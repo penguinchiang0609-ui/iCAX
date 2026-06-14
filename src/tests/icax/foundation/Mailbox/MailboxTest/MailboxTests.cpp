@@ -1,16 +1,20 @@
 #include <gtest/gtest.h>
 
-#include <Mailbox/MailBox.h>
+#include <Mailbox/MailChannel.h>
+#include <Mailbox/MailPostOffice.h>
+#include <Mailbox/MailQueue.h>
 
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
 #include <thread>
+#include <type_traits>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
-using namespace iCAX::Mailbox;
+using namespace iCAX::Mail;
 
 namespace
 {
@@ -45,14 +49,14 @@ namespace
     }
 }
 
-TEST(MailboxTest, DeliverAndRetrievePreservesOrderAndPayload)
+TEST(MailQueueTest, EnqueueAndDrainPreservesOrderAndPayload)
 {
-    CMailBox _MailBox;
+    CMailQueue _Queue;
 
-    _MailBox.DeliverMail(MakeIntMail(1, 0, 1001, 42));
-    _MailBox.DeliverMail(MakeIntMail(2, 1, 1002, 84));
+    _Queue.Enqueue(MakeIntMail(1, 0, 1001, 42));
+    _Queue.Enqueue(MakeIntMail(2, 1, 1002, 84));
 
-    auto _Mails = _MailBox.RetrieveMails();
+    auto _Mails = _Queue.Drain();
 
     ASSERT_EQ(2u, _Mails.size());
     EXPECT_EQ(1u, _Mails[0].Header.nMailId);
@@ -66,31 +70,31 @@ TEST(MailboxTest, DeliverAndRetrievePreservesOrderAndPayload)
     EXPECT_EQ(1002u, _Mails[1].Header.nTypeCode);
     EXPECT_EQ(84, ReadIntPayload(_Mails[1]));
 
-    EXPECT_TRUE(_MailBox.RetrieveMails().empty());
+    EXPECT_TRUE(_Queue.Drain().empty());
     ReleasePayloads(_Mails);
 }
 
-TEST(MailboxTest, ClearMailsEmptiesPendingMails)
+TEST(MailQueueTest, ClearEmptiesPendingMails)
 {
-    CMailBox _MailBox;
+    CMailQueue _Queue;
 
-    _MailBox.DeliverMail(MakeIntMail(1, 0, 1001, 42));
-    _MailBox.DeliverMail(MakeIntMail(2, 0, 1002, 84));
+    _Queue.Enqueue(MakeIntMail(1, 0, 1001, 42));
+    _Queue.Enqueue(MakeIntMail(2, 0, 1002, 84));
 
-    _MailBox.ClearMails();
+    _Queue.Clear();
 
-    EXPECT_TRUE(_MailBox.RetrieveMails().empty());
+    EXPECT_TRUE(_Queue.Drain().empty());
 }
 
-TEST(MailboxTest, SupportsEmptyPayloadMail)
+TEST(MailQueueTest, SupportsEmptyPayloadMail)
 {
-    CMailBox _MailBox;
+    CMailQueue _Queue;
     Mail _Mail;
     _Mail.Header.nMailId = 7;
     _Mail.Header.nTypeCode = 9001;
 
-    _MailBox.DeliverMail(_Mail);
-    auto _Mails = _MailBox.RetrieveMails();
+    _Queue.Enqueue(_Mail);
+    auto _Mails = _Queue.Drain();
 
     ASSERT_EQ(1u, _Mails.size());
     EXPECT_EQ(7u, _Mails[0].Header.nMailId);
@@ -99,7 +103,7 @@ TEST(MailboxTest, SupportsEmptyPayloadMail)
     EXPECT_EQ(nullptr, _Mails[0].Payload.pData);
 }
 
-TEST(MailboxTest, MailDefaultsAreEmptyAndSuccessful)
+TEST(MailQueueTest, MailDefaultsAreEmptyAndSuccessful)
 {
     Mail _Mail;
 
@@ -111,13 +115,13 @@ TEST(MailboxTest, MailDefaultsAreEmptyAndSuccessful)
     EXPECT_EQ(nullptr, _Mail.Payload.pData);
 }
 
-TEST(MailboxTest, MoveConstructorTransfersPendingMails)
+TEST(MailQueueTest, MoveConstructorTransfersPendingMails)
 {
-    CMailBox _Source;
-    _Source.DeliverMail(MakeIntMail(1, 0, 1001, 42));
+    CMailQueue _Source;
+    _Source.Enqueue(MakeIntMail(1, 0, 1001, 42));
 
-    CMailBox _Target(std::move(_Source));
-    auto _Mails = _Target.RetrieveMails();
+    CMailQueue _Target(std::move(_Source));
+    auto _Mails = _Target.Drain();
 
     ASSERT_EQ(1u, _Mails.size());
     EXPECT_EQ(1u, _Mails[0].Header.nMailId);
@@ -126,16 +130,16 @@ TEST(MailboxTest, MoveConstructorTransfersPendingMails)
     ReleasePayloads(_Mails);
 }
 
-TEST(MailboxTest, MoveAssignmentClearsTargetAndTransfersPendingMails)
+TEST(MailQueueTest, MoveAssignmentClearsTargetAndTransfersPendingMails)
 {
-    CMailBox _Source;
-    _Source.DeliverMail(MakeIntMail(2, 0, 2001, 84));
+    CMailQueue _Source;
+    _Source.Enqueue(MakeIntMail(2, 0, 2001, 84));
 
-    CMailBox _Target;
-    _Target.DeliverMail(MakeIntMail(1, 0, 1001, 42));
+    CMailQueue _Target;
+    _Target.Enqueue(MakeIntMail(1, 0, 1001, 42));
 
     _Target = std::move(_Source);
-    auto _Mails = _Target.RetrieveMails();
+    auto _Mails = _Target.Drain();
 
     ASSERT_EQ(1u, _Mails.size());
     EXPECT_EQ(2u, _Mails[0].Header.nMailId);
@@ -145,20 +149,20 @@ TEST(MailboxTest, MoveAssignmentClearsTargetAndTransfersPendingMails)
     ReleasePayloads(_Mails);
 }
 
-TEST(MailboxTest, SupportsConcurrentDeliverAndRetrieve)
+TEST(MailQueueTest, SupportsConcurrentEnqueueAndDrain)
 {
     constexpr int _ProducerCount = 4;
     constexpr int _MailsPerProducer = 64;
     constexpr int _TotalMails = _ProducerCount * _MailsPerProducer;
 
-    CMailBox _MailBox;
+    CMailQueue _Queue;
     std::atomic<int> _FinishedProducers = 0;
     std::vector<uint64_t> _ReceivedIds;
 
     std::thread _Consumer([&]() {
         while (_FinishedProducers.load(std::memory_order_acquire) != _ProducerCount)
         {
-            auto _Mails = _MailBox.RetrieveMails();
+            auto _Mails = _Queue.Drain();
             for (const auto& _Mail : _Mails)
             {
                 _ReceivedIds.push_back(_Mail.Header.nMailId);
@@ -167,7 +171,7 @@ TEST(MailboxTest, SupportsConcurrentDeliverAndRetrieve)
             std::this_thread::yield();
         }
 
-        auto _Mails = _MailBox.RetrieveMails();
+        auto _Mails = _Queue.Drain();
         for (const auto& _Mail : _Mails)
         {
             _ReceivedIds.push_back(_Mail.Header.nMailId);
@@ -182,7 +186,7 @@ TEST(MailboxTest, SupportsConcurrentDeliverAndRetrieve)
             for (int _Index = 0; _Index < _MailsPerProducer; ++_Index)
             {
                 const uint64_t _MailId = static_cast<uint64_t>(_Producer * _MailsPerProducer + _Index + 1);
-                _MailBox.DeliverMail(MakeIntMail(_MailId, 0, 3001, static_cast<int>(_MailId)));
+                _Queue.Enqueue(MakeIntMail(_MailId, 0, 3001, static_cast<int>(_MailId)));
             }
             _FinishedProducers.fetch_add(1, std::memory_order_release);
         });
@@ -201,4 +205,171 @@ TEST(MailboxTest, SupportsConcurrentDeliverAndRetrieve)
     {
         EXPECT_TRUE(_UniqueIds.contains(_MailId));
     }
+}
+
+TEST(MailPostOfficeTest, DefaultPostOfficeIsInvalidAndRejectsUse)
+{
+    CMailPostOffice _PostOffice;
+
+    EXPECT_FALSE(_PostOffice.IsValid());
+    EXPECT_THROW(_PostOffice.Send(Mail{}), std::logic_error);
+    EXPECT_THROW(_PostOffice.Receive(), std::logic_error);
+    EXPECT_THROW(_PostOffice.ClearIncoming(), std::logic_error);
+    EXPECT_THROW(_PostOffice.ClearOutgoing(), std::logic_error);
+}
+
+TEST(MailPostOfficeTest, PostOfficeIsLightweightNonOwningView)
+{
+    EXPECT_EQ(sizeof(void*) * 2, sizeof(CMailPostOffice));
+    EXPECT_TRUE(std::is_trivially_copy_constructible_v<CMailPostOffice>);
+    EXPECT_TRUE(std::is_trivially_copy_assignable_v<CMailPostOffice>);
+    EXPECT_TRUE((std::is_nothrow_constructible_v<CMailPostOffice, CMailQueue&, CMailQueue&>));
+    EXPECT_FALSE(std::is_move_constructible_v<CMailChannel>);
+    EXPECT_FALSE(std::is_move_assignable_v<CMailChannel>);
+}
+
+TEST(MailPostOfficeTest, EndASendIsReceivedByEndB)
+{
+    CMailChannel _Channel;
+    auto _EndAPostOffice = _Channel.GetEndAPostOffice();
+    auto _EndBPostOffice = _Channel.GetEndBPostOffice();
+
+    ASSERT_TRUE(_EndAPostOffice.IsValid());
+    ASSERT_TRUE(_EndBPostOffice.IsValid());
+
+    _EndAPostOffice.Send(MakeIntMail(1, 0, 1001, 42));
+
+    auto _EndBMails = _EndBPostOffice.Receive();
+    auto _EndAMails = _EndAPostOffice.Receive();
+
+    ASSERT_EQ(1u, _EndBMails.size());
+    EXPECT_TRUE(_EndAMails.empty());
+    EXPECT_EQ(1u, _EndBMails[0].Header.nMailId);
+    EXPECT_EQ(1001u, _EndBMails[0].Header.nTypeCode);
+    EXPECT_EQ(42, ReadIntPayload(_EndBMails[0]));
+
+    ReleasePayloads(_EndBMails);
+}
+
+TEST(MailPostOfficeTest, GetPostOfficeReturnsEndpointByChannelEnd)
+{
+    CMailChannel _Channel;
+    auto _EndAPostOffice = _Channel.GetPostOffice(kMailEndA);
+    auto _EndBPostOffice = _Channel.GetPostOffice(kMailEndB);
+
+    _EndAPostOffice.Send(MakeIntMail(1, 0, 1001, 42));
+    _EndBPostOffice.Send(MakeIntMail(2, 0, 2001, 84));
+
+    auto _EndBMails = _EndBPostOffice.Receive();
+    auto _EndAMails = _EndAPostOffice.Receive();
+
+    ASSERT_EQ(1u, _EndBMails.size());
+    ASSERT_EQ(1u, _EndAMails.size());
+    EXPECT_EQ(1u, _EndBMails[0].Header.nMailId);
+    EXPECT_EQ(2u, _EndAMails[0].Header.nMailId);
+
+    ReleasePayloads(_EndBMails);
+    ReleasePayloads(_EndAMails);
+}
+
+TEST(MailPostOfficeTest, RepeatedGetPostOfficeUsesSameUnderlyingChannel)
+{
+    CMailChannel _Channel;
+
+    auto _FirstEndA = _Channel.GetEndAPostOffice();
+    auto _SecondEndA = _Channel.GetEndAPostOffice();
+    auto _EndB = _Channel.GetEndBPostOffice();
+
+    _FirstEndA.Send(MakeIntMail(1, 0, 1001, 42));
+    _SecondEndA.Send(MakeIntMail(2, 0, 1002, 84));
+
+    auto _EndBMails = _EndB.Receive();
+
+    ASSERT_EQ(2u, _EndBMails.size());
+    EXPECT_EQ(1u, _EndBMails[0].Header.nMailId);
+    EXPECT_EQ(2u, _EndBMails[1].Header.nMailId);
+    EXPECT_EQ(42, ReadIntPayload(_EndBMails[0]));
+    EXPECT_EQ(84, ReadIntPayload(_EndBMails[1]));
+
+    ReleasePayloads(_EndBMails);
+}
+
+TEST(MailPostOfficeTest, EndBSendIsReceivedByEndA)
+{
+    CMailChannel _Channel;
+    auto _EndAPostOffice = _Channel.GetEndAPostOffice();
+    auto _EndBPostOffice = _Channel.GetEndBPostOffice();
+
+    _EndBPostOffice.Send(MakeIntMail(2, 1, 2001, 84));
+
+    auto _EndAMails = _EndAPostOffice.Receive();
+    auto _EndBMails = _EndBPostOffice.Receive();
+
+    ASSERT_EQ(1u, _EndAMails.size());
+    EXPECT_TRUE(_EndBMails.empty());
+    EXPECT_EQ(2u, _EndAMails[0].Header.nMailId);
+    EXPECT_EQ(1u, _EndAMails[0].Header.nOriginId);
+    EXPECT_EQ(2001u, _EndAMails[0].Header.nTypeCode);
+    EXPECT_EQ(84, ReadIntPayload(_EndAMails[0]));
+
+    ReleasePayloads(_EndAMails);
+}
+
+TEST(MailPostOfficeTest, DirectionsAreIndependent)
+{
+    CMailChannel _Channel;
+    auto _EndAPostOffice = _Channel.GetEndAPostOffice();
+    auto _EndBPostOffice = _Channel.GetEndBPostOffice();
+
+    _EndAPostOffice.Send(MakeIntMail(1, 0, 1001, 42));
+    _EndBPostOffice.Send(MakeIntMail(2, 1, 2001, 84));
+
+    auto _EndBMails = _EndBPostOffice.Receive();
+    auto _EndAMails = _EndAPostOffice.Receive();
+
+    ASSERT_EQ(1u, _EndBMails.size());
+    ASSERT_EQ(1u, _EndAMails.size());
+    EXPECT_EQ(1u, _EndBMails[0].Header.nMailId);
+    EXPECT_EQ(42, ReadIntPayload(_EndBMails[0]));
+    EXPECT_EQ(2u, _EndAMails[0].Header.nMailId);
+    EXPECT_EQ(84, ReadIntPayload(_EndAMails[0]));
+
+    ReleasePayloads(_EndBMails);
+    ReleasePayloads(_EndAMails);
+}
+
+TEST(MailPostOfficeTest, ClearIncomingOnlyClearsCurrentIncomingDirection)
+{
+    CMailChannel _Channel;
+    auto _EndAPostOffice = _Channel.GetEndAPostOffice();
+    auto _EndBPostOffice = _Channel.GetEndBPostOffice();
+
+    _EndAPostOffice.Send(MakeIntMail(1, 0, 1001, 42));
+    _EndBPostOffice.Send(MakeIntMail(2, 0, 2001, 84));
+
+    _EndBPostOffice.ClearIncoming();
+
+    EXPECT_TRUE(_EndBPostOffice.Receive().empty());
+
+    auto _EndAMails = _EndAPostOffice.Receive();
+    ASSERT_EQ(1u, _EndAMails.size());
+    EXPECT_EQ(2u, _EndAMails[0].Header.nMailId);
+    EXPECT_EQ(84, ReadIntPayload(_EndAMails[0]));
+
+    ReleasePayloads(_EndAMails);
+}
+
+TEST(MailPostOfficeTest, ChannelClearEmptiesBothDirections)
+{
+    CMailChannel _Channel;
+    auto _EndAPostOffice = _Channel.GetEndAPostOffice();
+    auto _EndBPostOffice = _Channel.GetEndBPostOffice();
+
+    _EndAPostOffice.Send(MakeIntMail(1, 0, 1001, 42));
+    _EndBPostOffice.Send(MakeIntMail(2, 0, 2001, 84));
+
+    _Channel.Clear();
+
+    EXPECT_TRUE(_EndAPostOffice.Receive().empty());
+    EXPECT_TRUE(_EndBPostOffice.Receive().empty());
 }

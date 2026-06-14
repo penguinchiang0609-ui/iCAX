@@ -20,10 +20,16 @@
     <ClInclude Include="pch.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="MailboxExport.h">
+    <ClInclude Include="MailExport.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="MailBox.h">
+    <ClInclude Include="MailPostOffice.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="MailQueue.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="MailChannel.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="Mail.h">
@@ -37,7 +43,13 @@
     <ClCompile Include="pch.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="MailBox.cpp">
+    <ClCompile Include="MailPostOffice.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="MailQueue.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="MailChannel.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

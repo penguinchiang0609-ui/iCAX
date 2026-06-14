@@ -1,6 +1,6 @@
 # runtime
 
-`runtime` 放置 icax 后台运行时。它负责把 framework、services、mailbox、pdo 和插件装配成可运行的后台实例。
+`runtime` 放置 icax 后台运行时。它负责把 framework、services、Mail 通信、PDO 和插件装配成可运行的后台实例。
 
 ## 目录结构
 

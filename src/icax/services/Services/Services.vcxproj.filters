@@ -13,7 +13,7 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Mailbox">
+    <Filter Include="Mail">
       <UniqueIdentifier>{f9c395b9-4b4d-423e-94a4-e7e50b730bb8}</UniqueIdentifier>
     </Filter>
     <Filter Include="Service">
@@ -30,11 +30,11 @@
     <ClInclude Include="Services.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IMailBoxService.h">
-      <Filter>Mailbox</Filter>
+    <ClInclude Include="IMailPostOfficeService.h">
+      <Filter>Mail</Filter>
     </ClInclude>
-    <ClInclude Include="MailBoxService.h">
-      <Filter>Mailbox</Filter>
+    <ClInclude Include="MailPostOfficeService.h">
+      <Filter>Mail</Filter>
     </ClInclude>
     <ClInclude Include="IService.h">
       <Filter>Service</Filter>
@@ -53,8 +53,8 @@
     <ClCompile Include="pch.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="MailBoxService.cpp">
-      <Filter>Mailbox</Filter>
+    <ClCompile Include="MailPostOfficeService.cpp">
+      <Filter>Mail</Filter>
     </ClCompile>
     <ClCompile Include="ServiceProvider.cpp">
       <Filter>Service</Filter>

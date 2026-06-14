@@ -147,9 +147,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />
-    <ClInclude Include="IMailBoxService.h" />
+    <ClInclude Include="IMailPostOfficeService.h" />
     <ClInclude Include="IService.h" />
-    <ClInclude Include="MailBoxService.h" />
+    <ClInclude Include="MailPostOfficeService.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ServiceProvider.h" />
     <ClInclude Include="Services.h" />
@@ -157,7 +157,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
-    <ClCompile Include="MailBoxService.cpp" />
+    <ClCompile Include="MailPostOfficeService.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

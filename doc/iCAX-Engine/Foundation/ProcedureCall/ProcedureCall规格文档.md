@@ -28,9 +28,9 @@ ProcedureCall 适用于这些场景：
 - 插件把能力注册出来，主程序通过 ID 调用。
 - runtime 不直接依赖某个产品模块，但可以调用产品模块暴露的方法。
 - 模块之间不希望互相 include 对方的业务头文件。
-- Mailbox 收到消息后，用消息里的 `nTypeCode` 找到对应处理函数。
+- Mail 通信的接收方取出邮件后，用消息里的 `nTypeCode` 找到对应处理函数。
 
-Mailbox 只是 ProcedureCall 的一个使用方。ProcedureCall 不属于 Mailbox。
+Mail 通信只是 ProcedureCall 的一个使用方。ProcedureCall 不属于 Mail 通信。
 
 ## 3. 基本概念
 
@@ -219,16 +219,16 @@ catch (const std::out_of_range&)
 }
 ```
 
-### 5.5 Mailbox 调用场景
+### 5.5 Mail 通信调用场景
 
-Mailbox 可以把 `PCID` 放在消息头里。
+Mail 通信可以把 `PCID` 放在消息头里。
 
 ```cpp
 auto fn = iCAX::PC::GetGlobalPCRegistry()->Find(mail.Header.nTypeCode);
 int result = fn(&context, &mail.Payload, nullptr);
 ```
 
-这里 Mailbox 只负责消息传递，ProcedureCall 只负责找到函数。
+这里 Mail 通信只负责消息传递，ProcedureCall 只负责找到函数。
 
 ## 6. 行为规则
 

@@ -7,7 +7,7 @@
 #include "Services/ServiceProvider.h"
 #include <vector>
 #include "CAXEnginConfig.h"
-#include "Services/IMailBoxService.h"
+#include "Services/IMailPostOfficeService.h"
 
 
 namespace iCAX
@@ -101,7 +101,7 @@ namespace iCAX
 
         private:
             CAXEnginConfig m_Config;
-            std::shared_ptr<iCAX::Services::IMailBoxService> m_pMailBoxService; //!< 邮箱服务
+            std::shared_ptr<iCAX::Services::IMailPostOfficeService> m_pMailPostOfficeService; //!< 邮局服务
             std::shared_ptr<iCAX::Database::IRepository> m_pRepository;             //!< 仓储 Eentity+Component
             std::shared_ptr<iCAX::Behaviour::IUniverse> m_pUniverse;                   //!< 系统 System
         };

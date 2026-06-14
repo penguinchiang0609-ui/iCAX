@@ -176,16 +176,16 @@ A 模块
   -> fn(context, input, output)
 ```
 
-Mailbox 调用链：
+Mail 通信调用链：
 
 ```text
-Mailbox::Mail.Header.nTypeCode
+Mail.Header.nTypeCode
   -> PCID
   -> registry.Find
   -> PCFunc(context, payload, output)
 ```
 
-Mailbox 不是 ProcedureCall 的组成部分，只是把 `PCID` 作为消息类型码使用。
+Mail 通信不是 ProcedureCall 的组成部分，只是把 `PCID` 作为消息类型码使用。
 
 ## 10. 参数方案
 
@@ -242,11 +242,11 @@ ProcedureCall 自身处理的错误很少：
 
 ProcedureCall 依赖 Data 的稳定 ID 能力。
 
-### 13.2 Mailbox
+### 13.2 Mail 通信
 
-Mailbox 可以使用 ProcedureCall 的 `PCID` 做消息类型码。
+Mail 通信可以使用 ProcedureCall 的 `PCID` 做消息类型码。
 
-ProcedureCall 不依赖 Mailbox。
+ProcedureCall 不依赖 Mail 通信。
 
 ### 13.3 Runtime 和插件
 

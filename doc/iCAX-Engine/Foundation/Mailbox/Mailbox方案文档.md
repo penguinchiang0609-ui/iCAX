@@ -1,19 +1,24 @@
-# Mailbox 方案文档
+# Mail 通信方案文档
 
 ## 1. 目标问题
 
-Mailbox 要解决的问题是：发送方和接收方不一定在同一段代码里即时调用，但需要在同一进程中交换低频消息。
+Mail 通信要解决的是同一进程内两个运行单元之间的低频消息交换问题。发送方不直接调用接收方代码，而是把邮件放入通道；接收方在自己的安全时机批量取出。
 
-解决方式是提供一个本地队列：
+Foundation 层不限定通信双方。它采用“双向通道 + 单向队列 + 端点邮局”的通用方案：
 
 ```text
-发送方 DeliverMail
-  -> 队列暂存 Mail
-接收方 RetrieveMails
-  -> 批量取出并处理
+EndA post office
+  Send
+    -> AToB queue
+      -> EndB post office Receive
+
+EndB post office
+  Send
+    -> BToA queue
+      -> EndA post office Receive
 ```
 
-Mailbox 不执行消息，不解释消息体，只管理消息暂存和所有权边界。
+具体产品通信只是上层服务对 EndA/EndB 的一种映射，不进入 Foundation 的核心模型。
 
 ## 2. 工程位置
 
@@ -30,7 +35,7 @@ Mailbox.vcxproj
 ## 3. 模块结构
 
 ```text
-MailboxExport.h
+MailExport.h
   -> DLL 导出宏
 
 Mail.h
@@ -39,191 +44,208 @@ Mail.h
   -> MailData
   -> Mail
 
-MailBox.h / MailBox.cpp
-  -> CMailBox
+MailQueue.h / MailQueue.cpp
+  -> CMailQueue，单向队列
+
+MailChannel.h / MailChannel.cpp
+  -> MailChannelEnd 与 CMailChannel，双向通道
+
+MailPostOffice.h / MailPostOffice.cpp
+  -> CMailPostOffice，某一端的邮局
 ```
 
-## 4. 核心数据结构
+## 4. 核心设计
 
-### 4.1 MailHeader
+### 4.1 Mail
 
-`MailHeader` 保存消息路由和关联信息。
+`Mail` 保持简单结构：
 
 ```cpp
-uint64_t nMailId;
-uint64_t nOriginId;
-uint64_t nTypeCode;
-StampCode nStamp;
+struct Mail
+{
+    MailHeader Header;
+    MailData Payload;
+};
 ```
 
-设计意图：
+`MailHeader::nTypeCode` 可作为 ProcedureCall 的过程 ID 使用，但 Mail 通信模块不依赖 ProcedureCall。
 
-- `nMailId` 标识当前消息。
-- `nOriginId` 支持请求/回复关联。
-- `nTypeCode` 支持按类型路由，常见值是 ProcedureCall 的 `PCID`。
-- `nStamp` 表达通用处理状态。
+### 4.2 CMailQueue
 
-### 4.2 MailData
+`CMailQueue` 是底层单向队列。
 
-`MailData` 保存 Payload 指针和长度。
-
-```cpp
-size_t nSize;
-uint8_t* pData;
-```
-
-当前采用裸指针是为了兼容现有调用方式，并保持底层结构简单。
-
-### 4.3 CMailBox
-
-`CMailBox` 内部保存：
+内部结构：
 
 ```cpp
 std::mutex m_Mutex;
 std::vector<Mail> m_vecMails;
 ```
 
-这是一个加锁保护的先进先出批量取出队列。
-
-## 5. 投递方案
-
-`DeliverMail` 当前实现：
+方法：
 
 ```cpp
-void CMailBox::DeliverMail(const Mail& mail)
+void Enqueue(const Mail& mail);
+std::vector<Mail> Drain();
+void Clear();
+```
+
+设计要点：
+
+- `Enqueue` 只做浅拷贝，避免模块参与 Payload 序列化。
+- `Drain` 使用 `swap` 整体取出队列，降低锁内开销。
+- `Clear` 释放仍滞留在队列中的 Payload。
+- 队列禁止拷贝，避免多个队列持有同一批裸指针 Payload。
+
+### 4.3 CMailChannel
+
+`CMailChannel` 拥有两个队列：
+
+```cpp
+CMailQueue m_AToB;
+CMailQueue m_BToA;
+```
+
+端点枚举：
+
+```cpp
+enum MailChannelEnd : uint8_t
 {
-    std::lock_guard<std::mutex> lock(m_Mutex);
-    m_vecMails.push_back(mail);
-}
+    kMailEndA = 0,
+    kMailEndB = 1,
+};
 ```
 
-特点：
-
-- 追加到队列尾部。
-- 对 `Mail` 做浅拷贝。
-- 不复制 Payload 内容。
-- 不检查 Payload 合法性。
-
-浅拷贝意味着投递后 Payload 指针必须继续有效，直到 Mailbox 清空它，或者接收方取出并释放它。
-
-## 6. 取出方案
-
-`RetrieveMails` 当前实现：
+它负责根据端点获取邮局：
 
 ```cpp
-std::vector<Mail> CMailBox::RetrieveMails()
-{
-    std::lock_guard<std::mutex> lock(m_Mutex);
-    std::vector<Mail> mails;
-    mails.swap(m_vecMails);
-    return mails;
-}
+CMailPostOffice GetPostOffice(MailChannelEnd end) noexcept;
+CMailPostOffice GetEndAPostOffice() noexcept;
+CMailPostOffice GetEndBPostOffice() noexcept;
 ```
 
-特点：
+返回的 `CMailPostOffice` 是非拥有视图，不分配内存，成本等同于复制两个队列指针。
 
-- 一次性返回当前所有消息。
-- 返回顺序与投递顺序一致。
-- 调用后内部队列为空。
-- Payload 所有权转移给调用方。
-- 使用 `swap` 把内部队列整体转移给调用方，避免浅拷贝后再清空造成所有权不清晰。
-
-## 7. 清空方案
-
-`ClearMails` 当前实现：
-
-```cpp
-std::lock_guard<std::mutex> lock(m_Mutex);
-for (auto& mail : m_vecMails)
-{
-    delete[] mail.Payload.pData;
-    mail.Payload.pData = nullptr;
-    mail.Payload.nSize = 0;
-}
-m_vecMails.clear();
-```
-
-它只负责清理仍在队列中的消息。
-
-如果消息已经通过 `RetrieveMails` 返回给调用方，Mailbox 不再负责释放。
-
-## 8. 移动与拷贝方案
-
-`CMailBox` 禁止拷贝：
-
-```cpp
-CMailBox(const CMailBox&) = delete;
-CMailBox& operator=(const CMailBox&) = delete;
-```
-
-原因是 `MailData::pData` 是裸指针。拷贝队列会造成多个 Mailbox 持有同一段 Payload，后续容易重复释放。
-
-`CMailBox` 支持移动：
-
-- 移动构造锁住源对象，然后通过 `swap` 转移内部 vector。
-- 移动赋值同时锁住源对象和目标对象，先清理目标已有消息，再通过 `swap` 转移源队列。
-
-## 9. 生命周期方案
-
-Mailbox 的生命周期围绕 Payload 所有权展开。
+EndA 邮局绑定：
 
 ```text
-投递前：
+incoming = BToA
+outgoing = AToB
+```
+
+EndB 邮局绑定：
+
+```text
+incoming = AToB
+outgoing = BToA
+```
+
+### 4.4 CMailPostOffice
+
+`CMailPostOffice` 是一个轻量收发入口，不拥有队列。
+
+内部结构：
+
+```cpp
+CMailQueue* m_pIncomingQueue;
+CMailQueue* m_pOutgoingQueue;
+```
+
+方法：
+
+```cpp
+bool IsValid() const noexcept;
+void Send(const Mail& mail) const;
+std::vector<Mail> Receive() const;
+void ClearIncoming() const;
+void ClearOutgoing() const;
+```
+
+`Send` 写入 outgoing queue，`Receive` 从 incoming queue 取出。
+
+`CMailChannel` 禁止拷贝和移动。这样已经获取到的 `CMailPostOffice` 不会因为通道对象被移动而指向失效或错位的队列。
+
+## 5. 服务层映射方案
+
+`Services` 按引擎 ID 维护一条通用 `CMailChannel`：
+
+```cpp
+std::unordered_map<uuid, CMailChannel> m_Channels;
+```
+
+在具体产品框架里，服务层可以把 EndA/EndB 映射成自己的两个运行角色：
+
+```text
+EndA = role 1
+EndB = role 2
+```
+
+因此服务接口可以保留业务友好的入口：
+
+```cpp
+CMailPostOffice GetRole1PostOffice(const uuid& engineId);
+CMailPostOffice GetRole2PostOffice(const uuid& engineId);
+```
+
+这里的角色命名属于 Services 的装配语义，不属于 Foundation 的通道语义。
+
+服务层内部用 mutex 保护 `m_Channels` 的创建和清空，避免两个线程首次访问同一引擎通道时发生 map 数据竞争。
+
+返回的 `CMailPostOffice` 是轻量对象，持有底层队列指针。它的有效期依赖服务中的 `CMailChannel`，服务卸载后不能继续使用旧邮局。反复获取同一个端点的邮局不会产生新的队列，也不会产生堆分配。
+
+## 6. 生命周期方案
+
+Payload 生命周期：
+
+```text
+发送前：
   调用方拥有 Payload
 
-DeliverMail 后：
-  Mailbox 队列持有 Payload 指针
+Send / Enqueue 后：
+  目标队列持有 Payload 指针
 
-RetrieveMails 后：
+Receive / Drain 后：
   调用方重新获得 Payload 所有权
 
-ClearMails 或析构：
-  Mailbox 释放仍在队列中的 Payload
+Clear 或队列析构：
+  队列释放仍滞留的 Payload
 ```
 
 关键约束：
 
-- 投递后的 Payload 不应由发送方立即释放。
-- 取出后的 Payload 必须由接收方释放。
-- Payload 必须与 `delete[]` 匹配。
+- 非空 Payload 必须由 `new[]` 分配。
+- 接收方处理完邮件后必须 `delete[] Payload.pData`。
+- 发送方在 `Send` 后不能再释放同一 Payload。
+- `CMailPostOffice` 不负责队列生命周期。
+- 生命周期所有者必须保证 `CMailChannel` 长于由它获取到的 `CMailPostOffice`。
+- 不能移动已经对外发放过邮局的 `CMailChannel`。
 
-## 10. 与其他项目的关系
+## 7. 线程方案
 
-### 10.1 ProcedureCall
+`CMailQueue` 方法级加锁，支持以下并发：
 
-Mailbox 可以把 `MailHeader::nTypeCode` 当作 ProcedureCall 的 `PCID`。
+- 多线程同时 `Enqueue`。
+- 一个线程 `Drain`，其他线程 `Enqueue`。
+- 一个线程 `Clear`，其他线程 `Enqueue` 或 `Drain`。
 
-Mailbox 不依赖 ProcedureCall，也不负责查找函数。
+`CMailChannel` 本身不额外加锁，双向线程安全由内部两个 `CMailQueue` 提供。
 
-### 10.2 Services
+`CMailPostOfficeService` 只保护通道 map 的创建和清空；消息收发走 `CMailQueue` 自己的锁。
 
-`Services` 使用 `CMailBox` 按引擎 ID 管理 inbox/outbox。
+## 8. 与其他项目的关系
 
-Foundation Mailbox 只提供队列；Services 提供装配和访问入口。
+### 8.1 ProcedureCall
 
-### 10.3 PDO
+Mail 通信可把 `MailHeader::nTypeCode` 当作 ProcedureCall 的 `PCID`。本模块不查找函数，也不执行函数。
 
-Mailbox 用于低频消息。PDO 用于高频可丢弃数据。
+### 8.2 Services
 
-## 11. 线程方案
+`Services` 负责把通用 EndA/EndB 映射成当前产品框架里的具体角色邮局。
 
-当前 `CMailBox` 使用 `std::mutex` 保护内部队列。
+### 8.3 PDO
 
-加锁范围：
+Mail 通信用于低频消息；PDO 用于高频状态数据。
 
-- `DeliverMail`：锁住队列并追加消息。
-- `RetrieveMails`：锁住队列并把内部 vector 交换到局部变量。
-- `ClearMails`：锁住队列并释放仍在队列中的 Payload。
-- 移动构造：锁住源对象并转移队列。
-- 移动赋值：同时锁住源对象和目标对象，避免死锁后转移队列。
-
-线程安全边界：
-
-- 方法级并发访问是安全的。
-- 对象析构仍需要外部保证没有其他线程继续访问该对象。
-- Payload 指向的业务数据不由 Mailbox 保护。
-
-## 12. 测试方案
+## 9. 测试方案
 
 测试工程：
 
@@ -233,15 +255,12 @@ src/tests/icax/foundation/Mailbox/MailboxTest/MailboxTest.vcxproj
 
 测试覆盖：
 
-- `Mail` 默认值。
-- 投递和取出顺序。
-- Header 和 Payload 保持。
-- `RetrieveMails` 清空队列。
-- `ClearMails` 清空队列。
-- 空 Payload。
-- 移动构造。
-- 移动赋值。
-- 并发投递和取出。
+- `CMailQueue` 入队、取出、清空、移动和并发。
+- `CMailPostOffice` 默认未绑定时的异常行为。
+- `CMailPostOffice` 轻量非拥有视图的大小和复制语义。
+- `CMailChannel` EndA/EndB 双向路由。
+- 两个方向互不串包。
+- 清空单方向和清空整个通道。
 
 验证命令：
 

@@ -48,7 +48,7 @@ void iCAX::Engine::CCAXEngine::Load()
     m_pRepository = iCAX::Database::GenerateRepository(iCAX::Data::GenerateNewUUID());
     //!< 构建宇宙
     m_pUniverse = iCAX::Behaviour::GenerateUniverse(m_pRepository, _pApplicationSetting);
-    m_pMailBoxService = iCAX::Services::GetGlobalServiceProvider()->Resolve<iCAX::Services::IMailBoxService>();
+    m_pMailPostOfficeService = iCAX::Services::GetGlobalServiceProvider()->Resolve<iCAX::Services::IMailPostOfficeService>();
 
     //! 加载插件
     auto _PluginPathes = LoadPluginMetas();
@@ -141,10 +141,11 @@ void iCAX::Engine::CCAXEngine::MainLoop()
     //! 帧前PDO双缓冲交换
     m_pUniverse->PreSwapPDO();
 
-    //! 检查邮箱，处理邮箱输入
-    if (m_pMailBoxService)
+    //! 检查邮局，处理邮件输入
+    if (m_pMailPostOfficeService)
     {
-        auto _Mails = m_pMailBoxService->GetInBox(m_pUniverse->GetID()).RetrieveMails();
+        auto _BackendPostOffice = m_pMailPostOfficeService->GetBackendPostOffice(m_pUniverse->GetID());
+        auto _Mails = _BackendPostOffice.Receive();
         for (auto& _Mail : _Mails)
         {
             try

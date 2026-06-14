@@ -1,22 +1,22 @@
 #include "pch.h"
-#include "MailBox.h"
+#include "MailQueue.h"
 #include <utility>
 
 //! 构造函数
-iCAX::Mailbox::CMailBox::CMailBox()
+iCAX::Mail::CMailQueue::CMailQueue()
     : m_Mutex()
     , m_vecMails()
 {
 }
 
 //! 析构函数
-iCAX::Mailbox::CMailBox::~CMailBox()
+iCAX::Mail::CMailQueue::~CMailQueue()
 {
-    ClearMails();
+    Clear();
 }
 
 //! 移动构造函数
-iCAX::Mailbox::CMailBox::CMailBox(CMailBox&& Other_) noexcept
+iCAX::Mail::CMailQueue::CMailQueue(CMailQueue&& Other_) noexcept
     : m_Mutex()
     , m_vecMails()
 {
@@ -25,7 +25,7 @@ iCAX::Mailbox::CMailBox::CMailBox(CMailBox&& Other_) noexcept
 }
 
 //! 移动赋值
-iCAX::Mailbox::CMailBox& iCAX::Mailbox::CMailBox::operator=(CMailBox&& Other_) noexcept
+iCAX::Mail::CMailQueue& iCAX::Mail::CMailQueue::operator=(CMailQueue&& Other_) noexcept
 {
     if (this != &Other_)
     {
@@ -36,30 +36,30 @@ iCAX::Mailbox::CMailBox& iCAX::Mailbox::CMailBox::operator=(CMailBox&& Other_) n
     return *this;
 }
 
-//! 投递邮件
-void iCAX::Mailbox::CMailBox::DeliverMail(const Mail& Mail_)
+//! 入队邮件
+void iCAX::Mail::CMailQueue::Enqueue(const Mail& Mail_)
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     m_vecMails.push_back(Mail_);
 }
 
-//! 获取邮件
-std::vector<iCAX::Mailbox::Mail> iCAX::Mailbox::CMailBox::RetrieveMails()
+//! 取出邮件
+std::vector<iCAX::Mail::Mail> iCAX::Mail::CMailQueue::Drain()
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
-    std::vector<Mail> RetrievedMails;
-    RetrievedMails.swap(m_vecMails);
-    return RetrievedMails;
+    std::vector<Mail> _Mails;
+    _Mails.swap(m_vecMails);
+    return _Mails;
 }
 
-//! 清空邮件
-void iCAX::Mailbox::CMailBox::ClearMails()
+//! 清空队列
+void iCAX::Mail::CMailQueue::Clear()
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     ReleasePayloads(m_vecMails);
 }
 
-void iCAX::Mailbox::CMailBox::ReleasePayloads(std::vector<Mail>& Mails_) noexcept
+void iCAX::Mail::CMailQueue::ReleasePayloads(std::vector<Mail>& Mails_) noexcept
 {
     for (auto& _Mail : Mails_)
     {

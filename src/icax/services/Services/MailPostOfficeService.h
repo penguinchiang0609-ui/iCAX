@@ -1,7 +1,9 @@
 #pragma once
 #include "Services.h"
-#include "IMailBoxService.h"
+#include "IMailPostOfficeService.h"
 #include "ServicesHelper.h"
+#include "Mailbox/MailChannel.h"
+#include <mutex>
 #include <unordered_map>
 
 namespace iCAX
@@ -9,20 +11,20 @@ namespace iCAX
     namespace Services
     {
         /*
-        * @brief 邮箱服务
+        * @brief 邮局服务
         */
-        class CMailBoxService : public IMailBoxService
+        class CMailPostOfficeService : public IMailPostOfficeService
         {
         public:
             /*
             * @brief 构造函数
             */
-            CMailBoxService();
+            CMailPostOfficeService();
 
             /*
             * @brief 析构函数
             */
-            virtual ~CMailBoxService();
+            virtual ~CMailPostOfficeService();
 
         public:
             /*
@@ -41,24 +43,24 @@ namespace iCAX
 
         public:
             /*
-            * @brief 获取前端邮件柜
+            * @brief 获取 backend 视角的邮局
             * @param [in] ID_ 引擎ID，允许多引擎并行存在
-            * @return 邮件柜引用
+            * @return 邮局
             */
-            virtual iCAX::Mailbox::CMailBox& GetOutBox(IN const iCAX::Data::uuid& ID_) override;
+            virtual iCAX::Mail::CMailPostOffice GetBackendPostOffice(IN const iCAX::Data::uuid& ID_) override;
 
             /*
-            * @brief 获取后端邮件柜
+            * @brief 获取 frontend 视角的邮局
             * @param [in] ID_ 引擎ID，允许多引擎并行存在
-            * @return 邮件柜引用
+            * @return 邮局
             */
-            virtual iCAX::Mailbox::CMailBox& GetInBox(IN const iCAX::Data::uuid& ID_) override;
+            virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice(IN const iCAX::Data::uuid& ID_) override;
 
         private:
-            std::unordered_map<iCAX::Data::uuid, iCAX::Mailbox::CMailBox> m_FrontendMailBoxes; //!< 前端邮件柜
-            std::unordered_map<iCAX::Data::uuid, iCAX::Mailbox::CMailBox> m_BackendMailBoxes;  //!< 后端邮件柜
+            std::mutex m_Mutex;
+            std::unordered_map<iCAX::Data::uuid, iCAX::Mail::CMailChannel> m_Channels; //!< 每个引擎一条双向邮件通道
 
-            AUTO_REGIST_SERVICE(IMailBoxService, CMailBoxService);
+            AUTO_REGIST_SERVICE(IMailPostOfficeService, CMailPostOfficeService);
         };
     }
 }

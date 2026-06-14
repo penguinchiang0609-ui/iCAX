@@ -1,11 +1,11 @@
 #pragma once
-#include "MailboxExport.h"
+#include "MailExport.h"
 #include <cstddef>
 #include <cstdint>
 
 namespace iCAX
 {
-    namespace Mailbox
+    namespace Mail
     {
         /*
         * @brief 邮件状态
@@ -23,7 +23,7 @@ namespace iCAX
         /*
         * @brief 邮件头
         */
-        struct _MAILBOX_EXP MailHeader
+        struct _MAIL_EXP MailHeader
         {
             uint64_t nMailId = 0;     //! 邮件ID
             uint64_t nOriginId = 0;   //! 原邮件ID，回复邮件时标识回复的是哪一封邮件，0 表示非回复邮件
@@ -34,7 +34,7 @@ namespace iCAX
         /*
         * @brief 邮件数据
         */
-        struct _MAILBOX_EXP MailData
+        struct _MAIL_EXP MailData
         {
             size_t nSize = 0;
             uint8_t* pData = nullptr;
@@ -43,7 +43,7 @@ namespace iCAX
         /*
         * @brief 邮件
         */
-        struct _MAILBOX_EXP Mail
+        struct _MAIL_EXP Mail
         {
             MailHeader Header;
             MailData Payload;
