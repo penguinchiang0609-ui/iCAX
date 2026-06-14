@@ -25,33 +25,35 @@ const iCAX::Data::uuid& iCAX::Database::CEntity::GetID() const
 //!< 添加组件
 std::shared_ptr<iCAX::Database::CComponentBase> iCAX::Database::CEntity::AddComponent(IN const std::string& strClassName_)
 {
-    if (HasComponent(strClassName_))
+    if (m_mapComponents.contains(strClassName_))
     {
         throw std::runtime_error("Component already exists: " + strClassName_);
     }
     std::shared_ptr<CComponentBase> _pComponent = GetGlobalMetaRegistry()->CreateByName(strClassName_, shared_from_this());
-    TriggerEntityChanging(EntityEventArgs::kAddComponent, strClassName_, {}, {}, _pComponent);
+    auto _NewProperties = _pComponent->GetProperties();
+    TriggerEntityChanging(EntityEventArgs::kAddComponent, strClassName_, {}, _NewProperties, _pComponent);
     m_mapComponents[strClassName_] = _pComponent;
     m_ComponentClasses.push_back(strClassName_);
-    TriggerEntityChanged(EntityEventArgs::kAddComponent, strClassName_, {}, {}, _pComponent);
     _pComponent->AddObserver(shared_from_this());//!< 侦听目标组件的属性事件
+    TriggerEntityChanged(EntityEventArgs::kAddComponent, strClassName_, {}, _NewProperties, _pComponent);
     return _pComponent;
 }
 
 //!< 移除组件
 void iCAX::Database::CEntity::RemoveComponent(IN const std::string& strClassName_)
 {
-    if (!HasComponent(strClassName_))
+    auto _Ite = m_mapComponents.find(strClassName_);
+    if (_Ite == m_mapComponents.end())
     {
         return;
     }
-    auto _Ite = m_mapComponents.find(strClassName_);
     auto _pCompoennt = _Ite->second;
+    auto _PreviousProperties = _pCompoennt->GetProperties();
     _Ite->second->RemoveObserver(shared_from_this());//!< 移除对目标组件的属性事件侦听
-    TriggerEntityChanging(EntityEventArgs::kRemoveComponent, strClassName_, _Ite->second->GetProperties(), {}, _pCompoennt);
+    TriggerEntityChanging(EntityEventArgs::kRemoveComponent, strClassName_, _PreviousProperties, {}, _pCompoennt);
     m_mapComponents.erase(_Ite);
     m_ComponentClasses.erase(std::remove(m_ComponentClasses.begin(), m_ComponentClasses.end(), strClassName_), m_ComponentClasses.end());
-    TriggerEntityChanged(EntityEventArgs::kRemoveComponent, strClassName_, _pCompoennt->GetProperties(), {}, _pCompoennt);
+    TriggerEntityChanged(EntityEventArgs::kRemoveComponent, strClassName_, _PreviousProperties, {}, _pCompoennt);
 }
 
 //!< 获取组件
@@ -85,16 +87,7 @@ std::vector<std::shared_ptr<iCAX::Database::CComponentBase>> iCAX::Database::CEn
 //!< 是否含有指定组件
 bool iCAX::Database::CEntity::HasComponent(IN const std::string& strClassName_) const
 {
-    auto _pMeta = GetGlobalMetaRegistry();
-    for (auto& [_Key, _pComponent] : m_mapComponents)
-    {
-        if (_pMeta->IsInheritance(_Key, strClassName_))
-        {
-            return true;
-        }
-    }
-
-    return false;
+    return m_mapComponents.contains(strClassName_);
 }
 
 //!< 获取组件类型列表

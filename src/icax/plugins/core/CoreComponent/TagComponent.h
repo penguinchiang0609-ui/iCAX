@@ -1,6 +1,6 @@
 #pragma once
 #include "Core.h"
-#include "Database/Component.h"
+#include "Database/ComponentBase.h"
 #include "Database/ComponentHelper.h"
 
 namespace iCAX
@@ -14,7 +14,8 @@ namespace iCAX
         {
             //!< 构造函数以及重载函数声明
             //!< 构造函数以及重载函数声明
-            DECLARE_ICAX_COMPONENT(TagComponent);
+            DECLARE_ICAX_COMPONENT(TagComponent, CComponentBase);
+            DECLARE_ICAX_COMPONENT_CREATOR(TagComponent);
 
             //!< 标记
             DECLARED_ICAX_FIELD(TagComponent, std::string, Tag, "",

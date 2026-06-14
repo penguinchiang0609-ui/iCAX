@@ -294,7 +294,48 @@ const std::list<iCAX::Database::OperationUnit>& iCAX::Tracker::CTransaction::Get
 //!< 修改前事件
 void iCAX::Tracker::CTransaction::OnRepositoryChanging(IN void* pSender_, IN const iCAX::Database::RepositoryEventArgs& Args_)
 {
-    m_ActualOperations.push_back(Args_);//!< write-log-ahead 先写日志，此处借鉴于数据库日志机制
+    if (Args_.nType == iCAX::Database::RepositoryEventArgs::kBatchChanged)
+    {
+        return;
+    }
+
+    if (Args_.nType != iCAX::Database::RepositoryEventArgs::kModifyComponent)
+    {
+        m_ActualOperations.push_back(Args_);//!< write-log-ahead 先写日志，此处借鉴于数据库日志机制
+        return;
+    }
+
+    auto _pMeta = iCAX::Database::GetGlobalMetaRegistry();
+    iCAX::Database::RepositoryEventArgs _Filtered = Args_;
+    _Filtered.PreviousProperties.clear();
+    _Filtered.NewProperties.clear();
+
+    for (const auto& [_strName, _NewValue] : Args_.NewProperties)
+    {
+        if (!_pMeta->HasPropertyByName(Args_.strClassName, _strName))
+        {
+            if (_pMeta->HasTypeByName(Args_.strClassName))
+            {
+                continue;
+            }
+        }
+        else if (_pMeta->GetPropertyChangePolicyByName(Args_.strClassName, _strName) != iCAX::Database::EPropertyChangePolicy::Transactional)
+        {
+            continue;
+        }
+
+        auto _ItePrevious = Args_.PreviousProperties.find(_strName);
+        if (_ItePrevious != Args_.PreviousProperties.end())
+        {
+            _Filtered.PreviousProperties.emplace(_strName, _ItePrevious->second);
+        }
+        _Filtered.NewProperties.emplace(_strName, _NewValue);
+    }
+
+    if (!_Filtered.NewProperties.empty())
+    {
+        m_ActualOperations.push_back(_Filtered);//!< write-log-ahead 先写日志，此处借鉴于数据库日志机制
+    }
 }
 
 //!< 更改后事件

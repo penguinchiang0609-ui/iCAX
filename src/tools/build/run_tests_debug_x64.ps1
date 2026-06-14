@@ -23,6 +23,8 @@ if (-not $MSBuild) {
 $BuildProjects = @(
     "src\icax\foundation\Data\Data.vcxproj",
     "src\tests\icax\foundation\Data\DataTest\DataTest.vcxproj",
+    "src\icax\framework\Database\Database.vcxproj",
+    "src\tests\icax\framework\Database\DatabaseTest\DatabaseTest.vcxproj",
     "src\icax\foundation\ProcedureCall\ProcedureCall.vcxproj",
     "src\tests\icax\foundation\ProcedureCall\ProcedureCallTest\ProcedureCallTest.vcxproj",
     "src\icax\foundation\Mailbox\Mailbox.vcxproj",
@@ -35,6 +37,7 @@ $BuildProjects = @(
 
 $TestExecutables = @(
     "src\icax\$Platform\$Configuration\DataTest.exe",
+    "src\icax\$Platform\$Configuration\DatabaseTest.exe",
     "src\icax\$Platform\$Configuration\ProcedureCallTest.exe",
     "src\icax\$Platform\$Configuration\MailboxTest.exe",
     "src\icax\$Platform\$Configuration\PDOTest.exe",

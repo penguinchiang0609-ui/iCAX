@@ -1,6 +1,7 @@
 #pragma once
 #include "Database.h"
 #include "IMetaRegistry.h"
+#include <vector>
 
 namespace iCAX
 {
@@ -18,8 +19,12 @@ namespace iCAX
             struct PropertyMeta
             {
                 std::string Name;//!< 属性名称
+                EPropertyKind Kind = EPropertyKind::Value;
+                EPropertyPersistence Persistence = EPropertyPersistence::Persistent;
+                EPropertyChangePolicy ChangePolicy = EPropertyChangePolicy::Transactional;
                 std::function<PropertyValue(const void*)> Getter;//!< 属性的获取方法
                 std::function<void(void*, const PropertyValue&)> Setter;//!< 属性的设置方法
+                DerivedPropertyEvaluator Evaluator;//!< 派生属性计算器
             };
 
             /*
@@ -31,6 +36,7 @@ namespace iCAX
                 std::function<std::shared_ptr<CComponentBase>(IN std::shared_ptr<IEntity>)> Creator;//!< 组件的构建方法
                 std::unordered_set<std::shared_ptr<IAttribute>> vecAttributes;        //!< 所有特性
                 std::unordered_set<std::shared_ptr<IChecker>> vecCheckers;            //!< 约束器
+                std::vector<uint32_t> vecPropertyOrder;                               //!< 属性注册顺序
                 std::unordered_map<uint32_t, PropertyMeta> mapProperties;                       //!< 属性元数据
             };
 
@@ -61,6 +67,11 @@ namespace iCAX
             */
             virtual bool IsInheritance(IN const std::string& strComponentClass_, IN const std::string& strParentComponentClass_) override;
 
+            /*
+            * @brief 是否包含组件类型
+            */
+            virtual bool HasTypeByName(IN const std::string& strComponentClass_) const override;
+
         public://! 构造器
             /*
             * @brief 注册构造函数
@@ -90,7 +101,42 @@ namespace iCAX
             * @param [in] Getter_ 获取器
             * @param [in] Setter_ 设置器
             */
-            virtual void RegistPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const std::function<PropertyValue(const void*)>& Getter_, IN const std::function<void(void*, const PropertyValue&)>& Setter_) override;
+            virtual void RegistPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const std::function<PropertyValue(const void*)>& Getter_, IN const std::function<void(void*, const PropertyValue&)>& Setter_, IN EPropertyPersistence Persistence_, IN EPropertyChangePolicy ChangePolicy_) override;
+
+            /*
+            * @brief 注册派生属性
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            * @param [in] Evaluator_ 计算器
+            */
+            virtual void RegistDerivedPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_, IN EPropertyPersistence Persistence_, IN EPropertyChangePolicy ChangePolicy_) override;
+
+            /*
+            * @brief 是否包含属性
+            */
+            virtual bool HasPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const override;
+
+            /*
+            * @brief 获取属性类型
+            */
+            virtual EPropertyKind GetPropertyKindByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const override;
+
+            /*
+            * @brief 获取属性持久化语义
+            */
+            virtual EPropertyPersistence GetPropertyPersistenceByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const override;
+
+            /*
+            * @brief 获取属性修改传播策略
+            */
+            virtual EPropertyChangePolicy GetPropertyChangePolicyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const override;
+
+            /*
+            * @brief 是否为派生属性
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            */
+            virtual bool IsDerivedPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const override;
 
             /*
             * @brief 获取属性名称列表
@@ -173,6 +219,16 @@ namespace iCAX
             * @param [in] NewValue_
             */
             void InvokeSetter(IN CComponentBase& Component_, IN const uint32_t& nComponentClass_, IN const uint32_t& nPropertyName_, IN const PropertyValue& NewValue_) const;
+
+            /*
+            * @brief 是否为派生属性
+            */
+            bool IsDerivedProperty(IN const uint32_t& nComponentClass_, IN const uint32_t& nPropertyName_) const;
+
+            /*
+            * @brief 查找属性元数据
+            */
+            const PropertyMeta* FindPropertyMeta(IN const uint32_t& nComponentClass_, IN const uint32_t& nPropertyName_) const;
 
             /*
             * @brief 获取特性列表

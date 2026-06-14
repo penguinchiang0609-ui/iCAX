@@ -1,7 +1,140 @@
 #include "pch.h"
 #include "RepositoryUndoRedo.h"
 #include <algorithm>
+#include <iterator>
+#include <map>
+#include <optional>
+#include "../Database/IMetaRegistry.h"
 #include "Data/uuid.h"
+
+namespace
+{
+    struct ComponentOperationKey final
+    {
+        iCAX::Data::uuid DomainID;
+        iCAX::Data::uuid EntityID;
+        std::string ComponentClass;
+
+        bool operator<(IN const ComponentOperationKey& Other_) const noexcept
+        {
+            if (DomainID != Other_.DomainID)
+            {
+                return DomainID < Other_.DomainID;
+            }
+            if (EntityID != Other_.EntityID)
+            {
+                return EntityID < Other_.EntityID;
+            }
+            return ComponentClass < Other_.ComponentClass;
+        }
+    };
+
+    std::optional<iCAX::Database::OperationUnit> FilterTransactionalModifyProperties(IN const iCAX::Database::OperationUnit& Operation_)
+    {
+        if (Operation_.nType != iCAX::Database::RepositoryEventArgs::kModifyComponent)
+        {
+            return Operation_;
+        }
+
+        auto _pMeta = iCAX::Database::GetGlobalMetaRegistry();
+        iCAX::Database::OperationUnit _Filtered = Operation_;
+        _Filtered.PreviousProperties.clear();
+        _Filtered.NewProperties.clear();
+
+        for (const auto& [_strName, _NewValue] : Operation_.NewProperties)
+        {
+            if (!_pMeta->HasPropertyByName(Operation_.strClassName, _strName))
+            {
+                if (_pMeta->HasTypeByName(Operation_.strClassName))
+                {
+                    continue;
+                }
+            }
+            else if (_pMeta->GetPropertyChangePolicyByName(Operation_.strClassName, _strName) != iCAX::Database::EPropertyChangePolicy::Transactional)
+            {
+                continue;
+            }
+
+            auto _ItePrevious = Operation_.PreviousProperties.find(_strName);
+            if (_ItePrevious != Operation_.PreviousProperties.end())
+            {
+                _Filtered.PreviousProperties.emplace(_strName, _ItePrevious->second);
+            }
+            _Filtered.NewProperties.emplace(_strName, _NewValue);
+        }
+
+        if (_Filtered.NewProperties.empty())
+        {
+            return std::nullopt;
+        }
+        return _Filtered;
+    }
+
+    std::list<iCAX::Database::OperationUnit> BuildOperationsFromChangeSet(IN const iCAX::Database::CChangeSet& ChangeSet_)
+    {
+        std::list<iCAX::Database::OperationUnit> _Operations;
+
+        for (const auto& _Change : ChangeSet_.CreatedEntities)
+        {
+            iCAX::Database::OperationUnit _Operation;
+            _Operation.nType = iCAX::Database::RepositoryEventArgs::kAddEntity;
+            _Operation.DomainID = _Change.Key.DomainID;
+            _Operation.EntityID = _Change.Key.EntityID;
+            _Operations.push_back(_Operation);
+        }
+
+        for (const auto& _Change : ChangeSet_.RemovedComponents)
+        {
+            iCAX::Database::OperationUnit _Operation;
+            _Operation.nType = iCAX::Database::RepositoryEventArgs::kRemoveComponent;
+            _Operation.DomainID = _Change.Key.DomainID;
+            _Operation.EntityID = _Change.Key.EntityID;
+            _Operation.strClassName = _Change.Key.ComponentClass;
+            _Operation.PreviousProperties = _Change.PreviousProperties;
+            _Operations.push_back(_Operation);
+        }
+
+        for (const auto& _Change : ChangeSet_.AddedComponents)
+        {
+            iCAX::Database::OperationUnit _Operation;
+            _Operation.nType = iCAX::Database::RepositoryEventArgs::kAddComponent;
+            _Operation.DomainID = _Change.Key.DomainID;
+            _Operation.EntityID = _Change.Key.EntityID;
+            _Operation.strClassName = _Change.Key.ComponentClass;
+            _Operation.NewProperties = _Change.NewProperties;
+            _Operations.push_back(_Operation);
+        }
+
+        std::map<ComponentOperationKey, iCAX::Database::OperationUnit> _ModifyOperations;
+        for (const auto& _Change : ChangeSet_.ModifiedProperties)
+        {
+            ComponentOperationKey _Key{ _Change.Key.DomainID, _Change.Key.EntityID, _Change.Key.ComponentClass };
+            auto& _Operation = _ModifyOperations[_Key];
+            _Operation.nType = iCAX::Database::RepositoryEventArgs::kModifyComponent;
+            _Operation.DomainID = _Change.Key.DomainID;
+            _Operation.EntityID = _Change.Key.EntityID;
+            _Operation.strClassName = _Change.Key.ComponentClass;
+            _Operation.PreviousProperties[_Change.Key.PropertyName] = _Change.PreviousValue;
+            _Operation.NewProperties[_Change.Key.PropertyName] = _Change.NewValue;
+        }
+
+        for (auto& [_, _Operation] : _ModifyOperations)
+        {
+            _Operations.push_back(_Operation);
+        }
+
+        for (const auto& _Change : ChangeSet_.DeletedEntities)
+        {
+            iCAX::Database::OperationUnit _Operation;
+            _Operation.nType = iCAX::Database::RepositoryEventArgs::kDeleteEntity;
+            _Operation.DomainID = _Change.Key.DomainID;
+            _Operation.EntityID = _Change.Key.EntityID;
+            _Operations.push_back(_Operation);
+        }
+
+        return _Operations;
+    }
+}
 
 //!< 构造函数
 iCAX::Tracker::CRepositoryUndoRedo::CRepositoryUndoRedo(IN std::shared_ptr<iCAX::Database::IRepository> pRepository_)
@@ -230,7 +363,16 @@ void iCAX::Tracker::CRepositoryUndoRedo::BatchRecord(IN const std::list<iCAX::Da
         return;
     }
 
-    m_CurrentInstancePtr.lock()->BatchRecord(Operations_);
+    std::list<iCAX::Database::OperationUnit> _TransactionalOperations;
+    for (const auto& _Operation : Operations_)
+    {
+        if (auto _Filtered = FilterTransactionalModifyProperties(_Operation))
+        {
+            _TransactionalOperations.push_back(*_Filtered);
+        }
+    }
+
+    m_CurrentInstancePtr.lock()->BatchRecord(_TransactionalOperations);
 }
 
 //!< 修改前事件
@@ -241,6 +383,30 @@ void iCAX::Tracker::CRepositoryUndoRedo::OnRepositoryChanging(IN void* pSender_,
 //!< 更改后事件
 void iCAX::Tracker::CRepositoryUndoRedo::OnRepositoryChanged(IN void* pSender_, IN const iCAX::Database::RepositoryEventArgs& Args_)
 {
+    if (Args_.nType == iCAX::Database::RepositoryEventArgs::kBatchChanged && Args_.pChangeSet)
+    {
+        for (const auto& _Domain : Args_.pChangeSet->CreatedDomains)
+        {
+            if (auto _pDomain = m_pRepository.lock()->GetDomain(_Domain.DomainID))
+            {
+                m_mapURInstancePtrs[_Domain.DomainID] = std::make_shared<CDomainUndoRedo>(_pDomain);
+            }
+        }
+
+        for (const auto& _Domain : Args_.pChangeSet->DeletedDomains)
+        {
+            m_mapURInstancePtrs.erase(_Domain.DomainID);
+        }
+
+        if (m_bHalt || Args_.pChangeSet->Kind != iCAX::Database::EChangeScopeKind::UserCommand || m_CurrentInstancePtr.expired())
+        {
+            return;
+        }
+
+        BatchRecord(BuildOperationsFromChangeSet(*Args_.pChangeSet));
+        return;
+    }
+
     if (Args_.nType == iCAX::Database::RepositoryEventArgs::kAddDomain)
     {
         //!< 创建域撤销还原
@@ -267,5 +433,11 @@ void iCAX::Tracker::CRepositoryUndoRedo::OnRepositoryChanged(IN void* pSender_, 
         return;
     }
 
-    m_CurrentInstancePtr.lock()->Record(Args_);
+    auto _Filtered = FilterTransactionalModifyProperties(Args_);
+    if (!_Filtered)
+    {
+        return;
+    }
+
+    m_CurrentInstancePtr.lock()->Record(*_Filtered);
 }

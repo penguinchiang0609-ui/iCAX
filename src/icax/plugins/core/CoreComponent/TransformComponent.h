@@ -35,12 +35,12 @@ namespace iCAX
             //!< 此处不提供缩放、镜像、剪切等变量。这些变量直接应用到具体的图形上，修改原始图形
 
             //! 层次关系
-            DECLARED_ICAX_NOVERSION_FIELD(std::weak_ptr<HierarchyComponent>, Hierarchy, {});
+            DECLARED_ICAX_RUNTIME_FIELD(std::weak_ptr<HierarchyComponent>, Hierarchy, {});
 
             //! 获取局部到世界的变换矩阵
             //! HierarchyComponent对应的System里面根据需要计算更新Local2WorldMatrix
             //! 该字段主要用于渲染以及碰撞检测
-            DECLARED_ICAX_NOVERSION_FIELD(iCAX::Math::Tranform3, Local2WorldMatrix, {});
+            DECLARED_ICAX_RUNTIME_FIELD(iCAX::Math::Tranform3, Local2WorldMatrix, {});
         };
     }
 }

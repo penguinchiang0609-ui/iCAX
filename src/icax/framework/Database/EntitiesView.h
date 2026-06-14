@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include "IEntitiesView.h"
 #include "IDomain.h"
+#include <memory>
 #include <set>
 
 
@@ -17,20 +18,6 @@ namespace iCAX
         */
         class _DATABASE_EXP CEntitiesView final : public IDomainEventListener, public IEntitiesView
         {
-        private:
-            struct _DATABASE_EXP WeakPtrCompare
-            {
-                bool operator()(const std::weak_ptr<CComponentBase>& lhs,
-                    const std::weak_ptr<CComponentBase>& rhs) const 
-                {
-                    auto l = lhs.lock();
-                    auto r = rhs.lock();
-                    if (!l || !r)
-                        return l.owner_before(r); // 保证可比较且不崩溃
-                    return l.get() < r.get();
-                }
-            };
-
         public:
             /*
             * @brief 构造函数
@@ -86,8 +73,8 @@ namespace iCAX
 
         private:
             std::unordered_map<iCAX::Data::uuid, CComponentMask> m_EntityMask;
-            std::unordered_map<size_t, std::set<std::weak_ptr<CComponentBase>, WeakPtrCompare>> m_Cache;  //!< 缓存数据
-            std::unordered_map<size_t, std::set<std::weak_ptr<CComponentBase>, WeakPtrCompare>> m_PreCache;  //!< 缓存数据
+            std::unordered_map<size_t, std::set<std::weak_ptr<CComponentBase>, std::owner_less<std::weak_ptr<CComponentBase>>>> m_Cache;  //!< 缓存数据
+            std::unordered_map<size_t, std::set<std::weak_ptr<CComponentBase>, std::owner_less<std::weak_ptr<CComponentBase>>>> m_PreCache;  //!< 缓存数据
             std::weak_ptr<IDomain> m_pDomain;
         };
     }

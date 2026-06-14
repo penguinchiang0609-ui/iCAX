@@ -5,12 +5,17 @@
 #include "MaskRegistry.h"
 #include "IDomain.h"
 #include "IRepository.h"
+#include "IMetaRegistry.h"
+
+#include <exception>
+#include <vector>
 
 //!< 构造函数
 iCAX::Database::CComponentBase::CComponentBase(IN std::shared_ptr<IEntity> pEntity_)
     : m_pEntity(pEntity_)
     , m_bEnable(false)
     , m_bDeleted(false)
+    , m_nComponentChangeNotificationSuppressionDepth(0)
 {
 }
 
@@ -22,6 +27,12 @@ iCAX::Database::CComponentBase::~CComponentBase()
 //!< 设置属性
 void iCAX::Database::CComponentBase::SetProperty(IN const std::string& strPropertyName_, IN const PropertyValue& NewValue_)
 {
+    auto _pMeta = GetGlobalMetaRegistry();
+    if (_pMeta->IsDerivedPropertyByName(GetComponentClass(), strPropertyName_))
+    {
+        throw std::runtime_error(std::format("{}.{} is a derived property and cannot be set", GetComponentClass(), strPropertyName_));
+    }
+
     auto _Previous = GetProperty(strPropertyName_);
     if (_Previous == NewValue_)
     {
@@ -29,13 +40,25 @@ void iCAX::Database::CComponentBase::SetProperty(IN const std::string& strProper
     }
 
     TriggerComponentChanging(ComponentEventArgs::kModifyComponent, { {strPropertyName_, _Previous} }, { {strPropertyName_, NewValue_}});
-    OnSetProperty(strPropertyName_, NewValue_);
+    {
+        ComponentChangeNotificationSuppressor _Suppressor(this);
+        OnSetProperty(strPropertyName_, NewValue_);
+    }
     TriggerComponentChanged(ComponentEventArgs::kModifyComponent, { {strPropertyName_, _Previous} }, { {strPropertyName_, NewValue_} });
 }
 
 //!< 设置属性集
 void iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Properties_)
 {
+    auto _pMeta = GetGlobalMetaRegistry();
+    for (auto& [_strName, _] : Properties_)
+    {
+        if (_pMeta->IsDerivedPropertyByName(GetComponentClass(), _strName))
+        {
+            throw std::runtime_error(std::format("{}.{} is a derived property and cannot be set", GetComponentClass(), _strName));
+        }
+    }
+
     PropertySet _PrivousProperties;
     PropertySet _NewProperties;
     for (auto& [_strName, _Value] : Properties_)
@@ -52,9 +75,31 @@ void iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
         return;
     }
     TriggerComponentChanging(ComponentEventArgs::kModifyComponent, _PrivousProperties, _NewProperties);
-    for (auto& [_strName, _Value] : _NewProperties)
+    std::vector<std::pair<std::string, PropertyValue>> _AppliedProperties;
     {
-        OnSetProperty(_strName, _Value);
+        ComponentChangeNotificationSuppressor _Suppressor(this);
+        try
+        {
+            for (auto& [_strName, _Value] : _NewProperties)
+            {
+                OnSetProperty(_strName, _Value);
+                _AppliedProperties.emplace_back(_strName, _PrivousProperties.at(_strName));
+            }
+        }
+        catch (...)
+        {
+            for (auto _Ite = _AppliedProperties.rbegin(); _Ite != _AppliedProperties.rend(); ++_Ite)
+            {
+                try
+                {
+                    OnSetProperty(_Ite->first, _Ite->second);
+                }
+                catch (...)
+                {
+                }
+            }
+            throw;
+        }
     }
     TriggerComponentChanged(ComponentEventArgs::kModifyComponent, _PrivousProperties, _NewProperties);
 }
@@ -63,9 +108,23 @@ void iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
 iCAX::Data::PropertySet iCAX::Database::CComponentBase::GetProperties() const
 {
     PropertySet _Set;
+    auto _pMeta = GetGlobalMetaRegistry();
+    const auto _strComponentClass = GetComponentClass();
+    const bool _bRegisteredComponent = _pMeta->HasTypeByName(_strComponentClass);
     auto _vecNames = GetPropertyNameArray();
     for (auto& _strName : _vecNames)
     {
+        if (_bRegisteredComponent)
+        {
+            if (!_pMeta->HasPropertyByName(_strComponentClass, _strName))
+            {
+                continue;
+            }
+            if (_pMeta->GetPropertyKindByName(_strComponentClass, _strName) != EPropertyKind::Value)
+            {
+                continue;
+            }
+        }
         _Set[_strName] = GetProperty(_strName);
     }
     return _Set;
@@ -190,7 +249,7 @@ void iCAX::Database::CComponentBase::TriggerComponentChanging(IN const Component
         //!< 检查 是否还有效
         if (auto _Observer = _Ite->lock())
         {
-            _Observer->OnComponentChanging(this, { nEventType_, GetComponentClass(), Previous_, New_ , shared_from_this()});
+            _Observer->OnComponentChanging(this, { nEventType_, GetComponentClass(), Previous_, New_, shared_from_this()});
             ++_Ite;
         }
         else
@@ -210,7 +269,7 @@ void iCAX::Database::CComponentBase::TriggerComponentChanged(IN const ComponentE
         //!< 检查 是否还有效
         if (auto _Observer = _Ite->lock())
         {
-            _Observer->OnComponentChanged(this, { nEventType_, GetComponentClass(), Previous_, New_ , shared_from_this() });
+            _Observer->OnComponentChanged(this, { nEventType_, GetComponentClass(), Previous_, New_, shared_from_this() });
             ++_Ite;
         }
         else
@@ -227,12 +286,36 @@ iCAX::Database::CComponentBase::ComponentChangeNotifier::ComponentChangeNotifier
     , nType(nType_)
     , Previous(Previous_)
     , New(New_)
+    , bEnabled(!pBase_->IsComponentChangeNotificationSuppressed())
+    , nUncaughtExceptionCount(std::uncaught_exceptions())
 {
-    pBase->TriggerComponentChanging(nType, Previous, New);
+    if (bEnabled)
+    {
+        pBase->TriggerComponentChanging(nType, Previous, New);
+    }
 }
 
 //!< 析构函数
 iCAX::Database::CComponentBase::ComponentChangeNotifier::~ComponentChangeNotifier()
 {
-    pBase->TriggerComponentChanged(nType, Previous, New);
+    if (bEnabled && std::uncaught_exceptions() == nUncaughtExceptionCount)
+    {
+        pBase->TriggerComponentChanged(nType, Previous, New);
+    }
+}
+
+iCAX::Database::CComponentBase::ComponentChangeNotificationSuppressor::ComponentChangeNotificationSuppressor(IN CComponentBase* pBase_)
+    : pBase(pBase_)
+{
+    ++pBase->m_nComponentChangeNotificationSuppressionDepth;
+}
+
+iCAX::Database::CComponentBase::ComponentChangeNotificationSuppressor::~ComponentChangeNotificationSuppressor()
+{
+    --pBase->m_nComponentChangeNotificationSuppressionDepth;
+}
+
+bool iCAX::Database::CComponentBase::IsComponentChangeNotificationSuppressed() const
+{
+    return m_nComponentChangeNotificationSuppressionDepth > 0;
 }

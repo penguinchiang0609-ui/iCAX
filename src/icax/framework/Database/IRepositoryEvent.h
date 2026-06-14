@@ -3,6 +3,7 @@
 #include <string>
 #include "Data/Variant.h"
 #include "Data/uuid.h"
+#include "ChangeSet.h"
 #include <map>
 #include <memory>
 
@@ -28,6 +29,7 @@ namespace iCAX
                 kDeleteEntity,                          //!< 删除实体
                 kAddDomain,                             //!< 增加域
                 kDeleteDomain,                          //!< 删除域
+                kBatchChanged,                          //!< 批量变更
             }nType = kModifyComponent;                                                 //!< 操作类型，即对于组件的操作
             iCAX::Data::uuid RepositoryID;                        //!< 仓储ID
             iCAX::Data::uuid DomainID;                            //!< 域ID
@@ -44,6 +46,7 @@ namespace iCAX
             std::shared_ptr<class IEntity> pEntity;                 //!< 实体
             std::shared_ptr<class IDomain> pDomain;                 //!< 域
             std::shared_ptr<class IRepository> pRepository;         //!< 仓储
+            std::shared_ptr<const CChangeSet> pChangeSet;           //!< 批量变更
         };
 
         /*

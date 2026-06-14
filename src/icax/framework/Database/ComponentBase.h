@@ -168,15 +168,35 @@ namespace iCAX
             {
                 ComponentChangeNotifier(IN CComponentBase* pBase_, IN ComponentEventArgs::EventType nType_, IN const PropertySet& Previous_, IN const PropertySet& New_);
                 ~ComponentChangeNotifier();
+                ComponentChangeNotifier(IN const ComponentChangeNotifier&) = delete;
+                ComponentChangeNotifier& operator=(IN const ComponentChangeNotifier&) = delete;
+                ComponentChangeNotifier(IN ComponentChangeNotifier&&) = delete;
+                ComponentChangeNotifier& operator=(IN ComponentChangeNotifier&&) = delete;
                 CComponentBase* pBase;
                 ComponentEventArgs::EventType nType;
-                const PropertySet& Previous;
-                const PropertySet& New;
+                PropertySet Previous;
+                PropertySet New;
+                bool bEnabled;
+                int nUncaughtExceptionCount;
             };
 
+            struct _DATABASE_EXP ComponentChangeNotificationSuppressor final
+            {
+                ComponentChangeNotificationSuppressor(IN CComponentBase* pBase_);
+                ~ComponentChangeNotificationSuppressor();
+                ComponentChangeNotificationSuppressor(IN const ComponentChangeNotificationSuppressor&) = delete;
+                ComponentChangeNotificationSuppressor& operator=(IN const ComponentChangeNotificationSuppressor&) = delete;
+                ComponentChangeNotificationSuppressor(IN ComponentChangeNotificationSuppressor&&) = delete;
+                ComponentChangeNotificationSuppressor& operator=(IN ComponentChangeNotificationSuppressor&&) = delete;
+                CComponentBase* pBase;
+            };
+
+            bool IsComponentChangeNotificationSuppressed() const;
 
         //public:
         //    mutable uint32_t m_bDirtyFlag;//! 用于标记哪些派生字段需要重新计算，子类具体实现，此处只是给出建议
+        private:
+            int m_nComponentChangeNotificationSuppressionDepth;
         };
     }
 }

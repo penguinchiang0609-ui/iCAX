@@ -8,3 +8,37 @@
 
 #define IN
 #define OUT
+
+namespace iCAX
+{
+    namespace Database
+    {
+        /*
+        * @brief 属性类型
+        */
+        enum class EPropertyKind
+        {
+            Value,
+            Derived
+        };
+
+        /*
+        * @brief 属性持久化语义
+        */
+        enum class EPropertyPersistence
+        {
+            Persistent,
+            NonPersistent
+        };
+
+        /*
+        * @brief 属性修改传播策略
+        */
+        enum class EPropertyChangePolicy
+        {
+            Transactional,
+            Observable,
+            Silent
+        };
+    }
+}

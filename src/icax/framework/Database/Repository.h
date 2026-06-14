@@ -3,16 +3,25 @@
 #include "IRepository.h"
 #include "Domain.h"
 #include "VersionTable.h"
+#include "DerivedProperty.h"
+#include "ChangeSet.h"
+
+#include <deque>
 
 namespace iCAX
 {
     namespace Database
     {
+        class CChangeSetJournal;
+
         /*
         * @brief 仓储实现
         */
         class CRepository final : public IRepository, public IDomainEventListener, public std::enable_shared_from_this<CRepository>
         {
+            friend class CRepositoryChangeScope;
+            friend class CRepositoryEventSuppressor;
+
         public:
             /*
             * @brief 构造函数
@@ -37,6 +46,57 @@ namespace iCAX
             * @return const iCAX::Data::uuid&
             */
             virtual const iCAX::Data::uuid& GetID() const override;
+
+        public:
+            /*
+            * @brief 开始批量变更作用域
+            */
+            virtual std::unique_ptr<IRepositoryChangeScope> BeginChangeScope(IN EChangeScopeKind Kind_, IN const std::string& strName_ = std::string()) override;
+
+            /*
+            * @brief 开始事务
+            */
+            virtual std::unique_ptr<IRepositoryChangeScope> BeginTransaction(IN const std::string& strName_ = std::string()) override;
+
+            /*
+            * @brief 是否可以撤销
+            */
+            virtual bool CanUndo() const override;
+
+            /*
+            * @brief 是否可以重做
+            */
+            virtual bool CanRedo() const override;
+
+            /*
+            * @brief 撤销
+            */
+            virtual bool Undo() override;
+
+            /*
+            * @brief 重做
+            */
+            virtual bool Redo() override;
+
+            /*
+            * @brief 打开快速保存操作日志
+            */
+            virtual void OpenOperationLog(IN const std::string& strPath_, IN const bool bTruncate_ = false) override;
+
+            /*
+            * @brief 关闭快速保存操作日志
+            */
+            virtual void CloseOperationLog() override;
+
+            /*
+            * @brief 是否已打开快速保存操作日志
+            */
+            virtual bool HasOperationLog() const override;
+
+            /*
+            * @brief 回放操作日志
+            */
+            virtual void ReplayOperationLog(IN const std::string& strPath_) override;
 
         public:
             /*
@@ -118,6 +178,11 @@ namespace iCAX
             virtual void BumpComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const override;
 
             /*
+            * @brief 计算派生字段
+            */
+            virtual PropertyValue EvaluateDerivedProperty(IN const CComponentBase& Component_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_) override;
+
+            /*
             * @brief 是否发生了更改
             * @param [in] nDomainID_
             * @param [in] nEntityID_
@@ -170,7 +235,7 @@ namespace iCAX
             * @param [in] PreviousValue_ 旧值
             * @param [in] NewValue_ 新值
             */
-            void TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_);
+            void TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
 
             /*
             * @brief 后触发
@@ -180,15 +245,40 @@ namespace iCAX
             * @param [in] PreviousValue_ 旧值
             * @param [in] NewValue_ 新值
             */
-            void TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_);
+            void TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
+
+        private:
+            std::unique_ptr<IRepositoryChangeScope> BeginChangeScopeCore(IN EChangeScopeKind Kind_, IN const std::string& strName_, IN const bool bAutoCommitOnDestroy_);
+            bool IsChangeScopeActive() const;
+            bool IsRepositoryEventSuppressed() const;
+            void EndChangeScope(IN const bool bCommit_);
+            void RecordRepositoryChanged(IN const RepositoryEventArgs& Args_);
+            CChangeSet BuildChangeSetFromRepositoryEvent(IN const RepositoryEventArgs& Args_) const;
+            void ApplyDomainChangedEffects(IN const DomainEventArgs& Args_);
+            void ApplyChangeSetEffects(IN const CChangeSet& ChangeSet_);
+            void ApplyChangeSetForward(IN const CChangeSet& ChangeSet_);
+            void ApplyChangeSetBackward(IN const CChangeSet& ChangeSet_);
+            void ApplyChangeSetWithReplayEvent(IN const CChangeSet& ChangeSet_);
+            void RollbackChangeSetSilently(IN const CChangeSet& ChangeSet_);
+            void HandleCommittedChangeSet(IN const CChangeSet& ChangeSet_);
+            void AppendOperationLog(IN const CChangeSet& ChangeSet_);
 
         private:
             std::list<std::weak_ptr<IRepositoryEventListener>> m_Observers;
+            std::unique_ptr<CChangeSetBuilder> m_pChangeSetBuilder;
+            EChangeScopeKind m_nChangeScopeKind = EChangeScopeKind::UserCommand;
+            std::string m_strChangeScopeName;
+            int m_nRepositoryEventSuppressionDepth = 0;
+            int m_nHistoryReplayDepth = 0;
+            std::deque<CChangeSet> m_UndoStack;
+            std::deque<CChangeSet> m_RedoStack;
+            std::unique_ptr<CChangeSetJournal> m_pOperationLog;
 
         private:
             iCAX::Data::uuid m_UID;                                                           //!< 仓储ID
             std::unordered_map<iCAX::Data::uuid, std::shared_ptr<CDomain>> m_mapDomains;                //!< 域字典
             std::shared_ptr<VersionTable> m_pVerisonTable;                                     //!< 版本号表
+            std::shared_ptr<CDerivedPropertyManager> m_pDerivedPropertyManager;                 //!< 派生字段管理器
         };
     }
 }

@@ -3,6 +3,7 @@
 #include <memory>
 #include "IDomain.h"
 #include "IRepositoryEvent.h"
+#include "DerivedProperty.h"
 
 namespace iCAX
 {
@@ -30,6 +31,59 @@ namespace iCAX
             *   以后希望的是，同一个app可以同时支持打开平面、平坡、管材、三维五轴等项目，或者单纯的平面多开
             */
             virtual const iCAX::Data::uuid& GetID() const = 0;
+
+        public:
+            /*
+            * @brief 开始批量变更作用域
+            */
+            virtual std::unique_ptr<IRepositoryChangeScope> BeginChangeScope(IN EChangeScopeKind Kind_, IN const std::string& strName_ = std::string()) = 0;
+
+            /*
+            * @brief 开始事务
+            * @details
+            *   事务内的更改立即作用于内存；Commit 后进入历史和快速保存日志，Cancel 后按反向日志回滚。
+            */
+            virtual std::unique_ptr<IRepositoryChangeScope> BeginTransaction(IN const std::string& strName_ = std::string()) = 0;
+
+            /*
+            * @brief 是否可以撤销
+            */
+            virtual bool CanUndo() const = 0;
+
+            /*
+            * @brief 是否可以重做
+            */
+            virtual bool CanRedo() const = 0;
+
+            /*
+            * @brief 撤销最近一次用户提交
+            */
+            virtual bool Undo() = 0;
+
+            /*
+            * @brief 重做最近一次撤销
+            */
+            virtual bool Redo() = 0;
+
+            /*
+            * @brief 打开快速保存操作日志
+            */
+            virtual void OpenOperationLog(IN const std::string& strPath_, IN const bool bTruncate_ = false) = 0;
+
+            /*
+            * @brief 关闭快速保存操作日志
+            */
+            virtual void CloseOperationLog() = 0;
+
+            /*
+            * @brief 是否已打开快速保存操作日志
+            */
+            virtual bool HasOperationLog() const = 0;
+
+            /*
+            * @brief 回放操作日志
+            */
+            virtual void ReplayOperationLog(IN const std::string& strPath_) = 0;
 
         public:
             /*
@@ -101,12 +155,12 @@ namespace iCAX
                 auto _pEntity = Component_.GetEntity();
                 if (!_pEntity)
                 {
-                    return -1;
+                    return 0;
                 }
                 auto _pDomain = _pEntity->GetDomain();
                 if (!_pDomain)
                 {
-                    return -1;
+                    return 0;
                 }
                 return GetComponentVersion(_pDomain->GetID(), _pEntity->GetID(), Component_.GetComponentClass());
             }
@@ -175,6 +229,14 @@ namespace iCAX
             * @param [in] strComponentType_
             */
             virtual void BumpComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const = 0;
+
+            /*
+            * @brief 计算派生字段
+            * @param [in] Component_ 目标组件
+            * @param [in] strPropertyName_ 派生字段名称
+            * @param [in] Evaluator_ 计算器
+            */
+            virtual PropertyValue EvaluateDerivedProperty(IN const CComponentBase& Component_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_) = 0;
 
             /*
             * @brief 重置组件更改标记

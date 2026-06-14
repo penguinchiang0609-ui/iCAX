@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "MaskRegistry.h"
 #include <cassert>
+#include <stdexcept>
 #include <unordered_map>
 #include "ComponentMask.h"
 
@@ -16,7 +17,10 @@ size_t iCAX::Database::CMaskRegistry::GetComponentIndex(IN const std::string& st
     if (it != s_mapNameToIndex.end())
         return it->second;
 
-    assert(_NextIndex < MAX_COMPONENTS && "Exceeded max number of components");
+    if (_NextIndex >= MAX_COMPONENTS)
+    {
+        throw std::runtime_error("Exceeded max number of components");
+    }
     s_mapNameToIndex[strClassName_] = _NextIndex;
     s_mapIndexToName[_NextIndex] = strClassName_;
     return _NextIndex++;

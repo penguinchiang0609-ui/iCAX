@@ -40,14 +40,14 @@ std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CDomain::CreateEntity(I
     auto _Ite = m_mapEntities.find(ID_);
     if (_Ite != m_mapEntities.end())
     {
-        throw;//!< 不可重复添加
+        throw std::runtime_error("Entity already exists");
     }
     auto _pEntity = std::make_shared<CEntity>(shared_from_this(), ID_);
 
     TriggerDomainChanging(DomainEventArgs::kAddEntity, ID_, {}, {}, {}, {}, _pEntity);
     m_mapEntities[ID_] = _pEntity;
-    TriggerDomainChanged(DomainEventArgs::kAddEntity, ID_, {}, {}, {}, {}, _pEntity);
     _pEntity->AddObserver(shared_from_this());//!< 增加监控
+    TriggerDomainChanged(DomainEventArgs::kAddEntity, ID_, {}, {}, {}, {}, _pEntity);
     return _pEntity;
 }
 

@@ -2,6 +2,7 @@
 #include "Database.h"
 #include "IEntity.h"
 #include "ComponentBase.h"
+#include "DerivedProperty.h"
 #include <unordered_set>
 #include "IAttribute.h"
 #include "IChecker.h"
@@ -42,6 +43,13 @@ namespace iCAX
             */
             virtual bool IsInheritance(IN const std::string& strComponentClass_, IN const std::string& strParentComponentClass_) = 0;
 
+            /*
+            * @brief 是否包含组件类型
+            * @param [in] strComponentClass_
+            * @return bool
+            */
+            virtual bool HasTypeByName(IN const std::string& strComponentClass_) const = 0;
+
         public://! 构造器
             /*
             * @brief 注册构造函数
@@ -56,10 +64,19 @@ namespace iCAX
             * @param [in] Creator_
             */
             template<typename T>
-            void RegistCeator(IN const std::function<std::shared_ptr<CComponentBase>(IN std::shared_ptr<IEntity>)>& Creator_)
+            void RegistCreator(IN const std::function<std::shared_ptr<CComponentBase>(IN std::shared_ptr<IEntity>)>& Creator_)
             {
                 static_assert(std::is_base_of<CComponentBase, T>::value, "T must be derived from CComponentBase");
-                RegistCreatorByName(T::S_ClassName, [](std::shared_ptr<IEntity>& pEntity_) { return std::make_shared<T>(pEntity_); });
+                RegistCreatorByName(T::S_ClassName, Creator_);
+            }
+
+            /*
+            * @brief 旧拼写兼容，后续新代码使用 RegistCreator
+            */
+            template<typename T>
+            void RegistCeator(IN const std::function<std::shared_ptr<CComponentBase>(IN std::shared_ptr<IEntity>)>& Creator_)
+            {
+                RegistCreator<T>(Creator_);
             }
 
             /*
@@ -98,6 +115,16 @@ namespace iCAX
                 return HasCreatorByName(T::S_ClassName);
             }
 
+            /*
+            * @brief 是否包含指定组件的构造
+            */
+            template<typename T>
+            bool HasCreator() const
+            {
+                static_assert(std::is_base_of<CComponentBase, T>::value, "T must be derived from CComponentBase");
+                return HasCreatorByName(T::S_ClassName);
+            }
+
 
         public://! 属性元数据
             /*
@@ -106,8 +133,55 @@ namespace iCAX
             * @param [in] strPropertyName_ 属性名称
             * @param [in] Getter_ 获取器
             * @param [in] Setter_ 设置器
+            * @param [in] Persistence_ 持久化语义
+            * @param [in] ChangePolicy_ 修改传播策略
             */
-            virtual void RegistPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const std::function<PropertyValue(const void*)>& Getter_, IN const std::function<void(void*, const PropertyValue&)>& Setter_) = 0;
+            virtual void RegistPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const std::function<PropertyValue(const void*)>& Getter_, IN const std::function<void(void*, const PropertyValue&)>& Setter_, IN EPropertyPersistence Persistence_ = EPropertyPersistence::Persistent, IN EPropertyChangePolicy ChangePolicy_ = EPropertyChangePolicy::Transactional) = 0;
+
+            /*
+            * @brief 注册派生属性
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            * @param [in] Evaluator_ 计算器
+            * @param [in] Persistence_ 持久化语义
+            * @param [in] ChangePolicy_ 修改传播策略
+            */
+            virtual void RegistDerivedPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_, IN EPropertyPersistence Persistence_ = EPropertyPersistence::NonPersistent, IN EPropertyChangePolicy ChangePolicy_ = EPropertyChangePolicy::Silent) = 0;
+
+            /*
+            * @brief 是否包含属性
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            */
+            virtual bool HasPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const = 0;
+
+            /*
+            * @brief 获取属性类型
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            */
+            virtual EPropertyKind GetPropertyKindByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const = 0;
+
+            /*
+            * @brief 获取属性持久化语义
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            */
+            virtual EPropertyPersistence GetPropertyPersistenceByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const = 0;
+
+            /*
+            * @brief 获取属性修改传播策略
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            */
+            virtual EPropertyChangePolicy GetPropertyChangePolicyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const = 0;
+
+            /*
+            * @brief 是否为派生属性
+            * @param [in] strComponentClass_ 组件类型名称
+            * @param [in] strPropertyName_ 属性名称
+            */
+            virtual bool IsDerivedPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const = 0;
 
             /*
             * @brief 获取属性名称列表
@@ -143,7 +217,7 @@ namespace iCAX
             void RegistAttribute(IN std::shared_ptr<IAttribute> pAttribute_)
             {
                 static_assert(std::is_base_of<CComponentBase, T>::value, "T must be derived from CComponentBase");
-                RegistAttributeByName(T::S_ClassName, pAttribute_);
+                RegistAttributeByName(pAttribute_, T::S_ClassName);
             }
 
             /*
@@ -158,7 +232,7 @@ namespace iCAX
             * @param [in] strComponentClass_ 组件类型
             */
             template<typename T>
-            const std::unordered_set<std::shared_ptr<IAttribute>>& GetAttributes() const
+            std::unordered_set<std::shared_ptr<IAttribute>> GetAttributes() const
             {
                 return GetAttributesByName(T::S_ClassName);
             }
@@ -178,7 +252,7 @@ namespace iCAX
             void RegistChecker(IN std::shared_ptr<IChecker> pChecker_)
             {
                 static_assert(std::is_base_of<CComponentBase, T>::value, "T must be derived from CComponentBase");
-                RegistCheckerByName(T::S_ClassName, pChecker_);
+                RegistCheckerByName(pChecker_, T::S_ClassName);
             }
 
             /*
@@ -193,7 +267,7 @@ namespace iCAX
             * @param [in] strComponentClass_ 组件类型
             */
             template<typename T>
-            const std::unordered_set<std::shared_ptr<IChecker>>& GetCheckers() const
+            std::unordered_set<std::shared_ptr<IChecker>> GetCheckers() const
             {
                 static_assert(std::is_base_of<CComponentBase, T>::value, "T must be derived from CComponentBase");
                 return GetCheckersByName(T::S_ClassName);

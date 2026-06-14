@@ -46,6 +46,12 @@ std::weak_ptr<iCAX::Tracker::UROperationStep> iCAX::Tracker::CDomainUndoRedo::En
         return std::shared_ptr<UROperationStep>();
     }
 
+    if (m_CurrOperationUnits.empty())
+    {
+        m_strCurrStepName.clear();
+        return std::shared_ptr<UROperationStep>();
+    }
+
     std::shared_ptr<UROperationStep> _pStep = std::make_shared<UROperationStep>();
 
     _pStep->ID = iCAX::Data::GenerateNewUUID();
@@ -133,7 +139,11 @@ void iCAX::Tracker::CDomainUndoRedo::Redo(IN const bool& bFake_)
                 auto _pDomain = _pRepository->GetDomain(_Ite->DomainID);
                 if (_pDomain)
                 {
-                    _pDomain->GetEntity(_Ite->EntityID)->AddComponent(_Ite->strClassName);
+                    auto _pComponent = _pDomain->GetEntity(_Ite->EntityID)->AddComponent(_Ite->strClassName);
+                    if (!_Ite->NewProperties.empty())
+                    {
+                        _pComponent->SetProperties(_Ite->NewProperties);
+                    }
                 }
                 break;
             }

@@ -53,10 +53,10 @@ namespace iCAX
 
         public://!! 以下成员修改不触发组件版本更新
             //! 父组件
-            DECLARED_ICAX_NOVERSION_FIELD(std::weak_ptr<HierarchyComponent>, ParentComponent, {});
+            DECLARED_ICAX_RUNTIME_FIELD(std::weak_ptr<HierarchyComponent>, ParentComponent, {});
             //! 子组件列表
             using ChildrenSet = std::unordered_set<std::weak_ptr<HierarchyComponent>, WeakPtrHash<HierarchyComponent>, WeakPtrEqual<HierarchyComponent>>;
-            DECLARED_ICAX_NOVERSION_FIELD(ChildrenSet, ChildrenComponents, {});
+            DECLARED_ICAX_RUNTIME_FIELD(ChildrenSet, ChildrenComponents, {});
         };
 
     }

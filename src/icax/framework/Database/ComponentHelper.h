@@ -88,13 +88,15 @@ private: \
                 { \
                     auto* p = static_cast<ownerType*>(obj); \
                     p->Set##name(fromVariantLambda(val));\
-                }); \
+                }, \
+                iCAX::Database::EPropertyPersistence::Persistent, \
+                iCAX::Database::EPropertyChangePolicy::Transactional); \
         } \
     }; \
     inline static _AutoRegister_Property_##name s_autoRegister_Property_##name{};
 
-//! 声明运行时字段，该字段影响版本，但无需序列化
-#define DECLARED_ICAX_VOLATILE_FIELD(type, name, defaultValue, equalLambda) \
+//! 声明非持久化可观察字段，该字段影响版本并发布事件，但不参与持久化和撤销还原
+#define DECLARED_ICAX_OBSERVABLE_FIELD(ownerType, type, name, defaultValue, equalLambda, toVariantLambda, fromVariantLambda) \
 private: \
     type m_##name = defaultValue; \
 public:\
@@ -102,27 +104,85 @@ public:\
 public: \
     const type& Get##name() const { return m_##name; } \
     void Set##name(const type& value) \
+    { \
+        if (!(equalLambda)(m_##name, value)) \
         { \
-        if (!equalLambda(m_##name, value)) \
-        { \
+            iCAX::Data::PropertySet _pre = { {#name, (toVariantLambda)(m_##name)}};\
+            iCAX::Data::PropertySet _new = { {#name, (toVariantLambda)(value)} };    \
+            ComponentChangeNotifier _(this, iCAX::Database::ComponentEventArgs::kModifyComponent, _pre, _new); \
             m_##name = value; \
-            if (auto pEntity = this->GetEntity()) \
-            { \
-                if (auto pDomain = pEntity->GetDomain()) \
-                { \
-                    if (auto pRepo = pDomain->GetRepository()) \
-                    { \
-                        pRepo->BumpComponentVersion(*this); \
-                    } \
-                } \
-            } \
         } \
-    }
+    } \
+private: \
+    struct _AutoRegister_Property_##name \
+    { \
+        _AutoRegister_Property_##name() \
+        { \
+            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
+            registry->RegistPropertyByName(ownerType::S_ClassName, #name, \
+                [](const void* obj) -> PropertyValue \
+                { \
+                    const auto* p = static_cast<const ownerType*>(obj); \
+                    return (toVariantLambda)(p->m_##name); \
+                }, \
+                [](void* obj, const PropertyValue& val) \
+                { \
+                    auto* p = static_cast<ownerType*>(obj); \
+                    p->Set##name(fromVariantLambda(val));\
+                }, \
+                iCAX::Database::EPropertyPersistence::NonPersistent, \
+                iCAX::Database::EPropertyChangePolicy::Observable); \
+        } \
+    }; \
+    inline static _AutoRegister_Property_##name s_autoRegister_Property_##name{};
 
-//! 声明临时字段，不影响版本，也无需序列化
-#define DECLARED_ICAX_NOVERSION_FIELD(type, name, defaultValue) \
+//! 旧名保留：运行时字段应通过meta声明为非持久化可观察字段
+#define DECLARED_ICAX_VOLATILE_FIELD(ownerType, type, name, defaultValue, equalLambda, toVariantLambda, fromVariantLambda) \
+    DECLARED_ICAX_OBSERVABLE_FIELD(ownerType, type, name, defaultValue, equalLambda, toVariantLambda, fromVariantLambda)
+
+//! 声明非持久化静默字段，该字段正常发布事件，但订阅者可按meta忽略版本和撤销还原
+#define DECLARED_ICAX_SILENT_FIELD(ownerType, type, name, defaultValue, equalLambda, toVariantLambda, fromVariantLambda) \
+private: \
+    type m_##name = defaultValue; \
 public:\
     static constexpr const char* PropertyName_##name = #name; /* 静态字符串变量 */ \
+public: \
+    const type& Get##name() const { return m_##name; } \
+    void Set##name(const type& value) \
+    { \
+        if (!(equalLambda)(m_##name, value)) \
+        { \
+            iCAX::Data::PropertySet _pre = { {#name, (toVariantLambda)(m_##name)}};\
+            iCAX::Data::PropertySet _new = { {#name, (toVariantLambda)(value)} };    \
+            ComponentChangeNotifier _(this, iCAX::Database::ComponentEventArgs::kModifyComponent, _pre, _new); \
+            m_##name = value; \
+        } \
+    } \
+private: \
+    struct _AutoRegister_Property_##name \
+    { \
+        _AutoRegister_Property_##name() \
+        { \
+            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
+            registry->RegistPropertyByName(ownerType::S_ClassName, #name, \
+                [](const void* obj) -> PropertyValue \
+                { \
+                    const auto* p = static_cast<const ownerType*>(obj); \
+                    return (toVariantLambda)(p->m_##name); \
+                }, \
+                [](void* obj, const PropertyValue& val) \
+                { \
+                    auto* p = static_cast<ownerType*>(obj); \
+                    p->Set##name(fromVariantLambda(val));\
+                }, \
+                iCAX::Database::EPropertyPersistence::NonPersistent, \
+                iCAX::Database::EPropertyChangePolicy::Silent); \
+        } \
+    }; \
+    inline static _AutoRegister_Property_##name s_autoRegister_Property_##name{};
+
+//! 声明运行时裸字段，不进入Property/Meta系统，不参与事件、版本、持久化和撤销还原
+#define DECLARED_ICAX_RUNTIME_FIELD(type, name, defaultValue) \
 public: \
     type m_##name = defaultValue;\
 public:\
@@ -131,6 +191,37 @@ public:\
     { \
         m_##name = value; \
     }\
+
+//! 旧名兼容：运行时裸字段
+#define DECLARED_ICAX_NOVERSION_FIELD(type, name, defaultValue) \
+    DECLARED_ICAX_RUNTIME_FIELD(type, name, defaultValue)
+
+//! 声明派生字段，该字段只读，按需计算并由Database维护过期状态
+#define DECLARED_ICAX_DERIVED_FIELD(ownerType, type, name, toVariantLambda, evaluatorLambda) \
+public:\
+    static constexpr const char* PropertyName_##name = #name; /* 静态字符串变量 */ \
+public: \
+    type Get##name() const \
+    { \
+        return GetProperty(#name).To<type>(); \
+    } \
+private: \
+    struct _AutoRegister_Derived_Property_##name \
+    { \
+        _AutoRegister_Derived_Property_##name() \
+        { \
+            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
+            registry->RegistDerivedPropertyByName(ownerType::S_ClassName, #name, \
+                [](iCAX::Database::CDerivedPropertyContext& context, const iCAX::Database::CComponentBase& component) -> PropertyValue \
+                { \
+                    const auto* p = static_cast<const ownerType*>(&component); \
+                    return (toVariantLambda)((evaluatorLambda)(*p, context)); \
+                }, \
+                iCAX::Database::EPropertyPersistence::NonPersistent, \
+                iCAX::Database::EPropertyChangePolicy::Silent); \
+        } \
+    }; \
+    inline static _AutoRegister_Derived_Property_##name s_autoRegister_Derived_Property_##name{};
 
 
 
