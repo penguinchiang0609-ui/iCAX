@@ -1,0 +1,13 @@
+{
+  "name": "cax-host",
+  "displayName": "CAX Host",
+  "backend": {
+    "host": "backend/CAXHost"
+  },
+  "frontend": {
+    "entry": ""
+  },
+  "protocol": {
+    "path": "protocol"
+  }
+}

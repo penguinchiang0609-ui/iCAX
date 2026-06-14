@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Plugins>
+    <Item Name="Core" ComponentPath="CoreComponent.dll" BehaviourPath="CoreBehaviour.dll" ServicePath="CoreService.dll"/>
+    <Item Name="Sample" ComponentPath="SampleComponent.dll" BehaviourPath="SampleBehaviour.dll" ServicePath="SampleService.dll"/>
+</Plugins>

@@ -1,0 +1,102 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="flatbuffers">
+      <UniqueIdentifier>{71a75682-2b4c-4aa7-b3ac-6b64f2ca47d1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Service">
+      <UniqueIdentifier>{062f5a41-ac10-4690-98b1-6b32b3787570}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Interop.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="framework.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\allocator.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\base.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\buffer.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\buffer_ref.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\default_allocator.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\detached_buffer.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\flatbuffer_builder.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\flatbuffers.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\flex_flat_util.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\flexbuffers.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\stl_emulation.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\string.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\struct.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\table.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\vector.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\vector_downward.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+    <ClInclude Include="IInteropService.h">
+      <Filter>Service</Filter>
+    </ClInclude>
+    <ClInclude Include="InteropService.h">
+      <Filter>Service</Filter>
+    </ClInclude>
+    <ClInclude Include="flatbuffers\array.h">
+      <Filter>flatbuffers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="InteropService.cpp">
+      <Filter>Service</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

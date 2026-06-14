@@ -1,0 +1,161 @@
+﻿################################################################################
+# 此 .gitignore 文件已由 Microsoft(R) Visual Studio 自动创建。
+################################################################################
+
+/.vs
+
+# 当前仓库结构的本地临时产物
+/.codex_tmp/
+/outputs/
+/doc/项目申报/
+/X Other/legacy/build-output/
+
+# Visual Studio / MSBuild 生成产物
+**/.vs/
+**/x64/
+**/Debug/
+**/Release/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+*.ilk
+*.pdb
+*.pch
+*.idb
+*.obj
+*.tlog
+*.recipe
+*.lastbuildstate
+*.FileListAbsolute.txt
+*.Up2Date
+/src/iCAX/.vs/iCAX/v17
+/src/iCAX/.vs/iCAX/FileContentIndex
+/src/iCAX/foundation/iCAX.foundation.Messenger/x64/Debug
+/src/iCAXSharp/iCAXSharp/.vs/iCAXSharp/v17
+/src/iCAXSharp/iCAXSharp/.vs/iCAXSharp
+/src/iCAXSharp/iCAXSharp/MessageUtility/obj
+/src/iCAXSharp/iCAXSharp/.vs/ProjectEvaluation
+/src/iCAXSharp/iCAXSharp/iCAX.ECS/obj
+/src/iCAXSharp/iCAXSharp/iCAX.Kernel/obj
+/src/iCAX/foundation/kernel/Kernel/x64/Debug
+/src/iCAX/x64/Debug
+/src/iCAX/Kernel/Database/x64/Debug
+/src/iCAX/packages
+/src/iCAX/Asset/x64/Debug
+/src/iCAX/Database/x64/Debug
+/src/iCAX/Services/x64/Debug
+/src/iCAX/Threading/x64/Debug
+/src/iCAX/Tracker/x64/Debug
+/src/iCAX/WorkShop/x64/Debug
+/src/iCAX/System/x64/Debug
+/src/iCAX/GCodeCore/x64/Debug
+/src/iCAX/Data/x64/Debug
+/src/iCAX/DataExtension/x64/Debug
+/iCAX.rar
+/src/iCAX/Engine/x64/Debug
+/src/iCAX/InputService/x64/Debug
+/src/iCAX/LogService/x64/Debug
+/src/iCAX/WindowService/x64/Debug
+/src/iCAX/iCAX09-18.rar
+/src/iCAX/NcInterface/x64/Debug
+/src/iCAX/NcData/x64/Debug
+*.rar
+/src/iCAX/RenderData/x64/Debug
+/src/iCAX/ColliderData/x64/Debug
+/src/iCAX/GP/x64/Debug
+/src/iCAX/Math/x64/Debug
+/src/iCAX/PhysicsPrimative/x64/Debug
+/src/iCAX/Geometry/x64/Debug
+/src/iCAX/RenderPrimative/x64/Debug
+/src/iCAX/RenderComponent/x64/Debug
+/src/iCAX/CoreComponent/x64/Debug
+/src/iCAX/RenderService/x64/Debug
+/src/iCAX/NCComponent/x64/Debug
+/src/iCAX/01 Foundation/Asset/x64/Debug
+/src/iCAX/01 Foundation/Data/x64/Debug
+/src/iCAX/01 Foundation/Geometry/x64/Debug
+/src/iCAX/01 Foundation/Math/x64/Debug
+/src/iCAX/01 Foundation/Threading/x64/Debug
+/src/iCAX/01 Foundation/WorkShop/x64/Debug
+/src/iCAX/02 Framework/Database/x64/Debug
+/src/iCAX/02 Framework/Engine/x64/Debug
+/src/iCAX/02 Framework/Services/x64/Debug
+/src/iCAX/02 Framework/System/x64/Debug
+/src/iCAX/02 Framework/Tracker/x64/Debug
+/src/iCAX/03 Plugins/01 Core/CoreService/x64/Debug
+/src/iCAX/03 Plugins/01 Core/CoreComponent/x64/Debug
+/src/iCAX/X Other/01 Core/CoreComponent/x64/Debug
+/src/iCAX/X Other/01 Core/CoreService/x64/Debug
+/src/iCAX/X Other/NCComponent/x64/Debug
+/src/iCAX/X Other/NcData/x64/Debug
+/src/iCAX/X Other/PhysicsPrimative/x64/Debug
+/src/iCAX/X Other/Threading/x64/Debug
+/src/iCAX/X Other/WorkShop/x64/Debug
+/src/iCAX/02 Framework/Plugins/x64/Debug
+/src/iCAX/03 Plugins/Core/CoreComponent/x64/Debug
+/src/iCAX/03 Plugins/Core/CoreService/x64/Debug
+/src/iCAX/X Other/LogService/.vs/LogService
+/src/iCAX/02 Framework/Behaviour/x64/Debug
+/src/iCAX/03 Plugins/Render/RenderComponent/x64/Debug
+/src/iCAX/03 Plugins/Render/RenderService/x64/Debug
+/src/iCAX/03 Plugins/Render/RenderSystem/x64/Debug
+/src/iCAX/03 Plugins/Core/CoreBehaviour/x64/Debug
+/src/iCAX/03 Plugins/Render/RenderBehaviour/x64/Debug
+/src/iCAX/MFCSample/x64/Debug
+/src/iCAX/06 Sample/MFCSample/x64/Debug/MFCSample.tlog
+/src/iCAX/.vs/iCAX/DesignTimeBuild
+/src/iCAX/02 Framework/EngineNet/x64/Debug
+/src/iCAX/03 Plugins/Interop/x64/Debug
+/src/iCAX/06 Sample/MFCSample/x64/Debug
+/src/iCAX/.vs/ProjectEvaluation
+/src/iCAX/06 Sample/WinFormsSample/obj
+/src/iCAX/.vs/iCAX/CopilotIndices/17.14.1368.60722
+/src/iCAX/04 Interop/InteropManaged/obj/Debug
+/src/iCAX/04 Interop/InteropManaged/obj
+/src/iCAX/04 Interop/InteropNative/x64/Debug
+/src/iCAX/04 Interop/InteropService/x64/Debug
+/src/iCAX/07 Sample/MFCSample/x64/Debug
+/src/iCAX/07 Sample/WinFormsSample/bin/Debug/net8.0-windows
+/src/iCAX/07 Sample/WinFormsSample/obj
+/src/iCAX/03 Plugins/Sample/SampleBehaviour/x64/Debug
+/src/iCAX/03 Plugins/Sample/SampleComponent/x64/Debug
+/src/iCAX/03 Plugins/Sample/SampleService/x64/Debug
+/src/iCAX/04 Interop/InteropManaged/bin/Debug/net8.0-windows10.0.26100.0
+/src/iCAX/06 Product/MFCSample/x64/Debug
+/src/iCAX/06 Product/WinFormsSample/obj
+/src/iCAX/07 Tools/vcpkg/.github
+/src/iCAX/.vs/iCAX/copilot-chat/2dd03208/sessions
+/src/iCAX/01 Foundation/CEFWrapper/CEF/Debug
+/src/iCAX/01 Foundation/CEFWrapper/x64
+/src/iCAX/02 Framework/CommandRouter/x64/Debug
+/src/iCAX/02 Framework/StateObject/x64/Debug
+/src/iCAX/06 Product/CAXHost/x64/Debug
+/src/iCAX/x64/Release
+/src/iCAX/02 Framework/ProcessDataObject/x64/Debug
+/src/iCAX/02 Framework/ProcedureCall/x64/Debug
+/src/iCAX/X Other/Render/RenderComponent/x64/Debug
+/src/iCAX-Engine/src/iCAX/.vs/iCAX
+/src/iCAX-Engine/src/iCAX/01 Foundation/Data/x64/Debug
+/src/iCAX-Engine/src/iCAX/01 Foundation/Geometry/x64/Debug
+/src/iCAX-Engine/src/iCAX/01 Foundation/Math/x64/Debug
+/src/iCAX-Engine/src/iCAX/02 Framework/Behaviour/x64/Debug
+/src/iCAX-Engine/src/iCAX/02 Framework/Database/x64/Debug
+/src/iCAX-Engine/src/iCAX/02 Framework/Engine/x64/Debug
+/src/iCAX-Engine/src/iCAX/02 Framework/ProcedureCall/x64/Debug
+/src/iCAX-Engine/src/iCAX/02 Framework/ProcessDataObject/x64/Debug
+/src/iCAX-Engine/src/iCAX/02 Framework/Services/x64/Debug
+/src/iCAX-Engine/src/iCAX/03 Plugins/Core/CoreBehaviour/x64/Debug
+/src/iCAX-Engine/src/iCAX/03 Plugins/Core/CoreComponent/x64/Debug
+/src/iCAX-Engine/src/iCAX/03 Plugins/Core/CoreService/x64/Debug
+/src/iCAX-Engine/src/iCAX/03 Plugins/Sample/SampleBehaviour/x64/Debug
+/src/iCAX-Engine/src/iCAX/03 Plugins/Sample/SampleComponent/x64/Debug
+/src/iCAX-Engine/src/iCAX/03 Plugins/Sample/SampleService/x64/Debug
+/src/iCAX-Engine/src/iCAX/06 Product/MFCSample/x64/Debug
+/src/iCAX-Engine/src/iCAX/packages
+/src/iCAX-Engine/src/iCAX/X Other/Render/RenderComponent/x64/Debug
+/src/iCAX-Engine/src/iCAX/x64
+/src/iCAX-Engine/src/iCAX/02 Framework/Tracker/x64/Debug
+/src/iCAX-Engine/src/iCAX/06 Product/CAXHost/x64/Debug

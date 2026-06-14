@@ -1,0 +1,444 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="2D">
+      <UniqueIdentifier>{0cfd9ef9-e9e0-40a3-9a6e-baf268c899c9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D">
+      <UniqueIdentifier>{5a6dda3b-a15c-45f4-b98e-ea219c2dbb2f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve">
+      <UniqueIdentifier>{847ddf4a-e1c2-4e94-82ee-cfdd05e989e0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\Bnd">
+      <UniqueIdentifier>{5d684faa-ec61-4567-b277-42856e900d34}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\Bnd\MLT">
+      <UniqueIdentifier>{ccb91ffe-c462-41ff-90ce-10946de50c18}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\Bnd\SGL">
+      <UniqueIdentifier>{31eb4996-e9d1-47ef-a8dd-d9484f282d01}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\Bnd\SGL\Bezier">
+      <UniqueIdentifier>{08ab21bb-ab03-4f3d-8f58-b8911e589d10}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\Bnd\SGL\Conic">
+      <UniqueIdentifier>{66449cf2-e5c8-4865-bd77-76cc94bba7e6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\Bnd\SGL\Spline">
+      <UniqueIdentifier>{6976f116-fcad-45f1-ae72-4f32e8d1c17c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\Bnd\SGL\Segment">
+      <UniqueIdentifier>{c292952f-f62c-41c4-b180-221369c1f0a5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\UnBnd">
+      <UniqueIdentifier>{35c701d7-5f02-41ca-8af3-c496d1d6e6b4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Curve\HalfBnd">
+      <UniqueIdentifier>{91ae771f-b29f-47d0-bf1f-8b6ad17c8e70}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve">
+      <UniqueIdentifier>{3bd61a92-da01-4327-9eff-595e4480e651}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="2D\Region">
+      <UniqueIdentifier>{d15b2674-8aed-47e1-9dd7-0621bbb240b5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\UnBnd">
+      <UniqueIdentifier>{0fb9b4e4-97ed-48f3-853b-1f58723814b3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\HalfBnd">
+      <UniqueIdentifier>{9b93c39b-421a-45d1-8cc8-2afe1e1e3560}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\Bnd">
+      <UniqueIdentifier>{1403573a-f0d3-44bd-8e5e-fdcb5d6d2dc2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\Bnd\SGL">
+      <UniqueIdentifier>{c0dcfd72-b56e-45da-9a91-6b3cd41c862a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\Bnd\SGL\Segment">
+      <UniqueIdentifier>{2d5a6d8c-849f-4330-a987-9ecd6db3e1f7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\Bnd\SGL\Bezier">
+      <UniqueIdentifier>{5629779b-4891-4de4-b50d-55dfde42212c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\Bnd\SGL\Conic">
+      <UniqueIdentifier>{40fa68ef-7ae4-4a51-87a4-0354a4d1c914}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\Bnd\SGL\Spline">
+      <UniqueIdentifier>{bc0caa56-86d3-4e64-9a3e-4c280c61c9ef}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="3D\Curve\Bnd\MLT">
+      <UniqueIdentifier>{fb678239-26ec-4750-8126-2a974bafe4b3}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="framework.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="GeometryPrimative.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Geometry.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Geometry2.h">
+      <Filter>2D</Filter>
+    </ClInclude>
+    <ClInclude Include="BndCurve2.h">
+      <Filter>2D\Curve\Bnd</Filter>
+    </ClInclude>
+    <ClInclude Include="Curve2.h">
+      <Filter>2D\Curve</Filter>
+    </ClInclude>
+    <ClInclude Include="Polyline2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="PolylineEx2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="Rect2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="RegularPolygon2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="RoundRect2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="Star2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="CubicBezier2.h">
+      <Filter>2D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClInclude>
+    <ClInclude Include="QuadraticBezier2.h">
+      <Filter>2D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClInclude>
+    <ClInclude Include="QuarticBezier2.h">
+      <Filter>2D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClInclude>
+    <ClInclude Include="Arc2.h">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="Circle2.h">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="Ellipse2.h">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="EllipseArc2.h">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="BSpline2.h">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="CatmullRomSpline2.h">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="Clothoid2.h">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="Nurbs2.h">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="Runway2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="MltBndCurve2.h">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="SglBndCurve2.h">
+      <Filter>2D\Curve\Bnd\SGL</Filter>
+    </ClInclude>
+    <ClInclude Include="Segment2.h">
+      <Filter>2D\Curve\Bnd\SGL\Segment</Filter>
+    </ClInclude>
+    <ClInclude Include="UnBndCurve2.h">
+      <Filter>2D\Curve\UnBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="HalfBndCurve2.h">
+      <Filter>2D\Curve\HalfBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="Line2.h">
+      <Filter>2D\Curve\UnBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="Ray2.h">
+      <Filter>2D\Curve\HalfBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="Geometry3.h">
+      <Filter>3D</Filter>
+    </ClInclude>
+    <ClInclude Include="Curve3.h">
+      <Filter>3D\Curve</Filter>
+    </ClInclude>
+    <ClInclude Include="UnBndCurve3.h">
+      <Filter>3D\Curve\UnBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="Line3.h">
+      <Filter>3D\Curve\UnBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="HalfBndCurve3.h">
+      <Filter>3D\Curve\HalfBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="Ray3.h">
+      <Filter>3D\Curve\HalfBnd</Filter>
+    </ClInclude>
+    <ClInclude Include="BndCurve3.h">
+      <Filter>3D\Curve\Bnd</Filter>
+    </ClInclude>
+    <ClInclude Include="SglBndCurve3.h">
+      <Filter>3D\Curve\Bnd\SGL</Filter>
+    </ClInclude>
+    <ClInclude Include="Segment3.h">
+      <Filter>3D\Curve\Bnd\SGL\Segment</Filter>
+    </ClInclude>
+    <ClInclude Include="CubicBezier3.h">
+      <Filter>3D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClInclude>
+    <ClInclude Include="QuadraticBezier3.h">
+      <Filter>3D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClInclude>
+    <ClInclude Include="QuarticBezier3.h">
+      <Filter>3D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClInclude>
+    <ClInclude Include="Arc3.h">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="Circle3.h">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="Ellipse3.h">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="EllipseArc3.h">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClInclude>
+    <ClInclude Include="BSpline3.h">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="CatmullRomSpline3.h">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="Clothoid3.h">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="NURBS3.h">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClInclude>
+    <ClInclude Include="MltBndCurve3.h">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="Runway3.h">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="Rect3.h">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="RoundRect3.h">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="Polyline3.h">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="PolylineEx3.h">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClInclude>
+    <ClInclude Include="Region2.h">
+      <Filter>2D\Region</Filter>
+    </ClInclude>
+    <ClInclude Include="Loop2.h">
+      <Filter>2D\Region</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="BndCurve2.cpp">
+      <Filter>2D\Curve\Bnd</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Geometry2.cpp">
+      <Filter>2D</Filter>
+    </ClCompile>
+    <ClCompile Include="Curve2.cpp">
+      <Filter>2D\Curve</Filter>
+    </ClCompile>
+    <ClCompile Include="Polyline2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="PolylineEx2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="Rect2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="RegularPolygon2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="RoundRect2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="Star2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="CubicBezier2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClCompile>
+    <ClCompile Include="QuadraticBezier2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClCompile>
+    <ClCompile Include="QuarticBezier2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClCompile>
+    <ClCompile Include="Arc2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="Circle2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="Ellipse2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="EllipseArc2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="BSpline2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="CatmullRomSpline2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="Clothoid2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="Nurbs2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="Runway2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="MltBndCurve2.cpp">
+      <Filter>2D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="SglBndCurve2.cpp">
+      <Filter>2D\Curve\Bnd\SGL</Filter>
+    </ClCompile>
+    <ClCompile Include="Segment2.cpp">
+      <Filter>2D\Curve\Bnd\SGL\Segment</Filter>
+    </ClCompile>
+    <ClCompile Include="UnBndCurve2.cpp">
+      <Filter>2D\Curve\UnBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="HalfBndCurve2.cpp">
+      <Filter>2D\Curve\HalfBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="Line2.cpp">
+      <Filter>2D\Curve\UnBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="Ray2.cpp">
+      <Filter>2D\Curve\HalfBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="Geometry3.cpp">
+      <Filter>3D</Filter>
+    </ClCompile>
+    <ClCompile Include="Curve3.cpp">
+      <Filter>3D\Curve</Filter>
+    </ClCompile>
+    <ClCompile Include="UnBndCurve3.cpp">
+      <Filter>3D\Curve\UnBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="Line3.cpp">
+      <Filter>3D\Curve\UnBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="HalfBndCurve3.cpp">
+      <Filter>3D\Curve\HalfBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="Ray3.cpp">
+      <Filter>3D\Curve\HalfBnd</Filter>
+    </ClCompile>
+    <ClCompile Include="BndCurve3.cpp">
+      <Filter>3D\Curve\Bnd</Filter>
+    </ClCompile>
+    <ClCompile Include="SglBndCurve3.cpp">
+      <Filter>3D\Curve\Bnd\SGL</Filter>
+    </ClCompile>
+    <ClCompile Include="Segment3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Segment</Filter>
+    </ClCompile>
+    <ClCompile Include="CubicBezier3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClCompile>
+    <ClCompile Include="QuadraticBezier3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClCompile>
+    <ClCompile Include="QuarticBezier3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Bezier</Filter>
+    </ClCompile>
+    <ClCompile Include="Arc3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="Circle3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="Ellipse3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="EllipseArc3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Conic</Filter>
+    </ClCompile>
+    <ClCompile Include="BSpline3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="CatmullRomSpline3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="Clothoid3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="NURBS3.cpp">
+      <Filter>3D\Curve\Bnd\SGL\Spline</Filter>
+    </ClCompile>
+    <ClCompile Include="MltBndCurve3.cpp">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="Runway3.cpp">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="Rect3.cpp">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="RoundRect3.cpp">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="Polyline3.cpp">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="PolylineEx3.cpp">
+      <Filter>3D\Curve\Bnd\MLT</Filter>
+    </ClCompile>
+    <ClCompile Include="Loop2.cpp">
+      <Filter>2D\Region</Filter>
+    </ClCompile>
+    <ClCompile Include="Region2.cpp">
+      <Filter>2D\Region</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

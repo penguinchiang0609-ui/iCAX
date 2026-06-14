@@ -1,0 +1,13 @@
+{
+  "name": "mfc-sample",
+  "displayName": "MFC Sample",
+  "backend": {
+    "host": "backend/MFCSample"
+  },
+  "frontend": {
+    "entry": ""
+  },
+  "protocol": {
+    "path": "protocol"
+  }
+}

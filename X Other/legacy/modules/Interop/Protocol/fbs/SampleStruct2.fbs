@@ -1,0 +1,10 @@
+namespace iCAX.Sample;
+
+// 这是一个人员表
+table MyStruct2 {
+  R:int; 
+}
+
+root_type MyStruct2;
+
+file_identifier "SMPL";

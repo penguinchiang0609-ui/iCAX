@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<Plugins>
+    <Item Name="Core" ComponentPath="CoreComponent.dll" BehaviourPath="CoreBehaviour.dll" ServicePath="CoreService.dll"/>
+    <Item Name="Render" ComponentPath="RenderComponent.dll" BehaviourPath="RenderBehaviour.dll" ServicePath="RenderService.dll"/>
+    <Item Name="Sample" ComponentPath="SampleComponent.dll" BehaviourPath="SampleBehaviour.dll" ServicePath="SampleService.dll"/>
+    <!--<Item Name="Interop" ServicePath="InteropService.dll"/> -->
+</Plugins>

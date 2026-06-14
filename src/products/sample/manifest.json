@@ -1,0 +1,22 @@
+{
+  "name": "sample",
+  "displayName": "Sample",
+  "backend": {
+    "components": [
+      "SampleComponent"
+    ],
+    "behaviours": [
+      "SampleBehaviour"
+    ],
+    "services": [
+      "SampleService"
+    ]
+  },
+  "frontend": {
+    "entry": ""
+  },
+  "protocol": {
+    "mailbox": "protocol/mailbox",
+    "pdo": "protocol/pdo"
+  }
+}
