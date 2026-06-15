@@ -6,6 +6,12 @@
 #include "SampleComponent/SampleComponent.h"
 #include "SampleService/ISampleService.h"
 
+namespace
+{
+    constexpr int kSampleActionSuccess = 0;
+    constexpr int kSampleActionFailed = -1;
+}
+
 //! 构造函数
 iCAX::Sample::SampleBehaviour::SampleBehaviour()
 {
@@ -89,7 +95,7 @@ int iCAX::Sample::TestIDSet(IN OUT void* pContext_, IN const void* IParam_, OUT 
     auto _pN = reinterpret_cast<const int*>(IParam_);
     if (_pComponent == nullptr || _pN == nullptr)
     {
-        return PC_FAILED;
+        return kSampleActionFailed;
     }
 
 
@@ -100,5 +106,5 @@ int iCAX::Sample::TestIDSet(IN OUT void* pContext_, IN const void* IParam_, OUT 
     auto _pR = reinterpret_cast<int*>(OParam_);
     *_pR = _nID;
     
-    return PC_SUCCESS;
+    return kSampleActionSuccess;
 }

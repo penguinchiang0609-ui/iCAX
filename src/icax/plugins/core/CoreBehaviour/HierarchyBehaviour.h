@@ -3,7 +3,6 @@
 #include "Behaviour/BehaviourBase.h"
 #include "../CoreComponent/HierarchyComponent.h"
 #include "Behaviour/IBehaviourRegistry.h"
-#include "ProcedureCall/IPCRegistry.h"
 
 using namespace iCAX::Behaviour;
 
@@ -131,8 +130,5 @@ namespace iCAX
         * @param [in] pChildEntity_
         */
         int RemoveHierarchyChild(IN OUT void* pContext_, IN const void* IParam_, OUT void* OParam_);//! (IN iCAX::Database::CComponentBase& Component_, IN const std::shared_ptr<iCAX::Database::IEntity>& pChildEntity_);
-
-        AUTO_REGIST_PC(CoreModule, AddHierarchyChild)
-        AUTO_REGIST_PC(CoreModule, RemoveHierarchyChild)
     }
 }

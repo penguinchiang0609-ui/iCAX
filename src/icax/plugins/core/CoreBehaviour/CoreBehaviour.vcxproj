@@ -112,7 +112,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\runtime;$(SolutionDir)\services;$(SolutionDir)\plugins\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\plugins\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -132,7 +132,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\runtime;$(SolutionDir)\services;$(SolutionDir)\plugins\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\plugins\core;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -173,10 +173,7 @@
     <ProjectReference Include="..\..\..\framework\Database\Database.vcxproj">
       <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\foundation\ProcedureCall\ProcedureCall.vcxproj">
-      <Project>{e78f9d71-cf56-454f-983d-59644ad82d32}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\..\services\Services\Services.vcxproj">
+    <ProjectReference Include="..\..\..\framework\Services\Services.vcxproj">
       <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
     </ProjectReference>
     <ProjectReference Include="..\CoreComponent\CoreComponent.vcxproj">

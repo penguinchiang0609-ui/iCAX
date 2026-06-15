@@ -4,7 +4,7 @@
 
 ## 目录结构
 
-- `icax/`：C++ 后台平台，包含核心运行时、基础库、框架、ProcedureCall、Mailbox、PDO 和平台级扩展。
+- `icax/`：C++ 后台平台，包含核心运行时、基础库、框架、Mailbox、PDO 和平台级扩展。
 - `icax-workbench/`：H5 前端通用工作台壳，负责页面运行环境、布局、路由和前端侧通信封装。
 - `icax-protocol/`：C++ 后台与 H5 前台共享的协议约定，主要包含 Mailbox、PDO 和通用常量。
 - `products/`：具体产品目录。每个产品同时包含 icax 侧扩展、H5 页面和产品级协议。

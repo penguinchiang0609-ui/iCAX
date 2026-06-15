@@ -2,6 +2,12 @@
 #include "HierarchyBehaviour.h"
 #include "Behaviour/IWorld.h"
 
+namespace
+{
+    constexpr int kBehaviourActionSuccess = 0;
+    constexpr int kBehaviourActionFailed = -1;
+}
+
 //! 构造函数
 iCAX::Core::HierarchyBehaviour::HierarchyBehaviour()
 {
@@ -143,7 +149,7 @@ int iCAX::Core::AddHierarchyChild(IN OUT void* pContext_, IN const void* IParam_
     auto _ppEntity = reinterpret_cast<const std::shared_ptr<iCAX::Database::IEntity>*>(IParam_);
     if (_pComponent == nullptr || _ppEntity == nullptr)
     {
-        return PC_FAILED;
+        return kBehaviourActionFailed;
     }
 
     std::shared_ptr<iCAX::Database::IEntity> _pChildEntity = *_ppEntity;
@@ -159,7 +165,7 @@ int iCAX::Core::AddHierarchyChild(IN OUT void* pContext_, IN const void* IParam_
             _Component.SetChildrenIDs(_vecIDs);
         }
     }
-    return PC_SUCCESS;
+    return kBehaviourActionSuccess;
 }
 
 //! 移除子节点
@@ -169,7 +175,7 @@ int iCAX::Core::RemoveHierarchyChild(IN OUT void * pContext_, IN const void * IP
     auto _ppEntity = reinterpret_cast<const std::shared_ptr<iCAX::Database::IEntity>*>(IParam_);
     if (_pComponent == nullptr || _ppEntity == nullptr)
     {
-        return PC_FAILED;
+        return kBehaviourActionFailed;
     }
 
     std::shared_ptr<iCAX::Database::IEntity> _pChildEntity = *_ppEntity;
@@ -194,6 +200,6 @@ int iCAX::Core::RemoveHierarchyChild(IN OUT void * pContext_, IN const void * IP
         }
     }
 
-    return PC_SUCCESS;
+    return kBehaviourActionSuccess;
 }
 

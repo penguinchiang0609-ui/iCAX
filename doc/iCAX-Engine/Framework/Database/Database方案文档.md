@@ -70,6 +70,9 @@ ChangeSet.h / ChangeSet.cpp
 ChangeLog.h / ChangeLog.cpp
   -> ChangeSet 过滤、反向变更生成、序列化和追加式操作日志
 
+RepositoryHistory.h / RepositoryHistory.cpp
+  -> 外挂式撤销还原记录器和历史栈
+
 EntitiesView.h / EntitiesView.cpp
   -> Domain 内 Entity 视图
 
@@ -359,17 +362,17 @@ sequenceDiagram
 Transactional
   -> 事件正常触发
   -> Repository 默认更新组件版本并失效派生字段
-  -> Database 历史栈默认记录撤销还原
+  -> undo recorder 打开时可进入当前 undo step
 
 Observable
   -> 事件正常触发
   -> Repository 默认更新组件版本并失效派生字段
-  -> Database 历史栈默认不记录撤销还原
+  -> undo recorder 默认不记录撤销还原
 
 Silent
   -> 事件正常触发
   -> Repository 默认不更新组件版本，不触发派生失效
-  -> Database 历史栈默认不记录撤销还原
+  -> undo recorder 默认不记录撤销还原
 ```
 
 `VersionTable` 的 key：
@@ -387,7 +390,7 @@ struct VersionKey
 
 ### 10.1 ChangeSet 与批量提交
 
-高频导入、插入项目文件、一次用户命令等场景不应该把中间事件逐条暴露给仓储订阅者。`Repository` 通过 `CChangeSetBuilder` 把作用域内事件合并成一个 `CChangeSet`：
+高频导入、插入项目文件、一次批量修改等场景不应该把中间事件逐条暴露给仓储订阅者。`Repository` 通过 `CChangeSetBuilder` 把作用域内事件合并成一个 `CChangeSet`：
 
 ```text
 BeginChangeScope(UserCommand)
@@ -397,7 +400,8 @@ BeginChangeScope(UserCommand)
      -> 合并变更
      -> 更新版本和派生字段失效
      -> 发布一次 kBatchChanged
-     -> 进入历史栈和快速保存日志
+     -> 写入快速保存日志
+     -> 如果当前存在 undo recorder，则被 undo recorder 监听
 ```
 
 合并规则：
@@ -422,43 +426,80 @@ BeginChangeScope(UserCommand)
   -> 保留 Cleanup 过程中产生的 RemovedComponents，便于撤销时恢复组件
 ```
 
-`LoadBaseline` 作用域用于打开项目文件。它不记录 ChangeSet，不发布事件，不进入历史栈，不写操作日志；提交后清空版本表和派生缓存。
+`LoadBaseline` 作用域用于打开项目文件。它不对外提交 ChangeSet，不发布事件，不进入撤销/重做栈，不写操作日志；提交后清空版本表、派生缓存和撤销/重做历史。
 
 ### 10.2 事务
 
-`BeginTransaction()` 是 `UserCommand` 作用域的事务化入口：
+`BeginTransaction()` 是独立的事务作用域，不等同于撤销还原记录：
 
 ```text
 BeginTransaction
   -> 修改立即作用于内存
-  -> Commit: 生成 ChangeSet 并提交
+  -> Commit: 生成 ChangeSet 并提交，写入快速保存日志，不创建 undo step
   -> Cancel: 根据 ChangeSet 反向应用，静默回滚内存
   -> 析构未提交: 默认 Cancel
 ```
 
 回滚时 `Repository` 会临时抑制仓储事件和版本/派生字段处理。因为事务内的中间修改本来没有发布给仓储订阅者，所以回滚也不发布补偿事件。
 
+事务提交如果发生在 undo recorder 打开的窗口内，会被 recorder 监听并纳入当前 undo step；否则只作为事务提交和快速保存日志存在。
+
+如果事务或批量修改没有被 undo recorder 捕获，`Repository` 会先按撤销语义过滤出事务型变更；过滤后仍有内容时，才清理受影响 Domain 的旧撤销/重做历史。这样可以避免旧 undo step 在新的非撤销事务型修改之后继续回放，造成内存状态和操作日志语义不一致。只包含 `Observable`、`Silent` 或运行期裸字段的提交不清理撤销历史。
+
 ### 10.3 撤销还原
 
-撤销还原直接基于提交后的 `ChangeSet`：
+撤销还原和批量修改、事务彼此独立。撤销还原的记录边界来自 `BeginUndoCommand(domainId, name)` / `End()`：
+
+撤销还原状态由 `CRepositoryHistory` 作为外挂模块维护。`Domain`、`Entity`、`Component` 不保存 undo step、撤销栈、重做栈、recorder 或历史指针；EC 结构只负责数据容器和事件上抛，`Repository` 在提交边界把 `ChangeSet` 委托给历史模块。
 
 ```text
-UserCommand Commit
-  -> FilterTransactionalChangeSet
-  -> push undo stack
-  -> clear redo stack
+BeginUndoCommand(domainId, name)
+  -> RepositoryHistory 创建独立 undo recorder，并记录发起 Domain
+  -> 监听后续已提交 ChangeSet
 
-Undo
+End
+  -> 结束监听
+  -> 合并 recorder 中的 ChangeSet
+  -> 生成 undo step
+  -> 挂到所有受影响 Domain 的撤销栈
+```
+
+撤销还原记录没有取消语义。需要回滚数据时应使用事务自己的 `Cancel()`；没有发生有效变更时，`End()` 不会产生 undo step。
+
+撤销还原 recorder 监听普通修改、批量修改提交和事务提交：
+
+```text
+Repository committed ChangeSet
+  -> if undo recorder active:
+       RepositoryHistory.RecordCommittedChangeSet
+       CChangeSetBuilder merge
+  -> else:
+       FilterTransactionalChangeSet
+       collect affected Domain IDs
+       remove related steps from undo/redo stacks
+
+UndoCommand End
+  -> FilterTransactionalChangeSet
+  -> collect affected Domain IDs
+  -> push shared step to each affected Domain 撤销栈
+  -> clear redo stack for each affected Domain
+  -> 超过历史深度上限时，从所有相关 Domain 栈中移除同一个 shared step
+
+Undo(domainId)
+  -> require shared step is at every affected Domain stack top
   -> MakeInverseChangeSet
   -> Replay scope 正向应用反向 ChangeSet
-  -> 原 ChangeSet 移入 redo stack
+  -> shared step 从所有相关 Domain 撤销栈移入重做栈
 
-Redo
+Redo(domainId)
+  -> require shared step is at every affected Domain stack top
   -> Replay scope 正向应用原 ChangeSet
-  -> 原 ChangeSet 移回 undo stack
+  -> shared step 从所有相关 Domain 重做栈移回撤销栈
 ```
 
 撤销还原只处理 `EPropertyChangePolicy::Transactional` 字段。结构性修改包括 Domain、Entity、Component 的创建和删除。
+
+跨 Domain step 不是拆成多个独立 step，而是同一个 step 指针挂到多个 Domain 栈里。撤销或重做前必须校验该 step 在所有相关 Domain 的对应栈顶一致；如果某个 Domain 后续产生了独立 step，则先撤销/重做该独立 step，避免共享 step 被部分移动。
 
 ### 10.4 快速保存操作日志
 
@@ -466,7 +507,7 @@ Redo
 
 ```text
 OpenOperationLog(path)
-  -> 后续每次 UserCommand Commit / Undo / Redo
+  -> 后续每次普通修改 / Transaction Commit / Batch Commit / Undo / Redo
      -> FilterPersistentChangeSet
      -> SerializeChangeSet
      -> append one line
@@ -483,7 +524,7 @@ OpenOperationLog(path)
 3. 得到最近一次完整日志记录对应的现场
 ```
 
-回放使用 `Replay` 作用域，不进入撤销栈，也不会再次追加日志。
+回放开始前清空撤销/重做历史。回放使用 `Replay` 作用域，不进入撤销栈，也不会再次追加日志。
 
 ## 11. 派生字段方案
 
@@ -753,11 +794,23 @@ SilentFieldRaisesNormalEventButDoesNotBumpVersion
 UserCommandScopeEmitsOneMergedChangeSet
 TransactionCancelRollsBackSilently
 TransactionCancelReplacementRestoresOriginalState
+TransactionCommitWritesOperationLogButDoesNotCreateUndoStep
+TransactionInsideUndoCommandCreatesUndoStep
+BatchInsideUndoCommandCreatesUndoStep
 UndoRedoUsesCommittedChangeSet
+CrossDomainUndoRequiresSharedStepAtEveryDomainTop
+UndoCommandRecordsOnlyTransactionalFields
+UndoCommandWithOnlyRuntimeFieldsCreatesNoStep
+LoadBaselineClearsUndoRedoHistory
+UndoHistoryLimitRemovesSharedStepFromEveryDomainStack
+NonUndoableTransactionClearsAffectedDomainHistory
+NonUndoableChangeClearsSharedStepFromEveryDomainStack
+ObservableChangeDoesNotClearUndoHistory
 UndoRestoresDeletedEntityComponents
 UndoReplaceComponentRestoresOriginalComponent
 UndoRecreateSameEntityIDRestoresOriginalEntityContents
 OperationLogReplaysPersistentChanges
+ReplayOperationLogClearsUndoRedoHistory
 OperationLogSkipsNonPersistentObservableFields
 OperationLogSkipsNonPersistentDomains
 ```

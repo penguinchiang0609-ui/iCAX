@@ -1,6 +1,8 @@
 #pragma once
 #include "Database.h"
 #include <memory>
+#include <tuple>
+#include <vector>
 #include "IDomain.h"
 #include "IRepositoryEvent.h"
 #include "DerivedProperty.h"
@@ -41,29 +43,59 @@ namespace iCAX
             /*
             * @brief 开始事务
             * @details
-            *   事务内的更改立即作用于内存；Commit 后进入历史和快速保存日志，Cancel 后按反向日志回滚。
+            *   事务内的更改立即作用于内存；Commit 后写入快速保存日志，Cancel 后按反向日志回滚。
+            *   事务不等同于撤销还原记录，Commit 不会自动进入 undo 栈。
+            *   如果事务型提交没有被 BeginUndoCommand/End 捕获，会清理受影响域的旧撤销/重做历史。
             */
             virtual std::unique_ptr<IRepositoryChangeScope> BeginTransaction(IN const std::string& strName_ = std::string()) = 0;
 
             /*
-            * @brief 是否可以撤销
+            * @brief 开始一次撤销还原记录
+            * @details
+            *   DomainID_ 表示本次命令的发起域；命令内部可以影响多个域。
+            *   Begin/End 之间提交的普通修改、批量修改和事务提交会被合并为一个 undo step。
             */
-            virtual bool CanUndo() const = 0;
+            virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_) = 0;
 
             /*
-            * @brief 是否可以重做
+            * @brief 当前是否正在记录撤销还原步骤
             */
-            virtual bool CanRedo() const = 0;
+            virtual bool IsUndoCommandRecording() const = 0;
 
             /*
-            * @brief 撤销最近一次用户提交
+            * @brief 获取当前撤销还原记录的发起域
             */
-            virtual bool Undo() = 0;
+            virtual iCAX::Data::uuid GetCurrentUndoCommandDomain() const = 0;
 
             /*
-            * @brief 重做最近一次撤销
+            * @brief 指定域是否可以撤销
             */
-            virtual bool Redo() = 0;
+            virtual bool CanUndo(IN const iCAX::Data::uuid& DomainID_) const = 0;
+
+            /*
+            * @brief 指定域是否可以重做
+            */
+            virtual bool CanRedo(IN const iCAX::Data::uuid& DomainID_) const = 0;
+
+            /*
+            * @brief 获取指定域的撤销步骤列表
+            */
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const = 0;
+
+            /*
+            * @brief 获取指定域的重做步骤列表
+            */
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const = 0;
+
+            /*
+            * @brief 撤销指定域栈顶步骤
+            */
+            virtual bool Undo(IN const iCAX::Data::uuid& DomainID_) = 0;
+
+            /*
+            * @brief 重做指定域栈顶步骤
+            */
+            virtual bool Redo(IN const iCAX::Data::uuid& DomainID_) = 0;
 
             /*
             * @brief 打开快速保存操作日志

@@ -1,0 +1,52 @@
+{
+  "__variant_type": "Object",
+  "value": {
+    "plugins": {
+      "__variant_type": "Array",
+      "value": [
+        {
+          "__variant_type": "Object",
+          "value": {
+            "name": {
+              "__variant_type": "string",
+              "value": "Core"
+            },
+            "componentPath": {
+              "__variant_type": "string",
+              "value": "CoreComponent.dll"
+            },
+            "behaviourPath": {
+              "__variant_type": "string",
+              "value": "CoreBehaviour.dll"
+            },
+            "servicePath": {
+              "__variant_type": "string",
+              "value": "CoreService.dll"
+            }
+          }
+        },
+        {
+          "__variant_type": "Object",
+          "value": {
+            "name": {
+              "__variant_type": "string",
+              "value": "Sample"
+            },
+            "componentPath": {
+              "__variant_type": "string",
+              "value": "SampleComponent.dll"
+            },
+            "behaviourPath": {
+              "__variant_type": "string",
+              "value": "SampleBehaviour.dll"
+            },
+            "servicePath": {
+              "__variant_type": "string",
+              "value": "SampleService.dll"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

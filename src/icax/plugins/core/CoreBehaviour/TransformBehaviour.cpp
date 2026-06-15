@@ -5,6 +5,12 @@
 #include "HierarchyBehaviour.h"
 #include "../CoreComponent/TransformComponent.h"
 
+namespace
+{
+    constexpr int kBehaviourActionSuccess = 0;
+    constexpr int kBehaviourActionFailed = -1;
+}
+
 //! 构造函数
 iCAX::Core::TransformBehaviour::TransformBehaviour()
 {
@@ -91,7 +97,7 @@ int iCAX::Core::Tranform(IN OUT void* pContext_, IN const void* IParam_, OUT voi
     auto _pTransform = reinterpret_cast<const iCAX::Math::Tranform3*>(IParam_);
     if (_pComponent == nullptr || _pTransform == nullptr)
     {
-        return PC_FAILED;
+        return kBehaviourActionFailed;
     }
 
     auto& _Component = dynamic_cast<iCAX::Core::TransformComponent&>(*_pComponent);
@@ -99,6 +105,6 @@ int iCAX::Core::Tranform(IN OUT void* pContext_, IN const void* IParam_, OUT voi
     _Component.SetTranslation(std::get<0>(_Tuple));
     _Component.SetRotation(std::get<1>(_Tuple));
 
-    return PC_SUCCESS;
+    return kBehaviourActionSuccess;
 }
 

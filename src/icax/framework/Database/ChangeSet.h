@@ -18,6 +18,7 @@ namespace iCAX
         enum class EChangeScopeKind
         {
             LoadBaseline,
+            Transaction,
             UserCommand,
             Replay
         };
@@ -146,5 +147,19 @@ namespace iCAX
             virtual void Cancel() = 0;
             virtual bool IsCompleted() const = 0;
         };
+
+        /*
+        * @brief Repository 撤销还原记录作用域
+        */
+        class _DATABASE_EXP IRepositoryUndoScope
+        {
+        public:
+            IRepositoryUndoScope() = default;
+            virtual ~IRepositoryUndoScope() = default;
+
+            virtual void End() = 0;
+            virtual bool IsCompleted() const = 0;
+        };
+
     }
 }

@@ -150,10 +150,18 @@ std::unique_ptr<IRepositoryChangeScope> BeginChangeScope(
 std::unique_ptr<IRepositoryChangeScope> BeginTransaction(
     const std::string& name = {});
 
-bool CanUndo() const;
-bool CanRedo() const;
-bool Undo();
-bool Redo();
+std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(
+    const uuid& domainId,
+    const std::string& name);
+
+bool IsUndoCommandRecording() const;
+uuid GetCurrentUndoCommandDomain() const;
+bool CanUndo(const uuid& domainId) const;
+bool CanRedo(const uuid& domainId) const;
+std::vector<std::tuple<uuid, std::string>> GetUndoArray(const uuid& domainId) const;
+std::vector<std::tuple<uuid, std::string>> GetRedoArray(const uuid& domainId) const;
+bool Undo(const uuid& domainId);
+bool Redo(const uuid& domainId);
 
 void OpenOperationLog(const std::string& path, bool truncate = false);
 void CloseOperationLog();
@@ -163,13 +171,15 @@ void ReplayOperationLog(const std::string& path);
 
 `BeginChangeScope(EChangeScopeKind::LoadBaseline)` 用于第一次打开项目文件：它静默导入基线数据，不发布仓储事件，不进入撤销还原，不写快速保存日志，并在提交后清理组件 dirty 标记。
 
-`BeginChangeScope(EChangeScopeKind::UserCommand)` 用于把一组修改合并成一次用户命令：提交时发布一次 `kBatchChanged`，并将合并后的 `ChangeSet` 进入撤销还原和快速保存日志。该 scope 离开作用域默认提交，用于兼容批量修改场景。
+`BeginChangeScope(EChangeScopeKind::UserCommand)` 是批量修改作用域：提交时发布一次 `kBatchChanged`，并将合并后的 `ChangeSet` 写入快速保存日志。批量修改本身不代表撤销还原；只有它发生在 `BeginUndoCommand(domainId, name)` / `End()` 之间时，才会被撤销还原记录监听并纳入当前 undo step。未被撤销记录捕获的事务型提交会清理受影响 Domain 的旧撤销/重做历史，避免后续撤销进入不一致状态；只包含 `Observable`、`Silent` 或运行期裸字段的提交不会清理历史。
 
-`BeginTransaction()` 用于数据库式事务：事务内修改会立即作用到内存；`Commit()` 后成为一次用户提交；`Cancel()` 或未显式提交就析构时，会按反向日志静默回滚。
+`BeginTransaction()` 用于数据库式事务：事务内修改会立即作用到内存；`Commit()` 后提交变更并写入快速保存日志，但不进入 undo 栈；`Cancel()` 或未显式提交就析构时，会按反向日志静默回滚。未被撤销记录边界包含的事务型提交会清理受影响 Domain 的旧撤销/重做历史。
 
-撤销还原基于提交后的 `ChangeSet`。只有 `EPropertyChangePolicy::Transactional` 字段进入撤销还原；`Observable` 和 `Silent` 字段仍正常发事件，但不会进入 undo/redo。
+`BeginUndoCommand(domainId, name)` 用于撤销还原记录：`domainId` 是本次命令的发起域，`End()` 表示结束监听并把期间记录到的变更合并为一个 undo step。undo step 可以影响多个 Domain，并会挂到所有受影响 Domain 的栈上。`Undo(domainId)` 和 `Redo(domainId)` 是事后回放。只有 `EPropertyChangePolicy::Transactional` 字段进入撤销还原；`Observable` 和 `Silent` 字段仍正常发事件，但不会进入 undo/redo。
 
-快速保存日志是追加式操作日志。每次用户提交、撤销、重做都会把可持久化部分写入日志文件；日志只记录持久化 Domain 内的结构性修改，以及 `Persistent + Transactional` 字段。软件崩溃后，上层应先加载原项目文件，再调用 `ReplayOperationLog()` 回放日志，恢复到最近一次已写入日志的提交状态。
+撤销还原信息必须外挂维护。`Domain`、`Entity`、`Component` 不保存 undo/redo 状态，不暴露历史栈，也不感知 recorder；它们只负责 EC 数据和事件链路。历史记录由 `Repository` 在提交边界委托给 `CRepositoryHistory` 维护。
+
+快速保存日志是追加式操作日志。每次事务提交、批量修改提交、普通修改、撤销、重做都会把可持久化部分写入日志文件；撤销还原的 `End()` 本身不写快速保存日志。日志只记录持久化 Domain 内的结构性修改，以及 `Persistent + Transactional` 字段。软件崩溃后，上层应先加载原项目文件，再调用 `ReplayOperationLog()` 回放日志，恢复到最近一次已写入日志的提交状态。
 
 ### 3.2 Domain 能力
 
@@ -649,21 +659,65 @@ tx->Cancel(); // Width 恢复为事务开始前的值，不发布提交事件
 
 如果事务对象析构前没有调用 `Commit()`，默认等价于 `Cancel()`。
 
+事务提交不代表可撤销命令结束，因此不会自动进入 undo 栈。需要撤销还原能力时，应使用 `BeginUndoCommand(domainId, name)` 建立可撤销命令边界。
+
 ### 7.8 撤销与重做
 
+撤销还原与批量修改、事务是三个独立概念。批量修改只合并事件；事务只表达提交/回滚；撤销还原通过 `BeginUndoCommand(domainId, name)` / `End()` 建立监听边界。
+
+一次可撤销命令的生命周期：
+
 ```cpp
-if (repo->CanUndo())
+auto command = repo->BeginUndoCommand(modelDomainId, "ResizePart"); // 开始一次可撤销命令
+
+size->SetWidth(100);
+size->SetHeight(40);
+
+command->End(); // 结束监听，生成一个 undo step
+```
+
+批量修改如果发生在撤销记录边界内，会被纳入同一个 undo step：
+
+```cpp
+auto undo = repo->BeginUndoCommand(camDomainId, "InsertProject");
+auto batch = repo->BeginChangeScope(EChangeScopeKind::UserCommand, "InsertProjectBatch");
+
+ImportEntities(repo, sourceProject);
+
+batch->Commit();
+undo->End(); // 批量修改产生的 ChangeSet 纳入当前 undo step
+```
+
+事务如果发生在撤销记录边界内，也会被纳入同一个 undo step；如果没有被撤销记录边界包含，则事务提交不支持撤销还原：
+
+```cpp
+auto undo = repo->BeginUndoCommand(modelDomainId, "MovePart");
+auto tx = repo->BeginTransaction("MovePartTransaction");
+
+transform->SetX(10);
+transform->SetY(20);
+
+tx->Commit();
+undo->End();
+```
+
+事后执行撤销和重做：
+
+```cpp
+if (repo->CanUndo(modelDomainId))
 {
-    repo->Undo();
+    repo->Undo(modelDomainId);
 }
 
-if (repo->CanRedo())
+if (repo->CanRedo(modelDomainId))
 {
-    repo->Redo();
+    repo->Redo(modelDomainId);
 }
 ```
 
-撤销还原以一次提交的 `ChangeSet` 为单位。一次事务内多次修改同一个字段，只保留最早旧值和最终新值；删除后用同一 EntityID 或同一 ComponentClass 重建时，按替换处理，撤销后应恢复原内容。
+撤销还原以一次 `BeginUndoCommand(domainId, name)` / `End()` 监听窗口为单位。窗口内可以包含普通修改、批量修改和事务提交；同一个字段多次修改只保留最早旧值和最终新值；删除后用同一 EntityID 或同一 ComponentClass 重建时，按替换处理，撤销后应恢复原内容。
+
+如果一个 undo step 同时影响多个 Domain，它必须在所有相关 Domain 的栈顶一致时才能撤销或重做。若其中某个 Domain 后续又产生了独立 step，则需要先处理该 Domain 的独立 step，避免跨域共享 step 被错误地部分撤销。
 
 ### 7.9 快速保存与崩溃恢复
 
@@ -673,7 +727,7 @@ if (repo->CanRedo())
 repo->OpenOperationLog("project.icax.log", true);
 ```
 
-之后每次用户提交都会追加一条操作日志。非持久化 Domain、非持久化字段和非事务字段不会写入快速保存日志。正常保存完整项目文件后，上层可以截断或重新创建日志。
+之后每次事务提交、批量修改提交、普通修改、撤销和重做都会追加一条操作日志。非持久化 Domain、非持久化字段和非事务字段不会写入快速保存日志。正常保存完整项目文件后，上层可以截断或重新创建日志。
 
 崩溃恢复流程：
 
@@ -684,7 +738,7 @@ LoadProjectFile(repo, "project.icax");     // 上层项目文件读取
 repo->ReplayOperationLog("project.icax.log");
 ```
 
-`ReplayOperationLog()` 按日志顺序正向回放。回放过程不进入撤销栈，也不会再次写入快速保存日志。
+`ReplayOperationLog()` 按日志顺序正向回放。回放前会清空撤销/重做历史；回放过程不进入撤销栈，也不会再次写入快速保存日志。
 
 ## 8. 线程模型
 
@@ -729,10 +783,19 @@ src/tests/icax/framework/Database/DatabaseTest/
 - 静默字段发布普通事件，但默认不更新版本。
 - 批量 `ChangeSet` 合并。
 - 事务取消时静默回滚。
+- 批量修改和事务提交本身不创建 undo 步骤。
+- 批量修改和事务提交被 `BeginUndoCommand(domainId, name)` / `End()` 包含时，才进入当前 undo step。
+- 未被撤销记录捕获的事务型提交会清理受影响 Domain 的旧撤销/重做历史；如果清理到跨 Domain shared step，该 step 会从所有相关 Domain 栈中一起移除。
+- 可观察字段、静默字段和运行期裸字段不进入撤销语义，也不会清理旧撤销历史。
+- 撤销还原按 Domain 维度维护 step 栈，跨 Domain step 需要所有相关 Domain 栈顶一致。
+- 撤销记录只包含事务型字段；可观察字段和运行期裸字段不进入 undo step。
+- `LoadBaseline` 提交后清空撤销/重做历史。
+- 跨 Domain shared step 被历史深度裁剪时，会从所有相关 Domain 栈中一起移除。
 - 撤销还原按提交后的 `ChangeSet` 正反向应用。
 - 删除实体后撤销可恢复组件和字段值。
 - 同一 EntityID 或同一 ComponentClass 替换后撤销可恢复原内容。
 - 快速保存日志可回放持久化修改。
+- 快速保存日志回放会清空调用前的撤销/重做历史。
 - 非持久可观察字段不会写入快速保存日志。
 - 非持久化 Domain 不会写入快速保存日志。
 

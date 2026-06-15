@@ -112,7 +112,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\runtime;$(SolutionDir)\services;$(SolutionDir)\plugins\core;$(SolutionDir)\..\products\sample\backend\component;$(SolutionDir)\..\products\sample\backend\behaviour;$(SolutionDir)\..\products\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\plugins\core;$(SolutionDir)\..\products\sample\backend\component;$(SolutionDir)\..\products\sample\backend\behaviour;$(SolutionDir)\..\products\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -132,7 +132,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\runtime;$(SolutionDir)\services;$(SolutionDir)\plugins\core;$(SolutionDir)\..\products\sample\backend\component;$(SolutionDir)\..\products\sample\backend\behaviour;$(SolutionDir)\..\products\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\plugins\core;$(SolutionDir)\..\products\sample\backend\component;$(SolutionDir)\..\products\sample\backend\behaviour;$(SolutionDir)\..\products\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -160,7 +160,7 @@
     <ClCompile Include="SampleService.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\..\icax\services\Services\Services.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\icax\framework\Services\Services.vcxproj">
       <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
     </ProjectReference>
   </ItemGroup>

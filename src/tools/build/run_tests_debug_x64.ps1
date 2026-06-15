@@ -23,22 +23,22 @@ if (-not $MSBuild) {
 $BuildProjects = @(
     "src\icax\foundation\Data\Data.vcxproj",
     "src\tests\icax\foundation\Data\DataTest\DataTest.vcxproj",
+    "src\icax\framework\ApplicationContext\ApplicationContext.vcxproj",
+    "src\tests\icax\framework\ApplicationContext\ApplicationContextTest\ApplicationContextTest.vcxproj",
     "src\icax\framework\Database\Database.vcxproj",
     "src\tests\icax\framework\Database\DatabaseTest\DatabaseTest.vcxproj",
-    "src\icax\foundation\ProcedureCall\ProcedureCall.vcxproj",
-    "src\tests\icax\foundation\ProcedureCall\ProcedureCallTest\ProcedureCallTest.vcxproj",
-    "src\icax\foundation\Mailbox\Mailbox.vcxproj",
-    "src\tests\icax\foundation\Mailbox\MailboxTest\MailboxTest.vcxproj",
-    "src\icax\foundation\PDO\PDO.vcxproj",
-    "src\tests\icax\foundation\PDO\PDOTest\PDOTest.vcxproj",
+    "src\icax\framework\Mailbox\Mailbox.vcxproj",
+    "src\tests\icax\framework\Mailbox\MailboxTest\MailboxTest.vcxproj",
+    "src\icax\framework\PDO\PDO.vcxproj",
+    "src\tests\icax\framework\PDO\PDOTest\PDOTest.vcxproj",
     "src\icax\foundation\Task\Task.vcxproj",
     "src\tests\icax\foundation\Task\TaskTest\TaskTest.vcxproj"
 )
 
 $TestExecutables = @(
     "src\icax\$Platform\$Configuration\DataTest.exe",
+    "src\icax\$Platform\$Configuration\ApplicationContextTest.exe",
     "src\icax\$Platform\$Configuration\DatabaseTest.exe",
-    "src\icax\$Platform\$Configuration\ProcedureCallTest.exe",
     "src\icax\$Platform\$Configuration\MailboxTest.exe",
     "src\icax\$Platform\$Configuration\PDOTest.exe",
     "src\icax\$Platform\$Configuration\TaskTest.exe"

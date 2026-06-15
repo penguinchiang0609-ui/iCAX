@@ -1,4 +1,4 @@
-﻿
+
 // MFCSample.cpp: 定义应用程序的类行为。
 //
 
@@ -52,11 +52,11 @@ BOOL CMFCSampleApp::InitInstance()
 
 	CWinApp::InitInstance();
 
-    m_pAppEngine = std::make_shared<iCAX::Engine::CCAXEngine>();
+    m_pApplicationHost = std::make_shared<iCAX::ApplicationHost::CApplicationHost>();
     //try
     //{
-        m_pAppEngine->Load();        // 加载引擎
-        //m_pAppEngine->MainLoop();    // 这里可以在 MFC 中主循环里调 Tick 或绑定定时器
+        m_pApplicationHost->Load();        // 加载应用宿主
+        //m_pApplicationHost->MainLoop();    // 这里可以在 MFC 中主循环里调 Tick 或绑定定时器
     //}
     //catch (const std::exception& e)
     //{
@@ -67,7 +67,7 @@ BOOL CMFCSampleApp::InitInstance()
     // 设置定时器，每 16ms 调用一次 Tick()
     SetTimer(nullptr, 1, 16, [](HWND, UINT, UINT_PTR, DWORD)
         {
-            theApp.m_pAppEngine->MainLoop(); // 封装 MainLoop() 内部 Tick
+            theApp.m_pApplicationHost->MainLoop(); // 封装 MainLoop() 内部 Tick
         });
 
 
@@ -91,7 +91,7 @@ BOOL CMFCSampleApp::InitInstance()
 
 	CMFCSampleDlg dlg;
 	m_pMainWnd = &dlg;
-    dlg.pComponent = m_pAppEngine->GetRepository().GetMetaEntity()->GetComponent<iCAX::Sample::SampleComponent>();
+    dlg.pComponent = m_pApplicationHost->GetRepository().GetMetaEntity()->GetComponent<iCAX::Sample::SampleComponent>();
 	INT_PTR nResponse = dlg.DoModal();
 	if (nResponse == IDOK)
 	{
@@ -126,10 +126,10 @@ BOOL CMFCSampleApp::InitInstance()
 
 int CMFCSampleApp::ExitInstance()
 {
-    if (m_pAppEngine)
+    if (m_pApplicationHost)
     {
-        m_pAppEngine->Unload(); // 确保服务 / universe / repository 卸载
-        m_pAppEngine.reset();
+        m_pApplicationHost->Unload(); // 确保服务 / universe / repository 卸载
+        m_pApplicationHost.reset();
     }
 
     return CWinApp::ExitInstance();

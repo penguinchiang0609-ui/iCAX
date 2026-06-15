@@ -54,6 +54,9 @@
     <ClInclude Include="Repository.h">
       <Filter>inner</Filter>
     </ClInclude>
+    <ClInclude Include="RepositoryHistory.h">
+      <Filter>inner</Filter>
+    </ClInclude>
     <ClInclude Include="IDomain.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
@@ -138,6 +141,9 @@
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="Repository.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="RepositoryHistory.cpp">
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="IRepository.cpp">

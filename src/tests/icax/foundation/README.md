@@ -5,7 +5,5 @@
 ## 目录结构
 
 - `Data/`：对应 `src/icax/foundation/Data` 的 Data 单元测试。
-- `ProcedureCall/`：对应 `src/icax/foundation/ProcedureCall` 的 ProcedureCall 单元测试。
-- `Mailbox/`：对应 `src/icax/foundation/Mailbox` 的 Mail 通信单元测试。
-- `PDO/`：对应 `src/icax/foundation/PDO` 的 PDO 单元测试。
 - `Task/`：对应 `src/icax/foundation/Task` 的 Task 单元测试。
+- `ResourcePool/`：对应 `src/icax/foundation/ResourcePool` 的 ResourcePool 单元测试。

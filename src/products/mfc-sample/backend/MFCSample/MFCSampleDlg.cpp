@@ -8,7 +8,6 @@
 #include "MFCSampleDlg.h"
 #include "afxdialogex.h"
 #include "SceneDlg.h"
-#include "ProcedureCall/IPCRegistry.h"
 #include "Data/CommonFunction.h"
 
 #ifdef _DEBUG
@@ -181,10 +180,8 @@ void CMFCSampleDlg::OnBnClickedButton1()
 {
     if (auto _pComponent = pComponent.lock())
     {
-        auto _fn = iCAX::PC::GetGlobalPCRegistry()->Find(iCAX::PC::MakePCID("TESTMODULE", "TestIDSet"));
         int _nID = 100;
-        int _nR = 0;
-        _fn(_pComponent.get(), &_nID, &_nR);
+        _pComponent->SetTestID(_pComponent->GetTestID() + _nID);
     }
     // TODO: 在此添加控件通知处理程序代码
 }

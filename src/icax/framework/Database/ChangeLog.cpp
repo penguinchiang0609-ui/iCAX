@@ -17,6 +17,8 @@ namespace
         {
         case EChangeScopeKind::LoadBaseline:
             return "LoadBaseline";
+        case EChangeScopeKind::Transaction:
+            return "Transaction";
         case EChangeScopeKind::Replay:
             return "Replay";
         case EChangeScopeKind::UserCommand:
@@ -30,6 +32,10 @@ namespace
         if (strKind_ == "LoadBaseline")
         {
             return EChangeScopeKind::LoadBaseline;
+        }
+        if (strKind_ == "Transaction")
+        {
+            return EChangeScopeKind::Transaction;
         }
         if (strKind_ == "Replay")
         {

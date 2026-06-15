@@ -3,7 +3,6 @@
 #include "Behaviour/BehaviourBase.h"
 #include "../CoreComponent/TransformComponent.h"
 #include "Behaviour/IBehaviourRegistry.h"
-#include "ProcedureCall/IPCRegistry.h"
 
 using namespace iCAX::Behaviour;
 
@@ -127,8 +126,5 @@ namespace iCAX
         * @param [in] Tranform_
         */
         int Tranform(IN OUT void* pContext_, IN const void* IParam_, OUT void* OParam_); //(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Math::Tranform3& Tranform_);
-
-        AUTO_REGIST_PC(CoreModule, Tranform)
-       /* AUTO_REGIST_PC(TransformBehaviour, Tranform, "void(iCAX::Behaviour::IWorld&, iCAX::Database::CComponentBase&, const iCAX::Math::Tranform3&)>");*/
     }
 }

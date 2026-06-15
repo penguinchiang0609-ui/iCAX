@@ -8,3 +8,4 @@
 
 - `ChangeSet.*`：批量变更模型与合并逻辑。
 - `ChangeLog.*`：ChangeSet 过滤、反向变更、序列化和追加式操作日志。
+- `RepositoryHistory.*`：外挂式撤销还原记录器和历史栈；`Domain`、`Entity`、`Component` 不保存历史状态。

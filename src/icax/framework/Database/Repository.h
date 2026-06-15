@@ -6,13 +6,12 @@
 #include "DerivedProperty.h"
 #include "ChangeSet.h"
 
-#include <deque>
-
 namespace iCAX
 {
     namespace Database
     {
         class CChangeSetJournal;
+        class CRepositoryHistory;
 
         /*
         * @brief 仓储实现
@@ -59,24 +58,49 @@ namespace iCAX
             virtual std::unique_ptr<IRepositoryChangeScope> BeginTransaction(IN const std::string& strName_ = std::string()) override;
 
             /*
-            * @brief 是否可以撤销
+            * @brief 开始一次撤销还原记录
             */
-            virtual bool CanUndo() const override;
+            virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_) override;
 
             /*
-            * @brief 是否可以重做
+            * @brief 当前是否正在记录撤销还原步骤
             */
-            virtual bool CanRedo() const override;
+            virtual bool IsUndoCommandRecording() const override;
+
+            /*
+            * @brief 获取当前撤销还原记录的发起域
+            */
+            virtual iCAX::Data::uuid GetCurrentUndoCommandDomain() const override;
+
+            /*
+            * @brief 指定域是否可以撤销
+            */
+            virtual bool CanUndo(IN const iCAX::Data::uuid& DomainID_) const override;
+
+            /*
+            * @brief 指定域是否可以重做
+            */
+            virtual bool CanRedo(IN const iCAX::Data::uuid& DomainID_) const override;
+
+            /*
+            * @brief 获取指定域的撤销步骤列表
+            */
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const override;
+
+            /*
+            * @brief 获取指定域的重做步骤列表
+            */
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const override;
 
             /*
             * @brief 撤销
             */
-            virtual bool Undo() override;
+            virtual bool Undo(IN const iCAX::Data::uuid& DomainID_) override;
 
             /*
             * @brief 重做
             */
-            virtual bool Redo() override;
+            virtual bool Redo(IN const iCAX::Data::uuid& DomainID_) override;
 
             /*
             * @brief 打开快速保存操作日志
@@ -270,8 +294,7 @@ namespace iCAX
             std::string m_strChangeScopeName;
             int m_nRepositoryEventSuppressionDepth = 0;
             int m_nHistoryReplayDepth = 0;
-            std::deque<CChangeSet> m_UndoStack;
-            std::deque<CChangeSet> m_RedoStack;
+            std::unique_ptr<CRepositoryHistory> m_pHistory;
             std::unique_ptr<CChangeSetJournal> m_pOperationLog;
 
         private:

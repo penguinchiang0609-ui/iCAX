@@ -3,6 +3,7 @@
 #include "Domain.h"
 #include "MetaRegistry.h"
 #include "ChangeLog.h"
+#include "RepositoryHistory.h"
 
 #include <map>
 #include <set>
@@ -57,6 +58,7 @@ namespace
 
     using ComponentVersionKey = std::tuple<iCAX::Data::uuid, iCAX::Data::uuid, std::string>;
     using PropertyInvalidationKey = std::tuple<iCAX::Data::uuid, iCAX::Data::uuid, std::string, std::string>;
+
 }
 
 namespace iCAX
@@ -152,6 +154,7 @@ namespace iCAX
 iCAX::Database::CRepository::CRepository(IN const iCAX::Data::uuid& UID_)
 {
     m_UID = UID_;
+    m_pHistory = std::make_unique<CRepositoryHistory>();
     m_pVerisonTable = std::make_shared<VersionTable>();
     m_pDerivedPropertyManager = std::make_shared<CDerivedPropertyManager>(*this);
 }
@@ -174,7 +177,116 @@ std::unique_ptr<iCAX::Database::IRepositoryChangeScope> iCAX::Database::CReposit
 
 std::unique_ptr<iCAX::Database::IRepositoryChangeScope> iCAX::Database::CRepository::BeginTransaction(IN const std::string& strName_)
 {
-    return BeginChangeScopeCore(EChangeScopeKind::UserCommand, strName_, false);
+    return BeginChangeScopeCore(EChangeScopeKind::Transaction, strName_, false);
+}
+
+std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepository::BeginUndoCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_)
+{
+    if (strName_.empty())
+    {
+        throw std::invalid_argument("Undo command name cannot be empty");
+    }
+    if (IsChangeScopeActive())
+    {
+        throw std::runtime_error("Undo scope cannot begin inside an active repository change scope");
+    }
+    if (!HasDomain(DomainID_))
+    {
+        throw std::invalid_argument("Undo command domain does not exist");
+    }
+
+    return m_pHistory->BeginCommand(DomainID_, strName_);
+}
+
+bool iCAX::Database::CRepository::IsUndoCommandRecording() const
+{
+    return m_pHistory->IsRecording();
+}
+
+iCAX::Data::uuid iCAX::Database::CRepository::GetCurrentUndoCommandDomain() const
+{
+    return m_pHistory->GetCurrentCommandDomain();
+}
+
+bool iCAX::Database::CRepository::CanUndo(IN const iCAX::Data::uuid& DomainID_) const
+{
+    if (IsChangeScopeActive() || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
+    {
+        return false;
+    }
+    return m_pHistory->CanUndo(DomainID_);
+}
+
+bool iCAX::Database::CRepository::CanRedo(IN const iCAX::Data::uuid& DomainID_) const
+{
+    if (IsChangeScopeActive() || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
+    {
+        return false;
+    }
+    return m_pHistory->CanRedo(DomainID_);
+}
+
+std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepository::GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const
+{
+    return m_pHistory->GetUndoArray(DomainID_);
+}
+
+std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepository::GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const
+{
+    return m_pHistory->GetRedoArray(DomainID_);
+}
+
+bool iCAX::Database::CRepository::Undo(IN const iCAX::Data::uuid& DomainID_)
+{
+    if (!CanUndo(DomainID_))
+    {
+        return false;
+    }
+
+    auto _StepName = m_pHistory->GetUndoStepName(DomainID_);
+    auto _Inverse = MakeInverseChangeSet(m_pHistory->GetUndoChangeSet(DomainID_), _StepName.empty() ? "Undo" : "Undo " + _StepName);
+
+    ++m_nHistoryReplayDepth;
+    try
+    {
+        ApplyChangeSetWithReplayEvent(_Inverse);
+        --m_nHistoryReplayDepth;
+    }
+    catch (...)
+    {
+        --m_nHistoryReplayDepth;
+        throw;
+    }
+
+    m_pHistory->MoveUndoToRedo(DomainID_);
+    AppendOperationLog(_Inverse);
+    return true;
+}
+
+bool iCAX::Database::CRepository::Redo(IN const iCAX::Data::uuid& DomainID_)
+{
+    if (!CanRedo(DomainID_))
+    {
+        return false;
+    }
+
+    auto _ChangeSet = m_pHistory->GetRedoChangeSet(DomainID_);
+
+    ++m_nHistoryReplayDepth;
+    try
+    {
+        ApplyChangeSetWithReplayEvent(_ChangeSet);
+        --m_nHistoryReplayDepth;
+    }
+    catch (...)
+    {
+        --m_nHistoryReplayDepth;
+        throw;
+    }
+
+    m_pHistory->MoveRedoToUndo(DomainID_);
+    AppendOperationLog(_ChangeSet);
+    return true;
 }
 
 std::unique_ptr<iCAX::Database::IRepositoryChangeScope> iCAX::Database::CRepository::BeginChangeScopeCore(IN EChangeScopeKind Kind_, IN const std::string& strName_, IN const bool bAutoCommitOnDestroy_)
@@ -188,73 +300,6 @@ std::unique_ptr<iCAX::Database::IRepositoryChangeScope> iCAX::Database::CReposit
     m_strChangeScopeName = strName_;
     m_pChangeSetBuilder = std::make_unique<CChangeSetBuilder>(Kind_, strName_);
     return std::make_unique<CRepositoryChangeScope>(*this, bAutoCommitOnDestroy_);
-}
-
-bool iCAX::Database::CRepository::CanUndo() const
-{
-    return !IsChangeScopeActive() && m_nHistoryReplayDepth == 0 && !m_UndoStack.empty();
-}
-
-bool iCAX::Database::CRepository::CanRedo() const
-{
-    return !IsChangeScopeActive() && m_nHistoryReplayDepth == 0 && !m_RedoStack.empty();
-}
-
-bool iCAX::Database::CRepository::Undo()
-{
-    if (!CanUndo())
-    {
-        return false;
-    }
-
-    auto _ChangeSet = m_UndoStack.back();
-    m_UndoStack.pop_back();
-    auto _Inverse = MakeInverseChangeSet(_ChangeSet, _ChangeSet.Name.empty() ? "Undo" : "Undo " + _ChangeSet.Name);
-
-    ++m_nHistoryReplayDepth;
-    try
-    {
-        ApplyChangeSetWithReplayEvent(_Inverse);
-        --m_nHistoryReplayDepth;
-    }
-    catch (...)
-    {
-        --m_nHistoryReplayDepth;
-        m_UndoStack.push_back(_ChangeSet);
-        throw;
-    }
-
-    m_RedoStack.push_back(_ChangeSet);
-    AppendOperationLog(_Inverse);
-    return true;
-}
-
-bool iCAX::Database::CRepository::Redo()
-{
-    if (!CanRedo())
-    {
-        return false;
-    }
-
-    auto _ChangeSet = m_RedoStack.back();
-    m_RedoStack.pop_back();
-
-    ++m_nHistoryReplayDepth;
-    try
-    {
-        ApplyChangeSetWithReplayEvent(_ChangeSet);
-        --m_nHistoryReplayDepth;
-    }
-    catch (...)
-    {
-        --m_nHistoryReplayDepth;
-        m_RedoStack.push_back(_ChangeSet);
-        throw;
-    }
-
-    m_UndoStack.push_back(_ChangeSet);
-    AppendOperationLog(_ChangeSet);
-    return true;
 }
 
 void iCAX::Database::CRepository::OpenOperationLog(IN const std::string& strPath_, IN const bool bTruncate_)
@@ -283,6 +328,8 @@ void iCAX::Database::CRepository::ReplayOperationLog(IN const std::string& strPa
 {
     CChangeSetJournal _Journal;
     const auto _ChangeSets = _Journal.ReadAll(strPath_);
+
+    m_pHistory->Clear();
 
     ++m_nHistoryReplayDepth;
     try
@@ -663,6 +710,7 @@ void iCAX::Database::CRepository::EndChangeScope(IN const bool bCommit_)
     {
         m_pVerisonTable->Clear();
         m_pDerivedPropertyManager->Clear();
+        m_pHistory->Clear();
         return;
     }
 
@@ -1006,19 +1054,14 @@ void iCAX::Database::CRepository::RollbackChangeSetSilently(IN const CChangeSet&
 void iCAX::Database::CRepository::HandleCommittedChangeSet(IN const CChangeSet& ChangeSet_)
 {
     if (ChangeSet_.IsEmpty()
-        || ChangeSet_.Kind != EChangeScopeKind::UserCommand
+        || ChangeSet_.Kind == EChangeScopeKind::LoadBaseline
+        || ChangeSet_.Kind == EChangeScopeKind::Replay
         || m_nHistoryReplayDepth > 0)
     {
         return;
     }
 
-    auto _UndoableChangeSet = FilterTransactionalChangeSet(ChangeSet_);
-    if (!_UndoableChangeSet.IsEmpty())
-    {
-        m_UndoStack.push_back(_UndoableChangeSet);
-        m_RedoStack.clear();
-    }
-
+    m_pHistory->HandleCommittedChangeSet(ChangeSet_);
     AppendOperationLog(ChangeSet_);
 }
 

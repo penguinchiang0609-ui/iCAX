@@ -3,7 +3,6 @@
 #include "Behaviour/BehaviourBase.h"
 #include <Behaviour/IUniverse.h>
 #include <Behaviour/IBehaviourRegistry.h>
-#include <ProcedureCall/IPCRegistry.h>
 
 using namespace iCAX::Behaviour;
 
@@ -121,7 +120,5 @@ namespace iCAX
         };
 
         int TestIDSet(IN OUT void* pContext_, IN const void* IParam_, OUT void* OParam_); //(IN iCAX::Database::CComponentBase& Component_, IN const int& n_);
-
-        AUTO_REGIST_PC(TESTMODULE, TestIDSet);
     }
 }

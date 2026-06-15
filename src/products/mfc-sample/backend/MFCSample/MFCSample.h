@@ -1,10 +1,10 @@
-﻿
+
 // MFCSample.h: PROJECT_NAME 应用程序的主头文件
 //
 
 #pragma once
 
-#include "Engine/CAXEngine.h"
+#include "ApplicationHost/ApplicationHost.h"
 #include <memory>
 
 #ifndef __AFXWIN_H__
@@ -32,7 +32,7 @@ public:
 	DECLARE_MESSAGE_MAP()
 
 private:
-    std::shared_ptr<iCAX::Engine::CCAXEngine> m_pAppEngine;
+    std::shared_ptr<iCAX::ApplicationHost::CApplicationHost> m_pApplicationHost;
 };
 
 extern CMFCSampleApp theApp;

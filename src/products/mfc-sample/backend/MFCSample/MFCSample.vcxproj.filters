@@ -70,14 +70,14 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <Xml Include="Startup.Setting">
+    <None Include="Setting\Startup.Setting">
       <Filter>Config</Filter>
-    </Xml>
-    <Xml Include="CAX.Setting">
+    </None>
+    <None Include="Setting\Application.Setting">
       <Filter>Config</Filter>
-    </Xml>
-    <Xml Include="Plugins.Setting">
+    </None>
+    <None Include="Setting\Plugins.Setting">
       <Filter>Config</Filter>
-    </Xml>
+    </None>
   </ItemGroup>
 </Project>

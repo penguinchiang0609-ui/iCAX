@@ -811,6 +811,7 @@ TEST(DatabaseRepositoryTest, UserCommandScopeEmitsOneMergedChangeSet)
 
     EXPECT_EQ(1, _NewComponent->Version());
     EXPECT_EQ(_ExistingVersion + 1, _ExistingComponent->Version());
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
 }
 
 TEST(DatabaseRepositoryTest, LoadBaselineScopeDoesNotNotifyOrMarkDirty)
@@ -880,7 +881,7 @@ TEST(DatabaseRepositoryTest, TransactionCancelRollsBackSilently)
     EXPECT_EQ(5, _Component->GetA());
     EXPECT_TRUE(_Observer->ChangingEvents.empty());
     EXPECT_TRUE(_Observer->ChangedEvents.empty());
-    EXPECT_FALSE(_Repository->CanUndo());
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
 }
 
 TEST(DatabaseRepositoryTest, TransactionCancelReplacementRestoresOriginalState)
@@ -915,7 +916,95 @@ TEST(DatabaseRepositoryTest, TransactionCancelReplacementRestoresOriginalState)
     EXPECT_EQ(9, _RestoredComponent->GetB());
     EXPECT_TRUE(_Observer->ChangingEvents.empty());
     EXPECT_TRUE(_Observer->ChangedEvents.empty());
-    EXPECT_FALSE(_Repository->CanUndo());
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
+}
+
+TEST(DatabaseRepositoryTest, TransactionCommitWritesOperationLogButDoesNotCreateUndoStep)
+{
+    auto _LogPath = MakeTempOperationLogPath();
+    const auto _DomainID = GenerateNewUUID();
+    const auto _EntityID = GenerateNewUUID();
+
+    {
+        auto _Repository = GenerateRepository(GenerateNewUUID());
+        _Repository->OpenOperationLog(_LogPath, true);
+
+        auto _Transaction = _Repository->BeginTransaction("CreateRuntimeTransaction");
+        auto _Domain = _Repository->CreateDomain(_DomainID, true);
+        auto _Entity = _Domain->CreateEntity(_EntityID);
+        auto _Component = _Entity->AddComponent<CSumComponent>();
+        _Component->SetA(11);
+        _Transaction->Commit();
+
+        EXPECT_FALSE(_Repository->CanUndo(_DomainID));
+        _Repository->CloseOperationLog();
+    }
+
+    auto _RecoveredRepository = GenerateRepository(GenerateNewUUID());
+    _RecoveredRepository->ReplayOperationLog(_LogPath);
+
+    auto _RecoveredDomain = _RecoveredRepository->GetDomain(_DomainID);
+    ASSERT_NE(nullptr, _RecoveredDomain);
+    auto _RecoveredEntity = _RecoveredDomain->GetEntity(_EntityID);
+    ASSERT_NE(nullptr, _RecoveredEntity);
+    auto _RecoveredComponent = _RecoveredEntity->GetComponent<CSumComponent>();
+    ASSERT_NE(nullptr, _RecoveredComponent);
+    EXPECT_EQ(11, _RecoveredComponent->GetA());
+
+    std::filesystem::remove(_LogPath);
+}
+
+TEST(DatabaseRepositoryTest, TransactionInsideUndoCommandCreatesUndoStep)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _Entity = _Domain->CreateEntity(GenerateNewUUID());
+    auto _Component = _Entity->AddComponent<CSumComponent>();
+    _Component->SetA(1);
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "TransactionUndo");
+    auto _Transaction = _Repository->BeginTransaction("SetA");
+    _Component->SetA(12);
+    _Transaction->Commit();
+    _UndoCommand->End();
+
+    EXPECT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
+    EXPECT_EQ(1, _Component->GetA());
+    EXPECT_TRUE(_Repository->Redo(_Domain->GetID()));
+    EXPECT_EQ(12, _Component->GetA());
+}
+
+TEST(DatabaseRepositoryTest, BatchInsideUndoCommandCreatesUndoStep)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _Entity = _Domain->CreateEntity(GenerateNewUUID());
+    auto _Component = _Entity->AddComponent<CSumComponent>();
+    _Component->SetA(1);
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "BatchUndo");
+    auto _Batch = _Repository->BeginChangeScope(EChangeScopeKind::UserCommand, "BatchSet");
+    _Component->SetA(20);
+    _Component->SetB(30);
+    _Batch->Commit();
+    _UndoCommand->End();
+
+    EXPECT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
+    EXPECT_EQ(1, _Component->GetA());
+    EXPECT_EQ(0, _Component->GetB());
+    EXPECT_TRUE(_Repository->Redo(_Domain->GetID()));
+    EXPECT_EQ(20, _Component->GetA());
+    EXPECT_EQ(30, _Component->GetB());
 }
 
 TEST(DatabaseRepositoryTest, UndoRedoUsesCommittedChangeSet)
@@ -930,23 +1019,271 @@ TEST(DatabaseRepositoryTest, UndoRedoUsesCommittedChangeSet)
     _Component->SetA(1);
     _Baseline->Commit();
 
-    auto _Transaction = _Repository->BeginTransaction("SetA");
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "SetA");
     _Component->SetA(10);
+    _UndoCommand->End();
+
+    EXPECT_EQ(10, _Component->GetA());
+    EXPECT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_FALSE(_Repository->CanRedo(_Domain->GetID()));
+
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
+    EXPECT_EQ(1, _Component->GetA());
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->CanRedo(_Domain->GetID()));
+
+    EXPECT_TRUE(_Repository->Redo(_Domain->GetID()));
+    EXPECT_EQ(10, _Component->GetA());
+    EXPECT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_FALSE(_Repository->CanRedo(_Domain->GetID()));
+}
+
+TEST(DatabaseRepositoryTest, CrossDomainUndoRequiresSharedStepAtEveryDomainTop)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _DomainA;
+    std::shared_ptr<IDomain> _DomainB;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _DomainA = _Repository->CreateDomain(GenerateNewUUID(), true);
+    _DomainB = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _ComponentA = _DomainA->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    auto _ComponentB = _DomainB->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    _ComponentA->SetA(1);
+    _ComponentB->SetA(2);
+    _Baseline->Commit();
+
+    auto _SharedCommand = _Repository->BeginUndoCommand(_DomainA->GetID(), "SharedMove");
+    _ComponentA->SetA(10);
+    _ComponentB->SetA(20);
+    _SharedCommand->End();
+
+    EXPECT_TRUE(_Repository->CanUndo(_DomainA->GetID()));
+    EXPECT_TRUE(_Repository->CanUndo(_DomainB->GetID()));
+
+    auto _BCommand = _Repository->BeginUndoCommand(_DomainB->GetID(), "DomainBOnly");
+    _ComponentB->SetA(30);
+    _BCommand->End();
+
+    EXPECT_FALSE(_Repository->CanUndo(_DomainA->GetID()));
+    EXPECT_TRUE(_Repository->CanUndo(_DomainB->GetID()));
+
+    EXPECT_TRUE(_Repository->Undo(_DomainB->GetID()));
+    EXPECT_EQ(20, _ComponentB->GetA());
+
+    EXPECT_TRUE(_Repository->CanUndo(_DomainA->GetID()));
+    EXPECT_TRUE(_Repository->Undo(_DomainA->GetID()));
+    EXPECT_EQ(1, _ComponentA->GetA());
+    EXPECT_EQ(2, _ComponentB->GetA());
+
+    EXPECT_TRUE(_Repository->Redo(_DomainA->GetID()));
+    EXPECT_EQ(10, _ComponentA->GetA());
+    EXPECT_EQ(20, _ComponentB->GetA());
+
+    EXPECT_TRUE(_Repository->Redo(_DomainB->GetID()));
+    EXPECT_EQ(30, _ComponentB->GetA());
+}
+
+TEST(DatabaseRepositoryTest, UndoCommandRecordsOnlyTransactionalFields)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _Entity = _Domain->CreateEntity(GenerateNewUUID());
+    auto _Component = _Entity->AddComponent<CPolicyComponent>();
+    _Component->SetPersistentValue(1);
+    _Component->SetRuntimeValue(2);
+    _Component->SetCacheValue(3);
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "MixedPolicy");
+    _Component->SetPersistentValue(10);
+    _Component->SetRuntimeValue(20);
+    _Component->SetCacheValue(30);
+    _UndoCommand->End();
+
+    ASSERT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
+    EXPECT_EQ(1, _Component->GetPersistentValue());
+    EXPECT_EQ(20, _Component->GetRuntimeValue());
+    EXPECT_EQ(30, _Component->GetCacheValue());
+
+    EXPECT_TRUE(_Repository->Redo(_Domain->GetID()));
+    EXPECT_EQ(10, _Component->GetPersistentValue());
+    EXPECT_EQ(20, _Component->GetRuntimeValue());
+    EXPECT_EQ(30, _Component->GetCacheValue());
+}
+
+TEST(DatabaseRepositoryTest, UndoCommandWithOnlyRuntimeFieldsCreatesNoStep)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _Entity = _Domain->CreateEntity(GenerateNewUUID());
+    auto _Component = _Entity->AddComponent<CPolicyComponent>();
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "RuntimeOnly");
+    _Component->SetRuntimeValue(20);
+    _Component->SetCacheValue(30);
+    _UndoCommand->End();
+
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->GetUndoArray(_Domain->GetID()).empty());
+}
+
+TEST(DatabaseRepositoryTest, LoadBaselineClearsUndoRedoHistory)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _Entity = _Domain->CreateEntity(GenerateNewUUID());
+    auto _Component = _Entity->AddComponent<CSumComponent>();
+    _Component->SetA(1);
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "SetA");
+    _Component->SetA(2);
+    _UndoCommand->End();
+
+    ASSERT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
+    ASSERT_TRUE(_Repository->CanRedo(_Domain->GetID()));
+
+    auto _Reload = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Reload");
+    _Component->SetA(3);
+    _Reload->Commit();
+
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_FALSE(_Repository->CanRedo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->GetUndoArray(_Domain->GetID()).empty());
+    EXPECT_TRUE(_Repository->GetRedoArray(_Domain->GetID()).empty());
+}
+
+TEST(DatabaseRepositoryTest, UndoHistoryLimitRemovesSharedStepFromEveryDomainStack)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _DomainA;
+    std::shared_ptr<IDomain> _DomainB;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _DomainA = _Repository->CreateDomain(GenerateNewUUID(), true);
+    _DomainB = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _ComponentA = _DomainA->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    auto _ComponentB = _DomainB->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    _ComponentA->SetA(1);
+    _ComponentB->SetA(2);
+    _Baseline->Commit();
+
+    auto _SharedCommand = _Repository->BeginUndoCommand(_DomainA->GetID(), "SharedMove");
+    _ComponentA->SetA(10);
+    _ComponentB->SetA(20);
+    _SharedCommand->End();
+
+    ASSERT_EQ(1, _Repository->GetUndoArray(_DomainA->GetID()).size());
+    ASSERT_EQ(1, _Repository->GetUndoArray(_DomainB->GetID()).size());
+
+    for (int _Index = 0; _Index < 40; ++_Index)
+    {
+        auto _Command = _Repository->BeginUndoCommand(_DomainB->GetID(), "DomainBOnly");
+        _ComponentB->SetA(100 + _Index);
+        _Command->End();
+    }
+
+    EXPECT_TRUE(_Repository->GetUndoArray(_DomainA->GetID()).empty());
+    EXPECT_EQ(40, _Repository->GetUndoArray(_DomainB->GetID()).size());
+    EXPECT_FALSE(_Repository->CanUndo(_DomainA->GetID()));
+    EXPECT_TRUE(_Repository->CanUndo(_DomainB->GetID()));
+}
+
+TEST(DatabaseRepositoryTest, NonUndoableTransactionClearsAffectedDomainHistory)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _Component = _Domain->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    _Component->SetA(1);
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "UndoableSetA");
+    _Component->SetA(2);
+    _UndoCommand->End();
+
+    ASSERT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+
+    auto _Transaction = _Repository->BeginTransaction("NonUndoableSetA");
+    _Component->SetA(3);
     _Transaction->Commit();
 
-    EXPECT_EQ(10, _Component->GetA());
-    EXPECT_TRUE(_Repository->CanUndo());
-    EXPECT_FALSE(_Repository->CanRedo());
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->GetUndoArray(_Domain->GetID()).empty());
+    EXPECT_EQ(3, _Component->GetA());
+}
 
-    EXPECT_TRUE(_Repository->Undo());
-    EXPECT_EQ(1, _Component->GetA());
-    EXPECT_FALSE(_Repository->CanUndo());
-    EXPECT_TRUE(_Repository->CanRedo());
+TEST(DatabaseRepositoryTest, NonUndoableChangeClearsSharedStepFromEveryDomainStack)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
 
-    EXPECT_TRUE(_Repository->Redo());
-    EXPECT_EQ(10, _Component->GetA());
-    EXPECT_TRUE(_Repository->CanUndo());
-    EXPECT_FALSE(_Repository->CanRedo());
+    std::shared_ptr<IDomain> _DomainA;
+    std::shared_ptr<IDomain> _DomainB;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _DomainA = _Repository->CreateDomain(GenerateNewUUID(), true);
+    _DomainB = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _ComponentA = _DomainA->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    auto _ComponentB = _DomainB->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    _ComponentA->SetA(1);
+    _ComponentB->SetA(2);
+    _Baseline->Commit();
+
+    auto _SharedCommand = _Repository->BeginUndoCommand(_DomainA->GetID(), "SharedMove");
+    _ComponentA->SetA(10);
+    _ComponentB->SetA(20);
+    _SharedCommand->End();
+
+    ASSERT_TRUE(_Repository->CanUndo(_DomainA->GetID()));
+    ASSERT_TRUE(_Repository->CanUndo(_DomainB->GetID()));
+
+    _ComponentB->SetA(30);
+
+    EXPECT_TRUE(_Repository->GetUndoArray(_DomainA->GetID()).empty());
+    EXPECT_TRUE(_Repository->GetUndoArray(_DomainB->GetID()).empty());
+    EXPECT_FALSE(_Repository->CanUndo(_DomainA->GetID()));
+    EXPECT_FALSE(_Repository->CanUndo(_DomainB->GetID()));
+}
+
+TEST(DatabaseRepositoryTest, ObservableChangeDoesNotClearUndoHistory)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(GenerateNewUUID(), true);
+    auto _Component = _Domain->CreateEntity(GenerateNewUUID())->AddComponent<CPolicyComponent>();
+    _Component->SetPersistentValue(1);
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "SetPersistent");
+    _Component->SetPersistentValue(2);
+    _UndoCommand->End();
+
+    ASSERT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+
+    _Component->SetRuntimeValue(30);
+    _Component->SetCacheValue(40);
+
+    EXPECT_TRUE(_Repository->CanUndo(_Domain->GetID()));
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
+    EXPECT_EQ(1, _Component->GetPersistentValue());
+    EXPECT_EQ(30, _Component->GetRuntimeValue());
+    EXPECT_EQ(40, _Component->GetCacheValue());
 }
 
 TEST(DatabaseRepositoryTest, UndoRestoresDeletedEntityComponents)
@@ -963,21 +1300,21 @@ TEST(DatabaseRepositoryTest, UndoRestoresDeletedEntityComponents)
     _Component->SetB(5);
     _Baseline->Commit();
 
-    auto _Transaction = _Repository->BeginTransaction("DeleteEntity");
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "DeleteEntity");
     _Domain->DeleteEntity(_EntityID);
-    _Transaction->Commit();
+    _UndoCommand->End();
 
     EXPECT_FALSE(_Domain->HasEntity(_EntityID));
-    ASSERT_TRUE(_Repository->CanUndo());
+    ASSERT_TRUE(_Repository->CanUndo(_Domain->GetID()));
 
-    EXPECT_TRUE(_Repository->Undo());
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
     ASSERT_TRUE(_Domain->HasEntity(_EntityID));
     auto _RestoredComponent = _Domain->GetEntity(_EntityID)->GetComponent<CSumComponent>();
     ASSERT_NE(nullptr, _RestoredComponent);
     EXPECT_EQ(4, _RestoredComponent->GetA());
     EXPECT_EQ(5, _RestoredComponent->GetB());
 
-    EXPECT_TRUE(_Repository->Redo());
+    EXPECT_TRUE(_Repository->Redo(_Domain->GetID()));
     EXPECT_FALSE(_Domain->HasEntity(_EntityID));
 }
 
@@ -995,23 +1332,23 @@ TEST(DatabaseRepositoryTest, UndoReplaceComponentRestoresOriginalComponent)
     _OriginalComponent->SetB(2);
     _Baseline->Commit();
 
-    auto _Transaction = _Repository->BeginTransaction("ReplaceComponent");
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "ReplaceComponent");
     _Entity->RemoveComponent<CSumComponent>();
     auto _ReplacementComponent = _Entity->AddComponent<CSumComponent>();
     _ReplacementComponent->SetA(10);
     _ReplacementComponent->SetB(20);
-    _Transaction->Commit();
+    _UndoCommand->End();
 
     ASSERT_TRUE(_Entity->HasComponent<CSumComponent>());
     EXPECT_EQ(10, _Entity->GetComponent<CSumComponent>()->GetA());
     EXPECT_EQ(20, _Entity->GetComponent<CSumComponent>()->GetB());
 
-    EXPECT_TRUE(_Repository->Undo());
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
     ASSERT_TRUE(_Entity->HasComponent<CSumComponent>());
     EXPECT_EQ(1, _Entity->GetComponent<CSumComponent>()->GetA());
     EXPECT_EQ(2, _Entity->GetComponent<CSumComponent>()->GetB());
 
-    EXPECT_TRUE(_Repository->Redo());
+    EXPECT_TRUE(_Repository->Redo(_Domain->GetID()));
     ASSERT_TRUE(_Entity->HasComponent<CSumComponent>());
     EXPECT_EQ(10, _Entity->GetComponent<CSumComponent>()->GetA());
     EXPECT_EQ(20, _Entity->GetComponent<CSumComponent>()->GetB());
@@ -1031,24 +1368,24 @@ TEST(DatabaseRepositoryTest, UndoRecreateSameEntityIDRestoresOriginalEntityConte
     _OriginalComponent->SetB(4);
     _Baseline->Commit();
 
-    auto _Transaction = _Repository->BeginTransaction("ReplaceEntity");
+    auto _UndoCommand = _Repository->BeginUndoCommand(_Domain->GetID(), "ReplaceEntity");
     _Domain->DeleteEntity(_EntityID);
     auto _ReplacementEntity = _Domain->CreateEntity(_EntityID);
     auto _ReplacementComponent = _ReplacementEntity->AddComponent<CSumComponent>();
     _ReplacementComponent->SetA(30);
     _ReplacementComponent->SetB(40);
-    _Transaction->Commit();
+    _UndoCommand->End();
 
     ASSERT_TRUE(_Domain->HasEntity(_EntityID));
     EXPECT_EQ(30, _Domain->GetEntity(_EntityID)->GetComponent<CSumComponent>()->GetA());
     EXPECT_EQ(40, _Domain->GetEntity(_EntityID)->GetComponent<CSumComponent>()->GetB());
 
-    EXPECT_TRUE(_Repository->Undo());
+    EXPECT_TRUE(_Repository->Undo(_Domain->GetID()));
     ASSERT_TRUE(_Domain->HasEntity(_EntityID));
     EXPECT_EQ(3, _Domain->GetEntity(_EntityID)->GetComponent<CSumComponent>()->GetA());
     EXPECT_EQ(4, _Domain->GetEntity(_EntityID)->GetComponent<CSumComponent>()->GetB());
 
-    EXPECT_TRUE(_Repository->Redo());
+    EXPECT_TRUE(_Repository->Redo(_Domain->GetID()));
     ASSERT_TRUE(_Domain->HasEntity(_EntityID));
     EXPECT_EQ(30, _Domain->GetEntity(_EntityID)->GetComponent<CSumComponent>()->GetA());
     EXPECT_EQ(40, _Domain->GetEntity(_EntityID)->GetComponent<CSumComponent>()->GetB());
@@ -1086,6 +1423,47 @@ TEST(DatabaseRepositoryTest, OperationLogReplaysPersistentChanges)
     std::filesystem::remove(_LogPath);
 }
 
+TEST(DatabaseRepositoryTest, ReplayOperationLogClearsUndoRedoHistory)
+{
+    auto _LogPath = MakeTempOperationLogPath();
+    const auto _DomainID = GenerateNewUUID();
+    const auto _EntityID = GenerateNewUUID();
+
+    {
+        auto _LogRepository = GenerateRepository(GenerateNewUUID());
+        _LogRepository->OpenOperationLog(_LogPath, true);
+        auto _Domain = _LogRepository->CreateDomain(_DomainID, true);
+        auto _Entity = _Domain->CreateEntity(_EntityID);
+        auto _Component = _Entity->AddComponent<CSumComponent>();
+        _Component->SetA(30);
+        _LogRepository->CloseOperationLog();
+    }
+
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    std::shared_ptr<IDomain> _Domain;
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    _Domain = _Repository->CreateDomain(_DomainID, true);
+    auto _Entity = _Domain->CreateEntity(_EntityID);
+    auto _Component = _Entity->AddComponent<CSumComponent>();
+    _Component->SetA(1);
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand(_DomainID, "SetA");
+    _Component->SetA(2);
+    _UndoCommand->End();
+
+    ASSERT_TRUE(_Repository->CanUndo(_DomainID));
+
+    _Repository->ReplayOperationLog(_LogPath);
+
+    EXPECT_FALSE(_Repository->CanUndo(_DomainID));
+    EXPECT_FALSE(_Repository->CanRedo(_DomainID));
+    EXPECT_EQ(30, _Component->GetA());
+
+    std::filesystem::remove(_LogPath);
+}
+
 TEST(DatabaseRepositoryTest, OperationLogSkipsNonPersistentObservableFields)
 {
     auto _LogPath = MakeTempOperationLogPath();
@@ -1103,7 +1481,7 @@ TEST(DatabaseRepositoryTest, OperationLogSkipsNonPersistentObservableFields)
     _Repository->CloseOperationLog();
 
     EXPECT_EQ(0, std::filesystem::file_size(_LogPath));
-    EXPECT_FALSE(_Repository->CanUndo());
+    EXPECT_FALSE(_Repository->CanUndo(_Domain->GetID()));
 
     std::filesystem::remove(_LogPath);
 }
