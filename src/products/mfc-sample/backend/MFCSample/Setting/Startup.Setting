@@ -1,9 +1,0 @@
-{
-  "__variant_type": "Object",
-  "value": {
-    "firstComponent": {
-      "__variant_type": "string",
-      "value": "SampleComponent"
-    }
-  }
-}

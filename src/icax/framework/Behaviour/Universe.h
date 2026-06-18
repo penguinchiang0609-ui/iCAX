@@ -1,8 +1,7 @@
 #pragma once
 #include "IUniverse.h"
 #include <chrono>
-#include "../Database/IRepositoryEvent.h"
-#include "World.h"
+#include "BehaviourDispacther.h"
 
 namespace iCAX
 {
@@ -11,17 +10,15 @@ namespace iCAX
         /*
         * @brief 宇宙
         * @remark 
-        *   1、相当于Project，即一个项目
-        *   2、应用程序本身的配置信息放置在ApplicationSetting中
+        *   Universe 是行为运行容器，不拥有 Repository，也不代表 Project。
         */
-        class CUniverse final : public IUniverse, public iCAX::Database::IRepositoryEventListener, public std::enable_shared_from_this<CUniverse>
+        class CUniverse final : public IUniverse, public std::enable_shared_from_this<CUniverse>
         {
         public:
             /*
             * @brief 构造函数
-            * @param [in] pContext_
             */
-            CUniverse(IN std::shared_ptr<IUniverseContext> pContext_);
+            CUniverse();
 
             /*
             * @brief 析构函数
@@ -48,30 +45,12 @@ namespace iCAX
             /*
             * @brief 每帧执行
             */
-            virtual void Tick() override;
+            virtual void Tick(IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 帧后交换PDO双缓冲
             */
             virtual void PostSwapPDO() override;
-
-            /*
-            * @brief 获取根世界
-            * @return IWorld&
-            */
-            virtual IWorld& GetRootWorld() override;
-
-            /*
-            * @brief 获取根世界
-            * @return IWorld&
-            */
-            virtual const IWorld& GetRootWorld() const override;
-
-            /*
-            * @brief 获取环境
-            * @return IUniverseContext&
-            */
-            virtual IUniverseContext& GetContext() const override;
 
             /*
             * @brief 清空
@@ -88,21 +67,32 @@ namespace iCAX
         public:
             /*
             * @brief 修改前事件
-            * @param [in] pSender_
             * @param [in] Args_
             */
-            virtual void OnRepositoryChanging(IN void* pSender_, IN const iCAX::Database::RepositoryEventArgs& Args_) override;
+            virtual void OnRepositoryChanging(
+                IN const IUniverseContext& Context_,
+                IN const iCAX::Database::RepositoryEventArgs& Args_) override;
 
             /*
             * @brief 更改后事件
-            * @param [in] pSender_
             * @param [in] Args_
             */
-            virtual void OnRepositoryChanged(IN void* pSender_, IN const iCAX::Database::RepositoryEventArgs& Args_) override;
+            virtual void OnRepositoryChanged(
+                IN const IUniverseContext& Context_,
+                IN const iCAX::Database::RepositoryEventArgs& Args_) override;
+
+            virtual bool BindBehaviourByIndex(IN const std::type_index& nType_) override;
+            virtual bool HasBindBehaviourByIndex(IN const std::type_index& nType_) const override;
+            virtual void UnbindBehaviourByIndex(IN const std::type_index& nType_) override;
+            virtual void PauseBehaviourByIndex(IN const std::type_index& nType_) override;
+            virtual bool IsBehaviourPausedByIndex(IN const std::type_index& nType_) const override;
+            virtual void ResumeBehaviourByIndex(IN const std::type_index& nType_) override;
+            virtual std::vector<std::shared_ptr<CBehaviourBase>> GetPausedBehaviours() const override;
+            virtual std::vector<std::shared_ptr<CBehaviourBase>> GetAllBehaviours() const override;
 
         private:
-            std::shared_ptr<IUniverseContext> m_pContext;                //!< 上下文
-            std::shared_ptr<CWorld> m_pRootWorld;                           //!< 根世界
+            iCAX::Data::uuid m_ID;
+            std::shared_ptr<CBehaviourDispatcher> m_pDispatcher;
         };
     }
 }

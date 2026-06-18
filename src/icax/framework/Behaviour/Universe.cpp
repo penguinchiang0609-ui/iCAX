@@ -1,12 +1,12 @@
 #include "pch.h"
 #include "Universe.h"
-#include "World.h"
 #include "Timer.h"
 
 //!< 构造函数
-iCAX::Behaviour::CUniverse::CUniverse(IN std::shared_ptr<IUniverseContext> pContext_)
+iCAX::Behaviour::CUniverse::CUniverse()
+    : m_ID(iCAX::Data::GenerateNewUUID())
+    , m_pDispatcher()
 {
-    m_pContext = pContext_;
 }
 
 //!< 析构函数
@@ -16,82 +16,144 @@ iCAX::Behaviour::CUniverse::~CUniverse()
 
 void iCAX::Behaviour::CUniverse::Initialize()
 {
-    m_pContext->GetDatabase().AddObserver(shared_from_this());
-    m_pRootWorld = std::make_shared<CWorld>(shared_from_this(), m_pContext->GetDatabase().GetID());
+    m_pDispatcher = std::make_shared<CBehaviourDispatcher>();
 }
 
 //!< 获取宇宙ID
 iCAX::Data::uuid iCAX::Behaviour::CUniverse::GetID() const
 {
-    return m_pContext->GetDatabase().GetID();
+    return m_ID;
 }
 
 //! 帧前交换PDO双缓冲
 void iCAX::Behaviour::CUniverse::PreSwapPDO()
 {
-    m_pRootWorld->PreSwapPDO();
 }
 
 //!< 每帧执行
-void iCAX::Behaviour::CUniverse::Tick()
+void iCAX::Behaviour::CUniverse::Tick(IN const IUniverseContext& Context_)
 {
-    dynamic_cast<CTimer&>(m_pContext->GetTimer()).Tick();//! 此处强转为CTimer，然后更新
-    if (m_pRootWorld != nullptr)
+    dynamic_cast<CTimer&>(Context_.GetTimer()).Tick();//! 此处强转为CTimer，然后更新
+    if (m_pDispatcher != nullptr)
     {
-        m_pRootWorld->Tick(*m_pContext, m_pContext->GetTimer().GetDeltaTime(), m_pContext->GetTimer().GetTime());
+        m_pDispatcher->Tick(Context_, Context_.GetTimer().GetDeltaTime(), Context_.GetTimer().GetTime());
     }
-    m_pContext->GetDatabase().ResetComponentChangedFlag();
 }
 
 //! 帧后交换PDO双缓冲
 void iCAX::Behaviour::CUniverse::PostSwapPDO()
 {
-    m_pRootWorld->PostSwapPDO();
-}
-
-//!< 获取根世界
-iCAX::Behaviour::IWorld& iCAX::Behaviour::CUniverse::GetRootWorld()
-{
-    return *m_pRootWorld;
-}
-
-//!< 获取根世界
-const iCAX::Behaviour::IWorld& iCAX::Behaviour::CUniverse::GetRootWorld() const
-{
-    return *m_pRootWorld;
-}
-
-//!< 获取环境
-iCAX::Behaviour::IUniverseContext& iCAX::Behaviour::CUniverse::GetContext() const
-{
-    return *m_pContext.get();
 }
 
 //! 清空
 void iCAX::Behaviour::CUniverse::Cleanup(IN const bool& bFaorced_)
 {
-    m_pRootWorld->Cleanup();
-
     if (bFaorced_)
     {
-        m_pRootWorld = nullptr;
+        m_pDispatcher = nullptr;
     }
 }
 
 //! 是否有效
 bool iCAX::Behaviour::CUniverse::IsValid() const
 {
-    return m_pRootWorld != nullptr;
+    return m_pDispatcher != nullptr;
 }
 
 //! 修改前事件
-void iCAX::Behaviour::CUniverse::OnRepositoryChanging(IN void* pSender_, IN const iCAX::Database::RepositoryEventArgs& Args_)
+void iCAX::Behaviour::CUniverse::OnRepositoryChanging(
+    IN const IUniverseContext& Context_,
+    IN const iCAX::Database::RepositoryEventArgs& Args_)
 {
-    m_pRootWorld->OnRepositoryChanging(GetContext(), Args_.nType, Args_.DomainID, Args_.pComponent, Args_.NewProperties);
+    if (!m_pDispatcher || !Args_.pComponent)
+    {
+        return;
+    }
+
+    if (Args_.nType == iCAX::Database::RepositoryEventArgs::kRemoveComponent)
+    {
+        m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kDestroyComponent, *Args_.pComponent, Args_.PreviousProperties);
+    }
+    else if (Args_.nType == iCAX::Database::RepositoryEventArgs::kModifyComponent)
+    {
+        m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kModifingComponent, *Args_.pComponent, Args_.NewProperties);
+    }
 }
 
 //! 更改后事件
-void iCAX::Behaviour::CUniverse::OnRepositoryChanged(IN void* pSender_, IN const iCAX::Database::RepositoryEventArgs& Args_)
+void iCAX::Behaviour::CUniverse::OnRepositoryChanged(
+    IN const IUniverseContext& Context_,
+    IN const iCAX::Database::RepositoryEventArgs& Args_)
 {
-    m_pRootWorld->OnRepositoryChanged(GetContext(), Args_.nType, Args_.DomainID, Args_.pComponent, Args_.NewProperties);
+    if (!m_pDispatcher || !Args_.pComponent)
+    {
+        return;
+    }
+
+    switch (Args_.nType)
+    {
+    case iCAX::Database::RepositoryEventArgs::kAddComponent:
+        m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kAddComponent, *Args_.pComponent, Args_.NewProperties);
+        break;
+    case iCAX::Database::RepositoryEventArgs::kEnableComponent:
+        m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kEnableComponent, *Args_.pComponent, Args_.NewProperties);
+        break;
+    case iCAX::Database::RepositoryEventArgs::kDisableComponent:
+        m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kDisableComponent, *Args_.pComponent, Args_.NewProperties);
+        break;
+    case iCAX::Database::RepositoryEventArgs::kModifyComponent:
+        m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kModifiedComponent, *Args_.pComponent, Args_.NewProperties);
+        break;
+    default:
+        break;
+    }
+}
+
+bool iCAX::Behaviour::CUniverse::BindBehaviourByIndex(IN const std::type_index& nType_)
+{
+    return m_pDispatcher ? m_pDispatcher->Pushback(nType_) : false;
+}
+
+bool iCAX::Behaviour::CUniverse::HasBindBehaviourByIndex(IN const std::type_index& nType_) const
+{
+    return m_pDispatcher ? m_pDispatcher->HasBehaviour(nType_) : false;
+}
+
+void iCAX::Behaviour::CUniverse::UnbindBehaviourByIndex(IN const std::type_index& nType_)
+{
+    if (m_pDispatcher)
+    {
+        m_pDispatcher->UnregisterBehaviour(nType_);
+    }
+}
+
+void iCAX::Behaviour::CUniverse::PauseBehaviourByIndex(IN const std::type_index& nType_)
+{
+    if (m_pDispatcher)
+    {
+        m_pDispatcher->Pause(nType_);
+    }
+}
+
+bool iCAX::Behaviour::CUniverse::IsBehaviourPausedByIndex(IN const std::type_index& nType_) const
+{
+    return m_pDispatcher ? m_pDispatcher->IsPaused(nType_) : false;
+}
+
+void iCAX::Behaviour::CUniverse::ResumeBehaviourByIndex(IN const std::type_index& nType_)
+{
+    if (m_pDispatcher)
+    {
+        m_pDispatcher->Resume(nType_);
+    }
+}
+
+std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> iCAX::Behaviour::CUniverse::GetPausedBehaviours() const
+{
+    return m_pDispatcher ? m_pDispatcher->GetPaused() : std::vector<std::shared_ptr<CBehaviourBase>>{};
+}
+
+std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> iCAX::Behaviour::CUniverse::GetAllBehaviours() const
+{
+    return m_pDispatcher ? m_pDispatcher->GetALL() : std::vector<std::shared_ptr<CBehaviourBase>>{};
 }

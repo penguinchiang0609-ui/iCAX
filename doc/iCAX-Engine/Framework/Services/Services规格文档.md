@@ -28,7 +28,7 @@
 
 ### 2.4 IMailPostOfficeService
 
-框架级邮局服务，按后台实例 ID 管理 `CMailChannel`，并提供 backend/frontend 两侧邮局。
+框架级邮局服务，按通信 ID 管理 `CMailChannel`，并提供 backend/frontend 两侧邮局。ApplicationHost 使用它管理应用级 MailID 对应的通道；项目级通道由 `ProjectSession` 自己持有。
 
 ```cpp
 auto service = iCAX::Services::GetGlobalServiceProvider()
@@ -36,7 +36,12 @@ auto service = iCAX::Services::GetGlobalServiceProvider()
 
 auto backend = service->GetBackendPostOffice(instanceId);
 auto frontend = service->GetFrontendPostOffice(instanceId);
+
+service->RemovePostOffice(instanceId);
+service->ClearPostOffices();
 ```
+
+移除某个通信 ID 后，由该通道取得的旧邮局会失效；调用方应重新获取有效邮局，或者停止向已关闭通道发送邮件。
 
 ## 3. 依赖边界
 

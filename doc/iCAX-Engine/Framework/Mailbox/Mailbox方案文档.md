@@ -101,8 +101,8 @@ void Clear();
 `CMailChannel` 拥有两个队列：
 
 ```cpp
-CMailQueue m_AToB;
-CMailQueue m_BToA;
+std::shared_ptr<CMailQueue> m_AToB;
+std::shared_ptr<CMailQueue> m_BToA;
 ```
 
 端点枚举：
@@ -121,9 +121,11 @@ enum MailChannelEnd : uint8_t
 CMailPostOffice GetPostOffice(MailChannelEnd end) noexcept;
 CMailPostOffice GetEndAPostOffice() noexcept;
 CMailPostOffice GetEndBPostOffice() noexcept;
+void Clear();
+void Reset();
 ```
 
-返回的 `CMailPostOffice` 是非拥有视图，不分配内存，成本等同于复制两个队列指针。
+返回的 `CMailPostOffice` 是非拥有弱引用视图，不分配队列；底层通道释放或 `Reset()` 后，旧邮局会失效并在使用时抛出异常。
 
 EndA 邮局绑定：
 
@@ -146,8 +148,8 @@ outgoing = BToA
 内部结构：
 
 ```cpp
-CMailQueue* m_pIncomingQueue;
-CMailQueue* m_pOutgoingQueue;
+std::weak_ptr<CMailQueue> m_pIncomingQueue;
+std::weak_ptr<CMailQueue> m_pOutgoingQueue;
 ```
 
 方法：
@@ -162,17 +164,19 @@ void ClearOutgoing() const;
 
 `Send` 写入 outgoing queue，`Receive` 从 incoming queue 取出。
 
-`CMailChannel` 禁止拷贝和移动。这样已经获取到的 `CMailPostOffice` 不会因为通道对象被移动而指向失效或错位的队列。
+`CMailChannel` 禁止拷贝和移动。这样已经获取到的 `CMailPostOffice` 不会因为通道对象被移动而指向错位的队列。通道销毁后，邮局弱引用失效，不会悬空访问。
+
+`Clear()` 只清空队列内容，不改变队列身份。`Reset()` 会先清空旧队列，再替换为新的 `CMailQueue`，用于关闭运行单元时切断所有旧邮局。
 
 ## 5. 服务层映射方案
 
-`Services` 按引擎 ID 维护一条通用 `CMailChannel`：
+`Services` 按通信 ID 维护一条通用 `CMailChannel`：
 
 ```cpp
 std::unordered_map<uuid, CMailChannel> m_Channels;
 ```
 
-在具体产品框架里，服务层可以把 EndA/EndB 映射成自己的两个运行角色：
+通信 ID 通常用于应用级 MailID，或其他由上层明确交给服务管理的通道。在具体产品框架里，服务层可以把 EndA/EndB 映射成自己的两个运行角色：
 
 ```text
 EndA = role 1
@@ -182,15 +186,17 @@ EndB = role 2
 因此服务接口可以保留业务友好的入口：
 
 ```cpp
-CMailPostOffice GetRole1PostOffice(const uuid& engineId);
-CMailPostOffice GetRole2PostOffice(const uuid& engineId);
+CMailPostOffice GetRole1PostOffice(const uuid& communicationId);
+CMailPostOffice GetRole2PostOffice(const uuid& communicationId);
 ```
 
 这里的角色命名属于 Services 的装配语义，不属于 Framework 的通道语义。
 
-服务层内部用 mutex 保护 `m_Channels` 的创建和清空，避免两个线程首次访问同一引擎通道时发生 map 数据竞争。
+服务层内部用 mutex 保护 `m_Channels` 的创建、移除和清空，避免两个线程首次访问同一通信通道时发生 map 数据竞争。
 
-返回的 `CMailPostOffice` 是轻量对象，持有底层队列指针。它的有效期依赖服务中的 `CMailChannel`，服务卸载后不能继续使用旧邮局。反复获取同一个端点的邮局不会产生新的队列，也不会产生堆分配。
+返回的 `CMailPostOffice` 是轻量对象，持有底层队列弱引用。服务移除通道或卸载后，旧邮局变为无效对象，继续收发会抛出 `std::logic_error`。反复获取同一个端点的邮局不会产生新的队列。
+
+`ProjectSession` 不通过 `IMailPostOfficeService` 维护项目级通道，而是自己持有 `CMailChannel`。这样每个 Project 可以独立关闭、重置和失效旧邮局，不会把项目生命周期塞进全局邮局服务。
 
 ## 6. 生命周期方案
 
@@ -216,7 +222,8 @@ Clear 或队列析构：
 - 接收方处理完邮件后必须 `delete[] Payload.pData`。
 - 发送方在 `Send` 后不能再释放同一 Payload。
 - `CMailPostOffice` 不负责队列生命周期。
-- 生命周期所有者必须保证 `CMailChannel` 长于由它获取到的 `CMailPostOffice`。
+- 生命周期所有者移除 `CMailChannel` 后，旧 `CMailPostOffice` 自动失效。
+- 生命周期所有者调用 `CMailChannel::Reset()` 后，旧 `CMailPostOffice` 自动失效，新获取的邮局绑定新队列。
 - 不能移动已经对外发放过邮局的 `CMailChannel`。
 
 ## 7. 线程方案
@@ -257,10 +264,11 @@ src/tests/icax/framework/Mailbox/MailboxTest/MailboxTest.vcxproj
 
 - `CMailQueue` 入队、取出、清空、移动和并发。
 - `CMailPostOffice` 默认未绑定时的异常行为。
-- `CMailPostOffice` 轻量非拥有视图的大小和复制语义。
+- `CMailPostOffice` 轻量非拥有视图的复制语义和通道销毁后的失效行为。
 - `CMailChannel` EndA/EndB 双向路由。
 - 两个方向互不串包。
 - 清空单方向和清空整个通道。
+- Reset 后旧邮局失效，新邮局可继续收发。
 
 验证命令：
 

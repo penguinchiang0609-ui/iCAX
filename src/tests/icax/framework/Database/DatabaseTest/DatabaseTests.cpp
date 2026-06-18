@@ -1038,49 +1038,43 @@ TEST(DatabaseRepositoryTest, UndoRedoUsesCommittedChangeSet)
     EXPECT_FALSE(_Repository->CanRedo(_Domain->GetID()));
 }
 
-TEST(DatabaseRepositoryTest, CrossDomainUndoRequiresSharedStepAtEveryDomainTop)
+TEST(DatabaseRepositoryTest, RepositoryUndoUsesSingleLinearHistory)
 {
     auto _Repository = GenerateRepository(GenerateNewUUID());
 
-    std::shared_ptr<IDomain> _DomainA;
-    std::shared_ptr<IDomain> _DomainB;
     auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
-    _DomainA = _Repository->CreateDomain(GenerateNewUUID(), true);
-    _DomainB = _Repository->CreateDomain(GenerateNewUUID(), true);
-    auto _ComponentA = _DomainA->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
-    auto _ComponentB = _DomainB->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    auto _ComponentA = _Repository->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    auto _ComponentB = _Repository->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
     _ComponentA->SetA(1);
     _ComponentB->SetA(2);
     _Baseline->Commit();
 
-    auto _SharedCommand = _Repository->BeginUndoCommand(_DomainA->GetID(), "SharedMove");
+    auto _SharedCommand = _Repository->BeginUndoCommand("MoveBoth");
     _ComponentA->SetA(10);
     _ComponentB->SetA(20);
     _SharedCommand->End();
 
-    EXPECT_TRUE(_Repository->CanUndo(_DomainA->GetID()));
-    EXPECT_TRUE(_Repository->CanUndo(_DomainB->GetID()));
+    EXPECT_TRUE(_Repository->CanUndo());
 
-    auto _BCommand = _Repository->BeginUndoCommand(_DomainB->GetID(), "DomainBOnly");
+    auto _BCommand = _Repository->BeginUndoCommand("MoveB");
     _ComponentB->SetA(30);
     _BCommand->End();
 
-    EXPECT_FALSE(_Repository->CanUndo(_DomainA->GetID()));
-    EXPECT_TRUE(_Repository->CanUndo(_DomainB->GetID()));
+    ASSERT_EQ(2, _Repository->GetUndoArray().size());
 
-    EXPECT_TRUE(_Repository->Undo(_DomainB->GetID()));
+    EXPECT_TRUE(_Repository->Undo());
     EXPECT_EQ(20, _ComponentB->GetA());
+    EXPECT_EQ(10, _ComponentA->GetA());
 
-    EXPECT_TRUE(_Repository->CanUndo(_DomainA->GetID()));
-    EXPECT_TRUE(_Repository->Undo(_DomainA->GetID()));
+    EXPECT_TRUE(_Repository->Undo());
     EXPECT_EQ(1, _ComponentA->GetA());
     EXPECT_EQ(2, _ComponentB->GetA());
 
-    EXPECT_TRUE(_Repository->Redo(_DomainA->GetID()));
+    EXPECT_TRUE(_Repository->Redo());
     EXPECT_EQ(10, _ComponentA->GetA());
     EXPECT_EQ(20, _ComponentB->GetA());
 
-    EXPECT_TRUE(_Repository->Redo(_DomainB->GetID()));
+    EXPECT_TRUE(_Repository->Redo());
     EXPECT_EQ(30, _ComponentB->GetA());
 }
 
@@ -1166,40 +1160,43 @@ TEST(DatabaseRepositoryTest, LoadBaselineClearsUndoRedoHistory)
     EXPECT_TRUE(_Repository->GetRedoArray(_Domain->GetID()).empty());
 }
 
-TEST(DatabaseRepositoryTest, UndoHistoryLimitRemovesSharedStepFromEveryDomainStack)
+TEST(DatabaseRepositoryTest, UndoHistoryLimitRemovesOldestRepositoryStep)
 {
     auto _Repository = GenerateRepository(GenerateNewUUID());
 
-    std::shared_ptr<IDomain> _DomainA;
-    std::shared_ptr<IDomain> _DomainB;
     auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
-    _DomainA = _Repository->CreateDomain(GenerateNewUUID(), true);
-    _DomainB = _Repository->CreateDomain(GenerateNewUUID(), true);
-    auto _ComponentA = _DomainA->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
-    auto _ComponentB = _DomainB->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    auto _ComponentA = _Repository->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
+    auto _ComponentB = _Repository->CreateEntity(GenerateNewUUID())->AddComponent<CSumComponent>();
     _ComponentA->SetA(1);
     _ComponentB->SetA(2);
     _Baseline->Commit();
 
-    auto _SharedCommand = _Repository->BeginUndoCommand(_DomainA->GetID(), "SharedMove");
+    auto _SharedCommand = _Repository->BeginUndoCommand("MoveBoth");
     _ComponentA->SetA(10);
     _ComponentB->SetA(20);
     _SharedCommand->End();
 
-    ASSERT_EQ(1, _Repository->GetUndoArray(_DomainA->GetID()).size());
-    ASSERT_EQ(1, _Repository->GetUndoArray(_DomainB->GetID()).size());
+    ASSERT_EQ(1, _Repository->GetUndoArray().size());
 
     for (int _Index = 0; _Index < 40; ++_Index)
     {
-        auto _Command = _Repository->BeginUndoCommand(_DomainB->GetID(), "DomainBOnly");
+        auto _Command = _Repository->BeginUndoCommand("MoveB");
         _ComponentB->SetA(100 + _Index);
         _Command->End();
     }
 
-    EXPECT_TRUE(_Repository->GetUndoArray(_DomainA->GetID()).empty());
-    EXPECT_EQ(40, _Repository->GetUndoArray(_DomainB->GetID()).size());
-    EXPECT_FALSE(_Repository->CanUndo(_DomainA->GetID()));
-    EXPECT_TRUE(_Repository->CanUndo(_DomainB->GetID()));
+    auto _UndoArray = _Repository->GetUndoArray();
+    ASSERT_EQ(40, _UndoArray.size());
+    EXPECT_TRUE(_Repository->CanUndo());
+
+    for (int _Index = 0; _Index < 40; ++_Index)
+    {
+        ASSERT_TRUE(_Repository->Undo());
+    }
+
+    EXPECT_FALSE(_Repository->CanUndo());
+    EXPECT_EQ(10, _ComponentA->GetA());
+    EXPECT_EQ(20, _ComponentB->GetA());
 }
 
 TEST(DatabaseRepositoryTest, NonUndoableTransactionClearsAffectedDomainHistory)

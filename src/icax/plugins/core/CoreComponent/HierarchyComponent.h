@@ -3,7 +3,6 @@
 #include "Data/uuid.h"
 #include "Database/ComponentBase.h"
 #include "Database/ComponentHelper.h"
-#include "Database/IDomain.h"
 #include "Database/IEntity.h"
 #include "Data/CommonFunction.h"
 
@@ -16,8 +15,8 @@ namespace iCAX
         /**
         * @brief 层次组件
         * @details
-        *   1、域中各个实体之间的父子关系
-        *   2、域中所有实体都必须有该组件
+        *   1、Repository 中各个实体之间的父子关系
+        *   2、需要参与层次关系的实体应拥有该组件
         *   3、实体在创建后第一时间需要赋父子关系
         */
         class _CORECOMPONENT_EXP HierarchyComponent final : public iCAX::Database::CComponentBase

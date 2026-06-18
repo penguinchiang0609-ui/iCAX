@@ -31,12 +31,23 @@ src/icax/framework/Services/
 `MailPostOfficeService` 在服务体系中管理这些对象：
 
 ```text
-instance id -> CMailChannel
+communication id -> CMailChannel
   -> backend post office
   -> frontend post office
 ```
 
 这样 ApplicationHost、产品 backend 或前端桥接层可以通过同一个服务拿到对应端的邮局。
+
+`communication id` 通常有两类：
+
+- 应用级 MailID：处理打开项目、列产品、应用设置等工作区命令。
+- 其他由上层明确交给服务统一管理的通用通信 ID。
+
+项目级通道默认归属 `ProjectSession`，不挂在 `MailPostOfficeService` 上。宿主卸载时调用 `ClearPostOffices()` 清空服务持有的应用级或通用通道。
+
+如果某个上层模块自行把通信 ID 交给本服务管理，应在该通信生命周期结束时调用 `RemovePostOffice(id)`。
+
+`CMailPostOffice` 是弱引用视图。项目通道被移除后，旧的 frontend/backend 邮局会变为无效对象，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
 
 ## 4. 迁移说明
 

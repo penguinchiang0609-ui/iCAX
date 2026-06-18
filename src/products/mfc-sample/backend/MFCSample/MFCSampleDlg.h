@@ -3,8 +3,6 @@
 //
 
 #pragma once
-#include "SampleComponent/SampleComponent.h"
-#include <memory>
 #include "SceneDlg.h"
 
 // CMFCSampleDlg 对话框
@@ -37,7 +35,6 @@ public:
     afx_msg void OnBnClickedOk();
 
 public:
-    std::weak_ptr<iCAX::Sample::SampleComponent> pComponent;
     afx_msg void OnBnClickedCancel();
     CButton TESTIDLABEL;
     CEdit txtTestID;

@@ -129,6 +129,46 @@ namespace iCAX
             void Initialzie();
 
             /*
+            * @brief 创建实体
+            */
+            virtual std::shared_ptr<IEntity> CreateEntity(IN const iCAX::Data::uuid& ID_) override;
+
+            /*
+            * @brief 是否包含实体
+            */
+            virtual bool HasEntity(IN const iCAX::Data::uuid& ID_) const override;
+
+            /*
+            * @brief 移除实体
+            */
+            virtual void DeleteEntity(IN const iCAX::Data::uuid& ID_) override;
+
+            /*
+            * @brief 获取实体
+            */
+            virtual std::shared_ptr<IEntity> GetEntity(IN const iCAX::Data::uuid& ID_) const override;
+
+            /*
+            * @brief 筛选实体
+            */
+            virtual std::vector<std::shared_ptr<IEntity>> FilterEntities(IN std::function<bool(std::shared_ptr<IEntity>)> funcWhere_) const override;
+
+            /*
+            * @brief 实体数量
+            */
+            virtual int EntityCount() const override;
+
+            /*
+            * @brief 获取实体ID列表
+            */
+            virtual std::vector<iCAX::Data::uuid> GetEntityIDs() const override;
+
+            /*
+            * @brief 获取实体视图
+            */
+            virtual IEntitiesView& GetView() const override;
+
+            /*
             * @brief 创建域
             * @param [in] ID_
             * @param [in] bPersistent_ 是否持久化

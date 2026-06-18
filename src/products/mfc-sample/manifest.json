@@ -1,9 +1,7 @@
 {
-  "name": "mfc-sample",
+  "productId": "icax.product.mfc-sample",
   "displayName": "MFC Sample",
-  "backend": {
-    "host": "backend/MFCSample"
-  },
+  "backend": {},
   "frontend": {
     "entry": ""
   },

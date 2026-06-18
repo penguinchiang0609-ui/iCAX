@@ -3,6 +3,7 @@
 #include "MailPostOffice.h"
 #include "MailQueue.h"
 #include <cstdint>
+#include <memory>
 
 namespace iCAX
 {
@@ -38,19 +39,19 @@ namespace iCAX
             /*
             * @brief 获取指定端点视角的邮局
             * @param End_ 端点
-            * @details 返回的是轻量非拥有视图，不分配内存。
+            * @details 返回的是轻量非拥有弱引用视图，不分配内存。
             */
             CMailPostOffice GetPostOffice(IN MailChannelEnd End_) noexcept;
 
             /*
             * @brief 获取 EndA 视角的邮局
-            * @details 返回的是轻量非拥有视图，不分配内存。
+            * @details 返回的是轻量非拥有弱引用视图，不分配内存。
             */
             CMailPostOffice GetEndAPostOffice() noexcept;
 
             /*
             * @brief 获取 EndB 视角的邮局
-            * @details 返回的是轻量非拥有视图，不分配内存。
+            * @details 返回的是轻量非拥有弱引用视图，不分配内存。
             */
             CMailPostOffice GetEndBPostOffice() noexcept;
 
@@ -58,6 +59,12 @@ namespace iCAX
             * @brief 清空两个方向上的待处理邮件
             */
             void Clear();
+
+            /*
+            * @brief 重置通道
+            * @details 丢弃当前两个方向的队列，并让已经发出去的邮局视图失效。
+            */
+            void Reset();
 
             /*
             * @brief 获取 EndA 到 EndB 的底层队列
@@ -70,8 +77,8 @@ namespace iCAX
             CMailQueue& GetBToAQueue() noexcept;
 
         private:
-            CMailQueue m_AToB;
-            CMailQueue m_BToA;
+            std::shared_ptr<CMailQueue> m_AToB = std::make_shared<CMailQueue>();
+            std::shared_ptr<CMailQueue> m_BToA = std::make_shared<CMailQueue>();
         };
     }
 }

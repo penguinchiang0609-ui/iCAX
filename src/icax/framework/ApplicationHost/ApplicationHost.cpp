@@ -2,78 +2,82 @@
 #include "ApplicationHost.h"
 #include <filesystem>
 #include <string>
-#include "Database/IMetaRegistry.h"
-#include "Behaviour/IBehaviourRegistry.h"
 #include <format>
-#include "Data/VariantSerializer.h"
+#include <cstring>
+#include <chrono>
+#include <utility>
 #include "ApplicationContext/FileApplicationConfigStore.h"
-#include <fstream>
-#include <sstream>
 #include <stdexcept>
-#include "PluginMeta.h"
-#include "Startup.h"
 
 namespace
 {
-    iCAX::Data::Variant _LoadVariantFile(IN const std::string& strPath_, IN const std::string& strLabel_)
+    iCAX::Command::CCommandRequest _MailToCommandRequest(IN const iCAX::Mail::Mail& Mail_)
     {
-        if (strPath_.empty())
-        {
-            throw std::invalid_argument(strLabel_ + " path cannot be empty");
-        }
+        iCAX::Command::CCommandRequest _Request;
+        _Request.nCommandID = Mail_.Header.nMailId;
+        _Request.nOriginID = Mail_.Header.nOriginId;
+        _Request.nTypeCode = Mail_.Header.nTypeCode;
 
-        std::ifstream _Input(strPath_, std::ios::binary);
-        if (!_Input)
+        if (Mail_.Payload.nSize > 0)
         {
-            throw std::runtime_error("Failed to open " + strLabel_ + ": " + strPath_);
+            if (Mail_.Payload.pData == nullptr)
+            {
+                throw std::invalid_argument("mail payload data is null");
+            }
+            _Request.Payload.assign(Mail_.Payload.pData, Mail_.Payload.pData + Mail_.Payload.nSize);
         }
-
-        std::ostringstream _Buffer;
-        _Buffer << _Input.rdbuf();
-        return iCAX::Data::VariantSerializer::Deserialize(_Buffer.str());
+        return _Request;
     }
 
-    iCAX::Data::ObjectMap _RequireObject(IN const iCAX::Data::Variant& Value_, IN const std::string& strLabel_)
+    iCAX::Mail::StampCode _CommandStatusToMailStamp(IN iCAX::Command::ECommandStatusCode Status_)
     {
-        if (!Value_.Is<iCAX::Data::ObjectMap>())
+        switch (Status_)
         {
-            throw std::runtime_error(strLabel_ + " must be an object");
+        case iCAX::Command::ECommandStatusCode::Ok:
+            return iCAX::Mail::kMailOk;
+        case iCAX::Command::ECommandStatusCode::NoHandler:
+            return iCAX::Mail::kMailNoHandler;
+        case iCAX::Command::ECommandStatusCode::InvalidRequest:
+            return iCAX::Mail::kMailInvalidPayload;
+        case iCAX::Command::ECommandStatusCode::ExecutionError:
+        default:
+            return iCAX::Mail::kMailExecutionError;
         }
-        return Value_.To<iCAX::Data::ObjectMap>();
     }
 
-    iCAX::Data::VariantArray _RequireArray(IN const iCAX::Data::ObjectMap& Object_, IN const std::string& strKey_, IN const std::string& strLabel_)
+    iCAX::Mail::Mail _CommandResponseToMail(
+        IN const iCAX::Mail::Mail& RequestMail_,
+        IN const iCAX::Command::CCommandResponse& Response_,
+        IN uint64_t nResponseMailID_)
     {
-        auto _Iter = Object_.find(strKey_);
-        if (_Iter == Object_.end() || !_Iter->second.Is<iCAX::Data::VariantArray>())
+        iCAX::Mail::Mail _Mail;
+        _Mail.Header.nMailId = nResponseMailID_;
+        _Mail.Header.nOriginId = RequestMail_.Header.nMailId;
+        _Mail.Header.nTypeCode = Response_.nTypeCode;
+        _Mail.Header.nStamp = _CommandStatusToMailStamp(Response_.nStatus);
+
+        const auto* _pPayload = &Response_.Payload;
+        std::vector<uint8_t> _ErrorPayload;
+        if (_pPayload->empty() && !Response_.strError.empty())
         {
-            throw std::runtime_error(strLabel_ + "." + strKey_ + " must be an array");
+            _ErrorPayload.assign(Response_.strError.begin(), Response_.strError.end());
+            _pPayload = &_ErrorPayload;
         }
-        return _Iter->second.To<iCAX::Data::VariantArray>();
+
+        if (!_pPayload->empty())
+        {
+            _Mail.Payload.nSize = _pPayload->size();
+            _Mail.Payload.pData = new uint8_t[_Mail.Payload.nSize];
+            std::memcpy(_Mail.Payload.pData, _pPayload->data(), _Mail.Payload.nSize);
+        }
+        return _Mail;
     }
 
-    std::string _RequireString(IN const iCAX::Data::ObjectMap& Object_, IN const std::string& strKey_, IN const std::string& strLabel_)
+    void _ReleaseMailPayload(IN OUT iCAX::Mail::Mail& Mail_) noexcept
     {
-        auto _Iter = Object_.find(strKey_);
-        if (_Iter == Object_.end() || !_Iter->second.Is<std::string>())
-        {
-            throw std::runtime_error(strLabel_ + "." + strKey_ + " must be a string");
-        }
-        return _Iter->second.To<std::string>();
-    }
-
-    std::string _OptionalString(IN const iCAX::Data::ObjectMap& Object_, IN const std::string& strKey_, IN const std::string& strLabel_)
-    {
-        auto _Iter = Object_.find(strKey_);
-        if (_Iter == Object_.end())
-        {
-            return {};
-        }
-        if (!_Iter->second.Is<std::string>())
-        {
-            throw std::runtime_error(strLabel_ + "." + strKey_ + " must be a string");
-        }
-        return _Iter->second.To<std::string>();
+        delete[] Mail_.Payload.pData;
+        Mail_.Payload.pData = nullptr;
+        Mail_.Payload.nSize = 0;
     }
 }
 
@@ -81,11 +85,14 @@ namespace
 //! 构造函数
 iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
     : m_Config()
+    , m_ApplicationMailID(iCAX::Data::GenerateNewUUID())
+    , m_pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
+    , m_pCommandDispatcher(std::make_unique<iCAX::Command::CCommandDispatcher>(m_pCommandRegistry))
+    , m_CommandContext()
 {
     //! 默认值
     m_Config.strApplicationSettingsPath = "Setting/Application.Setting";
-    m_Config.strPluginManifestPath = "Setting/Plugins.Setting";
-    m_Config.strStartupPath = "Setting/Startup.Setting";
+    m_Config.strProductCatalogPath = "Products";
     m_Config.Descriptor.AppID = "icax";
     m_Config.Descriptor.AppName = "iCAX";
     m_Config.Paths.InstallDirectory = std::filesystem::current_path().string();
@@ -98,155 +105,491 @@ iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
 //!< 析构函数
 iCAX::ApplicationHost::CApplicationHost::~CApplicationHost()
 {
-    Unload();
+    Stop();
 }
 
 //! 设置配置信息
 void iCAX::ApplicationHost::CApplicationHost::SetConfig(IN const ApplicationHostConfig& Config_)
 {
+    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    if (m_State == EApplicationHostState::Starting
+        || m_State == EApplicationHostState::Running
+        || m_State == EApplicationHostState::Stopping)
+    {
+        throw std::logic_error("ApplicationHost config cannot be changed while host is running");
+    }
     m_Config = Config_;
+}
+
+//! 启动后台工作线程
+void iCAX::ApplicationHost::CApplicationHost::Start()
+{
+    std::thread _ThreadToJoin;
+    {
+        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+        if (m_WorkThread.joinable()
+            && (m_State == EApplicationHostState::Stopped || m_State == EApplicationHostState::Faulted))
+        {
+            _ThreadToJoin = std::move(m_WorkThread);
+        }
+    }
+    if (_ThreadToJoin.joinable())
+    {
+        _ThreadToJoin.join();
+    }
+
+    std::unique_lock<std::mutex> _Lock(m_LifecycleMutex);
+    if (m_State == EApplicationHostState::Starting || m_State == EApplicationHostState::Running)
+    {
+        return;
+    }
+    if (m_State == EApplicationHostState::Stopping)
+    {
+        throw std::logic_error("ApplicationHost is stopping");
+    }
+
+    m_bStopRequested.store(false, std::memory_order_release);
+    m_bStartupCompleted = false;
+    m_StopReason = EApplicationHostStopReason::None;
+    m_Phase = EApplicationHostPhase::Starting;
+    m_LastFault.reset();
+    m_pWorkerException = nullptr;
+    m_State = EApplicationHostState::Starting;
+    m_WorkThread = std::thread(&CApplicationHost::WorkerMain, this);
+
+    m_StartupCondition.wait(_Lock, [this]() { return m_bStartupCompleted; });
+    if (m_State == EApplicationHostState::Faulted && m_pWorkerException)
+    {
+        auto _Exception = m_pWorkerException;
+        _Lock.unlock();
+        Stop();
+        std::rethrow_exception(_Exception);
+    }
+}
+
+//! 停止后台工作线程
+void iCAX::ApplicationHost::CApplicationHost::Stop()
+{
+    std::thread _ThreadToJoin;
+    {
+        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+        m_bStopRequested.store(true, std::memory_order_release);
+        if ((m_State == EApplicationHostState::Starting || m_State == EApplicationHostState::Running)
+            && m_WorkThread.joinable())
+        {
+            m_State = EApplicationHostState::Stopping;
+            m_StopReason = EApplicationHostStopReason::Requested;
+        }
+
+        if (m_WorkThread.joinable())
+        {
+            if (m_WorkThread.get_id() == std::this_thread::get_id())
+            {
+                m_StartupCondition.notify_all();
+                return;
+            }
+            _ThreadToJoin = std::move(m_WorkThread);
+        }
+    }
+
+    m_StartupCondition.notify_all();
+    if (_ThreadToJoin.joinable())
+    {
+        _ThreadToJoin.join();
+    }
+}
+
+//! 是否正在运行
+bool iCAX::ApplicationHost::CApplicationHost::IsRunning() const
+{
+    return GetState() == EApplicationHostState::Running;
+}
+
+//! 获取运行状态
+iCAX::ApplicationHost::EApplicationHostState iCAX::ApplicationHost::CApplicationHost::GetState() const
+{
+    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    return m_State;
+}
+
+//! 获取当前运行阶段
+iCAX::ApplicationHost::EApplicationHostPhase iCAX::ApplicationHost::CApplicationHost::GetPhase() const
+{
+    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    return m_Phase;
+}
+
+//! 获取当前停止原因
+iCAX::ApplicationHost::EApplicationHostStopReason iCAX::ApplicationHost::CApplicationHost::GetStopReason() const
+{
+    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    return m_StopReason;
+}
+
+//! 获取最后一次故障
+std::optional<iCAX::ApplicationHost::ApplicationHostFault> iCAX::ApplicationHost::CApplicationHost::GetLastFault() const
+{
+    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    return m_LastFault;
+}
+
+//! 订阅宿主事件
+uint64_t iCAX::ApplicationHost::CApplicationHost::SubscribeEvent(IN ApplicationHostEventHandler Handler_)
+{
+    if (!Handler_)
+    {
+        throw std::invalid_argument("ApplicationHost event handler cannot be empty");
+    }
+
+    std::lock_guard<std::mutex> _Lock(m_EventMutex);
+    const uint64_t _SubscriptionID = m_nNextEventSubscriptionID++;
+    m_mapEventHandlers.emplace(_SubscriptionID, std::move(Handler_));
+    return _SubscriptionID;
+}
+
+//! 取消订阅宿主事件
+bool iCAX::ApplicationHost::CApplicationHost::UnsubscribeEvent(IN uint64_t nSubscriptionID_)
+{
+    std::lock_guard<std::mutex> _Lock(m_EventMutex);
+    return m_mapEventHandlers.erase(nSubscriptionID_) > 0;
+}
+
+//! 工作线程入口
+void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
+{
+    NotifyEvent(EApplicationHostEventCode::Starting);
+
+    try
+    {
+        SetPhase(EApplicationHostPhase::Loading);
+        Load();
+
+        bool _bShouldRun = !m_bStopRequested.load(std::memory_order_acquire);
+        {
+            std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+            m_State = _bShouldRun ? EApplicationHostState::Running : EApplicationHostState::Stopping;
+            m_Phase = _bShouldRun ? EApplicationHostPhase::Running : EApplicationHostPhase::Stopping;
+            if (!_bShouldRun)
+            {
+                m_StopReason = EApplicationHostStopReason::Requested;
+            }
+            m_bStartupCompleted = true;
+        }
+        m_StartupCondition.notify_all();
+
+        if (_bShouldRun)
+        {
+            NotifyEvent(EApplicationHostEventCode::Started);
+        }
+
+        const uint32_t _nFrameIntervalMilliseconds = m_Config.nFrameIntervalMilliseconds == 0
+            ? 1
+            : m_Config.nFrameIntervalMilliseconds;
+        const auto _FrameInterval = std::chrono::milliseconds(_nFrameIntervalMilliseconds);
+        auto _NextFrameTime = std::chrono::steady_clock::now();
+
+        while (!m_bStopRequested.load(std::memory_order_acquire))
+        {
+            SetPhase(EApplicationHostPhase::Running);
+            MainLoop();
+            _NextFrameTime += _FrameInterval;
+            {
+                std::unique_lock<std::mutex> _Lock(m_LifecycleMutex);
+                m_StartupCondition.wait_until(
+                    _Lock,
+                    _NextFrameTime,
+                    [this]() { return m_bStopRequested.load(std::memory_order_acquire); });
+            }
+            if (_NextFrameTime < std::chrono::steady_clock::now() - _FrameInterval)
+            {
+                _NextFrameTime = std::chrono::steady_clock::now();
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+            m_State = EApplicationHostState::Stopping;
+            m_StopReason = EApplicationHostStopReason::Requested;
+            m_Phase = EApplicationHostPhase::Stopping;
+        }
+        NotifyEvent(EApplicationHostEventCode::Stopping);
+
+        SetPhase(EApplicationHostPhase::Unloading);
+        Unload();
+
+        {
+            std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+            m_State = EApplicationHostState::Stopped;
+            m_Phase = EApplicationHostPhase::None;
+        }
+        NotifyEvent(EApplicationHostEventCode::Stopped);
+    }
+    catch (...)
+    {
+        auto _Exception = std::current_exception();
+        EApplicationHostPhase _FaultPhase = EApplicationHostPhase::None;
+        {
+            std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+            _FaultPhase = m_Phase;
+        }
+        const auto _StopReason = _FaultPhase == EApplicationHostPhase::Loading || _FaultPhase == EApplicationHostPhase::Starting
+            ? EApplicationHostStopReason::StartFailed
+            : EApplicationHostStopReason::Faulted;
+        const auto _Message = std::format(
+            "ApplicationHost faulted during phase {}: {}",
+            static_cast<int>(_FaultPhase),
+            GetExceptionMessage(_Exception));
+
+        try
+        {
+            Unload();
+        }
+        catch (...)
+        {
+        }
+
+        RecordFault(_FaultPhase, _Message, _Exception);
+        {
+            std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+            m_StopReason = _StopReason;
+            m_State = EApplicationHostState::Faulted;
+            m_Phase = _FaultPhase;
+            m_bStartupCompleted = true;
+        }
+        m_StartupCondition.notify_all();
+        NotifyEvent(EApplicationHostEventCode::Faulted, _Message, _Exception);
+    }
+}
+
+//! 发布宿主事件
+void iCAX::ApplicationHost::CApplicationHost::NotifyEvent(
+    IN EApplicationHostEventCode Code_,
+    IN const std::string& strMessage_,
+    IN std::exception_ptr pException_)
+{
+    std::vector<ApplicationHostEventHandler> _Handlers;
+    {
+        std::lock_guard<std::mutex> _Lock(m_EventMutex);
+        _Handlers.reserve(m_mapEventHandlers.size());
+        for (const auto& _Pair : m_mapEventHandlers)
+        {
+            _Handlers.push_back(_Pair.second);
+        }
+    }
+
+    ApplicationHostEvent _Event;
+    _Event.Code = Code_;
+    _Event.strMessage = strMessage_;
+    _Event.pException = pException_;
+    {
+        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+        _Event.State = m_State;
+        _Event.StopReason = m_StopReason;
+        _Event.Phase = m_Phase;
+    }
+
+    for (const auto& _Handler : _Handlers)
+    {
+        try
+        {
+            _Handler(_Event);
+        }
+        catch (...)
+        {
+        }
+    }
+}
+
+//! 设置运行阶段
+void iCAX::ApplicationHost::CApplicationHost::SetPhase(IN EApplicationHostPhase Phase_)
+{
+    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    m_Phase = Phase_;
+}
+
+//! 记录故障
+void iCAX::ApplicationHost::CApplicationHost::RecordFault(
+    IN EApplicationHostPhase Phase_,
+    IN const std::string& strMessage_,
+    IN std::exception_ptr pException_)
+{
+    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    m_LastFault = ApplicationHostFault{ Phase_, strMessage_, pException_ };
+    m_pWorkerException = pException_;
+}
+
+//! 从异常中提取消息
+std::string iCAX::ApplicationHost::CApplicationHost::GetExceptionMessage(IN std::exception_ptr pException_)
+{
+    if (!pException_)
+    {
+        return {};
+    }
+
+    try
+    {
+        std::rethrow_exception(pException_);
+    }
+    catch (const std::exception& _Error)
+    {
+        return _Error.what();
+    }
+    catch (...)
+    {
+        return "Unknown exception";
+    }
 }
 
 //!< 加载
 void iCAX::ApplicationHost::CApplicationHost::Load()
 {
-    //! 加载应用上下文
     m_pApplicationContext = CreateApplicationContext();
-    auto _pApplicationSetting = std::make_shared<iCAX::Data::PropertyBag>(m_pApplicationContext->GetSettings().GetProperties());
-
-    //!< 构建仓储
-    m_pRepository = iCAX::Database::GenerateRepository(iCAX::Data::GenerateNewUUID());
-    //!< 构建宇宙
-    m_pUniverse = iCAX::Behaviour::GenerateUniverse(m_pRepository, _pApplicationSetting);
+    m_pApplicationSetting = std::make_shared<iCAX::Data::PropertyBag>(m_pApplicationContext->GetSettings().GetProperties());
     m_pMailPostOfficeService = iCAX::Services::GetGlobalServiceProvider()->Resolve<iCAX::Services::IMailPostOfficeService>();
 
-    //! 加载插件
-    auto _PluginMetas = LoadPluginMetas();
-    ////! TODO: 目前只支持放到exe同级目录，后续需要支持每个插件单独目录
-    //SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
-    //AddDllDirectory(L"third party");
-    //for (auto& entry : std::filesystem::recursive_directory_iterator("Plugins"))
-    //{
-    //    if (entry.is_directory())
-    //    {
-    //        AddDllDirectory(entry.path().c_str());
-    //    }
-    //}
-    for (const auto& _Meta : _PluginMetas)
+    m_pProjectManager = std::make_shared<iCAX::Project::CProjectManager>(m_pApplicationSetting);
+    for (const auto& _Product : LoadProductDefinitions())
     {
-        //! 注册插件组件
-        if (!_Meta.strComponentPath.empty())
-        {
-            HMODULE hMod = LoadLibraryA(_Meta.strComponentPath.c_str());//! 已经采用了自注册，加载了模块之后会自动
-            if (!hMod)
-            {
-                DWORD code = GetLastError();
-
-                throw std::runtime_error(
-                    std::format(
-                        "[Plugin Load Failure]\n"
-                        "  Path   : {}\n"
-                        "  Error  : Win32 code {}\n",
-                        _Meta.strBehaviourPath.c_str(), code
-                    ));
-            }
-        }
-        //! 注册插件行为
-        if (!_Meta.strBehaviourPath.empty())
-        {
-            HMODULE hMod = LoadLibraryA(_Meta.strBehaviourPath.c_str());//! 已经采用了自注册，加载了模块之后会自动
-            if (!hMod)
-            {
-                DWORD code = GetLastError();
-
-                throw std::runtime_error(
-                    std::format(
-                        "[Plugin Load Failure]\n"
-                        "  Path   : {}\n"
-                        "  Error  : Win32 code {}\n",
-                        _Meta.strServicePath.c_str(), code
-                    ));
-            }
-        }
-        if (!_Meta.strServicePath.empty())
-        {
-            HMODULE hMod = LoadLibraryA(_Meta.strServicePath.c_str());//! 已经采用了自注册，加载了模块之后会自动
-            if (!hMod)
-            {
-                DWORD code = GetLastError();
-
-                throw std::runtime_error(
-                    std::format(
-                        "[Plugin Load Failure]\n"
-                        "  Path   : {}\n"
-                        "  Error  : Win32 code {}\n",
-                        _Meta.strComponentPath.c_str(), code
-                    ));
-            }
-        }
+        LoadProductModules(_Product);
+        m_pProjectManager->Products().Set(_Product);
     }
 
-    auto _Startup = LoadStartup();
+    PrepareCommandContext();
 
-    //! 初始化首行为以及首组件
-    auto _vecIndexs = iCAX::Behaviour::GetGlobalBehaviourRegistry()->GetTypeIndexByComponentType(_Startup.FirstComponent);
-    if (_vecIndexs.empty())
+    for (const auto& _StartupProject : m_Config.StartupProjects)
     {
-        throw std::runtime_error("first behaviour to component not exist");
+        (void)OpenProject(_StartupProject.strProductID, _StartupProject.strProjectName, _StartupProject.strProjectPath);
     }
-    if (_vecIndexs.size() >= 2)
-    {
-        throw std::runtime_error("first behaviour to component not only one");
-    }
-    m_pUniverse->GetRootWorld().BindBehaviourByIndex(_vecIndexs[0]);
-    m_pRepository->GetMetaEntity()->AddComponent(_Startup.FirstComponent);
-
-    //! 后续程序交由首Behaviour进行管理，即完全交由具体的产品进行定制
-    //! CApplicationHost不提供OnLoading\Onloaded\OnUnloading\OnUnloaded等事件回调，这些回调由业务产品侧在首Behaviour的OnWake\OnStart\OnDetsory等方法中自行处理
 }
 
 //!< 主线程循环
 void iCAX::ApplicationHost::CApplicationHost::MainLoop()
 {
-    //! 帧前PDO双缓冲交换
-    m_pUniverse->PreSwapPDO();
-
-    //! 检查邮局，处理邮件输入
-    if (m_pMailPostOfficeService)
-    {
-        auto _BackendPostOffice = m_pMailPostOfficeService->GetBackendPostOffice(m_pUniverse->GetID());
-        auto _Mails = _BackendPostOffice.Receive();
-        for (auto& _Mail : _Mails)
-        {
-            //! 命令分发由 CommandHandler 适配层接入，ApplicationHost 不再把 Mail nTypeCode 当作过程函数执行。
-            delete[] _Mail.Payload.pData;
-            _Mail.Payload.pData = nullptr;
-            _Mail.Payload.nSize = 0;
-        }
-    }
-
-    //! 执行系统更新
-    m_pUniverse->Tick();
-
-    //! 帧后双缓冲交换
-    m_pUniverse->PostSwapPDO();
+    DispatchBackendMails();
 }
 
 //! 卸载
 void iCAX::ApplicationHost::CApplicationHost::Unload()
 {
-    iCAX::Services::GetGlobalServiceProvider()->UnloadAll();//! 清空服务
-    if (m_pUniverse)
+    if (m_pProjectManager)
     {
-        m_pUniverse->Cleanup(true);//!清空系统
-        m_pUniverse.reset();
+        m_pProjectManager->CloseAll();
+        m_pProjectManager.reset();
     }
-    if (m_pRepository)
+    if (m_pMailPostOfficeService)
     {
-        m_pRepository->CleanUp(true);//! 清空数据
-        m_pRepository.reset();
+        m_pMailPostOfficeService->ClearPostOffices();
+        m_pMailPostOfficeService.reset();
     }
+    iCAX::Services::GetGlobalServiceProvider()->UnloadAll();
+    m_CommandContext.Clear();
+    m_pApplicationSetting.reset();
     m_pApplicationContext.reset();
+}
+
+//! 准备命令上下文依赖
+void iCAX::ApplicationHost::CApplicationHost::PrepareCommandContext()
+{
+    m_CommandContext.Clear();
+    PopulateCommandContext(m_CommandContext, nullptr);
+}
+
+void iCAX::ApplicationHost::CApplicationHost::PopulateCommandContext(
+    IN OUT iCAX::Command::CCommandContext& Context_,
+    IN const std::shared_ptr<iCAX::Project::CProjectSession>& pProject_) const
+{
+    Context_.Clear();
+
+    if (m_pCommandRegistry)
+    {
+        Context_.SetDependency<iCAX::Command::CCommandRegistry>(m_pCommandRegistry);
+    }
+    if (m_pApplicationContext)
+    {
+        Context_.SetDependency<iCAX::Application::CApplicationContext>(m_pApplicationContext);
+        Context_.SetDependency<iCAX::Application::IApplicationContext>(m_pApplicationContext);
+    }
+    if (m_pProjectManager)
+    {
+        Context_.SetDependency<iCAX::Project::CProjectManager>(m_pProjectManager);
+    }
+    if (m_pMailPostOfficeService)
+    {
+        Context_.SetDependency<iCAX::Services::IMailPostOfficeService>(m_pMailPostOfficeService);
+    }
+    if (pProject_)
+    {
+        Context_.SetDependency<iCAX::Project::CProjectSession>(pProject_);
+        Context_.SetDependency<iCAX::Database::IRepository>(
+            std::shared_ptr<iCAX::Database::IRepository>(pProject_, &pProject_->Database()));
+        Context_.SetDependency<iCAX::Behaviour::IUniverse>(
+            std::shared_ptr<iCAX::Behaviour::IUniverse>(pProject_, &pProject_->Universe()));
+        Context_.SetDependency<iCAX::Resource::CResourceLibrary>(
+            std::shared_ptr<iCAX::Resource::CResourceLibrary>(pProject_, &pProject_->Resources()));
+    }
+}
+
+//! 处理后台收到的邮件命令
+void iCAX::ApplicationHost::CApplicationHost::DispatchBackendMails()
+{
+    if (!m_pMailPostOfficeService || !m_pCommandDispatcher)
+    {
+        return;
+    }
+
+    DispatchBackendMails(m_pMailPostOfficeService->GetBackendPostOffice(m_ApplicationMailID), nullptr);
+}
+
+void iCAX::ApplicationHost::CApplicationHost::DispatchBackendMails(
+    IN const iCAX::Mail::CMailPostOffice& PostOffice_,
+    IN const std::shared_ptr<iCAX::Project::CProjectSession>& pProject_)
+{
+    if (!PostOffice_.IsValid() || !m_pCommandDispatcher)
+    {
+        return;
+    }
+
+    auto _Mails = PostOffice_.Receive();
+    for (auto& _Mail : _Mails)
+    {
+        iCAX::Command::CCommandResponse _Response;
+        _Response.nCommandID = _Mail.Header.nMailId;
+        _Response.nOriginID = _Mail.Header.nOriginId;
+        _Response.nTypeCode = _Mail.Header.nTypeCode;
+
+        try
+        {
+            auto _Request = _MailToCommandRequest(_Mail);
+            iCAX::Command::CCommandContext _Context;
+            PopulateCommandContext(_Context, pProject_);
+            _Response = m_pCommandDispatcher->Dispatch(_Request, _Context);
+        }
+        catch (const std::invalid_argument& _Error)
+        {
+            _Response.nStatus = iCAX::Command::ECommandStatusCode::InvalidRequest;
+            _Response.strError = _Error.what();
+        }
+        catch (const std::exception& _Error)
+        {
+            _Response.nStatus = iCAX::Command::ECommandStatusCode::ExecutionError;
+            _Response.strError = _Error.what();
+        }
+        catch (...)
+        {
+            _Response.nStatus = iCAX::Command::ECommandStatusCode::ExecutionError;
+            _Response.strError = "Unknown command dispatch error";
+        }
+
+        auto _ResponseMail = _CommandResponseToMail(_Mail, _Response, AllocateBackendMailID());
+        PostOffice_.Send(_ResponseMail);
+        _ReleaseMailPayload(_Mail);
+    }
+}
+
+//! 分配后台发出的邮件ID
+uint64_t iCAX::ApplicationHost::CApplicationHost::AllocateBackendMailID()
+{
+    return m_nNextBackendMailID.fetch_add(1, std::memory_order_relaxed);
 }
 
 //! 加载应用程序配置
@@ -264,32 +607,147 @@ std::shared_ptr<iCAX::Application::CApplicationContext> iCAX::ApplicationHost::C
         LoadApplicationSettings());
 }
 
-//! 获取插件描述信息
-std::vector<iCAX::ApplicationHost::PluginMeta> iCAX::ApplicationHost::CApplicationHost::LoadPluginMetas() const
+std::vector<iCAX::Project::CProductDefinition> iCAX::ApplicationHost::CApplicationHost::LoadProductDefinitions() const
 {
-    auto _Root = _RequireObject(_LoadVariantFile(m_Config.strPluginManifestPath, "plugin manifest"), "plugin manifest");
-    auto _Plugins = _RequireArray(_Root, "plugins", "plugin manifest");
+    iCAX::Project::CProductCatalog _Loader;
+    std::vector<iCAX::Project::CProductDefinition> _Products;
 
-    std::vector<iCAX::ApplicationHost::PluginMeta> _vecMetas;
-    _vecMetas.reserve(_Plugins.size());
-    for (size_t i = 0; i < _Plugins.size(); ++i)
+    if (!m_Config.strProductCatalogPath.empty())
     {
-        auto _Plugin = _RequireObject(_Plugins[i], std::format("plugin manifest.plugins[{}]", i));
-        PluginMeta _Meta;
-        _Meta.strPluginName = _RequireString(_Plugin, "name", std::format("plugin manifest.plugins[{}]", i));
-        _Meta.strComponentPath = _OptionalString(_Plugin, "componentPath", std::format("plugin manifest.plugins[{}]", i));
-        _Meta.strBehaviourPath = _OptionalString(_Plugin, "behaviourPath", std::format("plugin manifest.plugins[{}]", i));
-        _Meta.strServicePath = _OptionalString(_Plugin, "servicePath", std::format("plugin manifest.plugins[{}]", i));
-        _vecMetas.push_back(_Meta);
+        auto _Loaded = _Loader.LoadManifestDirectory(m_Config.strProductCatalogPath);
+        _Products.insert(_Products.end(), _Loaded.begin(), _Loaded.end());
     }
-    return _vecMetas;
+
+    for (const auto& _Path : m_Config.ProductManifestPaths)
+    {
+        _Products.push_back(_Loader.LoadManifestFile(_Path));
+    }
+
+    return _Products;
 }
 
-//! 加载启动项
-iCAX::ApplicationHost::Startup iCAX::ApplicationHost::CApplicationHost::LoadStartup() const
+void iCAX::ApplicationHost::CApplicationHost::LoadProductModules(IN const iCAX::Project::CProductDefinition& Product_) const
 {
-    auto _Root = _RequireObject(_LoadVariantFile(m_Config.strStartupPath, "startup"), "startup");
-    Startup _Startup;
-    _Startup.FirstComponent = _RequireString(_Root, "firstComponent", "startup");
-    return _Startup;
+    auto _LoadModule = [](IN const std::string& strPath_, IN const std::string& strKind_) {
+        if (strPath_.empty())
+        {
+            return;
+        }
+
+        HMODULE hMod = LoadLibraryA(strPath_.c_str());
+        if (!hMod)
+        {
+            DWORD code = GetLastError();
+            throw std::runtime_error(
+                std::format(
+                    "[Product Module Load Failure]\n"
+                    "  Kind   : {}\n"
+                    "  Path   : {}\n"
+                    "  Error  : Win32 code {}\n",
+                    strKind_, strPath_, code));
+        }
+    };
+
+    for (const auto& _Path : Product_.ComponentModules)
+    {
+        _LoadModule(_Path, "component");
+    }
+    for (const auto& _Path : Product_.BehaviourModules)
+    {
+        _LoadModule(_Path, "behaviour");
+    }
+    for (const auto& _Path : Product_.ServiceModules)
+    {
+        _LoadModule(_Path, "service");
+    }
+    for (const auto& _Path : Product_.CommandModules)
+    {
+        _LoadModule(_Path, "command");
+    }
+    for (const auto& _Module : Product_.PluginModules)
+    {
+        _LoadModule(_Module.ComponentPath, "component");
+        _LoadModule(_Module.BehaviourPath, "behaviour");
+        _LoadModule(_Module.ServicePath, "service");
+        _LoadModule(_Module.CommandPath, "command");
+    }
+}
+
+iCAX::Project::CProjectManager& iCAX::ApplicationHost::CApplicationHost::GetProjectManager() const
+{
+    if (!m_pProjectManager)
+    {
+        throw std::logic_error("ProjectManager is not loaded");
+    }
+    return *m_pProjectManager;
+}
+
+std::shared_ptr<iCAX::Project::CProjectSession> iCAX::ApplicationHost::CApplicationHost::GetActiveProject() const
+{
+    if (!m_pProjectManager)
+    {
+        return nullptr;
+    }
+    return m_pProjectManager->GetActiveProject();
+}
+
+std::shared_ptr<iCAX::Project::CProjectSession> iCAX::ApplicationHost::CApplicationHost::OpenProject(
+    IN const std::string& strProductID_,
+    IN const std::string& strProjectName_,
+    IN const std::string& strProjectPath_)
+{
+    auto& _ProjectManager = GetProjectManager();
+    auto _pProject = _ProjectManager.OpenProject(strProductID_, strProjectName_, strProjectPath_);
+    std::weak_ptr<iCAX::Project::CProjectSession> _WeakProject = _pProject;
+    _pProject->SetFrameHandler(
+        [this, _WeakProject](
+            iCAX::Project::CProjectSession&,
+            const iCAX::Mail::CMailPostOffice& BackendPostOffice_) {
+            auto _pLockedProject = _WeakProject.lock();
+            if (!_pLockedProject)
+            {
+                return;
+            }
+            DispatchBackendMails(BackendPostOffice_, _pLockedProject);
+        });
+    _pProject->Start();
+    return _pProject;
+}
+
+bool iCAX::ApplicationHost::CApplicationHost::CloseProject(IN const iCAX::Data::uuid& ProjectID_)
+{
+    if (!m_pProjectManager)
+    {
+        return false;
+    }
+
+    return m_pProjectManager->CloseProject(ProjectID_);
+}
+
+iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetProjectFrontendPostOffice(IN const iCAX::Data::uuid& ProjectID_) const
+{
+    if (!m_pProjectManager)
+    {
+        throw std::runtime_error("Project not found");
+    }
+    auto _pProject = m_pProjectManager->FindProject(ProjectID_);
+    if (!_pProject)
+    {
+        throw std::runtime_error("Project not found");
+    }
+    return _pProject->GetFrontendPostOffice();
+}
+
+iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetApplicationFrontendPostOffice() const
+{
+    if (!m_pMailPostOfficeService)
+    {
+        throw std::logic_error("MailPostOfficeService is not loaded");
+    }
+    return m_pMailPostOfficeService->GetFrontendPostOffice(m_ApplicationMailID);
+}
+
+const iCAX::Data::uuid& iCAX::ApplicationHost::CApplicationHost::GetApplicationMailID() const
+{
+    return m_ApplicationMailID;
 }

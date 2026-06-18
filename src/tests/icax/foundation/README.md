@@ -6,4 +6,3 @@
 
 - `Data/`：对应 `src/icax/foundation/Data` 的 Data 单元测试。
 - `Task/`：对应 `src/icax/foundation/Task` 的 Task 单元测试。
-- `ResourcePool/`：对应 `src/icax/foundation/ResourcePool` 的 ResourcePool 单元测试。

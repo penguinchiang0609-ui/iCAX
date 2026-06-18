@@ -26,18 +26,27 @@ iCAX::Mail::CMailPostOffice iCAX::Mail::CMailChannel::GetEndBPostOffice() noexce
 //! 清空两个方向上的待处理邮件
 void iCAX::Mail::CMailChannel::Clear()
 {
-    m_AToB.Clear();
-    m_BToA.Clear();
+    m_AToB->Clear();
+    m_BToA->Clear();
+}
+
+//! 重置通道
+void iCAX::Mail::CMailChannel::Reset()
+{
+    m_AToB->Clear();
+    m_BToA->Clear();
+    m_AToB = std::make_shared<CMailQueue>();
+    m_BToA = std::make_shared<CMailQueue>();
 }
 
 //! 获取 EndA 到 EndB 的底层队列
 iCAX::Mail::CMailQueue& iCAX::Mail::CMailChannel::GetAToBQueue() noexcept
 {
-    return m_AToB;
+    return *m_AToB;
 }
 
 //! 获取 EndB 到 EndA 的底层队列
 iCAX::Mail::CMailQueue& iCAX::Mail::CMailChannel::GetBToAQueue() noexcept
 {
-    return m_BToA;
+    return *m_BToA;
 }

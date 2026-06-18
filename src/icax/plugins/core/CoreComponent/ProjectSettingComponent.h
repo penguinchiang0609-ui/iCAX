@@ -3,7 +3,6 @@
 #include "Data/uuid.h"
 #include "Database/ComponentBase.h"
 #include "Database/ComponentHelper.h"
-#include "Database/IDomain.h"
 #include "Database/IEntity.h"
 #include "Data/PropertyBag.h"
 

@@ -44,13 +44,14 @@ PDOHub + Mail System
    ↑ ↓
 Engine Thread
    ↓
-Universe
- └── Repository
-      └── Domain
-           └── World
-                ├── PDOHub
-                ├── Behaviours
-                └── Services
+ProjectSession
+ ├── Repository
+ │    └── Entity
+ │         └── Components
+ ├── ResourceLibrary
+ ├── Universe
+ │    └── Behaviours
+ └── MailChannel
 ```
 
 ------
@@ -80,9 +81,8 @@ Database 基于 EC 模型：
 
 ```
 Repository
- └── Domain
-      └── Entity
-           └── Components
+ └── Entity
+      └── Components
 ```
 
 特点：
@@ -99,34 +99,15 @@ Repository 是数据库顶级容器：
 
 职责：
 
-- 管理所有 Domain
+- 管理项目内所有 Entity/Component 数据
 - 管理持久化
 - 管理事务
 
-一个 Universe 对应一个 Repository。
-
-## 3.3 Domain
-
-Domain 用于数据隔离：
-
-用途：
-
-- 撤销还原隔离
-- 事务隔离
-- 功能隔离
-
-示例：
-
-```
-MainDomain
-UndoDomain
-TempDomain
-PreviewDomain
-```
+Repository 由 ProjectSession 持有。临时编辑、预览和导入由轻量 ProjectSession 或 Repository 快照表达。Universe 只承载行为调度，不对应也不拥有 Repository；ProjectSession 通过 UniverseContext 把当前 Repository 传给 Behaviour。
 
 ------
 
-## 3.4 Component
+## 3.3 Component
 
 Component 是最小持久化单元：
 
@@ -150,7 +131,7 @@ struct TransformComponent
 
 ------
 
-## 3.5 字段级事件系统
+## 3.4 字段级事件系统
 
 Component 字段修改自动触发：
 
@@ -165,7 +146,7 @@ OnModified
 - Undo/Redo 记录
 - UI 更新
 
-## 3.6 事务系统（Transaction）
+## 3.5 事务系统（Transaction）
 
 支持：
 
@@ -175,7 +156,7 @@ OnModified
 
 ------
 
-## 3.7 持久化系统
+## 3.6 持久化系统
 
 支持：
 
@@ -197,28 +178,16 @@ Database + Behaviour
 
 ## 4.1 Universe
 
-Universe 是 Engine 顶级容器：
+Universe 是行为运行容器：
 
 职责：
 
-- 管理 Repository
-- 管理 Worlds
+- 管理 Behaviour 调度器
+- 按 ProjectSession 传入的 UniverseContext 执行 Behaviour
 
 ------
 
-## 4.2 World
-
-World 是运行时容器：
-
-对应：
-
-- 一个 Domain
-- 一个 PDOHub
-- 一组 Behaviours
-
-------
-
-## 4.3 Behaviour
+## 4.2 Behaviour
 
 Behaviour 是系统逻辑执行单元。
 

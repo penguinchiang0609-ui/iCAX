@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
@@ -220,12 +221,24 @@ TEST(MailPostOfficeTest, DefaultPostOfficeIsInvalidAndRejectsUse)
 
 TEST(MailPostOfficeTest, PostOfficeIsLightweightNonOwningView)
 {
-    EXPECT_EQ(sizeof(void*) * 2, sizeof(CMailPostOffice));
-    EXPECT_TRUE(std::is_trivially_copy_constructible_v<CMailPostOffice>);
-    EXPECT_TRUE(std::is_trivially_copy_assignable_v<CMailPostOffice>);
-    EXPECT_TRUE((std::is_nothrow_constructible_v<CMailPostOffice, CMailQueue&, CMailQueue&>));
+    EXPECT_TRUE(std::is_copy_constructible_v<CMailPostOffice>);
+    EXPECT_TRUE(std::is_copy_assignable_v<CMailPostOffice>);
     EXPECT_FALSE(std::is_move_constructible_v<CMailChannel>);
     EXPECT_FALSE(std::is_move_assignable_v<CMailChannel>);
+}
+
+TEST(MailPostOfficeTest, PostOfficeInvalidatesWhenChannelIsDestroyed)
+{
+    CMailPostOffice _EndAPostOffice;
+    {
+        auto _pChannel = std::make_unique<CMailChannel>();
+        _EndAPostOffice = _pChannel->GetEndAPostOffice();
+        ASSERT_TRUE(_EndAPostOffice.IsValid());
+    }
+
+    EXPECT_FALSE(_EndAPostOffice.IsValid());
+    EXPECT_THROW(_EndAPostOffice.Send(Mail{}), std::logic_error);
+    EXPECT_THROW(_EndAPostOffice.Receive(), std::logic_error);
 }
 
 TEST(MailPostOfficeTest, EndASendIsReceivedByEndB)
@@ -372,4 +385,34 @@ TEST(MailPostOfficeTest, ChannelClearEmptiesBothDirections)
 
     EXPECT_TRUE(_EndAPostOffice.Receive().empty());
     EXPECT_TRUE(_EndBPostOffice.Receive().empty());
+}
+
+TEST(MailPostOfficeTest, ChannelResetInvalidatesOldPostOfficesAndCreatesFreshChannel)
+{
+    CMailChannel _Channel;
+    auto _OldEndA = _Channel.GetEndAPostOffice();
+    auto _OldEndB = _Channel.GetEndBPostOffice();
+
+    _OldEndA.Send(MakeIntMail(1, 0, 1001, 42));
+
+    _Channel.Reset();
+
+    EXPECT_FALSE(_OldEndA.IsValid());
+    EXPECT_FALSE(_OldEndB.IsValid());
+    EXPECT_THROW(_OldEndA.Send(Mail{}), std::logic_error);
+    EXPECT_THROW(_OldEndB.Receive(), std::logic_error);
+
+    auto _NewEndA = _Channel.GetEndAPostOffice();
+    auto _NewEndB = _Channel.GetEndBPostOffice();
+    ASSERT_TRUE(_NewEndA.IsValid());
+    ASSERT_TRUE(_NewEndB.IsValid());
+
+    _NewEndA.Send(MakeIntMail(2, 0, 2001, 84));
+    auto _Mails = _NewEndB.Receive();
+
+    ASSERT_EQ(1u, _Mails.size());
+    EXPECT_EQ(2u, _Mails[0].Header.nMailId);
+    EXPECT_EQ(84, ReadIntPayload(_Mails[0]));
+
+    ReleasePayloads(_Mails);
 }

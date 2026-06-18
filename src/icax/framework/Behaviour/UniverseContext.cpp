@@ -11,6 +11,16 @@ iCAX::Behaviour::CUniverseContext::CUniverseContext(IN const std::shared_ptr<iCA
     m_pTimer = std::make_shared<CTimer>();
 }
 
+//! 析构函数
+iCAX::Behaviour::CUniverseContext::~CUniverseContext()
+{
+    for (auto& [_Key, _pData] : m_mapContext)
+    {
+        delete[] _pData;
+    }
+    m_mapContext.clear();
+}
+
 //! 获取应用程序设置
 iCAX::Data::PropertyBag& iCAX::Behaviour::CUniverseContext::GetApplicationSettings() const
 {

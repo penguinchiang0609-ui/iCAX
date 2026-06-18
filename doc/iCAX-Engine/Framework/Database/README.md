@@ -2,7 +2,7 @@
 
 `Database` 是 iCAX Engine Framework 层的 EC 数据模型项目。
 
-它负责管理 `Repository`、`Domain`、`Entity`、`Component`、字段元数据、变更事件、组件版本和派生字段缓存。
+它负责管理 `Repository`、`Entity`、`Component`、字段元数据、变更事件、组件版本和派生字段缓存。
 
 ## 目录结构
 

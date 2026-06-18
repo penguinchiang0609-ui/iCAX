@@ -30,13 +30,7 @@
     <ClInclude Include="pch.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IWorld.h">
-      <Filter>extern\interface</Filter>
-    </ClInclude>
     <ClInclude Include="Universe.h">
-      <Filter>inner</Filter>
-    </ClInclude>
-    <ClInclude Include="World.h">
       <Filter>inner</Filter>
     </ClInclude>
     <ClInclude Include="System.h">
@@ -66,12 +60,6 @@
     <ClInclude Include="BehaviourRegistry.h">
       <Filter>inner</Filter>
     </ClInclude>
-    <ClInclude Include="IWorldContext.h">
-      <Filter>extern\interface</Filter>
-    </ClInclude>
-    <ClInclude Include="WorldContext.h">
-      <Filter>inner</Filter>
-    </ClInclude>
     <ClInclude Include="IUniverse.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
@@ -84,9 +72,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Universe.cpp">
-      <Filter>inner</Filter>
-    </ClCompile>
-    <ClCompile Include="World.cpp">
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="BehaviourBase.cpp">
@@ -106,9 +91,6 @@
     </ClCompile>
     <ClCompile Include="IBehaviourRegistry.cpp">
       <Filter>extern\interface</Filter>
-    </ClCompile>
-    <ClCompile Include="WorldContext.cpp">
-      <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="IUniverse.cpp">
       <Filter>extern\interface</Filter>

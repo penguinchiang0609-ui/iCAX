@@ -356,6 +356,60 @@ void iCAX::Database::CRepository::Initialzie()
     m_mapDomains[m_UID] = _pDomain;
 }
 
+std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::CreateEntity(IN const iCAX::Data::uuid& ID_)
+{
+    auto _pDomain = GetDomain(m_UID);
+    return _pDomain ? _pDomain->CreateEntity(ID_) : nullptr;
+}
+
+bool iCAX::Database::CRepository::HasEntity(IN const iCAX::Data::uuid& ID_) const
+{
+    auto _Ite = m_mapDomains.find(m_UID);
+    return _Ite != m_mapDomains.end() && _Ite->second->HasEntity(ID_);
+}
+
+void iCAX::Database::CRepository::DeleteEntity(IN const iCAX::Data::uuid& ID_)
+{
+    if (auto _pDomain = GetDomain(m_UID))
+    {
+        _pDomain->DeleteEntity(ID_);
+    }
+}
+
+std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::GetEntity(IN const iCAX::Data::uuid& ID_) const
+{
+    auto _Ite = m_mapDomains.find(m_UID);
+    return _Ite != m_mapDomains.end() ? _Ite->second->GetEntity(ID_) : nullptr;
+}
+
+std::vector<std::shared_ptr<iCAX::Database::IEntity>> iCAX::Database::CRepository::FilterEntities(IN std::function<bool(std::shared_ptr<IEntity>)> funcWhere_) const
+{
+    auto _Ite = m_mapDomains.find(m_UID);
+    return _Ite != m_mapDomains.end() ? _Ite->second->FilterEntities(funcWhere_) : std::vector<std::shared_ptr<IEntity>>{};
+}
+
+int iCAX::Database::CRepository::EntityCount() const
+{
+    auto _Ite = m_mapDomains.find(m_UID);
+    return _Ite != m_mapDomains.end() ? _Ite->second->EntityCount() : 0;
+}
+
+std::vector<iCAX::Data::uuid> iCAX::Database::CRepository::GetEntityIDs() const
+{
+    auto _Ite = m_mapDomains.find(m_UID);
+    return _Ite != m_mapDomains.end() ? _Ite->second->GetEntityIDs() : std::vector<iCAX::Data::uuid>{};
+}
+
+iCAX::Database::IEntitiesView& iCAX::Database::CRepository::GetView() const
+{
+    auto _Ite = m_mapDomains.find(m_UID);
+    if (_Ite == m_mapDomains.end())
+    {
+        throw std::runtime_error("Repository data space is missing");
+    }
+    return _Ite->second->GetView();
+}
+
 //!< 创造域
 std::shared_ptr<iCAX::Database::IDomain> iCAX::Database::CRepository::CreateDomain(IN const iCAX::Data::uuid& ID_, IN const bool& bPersistent_)
 {

@@ -1,6 +1,6 @@
 # MFCSample
 
-`MFCSample` 是 mfc-sample 产品的 C++ 示例宿主工程，用于验证 MFC 环境下的 icax 接入方式。它负责启动 `ApplicationHost` 并定时驱动后台主循环。
+`MFCSample` 是 mfc-sample 产品的 C++ 示例宿主工程，用于验证 MFC 环境下的 icax 接入方式。它负责启动 `ApplicationHost` 后台线程。
 
 ## 目录结构
 

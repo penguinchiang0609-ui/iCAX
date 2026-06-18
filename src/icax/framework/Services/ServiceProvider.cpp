@@ -16,12 +16,10 @@ iCAX::Services::CServiceProvider::~CServiceProvider()
 //! 卸载所有
 void iCAX::Services::CServiceProvider::UnloadAll()
 {
-    // 清理所有注册的单例服务
     for (auto& _Entry : m_mapSingletons)
     {
         _Entry.second->OnUnload();
     }
-    m_mapSingletonMask.clear();
     m_mapSingletons.clear();
 }
 

@@ -17,7 +17,7 @@ namespace iCAX
         /*
         * @brief Repository 外挂式历史记录器
         * @details
-        *   只维护撤销重做相关状态，不侵入 Domain、Entity、Component。
+        *   只维护撤销重做相关状态，不侵入 Repository、Entity、Component。
         */
         class _DATABASE_EXP CRepositoryHistory final
         {
@@ -28,7 +28,7 @@ namespace iCAX
             CRepositoryHistory(IN const CRepositoryHistory&) = delete;
             CRepositoryHistory& operator=(IN const CRepositoryHistory&) = delete;
 
-            std::unique_ptr<IRepositoryUndoScope> BeginCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_);
+            std::unique_ptr<IRepositoryUndoScope> BeginCommand(IN const iCAX::Data::uuid& RepositoryID_, IN const std::string& strName_);
             bool IsRecording() const;
             iCAX::Data::uuid GetCurrentCommandDomain() const;
 
@@ -53,10 +53,8 @@ namespace iCAX
             void EndCommand();
             void RecordCommittedChangeSet(IN const CChangeSet& ChangeSet_);
             void PushStep(IN std::shared_ptr<CHistoryStep> pStep_);
-            bool CanMoveStep(IN const iCAX::Data::uuid& DomainID_, IN const bool bUndo_) const;
-            bool MoveStep(IN const iCAX::Data::uuid& DomainID_, IN const bool bUndo_);
-            void RemoveStepFromStacks(IN const std::shared_ptr<CHistoryStep>& pStep_);
-            void ClearHistoryForDomains(IN const std::vector<iCAX::Data::uuid>& DomainIDs_);
+            bool CanMoveStep(IN const bool bUndo_) const;
+            bool MoveStep(IN const bool bUndo_);
             std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetStepArray(IN const std::deque<std::shared_ptr<CHistoryStep>>& Stack_) const;
 
             friend class CRepositoryHistoryScope;
@@ -64,8 +62,8 @@ namespace iCAX
         private:
             std::unique_ptr<CChangeSetBuilder> m_pCommandBuilder;
             iCAX::Data::uuid m_CurrentCommandDomainID;
-            std::map<iCAX::Data::uuid, std::deque<std::shared_ptr<CHistoryStep>>> m_UndoStacks;
-            std::map<iCAX::Data::uuid, std::deque<std::shared_ptr<CHistoryStep>>> m_RedoStacks;
+            std::deque<std::shared_ptr<CHistoryStep>> m_UndoStack;
+            std::deque<std::shared_ptr<CHistoryStep>> m_RedoStack;
         };
     }
 }

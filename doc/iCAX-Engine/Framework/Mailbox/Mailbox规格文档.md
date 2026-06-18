@@ -121,9 +121,9 @@ public:
 
 ## 5. CMailPostOffice
 
-`CMailPostOffice` 是某一端看到的邮局。它不拥有队列，只绑定一个收件队列和一个发件队列。
+`CMailPostOffice` 是某一端看到的邮局。它不拥有队列，只绑定一个收件队列弱引用和一个发件队列弱引用。
 
-它是轻量非拥有视图，内部只保存两个队列指针。获取 `CMailPostOffice` 不分配内存，也不转移任何队列所有权。
+它是轻量非拥有视图。获取 `CMailPostOffice` 不创建新队列，也不转移任何队列所有权。底层 `CMailChannel` 被移除或销毁后，旧邮局会失效，继续收发会抛出 `std::logic_error`。
 
 ```cpp
 class CMailPostOffice
@@ -164,6 +164,7 @@ public:
     CMailPostOffice GetEndAPostOffice() noexcept;
     CMailPostOffice GetEndBPostOffice() noexcept;
     void Clear();
+    void Reset();
 };
 ```
 
@@ -188,6 +189,10 @@ Receive() 读取 EndA -> EndB
 Send()    写入 EndB -> EndA
 ```
 
+`Clear()` 只清空两个方向上的待处理邮件，已经发出的 `CMailPostOffice` 仍然有效。
+
+`Reset()` 会丢弃当前两个方向的队列并创建新队列，已经发出的旧 `CMailPostOffice` 会失效。生命周期所有者关闭一个运行单元时，应使用 `Reset()`，避免旧邮局继续向已关闭的通道投递邮件。
+
 ## 7. 生命周期与所有权
 
 当前使用裸指针 Payload，因此所有权规则必须明确。
@@ -197,11 +202,12 @@ Send()    写入 EndB -> EndA
 - 邮件进入 `CMailQueue` 后，如果仍在队列中，队列负责释放 Payload。
 - `Drain()` 或 `Receive()` 返回后，Payload 所有权转移给调用方。
 - 调用方处理完返回邮件后必须释放 `Payload.pData`。
-- `CMailPostOffice` 不拥有队列，底层队列生命周期必须长于 `CMailPostOffice`。
+- `CMailPostOffice` 不拥有队列，底层队列释放后旧邮局自动失效。
 - `CMailChannel` 拥有两个底层 `CMailQueue`，因此由它负责释放仍未被接收的 Payload。
-- 不能在 `CMailChannel` 销毁后继续使用由它获取到的 `CMailPostOffice`。
+- `CMailChannel` 销毁后，由它获取到的 `CMailPostOffice` 不再可用，调用 `Send` / `Receive` / `ClearIncoming` / `ClearOutgoing` 会抛出异常。
+- `CMailChannel::Reset()` 后，由它旧队列获取到的 `CMailPostOffice` 不再可用；重新获取邮局会绑定新队列。
 - `CMailChannel` 禁止拷贝和移动，避免已经获取的 `CMailPostOffice` 指向失效或错位的队列。
-- 可以随时从 `CMailChannel` 获取 `CMailPostOffice`，成本等同于复制两个指针。
+- 可以随时从 `CMailChannel` 获取 `CMailPostOffice`，不会产生新队列。
 
 ## 8. 线程模型
 
@@ -216,7 +222,8 @@ Send()    写入 EndB -> EndA
 线程安全边界：
 
 - `CMailChannel` 或 `CMailQueue` 的析构必须由生命周期所有者保证安全，不能在其他线程仍可能访问时析构。
-- `CMailPostOffice` 是轻量对象，不能在其背后的 `CMailChannel` 销毁后继续使用。
+- `CMailChannel::Reset()` 也属于生命周期操作，应在没有其他线程同时通过同一通道获取新邮局时调用；旧邮局会安全失效。
+- `CMailPostOffice` 是轻量弱引用对象，背后的 `CMailChannel` 销毁后会变为无效邮局。
 - Payload 指向的业务数据不由 Mail 通信模块加锁保护。
 
 ## 9. 上层使用样例
@@ -292,9 +299,10 @@ src/tests/icax/framework/Mailbox/MailboxTest/
 - `CMailQueue` 移动构造和移动赋值。
 - 并发入队和取出。
 - 默认 `CMailPostOffice` 未绑定时抛出异常。
-- `CMailPostOffice` 是轻量非拥有视图，获取时不分配内存。
+- `CMailPostOffice` 是轻量非拥有视图，通道销毁后安全失效。
 - EndA -> EndB 路由。
 - EndB -> EndA 路由。
 - 双向消息互不串包。
 - 清空单向收件队列。
 - 清空整个 `CMailChannel`。
+- 重置 `CMailChannel` 后旧邮局失效，新邮局可继续收发。

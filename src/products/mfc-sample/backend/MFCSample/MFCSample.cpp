@@ -55,21 +55,13 @@ BOOL CMFCSampleApp::InitInstance()
     m_pApplicationHost = std::make_shared<iCAX::ApplicationHost::CApplicationHost>();
     //try
     //{
-        m_pApplicationHost->Load();        // 加载应用宿主
-        //m_pApplicationHost->MainLoop();    // 这里可以在 MFC 中主循环里调 Tick 或绑定定时器
+        m_pApplicationHost->Start();        // 启动应用宿主后台线程
     //}
     //catch (const std::exception& e)
     //{
     //    AfxMessageBox(CString(e.what()));
     //    return FALSE;
     //}
-
-    // 设置定时器，每 16ms 调用一次 Tick()
-    SetTimer(nullptr, 1, 16, [](HWND, UINT, UINT_PTR, DWORD)
-        {
-            theApp.m_pApplicationHost->MainLoop(); // 封装 MainLoop() 内部 Tick
-        });
-
 
 	AfxEnableControlContainer();
 
@@ -91,7 +83,6 @@ BOOL CMFCSampleApp::InitInstance()
 
 	CMFCSampleDlg dlg;
 	m_pMainWnd = &dlg;
-    dlg.pComponent = m_pApplicationHost->GetRepository().GetMetaEntity()->GetComponent<iCAX::Sample::SampleComponent>();
 	INT_PTR nResponse = dlg.DoModal();
 	if (nResponse == IDOK)
 	{
@@ -128,7 +119,7 @@ int CMFCSampleApp::ExitInstance()
 {
     if (m_pApplicationHost)
     {
-        m_pApplicationHost->Unload(); // 确保服务 / universe / repository 卸载
+        m_pApplicationHost->Stop(); // 确保后台线程停止并卸载
         m_pApplicationHost.reset();
     }
 

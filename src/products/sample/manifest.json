@@ -1,22 +1,24 @@
 {
-  "name": "sample",
+  "productId": "icax.product.sample",
   "displayName": "Sample",
   "backend": {
     "components": [
-      "SampleComponent"
+      "backend/component/SampleComponent"
     ],
     "behaviours": [
-      "SampleBehaviour"
+      "backend/behaviour/SampleBehaviour"
     ],
     "services": [
-      "SampleService"
+      "backend/service/SampleService"
     ]
   },
   "frontend": {
     "entry": ""
   },
   "protocol": {
-    "mailbox": "protocol/mailbox",
-    "pdo": "protocol/pdo"
+    "path": "protocol"
+  },
+  "startup": {
+    "firstComponent": "SampleComponent"
   }
 }

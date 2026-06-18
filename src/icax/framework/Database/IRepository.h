@@ -1,5 +1,6 @@
 #pragma once
 #include "Database.h"
+#include <functional>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -58,6 +59,16 @@ namespace iCAX
             virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_) = 0;
 
             /*
+            * @brief 开始一次撤销还原记录
+            * @details
+            *   单项目单数据空间语义下，上层不需要传入数据空间 ID。
+            */
+            std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const std::string& strName_)
+            {
+                return BeginUndoCommand(GetID(), strName_);
+            }
+
+            /*
             * @brief 当前是否正在记录撤销还原步骤
             */
             virtual bool IsUndoCommandRecording() const = 0;
@@ -72,30 +83,60 @@ namespace iCAX
             */
             virtual bool CanUndo(IN const iCAX::Data::uuid& DomainID_) const = 0;
 
+            bool CanUndo() const
+            {
+                return CanUndo(GetID());
+            }
+
             /*
             * @brief 指定域是否可以重做
             */
             virtual bool CanRedo(IN const iCAX::Data::uuid& DomainID_) const = 0;
+
+            bool CanRedo() const
+            {
+                return CanRedo(GetID());
+            }
 
             /*
             * @brief 获取指定域的撤销步骤列表
             */
             virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const = 0;
 
+            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray() const
+            {
+                return GetUndoArray(GetID());
+            }
+
             /*
             * @brief 获取指定域的重做步骤列表
             */
             virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const = 0;
+
+            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray() const
+            {
+                return GetRedoArray(GetID());
+            }
 
             /*
             * @brief 撤销指定域栈顶步骤
             */
             virtual bool Undo(IN const iCAX::Data::uuid& DomainID_) = 0;
 
+            bool Undo()
+            {
+                return Undo(GetID());
+            }
+
             /*
             * @brief 重做指定域栈顶步骤
             */
             virtual bool Redo(IN const iCAX::Data::uuid& DomainID_) = 0;
+
+            bool Redo()
+            {
+                return Redo(GetID());
+            }
 
             /*
             * @brief 打开快速保存操作日志
@@ -118,6 +159,46 @@ namespace iCAX
             virtual void ReplayOperationLog(IN const std::string& strPath_) = 0;
 
         public:
+            /*
+            * @brief 创建实体
+            */
+            virtual std::shared_ptr<IEntity> CreateEntity(IN const iCAX::Data::uuid& ID_) = 0;
+
+            /*
+            * @brief 是否包含实体
+            */
+            virtual bool HasEntity(IN const iCAX::Data::uuid& ID_) const = 0;
+
+            /*
+            * @brief 移除实体
+            */
+            virtual void DeleteEntity(IN const iCAX::Data::uuid& ID_) = 0;
+
+            /*
+            * @brief 获取实体
+            */
+            virtual std::shared_ptr<IEntity> GetEntity(IN const iCAX::Data::uuid& ID_) const = 0;
+
+            /*
+            * @brief 筛选实体
+            */
+            virtual std::vector<std::shared_ptr<IEntity>> FilterEntities(IN std::function<bool(std::shared_ptr<IEntity>)> funcWhere_) const = 0;
+
+            /*
+            * @brief 实体数量
+            */
+            virtual int EntityCount() const = 0;
+
+            /*
+            * @brief 获取实体ID列表
+            */
+            virtual std::vector<iCAX::Data::uuid> GetEntityIDs() const = 0;
+
+            /*
+            * @brief 获取实体视图
+            */
+            virtual IEntitiesView& GetView() const = 0;
+
             /*
             * @brief 创建域
             * @param [in] ID_

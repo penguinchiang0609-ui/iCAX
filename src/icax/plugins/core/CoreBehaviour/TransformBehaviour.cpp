@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "TransformBehaviour.h"
-#include "Behaviour/IWorld.h"
 #include "../CoreComponent/HierarchyComponent.h"
 #include "HierarchyBehaviour.h"
 #include "../CoreComponent/TransformComponent.h"
@@ -33,7 +32,7 @@ void iCAX::Core::TransformBehaviour::OnAwake(IN iCAX::Database::CComponentBase& 
 }
 
 //! 创建之后下一帧触发
-void iCAX::Core::TransformBehaviour::OnStart(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnStart(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
     auto& _Component = dynamic_cast<TransformComponent&>(Component_);
     if (auto _pEntity = _Component.GetEntity())
@@ -46,42 +45,42 @@ void iCAX::Core::TransformBehaviour::OnStart(IN IWorld& World_, IN iCAX::Databas
 }
 
 //! 修改Enable状态时触发
-void iCAX::Core::TransformBehaviour::OnEnable(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 每一帧预触发
-void iCAX::Core::TransformBehaviour::OnPreUpdate(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 每一帧触发
-void iCAX::Core::TransformBehaviour::OnUpdate(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 每一帧后触发
-void iCAX::Core::TransformBehaviour::OnPostUpdate(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 禁用时触发
-void iCAX::Core::TransformBehaviour::OnDisable(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 销毁时触发
-void iCAX::Core::TransformBehaviour::OnDestroy(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnDestroy(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 组件数据修改前触发
-void iCAX::Core::TransformBehaviour::OnModifing(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnModifing(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 组件数据修改后触发
-void iCAX::Core::TransformBehaviour::OnModified(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
+void iCAX::Core::TransformBehaviour::OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
 {
     auto& _Component = dynamic_cast<TransformComponent&>(Component_);
     if (NewValues_.contains(TransformComponent::PropertyName_Translation) || NewValues_.contains(TransformComponent::PropertyName_Rotation))

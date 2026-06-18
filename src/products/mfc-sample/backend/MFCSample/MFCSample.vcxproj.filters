@@ -70,13 +70,7 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Setting\Startup.Setting">
-      <Filter>Config</Filter>
-    </None>
     <None Include="Setting\Application.Setting">
-      <Filter>Config</Filter>
-    </None>
-    <None Include="Setting\Plugins.Setting">
       <Filter>Config</Filter>
     </None>
   </ItemGroup>

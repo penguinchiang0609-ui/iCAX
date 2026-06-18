@@ -9,7 +9,7 @@ namespace iCAX
         /*
         * @brief 上下文
         */
-        class CUniverseContext : public IUniverseContext
+        class _SYSTEM_EXP CUniverseContext : public IUniverseContext
         {
         public:
             /*
@@ -23,7 +23,7 @@ namespace iCAX
             /*
             * @brief 
             */
-            virtual ~CUniverseContext() = default;
+            virtual ~CUniverseContext();
 
         public:
             /*

@@ -8,4 +8,3 @@
 - `Math/`：向量、点、矩阵、变换、四元数等数学类型。
 - `Geometry/`：二维/三维曲线、圆弧、边界曲线等几何类型。
 - `Task/`：接近 C# `Task` 调用体验的 C++ 异步任务基础能力。
-- `ResourcePool/`：进程内资源池，用 `ResourceType + ResourceID` 统一索引模型、图片、文本、材质和缓存资源。

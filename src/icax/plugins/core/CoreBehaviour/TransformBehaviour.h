@@ -38,81 +38,71 @@ namespace iCAX
         protected:
             /*
             * @brief 创建之后触发
-            * @param [in] World_
             * @param [in] pComponent_
             */
             virtual void OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 创建之后下一帧触发
-            * @param [in] World_
             * @param [in] pComponent_
             */
-            virtual void OnStart(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
+            virtual void OnStart(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 修改Enable状态时触发
-            * @param [in] World_
             * @param [in] pComponent_
             */
-            virtual void OnEnable(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
+            virtual void OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 每一帧预触发
-            * @param [in] World_
             * @param [in] pComponent_
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
             */
-            virtual void OnPreUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) override;
+            virtual void OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 每一帧触发
-            * @param [in] World_
             * @param [in] pComponent_
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
             */
-            virtual void OnUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) override;
+            virtual void OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 每一帧后触发
-            * @param [in] World_
             * @param [in] pComponent_
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
             */
-            virtual void OnPostUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) override;
+            virtual void OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 禁用时触发
-            * @param [in] World_
             * @param [in] pComponent_
             */
-            virtual void OnDisable(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
+            virtual void OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 销毁时触发
-            * @param [in] World_
             * @param [in] pComponent_
             */
-            virtual void OnDestroy(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
+            virtual void OnDestroy(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 组件数据修改前触发
-            * @param [in] World_
             * @param [in] pComponent_
             * @param [in] NewValues_
             */
-            virtual void OnModifing(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) override;
+            virtual void OnModifing(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) override;
 
             /*
             * @brief 组件数据修改后触发
-            * @param [in] World_
             * @param [in] pComponent_
             * @param [in] NewValues_
             */
-            virtual void OnModified(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) override;
+            virtual void OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) override;
 
             AUTO_REGIST_BEHAVIOUR(TransformBehaviour);
 
@@ -121,10 +111,9 @@ namespace iCAX
 
         /*
         * @brief 变换
-        * @param [in] World_
         * @param [in] Component_
         * @param [in] Tranform_
         */
-        int Tranform(IN OUT void* pContext_, IN const void* IParam_, OUT void* OParam_); //(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Math::Tranform3& Tranform_);
+        int Tranform(IN OUT void* pContext_, IN const void* IParam_, OUT void* OParam_);
     }
 }

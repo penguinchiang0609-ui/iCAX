@@ -14,10 +14,10 @@ src/icax/framework/ApplicationContext/
 
 - 读取配置文件。
 - 构造 `ApplicationContext`。
-- 创建 `Database`。
-- 创建 `Universe`。
-- 加载插件。
-- 驱动主循环。
+- 加载产品目录和产品模块。
+- 创建 `ProjectManager`。
+- 打开启动项目。
+- 驱动应用级消息循环。
 
 `ApplicationContext` 是 ApplicationHost 构造出来的上下文对象，负责被查询，不负责启动流程。
 
@@ -25,8 +25,10 @@ src/icax/framework/ApplicationContext/
 ApplicationHost
   -> Load settings
   -> Build ApplicationContext
-  -> Create Repository / Universe
-  -> Pass context to Behaviour / Service / CommandHandler
+  -> Load product catalog
+  -> Create ProjectManager
+  -> ProjectSession creates Repository / UniverseContext / Universe
+  -> Pass application context to Service / CommandHandler
 ```
 
 ## 3. 配置读写

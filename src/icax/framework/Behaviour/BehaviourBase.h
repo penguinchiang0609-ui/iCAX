@@ -32,16 +32,16 @@ namespace iCAX
             virtual std::string GetComponentClass() const = 0;
 
         public:
-            void Awake(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
-            void Start(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
-            void Enable(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
-            void PreUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_);
-            void Update(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_);
-            void PostUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_);
-            void Disable(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
-            void Destory(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
-            void Modifing(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_);
-            void Modified(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_);
+            void Awake(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
+            void Start(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
+            void Enable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
+            void PreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_);
+            void Update(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_);
+            void PostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_);
+            void Disable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
+            void Destory(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_);
+            void Modifing(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_);
+            void Modified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_);
 
         public:
             /*
@@ -53,15 +53,15 @@ namespace iCAX
 
         protected:
             virtual void OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
-            virtual void OnStart(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
-            virtual void OnEnable(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
-            virtual void OnPreUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) {}
-            virtual void OnUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) {}
-            virtual void OnPostUpdate(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) {}
-            virtual void OnDisable(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
-            virtual void OnDestroy(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
-            virtual void OnModifing(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) {}
-            virtual void OnModified(IN class IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) {}
+            virtual void OnStart(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
+            virtual void OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
+            virtual void OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) {}
+            virtual void OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) {}
+            virtual void OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_) {}
+            virtual void OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
+            virtual void OnDestroy(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_) {}
+            virtual void OnModifing(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) {}
+            virtual void OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_) {}
         };
     }
 }

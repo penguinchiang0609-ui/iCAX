@@ -85,20 +85,18 @@ namespace iCAX
 
             /*
             * @brief tick
-            * @param [in] World_
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
             */
-            void Tick(IN const IUniverseContext& Context_, IN class IWorld& World_, IN const double& nDeltaTime_, IN const double& nTotalTime_) const;
+            void Tick(IN const IUniverseContext& Context_, IN const double& nDeltaTime_, IN const double& nTotalTime_) const;
 
             /*
             * @brief 通知
-            * @param [in] World_
             * @param [in] nType_
             * @param [in] pComponent_
             * @param [in] Properties_
             */
-            void OnNotify(IN const IUniverseContext& Context_, IN class IWorld& World_, IN NotifyType nType_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& Properties_) const;
+            void OnNotify(IN const IUniverseContext& Context_, IN NotifyType nType_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& Properties_) const;
 
         private:
             std::unordered_set<std::type_index> m_setBehaviourIndex;

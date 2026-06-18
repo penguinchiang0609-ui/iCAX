@@ -1,9 +1,7 @@
 {
-  "name": "cax-host",
+  "productId": "icax.product.cax-host",
   "displayName": "CAX Host",
-  "backend": {
-    "host": "backend/CAXHost"
-  },
+  "backend": {},
   "frontend": {
     "entry": ""
   },

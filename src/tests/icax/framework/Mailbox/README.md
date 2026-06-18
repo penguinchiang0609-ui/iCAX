@@ -4,4 +4,4 @@
 
 ## 目录结构
 
-- `MailboxTest/`：对应 `src/icax/framework/Mailbox/Mailbox.vcxproj` 的 Mail 通信单元测试。
+- `MailboxTest/`：对应 `src/icax/framework/Mailbox/Mailbox.vcxproj` 的 Mail 通信单元测试，覆盖收发、线程安全、通道销毁和 Reset 后旧邮局失效。

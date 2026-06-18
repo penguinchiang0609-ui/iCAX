@@ -9,3 +9,5 @@
 - `Database/`：对应 `src/icax/framework/Database` 的 Database 单元测试。
 - `Mailbox/`：对应 `src/icax/framework/Mailbox` 的 Mail 通信单元测试。
 - `PDO/`：对应 `src/icax/framework/PDO` 的 PDO 单元测试。
+- `Project/`：对应 `src/icax/framework/Project` 的产品目录和多项目会话单元测试。
+- `Resources/`：对应 `src/icax/framework/Resources` 的 Resources 单元测试。

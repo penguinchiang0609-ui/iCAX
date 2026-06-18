@@ -8,7 +8,6 @@
 #include "MFCSampleDlg.h"
 #include "afxdialogex.h"
 #include "SceneDlg.h"
-#include "Data/CommonFunction.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -178,20 +177,10 @@ void CMFCSampleDlg::OnBnClickedCancel()
 
 void CMFCSampleDlg::OnBnClickedButton1()
 {
-    if (auto _pComponent = pComponent.lock())
-    {
-        int _nID = 100;
-        _pComponent->SetTestID(_pComponent->GetTestID() + _nID);
-    }
-    // TODO: 在此添加控件通知处理程序代码
 }
 
 void CMFCSampleDlg::OnBnClickedButton2()
 {
-    if (auto _pComponent = pComponent.lock())
-    {
-        this->txtTestID.SetWindowTextW(std::to_wstring(_pComponent->GetTestID()).c_str());
-    }
 }
 
 void CMFCSampleDlg::OnBnClickedButton3()

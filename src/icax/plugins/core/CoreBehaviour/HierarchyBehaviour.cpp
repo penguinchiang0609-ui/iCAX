@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "HierarchyBehaviour.h"
-#include "Behaviour/IWorld.h"
 
 namespace
 {
@@ -30,13 +29,13 @@ void iCAX::Core::HierarchyBehaviour::OnAwake(IN iCAX::Database::CComponentBase& 
 }
 
 //! 创建之后下一帧触发
-void iCAX::Core::HierarchyBehaviour::OnStart(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnStart(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
     auto& _Component = dynamic_cast<HierarchyComponent&>(Component_);
-    if (auto _pDomain = World_.GetDomain())
+    auto& _Repository = Context_.GetDatabase();
     {
         //! 缓存父组件
-        if (auto _pEntity = _pDomain->GetEntity(_Component.GetParentID()))
+        if (auto _pEntity = _Repository.GetEntity(_Component.GetParentID()))
         {
             if (auto _pComponent = _pEntity->GetComponent<HierarchyComponent>())
             {
@@ -47,7 +46,7 @@ void iCAX::Core::HierarchyBehaviour::OnStart(IN IWorld& World_, IN iCAX::Databas
         _Component.m_ChildrenComponents.clear();
         for (auto _ChildID : _Component.GetChildrenIDs())
         {
-            if (auto _pEntity = _pDomain->GetEntity(_ChildID))
+            if (auto _pEntity = _Repository.GetEntity(_ChildID))
             {
                 if (auto _pComponent = _pEntity->GetComponent<HierarchyComponent>())
                 {
@@ -59,64 +58,62 @@ void iCAX::Core::HierarchyBehaviour::OnStart(IN IWorld& World_, IN iCAX::Databas
 }
 
 //! 修改Enable状态时触发
-void iCAX::Core::HierarchyBehaviour::OnEnable(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 每一帧预触发
-void iCAX::Core::HierarchyBehaviour::OnPreUpdate(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 每一帧触发
-void iCAX::Core::HierarchyBehaviour::OnUpdate(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 每一帧后触发
-void iCAX::Core::HierarchyBehaviour::OnPostUpdate(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 禁用时触发
-void iCAX::Core::HierarchyBehaviour::OnDisable(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 销毁时触发
-void iCAX::Core::HierarchyBehaviour::OnDestroy(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnDestroy(IN iCAX::Database::CComponentBase& Component_, IN const IUniverseContext& Context_)
 {
     auto& _Component = dynamic_cast<HierarchyComponent&>(Component_);
-    if (auto _pDomain = World_.GetDomain())
+    auto& _Repository = Context_.GetDatabase();
+    for (auto& _pChild : _Component.m_ChildrenComponents)
     {
-        for (auto& _pChild : _Component.m_ChildrenComponents)
+        if (auto _pComponent = _pChild.lock())
         {
-            if (auto _pComponent = _pChild.lock())
+            if (auto _pEntity = _pComponent->GetEntity())
             {
-                if (auto _pEntity = _pComponent->GetEntity())
-                {
-                    _pDomain->DeleteEntity(_pEntity->GetID());
-                }
+                _Repository.DeleteEntity(_pEntity->GetID());
             }
         }
     }
 }
 
 //! 组件数据修改前触发
-void iCAX::Core::HierarchyBehaviour::OnModifing(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnModifing(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
 {
 }
 
 //! 组件数据修改后触发
-void iCAX::Core::HierarchyBehaviour::OnModified(IN IWorld& World_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
+void iCAX::Core::HierarchyBehaviour::OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const IUniverseContext& Context_)
 {
     auto& _Component = dynamic_cast<HierarchyComponent&>(Component_);
-    if (auto _pDomain = World_.GetDomain())
+    auto& _Repository = Context_.GetDatabase();
     {
         //! 修改了父组件ID，则重新缓存父组件
         if (NewValues_.contains(HierarchyComponent::PropertyName_ParentID))
         {
-            if (auto _pEntity = _pDomain->GetEntity(_Component.GetParentID()))
+            if (auto _pEntity = _Repository.GetEntity(_Component.GetParentID()))
             {
                 if (auto _pComponent = _pEntity->GetComponent<HierarchyComponent>())
                 {
@@ -130,7 +127,7 @@ void iCAX::Core::HierarchyBehaviour::OnModified(IN IWorld& World_, IN iCAX::Data
             _Component.m_ChildrenComponents.clear();
             for (auto _ChildID : _Component.GetChildrenIDs())
             {
-                if (auto _pEntity = _pDomain->GetEntity(_ChildID))
+                if (auto _pEntity = _Repository.GetEntity(_ChildID))
                 {
                     if (auto _pComponent = _pEntity->GetComponent<HierarchyComponent>())
                     {

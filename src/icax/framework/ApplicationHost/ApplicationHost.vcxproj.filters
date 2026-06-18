@@ -27,13 +27,7 @@
     <ClInclude Include="ApplicationHostExport.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="PluginMeta.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="ApplicationHostConfig.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Startup.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

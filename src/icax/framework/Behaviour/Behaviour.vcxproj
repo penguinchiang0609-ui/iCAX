@@ -153,16 +153,12 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="UniverseContext.h" />
     <ClInclude Include="IUniverse.h" />
-    <ClInclude Include="IWorld.h" />
     <ClInclude Include="System.h" />
     <ClInclude Include="BehaviourBase.h" />
     <ClInclude Include="ITimer.h" />
     <ClInclude Include="Timer.h" />
-    <ClInclude Include="World.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Universe.h" />
-    <ClInclude Include="IWorldContext.h" />
-    <ClInclude Include="WorldContext.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BehaviourDispacther.cpp" />
@@ -180,8 +176,6 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="World.cpp" />
-    <ClCompile Include="WorldContext.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Database\Database.vcxproj">
@@ -189,9 +183,6 @@
     </ProjectReference>
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\PDO\PDO.vcxproj">
-      <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
