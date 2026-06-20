@@ -1,11 +1,11 @@
 #include "pch.h"
 #include "EntitiesView.h"
-#include "IDomain.h"
+#include "IRepository.h"
 #include "MaskRegistry.h"
 
 //!< 构造函数
-iCAX::Database::CEntitiesView::CEntitiesView(IN std::shared_ptr<IDomain> pDomain_)
-    : m_pDomain(pDomain_)
+iCAX::Database::CEntitiesView::CEntitiesView(IN std::shared_ptr<IRepository> pRepository_)
+    : m_pRepository(pRepository_)
     , m_Cache()
     , m_PreCache()
     , m_EntityMask()
@@ -18,31 +18,31 @@ iCAX::Database::CEntitiesView::~CEntitiesView()
 }
 
 //! 修改前事件
-void iCAX::Database::CEntitiesView::OnDomainChanging(IN void* pSender_, IN const DomainEventArgs& Args_)
+void iCAX::Database::CEntitiesView::OnRepositoryChanging(IN void* pSender_, IN const RepositoryEventArgs& Args_)
 {
 }
 
 //!< 更改后事件
-void iCAX::Database::CEntitiesView::OnDomainChanged(IN void* pSender_, IN const DomainEventArgs& Args_)
+void iCAX::Database::CEntitiesView::OnRepositoryChanged(IN void* pSender_, IN const RepositoryEventArgs& Args_)
 {
-    if (Args_.nType == DomainEventArgs::kAddComponent)
+    if (Args_.nType == RepositoryEventArgs::kAddComponent)
     {
         m_EntityMask[Args_.EntityID].Set(Args_.strClassName);
         size_t _nCode = CMaskRegistry::GetComponentIndex(Args_.strClassName);
         m_Cache[_nCode].insert(Args_.pComponent);
     }
-    else if (Args_.nType == DomainEventArgs::kRemoveComponent)
+    else if (Args_.nType == RepositoryEventArgs::kRemoveComponent)
     {
         m_EntityMask[Args_.EntityID].Reset(Args_.strClassName);
 
         size_t _nCode = CMaskRegistry::GetComponentIndex(Args_.strClassName);
         m_Cache[_nCode].erase(Args_.pComponent);
     }
-    else if (Args_.nType == DomainEventArgs::kAddEntity)
+    else if (Args_.nType == RepositoryEventArgs::kAddEntity)
     {
         m_EntityMask[Args_.EntityID] = CComponentMask();
     }
-    else if (Args_.nType == DomainEventArgs::kDeleteEntity)
+    else if (Args_.nType == RepositoryEventArgs::kDeleteEntity)
     {
         m_EntityMask.erase(Args_.EntityID);
         // 清理缓存中该实体的组件
@@ -81,11 +81,11 @@ void iCAX::Database::CEntitiesView::OnDomainChanged(IN void* pSender_, IN const 
 //!< 构建缓存
 void iCAX::Database::CEntitiesView::BuildCache(IN const std::string& strClassName_, IN const bool bForceReset_)
 {
-    if (m_pDomain.expired())
+    if (m_pRepository.expired())
     {
         return;
     }
-    auto _pDomain = m_pDomain.lock();
+    auto _pRepository = m_pRepository.lock();
     size_t _nCode = CMaskRegistry::GetComponentIndex(strClassName_);
     if (!m_Cache.contains(_nCode) || bForceReset_)//!< 未构建过，或强制重构建
     {
@@ -93,7 +93,7 @@ void iCAX::Database::CEntitiesView::BuildCache(IN const std::string& strClassNam
         {
             m_Cache[_nCode].clear();//! 已存在，强制刷新，则先清空
         }
-        auto _pEntities = _pDomain->FilterEntities([this, strClassName_](std::shared_ptr<IEntity> _pEntity)
+        auto _pEntities = _pRepository->FilterEntities([this, strClassName_](std::shared_ptr<IEntity> _pEntity)
         {
             const auto& _ID = _pEntity->GetID();
             // 如果没有 Mask，则构建一份新的

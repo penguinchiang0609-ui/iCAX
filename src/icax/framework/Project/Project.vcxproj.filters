@@ -15,22 +15,16 @@
     <ClInclude Include="pch.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ProductCatalog.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ProductDefinition.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="Project.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ProjectExport.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ProjectManager.h">
+    <ClInclude Include="ProjectCatalog.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ProjectSession.h">
+    <ClInclude Include="ProjectRuntime.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -41,16 +35,13 @@
     <ClCompile Include="pch.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ProductCatalog.cpp">
+    <ClCompile Include="ProjectCatalog.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ProductDefinition.cpp">
+    <ClCompile Include="Project.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ProjectManager.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="ProjectSession.cpp">
+    <ClCompile Include="ProjectRuntime.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

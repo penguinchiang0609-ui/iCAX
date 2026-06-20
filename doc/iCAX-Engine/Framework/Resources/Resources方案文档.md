@@ -11,10 +11,10 @@ src/icax/framework/Resources/
 原因：
 
 - 它不只是底层对象池，还表达工程资源条目、资源 manifest、持久化策略和加载器抽象。
-- Database、ProjectStorage、CommandHandler、Behaviour 和产品插件都通过资源路径或来源字符串引用资源，`ResourceKey` 只作为 Resources 内部索引。
+- Database、ProjectStorage、CommandHandler、Behaviour 和业务插件都通过资源路径或来源字符串引用资源，`ResourceKey` 只作为 Resources 内部索引。
 - 资源是否运行时临时、内嵌保存或外部引用，属于工程框架语义，不适合放在 foundation。
 
-`Resources` 仍然不依赖 `Database`、`Services`、`ApplicationHost` 或产品扩展，避免形成框架内部循环依赖。
+`Resources` 仍然不依赖 `Database`、`Services`、`ApplicationHost` 或业务扩展，避免形成框架内部循环依赖。
 
 ## 2. 项目组成
 
@@ -39,7 +39,7 @@ Resources/
 `CResourceLoaderRegistry` 负责按 C++ 资源类型注册、查找和调用 loader。
 `CResourceLibrary::Load<T>` 负责给上层提供“路径即 key，有则取、无则加载”的简化入口。常规入口使用 Project 持有的资源库，不要求调用方传入 `CResourcePool`。
 
-`Resources.h` 不包含 `ResourcePool.h`。普通产品代码 include `Resources.h` 时只看到 `CResourceLibrary`、资源信息、loader 协议和注册表；需要底层资源池能力时显式 include `ResourcePoolAccess.h`。
+`Resources.h` 不包含 `ResourcePool.h`。普通业务代码 include `Resources.h` 时只看到 `CResourceLibrary`、资源信息、loader 协议和注册表；需要底层资源池能力时显式 include `ResourcePoolAccess.h`。
 
 ## 3. 条目和对象分离
 
@@ -68,7 +68,7 @@ public:
 `CanLoad` 允许 loader 基于来源、扩展名、选项或上下文进一步判断。  
 `Load` 返回资源对象或只返回资源元信息。
 
-具体格式 loader 放在插件或产品项目里。例如：
+具体格式 loader 放在插件或业务模块里。例如：
 
 - `FbxResourceLoader`
 - `PngResourceLoader`
@@ -77,27 +77,28 @@ public:
 
 ## 5. Registry 设计
 
-`CResourceLoaderRegistry` 是进程内静态注册表。它不需要创建实例，也不提供注销能力。内部结构：
+`CResourceLoaderRegistry` 是按资源类型组织的 loader 注册表。正式运行路径使用 ApplicationHost 持有的应用级 registry；裸用 `CResourceLibrary` 或底层测试可以回退到静态全局 registry。内部结构：
 
 ```cpp
-static std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>> loaders;
+std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>> loaders;
 ```
 
 同一个 C++ 资源类型可以注册多个不同 loader。为了适配宏注册和静态初始化，同一资源类型下重复注册同一个 loader 类会被忽略。`FindLoader` 会先按 `std::type_index(typeid(TResource))` 查候选 loader，再调用 `CanLoad` 选择第一个可处理的 loader。
 
-产品和插件通常在具体 loader 的 `.cpp` 中使用宏注册：
+业务模块和插件通常在具体 loader 的 `.cpp` 中使用宏注册：
 
 ```cpp
 ICAX_REGISTER_RESOURCE_LOADER(ModelResource, FbxResourceLoader)
 ```
 
-也可以直接调用静态注册表：
+也可以直接调用实例注册表：
 
 ```cpp
-CResourceLoaderRegistry::Register(typeid(ModelResource), std::make_shared<FbxResourceLoader>());
+CResourceLoaderRegistry registry;
+registry.RegisterLoader(typeid(ModelResource), std::make_shared<FbxResourceLoader>());
 ```
 
-宏在静态初始化阶段向 `CResourceLoaderRegistry` 注册 loader。业务代码不需要在每次加载资源时传 registry。`.fbx`、`.png` 这类后缀只是来源格式，应由 loader 的 `CanLoad` 判断，不作为注册表的 key。
+宏在静态初始化阶段把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ApplicationHost 创建应用级 registry 后，ProductRuntime 按产品模块路径把对应注册动作回放进去。业务代码不需要在每次加载资源时传 registry。`.fbx`、`.png` 这类后缀只是来源格式，应由 loader 的 `CanLoad` 判断，不作为注册表的 key。
 
 `Load` 的流程：
 
@@ -129,12 +130,14 @@ project resource library.Get<T>(internalKey)
 project resource library.HasObject(internalKey)
   true -> return nullptr
 build load context from key/source/stored ResourceInfo
-CResourceLoaderRegistry::Load(context with typeid(T))
+当前 ResourceLoaderRegistry.LoadResource(context with typeid(T))
   failed -> return nullptr
 store successful result into project resource library
 project resource library.Get<T>(internalKey)
   return loaded object
 ```
+
+如果 `CResourceLibrary` 没有绑定 registry，会回退到静态全局 registry。正式 Project 路径由 `Project` 构造时注入 ApplicationHost 的应用级 registry，不依赖全局静态注册表。
 
 路径入口生成的内部 key 直接保存 `source` 字符串，不进行二次映射。对上层而言，路径就是资源身份，同一个路径不会因为 `T` 不同而形成两个 key。
 
@@ -145,7 +148,7 @@ CResourcePool previewPool;
 auto value = Load<T>(previewPool, source);
 ```
 
-这类用法适合单元测试、导入预览、临时工程或多工程并行处理，不是产品代码的默认写法。
+这类用法适合单元测试、导入预览、临时工程或多工程并行处理，不是业务代码的默认写法。
 
 ## 7. 持久化策略
 
@@ -194,4 +197,4 @@ auto ptr = pool.Get<T>(source);
 - LRU 或内存预算淘汰。
 - GPU 或前端资源释放协议。
 
-这些能力可以后续建立在 `Resources`、`ProjectStorage` 或产品插件之上。
+这些能力可以后续建立在 `Resources`、`ProjectStorage` 或业务插件之上。

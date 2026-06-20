@@ -1,0 +1,398 @@
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #eef2f5;
+  --line: #d6dde4;
+  --line-strong: #b8c3cf;
+  --text: #1d2630;
+  --muted: #637083;
+  --accent: #2f6f7e;
+  --accent-strong: #255a67;
+  --danger: #a94747;
+  --ok: #3f7650;
+  --shadow: 0 8px 24px rgba(28, 40, 54, 0.10);
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 960px;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.workbench {
+  display: grid;
+  grid-template-rows: 56px minmax(0, 1fr) 132px;
+  height: 100vh;
+}
+
+.app-bar {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 260px;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.brand-mark {
+  width: 44px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.app-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.app-subtitle,
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.context-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workbench-main {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+}
+
+.product-rail,
+.inspector {
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  padding: 12px;
+}
+
+.inspector {
+  border-left: 1px solid var(--line);
+  border-right: 0;
+}
+
+.rail-title,
+.panel-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.rail-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rail-item,
+.project-row {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+.rail-item.active,
+.project-row:hover {
+  border-color: var(--accent);
+  background: #edf7f8;
+}
+
+.rail-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.rail-state {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.workspace {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.workspace-header h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.workspace-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.product-card,
+.workspace-section,
+.editor-surface {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.product-card {
+  min-height: 164px;
+  padding: 14px;
+}
+
+.card-kicker {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.product-card h2,
+.workspace-section h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.product-card p {
+  min-height: 38px;
+  color: var(--muted);
+}
+
+.primary-button,
+.tool-button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+}
+
+.primary-button {
+  color: #ffffff;
+  background: var(--accent);
+}
+
+.primary-button:hover {
+  background: var(--accent-strong);
+}
+
+.tool-button {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.status-pill {
+  min-width: 66px;
+  min-height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.open-project-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.open-project-strip input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.workspace-section {
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.empty-block {
+  min-height: 48px;
+  display: grid;
+  align-items: center;
+  color: var(--muted);
+}
+
+.project-list,
+.recent-list {
+  display: grid;
+  gap: 8px;
+}
+
+.recent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.recent-title {
+  font-weight: 600;
+}
+
+.recent-path,
+.recent-time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-command-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.editor-surface {
+  min-height: 420px;
+  padding: 14px;
+}
+
+.editor-title {
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 140px;
+  gap: 12px;
+}
+
+.editor-grid > div {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.property-list {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.property-list dt {
+  color: var(--muted);
+}
+
+.property-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bottom-dock {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.log-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.log-row {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.log-row.ok {
+  color: var(--ok);
+}
+
+.log-row.error {
+  color: var(--danger);
+}
+
+.startup-error {
+  padding: 32px;
+}

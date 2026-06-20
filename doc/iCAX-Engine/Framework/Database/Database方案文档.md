@@ -2,7 +2,7 @@
 
 ## 1. 设计目标
 
-`Database` 以 `Repository` 作为唯一上层数据入口。上层不再用数据域拆分 CAD、CAM、临时编辑或预览数据；这些场景通过轻量项目会话、Repository 快照、导入事务或业务对象组合来表达。
+`Database` 以 `Repository` 作为唯一上层数据入口。上层不再在 Database 内拆分多个数据空间来表达 CAD、CAM、临时编辑或预览数据；这些场景通过轻量项目会话、Repository 快照、导入事务或业务对象组合来表达。
 
 核心目标：
 
@@ -45,7 +45,7 @@ Database/
     -> 组件版本和 changed 标记
 ```
 
-实现内部仍有一个默认数据空间对象用于复用旧事件链路和视图缓存，但它不再是上层架构概念。外部代码应只通过 `Repository` 访问 EC 数据。
+实现内部由 Repository 直接持有 Entity 表、EntityView、事件汇总、版本表和派生字段管理器。外部代码只通过 `Repository` 访问 EC 数据。
 
 ## 3. Repository 门面
 
@@ -77,7 +77,7 @@ sequenceDiagram
     R->>B: OnRepositoryChanging/Changed
 ```
 
-Repository 是对外事件发布者。ProjectSession 订阅 Repository 事件，再携带 UniverseContext 转发给 Universe。
+Repository 是对外事件发布者。Project 订阅 Repository 事件，再携带 UniverseContext 转发给 Universe。
 
 ## 5. ChangeSet
 
@@ -180,6 +180,10 @@ derived property -> source properties
 - `Silent` 字段不触发默认失效。
 - `Derived` 字段自身不写入日志。
 
-## 11. 后续清理
+## 11. 与其他 Framework 项目的关系
 
-当前实现内部仍保留旧数据空间类名和部分内部 key，这是为了先稳定事务、撤销还原、派生字段和快速保存链路。后续可以继续把内部命名从旧概念迁移为 `EntityStore` / `DataSpace`，但不应重新暴露给 Behaviour、Project 或产品代码。
+Behaviour 通过 `Repository::GetView()` 枚举组件并执行行为。
+
+Project 负责项目会话、资源库和 Repository 生命周期；Database 不关心项目打开方式。
+
+CommandHandler 通过 `ICommandContext` 获取 `IRepository`，执行命令时显式创建撤销记录边界。

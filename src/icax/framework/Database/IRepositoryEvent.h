@@ -27,12 +27,9 @@ namespace iCAX
                 kRemoveComponent,                       //!< 移除组件
                 kAddEntity,                             //!< 增加实体
                 kDeleteEntity,                          //!< 删除实体
-                kAddDomain,                             //!< 增加域
-                kDeleteDomain,                          //!< 删除域
                 kBatchChanged,                          //!< 批量变更
             }nType = kModifyComponent;                                                 //!< 操作类型，即对于组件的操作
             iCAX::Data::uuid RepositoryID;                        //!< 仓储ID
-            iCAX::Data::uuid DomainID;                            //!< 域ID
             iCAX::Data::uuid EntityID;                            //!< 实体ID
             std::string strClassName;                               //!< 组件类型
             //!< add时，旧值为空，新值为组件的值
@@ -44,7 +41,6 @@ namespace iCAX
 
             std::shared_ptr<class CComponentBase> pComponent;       //!< 组件
             std::shared_ptr<class IEntity> pEntity;                 //!< 实体
-            std::shared_ptr<class IDomain> pDomain;                 //!< 域
             std::shared_ptr<class IRepository> pRepository;         //!< 仓储
             std::shared_ptr<const CChangeSet> pChangeSet;           //!< 批量变更
         };

@@ -1,13 +1,19 @@
 #include "pch.h"
 #include "ApplicationHost.h"
-#include <filesystem>
-#include <string>
-#include <format>
-#include <cstring>
-#include <chrono>
-#include <utility>
+
 #include "ApplicationContext/FileApplicationConfigStore.h"
+#include "Behaviour/BehaviourRegistrationCatalog.h"
+#include "CommandHandler/FunctionCommandHandler.h"
+#include "Database/MetaRegistrationCatalog.h"
+#include "Resources/ResourceLoaderRegistrationCatalog.h"
+
+#include <chrono>
+#include <cstring>
+#include <filesystem>
+#include <format>
+#include <set>
 #include <stdexcept>
+#include <utility>
 
 namespace
 {
@@ -79,10 +85,206 @@ namespace
         Mail_.Payload.pData = nullptr;
         Mail_.Payload.nSize = 0;
     }
+
+    std::string _ToApplicationHostStateText(IN iCAX::ApplicationHost::EApplicationHostState State_)
+    {
+        switch (State_)
+        {
+        case iCAX::ApplicationHost::EApplicationHostState::Stopped:
+            return "Stopped";
+        case iCAX::ApplicationHost::EApplicationHostState::Starting:
+            return "Starting";
+        case iCAX::ApplicationHost::EApplicationHostState::Running:
+            return "Running";
+        case iCAX::ApplicationHost::EApplicationHostState::Stopping:
+            return "Stopping";
+        case iCAX::ApplicationHost::EApplicationHostState::Faulted:
+            return "Faulted";
+        default:
+            return "Unknown";
+        }
+    }
+
+    std::string _ToApplicationHostPhaseText(IN iCAX::ApplicationHost::EApplicationHostPhase Phase_)
+    {
+        switch (Phase_)
+        {
+        case iCAX::ApplicationHost::EApplicationHostPhase::None:
+            return "None";
+        case iCAX::ApplicationHost::EApplicationHostPhase::Starting:
+            return "Starting";
+        case iCAX::ApplicationHost::EApplicationHostPhase::Loading:
+            return "Loading";
+        case iCAX::ApplicationHost::EApplicationHostPhase::Running:
+            return "Running";
+        case iCAX::ApplicationHost::EApplicationHostPhase::Stopping:
+            return "Stopping";
+        case iCAX::ApplicationHost::EApplicationHostPhase::Unloading:
+            return "Unloading";
+        default:
+            return "Unknown";
+        }
+    }
+
+    iCAX::Data::ObjectMap _DecodeObjectPayload(IN const iCAX::Command::CCommandRequest& Request_)
+    {
+        auto _Payload = iCAX::ApplicationHost::DecodeApplicationHostPayload(Request_.Payload);
+        if (!_Payload.Is<iCAX::Data::ObjectMap>())
+        {
+            throw std::invalid_argument("ApplicationHost command payload must be an object");
+        }
+        return _Payload.To<iCAX::Data::ObjectMap>();
+    }
+
+    std::string _GetOptionalString(
+        IN const iCAX::Data::ObjectMap& Payload_,
+        IN const std::string& strName_,
+        IN const std::string& strDefault_ = std::string())
+    {
+        auto _Iter = Payload_.find(strName_);
+        if (_Iter == Payload_.end() || _Iter->second.Is<std::monostate>())
+        {
+            return strDefault_;
+        }
+        if (!_Iter->second.Is<std::string>())
+        {
+            throw std::invalid_argument("ApplicationHost payload field must be a string: " + strName_);
+        }
+        return _Iter->second.To<std::string>();
+    }
+
+    std::string _GetRequiredString(
+        IN const iCAX::Data::ObjectMap& Payload_,
+        IN const std::string& strName_)
+    {
+        auto _Value = _GetOptionalString(Payload_, strName_);
+        if (_Value.empty())
+        {
+            throw std::invalid_argument("ApplicationHost payload field is required: " + strName_);
+        }
+        return _Value;
+    }
+
+    std::string _GetDefaultProjectName(IN const std::string& strProjectPath_)
+    {
+        auto _Name = std::filesystem::path(strProjectPath_).stem().string();
+        return _Name.empty() ? std::string("Project") : _Name;
+    }
+
+    void _RequireExistingProjectFile(IN const std::string& strProjectPath_)
+    {
+        if (strProjectPath_.empty())
+        {
+            throw std::invalid_argument("Project path cannot be empty");
+        }
+        if (!std::filesystem::exists(strProjectPath_))
+        {
+            throw std::invalid_argument("Project file does not exist: " + strProjectPath_);
+        }
+        if (!std::filesystem::is_regular_file(strProjectPath_))
+        {
+            throw std::invalid_argument("Project path is not a file: " + strProjectPath_);
+        }
+    }
+
+    std::string _ToProductFileResolveStatusText(IN iCAX::ApplicationHost::EProductFileResolveStatus Status_)
+    {
+        switch (Status_)
+        {
+        case iCAX::ApplicationHost::EProductFileResolveStatus::Resolved:
+            return "Resolved";
+        case iCAX::ApplicationHost::EProductFileResolveStatus::NotFound:
+        default:
+            return "NotFound";
+        }
+    }
+
+    iCAX::Data::VariantArray _MakeStringArray(IN const std::vector<std::string>& Values_)
+    {
+        iCAX::Data::VariantArray _Array;
+        _Array.reserve(Values_.size());
+        for (const auto& _Value : Values_)
+        {
+            _Array.emplace_back(_Value);
+        }
+        return _Array;
+    }
+
+    void _ValidateProductDefinitions(IN const std::vector<iCAX::Product::CProductDefinition>& Products_)
+    {
+        std::set<std::string> _ProductIDs;
+        std::set<std::string> _ProjectFileMagics;
+        for (const auto& _Product : Products_)
+        {
+            if (_Product.ProductID.empty())
+            {
+                throw std::invalid_argument("ProductID cannot be empty");
+            }
+            if (!_ProductIDs.insert(_Product.ProductID).second)
+            {
+                throw std::invalid_argument("ProductID must be unique: " + _Product.ProductID);
+            }
+            if (_Product.ProjectFile.Magic.empty())
+            {
+                throw std::invalid_argument("Product project file magic cannot be empty: " + _Product.ProductID);
+            }
+            if (!_ProjectFileMagics.insert(_Product.ProjectFile.Magic).second)
+            {
+                throw std::invalid_argument("Product project file magic must be unique: " + _Product.ProjectFile.Magic);
+            }
+        }
+    }
+
+    void _RequireApplicationCommandContext(IN iCAX::Command::ICommandContext& Context_)
+    {
+        if (Context_.GetDependency<iCAX::Product::CProductRuntime>())
+        {
+            throw std::invalid_argument("ApplicationHost command must be sent to the application mailbox");
+        }
+    }
+
+    iCAX::Command::CCommandResponse _MakeApplicationPayloadResponse(IN const iCAX::Data::Variant& Payload_)
+    {
+        iCAX::Command::CCommandResponse _Response;
+        _Response.nStatus = iCAX::Command::ECommandStatusCode::Ok;
+        _Response.Payload = iCAX::ApplicationHost::EncodeApplicationHostPayload(Payload_);
+        return _Response;
+    }
+
+    iCAX::Data::Variant _MakeProductFilePayload(IN const iCAX::Product::CProductFileDefinition& Definition_)
+    {
+        iCAX::Data::ObjectMap _File;
+        _File["magic"] = Definition_.Magic;
+        _File["formatVersion"] = Definition_.FormatVersion;
+        _File["magicOffset"] = static_cast<unsigned long long>(Definition_.MagicOffset);
+        _File["probeBytes"] = static_cast<unsigned long long>(Definition_.ProbeBytes);
+
+        iCAX::Data::VariantArray _Extensions;
+        _Extensions.reserve(Definition_.FileExtensions.size());
+        for (const auto& _Extension : Definition_.FileExtensions)
+        {
+            _Extensions.emplace_back(_Extension);
+        }
+        _File["fileExtensions"] = _Extensions;
+        return iCAX::Data::Variant(_File);
+    }
+
+    iCAX::Data::VariantArray _MakeRecentProjectsPayload(IN const iCAX::Product::CProductData& ProductData_)
+    {
+        iCAX::Data::VariantArray _RecentProjects;
+        _RecentProjects.reserve(ProductData_.RecentProjects.size());
+        for (const auto& _Item : ProductData_.RecentProjects)
+        {
+            iCAX::Data::ObjectMap _RecentProject;
+            _RecentProject["path"] = _Item.ProjectPath;
+            _RecentProject["displayName"] = _Item.DisplayName;
+            _RecentProject["lastOpenedTime"] = _Item.LastOpenedTime;
+            _RecentProjects.emplace_back(_RecentProject);
+        }
+        return _RecentProjects;
+    }
 }
 
-
-//! 构造函数
 iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
     : m_Config()
     , m_ApplicationMailID(iCAX::Data::GenerateNewUUID())
@@ -90,9 +292,7 @@ iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
     , m_pCommandDispatcher(std::make_unique<iCAX::Command::CCommandDispatcher>(m_pCommandRegistry))
     , m_CommandContext()
 {
-    //! 默认值
     m_Config.strApplicationSettingsPath = "Setting/Application.Setting";
-    m_Config.strProductCatalogPath = "Products";
     m_Config.Descriptor.AppID = "icax";
     m_Config.Descriptor.AppName = "iCAX";
     m_Config.Paths.InstallDirectory = std::filesystem::current_path().string();
@@ -100,15 +300,25 @@ iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
     m_Config.Paths.CacheDirectory = "Cache";
     m_Config.Paths.TempDirectory = "Temp";
     m_Config.Paths.LogDirectory = "Log";
+
+    iCAX::Product::CProductDefinition _DefaultProduct;
+    _DefaultProduct.ProductID = "icax.default";
+    _DefaultProduct.ProductName = "iCAX Default Product";
+    _DefaultProduct.ProductVersion = "1.0";
+    _DefaultProduct.ProjectFile.Magic = "ICAX_DEFAULT";
+    _DefaultProduct.ProjectFile.FormatVersion = "1.0";
+    _DefaultProduct.ProjectFile.FileExtensions.push_back(".icax");
+    m_Config.Products.push_back(_DefaultProduct);
+    _ValidateProductDefinitions(m_Config.Products);
+
+    RegisterBuiltInApplicationCommands();
 }
 
-//!< 析构函数
 iCAX::ApplicationHost::CApplicationHost::~CApplicationHost()
 {
     Stop();
 }
 
-//! 设置配置信息
 void iCAX::ApplicationHost::CApplicationHost::SetConfig(IN const ApplicationHostConfig& Config_)
 {
     std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
@@ -118,10 +328,10 @@ void iCAX::ApplicationHost::CApplicationHost::SetConfig(IN const ApplicationHost
     {
         throw std::logic_error("ApplicationHost config cannot be changed while host is running");
     }
+    _ValidateProductDefinitions(Config_.Products);
     m_Config = Config_;
 }
 
-//! 启动后台工作线程
 void iCAX::ApplicationHost::CApplicationHost::Start()
 {
     std::thread _ThreadToJoin;
@@ -167,7 +377,6 @@ void iCAX::ApplicationHost::CApplicationHost::Start()
     }
 }
 
-//! 停止后台工作线程
 void iCAX::ApplicationHost::CApplicationHost::Stop()
 {
     std::thread _ThreadToJoin;
@@ -199,41 +408,35 @@ void iCAX::ApplicationHost::CApplicationHost::Stop()
     }
 }
 
-//! 是否正在运行
 bool iCAX::ApplicationHost::CApplicationHost::IsRunning() const
 {
     return GetState() == EApplicationHostState::Running;
 }
 
-//! 获取运行状态
 iCAX::ApplicationHost::EApplicationHostState iCAX::ApplicationHost::CApplicationHost::GetState() const
 {
     std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
     return m_State;
 }
 
-//! 获取当前运行阶段
 iCAX::ApplicationHost::EApplicationHostPhase iCAX::ApplicationHost::CApplicationHost::GetPhase() const
 {
     std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
     return m_Phase;
 }
 
-//! 获取当前停止原因
 iCAX::ApplicationHost::EApplicationHostStopReason iCAX::ApplicationHost::CApplicationHost::GetStopReason() const
 {
     std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
     return m_StopReason;
 }
 
-//! 获取最后一次故障
 std::optional<iCAX::ApplicationHost::ApplicationHostFault> iCAX::ApplicationHost::CApplicationHost::GetLastFault() const
 {
     std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
     return m_LastFault;
 }
 
-//! 订阅宿主事件
 uint64_t iCAX::ApplicationHost::CApplicationHost::SubscribeEvent(IN ApplicationHostEventHandler Handler_)
 {
     if (!Handler_)
@@ -247,14 +450,12 @@ uint64_t iCAX::ApplicationHost::CApplicationHost::SubscribeEvent(IN ApplicationH
     return _SubscriptionID;
 }
 
-//! 取消订阅宿主事件
 bool iCAX::ApplicationHost::CApplicationHost::UnsubscribeEvent(IN uint64_t nSubscriptionID_)
 {
     std::lock_guard<std::mutex> _Lock(m_EventMutex);
     return m_mapEventHandlers.erase(nSubscriptionID_) > 0;
 }
 
-//! 工作线程入口
 void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
 {
     NotifyEvent(EApplicationHostEventCode::Starting);
@@ -355,13 +556,80 @@ void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
             m_State = EApplicationHostState::Faulted;
             m_Phase = _FaultPhase;
             m_bStartupCompleted = true;
+            m_pWorkerException = _Exception;
         }
         m_StartupCondition.notify_all();
         NotifyEvent(EApplicationHostEventCode::Faulted, _Message, _Exception);
     }
 }
 
-//! 发布宿主事件
+void iCAX::ApplicationHost::CApplicationHost::Load()
+{
+    m_pApplicationContext = CreateApplicationContext();
+    m_pApplicationSetting = std::make_shared<iCAX::Data::PropertyBag>(m_pApplicationContext->GetSettings().GetProperties());
+    m_pApplicationServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
+    m_pApplicationMetaRegistry = iCAX::Database::CreateMetaRegistry();
+    m_pApplicationBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
+    m_pApplicationResourceLoaderRegistry = std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
+
+    iCAX::Services::CServiceRegistrationCatalog::ReplayAll(*m_pApplicationServiceProvider);
+    iCAX::Database::CMetaRegistrationCatalog::ReplayAll(*m_pApplicationMetaRegistry);
+    iCAX::Behaviour::CBehaviourRegistrationCatalog::ReplayAll(*m_pApplicationBehaviourRegistry);
+    iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayAll(*m_pApplicationResourceLoaderRegistry);
+    m_pMailChannelService = m_pApplicationServiceProvider->Resolve<iCAX::Services::IMailChannelService>();
+    if (!m_pMailChannelService->CreateChannel(m_ApplicationMailID))
+    {
+        throw std::runtime_error("Application mail channel already exists");
+    }
+
+    RegisterBuiltInApplicationCommands();
+    PrepareCommandContext();
+
+    if (m_Config.StartupProductID)
+    {
+        (void)StartProduct(*m_Config.StartupProductID);
+    }
+}
+
+void iCAX::ApplicationHost::CApplicationHost::MainLoop()
+{
+    DispatchApplicationMails();
+    DispatchProductMails();
+}
+
+void iCAX::ApplicationHost::CApplicationHost::Unload()
+{
+    auto _Runtimes = SnapshotProductRuntimes();
+    {
+        std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+        m_ProductRuntimes.clear();
+    }
+    for (auto& _pRuntime : _Runtimes)
+    {
+        if (_pRuntime)
+        {
+            _pRuntime->Stop();
+        }
+    }
+
+    if (m_pMailChannelService && !m_ApplicationMailID.is_nil())
+    {
+        (void)m_pMailChannelService->RemoveChannel(m_ApplicationMailID);
+    }
+    if (m_pApplicationServiceProvider)
+    {
+        m_pApplicationServiceProvider->UnloadAll();
+        m_pApplicationServiceProvider.reset();
+    }
+    m_pMailChannelService.reset();
+    m_pApplicationResourceLoaderRegistry.reset();
+    m_pApplicationBehaviourRegistry.reset();
+    m_pApplicationMetaRegistry.reset();
+    m_CommandContext.Clear();
+    m_pApplicationSetting.reset();
+    m_pApplicationContext.reset();
+}
+
 void iCAX::ApplicationHost::CApplicationHost::NotifyEvent(
     IN EApplicationHostEventCode Code_,
     IN const std::string& strMessage_,
@@ -388,11 +656,14 @@ void iCAX::ApplicationHost::CApplicationHost::NotifyEvent(
         _Event.Phase = m_Phase;
     }
 
-    for (const auto& _Handler : _Handlers)
+    for (auto& _Handler : _Handlers)
     {
         try
         {
-            _Handler(_Event);
+            if (_Handler)
+            {
+                _Handler(_Event);
+            }
         }
         catch (...)
         {
@@ -400,14 +671,12 @@ void iCAX::ApplicationHost::CApplicationHost::NotifyEvent(
     }
 }
 
-//! 设置运行阶段
 void iCAX::ApplicationHost::CApplicationHost::SetPhase(IN EApplicationHostPhase Phase_)
 {
     std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
     m_Phase = Phase_;
 }
 
-//! 记录故障
 void iCAX::ApplicationHost::CApplicationHost::RecordFault(
     IN EApplicationHostPhase Phase_,
     IN const std::string& strMessage_,
@@ -415,15 +684,13 @@ void iCAX::ApplicationHost::CApplicationHost::RecordFault(
 {
     std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
     m_LastFault = ApplicationHostFault{ Phase_, strMessage_, pException_ };
-    m_pWorkerException = pException_;
 }
 
-//! 从异常中提取消息
 std::string iCAX::ApplicationHost::CApplicationHost::GetExceptionMessage(IN std::exception_ptr pException_)
 {
     if (!pException_)
     {
-        return {};
+        return "Unknown exception";
     }
 
     try
@@ -440,63 +707,14 @@ std::string iCAX::ApplicationHost::CApplicationHost::GetExceptionMessage(IN std:
     }
 }
 
-//!< 加载
-void iCAX::ApplicationHost::CApplicationHost::Load()
-{
-    m_pApplicationContext = CreateApplicationContext();
-    m_pApplicationSetting = std::make_shared<iCAX::Data::PropertyBag>(m_pApplicationContext->GetSettings().GetProperties());
-    m_pMailPostOfficeService = iCAX::Services::GetGlobalServiceProvider()->Resolve<iCAX::Services::IMailPostOfficeService>();
-
-    m_pProjectManager = std::make_shared<iCAX::Project::CProjectManager>(m_pApplicationSetting);
-    for (const auto& _Product : LoadProductDefinitions())
-    {
-        LoadProductModules(_Product);
-        m_pProjectManager->Products().Set(_Product);
-    }
-
-    PrepareCommandContext();
-
-    for (const auto& _StartupProject : m_Config.StartupProjects)
-    {
-        (void)OpenProject(_StartupProject.strProductID, _StartupProject.strProjectName, _StartupProject.strProjectPath);
-    }
-}
-
-//!< 主线程循环
-void iCAX::ApplicationHost::CApplicationHost::MainLoop()
-{
-    DispatchBackendMails();
-}
-
-//! 卸载
-void iCAX::ApplicationHost::CApplicationHost::Unload()
-{
-    if (m_pProjectManager)
-    {
-        m_pProjectManager->CloseAll();
-        m_pProjectManager.reset();
-    }
-    if (m_pMailPostOfficeService)
-    {
-        m_pMailPostOfficeService->ClearPostOffices();
-        m_pMailPostOfficeService.reset();
-    }
-    iCAX::Services::GetGlobalServiceProvider()->UnloadAll();
-    m_CommandContext.Clear();
-    m_pApplicationSetting.reset();
-    m_pApplicationContext.reset();
-}
-
-//! 准备命令上下文依赖
 void iCAX::ApplicationHost::CApplicationHost::PrepareCommandContext()
 {
     m_CommandContext.Clear();
-    PopulateCommandContext(m_CommandContext, nullptr);
+    PopulateApplicationCommandContext(m_CommandContext);
 }
 
-void iCAX::ApplicationHost::CApplicationHost::PopulateCommandContext(
-    IN OUT iCAX::Command::CCommandContext& Context_,
-    IN const std::shared_ptr<iCAX::Project::CProjectSession>& pProject_) const
+void iCAX::ApplicationHost::CApplicationHost::PopulateApplicationCommandContext(
+    IN OUT iCAX::Command::CCommandContext& Context_) const
 {
     Context_.Clear();
 
@@ -509,47 +727,55 @@ void iCAX::ApplicationHost::CApplicationHost::PopulateCommandContext(
         Context_.SetDependency<iCAX::Application::CApplicationContext>(m_pApplicationContext);
         Context_.SetDependency<iCAX::Application::IApplicationContext>(m_pApplicationContext);
     }
-    if (m_pProjectManager)
     {
-        Context_.SetDependency<iCAX::Project::CProjectManager>(m_pProjectManager);
+        auto _pProducts = std::make_shared<std::vector<iCAX::Product::CProductDefinition>>(m_Config.Products);
+        Context_.SetDependency<std::vector<iCAX::Product::CProductDefinition>>(_pProducts);
     }
-    if (m_pMailPostOfficeService)
     {
-        Context_.SetDependency<iCAX::Services::IMailPostOfficeService>(m_pMailPostOfficeService);
+        auto _pRuntimes = std::make_shared<std::vector<std::shared_ptr<iCAX::Product::CProductRuntime>>>(SnapshotProductRuntimes());
+        Context_.SetDependency<std::vector<std::shared_ptr<iCAX::Product::CProductRuntime>>>(_pRuntimes);
     }
-    if (pProject_)
+    if (m_pApplicationServiceProvider)
     {
-        Context_.SetDependency<iCAX::Project::CProjectSession>(pProject_);
-        Context_.SetDependency<iCAX::Database::IRepository>(
-            std::shared_ptr<iCAX::Database::IRepository>(pProject_, &pProject_->Database()));
-        Context_.SetDependency<iCAX::Behaviour::IUniverse>(
-            std::shared_ptr<iCAX::Behaviour::IUniverse>(pProject_, &pProject_->Universe()));
-        Context_.SetDependency<iCAX::Resource::CResourceLibrary>(
-            std::shared_ptr<iCAX::Resource::CResourceLibrary>(pProject_, &pProject_->Resources()));
+        Context_.SetDependency<iCAX::Services::CServiceProvider>(m_pApplicationServiceProvider);
+    }
+    if (m_pMailChannelService)
+    {
+        Context_.SetDependency<iCAX::Services::IMailChannelService>(m_pMailChannelService);
+    }
+    if (m_pApplicationMetaRegistry)
+    {
+        Context_.SetDependency<iCAX::Database::IMetaRegistry>(m_pApplicationMetaRegistry);
+    }
+    if (m_pApplicationBehaviourRegistry)
+    {
+        Context_.SetDependency<iCAX::Behaviour::IBehaviourRegistry>(m_pApplicationBehaviourRegistry);
+    }
+    if (m_pApplicationResourceLoaderRegistry)
+    {
+        Context_.SetDependency<iCAX::Resource::CResourceLoaderRegistry>(m_pApplicationResourceLoaderRegistry);
     }
 }
 
-//! 处理后台收到的邮件命令
-void iCAX::ApplicationHost::CApplicationHost::DispatchBackendMails()
+void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
 {
-    if (!m_pMailPostOfficeService || !m_pCommandDispatcher)
+    if (!m_pCommandDispatcher)
     {
         return;
     }
 
-    DispatchBackendMails(m_pMailPostOfficeService->GetBackendPostOffice(m_ApplicationMailID), nullptr);
-}
-
-void iCAX::ApplicationHost::CApplicationHost::DispatchBackendMails(
-    IN const iCAX::Mail::CMailPostOffice& PostOffice_,
-    IN const std::shared_ptr<iCAX::Project::CProjectSession>& pProject_)
-{
-    if (!PostOffice_.IsValid() || !m_pCommandDispatcher)
+    if (!m_pMailChannelService || !m_pMailChannelService->HasChannel(m_ApplicationMailID))
     {
         return;
     }
 
-    auto _Mails = PostOffice_.Receive();
+    auto _PostOffice = m_pMailChannelService->GetBackendPostOffice(m_ApplicationMailID);
+    if (!_PostOffice.IsValid())
+    {
+        return;
+    }
+
+    auto _Mails = _PostOffice.Receive();
     for (auto& _Mail : _Mails)
     {
         iCAX::Command::CCommandResponse _Response;
@@ -561,7 +787,7 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchBackendMails(
         {
             auto _Request = _MailToCommandRequest(_Mail);
             iCAX::Command::CCommandContext _Context;
-            PopulateCommandContext(_Context, pProject_);
+            PopulateApplicationCommandContext(_Context);
             _Response = m_pCommandDispatcher->Dispatch(_Request, _Context);
         }
         catch (const std::invalid_argument& _Error)
@@ -581,18 +807,28 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchBackendMails(
         }
 
         auto _ResponseMail = _CommandResponseToMail(_Mail, _Response, AllocateBackendMailID());
-        PostOffice_.Send(_ResponseMail);
+        _PostOffice.Send(_ResponseMail);
         _ReleaseMailPayload(_Mail);
     }
 }
 
-//! 分配后台发出的邮件ID
+void iCAX::ApplicationHost::CApplicationHost::DispatchProductMails()
+{
+    auto _Runtimes = SnapshotProductRuntimes();
+    for (auto& _pRuntime : _Runtimes)
+    {
+        if (_pRuntime)
+        {
+            _pRuntime->DispatchProductMails();
+        }
+    }
+}
+
 uint64_t iCAX::ApplicationHost::CApplicationHost::AllocateBackendMailID()
 {
     return m_nNextBackendMailID.fetch_add(1, std::memory_order_relaxed);
 }
 
-//! 加载应用程序配置
 iCAX::Application::CApplicationSettings iCAX::ApplicationHost::CApplicationHost::LoadApplicationSettings() const
 {
     iCAX::Application::CFileApplicationConfigStore _Store;
@@ -607,144 +843,410 @@ std::shared_ptr<iCAX::Application::CApplicationContext> iCAX::ApplicationHost::C
         LoadApplicationSettings());
 }
 
-std::vector<iCAX::Project::CProductDefinition> iCAX::ApplicationHost::CApplicationHost::LoadProductDefinitions() const
+void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands()
 {
-    iCAX::Project::CProductCatalog _Loader;
-    std::vector<iCAX::Project::CProductDefinition> _Products;
+    m_pCommandRegistry->Set(
+        kAppGetStateCommand,
+        std::make_shared<iCAX::Command::CFunctionCommandHandler>(
+            [this](
+                IN const iCAX::Command::CCommandRequest& Request_,
+                IN iCAX::Command::ICommandContext& Context_) {
+                return HandleGetStateCommand(Request_, Context_);
+            }));
 
-    if (!m_Config.strProductCatalogPath.empty())
-    {
-        auto _Loaded = _Loader.LoadManifestDirectory(m_Config.strProductCatalogPath);
-        _Products.insert(_Products.end(), _Loaded.begin(), _Loaded.end());
-    }
+    m_pCommandRegistry->Set(
+        kAppListProductsCommand,
+        std::make_shared<iCAX::Command::CFunctionCommandHandler>(
+            [this](
+                IN const iCAX::Command::CCommandRequest& Request_,
+                IN iCAX::Command::ICommandContext& Context_) {
+                return HandleListProductsCommand(Request_, Context_);
+            }));
 
-    for (const auto& _Path : m_Config.ProductManifestPaths)
-    {
-        _Products.push_back(_Loader.LoadManifestFile(_Path));
-    }
+    m_pCommandRegistry->Set(
+        kAppStartProductCommand,
+        std::make_shared<iCAX::Command::CFunctionCommandHandler>(
+            [this](
+                IN const iCAX::Command::CCommandRequest& Request_,
+                IN iCAX::Command::ICommandContext& Context_) {
+                return HandleStartProductCommand(Request_, Context_);
+            }));
 
-    return _Products;
+    m_pCommandRegistry->Set(
+        kAppStopProductCommand,
+        std::make_shared<iCAX::Command::CFunctionCommandHandler>(
+            [this](
+                IN const iCAX::Command::CCommandRequest& Request_,
+                IN iCAX::Command::ICommandContext& Context_) {
+                return HandleStopProductCommand(Request_, Context_);
+            }));
+
+    m_pCommandRegistry->Set(
+        kAppResolveProjectFileCommand,
+        std::make_shared<iCAX::Command::CFunctionCommandHandler>(
+            [this](
+                IN const iCAX::Command::CCommandRequest& Request_,
+                IN iCAX::Command::ICommandContext& Context_) {
+                return HandleResolveProjectFileCommand(Request_, Context_);
+            }));
+
+    m_pCommandRegistry->Set(
+        kAppOpenProjectFileCommand,
+        std::make_shared<iCAX::Command::CFunctionCommandHandler>(
+            [this](
+                IN const iCAX::Command::CCommandRequest& Request_,
+                IN iCAX::Command::ICommandContext& Context_) {
+                return HandleOpenProjectFileCommand(Request_, Context_);
+            }));
 }
 
-void iCAX::ApplicationHost::CApplicationHost::LoadProductModules(IN const iCAX::Project::CProductDefinition& Product_) const
+iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleGetStateCommand(
+    IN const iCAX::Command::CCommandRequest&,
+    IN iCAX::Command::ICommandContext& Context_)
 {
-    auto _LoadModule = [](IN const std::string& strPath_, IN const std::string& strKind_) {
-        if (strPath_.empty())
+    _RequireApplicationCommandContext(Context_);
+    return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
+}
+
+iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleListProductsCommand(
+    IN const iCAX::Command::CCommandRequest&,
+    IN iCAX::Command::ICommandContext& Context_)
+{
+    _RequireApplicationCommandContext(Context_);
+    return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
+}
+
+iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleStartProductCommand(
+    IN const iCAX::Command::CCommandRequest& Request_,
+    IN iCAX::Command::ICommandContext& Context_)
+{
+    _RequireApplicationCommandContext(Context_);
+    auto _Payload = _DecodeObjectPayload(Request_);
+    auto _pRuntime = StartProduct(_GetOptionalString(_Payload, "productId"));
+
+    iCAX::Data::ObjectMap _Response;
+    _Response["applicationMailId"] = m_ApplicationMailID;
+    _Response["product"] = BuildProductPayload(_pRuntime->GetDefinition(), _pRuntime);
+    _Response["state"] = BuildApplicationStatePayload();
+    return _MakeApplicationPayloadResponse(iCAX::Data::Variant(_Response));
+}
+
+iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleStopProductCommand(
+    IN const iCAX::Command::CCommandRequest& Request_,
+    IN iCAX::Command::ICommandContext& Context_)
+{
+    _RequireApplicationCommandContext(Context_);
+    auto _Payload = _DecodeObjectPayload(Request_);
+    const auto _ProductID = _GetOptionalString(_Payload, "productId");
+    if (_ProductID.empty())
+    {
+        throw std::invalid_argument("ApplicationHost payload field is required: productId");
+    }
+    (void)StopProduct(_ProductID);
+    return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
+}
+
+iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleResolveProjectFileCommand(
+    IN const iCAX::Command::CCommandRequest& Request_,
+    IN iCAX::Command::ICommandContext& Context_)
+{
+    _RequireApplicationCommandContext(Context_);
+    auto _Payload = _DecodeObjectPayload(Request_);
+    auto _ResolveResult = ResolveProjectFileProduct(_GetRequiredString(_Payload, "projectPath"));
+
+    iCAX::Data::ObjectMap _Response;
+    _Response["applicationMailId"] = m_ApplicationMailID;
+    _Response["resolve"] = BuildProductFileResolvePayload(_ResolveResult);
+    return _MakeApplicationPayloadResponse(iCAX::Data::Variant(_Response));
+}
+
+iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleOpenProjectFileCommand(
+    IN const iCAX::Command::CCommandRequest& Request_,
+    IN iCAX::Command::ICommandContext& Context_)
+{
+    _RequireApplicationCommandContext(Context_);
+    auto _Payload = _DecodeObjectPayload(Request_);
+
+    const auto _ProjectPath = _GetRequiredString(_Payload, "projectPath");
+    _RequireExistingProjectFile(_ProjectPath);
+    auto _ProjectName = _GetOptionalString(_Payload, "projectName");
+    if (_ProjectName.empty())
+    {
+        _ProjectName = _GetDefaultProjectName(_ProjectPath);
+    }
+
+    auto _CatalogName = _GetOptionalString(_Payload, "catalogName");
+    if (_CatalogName.empty())
+    {
+        _CatalogName = _ProjectName;
+    }
+
+    auto _ResolveResult = ResolveProjectFileProduct(_ProjectPath);
+    if (_ResolveResult.Status != EProductFileResolveStatus::Resolved)
+    {
+        throw std::invalid_argument("Project file product is not resolved: " + _ProjectPath);
+    }
+
+    auto _pRuntime = StartProduct(_ResolveResult.ProductID);
+    auto _pCatalog = _pRuntime->OpenProjectCatalog(
+        _CatalogName,
+        _ProjectPath,
+        _ProjectName,
+        _ProjectPath);
+
+    iCAX::Data::ObjectMap _Response;
+    _Response["applicationMailId"] = m_ApplicationMailID;
+    _Response["resolve"] = BuildProductFileResolvePayload(_ResolveResult);
+    _Response["product"] = BuildProductPayload(_pRuntime->GetDefinition(), _pRuntime);
+    _Response["catalog"] = _pRuntime->BuildProjectCatalogPayload(_pCatalog);
+    _Response["state"] = BuildApplicationStatePayload();
+    return _MakeApplicationPayloadResponse(iCAX::Data::Variant(_Response));
+}
+
+iCAX::Data::Variant iCAX::ApplicationHost::CApplicationHost::BuildApplicationStatePayload() const
+{
+    iCAX::Data::ObjectMap _Root;
+    _Root["applicationMailId"] = m_ApplicationMailID;
+    _Root["state"] = _ToApplicationHostStateText(GetState());
+    _Root["phase"] = _ToApplicationHostPhaseText(GetPhase());
+
+    iCAX::Data::VariantArray _Products;
+    _Products.reserve(m_Config.Products.size());
+    for (const auto& _Definition : m_Config.Products)
+    {
+        _Products.emplace_back(BuildProductPayload(_Definition, FindProductRuntime(_Definition.ProductID)));
+    }
+    _Root["productCount"] = static_cast<unsigned long long>(_Products.size());
+    _Root["products"] = _Products;
+
+    auto _Runtimes = SnapshotProductRuntimes();
+    _Root["runningProductCount"] = static_cast<unsigned long long>(_Runtimes.size());
+
+    auto _Fault = GetLastFault();
+    _Root["faultMessage"] = _Fault ? _Fault->strMessage : std::string();
+    return iCAX::Data::Variant(_Root);
+}
+
+iCAX::Data::Variant iCAX::ApplicationHost::CApplicationHost::BuildProductFileResolvePayload(
+    IN const iCAX::ApplicationHost::CProductFileResolveResult& Result_) const
+{
+    iCAX::Data::ObjectMap _Resolve;
+    _Resolve["projectPath"] = Result_.ProjectPath;
+    _Resolve["status"] = _ToProductFileResolveStatusText(Result_.Status);
+    _Resolve["productId"] = Result_.ProductID;
+    _Resolve["candidateProductIds"] = _MakeStringArray(Result_.CandidateProductIDs);
+    _Resolve["matchedByMagic"] = Result_.bMatchedByMagic;
+    return iCAX::Data::Variant(_Resolve);
+}
+
+iCAX::Data::Variant iCAX::ApplicationHost::CApplicationHost::BuildProductPayload(
+    IN const iCAX::Product::CProductDefinition& Definition_,
+    IN const std::shared_ptr<iCAX::Product::CProductRuntime>& pRuntime_) const
+{
+    iCAX::Data::ObjectMap _Product;
+    _Product["productId"] = Definition_.ProductID;
+    _Product["productName"] = Definition_.ProductName;
+    _Product["productVersion"] = Definition_.ProductVersion;
+    _Product["frontendEntry"] = Definition_.FrontendEntry;
+    _Product["defaultProjectStartupComponent"] = Definition_.DefaultProjectStartupComponent;
+    _Product["projectFile"] = _MakeProductFilePayload(Definition_.ProjectFile);
+    _Product["isStarted"] = pRuntime_ && pRuntime_->IsStarted();
+    _Product["productMailId"] = pRuntime_ ? pRuntime_->GetProductMailID() : iCAX::Data::GenerateNilUUID();
+    _Product["recentProjects"] = pRuntime_
+        ? _MakeRecentProjectsPayload(pRuntime_->GetProductData())
+        : iCAX::Data::VariantArray();
+
+    if (pRuntime_)
+    {
+        _Product["runtime"] = pRuntime_->BuildProductStatePayload();
+    }
+    return iCAX::Data::Variant(_Product);
+}
+
+iCAX::Product::CProductDefinition iCAX::ApplicationHost::CApplicationHost::FindProductDefinition(
+    IN const std::string& strProductID_) const
+{
+    std::string _ProductID = strProductID_;
+    if (_ProductID.empty())
+    {
+        if (m_Config.Products.size() != 1)
         {
-            return;
+            throw std::invalid_argument("productId is required when ApplicationHost has zero or multiple products");
         }
+        _ProductID = m_Config.Products.front().ProductID;
+    }
 
-        HMODULE hMod = LoadLibraryA(strPath_.c_str());
-        if (!hMod)
+    for (const auto& _Definition : m_Config.Products)
+    {
+        if (_Definition.ProductID == _ProductID)
         {
-            DWORD code = GetLastError();
-            throw std::runtime_error(
-                std::format(
-                    "[Product Module Load Failure]\n"
-                    "  Kind   : {}\n"
-                    "  Path   : {}\n"
-                    "  Error  : Win32 code {}\n",
-                    strKind_, strPath_, code));
+            return _Definition;
         }
-    };
-
-    for (const auto& _Path : Product_.ComponentModules)
-    {
-        _LoadModule(_Path, "component");
     }
-    for (const auto& _Path : Product_.BehaviourModules)
-    {
-        _LoadModule(_Path, "behaviour");
-    }
-    for (const auto& _Path : Product_.ServiceModules)
-    {
-        _LoadModule(_Path, "service");
-    }
-    for (const auto& _Path : Product_.CommandModules)
-    {
-        _LoadModule(_Path, "command");
-    }
-    for (const auto& _Module : Product_.PluginModules)
-    {
-        _LoadModule(_Module.ComponentPath, "component");
-        _LoadModule(_Module.BehaviourPath, "behaviour");
-        _LoadModule(_Module.ServicePath, "service");
-        _LoadModule(_Module.CommandPath, "command");
-    }
+    throw std::runtime_error("Product definition not found: " + _ProductID);
 }
 
-iCAX::Project::CProjectManager& iCAX::ApplicationHost::CApplicationHost::GetProjectManager() const
+std::vector<std::shared_ptr<iCAX::Product::CProductRuntime>> iCAX::ApplicationHost::CApplicationHost::SnapshotProductRuntimes() const
 {
-    if (!m_pProjectManager)
+    std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+    std::vector<std::shared_ptr<iCAX::Product::CProductRuntime>> _Runtimes;
+    _Runtimes.reserve(m_ProductRuntimes.size());
+    for (const auto& [_ProductID, _pRuntime] : m_ProductRuntimes)
     {
-        throw std::logic_error("ProjectManager is not loaded");
+        _Runtimes.push_back(_pRuntime);
     }
-    return *m_pProjectManager;
+    return _Runtimes;
 }
 
-std::shared_ptr<iCAX::Project::CProjectSession> iCAX::ApplicationHost::CApplicationHost::GetActiveProject() const
+std::vector<iCAX::Product::CProductDefinition> iCAX::ApplicationHost::CApplicationHost::GetProductDefinitions() const
 {
-    if (!m_pProjectManager)
+    return m_Config.Products;
+}
+
+std::vector<std::shared_ptr<iCAX::Product::CProductRuntime>> iCAX::ApplicationHost::CApplicationHost::GetProductRuntimes() const
+{
+    return SnapshotProductRuntimes();
+}
+
+std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::ApplicationHost::CApplicationHost::FindProductRuntime(
+    IN const std::string& strProductID_) const
+{
+    std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+    auto _Iter = m_ProductRuntimes.find(strProductID_);
+    if (_Iter == m_ProductRuntimes.end())
     {
         return nullptr;
     }
-    return m_pProjectManager->GetActiveProject();
+    return _Iter->second;
 }
 
-std::shared_ptr<iCAX::Project::CProjectSession> iCAX::ApplicationHost::CApplicationHost::OpenProject(
-    IN const std::string& strProductID_,
-    IN const std::string& strProjectName_,
-    IN const std::string& strProjectPath_)
+std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::ApplicationHost::CApplicationHost::OpenProjectFile(
+    IN const std::string& strProjectPath_,
+    IN const std::string& strCatalogName_,
+    IN const std::string& strProjectName_)
 {
-    auto& _ProjectManager = GetProjectManager();
-    auto _pProject = _ProjectManager.OpenProject(strProductID_, strProjectName_, strProjectPath_);
-    std::weak_ptr<iCAX::Project::CProjectSession> _WeakProject = _pProject;
-    _pProject->SetFrameHandler(
-        [this, _WeakProject](
-            iCAX::Project::CProjectSession&,
-            const iCAX::Mail::CMailPostOffice& BackendPostOffice_) {
-            auto _pLockedProject = _WeakProject.lock();
-            if (!_pLockedProject)
-            {
-                return;
-            }
-            DispatchBackendMails(BackendPostOffice_, _pLockedProject);
-        });
-    _pProject->Start();
-    return _pProject;
+    _RequireExistingProjectFile(strProjectPath_);
+
+    auto _ResolveResult = ResolveProjectFileProduct(strProjectPath_);
+    if (_ResolveResult.Status != EProductFileResolveStatus::Resolved)
+    {
+        throw std::invalid_argument("Project file product is not resolved: " + strProjectPath_);
+    }
+
+    auto _ProjectName = strProjectName_.empty()
+        ? _GetDefaultProjectName(strProjectPath_)
+        : strProjectName_;
+    auto _CatalogName = strCatalogName_.empty()
+        ? _ProjectName
+        : strCatalogName_;
+
+    auto _pRuntime = StartProduct(_ResolveResult.ProductID);
+    return _pRuntime->OpenProjectCatalog(
+        _CatalogName,
+        strProjectPath_,
+        _ProjectName,
+        strProjectPath_);
 }
 
-bool iCAX::ApplicationHost::CApplicationHost::CloseProject(IN const iCAX::Data::uuid& ProjectID_)
+iCAX::ApplicationHost::CProductFileResolveResult iCAX::ApplicationHost::CApplicationHost::ResolveProjectFileProduct(
+    IN const std::string& strProjectPath_) const
 {
-    if (!m_pProjectManager)
-    {
-        return false;
-    }
-
-    return m_pProjectManager->CloseProject(ProjectID_);
+    return CProductFileResolver::Resolve(strProjectPath_, m_Config.Products);
 }
 
-iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetProjectFrontendPostOffice(IN const iCAX::Data::uuid& ProjectID_) const
+std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::ApplicationHost::CApplicationHost::StartProduct(
+    IN const std::string& strProductID_)
 {
-    if (!m_pProjectManager)
+    if (!m_pApplicationContext || !m_pApplicationSetting || !m_pMailChannelService)
     {
-        throw std::runtime_error("Project not found");
+        throw std::logic_error("ApplicationHost is not loaded");
     }
-    auto _pProject = m_pProjectManager->FindProject(ProjectID_);
-    if (!_pProject)
+
+    auto _Definition = FindProductDefinition(strProductID_);
     {
-        throw std::runtime_error("Project not found");
+        std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+        auto _Iter = m_ProductRuntimes.find(_Definition.ProductID);
+        if (_Iter != m_ProductRuntimes.end())
+        {
+            return _Iter->second;
+        }
     }
-    return _pProject->GetFrontendPostOffice();
+
+    auto _pRuntime = std::make_shared<iCAX::Product::CProductRuntime>(
+        _Definition,
+        m_pApplicationContext,
+        m_pApplicationSetting,
+        m_pApplicationServiceProvider,
+        m_pApplicationMetaRegistry,
+        m_pApplicationBehaviourRegistry,
+        m_pApplicationResourceLoaderRegistry);
+    _pRuntime->Start();
+
+    {
+        std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+        auto [_Iter, _Inserted] = m_ProductRuntimes.emplace(_Definition.ProductID, _pRuntime);
+        if (!_Inserted)
+        {
+            _pRuntime->Stop();
+            return _Iter->second;
+        }
+    }
+    return _pRuntime;
+}
+
+bool iCAX::ApplicationHost::CApplicationHost::StopProduct(IN const std::string& strProductID_)
+{
+    std::shared_ptr<iCAX::Product::CProductRuntime> _pRuntime;
+    {
+        std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+        auto _Iter = m_ProductRuntimes.find(strProductID_);
+        if (_Iter == m_ProductRuntimes.end())
+        {
+            return false;
+        }
+        _pRuntime = _Iter->second;
+        m_ProductRuntimes.erase(_Iter);
+    }
+
+    if (_pRuntime)
+    {
+        _pRuntime->Stop();
+    }
+    return true;
 }
 
 iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetApplicationFrontendPostOffice() const
 {
-    if (!m_pMailPostOfficeService)
+    if (!m_pMailChannelService)
     {
-        throw std::logic_error("MailPostOfficeService is not loaded");
+        throw std::logic_error("ApplicationHost is not loaded");
     }
-    return m_pMailPostOfficeService->GetFrontendPostOffice(m_ApplicationMailID);
+    return m_pMailChannelService->GetFrontendPostOffice(m_ApplicationMailID);
+}
+
+iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetProductFrontendPostOffice(
+    IN const std::string& strProductID_) const
+{
+    auto _pRuntime = FindProductRuntime(strProductID_);
+    if (!_pRuntime)
+    {
+        throw std::runtime_error("ProductRuntime not found");
+    }
+    return _pRuntime->GetProductFrontendPostOffice();
+}
+
+iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetProjectFrontendPostOffice(
+    IN const iCAX::Data::uuid& ProjectID_) const
+{
+    auto _Runtimes = SnapshotProductRuntimes();
+    for (const auto& _pRuntime : _Runtimes)
+    {
+        if (_pRuntime && _pRuntime->FindProjectCatalogByProjectID(ProjectID_))
+        {
+            return _pRuntime->GetProjectFrontendPostOffice(ProjectID_);
+        }
+    }
+    throw std::runtime_error("Project not found");
 }
 
 const iCAX::Data::uuid& iCAX::ApplicationHost::CApplicationHost::GetApplicationMailID() const

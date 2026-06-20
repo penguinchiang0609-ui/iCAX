@@ -1,6 +1,7 @@
 #pragma once
 #include "System.h"
 #include "BehaviourBase.h"
+#include "BehaviourRegistrationCatalog.h"
 #include "../Database/IEntity.h"
 
 namespace iCAX
@@ -106,6 +107,11 @@ namespace iCAX
         };
 
         /*
+        * @brief 创建独立行为注册表
+        */
+        _SYSTEM_EXP std::shared_ptr<IBehaviourRegistry> CreateBehaviourRegistry();
+
+        /*
         * @brief 获取全局行为注册表
         * @return std::shared_ptr<IBehaviourRegistry>
         */
@@ -122,7 +128,10 @@ private:\
     {\
         AutoRegisterBehaviour()\
         {\
-            iCAX::Behaviour::GetGlobalBehaviourRegistry()->RegisterBehaviour<TBehaviour>();\
+            iCAX::Behaviour::CBehaviourRegistrationCatalog::Register([](iCAX::Behaviour::IBehaviourRegistry& Registry_)\
+            {\
+                Registry_.RegisterBehaviour<TBehaviour>();\
+            }, this);\
         }\
     };\
     static inline AutoRegisterBehaviour s_auto_register_Instance{};

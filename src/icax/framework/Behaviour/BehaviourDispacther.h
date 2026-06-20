@@ -11,6 +11,8 @@ namespace iCAX
 {
     namespace Behaviour
     {
+        class IBehaviourRegistry;
+
         /*
         * @brief Behaviour调度器
         */
@@ -31,7 +33,7 @@ namespace iCAX
             /*
             * @brief 构造函数
             */
-            CBehaviourDispatcher();
+            explicit CBehaviourDispatcher(IN std::shared_ptr<IBehaviourRegistry> pRegistry_);
 
         public:
             /*
@@ -105,6 +107,7 @@ namespace iCAX
             std::unordered_map<std::string, std::shared_ptr<CBehaviourBase>> m_BehavioursMap;
             std::vector<std::shared_ptr<CBehaviourBase>> m_OrderedList;
             std::unordered_set<std::type_index> m_setPaused;
+            std::shared_ptr<IBehaviourRegistry> m_pRegistry;
         };
     }
 }

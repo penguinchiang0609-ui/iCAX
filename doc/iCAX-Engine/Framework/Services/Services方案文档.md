@@ -6,7 +6,7 @@
 src/icax/framework/Services/
 ```
 
-`Services` 放在 framework 下，是因为服务体系本身是后台框架的一部分。它为 ApplicationHost、Behaviour、插件和产品代码提供统一的服务注册和解析入口。
+`Services` 放在 framework 下，是因为服务体系本身是后台框架的一部分。它为 ApplicationHost、Behaviour、插件和业务代码提供统一的服务注册和解析入口。
 
 ## 2. 职责划分
 
@@ -15,39 +15,39 @@ src/icax/framework/Services/
 - 定义 `IService`。
 - 提供 `CServiceProvider`。
 - 提供服务自动注册辅助。
-- 提供框架级 `MailPostOfficeService`。
+- 提供 `IMailChannelService` / `CMailChannelService`，作为应用级 Mail channel 目录服务。
 
 `Services` 工程不负责：
 
 - 具体业务服务实现。
-- 具体命令处理。
 - 项目数据管理。
 - 资源对象持久化。
+- 具体业务命令分发。
 
-## 3. MailPostOfficeService
+## 3. 通信通道边界
 
-`Mailbox` 只提供 Mail、MailQueue、MailChannel 和 MailPostOffice 等基础通信对象。
+`Mailbox` 只提供 Mail、MailQueue、MailChannel 和 MailPostOffice 等基础通信对象，不维护全局目录。
 
-`MailPostOfficeService` 在服务体系中管理这些对象：
+`CMailChannelService` 是应用级服务，是当前框架内唯一的 channel 所有者：
 
 ```text
-communication id -> CMailChannel
-  -> backend post office
-  -> frontend post office
+ApplicationHost
+  CServiceProvider
+    IMailChannelService
+      applicationMailId -> CMailChannel
+      productMailId     -> CMailChannel
+      projectMailId     -> CMailChannel
 ```
 
-这样 ApplicationHost、产品 backend 或前端桥接层可以通过同一个服务拿到对应端的邮局。
+运行体只保存自己的 mail id：
 
-`communication id` 通常有两类：
+- `ApplicationHost` 保存 `applicationMailId`。
+- `ProductRuntime` 保存 `productMailId`。
+- `Project` 保存 `projectMailId`。
 
-- 应用级 MailID：处理打开项目、列产品、应用设置等工作区命令。
-- 其他由上层明确交给服务统一管理的通用通信 ID。
+上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 mail id 对应的 frontend post office。`CMailPostOffice` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧邮局会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
 
-项目级通道默认归属 `ProjectSession`，不挂在 `MailPostOfficeService` 上。宿主卸载时调用 `ClearPostOffices()` 清空服务持有的应用级或通用通道。
-
-如果某个上层模块自行把通信 ID 交给本服务管理，应在该通信生命周期结束时调用 `RemovePostOffice(id)`。
-
-`CMailPostOffice` 是弱引用视图。项目通道被移除后，旧的 frontend/backend 邮局会变为无效对象，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
+`GetFrontendPostOffice(id)` / `GetBackendPostOffice(id)` 只查询既有 channel，不隐式创建。channel 创建必须走 `CreateChannel(id)`，销毁必须走 `RemoveChannel(id)`。
 
 ## 4. 迁移说明
 

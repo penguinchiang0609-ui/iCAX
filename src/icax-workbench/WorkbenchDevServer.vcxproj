@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{4A7F5DD3-97A9-449D-9C5F-1EE47B341D3F}</ProjectGuid>
+    <Keyword>MakeFileProj</Keyword>
+    <RootNamespace>WorkbenchDevServer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <NMakeBuildCommandLine>echo iCAX Workbench has no native build step.</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>echo iCAX Workbench has no native rebuild step.</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>echo iCAX Workbench has no native clean step.</NMakeCleanCommandLine>
+    <NMakeOutput>$(ProjectDir)index.html</NMakeOutput>
+    <LocalDebuggerCommand>$(ProjectDir)run-workbench.cmd</LocalDebuggerCommand>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="dev-server.mjs" />
+    <None Include="index.html" />
+    <None Include="run-workbench.cmd" />
+    <None Include="run-workbench.ps1" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="bridge\createBridge.mjs" />
+    <None Include="bridge\hostBridge.mjs" />
+    <None Include="bridge\mockBridge.mjs" />
+    <None Include="layout\workbenchView.mjs" />
+    <None Include="mailbox\clients.mjs" />
+    <None Include="mailbox\commandNames.mjs" />
+    <None Include="mailbox\mailboxClient.mjs" />
+    <None Include="shell\bootstrap.mjs" />
+    <None Include="state\workbenchStore.mjs" />
+    <None Include="theme\workbench.css" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

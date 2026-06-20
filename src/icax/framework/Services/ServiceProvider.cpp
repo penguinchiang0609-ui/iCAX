@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "ServiceProvider.h"
+#include "ServiceRegistrationCatalog.h"
 
 //!< 构造函数
 iCAX::Services::CServiceProvider::CServiceProvider()
@@ -27,5 +28,7 @@ void iCAX::Services::CServiceProvider::UnloadAll()
 std::shared_ptr<iCAX::Services::CServiceProvider> iCAX::Services::GetGlobalServiceProvider()
 {
     static std::shared_ptr<CServiceProvider> s_pServiceProvider = std::make_shared<CServiceProvider>();
+    static size_t s_nReplayedRegistrationCount = 0;
+    s_nReplayedRegistrationCount = CServiceRegistrationCatalog::ReplayFrom(s_nReplayedRegistrationCount, *s_pServiceProvider);
     return s_pServiceProvider;
 }

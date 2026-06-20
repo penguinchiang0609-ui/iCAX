@@ -164,17 +164,15 @@
     <ClInclude Include="IChecker.h" />
     <ClInclude Include="IEntityEvent.h" />
     <ClInclude Include="IEntitiesView.h" />
-    <ClInclude Include="IDomain.h" />
     <ClInclude Include="IEntity.h" />
-    <ClInclude Include="IDomainEvent.h" />
     <ClInclude Include="IComponentEvent.h" />
     <ClInclude Include="IRepository.h" />
     <ClInclude Include="IRepositoryEvent.h" />
     <ClInclude Include="MetaRegistry.h" />
+    <ClInclude Include="MetaRegistrationCatalog.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Repository.h" />
     <ClInclude Include="RepositoryHistory.h" />
-    <ClInclude Include="Domain.h" />
     <ClInclude Include="VersionTable.h" />
   </ItemGroup>
   <ItemGroup>
@@ -191,6 +189,7 @@
     <ClCompile Include="ComponentMask.cpp" />
     <ClCompile Include="IRepository.cpp" />
     <ClCompile Include="MetaRegistry.cpp" />
+    <ClCompile Include="MetaRegistrationCatalog.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -199,7 +198,6 @@
     </ClCompile>
     <ClCompile Include="Repository.cpp" />
     <ClCompile Include="RepositoryHistory.cpp" />
-    <ClCompile Include="Domain.cpp" />
     <ClCompile Include="VersionTable.cpp" />
   </ItemGroup>
   <ItemGroup>

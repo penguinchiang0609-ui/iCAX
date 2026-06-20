@@ -34,15 +34,16 @@ $Projects = @(
     "src\icax\framework\Services\Services.vcxproj",
     "src\icax\framework\Behaviour\Behaviour.vcxproj",
     "src\icax\framework\Project\Project.vcxproj",
+    "src\icax\framework\Product\Product.vcxproj",
     "src\icax\plugins\core\CoreComponent\CoreComponent.vcxproj",
     "src\icax\plugins\core\CoreService\CoreService.vcxproj",
     "src\icax\plugins\core\CoreBehaviour\CoreBehaviour.vcxproj",
-    "src\products\sample\backend\component\SampleComponent\SampleComponent.vcxproj",
-    "src\products\sample\backend\service\SampleService\SampleService.vcxproj",
-    "src\products\sample\backend\behaviour\SampleBehaviour\SampleBehaviour.vcxproj",
+    "src\apps\sample\backend\component\SampleComponent\SampleComponent.vcxproj",
+    "src\apps\sample\backend\service\SampleService\SampleService.vcxproj",
+    "src\apps\sample\backend\behaviour\SampleBehaviour\SampleBehaviour.vcxproj",
     "src\icax\framework\ApplicationHost\ApplicationHost.vcxproj",
-    "src\products\cax-host\backend\CAXHost\CAXHost.vcxproj",
-    "src\products\mfc-sample\backend\MFCSample\MFCSample.vcxproj"
+    "src\apps\cax-host\backend\CAXHost\CAXHost.vcxproj",
+    "src\apps\mfc-sample\backend\MFCSample\MFCSample.vcxproj"
 )
 
 $ParentEnvironment = [Environment]::GetEnvironmentVariables()

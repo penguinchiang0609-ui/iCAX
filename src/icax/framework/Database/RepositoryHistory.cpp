@@ -1,10 +1,12 @@
 #include "pch.h"
 #include "RepositoryHistory.h"
 #include "ChangeLog.h"
+#include "IMetaRegistry.h"
 
 #include <algorithm>
 #include <map>
 #include <stdexcept>
+#include <utility>
 
 namespace
 {
@@ -67,7 +69,12 @@ struct iCAX::Database::CRepositoryHistory::CHistoryStep final
     CChangeSet ChangeSet;
 };
 
-std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositoryHistory::BeginCommand(IN const iCAX::Data::uuid& RepositoryID_, IN const std::string& strName_)
+iCAX::Database::CRepositoryHistory::CRepositoryHistory(IN std::shared_ptr<IMetaRegistry> pMetaRegistry_)
+    : m_pMetaRegistry(std::move(pMetaRegistry_))
+{
+}
+
+std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositoryHistory::BeginCommand(IN const std::string& strName_)
 {
     if (strName_.empty())
     {
@@ -78,7 +85,6 @@ std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositor
         throw std::runtime_error("Nested repository undo scopes are not supported");
     }
 
-    m_CurrentCommandDomainID = RepositoryID_;
     m_pCommandBuilder = std::make_unique<CChangeSetBuilder>(EChangeScopeKind::UserCommand, strName_);
     return std::make_unique<CRepositoryHistoryScope>(*this);
 }
@@ -86,11 +92,6 @@ std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositor
 bool iCAX::Database::CRepositoryHistory::IsRecording() const
 {
     return m_pCommandBuilder != nullptr;
-}
-
-iCAX::Data::uuid iCAX::Database::CRepositoryHistory::GetCurrentCommandDomain() const
-{
-    return m_pCommandBuilder ? m_CurrentCommandDomainID : iCAX::Data::GenerateNilUUID();
 }
 
 void iCAX::Database::CRepositoryHistory::HandleCommittedChangeSet(IN const CChangeSet& ChangeSet_)
@@ -108,14 +109,13 @@ void iCAX::Database::CRepositoryHistory::HandleCommittedChangeSet(IN const CChan
 void iCAX::Database::CRepositoryHistory::Clear()
 {
     m_pCommandBuilder.reset();
-    m_CurrentCommandDomainID = iCAX::Data::GenerateNilUUID();
     m_UndoStack.clear();
     m_RedoStack.clear();
 }
 
 void iCAX::Database::CRepositoryHistory::ClearForCommittedChangeSet(IN const CChangeSet& ChangeSet_)
 {
-    auto _UndoableChangeSet = FilterTransactionalChangeSet(ChangeSet_);
+    auto _UndoableChangeSet = FilterTransactionalChangeSet(ChangeSet_, GetMetaRegistry());
     if (_UndoableChangeSet.IsEmpty())
     {
         return;
@@ -125,47 +125,47 @@ void iCAX::Database::CRepositoryHistory::ClearForCommittedChangeSet(IN const CCh
     m_RedoStack.clear();
 }
 
-bool iCAX::Database::CRepositoryHistory::CanUndo(IN const iCAX::Data::uuid& DomainID_) const
+bool iCAX::Database::CRepositoryHistory::CanUndo() const
 {
     return CanMoveStep(true);
 }
 
-bool iCAX::Database::CRepositoryHistory::CanRedo(IN const iCAX::Data::uuid& DomainID_) const
+bool iCAX::Database::CRepositoryHistory::CanRedo() const
 {
     return CanMoveStep(false);
 }
 
-const iCAX::Database::CChangeSet& iCAX::Database::CRepositoryHistory::GetUndoChangeSet(IN const iCAX::Data::uuid& DomainID_) const
+const iCAX::Database::CChangeSet& iCAX::Database::CRepositoryHistory::GetUndoChangeSet() const
 {
     return m_UndoStack.back()->ChangeSet;
 }
 
-const iCAX::Database::CChangeSet& iCAX::Database::CRepositoryHistory::GetRedoChangeSet(IN const iCAX::Data::uuid& DomainID_) const
+const iCAX::Database::CChangeSet& iCAX::Database::CRepositoryHistory::GetRedoChangeSet() const
 {
     return m_RedoStack.back()->ChangeSet;
 }
 
-std::string iCAX::Database::CRepositoryHistory::GetUndoStepName(IN const iCAX::Data::uuid& DomainID_) const
+std::string iCAX::Database::CRepositoryHistory::GetUndoStepName() const
 {
     return m_UndoStack.back()->Name;
 }
 
-bool iCAX::Database::CRepositoryHistory::MoveUndoToRedo(IN const iCAX::Data::uuid& DomainID_)
+bool iCAX::Database::CRepositoryHistory::MoveUndoToRedo()
 {
     return MoveStep(true);
 }
 
-bool iCAX::Database::CRepositoryHistory::MoveRedoToUndo(IN const iCAX::Data::uuid& DomainID_)
+bool iCAX::Database::CRepositoryHistory::MoveRedoToUndo()
 {
     return MoveStep(false);
 }
 
-std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepositoryHistory::GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const
+std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepositoryHistory::GetUndoArray() const
 {
     return GetStepArray(m_UndoStack);
 }
 
-std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepositoryHistory::GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const
+std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepositoryHistory::GetRedoArray() const
 {
     return GetStepArray(m_RedoStack);
 }
@@ -178,9 +178,8 @@ void iCAX::Database::CRepositoryHistory::EndCommand()
     }
 
     auto _pBuilder = std::move(m_pCommandBuilder);
-    m_CurrentCommandDomainID = iCAX::Data::GenerateNilUUID();
 
-    auto _ChangeSet = FilterTransactionalChangeSet(_pBuilder->Build());
+    auto _ChangeSet = FilterTransactionalChangeSet(_pBuilder->Build(), GetMetaRegistry());
     if (_ChangeSet.IsEmpty())
     {
         return;
@@ -193,6 +192,11 @@ void iCAX::Database::CRepositoryHistory::EndCommand()
     PushStep(_pStep);
 }
 
+const iCAX::Database::IMetaRegistry& iCAX::Database::CRepositoryHistory::GetMetaRegistry() const
+{
+    return m_pMetaRegistry ? *m_pMetaRegistry : *GetGlobalMetaRegistry();
+}
+
 void iCAX::Database::CRepositoryHistory::RecordCommittedChangeSet(IN const CChangeSet& ChangeSet_)
 {
     if (!m_pCommandBuilder || ChangeSet_.IsEmpty())
@@ -200,10 +204,6 @@ void iCAX::Database::CRepositoryHistory::RecordCommittedChangeSet(IN const CChan
         return;
     }
 
-    for (const auto& _Change : ChangeSet_.CreatedDomains)
-    {
-        m_pCommandBuilder->RecordAddDomain(_Change.DomainID, _Change.bPersistent);
-    }
     for (const auto& _Change : ChangeSet_.CreatedEntities)
     {
         m_pCommandBuilder->RecordAddEntity(_Change.Key);
@@ -220,7 +220,7 @@ void iCAX::Database::CRepositoryHistory::RecordCommittedChangeSet(IN const CChan
     std::map<CChangeComponentKey, std::pair<iCAX::Data::PropertySet, iCAX::Data::PropertySet>> _ModifiedProperties;
     for (const auto& _Change : ChangeSet_.ModifiedProperties)
     {
-        auto& _Properties = _ModifiedProperties[{ _Change.Key.DomainID, _Change.Key.EntityID, _Change.Key.ComponentClass }];
+        auto& _Properties = _ModifiedProperties[{ _Change.Key.EntityID, _Change.Key.ComponentClass }];
         _Properties.first[_Change.Key.PropertyName] = _Change.PreviousValue;
         _Properties.second[_Change.Key.PropertyName] = _Change.NewValue;
     }
@@ -232,10 +232,6 @@ void iCAX::Database::CRepositoryHistory::RecordCommittedChangeSet(IN const CChan
     for (const auto& _Change : ChangeSet_.DeletedEntities)
     {
         m_pCommandBuilder->RecordDeleteEntity(_Change.Key);
-    }
-    for (const auto& _Change : ChangeSet_.DeletedDomains)
-    {
-        m_pCommandBuilder->RecordDeleteDomain(_Change.DomainID, _Change.bPersistent);
     }
 }
 

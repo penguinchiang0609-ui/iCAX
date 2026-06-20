@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "ResourceLibrary.h"
+#include "ResourceLoaderRegistry.h"
 #include "ResourcePoolAccess.h"
 
 #include <stdexcept>
@@ -22,6 +23,13 @@ namespace
 
 iCAX::Resource::CResourceLibrary::CResourceLibrary()
     : m_pPool(std::make_unique<CResourcePool>())
+    , m_pLoaderRegistry(nullptr)
+{
+}
+
+iCAX::Resource::CResourceLibrary::CResourceLibrary(IN std::shared_ptr<CResourceLoaderRegistry> pLoaderRegistry_)
+    : m_pPool(std::make_unique<CResourcePool>())
+    , m_pLoaderRegistry(std::move(pLoaderRegistry_))
 {
 }
 
@@ -140,7 +148,9 @@ std::shared_ptr<void> iCAX::Resource::CResourceLibrary::LoadUntyped(
     }
 
     auto _Context = MakeLoadContext(_Pool, _Key, std::type_index(RuntimeType_), strSource_, Info_, Options_);
-    auto _Result = CResourceLoaderRegistry::Load(_Context);
+    auto _Result = m_pLoaderRegistry
+        ? m_pLoaderRegistry->LoadResource(_Context)
+        : CResourceLoaderRegistry::Load(_Context);
     if (!_Result.IsOK())
     {
         return nullptr;

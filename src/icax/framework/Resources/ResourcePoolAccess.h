@@ -111,6 +111,51 @@ namespace iCAX
         template <typename T>
         std::shared_ptr<T> Load(
             IN CResourcePool& Pool_,
+            IN CResourceLoaderRegistry& LoaderRegistry_,
+            IN const CResourceKey& Key_,
+            IN const CResourceInfo& Info_ = CResourceInfo(),
+            IN const std::map<std::string, std::string>& Options_ = {})
+        {
+            if (!Key_.IsValid())
+            {
+                return nullptr;
+            }
+
+            using TResource = std::remove_cv_t<std::remove_reference_t<T>>;
+            auto _pExisting = Pool_.GetUntyped(Key_, typeid(TResource));
+            if (_pExisting)
+            {
+                return std::static_pointer_cast<TResource>(_pExisting);
+            }
+
+            if (Pool_.HasObject(Key_))
+            {
+                return nullptr;
+            }
+
+            const auto _TargetResourceType = std::type_index(typeid(TResource));
+            auto _Context = MakeLoadContext(Pool_, Key_, _TargetResourceType, Key_.Source, Info_, Options_);
+            auto _Result = LoaderRegistry_.LoadResource(_Context);
+            if (!_Result.IsOK())
+            {
+                return nullptr;
+            }
+            if (!StoreLoadResult(Pool_, _Result))
+            {
+                return nullptr;
+            }
+
+            auto _pLoaded = Pool_.GetUntyped(Key_, typeid(TResource));
+            if (!_pLoaded)
+            {
+                return nullptr;
+            }
+            return std::static_pointer_cast<TResource>(_pLoaded);
+        }
+
+        template <typename T>
+        std::shared_ptr<T> Load(
+            IN CResourcePool& Pool_,
             IN const CResourceKey& Key_,
             IN const CResourceInfo& Info_ = CResourceInfo(),
             IN const std::map<std::string, std::string>& Options_ = {})
@@ -150,6 +195,22 @@ namespace iCAX
                 return nullptr;
             }
             return std::static_pointer_cast<TResource>(_pLoaded);
+        }
+
+        template <typename T>
+        std::shared_ptr<T> Load(
+            IN CResourcePool& Pool_,
+            IN CResourceLoaderRegistry& LoaderRegistry_,
+            IN const std::string& strSource_,
+            IN const CResourceInfo& Info_ = CResourceInfo(),
+            IN const std::map<std::string, std::string>& Options_ = {})
+        {
+            if (strSource_.empty())
+            {
+                return nullptr;
+            }
+
+            return Load<T>(Pool_, LoaderRegistry_, MakeResourceKeyFromSource(strSource_), Info_, Options_);
         }
 
         template <typename T>

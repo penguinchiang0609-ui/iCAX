@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="bridge">
+      <UniqueIdentifier>{7815AE94-55A8-4CEB-B323-A383C1F07E49}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="layout">
+      <UniqueIdentifier>{A9F561F8-76F5-470F-A0D6-863D568B8E6D}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="mailbox">
+      <UniqueIdentifier>{4731374A-E577-490F-B3D8-8B72217447F4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shell">
+      <UniqueIdentifier>{D682B548-4E2B-42DD-B585-01A0DAB2FA03}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="state">
+      <UniqueIdentifier>{EB6766A3-F97D-4084-8CF6-4514C48CC742}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="theme">
+      <UniqueIdentifier>{3841C4FA-C288-43BB-B4A6-9DB28E1D0B53}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="bridge\createBridge.mjs">
+      <Filter>bridge</Filter>
+    </None>
+    <None Include="bridge\hostBridge.mjs">
+      <Filter>bridge</Filter>
+    </None>
+    <None Include="bridge\mockBridge.mjs">
+      <Filter>bridge</Filter>
+    </None>
+    <None Include="layout\workbenchView.mjs">
+      <Filter>layout</Filter>
+    </None>
+    <None Include="mailbox\clients.mjs">
+      <Filter>mailbox</Filter>
+    </None>
+    <None Include="mailbox\commandNames.mjs">
+      <Filter>mailbox</Filter>
+    </None>
+    <None Include="mailbox\mailboxClient.mjs">
+      <Filter>mailbox</Filter>
+    </None>
+    <None Include="shell\bootstrap.mjs">
+      <Filter>shell</Filter>
+    </None>
+    <None Include="state\workbenchStore.mjs">
+      <Filter>state</Filter>
+    </None>
+    <None Include="theme\workbench.css">
+      <Filter>theme</Filter>
+    </None>
+  </ItemGroup>
+</Project>

@@ -44,7 +44,7 @@ void iCAX::Core::CSpdlogService::OnLoad()
     //!   %! → 函数名
     //!   %t → 线程 id
     //!   %n → logger 名称
-    //!   示例：[2025-09-15 22:59:00.123] [info] [main.cpp:42 main][1034] Hello world!
+    //!   示例：[2025-09-15 22:59:00.123] [info] [main.cpp:42 main][1034] iCAX log ready.
     m_pLogger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] [%s:%# %!] %v");
     m_pLogger->flush_on(spdlog::level::info);
 

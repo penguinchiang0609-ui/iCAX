@@ -14,14 +14,23 @@ iCAX::Behaviour::CBehaviourRegistry::~CBehaviourRegistry()
 //!< 注册Behaviour
 void iCAX::Behaviour::CBehaviourRegistry::RegisterBehaviourByInstance(IN const std::shared_ptr<CBehaviourBase>& pBehaviour_)
 {
-    if (m_BehavioursByName.find(pBehaviour_->GetBehaviourClass()) != m_BehavioursByName.end())
+    if (!pBehaviour_)
     {
-        throw std::runtime_error(std::format("CBehaviourRegistry::RegisterBehaviourByInstance {} repeat", pBehaviour_->GetBehaviourClass()));
+        throw std::invalid_argument("Behaviour cannot be null");
     }
+
     std::type_index _nType = std::type_index(typeid(*pBehaviour_));
-    if (m_Behaviours.find(_nType) != m_Behaviours.end())
+    auto _NameIter = m_BehavioursByName.find(pBehaviour_->GetBehaviourClass());
+    auto _TypeIter = m_Behaviours.find(_nType);
+    if (_NameIter != m_BehavioursByName.end() || _TypeIter != m_Behaviours.end())
     {
-        throw std::runtime_error("CBehaviourRegistry::RegisterBehaviourByInstance repeat");
+        if (_NameIter != m_BehavioursByName.end()
+            && _TypeIter != m_Behaviours.end()
+            && _NameIter->second == _TypeIter->second)
+        {
+            return;
+        }
+        throw std::runtime_error(std::format("CBehaviourRegistry::RegisterBehaviourByInstance {} conflicts", pBehaviour_->GetBehaviourClass()));
     }
 
 

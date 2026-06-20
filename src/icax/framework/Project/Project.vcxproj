@@ -150,12 +150,10 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="ProductCatalog.h" />
-    <ClInclude Include="ProductDefinition.h" />
     <ClInclude Include="Project.h" />
     <ClInclude Include="ProjectExport.h" />
-    <ClInclude Include="ProjectManager.h" />
-    <ClInclude Include="ProjectSession.h" />
+    <ClInclude Include="ProjectCatalog.h" />
+    <ClInclude Include="ProjectRuntime.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
@@ -165,10 +163,9 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="ProductCatalog.cpp" />
-    <ClCompile Include="ProductDefinition.cpp" />
-    <ClCompile Include="ProjectManager.cpp" />
-    <ClCompile Include="ProjectSession.cpp" />
+    <ClCompile Include="ProjectCatalog.cpp" />
+    <ClCompile Include="Project.cpp" />
+    <ClCompile Include="ProjectRuntime.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj">
@@ -185,6 +182,9 @@
     </ProjectReference>
     <ProjectReference Include="..\Resources\Resources.vcxproj">
       <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\Services\Services.vcxproj">
+      <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

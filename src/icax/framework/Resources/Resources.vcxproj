@@ -155,6 +155,7 @@
     <ClInclude Include="ResourceKey.h" />
     <ClInclude Include="ResourceLibrary.h" />
     <ClInclude Include="ResourceLoadContext.h" />
+    <ClInclude Include="ResourceLoaderRegistrationCatalog.h" />
     <ClInclude Include="ResourceLoaderRegistry.h" />
     <ClInclude Include="ResourceLoadResult.h" />
     <ClInclude Include="ResourcePool.h" />
@@ -171,6 +172,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="ResourceKey.cpp" />
+    <ClCompile Include="ResourceLoaderRegistrationCatalog.cpp" />
     <ClCompile Include="ResourceLoaderRegistry.cpp" />
     <ClCompile Include="ResourcePool.cpp" />
     <ClCompile Include="ResourceLibrary.cpp" />

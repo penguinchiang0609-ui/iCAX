@@ -45,9 +45,6 @@
     <ClInclude Include="IEntity.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
-    <ClInclude Include="Domain.h">
-      <Filter>inner</Filter>
-    </ClInclude>
     <ClInclude Include="IRepository.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
@@ -57,13 +54,7 @@
     <ClInclude Include="RepositoryHistory.h">
       <Filter>inner</Filter>
     </ClInclude>
-    <ClInclude Include="IDomain.h">
-      <Filter>extern\interface</Filter>
-    </ClInclude>
     <ClInclude Include="IEntityEvent.h">
-      <Filter>extern\interface</Filter>
-    </ClInclude>
-    <ClInclude Include="IDomainEvent.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
     <ClInclude Include="IComponentEvent.h">
@@ -99,6 +90,9 @@
     <ClInclude Include="MetaRegistry.h">
       <Filter>inner</Filter>
     </ClInclude>
+    <ClInclude Include="MetaRegistrationCatalog.h">
+      <Filter>inner</Filter>
+    </ClInclude>
     <ClInclude Include="ComponentBase.h">
       <Filter>extern\class</Filter>
     </ClInclude>
@@ -131,9 +125,6 @@
     <ClCompile Include="Entity.cpp">
       <Filter>inner</Filter>
     </ClCompile>
-    <ClCompile Include="Domain.cpp">
-      <Filter>inner</Filter>
-    </ClCompile>
     <ClCompile Include="MaskRegistry.cpp">
       <Filter>inner</Filter>
     </ClCompile>
@@ -153,6 +144,9 @@
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="MetaRegistry.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="MetaRegistrationCatalog.cpp">
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="IMetaRegistry.cpp">

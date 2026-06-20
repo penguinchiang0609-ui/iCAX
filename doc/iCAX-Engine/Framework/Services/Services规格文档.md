@@ -4,7 +4,7 @@
 
 `Services` 是 framework 层的服务体系工程，提供服务接口、服务提供器、自动注册辅助和框架级服务实现。
 
-它不承载具体产品业务逻辑。日志、资源、设置等内置服务实现可以放在 `plugins/core/CoreService`，产品服务可以放在产品自己的 service 工程中。
+它不承载具体业务逻辑。日志、资源、设置等内置服务实现可以放在 `plugins/core/CoreService`，业务服务可以放在对应的 service 工程中。
 
 ## 2. 核心能力
 
@@ -24,24 +24,26 @@
 
 ### 2.3 ServicesHelper
 
-自动注册辅助，用于让服务模块在加载时把服务实例注册到全局服务提供器。
+自动注册辅助，用于让服务模块在加载时把注册动作记录到 `CServiceRegistrationCatalog`。ApplicationHost 创建应用级 `CServiceProvider` 后，再把注册动作回放到该容器。
 
-### 2.4 IMailPostOfficeService
+### 2.4 通信通道边界
 
-框架级邮局服务，按通信 ID 管理 `CMailChannel`，并提供 backend/frontend 两侧邮局。ApplicationHost 使用它管理应用级 MailID 对应的通道；项目级通道由 `ProjectSession` 自己持有。
+`Services` 提供应用级 `IMailChannelService`，用于统一托管 Mail channel 生命周期。
 
-```cpp
-auto service = iCAX::Services::GetGlobalServiceProvider()
-    ->Resolve<iCAX::Services::IMailPostOfficeService>();
+`IMailChannelService` 负责：
 
-auto backend = service->GetBackendPostOffice(instanceId);
-auto frontend = service->GetFrontendPostOffice(instanceId);
+- 按 mail id 显式创建 `CMailChannel`。
+- 判断指定 mail id 的 channel 是否存在。
+- 返回 frontend/backend `CMailPostOffice`。
+- 按 mail id 显式删除 channel，并使旧 post office 失效。
+- 在服务卸载时清空所有 channel。
 
-service->RemovePostOffice(instanceId);
-service->ClearPostOffices();
-```
+约束：
 
-移除某个通信 ID 后，由该通道取得的旧邮局会失效；调用方应重新获取有效邮局，或者停止向已关闭通道发送邮件。
+- `GetFrontendPostOffice` / `GetBackendPostOffice` 不会隐式创建 channel。
+- `CreateChannel` 对重复 id 返回失败，不覆盖旧 channel。
+- nil uuid 不是合法 mail id。
+- `ApplicationHost`、`ProductRuntime`、`Project` 只保存自己的 mail id，不直接持有 `CMailChannel`。
 
 ## 3. 依赖边界
 
@@ -49,11 +51,12 @@ service->ClearPostOffices();
 
 - `foundation/Data`
 - `framework/Mailbox`
+- 其他 foundation 基础能力。
 
-其他 framework 项目、插件和产品代码可以依赖 `Services`。
+其他 framework 项目、插件和业务代码可以依赖 `Services`。
 
 ## 4. 当前约束
 
-- 当前使用全局服务提供器。
-- 当前不区分应用级服务容器和项目级服务容器。
+- 正式运行路径使用 ApplicationHost 创建的应用级服务提供器。
+- 全局服务提供器仅作为底层测试和裸用场景的兼容入口。
 - 当前不负责具体业务命令分发。

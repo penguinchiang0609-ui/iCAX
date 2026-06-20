@@ -13,11 +13,11 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Mail">
-      <UniqueIdentifier>{f9c395b9-4b4d-423e-94a4-e7e50b730bb8}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Service">
       <UniqueIdentifier>{d5602d3c-6e00-4012-baff-6b5ad0a0fe8b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Mail">
+      <UniqueIdentifier>{2e97c3fb-e6a7-4c9c-a083-2db9a249d28e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -30,12 +30,6 @@
     <ClInclude Include="Services.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="IMailPostOfficeService.h">
-      <Filter>Mail</Filter>
-    </ClInclude>
-    <ClInclude Include="MailPostOfficeService.h">
-      <Filter>Mail</Filter>
-    </ClInclude>
     <ClInclude Include="IService.h">
       <Filter>Service</Filter>
     </ClInclude>
@@ -45,6 +39,15 @@
     <ClInclude Include="ServicesHelper.h">
       <Filter>Service</Filter>
     </ClInclude>
+    <ClInclude Include="ServiceRegistrationCatalog.h">
+      <Filter>Service</Filter>
+    </ClInclude>
+    <ClInclude Include="IMailChannelService.h">
+      <Filter>Mail</Filter>
+    </ClInclude>
+    <ClInclude Include="MailChannelService.h">
+      <Filter>Mail</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -53,11 +56,14 @@
     <ClCompile Include="pch.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="MailPostOfficeService.cpp">
-      <Filter>Mail</Filter>
-    </ClCompile>
     <ClCompile Include="ServiceProvider.cpp">
       <Filter>Service</Filter>
+    </ClCompile>
+    <ClCompile Include="ServiceRegistrationCatalog.cpp">
+      <Filter>Service</Filter>
+    </ClCompile>
+    <ClCompile Include="MailChannelService.cpp">
+      <Filter>Mail</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

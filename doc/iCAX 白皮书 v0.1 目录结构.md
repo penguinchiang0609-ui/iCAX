@@ -37,21 +37,23 @@ iCAX 遵循以下核心原则：
 
 ## 2.1 系统整体结构
 
-```
-UI Thread
-   ↑ ↓
-PDOHub + Mail System
-   ↑ ↓
-Engine Thread
-   ↓
-ProjectSession
- ├── Repository
- │    └── Entity
- │         └── Components
- ├── ResourceLibrary
- ├── Universe
- │    └── Behaviours
- └── MailChannel
+```text
+Frontend Host / Bridge
+   ↑ ↓ Mailbox / PDO / Resource
+ApplicationHost
+   ├── ApplicationContext
+   ├── Application MailChannel
+   ├── Application ServiceProvider
+   ├── Application Meta / Behaviour / ResourceLoader Registry
+   └── ProductRuntime*
+        ├── Product MailChannel
+        └── ProjectCatalog*
+             └── Project*
+                  ├── Repository
+                  ├── ResourceLibrary / ResourcePool
+                  ├── UniverseContext / Universe
+                  ├── Project MailChannel
+                  └── Project WorkThread
 ```
 
 ------
@@ -62,12 +64,14 @@ iCAX 分为：
 
 | 层级   | 名称          | 职责           |
 | ------ | ------------- | -------------- |
-| UI层   | UI Thread     | 用户交互与渲染 |
-| 通信层 | PDOHub + Mail | 线程通信       |
-| 行为层 | Behaviour     | 系统逻辑       |
-| 数据层 | Database      | 状态存储       |
-| 服务层 | Services      | 基础能力       |
-| 插件层 | Plugins       | 业务扩展       |
+| 层级   | 名称                    | 职责                         |
+| ------ | ----------------------- | ---------------------------- |
+| UI层   | Frontend Host / Bridge  | 用户交互、渲染和 endpoint 管理 |
+| 宿主层 | ApplicationHost         | 应用上下文、产品清单、应用级通道 |
+| 产品层 | ProductRuntime          | 产品模块加载、产品命令、项目目录 |
+| 项目层 | Project                 | Repository、Resource、Universe 和项目线程 |
+| 通信层 | Mailbox / PDO / Resource | 命令、状态和资源访问           |
+| 扩展层 | Plugins / Modules       | 业务扩展和自动注册             |
 
 # 3. 数据架构（Database Architecture）
 
@@ -103,7 +107,7 @@ Repository 是数据库顶级容器：
 - 管理持久化
 - 管理事务
 
-Repository 由 ProjectSession 持有。临时编辑、预览和导入由轻量 ProjectSession 或 Repository 快照表达。Universe 只承载行为调度，不对应也不拥有 Repository；ProjectSession 通过 UniverseContext 把当前 Repository 传给 Behaviour。
+Repository 由 Project 持有。临时编辑、预览和导入由轻量 Project 或 Repository 快照表达。Universe 只承载行为调度，不对应也不拥有 Repository；Project 通过 UniverseContext 把当前 Repository 传给 Behaviour。
 
 ------
 
@@ -183,7 +187,7 @@ Universe 是行为运行容器：
 职责：
 
 - 管理 Behaviour 调度器
-- 按 ProjectSession 传入的 UniverseContext 执行 Behaviour
+- 按 Project 传入的 UniverseContext 执行 Behaviour
 
 ------
 
@@ -240,7 +244,7 @@ UndoRedoService
 
 Service 特点：
 
-- 单例
+- Application 级共享
 - 依赖注入
 - 独立生命周期
 
@@ -255,7 +259,7 @@ Service 特点：
 - PDOHub
 - 字段级同步
 - 双缓冲
-- UI/Engine 通信
+- Frontend/backend 通信
 
 ------
 

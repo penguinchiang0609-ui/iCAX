@@ -21,7 +21,6 @@ namespace iCAX
         */
         struct _DATABASE_EXP CPropertyKey final
         {
-            iCAX::Data::uuid DomainID;
             iCAX::Data::uuid EntityID;
             std::string ComponentClass;
             std::string PropertyName;
@@ -61,7 +60,7 @@ namespace iCAX
         public:
             iCAX::Data::PropertyValue GetProperty(IN const CPropertyKey& Key_);
             iCAX::Data::PropertyValue GetProperty(IN const CComponentBase& Component_, IN const std::string& strPropertyName_);
-            iCAX::Data::PropertyValue GetProperty(IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_, IN const std::string& strPropertyName_);
+            iCAX::Data::PropertyValue GetProperty(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_, IN const std::string& strPropertyName_);
 
             const CPropertyKey& GetTarget() const;
 
@@ -91,14 +90,14 @@ namespace iCAX
             iCAX::Data::PropertyValue Evaluate(IN const CComponentBase& Component_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_);
             void AddDependency(IN const CPropertyKey& Derived_, IN const CPropertyKey& Source_);
             void Invalidate(IN const CPropertyKey& Source_);
-            void RemoveComponent(IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_);
+            void RemoveComponent(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_);
             void Clear();
 
         private:
             CPropertyKey MakeKey(IN const CComponentBase& Component_, IN const std::string& strPropertyName_) const;
             void ClearDependencies(IN const CPropertyKey& Derived_);
             void InvalidateRecursive(IN const CPropertyKey& Source_, IN OUT std::unordered_set<CPropertyKey, CPropertyKeyHash>& Visited_);
-            bool MatchComponent(IN const CPropertyKey& Key_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_) const;
+            bool MatchComponent(IN const CPropertyKey& Key_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_) const;
 
         private:
             CRepository& m_Repository;

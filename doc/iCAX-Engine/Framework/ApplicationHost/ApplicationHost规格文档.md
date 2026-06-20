@@ -2,26 +2,44 @@
 
 ## 1. 定位
 
-`ApplicationHost` 是 C++ 后台工作区宿主。
+`ApplicationHost` 是应用级后台宿主，是前端启动后最先连接的稳定入口。
 
-它负责构造 `ApplicationContext`，加载产品目录，创建 `ProjectManager`，接入应用级 `Mailbox` 和 `CommandHandler`，并管理多个已打开项目。
+它负责：
 
-`ApplicationHost` 不再代表某一个产品，也不直接拥有单个 `Repository` 或单个 `Universe`。这些对象由 `ProjectSession` 装配，其中 `Universe` 只承载行为结构，不承载项目数据。
+- 构造 `ApplicationContext`。
+- 创建应用级服务容器，并通过 `IMailChannelService` 托管应用、产品和项目 mail channel。
+- 维护支持的产品定义列表。
+- 启动、停止和查询 `ProductRuntime`。
+- 提供应用级 mailbox 和应用级内置命令。
+- 发布宿主生命周期事件。
+
+`ApplicationHost` 不直接维护 `ProjectCatalog`，也不直接打开项目。项目目录和项目实例归属 `ProductRuntime`。
 
 ## 2. 配置
 
 ```cpp
 iCAX::ApplicationHost::ApplicationHostConfig config;
 config.strApplicationSettingsPath = "Setting/Application.Setting";
-config.strProductCatalogPath = "Products";
 config.Descriptor.AppID = "icax";
 config.Descriptor.AppName = "iCAX";
 
-config.StartupProjects.push_back({
-    "icax.product.five-axis",
-    "Robot Cell",
-    "D:/projects/robot.icax"
-});
+iCAX::Product::CProductDefinition robot;
+robot.ProductID = "robot";
+robot.ProductName = "Robot";
+robot.FrontendEntry = "ui://robot/main";
+robot.ProjectFile.Magic = "ICAX_ROBOT";
+robot.ProjectFile.FormatVersion = "1.0";
+robot.ProjectFile.FileExtensions.push_back(".robot");
+robot.ProjectFile.MagicOffset = 0;
+robot.ProjectFile.ProbeBytes = 256;
+robot.Modules.ComponentModules.push_back("bin/RobotComponent.dll");
+robot.Modules.BehaviourModules.push_back("bin/RobotBehaviour.dll");
+robot.Modules.ServiceModules.push_back("bin/RobotService.dll");
+robot.Modules.CommandModules.push_back("bin/RobotCommand.dll");
+robot.DefaultProjectStartupComponent = "RobotStartupComponent";
+
+config.Products.push_back(robot);
+config.StartupProductID = "robot"; // 可选，只启动产品，不自动打开项目
 
 iCAX::ApplicationHost::CApplicationHost host;
 host.SetConfig(config);
@@ -32,133 +50,176 @@ host.SetConfig(config);
 - `strApplicationSettingsPath`：应用级配置文件。
 - `Descriptor`：应用描述。
 - `Paths`：应用路径。
-- `strProductCatalogPath`：产品目录路径，目录下每个产品目录可包含 `manifest.json`。
-- `ProductManifestPaths`：显式产品 manifest 路径列表。
-- `StartupProjects`：宿主启动时自动打开的项目列表。
-- `nFrameIntervalMilliseconds`：应用宿主线程帧间隔，只用于应用级消息处理，不驱动项目帧。
+- `Products`：宿主支持的产品定义列表。
+- `StartupProductID`：宿主启动时自动启动的产品，可为空。
+- `nFrameIntervalMilliseconds`：应用宿主线程帧间隔，只用于应用级与产品级消息轮询。
 
 ## 3. 生命周期
 
-### 3.1 Start
+`Start` 启动后台工作线程，并等待宿主进入 `Running` 或 `Faulted`。
 
-`Start` 会启动后台工作线程，并等待宿主进入 `Running` 或 `Faulted`。
-
-加载阶段执行：
+加载阶段：
 
 ```text
 LoadApplicationSettings
 Create ApplicationContext
-Resolve IMailPostOfficeService
-Create ProjectManager
-Load product manifests
-Load product modules
-Register products into ProductCatalog
+Create ServiceProvider
+Replay framework services
+Resolve IMailChannelService
+Create application mail channel
+Register built-in application commands
 Prepare application command context
-Open startup projects
+Start configured startup product?
 ```
-
-### 3.2 Stop
 
 `Stop` 请求后台线程停止，并等待线程退出。
 
-卸载阶段会关闭所有 `ProjectSession`，清空应用级邮件通道，卸载已创建的服务实例，并释放应用上下文。
+卸载阶段会停止所有已启动产品、删除应用级 mail channel、卸载已创建的服务实例，并释放应用上下文。
 
-## 4. 后台循环
+## 4. 应用级命令
 
-后台线程按固定帧间隔循环：
+应用级命令通过 `GetApplicationFrontendPostOffice()` 发送，payload 使用 `VariantSerializer` 编码的 `ObjectMap`。
+
+- `kAppGetStateCommand` / `App.GetState`：查询宿主状态、产品清单和已启动产品。
+- `kAppListProductsCommand` / `App.ListProducts`：查询产品清单，响应结构与 `App.GetState` 一致。
+- `kAppStartProductCommand` / `App.StartProduct`：启动产品。payload 可包含 `productId`。当只有一个产品时可省略。
+- `kAppStopProductCommand` / `App.StopProduct`：停止产品。payload 必须包含 `productId`。
+- `kAppResolveProjectFileCommand` / `App.ResolveProjectFile`：根据项目文件快速识别产品。
+- `kAppOpenProjectFileCommand` / `App.OpenProjectFile`：根据项目文件识别产品、启动产品并打开 ProjectCatalog。
+
+`App.StartProduct` 请求示例：
+
+```cpp
+iCAX::Data::ObjectMap payload;
+payload["productId"] = std::string("robot");
+
+auto bytes = iCAX::ApplicationHost::EncodeApplicationHostPayload(
+    iCAX::Data::Variant(payload));
+```
+
+应用级状态响应：
 
 ```text
-Dispatch application mailbox
+applicationMailId: uuid
+state: string
+phase: string
+productCount: unsigned_long_long
+products: array<object>
+runningProductCount: unsigned_long_long
+faultMessage: string
 ```
 
-应用宿主线程只处理应用级消息，不再统一 Tick 所有项目。
-
-每个 `ProjectSession` 有自己的后台线程和自己的项目级 `MailChannel`。项目线程的循环为：
+产品对象包含：
 
 ```text
-ProjectSession.PreSwapPDO
-Dispatch project mailbox
-ProjectSession.Tick
-ProjectSession.PostSwapPDO
+productId: string
+productName: string
+productVersion: string
+frontendEntry: string
+defaultProjectStartupComponent: string
+projectFile: object
+isStarted: bool
+productMailId: uuid
+recentProjects: array<object>
+runtime: object? // 已启动时存在，内容为 ProductRuntime 状态
 ```
 
-因此一个项目阻塞时不会阻塞其他项目的行为运行和项目邮件处理。
+`projectFile` 包含：
 
-## 5. 项目 API
+```text
+magic: string
+formatVersion: string
+fileExtensions: array<string>
+magicOffset: unsigned_long_long
+probeBytes: unsigned_long_long
+```
+
+`recentProjects` 来自产品运行数据，产品未启动时为空数组；产品启动后由 `ProductRuntime` 从 ProductData 中加载。最近项目对象包含：
+
+```text
+path: string
+displayName: string
+lastOpenedTime: string
+```
+
+`App.StartProduct` 响应：
+
+```text
+applicationMailId: uuid
+product: object
+state: object
+```
+
+`App.ResolveProjectFile` 请求示例：
 
 ```cpp
-auto& projectManager = host.GetProjectManager();
-auto project = host.OpenProject("icax.product.flat-cut", "Sheet A");
-
-auto& database = project->Database();
-auto& resources = project->Resources();
-auto& universe = project->Universe();
-
-host.CloseProject(project->GetProjectID());
+iCAX::Data::ObjectMap payload;
+payload["projectPath"] = std::string("D:/projects/RobotCell.robot");
 ```
 
-`ApplicationHost` 不提供全局 `Repository` 或全局 `Universe`。多项目场景下，数据和行为运行单元必须从明确的 `ProjectSession` 获取：
+响应：
+
+```text
+applicationMailId: uuid
+resolve: object
+```
+
+`resolve` 包含：
+
+```text
+projectPath: string
+status: string              // Resolved / NotFound
+productId: string
+candidateProductIds: array<string>
+matchedByMagic: bool
+```
+
+`App.OpenProjectFile` 请求示例：
 
 ```cpp
-auto project = host.OpenProject("icax.product.flat-cut", "Sheet A");
-auto& repository = project->Database();
-auto& universe = project->Universe();
-auto& resources = project->Resources();
+iCAX::Data::ObjectMap payload;
+payload["projectPath"] = std::string("D:/projects/RobotCell.robot");
 ```
 
-## 6. Mailbox 命令接入
+响应：
 
-`ApplicationHost` 有两类通信通道：
-
-- 应用级通道：通过 `GetApplicationMailID()` 标识，用于打开项目、列项目、应用设置等不属于某个项目的命令。
-- 项目级通道：归属具体 `ProjectSession`，用于操作指定项目。
-
-```cpp
-auto appOffice = host.GetApplicationFrontendPostOffice();
-auto projectOffice = host.GetProjectFrontendPostOffice(project->GetProjectID());
+```text
+applicationMailId: uuid
+resolve: object
+product: object
+catalog: object
+state: object
 ```
 
-`GetProjectFrontendPostOffice(projectId)` 会先定位 `ProjectSession`，再从该项目自己的 `MailChannel` 获取前端邮局。项目关闭后，旧项目邮局失效。
+`App.OpenProjectFile` 只接收文件路径和可选显示名称，不接收产品 ID。ApplicationHost 只用文件头 magic 识别产品。magic 不能为空，且必须在 ApplicationHost 的产品定义列表中全局唯一。扩展名只用于文件选择器和展示，不参与产品识别。若 magic 未命中则返回 `NotFound`；若出现多个产品命中同一个文件，则视为产品定义错误。
 
-宿主收到 Mail 后转换为 `CCommandRequest`：
+## 5. 前端启动流
 
-- `Mail.Header.nMailId` -> `CCommandRequest::nCommandID`
-- `Mail.Header.nOriginId` -> `CCommandRequest::nOriginID`
-- `Mail.Header.nTypeCode` -> `CCommandRequest::nTypeCode`
-- `Mail.Payload` -> `CCommandRequest::Payload`
+```text
+Frontend
+  -> ApplicationHost.Start()
+  -> ApplicationHost.GetApplicationFrontendPostOffice()
+  -> App.GetState / App.ListProducts
+  -> App.OpenProjectFile(filePath)?       // 双击文件启动时
+  -> App.StartProduct(productId)
+  <- productMailId, frontendEntry, recentProjects
+  -> product frontend initializes by frontendEntry
+  -> Product mailbox handles Product.OpenProjectCatalog
+  <- catalogId, main projectId
+  -> Project mailbox handles project commands
+```
 
-项目级命令的 `CommandContext` 会包含：
-
-- `IApplicationContext`
-- `CProjectManager`
-- 当前 `CProjectSession`
-- 当前项目的 `IRepository`
-- 当前项目的 `IUniverse`，用于访问行为运行结构
-- 当前项目的 `CResourceLibrary`
-- `IMailPostOfficeService`
-
-应用级命令不包含当前项目依赖。
-
-## 7. 事件订阅
-
-`ApplicationHost` 支持订阅生命周期事件：
-
-- `Starting`
-- `Started`
-- `Stopping`
-- `Stopped`
-- `Faulted`
-
-事件携带当前状态、运行阶段、停止原因、消息和异常。
-
-## 8. 依赖边界
+## 6. 依赖边界
 
 `ApplicationHost` 可以依赖：
 
 - `ApplicationContext`
 - `CommandHandler`
-- `Project`
-- `Services`
 - `Mailbox`
+- `Product`
+- `Services`
+- `Database`
+- `Behaviour`
+- `Resources`
 
-`ApplicationHost` 不应被 `Project`、`Database`、`Behaviour`、`Resources` 或产品代码反向依赖。
+`ApplicationHost` 不应被 `Product`、`Project`、`Database`、`Behaviour`、`Resources` 或业务模块反向依赖。

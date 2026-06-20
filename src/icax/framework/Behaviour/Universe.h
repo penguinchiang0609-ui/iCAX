@@ -7,6 +7,8 @@ namespace iCAX
 {
     namespace Behaviour
     {
+        class IBehaviourRegistry;
+
         /*
         * @brief 宇宙
         * @remark 
@@ -18,7 +20,7 @@ namespace iCAX
             /*
             * @brief 构造函数
             */
-            CUniverse();
+            explicit CUniverse(IN std::shared_ptr<IBehaviourRegistry> pRegistry_ = nullptr);
 
             /*
             * @brief 析构函数
@@ -93,6 +95,7 @@ namespace iCAX
         private:
             iCAX::Data::uuid m_ID;
             std::shared_ptr<CBehaviourDispatcher> m_pDispatcher;
+            std::shared_ptr<IBehaviourRegistry> m_pRegistry;
         };
     }
 }

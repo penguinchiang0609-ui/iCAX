@@ -22,7 +22,7 @@
 - 不提供 `SynchronizationContext` 的真实 UI 消息循环语义。
 - 不提供父子任务 attach 语义。
 - 不提供 `ValueTask`、`IAsyncEnumerable` 或 async stream。
-- 不负责 backend 与 H5 frontend 的 Mail 通信/PDO 通信。
+- 不负责 backend 与 frontend bridge 的 Mail 通信/PDO 通信。
 
 ## 4. 公开能力
 
@@ -176,7 +176,7 @@
 
 `Task` 内部使用 mutex、condition_variable 和 atomic 保护状态。
 
-本库允许任务在多个 C++ 线程之间使用，但它不改变 iCAX 的主体执行模型。iCAX 当前基础框架仍是同一进程内 backend 单线程与 frontend 单线程，通过 Mail 通信交互，高频数据通过 PDO 同步。
+本库允许任务在多个 C++ 线程之间使用，但它不改变 iCAX 的主体执行模型。当前 backend 由 ApplicationHost、ProductRuntime 和 Project 组织；ApplicationHost 拥有应用级工作线程，每个 Project 拥有自己的项目线程，前端通过 bridge 使用 Mailbox、PDO 和 Resource 与 backend 交互。
 
 Task 只作为 Foundation 能力提供，不作为 backend/frontend 通信协议。
 
@@ -486,7 +486,7 @@ std::size_t index = WaitAny<int>({
 
 ### 8.8 单线程主循环中手动调度
 
-适用于 backend 单线程主循环或单元测试中，不希望任务自动在线程池运行。
+适用于需要显式手动泵的单线程主循环或单元测试中，不希望任务自动在线程池运行。
 
 ```cpp
 auto scheduler = std::make_shared<ManualTaskScheduler>();

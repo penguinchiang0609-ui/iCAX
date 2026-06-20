@@ -18,7 +18,7 @@ EndB post office
       -> EndA post office Receive
 ```
 
-具体产品通信只是上层服务对 EndA/EndB 的一种映射，不进入 Framework 的核心通信模型。
+具体应用通信只是上层服务对 EndA/EndB 的一种映射，不进入 Framework 的核心通信模型。
 
 ## 2. 工程位置
 
@@ -68,7 +68,7 @@ struct Mail
 };
 ```
 
-`MailHeader::nTypeCode` 是业务类型码。Mailbox 不解释它，命令语义由上层 CommandHandler 或产品协议解释。
+`MailHeader::nTypeCode` 是业务类型码。Mailbox 不解释它，命令语义由上层 CommandHandler 或业务协议解释。
 
 ### 4.2 CMailQueue
 
@@ -168,35 +168,27 @@ void ClearOutgoing() const;
 
 `Clear()` 只清空队列内容，不改变队列身份。`Reset()` 会先清空旧队列，再替换为新的 `CMailQueue`，用于关闭运行单元时切断所有旧邮局。
 
-## 5. 服务层映射方案
+## 5. 运行体映射方案
 
-`Services` 按通信 ID 维护一条通用 `CMailChannel`：
-
-```cpp
-std::unordered_map<uuid, CMailChannel> m_Channels;
-```
-
-通信 ID 通常用于应用级 MailID，或其他由上层明确交给服务管理的通道。在具体产品框架里，服务层可以把 EndA/EndB 映射成自己的两个运行角色：
+`Mailbox` 不维护全局通道目录，也不按通信 ID 托管 `CMailChannel`。在具体应用框架里，可以由更高层服务或运行体把 EndA/EndB 映射成自己的两个运行角色：
 
 ```text
 EndA = role 1
 EndB = role 2
 ```
 
-因此服务接口可以保留业务友好的入口：
+上层运行体可以保留业务友好的入口：
 
 ```cpp
-CMailPostOffice GetRole1PostOffice(const uuid& communicationId);
-CMailPostOffice GetRole2PostOffice(const uuid& communicationId);
+CMailPostOffice GetFrontendPostOffice();
+CMailPostOffice GetBackendPostOffice();
 ```
 
-这里的角色命名属于 Services 的装配语义，不属于 Framework 的通道语义。
+这里的角色命名属于运行体装配语义，不属于 `Mailbox` 的基础通道语义。
 
-服务层内部用 mutex 保护 `m_Channels` 的创建、移除和清空，避免两个线程首次访问同一通信通道时发生 map 数据竞争。
+返回的 `CMailPostOffice` 是轻量对象，持有底层队列弱引用。生命周期所有者删除、重置或释放底层 `CMailChannel` 后，旧邮局变为无效对象，继续收发会抛出 `std::logic_error`。反复获取同一个端点的邮局不会产生新的队列。
 
-返回的 `CMailPostOffice` 是轻量对象，持有底层队列弱引用。服务移除通道或卸载后，旧邮局变为无效对象，继续收发会抛出 `std::logic_error`。反复获取同一个端点的邮局不会产生新的队列。
-
-`ProjectSession` 不通过 `IMailPostOfficeService` 维护项目级通道，而是自己持有 `CMailChannel`。这样每个 Project 可以独立关闭、重置和失效旧邮局，不会把项目生命周期塞进全局邮局服务。
+当前 iCAX framework 使用 `Services/IMailChannelService` 作为应用级 channel 目录。ApplicationHost、ProductRuntime 和 Project 只保存自己的 mail id，通过该服务获取 frontend/backend post office；Mailbox 本身仍保持无业务角色的基础通信语义。
 
 ## 6. 生命周期方案
 
@@ -236,7 +228,7 @@ Clear 或队列析构：
 
 `CMailChannel` 本身不额外加锁，双向线程安全由内部两个 `CMailQueue` 提供。
 
-`CMailPostOfficeService` 只保护通道 map 的创建和清空；消息收发走 `CMailQueue` 自己的锁。
+上层如果需要跨线程维护运行体目录，应自行保护目录结构；消息收发走 `CMailQueue` 自己的锁。
 
 ## 8. 与其他项目的关系
 
@@ -244,9 +236,9 @@ Clear 或队列析构：
 
 Mailbox 只负责消息传输。需要处理前端命令时，上层适配器把 `Mail` 转换为 `CCommandRequest`，再交给 `CommandHandler` 分发。
 
-### 8.2 Services
+### 8.2 运行体
 
-`Services` 负责把通用 EndA/EndB 映射成当前产品框架里的具体角色邮局。
+当前 iCAX framework 中，`IMailChannelService` 负责按 mail id 找到 channel，`ApplicationHost`、`ProductRuntime` 和 `Project` 负责把通用 EndA/EndB 映射成当前层级里的 frontend/backend 邮局。
 
 ### 8.3 PDO
 

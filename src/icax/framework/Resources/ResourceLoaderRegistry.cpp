@@ -4,15 +4,16 @@
 #include <algorithm>
 #include <mutex>
 #include <stdexcept>
-bool iCAX::Resource::CResourceLoaderRegistry::Register(IN const std::type_info& ResourceType_, IN const std::shared_ptr<IResourceLoader>& pLoader_)
+
+bool iCAX::Resource::CResourceLoaderRegistry::RegisterLoader(IN const std::type_info& ResourceType_, IN const std::shared_ptr<IResourceLoader>& pLoader_)
 {
     if (!pLoader_)
     {
         throw std::invalid_argument("Resource loader cannot be null");
     }
 
-    std::unique_lock<std::shared_mutex> _Lock(GetMutex());
-    auto& _Loaders = GetLoaderMap()[std::type_index(ResourceType_)];
+    std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
+    auto& _Loaders = m_Loaders[std::type_index(ResourceType_)];
     for (const auto& _Loader : _Loaders)
     {
         if (_Loader == pLoader_)
@@ -29,12 +30,11 @@ bool iCAX::Resource::CResourceLoaderRegistry::Register(IN const std::type_info& 
     return true;
 }
 
-std::vector<std::shared_ptr<iCAX::Resource::IResourceLoader>> iCAX::Resource::CResourceLoaderRegistry::GetLoaders(IN const std::type_info& ResourceType_)
+std::vector<std::shared_ptr<iCAX::Resource::IResourceLoader>> iCAX::Resource::CResourceLoaderRegistry::GetLoadersFor(IN const std::type_info& ResourceType_) const
 {
-    std::shared_lock<std::shared_mutex> _Lock(GetMutex());
-    const auto& _LoaderMap = GetLoaderMap();
-    auto _Ite = _LoaderMap.find(std::type_index(ResourceType_));
-    if (_Ite != _LoaderMap.end())
+    std::shared_lock<std::shared_mutex> _Lock(m_Mutex);
+    auto _Ite = m_Loaders.find(std::type_index(ResourceType_));
+    if (_Ite != m_Loaders.end())
     {
         return _Ite->second;
     }
@@ -42,7 +42,7 @@ std::vector<std::shared_ptr<iCAX::Resource::IResourceLoader>> iCAX::Resource::CR
     return {};
 }
 
-std::shared_ptr<iCAX::Resource::IResourceLoader> iCAX::Resource::CResourceLoaderRegistry::FindLoader(IN const CResourceLoadContext& Context_)
+std::shared_ptr<iCAX::Resource::IResourceLoader> iCAX::Resource::CResourceLoaderRegistry::FindLoaderFor(IN const CResourceLoadContext& Context_) const
 {
     if (Context_.TargetResourceType == std::type_index(typeid(void)))
     {
@@ -51,10 +51,9 @@ std::shared_ptr<iCAX::Resource::IResourceLoader> iCAX::Resource::CResourceLoader
 
     std::vector<std::shared_ptr<IResourceLoader>> _Candidates;
     {
-        std::shared_lock<std::shared_mutex> _Lock(GetMutex());
-        const auto& _LoaderMap = GetLoaderMap();
-        auto _Ite = _LoaderMap.find(Context_.TargetResourceType);
-        if (_Ite != _LoaderMap.end())
+        std::shared_lock<std::shared_mutex> _Lock(m_Mutex);
+        auto _Ite = m_Loaders.find(Context_.TargetResourceType);
+        if (_Ite != m_Loaders.end())
         {
             _Candidates = _Ite->second;
         }
@@ -70,9 +69,9 @@ std::shared_ptr<iCAX::Resource::IResourceLoader> iCAX::Resource::CResourceLoader
     return nullptr;
 }
 
-iCAX::Resource::CResourceLoadResult iCAX::Resource::CResourceLoaderRegistry::Load(IN const CResourceLoadContext& Context_)
+iCAX::Resource::CResourceLoadResult iCAX::Resource::CResourceLoaderRegistry::LoadResource(IN const CResourceLoadContext& Context_)
 {
-    auto _Loader = FindLoader(Context_);
+    auto _Loader = FindLoaderFor(Context_);
     if (!_Loader)
     {
         return CResourceLoadResult::NoLoader(Context_.TargetKey);
@@ -102,16 +101,32 @@ iCAX::Resource::CResourceLoadResult iCAX::Resource::CResourceLoaderRegistry::Loa
     return _Result;
 }
 
-std::shared_mutex& iCAX::Resource::CResourceLoaderRegistry::GetMutex()
+bool iCAX::Resource::CResourceLoaderRegistry::Register(IN const std::type_info& ResourceType_, IN const std::shared_ptr<IResourceLoader>& pLoader_)
 {
-    static std::shared_mutex _Mutex;
-    return _Mutex;
+    return GetGlobalRegistry().RegisterLoader(ResourceType_, pLoader_);
 }
 
-std::map<std::type_index, std::vector<std::shared_ptr<iCAX::Resource::IResourceLoader>>>& iCAX::Resource::CResourceLoaderRegistry::GetLoaderMap()
+std::vector<std::shared_ptr<iCAX::Resource::IResourceLoader>> iCAX::Resource::CResourceLoaderRegistry::GetLoaders(IN const std::type_info& ResourceType_)
 {
-    static std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>> _Loaders;
-    return _Loaders;
+    return GetGlobalRegistry().GetLoadersFor(ResourceType_);
+}
+
+std::shared_ptr<iCAX::Resource::IResourceLoader> iCAX::Resource::CResourceLoaderRegistry::FindLoader(IN const CResourceLoadContext& Context_)
+{
+    return GetGlobalRegistry().FindLoaderFor(Context_);
+}
+
+iCAX::Resource::CResourceLoadResult iCAX::Resource::CResourceLoaderRegistry::Load(IN const CResourceLoadContext& Context_)
+{
+    return GetGlobalRegistry().LoadResource(Context_);
+}
+
+iCAX::Resource::CResourceLoaderRegistry& iCAX::Resource::CResourceLoaderRegistry::GetGlobalRegistry()
+{
+    static CResourceLoaderRegistry _Registry;
+    static size_t _nReplayedRegistrationCount = 0;
+    _nReplayedRegistrationCount = CResourceLoaderRegistrationCatalog::ReplayFrom(_nReplayedRegistrationCount, _Registry);
+    return _Registry;
 }
 
 void iCAX::Resource::CResourceLoaderRegistry::AppendUnique(

@@ -5,8 +5,8 @@
 #include "IMetaRegistry.h"
 
 //!< 构造函数
-iCAX::Database::CEntity::CEntity(IN std::shared_ptr<IDomain> pDomain_, IN const iCAX::Data::uuid& UID_)
-    : m_pDomain(pDomain_)
+iCAX::Database::CEntity::CEntity(IN std::shared_ptr<IRepository> pRepository_, IN const iCAX::Data::uuid& UID_)
+    : m_pRepository(pRepository_)
     , m_UID(UID_)
 {
 }
@@ -29,7 +29,9 @@ std::shared_ptr<iCAX::Database::CComponentBase> iCAX::Database::CEntity::AddComp
     {
         throw std::runtime_error("Component already exists: " + strClassName_);
     }
-    std::shared_ptr<CComponentBase> _pComponent = GetGlobalMetaRegistry()->CreateByName(strClassName_, shared_from_this());
+    auto _pRepository = GetRepository();
+    auto _pMeta = _pRepository ? _pRepository->GetMetaRegistry() : GetGlobalMetaRegistry();
+    std::shared_ptr<CComponentBase> _pComponent = _pMeta->CreateByName(strClassName_, shared_from_this());
     auto _NewProperties = _pComponent->GetProperties();
     TriggerEntityChanging(EntityEventArgs::kAddComponent, strClassName_, {}, _NewProperties, _pComponent);
     m_mapComponents[strClassName_] = _pComponent;
@@ -71,7 +73,8 @@ std::shared_ptr<iCAX::Database::CComponentBase> iCAX::Database::CEntity::GetComp
 //!< 获取组件列表
 std::vector<std::shared_ptr<iCAX::Database::CComponentBase>> iCAX::Database::CEntity::GetComponents(IN const std::string& strClassName_) const
 {
-    auto _pMeta = GetGlobalMetaRegistry();
+    auto _pRepository = GetRepository();
+    auto _pMeta = _pRepository ? _pRepository->GetMetaRegistry() : GetGlobalMetaRegistry();
     std::vector<std::shared_ptr<iCAX::Database::CComponentBase>> _vecResult;
     for (auto & [_Key, _pComponent] : m_mapComponents)
     {
@@ -112,14 +115,14 @@ void iCAX::Database::CEntity::Cleanup()
     }
 }
 
-//!< 获取所在域
-std::shared_ptr<iCAX::Database::IDomain> iCAX::Database::CEntity::GetDomain() const
+//!< 获取所在仓储
+std::shared_ptr<iCAX::Database::IRepository> iCAX::Database::CEntity::GetRepository() const
 {
-    if (m_pDomain.expired())
+    if (m_pRepository.expired())
     {
         return nullptr;
     }
-    return m_pDomain.lock();
+    return m_pRepository.lock();
 }
 
 //!< 添加观察者

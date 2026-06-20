@@ -2,7 +2,6 @@
 #include "DerivedProperty.h"
 
 #include "ComponentBase.h"
-#include "IDomain.h"
 #include "IEntity.h"
 #include "IMetaRegistry.h"
 #include "Repository.h"
@@ -20,16 +19,14 @@ namespace
 
 bool iCAX::Database::CPropertyKey::operator==(IN const CPropertyKey& Other_) const noexcept
 {
-    return DomainID == Other_.DomainID
-        && EntityID == Other_.EntityID
+    return EntityID == Other_.EntityID
         && ComponentClass == Other_.ComponentClass
         && PropertyName == Other_.PropertyName;
 }
 
 std::size_t iCAX::Database::CPropertyKeyHash::operator()(IN const CPropertyKey& Key_) const noexcept
 {
-    std::size_t _Seed = std::hash<iCAX::Data::uuid>{}(Key_.DomainID);
-    _Seed ^= std::hash<iCAX::Data::uuid>{}(Key_.EntityID) + 0x9e3779b97f4a7c15ULL + (_Seed << 6) + (_Seed >> 2);
+    std::size_t _Seed = std::hash<iCAX::Data::uuid>{}(Key_.EntityID);
     _Seed ^= std::hash<std::string>{}(Key_.ComponentClass) + 0x9e3779b97f4a7c15ULL + (_Seed << 6) + (_Seed >> 2);
     _Seed ^= std::hash<std::string>{}(Key_.PropertyName) + 0x9e3779b97f4a7c15ULL + (_Seed << 6) + (_Seed >> 2);
     return _Seed;
@@ -44,7 +41,11 @@ iCAX::Database::CDerivedPropertyContext::CDerivedPropertyContext(IN CDerivedProp
 
 iCAX::Data::PropertyValue iCAX::Database::CDerivedPropertyContext::GetProperty(IN const CPropertyKey& Key_)
 {
-    auto _pMeta = GetGlobalMetaRegistry();
+    auto _pMeta = m_Repository.GetMetaRegistry();
+    if (!_pMeta)
+    {
+        _pMeta = GetGlobalMetaRegistry();
+    }
     const bool _bKnownProperty = _pMeta->HasPropertyByName(Key_.ComponentClass, Key_.PropertyName);
     if (_bKnownProperty)
     {
@@ -59,13 +60,7 @@ iCAX::Data::PropertyValue iCAX::Database::CDerivedPropertyContext::GetProperty(I
         return iCAX::Data::PropertyValue::Nil;
     }
 
-    auto _pDomain = m_Repository.GetDomain(Key_.DomainID);
-    if (!_pDomain)
-    {
-        return iCAX::Data::PropertyValue::Nil;
-    }
-
-    auto _pEntity = _pDomain->GetEntity(Key_.EntityID);
+    auto _pEntity = m_Repository.GetEntity(Key_.EntityID);
     if (!_pEntity)
     {
         if (_bKnownProperty)
@@ -102,18 +97,12 @@ iCAX::Data::PropertyValue iCAX::Database::CDerivedPropertyContext::GetProperty(I
         return iCAX::Data::PropertyValue::Nil;
     }
 
-    auto _pDomain = _pEntity->GetDomain();
-    if (!_pDomain)
-    {
-        return iCAX::Data::PropertyValue::Nil;
-    }
-
-    return GetProperty({ _pDomain->GetID(), _pEntity->GetID(), Component_.GetComponentClass(), strPropertyName_ });
+    return GetProperty({ _pEntity->GetID(), Component_.GetComponentClass(), strPropertyName_ });
 }
 
-iCAX::Data::PropertyValue iCAX::Database::CDerivedPropertyContext::GetProperty(IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_, IN const std::string& strPropertyName_)
+iCAX::Data::PropertyValue iCAX::Database::CDerivedPropertyContext::GetProperty(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_, IN const std::string& strPropertyName_)
 {
-    return GetProperty({ DomainID_, EntityID_, strComponentClass_, strPropertyName_ });
+    return GetProperty({ EntityID_, strComponentClass_, strPropertyName_ });
 }
 
 const iCAX::Database::CPropertyKey& iCAX::Database::CDerivedPropertyContext::GetTarget() const
@@ -176,13 +165,13 @@ void iCAX::Database::CDerivedPropertyManager::Invalidate(IN const CPropertyKey& 
     InvalidateRecursive(Source_, _Visited);
 }
 
-void iCAX::Database::CDerivedPropertyManager::RemoveComponent(IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_)
+void iCAX::Database::CDerivedPropertyManager::RemoveComponent(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_)
 {
     std::vector<CPropertyKey> _Keys;
 
     for (const auto& [_Key, _] : m_Caches)
     {
-        if (MatchComponent(_Key, DomainID_, EntityID_, strComponentClass_))
+        if (MatchComponent(_Key, EntityID_, strComponentClass_))
         {
             _Keys.push_back(_Key);
         }
@@ -190,7 +179,7 @@ void iCAX::Database::CDerivedPropertyManager::RemoveComponent(IN const iCAX::Dat
 
     for (const auto& [_Key, _] : m_SourceToDerived)
     {
-        if (MatchComponent(_Key, DomainID_, EntityID_, strComponentClass_))
+        if (MatchComponent(_Key, EntityID_, strComponentClass_))
         {
             _Keys.push_back(_Key);
         }
@@ -208,7 +197,7 @@ void iCAX::Database::CDerivedPropertyManager::RemoveComponent(IN const iCAX::Dat
     {
         for (auto _Ite = _DerivedSet.begin(); _Ite != _DerivedSet.end(); )
         {
-            if (MatchComponent(*_Ite, DomainID_, EntityID_, strComponentClass_))
+            if (MatchComponent(*_Ite, EntityID_, strComponentClass_))
             {
                 _Ite = _DerivedSet.erase(_Ite);
             }
@@ -233,7 +222,7 @@ void iCAX::Database::CDerivedPropertyManager::RemoveComponent(IN const iCAX::Dat
 
     for (auto _Ite = m_DerivedToSources.begin(); _Ite != m_DerivedToSources.end(); )
     {
-        if (MatchComponent(_Ite->first, DomainID_, EntityID_, strComponentClass_))
+        if (MatchComponent(_Ite->first, EntityID_, strComponentClass_))
         {
             _Ite = m_DerivedToSources.erase(_Ite);
             continue;
@@ -241,7 +230,7 @@ void iCAX::Database::CDerivedPropertyManager::RemoveComponent(IN const iCAX::Dat
 
         for (auto _SourceIte = _Ite->second.begin(); _SourceIte != _Ite->second.end(); )
         {
-            if (MatchComponent(*_SourceIte, DomainID_, EntityID_, strComponentClass_))
+            if (MatchComponent(*_SourceIte, EntityID_, strComponentClass_))
             {
                 _SourceIte = _Ite->second.erase(_SourceIte);
             }
@@ -277,13 +266,7 @@ iCAX::Database::CPropertyKey iCAX::Database::CDerivedPropertyManager::MakeKey(IN
         throw std::runtime_error(std::format("Component {} has no entity", Component_.GetComponentClass()));
     }
 
-    auto _pDomain = _pEntity->GetDomain();
-    if (!_pDomain)
-    {
-        throw std::runtime_error(std::format("Component {} has no domain", Component_.GetComponentClass()));
-    }
-
-    return { _pDomain->GetID(), _pEntity->GetID(), Component_.GetComponentClass(), strPropertyName_ };
+    return { _pEntity->GetID(), Component_.GetComponentClass(), strPropertyName_ };
 }
 
 void iCAX::Database::CDerivedPropertyManager::ClearDependencies(IN const CPropertyKey& Derived_)
@@ -338,9 +321,8 @@ void iCAX::Database::CDerivedPropertyManager::InvalidateRecursive(IN const CProp
     }
 }
 
-bool iCAX::Database::CDerivedPropertyManager::MatchComponent(IN const CPropertyKey& Key_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_) const
+bool iCAX::Database::CDerivedPropertyManager::MatchComponent(IN const CPropertyKey& Key_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strComponentClass_) const
 {
-    return Key_.DomainID == DomainID_
-        && Key_.EntityID == EntityID_
+    return Key_.EntityID == EntityID_
         && Key_.ComponentClass == strComponentClass_;
 }

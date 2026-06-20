@@ -4,7 +4,7 @@
 
 `Resources` 是 framework 层的工程资源系统。
 
-它解决的问题是：模型、图片、文字、材质、渲染缓存等资源可以统一通过资源路径或来源字符串访问。Database、CommandHandler、Behaviour 或产品代码不需要直接持有资源对象，也不需要手动构造资源 key。
+它解决的问题是：模型、图片、文字、材质、渲染缓存等资源可以统一通过资源路径或来源字符串访问。Database、CommandHandler、Behaviour 或业务代码不需要直接持有资源对象，也不需要手动构造资源 key。
 
 核心模型：
 
@@ -18,7 +18,7 @@ Resources
     IResourceLoader
 ```
 
-`Resources` 负责资源条目、资源对象池、资源元信息、持久化策略、manifest 查询、ResourceLoader 抽象和 loader 注册表。它不负责具体文件格式解析、GPU 上传、远程下载或工程文件写入，这些应由后续 ProjectStorage、ResourceLoader 实现或产品插件完成。
+`Resources` 负责资源条目、资源对象池、资源元信息、持久化策略、manifest 查询、ResourceLoader 抽象和 loader 注册表。它不负责具体文件格式解析、GPU 上传、远程下载或工程文件写入，这些应由后续 ProjectStorage、ResourceLoader 实现或业务插件完成。
 
 ## 2. 核心概念
 
@@ -123,9 +123,9 @@ std::vector<CResourceInfo> GetManifest(bool includeRuntimeOnly = false);
 
 ### 2.4 ResourcePool
 
-`CResourcePool` 是线程安全资源池。它是 `CResourceLibrary` 背后的存储对象。普通产品代码不需要直接操作它，也不应该把它作为 Project API 暴露出去。
+`CResourcePool` 是线程安全资源池。它是 `CResourceLibrary` 背后的存储对象。普通业务代码不需要直接操作它，也不应该把它作为 Project API 暴露出去。
 
-普通产品代码包含：
+普通业务代码包含：
 
 ```cpp
 #include <Resources/Resources.h>
@@ -179,28 +179,28 @@ public:
 };
 ```
 
-framework 只提供抽象和注册表。具体 `FbxResourceLoader`、`PngResourceLoader`、`StepResourceLoader` 等实现应放在插件或产品项目里。
+framework 只提供抽象和注册表。具体 `FbxResourceLoader`、`PngResourceLoader`、`StepResourceLoader` 等实现应放在插件或业务模块里。
 
 ### 2.6 ResourceLoaderRegistry
 
-`CResourceLoaderRegistry` 按资源类型注册 loader：
+`CResourceLoaderRegistry` 按资源类型注册 loader。它既支持实例注册表，也保留静态全局注册表作为裸用 `CResourceLibrary` 或底层测试的回退入口。正式运行路径中，`ApplicationHost` 持有应用级 registry，`ProductRuntime` 把产品模块中的 loader 注册回放进去，Project 的 `CResourceLibrary` 使用该应用级 registry 加载资源。
 
 ```cpp
-static bool Register(const std::type_info& resourceType, std::shared_ptr<IResourceLoader> loader);
+bool RegisterLoader(const std::type_info& resourceType, std::shared_ptr<IResourceLoader> loader);
 template <typename TResource>
-static bool Register(std::shared_ptr<IResourceLoader> loader);
-static std::vector<std::shared_ptr<IResourceLoader>> GetLoaders(const std::type_info& resourceType);
-template <typename TResource>
-static std::vector<std::shared_ptr<IResourceLoader>> GetLoaders();
-static std::shared_ptr<IResourceLoader> FindLoader(CResourceLoadContext context);
-static CResourceLoadResult Load(CResourceLoadContext context);
+bool RegisterLoader(std::shared_ptr<IResourceLoader> loader);
+std::vector<std::shared_ptr<IResourceLoader>> GetLoadersFor(const std::type_info& resourceType) const;
+std::shared_ptr<IResourceLoader> FindLoaderFor(CResourceLoadContext context) const;
+CResourceLoadResult LoadResource(CResourceLoadContext context);
 ```
 
-`CResourceLoaderRegistry` 是进程内静态注册表，不需要创建 registry 实例，也不提供注销能力。产品和插件通常在 loader 的 `.cpp` 中通过宏完成注册：
+业务模块和插件通常在 loader 的 `.cpp` 中通过宏完成注册：
 
 ```cpp
 ICAX_REGISTER_RESOURCE_LOADER(ModelResource, FbxResourceLoader)
 ```
+
+宏不会直接写入某个全局资源池，而是把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ApplicationHost 创建应用级 registry 后，ProductRuntime 按模块路径把对应注册动作回放到该 registry。
 
 注册表按 C++ 资源类型匹配 loader，也就是 `typeid(ModelResource)`。文件后缀或来源格式不是资源类型，应该由 loader 的 `CanLoad` 判断：
 
@@ -213,7 +213,7 @@ bool FbxResourceLoader::CanLoad(const CResourceLoadContext& context) const
 
 上层业务代码通常不直接操作注册表，只调用 `project.Resources().Load<T>(source)`。
 
-`CResourceLoaderRegistry::Load` 只负责调用 loader 并返回 `CResourceLoadResult`，不直接写入资源池。写入 `CResourceLibrary` 内部资源池或显式底层池由访问层完成：
+`CResourceLoaderRegistry::LoadResource` 只负责调用 loader 并返回 `CResourceLoadResult`，不直接写入资源池。写入 `CResourceLibrary` 内部资源池或显式底层池由访问层完成：
 
 - loader 返回资源对象时，访问层写入资源对象和元信息。
 - loader 只返回元信息时，访问层只登记资源条目。
@@ -233,10 +233,12 @@ auto resource = project.Resources().Load<T>(source);
 先从当前 Project 的 CResourceLibrary 获取 T
   获取成功 -> 直接返回
   获取失败且内部 key 下已有其他运行时对象 -> 返回 nullptr
-  未加载 -> 通过静态 ResourceLoaderRegistry 按 typeid(T) 查找 loader
+  未加载 -> 通过当前 ResourceLibrary 绑定的 ResourceLoaderRegistry 按 typeid(T) 查找 loader
     加载成功 -> 写入当前 Project 的资源库并返回 T
     加载失败 -> 返回 nullptr
 ```
+
+如果 `CResourceLibrary` 是裸创建且没有注入 registry，则会回退到静态全局 registry。该能力主要服务测试和局部工具代码，正式 Project 路径应使用 ApplicationHost 注入的应用级 registry。
 
 底层资源池仍然使用 `CResourceKey` 做索引，但这是 Resources 内部机制，不作为上层加载资源时必须提供的额外 key。
 

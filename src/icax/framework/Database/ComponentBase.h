@@ -11,8 +11,7 @@ namespace iCAX
         * @remark 
         *   1、一个实体上，同类型（strClassName取值相同）的组件只能添加一个
         *   2、组件不可独立存在，其作为实体某个切面的描述存在
-        *   3、修改组件的属性字段时会触发属性修改事件，外部可通过IPropertyEventListener实例进行侦听，
-        *       原则上上层业务不应该侦听IPropertyEventPublisher发布的事件，此事件是为了修改属性时，Domain可以获取到对应进行，进行撤销还原/数据简照的维护工作
+        *   3、修改组件的属性字段时会触发属性修改事件，Repository 会将其汇总为仓储事件，用于撤销还原、日志和派生字段失效
         *   4、提供了OnSetPropertyT<T>方法，用于子类实现设置属性值时按需发布事件（此处类似C#INotifier接口的实现）
         */
         class _DATABASE_EXP CComponentBase : public IComponentEventPublisher, public std::enable_shared_from_this<CComponentBase>

@@ -4,12 +4,14 @@
 #include <algorithm>
 #include "../Database/ComponentBase.h"
 #include <algorithm>
+#include <utility>
 
 //!< 构造函数
-iCAX::Behaviour::CBehaviourDispatcher::CBehaviourDispatcher()
+iCAX::Behaviour::CBehaviourDispatcher::CBehaviourDispatcher(IN std::shared_ptr<IBehaviourRegistry> pRegistry_)
     : m_setBehaviourIndex()
     , m_BehavioursMap()
     , m_OrderedList()
+    , m_pRegistry(pRegistry_ ? std::move(pRegistry_) : GetGlobalBehaviourRegistry())
 {
 }
 
@@ -20,7 +22,7 @@ bool iCAX::Behaviour::CBehaviourDispatcher::Pushback(IN const std::type_index& n
     {
         m_setBehaviourIndex.emplace(nType_);
 
-        std::shared_ptr<CBehaviourBase> _pBehaviour = GetGlobalBehaviourRegistry()->GetBehaviourByType(nType_);
+        std::shared_ptr<CBehaviourBase> _pBehaviour = m_pRegistry->GetBehaviourByType(nType_);
         m_OrderedList.push_back(_pBehaviour);
         m_BehavioursMap[_pBehaviour->GetComponentClass()] = _pBehaviour;
 
@@ -54,7 +56,7 @@ std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> iCAX::Behaviour::C
     std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> _Res;
     for (auto& _nType : m_setPaused)
     {
-        _Res.push_back(GetGlobalBehaviourRegistry()->GetBehaviourByType(_nType));
+        _Res.push_back(m_pRegistry->GetBehaviourByType(_nType));
     }
 
     return _Res;
@@ -66,7 +68,7 @@ std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> iCAX::Behaviour::C
     std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> _Res;
     for (auto& _nType : m_setBehaviourIndex)
     {
-        _Res.push_back(GetGlobalBehaviourRegistry()->GetBehaviourByType(_nType));
+        _Res.push_back(m_pRegistry->GetBehaviourByType(_nType));
     }
 
     return _Res;
@@ -81,7 +83,7 @@ bool iCAX::Behaviour::CBehaviourDispatcher::HasBehaviour(IN const std::type_inde
 //! 注销行为
 void iCAX::Behaviour::CBehaviourDispatcher::UnregisterBehaviour(IN const std::type_index& nType_)
 {
-    std::shared_ptr<CBehaviourBase> _pBehaviour = GetGlobalBehaviourRegistry()->GetBehaviourByType(nType_);
+    std::shared_ptr<CBehaviourBase> _pBehaviour = m_pRegistry->GetBehaviourByType(nType_);
     if (!_pBehaviour)
     {
         return;

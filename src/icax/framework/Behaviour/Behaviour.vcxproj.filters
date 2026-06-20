@@ -60,6 +60,9 @@
     <ClInclude Include="BehaviourRegistry.h">
       <Filter>inner</Filter>
     </ClInclude>
+    <ClInclude Include="BehaviourRegistrationCatalog.h">
+      <Filter>inner</Filter>
+    </ClInclude>
     <ClInclude Include="IUniverse.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
@@ -87,6 +90,9 @@
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="BehaviourRegistry.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="BehaviourRegistrationCatalog.cpp">
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="IBehaviourRegistry.cpp">

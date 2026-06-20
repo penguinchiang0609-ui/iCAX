@@ -4,5 +4,4 @@
 
 ## 目录结构
 
-当前暂无测试项目。
-
+- `mailboxClientTest.mjs`：验证 H5 Mailbox request/response Promise 语义、超时处理，以及 `App.OpenProjectFile` 不需要前端传产品 ID。

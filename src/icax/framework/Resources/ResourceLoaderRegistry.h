@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IResourceLoader.h"
+#include "ResourceLoaderRegistrationCatalog.h"
 
 #include <map>
 #include <memory>
@@ -16,9 +17,34 @@ namespace iCAX
     {
         class _RESOURCES_EXP CResourceLoaderRegistry final
         {
-        private:
-            CResourceLoaderRegistry() = delete;
-            ~CResourceLoaderRegistry() = delete;
+        public:
+            CResourceLoaderRegistry() = default;
+            ~CResourceLoaderRegistry() = default;
+
+            CResourceLoaderRegistry(IN const CResourceLoaderRegistry&) = delete;
+            CResourceLoaderRegistry& operator=(IN const CResourceLoaderRegistry&) = delete;
+
+        public:
+            bool RegisterLoader(IN const std::type_info& ResourceType_, IN const std::shared_ptr<IResourceLoader>& pLoader_);
+
+            template <typename TResource>
+            bool RegisterLoader(IN const std::shared_ptr<IResourceLoader>& pLoader_)
+            {
+                using TActualResource = std::remove_cv_t<std::remove_reference_t<TResource>>;
+                return RegisterLoader(typeid(TActualResource), pLoader_);
+            }
+
+            std::vector<std::shared_ptr<IResourceLoader>> GetLoadersFor(IN const std::type_info& ResourceType_) const;
+
+            template <typename TResource>
+            std::vector<std::shared_ptr<IResourceLoader>> GetLoadersFor() const
+            {
+                using TActualResource = std::remove_cv_t<std::remove_reference_t<TResource>>;
+                return GetLoadersFor(typeid(TActualResource));
+            }
+
+            std::shared_ptr<IResourceLoader> FindLoaderFor(IN const CResourceLoadContext& Context_) const;
+            CResourceLoadResult LoadResource(IN const CResourceLoadContext& Context_);
 
         public:
             static bool Register(IN const std::type_info& ResourceType_, IN const std::shared_ptr<IResourceLoader>& pLoader_);
@@ -46,8 +72,11 @@ namespace iCAX
             static void AppendUnique(
                 IN OUT std::vector<std::shared_ptr<IResourceLoader>>& Loaders_,
                 IN const std::shared_ptr<IResourceLoader>& pLoader_);
-            static std::shared_mutex& GetMutex();
-            static std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>>& GetLoaderMap();
+            static CResourceLoaderRegistry& GetGlobalRegistry();
+
+        private:
+            mutable std::shared_mutex m_Mutex;
+            std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>> m_Loaders;
         };
     }
 }
@@ -63,7 +92,10 @@ namespace iCAX
         { \
             ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceLoaderRegistration_, UniqueID)() \
             { \
-                ::iCAX::Resource::CResourceLoaderRegistry::Register(typeid(ResourceClass), std::make_shared<LoaderType>()); \
+                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_) \
+                { \
+                    Registry_.RegisterLoader(typeid(ResourceClass), std::make_shared<LoaderType>()); \
+                }, this); \
             } \
         }; \
         const ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceLoaderRegistration_, UniqueID) ICAX_RESOURCE_DETAIL_JOIN(g_AutoResourceLoaderRegistration_, UniqueID); \

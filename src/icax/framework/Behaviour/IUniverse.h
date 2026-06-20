@@ -12,6 +12,8 @@ namespace iCAX
 {
     namespace Behaviour
     {
+        class IBehaviourRegistry;
+
         /*
         * @brief 宇宙
         */
@@ -168,5 +170,6 @@ namespace iCAX
         * @brief 生成宇宙
         */
         std::shared_ptr<IUniverse> _SYSTEM_EXP GenerateUniverse();
+        std::shared_ptr<IUniverse> _SYSTEM_EXP GenerateUniverse(IN std::shared_ptr<IBehaviourRegistry> pRegistry_);
     }
 }

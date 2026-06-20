@@ -1,6 +1,6 @@
 # icax-protocol
 
-`icax-protocol` 放置 C++ backend 与 H5 frontend 共同遵守的协议约定。这里不放复杂运行逻辑，只放双方都需要稳定引用的消息名、字段名、数据形状和常量。
+`icax-protocol` 放置 C++ backend 与 frontend bridge 共同遵守的协议约定。这里不放复杂运行逻辑，只放双方都需要稳定引用的消息名、字段名、数据形状和常量。
 
 ## 目录结构
 

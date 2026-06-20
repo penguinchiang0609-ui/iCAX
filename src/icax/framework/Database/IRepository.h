@@ -4,7 +4,8 @@
 #include <memory>
 #include <tuple>
 #include <vector>
-#include "IDomain.h"
+#include "IEntitiesView.h"
+#include "IEntity.h"
 #include "IRepositoryEvent.h"
 #include "DerivedProperty.h"
 
@@ -12,6 +13,8 @@ namespace iCAX
 {
     namespace Database
     {
+        class IMetaRegistry;
+
         /*
         * @brief 仓储
         */
@@ -35,6 +38,8 @@ namespace iCAX
             */
             virtual const iCAX::Data::uuid& GetID() const = 0;
 
+            virtual std::shared_ptr<IMetaRegistry> GetMetaRegistry() const = 0;
+
         public:
             /*
             * @brief 开始批量变更作用域
@@ -46,27 +51,16 @@ namespace iCAX
             * @details
             *   事务内的更改立即作用于内存；Commit 后写入快速保存日志，Cancel 后按反向日志回滚。
             *   事务不等同于撤销还原记录，Commit 不会自动进入 undo 栈。
-            *   如果事务型提交没有被 BeginUndoCommand/End 捕获，会清理受影响域的旧撤销/重做历史。
+            *   如果事务型提交没有被 BeginUndoCommand/End 捕获，会清理旧撤销/重做历史。
             */
             virtual std::unique_ptr<IRepositoryChangeScope> BeginTransaction(IN const std::string& strName_ = std::string()) = 0;
 
             /*
             * @brief 开始一次撤销还原记录
             * @details
-            *   DomainID_ 表示本次命令的发起域；命令内部可以影响多个域。
             *   Begin/End 之间提交的普通修改、批量修改和事务提交会被合并为一个 undo step。
             */
-            virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_) = 0;
-
-            /*
-            * @brief 开始一次撤销还原记录
-            * @details
-            *   单项目单数据空间语义下，上层不需要传入数据空间 ID。
-            */
-            std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const std::string& strName_)
-            {
-                return BeginUndoCommand(GetID(), strName_);
-            }
+            virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const std::string& strName_) = 0;
 
             /*
             * @brief 当前是否正在记录撤销还原步骤
@@ -74,69 +68,34 @@ namespace iCAX
             virtual bool IsUndoCommandRecording() const = 0;
 
             /*
-            * @brief 获取当前撤销还原记录的发起域
+            * @brief 是否可以撤销
             */
-            virtual iCAX::Data::uuid GetCurrentUndoCommandDomain() const = 0;
+            virtual bool CanUndo() const = 0;
 
             /*
-            * @brief 指定域是否可以撤销
+            * @brief 是否可以重做
             */
-            virtual bool CanUndo(IN const iCAX::Data::uuid& DomainID_) const = 0;
-
-            bool CanUndo() const
-            {
-                return CanUndo(GetID());
-            }
+            virtual bool CanRedo() const = 0;
 
             /*
-            * @brief 指定域是否可以重做
+            * @brief 获取撤销步骤列表
             */
-            virtual bool CanRedo(IN const iCAX::Data::uuid& DomainID_) const = 0;
-
-            bool CanRedo() const
-            {
-                return CanRedo(GetID());
-            }
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray() const = 0;
 
             /*
-            * @brief 获取指定域的撤销步骤列表
+            * @brief 获取重做步骤列表
             */
-            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const = 0;
-
-            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray() const
-            {
-                return GetUndoArray(GetID());
-            }
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray() const = 0;
 
             /*
-            * @brief 获取指定域的重做步骤列表
+            * @brief 撤销栈顶步骤
             */
-            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const = 0;
-
-            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray() const
-            {
-                return GetRedoArray(GetID());
-            }
+            virtual bool Undo() = 0;
 
             /*
-            * @brief 撤销指定域栈顶步骤
+            * @brief 重做栈顶步骤
             */
-            virtual bool Undo(IN const iCAX::Data::uuid& DomainID_) = 0;
-
-            bool Undo()
-            {
-                return Undo(GetID());
-            }
-
-            /*
-            * @brief 重做指定域栈顶步骤
-            */
-            virtual bool Redo(IN const iCAX::Data::uuid& DomainID_) = 0;
-
-            bool Redo()
-            {
-                return Redo(GetID());
-            }
+            virtual bool Redo() = 0;
 
             /*
             * @brief 打开快速保存操作日志
@@ -200,45 +159,6 @@ namespace iCAX
             virtual IEntitiesView& GetView() const = 0;
 
             /*
-            * @brief 创建域
-            * @param [in] ID_
-            * @param [in] bPersistent_ 是否持久化
-            * @remark 如果存在多个域，业务层需要持有自己域名的ID
-            */
-            virtual std::shared_ptr<IDomain> CreateDomain(IN const iCAX::Data::uuid& ID_, IN const bool& bPersistent_) = 0;
-
-            /*
-            * @brief 是否包含域
-            * @param [in] ID_
-            */
-            virtual bool HasDomain(IN const iCAX::Data::uuid& ID_) const = 0;
-
-            /*
-            * @brief 获取域
-            * @param [in] ID_
-            * @remark 如果存在多个域，业务层需要持有自己域名的ID
-            */
-            virtual std::shared_ptr<IDomain> GetDomain(IN const iCAX::Data::uuid& ID_) = 0;
-
-            /*
-            * @brief 移除域
-            * @param [in] ID_
-            */
-            virtual void DeleteDomain(IN const iCAX::Data::uuid& ID_) = 0;
-
-            /*
-            * @brief 域数量
-            * @return int
-            */
-            virtual int DomainCount() const = 0;
-
-            /*
-            * @brief 获取域ID列表
-            * @return std::vector<iCAX::Data::uuid>
-            */
-            virtual std::vector<iCAX::Data::uuid> GetDomainIDs() const = 0;
-
-            /*
             * @brief 获取MetaEntity
             * @return std::shared_ptr<IEntity>
             * @remark 仓储自身的描述、配置信息承载者
@@ -247,14 +167,14 @@ namespace iCAX
 
             /*
             * @brief 清空
-            * @param [in] bForced_ 是否强制，默认false。如果为true，则本体域也会被删除
+            * @param [in] bForced_ 是否强制，默认false。如果为true，则本体实体也会被删除
             */
             virtual void CleanUp(IN const bool& bForced_ = false) = 0;
 
             /*
             * @brief 是否有效
             * @details
-            *   如果缺失了本体域，则为无效
+            *   如果缺失了本体实体，则为无效
             */
             virtual bool IsValid() = 0;
 
@@ -270,12 +190,7 @@ namespace iCAX
                 {
                     return 0;
                 }
-                auto _pDomain = _pEntity->GetDomain();
-                if (!_pDomain)
-                {
-                    return 0;
-                }
-                return GetComponentVersion(_pDomain->GetID(), _pEntity->GetID(), Component_.GetComponentClass());
+                return GetComponentVersion(_pEntity->GetID(), Component_.GetComponentClass());
             }
 
             /*
@@ -290,12 +205,7 @@ namespace iCAX
                 {
                     return false;
                 }
-                auto _pDomain = _pEntity->GetDomain();
-                if (!_pDomain)
-                {
-                    return false;
-                }
-                return IsComponentChanged(_pDomain->GetID(), _pEntity->GetID(), Component_.GetComponentClass());
+                return IsComponentChanged(_pEntity->GetID(), Component_.GetComponentClass());
             }
 
             /*
@@ -309,39 +219,31 @@ namespace iCAX
                 {
                     return;
                 }
-                auto _pDomain = _pEntity->GetDomain();
-                if (!_pDomain)
-                {
-                    return;
-                }
-                return BumpComponentVersion(_pDomain->GetID(), _pEntity->GetID(), Component_.GetComponentClass());
+                return BumpComponentVersion(_pEntity->GetID(), Component_.GetComponentClass());
             }
 
             /*
             * @brief 是否发生了更改
-            * @param [in] nDomainID_
             * @param [in] nEntityID_
             * @param [in] strComponentType_
             * @return bool
             */
-            virtual bool IsComponentChanged(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const = 0;
+            virtual bool IsComponentChanged(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const = 0;
 
             /*
             * @brief 获取组件版本
-            * @param [in] nDomainID_
             * @param [in] nEntityID_
             * @param [in] strComponentType_
             * @return size_t
             */
-            virtual size_t GetComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const = 0;
+            virtual size_t GetComponentVersion(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const = 0;
 
             /*
             * @brief 组件版本升级
-            * @param [in] nDomainID_
             * @param [in] nEntityID_
             * @param [in] strComponentType_
             */
-            virtual void BumpComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const = 0;
+            virtual void BumpComponentVersion(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const = 0;
 
             /*
             * @brief 计算派生字段
@@ -364,5 +266,8 @@ namespace iCAX
         * @return  std::shared_ptr<IRepository>
         */
         std::shared_ptr<IRepository> _DATABASE_EXP GenerateRepository(IN const iCAX::Data::uuid& RepositoryID_);
+        std::shared_ptr<IRepository> _DATABASE_EXP GenerateRepository(
+            IN const iCAX::Data::uuid& RepositoryID_,
+            IN std::shared_ptr<IMetaRegistry> pMetaRegistry_);
     }
 }

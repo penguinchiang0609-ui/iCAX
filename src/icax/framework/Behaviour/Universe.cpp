@@ -1,11 +1,15 @@
 #include "pch.h"
 #include "Universe.h"
 #include "Timer.h"
+#include "IBehaviourRegistry.h"
+
+#include <utility>
 
 //!< 构造函数
-iCAX::Behaviour::CUniverse::CUniverse()
+iCAX::Behaviour::CUniverse::CUniverse(IN std::shared_ptr<IBehaviourRegistry> pRegistry_)
     : m_ID(iCAX::Data::GenerateNewUUID())
     , m_pDispatcher()
+    , m_pRegistry(pRegistry_ ? std::move(pRegistry_) : GetGlobalBehaviourRegistry())
 {
 }
 
@@ -16,7 +20,7 @@ iCAX::Behaviour::CUniverse::~CUniverse()
 
 void iCAX::Behaviour::CUniverse::Initialize()
 {
-    m_pDispatcher = std::make_shared<CBehaviourDispatcher>();
+    m_pDispatcher = std::make_shared<CBehaviourDispatcher>(m_pRegistry);
 }
 
 //!< 获取宇宙ID

@@ -16,12 +16,14 @@ namespace iCAX
 {
     namespace Resource
     {
+        class CResourceLoaderRegistry;
         class CResourcePool;
 
         class _RESOURCES_EXP CResourceLibrary final
         {
         public:
             CResourceLibrary();
+            explicit CResourceLibrary(IN std::shared_ptr<CResourceLoaderRegistry> pLoaderRegistry_);
             ~CResourceLibrary();
 
             CResourceLibrary(IN const CResourceLibrary&) = delete;
@@ -114,6 +116,7 @@ namespace iCAX
 
         private:
             std::unique_ptr<CResourcePool> m_pPool;
+            std::shared_ptr<CResourceLoaderRegistry> m_pLoaderRegistry;
         };
     }
 }

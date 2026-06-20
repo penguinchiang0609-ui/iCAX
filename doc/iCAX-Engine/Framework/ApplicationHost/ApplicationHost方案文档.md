@@ -6,22 +6,28 @@
 src/icax/framework/ApplicationHost/
 ```
 
-`ApplicationHost` 是后台工作区宿主，不是某个产品的 backend，也不是 Project 容器本身。
+`ApplicationHost` 是应用级宿主，不是 ProjectCatalog 容器。
 
 ## 2. 架构
 
 ```text
 ApplicationHost
   ApplicationContext
-  CommandRegistry / CommandDispatcher
-  MailPostOfficeService
-  ProjectManager
-    ProductCatalog
-    ProjectSession*
+  Application CommandRegistry / CommandDispatcher
+  Application mail id
+  IMailChannelService
+  ProductDefinition*
+  ProductRuntime*
+    Product mail id
+    ProjectCatalog*
+      Project*
 ```
 
-`ApplicationHost` 只负责装配和驱动；产品和项目状态由 `Project` 工程表达。
-这里的“驱动”只指应用宿主自己的生命周期和应用级消息处理。项目帧循环由各自 `ProjectSession` 的线程驱动。
+ApplicationHost 只处理应用级生命周期和应用级入口。产品模块加载、最近项目、ProjectCatalog 和 Project 的接入交给 `ProductRuntime`。
+
+ApplicationHost 保存的是产品定义列表。产品定义只包含静态能力，例如前端入口、项目文件 magic 和模块路径；最近项目、产品用户设置等运行数据由对应 `ProductRuntime` 通过 ProductDataStore 加载。
+
+ApplicationHost 还负责项目文件的轻量识别：根据 `ProductDefinition.ProjectFile.Magic` 读取少量文件头，判断文件应交给哪个产品。这里不解析项目数据，也不创建 Repository。magic 是产品文件类型的唯一识别依据，不能为空且不能重复；扩展名只用于文件选择器和展示。
 
 ## 3. 装配流程
 
@@ -35,21 +41,21 @@ WorkThread
   -> Phase Loading
   -> LoadApplicationSettings
   -> Create ApplicationContext
-  -> Resolve IMailPostOfficeService
-  -> Create ProjectManager
-  -> LoadProductDefinitions
-  -> LoadProductModules
-  -> ProductCatalog.Set
+  -> Create ServiceProvider
+  -> Replay framework registrations
+  -> Resolve IMailChannelService
+  -> Create application mail channel
+  -> RegisterBuiltInApplicationCommands
   -> Prepare application CommandContext
-  -> Open startup projects
+  -> Start startup product?
   -> Phase Running
   -> Notify Started
-  -> loop MainLoop(application mailbox only)
+  -> loop MainLoop
   -> Phase Stopping
   -> Notify Stopping
   -> Phase Unloading
-  -> Close all projects
-  -> Clear mail offices
+  -> Stop all ProductRuntime
+  -> Remove application mail channel
   -> Unload service instances
   -> Notify Stopped
 ```
@@ -58,81 +64,78 @@ WorkThread
 
 ```text
 MainLoop
-  -> DispatchBackendMails(application mail id)
+  -> Dispatch application mailbox
+  -> Dispatch every started ProductRuntime product mailbox
 ```
 
-项目会话内部持有 Repository、UniverseContext 和 Universe。Repository 承载数据，UniverseContext 把当前项目数据和计时器传给 Behaviour，Universe 只承载 Behaviour 调度器。每个项目打开后由 `ProjectSession::Start()` 启动独立线程：
-
-```text
-ProjectSession::WorkerMain
-  -> BindStartup
-  -> loop
-       PreSwapPDO
-       DispatchBackendMails(project backend post office)
-       Universe.Tick(project universe context)
-       PostSwapPDO
-```
-
-`ApplicationHost::OpenProject` 会创建项目、设置项目帧处理函数，并启动该项目线程。这样每个 Project 都有自己的线程、邮箱、Repository 和 ResourceLibrary。
+`ProductRuntime` 本身不拥有工作线程。应用线程轮询产品级 mailbox。每个 `Project` 拥有自己的项目线程，因此项目行为运行和项目级 mailbox 不被其他项目阻塞。
 
 ## 5. 命令上下文
 
-宿主保存一个应用级 `CommandContext`，用于暴露应用级依赖。
-
-每次分发 Mail 时，宿主会构造本次命令上下文：
+应用级命令上下文包含：
 
 ```text
-Application command:
-  ApplicationContext
-  CommandRegistry
-  ProjectManager
-  MailPostOfficeService
-
-Project command:
-  ApplicationContext
-  CommandRegistry
-  ProjectManager
-  ProjectSession
-  IRepository
-  IUniverse
-  CResourceLibrary
-  MailPostOfficeService
+ApplicationContext
+CommandRegistry
+ProductDefinition list snapshot
+ProductRuntime list snapshot
+CServiceProvider
+IMailChannelService
+IMetaRegistry
+IBehaviourRegistry
+CResourceLoaderRegistry
 ```
 
-这样命令处理器不需要自己判断全局单例 Repository，也不会误操作其他项目。
+产品级命令上下文由 `ProductRuntime` 组装。项目级命令进入具体 Project 邮箱时，ProductRuntime 会额外放入当前 Project、ProjectCatalog、Repository、Universe 和 ResourceLibrary。
 
-## 6. 产品模块
+## 6. 通信通道
 
-产品模块由产品 manifest 声明，`ApplicationHost` 在加载产品定义后调用 `LoadLibraryA` 加载模块。
-
-产品模块加载后可以通过自注册把组件、Behaviour、Service、命令注册到对应注册表。产品 ID 用于区分产品类型；项目 ID 用于区分打开的项目实例。
-
-## 7. 通信通道
-
-`ApplicationHost` 使用 `IMailPostOfficeService` 管理应用级通信通道：
+应用级通道：
 
 ```text
-application mail id -> app channel
+application mail id -> App.GetState / App.ListProducts / App.StartProduct / App.StopProduct / App.ResolveProjectFile / App.OpenProjectFile
 ```
 
-项目级通信通道归属 `ProjectSession`：
+双击文件打开流程：
 
 ```text
-ProjectSession
-  MailChannel
-    EndA: frontend post office
-    EndB: backend post office
+Frontend shell receives project file path
+  -> App.OpenProjectFile(projectPath)
+  -> ApplicationHost.ResolveProjectFileProduct
+       read ProjectFile.ProbeBytes from project file
+       match ProjectFile.Magic at ProjectFile.MagicOffset
+  -> StartProduct(productId)
+  -> ProductRuntime.OpenProjectCatalog(projectPath)
+  -> return product mail id, catalog and main project id
 ```
 
-项目关闭时，`ProjectSession::Close()` 停止项目线程并重置自己的 `MailChannel`，旧项目邮局随之失效。
+如果 magic 未命中，ApplicationHost 返回 `NotFound`。如果同一个文件命中多个产品，说明产品定义中的 magic 存在歧义，应作为配置错误处理，而不是交给前端选择。
+
+产品级通道：
+
+```text
+product mail id -> Product.GetState / Product.OpenProjectCatalog / Product.CloseProjectCatalog
+```
+
+项目级通道：
+
+```text
+project mail id -> project commands
+```
+
+`IMailChannelService` 统一持有所有 `CMailChannel`。ApplicationHost、ProductRuntime 和 Project 只持有自己的 mail id，并通过服务获取 frontend/backend post office。上级运行体负责向前端 bridge 发放下级 mail id 对应的 frontend post office。运行体停止或关闭时删除对应 channel，旧邮局随之失效。
+
+## 7. 模块加载
+
+产品模块由 `CProductDefinition::Modules` 声明。`ApplicationHost` 不加载产品模块，启动产品时由 `ProductRuntime::Start()` 调用 `LoadLibraryA` 加载。
+
+当前阶段仍兼容已有 DLL 自动注册宏。宏注册项由注册目录记录，产品启动后回放到 ApplicationHost 的应用级 ServiceProvider、MetaRegistry、BehaviourRegistry 和 ResourceLoaderRegistry。这样扩展模块仍然按宏自动注册，不增加业务代码编写成本。
 
 ## 8. 设计原则
 
-- ApplicationContext 只放应用级状态。
-- ProductDefinition 只描述产品类型。
-- ProjectSession 承载项目实例状态。
-- Repository、ResourceLibrary、UniverseContext 都属于 ProjectSession。
-- Universe 由 ProjectSession 持有并驱动，但它本身不拥有项目数据。
-- MailChannel 和后台工作线程也属于 ProjectSession。
-- ApplicationHost 不直接保存单个 Repository 或 Universe。
-- 多产品并存靠 ProductID 区分；多项目并存靠 ProjectID 隔离。
+- ApplicationHost 只负责应用级入口和产品运行时生命周期。
+- ProductRuntime 负责产品级入口和 ProjectCatalog 生命周期。
+- Project 负责项目实例状态、项目线程、Repository、ResourceLibrary、Universe 和项目 mailbox。
+- ProductRuntime 可以同时维护多个 ProjectCatalog。
+- 一个 ProjectCatalog 内主项目最多存在一个。
+- 临时项目靠 ProjectID 隔离，用于预览、导入和转换。

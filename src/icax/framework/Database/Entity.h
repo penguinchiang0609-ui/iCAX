@@ -5,12 +5,13 @@
 #include <string>
 #include "ComponentBase.h"
 #include "IEntityEvent.h"
-#include "IDomain.h"
 
 namespace iCAX
 {
     namespace Database
     {
+        class IRepository;
+
         /*
         * @brief 实体
         * @remark 
@@ -26,7 +27,7 @@ namespace iCAX
             * @brief 构造函数
             * @param [in] UID_
             */
-            CEntity(IN std::shared_ptr<IDomain> pDomain_, IN const iCAX::Data::uuid& UID_);
+            CEntity(IN std::shared_ptr<IRepository> pRepository_, IN const iCAX::Data::uuid& UID_);
 
             /*
             * @brief 析构函数
@@ -147,16 +148,16 @@ namespace iCAX
             virtual void Cleanup() override;
 
             /*
-            * @brief 获取所在域
-            * @return std::shared_ptr<class IDomain>
+            * @brief 获取所在仓储
+            * @return std::shared_ptr<class IRepository>
             */
-            virtual class std::shared_ptr<IDomain> GetDomain() const override;
+            virtual class std::shared_ptr<IRepository> GetRepository() const override;
 
         private:
             iCAX::Data::uuid m_UID;                                                               //!< 实体ID
             std::map<std::string, std::shared_ptr<CComponentBase>> m_mapComponents;                 //!< 组件列表
             std::vector<std::string> m_ComponentClasses;
-            std::weak_ptr<IDomain> m_pDomain;                                                       //!< 所在域
+            std::weak_ptr<IRepository> m_pRepository;                                                //!< 所在仓储
         };
     }
 }

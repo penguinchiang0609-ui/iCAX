@@ -35,9 +35,14 @@ $BuildProjects = @(
     "src\tests\icax\framework\Mailbox\MailboxTest\MailboxTest.vcxproj",
     "src\icax\framework\PDO\PDO.vcxproj",
     "src\tests\icax\framework\PDO\PDOTest\PDOTest.vcxproj",
+    "src\icax\framework\Services\Services.vcxproj",
     "src\icax\framework\Behaviour\Behaviour.vcxproj",
     "src\icax\framework\Project\Project.vcxproj",
     "src\tests\icax\framework\Project\ProjectTest\ProjectTest.vcxproj",
+    "src\icax\framework\Product\Product.vcxproj",
+    "src\tests\icax\framework\Product\ProductTest\ProductTest.vcxproj",
+    "src\icax\framework\ApplicationHost\ApplicationHost.vcxproj",
+    "src\tests\icax\framework\ApplicationHost\ApplicationHostTest\ApplicationHostTest.vcxproj",
     "src\icax\foundation\Task\Task.vcxproj",
     "src\tests\icax\foundation\Task\TaskTest\TaskTest.vcxproj"
 )
@@ -49,6 +54,8 @@ $TestExecutables = @(
     "src\icax\$Platform\$Configuration\CommandHandlerTest.exe",
     "src\icax\$Platform\$Configuration\DatabaseTest.exe",
     "src\icax\$Platform\$Configuration\ProjectTest.exe",
+    "src\icax\$Platform\$Configuration\ProductTest.exe",
+    "src\icax\$Platform\$Configuration\ApplicationHostTest.exe",
     "src\icax\$Platform\$Configuration\MailboxTest.exe",
     "src\icax\$Platform\$Configuration\PDOTest.exe",
     "src\icax\$Platform\$Configuration\TaskTest.exe"

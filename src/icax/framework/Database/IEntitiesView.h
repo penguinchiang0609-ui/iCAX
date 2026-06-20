@@ -1,11 +1,15 @@
 #pragma once
 #include "Database.h"
+#include <memory>
+#include <string>
 #include <vector>
 
 namespace iCAX
 {
     namespace Database
     {
+        class CComponentBase;
+
         /*
         * @brief 实体集视图
         * @remark 根据组件掩码构建实体集视图（缓存）

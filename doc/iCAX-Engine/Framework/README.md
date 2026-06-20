@@ -2,7 +2,9 @@
 
 `Framework` 目录记录 iCAX Engine 框架层项目的规格和方案文档。
 
-框架层承接 Foundation 基础能力，并向 ApplicationHost、插件和产品代码提供可复用的应用框架能力。
+框架层承接 Foundation 基础能力，并向 ApplicationHost、插件和业务代码提供可复用的后台应用框架能力。
+
+当前后台以 `ApplicationHost -> ProductRuntime -> Project` 三层组织。ApplicationHost 持有应用级 ServiceProvider、MailChannelService、MetaRegistry、BehaviourRegistry 和 ResourceLoaderRegistry；ProductRuntime 负责产品模块加载和 ProjectCatalog 生命周期；Project 是数据隔离边界，独占 Repository、ResourceLibrary/ResourcePool、Universe、项目 mail channel 和项目线程。
 
 ## 目录结构
 
@@ -32,6 +34,10 @@ Framework/
     PDO规格文档.md
     PDO方案文档.md
     README.md
+  Product/
+    Product规格文档.md
+    Product方案文档.md
+    README.md
   Project/
     Project规格文档.md
     Project方案文档.md
@@ -49,11 +55,12 @@ Framework/
 ## 当前项目
 
 - `ApplicationContext`：应用描述、路径、应用级配置和配置读写边界。
-- `ApplicationHost`：后台工作区宿主，负责应用上下文、产品目录、多项目会话、命令分发、事件订阅和后台工作线程。
+- `ApplicationHost`：应用级后台宿主，负责应用上下文、产品清单、产品运行时、应用级 mailbox、事件订阅和后台工作线程。
 - `CommandHandler`：Mailbox 之上的后端命令处理抽象。
 - `Database`：Repository 单 EC 数据容器、实体组件管理、字段元数据、事件、版本和派生字段。
 - `Mailbox`：后台与前台之间的普通 Mail 通信通道。
 - `PDO`：后台与前台之间的高频可丢弃数据通道。
-- `Project`：产品定义、产品目录、项目会话和多项目管理。
-- `Resources`：工程资源系统，统一管理资源条目、对象、元信息、持久化策略和资源加载器。
-- `Services`：服务接口、服务提供器、自动注册辅助和框架级服务实现。
+- `Product`：产品级运行时，负责产品模块加载、产品级 mailbox、最近项目列表和 ProjectCatalog 生命周期。
+- `Project`：主项目和临时项目实例。每个 Project 独占数据、资源、Universe、项目 mail channel 和项目线程。
+- `Resources`：工程资源系统。资源对象按 Project 隔离，ResourceLoader 定义按 Application 注册。
+- `Services`：服务接口、服务提供器、自动注册辅助和应用级 MailChannelService。

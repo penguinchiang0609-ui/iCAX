@@ -87,10 +87,10 @@ namespace iCAX
             virtual void Cleanup() = 0;
 
             /*
-            * @brief 获取所在域
-            * @return std::shared_ptr<class IDomain>
+            * @brief 获取所在仓储
+            * @return std::shared_ptr<class IRepository>
             */
-            virtual class std::shared_ptr<class IDomain> GetDomain() const = 0;
+            virtual class std::shared_ptr<class IRepository> GetRepository() const = 0;
 
             /*
             * @brief 获取组件

@@ -3,7 +3,6 @@
 #include "IEntity.h"
 #include "ComponentMask.h"
 #include "MaskRegistry.h"
-#include "IDomain.h"
 #include "IRepository.h"
 #include "IMetaRegistry.h"
 
@@ -27,7 +26,7 @@ iCAX::Database::CComponentBase::~CComponentBase()
 //!< 设置属性
 void iCAX::Database::CComponentBase::SetProperty(IN const std::string& strPropertyName_, IN const PropertyValue& NewValue_)
 {
-    auto _pMeta = GetGlobalMetaRegistry();
+    auto _pMeta = ResolveMetaRegistryForComponent(*this);
     if (_pMeta->IsDerivedPropertyByName(GetComponentClass(), strPropertyName_))
     {
         throw std::runtime_error(std::format("{}.{} is a derived property and cannot be set", GetComponentClass(), strPropertyName_));
@@ -50,7 +49,7 @@ void iCAX::Database::CComponentBase::SetProperty(IN const std::string& strProper
 //!< 设置属性集
 void iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Properties_)
 {
-    auto _pMeta = GetGlobalMetaRegistry();
+    auto _pMeta = ResolveMetaRegistryForComponent(*this);
     for (auto& [_strName, _] : Properties_)
     {
         if (_pMeta->IsDerivedPropertyByName(GetComponentClass(), _strName))
@@ -108,7 +107,7 @@ void iCAX::Database::CComponentBase::SetProperties(IN const PropertySet& Propert
 iCAX::Data::PropertySet iCAX::Database::CComponentBase::GetProperties() const
 {
     PropertySet _Set;
-    auto _pMeta = GetGlobalMetaRegistry();
+    auto _pMeta = ResolveMetaRegistryForComponent(*this);
     const auto _strComponentClass = GetComponentClass();
     const bool _bRegisteredComponent = _pMeta->HasTypeByName(_strComponentClass);
     auto _vecNames = GetPropertyNameArray();
@@ -176,18 +175,13 @@ size_t iCAX::Database::CComponentBase::Version() const
     {
         return 0;
     }
-    auto _pDomain = _pEntity->GetDomain();
-    if (!_pDomain)
-    {
-        return 0;
-    }
-    auto _pRepository = _pDomain->GetRepository();
+    auto _pRepository = _pEntity->GetRepository();
     if (!_pRepository)
     {
         return 0;
     }
 
-    return _pRepository->GetComponentVersion(_pDomain->GetID(), _pEntity->GetID(), GetComponentClass());
+    return _pRepository->GetComponentVersion(_pEntity->GetID(), GetComponentClass());
 }
 
 //! 是否发生了更改
@@ -198,18 +192,13 @@ bool iCAX::Database::CComponentBase::IsChanged() const
     {
         return false;
     }
-    auto _pDomain = _pEntity->GetDomain();
-    if (!_pDomain)
-    {
-        return false;
-    }
-    auto _pRepository = _pDomain->GetRepository();
+    auto _pRepository = _pEntity->GetRepository();
     if (!_pRepository)
     {
         return false;
     }
 
-    return _pRepository->IsComponentChanged(_pDomain->GetID(), _pEntity->GetID(), GetComponentClass());
+    return _pRepository->IsComponentChanged(_pEntity->GetID(), GetComponentClass());
 }
 
 //! 删除

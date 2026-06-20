@@ -2,6 +2,7 @@
 #include <memory>
 #include "IService.h"
 #include "ServiceProvider.h"
+#include "ServiceRegistrationCatalog.h"
 
 
 //! 服务自动注册宏
@@ -11,7 +12,10 @@
         {\
             AutoRegisterService()\
             {\
-                iCAX::Services::GetGlobalServiceProvider()->RegisterSingleton<TService, TImplementation, TDependencies...>();\
+                iCAX::Services::CServiceRegistrationCatalog::Register([](iCAX::Services::CServiceProvider& Provider_)\
+                {\
+                    Provider_.RegisterSingleton<TService, TImplementation, TDependencies...>();\
+                }, this);\
             }\
         };\
 private:\

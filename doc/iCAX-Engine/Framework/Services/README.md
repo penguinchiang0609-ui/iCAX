@@ -6,5 +6,5 @@
 
 ## 目录结构
 
-- `Services规格文档.md`：服务接口、服务提供器和 MailPostOfficeService 的公开语义。
+- `Services规格文档.md`：服务接口、服务提供器和自动注册辅助的公开语义。
 - `Services方案文档.md`：服务注册、解析、生命周期和迁移边界。

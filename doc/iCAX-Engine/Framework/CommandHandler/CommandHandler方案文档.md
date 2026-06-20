@@ -6,7 +6,7 @@
 src/icax/framework/CommandHandler/
 ```
 
-`CommandHandler` 放在 framework，是因为它是后端应用协议层的通用抽象。它承接 Framework 的 Mailbox，又向产品 backend 提供统一命令分发模型。
+`CommandHandler` 放在 framework，是因为它是后端应用协议层的通用抽象。它位于 Mailbox 之上，向业务模块提供统一命令分发模型。
 
 ## 2. 为什么不放 Mailbox
 
@@ -25,22 +25,32 @@ Mail.nTypeCode
 ```text
 Mailbox = transport
 CommandHandler = command dispatch
-Service / Database / Behaviour = execution
+ApplicationHost = application mail adapter and product runtime lifecycle
+ProductRuntime = product/project mail adapter and context assembly
+Project / Repository / ResourceLibrary / Service = execution dependencies
 ```
 
 ## 3. 为什么不直接依赖 Database 和 Service
 
-不同产品命令需要的依赖不同。如果 CommandHandler 直接依赖所有 framework/service 项目，它会快速变成新的中心依赖。
+不同业务命令需要的依赖不同。如果 CommandHandler 直接依赖所有 framework/service 项目，它会快速变成新的中心依赖。
 
 所以当前用 `ICommandContext` 提供类型化依赖容器：
 
 ```cpp
 context.SetDependency<IApplicationContext>(appContext);
+context.SetDependency<CProject>(project);
 context.SetDependency<IRepository>(repository);
-context.SetDependency<IResourceService>(resourceService);
+context.SetDependency<CResourceLibrary>(resources);
 ```
 
 具体 handler 自己知道需要取什么依赖。
+
+应用级、产品级和项目级命令的上下文不同：
+
+- 应用级命令从应用邮局进入，通常有 `ApplicationContext`、产品定义列表、已启动产品列表和应用服务。
+- 产品级命令从产品邮局进入，通常有 `ApplicationContext`、`ProductRuntime`、`ProjectCatalog` 列表和服务。
+- 项目级命令从项目邮局进入，额外有 `Project`、所属 `ProjectCatalog`、`IRepository`、`IUniverse`、`ResourceLibrary`。
+- `CommandHandler` 本身不保存这些对象，也不决定命令属于应用级还是项目级。
 
 ## 4. 典型命令归属
 
@@ -48,7 +58,7 @@ context.SetDependency<IResourceService>(resourceService);
 
 ```text
 UndoCommandHandler
-  -> IRepository::Undo(domainId)
+  -> IRepository::Undo()
 ```
 
 导入 FBX：
@@ -56,7 +66,7 @@ UndoCommandHandler
 ```text
 ImportFbxCommandHandler
   -> ImportFbxService
-  -> ResourceService
+  -> CProject::Resources()
   -> IRepository::BeginUndoCommand
   -> 创建 EC 数据
 ```
@@ -73,9 +83,8 @@ UpdateSettingsCommandHandler
 
 当前不做：
 
-- Mailbox 适配器。
 - 具体命令协议编码。
-- 产品业务 handler。
+- 业务 handler。
 - 服务定位器。
 
-这些应由 ApplicationHost、产品 backend 或后续协议模块接入。
+Mailbox 适配器由 `ApplicationHost` 和 `ProductRuntime` 接入；具体命令协议编码和业务 handler 由业务模块或后续协议模块提供。

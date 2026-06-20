@@ -2,136 +2,111 @@
 
 ## 1. 定位
 
-`Project` 是 framework 层的产品与项目会话工程。
+`Project` 是 framework 层的项目工程。
 
-它区分两个概念：
+它只表达项目实例，不表达应用类型、业务类型或模块目录。运行态只允许一个主项目。为了支持预览、导入和转换，可以同时打开若干临时项目。
 
-- `ProductDefinition`：产品类型，如三维五轴、平切、焊接。
-- `ProjectSession`：一个已打开的项目实例。
+每个 `Project` 独占自己的 `Repository`、`ResourceLibrary`、`UniverseContext`、`Universe`、项目 mail channel 和后台工作线程。底层 `CMailChannel` 由应用级 `IMailChannelService` 按 `ProjectMailID` 托管。
 
-同一个进程可以同时加载多个产品类型，也可以同时打开多个项目实例。每个 `ProjectSession` 独占自己的 `Repository`、`ResourceLibrary`、`UniverseContext`、`Universe`、`MailChannel` 和后台工作线程。
+## 2. Project
 
-## 2. ProductDefinition
-
-产品定义描述产品类型，不保存项目数据：
+`CProject` 是项目运行单元：
 
 ```cpp
-iCAX::Project::CProductDefinition product;
-product.ProductID = "icax.product.five-axis";
-product.DisplayName = "三维五轴";
-product.StartupComponent = "FiveAxisStartupComponent";
-product.FrontendEntry = "frontend/index.html";
-product.ProtocolPath = "protocol";
+iCAX::Project::CProjectCreateInfo info;
+info.ProjectName = "Robot Cell";
+info.ProjectPath = "D:/projects/robot.icax";
+info.StartupComponent = "StartupComponent";
+info.pMailChannelService = mailChannelService;
+
+iCAX::Project::CProject project(info);
 ```
 
-产品 ID 必须显式填写，不从显示名或目录名推断。
-
-## 3. ProductCatalog
-
-`CProductCatalog` 管理产品定义：
-
-```cpp
-iCAX::Project::CProductCatalog catalog;
-catalog.Set(product);
-
-auto fiveAxis = catalog.Require("icax.product.five-axis");
-auto allProducts = catalog.GetDefinitions();
-```
-
-产品 manifest 是普通 UTF-8 JSON 文件，使用 `productId` 字段：
-
-```json
-{
-  "productId": "icax.product.flat-cut",
-  "displayName": "平切",
-  "backend": {
-    "components": [],
-    "behaviours": [],
-    "services": [],
-    "commands": []
-  },
-  "frontend": {
-    "entry": "frontend/index.html"
-  },
-  "protocol": {
-    "path": "protocol"
-  },
-  "startup": {
-    "firstComponent": "FlatCutStartupComponent"
-  }
-}
-```
-
-`backend` 下的模块路径、`frontend.entry` 和 `protocol.path` 都按 manifest 所在目录解析为规范路径。模块路径应指向可加载的动态库文件。
-
-## 4. ProjectSession
-
-`CProjectSession` 是项目运行单元：
-
-```cpp
-auto project = projectManager.OpenProject("icax.product.five-axis", "Robot Cell");
-
-auto& database = project->Database();
-auto& universe = project->Universe();
-auto& resources = project->Resources();
-
-auto model = project->Resources().Load<ModelResource>("D:/assets/robot.fbx");
-```
-
-每个项目会话拥有：
+每个项目拥有：
 
 - 一个 `Repository`，承载 EC 数据。
 - 一个 `ResourceLibrary`，承载项目资源。
 - 一个 `UniverseContext`，把当前项目的 Repository、计时器和应用设置传给 Behaviour。
 - 一个 `Universe`，承载 Behaviour 调度器并执行 Behaviour；它不拥有 Repository，也不代表 Project。
-- 一个 `MailChannel`，承载该项目自己的前后台邮件。
+- 一个 `ProjectMailID`，用于从 `IMailChannelService` 获取该项目自己的前后台邮件通道。
 - 一个后台工作线程，按项目自己的帧循环执行 `PreSwapPDO`、邮件处理、`Tick` 和 `PostSwapPDO`。
 - 一个 ProjectID，作为项目身份。
+- 一个 ProjectMailID，作为项目通信身份。
+- 一个项目角色：`Main` 或 `Transient`。
+- 一个可选启动组件名，用于启动时绑定首个 Behaviour。
 
 项目线程由 `Start()` 启动，由 `Stop()` 或 `Close()` 停止：
 
 ```cpp
-project->SetFrameHandler([](
-    iCAX::Project::CProjectSession& project,
+project.SetFrameHandler([](
+    iCAX::Project::CProject& project,
     const iCAX::Mail::CMailPostOffice& backendOffice) {
     auto mails = backendOffice.Receive();
     // 在项目线程内处理该项目的命令。
 });
 
-project->Start();
-project->Stop();
+project.Start();
+project.Stop();
 ```
 
 项目侧前端邮局可随时低成本获取：
 
 ```cpp
-auto frontendOffice = project->GetFrontendPostOffice();
+auto frontendOffice = project.GetFrontendPostOffice();
 ```
 
-`Close()` 会停止项目线程、清理 `Universe` / `UniverseContext` / `Repository` / `ResourceLibrary`，并重置项目 `MailChannel`，使已经发出去的旧邮局失效。
+`Close()` 会停止项目线程、清理 `Universe` / `UniverseContext` / `Repository` / `ResourceLibrary`，并从 `IMailChannelService` 删除项目 channel，使已经发出去的旧邮局失效。
 
-## 5. ProjectManager
+## 3. ProjectRuntime
 
-`CProjectManager` 管理多个项目实例：
+`IProjectRuntime` 是项目运行时抽象。上层可以通过它获取项目身份、状态和前端邮局，并控制启动、停止和关闭：
 
 ```cpp
-iCAX::Project::CProjectManager projectManager;
-projectManager.Products().Set(fiveAxisProduct);
-projectManager.Products().Set(flatCutProduct);
+std::shared_ptr<iCAX::Project::CProject> project = catalog.OpenMainProject("Robot Cell");
+auto runtime = iCAX::Project::CreateLocalProjectRuntime(project);
 
-auto fiveAxis = projectManager.OpenProject("icax.product.five-axis", "A");
-auto flatCut = projectManager.OpenProject("icax.product.flat-cut", "B");
+runtime->SetFrameHandler([](
+    iCAX::Project::IProjectRuntime& runtime,
+    const iCAX::Mail::CMailPostOffice& backendOffice) {
+    auto mails = backendOffice.Receive();
+    // 在项目运行时内处理该项目的命令。
+});
 
-projectManager.SetActiveProject(flatCut->GetProjectID());
-projectManager.CloseProject(fiveAxis->GetProjectID());
+runtime->Start();
+auto frontendOffice = runtime->GetFrontendPostOffice();
+runtime->Close();
 ```
 
-`ProjectManager` 只负责打开、关闭、查询和设置活动项目。它不统一驱动所有项目帧循环；项目运行由各自 `ProjectSession` 的后台线程完成。
+当前提供的实现是 `CLocalProjectRuntime`，它包装进程内 `CProject`。如果未来需要每个 Project 独立内存空间，应增加新的进程级实现，而不是让 ProductRuntime 直接依赖 `CProject`。
 
-## 6. 隔离规则
+本地实现可以通过 `GetLocalProject()` 取得被包装的 `CProject`，用于当前进程内命令上下文补齐。进程级实现应返回空指针，项目内部数据访问由 Project Worker 自己处理。
 
-- 产品定义是类型级信息，可以被多个项目共享。
-- 项目会话是实例级信息，不与其他项目共享 Repository、ResourceLibrary、UniverseContext、Universe、MailChannel 或后台线程。
-- 同一产品可以多开多个项目。
-- 不同产品可以同时打开项目。
+## 4. ProjectCatalog
+
+`CProjectCatalog` 管理一个主项目和若干临时项目：
+
+```cpp
+iCAX::Project::CProjectCatalogCreateInfo catalogInfo;
+catalogInfo.pMailChannelService = mailChannelService;
+
+iCAX::Project::CProjectCatalog projectCatalog(catalogInfo);
+
+auto mainProject = projectCatalog.OpenMainProject("Robot Cell", "D:/projects/robot.icax");
+auto previewProject = projectCatalog.OpenTransientProject("Import Preview");
+
+auto current = projectCatalog.GetMainProject();
+projectCatalog.CloseProject(previewProject->GetProjectID());
+projectCatalog.CloseMainProject();
+```
+
+`ProjectCatalog` 只负责打开、关闭和查询项目。它不统一驱动所有项目帧循环；项目运行由各自 `Project` 的后台线程完成。
+
+`OpenMainProject` 在已经存在主项目时会失败。是否保存、关闭并替换主项目由更上层命令或业务逻辑决定，framework 不隐式丢弃当前主项目。
+
+## 5. 隔离规则
+
+- 主项目是当前业务编辑对象，只能存在一个。
+- 临时项目用于预览、导入、转换和对照，不应承载主 UI 的长期编辑状态。
+- 项目是实例级运行对象，不与其他项目共享 Repository、ResourceLibrary、UniverseContext、Universe、项目 mail channel 或后台线程。
 - 资源路径相同也只在各自 Project 的 `ResourceLibrary` 内复用，不跨项目共享对象。
+- 当前进程内实现可以隔离标准 C++ 异常；独立 OS 地址空间必须由进程级 `IProjectRuntime` 实现。

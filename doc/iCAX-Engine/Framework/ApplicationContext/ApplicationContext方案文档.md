@@ -14,10 +14,8 @@ src/icax/framework/ApplicationContext/
 
 - 读取配置文件。
 - 构造 `ApplicationContext`。
-- 加载产品目录和产品模块。
-- 创建 `ProjectManager`。
-- 打开启动项目。
-- 驱动应用级消息循环。
+- 维护产品定义并启动 `ProductRuntime`。
+- 驱动应用级和产品级 mailbox 轮询。
 
 `ApplicationContext` 是 ApplicationHost 构造出来的上下文对象，负责被查询，不负责启动流程。
 
@@ -25,9 +23,9 @@ src/icax/framework/ApplicationContext/
 ApplicationHost
   -> Load settings
   -> Build ApplicationContext
-  -> Load product catalog
-  -> Create ProjectManager
-  -> ProjectSession creates Repository / UniverseContext / Universe
+  -> Start ProductRuntime
+  -> ProductRuntime opens ProjectCatalog
+  -> Project creates Repository / UniverseContext / Universe
   -> Pass application context to Service / CommandHandler
 ```
 
@@ -81,4 +79,4 @@ ApplicationContext -> ApplicationHost
 - 项目资源管理。
 - 用户账户系统。
 
-这些能力由 ApplicationHost、CommandHandler、ResourceService 或产品 backend 服务承载。
+这些能力由 ApplicationHost、ProductRuntime、CommandHandler、ResourceService 或业务服务承载。

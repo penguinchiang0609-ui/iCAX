@@ -1,6 +1,5 @@
 #include "pch.h"
 #include "Repository.h"
-#include "Domain.h"
 #include "MetaRegistry.h"
 #include "ChangeLog.h"
 #include "RepositoryHistory.h"
@@ -8,44 +7,50 @@
 #include <map>
 #include <set>
 #include <tuple>
+#include <utility>
 
 namespace
 {
-    bool ShouldAffectVersionAndDerived(IN const std::string& ComponentClass_, IN const std::string& PropertyName_)
+    bool ShouldAffectVersionAndDerived(
+        IN iCAX::Database::IMetaRegistry& Meta_,
+        IN const std::string& ComponentClass_,
+        IN const std::string& PropertyName_)
     {
-        auto _pMeta = iCAX::Database::GetGlobalMetaRegistry();
-        if (!_pMeta->HasPropertyByName(ComponentClass_, PropertyName_))
+        if (!Meta_.HasPropertyByName(ComponentClass_, PropertyName_))
         {
-            return !_pMeta->HasTypeByName(ComponentClass_);
+            return !Meta_.HasTypeByName(ComponentClass_);
         }
 
-        return _pMeta->GetPropertyKindByName(ComponentClass_, PropertyName_) == iCAX::Database::EPropertyKind::Value
-            && _pMeta->GetPropertyChangePolicyByName(ComponentClass_, PropertyName_) != iCAX::Database::EPropertyChangePolicy::Silent;
+        return Meta_.GetPropertyKindByName(ComponentClass_, PropertyName_) == iCAX::Database::EPropertyKind::Value
+            && Meta_.GetPropertyChangePolicyByName(ComponentClass_, PropertyName_) != iCAX::Database::EPropertyChangePolicy::Silent;
     }
 
-    std::vector<std::string> GetInvalidationPropertyNames(IN const std::shared_ptr<iCAX::Database::CComponentBase>& pComponent_)
+    std::vector<std::string> GetInvalidationPropertyNames(
+        IN iCAX::Database::IMetaRegistry& Meta_,
+        IN const std::shared_ptr<iCAX::Database::CComponentBase>& pComponent_)
     {
         if (!pComponent_)
         {
             return {};
         }
 
-        auto _pMeta = iCAX::Database::GetGlobalMetaRegistry();
         const auto _strComponentClass = pComponent_->GetComponentClass();
-        if (_pMeta->HasTypeByName(_strComponentClass))
+        if (Meta_.HasTypeByName(_strComponentClass))
         {
-            return _pMeta->GetPropertyNames(_strComponentClass);
+            return Meta_.GetPropertyNames(_strComponentClass);
         }
 
         return pComponent_->GetPropertyNameArray();
     }
 
-    std::vector<std::string> GetInvalidationPropertyNames(IN const std::string& strComponentClass_, IN const iCAX::Data::PropertySet& Properties_)
+    std::vector<std::string> GetInvalidationPropertyNames(
+        IN iCAX::Database::IMetaRegistry& Meta_,
+        IN const std::string& strComponentClass_,
+        IN const iCAX::Data::PropertySet& Properties_)
     {
-        auto _pMeta = iCAX::Database::GetGlobalMetaRegistry();
-        if (_pMeta->HasTypeByName(strComponentClass_))
+        if (Meta_.HasTypeByName(strComponentClass_))
         {
-            return _pMeta->GetPropertyNames(strComponentClass_);
+            return Meta_.GetPropertyNames(strComponentClass_);
         }
 
         std::vector<std::string> _vecNames;
@@ -56,9 +61,8 @@ namespace
         return _vecNames;
     }
 
-    using ComponentVersionKey = std::tuple<iCAX::Data::uuid, iCAX::Data::uuid, std::string>;
-    using PropertyInvalidationKey = std::tuple<iCAX::Data::uuid, iCAX::Data::uuid, std::string, std::string>;
-
+    using ComponentVersionKey = std::tuple<iCAX::Data::uuid, std::string>;
+    using PropertyInvalidationKey = std::tuple<iCAX::Data::uuid, std::string, std::string>;
 }
 
 namespace iCAX
@@ -150,24 +154,32 @@ namespace iCAX
     }
 }
 
-//!< 构造函数
 iCAX::Database::CRepository::CRepository(IN const iCAX::Data::uuid& UID_)
+    : CRepository(UID_, GetGlobalMetaRegistry())
+{
+}
+
+iCAX::Database::CRepository::CRepository(IN const iCAX::Data::uuid& UID_, IN std::shared_ptr<IMetaRegistry> pMetaRegistry_)
+    : m_pMetaRegistry(pMetaRegistry_ ? std::move(pMetaRegistry_) : GetGlobalMetaRegistry())
 {
     m_UID = UID_;
-    m_pHistory = std::make_unique<CRepositoryHistory>();
+    m_pHistory = std::make_unique<CRepositoryHistory>(m_pMetaRegistry);
     m_pVerisonTable = std::make_shared<VersionTable>();
     m_pDerivedPropertyManager = std::make_shared<CDerivedPropertyManager>(*this);
 }
 
-//!< 析构函数
 iCAX::Database::CRepository::~CRepository()
 {
 }
 
-//! 获取ID
 const iCAX::Data::uuid& iCAX::Database::CRepository::GetID() const
 {
     return m_UID;
+}
+
+std::shared_ptr<iCAX::Database::IMetaRegistry> iCAX::Database::CRepository::GetMetaRegistry() const
+{
+    return m_pMetaRegistry;
 }
 
 std::unique_ptr<iCAX::Database::IRepositoryChangeScope> iCAX::Database::CRepository::BeginChangeScope(IN EChangeScopeKind Kind_, IN const std::string& strName_)
@@ -180,7 +192,7 @@ std::unique_ptr<iCAX::Database::IRepositoryChangeScope> iCAX::Database::CReposit
     return BeginChangeScopeCore(EChangeScopeKind::Transaction, strName_, false);
 }
 
-std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepository::BeginUndoCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_)
+std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepository::BeginUndoCommand(IN const std::string& strName_)
 {
     if (strName_.empty())
     {
@@ -190,12 +202,8 @@ std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositor
     {
         throw std::runtime_error("Undo scope cannot begin inside an active repository change scope");
     }
-    if (!HasDomain(DomainID_))
-    {
-        throw std::invalid_argument("Undo command domain does not exist");
-    }
 
-    return m_pHistory->BeginCommand(DomainID_, strName_);
+    return m_pHistory->BeginCommand(strName_);
 }
 
 bool iCAX::Database::CRepository::IsUndoCommandRecording() const
@@ -203,48 +211,43 @@ bool iCAX::Database::CRepository::IsUndoCommandRecording() const
     return m_pHistory->IsRecording();
 }
 
-iCAX::Data::uuid iCAX::Database::CRepository::GetCurrentUndoCommandDomain() const
-{
-    return m_pHistory->GetCurrentCommandDomain();
-}
-
-bool iCAX::Database::CRepository::CanUndo(IN const iCAX::Data::uuid& DomainID_) const
+bool iCAX::Database::CRepository::CanUndo() const
 {
     if (IsChangeScopeActive() || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
     {
         return false;
     }
-    return m_pHistory->CanUndo(DomainID_);
+    return m_pHistory->CanUndo();
 }
 
-bool iCAX::Database::CRepository::CanRedo(IN const iCAX::Data::uuid& DomainID_) const
+bool iCAX::Database::CRepository::CanRedo() const
 {
     if (IsChangeScopeActive() || IsUndoCommandRecording() || m_nHistoryReplayDepth > 0)
     {
         return false;
     }
-    return m_pHistory->CanRedo(DomainID_);
+    return m_pHistory->CanRedo();
 }
 
-std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepository::GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const
+std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepository::GetUndoArray() const
 {
-    return m_pHistory->GetUndoArray(DomainID_);
+    return m_pHistory->GetUndoArray();
 }
 
-std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepository::GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const
+std::vector<std::tuple<iCAX::Data::uuid, std::string>> iCAX::Database::CRepository::GetRedoArray() const
 {
-    return m_pHistory->GetRedoArray(DomainID_);
+    return m_pHistory->GetRedoArray();
 }
 
-bool iCAX::Database::CRepository::Undo(IN const iCAX::Data::uuid& DomainID_)
+bool iCAX::Database::CRepository::Undo()
 {
-    if (!CanUndo(DomainID_))
+    if (!CanUndo())
     {
         return false;
     }
 
-    auto _StepName = m_pHistory->GetUndoStepName(DomainID_);
-    auto _Inverse = MakeInverseChangeSet(m_pHistory->GetUndoChangeSet(DomainID_), _StepName.empty() ? "Undo" : "Undo " + _StepName);
+    auto _StepName = m_pHistory->GetUndoStepName();
+    auto _Inverse = MakeInverseChangeSet(m_pHistory->GetUndoChangeSet(), _StepName.empty() ? "Undo" : "Undo " + _StepName);
 
     ++m_nHistoryReplayDepth;
     try
@@ -258,19 +261,19 @@ bool iCAX::Database::CRepository::Undo(IN const iCAX::Data::uuid& DomainID_)
         throw;
     }
 
-    m_pHistory->MoveUndoToRedo(DomainID_);
+    m_pHistory->MoveUndoToRedo();
     AppendOperationLog(_Inverse);
     return true;
 }
 
-bool iCAX::Database::CRepository::Redo(IN const iCAX::Data::uuid& DomainID_)
+bool iCAX::Database::CRepository::Redo()
 {
-    if (!CanRedo(DomainID_))
+    if (!CanRedo())
     {
         return false;
     }
 
-    auto _ChangeSet = m_pHistory->GetRedoChangeSet(DomainID_);
+    auto _ChangeSet = m_pHistory->GetRedoChangeSet();
 
     ++m_nHistoryReplayDepth;
     try
@@ -284,7 +287,7 @@ bool iCAX::Database::CRepository::Redo(IN const iCAX::Data::uuid& DomainID_)
         throw;
     }
 
-    m_pHistory->MoveRedoToUndo(DomainID_);
+    m_pHistory->MoveRedoToUndo();
     AppendOperationLog(_ChangeSet);
     return true;
 }
@@ -347,103 +350,66 @@ void iCAX::Database::CRepository::ReplayOperationLog(IN const std::string& strPa
     }
 }
 
-//! 初始化
 void iCAX::Database::CRepository::Initialzie()
 {
-    auto _pDomain = std::make_shared<CDomain>(shared_from_this(), m_UID, true);
-    _pDomain->Initialize();
-    _pDomain->AddObserver(shared_from_this());
-    m_mapDomains[m_UID] = _pDomain;
+    auto _pMetaEntity = std::make_shared<CEntity>(shared_from_this(), m_UID);
+    _pMetaEntity->AddObserver(shared_from_this());
+    m_mapEntities[m_UID] = _pMetaEntity;
+
+    m_pEntitesView = std::make_shared<CEntitiesView>(shared_from_this());
+    AddObserver(m_pEntitesView);
 }
 
 std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::CreateEntity(IN const iCAX::Data::uuid& ID_)
 {
-    auto _pDomain = GetDomain(m_UID);
-    return _pDomain ? _pDomain->CreateEntity(ID_) : nullptr;
+    if (ID_ == m_UID)
+    {
+        return GetEntity(m_UID);
+    }
+    auto _Ite = m_mapEntities.find(ID_);
+    if (_Ite != m_mapEntities.end())
+    {
+        throw std::runtime_error("Entity already exists: " + to_string(ID_));
+    }
+
+    auto _pEntity = std::make_shared<CEntity>(shared_from_this(), ID_);
+    TriggerRepositoryChanging(RepositoryEventArgs::kAddEntity, ID_, {}, {}, {}, {}, _pEntity);
+    m_mapEntities[ID_] = _pEntity;
+    _pEntity->AddObserver(shared_from_this());
+    TriggerRepositoryChanged(RepositoryEventArgs::kAddEntity, ID_, {}, {}, {}, {}, _pEntity);
+    return _pEntity;
 }
 
 bool iCAX::Database::CRepository::HasEntity(IN const iCAX::Data::uuid& ID_) const
 {
-    auto _Ite = m_mapDomains.find(m_UID);
-    return _Ite != m_mapDomains.end() && _Ite->second->HasEntity(ID_);
+    return m_mapEntities.find(ID_) != m_mapEntities.end();
 }
 
 void iCAX::Database::CRepository::DeleteEntity(IN const iCAX::Data::uuid& ID_)
 {
-    if (auto _pDomain = GetDomain(m_UID))
+    if (ID_ == m_UID)
     {
-        _pDomain->DeleteEntity(ID_);
+        return;
     }
+
+    auto _Ite = m_mapEntities.find(ID_);
+    if (_Ite == m_mapEntities.end())
+    {
+        return;
+    }
+
+    _Ite->second->Cleanup();
+    _Ite->second->RemoveObserver(shared_from_this());
+    auto _pEntity = _Ite->second;
+    TriggerRepositoryChanging(RepositoryEventArgs::kDeleteEntity, ID_, {}, {}, {}, {}, _pEntity);
+    m_mapEntities.erase(_Ite);
+    TriggerRepositoryChanged(RepositoryEventArgs::kDeleteEntity, ID_, {}, {}, {}, {}, _pEntity);
 }
 
 std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::GetEntity(IN const iCAX::Data::uuid& ID_) const
 {
-    auto _Ite = m_mapDomains.find(m_UID);
-    return _Ite != m_mapDomains.end() ? _Ite->second->GetEntity(ID_) : nullptr;
-}
-
-std::vector<std::shared_ptr<iCAX::Database::IEntity>> iCAX::Database::CRepository::FilterEntities(IN std::function<bool(std::shared_ptr<IEntity>)> funcWhere_) const
-{
-    auto _Ite = m_mapDomains.find(m_UID);
-    return _Ite != m_mapDomains.end() ? _Ite->second->FilterEntities(funcWhere_) : std::vector<std::shared_ptr<IEntity>>{};
-}
-
-int iCAX::Database::CRepository::EntityCount() const
-{
-    auto _Ite = m_mapDomains.find(m_UID);
-    return _Ite != m_mapDomains.end() ? _Ite->second->EntityCount() : 0;
-}
-
-std::vector<iCAX::Data::uuid> iCAX::Database::CRepository::GetEntityIDs() const
-{
-    auto _Ite = m_mapDomains.find(m_UID);
-    return _Ite != m_mapDomains.end() ? _Ite->second->GetEntityIDs() : std::vector<iCAX::Data::uuid>{};
-}
-
-iCAX::Database::IEntitiesView& iCAX::Database::CRepository::GetView() const
-{
-    auto _Ite = m_mapDomains.find(m_UID);
-    if (_Ite == m_mapDomains.end())
-    {
-        throw std::runtime_error("Repository data space is missing");
-    }
-    return _Ite->second->GetView();
-}
-
-//!< 创造域
-std::shared_ptr<iCAX::Database::IDomain> iCAX::Database::CRepository::CreateDomain(IN const iCAX::Data::uuid& ID_, IN const bool& bPersistent_)
-{
-    if (ID_ == m_UID)
-    {
-        return GetDomain(m_UID);
-    }
-    auto _Ite = m_mapDomains.find(ID_);
-    if (_Ite != m_mapDomains.end())
-    {
-        throw std::runtime_error("Domain already exists: " + to_string(ID_));
-    }
-    auto _pDomain = std::make_shared<CDomain>(shared_from_this(), ID_, bPersistent_);
-    _pDomain->Initialize();
-    
-    TriggerRepositoryChanging(RepositoryEventArgs::kAddDomain, ID_, {}, {}, {}, {}, {}, {}, _pDomain);
-    m_mapDomains[ID_] = _pDomain;
-    _pDomain->AddObserver(shared_from_this());
-    TriggerRepositoryChanged(RepositoryEventArgs::kAddDomain, ID_, {}, {}, {}, {}, {}, {}, _pDomain);
-
-    return _pDomain;
-}
-
-//!< 是否包含域
-bool iCAX::Database::CRepository::HasDomain(IN const iCAX::Data::uuid& ID_) const
-{
-    return m_mapDomains.find(ID_) != m_mapDomains.end();
-}
-
-//!< 获取域
-std::shared_ptr<iCAX::Database::IDomain> iCAX::Database::CRepository::GetDomain(IN const iCAX::Data::uuid& ID_)
-{
-    auto _Ite = m_mapDomains.find(ID_);
-    if (_Ite != m_mapDomains.end())
+    auto _Ite = m_mapEntities.find(ID_);
+    if (_Ite != m_mapEntities.end())
     {
         return _Ite->second;
     }
@@ -451,56 +417,52 @@ std::shared_ptr<iCAX::Database::IDomain> iCAX::Database::CRepository::GetDomain(
     return nullptr;
 }
 
-
-//!< 移除域
-void iCAX::Database::CRepository::DeleteDomain(IN const iCAX::Data::uuid& ID_)
+std::vector<std::shared_ptr<iCAX::Database::IEntity>> iCAX::Database::CRepository::FilterEntities(IN std::function<bool(std::shared_ptr<IEntity>)> funcWhere_) const
 {
-    if (ID_ == m_UID)
+    std::vector<std::shared_ptr<IEntity>> _vecTemp;
+    for (const auto& [_, _pEntity] : m_mapEntities)
     {
-        return;//!< 元域不得删除
+        if (funcWhere_(_pEntity))
+        {
+            _vecTemp.push_back(_pEntity);
+        }
     }
-    auto _Ite = m_mapDomains.find(ID_);
-    if (_Ite == m_mapDomains.end())
-    {
-        return;
-    }
-    _Ite->second->CleanUp();
-    _Ite->second->RemoveObserver(shared_from_this());
-    auto _pDomain = _Ite->second;
-    TriggerRepositoryChanging(RepositoryEventArgs::kDeleteDomain, ID_, {}, {}, {}, {}, {}, {}, _pDomain);
-    m_mapDomains.erase(_Ite);
-    TriggerRepositoryChanged(RepositoryEventArgs::kDeleteDomain, ID_, {}, {}, {}, {}, {}, {}, _pDomain);
-    m_pDerivedPropertyManager->Clear();
+    return _vecTemp;
 }
 
-//!< 域数量
-int iCAX::Database::CRepository::DomainCount() const
+int iCAX::Database::CRepository::EntityCount() const
 {
-    return (int)m_mapDomains.size();
+    return (int)m_mapEntities.size();
 }
 
-//!< 获取域ID列表
-std::vector<iCAX::Data::uuid> iCAX::Database::CRepository::GetDomainIDs() const
+std::vector<iCAX::Data::uuid> iCAX::Database::CRepository::GetEntityIDs() const
 {
     std::vector<iCAX::Data::uuid> _vecTemp;
-    for (auto& [_ID, _] : m_mapDomains)
+    for (const auto& [_ID, _] : m_mapEntities)
     {
         _vecTemp.push_back(_ID);
     }
     return _vecTemp;
 }
 
-//!< 获取MetaEntity
-std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::GetMetaEntity()
+iCAX::Database::IEntitiesView& iCAX::Database::CRepository::GetView() const
 {
-    return GetDomain(m_UID)->GetMetaEntity();
+    if (!m_pEntitesView)
+    {
+        throw std::runtime_error("Repository entity view is missing");
+    }
+    return *m_pEntitesView;
 }
 
-//! 清空
-void iCAX::Database::CRepository::CleanUp(IN const bool& bForced_/* = false*/)
+std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::GetMetaEntity()
 {
-    auto _vecIDs = GetDomainIDs();
-    for (auto _Ite = _vecIDs.begin(); _Ite != _vecIDs.end(); _Ite++)
+    return GetEntity(m_UID);
+}
+
+void iCAX::Database::CRepository::CleanUp(IN const bool& bForced_)
+{
+    auto _vecIDs = GetEntityIDs();
+    for (auto _Ite = _vecIDs.begin(); _Ite != _vecIDs.end(); ++_Ite)
     {
         if (*_Ite == m_UID)
         {
@@ -511,23 +473,21 @@ void iCAX::Database::CRepository::CleanUp(IN const bool& bForced_/* = false*/)
 
     for (auto& _ID : _vecIDs)
     {
-        DeleteDomain(_ID);
+        DeleteEntity(_ID);
     }
 
     if (bForced_)
     {
-        //! 最后删除本体实体
-        auto _Ite = m_mapDomains.find(m_UID);
-        if (_Ite == m_mapDomains.end())
+        auto _Ite = m_mapEntities.find(m_UID);
+        if (_Ite != m_mapEntities.end())
         {
-            return;
+            _Ite->second->Cleanup();
+            auto _pEntity = _Ite->second;
+            TriggerRepositoryChanging(RepositoryEventArgs::kDeleteEntity, m_UID, {}, {}, {}, {}, _pEntity);
+            _Ite->second->RemoveObserver(shared_from_this());
+            m_mapEntities.erase(_Ite);
+            TriggerRepositoryChanged(RepositoryEventArgs::kDeleteEntity, m_UID, {}, {}, {}, {}, _pEntity);
         }
-        _Ite->second->CleanUp();
-        _Ite->second->RemoveObserver(shared_from_this());
-        auto _pDomain = _Ite->second;
-        TriggerRepositoryChanging(RepositoryEventArgs::kDeleteDomain, m_UID, {}, {}, {}, {}, {}, {}, _pDomain);
-        m_mapDomains.erase(_Ite);
-        TriggerRepositoryChanged(RepositoryEventArgs::kDeleteDomain, m_UID, {}, {}, {}, {}, {}, {}, _pDomain);
     }
 
     if (m_pDerivedPropertyManager)
@@ -536,44 +496,37 @@ void iCAX::Database::CRepository::CleanUp(IN const bool& bForced_/* = false*/)
     }
 }
 
-//! 是否有效
 bool iCAX::Database::CRepository::IsValid()
 {
-    return HasDomain(m_UID);//! 如果缺少了本体域，则标明已经强制清空了，不再可用
+    return HasEntity(m_UID);
 }
 
-//! 获取组件版本号
-size_t iCAX::Database::CRepository::GetComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const
+size_t iCAX::Database::CRepository::GetComponentVersion(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const
 {
-    return m_pVerisonTable->GetVersion({ nDomainID_, nEntityID_, strComponentType_});;
+    return m_pVerisonTable->GetVersion({ nEntityID_, strComponentType_ });
 }
 
-//! 组件版本升级
-void iCAX::Database::CRepository::BumpComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const
+void iCAX::Database::CRepository::BumpComponentVersion(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const
 {
-    m_pVerisonTable->BumpVersion({ nDomainID_, nEntityID_, strComponentType_ });
+    m_pVerisonTable->BumpVersion({ nEntityID_, strComponentType_ });
 }
 
-//! 计算派生字段
 iCAX::Data::PropertyValue iCAX::Database::CRepository::EvaluateDerivedProperty(IN const CComponentBase& Component_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_)
 {
     return m_pDerivedPropertyManager->Evaluate(Component_, strPropertyName_, Evaluator_);
 }
 
-//! 是否发生了更改
-bool iCAX::Database::CRepository::IsComponentChanged(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const
+bool iCAX::Database::CRepository::IsComponentChanged(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const
 {
-    return m_pVerisonTable->IsDirty({ nDomainID_, nEntityID_, strComponentType_ });
+    return m_pVerisonTable->IsDirty({ nEntityID_, strComponentType_ });
 }
 
-//! 清空修改标记位
 void iCAX::Database::CRepository::ResetComponentChangedFlag()
 {
     m_pVerisonTable->ClearDirty();
 }
 
-//!< 域修改前事件
-void iCAX::Database::CRepository::OnDomainChanging(IN void* pSender_, IN const DomainEventArgs& Args_)
+void iCAX::Database::CRepository::OnEntityChanging(IN void* pSender_, IN const EntityEventArgs& Args_)
 {
     if (IsRepositoryEventSuppressed())
     {
@@ -585,11 +538,10 @@ void iCAX::Database::CRepository::OnDomainChanging(IN void* pSender_, IN const D
         return;
     }
 
-    TriggerRepositoryChanging((RepositoryEventArgs::EventType)(Args_.nType), Args_.DomainID, Args_.EntityID, Args_.strClassName, Args_.PreviousProperties, Args_.NewProperties, Args_.pComponent, Args_.pEntity, Args_.pDomain);
+    TriggerRepositoryChanging((RepositoryEventArgs::EventType)(Args_.nType), Args_.EntityID, Args_.strClassName, Args_.PreviousProperties, Args_.NewProperties, Args_.pComponent, Args_.pEntity);
 }
 
-//!< 域更改后事件
-void iCAX::Database::CRepository::OnDomainChanged(IN void* pSender_, IN const DomainEventArgs& Args_)
+void iCAX::Database::CRepository::OnEntityChanged(IN void* pSender_, IN const EntityEventArgs& Args_)
 {
     if (IsRepositoryEventSuppressed())
     {
@@ -598,70 +550,67 @@ void iCAX::Database::CRepository::OnDomainChanged(IN void* pSender_, IN const Do
 
     if (IsChangeScopeActive())
     {
-        TriggerRepositoryChanged((RepositoryEventArgs::EventType)(Args_.nType), Args_.DomainID, Args_.EntityID, Args_.strClassName, Args_.PreviousProperties, Args_.NewProperties, Args_.pComponent, Args_.pEntity, Args_.pDomain);
+        TriggerRepositoryChanged((RepositoryEventArgs::EventType)(Args_.nType), Args_.EntityID, Args_.strClassName, Args_.PreviousProperties, Args_.NewProperties, Args_.pComponent, Args_.pEntity);
         return;
     }
 
-    ApplyDomainChangedEffects(Args_);
+    ApplyEntityChangedEffects(Args_);
 
-    TriggerRepositoryChanged((RepositoryEventArgs::EventType)(Args_.nType), Args_.DomainID, Args_.EntityID, Args_.strClassName, Args_.PreviousProperties, Args_.NewProperties, Args_.pComponent, Args_.pEntity, Args_.pDomain);
+    TriggerRepositoryChanged((RepositoryEventArgs::EventType)(Args_.nType), Args_.EntityID, Args_.strClassName, Args_.PreviousProperties, Args_.NewProperties, Args_.pComponent, Args_.pEntity);
 }
 
-void iCAX::Database::CRepository::ApplyDomainChangedEffects(IN const DomainEventArgs& Args_)
+void iCAX::Database::CRepository::ApplyEntityChangedEffects(IN const EntityEventArgs& Args_)
 {
-    if (Args_.nType == iCAX::Database::DomainEventArgs::kModifyComponent)
+    if (Args_.nType == iCAX::Database::EntityEventArgs::kModifyComponent)
     {
         bool _bNeedBumpVersion = false;
         for (const auto& [_strPropertyName, _] : Args_.NewProperties)
         {
-            if (ShouldAffectVersionAndDerived(Args_.strClassName, _strPropertyName))
+            if (ShouldAffectVersionAndDerived(*m_pMetaRegistry, Args_.strClassName, _strPropertyName))
             {
                 _bNeedBumpVersion = true;
-                m_pDerivedPropertyManager->Invalidate({ Args_.DomainID, Args_.EntityID, Args_.strClassName, _strPropertyName });
+                m_pDerivedPropertyManager->Invalidate({ Args_.EntityID, Args_.strClassName, _strPropertyName });
             }
         }
 
         if (_bNeedBumpVersion)
         {
-            m_pVerisonTable->BumpVersion({ Args_.DomainID, Args_.EntityID, Args_.strClassName });
+            m_pVerisonTable->BumpVersion({ Args_.EntityID, Args_.strClassName });
         }
     }
-    else if (Args_.nType == iCAX::Database::DomainEventArgs::kAddComponent)
+    else if (Args_.nType == iCAX::Database::EntityEventArgs::kAddComponent)
     {
-        for (const auto& _strPropertyName : GetInvalidationPropertyNames(Args_.pComponent))
+        for (const auto& _strPropertyName : GetInvalidationPropertyNames(*m_pMetaRegistry, Args_.pComponent))
         {
-            m_pDerivedPropertyManager->Invalidate({ Args_.DomainID, Args_.EntityID, Args_.strClassName, _strPropertyName });
+            m_pDerivedPropertyManager->Invalidate({ Args_.EntityID, Args_.strClassName, _strPropertyName });
         }
-        m_pVerisonTable->Reset({ Args_.DomainID, Args_.EntityID, Args_.strClassName });
+        m_pVerisonTable->Reset({ Args_.EntityID, Args_.strClassName });
     }
-    else if (Args_.nType == iCAX::Database::DomainEventArgs::kRemoveComponent)
+    else if (Args_.nType == iCAX::Database::EntityEventArgs::kRemoveComponent)
     {
         for (const auto& [_strPropertyName, _] : Args_.PreviousProperties)
         {
-            m_pDerivedPropertyManager->Invalidate({ Args_.DomainID, Args_.EntityID, Args_.strClassName, _strPropertyName });
+            m_pDerivedPropertyManager->Invalidate({ Args_.EntityID, Args_.strClassName, _strPropertyName });
         }
-        m_pDerivedPropertyManager->RemoveComponent(Args_.DomainID, Args_.EntityID, Args_.strClassName);
-        m_pVerisonTable->Remove({ Args_.DomainID, Args_.EntityID, Args_.strClassName });
+        m_pDerivedPropertyManager->RemoveComponent(Args_.EntityID, Args_.strClassName);
+        m_pVerisonTable->Remove({ Args_.EntityID, Args_.strClassName });
     }
 }
 
-//!< 添加观察者
 void iCAX::Database::CRepository::AddObserver(IN std::shared_ptr<IRepositoryEventListener> Observer_)
 {
     m_Observers.push_back(Observer_);
 }
 
-//!< 移除观察者
 void iCAX::Database::CRepository::RemoveObserver(IN std::shared_ptr<IRepositoryEventListener> Observer_)
 {
     m_Observers.remove_if([&](const std::weak_ptr<IRepositoryEventListener>& weakObserver)
         {
-            return weakObserver.lock() == Observer_;
+            return weakObserver.expired() || weakObserver.lock() == Observer_;
         });
 }
 
-//!< 前触发
-void iCAX::Database::CRepository::TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_, IN std::shared_ptr<const CChangeSet> pChangeSet_)
+void iCAX::Database::CRepository::TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const CChangeSet> pChangeSet_)
 {
     if (IsRepositoryEventSuppressed())
     {
@@ -673,25 +622,21 @@ void iCAX::Database::CRepository::TriggerRepositoryChanging(IN const RepositoryE
         return;
     }
 
-    // 遍历观察者列表
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
     {
-        // 检查 是否还有效
         if (auto _Observer = _Ite->lock())
         {
-            _Observer->OnRepositoryChanging(this, { nType_, GetID(), DomainID_, EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, pDomain_, shared_from_this(), pChangeSet_ });
+            _Observer->OnRepositoryChanging(this, { nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
             ++_Ite;
         }
         else
         {
-            // 如果 已失效，移除它
             _Ite = m_Observers.erase(_Ite);
         }
     }
 }
 
-//!< 后触发
-void iCAX::Database::CRepository::TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_, IN std::shared_ptr<const CChangeSet> pChangeSet_)
+void iCAX::Database::CRepository::TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const CChangeSet> pChangeSet_)
 {
     if (IsRepositoryEventSuppressed())
     {
@@ -700,29 +645,26 @@ void iCAX::Database::CRepository::TriggerRepositoryChanged(IN const RepositoryEv
 
     if (IsChangeScopeActive() && nType_ != RepositoryEventArgs::kBatchChanged)
     {
-        RecordRepositoryChanged({ nType_, GetID(), DomainID_, EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, pDomain_, shared_from_this(), pChangeSet_ });
+        RecordRepositoryChanged({ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
         return;
     }
 
-    // 遍历观察者列表
     for (auto _Ite = m_Observers.begin(); _Ite != m_Observers.end(); )
     {
-        // 检查 是否还有效
         if (auto _Observer = _Ite->lock())
         {
-            _Observer->OnRepositoryChanged(this, { nType_, GetID(),  DomainID_, EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, pDomain_, shared_from_this(), pChangeSet_});
+            _Observer->OnRepositoryChanged(this, { nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
             ++_Ite;
         }
         else
         {
-            // 如果 已失效，移除它
             _Ite = m_Observers.erase(_Ite);
         }
     }
 
     if (nType_ != RepositoryEventArgs::kBatchChanged)
     {
-        auto _ChangeSet = BuildChangeSetFromRepositoryEvent({ nType_, GetID(), DomainID_, EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, pDomain_, shared_from_this(), pChangeSet_ });
+        auto _ChangeSet = BuildChangeSetFromRepositoryEvent({ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
         HandleCommittedChangeSet(_ChangeSet);
     }
 }
@@ -774,8 +716,8 @@ void iCAX::Database::CRepository::EndChangeScope(IN const bool bCommit_)
     }
 
     ApplyChangeSetEffects(*_pChangeSet);
-    TriggerRepositoryChanging(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, {}, {}, _pChangeSet);
-    TriggerRepositoryChanged(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, {}, {}, _pChangeSet);
+    TriggerRepositoryChanging(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pChangeSet);
+    TriggerRepositoryChanged(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pChangeSet);
     HandleCommittedChangeSet(*_pChangeSet);
 }
 
@@ -788,26 +730,20 @@ void iCAX::Database::CRepository::RecordRepositoryChanged(IN const RepositoryEve
 
     switch (Args_.nType)
     {
-    case RepositoryEventArgs::kAddDomain:
-        m_pChangeSetBuilder->RecordAddDomain(Args_.DomainID, Args_.pDomain ? Args_.pDomain->IsPersistent() : true);
-        break;
-    case RepositoryEventArgs::kDeleteDomain:
-        m_pChangeSetBuilder->RecordDeleteDomain(Args_.DomainID, Args_.pDomain ? Args_.pDomain->IsPersistent() : true);
-        break;
     case RepositoryEventArgs::kAddEntity:
-        m_pChangeSetBuilder->RecordAddEntity({ Args_.DomainID, Args_.EntityID });
+        m_pChangeSetBuilder->RecordAddEntity({ Args_.EntityID });
         break;
     case RepositoryEventArgs::kDeleteEntity:
-        m_pChangeSetBuilder->RecordDeleteEntity({ Args_.DomainID, Args_.EntityID });
+        m_pChangeSetBuilder->RecordDeleteEntity({ Args_.EntityID });
         break;
     case RepositoryEventArgs::kAddComponent:
-        m_pChangeSetBuilder->RecordAddComponent({ Args_.DomainID, Args_.EntityID, Args_.strClassName }, Args_.NewProperties);
+        m_pChangeSetBuilder->RecordAddComponent({ Args_.EntityID, Args_.strClassName }, Args_.NewProperties);
         break;
     case RepositoryEventArgs::kRemoveComponent:
-        m_pChangeSetBuilder->RecordRemoveComponent({ Args_.DomainID, Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties);
+        m_pChangeSetBuilder->RecordRemoveComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties);
         break;
     case RepositoryEventArgs::kModifyComponent:
-        m_pChangeSetBuilder->RecordModifyComponent({ Args_.DomainID, Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties, Args_.NewProperties);
+        m_pChangeSetBuilder->RecordModifyComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties, Args_.NewProperties);
         break;
     default:
         break;
@@ -820,26 +756,20 @@ iCAX::Database::CChangeSet iCAX::Database::CRepository::BuildChangeSetFromReposi
 
     switch (Args_.nType)
     {
-    case RepositoryEventArgs::kAddDomain:
-        _Builder.RecordAddDomain(Args_.DomainID, Args_.pDomain ? Args_.pDomain->IsPersistent() : true);
-        break;
-    case RepositoryEventArgs::kDeleteDomain:
-        _Builder.RecordDeleteDomain(Args_.DomainID, Args_.pDomain ? Args_.pDomain->IsPersistent() : true);
-        break;
     case RepositoryEventArgs::kAddEntity:
-        _Builder.RecordAddEntity({ Args_.DomainID, Args_.EntityID });
+        _Builder.RecordAddEntity({ Args_.EntityID });
         break;
     case RepositoryEventArgs::kDeleteEntity:
-        _Builder.RecordDeleteEntity({ Args_.DomainID, Args_.EntityID });
+        _Builder.RecordDeleteEntity({ Args_.EntityID });
         break;
     case RepositoryEventArgs::kAddComponent:
-        _Builder.RecordAddComponent({ Args_.DomainID, Args_.EntityID, Args_.strClassName }, Args_.NewProperties);
+        _Builder.RecordAddComponent({ Args_.EntityID, Args_.strClassName }, Args_.NewProperties);
         break;
     case RepositoryEventArgs::kRemoveComponent:
-        _Builder.RecordRemoveComponent({ Args_.DomainID, Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties);
+        _Builder.RecordRemoveComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties);
         break;
     case RepositoryEventArgs::kModifyComponent:
-        _Builder.RecordModifyComponent({ Args_.DomainID, Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties, Args_.NewProperties);
+        _Builder.RecordModifyComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties, Args_.NewProperties);
         break;
     default:
         break;
@@ -850,11 +780,6 @@ iCAX::Database::CChangeSet iCAX::Database::CRepository::BuildChangeSetFromReposi
 
 void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& ChangeSet_)
 {
-    if (!ChangeSet_.DeletedDomains.empty())
-    {
-        m_pDerivedPropertyManager->Clear();
-    }
-
     std::set<ComponentVersionKey> _VersionResets;
     std::set<ComponentVersionKey> _VersionBumps;
     std::set<ComponentVersionKey> _VersionRemoves;
@@ -863,24 +788,24 @@ void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& Cha
     for (const auto& _Change : ChangeSet_.AddedComponents)
     {
         const auto& _Key = _Change.Key;
-        _VersionResets.emplace(_Key.DomainID, _Key.EntityID, _Key.ComponentClass);
-        _VersionBumps.erase({ _Key.DomainID, _Key.EntityID, _Key.ComponentClass });
+        _VersionResets.emplace(_Key.EntityID, _Key.ComponentClass);
+        _VersionBumps.erase({ _Key.EntityID, _Key.ComponentClass });
 
-        for (const auto& _strPropertyName : GetInvalidationPropertyNames(_Key.ComponentClass, _Change.NewProperties))
+        for (const auto& _strPropertyName : GetInvalidationPropertyNames(*m_pMetaRegistry, _Key.ComponentClass, _Change.NewProperties))
         {
-            _Invalidations.emplace(_Key.DomainID, _Key.EntityID, _Key.ComponentClass, _strPropertyName);
+            _Invalidations.emplace(_Key.EntityID, _Key.ComponentClass, _strPropertyName);
         }
     }
 
     for (const auto& _Change : ChangeSet_.ModifiedProperties)
     {
         const auto& _Key = _Change.Key;
-        if (ShouldAffectVersionAndDerived(_Key.ComponentClass, _Key.PropertyName))
+        if (ShouldAffectVersionAndDerived(*m_pMetaRegistry, _Key.ComponentClass, _Key.PropertyName))
         {
-            _Invalidations.emplace(_Key.DomainID, _Key.EntityID, _Key.ComponentClass, _Key.PropertyName);
-            if (!_VersionResets.contains({ _Key.DomainID, _Key.EntityID, _Key.ComponentClass }))
+            _Invalidations.emplace(_Key.EntityID, _Key.ComponentClass, _Key.PropertyName);
+            if (!_VersionResets.contains({ _Key.EntityID, _Key.ComponentClass }))
             {
-                _VersionBumps.emplace(_Key.DomainID, _Key.EntityID, _Key.ComponentClass);
+                _VersionBumps.emplace(_Key.EntityID, _Key.ComponentClass);
             }
         }
     }
@@ -890,62 +815,52 @@ void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& Cha
         const auto& _Key = _Change.Key;
         for (const auto& [_strPropertyName, _] : _Change.PreviousProperties)
         {
-            _Invalidations.emplace(_Key.DomainID, _Key.EntityID, _Key.ComponentClass, _strPropertyName);
+            _Invalidations.emplace(_Key.EntityID, _Key.ComponentClass, _strPropertyName);
         }
 
-        _VersionResets.erase({ _Key.DomainID, _Key.EntityID, _Key.ComponentClass });
-        _VersionBumps.erase({ _Key.DomainID, _Key.EntityID, _Key.ComponentClass });
-        _VersionRemoves.emplace(_Key.DomainID, _Key.EntityID, _Key.ComponentClass);
+        _VersionResets.erase({ _Key.EntityID, _Key.ComponentClass });
+        _VersionBumps.erase({ _Key.EntityID, _Key.ComponentClass });
+        _VersionRemoves.emplace(_Key.EntityID, _Key.ComponentClass);
     }
 
-    for (const auto& [_DomainID, _EntityID, _ComponentClass, _PropertyName] : _Invalidations)
+    for (const auto& [_EntityID, _ComponentClass, _PropertyName] : _Invalidations)
     {
-        m_pDerivedPropertyManager->Invalidate({ _DomainID, _EntityID, _ComponentClass, _PropertyName });
+        m_pDerivedPropertyManager->Invalidate({ _EntityID, _ComponentClass, _PropertyName });
     }
 
     for (const auto& _Change : ChangeSet_.RemovedComponents)
     {
         const auto& _Key = _Change.Key;
-        m_pDerivedPropertyManager->RemoveComponent(_Key.DomainID, _Key.EntityID, _Key.ComponentClass);
+        m_pDerivedPropertyManager->RemoveComponent(_Key.EntityID, _Key.ComponentClass);
     }
 
-    for (const auto& [_DomainID, _EntityID, _ComponentClass] : _VersionRemoves)
+    for (const auto& [_EntityID, _ComponentClass] : _VersionRemoves)
     {
-        m_pVerisonTable->Remove({ _DomainID, _EntityID, _ComponentClass });
+        m_pVerisonTable->Remove({ _EntityID, _ComponentClass });
     }
-    for (const auto& [_DomainID, _EntityID, _ComponentClass] : _VersionResets)
+    for (const auto& [_EntityID, _ComponentClass] : _VersionResets)
     {
-        m_pVerisonTable->Reset({ _DomainID, _EntityID, _ComponentClass });
+        m_pVerisonTable->Reset({ _EntityID, _ComponentClass });
     }
-    for (const auto& [_DomainID, _EntityID, _ComponentClass] : _VersionBumps)
+    for (const auto& [_EntityID, _ComponentClass] : _VersionBumps)
     {
-        m_pVerisonTable->BumpVersion({ _DomainID, _EntityID, _ComponentClass });
+        m_pVerisonTable->BumpVersion({ _EntityID, _ComponentClass });
     }
 }
 
 void iCAX::Database::CRepository::ApplyChangeSetForward(IN const CChangeSet& ChangeSet_)
 {
-    for (const auto& _Change : ChangeSet_.CreatedDomains)
-    {
-        if (!HasDomain(_Change.DomainID))
-        {
-            CreateDomain(_Change.DomainID, _Change.bPersistent);
-        }
-    }
-
     for (const auto& _Change : ChangeSet_.CreatedEntities)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        if (_pDomain && !_pDomain->HasEntity(_Change.Key.EntityID))
+        if (!HasEntity(_Change.Key.EntityID))
         {
-            _pDomain->CreateEntity(_Change.Key.EntityID);
+            CreateEntity(_Change.Key.EntityID);
         }
     }
 
     for (const auto& _Change : ChangeSet_.RemovedComponents)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        auto _pEntity = _pDomain ? _pDomain->GetEntity(_Change.Key.EntityID) : nullptr;
+        auto _pEntity = GetEntity(_Change.Key.EntityID);
         if (_pEntity && _pEntity->HasComponent(_Change.Key.ComponentClass))
         {
             _pEntity->RemoveComponent(_Change.Key.ComponentClass);
@@ -954,8 +869,7 @@ void iCAX::Database::CRepository::ApplyChangeSetForward(IN const CChangeSet& Cha
 
     for (const auto& _Change : ChangeSet_.AddedComponents)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        auto _pEntity = _pDomain ? _pDomain->GetEntity(_Change.Key.EntityID) : nullptr;
+        auto _pEntity = GetEntity(_Change.Key.EntityID);
         if (!_pEntity)
         {
             continue;
@@ -973,13 +887,12 @@ void iCAX::Database::CRepository::ApplyChangeSetForward(IN const CChangeSet& Cha
     std::map<CChangeComponentKey, PropertySet> _ModifiedProperties;
     for (const auto& _Change : ChangeSet_.ModifiedProperties)
     {
-        _ModifiedProperties[{ _Change.Key.DomainID, _Change.Key.EntityID, _Change.Key.ComponentClass }][_Change.Key.PropertyName] = _Change.NewValue;
+        _ModifiedProperties[{ _Change.Key.EntityID, _Change.Key.ComponentClass }][_Change.Key.PropertyName] = _Change.NewValue;
     }
 
     for (const auto& [_Key, _Properties] : _ModifiedProperties)
     {
-        auto _pDomain = GetDomain(_Key.DomainID);
-        auto _pEntity = _pDomain ? _pDomain->GetEntity(_Key.EntityID) : nullptr;
+        auto _pEntity = GetEntity(_Key.EntityID);
         auto _pComponent = _pEntity ? _pEntity->GetComponent(_Key.ComponentClass) : nullptr;
         if (_pComponent)
         {
@@ -989,45 +902,26 @@ void iCAX::Database::CRepository::ApplyChangeSetForward(IN const CChangeSet& Cha
 
     for (const auto& _Change : ChangeSet_.DeletedEntities)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        if (_pDomain && _pDomain->HasEntity(_Change.Key.EntityID))
+        if (HasEntity(_Change.Key.EntityID))
         {
-            _pDomain->DeleteEntity(_Change.Key.EntityID);
-        }
-    }
-
-    for (const auto& _Change : ChangeSet_.DeletedDomains)
-    {
-        if (HasDomain(_Change.DomainID))
-        {
-            DeleteDomain(_Change.DomainID);
+            DeleteEntity(_Change.Key.EntityID);
         }
     }
 }
 
 void iCAX::Database::CRepository::ApplyChangeSetBackward(IN const CChangeSet& ChangeSet_)
 {
-    for (const auto& _Change : ChangeSet_.DeletedDomains)
-    {
-        if (!HasDomain(_Change.DomainID))
-        {
-            CreateDomain(_Change.DomainID, _Change.bPersistent);
-        }
-    }
-
     for (const auto& _Change : ChangeSet_.DeletedEntities)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        if (_pDomain && !_pDomain->HasEntity(_Change.Key.EntityID))
+        if (!HasEntity(_Change.Key.EntityID))
         {
-            _pDomain->CreateEntity(_Change.Key.EntityID);
+            CreateEntity(_Change.Key.EntityID);
         }
     }
 
     for (const auto& _Change : ChangeSet_.AddedComponents)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        auto _pEntity = _pDomain ? _pDomain->GetEntity(_Change.Key.EntityID) : nullptr;
+        auto _pEntity = GetEntity(_Change.Key.EntityID);
         if (_pEntity && _pEntity->HasComponent(_Change.Key.ComponentClass))
         {
             _pEntity->RemoveComponent(_Change.Key.ComponentClass);
@@ -1036,8 +930,7 @@ void iCAX::Database::CRepository::ApplyChangeSetBackward(IN const CChangeSet& Ch
 
     for (const auto& _Change : ChangeSet_.RemovedComponents)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        auto _pEntity = _pDomain ? _pDomain->GetEntity(_Change.Key.EntityID) : nullptr;
+        auto _pEntity = GetEntity(_Change.Key.EntityID);
         if (!_pEntity)
         {
             continue;
@@ -1055,13 +948,12 @@ void iCAX::Database::CRepository::ApplyChangeSetBackward(IN const CChangeSet& Ch
     std::map<CChangeComponentKey, PropertySet> _ModifiedProperties;
     for (const auto& _Change : ChangeSet_.ModifiedProperties)
     {
-        _ModifiedProperties[{ _Change.Key.DomainID, _Change.Key.EntityID, _Change.Key.ComponentClass }][_Change.Key.PropertyName] = _Change.PreviousValue;
+        _ModifiedProperties[{ _Change.Key.EntityID, _Change.Key.ComponentClass }][_Change.Key.PropertyName] = _Change.PreviousValue;
     }
 
     for (const auto& [_Key, _Properties] : _ModifiedProperties)
     {
-        auto _pDomain = GetDomain(_Key.DomainID);
-        auto _pEntity = _pDomain ? _pDomain->GetEntity(_Key.EntityID) : nullptr;
+        auto _pEntity = GetEntity(_Key.EntityID);
         auto _pComponent = _pEntity ? _pEntity->GetComponent(_Key.ComponentClass) : nullptr;
         if (_pComponent)
         {
@@ -1071,18 +963,9 @@ void iCAX::Database::CRepository::ApplyChangeSetBackward(IN const CChangeSet& Ch
 
     for (const auto& _Change : ChangeSet_.CreatedEntities)
     {
-        auto _pDomain = GetDomain(_Change.Key.DomainID);
-        if (_pDomain && _pDomain->HasEntity(_Change.Key.EntityID))
+        if (HasEntity(_Change.Key.EntityID))
         {
-            _pDomain->DeleteEntity(_Change.Key.EntityID);
-        }
-    }
-
-    for (const auto& _Change : ChangeSet_.CreatedDomains)
-    {
-        if (HasDomain(_Change.DomainID))
-        {
-            DeleteDomain(_Change.DomainID);
+            DeleteEntity(_Change.Key.EntityID);
         }
     }
 }
@@ -1126,11 +1009,5 @@ void iCAX::Database::CRepository::AppendOperationLog(IN const CChangeSet& Change
         return;
     }
 
-    auto _PersistentChangeSet = FilterPersistentChangeSet(ChangeSet_, [this](const iCAX::Data::uuid& DomainID_)
-        {
-            auto _pDomain = GetDomain(DomainID_);
-            return _pDomain ? _pDomain->IsPersistent() : true;
-        });
-
-    m_pOperationLog->Append(_PersistentChangeSet);
+    m_pOperationLog->Append(FilterPersistentChangeSet(ChangeSet_, *m_pMetaRegistry));
 }

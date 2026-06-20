@@ -14,6 +14,8 @@ namespace iCAX
 {
     namespace Database
     {
+        class IMetaRegistry;
+
         /*
         * @brief Repository 外挂式历史记录器
         * @details
@@ -23,31 +25,32 @@ namespace iCAX
         {
         public:
             CRepositoryHistory() = default;
+            explicit CRepositoryHistory(IN std::shared_ptr<IMetaRegistry> pMetaRegistry_);
             ~CRepositoryHistory() = default;
 
             CRepositoryHistory(IN const CRepositoryHistory&) = delete;
             CRepositoryHistory& operator=(IN const CRepositoryHistory&) = delete;
 
-            std::unique_ptr<IRepositoryUndoScope> BeginCommand(IN const iCAX::Data::uuid& RepositoryID_, IN const std::string& strName_);
+            std::unique_ptr<IRepositoryUndoScope> BeginCommand(IN const std::string& strName_);
             bool IsRecording() const;
-            iCAX::Data::uuid GetCurrentCommandDomain() const;
 
             void HandleCommittedChangeSet(IN const CChangeSet& ChangeSet_);
             void Clear();
             void ClearForCommittedChangeSet(IN const CChangeSet& ChangeSet_);
 
-            bool CanUndo(IN const iCAX::Data::uuid& DomainID_) const;
-            bool CanRedo(IN const iCAX::Data::uuid& DomainID_) const;
-            const CChangeSet& GetUndoChangeSet(IN const iCAX::Data::uuid& DomainID_) const;
-            const CChangeSet& GetRedoChangeSet(IN const iCAX::Data::uuid& DomainID_) const;
-            std::string GetUndoStepName(IN const iCAX::Data::uuid& DomainID_) const;
-            bool MoveUndoToRedo(IN const iCAX::Data::uuid& DomainID_);
-            bool MoveRedoToUndo(IN const iCAX::Data::uuid& DomainID_);
+            bool CanUndo() const;
+            bool CanRedo() const;
+            const CChangeSet& GetUndoChangeSet() const;
+            const CChangeSet& GetRedoChangeSet() const;
+            std::string GetUndoStepName() const;
+            bool MoveUndoToRedo();
+            bool MoveRedoToUndo();
 
-            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const;
-            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const;
+            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray() const;
+            std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray() const;
 
         private:
+            const IMetaRegistry& GetMetaRegistry() const;
             struct CHistoryStep;
 
             void EndCommand();
@@ -60,8 +63,8 @@ namespace iCAX
             friend class CRepositoryHistoryScope;
 
         private:
+            std::shared_ptr<IMetaRegistry> m_pMetaRegistry;
             std::unique_ptr<CChangeSetBuilder> m_pCommandBuilder;
-            iCAX::Data::uuid m_CurrentCommandDomainID;
             std::deque<std::shared_ptr<CHistoryStep>> m_UndoStack;
             std::deque<std::shared_ptr<CHistoryStep>> m_RedoStack;
         };

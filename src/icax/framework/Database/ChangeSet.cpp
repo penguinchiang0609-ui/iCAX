@@ -5,69 +5,41 @@
 
 namespace
 {
-    bool MatchDomain(IN const iCAX::Database::CChangeEntityKey& Key_, IN const iCAX::Data::uuid& DomainID_)
-    {
-        return Key_.DomainID == DomainID_;
-    }
-
-    bool MatchDomain(IN const iCAX::Database::CChangeComponentKey& Key_, IN const iCAX::Data::uuid& DomainID_)
-    {
-        return Key_.DomainID == DomainID_;
-    }
-
-    bool MatchDomain(IN const iCAX::Database::CChangePropertyKey& Key_, IN const iCAX::Data::uuid& DomainID_)
-    {
-        return Key_.DomainID == DomainID_;
-    }
-
     bool MatchEntity(IN const iCAX::Database::CChangeComponentKey& Key_, IN const iCAX::Database::CChangeEntityKey& EntityKey_)
     {
-        return Key_.DomainID == EntityKey_.DomainID
-            && Key_.EntityID == EntityKey_.EntityID;
+        return Key_.EntityID == EntityKey_.EntityID;
     }
 
     bool MatchEntity(IN const iCAX::Database::CChangePropertyKey& Key_, IN const iCAX::Database::CChangeEntityKey& EntityKey_)
     {
-        return Key_.DomainID == EntityKey_.DomainID
-            && Key_.EntityID == EntityKey_.EntityID;
+        return Key_.EntityID == EntityKey_.EntityID;
     }
 
     bool MatchComponent(IN const iCAX::Database::CChangePropertyKey& Key_, IN const iCAX::Database::CChangeComponentKey& ComponentKey_)
     {
-        return Key_.DomainID == ComponentKey_.DomainID
-            && Key_.EntityID == ComponentKey_.EntityID
+        return Key_.EntityID == ComponentKey_.EntityID
             && Key_.ComponentClass == ComponentKey_.ComponentClass;
     }
 }
 
 bool iCAX::Database::CChangeEntityKey::operator==(IN const CChangeEntityKey& Other_) const noexcept
 {
-    return DomainID == Other_.DomainID
-        && EntityID == Other_.EntityID;
+    return EntityID == Other_.EntityID;
 }
 
 bool iCAX::Database::CChangeEntityKey::operator<(IN const CChangeEntityKey& Other_) const noexcept
 {
-    if (DomainID != Other_.DomainID)
-    {
-        return DomainID < Other_.DomainID;
-    }
     return EntityID < Other_.EntityID;
 }
 
 bool iCAX::Database::CChangeComponentKey::operator==(IN const CChangeComponentKey& Other_) const noexcept
 {
-    return DomainID == Other_.DomainID
-        && EntityID == Other_.EntityID
+    return EntityID == Other_.EntityID
         && ComponentClass == Other_.ComponentClass;
 }
 
 bool iCAX::Database::CChangeComponentKey::operator<(IN const CChangeComponentKey& Other_) const noexcept
 {
-    if (DomainID != Other_.DomainID)
-    {
-        return DomainID < Other_.DomainID;
-    }
     if (EntityID != Other_.EntityID)
     {
         return EntityID < Other_.EntityID;
@@ -77,18 +49,13 @@ bool iCAX::Database::CChangeComponentKey::operator<(IN const CChangeComponentKey
 
 bool iCAX::Database::CChangePropertyKey::operator==(IN const CChangePropertyKey& Other_) const noexcept
 {
-    return DomainID == Other_.DomainID
-        && EntityID == Other_.EntityID
+    return EntityID == Other_.EntityID
         && ComponentClass == Other_.ComponentClass
         && PropertyName == Other_.PropertyName;
 }
 
 bool iCAX::Database::CChangePropertyKey::operator<(IN const CChangePropertyKey& Other_) const noexcept
 {
-    if (DomainID != Other_.DomainID)
-    {
-        return DomainID < Other_.DomainID;
-    }
     if (EntityID != Other_.EntityID)
     {
         return EntityID < Other_.EntityID;
@@ -102,9 +69,7 @@ bool iCAX::Database::CChangePropertyKey::operator<(IN const CChangePropertyKey& 
 
 bool iCAX::Database::CChangeSet::IsEmpty() const
 {
-    return CreatedDomains.empty()
-        && DeletedDomains.empty()
-        && CreatedEntities.empty()
+    return CreatedEntities.empty()
         && DeletedEntities.empty()
         && AddedComponents.empty()
         && RemovedComponents.empty()
@@ -115,36 +80,6 @@ iCAX::Database::CChangeSetBuilder::CChangeSetBuilder(IN EChangeScopeKind Kind_, 
     : m_Kind(Kind_)
     , m_strName(strName_)
 {
-}
-
-void iCAX::Database::CChangeSetBuilder::RecordAddDomain(IN const iCAX::Data::uuid& DomainID_, IN const bool bPersistent_)
-{
-    if (m_Kind == EChangeScopeKind::LoadBaseline)
-    {
-        return;
-    }
-
-    if (m_DeletedDomains.erase(DomainID_) > 0)
-    {
-        return;
-    }
-    m_CreatedDomains[DomainID_] = { DomainID_, bPersistent_ };
-}
-
-void iCAX::Database::CChangeSetBuilder::RecordDeleteDomain(IN const iCAX::Data::uuid& DomainID_, IN const bool bPersistent_)
-{
-    if (m_Kind == EChangeScopeKind::LoadBaseline)
-    {
-        return;
-    }
-
-    if (m_CreatedDomains.erase(DomainID_) > 0)
-    {
-        EraseDomainChanges(DomainID_);
-        return;
-    }
-
-    m_DeletedDomains[DomainID_] = { DomainID_, bPersistent_ };
 }
 
 void iCAX::Database::CChangeSetBuilder::RecordAddEntity(IN const CChangeEntityKey& Key_)
@@ -242,7 +177,7 @@ void iCAX::Database::CChangeSetBuilder::RecordModifyComponent(IN const CChangeCo
             continue;
         }
 
-        CChangePropertyKey _PropertyKey{ Key_.DomainID, Key_.EntityID, Key_.ComponentClass, _strPropertyName };
+        CChangePropertyKey _PropertyKey{ Key_.EntityID, Key_.ComponentClass, _strPropertyName };
         auto _IteChange = m_ModifiedProperties.find(_PropertyKey);
         if (_IteChange == m_ModifiedProperties.end())
         {
@@ -269,14 +204,6 @@ iCAX::Database::CChangeSet iCAX::Database::CChangeSetBuilder::Build() const
     _Result.Kind = m_Kind;
     _Result.Name = m_strName;
 
-    for (const auto& [_, _Change] : m_CreatedDomains)
-    {
-        _Result.CreatedDomains.push_back(_Change);
-    }
-    for (const auto& [_, _Change] : m_DeletedDomains)
-    {
-        _Result.DeletedDomains.push_back(_Change);
-    }
     for (const auto& [_, _Change] : m_CreatedEntities)
     {
         _Result.CreatedEntities.push_back(_Change);
@@ -299,30 +226,6 @@ iCAX::Database::CChangeSet iCAX::Database::CChangeSetBuilder::Build() const
     }
 
     return _Result;
-}
-
-void iCAX::Database::CChangeSetBuilder::EraseDomainChanges(IN const iCAX::Data::uuid& DomainID_)
-{
-    for (auto _Ite = m_CreatedEntities.begin(); _Ite != m_CreatedEntities.end(); )
-    {
-        _Ite = MatchDomain(_Ite->first, DomainID_) ? m_CreatedEntities.erase(_Ite) : std::next(_Ite);
-    }
-    for (auto _Ite = m_DeletedEntities.begin(); _Ite != m_DeletedEntities.end(); )
-    {
-        _Ite = MatchDomain(_Ite->first, DomainID_) ? m_DeletedEntities.erase(_Ite) : std::next(_Ite);
-    }
-    for (auto _Ite = m_AddedComponents.begin(); _Ite != m_AddedComponents.end(); )
-    {
-        _Ite = MatchDomain(_Ite->first, DomainID_) ? m_AddedComponents.erase(_Ite) : std::next(_Ite);
-    }
-    for (auto _Ite = m_RemovedComponents.begin(); _Ite != m_RemovedComponents.end(); )
-    {
-        _Ite = MatchDomain(_Ite->first, DomainID_) ? m_RemovedComponents.erase(_Ite) : std::next(_Ite);
-    }
-    for (auto _Ite = m_ModifiedProperties.begin(); _Ite != m_ModifiedProperties.end(); )
-    {
-        _Ite = MatchDomain(_Ite->first, DomainID_) ? m_ModifiedProperties.erase(_Ite) : std::next(_Ite);
-    }
 }
 
 void iCAX::Database::CChangeSetBuilder::EraseEntityChanges(IN const CChangeEntityKey& Key_)

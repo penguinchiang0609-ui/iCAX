@@ -1,6 +1,6 @@
 # foundation
 
-`foundation` 放置 icax 后台平台最底层的基础能力。这里的代码不应该依赖 `framework`、`services`、产品扩展或前端代码。
+`foundation` 放置 icax 后台平台最底层的基础能力。这里的代码不应该依赖 `framework`、`services`、业务应用扩展或前端代码。
 
 ## 目录结构
 

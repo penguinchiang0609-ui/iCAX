@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "MetaRegistry.h"
 #include "GenericComponent.h"
-#include "IDomain.h"
 #include "IEntity.h"
 #include "IRepository.h"
 #include "Data/CommonFunction.h"
@@ -17,7 +16,11 @@ void iCAX::Database::CMetaRegistry::RegistType(IN const std::string& strComponen
         {
             throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistType {} collides with {}", strComponentClass_, _pExistingMeta->strComponentClass));
         }
-        throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistType {}  {} has exist", strComponentClass_, _nClass));
+        if (m_mapType[_nClass] != _nParent)
+        {
+            throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistType {} parent conflicts", strComponentClass_));
+        }
+        return;
     }
     m_mapType[_nClass] = _nParent;
 
@@ -50,6 +53,10 @@ void iCAX::Database::CMetaRegistry::RegistCreatorByName(IN const std::string& st
 {
     uint32_t _nClass = FNV1a32(strComponentClass_.c_str());
     auto _pMeta = GetMeta(_nClass);
+    if (_pMeta->Creator)
+    {
+        return;
+    }
     _pMeta->Creator = Creator_;
 }
 
@@ -101,7 +108,13 @@ void iCAX::Database::CMetaRegistry::RegistPropertyByName(IN const std::string& s
         {
             throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistPropertyByName {}.{} collides with {}", strComponentClass_, strPropertyName_, _Ite->second.Name));
         }
-        throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistPropertyByName {} has exist {}", strComponentClass_, strPropertyName_));
+        if (_Ite->second.Kind != EPropertyKind::Value
+            || _Ite->second.Persistence != Persistence_
+            || _Ite->second.ChangePolicy != ChangePolicy_)
+        {
+            throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistPropertyByName {}.{} conflicts", strComponentClass_, strPropertyName_));
+        }
+        return;
     }
     _Ite->second.Name = strPropertyName_;
     _Ite->second.Kind = EPropertyKind::Value;
@@ -129,7 +142,13 @@ void iCAX::Database::CMetaRegistry::RegistDerivedPropertyByName(IN const std::st
         {
             throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistDerivedPropertyByName {}.{} collides with {}", strComponentClass_, strPropertyName_, _Ite->second.Name));
         }
-        throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistDerivedPropertyByName {} has exist {}", strComponentClass_, strPropertyName_));
+        if (_Ite->second.Kind != EPropertyKind::Derived
+            || _Ite->second.Persistence != Persistence_
+            || _Ite->second.ChangePolicy != ChangePolicy_)
+        {
+            throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::RegistDerivedPropertyByName {}.{} conflicts", strComponentClass_, strPropertyName_));
+        }
+        return;
     }
     _Ite->second.Name = strPropertyName_;
     _Ite->second.Kind = EPropertyKind::Derived;
@@ -322,13 +341,7 @@ PropertyValue iCAX::Database::CMetaRegistry::InvokeGetter(IN const CComponentBas
                     throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::InvokeGetter {} has no entity", Component_.GetComponentClass()));
                 }
 
-                auto _pDomain = _pEntity->GetDomain();
-                if (!_pDomain)
-                {
-                    throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::InvokeGetter {} has no domain", Component_.GetComponentClass()));
-                }
-
-                auto _pRepository = _pDomain->GetRepository();
+                auto _pRepository = _pEntity->GetRepository();
                 if (!_pRepository)
                 {
                     throw std::runtime_error(std::format("iCAX::Database::CMetaRegistry::InvokeGetter {} has no repository", Component_.GetComponentClass()));

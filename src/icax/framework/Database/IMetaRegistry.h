@@ -396,6 +396,17 @@ namespace iCAX
         * @brief 获取全局元数据注册表
         * @return std::shared_ptr<IMetaRegistry>
         */
+        _DATABASE_EXP std::shared_ptr<IMetaRegistry> CreateMetaRegistry();
+
+        /*
+        * @brief 获取全局元数据注册表
+        * @return std::shared_ptr<IMetaRegistry>
+        */
         _DATABASE_EXP std::shared_ptr<IMetaRegistry> GetGlobalMetaRegistry();
+
+        /*
+        * @brief 从组件所在仓储解析元数据注册表，无法解析时回退到全局注册表
+        */
+        _DATABASE_EXP std::shared_ptr<IMetaRegistry> ResolveMetaRegistryForComponent(IN const CComponentBase& Component_);
     }
 }

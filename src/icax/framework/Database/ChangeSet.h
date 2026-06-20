@@ -23,15 +23,8 @@ namespace iCAX
             Replay
         };
 
-        struct _DATABASE_EXP CChangeDomain final
-        {
-            iCAX::Data::uuid DomainID;
-            bool bPersistent = true;
-        };
-
         struct _DATABASE_EXP CChangeEntityKey final
         {
-            iCAX::Data::uuid DomainID;
             iCAX::Data::uuid EntityID;
 
             bool operator==(IN const CChangeEntityKey& Other_) const noexcept;
@@ -40,7 +33,6 @@ namespace iCAX
 
         struct _DATABASE_EXP CChangeComponentKey final
         {
-            iCAX::Data::uuid DomainID;
             iCAX::Data::uuid EntityID;
             std::string ComponentClass;
 
@@ -50,7 +42,6 @@ namespace iCAX
 
         struct _DATABASE_EXP CChangePropertyKey final
         {
-            iCAX::Data::uuid DomainID;
             iCAX::Data::uuid EntityID;
             std::string ComponentClass;
             std::string PropertyName;
@@ -86,8 +77,6 @@ namespace iCAX
             EChangeScopeKind Kind = EChangeScopeKind::UserCommand;
             std::string Name;
 
-            std::vector<CChangeDomain> CreatedDomains;
-            std::vector<CChangeDomain> DeletedDomains;
             std::vector<CChangeEntity> CreatedEntities;
             std::vector<CChangeEntity> DeletedEntities;
             std::vector<CChangeComponent> AddedComponents;
@@ -107,8 +96,6 @@ namespace iCAX
             ~CChangeSetBuilder() = default;
 
         public:
-            void RecordAddDomain(IN const iCAX::Data::uuid& DomainID_, IN const bool bPersistent_);
-            void RecordDeleteDomain(IN const iCAX::Data::uuid& DomainID_, IN const bool bPersistent_);
             void RecordAddEntity(IN const CChangeEntityKey& Key_);
             void RecordDeleteEntity(IN const CChangeEntityKey& Key_);
             void RecordAddComponent(IN const CChangeComponentKey& Key_, IN const iCAX::Data::PropertySet& NewProperties_);
@@ -118,15 +105,12 @@ namespace iCAX
             CChangeSet Build() const;
 
         private:
-            void EraseDomainChanges(IN const iCAX::Data::uuid& DomainID_);
             void EraseEntityChanges(IN const CChangeEntityKey& Key_);
             void EraseComponentChanges(IN const CChangeComponentKey& Key_);
 
         private:
             EChangeScopeKind m_Kind;
             std::string m_strName;
-            std::map<iCAX::Data::uuid, CChangeDomain> m_CreatedDomains;
-            std::map<iCAX::Data::uuid, CChangeDomain> m_DeletedDomains;
             std::map<CChangeEntityKey, CChangeEntity> m_CreatedEntities;
             std::map<CChangeEntityKey, CChangeEntity> m_DeletedEntities;
             std::map<CChangeComponentKey, CChangeComponent> m_AddedComponents;

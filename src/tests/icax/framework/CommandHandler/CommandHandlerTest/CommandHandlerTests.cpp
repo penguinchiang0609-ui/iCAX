@@ -150,3 +150,18 @@ TEST(CommandContextTest, ProvidesTypedDependenciesToHandlers)
     EXPECT_TRUE(_Response.IsOK());
     EXPECT_EQ(42, ReadPayload(_Response.Payload));
 }
+
+TEST(CommandContextTest, RequireDependencyReturnsValueAndReportsMissingDependency)
+{
+    CCommandContext _Context;
+
+    auto _pCounter = std::make_shared<CounterService>();
+    _pCounter->Value = 7;
+    _Context.SetDependency<CounterService>(_pCounter);
+
+    EXPECT_EQ(_pCounter, _Context.RequireDependency<CounterService>());
+
+    _Context.SetDependency<CounterService>(nullptr);
+    EXPECT_EQ(nullptr, _Context.GetDependency<CounterService>());
+    EXPECT_THROW(_Context.RequireDependency<CounterService>(), std::logic_error);
+}

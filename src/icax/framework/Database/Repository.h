@@ -1,7 +1,9 @@
 #pragma once
+#include <map>
 #include <memory>
 #include "IRepository.h"
-#include "Domain.h"
+#include "Entity.h"
+#include "EntitiesView.h"
 #include "VersionTable.h"
 #include "DerivedProperty.h"
 #include "ChangeSet.h"
@@ -12,11 +14,12 @@ namespace iCAX
     {
         class CChangeSetJournal;
         class CRepositoryHistory;
+        class IMetaRegistry;
 
         /*
         * @brief 仓储实现
         */
-        class CRepository final : public IRepository, public IDomainEventListener, public std::enable_shared_from_this<CRepository>
+        class CRepository final : public IRepository, public IEntityEventListener, public std::enable_shared_from_this<CRepository>
         {
             friend class CRepositoryChangeScope;
             friend class CRepositoryEventSuppressor;
@@ -26,7 +29,8 @@ namespace iCAX
             * @brief 构造函数
             * @param [in] 
             */
-            CRepository(IN const iCAX::Data::uuid& UID_);
+            explicit CRepository(IN const iCAX::Data::uuid& UID_);
+            CRepository(IN const iCAX::Data::uuid& UID_, IN std::shared_ptr<IMetaRegistry> pMetaRegistry_);
 
             /*
             * @brief 析构函数
@@ -45,6 +49,7 @@ namespace iCAX
             * @return const iCAX::Data::uuid&
             */
             virtual const iCAX::Data::uuid& GetID() const override;
+            virtual std::shared_ptr<IMetaRegistry> GetMetaRegistry() const override;
 
         public:
             /*
@@ -60,47 +65,30 @@ namespace iCAX
             /*
             * @brief 开始一次撤销还原记录
             */
-            virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const iCAX::Data::uuid& DomainID_, IN const std::string& strName_) override;
+            virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const std::string& strName_) override;
 
             /*
             * @brief 当前是否正在记录撤销还原步骤
             */
             virtual bool IsUndoCommandRecording() const override;
 
-            /*
-            * @brief 获取当前撤销还原记录的发起域
-            */
-            virtual iCAX::Data::uuid GetCurrentUndoCommandDomain() const override;
+            virtual bool CanUndo() const override;
 
-            /*
-            * @brief 指定域是否可以撤销
-            */
-            virtual bool CanUndo(IN const iCAX::Data::uuid& DomainID_) const override;
+            virtual bool CanRedo() const override;
 
-            /*
-            * @brief 指定域是否可以重做
-            */
-            virtual bool CanRedo(IN const iCAX::Data::uuid& DomainID_) const override;
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray() const override;
 
-            /*
-            * @brief 获取指定域的撤销步骤列表
-            */
-            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetUndoArray(IN const iCAX::Data::uuid& DomainID_) const override;
-
-            /*
-            * @brief 获取指定域的重做步骤列表
-            */
-            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray(IN const iCAX::Data::uuid& DomainID_) const override;
+            virtual std::vector<std::tuple<iCAX::Data::uuid, std::string>> GetRedoArray() const override;
 
             /*
             * @brief 撤销
             */
-            virtual bool Undo(IN const iCAX::Data::uuid& DomainID_) override;
+            virtual bool Undo() override;
 
             /*
             * @brief 重做
             */
-            virtual bool Redo(IN const iCAX::Data::uuid& DomainID_) override;
+            virtual bool Redo() override;
 
             /*
             * @brief 打开快速保存操作日志
@@ -169,45 +157,6 @@ namespace iCAX
             virtual IEntitiesView& GetView() const override;
 
             /*
-            * @brief 创建域
-            * @param [in] ID_
-            * @param [in] bPersistent_ 是否持久化
-            * @remark 如果存在多个域，业务层需要持有自己域名的ID
-            */
-            virtual std::shared_ptr<IDomain> CreateDomain(IN const iCAX::Data::uuid& ID_, IN const bool& bPersistent_) override;
-
-            /*
-            * @brief 是否包含域
-            * @param [in] ID_
-            */
-            virtual bool HasDomain(IN const iCAX::Data::uuid& ID_) const override;
-
-            /*
-            * @brief 创建域
-            * @param [in] ID_
-            * @remark 如果存在多个域，业务层需要持有自己域名的ID
-            */
-            virtual std::shared_ptr<IDomain> GetDomain(IN const iCAX::Data::uuid& ID_) override;
-
-            /*
-            * @brief 移除域
-            * @param [in] ID_
-            */
-            virtual void DeleteDomain(IN const iCAX::Data::uuid& ID_) override;
-
-            /*
-            * @brief 域数量
-            * @return int
-            */
-            virtual int DomainCount() const override;
-
-            /*
-            * @brief 获取域ID列表
-            * @return std::vector<iCAX::Data::uuid>
-            */
-            virtual std::vector<iCAX::Data::uuid> GetDomainIDs() const override;
-
-            /*
             * @brief 获取MetaEntity
             * @return std::shared_ptr<IEntity>
             * @remark 仓储自身的描述、配置信息承载者
@@ -226,20 +175,18 @@ namespace iCAX
 
             /*
             * @brief 获取组件版本
-            * @param [in] nDomainID_
             * @param [in] nEntityID_
             * @param [in] strComponentType_
             * @return size_t
             */
-            virtual size_t GetComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const override;
+            virtual size_t GetComponentVersion(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const override;
 
             /*
             * @brief 组件版本升级
-            * @param [in] nDomainID_
             * @param [in] nEntityID_
             * @param [in] strComponentType_
             */
-            virtual void BumpComponentVersion(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const override;
+            virtual void BumpComponentVersion(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const override;
 
             /*
             * @brief 计算派生字段
@@ -248,12 +195,11 @@ namespace iCAX
 
             /*
             * @brief 是否发生了更改
-            * @param [in] nDomainID_
             * @param [in] nEntityID_
             * @param [in] strComponentType_
             * @return bool
             */
-            virtual bool IsComponentChanged(IN const iCAX::Data::uuid& nDomainID_, IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const override;
+            virtual bool IsComponentChanged(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const override;
 
             /*
             * @brief 重置组件更改标记
@@ -262,20 +208,20 @@ namespace iCAX
             */
             virtual void ResetComponentChangedFlag() override;
 
-        public://!< 域事件观察方法
+        public://!< 实体事件观察方法
             /*
-            * @brief 域修改前事件
+            * @brief 实体修改前事件
             * @param [in] strPropertyName_ 属性名称
             * @param [in] NewValue_ 属性值
             */
-            virtual void OnDomainChanging(IN void* pSender_, IN const DomainEventArgs& Args_) override;
+            virtual void OnEntityChanging(IN void* pSender_, IN const EntityEventArgs& Args_) override;
 
             /*
-            * @brief 域更改后事件
+            * @brief 实体更改后事件
             * @param [in] strPropertyName_
             * @param [in] NewValue_ 属性值
             */
-            virtual void OnDomainChanged(IN void* pSender_, IN const DomainEventArgs& Args_) override;
+            virtual void OnEntityChanged(IN void* pSender_, IN const EntityEventArgs& Args_) override;
 
         public:
             /*
@@ -299,7 +245,7 @@ namespace iCAX
             * @param [in] PreviousValue_ 旧值
             * @param [in] NewValue_ 新值
             */
-            void TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
+            void TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
 
             /*
             * @brief 后触发
@@ -309,7 +255,7 @@ namespace iCAX
             * @param [in] PreviousValue_ 旧值
             * @param [in] NewValue_ 新值
             */
-            void TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& DomainID_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<IDomain> pDomain_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
+            void TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
 
         private:
             std::unique_ptr<IRepositoryChangeScope> BeginChangeScopeCore(IN EChangeScopeKind Kind_, IN const std::string& strName_, IN const bool bAutoCommitOnDestroy_);
@@ -318,7 +264,7 @@ namespace iCAX
             void EndChangeScope(IN const bool bCommit_);
             void RecordRepositoryChanged(IN const RepositoryEventArgs& Args_);
             CChangeSet BuildChangeSetFromRepositoryEvent(IN const RepositoryEventArgs& Args_) const;
-            void ApplyDomainChangedEffects(IN const DomainEventArgs& Args_);
+            void ApplyEntityChangedEffects(IN const EntityEventArgs& Args_);
             void ApplyChangeSetEffects(IN const CChangeSet& ChangeSet_);
             void ApplyChangeSetForward(IN const CChangeSet& ChangeSet_);
             void ApplyChangeSetBackward(IN const CChangeSet& ChangeSet_);
@@ -339,9 +285,11 @@ namespace iCAX
 
         private:
             iCAX::Data::uuid m_UID;                                                           //!< 仓储ID
-            std::unordered_map<iCAX::Data::uuid, std::shared_ptr<CDomain>> m_mapDomains;                //!< 域字典
+            std::map<iCAX::Data::uuid, std::shared_ptr<CEntity>> m_mapEntities;               //!< 实体字典
+            std::shared_ptr<CEntitiesView> m_pEntitesView;                                    //!< 视图数据
             std::shared_ptr<VersionTable> m_pVerisonTable;                                     //!< 版本号表
             std::shared_ptr<CDerivedPropertyManager> m_pDerivedPropertyManager;                 //!< 派生字段管理器
+            std::shared_ptr<IMetaRegistry> m_pMetaRegistry;
         };
     }
 }

@@ -2,7 +2,9 @@
 #include "ApplicationHostExport.h"
 #include "ApplicationContext/ApplicationDescriptor.h"
 #include "ApplicationContext/ApplicationPaths.h"
+#include "Product/ProductDefinition.h"
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,16 +13,6 @@ namespace iCAX
 {
     namespace ApplicationHost
     {
-        /*
-        * @brief 宿主启动时自动打开的项目
-        */
-        struct _APPLICATION_HOST_EXP ApplicationHostStartupProject final
-        {
-            std::string strProductID;
-            std::string strProjectName;
-            std::string strProjectPath;
-        };
-
         /*
         * @brief 配置文件
         */
@@ -42,19 +34,14 @@ namespace iCAX
             iCAX::Application::CApplicationPaths Paths;
 
             /*
-            * @brief 产品目录路径，目录下每个产品目录可包含 manifest.json
+            * @brief 宿主支持的产品定义
             */
-            std::string strProductCatalogPath;
+            std::vector<iCAX::Product::CProductDefinition> Products;
 
             /*
-            * @brief 显式产品清单路径列表
+            * @brief 宿主启动时自动启动的产品。为空表示只启动应用宿主。
             */
-            std::vector<std::string> ProductManifestPaths;
-
-            /*
-            * @brief 宿主启动时自动打开的项目列表。为空表示只启动工作区，不打开项目。
-            */
-            std::vector<ApplicationHostStartupProject> StartupProjects;
+            std::optional<std::string> StartupProductID;
 
             /*
             * @brief 后台工作线程帧间隔，单位毫秒

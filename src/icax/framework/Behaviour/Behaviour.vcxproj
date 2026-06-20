@@ -147,6 +147,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="BehaviourRegistry.h" />
+    <ClInclude Include="BehaviourRegistrationCatalog.h" />
     <ClInclude Include="IBehaviourRegistry.h" />
     <ClInclude Include="IUniverseContext.h" />
     <ClInclude Include="BehaviourDispacther.h" />
@@ -163,6 +164,7 @@
   <ItemGroup>
     <ClCompile Include="BehaviourDispacther.cpp" />
     <ClCompile Include="BehaviourBase.cpp" />
+    <ClCompile Include="BehaviourRegistrationCatalog.cpp" />
     <ClCompile Include="BehaviourRegistry.cpp" />
     <ClCompile Include="UniverseContext.cpp" />
     <ClCompile Include="IBehaviourRegistry.cpp" />

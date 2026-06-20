@@ -96,38 +96,37 @@ namespace
         return true;
     }
 
-    bool ShouldKeepProperty(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const bool bRequirePersistent_)
+    bool ShouldKeepProperty(IN const IMetaRegistry& Meta_, IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const bool bRequirePersistent_)
     {
-        auto _pMeta = GetGlobalMetaRegistry();
-        if (!_pMeta->HasTypeByName(strComponentClass_))
+        if (!Meta_.HasTypeByName(strComponentClass_))
         {
             return true;
         }
-        if (!_pMeta->HasPropertyByName(strComponentClass_, strPropertyName_))
+        if (!Meta_.HasPropertyByName(strComponentClass_, strPropertyName_))
         {
             return false;
         }
-        if (_pMeta->GetPropertyKindByName(strComponentClass_, strPropertyName_) != EPropertyKind::Value)
+        if (Meta_.GetPropertyKindByName(strComponentClass_, strPropertyName_) != EPropertyKind::Value)
         {
             return false;
         }
-        if (_pMeta->GetPropertyChangePolicyByName(strComponentClass_, strPropertyName_) != EPropertyChangePolicy::Transactional)
+        if (Meta_.GetPropertyChangePolicyByName(strComponentClass_, strPropertyName_) != EPropertyChangePolicy::Transactional)
         {
             return false;
         }
-        if (bRequirePersistent_ && _pMeta->GetPropertyPersistenceByName(strComponentClass_, strPropertyName_) != EPropertyPersistence::Persistent)
+        if (bRequirePersistent_ && Meta_.GetPropertyPersistenceByName(strComponentClass_, strPropertyName_) != EPropertyPersistence::Persistent)
         {
             return false;
         }
         return true;
     }
 
-    PropertySet FilterProperties(IN const std::string& strComponentClass_, IN const PropertySet& Properties_, IN const bool bRequirePersistent_)
+    PropertySet FilterProperties(IN const IMetaRegistry& Meta_, IN const std::string& strComponentClass_, IN const PropertySet& Properties_, IN const bool bRequirePersistent_)
     {
         PropertySet _Result;
         for (const auto& [_strName, _Value] : Properties_)
         {
-            if (ShouldKeepProperty(strComponentClass_, _strName, bRequirePersistent_))
+            if (ShouldKeepProperty(Meta_, strComponentClass_, _strName, bRequirePersistent_))
             {
                 _Result[_strName] = _Value;
             }
@@ -135,93 +134,40 @@ namespace
         return _Result;
     }
 
-    CChangeSet FilterChangeSet(IN const CChangeSet& ChangeSet_, IN const bool bRequirePersistent_, IN const std::function<bool(const uuid&)>& DomainPersistentResolver_)
+    CChangeSet FilterChangeSet(IN const CChangeSet& ChangeSet_, IN const IMetaRegistry& Meta_, IN const bool bRequirePersistent_)
     {
         CChangeSet _Result;
         _Result.Kind = ChangeSet_.Kind;
         _Result.Name = ChangeSet_.Name;
 
-        std::map<uuid, bool> _DomainPersistence;
-        for (const auto& _Change : ChangeSet_.CreatedDomains)
-        {
-            _DomainPersistence[_Change.DomainID] = _Change.bPersistent;
-        }
-        for (const auto& _Change : ChangeSet_.DeletedDomains)
-        {
-            _DomainPersistence[_Change.DomainID] = _Change.bPersistent;
-        }
-
-        auto _IsPersistentDomain = [&](const uuid& DomainID_) -> bool
-        {
-            if (!bRequirePersistent_)
-            {
-                return true;
-            }
-            auto _Ite = _DomainPersistence.find(DomainID_);
-            if (_Ite != _DomainPersistence.end())
-            {
-                return _Ite->second;
-            }
-            return !DomainPersistentResolver_ || DomainPersistentResolver_(DomainID_);
-        };
-
-        for (const auto& _Change : ChangeSet_.CreatedDomains)
-        {
-            if (_IsPersistentDomain(_Change.DomainID))
-            {
-                _Result.CreatedDomains.push_back(_Change);
-            }
-        }
-        for (const auto& _Change : ChangeSet_.DeletedDomains)
-        {
-            if (_IsPersistentDomain(_Change.DomainID))
-            {
-                _Result.DeletedDomains.push_back(_Change);
-            }
-        }
         for (const auto& _Change : ChangeSet_.CreatedEntities)
         {
-            if (_IsPersistentDomain(_Change.Key.DomainID))
-            {
-                _Result.CreatedEntities.push_back(_Change);
-            }
+            _Result.CreatedEntities.push_back(_Change);
         }
         for (const auto& _Change : ChangeSet_.DeletedEntities)
         {
-            if (_IsPersistentDomain(_Change.Key.DomainID))
-            {
-                _Result.DeletedEntities.push_back(_Change);
-            }
+            _Result.DeletedEntities.push_back(_Change);
         }
 
         for (const auto& _Change : ChangeSet_.AddedComponents)
         {
-            if (!_IsPersistentDomain(_Change.Key.DomainID))
-            {
-                continue;
-            }
             CChangeComponent _Filtered = _Change;
-            _Filtered.PreviousProperties = FilterProperties(_Change.Key.ComponentClass, _Change.PreviousProperties, bRequirePersistent_);
-            _Filtered.NewProperties = FilterProperties(_Change.Key.ComponentClass, _Change.NewProperties, bRequirePersistent_);
+            _Filtered.PreviousProperties = FilterProperties(Meta_, _Change.Key.ComponentClass, _Change.PreviousProperties, bRequirePersistent_);
+            _Filtered.NewProperties = FilterProperties(Meta_, _Change.Key.ComponentClass, _Change.NewProperties, bRequirePersistent_);
             _Result.AddedComponents.push_back(_Filtered);
         }
 
         for (const auto& _Change : ChangeSet_.RemovedComponents)
         {
-            if (!_IsPersistentDomain(_Change.Key.DomainID))
-            {
-                continue;
-            }
             CChangeComponent _Filtered = _Change;
-            _Filtered.PreviousProperties = FilterProperties(_Change.Key.ComponentClass, _Change.PreviousProperties, bRequirePersistent_);
-            _Filtered.NewProperties = FilterProperties(_Change.Key.ComponentClass, _Change.NewProperties, bRequirePersistent_);
+            _Filtered.PreviousProperties = FilterProperties(Meta_, _Change.Key.ComponentClass, _Change.PreviousProperties, bRequirePersistent_);
+            _Filtered.NewProperties = FilterProperties(Meta_, _Change.Key.ComponentClass, _Change.NewProperties, bRequirePersistent_);
             _Result.RemovedComponents.push_back(_Filtered);
         }
 
         for (const auto& _Change : ChangeSet_.ModifiedProperties)
         {
-            if (_IsPersistentDomain(_Change.Key.DomainID)
-                && ShouldKeepProperty(_Change.Key.ComponentClass, _Change.Key.PropertyName, bRequirePersistent_))
+            if (ShouldKeepProperty(Meta_, _Change.Key.ComponentClass, _Change.Key.PropertyName, bRequirePersistent_))
             {
                 _Result.ModifiedProperties.push_back(_Change);
             }
@@ -230,27 +176,9 @@ namespace
         return _Result;
     }
 
-    ObjectMap ToVariantObject(IN const CChangeDomain& Change_)
-    {
-        return {
-            { "domainID", Variant(Change_.DomainID) },
-            { "persistent", Variant(Change_.bPersistent) }
-        };
-    }
-
-    CChangeDomain ToChangeDomain(IN const Variant& Value_)
-    {
-        auto _Object = AsObject(Value_);
-        return {
-            Require(_Object, "domainID").To<uuid>(),
-            ReadBool(_Object, "persistent", true)
-        };
-    }
-
     ObjectMap ToVariantObject(IN const CChangeEntityKey& Key_)
     {
         return {
-            { "domainID", Variant(Key_.DomainID) },
             { "entityID", Variant(Key_.EntityID) }
         };
     }
@@ -258,7 +186,6 @@ namespace
     CChangeEntityKey ToChangeEntityKey(IN const ObjectMap& Object_)
     {
         return {
-            Require(Object_, "domainID").To<uuid>(),
             Require(Object_, "entityID").To<uuid>()
         };
     }
@@ -276,7 +203,6 @@ namespace
     ObjectMap ToVariantObject(IN const CChangeComponentKey& Key_)
     {
         return {
-            { "domainID", Variant(Key_.DomainID) },
             { "entityID", Variant(Key_.EntityID) },
             { "componentClass", Variant(Key_.ComponentClass) }
         };
@@ -285,7 +211,6 @@ namespace
     CChangeComponentKey ToChangeComponentKey(IN const ObjectMap& Object_)
     {
         return {
-            Require(Object_, "domainID").To<uuid>(),
             Require(Object_, "entityID").To<uuid>(),
             Require(Object_, "componentClass").To<std::string>()
         };
@@ -312,7 +237,6 @@ namespace
     ObjectMap ToVariantObject(IN const CChangePropertyKey& Key_)
     {
         return {
-            { "domainID", Variant(Key_.DomainID) },
             { "entityID", Variant(Key_.EntityID) },
             { "componentClass", Variant(Key_.ComponentClass) },
             { "propertyName", Variant(Key_.PropertyName) }
@@ -322,7 +246,6 @@ namespace
     CChangePropertyKey ToChangePropertyKey(IN const ObjectMap& Object_)
     {
         return {
-            Require(Object_, "domainID").To<uuid>(),
             Require(Object_, "entityID").To<uuid>(),
             Require(Object_, "componentClass").To<std::string>(),
             Require(Object_, "propertyName").To<std::string>()
@@ -377,12 +300,22 @@ namespace
 
 iCAX::Database::CChangeSet iCAX::Database::FilterTransactionalChangeSet(IN const CChangeSet& ChangeSet_)
 {
-    return FilterChangeSet(ChangeSet_, false, {});
+    return FilterTransactionalChangeSet(ChangeSet_, *GetGlobalMetaRegistry());
 }
 
-iCAX::Database::CChangeSet iCAX::Database::FilterPersistentChangeSet(IN const CChangeSet& ChangeSet_, IN const std::function<bool(const iCAX::Data::uuid&)>& DomainPersistentResolver_)
+iCAX::Database::CChangeSet iCAX::Database::FilterTransactionalChangeSet(IN const CChangeSet& ChangeSet_, IN const IMetaRegistry& Meta_)
 {
-    return FilterChangeSet(ChangeSet_, true, DomainPersistentResolver_);
+    return FilterChangeSet(ChangeSet_, Meta_, false);
+}
+
+iCAX::Database::CChangeSet iCAX::Database::FilterPersistentChangeSet(IN const CChangeSet& ChangeSet_)
+{
+    return FilterPersistentChangeSet(ChangeSet_, *GetGlobalMetaRegistry());
+}
+
+iCAX::Database::CChangeSet iCAX::Database::FilterPersistentChangeSet(IN const CChangeSet& ChangeSet_, IN const IMetaRegistry& Meta_)
+{
+    return FilterChangeSet(ChangeSet_, Meta_, true);
 }
 
 iCAX::Database::CChangeSet iCAX::Database::MakeInverseChangeSet(IN const CChangeSet& ChangeSet_, IN const std::string& strName_)
@@ -402,10 +335,6 @@ iCAX::Database::CChangeSet iCAX::Database::MakeInverseChangeSet(IN const CChange
         _Result.Name = "Undo";
     }
 
-    for (const auto& _Change : ChangeSet_.DeletedDomains)
-    {
-        _Result.CreatedDomains.push_back(_Change);
-    }
     for (const auto& _Change : ChangeSet_.DeletedEntities)
     {
         _Result.CreatedEntities.push_back(_Change);
@@ -426,11 +355,6 @@ iCAX::Database::CChangeSet iCAX::Database::MakeInverseChangeSet(IN const CChange
     {
         _Result.DeletedEntities.push_back(_Change);
     }
-    for (const auto& _Change : ChangeSet_.CreatedDomains)
-    {
-        _Result.DeletedDomains.push_back(_Change);
-    }
-
     return _Result;
 }
 
@@ -439,8 +363,6 @@ iCAX::Data::Variant iCAX::Database::ChangeSetToVariant(IN const CChangeSet& Chan
     ObjectMap _Object;
     _Object["kind"] = Variant(ToString(ChangeSet_.Kind));
     _Object["name"] = Variant(ChangeSet_.Name);
-    _Object["createdDomains"] = Variant(ToArray(ChangeSet_.CreatedDomains));
-    _Object["deletedDomains"] = Variant(ToArray(ChangeSet_.DeletedDomains));
     _Object["createdEntities"] = Variant(ToArray(ChangeSet_.CreatedEntities));
     _Object["deletedEntities"] = Variant(ToArray(ChangeSet_.DeletedEntities));
     _Object["addedComponents"] = Variant(ToArray(ChangeSet_.AddedComponents));
@@ -456,8 +378,6 @@ iCAX::Database::CChangeSet iCAX::Database::ChangeSetFromVariant(IN const iCAX::D
     CChangeSet _Result;
     _Result.Kind = ToScopeKind(Require(_Object, "kind").To<std::string>());
     _Result.Name = Require(_Object, "name").To<std::string>();
-    _Result.CreatedDomains = FromArray<CChangeDomain>(_Object, "createdDomains", ToChangeDomain);
-    _Result.DeletedDomains = FromArray<CChangeDomain>(_Object, "deletedDomains", ToChangeDomain);
     _Result.CreatedEntities = FromArray<CChangeEntity>(_Object, "createdEntities", ToChangeEntity);
     _Result.DeletedEntities = FromArray<CChangeEntity>(_Object, "deletedEntities", ToChangeEntity);
     _Result.AddedComponents = FromArray<CChangeComponent>(_Object, "addedComponents", ToChangeComponent);

@@ -10,15 +10,19 @@ namespace iCAX
 {
     namespace Database
     {
+        class IMetaRegistry;
+
         /*
         * @brief 过滤出可参与撤销还原的变更
         */
         CChangeSet FilterTransactionalChangeSet(IN const CChangeSet& ChangeSet_);
+        CChangeSet FilterTransactionalChangeSet(IN const CChangeSet& ChangeSet_, IN const IMetaRegistry& Meta_);
 
         /*
         * @brief 过滤出可写入快速保存日志的变更
         */
-        CChangeSet FilterPersistentChangeSet(IN const CChangeSet& ChangeSet_, IN const std::function<bool(const iCAX::Data::uuid&)>& DomainPersistentResolver_);
+        CChangeSet FilterPersistentChangeSet(IN const CChangeSet& ChangeSet_);
+        CChangeSet FilterPersistentChangeSet(IN const CChangeSet& ChangeSet_, IN const IMetaRegistry& Meta_);
 
         /*
         * @brief 生成反向变更

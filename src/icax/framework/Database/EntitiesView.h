@@ -1,10 +1,9 @@
 #pragma once
 #include "Database.h"
-#include "IDomainEvent.h"
+#include "IRepositoryEvent.h"
 #include "ComponentMask.h"
 #include <unordered_set>
 #include "IEntitiesView.h"
-#include "IDomain.h"
 #include <memory>
 #include <set>
 
@@ -16,13 +15,13 @@ namespace iCAX
         /*
         * @brief 实体视图
         */
-        class _DATABASE_EXP CEntitiesView final : public IDomainEventListener, public IEntitiesView
+        class _DATABASE_EXP CEntitiesView final : public IRepositoryEventListener, public IEntitiesView
         {
         public:
             /*
             * @brief 构造函数
             */
-            CEntitiesView(IN std::shared_ptr<IDomain> pDomain_);
+            CEntitiesView(IN std::shared_ptr<IRepository> pRepository_);
 
             /*
             * @brief 析构函数
@@ -35,14 +34,14 @@ namespace iCAX
             * @param [in] pSender_
             * @param [in] Args_
             */
-            virtual void OnDomainChanging(IN void* pSender_, IN const DomainEventArgs& Args_) override;
+            virtual void OnRepositoryChanging(IN void* pSender_, IN const RepositoryEventArgs& Args_) override;
 
             /*
             * @brief 更改后事件
             * @param [in] pSender_
             * @param [in] Args_
             */
-            virtual void OnDomainChanged(IN void* pSender_, IN const DomainEventArgs& Args_) override;
+            virtual void OnRepositoryChanged(IN void* pSender_, IN const RepositoryEventArgs& Args_) override;
 
         public:
             /*
@@ -75,7 +74,7 @@ namespace iCAX
             std::unordered_map<iCAX::Data::uuid, CComponentMask> m_EntityMask;
             std::unordered_map<size_t, std::set<std::weak_ptr<CComponentBase>, std::owner_less<std::weak_ptr<CComponentBase>>>> m_Cache;  //!< 缓存数据
             std::unordered_map<size_t, std::set<std::weak_ptr<CComponentBase>, std::owner_less<std::weak_ptr<CComponentBase>>>> m_PreCache;  //!< 缓存数据
-            std::weak_ptr<IDomain> m_pDomain;
+            std::weak_ptr<IRepository> m_pRepository;
         };
     }
 }

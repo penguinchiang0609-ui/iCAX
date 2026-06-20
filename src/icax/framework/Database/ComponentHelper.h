@@ -3,8 +3,8 @@
 #include "ComponentBase.h"
 #include "IEntity.h"
 #include "IMetaRegistry.h"
+#include "MetaRegistrationCatalog.h"
 #include "IRepository.h"
-#include "IDomain.h"
 #include "Data/Variant.h"
 
 //! 声明类
@@ -18,23 +18,25 @@ public: \
     virtual std::string GetComponentClass() const override { return S_ClassName; } \
     virtual std::vector<std::string> GetPropertyNameArray() const override \
     { \
-        return iCAX::Database::GetGlobalMetaRegistry()->GetPropertyNames(S_ClassName); \
+        return iCAX::Database::ResolveMetaRegistryForComponent(*this)->GetPropertyNames(S_ClassName); \
     } \
     virtual PropertyValue GetProperty(const std::string& strPropertyName_) const override \
     { \
-        return iCAX::Database::GetGlobalMetaRegistry()->InvokeGetter(*this, S_ClassName, strPropertyName_); \
+        return iCAX::Database::ResolveMetaRegistryForComponent(*this)->InvokeGetter(*this, S_ClassName, strPropertyName_); \
     } \
     virtual void OnSetProperty(const std::string& strPropertyName_, const PropertyValue& NewValue_) override \
     { \
-        iCAX::Database::GetGlobalMetaRegistry()->InvokeSetter(*this, S_ClassName, strPropertyName_, NewValue_); \
+        iCAX::Database::ResolveMetaRegistryForComponent(*this)->InvokeSetter(*this, S_ClassName, strPropertyName_, NewValue_); \
     } \
 private: \
     struct _AutoRegister_Type_##ClassName \
     { \
         _AutoRegister_Type_##ClassName() \
         { \
-            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
-            registry->RegistType( ClassName::S_ClassName, ParentClassName::S_ClassName); \
+            iCAX::Database::CMetaRegistrationCatalog::Register([](iCAX::Database::IMetaRegistry& registry) \
+            { \
+                registry.RegistType( ClassName::S_ClassName, ParentClassName::S_ClassName); \
+            }, this); \
         } \
     }; \
     inline static _AutoRegister_Type_##ClassName s_autoRegister_Type_##ClassName{};
@@ -45,11 +47,13 @@ private: \
     { \
         _AutoRegister_Component_Creator_##ClassName() \
         { \
-            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
-            registry->RegistCreatorByName(ClassName::S_ClassName, [](std::shared_ptr<iCAX::Database::IEntity> entity) \
+            iCAX::Database::CMetaRegistrationCatalog::Register([](iCAX::Database::IMetaRegistry& registry) \
             { \
-                return std::make_shared<ClassName>(entity); \
-            }); \
+                registry.RegistCreatorByName(ClassName::S_ClassName, [](std::shared_ptr<iCAX::Database::IEntity> entity) \
+                { \
+                    return std::make_shared<ClassName>(entity); \
+                }); \
+            }, this); \
         } \
     }; \
     inline static _AutoRegister_Component_Creator_##ClassName s_autoRegister_Component_Creator_##ClassName{};
@@ -77,20 +81,22 @@ private: \
     { \
         _AutoRegister_Property_##name() \
         { \
-            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
-            registry->RegistPropertyByName(ownerType::S_ClassName, #name, \
-                [](const void* obj) -> PropertyValue \
-                { \
-                    const auto* p = static_cast<const ownerType*>(obj); \
-                    return (toVariantLambda)(p->m_##name); \
-                }, \
-                [](void* obj, const PropertyValue& val) \
-                { \
-                    auto* p = static_cast<ownerType*>(obj); \
-                    p->Set##name(fromVariantLambda(val));\
-                }, \
-                iCAX::Database::EPropertyPersistence::Persistent, \
-                iCAX::Database::EPropertyChangePolicy::Transactional); \
+            iCAX::Database::CMetaRegistrationCatalog::Register([](iCAX::Database::IMetaRegistry& registry) \
+            { \
+                registry.RegistPropertyByName(ownerType::S_ClassName, #name, \
+                    [](const void* obj) -> PropertyValue \
+                    { \
+                        const auto* p = static_cast<const ownerType*>(obj); \
+                        return (toVariantLambda)(p->m_##name); \
+                    }, \
+                    [](void* obj, const PropertyValue& val) \
+                    { \
+                        auto* p = static_cast<ownerType*>(obj); \
+                        p->Set##name(fromVariantLambda(val));\
+                    }, \
+                    iCAX::Database::EPropertyPersistence::Persistent, \
+                    iCAX::Database::EPropertyChangePolicy::Transactional); \
+            }, this); \
         } \
     }; \
     inline static _AutoRegister_Property_##name s_autoRegister_Property_##name{};
@@ -118,20 +124,22 @@ private: \
     { \
         _AutoRegister_Property_##name() \
         { \
-            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
-            registry->RegistPropertyByName(ownerType::S_ClassName, #name, \
-                [](const void* obj) -> PropertyValue \
-                { \
-                    const auto* p = static_cast<const ownerType*>(obj); \
-                    return (toVariantLambda)(p->m_##name); \
-                }, \
-                [](void* obj, const PropertyValue& val) \
-                { \
-                    auto* p = static_cast<ownerType*>(obj); \
-                    p->Set##name(fromVariantLambda(val));\
-                }, \
-                iCAX::Database::EPropertyPersistence::NonPersistent, \
-                iCAX::Database::EPropertyChangePolicy::Observable); \
+            iCAX::Database::CMetaRegistrationCatalog::Register([](iCAX::Database::IMetaRegistry& registry) \
+            { \
+                registry.RegistPropertyByName(ownerType::S_ClassName, #name, \
+                    [](const void* obj) -> PropertyValue \
+                    { \
+                        const auto* p = static_cast<const ownerType*>(obj); \
+                        return (toVariantLambda)(p->m_##name); \
+                    }, \
+                    [](void* obj, const PropertyValue& val) \
+                    { \
+                        auto* p = static_cast<ownerType*>(obj); \
+                        p->Set##name(fromVariantLambda(val));\
+                    }, \
+                    iCAX::Database::EPropertyPersistence::NonPersistent, \
+                    iCAX::Database::EPropertyChangePolicy::Observable); \
+            }, this); \
         } \
     }; \
     inline static _AutoRegister_Property_##name s_autoRegister_Property_##name{};
@@ -163,20 +171,22 @@ private: \
     { \
         _AutoRegister_Property_##name() \
         { \
-            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
-            registry->RegistPropertyByName(ownerType::S_ClassName, #name, \
-                [](const void* obj) -> PropertyValue \
-                { \
-                    const auto* p = static_cast<const ownerType*>(obj); \
-                    return (toVariantLambda)(p->m_##name); \
-                }, \
-                [](void* obj, const PropertyValue& val) \
-                { \
-                    auto* p = static_cast<ownerType*>(obj); \
-                    p->Set##name(fromVariantLambda(val));\
-                }, \
-                iCAX::Database::EPropertyPersistence::NonPersistent, \
-                iCAX::Database::EPropertyChangePolicy::Silent); \
+            iCAX::Database::CMetaRegistrationCatalog::Register([](iCAX::Database::IMetaRegistry& registry) \
+            { \
+                registry.RegistPropertyByName(ownerType::S_ClassName, #name, \
+                    [](const void* obj) -> PropertyValue \
+                    { \
+                        const auto* p = static_cast<const ownerType*>(obj); \
+                        return (toVariantLambda)(p->m_##name); \
+                    }, \
+                    [](void* obj, const PropertyValue& val) \
+                    { \
+                        auto* p = static_cast<ownerType*>(obj); \
+                        p->Set##name(fromVariantLambda(val));\
+                    }, \
+                    iCAX::Database::EPropertyPersistence::NonPersistent, \
+                    iCAX::Database::EPropertyChangePolicy::Silent); \
+            }, this); \
         } \
     }; \
     inline static _AutoRegister_Property_##name s_autoRegister_Property_##name{};
@@ -210,15 +220,17 @@ private: \
     { \
         _AutoRegister_Derived_Property_##name() \
         { \
-            auto registry = iCAX::Database::GetGlobalMetaRegistry(); \
-            registry->RegistDerivedPropertyByName(ownerType::S_ClassName, #name, \
-                [](iCAX::Database::CDerivedPropertyContext& context, const iCAX::Database::CComponentBase& component) -> PropertyValue \
-                { \
-                    const auto* p = static_cast<const ownerType*>(&component); \
-                    return (toVariantLambda)((evaluatorLambda)(*p, context)); \
-                }, \
-                iCAX::Database::EPropertyPersistence::NonPersistent, \
-                iCAX::Database::EPropertyChangePolicy::Silent); \
+            iCAX::Database::CMetaRegistrationCatalog::Register([](iCAX::Database::IMetaRegistry& registry) \
+            { \
+                registry.RegistDerivedPropertyByName(ownerType::S_ClassName, #name, \
+                    [](iCAX::Database::CDerivedPropertyContext& context, const iCAX::Database::CComponentBase& component) -> PropertyValue \
+                    { \
+                        const auto* p = static_cast<const ownerType*>(&component); \
+                        return (toVariantLambda)((evaluatorLambda)(*p, context)); \
+                    }, \
+                    iCAX::Database::EPropertyPersistence::NonPersistent, \
+                    iCAX::Database::EPropertyChangePolicy::Silent); \
+            }, this); \
         } \
     }; \
     inline static _AutoRegister_Derived_Property_##name s_autoRegister_Derived_Property_##name{};

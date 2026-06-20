@@ -3,6 +3,8 @@
 #include "CommandHandlerExport.h"
 
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <typeindex>
 #include <typeinfo>
 
@@ -38,6 +40,17 @@ namespace iCAX
                     return nullptr;
                 }
                 return std::static_pointer_cast<T>(_pValue);
+            }
+
+            template <typename T>
+            std::shared_ptr<T> RequireDependency() const
+            {
+                auto _pValue = GetDependency<T>();
+                if (!_pValue)
+                {
+                    throw std::logic_error("command context dependency is missing: " + std::string(typeid(T).name()));
+                }
+                return _pValue;
             }
         };
     }

@@ -1,17 +1,24 @@
 #include <gtest/gtest.h>
 
+#include <Project/ProjectCatalog.h>
 #include <Project/Project.h>
+#include <Behaviour/IBehaviourRegistry.h>
+#include <Database/IMetaRegistry.h>
+#include <Resources/IResourceLoader.h>
+#include <Resources/ResourceLoaderRegistry.h>
+#include <Services/MailChannelService.h>
 
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <filesystem>
-#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
+#include <typeindex>
+#include <utility>
 
 using namespace iCAX::Project;
 
@@ -22,153 +29,110 @@ namespace
         std::string Text;
     };
 
-    CProductDefinition MakeProduct(const std::string& ProductID_, const std::string& DisplayName_)
+    class FixedTextLoader final : public iCAX::Resource::IResourceLoader
     {
-        CProductDefinition _Product;
-        _Product.ProductID = ProductID_;
-        _Product.DisplayName = DisplayName_;
-        return _Product;
-    }
+    public:
+        explicit FixedTextLoader(std::string Text_)
+            : m_Text(std::move(Text_))
+        {
+        }
 
-    std::filesystem::path PrepareTempDirectory()
-    {
-        auto _Path = std::filesystem::temp_directory_path() / "icax_project_catalog_test";
-        std::filesystem::remove_all(_Path);
-        std::filesystem::create_directories(_Path);
-        return _Path;
-    }
+        bool CanLoad(IN const iCAX::Resource::CResourceLoadContext& Context_) const override
+        {
+            return Context_.TargetResourceType == std::type_index(typeid(TextResource));
+        }
 
-    void WriteTextFile(const std::filesystem::path& Path_, const std::string& Text_)
-    {
-        std::filesystem::create_directories(Path_.parent_path());
-        std::ofstream _Output(Path_, std::ios::binary);
-        _Output << Text_;
-    }
+        iCAX::Resource::CResourceLoadResult Load(IN const iCAX::Resource::CResourceLoadContext& Context_) override
+        {
+            auto _pText = std::make_shared<TextResource>();
+            _pText->Text = m_Text;
+
+            auto _Info = Context_.Info;
+            _Info.Key = Context_.TargetKey;
+            _Info.Source = Context_.Source;
+            return iCAX::Resource::CResourceLoadResult::Succeeded(_Info, _pText);
+        }
+
+    private:
+        std::string m_Text;
+    };
 
     bool WaitFor(std::condition_variable& Condition_, std::mutex& Mutex_, const std::function<bool()>& Predicate_)
     {
         std::unique_lock<std::mutex> _Lock(Mutex_);
         return Condition_.wait_for(_Lock, std::chrono::seconds(2), Predicate_);
     }
-}
 
-TEST(ProductCatalogTest, RegistersMultipleProductDefinitions)
-{
-    CProductCatalog _Catalog;
-
-    EXPECT_TRUE(_Catalog.Register(MakeProduct("icax.product.five-axis", "Five Axis")));
-    EXPECT_TRUE(_Catalog.Register(MakeProduct("icax.product.flat-cut", "Flat Cut")));
-    EXPECT_FALSE(_Catalog.Register(MakeProduct("icax.product.flat-cut", "Flat Cut Duplicate")));
-
-    EXPECT_TRUE(_Catalog.Has("icax.product.five-axis"));
-    EXPECT_TRUE(_Catalog.Has("icax.product.flat-cut"));
-    EXPECT_EQ(2u, _Catalog.Count());
-
-    auto _FiveAxis = _Catalog.Require("icax.product.five-axis");
-    EXPECT_EQ("Five Axis", _FiveAxis.GetDisplayNameOrID());
-}
-
-TEST(ProductCatalogTest, LoadsProductIdManifestDirectoryAndResolvesPaths)
-{
-    auto _Root = PrepareTempDirectory();
-    auto _ProductA = _Root / "five-axis";
-    auto _ProductB = _Root / "flat-cut";
-
-    WriteTextFile(
-        _ProductA / "manifest.json",
-        R"json({
-  "productId": "icax.product.five-axis",
-  "displayName": "Five Axis",
-  "backend": {
-    "components": [ "bin/FiveComponent.dll" ],
-    "behaviours": [ "bin/FiveBehaviour.dll" ],
-    "services": [ "bin/FiveService.dll" ],
-    "commands": [ "bin/FiveCommand.dll" ]
-  },
-  "frontend": { "entry": "frontend/index.html" },
-  "protocol": { "path": "protocol" },
-  "startup": { "firstComponent": "FiveStartup" },
-  "file": { "extensions": [ ".icax5" ] }
-})json");
-
-    WriteTextFile(
-        _ProductB / "manifest.json",
-        R"json({
-  "productId": "icax.product.flat-cut",
-  "displayName": "Flat Cut"
-})json");
-
-    CProductCatalog _Catalog;
-    auto _Products = _Catalog.LoadManifestDirectory(_Root.string());
-
-    ASSERT_EQ(2u, _Products.size());
-    CProductDefinition _FiveAxis;
-    for (const auto& _Product : _Products)
+    std::shared_ptr<iCAX::Services::IMailChannelService> MakeMailChannelService()
     {
-        if (_Product.ProductID == "icax.product.five-axis")
-        {
-            _FiveAxis = _Product;
-        }
+        auto _pService = std::make_shared<iCAX::Services::CMailChannelService>();
+        _pService->OnLoad();
+        return _pService;
     }
 
-    EXPECT_EQ("Five Axis", _FiveAxis.DisplayName);
-    ASSERT_EQ(1u, _FiveAxis.ComponentModules.size());
-    EXPECT_EQ((_ProductA / "bin/FiveComponent.dll").lexically_normal().string(), _FiveAxis.ComponentModules[0]);
-    ASSERT_EQ(1u, _FiveAxis.BehaviourModules.size());
-    EXPECT_EQ((_ProductA / "bin/FiveBehaviour.dll").lexically_normal().string(), _FiveAxis.BehaviourModules[0]);
-    ASSERT_EQ(1u, _FiveAxis.ServiceModules.size());
-    EXPECT_EQ((_ProductA / "bin/FiveService.dll").lexically_normal().string(), _FiveAxis.ServiceModules[0]);
-    ASSERT_EQ(1u, _FiveAxis.CommandModules.size());
-    EXPECT_EQ((_ProductA / "bin/FiveCommand.dll").lexically_normal().string(), _FiveAxis.CommandModules[0]);
-    EXPECT_EQ((_ProductA / "frontend/index.html").lexically_normal().string(), _FiveAxis.FrontendEntry);
-    EXPECT_EQ((_ProductA / "protocol").lexically_normal().string(), _FiveAxis.ProtocolPath);
-    EXPECT_EQ("FiveStartup", _FiveAxis.StartupComponent);
-    ASSERT_EQ(1u, _FiveAxis.FileExtensions.size());
-    EXPECT_EQ(".icax5", _FiveAxis.FileExtensions[0]);
+    CProjectCatalogCreateInfo MakeCatalogInfo()
+    {
+        CProjectCatalogCreateInfo _Info;
+        _Info.pMailChannelService = MakeMailChannelService();
+        return _Info;
+    }
 
-    std::filesystem::remove_all(_Root);
+    CProjectCreateInfo MakeProjectInfo()
+    {
+        CProjectCreateInfo _Info;
+        _Info.pMailChannelService = MakeMailChannelService();
+        return _Info;
+    }
 }
 
-TEST(ProductCatalogTest, ManifestRequiresProductID)
+TEST(ProjectCatalogTest, AllowsOneMainProjectAndTransientProjects)
 {
-    auto _Root = PrepareTempDirectory();
-    auto _Manifest = _Root / "invalid" / "manifest.json";
-    WriteTextFile(_Manifest, R"json({ "displayName": "Missing ID" })json");
+    CProjectCatalog _Catalog(MakeCatalogInfo());
+    EXPECT_FALSE(_Catalog.GetCatalogID().is_nil());
+    EXPECT_EQ("Project Catalog", _Catalog.GetCatalogName());
 
-    CProductCatalog _Catalog;
-    EXPECT_THROW(_Catalog.LoadManifestFile(_Manifest.string()), std::runtime_error);
+    auto _pMain = _Catalog.OpenMainProject("Robot Cell");
+    auto _pTransient = _Catalog.OpenTransientProject("Sheet Nesting Preview");
 
-    std::filesystem::remove_all(_Root);
+    ASSERT_NE(nullptr, _pMain);
+    ASSERT_NE(nullptr, _pTransient);
+    EXPECT_TRUE(_pMain->IsMainProject());
+    EXPECT_TRUE(_pTransient->IsTransientProject());
+    EXPECT_NE(_pMain->GetProjectID(), _pTransient->GetProjectID());
+    EXPECT_EQ(2u, _Catalog.Count());
+    EXPECT_EQ(1u, _Catalog.TransientCount());
+    EXPECT_EQ(_pMain, _Catalog.GetMainProject());
+
+    EXPECT_THROW(_Catalog.OpenMainProject("Another Main"), std::logic_error);
+    EXPECT_NE(_pMain->Database().GetID(), _pTransient->Database().GetID());
+    EXPECT_EQ(_pMain->GetProjectID(), _pMain->Database().GetID());
+    EXPECT_EQ(_pTransient->GetProjectID(), _pTransient->Database().GetID());
 }
 
-TEST(ProjectManagerTest, OpensMultipleProductsAsIndependentProjects)
+TEST(ProjectCatalogTest, CatalogIdentityCanBeProvided)
 {
-    CProjectManager _Manager;
-    _Manager.Products().Set(MakeProduct("icax.product.five-axis", "Five Axis"));
-    _Manager.Products().Set(MakeProduct("icax.product.flat-cut", "Flat Cut"));
+    auto _Info = MakeCatalogInfo();
+    _Info.CatalogID = iCAX::Data::GenerateNewUUID();
+    _Info.CatalogName = "Catalog A";
+    _Info.CatalogPath = "memory://catalog-a";
 
-    auto _pFiveAxis = _Manager.OpenProject("icax.product.five-axis", "Robot Cell");
-    auto _pFlatCut = _Manager.OpenProject("icax.product.flat-cut", "Sheet Nesting");
+    CProjectCatalog _Catalog(_Info);
+    EXPECT_EQ(_Info.CatalogID, _Catalog.GetCatalogID());
+    EXPECT_EQ("Catalog A", _Catalog.GetCatalogName());
+    EXPECT_EQ("memory://catalog-a", _Catalog.GetCatalogPath());
 
-    ASSERT_NE(nullptr, _pFiveAxis);
-    ASSERT_NE(nullptr, _pFlatCut);
-    EXPECT_NE(_pFiveAxis->GetProjectID(), _pFlatCut->GetProjectID());
-    EXPECT_EQ("icax.product.five-axis", _pFiveAxis->GetProductID());
-    EXPECT_EQ("icax.product.flat-cut", _pFlatCut->GetProductID());
-    EXPECT_EQ(2u, _Manager.Count());
-
-    EXPECT_NE(_pFiveAxis->Database().GetID(), _pFlatCut->Database().GetID());
-    EXPECT_EQ(_pFiveAxis->GetProjectID(), _pFiveAxis->Database().GetID());
-    EXPECT_EQ(_pFlatCut->GetProjectID(), _pFlatCut->Database().GetID());
+    _Catalog.SetCatalogName("");
+    _Catalog.SetCatalogPath("memory://catalog-b");
+    EXPECT_EQ("Project Catalog", _Catalog.GetCatalogName());
+    EXPECT_EQ("memory://catalog-b", _Catalog.GetCatalogPath());
 }
 
-TEST(ProjectManagerTest, ProjectResourcesAreIsolated)
+TEST(ProjectCatalogTest, ProjectResourcesAreIsolated)
 {
-    CProjectManager _Manager;
-    _Manager.Products().Set(MakeProduct("icax.product.welding", "Welding"));
+    CProjectCatalog _Catalog(MakeCatalogInfo());
 
-    auto _pProjectA = _Manager.OpenProject("icax.product.welding", "Weld A");
-    auto _pProjectB = _Manager.OpenProject("icax.product.welding", "Weld B");
+    auto _pProjectA = _Catalog.OpenMainProject("Weld A");
+    auto _pProjectB = _Catalog.OpenTransientProject("Weld B Preview");
 
     auto _pTextA = std::make_shared<TextResource>();
     _pTextA->Text = "A";
@@ -187,24 +151,64 @@ TEST(ProjectManagerTest, ProjectResourcesAreIsolated)
         _pProjectB->Resources().Get<TextResource>("memory://shared-id").get());
 }
 
-TEST(ProjectManagerTest, CloseOneProjectKeepsOthersOpen)
+TEST(ProjectCatalogTest, ProjectUsesInjectedMetaRegistry)
 {
-    CProjectManager _Manager;
-    _Manager.Products().Set(MakeProduct("icax.product.flat-cut", "Flat Cut"));
+    auto _pMeta = iCAX::Database::CreateMetaRegistry();
 
-    auto _pProjectA = _Manager.OpenProject("icax.product.flat-cut", "A");
-    auto _pProjectB = _Manager.OpenProject("icax.product.flat-cut", "B");
-    const auto _ProjectAID = _pProjectA->GetProjectID();
-    const auto _ProjectBID = _pProjectB->GetProjectID();
+    auto _Info = MakeProjectInfo();
+    _Info.ProjectName = "Meta Isolated";
+    _Info.pMetaRegistry = _pMeta;
 
-    EXPECT_TRUE(_Manager.CloseProject(_ProjectAID));
-    EXPECT_EQ(nullptr, _Manager.FindProject(_ProjectAID));
-    ASSERT_NE(nullptr, _Manager.FindProject(_ProjectBID));
-    EXPECT_TRUE(_Manager.FindProject(_ProjectBID)->IsOpen());
-    EXPECT_EQ(1u, _Manager.Count());
+    CProject _Project(_Info);
+
+    EXPECT_EQ(_pMeta, _Project.Database().GetMetaRegistry());
 }
 
-TEST(ProjectSessionTest, StartRunsFrameHandlerOnProjectThread)
+TEST(ProjectCatalogTest, ProjectResourceLoadersAreIsolated)
+{
+    auto _pRegistryA = std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
+    auto _pRegistryB = std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
+    _pRegistryA->RegisterLoader(typeid(TextResource), std::make_shared<FixedTextLoader>("A"));
+    _pRegistryB->RegisterLoader(typeid(TextResource), std::make_shared<FixedTextLoader>("B"));
+
+    auto _InfoA = MakeProjectInfo();
+    _InfoA.ProjectName = "Resource A";
+    _InfoA.pResourceLoaderRegistry = _pRegistryA;
+
+    auto _InfoB = MakeProjectInfo();
+    _InfoB.ProjectName = "Resource B";
+    _InfoB.pResourceLoaderRegistry = _pRegistryB;
+
+    CProject _ProjectA(_InfoA);
+    CProject _ProjectB(_InfoB);
+
+    auto _pTextA = _ProjectA.Resources().Load<TextResource>("memory://same-resource");
+    auto _pTextB = _ProjectB.Resources().Load<TextResource>("memory://same-resource");
+
+    ASSERT_NE(nullptr, _pTextA);
+    ASSERT_NE(nullptr, _pTextB);
+    EXPECT_EQ("A", _pTextA->Text);
+    EXPECT_EQ("B", _pTextB->Text);
+}
+
+TEST(ProjectCatalogTest, CloseTransientProjectKeepsMainProjectOpen)
+{
+    CProjectCatalog _Catalog(MakeCatalogInfo());
+
+    auto _pMainProject = _Catalog.OpenMainProject("A");
+    auto _pTransientProject = _Catalog.OpenTransientProject("B Preview");
+    const auto _MainProjectID = _pMainProject->GetProjectID();
+    const auto _TransientProjectID = _pTransientProject->GetProjectID();
+
+    EXPECT_TRUE(_Catalog.CloseProject(_TransientProjectID));
+    EXPECT_EQ(nullptr, _Catalog.FindProject(_TransientProjectID));
+    ASSERT_NE(nullptr, _Catalog.FindProject(_MainProjectID));
+    EXPECT_TRUE(_Catalog.FindProject(_MainProjectID)->IsOpen());
+    EXPECT_EQ(_pMainProject, _Catalog.GetMainProject());
+    EXPECT_EQ(1u, _Catalog.Count());
+}
+
+TEST(ProjectTest, StartRunsFrameHandlerOnProjectThread)
 {
     std::mutex _Mutex;
     std::condition_variable _Condition;
@@ -212,11 +216,11 @@ TEST(ProjectSessionTest, StartRunsFrameHandlerOnProjectThread)
     bool _bPostOfficeValid = false;
     std::thread::id _HandlerThreadID;
 
-    CProjectSessionCreateInfo _Info;
-    _Info.Product = MakeProduct("icax.product.threaded", "Threaded");
+    auto _Info = MakeProjectInfo();
+    _Info.ProjectName = "Threaded";
     _Info.nFrameIntervalMilliseconds = 1;
     _Info.FrameHandler = [&](
-        CProjectSession&,
+        CProject&,
         const iCAX::Mail::CMailPostOffice& PostOffice_) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
@@ -227,19 +231,19 @@ TEST(ProjectSessionTest, StartRunsFrameHandlerOnProjectThread)
         _Condition.notify_all();
     };
 
-    CProjectSession _Session(_Info);
-    _Session.Start();
+    CProject _Project(_Info);
+    _Project.Start();
 
     EXPECT_TRUE(WaitFor(_Condition, _Mutex, [&]() { return _FrameCount >= 2; }));
-    _Session.Stop();
+    _Project.Stop();
 
-    EXPECT_FALSE(_Session.IsRunning());
+    EXPECT_FALSE(_Project.IsRunning());
     EXPECT_TRUE(_bPostOfficeValid);
     EXPECT_NE(std::thread::id{}, _HandlerThreadID);
     EXPECT_NE(std::this_thread::get_id(), _HandlerThreadID);
 }
 
-TEST(ProjectSessionTest, SessionsRunOnIndependentThreads)
+TEST(ProjectTest, ProjectsRunOnIndependentThreads)
 {
     std::mutex _Mutex;
     std::condition_variable _Condition;
@@ -248,11 +252,11 @@ TEST(ProjectSessionTest, SessionsRunOnIndependentThreads)
     std::thread::id _SlowThreadID;
     std::thread::id _FastThreadID;
 
-    CProjectSessionCreateInfo _SlowInfo;
-    _SlowInfo.Product = MakeProduct("icax.product.slow", "Slow");
+    auto _SlowInfo = MakeProjectInfo();
+    _SlowInfo.ProjectName = "Slow";
     _SlowInfo.nFrameIntervalMilliseconds = 1;
     _SlowInfo.FrameHandler = [&](
-        CProjectSession&,
+        CProject&,
         const iCAX::Mail::CMailPostOffice&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
@@ -263,11 +267,11 @@ TEST(ProjectSessionTest, SessionsRunOnIndependentThreads)
         std::this_thread::sleep_for(std::chrono::milliseconds(80));
     };
 
-    CProjectSessionCreateInfo _FastInfo;
-    _FastInfo.Product = MakeProduct("icax.product.fast", "Fast");
+    auto _FastInfo = MakeProjectInfo();
+    _FastInfo.ProjectName = "Fast";
     _FastInfo.nFrameIntervalMilliseconds = 1;
     _FastInfo.FrameHandler = [&](
-        CProjectSession&,
+        CProject&,
         const iCAX::Mail::CMailPostOffice&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
@@ -277,18 +281,18 @@ TEST(ProjectSessionTest, SessionsRunOnIndependentThreads)
         _Condition.notify_all();
     };
 
-    CProjectSession _SlowSession(_SlowInfo);
-    CProjectSession _FastSession(_FastInfo);
-    _SlowSession.Start();
-    _FastSession.Start();
+    CProject _SlowProject(_SlowInfo);
+    CProject _FastProject(_FastInfo);
+    _SlowProject.Start();
+    _FastProject.Start();
 
     EXPECT_TRUE(WaitFor(_Condition, _Mutex, [&]() {
         return _SlowFrames.load(std::memory_order_acquire) >= 1
             && _FastFrames.load(std::memory_order_acquire) >= 5;
     }));
 
-    _SlowSession.Stop();
-    _FastSession.Stop();
+    _SlowProject.Stop();
+    _FastProject.Stop();
 
     EXPECT_GE(_SlowFrames.load(std::memory_order_acquire), 1);
     EXPECT_GE(_FastFrames.load(std::memory_order_acquire), 5);
@@ -297,22 +301,73 @@ TEST(ProjectSessionTest, SessionsRunOnIndependentThreads)
     EXPECT_NE(_SlowThreadID, _FastThreadID);
 }
 
-TEST(ProjectSessionTest, CloseInvalidatesProjectMailPostOffices)
+TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
 {
-    CProjectSessionCreateInfo _Info;
-    _Info.Product = MakeProduct("icax.product.mail", "Mail");
+    std::mutex _Mutex;
+    std::condition_variable _Condition;
+    bool _bFaultProjectEnteredFrame = false;
+    std::atomic<int> _HealthyFrames = 0;
 
-    CProjectSession _Session(_Info);
-    auto _FrontendPostOffice = _Session.GetFrontendPostOffice();
-    auto _BackendPostOffice = _Session.GetBackendPostOffice();
+    auto _FaultInfo = MakeProjectInfo();
+    _FaultInfo.ProjectName = "Fault";
+    _FaultInfo.nFrameIntervalMilliseconds = 1;
+    _FaultInfo.FrameHandler = [&](
+        CProject&,
+        const iCAX::Mail::CMailPostOffice&) {
+        {
+            std::lock_guard<std::mutex> _Lock(_Mutex);
+            _bFaultProjectEnteredFrame = true;
+        }
+        _Condition.notify_all();
+        throw std::runtime_error("project local failure");
+    };
+
+    auto _HealthyInfo = MakeProjectInfo();
+    _HealthyInfo.ProjectName = "Healthy";
+    _HealthyInfo.nFrameIntervalMilliseconds = 1;
+    _HealthyInfo.FrameHandler = [&](
+        CProject&,
+        const iCAX::Mail::CMailPostOffice&) {
+        ++_HealthyFrames;
+        _Condition.notify_all();
+    };
+
+    CProject _FaultProject(_FaultInfo);
+    CProject _HealthyProject(_HealthyInfo);
+    _FaultProject.Start();
+    _HealthyProject.Start();
+
+    EXPECT_TRUE(WaitFor(_Condition, _Mutex, [&]() {
+        return _bFaultProjectEnteredFrame
+            && _FaultProject.GetState() == EProjectState::Faulted
+            && _HealthyFrames.load(std::memory_order_acquire) >= 5;
+    }));
+
+    EXPECT_EQ(EProjectState::Faulted, _FaultProject.GetState());
+    ASSERT_TRUE(_FaultProject.GetLastFault().has_value());
+    EXPECT_EQ("project local failure", _FaultProject.GetLastFault()->Message);
+    EXPECT_TRUE(_HealthyProject.IsRunning());
+    EXPECT_GE(_HealthyFrames.load(std::memory_order_acquire), 5);
+
+    _HealthyProject.Stop();
+}
+
+TEST(ProjectTest, CloseInvalidatesProjectMailPostOffices)
+{
+    auto _Info = MakeProjectInfo();
+    _Info.ProjectName = "Mail";
+
+    CProject _Project(_Info);
+    auto _FrontendPostOffice = _Project.GetFrontendPostOffice();
+    auto _BackendPostOffice = _Project.GetBackendPostOffice();
     ASSERT_TRUE(_FrontendPostOffice.IsValid());
     ASSERT_TRUE(_BackendPostOffice.IsValid());
 
-    _Session.Close();
+    _Project.Close();
 
     EXPECT_FALSE(_FrontendPostOffice.IsValid());
     EXPECT_FALSE(_BackendPostOffice.IsValid());
     EXPECT_THROW(_FrontendPostOffice.Send(iCAX::Mail::Mail{}), std::logic_error);
     EXPECT_THROW(_BackendPostOffice.Receive(), std::logic_error);
-    EXPECT_THROW(_Session.GetFrontendPostOffice(), std::logic_error);
+    EXPECT_THROW(_Project.GetFrontendPostOffice(), std::logic_error);
 }
