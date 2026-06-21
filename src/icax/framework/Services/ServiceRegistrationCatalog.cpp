@@ -110,6 +110,7 @@ size_t iCAX::Services::CServiceRegistrationCatalog::ReplayFrom(IN size_t nFirstI
         nFirstIndex_ = _AllRegistrations.size();
     }
 
+    // 回放函数可能继续触发服务解析或间接加载模块，因此不要在持有 catalog 锁时执行用户注册逻辑。
     for (const auto& _Registration : _Registrations)
     {
         _Registration.Replay(Provider_);
@@ -133,6 +134,7 @@ void iCAX::Services::CServiceRegistrationCatalog::ReplayByModulePaths(
         _Registrations = GetRegistrations();
     }
 
+    // 全局 catalog 保存所有模块的注册动作；ProductRuntime 只回放自己已加载模块的记录，实现产品级隔离。
     for (const auto& _Registration : _Registrations)
     {
         if (std::find(_ModulePaths.begin(), _ModulePaths.end(), _Registration.ModulePath) != _ModulePaths.end())

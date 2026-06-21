@@ -29,6 +29,7 @@ std::shared_ptr<iCAX::Services::CServiceProvider> iCAX::Services::GetGlobalServi
 {
     static std::shared_ptr<CServiceProvider> s_pServiceProvider = std::make_shared<CServiceProvider>();
     static size_t s_nReplayedRegistrationCount = 0;
+    // 全局 Provider 延迟回放新注册项，允许 DLL 在运行期加载后通过静态对象把服务补登记进来。
     s_nReplayedRegistrationCount = CServiceRegistrationCatalog::ReplayFrom(s_nReplayedRegistrationCount, *s_pServiceProvider);
     return s_pServiceProvider;
 }

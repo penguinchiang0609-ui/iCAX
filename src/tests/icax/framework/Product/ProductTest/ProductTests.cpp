@@ -9,6 +9,7 @@
 #include <Project/ProjectRuntime.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <Services/ServiceProvider.h>
+#include <Services/ServiceRegistrationCatalog.h>
 #include <Data/Variant.h>
 #include <Mailbox/Mail.h>
 
@@ -147,10 +148,8 @@ namespace
         iCAX::Application::CApplicationSettings _Settings;
         auto _pContext = std::make_shared<iCAX::Application::CApplicationContext>(_Descriptor, _Paths, _Settings);
         auto _pSettings = std::make_shared<iCAX::Data::PropertyBag>(_Settings.GetProperties());
-        auto _pServiceProvider = iCAX::Services::GetGlobalServiceProvider();
-        auto _pMetaRegistry = iCAX::Database::CreateMetaRegistry();
-        auto _pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
-        auto _pResourceLoaderRegistry = std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
+        auto _pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
+        iCAX::Services::CServiceRegistrationCatalog::ReplayAll(*_pServiceProvider);
 
         CProductDefinition _Definition;
         _Definition.ProductID = strProductID_;
@@ -174,9 +173,6 @@ namespace
             _pContext,
             _pSettings,
             _pServiceProvider,
-            _pMetaRegistry,
-            _pBehaviourRegistry,
-            _pResourceLoaderRegistry,
             _pProductDataStore);
     }
 }
@@ -252,6 +248,7 @@ TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
     _OpenPayload["projectPath"] = std::string("memory://robot-cell");
     auto _OpenRequest = MakeRequestMail(2001, kProductOpenProjectCatalogCommand, iCAX::Data::Variant(_OpenPayload));
     _FrontendPostOffice.Send(_OpenRequest);
+    ReleaseMailPayload(_OpenRequest);
 
     auto _OpenResponses = WaitForProductMails(_pRuntime, _FrontendPostOffice);
     ASSERT_EQ(1u, _OpenResponses.size());
@@ -284,6 +281,7 @@ TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
     _ClosePayload["catalogId"] = _CatalogID;
     auto _CloseRequest = MakeRequestMail(2002, kProductCloseProjectCatalogCommand, iCAX::Data::Variant(_ClosePayload));
     _FrontendPostOffice.Send(_CloseRequest);
+    ReleaseMailPayload(_CloseRequest);
 
     auto _CloseResponses = WaitForProductMails(_pRuntime, _FrontendPostOffice);
     ASSERT_EQ(1u, _CloseResponses.size());
@@ -310,6 +308,7 @@ TEST(ProductRuntimeMailboxTest, ProductCommandSentToProjectMailboxIsRejected)
     auto _ProjectPostOffice = _pRuntime->GetProjectFrontendPostOffice(_pProject->GetProjectID());
     auto _Request = MakeRequestMail(3001, kProductGetStateCommand);
     _ProjectPostOffice.Send(_Request);
+    ReleaseMailPayload(_Request);
 
     auto _Responses = WaitForMails(_ProjectPostOffice);
     ASSERT_EQ(1u, _Responses.size());
@@ -358,6 +357,7 @@ TEST(ProductRuntimeMailboxTest, ProjectMailboxProvidesProjectRuntimeContext)
     auto _ProjectPostOffice = _pRuntime->GetProjectFrontendPostOffice(_ProjectID);
     auto _Request = MakeRequestMail(4001, kInspectProjectRuntimeContextCommand);
     _ProjectPostOffice.Send(_Request);
+    ReleaseMailPayload(_Request);
 
     auto _Responses = WaitForMails(_ProjectPostOffice);
     ASSERT_EQ(1u, _Responses.size());

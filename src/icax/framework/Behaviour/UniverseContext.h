@@ -8,20 +8,22 @@ namespace iCAX
     {
         /*
         * @brief 上下文
+        * @remark 默认 UniverseContext 保存当前 Project 的 Repository、应用设置和 Timer。
         */
         class _SYSTEM_EXP CUniverseContext : public IUniverseContext
         {
         public:
             /*
             * @brief 构造函数
-            * @param [in] pRepository_
-            * @param [in] 
+            * @param [in] pRepository_ 当前项目 Repository。
+            * @param [in] pApplicationSetting_ 应用设置属性包。
             */
             CUniverseContext(IN const std::shared_ptr<iCAX::Database::IRepository>& pRepository_, 
                 IN const std::shared_ptr<iCAX::Data::PropertyBag>& pApplicationSetting_);
 
             /*
-            * @brief 
+            * @brief 析构函数
+            * @details 释放 SetData 接管的所有临时裸数据。
             */
             virtual ~CUniverseContext();
 

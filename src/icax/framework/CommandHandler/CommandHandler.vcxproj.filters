@@ -45,6 +45,9 @@
     <ClInclude Include="CommandDispatcher.h">
       <Filter>inner</Filter>
     </ClInclude>
+    <ClInclude Include="CommandRegistrationCatalog.h">
+      <Filter>inner</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -66,6 +69,9 @@
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="CommandDispatcher.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="CommandRegistrationCatalog.cpp">
       <Filter>inner</Filter>
     </ClCompile>
   </ItemGroup>

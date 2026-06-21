@@ -6,11 +6,11 @@
 
 后台以 `ApplicationHost -> ProductRuntime -> Project` 三层组织：
 
-- `ApplicationHost` 是应用级入口，拥有应用上下文、应用级 mailbox、应用级服务容器，以及应用级 Meta/Behaviour/ResourceLoader 注册表。
-- `ProductRuntime` 表达一个已启动产品，负责产品模块加载、产品级 mailbox、产品命令和 ProjectCatalog 生命周期。产品模块通过宏登记的 Service、ComponentMeta、Behaviour、ResourceLoader 会被回放到应用级注册表中，扩展代码不需要手写注册流程。
+- `ApplicationHost` 是应用级入口，拥有应用上下文、应用级 mailbox 和应用级服务容器。
+- `ProductRuntime` 表达一个已启动产品，负责产品模块加载、产品级 mailbox、产品命令、产品数据和 ProjectCatalog 生命周期。产品模块通过宏登记的 ComponentMeta、Behaviour、ResourceLoader 和 CommandHandler 会被回放到产品级注册表中，Service 回放到应用级服务容器。
 - `Project` 表达一个已打开项目。每个项目独占自己的 Repository、ResourceLibrary/ResourcePool、UniverseContext、Universe、项目 mail channel 和后台工作线程。
 
-Service 在整个 Application 内共享，`IMailChannelService` 也是应用级服务，负责按 mail id 托管 Application/Product/Project 的通信通道。Behaviour 的定义注册表也在 Application 内共享，但 `Universe` 实例按 Project 创建。数据对象、资源对象、项目邮箱和项目线程全部按 Project 隔离。
+Service 在整个 Application 内共享，`IMailChannelService` 也是应用级服务，负责按 mail id 托管 Application/Product/Project 的通信通道。ComponentMeta、Behaviour、ResourceLoader 和 CommandHandler 按 ProductRuntime 隔离；`Universe` 实例、Repository、资源对象、项目 ResourceLoaderRegistry、项目邮箱和项目线程全部按 Project 隔离。
 
 ## 目录结构
 

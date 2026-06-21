@@ -6,13 +6,13 @@
 #include "EntitiesView.h"
 #include "VersionTable.h"
 #include "DerivedProperty.h"
-#include "ChangeSet.h"
+#include "OperationLog.h"
 
 namespace iCAX
 {
     namespace Database
     {
-        class CChangeSetJournal;
+        class COperationBatchJournal;
         class CRepositoryHistory;
         class IMetaRegistry;
 
@@ -240,48 +240,140 @@ namespace iCAX
             /*
             * @brief 前触发
             * @param [in] nType_
-            * @param [in] ID_
-            * @param [in] strClassName_ 类名
-            * @param [in] PreviousValue_ 旧值
-            * @param [in] NewValue_ 新值
+            * @param [in] EntityID_ 目标实体 ID。
+            * @param [in] strClassName_ 目标组件类型；实体级事件为空。
+            * @param [in] Previous_ 操作前字段集合。
+            * @param [in] New_ 操作后字段集合。
+            * @param [in] pComponent_ 关联组件；实体级事件可为空。
+            * @param [in] pEntity_ 关联实体。
+            * @param [in] pChangeSet_ 批量事件携带的 ChangeSet 摘要；普通事件为空。
             */
             void TriggerRepositoryChanging(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
 
             /*
             * @brief 后触发
             * @param [in] nType_
-            * @param [in] ID_
-            * @param [in] strClassName_ 类名
-            * @param [in] PreviousValue_ 旧值
-            * @param [in] NewValue_ 新值
+            * @param [in] EntityID_ 目标实体 ID。
+            * @param [in] strClassName_ 目标组件类型；实体级事件为空。
+            * @param [in] Previous_ 操作前字段集合。
+            * @param [in] New_ 操作后字段集合。
+            * @param [in] pComponent_ 关联组件；实体级事件可为空。
+            * @param [in] pEntity_ 关联实体。
+            * @param [in] pChangeSet_ 批量事件携带的 ChangeSet 摘要；普通事件为空。
             */
             void TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const CChangeSet> pChangeSet_ = nullptr);
 
         private:
+            /*
+            * @brief 创建 Repository 内部批量变更作用域。
+            * @param [in] Kind_ 批次语义。
+            * @param [in] strName_ 批次名称。
+            * @param [in] bAutoCommitOnDestroy_ 作用域析构时是否自动提交；false 时自动取消。
+            * @return 批量变更作用域。
+            */
             std::unique_ptr<IRepositoryChangeScope> BeginChangeScopeCore(IN EChangeScopeKind Kind_, IN const std::string& strName_, IN const bool bAutoCommitOnDestroy_);
+
+            /*
+            * @brief 判断当前是否存在活跃批量变更作用域。
+            * @return true 表示当前正在收集 OperationBatch。
+            */
             bool IsChangeScopeActive() const;
+
+            /*
+            * @brief 判断 Repository 事件是否被临时抑制。
+            * @return true 表示当前不应向外发布事件，也不应记录操作。
+            */
             bool IsRepositoryEventSuppressed() const;
+
+            /*
+            * @brief 结束当前批量变更作用域。
+            * @param [in] bCommit_ true 表示提交，false 表示取消并静默回滚。
+            * @details
+            *   提交时先冻结有序 OperationBatch，再派生 ChangeSet 净摘要。
+            *   ChangeSet 非空才发布批量事件、更新版本/派生字段、进入历史和快速保存日志。
+            *   取消时按 OperationBatch 反向顺序静默回滚，不发布事件。
+            */
             void EndChangeScope(IN const bool bCommit_);
-            void RecordRepositoryChanged(IN const RepositoryEventArgs& Args_);
-            CChangeSet BuildChangeSetFromRepositoryEvent(IN const RepositoryEventArgs& Args_) const;
+
+            /*
+            * @brief 将 Repository 事件追加为有序操作。
+            * @param [in] Args_ Repository 事件参数。
+            */
+            void RecordRepositoryOperation(IN const RepositoryEventArgs& Args_);
+
+            /*
+            * @brief 应用单个实体事件对版本和派生字段的影响。
+            * @param [in] Args_ 实体事件参数。
+            */
             void ApplyEntityChangedEffects(IN const EntityEventArgs& Args_);
+
+            /*
+            * @brief 应用 ChangeSet 摘要对版本和派生字段的影响。
+            * @param [in] ChangeSet_ 批量净变更摘要。
+            */
             void ApplyChangeSetEffects(IN const CChangeSet& ChangeSet_);
-            void ApplyChangeSetForward(IN const CChangeSet& ChangeSet_);
-            void ApplyChangeSetBackward(IN const CChangeSet& ChangeSet_);
-            void ApplyChangeSetWithReplayEvent(IN const CChangeSet& ChangeSet_);
-            void RollbackChangeSetSilently(IN const CChangeSet& ChangeSet_);
-            void HandleCommittedChangeSet(IN const CChangeSet& ChangeSet_);
-            void AppendOperationLog(IN const CChangeSet& ChangeSet_);
+
+            /*
+            * @brief 正向执行一条 Repository 操作。
+            * @param [in] Operation_ 待执行操作。
+            */
+            void ApplyOperationForward(IN const CRepositoryOperation& Operation_);
+
+            /*
+            * @brief 按原顺序正向执行操作批次。
+            * @param [in] Batch_ 待执行操作批次。
+            */
+            void ApplyOperationBatchForward(IN const COperationBatch& Batch_);
+
+            /*
+            * @brief 按反向语义执行操作批次。
+            * @param [in] Batch_ 原始操作批次。
+            * @details
+            *   内部先生成反向 OperationBatch，再按反向批次的正向顺序执行。
+            *   等价于按原批次倒序逐条恢复。
+            */
+            void ApplyOperationBatchBackward(IN const COperationBatch& Batch_);
+
+            /*
+            * @brief 以 Replay 批量事件语义执行操作批次。
+            * @param [in] Batch_ 待回放操作批次。
+            * @details
+            *   Undo、Redo 和快速保存恢复都会走该路径。
+            *   该方法会创建 Replay 作用域，使回放期间仍能产生一次批量事件，但不会再次进入历史栈。
+            */
+            void ApplyOperationBatchWithReplayEvent(IN const COperationBatch& Batch_);
+
+            /*
+            * @brief 静默回滚操作批次。
+            * @param [in] Batch_ 原始操作批次。
+            * @details
+            *   用于事务 Cancel 和批量作用域 Cancel。
+            *   回滚期间通过事件抑制器避免通知外部，也避免写入历史或快速保存日志。
+            */
+            void RollbackOperationBatchSilently(IN const COperationBatch& Batch_);
+
+            /*
+            * @brief 处理已提交操作批次。
+            * @param [in] Batch_ 有序操作批次，是历史和日志的事实来源。
+            * @param [in] Summary_ 净变更摘要，用于判断提交是否有对外可见效果。
+            */
+            void HandleCommittedOperationBatch(IN const COperationBatch& Batch_, IN const CChangeSet& Summary_);
+
+            /*
+            * @brief 追加快速保存操作日志。
+            * @param [in] Batch_ 待写入的有序操作批次。
+            */
+            void AppendOperationLog(IN const COperationBatch& Batch_);
 
         private:
             std::list<std::weak_ptr<IRepositoryEventListener>> m_Observers;
-            std::unique_ptr<CChangeSetBuilder> m_pChangeSetBuilder;
+            std::unique_ptr<COperationBatchBuilder> m_pOperationBatchBuilder;
             EChangeScopeKind m_nChangeScopeKind = EChangeScopeKind::UserCommand;
             std::string m_strChangeScopeName;
             int m_nRepositoryEventSuppressionDepth = 0;
             int m_nHistoryReplayDepth = 0;
             std::unique_ptr<CRepositoryHistory> m_pHistory;
-            std::unique_ptr<CChangeSetJournal> m_pOperationLog;
+            std::unique_ptr<COperationBatchJournal> m_pOperationLog;
 
         private:
             iCAX::Data::uuid m_UID;                                                           //!< 仓储ID

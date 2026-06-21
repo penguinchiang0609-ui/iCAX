@@ -13,6 +13,9 @@ namespace iCAX
     {
         /*
         * @brief 服务供应商
+        * @details
+        *   CServiceProvider 是一个服务容器实例，保存服务工厂和已创建的单例。
+        *   它和自动注册 Catalog 是两层：Catalog 保存注册动作，Provider 保存某个 Application/Product 实际可用的服务。
         */
         class _SERVICE_EXP CServiceProvider final
         {
@@ -39,6 +42,9 @@ namespace iCAX
             * @param_template [in] TService 服务接口类型
             * @param_template [in] TImplementation 服务实现类型
             * @param_template [in] ...TDependencies 依赖的其他服务接口类型
+            * @details
+            *   注册时只保存工厂，不立即创建实例。
+            *   首次 Resolve 时会递归解析依赖、构造实现对象、调用 OnLoad，然后缓存为单例。
             */
             template<typename TService, typename TImplementation, typename... TDependencies>
             void RegisterSingleton()
@@ -64,7 +70,9 @@ namespace iCAX
             /*
             * @brief 获取服务
             * @param_template [in] TService 服务类型
-            * @return std::shared_ptr<TService>
+            * @return 已解析的服务实例。
+            * @throws std::runtime_error 服务未注册时抛出。
+            * @details 单例服务首次解析后会缓存，后续解析返回同一实例。
             */
             template<typename TService>
             std::shared_ptr<TService> Resolve()
@@ -110,6 +118,9 @@ namespace iCAX
         /*
         * @brief 获取全局服务供应商
         * @return std::shared_ptr<CServiceProvider>
+        * @details
+        *   全局 Provider 主要用于旧式或简单场景。当前框架中的 ApplicationHost/ProductRuntime
+        *   更倾向持有自己的 Provider，以便隔离不同运行态。
         */
         _SERVICE_EXP std::shared_ptr<CServiceProvider> GetGlobalServiceProvider();
 

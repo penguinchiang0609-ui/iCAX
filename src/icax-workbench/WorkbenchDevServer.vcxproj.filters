@@ -10,6 +10,9 @@
     <Filter Include="mailbox">
       <UniqueIdentifier>{4731374A-E577-490F-B3D8-8B72217447F4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="product">
+      <UniqueIdentifier>{E2D0FC81-7E86-4215-BB57-90FD4D0918A4}</UniqueIdentifier>
+    </Filter>
     <Filter Include="shell">
       <UniqueIdentifier>{D682B548-4E2B-42DD-B585-01A0DAB2FA03}</UniqueIdentifier>
     </Filter>
@@ -41,6 +44,9 @@
     </None>
     <None Include="mailbox\mailboxClient.mjs">
       <Filter>mailbox</Filter>
+    </None>
+    <None Include="product\productModuleHost.mjs">
+      <Filter>product</Filter>
     </None>
     <None Include="shell\bootstrap.mjs">
       <Filter>shell</Filter>

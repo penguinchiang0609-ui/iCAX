@@ -150,6 +150,155 @@ namespace
             })
     };
 
+    class COrderedSizeComponent final : public CComponentBase
+    {
+    public:
+        static constexpr const char* S_ClassName = "COrderedSizeComponent";
+        static constexpr const char* PropertyName_Length = "Length";
+        static constexpr const char* PropertyName_Width = "Width";
+
+        explicit COrderedSizeComponent(std::shared_ptr<IEntity> pEntity_)
+            : CComponentBase(pEntity_)
+        {
+        }
+
+        std::string GetComponentClass() const override
+        {
+            return S_ClassName;
+        }
+
+        std::vector<std::string> GetPropertyNameArray() const override
+        {
+            return { PropertyName_Length, PropertyName_Width };
+        }
+
+        PropertyValue GetProperty(const std::string& strPropertyName_) const override
+        {
+            if (strPropertyName_ == PropertyName_Length)
+            {
+                return PropertyValue(m_nLength);
+            }
+            if (strPropertyName_ == PropertyName_Width)
+            {
+                return PropertyValue(m_nWidth);
+            }
+            return PropertyValue::Nil;
+        }
+
+        int GetLength() const
+        {
+            return m_nLength;
+        }
+
+        int GetWidth() const
+        {
+            return m_nWidth;
+        }
+
+        void SetLength(int nLength_)
+        {
+            SetProperty(PropertyName_Length, PropertyValue(nLength_));
+        }
+
+        void SetWidth(int nWidth_)
+        {
+            SetProperty(PropertyName_Width, PropertyValue(nWidth_));
+        }
+
+    protected:
+        void OnSetProperty(const std::string& strPropertyName_, const PropertyValue& NewValue_) override
+        {
+            auto _nNextLength = m_nLength;
+            auto _nNextWidth = m_nWidth;
+            if (strPropertyName_ == PropertyName_Length)
+            {
+                _nNextLength = NewValue_.To<int>();
+            }
+            else if (strPropertyName_ == PropertyName_Width)
+            {
+                _nNextWidth = NewValue_.To<int>();
+            }
+            else
+            {
+                throw std::runtime_error("Unknown ordered size property");
+            }
+
+            if (_nNextLength <= _nNextWidth)
+            {
+                throw std::runtime_error("Length must be greater than width");
+            }
+
+            m_nLength = _nNextLength;
+            m_nWidth = _nNextWidth;
+        }
+
+    private:
+        struct _AutoRegister_Type
+        {
+            _AutoRegister_Type()
+            {
+                CMetaRegistrationCatalog::Register([](IMetaRegistry& Registry_)
+                {
+                    Registry_.RegistType(COrderedSizeComponent::S_ClassName, CComponentBase::S_ClassName);
+                }, this);
+            }
+        };
+
+        struct _AutoRegister_Creator
+        {
+            _AutoRegister_Creator()
+            {
+                CMetaRegistrationCatalog::Register([](IMetaRegistry& Registry_)
+                {
+                    Registry_.RegistCreatorByName(COrderedSizeComponent::S_ClassName, [](std::shared_ptr<IEntity> pEntity_)
+                    {
+                        return std::make_shared<COrderedSizeComponent>(pEntity_);
+                    });
+                }, this);
+            }
+        };
+
+        struct _AutoRegister_Properties
+        {
+            _AutoRegister_Properties()
+            {
+                CMetaRegistrationCatalog::Register([](IMetaRegistry& Registry_)
+                {
+                    Registry_.RegistPropertyByName(
+                        COrderedSizeComponent::S_ClassName,
+                        COrderedSizeComponent::PropertyName_Length,
+                        [](const void* pObject_) -> PropertyValue
+                        {
+                            return PropertyValue(static_cast<const COrderedSizeComponent*>(pObject_)->GetLength());
+                        },
+                        [](void* pObject_, const PropertyValue& Value_)
+                        {
+                            static_cast<COrderedSizeComponent*>(pObject_)->SetLength(Value_.To<int>());
+                        });
+
+                    Registry_.RegistPropertyByName(
+                        COrderedSizeComponent::S_ClassName,
+                        COrderedSizeComponent::PropertyName_Width,
+                        [](const void* pObject_) -> PropertyValue
+                        {
+                            return PropertyValue(static_cast<const COrderedSizeComponent*>(pObject_)->GetWidth());
+                        },
+                        [](void* pObject_, const PropertyValue& Value_)
+                        {
+                            static_cast<COrderedSizeComponent*>(pObject_)->SetWidth(Value_.To<int>());
+                        });
+                }, this);
+            }
+        };
+
+        inline static _AutoRegister_Type s_TypeRegistration{};
+        inline static _AutoRegister_Creator s_CreatorRegistration{};
+        inline static _AutoRegister_Properties s_PropertyRegistration{};
+
+        int m_nLength = 10;
+        int m_nWidth = 8;
+    };
+
     class CMissingDependencyComponent final : public CComponentBase
     {
         DECLARE_ICAX_COMPONENT(CMissingDependencyComponent, CComponentBase)
@@ -990,6 +1139,31 @@ TEST(DatabaseRepositoryTest, UndoRedoUsesCommittedChangeSet)
     EXPECT_FALSE(_Repository->CanRedo());
 }
 
+TEST(DatabaseRepositoryTest, UndoRedoReplaysOperationsInOriginalOrder)
+{
+    auto _Repository = GenerateRepository(GenerateNewUUID());
+
+    auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    auto _Component = _Repository->CreateEntity(GenerateNewUUID())->AddComponent<COrderedSizeComponent>();
+    _Baseline->Commit();
+
+    auto _UndoCommand = _Repository->BeginUndoCommand("Resize");
+    _Component->SetWidth(5);
+    _Component->SetLength(6);
+    _UndoCommand->End();
+
+    EXPECT_EQ(6, _Component->GetLength());
+    EXPECT_EQ(5, _Component->GetWidth());
+
+    ASSERT_TRUE(_Repository->Undo());
+    EXPECT_EQ(10, _Component->GetLength());
+    EXPECT_EQ(8, _Component->GetWidth());
+
+    ASSERT_TRUE(_Repository->Redo());
+    EXPECT_EQ(6, _Component->GetLength());
+    EXPECT_EQ(5, _Component->GetWidth());
+}
+
 TEST(DatabaseRepositoryTest, RepositoryUndoUsesSingleLinearHistory)
 {
     auto _Repository = GenerateRepository(GenerateNewUUID());
@@ -1362,6 +1536,37 @@ TEST(DatabaseRepositoryTest, OperationLogReplaysPersistentChanges)
     ASSERT_NE(nullptr, _RecoveredComponent);
     EXPECT_EQ(7, _RecoveredComponent->GetA());
     EXPECT_EQ(8, _RecoveredComponent->GetB());
+
+    std::filesystem::remove(_LogPath);
+}
+
+TEST(DatabaseRepositoryTest, OperationLogReplaysBatchOperationsInOriginalOrder)
+{
+    auto _LogPath = MakeTempOperationLogPath();
+    const auto _EntityID = GenerateNewUUID();
+
+    {
+        auto _Repository = GenerateRepository(GenerateNewUUID());
+        auto _Baseline = _Repository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+        auto _Component = _Repository->CreateEntity(_EntityID)->AddComponent<COrderedSizeComponent>();
+        _Baseline->Commit();
+
+        _Repository->OpenOperationLog(_LogPath, true);
+        auto _Batch = _Repository->BeginChangeScope(EChangeScopeKind::UserCommand, "Resize");
+        _Component->SetWidth(5);
+        _Component->SetLength(6);
+        _Batch->Commit();
+        _Repository->CloseOperationLog();
+    }
+
+    auto _RecoveredRepository = GenerateRepository(GenerateNewUUID());
+    auto _RecoveredBaseline = _RecoveredRepository->BeginChangeScope(EChangeScopeKind::LoadBaseline, "Baseline");
+    auto _RecoveredComponent = _RecoveredRepository->CreateEntity(_EntityID)->AddComponent<COrderedSizeComponent>();
+    _RecoveredBaseline->Commit();
+
+    ASSERT_NO_THROW(_RecoveredRepository->ReplayOperationLog(_LogPath));
+    EXPECT_EQ(6, _RecoveredComponent->GetLength());
+    EXPECT_EQ(5, _RecoveredComponent->GetWidth());
 
     std::filesystem::remove(_LogPath);
 }

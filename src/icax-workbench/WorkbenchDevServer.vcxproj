@@ -67,6 +67,7 @@
     <None Include="mailbox\clients.mjs" />
     <None Include="mailbox\commandNames.mjs" />
     <None Include="mailbox\mailboxClient.mjs" />
+    <None Include="product\productModuleHost.mjs" />
     <None Include="shell\bootstrap.mjs" />
     <None Include="state\workbenchStore.mjs" />
     <None Include="theme\workbench.css" />

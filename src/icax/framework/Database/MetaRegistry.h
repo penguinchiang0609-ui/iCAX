@@ -9,6 +9,9 @@ namespace iCAX
     {
         /*
         * @brief 元数据注册表
+        * @details
+        *   内部使用稳定字符串 ID 保存类型和字段，以减少字符串 map 的重复开销。
+        *   公共接口仍然以组件类名和属性名暴露，方便业务代码使用。
         */
         class CMetaRegistry : public IMetaRegistry
         {
@@ -19,9 +22,9 @@ namespace iCAX
             struct PropertyMeta
             {
                 std::string Name;//!< 属性名称
-                EPropertyKind Kind = EPropertyKind::Value;
-                EPropertyPersistence Persistence = EPropertyPersistence::Persistent;
-                EPropertyChangePolicy ChangePolicy = EPropertyChangePolicy::Transactional;
+                EPropertyKind Kind = EPropertyKind::Value; //!< 值字段或派生字段。
+                EPropertyPersistence Persistence = EPropertyPersistence::Persistent; //!< 持久化语义。
+                EPropertyChangePolicy ChangePolicy = EPropertyChangePolicy::Transactional; //!< 修改传播策略。
                 std::function<PropertyValue(const void*)> Getter;//!< 属性的获取方法
                 std::function<void(void*, const PropertyValue&)> Setter;//!< 属性的设置方法
                 DerivedPropertyEvaluator Evaluator;//!< 派生属性计算器

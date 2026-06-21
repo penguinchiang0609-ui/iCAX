@@ -1,10 +1,8 @@
 #include "pch.h"
 #include "RepositoryHistory.h"
-#include "ChangeLog.h"
 #include "IMetaRegistry.h"
 
 #include <algorithm>
-#include <map>
 #include <stdexcept>
 #include <utility>
 
@@ -66,7 +64,7 @@ struct iCAX::Database::CRepositoryHistory::CHistoryStep final
 {
     iCAX::Data::uuid ID;
     std::string Name;
-    CChangeSet ChangeSet;
+    COperationBatch Batch;
 };
 
 iCAX::Database::CRepositoryHistory::CRepositoryHistory(IN std::shared_ptr<IMetaRegistry> pMetaRegistry_)
@@ -85,7 +83,7 @@ std::unique_ptr<iCAX::Database::IRepositoryUndoScope> iCAX::Database::CRepositor
         throw std::runtime_error("Nested repository undo scopes are not supported");
     }
 
-    m_pCommandBuilder = std::make_unique<CChangeSetBuilder>(EChangeScopeKind::UserCommand, strName_);
+    m_pCommandBuilder = std::make_unique<COperationBatchBuilder>(EChangeScopeKind::UserCommand, strName_);
     return std::make_unique<CRepositoryHistoryScope>(*this);
 }
 
@@ -94,15 +92,17 @@ bool iCAX::Database::CRepositoryHistory::IsRecording() const
     return m_pCommandBuilder != nullptr;
 }
 
-void iCAX::Database::CRepositoryHistory::HandleCommittedChangeSet(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepositoryHistory::HandleCommittedOperationBatch(IN const COperationBatch& Batch_)
 {
+    // 撤销记录边界之外发生的可撤销修改会让旧历史失效。
+    // 边界之内的提交则追加到当前 undo step，保持操作顺序。
     if (IsRecording())
     {
-        RecordCommittedChangeSet(ChangeSet_);
+        RecordCommittedOperationBatch(Batch_);
     }
     else
     {
-        ClearForCommittedChangeSet(ChangeSet_);
+        ClearForCommittedOperationBatch(Batch_);
     }
 }
 
@@ -113,10 +113,12 @@ void iCAX::Database::CRepositoryHistory::Clear()
     m_RedoStack.clear();
 }
 
-void iCAX::Database::CRepositoryHistory::ClearForCommittedChangeSet(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepositoryHistory::ClearForCommittedOperationBatch(IN const COperationBatch& Batch_)
 {
-    auto _UndoableChangeSet = FilterTransactionalChangeSet(ChangeSet_, GetMetaRegistry());
-    if (_UndoableChangeSet.IsEmpty())
+    // 只有 Transactional 操作会影响 undo/redo 历史。
+    // Observable/Silent/Derived 等非撤销字段不应清空用户已有撤销栈。
+    auto _UndoableBatch = FilterTransactionalOperationBatch(Batch_, GetMetaRegistry());
+    if (_UndoableBatch.IsEmpty())
     {
         return;
     }
@@ -135,14 +137,14 @@ bool iCAX::Database::CRepositoryHistory::CanRedo() const
     return CanMoveStep(false);
 }
 
-const iCAX::Database::CChangeSet& iCAX::Database::CRepositoryHistory::GetUndoChangeSet() const
+const iCAX::Database::COperationBatch& iCAX::Database::CRepositoryHistory::GetUndoOperationBatch() const
 {
-    return m_UndoStack.back()->ChangeSet;
+    return m_UndoStack.back()->Batch;
 }
 
-const iCAX::Database::CChangeSet& iCAX::Database::CRepositoryHistory::GetRedoChangeSet() const
+const iCAX::Database::COperationBatch& iCAX::Database::CRepositoryHistory::GetRedoOperationBatch() const
 {
-    return m_RedoStack.back()->ChangeSet;
+    return m_RedoStack.back()->Batch;
 }
 
 std::string iCAX::Database::CRepositoryHistory::GetUndoStepName() const
@@ -179,16 +181,17 @@ void iCAX::Database::CRepositoryHistory::EndCommand()
 
     auto _pBuilder = std::move(m_pCommandBuilder);
 
-    auto _ChangeSet = FilterTransactionalChangeSet(_pBuilder->Build(), GetMetaRegistry());
-    if (_ChangeSet.IsEmpty())
+    // End 时才做 meta 过滤：记录阶段保留原始顺序，结束阶段只剔除不可撤销字段。
+    auto _Batch = FilterTransactionalOperationBatch(_pBuilder->Build(), GetMetaRegistry());
+    if (_Batch.IsEmpty())
     {
         return;
     }
 
     auto _pStep = std::make_shared<CHistoryStep>();
     _pStep->ID = iCAX::Data::GenerateNewUUID();
-    _pStep->Name = _ChangeSet.Name;
-    _pStep->ChangeSet = _ChangeSet;
+    _pStep->Name = _Batch.Name;
+    _pStep->Batch = _Batch;
     PushStep(_pStep);
 }
 
@@ -197,42 +200,14 @@ const iCAX::Database::IMetaRegistry& iCAX::Database::CRepositoryHistory::GetMeta
     return m_pMetaRegistry ? *m_pMetaRegistry : *GetGlobalMetaRegistry();
 }
 
-void iCAX::Database::CRepositoryHistory::RecordCommittedChangeSet(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepositoryHistory::RecordCommittedOperationBatch(IN const COperationBatch& Batch_)
 {
-    if (!m_pCommandBuilder || ChangeSet_.IsEmpty())
+    if (!m_pCommandBuilder || Batch_.IsEmpty())
     {
         return;
     }
 
-    for (const auto& _Change : ChangeSet_.CreatedEntities)
-    {
-        m_pCommandBuilder->RecordAddEntity(_Change.Key);
-    }
-    for (const auto& _Change : ChangeSet_.RemovedComponents)
-    {
-        m_pCommandBuilder->RecordRemoveComponent(_Change.Key, _Change.PreviousProperties);
-    }
-    for (const auto& _Change : ChangeSet_.AddedComponents)
-    {
-        m_pCommandBuilder->RecordAddComponent(_Change.Key, _Change.NewProperties);
-    }
-
-    std::map<CChangeComponentKey, std::pair<iCAX::Data::PropertySet, iCAX::Data::PropertySet>> _ModifiedProperties;
-    for (const auto& _Change : ChangeSet_.ModifiedProperties)
-    {
-        auto& _Properties = _ModifiedProperties[{ _Change.Key.EntityID, _Change.Key.ComponentClass }];
-        _Properties.first[_Change.Key.PropertyName] = _Change.PreviousValue;
-        _Properties.second[_Change.Key.PropertyName] = _Change.NewValue;
-    }
-    for (const auto& [_Key, _Properties] : _ModifiedProperties)
-    {
-        m_pCommandBuilder->RecordModifyComponent(_Key, _Properties.first, _Properties.second);
-    }
-
-    for (const auto& _Change : ChangeSet_.DeletedEntities)
-    {
-        m_pCommandBuilder->RecordDeleteEntity(_Change.Key);
-    }
+    m_pCommandBuilder->AppendBatch(Batch_);
 }
 
 void iCAX::Database::CRepositoryHistory::PushStep(IN std::shared_ptr<CHistoryStep> pStep_)
@@ -247,6 +222,7 @@ void iCAX::Database::CRepositoryHistory::PushStep(IN std::shared_ptr<CHistorySte
     {
         m_UndoStack.pop_front();
     }
+    // 新的用户步骤会形成新的历史分支，旧 redo 栈必须失效。
     m_RedoStack.clear();
 }
 

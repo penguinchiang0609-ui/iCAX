@@ -37,6 +37,7 @@ void iCAX::Behaviour::CUniverse::PreSwapPDO()
 //!< 每帧执行
 void iCAX::Behaviour::CUniverse::Tick(IN const IUniverseContext& Context_)
 {
+    // 当前默认 Context 使用 CTimer。先推进时间，再把本帧 delta/total 分发给行为系统。
     dynamic_cast<CTimer&>(Context_.GetTimer()).Tick();//! 此处强转为CTimer，然后更新
     if (m_pDispatcher != nullptr)
     {
@@ -76,10 +77,12 @@ void iCAX::Behaviour::CUniverse::OnRepositoryChanging(
 
     if (Args_.nType == iCAX::Database::RepositoryEventArgs::kRemoveComponent)
     {
+        // 移除组件前通知 Destroy，让行为仍可读取组件旧字段。
         m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kDestroyComponent, *Args_.pComponent, Args_.PreviousProperties);
     }
     else if (Args_.nType == iCAX::Database::RepositoryEventArgs::kModifyComponent)
     {
+        // 修改前通知 Modifing，Properties 携带即将写入的新值。
         m_pDispatcher->OnNotify(Context_, CBehaviourDispatcher::kModifingComponent, *Args_.pComponent, Args_.NewProperties);
     }
 }

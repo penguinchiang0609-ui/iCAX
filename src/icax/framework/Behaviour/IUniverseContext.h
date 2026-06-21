@@ -11,12 +11,15 @@ namespace iCAX
     {
         /*
         * @brief 宇宙上下文
+        * @remark
+        *   Context 是 Project 每帧传入 Universe 的运行环境。
+        *   Behaviour 通过它访问当前项目的 Repository、计时器和应用设置，避免 Behaviour 持有项目状态。
         */
         class _SYSTEM_EXP IUniverseContext
         {
         public:
             /*
-            * @brief
+            * @brief 析构函数
             */
             virtual ~IUniverseContext() = default;
 
@@ -43,20 +46,22 @@ namespace iCAX
             /*
             * @brief 设置数据
             * @param [in] nKey_ 项ID
-            * @param [in] pData_
+            * @param [in] pData_ 裸字节数组指针；Context 接管所有权，析构或 Remove 时 delete[]。
+            * @details 该接口用于少量运行期临时数据。优先使用类型明确的 Component/Service。
             */
             virtual void SetData(IN const uint32_t& nKey_, IN uint8_t* pData_) = 0;
 
             /*
             * @brief 获取数据
-            * @param [in] nKey_
-            * @return uint8_t*
+            * @param [in] nKey_ 项 ID。
+            * @return 临时数据指针；不存在时返回 nullptr。
             */
             virtual uint8_t* GetData(IN const uint32_t& nKey_) = 0;
 
             /*
             * @brief 移除
-            * @param [in] nKey_
+            * @param [in] nKey_ 项 ID。
+            * @details 如果存在对应数据，会 delete[] 释放。
             */
             virtual void Remove(IN const uint32_t& nKey_) = 0;
         };

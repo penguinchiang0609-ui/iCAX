@@ -57,7 +57,7 @@ void iCAX::PDO::CPDOHub::SwapOutSlot()
 {
     for (auto& [_, _pSlot] : m_mapSlots)
     {
-        if ((_pSlot->GetHeader().eDirection & kDirection2Externer) != kDirectionNil)
+        if ((_pSlot->GetHeader().eDirection & kDirection2External) != kDirectionNil)
         {
             _pSlot->SwapBuffersIfReady();
         }

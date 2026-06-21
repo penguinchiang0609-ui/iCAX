@@ -82,7 +82,9 @@ Repository 发布两类事件：
 
 事件包含操作类型、实体 ID、组件类型、旧值、新值、组件指针、实体指针和批量变更信息。
 
-批量提交时，Repository 会发布一次 `kBatchChanged`，上层可以根据 `ChangeSet` 做日志、刷新和 UI 合并更新。
+批量提交时，Repository 会发布一次 `kBatchChanged`，上层可以根据 `ChangeSet` 做刷新和 UI 合并更新。
+
+`ChangeSet` 是提交后的净变更摘要，会合并同一字段的多次修改。撤销、重做、事务回滚和快速保存不以 ChangeSet 为事实来源，而是使用内部有序 `OperationBatch`。
 
 ## 5. 批量变更
 
@@ -98,8 +100,9 @@ scope->Commit();
 
 - 内存中所有修改已经完成。
 - Repository 只对外发布一次批量变更事件。
-- 快速保存日志追加合并后的 ChangeSet。
+- 快速保存日志追加有序 OperationBatch。
 - 如果该批量变更发生在撤销记录边界内，会被纳入当前 undo step。
+- 如果批量内的操作互相抵消，最终 ChangeSet 为空，则不发布批量事件、不进入撤销历史、不写快速保存日志。
 
 ## 6. 事务
 
@@ -114,6 +117,8 @@ tx->Commit();
 `Commit()` 后写入快速保存日志，但不会自动进入撤销还原栈。事务如果被撤销记录边界包含，则其修改会被撤销记录捕获。
 
 `Cancel()` 或未显式提交即析构时，会按反向日志静默回滚。
+
+事务回滚按 OperationBatch 的反向顺序执行。这样可以保证字段之间存在顺序约束时，回滚过程仍遵守原始约束。
 
 ## 7. 撤销还原
 
@@ -135,6 +140,7 @@ repo->Redo();
 - `Cancel()` 不作为公开命令；需要放弃修改时使用事务回滚或业务层自行处理。
 - 只有 `Transactional` 字段进入撤销还原。
 - `Observable` 字段仍正常发事件，但不进入 undo/redo。
+- Undo 使用反向 OperationBatch，Redo 使用原 OperationBatch，因此同一个 step 内的字段修改顺序会被严格保留。
 - 撤销还原历史由 Repository 外挂维护，`Entity` 和 `Component` 不保存历史栈。
 
 ## 8. 快速保存
@@ -158,7 +164,7 @@ repo->ReplayOperationLog("project.icax.log");
 
 - 结构性修改。
 - `Persistent + Transactional` 字段修改。
-- 普通修改、批量提交、事务提交、撤销和重做产生的最终变更。
+- 普通修改、批量提交、事务提交、撤销和重做产生的有序操作。
 
 快速保存不记录：
 

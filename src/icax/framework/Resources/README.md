@@ -12,7 +12,7 @@
 - `ResourcePool.*`：线程安全资源池，作为 `CResourceLibrary` 的内部存储对象。
 - `ResourcePoolAccess.h`：显式 `CResourcePool` 的高级访问重载，供测试、导入预览、临时工程或多工程并行处理使用。
 - `IResourceLoader.h` / `ResourceLoadContext.h` / `ResourceLoadResult.h`：资源加载器抽象、加载上下文和加载结果。
-- `ResourceLoaderRegistry.*`：资源加载器注册表，正式运行路径使用 ApplicationHost 持有的应用级实例；裸用资源库时可回退到静态全局实例。提供 `ICAX_REGISTER_RESOURCE_LOADER(ResourceClass, LoaderType)` 宏，按 C++ 资源类型查找 loader 并返回加载结果。
+- `ResourceLoaderRegistry.*`：资源加载器注册表，正式运行路径由 ProductRuntime 和 Project 分别持有实例。默认 `CResourceLibrary` 只创建空的私有 registry，不回退静态全局实例。提供 `ICAX_REGISTER_RESOURCE_LOADER(ResourceClass, LoaderType)` 宏，按 C++ 资源类型查找 loader 并返回加载结果。
 - `Resources.h`：资源系统普通入口头，不包含 `ResourcePool.h`。
 - `ResourcesExport.h`：DLL 导出宏。
 - `framework.h` / `pch.*` / `dllmain.cpp`：Visual Studio 动态库工程基础文件。

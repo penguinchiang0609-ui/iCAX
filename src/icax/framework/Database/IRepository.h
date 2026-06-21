@@ -58,7 +58,7 @@ namespace iCAX
             /*
             * @brief 开始一次撤销还原记录
             * @details
-            *   Begin/End 之间提交的普通修改、批量修改和事务提交会被合并为一个 undo step。
+            *   Begin/End 之间提交的普通修改、批量修改和事务提交会被汇总为一个保序 undo step。
             */
             virtual std::unique_ptr<IRepositoryUndoScope> BeginUndoCommand(IN const std::string& strName_) = 0;
 

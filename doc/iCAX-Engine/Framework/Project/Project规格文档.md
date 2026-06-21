@@ -17,10 +17,15 @@ iCAX::Project::CProjectCreateInfo info;
 info.ProjectName = "Robot Cell";
 info.ProjectPath = "D:/projects/robot.icax";
 info.StartupComponent = "StartupComponent";
+info.pMetaRegistry = productMetaRegistry;
+info.pBehaviourRegistry = productBehaviourRegistry;
+info.pResourceLoaderRegistry = projectResourceLoaderRegistry;
 info.pMailChannelService = mailChannelService;
 
 iCAX::Project::CProject project(info);
 ```
+
+`pMetaRegistry`、`pBehaviourRegistry`、`pResourceLoaderRegistry` 和 `pMailChannelService` 是必填依赖。Project 不会再回退到全局注册表。这样可以保证项目数据、资源加载和行为调度都来自明确的产品/项目上下文。
 
 每个项目拥有：
 
@@ -87,7 +92,12 @@ runtime->Close();
 
 ```cpp
 iCAX::Project::CProjectCatalogCreateInfo catalogInfo;
+catalogInfo.pMetaRegistry = productMetaRegistry;
+catalogInfo.pBehaviourRegistry = productBehaviourRegistry;
 catalogInfo.pMailChannelService = mailChannelService;
+catalogInfo.ResourceLoaderRegistryFactory = []() {
+    return CreateProjectResourceLoaderRegistry();
+};
 
 iCAX::Project::CProjectCatalog projectCatalog(catalogInfo);
 
@@ -108,5 +118,6 @@ projectCatalog.CloseMainProject();
 - 主项目是当前业务编辑对象，只能存在一个。
 - 临时项目用于预览、导入、转换和对照，不应承载主 UI 的长期编辑状态。
 - 项目是实例级运行对象，不与其他项目共享 Repository、ResourceLibrary、UniverseContext、Universe、项目 mail channel 或后台线程。
+- Project 必须显式注入 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry 和 MailChannelService，不使用全局 fallback。
 - 资源路径相同也只在各自 Project 的 `ResourceLibrary` 内复用，不跨项目共享对象。
 - 当前进程内实现可以隔离标准 C++ 异常；独立 OS 地址空间必须由进程级 `IProjectRuntime` 实现。

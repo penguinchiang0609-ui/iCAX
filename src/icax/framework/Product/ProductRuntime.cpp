@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ProductRuntime.h"
 
+#include "CommandHandler/CommandRegistrationCatalog.h"
 #include "CommandHandler/FunctionCommandHandler.h"
 
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <filesystem>
 #include <format>
 #include <iomanip>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -320,6 +322,66 @@ namespace
         return _NormalizeModulePath(std::string(_Buffer, _Length));
     }
 
+    std::mutex& _GetLoadedModuleMutex()
+    {
+        static std::mutex _Mutex;
+        return _Mutex;
+    }
+
+    std::map<std::string, HMODULE>& _GetLoadedModules()
+    {
+        static std::map<std::string, HMODULE> _Modules;
+        return _Modules;
+    }
+
+    HMODULE _LoadProductModuleOnce(IN const std::string& strPath_, IN const std::string& strKind_)
+    {
+        if (strPath_.empty())
+        {
+            return nullptr;
+        }
+
+        const auto _RequestedPath = _NormalizeModulePath(strPath_);
+        {
+            std::lock_guard<std::mutex> _Lock(_GetLoadedModuleMutex());
+            auto _Iter = _GetLoadedModules().find(_RequestedPath);
+            if (_Iter != _GetLoadedModules().end())
+            {
+                return _Iter->second;
+            }
+        }
+
+        HMODULE _Module = LoadLibraryA((_RequestedPath.empty() ? strPath_ : _RequestedPath).c_str());
+        if (!_Module)
+        {
+            DWORD code = GetLastError();
+            throw std::runtime_error(
+                std::format(
+                    "[Product Module Load Failure]\n"
+                    "  Kind      : {}\n"
+                    "  Path      : {}\n"
+                    "  Error     : Win32 code {}\n",
+                    strKind_, strPath_, code));
+        }
+
+        auto _LoadedPath = _GetLoadedModulePath(_Module);
+        if (_LoadedPath.empty())
+        {
+            _LoadedPath = _RequestedPath;
+        }
+
+        {
+            std::lock_guard<std::mutex> _Lock(_GetLoadedModuleMutex());
+            auto [_Iter, _Inserted] = _GetLoadedModules().emplace(_LoadedPath, _Module);
+            if (!_Inserted)
+            {
+                FreeLibrary(_Module);
+                return _Iter->second;
+            }
+        }
+        return _Module;
+    }
+
     void _AppendUniqueModulePath(IN OUT std::vector<std::string>& ModulePaths_, IN const std::string& strPath_)
     {
         auto _Path = _NormalizeModulePath(strPath_);
@@ -332,6 +394,14 @@ namespace
             ModulePaths_.push_back(std::move(_Path));
         }
     }
+
+    std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> _CreateResourceLoaderRegistryFromModulePaths(
+        IN const std::vector<std::string>& ModulePaths_)
+    {
+        auto _pRegistry = std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
+        iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(*_pRegistry, ModulePaths_);
+        return _pRegistry;
+    }
 }
 
 iCAX::Product::CProductRuntime::CProductRuntime(
@@ -339,9 +409,6 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     IN std::shared_ptr<iCAX::Application::CApplicationContext> pApplicationContext_,
     IN std::shared_ptr<iCAX::Data::PropertyBag> pApplicationSettings_,
     IN std::shared_ptr<iCAX::Services::CServiceProvider> pApplicationServiceProvider_,
-    IN std::shared_ptr<iCAX::Database::IMetaRegistry> pApplicationMetaRegistry_,
-    IN std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pApplicationBehaviourRegistry_,
-    IN std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pApplicationResourceLoaderRegistry_,
     IN std::shared_ptr<IProductDataStore> pProductDataStore_)
     : m_Definition(Definition_)
     , m_ProductData()
@@ -350,9 +417,9 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     , m_pApplicationSettings(pApplicationSettings_ ? std::move(pApplicationSettings_) : std::make_shared<iCAX::Data::PropertyBag>())
     , m_pApplicationServiceProvider(std::move(pApplicationServiceProvider_))
     , m_pMailChannelService(m_pApplicationServiceProvider ? m_pApplicationServiceProvider->Resolve<iCAX::Services::IMailChannelService>() : nullptr)
-    , m_pApplicationMetaRegistry(std::move(pApplicationMetaRegistry_))
-    , m_pApplicationBehaviourRegistry(std::move(pApplicationBehaviourRegistry_))
-    , m_pApplicationResourceLoaderRegistry(std::move(pApplicationResourceLoaderRegistry_))
+    , m_pProductMetaRegistry(iCAX::Database::CreateMetaRegistry())
+    , m_pProductBehaviourRegistry(iCAX::Behaviour::CreateBehaviourRegistry())
+    , m_pProductResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
     , m_pProductDataStore(std::move(pProductDataStore_))
     , m_pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
     , m_pCommandDispatcher(std::make_unique<iCAX::Command::CCommandDispatcher>(m_pCommandRegistry))
@@ -381,17 +448,17 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     {
         throw std::invalid_argument("MailChannelService cannot be null");
     }
-    if (!m_pApplicationMetaRegistry)
+    if (!m_pProductMetaRegistry)
     {
-        throw std::invalid_argument("Application MetaRegistry cannot be null");
+        throw std::invalid_argument("Product MetaRegistry cannot be null");
     }
-    if (!m_pApplicationBehaviourRegistry)
+    if (!m_pProductBehaviourRegistry)
     {
-        throw std::invalid_argument("Application BehaviourRegistry cannot be null");
+        throw std::invalid_argument("Product BehaviourRegistry cannot be null");
     }
-    if (!m_pApplicationResourceLoaderRegistry)
+    if (!m_pProductResourceLoaderRegistry)
     {
-        throw std::invalid_argument("Application ResourceLoaderRegistry cannot be null");
+        throw std::invalid_argument("Product ResourceLoaderRegistry cannot be null");
     }
     if (!m_pProductDataStore)
     {
@@ -420,10 +487,17 @@ void iCAX::Product::CProductRuntime::Start()
         LoadProductModules();
         m_bModulesLoaded = true;
     }
-    iCAX::Database::CMetaRegistrationCatalog::ReplayByModulePaths(*m_pApplicationMetaRegistry, m_LoadedModulePaths);
-    iCAX::Behaviour::CBehaviourRegistrationCatalog::ReplayByModulePaths(*m_pApplicationBehaviourRegistry, m_LoadedModulePaths);
-    iCAX::Services::CServiceRegistrationCatalog::ReplayByModulePaths(*m_pApplicationServiceProvider, m_LoadedModulePaths);
-    iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(*m_pApplicationResourceLoaderRegistry, m_LoadedModulePaths);
+    if (!m_bRegistrationsReplayed)
+    {
+        // 模块加载后，DLL 内静态注册对象已经把注册动作写入各 Catalog。
+        // 这里按已加载模块路径回放到产品自己的注册表，避免不同产品互相污染。
+        iCAX::Database::CMetaRegistrationCatalog::ReplayByModulePaths(*m_pProductMetaRegistry, m_LoadedModulePaths);
+        iCAX::Behaviour::CBehaviourRegistrationCatalog::ReplayByModulePaths(*m_pProductBehaviourRegistry, m_LoadedModulePaths);
+        iCAX::Services::CServiceRegistrationCatalog::ReplayByModulePaths(*m_pApplicationServiceProvider, m_LoadedModulePaths);
+        iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(*m_pProductResourceLoaderRegistry, m_LoadedModulePaths);
+        iCAX::Command::CCommandRegistrationCatalog::ReplayByModulePaths(*m_pCommandRegistry, m_LoadedModulePaths);
+        m_bRegistrationsReplayed = true;
+    }
     PrepareCommandContext();
     if (!m_pMailChannelService->CreateChannel(m_ProductMailID))
     {
@@ -574,11 +648,14 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     _CatalogInfo.CatalogName = _CatalogName;
     _CatalogInfo.CatalogPath = _CatalogPath;
     _CatalogInfo.pApplicationSettings = m_pApplicationSettings;
-    _CatalogInfo.pMetaRegistry = m_pApplicationMetaRegistry;
-    _CatalogInfo.pBehaviourRegistry = m_pApplicationBehaviourRegistry;
+    _CatalogInfo.pMetaRegistry = m_pProductMetaRegistry;
+    _CatalogInfo.pBehaviourRegistry = m_pProductBehaviourRegistry;
     _CatalogInfo.pMailChannelService = m_pMailChannelService;
-    _CatalogInfo.ResourceLoaderRegistryFactory = [pResourceLoaderRegistry = m_pApplicationResourceLoaderRegistry]() {
-        return pResourceLoaderRegistry;
+    const auto _ModulePaths = m_LoadedModulePaths;
+    // 每个 Project 都创建自己的资源 loader registry。
+    // registry 内容来自产品模块回放，但资源缓存和加载器集合归项目隔离。
+    _CatalogInfo.ResourceLoaderRegistryFactory = [_ModulePaths]() {
+        return _CreateResourceLoaderRegistryFromModulePaths(_ModulePaths);
     };
     auto _pCatalog = std::make_shared<iCAX::Project::CProjectCatalog>(_CatalogInfo);
     auto _pProject = _pCatalog->OpenMainProject(
@@ -605,6 +682,7 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     }
     catch (...)
     {
+        // 打开流程跨 catalog、project runtime 和工作线程；任一步失败都要撤销已登记对象，避免残留半开项目。
         (void)RemoveProjectRuntime(_pProject->GetProjectID());
         if (_bCatalogRegistered)
         {
@@ -808,6 +886,7 @@ void iCAX::Product::CProductRuntime::PopulateCommandContext(
 {
     Context_.Clear();
 
+    // 产品级依赖总是注入；项目级依赖只在项目邮箱分发时追加。
     if (m_pCommandRegistry)
     {
         Context_.SetDependency<iCAX::Command::CCommandRegistry>(m_pCommandRegistry);
@@ -833,13 +912,17 @@ void iCAX::Product::CProductRuntime::PopulateCommandContext(
     {
         Context_.SetDependency<iCAX::Services::IMailChannelService>(m_pMailChannelService);
     }
-    if (m_pApplicationMetaRegistry)
+    if (m_pProductMetaRegistry)
     {
-        Context_.SetDependency<iCAX::Database::IMetaRegistry>(m_pApplicationMetaRegistry);
+        Context_.SetDependency<iCAX::Database::IMetaRegistry>(m_pProductMetaRegistry);
     }
-    if (m_pApplicationBehaviourRegistry)
+    if (m_pProductBehaviourRegistry)
     {
-        Context_.SetDependency<iCAX::Behaviour::IBehaviourRegistry>(m_pApplicationBehaviourRegistry);
+        Context_.SetDependency<iCAX::Behaviour::IBehaviourRegistry>(m_pProductBehaviourRegistry);
+    }
+    if (m_pProductResourceLoaderRegistry)
+    {
+        Context_.SetDependency<iCAX::Resource::CResourceLoaderRegistry>(m_pProductResourceLoaderRegistry);
     }
     if (pProjectRuntime_)
     {
@@ -855,6 +938,7 @@ void iCAX::Product::CProductRuntime::PopulateCommandContext(
         {
             return;
         }
+        // 下面三个 shared_ptr 使用别名构造：生命周期跟随 _pProject，本身不拥有子对象。
         Context_.SetDependency<iCAX::Project::CProject>(_pProject);
         Context_.SetDependency<iCAX::Database::IRepository>(
             std::shared_ptr<iCAX::Database::IRepository>(_pProject, &_pProject->Database()));
@@ -893,6 +977,11 @@ iCAX::Product::CProductData iCAX::Product::CProductRuntime::SnapshotProductData(
 {
     std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
     return m_ProductData;
+}
+
+std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> iCAX::Product::CProductRuntime::CreateProjectResourceLoaderRegistry() const
+{
+    return _CreateResourceLoaderRegistryFromModulePaths(m_LoadedModulePaths);
 }
 
 std::shared_ptr<iCAX::Project::IProjectRuntime> iCAX::Product::CProductRuntime::FindProjectRuntime(
@@ -959,6 +1048,7 @@ void iCAX::Product::CProductRuntime::DispatchProjectMails(
         {
             auto _Request = _MailToCommandRequest(_Mail);
             iCAX::Command::CCommandContext _Context;
+            // 同一套 CommandDispatcher 同时服务产品邮箱和项目邮箱，差异由 Context 中是否包含 ProjectRuntime 决定。
             PopulateCommandContext(_Context, pProjectRuntime_);
             _Response = m_pCommandDispatcher->Dispatch(_Request, _Context);
         }
@@ -980,6 +1070,8 @@ void iCAX::Product::CProductRuntime::DispatchProjectMails(
 
         auto _ResponseMail = _CommandResponseToMail(_Mail, _Response, AllocateBackendMailID());
         PostOffice_.Send(_ResponseMail);
+        // Send 会深拷贝响应 Payload，因此这里立即释放本地临时邮件负载。
+        _ReleaseMailPayload(_ResponseMail);
         _ReleaseMailPayload(_Mail);
     }
 }
@@ -1003,6 +1095,7 @@ void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX:
             {
                 return;
             }
+            // 项目线程每帧进入这里，产品 runtime 只做邮件分发，不直接驱动项目数据。
             _pRuntime->DispatchProjectMails(BackendPostOffice_, _pProjectRuntime);
         });
     pProjectRuntime_->Start();
@@ -1083,26 +1176,11 @@ void iCAX::Product::CProductRuntime::RecordRecentProject(
 void iCAX::Product::CProductRuntime::LoadProductModules()
 {
     auto _LoadModule = [](IN const std::string& strPath_, IN const std::string& strKind_) -> std::string {
-        if (strPath_.empty())
-        {
-            return {};
-        }
-
-        HMODULE hMod = LoadLibraryA(strPath_.c_str());
-        if (!hMod)
-        {
-            DWORD code = GetLastError();
-            throw std::runtime_error(
-                std::format(
-                    "[Product Module Load Failure]\n"
-                    "  Kind      : {}\n"
-                    "  Path      : {}\n"
-                    "  Error     : Win32 code {}\n",
-                    strKind_, strPath_, code));
-        }
-        return _GetLoadedModulePath(hMod);
+        return _GetLoadedModulePath(_LoadProductModuleOnce(strPath_, strKind_));
     };
 
+    // LoadLibrary 只负责把 DLL 装入进程；模块内静态注册对象会登记到各 RegistrationCatalog。
+    // 真正写入产品注册表发生在 Start() 的 ReplayByModulePaths 阶段。
     for (const auto& _Path : m_Definition.Modules.ComponentModules)
     {
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "component"));

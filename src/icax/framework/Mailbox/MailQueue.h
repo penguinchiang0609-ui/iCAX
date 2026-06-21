@@ -13,9 +13,10 @@ namespace iCAX
         * @remark
         *   1、MailQueue 只负责一个方向上的邮件暂存。
         *   2、它不表达双向收发语义。
-        *   3、Enqueue 对 Mail 做浅拷贝，Payload 所有权进入队列。
-        *   4、Drain 会把队列内邮件整体转交给调用方，调用方负责释放 Payload。
-        *   5、Clear 会释放当前仍滞留在队列中的 Payload。
+        *   3、Enqueue 会复制 MailHeader，并深拷贝 Payload。
+        *   4、调用方仍拥有传入 Mail 的 Payload，需要按自己的所有权规则释放。
+        *   5、Drain 会把队列内邮件整体转交给调用方，调用方负责释放返回邮件的 Payload。
+        *   6、Clear 会释放当前仍滞留在队列中的 Payload。
         */
         class _MAIL_EXP CMailQueue final
         {
@@ -30,7 +31,10 @@ namespace iCAX
         public:
             /*
             * @brief 入队邮件
-            * @param Mail_ 邮件
+            * @param [in] Mail_ 待写入队列的邮件。
+            * @details
+            *   会复制 MailHeader 并深拷贝 Payload。
+            *   如果 nSize 大于 0 但 pData 为空，会抛出 std::invalid_argument。
             */
             void Enqueue(const Mail& Mail_);
 
@@ -43,10 +47,15 @@ namespace iCAX
 
             /*
             * @brief 清空队列
+            * @details 清空时会释放仍滞留在队列中的 Payload。
             */
             void Clear();
 
         private:
+            /*
+            * @brief 释放一组邮件的 Payload。
+            * @param [in,out] Mails_ 待释放负载的邮件数组；释放后 pData 置空，nSize 置 0。
+            */
             static void ReleasePayloads(std::vector<Mail>& Mails_) noexcept;
 
         private:

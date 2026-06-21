@@ -31,6 +31,7 @@ iCAX::Command::CCommandResponse iCAX::Command::CCommandDispatcher::Dispatch(IN c
     try
     {
         _Response = _pHandler->Handle(Request_, Context_);
+        // handler 可以只填业务状态和 Payload；请求身份字段由 Dispatcher 统一回填，保证响应可被调用方关联。
         _Response.nCommandID = Request_.nCommandID;
         _Response.nOriginID = Request_.nOriginID;
         _Response.nTypeCode = Request_.nTypeCode;

@@ -4,7 +4,7 @@
 
 它表达已打开的项目运行单元。一个 `ProjectCatalog` 是一组项目的目录，目录内部最多一个主项目，同时允许若干临时项目用于预览、导入和转换。`ProductRuntime` 维护 ProjectCatalog 和 `IProjectRuntime` 运行时句柄，`ApplicationHost` 只在需要时跨已启动产品查找项目邮箱。每个项目实例独占自己的 `Repository`、`ResourceLibrary`、`UniverseContext`、`Universe`、项目 mail channel 和后台工作线程；channel 实体由应用级 `IMailChannelService` 按 `projectMailId` 托管。
 
-Project 是数据隔离边界。组件元数据、行为定义和资源加载器来自应用级注册表；实体数据、组件实例、变更日志、资源对象、项目消息和项目执行循环都只属于当前 Project。
+Project 是数据隔离边界。组件元数据和行为定义来自当前 ProductRuntime 的产品级注册表；资源加载器由当前产品模块回放到项目自己的 ResourceLoaderRegistry；实体数据、组件实例、变更日志、资源对象、项目消息和项目执行循环都只属于当前 Project。
 
 ## 目录结构
 

@@ -123,7 +123,12 @@ void iCAX::Project::CLocalProjectRuntime::Stop()
 
 void iCAX::Project::CLocalProjectRuntime::Close()
 {
-    auto _pProject = m_pProject;
+    {
+        std::lock_guard<std::mutex> _Lock(m_FrameHandlerMutex);
+        m_FrameHandler = nullptr;
+    }
+
+    auto _pProject = std::exchange(m_pProject, nullptr);
     if (_pProject)
     {
         _pProject->SetFrameHandler(nullptr);

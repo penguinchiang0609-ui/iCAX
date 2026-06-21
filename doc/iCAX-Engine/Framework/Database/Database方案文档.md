@@ -10,7 +10,7 @@
 - Entity 只表达身份。
 - Component 只表达数据、状态或能力。
 - Behaviour、Project、ApplicationHost 不依赖内部数据空间实现。
-- 日志、事务、撤销还原和快速保存统一基于 ChangeSet。
+- 日志、事务、撤销还原和快速保存统一基于有序 OperationBatch；ChangeSet 只作为提交后的净变更摘要。
 
 ## 2. 当前代码结构
 
@@ -30,13 +30,13 @@ Database/
     -> Component 类型和字段 meta 注册表
 
   ChangeSet.*
-    -> 变更集合、合并、过滤和反向变更生成
+    -> 变更集合和合并摘要，用于批量事件、版本和派生字段失效
 
   RepositoryHistory.*
     -> 撤销还原历史，外挂维护
 
-  ChangeLog.*
-    -> 快速保存日志读写
+  OperationLog.*
+    -> 有序操作批次、字段过滤、反向批次生成和快速保存日志读写
 
   DerivedProperty.*
     -> 派生字段缓存、依赖和失效
@@ -79,11 +79,14 @@ sequenceDiagram
 
 Repository 是对外事件发布者。Project 订阅 Repository 事件，再携带 UniverseContext 转发给 Universe。
 
-## 5. ChangeSet
+## 5. OperationBatch 与 ChangeSet
 
-ChangeSet 是事务、批量变更、撤销还原和快速保存的共同底座。
+Database 内部同时维护两种变更视图：
 
-ChangeSet 记录：
+- `OperationBatch`：按实际发生顺序追加每一条操作，不合并字段。它是事务回滚、撤销还原、重做和快速保存回放的事实来源。
+- `ChangeSet`：由 OperationBatch 派生出来的净变更摘要，会合并同一字段的多次修改，主要用于 `kBatchChanged` 事件、版本更新和派生字段失效。
+
+OperationBatch 记录：
 
 - 创建实体。
 - 删除实体。
@@ -91,11 +94,17 @@ ChangeSet 记录：
 - 删除组件。
 - 修改字段。
 
+OperationBatch 支持：
+
+- 按原始顺序回放。
+- 按反向顺序生成回滚批次。
+- 按字段 meta 过滤事务型字段和持久化字段。
+- 序列化为追加式快速保存日志。
+
 ChangeSet 支持：
 
-- 合并多次字段修改。
-- 生成反向变更。
-- 过滤可持久化内容。
+- 合并多次字段修改为净结果。
+- 抵消批量内的临时创建、删除和字段恢复。
 - 批量事件携带。
 
 ## 6. 批量变更
@@ -104,10 +113,12 @@ ChangeSet 支持：
 
 变更期间，普通细粒度事件会被记录到 builder；提交时统一：
 
-1. 应用版本和派生字段失效。
-2. 发布 `kBatchChanged`。
-3. 进入撤销记录器。
-4. 追加快速保存日志。
+1. 冻结有序 OperationBatch。
+2. 从 OperationBatch 派生 ChangeSet 净摘要。
+3. 如果 ChangeSet 非空，应用版本和派生字段失效。
+4. 发布 `kBatchChanged`，事件携带 ChangeSet。
+5. OperationBatch 进入撤销记录器。
+6. OperationBatch 追加快速保存日志。
 
 `LoadBaseline` 是静默加载基线模式。它用于首次打开项目文件，提交后清空版本脏标记、派生缓存和历史，不发布普通用户修改语义。
 
@@ -115,7 +126,7 @@ ChangeSet 支持：
 
 事务由 `BeginTransaction()` 创建。
 
-事务内修改直接落到内存；取消时用反向 ChangeSet 静默回滚。提交时写入快速保存日志，但不自动进入 undo 栈。
+事务内修改直接落到内存；取消时基于 OperationBatch 生成反向批次，并按倒序静默回滚。提交时写入快速保存日志，但不自动进入 undo 栈。
 
 事务和撤销还原不绑定。只有事务提交发生在 `BeginUndoCommand(name)` / `End()` 之间时，才会被当前 undo step 捕获。
 
@@ -136,16 +147,16 @@ repo->Redo();
 内部规则：
 
 - Begin/End 只定义监听边界。
-- End 时把期间捕获的 ChangeSet 合并为一个 step。
-- Undo 使用反向 ChangeSet 回放。
-- Redo 使用原 ChangeSet 回放。
+- End 时把期间捕获的 OperationBatch 汇总为一个 step，保留真实操作顺序。
+- Undo 使用反向 OperationBatch 回放，内部按原操作的反向顺序恢复。
+- Redo 使用原 OperationBatch 回放，保持用户原始修改顺序。
 - 事务、批量变更和普通修改是独立概念，只是在日志底座上被 undo recorder 监听。
 
 ## 9. 快速保存
 
-快速保存由 `CChangeSetJournal` 实现。
+快速保存由 `COperationBatchJournal` 实现。
 
-每次提交后，Repository 会把可持久化 ChangeSet 追加到日志。正常保存完整项目文件后，上层可以截断或重建日志。
+每次提交后，Repository 会把可持久化 OperationBatch 追加到日志。正常保存完整项目文件后，上层可以截断或重建日志。
 
 崩溃恢复时：
 

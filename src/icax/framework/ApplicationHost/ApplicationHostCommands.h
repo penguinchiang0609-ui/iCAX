@@ -38,7 +38,19 @@ namespace iCAX
         inline constexpr uint64_t kAppResolveProjectFileCommand = MakeApplicationCommandCode(Detail::FNV1a32("App.ResolveProjectFile"));
         inline constexpr uint64_t kAppOpenProjectFileCommand = MakeApplicationCommandCode(Detail::FNV1a32("App.OpenProjectFile"));
 
+        /*
+        * @brief 编码 ApplicationHost 命令负载。
+        * @param [in] Payload_ Variant 负载。
+        * @return UTF-8 文本字节数组。
+        * @details 使用 Data::VariantSerializer，不引入 flatbuffer/interop。
+        */
         _APPLICATION_HOST_EXP std::vector<uint8_t> EncodeApplicationHostPayload(IN const iCAX::Data::Variant& Payload_);
+
+        /*
+        * @brief 解码 ApplicationHost 命令负载。
+        * @param [in] Payload_ UTF-8 文本字节数组。
+        * @return Variant 负载；空负载返回空对象。
+        */
         _APPLICATION_HOST_EXP iCAX::Data::Variant DecodeApplicationHostPayload(IN const std::vector<uint8_t>& Payload_);
     }
 }

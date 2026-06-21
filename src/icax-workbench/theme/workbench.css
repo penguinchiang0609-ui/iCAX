@@ -280,6 +280,27 @@ button {
   margin-bottom: 14px;
 }
 
+.product-extension-shell {
+  margin-bottom: 14px;
+}
+
+.product-extension-loading,
+.product-extension-error {
+  min-height: 54px;
+  display: grid;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.product-extension-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .empty-block {
   min-height: 48px;
   display: grid;

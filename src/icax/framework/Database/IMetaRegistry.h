@@ -13,6 +13,9 @@ namespace iCAX
     {
         /*
         * @brief 元数据注册表
+        * @details
+        *   MetaRegistry 是组件类型、构造器、字段 meta、特性和约束器的注册中心。
+        *   字段是否持久化、是否参与事务/撤销/日志，都应在这里声明，由调用方按 meta 决策。
         */
         class _DATABASE_EXP IMetaRegistry
         {
@@ -71,15 +74,6 @@ namespace iCAX
             }
 
             /*
-            * @brief 旧拼写兼容，后续新代码使用 RegistCreator
-            */
-            template<typename T>
-            void RegistCeator(IN const std::function<std::shared_ptr<CComponentBase>(IN std::shared_ptr<IEntity>)>& Creator_)
-            {
-                RegistCreator<T>(Creator_);
-            }
-
-            /*
             * @brief 构造
             * @param [in] strComponentClass_
             * @param [in] pEntity_
@@ -135,6 +129,9 @@ namespace iCAX
             * @param [in] Setter_ 设置器
             * @param [in] Persistence_ 持久化语义
             * @param [in] ChangePolicy_ 修改传播策略
+            * @details
+            *   Value 字段默认 Persistent + Transactional。
+            *   Silent 字段不会触发事件和版本；Observable 字段触发事件但不进入事务/撤销事实日志。
             */
             virtual void RegistPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const std::function<PropertyValue(const void*)>& Getter_, IN const std::function<void(void*, const PropertyValue&)>& Setter_, IN EPropertyPersistence Persistence_ = EPropertyPersistence::Persistent, IN EPropertyChangePolicy ChangePolicy_ = EPropertyChangePolicy::Transactional) = 0;
 
@@ -145,6 +142,9 @@ namespace iCAX
             * @param [in] Evaluator_ 计算器
             * @param [in] Persistence_ 持久化语义
             * @param [in] ChangePolicy_ 修改传播策略
+            * @details
+            *   Derived 字段默认 NonPersistent + Silent。
+            *   计算器应通过 CDerivedPropertyContext 读取依赖字段，以便自动维护依赖图。
             */
             virtual void RegistDerivedPropertyByName(IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_, IN EPropertyPersistence Persistence_ = EPropertyPersistence::NonPersistent, IN EPropertyChangePolicy ChangePolicy_ = EPropertyChangePolicy::Silent) = 0;
 
@@ -195,6 +195,8 @@ namespace iCAX
             * @param [in] Component_
             * @param [in] strComponentClass_
             * @param [in] strPropertyName_
+            * @return 属性值。
+            * @details strComponentClass_ 可以指定父类字段视角，避免子类同名字段覆盖时无法读取父类 meta。
             */
             virtual PropertyValue InvokeGetter(IN const CComponentBase& Component_, IN const std::string& strComponentClass_, IN const std::string& strPropertyName_) const = 0;
 
@@ -204,6 +206,7 @@ namespace iCAX
             * @param [in] strComponentClass_
             * @param [in] strPropertyName_
             * @param [in] NewValue_
+            * @details Setter 只负责写入字段；事件触发由 ComponentBase::SetProperty 外层控制。
             */
             virtual void InvokeSetter(IN CComponentBase& Component_, IN const std::string& strComponentClass_, IN const std::string& strPropertyName_, IN const PropertyValue& NewValue_) const = 0;
 

@@ -112,7 +112,8 @@ public:
 
 - `Enqueue(mail)` 把邮件追加到队列尾部。
 - 队列保留入队顺序。
-- `Enqueue` 对 `Mail` 做浅拷贝，不复制 Payload 内容。
+- `Enqueue` 复制 `MailHeader`，并深拷贝 Payload 内容。
+- 调用方仍拥有传入 `Mail` 的 Payload；如果传入邮件使用 `new[]` 分配 Payload，发送后仍应由调用方释放。
 - `Drain()` 返回当前全部邮件，并清空队列。
 - `Drain()` 返回后，Payload 所有权转移给调用方。
 - `Clear()` 清空仍滞留在队列里的邮件，并释放其 Payload。
@@ -199,8 +200,9 @@ Send()    写入 EndB -> EndA
 
 - 空 Payload 使用 `nSize == 0` 且 `pData == nullptr`。
 - 非空 Payload 必须使用 `new[]` 分配，才能由 `delete[]` 释放。
-- 邮件进入 `CMailQueue` 后，如果仍在队列中，队列负责释放 Payload。
-- `Drain()` 或 `Receive()` 返回后，Payload 所有权转移给调用方。
+- `Send()` / `Enqueue()` 会深拷贝 Payload，调用方继续拥有传入邮件的 Payload。
+- 邮件进入 `CMailQueue` 后，队列只负责释放自己拷贝出来的 Payload。
+- `Drain()` 或 `Receive()` 返回后，队列中那份 Payload 所有权转移给调用方。
 - 调用方处理完返回邮件后必须释放 `Payload.pData`。
 - `CMailPostOffice` 不拥有队列，底层队列释放后旧邮局自动失效。
 - `CMailChannel` 拥有两个底层 `CMailQueue`，因此由它负责释放仍未被接收的 Payload。
@@ -246,6 +248,9 @@ command.Payload.nSize = sizeof(int);
 command.Payload.pData = new uint8_t[sizeof(int)];
 
 endAOffice.Send(command);
+delete[] command.Payload.pData;
+command.Payload.pData = nullptr;
+command.Payload.nSize = 0;
 
 auto mails = endBOffice.Receive();
 for (auto& mail : mails)

@@ -57,14 +57,14 @@ enum PDODirection
 {
     kDirectionNil = 0,
     kDirection2Inner = 1,
-    kDirection2Externer = 2,
-    kDirtionBoth = 3
+    kDirection2External = 2,
+    kDirectionBoth = 3
 };
 ```
 
 - `kDirection2Inner`：外部写入，内部读取。通常在 backend 帧开始时交换。
-- `kDirection2Externer`：内部写入，外部读取。通常在 backend 帧结束时交换。
-- `kDirtionBoth`：双向槽，入向和出向交换都会处理。
+- `kDirection2External`：内部写入，外部读取。通常在 backend 帧结束时交换。
+- `kDirectionBoth`：双向槽，入向和出向交换都会处理。
 
 ## 6. Slot 使用规则
 
@@ -83,7 +83,7 @@ struct ViewState
 };
 
 auto id = iCAX::PDO::MakePDOID("View.State", "Main");
-iCAX::PDO::CPDOSlot slot({ 1, id, iCAX::PDO::kDirtionBoth, sizeof(ViewState) });
+iCAX::PDO::CPDOSlot slot({ 1, id, iCAX::PDO::kDirectionBoth, sizeof(ViewState) });
 
 ViewState state{ 1.5f, 10.0f, 20.0f };
 std::memcpy(slot.GetWriteData(), &state, sizeof(ViewState));
@@ -104,15 +104,15 @@ std::memcpy(&read, slot.GetReadData(), sizeof(ViewState));
 ```cpp
 auto hub = iCAX::PDO::GeneratePDOHub({
     { 1, cameraId, iCAX::PDO::kDirection2Inner, sizeof(CameraInput) },
-    { 1, previewId, iCAX::PDO::kDirection2Externer, sizeof(PreviewState) }
+    { 1, previewId, iCAX::PDO::kDirection2External, sizeof(PreviewState) }
 });
 
 auto& cameraSlot = hub->GetSlot(cameraId);
 ```
 
-`SwapInSlot()` 只交换 `kDirection2Inner` 和 `kDirtionBoth` 的槽。
+`SwapInSlot()` 只交换 `kDirection2Inner` 和 `kDirectionBoth` 的槽。
 
-`SwapOutSlot()` 只交换 `kDirection2Externer` 和 `kDirtionBoth` 的槽。
+`SwapOutSlot()` 只交换 `kDirection2External` 和 `kDirectionBoth` 的槽。
 
 ## 8. 生命周期
 

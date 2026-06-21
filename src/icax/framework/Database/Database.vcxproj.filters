@@ -27,9 +27,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ChangeLog.h">
-      <Filter>extern\class</Filter>
-    </ClInclude>
     <ClInclude Include="ChangeSet.h">
       <Filter>extern\class</Filter>
     </ClInclude>
@@ -93,6 +90,9 @@
     <ClInclude Include="MetaRegistrationCatalog.h">
       <Filter>inner</Filter>
     </ClInclude>
+    <ClInclude Include="OperationLog.h">
+      <Filter>extern\class</Filter>
+    </ClInclude>
     <ClInclude Include="ComponentBase.h">
       <Filter>extern\class</Filter>
     </ClInclude>
@@ -110,9 +110,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ChangeLog.cpp">
-      <Filter>extern\class</Filter>
-    </ClCompile>
     <ClCompile Include="ChangeSet.cpp">
       <Filter>extern\class</Filter>
     </ClCompile>
@@ -148,6 +145,9 @@
     </ClCompile>
     <ClCompile Include="MetaRegistrationCatalog.cpp">
       <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="OperationLog.cpp">
+      <Filter>extern\class</Filter>
     </ClCompile>
     <ClCompile Include="IMetaRegistry.cpp">
       <Filter>extern\interface</Filter>

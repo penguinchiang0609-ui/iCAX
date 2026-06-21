@@ -62,7 +62,7 @@ TEST(PDOTest, MakePDOIDIsStableAndSeparatesTypeAndInstance)
 TEST(PDOTest, SlotSwapsOnlyAfterWriteIsMarkedReady)
 {
     const auto id = MakePDOID("Test.Payload", "Slot");
-    CPDOSlot slot(MakeDecl(id, kDirtionBoth));
+    CPDOSlot slot(MakeDecl(id, kDirectionBoth));
 
     const void* initialRead = slot.GetReadData();
     void* initialWrite = slot.GetWriteData();
@@ -95,8 +95,8 @@ TEST(PDOTest, HubSwapsSlotsAccordingToDirection)
 
     auto hub = GeneratePDOHub({
         MakeDecl(inboundId, kDirection2Inner),
-        MakeDecl(outboundId, kDirection2Externer),
-        MakeDecl(bothId, kDirtionBoth)
+        MakeDecl(outboundId, kDirection2External),
+        MakeDecl(bothId, kDirectionBoth)
     });
 
     auto& inbound = hub->GetSlot(inboundId);
@@ -125,7 +125,7 @@ TEST(PDOTest, HubThrowsForUnknownSlotAndAfterClear)
     const auto missingId = MakePDOID("Test.Payload", "Missing");
 
     CPDOHub hub;
-    hub.Intialize({ MakeDecl(id, kDirtionBoth) });
+    hub.Intialize({ MakeDecl(id, kDirectionBoth) });
 
     EXPECT_NO_THROW((void)hub.GetSlot(id));
     EXPECT_THROW((void)hub.GetSlot(missingId), std::runtime_error);

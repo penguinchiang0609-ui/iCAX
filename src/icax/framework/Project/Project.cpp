@@ -9,6 +9,49 @@
 #include <stdexcept>
 #include <utility>
 
+namespace
+{
+    std::shared_ptr<iCAX::Database::IMetaRegistry> RequireMetaRegistry(
+        IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
+    {
+        if (!CreateInfo_.pMetaRegistry)
+        {
+            throw std::invalid_argument("Project MetaRegistry cannot be null");
+        }
+        return CreateInfo_.pMetaRegistry;
+    }
+
+    std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> RequireBehaviourRegistry(
+        IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
+    {
+        if (!CreateInfo_.pBehaviourRegistry)
+        {
+            throw std::invalid_argument("Project BehaviourRegistry cannot be null");
+        }
+        return CreateInfo_.pBehaviourRegistry;
+    }
+
+    std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> RequireResourceLoaderRegistry(
+        IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
+    {
+        if (!CreateInfo_.pResourceLoaderRegistry)
+        {
+            throw std::invalid_argument("Project ResourceLoaderRegistry cannot be null");
+        }
+        return CreateInfo_.pResourceLoaderRegistry;
+    }
+
+    std::shared_ptr<iCAX::Services::IMailChannelService> RequireMailChannelService(
+        IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
+    {
+        if (!CreateInfo_.pMailChannelService)
+        {
+            throw std::invalid_argument("MailChannelService cannot be null");
+        }
+        return CreateInfo_.pMailChannelService;
+    }
+}
+
 class iCAX::Project::CProject::CRepositoryEventForwarder final
     : public iCAX::Database::IRepositoryEventListener
 {
@@ -44,10 +87,10 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_ProjectPath(CreateInfo_.ProjectPath)
     , m_StartupComponent(CreateInfo_.StartupComponent)
     , m_pApplicationSettings(CreateInfo_.pApplicationSettings ? CreateInfo_.pApplicationSettings : std::make_shared<iCAX::Data::PropertyBag>())
-    , m_pMetaRegistry(CreateInfo_.pMetaRegistry ? CreateInfo_.pMetaRegistry : iCAX::Database::GetGlobalMetaRegistry())
-    , m_pBehaviourRegistry(CreateInfo_.pBehaviourRegistry ? CreateInfo_.pBehaviourRegistry : iCAX::Behaviour::GetGlobalBehaviourRegistry())
-    , m_pResourceLoaderRegistry(CreateInfo_.pResourceLoaderRegistry)
-    , m_pMailChannelService(std::move(CreateInfo_.pMailChannelService))
+    , m_pMetaRegistry(RequireMetaRegistry(CreateInfo_))
+    , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
+    , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
+    , m_pMailChannelService(RequireMailChannelService(CreateInfo_))
     , m_pRepository(iCAX::Database::GenerateRepository(m_ProjectID, m_pMetaRegistry))
     , m_pUniverseContext(std::make_shared<iCAX::Behaviour::CUniverseContext>(m_pRepository, m_pApplicationSettings))
     , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
@@ -56,10 +99,6 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_nFrameIntervalMilliseconds(CreateInfo_.nFrameIntervalMilliseconds == 0 ? 1 : CreateInfo_.nFrameIntervalMilliseconds)
     , m_FrameHandler(CreateInfo_.FrameHandler)
 {
-    if (!m_pMailChannelService)
-    {
-        throw std::invalid_argument("MailChannelService cannot be null");
-    }
     if (m_ProjectName.empty())
     {
         m_ProjectName = m_Role == EProjectRole::Main ? "Main Project" : "Transient Project";
@@ -213,6 +252,7 @@ void iCAX::Project::CProject::Start()
     }
     if (_ThreadToJoin.joinable())
     {
+        // 上一次线程已经结束但还未 join，先回收线程句柄，再启动新线程。
         _ThreadToJoin.join();
     }
 
@@ -232,6 +272,7 @@ void iCAX::Project::CProject::Start()
     m_State = EProjectState::Starting;
     m_WorkThread = std::thread(&CProject::WorkerMain, this);
 
+    // Start 对调用方表现为同步启动：等待工作线程进入 Running、Stopped 或 Faulted。
     m_StopCondition.wait(_Lock, [this]() {
         return m_State == EProjectState::Running
             || m_State == EProjectState::Faulted
@@ -263,6 +304,7 @@ void iCAX::Project::CProject::Stop()
         {
             if (m_WorkThread.get_id() == std::this_thread::get_id())
             {
+                // 避免工作线程内部调用 Stop 时自 join 死锁，只设置停止标记并返回。
                 m_StopCondition.notify_all();
                 return;
             }
@@ -285,6 +327,7 @@ void iCAX::Project::CProject::BindStartup()
         return;
     }
 
+    // 启动组件约定只能对应一个 Behaviour；否则项目启动入口不明确。
     auto _vecIndexs = m_pBehaviourRegistry->GetTypeIndexByComponentType(m_StartupComponent);
     if (_vecIndexs.empty())
     {
@@ -296,6 +339,7 @@ void iCAX::Project::CProject::BindStartup()
     }
 
     m_pUniverse->BindBehaviourByIndex(_vecIndexs[0]);
+    // MetaEntity 承载项目级启动组件，使行为系统能通过普通 EC 机制感知启动入口。
     m_pRepository->GetMetaEntity()->AddComponent(m_StartupComponent);
     m_bStartupBound = true;
 }
@@ -323,6 +367,7 @@ void iCAX::Project::CProject::Close()
 {
     Stop();
 
+    // 关闭顺序从行为到数据：先停止线程，再释放 Universe，最后清理 Repository 和资源。
     if (m_pUniverse)
     {
         m_pUniverse->Cleanup(true);
@@ -368,6 +413,7 @@ void iCAX::Project::CProject::WorkerMain()
             auto _Handler = GetFrameHandler();
             if (_Handler)
             {
+                // ProductRuntime 在这里接入项目邮箱分发；Project 本身不依赖 CommandHandler。
                 _Handler(*this, GetBackendPostOffice());
             }
 
@@ -384,6 +430,7 @@ void iCAX::Project::CProject::WorkerMain()
             }
             if (_NextFrameTime < std::chrono::steady_clock::now() - _FrameInterval)
             {
+                // 如果一帧耗时过长，丢弃积压帧，避免线程忙追历史时间点。
                 _NextFrameTime = std::chrono::steady_clock::now();
             }
         }
@@ -392,6 +439,7 @@ void iCAX::Project::CProject::WorkerMain()
     }
     catch (...)
     {
+        // 项目线程异常只标记当前项目 Faulted，不向其他项目或产品线程传播。
         auto _Exception = std::current_exception();
         std::string _Message = "Project faulted";
         try

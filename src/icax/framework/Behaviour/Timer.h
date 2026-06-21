@@ -8,6 +8,7 @@ namespace iCAX
     {
         /*
         * @brief 时间服务
+        * @remark 使用 steady_clock 计算帧间隔，避免系统时间调整影响行为 Tick。
         */
         class CTimer final : public ITimer
         {
@@ -25,6 +26,7 @@ namespace iCAX
         public:
             /*
             * @brief 每帧调用
+            * @details 更新 DeltaTime 和 TotalTime，通常由 Universe::Tick 调用。
             */
             void Tick();
 

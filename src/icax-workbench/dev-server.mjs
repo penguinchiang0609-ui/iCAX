@@ -4,6 +4,7 @@ import { extname, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
+const workspaceRoot = fileURLToPath(new URL("../", import.meta.url));
 const port = Number(process.env.PORT || process.argv[2] || 4173);
 const host = process.env.HOST || "127.0.0.1";
 
@@ -55,8 +56,9 @@ function resolveRequestPath(pathname) {
   const decodedPath = decodeURIComponent(pathname);
   const localPath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
   const normalizedPath = normalize(localPath);
-  const fullPath = resolve(root, normalizedPath);
-  const relativePath = relative(root, fullPath);
+  const basePath = normalizedPath.startsWith(`apps${sep}`) || normalizedPath === "apps" ? workspaceRoot : root;
+  const fullPath = resolve(basePath, normalizedPath);
+  const relativePath = relative(basePath, fullPath);
 
   if (relativePath.startsWith("..") || relativePath.includes(`..${sep}`)) {
     throw Object.assign(new Error("Forbidden"), { code: "EACCES" });

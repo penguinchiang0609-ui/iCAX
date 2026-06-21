@@ -8,7 +8,10 @@ namespace iCAX
     namespace Mail
     {
         /*
-        * @brief 邮件状态
+        * @brief 邮件处理状态戳。
+        * @details
+        *   Stamp 写在响应邮件 Header 中，用于让发送侧快速判断命令是否成功。
+        *   Mailbox 本身只转运该值，不解释业务错误；更详细的错误文本或业务数据放在 Payload 中。
         */
         enum StampCode : uint16_t
         {
@@ -21,27 +24,35 @@ namespace iCAX
         };
 
         /*
-        * @brief 邮件头
+        * @brief 邮件头。
+        * @details
+        *   nMailId 标识本封邮件；响应邮件会把请求邮件 ID 写到 nOriginId。
+        *   nTypeCode 是上层命令类型码，通常由 CommandHandler 根据它选择处理器。
         */
         struct _MAIL_EXP MailHeader
         {
-            uint64_t nMailId = 0;     //! 邮件ID
-            uint64_t nOriginId = 0;   //! 原邮件ID，回复邮件时标识回复的是哪一封邮件，0 表示非回复邮件
-            uint64_t nTypeCode = 0;   //! 过程调用ID，可以理解为 CommandCode，即由谁来处理该邮件。
-            StampCode nStamp = kMailOk; //! 签章，业务错误码由各业务自行定义并在邮件体中传递。
+            uint64_t nMailId = 0;        //!< 邮件自身 ID，由发送侧分配。
+            uint64_t nOriginId = 0;      //!< 原邮件 ID；回复邮件标识回复哪一封请求，0 表示非回复邮件。
+            uint64_t nTypeCode = 0;      //!< 命令类型码；Mailbox 不解析，只透传给上层。
+            StampCode nStamp = kMailOk;  //!< 处理状态戳；业务错误细节由业务自行放入邮件体。
         };
 
         /*
-        * @brief 邮件数据
+        * @brief 邮件数据。
+        * @details
+        *   MailQueue::Enqueue/CMailPostOffice::Send 会深拷贝 pData。
+        *   CMailPostOffice::Receive 返回的 Mail 由调用方拥有 Payload 内存，处理后必须 delete[] pData。
         */
         struct _MAIL_EXP MailData
         {
-            size_t nSize = 0;
-            uint8_t* pData = nullptr;
+            size_t nSize = 0;       //!< 负载字节数；为 0 时 pData 可以为空。
+            uint8_t* pData = nullptr; //!< 负载内存；Receive 后所有权转移给调用方。
         };
 
         /*
-        * @brief 邮件
+        * @brief 一封进程内邮件。
+        * @details
+        *   Mailbox 只提供队列语义，不绑定前端/后端，也不规定 Payload 编码格式。
         */
         struct _MAIL_EXP Mail
         {

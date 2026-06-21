@@ -6,10 +6,13 @@
 #include <Mailbox/Mail.h>
 #include <Product/ProductCommands.h>
 
+#include <array>
 #include <chrono>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -34,6 +37,22 @@ namespace
             ReleaseMailPayload(_Mail);
         }
         Mails_.clear();
+    }
+
+    void SendMail(
+        IN const iCAX::Mail::CMailPostOffice& PostOffice_,
+        IN OUT iCAX::Mail::Mail& Mail_)
+    {
+        PostOffice_.Send(Mail_);
+        ReleaseMailPayload(Mail_);
+    }
+
+    void SendMail(
+        IN const iCAX::Mail::CMailPostOffice& PostOffice_,
+        IN iCAX::Mail::Mail&& Mail_)
+    {
+        PostOffice_.Send(Mail_);
+        ReleaseMailPayload(Mail_);
     }
 
     iCAX::Mail::Mail MakeApplicationRequestMail(
@@ -168,7 +187,7 @@ TEST(ApplicationHostMailboxTest, ApplicationMailboxReturnsProductListBeforeProdu
 
     auto _FrontendPostOffice = _Host.GetApplicationFrontendPostOffice();
     auto _Request = MakeApplicationRequestMail(1001, kAppGetStateCommand);
-    _FrontendPostOffice.Send(_Request);
+    SendMail(_FrontendPostOffice, _Request);
 
     auto _Responses = WaitForMails(_FrontendPostOffice);
     ASSERT_EQ(1u, _Responses.size());
@@ -205,7 +224,7 @@ TEST(ApplicationHostMailboxTest, ApplicationFrontendPostOfficeIsAvailableAfterSt
     ASSERT_TRUE(_FrontendPostOffice.IsValid());
 
     auto _Request = MakeApplicationRequestMail(1501, kAppGetStateCommand);
-    _FrontendPostOffice.Send(_Request);
+    SendMail(_FrontendPostOffice, _Request);
 
     auto _Responses = WaitForMails(_FrontendPostOffice);
     ASSERT_EQ(1u, _Responses.size());
@@ -223,7 +242,7 @@ TEST(ApplicationHostMailboxTest, ApplicationMailboxCanStartProduct)
 
     auto _FrontendPostOffice = _Host.GetApplicationFrontendPostOffice();
     auto _Request = MakeApplicationRequestMail(2001, kAppStartProductCommand);
-    _FrontendPostOffice.Send(_Request);
+    SendMail(_FrontendPostOffice, _Request);
 
     auto _Responses = WaitForMails(_FrontendPostOffice);
     ASSERT_EQ(1u, _Responses.size());
@@ -261,7 +280,7 @@ TEST(ApplicationHostMailboxTest, ProductMailboxCanOpenAndCloseProjectCatalogAfte
         3001,
         iCAX::Product::kProductOpenProjectCatalogCommand,
         iCAX::Data::Variant(_OpenPayload));
-    _ProductPostOffice.Send(_OpenRequest);
+    SendMail(_ProductPostOffice, _OpenRequest);
 
     auto _OpenResponses = WaitForMails(_ProductPostOffice);
     ASSERT_EQ(1u, _OpenResponses.size());
@@ -288,7 +307,7 @@ TEST(ApplicationHostMailboxTest, ProductMailboxCanOpenAndCloseProjectCatalogAfte
         3002,
         iCAX::Product::kProductCloseProjectCatalogCommand,
         iCAX::Data::Variant(_ClosePayload));
-    _ProductPostOffice.Send(_CloseRequest);
+    SendMail(_ProductPostOffice, _CloseRequest);
 
     auto _CloseResponses = WaitForMails(_ProductPostOffice);
     ASSERT_EQ(1u, _CloseResponses.size());
@@ -312,7 +331,7 @@ TEST(ApplicationHostMailboxTest, ApplicationHostCanStartMultipleConfiguredProduc
 
     iCAX::Data::ObjectMap _RobotPayload;
     _RobotPayload["productId"] = std::string("robot");
-    _ApplicationPostOffice.Send(MakeApplicationRequestMail(
+    SendMail(_ApplicationPostOffice, MakeApplicationRequestMail(
         4001,
         kAppStartProductCommand,
         iCAX::Data::Variant(_RobotPayload)));
@@ -323,7 +342,7 @@ TEST(ApplicationHostMailboxTest, ApplicationHostCanStartMultipleConfiguredProduc
 
     iCAX::Data::ObjectMap _WeldPayload;
     _WeldPayload["productId"] = std::string("weld");
-    _ApplicationPostOffice.Send(MakeApplicationRequestMail(
+    SendMail(_ApplicationPostOffice, MakeApplicationRequestMail(
         4002,
         kAppStartProductCommand,
         iCAX::Data::Variant(_WeldPayload)));
@@ -345,6 +364,67 @@ TEST(ApplicationHostMailboxTest, ApplicationHostCanStartMultipleConfiguredProduc
     ReleaseMailPayloads(_WeldResponses);
 
     _Host.Stop();
+}
+
+TEST(ApplicationHostMailboxTest, StartProductReturnsSingleRuntimeAcrossConcurrentCallers)
+{
+    CApplicationHost _Host;
+    _Host.SetConfig(MakeTwoProductConfig());
+    _Host.Start();
+
+    constexpr int kThreadCount = 8;
+    std::array<std::shared_ptr<iCAX::Product::CProductRuntime>, kThreadCount> _Runtimes;
+    std::array<std::exception_ptr, kThreadCount> _Exceptions;
+    std::vector<std::thread> _Threads;
+
+    for (int _Index = 0; _Index < kThreadCount; ++_Index)
+    {
+        _Threads.emplace_back([&, _Index]() {
+            try
+            {
+                _Runtimes[_Index] = _Host.StartProduct("robot");
+            }
+            catch (...)
+            {
+                _Exceptions[_Index] = std::current_exception();
+            }
+        });
+    }
+
+    for (auto& _Thread : _Threads)
+    {
+        _Thread.join();
+    }
+
+    for (const auto& _Exception : _Exceptions)
+    {
+        if (_Exception)
+        {
+            std::rethrow_exception(_Exception);
+        }
+    }
+
+    ASSERT_NE(nullptr, _Runtimes[0]);
+    for (const auto& _pRuntime : _Runtimes)
+    {
+        EXPECT_EQ(_Runtimes[0], _pRuntime);
+    }
+
+    EXPECT_EQ(1u, _Host.GetProductRuntimes().size());
+    EXPECT_EQ(_Runtimes[0], _Host.FindProductRuntime("robot"));
+    EXPECT_TRUE(_Host.GetProductFrontendPostOffice("robot").IsValid());
+
+    _Host.Stop();
+}
+
+TEST(ApplicationHostMailboxTest, StartProductIsRejectedAfterHostStops)
+{
+    CApplicationHost _Host;
+    _Host.SetConfig(MakeTwoProductConfig());
+    _Host.Start();
+    _Host.Stop();
+
+    EXPECT_THROW(_Host.StartProduct("robot"), std::logic_error);
 }
 
 TEST(ApplicationHostMailboxTest, ProductDefinitionRequiresProjectFileMagic)
@@ -389,7 +469,7 @@ TEST(ApplicationHostMailboxTest, ApplicationMailboxCanResolveAndOpenProjectFile)
 
     iCAX::Data::ObjectMap _ResolvePayload;
     _ResolvePayload["projectPath"] = _ProjectPath.string();
-    _ApplicationPostOffice.Send(MakeApplicationRequestMail(
+    SendMail(_ApplicationPostOffice, MakeApplicationRequestMail(
         6001,
         kAppResolveProjectFileCommand,
         iCAX::Data::Variant(_ResolvePayload)));
@@ -406,7 +486,7 @@ TEST(ApplicationHostMailboxTest, ApplicationMailboxCanResolveAndOpenProjectFile)
 
     iCAX::Data::ObjectMap _OpenPayload;
     _OpenPayload["projectPath"] = _ProjectPath.string();
-    _ApplicationPostOffice.Send(MakeApplicationRequestMail(
+    SendMail(_ApplicationPostOffice, MakeApplicationRequestMail(
         6002,
         kAppOpenProjectFileCommand,
         iCAX::Data::Variant(_OpenPayload)));
@@ -483,7 +563,7 @@ TEST(ApplicationHostMailboxTest, ApplicationCommandSentToProductMailboxHasNoHand
 
     auto _ProductPostOffice = _Host.GetProductFrontendPostOffice(_pRuntime->GetProductID());
     auto _Request = MakeApplicationRequestMail(5001, kAppGetStateCommand);
-    _ProductPostOffice.Send(_Request);
+    SendMail(_ProductPostOffice, _Request);
 
     auto _Responses = WaitForMails(_ProductPostOffice);
     ASSERT_EQ(1u, _Responses.size());

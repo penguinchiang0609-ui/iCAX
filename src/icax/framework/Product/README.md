@@ -4,7 +4,7 @@
 
 ProductRuntime 保存自己的 `productMailId`，并通过应用级 `IMailChannelService` 显式创建和删除产品级 `CMailChannel`。前端通过 ApplicationHost 启动产品后，拿到该产品的 frontend post office，再与产品级命令入口对话。
 
-ProductRuntime 不创建独立 ServiceProvider，也不创建独立 Meta/Behaviour 注册表。它加载产品模块后，将模块中的自动注册项回放到 ApplicationHost 持有的应用级注册表中。这样 Service 可以全应用复用，Behaviour 定义也可以全应用复用，而每个 Project 仍然拥有自己的 Universe 实例和数据对象。
+ProductRuntime 不创建独立 ServiceProvider，Service 仍由 ApplicationHost 的应用级 ServiceProvider 共享。ProductRuntime 会创建自己的产品级 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry 和 CommandRegistry；加载产品模块后，将模块中的自动注册项按模块路径回放到当前产品运行时。每个 Project 仍然拥有自己的 Universe 实例、Repository、ResourceLibrary、项目 ResourceLoaderRegistry 和项目 mailbox。
 
 产品定义和产品数据分离：`ProductDefinition` 保存产品静态能力，例如前端入口、项目文件 magic、magic 偏移、探测字节数和模块路径；`ProductData` 保存最近项目和产品用户设置，默认落盘到 `{UserConfigDirectory}/Products/{productId}/Product.Data`。项目文件 magic 是产品类型的唯一识别依据，不能为空且不能重复；扩展名只用于文件选择器和展示。
 

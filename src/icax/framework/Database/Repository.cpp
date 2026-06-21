@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "Repository.h"
 #include "MetaRegistry.h"
-#include "ChangeLog.h"
 #include "RepositoryHistory.h"
 
 #include <map>
@@ -247,12 +246,12 @@ bool iCAX::Database::CRepository::Undo()
     }
 
     auto _StepName = m_pHistory->GetUndoStepName();
-    auto _Inverse = MakeInverseChangeSet(m_pHistory->GetUndoChangeSet(), _StepName.empty() ? "Undo" : "Undo " + _StepName);
+    auto _Inverse = MakeInverseOperationBatch(m_pHistory->GetUndoOperationBatch(), _StepName.empty() ? "Undo" : "Undo " + _StepName);
 
     ++m_nHistoryReplayDepth;
     try
     {
-        ApplyChangeSetWithReplayEvent(_Inverse);
+        ApplyOperationBatchWithReplayEvent(_Inverse);
         --m_nHistoryReplayDepth;
     }
     catch (...)
@@ -273,12 +272,12 @@ bool iCAX::Database::CRepository::Redo()
         return false;
     }
 
-    auto _ChangeSet = m_pHistory->GetRedoChangeSet();
+    auto _Batch = m_pHistory->GetRedoOperationBatch();
 
     ++m_nHistoryReplayDepth;
     try
     {
-        ApplyChangeSetWithReplayEvent(_ChangeSet);
+        ApplyOperationBatchWithReplayEvent(_Batch);
         --m_nHistoryReplayDepth;
     }
     catch (...)
@@ -288,7 +287,7 @@ bool iCAX::Database::CRepository::Redo()
     }
 
     m_pHistory->MoveRedoToUndo();
-    AppendOperationLog(_ChangeSet);
+    AppendOperationLog(_Batch);
     return true;
 }
 
@@ -301,7 +300,7 @@ std::unique_ptr<iCAX::Database::IRepositoryChangeScope> iCAX::Database::CReposit
 
     m_nChangeScopeKind = Kind_;
     m_strChangeScopeName = strName_;
-    m_pChangeSetBuilder = std::make_unique<CChangeSetBuilder>(Kind_, strName_);
+    m_pOperationBatchBuilder = std::make_unique<COperationBatchBuilder>(Kind_, strName_);
     return std::make_unique<CRepositoryChangeScope>(*this, bAutoCommitOnDestroy_);
 }
 
@@ -309,7 +308,7 @@ void iCAX::Database::CRepository::OpenOperationLog(IN const std::string& strPath
 {
     if (!m_pOperationLog)
     {
-        m_pOperationLog = std::make_unique<CChangeSetJournal>();
+        m_pOperationLog = std::make_unique<COperationBatchJournal>();
     }
     m_pOperationLog->Open(strPath_, bTruncate_);
 }
@@ -329,17 +328,17 @@ bool iCAX::Database::CRepository::HasOperationLog() const
 
 void iCAX::Database::CRepository::ReplayOperationLog(IN const std::string& strPath_)
 {
-    CChangeSetJournal _Journal;
-    const auto _ChangeSets = _Journal.ReadAll(strPath_);
+    COperationBatchJournal _Journal;
+    const auto _Batches = _Journal.ReadAll(strPath_);
 
     m_pHistory->Clear();
 
     ++m_nHistoryReplayDepth;
     try
     {
-        for (const auto& _ChangeSet : _ChangeSets)
+        for (const auto& _Batch : _Batches)
         {
-            ApplyChangeSetWithReplayEvent(_ChangeSet);
+            ApplyOperationBatchWithReplayEvent(_Batch);
         }
         --m_nHistoryReplayDepth;
     }
@@ -645,7 +644,7 @@ void iCAX::Database::CRepository::TriggerRepositoryChanged(IN const RepositoryEv
 
     if (IsChangeScopeActive() && nType_ != RepositoryEventArgs::kBatchChanged)
     {
-        RecordRepositoryChanged({ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
+        RecordRepositoryOperation({ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
         return;
     }
 
@@ -664,14 +663,15 @@ void iCAX::Database::CRepository::TriggerRepositoryChanged(IN const RepositoryEv
 
     if (nType_ != RepositoryEventArgs::kBatchChanged)
     {
-        auto _ChangeSet = BuildChangeSetFromRepositoryEvent({ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
-        HandleCommittedChangeSet(_ChangeSet);
+        auto _Batch = MakeOperationBatchFromRepositoryEvent({ nType_, GetID(), EntityID_, strClassName_, Previous_, New_, pComponent_, pEntity_, shared_from_this(), pChangeSet_ });
+        auto _Summary = BuildChangeSetFromOperationBatch(_Batch);
+        HandleCommittedOperationBatch(_Batch, _Summary);
     }
 }
 
 bool iCAX::Database::CRepository::IsChangeScopeActive() const
 {
-    return m_pChangeSetBuilder != nullptr;
+    return m_pOperationBatchBuilder != nullptr;
 }
 
 bool iCAX::Database::CRepository::IsRepositoryEventSuppressed() const
@@ -686,24 +686,29 @@ void iCAX::Database::CRepository::EndChangeScope(IN const bool bCommit_)
         return;
     }
 
-    auto _pBuilder = std::move(m_pChangeSetBuilder);
+    auto _pBuilder = std::move(m_pOperationBatchBuilder);
     auto _nKind = m_nChangeScopeKind;
     m_nChangeScopeKind = EChangeScopeKind::UserCommand;
     m_strChangeScopeName.clear();
 
-    auto _pChangeSet = std::make_shared<CChangeSet>(_pBuilder->Build());
+    // OperationBatch 是事实日志，ChangeSet 是由事实日志派生的净变更摘要。
+    // 提交路径必须先冻结 Batch，再派生 Summary，避免撤销/日志丢失真实操作顺序。
+    auto _Batch = _pBuilder->Build();
+    auto _pChangeSet = std::make_shared<CChangeSet>(BuildChangeSetFromOperationBatch(_Batch));
 
     if (!bCommit_)
     {
-        if (!_pChangeSet->IsEmpty())
+        if (!_Batch.IsEmpty())
         {
-            RollbackChangeSetSilently(*_pChangeSet);
+            RollbackOperationBatchSilently(_Batch);
         }
         return;
     }
 
     if (_nKind == EChangeScopeKind::LoadBaseline)
     {
+        // 加载基线用于首次打开项目文件。此时内存状态就是新的干净基线，
+        // 不应产生用户修改语义、历史记录或快速保存日志。
         m_pVerisonTable->Clear();
         m_pDerivedPropertyManager->Clear();
         m_pHistory->Clear();
@@ -712,74 +717,31 @@ void iCAX::Database::CRepository::EndChangeScope(IN const bool bCommit_)
 
     if (_pChangeSet->IsEmpty())
     {
+        // 批次内操作可能互相抵消，例如添加组件后又删除组件。
+        // 净摘要为空时对外没有可见变更，不发布批量事件，也不进入历史或日志。
         return;
     }
 
     ApplyChangeSetEffects(*_pChangeSet);
     TriggerRepositoryChanging(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pChangeSet);
     TriggerRepositoryChanged(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pChangeSet);
-    HandleCommittedChangeSet(*_pChangeSet);
+    HandleCommittedOperationBatch(_Batch, *_pChangeSet);
 }
 
-void iCAX::Database::CRepository::RecordRepositoryChanged(IN const RepositoryEventArgs& Args_)
+void iCAX::Database::CRepository::RecordRepositoryOperation(IN const RepositoryEventArgs& Args_)
 {
-    if (!m_pChangeSetBuilder)
+    if (!m_pOperationBatchBuilder)
     {
         return;
     }
 
-    switch (Args_.nType)
-    {
-    case RepositoryEventArgs::kAddEntity:
-        m_pChangeSetBuilder->RecordAddEntity({ Args_.EntityID });
-        break;
-    case RepositoryEventArgs::kDeleteEntity:
-        m_pChangeSetBuilder->RecordDeleteEntity({ Args_.EntityID });
-        break;
-    case RepositoryEventArgs::kAddComponent:
-        m_pChangeSetBuilder->RecordAddComponent({ Args_.EntityID, Args_.strClassName }, Args_.NewProperties);
-        break;
-    case RepositoryEventArgs::kRemoveComponent:
-        m_pChangeSetBuilder->RecordRemoveComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties);
-        break;
-    case RepositoryEventArgs::kModifyComponent:
-        m_pChangeSetBuilder->RecordModifyComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties, Args_.NewProperties);
-        break;
-    default:
-        break;
-    }
-}
-
-iCAX::Database::CChangeSet iCAX::Database::CRepository::BuildChangeSetFromRepositoryEvent(IN const RepositoryEventArgs& Args_) const
-{
-    CChangeSetBuilder _Builder(EChangeScopeKind::UserCommand, {});
-
-    switch (Args_.nType)
-    {
-    case RepositoryEventArgs::kAddEntity:
-        _Builder.RecordAddEntity({ Args_.EntityID });
-        break;
-    case RepositoryEventArgs::kDeleteEntity:
-        _Builder.RecordDeleteEntity({ Args_.EntityID });
-        break;
-    case RepositoryEventArgs::kAddComponent:
-        _Builder.RecordAddComponent({ Args_.EntityID, Args_.strClassName }, Args_.NewProperties);
-        break;
-    case RepositoryEventArgs::kRemoveComponent:
-        _Builder.RecordRemoveComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties);
-        break;
-    case RepositoryEventArgs::kModifyComponent:
-        _Builder.RecordModifyComponent({ Args_.EntityID, Args_.strClassName }, Args_.PreviousProperties, Args_.NewProperties);
-        break;
-    default:
-        break;
-    }
-
-    return _Builder.Build();
+    m_pOperationBatchBuilder->RecordRepositoryEvent(Args_);
 }
 
 void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& ChangeSet_)
 {
+    // 版本和派生字段失效只关心最终净结果，不需要保留字段修改顺序。
+    // 因此这里使用 ChangeSet，而不是 OperationBatch。
     std::set<ComponentVersionKey> _VersionResets;
     std::set<ComponentVersionKey> _VersionBumps;
     std::set<ComponentVersionKey> _VersionRemoves;
@@ -848,166 +810,120 @@ void iCAX::Database::CRepository::ApplyChangeSetEffects(IN const CChangeSet& Cha
     }
 }
 
-void iCAX::Database::CRepository::ApplyChangeSetForward(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepository::ApplyOperationForward(IN const CRepositoryOperation& Operation_)
 {
-    for (const auto& _Change : ChangeSet_.CreatedEntities)
+    switch (Operation_.Type)
     {
-        if (!HasEntity(_Change.Key.EntityID))
+    case RepositoryEventArgs::kAddEntity:
+        if (!HasEntity(Operation_.EntityID))
         {
-            CreateEntity(_Change.Key.EntityID);
+            CreateEntity(Operation_.EntityID);
         }
-    }
-
-    for (const auto& _Change : ChangeSet_.RemovedComponents)
-    {
-        auto _pEntity = GetEntity(_Change.Key.EntityID);
-        if (_pEntity && _pEntity->HasComponent(_Change.Key.ComponentClass))
+        break;
+    case RepositoryEventArgs::kDeleteEntity:
+        if (HasEntity(Operation_.EntityID))
         {
-            _pEntity->RemoveComponent(_Change.Key.ComponentClass);
+            DeleteEntity(Operation_.EntityID);
         }
-    }
-
-    for (const auto& _Change : ChangeSet_.AddedComponents)
+        break;
+    case RepositoryEventArgs::kAddComponent:
     {
-        auto _pEntity = GetEntity(_Change.Key.EntityID);
+        auto _pEntity = GetEntity(Operation_.EntityID);
         if (!_pEntity)
         {
-            continue;
+            break;
         }
 
-        auto _pComponent = _pEntity->HasComponent(_Change.Key.ComponentClass)
-            ? _pEntity->GetComponent(_Change.Key.ComponentClass)
-            : _pEntity->AddComponent(_Change.Key.ComponentClass);
-        if (_pComponent && !_Change.NewProperties.empty())
+        auto _pComponent = _pEntity->HasComponent(Operation_.ComponentClass)
+            ? _pEntity->GetComponent(Operation_.ComponentClass)
+            : _pEntity->AddComponent(Operation_.ComponentClass);
+        if (_pComponent && !Operation_.NewProperties.empty())
         {
-            _pComponent->SetProperties(_Change.NewProperties);
+            _pComponent->SetProperties(Operation_.NewProperties);
         }
+        break;
     }
-
-    std::map<CChangeComponentKey, PropertySet> _ModifiedProperties;
-    for (const auto& _Change : ChangeSet_.ModifiedProperties)
+    case RepositoryEventArgs::kRemoveComponent:
     {
-        _ModifiedProperties[{ _Change.Key.EntityID, _Change.Key.ComponentClass }][_Change.Key.PropertyName] = _Change.NewValue;
-    }
-
-    for (const auto& [_Key, _Properties] : _ModifiedProperties)
-    {
-        auto _pEntity = GetEntity(_Key.EntityID);
-        auto _pComponent = _pEntity ? _pEntity->GetComponent(_Key.ComponentClass) : nullptr;
-        if (_pComponent)
+        auto _pEntity = GetEntity(Operation_.EntityID);
+        if (_pEntity && _pEntity->HasComponent(Operation_.ComponentClass))
         {
-            _pComponent->SetProperties(_Properties);
+            _pEntity->RemoveComponent(Operation_.ComponentClass);
         }
+        break;
     }
-
-    for (const auto& _Change : ChangeSet_.DeletedEntities)
+    case RepositoryEventArgs::kModifyComponent:
     {
-        if (HasEntity(_Change.Key.EntityID))
+        auto _pEntity = GetEntity(Operation_.EntityID);
+        auto _pComponent = _pEntity ? _pEntity->GetComponent(Operation_.ComponentClass) : nullptr;
+        if (_pComponent && !Operation_.NewProperties.empty())
         {
-            DeleteEntity(_Change.Key.EntityID);
+            _pComponent->SetProperties(Operation_.NewProperties);
         }
+        break;
+    }
+    default:
+        break;
     }
 }
 
-void iCAX::Database::CRepository::ApplyChangeSetBackward(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepository::ApplyOperationBatchForward(IN const COperationBatch& Batch_)
 {
-    for (const auto& _Change : ChangeSet_.DeletedEntities)
+    for (const auto& _Operation : Batch_.Operations)
     {
-        if (!HasEntity(_Change.Key.EntityID))
-        {
-            CreateEntity(_Change.Key.EntityID);
-        }
-    }
-
-    for (const auto& _Change : ChangeSet_.AddedComponents)
-    {
-        auto _pEntity = GetEntity(_Change.Key.EntityID);
-        if (_pEntity && _pEntity->HasComponent(_Change.Key.ComponentClass))
-        {
-            _pEntity->RemoveComponent(_Change.Key.ComponentClass);
-        }
-    }
-
-    for (const auto& _Change : ChangeSet_.RemovedComponents)
-    {
-        auto _pEntity = GetEntity(_Change.Key.EntityID);
-        if (!_pEntity)
-        {
-            continue;
-        }
-
-        auto _pComponent = _pEntity->HasComponent(_Change.Key.ComponentClass)
-            ? _pEntity->GetComponent(_Change.Key.ComponentClass)
-            : _pEntity->AddComponent(_Change.Key.ComponentClass);
-        if (_pComponent && !_Change.PreviousProperties.empty())
-        {
-            _pComponent->SetProperties(_Change.PreviousProperties);
-        }
-    }
-
-    std::map<CChangeComponentKey, PropertySet> _ModifiedProperties;
-    for (const auto& _Change : ChangeSet_.ModifiedProperties)
-    {
-        _ModifiedProperties[{ _Change.Key.EntityID, _Change.Key.ComponentClass }][_Change.Key.PropertyName] = _Change.PreviousValue;
-    }
-
-    for (const auto& [_Key, _Properties] : _ModifiedProperties)
-    {
-        auto _pEntity = GetEntity(_Key.EntityID);
-        auto _pComponent = _pEntity ? _pEntity->GetComponent(_Key.ComponentClass) : nullptr;
-        if (_pComponent)
-        {
-            _pComponent->SetProperties(_Properties);
-        }
-    }
-
-    for (const auto& _Change : ChangeSet_.CreatedEntities)
-    {
-        if (HasEntity(_Change.Key.EntityID))
-        {
-            DeleteEntity(_Change.Key.EntityID);
-        }
+        ApplyOperationForward(_Operation);
     }
 }
 
-void iCAX::Database::CRepository::ApplyChangeSetWithReplayEvent(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepository::ApplyOperationBatchBackward(IN const COperationBatch& Batch_)
 {
-    if (ChangeSet_.IsEmpty())
+    auto _Inverse = MakeInverseOperationBatch(Batch_);
+    ApplyOperationBatchForward(_Inverse);
+}
+
+void iCAX::Database::CRepository::ApplyOperationBatchWithReplayEvent(IN const COperationBatch& Batch_)
+{
+    if (Batch_.IsEmpty())
     {
         return;
     }
 
-    auto _Scope = BeginChangeScopeCore(EChangeScopeKind::Replay, ChangeSet_.Name, true);
-    ApplyChangeSetForward(ChangeSet_);
+    // Replay 使用非自动提交作用域：如果 Apply 过程中抛异常，作用域析构会 Cancel，
+    // 已经应用的部分会按反向操作静默回滚，避免留下半条回放结果。
+    auto _Scope = BeginChangeScopeCore(EChangeScopeKind::Replay, Batch_.Name, false);
+    ApplyOperationBatchForward(Batch_);
     _Scope->Commit();
 }
 
-void iCAX::Database::CRepository::RollbackChangeSetSilently(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepository::RollbackOperationBatchSilently(IN const COperationBatch& Batch_)
 {
     CRepositoryEventSuppressor _Suppressor(*this);
-    ApplyChangeSetBackward(ChangeSet_);
+    ApplyOperationBatchBackward(Batch_);
 }
 
-void iCAX::Database::CRepository::HandleCommittedChangeSet(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepository::HandleCommittedOperationBatch(IN const COperationBatch& Batch_, IN const CChangeSet& Summary_)
 {
-    if (ChangeSet_.IsEmpty()
-        || ChangeSet_.Kind == EChangeScopeKind::LoadBaseline
-        || ChangeSet_.Kind == EChangeScopeKind::Replay
+    if (Batch_.IsEmpty()
+        || Summary_.IsEmpty()
+        || Batch_.Kind == EChangeScopeKind::LoadBaseline
+        || Batch_.Kind == EChangeScopeKind::Replay
         || m_nHistoryReplayDepth > 0)
     {
+        // LoadBaseline 是干净基线；Replay/Undo/Redo 不应再次进入历史；
+        // HistoryReplayDepth 用于阻断 Undo/Redo 自身产生嵌套历史。
         return;
     }
 
-    m_pHistory->HandleCommittedChangeSet(ChangeSet_);
-    AppendOperationLog(ChangeSet_);
+    m_pHistory->HandleCommittedOperationBatch(Batch_);
+    AppendOperationLog(Batch_);
 }
 
-void iCAX::Database::CRepository::AppendOperationLog(IN const CChangeSet& ChangeSet_)
+void iCAX::Database::CRepository::AppendOperationLog(IN const COperationBatch& Batch_)
 {
     if (!m_pOperationLog || !m_pOperationLog->IsOpen())
     {
         return;
     }
 
-    m_pOperationLog->Append(FilterPersistentChangeSet(ChangeSet_, *m_pMetaRegistry));
+    m_pOperationLog->Append(FilterPersistentOperationBatch(Batch_, *m_pMetaRegistry));
 }

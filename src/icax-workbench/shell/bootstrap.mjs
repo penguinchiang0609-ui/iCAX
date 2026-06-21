@@ -1,17 +1,19 @@
 import { createBridge } from "../bridge/createBridge.mjs";
 import { ApplicationClient, ProductClient } from "../mailbox/clients.mjs";
 import { MailboxClient } from "../mailbox/mailboxClient.mjs";
+import { ProductModuleHost } from "../product/productModuleHost.mjs";
 import { WorkbenchStore } from "../state/workbenchStore.mjs";
 import { mountWorkbench } from "../layout/workbenchView.mjs";
 
 async function main() {
   const root = document.getElementById("app");
   const store = new WorkbenchStore();
-  const bridge = createBridge();
+  const bridge = await createBridge();
   const mailboxClient = new MailboxClient(bridge);
+  const productModuleHost = new ProductModuleHost({ bridge, mailboxClient });
 
   const actions = createActions({ bridge, mailboxClient, store });
-  const view = mountWorkbench(root, actions);
+  const view = mountWorkbench(root, actions, { productModuleHost });
   store.subscribe((state) => view.render(state));
 
   await actions.bootstrap();
@@ -105,7 +107,9 @@ function createActions({ bridge, mailboxClient, store }) {
     },
 
     async chooseAndOpenProjectFile() {
-      const projectPath = await bridge.openFileDialog?.({ filters: [{ name: "iCAX Project", extensions: ["icax"] }] });
+      const activeProduct = store.getState().productsById.get(store.getState().activeProductId);
+      const extensions = activeProduct?.projectFile?.fileExtensions?.map((item) => item.replace(".", "")) ?? ["icax"];
+      const projectPath = await bridge.openFileDialog?.({ filters: [{ name: "iCAX Project", extensions }] });
       if (projectPath) {
         await this.openProjectFile(projectPath);
       }

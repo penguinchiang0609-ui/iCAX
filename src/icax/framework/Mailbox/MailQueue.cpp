@@ -1,5 +1,8 @@
 #include "pch.h"
 #include "MailQueue.h"
+#include <cstring>
+#include <memory>
+#include <stdexcept>
 #include <utility>
 
 //! 构造函数
@@ -39,8 +42,24 @@ iCAX::Mail::CMailQueue& iCAX::Mail::CMailQueue::operator=(CMailQueue&& Other_) n
 //! 入队邮件
 void iCAX::Mail::CMailQueue::Enqueue(const Mail& Mail_)
 {
+    Mail _Copy;
+    _Copy.Header = Mail_.Header;
+    _Copy.Payload.nSize = Mail_.Payload.nSize;
+    std::unique_ptr<uint8_t[]> _Payload;
+    if (Mail_.Payload.nSize > 0)
+    {
+        if (Mail_.Payload.pData == nullptr)
+        {
+            throw std::invalid_argument("mail payload data is null");
+        }
+        _Payload = std::make_unique<uint8_t[]>(Mail_.Payload.nSize);
+        std::memcpy(_Payload.get(), Mail_.Payload.pData, Mail_.Payload.nSize);
+        _Copy.Payload.pData = _Payload.get();
+    }
+
     std::lock_guard<std::mutex> _Lock(m_Mutex);
-    m_vecMails.push_back(Mail_);
+    m_vecMails.push_back(_Copy);
+    (void)_Payload.release();
 }
 
 //! 取出邮件

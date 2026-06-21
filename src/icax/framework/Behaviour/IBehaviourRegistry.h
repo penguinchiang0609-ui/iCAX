@@ -10,6 +10,9 @@ namespace iCAX
     {
         /*
         * @brief Behaviour注册表
+        * @remark
+        *   注册表保存可复用的无状态 Behaviour 实例。
+        *   Application/Product 可以创建自己的注册表并按模块回放自动注册，避免不同产品行为互相污染。
         */
         class _SYSTEM_EXP IBehaviourRegistry
         {
@@ -27,7 +30,7 @@ namespace iCAX
         public:
             /*
             * @brief 注册Behaviour
-            * @param [in] pBehaviour_
+            * @param [in] pBehaviour_ 行为实例，不能为空。
             */
             virtual void RegisterBehaviourByInstance(IN const std::shared_ptr<CBehaviourBase>& pBehaviour_) = 0;
 
@@ -68,6 +71,9 @@ namespace iCAX
 
             /*
             * @brief 注册Behaviour
+            * @param_template [in] T Behaviour 类型。
+            * @param [in] args 构造参数。
+            * @return 已注册或新创建的 Behaviour 实例。
             */
             template<typename T, typename... Args>
             std::shared_ptr<T> RegisterBehaviour(IN Args&&... args)
@@ -84,6 +90,7 @@ namespace iCAX
 
             /*
             * @brief 是否已包含
+            * @return true 表示 T 已注册。
             */
             template<typename T>
             std::shared_ptr<T> HasBehaviour() const
@@ -93,6 +100,7 @@ namespace iCAX
 
             /*
             * @brief 获取Behaviour
+            * @return 已注册行为；不存在时返回 nullptr。
             */
             template<typename T>
             std::shared_ptr<T> GetBehaviour() const
@@ -108,12 +116,14 @@ namespace iCAX
 
         /*
         * @brief 创建独立行为注册表
+        * @return 新的行为注册表实例。
         */
         _SYSTEM_EXP std::shared_ptr<IBehaviourRegistry> CreateBehaviourRegistry();
 
         /*
         * @brief 获取全局行为注册表
         * @return std::shared_ptr<IBehaviourRegistry>
+        * @details 简单场景可用；产品运行态优先使用自己的行为注册表。
         */
         _SYSTEM_EXP std::shared_ptr<IBehaviourRegistry> GetGlobalBehaviourRegistry();
     }

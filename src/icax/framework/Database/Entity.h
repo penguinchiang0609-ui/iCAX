@@ -100,12 +100,15 @@ namespace iCAX
             * @brief 添加或替换组件
             * @param [in] strClassName_
             * @return std::shared_ptr<CComponentBase>
+            * @details
+            *   组件通过 MetaRegistry 创建，添加后 Entity 会订阅组件事件并向 Repository 转发。
             */
             virtual std::shared_ptr<CComponentBase> AddComponent(IN const std::string& strClassName_) override;
 
             /*
             * @brief 移除组件
             * @param [in] strClassName_
+            * @details 移除前会触发 EntityChanging，移除后触发 EntityChanged。
             */
             virtual void RemoveComponent(IN const std::string& strClassName_) override;
 
@@ -144,6 +147,7 @@ namespace iCAX
 
             /*
             * @brief 清除所有组件
+            * @details 按添加顺序的反序移除组件，避免依赖组件先被删除。
             */
             virtual void Cleanup() override;
 

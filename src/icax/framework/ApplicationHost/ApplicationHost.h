@@ -28,6 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -101,92 +102,296 @@ namespace iCAX
         class _APPLICATION_HOST_EXP CApplicationHost
         {
         public:
+            /*
+            * @brief 构造应用宿主。
+            * @details 默认会创建一个 icax.default 产品定义，调用方可在 Start 前 SetConfig 覆盖。
+            */
             CApplicationHost();
             virtual ~CApplicationHost();
 
         public:
+            /*
+            * @brief 设置宿主配置。
+            * @param [in] Config_ 新配置。
+            * @throws std::logic_error 宿主正在运行或停止时抛出。
+            */
             void SetConfig(IN const ApplicationHostConfig& Config_);
+
+            /*
+            * @brief 启动宿主工作线程。
+            * @details Start 会等待工作线程完成 Load 并进入 Running，启动失败会重新抛出工作线程异常。
+            */
             void Start();
+
+            /*
+            * @brief 停止宿主工作线程并卸载产品运行时。
+            */
             void Stop();
 
+            /*
+            * @brief 判断宿主是否运行中。
+            */
             bool IsRunning() const;
+
+            /*
+            * @brief 获取宿主状态。
+            */
             EApplicationHostState GetState() const;
+
+            /*
+            * @brief 获取宿主当前阶段。
+            */
             EApplicationHostPhase GetPhase() const;
+
+            /*
+            * @brief 获取最近一次停止原因。
+            */
             EApplicationHostStopReason GetStopReason() const;
+
+            /*
+            * @brief 获取最近一次异常。
+            */
             std::optional<ApplicationHostFault> GetLastFault() const;
 
+            /*
+            * @brief 订阅宿主事件。
+            * @param [in] Handler_ 事件回调，不能为空。
+            * @return 订阅 ID，可用于取消订阅。
+            */
             uint64_t SubscribeEvent(IN ApplicationHostEventHandler Handler_);
+
+            /*
+            * @brief 取消宿主事件订阅。
+            * @return true 表示移除了订阅。
+            */
             bool UnsubscribeEvent(IN uint64_t nSubscriptionID_);
 
         private:
+            /*
+            * @brief 宿主工作线程入口。
+            * @details 执行 Load -> MainLoop -> Unload，并把异常转换为 Faulted 状态和事件。
+            */
             void WorkerMain();
+
+            /*
+            * @brief 加载应用上下文、注册表、服务和应用邮箱。
+            */
             void Load();
+
+            /*
+            * @brief 宿主主循环。
+            * @details 每帧分发应用邮箱邮件，再分发已启动产品的产品邮箱邮件。
+            */
             void MainLoop();
+
+            /*
+            * @brief 卸载产品运行时、应用邮箱、服务和上下文。
+            */
             void Unload();
 
+            /*
+            * @brief 通知宿主事件。
+            */
             void NotifyEvent(
                 IN EApplicationHostEventCode Code_,
                 IN const std::string& strMessage_ = {},
                 IN std::exception_ptr pException_ = nullptr);
+            /*
+            * @brief 设置当前阶段。
+            */
             void SetPhase(IN EApplicationHostPhase Phase_);
+
+            /*
+            * @brief 记录异常信息。
+            */
             void RecordFault(
                 IN EApplicationHostPhase Phase_,
                 IN const std::string& strMessage_,
                 IN std::exception_ptr pException_);
+            /*
+            * @brief 从 exception_ptr 提取错误文本。
+            */
             static std::string GetExceptionMessage(IN std::exception_ptr pException_);
 
+            /*
+            * @brief 准备应用级命令上下文。
+            */
             void PrepareCommandContext();
+
+            /*
+            * @brief 填充应用级命令上下文。
+            * @details 应用级上下文不包含 ProductRuntime，用于区分命令必须发送到应用邮箱。
+            */
             void PopulateApplicationCommandContext(IN OUT iCAX::Command::CCommandContext& Context_) const;
+
+            /*
+            * @brief 分发应用邮箱邮件。
+            */
             void DispatchApplicationMails();
+
+            /*
+            * @brief 分发全部产品邮箱邮件。
+            */
             void DispatchProductMails();
+
+            /*
+            * @brief 分配后端响应邮件 ID。
+            */
             uint64_t AllocateBackendMailID();
 
+            /*
+            * @brief 加载应用设置。
+            */
             iCAX::Application::CApplicationSettings LoadApplicationSettings() const;
+
+            /*
+            * @brief 创建应用上下文。
+            */
             std::shared_ptr<iCAX::Application::CApplicationContext> CreateApplicationContext() const;
+
+            /*
+            * @brief 注册 ApplicationHost 内建命令。
+            */
             void RegisterBuiltInApplicationCommands();
 
+            /*
+            * @brief 处理获取应用状态命令。
+            */
             iCAX::Command::CCommandResponse HandleGetStateCommand(
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Command::ICommandContext& Context_);
+
+            /*
+            * @brief 处理列出产品命令。
+            * @details 当前实现返回完整应用状态，其中包含产品定义和运行态信息。
+            */
             iCAX::Command::CCommandResponse HandleListProductsCommand(
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Command::ICommandContext& Context_);
+
+            /*
+            * @brief 处理启动产品命令。
+            * @param [in] Request_ Payload 可包含 productId；单产品时可省略。
+            */
             iCAX::Command::CCommandResponse HandleStartProductCommand(
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Command::ICommandContext& Context_);
+
+            /*
+            * @brief 处理停止产品命令。
+            * @param [in] Request_ Payload 必须包含 productId。
+            */
             iCAX::Command::CCommandResponse HandleStopProductCommand(
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Command::ICommandContext& Context_);
+
+            /*
+            * @brief 处理识别项目文件产品命令。
+            * @param [in] Request_ Payload 必须包含 projectPath。
+            */
             iCAX::Command::CCommandResponse HandleResolveProjectFileCommand(
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Command::ICommandContext& Context_);
+
+            /*
+            * @brief 处理打开项目文件命令。
+            * @param [in] Request_ Payload 必须包含 projectPath，可包含 catalogName/projectName。
+            */
             iCAX::Command::CCommandResponse HandleOpenProjectFileCommand(
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Command::ICommandContext& Context_);
 
+            /*
+            * @brief 构建应用状态负载。
+            */
             iCAX::Data::Variant BuildApplicationStatePayload() const;
+
+            /*
+            * @brief 构建项目文件识别结果负载。
+            */
             iCAX::Data::Variant BuildProductFileResolvePayload(IN const CProductFileResolveResult& Result_) const;
+
+            /*
+            * @brief 构建产品定义和运行态负载。
+            */
             iCAX::Data::Variant BuildProductPayload(
                 IN const iCAX::Product::CProductDefinition& Definition_,
                 IN const std::shared_ptr<iCAX::Product::CProductRuntime>& pRuntime_) const;
+            /*
+            * @brief 查找产品定义。
+            * @param [in] strProductID_ 产品 ID；为空且只有一个产品时返回唯一产品。
+            * @return 产品定义。
+            */
             iCAX::Product::CProductDefinition FindProductDefinition(IN const std::string& strProductID_) const;
+
+            /*
+            * @brief 获取产品 runtime 快照。
+            */
             std::vector<std::shared_ptr<iCAX::Product::CProductRuntime>> SnapshotProductRuntimes() const;
 
         public:
+            /*
+            * @brief 获取宿主支持的产品定义。
+            */
             std::vector<iCAX::Product::CProductDefinition> GetProductDefinitions() const;
+
+            /*
+            * @brief 获取已启动产品 runtime 快照。
+            */
             std::vector<std::shared_ptr<iCAX::Product::CProductRuntime>> GetProductRuntimes() const;
+
+            /*
+            * @brief 查找已启动产品 runtime。
+            */
             std::shared_ptr<iCAX::Product::CProductRuntime> FindProductRuntime(IN const std::string& strProductID_) const;
+
+            /*
+            * @brief 启动产品。
+            * @param [in] strProductID_ 产品 ID；为空且只有一个产品时启动唯一产品。
+            * @return 产品运行时。
+            * @details 并发启动同一产品时，只会创建一个 runtime，其他调用等待并复用。
+            */
             std::shared_ptr<iCAX::Product::CProductRuntime> StartProduct(IN const std::string& strProductID_ = std::string());
+
+            /*
+            * @brief 停止产品。
+            * @return true 表示产品 runtime 存在并被停止。
+            */
             bool StopProduct(IN const std::string& strProductID_);
+
+            /*
+            * @brief 根据项目文件 magic 识别产品。
+            */
             CProductFileResolveResult ResolveProjectFileProduct(IN const std::string& strProjectPath_) const;
+
+            /*
+            * @brief 打开项目文件。
+            * @details 先识别文件所属产品，再启动产品并打开项目 catalog。
+            */
             std::shared_ptr<iCAX::Project::CProjectCatalog> OpenProjectFile(
                 IN const std::string& strProjectPath_,
                 IN const std::string& strCatalogName_ = std::string(),
                 IN const std::string& strProjectName_ = std::string());
 
+            /*
+            * @brief 获取应用邮箱前端端点。
+            * @details 前端启动后首先通过该邮局与 ApplicationHost 通信。
+            */
             iCAX::Mail::CMailPostOffice GetApplicationFrontendPostOffice() const;
+
+            /*
+            * @brief 获取产品邮箱前端端点。
+            */
             iCAX::Mail::CMailPostOffice GetProductFrontendPostOffice(IN const std::string& strProductID_) const;
+
+            /*
+            * @brief 获取项目邮箱前端端点。
+            */
             iCAX::Mail::CMailPostOffice GetProjectFrontendPostOffice(IN const iCAX::Data::uuid& ProjectID_) const;
+
+            /*
+            * @brief 获取应用邮箱 ID。
+            */
             const iCAX::Data::uuid& GetApplicationMailID() const;
 
             const iCAX::Application::IApplicationContext& GetApplicationContext() const
@@ -237,6 +442,8 @@ namespace iCAX
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pApplicationResourceLoaderRegistry;
             std::shared_ptr<iCAX::Data::PropertyBag> m_pApplicationSetting;
             mutable std::mutex m_ProductRuntimeMutex;
+            std::condition_variable m_ProductRuntimeCondition;
+            std::set<std::string> m_StartingProductIDs;
             std::map<std::string, std::shared_ptr<iCAX::Product::CProductRuntime>> m_ProductRuntimes;
         };
     }

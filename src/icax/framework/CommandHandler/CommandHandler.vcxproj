@@ -148,6 +148,7 @@
     <ClInclude Include="CommandDispatcher.h" />
     <ClInclude Include="CommandHandlerExport.h" />
     <ClInclude Include="CommandMessage.h" />
+    <ClInclude Include="CommandRegistrationCatalog.h" />
     <ClInclude Include="CommandRegistry.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="FunctionCommandHandler.h" />
@@ -159,6 +160,7 @@
     <ClCompile Include="CommandContext.cpp" />
     <ClCompile Include="CommandDispatcher.cpp" />
     <ClCompile Include="CommandMessage.cpp" />
+    <ClCompile Include="CommandRegistrationCatalog.cpp" />
     <ClCompile Include="CommandRegistry.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FunctionCommandHandler.cpp" />

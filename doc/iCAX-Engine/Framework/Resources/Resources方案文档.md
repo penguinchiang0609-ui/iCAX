@@ -77,7 +77,7 @@ public:
 
 ## 5. Registry 设计
 
-`CResourceLoaderRegistry` 是按资源类型组织的 loader 注册表。正式运行路径使用 ApplicationHost 持有的应用级 registry；裸用 `CResourceLibrary` 或底层测试可以回退到静态全局 registry。内部结构：
+`CResourceLoaderRegistry` 是按资源类型组织的 loader 注册表。正式运行路径中，ProductRuntime 持有产品级 registry，Project 持有项目级 registry；默认 `CResourceLibrary` 会创建空的私有 registry，不回退静态全局 registry。内部结构：
 
 ```cpp
 std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>> loaders;
@@ -98,7 +98,7 @@ CResourceLoaderRegistry registry;
 registry.RegisterLoader(typeid(ModelResource), std::make_shared<FbxResourceLoader>());
 ```
 
-宏在静态初始化阶段把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ApplicationHost 创建应用级 registry 后，ProductRuntime 按产品模块路径把对应注册动作回放进去。业务代码不需要在每次加载资源时传 registry。`.fbx`、`.png` 这类后缀只是来源格式，应由 loader 的 `CanLoad` 判断，不作为注册表的 key。
+宏在静态初始化阶段把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ProductRuntime 加载产品模块后，按产品模块路径把对应注册动作回放到产品级 registry；创建 Project 时再回放到项目级 registry。业务代码不需要在每次加载资源时传 registry。`.fbx`、`.png` 这类后缀只是来源格式，应由 loader 的 `CanLoad` 判断，不作为注册表的 key。
 
 `Load` 的流程：
 
@@ -137,7 +137,7 @@ project resource library.Get<T>(internalKey)
   return loaded object
 ```
 
-如果 `CResourceLibrary` 没有绑定 registry，会回退到静态全局 registry。正式 Project 路径由 `Project` 构造时注入 ApplicationHost 的应用级 registry，不依赖全局静态注册表。
+如果 `CResourceLibrary` 没有绑定 registry，会创建空的私有 registry。正式 Project 路径由 `Project` 构造时注入项目级 registry，不依赖全局静态注册表。
 
 路径入口生成的内部 key 直接保存 `source` 字符串，不进行二次映射。对上层而言，路径就是资源身份，同一个路径不会因为 `T` 不同而形成两个 key。
 

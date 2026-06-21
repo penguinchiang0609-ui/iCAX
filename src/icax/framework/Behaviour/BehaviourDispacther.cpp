@@ -103,7 +103,8 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(IN const IUniverseContext& Cont
 {
     auto& _View = Context_.GetDatabase().GetView();
 
-    //!< OnStart
+    // Start 只针对本帧首次出现在当前组件缓存中的组件调用。
+    // GetPreEntities 保存上一帧快照，RefreshPreCache 在 Start 阶段结束后推进。
     for (const auto& _pBehaviour : m_OrderedList) 
     {
         if (IsPaused(typeid(*_pBehaviour)))//! 被暂停的则跳过
@@ -126,7 +127,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(IN const IUniverseContext& Cont
     }
     _View.RefreshPreCache();
 
-    //!< OnPreUpdate
+    // PreUpdate、Update、PostUpdate 都按行为绑定顺序执行；每个行为内部遍历它关注的组件缓存。
     for (const auto& _pBehaviour : m_OrderedList)
     {
         if (IsPaused(typeid(*_pBehaviour)))
@@ -177,6 +178,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnNotify(IN const IUniverseContext& 
     {
         return;
     }
+    // Repository 只发布数据事件；Dispatcher 在这里把数据事件翻译成 Behaviour 生命周期回调。
     switch (nType_)
     {
     case kAddComponent:

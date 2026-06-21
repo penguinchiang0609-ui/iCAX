@@ -1,3 +1,5 @@
+import { getCommandTypeCode } from "./commandNames.mjs";
+
 const DEFAULT_TIMEOUT_MS = 15000;
 
 export class MailboxError extends Error {
@@ -54,6 +56,7 @@ export class MailboxClient {
       id: requestId,
       originId: 0,
       command,
+      typeCode: getCommandTypeCode(command),
       stamp: "Ok",
       payload,
     };

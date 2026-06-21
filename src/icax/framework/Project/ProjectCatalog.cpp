@@ -284,6 +284,22 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         CreateInfo_.pResourceLoaderRegistry = m_ResourceLoaderRegistryFactory();
     }
+    if (!CreateInfo_.pMetaRegistry)
+    {
+        throw std::invalid_argument("ProjectCatalog MetaRegistry cannot be null");
+    }
+    if (!CreateInfo_.pBehaviourRegistry)
+    {
+        throw std::invalid_argument("ProjectCatalog BehaviourRegistry cannot be null");
+    }
+    if (!CreateInfo_.pMailChannelService)
+    {
+        throw std::invalid_argument("ProjectCatalog MailChannelService cannot be null");
+    }
+    if (!CreateInfo_.pResourceLoaderRegistry)
+    {
+        throw std::invalid_argument("ProjectCatalog ResourceLoaderRegistry cannot be null");
+    }
 
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     if (CreateInfo_.Role == EProjectRole::Main && !m_MainProjectID.is_nil())

@@ -12,5 +12,6 @@ Handler 通过 `ICommandContext` 获取执行依赖。可选依赖使用 `GetDep
 - `ICommandContext.h` / `CommandContext.*`：命令执行上下文和依赖注入容器。
 - `ICommandHandler.h` / `FunctionCommandHandler.*`：命令处理器接口和函数适配器。
 - `CommandRegistry.*`：命令 type code 到 handler 的注册表。
+- `CommandRegistrationCatalog.*`：产品命令模块的自动注册回放表。
 - `CommandDispatcher.*`：命令分发和异常到状态码的转换。
 - `CommandHandlerExport.h`：DLL 导出宏。

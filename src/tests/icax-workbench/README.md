@@ -5,3 +5,4 @@
 ## 目录结构
 
 - `mailboxClientTest.mjs`：验证 H5 Mailbox request/response Promise 语义、超时处理，以及 `App.OpenProjectFile` 不需要前端传产品 ID。
+- `productModuleHostTest.mjs`：验证产品前端入口解析和动态挂载。

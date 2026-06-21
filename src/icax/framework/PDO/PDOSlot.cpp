@@ -38,6 +38,7 @@ void* iCAX::PDO::CPDOSlot::GetWriteData()
 void iCAX::PDO::CPDOSlot::MarkWriteReady()
 {
     uint8_t wi = m_nWriteIndex.load(std::memory_order_relaxed);
+    // 写侧先填充写缓冲，再用 release 标记 Ready；交换侧用 acquire 读取该状态，保证能看到完整负载。
     m_nSlotStatus[wi].store(ESlotStatus::Ready, std::memory_order_release);
 }
 
@@ -55,11 +56,11 @@ void iCAX::PDO::CPDOSlot::SwapBuffersIfReady()
 
     if (m_nSlotStatus[wi].load(std::memory_order_acquire) == ESlotStatus::Ready)
     {
-        // 交换索引
+        // 只有完整写入才交换。未交换前多次写同一写缓冲会覆盖旧值，这是 PDO 面向高频数据的可丢弃语义。
         m_nWriteIndex.store(ri, std::memory_order_release);
         m_nReadIndex.store(wi, std::memory_order_release);
 
-        // 新写 buffer 重置状态
+        // 旧读缓冲成为新的写缓冲，必须清空 Ready 状态，避免下一帧误交换。
         m_nSlotStatus[ri].store(ESlotStatus::Empty, std::memory_order_relaxed);
     }
 }

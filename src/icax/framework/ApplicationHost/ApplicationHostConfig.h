@@ -15,6 +15,7 @@ namespace iCAX
     {
         /*
         * @brief 配置文件
+        * @details ApplicationHostConfig 是宿主启动参数，必须在 Start 前设置。
         */
         struct _APPLICATION_HOST_EXP ApplicationHostConfig
         {

@@ -144,10 +144,6 @@ private: \
     }; \
     inline static _AutoRegister_Property_##name s_autoRegister_Property_##name{};
 
-//! 旧名保留：运行时字段应通过meta声明为非持久化可观察字段
-#define DECLARED_ICAX_VOLATILE_FIELD(ownerType, type, name, defaultValue, equalLambda, toVariantLambda, fromVariantLambda) \
-    DECLARED_ICAX_OBSERVABLE_FIELD(ownerType, type, name, defaultValue, equalLambda, toVariantLambda, fromVariantLambda)
-
 //! 声明非持久化静默字段，该字段正常发布事件，但订阅者可按meta忽略版本和撤销还原
 #define DECLARED_ICAX_SILENT_FIELD(ownerType, type, name, defaultValue, equalLambda, toVariantLambda, fromVariantLambda) \
 private: \
@@ -201,10 +197,6 @@ public:\
     { \
         m_##name = value; \
     }\
-
-//! 旧名兼容：运行时裸字段
-#define DECLARED_ICAX_NOVERSION_FIELD(type, name, defaultValue) \
-    DECLARED_ICAX_RUNTIME_FIELD(type, name, defaultValue)
 
 //! 声明派生字段，该字段只读，按需计算并由Database维护过期状态
 #define DECLARED_ICAX_DERIVED_FIELD(ownerType, type, name, toVariantLambda, evaluatorLambda) \

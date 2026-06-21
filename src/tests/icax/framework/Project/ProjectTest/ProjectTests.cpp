@@ -2,6 +2,7 @@
 
 #include <Project/ProjectCatalog.h>
 #include <Project/Project.h>
+#include <Project/ProjectRuntime.h>
 #include <Behaviour/IBehaviourRegistry.h>
 #include <Database/IMetaRegistry.h>
 #include <Resources/IResourceLoader.h>
@@ -70,16 +71,29 @@ namespace
         return _pService;
     }
 
+    std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> MakeResourceLoaderRegistry()
+    {
+        return std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
+    }
+
     CProjectCatalogCreateInfo MakeCatalogInfo()
     {
         CProjectCatalogCreateInfo _Info;
+        _Info.pMetaRegistry = iCAX::Database::CreateMetaRegistry();
+        _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
         _Info.pMailChannelService = MakeMailChannelService();
+        _Info.ResourceLoaderRegistryFactory = []() {
+            return MakeResourceLoaderRegistry();
+        };
         return _Info;
     }
 
     CProjectCreateInfo MakeProjectInfo()
     {
         CProjectCreateInfo _Info;
+        _Info.pMetaRegistry = iCAX::Database::CreateMetaRegistry();
+        _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
+        _Info.pResourceLoaderRegistry = MakeResourceLoaderRegistry();
         _Info.pMailChannelService = MakeMailChannelService();
         return _Info;
     }
@@ -162,6 +176,27 @@ TEST(ProjectCatalogTest, ProjectUsesInjectedMetaRegistry)
     CProject _Project(_Info);
 
     EXPECT_EQ(_pMeta, _Project.Database().GetMetaRegistry());
+}
+
+TEST(ProjectCatalogTest, ProjectCreationRequiresExplicitRegistries)
+{
+    auto _Info = MakeProjectInfo();
+    _Info.pMetaRegistry.reset();
+    EXPECT_THROW({
+        CProject _Project(_Info);
+    }, std::invalid_argument);
+
+    _Info = MakeProjectInfo();
+    _Info.pBehaviourRegistry.reset();
+    EXPECT_THROW({
+        CProject _Project(_Info);
+    }, std::invalid_argument);
+
+    _Info = MakeProjectInfo();
+    _Info.pResourceLoaderRegistry.reset();
+    EXPECT_THROW({
+        CProject _Project(_Info);
+    }, std::invalid_argument);
 }
 
 TEST(ProjectCatalogTest, ProjectResourceLoadersAreIsolated)
@@ -370,4 +405,22 @@ TEST(ProjectTest, CloseInvalidatesProjectMailPostOffices)
     EXPECT_THROW(_FrontendPostOffice.Send(iCAX::Mail::Mail{}), std::logic_error);
     EXPECT_THROW(_BackendPostOffice.Receive(), std::logic_error);
     EXPECT_THROW(_Project.GetFrontendPostOffice(), std::logic_error);
+}
+
+TEST(ProjectRuntimeTest, CloseReleasesLocalProjectReference)
+{
+    auto _Info = MakeProjectInfo();
+    _Info.ProjectName = "Runtime Local Project";
+    auto _pProject = std::make_shared<CProject>(_Info);
+    auto _pRuntime = CreateLocalProjectRuntime(_pProject);
+
+    ASSERT_NE(nullptr, _pRuntime->GetLocalProject());
+    EXPECT_TRUE(_pRuntime->IsOpen());
+
+    _pRuntime->Close();
+
+    EXPECT_EQ(nullptr, _pRuntime->GetLocalProject());
+    EXPECT_FALSE(_pRuntime->IsOpen());
+    EXPECT_FALSE(_pProject->IsOpen());
+    EXPECT_THROW((void)_pRuntime->GetProjectName(), std::logic_error);
 }

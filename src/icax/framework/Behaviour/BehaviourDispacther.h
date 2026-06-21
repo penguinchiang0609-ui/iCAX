@@ -15,6 +15,9 @@ namespace iCAX
 
         /*
         * @brief Behaviour调度器
+        * @remark
+        *   Dispatcher 保存 Universe 已绑定的行为列表，并负责按帧顺序或 Repository 事件调用 Behaviour。
+        *   行为执行顺序等于绑定顺序，业务逻辑不要依赖 unordered_set 的遍历顺序。
         */
         class _SYSTEM_EXP CBehaviourDispatcher final
         {
@@ -39,6 +42,7 @@ namespace iCAX
             /*
             * @brief 追加行为
             * @param [in] nType_
+            * @return true 表示新增绑定；false 表示该行为已绑定。
             */
             bool Pushback(IN const std::type_index& nType_);
 
@@ -51,6 +55,7 @@ namespace iCAX
             /*
             * @brief 是否暂停
             * @param [in] nType_
+            * @return true 表示该行为已暂停。
             */
             bool IsPaused(IN const std::type_index& nType_) const;
 
@@ -87,16 +92,22 @@ namespace iCAX
 
             /*
             * @brief tick
+            * @param [in] Context_ Universe 上下文。
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
+            * @details
+            *   执行顺序为：新组件 Start -> RefreshPreCache -> PreUpdate -> Update -> PostUpdate。
+            *   暂停的行为在上述阶段都会跳过。
             */
             void Tick(IN const IUniverseContext& Context_, IN const double& nDeltaTime_, IN const double& nTotalTime_) const;
 
             /*
             * @brief 通知
+            * @param [in] Context_ Universe 上下文。
             * @param [in] nType_
             * @param [in] pComponent_
             * @param [in] Properties_
+            * @details Repository 事件会被映射到 Awake/Enable/Disable/Destroy/Modifying/Modified。
             */
             void OnNotify(IN const IUniverseContext& Context_, IN NotifyType nType_, IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& Properties_) const;
 

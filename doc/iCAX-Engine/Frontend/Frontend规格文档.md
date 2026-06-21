@@ -109,6 +109,7 @@ interface IcaxMail {
   id: string | number;
   originId?: string | number;
   command: string;
+  typeCode?: string;
   stamp?: string;
   payload?: unknown;
 }
@@ -139,6 +140,7 @@ const opened = await appClient.openProjectFile("D:/projects/sample.icax");
 Promise 的完成规则：
 
 - request mail 必须带有唯一 `id`。
+- request mail 应同时带 `command` 和 `typeCode`。`command` 是调试友好的文本名，`typeCode` 是 C++ `MailHeader::nTypeCode` 使用的 `uint64` 十进制字符串。
 - request mail 的 `originId` 为 `0` 或空，表示它不是响应。
 - response mail 的 `originId` 必须等于 request mail 的 `id`。
 - `stamp == "Ok"` 时 Promise resolve `payload`。

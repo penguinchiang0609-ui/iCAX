@@ -100,6 +100,22 @@ auto projectOffice = productRuntime->GetProjectFrontendPostOffice(project->GetPr
 
 `ProductRuntime` 内部通过 `IProjectRuntime` 管理项目运行实例。当前实现使用 `CLocalProjectRuntime` 包装进程内 `CProject`；上层只应依赖项目 ID、状态和项目 mailbox，不应假设项目一定和 ProductRuntime 位于同一个地址空间。
 
+产品运行时拥有自己的产品级注册表：
+
+```text
+ProductRuntime
+  Product MetaRegistry
+  Product BehaviourRegistry
+  Product ResourceLoaderRegistry
+  Product CommandRegistry
+```
+
+产品模块加载后，`ComponentMeta`、`Behaviour`、`ResourceLoader` 和 `CommandHandler` 的宏注册动作只回放到当前产品运行时。Service 注册动作回放到 Application 级 `CServiceProvider`，因为服务是应用级共享能力。
+
+每个 Project 创建时会得到自己的 `ResourceLoaderRegistry`，该 registry 从当前产品模块重新回放 ResourceLoader 注册动作。这样 loader 实例、资源对象和资源池都按 Project 隔离。
+
+产品 DLL 进程内只加载一次。由于自动注册宏只提供注册、不提供注销，模块加载后按进程常驻处理；停止产品只关闭 mailbox、ProjectCatalog、ProjectRuntime 和产品数据，不卸载 DLL。
+
 ## 5. 产品级命令
 
 - `kProductGetStateCommand` / `Product.GetState`：查询产品状态和 ProjectCatalog 列表。

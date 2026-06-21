@@ -42,19 +42,24 @@ namespace iCAX
             * @brief 设置属性
             * @param [in] strPropertyName_ 属性名称
             * @param [in] NewValue_ 值
+            * @details
+            *   会在写入前后触发 ComponentChanging/ComponentChanged。
+            *   字段是否真正触发事件、版本或日志，最终由字段 meta 的 ChangePolicy 决定。
             */
             void SetProperty(IN const std::string& strPropertyName_, IN const PropertyValue& NewValue_);
 
             /*
             * @brief 批量设置
             * @param [in] Properties_
-            * @remark 此处不可以通过调用SetProperty来实现，因为SetProperty会触发修改
+            * @remark
+            *   此处不可以通过调用 SetProperty 来实现，因为 SetProperty 会逐字段触发修改。
+            *   SetProperties 用于回放、加载和批量恢复已有状态。
             */
             void SetProperties(IN const PropertySet& Properties_);
 
             /*
             * @brief 获取属性
-            * @return PropertySet
+            * @return 当前组件全部属性集合。
             */
             virtual PropertySet GetProperties() const;
 
@@ -79,11 +84,13 @@ namespace iCAX
         public:
             /*
             * @brief 启用
+            * @details 会触发组件启用事件。
             */
             void Enable();
 
             /*
             * @brief 禁用
+            * @details 会触发组件禁用事件。
             */
             void Disable();
 
@@ -95,13 +102,13 @@ namespace iCAX
 
             /*
             * @brief 获取版本号
-            * @return size_t
+            * @return 组件在 Repository 版本表中的版本号；脱离 Repository 时返回 0。
             */
             size_t Version() const;
 
             /*
             * @brief 是否发生了更改
-            * @return bool
+            * @return true 表示本帧或当前统计周期内组件被标记为 changed。
             */
             bool IsChanged() const;
 
@@ -165,6 +172,10 @@ namespace iCAX
         protected:
             struct _DATABASE_EXP ComponentChangeNotifier final
             {
+                /*
+                * @brief 构造组件修改通知器。
+                * @details 构造时发送 Changing，析构时在无异常或异常数未增加时发送 Changed。
+                */
                 ComponentChangeNotifier(IN CComponentBase* pBase_, IN ComponentEventArgs::EventType nType_, IN const PropertySet& Previous_, IN const PropertySet& New_);
                 ~ComponentChangeNotifier();
                 ComponentChangeNotifier(IN const ComponentChangeNotifier&) = delete;
@@ -181,6 +192,10 @@ namespace iCAX
 
             struct _DATABASE_EXP ComponentChangeNotificationSuppressor final
             {
+                /*
+                * @brief 临时抑制组件事件。
+                * @details 用于回放或批量状态恢复，避免内部写入再次触发事件。
+                */
                 ComponentChangeNotificationSuppressor(IN CComponentBase* pBase_);
                 ~ComponentChangeNotificationSuppressor();
                 ComponentChangeNotificationSuppressor(IN const ComponentChangeNotificationSuppressor&) = delete;

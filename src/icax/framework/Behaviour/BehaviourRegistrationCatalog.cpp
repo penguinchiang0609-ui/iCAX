@@ -110,6 +110,7 @@ size_t iCAX::Behaviour::CBehaviourRegistrationCatalog::ReplayFrom(IN size_t nFir
         nFirstIndex_ = _AllRegistrations.size();
     }
 
+    // 回放前释放 catalog 锁，避免注册 Behaviour 时又触发模块加载或注册表访问造成死锁。
     for (const auto& _Registration : _Registrations)
     {
         _Registration.Replay(Registry_);
@@ -133,6 +134,7 @@ void iCAX::Behaviour::CBehaviourRegistrationCatalog::ReplayByModulePaths(
         _Registrations = GetRegistrations();
     }
 
+    // ProductRuntime 只回放本产品模块贡献的 Behaviour，以实现产品级行为隔离。
     for (const auto& _Registration : _Registrations)
     {
         if (std::find(_ModulePaths.begin(), _ModulePaths.end(), _Registration.ModulePath) != _ModulePaths.end())

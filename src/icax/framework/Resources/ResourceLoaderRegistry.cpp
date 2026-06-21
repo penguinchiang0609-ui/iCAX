@@ -16,6 +16,7 @@ bool iCAX::Resource::CResourceLoaderRegistry::RegisterLoader(IN const std::type_
     auto& _Loaders = m_Loaders[std::type_index(ResourceType_)];
     for (const auto& _Loader : _Loaders)
     {
+        // 同一实例或同一 loader 实现类型只保留一份，避免重复 CanLoad/Load。
         if (_Loader == pLoader_)
         {
             return false;
@@ -59,6 +60,7 @@ std::shared_ptr<iCAX::Resource::IResourceLoader> iCAX::Resource::CResourceLoader
         }
     }
 
+    // 在锁外调用 CanLoad，避免 loader 内部间接注册或查询时造成注册表锁重入。
     for (const auto& _Loader : _Candidates)
     {
         if (_Loader && _Loader->CanLoad(Context_))
@@ -125,6 +127,7 @@ iCAX::Resource::CResourceLoaderRegistry& iCAX::Resource::CResourceLoaderRegistry
 {
     static CResourceLoaderRegistry _Registry;
     static size_t _nReplayedRegistrationCount = 0;
+    // 全局 Registry 增量回放新注册项，支持模块运行期加载后的静态自动注册。
     _nReplayedRegistrationCount = CResourceLoaderRegistrationCatalog::ReplayFrom(_nReplayedRegistrationCount, _Registry);
     return _Registry;
 }

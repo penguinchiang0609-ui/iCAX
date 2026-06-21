@@ -126,6 +126,13 @@ namespace
         (void)_Registered;
         return _pLoader;
     }
+
+    std::shared_ptr<CResourceLoaderRegistry> MakeMemoryTextRegistry()
+    {
+        auto _pRegistry = std::make_shared<CResourceLoaderRegistry>();
+        _pRegistry->RegisterLoader(typeid(TextResource), GetMemoryTextLoader());
+        return _pRegistry;
+    }
 }
 
 ICAX_REGISTER_RESOURCE_LOADER(MacroTextResource, MacroTextLoader)
@@ -579,7 +586,7 @@ TEST(ResourceKeyTest, SourcePathKeyIsStable)
 
 TEST(ResourceLibraryTest, LoadsWithoutExposingPool)
 {
-    CResourceLibrary _Resources;
+    CResourceLibrary _Resources(MakeMemoryTextRegistry());
     auto _pLoader = GetMemoryTextLoader();
     _pLoader->nLoadCount = 0;
 
@@ -629,8 +636,8 @@ TEST(ResourceLibraryTest, SeparateLibrariesDoNotShareResourceObjects)
     auto _pLoader = GetMemoryTextLoader();
     _pLoader->nLoadCount = 0;
 
-    CResourceLibrary _ProjectAResources;
-    CResourceLibrary _ProjectBResources;
+    CResourceLibrary _ProjectAResources(MakeMemoryTextRegistry());
+    CResourceLibrary _ProjectBResources(MakeMemoryTextRegistry());
 
     auto _pA = _ProjectAResources.Load<TextResource>("memory://shared-source");
     auto _pB = _ProjectBResources.Load<TextResource>("memory://shared-source");
@@ -643,6 +650,18 @@ TEST(ResourceLibraryTest, SeparateLibrariesDoNotShareResourceObjects)
     EXPECT_EQ(1u, _ProjectAResources.Count());
     EXPECT_EQ(1u, _ProjectBResources.Count());
     EXPECT_EQ(2, _pLoader->nLoadCount);
+}
+
+TEST(ResourceLibraryTest, DefaultLibraryDoesNotUseGlobalLoaders)
+{
+    auto _pLoader = GetMemoryTextLoader();
+    _pLoader->nLoadCount = 0;
+
+    CResourceLibrary _Resources;
+    auto _pText = _Resources.Load<TextResource>("memory://default-library");
+
+    EXPECT_EQ(nullptr, _pText);
+    EXPECT_EQ(0, _pLoader->nLoadCount);
 }
 
 TEST(ResourceLibraryTest, CanMoveProjectResourceLibrary)

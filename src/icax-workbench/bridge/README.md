@@ -19,3 +19,12 @@
 - `createBridge.mjs`：优先接入宿主注入的 bridge；没有宿主时使用 mock bridge。
 - `hostBridge.mjs`：宿主 bridge 适配器，统一 `postMail`、`subscribeMail`、文件选择和项目文件打开事件。
 - `mockBridge.mjs`：浏览器调试用 mock backend，异步返回 response mail。
+## 开发态产品注入
+
+没有原生宿主时，workbench 使用 `MockIcaxBridge`。开发调试具体产品时，可以通过 URL 注入产品 manifest：
+
+```text
+/?mockProductManifest=/apps/flat-laser-cam/frontend/productManifest.mjs
+```
+
+manifest 需要导出 `createMockProduct()`。这样通用 workbench 不需要硬编码任何具体产品信息。

@@ -129,7 +129,7 @@ project mail id -> project commands
 
 产品模块由 `CProductDefinition::Modules` 声明。`ApplicationHost` 不加载产品模块，启动产品时由 `ProductRuntime::Start()` 调用 `LoadLibraryA` 加载。
 
-当前阶段仍兼容已有 DLL 自动注册宏。宏注册项由注册目录记录，产品启动后回放到 ApplicationHost 的应用级 ServiceProvider、MetaRegistry、BehaviourRegistry 和 ResourceLoaderRegistry。这样扩展模块仍然按宏自动注册，不增加业务代码编写成本。
+扩展模块继续使用 DLL 自动注册宏。宏注册项由注册目录记录，产品启动后回放到对应的 ServiceProvider、MetaRegistry、BehaviourRegistry 和 ResourceLoaderRegistry。这样扩展模块按产品定义加载，不增加业务代码编写成本。
 
 ## 8. 设计原则
 

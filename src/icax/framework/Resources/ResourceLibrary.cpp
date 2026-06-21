@@ -23,7 +23,7 @@ namespace
 
 iCAX::Resource::CResourceLibrary::CResourceLibrary()
     : m_pPool(std::make_unique<CResourcePool>())
-    , m_pLoaderRegistry(nullptr)
+    , m_pLoaderRegistry(std::make_shared<CResourceLoaderRegistry>())
 {
 }
 
@@ -136,21 +136,27 @@ std::shared_ptr<void> iCAX::Resource::CResourceLibrary::LoadUntyped(
     auto& _Pool = GetPool();
     const auto _Key = MakeResourceKeyFromSource(strSource_);
 
+    // 资源加载优先走项目本地缓存；typeid 不匹配时不能复用同 key 对象。
     auto _pExisting = _Pool.GetUntyped(_Key, RuntimeType_);
     if (_pExisting)
     {
         return _pExisting;
     }
 
+    // 同 key 已加载成其他 C++ 类型时返回空，避免 static_pointer_cast 到错误类型。
     if (_Pool.HasObject(_Key))
     {
         return nullptr;
     }
 
     auto _Context = MakeLoadContext(_Pool, _Key, std::type_index(RuntimeType_), strSource_, Info_, Options_);
-    auto _Result = m_pLoaderRegistry
-        ? m_pLoaderRegistry->LoadResource(_Context)
-        : CResourceLoaderRegistry::Load(_Context);
+    if (!m_pLoaderRegistry)
+    {
+        throw std::logic_error("Resource library has no loader registry");
+    }
+
+    // LoaderRegistry 只负责找 loader 和规范化加载结果；写回资源池由 ResourceLibrary 统一完成。
+    auto _Result = m_pLoaderRegistry->LoadResource(_Context);
     if (!_Result.IsOK())
     {
         return nullptr;

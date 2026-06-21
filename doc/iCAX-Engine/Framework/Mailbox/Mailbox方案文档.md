@@ -91,7 +91,7 @@ void Clear();
 
 设计要点：
 
-- `Enqueue` 只做浅拷贝，避免模块参与 Payload 序列化。
+- `Enqueue` 复制 `MailHeader` 并深拷贝 Payload，避免调用方释放原始邮件后队列悬空。
 - `Drain` 使用 `swap` 整体取出队列，降低锁内开销。
 - `Clear` 释放仍滞留在队列中的 Payload。
 - 队列禁止拷贝，避免多个队列持有同一批裸指针 Payload。
@@ -199,10 +199,11 @@ Payload 生命周期：
   调用方拥有 Payload
 
 Send / Enqueue 后：
-  目标队列持有 Payload 指针
+  目标队列持有 Payload 的独立拷贝
+  调用方仍持有原始 Payload，需要自行释放
 
 Receive / Drain 后：
-  调用方重新获得 Payload 所有权
+  调用方获得队列中那份 Payload 拷贝的所有权
 
 Clear 或队列析构：
   队列释放仍滞留的 Payload
@@ -212,7 +213,7 @@ Clear 或队列析构：
 
 - 非空 Payload 必须由 `new[]` 分配。
 - 接收方处理完邮件后必须 `delete[] Payload.pData`。
-- 发送方在 `Send` 后不能再释放同一 Payload。
+- 发送方在 `Send` 后应该释放自己传入的原始 Payload；队列释放或返回的是队列深拷贝出的 Payload。
 - `CMailPostOffice` 不负责队列生命周期。
 - 生命周期所有者移除 `CMailChannel` 后，旧 `CMailPostOffice` 自动失效。
 - 生命周期所有者调用 `CMailChannel::Reset()` 后，旧 `CMailPostOffice` 自动失效，新获取的邮局绑定新队列。

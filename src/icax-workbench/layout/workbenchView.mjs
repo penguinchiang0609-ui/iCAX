@@ -10,7 +10,7 @@ function productStatus(product) {
   return product.isStarted ? "Running" : "Stopped";
 }
 
-export function mountWorkbench(root, actions) {
+export function mountWorkbench(root, actions, options = {}) {
   if (!root) {
     throw new TypeError("root is required");
   }
@@ -51,6 +51,7 @@ export function mountWorkbench(root, actions) {
     render(state) {
       latestState = state;
       root.innerHTML = renderWorkbench(state);
+      options.productModuleHost?.render(state, root);
     },
     getState() {
       return latestState;
@@ -159,6 +160,7 @@ function renderProductCard(product) {
 function renderProductWorkspace(product) {
   const recentProjects = product.recentProjects ?? [];
   const catalogs = product.runtime?.catalogs ?? product.catalogs ?? [];
+  const projectPath = defaultProjectPath(product);
   return `
     <main class="workspace">
       <section class="workspace-header">
@@ -176,8 +178,13 @@ function renderProductWorkspace(product) {
         `}
       </section>
 
+      <section class="product-extension-shell"
+               data-product-extension
+               data-product-id="${escapeText(product.productId)}"
+               data-extension-mode="product"></section>
+
       <section class="open-project-strip">
-        <input data-field="projectPath" type="text" value="D:/projects/sample.icax" aria-label="Project path" />
+        <input data-field="projectPath" type="text" value="${escapeText(projectPath)}" aria-label="Project path" />
         <button class="primary-button" data-action="open-file" type="button">Open File</button>
         <button class="tool-button" data-action="choose-file" type="button">Browse</button>
       </section>
@@ -211,6 +218,16 @@ function renderProductWorkspace(product) {
   `;
 }
 
+function defaultProjectPath(product) {
+  const recentPath = product.recentProjects?.[0]?.path;
+  if (recentPath) {
+    return recentPath;
+  }
+
+  const extension = product.projectFile?.fileExtensions?.[0] ?? ".icax";
+  return `D:/projects/sample${extension}`;
+}
+
 function renderProjectRow(catalog) {
   const project = catalog.mainProject;
   return `
@@ -239,12 +256,17 @@ function renderProjectWorkspace(product, project) {
         </div>
       </section>
       <div class="editor-surface">
-        <div class="editor-title">${escapeText(product.productName)} Project Workspace</div>
-        <div class="editor-grid">
-          <div>Scene</div>
-          <div>Process</div>
-          <div>Resources</div>
-          <div>Diagnostics</div>
+        <div data-product-extension
+             data-product-id="${escapeText(product.productId)}"
+             data-project-id="${escapeText(project.projectId)}"
+             data-extension-mode="project">
+          <div class="editor-title">${escapeText(product.productName)} Project Workspace</div>
+          <div class="editor-grid">
+            <div>Scene</div>
+            <div>Process</div>
+            <div>Resources</div>
+            <div>Diagnostics</div>
+          </div>
         </div>
       </div>
     </main>

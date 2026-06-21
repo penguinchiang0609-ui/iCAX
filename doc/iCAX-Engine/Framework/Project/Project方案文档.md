@@ -76,10 +76,11 @@ CLocalProjectRuntime
 ProjectCatalog::OpenMainProject(name, path, startupComponent)
   -> fail if main project already exists
   -> Generate project id
-  -> Database::GenerateRepository(project id)
+  -> require product MetaRegistry / BehaviourRegistry / project ResourceLoaderRegistry / MailChannelService
+  -> Database::GenerateRepository(project id, product MetaRegistry)
   -> create UniverseContext(repository, application settings)
-  -> Behaviour::GenerateUniverse()
-  -> create ResourceLibrary
+  -> Behaviour::GenerateUniverse(product BehaviourRegistry)
+  -> create ResourceLibrary(project ResourceLoaderRegistry)
   -> create project mail channel through IMailChannelService
   -> Project subscribes repository events
   -> set main project id
@@ -114,8 +115,8 @@ Project
 
 应用级命令仍使用 `ApplicationHost::GetApplicationMailID()` 对应的应用级邮局，适合列产品、启动产品、停止产品。打开 ProjectCatalog 走产品级邮局。
 
-## 7. 与应用级注册表的关系
+## 7. 与产品级注册表的关系
 
-当前组件元数据、Behaviour 定义、Service 和 ResourceLoader 都在 Application 级装配。产品模块加载后，模块中的宏注册项会被 `ProductRuntime` 回放到 `ApplicationHost` 持有的应用级注册表或服务容器。
+当前组件元数据、Behaviour 定义、ResourceLoader 和 CommandHandler 都在 ProductRuntime 级装配。产品模块加载后，模块中的宏注册项会被 `ProductRuntime` 回放到当前产品的注册表。Service 仍在 Application 级 ServiceProvider 中共享。
 
-Project 不维护自己的业务类型目录。Project 创建 Repository、Universe 和 ResourceLibrary 时只引用应用级定义能力；实体数据、组件实例、资源对象、项目消息和项目线程仍完全归属当前 Project。
+Project 不维护自己的业务类型目录。Project 创建 Repository 和 Universe 时引用产品级定义能力；创建 ResourceLibrary 时使用项目自己的 ResourceLoaderRegistry。实体数据、组件实例、资源对象、项目消息和项目线程仍完全归属当前 Project。

@@ -30,10 +30,11 @@ function makeProduct() {
 }
 
 export class MockIcaxBridge {
-  constructor() {
+  constructor(options = {}) {
     this.subscribers = new Map();
-    this.products = [makeProduct()];
+    this.products = options.products ?? [makeProduct()];
     this.catalogsByProductId = new Map();
+    this.projectsByMailId = new Map();
     this.nextMailId = 1000;
     this.nextCatalogId = 1;
     this.nextProjectId = 1;
@@ -60,7 +61,8 @@ export class MockIcaxBridge {
   }
 
   async openFileDialog() {
-    return "D:/projects/sample.icax";
+    const product = this.products.find((item) => item.isStarted) ?? this.products[0];
+    return product?.recentProjects?.[0]?.path ?? `D:/projects/sample${product?.projectFile?.fileExtensions?.[0] ?? ".icax"}`;
   }
 
   onProjectFileOpen(handler) {
@@ -87,6 +89,11 @@ export class MockIcaxBridge {
       const product = this.products.find((item) => item.productMailId === mailId);
       if (product) {
         return this.#makeReply(mail, this.#handleProductCommand(product, mail));
+      }
+
+      const projectRuntime = this.projectsByMailId.get(mailId);
+      if (projectRuntime) {
+        return this.#makeReply(mail, this.#handleProjectCommand(projectRuntime, mail));
       }
 
       return this.#makeReply(mail, { error: "mailId not found" }, "NoHandler");
@@ -151,8 +158,9 @@ export class MockIcaxBridge {
   }
 
   #productSummary(product) {
+    const { mockBackend, ...summary } = product;
     return {
-      ...product,
+      ...summary,
       runtime: product.isStarted ? {
         catalogCount: this.#catalogs(product.productId).length,
         catalogs: this.#catalogs(product.productId),
@@ -193,11 +201,22 @@ export class MockIcaxBridge {
       };
     }
 
+    const product = this.#productForProjectPath(projectPath);
+    if (!product) {
+      return {
+        projectPath,
+        status: "NotResolved",
+        productId: "",
+        candidateProductIds: [],
+        matchedByMagic: false,
+      };
+    }
+
     return {
       projectPath,
       status: "Resolved",
-      productId: this.products[0].productId,
-      candidateProductIds: [this.products[0].productId],
+      productId: product.productId,
+      candidateProductIds: [product.productId],
       matchedByMagic: true,
     };
   }
@@ -236,7 +255,7 @@ export class MockIcaxBridge {
         projectMailId: projectId,
         projectName: name,
         projectPath,
-        startupComponent: "SampleStartup",
+        startupComponent: product.defaultProjectStartupComponent || "ProjectStartup",
         role: "Main",
         state: "Running",
         isMainProject: true,
@@ -248,6 +267,16 @@ export class MockIcaxBridge {
     };
 
     this.#catalogs(product.productId).push(catalog);
+    this.projectsByMailId.set(projectId, {
+      productId: product.productId,
+      catalogId: catalog.catalogId,
+      project: catalog.mainProject,
+      state: product.mockBackend?.createProjectState?.({
+        product,
+        catalog,
+        project: catalog.mainProject,
+      }) ?? {},
+    });
     product.recentProjects = [{
       path: projectPath,
       displayName: name,
@@ -264,8 +293,28 @@ export class MockIcaxBridge {
 
   #closeProjectCatalog(product, catalogId) {
     const catalogs = this.#catalogs(product.productId);
+    for (const catalog of catalogs) {
+      if (catalog.catalogId === catalogId && catalog.mainProject?.projectMailId) {
+        this.projectsByMailId.delete(catalog.mainProject.projectMailId);
+      }
+    }
     this.catalogsByProductId.set(product.productId, catalogs.filter((catalog) => catalog.catalogId !== catalogId));
     return this.#productState(product);
+  }
+
+  #handleProjectCommand(projectRuntime, mail) {
+    const product = this.#findProduct(projectRuntime.productId);
+    if (!product.mockBackend?.handleProjectCommand) {
+      return { error: `No project command handler: ${mail.command}` };
+    }
+
+    return product.mockBackend.handleProjectCommand({
+      command: mail.command,
+      payload: mail.payload ?? {},
+      product,
+      project: projectRuntime.project,
+      state: projectRuntime.state,
+    });
   }
 
   #findProduct(productId) {
@@ -287,11 +336,23 @@ export class MockIcaxBridge {
     return this.catalogsByProductId.get(productId);
   }
 
+  #productForProjectPath(projectPath) {
+    const extension = this.#fileExtension(projectPath).toLowerCase();
+    if (!extension) {
+      return null;
+    }
+    return this.products.find((product) => {
+      const extensions = product.projectFile?.fileExtensions ?? [];
+      return extensions.some((item) => item.toLowerCase() === extension);
+    }) ?? null;
+  }
+
   #makeReply(request, payload, stamp = "Ok") {
     return {
       id: this.nextMailId++,
       originId: request.id,
       command: request.command,
+      typeCode: request.typeCode ?? "",
       stamp,
       payload,
     };
@@ -312,5 +373,12 @@ export class MockIcaxBridge {
     const fileName = normalized.split("/").pop() ?? "";
     const dotIndex = fileName.lastIndexOf(".");
     return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
+  }
+
+  #fileExtension(projectPath) {
+    const normalized = projectPath.replaceAll("\\", "/");
+    const fileName = normalized.split("/").pop() ?? "";
+    const dotIndex = fileName.lastIndexOf(".");
+    return dotIndex > 0 ? fileName.slice(dotIndex) : "";
   }
 }

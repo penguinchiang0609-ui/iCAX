@@ -367,6 +367,7 @@ void iCAX::ApplicationHost::CApplicationHost::Start()
     m_State = EApplicationHostState::Starting;
     m_WorkThread = std::thread(&CApplicationHost::WorkerMain, this);
 
+    // Start 对外表现为同步启动：等待工作线程完成 Load，避免前端拿到尚未创建的应用邮箱。
     m_StartupCondition.wait(_Lock, [this]() { return m_bStartupCompleted; });
     if (m_State == EApplicationHostState::Faulted && m_pWorkerException)
     {
@@ -394,6 +395,7 @@ void iCAX::ApplicationHost::CApplicationHost::Stop()
         {
             if (m_WorkThread.get_id() == std::this_thread::get_id())
             {
+                // 防止工作线程内部触发 Stop 后自 join 死锁，只设置停止标记并唤醒等待者。
                 m_StartupCondition.notify_all();
                 return;
             }
@@ -492,6 +494,7 @@ void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
         while (!m_bStopRequested.load(std::memory_order_acquire))
         {
             SetPhase(EApplicationHostPhase::Running);
+            // 宿主线程只处理应用级和产品级邮箱；项目级邮箱由各 Project 工作线程在自己的帧循环处理。
             MainLoop();
             _NextFrameTime += _FrameInterval;
             {
@@ -503,6 +506,7 @@ void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
             }
             if (_NextFrameTime < std::chrono::steady_clock::now() - _FrameInterval)
             {
+                // 宿主主循环不追赶积压帧，避免长耗时命令导致空转补帧。
                 _NextFrameTime = std::chrono::steady_clock::now();
             }
         }
@@ -576,6 +580,7 @@ void iCAX::ApplicationHost::CApplicationHost::Load()
     iCAX::Database::CMetaRegistrationCatalog::ReplayAll(*m_pApplicationMetaRegistry);
     iCAX::Behaviour::CBehaviourRegistrationCatalog::ReplayAll(*m_pApplicationBehaviourRegistry);
     iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayAll(*m_pApplicationResourceLoaderRegistry);
+    // 应用级服务容器中必须包含 MailChannelService；后续 Application/Product/Project 邮箱都通过它创建。
     m_pMailChannelService = m_pApplicationServiceProvider->Resolve<iCAX::Services::IMailChannelService>();
     if (!m_pMailChannelService->CreateChannel(m_ApplicationMailID))
     {
@@ -599,6 +604,12 @@ void iCAX::ApplicationHost::CApplicationHost::MainLoop()
 
 void iCAX::ApplicationHost::CApplicationHost::Unload()
 {
+    {
+        std::unique_lock<std::mutex> _Lock(m_ProductRuntimeMutex);
+        // 如果其他线程正在 StartProduct，等待它退出创建临界区后再卸载，避免 runtime 半创建半销毁。
+        m_ProductRuntimeCondition.wait(_Lock, [this]() { return m_StartingProductIDs.empty(); });
+    }
+
     auto _Runtimes = SnapshotProductRuntimes();
     {
         std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
@@ -787,6 +798,7 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
         {
             auto _Request = _MailToCommandRequest(_Mail);
             iCAX::Command::CCommandContext _Context;
+            // 每封邮件使用新的上下文快照，避免 handler 修改 Context 影响下一封邮件。
             PopulateApplicationCommandContext(_Context);
             _Response = m_pCommandDispatcher->Dispatch(_Request, _Context);
         }
@@ -808,6 +820,8 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
 
         auto _ResponseMail = _CommandResponseToMail(_Mail, _Response, AllocateBackendMailID());
         _PostOffice.Send(_ResponseMail);
+        // Send 会深拷贝 Payload，因此临时响应和请求负载可以在本轮立即释放。
+        _ReleaseMailPayload(_ResponseMail);
         _ReleaseMailPayload(_Mail);
     }
 }
@@ -1161,35 +1175,76 @@ std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::ApplicationHost::CApplicat
     {
         throw std::logic_error("ApplicationHost is not loaded");
     }
-
-    auto _Definition = FindProductDefinition(strProductID_);
     {
-        std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
-        auto _Iter = m_ProductRuntimes.find(_Definition.ProductID);
-        if (_Iter != m_ProductRuntimes.end())
+        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+        if (m_State == EApplicationHostState::Stopping
+            || m_State == EApplicationHostState::Stopped
+            || m_State == EApplicationHostState::Faulted
+            || m_Phase == EApplicationHostPhase::Unloading)
         {
-            return _Iter->second;
+            throw std::logic_error("ApplicationHost is not accepting product starts");
         }
     }
 
-    auto _pRuntime = std::make_shared<iCAX::Product::CProductRuntime>(
-        _Definition,
-        m_pApplicationContext,
-        m_pApplicationSetting,
-        m_pApplicationServiceProvider,
-        m_pApplicationMetaRegistry,
-        m_pApplicationBehaviourRegistry,
-        m_pApplicationResourceLoaderRegistry);
-    _pRuntime->Start();
+    auto _Definition = FindProductDefinition(strProductID_);
+    {
+        std::unique_lock<std::mutex> _Lock(m_ProductRuntimeMutex);
+        for (;;)
+        {
+            auto _Iter = m_ProductRuntimes.find(_Definition.ProductID);
+            if (_Iter != m_ProductRuntimes.end())
+            {
+                return _Iter->second;
+            }
 
+            if (m_StartingProductIDs.insert(_Definition.ProductID).second)
+            {
+                // 当前线程获得该 ProductID 的创建权，退出锁后执行耗时的模块加载和 runtime 启动。
+                break;
+            }
+
+            // 其他线程正在启动同一产品，等待它完成后复用已创建 runtime。
+            m_ProductRuntimeCondition.wait(_Lock);
+        }
+    }
+
+    std::shared_ptr<iCAX::Product::CProductRuntime> _pRuntime;
+    try
+    {
+        _pRuntime = std::make_shared<iCAX::Product::CProductRuntime>(
+            _Definition,
+            m_pApplicationContext,
+            m_pApplicationSetting,
+            m_pApplicationServiceProvider);
+        _pRuntime->Start();
+    }
+    catch (...)
+    {
+        {
+            std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+            m_StartingProductIDs.erase(_Definition.ProductID);
+        }
+        m_ProductRuntimeCondition.notify_all();
+        throw;
+    }
+
+    std::shared_ptr<iCAX::Product::CProductRuntime> _pExistingRuntime;
     {
         std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
         auto [_Iter, _Inserted] = m_ProductRuntimes.emplace(_Definition.ProductID, _pRuntime);
         if (!_Inserted)
         {
-            _pRuntime->Stop();
-            return _Iter->second;
+            _pExistingRuntime = _Iter->second;
         }
+        m_StartingProductIDs.erase(_Definition.ProductID);
+    }
+    m_ProductRuntimeCondition.notify_all();
+
+    if (_pExistingRuntime)
+    {
+        // 极端竞态下如果已有 runtime 先插入，停止本次新建 runtime，返回既有实例。
+        _pRuntime->Stop();
+        return _pExistingRuntime;
     }
     return _pRuntime;
 }
@@ -1198,7 +1253,11 @@ bool iCAX::ApplicationHost::CApplicationHost::StopProduct(IN const std::string& 
 {
     std::shared_ptr<iCAX::Product::CProductRuntime> _pRuntime;
     {
-        std::lock_guard<std::mutex> _Lock(m_ProductRuntimeMutex);
+        std::unique_lock<std::mutex> _Lock(m_ProductRuntimeMutex);
+        m_ProductRuntimeCondition.wait(_Lock, [this, &strProductID_]() {
+            return m_StartingProductIDs.find(strProductID_) == m_StartingProductIDs.end();
+        });
+
         auto _Iter = m_ProductRuntimes.find(strProductID_);
         if (_Iter == m_ProductRuntimes.end())
         {

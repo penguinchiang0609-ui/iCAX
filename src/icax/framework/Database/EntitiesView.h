@@ -14,6 +14,9 @@ namespace iCAX
     {
         /*
         * @brief 实体视图
+        * @details
+        *   监听 Repository 事件并维护组件类型到组件集合的缓存。
+        *   当前缓存用于行为遍历，前缓存用于判断组件是否是本帧新出现。
         */
         class _DATABASE_EXP CEntitiesView final : public IRepositoryEventListener, public IEntitiesView
         {

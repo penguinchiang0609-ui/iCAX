@@ -84,10 +84,20 @@ project.Resources().Remove("D:/assets/robot.fbx");
 auto manifest = project.Resources().GetManifest();
 ```
 
-在没有 Project 封装的测试或局部代码中，也可以直接创建资源库：
+在没有 Project 封装的测试或局部代码中，也可以直接创建资源库。默认构造的 `CResourceLibrary` 会创建一个空的私有 loader registry，不会使用全局 loader：
 
 ```cpp
 CResourceLibrary resources;
+auto missing = resources.Load<ModelResource>("D:/assets/robot.fbx"); // 没有注入 loader，返回 nullptr
+```
+
+需要加载资源时应显式注入 registry：
+
+```cpp
+auto loaders = std::make_shared<CResourceLoaderRegistry>();
+loaders->RegisterLoader(typeid(ModelResource), std::make_shared<FbxResourceLoader>());
+
+CResourceLibrary resources(loaders);
 auto model = resources.Load<ModelResource>("D:/assets/robot.fbx");
 ```
 
@@ -183,7 +193,7 @@ framework 只提供抽象和注册表。具体 `FbxResourceLoader`、`PngResourc
 
 ### 2.6 ResourceLoaderRegistry
 
-`CResourceLoaderRegistry` 按资源类型注册 loader。它既支持实例注册表，也保留静态全局注册表作为裸用 `CResourceLibrary` 或底层测试的回退入口。正式运行路径中，`ApplicationHost` 持有应用级 registry，`ProductRuntime` 把产品模块中的 loader 注册回放进去，Project 的 `CResourceLibrary` 使用该应用级 registry 加载资源。
+`CResourceLoaderRegistry` 按资源类型注册 loader。正式运行路径中，ProductRuntime 持有产品级 registry；创建 Project 时会为该 Project 创建独立 registry，并按产品模块路径回放 ResourceLoader 注册动作。Project 的 `CResourceLibrary` 只使用自己的项目级 registry 加载资源。
 
 ```cpp
 bool RegisterLoader(const std::type_info& resourceType, std::shared_ptr<IResourceLoader> loader);
@@ -200,7 +210,7 @@ CResourceLoadResult LoadResource(CResourceLoadContext context);
 ICAX_REGISTER_RESOURCE_LOADER(ModelResource, FbxResourceLoader)
 ```
 
-宏不会直接写入某个全局资源池，而是把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ApplicationHost 创建应用级 registry 后，ProductRuntime 按模块路径把对应注册动作回放到该 registry。
+宏不会直接写入某个全局资源池，而是把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ProductRuntime 加载产品模块后，按模块路径把对应注册动作回放到产品级 registry；创建 Project 时再回放到项目级 registry。
 
 注册表按 C++ 资源类型匹配 loader，也就是 `typeid(ModelResource)`。文件后缀或来源格式不是资源类型，应该由 loader 的 `CanLoad` 判断：
 
@@ -233,12 +243,12 @@ auto resource = project.Resources().Load<T>(source);
 先从当前 Project 的 CResourceLibrary 获取 T
   获取成功 -> 直接返回
   获取失败且内部 key 下已有其他运行时对象 -> 返回 nullptr
-  未加载 -> 通过当前 ResourceLibrary 绑定的 ResourceLoaderRegistry 按 typeid(T) 查找 loader
+  未加载 -> 通过当前 ResourceLibrary 绑定的项目级 ResourceLoaderRegistry 按 typeid(T) 查找 loader
     加载成功 -> 写入当前 Project 的资源库并返回 T
     加载失败 -> 返回 nullptr
 ```
 
-如果 `CResourceLibrary` 是裸创建且没有注入 registry，则会回退到静态全局 registry。该能力主要服务测试和局部工具代码，正式 Project 路径应使用 ApplicationHost 注入的应用级 registry。
+如果 `CResourceLibrary` 是裸创建且没有注入 registry，则只拥有一个空的私有 registry，不会回退到静态全局 registry。
 
 底层资源池仍然使用 `CResourceKey` 做索引，但这是 Resources 内部机制，不作为上层加载资源时必须提供的额外 key。
 

@@ -14,6 +14,17 @@ namespace iCAX
 {
     namespace Resource
     {
+        /*
+        * @brief 合并调用方传入的资源信息和池中已有资源信息。
+        * @param [in] Pool_ 资源池。
+        * @param [in] Key_ 目标资源键。
+        * @param [in] strSource_ 本次加载来源。
+        * @param [in] Info_ 调用方传入的覆盖信息。
+        * @return 补齐 Key/Source 后的资源信息。
+        * @details
+        *   已登记信息作为基础，本次传入的非空/非零字段覆盖旧值。
+        *   这样可以先登记资源清单，真正加载时再补充名称、hash 或其他元数据。
+        */
         inline CResourceInfo BuildLoadInfo(
             IN const CResourcePool& Pool_,
             IN const CResourceKey& Key_,
@@ -69,6 +80,16 @@ namespace iCAX
             return _Info;
         }
 
+        /*
+        * @brief 创建资源加载上下文。
+        * @param [in,out] Pool_ 资源池，用于读取已有资源信息。
+        * @param [in] Key_ 目标资源键。
+        * @param [in] TargetResourceType_ 调用方请求的 C++ 资源类型。
+        * @param [in] strSource_ 加载来源。
+        * @param [in] Info_ 调用方传入的资源信息。
+        * @param [in] Options_ 加载选项。
+        * @return 可传给 IResourceLoader 的上下文。
+        */
         inline CResourceLoadContext MakeLoadContext(
             IN CResourcePool& Pool_,
             IN const CResourceKey& Key_,
@@ -86,6 +107,15 @@ namespace iCAX
             return _Context;
         }
 
+        /*
+        * @brief 将加载结果写回资源池。
+        * @param [in,out] Pool_ 资源池。
+        * @param [in] Result_ 加载结果。
+        * @return true 表示成功写回资源信息或对象。
+        * @details
+        *   如果 Result 只包含 Info，则只登记资源清单；
+        *   如果包含 pResource，则必须带 RuntimeType，并将对象写入资源池。
+        */
         inline bool StoreLoadResult(IN CResourcePool& Pool_, IN const CResourceLoadResult& Result_)
         {
             if (!Result_.IsOK() || !Result_.Info.Key.IsValid())
@@ -109,6 +139,15 @@ namespace iCAX
         }
 
         template <typename T>
+        /*
+        * @brief 使用指定加载器注册表加载资源。
+        * @param [in,out] Pool_ 项目资源池。
+        * @param [in,out] LoaderRegistry_ 加载器注册表。
+        * @param [in] Key_ 资源键。
+        * @param [in] Info_ 资源信息。
+        * @param [in] Options_ 加载选项。
+        * @return 类型匹配的资源对象；失败、类型冲突或 key 无效时返回 nullptr。
+        */
         std::shared_ptr<T> Load(
             IN CResourcePool& Pool_,
             IN CResourceLoaderRegistry& LoaderRegistry_,
@@ -154,6 +193,11 @@ namespace iCAX
         }
 
         template <typename T>
+        /*
+        * @brief 使用全局加载器注册表加载资源。
+        * @return 类型匹配的资源对象；失败时返回 nullptr。
+        * @details 优先用于简单场景；项目运行时推荐显式传入自己的 LoaderRegistry。
+        */
         std::shared_ptr<T> Load(
             IN CResourcePool& Pool_,
             IN const CResourceKey& Key_,
@@ -198,6 +242,11 @@ namespace iCAX
         }
 
         template <typename T>
+        /*
+        * @brief 使用指定加载器注册表按来源字符串加载资源。
+        * @param [in] strSource_ 资源来源，同时作为 key。
+        * @return 类型匹配的资源对象；来源为空或加载失败时返回 nullptr。
+        */
         std::shared_ptr<T> Load(
             IN CResourcePool& Pool_,
             IN CResourceLoaderRegistry& LoaderRegistry_,
@@ -214,6 +263,10 @@ namespace iCAX
         }
 
         template <typename T>
+        /*
+        * @brief 使用全局加载器注册表按来源字符串加载资源。
+        * @return 类型匹配的资源对象；来源为空或加载失败时返回 nullptr。
+        */
         std::shared_ptr<T> Load(
             IN CResourcePool& Pool_,
             IN const std::string& strSource_,
