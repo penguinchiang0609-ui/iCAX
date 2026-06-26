@@ -2,7 +2,7 @@
 
 本目录记录 iCAX Engine Framework 层服务体系的规格与方案文档。
 
-源码目录对应 `src/icax/framework/Services/`。
+源码目录对应 `src/icax-engine/framework/Services/`。
 
 ## 目录结构
 

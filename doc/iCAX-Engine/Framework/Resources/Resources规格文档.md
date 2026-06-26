@@ -55,6 +55,7 @@ struct CResourceInfo
     std::string Name;
     std::string Source;
     std::string ContentHash;
+    uint64_t nVersion;
     uint64_t nSize;
     uint32_t nFlags;
     EResourcePersistenceMode Persistence;
@@ -67,6 +68,8 @@ struct CResourceInfo
 - `RuntimeOnly`：运行时资源，不进入工程文件 manifest。
 - `Embedded`：资源需要内嵌保存到工程文件或工程包。
 - `External`：资源以外部引用形式保存，工程文件记录引用信息。
+
+`nVersion` 是资源内容版本，类型为 `uint64_t`。它不是文件格式版本，也不是 loader 版本，而是当前资源对象内容的运行期版本。运行期生成的 mesh、渲染缓存、识别结果等资源发生内容变化时，应调用 `Touch(source)` 递增版本；这个版本可以直接作为 PDO 的 `dataVersion` 使用，避免未变化资源每帧重复序列化。
 
 ### 2.3 ResourceLibrary
 
@@ -120,6 +123,8 @@ void Register(std::string source, CResourceInfo info = {});
 bool TryRegister(std::string source, CResourceInfo info = {});
 bool Contains(std::string source);
 bool HasObject(std::string source);
+uint64_t GetVersion(std::string source);
+uint64_t Touch(std::string source);
 bool Unload(std::string source);
 bool Remove(std::string source);
 void Clear();
@@ -159,6 +164,8 @@ std::shared_ptr<T> Get<T>(std::string source) const;
 
 bool Contains(CResourceKey key) const;
 bool HasObject(CResourceKey key) const;
+uint64_t GetVersion(CResourceKey key) const;
+uint64_t Touch(CResourceKey key);
 bool Unload(CResourceKey key);
 bool Remove(CResourceKey key);
 void Clear();
@@ -173,6 +180,7 @@ std::vector<CResourceInfo> GetManifest(bool includeRuntimeOnly = false) const;
 
 `Register` 只登记资源条目，不要求资源对象已经加载。  
 `Set` 会替换同 key 的旧资源对象和元信息。  
+`Touch` 只在资源内容变化时调用，递增并返回资源内容版本；单纯修改 `Name`、`Persistence`、`Metadata` 不应调用。
 `Unload` 释放资源池持有的对象引用，但保留资源条目和元信息。  
 `GetManifest` 默认只返回 `Embedded` 和 `External` 资源条目。
 
@@ -311,6 +319,27 @@ for (const auto& item : manifest)
     }
 }
 ```
+
+### 3.5 运行期生成资源与 PDO 版本
+
+```cpp
+auto mesh = std::make_shared<MeshResource>();
+project.Resources().Set<MeshResource>("runtime://preview/mesh", mesh);
+
+// 识别或仿真更新了 mesh 内容。
+mesh->UpdateFromSimulation(result);
+auto version = project.Resources().Touch("runtime://preview/mesh");
+
+void* writeData = nullptr;
+auto& slot = project.PDOHub().GetSlot(previewMeshPDO);
+if (slot.TryGetWriteDataIfNewer(version, writeData))
+{
+    SerializeMeshToPDO(*mesh, writeData);
+    slot.MarkWriteReady(version);
+}
+```
+
+如果只修改资源的显示名称、持久化策略或扩展 metadata，不调用 `Touch`。
 
 ## 4. 类型约定
 

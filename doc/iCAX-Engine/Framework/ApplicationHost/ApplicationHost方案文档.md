@@ -3,7 +3,7 @@
 ## 1. 工程位置
 
 ```text
-src/icax/framework/ApplicationHost/
+src/icax-engine/framework/ApplicationHost/
 ```
 
 `ApplicationHost` 是应用级宿主，不是 ProjectCatalog 容器。
@@ -42,11 +42,10 @@ WorkThread
   -> LoadApplicationSettings
   -> Create ApplicationContext
   -> Create ServiceProvider
-  -> Replay framework registrations
+  -> Register built-in MailChannelService
   -> Resolve IMailChannelService
   -> Create application mail channel
   -> RegisterBuiltInApplicationCommands
-  -> Prepare application CommandContext
   -> Start startup product?
   -> Phase Running
   -> Notify Started
@@ -68,7 +67,7 @@ MainLoop
   -> Dispatch every started ProductRuntime product mailbox
 ```
 
-`ProductRuntime` 本身不拥有工作线程。应用线程轮询产品级 mailbox。每个 `Project` 拥有自己的项目线程，因此项目行为运行和项目级 mailbox 不被其他项目阻塞。
+`ApplicationHost` 只处理应用级 mailbox。`ProductRuntime` 拥有自己的产品级工作线程并处理产品级 mailbox；每个 `Project` 也拥有自己的项目线程并处理项目级 mailbox。因此应用、产品和项目三个层级互不共享主循环。
 
 ## 5. 命令上下文
 
@@ -81,12 +80,9 @@ ProductDefinition list snapshot
 ProductRuntime list snapshot
 CServiceProvider
 IMailChannelService
-IMetaRegistry
-IBehaviourRegistry
-CResourceLoaderRegistry
 ```
 
-产品级命令上下文由 `ProductRuntime` 组装。项目级命令进入具体 Project 邮箱时，ProductRuntime 会额外放入当前 Project、ProjectCatalog、Repository、Universe 和 ResourceLibrary。
+产品级命令上下文由 `ProductRuntime` 组装。项目级命令进入具体 Project 邮箱时，ProductRuntime 会额外放入当前 ProjectContext；业务代码通过 ProjectContext 访问 Repository、Universe、ResourceLibrary、PDOHub 和服务容器。
 
 ## 6. 通信通道
 
@@ -125,11 +121,13 @@ project mail id -> project commands
 
 `IMailChannelService` 统一持有所有 `CMailChannel`。ApplicationHost、ProductRuntime 和 Project 只持有自己的 mail id，并通过服务获取 frontend/backend post office。上级运行体负责向前端 bridge 发放下级 mail id 对应的 frontend post office。运行体停止或关闭时删除对应 channel，旧邮局随之失效。
 
+ApplicationHost 对同一个 `productId` 维护启动中和停止中标记。`StopProduct` 会先标记产品停止中，等 `ProductRuntime::Stop()` 完成后才从运行时表移除；`StartProduct` 遇到同一产品正在停止时等待。这样可以避免关闭再打开时同一产品短时间内出现两个后台运行时。
+
 ## 7. 模块加载
 
 产品模块由 `CProductDefinition::Modules` 声明。`ApplicationHost` 不加载产品模块，启动产品时由 `ProductRuntime::Start()` 调用 `LoadLibraryA` 加载。
 
-扩展模块继续使用 DLL 自动注册宏。宏注册项由注册目录记录，产品启动后回放到对应的 ServiceProvider、MetaRegistry、BehaviourRegistry 和 ResourceLoaderRegistry。这样扩展模块按产品定义加载，不增加业务代码编写成本。
+扩展模块继续使用 DLL 自动注册宏。宏注册项由注册目录记录，产品启动后由 `ProductRuntime` 按产品模块路径回放：Service 回放到应用级 ServiceProvider，ComponentMeta 回放到产品级 MetaRegistry，Behaviour 回放到产品级 BehaviourRegistry，ResourceLoader 回放到产品级 ResourceLoaderRegistry。这样扩展模块按产品定义加载，不增加业务代码编写成本。
 
 ## 8. 设计原则
 

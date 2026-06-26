@@ -18,6 +18,10 @@ Framework/
     ApplicationContext规格文档.md
     ApplicationContext方案文档.md
     README.md
+  Behaviour/
+    Behaviour规格文档.md
+    Behaviour方案文档.md
+    README.md
   CommandHandler/
     CommandHandler规格文档.md
     CommandHandler方案文档.md
@@ -56,6 +60,7 @@ Framework/
 
 - `ApplicationContext`：应用描述、路径、应用级配置和配置读写边界。
 - `ApplicationHost`：应用级后台宿主，负责应用上下文、产品清单、产品运行时、应用级 mailbox、事件订阅和后台工作线程。
+- `Behaviour`：Component 对应的行为系统，负责 Universe、Behaviour 注册、生命周期回调、调度顺序和销毁队列。
 - `CommandHandler`：Mailbox 之上的后端命令处理抽象。
 - `Database`：Repository 单 EC 数据容器、实体组件管理、字段元数据、事件、版本和派生字段。
 - `Mailbox`：后台与前台之间的普通 Mail 通信通道。

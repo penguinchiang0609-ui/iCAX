@@ -1,4 +1,4 @@
-﻿# iCAX 项目编码批量转换: GBK → UTF-8 with BOM
+# iCAX 项目编码批量转换: GBK → UTF-8 with BOM
 # 用法: 在项目根目录右键 → "使用 PowerShell 运行"，或在终端执行:
 #   powershell -ExecutionPolicy Bypass -File convert_encoding.ps1
 
@@ -28,7 +28,7 @@ foreach ($ext in $TextExts) {
         Where-Object {
             $full = $_.FullName
             foreach ($ex in $ExcludeDirs) {
-                if ($full -match "\\$ex\\" -or $full -match "\\$ex`$") { return $false }
+                if ($full -match "\$ex\" -or $full -match "\$ex`$") { return $false }
             }
             return $true
         }

@@ -2,7 +2,7 @@
 
 本目录记录 iCAX Engine Framework 层后台应用宿主的规格与方案文档。
 
-源码目录对应 `src/icax/framework/ApplicationHost/`。
+源码目录对应 `src/icax-engine/framework/ApplicationHost/`。
 
 ## 目录结构
 

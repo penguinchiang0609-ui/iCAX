@@ -3,7 +3,7 @@
 ## 1. 工程位置
 
 ```text
-src/icax/framework/Services/
+src/icax-engine/framework/Services/
 ```
 
 `Services` 放在 framework 下，是因为服务体系本身是后台框架的一部分。它为 ApplicationHost、Behaviour、插件和业务代码提供统一的服务注册和解析入口。
@@ -34,16 +34,16 @@ src/icax/framework/Services/
 ApplicationHost
   CServiceProvider
     IMailChannelService
-      applicationMailId -> CMailChannel
-      productMailId     -> CMailChannel
-      projectMailId     -> CMailChannel
+      applicationChannelId -> CMailChannel
+      productChannelId     -> CMailChannel
+      projectChannelId     -> CMailChannel
 ```
 
 运行体只保存自己的 mail id：
 
-- `ApplicationHost` 保存 `applicationMailId`。
-- `ProductRuntime` 保存 `productMailId`。
-- `Project` 保存 `projectMailId`。
+- `ApplicationHost` 保存 `applicationChannelId`。
+- `ProductRuntime` 保存 `productChannelId`。
+- `Project` 保存 `projectChannelId`。
 
 上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 mail id 对应的 frontend post office。`CMailPostOffice` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧邮局会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
 
@@ -54,13 +54,13 @@ ApplicationHost
 旧位置：
 
 ```text
-src/icax/services/Services/
+src/icax-engine/services/Services/
 ```
 
 新位置：
 
 ```text
-src/icax/framework/Services/
+src/icax-engine/framework/Services/
 ```
 
 迁移后，include 路径仍保持：

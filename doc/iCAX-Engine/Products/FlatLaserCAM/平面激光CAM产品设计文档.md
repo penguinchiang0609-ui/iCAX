@@ -51,11 +51,11 @@ iCAX::Product::CProductDefinition product;
 product.ProductID = "icax.flat-laser-cam";
 product.ProductName = "Flat Laser CAM";
 product.ProductVersion = "0.1.0";
-product.FrontendEntry = "apps/flat-laser-cam/frontend/entry.mjs";
+product.FrontendEntry = "apps/flat-laser-cam/webpage/entry.mjs";
 product.DefaultProjectStartupComponent = "CFlatLaserProjectComponent";
 
 product.ProjectFile.Magic = "ICAX_FLAT_LASER_CAM";
-product.ProjectFile.FormatVersion = 1;
+product.ProjectFile.FormatVersion = "1.0";
 product.ProjectFile.FileExtensions.push_back(".ilcam");
 product.ProjectFile.MagicOffset = 0;
 product.ProjectFile.ProbeBytes = 64;
@@ -147,7 +147,7 @@ src/apps/flat-laser-cam/backend/
 - 刀路变化后使仿真和 NC 输出过期。
 - 项目打开后绑定默认行为。
 
-Behaviour 不保存业务状态，只按当前 Project 的 Repository 和 UniverseContext 工作。
+Behaviour 不保存业务状态，只按当前 Project 显式传入的 ApplicationContext、ProductContext、ProjectContext 工作。
 
 ### 5.3 Service 模块
 
@@ -965,9 +965,9 @@ PDO
 
 验收：
 
-- `App.StartProduct("icax.flat-laser-cam")` 返回 productMailId。
+- `App.StartProduct("icax.flat-laser-cam")` 返回 productChannelId。
 - H5 加载产品工作区。
-- Project 创建后返回 projectMailId。
+- Project 创建后返回 projectChannelId。
 
 ### M1 图纸导入和清理
 

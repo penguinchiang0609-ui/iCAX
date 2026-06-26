@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-$SolutionDir = (Resolve-Path (Join-Path $RepoRoot "src\icax")).Path + "\"
+$SolutionDir = (Resolve-Path (Join-Path $RepoRoot "src\icax-engine")).Path + "\"
 
 $MSBuildCandidates = @(
     "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe",
@@ -21,44 +21,46 @@ if (-not $MSBuild) {
 }
 
 $BuildProjects = @(
-    "src\icax\foundation\Data\Data.vcxproj",
-    "src\tests\icax\foundation\Data\DataTest\DataTest.vcxproj",
-    "src\icax\framework\Resources\Resources.vcxproj",
-    "src\tests\icax\framework\Resources\ResourcesTest\ResourcesTest.vcxproj",
-    "src\icax\framework\ApplicationContext\ApplicationContext.vcxproj",
-    "src\tests\icax\framework\ApplicationContext\ApplicationContextTest\ApplicationContextTest.vcxproj",
-    "src\icax\framework\CommandHandler\CommandHandler.vcxproj",
-    "src\tests\icax\framework\CommandHandler\CommandHandlerTest\CommandHandlerTest.vcxproj",
-    "src\icax\framework\Database\Database.vcxproj",
-    "src\tests\icax\framework\Database\DatabaseTest\DatabaseTest.vcxproj",
-    "src\icax\framework\Mailbox\Mailbox.vcxproj",
-    "src\tests\icax\framework\Mailbox\MailboxTest\MailboxTest.vcxproj",
-    "src\icax\framework\PDO\PDO.vcxproj",
-    "src\tests\icax\framework\PDO\PDOTest\PDOTest.vcxproj",
-    "src\icax\framework\Services\Services.vcxproj",
-    "src\icax\framework\Behaviour\Behaviour.vcxproj",
-    "src\icax\framework\Project\Project.vcxproj",
-    "src\tests\icax\framework\Project\ProjectTest\ProjectTest.vcxproj",
-    "src\icax\framework\Product\Product.vcxproj",
-    "src\tests\icax\framework\Product\ProductTest\ProductTest.vcxproj",
-    "src\icax\framework\ApplicationHost\ApplicationHost.vcxproj",
-    "src\tests\icax\framework\ApplicationHost\ApplicationHostTest\ApplicationHostTest.vcxproj",
-    "src\icax\foundation\Task\Task.vcxproj",
-    "src\tests\icax\foundation\Task\TaskTest\TaskTest.vcxproj"
+    "src\icax-engine\foundation\Data\Data.vcxproj",
+    "src\tests\icax-engine\foundation\Data\DataTest\DataTest.vcxproj",
+    "src\icax-engine\framework\Resources\Resources.vcxproj",
+    "src\tests\icax-engine\framework\Resources\ResourcesTest\ResourcesTest.vcxproj",
+    "src\icax-engine\framework\ApplicationContext\ApplicationContext.vcxproj",
+    "src\tests\icax-engine\framework\ApplicationContext\ApplicationContextTest\ApplicationContextTest.vcxproj",
+    "src\icax-engine\framework\CommandHandler\CommandHandler.vcxproj",
+    "src\tests\icax-engine\framework\CommandHandler\CommandHandlerTest\CommandHandlerTest.vcxproj",
+    "src\icax-engine\framework\Database\Database.vcxproj",
+    "src\tests\icax-engine\framework\Database\DatabaseTest\DatabaseTest.vcxproj",
+    "src\icax-engine\framework\Mailbox\Mailbox.vcxproj",
+    "src\tests\icax-engine\framework\Mailbox\MailboxTest\MailboxTest.vcxproj",
+    "src\icax-engine\framework\PDO\PDO.vcxproj",
+    "src\tests\icax-engine\framework\PDO\PDOTest\PDOTest.vcxproj",
+    "src\icax-engine\framework\ProductContext\ProductContext.vcxproj",
+    "src\icax-engine\framework\ProjectContext\ProjectContext.vcxproj",
+    "src\icax-engine\framework\Services\Services.vcxproj",
+    "src\icax-engine\framework\Behaviour\Behaviour.vcxproj",
+    "src\icax-engine\framework\Project\Project.vcxproj",
+    "src\tests\icax-engine\framework\Project\ProjectTest\ProjectTest.vcxproj",
+    "src\icax-engine\framework\Product\Product.vcxproj",
+    "src\tests\icax-engine\framework\Product\ProductTest\ProductTest.vcxproj",
+    "src\icax-engine\framework\ApplicationHost\ApplicationHost.vcxproj",
+    "src\tests\icax-engine\framework\ApplicationHost\ApplicationHostTest\ApplicationHostTest.vcxproj",
+    "src\icax-engine\foundation\Task\Task.vcxproj",
+    "src\tests\icax-engine\foundation\Task\TaskTest\TaskTest.vcxproj"
 )
 
 $TestExecutables = @(
-    "src\icax\$Platform\$Configuration\DataTest.exe",
-    "src\icax\$Platform\$Configuration\ResourcesTest.exe",
-    "src\icax\$Platform\$Configuration\ApplicationContextTest.exe",
-    "src\icax\$Platform\$Configuration\CommandHandlerTest.exe",
-    "src\icax\$Platform\$Configuration\DatabaseTest.exe",
-    "src\icax\$Platform\$Configuration\ProjectTest.exe",
-    "src\icax\$Platform\$Configuration\ProductTest.exe",
-    "src\icax\$Platform\$Configuration\ApplicationHostTest.exe",
-    "src\icax\$Platform\$Configuration\MailboxTest.exe",
-    "src\icax\$Platform\$Configuration\PDOTest.exe",
-    "src\icax\$Platform\$Configuration\TaskTest.exe"
+    "src\icax-engine\$Platform\$Configuration\DataTest.exe",
+    "src\icax-engine\$Platform\$Configuration\ResourcesTest.exe",
+    "src\icax-engine\$Platform\$Configuration\ApplicationContextTest.exe",
+    "src\icax-engine\$Platform\$Configuration\CommandHandlerTest.exe",
+    "src\icax-engine\$Platform\$Configuration\DatabaseTest.exe",
+    "src\icax-engine\$Platform\$Configuration\ProjectTest.exe",
+    "src\icax-engine\$Platform\$Configuration\ProductTest.exe",
+    "src\icax-engine\$Platform\$Configuration\ApplicationHostTest.exe",
+    "src\icax-engine\$Platform\$Configuration\MailboxTest.exe",
+    "src\icax-engine\$Platform\$Configuration\PDOTest.exe",
+    "src\icax-engine\$Platform\$Configuration\TaskTest.exe"
 )
 
 $ParentEnvironment = [Environment]::GetEnvironmentVariables()
@@ -142,7 +144,7 @@ foreach ($Project in $BuildProjects) {
     }
 }
 
-$env:PATH = (Join-Path $RepoRoot "src\icax\$Platform\$Configuration") + ";" + $env:PATH
+$env:PATH = (Join-Path $RepoRoot "src\icax-engine\$Platform\$Configuration") + ";" + $env:PATH
 
 foreach ($TestExecutable in $TestExecutables) {
     $ExecutablePath = Join-Path $RepoRoot $TestExecutable

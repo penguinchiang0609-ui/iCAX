@@ -41,19 +41,19 @@ namespace iCAX
             * @brief 创建之后触发
             * @param [in] pComponent_
             */
-            virtual void OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) override;
 
             /*
             * @brief 创建之后下一帧触发
             * @param [in] pComponent_
             */
-            virtual void OnStart(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnStart(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) override;
 
             /*
             * @brief 修改Enable状态时触发
             * @param [in] pComponent_
             */
-            virtual void OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) override;
 
             /*
             * @brief 每一帧预触发
@@ -61,7 +61,7 @@ namespace iCAX
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
             */
-            virtual void OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) override;
 
             /*
             * @brief 每一帧触发
@@ -69,7 +69,7 @@ namespace iCAX
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
             */
-            virtual void OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) override;
 
             /*
             * @brief 每一帧后触发
@@ -77,33 +77,33 @@ namespace iCAX
             * @param [in] nDeltaTime_
             * @param [in] nTotalTime_
             */
-            virtual void OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) override;
 
             /*
             * @brief 禁用时触发
             * @param [in] pComponent_
             */
-            virtual void OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) override;
 
             /*
             * @brief 销毁时触发
-            * @param [in] pComponent_
+            * @param [in] DestroyInfo_ 被销毁组件的快照信息。
             */
-            virtual void OnDestroy(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnDestroy(IN const iCAX::Behaviour::CComponentDestroyInfo& DestroyInfo_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) override;
 
             /*
             * @brief 组件数据修改前触发
             * @param [in] pComponent_
             * @param [in] NewValues_
             */
-            virtual void OnModifing(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnModifying(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) override;
 
             /*
             * @brief 组件数据修改后触发
             * @param [in] pComponent_
             * @param [in] NewValues_
             */
-            virtual void OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Behaviour::IUniverseContext& Context_) override;
+            virtual void OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) override;
 
             AUTO_REGIST_BEHAVIOUR(SampleBehaviour);
 

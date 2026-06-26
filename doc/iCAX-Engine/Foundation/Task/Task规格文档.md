@@ -632,7 +632,7 @@ std::unique_ptr<int> value = task.TakeResult();
 
 ## 10. 测试要求
 
-Task 的单元测试位于 `src/tests/icax/foundation/Task/TaskTest/`。
+Task 的单元测试位于 `src/tests/icax-engine/foundation/Task/TaskTest/`。
 
 测试应覆盖：
 

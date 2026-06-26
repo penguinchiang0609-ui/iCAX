@@ -1,0 +1,165 @@
+import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
+import { ProductCommands } from "../SDK/Mailbox/commandRoute.mjs";
+import { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
+
+export class ProductProxy {
+  constructor(mailboxClient, productState, options = {}) {
+    if (!mailboxClient) {
+      throw new TypeError("mailboxClient is required");
+    }
+    if (!isUsableChannelId(productState?.productChannelId)) {
+      throw new TypeError("productState.productChannelId must be a non-nil channel id");
+    }
+
+    this.mailboxClient = mailboxClient;
+    this.bridge = options.bridge ?? mailboxClient.bridge ?? null;
+    this.appProxy = options.appProxy ?? null;
+    this.state = productState;
+    this.productId = productState.productId;
+    this.productChannelId = productState.productChannelId;
+    this.projects = new Map();
+    this.unsubscribers = new Set();
+  }
+
+  updateState(productState) {
+    if (!isUsableChannelId(productState?.productChannelId)) {
+      throw new TypeError("productState.productChannelId must be a non-nil channel id");
+    }
+
+    this.state = productState;
+    this.productId = productState.productId;
+    this.productChannelId = productState.productChannelId;
+  }
+
+  async getState() {
+    const state = await this.mailboxClient.request(this.productChannelId, ProductCommands.getState);
+    if (state?.productChannelId) {
+      this.updateState({ ...this.state, ...state });
+    }
+    await this.#syncProjectsFromCatalogs(state?.catalogs ?? []);
+    return state;
+  }
+
+  async listProjectCatalogs() {
+    const response = await this.mailboxClient.request(this.productChannelId, ProductCommands.listProjectCatalogs);
+    await this.#syncProjectsFromCatalogs(response?.catalogs ?? []);
+    return response;
+  }
+
+  async openProjectCatalog(projectPath, options = {}) {
+    const response = await this.mailboxClient.request(this.productChannelId, ProductCommands.openProjectCatalog, {
+      projectPath,
+      catalogPath: options.catalogPath ?? projectPath,
+      catalogName: options.catalogName ?? "",
+      projectName: options.projectName ?? "",
+    });
+
+    const project = response.catalog?.mainProject;
+    return { ...response, projectProxy: project ? await this.adoptProject(project) : null };
+  }
+
+  async closeProjectCatalog(catalogId) {
+    const response = await this.mailboxClient.request(this.productChannelId, ProductCommands.closeProjectCatalog, { catalogId });
+    if (response?.productChannelId) {
+      this.updateState({ ...this.state, ...response });
+    }
+    await this.#syncProjectsFromCatalogs(response?.catalogs ?? []);
+    return response;
+  }
+
+  subscribe(command, handler) {
+    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.productChannelId, command, handler));
+  }
+
+  subscribeAll(handler) {
+    return this.#trackUnsubscribe(this.mailboxClient.subscribeAll(this.productChannelId, handler));
+  }
+
+  getProject(projectId) {
+    return this.projects.get(projectId) ?? null;
+  }
+
+  async adoptProject(projectState) {
+    if (!projectState?.projectId) {
+      return null;
+    }
+
+    const registeredState = await this.#registerProjectChannel(projectState);
+    if (!isUsableChannelId(registeredState.projectChannelId)) {
+      throw new Error(`Project has no usable channel id: ${registeredState.projectId}`);
+    }
+
+    const existing = this.projects.get(registeredState.projectId);
+    if (existing) {
+      existing.updateState(registeredState);
+      return existing;
+    }
+
+    const project = new ProjectProxy(this.mailboxClient, registeredState, {
+      bridge: this.bridge,
+      product: this,
+    });
+    this.projects.set(project.projectId, project);
+    return project;
+  }
+
+  dispose() {
+    for (const project of this.projects.values()) {
+      project.dispose();
+    }
+    this.projects.clear();
+
+    for (const unsubscribe of [...this.unsubscribers]) {
+      unsubscribe();
+    }
+    this.unsubscribers.clear();
+
+    this.mailboxClient.stop(this.productChannelId);
+  }
+
+  #trackUnsubscribe(unsubscribe) {
+    this.unsubscribers.add(unsubscribe);
+    return () => {
+      this.unsubscribers.delete(unsubscribe);
+      unsubscribe();
+    };
+  }
+
+  async #syncProjectsFromCatalogs(catalogs) {
+    const openProjectIds = new Set();
+    for (const catalog of catalogs) {
+      if (catalog?.mainProject) {
+        openProjectIds.add(catalog.mainProject.projectId);
+        await this.adoptProject(catalog.mainProject);
+      }
+      for (const project of catalog?.projects ?? []) {
+        openProjectIds.add(project.projectId);
+        await this.adoptProject(project);
+      }
+    }
+
+    for (const projectId of [...this.projects.keys()]) {
+      if (!openProjectIds.has(projectId)) {
+        const project = this.projects.get(projectId);
+        project?.dispose();
+        this.projects.delete(projectId);
+      }
+    }
+  }
+
+  async #registerProjectChannel(projectState) {
+    if (isUsableChannelId(projectState?.projectChannelId)) {
+      return projectState;
+    }
+    if (!this.bridge?.registerProjectChannel || !projectState?.projectId) {
+      return projectState;
+    }
+
+    const channelId = await this.bridge.registerProjectChannel(projectState.projectId);
+    if (!channelId) {
+      return projectState;
+    }
+
+    return { ...projectState, projectChannelId: channelId };
+  }
+}

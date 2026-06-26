@@ -8,4 +8,4 @@
 
 - `mailbox/`：产品邮件命令和请求/响应说明。
 - `pdo/`：产品高频数据同步约定。
-
+- `file/`：项目文件格式、magic、schema version 和 migration 说明。

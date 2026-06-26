@@ -112,7 +112,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\plugins\core;$(SolutionDir)\..\apps\sample\backend\component;$(SolutionDir)\..\apps\sample\backend\behaviour;$(SolutionDir)\..\apps\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)iCAX-Engine\foundation;$(SolutionDir)iCAX-Engine\framework;$(SolutionDir)apps\sample\backend\component;$(SolutionDir)apps\sample\backend\behaviour;$(SolutionDir)apps\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -132,7 +132,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)\foundation;$(SolutionDir)\framework;$(SolutionDir)\plugins\core;$(SolutionDir)\..\apps\sample\backend\component;$(SolutionDir)\..\apps\sample\backend\behaviour;$(SolutionDir)\..\apps\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)iCAX-Engine\foundation;$(SolutionDir)iCAX-Engine\framework;$(SolutionDir)apps\sample\backend\component;$(SolutionDir)apps\sample\backend\behaviour;$(SolutionDir)apps\sample\backend\service;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -158,10 +158,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\..\..\..\icax\foundation\Data\Data.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\..\..\icax\framework\Database\Database.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">
       <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
     </ProjectReference>
   </ItemGroup>

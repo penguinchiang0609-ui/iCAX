@@ -64,7 +64,7 @@ host.SetConfig(config);
 LoadApplicationSettings
 Create ApplicationContext
 Create ServiceProvider
-Replay framework services
+Register built-in MailChannelService
 Resolve IMailChannelService
 Create application mail channel
 Register built-in application commands
@@ -87,6 +87,8 @@ Start configured startup product?
 - `kAppResolveProjectFileCommand` / `App.ResolveProjectFile`：根据项目文件快速识别产品。
 - `kAppOpenProjectFileCommand` / `App.OpenProjectFile`：根据项目文件识别产品、启动产品并打开 ProjectCatalog。
 
+同一 `productId` 的 `StartProduct` 和 `StopProduct` 严格串行。产品停止期间，新的 `StartProduct` 会等待旧 `ProductRuntime` 完成停止并从宿主表中移除后，再创建新的运行时实例。
+
 `App.StartProduct` 请求示例：
 
 ```cpp
@@ -100,7 +102,7 @@ auto bytes = iCAX::ApplicationHost::EncodeApplicationHostPayload(
 应用级状态响应：
 
 ```text
-applicationMailId: uuid
+applicationChannelId: uuid
 state: string
 phase: string
 productCount: unsigned_long_long
@@ -119,7 +121,7 @@ frontendEntry: string
 defaultProjectStartupComponent: string
 projectFile: object
 isStarted: bool
-productMailId: uuid
+productChannelId: uuid
 recentProjects: array<object>
 runtime: object? // 已启动时存在，内容为 ProductRuntime 状态
 ```
@@ -145,7 +147,7 @@ lastOpenedTime: string
 `App.StartProduct` 响应：
 
 ```text
-applicationMailId: uuid
+applicationChannelId: uuid
 product: object
 state: object
 ```
@@ -160,7 +162,7 @@ payload["projectPath"] = std::string("D:/projects/RobotCell.robot");
 响应：
 
 ```text
-applicationMailId: uuid
+applicationChannelId: uuid
 resolve: object
 ```
 
@@ -184,7 +186,7 @@ payload["projectPath"] = std::string("D:/projects/RobotCell.robot");
 响应：
 
 ```text
-applicationMailId: uuid
+applicationChannelId: uuid
 resolve: object
 product: object
 catalog: object
@@ -202,7 +204,7 @@ Frontend
   -> App.GetState / App.ListProducts
   -> App.OpenProjectFile(filePath)?       // 双击文件启动时
   -> App.StartProduct(productId)
-  <- productMailId, frontendEntry, recentProjects
+  <- productChannelId, frontendEntry, recentProjects
   -> product frontend initializes by frontendEntry
   -> Product mailbox handles Product.OpenProjectCatalog
   <- catalogId, main projectId

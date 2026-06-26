@@ -2,56 +2,21 @@
 
 #include "FlatLaserCamCommandExport.h"
 
-#include "CommandHandler/ICommandHandler.h"
+#include "CommandHandler/CommandTarget.h"
 
 namespace iCAX::FlatLaserCAM
 {
-    class _FLATLASERCAMCOMMAND_EXP CImportDrawingCommandHandler final : public iCAX::Command::ICommandHandler
+    class _FLATLASERCAMCOMMAND_EXP CFlatLaserCamCommandTarget final : public iCAX::Command::CCommandTarget
     {
     public:
-        iCAX::Command::CCommandResponse Handle(
-            IN const iCAX::Command::CCommandRequest& request,
-            IN iCAX::Command::ICommandContext& context) override;
-    };
+        CFlatLaserCamCommandTarget();
+        ~CFlatLaserCamCommandTarget() override = default;
 
-    class _FLATLASERCAMCOMMAND_EXP CCreateSheetCommandHandler final : public iCAX::Command::ICommandHandler
-    {
-    public:
-        iCAX::Command::CCommandResponse Handle(
+    private:
+        iCAX::Command::CCommandResponse HandleAccepted(
             IN const iCAX::Command::CCommandRequest& request,
-            IN iCAX::Command::ICommandContext& context) override;
-    };
-
-    class _FLATLASERCAMCOMMAND_EXP CGenerateNestingCommandHandler final : public iCAX::Command::ICommandHandler
-    {
-    public:
-        iCAX::Command::CCommandResponse Handle(
-            IN const iCAX::Command::CCommandRequest& request,
-            IN iCAX::Command::ICommandContext& context) override;
-    };
-
-    class _FLATLASERCAMCOMMAND_EXP CGenerateToolpathCommandHandler final : public iCAX::Command::ICommandHandler
-    {
-    public:
-        iCAX::Command::CCommandResponse Handle(
-            IN const iCAX::Command::CCommandRequest& request,
-            IN iCAX::Command::ICommandContext& context) override;
-    };
-
-    class _FLATLASERCAMCOMMAND_EXP CRunSimulationCommandHandler final : public iCAX::Command::ICommandHandler
-    {
-    public:
-        iCAX::Command::CCommandResponse Handle(
-            IN const iCAX::Command::CCommandRequest& request,
-            IN iCAX::Command::ICommandContext& context) override;
-    };
-
-    class _FLATLASERCAMCOMMAND_EXP CGenerateNcCommandHandler final : public iCAX::Command::ICommandHandler
-    {
-    public:
-        iCAX::Command::CCommandResponse Handle(
-            IN const iCAX::Command::CCommandRequest& request,
-            IN iCAX::Command::ICommandContext& context) override;
+            IN iCAX::Application::IApplicationContext& applicationContext,
+            IN iCAX::Product::IProductContext* productContext,
+            IN iCAX::Project::IProjectContext* projectContext);
     };
 }
-

@@ -3,7 +3,7 @@
 ## 1. 工程位置
 
 ```text
-src/icax/framework/Product/
+src/icax-engine/framework/Product/
 ```
 
 ## 2. 分层
@@ -24,9 +24,9 @@ ProductRuntime
       Transient Project*
 ```
 
-`ProductRuntime` 是产品级边界。它不拥有应用上下文的生命周期，但会持有 ApplicationHost 创建的 `ApplicationContext` 和应用设置快照。
+`ProductRuntime` 是产品级边界。它不拥有应用上下文的生命周期，只持有 ApplicationHost 创建的 `ApplicationContext`；应用级配置通过 `ApplicationContext` 读取，不再复制额外的设置副本。
 
-`ProductDefinition` 只表达产品静态能力，例如产品 ID、名称、版本、前端入口、项目文件 magic、文件扩展名和模块列表。`ProductData` 表达产品运行数据，例如最近项目和产品用户设置，通过 `IProductDataStore` 读写。
+`ProductDefinition` 只表达产品静态能力，例如产品 ID、名称、版本、前端入口、项目文件 magic、文件扩展名和模块列表。`ProductManifest` 负责从产品包的 `product.manifest.json` 构造 `ProductDefinition`。`ProductData` 表达产品运行数据，例如最近项目和产品用户设置，通过 `IProductDataStore` 读写。
 
 ## 3. 启动
 
@@ -41,14 +41,27 @@ ApplicationHost::StartProduct(productId)
        Register built-in product commands
        Prepare product command context
        Create product mail channel
-  -> return productMailId
+  -> return productChannelId
 ```
 
 产品模块加载使用 `LoadLibraryA`，同一 DLL 在进程内只加载一次。当前阶段保留已有自动注册宏，但宏本身只把注册动作记录到注册目录；`ProductRuntime::Start()` 会把当前产品模块对应的 ComponentMeta、Behaviour、ResourceLoader 和 CommandHandler 回放到产品级注册表，把 Service 回放到 ApplicationHost 持有的应用级 ServiceProvider。
 
 默认 ProductData 文件位于 `{UserConfigDirectory}/Products/{productId}/Product.Data`，为空时回退到 `Setting/Products/{productId}/Product.Data`。
 
-## 4. 打开项目目录
+## 4. Manifest 加载
+
+```text
+LoadProductDefinitions(productRoot)
+  -> scan productRoot/*/product.manifest.json
+  -> LoadProductManifest(manifestPath)
+  -> parse productId/productName/projectFile/backend/webpage
+  -> resolve backend module paths relative to product directory
+  -> return vector<CProductDefinition>
+```
+
+manifest loader 属于 `Product` 模块，不属于 `WebPageHost`。启动层可以用它构造 `ApplicationHostConfig.Products`，然后再启动 `ApplicationHost` 或 `WebPageHost`。
+
+## 5. 打开项目目录
 
 ```text
 Product.OpenProjectCatalog
@@ -70,7 +83,7 @@ Product.OpenProjectCatalog
 
 最近项目记录属于产品数据。`ProductRuntime` 只记录真实文件路径；`memory://`、`ui://` 等虚拟路径不写入 ProductData。最近项目按路径去重，新打开的项目移到列表前端，当前上限为 20 条。
 
-## 5. 命令上下文
+## 6. 命令上下文
 
 产品级命令上下文：
 
@@ -102,15 +115,15 @@ CResourceLibrary
 
 产品命令必须发到产品 mailbox。若产品命令发到项目 mailbox，因为上下文中存在当前 `IProjectRuntime`，会返回 `InvalidRequest`。
 
-## 6. 生命周期
+## 7. 生命周期
 
-`ProductRuntime::Stop()` 会关闭所有 ProjectCatalog，ProjectCatalog 会关闭其中所有 Project。ProductRuntime 随后通过 `IMailChannelService::RemoveChannel(productMailId)` 删除产品级 channel，旧产品邮局随之失效。
+`ProductRuntime::Stop()` 会关闭所有 ProjectCatalog，ProjectCatalog 会关闭其中所有 Project。ProductRuntime 随后通过 `IMailChannelService::RemoveChannel(productChannelId)` 删除产品级 channel，旧产品邮局随之失效。
 
 ApplicationHost 卸载时会停止所有已启动 ProductRuntime。
 
-## 7. Project 隔离演进
+## 8. Project 隔离演进
 
-当前 `ProductRuntime` 使用 `IProjectRuntime` 管理项目。实际实现仍是进程内 `CLocalProjectRuntime -> CProject`，每个 Project 独立线程、Repository、ResourceLibrary、Universe 和项目 mail channel。标准 C++ 异常只会让对应 Project 进入 `Faulted`，不会停止同一 ProductRuntime 下的其他 Project。
+当前 `ProductRuntime` 使用 `IProjectRuntime` 管理项目。实际实现仍是进程内 `CLocalProjectRuntime -> CProject`，每个 Project 独立线程、Repository、ResourceLibrary、Universe 和项目 mail channel。Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。
 
 若要求每个 Project 拥有独立 OS 内存空间，需要在现有抽象下新增进程级实现：
 
@@ -120,4 +133,4 @@ IProjectRuntime
   CProcessProjectRuntime    // 每个 Project 一个 Worker 进程
 ```
 
-进程级实现中，ProductRuntime 只保留 `ProjectHandle`、状态和 mailbox 代理；Repository、ResourceLibrary、Universe 和业务模块都在 Project Worker 进程内。普通 Mailbox 通过 IPC 转发，高频 PDO 使用每 Project 独立共享内存段。Worker 进程崩溃时，ProductRuntime 将该 Project 标记为 Faulted，并保留其他 Project 与 ProductRuntime。
+进程级实现中，ProductRuntime 只保留 `ProjectHandle`、状态和 mailbox 代理；Repository、ResourceLibrary、Universe 和业务模块都在 Project Worker 进程内。普通 Mailbox 通过 IPC 转发，高频 PDO 使用每 Project 独立共享内存段。Worker 进程崩溃时，由进程级 ProjectRuntime 负责记录该 Project 的故障状态，并保留其他 Project 与 ProductRuntime。

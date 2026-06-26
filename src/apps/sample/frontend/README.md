@@ -1,8 +1,8 @@
 # frontend
 
-`frontend` 放置 sample 应用的 H5 页面和交互代码。
+`frontend` 保留 sample 应用上一版 H5 实验代码。
 
-sample 前端作为产品 H5 模块示例，应通过 `icax-workbench/product` 暴露产品工作区贡献，通过 `icax-workbench/project` 暴露项目工作区贡献。
+新的产品前端应放在 `src/apps/<product-id>/webpage/`，并通过 `src/iCAX-UI/SDK` 接入 Application、Product、Project 三层前端运行模型。
 
 ## 目录结构
 

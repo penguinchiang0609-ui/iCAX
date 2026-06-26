@@ -4,14 +4,16 @@
 
 PDO 解决 backend 与 frontend 之间高频过程状态同步的问题。
 
-它不提供消息队列、不提供命令分发、不保证每次写入都被消费。它的设计重点是低成本读取最新状态。
+它不提供消息队列、不提供命令分发、不保证每次写入都被消费。它的设计重点是低成本读取最新状态，并通过运行期 data version 避免 Mesh 等重数据在未变化时重复序列化。
+
+当前方案统一采用 Windows OS shared memory，不再维护其他缓冲实现路径。
 
 ## 2. 所属层级
 
 PDO 位于 Framework：
 
 ```text
-src/icax/framework/PDO/
+src/icax-engine/framework/PDO/
 ```
 
 原因是 PDO 服务于 iCAX 的 backend/frontend 框架通信模型，不再作为完全独立的 Foundation 基础类型存在。
@@ -24,11 +26,21 @@ PDO 依赖 Foundation/Data 的稳定 ID 能力。
 PDO.vcxproj
 PDO.h
 PDODecl.h / PDODecl.cpp
+PDOPayload.h
+PDOLease.h
 IPDOSlot.h
-PDOSlot.h / PDOSlot.cpp
 IPDOHub.h / IPDOHub.cpp
+SharedPDOArena.h / SharedPDOArena.cpp
 PDOHub.h / PDOHub.cpp
 ```
+
+- `PDODecl.*`：定义 `PDOID`、方向和固定 payload 声明。
+- `PDOPayload.h`：定义固定 payload 布局辅助和 `MakeTypedPDODecl<T>()`。
+- `PDOLease.h`：定义 `CPDOReadLease` / `CPDOWriteLease`，封装读写租约生命周期。
+- `IPDOSlot.*`：定义双缓冲 Slot 的抽象访问接口。
+- `IPDOHub.*`：定义 Hub 抽象接口，并暴露共享内存名称、大小和声明快照。
+- `SharedPDOArena.*`：实现共享内存 Arena 和共享内存 Slot。
+- `PDOHub.*`：实现按方向批量交换的一组 Slot。
 
 ## 4. ID 设计
 
@@ -36,35 +48,152 @@ PDOHub.h / PDOHub.cpp
 
 这样 PDO 本身不维护哈希算法，也不引入新的 ID 体系。
 
-## 5. Slot 设计
+PDOID 只负责定位约定好的 PDO 槽，不承担字段描述、版本迁移或跨版本协商职责。
 
-`CPDOSlot` 内部维护两个缓冲区：
+## 5. 共享内存 Arena 设计
 
-```cpp
-uint8_t* m_pDataArray[2];
-std::atomic<uint8_t> m_nWriteIndex;
-std::atomic<uint8_t> m_nReadIndex;
+`CSharedPDOArena` 使用 Windows OS shared memory：
+
+```text
+CreateFileMappingW
+OpenFileMappingW
+MapViewOfFile
 ```
 
-写入方始终写当前 `writeIndex`。
+创建方创建 Arena。另一侧按名称打开同一块 mapping。CEF renderer bridge 可以把 payload 范围包装成 V8 `ArrayBuffer`，JS 侧再创建 TypedArray/DataView 视图。Slot header 的状态切换必须由 native bridge 调用 C++ API 完成，不能让 JS 直接写 header。
 
-读取方始终读当前 `readIndex`。
+Arena 总体布局：
 
-写入完成后，调用方必须调用 `MarkWriteReady()`。这会把当前写缓冲标记为 ready。
+```text
+SharedPDOArenaHeader
+SharedPDOSlotHeader[slotCount]
+payload buffer area
+```
 
-交换时，如果当前写缓冲为 ready，则交换读写索引，并把新的写缓冲状态重置为空。
+Arena header：
 
-## 6. Hub 设计
+```cpp
+struct SharedPDOArenaHeader
+{
+    uint32_t nMagic;
+    uint32_t nVersion;
+    uint32_t nSlotCount;
+    uint32_t nHeaderSize;
+    uint64_t nArenaSize;
+    uint64_t nSlotTableOffset;
+    uint64_t nPayloadOffset;
+};
+```
 
-`CPDOHub` 使用 `unordered_map<PDOID, shared_ptr<CPDOSlot>>` 管理槽。
+Slot header：
 
-初始化时根据 `PDODecl` 创建所有槽。
+```cpp
+struct SharedPDOSlotHeader
+{
+    PDOID nID;
+    uint32_t nVersion;
+    uint32_t nDirection;
+    uint32_t nPayloadSize;
+    uint64_t nBufferOffset[2];
+    volatile long nBufferState[2];
+    volatile long nReaderCount[2];
+    volatile long nPublishedIndex;
+    volatile long nWriteIndex;
+    volatile long nReadyIndex;
+    volatile long nSequence;
+    volatile unsigned long long nBufferDataVersion[2];
+    volatile unsigned long long nPublishedDataVersion;
+    volatile unsigned long long nLatestDataVersion;
+};
+```
 
-`SwapInSlot()` 遍历槽集合，只交换入向槽。
+`nVersion` 是 payload 协议版本；`nBufferDataVersion`、`nPublishedDataVersion` 和 `nLatestDataVersion` 是运行期源数据版本，语义上全部是 `uint64_t`。二者职责不同，不能混用。`nLatestDataVersion` 是单调的 Slot 最新源数据版本，即使 Ready buffer 被拿回去重写，它也不会回退。
 
-`SwapOutSlot()` 遍历槽集合，只交换出向槽。
+所有 payload offset 都是相对 Arena base 的偏移，不存指针。browser process 和 renderer process 的映射地址可能不同，保存绝对指针是不可靠的。
 
-这个设计让 ApplicationHost 可以在固定帧点统一处理：
+## 6. 双缓冲设计
+
+每个 Slot 固定两个 payload buffer：
+
+```text
+published buffer: 读侧可见
+write buffer:     写侧写入
+```
+
+每个 buffer 还有一个状态：
+
+```text
+Free
+Writing
+Ready
+Published
+Reading
+```
+
+写入流程：
+
+```text
+CPDOWriteLease::TryBeginIfNewer(slot, dataVersion)
+如果 dataVersion <= latest data version，跳过本次序列化
+如果 write buffer 繁忙，返回 nullopt，本帧丢弃
+buffer state -> Writing
+写入固定 payload
+Commit()
+buffer data version = dataVersion
+buffer state -> Ready
+SwapBuffersIfReady()
+ready buffer -> Published
+published data version = ready buffer data version
+old published buffer -> Free
+sequence++
+```
+
+读取流程：
+
+```text
+CPDOReadLease(slot)
+reader count++
+buffer state -> Reading
+返回 sequence、buffer index、data version 和 payload 指针
+按固定 layout 解释 payload
+lease 析构或 Release()
+reader count--
+如果该 buffer 已不是当前 published，则 buffer state -> Free
+```
+
+当前保持双缓冲，是为了贴近 EtherCAT PDO 这类“周期交换最新过程数据”的模型。PDO 接受丢帧，不保证每一帧都被消费；如果写侧在读侧处理前发布多次，读侧只关心最新可用状态。
+
+双缓冲也意味着读侧不能长期持有读租约。一次交换之后，旧 published buffer 会成为下一轮可写 buffer；如果读侧还没释放读租约，阻塞写会等待，非阻塞写会返回 false 并丢弃本帧。PDO 接受丢帧，但不接受写侧覆盖正在读取的 buffer。
+
+如果 write buffer 已经处于 `Ready`，但帧边界还没有执行交换，写侧可以用更高的 data version 重新进入 `Writing` 并覆盖该 ready buffer。这样 Mesh 版本连续变化时，PDO 会保留最近版本，丢弃中间未发布版本。
+
+如果 write buffer 已经处于 `Writing`，说明当前存在 active write lease。此时不能再次返回同一块 buffer；非阻塞写返回 false，阻塞写会等待该租约 Commit 或 Cancel。
+
+如果覆盖 ready buffer 的写租约最终 Cancel，Slot 会恢复原来的 ready buffer。这样序列化失败或中途放弃时，不会把已经准备好但尚未交换出去的旧版本误删。
+
+## 7. Hub 设计
+
+`CPDOHub` 内部持有一块 `CSharedPDOArena`，并使用：
+
+```cpp
+std::unordered_map<PDOID, std::shared_ptr<CSharedPDOSlot>>
+```
+
+管理槽对象。
+
+`CPDOHub::Intialize()` 会：
+
+1. 生成一个唯一的 `Local\\iCAX.PDO.Hub.*` mapping 名称。
+2. 调用 `CSharedPDOArena::Create()` 创建共享内存 Arena。
+3. 为每个声明获取对应 `CSharedPDOSlot`，保存到 map。
+
+`SwapInSlot()` 遍历槽集合，只交换 `kDirection2Inner` 槽。
+
+`SwapOutSlot()` 遍历槽集合，只交换 `kDirection2External` 槽。
+
+每个 Slot 只允许一个写入方向。需要双向过程数据时，产品应声明两个 PDOID，而不是让同一个 Slot 双写。
+
+这个设计让 Project 或运行时调度可以在固定帧点统一处理：
 
 ```text
 Frame Begin
@@ -74,7 +203,16 @@ Frame Begin
 Frame End
 ```
 
-## 7. 与 Mailbox 的关系
+如果某个场景需要把共享内存信息交给前端，则上层可以：
+
+- 直接使用 `CSharedPDOArena::Create(name, decls)` 创建具名 Arena。
+- 通过 `IPDOHub::GetSharedArenaName()` 取得自动生成的名称。
+- 通过 `IPDOHub::GetSharedArenaSize()` 取得 Arena 大小。
+- 通过 `IPDOHub::GetPDODeclarations()` 取得声明快照。
+
+跨进程只传 Arena name 和必要元信息，不传当前进程 base address。
+
+## 8. 与 Mailbox 的关系
 
 Mailbox 负责低频、必须被处理的消息。
 
@@ -82,30 +220,112 @@ PDO 负责高频、只关心最新值的状态。
 
 二者可以同时存在，但互不调用。
 
-## 8. 与 Data 的关系
+在 CEF/H5 场景下，Mailbox 负责控制面：
+
+```text
+打开项目
+创建/关闭 PDO Arena
+通知前端 Arena 名称
+通知前端某个固定 PDO 是否可用
+```
+
+PDO 负责数据面：
+
+```text
+固定 payload layout
+双缓冲
+buffer state
+reader count
+sequence
+共享内存 raw bytes
+```
+
+## 9. 与 Data 的关系
 
 PDO 只依赖 Data 的稳定 ID。
 
 `PDOID` 的语义仍归 PDO 管理，具体 ID 生成算法由 Data 提供。
 
-## 9. 并发边界
+## 10. 并发边界
 
-`CPDOSlot` 使用原子变量保护缓冲状态。
+`CSharedPDOSlot` 使用 Windows `Interlocked*` 操作维护双缓冲索引、buffer state、reader count、ready 状态和 sequence。
+
+Payload 本身的读写一致性由调用顺序和读租约共同保证：写侧必须完整写入 payload 后再 `Commit()` 或 `MarkWriteReady(dataVersion)`；读侧必须用 `CPDOReadLease` 或 `BeginRead/EndRead` 包围读取过程。泄漏读租约会使阻塞写等待，并使非阻塞写持续返回 false。
+
+版本判断由 Slot 头部的 data version 完成。产品侧典型写法：
+
+```cpp
+auto write = CPDOWriteLease::TryBeginIfNewer(slot, mesh.Version());
+if (write.has_value())
+{
+    SerializeMeshToPDO(mesh, write->Data());
+    write->Commit();
+}
+```
 
 `CPDOHub` 不把 map 操作设计为并发写场景。上层应先完成 Hub 初始化，再进入运行期读写和交换。
 
-## 10. 后续可演进点
+## 11. Arena 校验
 
-- 补充 Payload size 的输入校验。
-- 补充重复 PDOID 的策略说明。
-- 补充版本协商检查。
+`CSharedPDOArena::Create()` 会校验输入声明，拒绝空名称、空声明、重复 ID、非法方向和非正 payload size。
 
-## 11. 测试
+`CSharedPDOArena::Open()` 会校验共享内存中的结构，避免 renderer 或其他进程打开坏 mapping 后继续拿到危险指针：
+
+- magic、version、header size 必须匹配当前实现。
+- slot count 必须大于 0。
+- slot table 和 payload offset 必须 64 字节对齐，并且位于 Arena 范围内。
+- 每个 Slot 必须有合法 ID、version、direction 和 payload size。
+- 每个 buffer offset 必须 64 字节对齐，且 payload 范围不能越界。
+- buffer state 必须是合法状态，published buffer 必须处于 `Published` 或 `Reading` 状态。
+- reader count 必须为非负数；`Reading` 状态必须存在 reader。
+- published/write/ready index 必须是合法双缓冲索引，published 和 write 不能指向同一个 buffer。
+- Arena 内不能存在重复 PDOID。
+
+## 12. JS/CEF 使用原则
+
+PDO 不提供字段级 descriptor。前端 JS 通过产品配套 TS wrapper 解释 ArrayBuffer。
+
+CEF native bridge 必须封装 Arena 打开、Slot 查询、读租约、写租约和释放逻辑。JS 不直接写 Slot header，不直接维护 reader count，也不直接修改 buffer state。
+
+建议 bridge 操作边界：
+
+```text
+openArena(name)
+listPDO()
+beginRead(pdoId) -> payload view + sequence + bufferIndex + dataVersion
+endRead(pdoId, bufferIndex)
+tryBeginWrite(pdoId, dataVersion) -> payload view | null
+commitWrite(pdoId, dataVersion)
+cancelWrite(pdoId)
+```
+
+推荐产品侧为每个 PDO payload 生成或手写一份 wrapper：
+
+```ts
+class CameraPDOView {
+  constructor(private buffer: ArrayBuffer, private offset: number) {}
+
+  get version() {
+    return new DataView(this.buffer, this.offset).getUint32(0, true);
+  }
+}
+```
+
+前端不应该把 PDO 当 JSON 或对象树解析。PDO 的价值就在于固定布局、直接视图和低拷贝成本。
+
+## 13. 后续可演进点
+
+- CEF bridge 中增加 V8 ArrayBuffer release callback 的生命周期联动。
+- 为 `ICAX_DECLARE_PDO_PAYLOAD` 对应的 C++ payload 生成 TypeScript wrapper，降低产品侧手写偏移的风险。
+- 增加更明确的 Arena 名称分配策略，便于日志诊断和前端调试。
+- 在 Mailbox/CommandHandler 层补充项目关闭通知，提醒前端宿主停止访问对应 Arena。
+
+## 14. 测试
 
 测试工程：
 
 ```text
-src/tests/icax/framework/PDO/PDOTest/PDOTest.vcxproj
+src/tests/icax-engine/framework/PDO/PDOTest/PDOTest.vcxproj
 ```
 
-测试运行后会生成 `PDOTest.exe`，用于验证 ID、Slot、Hub 和异常行为。
+测试运行后会生成 `PDOTest.exe`，用于验证 ID、payload 声明、RAII 租约、写租约独占、ready 覆盖取消恢复、共享 Slot、Hub、shared memory Arena、生命周期、轻量高频读写压力和异常行为。

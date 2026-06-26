@@ -10,3 +10,4 @@
 - `service/`：产品服务模块，承载可复用业务能力。
 - `command/`：产品命令常量与命令处理入口。
 
+产品 backend 由 `../product.manifest.json` 声明，ApplicationHost 启动产品时按 manifest 加载模块并回放注册表。

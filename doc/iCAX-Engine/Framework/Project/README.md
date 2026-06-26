@@ -1,6 +1,6 @@
 # Project
 
-源码目录对应 `src/icax/framework/Project/`。
+源码目录对应 `src/icax-engine/framework/Project/`。
 
 ## 文档结构
 

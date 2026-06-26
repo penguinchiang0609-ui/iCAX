@@ -4,7 +4,7 @@
 
 `Services` 是 framework 层的服务体系工程，提供服务接口、服务提供器、自动注册辅助和框架级服务实现。
 
-它不承载具体业务逻辑。日志、资源、设置等内置服务实现可以放在 `plugins/core/CoreService`，业务服务可以放在对应的 service 工程中。
+它不承载具体业务逻辑。框架级服务实现放在 framework 内，产品级服务实现放在对应 `src/apps/<product-id>/backend/service` 工程中。
 
 ## 2. 核心能力
 
@@ -53,7 +53,7 @@
 - `framework/Mailbox`
 - 其他 foundation 基础能力。
 
-其他 framework 项目、插件和业务代码可以依赖 `Services`。
+其他 framework 项目、产品模块和业务代码可以依赖 `Services`。
 
 ## 4. 当前约束
 

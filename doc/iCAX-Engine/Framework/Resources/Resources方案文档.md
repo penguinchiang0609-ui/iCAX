@@ -5,7 +5,7 @@
 `Resources` 放在：
 
 ```text
-src/icax/framework/Resources/
+src/icax-engine/framework/Resources/
 ```
 
 原因：
@@ -47,10 +47,13 @@ Resources/
 
 - `Register` / `TryRegister`：只创建或更新资源条目。
 - `Set` / `TryAdd`：创建资源条目并绑定对象。
+- `Touch`：标记资源内容变化，递增资源内容版本。
 - `Unload`：释放对象但保留条目。
 - `Remove`：删除整个条目。
 
 这样工程打开时可以先恢复资源目录；真实资源对象可以在后续命令、行为或渲染路径中按需加载。
+
+资源内容版本保存在 `CResourceInfo::nVersion`，类型为 `uint64_t`。它只表达资源对象内容版本，不表达资源文件格式版本、loader 版本或工程 schema 版本。`Register`、`Set`、`UpdateInfo` 不自动递增版本；业务代码确认内容变化后显式调用 `Touch`。当传入的 `CResourceInfo::nVersion == 0` 时，更新已有条目会保留原版本，避免普通元信息更新把版本清零。
 
 ## 4. Loader 设计
 
@@ -165,7 +168,22 @@ enum class EResourcePersistenceMode : uint8_t
 
 `GetManifest(false)` 默认只返回 `Embedded` 和 `External` 条目，供后续 ProjectStorage 保存工程时使用。
 
-## 8. 类型安全
+## 8. 资源版本与 PDO
+
+PDO 的 `dataVersion` 是 `uint64_t`，Resources 的 `CResourceInfo::nVersion` 也采用 `uint64_t`，两者可以直接对接。典型流程：
+
+```text
+运行期生成或更新资源内容
+  -> project.Resources().Touch(source) 得到 resourceVersion
+  -> slot.TryGetWriteDataIfNewer(resourceVersion, writeData)
+  -> 有更新才序列化资源到 PDO
+```
+
+这样 mesh、实例矩阵、渲染缓存等资源不需要每帧序列化。只要资源版本没有高于 PDO Slot 的 latest data version，写侧就直接跳过。
+
+资源版本由资源库维护，不要求资源类型继承统一基类。第三方模型对象、业务临时对象、运行期缓存对象都可以通过 `ResourceInfo.nVersion` 参与同一套版本判断。
+
+## 9. 类型安全
 
 资源对象以 `shared_ptr<void>` 存储，同时记录 `std::type_index`。
 
@@ -178,7 +196,7 @@ auto ptr = pool.Get<T>(source);
 
 这也是 `Source` 身份模型。上层加载资源时使用 `project.Resources().Load<T>(source)`，loader 返回对象时必须携带运行时类型，访问层写入资源池前会校验对象和类型信息是否完整。运行时类型只用于校验，不参与 key。
 
-## 9. 并发策略
+## 10. 并发策略
 
 资源池和 loader 注册表都使用 `std::shared_mutex`：
 
@@ -187,7 +205,7 @@ auto ptr = pool.Get<T>(source);
 
 资源池只保证映射表线程安全。资源对象自身是否可变、是否线程安全，由资源类型自己决定。
 
-## 10. 不纳入当前项目的能力
+## 11. 不纳入当前项目的能力
 
 当前不做：
 

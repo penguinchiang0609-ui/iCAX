@@ -4,7 +4,7 @@
 
 `Product` 是产品级运行时。它位于 `ApplicationHost` 和 `Project` 之间。
 
-`ApplicationHost` 负责列出和启动产品；`ProductRuntime` 负责产品级 mailbox、产品模块加载、最近项目列表和 ProjectCatalog 生命周期。产品级 mailbox 的底层 channel 由应用级 `IMailChannelService` 按 `productMailId` 托管。产品 UI 入口由 `FrontendEntry` 描述，但后端不绑定 H5、WPF 或 Qt。
+`ApplicationHost` 负责列出和启动产品；`ProductRuntime` 负责产品级 mailbox、产品模块加载、最近项目列表和 ProjectCatalog 生命周期。产品级 mailbox 的底层 channel 由应用级 `IMailChannelService` 按 `productChannelId` 托管。产品 UI 入口由 `FrontendEntry` 描述，但后端不绑定 H5、WPF 或 Qt。
 
 ## 2. 产品定义
 
@@ -40,7 +40,41 @@ probeBytes: unsigned_long_long
 
 `magic` 是识别项目文件归属产品的唯一依据，不能为空，且同一 ApplicationHost 下不能重复。`magicOffset` 表示 magic 在文件头中的偏移；`probeBytes` 表示 ApplicationHost 为识别产品最多读取的探测字节数。ApplicationHost 只做轻量文件探测，不解析完整项目文件。
 
-## 3. 产品数据
+## 3. 产品 Manifest
+
+`Product` 模块提供产品 manifest loader，用于把 `src/apps/<product-id>/product.manifest.json` 转换为 `CProductDefinition`。
+
+接口：
+
+```cpp
+auto manifest = iCAX::Product::LoadProductManifest("D:/iCAX/src/apps/robot/product.manifest.json");
+auto products = iCAX::Product::LoadProductDefinitions("D:/iCAX/src/apps");
+```
+
+字段映射：
+
+```text
+productId                         -> CProductDefinition.ProductID
+productName                       -> CProductDefinition.ProductName
+productVersion                    -> CProductDefinition.ProductVersion
+projectFile.magic                 -> CProductDefinition.ProjectFile.Magic
+projectFile.formatVersion         -> CProductDefinition.ProjectFile.FormatVersion
+projectFile.quickSaveLogMagic     -> CProductDefinition.ProjectFile.QuickSaveLogMagic
+projectFile.quickSaveLogVersion   -> CProductDefinition.ProjectFile.QuickSaveLogVersion
+projectFile.fileExtensions        -> CProductDefinition.ProjectFile.FileExtensions
+projectFile.magicOffset           -> CProductDefinition.ProjectFile.MagicOffset
+projectFile.probeBytes            -> CProductDefinition.ProjectFile.ProbeBytes
+backend.startupComponent          -> CProductDefinition.DefaultProjectStartupComponent
+backend.modules.components        -> CProductDefinition.Modules.ComponentModules
+backend.modules.behaviours        -> CProductDefinition.Modules.BehaviourModules
+backend.modules.services          -> CProductDefinition.Modules.ServiceModules
+backend.modules.commands          -> CProductDefinition.Modules.CommandModules
+webpage.entry                     -> CProductDefinition.FrontendEntry
+```
+
+模块路径按 manifest 所在产品目录解析为规范化路径。`WebPageHost` 不解析 manifest；启动层负责调用上述接口并把结果写入 `ApplicationHostConfig.Products`。
+
+## 4. 产品数据
 
 `ProductData` 是产品运行数据，归属产品运行时，不属于应用级配置，也不属于产品静态定义。
 
@@ -76,7 +110,7 @@ lastOpenedTime: string
 
 如果 `UserConfigDirectory` 为空，则使用 `Setting/Products/{productId}/Product.Data`。`ProductRuntime::Start()` 会加载 ProductData，打开真实文件路径的项目后会更新最近项目；`memory://` 等非文件路径不会写入最近项目。
 
-## 4. 产品运行时
+## 5. 产品运行时
 
 ```cpp
 auto productRuntime = host.StartProduct("robot");
@@ -116,7 +150,7 @@ ProductRuntime
 
 产品 DLL 进程内只加载一次。由于自动注册宏只提供注册、不提供注销，模块加载后按进程常驻处理；停止产品只关闭 mailbox、ProjectCatalog、ProjectRuntime 和产品数据，不卸载 DLL。
 
-## 5. 产品级命令
+## 6. 产品级命令
 
 - `kProductGetStateCommand` / `Product.GetState`：查询产品状态和 ProjectCatalog 列表。
 - `kProductListProjectCatalogsCommand` / `Product.ListProjectCatalogs`：查询 ProjectCatalog 列表，响应与 `Product.GetState` 一致。
@@ -139,7 +173,7 @@ auto bytes = iCAX::Product::EncodeProductPayload(iCAX::Data::Variant(payload));
 
 ```text
 productId: string
-productMailId: uuid
+productChannelId: uuid
 catalog: object
 state: object
 ```
@@ -151,7 +185,7 @@ productId: string
 productName: string
 productVersion: string
 frontendEntry: string
-productMailId: uuid
+productChannelId: uuid
 isStarted: bool
 recentProjects: array<object>
 projectFile: object
@@ -181,7 +215,7 @@ probeBytes: unsigned_long_long
 
 ```text
 projectId: uuid
-projectMailId: uuid
+projectChannelId: uuid
 projectName: string
 projectPath: string
 startupComponent: string
@@ -198,6 +232,6 @@ faultMessage: string
 
 `ProductRuntime` 不创建工作线程。ApplicationHost 的主循环轮询产品级 mailbox。
 
-每个 `Project` 自己创建工作线程，并在项目线程内处理项目级 mailbox、Repository 事件和 Behaviour Tick。项目 channel 由 `IMailChannelService` 按 `projectMailId` 托管，Project 关闭时删除。
+每个 `Project` 自己创建工作线程，并在项目线程内处理项目级 mailbox、Repository 事件和 Behaviour Tick。项目 channel 由 `IMailChannelService` 按 `projectChannelId` 托管，Project 关闭时删除。
 
-当前本地 ProjectRuntime 可以隔离标准 C++ 异常：某个项目线程抛出异常后，该项目进入 `Faulted`，其他项目继续运行。若要隔离访问冲突、堆破坏或整个项目崩溃，需要将 `IProjectRuntime` 实现替换为每 Project 一个 Worker 进程。
+Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。若要隔离访问冲突、堆破坏或整个项目崩溃，需要将 `IProjectRuntime` 实现替换为每 Project 一个 Worker 进程。

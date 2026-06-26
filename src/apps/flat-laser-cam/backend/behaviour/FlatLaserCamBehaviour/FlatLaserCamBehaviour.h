@@ -17,7 +17,9 @@ namespace iCAX::FlatLaserCAM
         void OnModified(
             IN iCAX::Database::CComponentBase& component,
             IN const iCAX::Data::PropertySet& newValues,
-            IN const iCAX::Behaviour::IUniverseContext& context) override;
+            IN const iCAX::Application::IApplicationContext& application,
+            IN const iCAX::Product::IProductContext& product,
+            IN iCAX::Project::IProjectContext& project) override;
 
         AUTO_REGIST_BEHAVIOUR(CFlatLaserProjectBehaviour)
     };
@@ -31,7 +33,9 @@ namespace iCAX::FlatLaserCAM
         void OnModified(
             IN iCAX::Database::CComponentBase& component,
             IN const iCAX::Data::PropertySet& newValues,
-            IN const iCAX::Behaviour::IUniverseContext& context) override;
+            IN const iCAX::Application::IApplicationContext& application,
+            IN const iCAX::Product::IProductContext& product,
+            IN iCAX::Project::IProjectContext& project) override;
 
         AUTO_REGIST_BEHAVIOUR(CNestingPlanBehaviour)
     };
@@ -45,9 +49,10 @@ namespace iCAX::FlatLaserCAM
         void OnModified(
             IN iCAX::Database::CComponentBase& component,
             IN const iCAX::Data::PropertySet& newValues,
-            IN const iCAX::Behaviour::IUniverseContext& context) override;
+            IN const iCAX::Application::IApplicationContext& application,
+            IN const iCAX::Product::IProductContext& product,
+            IN iCAX::Project::IProjectContext& project) override;
 
         AUTO_REGIST_BEHAVIOUR(CToolpathBehaviour)
     };
 }
-

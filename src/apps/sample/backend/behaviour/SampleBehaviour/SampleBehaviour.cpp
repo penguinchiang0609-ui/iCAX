@@ -1,4 +1,3 @@
-#include "SampleBehaviour.h"
 #include "pch.h"
 #include "SampleBehaviour.h"
 #include <iostream>
@@ -28,61 +27,61 @@ std::string iCAX::Sample::SampleBehaviour::GetComponentClass() const
 }
 
 //! 创建之后触发
-void iCAX::Sample::SampleBehaviour::OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_)
 {
     std::cout << "OnAwake" << std::endl;
 }
 
 //! 创建之后下一帧触发
-void iCAX::Sample::SampleBehaviour::OnStart(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnStart(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_)
 {
     std::cout << "OnStart" << std::endl;
 }
 
 //! 修改Enable状态时触发
-void iCAX::Sample::SampleBehaviour::OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_)
 {
     std::cout << "OnEnable" << std::endl;
 }
 
 //! 每一帧预触发
-void iCAX::Sample::SampleBehaviour::OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_)
 {
     std::cout << "OnPreUpdate" << std::endl;
 }
 
 //! 每一帧触发
-void iCAX::Sample::SampleBehaviour::OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_)
 {
     std::cout << "OnUpdate" << std::endl;
 }
 
 //! 每一帧后触发
-void iCAX::Sample::SampleBehaviour::OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const double& nDeltaTime_, IN const double& nTotalTime_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_)
 {
     std::cout << "OnPostUpdate" << std::endl;
 }
 
 //! 禁用时触发
-void iCAX::Sample::SampleBehaviour::OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_)
 {
     std::cout << "OnDisable" << std::endl;
 }
 
 //! 销毁时触发
-void iCAX::Sample::SampleBehaviour::OnDestroy(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnDestroy(IN const iCAX::Behaviour::CComponentDestroyInfo& DestroyInfo_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_)
 {
     std::cout << "OnDestroy" << std::endl;
 }
 
 //! 组件数据修改前触发
-void iCAX::Sample::SampleBehaviour::OnModifing(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnModifying(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_)
 {
-    std::cout << "OnModifing" << std::endl;
+    std::cout << "OnModifying" << std::endl;
 }
 
 //! 组件数据修改后触发
-void iCAX::Sample::SampleBehaviour::OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Behaviour::IUniverseContext& Context_)
+void iCAX::Sample::SampleBehaviour::OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_)
 {
     std::cout << "OnModified" << std::endl;
 }
@@ -100,7 +99,10 @@ int iCAX::Sample::TestIDSet(IN OUT void* pContext_, IN const void* IParam_, OUT 
 
     auto& _Component = dynamic_cast<iCAX::Sample::SampleComponent&>(*_pComponent);
     int _nID = _Component.GetTestID() + *_pN;
-    _Component.SetTestID(_nID);
+    if (!_Component.SetTestID(_nID))
+    {
+        return kSampleActionFailed;
+    }
 
     auto _pR = reinterpret_cast<int*>(OParam_);
     *_pR = _nID;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Product/ProductDefinition.h"
+#include "ProductContext/ProductDefinition.h"
 
 #include <filesystem>
 #include <string>
@@ -12,7 +12,7 @@ namespace iCAX::FlatLaserCAM
     inline constexpr const char* KProductVersion = "0.1.0";
     inline constexpr const char* KProjectMagic = "ICAX_FLAT_LASER_CAM";
     inline constexpr const char* KProjectFileExtension = ".ilcam";
-    inline constexpr const char* KFrontendEntry = "apps/flat-laser-cam/frontend/entry.mjs";
+    inline constexpr const char* KFrontendEntry = "apps/flat-laser-cam/webpage/entry.mjs";
     inline constexpr const char* KDefaultStartupComponent = "CFlatLaserProjectComponent";
 
     inline std::string MakeModulePath(const std::filesystem::path& binaryRoot, const char* moduleName)
@@ -31,7 +31,7 @@ namespace iCAX::FlatLaserCAM
         definition.DefaultProjectStartupComponent = KDefaultStartupComponent;
 
         definition.ProjectFile.Magic = KProjectMagic;
-        definition.ProjectFile.FormatVersion = 1;
+        definition.ProjectFile.FormatVersion = "1.0";
         definition.ProjectFile.FileExtensions = { KProjectFileExtension };
         definition.ProjectFile.MagicOffset = 0;
         definition.ProjectFile.ProbeBytes = 64;

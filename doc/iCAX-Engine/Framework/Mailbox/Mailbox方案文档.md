@@ -23,7 +23,7 @@ EndB post office
 ## 2. 工程位置
 
 ```text
-src/icax/framework/Mailbox/
+src/icax-engine/framework/Mailbox/
 ```
 
 工程文件：
@@ -43,6 +43,9 @@ Mail.h
   -> MailHeader
   -> MailData
   -> Mail
+
+MailPayload.h / MailPayload.cpp
+  -> 文本 Payload 创建、读取和释放辅助函数
 
 MailQueue.h / MailQueue.cpp
   -> CMailQueue，单向队列
@@ -70,7 +73,28 @@ struct Mail
 
 `MailHeader::nTypeCode` 是业务类型码。Mailbox 不解释它，命令语义由上层 CommandHandler 或业务协议解释。
 
-### 4.2 CMailQueue
+Payload 底层仍是 bytes。面向 H5 的普通命令在协议上约定为 UTF-8 文本，也就是 JS string；文本内容通常是 JSON。这样 JS 侧不需要处理 C++ 结构体、指针、`size_t` 或 `uint64_t` 精度问题。
+
+### 4.2 MailPayload
+
+`MailPayload` 提供官方文本负载入口：
+
+```cpp
+void ReleaseMailPayload(Mail& mail) noexcept;
+void SetMailPayloadText(Mail& mail, const std::string& text);
+std::string GetMailPayloadText(const Mail& mail);
+Mail CreateTextMail(const MailHeader& header, const std::string& text);
+```
+
+设计要点：
+
+- `SetMailPayloadText` 先释放旧 Payload，再把 UTF-8 文本拷贝到 `uint8_t[]`。
+- `GetMailPayloadText` 不做 JSON 解析，只把 Payload 按 UTF-8 文本取出。
+- 空字符串对应空 Payload，不额外写入字符串结尾的 `\0`。
+- `ReleaseMailPayload` 是统一释放入口，避免业务代码散落手写 `delete[]`。
+- 大块资源和模型数据不走普通文本 Payload，应走资源池或专门二进制路径；高频状态走 PDO。
+
+### 4.3 CMailQueue
 
 `CMailQueue` 是底层单向队列。
 
@@ -96,7 +120,7 @@ void Clear();
 - `Clear` 释放仍滞留在队列中的 Payload。
 - 队列禁止拷贝，避免多个队列持有同一批裸指针 Payload。
 
-### 4.3 CMailChannel
+### 4.4 CMailChannel
 
 `CMailChannel` 拥有两个队列：
 
@@ -141,7 +165,7 @@ incoming = AToB
 outgoing = BToA
 ```
 
-### 4.4 CMailPostOffice
+### 4.5 CMailPostOffice
 
 `CMailPostOffice` 是一个轻量收发入口，不拥有队列。
 
@@ -212,7 +236,7 @@ Clear 或队列析构：
 关键约束：
 
 - 非空 Payload 必须由 `new[]` 分配。
-- 接收方处理完邮件后必须 `delete[] Payload.pData`。
+- 接收方处理完邮件后必须调用 `ReleaseMailPayload(mail)`。
 - 发送方在 `Send` 后应该释放自己传入的原始 Payload；队列释放或返回的是队列深拷贝出的 Payload。
 - `CMailPostOffice` 不负责队列生命周期。
 - 生命周期所有者移除 `CMailChannel` 后，旧 `CMailPostOffice` 自动失效。
@@ -237,6 +261,8 @@ Clear 或队列析构：
 
 Mailbox 只负责消息传输。需要处理前端命令时，上层适配器把 `Mail` 转换为 `CCommandRequest`，再交给 `CommandHandler` 分发。
 
+普通命令 Payload 建议采用 UTF-8 JSON 文本。H5 bridge 侧发送 JS string，C++ bridge 侧用 `SetMailPayloadText` 写入邮件；接收侧用 `GetMailPayloadText` 取出后交给具体 command codec 解析。
+
 ### 8.2 运行体
 
 当前 iCAX framework 中，`IMailChannelService` 负责按 mail id 找到 channel，`ApplicationHost`、`ProductRuntime` 和 `Project` 负责把通用 EndA/EndB 映射成当前层级里的 frontend/backend 邮局。
@@ -250,12 +276,13 @@ Mail 通信用于低频消息；PDO 用于高频状态数据。
 测试工程：
 
 ```text
-src/tests/icax/framework/Mailbox/MailboxTest/MailboxTest.vcxproj
+src/tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj
 ```
 
 测试覆盖：
 
 - `CMailQueue` 入队、取出、清空、移动和并发。
+- 文本 Payload 的创建、读取、替换和队列深拷贝。
 - `CMailPostOffice` 默认未绑定时的异常行为。
 - `CMailPostOffice` 轻量非拥有视图的复制语义和通道销毁后的失效行为。
 - `CMailChannel` EndA/EndB 双向路由。

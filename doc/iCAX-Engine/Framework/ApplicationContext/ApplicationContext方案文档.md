@@ -3,7 +3,7 @@
 ## 1. 工程位置
 
 ```text
-src/icax/framework/ApplicationContext/
+src/icax-engine/framework/ApplicationContext/
 ```
 
 `ApplicationContext` 放在 framework，是因为它描述应用运行环境，会被 ApplicationHost、Behaviour、Service、CommandHandler 使用；但它本身不应依赖这些上层项目。
@@ -25,7 +25,7 @@ ApplicationHost
   -> Build ApplicationContext
   -> Start ProductRuntime
   -> ProductRuntime opens ProjectCatalog
-  -> Project creates Repository / UniverseContext / Universe
+  -> Project creates Repository / Universe
   -> Pass application context to Service / CommandHandler
 ```
 

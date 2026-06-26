@@ -25,6 +25,8 @@ CMailPostOffice
 
 Mail 通信不处理业务逻辑，不解析 Payload。需要按消息类型分发命令时，上层可把 `MailHeader::nTypeCode` 映射到 `CommandHandler` 的命令类型。
 
+面向 H5 的普通命令约定 Payload 为 UTF-8 文本，也就是 JS string。文本内容通常是 JSON。Mailbox 底层仍以 bytes 保存 Payload，C++ 侧通过 `MailPayload.h` 的文本辅助函数创建、读取和释放文本负载。
+
 ## 2. 使用场景
 
 - 任意一端向另一端发送命令。
@@ -44,7 +46,7 @@ Mail 通信与 PDO 的分工：
 ```cpp
 struct MailHeader
 {
-    uint64_t nMailId = 0;
+    uint64_t nChannelId = 0;
     uint64_t nOriginId = 0;
     uint64_t nTypeCode = 0;
     StampCode nStamp = kMailOk;
@@ -53,7 +55,7 @@ struct MailHeader
 
 字段含义：
 
-- `nMailId`：当前邮件 ID。
+- `nChannelId`：当前邮件 ID。
 - `nOriginId`：原始邮件 ID，回复邮件使用它关联请求；`0` 表示没有原始邮件。
 - `nTypeCode`：邮件类型码，常见用法是保存命令、事件或响应类型。
 - `nStamp`：通用处理状态，业务错误码由业务 Payload 自己表达。
@@ -64,11 +66,10 @@ struct MailHeader
 enum StampCode : uint16_t
 {
     kMailOk = 0,
-    kMailUnknownType = 1,
-    kMailNoHandler = 2,
-    kMailInvalidPayload = 3,
-    kMailExecutionError = 4,
-    kMailTimeout = 5,
+    kMailNoHandler = 1,
+    kMailInvalidPayload = 2,
+    kMailExecutionError = 3,
+    kMailTimeout = 4,
 };
 ```
 
@@ -83,6 +84,29 @@ struct MailData
 ```
 
 Mail 通信不解析 `pData`，也不知道 Payload 的类型。
+
+普通 H5 命令使用 UTF-8 文本 Payload：
+
+```cpp
+MailHeader header;
+header.nChannelId = 1;
+header.nTypeCode = commandCode;
+
+auto mail = CreateTextMail(header, R"({"projectPath":"D:/demo.robot"})");
+postOffice.Send(mail);
+ReleaseMailPayload(mail);
+```
+
+接收方：
+
+```cpp
+auto mails = postOffice.Receive();
+for (auto& mail : mails)
+{
+    auto text = GetMailPayloadText(mail);
+    ReleaseMailPayload(mail);
+}
+```
 
 ### 3.4 Mail
 
@@ -196,14 +220,14 @@ Send()    写入 EndB -> EndA
 
 ## 7. 生命周期与所有权
 
-当前使用裸指针 Payload，因此所有权规则必须明确。
+当前底层使用裸指针 Payload，因此所有权规则必须明确。业务代码应优先使用 `MailPayload.h` 中的 `ReleaseMailPayload` 释放邮件负载，而不是散落手写 `delete[]`。
 
 - 空 Payload 使用 `nSize == 0` 且 `pData == nullptr`。
-- 非空 Payload 必须使用 `new[]` 分配，才能由 `delete[]` 释放。
+- 非空 Payload 必须使用 `new[]` 分配，才能由 `ReleaseMailPayload` 释放。
 - `Send()` / `Enqueue()` 会深拷贝 Payload，调用方继续拥有传入邮件的 Payload。
 - 邮件进入 `CMailQueue` 后，队列只负责释放自己拷贝出来的 Payload。
 - `Drain()` 或 `Receive()` 返回后，队列中那份 Payload 所有权转移给调用方。
-- 调用方处理完返回邮件后必须释放 `Payload.pData`。
+- 调用方处理完返回邮件后必须调用 `ReleaseMailPayload(mail)` 释放 `Payload.pData`。
 - `CMailPostOffice` 不拥有队列，底层队列释放后旧邮局自动失效。
 - `CMailChannel` 拥有两个底层 `CMailQueue`，因此由它负责释放仍未被接收的 Payload。
 - `CMailChannel` 销毁后，由它获取到的 `CMailPostOffice` 不再可用，调用 `Send` / `Receive` / `ClearIncoming` / `ClearOutgoing` 会抛出异常。
@@ -234,6 +258,7 @@ Send()    写入 EndB -> EndA
 
 ```cpp
 #include <Mailbox/MailChannel.h>
+#include <Mailbox/MailPayload.h>
 
 using namespace iCAX::Mail;
 
@@ -242,21 +267,18 @@ auto endAOffice = channel.GetEndAPostOffice();
 auto endBOffice = channel.GetEndBPostOffice();
 
 Mail command;
-command.Header.nMailId = 1;
+command.Header.nChannelId = 1;
 command.Header.nTypeCode = 1001;
-command.Payload.nSize = sizeof(int);
-command.Payload.pData = new uint8_t[sizeof(int)];
+SetMailPayloadText(command, R"({"action":"ping"})");
 
 endAOffice.Send(command);
-delete[] command.Payload.pData;
-command.Payload.pData = nullptr;
-command.Payload.nSize = 0;
+ReleaseMailPayload(command);
 
 auto mails = endBOffice.Receive();
 for (auto& mail : mails)
 {
-    // EndB 按 nTypeCode 处理 mail.Payload。
-    delete[] mail.Payload.pData;
+    auto payloadText = GetMailPayloadText(mail);
+    ReleaseMailPayload(mail);
 }
 ```
 
@@ -264,8 +286,8 @@ for (auto& mail : mails)
 
 ```cpp
 Mail reply;
-reply.Header.nMailId = 2;
-reply.Header.nOriginId = request.Header.nMailId;
+reply.Header.nChannelId = 2;
+reply.Header.nOriginId = request.Header.nChannelId;
 reply.Header.nTypeCode = request.Header.nTypeCode;
 reply.Header.nStamp = kMailOk;
 
@@ -291,7 +313,7 @@ auto role2Mails = role2Office.Receive();
 单元测试目录：
 
 ```text
-src/tests/icax/framework/Mailbox/MailboxTest/
+src/tests/icax-engine/framework/Mailbox/MailboxTest/
 ```
 
 测试覆盖：
@@ -301,6 +323,7 @@ src/tests/icax/framework/Mailbox/MailboxTest/
 - `CMailQueue::Drain()` 清空队列。
 - `CMailQueue::Clear()` 释放队列中 Payload。
 - 空 Payload。
+- UTF-8 文本 Payload 的创建、读取、替换和队列深拷贝。
 - `CMailQueue` 移动构造和移动赋值。
 - 并发入队和取出。
 - 默认 `CMailPostOffice` 未绑定时抛出异常。

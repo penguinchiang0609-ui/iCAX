@@ -67,7 +67,7 @@ class IApplicationContext
 public:
     virtual const CApplicationDescriptor& GetDescriptor() const = 0;
     virtual const CApplicationPaths& GetPaths() const = 0;
-    virtual const CApplicationSettings& GetSettings() const = 0;
+    virtual CApplicationSettings GetSettings() const = 0;
 };
 ```
 

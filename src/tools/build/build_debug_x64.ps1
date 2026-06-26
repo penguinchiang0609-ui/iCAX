@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..\..")
-$SolutionDir = (Resolve-Path (Join-Path $RepoRoot "src\icax")).Path + "\"
+$SolutionDir = (Resolve-Path (Join-Path $RepoRoot "src\icax-engine")).Path + "\"
 
 $MSBuildCandidates = @(
     "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\amd64\MSBuild.exe",
@@ -21,27 +21,27 @@ if (-not $MSBuild) {
 }
 
 $Projects = @(
-    "src\icax\foundation\Data\Data.vcxproj",
-    "src\icax\foundation\Math\Math.vcxproj",
-    "src\icax\foundation\Geometry\Geometry.vcxproj",
-    "src\icax\foundation\Task\Task.vcxproj",
-    "src\icax\framework\Resources\Resources.vcxproj",
-    "src\icax\framework\Mailbox\Mailbox.vcxproj",
-    "src\icax\framework\PDO\PDO.vcxproj",
-    "src\icax\framework\ApplicationContext\ApplicationContext.vcxproj",
-    "src\icax\framework\CommandHandler\CommandHandler.vcxproj",
-    "src\icax\framework\Database\Database.vcxproj",
-    "src\icax\framework\Services\Services.vcxproj",
-    "src\icax\framework\Behaviour\Behaviour.vcxproj",
-    "src\icax\framework\Project\Project.vcxproj",
-    "src\icax\framework\Product\Product.vcxproj",
-    "src\icax\plugins\core\CoreComponent\CoreComponent.vcxproj",
-    "src\icax\plugins\core\CoreService\CoreService.vcxproj",
-    "src\icax\plugins\core\CoreBehaviour\CoreBehaviour.vcxproj",
+    "src\icax-engine\foundation\Data\Data.vcxproj",
+    "src\icax-engine\foundation\Math\Math.vcxproj",
+    "src\icax-engine\foundation\Geometry\Geometry.vcxproj",
+    "src\icax-engine\foundation\Task\Task.vcxproj",
+    "src\icax-engine\framework\Resources\Resources.vcxproj",
+    "src\icax-engine\framework\Mailbox\Mailbox.vcxproj",
+    "src\icax-engine\framework\PDO\PDO.vcxproj",
+    "src\icax-engine\framework\ApplicationContext\ApplicationContext.vcxproj",
+    "src\icax-engine\framework\ProductContext\ProductContext.vcxproj",
+    "src\icax-engine\framework\ProjectContext\ProjectContext.vcxproj",
+    "src\icax-engine\framework\CommandHandler\CommandHandler.vcxproj",
+    "src\icax-engine\framework\Database\Database.vcxproj",
+    "src\icax-engine\framework\Services\Services.vcxproj",
+    "src\icax-engine\framework\Behaviour\Behaviour.vcxproj",
+    "src\icax-engine\framework\Project\Project.vcxproj",
+    "src\icax-engine\framework\Product\Product.vcxproj",
     "src\apps\sample\backend\component\SampleComponent\SampleComponent.vcxproj",
     "src\apps\sample\backend\service\SampleService\SampleService.vcxproj",
     "src\apps\sample\backend\behaviour\SampleBehaviour\SampleBehaviour.vcxproj",
-    "src\icax\framework\ApplicationHost\ApplicationHost.vcxproj",
+    "src\icax-engine\framework\ApplicationHost\ApplicationHost.vcxproj",
+    "src\iCAX-UI\WebPageHost\WebPageHost.vcxproj",
     "src\apps\cax-host\backend\CAXHost\CAXHost.vcxproj",
     "src\apps\mfc-sample\backend\MFCSample\MFCSample.vcxproj"
 )

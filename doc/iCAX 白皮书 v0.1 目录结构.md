@@ -51,7 +51,7 @@ ApplicationHost
              └── Project*
                   ├── Repository
                   ├── ResourceLibrary / ResourcePool
-                  ├── UniverseContext / Universe
+                  ├── Universe
                   ├── Project MailChannel
                   └── Project WorkThread
 ```
@@ -107,7 +107,7 @@ Repository 是数据库顶级容器：
 - 管理持久化
 - 管理事务
 
-Repository 由 Project 持有。临时编辑、预览和导入由轻量 Project 或 Repository 快照表达。Universe 只承载行为调度，不对应也不拥有 Repository；Project 通过 UniverseContext 把当前 Repository 传给 Behaviour。
+Repository 由 Project 持有。临时编辑、预览和导入由轻量 Project 或 Repository 快照表达。Universe 只承载行为调度，不对应也不拥有 Repository；Project 在调度时显式传入 ApplicationContext、ProductContext 和 ProjectContext。
 
 ------
 
@@ -187,7 +187,7 @@ Universe 是行为运行容器：
 职责：
 
 - 管理 Behaviour 调度器
-- 按 Project 传入的 UniverseContext 执行 Behaviour
+- 按 Project 传入的 Application/Product/Project 三层上下文执行 Behaviour
 
 ------
 
@@ -210,10 +210,13 @@ OnStart
 OnPreUpdate
 OnUpdate
 OnPostUpdate
+OnDestroyImmediate
 OnDestroy
 OnModifying
 OnModified
 ```
+
+其中 `OnDestroyImmediate` 在组件移除链路中同步触发；`OnDestroy` 在下一次 Tick 开头的统一销毁阶段触发，参数是 `CComponentDestroyInfo` 销毁快照，而不是已经脱离 Entity/Repository 的组件对象。
 
 ------
 

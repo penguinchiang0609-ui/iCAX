@@ -2,7 +2,7 @@
 
 本目录记录 iCAX Engine Framework 层命令处理抽象的规格与方案文档。
 
-对应源码目录 `src/icax/framework/CommandHandler/`。它位于 Mailbox 之上，用于把前端命令分发给后端 handler。
+对应源码目录 `src/icax-engine/framework/CommandHandler/`。它位于 Mailbox 之上，用于把前端命令分发给后端 handler。
 
 ## 目录结构
 
