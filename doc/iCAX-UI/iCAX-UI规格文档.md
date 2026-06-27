@@ -2,17 +2,19 @@
 
 ## 1. 定位
 
-iCAX-UI 是 iCAX 桌面应用的 H5 前端框架层：
+iCAX-UI 是 iCAX 桌面应用的前端框架层。当前默认真实前端是 WPF，CEF/H5 是可选前端路线：
 
 ```text
-WebPageHost + WebPage
+UIContainer + WpfUIContainer
+UIContainer + CefUIContainer + WebPage
 ```
 
-- `WebPageHost` 是 H5 adapter 核心，连接 UI 宿主和 `iCAX-Application` 的 `FrontendBridge`。
-- `CefWebPageHost` 是当前 CEF 浏览器宿主适配层。
+- `UIContainer` 是 UI 容器公共契约、静态注册工厂和内置 headless 容器。
+- `WpfUIContainer` 是当前默认 WPF 容器实现。
+- `CefUIContainer` 是可选 CEF 浏览器容器实现。
 - `WebPage` 是 H5 单页工作台，由 `AppShell` 和产品 `webpage` 模块组成。
 
-iCAX-UI 不拥有 Engine。Engine 生命周期由 `iCAX-Application` 管理，因此未来 Qt/WPF UI 可以复用同一个应用容器。
+iCAX-UI 不拥有 Engine。Engine 生命周期由 `iCAX-Application` 管理，因此 WPF、Qt、CEF/H5 UI 可以复用同一个应用容器。
 
 ## 2. 源码位置
 
@@ -21,8 +23,9 @@ src/iCAX-Application/
   Application/
 
 src/iCAX-UI/
-  WebPageHost/
-  CefWebPageHost/
+  UIContainer/
+  WpfUIContainer/
+  CefUIContainer/
   AppProxy/
   ProductProxy/
   ProjectProxy/
@@ -45,8 +48,9 @@ src/apps/<product-id>/
 ## 3. 模块划分
 
 - `iCAX-Application/Application`：应用容器，拥有 Engine 和通用 `FrontendBridge`。
-- `WebPageHost`：H5 adapter 核心，不拥有 Engine。
-- `CefWebPageHost`：CEF 宿主适配层，负责浏览器窗口和 JS bridge。
+- `UIContainer`：UI 容器公共契约、工厂和 headless 启动验证。
+- `WpfUIContainer`：WPF 版 `IUIContainer`，负责 WPF 主窗口和 mailbox 连接。
+- `CefUIContainer`：CEF 版 `IUIContainer`，负责浏览器窗口和 JS bridge。
 - `SDK/AppShell`：SDK 自带的 H5 单页应用壳。
 - `AppProxy`：前端应用代理，封装 application channel、产品列表、产品启动和按文件打开项目。
 - `ProductProxy`：前端产品代理，封装 product channel、产品状态、产品级事件、项目打开入口和产品 webpage 加载。
@@ -56,20 +60,20 @@ src/apps/<product-id>/
 
 `AppProxy/ProductProxy/ProjectProxy` 是前端自己的三层结构，与 backend 概念对齐，但不拥有 backend 数据。它们只保存前端通信入口、状态快照、事件订阅和视图所需的轻量引用。
 
-## 4. WebPageHost
+## 4. UIContainer
 
-`WebPageHost` 是连接 WebPage 和 `FrontendBridge` 的 adapter。
+`UIContainer` 是连接 Application 启动层和具体 UI 容器的公共契约。
 
 它负责：
 
-- 绑定已经 attach 到 Engine 的 `CFrontendBridge`。
-- 被 CEF/WebView/Qt 等 UI 宿主适配层调用。
-- 将 JS 发来的 mail 交给 `FrontendBridge`。
-- 从 `FrontendBridge` 取出 Engine response/event，交给宿主适配器推送到 H5。
+- 定义 `IFrontendBridge` 和 `IUIContainer`。
+- 根据配置通过 `CUIContainerFactory` 创建真实 UI 容器。
+- 支持 UI 容器 DLL 静态注册。
+- 提供内置 headless 容器，验证 application channel 和 `App.GetState` 握手。
 
-`WebPageHost` 不写具体产品逻辑，不知道平切、五轴、焊接等业务细节，不启动或停止 `ApplicationHost`。
+`UIContainer` 不写具体产品逻辑，不知道平切、五轴、焊接等业务细节，不启动或停止 `ApplicationHost`。
 
-CEF 浏览器窗口、`window.icax` 注入、PDO shared memory 到 JS 视图的映射、文件对话框、窗口标题和拖拽文件属于 `CefWebPageHost` 或更外层宿主适配器。
+WPF 主窗口、mailbox 命令按钮、native viewport 承载区域属于 `WpfUIContainer`。CEF 浏览器窗口、`window.icax` 注入、PDO shared memory 到 JS 视图的映射、文件对话框、窗口标题和拖拽文件属于 `CefUIContainer` 或更外层宿主适配器。
 
 ## 5. WebPage
 
@@ -159,7 +163,7 @@ CApplication.Start()
   -> Engine ApplicationHost.Start()
   -> FrontendBridge.Attach(ApplicationHost)
 CEF/WebView/Qt host starts
-  -> WebPageHost.Start()
+  -> UIContainer.Start()
   -> AppShell loads
   -> window.icax.getApplicationChannelId()
   -> App.GetState

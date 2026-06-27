@@ -148,16 +148,17 @@ export class ProductProxy {
   }
 
   async #registerProjectChannel(projectState) {
-    if (isUsableChannelId(projectState?.projectChannelId)) {
-      return projectState;
-    }
-    if (!this.bridge?.registerProjectChannel || !projectState?.projectId) {
+    if (!projectState?.projectId) {
       return projectState;
     }
 
+    if (typeof this.bridge?.registerProjectChannel !== "function") {
+      throw new Error("Host bridge does not support project channel registration");
+    }
+
     const channelId = await this.bridge.registerProjectChannel(projectState.projectId);
-    if (!channelId) {
-      return projectState;
+    if (!isUsableChannelId(channelId)) {
+      throw new Error(`Host bridge returned invalid project channel id: ${projectState.projectId}`);
     }
 
     return { ...projectState, projectChannelId: channelId };

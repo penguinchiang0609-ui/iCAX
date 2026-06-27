@@ -28,7 +28,7 @@ AppShell / product webpage
 宿主加载入口：
 
 ```text
-CefWebPageHost
+CefUIContainer
   -> src/iCAX-UI/SDK/AppShell/index.html
 ```
 

@@ -1,9 +1,40 @@
 #include "pch.h"
 #include "Application.h"
 
+#include <filesystem>
 #include <stdexcept>
 
-iCAX::Application::CApplication::CApplication() = default;
+namespace
+{
+    iCAX::Application::CApplicationConfig _MakeDefaultApplicationConfig()
+    {
+        iCAX::Application::CApplicationConfig _Config;
+        _Config.EngineConfig.strApplicationSettingsPath = "Setting/Application.Setting";
+        _Config.EngineConfig.Descriptor.AppID = "icax";
+        _Config.EngineConfig.Descriptor.AppName = "iCAX";
+        _Config.EngineConfig.Paths.InstallDirectory = std::filesystem::current_path().string();
+        _Config.EngineConfig.Paths.UserConfigDirectory = "Setting";
+        _Config.EngineConfig.Paths.CacheDirectory = "Cache";
+        _Config.EngineConfig.Paths.TempDirectory = "Temp";
+        _Config.EngineConfig.Paths.LogDirectory = "Log";
+        _Config.EngineConfig.nFrameIntervalMilliseconds = 16;
+
+        iCAX::Product::CProductDefinition _DefaultProduct;
+        _DefaultProduct.ProductID = "icax.default";
+        _DefaultProduct.ProductName = "iCAX Default Product";
+        _DefaultProduct.ProductVersion = "1.0";
+        _DefaultProduct.ProjectFile.Magic = "ICAX_DEFAULT";
+        _DefaultProduct.ProjectFile.FormatVersion = "1.0";
+        _DefaultProduct.ProjectFile.FileExtensions.push_back(".icax");
+        _Config.EngineConfig.Products.push_back(_DefaultProduct);
+        return _Config;
+    }
+}
+
+iCAX::Application::CApplication::CApplication()
+    : m_Config(_MakeDefaultApplicationConfig())
+{
+}
 
 iCAX::Application::CApplication::~CApplication()
 {
@@ -13,7 +44,7 @@ iCAX::Application::CApplication::~CApplication()
     }
 }
 
-void iCAX::Application::CApplication::SetConfig(IN const CApplicationConfig& Config_)
+void iCAX::Application::CApplication::SetConfig(const CApplicationConfig& Config_)
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     if (m_bStarted)

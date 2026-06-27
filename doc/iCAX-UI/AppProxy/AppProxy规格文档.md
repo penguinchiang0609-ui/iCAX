@@ -38,6 +38,10 @@ const app = await AppProxy.create(bridge);
 
 产品启动、停止、项目文件打开都通过 application channel 发起。`AppProxy` 收到 backend state 后，同步本地 `ProductProxy` 对象表。
 
+backend state 中的 `productChannelId` 只表示 product runtime 的通信身份，不表示当前 H5 bridge 已经可以向该 channel 投递邮件。只要 product runtime 处于 started 状态，`AppProxy` 在创建或更新 `ProductProxy` 前必须调用 `bridge.registerProductChannel(productId)`，让原生宿主把 product frontend post office 注册到当前 bridge 会话。
+
+`bridge.registerProductChannel(productId)` 返回的 channel id 才是本次前端会话实际可用的 `productChannelId`。如果返回空、nil 或非法 channel id，必须立即抛出异常。
+
 ## 4. 错误处理
 
 缺少 `bridge`、`mailboxClient` 或 application channel id 时立即抛出异常。命令失败和超时由 `MailboxClient` 转换为 rejected Promise。

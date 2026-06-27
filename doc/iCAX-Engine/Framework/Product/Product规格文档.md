@@ -72,7 +72,7 @@ backend.modules.commands          -> CProductDefinition.Modules.CommandModules
 webpage.entry                     -> CProductDefinition.FrontendEntry
 ```
 
-模块路径按 manifest 所在产品目录解析为规范化路径。`WebPageHost` 不解析 manifest；启动层负责调用上述接口并把结果写入 `ApplicationHostConfig.Products`。
+模块路径按 manifest 所在产品目录解析为规范化路径。`UIContainer` 不解析 manifest；启动层负责调用上述接口并把结果写入 `ApplicationHostConfig.Products`。
 
 ## 4. 产品数据
 

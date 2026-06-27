@@ -23,7 +23,7 @@ src/iCAX-UI/ProjectProxy/
 ProjectProxy.execute(command, payload)
   -> MailboxClient.request(projectChannelId, command, payload)
   -> bridge.postMail()
-  -> WebPageHost
+  -> UIContainer
   -> backend project command handler
   <- response mail
   -> Promise resolve/reject

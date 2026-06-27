@@ -12,16 +12,16 @@
 
 ## 运行入口
 
-当前推荐先运行新的 H5 WebPageShell 调试入口：
+当前推荐先运行新的 H5 ApplicationProxy 调试入口：
 
 ```powershell
-node ..\iCAX-UI\WebPageShell\dev-server.mjs
+node ..\iCAX-UI\ApplicationProxy\dev-server.mjs
 ```
 
 或在仓库根目录运行：
 
 ```powershell
-node src\iCAX-UI\WebPageShell\dev-server.mjs
+node src\iCAX-UI\ApplicationProxy\dev-server.mjs
 ```
 
 开发服务器会在 `http://127.0.0.1:4173/` 提供唯一 H5 页面。当前没有 ECF 宿主注入 `window.icax` 时，前端会自动使用 mock bridge，方便先验证 mailbox Promise、产品启动、项目打开和产品 webpage 模块挂载流程。

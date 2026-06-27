@@ -1,6 +1,6 @@
 # AppShell
 
-`AppShell` 是 iCAX 前端唯一 H5 页面入口。`WebPageHost` 永远加载这里的 `index.html`，产品前端通过 manifest 中的 `webpage.entry` 作为模块挂载进来。
+`AppShell` 是 iCAX 前端唯一 H5 页面入口。`UIContainer` 永远加载这里的 `index.html`，产品前端通过 manifest 中的 `webpage.entry` 作为模块挂载进来。
 
 ## 目录结构
 

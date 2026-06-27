@@ -1,0 +1,132 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Win32" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/iCAX-Application/" />
+  <Folder Name="/iCAX-Application/Application/">
+    <Project Path="iCAX-Application/Application/Application.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/" />
+  <Folder Name="/iCAX-Engine/foundation/" />
+  <Folder Name="/iCAX-Engine/foundation/Data/">
+    <Project Path="iCAX-Engine/foundation/Data/Data.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/Geometry/">
+    <Project Path="iCAX-Engine/foundation/Geometry/Geometry.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/Math/">
+    <Project Path="iCAX-Engine/foundation/Math/Math.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/Task/">
+    <Project Path="iCAX-Engine/foundation/Task/Task.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/" />
+  <Folder Name="/iCAX-Engine/framework/ApplicationContext/">
+    <Project Path="iCAX-Engine/framework/ApplicationContext/ApplicationContext.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/ApplicationHost/">
+    <Project Path="iCAX-Engine/framework/ApplicationHost/ApplicationHost.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/Behaviour/">
+    <Project Path="iCAX-Engine/framework/Behaviour/Behaviour.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/CommandHandler/">
+    <Project Path="iCAX-Engine/framework/CommandHandler/CommandHandler.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/Database/">
+    <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/Mailbox/">
+    <Project Path="iCAX-Engine/framework/Mailbox/Mailbox.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/PDO/">
+    <Project Path="iCAX-Engine/framework/PDO/PDO.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/Product/">
+    <Project Path="iCAX-Engine/framework/Product/Product.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/ProductContext/">
+    <Project Path="iCAX-Engine/framework/ProductContext/ProductContext.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/Project/">
+    <Project Path="iCAX-Engine/framework/Project/Project.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/ProjectContext/">
+    <Project Path="iCAX-Engine/framework/ProjectContext/ProjectContext.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/Resources/">
+    <Project Path="iCAX-Engine/framework/Resources/Resources.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/Services/">
+    <Project Path="iCAX-Engine/framework/Services/Services.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-UI/" />
+  <Folder Name="/iCAX-UI/CefUIContainer/">
+    <Project Path="iCAX-UI/CefUIContainer/CefUIContainer.vcxproj">
+      <Build Project="false" />
+    </Project>
+  </Folder>
+  <Folder Name="/iCAX-UI/UIContainer/">
+    <Project Path="iCAX-UI/UIContainer/UIContainer.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-UI/WpfUIContainer/">
+    <Project Path="iCAX-UI/WpfUIContainer/WpfUIContainer.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/icax-engine/" />
+  <Folder Name="/tests/icax-engine/foundation/" />
+  <Folder Name="/tests/icax-engine/foundation/Data/" />
+  <Folder Name="/tests/icax-engine/foundation/Data/DataTest/">
+    <Project Path="tests/icax-engine/foundation/Data/DataTest/DataTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/foundation/Task/" />
+  <Folder Name="/tests/icax-engine/foundation/Task/TaskTest/">
+    <Project Path="tests/icax-engine/foundation/Task/TaskTest/TaskTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/" />
+  <Folder Name="/tests/icax-engine/framework/ApplicationContext/" />
+  <Folder Name="/tests/icax-engine/framework/ApplicationContext/ApplicationContextTest/">
+    <Project Path="tests/icax-engine/framework/ApplicationContext/ApplicationContextTest/ApplicationContextTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/ApplicationHost/" />
+  <Folder Name="/tests/icax-engine/framework/ApplicationHost/ApplicationHostTest/">
+    <Project Path="tests/icax-engine/framework/ApplicationHost/ApplicationHostTest/ApplicationHostTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/Behaviour/" />
+  <Folder Name="/tests/icax-engine/framework/Behaviour/BehaviourTest/">
+    <Project Path="tests/icax-engine/framework/Behaviour/BehaviourTest/BehaviourTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/CommandHandler/" />
+  <Folder Name="/tests/icax-engine/framework/CommandHandler/CommandHandlerTest/">
+    <Project Path="tests/icax-engine/framework/CommandHandler/CommandHandlerTest/CommandHandlerTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/Database/" />
+  <Folder Name="/tests/icax-engine/framework/Database/DatabaseTest/">
+    <Project Path="tests/icax-engine/framework/Database/DatabaseTest/DatabaseTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/Mailbox/" />
+  <Folder Name="/tests/icax-engine/framework/Mailbox/MailboxTest/">
+    <Project Path="tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/PDO/" />
+  <Folder Name="/tests/icax-engine/framework/PDO/PDOTest/">
+    <Project Path="tests/icax-engine/framework/PDO/PDOTest/PDOTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/Product/" />
+  <Folder Name="/tests/icax-engine/framework/Product/ProductTest/">
+    <Project Path="tests/icax-engine/framework/Product/ProductTest/ProductTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/Project/" />
+  <Folder Name="/tests/icax-engine/framework/Project/ProjectTest/">
+    <Project Path="tests/icax-engine/framework/Project/ProjectTest/ProjectTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/Resources/" />
+  <Folder Name="/tests/icax-engine/framework/Resources/ResourcesTest/">
+    <Project Path="tests/icax-engine/framework/Resources/ResourcesTest/ResourcesTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/framework/Services/" />
+  <Folder Name="/tests/icax-engine/framework/Services/ServicesTest/">
+    <Project Path="tests/icax-engine/framework/Services/ServicesTest/ServicesTest.vcxproj" />
+  </Folder>
+</Solution>

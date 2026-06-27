@@ -4,11 +4,14 @@
 
 ```text
 src/iCAX-Application/Application/
+  Main.cpp
   Application.h
   Application.cpp
   FrontendBridge.h
   FrontendBridge.cpp
 ```
+
+`Application.vcxproj` 生成 `Application.exe`，不是动态库。
 
 `CApplication` 负责拥有 `ApplicationHost` 和 `CFrontendBridge`。
 
@@ -21,8 +24,10 @@ H5/CEF UI：
 ```text
 CApplication
   -> CFrontendBridge
-  -> CWebPageHost
-  -> CCefWebPageHost
+  -> IFrontendBridge
+  -> CUIContainerFactory
+  -> IUIContainer
+    -> CCefUIContainer / HeadlessUIContainer
 ```
 
 Qt UI：
@@ -30,10 +35,11 @@ Qt UI：
 ```text
 CApplication
   -> CFrontendBridge
+  -> IFrontendBridge
   -> QtHost
 ```
 
-因此 `WebPageHost` 不再是 Engine 宿主，只是 H5 侧的 bridge adapter。
+因此具体 UI 容器不再是 Engine 宿主，也不链接 `Application.exe`，只是通过 `IFrontendBridge` 连接后端。
 
 ## 3. Mail 流程
 
@@ -52,3 +58,27 @@ UI
 `CApplication.Start()` 中如果 Engine 启动成功但 bridge attach 失败，应立即停止 Engine 并重新抛出异常。
 
 `CFrontendBridge` 不吞业务异常。投递失败、channel 未注册、post office 无效都应在调用现场抛出。
+
+## 5. UI 容器配置
+
+`Main.cpp` 从以下位置读取 UI 容器配置：
+
+```text
+Setting/UIContainer.Setting
+UIContainer.Setting
+```
+
+默认值：
+
+```ini
+type=headless
+startupHandshakeTimeoutMS=5000
+```
+
+CEF 示例：
+
+```ini
+type=cef
+modulePath=CefUIContainer.dll
+webPageRoot=.../src/iCAX-UI/SDK/AppShell
+```

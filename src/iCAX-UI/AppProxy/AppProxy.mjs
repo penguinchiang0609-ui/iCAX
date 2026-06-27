@@ -148,16 +148,17 @@ export class AppProxy {
   }
 
   async #registerProductChannel(productState) {
-    if (isUsableChannelId(productState?.productChannelId)) {
-      return productState;
-    }
-    if (productState?.isStarted !== true || !this.bridge?.registerProductChannel || !productState?.productId) {
+    if (productState?.isStarted !== true || !productState?.productId) {
       return productState;
     }
 
+    if (typeof this.bridge?.registerProductChannel !== "function") {
+      throw new Error("Host bridge does not support product channel registration");
+    }
+
     const channelId = await this.bridge.registerProductChannel(productState.productId);
-    if (!channelId) {
-      return productState;
+    if (!isUsableChannelId(channelId)) {
+      throw new Error(`Host bridge returned invalid product channel id: ${productState.productId}`);
     }
 
     return { ...productState, productChannelId: channelId };

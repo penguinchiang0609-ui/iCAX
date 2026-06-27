@@ -133,11 +133,28 @@ await bridge.pdo.withRead(options, reader);
 
 获取 PDO 读租约。
 
+`options` 至少包含：
+
+- `arenaName`
+- `id`
+- `version`
+- `payloadSize`
+
+reader 形态：
+
+```js
+const result = bridge.pdo.withRead(options, (buffer, meta) => {
+  return decode(buffer, meta);
+});
+```
+
 要求：
 
+- reader 必须同步执行，不允许返回 `Promise`。
 - reader 执行期间数据视图有效。
 - reader 返回后，前端不得继续持有并异步使用该租约视图。
 - 如果 PDO 不存在或版本不匹配，应抛出明确错误。
+- CEF 宿主下 `buffer` 是 shared memory payload 的 V8 快照，不是 JS 层 external shared memory。
 
 ## 6. Mock 行为
 

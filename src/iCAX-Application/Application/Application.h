@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ApplicationExport.h"
 #include "FrontendBridge.h"
 #include "ApplicationHost/ApplicationHost.h"
 
@@ -15,7 +14,7 @@ namespace iCAX
         * @brief 进程级 Application 配置。
         * @details EngineConfig 由启动层准备，产品 manifest 应在进入 CApplication 前完成解析。
         */
-        struct _APPLICATION_EXP CApplicationConfig final
+        struct CApplicationConfig final
         {
             iCAX::ApplicationHost::ApplicationHostConfig EngineConfig;
             std::string UIName; //!< 可选 UI 名称，例如 H5/Qt/WPF，仅用于上层标识。
@@ -28,14 +27,14 @@ namespace iCAX
         *   它拥有 ApplicationHost 和 FrontendBridge；具体 UI 宿主只接入 FrontendBridge，
         *   不再直接创建或停止 Engine。
         */
-        class _APPLICATION_EXP CApplication final
+        class CApplication final
         {
         public:
             CApplication();
             ~CApplication();
 
-            CApplication(IN const CApplication&) = delete;
-            CApplication& operator=(IN const CApplication&) = delete;
+            CApplication(const CApplication&) = delete;
+            CApplication& operator=(const CApplication&) = delete;
 
         public:
             /*
@@ -43,7 +42,7 @@ namespace iCAX
             * @param [in] Config_ 新配置。
             * @throws std::logic_error Application 已启动时抛出。
             */
-            void SetConfig(IN const CApplicationConfig& Config_);
+            void SetConfig(const CApplicationConfig& Config_);
 
             /*
             * @brief 启动 Engine 并把 FrontendBridge 绑定到 Engine。

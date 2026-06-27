@@ -59,7 +59,7 @@ LoadProductDefinitions(productRoot)
   -> return vector<CProductDefinition>
 ```
 
-manifest loader 属于 `Product` 模块，不属于 `WebPageHost`。启动层可以用它构造 `ApplicationHostConfig.Products`，然后再启动 `ApplicationHost` 或 `WebPageHost`。
+manifest loader 属于 `Product` 模块，不属于 `UIContainer`。启动层可以用它构造 `ApplicationHostConfig.Products`，然后再启动 `ApplicationHost` 或 `UIContainer`。
 
 ## 5. 打开项目目录
 

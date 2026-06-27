@@ -6,6 +6,7 @@
 
 # 当前仓库结构的本地临时产物
 /.codex_tmp/
+/.deps/
 /outputs/
 /doc/项目申报/
 /X Other/legacy/build-output/

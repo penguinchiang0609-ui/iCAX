@@ -52,9 +52,32 @@ await project.pdo.withRead(typeName, instanceName, view => {
 要求：
 
 - lease 期间数据不可被写侧破坏。
+- reader 必须同步执行；不得返回 `Promise`。
 - reader 返回后 lease 结束。
-- 前端不得跨异步边界保存底层视图。
+- 前端不得跨异步边界保存底层视图或把它作为长期缓存。
 - 如果前端只接受丢帧，则读取最新可用数据即可。
+
+当前 CEF 宿主中，renderer 进程会打开同名 shared memory arena 并取得 C++ PDO 读租约。由于官方 CEF 启用了 V8 sandbox，V8 不允许直接把任意进程内存包装成 external `ArrayBuffer`，所以传给 reader 的 `ArrayBuffer` 是当前 PDO payload 的 V8 快照。它保证读取语义正确，但不是 JS 层零拷贝。
+
+reader 的第二个参数是只读元信息：
+
+```js
+project.pdo.withRead(typeName, instanceName, (buffer, meta) => {
+  return {
+    dataVersion: meta.dataVersion,
+    bytes: new Uint8Array(buffer)
+  };
+});
+```
+
+`meta` 至少包含：
+
+- `id`
+- `version`
+- `payloadSize`
+- `sequence`
+- `bufferIndex`
+- `dataVersion`
 
 ## 7. 版本语义
 
@@ -81,3 +104,5 @@ await project.pdo.withRead(typeName, instanceName, view => {
 - 能从 descriptor 找到 declaration。
 - 能调用 bridge 获取 read lease。
 - 对不存在的 PDO 给出明确错误。
+- CEF 宿主下 H5 能读取 C++ 写入 shared memory arena 的 payload 和 `dataVersion`。
+- MAIL 仍走 mailbox/JSON，不受 PDO shared memory 改造影响。

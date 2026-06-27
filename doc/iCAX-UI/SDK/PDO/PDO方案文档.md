@@ -27,15 +27,28 @@ ProjectProxy
 
 ## 4. Shared Memory 映射方案
 
-真实 CEF/宿主适配器下需要把 OS shared memory 映射为 JS 可读视图，并明确 lease 释放时机。
+真实 CEF/宿主适配器下需要打开 OS shared memory，并明确 lease 释放时机。
 
 映射策略：
 
 - C++ 侧创建 shared memory arena。
-- WebPageHost 根据 project PDO descriptor 暴露 arena 名称和 declaration。
+- UIContainer 根据 project PDO descriptor 暴露 arena 名称和 declaration。
 - JS 侧通过 bridge 申请 read lease。
-- bridge 在 lease 有效期内提供 `ArrayBuffer` 或 typed array view。
+- CEF renderer 进程按 arena 名称打开同名 shared memory mapping。
+- renderer 进程通过 C++ PDO API 取得 `CPDOReadLease`。
+- bridge 在 reader 执行期间提供 `ArrayBuffer` 和只读 meta。
 - reader 返回后释放 lease。
+
+当前官方 CEF binary 启用了 V8 sandbox，`CefV8Value::CreateArrayBuffer` 不能直接包装 arbitrary process memory。因此 CEF 实现使用 `CreateArrayBufferWithCopy()` 把当前 read lease payload 拷贝到 V8 拥有的 `ArrayBuffer`。
+
+这意味着：
+
+- C++ 与 CEF renderer 之间仍然通过 OS shared memory 传递 PDO。
+- JS 获得的是当前帧快照，不会直接持有共享内存指针。
+- reader 必须同步执行，避免上层把 PDO 租约生命周期误解成异步资源。
+- 真正的 JS external ArrayBuffer 零拷贝需要定制 CEF 构建或改用其他 native/GPU interop 路径。
+
+MAIL 不参与上述共享内存路径。MAIL 仍通过 `cefQuery`、JSON payload 和 mailbox response/event 机制交互。
 
 ## 5. 双缓冲/版本方案
 

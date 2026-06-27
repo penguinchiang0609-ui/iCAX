@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{7D65DF92-6F59-4787-8905-E15402278DD6}</ProjectGuid>
+    <RootNamespace>CefUIContainer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>CefUIContainer</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros">
+    <ICAXBundledCefRoot>$(MSBuildProjectDirectory)\..\..\..\.deps\cef\cef_binary_149.0.5+g6770623+chromium-149.0.7827.197_windows64_minimal</ICAXBundledCefRoot>
+    <ICAXCefRoot Condition="'$(ICAXCefRoot)'=='' and Exists('$(ICAXBundledCefRoot)\include\cef_app.h')">$(ICAXBundledCefRoot)</ICAXCefRoot>
+    <ICAXCefRoot Condition="'$(ICAXCefRoot)'==''">$(ICAX_CEF_ROOT)</ICAXCefRoot>
+    <ICAXCefLibDir Condition="'$(ICAXCefLibDir)'==''">$(ICAX_CEF_LIB_DIR)</ICAXCefLibDir>
+    <ICAXCefWrapperLibDir Condition="'$(ICAXCefWrapperLibDir)'==''">$(ICAX_CEF_WRAPPER_LIB_DIR)</ICAXCefWrapperLibDir>
+    <ICAXCefLibDir Condition="'$(ICAXCefLibDir)'=='' and '$(Configuration)'=='Debug' and Exists('$(ICAXCefRoot)\Debug\libcef.lib')">$(ICAXCefRoot)\Debug</ICAXCefLibDir>
+    <ICAXCefLibDir Condition="'$(ICAXCefLibDir)'==''">$(ICAXCefRoot)\Release</ICAXCefLibDir>
+    <ICAXCefWrapperLibDir Condition="'$(ICAXCefWrapperLibDir)'=='' and Exists('$(ICAXCefRoot)\build_vs2022_x64_md\libcef_dll_wrapper\$(Configuration)\libcef_dll_wrapper.lib')">$(ICAXCefRoot)\build_vs2022_x64_md\libcef_dll_wrapper\$(Configuration)</ICAXCefWrapperLibDir>
+    <ICAXCefWrapperLibDir Condition="'$(ICAXCefWrapperLibDir)'=='' and Exists('$(ICAXCefRoot)\build\libcef_dll_wrapper\$(Platform)\$(Configuration)\libcef_dll_wrapper.lib')">$(ICAXCefRoot)\build\libcef_dll_wrapper\$(Platform)\$(Configuration)</ICAXCefWrapperLibDir>
+    <ICAXCefWrapperLibDir Condition="'$(ICAXCefWrapperLibDir)'=='' and Exists('$(ICAXCefRoot)\build\libcef_dll_wrapper\$(Configuration)\libcef_dll_wrapper.lib')">$(ICAXCefRoot)\build\libcef_dll_wrapper\$(Configuration)</ICAXCefWrapperLibDir>
+    <ICAXCefWrapperLibDir Condition="'$(ICAXCefWrapperLibDir)'==''">$(ICAXCefRoot)\build\libcef_dll_wrapper\$(Platform)\$(Configuration)</ICAXCefWrapperLibDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CEF_UI_CONTAINER;BOOST_ALL_NO_LIB;BOOST_JSON_NO_LIB;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..;$(ICAXCefRoot);$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\packages\boost.1.87.0\lib\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(ICAXCefLibDir);$(ICAXCefWrapperLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcef.lib;libcef_dll_wrapper.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CEF_UI_CONTAINER;BOOST_ALL_NO_LIB;BOOST_JSON_NO_LIB;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..;$(ICAXCefRoot);$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\packages\boost.1.87.0\lib\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(ICAXCefLibDir);$(ICAXCefWrapperLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcef.lib;libcef_dll_wrapper.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CEF_UI_CONTAINER;BOOST_ALL_NO_LIB;BOOST_JSON_NO_LIB;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..;$(ICAXCefRoot);$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\packages\boost.1.87.0\lib\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(ICAXCefLibDir);$(ICAXCefWrapperLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcef.lib;libcef_dll_wrapper.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CEF_UI_CONTAINER;BOOST_ALL_NO_LIB;BOOST_JSON_NO_LIB;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..;$(ICAXCefRoot);$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\iCAX-Engine\packages\boost.1.87.0\lib\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalLibraryDirectories>$(ICAXCefLibDir);$(ICAXCefWrapperLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libcef.lib;libcef_dll_wrapper.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup>
+    <PostBuildEvent>
+      <Command>if exist "$(ICAXCefLibDir)\libcef.dll" xcopy /Y /I "$(ICAXCefLibDir)\*" "$(OutDir)" &gt;nul
+if exist "$(ICAXCefRoot)\Resources" xcopy /E /I /Y "$(ICAXCefRoot)\Resources" "$(OutDir)" &gt;nul
+if exist "$(ICAXCefRoot)\locales" xcopy /E /I /Y "$(ICAXCefRoot)\locales" "$(OutDir)locales\" &gt;nul</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="CefUIContainer.h" />
+    <ClInclude Include="CefUIContainerExport.h" />
+    <ClInclude Include="framework.h" />
+    <ClInclude Include="pch.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CefUIContainer.cpp" />
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="pch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UIContainer\UIContainer.vcxproj">
+      <Project>{f41f583c-9368-41b8-9b05-0c92c1e91f30}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Engine\framework\PDO\PDO.vcxproj">
+      <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Target Name="ValidateCefSdk" BeforeTargets="ResolveProjectReferences;PrepareForBuild">
+    <Error Condition="'$(ICAXCefRoot)'==''" Text="CEF SDK is required. Set ICAX_CEF_ROOT to the CEF binary distribution root." />
+    <Error Condition="!Exists('$(ICAXCefRoot)\include\cef_app.h')" Text="CEF include not found: $(ICAXCefRoot)\include\cef_app.h" />
+    <Error Condition="!Exists('$(ICAXCefLibDir)\libcef.lib')" Text="CEF libcef.lib not found: $(ICAXCefLibDir)\libcef.lib. Set ICAX_CEF_LIB_DIR if your CEF layout is different." />
+    <Error Condition="!Exists('$(ICAXCefWrapperLibDir)\libcef_dll_wrapper.lib')" Text="CEF libcef_dll_wrapper.lib not found: $(ICAXCefWrapperLibDir)\libcef_dll_wrapper.lib. Build CEF libcef_dll_wrapper or set ICAX_CEF_WRAPPER_LIB_DIR." />
+  </Target>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

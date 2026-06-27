@@ -28,11 +28,11 @@ namespace
         return *_ID;
     }
 
-    iCAX::Application::CFrontendMailEnvelope _ToEnvelope(
+    iCAX::Frontend::CFrontendMailEnvelope _ToEnvelope(
         IN const iCAX::Data::uuid& ChannelID_,
         IN const iCAX::Mail::Mail& Mail_)
     {
-        iCAX::Application::CFrontendMailEnvelope _Envelope;
+        iCAX::Frontend::CFrontendMailEnvelope _Envelope;
         _Envelope.ChannelID = _ToString(ChannelID_);
         _Envelope.nID = Mail_.Header.nMailId;
         _Envelope.nOriginID = Mail_.Header.nOriginId;
@@ -42,7 +42,7 @@ namespace
         return _Envelope;
     }
 
-    iCAX::Mail::Mail _ToMail(IN const iCAX::Application::CFrontendMailEnvelope& Envelope_)
+    iCAX::Mail::Mail _ToMail(IN const iCAX::Frontend::CFrontendMailEnvelope& Envelope_)
     {
         iCAX::Mail::MailHeader _Header;
         _Header.nMailId = Envelope_.nID;
@@ -112,7 +112,7 @@ iCAX::Application::CFrontendBridge::CFrontendBridge()
 
 iCAX::Application::CFrontendBridge::~CFrontendBridge() = default;
 
-void iCAX::Application::CFrontendBridge::Attach(IN iCAX::ApplicationHost::CApplicationHost& Engine_)
+void iCAX::Application::CFrontendBridge::Attach(iCAX::ApplicationHost::CApplicationHost& Engine_)
 {
     if (!Engine_.IsRunning())
     {
@@ -158,7 +158,7 @@ std::string iCAX::Application::CFrontendBridge::GetApplicationChannelIDText() co
     return _ToString(_Engine.GetApplicationChannelID());
 }
 
-std::string iCAX::Application::CFrontendBridge::RegisterProductChannel(IN const std::string& strProductID_)
+std::string iCAX::Application::CFrontendBridge::RegisterProductChannel(const std::string& strProductID_)
 {
     auto& _Engine = m_pImpl->RequireEngine();
     auto _pRuntime = _Engine.FindProductRuntime(strProductID_);
@@ -172,7 +172,7 @@ std::string iCAX::Application::CFrontendBridge::RegisterProductChannel(IN const 
     return _ToString(_ChannelID);
 }
 
-std::string iCAX::Application::CFrontendBridge::RegisterProjectChannel(IN const std::string& strProjectID_)
+std::string iCAX::Application::CFrontendBridge::RegisterProjectChannel(const std::string& strProjectID_)
 {
     auto& _Engine = m_pImpl->RequireEngine();
     auto _ProjectID = _ParseChannelID(strProjectID_);
@@ -205,7 +205,7 @@ std::string iCAX::Application::CFrontendBridge::RegisterProjectChannel(IN const 
     throw std::runtime_error("Project runtime is not found: " + strProjectID_);
 }
 
-void iCAX::Application::CFrontendBridge::PostMail(IN const CFrontendMailEnvelope& Envelope_)
+void iCAX::Application::CFrontendBridge::PostMail(const CFrontendMailEnvelope& Envelope_)
 {
     const auto _ChannelID = _ParseChannelID(Envelope_.ChannelID);
     auto _PostOffice = m_pImpl->GetRegisteredPostOffice(_ChannelID);
@@ -261,7 +261,7 @@ std::vector<iCAX::Application::CFrontendMailEnvelope> iCAX::Application::CFronte
     return _Result;
 }
 
-void iCAX::Application::CFrontendBridge::SetMailHandler(IN FrontendMailHandler Handler_)
+void iCAX::Application::CFrontendBridge::SetMailHandler(FrontendMailHandler Handler_)
 {
     std::lock_guard<std::mutex> _Lock(m_pImpl->Mutex);
     m_pImpl->MailHandler = std::move(Handler_);

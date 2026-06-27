@@ -2,13 +2,13 @@
 
 ## 1. 设计目标
 
-iCAX-UI 不是一个独立网站，而是 iCAX 桌面应用的 H5 前端层。它由 `WebPageHost` 和 `WebPage` 组成：
+iCAX-UI 不是一个独立网站，而是 iCAX 桌面应用的 H5 前端层。它由 `UIContainer` 和 `WebPage` 组成：
 
 ```text
-WebPageHost + WebPage
+UIContainer + WebPage
 ```
 
-- `WebPageHost` 是 C++ 侧 H5 adapter。它连接 UI 宿主和 `iCAX-Application` 的 `FrontendBridge`，但不拥有 Engine。
+- `UIContainer` 是 C++ 侧 H5 adapter。它连接 UI 宿主和 `iCAX-Application` 的 `FrontendBridge`，但不拥有 Engine。
 - `WebPage` 是 H5 单页应用，负责界面呈现、用户交互、命令发起、订阅后端事件和读取 PDO 高频数据。
 
 iCAX-UI 的核心原则：
@@ -33,8 +33,8 @@ src/iCAX-Application/
 
 ```text
 src/iCAX-UI/
-  WebPageHost/
-  CefWebPageHost/
+  UIContainer/
+  CefUIContainer/
   AppProxy/
   ProductProxy/
   ProjectProxy/
@@ -75,9 +75,8 @@ flowchart LR
     ProjectProxy --> PDOClient
     PDOClient --> Bridge["SDK/Bridge<br/>window.icax"]
     Mailbox --> Bridge
-    Bridge --> CefHost["CefWebPageHost<br/>CEF 宿主适配"]
-    CefHost --> WebHost["WebPageHost<br/>H5 adapter"]
-    WebHost --> FrontendBridge["iCAX-Application<br/>FrontendBridge"]
+    Bridge --> CefHost["CefUIContainer<br/>IUIContainer 实现"]
+    CefHost --> FrontendBridge["iCAX-Application<br/>FrontendBridge"]
     FrontendBridge --> AppHost["Engine ApplicationHost"]
     AppHost --> ProductRuntime["ProductRuntime"]
     ProductRuntime --> Project["Project"]
@@ -96,33 +95,33 @@ flowchart LR
 CApplication
   ApplicationHost
   FrontendBridge
-  UI adapter
+  UIContainerFactory
 ```
 
 它负责：
 
 - 配置并启动 Engine。
 - 将 `FrontendBridge` attach 到 `ApplicationHost`。
-- 向 UI adapter 暴露稳定的前端桥。
+- 向 UI container 暴露稳定的前端桥。
 - 在关闭时先停止 UI，再停止 Engine。
 
-`WebPageHost`、`CefWebPageHost`、未来 Qt/WPF 宿主都不应直接拥有 Engine。
+`UIContainer`、`CefUIContainer`、未来 Qt/WPF 宿主都不应直接拥有 Engine。
 
-## 5. WebPageHost 设计
+## 5. UIContainer 设计
 
-`WebPageHost` 是前端和 `FrontendBridge` 之间的原生边界。
+`UIContainer` 是前端容器公共契约和工厂，不是具体窗口实现。
 
 主要职责：
 
-- 接收 `CFrontendBridge*`。
-- 被 CEF/WebView/Qt 适配层调用。
-- 将 JS 发来的 mail 投递到 `FrontendBridge`。
-- 将 Engine 返回的 response/event 推送给 JS。
-- 为 CEF/WebView 适配层提供 mailbox API。
+- 定义 `IFrontendBridge`。
+- 定义 `IUIContainer`。
+- 提供 `CUIContainerFactory`。
+- 提供静态注册宏。
+- 提供内置 headless 容器用于启动握手验证。
 
-`WebPageHost` 不实现任何具体产品逻辑，不启动/停止 `ApplicationHost`，不缓存 post office。
+`UIContainer` 不实现任何具体产品逻辑，不启动/停止 `ApplicationHost`，不缓存 post office。
 
-`CefWebPageHost` 负责 CEF runtime、浏览器窗口、`window.icax` 注入和 Engine mail 推送。PDO shared memory 到 JS `ArrayBuffer`、文件对话框、窗口标题、拖拽文件属于 `CefWebPageHost` 的后续宿主能力。
+`CefUIContainer` 负责 CEF runtime、浏览器窗口、`window.icax` 注入和 Engine mail 推送。PDO shared memory 到 JS `ArrayBuffer`、文件对话框、窗口标题、拖拽文件属于 `CefUIContainer` 的后续宿主能力。
 
 ## 6. AppShell 设计
 
@@ -286,7 +285,7 @@ sequenceDiagram
     participant NativeApp as CApplication
     participant Engine as ApplicationHost
     participant Bridge as FrontendBridge
-    participant Host as WebPageHost
+    participant Host as UIContainer
     participant Page as WebPage
     participant SDK as SDK
     participant Product as ProductRuntime
@@ -316,15 +315,15 @@ sequenceDiagram
 WebPage
   -> SDK CommandClient
   -> window.icax.postMail
-  -> CefWebPageHost
-  -> WebPageHost
+  -> CefUIContainer
+  -> UIContainer
   -> FrontendBridge
   -> MailChannelService
   -> ApplicationHost/ProductRuntime/Project
   -> CommandHandler
   -> response mail
   -> FrontendBridge
-  -> WebPageHost
+  -> UIContainer
   -> SDK Promise resolve/reject
 ```
 
@@ -334,7 +333,7 @@ WebPage
 backend observer/event
   -> backend post office Send(originId = 0)
   -> FrontendBridge
-  -> WebPageHost
+  -> UIContainer
   -> window.icax event callback
   -> Mailbox subscribe/subscribeAll
   -> UI update
@@ -369,8 +368,8 @@ iCAX-UI 只能：
 框架内已落地：
 
 - `src/iCAX-Application/Application`
-- `src/iCAX-UI/WebPageHost`
-- `src/iCAX-UI/CefWebPageHost`
+- `src/iCAX-UI/UIContainer`
+- `src/iCAX-UI/CefUIContainer`
 - `src/iCAX-UI/SDK/AppShell`
 - `src/iCAX-UI/AppProxy`
 - `src/iCAX-UI/ProductProxy`
@@ -386,7 +385,7 @@ iCAX-UI 只能：
 
 外部集成边界：
 
-- CEF/宿主适配器属于原生宿主集成层，应接入 `WebPageHost`，不进入 `ApplicationHost`。
+- CEF/宿主适配器属于原生宿主集成层，应接入 `UIContainer`，不进入 `ApplicationHost`。
 - PDO shared memory 到 JS `ArrayBuffer` 的映射属于 host bridge 能力，应通过 `Bridge` 暴露。
 - 产品级 UI 组件属于 `src/apps/<product-id>/webpage`，公共 UI 才进入 `UI`。
 - 产品协议定义属于 `src/apps/<product-id>/protocol`，公共框架只提供加载和调用机制。

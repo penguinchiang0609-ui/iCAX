@@ -7,8 +7,8 @@ src/iCAX-Application/
   Application/
 
 src/iCAX-UI/
-  WebPageHost/
-  CefWebPageHost/
+  UIContainer/
+  CefUIContainer/
   AppProxy/
   ProductProxy/
   ProjectProxy/
@@ -29,9 +29,9 @@ src/apps/
 
 `src/iCAX-UI` 是公共 H5 前端框架。`src/iCAX-Application` 是应用容器，负责组合 Engine 与 UI bridge。`src/apps` 是具体产品。三者通过 manifest、mailbox 和 PDO 契约连接。
 
-## 2. WebPageHost 方案
+## 2. UIContainer 方案
 
-`WebPageHost` 是 H5 adapter 核心。`CefWebPageHost` 是 CEF 原生适配层。
+`UIContainer` 是公共契约和容器工厂。`CefUIContainer` 是 CEF 版 `IUIContainer` 实现。
 
 内部组成：
 
@@ -40,10 +40,13 @@ iCAX-Application
   ApplicationHost
   FrontendBridge
 
-WebPageHost
-  non-owning FrontendBridge*
+UIContainer
+  IFrontendBridge
+  IUIContainer
+  CUIContainerFactory
 
-CefWebPageHost
+CefUIContainer
+  IUIContainer
   CEF Runtime
   CEF Browser
   JS Bridge Injection
@@ -51,23 +54,22 @@ CefWebPageHost
   NativeDialogBridge
 ```
 
-当前 `src/iCAX-UI/WebPageHost/CWebPageHost` 已落地 H5 与 `FrontendBridge` 的 adapter 骨架：
+当前 `src/iCAX-UI/UIContainer` 已落地：
 
-- `Start()` 校验 `FrontendBridge` 已绑定 Engine。
-- `GetApplicationChannelIDText()` 返回应用级入口。
-- `RegisterProductChannel(productId)` 转发产品 channel 注册。
-- `RegisterProjectChannel(projectId)` 转发项目 channel 注册。
-- `PostMail(envelope)` 将 H5 mail 投递到 Engine。
-- `PollMails()` 取出 Engine 发回 H5 的 response/event。
+- `IFrontendBridge` 前端桥契约。
+- `CFrontendMailEnvelope` 邮件信封。
+- `IUIContainer` UI 容器接口。
+- `CUIContainerFactory` 静态注册工厂。
+- 内置 `headless` 容器，用于验证 `ApplicationProxy` 启动握手。
 
-`CefWebPageHost` 已开始落地：
+`CefUIContainer` 已开始落地：
 
 - 初始化 CEF runtime。
 - 创建 CEF browser。
 - 加载 `AppShell/index.html`。
 - 注入 `window.icax`。
-- 将 JS `postMail` 调到 `CWebPageHost::PostMail`。
-- 轮询 `PollMails` 并推送 JS。
+- 将 JS bridge 调用直接转发到 `IFrontendBridge`。
+- 轮询 `IFrontendBridge::PollMails()` 并推送 JS。
 
 后续仍需要补：
 
@@ -195,8 +197,8 @@ const unsubscribe = mailbox.subscribe(projectChannelId, "Project.RepositoryChang
 已新增：
 
 - `src/iCAX-Application/Application`
-- `src/iCAX-UI/WebPageHost`
-- `src/iCAX-UI/CefWebPageHost`
+- `src/iCAX-UI/UIContainer`
+- `src/iCAX-UI/CefUIContainer`
 - `src/iCAX-UI/SDK/AppShell`
 - `src/iCAX-UI/AppProxy`
 - `src/iCAX-UI/ProductProxy`

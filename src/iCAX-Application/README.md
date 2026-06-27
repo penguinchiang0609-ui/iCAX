@@ -1,6 +1,6 @@
 # iCAX-Application
 
-`iCAX-Application` 是进程级应用层，负责把 Engine 和 UI 组合成一个完整桌面应用。
+`iCAX-Application` 是进程级应用层，负责把 Engine 和 UI 组合成一个完整桌面应用。当前 `Application` 工程生成可执行程序。
 
 它不属于 `iCAX-Engine`，也不属于 `iCAX-UI`：
 
