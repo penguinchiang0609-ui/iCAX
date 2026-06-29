@@ -4,7 +4,7 @@
 
 `UIContainer` 是前端容器抽象，不是具体窗口或浏览器实现。
 
-它位于 `src/iCAX-UI/UIContainer`，负责定义 Application 启动层和 UI 技术实现之间的稳定契约。CEF、Qt、WPF、Headless 都应实现 `IUIContainer`。
+它位于 `src/iCAX-UI/UIContainer`，负责定义 Application 启动层和 UI 技术实现之间的稳定契约。CEF、WPF、QT、Headless 都应实现 `IUIContainer`。
 
 ## 2. 核心类型
 
@@ -26,7 +26,7 @@ Setting/UIContainer.Setting
 支持字段：
 
 - `type`：容器类型。默认 `headless`。
-- `modulePath`：容器 DLL 路径。`headless` 可为空，`wpf` 默认可为 `WpfUIContainer.dll`，`cef` 默认可为 `CefUIContainer.dll`。
+- `modulePath`：容器 DLL 路径。`headless` 可为空，`cef` 默认可为 `CefUIContainer.dll`，`wpf` 默认可为 `WpfUIContainer.dll`，`qt` 默认可为 `QtUIContainer.dll`。
 - `webPageRoot`：AppShell 根目录。
 - `startURL`：可选启动 URL。
 - `startupHandshakeTimeoutMS`：headless 启动握手超时。
@@ -37,7 +37,14 @@ Setting/UIContainer.Setting
 动态容器 DLL 加载后，应通过宏注册：
 
 ```cpp
+ICAX_REGISTER_UI_CONTAINER("cef", iCAX::Frontend::Cef::CCefUIContainer)
+```
+
+WPF/QT 容器也使用同一注册方式：
+
+```cpp
 ICAX_REGISTER_UI_CONTAINER("wpf", iCAX::Frontend::CWpfUIContainer)
+ICAX_REGISTER_UI_CONTAINER("qt", iCAX::Frontend::CQtUIContainer)
 ```
 
 工厂流程：
@@ -54,7 +61,7 @@ CUIContainerFactory.Create(config)
 
 ## 5. Headless 容器
 
-`wpf` 是当前默认真实前端容器。
+`cef` 是当前默认真实前端容器。WPF/QT 是同一契约下的可选前端容器。
 
 内置 `headless` 容器用于启动链路验收，不创建窗口。
 

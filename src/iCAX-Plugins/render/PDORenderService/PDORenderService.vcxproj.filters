@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files"><UniqueIdentifier>{1d627ecb-444f-46ee-b4cf-4de0aeefb1a7}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{b18b8c0f-50e0-4578-8e17-b04c9783d68a}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="PDORenderService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="PDORenderServiceExport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="PDORenderService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+</Project>

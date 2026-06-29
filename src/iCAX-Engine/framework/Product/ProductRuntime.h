@@ -14,6 +14,7 @@
 #include "Data/Variant.h"
 #include "Database/IMetaRegistry.h"
 #include "Database/MetaRegistrationCatalog.h"
+#include "Mailbox/MailChannelRegistry.h"
 #include "Mailbox/MailPostOffice.h"
 #include "Project/Project.h"
 #include "Project/ProjectCatalog.h"
@@ -21,7 +22,6 @@
 #include "Resources/ResourceLoaderRegistrationCatalog.h"
 #include "Resources/ResourceLoaderRegistry.h"
 #include "ProductContext/IProductContext.h"
-#include "Services/IMailChannelService.h"
 #include "Services/ServiceProvider.h"
 #include "Services/ServiceRegistrationCatalog.h"
 
@@ -61,6 +61,7 @@ namespace iCAX
                 IN const CProductDefinition& Definition_,
                 IN std::shared_ptr<iCAX::Application::CApplicationContext> pApplicationContext_,
                 IN std::shared_ptr<iCAX::Services::CServiceProvider> pApplicationServiceProvider_,
+                IN std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry_,
                 IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr,
                 IN uint32_t nFrameIntervalMilliseconds_ = 16);
             ~CProductRuntime();
@@ -116,7 +117,19 @@ namespace iCAX
             /*
             * @brief 获取产品通信通道 ID。
             */
-            const iCAX::Data::uuid& GetProductChannelID() const;
+            const iCAX::Data::uuid& GetProductChannelID() const override;
+
+            /*
+            * @brief 获取后端视角的产品邮局。
+            * @return 产品邮箱的后端端点。
+            * @throws std::logic_error 产品未启动时抛出。
+            */
+            iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override;
+
+            /*
+            * @brief 获取前端视角的产品邮局。
+            */
+            iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override;
 
             /*
             * @brief 获取前端视角的产品邮局。
@@ -431,7 +444,7 @@ namespace iCAX
             iCAX::Data::uuid m_ProductChannelID;
             std::shared_ptr<iCAX::Application::CApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pApplicationServiceProvider;
-            std::shared_ptr<iCAX::Services::IMailChannelService> m_pMailChannelService;
+            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pProductMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pProductBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pProductResourceLoaderRegistry;
@@ -459,3 +472,4 @@ namespace iCAX
         };
     }
 }
+

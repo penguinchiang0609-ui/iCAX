@@ -51,7 +51,7 @@ mailPollIntervalMS=16
 - `ICAX_CEF_LIB_DIR`
 - `ICAX_CEF_WRAPPER_LIB_DIR`
 
-主解决方案默认不构建 `CefUIContainer`，避免没有 CEF SDK 的机器无法构建基础框架。
+当前 H5 是主前端路线，主解决方案会构建 `CefUIContainer`。没有 CEF SDK 的机器应先准备 `.deps/cef`，或通过环境变量指定 CEF SDK 路径。
 
 `libcef_dll_wrapper.lib` 必须由同一份 CEF SDK 编译得到，并且运行库需要和本工程一致。当前使用 `/MD`：
 

@@ -10,7 +10,7 @@
 #include "Data/Variant.h"
 #include "Mailbox/MailPostOffice.h"
 #include "Product/ProductRuntime.h"
-#include "Services/IMailChannelService.h"
+#include "Mailbox/MailChannelRegistry.h"
 #include "Services/ServiceProvider.h"
 #include "Services/ServiceRegistrationCatalog.h"
 #include <atomic>
@@ -424,7 +424,7 @@ namespace iCAX
             std::atomic_uint64_t m_nNextBackendMailID = 1;
             std::shared_ptr<iCAX::Application::CApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pApplicationServiceProvider;
-            std::shared_ptr<iCAX::Services::IMailChannelService> m_pMailChannelService;
+            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
             mutable std::mutex m_ProductRuntimeMutex;
             std::condition_variable m_ProductRuntimeCondition;
             std::set<std::string> m_StartingProductIDs;
@@ -433,3 +433,4 @@ namespace iCAX
         };
     }
 }
+

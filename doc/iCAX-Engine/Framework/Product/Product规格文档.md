@@ -4,7 +4,7 @@
 
 `Product` 是产品级运行时。它位于 `ApplicationHost` 和 `Project` 之间。
 
-`ApplicationHost` 负责列出和启动产品；`ProductRuntime` 负责产品级 mailbox、产品模块加载、最近项目列表和 ProjectCatalog 生命周期。产品级 mailbox 的底层 channel 由应用级 `IMailChannelService` 按 `productChannelId` 托管。产品 UI 入口由 `FrontendEntry` 描述，但后端不绑定 H5、WPF 或 Qt。
+`ApplicationHost` 负责列出和启动产品；`ProductRuntime` 负责产品级 mailbox、产品模块加载、最近项目列表和 ProjectCatalog 生命周期。产品级 mailbox 的底层 channel 由应用级 `CMailChannelRegistry` 按 `productChannelId` 托管。产品 UI 入口由 `FrontendEntry` 描述，但后端不绑定 H5、WPF 或 Qt。
 
 ## 2. 产品定义
 
@@ -232,6 +232,7 @@ faultMessage: string
 
 `ProductRuntime` 不创建工作线程。ApplicationHost 的主循环轮询产品级 mailbox。
 
-每个 `Project` 自己创建工作线程，并在项目线程内处理项目级 mailbox、Repository 事件和 Behaviour Tick。项目 channel 由 `IMailChannelService` 按 `projectChannelId` 托管，Project 关闭时删除。
+每个 `Project` 自己创建工作线程，并在项目线程内处理项目级 mailbox、Repository 事件和 Behaviour Tick。项目 channel 由 `CMailChannelRegistry` 按 `projectChannelId` 托管，Project 关闭时删除。
 
 Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。若要隔离访问冲突、堆破坏或整个项目崩溃，需要将 `IProjectRuntime` 实现替换为每 Project 一个 Worker 进程。
+

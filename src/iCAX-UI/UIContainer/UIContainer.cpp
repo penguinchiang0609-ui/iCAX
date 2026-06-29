@@ -95,6 +95,10 @@ namespace
         {
             return "WpfUIContainer.dll";
         }
+        if (_Type == "qt")
+        {
+            return "QtUIContainer.dll";
+        }
         throw std::invalid_argument("UI container module path is required for container type: " + Config_.ContainerType);
     }
 

@@ -62,14 +62,14 @@ namespace
         return CreateInfo_.pResourceLoaderRegistry;
     }
 
-    std::shared_ptr<iCAX::Services::IMailChannelService> RequireMailChannelService(
+    std::shared_ptr<iCAX::Mail::CMailChannelRegistry> RequireMailChannelRegistry(
         IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
     {
-        if (!CreateInfo_.pMailChannelService)
+        if (!CreateInfo_.pMailChannelRegistry)
         {
-            throw std::invalid_argument("MailChannelService cannot be null");
+            throw std::invalid_argument("MailChannelRegistry cannot be null");
         }
-        return CreateInfo_.pMailChannelService;
+        return CreateInfo_.pMailChannelRegistry;
     }
 
     std::shared_ptr<iCAX::Services::CServiceProvider> RequireServiceProvider(
@@ -148,7 +148,7 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_pMetaRegistry(RequireMetaRegistry(CreateInfo_))
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
-    , m_pMailChannelService(RequireMailChannelService(CreateInfo_))
+    , m_pMailChannelRegistry(RequireMailChannelRegistry(CreateInfo_))
     , m_pRepository(iCAX::Database::GenerateRepository(m_ProjectID, m_pMetaRegistry))
     , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
     , m_pPDOHub(CreateInfo_.PDODeclarations.empty() ? nullptr : iCAX::PDO::GeneratePDOHub(CreateInfo_.PDODeclarations))
@@ -163,7 +163,7 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
         m_ProjectName = m_Role == EProjectRole::Main ? "Main Project" : "Transient Project";
     }
     m_pRepository->AddObserver(m_pRepositoryEventForwarder);
-    if (!m_pMailChannelService->CreateChannel(m_ProjectChannelID))
+    if (!m_pMailChannelRegistry->CreateChannel(m_ProjectChannelID))
     {
         throw std::runtime_error("Project mail channel already exists");
     }
@@ -437,10 +437,10 @@ iCAX::Services::CServiceProvider& iCAX::Project::CProject::Services() const
     return *m_pServiceProvider;
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetBackendPostOffice()
+iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetBackendPostOffice() const
 {
     EnsureOpen();
-    return m_pMailChannelService->GetBackendPostOffice(m_ProjectChannelID);
+    return m_pMailChannelRegistry->GetBackendPostOffice(m_ProjectChannelID);
 }
 
 void iCAX::Project::CProject::SendFrontendEvent(
@@ -468,10 +468,10 @@ void iCAX::Project::CProject::SendFrontendEvent(
     iCAX::Mail::ReleaseMailPayload(_Mail);
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetFrontendPostOffice()
+iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetFrontendPostOffice() const
 {
     EnsureOpen();
-    return m_pMailChannelService->GetFrontendPostOffice(m_ProjectChannelID);
+    return m_pMailChannelRegistry->GetFrontendPostOffice(m_ProjectChannelID);
 }
 
 void iCAX::Project::CProject::Start()
@@ -635,9 +635,9 @@ void iCAX::Project::CProject::Close()
     }
     m_pPDOHub.reset();
     m_Resources.Clear();
-    if (m_pMailChannelService && !m_ProjectChannelID.is_nil())
+    if (m_pMailChannelRegistry && !m_ProjectChannelID.is_nil())
     {
-        (void)m_pMailChannelService->RemoveChannel(m_ProjectChannelID);
+        (void)m_pMailChannelRegistry->RemoveChannel(m_ProjectChannelID);
     }
     m_bStartupBound = false;
     if (GetState() != EProjectState::Faulted)
@@ -782,3 +782,4 @@ void iCAX::Project::CProject::EnsureProjectThreadAccess(IN const char* strApiNam
     std::string _ApiName = strApiName_ ? strApiName_ : "Project API";
     throw std::logic_error(_ApiName + " can only be accessed from the project worker thread while the project is running");
 }
+

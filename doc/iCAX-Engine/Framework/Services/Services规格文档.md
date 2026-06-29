@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-`Services` 是 framework 层的服务体系工程，提供服务接口、服务提供器、自动注册辅助和框架级服务实现。
+`Services` 是 framework 层的服务体系工程，提供服务接口、服务提供器和自动注册辅助。
 
 它不承载具体业务逻辑。框架级服务实现放在 framework 内，产品级服务实现放在对应 `src/apps/<product-id>/backend/service` 工程中。
 
@@ -28,29 +28,21 @@
 
 ### 2.4 通信通道边界
 
-`Services` 提供应用级 `IMailChannelService`，用于统一托管 Mail channel 生命周期。
+`Services` 不承载 Mailbox，也不承载 PDO。通信和共享内存能力属于运行时上下文：
 
-`IMailChannelService` 负责：
-
-- 按 mail id 显式创建 `CMailChannel`。
-- 判断指定 mail id 的 channel 是否存在。
-- 返回 frontend/backend `CMailPostOffice`。
-- 按 mail id 显式删除 channel，并使旧 post office 失效。
-- 在服务卸载时清空所有 channel。
+- Mailbox 位于 `framework/Mailbox`，由 `ApplicationHost` 直接持有 `CMailChannelRegistry` 并显式注入 ProductRuntime / Project。
+- PDO 位于 `framework/PDO`，由 `Project` 直接持有 `IPDOHub` 并通过 `IProjectContext::PDOHub()` 暴露。
 
 约束：
 
-- `GetFrontendPostOffice` / `GetBackendPostOffice` 不会隐式创建 channel。
-- `CreateChannel` 对重复 id 返回失败，不覆盖旧 channel。
-- nil uuid 不是合法 mail id。
-- `ApplicationHost`、`ProductRuntime`、`Project` 只保存自己的 mail id，不直接持有 `CMailChannel`。
+- ServiceProvider 只管理实现 `IService` 的服务对象。
+- Mailbox / PDO 不允许注册成 Service。
+- 业务代码需要通信能力时从 Application/Product/ProjectContext 获取。
 
 ## 3. 依赖边界
 
 `Services` 可以依赖：
 
-- `foundation/Data`
-- `framework/Mailbox`
 - 其他 foundation 基础能力。
 
 其他 framework 项目、产品模块和业务代码可以依赖 `Services`。
@@ -60,3 +52,4 @@
 - 正式运行路径使用 ApplicationHost 创建的应用级服务提供器。
 - 全局服务提供器仅作为底层测试和裸用场景入口。
 - 当前不负责具体业务命令分发。
+

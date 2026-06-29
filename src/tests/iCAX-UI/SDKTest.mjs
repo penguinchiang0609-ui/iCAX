@@ -194,11 +194,11 @@ async function testProductModuleLoader() {
 
   const cache = new Map();
   const module = await loadProductModule({
-    productId: "icax.flat-laser-cam",
-    frontendEntry: entry,
-  }, cache, { baseUrl: shellBaseUrl });
+    productId: "icax.test-product",
+    frontendEntry: "./fixtures/mock-product/entry.mjs",
+  }, cache, { baseUrl: import.meta.url });
   assert.equal(typeof module.mountProduct, "function");
-  assert.equal(cache.get("icax.flat-laser-cam"), module);
+  assert.equal(cache.get("icax.test-product"), module);
 
   const calls = [];
   mountProductModule({

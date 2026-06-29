@@ -2,19 +2,19 @@
 
 ## 1. 定位
 
-iCAX-UI 是 iCAX 桌面应用的前端框架层。当前默认真实前端是 WPF，CEF/H5 是可选前端路线：
+iCAX-UI 是 iCAX 桌面应用的前端框架层。当前默认真实前端是 CEF/H5：
 
 ```text
-UIContainer + WpfUIContainer
 UIContainer + CefUIContainer + WebPage
 ```
 
 - `UIContainer` 是 UI 容器公共契约、静态注册工厂和内置 headless 容器。
-- `WpfUIContainer` 是当前默认 WPF 容器实现。
-- `CefUIContainer` 是可选 CEF 浏览器容器实现。
+- `CefUIContainer` 是当前默认 CEF 浏览器容器实现。
+- `WpfUIContainer` 是可选 WPF 容器实现。
+- `QtUIContainer` 可以按同一契约扩展为可选 QT 容器实现。
 - `WebPage` 是 H5 单页工作台，由 `AppShell` 和产品 `webpage` 模块组成。
 
-iCAX-UI 不拥有 Engine。Engine 生命周期由 `iCAX-Application` 管理，因此 WPF、Qt、CEF/H5 UI 可以复用同一个应用容器。
+iCAX-UI 不拥有 Engine。Engine 生命周期由 `iCAX-Application` 管理。H5 通过 host bridge 与 backend 通信；WPF/QT 等其他前端技术也只能通过 `IFrontendBridge` 和 PDO 契约与 backend 交互。
 
 ## 2. 源码位置
 
@@ -24,8 +24,8 @@ src/iCAX-Application/
 
 src/iCAX-UI/
   UIContainer/
-  WpfUIContainer/
   CefUIContainer/
+  WpfUIContainer/
   AppProxy/
   ProductProxy/
   ProjectProxy/
@@ -49,8 +49,9 @@ src/apps/<product-id>/
 
 - `iCAX-Application/Application`：应用容器，拥有 Engine 和通用 `FrontendBridge`。
 - `UIContainer`：UI 容器公共契约、工厂和 headless 启动验证。
-- `WpfUIContainer`：WPF 版 `IUIContainer`，负责 WPF 主窗口和 mailbox 连接。
 - `CefUIContainer`：CEF 版 `IUIContainer`，负责浏览器窗口和 JS bridge。
+- `WpfUIContainer`：WPF 版 `IUIContainer` 可选实现，负责 WPF 主窗口和 mailbox 连接。
+- `QtUIContainer`：未来可选 QT 版 `IUIContainer`，只要遵守同一契约即可接入。
 - `SDK/AppShell`：SDK 自带的 H5 单页应用壳。
 - `AppProxy`：前端应用代理，封装 application channel、产品列表、产品启动和按文件打开项目。
 - `ProductProxy`：前端产品代理，封装 product channel、产品状态、产品级事件、项目打开入口和产品 webpage 加载。
@@ -73,7 +74,7 @@ src/apps/<product-id>/
 
 `UIContainer` 不写具体产品逻辑，不知道平切、五轴、焊接等业务细节，不启动或停止 `ApplicationHost`。
 
-WPF 主窗口、mailbox 命令按钮、native viewport 承载区域属于 `WpfUIContainer`。CEF 浏览器窗口、`window.icax` 注入、PDO shared memory 到 JS 视图的映射、文件对话框、窗口标题和拖拽文件属于 `CefUIContainer` 或更外层宿主适配器。
+CEF 浏览器窗口、`window.icax` 注入、PDO shared memory 到 JS 视图的映射、文件对话框、窗口标题和拖拽文件属于 `CefUIContainer` 或更外层宿主适配器。WPF/QT 容器不需要模拟 `window.icax`，但必须提供等价的 mailbox/PDO 调用能力。
 
 ## 5. WebPage
 
@@ -162,7 +163,7 @@ const opened = await app.openProjectFile("D:/projects/a.ilcam");
 CApplication.Start()
   -> Engine ApplicationHost.Start()
   -> FrontendBridge.Attach(ApplicationHost)
-CEF/WebView/Qt host starts
+CEF host starts
   -> UIContainer.Start()
   -> AppShell loads
   -> window.icax.getApplicationChannelId()

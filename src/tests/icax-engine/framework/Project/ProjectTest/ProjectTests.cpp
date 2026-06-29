@@ -16,7 +16,7 @@
 #include <Resources/ResourceLoaderRegistry.h>
 #include <ProductContext/IProductContext.h>
 #include <Mailbox/MailPayload.h>
-#include <Services/MailChannelService.h>
+#include <Mailbox/MailChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 
 #include <atomic>
@@ -370,11 +370,9 @@ namespace
         return Condition_.wait_for(_Lock, std::chrono::seconds(2), Predicate_);
     }
 
-    std::shared_ptr<iCAX::Services::IMailChannelService> MakeMailChannelService()
+    std::shared_ptr<iCAX::Mail::CMailChannelRegistry> MakeMailChannelRegistry()
     {
-        auto _pService = std::make_shared<iCAX::Services::CMailChannelService>();
-        _pService->OnLoad();
-        return _pService;
+        return std::make_shared<iCAX::Mail::CMailChannelRegistry>();
     }
 
     std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> MakeResourceLoaderRegistry()
@@ -387,7 +385,7 @@ namespace
         CProjectCatalogCreateInfo _Info;
         _Info.pMetaRegistry = CreateProjectTestMetaRegistry();
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
-        _Info.pMailChannelService = MakeMailChannelService();
+        _Info.pMailChannelRegistry = MakeMailChannelRegistry();
         _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
@@ -407,7 +405,7 @@ namespace
         _Info.pMetaRegistry = CreateProjectTestMetaRegistry();
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
         _Info.pResourceLoaderRegistry = MakeResourceLoaderRegistry();
-        _Info.pMailChannelService = MakeMailChannelService();
+        _Info.pMailChannelRegistry = MakeMailChannelRegistry();
         _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
@@ -654,7 +652,7 @@ TEST(ProjectCatalogTest, CatalogCreationRequiresExplicitDependencies)
     EXPECT_THROW({ CProjectCatalog _Catalog(_Info); }, std::invalid_argument);
 
     _Info = MakeCatalogInfo();
-    _Info.pMailChannelService.reset();
+    _Info.pMailChannelRegistry.reset();
     EXPECT_THROW({ CProjectCatalog _Catalog(_Info); }, std::invalid_argument);
 }
 
@@ -1062,3 +1060,4 @@ TEST(ProjectRuntimeTest, CloseReleasesLocalProjectReference)
     EXPECT_FALSE(_pProject->IsOpen());
     EXPECT_THROW((void)_pRuntime->GetProjectName(), std::logic_error);
 }
+

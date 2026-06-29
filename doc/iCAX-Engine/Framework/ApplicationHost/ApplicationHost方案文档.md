@@ -15,7 +15,7 @@ ApplicationHost
   ApplicationContext
   Application CommandRegistry / CommandDispatcher
   Application mail id
-  IMailChannelService
+  CMailChannelRegistry
   ProductDefinition*
   ProductRuntime*
     Product mail id
@@ -42,9 +42,9 @@ WorkThread
   -> LoadApplicationSettings
   -> Create ApplicationContext
   -> Create ServiceProvider
-  -> Register built-in MailChannelService
-  -> Resolve IMailChannelService
+  -> Create MailChannelRegistry
   -> Create application mail channel
+  -> Bind ApplicationContext runtime capabilities
   -> RegisterBuiltInApplicationCommands
   -> Start startup product?
   -> Phase Running
@@ -79,10 +79,10 @@ CommandRegistry
 ProductDefinition list snapshot
 ProductRuntime list snapshot
 CServiceProvider
-IMailChannelService
+CMailChannelRegistry
 ```
 
-产品级命令上下文由 `ProductRuntime` 组装。项目级命令进入具体 Project 邮箱时，ProductRuntime 会额外放入当前 ProjectContext；业务代码通过 ProjectContext 访问 Repository、Universe、ResourceLibrary、PDOHub 和服务容器。
+产品级命令上下文由 `ProductRuntime` 组装。项目级命令进入具体 Project 邮箱时，ProductRuntime 会额外放入当前 ProjectContext；业务代码通过 ProjectContext 访问 Repository、Universe、ResourceLibrary、PDOHub、项目邮局和服务容器。
 
 ## 6. 通信通道
 
@@ -119,7 +119,7 @@ product mail id -> Product.GetState / Product.OpenProjectCatalog / Product.Close
 project mail id -> project commands
 ```
 
-`IMailChannelService` 统一持有所有 `CMailChannel`。ApplicationHost、ProductRuntime 和 Project 只持有自己的 mail id，并通过服务获取 frontend/backend post office。上级运行体负责向前端 bridge 发放下级 mail id 对应的 frontend post office。运行体停止或关闭时删除对应 channel，旧邮局随之失效。
+`CMailChannelRegistry` 统一持有所有 `CMailChannel`。ApplicationHost 直接持有 registry，并显式注入 ProductRuntime 和 Project；ApplicationHost、ProductRuntime 和 Project 只持有自己的 mail id，并通过 context 暴露 frontend/backend post office。上级运行体负责向前端 bridge 发放下级 mail id 对应的 frontend post office。运行体停止或关闭时删除对应 channel，旧邮局随之失效。
 
 ApplicationHost 对同一个 `productId` 维护启动中和停止中标记。`StopProduct` 会先标记产品停止中，等 `ProductRuntime::Stop()` 完成后才从运行时表移除；`StartProduct` 遇到同一产品正在停止时等待。这样可以避免关闭再打开时同一产品短时间内出现两个后台运行时。
 
@@ -137,3 +137,4 @@ ApplicationHost 对同一个 `productId` 维护启动中和停止中标记。`St
 - ProductRuntime 可以同时维护多个 ProjectCatalog。
 - 一个 ProjectCatalog 内主项目最多存在一个。
 - 临时项目靠 ProjectID 隔离，用于预览、导入和转换。
+

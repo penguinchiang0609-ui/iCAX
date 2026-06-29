@@ -4,7 +4,7 @@
 #include "ApplicationContext/FileApplicationConfigStore.h"
 #include "CommandHandler/CommandTarget.h"
 #include "Mailbox/MailPayload.h"
-#include "Services/MailChannelService.h"
+#include "Mailbox/MailChannelRegistry.h"
 
 #include <chrono>
 #include <cstring>
@@ -601,17 +601,35 @@ void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
 
 void iCAX::ApplicationHost::CApplicationHost::Load()
 {
-    m_pApplicationContext = CreateApplicationContext();
     m_pApplicationServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
-
-    m_pApplicationServiceProvider->RegisterSingleton<
-        iCAX::Services::IMailChannelService,
-        iCAX::Services::CMailChannelService>();
-    // 应用级服务容器中必须包含 MailChannelService；后续 Application/Product/Project 邮箱都通过它创建。
-    m_pMailChannelService = m_pApplicationServiceProvider->Resolve<iCAX::Services::IMailChannelService>();
-    if (!m_pMailChannelService->CreateChannel(m_ApplicationChannelID))
+    m_pMailChannelRegistry = std::make_shared<iCAX::Mail::CMailChannelRegistry>();
+    if (!m_pMailChannelRegistry->CreateChannel(m_ApplicationChannelID))
     {
         throw std::runtime_error("Application mail channel already exists");
+    }
+    m_pApplicationContext = CreateApplicationContext();
+    {
+        std::weak_ptr<iCAX::Mail::CMailChannelRegistry> _Registry = m_pMailChannelRegistry;
+        const auto _ApplicationChannelID = m_ApplicationChannelID;
+        m_pApplicationContext->BindRuntimeCapabilities(
+            m_ApplicationChannelID,
+            m_pApplicationServiceProvider,
+            [_Registry, _ApplicationChannelID]() {
+                auto _pRegistry = _Registry.lock();
+                if (!_pRegistry)
+                {
+                    throw std::logic_error("Application mail channel registry is not available");
+                }
+                return _pRegistry->GetBackendPostOffice(_ApplicationChannelID);
+            },
+            [_Registry, _ApplicationChannelID]() {
+                auto _pRegistry = _Registry.lock();
+                if (!_pRegistry)
+                {
+                    throw std::logic_error("Application mail channel registry is not available");
+                }
+                return _pRegistry->GetFrontendPostOffice(_ApplicationChannelID);
+            });
     }
 
     if (m_Config.StartupProductID)
@@ -649,16 +667,16 @@ void iCAX::ApplicationHost::CApplicationHost::Unload()
         }
     }
 
-    if (m_pMailChannelService && !m_ApplicationChannelID.is_nil())
+    if (m_pMailChannelRegistry && !m_ApplicationChannelID.is_nil())
     {
-        (void)m_pMailChannelService->RemoveChannel(m_ApplicationChannelID);
+        (void)m_pMailChannelRegistry->RemoveChannel(m_ApplicationChannelID);
     }
     if (m_pApplicationServiceProvider)
     {
         m_pApplicationServiceProvider->UnloadAll();
         m_pApplicationServiceProvider.reset();
     }
-    m_pMailChannelService.reset();
+    m_pMailChannelRegistry.reset();
     m_pApplicationContext.reset();
 }
 
@@ -740,12 +758,12 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
         return;
     }
 
-    if (!m_pMailChannelService || !m_pMailChannelService->HasChannel(m_ApplicationChannelID))
+    if (!m_pMailChannelRegistry || !m_pMailChannelRegistry->HasChannel(m_ApplicationChannelID))
     {
         return;
     }
 
-    auto _PostOffice = m_pMailChannelService->GetBackendPostOffice(m_ApplicationChannelID);
+    auto _PostOffice = m_pMailChannelRegistry->GetBackendPostOffice(m_ApplicationChannelID);
     if (!_PostOffice.IsValid())
     {
         return;
@@ -1135,7 +1153,7 @@ std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::ApplicationHost::CApplicat
             }
             if (!m_pApplicationContext
                 || !m_pApplicationServiceProvider
-                || !m_pMailChannelService)
+                || !m_pMailChannelRegistry)
             {
                 throw std::logic_error("ApplicationHost is not loaded");
             }
@@ -1171,6 +1189,7 @@ std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::ApplicationHost::CApplicat
             _Definition,
             m_pApplicationContext,
             m_pApplicationServiceProvider,
+            m_pMailChannelRegistry,
             nullptr,
             m_Config.nFrameIntervalMilliseconds);
         _pRuntime->Start();
@@ -1262,18 +1281,18 @@ bool iCAX::ApplicationHost::CApplicationHost::StopProduct(IN const std::string& 
 
 iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetApplicationFrontendPostOffice() const
 {
-    if (!m_pMailChannelService)
+    if (!m_pMailChannelRegistry)
     {
         throw std::logic_error("ApplicationHost is not loaded");
     }
-    return m_pMailChannelService->GetFrontendPostOffice(m_ApplicationChannelID);
+    return m_pMailChannelRegistry->GetFrontendPostOffice(m_ApplicationChannelID);
 }
 
 void iCAX::ApplicationHost::CApplicationHost::SendFrontendEvent(
     IN uint64_t nTypeCode_,
     IN const std::string& strPayloadText_)
 {
-    if (!m_pMailChannelService || m_ApplicationChannelID.is_nil())
+    if (!m_pMailChannelRegistry || m_ApplicationChannelID.is_nil())
     {
         throw std::logic_error("ApplicationHost mail channel is not available");
     }
@@ -1287,7 +1306,7 @@ void iCAX::ApplicationHost::CApplicationHost::SendFrontendEvent(
     auto _Mail = iCAX::Mail::CreateTextMail(_Header, strPayloadText_);
     try
     {
-        m_pMailChannelService->GetBackendPostOffice(m_ApplicationChannelID).Send(_Mail);
+        m_pMailChannelRegistry->GetBackendPostOffice(m_ApplicationChannelID).Send(_Mail);
     }
     catch (...)
     {
@@ -1326,3 +1345,4 @@ const iCAX::Data::uuid& iCAX::ApplicationHost::CApplicationHost::GetApplicationC
 {
     return m_ApplicationChannelID;
 }
+

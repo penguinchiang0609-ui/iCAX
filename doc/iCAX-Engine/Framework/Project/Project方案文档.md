@@ -41,7 +41,7 @@ ApplicationHost
 - 独立 Repository。
 - 独立 ResourceLibrary。
 - 独立 Universe。
-- 独立项目 mail channel，由应用级 `IMailChannelService` 按 `ProjectChannelID` 托管。
+- 独立项目 mail channel，由应用级 `CMailChannelRegistry` 按 `ProjectChannelID` 托管。
 - 可选独立 PDOHub，由 `CProjectCreateInfo::PDODeclarations` 决定是否创建。
 - 独立项目工作线程。
 
@@ -76,12 +76,12 @@ CLocalProjectRuntime
 ProjectCatalog::OpenMainProject(name, path, startupComponent)
   -> fail if main project already exists
   -> Generate project id
-  -> require product MetaRegistry / BehaviourRegistry / project ResourceLoaderRegistry / MailChannelService
+  -> require product MetaRegistry / BehaviourRegistry / project ResourceLoaderRegistry / MailChannelRegistry
   -> Database::GenerateRepository(project id, product MetaRegistry)
   -> Behaviour::GenerateUniverse(product BehaviourRegistry)
   -> create ResourceLibrary(project ResourceLoaderRegistry)
   -> create PDOHub if PDODeclarations is not empty
-  -> create project mail channel through IMailChannelService
+  -> create project mail channel through CMailChannelRegistry
   -> Project subscribes repository events
   -> set main project id
 ```
@@ -152,7 +152,7 @@ quick-save 日志头部的 `magic` 和 `version` 来自产品/文件层。Projec
 
 ## 7. 通信
 
-项目通信通道按 `projectChannelId` 归属 `Project`，底层 `CMailChannel` 由应用级 `IMailChannelService` 维护：
+项目通信通道按 `projectChannelId` 归属 `Project`，底层 `CMailChannel` 由应用级 `CMailChannelRegistry` 维护：
 
 ```text
 Project
@@ -191,3 +191,4 @@ PostSwapPDO()
 Behaviour 和 CommandHandler 通过 `IProjectContext::HasPDOHub()` 和 `IProjectContext::PDOHub()` 访问项目 PDO。未配置 PDO 的项目会在访问 `PDOHub()` 时抛出异常。
 
 前端宿主通过 Mailbox 获取项目 PDO Arena name，再打开对应 shared memory。Project 关闭时释放 PDOHub；前端宿主收到项目关闭后必须停止访问该 Arena。
+

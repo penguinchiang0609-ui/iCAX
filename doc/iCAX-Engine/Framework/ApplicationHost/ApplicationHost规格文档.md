@@ -7,7 +7,8 @@
 它负责：
 
 - 构造 `ApplicationContext`。
-- 创建应用级服务容器，并通过 `IMailChannelService` 托管应用、产品和项目 mail channel。
+- 创建应用级服务容器。
+- 直接持有 `CMailChannelRegistry`，并托管应用、产品和项目 mail channel。
 - 维护支持的产品定义列表。
 - 启动、停止和查询 `ProductRuntime`。
 - 提供应用级 mailbox 和应用级内置命令。
@@ -64,9 +65,9 @@ host.SetConfig(config);
 LoadApplicationSettings
 Create ApplicationContext
 Create ServiceProvider
-Register built-in MailChannelService
-Resolve IMailChannelService
+Create MailChannelRegistry
 Create application mail channel
+Bind ApplicationContext runtime capabilities
 Register built-in application commands
 Prepare application command context
 Start configured startup product?
@@ -225,3 +226,4 @@ Frontend
 - `Resources`
 
 `ApplicationHost` 不应被 `Product`、`Project`、`Database`、`Behaviour`、`Resources` 或业务模块反向依赖。
+

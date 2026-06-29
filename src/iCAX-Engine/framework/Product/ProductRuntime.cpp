@@ -539,6 +539,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     IN const CProductDefinition& Definition_,
     IN std::shared_ptr<iCAX::Application::CApplicationContext> pApplicationContext_,
     IN std::shared_ptr<iCAX::Services::CServiceProvider> pApplicationServiceProvider_,
+    IN std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry_,
     IN std::shared_ptr<IProductDataStore> pProductDataStore_,
     IN uint32_t nFrameIntervalMilliseconds_)
     : m_Definition(Definition_)
@@ -546,7 +547,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     , m_ProductChannelID(iCAX::Data::GenerateNewUUID())
     , m_pApplicationContext(std::move(pApplicationContext_))
     , m_pApplicationServiceProvider(std::move(pApplicationServiceProvider_))
-    , m_pMailChannelService(m_pApplicationServiceProvider ? m_pApplicationServiceProvider->Resolve<iCAX::Services::IMailChannelService>() : nullptr)
+    , m_pMailChannelRegistry(std::move(pMailChannelRegistry_))
     , m_pProductMetaRegistry(iCAX::Database::CreateMetaRegistry())
     , m_pProductBehaviourRegistry(iCAX::Behaviour::CreateBehaviourRegistry())
     , m_pProductResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
@@ -579,9 +580,9 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     {
         throw std::invalid_argument("Application ServiceProvider cannot be null");
     }
-    if (!m_pMailChannelService)
+    if (!m_pMailChannelRegistry)
     {
-        throw std::invalid_argument("MailChannelService cannot be null");
+        throw std::invalid_argument("MailChannelRegistry cannot be null");
     }
     if (!m_pProductMetaRegistry)
     {
@@ -646,7 +647,7 @@ void iCAX::Product::CProductRuntime::Start()
         iCAX::Command::CCommandRegistrationCatalog::ReplayByModulePaths(*m_pCommandRegistry, m_LoadedModulePaths);
         m_bRegistrationsReplayed = true;
     }
-    if (!m_pMailChannelService->CreateChannel(m_ProductChannelID))
+    if (!m_pMailChannelRegistry->CreateChannel(m_ProductChannelID))
     {
         throw std::runtime_error("Product mail channel already exists");
     }
@@ -663,7 +664,7 @@ void iCAX::Product::CProductRuntime::Start()
     catch (...)
     {
         m_bStarted = false;
-        (void)m_pMailChannelService->RemoveChannel(m_ProductChannelID);
+        (void)m_pMailChannelRegistry->RemoveChannel(m_ProductChannelID);
         throw;
     }
 }
@@ -701,9 +702,9 @@ void iCAX::Product::CProductRuntime::CloseRuntimeObjects()
     auto _Runtimes = SnapshotProjectRuntimes();
     if (_Catalogs.empty() && _Runtimes.empty())
     {
-        if (m_pMailChannelService && !m_ProductChannelID.is_nil())
+        if (m_pMailChannelRegistry && !m_ProductChannelID.is_nil())
         {
-            (void)m_pMailChannelService->RemoveChannel(m_ProductChannelID);
+            (void)m_pMailChannelRegistry->RemoveChannel(m_ProductChannelID);
         }
         return;
     }
@@ -730,9 +731,9 @@ void iCAX::Product::CProductRuntime::CloseRuntimeObjects()
             _pCatalog->CloseAll();
         }
     }
-    if (m_pMailChannelService && !m_ProductChannelID.is_nil())
+    if (m_pMailChannelRegistry && !m_ProductChannelID.is_nil())
     {
-        (void)m_pMailChannelService->RemoveChannel(m_ProductChannelID);
+        (void)m_pMailChannelRegistry->RemoveChannel(m_ProductChannelID);
     }
 }
 
@@ -776,8 +777,19 @@ const iCAX::Data::uuid& iCAX::Product::CProductRuntime::GetProductChannelID() co
 
 iCAX::Mail::CMailPostOffice iCAX::Product::CProductRuntime::GetProductFrontendPostOffice() const
 {
+    return GetFrontendPostOffice();
+}
+
+iCAX::Mail::CMailPostOffice iCAX::Product::CProductRuntime::GetBackendPostOffice() const
+{
     EnsureStarted();
-    return m_pMailChannelService->GetFrontendPostOffice(m_ProductChannelID);
+    return m_pMailChannelRegistry->GetBackendPostOffice(m_ProductChannelID);
+}
+
+iCAX::Mail::CMailPostOffice iCAX::Product::CProductRuntime::GetFrontendPostOffice() const
+{
+    EnsureStarted();
+    return m_pMailChannelRegistry->GetFrontendPostOffice(m_ProductChannelID);
 }
 
 void iCAX::Product::CProductRuntime::SendFrontendEvent(
@@ -795,7 +807,7 @@ void iCAX::Product::CProductRuntime::SendFrontendEvent(
     auto _Mail = iCAX::Mail::CreateTextMail(_Header, strPayloadText_);
     try
     {
-        m_pMailChannelService->GetBackendPostOffice(m_ProductChannelID).Send(_Mail);
+        GetBackendPostOffice().Send(_Mail);
     }
     catch (...)
     {
@@ -812,7 +824,7 @@ void iCAX::Product::CProductRuntime::DispatchProductMails()
         return;
     }
 
-    DispatchProjectMails(m_pMailChannelService->GetBackendPostOffice(m_ProductChannelID), nullptr);
+    DispatchProjectMails(GetBackendPostOffice(), nullptr);
 }
 
 std::vector<std::shared_ptr<iCAX::Project::CProjectCatalog>> iCAX::Product::CProductRuntime::GetProjectCatalogs() const
@@ -875,7 +887,7 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     _CatalogInfo.pServiceProvider = m_pApplicationServiceProvider;
     _CatalogInfo.pMetaRegistry = m_pProductMetaRegistry;
     _CatalogInfo.pBehaviourRegistry = m_pProductBehaviourRegistry;
-    _CatalogInfo.pMailChannelService = m_pMailChannelService;
+    _CatalogInfo.pMailChannelRegistry = m_pMailChannelRegistry;
     _CatalogInfo.PDODeclarations = m_Definition.PDODeclarations;
     const auto _ModulePaths = m_LoadedModulePaths;
     // 每个 Project 都创建自己的资源 loader registry。
@@ -1609,3 +1621,4 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectRed
     _Payload["applied"] = _Applied;
     return _MakeProductPayloadResponse(iCAX::Data::Variant(_Payload));
 }
+

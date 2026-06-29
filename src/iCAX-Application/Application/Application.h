@@ -17,7 +17,7 @@ namespace iCAX
         struct CApplicationConfig final
         {
             iCAX::ApplicationHost::ApplicationHostConfig EngineConfig;
-            std::string UIName; //!< 可选 UI 名称，例如 H5/Qt/WPF，仅用于上层标识。
+            std::string UIName; //!< 可选 UI 名称，例如 H5/WPF/QT，仅用于上层标识。
         };
 
         /*

@@ -9,7 +9,7 @@
 #include <Product/ProductRuntime.h>
 #include <Project/ProjectRuntime.h>
 #include <Resources/ResourceLoaderRegistry.h>
-#include <Services/MailChannelService.h>
+#include <Mailbox/MailChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 #include <Data/Variant.h>
 #include <Mailbox/Mail.h>
@@ -177,9 +177,7 @@ namespace
         iCAX::Application::CApplicationSettings _Settings;
         auto _pContext = std::make_shared<iCAX::Application::CApplicationContext>(_Descriptor, _Paths, _Settings);
         auto _pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
-        _pServiceProvider->RegisterSingleton<
-            iCAX::Services::IMailChannelService,
-            iCAX::Services::CMailChannelService>();
+        auto _pMailChannelRegistry = std::make_shared<iCAX::Mail::CMailChannelRegistry>();
 
         CProductDefinition _Definition;
         _Definition.ProductID = strProductID_;
@@ -202,6 +200,7 @@ namespace
             _Definition,
             _pContext,
             _pServiceProvider,
+            _pMailChannelRegistry,
             _pProductDataStore);
     }
 
@@ -479,3 +478,4 @@ TEST(ProductRuntimeMailboxTest, ProjectMailboxProvidesProjectContext)
     ReleaseMailPayloads(_Responses);
     _pRuntime->Stop();
 }
+

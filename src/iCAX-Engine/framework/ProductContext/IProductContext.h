@@ -1,6 +1,8 @@
 #pragma once
 
 #include "ProductContextExport.h"
+#include "Data/uuid.h"
+#include "Mailbox/MailPostOffice.h"
 #include "ProductData.h"
 #include "ProductDefinition.h"
 
@@ -63,6 +65,21 @@ namespace iCAX
             * @brief 获取产品数据快照。
             */
             virtual CProductData GetProductData() const = 0;
+
+            /*
+            * @brief 获取产品级通信通道 ID。
+            */
+            virtual const iCAX::Data::uuid& GetProductChannelID() const;
+
+            /*
+            * @brief 获取后端视角产品邮局。
+            */
+            virtual iCAX::Mail::CMailPostOffice GetBackendPostOffice() const;
+
+            /*
+            * @brief 获取前端视角产品邮局。
+            */
+            virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const;
 
             /*
             * @brief 获取当前产品可用的服务容器。

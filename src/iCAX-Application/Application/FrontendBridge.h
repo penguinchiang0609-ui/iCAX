@@ -22,7 +22,7 @@ namespace iCAX
         * @details
         *   CFrontendBridge 是 Application 级别的 UI 桥，不属于任何具体 UI 技术。
         *   它只负责把 UI mail envelope 投递到 Engine 的 mailbox，并从 Engine frontend post office
-        *   取出 response/event。CEF、Qt、WPF 等 UI 宿主都应复用该桥。
+        *   取出 response/event。H5/CEF、WPF、QT 等 UI 宿主都应复用该桥接入后台。
         */
         class CFrontendBridge final : public iCAX::Frontend::IFrontendBridge
         {

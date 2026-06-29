@@ -212,7 +212,7 @@ CMailPostOffice GetBackendPostOffice();
 
 返回的 `CMailPostOffice` 是轻量对象，持有底层队列弱引用。生命周期所有者删除、重置或释放底层 `CMailChannel` 后，旧邮局变为无效对象，继续收发会抛出 `std::logic_error`。反复获取同一个端点的邮局不会产生新的队列。
 
-当前 iCAX framework 使用 `Services/IMailChannelService` 作为应用级 channel 目录。ApplicationHost、ProductRuntime 和 Project 只保存自己的 mail id，通过该服务获取 frontend/backend post office；Mailbox 本身仍保持无业务角色的基础通信语义。
+当前 iCAX framework 使用 `Mailbox/CMailChannelRegistry` 作为应用级 channel 目录。ApplicationHost 直接持有 registry，并显式注入 ProductRuntime 和 Project；运行体只保存自己的 mail id，通过 context 暴露 frontend/backend post office。Mailbox 本身仍保持无业务角色的基础通信语义。
 
 ## 6. 生命周期方案
 
@@ -265,7 +265,7 @@ Mailbox 只负责消息传输。需要处理前端命令时，上层适配器把
 
 ### 8.2 运行体
 
-当前 iCAX framework 中，`IMailChannelService` 负责按 mail id 找到 channel，`ApplicationHost`、`ProductRuntime` 和 `Project` 负责把通用 EndA/EndB 映射成当前层级里的 frontend/backend 邮局。
+当前 iCAX framework 中，`CMailChannelRegistry` 负责按 mail id 找到 channel，`ApplicationHost`、`ProductRuntime` 和 `Project` 负责把通用 EndA/EndB 映射成当前层级里的 frontend/backend 邮局。
 
 ### 8.3 PDO
 
@@ -295,3 +295,4 @@ src/tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj
 ```powershell
 & .\src\tools\build\run_tests_debug_x64.ps1
 ```
+

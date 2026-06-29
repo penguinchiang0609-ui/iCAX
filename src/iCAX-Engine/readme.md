@@ -1,13 +1,13 @@
 # icax-engine
 
-`icax-engine` 是 C++ 后台平台。它负责对象模型、行为调度、服务、Mail 通信和 PDO 高频数据。
+`icax-engine` 是 C++ 后台平台。它负责对象模型、行为调度、服务、资源、Mail 通信和 PDO 高频数据。
 
 当前后台以 `ApplicationHost -> ProductRuntime -> Project` 三层组织。ApplicationHost 拥有应用级工作线程并轮询应用级、产品级 mailbox；每个 Project 拥有自己的 Repository、ResourceLibrary、Universe、MailChannel 和项目工作线程。
 
 ## 目录结构
 
 - `foundation/`：不依赖业务框架的基础类型、数学几何、任务等基础能力。
-- `framework/`：实体、组件、行为、应用宿主、服务体系、Mail 通信和 PDO 等后台核心框架。
+- `framework/`：实体、组件、行为、应用宿主、服务体系、资源、Mail 通信和 PDO 等后台核心框架。
 - `packages/`：当前 Visual Studio/NuGet 依赖包缓存。
 
 ## 运行入口

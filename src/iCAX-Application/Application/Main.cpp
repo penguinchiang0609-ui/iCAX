@@ -104,8 +104,8 @@ namespace
     iCAX::Frontend::CUIContainerConfig LoadUIContainerConfig()
     {
         iCAX::Frontend::CUIContainerConfig _Config;
-        _Config.ContainerType = "wpf";
-        _Config.ModulePath = "WpfUIContainer.dll";
+        _Config.ContainerType = "cef";
+        _Config.ModulePath = "CefUIContainer.dll";
 
         if (auto _WebPageRoot = FindDefaultWebPageRoot(); !_WebPageRoot.empty())
         {

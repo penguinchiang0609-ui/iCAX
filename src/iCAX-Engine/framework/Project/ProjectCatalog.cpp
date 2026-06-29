@@ -12,7 +12,7 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     , m_pServiceProvider(CreateInfo_.pServiceProvider)
     , m_pMetaRegistry(CreateInfo_.pMetaRegistry)
     , m_pBehaviourRegistry(CreateInfo_.pBehaviourRegistry)
-    , m_pMailChannelService(CreateInfo_.pMailChannelService)
+    , m_pMailChannelRegistry(CreateInfo_.pMailChannelRegistry)
     , m_PDODeclarations(CreateInfo_.PDODeclarations)
     , m_ResourceLoaderRegistryFactory(CreateInfo_.ResourceLoaderRegistryFactory)
     , m_Projects()
@@ -38,9 +38,9 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     {
         throw std::invalid_argument("ProjectCatalog BehaviourRegistry cannot be null");
     }
-    if (!m_pMailChannelService)
+    if (!m_pMailChannelRegistry)
     {
-        throw std::invalid_argument("ProjectCatalog MailChannelService cannot be null");
+        throw std::invalid_argument("ProjectCatalog MailChannelRegistry cannot be null");
     }
     if (!m_ResourceLoaderRegistryFactory)
     {
@@ -299,9 +299,9 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         CreateInfo_.pBehaviourRegistry = m_pBehaviourRegistry;
     }
-    if (!CreateInfo_.pMailChannelService)
+    if (!CreateInfo_.pMailChannelRegistry)
     {
-        CreateInfo_.pMailChannelService = m_pMailChannelService;
+        CreateInfo_.pMailChannelRegistry = m_pMailChannelRegistry;
     }
     if (!CreateInfo_.pResourceLoaderRegistry && m_ResourceLoaderRegistryFactory)
     {
@@ -331,9 +331,9 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         throw std::invalid_argument("ProjectCatalog BehaviourRegistry cannot be null");
     }
-    if (!CreateInfo_.pMailChannelService)
+    if (!CreateInfo_.pMailChannelRegistry)
     {
-        throw std::invalid_argument("ProjectCatalog MailChannelService cannot be null");
+        throw std::invalid_argument("ProjectCatalog MailChannelRegistry cannot be null");
     }
     if (!CreateInfo_.pResourceLoaderRegistry)
     {
@@ -372,3 +372,4 @@ std::vector<std::shared_ptr<iCAX::Project::CProject>> iCAX::Project::CProjectCat
     }
     return _Projects;
 }
+

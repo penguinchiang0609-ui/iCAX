@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files"><UniqueIdentifier>{64d2abb3-43a7-41db-af7e-bfa16b329926}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{739e9ed0-c654-4b8e-839b-0dcb180da854}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ColliderData.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ColliderDataExport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ColliderDataTypes.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ColliderData.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+</Project>

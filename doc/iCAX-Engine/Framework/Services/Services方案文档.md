@@ -15,7 +15,6 @@ src/icax-engine/framework/Services/
 - 定义 `IService`。
 - 提供 `CServiceProvider`。
 - 提供服务自动注册辅助。
-- 提供 `IMailChannelService` / `CMailChannelService`，作为应用级 Mail channel 目录服务。
 
 `Services` 工程不负责：
 
@@ -26,17 +25,17 @@ src/icax-engine/framework/Services/
 
 ## 3. 通信通道边界
 
-`Mailbox` 只提供 Mail、MailQueue、MailChannel 和 MailPostOffice 等基础通信对象，不维护全局目录。
+`Mailbox` 提供 Mail、MailQueue、MailChannel、MailPostOffice 和 MailChannelRegistry 等基础通信对象。
 
-`CMailChannelService` 是应用级服务，是当前框架内唯一的 channel 所有者：
+`CMailChannelRegistry` 不是 Service。`ApplicationHost` 直接持有一个应用级 registry，并显式注入 ProductRuntime / Project：
 
 ```text
 ApplicationHost
   CServiceProvider
-    IMailChannelService
-      applicationChannelId -> CMailChannel
-      productChannelId     -> CMailChannel
-      projectChannelId     -> CMailChannel
+  CMailChannelRegistry
+    applicationChannelId -> CMailChannel
+    productChannelId     -> CMailChannel
+    projectChannelId     -> CMailChannel
 ```
 
 运行体只保存自己的 mail id：
@@ -45,7 +44,7 @@ ApplicationHost
 - `ProductRuntime` 保存 `productChannelId`。
 - `Project` 保存 `projectChannelId`。
 
-上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 mail id 对应的 frontend post office。`CMailPostOffice` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧邮局会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
+上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 mail id 对应的 frontend post office。Application/Product/ProjectContext 暴露本层 post office。`CMailPostOffice` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧邮局会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
 
 `GetFrontendPostOffice(id)` / `GetBackendPostOffice(id)` 只查询既有 channel，不隐式创建。channel 创建必须走 `CreateChannel(id)`，销毁必须走 `RemoveChannel(id)`。
 
@@ -77,3 +76,4 @@ src/icax-engine/framework/Services/
 - 区分全局服务、应用宿主服务和项目服务的生命周期。
 - 为服务卸载顺序补充更明确的依赖约束。
 - 将 CommandHandler 接入 ApplicationHost 后，业务命令通过服务解析具体能力。
+

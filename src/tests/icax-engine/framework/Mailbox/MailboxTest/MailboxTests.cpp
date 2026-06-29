@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <Data/uuid.h>
 #include <Mailbox/MailChannel.h>
+#include <Mailbox/MailChannelRegistry.h>
 #include <Mailbox/MailPayload.h>
 #include <Mailbox/MailPostOffice.h>
 #include <Mailbox/MailQueue.h>
@@ -523,4 +525,84 @@ TEST(MailPostOfficeTest, ChannelResetInvalidatesOldPostOfficesAndCreatesFreshCha
     EXPECT_EQ(84, ReadIntPayload(_Mails[0]));
 
     ReleasePayloads(_Mails);
+}
+
+TEST(MailChannelRegistryTest, ChannelMustBeExplicitlyCreated)
+{
+    CMailChannelRegistry _Registry;
+
+    const auto _ChannelID = iCAX::Data::GenerateNewUUID();
+    EXPECT_FALSE(_Registry.HasChannel(_ChannelID));
+    EXPECT_THROW(_Registry.GetFrontendPostOffice(_ChannelID), std::logic_error);
+    EXPECT_THROW(_Registry.GetBackendPostOffice(_ChannelID), std::logic_error);
+
+    EXPECT_TRUE(_Registry.CreateChannel(_ChannelID));
+    EXPECT_TRUE(_Registry.HasChannel(_ChannelID));
+    EXPECT_FALSE(_Registry.CreateChannel(_ChannelID));
+
+    auto _FrontendPostOffice = _Registry.GetFrontendPostOffice(_ChannelID);
+    auto _BackendPostOffice = _Registry.GetBackendPostOffice(_ChannelID);
+    ASSERT_TRUE(_FrontendPostOffice.IsValid());
+    ASSERT_TRUE(_BackendPostOffice.IsValid());
+
+    iCAX::Mail::Mail _Mail;
+    _Mail.Header.nMailId = 7;
+    _FrontendPostOffice.Send(_Mail);
+
+    auto _Mails = _BackendPostOffice.Receive();
+    ASSERT_EQ(1u, _Mails.size());
+    EXPECT_EQ(7u, _Mails[0].Header.nMailId);
+}
+
+TEST(MailChannelRegistryTest, RemovingChannelInvalidatesExistingPostOffices)
+{
+    CMailChannelRegistry _Registry;
+
+    const auto _ChannelID = iCAX::Data::GenerateNewUUID();
+    ASSERT_TRUE(_Registry.CreateChannel(_ChannelID));
+    auto _FrontendPostOffice = _Registry.GetFrontendPostOffice(_ChannelID);
+    auto _BackendPostOffice = _Registry.GetBackendPostOffice(_ChannelID);
+
+    EXPECT_TRUE(_Registry.RemoveChannel(_ChannelID));
+    EXPECT_FALSE(_Registry.HasChannel(_ChannelID));
+    EXPECT_FALSE(_FrontendPostOffice.IsValid());
+    EXPECT_FALSE(_BackendPostOffice.IsValid());
+    EXPECT_THROW(_FrontendPostOffice.Send(iCAX::Mail::Mail{}), std::logic_error);
+    EXPECT_THROW(_BackendPostOffice.Receive(), std::logic_error);
+    EXPECT_THROW(_Registry.GetFrontendPostOffice(_ChannelID), std::logic_error);
+    EXPECT_FALSE(_Registry.RemoveChannel(_ChannelID));
+}
+
+TEST(MailChannelRegistryTest, ClearChannelsInvalidatesAllChannels)
+{
+    CMailChannelRegistry _Registry;
+
+    const auto _ChannelA = iCAX::Data::GenerateNewUUID();
+    const auto _ChannelB = iCAX::Data::GenerateNewUUID();
+    ASSERT_TRUE(_Registry.CreateChannel(_ChannelA));
+    ASSERT_TRUE(_Registry.CreateChannel(_ChannelB));
+    auto _PostOfficeA = _Registry.GetFrontendPostOffice(_ChannelA);
+    auto _PostOfficeB = _Registry.GetFrontendPostOffice(_ChannelB);
+
+    _Registry.ClearChannels();
+    EXPECT_FALSE(_PostOfficeA.IsValid());
+    EXPECT_FALSE(_PostOfficeB.IsValid());
+    EXPECT_THROW(_Registry.GetFrontendPostOffice(_ChannelA), std::logic_error);
+    EXPECT_THROW(_Registry.GetFrontendPostOffice(_ChannelB), std::logic_error);
+
+    ASSERT_TRUE(_Registry.CreateChannel(_ChannelA));
+    auto _PostOfficeAfterClear = _Registry.GetFrontendPostOffice(_ChannelA);
+    ASSERT_TRUE(_PostOfficeAfterClear.IsValid());
+}
+
+TEST(MailChannelRegistryTest, NilChannelIDIsRejected)
+{
+    CMailChannelRegistry _Registry;
+
+    const auto _NilID = iCAX::Data::GenerateNilUUID();
+    EXPECT_THROW(_Registry.CreateChannel(_NilID), std::invalid_argument);
+    EXPECT_THROW(_Registry.HasChannel(_NilID), std::invalid_argument);
+    EXPECT_THROW(_Registry.GetFrontendPostOffice(_NilID), std::invalid_argument);
+    EXPECT_THROW(_Registry.GetBackendPostOffice(_NilID), std::invalid_argument);
+    EXPECT_THROW(_Registry.RemoveChannel(_NilID), std::invalid_argument);
 }

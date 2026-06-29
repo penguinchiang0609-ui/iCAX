@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files"><UniqueIdentifier>{5b6781a8-ae31-4d90-9e1c-25008d700ab5}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{893fa143-bbe3-4393-a819-7378e32a89fe}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="JoltColliderService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="JoltColliderServiceExport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="JoltColliderService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+</Project>

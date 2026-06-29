@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files"><UniqueIdentifier>{bbd01c1a-aace-4138-9635-76a5e77cc4d8}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{fa33d318-69e0-4098-918d-9809f5265e56}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="InputPDO.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="InputPDODecl.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="InputPDOExport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="InputPDOLayouts.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="InputPDOTypes.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="InputPDOValidation.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="InputPDODecl.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="InputPDOValidation.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+</Project>

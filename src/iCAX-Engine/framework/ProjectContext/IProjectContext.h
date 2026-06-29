@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Data/uuid.h"
+#include "Mailbox/MailPostOffice.h"
 #include "ProjectContextExport.h"
 
 #include <string>
@@ -53,6 +54,16 @@ namespace iCAX
             * @brief 获取项目通信通道 ID。
             */
             virtual const iCAX::Data::uuid& GetProjectChannelID() const = 0;
+
+            /*
+            * @brief 获取后端视角项目邮局。
+            */
+            virtual iCAX::Mail::CMailPostOffice GetBackendPostOffice() const;
+
+            /*
+            * @brief 获取前端视角项目邮局。
+            */
+            virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const;
 
             /*
             * @brief 获取项目名称。

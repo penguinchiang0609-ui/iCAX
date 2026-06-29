@@ -6,7 +6,7 @@
 
 它只表达项目实例，不表达应用类型、业务类型或模块目录。运行态只允许一个主项目。为了支持预览、导入和转换，可以同时打开若干临时项目。
 
-每个 `Project` 独占自己的 `Repository`、`ResourceLibrary`、`Universe`、项目 mail channel、可选 PDOHub 和后台工作线程。底层 `CMailChannel` 由应用级 `IMailChannelService` 按 `ProjectChannelID` 托管。
+每个 `Project` 独占自己的 `Repository`、`ResourceLibrary`、`Universe`、项目 mail channel、可选 PDOHub 和后台工作线程。底层 `CMailChannel` 由应用级 `CMailChannelRegistry` 按 `ProjectChannelID` 托管。
 
 ## 2. Project
 
@@ -23,12 +23,12 @@ info.pServiceProvider = serviceProvider;
 info.pMetaRegistry = productMetaRegistry;
 info.pBehaviourRegistry = productBehaviourRegistry;
 info.pResourceLoaderRegistry = projectResourceLoaderRegistry;
-info.pMailChannelService = mailChannelService;
+info.pMailChannelRegistry = mailChannelRegistry;
 
 iCAX::Project::CProject project(info);
 ```
 
-`pApplicationContext`、`pProductContext`、`pServiceProvider`、`pMetaRegistry`、`pBehaviourRegistry`、`pResourceLoaderRegistry` 和 `pMailChannelService` 是必填依赖。Project 只使用显式注入的注册表。这样可以保证项目数据、资源加载和行为调度都来自明确的产品/项目上下文。
+`pApplicationContext`、`pProductContext`、`pServiceProvider`、`pMetaRegistry`、`pBehaviourRegistry`、`pResourceLoaderRegistry` 和 `pMailChannelRegistry` 是必填依赖。Project 只使用显式注入的注册表。这样可以保证项目数据、资源加载和行为调度都来自明确的产品/项目上下文。
 
 每个项目拥有：
 
@@ -37,7 +37,7 @@ iCAX::Project::CProject project(info);
 - 一个 `Universe`，承载 Behaviour 调度器并执行 Behaviour；它不拥有 Repository，也不代表 Project。
 - 一个可选 `PDOHub`，承载项目级高频共享内存 PDO 通道。
 - 每帧调度和 Repository 事件转发时显式传入 `ApplicationContext`、`ProductContext` 和 `ProjectContext`。
-- 一个 `ProjectChannelID`，用于从 `IMailChannelService` 获取该项目自己的前后台邮件通道。
+- 一个 `ProjectChannelID`，用于从 `CMailChannelRegistry` 获取该项目自己的前后台邮件通道。
 - 一个后台工作线程，按项目自己的帧循环执行 `PreSwapPDO`、邮件处理、`Tick` 和 `PostSwapPDO`。
 - 一个 ProjectID，作为项目身份。
 - 一个 ProjectChannelID，作为项目通信身份。
@@ -64,7 +64,7 @@ project.Stop();
 auto frontendOffice = project.GetFrontendPostOffice();
 ```
 
-`Close()` 会停止项目线程、清理 `Universe` / `Repository` / `ResourceLibrary`，并从 `IMailChannelService` 删除项目 channel，使已经发出去的旧邮局失效。
+`Close()` 会停止项目线程、清理 `Universe` / `Repository` / `ResourceLibrary`，并从 `CMailChannelRegistry` 删除项目 channel，使已经发出去的旧邮局失效。
 
 如果创建参数中提供了 `PDODeclarations`，Project 会创建自己的 PDOHub：
 
@@ -154,7 +154,7 @@ runtime->Close();
 iCAX::Project::CProjectCatalogCreateInfo catalogInfo;
 catalogInfo.pMetaRegistry = productMetaRegistry;
 catalogInfo.pBehaviourRegistry = productBehaviourRegistry;
-catalogInfo.pMailChannelService = mailChannelService;
+catalogInfo.pMailChannelRegistry = mailChannelRegistry;
 catalogInfo.ResourceLoaderRegistryFactory = []() {
     return CreateProjectResourceLoaderRegistry();
 };
@@ -169,7 +169,7 @@ projectCatalog.CloseProject(previewProject->GetProjectID());
 projectCatalog.CloseMainProject();
 ```
 
-`CProjectCatalogCreateInfo` 必须提供 `pApplicationContext`、`pProductContext`、`pServiceProvider`、`pMetaRegistry`、`pBehaviourRegistry`、`pMailChannelService` 和 `ResourceLoaderRegistryFactory`。Catalog 构造阶段即完成依赖校验，不允许创建半有效目录。
+`CProjectCatalogCreateInfo` 必须提供 `pApplicationContext`、`pProductContext`、`pServiceProvider`、`pMetaRegistry`、`pBehaviourRegistry`、`pMailChannelRegistry` 和 `ResourceLoaderRegistryFactory`。Catalog 构造阶段即完成依赖校验，不允许创建半有效目录。
 
 `ProjectCatalog` 只负责打开、关闭和查询项目。它不统一驱动所有项目帧循环；项目运行由各自 `Project` 的后台线程完成。
 
@@ -180,6 +180,7 @@ projectCatalog.CloseMainProject();
 - 主项目是当前业务编辑对象，只能存在一个。
 - 临时项目用于预览、导入、转换和对照，不应承载主 UI 的长期编辑状态。
 - 项目是实例级运行对象，不与其他项目共享 Repository、ResourceLibrary、Universe、项目 mail channel、PDOHub 或后台线程。
-- Project 必须显式注入 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry 和 MailChannelService，不读取全局注册表。
+- Project 必须显式注入 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry 和 MailChannelRegistry，不读取全局注册表。
 - 资源路径相同也只在各自 Project 的 `ResourceLibrary` 内复用，不跨项目共享对象。
 - Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露；独立 OS 地址空间必须由进程级 `IProjectRuntime` 实现。
+

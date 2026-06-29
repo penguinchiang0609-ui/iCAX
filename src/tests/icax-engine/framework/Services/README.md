@@ -4,4 +4,5 @@
 
 ## 目录结构
 
-- `ServicesTest/`：使用 gtest 验证服务实现。当前覆盖 `CMailChannelService` 的显式创建、查询、删除、卸载和旧邮局失效行为。
+- `ServicesTest/`：使用 gtest 验证服务容器的注册、解析、卸载和未注册服务异常行为。
+

@@ -14,7 +14,7 @@
 #include "Resources/ResourceLoaderRegistry.h"
 #include "ProductContext/IProductContext.h"
 #include "ProjectContext/IProjectContext.h"
-#include "Services/IMailChannelService.h"
+#include "Mailbox/MailChannelRegistry.h"
 #include "Services/ServiceProvider.h"
 
 #include <atomic>
@@ -99,7 +99,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry; //!< 元数据注册表。
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 行为注册表。
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry; //!< 项目资源加载器注册表。
-            std::shared_ptr<iCAX::Services::IMailChannelService> pMailChannelService; //!< 邮件通道服务。
+            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry; //!< 邮件通道注册表。
             std::vector<iCAX::PDO::PDODecl> PDODeclarations; //!< 项目级 PDO 声明；为空表示项目不启用 PDO。
             uint32_t nFrameIntervalMilliseconds = 16; //!< 项目工作线程帧间隔。
             ProjectFrameHandler FrameHandler; //!< 每帧回调。
@@ -305,7 +305,7 @@ namespace iCAX
             /*
             * @brief 获取后端视角项目邮局。
             */
-            iCAX::Mail::CMailPostOffice GetBackendPostOffice();
+            iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override;
 
             /*
             * @brief 向项目级前端邮箱主动发送事件邮件。
@@ -319,7 +319,7 @@ namespace iCAX
             /*
             * @brief 获取前端视角项目邮局。
             */
-            iCAX::Mail::CMailPostOffice GetFrontendPostOffice();
+            iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override;
 
             /*
             * @brief 启动项目工作线程。
@@ -430,7 +430,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
-            std::shared_ptr<iCAX::Services::IMailChannelService> m_pMailChannelService;
+            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
             std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
             std::shared_ptr<iCAX::Behaviour::IUniverse> m_pUniverse;
             std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
@@ -444,3 +444,4 @@ namespace iCAX
         };
     }
 }
+

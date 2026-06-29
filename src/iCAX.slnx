@@ -61,17 +61,48 @@
   <Folder Name="/iCAX-Engine/framework/Services/">
     <Project Path="iCAX-Engine/framework/Services/Services.vcxproj" />
   </Folder>
+  <Folder Name="/iCAX-Plugins/" />
+  <Folder Name="/iCAX-Plugins/input/" />
+  <Folder Name="/iCAX-Plugins/input/InputPDO/">
+    <Project Path="iCAX-Plugins/input/InputPDO/InputPDO.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/physics/" />
+  <Folder Name="/iCAX-Plugins/physics/ColliderData/">
+    <Project Path="iCAX-Plugins/physics/ColliderData/ColliderData.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/physics/ColliderService/">
+    <Project Path="iCAX-Plugins/physics/ColliderService/ColliderService.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/physics/JoltColliderService/">
+    <Project Path="iCAX-Plugins/physics/JoltColliderService/JoltColliderService.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/physics/JoltPhysics/">
+    <Project Path="iCAX-Plugins/physics/JoltPhysics/JoltPhysics.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/render/" />
+  <Folder Name="/iCAX-Plugins/render/RenderPDO/">
+    <Project Path="iCAX-Plugins/render/RenderPDO/RenderPDO.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/render/PDORenderService/">
+    <Project Path="iCAX-Plugins/render/PDORenderService/PDORenderService.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/render/RenderData/">
+    <Project Path="iCAX-Plugins/render/RenderData/RenderData.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/render/RenderService/">
+    <Project Path="iCAX-Plugins/render/RenderService/RenderService.vcxproj" />
+  </Folder>
   <Folder Name="/iCAX-UI/" />
   <Folder Name="/iCAX-UI/CefUIContainer/">
-    <Project Path="iCAX-UI/CefUIContainer/CefUIContainer.vcxproj">
-      <Build Project="false" />
-    </Project>
+    <Project Path="iCAX-UI/CefUIContainer/CefUIContainer.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-UI/UIContainer/">
     <Project Path="iCAX-UI/UIContainer/UIContainer.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-UI/WpfUIContainer/">
-    <Project Path="iCAX-UI/WpfUIContainer/WpfUIContainer.vcxproj" />
+    <Project Path="iCAX-UI/WpfUIContainer/WpfUIContainer.vcxproj">
+      <Build Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/tests/" />
   <Folder Name="/tests/icax-engine/" />
@@ -128,5 +159,29 @@
   <Folder Name="/tests/icax-engine/framework/Services/" />
   <Folder Name="/tests/icax-engine/framework/Services/ServicesTest/">
     <Project Path="tests/icax-engine/framework/Services/ServicesTest/ServicesTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-plugins/" />
+  <Folder Name="/tests/icax-plugins/input/" />
+  <Folder Name="/tests/icax-plugins/input/InputPDO/" />
+  <Folder Name="/tests/icax-plugins/input/InputPDO/InputPDOTest/">
+    <Project Path="tests/icax-plugins/input/InputPDO/InputPDOTest/InputPDOTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-plugins/physics/" />
+  <Folder Name="/tests/icax-plugins/physics/ColliderService/" />
+  <Folder Name="/tests/icax-plugins/physics/ColliderService/ColliderServiceTest/">
+    <Project Path="tests/icax-plugins/physics/ColliderService/ColliderServiceTest/ColliderServiceTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-plugins/physics/JoltPhysics/" />
+  <Folder Name="/tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/">
+    <Project Path="tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/JoltPhysicsTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-plugins/render/" />
+  <Folder Name="/tests/icax-plugins/render/RenderPDO/" />
+  <Folder Name="/tests/icax-plugins/render/RenderPDO/RenderPDOTest/">
+    <Project Path="tests/icax-plugins/render/RenderPDO/RenderPDOTest/RenderPDOTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-plugins/render/RenderService/" />
+  <Folder Name="/tests/icax-plugins/render/RenderService/RenderServiceTest/">
+    <Project Path="tests/icax-plugins/render/RenderService/RenderServiceTest/RenderServiceTest.vcxproj" />
   </Folder>
 </Solution>

@@ -6,7 +6,8 @@
 
 ## 目录结构
 
-- `iCAX-Engine/`：C++ 后台平台，包含 foundation、framework、Mailbox、PDO、插件和平台级扩展。
+- `iCAX-Engine/`：C++ 后台平台，包含 foundation、framework、Resources、Mailbox、PDO 和平台级扩展。
+- `iCAX-Plugins/`：插件层，承载渲染、显示数据、几何内核适配、导入导出等可选扩展能力。
 - `iCAX-Application/`：应用容器层，负责组合 Engine 与 UI bridge。
 - `iCAX-UI/`：前端公共框架，包含 UIContainer、WpfUIContainer、CefUIContainer、AppShell、Proxy、SDK、Mailbox/PDO 前端适配和公共 UI 能力。
 - `apps/`：具体产品目录。每个产品独立包含 manifest、backend、webpage 和 protocol；当前主线不内置旧示例产品。

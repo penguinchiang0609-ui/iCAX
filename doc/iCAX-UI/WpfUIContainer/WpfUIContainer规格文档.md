@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-`WpfUIContainer` 是当前默认真实前端容器。
+`WpfUIContainer` 是可选真实前端容器。当前默认真实前端仍是 CEF/H5；WPF 通过同一个 `IUIContainer` 契约接入 backend。
 
 它通过 C++/CLI 实现 native `IUIContainer`，在同一进程内启动 WPF UI 线程，并通过 `IFrontendBridge` 与 backend `ApplicationHost` 交互。
 

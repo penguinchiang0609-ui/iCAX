@@ -14,7 +14,7 @@ namespace iCAX
         /*
         * @brief UI 与 Engine 之间传递的通用邮件信封。
         * @details
-        *   该结构只表达跨 UI 边界的 mail envelope，不绑定 H5/CEF/Qt/WPF。
+        *   该结构只表达跨 UI 边界的 mail envelope，不绑定 H5/CEF/WPF/QT 等具体前端技术。
         *   PayloadText 是 UTF-8 文本，通常是 Data::VariantSerializer 产生的文本。
         */
         struct _UI_CONTAINER_EXP CFrontendMailEnvelope final

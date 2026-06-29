@@ -21,3 +21,13 @@ const iCAX::PDO::IPDOHub& iCAX::Project::IProjectContext::PDOHub() const
 {
     throw std::logic_error("Project PDO hub is not configured");
 }
+
+iCAX::Mail::CMailPostOffice iCAX::Project::IProjectContext::GetBackendPostOffice() const
+{
+    throw std::logic_error("Project backend post office is not configured");
+}
+
+iCAX::Mail::CMailPostOffice iCAX::Project::IProjectContext::GetFrontendPostOffice() const
+{
+    throw std::logic_error("Project frontend post office is not configured");
+}

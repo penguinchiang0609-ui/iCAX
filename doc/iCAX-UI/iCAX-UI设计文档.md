@@ -18,7 +18,7 @@ iCAX-UI 的核心原则：
 - 普通交互走 mailbox，返回值以 Promise 形式表达。
 - 高频数据走 PDO，mailbox 只传递控制命令和状态通知。
 - 产品 UI 是插件式 ESM 模块，由 manifest 指向入口。
-- Engine 生命周期属于 `iCAX-Application`，H5/Qt/WPF 只是不同 UI 实现。
+- Engine 生命周期属于 `iCAX-Application`，H5/CEF 是当前默认前端实现；WPF/QT 可以作为同一 `UIContainer` 契约下的替代实现。
 
 ## 2. 目录设计
 
@@ -105,7 +105,7 @@ CApplication
 - 向 UI container 暴露稳定的前端桥。
 - 在关闭时先停止 UI，再停止 Engine。
 
-`UIContainer`、`CefUIContainer`、未来 Qt/WPF 宿主都不应直接拥有 Engine。
+`UIContainer`、`CefUIContainer`、`WpfUIContainer` 和未来 `QtUIContainer` 都不应直接拥有 Engine。
 
 ## 5. UIContainer 设计
 
@@ -318,7 +318,7 @@ WebPage
   -> CefUIContainer
   -> UIContainer
   -> FrontendBridge
-  -> MailChannelService
+  -> MailChannelRegistry
   -> ApplicationHost/ProductRuntime/Project
   -> CommandHandler
   -> response mail
@@ -389,3 +389,4 @@ iCAX-UI 只能：
 - PDO shared memory 到 JS `ArrayBuffer` 的映射属于 host bridge 能力，应通过 `Bridge` 暴露。
 - 产品级 UI 组件属于 `src/apps/<product-id>/webpage`，公共 UI 才进入 `UI`。
 - 产品协议定义属于 `src/apps/<product-id>/protocol`，公共框架只提供加载和调用机制。
+

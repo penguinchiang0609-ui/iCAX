@@ -22,7 +22,7 @@ namespace iCAX
         struct _UI_CONTAINER_EXP CUIContainerConfig final
         {
             IFrontendBridge* pFrontendBridge = nullptr; //!< Application 提供的通用前端桥，非拥有。
-            std::string ContainerType = "headless";     //!< 容器类型，如 headless、cef、qt、wpf。
+            std::string ContainerType = "headless";     //!< 容器类型，如 headless、cef、wpf、qt。
             std::string ModulePath;                     //!< 动态 UI 容器 DLL 路径；加载后通过静态注册表构造。
             std::string WebPageRoot;                    //!< H5 AppShell 根目录。
             std::string StartURL;                       //!< 可选启动 URL；为空时由具体容器决定。
@@ -33,8 +33,8 @@ namespace iCAX
         /*
         * @brief UI 容器接口。
         * @details
-        *   UIContainer 是 Application.exe 看到的唯一 UI 抽象。CEF、Qt、WPF、Headless
-        *   都应实现该接口；它们负责启动前端运行环境，并通过 IFrontendBridge 连接 Engine。
+        *   UIContainer 是 Application.exe 看到的唯一 UI 抽象。CEF、WPF、QT、Headless
+        *   都可以实现该接口；它们负责启动前端运行环境，并通过 IFrontendBridge 连接 Engine。
         */
         class _UI_CONTAINER_EXP IUIContainer
         {
@@ -125,7 +125,7 @@ namespace iCAX
         * @brief UI 容器工厂。
         * @details
         *   工厂只负责把配置转换为 IUIContainer 实例。headless 是内置实现；
-        *   cef/qt/wpf 等真实 UI 容器应通过 ModulePath 动态加载。
+        *   CEF、WPF、QT 等真实 UI 容器应通过 ModulePath 动态加载。
         */
         class _UI_CONTAINER_EXP CUIContainerFactory final
         {

@@ -117,7 +117,7 @@ CResourceLibrary
 
 ## 7. 生命周期
 
-`ProductRuntime::Stop()` 会关闭所有 ProjectCatalog，ProjectCatalog 会关闭其中所有 Project。ProductRuntime 随后通过 `IMailChannelService::RemoveChannel(productChannelId)` 删除产品级 channel，旧产品邮局随之失效。
+`ProductRuntime::Stop()` 会关闭所有 ProjectCatalog，ProjectCatalog 会关闭其中所有 Project。ProductRuntime 随后通过 `CMailChannelRegistry::RemoveChannel(productChannelId)` 删除产品级 channel，旧产品邮局随之失效。
 
 ApplicationHost 卸载时会停止所有已启动 ProductRuntime。
 
@@ -134,3 +134,4 @@ IProjectRuntime
 ```
 
 进程级实现中，ProductRuntime 只保留 `ProjectHandle`、状态和 mailbox 代理；Repository、ResourceLibrary、Universe 和业务模块都在 Project Worker 进程内。普通 Mailbox 通过 IPC 转发，高频 PDO 使用每 Project 独立共享内存段。Worker 进程崩溃时，由进程级 ProjectRuntime 负责记录该 Project 的故障状态，并保留其他 Project 与 ProductRuntime。
+
