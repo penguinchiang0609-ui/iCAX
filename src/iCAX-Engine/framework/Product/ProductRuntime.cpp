@@ -3,13 +3,11 @@
 
 #include "CommandHandler/CommandRegistrationCatalog.h"
 #include "CommandHandler/CommandTarget.h"
-#include "Mailbox/MailPayload.h"
 #include "Project/ProjectCommands.h"
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
-#include <cstring>
 #include <filesystem>
 #include <format>
 #include <iomanip>
@@ -22,73 +20,6 @@
 
 namespace
 {
-    iCAX::Command::CCommandRequest _MailToCommandRequest(IN const iCAX::Mail::Mail& Mail_)
-    {
-        iCAX::Command::CCommandRequest _Request;
-        _Request.nCommandID = Mail_.Header.nMailId;
-        _Request.nOriginID = Mail_.Header.nOriginId;
-        _Request.Route = iCAX::Command::MakeCommandRoute(Mail_.Header.nTypeCode);
-
-        if (Mail_.Payload.nSize > 0)
-        {
-            if (Mail_.Payload.pData == nullptr)
-            {
-                throw std::invalid_argument("mail payload data is null");
-            }
-            _Request.Payload.assign(Mail_.Payload.pData, Mail_.Payload.pData + Mail_.Payload.nSize);
-        }
-        return _Request;
-    }
-
-    iCAX::Mail::StampCode _CommandStatusToMailStamp(IN iCAX::Command::ECommandStatusCode Status_)
-    {
-        switch (Status_)
-        {
-        case iCAX::Command::ECommandStatusCode::Ok:
-            return iCAX::Mail::kMailOk;
-        case iCAX::Command::ECommandStatusCode::NoHandler:
-            return iCAX::Mail::kMailNoHandler;
-        case iCAX::Command::ECommandStatusCode::InvalidRequest:
-        default:
-            return iCAX::Mail::kMailInvalidPayload;
-        }
-    }
-
-    iCAX::Mail::Mail _CommandResponseToMail(
-        IN const iCAX::Mail::Mail& RequestMail_,
-        IN const iCAX::Command::CCommandResponse& Response_,
-        IN uint64_t nResponseMailID_)
-    {
-        iCAX::Mail::Mail _Mail;
-        _Mail.Header.nMailId = nResponseMailID_;
-        _Mail.Header.nOriginId = RequestMail_.Header.nMailId;
-        _Mail.Header.nTypeCode = Response_.Route.GetRouteCode();
-        _Mail.Header.nStamp = _CommandStatusToMailStamp(Response_.nStatus);
-
-        const auto* _pPayload = &Response_.Payload;
-        std::vector<uint8_t> _ErrorPayload;
-        if (_pPayload->empty() && !Response_.strError.empty())
-        {
-            _ErrorPayload.assign(Response_.strError.begin(), Response_.strError.end());
-            _pPayload = &_ErrorPayload;
-        }
-
-        if (!_pPayload->empty())
-        {
-            _Mail.Payload.nSize = _pPayload->size();
-            _Mail.Payload.pData = new uint8_t[_Mail.Payload.nSize];
-            std::memcpy(_Mail.Payload.pData, _pPayload->data(), _Mail.Payload.nSize);
-        }
-        return _Mail;
-    }
-
-    void _ReleaseMailPayload(IN OUT iCAX::Mail::Mail& Mail_) noexcept
-    {
-        delete[] Mail_.Payload.pData;
-        Mail_.Payload.pData = nullptr;
-        Mail_.Payload.nSize = 0;
-    }
-
     class CStaticProductCommandTarget final : public iCAX::Command::CCommandTarget
     {
     public:
@@ -554,6 +485,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     , m_pProductDataStore(std::move(pProductDataStore_))
     , m_pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
     , m_pCommandDispatcher(std::make_unique<iCAX::Command::CCommandDispatcher>(m_pCommandRegistry))
+    , m_pMailCommandHandler(std::make_unique<iCAX::MailHandler::CMailCommandHandler>())
     , m_nFrameIntervalMilliseconds(nFrameIntervalMilliseconds_ == 0 ? 1 : nFrameIntervalMilliseconds_)
 {
     if (!IsValidProductID(m_Definition.ProductID))
@@ -804,17 +736,7 @@ void iCAX::Product::CProductRuntime::SendFrontendEvent(
     _Header.nTypeCode = nTypeCode_;
     _Header.nStamp = iCAX::Mail::kMailOk;
 
-    auto _Mail = iCAX::Mail::CreateTextMail(_Header, strPayloadText_);
-    try
-    {
-        GetBackendPostOffice().Send(_Mail);
-    }
-    catch (...)
-    {
-        iCAX::Mail::ReleaseMailPayload(_Mail);
-        throw;
-    }
-    iCAX::Mail::ReleaseMailPayload(_Mail);
+    GetBackendPostOffice().SendText(_Header, strPayloadText_);
 }
 
 void iCAX::Product::CProductRuntime::DispatchProductMails()
@@ -888,7 +810,8 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     _CatalogInfo.pMetaRegistry = m_pProductMetaRegistry;
     _CatalogInfo.pBehaviourRegistry = m_pProductBehaviourRegistry;
     _CatalogInfo.pMailChannelRegistry = m_pMailChannelRegistry;
-    _CatalogInfo.PDODeclarations = m_Definition.PDODeclarations;
+    _CatalogInfo.bEnablePDOHub = m_Definition.bEnablePDOHub;
+    _CatalogInfo.PDOHubCreateInfo = m_Definition.PDOHubCreateInfo;
     const auto _ModulePaths = m_LoadedModulePaths;
     // 每个 Project 都创建自己的资源 loader registry。
     // registry 内容来自产品模块回放，但资源缓存和加载器集合归项目隔离。
@@ -1271,28 +1194,20 @@ void iCAX::Product::CProductRuntime::DispatchProjectMails(
         return;
     }
 
-    auto _Mails = PostOffice_.Receive();
-    for (auto& _Mail : _Mails)
+    iCAX::Project::IProjectContext* _pProjectContext = nullptr;
+    auto _pLocalProject = pProjectRuntime_ ? pProjectRuntime_->GetLocalProject() : nullptr;
+    if (_pLocalProject)
     {
-        auto _Request = _MailToCommandRequest(_Mail);
-        iCAX::Project::IProjectContext* _pProjectContext = nullptr;
-        auto _pLocalProject = pProjectRuntime_ ? pProjectRuntime_->GetLocalProject() : nullptr;
-        if (_pLocalProject)
-        {
-            _pProjectContext = static_cast<iCAX::Project::IProjectContext*>(_pLocalProject.get());
-        }
-        auto _Response = m_pCommandDispatcher->Dispatch(
-            _Request,
-            *m_pApplicationContext,
-            static_cast<iCAX::Product::IProductContext*>(this),
-            _pProjectContext);
-
-        auto _ResponseMail = _CommandResponseToMail(_Mail, _Response, AllocateBackendMailID());
-        PostOffice_.Send(_ResponseMail);
-        // Send 会深拷贝响应 Payload，因此这里立即释放本地临时邮件负载。
-        _ReleaseMailPayload(_ResponseMail);
-        _ReleaseMailPayload(_Mail);
+        _pProjectContext = static_cast<iCAX::Project::IProjectContext*>(_pLocalProject.get());
     }
+
+    m_pMailCommandHandler->DispatchAvailableMails(
+        PostOffice_,
+        *m_pCommandDispatcher,
+        *m_pApplicationContext,
+        static_cast<iCAX::Product::IProductContext*>(this),
+        _pProjectContext,
+        [this]() { return AllocateBackendMailID(); });
 }
 
 void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_)

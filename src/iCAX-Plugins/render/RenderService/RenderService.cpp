@@ -3,5 +3,5 @@
 
 uint32_t iCAX::Render::GetRenderServiceContractVersion() noexcept
 {
-    return 1;
+    return 2;
 }

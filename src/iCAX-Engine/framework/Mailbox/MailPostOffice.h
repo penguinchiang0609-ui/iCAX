@@ -3,6 +3,7 @@
 #include "Mail.h"
 #include "MailQueue.h"
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace iCAX
@@ -52,6 +53,28 @@ namespace iCAX
             *   如果底层 Channel 被 Reset 或释放，发送会抛出 std::logic_error。
             */
             void Send(const Mail& Mail_) const;
+
+            /*
+            * @brief 发送 header + bytes。
+            * @param [in] Header_ 邮件头。
+            * @param [in] pPayload_ payload 首地址；nPayloadSize_ 为 0 时可以为空。
+            * @param [in] nPayloadSize_ payload 字节数。
+            * @details
+            *   直接把字节写入底层队列的预分配池，避免调用方为了发送临时构造 Mail payload。
+            */
+            void SendPayload(
+                IN const MailHeader& Header_,
+                IN const void* pPayload_,
+                IN size_t nPayloadSize_) const;
+
+            /*
+            * @brief 发送 UTF-8 文本邮件。
+            * @param [in] Header_ 邮件头。
+            * @param [in] strPayloadText_ UTF-8 文本；H5 通常传 JSON 字符串。
+            */
+            void SendText(
+                IN const MailHeader& Header_,
+                IN const std::string& strPayloadText_) const;
 
             /*
             * @brief 接收当前全部邮件

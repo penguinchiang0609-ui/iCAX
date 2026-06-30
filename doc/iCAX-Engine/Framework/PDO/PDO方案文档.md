@@ -78,10 +78,13 @@ struct SharedPDOArenaHeader
     uint32_t nMagic;
     uint32_t nVersion;
     uint32_t nSlotCount;
+    uint32_t nSlotCapacity;
     uint32_t nHeaderSize;
     uint64_t nArenaSize;
     uint64_t nSlotTableOffset;
     uint64_t nPayloadOffset;
+    uint64_t nPayloadSize;
+    volatile long nDefragState;
 };
 ```
 
@@ -90,10 +93,13 @@ Slot header：
 ```cpp
 struct SharedPDOSlotHeader
 {
+    uint32_t nActive;
     PDOID nID;
     uint32_t nVersion;
     uint32_t nDirection;
     uint32_t nPayloadSize;
+    uint64_t nPayloadBlockOffset;
+    uint64_t nPayloadBlockSize;
     uint64_t nBufferOffset[2];
     volatile long nBufferState[2];
     volatile long nReaderCount[2];
@@ -106,6 +112,8 @@ struct SharedPDOSlotHeader
     volatile unsigned long long nLatestDataVersion;
 };
 ```
+
+`nSlotCount` 是 active slot 数，`nSlotCapacity` 是 slot table 容量。`nActive == 0` 的 slot header 表示空闲表项，可被后续动态分配复用。
 
 `nVersion` 是 payload 协议版本；`nBufferDataVersion`、`nPublishedDataVersion` 和 `nLatestDataVersion` 是运行期源数据版本，语义上全部是 `uint64_t`。二者职责不同，不能混用。`nLatestDataVersion` 是单调的 Slot 最新源数据版本，即使 Ready buffer 被拿回去重写，它也不会回退。
 
@@ -185,7 +193,44 @@ std::unordered_map<PDOID, std::shared_ptr<CSharedPDOSlot>>
 
 1. 生成一个唯一的 `Local\\iCAX.PDO.Hub.*` mapping 名称。
 2. 调用 `CSharedPDOArena::Create()` 创建共享内存 Arena。
-3. 为每个声明获取对应 `CSharedPDOSlot`，保存到 map。
+3. 根据创建参数中的初始声明分配初始 slot，保存到 map。
+
+动态 Hub 使用 `CPDOHubCreateInfo` 创建：
+
+```cpp
+iCAX::PDO::CPDOHubCreateInfo info;
+info.nArenaSize = 64ull * 1024ull * 1024ull;
+info.nSlotCapacity = 4096;
+auto hub = iCAX::PDO::GeneratePDOHub(info);
+```
+
+运行期新增高频数据时，业务层调用：
+
+```cpp
+iCAX::PDO::CPDOHubAllocationCallbacks callbacks;
+callbacks.OnDefragmentBegin = []()
+{
+    // 可选：通知前端暂停使用旧 offset。
+};
+callbacks.OnDefragmentEnd = [](const std::vector<iCAX::PDO::CPDOHubDefragMove>& moves)
+{
+    // 可选：根据 moves 通知 SlotMoved，然后通知 DefragEnd。
+};
+
+auto& slot = hub->AllocateSlot({ version, pdoId, direction, payloadSize }, callbacks);
+```
+
+删除高频数据时调用：
+
+```cpp
+hub->FreeSlot(pdoId);
+```
+
+`AllocateSlot()` 从 Arena payload 区分配连续空间。`FreeSlot()` 释放空间，并在 Hub 的空闲块表中合并相邻块。
+
+当分配失败但空闲总容量足够时，说明 free list 已经碎片化。此时 `CPDOHub` 会在 PDO 模块内部自动执行碎片整理：设置 Arena `nDefragState`，等待相关 slot 的读写租约结束，把 active slot 的 payload block 按 offset 顺序向前搬移，更新 slot header 中的 `nPayloadBlockOffset` 和 `nBufferOffset[]`，最后重建 free list 并重试分配。
+
+外部不能直接调用碎片整理，也不能参与 free list 管理。需要通知前端时，只能通过 `AllocateSlot(decl, callbacks)` 传入开始/结束回调。开始回调用于发送 `DefragBegin`；结束回调携带移动列表，调用方可以发送 `SlotMoved(PDOID)` 和 `DefragEnd`。前端必须按 `PDOID` 重新解析 offset，不得缓存旧 offset。
 
 `SwapInSlot()` 遍历槽集合，只交换 `kDirection2Inner` 槽。
 
@@ -226,7 +271,7 @@ PDO 负责高频、只关心最新值的状态。
 打开项目
 创建/关闭 PDO Arena
 通知前端 Arena 名称
-通知前端某个固定 PDO 是否可用
+通知前端某个 PDO slot 已分配、释放、移动或 arena 正在整理碎片
 ```
 
 PDO 负责数据面：
@@ -263,19 +308,21 @@ if (write.has_value())
 }
 ```
 
-`CPDOHub` 不把 map 操作设计为并发写场景。上层应先完成 Hub 初始化，再进入运行期读写和交换。
+`CPDOHub` 使用 mutex 保护 slot map、动态分配和释放。释放 slot 后，旧 `IPDOSlot&` 引用立即失效；业务层必须通过生命周期和 mailbox 事件保证读写方不继续访问已释放 slot。
 
 ## 11. Arena 校验
 
-`CSharedPDOArena::Create()` 会校验输入声明，拒绝空名称、空声明、重复 ID、非法方向和非正 payload size。
+`CSharedPDOArena::Create(name, decls)` 会校验输入声明，拒绝空名称、空声明、重复 ID、非法方向和非正 payload size。
+
+`CSharedPDOArena::Create(name, createInfo)` 会校验 Arena 大小、slot capacity 和初始声明。动态 Arena 允许初始声明为空，但必须有可用 slot capacity。
 
 `CSharedPDOArena::Open()` 会校验共享内存中的结构，避免 renderer 或其他进程打开坏 mapping 后继续拿到危险指针：
 
 - magic、version、header size 必须匹配当前实现。
-- slot count 必须大于 0。
-- slot table 和 payload offset 必须 64 字节对齐，并且位于 Arena 范围内。
-- 每个 Slot 必须有合法 ID、version、direction 和 payload size。
-- 每个 buffer offset 必须 64 字节对齐，且 payload 范围不能越界。
+- slot count 不能超过 slot capacity，slot capacity 必须大于 0。
+- slot table、payload offset 和 payload size 必须位于 Arena 范围内。
+- 每个 active Slot 必须有合法 ID、version、direction 和 payload size。
+- 每个 active Slot 的 payload block 和 buffer offset 必须 64 字节对齐，且 payload 范围不能越界。
 - buffer state 必须是合法状态，published buffer 必须处于 `Published` 或 `Reading` 状态。
 - reader count 必须为非负数；`Reading` 状态必须存在 reader。
 - published/write/ready index 必须是合法双缓冲索引，published 和 write 不能指向同一个 buffer。

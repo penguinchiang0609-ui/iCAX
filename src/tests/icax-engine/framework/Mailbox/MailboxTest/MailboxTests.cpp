@@ -44,9 +44,7 @@ namespace
 
     void ReleasePayload(Mail& Mail_)
     {
-        delete[] Mail_.Payload.pData;
-        Mail_.Payload.pData = nullptr;
-        Mail_.Payload.nSize = 0;
+        ReleaseMailPayload(Mail_);
     }
 
     void ReleasePayloads(std::vector<Mail>& Mails_)
@@ -226,6 +224,55 @@ TEST(MailPayloadTest, QueueDeepCopiesTextPayload)
     ReleasePayloads(_Mails);
 }
 
+TEST(MailQueueTest, SharedQueueDrainsPayloadAsLeaseAndReleaseReturnsStorage)
+{
+    CMailQueueCreateInfo _CreateInfo;
+    _CreateInfo.nMaxMailCount = 1;
+    _CreateInfo.nPayloadPoolBytes = 64;
+    _CreateInfo.nMaxPayloadBytesPerMail = 64;
+
+    auto _pQueue = std::make_shared<CMailQueue>(_CreateInfo);
+    EnqueueIntMail(*_pQueue, 1, 0, 1001, 42);
+
+    EXPECT_EQ(0u, _pQueue->GetFreeRecordCount());
+    EXPECT_LT(_pQueue->GetFreePayloadBytes(), _CreateInfo.nPayloadPoolBytes);
+
+    auto _Mails = _pQueue->Drain();
+    ASSERT_EQ(1u, _Mails.size());
+    EXPECT_NE(nullptr, _Mails[0].Payload.pLease);
+    EXPECT_EQ(42, ReadIntPayload(_Mails[0]));
+    EXPECT_EQ(0u, _pQueue->GetFreeRecordCount());
+
+    ReleasePayload(_Mails[0]);
+
+    EXPECT_EQ(1u, _pQueue->GetFreeRecordCount());
+    EXPECT_EQ(_CreateInfo.nPayloadPoolBytes, _pQueue->GetFreePayloadBytes());
+}
+
+TEST(MailQueueTest, PreallocatedPoolRejectsWhenRecordOrPayloadSpaceIsFull)
+{
+    CMailQueueCreateInfo _CreateInfo;
+    _CreateInfo.nMaxMailCount = 1;
+    _CreateInfo.nPayloadPoolBytes = 8;
+    _CreateInfo.nMaxPayloadBytesPerMail = 8;
+
+    auto _pQueue = std::make_shared<CMailQueue>(_CreateInfo);
+    EnqueueIntMail(*_pQueue, 1, 0, 1001, 42);
+
+    auto _SecondMail = MakeIntMail(2, 0, 1002, 84);
+    EXPECT_FALSE(_pQueue->TryEnqueue(_SecondMail));
+    EXPECT_THROW(_pQueue->Enqueue(_SecondMail), std::runtime_error);
+    ReleasePayload(_SecondMail);
+
+    auto _Mails = _pQueue->Drain();
+    ASSERT_EQ(1u, _Mails.size());
+    ReleasePayloads(_Mails);
+
+    std::vector<uint8_t> _TooLargePayload(16, 1);
+    MailHeader _Header;
+    EXPECT_THROW(_pQueue->EnqueuePayload(_Header, _TooLargePayload.data(), _TooLargePayload.size()), std::runtime_error);
+}
+
 TEST(MailQueueTest, MoveConstructorTransfersPendingMails)
 {
     CMailQueue _Source;
@@ -372,6 +419,28 @@ TEST(MailPostOfficeTest, EndASendIsReceivedByEndB)
     EXPECT_EQ(42, ReadIntPayload(_EndBMails[0]));
 
     ReleasePayloads(_EndBMails);
+}
+
+TEST(MailPostOfficeTest, SendTextWritesPayloadDirectlyToOutgoingQueue)
+{
+    CMailChannel _Channel;
+    auto _EndAPostOffice = _Channel.GetEndAPostOffice();
+    auto _EndBPostOffice = _Channel.GetEndBPostOffice();
+
+    MailHeader _Header;
+    _Header.nMailId = 10;
+    _Header.nTypeCode = 1010;
+    const std::string _PayloadText = R"({"event":"ready"})";
+
+    _EndAPostOffice.SendText(_Header, _PayloadText);
+
+    auto _Mails = _EndBPostOffice.Receive();
+    ASSERT_EQ(1u, _Mails.size());
+    EXPECT_EQ(10u, _Mails[0].Header.nMailId);
+    EXPECT_EQ(1010u, _Mails[0].Header.nTypeCode);
+    EXPECT_EQ(_PayloadText, GetMailPayloadText(_Mails[0]));
+
+    ReleasePayloads(_Mails);
 }
 
 TEST(MailPostOfficeTest, GetPostOfficeReturnsEndpointByChannelEnd)
@@ -552,6 +621,31 @@ TEST(MailChannelRegistryTest, ChannelMustBeExplicitlyCreated)
     auto _Mails = _BackendPostOffice.Receive();
     ASSERT_EQ(1u, _Mails.size());
     EXPECT_EQ(7u, _Mails[0].Header.nMailId);
+}
+
+TEST(MailChannelRegistryTest, CreateChannelAcceptsPerDirectionQueueCapacity)
+{
+    CMailChannelRegistry _Registry;
+    CMailChannelCreateInfo _CreateInfo;
+    _CreateInfo.EndAToEndBQueue.nMaxMailCount = 1;
+    _CreateInfo.EndAToEndBQueue.nPayloadPoolBytes = 8;
+    _CreateInfo.EndAToEndBQueue.nMaxPayloadBytesPerMail = 8;
+
+    const auto _ChannelID = iCAX::Data::GenerateNewUUID();
+    ASSERT_TRUE(_Registry.CreateChannel(_ChannelID, _CreateInfo));
+
+    auto _FrontendPostOffice = _Registry.GetFrontendPostOffice(_ChannelID);
+    auto _BackendPostOffice = _Registry.GetBackendPostOffice(_ChannelID);
+
+    SendIntMail(_FrontendPostOffice, 1, 0, 1001, 42);
+    auto _SecondMail = MakeIntMail(2, 0, 1002, 84);
+    EXPECT_THROW(_FrontendPostOffice.Send(_SecondMail), std::runtime_error);
+    ReleasePayload(_SecondMail);
+
+    auto _Mails = _BackendPostOffice.Receive();
+    ASSERT_EQ(1u, _Mails.size());
+    EXPECT_EQ(42, ReadIntPayload(_Mails[0]));
+    ReleasePayloads(_Mails);
 }
 
 TEST(MailChannelRegistryTest, RemovingChannelInvalidatesExistingPostOffices)

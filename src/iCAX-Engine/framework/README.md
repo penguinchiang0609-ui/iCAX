@@ -24,6 +24,7 @@ Service 在整个 Application 内共享，但通信通道不进入 ServiceProvid
 - `Project/`：主项目和临时项目实例。每个项目独占 Repository、ResourceLibrary、Universe、项目 mail channel 和后台工作线程。
 - `Resources/`：工程资源系统，用资源来源字符串统一索引资源条目、对象、元信息、持久化策略和资源加载器。
 - `Mailbox/`：后台与前台之间的普通 Mail 通信通道，用于命令、事件、请求响应和低频状态同步；`CMailChannelRegistry` 位于本目录。
+- `MailHandler/`：Mailbox 与 CommandHandler 之间的桥接层，负责把邮件转换成命令请求并发送命令响应，不承载业务逻辑。
 - `PDO/`：后台与前台之间的高频可丢弃数据通道，用于同步过程数据；运行时归属 ProjectContext，不作为 Service。
 - `CommandHandler/`：Mailbox 之上的后端命令请求、上下文、注册和分发抽象。
 - `Behaviour/`：行为运行容器、行为注册和行为调度。

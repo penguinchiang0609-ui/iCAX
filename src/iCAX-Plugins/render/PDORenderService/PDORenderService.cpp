@@ -1,15 +1,22 @@
 #include "pch.h"
 #include "PDORenderService.h"
 
+#include "Mailbox/MailPayload.h"
+#include "RenderPDO/RenderPDODecl.h"
 #include "RenderPDO/RenderPDOLayouts.h"
 #include "RenderPDO/RenderPDOValidation.h"
+#include "PDO/IPDOHub.h"
 #include "PDO/PDOLease.h"
+#include "ProjectContext/IProjectContext.h"
 
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace
@@ -250,6 +257,140 @@ namespace
         }
     }
 
+    uint64_t CheckedAdd(IN uint64_t nLeft_, IN uint64_t nRight_)
+    {
+        if (nLeft_ > (std::numeric_limits<uint64_t>::max)() - nRight_)
+        {
+            throw std::overflow_error("Render PDO payload byte count overflows");
+        }
+        return nLeft_ + nRight_;
+    }
+
+    iCAX::RenderPDO::ERenderPDOPayloadKind ToPDOPayloadKind(IN ERenderGeometryKind eKind_)
+    {
+        switch (eKind_)
+        {
+        case ERenderGeometryKind::Mesh:
+            return iCAX::RenderPDO::ERenderPDOPayloadKind::Mesh;
+        case ERenderGeometryKind::Polyline:
+            return iCAX::RenderPDO::ERenderPDOPayloadKind::Polyline;
+        case ERenderGeometryKind::Toolpath:
+            return iCAX::RenderPDO::ERenderPDOPayloadKind::Toolpath;
+        default:
+            throw std::invalid_argument("Render geometry kind is invalid");
+        }
+    }
+
+    const char* GetGeometryKindName(IN ERenderGeometryKind eKind_)
+    {
+        switch (eKind_)
+        {
+        case ERenderGeometryKind::Mesh:
+            return "Mesh";
+        case ERenderGeometryKind::Polyline:
+            return "Polyline";
+        case ERenderGeometryKind::Toolpath:
+            return "Toolpath";
+        default:
+            throw std::invalid_argument("Render geometry kind is invalid");
+        }
+    }
+
+    std::string MakeScenePrefix(
+        IN const iCAX::Data::uuid& ProjectID_,
+        IN RenderSceneID nSceneID_)
+    {
+        std::ostringstream _Stream;
+        _Stream << iCAX::Data::to_string(ProjectID_) << ".scene." << nSceneID_;
+        return _Stream.str();
+    }
+
+    std::string MakeGeometryInstanceName(
+        IN const iCAX::Data::uuid& ProjectID_,
+        IN RenderSceneID nSceneID_,
+        IN ERenderGeometryKind eGeometryKind_,
+        IN RenderGeometryID nGeometryID_)
+    {
+        std::ostringstream _Stream;
+        _Stream << MakeScenePrefix(ProjectID_, nSceneID_)
+            << ".geometry." << GetGeometryKindName(eGeometryKind_) << "." << nGeometryID_;
+        return _Stream.str();
+    }
+
+    std::string MakeObjectInstanceName(
+        IN const iCAX::Data::uuid& ProjectID_,
+        IN RenderSceneID nSceneID_,
+        IN RenderObjectID nObjectID_)
+    {
+        std::ostringstream _Stream;
+        _Stream << MakeScenePrefix(ProjectID_, nSceneID_) << ".object." << nObjectID_;
+        return _Stream.str();
+    }
+
+    std::string MakeViewInstanceName(
+        IN const iCAX::Data::uuid& ProjectID_,
+        IN RenderSceneID nSceneID_)
+    {
+        std::ostringstream _Stream;
+        _Stream << MakeScenePrefix(ProjectID_, nSceneID_) << ".view";
+        return _Stream.str();
+    }
+
+    uint64_t CalculateMeshPayloadCapacity(IN const SRenderMeshData& Mesh_)
+    {
+        uint64_t _Size = sizeof(iCAX::RenderPDO::SRenderMeshPDOHeader);
+        _Size = CheckedAdd(_Size, CheckedBytes<iCAX::RenderPDO::SFloat3>(Mesh_.Positions.size()));
+        _Size = CheckedAdd(_Size, CheckedBytes<iCAX::RenderPDO::SFloat3>(Mesh_.Normals.size()));
+        _Size = CheckedAdd(_Size, CheckedBytes<uint32_t>(Mesh_.VertexColorsRGBA.size()));
+        _Size = CheckedAdd(_Size, CheckedBytes<uint32_t>(Mesh_.Indices.size()));
+        return _Size;
+    }
+
+    uint64_t CalculatePolylinePayloadCapacity(IN const SRenderPolylineData& Polyline_)
+    {
+        uint64_t _Size = sizeof(iCAX::RenderPDO::SRenderPolylinePDOHeader);
+        _Size = CheckedAdd(_Size, CheckedBytes<iCAX::RenderPDO::SFloat3>(Polyline_.Points.size()));
+        _Size = CheckedAdd(_Size, CheckedBytes<iCAX::RenderPDO::SRenderPolylineRangeData>(Polyline_.Ranges.size()));
+        return _Size;
+    }
+
+    uint64_t CalculateToolpathPayloadCapacity(IN const SRenderToolpathData& Toolpath_)
+    {
+        uint64_t _Size = sizeof(iCAX::RenderPDO::SRenderToolpathPDOHeader);
+        _Size = CheckedAdd(_Size, CheckedBytes<iCAX::RenderPDO::SRenderToolpathPointData>(Toolpath_.Points.size()));
+        _Size = CheckedAdd(_Size, CheckedBytes<iCAX::RenderPDO::SRenderToolpathSpanData>(Toolpath_.Spans.size()));
+        return _Size;
+    }
+
+    uint64_t CalculateObjectPayloadCapacity()
+    {
+        uint64_t _Size = sizeof(iCAX::RenderPDO::SRenderInstanceListPDOHeader);
+        _Size = CheckedAdd(_Size, sizeof(iCAX::RenderPDO::SRenderInstanceData));
+        _Size = CheckedAdd(_Size, sizeof(iCAX::RenderPDO::SRenderStyleData));
+        return _Size;
+    }
+
+    uint64_t CalculateViewPayloadCapacity(IN const SRenderSceneSnapshot& Snapshot_)
+    {
+        uint64_t _Size = sizeof(iCAX::RenderPDO::SRenderViewStatePDOHeader);
+        _Size = CheckedAdd(_Size, CheckedBytes<iCAX::RenderPDO::SRenderViewStateData>(Snapshot_.Views.size()));
+        return _Size;
+    }
+
+    iCAX::PDO::PDODecl MakeRenderDeclWithID(
+        IN iCAX::RenderPDO::ERenderPDOPayloadKind ePayloadKind_,
+        IN iCAX::PDO::PDOID nPDOID_,
+        IN uint64_t nPayloadCapacity_)
+    {
+        auto _Decl = iCAX::RenderPDO::MakeRenderPDODecl(
+            ePayloadKind_,
+            "temporary.instance.name.for.dynamic.render.pdo",
+            iCAX::PDO::kDirection2External,
+            nPayloadCapacity_);
+        _Decl.nID = nPDOID_;
+        return _Decl;
+    }
+
     bool CommitPayloadToSlot(
         IN const std::vector<std::byte>& Payload_,
         IN iCAX::PDO::IPDOSlot& Slot_,
@@ -279,6 +420,7 @@ void iCAX::PDORenderService::CPDORenderService::OnUnload()
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     m_Projects.clear();
+    m_PDOOutputs.clear();
 }
 
 bool iCAX::PDORenderService::CPDORenderService::CreateScene(
@@ -329,6 +471,7 @@ void iCAX::PDORenderService::CPDORenderService::DestroyProject(IN const iCAX::Da
 
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     m_Projects.erase(ProjectID_);
+    m_PDOOutputs.erase(ProjectID_);
 }
 
 bool iCAX::PDORenderService::CPDORenderService::HasScene(
@@ -363,6 +506,80 @@ std::vector<iCAX::Render::RenderSceneID> iCAX::PDORenderService::CPDORenderServi
     }
     std::sort(_IDs.begin(), _IDs.end());
     return _IDs;
+}
+
+void iCAX::PDORenderService::CPDORenderService::Update(
+    IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+    IN const iCAX::Product::IProductContext& ProductContext_,
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN const double& nDeltaTime_,
+    IN const double& nTotalTime_)
+{
+    (void)ApplicationContext_;
+    (void)ProductContext_;
+    (void)nDeltaTime_;
+    (void)nTotalTime_;
+
+    const auto& _ProjectID = ProjectContext_.GetProjectID();
+    if (_ProjectID.is_nil())
+    {
+        throw std::invalid_argument("Render project id cannot be nil");
+    }
+
+    std::unordered_map<iCAX::Render::RenderSceneID, iCAX::Render::SRenderSceneSnapshot> _Scenes;
+    std::unordered_map<iCAX::Render::RenderSceneID, SScenePDOOutputState> _States;
+    {
+        std::lock_guard<std::mutex> _Lock(m_Mutex);
+        auto _ProjectIter = m_Projects.find(_ProjectID);
+        if (_ProjectIter != m_Projects.end())
+        {
+            _Scenes = _ProjectIter->second;
+        }
+        auto _StateProjectIter = m_PDOOutputs.find(_ProjectID);
+        if (_StateProjectIter != m_PDOOutputs.end())
+        {
+            _States = _StateProjectIter->second;
+        }
+    }
+
+    if (_Scenes.empty() && _States.empty())
+    {
+        return;
+    }
+    if (!ProjectContext_.HasPDOHub())
+    {
+        throw std::logic_error("PDORenderService requires project PDO hub");
+    }
+
+    for (auto _StateIter = _States.begin(); _StateIter != _States.end();)
+    {
+        const auto _SceneIter = _Scenes.find(_StateIter->first);
+        if (_SceneIter == _Scenes.end())
+        {
+            FreeScenePDOOutput(_ProjectID, _StateIter->first, ProjectContext_, _StateIter->second);
+            _StateIter = _States.erase(_StateIter);
+            continue;
+        }
+        ++_StateIter;
+    }
+
+    for (const auto& [_SceneID, _Scene] : _Scenes)
+    {
+        auto& _State = _States[_SceneID];
+        SynchronizeScenePDOOutput(_ProjectID, &_Scene, ProjectContext_, _State);
+    }
+
+    {
+        std::lock_guard<std::mutex> _Lock(m_Mutex);
+        if (_States.empty())
+        {
+            m_PDOOutputs.erase(_ProjectID);
+        }
+        else
+        {
+            m_PDOOutputs[_ProjectID] = std::move(_States);
+        }
+    }
 }
 
 bool iCAX::PDORenderService::CPDORenderService::ClearScene(
@@ -525,6 +742,70 @@ iCAX::Render::SRenderSceneSnapshot iCAX::PDORenderService::CPDORenderService::Ge
         throw std::logic_error("Render scene does not exist");
     }
     return *_pScene;
+}
+
+iCAX::PDO::PDOID iCAX::PDORenderService::CPDORenderService::MakeGeometryPDOID(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Render::RenderSceneID nSceneID_,
+    IN iCAX::Render::ERenderGeometryKind eGeometryKind_,
+    IN iCAX::Render::RenderGeometryID nGeometryID_)
+{
+    ValidateProjectAndScene(ProjectID_, nSceneID_);
+    if (nGeometryID_ == iCAX::Render::kInvalidRenderGeometryID)
+    {
+        throw std::invalid_argument("Render geometry id cannot be zero");
+    }
+    return iCAX::PDO::MakePDOID(
+        iCAX::RenderPDO::GetRenderPDOPayloadTypeName(ToPDOPayloadKind(eGeometryKind_)),
+        MakeGeometryInstanceName(ProjectID_, nSceneID_, eGeometryKind_, nGeometryID_));
+}
+
+iCAX::PDO::PDOID iCAX::PDORenderService::CPDORenderService::MakeObjectPDOID(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Render::RenderSceneID nSceneID_,
+    IN iCAX::Render::RenderObjectID nObjectID_)
+{
+    ValidateProjectAndScene(ProjectID_, nSceneID_);
+    if (nObjectID_ == iCAX::Render::kInvalidRenderObjectID)
+    {
+        throw std::invalid_argument("Render object id cannot be zero");
+    }
+    return iCAX::PDO::MakePDOID(
+        iCAX::RenderPDO::GetRenderPDOPayloadTypeName(iCAX::RenderPDO::ERenderPDOPayloadKind::InstanceList),
+        MakeObjectInstanceName(ProjectID_, nSceneID_, nObjectID_));
+}
+
+iCAX::PDO::PDOID iCAX::PDORenderService::CPDORenderService::MakeViewStatePDOID(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Render::RenderSceneID nSceneID_)
+{
+    ValidateProjectAndScene(ProjectID_, nSceneID_);
+    return iCAX::PDO::MakePDOID(
+        iCAX::RenderPDO::GetRenderPDOPayloadTypeName(iCAX::RenderPDO::ERenderPDOPayloadKind::ViewState),
+        MakeViewInstanceName(ProjectID_, nSceneID_));
+}
+
+void iCAX::PDORenderService::CPDORenderService::NotifyPDODefragBegin(
+    IN iCAX::Project::IProjectContext& ProjectContext_) const
+{
+    SendDefragEvent(ProjectContext_, kPDORenderDefragBeginEvent, "DefragBegin", 0);
+}
+
+void iCAX::PDORenderService::CPDORenderService::NotifyPDOSlotMoved(
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN iCAX::PDO::PDOID nPDOID_) const
+{
+    if (nPDOID_ == 0)
+    {
+        throw std::invalid_argument("PDO id cannot be zero");
+    }
+    SendDefragEvent(ProjectContext_, kPDORenderSlotMovedEvent, "SlotMoved", nPDOID_);
+}
+
+void iCAX::PDORenderService::CPDORenderService::NotifyPDODefragEnd(
+    IN iCAX::Project::IProjectContext& ProjectContext_) const
+{
+    SendDefragEvent(ProjectContext_, kPDORenderDefragEndEvent, "DefragEnd", 0);
 }
 
 bool iCAX::PDORenderService::CPDORenderService::WriteMeshToPDO(
@@ -746,6 +1027,77 @@ bool iCAX::PDORenderService::CPDORenderService::WriteInstanceListToPDO(
     return CommitPayloadToSlot(_Payload, Slot_, _Snapshot.nInstanceDataVersion);
 }
 
+bool iCAX::PDORenderService::CPDORenderService::WriteObjectToPDO(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Render::RenderSceneID nSceneID_,
+    IN iCAX::Render::RenderObjectID nObjectID_,
+    IN iCAX::PDO::IPDOSlot& Slot_) const
+{
+    auto _Snapshot = GetSceneSnapshot(ProjectID_, nSceneID_);
+    if (_Snapshot.nInstanceDataVersion == 0)
+    {
+        return false;
+    }
+
+    const auto _InstanceIter = std::find_if(
+        _Snapshot.Instances.begin(),
+        _Snapshot.Instances.end(),
+        [nObjectID_](IN const iCAX::Render::SRenderInstanceData& Item_)
+        {
+            return Item_.nObjectID == nObjectID_;
+        });
+    if (_InstanceIter == _Snapshot.Instances.end())
+    {
+        return false;
+    }
+
+    iCAX::RenderPDO::SRenderInstanceData _Instance;
+    _Instance.nObjectID = _InstanceIter->nObjectID;
+    _Instance.nGeometryID = _InstanceIter->nGeometryID;
+    _Instance.nGeometryKind = ToRenderGeometryKind(_InstanceIter->eGeometryKind);
+    _Instance.nRenderClass = ToRenderClass(_InstanceIter->eRenderClass);
+    _Instance.nStyleID = _InstanceIter->nStyleID;
+    _Instance.nFlags = _InstanceIter->nFlags;
+    _Instance.Transform = ToRenderMatrix(_InstanceIter->Transform);
+
+    iCAX::RenderPDO::SRenderStyleData _Style;
+    _Style.nStyleID = _InstanceIter->nStyleID;
+    const auto _StyleIter = std::find_if(
+        _Snapshot.Styles.begin(),
+        _Snapshot.Styles.end(),
+        [_InstanceIter](IN const iCAX::Render::SRenderStyleData& Item_)
+        {
+            return Item_.nStyleID == _InstanceIter->nStyleID;
+        });
+    if (_StyleIter != _Snapshot.Styles.end())
+    {
+        _Style.nStyleID = _StyleIter->nStyleID;
+        _Style.nColorRGBA = _StyleIter->nColorRGBA;
+        _Style.nLineWidth = _StyleIter->nLineWidth;
+        _Style.nFlags = _StyleIter->nFlags;
+    }
+
+    iCAX::RenderPDO::SRenderInstanceListPDOHeader _Header;
+    _Header.Header.nPayloadKind = static_cast<uint32_t>(iCAX::RenderPDO::ERenderPDOPayloadKind::InstanceList);
+    _Header.Header.nHeaderSize = sizeof(iCAX::RenderPDO::SRenderInstanceListPDOHeader);
+    _Header.Header.nDataVersion = _Snapshot.nInstanceDataVersion;
+    _Header.nInstanceCount = 1;
+    _Header.nStyleCount = 1;
+
+    std::vector<std::byte> _Payload(sizeof(iCAX::RenderPDO::SRenderInstanceListPDOHeader));
+    _Header.nInstancesOffset = AppendRaw(_Payload, &_Instance, sizeof(_Instance));
+    _Header.nStylesOffset = AppendRaw(_Payload, &_Style, sizeof(_Style));
+    _Header.Header.nPayloadSize = static_cast<uint64_t>(_Payload.size());
+    std::memcpy(_Payload.data(), &_Header, sizeof(_Header));
+
+    std::string _Error;
+    if (!iCAX::RenderPDO::ValidateInstanceListPDOHeader(_Header, Slot_.GetHeader().nPayloadSize, &_Error))
+    {
+        throw std::runtime_error("Serialized object PDO is invalid: " + _Error);
+    }
+    return CommitPayloadToSlot(_Payload, Slot_, _Snapshot.nInstanceDataVersion);
+}
+
 bool iCAX::PDORenderService::CPDORenderService::WriteViewStatesToPDO(
     IN const iCAX::Data::uuid& ProjectID_,
     IN iCAX::Render::RenderSceneID nSceneID_,
@@ -845,4 +1197,370 @@ void iCAX::PDORenderService::CPDORenderService::ValidateProjectAndScene(
     {
         throw std::invalid_argument("Render scene id cannot be zero");
     }
+}
+
+void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN const iCAX::Render::SRenderSceneSnapshot* pScene_,
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN OUT SScenePDOOutputState& State_) const
+{
+    if (!pScene_)
+    {
+        FreeScenePDOOutput(ProjectID_, iCAX::Render::kInvalidRenderSceneID, ProjectContext_, State_);
+        return;
+    }
+
+    auto& _PDOHub = ProjectContext_.PDOHub();
+    const auto _SceneID = pScene_->nSceneID;
+
+    auto _FreeAssignment =
+        [this, &_PDOHub, &ProjectContext_, _SceneID](
+            IN const char* pSlotRole_,
+            IN const char* pPayloadKind_,
+            IN iCAX::Render::RenderGeometryID nGeometryID_,
+            IN iCAX::Render::RenderObjectID nObjectID_,
+            IN OUT SSlotAssignment& Assignment_)
+        {
+            if (Assignment_.nPDOID == 0)
+            {
+                return;
+            }
+            if (_PDOHub.FreeSlot(Assignment_.nPDOID))
+            {
+                SendSlotEvent(
+                    ProjectContext_,
+                    kPDORenderSlotFreedEvent,
+                    "SlotFreed",
+                    pSlotRole_,
+                    _SceneID,
+                    Assignment_.nPDOID,
+                    nGeometryID_,
+                    nObjectID_,
+                    pPayloadKind_,
+                    Assignment_.nPayloadCapacity);
+            }
+            Assignment_ = {};
+        };
+
+    iCAX::PDO::CPDOHubAllocationCallbacks _AllocationCallbacks;
+    _AllocationCallbacks.OnDefragmentBegin =
+        [this, &ProjectContext_]()
+        {
+            NotifyPDODefragBegin(ProjectContext_);
+        };
+    _AllocationCallbacks.OnDefragmentEnd =
+        [this, &ProjectContext_](IN const std::vector<iCAX::PDO::CPDOHubDefragMove>& Moves_)
+        {
+            for (const auto& _Move : Moves_)
+            {
+                NotifyPDOSlotMoved(ProjectContext_, _Move.nPDOID);
+            }
+            NotifyPDODefragEnd(ProjectContext_);
+        };
+
+    auto _EnsureAssignment =
+        [this, &_PDOHub, &ProjectContext_, _SceneID, &_AllocationCallbacks](
+            IN iCAX::RenderPDO::ERenderPDOPayloadKind ePayloadKind_,
+            IN const char* pSlotRole_,
+            IN iCAX::PDO::PDOID nPDOID_,
+            IN iCAX::Render::RenderGeometryID nGeometryID_,
+            IN iCAX::Render::RenderObjectID nObjectID_,
+            IN uint64_t nPayloadCapacity_,
+            IN OUT SSlotAssignment& Assignment_)
+        {
+            const char* _pPayloadKindName = iCAX::RenderPDO::GetRenderPDOPayloadTypeName(ePayloadKind_);
+            if (Assignment_.nPDOID == 0)
+            {
+                const auto _Decl = MakeRenderDeclWithID(ePayloadKind_, nPDOID_, nPayloadCapacity_);
+                _PDOHub.AllocateSlot(_Decl, _AllocationCallbacks);
+                Assignment_.nPDOID = nPDOID_;
+                Assignment_.nPayloadCapacity = nPayloadCapacity_;
+                SendSlotEvent(
+                    ProjectContext_,
+                    kPDORenderSlotAllocatedEvent,
+                    "SlotAllocated",
+                    pSlotRole_,
+                    _SceneID,
+                    nPDOID_,
+                    nGeometryID_,
+                    nObjectID_,
+                    _pPayloadKindName,
+                    nPayloadCapacity_);
+                return;
+            }
+
+            if (Assignment_.nPDOID != nPDOID_)
+            {
+                throw std::logic_error("Render PDO slot assignment id is inconsistent");
+            }
+
+            if (Assignment_.nPayloadCapacity < nPayloadCapacity_)
+            {
+                _PDOHub.FreeSlot(Assignment_.nPDOID);
+                const auto _Decl = MakeRenderDeclWithID(ePayloadKind_, nPDOID_, nPayloadCapacity_);
+                _PDOHub.AllocateSlot(_Decl, _AllocationCallbacks);
+                Assignment_.nPayloadCapacity = nPayloadCapacity_;
+                SendSlotEvent(
+                    ProjectContext_,
+                    kPDORenderSlotMovedEvent,
+                    "SlotMoved",
+                    pSlotRole_,
+                    _SceneID,
+                    nPDOID_,
+                    nGeometryID_,
+                    nObjectID_,
+                    _pPayloadKindName,
+                    nPayloadCapacity_);
+            }
+        };
+
+    for (auto _Iter = State_.MeshSlots.begin(); _Iter != State_.MeshSlots.end();)
+    {
+        if (pScene_->Meshes.find(_Iter->first) == pScene_->Meshes.end())
+        {
+            _FreeAssignment("Geometry", "render.mesh", _Iter->first, 0, _Iter->second);
+            _Iter = State_.MeshSlots.erase(_Iter);
+            continue;
+        }
+        ++_Iter;
+    }
+
+    for (auto _Iter = State_.PolylineSlots.begin(); _Iter != State_.PolylineSlots.end();)
+    {
+        if (pScene_->Polylines.find(_Iter->first) == pScene_->Polylines.end())
+        {
+            _FreeAssignment("Geometry", "render.polyline", _Iter->first, 0, _Iter->second);
+            _Iter = State_.PolylineSlots.erase(_Iter);
+            continue;
+        }
+        ++_Iter;
+    }
+
+    for (auto _Iter = State_.ToolpathSlots.begin(); _Iter != State_.ToolpathSlots.end();)
+    {
+        if (pScene_->Toolpaths.find(_Iter->first) == pScene_->Toolpaths.end())
+        {
+            _FreeAssignment("Geometry", "render.toolpath", _Iter->first, 0, _Iter->second);
+            _Iter = State_.ToolpathSlots.erase(_Iter);
+            continue;
+        }
+        ++_Iter;
+    }
+
+    std::unordered_set<iCAX::Render::RenderObjectID> _LiveObjects;
+    _LiveObjects.reserve(pScene_->Instances.size());
+    for (const auto& _Instance : pScene_->Instances)
+    {
+        if (_Instance.nObjectID == iCAX::Render::kInvalidRenderObjectID)
+        {
+            throw std::invalid_argument("Render object id cannot be zero");
+        }
+        _LiveObjects.insert(_Instance.nObjectID);
+    }
+
+    for (auto _Iter = State_.ObjectSlots.begin(); _Iter != State_.ObjectSlots.end();)
+    {
+        if (_LiveObjects.find(_Iter->first) == _LiveObjects.end())
+        {
+            _FreeAssignment("Object", "render.instance_list", 0, _Iter->first, _Iter->second);
+            _Iter = State_.ObjectSlots.erase(_Iter);
+            continue;
+        }
+        ++_Iter;
+    }
+
+    for (const auto& [_GeometryID, _Mesh] : pScene_->Meshes)
+    {
+        auto& _Assignment = State_.MeshSlots[_GeometryID];
+        const auto _PDOID = MakeGeometryPDOID(ProjectID_, _SceneID, iCAX::Render::ERenderGeometryKind::Mesh, _GeometryID);
+        _EnsureAssignment(
+            iCAX::RenderPDO::ERenderPDOPayloadKind::Mesh,
+            "Geometry",
+            _PDOID,
+            _GeometryID,
+            0,
+            CalculateMeshPayloadCapacity(_Mesh),
+            _Assignment);
+        (void)WriteMeshToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID));
+    }
+
+    for (const auto& [_GeometryID, _Polyline] : pScene_->Polylines)
+    {
+        auto& _Assignment = State_.PolylineSlots[_GeometryID];
+        const auto _PDOID = MakeGeometryPDOID(ProjectID_, _SceneID, iCAX::Render::ERenderGeometryKind::Polyline, _GeometryID);
+        _EnsureAssignment(
+            iCAX::RenderPDO::ERenderPDOPayloadKind::Polyline,
+            "Geometry",
+            _PDOID,
+            _GeometryID,
+            0,
+            CalculatePolylinePayloadCapacity(_Polyline),
+            _Assignment);
+        (void)WritePolylineToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID));
+    }
+
+    for (const auto& [_GeometryID, _Toolpath] : pScene_->Toolpaths)
+    {
+        auto& _Assignment = State_.ToolpathSlots[_GeometryID];
+        const auto _PDOID = MakeGeometryPDOID(ProjectID_, _SceneID, iCAX::Render::ERenderGeometryKind::Toolpath, _GeometryID);
+        _EnsureAssignment(
+            iCAX::RenderPDO::ERenderPDOPayloadKind::Toolpath,
+            "Geometry",
+            _PDOID,
+            _GeometryID,
+            0,
+            CalculateToolpathPayloadCapacity(_Toolpath),
+            _Assignment);
+        (void)WriteToolpathToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID));
+    }
+
+    for (const auto& _Instance : pScene_->Instances)
+    {
+        auto& _Assignment = State_.ObjectSlots[_Instance.nObjectID];
+        const auto _PDOID = MakeObjectPDOID(ProjectID_, _SceneID, _Instance.nObjectID);
+        _EnsureAssignment(
+            iCAX::RenderPDO::ERenderPDOPayloadKind::InstanceList,
+            "Object",
+            _PDOID,
+            _Instance.nGeometryID,
+            _Instance.nObjectID,
+            CalculateObjectPayloadCapacity(),
+            _Assignment);
+        (void)WriteObjectToPDO(ProjectID_, _SceneID, _Instance.nObjectID, _PDOHub.GetSlot(_Assignment.nPDOID));
+    }
+
+    if (pScene_->Views.empty() || pScene_->nViewDataVersion == 0)
+    {
+        _FreeAssignment("ViewState", "render.view_state", 0, 0, State_.ViewSlot);
+    }
+    else
+    {
+        const auto _PDOID = MakeViewStatePDOID(ProjectID_, _SceneID);
+        _EnsureAssignment(
+            iCAX::RenderPDO::ERenderPDOPayloadKind::ViewState,
+            "ViewState",
+            _PDOID,
+            0,
+            0,
+            CalculateViewPayloadCapacity(*pScene_),
+            State_.ViewSlot);
+        (void)WriteViewStatesToPDO(ProjectID_, _SceneID, _PDOHub.GetSlot(State_.ViewSlot.nPDOID));
+    }
+}
+
+void iCAX::PDORenderService::CPDORenderService::FreeScenePDOOutput(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Render::RenderSceneID nSceneID_,
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN OUT SScenePDOOutputState& State_) const
+{
+    (void)ProjectID_;
+    auto& _PDOHub = ProjectContext_.PDOHub();
+
+    auto _FreeAssignment =
+        [this, &_PDOHub, &ProjectContext_, nSceneID_](
+            IN const char* pSlotRole_,
+            IN const char* pPayloadKind_,
+            IN iCAX::Render::RenderGeometryID nGeometryID_,
+            IN iCAX::Render::RenderObjectID nObjectID_,
+            IN OUT SSlotAssignment& Assignment_)
+        {
+            if (Assignment_.nPDOID == 0)
+            {
+                return;
+            }
+            if (_PDOHub.FreeSlot(Assignment_.nPDOID))
+            {
+                SendSlotEvent(
+                    ProjectContext_,
+                    kPDORenderSlotFreedEvent,
+                    "SlotFreed",
+                    pSlotRole_,
+                    nSceneID_,
+                    Assignment_.nPDOID,
+                    nGeometryID_,
+                    nObjectID_,
+                    pPayloadKind_,
+                    Assignment_.nPayloadCapacity);
+            }
+            Assignment_ = {};
+        };
+
+    for (auto& [_GeometryID, _Assignment] : State_.MeshSlots)
+    {
+        _FreeAssignment("Geometry", "render.mesh", _GeometryID, 0, _Assignment);
+    }
+    for (auto& [_GeometryID, _Assignment] : State_.PolylineSlots)
+    {
+        _FreeAssignment("Geometry", "render.polyline", _GeometryID, 0, _Assignment);
+    }
+    for (auto& [_GeometryID, _Assignment] : State_.ToolpathSlots)
+    {
+        _FreeAssignment("Geometry", "render.toolpath", _GeometryID, 0, _Assignment);
+    }
+    for (auto& [_ObjectID, _Assignment] : State_.ObjectSlots)
+    {
+        _FreeAssignment("Object", "render.instance_list", 0, _ObjectID, _Assignment);
+    }
+    _FreeAssignment("ViewState", "render.view_state", 0, 0, State_.ViewSlot);
+
+    State_.MeshSlots.clear();
+    State_.PolylineSlots.clear();
+    State_.ToolpathSlots.clear();
+    State_.ObjectSlots.clear();
+}
+
+void iCAX::PDORenderService::CPDORenderService::SendSlotEvent(
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN uint64_t nEventTypeCode_,
+    IN const char* pEventName_,
+    IN const char* pSlotRole_,
+    IN iCAX::Render::RenderSceneID nSceneID_,
+    IN iCAX::PDO::PDOID nPDOID_,
+    IN iCAX::Render::RenderGeometryID nGeometryID_,
+    IN iCAX::Render::RenderObjectID nObjectID_,
+    IN const char* pPayloadKind_,
+    IN uint64_t nPayloadCapacity_) const
+{
+    std::ostringstream _Payload;
+    _Payload
+        << "{\"event\":\"" << pEventName_
+        << "\",\"projectId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectID())
+        << "\",\"channelId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectChannelID())
+        << "\",\"sceneId\":\"" << nSceneID_
+        << "\",\"slotRole\":\"" << pSlotRole_
+        << "\",\"payloadKind\":\"" << pPayloadKind_
+        << "\",\"pdoId\":\"" << nPDOID_
+        << "\",\"geometryId\":\"" << nGeometryID_
+        << "\",\"objectId\":\"" << nObjectID_
+        << "\",\"payloadCapacity\":\"" << nPayloadCapacity_
+        << "\"}";
+
+    iCAX::Mail::MailHeader _Header;
+    _Header.nMailId = m_nNextEventMailID.fetch_add(1);
+    _Header.nTypeCode = nEventTypeCode_;
+    _Header.nStamp = iCAX::Mail::kMailOk;
+    ProjectContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
+}
+
+void iCAX::PDORenderService::CPDORenderService::SendDefragEvent(
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN uint64_t nEventTypeCode_,
+    IN const char* pEventName_,
+    IN iCAX::PDO::PDOID nPDOID_) const
+{
+    std::ostringstream _Payload;
+    _Payload
+        << "{\"event\":\"" << pEventName_
+        << "\",\"projectId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectID())
+        << "\",\"channelId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectChannelID())
+        << "\",\"pdoId\":\"" << nPDOID_
+        << "\"}";
+
+    iCAX::Mail::MailHeader _Header;
+    _Header.nMailId = m_nNextEventMailID.fetch_add(1);
+    _Header.nTypeCode = nEventTypeCode_;
+    _Header.nStamp = iCAX::Mail::kMailOk;
+    ProjectContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
 }

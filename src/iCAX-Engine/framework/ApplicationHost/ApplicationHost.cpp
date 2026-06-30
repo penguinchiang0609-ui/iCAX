@@ -3,11 +3,9 @@
 
 #include "ApplicationContext/FileApplicationConfigStore.h"
 #include "CommandHandler/CommandTarget.h"
-#include "Mailbox/MailPayload.h"
 #include "Mailbox/MailChannelRegistry.h"
 
 #include <chrono>
-#include <cstring>
 #include <filesystem>
 #include <format>
 #include <set>
@@ -17,73 +15,6 @@
 
 namespace
 {
-    iCAX::Command::CCommandRequest _MailToCommandRequest(IN const iCAX::Mail::Mail& Mail_)
-    {
-        iCAX::Command::CCommandRequest _Request;
-        _Request.nCommandID = Mail_.Header.nMailId;
-        _Request.nOriginID = Mail_.Header.nOriginId;
-        _Request.Route = iCAX::Command::MakeCommandRoute(Mail_.Header.nTypeCode);
-
-        if (Mail_.Payload.nSize > 0)
-        {
-            if (Mail_.Payload.pData == nullptr)
-            {
-                throw std::invalid_argument("mail payload data is null");
-            }
-            _Request.Payload.assign(Mail_.Payload.pData, Mail_.Payload.pData + Mail_.Payload.nSize);
-        }
-        return _Request;
-    }
-
-    iCAX::Mail::StampCode _CommandStatusToMailStamp(IN iCAX::Command::ECommandStatusCode Status_)
-    {
-        switch (Status_)
-        {
-        case iCAX::Command::ECommandStatusCode::Ok:
-            return iCAX::Mail::kMailOk;
-        case iCAX::Command::ECommandStatusCode::NoHandler:
-            return iCAX::Mail::kMailNoHandler;
-        case iCAX::Command::ECommandStatusCode::InvalidRequest:
-        default:
-            return iCAX::Mail::kMailInvalidPayload;
-        }
-    }
-
-    iCAX::Mail::Mail _CommandResponseToMail(
-        IN const iCAX::Mail::Mail& RequestMail_,
-        IN const iCAX::Command::CCommandResponse& Response_,
-        IN uint64_t nResponseMailID_)
-    {
-        iCAX::Mail::Mail _Mail;
-        _Mail.Header.nMailId = nResponseMailID_;
-        _Mail.Header.nOriginId = RequestMail_.Header.nMailId;
-        _Mail.Header.nTypeCode = Response_.Route.GetRouteCode();
-        _Mail.Header.nStamp = _CommandStatusToMailStamp(Response_.nStatus);
-
-        const auto* _pPayload = &Response_.Payload;
-        std::vector<uint8_t> _ErrorPayload;
-        if (_pPayload->empty() && !Response_.strError.empty())
-        {
-            _ErrorPayload.assign(Response_.strError.begin(), Response_.strError.end());
-            _pPayload = &_ErrorPayload;
-        }
-
-        if (!_pPayload->empty())
-        {
-            _Mail.Payload.nSize = _pPayload->size();
-            _Mail.Payload.pData = new uint8_t[_Mail.Payload.nSize];
-            std::memcpy(_Mail.Payload.pData, _pPayload->data(), _Mail.Payload.nSize);
-        }
-        return _Mail;
-    }
-
-    void _ReleaseMailPayload(IN OUT iCAX::Mail::Mail& Mail_) noexcept
-    {
-        delete[] Mail_.Payload.pData;
-        Mail_.Payload.pData = nullptr;
-        Mail_.Payload.nSize = 0;
-    }
-
     class CStaticApplicationCommandTarget final : public iCAX::Command::CCommandTarget
     {
     public:
@@ -323,6 +254,7 @@ iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
     , m_ApplicationChannelID(iCAX::Data::GenerateNewUUID())
     , m_pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
     , m_pCommandDispatcher(std::make_unique<iCAX::Command::CCommandDispatcher>(m_pCommandRegistry))
+    , m_pMailCommandHandler(std::make_unique<iCAX::MailHandler::CMailCommandHandler>())
 {
     m_Config.strApplicationSettingsPath = "Setting/Application.Setting";
     m_Config.Descriptor.AppID = "icax";
@@ -769,18 +701,13 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
         return;
     }
 
-    auto _Mails = _PostOffice.Receive();
-    for (auto& _Mail : _Mails)
-    {
-        auto _Request = _MailToCommandRequest(_Mail);
-        auto _Response = m_pCommandDispatcher->Dispatch(_Request, *m_pApplicationContext, nullptr, nullptr);
-
-        auto _ResponseMail = _CommandResponseToMail(_Mail, _Response, AllocateBackendMailID());
-        _PostOffice.Send(_ResponseMail);
-        // Send 会深拷贝 Payload，因此临时响应和请求负载可以在本轮立即释放。
-        _ReleaseMailPayload(_ResponseMail);
-        _ReleaseMailPayload(_Mail);
-    }
+    m_pMailCommandHandler->DispatchAvailableMails(
+        _PostOffice,
+        *m_pCommandDispatcher,
+        *m_pApplicationContext,
+        nullptr,
+        nullptr,
+        [this]() { return AllocateBackendMailID(); });
 }
 
 uint64_t iCAX::ApplicationHost::CApplicationHost::AllocateBackendMailID()
@@ -1303,17 +1230,7 @@ void iCAX::ApplicationHost::CApplicationHost::SendFrontendEvent(
     _Header.nTypeCode = nTypeCode_;
     _Header.nStamp = iCAX::Mail::kMailOk;
 
-    auto _Mail = iCAX::Mail::CreateTextMail(_Header, strPayloadText_);
-    try
-    {
-        m_pMailChannelRegistry->GetBackendPostOffice(m_ApplicationChannelID).Send(_Mail);
-    }
-    catch (...)
-    {
-        iCAX::Mail::ReleaseMailPayload(_Mail);
-        throw;
-    }
-    iCAX::Mail::ReleaseMailPayload(_Mail);
+    m_pMailChannelRegistry->GetBackendPostOffice(m_ApplicationChannelID).SendText(_Header, strPayloadText_);
 }
 
 iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetProductFrontendPostOffice(

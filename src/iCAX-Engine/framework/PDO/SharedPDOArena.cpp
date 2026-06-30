@@ -52,6 +52,15 @@ namespace
         return _Offset;
     }
 
+    uint64_t CalculatePayloadOffset(IN uint32_t nSlotCapacity_)
+    {
+        uint64_t _Offset = AlignUp(sizeof(iCAX::PDO::SharedPDOArenaHeader), kSharedPDOAlignment);
+        _Offset += AlignUp(
+            sizeof(iCAX::PDO::SharedPDOSlotHeader) * static_cast<uint64_t>(nSlotCapacity_),
+            kSharedPDOAlignment);
+        return AlignUp(_Offset, kSharedPDOAlignment);
+    }
+
     DWORD HighDword(IN uint64_t nValue_)
     {
         return static_cast<DWORD>(nValue_ >> 32);
@@ -108,9 +117,87 @@ namespace
             || nDirection_ == iCAX::PDO::kDirection2External;
     }
 
+    void ValidateArenaCreateInfo(IN const iCAX::PDO::CSharedPDOArena::CCreateInfo& CreateInfo_)
+    {
+        if (CreateInfo_.nSlotCapacity == 0)
+        {
+            throw std::invalid_argument("Shared PDO arena slot capacity cannot be zero");
+        }
+        if (CreateInfo_.InitialDeclarations.size() > CreateInfo_.nSlotCapacity)
+        {
+            throw std::invalid_argument("Shared PDO initial declarations exceed slot capacity");
+        }
+        const auto _PayloadOffset = CalculatePayloadOffset(CreateInfo_.nSlotCapacity);
+        if (CreateInfo_.nArenaSize <= _PayloadOffset)
+        {
+            throw std::invalid_argument("Shared PDO arena size is too small for slot table");
+        }
+    }
+
     bool AddWouldOverflow(IN uint64_t nLeft_, IN uint64_t nRight_)
     {
         return nLeft_ > UINT64_MAX - nRight_;
+    }
+
+    iCAX::PDO::SharedPDOArenaHeader* GetArenaHeaderFromBase(IN uint8_t* pArenaBase_) noexcept
+    {
+        return reinterpret_cast<iCAX::PDO::SharedPDOArenaHeader*>(pArenaBase_);
+    }
+
+    const iCAX::PDO::SharedPDOArenaHeader* GetArenaHeaderFromBase(IN const uint8_t* pArenaBase_) noexcept
+    {
+        return reinterpret_cast<const iCAX::PDO::SharedPDOArenaHeader*>(pArenaBase_);
+    }
+
+    bool IsArenaDefragmenting(IN const uint8_t* pArenaBase_) noexcept
+    {
+        if (!pArenaBase_)
+        {
+            return false;
+        }
+        const auto* _Header = GetArenaHeaderFromBase(pArenaBase_);
+        return InterlockedCompareExchange(
+            const_cast<volatile long*>(&_Header->nDefragState),
+            0,
+            0) != 0;
+    }
+
+    void WaitSlotQuiescent(IN const iCAX::PDO::SharedPDOSlotHeader& Slot_)
+    {
+        for (;;)
+        {
+            bool _bHasReader = false;
+            for (uint32_t _BufferIndex = 0; _BufferIndex < iCAX::PDO::kSharedPDOBufferCount; ++_BufferIndex)
+            {
+                if (InterlockedCompareExchange(
+                    const_cast<volatile long*>(&Slot_.nReaderCount[_BufferIndex]),
+                    0,
+                    0) != 0)
+                {
+                    _bHasReader = true;
+                    break;
+                }
+            }
+
+            bool _bHasWriter = false;
+            for (uint32_t _BufferIndex = 0; _BufferIndex < iCAX::PDO::kSharedPDOBufferCount; ++_BufferIndex)
+            {
+                if (InterlockedCompareExchange(
+                    const_cast<volatile long*>(&Slot_.nBufferState[_BufferIndex]),
+                    0,
+                    0) == iCAX::PDO::kSharedPDOBufferWriting)
+                {
+                    _bHasWriter = true;
+                    break;
+                }
+            }
+
+            if (!_bHasReader && !_bHasWriter)
+            {
+                return;
+            }
+            SwitchToThread();
+        }
     }
 
     bool IsRangeInsideArena(
@@ -189,7 +276,7 @@ iCAX::PDO::CSharedPDOSlot::CSharedPDOSlot(IN uint8_t* pArenaBase_, IN SharedPDOS
 
 bool iCAX::PDO::CSharedPDOSlot::IsValid() const noexcept
 {
-    return m_pArenaBase != nullptr && m_pHeader != nullptr;
+    return m_pArenaBase != nullptr && m_pHeader != nullptr && m_pHeader->nActive != 0;
 }
 
 uint32_t iCAX::PDO::CSharedPDOSlot::GetSequence() const noexcept
@@ -260,6 +347,10 @@ bool iCAX::PDO::CSharedPDOSlot::IsReadSnapshotValid(
     {
         return false;
     }
+    if (IsArenaDefragmenting(m_pArenaBase))
+    {
+        return false;
+    }
 
     const auto _CurrentSequence = GetSequence();
     const auto _CurrentPublishedIndex = GetPublishedIndex();
@@ -320,6 +411,10 @@ bool iCAX::PDO::CSharedPDOSlot::TryBeginWrite(OUT void*& pWriteData_)
 {
     RequireValid();
     pWriteData_ = nullptr;
+    if (IsArenaDefragmenting(m_pArenaBase))
+    {
+        return false;
+    }
 
     const auto _WriteIndex = static_cast<uint32_t>(InterlockedCompareExchange(
         &m_pHeader->nWriteIndex,
@@ -405,6 +500,12 @@ const void* iCAX::PDO::CSharedPDOSlot::BeginRead(
 
     for (;;)
     {
+        if (IsArenaDefragmenting(m_pArenaBase))
+        {
+            SwitchToThread();
+            continue;
+        }
+
         const auto _Sequence = GetSequence();
         const auto _PublishedIndex = GetPublishedIndex();
         const auto _State = GetBufferState(_PublishedIndex);
@@ -592,17 +693,30 @@ std::shared_ptr<iCAX::PDO::CSharedPDOArena> iCAX::PDO::CSharedPDOArena::Create(
     IN std::wstring strName_,
     IN const std::vector<PDODecl>& Decls_)
 {
-    if (strName_.empty())
-    {
-        throw std::invalid_argument("Shared PDO arena name cannot be empty");
-    }
     if (Decls_.empty())
     {
         throw std::invalid_argument("Shared PDO arena must contain at least one slot");
     }
 
+    CCreateInfo _Info;
+    _Info.nArenaSize = CalculateArenaSize(Decls_);
+    _Info.nSlotCapacity = static_cast<uint32_t>(Decls_.size());
+    _Info.InitialDeclarations = Decls_;
+    return Create(std::move(strName_), _Info);
+}
+
+std::shared_ptr<iCAX::PDO::CSharedPDOArena> iCAX::PDO::CSharedPDOArena::Create(
+    IN std::wstring strName_,
+    IN const CCreateInfo& CreateInfo_)
+{
+    if (strName_.empty())
+    {
+        throw std::invalid_argument("Shared PDO arena name cannot be empty");
+    }
+    ValidateArenaCreateInfo(CreateInfo_);
+
     std::unordered_set<PDOID> _IDs;
-    for (const auto& _Decl : Decls_)
+    for (const auto& _Decl : CreateInfo_.InitialDeclarations)
     {
         ValidatePDODecl(_Decl);
         if (!_IDs.insert(_Decl.nID).second)
@@ -611,13 +725,12 @@ std::shared_ptr<iCAX::PDO::CSharedPDOArena> iCAX::PDO::CSharedPDOArena::Create(
         }
     }
 
-    const auto _ArenaSize = CalculateArenaSize(Decls_);
     HANDLE _Mapping = CreateFileMappingW(
         INVALID_HANDLE_VALUE,
         nullptr,
         PAGE_READWRITE,
-        HighDword(_ArenaSize),
-        LowDword(_ArenaSize),
+        HighDword(CreateInfo_.nArenaSize),
+        LowDword(CreateInfo_.nArenaSize),
         strName_.c_str());
     if (!_Mapping)
     {
@@ -641,8 +754,26 @@ std::shared_ptr<iCAX::PDO::CSharedPDOArena> iCAX::PDO::CSharedPDOArena::Create(
     _pArena->m_strName = std::move(strName_);
     _pArena->m_hMapping = _Mapping;
     _pArena->m_pBase = _pBase;
-    _pArena->m_nArenaSize = _ArenaSize;
-    _pArena->InitializeCreatedArena(Decls_);
+    _pArena->m_nArenaSize = CreateInfo_.nArenaSize;
+    _pArena->InitializeCreatedArena(CreateInfo_.nSlotCapacity);
+
+    auto* _Header = _pArena->GetMutableHeader();
+    uint64_t _NextPayloadOffset = _Header->nPayloadOffset;
+    auto* _Slots = _pArena->GetSlotTable();
+    for (size_t _Index = 0; _Index < CreateInfo_.InitialDeclarations.size(); ++_Index)
+    {
+        const auto& _Decl = CreateInfo_.InitialDeclarations[_Index];
+        const uint64_t _BlockSize = AlignUp(static_cast<uint64_t>(_Decl.nPayloadSize), kSharedPDOAlignment)
+            * iCAX::PDO::kSharedPDOBufferCount;
+        if (!IsRangeInsideArena(_NextPayloadOffset, _BlockSize, _Header->nArenaSize))
+        {
+            throw std::runtime_error("Shared PDO initial declarations exceed arena payload space");
+        }
+
+        (void)_pArena->InitializeSlot(_Slots[_Index], _Decl, _NextPayloadOffset, _BlockSize);
+        _NextPayloadOffset += _BlockSize;
+    }
+
     _pArena->ValidateOpenedArena();
     return _pArena;
 }
@@ -712,6 +843,12 @@ const iCAX::PDO::SharedPDOArenaHeader& iCAX::PDO::CSharedPDOArena::GetHeader() c
     return *GetMutableHeader();
 }
 
+uint32_t iCAX::PDO::CSharedPDOArena::GetSlotCapacity() const
+{
+    ValidateOpenedArena();
+    return GetMutableHeader()->nSlotCapacity;
+}
+
 std::vector<iCAX::PDO::PDODecl> iCAX::PDO::CSharedPDOArena::GetDeclarations() const
 {
     ValidateOpenedArena();
@@ -719,9 +856,13 @@ std::vector<iCAX::PDO::PDODecl> iCAX::PDO::CSharedPDOArena::GetDeclarations() co
     const auto& _Header = *GetMutableHeader();
     const auto* _Slots = GetSlotTable();
     _Decls.reserve(_Header.nSlotCount);
-    for (uint32_t _Index = 0; _Index < _Header.nSlotCount; ++_Index)
+    for (uint32_t _Index = 0; _Index < _Header.nSlotCapacity; ++_Index)
     {
         const auto& _Slot = _Slots[_Index];
+        if (_Slot.nActive == 0)
+        {
+            continue;
+        }
         _Decls.push_back(PDODecl{
             _Slot.nVersion,
             _Slot.nID,
@@ -737,9 +878,9 @@ iCAX::PDO::CSharedPDOSlot iCAX::PDO::CSharedPDOArena::GetSlot(IN PDOID nID_) con
     ValidateOpenedArena();
     const auto& _Header = *GetMutableHeader();
     auto* _Slots = GetSlotTable();
-    for (uint32_t _Index = 0; _Index < _Header.nSlotCount; ++_Index)
+    for (uint32_t _Index = 0; _Index < _Header.nSlotCapacity; ++_Index)
     {
-        if (_Slots[_Index].nID == nID_)
+        if (_Slots[_Index].nActive != 0 && _Slots[_Index].nID == nID_)
         {
             return CSharedPDOSlot(m_pBase, &_Slots[_Index]);
         }
@@ -747,51 +888,221 @@ iCAX::PDO::CSharedPDOSlot iCAX::PDO::CSharedPDOArena::GetSlot(IN PDOID nID_) con
     throw std::runtime_error(std::format("Shared PDO slot not found: {}", nID_));
 }
 
-void iCAX::PDO::CSharedPDOArena::InitializeCreatedArena(IN const std::vector<PDODecl>& Decls_)
+void iCAX::PDO::CSharedPDOArena::BeginDefragment()
+{
+    ValidateOpenedArena();
+    auto* _Header = GetMutableHeader();
+    const auto _OldState = InterlockedCompareExchange(&_Header->nDefragState, 1, 0);
+    if (_OldState != 0)
+    {
+        throw std::logic_error("Shared PDO arena is already defragmenting");
+    }
+}
+
+void iCAX::PDO::CSharedPDOArena::EndDefragment() noexcept
+{
+    if (!m_pBase)
+    {
+        return;
+    }
+    auto* _Header = GetMutableHeader();
+    InterlockedExchange(&_Header->nDefragState, 0);
+}
+
+bool iCAX::PDO::CSharedPDOArena::IsDefragmenting() const noexcept
+{
+    return IsArenaDefragmenting(m_pBase);
+}
+
+iCAX::PDO::CSharedPDOArena::CMoveSlotPayloadResult iCAX::PDO::CSharedPDOArena::MoveSlotPayload(
+    IN PDOID nID_,
+    IN uint64_t nNewPayloadBlockOffset_)
+{
+    ValidateOpenedArena();
+    if (!IsDefragmenting())
+    {
+        throw std::logic_error("Shared PDO arena must be in defragmenting state before moving slot payload");
+    }
+    if (!IsAligned(nNewPayloadBlockOffset_))
+    {
+        throw std::invalid_argument("Shared PDO moved payload block offset is not aligned");
+    }
+
+    auto* _Header = GetMutableHeader();
+    auto* _Slots = GetSlotTable();
+    for (uint32_t _Index = 0; _Index < _Header->nSlotCapacity; ++_Index)
+    {
+        auto& _Slot = _Slots[_Index];
+        if (_Slot.nActive == 0 || _Slot.nID != nID_)
+        {
+            continue;
+        }
+
+        if (nNewPayloadBlockOffset_ < _Header->nPayloadOffset
+            || !IsRangeInsideArena(nNewPayloadBlockOffset_, _Slot.nPayloadBlockSize, _Header->nArenaSize))
+        {
+            throw std::invalid_argument("Shared PDO moved payload block range is invalid");
+        }
+
+        WaitSlotQuiescent(_Slot);
+
+        CMoveSlotPayloadResult _Result;
+        _Result.nPDOID = nID_;
+        _Result.nOldPayloadBlockOffset = _Slot.nPayloadBlockOffset;
+        _Result.nNewPayloadBlockOffset = nNewPayloadBlockOffset_;
+        _Result.nPayloadBlockSize = _Slot.nPayloadBlockSize;
+
+        if (_Result.nOldPayloadBlockOffset == _Result.nNewPayloadBlockOffset)
+        {
+            return _Result;
+        }
+
+        uint64_t _BufferRelativeOffsets[kSharedPDOBufferCount]{};
+        for (uint32_t _BufferIndex = 0; _BufferIndex < kSharedPDOBufferCount; ++_BufferIndex)
+        {
+            _BufferRelativeOffsets[_BufferIndex] =
+                _Slot.nBufferOffset[_BufferIndex] - _Slot.nPayloadBlockOffset;
+        }
+
+        std::memmove(
+            m_pBase + _Result.nNewPayloadBlockOffset,
+            m_pBase + _Result.nOldPayloadBlockOffset,
+            static_cast<size_t>(_Result.nPayloadBlockSize));
+
+        _Slot.nPayloadBlockOffset = _Result.nNewPayloadBlockOffset;
+        for (uint32_t _BufferIndex = 0; _BufferIndex < kSharedPDOBufferCount; ++_BufferIndex)
+        {
+            _Slot.nBufferOffset[_BufferIndex] =
+                _Result.nNewPayloadBlockOffset + _BufferRelativeOffsets[_BufferIndex];
+        }
+        return _Result;
+    }
+
+    throw std::runtime_error(std::format("Shared PDO slot not found: {}", nID_));
+}
+
+void iCAX::PDO::CSharedPDOArena::InitializeCreatedArena(IN uint32_t nSlotCapacity_)
 {
     std::memset(m_pBase, 0, static_cast<size_t>(m_nArenaSize));
 
     auto* _Header = GetMutableHeader();
     _Header->nMagic = kSharedPDOArenaMagic;
     _Header->nVersion = kSharedPDOArenaVersion;
-    _Header->nSlotCount = static_cast<uint32_t>(Decls_.size());
+    _Header->nSlotCount = 0;
+    _Header->nSlotCapacity = nSlotCapacity_;
     _Header->nHeaderSize = sizeof(SharedPDOArenaHeader);
     _Header->nArenaSize = m_nArenaSize;
     _Header->nSlotTableOffset = AlignUp(sizeof(SharedPDOArenaHeader), kSharedPDOAlignment);
-    _Header->nPayloadOffset = AlignUp(
-        _Header->nSlotTableOffset + sizeof(SharedPDOSlotHeader) * Decls_.size(),
-        kSharedPDOAlignment);
+    _Header->nPayloadOffset = CalculatePayloadOffset(nSlotCapacity_);
+    _Header->nPayloadSize = _Header->nArenaSize - _Header->nPayloadOffset;
+}
 
-    auto* _Slots = GetSlotTable();
-    uint64_t _PayloadOffset = _Header->nPayloadOffset;
-    for (size_t _Index = 0; _Index < Decls_.size(); ++_Index)
+iCAX::PDO::CSharedPDOSlot iCAX::PDO::CSharedPDOArena::InitializeSlot(
+    IN SharedPDOSlotHeader& Slot_,
+    IN const PDODecl& Decl_,
+    IN uint64_t nPayloadBlockOffset_,
+    IN uint64_t nPayloadBlockSize_)
+{
+    ValidatePDODecl(Decl_);
+    const uint64_t _PayloadSize = AlignUp(static_cast<uint64_t>(Decl_.nPayloadSize), kSharedPDOAlignment);
+    const uint64_t _RequiredBlockSize = _PayloadSize * kSharedPDOBufferCount;
+    if (nPayloadBlockSize_ < _RequiredBlockSize)
     {
-        const auto& _Decl = Decls_[_Index];
-        auto& _Slot = _Slots[_Index];
-        _Slot.nID = _Decl.nID;
-        _Slot.nVersion = _Decl.nVersion;
-        _Slot.nDirection = _Decl.eDirection;
-        _Slot.nPayloadSize = static_cast<uint32_t>(_Decl.nPayloadSize);
-        _Slot.nBufferState[0] = kSharedPDOBufferPublished;
-        _Slot.nBufferState[1] = kSharedPDOBufferFree;
-        _Slot.nReaderCount[0] = 0;
-        _Slot.nReaderCount[1] = 0;
-        _Slot.nPublishedIndex = 0;
-        _Slot.nWriteIndex = 1;
-        _Slot.nReadyIndex = kSharedPDOReadyNone;
-        _Slot.nSequence = 0;
-        _Slot.nBufferDataVersion[0] = 0;
-        _Slot.nBufferDataVersion[1] = 0;
-        _Slot.nPublishedDataVersion = 0;
-        _Slot.nLatestDataVersion = 0;
+        throw std::invalid_argument("Shared PDO payload block is too small");
+    }
+    if (!IsAligned(nPayloadBlockOffset_) || !IsAligned(nPayloadBlockSize_))
+    {
+        throw std::invalid_argument("Shared PDO payload block is not aligned");
+    }
+    if (!IsRangeInsideArena(nPayloadBlockOffset_, nPayloadBlockSize_, GetMutableHeader()->nArenaSize))
+    {
+        throw std::invalid_argument("Shared PDO payload block is outside arena");
+    }
 
-        for (uint32_t _BufferIndex = 0; _BufferIndex < kSharedPDOBufferCount; ++_BufferIndex)
+    std::memset(&Slot_, 0, sizeof(Slot_));
+    Slot_.nActive = 1;
+    Slot_.nID = Decl_.nID;
+    Slot_.nVersion = Decl_.nVersion;
+    Slot_.nDirection = Decl_.eDirection;
+    Slot_.nPayloadSize = static_cast<uint32_t>(Decl_.nPayloadSize);
+    Slot_.nPayloadBlockOffset = nPayloadBlockOffset_;
+    Slot_.nPayloadBlockSize = nPayloadBlockSize_;
+    Slot_.nBufferOffset[0] = nPayloadBlockOffset_;
+    Slot_.nBufferOffset[1] = nPayloadBlockOffset_ + _PayloadSize;
+    Slot_.nBufferState[0] = kSharedPDOBufferPublished;
+    Slot_.nBufferState[1] = kSharedPDOBufferFree;
+    Slot_.nReaderCount[0] = 0;
+    Slot_.nReaderCount[1] = 0;
+    Slot_.nPublishedIndex = 0;
+    Slot_.nWriteIndex = 1;
+    Slot_.nReadyIndex = kSharedPDOReadyNone;
+    Slot_.nSequence = 0;
+    Slot_.nBufferDataVersion[0] = 0;
+    Slot_.nBufferDataVersion[1] = 0;
+    Slot_.nPublishedDataVersion = 0;
+    Slot_.nLatestDataVersion = 0;
+    ++GetMutableHeader()->nSlotCount;
+    return CSharedPDOSlot(m_pBase, &Slot_);
+}
+
+iCAX::PDO::CSharedPDOSlot iCAX::PDO::CSharedPDOArena::AllocateSlot(
+    IN const PDODecl& Decl_,
+    IN uint64_t nPayloadBlockOffset_,
+    IN uint64_t nPayloadBlockSize_)
+{
+    ValidateOpenedArena();
+    ValidatePDODecl(Decl_);
+
+    auto* _Header = GetMutableHeader();
+    auto* _Slots = GetSlotTable();
+    SharedPDOSlotHeader* _pFreeSlot = nullptr;
+    for (uint32_t _Index = 0; _Index < _Header->nSlotCapacity; ++_Index)
+    {
+        if (_Slots[_Index].nActive != 0 && _Slots[_Index].nID == Decl_.nID)
         {
-            _PayloadOffset = AlignUp(_PayloadOffset, kSharedPDOAlignment);
-            _Slot.nBufferOffset[_BufferIndex] = _PayloadOffset;
-            _PayloadOffset += AlignUp(static_cast<uint64_t>(_Decl.nPayloadSize), kSharedPDOAlignment);
+            throw std::runtime_error(std::format("Duplicate shared PDO id: {}", Decl_.nID));
+        }
+        if (!_pFreeSlot && _Slots[_Index].nActive == 0)
+        {
+            _pFreeSlot = &_Slots[_Index];
         }
     }
+    if (!_pFreeSlot)
+    {
+        throw std::runtime_error("Shared PDO arena slot table is full");
+    }
+    return InitializeSlot(*_pFreeSlot, Decl_, nPayloadBlockOffset_, nPayloadBlockSize_);
+}
+
+bool iCAX::PDO::CSharedPDOArena::FreeSlot(IN PDOID nID_)
+{
+    ValidateOpenedArena();
+    auto* _Header = GetMutableHeader();
+    auto* _Slots = GetSlotTable();
+    for (uint32_t _Index = 0; _Index < _Header->nSlotCapacity; ++_Index)
+    {
+        auto& _Slot = _Slots[_Index];
+        if (_Slot.nActive == 0 || _Slot.nID != nID_)
+        {
+            continue;
+        }
+        for (uint32_t _BufferIndex = 0; _BufferIndex < kSharedPDOBufferCount; ++_BufferIndex)
+        {
+            if (InterlockedCompareExchange(&_Slot.nReaderCount[_BufferIndex], 0, 0) != 0)
+            {
+                throw std::logic_error("Shared PDO slot cannot be freed while it has active readers");
+            }
+        }
+        if (InterlockedCompareExchange(&_Slot.nBufferState[_Slot.nWriteIndex], 0, 0) == kSharedPDOBufferWriting)
+        {
+            throw std::logic_error("Shared PDO slot cannot be freed while it is being written");
+        }
+
+        std::memset(&_Slot, 0, sizeof(_Slot));
+        --_Header->nSlotCount;
+        return true;
+    }
+    return false;
 }
 
 void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
@@ -813,13 +1124,25 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
     {
         throw std::runtime_error("Shared PDO arena header size is invalid");
     }
-    if (_Header->nSlotCount == 0)
+    if (_Header->nSlotCapacity == 0)
     {
-        throw std::runtime_error("Shared PDO arena slot count is invalid");
+        throw std::runtime_error("Shared PDO arena slot capacity is invalid");
+    }
+    if (_Header->nSlotCount > _Header->nSlotCapacity)
+    {
+        throw std::runtime_error("Shared PDO arena slot count exceeds capacity");
     }
     if (_Header->nArenaSize == 0)
     {
         throw std::runtime_error("Shared PDO arena size is invalid");
+    }
+    const auto _DefragState = InterlockedCompareExchange(
+        const_cast<volatile long*>(&_Header->nDefragState),
+        0,
+        0);
+    if (_DefragState != 0 && _DefragState != 1)
+    {
+        throw std::runtime_error("Shared PDO arena defrag state is invalid");
     }
     if (m_nArenaSize != 0 && _Header->nArenaSize > m_nArenaSize)
     {
@@ -833,12 +1156,12 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
     {
         throw std::runtime_error("Shared PDO arena slot table offset is not aligned");
     }
-    if (_Header->nSlotCount > UINT64_MAX / sizeof(SharedPDOSlotHeader))
+    if (_Header->nSlotCapacity > UINT64_MAX / sizeof(SharedPDOSlotHeader))
     {
         throw std::runtime_error("Shared PDO arena slot table size overflows");
     }
     const auto _SlotTableSize = static_cast<uint64_t>(sizeof(SharedPDOSlotHeader))
-        * static_cast<uint64_t>(_Header->nSlotCount);
+        * static_cast<uint64_t>(_Header->nSlotCapacity);
     if (!IsRangeInsideArena(_Header->nSlotTableOffset, _SlotTableSize, _Header->nArenaSize))
     {
         throw std::runtime_error("Shared PDO arena slot table range is invalid");
@@ -852,16 +1175,26 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
     {
         throw std::runtime_error("Shared PDO arena payload range is invalid");
     }
+    if (_Header->nPayloadSize != _Header->nArenaSize - _Header->nPayloadOffset)
+    {
+        throw std::runtime_error("Shared PDO arena payload size is invalid");
+    }
     if (!IsAligned(_Header->nPayloadOffset))
     {
         throw std::runtime_error("Shared PDO arena payload offset is not aligned");
     }
 
     std::unordered_set<PDOID> _IDs;
+    uint32_t _ActiveCount = 0;
     const auto* _Slots = reinterpret_cast<const SharedPDOSlotHeader*>(m_pBase + _Header->nSlotTableOffset);
-    for (uint32_t _Index = 0; _Index < _Header->nSlotCount; ++_Index)
+    for (uint32_t _Index = 0; _Index < _Header->nSlotCapacity; ++_Index)
     {
         const auto& _Slot = _Slots[_Index];
+        if (_Slot.nActive == 0)
+        {
+            continue;
+        }
+        ++_ActiveCount;
         if (_Slot.nID == 0 || !_IDs.insert(_Slot.nID).second)
         {
             throw std::runtime_error("Shared PDO arena slot id is invalid");
@@ -877,6 +1210,12 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
         if (_Slot.nPayloadSize == 0)
         {
             throw std::runtime_error("Shared PDO arena slot payload size is invalid");
+        }
+        if (!IsAligned(_Slot.nPayloadBlockOffset)
+            || !IsAligned(_Slot.nPayloadBlockSize)
+            || !IsRangeInsideArena(_Slot.nPayloadBlockOffset, _Slot.nPayloadBlockSize, _Header->nArenaSize))
+        {
+            throw std::runtime_error("Shared PDO arena slot payload block is invalid");
         }
         if (!IsValidBufferIndex(_Slot.nPublishedIndex)
             || !IsValidBufferIndex(_Slot.nWriteIndex)
@@ -931,7 +1270,9 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
             }
             const auto _BufferOffset = _Slot.nBufferOffset[_BufferIndex];
             if (!IsAligned(_BufferOffset)
-                || !IsRangeInsideArena(_BufferOffset, _Slot.nPayloadSize, _Header->nArenaSize))
+                || !IsRangeInsideArena(_BufferOffset, _Slot.nPayloadSize, _Header->nArenaSize)
+                || _BufferOffset < _Slot.nPayloadBlockOffset
+                || _BufferOffset + _Slot.nPayloadSize > _Slot.nPayloadBlockOffset + _Slot.nPayloadBlockSize)
             {
                 throw std::runtime_error("Shared PDO arena slot buffer range is invalid");
             }
@@ -940,6 +1281,10 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
         {
             throw std::runtime_error("Shared PDO arena slot buffer offsets must be distinct");
         }
+    }
+    if (_ActiveCount != _Header->nSlotCount)
+    {
+        throw std::runtime_error("Shared PDO arena active slot count is invalid");
     }
 }
 

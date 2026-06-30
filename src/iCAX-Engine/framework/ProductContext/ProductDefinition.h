@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ProductContextExport.h"
-#include "PDO/PDODecl.h"
+#include "PDO/IPDOHub.h"
 
 #include <cstdint>
 #include <string>
@@ -63,7 +63,8 @@ namespace iCAX
             std::string DefaultProjectStartupComponent; //!< 打开项目后默认绑定的启动组件。
             CProductFileDefinition ProjectFile; //!< 产品项目文件识别规则。
             CProductModules Modules; //!< 产品需要加载的模块定义。
-            std::vector<iCAX::PDO::PDODecl> PDODeclarations; //!< 默认项目 PDO 声明；为空表示产品默认不启用 PDO。
+            bool bEnablePDOHub = false; //!< true 表示项目默认创建一块可动态分配 slot 的 PDO Arena。
+            iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 默认项目 PDOHub 创建参数。
         };
 
         /*

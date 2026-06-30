@@ -14,6 +14,7 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -38,6 +39,16 @@ namespace
             nID_,
             eDirection_,
             static_cast<int>(sizeof(Payload))
+        };
+    }
+
+    PDODecl MakeRawDecl(const PDOID& nID_, const PDODirection& eDirection_, uint64_t nPayloadSize_)
+    {
+        return PDODecl{
+            1,
+            nID_,
+            eDirection_,
+            static_cast<int>(nPayloadSize_)
         };
     }
 
@@ -472,6 +483,133 @@ TEST(PDOTest, GeneratedHubExposesSharedArenaInfoThroughInterface)
 
     auto sameArena = CSharedPDOArena::Open(hub->GetSharedArenaName());
     EXPECT_EQ(hub->GetSharedArenaSize(), sameArena->GetArenaSize());
+}
+
+TEST(PDOTest, GeneratedHubAllocatesDynamicSlotsFromSharedArena)
+{
+    CPDOHubCreateInfo info;
+    info.nArenaSize = 1024 * 1024;
+    info.nSlotCapacity = 8;
+
+    auto hub = GeneratePDOHub(info);
+    ASSERT_TRUE(hub->GetPDODeclarations().empty());
+
+    const auto id = MakePDOID("Test.Payload", "Dynamic");
+    auto& slot = hub->AllocateSlot(MakeDecl(id, kDirection2External));
+    ASSERT_TRUE(hub->HasSlot(id));
+    EXPECT_EQ(id, slot.GetHeader().nID);
+
+    WritePayload(slot, Payload{ 123, 4.5 }, 1);
+    hub->SwapOutSlot();
+    EXPECT_EQ(123, ReadPayload(slot).nValue);
+
+    auto sameArena = CSharedPDOArena::Open(hub->GetSharedArenaName());
+    auto sameSlot = sameArena->GetSlot(id);
+    EXPECT_EQ(123, ReadPayload(sameSlot).nValue);
+}
+
+TEST(PDOTest, DynamicHubReusesFreedSlotMemory)
+{
+    CPDOHubCreateInfo info;
+    info.nArenaSize = 4096;
+    info.nSlotCapacity = 2;
+
+    auto hub = GeneratePDOHub(info);
+    const auto firstId = MakePDOID("Test.Payload", "Dynamic.First");
+    const auto secondId = MakePDOID("Test.Payload", "Dynamic.Second");
+
+    auto& firstSlot = hub->AllocateSlot(MakeDecl(firstId, kDirection2External));
+    const auto firstOffset =
+        static_cast<CSharedPDOSlot&>(firstSlot).GetSharedHeader().nPayloadBlockOffset;
+
+    EXPECT_TRUE(hub->FreeSlot(firstId));
+    EXPECT_FALSE(hub->HasSlot(firstId));
+
+    auto& secondSlot = hub->AllocateSlot(MakeDecl(secondId, kDirection2External));
+    const auto secondOffset =
+        static_cast<CSharedPDOSlot&>(secondSlot).GetSharedHeader().nPayloadBlockOffset;
+    EXPECT_EQ(firstOffset, secondOffset);
+}
+
+TEST(PDOTest, DynamicHubDefragmentsWhenTotalFreeCapacityCanSatisfyAllocation)
+{
+    CPDOHubCreateInfo info;
+    info.nArenaSize = 8192;
+    info.nSlotCapacity = 16;
+
+    auto hub = GeneratePDOHub(info);
+    std::vector<PDOID> ids;
+    for (int index = 0; index < 32; ++index)
+    {
+        const auto id = MakePDOID("Test.Payload.Fragment", std::to_string(index));
+        try
+        {
+            (void)hub->AllocateSlot(MakeRawDecl(id, kDirection2External, 256));
+            ids.push_back(id);
+        }
+        catch (const std::runtime_error&)
+        {
+            break;
+        }
+    }
+    ASSERT_GE(ids.size(), 4u);
+
+    auto& anchorSlot = hub->GetSlot(ids[1]);
+    WritePayload(anchorSlot, Payload{ 77, 7.7 }, 1);
+    anchorSlot.SwapBuffersIfReady();
+    const auto anchorOffsetBefore =
+        static_cast<CSharedPDOSlot&>(anchorSlot).GetSharedHeader().nPayloadBlockOffset;
+
+    for (size_t index = 0; index < ids.size(); index += 2)
+    {
+        EXPECT_TRUE(hub->FreeSlot(ids[index]));
+    }
+
+    const auto newId = MakePDOID("Test.Payload.Fragment", "LargeAfterFragmentation");
+    int beginCallbackCount = 0;
+    int endCallbackCount = 0;
+    std::vector<CPDOHubDefragMove> moves;
+    CPDOHubAllocationCallbacks callbacks;
+    callbacks.OnDefragmentBegin = [&beginCallbackCount]()
+        {
+            ++beginCallbackCount;
+        };
+    callbacks.OnDefragmentEnd = [&endCallbackCount, &moves](const std::vector<CPDOHubDefragMove>& Moves_)
+        {
+            ++endCallbackCount;
+            moves = Moves_;
+        };
+
+    (void)hub->AllocateSlot(MakeRawDecl(newId, kDirection2External, 513), callbacks);
+
+    const auto anchorOffsetAfter =
+        static_cast<CSharedPDOSlot&>(anchorSlot).GetSharedHeader().nPayloadBlockOffset;
+    EXPECT_EQ(1, beginCallbackCount);
+    EXPECT_EQ(1, endCallbackCount);
+    EXPECT_FALSE(moves.empty());
+    EXPECT_LT(anchorOffsetAfter, anchorOffsetBefore);
+    EXPECT_TRUE(hub->HasSlot(newId));
+    EXPECT_EQ(77, ReadPayload(anchorSlot).nValue);
+    EXPECT_DOUBLE_EQ(7.7, ReadPayload(anchorSlot).nRatio);
+}
+
+TEST(PDOTest, DynamicHubRejectsFreeWhileReaderIsActive)
+{
+    CPDOHubCreateInfo info;
+    info.nArenaSize = 1024 * 1024;
+    info.nSlotCapacity = 4;
+
+    auto hub = GeneratePDOHub(info);
+    const auto id = MakePDOID("Test.Payload", "Dynamic.Reader");
+    auto& slot = hub->AllocateSlot(MakeDecl(id, kDirection2External));
+    CPDOReadLease readLease(slot);
+
+    EXPECT_THROW((void)hub->FreeSlot(id), std::logic_error);
+    EXPECT_TRUE(hub->HasSlot(id));
+
+    readLease.Release();
+    EXPECT_TRUE(hub->FreeSlot(id));
+    EXPECT_FALSE(hub->HasSlot(id));
 }
 
 TEST(PDOTest, SharedArenaCreatesFixedDoubleBufferedSlots)

@@ -2,6 +2,8 @@
 #include "MailExport.h"
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <memory>
 
 namespace iCAX
 {
@@ -37,17 +39,40 @@ namespace iCAX
         };
 
         /*
+        * @brief 邮件负载池租约。
+        * @details
+        *   MailQueue 可以把 Payload 放在预分配池中，并通过该接口在 ReleaseMailPayload()
+        *   时归还 record 和 payload 空间。业务代码不直接调用该接口。
+        */
+        class _MAIL_EXP IMailPayloadLease
+        {
+        public:
+            IMailPayloadLease() = default;
+            virtual ~IMailPayloadLease() = default;
+
+            IMailPayloadLease(IN const IMailPayloadLease&) = delete;
+            IMailPayloadLease& operator=(IN const IMailPayloadLease&) = delete;
+
+        public:
+            virtual void ReleaseMailPayloadLease(
+                IN size_t nLeaseIndex_,
+                IN uint32_t nLeaseGeneration_) noexcept = 0;
+        };
+
+        /*
         * @brief 邮件数据。
         * @details
-        *   MailQueue::Enqueue/CMailPostOffice::Send 会深拷贝 pData。
-        *   CMailPostOffice::Receive 返回的 Mail 由调用方拥有 Payload 内存，处理后应调用
-        *   MailPayload.h 中的 ReleaseMailPayload 释放。
+        *   pData 可以来自普通 new[]，也可以来自 MailQueue 的预分配 PayloadPool。
+        *   调用方不需要区分来源，统一用 MailPayload.h 中的 ReleaseMailPayload 释放。
         *   普通 H5 命令建议通过 MailPayload.h 的文本辅助函数存取 UTF-8/JSON 字符串。
         */
         struct _MAIL_EXP MailData
         {
             size_t nSize = 0;       //!< 负载字节数；为 0 时 pData 可以为空。
             uint8_t* pData = nullptr; //!< 负载内存；Receive 后所有权转移给调用方。
+            std::shared_ptr<IMailPayloadLease> pLease; //!< 非空表示 Payload 来自队列预分配池。
+            size_t nLeaseIndex = (std::numeric_limits<size_t>::max)(); //!< 池租约 record index。
+            uint32_t nLeaseGeneration = 0; //!< 池租约 generation，防止旧 Mail 误释放复用后的 record。
         };
 
         /*

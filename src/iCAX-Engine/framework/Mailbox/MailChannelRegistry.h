@@ -38,6 +38,16 @@ namespace iCAX
             bool CreateChannel(IN const iCAX::Data::uuid& ChannelID_);
 
             /*
+            * @brief 创建指定容量的通道。
+            * @param [in] ChannelID_ 通道 ID，不能是 nil uuid。
+            * @param [in] CreateInfo_ 两个方向的队列容量参数。
+            * @return true 表示成功创建；false 表示同 ID 通道已存在。
+            */
+            bool CreateChannel(
+                IN const iCAX::Data::uuid& ChannelID_,
+                IN const CMailChannelCreateInfo& CreateInfo_);
+
+            /*
             * @brief 判断通道是否存在。
             * @param [in] ChannelID_ 通道 ID。
             * @return true 表示已存在。

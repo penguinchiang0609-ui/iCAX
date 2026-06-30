@@ -151,7 +151,7 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_pMailChannelRegistry(RequireMailChannelRegistry(CreateInfo_))
     , m_pRepository(iCAX::Database::GenerateRepository(m_ProjectID, m_pMetaRegistry))
     , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
-    , m_pPDOHub(CreateInfo_.PDODeclarations.empty() ? nullptr : iCAX::PDO::GeneratePDOHub(CreateInfo_.PDODeclarations))
+    , m_pPDOHub(CreateInfo_.bEnablePDOHub ? iCAX::PDO::GeneratePDOHub(CreateInfo_.PDOHubCreateInfo) : nullptr)
     , m_pRepositoryEventForwarder(std::make_shared<CRepositoryEventForwarder>(*this))
     , m_Resources(m_pResourceLoaderRegistry)
     , m_nFrameIntervalMilliseconds(CreateInfo_.nFrameIntervalMilliseconds == 0 ? 1 : CreateInfo_.nFrameIntervalMilliseconds)
@@ -455,17 +455,7 @@ void iCAX::Project::CProject::SendFrontendEvent(
     _Header.nTypeCode = nTypeCode_;
     _Header.nStamp = iCAX::Mail::kMailOk;
 
-    auto _Mail = iCAX::Mail::CreateTextMail(_Header, strPayloadText_);
-    try
-    {
-        GetBackendPostOffice().Send(_Mail);
-    }
-    catch (...)
-    {
-        iCAX::Mail::ReleaseMailPayload(_Mail);
-        throw;
-    }
-    iCAX::Mail::ReleaseMailPayload(_Mail);
+    GetBackendPostOffice().SendText(_Header, strPayloadText_);
 }
 
 iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetFrontendPostOffice() const

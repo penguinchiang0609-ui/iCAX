@@ -31,10 +31,13 @@ namespace iCAX
             uint32_t nMagic = kSharedPDOArenaMagic;
             uint32_t nVersion = kSharedPDOArenaVersion;
             uint32_t nSlotCount = 0;
+            uint32_t nSlotCapacity = 0;
             uint32_t nHeaderSize = sizeof(SharedPDOArenaHeader);
             uint64_t nArenaSize = 0;
             uint64_t nSlotTableOffset = 0;
             uint64_t nPayloadOffset = 0;
+            uint64_t nPayloadSize = 0;
+            volatile long nDefragState = 0;
         };
 
         /*
@@ -46,11 +49,15 @@ namespace iCAX
         */
         struct _PDO_EXP SharedPDOSlotHeader final
         {
+            uint32_t nActive = 0;
+            uint32_t nReserved0 = 0;
             PDOID nID = 0;
             uint32_t nVersion = 0;
             uint32_t nDirection = kDirectionNil;
             uint32_t nPayloadSize = 0;
             uint32_t nReserved = 0;
+            uint64_t nPayloadBlockOffset = 0;
+            uint64_t nPayloadBlockSize = 0;
             uint64_t nBufferOffset[kSharedPDOBufferCount]{};
             volatile long nBufferState[kSharedPDOBufferCount]{};
             volatile long nReaderCount[kSharedPDOBufferCount]{};
@@ -127,9 +134,28 @@ namespace iCAX
         class _PDO_EXP CSharedPDOArena final
         {
         public:
+            struct CCreateInfo final
+            {
+                uint64_t nArenaSize = 0;
+                uint32_t nSlotCapacity = 0;
+                std::vector<PDODecl> InitialDeclarations;
+            };
+
+            struct CMoveSlotPayloadResult final
+            {
+                PDOID nPDOID = 0;
+                uint64_t nOldPayloadBlockOffset = 0;
+                uint64_t nNewPayloadBlockOffset = 0;
+                uint64_t nPayloadBlockSize = 0;
+            };
+
             static std::shared_ptr<CSharedPDOArena> Create(
                 IN std::wstring strName_,
                 IN const std::vector<PDODecl>& Decls_);
+
+            static std::shared_ptr<CSharedPDOArena> Create(
+                IN std::wstring strName_,
+                IN const CCreateInfo& CreateInfo_);
 
             static std::shared_ptr<CSharedPDOArena> Open(IN std::wstring strName_);
 
@@ -144,13 +170,28 @@ namespace iCAX
             void* GetBaseAddress() const noexcept;
             uint64_t GetArenaSize() const noexcept;
             const SharedPDOArenaHeader& GetHeader() const;
+            uint32_t GetSlotCapacity() const;
             std::vector<PDODecl> GetDeclarations() const;
             CSharedPDOSlot GetSlot(IN PDOID nID_) const;
+            void BeginDefragment();
+            void EndDefragment() noexcept;
+            bool IsDefragmenting() const noexcept;
+            CMoveSlotPayloadResult MoveSlotPayload(IN PDOID nID_, IN uint64_t nNewPayloadBlockOffset_);
+            CSharedPDOSlot AllocateSlot(
+                IN const PDODecl& Decl_,
+                IN uint64_t nPayloadBlockOffset_,
+                IN uint64_t nPayloadBlockSize_);
+            bool FreeSlot(IN PDOID nID_);
 
         private:
             CSharedPDOArena() = default;
 
-            void InitializeCreatedArena(IN const std::vector<PDODecl>& Decls_);
+            void InitializeCreatedArena(IN uint32_t nSlotCapacity_);
+            CSharedPDOSlot InitializeSlot(
+                IN SharedPDOSlotHeader& Slot_,
+                IN const PDODecl& Decl_,
+                IN uint64_t nPayloadBlockOffset_,
+                IN uint64_t nPayloadBlockSize_);
             void ValidateOpenedArena() const;
             SharedPDOArenaHeader* GetMutableHeader() const;
             SharedPDOSlotHeader* GetSlotTable() const;

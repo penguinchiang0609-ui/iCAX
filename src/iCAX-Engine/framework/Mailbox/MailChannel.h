@@ -20,6 +20,18 @@ namespace iCAX
         };
 
         /*
+        * @brief 双向邮件通道创建参数。
+        * @details
+        *   每个方向都有独立 MailQueue，因此也有独立的 record 池和 payload 池。
+        *   业务侧可以按通道用途调大某一方向的容量。
+        */
+        struct _MAIL_EXP CMailChannelCreateInfo final
+        {
+            CMailQueueCreateInfo EndAToEndBQueue;
+            CMailQueueCreateInfo EndBToEndAQueue;
+        };
+
+        /*
         * @brief 双向邮件通道
         * @remark
         *   一个 MailChannel 内部包含两个 MailQueue：
@@ -31,6 +43,7 @@ namespace iCAX
         {
         public:
             CMailChannel() = default;
+            explicit CMailChannel(IN const CMailChannelCreateInfo& CreateInfo_);
             ~CMailChannel() = default;
             CMailChannel(const CMailChannel&) = delete;
             CMailChannel& operator=(const CMailChannel&) = delete;
@@ -86,8 +99,9 @@ namespace iCAX
             CMailQueue& GetBToAQueue() noexcept;
 
         private:
-            std::shared_ptr<CMailQueue> m_AToB = std::make_shared<CMailQueue>();
-            std::shared_ptr<CMailQueue> m_BToA = std::make_shared<CMailQueue>();
+            CMailChannelCreateInfo m_CreateInfo;
+            std::shared_ptr<CMailQueue> m_AToB = std::make_shared<CMailQueue>(m_CreateInfo.EndAToEndBQueue);
+            std::shared_ptr<CMailQueue> m_BToA = std::make_shared<CMailQueue>(m_CreateInfo.EndBToEndAQueue);
         };
     }
 }

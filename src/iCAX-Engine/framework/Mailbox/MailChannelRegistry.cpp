@@ -5,12 +5,19 @@
 
 bool iCAX::Mail::CMailChannelRegistry::CreateChannel(IN const iCAX::Data::uuid& ChannelID_)
 {
+    return CreateChannel(ChannelID_, CMailChannelCreateInfo{});
+}
+
+bool iCAX::Mail::CMailChannelRegistry::CreateChannel(
+    IN const iCAX::Data::uuid& ChannelID_,
+    IN const CMailChannelCreateInfo& CreateInfo_)
+{
     ValidateChannelID(ChannelID_);
 
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     auto [_Iter, _Inserted] = m_Channels.emplace(
         ChannelID_,
-        std::make_unique<CMailChannel>());
+        std::make_unique<CMailChannel>(CreateInfo_));
     return _Inserted;
 }
 

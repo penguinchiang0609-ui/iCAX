@@ -2,14 +2,30 @@
 #include "MailPayload.h"
 
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 
 void iCAX::Mail::ReleaseMailPayload(IN OUT Mail& Mail_) noexcept
 {
+    if (Mail_.Payload.pLease)
+    {
+        Mail_.Payload.pLease->ReleaseMailPayloadLease(
+            Mail_.Payload.nLeaseIndex,
+            Mail_.Payload.nLeaseGeneration);
+        Mail_.Payload.pLease.reset();
+        Mail_.Payload.nLeaseIndex = (std::numeric_limits<size_t>::max)();
+        Mail_.Payload.nLeaseGeneration = 0;
+        Mail_.Payload.pData = nullptr;
+        Mail_.Payload.nSize = 0;
+        return;
+    }
+
     delete[] Mail_.Payload.pData;
     Mail_.Payload.pData = nullptr;
     Mail_.Payload.nSize = 0;
+    Mail_.Payload.nLeaseIndex = (std::numeric_limits<size_t>::max)();
+    Mail_.Payload.nLeaseGeneration = 0;
 }
 
 void iCAX::Mail::SetMailPayloadText(IN OUT Mail& Mail_, IN const std::string& strText_)

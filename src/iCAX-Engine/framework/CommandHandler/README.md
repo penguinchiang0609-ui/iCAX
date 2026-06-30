@@ -1,8 +1,8 @@
 # CommandHandler
 
-`CommandHandler` 是 framework 层的后端命令处理抽象。它位于 Mailbox 之上，用于把前端命令解释为后端应用用例调用。
+`CommandHandler` 是 framework 层的后端命令处理抽象，用于把命令请求解释为后端应用用例调用。
 
-本项目不直接依赖 Mailbox，也不保存业务状态。ApplicationHost 的 Mailbox 适配器可以把邮件转换为 `CCommandRequest`，再交给 `CCommandDispatcher`。
+本项目不直接依赖 Mailbox，也不保存业务状态。`framework/MailHandler` 负责把邮件转换为 `CCommandRequest`，再交给 `CCommandDispatcher`。
 
 CommandHandler 使用主/子命令模型。`CCommandRoute` 的高 32 位是主命令码，低 32 位是子命令码；上层使用 `Main.Sub` 命令名定义协议，底层使用合成后的 64 位 route code 分发。main/sub 单段名称必须匹配 `[A-Z][A-Za-z0-9_]*`。`CCommandRegistry` 注册的是 `ICommandTarget`，一个 command target 负责一个主命令，并在内部把多个子命令分发到不同函数。`CCommandTarget` 是具体主命令类的基类，业务模块通过继承它实现自己的主命令。
 

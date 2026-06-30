@@ -9,6 +9,7 @@
 #include "CommandHandler/CommandRegistry.h"
 #include "Data/Variant.h"
 #include "Mailbox/MailPostOffice.h"
+#include "MailHandler/CMailCommandHandler.h"
 #include "Product/ProductRuntime.h"
 #include "Mailbox/MailChannelRegistry.h"
 #include "Services/ServiceProvider.h"
@@ -421,6 +422,7 @@ namespace iCAX
             iCAX::Data::uuid m_ApplicationChannelID;
             std::shared_ptr<iCAX::Command::CCommandRegistry> m_pCommandRegistry;
             std::unique_ptr<iCAX::Command::CCommandDispatcher> m_pCommandDispatcher;
+            std::unique_ptr<iCAX::MailHandler::CMailCommandHandler> m_pMailCommandHandler;
             std::atomic_uint64_t m_nNextBackendMailID = 1;
             std::shared_ptr<iCAX::Application::CApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pApplicationServiceProvider;

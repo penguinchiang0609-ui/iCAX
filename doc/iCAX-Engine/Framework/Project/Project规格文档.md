@@ -66,13 +66,12 @@ auto frontendOffice = project.GetFrontendPostOffice();
 
 `Close()` 会停止项目线程、清理 `Universe` / `Repository` / `ResourceLibrary`，并从 `CMailChannelRegistry` 删除项目 channel，使已经发出去的旧邮局失效。
 
-如果创建参数中提供了 `PDODeclarations`，Project 会创建自己的 PDOHub：
+如果创建参数中启用 `bEnablePDOHub`，Project 会根据 `PDOHubCreateInfo` 创建自己的动态 PDOHub：
 
 ```cpp
-info.PDODeclarations = {
-    { 1, cameraId, iCAX::PDO::kDirection2External, sizeof(CameraPDO) },
-    { 1, inputId, iCAX::PDO::kDirection2Inner, sizeof(InputPDO) }
-};
+info.bEnablePDOHub = true;
+info.PDOHubCreateInfo.nArenaSize = 64ull * 1024ull * 1024ull;
+info.PDOHubCreateInfo.nSlotCapacity = 4096;
 
 iCAX::Project::CProject project(info);
 
@@ -80,7 +79,7 @@ auto& pdo = project.PDOHub();
 auto arenaName = pdo.GetSharedArenaName();
 ```
 
-项目帧循环中，`PreSwapPDO()` 会交换入向 PDO，`PostSwapPDO()` 会交换出向 PDO。`Close()` 会释放项目 PDOHub；前端宿主应在项目关闭消息后停止访问对应 Arena。
+产品或服务可以在运行期调用 `project.PDOHub().AllocateSlot(...)` / `FreeSlot(...)` 分配和释放具体 PDO slot。项目帧循环中，`PreSwapPDO()` 会交换入向 PDO，`PostSwapPDO()` 会交换出向 PDO。`Close()` 会释放项目 PDOHub；前端宿主应在项目关闭消息后停止访问对应 Arena。
 
 ## 3. 快速保存
 

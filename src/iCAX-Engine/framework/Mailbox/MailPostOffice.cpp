@@ -24,6 +24,23 @@ void iCAX::Mail::CMailPostOffice::Send(const Mail& Mail_) const
     RequireOutgoingQueue()->Enqueue(Mail_);
 }
 
+//! 发送 header + bytes
+void iCAX::Mail::CMailPostOffice::SendPayload(
+    IN const MailHeader& Header_,
+    IN const void* pPayload_,
+    IN size_t nPayloadSize_) const
+{
+    RequireOutgoingQueue()->EnqueuePayload(Header_, pPayload_, nPayloadSize_);
+}
+
+//! 发送 UTF-8 文本
+void iCAX::Mail::CMailPostOffice::SendText(
+    IN const MailHeader& Header_,
+    IN const std::string& strPayloadText_) const
+{
+    SendPayload(Header_, strPayloadText_.data(), strPayloadText_.size());
+}
+
 //! 接收邮件
 std::vector<iCAX::Mail::Mail> iCAX::Mail::CMailPostOffice::Receive() const
 {

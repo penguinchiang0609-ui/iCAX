@@ -13,7 +13,8 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     , m_pMetaRegistry(CreateInfo_.pMetaRegistry)
     , m_pBehaviourRegistry(CreateInfo_.pBehaviourRegistry)
     , m_pMailChannelRegistry(CreateInfo_.pMailChannelRegistry)
-    , m_PDODeclarations(CreateInfo_.PDODeclarations)
+    , m_bEnablePDOHub(CreateInfo_.bEnablePDOHub)
+    , m_PDOHubCreateInfo(CreateInfo_.PDOHubCreateInfo)
     , m_ResourceLoaderRegistryFactory(CreateInfo_.ResourceLoaderRegistryFactory)
     , m_Projects()
     , m_MainProjectID(iCAX::Data::GenerateNilUUID())
@@ -307,9 +308,10 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         CreateInfo_.pResourceLoaderRegistry = m_ResourceLoaderRegistryFactory();
     }
-    if (CreateInfo_.PDODeclarations.empty() && !m_PDODeclarations.empty())
+    if (!CreateInfo_.bEnablePDOHub && m_bEnablePDOHub)
     {
-        CreateInfo_.PDODeclarations = m_PDODeclarations;
+        CreateInfo_.bEnablePDOHub = true;
+        CreateInfo_.PDOHubCreateInfo = m_PDOHubCreateInfo;
     }
     if (!CreateInfo_.pMetaRegistry)
     {

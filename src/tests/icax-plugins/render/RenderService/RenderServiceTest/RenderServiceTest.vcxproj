@@ -53,6 +53,15 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj">
+      <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ProductContext\ProductContext.vcxproj">
+      <Project>{74d665ef-d89e-4104-ae6f-e31c7bff0f46}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj">
+      <Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\render\RenderData\RenderData.vcxproj">
       <Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project>
     </ProjectReference>
@@ -67,6 +76,12 @@
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\PDO\PDO.vcxproj">
       <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Mailbox\Mailbox.vcxproj">
+      <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\CommandHandler\CommandHandler.vcxproj">
+      <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>

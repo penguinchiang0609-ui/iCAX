@@ -16,6 +16,7 @@
 #include "Database/MetaRegistrationCatalog.h"
 #include "Mailbox/MailChannelRegistry.h"
 #include "Mailbox/MailPostOffice.h"
+#include "MailHandler/CMailCommandHandler.h"
 #include "Project/Project.h"
 #include "Project/ProjectCatalog.h"
 #include "Project/ProjectRuntime.h"
@@ -451,6 +452,7 @@ namespace iCAX
             std::shared_ptr<IProductDataStore> m_pProductDataStore;
             std::shared_ptr<iCAX::Command::CCommandRegistry> m_pCommandRegistry;
             std::unique_ptr<iCAX::Command::CCommandDispatcher> m_pCommandDispatcher;
+            std::unique_ptr<iCAX::MailHandler::CMailCommandHandler> m_pMailCommandHandler;
             std::atomic_uint64_t m_nNextBackendMailID = 1;
             mutable std::mutex m_RuntimeMutex;
             std::condition_variable m_WorkerCondition;

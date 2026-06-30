@@ -1,27 +1,64 @@
 #pragma once
 
 #include "PDORenderServiceExport.h"
+#include "CommandHandler/CommandRoute.h"
 #include "RenderService/RenderService.h"
 #include "PDO/IPDOSlot.h"
 #include "Services/ServicesHelper.h"
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace iCAX
 {
     namespace PDORenderService
     {
         /*
+        * @brief PDORenderService 发给前端的事件码。
+        * @details
+        *   事件通过项目 mailbox 发送，payload 使用 UTF-8 JSON 文本。
+        *   前端必须把 PDOID 当作 slot 身份，并在 shared memory arena 中按 PDOID 解析当前 offset，
+        *   不允许长期缓存 offset。碎片整理或扩容后，同一个 PDOID 对应的 offset 可能变化。
+        */
+        inline constexpr uint64_t kPDORenderSlotAllocatedEvent =
+            iCAX::Command::MakeCommandCode("PDORender", "SlotAllocated");
+        inline constexpr uint64_t kPDORenderSlotFreedEvent =
+            iCAX::Command::MakeCommandCode("PDORender", "SlotFreed");
+        inline constexpr uint64_t kPDORenderSlotMovedEvent =
+            iCAX::Command::MakeCommandCode("PDORender", "SlotMoved");
+        inline constexpr uint64_t kPDORenderDefragBeginEvent =
+            iCAX::Command::MakeCommandCode("PDORender", "DefragBegin");
+        inline constexpr uint64_t kPDORenderDefragEndEvent =
+            iCAX::Command::MakeCommandCode("PDORender", "DefragEnd");
+
+        /*
         * @brief 基于 PDO 的 RenderService 实现。
         * @details
-        *   该服务按 ProjectID + RenderSceneID 保存 RenderData。写 PDO 时，调用方显式传入目标 Slot，
-        *   因此服务不会长期持有 Project PDOHub 指针，也不会在项目关闭后留下悬挂引用。
+        *   该服务按 ProjectID + RenderSceneID 保存 RenderData。Update 时通过 ProjectContext 获取当前项目 PDOHub，
+        *   按当前 RenderData 动态分配/释放 slot，并把数据写入目标 slot；服务不会长期持有 Project PDOHub 指针。
         */
         class _PDO_RENDER_SERVICE_EXP CPDORenderService final : public iCAX::Render::IRenderService
         {
             AUTO_REGIST_SERVICE(iCAX::Render::IRenderService, CPDORenderService)
+
+        private:
+            struct SSlotAssignment final
+            {
+                iCAX::PDO::PDOID nPDOID = 0;
+                uint64_t nPayloadCapacity = 0;
+            };
+
+            struct SScenePDOOutputState final
+            {
+                std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> MeshSlots;
+                std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> PolylineSlots;
+                std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> ToolpathSlots;
+                std::unordered_map<iCAX::Render::RenderObjectID, SSlotAssignment> ObjectSlots;
+                SSlotAssignment ViewSlot;
+            };
 
         public:
             CPDORenderService();
@@ -49,6 +86,13 @@ namespace iCAX
                 IN iCAX::Render::RenderSceneID nSceneID_) const override;
 
             std::vector<iCAX::Render::RenderSceneID> ListSceneIDs(IN const iCAX::Data::uuid& ProjectID_) const override;
+
+            void Update(
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+                IN const iCAX::Product::IProductContext& ProductContext_,
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN const double& nDeltaTime_,
+                IN const double& nTotalTime_) override;
 
             bool ClearScene(
                 IN const iCAX::Data::uuid& ProjectID_,
@@ -93,6 +137,51 @@ namespace iCAX
                 IN iCAX::Render::RenderSceneID nSceneID_) const override;
 
             /*
+            * @brief 构造一个渲染几何 PDOID。
+            * @details
+            *   PDOID 是前后端共同使用的稳定身份。slot 在 arena 中移动或重新分配时，PDOID 不变。
+            */
+            static iCAX::PDO::PDOID MakeGeometryPDOID(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Render::ERenderGeometryKind eGeometryKind_,
+                IN iCAX::Render::RenderGeometryID nGeometryID_);
+
+            /*
+            * @brief 构造一个渲染对象 PDOID。
+            * @details 一个对象对应一个 InstanceList PDO slot，payload 中只包含该对象自己的 transform/style。
+            */
+            static iCAX::PDO::PDOID MakeObjectPDOID(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Render::RenderObjectID nObjectID_);
+
+            /*
+            * @brief 构造一个 scene 视图状态 PDOID。
+            */
+            static iCAX::PDO::PDOID MakeViewStatePDOID(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_);
+
+            /*
+            * @brief 通知前端 PDO arena 即将开始碎片整理。
+            * @details 前端收到后应暂停直接缓存 offset 的读写逻辑，只保留 PDOID，并等待 DefragEnd 后重新解析。
+            */
+            void NotifyPDODefragBegin(IN iCAX::Project::IProjectContext& ProjectContext_) const;
+
+            /*
+            * @brief 通知前端某个 PDO slot 在 arena 中被移动。
+            */
+            void NotifyPDOSlotMoved(
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::PDO::PDOID nPDOID_) const;
+
+            /*
+            * @brief 通知前端 PDO arena 碎片整理结束。
+            */
+            void NotifyPDODefragEnd(IN iCAX::Project::IProjectContext& ProjectContext_) const;
+
+            /*
             * @brief 将指定 mesh 写入一个 RenderPDO mesh slot。
             * @return true 表示本次写入完成；false 表示数据版本未更新或写缓冲暂不可用。
             */
@@ -119,6 +208,18 @@ namespace iCAX
                 IN iCAX::Render::RenderSceneID nSceneID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
+            /*
+            * @brief 将单个渲染对象写入一个 InstanceList PDO slot。
+            * @details
+            *   PDORenderService 的常规输出模型是一个对象一个 PDO slot。该函数序列化出的 InstanceList
+            *   只包含一个 instance，并按该 instance 引用的 style 写入最多一个 style。
+            */
+            bool WriteObjectToPDO(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Render::RenderObjectID nObjectID_,
+                IN iCAX::PDO::IPDOSlot& Slot_) const;
+
             bool WriteViewStatesToPDO(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
@@ -137,11 +238,45 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_);
 
+            void SynchronizeScenePDOOutput(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN const iCAX::Render::SRenderSceneSnapshot* pScene_,
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN OUT SScenePDOOutputState& State_) const;
+
+            void FreeScenePDOOutput(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN OUT SScenePDOOutputState& State_) const;
+
+            void SendSlotEvent(
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN uint64_t nEventTypeCode_,
+                IN const char* pEventName_,
+                IN const char* pSlotRole_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::PDO::PDOID nPDOID_,
+                IN iCAX::Render::RenderGeometryID nGeometryID_,
+                IN iCAX::Render::RenderObjectID nObjectID_,
+                IN const char* pPayloadKind_,
+                IN uint64_t nPayloadCapacity_) const;
+
+            void SendDefragEvent(
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN uint64_t nEventTypeCode_,
+                IN const char* pEventName_,
+                IN iCAX::PDO::PDOID nPDOID_) const;
+
         private:
             mutable std::mutex m_Mutex;
+            mutable std::atomic_uint64_t m_nNextEventMailID = 1;
             std::unordered_map<
                 iCAX::Data::uuid,
                 std::unordered_map<iCAX::Render::RenderSceneID, iCAX::Render::SRenderSceneSnapshot>> m_Projects;
+            std::unordered_map<
+                iCAX::Data::uuid,
+                std::unordered_map<iCAX::Render::RenderSceneID, SScenePDOOutputState>> m_PDOOutputs;
         };
     }
 }

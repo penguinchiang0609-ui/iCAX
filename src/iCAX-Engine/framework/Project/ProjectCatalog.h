@@ -28,7 +28,8 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry; //!< 产品级元数据注册表。
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 产品级行为注册表。
             std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry; //!< 邮件通道注册表。
-            std::vector<iCAX::PDO::PDODecl> PDODeclarations; //!< Catalog 默认传给每个项目的 PDO 声明。
+            bool bEnablePDOHub = false; //!< Catalog 默认传给每个项目的动态 PDOHub 开关。
+            iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< Catalog 默认传给每个项目的动态 PDOHub 创建参数。
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> ResourceLoaderRegistryFactory; //!< 项目级资源加载器注册表工厂。
         };
 
@@ -187,7 +188,8 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
             std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
-            std::vector<iCAX::PDO::PDODecl> m_PDODeclarations;
+            bool m_bEnablePDOHub = false;
+            iCAX::PDO::CPDOHubCreateInfo m_PDOHubCreateInfo;
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> m_ResourceLoaderRegistryFactory;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProject>> m_Projects;
             iCAX::Data::uuid m_MainProjectID;

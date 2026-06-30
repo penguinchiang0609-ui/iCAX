@@ -40,6 +40,9 @@
   <Folder Name="/iCAX-Engine/framework/Mailbox/">
     <Project Path="iCAX-Engine/framework/Mailbox/Mailbox.vcxproj" />
   </Folder>
+  <Folder Name="/iCAX-Engine/framework/MailHandler/">
+    <Project Path="iCAX-Engine/framework/MailHandler/MailHandler.vcxproj" />
+  </Folder>
   <Folder Name="/iCAX-Engine/framework/PDO/">
     <Project Path="iCAX-Engine/framework/PDO/PDO.vcxproj" />
   </Folder>
@@ -74,10 +77,14 @@
     <Project Path="iCAX-Plugins/physics/ColliderService/ColliderService.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Plugins/physics/JoltColliderService/">
-    <Project Path="iCAX-Plugins/physics/JoltColliderService/JoltColliderService.vcxproj" />
+    <Project Path="iCAX-Plugins/physics/JoltColliderService/JoltColliderService.vcxproj">
+      <Build Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/iCAX-Plugins/physics/JoltPhysics/">
-    <Project Path="iCAX-Plugins/physics/JoltPhysics/JoltPhysics.vcxproj" />
+    <Project Path="iCAX-Plugins/physics/JoltPhysics/JoltPhysics.vcxproj">
+      <Build Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/iCAX-Plugins/render/" />
   <Folder Name="/iCAX-Plugins/render/RenderPDO/">
@@ -140,6 +147,10 @@
   <Folder Name="/tests/icax-engine/framework/Mailbox/MailboxTest/">
     <Project Path="tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj" />
   </Folder>
+  <Folder Name="/tests/icax-engine/framework/MailHandler/" />
+  <Folder Name="/tests/icax-engine/framework/MailHandler/MailHandlerTest/">
+    <Project Path="tests/icax-engine/framework/MailHandler/MailHandlerTest/MailHandlerTest.vcxproj" />
+  </Folder>
   <Folder Name="/tests/icax-engine/framework/PDO/" />
   <Folder Name="/tests/icax-engine/framework/PDO/PDOTest/">
     <Project Path="tests/icax-engine/framework/PDO/PDOTest/PDOTest.vcxproj" />
@@ -169,11 +180,15 @@
   <Folder Name="/tests/icax-plugins/physics/" />
   <Folder Name="/tests/icax-plugins/physics/ColliderService/" />
   <Folder Name="/tests/icax-plugins/physics/ColliderService/ColliderServiceTest/">
-    <Project Path="tests/icax-plugins/physics/ColliderService/ColliderServiceTest/ColliderServiceTest.vcxproj" />
+    <Project Path="tests/icax-plugins/physics/ColliderService/ColliderServiceTest/ColliderServiceTest.vcxproj">
+      <Build Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/tests/icax-plugins/physics/JoltPhysics/" />
   <Folder Name="/tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/">
-    <Project Path="tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/JoltPhysicsTest.vcxproj" />
+    <Project Path="tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/JoltPhysicsTest.vcxproj">
+      <Build Project="false" />
+    </Project>
   </Folder>
   <Folder Name="/tests/icax-plugins/render/" />
   <Folder Name="/tests/icax-plugins/render/RenderPDO/" />

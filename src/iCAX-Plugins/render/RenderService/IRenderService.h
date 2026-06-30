@@ -8,6 +8,21 @@
 
 namespace iCAX
 {
+    namespace Application
+    {
+        class IApplicationContext;
+    }
+
+    namespace Product
+    {
+        class IProductContext;
+    }
+
+    namespace Project
+    {
+        class IProjectContext;
+    }
+
     namespace Render
     {
         /*
@@ -56,6 +71,24 @@ namespace iCAX
             * @brief 列出某个项目下的渲染场景 ID。
             */
             virtual std::vector<RenderSceneID> ListSceneIDs(IN const iCAX::Data::uuid& ProjectID_) const = 0;
+
+            /*
+            * @brief 刷新一帧渲染输出。
+            * @param [in] ApplicationContext_ 应用级上下文。
+            * @param [in] ProductContext_ 产品级上下文。
+            * @param [in,out] ProjectContext_ 项目级上下文；PDO、资源和项目数据都从这里进入。
+            * @param [in] nDeltaTime_ 当前帧距离上一帧的时间，单位秒。
+            * @param [in] nTotalTime_ 项目运行累计时间，单位秒。
+            * @details
+            *   Update 是 RenderService 的帧入口，也可以理解为渲染服务的 OnTick。
+            *   PDO 实现应在这里把 RenderData 写入项目 PDO；原生渲染实现应在这里刷新屏幕或提交渲染命令。
+            */
+            virtual void Update(
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+                IN const iCAX::Product::IProductContext& ProductContext_,
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN const double& nDeltaTime_,
+                IN const double& nTotalTime_) = 0;
 
             /*
             * @brief 清空场景内所有渲染数据，但保留场景本身。

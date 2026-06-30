@@ -100,7 +100,8 @@ namespace iCAX
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 行为注册表。
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry; //!< 项目资源加载器注册表。
             std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry; //!< 邮件通道注册表。
-            std::vector<iCAX::PDO::PDODecl> PDODeclarations; //!< 项目级 PDO 声明；为空表示项目不启用 PDO。
+            bool bEnablePDOHub = false; //!< true 表示创建项目级动态 PDOHub。
+            iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 动态 PDOHub 创建参数。
             uint32_t nFrameIntervalMilliseconds = 16; //!< 项目工作线程帧间隔。
             ProjectFrameHandler FrameHandler; //!< 每帧回调。
         };

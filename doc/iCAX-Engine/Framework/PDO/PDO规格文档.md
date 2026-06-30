@@ -113,7 +113,9 @@ enum PDODirection
 
 ## 6. Shared PDO Arena 生命周期
 
-创建方通过 `CSharedPDOArena::Create(name, decls)` 创建共享内存：
+创建方可以用静态声明创建 Arena，也可以用动态 Arena 创建参数创建一块较大的共享内存，再在运行期分配 slot。
+
+静态声明方式：
 
 ```cpp
 auto arena = iCAX::PDO::CSharedPDOArena::Create(
@@ -124,6 +126,33 @@ auto arena = iCAX::PDO::CSharedPDOArena::Create(
     });
 ```
 
+动态 Arena 方式：
+
+```cpp
+iCAX::PDO::CPDOHubCreateInfo createInfo;
+createInfo.nArenaSize = 64ull * 1024ull * 1024ull;
+createInfo.nSlotCapacity = 4096;
+
+auto hub = iCAX::PDO::GeneratePDOHub(createInfo);
+
+iCAX::PDO::CPDOHubAllocationCallbacks callbacks;
+callbacks.OnDefragmentBegin = []()
+{
+    // 可选：通知前端暂停使用已缓存 offset。
+};
+callbacks.OnDefragmentEnd = [](const std::vector<iCAX::PDO::CPDOHubDefragMove>& moves)
+{
+    // 可选：根据 moves 发送 SlotMoved，然后通知前端重新解析 offset。
+};
+
+auto& slot = hub->AllocateSlot({
+    1,
+    meshPDOID,
+    iCAX::PDO::kDirection2External,
+    meshPayloadBytes
+}, callbacks);
+```
+
 另一侧通过同名 mapping 打开：
 
 ```cpp
@@ -132,7 +161,11 @@ auto arena = iCAX::PDO::CSharedPDOArena::Open(L"Local\\iCAX.PDO.Project.1");
 
 Arena 的生命周期由持有 `CSharedPDOArena` 的进程对象控制。最后一个 mapping handle 关闭后，Windows 会释放对应共享内存对象。
 
-Arena 通常由 Project 通过 `CProjectCreateInfo::PDODeclarations` 创建和持有。Mailbox 可以用于通知前端：“某个项目的 PDO Arena 名称是什么”。Project 关闭后会释放自己的 PDOHub，前端宿主应停止访问对应 Arena。
+Arena 通常由 Project 通过 `CProjectCreateInfo::PDOHubCreateInfo` 创建和持有。Mailbox 可以用于通知前端：“某个项目的 PDO Arena 名称是什么，以及某个 PDOID 对应的 slot 何时创建或释放”。Project 关闭后会释放自己的 PDOHub，前端宿主应停止访问对应 Arena。
+
+前端不得缓存 payload offset。动态 Arena 允许 slot 被释放、复用，后续碎片整理也可能移动 slot。前端应始终用 `PDOID` 在 Arena 的 active slot table 中重新定位当前 offset。
+
+碎片整理属于 PDO 模块内部行为。调用 `AllocateSlot()` 时，如果没有足够大的连续空闲块，但 Arena 总空闲容量足以容纳本次分配，`CPDOHub` 会自动执行碎片整理并重试分配。外部不能直接调用碎片整理，也不需要检查空闲块；如果需要通知前端，应使用带 `CPDOHubAllocationCallbacks` 的 `AllocateSlot()` 重载。
 
 ## 7. Slot 使用规则
 
@@ -178,7 +211,7 @@ auto dataVersion = readLease.DataVersion();
 
 ## 8. Hub 使用规则
 
-`GeneratePDOHub()` 根据一组 `PDODecl` 创建 Hub。Hub 内部同样使用 shared memory Arena，只是 Arena 名称由 `CPDOHub` 自动生成。
+`GeneratePDOHub(std::vector<PDODecl>)` 根据一组静态 `PDODecl` 创建 Hub。`GeneratePDOHub(CPDOHubCreateInfo)` 创建动态 Hub，创建时只固定 Arena 总大小和 slot table 容量，具体 slot 可在运行期通过 `AllocateSlot()` 分配。
 
 上层通过 `GetSlot(id)` 访问指定槽。
 
@@ -190,6 +223,37 @@ auto hub = iCAX::PDO::GeneratePDOHub({
 
 auto& cameraSlot = hub->GetSlot(cameraId);
 ```
+
+动态分配方式：
+
+```cpp
+iCAX::PDO::CPDOHubCreateInfo createInfo;
+createInfo.nArenaSize = 64ull * 1024ull * 1024ull;
+createInfo.nSlotCapacity = 4096;
+
+auto hub = iCAX::PDO::GeneratePDOHub(createInfo);
+
+iCAX::PDO::CPDOHubAllocationCallbacks callbacks;
+callbacks.OnDefragmentBegin = []()
+{
+    // 可选：发送 DefragBegin。
+};
+callbacks.OnDefragmentEnd = [](const std::vector<iCAX::PDO::CPDOHubDefragMove>& moves)
+{
+    // 可选：发送 SlotMoved... 和 DefragEnd。
+};
+
+auto& meshSlot = hub->AllocateSlot({
+    1,
+    meshId,
+    iCAX::PDO::kDirection2External,
+    meshPayloadBytes
+}, callbacks);
+
+hub->FreeSlot(meshId);
+```
+
+`AllocateSlot()` 会从 Arena payload 区切分连续空间。`FreeSlot()` 会回收空间并合并相邻空闲块。释放后旧 `IPDOSlot&` 引用失效，上层不得继续读写。`AllocateSlot(decl)` 等价于使用空回调；它仍然会在 PDO 内部自动整理碎片，只是不会通知外部。
 
 `SwapInSlot()` 只交换 `kDirection2Inner` 的槽。
 
@@ -280,9 +344,11 @@ class RenderCameraPDOView {
 
 ```text
 SharedPDOArenaHeader
-SharedPDOSlotHeader[slotCount]
+SharedPDOSlotHeader[slotCapacity]
 payload buffer area
 ```
+
+`nSlotCount` 表示当前 active slot 数量，`nSlotCapacity` 表示 slot table 容量。动态 Arena 可以在创建时没有 active slot，但必须有可用容量。
 
 每个 Slot 固定两个 payload buffer：
 
@@ -301,7 +367,7 @@ Published 当前读侧可见。
 Reading   读侧正在读取；写侧不可复用。
 ```
 
-Slot header 保存 `PDOID/version/direction/payloadSize/bufferOffset/bufferState/readerCount/publishedIndex/writeIndex/readyIndex/sequence/bufferDataVersion/publishedDataVersion/latestDataVersion` 等共享状态。
+Slot header 保存 `active/PDOID/version/direction/payloadSize/payloadBlockOffset/payloadBlockSize/bufferOffset/bufferState/readerCount/publishedIndex/writeIndex/readyIndex/sequence/bufferDataVersion/publishedDataVersion/latestDataVersion` 等共享状态。
 
 所有 offset 都是相对 Arena base address 的偏移，不保存进程内指针，因为不同进程映射到的虚拟地址可能不同。
 
@@ -335,13 +401,15 @@ lease 析构或 Release()
 - 如果 ready buffer 还没交换，写侧又收到更高版本源数据，可以覆盖该 ready buffer；旧 ready 数据会被丢弃。
 - 写侧应该优先使用 `CPDOWriteLease::TryBeginIfNewer()`，避免 Mesh 等重数据每帧重复序列化，并避免高频帧循环被读租约阻塞。
 
-`CPDOHub` 的槽集合管理不是并发容器。初始化、清理和按 ID 访问应由上层生命周期保证。
+`CPDOHub` 的槽集合管理由 Hub 内部 mutex 保护。需要注意的是，`FreeSlot()` 之后旧 `IPDOSlot&` 引用立即失效；业务层应通过生命周期和事件通知保证读写方不继续使用已释放 slot。
 
 ## 13. 错误处理
 
 `CPDOHub::GetSlot()` 查不到 ID 时抛出 `std::runtime_error`。
 
-`CSharedPDOArena::Create()` 会拒绝空名称、空声明、重复 PDOID、非法方向和非正 payload size。
+`CSharedPDOArena::Create(name, decls)` 会拒绝空名称、空声明、重复 PDOID、非法方向和非正 payload size。
+
+`CSharedPDOArena::Create(name, createInfo)` 会拒绝空名称、无效 Arena 大小、无效 slot capacity、重复初始 PDOID、非法方向和非正 payload size。动态 Arena 允许初始声明为空。
 
 `CSharedPDOArena::Create()` 如果发现同名 mapping 已经存在，会抛出异常，避免错误复用旧 Arena。
 
@@ -349,10 +417,10 @@ lease 析构或 Release()
 
 打开 Arena 时会校验：
 
-- magic、version、header size、slot count。
-- Arena size、slot table offset、payload offset 和范围。
+- magic、version、header size、slot count、slot capacity。
+- Arena size、slot table offset、payload offset、payload size 和范围。
 - 每个 Slot 的 ID、version、direction、payload size。
-- 每个 Slot 的 buffer offset、buffer state、reader count、published/write/ready index。
+- 每个 active Slot 的 payload block、buffer offset、buffer state、reader count、published/write/ready index。
 - 重复 PDOID 和两个 buffer offset 相同的非法结构。
 
 ## 14. 单元测试
@@ -377,6 +445,9 @@ src/tests/icax-engine/framework/PDO/PDOTest/
 - `CPDOHub` 根据方向交换入向和出向槽。
 - `IPDOHub` 可暴露共享内存名称、大小和声明快照。
 - 未知槽和 `Clear()` 后访问槽的异常行为。
+- 动态 Hub 可从共享 Arena 分配 slot。
+- 动态 Hub 会复用已释放 slot 的 payload 空间。
+- 正在被读侧持有的 slot 不能释放。
 - `CSharedPDOArena` 创建固定双缓冲 Slot。
 - 通过同名共享内存打开的 Arena 可以读到发布后的 payload。
 - Arena owner 销毁后，同名 mapping 可以重新创建。

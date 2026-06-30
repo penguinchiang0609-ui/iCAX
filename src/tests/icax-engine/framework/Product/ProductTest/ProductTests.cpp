@@ -66,9 +66,7 @@ namespace
 
     void ReleaseTestMailPayload(IN OUT iCAX::Mail::Mail& Mail_) noexcept
     {
-        delete[] Mail_.Payload.pData;
-        Mail_.Payload.pData = nullptr;
-        Mail_.Payload.nSize = 0;
+        iCAX::Mail::ReleaseMailPayload(Mail_);
     }
 
     void ReleaseMailPayloads(IN OUT std::vector<iCAX::Mail::Mail>& Mails_) noexcept

@@ -1,277 +1,221 @@
 # Mail 通信方案文档
 
-## 1. 目标问题
+## 1. 目标
 
-Mail 通信要解决的是同一进程内两个运行单元之间的低频消息交换问题。发送方不直接调用接收方代码，而是把邮件放入通道；接收方在自己的安全时机批量取出。
+Mail 通信解决同一进程内两个运行单元之间的低频消息交换。发送方不直接调用接收方代码，而是把邮件写入对端队列；接收方在自己的安全时机批量取出。
 
-Framework 层不限定通信双方。它采用“双向通道 + 单向队列 + 端点邮局”的通用方案：
+本模块目标：
 
-```text
-EndA post office
-  Send
-    -> AToB queue
-      -> EndB post office Receive
+- 保持通用 EndA/EndB 模型，不绑定业务角色。
+- 保证同一方向内消息有序。
+- 减少每封邮件带来的堆分配释放频次。
+- 保持 payload 生命周期清晰，接收方统一调用 `ReleaseMailPayload`。
 
-EndB post office
-  Send
-    -> BToA queue
-      -> EndA post office Receive
-```
-
-具体应用通信只是上层服务对 EndA/EndB 的一种映射，不进入 Framework 的核心通信模型。
-
-## 2. 工程位置
+## 2. 总体结构
 
 ```text
-src/icax-engine/framework/Mailbox/
+CMailChannel
+  EndA -> EndB: CMailQueue
+  EndB -> EndA: CMailQueue
+
+CMailPostOffice(EndA)
+  incoming = EndB -> EndA
+  outgoing = EndA -> EndB
+
+CMailPostOffice(EndB)
+  incoming = EndA -> EndB
+  outgoing = EndB -> EndA
 ```
 
-工程文件：
+`CMailPostOffice` 只保存两个队列的弱引用，因此获取邮局成本很低，通道释放后旧邮局会自然失效。
+
+## 3. 池化队列
+
+`CMailQueue` 内部不再保存 `std::vector<Mail>` 和每封邮件独立 `new[]` 的 payload，而是使用两个预分配池：
 
 ```text
-Mailbox.vcxproj
+record pool
+  CRecord[nMaxMailCount]
+
+payload pool
+  uint8_t[nPayloadPoolBytes]
 ```
 
-## 3. 模块结构
+每个 record 保存：
+
+- `MailHeader`
+- payload offset
+- payload size
+- payload block size
+- generation
+- state
+
+record 状态：
 
 ```text
-MailExport.h
-  -> DLL 导出宏
-
-Mail.h
-  -> StampCode
-  -> MailHeader
-  -> MailData
-  -> Mail
-
-MailPayload.h / MailPayload.cpp
-  -> 文本 Payload 创建、读取和释放辅助函数
-
-MailQueue.h / MailQueue.cpp
-  -> CMailQueue，单向队列
-
-MailChannel.h / MailChannel.cpp
-  -> MailChannelEnd 与 CMailChannel，双向通道
-
-MailPostOffice.h / MailPostOffice.cpp
-  -> CMailPostOffice，某一端的邮局
+Free -> Pending -> Leased -> Free
 ```
 
-## 4. 核心设计
+发送流程：
 
-### 4.1 Mail
+```text
+Send / Enqueue
+  -> 从 free record 取一个 record
+  -> 从 payload free list 切一段空间
+  -> 复制 header 和 payload
+  -> record 进入 Pending
+```
 
-`Mail` 保持简单结构：
+接收流程：
+
+```text
+Receive / Drain
+  -> Pending record 转成 Mail
+  -> Mail payload 指向队列 payload pool
+  -> Mail 携带 IMailPayloadLease
+  -> record 进入 Leased
+```
+
+释放流程：
+
+```text
+ReleaseMailPayload
+  -> 如果 payload 携带 lease，则调用 ReleaseMailPayloadLease
+  -> record 回到 Free
+  -> payload block 回到 free list
+  -> 相邻 free block 合并
+```
+
+如果 `CMailQueue` 不是由 `std::shared_ptr` 拥有，`Drain()` 无法给返回邮件挂安全租约，会退回为深拷贝 payload。正常业务通过 `CMailChannel` 使用队列，通道内部队列由 `shared_ptr` 拥有，因此返回的是池租约。
+
+## 4. Payload free list
+
+payload pool 使用空闲块表管理：
 
 ```cpp
-struct Mail
+struct CFreeBlock
 {
-    MailHeader Header;
-    MailData Payload;
+    size_t nOffset;
+    size_t nSize;
 };
 ```
 
-`MailHeader::nTypeCode` 是业务类型码。Mailbox 不解释它，命令语义由上层 CommandHandler 或业务协议解释。
+分配策略：
 
-Payload 底层仍是 bytes。面向 H5 的普通命令在协议上约定为 UTF-8 文本，也就是 JS string；文本内容通常是 JSON。这样 JS 侧不需要处理 C++ 结构体、指针、`size_t` 或 `uint64_t` 精度问题。
+- first-fit。
+- 分配时按 8 字节对齐。
+- 分配失败时 `TryEnqueue` 返回 `false`。
+- `Enqueue` 把失败转换为 `std::runtime_error`。
 
-### 4.2 MailPayload
+释放策略：
 
-`MailPayload` 提供官方文本负载入口：
+- 归还 block 后按 offset 排序。
+- 相邻或重叠 block 合并。
+- 队列初始化时预留 `recordCount + 1` 个 free block 容量，释放路径不依赖临时扩容。
+
+Mailbox 不做 PDO 那种碎片整理。邮件 payload 生命周期短，且接收方可能正在读取已经租出的 payload；移动 payload 会让问题复杂化。当前策略依赖相邻合并和容量配置解决低频控制消息的性能问题。
+
+## 5. 统一释放入口
+
+`ReleaseMailPayload` 是唯一合法释放入口：
 
 ```cpp
 void ReleaseMailPayload(Mail& mail) noexcept;
-void SetMailPayloadText(Mail& mail, const std::string& text);
-std::string GetMailPayloadText(const Mail& mail);
-Mail CreateTextMail(const MailHeader& header, const std::string& text);
 ```
 
-设计要点：
+实现逻辑：
 
-- `SetMailPayloadText` 先释放旧 Payload，再把 UTF-8 文本拷贝到 `uint8_t[]`。
-- `GetMailPayloadText` 不做 JSON 解析，只把 Payload 按 UTF-8 文本取出。
-- 空字符串对应空 Payload，不额外写入字符串结尾的 `\0`。
-- `ReleaseMailPayload` 是统一释放入口，避免业务代码散落手写 `delete[]`。
-- 大块资源和模型数据不走普通文本 Payload，应走资源池或专门二进制路径；高频状态走 PDO。
+- 如果 `mail.Payload.pLease` 非空，归还队列 record 和 payload block。
+- 否则对 `mail.Payload.pData` 执行 `delete[]`。
+- 释放后清空 `pData`、`nSize` 和租约字段。
 
-### 4.3 CMailQueue
+因此业务层不需要知道 payload 来源。相应地，业务层禁止手写 `delete[] mail.Payload.pData`。
 
-`CMailQueue` 是底层单向队列。
+## 6. 发送接口分层
 
-内部结构：
+`CMailPostOffice` 提供三种发送方式：
 
 ```cpp
-std::mutex m_Mutex;
-std::vector<Mail> m_vecMails;
+void Send(const Mail& mail) const;
+void SendPayload(const MailHeader& header, const void* payload, size_t payloadSize) const;
+void SendText(const MailHeader& header, const std::string& payloadText) const;
 ```
 
-方法：
+使用建议：
+
+- 已经有 `Mail` 对象时用 `Send`。
+- 只有 header + bytes 时用 `SendPayload`，避免构造临时 `Mail`。
+- 普通 H5 JSON 命令或事件用 `SendText`。
+
+`Send` 仍会复制 payload 到队列池中，调用方仍需释放传入的临时邮件。
+
+## 7. 通道容量配置
+
+通道创建参数：
 
 ```cpp
-void Enqueue(const Mail& mail);
-std::vector<Mail> Drain();
-void Clear();
-```
-
-设计要点：
-
-- `Enqueue` 复制 `MailHeader` 并深拷贝 Payload，避免调用方释放原始邮件后队列悬空。
-- `Drain` 使用 `swap` 整体取出队列，降低锁内开销。
-- `Clear` 释放仍滞留在队列中的 Payload。
-- 队列禁止拷贝，避免多个队列持有同一批裸指针 Payload。
-
-### 4.4 CMailChannel
-
-`CMailChannel` 拥有两个队列：
-
-```cpp
-std::shared_ptr<CMailQueue> m_AToB;
-std::shared_ptr<CMailQueue> m_BToA;
-```
-
-端点枚举：
-
-```cpp
-enum MailChannelEnd : uint8_t
+struct CMailChannelCreateInfo
 {
-    kMailEndA = 0,
-    kMailEndB = 1,
+    CMailQueueCreateInfo EndAToEndBQueue;
+    CMailQueueCreateInfo EndBToEndAQueue;
 };
 ```
 
-它负责根据端点获取邮局：
+两个方向容量独立。典型用法：
+
+- 前端到后端命令少，可以较小。
+- 后端到前端事件较多，可以较大。
+- 项目通道可以比应用通道更大。
+
+`CMailChannel::Reset()` 会按原始创建参数重建两个方向的队列。
+
+## 8. Registry
+
+`CMailChannelRegistry` 按 ChannelID 管理通道生命周期：
 
 ```cpp
-CMailPostOffice GetPostOffice(MailChannelEnd end) noexcept;
-CMailPostOffice GetEndAPostOffice() noexcept;
-CMailPostOffice GetEndBPostOffice() noexcept;
-void Clear();
-void Reset();
+bool CreateChannel(const uuid& channelID);
+bool CreateChannel(const uuid& channelID, const CMailChannelCreateInfo& createInfo);
+CMailPostOffice GetFrontendPostOffice(const uuid& channelID) const;
+CMailPostOffice GetBackendPostOffice(const uuid& channelID) const;
+bool RemoveChannel(const uuid& channelID);
+void ClearChannels();
 ```
 
-返回的 `CMailPostOffice` 是非拥有弱引用视图，不分配队列；底层通道释放或 `Reset()` 后，旧邮局会失效并在使用时抛出异常。
+Registry 线程安全。它由 ApplicationHost 持有并显式注入 ProductRuntime / Project，不是全局单例。
 
-EndA 邮局绑定：
+`GetFrontendPostOffice` / `GetBackendPostOffice` 是 framework 装配层命名：
 
-```text
-incoming = BToA
-outgoing = AToB
-```
+- frontend = EndA
+- backend = EndB
 
-EndB 邮局绑定：
+Mailbox 核心层不理解这两个角色。
 
-```text
-incoming = AToB
-outgoing = BToA
-```
+## 9. 线程模型
 
-### 4.5 CMailPostOffice
+`CMailQueue` 每个公开方法内部加锁。
 
-`CMailPostOffice` 是一个轻量收发入口，不拥有队列。
+安全场景：
 
-内部结构：
+- 多线程同时发送。
+- 接收线程 Drain，同时发送线程 Enqueue。
+- Clear 与发送/接收并发。
 
-```cpp
-std::weak_ptr<CMailQueue> m_pIncomingQueue;
-std::weak_ptr<CMailQueue> m_pOutgoingQueue;
-```
+生命周期场景由外部所有者负责：
 
-方法：
+- 通道关闭时调用 `RemoveChannel` 或 `Reset`。
+- 旧 PostOffice 只持有弱引用，通道移除后使用时抛 `std::logic_error`。
+- 已接收但未释放的 Mail 会通过租约延长队列寿命，直到 `ReleaseMailPayload`。
 
-```cpp
-bool IsValid() const noexcept;
-void Send(const Mail& mail) const;
-std::vector<Mail> Receive() const;
-void ClearIncoming() const;
-void ClearOutgoing() const;
-```
+## 10. 与 WebView2 / OS shared memory 的关系
 
-`Send` 写入 outgoing queue，`Receive` 从 incoming queue 取出。
+当前 Mailbox 是进程内预分配池，不直接暴露 OS shared memory 给 JS。
 
-`CMailChannel` 禁止拷贝和移动。这样已经获取到的 `CMailPostOffice` 不会因为通道对象被移动而指向错位的队列。通道销毁后，邮局弱引用失效，不会悬空访问。
+WebView2 的 JS 共享内存需要通过 WebView2 SharedBuffer 投递；这属于 UIContainer/Bridge 适配层，不放进 Mailbox 核心模块。Mailbox 的契约保持 `MailHeader + bytes payload`，后续可以在 bridge 层把同一套契约映射到 WebView2 SharedBuffer。
 
-`Clear()` 只清空队列内容，不改变队列身份。`Reset()` 会先清空旧队列，再替换为新的 `CMailQueue`，用于关闭运行单元时切断所有旧邮局。
+高频大数据仍由 PDO 负责，Mailbox 不承担 mesh、刀路、渲染数据的高频通道职责。
 
-## 5. 运行体映射方案
-
-`Mailbox` 不维护全局通道目录，也不按通信 ID 托管 `CMailChannel`。在具体应用框架里，可以由更高层服务或运行体把 EndA/EndB 映射成自己的两个运行角色：
-
-```text
-EndA = role 1
-EndB = role 2
-```
-
-上层运行体可以保留业务友好的入口：
-
-```cpp
-CMailPostOffice GetFrontendPostOffice();
-CMailPostOffice GetBackendPostOffice();
-```
-
-这里的角色命名属于运行体装配语义，不属于 `Mailbox` 的基础通道语义。
-
-返回的 `CMailPostOffice` 是轻量对象，持有底层队列弱引用。生命周期所有者删除、重置或释放底层 `CMailChannel` 后，旧邮局变为无效对象，继续收发会抛出 `std::logic_error`。反复获取同一个端点的邮局不会产生新的队列。
-
-当前 iCAX framework 使用 `Mailbox/CMailChannelRegistry` 作为应用级 channel 目录。ApplicationHost 直接持有 registry，并显式注入 ProductRuntime 和 Project；运行体只保存自己的 mail id，通过 context 暴露 frontend/backend post office。Mailbox 本身仍保持无业务角色的基础通信语义。
-
-## 6. 生命周期方案
-
-Payload 生命周期：
-
-```text
-发送前：
-  调用方拥有 Payload
-
-Send / Enqueue 后：
-  目标队列持有 Payload 的独立拷贝
-  调用方仍持有原始 Payload，需要自行释放
-
-Receive / Drain 后：
-  调用方获得队列中那份 Payload 拷贝的所有权
-
-Clear 或队列析构：
-  队列释放仍滞留的 Payload
-```
-
-关键约束：
-
-- 非空 Payload 必须由 `new[]` 分配。
-- 接收方处理完邮件后必须调用 `ReleaseMailPayload(mail)`。
-- 发送方在 `Send` 后应该释放自己传入的原始 Payload；队列释放或返回的是队列深拷贝出的 Payload。
-- `CMailPostOffice` 不负责队列生命周期。
-- 生命周期所有者移除 `CMailChannel` 后，旧 `CMailPostOffice` 自动失效。
-- 生命周期所有者调用 `CMailChannel::Reset()` 后，旧 `CMailPostOffice` 自动失效，新获取的邮局绑定新队列。
-- 不能移动已经对外发放过邮局的 `CMailChannel`。
-
-## 7. 线程方案
-
-`CMailQueue` 方法级加锁，支持以下并发：
-
-- 多线程同时 `Enqueue`。
-- 一个线程 `Drain`，其他线程 `Enqueue`。
-- 一个线程 `Clear`，其他线程 `Enqueue` 或 `Drain`。
-
-`CMailChannel` 本身不额外加锁，双向线程安全由内部两个 `CMailQueue` 提供。
-
-上层如果需要跨线程维护运行体目录，应自行保护目录结构；消息收发走 `CMailQueue` 自己的锁。
-
-## 8. 与其他项目的关系
-
-### 8.1 CommandHandler
-
-Mailbox 只负责消息传输。需要处理前端命令时，上层适配器把 `Mail` 转换为 `CCommandRequest`，再交给 `CommandHandler` 分发。
-
-普通命令 Payload 建议采用 UTF-8 JSON 文本。H5 bridge 侧发送 JS string，C++ bridge 侧用 `SetMailPayloadText` 写入邮件；接收侧用 `GetMailPayloadText` 取出后交给具体 command codec 解析。
-
-### 8.2 运行体
-
-当前 iCAX framework 中，`CMailChannelRegistry` 负责按 mail id 找到 channel，`ApplicationHost`、`ProductRuntime` 和 `Project` 负责把通用 EndA/EndB 映射成当前层级里的 frontend/backend 邮局。
-
-### 8.3 PDO
-
-Mail 通信用于低频消息；PDO 用于高频状态数据。
-
-## 9. 测试方案
+## 11. 测试方案
 
 测试工程：
 
@@ -279,20 +223,16 @@ Mail 通信用于低频消息；PDO 用于高频状态数据。
 src/tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj
 ```
 
-测试覆盖：
+核心测试：
 
-- `CMailQueue` 入队、取出、清空、移动和并发。
-- 文本 Payload 的创建、读取、替换和队列深拷贝。
-- `CMailPostOffice` 默认未绑定时的异常行为。
-- `CMailPostOffice` 轻量非拥有视图的复制语义和通道销毁后的失效行为。
-- `CMailChannel` EndA/EndB 双向路由。
-- 两个方向互不串包。
-- 清空单方向和清空整个通道。
-- Reset 后旧邮局失效，新邮局可继续收发。
+- `SharedQueueDrainsPayloadAsLeaseAndReleaseReturnsStorage`
+- `PreallocatedPoolRejectsWhenRecordOrPayloadSpaceIsFull`
+- `SendTextWritesPayloadDirectlyToOutgoingQueue`
+- `CreateChannelAcceptsPerDirectionQueueCapacity`
 
-验证命令：
+联动测试：
 
-```powershell
-& .\src\tools\build\run_tests_debug_x64.ps1
-```
-
+- `ProjectTest` 覆盖 Project 事件发送。
+- `ProductTest` 覆盖 Product mailbox 命令和事件。
+- `ApplicationHostTest` 覆盖 ApplicationHost/Product/Project 通信链路。
+- `RenderServiceTest` 覆盖 PDORenderService 通过项目 mailbox 发 slot/defrag 事件。

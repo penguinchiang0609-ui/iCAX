@@ -9,3 +9,10 @@ std::shared_ptr<iCAX::PDO::IPDOHub> iCAX::PDO::GeneratePDOHub(IN std::vector<PDO
     _pHub->Intialize(Descs_);
     return _pHub;
 }
+
+std::shared_ptr<iCAX::PDO::IPDOHub> iCAX::PDO::GeneratePDOHub(IN const CPDOHubCreateInfo& CreateInfo_)
+{
+    auto _pHub = std::make_shared<CPDOHub>();
+    _pHub->Intialize(CreateInfo_);
+    return _pHub;
+}

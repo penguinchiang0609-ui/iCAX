@@ -2,65 +2,41 @@
 
 ## 1. 定位
 
-Mail 通信是进程内低频消息交互能力，用于两个运行单元之间传递命令、事件和请求响应。
+Mail 通信用于同一进程内两个运行单元之间传递低频消息，包括命令、事件、请求响应和低频状态同步。
 
-Framework 层只提供通用双端点模型：
+Mailbox 只提供通用双端点模型：
 
 ```text
 EndA <-> EndB
 ```
 
-模块分成三层：
+它不绑定前端、后端、产品或项目。具体运行体可以把 EndA/EndB 映射成自己的业务角色。
 
-```text
-CMailQueue
-  单向邮件队列，只负责入队、取出、清空。
+Mail 与 PDO 的分工：
 
-CMailChannel
-  双向邮件通道，内部包含 A->B 与 B->A 两个 CMailQueue。
+- Mail：低频、可靠、有序的控制消息。
+- PDO：高频、可丢帧的数据同步。
 
-CMailPostOffice
-  从 CMailChannel 的某个端点初始化出来的邮局，提供 Send / Receive。
-```
+## 2. 数据结构
 
-Mail 通信不处理业务逻辑，不解析 Payload。需要按消息类型分发命令时，上层可把 `MailHeader::nTypeCode` 映射到 `CommandHandler` 的命令类型。
-
-面向 H5 的普通命令约定 Payload 为 UTF-8 文本，也就是 JS string。文本内容通常是 JSON。Mailbox 底层仍以 bytes 保存 Payload，C++ 侧通过 `MailPayload.h` 的文本辅助函数创建、读取和释放文本负载。
-
-## 2. 使用场景
-
-- 任意一端向另一端发送命令。
-- 任意一端向另一端发送回复或事件。
-- 接收端在自己的安全时机批量取出待处理邮件。
-- `Services` 可把通用 EndA/EndB 映射成具体应用中的两个运行角色。
-
-Mail 通信与 PDO 的分工：
-
-- Mail 通信：低频、命令、事件、请求响应。
-- PDO：高频、可丢弃状态数据。
-
-## 3. 数据结构
-
-### 3.1 MailHeader
+### 2.1 MailHeader
 
 ```cpp
 struct MailHeader
 {
-    uint64_t nChannelId = 0;
+    uint64_t nMailId = 0;
     uint64_t nOriginId = 0;
     uint64_t nTypeCode = 0;
     StampCode nStamp = kMailOk;
 };
 ```
 
-字段含义：
+- `nMailId`：本封邮件 ID，由发送侧分配。
+- `nOriginId`：原始邮件 ID，回复邮件用它关联请求；`0` 表示非回复邮件。
+- `nTypeCode`：上层业务类型码。当前 CommandHandler 使用它承载 64 位命令路由码。
+- `nStamp`：通用处理状态。业务错误细节由业务 payload 表达。
 
-- `nChannelId`：当前邮件 ID。
-- `nOriginId`：原始邮件 ID，回复邮件使用它关联请求；`0` 表示没有原始邮件。
-- `nTypeCode`：邮件类型码，常见用法是保存命令、事件或响应类型。
-- `nStamp`：通用处理状态，业务错误码由业务 Payload 自己表达。
-
-### 3.2 StampCode
+### 2.2 StampCode
 
 ```cpp
 enum StampCode : uint16_t
@@ -73,7 +49,7 @@ enum StampCode : uint16_t
 };
 ```
 
-### 3.3 MailData
+### 2.3 MailData
 
 ```cpp
 struct MailData
@@ -83,32 +59,16 @@ struct MailData
 };
 ```
 
-Mail 通信不解析 `pData`，也不知道 Payload 的类型。
+`MailData` 还包含队列池租约字段，业务代码不直接访问这些字段。
 
-普通 H5 命令使用 UTF-8 文本 Payload：
+调用方必须遵守：
 
-```cpp
-MailHeader header;
-header.nChannelId = 1;
-header.nTypeCode = commandCode;
+- 空 payload 使用 `nSize == 0` 且 `pData == nullptr`。
+- 非空 payload 可以来自普通 `new[]`，也可以来自 `CMailQueue` 的预分配池。
+- 业务代码一律调用 `ReleaseMailPayload(mail)` 释放。
+- 不允许对 `Payload.pData` 手写 `delete[]`。
 
-auto mail = CreateTextMail(header, R"({"projectPath":"D:/demo.robot"})");
-postOffice.Send(mail);
-ReleaseMailPayload(mail);
-```
-
-接收方：
-
-```cpp
-auto mails = postOffice.Receive();
-for (auto& mail : mails)
-{
-    auto text = GetMailPayloadText(mail);
-    ReleaseMailPayload(mail);
-}
-```
-
-### 3.4 Mail
+### 2.4 Mail
 
 ```cpp
 struct Mail
@@ -118,44 +78,68 @@ struct Mail
 };
 ```
 
-## 4. CMailQueue
+Mailbox 不解释 payload。面向 H5 的普通命令建议 payload 使用 UTF-8 JSON 文本。
 
-`CMailQueue` 是单向队列。
+## 3. CMailQueue
+
+`CMailQueue` 是单向邮件队列。
 
 ```cpp
+struct CMailQueueCreateInfo
+{
+    size_t nMaxMailCount = 4096;
+    size_t nPayloadPoolBytes = 4ull * 1024ull * 1024ull;
+    size_t nMaxPayloadBytesPerMail = 256ull * 1024ull;
+};
+
 class CMailQueue
 {
 public:
+    CMailQueue();
+    explicit CMailQueue(const CMailQueueCreateInfo& createInfo);
+
     void Enqueue(const Mail& mail);
+    bool TryEnqueue(const Mail& mail);
+
+    void EnqueuePayload(const MailHeader& header, const void* payload, size_t payloadSize);
+    bool TryEnqueuePayload(const MailHeader& header, const void* payload, size_t payloadSize);
+
     std::vector<Mail> Drain();
     void Clear();
+
+    size_t GetPendingCount() const;
+    size_t GetFreeRecordCount() const;
+    size_t GetFreePayloadBytes() const;
 };
 ```
 
 行为规则：
 
-- `Enqueue(mail)` 把邮件追加到队列尾部。
-- 队列保留入队顺序。
-- `Enqueue` 复制 `MailHeader`，并深拷贝 Payload 内容。
-- 调用方仍拥有传入 `Mail` 的 Payload；如果传入邮件使用 `new[]` 分配 Payload，发送后仍应由调用方释放。
-- `Drain()` 返回当前全部邮件，并清空队列。
-- `Drain()` 返回后，Payload 所有权转移给调用方。
-- `Clear()` 清空仍滞留在队列里的邮件，并释放其 Payload。
-- `CMailQueue` 禁止拷贝，支持移动。
-- `CMailQueue` 的方法级访问是线程安全的。
+- 队列创建时一次性分配 record 池和 payload 池。
+- `Enqueue` / `EnqueuePayload` 复制 `MailHeader`，并把 payload 拷贝到队列预分配池。
+- 发送方仍拥有传入邮件的 payload，发送后仍需释放自己的临时邮件。
+- `TryEnqueue` / `TryEnqueuePayload` 在 record 或 payload 空间不足时返回 `false`。
+- `Enqueue` / `EnqueuePayload` 在空间不足时抛出 `std::runtime_error`。
+- payload 大小超过 `nMaxPayloadBytesPerMail` 时抛出 `std::runtime_error`。
+- `Drain()` 取出当前 pending 邮件并清空 pending 队列。
+- `Drain()` 返回的邮件处理完成后必须调用 `ReleaseMailPayload`。
+- `Clear()` 只释放仍滞留在队列里的 pending 邮件，不影响已经 `Drain()` 出去的邮件。
+- `CMailQueue` 方法级线程安全。
 
-## 5. CMailPostOffice
+## 4. CMailPostOffice
 
-`CMailPostOffice` 是某一端看到的邮局。它不拥有队列，只绑定一个收件队列弱引用和一个发件队列弱引用。
-
-它是轻量非拥有视图。获取 `CMailPostOffice` 不创建新队列，也不转移任何队列所有权。底层 `CMailChannel` 被移除或销毁后，旧邮局会失效，继续收发会抛出 `std::logic_error`。
+`CMailPostOffice` 是某一端看到的轻量邮局视图。它不拥有队列，只保存收件队列和发件队列的弱引用。
 
 ```cpp
 class CMailPostOffice
 {
 public:
     bool IsValid() const noexcept;
+
     void Send(const Mail& mail) const;
+    void SendPayload(const MailHeader& header, const void* payload, size_t payloadSize) const;
+    void SendText(const MailHeader& header, const std::string& payloadText) const;
+
     std::vector<Mail> Receive() const;
     void ClearIncoming() const;
     void ClearOutgoing() const;
@@ -164,16 +148,23 @@ public:
 
 行为规则：
 
-- `Send(mail)` 将邮件写入对端的收件队列。
+- `Send(mail)` 将邮件写入对端收件队列。
+- `SendPayload` 直接发送 bytes，避免调用方先构造临时 `Mail` payload。
+- `SendText` 直接发送 UTF-8 文本 payload，H5 命令通常使用该接口发送 JSON 字符串。
 - `Receive()` 从本端收件队列取出当前全部邮件。
 - `ClearIncoming()` 清空本端收件队列。
-- `ClearOutgoing()` 清空本端发件队列，也就是对端的收件队列。
+- `ClearOutgoing()` 清空本端发件队列，也就是对端收件队列。
 - 默认构造的 `CMailPostOffice` 未绑定队列，`IsValid()` 返回 `false`。
-- 对未绑定邮局调用 `Send`、`Receive`、`ClearIncoming`、`ClearOutgoing` 会抛出 `std::logic_error`。
+- 对无效邮局调用收发或清空接口会抛出 `std::logic_error`。
 
-## 6. CMailChannel
+## 5. CMailChannel
 
-`CMailChannel` 是完整的双向通道。
+`CMailChannel` 是双向通道，内部拥有两个单向队列：
+
+```text
+EndA -> EndB
+EndB -> EndA
+```
 
 ```cpp
 enum MailChannelEnd : uint8_t
@@ -182,22 +173,25 @@ enum MailChannelEnd : uint8_t
     kMailEndB = 1,
 };
 
+struct CMailChannelCreateInfo
+{
+    CMailQueueCreateInfo EndAToEndBQueue;
+    CMailQueueCreateInfo EndBToEndAQueue;
+};
+
 class CMailChannel
 {
 public:
+    CMailChannel();
+    explicit CMailChannel(const CMailChannelCreateInfo& createInfo);
+
     CMailPostOffice GetPostOffice(MailChannelEnd end) noexcept;
     CMailPostOffice GetEndAPostOffice() noexcept;
     CMailPostOffice GetEndBPostOffice() noexcept;
+
     void Clear();
     void Reset();
 };
-```
-
-内部包含两个方向：
-
-```text
-EndA -> EndB
-EndB -> EndA
 ```
 
 EndA 邮局：
@@ -214,101 +208,121 @@ Receive() 读取 EndA -> EndB
 Send()    写入 EndB -> EndA
 ```
 
-`Clear()` 只清空两个方向上的待处理邮件，已经发出的 `CMailPostOffice` 仍然有效。
+生命周期规则：
 
-`Reset()` 会丢弃当前两个方向的队列并创建新队列，已经发出的旧 `CMailPostOffice` 会失效。生命周期所有者关闭一个运行单元时，应使用 `Reset()`，避免旧邮局继续向已关闭的通道投递邮件。
+- `Clear()` 清空两个方向上的 pending 邮件，不改变队列身份，旧邮局仍然有效。
+- `Reset()` 丢弃当前两个方向的队列并按原创建参数重建队列，旧邮局失效。
+- `CMailChannel` 禁止拷贝和移动。
+- 可以低成本反复获取 `CMailPostOffice`，不会创建新队列。
 
-## 7. 生命周期与所有权
+## 6. CMailChannelRegistry
 
-当前底层使用裸指针 Payload，因此所有权规则必须明确。业务代码应优先使用 `MailPayload.h` 中的 `ReleaseMailPayload` 释放邮件负载，而不是散落手写 `delete[]`。
-
-- 空 Payload 使用 `nSize == 0` 且 `pData == nullptr`。
-- 非空 Payload 必须使用 `new[]` 分配，才能由 `ReleaseMailPayload` 释放。
-- `Send()` / `Enqueue()` 会深拷贝 Payload，调用方继续拥有传入邮件的 Payload。
-- 邮件进入 `CMailQueue` 后，队列只负责释放自己拷贝出来的 Payload。
-- `Drain()` 或 `Receive()` 返回后，队列中那份 Payload 所有权转移给调用方。
-- 调用方处理完返回邮件后必须调用 `ReleaseMailPayload(mail)` 释放 `Payload.pData`。
-- `CMailPostOffice` 不拥有队列，底层队列释放后旧邮局自动失效。
-- `CMailChannel` 拥有两个底层 `CMailQueue`，因此由它负责释放仍未被接收的 Payload。
-- `CMailChannel` 销毁后，由它获取到的 `CMailPostOffice` 不再可用，调用 `Send` / `Receive` / `ClearIncoming` / `ClearOutgoing` 会抛出异常。
-- `CMailChannel::Reset()` 后，由它旧队列获取到的 `CMailPostOffice` 不再可用；重新获取邮局会绑定新队列。
-- `CMailChannel` 禁止拷贝和移动，避免已经获取的 `CMailPostOffice` 指向失效或错位的队列。
-- 可以随时从 `CMailChannel` 获取 `CMailPostOffice`，不会产生新队列。
-
-## 8. 线程模型
-
-`CMailQueue` 是方法级线程安全的。
-
-- 多线程可以同时 `Enqueue()`。
-- 一个线程可以 `Drain()`，同时其他线程 `Enqueue()`。
-- 一个线程可以 `Clear()`，同时其他线程 `Enqueue()` 或 `Drain()`。
-
-`CMailPostOffice` 的收发线程安全来自其绑定的 `CMailQueue`。
-
-线程安全边界：
-
-- `CMailChannel` 或 `CMailQueue` 的析构必须由生命周期所有者保证安全，不能在其他线程仍可能访问时析构。
-- `CMailChannel::Reset()` 也属于生命周期操作，应在没有其他线程同时通过同一通道获取新邮局时调用；旧邮局会安全失效。
-- `CMailPostOffice` 是轻量弱引用对象，背后的 `CMailChannel` 销毁后会变为无效邮局。
-- Payload 指向的业务数据不由 Mail 通信模块加锁保护。
-
-## 9. 上层使用样例
-
-### 9.1 EndA 发送命令，EndB 接收
+`CMailChannelRegistry` 是线程安全的通道目录，由 ApplicationHost 等生命周期所有者持有。
 
 ```cpp
-#include <Mailbox/MailChannel.h>
-#include <Mailbox/MailPayload.h>
+class CMailChannelRegistry
+{
+public:
+    bool CreateChannel(const uuid& channelID);
+    bool CreateChannel(const uuid& channelID, const CMailChannelCreateInfo& createInfo);
+    bool HasChannel(const uuid& channelID) const;
 
-using namespace iCAX::Mail;
+    CMailPostOffice GetFrontendPostOffice(const uuid& channelID) const;
+    CMailPostOffice GetBackendPostOffice(const uuid& channelID) const;
 
+    bool RemoveChannel(const uuid& channelID);
+    void ClearChannels();
+};
+```
+
+命名中的 frontend/backend 只是 framework 当前装配约定：
+
+- frontend 使用 EndA 邮局。
+- backend 使用 EndB 邮局。
+
+Mailbox 底层仍只认识 EndA/EndB。
+
+## 7. 使用样例
+
+### 7.1 发送 UTF-8 JSON 命令
+
+```cpp
 CMailChannel channel;
-auto endAOffice = channel.GetEndAPostOffice();
-auto endBOffice = channel.GetEndBPostOffice();
+auto frontend = channel.GetEndAPostOffice();
+auto backend = channel.GetEndBPostOffice();
 
-Mail command;
-command.Header.nChannelId = 1;
-command.Header.nTypeCode = 1001;
-SetMailPayloadText(command, R"({"action":"ping"})");
+MailHeader header;
+header.nMailId = 1;
+header.nTypeCode = MakeCommandCode("Project", "Open");
 
-endAOffice.Send(command);
-ReleaseMailPayload(command);
+frontend.SendText(header, R"({"path":"D:/demo.robot"})");
 
-auto mails = endBOffice.Receive();
+auto mails = backend.Receive();
 for (auto& mail : mails)
 {
-    auto payloadText = GetMailPayloadText(mail);
+    auto text = GetMailPayloadText(mail);
     ReleaseMailPayload(mail);
 }
 ```
 
-### 9.2 EndB 回复 EndA
+### 7.2 使用临时 Mail 发送
 
 ```cpp
-Mail reply;
-reply.Header.nChannelId = 2;
-reply.Header.nOriginId = request.Header.nChannelId;
-reply.Header.nTypeCode = request.Header.nTypeCode;
-reply.Header.nStamp = kMailOk;
+MailHeader header;
+header.nMailId = 2;
+header.nTypeCode = eventCode;
 
-endBOffice.Send(reply);
+auto mail = CreateTextMail(header, R"({"event":"ready"})");
+postOffice.Send(mail);
 
-auto replies = endAOffice.Receive();
+// Send 会深拷贝 payload，发送方仍需释放自己的临时邮件。
+ReleaseMailPayload(mail);
 ```
 
-### 9.3 服务层映射示例
+### 7.3 接收并回复
 
 ```cpp
-auto role1Office = channel.GetPostOffice(kMailEndA);
-auto role2Office = channel.GetPostOffice(kMailEndB);
+auto requests = backend.Receive();
+for (auto& request : requests)
+{
+    MailHeader replyHeader;
+    replyHeader.nMailId = AllocateMailID();
+    replyHeader.nOriginId = request.Header.nMailId;
+    replyHeader.nTypeCode = request.Header.nTypeCode;
+    replyHeader.nStamp = kMailOk;
 
-role1Office.Send(command);
-auto role2Mails = role2Office.Receive();
+    backend.SendText(replyHeader, R"({"ok":true})");
+    ReleaseMailPayload(request);
+}
 ```
 
-这里的变量名称属于服务层或应用层，`CMailChannel` 本身只知道 EndA/EndB。
+### 7.4 指定通道容量
 
-## 10. 测试要求
+```cpp
+CMailChannelCreateInfo createInfo;
+createInfo.EndAToEndBQueue.nMaxMailCount = 1024;
+createInfo.EndAToEndBQueue.nPayloadPoolBytes = 2ull * 1024ull * 1024ull;
+createInfo.EndBToEndAQueue.nMaxMailCount = 4096;
+createInfo.EndBToEndAQueue.nPayloadPoolBytes = 8ull * 1024ull * 1024ull;
+
+registry.CreateChannel(channelID, createInfo);
+```
+
+## 8. 线程模型
+
+`CMailQueue` 是方法级线程安全的：
+
+- 多线程可以同时发送。
+- 一个线程可以接收，同时其他线程发送。
+- 一个线程可以清空队列，同时其他线程发送或接收。
+
+生命周期操作由所有者保证：
+
+- 不应在其他线程仍使用同一通道时销毁 `CMailChannel`。
+- `Reset()` / `RemoveChannel()` 用于关闭运行体时切断旧邮局。
+- 已经 `Receive()` 出来的邮件会通过租约保持必要的队列存活，直到调用方 `ReleaseMailPayload`。
+
+## 9. 测试要求
 
 单元测试目录：
 
@@ -318,19 +332,12 @@ src/tests/icax-engine/framework/Mailbox/MailboxTest/
 
 测试覆盖：
 
-- `Mail` 默认值。
-- `CMailQueue` 入队顺序。
-- `CMailQueue::Drain()` 清空队列。
-- `CMailQueue::Clear()` 释放队列中 Payload。
-- 空 Payload。
-- UTF-8 文本 Payload 的创建、读取、替换和队列深拷贝。
-- `CMailQueue` 移动构造和移动赋值。
-- 并发入队和取出。
-- 默认 `CMailPostOffice` 未绑定时抛出异常。
-- `CMailPostOffice` 是轻量非拥有视图，通道销毁后安全失效。
-- EndA -> EndB 路由。
-- EndB -> EndA 路由。
-- 双向消息互不串包。
-- 清空单向收件队列。
-- 清空整个 `CMailChannel`。
-- 重置 `CMailChannel` 后旧邮局失效，新邮局可继续收发。
+- 队列入队、取出、清空和顺序。
+- 文本 payload 创建、读取、替换。
+- 队列池租约释放后归还 record 和 payload 空间。
+- record 或 payload 池满时的失败行为。
+- `SendText` 直接发送文本。
+- EndA/EndB 双向路由与方向隔离。
+- Channel reset 后旧邮局失效。
+- Registry 显式创建、移除、清空和按方向配置容量。
+- 并发发送和接收。

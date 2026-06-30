@@ -545,7 +545,8 @@ TEST(ProjectCatalogTest, ProjectOwnsAndSwapsPDOHub)
     const auto _OutboundID = iCAX::PDO::MakePDOID("ProjectTest.PDO", "Outbound");
 
     auto _Info = MakeProjectInfo();
-    _Info.PDODeclarations = {
+    _Info.bEnablePDOHub = true;
+    _Info.PDOHubCreateInfo.InitialDeclarations = {
         MakeProjectPDODecl(_InboundID, iCAX::PDO::kDirection2Inner),
         MakeProjectPDODecl(_OutboundID, iCAX::PDO::kDirection2External)
     };

@@ -42,7 +42,7 @@ ApplicationHost
 - 独立 ResourceLibrary。
 - 独立 Universe。
 - 独立项目 mail channel，由应用级 `CMailChannelRegistry` 按 `ProjectChannelID` 托管。
-- 可选独立 PDOHub，由 `CProjectCreateInfo::PDODeclarations` 决定是否创建。
+- 可选独立 PDOHub，由 `CProjectCreateInfo::bEnablePDOHub` 和 `PDOHubCreateInfo` 决定是否创建。
 - 独立项目工作线程。
 
 当前实现是进程内隔离：每个 Project 拥有独立对象图和线程，但仍处在同一个 OS 进程地址空间内。Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。
@@ -80,7 +80,7 @@ ProjectCatalog::OpenMainProject(name, path, startupComponent)
   -> Database::GenerateRepository(project id, product MetaRegistry)
   -> Behaviour::GenerateUniverse(product BehaviourRegistry)
   -> create ResourceLibrary(project ResourceLoaderRegistry)
-  -> create PDOHub if PDODeclarations is not empty
+  -> create PDOHub if bEnablePDOHub is true
   -> create project mail channel through CMailChannelRegistry
   -> Project subscribes repository events
   -> set main project id
@@ -173,7 +173,7 @@ Project 不维护自己的业务类型目录。Project 创建 Repository 和 Uni
 
 ## 9. 与 PDO 的关系
 
-PDO 声明由产品或文件/启动模块决定，通过 `CProjectCreateInfo::PDODeclarations` 传给 Project。Project 不理解 payload 字段含义，只负责创建、交换和释放项目级 PDOHub。
+PDO Arena 由产品或文件/启动模块决定，通过 `CProjectCreateInfo::bEnablePDOHub` 和 `PDOHubCreateInfo` 传给 Project。Project 不理解 payload 字段含义，只负责创建、交换和释放项目级 PDOHub。具体 slot 可以由 RenderService、InputService 或其他业务服务在运行期动态分配和释放。
 
 帧循环顺序：
 

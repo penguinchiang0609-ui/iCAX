@@ -186,6 +186,9 @@
     <ProjectReference Include="..\Mailbox\Mailbox.vcxproj">
       <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\MailHandler\MailHandler.vcxproj">
+      <Project>{dfe34a7a-53d1-4b0e-85c3-5ddc2c9d2b1e}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\PDO\PDO.vcxproj">
       <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
     </ProjectReference>

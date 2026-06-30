@@ -1,6 +1,8 @@
 #pragma once
 #include "PDO.h"
+#include <mutex>
 #include <unordered_map>
+#include <vector>
 #include "IPDOHub.h"
 #include "SharedPDOArena.h"
 
@@ -16,6 +18,13 @@ namespace iCAX
         */
         class _PDO_EXP CPDOHub final : public IPDOHub
         {
+        private:
+            struct CFreeBlock final
+            {
+                uint64_t nOffset = 0;
+                uint64_t nSize = 0;
+            };
+
         public:
             /*
             * @brief 构造函数
@@ -38,6 +47,11 @@ namespace iCAX
             virtual void Intialize(IN std::vector<PDODecl> Descs_);
 
             /*
+            * @brief 按创建参数初始化 Hub。
+            */
+            virtual void Intialize(IN const CPDOHubCreateInfo& CreateInfo_);
+
+            /*
             * @brief 释放所有槽
             * @details 清空后，旧 Slot 引用不再可用，上层不应继续保存。
             */
@@ -51,6 +65,13 @@ namespace iCAX
             * @throws std::runtime_error 指定 ID 不存在。
             */
             virtual IPDOSlot& GetSlot(IN const PDOID& nPDOID_) override;
+
+            virtual bool HasSlot(IN const PDOID& nPDOID_) const override;
+            virtual IPDOSlot& AllocateSlot(IN const PDODecl& Decl_) override;
+            virtual IPDOSlot& AllocateSlot(
+                IN const PDODecl& Decl_,
+                IN const CPDOHubAllocationCallbacks& Callbacks_) override;
+            virtual bool FreeSlot(IN const PDOID& nPDOID_) override;
 
             /*
             * @brief 获取当前 Hub 使用的共享内存名称。
@@ -87,9 +108,20 @@ namespace iCAX
             virtual void SwapOutSlot() override;
 
         private:
+            CFreeBlock TakeFreeBlock(IN uint64_t nSize_);
+            bool TryTakeFreeBlock(IN uint64_t nSize_, OUT CFreeBlock& Block_);
+            void ReturnFreeBlock(IN CFreeBlock Block_);
+            void RebuildFreeBlocks();
+            uint64_t GetTotalFreeBytesNoLock() const;
+            uint64_t GetLargestFreeBlockBytesNoLock() const;
+            std::vector<CPDOHubDefragMove> DefragmentNoLock();
+
+        private:
+            mutable std::mutex m_Mutex;
             std::wstring m_strArenaName;
             std::shared_ptr<CSharedPDOArena> m_pArena;
             std::unordered_map<uint64_t, std::shared_ptr<CSharedPDOSlot>> m_mapSlots;
+            std::vector<CFreeBlock> m_FreeBlocks;
         };
     }
 }
