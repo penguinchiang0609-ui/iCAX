@@ -34,8 +34,8 @@ ApplicationHost
 配置读写拆成三层：
 
 ```text
-CApplicationSettings
-  配置数据快照
+PropertyBag
+  配置数据快照，由 ApplicationContext 持有
 
 IApplicationConfigStore
   配置读写接口
@@ -43,7 +43,7 @@ IApplicationConfigStore
 CFileApplicationConfigStore
   默认文件读写实现
 
-CApplicationSettingsService
+CApplicationConfigService
   修改配置、保存配置、重新加载配置
 ```
 

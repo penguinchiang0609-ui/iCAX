@@ -163,7 +163,9 @@ namespace
         return _Variant.To<iCAX::Data::ObjectMap>();
     }
 
-    std::shared_ptr<CProductRuntime> MakeRuntime(IN const std::string& strProductID_ = "robot")
+    std::shared_ptr<CProductRuntime> MakeRuntime(
+        IN const std::string& strProductID_ = "robot",
+        IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr)
     {
         iCAX::Application::CApplicationDescriptor _Descriptor;
         _Descriptor.AppID = "icax-test";
@@ -172,7 +174,7 @@ namespace
         iCAX::Application::CApplicationPaths _Paths;
         _Paths.InstallDirectory = ".";
 
-        iCAX::Application::CApplicationSettings _Settings;
+        iCAX::Data::PropertyBag _Settings;
         auto _pContext = std::make_shared<iCAX::Application::CApplicationContext>(_Descriptor, _Paths, _Settings);
         auto _pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         auto _pMailChannelRegistry = std::make_shared<iCAX::Mail::CMailChannelRegistry>();
@@ -186,7 +188,9 @@ namespace
         _Definition.ProjectFile.FormatVersion = "1.0";
         _Definition.ProjectFile.FileExtensions.push_back(".robot");
 
-        auto _pProductDataStore = std::make_shared<CMemoryProductDataStore>();
+        auto _pProductDataStore = pProductDataStore_
+            ? std::move(pProductDataStore_)
+            : std::make_shared<CMemoryProductDataStore>();
         CProductData _ProductData;
         _ProductData.RecentProjects.push_back(CRecentProjectItem{
             "D:/projects/recent-robot.robot",
@@ -233,7 +237,7 @@ TEST(ProductDataStoreTest, SavesAndLoadsProductDataPerProduct)
         "D:/projects/robot.robot",
         "Robot Cell",
         "2026-06-20T00:00:00Z" });
-    _ProductData.UserSettings.Set("theme", std::string("dark"));
+    _ProductData.Settings.Set("theme", std::string("dark"));
 
     _Store.Save("robot", _ProductData);
 
@@ -242,7 +246,7 @@ TEST(ProductDataStoreTest, SavesAndLoadsProductDataPerProduct)
     EXPECT_EQ("D:/projects/robot.robot", _Loaded.RecentProjects[0].ProjectPath);
     EXPECT_EQ("Robot Cell", _Loaded.RecentProjects[0].DisplayName);
     EXPECT_EQ("2026-06-20T00:00:00Z", _Loaded.RecentProjects[0].LastOpenedTime);
-    EXPECT_EQ("dark", _Loaded.UserSettings.Get("theme", iCAX::Data::Variant()).To<std::string>());
+    EXPECT_EQ("dark", _Loaded.Settings.Get("theme", iCAX::Data::Variant()).To<std::string>());
 
     EXPECT_TRUE(std::filesystem::exists(_Store.GetProductDataPath("robot")));
     EXPECT_TRUE(_Store.Load("weld").RecentProjects.empty());
@@ -315,6 +319,33 @@ TEST(ProductRuntimeTest, LocalProjectPathStartsQuickSaveLog)
 
     _pRuntime->Stop();
     RemoveProjectFiles(_ProjectPath);
+}
+
+TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
+{
+    auto _pProductDataStore = std::make_shared<CMemoryProductDataStore>();
+    auto _pRuntime = MakeRuntime("laser-3d-cam", _pProductDataStore);
+    _pRuntime->Start();
+
+    iCAX::Data::PropertyBag _Settings;
+    _Settings.Set("ui.defaultLayer", std::string("outer-cut"));
+    _Settings.Set("tool.defaultLibrary", std::string("D:/tools/laser"));
+    _pRuntime->ReplaceSettings(_Settings);
+
+    EXPECT_EQ(
+        "outer-cut",
+        _pRuntime->GetSettings()
+            .Get("ui.defaultLayer", iCAX::Data::Variant())
+            .To<std::string>());
+
+    _pRuntime->Stop();
+
+    const auto _SavedData = _pProductDataStore->Load("laser-3d-cam");
+    EXPECT_EQ(
+        "D:/tools/laser",
+        _SavedData.Settings
+            .Get("tool.defaultLibrary", iCAX::Data::Variant())
+            .To<std::string>());
 }
 
 TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)

@@ -32,14 +32,14 @@ namespace
             return Paths;
         }
 
-        iCAX::Application::CApplicationSettings GetSettings() const override
+        iCAX::Data::PropertyBag GetSettings() const override
         {
             return Settings;
         }
 
         iCAX::Application::CApplicationDescriptor Descriptor;
         iCAX::Application::CApplicationPaths Paths;
-        iCAX::Application::CApplicationSettings Settings;
+        iCAX::Data::PropertyBag Settings;
     };
 
     class CTestCommandTarget final : public CCommandTarget

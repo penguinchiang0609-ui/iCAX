@@ -111,6 +111,16 @@ namespace iCAX
             CProductData GetProductData() const override;
 
             /*
+            * @brief 获取产品级设置快照。
+            */
+            iCAX::Data::PropertyBag GetSettings() const override;
+
+            /*
+            * @brief 替换并保存产品级设置。
+            */
+            void ReplaceSettings(IN const iCAX::Data::PropertyBag& Settings_) override;
+
+            /*
             * @brief 获取产品 ID。
             */
             const std::string& GetProductID() const override;

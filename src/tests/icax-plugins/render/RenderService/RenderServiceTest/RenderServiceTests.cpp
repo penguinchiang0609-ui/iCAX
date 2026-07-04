@@ -30,7 +30,7 @@ namespace
             throw std::logic_error("Application paths are not used by render service tests");
         }
 
-        iCAX::Application::CApplicationSettings GetSettings() const override
+        iCAX::Data::PropertyBag GetSettings() const override
         {
             return {};
         }
@@ -126,6 +126,16 @@ namespace
             return m_ProjectPath;
         }
 
+        iCAX::Data::PropertyBag& Settings() override
+        {
+            return m_Settings;
+        }
+
+        const iCAX::Data::PropertyBag& Settings() const override
+        {
+            return m_Settings;
+        }
+
         iCAX::Database::IRepository& Database() override
         {
             throw std::logic_error("Repository is not used by render service tests");
@@ -181,6 +191,7 @@ namespace
         std::shared_ptr<iCAX::Mail::CMailChannel> m_pChannel;
         std::string m_ProjectName = "Render Service Test";
         std::string m_ProjectPath;
+        iCAX::Data::PropertyBag m_Settings;
     };
 
     iCAX::Render::SRenderMeshData MakeTriangleMesh(

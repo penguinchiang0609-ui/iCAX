@@ -85,10 +85,14 @@ namespace
     std::filesystem::path FindDefaultWebPageRoot()
     {
         const auto _Current = std::filesystem::current_path();
+        const auto _SourceRoot = std::filesystem::weakly_canonical(
+            std::filesystem::path(__FILE__)).parent_path().parent_path().parent_path();
         const std::filesystem::path _Candidates[] = {
             _Current / "src" / "iCAX-UI" / "SDK" / "AppShell",
             _Current / "iCAX-UI" / "SDK" / "AppShell",
-            _Current / ".." / ".." / "iCAX-UI" / "SDK" / "AppShell"
+            _Current / ".." / ".." / "iCAX-UI" / "SDK" / "AppShell",
+            _Current / ".." / ".." / ".." / ".." / "iCAX-UI" / "SDK" / "AppShell",
+            _SourceRoot / "iCAX-UI" / "SDK" / "AppShell"
         };
 
         for (const auto& _Candidate : _Candidates)

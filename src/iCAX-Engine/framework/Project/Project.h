@@ -91,6 +91,7 @@ namespace iCAX
             EProjectRole Role = EProjectRole::Main; //!< 项目角色。
             std::string ProjectName; //!< 项目名称。
             std::string ProjectPath; //!< 项目路径。
+            iCAX::Data::PropertyBag Settings; //!< 项目级参数，跟随项目文件保存。
             std::string QuickSaveLogPath; //!< 快速保存日志路径；为空时根据 ProjectPath 推导。
             std::string StartupComponent; //!< 启动组件类型名。
             std::shared_ptr<iCAX::Application::IApplicationContext> pApplicationContext; //!< 应用上下文。
@@ -154,6 +155,13 @@ namespace iCAX
             * @brief 获取项目路径。
             */
             const std::string& GetProjectPath() const override;
+
+            /*
+            * @brief 获取项目级参数。
+            * @details 项目级设置跟随项目文件保存，产品级用户偏好不应放入这里。
+            */
+            iCAX::Data::PropertyBag& Settings() override;
+            const iCAX::Data::PropertyBag& Settings() const override;
 
             /*
             * @brief 设置项目路径。
@@ -423,6 +431,7 @@ namespace iCAX
             EProjectRole m_Role = EProjectRole::Main;
             std::string m_ProjectName;
             std::string m_ProjectPath;
+            iCAX::Data::PropertyBag m_Settings;
             std::string m_QuickSaveLogPath;
             std::string m_StartupComponent;
             std::shared_ptr<iCAX::Application::IApplicationContext> m_pApplicationContext;

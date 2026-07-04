@@ -95,6 +95,34 @@ const actions = {
     });
   },
 
+  async newProjectCatalog(options = {}) {
+    await track("Product.OpenProjectCatalog", async () => {
+      let productProxy = state.activeProductProxy;
+      if (!productProxy) {
+        if (!state.activeProductState?.productId) {
+          throw new Error("没有可用产品。");
+        }
+        productProxy = await state.appProxy.startProduct(state.activeProductState.productId);
+        state.activeProductProxy = productProxy;
+        state.activeProductState = productProxy.state;
+      }
+
+      const response = await productProxy.openProjectCatalog(options.projectPath ?? "", {
+        catalogPath: options.catalogPath ?? options.projectPath ?? "",
+        catalogName: options.catalogName ?? "CAM Project",
+        projectName: options.projectName ?? "CAM Project",
+      });
+
+      if (response.state?.productChannelId) {
+        productProxy.updateState(response.state);
+        state.activeProductState = response.state;
+      }
+      state.activeProjectProxy = response.projectProxy;
+      state.activeProjectState = response.projectProxy?.state ?? response.catalog?.mainProject ?? null;
+      await mountActiveProductModule();
+    });
+  },
+
   async chooseProjectFile() {
     const bridge = state.bridge ?? state.appProxy?.bridge ?? null;
     if (typeof bridge?.openFileDialog !== "function") {

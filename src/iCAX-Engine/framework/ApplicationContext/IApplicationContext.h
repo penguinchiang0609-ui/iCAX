@@ -2,7 +2,7 @@
 
 #include "ApplicationDescriptor.h"
 #include "ApplicationPaths.h"
-#include "ApplicationSettings.h"
+#include "Data/PropertyBag.h"
 #include "Data/uuid.h"
 #include "Mailbox/MailPostOffice.h"
 
@@ -50,7 +50,7 @@ namespace iCAX
             * @brief 获取应用设置副本。
             * @return 当前应用设置副本。
             */
-            virtual CApplicationSettings GetSettings() const = 0;
+            virtual iCAX::Data::PropertyBag GetSettings() const = 0;
 
             /*
             * @brief 获取应用级通信通道 ID。

@@ -1,0 +1,25 @@
+{
+  "schema": "icax.product.manifest",
+  "schemaVersion": 1,
+  "productId": "icax.laser-3d-cam",
+  "productName": "三维线条切割 CAM",
+  "productVersion": "0.1.0",
+  "projectFile": {
+    "magic": "ICAX_LASER_3D_CAM",
+    "formatVersion": "0.1",
+    "quickSaveLogMagic": "ICAX_LASER_3D_CAM_QSAVE",
+    "quickSaveLogVersion": 1,
+    "fileExtensions": [".i3cam"],
+    "magicOffset": 0,
+    "probeBytes": 256
+  },
+  "backend": {
+    "modules": {
+      "components": ["../../iCAX-Plugins/cam/TopologyToolpath/${Platform}/${Configuration}/TopologyToolpath.dll"],
+      "commands": ["../../iCAX-Plugins/cam/TopologyToolpath/${Platform}/${Configuration}/TopologyToolpath.dll"]
+    }
+  },
+  "webpage": {
+    "entry": "apps/laser-3d-cam/webpage/entry.mjs"
+  }
+}

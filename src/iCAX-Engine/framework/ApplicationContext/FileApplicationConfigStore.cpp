@@ -8,7 +8,7 @@
 #include <sstream>
 #include <stdexcept>
 
-iCAX::Application::CApplicationSettings iCAX::Application::CFileApplicationConfigStore::Load(IN const std::string& strPath_) const
+iCAX::Data::PropertyBag iCAX::Application::CFileApplicationConfigStore::Load(IN const std::string& strPath_) const
 {
     if (strPath_.empty())
     {
@@ -17,7 +17,7 @@ iCAX::Application::CApplicationSettings iCAX::Application::CFileApplicationConfi
 
     if (!std::filesystem::exists(strPath_))
     {
-        return CApplicationSettings();
+        return iCAX::Data::PropertyBag();
     }
 
     std::ifstream _Input(strPath_, std::ios::binary);
@@ -34,10 +34,10 @@ iCAX::Application::CApplicationSettings iCAX::Application::CFileApplicationConfi
         throw std::runtime_error("Application config root must be an object: " + strPath_);
     }
 
-    return CApplicationSettings(_Variant.To<iCAX::Data::ObjectMap>());
+    return iCAX::Data::PropertyBag(_Variant.To<iCAX::Data::ObjectMap>());
 }
 
-void iCAX::Application::CFileApplicationConfigStore::Save(IN const std::string& strPath_, IN const CApplicationSettings& Settings_) const
+void iCAX::Application::CFileApplicationConfigStore::Save(IN const std::string& strPath_, IN const iCAX::Data::PropertyBag& Settings_) const
 {
     if (strPath_.empty())
     {

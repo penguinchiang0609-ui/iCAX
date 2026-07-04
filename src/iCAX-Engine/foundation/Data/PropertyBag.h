@@ -41,7 +41,7 @@ namespace iCAX
             * @param [in] strkey_
             * @param [in] Default_
             */
-            iCAX::Data::Variant Get(const std::string& strkey_, const iCAX::Data::Variant& Default_) const;
+            iCAX::Data::Variant Get(const std::string& strkey_, const iCAX::Data::Variant& Default_ = iCAX::Data::Variant()) const;
 
             /*
             * @brief 获取设置项/值
@@ -49,7 +49,7 @@ namespace iCAX
             * @param [in] strPath_
             * @param [in] Default_
             */
-            iCAX::Data::Variant Get(const std::string& strkey_, const std::string& strPath_, const  iCAX::Data::Variant& Default_) const;
+            iCAX::Data::Variant Get(const std::string& strkey_, const std::string& strPath_, const  iCAX::Data::Variant& Default_ = iCAX::Data::Variant()) const;
 
             /*
             * @brief 设置

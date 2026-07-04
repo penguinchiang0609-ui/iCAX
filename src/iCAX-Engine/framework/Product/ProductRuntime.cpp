@@ -188,6 +188,69 @@ namespace
         return _Text;
     }
 
+    std::wstring _UTF8ToWide(IN const std::string& Text_)
+    {
+        if (Text_.empty())
+        {
+            return {};
+        }
+
+        const int _Length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Text_.data(), static_cast<int>(Text_.size()), nullptr, 0);
+        if (_Length <= 0)
+        {
+            throw std::runtime_error("Invalid UTF-8 path text");
+        }
+
+        std::wstring _Result(static_cast<size_t>(_Length), L'\0');
+        const int _Written = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, Text_.data(), static_cast<int>(Text_.size()), _Result.data(), _Length);
+        if (_Written != _Length)
+        {
+            throw std::runtime_error("Failed to convert UTF-8 path text");
+        }
+        return _Result;
+    }
+
+    std::string _WideToUTF8(IN const std::wstring& Text_)
+    {
+        if (Text_.empty())
+        {
+            return {};
+        }
+
+        const int _Length = WideCharToMultiByte(CP_UTF8, 0, Text_.data(), static_cast<int>(Text_.size()), nullptr, 0, nullptr, nullptr);
+        if (_Length <= 0)
+        {
+            throw std::runtime_error("Failed to measure UTF-8 path text");
+        }
+
+        std::string _Result(static_cast<size_t>(_Length), '\0');
+        const int _Written = WideCharToMultiByte(CP_UTF8, 0, Text_.data(), static_cast<int>(Text_.size()), _Result.data(), _Length, nullptr, nullptr);
+        if (_Written != _Length)
+        {
+            throw std::runtime_error("Failed to convert UTF-8 path text");
+        }
+        return _Result;
+    }
+
+    std::filesystem::path _PathFromUTF8(IN const std::string& Text_)
+    {
+        std::u8string _Text(Text_.begin(), Text_.end());
+        return std::filesystem::path(_Text);
+    }
+
+    std::string _PathToUTF8(IN const std::filesystem::path& Path_)
+    {
+        auto _Text = Path_.u8string();
+        return std::string(_Text.begin(), _Text.end());
+    }
+
+    char _ToLowerASCII(IN const char ch_) noexcept
+    {
+        return ch_ >= 'A' && ch_ <= 'Z'
+            ? static_cast<char>(ch_ - 'A' + 'a')
+            : ch_;
+    }
+
     iCAX::Data::Variant _MakePDOPayload(IN const iCAX::Project::CProjectPDODescriptor& Descriptor_)
     {
         iCAX::Data::ObjectMap _PDO;
@@ -214,8 +277,8 @@ namespace
     {
         std::filesystem::path _Root = Context_.GetPaths().UserConfigDirectory.empty()
             ? std::filesystem::path("Setting")
-            : std::filesystem::path(Context_.GetPaths().UserConfigDirectory);
-        return (_Root / "Products").string();
+            : _PathFromUTF8(Context_.GetPaths().UserConfigDirectory);
+        return _PathToUTF8(_Root / "Products");
     }
 
     bool _ShouldRecordRecentProject(IN const std::string& strProjectPath_)
@@ -338,26 +401,27 @@ namespace
             return {};
         }
 
-        const auto _RequiredLength = GetFullPathNameA(strPath_.c_str(), 0, nullptr, nullptr);
+        const auto _WidePath = _UTF8ToWide(strPath_);
+        const auto _RequiredLength = GetFullPathNameW(_WidePath.c_str(), 0, nullptr, nullptr);
         if (_RequiredLength == 0)
         {
             return strPath_;
         }
 
-        std::vector<char> _Buffer(static_cast<size_t>(_RequiredLength) + 1);
-        const auto _Length = GetFullPathNameA(strPath_.c_str(), static_cast<DWORD>(_Buffer.size()), _Buffer.data(), nullptr);
+        std::vector<wchar_t> _Buffer(static_cast<size_t>(_RequiredLength) + 1);
+        const auto _Length = GetFullPathNameW(_WidePath.c_str(), static_cast<DWORD>(_Buffer.size()), _Buffer.data(), nullptr);
         if (_Length == 0 || _Length >= _Buffer.size())
         {
             return strPath_;
         }
 
-        std::string _Normalized(_Buffer.data(), _Length);
+        std::string _Normalized = _WideToUTF8(std::wstring(_Buffer.data(), _Length));
         std::replace(_Normalized.begin(), _Normalized.end(), '/', '\\');
         std::transform(
             _Normalized.begin(),
             _Normalized.end(),
             _Normalized.begin(),
-            [](IN const unsigned char ch_) { return static_cast<char>(std::tolower(ch_)); });
+            [](IN const char ch_) { return _ToLowerASCII(ch_); });
         return _Normalized;
     }
 
@@ -368,17 +432,17 @@ namespace
             return {};
         }
 
-        std::vector<char> _Buffer(MAX_PATH);
+        std::vector<wchar_t> _Buffer(MAX_PATH);
         while (true)
         {
-            const auto _Length = GetModuleFileNameA(hModule_, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
+            const auto _Length = GetModuleFileNameW(hModule_, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
             if (_Length == 0)
             {
                 return {};
             }
             if (_Length < _Buffer.size() - 1)
             {
-                return _NormalizeModulePath(std::string(_Buffer.data(), _Length));
+                return _NormalizeModulePath(_WideToUTF8(std::wstring(_Buffer.data(), _Length)));
             }
             _Buffer.resize(_Buffer.size() * 2);
         }
@@ -413,7 +477,8 @@ namespace
             }
         }
 
-        HMODULE _Module = LoadLibraryA((_RequestedPath.empty() ? strPath_ : _RequestedPath).c_str());
+        const auto _LoadPath = _RequestedPath.empty() ? strPath_ : _RequestedPath;
+        HMODULE _Module = LoadLibraryW(_UTF8ToWide(_LoadPath).c_str());
         if (!_Module)
         {
             DWORD code = GetLastError();
@@ -695,6 +760,24 @@ const iCAX::Product::CProductDefinition& iCAX::Product::CProductRuntime::GetDefi
 iCAX::Product::CProductData iCAX::Product::CProductRuntime::GetProductData() const
 {
     return SnapshotProductData();
+}
+
+iCAX::Data::PropertyBag iCAX::Product::CProductRuntime::GetSettings() const
+{
+    std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
+    return m_ProductData.Settings;
+}
+
+void iCAX::Product::CProductRuntime::ReplaceSettings(IN const iCAX::Data::PropertyBag& Settings_)
+{
+    CProductData _ProductData;
+    {
+        std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
+        m_ProductData.Settings = Settings_;
+        _ProductData = m_ProductData;
+    }
+
+    SaveProductData(_ProductData);
 }
 
 const std::string& iCAX::Product::CProductRuntime::GetProductID() const

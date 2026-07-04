@@ -36,16 +36,13 @@
     <ClInclude Include="ApplicationPaths.h">
       <Filter>extern</Filter>
     </ClInclude>
-    <ClInclude Include="ApplicationSettings.h">
-      <Filter>extern</Filter>
-    </ClInclude>
     <ClInclude Include="ApplicationContext.h">
       <Filter>inner</Filter>
     </ClInclude>
     <ClInclude Include="FileApplicationConfigStore.h">
       <Filter>inner</Filter>
     </ClInclude>
-    <ClInclude Include="ApplicationSettingsService.h">
+    <ClInclude Include="ApplicationConfigService.h">
       <Filter>inner</Filter>
     </ClInclude>
   </ItemGroup>
@@ -59,16 +56,13 @@
     <ClCompile Include="ApplicationDescriptor.cpp">
       <Filter>extern</Filter>
     </ClCompile>
-    <ClCompile Include="ApplicationSettings.cpp">
-      <Filter>extern</Filter>
-    </ClCompile>
     <ClCompile Include="ApplicationContext.cpp">
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="FileApplicationConfigStore.cpp">
       <Filter>inner</Filter>
     </ClCompile>
-    <ClCompile Include="ApplicationSettingsService.cpp">
+    <ClCompile Include="ApplicationConfigService.cpp">
       <Filter>inner</Filter>
     </ClCompile>
   </ItemGroup>

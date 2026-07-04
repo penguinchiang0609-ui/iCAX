@@ -13,17 +13,31 @@ namespace
 {
     namespace json = boost::json;
 
+    std::string _PathToUTF8(IN const std::filesystem::path& Path_);
+
+    std::filesystem::path _PathFromUTF8(IN const std::string& strPath_)
+    {
+        std::u8string _Text(strPath_.begin(), strPath_.end());
+        return std::filesystem::path(_Text);
+    }
+
     std::string _ReadAllText(IN const std::filesystem::path& Path_)
     {
         std::ifstream _Input(Path_, std::ios::binary);
         if (!_Input)
         {
-            throw std::runtime_error("Cannot open product manifest: " + Path_.string());
+            throw std::runtime_error("Cannot open product manifest: " + _PathToUTF8(Path_));
         }
 
         std::ostringstream _Buffer;
         _Buffer << _Input.rdbuf();
         return _Buffer.str();
+    }
+
+    std::string _PathToUTF8(IN const std::filesystem::path& Path_)
+    {
+        const auto _Text = Path_.u8string();
+        return std::string(_Text.begin(), _Text.end());
     }
 
     const json::object& _RequireObject(IN const json::value& Value_, IN const std::string& strName_)
@@ -148,6 +162,54 @@ namespace
         return _Items;
     }
 
+    void _ReplaceAll(
+        IN OUT std::string& strText_,
+        IN const std::string& strFrom_,
+        IN const std::string& strTo_)
+    {
+        if (strFrom_.empty())
+        {
+            return;
+        }
+
+        size_t _Position = 0;
+        while ((_Position = strText_.find(strFrom_, _Position)) != std::string::npos)
+        {
+            strText_.replace(_Position, strFrom_.length(), strTo_);
+            _Position += strTo_.length();
+        }
+    }
+
+    std::string _BuildConfigurationName()
+    {
+#ifdef _DEBUG
+        return "Debug";
+#else
+        return "Release";
+#endif
+    }
+
+    std::string _BuildPlatformName()
+    {
+#if defined(_M_X64) || defined(__x86_64__) || defined(__amd64__)
+        return "x64";
+#elif defined(_M_IX86) || defined(__i386__)
+        return "Win32";
+#elif defined(_M_ARM64) || defined(__aarch64__)
+        return "ARM64";
+#else
+        return "UnknownPlatform";
+#endif
+    }
+
+    std::string _ExpandManifestPathTokens(IN const std::string& strPath_)
+    {
+        auto _Path = strPath_;
+        _ReplaceAll(_Path, "${Configuration}", _BuildConfigurationName());
+        _ReplaceAll(_Path, "${Platform}", _BuildPlatformName());
+        return _Path;
+    }
+
     std::string _ResolveBackendPath(
         IN const std::filesystem::path& ProductRoot_,
         IN const std::string& strPath_)
@@ -157,12 +219,12 @@ namespace
             return {};
         }
 
-        std::filesystem::path _Path(strPath_);
+        std::filesystem::path _Path = _PathFromUTF8(_ExpandManifestPathTokens(strPath_));
         if (_Path.is_relative())
         {
             _Path = ProductRoot_ / _Path;
         }
-        return std::filesystem::weakly_canonical(_Path).string();
+        return _PathToUTF8(std::filesystem::weakly_canonical(_Path));
     }
 
     std::vector<std::string> _ResolveBackendPaths(
@@ -191,7 +253,7 @@ namespace
 
 iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std::string& strManifestPath_)
 {
-    const std::filesystem::path _ManifestPath(strManifestPath_);
+    const std::filesystem::path _ManifestPath = _PathFromUTF8(strManifestPath_);
     const auto _ProductRoot = _ManifestPath.parent_path();
 
     boost::system::error_code _Error;
@@ -204,7 +266,7 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
     const auto& _Root = _RequireObject(_Value, "root");
 
     CProductManifest _Manifest;
-    _Manifest.ManifestPath = std::filesystem::weakly_canonical(_ManifestPath).string();
+    _Manifest.ManifestPath = _PathToUTF8(std::filesystem::weakly_canonical(_ManifestPath));
     _Manifest.Schema = _OptionalString(_Root, "schema", "icax.product.manifest");
     _Manifest.nSchemaVersion = _OptionalUInt32(_Root, "schemaVersion", 1);
 
@@ -265,10 +327,10 @@ std::vector<iCAX::Product::CProductDefinition> iCAX::Product::LoadProductDefinit
         return _Definitions;
     }
 
-    const std::filesystem::path _ProductRoot(strProductRoot_);
+    const std::filesystem::path _ProductRoot = _PathFromUTF8(strProductRoot_);
     if (!std::filesystem::exists(_ProductRoot))
     {
-        throw std::runtime_error("Product root does not exist: " + _ProductRoot.string());
+        throw std::runtime_error("Product root does not exist: " + _PathToUTF8(_ProductRoot));
     }
 
     for (const auto& _Entry : std::filesystem::directory_iterator(_ProductRoot))
@@ -284,7 +346,7 @@ std::vector<iCAX::Product::CProductDefinition> iCAX::Product::LoadProductDefinit
             continue;
         }
 
-        _Definitions.push_back(LoadProductManifest(_ManifestPath.string()).Definition);
+        _Definitions.push_back(LoadProductManifest(_PathToUTF8(_ManifestPath)).Definition);
     }
     return _Definitions;
 }

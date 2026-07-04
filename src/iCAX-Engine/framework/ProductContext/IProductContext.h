@@ -67,6 +67,22 @@ namespace iCAX
             virtual CProductData GetProductData() const = 0;
 
             /*
+            * @brief 获取产品级设置快照。
+            * @details
+            *   产品级设置与产品业务相关，但不跟随项目文件保存。
+            *   默认实现从 GetProductData().Settings 返回快照。
+            */
+            virtual iCAX::Data::PropertyBag GetSettings() const;
+
+            /*
+            * @brief 替换并保存产品级设置。
+            * @param [in] Settings_ 新的产品级用户设置。
+            * @details
+            *   只有具备持久化能力的 ProductContext 才应重写该方法。
+            */
+            virtual void ReplaceSettings(IN const iCAX::Data::PropertyBag& Settings_);
+
+            /*
             * @brief 获取产品级通信通道 ID。
             */
             virtual const iCAX::Data::uuid& GetProductChannelID() const;

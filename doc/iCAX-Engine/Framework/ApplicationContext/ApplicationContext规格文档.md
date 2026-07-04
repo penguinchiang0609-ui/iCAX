@@ -45,14 +45,14 @@ struct CApplicationPaths
 
 这些路径属于应用运行环境，不进入 `Database`。
 
-### 2.3 ApplicationSettings
+### 2.3 应用级 Settings
 
-应用级配置快照，例如语言、主题、最近打开文件、默认项目目录等。
+应用级配置快照，例如 UI 容器类型、语言、主题、全局插件目录、缓存目录等。
 
 配置数据使用 `Data::PropertyBag` 承载：
 
 ```cpp
-CApplicationSettings settings;
+iCAX::Data::PropertyBag settings;
 settings.Set("ui.theme", Variant(std::string("dark")));
 auto theme = settings.Get("ui.theme").To<std::string>();
 ```
@@ -67,13 +67,13 @@ class IApplicationContext
 public:
     virtual const CApplicationDescriptor& GetDescriptor() const = 0;
     virtual const CApplicationPaths& GetPaths() const = 0;
-    virtual CApplicationSettings GetSettings() const = 0;
+    virtual iCAX::Data::PropertyBag GetSettings() const = 0;
 };
 ```
 
-### 2.5 ApplicationSettingsService
+### 2.5 ApplicationConfigService
 
-应用配置修改、保存和重载通过 `CApplicationSettingsService` 完成：
+应用配置修改、保存和重载通过 `CApplicationConfigService` 完成：
 
 ```cpp
 settingsService.SetValue("ui.theme", Variant(std::string("dark")));

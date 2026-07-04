@@ -404,6 +404,16 @@ namespace
             return m_strProjectPath;
         }
 
+        iCAX::Data::PropertyBag& Settings() override
+        {
+            return m_Settings;
+        }
+
+        const iCAX::Data::PropertyBag& Settings() const override
+        {
+            return m_Settings;
+        }
+
         iCAX::Database::IRepository& Database() override
         {
             return *m_pRepository;
@@ -434,6 +444,7 @@ namespace
         iCAX::Data::uuid m_ProjectChannelID;
         std::string m_strProjectName;
         std::string m_strProjectPath;
+        iCAX::Data::PropertyBag m_Settings;
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
         iCAX::Resource::CResourceLibrary m_Resources;
         std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;

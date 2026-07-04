@@ -84,7 +84,7 @@ data.RecentProjects.push_back({
     "D:/projects/robot.robot",
     "Robot Cell",
     "2026-06-20T00:00:00Z"});
-data.UserSettings.Set("theme", std::string("dark"));
+data.Settings.Set("theme", std::string("dark"));
 ```
 
 `CProductData` 当前包含：

@@ -85,10 +85,11 @@ repo->DeleteEntity(entityId);
 
 ### 3.2 Meta Entity
 
-`GetMetaEntity()` 返回仓储自身的描述实体，用于项目级配置或启动组件。
+`GetMetaEntity()` 返回仓储自身的描述实体，用于启动组件这类仓储自身描述。
+项目级参数不放在 Meta Entity 中，而是通过 `ProjectContext.Settings()` 访问并跟随项目文件保存。
 
 ```cpp
-repo->GetMetaEntity()->AddComponent<ProjectSettingComponent>();
+repo->GetMetaEntity()->AddComponent<StartupComponent>();
 ```
 
 ## 4. 写入过滤

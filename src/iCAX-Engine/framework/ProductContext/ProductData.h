@@ -29,7 +29,7 @@ namespace iCAX
         struct _PRODUCT_CONTEXT_EXP CProductData final
         {
             std::vector<CRecentProjectItem> RecentProjects; //!< 最近打开项目列表。
-            iCAX::Data::PropertyBag UserSettings; //!< 产品级用户设置。
+            iCAX::Data::PropertyBag Settings; //!< 产品级设置。
         };
 
         /*

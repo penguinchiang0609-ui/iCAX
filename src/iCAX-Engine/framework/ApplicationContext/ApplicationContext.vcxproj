@@ -152,8 +152,7 @@
     <ClInclude Include="ApplicationContextExport.h" />
     <ClInclude Include="ApplicationDescriptor.h" />
     <ClInclude Include="ApplicationPaths.h" />
-    <ClInclude Include="ApplicationSettings.h" />
-    <ClInclude Include="ApplicationSettingsService.h" />
+    <ClInclude Include="ApplicationConfigService.h" />
     <ClInclude Include="FileApplicationConfigStore.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="IApplicationConfigStore.h" />
@@ -163,8 +162,7 @@
   <ItemGroup>
     <ClCompile Include="ApplicationContext.cpp" />
     <ClCompile Include="ApplicationDescriptor.cpp" />
-    <ClCompile Include="ApplicationSettings.cpp" />
-    <ClCompile Include="ApplicationSettingsService.cpp" />
+    <ClCompile Include="ApplicationConfigService.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FileApplicationConfigStore.cpp" />
     <ClCompile Include="pch.cpp">

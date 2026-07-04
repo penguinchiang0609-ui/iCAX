@@ -715,7 +715,7 @@ uint64_t iCAX::ApplicationHost::CApplicationHost::AllocateBackendMailID()
     return m_nNextBackendMailID.fetch_add(1, std::memory_order_relaxed);
 }
 
-iCAX::Application::CApplicationSettings iCAX::ApplicationHost::CApplicationHost::LoadApplicationSettings() const
+iCAX::Data::PropertyBag iCAX::ApplicationHost::CApplicationHost::LoadApplicationSettings() const
 {
     iCAX::Application::CFileApplicationConfigStore _Store;
     return _Store.Load(m_Config.strApplicationSettingsPath);

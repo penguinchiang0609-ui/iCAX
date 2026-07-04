@@ -12,6 +12,18 @@
 
 namespace
 {
+    std::filesystem::path _PathFromUTF8(IN const std::string& strPath_)
+    {
+        std::u8string _Text(strPath_.begin(), strPath_.end());
+        return std::filesystem::path(_Text);
+    }
+
+    std::string _PathToUTF8(IN const std::filesystem::path& Path_)
+    {
+        const auto _Text = Path_.u8string();
+        return std::string(_Text.begin(), _Text.end());
+    }
+
     std::string _GetString(
         IN const iCAX::Data::ObjectMap& Object_,
         IN const std::string& strName_,
@@ -64,7 +76,7 @@ namespace
             _RecentProjects.emplace_back(_RecentProjectToVariant(_Item));
         }
         _Root["recentProjects"] = _RecentProjects;
-        _Root["userSettings"] = Data_.UserSettings.GetProperties();
+        _Root["settings"] = Data_.Settings.GetProperties();
         return iCAX::Data::Variant(_Root);
     }
 
@@ -96,14 +108,14 @@ namespace
             }
         }
 
-        auto _SettingsIter = _Root.find("userSettings");
+        auto _SettingsIter = _Root.find("settings");
         if (_SettingsIter != _Root.end() && !_SettingsIter->second.Is<std::monostate>())
         {
             if (!_SettingsIter->second.Is<iCAX::Data::ObjectMap>())
             {
-                throw std::runtime_error("Product userSettings must be an object");
+                throw std::runtime_error("Product settings must be an object");
             }
-            _Data.UserSettings = iCAX::Data::PropertyBag(_SettingsIter->second.To<iCAX::Data::ObjectMap>());
+            _Data.Settings = iCAX::Data::PropertyBag(_SettingsIter->second.To<iCAX::Data::ObjectMap>());
         }
 
         return _Data;
@@ -122,12 +134,13 @@ iCAX::Product::CFileProductDataStore::CFileProductDataStore(IN std::string strPr
 iCAX::Product::CProductData iCAX::Product::CFileProductDataStore::Load(IN const std::string& strProductID_) const
 {
     const auto _Path = GetProductDataPath(strProductID_);
-    if (!std::filesystem::exists(_Path))
+    const auto _FilePath = _PathFromUTF8(_Path);
+    if (!std::filesystem::exists(_FilePath))
     {
         return CProductData();
     }
 
-    std::ifstream _Input(_Path, std::ios::binary);
+    std::ifstream _Input(_FilePath, std::ios::binary);
     if (!_Input)
     {
         throw std::runtime_error("Failed to open product data file: " + _Path);
@@ -144,13 +157,14 @@ void iCAX::Product::CFileProductDataStore::Save(
     IN const CProductData& Data_) const
 {
     const auto _Path = GetProductDataPath(strProductID_);
-    auto _ParentPath = std::filesystem::path(_Path).parent_path();
+    const auto _FilePath = _PathFromUTF8(_Path);
+    auto _ParentPath = _FilePath.parent_path();
     if (!_ParentPath.empty())
     {
         std::filesystem::create_directories(_ParentPath);
     }
 
-    std::ofstream _Output(_Path, std::ios::binary | std::ios::trunc);
+    std::ofstream _Output(_FilePath, std::ios::binary | std::ios::trunc);
     if (!_Output)
     {
         throw std::runtime_error("Failed to write product data file: " + _Path);
@@ -166,5 +180,5 @@ std::string iCAX::Product::CFileProductDataStore::GetProductDataPath(IN const st
         throw std::invalid_argument("ProductID contains unsafe characters: " + strProductID_);
     }
 
-    return (std::filesystem::path(m_strProductDataRoot) / strProductID_ / "Product.Data").string();
+    return _PathToUTF8(_PathFromUTF8(m_strProductDataRoot) / strProductID_ / "Product.Data");
 }

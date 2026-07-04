@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <ApplicationContext/ApplicationContext.h>
-#include <ApplicationContext/ApplicationSettingsService.h>
+#include <ApplicationContext/ApplicationConfigService.h>
 #include <ApplicationContext/FileApplicationConfigStore.h>
 
 #include <chrono>
@@ -45,7 +45,7 @@ TEST(ApplicationContextTest, HoldsDescriptorPathsAndSettings)
     CApplicationPaths _Paths;
     _Paths.UserConfigDirectory = "Setting";
 
-    CApplicationSettings _Settings;
+    iCAX::Data::PropertyBag _Settings;
     _Settings.Set("ui.theme", iCAX::Data::Variant(std::string("dark")));
 
     CApplicationContext _Context(_Descriptor, _Paths, _Settings);
@@ -59,7 +59,7 @@ TEST(ApplicationConfigStoreTest, SaveAndLoadSettings)
 {
     auto _Path = MakeTempConfigPath();
 
-    CApplicationSettings _Settings;
+    iCAX::Data::PropertyBag _Settings;
     _Settings.Set("ui.theme", iCAX::Data::Variant(std::string("light")));
     _Settings.Set("project.defaultVersion", iCAX::Data::Variant(2));
 
@@ -73,24 +73,24 @@ TEST(ApplicationConfigStoreTest, SaveAndLoadSettings)
     std::filesystem::remove(_Path);
 }
 
-TEST(ApplicationSettingsServiceTest, UpdatesContextAndPersistsSettings)
+TEST(ApplicationConfigServiceTest, UpdatesContextAndPersistsSettings)
 {
     auto _Path = MakeTempConfigPath();
 
     CApplicationDescriptor _Descriptor;
     CApplicationPaths _Paths;
-    CApplicationSettings _Settings;
+    iCAX::Data::PropertyBag _Settings;
     _Settings.Set("ui.theme", iCAX::Data::Variant(std::string("light")));
 
     auto _pContext = std::make_shared<CApplicationContext>(_Descriptor, _Paths, _Settings);
     auto _pStore = std::make_shared<CFileApplicationConfigStore>();
-    CApplicationSettingsService _Service(_pContext, _pStore, _Path.string());
+    CApplicationConfigService _Service(_pContext, _pStore, _Path.string());
 
     _Service.SetValue("ui.theme", iCAX::Data::Variant(std::string("dark")));
     EXPECT_EQ("dark", _pContext->GetSettings().Get("ui.theme").To<std::string>());
 
     _Service.Save();
-    _pContext->ReplaceSettings(CApplicationSettings());
+    _pContext->ReplaceSettings(iCAX::Data::PropertyBag());
     EXPECT_EQ("default", _pContext->GetSettings().Get("ui.theme", iCAX::Data::Variant(std::string("default"))).To<std::string>());
 
     _Service.Reload();

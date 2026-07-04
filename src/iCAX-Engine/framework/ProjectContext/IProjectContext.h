@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Data/PropertyBag.h"
 #include "Data/uuid.h"
 #include "Mailbox/MailPostOffice.h"
 #include "ProjectContextExport.h"
@@ -74,6 +75,13 @@ namespace iCAX
             * @brief 获取项目路径。
             */
             virtual const std::string& GetProjectPath() const = 0;
+
+            /*
+            * @brief 获取项目级参数。
+            * @details 项目级设置跟项目文件走，不承载产品级设置或应用级设置。
+            */
+            virtual iCAX::Data::PropertyBag& Settings() = 0;
+            virtual const iCAX::Data::PropertyBag& Settings() const = 0;
 
             /*
             * @brief 获取项目 Repository。

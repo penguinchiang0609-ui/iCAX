@@ -140,6 +140,7 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_Role(CreateInfo_.Role)
     , m_ProjectName(CreateInfo_.ProjectName)
     , m_ProjectPath(CreateInfo_.ProjectPath)
+    , m_Settings(CreateInfo_.Settings)
     , m_QuickSaveLogPath(CreateInfo_.QuickSaveLogPath)
     , m_StartupComponent(CreateInfo_.StartupComponent)
     , m_pApplicationContext(RequireApplicationContext(CreateInfo_))
@@ -197,6 +198,18 @@ void iCAX::Project::CProject::SetProjectName(IN const std::string& strName_)
 const std::string& iCAX::Project::CProject::GetProjectPath() const
 {
     return m_ProjectPath;
+}
+
+iCAX::Data::PropertyBag& iCAX::Project::CProject::Settings()
+{
+    EnsureProjectThreadAccess("Project::Settings");
+    return m_Settings;
+}
+
+const iCAX::Data::PropertyBag& iCAX::Project::CProject::Settings() const
+{
+    EnsureProjectThreadAccess("Project::Settings");
+    return m_Settings;
 }
 
 void iCAX::Project::CProject::SetProjectPath(IN const std::string& strPath_)

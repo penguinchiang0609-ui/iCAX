@@ -221,7 +221,7 @@ namespace iCAX
             /*
             * @brief 加载应用设置。
             */
-            iCAX::Application::CApplicationSettings LoadApplicationSettings() const;
+            iCAX::Data::PropertyBag LoadApplicationSettings() const;
 
             /*
             * @brief 创建应用上下文。

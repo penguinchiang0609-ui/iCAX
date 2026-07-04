@@ -502,6 +502,33 @@ TEST(ProjectCatalogTest, CatalogIdentityCanBeProvided)
     EXPECT_EQ("memory://catalog-b", _Catalog.GetCatalogPath());
 }
 
+TEST(ProjectTest, SettingsAreInitializedFromCreateInfo)
+{
+    auto _Info = MakeProjectInfo();
+    _Info.Settings.Set("unit.length", std::string("Millimeter"));
+    _Info.Settings.Set("unit.angle", std::string("Degree"));
+    _Info.Settings.Set("geometry.defaultTolerance", 0.001);
+    _Info.Settings.Set("coordinate.project", std::string("LaserPartCS"));
+    _Info.Settings.Set("defaultLayer", "laser3dcam.toolpath", std::string("outer-cut"));
+
+    CProject _Project(_Info);
+
+    EXPECT_EQ("Millimeter", _Project.Settings().Get("unit.length").To<std::string>());
+    EXPECT_EQ("Degree", _Project.Settings().Get("unit.angle").To<std::string>());
+    EXPECT_DOUBLE_EQ(0.001, _Project.Settings().Get("geometry.defaultTolerance").To<double>());
+    EXPECT_EQ("LaserPartCS", _Project.Settings().Get("coordinate.project").To<std::string>());
+    EXPECT_EQ(
+        "outer-cut",
+        _Project.Settings()
+            .Get("defaultLayer", "laser3dcam.toolpath", iCAX::Data::Variant())
+            .To<std::string>());
+    EXPECT_EQ(
+        "fallback",
+        _Project.Settings()
+            .Get("missing", iCAX::Data::Variant(std::string("fallback")))
+            .To<std::string>());
+}
+
 TEST(ProjectCatalogTest, ProjectResourcesAreIsolated)
 {
     CProjectCatalog _Catalog(MakeCatalogInfo());
