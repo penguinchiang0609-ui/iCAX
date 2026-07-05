@@ -12,11 +12,14 @@
   <Folder Name="/iCAX-Engine/foundation/Data/">
     <Project Path="iCAX-Engine/foundation/Data/Data.vcxproj" />
   </Folder>
-  <Folder Name="/iCAX-Engine/foundation/Geometry/">
-    <Project Path="iCAX-Engine/foundation/Geometry/Geometry.vcxproj" />
+  <Folder Name="/iCAX-Engine/foundation/GeometryData/">
+    <Project Path="iCAX-Engine/foundation/GeometryData/GeometryData.vcxproj" />
   </Folder>
-  <Folder Name="/iCAX-Engine/foundation/Math/">
-    <Project Path="iCAX-Engine/foundation/Math/Math.vcxproj" />
+  <Folder Name="/iCAX-Engine/foundation/GeometryAdapter/">
+    <Project Path="iCAX-Engine/foundation/GeometryAdapter/GeometryAdapter.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/GeometryAlgo/">
+    <Project Path="iCAX-Engine/foundation/GeometryAlgo/GeometryAlgo.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/Task/">
     <Project Path="iCAX-Engine/foundation/Task/Task.vcxproj" />
@@ -66,8 +69,8 @@
   </Folder>
   <Folder Name="/iCAX-Plugins/" />
   <Folder Name="/iCAX-Plugins/cam/" />
-  <Folder Name="/iCAX-Plugins/cam/TopologyToolpath/">
-    <Project Path="iCAX-Plugins/cam/TopologyToolpath/TopologyToolpath.vcxproj" />
+  <Folder Name="/iCAX-Plugins/cam/Laser3DCAM/">
+    <Project Path="iCAX-Plugins/cam/Laser3DCAM/Laser3DCAM.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Plugins/input/" />
   <Folder Name="/iCAX-Plugins/input/InputPDO/">

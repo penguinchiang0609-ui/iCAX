@@ -10,7 +10,7 @@
 - 大对象、二进制和可复原资源进入 Resources。
 - 几何内核对象、渲染对象、碰撞世界对象只能作为运行时缓存。
 
-## 2. 通用坐标、单位与精度约定
+## 2. 通用单位、世界坐标与精度约定
 
 这些约定不是独立功能模块，而是所有 CAM 数据结构和功能模块共同遵守的基础契约。
 
@@ -21,26 +21,13 @@
 - 时间单位为秒。
 - 所有持久化数据、命令参数和 UI 显示默认使用上述单位。
 
-核心坐标系：
+世界坐标规则：
 
-```text
-ProjectCS        项目公共基准坐标系
-ModelCS          目标工件 CAD 原始坐标系
-ToolAssemblyCS   切割头装配根坐标系
-ComponentCS      切割头子部件局部坐标系
-JointCS          关节坐标系
-TCPCS            TCP 坐标系，Z 轴为激光束方向
-RenderCS         前端渲染坐标系
-```
-
-坐标使用规则：
-
-- 刀路曲线数据持久化在 `ProjectCS`。
-- 五轴姿态场中的 TCP 位姿持久化在 `ProjectCS`。
-- 目标工件导入模块负责建立 `ModelCS -> ProjectCS`。
-- 切割头机械模型模块负责维护 `ComponentCS -> ParentComponentCS -> ToolAssemblyCS -> ProjectCS`。
-- 运动规划模块使用 `ProjectCS` 中的 TCP 位姿求解切割头关节值。
-- 渲染模块可以把 `ProjectCS` 转换为 `RenderCS`，但不得把渲染坐标反向作为 CAM 计算依据。
+- 除切割头机械结构内部数据外，Database、Resources、PDO 和命令参数中的 CAM 业务数据统一使用世界坐标系。
+- 目标工件导入时将源 CAD 几何转换到世界坐标系；导入完成后，刀路、姿态场、碰撞、仿真都不再暴露源模型局部坐标。
+- 刀路曲线、五轴姿态场、运动规划目标姿态和仿真状态都按世界坐标表达。
+- TCP、关节坐标、切割头子部件局部坐标只属于切割头机械模型模块。
+- 机床坐标系、工件零点等只影响后处理和输出转换，不进入当前 CAM 主数据结构。
 
 默认几何误差目标：
 
@@ -53,7 +40,7 @@ RenderCS         前端渲染坐标系
 - edge/loop 转刀路曲线。
 - 曲线拟合。
 - 姿态场采样的几何位置误差。
-- 运动规划采样的 TCP 位置误差。
+- 运动规划采样的目标位置误差。
 
 不适用范围：
 
@@ -126,8 +113,10 @@ ProjectContext.Settings().Get(key, path, defaultValue)
 ```text
 WorkpieceEntity
 ToolAssemblyEntity
-LayerEntity
-ToolpathEntity
+CuttingLayerEntity
+VisibleLayerEntity
+BlockEntity
+PathEntity
 OrderPlanEntity
 SafetyCheckEntity
 SimulationEntity
@@ -141,18 +130,40 @@ SimulationEntity
 - 会参与撤销还原。
 - 需要独立版本或状态。
 
+Root 不作为独立业务 Entity。RootComponent 直接挂在 Repository 的 MetaEntity 上：
+
+```text
+MetaEntity
+  CLaserCamRootComponent
+```
+
+RootComponent 只保存当前主对象引用，不保存业务集合：
+
+```text
+CLaserCamRootComponent
+  ActiveWorkpieceID
+  ActiveToolAssemblyID
+  DefaultCuttingLayerID
+  DefaultVisibleLayerID
+  ActiveOrderPlanID
+  LatestSafetyCheckID
+  ActiveSimulationID
+  ProgramRootBlockID
+```
+
 ## 5. Workpiece
 
 ```text
-CLaserCamWorkpieceComponent
-  WorkpieceID
+WorkpieceEntity
+  CLaserWorkpieceComponent
+
+CLaserWorkpieceComponent
   Name
   SourcePath
-  CadModelResourceID
-  DisplayMeshResourceID
-  CollisionGeometryResourceID
-  ModelToProjectTransform
-  Version
+  ModelResourceID
+  TopologyResourceID
+  DisplayResourceID
+  TopologyVersion
 ```
 
 Database 只保存资源引用和变换，不保存 BRep 指针。
@@ -172,46 +183,124 @@ CLaserCamToolAssemblyComponent
 
 `ToolAssemblyResourceID` 指向解析后的内部统一结构，便于快速打开项目。
 
-## 7. Layer
+## 7. CuttingLayer 与 VisibleLayer
 
 ```text
-CLaserCamLayerComponent
-  LayerID
+CuttingLayerEntity
+  CLaserCamCuttingLayerComponent
+
+CLaserCamCuttingLayerComponent
+  Name
+  CuttingProcessID
+  CuttingProcessName
+  Enabled
+  OutputOrder
+```
+
+CuttingLayer 是给切割系统使用的加工工艺分组。不同 CuttingLayer 可以对应切割系统中的不同加工工艺，如功率、速度、气体、焦点等。当前项目只保存切割系统可识别的工艺 ID 和名称，不在 iCAX 内展开具体工艺参数。
+
+```text
+VisibleLayerEntity
+  CLaserCamVisibleLayerComponent
+
+CLaserCamVisibleLayerComponent
   Name
   Color
   Visible
-  LockState
+  Locked
   Order
 ```
 
-图层只组织刀路，不改变刀路几何。
+VisibleLayer 只服务前端显示、隐藏、颜色和选择过滤，不表达切割系统工艺。
 
-## 8. Toolpath
+## 8. ProgramNode / Block / Toolpath
+
+加工程序按一棵树表达。Block 是容器节点，Toolpath 是运动叶子节点。二者都继承共同的程序节点字段：
 
 ```text
-CLaserCamToolpathComponent
-  ToolpathID
+CCAMProgramNodeComponent
   Name
-  LayerID
-  CurveResourceID
-  QualitySummary
-  Process
-  State
-  DefaultLeadInParameter
-  DefaultDirection
-  Version
-  OptionalSourceInfo
+  PreInstructions[]
+  PostInstructions[]
 ```
 
-刀路主身份是 `ToolpathID`。CAD 拓扑来源只是可选信息。
+共同字段的含义：
 
-## 9. ToolpathCurveResource
+- `PreInstructions[]`：节点执行前按数组顺序执行的指令。
+- `PostInstructions[]`：节点执行后按数组顺序执行的指令。
+
+`CamInstruction` 是指令的结构化表达：
 
 ```text
-ToolpathCurveResource
-  CurveID
-  IsClosed
-  Segment[]
+CamInstruction
+  Type        // Comment / RawNC / MCode / GCode / Process / Dwell / Custom
+  Code        // 指令码或产品内部动作码，如 M03、G04、LaserOn
+  Text        // 注释文本或原始 NC 文本
+  Parameters  // ObjectMap，保存功率、延时、气体等结构化参数
+  Enabled
+```
+
+说明：
+
+- 注释不单独占字段，统一表达为 `Type=Comment` 的 CamInstruction。
+- 前置或后置由所在数组表达，CamInstruction 内部不重复保存 stage。
+- 指令执行顺序由数组顺序表达，CamInstruction 内部不保存 order。
+- `Parameters` 只保存指令参数，不回指 Entity、Resource 或运行时服务。
+
+RootComponent 通过 `ProgramRootBlockID` 指向根 Block。一个完整加工文件就是根 Block：
+
+```text
+ProgramRootBlockEntity
+  CCAMBlockComponent
+
+CCAMBlockComponent : CCAMProgramNodeComponent
+  Children[]
+```
+
+`Children[]` 是有序数组，每个元素只保存两项：
+
+```text
+ProgramChild
+  Kind      // block 或 path
+  EntityID  // 子 Block 或 Toolpath 的 EntityID
+```
+
+执行语义：
+
+1. 按顺序执行 Block 的 `PreInstructions[]`。
+2. 按 `Children[]` 顺序执行子 Block 或 Toolpath。
+3. 按顺序执行 Block 的 `PostInstructions[]`。
+
+Toolpath 是真正的运动节点：
+
+```text
+PathEntity
+  CCAMPathComponent
+
+CCAMPathComponent : CCAMProgramNodeComponent
+  WorkpieceEntityID
+  CuttingLayerID
+  VisibleLayerID
+  PathKind
+  TopologyKind
+  TopologyID
+  Source
+  Operation
+  Role
+  CurveResourceID
+  PoseFieldResourceID
+```
+
+刀路主身份是 Path EntityID。当前阶段会把来源拓扑记录到组件和曲线资源中；真实空间曲线生成后，刀路仍然以 `CurveResourceID` 指向的曲线资源为权威几何，以 `PoseFieldResourceID` 指向姿态场资源。曲线资源和姿态场资源都统一使用世界坐标。`CuttingLayerID` 决定切割系统工艺分组，`VisibleLayerID` 决定前端显示分组。刀路顺序不写在 Path 自身，而由所属 Block 的 `Children[]` 决定。
+
+## 9. PathCurveResource
+
+```text
+PathCurveResource
+  TopologyKind
+  TopologyID
+  SourceTopology
+  Segments[]
   Version
 ```
 
@@ -226,33 +315,31 @@ CubicBSplineSegment3
 BezierSegment3
 ```
 
-曲线资源是刀路的权威几何数据。
+曲线资源是刀路的权威几何数据。资源本身只保存曲线数据和可选来源拓扑快照，不反向保存所属 Workpiece 或 Path。工件归属由 `CCAMPathComponent.WorkpieceEntityID` 表达，刀路到曲线资源的引用由 `CCAMPathComponent.CurveResourceID` 表达。所有点、向量和曲线段参数都使用世界坐标，不使用模型局部坐标、渲染坐标或切割头局部坐标。
 
 ## 10. PoseFieldResource
 
 ```text
 PoseFieldResource
-  PoseFieldID
-  ToolpathID
   Version
   Sample[]
 ```
 
 ```text
 PoseSample
-  CurveParameter
-  TCPPositionInProjectCS
-  TCPPoseInProjectCS
-  BeamDirectionInProjectCS
-  OptionalJointValues
+  SegmentIndex
+  SegmentU
+  BeamDirection
 ```
+
+姿态场资源只保存姿态场本体，不反向保存 ToolpathID、CurveResourceID、CurveVersion 或 PoseFieldID。资源身份由 ResourcePool key 表达，归属关系由 `CCAMPathComponent.PoseFieldResourceID` 表达，曲线与姿态场的对应关系由同一个 `CCAMPathComponent` 同时持有 `CurveResourceID` 和 `PoseFieldResourceID` 来维护。
+
+采样点使用 `SegmentIndex + SegmentU` 绑定复合曲线中的某一段及该段原生参数，不使用整条刀路归一化参数，也不使用累计弧长作为主定位。`BeamDirection` 是世界坐标下的激光束方向。采样点位置不持久化在 PoseFieldResource 中，而是通过 `PathCurveResource.Segments[SegmentIndex]` 按 `SegmentU` 求值得到。姿态场不保存 TCP 字段、完整机械姿态或关节值；TCP、关节链和逆解结果属于切割头机械模型与运动规划阶段。
 
 ## 11. MotionPlanResource
 
 ```text
 MotionPlanResource
-  MotionPlanID
-  ToolpathID
   Version
   LeadInSelection
   CuttingDirection
@@ -265,6 +352,8 @@ MotionPlanResource
   ContinuityCheckResult
   CollisionCheckResult
 ```
+
+MotionPlanResource 同样是纯数据资源，不保存自己的 ResourceID，也不反向保存 ToolpathID。后续由拥有者组件保存 `MotionPlanResourceID`，资源内部只保存规划结果本体。若运动样本需要定位来源刀路，优先使用资源内部的路径序号、段序号或样本序号，不直接回指 Repository Entity。
 
 ## 12. SafetyCheckResult
 
@@ -304,8 +393,8 @@ ResourceInfo
 ## 15. 测试点
 
 - 创建项目后 ProjectContext 存在统一 settings 入口。
-- 创建项目后 Repository 中存在默认 Layer。
+- 创建项目后 Repository 中存在默认 CuttingLayer 和默认 VisibleLayer。
 - 导入模型后 Workpiece 只保存 ResourceID 和 Transform。
-- 生成刀路后 Toolpath entity 引用曲线资源。
-- 删除图层前必须处理其下刀路归属。
+- 生成刀路后 Path entity 引用曲线资源。
+- 删除 CuttingLayer 或 VisibleLayer 前必须处理其下刀路归属。
 - 保存重开后 ResourceID 可解析到内嵌资源。

@@ -47,9 +47,10 @@ SimulationState
   CurrentToolpathID
   CurrentSegmentID
   CurrentMotionKind
-  CurrentCurveParameter
-  CurrentTCPPosition
-  CurrentTCPPose
+  CurrentSegmentIndex
+  CurrentSegmentU
+  CurrentPositionInWorldCS
+  CurrentOrientationInWorldCS
   CurrentJointValues[]
   CurrentCollisionState
   CompletedToolpathIDs[]
@@ -78,8 +79,8 @@ MVP 使用固定速度或固定步长。
 
 插值对象：
 
-- TCP 位置。
-- TCP 姿态。
+- 世界坐标位置。
+- 世界坐标姿态。
 - 关节值。
 
 若 MotionPlan 已有足够密集采样，可先采用采样点步进。
@@ -118,7 +119,7 @@ SimulationToolStatePDO
   ToolAssemblyID
   JointValues[]
   ComponentPose[]
-  TCPPose
+  ToolPoseInWorldCS
   MotionKind
 ```
 

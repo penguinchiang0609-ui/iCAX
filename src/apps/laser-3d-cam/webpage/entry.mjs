@@ -282,9 +282,9 @@ function runCamAction(context, view, action) {
   } else if (action === "recognize-loops") {
     runProjectCommand(context, view, "Cam.RecognizeLoops", {});
   } else if (action === "add-selection") {
-    runProjectCommand(context, view, "Cam.AddSelectionToToolpathList", {});
+    runProjectCommand(context, view, "Cam.AddSelectionPath", {});
   } else if (action === "clear-toolpaths") {
-    runProjectCommand(context, view, "Cam.ClearToolpathList", {});
+    runProjectCommand(context, view, "Cam.ClearProgram", {});
   }
 }
 

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files"><UniqueIdentifier>{ff3dceac-0639-4bdb-b919-adfa684083e2}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{a5409112-9084-48b2-8822-f532b6039936}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="FeatureRecognitionService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Laser3DCAM.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolpathGenerationService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolpathOrderService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolpathComponents.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolpathResourceKeys.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolpathResources.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="Laser3DCAMExport.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CamCommands.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="FeatureRecognitionService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="Laser3DCAM.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolpathGenerationService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolpathOrderService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+</Project>

@@ -39,8 +39,8 @@ src/iCAX-Plugins/cam/Laser3DCAM/
   Laser3DCAM.h
   Laser3DCAM.cpp
   Data/
-    LaserCamComponents.h
-    LaserCamResources.h
+    ToolpathComponents.h
+    ToolpathResources.h
     LaserCamCommands.h
   Tool/
     ToolAssemblyImporter.h
@@ -223,7 +223,7 @@ Resources 保存项目可复原资源，随项目文件内嵌。
 - `ToolDescriptionResource`：SDF/SDFormat 原始资源。
 - `ToolComponentModelResource`：切割头子部件 STEP/STP 或 STL 资源。
 - `CollisionGeometryResource`：mesh 或包围盒碰撞包络。
-- `ToolpathCurveResource`：刀路曲线资源。
+- `PathCurveResource`：刀路曲线资源。
 - `PoseFieldResource`：五轴姿态场采样或插值数据。
 - `MotionPlanResource`：关节运动序列、空移段和蛙跳段。
 - `DisplayMeshResource`：可丢弃显示缓存。
@@ -262,9 +262,9 @@ Mailbox 不传：
 - 大采样点数组。
 - 每帧状态。
 
-## 8. 坐标和精度方案
+## 8. 世界坐标和精度方案
 
-产品内部采用三维右手直角坐标系。
+产品内部采用统一的三维右手世界坐标系。除切割头机械结构内部数据外，Database、Resources、PDO 和命令参数中的 CAM 业务数据都按世界坐标表达。
 
 单位：
 
@@ -272,31 +272,17 @@ Mailbox 不传：
 - 角度：度。
 - 时间：秒。
 
-核心坐标系：
+坐标规则：
 
-```text
-ProjectCS        项目公共基准坐标系
-ModelCS          目标工件 CAD 原始坐标系
-ToolAssemblyCS   切割头装配根坐标系
-ComponentCS      切割头子部件局部坐标系
-JointCS          关节坐标系
-TCPCS            TCP 坐标系，Z 轴为激光束方向
-```
-
-变换链：
-
-```text
-ModelCS -> ProjectCS
-ToolAssemblyCS -> ProjectCS
-ComponentCS -> ParentComponentCS
-JointCS -> ParentComponentCS
-TCPCS -> ToolComponentCS -> ... -> ToolAssemblyCS -> ProjectCS
-```
+- 目标工件导入时转换到世界坐标系。
+- 刀路曲线、五轴姿态场、运动规划目标姿态、碰撞检测输入和仿真状态都使用世界坐标系。
+- 切割头机械结构内部可以使用子部件局部坐标、关节坐标和 TCP；这些坐标只在切割头机械模型模块内解释。
+- 工件零点、真实机床坐标系和控制系统坐标转换只属于后处理/输出阶段，不进入当前 CAM 主数据。
 
 误差：
 
 - 刀路相对目标几何的默认最大几何偏差为 `0.001 mm`。
-- 候选对象转刀路、曲线拟合、姿态场采样、运动规划采样都以 `0.001 mm` 为默认几何误差目标。
+- 候选特征转刀路、曲线拟合、姿态场采样、运动规划采样都以 `0.001 mm` 为默认几何误差目标。
 - 渲染网格可以低精度，但不能作为刀路和运动规划的权威几何来源。
 
 ## 9. 核心数据结构
@@ -311,7 +297,6 @@ ProjectContext
       UnitAngle = Degree
       UnitTime = Second
       DefaultGeometryTolerance = 0.001
-      ProjectCoordinateSystem = ProjectCS
     extensions
       icax.laser-3d-cam
         SettingsBag
@@ -323,15 +308,16 @@ ProjectContext 只提供项目级统一 settings 入口，不直接包含 Laser3
 ### 9.2 目标工件组件
 
 ```text
-CLaserCamWorkpieceComponent
-  WorkpieceID
+WorkpieceEntity
+  CLaserWorkpieceComponent
+
+CLaserWorkpieceComponent
   Name
   SourcePath
-  CadModelResourceID
-  DisplayMeshResourceID
-  CollisionGeometryResourceID
-  ModelToProjectTransform
-  Version
+  ModelResourceID
+  TopologyResourceID
+  DisplayResourceID
+  TopologyVersion
 ```
 
 目标工件只支持 STEP/STP、IGS/IGES。STL 不作为目标工件导入格式。
@@ -384,38 +370,101 @@ Joint
   MaxValue
 ```
 
-### 9.4 图层组件
+### 9.4 CuttingLayer 与 VisibleLayer
 
-每个图层可以是一个 entity：
+图层拆成两类，不混用：
 
 ```text
-CLaserCamLayerComponent
-  LayerID
+CuttingLayerEntity
+  CLaserCamCuttingLayerComponent
+
+CLaserCamCuttingLayerComponent
+  Name
+  CuttingProcessID
+  CuttingProcessName
+  Enabled
+  OutputOrder
+```
+
+CuttingLayer 面向切割系统，用于加工工艺分组。不同 CuttingLayer 可以映射到切割系统中不同的加工工艺；iCAX 当前只保存切割系统可识别的工艺 ID 和名称。
+
+```text
+VisibleLayerEntity
+  CLaserCamVisibleLayerComponent
+
+CLaserCamVisibleLayerComponent
   Name
   Color
   Visible
-  LockState
+  Locked
   Order
 ```
 
-### 9.5 刀路组件
+VisibleLayer 面向前端显示，用于颜色、显隐和选择过滤，不表达切割工艺。
 
-每条刀路是一个 entity：
+### 9.5 加工程序节点、块和刀路
+
+加工程序按树组织。Block 是容器，Toolpath 是实际运动叶子。Block 和 Toolpath 都继承共同的程序节点字段：
 
 ```text
-CLaserCamToolpathComponent
-  ToolpathID
+CCAMProgramNodeComponent
   Name
-  LayerID
-  CurveResourceID
-  QualitySummary
-  Process
-  State
-  DefaultLeadInParameter
-  DefaultDirection
-  Version
-  OptionalSourceInfo
+  PreInstructions[]
+  PostInstructions[]
 ```
+
+`PreInstructions[]` 和 `PostInstructions[]` 的元素是结构化的 `CamInstruction`：
+
+```text
+CamInstruction
+  Type        // Comment / RawNC / MCode / GCode / Process / Dwell / Custom
+  Code        // 指令码或产品内部动作码，如 M03、G04、LaserOn
+  Text        // 注释文本或原始 NC 文本
+  Parameters  // ObjectMap，保存功率、延时、气体等结构化参数
+  Enabled
+```
+
+注释统一表达为 `Type=Comment` 的指令。前置或后置由所在数组表达，指令顺序由数组顺序表达，指令对象内部不重复保存 stage 或 order。
+
+根节点不是单独的全局静态对象，而是由 `CLaserCamRootComponent.ProgramRootBlockID` 指向的普通 Block Entity：
+
+```text
+ProgramRootBlockEntity
+  CCAMBlockComponent
+
+CCAMBlockComponent : CCAMProgramNodeComponent
+  Children[]
+```
+
+`Children[]` 是有序数组，每项保存：
+
+```text
+ProgramChild
+  Kind      // block 或 path
+  EntityID  // 子 Block 或 Toolpath 的 EntityID
+```
+
+每条真实运动刀路是一个 Path Entity：
+
+```text
+PathEntity
+  CCAMPathComponent
+
+CCAMPathComponent : CCAMProgramNodeComponent
+  WorkpieceEntityID
+  CuttingLayerID
+  VisibleLayerID
+  PathKind
+  TopologyKind
+  TopologyID
+  Source
+  Operation
+  Role
+  CurveResourceID
+  PoseFieldResourceID
+```
+
+执行顺序由 Block 的 `Children[]` 决定，不由 Path 自身保存全局排序。一个加工文件天然就是根 Block；文件级前置指令和后置指令直接挂在根 Block 的 `PreInstructions[]` 和 `PostInstructions[]` 上。
 
 ```text
 ToolpathQualitySummary
@@ -429,10 +478,11 @@ ToolpathQualitySummary
 ### 9.6 刀路曲线资源
 
 ```text
-ToolpathCurveResource
-  CurveID
-  IsClosed
-  Segment[]
+PathCurveResource
+  TopologyKind
+  TopologyID
+  SourceTopology
+  Segments[]
   Version
 ```
 
@@ -447,7 +497,7 @@ CubicBSplineSegment3
 BezierSegment3
 ```
 
-刀路曲线资源是 CAM 的权威曲线数据。CAD 拓扑引用只是可选来源信息。
+刀路曲线资源是 CAM 的权威曲线数据。资源本身只保存曲线数据和可选来源拓扑快照，不反向保存所属 Workpiece 或 Path。工件归属由 `CCAMPathComponent.WorkpieceEntityID` 表达，刀路到曲线资源的引用由 `CCAMPathComponent.CurveResourceID` 表达。CAD 拓扑引用只是可选来源信息。
 
 ### 9.7 工艺数据
 
@@ -480,29 +530,25 @@ LeadInOut
 
 ```text
 PoseFieldResource
-  PoseFieldID
-  ToolpathID
   Version
   Sample[]
 ```
 
 ```text
 PoseSample
-  CurveParameter
-  TCPPositionInProjectCS
-  TCPPoseInProjectCS
-  BeamDirectionInProjectCS
-  OptionalJointValues
+  SegmentIndex
+  SegmentU
+  BeamDirection
 ```
 
-MVP 采用离散采样表达，后续可扩展为连续姿态函数。
+MVP 采用离散采样表达，后续可扩展为连续姿态函数。PoseFieldResource 是纯数据资源，不保存 ToolpathID、CurveResourceID、CurveVersion 或 PoseFieldID 这类反向关系。资源身份由 ResourcePool key 表达；刀路通过 `CCAMPathComponent.PoseFieldResourceID` 引用姿态场；曲线与姿态场的对应关系由同一个 `CCAMPathComponent` 同时持有 `CurveResourceID` 和 `PoseFieldResourceID` 维护。
+
+采样点使用 `SegmentIndex + SegmentU` 绑定复合曲线中的曲线段和该段原生参数。`BeamDirection` 使用世界坐标。采样点位置不持久化在 PoseFieldResource 中，而是由曲线资源按 `SegmentIndex + SegmentU` 求值获得。姿态场不保存 TCP 字段、完整机械姿态或关节值。
 
 ### 9.9 运动规划资源
 
 ```text
 MotionPlanResource
-  MotionPlanID
-  ToolpathID
   Version
   LeadInSelection
   CuttingDirection
@@ -516,12 +562,15 @@ MotionPlanResource
   CollisionCheckResult
 ```
 
+MotionPlanResource 只保存运动规划结果本体，不保存自己的 ResourceID，也不反向保存 ToolpathID。与刀路、程序块或工程状态的关联由 Database 组件保存 ResourceID 来表达。
+
 ```text
 MotionSample
   SegmentID
-  CurveParameter
-  TCPPositionInProjectCS
-  TCPPoseInProjectCS
+  SegmentIndex
+  SegmentU
+  Position
+  Orientation
   JointValues[]
   MotionKind(Cutting/AirMove/FrogJump)
   IKState
@@ -543,7 +592,7 @@ SafetyCheckResult
 ```text
 CollisionEvent
   SampleOrPosition
-  ToolpathID
+  MotionSampleIndex
   MotionKind
   ObjectA
   ObjectB
@@ -561,9 +610,10 @@ SimulationState
   CurrentToolpathID
   CurrentSegmentID
   CurrentMotionKind
-  CurrentCurveParameter
-  CurrentTCPPosition
-  CurrentTCPPose
+  CurrentSegmentIndex
+  CurrentSegmentU
+  CurrentPositionInWorldCS
+  CurrentOrientationInWorldCS
   CurrentJointValues[]
   CurrentCollisionState
   CompletedToolpathIDs[]
@@ -593,16 +643,17 @@ SimulationState
 - 导入 STEP/STP、IGS/IGES 目标工件。
 - 保存原始 CAD 文件为内嵌资源。
 - 构建显示资源和碰撞资源。
-- 保存 `ModelCS -> ProjectCS` 变换。
+- 将导入几何转换到项目世界坐标。
 - 为后续识别和拾取提供几何访问能力。
 
 ### 10.3 FeatureRecognitionService
 
 职责：
 
-- 从目标工件识别孔和坡口孔。
-- 输出候选 edge/loop。
-- 候选对象可以保留 CAD 来源，但不是刀路主身份。
+- 输入 BRep 模型资源和 FeatureDefinition。
+- 从目标工件识别孔、坡口孔、外轮廓等参数化特征。
+- 输出 RecognizedFeature，包含 path、depth、axis、direction、radius、bevelType 等参数化信息。
+- RecognizedFeature 可以保留 BRep 来源引用，但不是刀路主身份。
 - 识别失败不阻断手动拾取。
 
 ### 10.4 PickService
@@ -618,10 +669,10 @@ SimulationState
 
 职责：
 
-- 将候选 edge/loop 转为三维空间曲线。
+- 将 RecognizedFeature 转为三维空间曲线。
 - 支持 line、arc、polyline、ellipse、三阶 B 样条和 Bezier。
 - 控制默认最大几何偏差 `0.001 mm`。
-- 输出刀路质量摘要。
+- 输出 GeneratedToolpath，由 CommandHandler 写入 PathCurveResource、PathEntity 和 Block.Children。
 - 不让刀路主身份依赖 CAD 拓扑。
 
 ### 10.6 PoseFieldService
@@ -629,15 +680,15 @@ SimulationState
 职责：
 
 - 沿刀路生成五轴姿态场。
-- 表达 TCP 位姿和激光束方向。
-- 必要时推导或缓存关节值。
+- 表达世界坐标下的刀路位置、姿态和激光束方向。
+- 不在姿态场中缓存关节值。
 - 输出 PoseFieldResource。
 
 ### 10.7 KinematicsService
 
 职责：
 
-- 根据 ToolAssembly 和 TCP 位姿求逆解。
+- 根据 ToolAssembly 和世界坐标下的目标切割姿态求逆解。
 - 处理多解选择。
 - 识别无逆解、超限、跳变和奇异点。
 - 对多解进行评分。
@@ -645,7 +696,7 @@ SimulationState
 多解评分优先级：
 
 ```text
-必须满足：关节限位、TCP 位姿误差、碰撞基本约束
+必须满足：关节限位、目标姿态误差、碰撞基本约束
 优先选择：远离奇异点、远离限位、与上一状态变化小、姿态调整平滑
 ```
 
@@ -810,15 +861,16 @@ sequenceDiagram
     participant Res as Resources
 
     UI->>Cmd: LaserCam.RecognizeFeatures()
-    Cmd->>Rec: 识别孔和坡口孔
-    Rec-->>Cmd: 候选 edge/loop
-    Cmd-->>UI: 返回候选列表
+    Cmd->>Rec: BRep + FeatureDefinition[] 识别孔和坡口孔
+    Rec-->>Cmd: RecognizedFeature[]
+    Cmd-->>UI: 返回参数化特征列表
     UI->>Cmd: LaserCam.PickObject(edge/loop)
     Cmd->>Pick: 更新当前选择
-    UI->>Cmd: LaserCam.GenerateToolpath(selection)
-    Cmd->>Gen: 生成空间曲线
-    Gen->>Res: 保存 ToolpathCurveResource
-    Gen->>Repo: 创建 Toolpath entity
+    UI->>Cmd: LaserCam.GenerateToolpath(recognizedFeature)
+    Cmd->>Gen: 生成 GeneratedToolpath
+    Cmd->>Res: 保存 PathCurveResource
+    Cmd->>Repo: 创建 Path entity
+    Cmd->>Repo: 追加 Toolpath 到 Program Root Block.Children
     Cmd-->>UI: 返回 ToolpathID
 ```
 
@@ -888,7 +940,7 @@ sequenceDiagram
 中央三维视图区
   工件模型
   切割头
-  候选 edge/loop
+  候选特征
   刀路
   姿态场
   空移路径

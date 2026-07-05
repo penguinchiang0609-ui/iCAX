@@ -10,9 +10,9 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{41e6e443-2614-4e0d-914a-bfc4d5802cd4}</ProjectGuid>
-    <RootNamespace>TopologyToolpath</RootNamespace>
+    <RootNamespace>Laser3DCAM</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>TopologyToolpath</ProjectName>
+    <ProjectName>Laser3DCAM</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
@@ -31,7 +31,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_TOPOLOGY_TOOLPATH;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_LASER_3D_CAM;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
@@ -46,15 +46,22 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="TopologyToolpath.h" />
-    <ClInclude Include="TopologyToolpathComponents.h" />
-    <ClInclude Include="TopologyToolpathResources.h" />
-    <ClInclude Include="TopologyToolpathExport.h" />
+    <ClInclude Include="FeatureRecognitionService.h" />
+    <ClInclude Include="Laser3DCAM.h" />
+    <ClInclude Include="ToolpathGenerationService.h" />
+    <ClInclude Include="ToolpathOrderService.h" />
+    <ClInclude Include="ToolpathComponents.h" />
+    <ClInclude Include="ToolpathResourceKeys.h" />
+    <ClInclude Include="ToolpathResources.h" />
+    <ClInclude Include="Laser3DCAMExport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="CamCommands.cpp" />
     <ClCompile Include="dllmain.cpp" />
-    <ClCompile Include="TopologyToolpath.cpp" />
+    <ClCompile Include="FeatureRecognitionService.cpp" />
+    <ClCompile Include="Laser3DCAM.cpp" />
+    <ClCompile Include="ToolpathGenerationService.cpp" />
+    <ClCompile Include="ToolpathOrderService.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -77,6 +84,9 @@
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj">
       <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj">
+      <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

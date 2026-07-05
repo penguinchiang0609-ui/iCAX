@@ -18,7 +18,7 @@ STL 不作为目标工件导入格式。
 - 读取 STEP/STP、IGS/IGES 文件。
 - 判断或确认单位。
 - 内嵌原始 CAD 资源。
-- 建立 `ModelCS -> ProjectCS` 变换。
+- 将导入几何转换到项目世界坐标。
 - 生成显示资源。
 - 生成碰撞资源。
 - 写入 WorkpieceComponent。
@@ -28,7 +28,7 @@ STL 不作为目标工件导入格式。
 - 刀路生成。
 - 特征识别算法本身。
 - 运动规划。
-- 真实机床坐标系。
+- 后处理输出坐标转换。
 
 ## 3. 数据结构
 
@@ -44,15 +44,16 @@ CadModelResource
 ```
 
 ```text
-CLaserCamWorkpieceComponent
-  WorkpieceID
+WorkpieceEntity
+  CLaserWorkpieceComponent
+
+CLaserWorkpieceComponent
   Name
   SourcePath
-  CadModelResourceID
-  DisplayMeshResourceID
-  CollisionGeometryResourceID
-  ModelToProjectTransform
-  Version
+  ModelResourceID
+  TopologyResourceID
+  DisplayResourceID
+  TopologyVersion
 ```
 
 ```text
@@ -82,8 +83,8 @@ CollisionGeometryResource
 3. 识别 CAD 类型
 4. 调用几何内核导入
 5. 解析单位
-6. 建立 ModelCS
-7. 建立 ModelCS -> ProjectCS
+6. 读取源模型坐标和单位
+7. 将几何转换到项目世界坐标
 8. 内嵌 CadModelResource
 9. 生成 DisplayMeshResource
 10. 生成 CollisionGeometryResource

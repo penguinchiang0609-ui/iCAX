@@ -15,8 +15,9 @@
   },
   "backend": {
     "modules": {
-      "components": ["../../iCAX-Plugins/cam/TopologyToolpath/${Platform}/${Configuration}/TopologyToolpath.dll"],
-      "commands": ["../../iCAX-Plugins/cam/TopologyToolpath/${Platform}/${Configuration}/TopologyToolpath.dll"]
+      "components": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
+      "services": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
+      "commands": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"]
     }
   },
   "webpage": {
