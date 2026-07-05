@@ -27,7 +27,7 @@ src/icax-engine/framework/Services/
 
 `Mailbox` 提供 Mail、MailQueue、MailChannel、MailPostOffice 和 MailChannelRegistry 等基础通信对象。
 
-`CMailChannelRegistry` 不是 Service。`ApplicationHost` 直接持有一个应用级 registry，并显式注入 ProductRuntime / Project：
+`CMailChannelRegistry` 不是 Service。`ApplicationHost` 直接持有一个应用级 registry，并显式注入 ProductRuntime / Project / Scene：
 
 ```text
 ApplicationHost
@@ -35,16 +35,16 @@ ApplicationHost
   CMailChannelRegistry
     applicationChannelId -> CMailChannel
     productChannelId     -> CMailChannel
-    projectChannelId     -> CMailChannel
+    sceneChannelId       -> CMailChannel
 ```
 
 运行体只保存自己的 mail id：
 
 - `ApplicationHost` 保存 `applicationChannelId`。
 - `ProductRuntime` 保存 `productChannelId`。
-- `Project` 保存 `projectChannelId`。
+- `Scene` 保存 `sceneChannelId`。
 
-上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 mail id 对应的 frontend post office。Application/Product/ProjectContext 暴露本层 post office。`CMailPostOffice` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧邮局会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
+上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 mail id 对应的 frontend post office。Application/Product/SceneContext 暴露本层 post office。`CMailPostOffice` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧邮局会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
 
 `GetFrontendPostOffice(id)` / `GetBackendPostOffice(id)` 只查询既有 channel，不隐式创建。channel 创建必须走 `CreateChannel(id)`，销毁必须走 `RemoveChannel(id)`。
 

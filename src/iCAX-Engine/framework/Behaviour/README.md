@@ -2,11 +2,11 @@
 
 `Behaviour` 是 framework 中的行为工程，负责行为运行容器、行为注册、行为调度和组件生命周期回调。
 
-`Universe` 只表达行为运行容器，不拥有 `Repository`，也不代表 `Project`。Behaviour 需要访问运行现场时，由 `Project` 在调度时显式传入 `ApplicationContext`、`ProductContext` 和 `ProjectContext`。每个 `Universe` 持有自己的 Behaviour 实例，Behaviour 之间不跨项目共享运行状态。
+`Universe` 只表达行为运行容器，不拥有 `Repository`，也不代表 `Project`。Behaviour 需要访问运行现场时，由 Scene 在调度时显式传入 `ApplicationContext`、`ProductContext`、`ProjectContext` 和 `SceneContext`。每个 `Universe` 持有自己的 Behaviour 实例，Behaviour 之间不跨 Scene 共享运行状态。
 
-`Universe` 不拥有计时器，也不决定帧节奏。`Project` 负责运行时调度，在每帧调用 `Universe::Tick` 时显式传入 `deltaTime/totalTime`。
+`Universe` 不拥有计时器，也不决定帧节奏。Scene 负责运行时调度，在每帧调用 `Universe::Tick` 时显式传入 `deltaTime/totalTime`。
 
-`IBehaviourRegistry` 保存 Behaviour 的类型描述和创建工厂，不保存可执行实例。Application/Product 可以创建自己的注册表并回放自动注册目录；Project 创建 `Universe` 时注入对应注册表，由 Dispatcher 在绑定 Behaviour 时创建项目私有实例。
+`IBehaviourRegistry` 保存 Behaviour 的类型描述和创建工厂，不保存可执行实例。Application/Product 可以创建自己的注册表并回放自动注册目录；Scene 创建 `Universe` 时注入对应注册表，由 Dispatcher 在绑定 Behaviour 时创建 Scene 私有实例。
 
 Behaviour 不提供全局默认注册表。产品启动时应显式创建自己的 `IBehaviourRegistry`，再按产品模块路径从 `BehaviourRegistrationCatalog` 回放注册动作。一个 `ComponentClass` 只能注册一个 Behaviour，冲突会在注册阶段暴露。
 
@@ -60,11 +60,11 @@ Behaviour 的自动注册宏只把“注册回放函数”追加到进程级 `Be
 
 ## 线程模型与并发边界
 
-Behaviour 不提供内部并发保护。标准运行模型是：每个 Project 的工作线程驱动自己的 `Repository`、`Universe` 和 Behaviour 实例；`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新都应在同一个 Project 线程内发生。
+Behaviour 不提供内部并发保护。标准运行模型是：每个 Scene 的工作线程驱动自己的 `Repository`、`Universe` 和 Behaviour 实例；`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新都应在同一个 Scene 线程内发生。
 
-前端线程、ApplicationHost 线程或其他 Project 线程不应直接调用 Behaviour，也不应直接修改 Behaviour 保存的运行态。跨线程输入应先进入 Mailbox/PDO/命令通道，再由对应 Project 线程消费并修改 Repository 或驱动 Universe。
+前端线程、ApplicationHost 线程或其他 Scene 线程不应直接调用 Behaviour，也不应直接修改 Behaviour 保存的运行态。跨线程输入应先进入 Mailbox/PDO/命令通道，再由对应 Scene 线程消费并修改 Repository 或驱动 Universe。
 
-在上述约束下，Behaviour 可以保存项目内轻量状态而不加锁。如果未来需要多线程计算，应由上层服务或任务系统明确交付结果，再回到 Project 线程应用数据修改；Behaviour 本身仍保持单线程回调语义。
+在上述约束下，Behaviour 可以保存 Scene 内轻量状态而不加锁。如果未来需要多线程计算，应由上层服务明确交付结果，再回到 Scene 线程应用数据修改；Behaviour 本身仍保持单线程回调语义。
 
 ## 目录结构
 

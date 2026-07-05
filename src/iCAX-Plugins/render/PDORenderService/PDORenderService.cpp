@@ -8,6 +8,7 @@
 #include "PDO/IPDOHub.h"
 #include "PDO/PDOLease.h"
 #include "ProjectContext/IProjectContext.h"
+#include "ProjectContext/ISceneContext.h"
 
 #include <algorithm>
 #include <cstring>
@@ -512,6 +513,7 @@ void iCAX::PDORenderService::CPDORenderService::Update(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN iCAX::Project::ISceneContext& SceneContext_,
     IN const double& nDeltaTime_,
     IN const double& nTotalTime_)
 {
@@ -546,7 +548,7 @@ void iCAX::PDORenderService::CPDORenderService::Update(
     {
         return;
     }
-    if (!ProjectContext_.HasPDOHub())
+    if (!SceneContext_.HasPDOHub())
     {
         throw std::logic_error("PDORenderService requires project PDO hub");
     }
@@ -556,7 +558,7 @@ void iCAX::PDORenderService::CPDORenderService::Update(
         const auto _SceneIter = _Scenes.find(_StateIter->first);
         if (_SceneIter == _Scenes.end())
         {
-            FreeScenePDOOutput(_ProjectID, _StateIter->first, ProjectContext_, _StateIter->second);
+            FreeScenePDOOutput(_ProjectID, _StateIter->first, SceneContext_, _StateIter->second);
             _StateIter = _States.erase(_StateIter);
             continue;
         }
@@ -566,7 +568,7 @@ void iCAX::PDORenderService::CPDORenderService::Update(
     for (const auto& [_SceneID, _Scene] : _Scenes)
     {
         auto& _State = _States[_SceneID];
-        SynchronizeScenePDOOutput(_ProjectID, &_Scene, ProjectContext_, _State);
+        SynchronizeScenePDOOutput(_ProjectID, &_Scene, SceneContext_, _State);
     }
 
     {
@@ -786,26 +788,29 @@ iCAX::PDO::PDOID iCAX::PDORenderService::CPDORenderService::MakeViewStatePDOID(
 }
 
 void iCAX::PDORenderService::CPDORenderService::NotifyPDODefragBegin(
-    IN iCAX::Project::IProjectContext& ProjectContext_) const
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Project::ISceneContext& SceneContext_) const
 {
-    SendDefragEvent(ProjectContext_, kPDORenderDefragBeginEvent, "DefragBegin", 0);
+    SendDefragEvent(ProjectID_, SceneContext_, kPDORenderDefragBeginEvent, "DefragBegin", 0);
 }
 
 void iCAX::PDORenderService::CPDORenderService::NotifyPDOSlotMoved(
-    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Project::ISceneContext& SceneContext_,
     IN iCAX::PDO::PDOID nPDOID_) const
 {
     if (nPDOID_ == 0)
     {
         throw std::invalid_argument("PDO id cannot be zero");
     }
-    SendDefragEvent(ProjectContext_, kPDORenderSlotMovedEvent, "SlotMoved", nPDOID_);
+    SendDefragEvent(ProjectID_, SceneContext_, kPDORenderSlotMovedEvent, "SlotMoved", nPDOID_);
 }
 
 void iCAX::PDORenderService::CPDORenderService::NotifyPDODefragEnd(
-    IN iCAX::Project::IProjectContext& ProjectContext_) const
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Project::ISceneContext& SceneContext_) const
 {
-    SendDefragEvent(ProjectContext_, kPDORenderDefragEndEvent, "DefragEnd", 0);
+    SendDefragEvent(ProjectID_, SceneContext_, kPDORenderDefragEndEvent, "DefragEnd", 0);
 }
 
 bool iCAX::PDORenderService::CPDORenderService::WriteMeshToPDO(
@@ -1202,20 +1207,20 @@ void iCAX::PDORenderService::CPDORenderService::ValidateProjectAndScene(
 void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
     IN const iCAX::Data::uuid& ProjectID_,
     IN const iCAX::Render::SRenderSceneSnapshot* pScene_,
-    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN iCAX::Project::ISceneContext& SceneContext_,
     IN OUT SScenePDOOutputState& State_) const
 {
     if (!pScene_)
     {
-        FreeScenePDOOutput(ProjectID_, iCAX::Render::kInvalidRenderSceneID, ProjectContext_, State_);
+        FreeScenePDOOutput(ProjectID_, iCAX::Render::kInvalidRenderSceneID, SceneContext_, State_);
         return;
     }
 
-    auto& _PDOHub = ProjectContext_.PDOHub();
+    auto& _PDOHub = SceneContext_.PDOHub();
     const auto _SceneID = pScene_->nSceneID;
 
     auto _FreeAssignment =
-        [this, &_PDOHub, &ProjectContext_, _SceneID](
+        [this, &ProjectID_, &_PDOHub, &SceneContext_, _SceneID](
             IN const char* pSlotRole_,
             IN const char* pPayloadKind_,
             IN iCAX::Render::RenderGeometryID nGeometryID_,
@@ -1229,7 +1234,8 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             if (_PDOHub.FreeSlot(Assignment_.nPDOID))
             {
                 SendSlotEvent(
-                    ProjectContext_,
+                    ProjectID_,
+                    SceneContext_,
                     kPDORenderSlotFreedEvent,
                     "SlotFreed",
                     pSlotRole_,
@@ -1245,22 +1251,22 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
 
     iCAX::PDO::CPDOHubAllocationCallbacks _AllocationCallbacks;
     _AllocationCallbacks.OnDefragmentBegin =
-        [this, &ProjectContext_]()
+        [this, &ProjectID_, &SceneContext_]()
         {
-            NotifyPDODefragBegin(ProjectContext_);
+            NotifyPDODefragBegin(ProjectID_, SceneContext_);
         };
     _AllocationCallbacks.OnDefragmentEnd =
-        [this, &ProjectContext_](IN const std::vector<iCAX::PDO::CPDOHubDefragMove>& Moves_)
+        [this, &ProjectID_, &SceneContext_](IN const std::vector<iCAX::PDO::CPDOHubDefragMove>& Moves_)
         {
             for (const auto& _Move : Moves_)
             {
-                NotifyPDOSlotMoved(ProjectContext_, _Move.nPDOID);
+                NotifyPDOSlotMoved(ProjectID_, SceneContext_, _Move.nPDOID);
             }
-            NotifyPDODefragEnd(ProjectContext_);
+            NotifyPDODefragEnd(ProjectID_, SceneContext_);
         };
 
     auto _EnsureAssignment =
-        [this, &_PDOHub, &ProjectContext_, _SceneID, &_AllocationCallbacks](
+        [this, &ProjectID_, &_PDOHub, &SceneContext_, _SceneID, &_AllocationCallbacks](
             IN iCAX::RenderPDO::ERenderPDOPayloadKind ePayloadKind_,
             IN const char* pSlotRole_,
             IN iCAX::PDO::PDOID nPDOID_,
@@ -1277,7 +1283,8 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
                 Assignment_.nPDOID = nPDOID_;
                 Assignment_.nPayloadCapacity = nPayloadCapacity_;
                 SendSlotEvent(
-                    ProjectContext_,
+                    ProjectID_,
+                    SceneContext_,
                     kPDORenderSlotAllocatedEvent,
                     "SlotAllocated",
                     pSlotRole_,
@@ -1302,7 +1309,8 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
                 _PDOHub.AllocateSlot(_Decl, _AllocationCallbacks);
                 Assignment_.nPayloadCapacity = nPayloadCapacity_;
                 SendSlotEvent(
-                    ProjectContext_,
+                    ProjectID_,
+                    SceneContext_,
                     kPDORenderSlotMovedEvent,
                     "SlotMoved",
                     pSlotRole_,
@@ -1452,14 +1460,13 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
 void iCAX::PDORenderService::CPDORenderService::FreeScenePDOOutput(
     IN const iCAX::Data::uuid& ProjectID_,
     IN iCAX::Render::RenderSceneID nSceneID_,
-    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN iCAX::Project::ISceneContext& SceneContext_,
     IN OUT SScenePDOOutputState& State_) const
 {
-    (void)ProjectID_;
-    auto& _PDOHub = ProjectContext_.PDOHub();
+    auto& _PDOHub = SceneContext_.PDOHub();
 
     auto _FreeAssignment =
-        [this, &_PDOHub, &ProjectContext_, nSceneID_](
+        [this, &ProjectID_, &_PDOHub, &SceneContext_, nSceneID_](
             IN const char* pSlotRole_,
             IN const char* pPayloadKind_,
             IN iCAX::Render::RenderGeometryID nGeometryID_,
@@ -1473,7 +1480,8 @@ void iCAX::PDORenderService::CPDORenderService::FreeScenePDOOutput(
             if (_PDOHub.FreeSlot(Assignment_.nPDOID))
             {
                 SendSlotEvent(
-                    ProjectContext_,
+                    ProjectID_,
+                    SceneContext_,
                     kPDORenderSlotFreedEvent,
                     "SlotFreed",
                     pSlotRole_,
@@ -1512,7 +1520,8 @@ void iCAX::PDORenderService::CPDORenderService::FreeScenePDOOutput(
 }
 
 void iCAX::PDORenderService::CPDORenderService::SendSlotEvent(
-    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Project::ISceneContext& SceneContext_,
     IN uint64_t nEventTypeCode_,
     IN const char* pEventName_,
     IN const char* pSlotRole_,
@@ -1526,8 +1535,8 @@ void iCAX::PDORenderService::CPDORenderService::SendSlotEvent(
     std::ostringstream _Payload;
     _Payload
         << "{\"event\":\"" << pEventName_
-        << "\",\"projectId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectID())
-        << "\",\"channelId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectChannelID())
+        << "\",\"projectId\":\"" << iCAX::Data::to_string(ProjectID_)
+        << "\",\"channelId\":\"" << iCAX::Data::to_string(SceneContext_.GetSceneChannelID())
         << "\",\"sceneId\":\"" << nSceneID_
         << "\",\"slotRole\":\"" << pSlotRole_
         << "\",\"payloadKind\":\"" << pPayloadKind_
@@ -1541,11 +1550,12 @@ void iCAX::PDORenderService::CPDORenderService::SendSlotEvent(
     _Header.nMailId = m_nNextEventMailID.fetch_add(1);
     _Header.nTypeCode = nEventTypeCode_;
     _Header.nStamp = iCAX::Mail::kMailOk;
-    ProjectContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
+    SceneContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
 }
 
 void iCAX::PDORenderService::CPDORenderService::SendDefragEvent(
-    IN iCAX::Project::IProjectContext& ProjectContext_,
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Project::ISceneContext& SceneContext_,
     IN uint64_t nEventTypeCode_,
     IN const char* pEventName_,
     IN iCAX::PDO::PDOID nPDOID_) const
@@ -1553,8 +1563,8 @@ void iCAX::PDORenderService::CPDORenderService::SendDefragEvent(
     std::ostringstream _Payload;
     _Payload
         << "{\"event\":\"" << pEventName_
-        << "\",\"projectId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectID())
-        << "\",\"channelId\":\"" << iCAX::Data::to_string(ProjectContext_.GetProjectChannelID())
+        << "\",\"projectId\":\"" << iCAX::Data::to_string(ProjectID_)
+        << "\",\"channelId\":\"" << iCAX::Data::to_string(SceneContext_.GetSceneChannelID())
         << "\",\"pdoId\":\"" << nPDOID_
         << "\"}";
 
@@ -1562,5 +1572,5 @@ void iCAX::PDORenderService::CPDORenderService::SendDefragEvent(
     _Header.nMailId = m_nNextEventMailID.fetch_add(1);
     _Header.nTypeCode = nEventTypeCode_;
     _Header.nStamp = iCAX::Mail::kMailOk;
-    ProjectContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
+    SceneContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
 }

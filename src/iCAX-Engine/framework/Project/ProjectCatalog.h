@@ -28,16 +28,16 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry; //!< 产品级元数据注册表。
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 产品级行为注册表。
             std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry; //!< 邮件通道注册表。
-            bool bEnablePDOHub = false; //!< Catalog 默认传给每个项目的动态 PDOHub 开关。
-            iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< Catalog 默认传给每个项目的动态 PDOHub 创建参数。
-            std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> ResourceLoaderRegistryFactory; //!< 项目级资源加载器注册表工厂。
+            bool bEnablePDOHub = false; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 开关。
+            iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 创建参数。
+            std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> ResourceLoaderRegistryFactory; //!< Scene 级资源加载器注册表工厂。
         };
 
         /*
         * @brief 项目目录。
         * @details
         *   Catalog 是一个工程打开上下文，可以包含一个主项目和若干临时项目。
-        *   它不启动项目线程；ProductRuntime 会为项目创建 ProjectRuntime 并启动。
+        *   它不启动 Scene 线程；ProductRuntime 会为项目创建 ProjectRuntime 并启动主 Scene。
         */
         class _PROJECT_EXP CProjectCatalog final
         {

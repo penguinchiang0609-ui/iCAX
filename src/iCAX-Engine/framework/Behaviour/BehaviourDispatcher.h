@@ -20,7 +20,7 @@ namespace iCAX
         * @remark
         *   Dispatcher 保存 Universe 已绑定的行为列表，并负责按帧顺序或 Repository 事件调用 Behaviour。
         *   行为执行顺序由 GetSchedule() 生成的执行计划决定；无依赖且优先级相同时按绑定顺序保持稳定。
-        *   Dispatcher 按 Project 单线程模型使用，不在内部为 Behaviour 回调加锁。
+        *   Dispatcher 按 Scene 单线程模型使用，不在内部为 Behaviour 回调加锁。
         */
         class _SYSTEM_EXP CBehaviourDispatcher final
         {
@@ -129,6 +129,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_) const;
 
@@ -144,6 +145,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const iCAX::Database::RepositoryEventArgs& Args_) const;
 
             /*
@@ -158,6 +160,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const iCAX::Database::RepositoryEventArgs& Args_) const;
 
         private:
@@ -169,16 +172,19 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const std::shared_ptr<iCAX::Database::CComponentBase>& pComponent_,
                 IN const CComponentDestroyInfo& DestroyInfo_) const;
             void FlushPendingDestroyNotifications(
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_) const;
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) const;
             void OnNotify(
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN NotifyType nType_,
                 IN iCAX::Database::CComponentBase& Component_,
                 IN const iCAX::Data::PropertySet& Properties_) const;
@@ -186,6 +192,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const std::vector<NotifyRequest>& Notifications_) const;
 
         private:

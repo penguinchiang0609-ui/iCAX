@@ -240,7 +240,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理列出产品命令。
@@ -250,7 +251,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理启动产品命令。
@@ -260,7 +262,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理停止产品命令。
@@ -270,7 +273,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理识别项目文件产品命令。
@@ -280,7 +284,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理打开项目文件命令。
@@ -290,7 +295,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 构建应用状态负载。
@@ -385,7 +391,7 @@ namespace iCAX
             iCAX::Mail::CMailPostOffice GetProductFrontendPostOffice(IN const std::string& strProductID_) const;
 
             /*
-            * @brief 获取项目邮箱前端端点。
+            * @brief 获取项目主 Scene 邮箱前端端点。
             */
             iCAX::Mail::CMailPostOffice GetProjectFrontendPostOffice(IN const iCAX::Data::uuid& ProjectID_) const;
 

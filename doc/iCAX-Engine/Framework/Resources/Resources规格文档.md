@@ -73,18 +73,18 @@ struct CResourceInfo
 
 ### 2.3 ResourceLibrary
 
-`CResourceLibrary` 是 Project 级资源入口。每个 Project 持有自己的 `CResourceLibrary`，内部独占一个资源池，因此多个 Project 同时打开时资源天然隔离。
+`CResourceLibrary` 是 Scene 级资源入口。每个 Scene 持有自己的 `CResourceLibrary`，内部独占一个资源池，因此多个 Scene 同时存在时资源天然隔离。
 
 上层业务常规使用方式是：
 
 ```cpp
-auto model = project.Resources().Load<ModelResource>("D:/assets/robot.fbx");
-auto cached = project.Resources().Get<ModelResource>("D:/assets/robot.fbx");
+auto model = scene.Resources().Load<ModelResource>("D:/assets/robot.fbx");
+auto cached = scene.Resources().Get<ModelResource>("D:/assets/robot.fbx");
 
-project.Resources().Unload("D:/assets/robot.fbx");
-project.Resources().Remove("D:/assets/robot.fbx");
+scene.Resources().Unload("D:/assets/robot.fbx");
+scene.Resources().Remove("D:/assets/robot.fbx");
 
-auto manifest = project.Resources().GetManifest();
+auto manifest = scene.Resources().GetManifest();
 ```
 
 在没有 Project 封装的测试或局部代码中，也可以直接创建资源库。默认构造的 `CResourceLibrary` 会创建一个空的私有 loader registry，不会使用全局 loader：
@@ -138,7 +138,7 @@ std::vector<CResourceInfo> GetManifest(bool includeRuntimeOnly = false);
 
 ### 2.4 ResourcePool
 
-`CResourcePool` 是线程安全资源池。它是 `CResourceLibrary` 背后的存储对象。普通业务代码不需要直接操作它，也不应该把它作为 Project API 暴露出去。
+`CResourcePool` 是线程安全资源池。它是 `CResourceLibrary` 背后的存储对象。普通业务代码不需要直接操作它，也不应该把它作为 Project API 暴露出去；运行期应通过 Scene 的 `CResourceLibrary` 访问资源。
 
 普通业务代码包含：
 
@@ -201,7 +201,7 @@ framework 只提供抽象和注册表。具体 `FbxResourceLoader`、`PngResourc
 
 ### 2.6 ResourceLoaderRegistry
 
-`CResourceLoaderRegistry` 按资源类型注册 loader。正式运行路径中，ProductRuntime 持有产品级 registry；创建 Project 时会为该 Project 创建独立 registry，并按产品模块路径回放 ResourceLoader 注册动作。Project 的 `CResourceLibrary` 只使用自己的项目级 registry 加载资源。
+`CResourceLoaderRegistry` 按资源类型注册 loader。正式运行路径中，ProductRuntime 持有产品级 registry；创建 Scene 时会为该 Scene 创建独立 registry，并按产品模块路径回放 ResourceLoader 注册动作。Scene 的 `CResourceLibrary` 只使用自己的 Scene 级 registry 加载资源。
 
 ```cpp
 bool RegisterLoader(const std::type_info& resourceType, std::shared_ptr<IResourceLoader> loader);
@@ -218,7 +218,7 @@ CResourceLoadResult LoadResource(CResourceLoadContext context);
 ICAX_REGISTER_RESOURCE_LOADER(ModelResource, FbxResourceLoader)
 ```
 
-宏不会直接写入某个全局资源池，而是把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ProductRuntime 加载产品模块后，按模块路径把对应注册动作回放到产品级 registry；创建 Project 时再回放到项目级 registry。
+宏不会直接写入某个全局资源池，而是把注册动作记录到 `CResourceLoaderRegistrationCatalog`。ProductRuntime 加载产品模块后，按模块路径把对应注册动作回放到产品级 registry；创建 Scene 时再回放到 Scene 级 registry。
 
 注册表按 C++ 资源类型匹配 loader，也就是 `typeid(ModelResource)`。文件后缀或来源格式不是资源类型，应该由 loader 的 `CanLoad` 判断：
 
@@ -229,7 +229,7 @@ bool FbxResourceLoader::CanLoad(const CResourceLoadContext& context) const
 }
 ```
 
-上层业务代码通常不直接操作注册表，只调用 `project.Resources().Load<T>(source)`。
+上层业务代码通常不直接操作注册表，只调用 `scene.Resources().Load<T>(source)`。
 
 `CResourceLoaderRegistry::LoadResource` 只负责调用 loader 并返回 `CResourceLoadResult`，不直接写入资源池。写入 `CResourceLibrary` 内部资源池或显式底层池由访问层完成：
 
@@ -241,18 +241,18 @@ bool FbxResourceLoader::CanLoad(const CResourceLoadContext& context) const
 `CResourceLibrary::Load<T>` 是上层最常用的资源访问入口：
 
 ```cpp
-auto resource = project.Resources().Load<T>(source);
+auto resource = scene.Resources().Load<T>(source);
 ```
 
 它的语义是：
 
 ```text
 基于 source 生成内部 ResourceKey，同一个 source 只对应一个资源身份
-先从当前 Project 的 CResourceLibrary 获取 T
+先从当前 Scene 的 CResourceLibrary 获取 T
   获取成功 -> 直接返回
   获取失败且内部 key 下已有其他运行时对象 -> 返回 nullptr
-  未加载 -> 通过当前 ResourceLibrary 绑定的项目级 ResourceLoaderRegistry 按 typeid(T) 查找 loader
-    加载成功 -> 写入当前 Project 的资源库并返回 T
+  未加载 -> 通过当前 ResourceLibrary 绑定的 Scene 级 ResourceLoaderRegistry 按 typeid(T) 查找 loader
+    加载成功 -> 写入当前 Scene 的资源库并返回 T
     加载失败 -> 返回 nullptr
 ```
 
@@ -277,11 +277,11 @@ ICAX_REGISTER_RESOURCE_LOADER(ModelResource, FbxResourceLoader)
 ```cpp
 using namespace iCAX::Resource;
 
-auto model = project.Resources().Load<ModelResource>("D:/assets/robot.fbx");
-auto sameModel = project.Resources().Load<ModelResource>("D:/assets/robot.fbx");
+auto model = scene.Resources().Load<ModelResource>("D:/assets/robot.fbx");
+auto sameModel = scene.Resources().Load<ModelResource>("D:/assets/robot.fbx");
 ```
 
-第二次调用会直接从该 Project 的资源库返回已有对象，不会重复调用 loader。
+第二次调用会直接从该 Scene 的资源库返回已有对象，不会重复调用 loader。
 
 ### 3.2 加载外部资源并标记持久化策略
 
@@ -290,7 +290,7 @@ CResourceInfo info;
 info.Name = "RobotArm";
 info.Persistence = EResourcePersistenceMode::External;
 
-auto model = project.Resources().Load<ModelResource>(
+auto model = scene.Resources().Load<ModelResource>(
     "D:/assets/robot.fbx",
     info);
 ```
@@ -298,7 +298,7 @@ auto model = project.Resources().Load<ModelResource>(
 ### 3.3 工程恢复后按需加载资源
 
 ```cpp
-auto model = project.Resources().Load<ModelResource>("D:/assets/robot.fbx");
+auto model = scene.Resources().Load<ModelResource>("D:/assets/robot.fbx");
 ```
 
 工程打开时只要恢复了资源来源，后续访问仍然使用同一个路径字符串。
@@ -306,7 +306,7 @@ auto model = project.Resources().Load<ModelResource>("D:/assets/robot.fbx");
 ### 3.4 获取工程资源清单
 
 ```cpp
-auto manifest = project.Resources().GetManifest();
+auto manifest = scene.Resources().GetManifest();
 for (const auto& item : manifest)
 {
     if (item.IsEmbedded())
@@ -324,14 +324,14 @@ for (const auto& item : manifest)
 
 ```cpp
 auto mesh = std::make_shared<MeshResource>();
-project.Resources().Set<MeshResource>("runtime://preview/mesh", mesh);
+scene.Resources().Set<MeshResource>("runtime://preview/mesh", mesh);
 
 // 识别或仿真更新了 mesh 内容。
 mesh->UpdateFromSimulation(result);
-auto version = project.Resources().Touch("runtime://preview/mesh");
+auto version = scene.Resources().Touch("runtime://preview/mesh");
 
 void* writeData = nullptr;
-auto& slot = project.PDOHub().GetSlot(previewMeshPDO);
+auto& slot = scene.PDOHub().GetSlot(previewMeshPDO);
 if (slot.TryGetWriteDataIfNewer(version, writeData))
 {
     SerializeMeshToPDO(*mesh, writeData);

@@ -156,6 +156,7 @@
     <ClInclude Include="ProjectCommands.h" />
     <ClInclude Include="ProjectRuntime.h" />
     <ClInclude Include="ProjectRuntimeScheduler.h" />
+    <ClInclude Include="ProjectScene.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
@@ -169,6 +170,7 @@
     <ClCompile Include="Project.cpp" />
     <ClCompile Include="ProjectRuntime.cpp" />
     <ClCompile Include="ProjectRuntimeScheduler.cpp" />
+    <ClCompile Include="ProjectScene.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj">

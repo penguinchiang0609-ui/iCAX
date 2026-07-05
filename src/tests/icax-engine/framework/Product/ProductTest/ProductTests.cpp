@@ -471,13 +471,15 @@ TEST(ProductRuntimeMailboxTest, ProjectMailboxProvidesProjectContext)
             IN const iCAX::Command::CCommandRequest&,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
             iCAX::Data::ObjectMap _Payload;
             _Payload["projectId"] = pProjectContext_ ? pProjectContext_->GetProjectID() : iCAX::Data::GenerateNilUUID();
-            _Payload["projectChannelId"] = pProjectContext_ ? pProjectContext_->GetProjectChannelID() : iCAX::Data::GenerateNilUUID();
+            _Payload["projectChannelId"] = pSceneContext_ ? pSceneContext_->GetSceneChannelID() : iCAX::Data::GenerateNilUUID();
             _Payload["projectName"] = pProjectContext_ ? pProjectContext_->GetProjectName() : std::string();
             _Payload["hasProductContext"] = pProductContext_ != nullptr;
             _Payload["hasProjectContext"] = pProjectContext_ != nullptr;
+            _Payload["hasSceneContext"] = pSceneContext_ != nullptr;
             _Payload["sameProject"] = pProjectContext_
                 && pProjectContext_->GetProjectID() == _ProjectID;
 

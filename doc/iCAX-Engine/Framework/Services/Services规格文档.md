@@ -30,14 +30,14 @@
 
 `Services` 不承载 Mailbox，也不承载 PDO。通信和共享内存能力属于运行时上下文：
 
-- Mailbox 位于 `framework/Mailbox`，由 `ApplicationHost` 直接持有 `CMailChannelRegistry` 并显式注入 ProductRuntime / Project。
-- PDO 位于 `framework/PDO`，由 `Project` 直接持有 `IPDOHub` 并通过 `IProjectContext::PDOHub()` 暴露。
+- Mailbox 位于 `framework/Mailbox`，由 `ApplicationHost` 直接持有 `CMailChannelRegistry` 并显式注入 ProductRuntime / Project / Scene。
+- PDO 位于 `framework/PDO`，由 `Scene` 直接持有 `IPDOHub` 并通过 `ISceneContext::PDOHub()` 暴露。
 
 约束：
 
 - ServiceProvider 只管理实现 `IService` 的服务对象。
 - Mailbox / PDO 不允许注册成 Service。
-- 业务代码需要通信能力时从 Application/Product/ProjectContext 获取。
+- 业务代码需要通信能力时从 Application/Product/Project/Scene context 获取；项目级设置走 ProjectContext，运行现场能力走 SceneContext。
 
 ## 3. 依赖边界
 

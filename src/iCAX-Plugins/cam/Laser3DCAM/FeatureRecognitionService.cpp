@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "FeatureRecognitionService.h"
 
-#include "ProjectContext/IProjectContext.h"
+#include "ProjectContext/ISceneContext.h"
 #include "Resources/ResourceLibrary.h"
 #include "Services/ServicesHelper.h"
 
@@ -28,7 +28,7 @@ namespace iCAX
             }
 
             SFeatureRecognitionResult Recognize(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SFeatureRecognitionRequest& Request_) override
             {
                 if (Request_.BRep.BRepResourceID.empty())
@@ -40,7 +40,7 @@ namespace iCAX
                     throw std::invalid_argument("Feature recognition requires at least one feature definition");
                 }
 
-                const auto _BRepVersion = Project_.Resources().GetVersion(Request_.BRep.BRepResourceID);
+                const auto _BRepVersion = Scene_.Resources().GetVersion(Request_.BRep.BRepResourceID);
                 if (_BRepVersion == 0)
                 {
                     throw std::invalid_argument("Feature recognition BRep resource does not exist");

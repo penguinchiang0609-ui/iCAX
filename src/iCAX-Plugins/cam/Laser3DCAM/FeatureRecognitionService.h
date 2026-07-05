@@ -13,7 +13,7 @@ namespace iCAX
 {
     namespace Project
     {
-        class IProjectContext;
+        class ISceneContext;
     }
 
     namespace CAM
@@ -95,7 +95,7 @@ namespace iCAX
 
         public:
             virtual SFeatureRecognitionResult Recognize(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SFeatureRecognitionRequest& Request_) = 0;
         };
     }

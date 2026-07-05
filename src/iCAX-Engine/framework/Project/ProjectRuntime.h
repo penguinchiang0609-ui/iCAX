@@ -37,7 +37,7 @@ namespace iCAX
             */
             virtual const iCAX::Data::uuid& GetProjectID() const = 0;
             /*
-            * @brief 获取项目通信通道 ID。
+            * @brief 获取项目主 Scene 通信通道 ID。
             */
             virtual const iCAX::Data::uuid& GetProjectChannelID() const = 0;
             /*
@@ -69,7 +69,7 @@ namespace iCAX
             */
             virtual bool IsOpen() const = 0;
             /*
-            * @brief 项目工作线程是否运行中。
+            * @brief 项目主 Scene 工作线程是否运行中。
             */
             virtual bool IsRunning() const = 0;
             /*
@@ -81,11 +81,11 @@ namespace iCAX
             */
             virtual std::optional<CProjectFault> GetLastFault() const = 0;
             /*
-            * @brief 获取 PDO 共享内存描述快照。
+            * @brief 获取项目主 Scene PDO 共享内存描述快照。
             */
             virtual CProjectPDODescriptor GetPDODescriptor() const = 0;
             /*
-            * @brief 获取前端视角项目邮局。
+            * @brief 获取前端视角项目主 Scene 邮局。
             */
             virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice() = 0;
             /*
@@ -115,7 +115,7 @@ namespace iCAX
         /*
         * @brief 本地项目运行时适配器。
         * @details
-        *   包装 CProject 并转发生命周期调用。FrameHandler 会被转接到 CProject 的每帧回调中。
+        *   包装 CProject 并转发生命周期调用。FrameHandler 会被转接到主 Scene 的每帧回调中。
         */
         class _PROJECT_EXP CLocalProjectRuntime final : public IProjectRuntime
         {
@@ -136,7 +136,7 @@ namespace iCAX
             */
             const iCAX::Data::uuid& GetProjectID() const override;
             /*
-            * @brief 获取项目通信通道 ID。
+            * @brief 获取项目主 Scene 通信通道 ID。
             */
             const iCAX::Data::uuid& GetProjectChannelID() const override;
             /*
@@ -168,7 +168,7 @@ namespace iCAX
             */
             bool IsOpen() const override;
             /*
-            * @brief 本地项目是否运行中。
+            * @brief 本地项目主 Scene 是否运行中。
             */
             bool IsRunning() const override;
             /*
@@ -180,11 +180,11 @@ namespace iCAX
             */
             std::optional<CProjectFault> GetLastFault() const override;
             /*
-            * @brief 获取 PDO 共享内存描述快照。
+            * @brief 获取项目主 Scene PDO 共享内存描述快照。
             */
             CProjectPDODescriptor GetPDODescriptor() const override;
             /*
-            * @brief 获取前端视角项目邮局。
+            * @brief 获取前端视角项目主 Scene 邮局。
             */
             iCAX::Mail::CMailPostOffice GetFrontendPostOffice() override;
             /*

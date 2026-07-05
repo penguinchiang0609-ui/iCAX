@@ -33,6 +33,7 @@ namespace iCAX
             * @param [in] ApplicationContext_ 应用上下文。
             * @param [in] pProductContext_ 产品上下文；应用级命令为空。
             * @param [in] pProjectContext_ 项目上下文；非项目命令为空。
+            * @param [in] pSceneContext_ 场景上下文；非场景命令为空。
             * @return 命令响应；路由无效返回 InvalidRequest，找不到 handler 返回 NoHandler。
             * @throws handler 抛出的异常会原样向外传播。
             */
@@ -40,7 +41,8 @@ namespace iCAX
                 IN const CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_) const;
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_) const;
 
         private:
             std::shared_ptr<CCommandRegistry> m_pRegistry;

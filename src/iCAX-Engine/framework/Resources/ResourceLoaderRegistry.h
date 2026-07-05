@@ -20,7 +20,7 @@ namespace iCAX
         * @details
         *   Registry 按资源 C++ 类型保存 loader 列表。Load<T> 会用 typeid(T) 找到候选 loader，
         *   再由 loader 的 CanLoad 判断来源、选项是否适配。
-        *   具体 Project 可以持有自己的 Registry，从而隔离产品或项目级加载能力。
+        *   具体 Scene 可以持有自己的 Registry，从而隔离产品或 Scene 级加载能力。
         */
         class _RESOURCES_EXP CResourceLoaderRegistry final
         {

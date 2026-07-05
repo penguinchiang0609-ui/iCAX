@@ -86,7 +86,8 @@ namespace
             IN const CCommandRequest&,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext*) override
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext*) override
         {
             return CCommandResponse{};
         }
@@ -132,7 +133,8 @@ namespace
             const CCommandRequest&,
             iCAX::Application::IApplicationContext&,
             iCAX::Product::IProductContext*,
-            iCAX::Project::IProjectContext*) {
+            iCAX::Project::IProjectContext*,
+            iCAX::Project::ISceneContext*) {
             return CCommandResponse{};
         };
     }
@@ -242,7 +244,8 @@ TEST(CommandRegistrationCatalogTest, ReplayFromRegistersIntoIndependentRegistrie
             const CCommandRequest&,
             iCAX::Application::IApplicationContext&,
             iCAX::Product::IProductContext*,
-            iCAX::Project::IProjectContext*) {
+            iCAX::Project::IProjectContext*,
+            iCAX::Project::ISceneContext*) {
             return CCommandResponse{};
         });
         if (!Registry_.Register(_pCommandTarget))
@@ -297,9 +300,10 @@ TEST(CommandDispatcherTest, DispatchesRegisteredSubCommand)
         const CCommandRequest& Request_,
         iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext* pProductContext_,
-        iCAX::Project::IProjectContext* pProjectContext_) {
+        iCAX::Project::IProjectContext* pProjectContext_,
+        iCAX::Project::ISceneContext* pSceneContext_) {
         (void)ApplicationContext_;
-        if (pProductContext_ || pProjectContext_)
+        if (pProductContext_ || pProjectContext_ || pSceneContext_)
         {
             throw std::runtime_error("unexpected non-application context");
         }
@@ -315,7 +319,7 @@ TEST(CommandDispatcherTest, DispatchesRegisteredSubCommand)
     _Request.nOriginID = 3;
     _Request.Route = MakeCommandRoute("Test", "Echo");
 
-    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr);
+    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_TRUE(_Response.IsOK());
     EXPECT_EQ(7u, _Response.nCommandID);
@@ -334,7 +338,7 @@ TEST(CommandDispatcherTest, MissingMainCommandReturnsNoHandler)
     _Request.nCommandID = 9;
     _Request.Route = MakeCommandRoute("Missing", "Ping");
 
-    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr);
+    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_FALSE(_Response.IsOK());
     EXPECT_EQ(ECommandStatusCode::NoHandler, _Response.nStatus);
@@ -352,7 +356,7 @@ TEST(CommandDispatcherTest, InvalidRouteReturnsInvalidRequest)
     _Request.nCommandID = 11;
     _Request.Route = MakeCommandRoute(0);
 
-    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr);
+    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_FALSE(_Response.IsOK());
     EXPECT_EQ(ECommandStatusCode::InvalidRequest, _Response.nStatus);
@@ -371,7 +375,8 @@ TEST(CommandDispatcherTest, MissingSubCommandReturnsNoHandler)
         const CCommandRequest&,
         iCAX::Application::IApplicationContext&,
         iCAX::Product::IProductContext*,
-        iCAX::Project::IProjectContext*) {
+        iCAX::Project::IProjectContext*,
+            iCAX::Project::ISceneContext*) {
         return CCommandResponse{};
     });
     _pRegistry->Register(_pCommandTarget);
@@ -380,7 +385,7 @@ TEST(CommandDispatcherTest, MissingSubCommandReturnsNoHandler)
     _Request.nCommandID = 10;
     _Request.Route = MakeCommandRoute("Test", "Missing");
 
-    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr);
+    auto _Response = _Dispatcher.Dispatch(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_FALSE(_Response.IsOK());
     EXPECT_EQ(ECommandStatusCode::NoHandler, _Response.nStatus);
@@ -398,14 +403,16 @@ TEST(CommandDispatcherTest, HandlerExceptionsPropagate)
         const CCommandRequest&,
         iCAX::Application::IApplicationContext&,
         iCAX::Product::IProductContext*,
-        iCAX::Project::IProjectContext*) -> CCommandResponse {
+        iCAX::Project::IProjectContext*,
+            iCAX::Project::ISceneContext*) -> CCommandResponse {
         throw std::invalid_argument("bad payload");
     });
     _pCommandTarget->Bind("Failed", [](
         const CCommandRequest&,
         iCAX::Application::IApplicationContext&,
         iCAX::Product::IProductContext*,
-        iCAX::Project::IProjectContext*) -> CCommandResponse {
+        iCAX::Project::IProjectContext*,
+            iCAX::Project::ISceneContext*) -> CCommandResponse {
         throw std::runtime_error("boom");
     });
     _pRegistry->Register(_pCommandTarget);
@@ -413,12 +420,12 @@ TEST(CommandDispatcherTest, HandlerExceptionsPropagate)
     CCommandRequest _InvalidRequest;
     _InvalidRequest.Route = MakeCommandRoute("Test", "Invalid");
     EXPECT_THROW(
-        (void)_Dispatcher.Dispatch(_InvalidRequest, _ApplicationContext, nullptr, nullptr),
+        (void)_Dispatcher.Dispatch(_InvalidRequest, _ApplicationContext, nullptr, nullptr, nullptr),
         std::invalid_argument);
 
     CCommandRequest _FailedRequest;
     _FailedRequest.Route = MakeCommandRoute("Test", "Failed");
     EXPECT_THROW(
-        (void)_Dispatcher.Dispatch(_FailedRequest, _ApplicationContext, nullptr, nullptr),
+        (void)_Dispatcher.Dispatch(_FailedRequest, _ApplicationContext, nullptr, nullptr, nullptr),
         std::runtime_error);
 }

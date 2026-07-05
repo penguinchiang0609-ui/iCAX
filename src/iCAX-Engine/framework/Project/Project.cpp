@@ -1,11 +1,6 @@
 #include "pch.h"
 #include "Project.h"
 
-#include "Behaviour/IBehaviourRegistry.h"
-#include "Database/IMetaRegistry.h"
-#include "Mailbox/MailPayload.h"
-
-#include <chrono>
 #include <filesystem>
 #include <stdexcept>
 #include <utility>
@@ -30,6 +25,16 @@ namespace
             throw std::invalid_argument("Project ProductContext cannot be null");
         }
         return CreateInfo_.pProductContext;
+    }
+
+    std::shared_ptr<iCAX::Services::CServiceProvider> RequireServiceProvider(
+        IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
+    {
+        if (!CreateInfo_.pServiceProvider)
+        {
+            throw std::invalid_argument("Project ServiceProvider cannot be null");
+        }
+        return CreateInfo_.pServiceProvider;
     }
 
     std::shared_ptr<iCAX::Database::IMetaRegistry> RequireMetaRegistry(
@@ -67,19 +72,9 @@ namespace
     {
         if (!CreateInfo_.pMailChannelRegistry)
         {
-            throw std::invalid_argument("MailChannelRegistry cannot be null");
+            throw std::invalid_argument("Project MailChannelRegistry cannot be null");
         }
         return CreateInfo_.pMailChannelRegistry;
-    }
-
-    std::shared_ptr<iCAX::Services::CServiceProvider> RequireServiceProvider(
-        IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
-    {
-        if (!CreateInfo_.pServiceProvider)
-        {
-            throw std::invalid_argument("Project ServiceProvider cannot be null");
-        }
-        return CreateInfo_.pServiceProvider;
     }
 
     bool IsExternalPath(IN const std::string& strPath_)
@@ -99,7 +94,7 @@ namespace
     void EnsureParentDirectory(IN const std::string& strPath_)
     {
         const std::filesystem::path _Path(strPath_);
-        auto _Parent = _Path.parent_path();
+        const auto _Parent = _Path.parent_path();
         if (!_Parent.empty())
         {
             std::filesystem::create_directories(_Parent);
@@ -107,36 +102,8 @@ namespace
     }
 }
 
-class iCAX::Project::CProject::CRepositoryEventForwarder final
-    : public iCAX::Database::IRepositoryEventListener
-{
-public:
-    explicit CRepositoryEventForwarder(IN iCAX::Project::CProject& Project_)
-        : m_Project(Project_)
-    {
-    }
-
-    virtual void OnRepositoryChanging(
-        IN void*,
-        IN const iCAX::Database::RepositoryEventArgs& Args_) override
-    {
-        m_Project.OnRepositoryChanging(Args_);
-    }
-
-    virtual void OnRepositoryChanged(
-        IN void*,
-        IN const iCAX::Database::RepositoryEventArgs& Args_) override
-    {
-        m_Project.OnRepositoryChanged(Args_);
-    }
-
-private:
-    iCAX::Project::CProject& m_Project;
-};
-
 iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     : m_ProjectID(CreateInfo_.ProjectID.is_nil() ? iCAX::Data::GenerateNewUUID() : CreateInfo_.ProjectID)
-    , m_ProjectChannelID(CreateInfo_.ProjectChannelID.is_nil() ? iCAX::Data::GenerateNewUUID() : CreateInfo_.ProjectChannelID)
     , m_Role(CreateInfo_.Role)
     , m_ProjectName(CreateInfo_.ProjectName)
     , m_ProjectPath(CreateInfo_.ProjectPath)
@@ -150,24 +117,17 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
     , m_pMailChannelRegistry(RequireMailChannelRegistry(CreateInfo_))
-    , m_pRepository(iCAX::Database::GenerateRepository(m_ProjectID, m_pMetaRegistry))
-    , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
-    , m_pPDOHub(CreateInfo_.bEnablePDOHub ? iCAX::PDO::GeneratePDOHub(CreateInfo_.PDOHubCreateInfo) : nullptr)
-    , m_pRepositoryEventForwarder(std::make_shared<CRepositoryEventForwarder>(*this))
-    , m_Resources(m_pResourceLoaderRegistry)
-    , m_nFrameIntervalMilliseconds(CreateInfo_.nFrameIntervalMilliseconds == 0 ? 1 : CreateInfo_.nFrameIntervalMilliseconds)
-    , m_RuntimeScheduler(m_nFrameIntervalMilliseconds)
     , m_FrameHandler(CreateInfo_.FrameHandler)
 {
     if (m_ProjectName.empty())
     {
         m_ProjectName = m_Role == EProjectRole::Main ? "Main Project" : "Transient Project";
     }
-    m_pRepository->AddObserver(m_pRepositoryEventForwarder);
-    if (!m_pMailChannelRegistry->CreateChannel(m_ProjectChannelID))
-    {
-        throw std::runtime_error("Project mail channel already exists");
-    }
+
+    auto _SceneInfo = MakeMainSceneCreateInfo(CreateInfo_);
+    auto _pMainScene = std::make_shared<CProjectScene>(*this, _SceneInfo);
+    m_MainSceneID = _pMainScene->GetSceneID();
+    m_Scenes.emplace(m_MainSceneID, _pMainScene);
 }
 
 iCAX::Project::CProject::~CProject()
@@ -178,11 +138,6 @@ iCAX::Project::CProject::~CProject()
 const iCAX::Data::uuid& iCAX::Project::CProject::GetProjectID() const
 {
     return m_ProjectID;
-}
-
-const iCAX::Data::uuid& iCAX::Project::CProject::GetProjectChannelID() const
-{
-    return m_ProjectChannelID;
 }
 
 const std::string& iCAX::Project::CProject::GetProjectName() const
@@ -200,21 +155,19 @@ const std::string& iCAX::Project::CProject::GetProjectPath() const
     return m_ProjectPath;
 }
 
+void iCAX::Project::CProject::SetProjectPath(IN const std::string& strPath_)
+{
+    m_ProjectPath = strPath_;
+}
+
 iCAX::Data::PropertyBag& iCAX::Project::CProject::Settings()
 {
-    EnsureProjectThreadAccess("Project::Settings");
     return m_Settings;
 }
 
 const iCAX::Data::PropertyBag& iCAX::Project::CProject::Settings() const
 {
-    EnsureProjectThreadAccess("Project::Settings");
     return m_Settings;
-}
-
-void iCAX::Project::CProject::SetProjectPath(IN const std::string& strPath_)
-{
-    m_ProjectPath = strPath_;
 }
 
 std::string iCAX::Project::CProject::GetQuickSaveLogPath() const
@@ -231,25 +184,25 @@ void iCAX::Project::CProject::SetQuickSaveLogPath(IN const std::string& strPath_
 
 void iCAX::Project::CProject::ReplayQuickSaveLog(IN const std::string& strMagic_, IN uint32_t nVersion_)
 {
-    EnsureOpen();
     auto _LogPath = GetQuickSaveLogPath();
     if (_LogPath.empty() || !std::filesystem::exists(_LogPath) || std::filesystem::file_size(_LogPath) == 0)
     {
         return;
     }
 
-    const auto _bWasLogOpen = m_pRepository->HasOperationLog();
+    auto& _Repository = GetMainScene().Database();
+    const auto _bWasLogOpen = _Repository.HasOperationLog();
     if (_bWasLogOpen)
     {
-        m_pRepository->CloseOperationLog();
+        _Repository.CloseOperationLog();
     }
 
     try
     {
-        m_pRepository->ReplayOperationLog(_LogPath, strMagic_, nVersion_);
+        _Repository.ReplayOperationLog(_LogPath, strMagic_, nVersion_);
         if (_bWasLogOpen)
         {
-            m_pRepository->OpenOperationLog(_LogPath, false, strMagic_, nVersion_);
+            _Repository.OpenOperationLog(_LogPath, false, strMagic_, nVersion_);
         }
     }
     catch (...)
@@ -258,7 +211,7 @@ void iCAX::Project::CProject::ReplayQuickSaveLog(IN const std::string& strMagic_
         {
             try
             {
-                m_pRepository->OpenOperationLog(_LogPath, false, strMagic_, nVersion_);
+                _Repository.OpenOperationLog(_LogPath, false, strMagic_, nVersion_);
             }
             catch (...)
             {
@@ -268,9 +221,11 @@ void iCAX::Project::CProject::ReplayQuickSaveLog(IN const std::string& strMagic_
     }
 }
 
-void iCAX::Project::CProject::OpenQuickSaveLog(IN bool bTruncate_, IN const std::string& strMagic_, IN uint32_t nVersion_)
+void iCAX::Project::CProject::OpenQuickSaveLog(
+    IN bool bTruncate_,
+    IN const std::string& strMagic_,
+    IN uint32_t nVersion_)
 {
-    EnsureOpen();
     auto _LogPath = GetQuickSaveLogPath();
     if (_LogPath.empty())
     {
@@ -278,7 +233,11 @@ void iCAX::Project::CProject::OpenQuickSaveLog(IN bool bTruncate_, IN const std:
     }
 
     EnsureParentDirectory(_LogPath);
-    m_pRepository->OpenOperationLog(_LogPath, bTruncate_, strMagic_, nVersion_);
+    GetMainScene().Database().OpenOperationLog(_LogPath, bTruncate_, strMagic_, nVersion_);
+    {
+        std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+        m_bQuickSaveLogOpen = true;
+    }
 }
 
 void iCAX::Project::CProject::MarkProjectFileSaved(
@@ -286,7 +245,6 @@ void iCAX::Project::CProject::MarkProjectFileSaved(
     IN const std::string& strMagic_,
     IN uint32_t nVersion_)
 {
-    EnsureOpen();
     if (!strProjectPath_.empty())
     {
         SetProjectPath(strProjectPath_);
@@ -298,22 +256,35 @@ void iCAX::Project::CProject::MarkProjectFileSaved(
         throw std::invalid_argument("Project quick save log path is empty");
     }
 
-    m_pRepository->CloseOperationLog();
+    auto& _Repository = GetMainScene().Database();
+    _Repository.CloseOperationLog();
+    {
+        std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+        m_bQuickSaveLogOpen = false;
+    }
     EnsureParentDirectory(_LogPath);
-    m_pRepository->OpenOperationLog(_LogPath, true, strMagic_, nVersion_);
+    _Repository.OpenOperationLog(_LogPath, true, strMagic_, nVersion_);
+    {
+        std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+        m_bQuickSaveLogOpen = true;
+    }
 }
 
 void iCAX::Project::CProject::CloseQuickSaveLog()
 {
-    if (m_pRepository)
+    auto _pMainScene = GetScene(m_MainSceneID);
+    if (_pMainScene)
     {
-        m_pRepository->CloseOperationLog();
+        _pMainScene->Database().CloseOperationLog();
     }
+    std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+    m_bQuickSaveLogOpen = false;
 }
 
 bool iCAX::Project::CProject::IsQuickSaveLogOpen() const
 {
-    return m_pRepository && m_pRepository->HasOperationLog();
+    std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+    return m_bQuickSaveLogOpen;
 }
 
 iCAX::Project::EProjectRole iCAX::Project::CProject::GetRole() const
@@ -336,453 +307,338 @@ const std::string& iCAX::Project::CProject::GetStartupComponent() const
     return m_StartupComponent;
 }
 
+const iCAX::Data::uuid& iCAX::Project::CProject::GetMainSceneID() const
+{
+    return m_MainSceneID;
+}
+
+iCAX::Project::CProjectScene& iCAX::Project::CProject::GetMainScene()
+{
+    return *RequireMainScene();
+}
+
+const iCAX::Project::CProjectScene& iCAX::Project::CProject::GetMainScene() const
+{
+    return *RequireMainScene();
+}
+
+std::shared_ptr<iCAX::Project::CProjectScene> iCAX::Project::CProject::GetScene(
+    IN const iCAX::Data::uuid& SceneID_) const
+{
+    std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+    auto _Iter = m_Scenes.find(SceneID_);
+    return _Iter == m_Scenes.end() ? nullptr : _Iter->second;
+}
+
+std::vector<std::shared_ptr<iCAX::Project::CProjectScene>> iCAX::Project::CProject::GetScenes() const
+{
+    std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+    std::vector<std::shared_ptr<CProjectScene>> _Scenes;
+    _Scenes.reserve(m_Scenes.size());
+    for (const auto& [_ID, _pScene] : m_Scenes)
+    {
+        _Scenes.push_back(_pScene);
+    }
+    return _Scenes;
+}
+
+std::shared_ptr<iCAX::Project::CProjectScene> iCAX::Project::CProject::OpenChildScene(
+    IN const iCAX::Data::uuid& ParentSceneID_,
+    IN CProjectSceneCreateInfo CreateInfo_)
+{
+    std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+    if (m_Scenes.find(ParentSceneID_) == m_Scenes.end())
+    {
+        throw std::invalid_argument("Parent scene does not exist");
+    }
+
+    CreateInfo_.SceneID = CreateInfo_.SceneID.is_nil() ? iCAX::Data::GenerateNewUUID() : CreateInfo_.SceneID;
+    CreateInfo_.SceneChannelID = CreateInfo_.SceneChannelID.is_nil() ? iCAX::Data::GenerateNewUUID() : CreateInfo_.SceneChannelID;
+    CreateInfo_.ParentSceneID = ParentSceneID_;
+    CreateInfo_.Role = ESceneRole::Transient;
+    if (CreateInfo_.SceneName.empty())
+    {
+        CreateInfo_.SceneName = "Transient Scene";
+    }
+    CreateInfo_.pApplicationContext = CreateInfo_.pApplicationContext ? CreateInfo_.pApplicationContext : m_pApplicationContext;
+    CreateInfo_.pProductContext = CreateInfo_.pProductContext ? CreateInfo_.pProductContext : m_pProductContext;
+    CreateInfo_.pServiceProvider = CreateInfo_.pServiceProvider ? CreateInfo_.pServiceProvider : m_pServiceProvider;
+    CreateInfo_.pMetaRegistry = CreateInfo_.pMetaRegistry ? CreateInfo_.pMetaRegistry : m_pMetaRegistry;
+    CreateInfo_.pBehaviourRegistry = CreateInfo_.pBehaviourRegistry ? CreateInfo_.pBehaviourRegistry : m_pBehaviourRegistry;
+    CreateInfo_.pResourceLoaderRegistry = CreateInfo_.pResourceLoaderRegistry ? CreateInfo_.pResourceLoaderRegistry : m_pResourceLoaderRegistry;
+    CreateInfo_.pMailChannelRegistry = CreateInfo_.pMailChannelRegistry ? CreateInfo_.pMailChannelRegistry : m_pMailChannelRegistry;
+
+    auto _pScene = std::make_shared<CProjectScene>(*this, CreateInfo_);
+    if (!m_Scenes.emplace(_pScene->GetSceneID(), _pScene).second)
+    {
+        throw std::runtime_error("Scene already exists");
+    }
+    return _pScene;
+}
+
+bool iCAX::Project::CProject::CloseScene(IN const iCAX::Data::uuid& SceneID_)
+{
+    if (SceneID_ == m_MainSceneID)
+    {
+        throw std::invalid_argument("Main scene cannot be closed by CloseScene; close the project instead");
+    }
+
+    std::shared_ptr<CProjectScene> _pScene;
+    {
+        std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+        auto _Iter = m_Scenes.find(SceneID_);
+        if (_Iter == m_Scenes.end())
+        {
+            return false;
+        }
+        _pScene = _Iter->second;
+        m_Scenes.erase(_Iter);
+    }
+    _pScene->Close();
+    return true;
+}
+
+const iCAX::Data::uuid& iCAX::Project::CProject::GetProjectChannelID() const
+{
+    return GetMainScene().GetSceneChannelID();
+}
+
 bool iCAX::Project::CProject::IsOpen() const
 {
-    return m_pRepository != nullptr && m_pUniverse != nullptr;
+    return GetScene(m_MainSceneID) != nullptr;
 }
 
 bool iCAX::Project::CProject::IsRunning() const
 {
-    return GetState() == EProjectState::Running;
+    auto _pMainScene = GetScene(m_MainSceneID);
+    return _pMainScene && _pMainScene->IsRunning();
 }
 
 iCAX::Project::EProjectState iCAX::Project::CProject::GetState() const
 {
-    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-    return m_State;
+    auto _pMainScene = GetScene(m_MainSceneID);
+    return _pMainScene ? ConvertSceneState(_pMainScene->GetState()) : EProjectState::Stopped;
 }
 
 std::optional<iCAX::Project::CProjectFault> iCAX::Project::CProject::GetLastFault() const
 {
-    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-    return m_LastFault;
+    auto _pMainScene = GetScene(m_MainSceneID);
+    auto _Fault = _pMainScene ? _pMainScene->GetLastFault() : std::nullopt;
+    return _Fault ? std::make_optional(ConvertSceneFault(*_Fault)) : std::nullopt;
 }
 
 void iCAX::Project::CProject::SetFrameHandler(IN ProjectFrameHandler Handler_)
 {
-    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
+    std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
     m_FrameHandler = std::move(Handler_);
 }
 
 iCAX::Database::IRepository& iCAX::Project::CProject::Database()
 {
-    EnsureProjectThreadAccess("Project::Database");
-    return *m_pRepository;
+    return GetMainScene().Database();
 }
 
 const iCAX::Database::IRepository& iCAX::Project::CProject::Database() const
 {
-    EnsureProjectThreadAccess("Project::Database");
-    return *m_pRepository;
+    return GetMainScene().Database();
 }
 
 iCAX::Behaviour::IUniverse& iCAX::Project::CProject::Universe()
 {
-    EnsureProjectThreadAccess("Project::Universe");
-    return *m_pUniverse;
+    return GetMainScene().Universe();
 }
 
 const iCAX::Behaviour::IUniverse& iCAX::Project::CProject::Universe() const
 {
-    EnsureProjectThreadAccess("Project::Universe");
-    return *m_pUniverse;
+    return GetMainScene().Universe();
 }
 
 iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::Resources()
 {
-    EnsureProjectThreadAccess("Project::Resources");
-    return m_Resources;
+    return GetMainScene().Resources();
 }
 
 const iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::Resources() const
 {
-    EnsureProjectThreadAccess("Project::Resources");
-    return m_Resources;
+    return GetMainScene().Resources();
 }
 
 bool iCAX::Project::CProject::HasPDOHub() const
 {
-    return m_pPDOHub != nullptr;
+    auto _pMainScene = GetScene(m_MainSceneID);
+    return _pMainScene ? _pMainScene->HasPDOHub() : false;
 }
 
 iCAX::Project::CProjectPDODescriptor iCAX::Project::CProject::GetPDODescriptor() const
 {
-    CProjectPDODescriptor _Descriptor;
-    auto _pPDOHub = m_pPDOHub;
-    if (!_pPDOHub)
-    {
-        return _Descriptor;
-    }
-
-    _Descriptor.bEnabled = true;
-    _Descriptor.SharedArenaName = _pPDOHub->GetSharedArenaName();
-    _Descriptor.nSharedArenaSize = _pPDOHub->GetSharedArenaSize();
-    _Descriptor.Declarations = _pPDOHub->GetPDODeclarations();
-    return _Descriptor;
+    auto _pMainScene = GetScene(m_MainSceneID);
+    return _pMainScene ? _pMainScene->GetPDODescriptor() : CProjectPDODescriptor{};
 }
 
 iCAX::PDO::IPDOHub& iCAX::Project::CProject::PDOHub()
 {
-    EnsureProjectThreadAccess("Project::PDOHub");
-    if (!m_pPDOHub)
-    {
-        throw std::logic_error("Project PDO hub is not configured");
-    }
-    return *m_pPDOHub;
+    return GetMainScene().PDOHub();
 }
 
 const iCAX::PDO::IPDOHub& iCAX::Project::CProject::PDOHub() const
 {
-    EnsureProjectThreadAccess("Project::PDOHub");
-    if (!m_pPDOHub)
-    {
-        throw std::logic_error("Project PDO hub is not configured");
-    }
-    return *m_pPDOHub;
+    return GetMainScene().PDOHub();
 }
 
 iCAX::Services::CServiceProvider& iCAX::Project::CProject::Services() const
 {
-    if (!m_pServiceProvider)
-    {
-        throw std::logic_error("Project service provider is not available");
-    }
-    return *m_pServiceProvider;
+    return GetMainScene().Services();
 }
 
 iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetBackendPostOffice() const
 {
-    EnsureOpen();
-    return m_pMailChannelRegistry->GetBackendPostOffice(m_ProjectChannelID);
+    return GetMainScene().GetBackendPostOffice();
 }
 
 void iCAX::Project::CProject::SendFrontendEvent(
     IN uint64_t nTypeCode_,
     IN const std::string& strPayloadText_)
 {
-    EnsureOpen();
-
-    iCAX::Mail::MailHeader _Header;
-    _Header.nMailId = m_nNextBackendMailID.fetch_add(1, std::memory_order_relaxed);
-    _Header.nOriginId = 0;
-    _Header.nTypeCode = nTypeCode_;
-    _Header.nStamp = iCAX::Mail::kMailOk;
-
-    GetBackendPostOffice().SendText(_Header, strPayloadText_);
+    GetMainScene().SendFrontendEvent(nTypeCode_, strPayloadText_);
 }
 
 iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetFrontendPostOffice() const
 {
-    EnsureOpen();
-    return m_pMailChannelRegistry->GetFrontendPostOffice(m_ProjectChannelID);
+    return GetMainScene().GetFrontendPostOffice();
 }
 
 void iCAX::Project::CProject::Start()
 {
-    std::thread _ThreadToJoin;
-    {
-        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-        if (m_WorkThread.joinable()
-            && (m_State == EProjectState::Stopped || m_State == EProjectState::Faulted))
-        {
-            _ThreadToJoin = std::move(m_WorkThread);
-        }
-    }
-    if (_ThreadToJoin.joinable())
-    {
-        // 上一次线程已经结束但还未 join，先回收线程句柄，再启动新线程。
-        _ThreadToJoin.join();
-    }
-
-    std::unique_lock<std::mutex> _Lock(m_LifecycleMutex);
-    if (m_State == EProjectState::Starting || m_State == EProjectState::Running)
-    {
-        return;
-    }
-    if (m_State == EProjectState::Stopping)
-    {
-        throw std::logic_error("Project is stopping");
-    }
-
-    EnsureOpen();
-    m_LastFault.reset();
-    m_bStopRequested.store(false, std::memory_order_release);
-    m_bHasEnteredRunning.store(false, std::memory_order_release);
-    m_State = EProjectState::Starting;
-    m_WorkThread = std::thread(&CProject::WorkerMain, this);
-
-    // Start 对调用方表现为同步启动：等待工作线程进入 Running、Stopped 或 Faulted。
-    m_StopCondition.wait(_Lock, [this]() {
-        return m_State == EProjectState::Running
-            || m_State == EProjectState::Faulted
-            || m_State == EProjectState::Stopped;
-        });
-
-    if (m_State == EProjectState::Faulted
-        && !m_bHasEnteredRunning.load(std::memory_order_acquire)
-        && m_LastFault
-        && m_LastFault->Exception)
-    {
-        auto _Exception = m_LastFault->Exception;
-        _Lock.unlock();
-        Stop();
-        std::rethrow_exception(_Exception);
-    }
+    GetMainScene().Start();
 }
 
 void iCAX::Project::CProject::Stop()
 {
-    std::thread _ThreadToJoin;
+    auto _Scenes = GetScenes();
+    for (auto& _pScene : _Scenes)
     {
-        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-        m_bStopRequested.store(true, std::memory_order_release);
-        if ((m_State == EProjectState::Starting || m_State == EProjectState::Running)
-            && m_WorkThread.joinable())
+        if (_pScene)
         {
-            m_State = EProjectState::Stopping;
+            _pScene->Stop();
         }
-
-        if (m_WorkThread.joinable())
-        {
-            if (m_WorkThread.get_id() == std::this_thread::get_id())
-            {
-                // 避免工作线程内部调用 Stop 时自 join 死锁，只设置停止标记并返回。
-                m_StopCondition.notify_all();
-                return;
-            }
-            _ThreadToJoin = std::move(m_WorkThread);
-        }
-    }
-
-    m_StopCondition.notify_all();
-    if (_ThreadToJoin.joinable())
-    {
-        _ThreadToJoin.join();
     }
 }
 
 void iCAX::Project::CProject::BindStartup()
 {
-    EnsureOpen();
-    if (m_bStartupBound || m_StartupComponent.empty())
-    {
-        return;
-    }
-
-    // 启动组件约定只能对应一个 Behaviour；否则项目启动入口不明确。
-    auto _vecIndexs = m_pBehaviourRegistry->GetTypeIndexByComponentType(m_StartupComponent);
-    if (_vecIndexs.empty())
-    {
-        throw std::runtime_error("startup behaviour to component does not exist: " + m_StartupComponent);
-    }
-    if (_vecIndexs.size() >= 2)
-    {
-        throw std::runtime_error("startup behaviour to component is not unique: " + m_StartupComponent);
-    }
-
-    m_pUniverse->BindBehaviourByIndex(_vecIndexs[0]);
-    // MetaEntity 承载项目级启动组件，使行为系统能通过普通 EC 机制感知启动入口。
-    m_pRepository->GetMetaEntity()->AddComponent(m_StartupComponent);
-    m_bStartupBound = true;
+    GetMainScene().BindStartup();
 }
 
 void iCAX::Project::CProject::PreSwapPDO()
 {
-    EnsureOpen();
-    if (m_pPDOHub)
-    {
-        m_pPDOHub->SwapInSlot();
-    }
-    m_pUniverse->PreSwapPDO();
+    GetMainScene().PreSwapPDO();
 }
 
 void iCAX::Project::CProject::Tick()
 {
-    EnsureOpen();
-    const auto _FrameTime = m_RuntimeScheduler.Tick();
-    m_pUniverse->Tick(*m_pApplicationContext, *m_pProductContext, *this, _FrameTime.DeltaTime, _FrameTime.TotalTime);
-    m_pRepository->ResetComponentChangedFlag();
+    GetMainScene().Tick();
 }
 
 void iCAX::Project::CProject::PostSwapPDO()
 {
-    EnsureOpen();
-    m_pUniverse->PostSwapPDO();
-    if (m_pPDOHub)
-    {
-        m_pPDOHub->SwapOutSlot();
-    }
+    GetMainScene().PostSwapPDO();
 }
 
 void iCAX::Project::CProject::Close()
 {
-    Stop();
-
-    // 关闭顺序从行为到数据：先停止线程并关闭快速保存日志，
-    // 再释放 Universe，最后清理 Repository 和资源。这样关闭过程中的 Cleanup 不会被写入快速保存日志。
-    CloseQuickSaveLog();
-    if (m_pUniverse)
+    std::vector<std::shared_ptr<CProjectScene>> _Scenes;
     {
-        m_pUniverse->Cleanup(true);
-        m_pUniverse.reset();
-    }
-    if (m_pRepository && m_pRepositoryEventForwarder)
-    {
-        m_pRepository->RemoveObserver(m_pRepositoryEventForwarder);
-    }
-    m_pRepositoryEventForwarder.reset();
-    if (m_pRepository)
-    {
-        m_pRepository->CleanUp(true);
-        m_pRepository.reset();
-    }
-    m_pPDOHub.reset();
-    m_Resources.Clear();
-    if (m_pMailChannelRegistry && !m_ProjectChannelID.is_nil())
-    {
-        (void)m_pMailChannelRegistry->RemoveChannel(m_ProjectChannelID);
-    }
-    m_bStartupBound = false;
-    if (GetState() != EProjectState::Faulted)
-    {
-        SetState(EProjectState::Stopped);
-    }
-}
-
-void iCAX::Project::CProject::WorkerMain()
-{
-    {
-        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-        m_WorkThreadID = std::this_thread::get_id();
-    }
-
-    try
-    {
-        BindStartup();
-        m_bHasEnteredRunning.store(true, std::memory_order_release);
-        SetState(EProjectState::Running);
-
-        m_RuntimeScheduler.Reset(m_nFrameIntervalMilliseconds);
-
-        while (!m_bStopRequested.load(std::memory_order_acquire))
+        std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+        for (const auto& [_ID, _pScene] : m_Scenes)
         {
-            PreSwapPDO();
-
-            auto _Handler = GetFrameHandler();
-            if (_Handler)
+            if (_pScene && _ID != m_MainSceneID)
             {
-                // ProductRuntime 在这里接入项目邮箱分发；Project 本身不依赖 CommandHandler。
-                _Handler(*this, GetBackendPostOffice());
+                _Scenes.push_back(_pScene);
             }
-
-            Tick();
-            PostSwapPDO();
-
-            m_RuntimeScheduler.AdvanceFrameDeadline();
-            {
-                std::unique_lock<std::mutex> _Lock(m_LifecycleMutex);
-                m_StopCondition.wait_until(
-                    _Lock,
-                    m_RuntimeScheduler.GetNextFrameTime(),
-                    [this]() { return m_bStopRequested.load(std::memory_order_acquire); });
-            }
-            m_RuntimeScheduler.DropBacklogIfNeeded();
         }
-
-        SetState(EProjectState::Stopped);
-    }
-    catch (...)
-    {
-        // 项目线程异常只标记当前项目 Faulted，不向其他项目或产品线程传播。
-        auto _Exception = std::current_exception();
-        std::string _Message = "Project faulted";
-        try
+        auto _Iter = m_Scenes.find(m_MainSceneID);
+        if (_Iter != m_Scenes.end() && _Iter->second)
         {
-            std::rethrow_exception(_Exception);
+            _Scenes.push_back(_Iter->second);
         }
-        catch (const std::exception& _Error)
+        m_Scenes.clear();
+        m_bQuickSaveLogOpen = false;
+    }
+
+    for (auto& _pScene : _Scenes)
+    {
+        _pScene->Close();
+    }
+}
+
+iCAX::Project::CProjectSceneCreateInfo iCAX::Project::CProject::MakeMainSceneCreateInfo(
+    IN const CProjectCreateInfo& CreateInfo_) const
+{
+    CProjectSceneCreateInfo _SceneInfo;
+    _SceneInfo.SceneID = m_ProjectID;
+    _SceneInfo.SceneChannelID = CreateInfo_.ProjectChannelID.is_nil()
+        ? iCAX::Data::GenerateNewUUID()
+        : CreateInfo_.ProjectChannelID;
+    _SceneInfo.ParentSceneID = iCAX::Data::GenerateNilUUID();
+    _SceneInfo.Role = m_Role == EProjectRole::Main ? ESceneRole::Main : ESceneRole::Transient;
+    _SceneInfo.SceneName = m_ProjectName;
+    _SceneInfo.StartupComponent = m_StartupComponent;
+    _SceneInfo.pApplicationContext = m_pApplicationContext;
+    _SceneInfo.pProductContext = m_pProductContext;
+    _SceneInfo.pServiceProvider = m_pServiceProvider;
+    _SceneInfo.pMetaRegistry = m_pMetaRegistry;
+    _SceneInfo.pBehaviourRegistry = m_pBehaviourRegistry;
+    _SceneInfo.pResourceLoaderRegistry = m_pResourceLoaderRegistry;
+    _SceneInfo.pMailChannelRegistry = m_pMailChannelRegistry;
+    _SceneInfo.bEnablePDOHub = CreateInfo_.bEnablePDOHub;
+    _SceneInfo.PDOHubCreateInfo = CreateInfo_.PDOHubCreateInfo;
+    _SceneInfo.nFrameIntervalMilliseconds = CreateInfo_.nFrameIntervalMilliseconds;
+    _SceneInfo.FrameHandler = [this](IN CProjectScene&, IN const iCAX::Mail::CMailPostOffice& PostOffice_) {
+        ProjectFrameHandler _Handler;
         {
-            _Message = _Error.what();
+            std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+            _Handler = m_FrameHandler;
         }
-        catch (...)
+        if (_Handler)
         {
-            _Message = "Project caught a non-standard exception";
+            _Handler(*const_cast<CProject*>(this), PostOffice_);
         }
-
-        RecordFault(_Message, _Exception);
-        SetState(EProjectState::Faulted);
-    }
-
-    {
-        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-        m_WorkThreadID = std::thread::id();
-    }
+    };
+    return _SceneInfo;
 }
 
-void iCAX::Project::CProject::OnRepositoryChanging(IN const iCAX::Database::RepositoryEventArgs& Args_)
+std::shared_ptr<iCAX::Project::CProjectScene> iCAX::Project::CProject::RequireMainScene() const
 {
-    if (m_pUniverse && m_pApplicationContext && m_pProductContext)
+    auto _pScene = GetScene(m_MainSceneID);
+    if (!_pScene)
     {
-        m_pUniverse->OnRepositoryChanging(*m_pApplicationContext, *m_pProductContext, *this, Args_);
+        throw std::logic_error("Project main scene is closed");
+    }
+    return _pScene;
+}
+
+iCAX::Project::EProjectState iCAX::Project::CProject::ConvertSceneState(IN ESceneState State_)
+{
+    switch (State_)
+    {
+    case ESceneState::Created:
+        return EProjectState::Created;
+    case ESceneState::Starting:
+        return EProjectState::Starting;
+    case ESceneState::Running:
+        return EProjectState::Running;
+    case ESceneState::Stopping:
+        return EProjectState::Stopping;
+    case ESceneState::Stopped:
+        return EProjectState::Stopped;
+    case ESceneState::Faulted:
+        return EProjectState::Faulted;
+    default:
+        throw std::invalid_argument("Invalid scene state");
     }
 }
 
-void iCAX::Project::CProject::OnRepositoryChanged(IN const iCAX::Database::RepositoryEventArgs& Args_)
+iCAX::Project::CProjectFault iCAX::Project::CProject::ConvertSceneFault(IN const CSceneFault& Fault_)
 {
-    if (m_pUniverse && m_pApplicationContext && m_pProductContext)
-    {
-        m_pUniverse->OnRepositoryChanged(*m_pApplicationContext, *m_pProductContext, *this, Args_);
-    }
+    return CProjectFault{ Fault_.Message, Fault_.Exception };
 }
-
-void iCAX::Project::CProject::SetState(IN EProjectState State_)
-{
-    {
-        std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-        m_State = State_;
-    }
-    m_StopCondition.notify_all();
-}
-
-void iCAX::Project::CProject::RecordFault(IN const std::string& strMessage_, IN std::exception_ptr Exception_)
-{
-    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-    m_LastFault = CProjectFault{ strMessage_, Exception_ };
-}
-
-iCAX::Project::ProjectFrameHandler iCAX::Project::CProject::GetFrameHandler() const
-{
-    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-    return m_FrameHandler;
-}
-
-void iCAX::Project::CProject::EnsureOpen() const
-{
-    if (!IsOpen())
-    {
-        throw std::logic_error("Project is closed");
-    }
-}
-
-void iCAX::Project::CProject::EnsureProjectThreadAccess(IN const char* strApiName_) const
-{
-    EnsureOpen();
-
-    std::lock_guard<std::mutex> _Lock(m_LifecycleMutex);
-    const bool _bThreadOwned =
-        (m_State == EProjectState::Starting || m_State == EProjectState::Running)
-        && m_WorkThreadID != std::thread::id();
-    if (!_bThreadOwned)
-    {
-        return;
-    }
-
-    if (m_WorkThreadID == std::this_thread::get_id())
-    {
-        return;
-    }
-
-    std::string _ApiName = strApiName_ ? strApiName_ : "Project API";
-    throw std::logic_error(_ApiName + " can only be accessed from the project worker thread while the project is running");
-}
-

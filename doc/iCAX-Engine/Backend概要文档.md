@@ -15,7 +15,7 @@ ApplicationHost
   CMailChannelRegistry
     applicationChannelId -> CMailChannel
     productChannelId*    -> CMailChannel
-    projectChannelId*    -> CMailChannel
+    sceneChannelId*      -> CMailChannel
   ProductRuntime*
     ProductDefinition
     ProductData
@@ -25,25 +25,35 @@ ApplicationHost
     Product ResourceLoaderRegistry
     Product CommandRegistry / CommandDispatcher
     ProjectCatalog*
-      Main Project
-      Transient Project*
-        Repository
-        ResourceLibrary / ResourcePool
-        Universe
-        Project mail id
-        Project WorkThread
+      Project*
+        ProjectID / ProjectPath / ProjectSetting
+        Main Scene
+          Repository
+          ResourceLibrary / ResourcePool
+          Universe
+          Scene mail id
+          Scene PDOHub
+          Scene WorkThread
+        Child Scene*
+          Repository
+          ResourceLibrary / ResourcePool
+          Universe
+          Scene mail id
+          Scene PDOHub
+          Scene WorkThread
 ```
 
 核心规则：
 
 - ApplicationHost 是应用级入口。
 - ProductRuntime 是产品级入口。
-- Project 是数据和运行隔离边界。
+- Project 是项目级管理容器，承载项目身份、路径和跟图纸走的 ProjectSetting。
+- Scene 是数据和运行隔离边界。
 - ServiceProvider 在 Application 级共享。
 - ComponentMeta、Behaviour 定义、ResourceLoader 和 CommandHandler 按 ProductRuntime 回放到产品级注册表。
 - MailChannelRegistry 在 ApplicationHost 中共享，但不进入 ServiceProvider；channel 按 mail id 显式创建和删除。
-- PDO 不进入 ServiceProvider；项目 PDOHub 归 Project 持有，并通过 ProjectContext 暴露。
-- Repository、资源对象、项目 ResourceLoaderRegistry、Universe 实例、项目 mail channel、项目 PDO 和项目线程按 Project 隔离。
+- PDO 不进入 ServiceProvider；Scene PDOHub 归 Scene 持有，并通过 SceneContext 暴露。
+- Repository、资源对象、Scene ResourceLoaderRegistry、Universe 实例、Scene mail channel、Scene PDO 和 Scene 线程按 Scene 隔离。
 
 ## 3. 启动流程
 
@@ -93,11 +103,12 @@ Frontend
 ProductRuntime
   -> create ProjectCatalog
   -> open main Project
-  -> create project-local ResourceLoaderRegistry from product modules
-  -> create project mail channel
+  -> create main Scene
+  -> create scene-local ResourceLoaderRegistry from product modules
+  -> create scene mail channel
   -> create LocalProjectRuntime
-  -> start Project thread
-  <- catalogId / projectId / projectChannelId / project frontend post office
+  -> start main Scene thread
+  <- catalogId / projectId / mainSceneId / mainSceneChannelId / scene frontend post office
 ```
 
 ## 4. 通信模型
@@ -107,10 +118,10 @@ ProductRuntime
 ```text
 applicationChannelId -> application CMailChannel
 productChannelId     -> product CMailChannel
-projectChannelId     -> project CMailChannel
+sceneChannelId       -> scene CMailChannel
 ```
 
-`ApplicationHost`、`ProductRuntime` 和 `Project` 只保存自己的 mail id，并从显式注入的 `CMailChannelRegistry` 获取 frontend/backend post office。`GetFrontendPostOffice` / `GetBackendPostOffice` 不隐式创建 channel；创建和删除必须显式走 `CreateChannel` / `RemoveChannel`。Application/Product/ProjectContext 对外暴露本层 post office，调用方不需要从 ServiceProvider 解析通信能力。
+`ApplicationHost`、`ProductRuntime` 和 `Scene` 只保存自己的 mail id，并从显式注入的 `CMailChannelRegistry` 获取 frontend/backend post office。`GetFrontendPostOffice` / `GetBackendPostOffice` 不隐式创建 channel；创建和删除必须显式走 `CreateChannel` / `RemoveChannel`。Application/Product/SceneContext 对外暴露本层 post office，调用方不需要从 ServiceProvider 解析通信能力。
 
 `CMailPostOffice` 是轻量 endpoint 视图，不拥有队列。上级运行体负责向前端 bridge 发放下级运行体的 frontend post office。运行体停止或关闭时删除自己的 channel，旧 post office 自动失效。
 
@@ -125,31 +136,31 @@ Database 当前以 Repository 为单 EC 数据容器：
 - ComponentMeta 描述字段、持久化、变更策略和派生字段。
 - Repository 负责实体组件管理、事件、变更日志、事务、撤销重做和快速保存日志。
 
-Project 创建自己的 Repository，因此不同 Project 的实体和组件实例互不可见。
+Scene 创建自己的 Repository，因此不同 Scene 的实体和组件实例互不可见。Project 只管理主 Scene 和子 Scene，不直接承载 EC 数据。
 
 ## 6. 行为模型
 
-Behaviour 定义在 ProductRuntime 的产品级注册表中注册，Project 创建自己的 Universe 实例。Universe 不持有数据；Project 在调度 `Universe::Tick` 或转发 Repository 事件时，显式传入 `ApplicationContext`、`ProductContext` 和 `ProjectContext`。
+Behaviour 定义在 ProductRuntime 的产品级注册表中注册，Scene 创建自己的 Universe 实例。Universe 不持有数据；Scene 在调度 `Universe::Tick` 或转发 Repository 事件时，显式传入 `ApplicationContext`、`ProductContext`、`ProjectContext` 和 `SceneContext`。
 
-因此 Behaviour 定义属于产品，行为执行上下文属于当前 Project。
+因此 Behaviour 定义属于产品，ProjectContext 提供项目级参数，SceneContext 提供当前运行现场。
 
 ## 7. 资源模型
 
-Resource 对象按 Project 隔离：
+Resource 对象按 Scene 隔离：
 
 ```text
-Project
+Scene
   -> CResourceLibrary
        -> CResourcePool
 ```
 
-ResourceLoader 注册动作由产品模块提供，ProductRuntime 会回放到产品级注册表；每个 Project 创建自己的 ResourceLoaderRegistry，再从产品模块回放注册动作，因此 loader 实例和资源对象都不跨 Project 共享：
+ResourceLoader 注册动作由产品模块提供，ProductRuntime 会回放到产品级注册表；每个 Scene 创建自己的 ResourceLoaderRegistry，再从产品模块回放注册动作，因此 loader 实例和资源对象都不跨 Scene 共享：
 
 ```text
 ProductRuntime
   -> product ResourceLoaderRegistry
-Project
-  -> project ResourceLoaderRegistry
+Scene
+  -> scene ResourceLoaderRegistry
   -> CResourceLibrary
   -> CResourcePool
 ```
@@ -182,22 +193,22 @@ ProductRuntime 加载产品模块后，按模块路径回放注册动作：
 - Service 回放到 ApplicationHost 的应用级 ServiceProvider。
 - ComponentMeta 回放到 ProductRuntime 的产品级 MetaRegistry。
 - Behaviour 回放到 ProductRuntime 的产品级 BehaviourRegistry。
-- ResourceLoader 回放到 ProductRuntime 的产品级 ResourceLoaderRegistry，并在创建 Project 时再次回放到项目级 ResourceLoaderRegistry。
+- ResourceLoader 回放到 ProductRuntime 的产品级 ResourceLoaderRegistry，并在创建 Scene 时再次回放到 Scene 级 ResourceLoaderRegistry。
 - CommandHandler 回放到 ProductRuntime 的产品级 CommandRegistry。
 
 产品 DLL 在进程内只加载一次。由于自动注册宏不提供注销能力，模块加载后按进程常驻处理。
 
-自动注册 Catalog 是追加式的进程级目录：模块加载时追加注册回放函数，ProductRuntime 根据模块路径把这些回放函数写入自己的产品级注册表。当前不支持插件热卸载、热替换或从 Catalog 中删除注册记录。若需要卸载某个项目的行为，只能解除该 Project/Universe 内的 Behaviour 实例绑定；这不会影响产品级注册表，也不会卸载 DLL。
+自动注册 Catalog 是追加式的进程级目录：模块加载时追加注册回放函数，ProductRuntime 根据模块路径把这些回放函数写入自己的产品级注册表。当前不支持插件热卸载、热替换或从 Catalog 中删除注册记录。若需要卸载某个 Scene 的行为，只能解除该 Scene/Universe 内的 Behaviour 实例绑定；这不会影响产品级注册表，也不会卸载 DLL。
 
 ## 9. 线程模型
 
 当前进程内线程边界：
 
-- ApplicationHost 拥有应用级工作线程，轮询 application/product mailbox。
-- ProductRuntime 不创建自己的工作线程。
-- 每个 Project 拥有自己的项目线程，并由该线程驱动本 Project 的 Repository、Universe 和 Behaviour 实例。
+- ApplicationHost 拥有应用级工作线程，轮询 application mailbox。
+- ProductRuntime 拥有产品级工作线程，轮询 product mailbox。
+- 每个 Scene 拥有自己的 Scene 线程，并由该线程驱动本 Scene 的 Repository、Universe 和 Behaviour 实例。
 
-Behaviour 不提供内部并发保护。`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新应在同一个 Project 线程内发生。暂停帧更新只跳过 `PreUpdate / Update / PostUpdate`，不拦截 `Start` 和 Repository 生命周期事件。组件移除时，`OnDestroyImmediate` 在 Repository remove 链路内同步触发，`OnDestroy` 在下一次 `Tick` 开始的统一销毁阶段触发。`OnDestroy` 接收 `CComponentDestroyInfo` 快照，不接收已经脱离 Entity/Repository 的组件对象；若 `OnDestroy` 中继续删除其他组件，同一销毁阶段会持续处理到队列为空。前端线程、ApplicationHost 线程或其他 Project 线程不直接调用 Behaviour；跨线程输入通过 Mailbox、PDO 或命令通道进入目标 Project，再由目标 Project 线程消费。
+Behaviour 不提供内部并发保护。`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新应在同一个 Scene 线程内发生。暂停帧更新只跳过 `PreUpdate / Update / PostUpdate`，不拦截 `Start` 和 Repository 生命周期事件。组件移除时，`OnDestroyImmediate` 在 Repository remove 链路内同步触发，`OnDestroy` 在下一次 `Tick` 开始的统一销毁阶段触发。`OnDestroy` 接收 `CComponentDestroyInfo` 快照，不接收已经脱离 Entity/Repository 的组件对象；若 `OnDestroy` 中继续删除其他组件，同一销毁阶段会持续处理到队列为空。前端线程、ApplicationHost 线程或其他 Scene 线程不直接调用 Behaviour；跨线程输入通过 Mailbox、PDO 或命令通道进入目标 Scene，再由目标 Scene 线程消费。
 
 Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。访问冲突、堆破坏等 native 崩溃仍可能影响整个进程；若未来需要硬隔离，应通过 `IProjectRuntime` 增加每 Project 一个 worker process 的实现。
 

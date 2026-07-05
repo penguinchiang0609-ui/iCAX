@@ -24,6 +24,9 @@
     <ClInclude Include="IProjectContext.h">
       <Filter>extern</Filter>
     </ClInclude>
+    <ClInclude Include="ISceneContext.h">
+      <Filter>extern</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -33,6 +36,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="IProjectContext.cpp">
+      <Filter>extern</Filter>
+    </ClCompile>
+    <ClCompile Include="ISceneContext.cpp">
       <Filter>extern</Filter>
     </ClCompile>
   </ItemGroup>

@@ -64,10 +64,9 @@ WorkThread
 ```text
 MainLoop
   -> Dispatch application mailbox
-  -> Dispatch every started ProductRuntime product mailbox
 ```
 
-`ApplicationHost` 只处理应用级 mailbox。`ProductRuntime` 拥有自己的产品级工作线程并处理产品级 mailbox；每个 `Project` 也拥有自己的项目线程并处理项目级 mailbox。因此应用、产品和项目三个层级互不共享主循环。
+`ApplicationHost` 只处理应用级 mailbox。`ProductRuntime` 拥有自己的产品级工作线程并处理产品级 mailbox；每个 `Scene` 拥有自己的 Scene 线程并处理 Scene mailbox。因此应用、产品和 Scene 运行现场互不共享主循环。
 
 ## 5. 命令上下文
 
@@ -82,7 +81,7 @@ CServiceProvider
 CMailChannelRegistry
 ```
 
-产品级命令上下文由 `ProductRuntime` 组装。项目级命令进入具体 Project 邮箱时，ProductRuntime 会额外放入当前 ProjectContext；业务代码通过 ProjectContext 访问 Repository、Universe、ResourceLibrary、PDOHub、项目邮局和服务容器。
+产品级命令上下文由 `ProductRuntime` 组装。Scene 级命令进入具体 Scene 邮箱时，ProductRuntime 会额外放入当前 ProjectContext 和 SceneContext；业务代码通过 ProjectContext 访问项目身份、路径和 ProjectSetting，通过 SceneContext 访问 Repository、Universe、ResourceLibrary、PDOHub、Scene 邮局和服务容器。
 
 ## 6. 通信通道
 
@@ -113,13 +112,13 @@ Frontend shell receives project file path
 product mail id -> Product.GetState / Product.OpenProjectCatalog / Product.CloseProjectCatalog
 ```
 
-项目级通道：
+Scene 级通道：
 
 ```text
-project mail id -> project commands
+scene mail id -> scene/project commands
 ```
 
-`CMailChannelRegistry` 统一持有所有 `CMailChannel`。ApplicationHost 直接持有 registry，并显式注入 ProductRuntime 和 Project；ApplicationHost、ProductRuntime 和 Project 只持有自己的 mail id，并通过 context 暴露 frontend/backend post office。上级运行体负责向前端 bridge 发放下级 mail id 对应的 frontend post office。运行体停止或关闭时删除对应 channel，旧邮局随之失效。
+`CMailChannelRegistry` 统一持有所有 `CMailChannel`。ApplicationHost 直接持有 registry，并显式注入 ProductRuntime、Project 和 Scene；ApplicationHost、ProductRuntime 和 Scene 只持有自己的 mail id，并通过 context 暴露 frontend/backend post office。上级运行体负责向前端 bridge 发放下级 mail id 对应的 frontend post office。运行体停止或关闭时删除对应 channel，旧邮局随之失效。
 
 ApplicationHost 对同一个 `productId` 维护启动中和停止中标记。`StopProduct` 会先标记产品停止中，等 `ProductRuntime::Stop()` 完成后才从运行时表移除；`StartProduct` 遇到同一产品正在停止时等待。这样可以避免关闭再打开时同一产品短时间内出现两个后台运行时。
 
@@ -133,7 +132,7 @@ ApplicationHost 对同一个 `productId` 维护启动中和停止中标记。`St
 
 - ApplicationHost 只负责应用级入口和产品运行时生命周期。
 - ProductRuntime 负责产品级入口和 ProjectCatalog 生命周期。
-- Project 负责项目实例状态、项目线程、Repository、ResourceLibrary、Universe 和项目 mailbox。
+- Project 负责项目实例状态、ProjectSetting 和 Scene 集合；Scene 负责线程、Repository、ResourceLibrary、Universe、PDOHub 和 Scene mailbox。
 - ProductRuntime 可以同时维护多个 ProjectCatalog。
 - 一个 ProjectCatalog 内主项目最多存在一个。
 - 临时项目靠 ProjectID 隔离，用于预览、导入和转换。

@@ -4,18 +4,19 @@
 
 `Behaviour` 是 Component 对应的行为逻辑层。Component 负责表达实体的身份、状态或能力；Behaviour 负责响应这些数据的生命周期事件和帧更新。
 
-Behaviour 不拥有 `Repository`，也不代表 `Project`。运行现场由 Project 在调用时显式传入：
+Behaviour 不拥有 `Repository`，也不代表 `Project` 或 `Scene`。运行现场由 Scene 在调用时显式传入：
 
 ```cpp
-OnUpdate(component, applicationContext, productContext, projectContext, deltaTime, totalTime);
+OnUpdate(component, applicationContext, productContext, projectContext, sceneContext, deltaTime, totalTime);
 ```
 
 ## 2. 运行层级
 
 - `ApplicationContext`：应用级上下文，如应用配置、路径和应用级依赖。
 - `ProductContext`：产品级上下文，如产品定义、产品数据、产品级注册表和产品服务。
-- `ProjectContext`：项目级上下文，如当前 Repository、资源库、项目配置和项目服务。
-- `Universe`：Project 内的 Behaviour 运行容器。每个 Project 拥有自己的 Universe。
+- `ProjectContext`：项目级上下文，只包含项目身份、路径和跟图纸走的 ProjectSetting。
+- `SceneContext`：场景级上下文，包含 Repository、资源库、PDO、mail 和场景可用服务。
+- `Universe`：Scene 内的 Behaviour 运行容器。每个 Scene 拥有自己的 Universe。
 - `BehaviourRegistry`：保存 Behaviour 类型和创建工厂，通常按 Product 隔离。
 
 ## 3. 注册与绑定
@@ -35,7 +36,7 @@ public:
 };
 ```
 
-Catalog 只保存注册回放函数，不保存运行实例。产品启动时按模块路径把注册动作回放到自己的 `IBehaviourRegistry`，Project 创建 Universe 时注入该注册表。Universe 绑定 Behaviour 后，会为当前 Project 创建独立 Behaviour 实例。
+Catalog 只保存注册回放函数，不保存运行实例。产品启动时按模块路径把注册动作回放到自己的 `IBehaviourRegistry`，Scene 创建 Universe 时注入该注册表。Universe 绑定 Behaviour 后，会为当前 Scene 创建独立 Behaviour 实例。
 
 一个 `ComponentClass` 只能注册一个 Behaviour。若一个 Behaviour 越来越庞大，应优先检查 Component 抽象是否过粗。
 
@@ -92,15 +93,14 @@ iCAX::Behaviour::CBehaviourSchedule GetSchedule() const override
 
 ## 7. 线程模型
 
-Behaviour 遵循 Project 单线程模型。Project 工作线程驱动 Repository、Universe 和 Behaviour。外部线程不应直接调用 Behaviour，也不应直接修改 Behaviour 内部状态。
+Behaviour 遵循 Scene 单线程模型。Scene 工作线程驱动 Repository、Universe 和 Behaviour。外部线程不应直接调用 Behaviour，也不应直接修改 Behaviour 内部状态。
 
-跨线程输入应通过 Mailbox、PDO 或命令通道进入对应 Project 线程，再由 Project 线程修改 Repository 或驱动 Universe。
+跨线程输入应通过 Mailbox、PDO 或命令通道进入对应 Scene 线程，再由 Scene 线程修改 Repository 或驱动 Universe。
 
 ## 8. 非目标
 
 - 不负责 Repository 生命周期。
-- 不负责 Project 线程和帧节奏。
+- 不负责 Scene 线程和帧节奏。
 - 不负责资源池、服务注册和命令注册。
 - 不支持 Behaviour 插件热卸载或热替换。
 - 不提供内部并发保护。
-

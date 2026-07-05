@@ -33,23 +33,23 @@ CPDORenderService
 
 ## 每帧输出流程
 
-`Update(application, product, project, deltaTime, totalTime)` 的流程：
+`Update(application, product, project, scene, deltaTime, totalTime)` 的流程：
 
 ```text
 1. 从 ProjectContext 读取 ProjectID。
 2. 复制该 ProjectID 下的 scene snapshot 和 PDO output state。
-3. 从 ProjectContext 取得当前项目 PDOHub。
+3. 从 SceneContext 取得当前 Scene PDOHub。
 4. 对已经不存在的 scene 释放全部已分配 slot，并发 SlotFreed。
 5. 对仍存在的 scene：
    5.1 释放已删除的 geometry/object/view slot，并发 SlotFreed。
-   5.2 为新增的 geometry/object/view 分配 slot；分配时把 PDOHub 的碎片整理回调接到项目 mailbox。
+   5.2 为新增的 geometry/object/view 分配 slot；分配时把 PDOHub 的碎片整理回调接到 Scene mailbox。
    5.3 分配成功后发送 SlotAllocated。
    5.4 如果 payload 变大且旧容量不足，保持 PDOID 不变，释放旧 slot 后重新分配容量，并发 SlotMoved。
    5.5 将 RenderData 序列化写入对应 slot。
 6. 把新的 PDO output state 写回服务。
 ```
 
-`Update` 不长期持有项目 PDOHub，也不把 slot 引用缓存到服务中。它只缓存 `PDOID` 和容量。
+`Update` 不长期持有 Scene PDOHub，也不把 slot 引用缓存到服务中。它只缓存 `PDOID` 和容量。
 
 ## 对象级 slot
 
@@ -102,6 +102,6 @@ DefragEnd
 
 ## 删除与关闭
 
-`DestroyScene(ProjectID, SceneID)` 只删除 scene 数据，不直接释放 PDO slot，因为它没有 `ProjectContext`，也就拿不到项目 PDOHub。下一次 `Update` 发现 scene 不存在时释放 slot，并发送 `SlotFreed`。
+`DestroyScene(ProjectID, SceneID)` 只删除 scene 数据，不直接释放 PDO slot，因为它没有 `SceneContext`，也就拿不到 Scene PDOHub。下一次 `Update` 发现 scene 不存在时释放 slot，并发送 `SlotFreed`。
 
-`DestroyProject(ProjectID)` 用于项目关闭。项目 PDOHub 和前端 channel 会随 project 生命周期销毁，服务只清理自己的 scene 和 output state。
+`DestroyProject(ProjectID)` 用于项目关闭。Scene PDOHub 和前端 channel 会随 scene 生命周期销毁，服务只清理自己的 scene 和 output state。

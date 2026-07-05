@@ -190,6 +190,7 @@ namespace
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
             IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&,
             IN const double& nDeltaTime_,
             IN const double& nTotalTime_) override
         {
@@ -226,7 +227,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++AwakeCount;
         }
@@ -236,7 +238,8 @@ namespace
             IN const iCAX::Data::PropertySet&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++ModifyingCount;
         }
@@ -246,7 +249,8 @@ namespace
             IN const iCAX::Data::PropertySet& NewValues_,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++ModifiedCount;
             LastModifiedValue = NewValues_.at(S_ValueProperty).To<int>();
@@ -256,7 +260,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++DisableCount;
         }
@@ -265,7 +270,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++DestroyImmediateCount;
         }
@@ -274,7 +280,8 @@ namespace
             IN const iCAX::Behaviour::CComponentDestroyInfo& DestroyInfo_,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++DestroyCount;
             LastDestroyValue = DestroyInfo_.PreviousProperties.at(S_ValueProperty).To<int>();

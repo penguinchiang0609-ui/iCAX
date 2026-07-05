@@ -10,6 +10,7 @@
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
 #include "ProjectContext/IProjectContext.h"
+#include "ProjectContext/ISceneContext.h"
 #include "Resources/ResourceInfo.h"
 #include "Resources/ResourceLibrary.h"
 
@@ -70,13 +71,13 @@ namespace
         return _Response;
     }
 
-    iCAX::Project::IProjectContext& _RequireProjectContext(IN iCAX::Project::IProjectContext* pProjectContext_)
+    iCAX::Project::ISceneContext& _RequireSceneContext(IN iCAX::Project::ISceneContext* pSceneContext_)
     {
-        if (!pProjectContext_)
+        if (!pSceneContext_)
         {
             throw std::invalid_argument("Cam command must be sent to a project mailbox");
         }
-        return *pProjectContext_;
+        return *pSceneContext_;
     }
 
     unsigned long long _ToUInt64(IN const Variant& Value_, IN const std::string& strFieldName_)
@@ -834,14 +835,14 @@ namespace
     }
 
     std::shared_ptr<iCAX::CAM::CCAMTopologyResource> _GetTopologyResource(
-        IN iCAX::Project::IProjectContext& Project_,
+        IN iCAX::Project::ISceneContext& Scene_,
         IN const std::shared_ptr<iCAX::CAM::CLaserWorkpieceComponent>& pWorkpiece_)
     {
         if (!pWorkpiece_ || pWorkpiece_->GetTopologyResourceID().empty())
         {
             return nullptr;
         }
-        return Project_.Resources().Get<iCAX::CAM::CCAMTopologyResource>(pWorkpiece_->GetTopologyResourceID());
+        return Scene_.Resources().Get<iCAX::CAM::CCAMTopologyResource>(pWorkpiece_->GetTopologyResourceID());
     }
 
     const VariantArray& _GetTopologyArray(
@@ -940,7 +941,7 @@ namespace
         IN uint64_t nVersion_);
 
     std::string _CreatePoseFieldResource(
-        IN iCAX::Project::IProjectContext& Project_,
+        IN iCAX::Project::ISceneContext& Scene_,
         IN const iCAX::Data::uuid& PathEntityID_,
         IN const std::string& strPathName_)
     {
@@ -954,12 +955,12 @@ namespace
             "cam.pose-field",
             iCAX::Resource::EResourcePersistenceMode::Embedded,
             _pPoseField->nVersion);
-        Project_.Resources().Set<iCAX::CAM::CCAMPoseFieldResource>(_PoseFieldResourceID, _pPoseField, _PoseFieldInfo);
+        Scene_.Resources().Set<iCAX::CAM::CCAMPoseFieldResource>(_PoseFieldResourceID, _pPoseField, _PoseFieldInfo);
         return _PoseFieldResourceID;
     }
 
     std::shared_ptr<iCAX::CAM::CCAMPathComponent> _CreatePathEntity(
-        IN iCAX::Project::IProjectContext& Project_,
+        IN iCAX::Project::ISceneContext& Scene_,
         IN const iCAX::Data::uuid& WorkpieceEntityID_,
         IN const std::string& strKind_,
         IN unsigned long long nTopologyID_,
@@ -968,7 +969,7 @@ namespace
     {
         const auto _Label = _GetObjectString(TopologyObject_, "label", strKind_ + " " + std::to_string(nTopologyID_));
         const auto _Role = _GetObjectString(TopologyObject_, "role");
-        auto& _Repository = Project_.Database();
+        auto& _Repository = Scene_.Database();
         const auto [_DefaultCuttingLayerID, _DefaultVisibleLayerID] = _EnsureDefaultLayers(_Repository);
         auto [_pEntity, _pPath] = _CreateEntityWithComponent<iCAX::CAM::CCAMPathComponent>(_Repository);
         const auto _CurveResourceID = iCAX::CAM::MakeCAMPathCurveResourceID(_pEntity->GetID());
@@ -985,8 +986,8 @@ namespace
             "cam.path-curve",
             iCAX::Resource::EResourcePersistenceMode::Embedded,
             _pCurve->nVersion);
-        Project_.Resources().Set<iCAX::CAM::CCAMPathCurveResource>(_CurveResourceID, _pCurve, _CurveInfo);
-        const auto _PoseFieldResourceID = _CreatePoseFieldResource(Project_, _pEntity->GetID(), _Label);
+        Scene_.Resources().Set<iCAX::CAM::CCAMPathCurveResource>(_CurveResourceID, _pCurve, _CurveInfo);
+        const auto _PoseFieldResourceID = _CreatePoseFieldResource(Scene_, _pEntity->GetID(), _Label);
 
         _SetUuidProperty(_pPath, iCAX::CAM::CCAMPathComponent::PropertyName_WorkpieceEntityID, WorkpieceEntityID_);
         _SetUuidProperty(_pPath, iCAX::CAM::CCAMPathComponent::PropertyName_CuttingLayerID, _DefaultCuttingLayerID);
@@ -1199,13 +1200,13 @@ namespace
         return _Status;
     }
 
-    Variant _BuildScenePayload(IN iCAX::Project::IProjectContext& Project_)
+    Variant _BuildScenePayload(IN iCAX::Project::ISceneContext& Scene_)
     {
-        auto& _Repository = Project_.Database();
+        auto& _Repository = Scene_.Database();
         auto _pRoot = _GetComponent<iCAX::CAM::CLaserCamRootComponent>(_Repository);
         auto [_pWorkpieceEntity, _pWorkpiece] = _GetActiveWorkpiece(_Repository);
         auto _pSelection = _GetComponent<iCAX::CAM::CCAMSelectionComponent>(_Repository);
-        auto _pTopology = _GetTopologyResource(Project_, _pWorkpiece);
+        auto _pTopology = _GetTopologyResource(Scene_, _pWorkpiece);
         auto _Workpiece = _MakeWorkpiecePayload(_pWorkpieceEntity, _pWorkpiece);
 
         ObjectMap _Scene;
@@ -1259,7 +1260,7 @@ namespace
     }
 
     void _RegisterImportedModelResources(
-        IN iCAX::Project::IProjectContext& Project_,
+        IN iCAX::Project::ISceneContext& Scene_,
         IN const std::string& strSourcePath_,
         OUT std::string& strModelResourceID_,
         OUT std::string& strTopologyResourceID_,
@@ -1271,7 +1272,7 @@ namespace
             throw std::invalid_argument("Cam ImportModel requires sourcePath");
         }
 
-        auto& _Resources = Project_.Resources();
+        auto& _Resources = Scene_.Resources();
         strModelResourceID_ = strSourcePath_;
         strTopologyResourceID_ = iCAX::CAM::MakeCAMTopologyResourceID(strModelResourceID_);
         strDisplayResourceID_ = iCAX::CAM::MakeCAMDisplayResourceID(strModelResourceID_);
@@ -1330,19 +1331,21 @@ namespace
             IN const iCAX::Command::CCommandRequest&,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext* pProjectContext_)
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
         {
-            auto& _Project = _RequireProjectContext(pProjectContext_);
-            return _MakeResponse(_BuildScenePayload(_Project));
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
+            return _MakeResponse(_BuildScenePayload(_Scene));
         }
 
         static iCAX::Command::CCommandResponse HandleImportModel(
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext* pProjectContext_)
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
         {
-            auto& _Project = _RequireProjectContext(pProjectContext_);
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
             auto _Payload = _DecodeObjectPayload(Request_);
             auto _SourcePath = _GetOptionalString(_Payload, "sourcePath");
             if (_SourcePath.empty())
@@ -1355,14 +1358,14 @@ namespace
             std::string _DisplayResourceID;
             uint64_t _TopologyVersion = 0;
             _RegisterImportedModelResources(
-                _Project,
+                _Scene,
                 _SourcePath,
                 _ModelResourceID,
                 _TopologyResourceID,
                 _DisplayResourceID,
                 _TopologyVersion);
 
-            auto& _Repository = _Project.Database();
+            auto& _Repository = _Scene.Database();
             auto _Undo = _Repository.BeginUndoCommand("Import CAM model");
             auto _pRoot = _GetOrCreateComponent<iCAX::CAM::CLaserCamRootComponent>(_Repository);
             auto _pSelection = _GetOrCreateComponent<iCAX::CAM::CCAMSelectionComponent>(_Repository);
@@ -1391,16 +1394,17 @@ namespace
             _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedLabel, std::string());
             _Undo->End();
 
-            return _MakeResponse(_BuildScenePayload(_Project));
+            return _MakeResponse(_BuildScenePayload(_Scene));
         }
 
         static iCAX::Command::CCommandResponse HandlePickTopology(
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext* pProjectContext_)
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
         {
-            auto& _Project = _RequireProjectContext(pProjectContext_);
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
             auto _Payload = _DecodeObjectPayload(Request_);
             auto _Kind = _GetOptionalString(_Payload, "kind");
             const auto _ID = _GetOptionalUInt64(_Payload, "id");
@@ -1409,9 +1413,9 @@ namespace
                 throw std::invalid_argument("Cam PickTopology requires kind and id");
             }
 
-            auto& _Repository = _Project.Database();
+            auto& _Repository = _Scene.Database();
             auto [_pWorkpieceEntity, _pWorkpiece] = _GetActiveWorkpiece(_Repository);
-            auto _pTopology = _GetTopologyResource(_Project, _pWorkpiece);
+            auto _pTopology = _GetTopologyResource(_Scene, _pWorkpiece);
             if (!_pTopology)
             {
                 throw std::invalid_argument("Cam topology resource is not available");
@@ -1432,23 +1436,24 @@ namespace
             _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedKind, _Kind);
             _SetUInt64Property(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedID, _ID);
             _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedLabel, _Label);
-            return _MakeResponse(_BuildScenePayload(_Project));
+            return _MakeResponse(_BuildScenePayload(_Scene));
         }
 
         static iCAX::Command::CCommandResponse HandleRecognizeLoops(
             IN const iCAX::Command::CCommandRequest&,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext* pProjectContext_)
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
         {
-            auto& _Project = _RequireProjectContext(pProjectContext_);
-            auto& _Repository = _Project.Database();
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
+            auto& _Repository = _Scene.Database();
             auto [_pWorkpieceEntity, _pWorkpiece] = _GetActiveWorkpiece(_Repository);
             if (!_pWorkpieceEntity || !_pWorkpiece)
             {
                 throw std::invalid_argument("Cam active workpiece is not available");
             }
-            auto _pTopology = _GetTopologyResource(_Project, _pWorkpiece);
+            auto _pTopology = _GetTopologyResource(_Scene, _pWorkpiece);
             if (!_pTopology)
             {
                 throw std::invalid_argument("Cam topology resource is not available");
@@ -1472,21 +1477,22 @@ namespace
                 {
                     continue;
                 }
-                _CreatePathEntity(_Project, _pWorkpieceEntity->GetID(), kTopologyKindLoop, _TopologyID, _LoopObject, "auto");
+                _CreatePathEntity(_Scene, _pWorkpieceEntity->GetID(), kTopologyKindLoop, _TopologyID, _LoopObject, "auto");
             }
             _Undo->End();
 
-            return _MakeResponse(_BuildScenePayload(_Project));
+            return _MakeResponse(_BuildScenePayload(_Scene));
         }
 
         static iCAX::Command::CCommandResponse HandleAddSelectionPath(
             IN const iCAX::Command::CCommandRequest&,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext* pProjectContext_)
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
         {
-            auto& _Project = _RequireProjectContext(pProjectContext_);
-            auto& _Repository = _Project.Database();
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
+            auto& _Repository = _Scene.Database();
             auto _pSelection = _GetComponent<iCAX::CAM::CCAMSelectionComponent>(_Repository);
             if (!_pSelection || _pSelection->GetSelectedKind().empty() || _pSelection->GetSelectedID() == 0ull)
             {
@@ -1498,7 +1504,7 @@ namespace
             {
                 throw std::invalid_argument("Cam active workpiece is not available");
             }
-            auto _pTopology = _GetTopologyResource(_Project, _pWorkpiece);
+            auto _pTopology = _GetTopologyResource(_Scene, _pWorkpiece);
             if (!_pTopology)
             {
                 throw std::invalid_argument("Cam topology resource is not available");
@@ -1513,7 +1519,7 @@ namespace
             if (!_HasPathForTopology(_Repository, _pWorkpieceEntity->GetID(), _pSelection->GetSelectedKind(), _pSelection->GetSelectedID()))
             {
                 _CreatePathEntity(
-                    _Project,
+                    _Scene,
                     _pWorkpieceEntity->GetID(),
                     _pSelection->GetSelectedKind(),
                     _pSelection->GetSelectedID(),
@@ -1522,16 +1528,17 @@ namespace
             }
             _Undo->End();
 
-            return _MakeResponse(_BuildScenePayload(_Project));
+            return _MakeResponse(_BuildScenePayload(_Scene));
         }
 
         static iCAX::Command::CCommandResponse HandleSetPoseField(
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext* pProjectContext_)
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
         {
-            auto& _Project = _RequireProjectContext(pProjectContext_);
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
             auto _Payload = _DecodeObjectPayload(Request_);
             const auto _PathIDText = _GetOptionalString(_Payload, "pathEntityId");
             const auto _PathID = _ParseRequiredUuid(_PathIDText, "pathEntityId");
@@ -1543,7 +1550,7 @@ namespace
             }
             auto _Samples = _NormalizePoseSamples(_SamplesIter->second.To<VariantArray>());
 
-            auto& _Repository = _Project.Database();
+            auto& _Repository = _Scene.Database();
             auto _pPathEntity = _Repository.GetEntity(_PathID);
             auto _pPath = _GetComponent<iCAX::CAM::CCAMPathComponent>(_pPathEntity);
             if (!_pPathEntity || !_pPath)
@@ -1551,7 +1558,7 @@ namespace
                 throw std::invalid_argument("Cam SetPoseField path does not exist");
             }
 
-            auto& _Resources = _Project.Resources();
+            auto& _Resources = _Scene.Resources();
             auto _PoseFieldResourceID = _pPath->GetPoseFieldResourceID();
             if (_PoseFieldResourceID.empty())
             {
@@ -1577,24 +1584,25 @@ namespace
             }
             _Undo->End();
 
-            return _MakeResponse(_BuildScenePayload(_Project));
+            return _MakeResponse(_BuildScenePayload(_Scene));
         }
 
         static iCAX::Command::CCommandResponse HandleClearProgram(
             IN const iCAX::Command::CCommandRequest&,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext* pProjectContext_)
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
         {
-            auto& _Project = _RequireProjectContext(pProjectContext_);
-            auto& _Repository = _Project.Database();
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
+            auto& _Repository = _Scene.Database();
             auto _Undo = _Repository.BeginUndoCommand("Clear CAM program");
             _DeleteEntitiesWithComponent<iCAX::CAM::CCAMPathComponent>(_Repository);
             _DeleteNonRootProgramBlocks(_Repository);
             _ClearProgramRootBlockChildren(_Repository);
             _Undo->End();
 
-            return _MakeResponse(_BuildScenePayload(_Project));
+            return _MakeResponse(_BuildScenePayload(_Scene));
         }
     };
 

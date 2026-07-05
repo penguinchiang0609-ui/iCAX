@@ -17,7 +17,7 @@ Frontend Bridge
   -> CCommandRegistry
   -> ICommandTarget
   -> sub command function
-  -> ApplicationContext / ProductContext / ProjectContext
+  -> ApplicationContext / ProductContext / ProjectContext / SceneContext
 ```
 
 ## 2. 命令路由
@@ -104,15 +104,17 @@ public:
         Bind("GetState", [this](const CCommandRequest& request,
                                 IApplicationContext& app,
                                 IProductContext* product,
-                                IProjectContext* project) {
-            return GetState(request, app, product, project);
+                                IProjectContext* project,
+                                ISceneContext* scene) {
+            return GetState(request, app, product, project, scene);
         });
 
         Bind("OpenProjectCatalog", [this](const CCommandRequest& request,
                                            IApplicationContext& app,
                                            IProductContext* product,
-                                           IProjectContext* project) {
-            return OpenProjectCatalog(request, app, product, project);
+                                           IProjectContext* project,
+                                           ISceneContext* scene) {
+            return OpenProjectCatalog(request, app, product, project, scene);
         });
     }
 
@@ -120,12 +122,14 @@ private:
     CCommandResponse GetState(const CCommandRequest& request,
                               IApplicationContext& app,
                               IProductContext* product,
-                              IProjectContext* project);
+                              IProjectContext* project,
+                              ISceneContext* scene);
 
     CCommandResponse OpenProjectCatalog(const CCommandRequest& request,
                                         IApplicationContext& app,
                                         IProductContext* product,
-                                        IProjectContext* project);
+                                        IProjectContext* project,
+                                        ISceneContext* scene);
 };
 
 auto productTarget = std::make_shared<CProductCommandTarget>();
@@ -148,8 +152,9 @@ public:
         Bind("Solve", [this](const CCommandRequest& request,
                              IApplicationContext& app,
                              IProductContext* product,
-                             IProjectContext* project) {
-            return Solve(request, app, product, project);
+                             IProjectContext* project,
+                             ISceneContext* scene) {
+            return Solve(request, app, product, project, scene);
         });
     }
 
@@ -157,7 +162,8 @@ private:
     CCommandResponse Solve(const CCommandRequest& request,
                            IApplicationContext& app,
                            IProductContext* product,
-                           IProjectContext* project);
+                           IProjectContext* project,
+                           ISceneContext* scene);
 };
 ```
 
@@ -169,7 +175,7 @@ private:
 mainCode -> ICommandTarget
 ```
 
-它不是全局单例。`ApplicationHost` 拥有应用级 registry，`ProductRuntime` 拥有产品级 registry。项目级命令仍使用所属产品的 registry，但从项目邮箱进入时会额外携带 `ProjectContext` 和项目级依赖。
+它不是全局单例。`ApplicationHost` 拥有应用级 registry，`ProductRuntime` 拥有产品级 registry。Scene 级命令仍使用所属产品的 registry，但从 Scene 邮箱进入时会同时携带 `ProjectContext` 和 `SceneContext`。
 
 注册同一主命令码但名称不同会抛出异常，用于防止命令 hash 碰撞静默覆盖。
 
@@ -205,7 +211,7 @@ request.Route.nMainCode
 
 ## 8. 上下文边界
 
-`CommandHandler` 不再提供额外的泛型依赖容器。命令函数只接收 `ApplicationContext`、可选 `ProductContext` 和可选 `ProjectContext`。业务依赖按归属从上下文获取：产品级服务和注册表从 `ProductContext` 获取；项目级 Repository、ResourceLibrary、PDOHub 和项目服务从 `ProjectContext` 获取。
+`CommandHandler` 不再提供额外的泛型依赖容器。命令函数只接收 `ApplicationContext`、可选 `ProductContext`、可选 `ProjectContext` 和可选 `SceneContext`。业务依赖按归属从上下文获取：产品级服务和注册表从 `ProductContext` 获取；项目身份、路径和项目级 Settings 从 `ProjectContext` 获取；Repository、ResourceLibrary、PDOHub、MailChannel 和 Scene 服务从 `SceneContext` 获取。
 
 ## 9. 自动注册
 

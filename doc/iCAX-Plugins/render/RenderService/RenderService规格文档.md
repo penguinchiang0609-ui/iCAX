@@ -9,7 +9,7 @@
 - `CreateScene(ProjectID, SceneID)`
 - `DestroyScene(ProjectID, SceneID)`
 - `DestroyProject(ProjectID)`
-- `Update(ApplicationContext, ProductContext, ProjectContext, DeltaTime, TotalTime)`
+- `Update(ApplicationContext, ProductContext, ProjectContext, SceneContext, DeltaTime, TotalTime)`
 - `UpsertMesh / UpsertPolyline / UpsertToolpath`
 - `SetInstances`
 - `SetViewStates`
@@ -19,20 +19,20 @@
 
 `Update` 是渲染服务的每帧入口，也可以理解为 RenderService 的 `OnTick`：
 
-- PDO 实现：把当前 scene 的 RenderData 写入项目 PDOHub，必要时动态分配或释放 slot，随后由 Project 帧循环在 `PostSwapPDO` 阶段交换出去。
+- PDO 实现：把当前 scene 的 RenderData 写入 Scene PDOHub，必要时动态分配或释放 slot，随后由 Scene 帧循环在 `PostSwapPDO` 阶段交换出去。
 - 原生渲染实现：刷新屏幕、提交渲染命令或同步 renderer 内部状态。
-- 调用位置：应在项目线程中调用，通常由 Behaviour、Project frame handler 或产品运行时调度。
+- 调用位置：应在 Scene 线程中调用，通常由 Behaviour、Scene frame handler 或产品运行时调度。
 
 ## 使用样例
 
 ```cpp
-auto render = project.Services().Resolve<iCAX::Render::IRenderService>();
+auto render = scene.Services().Resolve<iCAX::Render::IRenderService>();
 
 render->CreateScene(project.GetProjectID(), 1);
 render->UpsertMesh(project.GetProjectID(), 1, mesh);
 render->SetInstances(project.GetProjectID(), 1, { instance }, {}, instanceVersion);
 
-render->Update(applicationContext, productContext, project, deltaTime, totalTime);
+render->Update(applicationContext, productContext, project, scene, deltaTime, totalTime);
 
 auto snapshot = render->GetSceneSnapshot(project.GetProjectID(), 1);
 ```

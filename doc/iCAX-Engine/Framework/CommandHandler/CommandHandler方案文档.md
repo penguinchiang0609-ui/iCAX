@@ -30,7 +30,7 @@ Mailbox = transport
 CommandHandler = command route and dispatch
 ApplicationHost = application mail adapter and product runtime lifecycle
 ProductRuntime = product/project mail adapter and context assembly
-ApplicationContext / ProductContext / ProjectContext = execution context
+ApplicationContext / ProductContext / ProjectContext / SceneContext = execution context
 ```
 
 ## 3. 为什么是主/子命令
@@ -101,17 +101,18 @@ Robot
 
 ## 5. 上下文传递
 
-命令执行只传三个显式上下文：
+命令执行只传四类显式上下文：
 
 - `ApplicationContext`：应用级描述、路径和系统设置。
 - `ProductContext`：产品定义、产品数据、产品级注册表和产品服务入口；应用级命令为空。
-- `ProjectContext`：项目数据现场、Repository、ResourceLibrary、PDOHub 和项目服务入口；非项目命令为空。
+- `ProjectContext`：项目身份、路径和项目级 Settings；非项目命令为空。
+- `SceneContext`：Repository、ResourceLibrary、PDOHub、MailChannel 和 Scene 服务入口；非 Scene 命令为空。
 
 应用级、产品级和项目级命令的上下文不同：
 
 - 应用级命令从应用邮局进入，通常有 `ApplicationContext`、产品定义列表、已启动产品列表和应用服务。
 - 产品级命令从产品邮局进入，通常有 `ApplicationContext`、`ProductRuntime`、`ProjectCatalog` 列表和服务。
-- 项目级命令从项目邮局进入，额外有 `Project`、所属 `ProjectCatalog`、`IRepository`、`IUniverse`、`ResourceLibrary`。
+- Scene 级命令从 Scene 邮局进入，同时携带 `ProjectContext` 和 `SceneContext`；项目级 Settings 走 ProjectContext，数据现场走 SceneContext。
 
 命令不再通过泛型依赖袋获取对象。需要什么能力，就从对应层级的 context 获取；如果 context 没有这个能力，应补充该 context 的契约，而不是新增隐式依赖入口。
 
@@ -121,7 +122,7 @@ Robot
 
 - `ApplicationHost` 拥有应用级 registry，只放应用入口命令。
 - 每个 `ProductRuntime` 拥有产品级 registry，内建产品命令和产品模块命令都注册到这里。
-- 项目级命令仍使用所属产品的 registry，通过项目邮箱进入时额外携带 `ProjectContext` 和项目级依赖。
+- Scene 级命令仍使用所属产品的 registry，通过 Scene 邮箱进入时额外携带 `ProjectContext` 和 `SceneContext`。
 
 宏注册保留动态 DLL 的低成本写法：
 

@@ -17,6 +17,7 @@
 #include <Resources/ResourceLoaderRegistry.h>
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
+#include <ProjectContext/ISceneContext.h>
 #include <Services/ServiceProvider.h>
 
 #include <memory>
@@ -174,7 +175,8 @@ namespace
             IN iCAX::Database::CComponentBase& Component_,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++AwakeCount;
             LastAwakeProperties = Component_.GetProperties();
@@ -184,7 +186,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++StartCount;
         }
@@ -193,7 +196,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++EnableCount;
         }
@@ -202,7 +206,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++DisableCount;
         }
@@ -211,7 +216,8 @@ namespace
             IN const iCAX::Behaviour::CComponentDestroyInfo& DestroyInfo_,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++DestroyCount;
             LastDestroyEntityID = DestroyInfo_.EntityID;
@@ -223,7 +229,8 @@ namespace
             IN iCAX::Database::CComponentBase& Component_,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++DestroyImmediateCount;
             LastDestroyImmediateProperties = Component_.GetProperties();
@@ -234,7 +241,8 @@ namespace
             IN const iCAX::Data::PropertySet& NewValues_,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++ModifyingCount;
             LastModifyingProperties = NewValues_;
@@ -252,7 +260,8 @@ namespace
             IN const iCAX::Data::PropertySet& NewValues_,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++ModifiedCount;
             LastModifiedProperties = NewValues_;
@@ -263,6 +272,7 @@ namespace
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
             IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&,
             IN const double& nDeltaTime_,
             IN const double& nTotalTime_) override
         {
@@ -276,6 +286,7 @@ namespace
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
             IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&,
             IN const double&,
             IN const double&) override
         {
@@ -287,6 +298,7 @@ namespace
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
             IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&,
             IN const double&,
             IN const double&) override
         {
@@ -371,27 +383,16 @@ namespace
     class CTestProjectContext final : public iCAX::Project::IProjectContext
     {
     public:
-        CTestProjectContext(
-            IN std::shared_ptr<iCAX::Database::IRepository> pRepository_,
-            IN std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry_,
-            IN std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider_)
-            : m_ProjectID(pRepository_->GetID())
-            , m_ProjectChannelID(iCAX::Data::GenerateNewUUID())
+        explicit CTestProjectContext(
+            IN const iCAX::Data::uuid& ProjectID_)
+            : m_ProjectID(ProjectID_)
             , m_strProjectName("Behaviour Test Project")
-            , m_pRepository(std::move(pRepository_))
-            , m_Resources(std::move(pResourceLoaderRegistry_))
-            , m_pServiceProvider(std::move(pServiceProvider_))
         {
         }
 
         const iCAX::Data::uuid& GetProjectID() const override
         {
             return m_ProjectID;
-        }
-
-        const iCAX::Data::uuid& GetProjectChannelID() const override
-        {
-            return m_ProjectChannelID;
         }
 
         const std::string& GetProjectName() const override
@@ -414,6 +415,64 @@ namespace
             return m_Settings;
         }
 
+    private:
+        iCAX::Data::uuid m_ProjectID;
+        std::string m_strProjectName;
+        std::string m_strProjectPath;
+        iCAX::Data::PropertyBag m_Settings;
+    };
+
+    class CTestSceneContext final : public iCAX::Project::ISceneContext
+    {
+    public:
+        CTestSceneContext(
+            IN std::shared_ptr<iCAX::Database::IRepository> pRepository_,
+            IN std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry_,
+            IN std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider_)
+            : m_SceneID(pRepository_->GetID())
+            , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
+            , m_strSceneName("Behaviour Test Scene")
+            , m_pRepository(std::move(pRepository_))
+            , m_Resources(std::move(pResourceLoaderRegistry_))
+            , m_pServiceProvider(std::move(pServiceProvider_))
+        {
+        }
+
+        const iCAX::Data::uuid& GetSceneID() const override
+        {
+            return m_SceneID;
+        }
+
+        const iCAX::Data::uuid& GetSceneChannelID() const override
+        {
+            return m_SceneChannelID;
+        }
+
+        const std::string& GetSceneName() const override
+        {
+            return m_strSceneName;
+        }
+
+        iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override
+        {
+            throw std::logic_error("Backend post office is not used by behaviour tests");
+        }
+
+        iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override
+        {
+            throw std::logic_error("Frontend post office is not used by behaviour tests");
+        }
+
+        bool IsMainScene() const override
+        {
+            return true;
+        }
+
+        bool IsTransientScene() const override
+        {
+            return false;
+        }
+
         iCAX::Database::IRepository& Database() override
         {
             return *m_pRepository;
@@ -434,17 +493,30 @@ namespace
             return m_Resources;
         }
 
+        bool HasPDOHub() const override
+        {
+            return false;
+        }
+
+        iCAX::PDO::IPDOHub& PDOHub() override
+        {
+            throw std::logic_error("PDO hub is not used by behaviour tests");
+        }
+
+        const iCAX::PDO::IPDOHub& PDOHub() const override
+        {
+            throw std::logic_error("PDO hub is not used by behaviour tests");
+        }
+
         iCAX::Services::CServiceProvider& Services() const override
         {
             return *m_pServiceProvider;
         }
 
     private:
-        iCAX::Data::uuid m_ProjectID;
-        iCAX::Data::uuid m_ProjectChannelID;
-        std::string m_strProjectName;
-        std::string m_strProjectPath;
-        iCAX::Data::PropertyBag m_Settings;
+        iCAX::Data::uuid m_SceneID;
+        iCAX::Data::uuid m_SceneChannelID;
+        std::string m_strSceneName;
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
         iCAX::Resource::CResourceLibrary m_Resources;
         std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
@@ -462,7 +534,8 @@ namespace
             , pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
             , pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
             , Product(pMetaRegistry, pBehaviourRegistry, pResourceLoaderRegistry, pServiceProvider, pCommandRegistry)
-            , Project(pRepository, pResourceLoaderRegistry, pServiceProvider)
+            , Project(pRepository->GetID())
+            , Scene(pRepository, pResourceLoaderRegistry, pServiceProvider)
         {
         }
 
@@ -475,6 +548,7 @@ namespace
         iCAX::Application::CApplicationContext Application;
         CTestProductContext Product;
         CTestProjectContext Project;
+        CTestSceneContext Scene;
     };
 
     class CSecondComponentBehaviour final : public iCAX::Behaviour::CBehaviourBase
@@ -535,17 +609,17 @@ namespace
         }
 
     protected:
-        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("Early.Awake");
         }
 
-        void OnModified(IN iCAX::Database::CComponentBase&, IN const iCAX::Data::PropertySet&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnModified(IN iCAX::Database::CComponentBase&, IN const iCAX::Data::PropertySet&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("Early.Modified");
         }
 
-        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN const double&, IN const double&) override
+        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&, IN const double&, IN const double&) override
         {
             PushLog("Early.Update");
         }
@@ -575,17 +649,17 @@ namespace
         }
 
     protected:
-        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("Middle.Awake");
         }
 
-        void OnModified(IN iCAX::Database::CComponentBase&, IN const iCAX::Data::PropertySet&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnModified(IN iCAX::Database::CComponentBase&, IN const iCAX::Data::PropertySet&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("Middle.Modified");
         }
 
-        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN const double&, IN const double&) override
+        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&, IN const double&, IN const double&) override
         {
             PushLog("Middle.Update");
         }
@@ -614,17 +688,17 @@ namespace
         }
 
     protected:
-        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("Late.Awake");
         }
 
-        void OnModified(IN iCAX::Database::CComponentBase&, IN const iCAX::Data::PropertySet&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnModified(IN iCAX::Database::CComponentBase&, IN const iCAX::Data::PropertySet&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("Late.Modified");
         }
 
-        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN const double&, IN const double&) override
+        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&, IN const double&, IN const double&) override
         {
             PushLog("Late.Update");
         }
@@ -646,12 +720,12 @@ namespace
         }
 
     protected:
-        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("BindingFirst.Awake");
         }
 
-        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN const double&, IN const double&) override
+        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&, IN const double&, IN const double&) override
         {
             PushLog("BindingFirst.Update");
         }
@@ -673,12 +747,12 @@ namespace
         }
 
     protected:
-        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&) override
+        void OnAwake(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&) override
         {
             PushLog("BindingSecond.Awake");
         }
 
-        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN const double&, IN const double&) override
+        void OnUpdate(IN iCAX::Database::CComponentBase&, IN const iCAX::Application::IApplicationContext&, IN const iCAX::Product::IProductContext&, IN iCAX::Project::IProjectContext&, IN iCAX::Project::ISceneContext&, IN const double&, IN const double&) override
         {
             PushLog("BindingSecond.Update");
         }
@@ -774,11 +848,12 @@ namespace
             IN const iCAX::Behaviour::CComponentDestroyInfo&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext& ProjectContext_) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext& SceneContext_) override
         {
             ++m_pState->ADestroyCount;
 
-            auto _pEntity = ProjectContext_.Database().GetEntity(m_pState->BEntityID);
+            auto _pEntity = SceneContext_.Database().GetEntity(m_pState->BEntityID);
             if (_pEntity && _pEntity->HasComponent(S_CascadeBComponentClass))
             {
                 m_pState->ARemovedB = _pEntity->RemoveComponent(S_CascadeBComponentClass, m_pState->RemoveError);
@@ -789,7 +864,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++m_pState->ADestroyImmediateCount;
         }
@@ -821,7 +897,8 @@ namespace
             IN const iCAX::Behaviour::CComponentDestroyInfo&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++m_pState->BDestroyCount;
         }
@@ -830,7 +907,8 @@ namespace
             IN iCAX::Database::CComponentBase&,
             IN const iCAX::Application::IApplicationContext&,
             IN const iCAX::Product::IProductContext&,
-            IN iCAX::Project::IProjectContext&) override
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
         {
             ++m_pState->BDestroyImmediateCount;
         }
@@ -846,11 +924,13 @@ namespace
             IN iCAX::Behaviour::IUniverse& Universe_,
             IN const iCAX::Application::IApplicationContext& ApplicationContext_,
             IN const iCAX::Product::IProductContext& ProductContext_,
-            IN iCAX::Project::IProjectContext& ProjectContext_)
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_)
             : m_Universe(Universe_)
             , m_ApplicationContext(ApplicationContext_)
             , m_ProductContext(ProductContext_)
             , m_ProjectContext(ProjectContext_)
+            , m_SceneContext(SceneContext_)
         {
         }
 
@@ -858,14 +938,24 @@ namespace
             IN void*,
             IN const iCAX::Database::RepositoryEventArgs& Args_) override
         {
-            m_Universe.OnRepositoryChanging(m_ApplicationContext, m_ProductContext, m_ProjectContext, Args_);
+            m_Universe.OnRepositoryChanging(
+                m_ApplicationContext,
+                m_ProductContext,
+                m_ProjectContext,
+                m_SceneContext,
+                Args_);
         }
 
         void OnRepositoryChanged(
             IN void*,
             IN const iCAX::Database::RepositoryEventArgs& Args_) override
         {
-            m_Universe.OnRepositoryChanged(m_ApplicationContext, m_ProductContext, m_ProjectContext, Args_);
+            m_Universe.OnRepositoryChanged(
+                m_ApplicationContext,
+                m_ProductContext,
+                m_ProjectContext,
+                m_SceneContext,
+                Args_);
         }
 
     private:
@@ -873,6 +963,7 @@ namespace
         const iCAX::Application::IApplicationContext& m_ApplicationContext;
         const iCAX::Product::IProductContext& m_ProductContext;
         iCAX::Project::IProjectContext& m_ProjectContext;
+        iCAX::Project::ISceneContext& m_SceneContext;
     };
 
     std::shared_ptr<iCAX::Database::IRepository> CreateRepository()
@@ -1017,7 +1108,7 @@ TEST(BehaviourDispatcherTest, TickUsesBehaviourScheduleOrder)
     (void)_pEntity->AddComponent(S_OrderMiddleComponentClass);
     (void)_pEntity->AddComponent(S_OrderEarlyComponentClass);
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     const std::vector<std::string> _Expected = {
         "Early.Update",
@@ -1045,7 +1136,8 @@ TEST(BehaviourDispatcherTest, BatchAwakeAndModifiedUseBehaviourScheduleOrder)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1100,7 +1192,8 @@ TEST(BehaviourDispatcherTest, EqualScheduleUsesBindingOrder)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1116,7 +1209,7 @@ TEST(BehaviourDispatcherTest, EqualScheduleUsesBindingOrder)
     EXPECT_EQ(_ExpectedAwake, *_pLog);
 
     _pLog->clear();
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     const std::vector<std::string> _ExpectedUpdate = {
         "BindingSecond.Update",
@@ -1154,7 +1247,8 @@ TEST(BehaviourUniverseTest, BatchChangesDispatchLifecycleAndRefreshView)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1171,7 +1265,7 @@ TEST(BehaviourUniverseTest, BatchChangesDispatchLifecycleAndRefreshView)
     EXPECT_EQ(7, _pBehaviour->LastAwakeProperties[S_ValueProperty].To<int>());
     EXPECT_EQ(1u, _pRepository->GetView().GetEntities(S_TestComponentClass).size());
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
     EXPECT_EQ(1, _pBehaviour->StartCount);
 
     _pRepository->BeginBatch();
@@ -1198,7 +1292,7 @@ TEST(BehaviourUniverseTest, BatchChangesDispatchLifecycleAndRefreshView)
     EXPECT_EQ(1, _pBehaviour->DestroyImmediateCount);
     EXPECT_EQ(0, _pBehaviour->DestroyCount);
     EXPECT_EQ(9, _pBehaviour->LastDestroyImmediateProperties[S_ValueProperty].To<int>());
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.032);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
     EXPECT_EQ(9, _pBehaviour->LastDestroyProperties[S_ValueProperty].To<int>());
     EXPECT_TRUE(_pRepository->GetView().GetEntities(S_TestComponentClass).empty());
@@ -1218,7 +1312,8 @@ TEST(BehaviourUniverseTest, SingleModifyDispatchesModifyingBeforeModified)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1256,7 +1351,8 @@ TEST(BehaviourUniverseTest, SingleRemoveDispatchesDestroyImmediateThenDestroyOnN
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1270,7 +1366,7 @@ TEST(BehaviourUniverseTest, SingleRemoveDispatchesDestroyImmediateThenDestroyOnN
     EXPECT_EQ(0, _pBehaviour->DestroyCount);
     EXPECT_EQ(31, _pBehaviour->LastDestroyImmediateProperties[S_ValueProperty].To<int>());
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     EXPECT_EQ(1, _pBehaviour->DestroyImmediateCount);
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
@@ -1299,7 +1395,8 @@ TEST(BehaviourUniverseTest, DeleteEntityDispatchesComponentDestroyLifecycle)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     ASSERT_TRUE(_pRepository->DeleteEntity(_EntityID, _strError)) << _strError;
@@ -1308,7 +1405,7 @@ TEST(BehaviourUniverseTest, DeleteEntityDispatchesComponentDestroyLifecycle)
     EXPECT_EQ(0, _pBehaviour->DestroyCount);
     EXPECT_EQ(71, _pBehaviour->LastDestroyImmediateProperties[S_ValueProperty].To<int>());
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
     EXPECT_EQ(_EntityID, _pBehaviour->LastDestroyEntityID);
@@ -1335,7 +1432,8 @@ TEST(BehaviourUniverseTest, BatchRemoveThenAddDispatchesDestroyAndAwakeInOrder)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     _pRepository->BeginBatch();
@@ -1351,7 +1449,7 @@ TEST(BehaviourUniverseTest, BatchRemoveThenAddDispatchesDestroyAndAwakeInOrder)
     EXPECT_EQ(41, _pBehaviour->LastDestroyImmediateProperties[S_ValueProperty].To<int>());
     EXPECT_FALSE(_pBehaviour->LastAwakeProperties.contains(S_ValueProperty));
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
     EXPECT_EQ(41, _pBehaviour->LastDestroyProperties[S_ValueProperty].To<int>());
@@ -1376,7 +1474,8 @@ TEST(BehaviourUniverseTest, BatchModifyThenRemoveDispatchesOnlyDestroyWithRemove
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     _pRepository->BeginBatch();
@@ -1389,7 +1488,7 @@ TEST(BehaviourUniverseTest, BatchModifyThenRemoveDispatchesOnlyDestroyWithRemove
     EXPECT_EQ(1, _pBehaviour->DestroyImmediateCount);
     EXPECT_EQ(52, _pBehaviour->LastDestroyImmediateProperties[S_ValueProperty].To<int>());
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
     EXPECT_EQ(52, _pBehaviour->LastDestroyProperties[S_ValueProperty].To<int>());
@@ -1414,7 +1513,8 @@ TEST(BehaviourUniverseTest, BatchRemoveAddModifyDispatchesDestroyAndAwakeWithout
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     _pRepository->BeginBatch();
@@ -1430,7 +1530,7 @@ TEST(BehaviourUniverseTest, BatchRemoveAddModifyDispatchesDestroyAndAwakeWithout
     EXPECT_EQ(61, _pBehaviour->LastDestroyImmediateProperties[S_ValueProperty].To<int>());
     EXPECT_EQ(62, _pBehaviour->LastAwakeProperties[S_ValueProperty].To<int>());
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
     EXPECT_EQ(61, _pBehaviour->LastDestroyProperties[S_ValueProperty].To<int>());
@@ -1452,7 +1552,8 @@ TEST(BehaviourUniverseTest, DestroyFlushProcessesCascadeRemovalInSameTick)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntityA = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1469,7 +1570,7 @@ TEST(BehaviourUniverseTest, DestroyFlushProcessesCascadeRemovalInSameTick)
     EXPECT_EQ(0, _pState->BDestroyImmediateCount);
     EXPECT_EQ(0, _pState->BDestroyCount);
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     EXPECT_EQ(1, _pState->ADestroyImmediateCount);
     EXPECT_EQ(1, _pState->ADestroyCount);
@@ -1478,7 +1579,7 @@ TEST(BehaviourUniverseTest, DestroyFlushProcessesCascadeRemovalInSameTick)
     EXPECT_EQ(1, _pState->BDestroyCount);
     EXPECT_FALSE(_pEntityB->HasComponent(S_CascadeBComponentClass));
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.032);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
 
     EXPECT_EQ(1, _pState->ADestroyCount);
     EXPECT_EQ(1, _pState->BDestroyCount);
@@ -1498,7 +1599,8 @@ TEST(BehaviourUniverseTest, NetEmptyBatchDoesNotDispatchLifecycle)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1526,7 +1628,7 @@ TEST(BehaviourUniverseTest, TickUsesProvidedFrameTime)
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
     (void)_pEntity->AddComponent(S_TestComponentClass);
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.25, 1.5);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.25, 1.5);
 
     EXPECT_EQ(1, _pBehaviour->UpdateCount);
     EXPECT_DOUBLE_EQ(0.25, _pBehaviour->LastDeltaTime);
@@ -1547,14 +1649,15 @@ TEST(BehaviourUniverseTest, DisabledComponentSkipsFrameUpdateUntilEnabled)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
     auto _pComponent = _pEntity->AddComponent(S_TestComponentClass);
     ASSERT_TRUE(_pComponent->IsEnable());
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
     EXPECT_EQ(1, _pBehaviour->StartCount);
     EXPECT_EQ(1, _pBehaviour->PreUpdateCount);
     EXPECT_EQ(1, _pBehaviour->UpdateCount);
@@ -1564,7 +1667,7 @@ TEST(BehaviourUniverseTest, DisabledComponentSkipsFrameUpdateUntilEnabled)
     EXPECT_FALSE(_pComponent->IsEnable());
     EXPECT_EQ(1, _pBehaviour->DisableCount);
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.032);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
     EXPECT_EQ(1, _pBehaviour->StartCount);
     EXPECT_EQ(1, _pBehaviour->PreUpdateCount);
     EXPECT_EQ(1, _pBehaviour->UpdateCount);
@@ -1574,7 +1677,7 @@ TEST(BehaviourUniverseTest, DisabledComponentSkipsFrameUpdateUntilEnabled)
     EXPECT_TRUE(_pComponent->IsEnable());
     EXPECT_EQ(1, _pBehaviour->EnableCount);
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.048);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.048);
     EXPECT_EQ(1, _pBehaviour->StartCount);
     EXPECT_EQ(2, _pBehaviour->PreUpdateCount);
     EXPECT_EQ(2, _pBehaviour->UpdateCount);
@@ -1595,7 +1698,8 @@ TEST(BehaviourUniverseTest, PauseFrameUpdateSkipsOnlyFrameCallbacks)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1610,7 +1714,7 @@ TEST(BehaviourUniverseTest, PauseFrameUpdateSkipsOnlyFrameCallbacks)
     ASSERT_TRUE(_pComponent->SetProperty(S_ValueProperty, iCAX::Data::PropertyValue(21), _strError)) << _strError;
     _pComponent->Disable();
     _pComponent->Enable();
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
 
     EXPECT_EQ(1, _pBehaviour->ModifyingCount);
     EXPECT_EQ(1, _pBehaviour->ModifiedCount);
@@ -1625,7 +1729,7 @@ TEST(BehaviourUniverseTest, PauseFrameUpdateSkipsOnlyFrameCallbacks)
     EXPECT_FALSE(_pUniverse->IsFrameUpdatePaused<CCountingBehaviour>());
     EXPECT_TRUE(_pUniverse->GetFrameUpdatePausedBehaviours().empty());
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.032);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
 
     EXPECT_EQ(1, _pBehaviour->StartCount);
     EXPECT_EQ(1, _pBehaviour->PreUpdateCount);
@@ -1647,7 +1751,8 @@ TEST(BehaviourUniverseTest, BatchEnableDisableDispatchesOnlyNetStateChange)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1700,7 +1805,8 @@ TEST(BehaviourUniverseShutdownTest, RemovingRepositoryForwarderStopsEventDispatc
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
@@ -1733,14 +1839,15 @@ TEST(BehaviourUniverseShutdownTest, ForcedCleanupInvalidatesUniverseAndStopsDisp
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
     auto _pComponent = _pEntity->AddComponent(S_TestComponentClass);
     EXPECT_EQ(1, _pBehaviour->AwakeCount);
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
     EXPECT_EQ(1, _pBehaviour->StartCount);
     EXPECT_EQ(1, _pBehaviour->UpdateCount);
 
@@ -1754,7 +1861,7 @@ TEST(BehaviourUniverseShutdownTest, ForcedCleanupInvalidatesUniverseAndStopsDisp
 
     std::string _strError;
     ASSERT_TRUE(_pComponent->SetProperty(S_ValueProperty, iCAX::Data::PropertyValue(12), _strError)) << _strError;
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.032);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
 
     EXPECT_EQ(1, _pBehaviour->AwakeCount);
     EXPECT_EQ(0, _pBehaviour->ModifyingCount);
@@ -1777,14 +1884,15 @@ TEST(BehaviourUniverseShutdownTest, UnbindBehaviourStopsEventAndTickDispatch)
         *_pUniverse,
         _Runtime.Application,
         _Runtime.Product,
-        _Runtime.Project);
+        _Runtime.Project,
+        _Runtime.Scene);
     _pRepository->AddObserver(_pForwarder);
 
     auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
     auto _pComponent = _pEntity->AddComponent(S_TestComponentClass);
     EXPECT_EQ(1, _pBehaviour->AwakeCount);
 
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.016);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
     EXPECT_EQ(1, _pBehaviour->UpdateCount);
 
     _pUniverse->UnbindBehaviour<CCountingBehaviour>();
@@ -1798,7 +1906,7 @@ TEST(BehaviourUniverseShutdownTest, UnbindBehaviourStopsEventAndTickDispatch)
     _pComponent->Enable();
     _pComponent->Disable();
     ASSERT_TRUE(_pEntity->RemoveComponent(S_TestComponentClass, _strError)) << _strError;
-    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, 0.016, 0.032);
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
 
     EXPECT_EQ(1, _pBehaviour->AwakeCount);
     EXPECT_EQ(0, _pBehaviour->ModifyingCount);
@@ -1824,7 +1932,8 @@ TEST(BehaviourUniverseShutdownTest, ExpiredRepositoryForwarderDoesNotKeepUnivers
             *_pUniverse,
             _Runtime.Application,
             _Runtime.Product,
-            _Runtime.Project);
+            _Runtime.Project,
+        _Runtime.Scene);
         _pRepository->AddObserver(_pForwarder);
     }
 

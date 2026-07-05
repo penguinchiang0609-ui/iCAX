@@ -14,7 +14,7 @@ namespace iCAX
 {
     namespace Project
     {
-        class IProjectContext;
+        class ISceneContext;
     }
 
     namespace CAM
@@ -66,11 +66,11 @@ namespace iCAX
 
         public:
             virtual SToolpathOrderPlan BuildOrderPlan(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SToolpathOrderRequest& Request_) = 0;
 
             virtual bool ApplyOrderPlan(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SToolpathOrderPlan& Plan_,
                 OUT std::string& strError_) = 0;
         };

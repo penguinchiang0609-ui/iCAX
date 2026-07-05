@@ -195,9 +195,10 @@ namespace
 
     void _RequireApplicationMailboxContext(
         IN const iCAX::Product::IProductContext* pProductContext_,
-        IN const iCAX::Project::IProjectContext* pProjectContext_)
+        IN const iCAX::Project::IProjectContext* pProjectContext_,
+        IN const iCAX::Project::ISceneContext* pSceneContext_)
     {
-        if (pProductContext_ || pProjectContext_)
+        if (pProductContext_ || pProjectContext_ || pSceneContext_)
         {
             throw std::invalid_argument("ApplicationHost command must be sent to the application mailbox");
         }
@@ -458,7 +459,7 @@ void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
         while (!m_bStopRequested.load(std::memory_order_acquire))
         {
             SetPhase(EApplicationHostPhase::Running);
-            // 宿主线程只处理应用级邮箱；产品邮箱由 ProductRuntime 线程处理，项目邮箱由各 Project 工作线程处理。
+            // 宿主线程只处理应用级邮箱；产品邮箱由 ProductRuntime 线程处理，Scene 邮箱由各 Scene 工作线程处理。
             MainLoop();
             _NextFrameTime += _FrameInterval;
             {
@@ -707,6 +708,7 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
         *m_pApplicationContext,
         nullptr,
         nullptr,
+        nullptr,
         [this]() { return AllocateBackendMailID(); });
 }
 
@@ -738,8 +740,9 @@ void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kAppListProductsName,
@@ -747,8 +750,9 @@ void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleListProductsCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleListProductsCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kAppStartProductName,
@@ -756,8 +760,9 @@ void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleStartProductCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleStartProductCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kAppStopProductName,
@@ -765,8 +770,9 @@ void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleStopProductCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleStopProductCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kAppResolveProjectFileName,
@@ -774,8 +780,9 @@ void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleResolveProjectFileCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleResolveProjectFileCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kAppOpenProjectFileName,
@@ -783,8 +790,9 @@ void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleOpenProjectFileCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleOpenProjectFileCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
     auto _pCommandTarget = std::make_shared<CStaticApplicationCommandTarget>(kAppCommandMainName, std::move(_Commands));
@@ -798,9 +806,10 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleG
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_);
+    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
 }
 
@@ -808,9 +817,10 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleL
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_);
+    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
 }
 
@@ -818,9 +828,10 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleS
     IN const iCAX::Command::CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_);
+    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     auto _pRuntime = StartProduct(_GetOptionalString(_Payload, "productId"));
 
@@ -835,9 +846,10 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleS
     IN const iCAX::Command::CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_);
+    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     const auto _ProductID = _GetOptionalString(_Payload, "productId");
     if (_ProductID.empty())
@@ -852,9 +864,10 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleR
     IN const iCAX::Command::CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_);
+    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     auto _ResolveResult = ResolveProjectFileProduct(_GetRequiredString(_Payload, "projectPath"));
 
@@ -868,9 +881,10 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleO
     IN const iCAX::Command::CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_);
+    _RequireApplicationMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
 
     const auto _ProjectPath = _GetRequiredString(_Payload, "projectPath");

@@ -12,7 +12,7 @@ namespace iCAX
         * @brief 宇宙
         * @remark 
         *   Universe 是行为运行容器，不拥有 Repository，也不代表 Project。
-        *   Project 线程负责驱动 Universe；Universe 不提供跨线程同步。
+        *   Scene 线程负责驱动 Universe；Universe 不提供跨线程同步。
         */
         class CUniverse final : public IUniverse
         {
@@ -46,6 +46,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_) override;
 
@@ -75,6 +76,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const iCAX::Database::RepositoryEventArgs& Args_) override;
 
             /*
@@ -85,6 +87,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const iCAX::Database::RepositoryEventArgs& Args_) override;
 
             virtual bool BindBehaviourByIndex(IN const std::type_index& nType_) override;

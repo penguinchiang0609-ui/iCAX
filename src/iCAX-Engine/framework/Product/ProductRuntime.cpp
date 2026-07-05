@@ -360,9 +360,10 @@ namespace
 
     void _RequireProductMailboxContext(
         IN const iCAX::Product::IProductContext* pProductContext_,
-        IN const iCAX::Project::IProjectContext* pProjectContext_)
+        IN const iCAX::Project::IProjectContext* pProjectContext_,
+        IN const iCAX::Project::ISceneContext* pSceneContext_)
     {
-        if (pProjectContext_)
+        if (pProjectContext_ || pSceneContext_)
         {
             throw std::invalid_argument("Product command must be sent to the product mailbox");
         }
@@ -374,7 +375,8 @@ namespace
 
     void _RequireProjectMailboxContext(
         IN const iCAX::Product::IProductContext* pProductContext_,
-        IN const iCAX::Project::IProjectContext* pProjectContext_)
+        IN const iCAX::Project::IProjectContext* pProjectContext_,
+        IN const iCAX::Project::ISceneContext* pSceneContext_)
     {
         if (!pProductContext_)
         {
@@ -382,7 +384,11 @@ namespace
         }
         if (!pProjectContext_)
         {
-            throw std::invalid_argument("Project command must be sent to the project mailbox");
+            throw std::invalid_argument("Project command context is missing ProjectContext");
+        }
+        if (!pSceneContext_)
+        {
+            throw std::invalid_argument("Project command context is missing SceneContext");
         }
     }
 
@@ -896,8 +902,8 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     _CatalogInfo.bEnablePDOHub = m_Definition.bEnablePDOHub;
     _CatalogInfo.PDOHubCreateInfo = m_Definition.PDOHubCreateInfo;
     const auto _ModulePaths = m_LoadedModulePaths;
-    // 每个 Project 都创建自己的资源 loader registry。
-    // registry 内容来自产品模块回放，但资源缓存和加载器集合归项目隔离。
+    // 每个 Scene 都创建自己的资源 loader registry。
+    // registry 内容来自产品模块回放，但资源缓存和加载器集合归 Scene 隔离。
     _CatalogInfo.ResourceLoaderRegistryFactory = [_ModulePaths]() {
         return _CreateResourceLoaderRegistryFromModulePaths(_ModulePaths);
     };
@@ -916,6 +922,7 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
         if (!_pProject->GetQuickSaveLogPath().empty())
         {
             _pProject->ReplayQuickSaveLog(_QuickSaveLogMagic, _QuickSaveLogVersion);
+            _pProject->OpenQuickSaveLog(false, _QuickSaveLogMagic, _QuickSaveLogVersion);
         }
         {
             std::lock_guard<std::mutex> _Lock(m_ProjectCatalogMutex);
@@ -929,10 +936,6 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
         }
         RegisterProjectRuntime(_pProjectRuntime);
         StartProject(_pProjectRuntime);
-        if (!_pProject->GetQuickSaveLogPath().empty())
-        {
-            _pProject->OpenQuickSaveLog(false, _QuickSaveLogMagic, _QuickSaveLogVersion);
-        }
         RecordRecentProject(_ProjectPath, _ProjectName);
     }
     catch (...)
@@ -1278,10 +1281,12 @@ void iCAX::Product::CProductRuntime::DispatchProjectMails(
     }
 
     iCAX::Project::IProjectContext* _pProjectContext = nullptr;
+    iCAX::Project::ISceneContext* _pSceneContext = nullptr;
     auto _pLocalProject = pProjectRuntime_ ? pProjectRuntime_->GetLocalProject() : nullptr;
     if (_pLocalProject)
     {
         _pProjectContext = static_cast<iCAX::Project::IProjectContext*>(_pLocalProject.get());
+        _pSceneContext = &_pLocalProject->GetMainScene();
     }
 
     m_pMailCommandHandler->DispatchAvailableMails(
@@ -1290,6 +1295,7 @@ void iCAX::Product::CProductRuntime::DispatchProjectMails(
         *m_pApplicationContext,
         static_cast<iCAX::Product::IProductContext*>(this),
         _pProjectContext,
+        _pSceneContext,
         [this]() { return AllocateBackendMailID(); });
 }
 
@@ -1312,7 +1318,7 @@ void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX:
             {
                 return;
             }
-            // 项目线程每帧进入这里，产品 runtime 只做邮件分发，不直接驱动项目数据。
+            // 主 Scene 线程每帧进入这里，产品 runtime 只做邮件分发，不直接驱动 Scene 数据。
             _pRuntime->DispatchProjectMails(BackendPostOffice_, _pProjectRuntime);
         });
     pProjectRuntime_->Start();
@@ -1425,8 +1431,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kProductListProjectCatalogsName,
@@ -1434,8 +1441,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleListProjectCatalogsCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleListProjectCatalogsCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kProductOpenProjectCatalogName,
@@ -1443,8 +1451,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleOpenProjectCatalogCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleOpenProjectCatalogCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _Commands.emplace_back(
         kProductCloseProjectCatalogName,
@@ -1452,8 +1461,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleCloseProjectCatalogCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleCloseProjectCatalogCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
     auto _pCommandTarget = std::make_shared<CStaticProductCommandTarget>(kProductCommandMainName, std::move(_Commands));
@@ -1469,8 +1479,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleProjectGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleProjectGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _ProjectCommands.emplace_back(
         iCAX::Project::kProjectUndoName,
@@ -1478,8 +1489,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleProjectUndoCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleProjectUndoCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _ProjectCommands.emplace_back(
         iCAX::Project::kProjectRedoName,
@@ -1487,8 +1499,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleProjectRedoCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleProjectRedoCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
     _ProjectCommands.emplace_back(
         iCAX::Project::kProjectGetUndoRedoStateName,
@@ -1496,8 +1509,9 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
-            IN iCAX::Project::IProjectContext* pProjectContext_) {
-            return HandleProjectGetUndoRedoStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleProjectGetUndoRedoStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
     auto _pProjectCommandTarget = std::make_shared<CStaticProductCommandTarget>(
@@ -1513,9 +1527,10 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleGetStateCo
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductMailboxContext(pProductContext_, pProjectContext_);
+    _RequireProductMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 
@@ -1523,9 +1538,10 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleListProjec
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductMailboxContext(pProductContext_, pProjectContext_);
+    _RequireProductMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 
@@ -1533,9 +1549,10 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleOpenProjec
     IN const iCAX::Command::CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductMailboxContext(pProductContext_, pProjectContext_);
+    _RequireProductMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
 
     auto _pCatalog = OpenProjectCatalog(
@@ -1556,9 +1573,10 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleCloseProje
     IN const iCAX::Command::CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductMailboxContext(pProductContext_, pProjectContext_);
+    _RequireProductMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     (void)CloseProjectCatalog(_GetRequiredUUID(_Payload, "catalogId"));
     return _MakeProductPayloadResponse(BuildProductStatePayload());
@@ -1568,15 +1586,16 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGet
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_);
+    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
 
     auto _Payload = _MakeProjectPayload(FindProjectRuntime(pProjectContext_->GetProjectID()));
     auto _Project = _Payload.Is<iCAX::Data::ObjectMap>()
         ? _Payload.To<iCAX::Data::ObjectMap>()
         : iCAX::Data::ObjectMap{};
-    _Project["undoRedo"] = _MakeUndoRedoStatePayload(pProjectContext_->Database());
+    _Project["undoRedo"] = _MakeUndoRedoStatePayload(pSceneContext_->Database());
     return _MakeProductPayloadResponse(iCAX::Data::Variant(_Project));
 }
 
@@ -1584,21 +1603,23 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGet
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_);
-    return _MakeProductPayloadResponse(_MakeUndoRedoStatePayload(pProjectContext_->Database()));
+    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
+    return _MakeProductPayloadResponse(_MakeUndoRedoStatePayload(pSceneContext_->Database()));
 }
 
 iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectUndoCommand(
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_);
+    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
 
-    auto& _Repository = pProjectContext_->Database();
+    auto& _Repository = pSceneContext_->Database();
     const auto _Applied = _Repository.Undo();
     auto _Payload = _MakeUndoRedoStatePayload(_Repository).To<iCAX::Data::ObjectMap>();
     _Payload["applied"] = _Applied;
@@ -1609,11 +1630,12 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectRed
     IN const iCAX::Command::CCommandRequest&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_);
+    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
 
-    auto& _Repository = pProjectContext_->Database();
+    auto& _Repository = pSceneContext_->Database();
     const auto _Applied = _Repository.Redo();
     auto _Payload = _MakeUndoRedoStatePayload(_Repository).To<iCAX::Data::ObjectMap>();
     _Payload["applied"] = _Applied;

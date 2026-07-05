@@ -19,7 +19,7 @@ namespace iCAX
         /*
         * @brief PDORenderService 发给前端的事件码。
         * @details
-        *   事件通过项目 mailbox 发送，payload 使用 UTF-8 JSON 文本。
+        *   事件通过 Scene mailbox 发送，payload 使用 UTF-8 JSON 文本。
         *   前端必须把 PDOID 当作 slot 身份，并在 shared memory arena 中按 PDOID 解析当前 offset，
         *   不允许长期缓存 offset。碎片整理或扩容后，同一个 PDOID 对应的 offset 可能变化。
         */
@@ -37,8 +37,8 @@ namespace iCAX
         /*
         * @brief 基于 PDO 的 RenderService 实现。
         * @details
-        *   该服务按 ProjectID + RenderSceneID 保存 RenderData。Update 时通过 ProjectContext 获取当前项目 PDOHub，
-        *   按当前 RenderData 动态分配/释放 slot，并把数据写入目标 slot；服务不会长期持有 Project PDOHub 指针。
+        *   该服务按 ProjectID + RenderSceneID 保存 RenderData。Update 时通过 SceneContext 获取当前 Scene PDOHub，
+        *   按当前 RenderData 动态分配/释放 slot，并把数据写入目标 slot；服务不会长期持有 Scene PDOHub 指针。
         */
         class _PDO_RENDER_SERVICE_EXP CPDORenderService final : public iCAX::Render::IRenderService
         {
@@ -91,6 +91,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_) override;
 
@@ -167,19 +168,24 @@ namespace iCAX
             * @brief 通知前端 PDO arena 即将开始碎片整理。
             * @details 前端收到后应暂停直接缓存 offset 的读写逻辑，只保留 PDOID，并等待 DefragEnd 后重新解析。
             */
-            void NotifyPDODefragBegin(IN iCAX::Project::IProjectContext& ProjectContext_) const;
+            void NotifyPDODefragBegin(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Project::ISceneContext& SceneContext_) const;
 
             /*
             * @brief 通知前端某个 PDO slot 在 arena 中被移动。
             */
             void NotifyPDOSlotMoved(
-                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN iCAX::PDO::PDOID nPDOID_) const;
 
             /*
             * @brief 通知前端 PDO arena 碎片整理结束。
             */
-            void NotifyPDODefragEnd(IN iCAX::Project::IProjectContext& ProjectContext_) const;
+            void NotifyPDODefragEnd(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Project::ISceneContext& SceneContext_) const;
 
             /*
             * @brief 将指定 mesh 写入一个 RenderPDO mesh slot。
@@ -241,17 +247,18 @@ namespace iCAX
             void SynchronizeScenePDOOutput(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN const iCAX::Render::SRenderSceneSnapshot* pScene_,
-                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN OUT SScenePDOOutputState& State_) const;
 
             void FreeScenePDOOutput(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN OUT SScenePDOOutputState& State_) const;
 
             void SendSlotEvent(
-                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN uint64_t nEventTypeCode_,
                 IN const char* pEventName_,
                 IN const char* pSlotRole_,
@@ -263,7 +270,8 @@ namespace iCAX
                 IN uint64_t nPayloadCapacity_) const;
 
             void SendDefragEvent(
-                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN uint64_t nEventTypeCode_,
                 IN const char* pEventName_,
                 IN iCAX::PDO::PDOID nPDOID_) const;

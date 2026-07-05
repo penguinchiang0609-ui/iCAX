@@ -17,10 +17,10 @@ namespace iCAX
     namespace Resource
     {
         /*
-        * @brief 项目级资源池。
+        * @brief Scene 级资源池。
         * @details
         *   ResourcePool 保存资源清单和已加载对象。它不负责加载逻辑，加载由 ResourceLibrary 或 Resource::Load 完成。
-        *   同一个 Project 应持有自己的 ResourcePool/ResourceLibrary，以隔离不同项目的资源缓存和持久化清单。
+        *   同一个 Scene 应持有自己的 ResourcePool/ResourceLibrary，以隔离不同 Scene 的资源缓存和持久化清单。
         */
         class _RESOURCES_EXP CResourcePool final
         {

@@ -58,7 +58,8 @@ iCAX::Command::CCommandResponse iCAX::Command::CCommandTarget::Handle(
     IN const CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext& ApplicationContext_,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_)
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
     if (Request_.Route.nMainCode != m_nMainCode)
     {
@@ -84,7 +85,7 @@ iCAX::Command::CCommandResponse iCAX::Command::CCommandTarget::Handle(
         _Func = _Iter->second.Func;
     }
 
-    return _Func(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+    return _Func(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
 }
 
 bool iCAX::Command::CCommandTarget::RegisterSubCommand(

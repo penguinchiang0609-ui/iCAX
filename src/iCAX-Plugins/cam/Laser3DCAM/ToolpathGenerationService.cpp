@@ -3,7 +3,7 @@
 
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
-#include "ProjectContext/IProjectContext.h"
+#include "ProjectContext/ISceneContext.h"
 #include "Services/ServicesHelper.h"
 #include "ToolpathComponents.h"
 
@@ -30,7 +30,7 @@ namespace iCAX
             }
 
             SGeneratedToolpath Generate(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SToolpathGenerationRequest& Request_) override
             {
                 if (Request_.WorkpieceEntityID.is_nil())
@@ -42,7 +42,7 @@ namespace iCAX
                     throw std::invalid_argument("Toolpath generation requires feature kind");
                 }
 
-                auto _pWorkpieceEntity = Project_.Database().GetEntity(Request_.WorkpieceEntityID);
+                auto _pWorkpieceEntity = Scene_.Database().GetEntity(Request_.WorkpieceEntityID);
                 if (!_pWorkpieceEntity || !_pWorkpieceEntity->GetComponent<CLaserWorkpieceComponent>())
                 {
                     throw std::invalid_argument("Toolpath generation workpiece does not exist");

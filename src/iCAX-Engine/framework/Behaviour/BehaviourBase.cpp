@@ -6,27 +6,30 @@ void iCAX::Behaviour::CBehaviourBase::Awake(
     IN iCAX::Database::CComponentBase& Component_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnAwake(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnAwake(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Start(
     IN iCAX::Database::CComponentBase& Component_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnStart(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnStart(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Enable(
     IN iCAX::Database::CComponentBase& Component_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnEnable(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnEnable(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::PreUpdate(
@@ -34,10 +37,11 @@ void iCAX::Behaviour::CBehaviourBase::PreUpdate(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const double& nDeltaTime_,
     IN const double& nTotalTime_)
 {
-    OnPreUpdate(Component_, ApplicationContext_, ProductContext_, ProjectContext_, nDeltaTime_, nTotalTime_);
+    OnPreUpdate(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Update(
@@ -45,10 +49,11 @@ void iCAX::Behaviour::CBehaviourBase::Update(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const double& nDeltaTime_,
     IN const double& nTotalTime_)
 {
-    OnUpdate(Component_, ApplicationContext_, ProductContext_, ProjectContext_, nDeltaTime_, nTotalTime_);
+    OnUpdate(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::PostUpdate(
@@ -56,37 +61,41 @@ void iCAX::Behaviour::CBehaviourBase::PostUpdate(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const double& nDeltaTime_,
     IN const double& nTotalTime_)
 {
-    OnPostUpdate(Component_, ApplicationContext_, ProductContext_, ProjectContext_, nDeltaTime_, nTotalTime_);
+    OnPostUpdate(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Disable(
     IN iCAX::Database::CComponentBase& Component_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnDisable(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnDisable(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Destroy(
     IN const CComponentDestroyInfo& DestroyInfo_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnDestroy(DestroyInfo_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnDestroy(DestroyInfo_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::DestroyImmediate(
     IN iCAX::Database::CComponentBase& Component_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnDestroyImmediate(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnDestroyImmediate(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Modifying(
@@ -94,9 +103,10 @@ void iCAX::Behaviour::CBehaviourBase::Modifying(
     IN const iCAX::Data::PropertySet& NewValues_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnModifying(Component_, NewValues_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnModifying(Component_, NewValues_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Modified(
@@ -104,9 +114,10 @@ void iCAX::Behaviour::CBehaviourBase::Modified(
     IN const iCAX::Data::PropertySet& NewValues_,
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_)
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_)
 {
-    OnModified(Component_, NewValues_, ApplicationContext_, ProductContext_, ProjectContext_);
+    OnModified(Component_, NewValues_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 }
 
 void iCAX::Behaviour::CBehaviourBase::Detach()

@@ -17,7 +17,8 @@ iCAX::Command::CCommandResponse iCAX::Command::CCommandDispatcher::Dispatch(
     IN const CCommandRequest& Request_,
     IN iCAX::Application::IApplicationContext& ApplicationContext_,
     IN iCAX::Product::IProductContext* pProductContext_,
-    IN iCAX::Project::IProjectContext* pProjectContext_) const
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_) const
 {
     CCommandResponse _Response;
     _Response.nCommandID = Request_.nCommandID;
@@ -39,7 +40,12 @@ iCAX::Command::CCommandResponse iCAX::Command::CCommandDispatcher::Dispatch(
         return _Response;
     }
 
-    _Response = _pCommandTarget->Handle(Request_, ApplicationContext_, pProductContext_, pProjectContext_);
+    _Response = _pCommandTarget->Handle(
+        Request_,
+        ApplicationContext_,
+        pProductContext_,
+        pProjectContext_,
+        pSceneContext_);
     // handler 可以只填业务状态和 Payload；请求身份字段由 Dispatcher 统一回填，保证响应可被调用方关联。
     _Response.nCommandID = Request_.nCommandID;
     _Response.nOriginID = Request_.nOriginID;

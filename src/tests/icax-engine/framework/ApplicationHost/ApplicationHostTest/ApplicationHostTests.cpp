@@ -39,7 +39,8 @@ namespace
                     IN const iCAX::Command::CCommandRequest&,
                     IN iCAX::Application::IApplicationContext&,
                     IN iCAX::Product::IProductContext*,
-                    IN iCAX::Project::IProjectContext*) {
+                    IN iCAX::Project::IProjectContext*,
+                    IN iCAX::Project::ISceneContext*) {
                     return iCAX::Command::CCommandResponse{};
                 });
         }

@@ -15,14 +15,14 @@ namespace iCAX
         struct _PROJECT_EXP CProjectFrameTime final
         {
             double DeltaTime = 0.0; //!< 当前帧距离上一帧的秒数。
-            double TotalTime = 0.0; //!< Project 调度器启动或重置后的累计秒数。
+            double TotalTime = 0.0; //!< Scene 调度器启动或重置后的累计秒数。
         };
 
         /*
-        * @brief Project 运行时调度器。
+        * @brief Scene 运行时调度器。
         * @details
-        *   Project 是 Universe Tick 的驱动方，因此帧时间统计和下一帧唤醒时间也属于 Project。
-        *   Universe 只消费 Project 传入的 DeltaTime/TotalTime，不拥有计时器。
+        *   Scene 是 Universe Tick 的驱动方，因此帧时间统计和下一帧唤醒时间也属于 Scene。
+        *   Universe 只消费 Scene 传入的 DeltaTime/TotalTime，不拥有计时器。
         */
         class _PROJECT_EXP CProjectRuntimeScheduler final
         {
@@ -53,7 +53,7 @@ namespace iCAX
 
             /*
             * @brief 如果当前线程已经明显落后目标帧时间，则丢弃积压帧。
-            * @details 避免项目线程在长耗时后忙追历史时间点。
+            * @details 避免 Scene 线程在长耗时后忙追历史时间点。
             */
             void DropBacklogIfNeeded();
 

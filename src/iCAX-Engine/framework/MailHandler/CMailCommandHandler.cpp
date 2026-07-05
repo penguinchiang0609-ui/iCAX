@@ -69,6 +69,7 @@ size_t iCAX::MailHandler::CMailCommandHandler::DispatchAvailableMails(
     IN iCAX::Application::IApplicationContext& ApplicationContext_,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_,
     IN const MailIDAllocator& AllocateResponseMailID_) const
 {
     if (!PostOffice_.IsValid())
@@ -91,7 +92,8 @@ size_t iCAX::MailHandler::CMailCommandHandler::DispatchAvailableMails(
             _Request,
             ApplicationContext_,
             pProductContext_,
-            pProjectContext_);
+            pProjectContext_,
+            pSceneContext_);
 
         SendCommandResponse(
             PostOffice_,
@@ -128,4 +130,3 @@ void iCAX::MailHandler::CMailCommandHandler::SendCommandResponse(
         _pPayload->empty() ? nullptr : _pPayload->data(),
         _pPayload->size());
 }
-

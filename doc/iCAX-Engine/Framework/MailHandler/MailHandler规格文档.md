@@ -29,6 +29,7 @@ public:
         IApplicationContext& applicationContext,
         IProductContext* productContext,
         IProjectContext* projectContext,
+        ISceneContext* sceneContext,
         const MailIDAllocator& allocateResponseMailID) const;
 };
 ```
@@ -59,6 +60,7 @@ mailHandler.DispatchAvailableMails(
     applicationContext,
     productContext,
     projectContext,
+    sceneContext,
     [&]() { return AllocateBackendMailID(); });
 ```
 
@@ -69,6 +71,7 @@ mailHandler.DispatchAvailableMails(
     applicationPostOffice,
     commandDispatcher,
     applicationContext,
+    nullptr,
     nullptr,
     nullptr,
     [&]() { return AllocateBackendMailID(); });
@@ -83,6 +86,7 @@ mailHandler.DispatchAvailableMails(
     applicationContext,
     productContext,
     nullptr,
+    nullptr,
     [&]() { return AllocateBackendMailID(); });
 ```
 
@@ -95,6 +99,7 @@ mailHandler.DispatchAvailableMails(
     applicationContext,
     productContext,
     projectContext,
+    sceneContext,
     [&]() { return AllocateBackendMailID(); });
 ```
 
@@ -111,4 +116,3 @@ src/tests/icax-engine/framework/MailHandler/MailHandlerTest/
 - Mail 到 CommandRequest 的转换。
 - 成功命令响应。
 - 无 handler 的响应状态和错误 payload。
-

@@ -56,10 +56,10 @@ namespace
     }
 
     std::shared_ptr<iCAX::Database::CComponentBase> FindCurrentComponent(
-        IN iCAX::Project::IProjectContext& ProjectContext_,
+        IN iCAX::Project::ISceneContext& SceneContext_,
         IN const ComponentKey& Key_)
     {
-        auto _pEntity = ProjectContext_.Database().GetEntity(Key_.EntityID);
+        auto _pEntity = SceneContext_.Database().GetEntity(Key_.EntityID);
         if (!_pEntity)
         {
             return nullptr;
@@ -409,6 +409,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::DispatchDestroyImmediateAndQueue(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const std::shared_ptr<iCAX::Database::CComponentBase>& pComponent_,
     IN const CComponentDestroyInfo& DestroyInfo_) const
 {
@@ -425,7 +426,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::DispatchDestroyImmediateAndQueue(
 
     if (pComponent_)
     {
-        _Ite->second->DestroyImmediate(*pComponent_, ApplicationContext_, ProductContext_, ProjectContext_);
+        _Ite->second->DestroyImmediate(*pComponent_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
     }
     QueueDestroyNotification(DestroyInfo_);
 }
@@ -433,7 +434,8 @@ void iCAX::Behaviour::CBehaviourDispatcher::DispatchDestroyImmediateAndQueue(
 void iCAX::Behaviour::CBehaviourDispatcher::FlushPendingDestroyNotifications(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
-    IN iCAX::Project::IProjectContext& ProjectContext_) const
+    IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) const
 {
     size_t _nProcessedNotificationCount = 0;
 
@@ -494,7 +496,8 @@ void iCAX::Behaviour::CBehaviourDispatcher::FlushPendingDestroyNotifications(
                 _Notification.DestroyInfo,
                 ApplicationContext_,
                 ProductContext_,
-                ProjectContext_);
+                ProjectContext_,
+                SceneContext_);
         }
     }
 }
@@ -504,11 +507,12 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const double& nDeltaTime_,
     IN const double& nTotalTime_) const
 {
-    auto& _View = ProjectContext_.Database().GetView();
-    FlushPendingDestroyNotifications(ApplicationContext_, ProductContext_, ProjectContext_);
+    auto& _View = SceneContext_.Database().GetView();
+    FlushPendingDestroyNotifications(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 
     // Start 只针对本帧首次出现在当前组件缓存中的组件调用。
     // GetPreEntities 保存上一帧快照，RefreshPreCache 在 Start 阶段结束后推进。
@@ -529,7 +533,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
                     return  p.get() == _pComponent.get();
                 }) == _p2ndCache.end())
             {
-                _pBehaviour->Start(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_);
+                _pBehaviour->Start(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
             }
         }
     }
@@ -553,7 +557,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
             {
                 continue;
             }
-            _pBehaviour->PreUpdate(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_, nDeltaTime_, nTotalTime_);
+            _pBehaviour->PreUpdate(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
         }
     }
 
@@ -575,7 +579,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
             {
                 continue;
             }
-            _pBehaviour->Update(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_, nDeltaTime_, nTotalTime_);
+            _pBehaviour->Update(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
         }
     }
 
@@ -597,7 +601,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
             {
                 continue;
             }
-            _pBehaviour->PostUpdate(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_, nDeltaTime_, nTotalTime_);
+            _pBehaviour->PostUpdate(*_pComponent, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
         }
     }
 }
@@ -606,6 +610,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanging(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const iCAX::Database::RepositoryEventArgs& Args_) const
 {
     if (!Args_.pComponent)
@@ -621,12 +626,13 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanging(
             ApplicationContext_,
             ProductContext_,
             ProjectContext_,
+            SceneContext_,
             Args_.pComponent,
             MakeDestroyInfo(Args_));
     }
     else if (Args_.nType == iCAX::Database::RepositoryEventArgs::kModifyComponent)
     {
-        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, kModifyingComponent, *Args_.pComponent, Args_.NewProperties);
+        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, kModifyingComponent, *Args_.pComponent, Args_.NewProperties);
     }
 }
 
@@ -634,6 +640,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanged(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const iCAX::Database::RepositoryEventArgs& Args_) const
 {
     if (Args_.nType == iCAX::Database::RepositoryEventArgs::kBatchChanged)
@@ -766,12 +773,12 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanged(
             }
             if (_State.HasStructuralEvent && _bExistsAfterBatch && _State.LastStructuralEvent == iCAX::Database::RepositoryEventArgs::kAddComponent)
             {
-                auto _pComponent = _State.pLastAddComponent ? _State.pLastAddComponent : FindCurrentComponent(ProjectContext_, _Key);
+                auto _pComponent = _State.pLastAddComponent ? _State.pLastAddComponent : FindCurrentComponent(SceneContext_, _Key);
                 _QueueNotify(kAddComponent, _pComponent, _State.LastAddProperties, _State.LastAddSequence);
             }
             if (!_State.HasStructuralEvent && _State.HasModifyEvent)
             {
-                auto _pComponent = _State.pModifiedComponent ? _State.pModifiedComponent : FindCurrentComponent(ProjectContext_, _Key);
+                auto _pComponent = _State.pModifiedComponent ? _State.pModifiedComponent : FindCurrentComponent(SceneContext_, _Key);
                 _QueueNotify(kModifiedComponent, _pComponent, _State.ModifiedProperties, _State.FirstModifySequence);
             }
             if (_State.HasEnableStateEvent && _bExistedBeforeBatch && _bExistsAfterBatch)
@@ -780,7 +787,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanged(
                 const bool _bFinallyEnabled = _State.LastEnableStateEvent == iCAX::Database::RepositoryEventArgs::kEnableComponent;
                 if (_bInitiallyEnabled != _bFinallyEnabled)
                 {
-                    auto _pComponent = _State.pLastEnableStateComponent ? _State.pLastEnableStateComponent : FindCurrentComponent(ProjectContext_, _Key);
+                    auto _pComponent = _State.pLastEnableStateComponent ? _State.pLastEnableStateComponent : FindCurrentComponent(SceneContext_, _Key);
                     _QueueNotify(
                         _bFinallyEnabled ? kEnableComponent : kDisableComponent,
                         _pComponent,
@@ -790,7 +797,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanged(
             }
         }
 
-        OnNotifyBatch(ApplicationContext_, ProductContext_, ProjectContext_, _Notifications);
+        OnNotifyBatch(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, _Notifications);
         return;
     }
 
@@ -802,16 +809,16 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnRepositoryChanged(
     switch (Args_.nType)
     {
     case iCAX::Database::RepositoryEventArgs::kAddComponent:
-        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, kAddComponent, *Args_.pComponent, Args_.NewProperties);
+        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, kAddComponent, *Args_.pComponent, Args_.NewProperties);
         break;
     case iCAX::Database::RepositoryEventArgs::kEnableComponent:
-        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, kEnableComponent, *Args_.pComponent, Args_.NewProperties);
+        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, kEnableComponent, *Args_.pComponent, Args_.NewProperties);
         break;
     case iCAX::Database::RepositoryEventArgs::kDisableComponent:
-        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, kDisableComponent, *Args_.pComponent, Args_.NewProperties);
+        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, kDisableComponent, *Args_.pComponent, Args_.NewProperties);
         break;
     case iCAX::Database::RepositoryEventArgs::kModifyComponent:
-        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, kModifiedComponent, *Args_.pComponent, Args_.NewProperties);
+        OnNotify(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, kModifiedComponent, *Args_.pComponent, Args_.NewProperties);
         break;
     default:
         break;
@@ -823,6 +830,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnNotify(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN NotifyType nType_,
     IN iCAX::Database::CComponentBase& Component_,
     IN const iCAX::Data::PropertySet& Properties_) const
@@ -836,21 +844,21 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnNotify(
     switch (nType_)
     {
     case kAddComponent:
-        _Ite->second->Awake(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+        _Ite->second->Awake(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     case kEnableComponent:
-        _Ite->second->Enable(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+        _Ite->second->Enable(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     case kDisableComponent:
-        _Ite->second->Disable(Component_, ApplicationContext_, ProductContext_, ProjectContext_);
+        _Ite->second->Disable(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     case kDestroyComponent:
         throw std::logic_error("Destroy notifications must use the destroy queue");
     case kModifyingComponent:
-        _Ite->second->Modifying(Component_, Properties_, ApplicationContext_, ProductContext_, ProjectContext_);
+        _Ite->second->Modifying(Component_, Properties_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     case kModifiedComponent:
-        _Ite->second->Modified(Component_, Properties_, ApplicationContext_, ProductContext_, ProjectContext_);
+        _Ite->second->Modified(Component_, Properties_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     default:
         break;
@@ -862,6 +870,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnNotifyBatch(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const std::vector<NotifyRequest>& Notifications_) const
 {
     auto _GetNotifyComponentClass = [](IN const NotifyRequest& Notification_)
@@ -916,6 +925,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnNotifyBatch(
                 ApplicationContext_,
                 ProductContext_,
                 ProjectContext_,
+                SceneContext_,
                 _Notification.pComponent,
                 _Notification.DestroyInfo);
         }
@@ -929,6 +939,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnNotifyBatch(
                 ApplicationContext_,
                 ProductContext_,
                 ProjectContext_,
+                SceneContext_,
                 _Notification.Type,
                 *_Notification.pComponent,
                 _Notification.Properties);

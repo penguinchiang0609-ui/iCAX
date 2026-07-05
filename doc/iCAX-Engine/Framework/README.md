@@ -4,7 +4,7 @@
 
 框架层承接 Foundation 基础能力，并向 ApplicationHost、插件和业务代码提供可复用的后台应用框架能力。
 
-当前后台以 `ApplicationHost -> ProductRuntime -> Project` 三层组织。ApplicationHost 持有应用级 ServiceProvider 和 MailChannelRegistry；ProductRuntime 持有产品级 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry、CommandRegistry、产品 mailbox 和 ProductData；Project 是数据隔离边界，独占 Repository、ResourceLibrary/ResourcePool、项目 ResourceLoaderRegistry、Universe、项目 mail channel 和项目线程。
+当前后台以 `ApplicationHost -> ProductRuntime -> Project -> Scene` 四层组织。ApplicationHost 持有应用级 ServiceProvider 和 MailChannelRegistry；ProductRuntime 持有产品级 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry、CommandRegistry、产品 mailbox 和 ProductData；Project 是项目管理容器，承载项目身份、路径和 ProjectSetting；Scene 是运行现场隔离边界，独占 Repository、ResourceLibrary/ResourcePool、Scene ResourceLoaderRegistry、Universe、Scene mail channel、PDOHub 和 Scene 线程。
 
 ## 目录结构
 
@@ -66,7 +66,7 @@ Framework/
 - `Mailbox`：后台与前台之间的普通 Mail 通信通道。
 - `PDO`：后台与前台之间的高频可丢弃数据通道。
 - `Product`：产品级运行时，负责产品模块加载、产品级 mailbox、最近项目列表和 ProjectCatalog 生命周期。
-- `Project`：主项目和临时项目实例。每个 Project 独占数据、资源、Universe、项目 mail channel 和项目线程。
-- `Resources`：工程资源系统。资源对象和项目 ResourceLoaderRegistry 按 Project 隔离，ResourceLoader 注册动作由产品模块回放。
+- `Project`：项目管理容器和 Scene 运行现场。Project 管理主 Scene 与子 Scene；Scene 独占数据、资源、Universe、mail channel、PDOHub 和线程。
+- `Resources`：工程资源系统。资源对象和 Scene ResourceLoaderRegistry 按 Scene 隔离，ResourceLoader 注册动作由产品模块回放。
 - `Services`：服务接口、服务提供器、自动注册辅助和应用级 MailChannelRegistry。
 

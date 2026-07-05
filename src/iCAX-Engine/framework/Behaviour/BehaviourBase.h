@@ -8,6 +8,7 @@
 #include "ApplicationContext/IApplicationContext.h"
 #include "ProductContext/IProductContext.h"
 #include "ProjectContext/IProjectContext.h"
+#include "ProjectContext/ISceneContext.h"
 
 namespace iCAX
 {
@@ -43,10 +44,10 @@ namespace iCAX
         * @brief 行为
         * @remark
         *   1、Behaviour 是 Component 对应的 system/行为逻辑。
-        *   2、行为对象由 Universe 通过注册表工厂创建，同一个 Project/Universe 独享自己的 Behaviour 实例。
-        *      Behaviour 可以保存本运行容器内的轻量状态，运行上下文由 Application/Product/Project 三层显式传入。
+        *   2、行为对象由 Universe 通过注册表工厂创建，同一个 Scene/Universe 独享自己的 Behaviour 实例。
+        *      Behaviour 可以保存本运行容器内的轻量状态，运行上下文由 Application/Product/Project/Scene 显式传入。
         *   3、公开生命周期方法由 Dispatcher 调用，派生类只需要覆写 OnXxx 钩子。
-        *   4、Behaviour 回调遵循 Project 单线程模型，不做内部并发保护；不要从前端线程或其他 Project 线程直接调用。
+        *   4、Behaviour 回调遵循 Scene 单线程模型，不做内部并发保护；不要从前端线程或其他 Scene 线程直接调用。
         */
         class _SYSTEM_EXP CBehaviourBase
         {
@@ -88,7 +89,8 @@ namespace iCAX
                 IN iCAX::Database::CComponentBase& Component_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 组件第一次参与帧循环时调用。
@@ -97,7 +99,8 @@ namespace iCAX
                 IN iCAX::Database::CComponentBase& Component_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 组件启用后调用。
@@ -106,7 +109,8 @@ namespace iCAX
                 IN iCAX::Database::CComponentBase& Component_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 帧更新前调用。
@@ -119,6 +123,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_);
 
@@ -131,6 +136,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_);
 
@@ -143,6 +149,7 @@ namespace iCAX
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_);
 
@@ -153,7 +160,8 @@ namespace iCAX
                 IN iCAX::Database::CComponentBase& Component_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 组件销毁后的统一销毁阶段调用。
@@ -168,7 +176,8 @@ namespace iCAX
                 IN const CComponentDestroyInfo& DestroyInfo_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 组件销毁时立即调用。
@@ -179,7 +188,8 @@ namespace iCAX
                 IN iCAX::Database::CComponentBase& Component_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 组件字段修改前调用。
@@ -190,7 +200,8 @@ namespace iCAX
                 IN const iCAX::Data::PropertySet& NewValues_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 组件字段修改后调用。
@@ -201,7 +212,8 @@ namespace iCAX
                 IN const iCAX::Data::PropertySet& NewValues_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
-                IN iCAX::Project::IProjectContext& ProjectContext_);
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_);
 
             /*
             * @brief 行为实例从 Dispatcher 中解除绑定前调用。
@@ -221,17 +233,28 @@ namespace iCAX
             virtual void* GetFunction(const std::string& strFnName_) const { return nullptr; };
 
         protected:
-            virtual void OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
-            virtual void OnStart(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
-            virtual void OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
-            virtual void OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) {}
-            virtual void OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) {}
-            virtual void OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) {}
-            virtual void OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
-            virtual void OnDestroy(IN const CComponentDestroyInfo& DestroyInfo_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
-            virtual void OnDestroyImmediate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
-            virtual void OnModifying(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
-            virtual void OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_) {}
+            virtual void OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
+            virtual void OnStart(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
+            virtual void OnEnable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
+            virtual void OnPreUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) {}
+            virtual void OnUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) {}
+            virtual void OnPostUpdate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_, IN const double& nDeltaTime_, IN const double& nTotalTime_) {}
+            virtual void OnDisable(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
+            virtual void OnDestroy(IN const CComponentDestroyInfo& DestroyInfo_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
+            virtual void OnDestroyImmediate(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
+            virtual void OnModifying(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
+            virtual void OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_) {}
             virtual void OnDetach() {}
         };
     }

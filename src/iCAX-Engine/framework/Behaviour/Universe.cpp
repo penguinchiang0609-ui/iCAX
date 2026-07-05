@@ -41,12 +41,13 @@ void iCAX::Behaviour::CUniverse::Tick(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const double& nDeltaTime_,
     IN const double& nTotalTime_)
 {
     if (m_pDispatcher != nullptr)
     {
-        m_pDispatcher->Tick(ApplicationContext_, ProductContext_, ProjectContext_, nDeltaTime_, nTotalTime_);
+        m_pDispatcher->Tick(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
     }
 }
 
@@ -79,11 +80,12 @@ void iCAX::Behaviour::CUniverse::OnRepositoryChanging(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const iCAX::Database::RepositoryEventArgs& Args_)
 {
     if (m_pDispatcher)
     {
-        m_pDispatcher->OnRepositoryChanging(ApplicationContext_, ProductContext_, ProjectContext_, Args_);
+        m_pDispatcher->OnRepositoryChanging(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, Args_);
     }
 }
 
@@ -92,11 +94,12 @@ void iCAX::Behaviour::CUniverse::OnRepositoryChanged(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
     IN const iCAX::Database::RepositoryEventArgs& Args_)
 {
     if (m_pDispatcher)
     {
-        m_pDispatcher->OnRepositoryChanged(ApplicationContext_, ProductContext_, ProjectContext_, Args_);
+        m_pDispatcher->OnRepositoryChanged(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, Args_);
     }
 }
 

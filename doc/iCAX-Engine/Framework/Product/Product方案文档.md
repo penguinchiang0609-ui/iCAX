@@ -67,11 +67,11 @@ manifest loader 属于 `Product` 模块，不属于 `UIContainer`。启动层可
 Product.OpenProjectCatalog
   -> ProductRuntime::OpenProjectCatalog
   -> create ProjectCatalog
-  -> create project-local ResourceLoaderRegistry from product modules
+  -> create main-scene ResourceLoaderRegistry from product modules
   -> ProjectCatalog.OpenMainProject
   -> CreateLocalProjectRuntime(project)
   -> register IProjectRuntime
-  -> ProjectRuntime.SetFrameHandler(dispatch project mailbox)
+  -> ProjectRuntime.SetFrameHandler(dispatch main scene mailbox)
   -> ProjectRuntime.Start
   -> RecordRecentProject(projectPath)
   -> return catalog and main project id
@@ -79,7 +79,7 @@ Product.OpenProjectCatalog
 
 `ProductRuntime` 不再直接把 `CProject` 当成运行边界，而是维护 ProjectID 到 `IProjectRuntime` 的映射。当前 `IProjectRuntime` 的实现是 `CLocalProjectRuntime`，它包装进程内 `CProject`。后续进程级隔离可以新增 `CProcessProjectRuntime`，让 ProductRuntime 继续只面对运行时句柄。
 
-`ProductRuntime` 负责把项目运行时中的 backend post office 转换为命令请求，并补齐项目级命令上下文。
+`ProductRuntime` 负责把项目主 Scene 的 backend post office 转换为命令请求，并补齐 ProjectContext 和 SceneContext。
 
 最近项目记录属于产品数据。`ProductRuntime` 只记录真实文件路径；`memory://`、`ui://` 等虚拟路径不写入 ProductData。最近项目按路径去重，新打开的项目移到列表前端，当前上限为 20 条。
 
@@ -107,23 +107,21 @@ CommandRegistry
 owning ProjectCatalog
 ProjectCatalog list snapshot
 IProjectRuntime
-Project                  // 仅本地 ProjectRuntime 存在
-IRepository
-IUniverse
-CResourceLibrary
+ProjectContext           // 项目身份、路径和 ProjectSetting
+SceneContext             // Repository / Universe / ResourceLibrary / PDO / mail
 ```
 
 产品命令必须发到产品 mailbox。若产品命令发到项目 mailbox，因为上下文中存在当前 `IProjectRuntime`，会返回 `InvalidRequest`。
 
 ## 7. 生命周期
 
-`ProductRuntime::Stop()` 会关闭所有 ProjectCatalog，ProjectCatalog 会关闭其中所有 Project。ProductRuntime 随后通过 `CMailChannelRegistry::RemoveChannel(productChannelId)` 删除产品级 channel，旧产品邮局随之失效。
+`ProductRuntime::Stop()` 会关闭所有 ProjectCatalog，ProjectCatalog 会关闭其中所有 Project 和 Scene。ProductRuntime 随后通过 `CMailChannelRegistry::RemoveChannel(productChannelId)` 删除产品级 channel，旧产品邮局随之失效。
 
 ApplicationHost 卸载时会停止所有已启动 ProductRuntime。
 
 ## 8. Project 隔离演进
 
-当前 `ProductRuntime` 使用 `IProjectRuntime` 管理项目。实际实现仍是进程内 `CLocalProjectRuntime -> CProject`，每个 Project 独立线程、Repository、ResourceLibrary、Universe 和项目 mail channel。Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。
+当前 `ProductRuntime` 使用 `IProjectRuntime` 管理项目。实际实现仍是进程内 `CLocalProjectRuntime -> CProject -> MainScene`，线程、Repository、ResourceLibrary、Universe、PDOHub 和 mail channel 归属 Scene。Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。
 
 若要求每个 Project 拥有独立 OS 内存空间，需要在现有抽象下新增进程级实现：
 
@@ -133,5 +131,5 @@ IProjectRuntime
   CProcessProjectRuntime    // 每个 Project 一个 Worker 进程
 ```
 
-进程级实现中，ProductRuntime 只保留 `ProjectHandle`、状态和 mailbox 代理；Repository、ResourceLibrary、Universe 和业务模块都在 Project Worker 进程内。普通 Mailbox 通过 IPC 转发，高频 PDO 使用每 Project 独立共享内存段。Worker 进程崩溃时，由进程级 ProjectRuntime 负责记录该 Project 的故障状态，并保留其他 Project 与 ProductRuntime。
+进程级实现中，ProductRuntime 只保留 `ProjectHandle`、状态和 mailbox 代理；Repository、ResourceLibrary、Universe 和业务模块都在 Project Worker 进程内。普通 Mailbox 通过 IPC 转发，高频 PDO 使用每 Scene 独立共享内存段。Worker 进程崩溃时，由进程级 ProjectRuntime 负责记录该 Project 的故障状态，并保留其他 Project 与 ProductRuntime。
 

@@ -23,6 +23,7 @@ namespace iCAX
     namespace Project
     {
         class IProjectContext;
+        class ISceneContext;
     }
 
     namespace Command
@@ -70,7 +71,8 @@ namespace iCAX
                 IN const CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_) = 0;
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_) = 0;
         };
 
         /*
@@ -87,7 +89,8 @@ namespace iCAX
                 const CCommandRequest&,
                 iCAX::Application::IApplicationContext&,
                 iCAX::Product::IProductContext*,
-                iCAX::Project::IProjectContext*)>;
+                iCAX::Project::IProjectContext*,
+                iCAX::Project::ISceneContext*)>;
 
         protected:
             /*
@@ -112,7 +115,8 @@ namespace iCAX
                 IN const CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_) override;
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_) override;
 
         protected:
             /*

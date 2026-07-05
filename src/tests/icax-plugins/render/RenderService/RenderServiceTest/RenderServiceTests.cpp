@@ -3,6 +3,7 @@
 #include <ApplicationContext/IApplicationContext.h>
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
+#include <ProjectContext/ISceneContext.h>
 #include <PDORenderService/PDORenderService.h>
 #include <RenderPDO/RenderPDO.h>
 #include <PDO/IPDOHub.h>
@@ -86,34 +87,14 @@ namespace
     class CTestProjectContext final : public iCAX::Project::IProjectContext
     {
     public:
-        CTestProjectContext(
-            IN const iCAX::Data::uuid& ProjectID_,
-            IN std::shared_ptr<iCAX::PDO::IPDOHub> pPDOHub_)
+        explicit CTestProjectContext(IN const iCAX::Data::uuid& ProjectID_)
             : m_ProjectID(ProjectID_)
-            , m_ProjectChannelID(iCAX::Data::GenerateNewUUID())
-            , m_pPDOHub(std::move(pPDOHub_))
-            , m_pChannel(std::make_shared<iCAX::Mail::CMailChannel>())
         {
         }
 
         const iCAX::Data::uuid& GetProjectID() const override
         {
             return m_ProjectID;
-        }
-
-        const iCAX::Data::uuid& GetProjectChannelID() const override
-        {
-            return m_ProjectChannelID;
-        }
-
-        iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override
-        {
-            return m_pChannel->GetEndAPostOffice();
-        }
-
-        iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override
-        {
-            return m_pChannel->GetEndBPostOffice();
         }
 
         const std::string& GetProjectName() const override
@@ -134,6 +115,59 @@ namespace
         const iCAX::Data::PropertyBag& Settings() const override
         {
             return m_Settings;
+        }
+
+    private:
+        iCAX::Data::uuid m_ProjectID;
+        std::string m_ProjectName = "Render Service Test";
+        std::string m_ProjectPath;
+        iCAX::Data::PropertyBag m_Settings;
+    };
+
+    class CTestSceneContext final : public iCAX::Project::ISceneContext
+    {
+    public:
+        explicit CTestSceneContext(IN std::shared_ptr<iCAX::PDO::IPDOHub> pPDOHub_)
+            : m_SceneID(iCAX::Data::GenerateNewUUID())
+            , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
+            , m_pPDOHub(std::move(pPDOHub_))
+            , m_pChannel(std::make_shared<iCAX::Mail::CMailChannel>())
+        {
+        }
+
+        const iCAX::Data::uuid& GetSceneID() const override
+        {
+            return m_SceneID;
+        }
+
+        const iCAX::Data::uuid& GetSceneChannelID() const override
+        {
+            return m_SceneChannelID;
+        }
+
+        const std::string& GetSceneName() const override
+        {
+            return m_SceneName;
+        }
+
+        iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override
+        {
+            return m_pChannel->GetEndAPostOffice();
+        }
+
+        iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override
+        {
+            return m_pChannel->GetEndBPostOffice();
+        }
+
+        bool IsMainScene() const override
+        {
+            return true;
+        }
+
+        bool IsTransientScene() const override
+        {
+            return false;
         }
 
         iCAX::Database::IRepository& Database() override
@@ -185,13 +219,11 @@ namespace
         }
 
     private:
-        iCAX::Data::uuid m_ProjectID;
-        iCAX::Data::uuid m_ProjectChannelID;
+        iCAX::Data::uuid m_SceneID;
+        iCAX::Data::uuid m_SceneChannelID;
         std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
         std::shared_ptr<iCAX::Mail::CMailChannel> m_pChannel;
-        std::string m_ProjectName = "Render Service Test";
-        std::string m_ProjectPath;
-        iCAX::Data::PropertyBag m_Settings;
+        std::string m_SceneName = "Render Service Test Scene";
     };
 
     iCAX::Render::SRenderMeshData MakeTriangleMesh(
@@ -421,9 +453,10 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
 
     CTestApplicationContext _ApplicationContext;
     CTestProductContext _ProductContext;
-    CTestProjectContext _ProjectContext(_ProjectID, _Hub);
+    CTestProjectContext _ProjectContext(_ProjectID);
+    CTestSceneContext _SceneContext(_Hub);
 
-    _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, 0.016, 1.0);
+    _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, _SceneContext, 0.016, 1.0);
     _Hub->SwapOutSlot();
 
     EXPECT_TRUE(_Hub->HasSlot(_MeshPDOID));
@@ -460,7 +493,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         EXPECT_EQ(25u, _ViewHeader.Header.nDataVersion);
     }
 
-    auto _Mails = _ProjectContext.GetFrontendPostOffice().Receive();
+    auto _Mails = _SceneContext.GetFrontendPostOffice().Receive();
     ASSERT_GE(_Mails.size(), 5u);
     size_t _AllocatedCount = 0;
     for (auto& _Mail : _Mails)
@@ -477,10 +510,10 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     EXPECT_EQ(5u, _AllocatedCount);
 
     ASSERT_TRUE(_Service.SetInstances(_ProjectID, _SceneID, {}, {}, 26));
-    _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, 0.016, 1.016);
+    _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, _SceneContext, 0.016, 1.016);
     EXPECT_FALSE(_Hub->HasSlot(_ObjectPDOID));
 
-    auto _RemovalMails = _ProjectContext.GetFrontendPostOffice().Receive();
+    auto _RemovalMails = _SceneContext.GetFrontendPostOffice().Receive();
     bool _bFoundObjectFreed = false;
     for (auto& _Mail : _RemovalMails)
     {
@@ -500,14 +533,15 @@ TEST(PDORenderServiceTest, SendsDefragNotificationsThroughProjectMailbox)
 {
     iCAX::PDORenderService::CPDORenderService _Service;
     const auto _ProjectID = iCAX::Data::GenerateNewUUID();
-    CTestProjectContext _ProjectContext(_ProjectID, nullptr);
+    CTestProjectContext _ProjectContext(_ProjectID);
+    CTestSceneContext _SceneContext(nullptr);
     constexpr iCAX::PDO::PDOID _MovedPDOID = 123456789ull;
 
-    _Service.NotifyPDODefragBegin(_ProjectContext);
-    _Service.NotifyPDOSlotMoved(_ProjectContext, _MovedPDOID);
-    _Service.NotifyPDODefragEnd(_ProjectContext);
+    _Service.NotifyPDODefragBegin(_ProjectContext.GetProjectID(), _SceneContext);
+    _Service.NotifyPDOSlotMoved(_ProjectContext.GetProjectID(), _SceneContext, _MovedPDOID);
+    _Service.NotifyPDODefragEnd(_ProjectContext.GetProjectID(), _SceneContext);
 
-    auto _Mails = _ProjectContext.GetFrontendPostOffice().Receive();
+    auto _Mails = _SceneContext.GetFrontendPostOffice().Receive();
     ASSERT_EQ(3u, _Mails.size());
 
     EXPECT_EQ(iCAX::PDORenderService::kPDORenderDefragBeginEvent, _Mails[0].Header.nTypeCode);

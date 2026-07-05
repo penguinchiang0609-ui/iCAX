@@ -8,7 +8,7 @@
 
 - 构造 `ApplicationContext`。
 - 创建应用级服务容器。
-- 直接持有 `CMailChannelRegistry`，并托管应用、产品和项目 mail channel。
+- 直接持有 `CMailChannelRegistry`，并托管应用、产品和 Scene mail channel。
 - 维护支持的产品定义列表。
 - 启动、停止和查询 `ProductRuntime`。
 - 提供应用级 mailbox 和应用级内置命令。
@@ -53,7 +53,7 @@ host.SetConfig(config);
 - `Paths`：应用路径。
 - `Products`：宿主支持的产品定义列表。
 - `StartupProductID`：宿主启动时自动启动的产品，可为空。
-- `nFrameIntervalMilliseconds`：应用宿主线程帧间隔，只用于应用级与产品级消息轮询。
+- `nFrameIntervalMilliseconds`：应用宿主线程帧间隔，只用于应用级消息轮询。
 
 ## 3. 生命周期
 
@@ -208,8 +208,8 @@ Frontend
   <- productChannelId, frontendEntry, recentProjects
   -> product frontend initializes by frontendEntry
   -> Product mailbox handles Product.OpenProjectCatalog
-  <- catalogId, main projectId
-  -> Project mailbox handles project commands
+  <- catalogId, main projectId, mainSceneChannelId
+  -> Main Scene mailbox handles scene/project commands
 ```
 
 ## 6. 依赖边界

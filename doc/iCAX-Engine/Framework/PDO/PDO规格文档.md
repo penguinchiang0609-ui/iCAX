@@ -161,7 +161,7 @@ auto arena = iCAX::PDO::CSharedPDOArena::Open(L"Local\\iCAX.PDO.Project.1");
 
 Arena 的生命周期由持有 `CSharedPDOArena` 的进程对象控制。最后一个 mapping handle 关闭后，Windows 会释放对应共享内存对象。
 
-Arena 通常由 Project 通过 `CProjectCreateInfo::PDOHubCreateInfo` 创建和持有。Mailbox 可以用于通知前端：“某个项目的 PDO Arena 名称是什么，以及某个 PDOID 对应的 slot 何时创建或释放”。Project 关闭后会释放自己的 PDOHub，前端宿主应停止访问对应 Arena。
+Arena 通常由 Scene 通过创建参数中的 `PDOHubCreateInfo` 创建和持有。Mailbox 可以用于通知前端：“某个 Scene 的 PDO Arena 名称是什么，以及某个 PDOID 对应的 slot 何时创建或释放”。Scene 关闭后会释放自己的 PDOHub，前端宿主应停止访问对应 Arena。
 
 前端不得缓存 payload offset。动态 Arena 允许 slot 被释放、复用，后续碎片整理也可能移动 slot。前端应始终用 `PDOID` 在 Arena 的 active slot table 中重新定位当前 offset。
 

@@ -21,6 +21,7 @@ namespace iCAX
     namespace Project
     {
         class IProjectContext;
+        class ISceneContext;
     }
 
     namespace Render
@@ -76,17 +77,19 @@ namespace iCAX
             * @brief 刷新一帧渲染输出。
             * @param [in] ApplicationContext_ 应用级上下文。
             * @param [in] ProductContext_ 产品级上下文。
-            * @param [in,out] ProjectContext_ 项目级上下文；PDO、资源和项目数据都从这里进入。
+            * @param [in] ProjectContext_ 项目级上下文；项目级参数从这里进入。
+            * @param [in,out] SceneContext_ 场景级上下文；PDO、资源和场景数据都从这里进入。
             * @param [in] nDeltaTime_ 当前帧距离上一帧的时间，单位秒。
-            * @param [in] nTotalTime_ 项目运行累计时间，单位秒。
+            * @param [in] nTotalTime_ Scene 运行累计时间，单位秒。
             * @details
             *   Update 是 RenderService 的帧入口，也可以理解为渲染服务的 OnTick。
-            *   PDO 实现应在这里把 RenderData 写入项目 PDO；原生渲染实现应在这里刷新屏幕或提交渲染命令。
+            *   PDO 实现应在这里把 RenderData 写入 Scene PDO；原生渲染实现应在这里刷新屏幕或提交渲染命令。
             */
             virtual void Update(
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_) = 0;
 

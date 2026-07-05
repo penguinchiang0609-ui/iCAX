@@ -13,7 +13,7 @@ namespace iCAX
 {
     namespace Project
     {
-        class IProjectContext;
+        class ISceneContext;
     }
 
     namespace CAM
@@ -61,7 +61,7 @@ namespace iCAX
 
         public:
             virtual SGeneratedToolpath Generate(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SToolpathGenerationRequest& Request_) = 0;
         };
     }

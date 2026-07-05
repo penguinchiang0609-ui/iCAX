@@ -23,8 +23,8 @@ namespace iCAX
         /*
         * @brief 资源库。
         * @details
-        *   ResourceLibrary 是 Project 对外暴露的资源入口，内部拥有一个 ResourcePool，并使用注入的 LoaderRegistry 执行加载。
-        *   上层推荐通过 project.Resources().Load<T>(path) 使用资源，而不是直接操作全局 loader 或静态资源池。
+        *   ResourceLibrary 是 Scene 对外暴露的资源入口，内部拥有一个 ResourcePool，并使用注入的 LoaderRegistry 执行加载。
+        *   上层推荐通过 scene.Resources().Load<T>(path) 使用资源，而不是直接操作全局 loader 或静态资源池。
         */
         class _RESOURCES_EXP CResourceLibrary final
         {

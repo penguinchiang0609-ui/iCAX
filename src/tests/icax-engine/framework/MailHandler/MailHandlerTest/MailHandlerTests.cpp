@@ -91,7 +91,8 @@ TEST(MailCommandHandlerTest, DispatchesMailCommandAndSendsResponse)
             IN const iCAX::Command::CCommandRequest& Request_,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
-            IN iCAX::Project::IProjectContext*) {
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext*) {
             iCAX::Command::CCommandResponse _Response;
             _Response.Payload = Request_.Payload;
             return _Response;
@@ -114,6 +115,7 @@ TEST(MailCommandHandlerTest, DispatchesMailCommandAndSendsResponse)
         _Backend,
         _Dispatcher,
         _ApplicationContext,
+        nullptr,
         nullptr,
         nullptr,
         [&]() { return _NextResponseMailID++; }));
@@ -145,6 +147,7 @@ TEST(MailCommandHandlerTest, NoHandlerResponseUsesMailNoHandlerStampAndErrorPayl
         _Backend,
         _Dispatcher,
         _ApplicationContext,
+        nullptr,
         nullptr,
         nullptr,
         []() { return 200u; }));

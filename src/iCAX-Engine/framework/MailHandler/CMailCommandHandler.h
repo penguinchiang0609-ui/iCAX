@@ -8,6 +8,7 @@
 #include <Mailbox/MailPostOffice.h>
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
+#include <ProjectContext/ISceneContext.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -59,6 +60,7 @@ namespace iCAX
             * @param [in] ApplicationContext_ 应用上下文。
             * @param [in] pProductContext_ 产品上下文；应用级命令可为空。
             * @param [in] pProjectContext_ 项目上下文；非项目命令可为空。
+            * @param [in] pSceneContext_ 场景上下文；非场景命令可为空。
             * @param [in] AllocateResponseMailID_ 响应邮件 ID 分配器，不能为空。
             * @return 已处理邮件数量。
             * @throws 命令 handler 抛出的异常会原样向外传播。
@@ -69,6 +71,7 @@ namespace iCAX
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_,
                 IN const MailIDAllocator& AllocateResponseMailID_) const;
 
         private:
@@ -80,4 +83,3 @@ namespace iCAX
         };
     }
 }
-

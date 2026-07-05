@@ -44,7 +44,7 @@ namespace iCAX
         * @brief 产品运行时
         * @details
         *   ProductRuntime 是产品级后台入口，拥有产品邮箱和多个 ProjectCatalog。
-        *   Project 自己仍然拥有独立线程、Repository、ResourceLibrary、Universe 和项目邮箱。
+        *   Project 只承载项目身份和 ProjectSetting；Repository、ResourceLibrary、Universe、PDOHub、邮箱和工作线程归属 Scene。
         */
         class _PRODUCT_EXP CProductRuntime final
             : public IProductContext
@@ -190,7 +190,7 @@ namespace iCAX
             * @param [in] strProjectName_ 主项目名称，空时使用 catalog 名称。
             * @param [in] strProjectPath_ 主项目路径。
             * @return 新打开的项目 catalog。
-            * @details 会创建 main project、project runtime，启动项目线程，并记录最近项目。
+            * @details 会创建 main project、project runtime，启动主 Scene 线程，并记录最近项目。
             */
             std::shared_ptr<iCAX::Project::CProjectCatalog> OpenProjectCatalog(
                 IN const std::string& strCatalogName_ = std::string(),
@@ -220,7 +220,7 @@ namespace iCAX
 
             /*
             * @brief 获取指定项目的前端邮局。
-            * @return 项目邮箱的前端端点。
+            * @return 项目主 Scene 邮箱的前端端点。
             * @throws std::runtime_error 项目不存在时抛出。
             */
             iCAX::Mail::CMailPostOffice GetProjectFrontendPostOffice(IN const iCAX::Data::uuid& ProjectID_) const;
@@ -272,7 +272,7 @@ namespace iCAX
 
             /*
             * @brief 产品工作线程入口。
-            * @details 只分发产品邮箱；项目邮箱由项目线程每帧分发。
+            * @details 只分发产品邮箱；Scene 邮箱由 Scene 线程每帧分发。
             */
             void WorkerMain();
 
@@ -303,8 +303,8 @@ namespace iCAX
             CProductData SnapshotProductData() const;
 
             /*
-            * @brief 创建项目级资源加载器注册表。
-            * @details 根据产品已加载模块路径回放 loader，保证每个项目有独立 Registry。
+            * @brief 创建 Scene 级资源加载器注册表。
+            * @details 根据产品已加载模块路径回放 loader，保证每个 Scene 有独立 Registry。
             */
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> CreateProjectResourceLoaderRegistry() const;
 
@@ -327,7 +327,7 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_);
 
             /*
-            * @brief 分发指定项目或产品邮箱中的邮件。
+            * @brief 分发指定项目主 Scene 或产品邮箱中的邮件。
             * @param [in] PostOffice_ 后端视角邮局。
             * @param [in] pProjectRuntime_ 项目运行时；为空表示产品邮箱。
             */
@@ -378,7 +378,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理列出项目 catalog 命令。
@@ -388,7 +389,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理打开项目 catalog 命令。
@@ -399,7 +401,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理关闭项目 catalog 命令。
@@ -410,7 +413,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理项目状态查询命令。
@@ -420,7 +424,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理项目撤销重做状态查询命令。
@@ -429,7 +434,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理项目撤销命令。
@@ -438,7 +444,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理项目重做命令。
@@ -447,7 +454,8 @@ namespace iCAX
                 IN const iCAX::Command::CCommandRequest& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
-                IN iCAX::Project::IProjectContext* pProjectContext_);
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
 
         private:
             CProductDefinition m_Definition;

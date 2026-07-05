@@ -3,10 +3,10 @@
 ## 1. 工程位置
 
 ```text
-src/icax-engine/framework/Project/
+src/iCAX-Engine/framework/Project/
 ```
 
-`Project` 放在 framework 下，因为它不是基础数据结构，而是把 Database、Resources、Behaviour 和 Mailbox 组合成项目运行单元的框架能力。
+`Project` 是 framework 层的项目管理能力。它不再把 Database、Resources、Behaviour、Mailbox 和 PDO 全部压在 Project 自身，而是用 `Project -> Scene` 的结构把项目级信息和运行现场分开。
 
 ## 2. 分层
 
@@ -14,109 +14,116 @@ src/icax-engine/framework/Project/
 ApplicationHost
   ProductRuntime
     ProjectCatalog
-    IProjectRuntime*
-    Main Project?
-      Repository
-      ResourceLibrary
-      Universe
-      PDOHub?
-      Project mail id
-      WorkThread
-
-    Transient Project*
-      Repository
-      ResourceLibrary
-      Universe
-      PDOHub?
-      Project mail id
-      WorkThread
+      Main Project
+        ProjectID / ProjectPath / ProjectSetting
+        Main Scene
+          Repository
+          ResourceLibrary
+          Universe
+          PDOHub?
+          Scene mail id
+          WorkThread
+        Child Scene*
+          Repository
+          ResourceLibrary
+          Universe
+          PDOHub?
+          Scene mail id
+          WorkThread
+      Transient Project*
+        ProjectID / ProjectPath / ProjectSetting
+        Main Scene
+        Child Scene*
 ```
 
-`ApplicationHost` 负责应用级生命周期和产品运行时；`ProductRuntime` 负责项目目录管理和项目运行时句柄；`Project` 负责项目实例。运行态一个 ProjectCatalog 内只有一个主项目，临时项目用于预览、导入和转换。每个项目实例自己运行，不共用同一条后台帧循环。
+`ApplicationHost` 负责应用级生命周期和产品运行时；`ProductRuntime` 负责产品模块、产品 mailbox、产品数据和 ProjectCatalog；`ProjectCatalog` 管理 Project；`Project` 管理主 Scene 与子 Scene；`Scene` 才是运行现场。
 
-## 3. 项目实例
+## 3. Project 与 Scene 的职责
 
-`CProject` 是项目隔离边界。每次打开主项目或临时项目都会创建：
+Project 负责：
 
-- 独立 Repository。
-- 独立 ResourceLibrary。
-- 独立 Universe。
-- 独立项目 mail channel，由应用级 `CMailChannelRegistry` 按 `ProjectChannelID` 托管。
-- 可选独立 PDOHub，由 `CProjectCreateInfo::bEnablePDOHub` 和 `PDOHubCreateInfo` 决定是否创建。
-- 独立项目工作线程。
+- ProjectID、ProjectName、ProjectPath。
+- ProjectSetting，也就是跟随图纸保存和打开的项目级参数。
+- 主 Scene 与子 Scene 集合。
+- 快速保存日志路径、打开、回放、截断和关闭时机。
+- 对外暴露主 Scene 的运行句柄，供上层完成默认项目交互。
 
-当前实现是进程内隔离：每个 Project 拥有独立对象图和线程，但仍处在同一个 OS 进程地址空间内。Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。
+Scene 负责：
 
-严格意义上的独立内存空间必须使用进程级隔离，即每个 Project 由独立 Project Worker 进程承载。线程和对象边界不能阻止野指针、堆破坏、访问冲突等 native 崩溃影响整个进程。
+- Repository 和 EC 数据。
+- ResourceLibrary 和资源对象。
+- Universe 和 Behaviour 实例。
+- Scene mail channel。
+- 可选 PDOHub。
+- Scene 工作线程和帧调度。
 
-## 4. ProjectRuntime
+这条边界是硬规则：ProjectContext 不提供 Repository、Resource、PDO 或 mail；这些能力统一从 SceneContext 取。
 
-`IProjectRuntime` 是 ProductRuntime 看到的项目运行句柄。它提供项目身份、状态、前端邮局、启动、停止和关闭能力，但不要求上层知道项目内部是不是 `CProject`。
+## 4. 运行流程
 
-当前实现为 `CLocalProjectRuntime`：
-
-```text
-CLocalProjectRuntime
-  -> CProject
-  -> Project thread
-  -> project mail id
-```
-
-`CLocalProjectRuntime` 仍运行在当前进程中，用于保持当前功能和测试稳定。后续如果要做到每个 Project 独立内存空间，应新增 `CProcessProjectRuntime`，由它启动独立 Project Worker 进程，并把 mailbox/PDO 转换成跨进程通道。
-
-`Universe` 只保存 Behaviour 调度器，不保存 Repository，也不作为 Repository 事件订阅者。`Project` 在每帧调度和 Repository 事件转发时，显式传入 `ApplicationContext`、`ProductContext` 和 `ProjectContext`。
-
-`Project` 订阅自己的 Repository 事件，再把事件和三层上下文转发给 `Universe`。因此数据归属仍在 Project/Repository，Behaviour 只是被当前项目上下文驱动。
-
-## 5. 打开项目
-
-打开主项目流程：
-
-```text
-ProjectCatalog::OpenMainProject(name, path, startupComponent)
-  -> fail if main project already exists
-  -> Generate project id
-  -> require product MetaRegistry / BehaviourRegistry / project ResourceLoaderRegistry / MailChannelRegistry
-  -> Database::GenerateRepository(project id, product MetaRegistry)
-  -> Behaviour::GenerateUniverse(product BehaviourRegistry)
-  -> create ResourceLibrary(project ResourceLoaderRegistry)
-  -> create PDOHub if bEnablePDOHub is true
-  -> create project mail channel through CMailChannelRegistry
-  -> Project subscribes repository events
-  -> set main project id
-```
-
-打开临时项目使用 `ProjectCatalog::OpenTransientProject(name, path, startupComponent)`，流程相同，但不会占用主项目位置。
-
-`ProjectCatalog::OpenMainProject` 和 `OpenTransientProject` 只创建项目实例，不自动启动线程。由 `ProductRuntime::OpenProjectCatalog`、`OpenTransientProject` 或其他上层宿主完成运行接入：
+打开主项目：
 
 ```text
 ProductRuntime::OpenProjectCatalog(name, path)
   -> ProjectCatalog.OpenMainProject(name, path, startupComponent)
+       -> create CProject
+       -> CProject creates MainScene
+            -> create scene ResourceLoaderRegistry
+            -> create Repository(project id, product MetaRegistry)
+            -> create Universe(product BehaviourRegistry)
+            -> create ResourceLibrary(scene ResourceLoaderRegistry)
+            -> create PDOHub if enabled
+            -> create scene mail channel through CMailChannelRegistry
+            -> subscribe repository events
+  -> replay quick-save log on MainScene Repository
   -> CreateLocalProjectRuntime(project)
-  -> ProjectRuntime.SetFrameHandler(dispatch project mailbox)
+  -> ProjectRuntime.SetFrameHandler(dispatch main scene mailbox)
   -> ProjectRuntime.Start()
+  -> open quick-save log for append
 ```
 
-如果创建参数包含 `StartupComponent`，`Project` 在线程启动时执行 `BindStartup`。`BindStartup` 会查找启动组件对应的 Behaviour，并把启动组件添加到 Repository 的 meta entity。
+Scene 每帧：
 
-## 6. 快速保存闭环
+```text
+Scene PreSwapPDO
+  -> Scene PDOHub SwapInSlot()
+  -> Universe PreSwapPDO()
+FrameHandler(scene backend mailbox)
+  -> MailHandler
+  -> CommandHandler(application, product, project, scene)
+Scene Tick
+  -> Universe Tick(application, product, project, scene)
+Scene PostSwapPDO
+  -> Universe PostSwapPDO()
+  -> Scene PDOHub SwapOutSlot()
+```
+
+Repository 事件由 Scene 转发给 Universe，转发时显式携带四层上下文：
+
+```text
+ApplicationContext
+ProductContext
+ProjectContext
+SceneContext
+```
+
+## 5. 快速保存
 
 快速保存分为两层：
 
-- Database 层：`Repository` 负责把普通修改、批量提交、事务提交、Undo/Redo 写成有序 `OperationBatch`，并能回放日志。
-- Project 层：`Project` 负责日志路径、打开、回放、截断和关闭时机。
+- Database 层：Repository 负责把普通修改、批量提交、事务提交、Undo/Redo 写成有序 `OperationBatch`，并能回放日志。
+- Project 层：Project 负责日志路径、打开、回放、截断和关闭时机。
 
 Project 不直接序列化主项目文件。正确流程是：
 
 ```text
 打开项目文件
   -> 产品/文件模块读取主项目文件
-  -> Repository.BeginLoadBaseline()
+  -> MainScene.Repository.BeginLoadBaseline()
   -> 写入项目基线数据
-  -> Repository.EndLoadBaseline()
+  -> MainScene.Repository.EndLoadBaseline()
   -> Project.ReplayQuickSaveLog(quickSaveMagic, quickSaveVersion)
-  -> Project.Start()
+  -> MainScene.Start()
   -> Project.OpenQuickSaveLog(false, quickSaveMagic, quickSaveVersion)
 ```
 
@@ -124,7 +131,7 @@ Project 不直接序列化主项目文件。正确流程是：
 
 ```text
 保存项目文件
-  -> 产品/文件模块把当前 Repository/ResourceLibrary 写入主项目文件
+  -> 产品/文件模块把 MainScene Repository/ResourceLibrary 写入主项目文件
   -> 写文件成功
   -> Project.MarkProjectFileSaved(path?, quickSaveMagic, quickSaveVersion)
        -> close old operation log
@@ -133,62 +140,38 @@ Project 不直接序列化主项目文件。正确流程是：
        -> reopen quick-save log for append
 ```
 
-关闭项目：
+关闭 Project 时先关闭快速保存日志，再关闭 Scene，避免 Scene 清理实体和组件时把删除操作追加到快速保存日志。
+
+## 6. 通信
+
+Application、Product、Scene 各自拥有自己的 mail channel。Project 本身不拥有 channel；外部默认项目交互使用主 Scene channel。
 
 ```text
-Project.Close()
-  -> Stop project thread
-  -> CloseQuickSaveLog()
-  -> cleanup Universe/Repository/ResourceLibrary
-  -> release project PDOHub
-  -> remove project mail channel
+applicationChannelId -> ApplicationHost
+productChannelId     -> ProductRuntime
+sceneChannelId       -> Project MainScene / ChildScene
 ```
 
-关闭时先关闭日志，是为了避免 Repository 清理实体和组件时把删除操作追加到快速保存日志。
+`ProductRuntime::GetProjectFrontendPostOffice(projectId)` 会找到对应 ProjectRuntime，再返回主 Scene 的 frontend post office。ApplicationHost 的同名接口只是跨已启动产品做一次查找代理。
 
-`ProductRuntime::OpenProjectCatalog` 会在创建主项目后先回放 quick-save 日志，再启动项目线程，启动成功后打开追加日志。临时项目默认不自动承担主项目快速保存职责。
+应用级命令发到应用 mailbox；产品级命令发到产品 mailbox；数据编辑、撤销重做、渲染同步等 Scene 级命令发到对应 Scene mailbox，并由 CommandHandler 同时接收 ProjectContext 和 SceneContext。
 
-quick-save 日志头部的 `magic` 和 `version` 来自产品/文件层。Project 只负责透传，Repository 只负责校验和写入日志头；产品文件版本的升级代码不放在 Project 或 Database 中。
+## 7. 与产品级注册表的关系
 
-## 7. 通信
+ComponentMeta、Behaviour 定义、ResourceLoader 和 CommandHandler 都在 ProductRuntime 级装配。产品模块加载后，模块中的宏注册项会被 ProductRuntime 回放到当前产品的注册表。Service 仍在 Application 级 ServiceProvider 中共享。
 
-项目通信通道按 `projectChannelId` 归属 `Project`，底层 `CMailChannel` 由应用级 `CMailChannelRegistry` 维护：
+Scene 创建 Repository 和 Universe 时引用产品级定义能力；创建 ResourceLibrary 时使用 Scene 自己的 ResourceLoaderRegistry。实体数据、组件实例、资源对象、Scene 消息和 Scene 线程完全归属当前 Scene。
 
-```text
-Project
-  projectChannelId
-  frontend post office
-  backend post office
-```
+## 8. 与 PDO 的关系
 
-`ProductRuntime::GetProjectFrontendPostOffice(projectId)` 先找到项目运行时，再通过项目的 `projectChannelId` 返回该项目自己的 frontend post office。`ApplicationHost::GetProjectFrontendPostOffice(projectId)` 只是跨已启动产品做一次查找代理。项目线程每帧从自己的 backend post office 收取邮件并分发命令。
+PDO Arena 由产品或文件/启动模块决定，通过 Project 创建参数转给主 Scene。Scene 不理解 payload 字段含义，只负责创建、交换和释放 Scene PDOHub。具体 slot 可以由 RenderService、InputService 或其他业务服务在运行期动态分配和释放。
 
-应用级命令仍使用 `ApplicationHost::GetApplicationChannelID()` 对应的应用级邮局，适合列产品、启动产品、停止产品。打开 ProjectCatalog 走产品级邮局。
+Behaviour、CommandHandler 和 RenderService 通过 `ISceneContext::HasPDOHub()` 和 `ISceneContext::PDOHub()` 访问 Scene PDO。未配置 PDO 的 Scene 会在访问 `PDOHub()` 时抛出异常。
 
-## 8. 与产品级注册表的关系
+前端宿主通过 Mailbox 获取 Scene PDO Arena name，再打开对应 shared memory。Scene 关闭时释放 PDOHub；前端宿主收到 Scene 关闭后必须停止访问该 Arena。
 
-当前组件元数据、Behaviour 定义、ResourceLoader 和 CommandHandler 都在 ProductRuntime 级装配。产品模块加载后，模块中的宏注册项会被 `ProductRuntime` 回放到当前产品的注册表。Service 仍在 Application 级 ServiceProvider 中共享。
+## 9. 内存隔离
 
-Project 不维护自己的业务类型目录。Project 创建 Repository 和 Universe 时引用产品级定义能力；创建 ResourceLibrary 时使用项目自己的 ResourceLoaderRegistry。实体数据、组件实例、资源对象、项目消息和项目线程仍完全归属当前 Project。
+当前实现是进程内隔离：不同 Scene 拥有独立对象图和线程，但仍处在同一个 OS 进程地址空间内。Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。
 
-## 9. 与 PDO 的关系
-
-PDO Arena 由产品或文件/启动模块决定，通过 `CProjectCreateInfo::bEnablePDOHub` 和 `PDOHubCreateInfo` 传给 Project。Project 不理解 payload 字段含义，只负责创建、交换和释放项目级 PDOHub。具体 slot 可以由 RenderService、InputService 或其他业务服务在运行期动态分配和释放。
-
-帧循环顺序：
-
-```text
-PreSwapPDO()
-  -> Project PDOHub SwapInSlot()
-  -> Universe PreSwapPDO()
-FrameHandler(project mailbox)
-Tick()
-PostSwapPDO()
-  -> Universe PostSwapPDO()
-  -> Project PDOHub SwapOutSlot()
-```
-
-Behaviour 和 CommandHandler 通过 `IProjectContext::HasPDOHub()` 和 `IProjectContext::PDOHub()` 访问项目 PDO。未配置 PDO 的项目会在访问 `PDOHub()` 时抛出异常。
-
-前端宿主通过 Mailbox 获取项目 PDO Arena name，再打开对应 shared memory。Project 关闭时释放 PDOHub；前端宿主收到项目关闭后必须停止访问该 Arena。
-
+严格意义上的独立内存空间必须使用进程级隔离，即每个 Project 或 Scene 由独立 Worker 进程承载。线程和对象边界不能阻止野指针、堆破坏、访问冲突等 native 崩溃影响整个进程。

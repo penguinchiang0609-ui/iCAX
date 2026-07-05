@@ -106,7 +106,7 @@ sequenceDiagram
     R->>B: OnRepositoryChanging/Changed
 ```
 
-Repository 是对外事件发布者。Project 订阅 Repository 事件，再携带 ApplicationContext、ProductContext 和 ProjectContext 转发给 Universe。
+Repository 是对外事件发布者。Scene 订阅 Repository 事件，再携带 ApplicationContext、ProductContext、ProjectContext 和 SceneContext 转发给 Universe。
 
 ## 6. OperationBatch 与 ChangeSet
 
@@ -249,6 +249,6 @@ derived property -> source properties
 
 Behaviour 通过 `Repository::GetView()` 枚举组件并执行行为。
 
-Project 负责项目会话、资源库和 Repository 生命周期；Database 不关心项目打开方式。
+Scene 负责资源库和 Repository 生命周期；Project 负责项目身份、ProjectSetting 和 Scene 集合。Database 不关心项目或 Scene 的打开方式。
 
-项目级 CommandHandler 通过 `ProjectContext::Database()` 获取 `IRepository`，执行命令时显式创建撤销记录边界。
+Scene 级 CommandHandler 通过 `SceneContext::Database()` 获取 `IRepository`，执行命令时显式创建撤销记录边界。ProjectContext 只提供项目身份、路径和 ProjectSetting。

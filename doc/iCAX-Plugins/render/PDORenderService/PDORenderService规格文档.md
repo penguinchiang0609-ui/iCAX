@@ -2,19 +2,19 @@
 
 ## 定位
 
-`CPDORenderService` 实现 `IRenderService`，用于 H5 或其他外部前端路线。它把 `RenderData` 序列化为 `RenderPDO` payload，并写入当前项目的 `PDOHub`。
+`CPDORenderService` 实现 `IRenderService`，用于 H5 或其他外部前端路线。它把 `RenderData` 序列化为 `RenderPDO` payload，并写入当前 Scene 的 `PDOHub`。
 
-`PDORenderService` 不负责渲染屏幕。它只负责把后端渲染数据同步到项目 PDO，并通过项目 mailbox 告知前端 slot 的分配、释放和移动。
+`PDORenderService` 不负责渲染屏幕。它只负责把后端渲染数据同步到 Scene PDO，并通过 Scene mailbox 告知前端 slot 的分配、释放和移动。
 
 ## 核心接口
 
-- `Update(ApplicationContext, ProductContext, ProjectContext, DeltaTime, TotalTime)`
+- `Update(ApplicationContext, ProductContext, ProjectContext, SceneContext, DeltaTime, TotalTime)`
 - `MakeGeometryPDOID(ProjectID, SceneID, GeometryKind, GeometryID)`
 - `MakeObjectPDOID(ProjectID, SceneID, ObjectID)`
 - `MakeViewStatePDOID(ProjectID, SceneID)`
-- `NotifyPDODefragBegin(ProjectContext)`
-- `NotifyPDOSlotMoved(ProjectContext, PDOID)`
-- `NotifyPDODefragEnd(ProjectContext)`
+- `NotifyPDODefragBegin(ProjectID, SceneContext)`
+- `NotifyPDOSlotMoved(ProjectID, SceneContext, PDOID)`
+- `NotifyPDODefragEnd(ProjectID, SceneContext)`
 - `WriteMeshToPDO(ProjectID, SceneID, GeometryID, Slot)`
 - `WritePolylineToPDO(ProjectID, SceneID, GeometryID, Slot)`
 - `WriteToolpathToPDO(ProjectID, SceneID, GeometryID, Slot)`
@@ -26,7 +26,7 @@
 
 ## 分配规则
 
-`Update` 每帧从 `ProjectContext.PDOHub()` 获取当前项目的动态 PDOHub，并按当前 scene 数据自动分配或释放 slot。
+`Update` 每帧从 `SceneContext.PDOHub()` 获取当前 Scene 的动态 PDOHub，并按当前 scene 数据自动分配或释放 slot。`ProjectContext` 只用于取得 ProjectID 和项目级设置。
 
 - 一个 mesh、polyline、toolpath 几何各自占用一个 geometry slot。
 - 一个 render object 占用一个 object slot。该 slot 使用 `InstanceList` payload，但只包含这个对象自己的 instance 和 style。
@@ -37,7 +37,7 @@
 
 ## 邮件事件
 
-`PDORenderService` 通过项目后端邮局发送事件，前端从项目前端邮局接收。payload 是 UTF-8 JSON 文本。所有 64 位 ID 都以字符串形式写入，避免 JS `Number` 精度问题。
+`PDORenderService` 通过 Scene 后端邮局发送事件，前端从 Scene 前端邮局接收。payload 是 UTF-8 JSON 文本。所有 64 位 ID 都以字符串形式写入，避免 JS `Number` 精度问题。
 
 事件码：
 
@@ -77,7 +77,7 @@ DefragEnd
 ## 使用样例
 
 ```cpp
-auto render = project.Services().Resolve<iCAX::Render::IRenderService>();
+auto render = scene.Services().Resolve<iCAX::Render::IRenderService>();
 
 render->CreateScene(project.GetProjectID(), 1);
 render->UpsertMesh(project.GetProjectID(), 1, mesh);
@@ -88,8 +88,8 @@ instance.nGeometryID = mesh.nGeometryID;
 instance.eGeometryKind = iCAX::Render::ERenderGeometryKind::Mesh;
 render->SetInstances(project.GetProjectID(), 1, { instance }, {}, instanceVersion);
 
-render->Update(applicationContext, productContext, project, deltaTime, totalTime);
-project.PDOHub().SwapOutSlot();
+render->Update(applicationContext, productContext, project, scene, deltaTime, totalTime);
+scene.PDOHub().SwapOutSlot();
 ```
 
 如果上层需要提前知道某个对象的 PDOID：

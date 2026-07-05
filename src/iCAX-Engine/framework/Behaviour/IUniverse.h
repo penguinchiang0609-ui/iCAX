@@ -17,10 +17,10 @@ namespace iCAX
         * @brief 宇宙
         * @remark
         *   Universe 是行为运行容器，不拥有 Repository，也不代表 Project。
-        *   Project 在每帧把 Application/Product/Project 三层上下文传入 Universe，
+        *   Scene 在每帧把 Application/Product/Project/Scene 四层上下文传入 Universe，
         *   Universe 再调度已绑定行为。
-        *   Universe 和其中的 Behaviour 实例按 Project 单线程模型运行，不做内部并发保护；
-        *   外部线程应通过 Mailbox/PDO/命令通道把工作交给所属 Project 线程。
+        *   Universe 和其中的 Behaviour 实例按 Scene 单线程模型运行，不做内部并发保护；
+        *   外部线程应通过 Mailbox/PDO/命令通道把工作交给所属 Scene 线程。
         */
         class _SYSTEM_EXP IUniverse
         {
@@ -50,7 +50,7 @@ namespace iCAX
 
             /*
             * @brief 帧前交换PDO双缓冲
-            * @details 当前预留给 PDO 帧前交换，通常由 Project 工作线程调用。
+            * @details 当前预留给 PDO 帧前交换，通常由 Scene 工作线程调用。
             */
             virtual void PreSwapPDO() = 0;
 
@@ -59,20 +59,22 @@ namespace iCAX
             * @param [in] ApplicationContext_ 应用上下文。
             * @param [in] ProductContext_ 产品上下文。
             * @param [in] ProjectContext_ 项目上下文。
-            * @param [in] nDeltaTime_ 当前帧间隔秒数，由 Project 运行时调度器提供。
-            * @param [in] nTotalTime_ 累计运行秒数，由 Project 运行时调度器提供。
-            * @details 应由所属 Project 线程调用；不得与 Repository 事件转发并发进入同一 Universe。
+            * @param [in] nDeltaTime_ 当前帧间隔秒数，由 Scene 运行时调度器提供。
+            * @param [in] nTotalTime_ 累计运行秒数，由 Scene 运行时调度器提供。
+            * @param [in] SceneContext_ 场景上下文。
+            * @details 应由所属 Scene 线程调用；不得与 Repository 事件转发并发进入同一 Universe。
             */
             virtual void Tick(
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_) = 0;
 
             /*
             * @brief 帧后交换PDO双缓冲
-            * @details 当前预留给 PDO 帧后交换，通常由 Project 工作线程调用。
+            * @details 当前预留给 PDO 帧后交换，通常由 Scene 工作线程调用。
             */
             virtual void PostSwapPDO() = 0;
 
@@ -95,12 +97,14 @@ namespace iCAX
             * @param [in] ProductContext_ 产品上下文。
             * @param [in] ProjectContext_ 项目上下文。
             * @param [in] Args_ Repository 事件参数。
-            * @details 应由所属 Project 线程在 Repository 事件链路中调用。
+            * @param [in] SceneContext_ 场景上下文。
+            * @details 应由所属 Scene 线程在 Repository 事件链路中调用。
             */
             virtual void OnRepositoryChanging(
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const iCAX::Database::RepositoryEventArgs& Args_) = 0;
 
             /*
@@ -109,12 +113,14 @@ namespace iCAX
             * @param [in] ProductContext_ 产品上下文。
             * @param [in] ProjectContext_ 项目上下文。
             * @param [in] Args_ Repository 事件参数。
-            * @details 应由所属 Project 线程在 Repository 事件链路中调用。
+            * @param [in] SceneContext_ 场景上下文。
+            * @details 应由所属 Scene 线程在 Repository 事件链路中调用。
             */
             virtual void OnRepositoryChanged(
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN const iCAX::Product::IProductContext& ProductContext_,
                 IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const iCAX::Database::RepositoryEventArgs& Args_) = 0;
 
             /*

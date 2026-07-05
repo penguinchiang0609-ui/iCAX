@@ -234,5 +234,5 @@ src/tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj
 
 - `ProjectTest` 覆盖 Project 事件发送。
 - `ProductTest` 覆盖 Product mailbox 命令和事件。
-- `ApplicationHostTest` 覆盖 ApplicationHost/Product/Project 通信链路。
-- `RenderServiceTest` 覆盖 PDORenderService 通过项目 mailbox 发 slot/defrag 事件。
+- `ApplicationHostTest` 覆盖 ApplicationHost/Product/Scene 通信链路。
+- `RenderServiceTest` 覆盖 PDORenderService 通过 Scene mailbox 发 slot/defrag 事件。

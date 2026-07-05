@@ -5,7 +5,7 @@
 
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
-#include "ProjectContext/IProjectContext.h"
+#include "ProjectContext/ISceneContext.h"
 #include "Services/ServicesHelper.h"
 
 #include <optional>
@@ -168,10 +168,10 @@ namespace iCAX
             }
 
             SToolpathOrderPlan BuildOrderPlan(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SToolpathOrderRequest& Request_) override
             {
-                auto& _Repository = Project_.Database();
+                auto& _Repository = Scene_.Database();
                 auto [_pBlockEntity, _pBlock] = _RequireBlock(_Repository, Request_.BlockEntityID);
 
                 SToolpathOrderPlan _Plan;
@@ -200,11 +200,11 @@ namespace iCAX
             }
 
             bool ApplyOrderPlan(
-                IN iCAX::Project::IProjectContext& Project_,
+                IN iCAX::Project::ISceneContext& Scene_,
                 IN const SToolpathOrderPlan& Plan_,
                 OUT std::string& strError_) override
             {
-                auto& _Repository = Project_.Database();
+                auto& _Repository = Scene_.Database();
                 auto [_pBlockEntity, _pBlock] = _RequireBlock(_Repository, Plan_.BlockEntityID);
 
                 VariantArray _Children;

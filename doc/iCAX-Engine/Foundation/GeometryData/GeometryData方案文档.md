@@ -157,6 +157,134 @@ Compound
 
 `Coedge` 是必要的。它解决的问题是：同一条 edge 在不同 face/wire 中可能方向不同，并且在每个 face 的参数域中有自己的 p-curve。
 
+拓扑结构类图如下：
+
+```mermaid
+classDiagram
+direction LR
+
+class BRepModel {
+  +Curve2Record[] Curves2
+  +Curve3Record[] Curves3
+  +Surface3Record[] Surfaces3
+  +Triangulation3Record[] Triangulations3
+  +BRepVertex[] Vertices
+  +BRepEdge[] Edges
+  +BRepWire[] Wires
+  +BRepFace[] Faces
+  +BRepShell[] Shells
+  +BRepSolid[] Solids
+  +BRepCompSolid[] CompSolids
+  +BRepCompound[] Compounds
+  +BRepShapeRef[] RootShapes
+}
+
+class BRepVertex {
+  +uint64 Id
+  +Point3 Position
+  +double Tolerance
+}
+
+class BRepEdge {
+  +uint64 Id
+  +uint64 Curve3Id
+  +uint64 StartVertexId
+  +uint64 EndVertexId
+  +ParameterRange Range
+  +bool Degenerated
+}
+
+class BRepCoedge {
+  +uint64 EdgeId
+  +uint64 Curve2Id
+  +uint64 StartVertexId
+  +uint64 EndVertexId
+  +ETopologyOrientation Orientation
+}
+
+class BRepWire {
+  +uint64 Id
+  +BRepCoedge[] Coedges
+  +bool Closed
+}
+
+class BRepFace {
+  +uint64 Id
+  +uint64 Surface3Id
+  +uint64 Triangulation3Id
+  +uint64[] WireIds
+  +SurfaceParameterRange Domain
+  +ETopologyOrientation Orientation
+}
+
+class BRepShell {
+  +uint64 Id
+  +uint64[] FaceIds
+  +bool Closed
+}
+
+class BRepSolid {
+  +uint64 Id
+  +uint64[] ShellIds
+}
+
+class BRepCompSolid {
+  +uint64 Id
+  +uint64[] SolidIds
+}
+
+class BRepCompound {
+  +uint64 Id
+  +BRepShapeRef[] Children
+}
+
+class BRepShapeRef {
+  +EBRepShapeKind Kind
+  +uint64 Id
+  +ETopologyOrientation Orientation
+  +Transform3 Location
+}
+
+BRepModel "1" *-- "0..*" BRepVertex
+BRepModel "1" *-- "0..*" BRepEdge
+BRepModel "1" *-- "0..*" BRepWire
+BRepModel "1" *-- "0..*" BRepFace
+BRepModel "1" *-- "0..*" BRepShell
+BRepModel "1" *-- "0..*" BRepSolid
+BRepModel "1" *-- "0..*" BRepCompSolid
+BRepModel "1" *-- "0..*" BRepCompound
+BRepModel "1" *-- "0..*" BRepShapeRef : RootShapes
+
+BRepWire "1" *-- "0..*" BRepCoedge
+BRepCompound "1" *-- "0..*" BRepShapeRef : Children
+BRepEdge --> BRepVertex : Start/End
+BRepEdge --> Curve3Record : Curve3Id
+BRepCoedge --> BRepEdge : EdgeId
+BRepCoedge --> Curve2Record : Curve2Id
+BRepFace --> Surface3Record : Surface3Id
+BRepFace --> Triangulation3Record : Triangulation3Id
+BRepFace --> BRepWire : WireIds
+BRepShell --> BRepFace : FaceIds
+BRepSolid --> BRepShell : ShellIds
+BRepCompSolid --> BRepSolid : SolidIds
+BRepShapeRef --> BRepVertex : Kind+Id
+BRepShapeRef --> BRepEdge : Kind+Id
+BRepShapeRef --> BRepWire : Kind+Id
+BRepShapeRef --> BRepFace : Kind+Id
+BRepShapeRef --> BRepShell : Kind+Id
+BRepShapeRef --> BRepSolid : Kind+Id
+BRepShapeRef --> BRepCompSolid : Kind+Id
+BRepShapeRef --> BRepCompound : Kind+Id
+```
+
+设计上需要注意：
+
+- `BRepModel` 是 topo 数据的承载整体，不是 `BRepFace` 或 `BRepSolid` 单独就能表达完整 CAD 模型。
+- `BRepEdge` 不是曲线本身，而是对 `Curve3Record` 的拓扑使用。
+- `BRepFace` 不是曲面本身，而是对 `Surface3Record` 的拓扑使用，并通过 `BRepWire` 裁剪出有限区域。
+- `BRepCoedge` 是 edge 在 wire 中的有向实例，承载 p-curve、方向和局部起止点信息。
+- 类图中的箭头大部分是 Id 引用关系，不代表 C++ 指针拥有关系。
+
 ### 5.3 RootShapes
 
 `RootShapes` 是新的统一入口。
@@ -195,4 +323,3 @@ Compound
 - mesh 是否无自交。
 
 这些需要 `GeometryAlgo` 的轻量校验或 `GeometryAdapter` 调外部内核做强校验。
-

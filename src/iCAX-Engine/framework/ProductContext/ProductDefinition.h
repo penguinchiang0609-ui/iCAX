@@ -63,8 +63,8 @@ namespace iCAX
             std::string DefaultProjectStartupComponent; //!< 打开项目后默认绑定的启动组件。
             CProductFileDefinition ProjectFile; //!< 产品项目文件识别规则。
             CProductModules Modules; //!< 产品需要加载的模块定义。
-            bool bEnablePDOHub = false; //!< true 表示项目默认创建一块可动态分配 slot 的 PDO Arena。
-            iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 默认项目 PDOHub 创建参数。
+            bool bEnablePDOHub = false; //!< true 表示项目主 Scene 默认创建一块可动态分配 slot 的 PDO Arena。
+            iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 默认主 Scene PDOHub 创建参数。
         };
 
         /*
