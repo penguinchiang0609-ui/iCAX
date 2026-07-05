@@ -148,9 +148,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="BinaryResource.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="IResourceLoader.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="ResourceImportExport.h" />
     <ClInclude Include="ResourceInfo.h" />
     <ClInclude Include="ResourceKey.h" />
     <ClInclude Include="ResourceLibrary.h" />
@@ -164,6 +166,7 @@
     <ClInclude Include="ResourcesExport.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="BinaryResource.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -172,6 +175,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="ResourceKey.cpp" />
+    <ClCompile Include="ResourceImportExport.cpp" />
     <ClCompile Include="ResourceLoaderRegistrationCatalog.cpp" />
     <ClCompile Include="ResourceLoaderRegistry.cpp" />
     <ClCompile Include="ResourcePool.cpp" />

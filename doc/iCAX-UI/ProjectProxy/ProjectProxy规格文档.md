@@ -2,42 +2,40 @@
 
 ## 1. 定位
 
-`ProjectProxy` 是前端项目代理层。它表达某个 backend project 的前端会话。
+`ProjectProxy` 是前端项目代理层。它表达某个 backend project 的前端容器。
 
 前端 project proxy 不拥有 repository、resource pool、ECS 或项目文件数据，只保存：
 
 - project id。
-- project channel id。
 - project state 快照。
-- `PDOClient`。
+- Scene 状态表。
+- 主 `SceneProxy`。
 
 ## 2. 对外接口
 
-构造 `ProjectProxy` 时必须提供带 `projectChannelId` 的 project state。
+构造 `ProjectProxy` 时必须提供带 `projectId` 的 project state。Project 本身不拥有 channel，也不直接暴露 PDO。
 
 方法：
 
-- `updateState(projectState)`：更新项目状态快照，并按最新 PDO 描述重建 `PDOClient`。
-- `getState()`：发送 `Project.GetState`，刷新并返回项目状态。
-- `execute(command, payload, options)`：向 project channel 发送项目级命令。
-- `undo(options)`：发送 `Project.Undo`。
-- `redo(options)`：发送 `Project.Redo`。
-- `getUndoRedoState(options)`：发送 `Project.GetUndoRedoState`。
-- `subscribe(command, handler)`：订阅 project channel 的指定事件。
-- `subscribeAll(handler)`：订阅 project channel 的所有事件。
+- `updateState(projectState)`：更新项目状态快照。
+- `syncScenes(projectState)`：按 project state 创建、更新和释放 `SceneProxy`。
+- `adoptScene(sceneState)`：根据 scene state 创建或更新单个 `SceneProxy`。
+- `getScene(sceneId)`：获取指定 Scene 的前端代理。
+- `getMainScene()`：获取主 Scene 的前端代理。
 
 属性：
 
-- `pdo`：项目 PDO 访问入口。
+- `mainSceneId`：主 Scene ID。
+- `scenes`：SceneProxy 表。
 
-## 3. PDO 边界
+## 3. Scene 边界
 
-`ProjectProxy` 只提供 PDO client，不解释 payload。PDO 的 `typeName + instanceName`、版本和二进制布局由产品协议定义。
+`ProjectProxy` 只表达项目容器，不执行业务命令，不订阅 Scene 事件，不读取 PDO。可运行现场由 `SceneProxy` 表达。业务命令、撤销重做和 PDO 入口都走 `SceneProxy`。
 
 ## 4. 验收要求
 
-- 项目级命令必须返回 Promise。
-- backend 主动项目事件可以被订阅。
-- PDO 访问入口只来自项目状态，不创建全局单例。
-- `ProjectProxy` 层必须至少提供状态、撤销、重做和撤销重做状态查询的标准入口。
+- Project 本身不得要求独立通信通道字段。
+- `ProjectProxy` 必须能根据 project state 同步多个 Scene。
+- 主 Scene 可以通过 `getMainScene()` 获取。
+- `ProjectProxy` 释放时必须释放其拥有的所有 `SceneProxy` 订阅。
 - 项目文件保存依赖具体产品/文件模块，不作为 `ProjectProxy` 前端公共层的固定命令。

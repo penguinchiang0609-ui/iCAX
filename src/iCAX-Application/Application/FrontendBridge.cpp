@@ -172,11 +172,14 @@ std::string iCAX::Application::CFrontendBridge::RegisterProductChannel(const std
     return _ToString(_ChannelID);
 }
 
-std::string iCAX::Application::CFrontendBridge::RegisterProjectChannel(const std::string& strProjectID_)
+std::string iCAX::Application::CFrontendBridge::RegisterSceneChannel(
+    const std::string& strProjectID_,
+    const std::string& strSceneID_)
 {
     auto& _Engine = m_pImpl->RequireEngine();
     auto _ProjectID = _ParseChannelID(strProjectID_);
-    auto _PostOffice = _Engine.GetProjectFrontendPostOffice(_ProjectID);
+    auto _SceneID = _ParseChannelID(strSceneID_);
+    auto _PostOffice = _Engine.GetSceneFrontendPostOffice(_ProjectID, _SceneID);
 
     for (const auto& _pRuntime : _Engine.GetProductRuntimes())
     {
@@ -197,12 +200,18 @@ std::string iCAX::Application::CFrontendBridge::RegisterProjectChannel(const std
             continue;
         }
 
-        const auto _ProjectChannelID = _pProject->GetProjectChannelID();
-        m_pImpl->RegisterPostOffice(_ProjectChannelID, _PostOffice);
-        return _ToString(_ProjectChannelID);
+        auto _pScene = _pProject->GetScene(_SceneID);
+        if (!_pScene)
+        {
+            continue;
+        }
+
+        const auto _SceneChannelID = _pScene->GetSceneChannelID();
+        m_pImpl->RegisterPostOffice(_SceneChannelID, _PostOffice);
+        return _ToString(_SceneChannelID);
     }
 
-    throw std::runtime_error("Project runtime is not found: " + strProjectID_);
+    throw std::runtime_error("Scene runtime is not found: " + strProjectID_ + "/" + strSceneID_);
 }
 
 void iCAX::Application::CFrontendBridge::PostMail(const CFrontendMailEnvelope& Envelope_)

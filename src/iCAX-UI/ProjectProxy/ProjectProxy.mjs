@@ -1,14 +1,13 @@
 import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
-import { ProjectCommands } from "../SDK/Mailbox/commandRoute.mjs";
-import { PDOClient } from "../SDK/PDO/pdoClient.mjs";
+import { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 
 export class ProjectProxy {
   constructor(mailboxClient, projectState, options = {}) {
     if (!mailboxClient) {
       throw new TypeError("mailboxClient is required");
     }
-    if (!isUsableChannelId(projectState?.projectChannelId)) {
-      throw new TypeError("projectState.projectChannelId must be a non-nil channel id");
+    if (!projectState?.projectId) {
+      throw new TypeError("projectState.projectId is required");
     }
 
     this.mailboxClient = mailboxClient;
@@ -16,67 +15,118 @@ export class ProjectProxy {
     this.product = options.product ?? null;
     this.state = projectState;
     this.projectId = projectState.projectId;
-    this.projectChannelId = projectState.projectChannelId;
-    this.pdo = new PDOClient(projectState.pdo, this.bridge);
-    this.unsubscribers = new Set();
-  }
-
-  async getState() {
-    const state = await this.execute(ProjectCommands.getState);
-    if (state?.projectChannelId) {
-      this.updateState({ ...this.state, ...state });
-    }
-    return state;
+    this.mainSceneId = projectState.mainSceneId ?? projectState.mainScene?.sceneId ?? "";
+    this.scenes = new Map();
+    this.mainSceneProxy = null;
   }
 
   updateState(projectState) {
-    if (!isUsableChannelId(projectState?.projectChannelId)) {
-      throw new TypeError("projectState.projectChannelId must be a non-nil channel id");
+    if (!projectState?.projectId) {
+      throw new TypeError("projectState.projectId is required");
     }
 
     this.state = projectState;
     this.projectId = projectState.projectId;
-    this.projectChannelId = projectState.projectChannelId;
-    this.pdo = new PDOClient(projectState.pdo, this.bridge);
+    this.mainSceneId = projectState.mainSceneId ?? projectState.mainScene?.sceneId ?? "";
   }
 
-  execute(command, payload = {}, options = {}) {
-    return this.mailboxClient.request(this.projectChannelId, command, payload, options);
+  async syncScenes(projectState = this.state) {
+    this.updateState(projectState);
+
+    const sceneStates = collectSceneStates(projectState);
+    const openSceneIds = new Set();
+    for (const sceneState of sceneStates) {
+      openSceneIds.add(sceneState.sceneId);
+      await this.adoptScene(sceneState);
+    }
+
+    for (const sceneId of [...this.scenes.keys()]) {
+      if (!openSceneIds.has(sceneId)) {
+        const scene = this.scenes.get(sceneId);
+        scene?.dispose();
+        this.scenes.delete(sceneId);
+      }
+    }
+
+    this.mainSceneProxy = this.mainSceneId ? this.getScene(this.mainSceneId) : null;
+    return this;
   }
 
-  undo(options = {}) {
-    return this.execute(ProjectCommands.undo, {}, options);
+  async adoptScene(sceneState) {
+    if (!sceneState?.sceneId) {
+      return null;
+    }
+
+    const registeredState = await this.#registerSceneChannel(sceneState);
+    if (!isUsableChannelId(registeredState.sceneChannelId)) {
+      throw new Error(`Scene has no usable channel id: ${registeredState.sceneId}`);
+    }
+
+    const existing = this.scenes.get(registeredState.sceneId);
+    if (existing) {
+      existing.updateState(registeredState);
+      return existing;
+    }
+
+    const scene = new SceneProxy(this.mailboxClient, registeredState, {
+      bridge: this.bridge,
+      project: this,
+    });
+    this.scenes.set(scene.sceneId, scene);
+    if (scene.sceneId === this.mainSceneId) {
+      this.mainSceneProxy = scene;
+    }
+    return scene;
   }
 
-  redo(options = {}) {
-    return this.execute(ProjectCommands.redo, {}, options);
+  getScene(sceneId) {
+    return this.scenes.get(sceneId) ?? null;
   }
 
-  getUndoRedoState(options = {}) {
-    return this.execute(ProjectCommands.getUndoRedoState, {}, options);
-  }
-
-  subscribe(command, handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.projectChannelId, command, handler));
-  }
-
-  subscribeAll(handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribeAll(this.projectChannelId, handler));
+  getMainScene() {
+    return this.mainSceneProxy;
   }
 
   dispose() {
-    for (const unsubscribe of [...this.unsubscribers]) {
-      unsubscribe();
+    for (const scene of this.scenes.values()) {
+      scene.dispose();
     }
-    this.unsubscribers.clear();
-    this.mailboxClient.stop(this.projectChannelId);
+    this.scenes.clear();
+    this.mainSceneProxy = null;
   }
 
-  #trackUnsubscribe(unsubscribe) {
-    this.unsubscribers.add(unsubscribe);
-    return () => {
-      this.unsubscribers.delete(unsubscribe);
-      unsubscribe();
-    };
+  async #registerSceneChannel(sceneState) {
+    if (isUsableChannelId(sceneState?.sceneChannelId)) {
+      return sceneState;
+    }
+
+    if (typeof this.bridge?.registerSceneChannel !== "function") {
+      throw new Error("Host bridge does not support scene channel registration");
+    }
+
+    const channelId = await this.bridge.registerSceneChannel(this.projectId, sceneState.sceneId);
+    if (!isUsableChannelId(channelId)) {
+      throw new Error(`Host bridge returned invalid scene channel id: ${this.projectId}/${sceneState.sceneId}`);
+    }
+
+    return { ...sceneState, sceneChannelId: channelId };
   }
+}
+
+function collectSceneStates(projectState) {
+  const result = [];
+  const seen = new Set();
+  const append = (scene) => {
+    if (!scene?.sceneId || seen.has(scene.sceneId)) {
+      return;
+    }
+    seen.add(scene.sceneId);
+    result.push(scene);
+  };
+
+  append(projectState?.mainScene);
+  for (const scene of projectState?.scenes ?? []) {
+    append(scene);
+  }
+  return result;
 }

@@ -20,8 +20,9 @@ ProductRuntime
     Product mail id
     IProjectRuntime*
     ProjectCatalog*
-      Main Project?
-      Transient Project*
+      Main Project
+        Main Scene
+        Child Scene*
 ```
 
 `ProductRuntime` 是产品级边界。它不拥有应用上下文的生命周期，只持有 ApplicationHost 创建的 `ApplicationContext`；应用级配置通过 `ApplicationContext` 读取，不再复制额外的设置副本。
@@ -71,7 +72,7 @@ Product.OpenProjectCatalog
   -> ProjectCatalog.OpenMainProject
   -> CreateLocalProjectRuntime(project)
   -> register IProjectRuntime
-  -> ProjectRuntime.SetFrameHandler(dispatch main scene mailbox)
+  -> ProjectRuntime.SetMainSceneFrameHandler(dispatch main scene mailbox)
   -> ProjectRuntime.Start
   -> RecordRecentProject(projectPath)
   -> return catalog and main project id

@@ -55,7 +55,8 @@ export class ProductProxy {
     });
 
     const project = response.catalog?.mainProject;
-    return { ...response, projectProxy: project ? await this.adoptProject(project) : null };
+    const projectProxy = project ? await this.adoptProject(project) : null;
+    return { ...response, projectProxy, sceneProxy: projectProxy?.getMainScene() ?? null };
   }
 
   async closeProjectCatalog(catalogId) {
@@ -84,14 +85,11 @@ export class ProductProxy {
       return null;
     }
 
-    const registeredState = await this.#registerProjectChannel(projectState);
-    if (!isUsableChannelId(registeredState.projectChannelId)) {
-      throw new Error(`Project has no usable channel id: ${registeredState.projectId}`);
-    }
-
+    const registeredState = await this.#registerProjectMainScene(projectState);
     const existing = this.projects.get(registeredState.projectId);
     if (existing) {
       existing.updateState(registeredState);
+      await existing.syncScenes(registeredState);
       return existing;
     }
 
@@ -100,6 +98,7 @@ export class ProductProxy {
       product: this,
     });
     this.projects.set(project.projectId, project);
+    await project.syncScenes(registeredState);
     return project;
   }
 
@@ -147,20 +146,34 @@ export class ProductProxy {
     }
   }
 
-  async #registerProjectChannel(projectState) {
+  async #registerProjectMainScene(projectState) {
     if (!projectState?.projectId) {
       return projectState;
     }
 
-    if (typeof this.bridge?.registerProjectChannel !== "function") {
-      throw new Error("Host bridge does not support project channel registration");
+    const mainScene = projectState.mainScene;
+    if (!mainScene?.sceneId) {
+      throw new Error(`Project has no main scene: ${projectState.projectId}`);
+    }
+    if (typeof this.bridge?.registerSceneChannel !== "function") {
+      throw new Error("Host bridge does not support scene channel registration");
     }
 
-    const channelId = await this.bridge.registerProjectChannel(projectState.projectId);
+    const channelId = await this.bridge.registerSceneChannel(projectState.projectId, mainScene.sceneId);
     if (!isUsableChannelId(channelId)) {
-      throw new Error(`Host bridge returned invalid project channel id: ${projectState.projectId}`);
+      throw new Error(`Host bridge returned invalid main scene channel id: ${projectState.projectId}/${mainScene.sceneId}`);
     }
 
-    return { ...projectState, projectChannelId: channelId };
+    const registeredMainScene = { ...mainScene, sceneChannelId: channelId };
+    const scenes = (projectState.scenes ?? []).map((scene) =>
+      scene?.sceneId === registeredMainScene.sceneId ? registeredMainScene : scene);
+    return {
+      ...projectState,
+      mainSceneChannelId: channelId,
+      mainScene: registeredMainScene,
+      scenes: scenes.some((scene) => scene?.sceneId === registeredMainScene.sceneId)
+        ? scenes
+        : [registeredMainScene, ...scenes],
+    };
   }
 }

@@ -44,7 +44,9 @@ namespace iCAX
             virtual bool IsAttached() const = 0;
             virtual std::string GetApplicationChannelIDText() const = 0;
             virtual std::string RegisterProductChannel(const std::string& strProductID_) = 0;
-            virtual std::string RegisterProjectChannel(const std::string& strProjectID_) = 0;
+            virtual std::string RegisterSceneChannel(
+                const std::string& strProjectID_,
+                const std::string& strSceneID_) = 0;
             virtual void PostMail(const CFrontendMailEnvelope& Envelope_) = 0;
             virtual std::vector<CFrontendMailEnvelope> PollMails() = 0;
             virtual void SetMailHandler(FrontendMailHandler Handler_) = 0;

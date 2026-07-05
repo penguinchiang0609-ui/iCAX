@@ -15,7 +15,8 @@ namespace iCAX
         /*
         * @brief ProjectCatalog 创建参数。
         * @details
-        *   Catalog 保存一个主项目和多个临时项目，并为这些项目注入相同的产品级注册表/服务。
+        *   Catalog 保存一个主项目，并为该项目注入产品级注册表/服务。
+        *   临时预览、局部编辑和仿真等隔离现场应由 Project 内部的子 Scene 承载。
         */
         struct _PROJECT_EXP CProjectCatalogCreateInfo final
         {
@@ -36,8 +37,8 @@ namespace iCAX
         /*
         * @brief 项目目录。
         * @details
-        *   Catalog 是一个工程打开上下文，可以包含一个主项目和若干临时项目。
-        *   它不启动 Scene 线程；ProductRuntime 会为项目创建 ProjectRuntime 并启动主 Scene。
+        *   Catalog 是一个工程打开上下文，只包含一个主 Project。
+        *   它不启动 Scene 线程；ProductRuntime 会登记项目运行时句柄，并启动项目的主 Scene。
         */
         class _PROJECT_EXP CProjectCatalog final
         {
@@ -92,18 +93,6 @@ namespace iCAX
             std::shared_ptr<CProject> OpenMainProject(IN const CProjectCreateInfo& CreateInfo_);
 
             /*
-            * @brief 打开临时项目。
-            */
-            std::shared_ptr<CProject> OpenTransientProject(
-                IN const std::string& strProjectName_ = std::string(),
-                IN const std::string& strProjectPath_ = std::string(),
-                IN const std::string& strStartupComponent_ = std::string());
-            /*
-            * @brief 使用完整创建参数打开临时项目。
-            */
-            std::shared_ptr<CProject> OpenTransientProject(IN const CProjectCreateInfo& CreateInfo_);
-
-            /*
             * @brief 关闭主项目。
             * @return true 表示存在主项目并已关闭。
             */
@@ -113,11 +102,6 @@ namespace iCAX
             * @brief 关闭指定项目。
             */
             bool CloseProject(IN const iCAX::Data::uuid& ProjectID_);
-
-            /*
-            * @brief 关闭全部临时项目。
-            */
-            void CloseTransientProjects();
 
             /*
             * @brief 关闭 catalog 内全部项目。
@@ -140,11 +124,6 @@ namespace iCAX
             std::vector<std::shared_ptr<CProject>> GetProjects() const;
 
             /*
-            * @brief 获取临时项目快照。
-            */
-            std::vector<std::shared_ptr<CProject>> GetTransientProjects() const;
-
-            /*
             * @brief 获取全部项目 ID。
             */
             std::vector<iCAX::Data::uuid> GetProjectIDs() const;
@@ -158,11 +137,6 @@ namespace iCAX
             * @brief 项目总数。
             */
             size_t Count() const;
-
-            /*
-            * @brief 临时项目数量。
-            */
-            size_t TransientCount() const;
 
         private:
             /*

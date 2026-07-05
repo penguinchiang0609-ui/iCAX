@@ -10,6 +10,6 @@
 - `Mailbox/`：对应 `src/icax-engine/framework/Mailbox` 的 Mail 通信单元测试。
 - `MailHandler/`：对应 `src/icax-engine/framework/MailHandler` 的 Mail 到 Command 桥接单元测试。
 - `PDO/`：对应 `src/icax-engine/framework/PDO` 的 PDO 单元测试。
-- `Project/`：对应 `src/icax-engine/framework/Project` 的主项目和临时项目会话单元测试。
+- `Project/`：对应 `src/icax-engine/framework/Project` 的 Project、ProjectCatalog 和 Scene 隔离单元测试。
 - `Resources/`：对应 `src/icax-engine/framework/Resources` 的 Resources 单元测试。
 - `Services/`：对应 `src/icax-engine/framework/Services` 的 Services 单元测试。

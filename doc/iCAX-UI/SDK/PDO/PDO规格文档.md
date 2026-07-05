@@ -20,7 +20,7 @@ PDO 不自描述业务结构。
 
 ## 4. 边界
 
-本模块只管理 PDO ID、声明查找和 lease 获取，不负责渲染和业务解析。产品页面通过 `ProjectProxy` 暴露的 `project.pdo` 使用本能力，不直接构造 `PDOClient`。
+本模块只管理 PDO ID、声明查找和 lease 获取，不负责渲染和业务解析。产品页面通过 `SceneProxy` 暴露的 `scene.pdo` 使用本能力，不直接构造 `PDOClient`。
 
 ## 5. PDO Descriptor
 
@@ -44,7 +44,7 @@ PDO 不要求运行时 declaration 携带 `typeName` 或 `instanceName`。产品
 前端读取 PDO 时必须通过 lease：
 
 ```js
-await project.pdo.withRead(typeName, instanceName, view => {
+await scene.pdo.withRead(typeName, instanceName, view => {
   // 在这里读取 view
 });
 ```
@@ -62,7 +62,7 @@ await project.pdo.withRead(typeName, instanceName, view => {
 reader 的第二个参数是只读元信息：
 
 ```js
-project.pdo.withRead(typeName, instanceName, (buffer, meta) => {
+scene.pdo.withRead(typeName, instanceName, (buffer, meta) => {
   return {
     dataVersion: meta.dataVersion,
     bytes: new Uint8Array(buffer)

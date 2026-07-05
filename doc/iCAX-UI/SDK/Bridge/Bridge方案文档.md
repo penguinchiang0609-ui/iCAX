@@ -29,9 +29,9 @@ globalThis.icax
 
 - application mailbox。
 - product mailbox。
-- project mailbox。
+- scene mailbox。
 - 产品启动。
-- 项目打开。
+- 项目打开与主 Scene 登记。
 - command response。
 
 它只用于开发期和前端白盒测试，不作为产品运行时能力。
@@ -64,6 +64,10 @@ window.icaxNativeBridge
 - `App.OpenProjectFile`
 - `Product.GetState`
 - `Product.OpenProjectCatalog`
+- `Project.GetState`
+- `Project.Undo`
+- `Project.Redo`
+- `Project.GetUndoRedoState`
 - backend 主动 event mail，通过 `emitMail(channelId, command, payload)` 触发。
 
 mock response 使用和真实 bridge 一样的 mail envelope 返回，确保 `Mailbox` 测试覆盖真实交互形态。

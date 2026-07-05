@@ -104,7 +104,6 @@ namespace
 
 iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     : m_ProjectID(CreateInfo_.ProjectID.is_nil() ? iCAX::Data::GenerateNewUUID() : CreateInfo_.ProjectID)
-    , m_Role(CreateInfo_.Role)
     , m_ProjectName(CreateInfo_.ProjectName)
     , m_ProjectPath(CreateInfo_.ProjectPath)
     , m_Settings(CreateInfo_.Settings)
@@ -117,11 +116,11 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
     , m_pMailChannelRegistry(RequireMailChannelRegistry(CreateInfo_))
-    , m_FrameHandler(CreateInfo_.FrameHandler)
+    , m_MainSceneFrameHandler(CreateInfo_.OnMainSceneFrame)
 {
     if (m_ProjectName.empty())
     {
-        m_ProjectName = m_Role == EProjectRole::Main ? "Main Project" : "Transient Project";
+        m_ProjectName = "Project";
     }
 
     auto _SceneInfo = MakeMainSceneCreateInfo(CreateInfo_);
@@ -287,21 +286,6 @@ bool iCAX::Project::CProject::IsQuickSaveLogOpen() const
     return m_bQuickSaveLogOpen;
 }
 
-iCAX::Project::EProjectRole iCAX::Project::CProject::GetRole() const
-{
-    return m_Role;
-}
-
-bool iCAX::Project::CProject::IsMainProject() const
-{
-    return m_Role == EProjectRole::Main;
-}
-
-bool iCAX::Project::CProject::IsTransientProject() const
-{
-    return m_Role == EProjectRole::Transient;
-}
-
 const std::string& iCAX::Project::CProject::GetStartupComponent() const
 {
     return m_StartupComponent;
@@ -398,7 +382,7 @@ bool iCAX::Project::CProject::CloseScene(IN const iCAX::Data::uuid& SceneID_)
     return true;
 }
 
-const iCAX::Data::uuid& iCAX::Project::CProject::GetProjectChannelID() const
+const iCAX::Data::uuid& iCAX::Project::CProject::GetMainSceneChannelID() const
 {
     return GetMainScene().GetSceneChannelID();
 }
@@ -427,82 +411,82 @@ std::optional<iCAX::Project::CProjectFault> iCAX::Project::CProject::GetLastFaul
     return _Fault ? std::make_optional(ConvertSceneFault(*_Fault)) : std::nullopt;
 }
 
-void iCAX::Project::CProject::SetFrameHandler(IN ProjectFrameHandler Handler_)
+void iCAX::Project::CProject::SetMainSceneFrameHandler(IN MainSceneFrameHandler Handler_)
 {
     std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
-    m_FrameHandler = std::move(Handler_);
+    m_MainSceneFrameHandler = std::move(Handler_);
 }
 
-iCAX::Database::IRepository& iCAX::Project::CProject::Database()
+iCAX::Database::IRepository& iCAX::Project::CProject::MainSceneDatabase()
 {
     return GetMainScene().Database();
 }
 
-const iCAX::Database::IRepository& iCAX::Project::CProject::Database() const
+const iCAX::Database::IRepository& iCAX::Project::CProject::MainSceneDatabase() const
 {
     return GetMainScene().Database();
 }
 
-iCAX::Behaviour::IUniverse& iCAX::Project::CProject::Universe()
+iCAX::Behaviour::IUniverse& iCAX::Project::CProject::MainSceneUniverse()
 {
     return GetMainScene().Universe();
 }
 
-const iCAX::Behaviour::IUniverse& iCAX::Project::CProject::Universe() const
+const iCAX::Behaviour::IUniverse& iCAX::Project::CProject::MainSceneUniverse() const
 {
     return GetMainScene().Universe();
 }
 
-iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::Resources()
+iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::MainSceneResources()
 {
     return GetMainScene().Resources();
 }
 
-const iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::Resources() const
+const iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::MainSceneResources() const
 {
     return GetMainScene().Resources();
 }
 
-bool iCAX::Project::CProject::HasPDOHub() const
+bool iCAX::Project::CProject::MainSceneHasPDOHub() const
 {
     auto _pMainScene = GetScene(m_MainSceneID);
     return _pMainScene ? _pMainScene->HasPDOHub() : false;
 }
 
-iCAX::Project::CProjectPDODescriptor iCAX::Project::CProject::GetPDODescriptor() const
+iCAX::Project::CMainScenePDODescriptor iCAX::Project::CProject::GetMainScenePDODescriptor() const
 {
     auto _pMainScene = GetScene(m_MainSceneID);
-    return _pMainScene ? _pMainScene->GetPDODescriptor() : CProjectPDODescriptor{};
+    return _pMainScene ? _pMainScene->GetPDODescriptor() : CMainScenePDODescriptor{};
 }
 
-iCAX::PDO::IPDOHub& iCAX::Project::CProject::PDOHub()
+iCAX::PDO::IPDOHub& iCAX::Project::CProject::MainScenePDOHub()
 {
     return GetMainScene().PDOHub();
 }
 
-const iCAX::PDO::IPDOHub& iCAX::Project::CProject::PDOHub() const
+const iCAX::PDO::IPDOHub& iCAX::Project::CProject::MainScenePDOHub() const
 {
     return GetMainScene().PDOHub();
 }
 
-iCAX::Services::CServiceProvider& iCAX::Project::CProject::Services() const
+iCAX::Services::CServiceProvider& iCAX::Project::CProject::MainSceneServices() const
 {
     return GetMainScene().Services();
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetBackendPostOffice() const
+iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetMainSceneBackendPostOffice() const
 {
     return GetMainScene().GetBackendPostOffice();
 }
 
-void iCAX::Project::CProject::SendFrontendEvent(
+void iCAX::Project::CProject::SendMainSceneFrontendEvent(
     IN uint64_t nTypeCode_,
     IN const std::string& strPayloadText_)
 {
     GetMainScene().SendFrontendEvent(nTypeCode_, strPayloadText_);
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetFrontendPostOffice() const
+iCAX::Mail::CMailPostOffice iCAX::Project::CProject::GetMainSceneFrontendPostOffice() const
 {
     return GetMainScene().GetFrontendPostOffice();
 }
@@ -529,17 +513,17 @@ void iCAX::Project::CProject::BindStartup()
     GetMainScene().BindStartup();
 }
 
-void iCAX::Project::CProject::PreSwapPDO()
+void iCAX::Project::CProject::PreSwapMainScenePDO()
 {
     GetMainScene().PreSwapPDO();
 }
 
-void iCAX::Project::CProject::Tick()
+void iCAX::Project::CProject::TickMainScene()
 {
     GetMainScene().Tick();
 }
 
-void iCAX::Project::CProject::PostSwapPDO()
+void iCAX::Project::CProject::PostSwapMainScenePDO()
 {
     GetMainScene().PostSwapPDO();
 }
@@ -576,11 +560,11 @@ iCAX::Project::CProjectSceneCreateInfo iCAX::Project::CProject::MakeMainSceneCre
 {
     CProjectSceneCreateInfo _SceneInfo;
     _SceneInfo.SceneID = m_ProjectID;
-    _SceneInfo.SceneChannelID = CreateInfo_.ProjectChannelID.is_nil()
+    _SceneInfo.SceneChannelID = CreateInfo_.MainSceneChannelID.is_nil()
         ? iCAX::Data::GenerateNewUUID()
-        : CreateInfo_.ProjectChannelID;
+        : CreateInfo_.MainSceneChannelID;
     _SceneInfo.ParentSceneID = iCAX::Data::GenerateNilUUID();
-    _SceneInfo.Role = m_Role == EProjectRole::Main ? ESceneRole::Main : ESceneRole::Transient;
+    _SceneInfo.Role = ESceneRole::Main;
     _SceneInfo.SceneName = m_ProjectName;
     _SceneInfo.StartupComponent = m_StartupComponent;
     _SceneInfo.pApplicationContext = m_pApplicationContext;
@@ -594,10 +578,10 @@ iCAX::Project::CProjectSceneCreateInfo iCAX::Project::CProject::MakeMainSceneCre
     _SceneInfo.PDOHubCreateInfo = CreateInfo_.PDOHubCreateInfo;
     _SceneInfo.nFrameIntervalMilliseconds = CreateInfo_.nFrameIntervalMilliseconds;
     _SceneInfo.FrameHandler = [this](IN CProjectScene&, IN const iCAX::Mail::CMailPostOffice& PostOffice_) {
-        ProjectFrameHandler _Handler;
+        MainSceneFrameHandler _Handler;
         {
             std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
-            _Handler = m_FrameHandler;
+            _Handler = m_MainSceneFrameHandler;
         }
         if (_Handler)
         {

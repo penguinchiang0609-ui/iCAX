@@ -42,7 +42,7 @@ Project 对外提供：
 - 子 Scene 管理：`OpenChildScene()`、`CloseScene()`、`GetScene()`、`GetScenes()`。
 - 快速保存日志：`ReplayQuickSaveLog()`、`OpenQuickSaveLog()`、`MarkProjectFileSaved()`、`CloseQuickSaveLog()`。
 
-Project 中保留的 `Database()`、`Resources()`、`PDOHub()`、`GetFrontendPostOffice()` 等便利方法只转发到主 Scene，不能理解为 Project 自己拥有这些运行时资源。
+Project 中保留的 `MainSceneDatabase()`、`MainSceneResources()`、`MainScenePDOHub()`、`GetMainSceneFrontendPostOffice()` 等主 Scene 便利方法只转发到主 Scene，不能理解为 Project 自己拥有这些运行时资源。
 
 ## 4. Scene
 
@@ -116,7 +116,7 @@ project.MarkProjectFileSaved("", quickSaveMagic, quickSaveVersion);
 
 ## 7. ProjectCatalog
 
-`CProjectCatalog` 管理一个主 Project 和若干临时 Project：
+`CProjectCatalog` 管理一个主 Project。预览、导入、局部编辑和仿真等临时现场由主 Project 或已有 Scene 打开子 Scene：
 
 ```cpp
 iCAX::Project::CProjectCatalogCreateInfo catalogInfo;
@@ -130,10 +130,13 @@ catalogInfo.ResourceLoaderRegistryFactory = []() {
 iCAX::Project::CProjectCatalog projectCatalog(catalogInfo);
 
 auto mainProject = projectCatalog.OpenMainProject("Robot Cell", "D:/projects/robot.icax");
-auto previewProject = projectCatalog.OpenTransientProject("Import Preview");
+
+iCAX::Project::CProjectSceneCreateInfo previewInfo;
+previewInfo.SceneName = "Import Preview";
+auto previewScene = mainProject->OpenChildScene(mainProject->GetMainSceneID(), previewInfo);
 ```
 
-Catalog 只负责打开、关闭和查询 Project。Project 的主 Scene 或子 Scene 才是真正的数据和运行隔离单元。
+Catalog 只负责打开、关闭和查询主 Project。Project 的主 Scene 或子 Scene 才是真正的数据和运行隔离单元。
 
 ## 8. 隔离规则
 

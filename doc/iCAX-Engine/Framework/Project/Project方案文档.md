@@ -30,13 +30,9 @@ ApplicationHost
           PDOHub?
           Scene mail id
           WorkThread
-      Transient Project*
-        ProjectID / ProjectPath / ProjectSetting
-        Main Scene
-        Child Scene*
 ```
 
-`ApplicationHost` 负责应用级生命周期和产品运行时；`ProductRuntime` 负责产品模块、产品 mailbox、产品数据和 ProjectCatalog；`ProjectCatalog` 管理 Project；`Project` 管理主 Scene 与子 Scene；`Scene` 才是运行现场。
+`ApplicationHost` 负责应用级生命周期和产品运行时；`ProductRuntime` 负责产品模块、产品 mailbox、产品数据和 ProjectCatalog；`ProjectCatalog` 管理主 Project；`Project` 管理主 Scene 与子 Scene；`Scene` 才是运行现场。
 
 ## 3. Project 与 Scene 的职责
 
@@ -77,7 +73,7 @@ ProductRuntime::OpenProjectCatalog(name, path)
             -> subscribe repository events
   -> replay quick-save log on MainScene Repository
   -> CreateLocalProjectRuntime(project)
-  -> ProjectRuntime.SetFrameHandler(dispatch main scene mailbox)
+  -> ProjectRuntime.SetMainSceneFrameHandler(dispatch main scene mailbox)
   -> ProjectRuntime.Start()
   -> open quick-save log for append
 ```
@@ -152,7 +148,7 @@ productChannelId     -> ProductRuntime
 sceneChannelId       -> Project MainScene / ChildScene
 ```
 
-`ProductRuntime::GetProjectFrontendPostOffice(projectId)` 会找到对应 ProjectRuntime，再返回主 Scene 的 frontend post office。ApplicationHost 的同名接口只是跨已启动产品做一次查找代理。
+`ProductRuntime::GetSceneFrontendPostOffice(projectId, sceneId)` 会找到对应 ProjectRuntime，再返回指定 Scene 的 frontend post office。ApplicationHost 的同名接口只是跨已启动产品做一次查找代理。
 
 应用级命令发到应用 mailbox；产品级命令发到产品 mailbox；数据编辑、撤销重做、渲染同步等 Scene 级命令发到对应 Scene mailbox，并由 CommandHandler 同时接收 ProjectContext 和 SceneContext。
 

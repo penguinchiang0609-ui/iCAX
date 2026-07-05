@@ -17,7 +17,7 @@ namespace iCAX
         /*
         * @brief 项目运行时每帧回调。
         */
-        using ProjectRuntimeFrameHandler = std::function<void(
+        using MainSceneRuntimeFrameHandler = std::function<void(
             IProjectRuntime&,
             const iCAX::Mail::CMailPostOffice&)>;
 
@@ -39,7 +39,7 @@ namespace iCAX
             /*
             * @brief 获取项目主 Scene 通信通道 ID。
             */
-            virtual const iCAX::Data::uuid& GetProjectChannelID() const = 0;
+            virtual const iCAX::Data::uuid& GetMainSceneChannelID() const = 0;
             /*
             * @brief 获取项目名称。
             */
@@ -52,18 +52,6 @@ namespace iCAX
             * @brief 获取启动组件类型名。
             */
             virtual std::string GetStartupComponent() const = 0;
-            /*
-            * @brief 获取项目角色。
-            */
-            virtual EProjectRole GetRole() const = 0;
-            /*
-            * @brief 是否为主项目。
-            */
-            virtual bool IsMainProject() const = 0;
-            /*
-            * @brief 是否为临时项目。
-            */
-            virtual bool IsTransientProject() const = 0;
             /*
             * @brief 项目是否仍然打开。
             */
@@ -83,15 +71,15 @@ namespace iCAX
             /*
             * @brief 获取项目主 Scene PDO 共享内存描述快照。
             */
-            virtual CProjectPDODescriptor GetPDODescriptor() const = 0;
+            virtual CMainScenePDODescriptor GetMainScenePDODescriptor() const = 0;
             /*
             * @brief 获取前端视角项目主 Scene 邮局。
             */
-            virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice() = 0;
+            virtual iCAX::Mail::CMailPostOffice GetMainSceneFrontendPostOffice() = 0;
             /*
             * @brief 设置 runtime 每帧回调。
             */
-            virtual void SetFrameHandler(IN ProjectRuntimeFrameHandler Handler_) = 0;
+            virtual void SetMainSceneFrameHandler(IN MainSceneRuntimeFrameHandler Handler_) = 0;
             /*
             * @brief 启动项目 runtime。
             */
@@ -138,7 +126,7 @@ namespace iCAX
             /*
             * @brief 获取项目主 Scene 通信通道 ID。
             */
-            const iCAX::Data::uuid& GetProjectChannelID() const override;
+            const iCAX::Data::uuid& GetMainSceneChannelID() const override;
             /*
             * @brief 获取项目名称。
             */
@@ -151,18 +139,6 @@ namespace iCAX
             * @brief 获取启动组件类型名。
             */
             std::string GetStartupComponent() const override;
-            /*
-            * @brief 获取项目角色。
-            */
-            EProjectRole GetRole() const override;
-            /*
-            * @brief 是否为主项目。
-            */
-            bool IsMainProject() const override;
-            /*
-            * @brief 是否为临时项目。
-            */
-            bool IsTransientProject() const override;
             /*
             * @brief 本地项目是否仍然打开。
             */
@@ -182,15 +158,15 @@ namespace iCAX
             /*
             * @brief 获取项目主 Scene PDO 共享内存描述快照。
             */
-            CProjectPDODescriptor GetPDODescriptor() const override;
+            CMainScenePDODescriptor GetMainScenePDODescriptor() const override;
             /*
             * @brief 获取前端视角项目主 Scene 邮局。
             */
-            iCAX::Mail::CMailPostOffice GetFrontendPostOffice() override;
+            iCAX::Mail::CMailPostOffice GetMainSceneFrontendPostOffice() override;
             /*
             * @brief 设置每帧回调。
             */
-            void SetFrameHandler(IN ProjectRuntimeFrameHandler Handler_) override;
+            void SetMainSceneFrameHandler(IN MainSceneRuntimeFrameHandler Handler_) override;
             /*
             * @brief 启动本地项目。
             */
@@ -212,7 +188,7 @@ namespace iCAX
             /*
             * @brief 获取每帧回调快照。
             */
-            ProjectRuntimeFrameHandler GetFrameHandler() const;
+            MainSceneRuntimeFrameHandler GetMainSceneFrameHandler() const;
 
             /*
             * @brief 获取本地项目引用。
@@ -223,7 +199,7 @@ namespace iCAX
         private:
             std::shared_ptr<CProject> m_pProject;
             mutable std::mutex m_FrameHandlerMutex;
-            ProjectRuntimeFrameHandler m_FrameHandler;
+            MainSceneRuntimeFrameHandler m_MainSceneFrameHandler;
         };
 
         /*

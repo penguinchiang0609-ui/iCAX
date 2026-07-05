@@ -155,7 +155,7 @@
     <ClInclude Include="ProjectCatalog.h" />
     <ClInclude Include="ProjectCommands.h" />
     <ClInclude Include="ProjectRuntime.h" />
-    <ClInclude Include="ProjectRuntimeScheduler.h" />
+    <ClInclude Include="SceneRuntimeScheduler.h" />
     <ClInclude Include="ProjectScene.h" />
   </ItemGroup>
   <ItemGroup>
@@ -169,7 +169,7 @@
     <ClCompile Include="ProjectCatalog.cpp" />
     <ClCompile Include="Project.cpp" />
     <ClCompile Include="ProjectRuntime.cpp" />
-    <ClCompile Include="ProjectRuntimeScheduler.cpp" />
+    <ClCompile Include="SceneRuntimeScheduler.cpp" />
     <ClCompile Include="ProjectScene.cpp" />
   </ItemGroup>
   <ItemGroup>

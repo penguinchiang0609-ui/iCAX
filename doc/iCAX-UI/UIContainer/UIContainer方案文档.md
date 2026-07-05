@@ -72,7 +72,7 @@ modulePath=QtUIContainer.dll
 
 - `getApplicationChannelId()`
 - `registerProductChannel(productId)`
-- `registerProjectChannel(projectId)`
+- `registerSceneChannel(projectId, sceneId)`
 - `postMail(mail)`
 - `subscribeMail(channelId, handler)`
 

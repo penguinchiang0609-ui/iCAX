@@ -38,7 +38,7 @@ CApplication.Stop()
 
 - `GetApplicationChannelIDText()`
 - `RegisterProductChannel(productId)`
-- `RegisterProjectChannel(projectId)`
+- `RegisterSceneChannel(projectId, sceneId)`
 - `PostMail(envelope)`
 - `PollMails()`
 - `SetMailHandler(handler)`
@@ -52,7 +52,7 @@ CApplication.Stop()
 - UI 宿主不链接 `Application.exe`，只通过 `IFrontendBridge` 指针回调 Application 持有的桥实现。
 - 产品 manifest 必须在进入 `CApplicationConfig::EngineConfig` 前完成解析。
 - `RegisterProductChannel` 只缓存 post office，不启动产品。
-- `RegisterProjectChannel` 只缓存 post office，不打开项目。
+- `RegisterSceneChannel` 只缓存 post office，不打开项目或 Scene。
 
 ## 6. 默认启动
 

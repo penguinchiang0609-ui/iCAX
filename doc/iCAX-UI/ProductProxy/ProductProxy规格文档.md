@@ -20,7 +20,7 @@
 - `updateState(productState)`：更新产品状态快照。
 - `getState()`：获取产品状态。
 - `listProjectCatalogs()`：列出产品下的项目目录。
-- `openProjectCatalog(projectPath, options)`：打开项目目录并返回 `ProjectProxy`。
+- `openProjectCatalog(projectPath, options)`：打开项目目录并返回 `ProjectProxy` 与主 `SceneProxy`。
 - `closeProjectCatalog(catalogId)`：关闭项目目录。
 - `subscribe(command, handler)`：订阅 product channel 的指定事件。
 - `subscribeAll(handler)`：订阅 product channel 的所有事件。
@@ -33,12 +33,12 @@
 
 `ProductProxy` 模块不解释产品协议。具体产品命令、事件和 PDO payload 由 `src/apps/<product-id>/protocol` 定义。
 
-backend state 中的 `projectChannelId` 只表示 project runtime 的通信身份，不表示当前 H5 bridge 已经可以向该 channel 投递邮件。只要 `ProductProxy` 根据 catalog/project state 创建或更新 `ProjectProxy`，就必须调用 `bridge.registerProjectChannel(projectId)`，让原生宿主把 project frontend post office 注册到当前 bridge 会话。
+Project 本身不拥有 mailbox。backend project state 必须提供 `mainSceneId`、`mainScene` 和 `scenes`。只要 `ProductProxy` 根据 catalog/project state 创建或更新 `ProjectProxy`，就必须先根据主 Scene 调用 `bridge.registerSceneChannel(projectId, mainSceneId)`，让原生宿主把主 Scene 的 frontend post office 注册到当前 bridge 会话。
 
-`bridge.registerProjectChannel(projectId)` 返回的 channel id 才是本次前端会话实际可用的 `projectChannelId`。如果返回空、nil 或非法 channel id，必须立即抛出异常。
+`bridge.registerSceneChannel(projectId, sceneId)` 返回的 channel id 才是本次前端会话实际可用的 `sceneChannelId`。如果返回空、nil 或非法 channel id，必须立即抛出异常。
 
 ## 4. 验收要求
 
-- product channel 不与 application/project channel 混用。
-- 打开项目后可以自动登记 project channel。
+- product channel 不与 application/scene channel 混用。
+- 打开项目后可以自动登记主 Scene channel。
 - 产品级事件可以被订阅。

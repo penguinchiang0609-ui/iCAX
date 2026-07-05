@@ -1258,15 +1258,16 @@ iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetProductF
     return _pRuntime->GetProductFrontendPostOffice();
 }
 
-iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetProjectFrontendPostOffice(
-    IN const iCAX::Data::uuid& ProjectID_) const
+iCAX::Mail::CMailPostOffice iCAX::ApplicationHost::CApplicationHost::GetSceneFrontendPostOffice(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN const iCAX::Data::uuid& SceneID_) const
 {
     auto _Runtimes = SnapshotProductRuntimes();
     for (const auto& _pRuntime : _Runtimes)
     {
         if (_pRuntime && _pRuntime->FindProjectCatalogByProjectID(ProjectID_))
         {
-            return _pRuntime->GetProjectFrontendPostOffice(ProjectID_);
+            return _pRuntime->GetSceneFrontendPostOffice(ProjectID_, SceneID_);
         }
     }
     throw std::runtime_error("Project not found");

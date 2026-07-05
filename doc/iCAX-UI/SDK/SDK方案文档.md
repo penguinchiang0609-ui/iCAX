@@ -39,7 +39,7 @@ SDK/runtime
   -> SDK/Bridge
   -> AppProxy
 
-AppProxy/ProductProxy/ProjectProxy
+AppProxy/ProductProxy/ProjectProxy/SceneProxy
   -> SDK/Mailbox
   -> SDK/PDO
 ```
@@ -54,7 +54,7 @@ Shell 或产品前端应这样使用：
 import { connectApplication, ProjectCommands } from "../../iCAX-UI/SDK/index.mjs";
 
 const app = await connectApplication();
-const product = await app.startProduct("icax.flat-laser-cam");
+const product = await app.startProduct("icax.laser-3d-cam");
 ```
 
 产品前端不直接 import：
@@ -68,17 +68,18 @@ SDK/PDO/*
 
 ## 4. 封装策略
 
-Mailbox 封装在三层代理对象中：
+Mailbox 封装在代理对象中：
 
 - `AppProxy` 使用 application channel。
 - `ProductProxy` 使用 product channel。
-- `ProjectProxy` 使用 project channel。
+- `ProjectProxy` 管理项目容器，不使用 mailbox。
+- `SceneProxy` 使用 scene channel。
 
-PDO 封装在 `ProjectProxy` 中：
+PDO 封装在 `SceneProxy` 中：
 
-- 项目状态携带 PDO 描述。
-- `ProjectProxy` 创建 `project.pdo`。
-- 产品前端通过 `project.pdo.withRead(typeName, instanceName, reader)` 读取高频数据。
+- Scene 状态携带 PDO 描述。
+- `SceneProxy` 创建 `scene.pdo`。
+- 产品前端通过 `scene.pdo.withRead(typeName, instanceName, reader)` 读取高频数据。
 
 Bridge 封装在 `connectApplication()` 中：
 
@@ -92,11 +93,11 @@ Bridge 封装在 `connectApplication()` 中：
 ```text
 SDK/index -> SDK/runtime
 SDK/AppShell -> SDK/index
-SDK/index -> AppProxy/ProductProxy/ProjectProxy
+SDK/index -> AppProxy/ProductProxy/ProjectProxy/SceneProxy
 SDK/index -> ProductProxy module loader
 SDK/index -> UI
-AppProxy/ProductProxy/ProjectProxy -> SDK/Mailbox
-ProjectProxy -> SDK/PDO
+AppProxy/ProductProxy/SceneProxy -> SDK/Mailbox
+SceneProxy -> SDK/PDO
 SDK/PDO -> SDK/Mailbox command route
 SDK/Bridge -> SDK/Mailbox
 ```
@@ -104,9 +105,9 @@ SDK/Bridge -> SDK/Mailbox
 不允许：
 
 ```text
-SDK/Mailbox -> AppProxy/ProductProxy/ProjectProxy
-SDK/PDO -> ProjectProxy
-SDK/Bridge -> AppProxy/ProductProxy/ProjectProxy
+SDK/Mailbox -> AppProxy/ProductProxy/ProjectProxy/SceneProxy
+SDK/PDO -> SceneProxy
+SDK/Bridge -> AppProxy/ProductProxy/ProjectProxy/SceneProxy
 产品 webpage -> SDK/Mailbox 或 SDK/PDO
 ```
 

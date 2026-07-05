@@ -34,25 +34,19 @@ namespace iCAX
             Faulted = 5,
         };
 
-        enum class EProjectRole : uint8_t
-        {
-            Main = 0,
-            Transient = 1,
-        };
-
         struct _PROJECT_EXP CProjectFault final
         {
             std::string Message;
             std::exception_ptr Exception = nullptr;
         };
 
-        using CProjectPDODescriptor = CScenePDODescriptor;
+        using CMainScenePDODescriptor = CScenePDODescriptor;
 
         /*
         * @brief 项目每帧回调。
         * @details 回调由主 Scene 的工作线程触发；CProject 只作为项目级上下文传入。
         */
-        using ProjectFrameHandler = std::function<void(CProject&, const iCAX::Mail::CMailPostOffice&)>;
+        using MainSceneFrameHandler = std::function<void(CProject&, const iCAX::Mail::CMailPostOffice&)>;
 
         /*
         * @brief 项目创建参数。
@@ -63,8 +57,7 @@ namespace iCAX
         struct _PROJECT_EXP CProjectCreateInfo final
         {
             iCAX::Data::uuid ProjectID;
-            iCAX::Data::uuid ProjectChannelID; //!< 兼容旧字段名；实际作为主 Scene 通信通道 ID 使用。
-            EProjectRole Role = EProjectRole::Main;
+            iCAX::Data::uuid MainSceneChannelID; //!< 主 Scene 通信通道 ID，nil 时自动生成。
             std::string ProjectName;
             std::string ProjectPath;
             iCAX::Data::PropertyBag Settings;
@@ -80,7 +73,7 @@ namespace iCAX
             bool bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo;
             uint32_t nFrameIntervalMilliseconds = 16;
-            ProjectFrameHandler FrameHandler;
+            MainSceneFrameHandler OnMainSceneFrame;
         };
 
         /*
@@ -121,9 +114,6 @@ namespace iCAX
             void CloseQuickSaveLog();
             bool IsQuickSaveLogOpen() const;
 
-            EProjectRole GetRole() const;
-            bool IsMainProject() const;
-            bool IsTransientProject() const;
             const std::string& GetStartupComponent() const;
 
             const iCAX::Data::uuid& GetMainSceneID() const;
@@ -138,37 +128,36 @@ namespace iCAX
 
             /*
             * @brief 主 Scene 通信通道 ID。
-            * @details 保留旧接口名，返回 MainScene.GetSceneChannelID()。
             */
-            const iCAX::Data::uuid& GetProjectChannelID() const;
+            const iCAX::Data::uuid& GetMainSceneChannelID() const;
 
             bool IsOpen() const;
             bool IsRunning() const;
             EProjectState GetState() const;
             std::optional<CProjectFault> GetLastFault() const;
-            void SetFrameHandler(IN ProjectFrameHandler Handler_);
+            void SetMainSceneFrameHandler(IN MainSceneFrameHandler Handler_);
 
-            iCAX::Database::IRepository& Database();
-            const iCAX::Database::IRepository& Database() const;
-            iCAX::Behaviour::IUniverse& Universe();
-            const iCAX::Behaviour::IUniverse& Universe() const;
-            iCAX::Resource::CResourceLibrary& Resources();
-            const iCAX::Resource::CResourceLibrary& Resources() const;
-            bool HasPDOHub() const;
-            CProjectPDODescriptor GetPDODescriptor() const;
-            iCAX::PDO::IPDOHub& PDOHub();
-            const iCAX::PDO::IPDOHub& PDOHub() const;
-            iCAX::Services::CServiceProvider& Services() const;
-            iCAX::Mail::CMailPostOffice GetBackendPostOffice() const;
-            void SendFrontendEvent(IN uint64_t nTypeCode_, IN const std::string& strPayloadText_);
-            iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const;
+            iCAX::Database::IRepository& MainSceneDatabase();
+            const iCAX::Database::IRepository& MainSceneDatabase() const;
+            iCAX::Behaviour::IUniverse& MainSceneUniverse();
+            const iCAX::Behaviour::IUniverse& MainSceneUniverse() const;
+            iCAX::Resource::CResourceLibrary& MainSceneResources();
+            const iCAX::Resource::CResourceLibrary& MainSceneResources() const;
+            bool MainSceneHasPDOHub() const;
+            CMainScenePDODescriptor GetMainScenePDODescriptor() const;
+            iCAX::PDO::IPDOHub& MainScenePDOHub();
+            const iCAX::PDO::IPDOHub& MainScenePDOHub() const;
+            iCAX::Services::CServiceProvider& MainSceneServices() const;
+            iCAX::Mail::CMailPostOffice GetMainSceneBackendPostOffice() const;
+            void SendMainSceneFrontendEvent(IN uint64_t nTypeCode_, IN const std::string& strPayloadText_);
+            iCAX::Mail::CMailPostOffice GetMainSceneFrontendPostOffice() const;
 
             void Start();
             void Stop();
             void BindStartup();
-            void PreSwapPDO();
-            void Tick();
-            void PostSwapPDO();
+            void PreSwapMainScenePDO();
+            void TickMainScene();
+            void PostSwapMainScenePDO();
             void Close();
 
         private:
@@ -180,7 +169,6 @@ namespace iCAX
         private:
             mutable std::recursive_mutex m_Mutex;
             iCAX::Data::uuid m_ProjectID;
-            EProjectRole m_Role = EProjectRole::Main;
             std::string m_ProjectName;
             std::string m_ProjectPath;
             iCAX::Data::PropertyBag m_Settings;
@@ -196,7 +184,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
             iCAX::Data::uuid m_MainSceneID;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProjectScene>> m_Scenes;
-            ProjectFrameHandler m_FrameHandler;
+            MainSceneFrameHandler m_MainSceneFrameHandler;
         };
     }
 }

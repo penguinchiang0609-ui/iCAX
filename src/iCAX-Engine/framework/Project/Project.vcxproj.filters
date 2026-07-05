@@ -30,7 +30,7 @@
     <ClInclude Include="ProjectRuntime.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ProjectRuntimeScheduler.h">
+    <ClInclude Include="SceneRuntimeScheduler.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ProjectScene.h">
@@ -53,7 +53,7 @@
     <ClCompile Include="ProjectRuntime.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ProjectRuntimeScheduler.cpp">
+    <ClCompile Include="SceneRuntimeScheduler.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ProjectScene.cpp">

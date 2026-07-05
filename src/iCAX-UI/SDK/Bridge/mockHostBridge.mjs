@@ -3,7 +3,10 @@ import { deserializeVariantText, serializeVariantText } from "../Mailbox/variant
 
 const appChannelId = "00000000-0000-4000-8000-000000000001";
 const productChannelId = "00000000-0000-4000-8000-000000000101";
-const projectChannelId = "00000000-0000-4000-8000-000000000201";
+const sceneChannelId = "00000000-0000-4000-8000-000000000201";
+const projectId = "00000000-0000-4000-8000-000000000401";
+const mainSceneId = "00000000-0000-4000-8000-000000000501";
+const mockProductId = "icax.mock-product";
 const nilChannelId = "00000000-0000-0000-0000-000000000000";
 
 export class MockHostBridge {
@@ -19,7 +22,7 @@ export class MockHostBridge {
   }
 
   async registerProductChannel(productId) {
-    if (productId && productId !== "icax.flat-laser-cam") {
+    if (productId && productId !== mockProductId) {
       throw new Error(`Product is not started: ${productId}`);
     }
     if (!this.productStarted) {
@@ -28,14 +31,20 @@ export class MockHostBridge {
     return productChannelId;
   }
 
-  async registerProjectChannel(projectId) {
-    if (!projectId) {
+  async registerSceneChannel(requestProjectId, requestSceneId) {
+    if (!requestProjectId) {
       throw new TypeError("projectId is required");
+    }
+    if (!requestSceneId) {
+      throw new TypeError("sceneId is required");
     }
     if (!this.projectOpened) {
       throw new Error("Project is not open");
     }
-    return projectChannelId;
+    if (requestProjectId !== projectId || requestSceneId !== mainSceneId) {
+      throw new Error(`Scene is not open: ${requestProjectId}/${requestSceneId}`);
+    }
+    return sceneChannelId;
   }
 
   subscribeMail(channelId, handler) {
@@ -66,7 +75,7 @@ export class MockHostBridge {
   }
 
   async openFileDialog() {
-    return "D:/projects/mock.ilcam";
+    return "D:/projects/mock.icax";
   }
 
   emitMail(channelId, command, payload = {}, options = {}) {
@@ -153,8 +162,8 @@ export class MockHostBridge {
     return {
       projectPath: projectPath ?? "",
       status: projectPath ? "Resolved" : "NotFound",
-      productId: projectPath ? "icax.flat-laser-cam" : "",
-      candidateProductIds: projectPath ? ["icax.flat-laser-cam"] : [],
+      productId: projectPath ? mockProductId : "",
+      candidateProductIds: projectPath ? [mockProductId] : [],
       matchedByMagic: Boolean(projectPath),
     };
   }
@@ -175,22 +184,22 @@ export class MockHostBridge {
   #productState() {
     const session = this.productStarted ? this.#runningProductState() : null;
     return {
-      productId: "icax.flat-laser-cam",
-      productName: "Flat Laser CAM",
+      productId: mockProductId,
+      productName: "Mock Product",
       productVersion: "0.1.0",
-      frontendEntry: "apps/flat-laser-cam/webpage/entry.mjs",
-      defaultProjectStartupComponent: "FlatLaserCamStartupComponent",
+      frontendEntry: "../../../../tests/iCAX-UI/fixtures/mock-product/entry.mjs",
+      defaultProjectStartupComponent: "MockStartupComponent",
       projectFile: {
-        magic: "ICAX_FLAT_LASER_CAM",
+        magic: "ICAX_MOCK_PRODUCT",
         formatVersion: "1.0",
-        fileExtensions: [".ilcam"],
+        fileExtensions: [".icax"],
         magicOffset: 0,
         probeBytes: 256,
       },
       isStarted: this.productStarted,
       productChannelId: this.productStarted ? productChannelId : nilChannelId,
       recentProjects: [
-        { path: "D:/projects/mock.ilcam", displayName: "mock.ilcam", lastOpenedTime: "2026-06-24T00:00:00Z" },
+        { path: "D:/projects/mock.icax", displayName: "mock.icax", lastOpenedTime: "2026-06-24T00:00:00Z" },
       ],
       session,
     };
@@ -198,13 +207,13 @@ export class MockHostBridge {
 
   #runningProductState() {
     return {
-      productId: "icax.flat-laser-cam",
+      productId: mockProductId,
       productChannelId,
-      catalogs: this.projectOpened ? [this.#catalogState("D:/projects/mock.ilcam")] : [],
+      catalogs: this.projectOpened ? [this.#catalogState("D:/projects/mock.icax")] : [],
     };
   }
 
-  #catalogState(projectPath = "D:/projects/mock.ilcam") {
+  #catalogState(projectPath = "D:/projects/mock.icax") {
     return {
       catalogId: "00000000-0000-4000-8000-000000000301",
       catalogName: "Mock Catalog",
@@ -214,19 +223,38 @@ export class MockHostBridge {
     };
   }
 
-  #projectState(projectPath = "D:/projects/mock.ilcam") {
+  #projectState(projectPath = "D:/projects/mock.icax") {
+    const mainScene = this.#sceneState();
     return {
-      projectId: "00000000-0000-4000-8000-000000000401",
-      projectChannelId,
+      projectId,
+      mainSceneId,
+      mainSceneChannelId: sceneChannelId,
       projectName: "Mock Project",
       projectPath,
       state: "Running",
-      role: "Main",
-      isMainProject: true,
-      isTransientProject: false,
       isOpen: true,
       isRunning: true,
-      startupComponent: "CFlatLaserProjectComponent",
+      startupComponent: "CMockProjectStartupComponent",
+      faultMessage: "",
+      mainScene,
+      sceneCount: 1,
+      scenes: [mainScene],
+    };
+  }
+
+  #sceneState() {
+    return {
+      sceneId: mainSceneId,
+      sceneChannelId,
+      parentSceneId: nilChannelId,
+      sceneName: "Main Scene",
+      role: "Main",
+      state: "Running",
+      isMainScene: true,
+      isTransientScene: false,
+      isOpen: true,
+      isRunning: true,
+      startupComponent: "CMockProjectStartupComponent",
       faultMessage: "",
       undoRedo: this.#undoRedoState(),
       pdo: {

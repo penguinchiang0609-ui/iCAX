@@ -11,7 +11,7 @@ ProductRuntime 不创建独立 ServiceProvider，Service 仍由 ApplicationHost 
 ## 目录结构
 
 - `Product.vcxproj`：产品运行时工程。
-- `ProductRuntime.h` / `ProductRuntime.cpp`：产品运行时入口，处理产品级命令、ProjectCatalog 管理、项目运行时登记和项目命令转发。
+- `ProductRuntime.h` / `ProductRuntime.cpp`：产品运行时入口，处理产品级命令、ProjectCatalog 管理、项目运行时登记和 Scene mailbox 命令分发。
 - `ProductCommands.h` / `ProductCommands.cpp`：产品级内置命令常量和 Variant payload 编解码。
 - `ProductManifest.h` / `ProductManifest.cpp`：产品 manifest 读取、校验和 `CProductDefinition` 构造。
 - `ProductExport.h`：DLL 导出宏。

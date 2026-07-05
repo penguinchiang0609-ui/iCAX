@@ -19,7 +19,7 @@ export function validateBridge(bridge, name = "bridge") {
   const requiredMethods = [
     "getApplicationChannelId",
     "registerProductChannel",
-    "registerProjectChannel",
+    "registerSceneChannel",
     "postMail",
     "subscribeMail",
   ];

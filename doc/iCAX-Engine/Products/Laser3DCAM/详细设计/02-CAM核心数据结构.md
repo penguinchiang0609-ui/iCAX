@@ -153,6 +153,8 @@ CLaserCamRootComponent
 
 ## 5. Workpiece
 
+一个项目可以包含多个 Workpiece Entity。RootComponent 不保存工件集合，只保存 `ActiveWorkpieceID`；所有工件通过 Repository 中的 `CLaserWorkpieceComponent` 查询。新增刀路时，`CCAMPathComponent.WorkpieceEntityID` 指向当时的当前工件。
+
 ```text
 WorkpieceEntity
   CLaserWorkpieceComponent
@@ -161,12 +163,13 @@ CLaserWorkpieceComponent
   Name
   SourcePath
   ModelResourceID
+  BRepResourceID
   TopologyResourceID
   DisplayResourceID
   TopologyVersion
 ```
 
-Database 只保存资源引用和变换，不保存 BRep 指针。
+Database 只保存资源引用和变换，不保存 BRep 指针。`ModelResourceID` 指向原始 CAD 文件资源，`BRepResourceID` 指向 `GeometryData::BRepModel` 中立几何资源。`DisplayResourceID` 是可选显示对象标识，真实显示数据由 render 插件或 PDO 渲染服务管理。
 
 ## 6. ToolAssembly
 
@@ -297,22 +300,23 @@ CCAMPathComponent : CCAMProgramNodeComponent
 
 ```text
 PathCurveResource
+  Version
   TopologyKind
   TopologyID
   SourceTopology
-  Segments[]
-  Version
+  Curve: CompositeCurve3
 ```
 
-曲线段：
+`CompositeCurve3` 来自 `GeometryData`，只保存数据：
 
 ```text
-LineSegment3
-ArcSegment3
-PolylineSegment3
-EllipseSegment3
-CubicBSplineSegment3
-BezierSegment3
+CompositeCurve3
+  Closed
+  Segments[]
+
+CurveSegment3
+  Curve(Line3/Ray3/Segment3/Circle3/Arc3/Ellipse3/EllipseArc3/Polyline3/Bezier3/BSpline3/NURBS3/Clothoid3)
+  Range
 ```
 
 曲线资源是刀路的权威几何数据。资源本身只保存曲线数据和可选来源拓扑快照，不反向保存所属 Workpiece 或 Path。工件归属由 `CCAMPathComponent.WorkpieceEntityID` 表达，刀路到曲线资源的引用由 `CCAMPathComponent.CurveResourceID` 表达。所有点、向量和曲线段参数都使用世界坐标，不使用模型局部坐标、渲染坐标或切割头局部坐标。
@@ -334,7 +338,7 @@ PoseSample
 
 姿态场资源只保存姿态场本体，不反向保存 ToolpathID、CurveResourceID、CurveVersion 或 PoseFieldID。资源身份由 ResourcePool key 表达，归属关系由 `CCAMPathComponent.PoseFieldResourceID` 表达，曲线与姿态场的对应关系由同一个 `CCAMPathComponent` 同时持有 `CurveResourceID` 和 `PoseFieldResourceID` 来维护。
 
-采样点使用 `SegmentIndex + SegmentU` 绑定复合曲线中的某一段及该段原生参数，不使用整条刀路归一化参数，也不使用累计弧长作为主定位。`BeamDirection` 是世界坐标下的激光束方向。采样点位置不持久化在 PoseFieldResource 中，而是通过 `PathCurveResource.Segments[SegmentIndex]` 按 `SegmentU` 求值得到。姿态场不保存 TCP 字段、完整机械姿态或关节值；TCP、关节链和逆解结果属于切割头机械模型与运动规划阶段。
+采样点使用 `SegmentIndex + SegmentU` 绑定复合曲线中的某一段及该段原生参数，不使用整条刀路归一化参数，也不使用累计弧长作为主定位。`BeamDirection` 是世界坐标下的激光束方向。采样点位置不持久化在 PoseFieldResource 中，而是通过 `PathCurveResource.Curve.Segments[SegmentIndex]` 按 `SegmentU` 求值得到。姿态场不保存 TCP 字段、完整机械姿态或关节值；TCP、关节链和逆解结果属于切割头机械模型与运动规划阶段。
 
 ## 11. MotionPlanResource
 

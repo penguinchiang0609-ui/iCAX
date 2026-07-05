@@ -111,6 +111,71 @@ namespace
         }
     };
 
+    class MemoryTextImporter final : public IResourceImporter
+    {
+    public:
+        std::vector<CResourceFormatDescriptor> GetImportFormats() const override
+        {
+            return { { "test.text", "Test Text", { ".txt" }, { "text/plain" }, true, false } };
+        }
+
+        bool CanImport(IN const CResourceImportRequest& Request_) const override
+        {
+            return (Request_.FormatID.empty() || Request_.FormatID == "test.text")
+                && Request_.SourcePath.rfind("import://", 0) == 0;
+        }
+
+        CResourceImportResult Import(IN CResourceLibrary& Library_, IN const CResourceImportRequest& Request_) override
+        {
+            if (Request_.SourcePath.empty())
+            {
+                return CResourceImportResult::Invalid(Request_, "source is empty");
+            }
+
+            const auto _ResourceID = Request_.TargetResourceID.empty() ? Request_.SourcePath : Request_.TargetResourceID;
+            auto _pText = std::make_shared<TextResource>();
+            _pText->Text = Request_.SourcePath.substr(std::string("import://").size());
+
+            CResourceInfo _Info;
+            _Info.Source = _ResourceID;
+            _Info.Name = "imported text";
+            _Info.Persistence = Request_.Persistence;
+            _Info.nVersion = 1;
+            _Info.Metadata["kind"] = "test.text";
+
+            Library_.Set<TextResource>(_ResourceID, _pText, _Info);
+
+            CResourceImportItem _Item;
+            _Item.Role = "text";
+            _Item.ResourceID = _ResourceID;
+            _Item.Info = _Info;
+            auto _Result = CResourceImportResult::Succeeded(_ResourceID, { _Item });
+            _Result.Metadata["importer"] = "test";
+            return _Result;
+        }
+    };
+
+    class MemoryTextExporter final : public IResourceExporter
+    {
+    public:
+        std::vector<CResourceFormatDescriptor> GetExportFormats() const override
+        {
+            return { { "test.text", "Test Text", { ".txt" }, { "text/plain" }, false, true } };
+        }
+
+        bool CanExport(IN const CResourceLibrary& Library_, IN const CResourceExportRequest& Request_) const override
+        {
+            return (Request_.FormatID.empty() || Request_.FormatID == "test.text")
+                && !Request_.TargetPath.empty()
+                && Library_.Get<TextResource>(Request_.ResourceID) != nullptr;
+        }
+
+        CResourceExportResult Export(IN const CResourceLibrary&, IN const CResourceExportRequest& Request_) override
+        {
+            return CResourceExportResult::Succeeded(Request_.TargetPath, "test.text", { Request_.ResourceID });
+        }
+    };
+
     std::shared_ptr<MemoryTextLoader> GetMemoryTextLoader()
     {
         static auto _pLoader = std::make_shared<MemoryTextLoader>();
@@ -505,6 +570,69 @@ TEST(ResourceLoaderRegistryTest, MacroRegistersLoaderAtStaticInitialization)
     auto _pText = std::static_pointer_cast<MacroTextResource>(_Result.pResource);
     ASSERT_NE(nullptr, _pText);
     EXPECT_EQ("registered", _pText->Text);
+}
+
+TEST(ResourceImportExportTest, ResourceLibraryImportUsesRegisteredImporter)
+{
+    auto _pRegistry = std::make_shared<CResourceLoaderRegistry>();
+    ASSERT_TRUE(_pRegistry->RegisterImporter(std::make_shared<MemoryTextImporter>()));
+
+    CResourceLibrary _Library(_pRegistry);
+
+    CResourceImportRequest _Request;
+    _Request.SourcePath = "import://hello";
+    _Request.TargetResourceID = "memory://imported-text";
+    _Request.Persistence = EResourcePersistenceMode::Embedded;
+
+    auto _Result = _Library.Import(_Request);
+    ASSERT_TRUE(_Result.IsOK()) << _Result.Error;
+    EXPECT_EQ("memory://imported-text", _Result.PrimaryResourceID);
+    ASSERT_EQ(1u, _Result.Items.size());
+    EXPECT_EQ("text", _Result.Items.front().Role);
+
+    auto _pText = _Library.Get<TextResource>("memory://imported-text");
+    ASSERT_NE(nullptr, _pText);
+    EXPECT_EQ("hello", _pText->Text);
+
+    auto _Info = _Library.GetInfo("memory://imported-text");
+    ASSERT_TRUE(_Info.has_value());
+    EXPECT_TRUE(_Info->IsEmbedded());
+    EXPECT_EQ(1u, _Library.GetImportFormats().size());
+}
+
+TEST(ResourceImportExportTest, ImportWithoutHandlerReturnsNoHandler)
+{
+    CResourceLibrary _Library(std::make_shared<CResourceLoaderRegistry>());
+
+    CResourceImportRequest _Request;
+    _Request.SourcePath = "unknown://asset";
+
+    auto _Result = _Library.Import(_Request);
+    EXPECT_FALSE(_Result.IsOK());
+    EXPECT_EQ(EResourceImportExportStatus::NoHandler, _Result.Status);
+}
+
+TEST(ResourceImportExportTest, ResourceLibraryExportUsesRegisteredExporter)
+{
+    auto _pRegistry = std::make_shared<CResourceLoaderRegistry>();
+    ASSERT_TRUE(_pRegistry->RegisterExporter(std::make_shared<MemoryTextExporter>()));
+
+    CResourceLibrary _Library(_pRegistry);
+    auto _pText = std::make_shared<TextResource>();
+    _pText->Text = "hello";
+    _Library.Set<TextResource>("memory://exported-text", _pText);
+
+    CResourceExportRequest _Request;
+    _Request.ResourceID = "memory://exported-text";
+    _Request.TargetPath = "export://hello.txt";
+    _Request.FormatID = "test.text";
+
+    auto _Result = _Library.Export(_Request);
+    ASSERT_TRUE(_Result.IsOK()) << _Result.Error;
+    EXPECT_EQ("export://hello.txt", _Result.TargetPath);
+    ASSERT_EQ(1u, _Result.ResourceIDs.size());
+    EXPECT_EQ("memory://exported-text", _Result.ResourceIDs.front());
+    EXPECT_EQ(1u, _Library.GetExportFormats().size());
 }
 
 TEST(ResourcePoolAccessTest, PoolAccessRegistersMetadataOnlyLoadResult)

@@ -14,7 +14,7 @@ SDK 公开导出：
 - `createBridge()` / `validateBridge()`：宿主 bridge 创建与校验能力，主要用于 Shell 和测试。
 - `MockHostBridge`：开发期和白盒测试使用的 mock bridge。
 - `AppCommands` / `ProductCommands` / `ProjectCommands`：框架标准命令名。
-- `AppProxy` / `ProductProxy` / `ProjectProxy`：前端三层代理对象。
+- `AppProxy` / `ProductProxy` / `ProjectProxy` / `SceneProxy`：前端四层代理对象。
 - `resolveFrontendEntry()` / `loadProductModule()` / `mountProductModule()`：产品 H5 模块加载能力。
 - `escapeText()` / `escapeAttr()`：公共 HTML 转义工具。
 
@@ -27,7 +27,7 @@ SDK 公开导出：
 - `SDK/Mailbox`：mailbox client、命令码、Variant 文本编解码。
 - `SDK/PDO`：PDO 前端访问代理。
 
-产品页面不应该直接 new `MailboxClient`，也不应该直接操作 PDO header。产品页面通过 `AppProxy/ProductProxy/ProjectProxy` 发送命令、订阅事件，通过 `project.pdo` 读取 PDO。
+产品页面不应该直接 new `MailboxClient`，也不应该直接操作 PDO header。产品页面通过 `AppProxy/ProductProxy/ProjectProxy/SceneProxy` 发送命令、订阅事件，通过 `scene.pdo` 读取 PDO。
 
 ## 4. 边界
 
@@ -51,11 +51,11 @@ SDK 公开导出名称一旦被产品使用，应保持稳定。
 import { connectApplication } from "../../iCAX-UI/SDK/index.mjs";
 
 const app = await connectApplication();
-const product = await app.startProduct("icax.flat-laser-cam");
-const opened = await product.openProjectCatalog("D:/projects/a.ilcam");
+const product = await app.startProduct("icax.laser-3d-cam");
+const opened = await product.openProjectCatalog("D:/projects/a.icax");
 
-await opened.projectProxy.execute("Project.Save", {
-  path: "D:/projects/a.ilcam",
+await opened.sceneProxy.execute("Project.Save", {
+  path: "D:/projects/a.icax",
 });
 ```
 

@@ -20,7 +20,7 @@ CCefUIContainer : IUIContainer
 window.icax = {
   getApplicationChannelId,
   registerProductChannel,
-  registerProjectChannel,
+  registerSceneChannel,
   postMail,
   subscribeMail,
   pdo,

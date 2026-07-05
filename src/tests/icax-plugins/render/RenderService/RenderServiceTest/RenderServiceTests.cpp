@@ -529,7 +529,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     EXPECT_TRUE(_bFoundObjectFreed);
 }
 
-TEST(PDORenderServiceTest, SendsDefragNotificationsThroughProjectMailbox)
+TEST(PDORenderServiceTest, SendsDefragNotificationsThroughSceneMailbox)
 {
     iCAX::PDORenderService::CPDORenderService _Service;
     const auto _ProjectID = iCAX::Data::GenerateNewUUID();

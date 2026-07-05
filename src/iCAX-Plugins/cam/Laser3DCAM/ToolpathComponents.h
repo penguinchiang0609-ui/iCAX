@@ -182,7 +182,8 @@ namespace iCAX
         * @brief 三维线条切割 CAM 工件组件。
         * @details
         *   该组件挂在普通 Workpiece Entity 上。
-        *   Database 只保存模型来源和资源 ID；STEP/IGES/BRep/拓扑索引/显示网格等大对象进入 Project.Resources。
+        *   Database 只保存模型来源和资源 ID；STEP/IGES/BRep/拓扑索引等大对象进入 Scene.Resources。
+        *   DisplayResourceID 是可选显示对象标识，真实显示数据由 render 插件或 PDO 渲染服务管理。
         */
         class CLaserWorkpieceComponent final : public iCAX::Database::CComponentBase
         {
@@ -192,6 +193,7 @@ namespace iCAX
             DECLARED_ICAX_FIELD(CLaserWorkpieceComponent, std::string, Name, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CLaserWorkpieceComponent, std::string, SourcePath, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CLaserWorkpieceComponent, std::string, ModelResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CLaserWorkpieceComponent, std::string, BRepResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CLaserWorkpieceComponent, std::string, TopologyResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CLaserWorkpieceComponent, std::string, DisplayResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CLaserWorkpieceComponent, unsigned long long, TopologyVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
@@ -219,7 +221,7 @@ namespace iCAX
         * @brief 三维线条切割 CAM 路径组件。
         * @details
         *   该组件挂在普通 Path Entity 上，一条已确认刀路对应一个 Path Entity。
-        *   组件保存拓扑来源、所属工件、切割图层、显示图层和资源引用；空间曲线、姿态场等大数据进入 Project.Resources。
+        *   组件保存拓扑来源、所属工件、切割图层、显示图层和资源引用；空间曲线、姿态场等大数据进入 Scene.Resources。
         *   刀路执行顺序不保存在 Path 自身，而由 CCAMBlockComponent.Children 维护。
         */
         class CCAMPathComponent final : public CCAMProgramNodeComponent

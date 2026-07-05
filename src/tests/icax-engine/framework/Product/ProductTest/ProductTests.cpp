@@ -289,11 +289,15 @@ TEST(ProductRuntimeTest, OpensAndClosesProjectCatalogDirectly)
     EXPECT_EQ("Robot Cell", _pProject->GetProjectName());
     EXPECT_EQ("memory://robot-cell", _pProject->GetProjectPath());
     EXPECT_TRUE(_pProject->IsRunning());
-    EXPECT_TRUE(_pRuntime->GetProjectFrontendPostOffice(_pProject->GetProjectID()).IsValid());
+    EXPECT_TRUE(_pRuntime->GetSceneFrontendPostOffice(
+        _pProject->GetProjectID(),
+        _pProject->GetMainSceneID()).IsValid());
 
     EXPECT_TRUE(_pRuntime->CloseProjectCatalog(_pCatalog->GetCatalogID()));
     EXPECT_EQ(nullptr, _pRuntime->FindProjectCatalog(_pCatalog->GetCatalogID()));
-    EXPECT_THROW(_pRuntime->GetProjectFrontendPostOffice(_pProject->GetProjectID()), std::runtime_error);
+    EXPECT_THROW(
+        _pRuntime->GetSceneFrontendPostOffice(_pProject->GetProjectID(), _pProject->GetMainSceneID()),
+        std::runtime_error);
 
     _pRuntime->Stop();
 }
@@ -373,7 +377,9 @@ TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
     EXPECT_EQ("Robot Catalog", _Catalog.at("catalogName").To<std::string>());
     EXPECT_TRUE(_Catalog.at("hasMainProject").To<bool>());
     auto _MainProject = _Catalog.at("mainProject").To<iCAX::Data::ObjectMap>();
-    EXPECT_FALSE(_MainProject.at("projectChannelId").To<iCAX::Data::uuid>().is_nil());
+    EXPECT_FALSE(_MainProject.at("mainSceneChannelId").To<iCAX::Data::uuid>().is_nil());
+    auto _MainScene = _MainProject.at("mainScene").To<iCAX::Data::ObjectMap>();
+    EXPECT_FALSE(_MainScene.at("sceneChannelId").To<iCAX::Data::uuid>().is_nil());
 
     auto _State = _OpenPayloadObject.at("state").To<iCAX::Data::ObjectMap>();
     EXPECT_EQ("robot", _State.at("productId").To<std::string>());
@@ -430,7 +436,7 @@ TEST(ProductRuntimeMailboxTest, ProductRuntimeCanSendFrontendEvent)
     _pRuntime->Stop();
 }
 
-TEST(ProductRuntimeMailboxTest, ProductCommandSentToProjectMailboxIsRejected)
+TEST(ProductRuntimeMailboxTest, ProductCommandSentToSceneMailboxIsRejected)
 {
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
@@ -439,19 +445,21 @@ TEST(ProductRuntimeMailboxTest, ProductCommandSentToProjectMailboxIsRejected)
     auto _pProject = _pCatalog->GetMainProject();
     ASSERT_NE(nullptr, _pProject);
 
-    auto _ProjectPostOffice = _pRuntime->GetProjectFrontendPostOffice(_pProject->GetProjectID());
+    auto _ScenePostOffice = _pRuntime->GetSceneFrontendPostOffice(
+        _pProject->GetProjectID(),
+        _pProject->GetMainSceneID());
     auto _Request = MakeRequestMail(3001, kProductGetStateCommand);
-    _ProjectPostOffice.Send(_Request);
+    _ScenePostOffice.Send(_Request);
     ReleaseTestMailPayload(_Request);
 
     auto _Fault = WaitForProjectFault(_pProject);
     ASSERT_TRUE(_Fault.has_value());
     EXPECT_NE(std::string::npos, _Fault->Message.find("Product command must be sent to the product mailbox"));
-    EXPECT_TRUE(_ProjectPostOffice.Receive().empty());
+    EXPECT_TRUE(_ScenePostOffice.Receive().empty());
     _pRuntime->Stop();
 }
 
-TEST(ProductRuntimeMailboxTest, ProjectMailboxProvidesProjectContext)
+TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
 {
     constexpr uint64_t kInspectProjectContextCommand =
         iCAX::Command::MakeCommandCode("InspectProject", "ProjectContext");
@@ -475,7 +483,7 @@ TEST(ProductRuntimeMailboxTest, ProjectMailboxProvidesProjectContext)
             IN iCAX::Project::ISceneContext* pSceneContext_) {
             iCAX::Data::ObjectMap _Payload;
             _Payload["projectId"] = pProjectContext_ ? pProjectContext_->GetProjectID() : iCAX::Data::GenerateNilUUID();
-            _Payload["projectChannelId"] = pSceneContext_ ? pSceneContext_->GetSceneChannelID() : iCAX::Data::GenerateNilUUID();
+            _Payload["sceneChannelId"] = pSceneContext_ ? pSceneContext_->GetSceneChannelID() : iCAX::Data::GenerateNilUUID();
             _Payload["projectName"] = pProjectContext_ ? pProjectContext_->GetProjectName() : std::string();
             _Payload["hasProductContext"] = pProductContext_ != nullptr;
             _Payload["hasProjectContext"] = pProjectContext_ != nullptr;
@@ -489,18 +497,18 @@ TEST(ProductRuntimeMailboxTest, ProjectMailboxProvidesProjectContext)
         });
     ASSERT_TRUE(_pRuntime->GetCommandRegistry().Register(_pCommandTarget));
 
-    auto _ProjectPostOffice = _pRuntime->GetProjectFrontendPostOffice(_ProjectID);
+    auto _ScenePostOffice = _pRuntime->GetSceneFrontendPostOffice(_ProjectID, _pProject->GetMainSceneID());
     auto _Request = MakeRequestMail(4001, kInspectProjectContextCommand);
-    _ProjectPostOffice.Send(_Request);
+    _ScenePostOffice.Send(_Request);
     ReleaseTestMailPayload(_Request);
 
-    auto _Responses = WaitForMails(_ProjectPostOffice);
+    auto _Responses = WaitForMails(_ScenePostOffice);
     ASSERT_EQ(1u, _Responses.size());
     EXPECT_EQ(iCAX::Mail::kMailOk, _Responses[0].Header.nStamp);
 
     auto _Payload = DecodeObjectPayload(_Responses[0]);
     EXPECT_EQ(_ProjectID, _Payload.at("projectId").To<iCAX::Data::uuid>());
-    EXPECT_FALSE(_Payload.at("projectChannelId").To<iCAX::Data::uuid>().is_nil());
+    EXPECT_FALSE(_Payload.at("sceneChannelId").To<iCAX::Data::uuid>().is_nil());
     EXPECT_EQ("Project Context", _Payload.at("projectName").To<std::string>());
     EXPECT_TRUE(_Payload.at("hasProductContext").To<bool>());
     EXPECT_TRUE(_Payload.at("hasProjectContext").To<bool>());

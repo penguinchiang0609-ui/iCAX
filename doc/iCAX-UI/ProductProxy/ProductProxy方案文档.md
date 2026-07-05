@@ -15,7 +15,7 @@ src/iCAX-UI/ProductProxy/
 
 - `Mailbox`
 - `ProjectProxy`
-- `Bridge` 的 product/project channel 登记能力
+- `Bridge` 的 product/scene channel 登记能力
 
 产品模块加载能力依赖浏览器原生 dynamic import，不依赖 backend 数据结构。
 
@@ -24,10 +24,12 @@ src/iCAX-UI/ProductProxy/
 ```text
 ProductProxy.openProjectCatalog(path)
   -> mailbox.request(productChannelId, Product.OpenProjectCatalog)
-  <- catalog.mainProject + projectChannelId
+  <- catalog.mainProject + mainScene
   -> adoptProject(mainProject)
-  -> bridge.registerProjectChannel(projectId)
+  -> bridge.registerSceneChannel(projectId, mainSceneId)
   -> new/update ProjectProxy
+  -> ProjectProxy.syncScenes()
+  -> return ProjectProxy + main SceneProxy
 ```
 
 ## 4. 状态同步

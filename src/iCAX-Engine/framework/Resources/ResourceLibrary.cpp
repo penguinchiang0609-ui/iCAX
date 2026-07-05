@@ -114,6 +114,42 @@ std::vector<iCAX::Resource::CResourceInfo> iCAX::Resource::CResourceLibrary::Get
     return GetPool().GetManifest(bIncludeRuntimeOnly_);
 }
 
+std::vector<iCAX::Resource::CResourceFormatDescriptor> iCAX::Resource::CResourceLibrary::GetImportFormats() const
+{
+    if (!m_pLoaderRegistry)
+    {
+        throw std::logic_error("Resource library has no loader registry");
+    }
+    return m_pLoaderRegistry->GetImportFormats();
+}
+
+std::vector<iCAX::Resource::CResourceFormatDescriptor> iCAX::Resource::CResourceLibrary::GetExportFormats() const
+{
+    if (!m_pLoaderRegistry)
+    {
+        throw std::logic_error("Resource library has no loader registry");
+    }
+    return m_pLoaderRegistry->GetExportFormats();
+}
+
+iCAX::Resource::CResourceImportResult iCAX::Resource::CResourceLibrary::Import(IN const CResourceImportRequest& Request_)
+{
+    if (!m_pLoaderRegistry)
+    {
+        throw std::logic_error("Resource library has no loader registry");
+    }
+    return m_pLoaderRegistry->ImportResource(*this, Request_);
+}
+
+iCAX::Resource::CResourceExportResult iCAX::Resource::CResourceLibrary::Export(IN const CResourceExportRequest& Request_) const
+{
+    if (!m_pLoaderRegistry)
+    {
+        throw std::logic_error("Resource library has no loader registry");
+    }
+    return m_pLoaderRegistry->ExportResource(*this, Request_);
+}
+
 iCAX::Resource::CResourcePool& iCAX::Resource::CResourceLibrary::GetPool()
 {
     if (!m_pPool)

@@ -140,7 +140,7 @@ ImportToolResult
 
 ```mermaid
 sequenceDiagram
-    participant Cmd as LaserCam.ImportTool
+    participant Cmd as Cam.ImportTool
     participant Importer as ToolAssemblyImporter
     participant Res as ResourcePool
     participant Repo as Repository

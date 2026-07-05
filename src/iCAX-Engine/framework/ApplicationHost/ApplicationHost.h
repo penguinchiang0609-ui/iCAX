@@ -391,9 +391,11 @@ namespace iCAX
             iCAX::Mail::CMailPostOffice GetProductFrontendPostOffice(IN const std::string& strProductID_) const;
 
             /*
-            * @brief 获取项目主 Scene 邮箱前端端点。
+            * @brief 获取 Scene 邮箱前端端点。
             */
-            iCAX::Mail::CMailPostOffice GetProjectFrontendPostOffice(IN const iCAX::Data::uuid& ProjectID_) const;
+            iCAX::Mail::CMailPostOffice GetSceneFrontendPostOffice(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN const iCAX::Data::uuid& SceneID_) const;
 
             /*
             * @brief 获取应用通信通道 ID。

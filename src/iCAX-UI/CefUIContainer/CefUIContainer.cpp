@@ -258,8 +258,8 @@ namespace
       return queryNative("registerProductChannel", { productId });
     },
 
-    registerProjectChannel(projectId) {
-      return queryNative("registerProjectChannel", { projectId });
+    registerSceneChannel(projectId, sceneId) {
+      return queryNative("registerSceneChannel", { projectId, sceneId });
     },
 
     postMail(mail) {
@@ -681,10 +681,11 @@ namespace
                     return true;
                 }
 
-                if (_Method == "registerProjectChannel")
+                if (_Method == "registerSceneChannel")
                 {
                     const auto _ProjectID = _AsString(_RequireField(_Payload, "projectId"), "projectId");
-                    Callback_->Success(json::serialize(_ToJsonValue(m_pBridge->RegisterProjectChannel(_ProjectID))));
+                    const auto _SceneID = _AsString(_RequireField(_Payload, "sceneId"), "sceneId");
+                    Callback_->Success(json::serialize(_ToJsonValue(m_pBridge->RegisterSceneChannel(_ProjectID, _SceneID))));
                     return true;
                 }
 

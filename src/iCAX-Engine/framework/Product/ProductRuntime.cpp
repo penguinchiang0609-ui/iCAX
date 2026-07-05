@@ -41,19 +41,6 @@ namespace
         }
     };
 
-    std::string _ToProjectRoleText(IN iCAX::Project::EProjectRole Role_)
-    {
-        switch (Role_)
-        {
-        case iCAX::Project::EProjectRole::Main:
-            return "Main";
-        case iCAX::Project::EProjectRole::Transient:
-            return "Transient";
-        default:
-            throw std::invalid_argument("Invalid project role");
-        }
-    }
-
     std::string _ToProjectStateText(IN iCAX::Project::EProjectState State_)
     {
         switch (State_)
@@ -75,7 +62,68 @@ namespace
         }
     }
 
-    iCAX::Data::Variant _MakePDOPayload(IN const iCAX::Project::CProjectPDODescriptor& Descriptor_);
+    std::string _ToSceneRoleText(IN iCAX::Project::ESceneRole Role_)
+    {
+        switch (Role_)
+        {
+        case iCAX::Project::ESceneRole::Main:
+            return "Main";
+        case iCAX::Project::ESceneRole::Transient:
+            return "Transient";
+        default:
+            throw std::invalid_argument("Invalid scene role");
+        }
+    }
+
+    std::string _ToSceneStateText(IN iCAX::Project::ESceneState State_)
+    {
+        switch (State_)
+        {
+        case iCAX::Project::ESceneState::Created:
+            return "Created";
+        case iCAX::Project::ESceneState::Starting:
+            return "Starting";
+        case iCAX::Project::ESceneState::Running:
+            return "Running";
+        case iCAX::Project::ESceneState::Stopping:
+            return "Stopping";
+        case iCAX::Project::ESceneState::Stopped:
+            return "Stopped";
+        case iCAX::Project::ESceneState::Faulted:
+            return "Faulted";
+        default:
+            throw std::invalid_argument("Invalid scene state");
+        }
+    }
+
+    iCAX::Data::Variant _MakePDOPayload(IN const iCAX::Project::CScenePDODescriptor& Descriptor_);
+
+    iCAX::Data::Variant _MakeScenePayload(IN const std::shared_ptr<iCAX::Project::CProjectScene>& pScene_)
+    {
+        iCAX::Data::ObjectMap _Scene;
+        if (!pScene_)
+        {
+            return iCAX::Data::Variant(_Scene);
+        }
+
+        const auto _State = pScene_->GetState();
+        _Scene["sceneId"] = pScene_->GetSceneID();
+        _Scene["sceneChannelId"] = pScene_->GetSceneChannelID();
+        _Scene["parentSceneId"] = pScene_->GetParentSceneID();
+        _Scene["sceneName"] = pScene_->GetSceneName();
+        _Scene["role"] = _ToSceneRoleText(pScene_->GetRole());
+        _Scene["state"] = _ToSceneStateText(_State);
+        _Scene["isMainScene"] = pScene_->IsMainScene();
+        _Scene["isTransientScene"] = pScene_->IsTransientScene();
+        _Scene["isOpen"] = pScene_->IsOpen();
+        _Scene["isRunning"] = _State == iCAX::Project::ESceneState::Running;
+        _Scene["startupComponent"] = pScene_->GetStartupComponent();
+
+        auto _Fault = pScene_->GetLastFault();
+        _Scene["faultMessage"] = _Fault ? _Fault->Message : std::string();
+        _Scene["pdo"] = _MakePDOPayload(pScene_->GetPDODescriptor());
+        return iCAX::Data::Variant(_Scene);
+    }
 
     iCAX::Data::Variant _MakeUndoRedoStatePayload(IN const iCAX::Database::IRepository& Repository_)
     {
@@ -110,21 +158,34 @@ namespace
         }
 
         const auto _State = pProjectRuntime_->GetState();
+        auto _pProject = pProjectRuntime_->GetLocalProject();
+        auto _pMainScene = _pProject ? _pProject->GetScene(_pProject->GetMainSceneID()) : nullptr;
         _Project["projectId"] = pProjectRuntime_->GetProjectID();
-        _Project["projectChannelId"] = pProjectRuntime_->GetProjectChannelID();
         _Project["projectName"] = pProjectRuntime_->GetProjectName();
         _Project["projectPath"] = pProjectRuntime_->GetProjectPath();
         _Project["startupComponent"] = pProjectRuntime_->GetStartupComponent();
-        _Project["role"] = _ToProjectRoleText(pProjectRuntime_->GetRole());
         _Project["state"] = _ToProjectStateText(_State);
-        _Project["isMainProject"] = pProjectRuntime_->IsMainProject();
-        _Project["isTransientProject"] = pProjectRuntime_->IsTransientProject();
         _Project["isOpen"] = pProjectRuntime_->IsOpen();
         _Project["isRunning"] = _State == iCAX::Project::EProjectState::Running;
 
         auto _Fault = pProjectRuntime_->GetLastFault();
         _Project["faultMessage"] = _Fault ? _Fault->Message : std::string();
-        _Project["pdo"] = _MakePDOPayload(pProjectRuntime_->GetPDODescriptor());
+        _Project["mainSceneId"] = _pProject ? _pProject->GetMainSceneID() : iCAX::Data::GenerateNilUUID();
+        _Project["mainSceneChannelId"] = _pMainScene ? _pMainScene->GetSceneChannelID() : iCAX::Data::GenerateNilUUID();
+        _Project["mainScene"] = _MakeScenePayload(_pMainScene);
+
+        iCAX::Data::VariantArray _Scenes;
+        if (_pProject)
+        {
+            auto _SceneSnapshot = _pProject->GetScenes();
+            _Scenes.reserve(_SceneSnapshot.size());
+            for (const auto& _pScene : _SceneSnapshot)
+            {
+                _Scenes.emplace_back(_MakeScenePayload(_pScene));
+            }
+        }
+        _Project["sceneCount"] = static_cast<unsigned long long>(_Scenes.size());
+        _Project["scenes"] = _Scenes;
         return iCAX::Data::Variant(_Project);
     }
 
@@ -251,7 +312,7 @@ namespace
             : ch_;
     }
 
-    iCAX::Data::Variant _MakePDOPayload(IN const iCAX::Project::CProjectPDODescriptor& Descriptor_)
+    iCAX::Data::Variant _MakePDOPayload(IN const iCAX::Project::CScenePDODescriptor& Descriptor_)
     {
         iCAX::Data::ObjectMap _PDO;
         _PDO["enabled"] = Descriptor_.bEnabled;
@@ -373,22 +434,22 @@ namespace
         }
     }
 
-    void _RequireProjectMailboxContext(
+    void _RequireSceneMailboxContext(
         IN const iCAX::Product::IProductContext* pProductContext_,
         IN const iCAX::Project::IProjectContext* pProjectContext_,
         IN const iCAX::Project::ISceneContext* pSceneContext_)
     {
         if (!pProductContext_)
         {
-            throw std::invalid_argument("Project command context is missing ProductContext");
+            throw std::invalid_argument("Scene command context is missing ProductContext");
         }
         if (!pProjectContext_)
         {
-            throw std::invalid_argument("Project command context is missing ProjectContext");
+            throw std::invalid_argument("Scene command context is missing ProjectContext");
         }
         if (!pSceneContext_)
         {
-            throw std::invalid_argument("Project command context is missing SceneContext");
+            throw std::invalid_argument("Scene command context is missing SceneContext");
         }
     }
 
@@ -835,7 +896,7 @@ void iCAX::Product::CProductRuntime::DispatchProductMails()
         return;
     }
 
-    DispatchProjectMails(GetBackendPostOffice(), nullptr);
+    DispatchSceneMails(GetBackendPostOffice(), nullptr);
 }
 
 std::vector<std::shared_ptr<iCAX::Project::CProjectCatalog>> iCAX::Product::CProductRuntime::GetProjectCatalogs() const
@@ -956,39 +1017,6 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     return _pCatalog;
 }
 
-std::shared_ptr<iCAX::Project::CProject> iCAX::Product::CProductRuntime::OpenTransientProject(
-    IN const iCAX::Data::uuid& CatalogID_,
-    IN const std::string& strProjectName_,
-    IN const std::string& strProjectPath_)
-{
-    EnsureStarted();
-
-    auto _pCatalog = FindProjectCatalog(CatalogID_);
-    if (!_pCatalog)
-    {
-        throw std::runtime_error("ProjectCatalog not found");
-    }
-
-    auto _pProject = _pCatalog->OpenTransientProject(
-        strProjectName_,
-        strProjectPath_,
-        m_Definition.DefaultProjectStartupComponent);
-    auto _pProjectRuntime = iCAX::Project::CreateLocalProjectRuntime(_pProject);
-
-    try
-    {
-        RegisterProjectRuntime(_pProjectRuntime);
-        StartProject(_pProjectRuntime);
-    }
-    catch (...)
-    {
-        (void)RemoveProjectRuntime(_pProject->GetProjectID());
-        (void)_pCatalog->CloseProject(_pProject->GetProjectID());
-        throw;
-    }
-    return _pProject;
-}
-
 bool iCAX::Product::CProductRuntime::CloseProject(IN const iCAX::Data::uuid& ProjectID_)
 {
     auto _pCatalog = FindProjectCatalogByProjectID(ProjectID_);
@@ -1034,15 +1062,26 @@ bool iCAX::Product::CProductRuntime::CloseProjectCatalog(IN const iCAX::Data::uu
     return true;
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Product::CProductRuntime::GetProjectFrontendPostOffice(
-    IN const iCAX::Data::uuid& ProjectID_) const
+iCAX::Mail::CMailPostOffice iCAX::Product::CProductRuntime::GetSceneFrontendPostOffice(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN const iCAX::Data::uuid& SceneID_) const
 {
     auto _pRuntime = FindProjectRuntime(ProjectID_);
     if (!_pRuntime)
     {
         throw std::runtime_error("Project not found");
     }
-    return _pRuntime->GetFrontendPostOffice();
+    auto _pProject = _pRuntime->GetLocalProject();
+    if (!_pProject)
+    {
+        throw std::runtime_error("Project does not expose local scenes");
+    }
+    auto _pScene = _pProject->GetScene(SceneID_);
+    if (!_pScene)
+    {
+        throw std::runtime_error("Scene not found");
+    }
+    return _pScene->GetFrontendPostOffice();
 }
 
 iCAX::Data::Variant iCAX::Product::CProductRuntime::BuildProductStatePayload() const
@@ -1092,7 +1131,6 @@ iCAX::Data::Variant iCAX::Product::CProductRuntime::BuildProjectCatalogPayload(
     _Catalog["mainProjectId"] = _pMainProject ? _pMainProject->GetProjectID() : iCAX::Data::GenerateNilUUID();
     _Catalog["mainProject"] = _MakeProjectPayload(_pMainProjectRuntime);
     _Catalog["projectCount"] = static_cast<unsigned long long>(pCatalog_->Count());
-    _Catalog["transientProjectCount"] = static_cast<unsigned long long>(pCatalog_->TransientCount());
 
     iCAX::Data::VariantArray _Projects;
     auto _Snapshot = pCatalog_->GetProjects();
@@ -1271,7 +1309,7 @@ std::shared_ptr<iCAX::Project::IProjectRuntime> iCAX::Product::CProductRuntime::
     return _pRuntime;
 }
 
-void iCAX::Product::CProductRuntime::DispatchProjectMails(
+void iCAX::Product::CProductRuntime::DispatchSceneMails(
     IN const iCAX::Mail::CMailPostOffice& PostOffice_,
     IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_)
 {
@@ -1308,7 +1346,7 @@ void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX:
 
     std::weak_ptr<CProductRuntime> _WeakRuntime = shared_from_this();
     std::weak_ptr<iCAX::Project::IProjectRuntime> _WeakProjectRuntime = pProjectRuntime_;
-    pProjectRuntime_->SetFrameHandler(
+    pProjectRuntime_->SetMainSceneFrameHandler(
         [_WeakRuntime, _WeakProjectRuntime](
             iCAX::Project::IProjectRuntime&,
             const iCAX::Mail::CMailPostOffice& BackendPostOffice_) {
@@ -1319,7 +1357,7 @@ void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX:
                 return;
             }
             // 主 Scene 线程每帧进入这里，产品 runtime 只做邮件分发，不直接驱动 Scene 数据。
-            _pRuntime->DispatchProjectMails(BackendPostOffice_, _pProjectRuntime);
+            _pRuntime->DispatchSceneMails(BackendPostOffice_, _pProjectRuntime);
         });
     pProjectRuntime_->Start();
 }
@@ -1589,13 +1627,25 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGet
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
 
     auto _Payload = _MakeProjectPayload(FindProjectRuntime(pProjectContext_->GetProjectID()));
     auto _Project = _Payload.Is<iCAX::Data::ObjectMap>()
         ? _Payload.To<iCAX::Data::ObjectMap>()
         : iCAX::Data::ObjectMap{};
-    _Project["undoRedo"] = _MakeUndoRedoStatePayload(pSceneContext_->Database());
+    auto _UndoRedo = _MakeUndoRedoStatePayload(pSceneContext_->Database());
+    auto* _pConcreteScene = dynamic_cast<iCAX::Project::CProjectScene*>(pSceneContext_);
+    if (_pConcreteScene)
+    {
+        auto _ScenePayload = _MakeScenePayload(_pConcreteScene->shared_from_this());
+        auto _Scene = _ScenePayload.Is<iCAX::Data::ObjectMap>()
+            ? _ScenePayload.To<iCAX::Data::ObjectMap>()
+            : iCAX::Data::ObjectMap{};
+        _Scene["undoRedo"] = _UndoRedo;
+        _Project["activeScene"] = iCAX::Data::Variant(_Scene);
+    }
+    _Project["activeSceneId"] = pSceneContext_->GetSceneID();
+    _Project["undoRedo"] = _UndoRedo;
     return _MakeProductPayloadResponse(iCAX::Data::Variant(_Project));
 }
 
@@ -1606,7 +1656,7 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGet
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeProductPayloadResponse(_MakeUndoRedoStatePayload(pSceneContext_->Database()));
 }
 
@@ -1617,7 +1667,7 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectUnd
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
 
     auto& _Repository = pSceneContext_->Database();
     const auto _Applied = _Repository.Undo();
@@ -1633,7 +1683,7 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectRed
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProjectMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneMailboxContext(pProductContext_, pProjectContext_, pSceneContext_);
 
     auto& _Repository = pSceneContext_->Database();
     const auto _Applied = _Repository.Redo();

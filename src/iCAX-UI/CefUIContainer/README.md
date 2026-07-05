@@ -8,7 +8,7 @@
 - 创建 CEF browser。
 - 加载 `AppShell/index.html` 或配置指定的 `startURL`。
 - 注入 `window.icax` bridge。
-- 将 JS 的 `getApplicationChannelId/registerProductChannel/registerProjectChannel/postMail` 直接转发到 `IFrontendBridge`。
+- 将 JS 的 `getApplicationChannelId/registerProductChannel/registerSceneChannel/postMail` 直接转发到 `IFrontendBridge`。
 - 轮询 `IFrontendBridge::PollMails()`，把后端 response/event 派发给 JS 订阅者。
 
 ## CEF SDK

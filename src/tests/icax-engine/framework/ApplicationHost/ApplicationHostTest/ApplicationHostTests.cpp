@@ -336,10 +336,13 @@ TEST(ApplicationHostMailboxTest, ProductMailboxCanOpenAndCloseProjectCatalogAfte
     auto _Project = _Catalog.at("mainProject").To<iCAX::Data::ObjectMap>();
     EXPECT_EQ("Robot Cell", _Project.at("projectName").To<std::string>());
     EXPECT_EQ("Running", _Project.at("state").To<std::string>());
-    EXPECT_FALSE(_Project.at("projectChannelId").To<iCAX::Data::uuid>().is_nil());
+    EXPECT_FALSE(_Project.at("mainSceneChannelId").To<iCAX::Data::uuid>().is_nil());
+    auto _MainScene = _Project.at("mainScene").To<iCAX::Data::ObjectMap>();
+    EXPECT_FALSE(_MainScene.at("sceneChannelId").To<iCAX::Data::uuid>().is_nil());
     const auto _ProjectID = _Project.at("projectId").To<iCAX::Data::uuid>();
+    const auto _MainSceneID = _Project.at("mainSceneId").To<iCAX::Data::uuid>();
     const auto _CatalogID = _Catalog.at("catalogId").To<iCAX::Data::uuid>();
-    EXPECT_TRUE(_Host.GetProjectFrontendPostOffice(_ProjectID).IsValid());
+    EXPECT_TRUE(_Host.GetSceneFrontendPostOffice(_ProjectID, _MainSceneID).IsValid());
     ASSERT_NE(nullptr, _pRuntime->FindProjectCatalog(_CatalogID));
     ReleaseMailPayloads(_OpenResponses);
 
@@ -357,7 +360,7 @@ TEST(ApplicationHostMailboxTest, ProductMailboxCanOpenAndCloseProjectCatalogAfte
     auto _CloseState = DecodeProductObjectPayload(_CloseResponses[0]);
     EXPECT_EQ(0ull, _CloseState.at("catalogCount").To<unsigned long long>());
     EXPECT_EQ(nullptr, _pRuntime->FindProjectCatalog(_CatalogID));
-    EXPECT_THROW(_Host.GetProjectFrontendPostOffice(_ProjectID), std::runtime_error);
+    EXPECT_THROW(_Host.GetSceneFrontendPostOffice(_ProjectID, _MainSceneID), std::runtime_error);
     ReleaseMailPayloads(_CloseResponses);
 
     _Host.Stop();

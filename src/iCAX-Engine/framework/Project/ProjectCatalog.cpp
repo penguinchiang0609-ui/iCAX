@@ -89,7 +89,6 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::OpenMai
     IN const std::string& strStartupComponent_)
 {
     CProjectCreateInfo _Info;
-    _Info.Role = EProjectRole::Main;
     _Info.ProjectName = strProjectName_;
     _Info.ProjectPath = strProjectPath_;
     _Info.StartupComponent = strStartupComponent_;
@@ -102,30 +101,6 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::OpenMai
 std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::OpenMainProject(IN const CProjectCreateInfo& CreateInfo_)
 {
     CProjectCreateInfo _Info = CreateInfo_;
-    _Info.Role = EProjectRole::Main;
-    return CreateProject(_Info);
-}
-
-std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::OpenTransientProject(
-    IN const std::string& strProjectName_,
-    IN const std::string& strProjectPath_,
-    IN const std::string& strStartupComponent_)
-{
-    CProjectCreateInfo _Info;
-    _Info.Role = EProjectRole::Transient;
-    _Info.ProjectName = strProjectName_;
-    _Info.ProjectPath = strProjectPath_;
-    _Info.StartupComponent = strStartupComponent_;
-    _Info.pApplicationContext = m_pApplicationContext;
-    _Info.pProductContext = m_pProductContext;
-    _Info.pServiceProvider = m_pServiceProvider;
-    return OpenTransientProject(_Info);
-}
-
-std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::OpenTransientProject(IN const CProjectCreateInfo& CreateInfo_)
-{
-    CProjectCreateInfo _Info = CreateInfo_;
-    _Info.Role = EProjectRole::Transient;
     return CreateProject(_Info);
 }
 
@@ -168,18 +143,6 @@ bool iCAX::Project::CProjectCatalog::CloseProject(IN const iCAX::Data::uuid& Pro
         _pProject->Close();
     }
     return true;
-}
-
-void iCAX::Project::CProjectCatalog::CloseTransientProjects()
-{
-    auto _Projects = GetTransientProjects();
-    for (auto& _pProject : _Projects)
-    {
-        if (_pProject)
-        {
-            (void)CloseProject(_pProject->GetProjectID());
-        }
-    }
 }
 
 void iCAX::Project::CProjectCatalog::CloseAll()
@@ -227,20 +190,6 @@ std::vector<std::shared_ptr<iCAX::Project::CProject>> iCAX::Project::CProjectCat
     return SnapshotProjects();
 }
 
-std::vector<std::shared_ptr<iCAX::Project::CProject>> iCAX::Project::CProjectCatalog::GetTransientProjects() const
-{
-    std::lock_guard<std::mutex> _Lock(m_Mutex);
-    std::vector<std::shared_ptr<CProject>> _Projects;
-    for (const auto& [_ID, _Project] : m_Projects)
-    {
-        if (_Project && _Project->IsTransientProject())
-        {
-            _Projects.push_back(_Project);
-        }
-    }
-    return _Projects;
-}
-
 std::vector<iCAX::Data::uuid> iCAX::Project::CProjectCatalog::GetProjectIDs() const
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
@@ -262,20 +211,6 @@ size_t iCAX::Project::CProjectCatalog::Count() const
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     return m_Projects.size();
-}
-
-size_t iCAX::Project::CProjectCatalog::TransientCount() const
-{
-    std::lock_guard<std::mutex> _Lock(m_Mutex);
-    size_t _Count = 0;
-    for (const auto& [_ID, _Project] : m_Projects)
-    {
-        if (_Project && _Project->IsTransientProject())
-        {
-            ++_Count;
-        }
-    }
-    return _Count;
 }
 
 std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateProject(IN CProjectCreateInfo CreateInfo_)
@@ -343,9 +278,9 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     }
 
     std::lock_guard<std::mutex> _Lock(m_Mutex);
-    if (CreateInfo_.Role == EProjectRole::Main && !m_MainProjectID.is_nil())
+    if (!m_MainProjectID.is_nil())
     {
-        throw std::logic_error("Main project already exists");
+        throw std::logic_error("ProjectCatalog already has a project");
     }
 
     auto _pProject = std::make_shared<CProject>(CreateInfo_);
@@ -356,10 +291,7 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     }
 
     m_Projects.emplace(_ProjectID, _pProject);
-    if (_pProject->IsMainProject())
-    {
-        m_MainProjectID = _ProjectID;
-    }
+    m_MainProjectID = _ProjectID;
     return _pProject;
 }
 

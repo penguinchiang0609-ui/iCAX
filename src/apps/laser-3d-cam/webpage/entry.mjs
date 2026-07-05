@@ -28,14 +28,14 @@ export function mountProduct(context) {
 }
 
 export function mountProject(context) {
-  const { mount, projectProxy, project } = context;
-  if (!mount || !projectProxy || !project?.projectId) {
+  const { mount, sceneProxy, project } = context;
+  if (!mount || !sceneProxy || !project?.projectId) {
     return;
   }
   ensureStyles();
 
   const view = getProjectView(project.projectId);
-  view.projectProxy = projectProxy;
+  view.sceneProxy = sceneProxy;
   renderProject(context, view);
 
   if (!view.scene && !view.pending) {
@@ -62,16 +62,18 @@ function renderProject(context, view) {
   const topology = scene.topology ?? {};
   const selection = scene.selection ?? {};
   const toolpaths = scene.toolpaths ?? [];
+  const workpieces = scene.workpieces ?? [];
 
   mount.innerHTML = `
     <div class="cam-workspace">
       <div class="cam-toolbar">
-        <input class="cam-path-input" type="text" data-cam-model-path value="${escapeAttr(view.sourcePath || model.sourcePath || "")}" placeholder="STEP 文件路径或 URI" />
+        <input class="cam-path-input" type="text" data-cam-model-path value="${escapeAttr(view.sourcePath || model.sourcePath || "")}" placeholder="STEP/STP/IGS/IGES 文件路径" />
         <button class="tool-button" type="button" data-cam-action="import-model">导入模型</button>
         <button class="tool-button" type="button" data-cam-action="recognize-loops" ${model.isLoaded && topology.hasTopology ? "" : "disabled"}>识别孔 loop</button>
         <button class="primary-button" type="button" data-cam-action="add-selection" ${selection.id ? "" : "disabled"}>加入刀路列表</button>
         <button class="tool-button" type="button" data-cam-action="clear-toolpaths" ${toolpaths.length ? "" : "disabled"}>清空刀路</button>
       </div>
+      ${renderImportNotice(topology)}
       <div class="cam-main">
         <section class="cam-viewport">
           ${renderViewport(scene)}
@@ -82,6 +84,10 @@ function renderProject(context, view) {
             <div class="cam-selection">${selection.id ? `${escapeText(selection.kind)} #${escapeText(selection.id)} · ${escapeText(selection.label)}` : "未选择"}</div>
           </section>
           <section class="cam-panel">
+            <h3>工件列表</h3>
+            ${renderWorkpieceList(workpieces, model.entityId)}
+          </section>
+          <section class="cam-panel">
             <h3>刀路列表</h3>
             ${renderToolpathList(toolpaths)}
           </section>
@@ -89,8 +95,10 @@ function renderProject(context, view) {
             <h3>项目</h3>
             <dl class="cam-facts">
               <dt>名称</dt><dd>${escapeText(project.projectName)}</dd>
+              <dt>工件数</dt><dd>${escapeText(workpieces.length)}</dd>
               <dt>模型</dt><dd>${model.isLoaded ? escapeText(model.sourcePath) : "未导入"}</dd>
               <dt>拓扑版本</dt><dd>${escapeText(model.topologyVersion ?? 0)}</dd>
+              <dt>导入模式</dt><dd>${escapeText(topology.importMode || "normal")}</dd>
               <dt>拓扑</dt><dd>${topology.hasTopology ? `${escapeText(topology.faceCount ?? 0)} 面 / ${escapeText(topology.loopCount ?? 0)} loop / ${escapeText(topology.edgeCount ?? 0)} 边` : "未生成"}</dd>
             </dl>
           </section>
@@ -113,6 +121,12 @@ function renderProject(context, view) {
       return;
     }
 
+    const workpieceTarget = event.target instanceof Element ? event.target.closest("[data-cam-workpiece-id]") : null;
+    if (workpieceTarget) {
+      runProjectCommand(context, view, "Cam.SetActiveWorkpiece", { workpieceEntityId: workpieceTarget.dataset.camWorkpieceId });
+      return;
+    }
+
     const pickTarget = event.target instanceof Element ? event.target.closest("[data-cam-pick]") : null;
     if (pickTarget) {
       const kind = pickTarget.dataset.camKind;
@@ -121,6 +135,18 @@ function renderProject(context, view) {
       runProjectCommand(context, view, "Cam.PickTopology", { kind, id, label });
     }
   };
+}
+
+function renderImportNotice(topology) {
+  if (topology?.importMode !== "fallback-preview") {
+    return "";
+  }
+
+  return `
+    <div class="cam-import-notice">
+      ${escapeText(topology.diagnostic || "当前显示的是 fallback 预览拓扑，不是真实 CAD 内核解析结果。")}
+    </div>
+  `;
 }
 
 function renderViewport(scene) {
@@ -250,6 +276,29 @@ function findTopologyObject(scene, kind, id) {
   return (list ?? []).find((item) => String(item.id) === String(id)) ?? null;
 }
 
+function renderWorkpieceList(workpieces, activeWorkpieceId) {
+  if (!workpieces.length) {
+    return `<div class="cam-empty-row">暂无工件。</div>`;
+  }
+
+  return `
+    <div class="cam-toolpath-list">
+      ${workpieces.map((item, index) => {
+        const isActive = String(item.entityId ?? "") === String(activeWorkpieceId ?? "");
+        return `
+          <button class="cam-workpiece-row${isActive ? " active" : ""}"
+                  type="button"
+                  data-cam-workpiece-id="${escapeAttr(item.entityId)}">
+            <span>${escapeText(index + 1)}</span>
+            <strong>${escapeText(item.name || item.sourcePath || item.entityId)}</strong>
+            <small>${escapeText(item.sourcePath || item.modelResourceId || "")}</small>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
 function renderToolpathList(toolpaths) {
   if (!toolpaths.length) {
     return `<div class="cam-empty-row">暂无刀路。</div>`;
@@ -274,7 +323,7 @@ function runCamAction(context, view, action) {
     const sourcePath = String(input?.value ?? view.sourcePath ?? "").trim();
     view.sourcePath = sourcePath;
     if (!sourcePath) {
-      view.error = "请输入 STEP 文件路径或 URI";
+      view.error = "请输入 STEP/STP/IGS/IGES 文件路径";
       renderProject(context, view);
       return;
     }
@@ -293,7 +342,7 @@ function refreshScene(context, view) {
 }
 
 async function runProjectCommand(context, view, command, payload) {
-  if (!context.projectProxy) {
+  if (!context.sceneProxy) {
     return;
   }
 
@@ -301,7 +350,7 @@ async function runProjectCommand(context, view, command, payload) {
   view.error = "";
   renderProject(context, view);
   try {
-    view.scene = await context.projectProxy.execute(command, payload);
+    view.scene = await context.sceneProxy.execute(command, payload);
   } catch (error) {
     view.error = error?.message ?? String(error);
   } finally {
@@ -397,6 +446,16 @@ function ensureStyles() {
       grid-template-columns: minmax(420px, 1fr) 300px;
       min-height: 500px;
       gap: 14px;
+    }
+
+    .cam-import-notice {
+      padding: 8px 10px;
+      border: 1px solid rgba(248, 214, 109, 0.36);
+      border-radius: 5px;
+      background: rgba(248, 214, 109, 0.12);
+      color: #f3ddb0;
+      font-size: 12px;
+      line-height: 1.45;
     }
 
     .cam-viewport {
@@ -530,6 +589,46 @@ function ensureStyles() {
     .cam-toolpath-list {
       display: grid;
       gap: 8px;
+    }
+
+    .cam-workpiece-row {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 4px 8px;
+      width: 100%;
+      padding: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.04);
+      color: #e6f0f6;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .cam-workpiece-row:hover,
+    .cam-workpiece-row.active {
+      border-color: rgba(126, 198, 216, 0.72);
+      background: rgba(126, 198, 216, 0.12);
+    }
+
+    .cam-workpiece-row span {
+      color: #7ec6d8;
+      font-size: 12px;
+      grid-row: span 2;
+    }
+
+    .cam-workpiece-row strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .cam-workpiece-row small {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: var(--muted, #8896a3);
+      font-size: 12px;
     }
 
     .cam-toolpath-row {

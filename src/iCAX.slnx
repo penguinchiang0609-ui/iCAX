@@ -68,6 +68,10 @@
     <Project Path="iCAX-Engine/framework/Services/Services.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Plugins/" />
+  <Folder Name="/iCAX-Plugins/cad/" />
+  <Folder Name="/iCAX-Plugins/cad/OpenCascadeResourceImport/">
+    <Project Path="iCAX-Plugins/cad/OpenCascadeResourceImport/OpenCascadeResourceImport.vcxproj" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/cam/" />
   <Folder Name="/iCAX-Plugins/cam/Laser3DCAM/">
     <Project Path="iCAX-Plugins/cam/Laser3DCAM/Laser3DCAM.vcxproj" />

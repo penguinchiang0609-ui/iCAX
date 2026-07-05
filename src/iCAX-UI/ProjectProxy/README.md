@@ -1,21 +1,19 @@
 # ProjectProxy
 
-`ProjectProxy` 是前端项目代理模块，表达某个 backend project 的前端会话。
+`ProjectProxy` 是前端项目代理模块，表达某个 backend project 的前端容器。
 
 ## 目录结构
 
-- `ProjectProxy.mjs`：前端 project 代理对象。它持有 project channel、项目状态快照和 PDO client。
+- `ProjectProxy.mjs`：前端 project 代理对象。它持有项目状态快照、Scene 列表和主 Scene 代理。
 
 ## 标准能力
 
-- `getState()`：刷新项目状态快照。
-- `execute(command, payload, options)`：执行项目级命令。
-- `undo(options)`：发送 `Project.Undo`。
-- `redo(options)`：发送 `Project.Redo`。
-- `getUndoRedoState(options)`：发送 `Project.GetUndoRedoState`。
-- `subscribe(command, handler)` / `subscribeAll(handler)`：订阅项目级事件。
-- `pdo`：项目 PDO 高频数据入口。
+- `syncScenes(projectState)`：根据项目状态同步 Scene 代理。
+- `adoptScene(sceneState)`：创建或更新单个 Scene 代理。
+- `getScene(sceneId)`：获取指定 Scene 代理。
+- `getMainScene()`：获取主 Scene 代理。
+- `dispose()`：释放本项目下所有 Scene 订阅。
 
 ## 边界
 
-本模块不持有 repository、resource pool 或 ECS 数据。项目数据归 backend project 所有；前端通过 mailbox 执行项目级命令，通过 PDO 读取高频快照。
+本模块不持有 repository、resource pool、ECS 数据、mailbox 或 PDO。项目级数据归 backend project 所有；可运行现场归 backend scene 所有。前端通过 `SceneProxy` 执行业务命令、订阅事件和读取 PDO。

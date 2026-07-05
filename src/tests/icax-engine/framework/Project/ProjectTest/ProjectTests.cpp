@@ -467,28 +467,28 @@ namespace
     }
 }
 
-TEST(ProjectCatalogTest, AllowsOneMainProjectAndTransientProjects)
+TEST(ProjectCatalogTest, AllowsOneMainProjectAndChildScenes)
 {
     CProjectCatalog _Catalog(MakeCatalogInfo());
     EXPECT_FALSE(_Catalog.GetCatalogID().is_nil());
     EXPECT_EQ("Project Catalog", _Catalog.GetCatalogName());
 
-    auto _pMain = _Catalog.OpenMainProject("Robot Cell");
-    auto _pTransient = _Catalog.OpenTransientProject("Sheet Nesting Preview");
+    auto _pProject = _Catalog.OpenMainProject("Robot Cell");
+    auto _pChildScene = _pProject->OpenChildScene(_pProject->GetMainSceneID(), CProjectSceneCreateInfo{});
 
-    ASSERT_NE(nullptr, _pMain);
-    ASSERT_NE(nullptr, _pTransient);
-    EXPECT_TRUE(_pMain->IsMainProject());
-    EXPECT_TRUE(_pTransient->IsTransientProject());
-    EXPECT_NE(_pMain->GetProjectID(), _pTransient->GetProjectID());
-    EXPECT_EQ(2u, _Catalog.Count());
-    EXPECT_EQ(1u, _Catalog.TransientCount());
-    EXPECT_EQ(_pMain, _Catalog.GetMainProject());
+    ASSERT_NE(nullptr, _pProject);
+    ASSERT_NE(nullptr, _pChildScene);
+    EXPECT_EQ(1u, _Catalog.Count());
+    EXPECT_EQ(_pProject, _Catalog.GetMainProject());
+    EXPECT_EQ(2u, _pProject->GetScenes().size());
+    EXPECT_TRUE(_pProject->GetMainScene().IsMainScene());
+    EXPECT_TRUE(_pChildScene->IsTransientScene());
+    EXPECT_EQ(_pProject->GetMainSceneID(), _pChildScene->GetParentSceneID());
 
     EXPECT_THROW(_Catalog.OpenMainProject("Another Main"), std::logic_error);
-    EXPECT_NE(_pMain->Database().GetID(), _pTransient->Database().GetID());
-    EXPECT_EQ(_pMain->GetProjectID(), _pMain->Database().GetID());
-    EXPECT_EQ(_pTransient->GetProjectID(), _pTransient->Database().GetID());
+    EXPECT_NE(_pProject->MainSceneDatabase().GetID(), _pChildScene->Database().GetID());
+    EXPECT_EQ(_pProject->GetProjectID(), _pProject->MainSceneDatabase().GetID());
+    EXPECT_EQ(_pChildScene->GetSceneID(), _pChildScene->Database().GetID());
 }
 
 TEST(ProjectCatalogTest, CatalogIdentityCanBeProvided)
@@ -536,28 +536,28 @@ TEST(ProjectTest, SettingsAreInitializedFromCreateInfo)
             .To<std::string>());
 }
 
-TEST(ProjectCatalogTest, ProjectResourcesAreIsolated)
+TEST(ProjectCatalogTest, SceneResourcesAreIsolated)
 {
     CProjectCatalog _Catalog(MakeCatalogInfo());
 
-    auto _pProjectA = _Catalog.OpenMainProject("Weld A");
-    auto _pProjectB = _Catalog.OpenTransientProject("Weld B Preview");
+    auto _pProject = _Catalog.OpenMainProject("Weld A");
+    auto _pChildScene = _pProject->OpenChildScene(_pProject->GetMainSceneID(), CProjectSceneCreateInfo{});
 
     auto _pTextA = std::make_shared<TextResource>();
     _pTextA->Text = "A";
     auto _pTextB = std::make_shared<TextResource>();
     _pTextB->Text = "B";
 
-    _pProjectA->Resources().Set<TextResource>("memory://shared-id", _pTextA);
-    _pProjectB->Resources().Set<TextResource>("memory://shared-id", _pTextB);
+    _pProject->MainSceneResources().Set<TextResource>("memory://shared-id", _pTextA);
+    _pChildScene->Resources().Set<TextResource>("memory://shared-id", _pTextB);
 
-    ASSERT_NE(nullptr, _pProjectA->Resources().Get<TextResource>("memory://shared-id"));
-    ASSERT_NE(nullptr, _pProjectB->Resources().Get<TextResource>("memory://shared-id"));
-    EXPECT_EQ("A", _pProjectA->Resources().Get<TextResource>("memory://shared-id")->Text);
-    EXPECT_EQ("B", _pProjectB->Resources().Get<TextResource>("memory://shared-id")->Text);
+    ASSERT_NE(nullptr, _pProject->MainSceneResources().Get<TextResource>("memory://shared-id"));
+    ASSERT_NE(nullptr, _pChildScene->Resources().Get<TextResource>("memory://shared-id"));
+    EXPECT_EQ("A", _pProject->MainSceneResources().Get<TextResource>("memory://shared-id")->Text);
+    EXPECT_EQ("B", _pChildScene->Resources().Get<TextResource>("memory://shared-id")->Text);
     EXPECT_NE(
-        _pProjectA->Resources().Get<TextResource>("memory://shared-id").get(),
-        _pProjectB->Resources().Get<TextResource>("memory://shared-id").get());
+        _pProject->MainSceneResources().Get<TextResource>("memory://shared-id").get(),
+        _pChildScene->Resources().Get<TextResource>("memory://shared-id").get());
 }
 
 TEST(ProjectCatalogTest, ProjectUsesInjectedMetaRegistry)
@@ -570,10 +570,10 @@ TEST(ProjectCatalogTest, ProjectUsesInjectedMetaRegistry)
 
     CProject _Project(_Info);
 
-    EXPECT_EQ(_pMeta, _Project.Database().GetMetaRegistry());
+    EXPECT_EQ(_pMeta, _Project.MainSceneDatabase().GetMetaRegistry());
 }
 
-TEST(ProjectCatalogTest, ProjectOwnsAndSwapsPDOHub)
+TEST(ProjectCatalogTest, MainSceneOwnsAndSwapsPDOHub)
 {
     const auto _InboundID = iCAX::PDO::MakePDOID("ProjectTest.PDO", "Inbound");
     const auto _OutboundID = iCAX::PDO::MakePDOID("ProjectTest.PDO", "Outbound");
@@ -587,8 +587,8 @@ TEST(ProjectCatalogTest, ProjectOwnsAndSwapsPDOHub)
 
     CProject _Project(_Info);
 
-    ASSERT_TRUE(_Project.HasPDOHub());
-    auto& _Hub = _Project.PDOHub();
+    ASSERT_TRUE(_Project.MainSceneHasPDOHub());
+    auto& _Hub = _Project.MainScenePDOHub();
     const auto _ArenaName = _Hub.GetSharedArenaName();
     ASSERT_FALSE(_ArenaName.empty());
     EXPECT_GT(_Hub.GetSharedArenaSize(), sizeof(iCAX::PDO::SharedPDOArenaHeader));
@@ -597,28 +597,28 @@ TEST(ProjectCatalogTest, ProjectOwnsAndSwapsPDOHub)
     auto _ExternalInbound = _ExternalArena->GetSlot(_InboundID);
     WriteProjectPDOPayload(_ExternalInbound, 11);
 
-    _Project.PreSwapPDO();
+    _Project.PreSwapMainScenePDO();
     EXPECT_EQ(11, ReadProjectPDOPayload(_Hub.GetSlot(_InboundID)));
 
     WriteProjectPDOPayload(_Hub.GetSlot(_OutboundID), 22);
-    _Project.PostSwapPDO();
+    _Project.PostSwapMainScenePDO();
     auto _ExternalOutbound = _ExternalArena->GetSlot(_OutboundID);
     EXPECT_EQ(22, ReadProjectPDOPayload(_ExternalOutbound));
 
     _ExternalArena.reset();
     _Project.Close();
 
-    EXPECT_FALSE(_Project.HasPDOHub());
-    EXPECT_THROW((void)_Project.PDOHub(), std::logic_error);
+    EXPECT_FALSE(_Project.MainSceneHasPDOHub());
+    EXPECT_THROW((void)_Project.MainScenePDOHub(), std::logic_error);
     EXPECT_THROW((void)iCAX::PDO::CSharedPDOArena::Open(_ArenaName), std::runtime_error);
 }
 
-TEST(ProjectCatalogTest, ProjectWithoutPDOHubUsesDefaultContextBehavior)
+TEST(ProjectCatalogTest, MainSceneWithoutPDOHubUsesDefaultContextBehavior)
 {
     CProject _Project(MakeProjectInfo());
 
-    EXPECT_FALSE(_Project.HasPDOHub());
-    EXPECT_THROW((void)_Project.PDOHub(), std::logic_error);
+    EXPECT_FALSE(_Project.MainSceneHasPDOHub());
+    EXPECT_THROW((void)_Project.MainScenePDOHub(), std::logic_error);
 }
 
 TEST(ProjectCatalogTest, ProjectCreationRequiresExplicitRegistries)
@@ -709,8 +709,8 @@ TEST(ProjectCatalogTest, ProjectResourceLoadersAreIsolated)
     CProject _ProjectA(_InfoA);
     CProject _ProjectB(_InfoB);
 
-    auto _pTextA = _ProjectA.Resources().Load<TextResource>("memory://same-resource");
-    auto _pTextB = _ProjectB.Resources().Load<TextResource>("memory://same-resource");
+    auto _pTextA = _ProjectA.MainSceneResources().Load<TextResource>("memory://same-resource");
+    auto _pTextB = _ProjectB.MainSceneResources().Load<TextResource>("memory://same-resource");
 
     ASSERT_NE(nullptr, _pTextA);
     ASSERT_NE(nullptr, _pTextB);
@@ -718,24 +718,25 @@ TEST(ProjectCatalogTest, ProjectResourceLoadersAreIsolated)
     EXPECT_EQ("B", _pTextB->Text);
 }
 
-TEST(ProjectCatalogTest, CloseTransientProjectKeepsMainProjectOpen)
+TEST(ProjectCatalogTest, CloseChildSceneKeepsMainSceneOpen)
 {
     CProjectCatalog _Catalog(MakeCatalogInfo());
 
-    auto _pMainProject = _Catalog.OpenMainProject("A");
-    auto _pTransientProject = _Catalog.OpenTransientProject("B Preview");
-    const auto _MainProjectID = _pMainProject->GetProjectID();
-    const auto _TransientProjectID = _pTransientProject->GetProjectID();
+    auto _pProject = _Catalog.OpenMainProject("A");
+    auto _pChildScene = _pProject->OpenChildScene(_pProject->GetMainSceneID(), CProjectSceneCreateInfo{});
+    const auto _ProjectID = _pProject->GetProjectID();
+    const auto _ChildSceneID = _pChildScene->GetSceneID();
 
-    EXPECT_TRUE(_Catalog.CloseProject(_TransientProjectID));
-    EXPECT_EQ(nullptr, _Catalog.FindProject(_TransientProjectID));
-    ASSERT_NE(nullptr, _Catalog.FindProject(_MainProjectID));
-    EXPECT_TRUE(_Catalog.FindProject(_MainProjectID)->IsOpen());
-    EXPECT_EQ(_pMainProject, _Catalog.GetMainProject());
+    EXPECT_TRUE(_pProject->CloseScene(_ChildSceneID));
+    EXPECT_EQ(nullptr, _pProject->GetScene(_ChildSceneID));
+    ASSERT_NE(nullptr, _Catalog.FindProject(_ProjectID));
+    EXPECT_TRUE(_Catalog.FindProject(_ProjectID)->IsOpen());
+    EXPECT_TRUE(_Catalog.FindProject(_ProjectID)->GetMainScene().IsOpen());
+    EXPECT_EQ(_pProject, _Catalog.GetMainProject());
     EXPECT_EQ(1u, _Catalog.Count());
 }
 
-TEST(ProjectTest, StartRunsFrameHandlerOnProjectThread)
+TEST(ProjectTest, StartRunsMainSceneFrameHandlerOnSceneThread)
 {
     std::mutex _Mutex;
     std::condition_variable _Condition;
@@ -746,7 +747,7 @@ TEST(ProjectTest, StartRunsFrameHandlerOnProjectThread)
     auto _Info = MakeProjectInfo();
     _Info.ProjectName = "Threaded";
     _Info.nFrameIntervalMilliseconds = 1;
-    _Info.FrameHandler = [&](
+    _Info.OnMainSceneFrame = [&](
         CProject&,
         const iCAX::Mail::CMailPostOffice& PostOffice_) {
         {
@@ -770,7 +771,7 @@ TEST(ProjectTest, StartRunsFrameHandlerOnProjectThread)
     EXPECT_NE(std::this_thread::get_id(), _HandlerThreadID);
 }
 
-TEST(ProjectTest, TickUsesProjectRuntimeSchedulerFrameTime)
+TEST(ProjectTest, TickUsesSceneRuntimeSchedulerFrameTime)
 {
     auto _Info = MakeProjectInfo();
     _Info.ProjectName = "Frame Time";
@@ -780,9 +781,9 @@ TEST(ProjectTest, TickUsesProjectRuntimeSchedulerFrameTime)
     CProject _Project(_Info);
     _Project.BindStartup();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    _Project.Tick();
+    _Project.TickMainScene();
 
-    auto _Behaviours = _Project.Universe().GetAllBehaviours();
+    auto _Behaviours = _Project.MainSceneUniverse().GetAllBehaviours();
     ASSERT_EQ(1u, _Behaviours.size());
     auto _pBehaviour = std::dynamic_pointer_cast<CFrameTimeBehaviour>(_Behaviours.front());
     ASSERT_NE(nullptr, _pBehaviour);
@@ -798,14 +799,14 @@ TEST(ProjectTest, ForwardsRepositoryLifecycleEventsToUniverse)
     _Info.pBehaviourRegistry->RegisterBehaviour<CProjectLifecycleBehaviour>();
 
     CProject _Project(_Info);
-    ASSERT_TRUE(_Project.Universe().BindBehaviour<CProjectLifecycleBehaviour>());
+    ASSERT_TRUE(_Project.MainSceneUniverse().BindBehaviour<CProjectLifecycleBehaviour>());
 
-    auto _Behaviours = _Project.Universe().GetAllBehaviours();
+    auto _Behaviours = _Project.MainSceneUniverse().GetAllBehaviours();
     ASSERT_EQ(1u, _Behaviours.size());
     auto _pBehaviour = std::dynamic_pointer_cast<CProjectLifecycleBehaviour>(_Behaviours.front());
     ASSERT_NE(nullptr, _pBehaviour);
 
-    auto _pEntity = _Project.Database().CreateEntity(iCAX::Data::GenerateNewUUID());
+    auto _pEntity = _Project.MainSceneDatabase().CreateEntity(iCAX::Data::GenerateNewUUID());
     auto _pComponent = _pEntity->AddComponent(S_LifecycleComponentClass);
 
     EXPECT_EQ(1, _pBehaviour->AwakeCount);
@@ -823,7 +824,7 @@ TEST(ProjectTest, ForwardsRepositoryLifecycleEventsToUniverse)
     EXPECT_EQ(1, _pBehaviour->DestroyImmediateCount);
     EXPECT_EQ(0, _pBehaviour->DestroyCount);
 
-    _Project.Tick();
+    _Project.TickMainScene();
 
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
     EXPECT_EQ(42, _pBehaviour->LastDestroyValue);
@@ -841,7 +842,7 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     auto _SlowInfo = MakeProjectInfo();
     _SlowInfo.ProjectName = "Slow";
     _SlowInfo.nFrameIntervalMilliseconds = 1;
-    _SlowInfo.FrameHandler = [&](
+    _SlowInfo.OnMainSceneFrame = [&](
         CProject&,
         const iCAX::Mail::CMailPostOffice&) {
         {
@@ -856,7 +857,7 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     auto _FastInfo = MakeProjectInfo();
     _FastInfo.ProjectName = "Fast";
     _FastInfo.nFrameIntervalMilliseconds = 1;
-    _FastInfo.FrameHandler = [&](
+    _FastInfo.OnMainSceneFrame = [&](
         CProject&,
         const iCAX::Mail::CMailPostOffice&) {
         {
@@ -897,7 +898,7 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     auto _FaultInfo = MakeProjectInfo();
     _FaultInfo.ProjectName = "Fault";
     _FaultInfo.nFrameIntervalMilliseconds = 1;
-    _FaultInfo.FrameHandler = [&](
+    _FaultInfo.OnMainSceneFrame = [&](
         CProject&,
         const iCAX::Mail::CMailPostOffice&) {
         {
@@ -911,7 +912,7 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     auto _HealthyInfo = MakeProjectInfo();
     _HealthyInfo.ProjectName = "Healthy";
     _HealthyInfo.nFrameIntervalMilliseconds = 1;
-    _HealthyInfo.FrameHandler = [&](
+    _HealthyInfo.OnMainSceneFrame = [&](
         CProject&,
         const iCAX::Mail::CMailPostOffice&) {
         ++_HealthyFrames;
@@ -938,14 +939,14 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     _HealthyProject.Stop();
 }
 
-TEST(ProjectTest, CloseInvalidatesProjectMailPostOffices)
+TEST(ProjectTest, CloseInvalidatesMainSceneMailPostOffices)
 {
     auto _Info = MakeProjectInfo();
     _Info.ProjectName = "Mail";
 
     CProject _Project(_Info);
-    auto _FrontendPostOffice = _Project.GetFrontendPostOffice();
-    auto _BackendPostOffice = _Project.GetBackendPostOffice();
+    auto _FrontendPostOffice = _Project.GetMainSceneFrontendPostOffice();
+    auto _BackendPostOffice = _Project.GetMainSceneBackendPostOffice();
     ASSERT_TRUE(_FrontendPostOffice.IsValid());
     ASSERT_TRUE(_BackendPostOffice.IsValid());
 
@@ -955,17 +956,17 @@ TEST(ProjectTest, CloseInvalidatesProjectMailPostOffices)
     EXPECT_FALSE(_BackendPostOffice.IsValid());
     EXPECT_THROW(_FrontendPostOffice.Send(iCAX::Mail::Mail{}), std::logic_error);
     EXPECT_THROW(_BackendPostOffice.Receive(), std::logic_error);
-    EXPECT_THROW(_Project.GetFrontendPostOffice(), std::logic_error);
+    EXPECT_THROW(_Project.GetMainSceneFrontendPostOffice(), std::logic_error);
 }
 
-TEST(ProjectTest, ProjectCanSendFrontendEvent)
+TEST(ProjectTest, MainSceneCanSendFrontendEvent)
 {
     constexpr uint64_t kRepositoryChangedEvent = iCAX::Command::MakeCommandCode("Project", "RepositoryChanged");
 
     CProject _Project(MakeProjectInfo());
-    auto _FrontendPostOffice = _Project.GetFrontendPostOffice();
+    auto _FrontendPostOffice = _Project.GetMainSceneFrontendPostOffice();
 
-    _Project.SendFrontendEvent(kRepositoryChangedEvent, "project-event");
+    _Project.SendMainSceneFrontendEvent(kRepositoryChangedEvent, "project-event");
 
     auto _Events = _FrontendPostOffice.Receive();
     ASSERT_EQ(1u, _Events.size());
@@ -990,7 +991,7 @@ TEST(ProjectQuickSaveTest, ReplaysExistingLogAndContinuesAppending)
         EXPECT_EQ(_ProjectPath.string() + ".log", _Project.GetQuickSaveLogPath());
 
         _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
-        auto _pEntity = _Project.Database().CreateEntity(_EntityID);
+        auto _pEntity = _Project.MainSceneDatabase().CreateEntity(_EntityID);
         auto _pComponent = _pEntity->AddComponent(S_QuickSaveComponentClass);
         ASSERT_TRUE(_pComponent->SetProperty("Value", iCAX::Data::PropertyValue(7)));
         _Project.CloseQuickSaveLog();
@@ -1000,7 +1001,7 @@ TEST(ProjectQuickSaveTest, ReplaysExistingLogAndContinuesAppending)
         CProject _Project(_Info);
         _Project.ReplayQuickSaveLog(S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
 
-        auto _pEntity = _Project.Database().GetEntity(_EntityID);
+        auto _pEntity = _Project.MainSceneDatabase().GetEntity(_EntityID);
         ASSERT_NE(nullptr, _pEntity);
         auto _pComponent = _pEntity->GetComponent(S_QuickSaveComponentClass);
         ASSERT_NE(nullptr, _pComponent);
@@ -1015,7 +1016,7 @@ TEST(ProjectQuickSaveTest, ReplaysExistingLogAndContinuesAppending)
         CProject _Project(_Info);
         _Project.ReplayQuickSaveLog(S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
 
-        auto _pEntity = _Project.Database().GetEntity(_EntityID);
+        auto _pEntity = _Project.MainSceneDatabase().GetEntity(_EntityID);
         ASSERT_NE(nullptr, _pEntity);
         auto _pComponent = _pEntity->GetComponent(S_QuickSaveComponentClass);
         ASSERT_NE(nullptr, _pComponent);
@@ -1034,7 +1035,7 @@ TEST(ProjectQuickSaveTest, MarkProjectFileSavedTruncatesAndReopensLog)
 
     CProject _Project(_Info);
     _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
-    auto _pEntity = _Project.Database().CreateEntity(iCAX::Data::GenerateNewUUID());
+    auto _pEntity = _Project.MainSceneDatabase().CreateEntity(iCAX::Data::GenerateNewUUID());
     auto _pComponent = _pEntity->AddComponent(S_QuickSaveComponentClass);
     ASSERT_TRUE(_pComponent->SetProperty("Value", iCAX::Data::PropertyValue(1)));
     ASSERT_GT(std::filesystem::file_size(_Project.GetQuickSaveLogPath()), 0u);
@@ -1063,7 +1064,7 @@ TEST(ProjectQuickSaveTest, CloseDoesNotAppendRepositoryCleanup)
     {
         CProject _Project(_Info);
         _Project.OpenQuickSaveLog(true, S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
-        auto _pEntity = _Project.Database().CreateEntity(_EntityID);
+        auto _pEntity = _Project.MainSceneDatabase().CreateEntity(_EntityID);
         auto _pComponent = _pEntity->AddComponent(S_QuickSaveComponentClass);
         ASSERT_TRUE(_pComponent->SetProperty("Value", iCAX::Data::PropertyValue(5)));
         _Project.Close();
@@ -1072,7 +1073,7 @@ TEST(ProjectQuickSaveTest, CloseDoesNotAppendRepositoryCleanup)
     {
         CProject _Project(_Info);
         _Project.ReplayQuickSaveLog(S_TestQuickSaveLogMagic, S_TestQuickSaveLogVersion);
-        EXPECT_NE(nullptr, _Project.Database().GetEntity(_EntityID));
+        EXPECT_NE(nullptr, _Project.MainSceneDatabase().GetEntity(_EntityID));
     }
 
     RemoveProjectFiles(_ProjectPath);

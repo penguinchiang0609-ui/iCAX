@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ResourceImportExport.h"
 #include "ResourceInfo.h"
 
 #include <cstddef>
@@ -198,6 +199,36 @@ namespace iCAX
             * @param [in] bIncludeRuntimeOnly_ true 表示包含运行期资源。
             */
             std::vector<CResourceInfo> GetManifest(IN bool bIncludeRuntimeOnly_ = false) const;
+
+            /*
+            * @brief 获取当前资源库可用的导入格式。
+            * @details
+            *   格式来自注入的 ResourceLoaderRegistry。产品或插件通过导入器注册扩展格式，
+            *   ResourceLibrary 只负责暴露当前 Scene 可见的能力。
+            */
+            std::vector<CResourceFormatDescriptor> GetImportFormats() const;
+
+            /*
+            * @brief 获取当前资源库可用的导出格式。
+            */
+            std::vector<CResourceFormatDescriptor> GetExportFormats() const;
+
+            /*
+            * @brief 导入外部资源。
+            * @param [in] Request_ 导入请求，通常包含外部文件路径、可选格式 ID 和导入选项。
+            * @return 导入结果；成功时 Items 中包含本次生成的一组资源及其角色。
+            * @details
+            *   该方法是资源导入的统一入口。调用方不关心具体格式由哪个插件处理，
+            *   Registry 会按 CanImport 选择合适的 IResourceImporter。
+            */
+            CResourceImportResult Import(IN const CResourceImportRequest& Request_);
+
+            /*
+            * @brief 导出资源到外部目标。
+            * @param [in] Request_ 导出请求，包含资源 ID、目标路径、可选格式 ID 和导出选项。
+            * @return 导出结果。
+            */
+            CResourceExportResult Export(IN const CResourceExportRequest& Request_) const;
 
         private:
             /*

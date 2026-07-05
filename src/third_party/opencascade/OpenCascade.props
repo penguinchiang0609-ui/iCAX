@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ICAXOpenCascadeVersion>8.0.0-p1</ICAXOpenCascadeVersion>
+    <ICAXOpenCascadeRoot>$(MSBuildThisFileDirectory)occt-8.0.0-p1\</ICAXOpenCascadeRoot>
+    <ICAXOpenCascadeInstallRoot>$(MSBuildThisFileDirectory)install\vs2022-x64\</ICAXOpenCascadeInstallRoot>
+    <ICAXOpenCascadeIncludeDir>$(ICAXOpenCascadeInstallRoot)inc\</ICAXOpenCascadeIncludeDir>
+    <ICAXOpenCascadePlatformDir>$(ICAXOpenCascadeInstallRoot)win64\vc14\</ICAXOpenCascadePlatformDir>
+    <ICAXOpenCascadeBinDir Condition="'$(Configuration)' == 'Debug'">$(ICAXOpenCascadePlatformDir)bind\</ICAXOpenCascadeBinDir>
+    <ICAXOpenCascadeBinDir Condition="'$(Configuration)' != 'Debug'">$(ICAXOpenCascadePlatformDir)bin\</ICAXOpenCascadeBinDir>
+    <ICAXOpenCascadeLibDir Condition="'$(Configuration)' == 'Debug'">$(ICAXOpenCascadePlatformDir)libd\</ICAXOpenCascadeLibDir>
+    <ICAXOpenCascadeLibDir Condition="'$(Configuration)' != 'Debug'">$(ICAXOpenCascadePlatformDir)lib\</ICAXOpenCascadeLibDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <ICAXOpenCascadeFoundationLibs>TKernel.lib;TKMath.lib</ICAXOpenCascadeFoundationLibs>
+    <ICAXOpenCascadeModelingLibs>TKG2d.lib;TKG3d.lib;TKGeomBase.lib;TKBRep.lib;TKGeomAlgo.lib;TKTopAlgo.lib;TKPrim.lib;TKBO.lib;TKBool.lib;TKFillet.lib;TKOffset.lib;TKFeat.lib;TKMesh.lib;TKXMesh.lib;TKShHealing.lib;TKExpress.lib</ICAXOpenCascadeModelingLibs>
+    <ICAXOpenCascadeDataExchangeLibs>$(ICAXOpenCascadeFoundationLibs);$(ICAXOpenCascadeModelingLibs);TKDE.lib;TKXSBase.lib;TKDESTEP.lib;TKDEIGES.lib;TKDESTL.lib;TKRWMesh.lib;TKXCAF.lib;TKLCAF.lib;TKCAF.lib;TKCDF.lib;TKStdL.lib;TKStd.lib;TKVCAF.lib;TKBinL.lib;TKBin.lib;TKBinXCAF.lib;TKXmlL.lib;TKXml.lib;TKXmlXCAF.lib</ICAXOpenCascadeDataExchangeLibs>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ICAXOpenCascadeIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(ICAXOpenCascadeLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

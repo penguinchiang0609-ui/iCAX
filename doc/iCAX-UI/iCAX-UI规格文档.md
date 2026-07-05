@@ -29,6 +29,7 @@ src/iCAX-UI/
   AppProxy/
   ProductProxy/
   ProjectProxy/
+  SceneProxy/
   UI/
   SDK/
     AppShell/
@@ -55,11 +56,12 @@ src/apps/<product-id>/
 - `SDK/AppShell`：SDK 自带的 H5 单页应用壳。
 - `AppProxy`：前端应用代理，封装 application channel、产品列表、产品启动和按文件打开项目。
 - `ProductProxy`：前端产品代理，封装 product channel、产品状态、产品级事件、项目打开入口和产品 webpage 加载。
-- `ProjectProxy`：前端项目代理，封装 project channel、项目状态、项目级命令和 PDO 访问。
+- `ProjectProxy`：前端项目代理，封装项目状态、Scene 列表和主 Scene 入口。
+- `SceneProxy`：前端 Scene 代理，封装 scene channel、Scene 命令、撤销重做、事件订阅和 PDO 访问。
 - `UI`：公共 UI 工具和组件。
 - `SDK`：对 Shell 和产品前端暴露的统一导出入口，内部封装 Bridge、Mailbox、PDO。
 
-`AppProxy/ProductProxy/ProjectProxy` 是前端自己的三层结构，与 backend 概念对齐，但不拥有 backend 数据。它们只保存前端通信入口、状态快照、事件订阅和视图所需的轻量引用。
+`AppProxy/ProductProxy/ProjectProxy/SceneProxy` 是前端自己的四层结构，与 backend 概念对齐，但不拥有 backend 数据。它们只保存前端通信入口、状态快照、事件订阅和视图所需的轻量引用。
 
 ## 4. UIContainer
 
@@ -90,6 +92,7 @@ src/iCAX-UI/SDK/AppShell/index.html
 AppProxy workspace
   -> ProductProxy workspace
     -> ProjectProxy workspace
+      -> SceneProxy workspace
 ```
 
 产品前端不是新网页，而是由 manifest 指向的 ESM 模块：
@@ -97,7 +100,7 @@ AppProxy workspace
 ```json
 {
   "webpage": {
-    "entry": "apps/flat-laser-cam/webpage/entry.mjs"
+    "entry": "apps/laser-3d-cam/webpage/entry.mjs"
   }
 }
 ```
@@ -112,7 +115,7 @@ H5 侧只依赖 `window.icax`：
 interface IcaxBridge {
   getApplicationChannelId(): Promise<string>;
   registerProductChannel(productId: string): Promise<string>;
-  registerProjectChannel(projectId: string): Promise<string>;
+  registerSceneChannel(projectId: string, sceneId: string): Promise<string>;
   postMail(mail: IcaxMailEnvelope): void | Promise<void>;
   subscribeMail(channelId: string, handler: (mail: IcaxMailEnvelope) => void): () => void;
   openFileDialog?(options: OpenFileDialogOptions): Promise<string | null>;
@@ -144,8 +147,8 @@ interface IcaxMailEnvelope {
 
 ```js
 const app = await icax.connectApplication();
-const product = await app.startProduct("icax.flat-laser-cam");
-const opened = await app.openProjectFile("D:/projects/a.ilcam");
+const product = await app.startProduct("icax.laser-3d-cam");
+const opened = await app.openProjectFile("D:/projects/a.icax");
 ```
 
 完成规则：
@@ -178,7 +181,7 @@ CEF host starts
 ```text
 OS passes file path to application container
   -> ApplicationHost resolves product by magic
-  -> ProductRuntime opens Project
+  -> ProductRuntime opens Project and MainScene
   -> AppShell loads product webpage entry
   -> render project workspace
 ```
@@ -199,7 +202,7 @@ H5 不直接操作 PDO header。宿主适配器负责：
 产品前端只使用：
 
 ```js
-project.pdo.withRead("PreviewMesh", "MainViewport", view => {
+scene.pdo.withRead("PreviewMesh", "MainViewport", view => {
   // read payload
 });
 ```

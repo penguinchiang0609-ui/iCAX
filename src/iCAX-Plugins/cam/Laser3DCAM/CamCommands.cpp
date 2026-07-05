@@ -9,13 +9,19 @@
 #include "Data/VariantSerializer.h"
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
+#include "GeometryData/GeometryData.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
+#include "Resources/ResourceImportExport.h"
 #include "Resources/ResourceInfo.h"
 #include "Resources/ResourceLibrary.h"
+#include "Services/ServiceProvider.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -75,7 +81,7 @@ namespace
     {
         if (!pSceneContext_)
         {
-            throw std::invalid_argument("Cam command must be sent to a project mailbox");
+            throw std::invalid_argument("Cam command must be sent to a scene mailbox");
         }
         return *pSceneContext_;
     }
@@ -185,6 +191,19 @@ namespace
             return nDefault_;
         }
         return _ToUInt64(_Iter->second, strName_);
+    }
+
+    double _GetOptionalDouble(
+        IN const ObjectMap& Payload_,
+        IN const std::string& strName_,
+        IN double dDefault_)
+    {
+        auto _Iter = Payload_.find(strName_);
+        if (_Iter == Payload_.end() || _Iter->second.Is<std::monostate>())
+        {
+            return dDefault_;
+        }
+        return _ToDouble(_Iter->second, strName_);
     }
 
     std::shared_ptr<iCAX::Database::CComponentBase> _GetOrCreateComponent(
@@ -418,7 +437,19 @@ namespace
         return _Result;
     }
 
-    ObjectMap _NormalizePoseSample(IN const Variant& Sample_, IN size_t nSampleIndex_)
+    iCAX::GeometryData::Direction3 _ReadDirection3(
+        IN const ObjectMap& Object_,
+        IN const std::string& strFieldName_)
+    {
+        const auto _Values = _NormalizeNumericArray(Object_, strFieldName_, 3);
+        iCAX::GeometryData::Direction3 _Direction;
+        _Direction.X = _Values[0].To<double>();
+        _Direction.Y = _Values[1].To<double>();
+        _Direction.Z = _Values[2].To<double>();
+        return _Direction;
+    }
+
+    iCAX::CAM::SCAMPoseSample _NormalizePoseSample(IN const Variant& Sample_, IN size_t nSampleIndex_)
     {
         if (!Sample_.Is<ObjectMap>())
         {
@@ -426,16 +457,16 @@ namespace
         }
 
         const auto _Input = Sample_.To<ObjectMap>();
-        ObjectMap _Sample;
-        _Sample["segmentIndex"] = _GetObjectUInt64(_Input, "segmentIndex");
-        _Sample["segmentU"] = _GetObjectDouble(_Input, "segmentU");
-        _Sample["beamDirection"] = _NormalizeNumericArray(_Input, "beamDirection", 3);
+        iCAX::CAM::SCAMPoseSample _Sample;
+        _Sample.nSegmentIndex = _GetObjectUInt64(_Input, "segmentIndex");
+        _Sample.dSegmentU = _GetObjectDouble(_Input, "segmentU");
+        _Sample.BeamDirection = _ReadDirection3(_Input, "beamDirection");
         return _Sample;
     }
 
-    VariantArray _NormalizePoseSamples(IN const VariantArray& Samples_)
+    std::vector<iCAX::CAM::SCAMPoseSample> _NormalizePoseSamples(IN const VariantArray& Samples_)
     {
-        VariantArray _Result;
+        std::vector<iCAX::CAM::SCAMPoseSample> _Result;
         _Result.reserve(Samples_.size());
         for (size_t _Index = 0; _Index < Samples_.size(); ++_Index)
         {
@@ -1025,11 +1056,22 @@ namespace
         _Workpiece["name"] = pWorkpiece_ ? pWorkpiece_->GetName() : std::string();
         _Workpiece["sourcePath"] = pWorkpiece_ ? pWorkpiece_->GetSourcePath() : std::string();
         _Workpiece["modelResourceId"] = pWorkpiece_ ? pWorkpiece_->GetModelResourceID() : std::string();
+        _Workpiece["brepResourceId"] = pWorkpiece_ ? pWorkpiece_->GetBRepResourceID() : std::string();
         _Workpiece["topologyResourceId"] = pWorkpiece_ ? pWorkpiece_->GetTopologyResourceID() : std::string();
         _Workpiece["displayResourceId"] = pWorkpiece_ ? pWorkpiece_->GetDisplayResourceID() : std::string();
         _Workpiece["topologyVersion"] = pWorkpiece_ ? pWorkpiece_->GetTopologyVersion() : 0ull;
         _Workpiece["isLoaded"] = pWorkpiece_ && !pWorkpiece_->GetSourcePath().empty();
         return _Workpiece;
+    }
+
+    VariantArray _MakeWorkpieceArray(IN iCAX::Database::IRepository& Repository_)
+    {
+        VariantArray _Workpieces;
+        for (const auto& [_pEntity, _pWorkpiece] : _CollectEntitiesWithComponent<iCAX::CAM::CLaserWorkpieceComponent>(Repository_))
+        {
+            _Workpieces.emplace_back(_MakeWorkpiecePayload(_pEntity, _pWorkpiece));
+        }
+        return _Workpieces;
     }
 
     ObjectMap _MakePathPayload(
@@ -1197,6 +1239,22 @@ namespace
         _Status["faceCount"] = pTopology_ ? static_cast<unsigned long long>(pTopology_->Faces.size()) : 0ull;
         _Status["loopCount"] = pTopology_ ? static_cast<unsigned long long>(pTopology_->Loops.size()) : 0ull;
         _Status["edgeCount"] = pTopology_ ? static_cast<unsigned long long>(pTopology_->Edges.size()) : 0ull;
+        _Status["metadata"] = pTopology_ ? pTopology_->Metadata : ObjectMap{};
+
+        if (pTopology_)
+        {
+            auto _ImportMode = pTopology_->Metadata.find("importMode");
+            if (_ImportMode != pTopology_->Metadata.end())
+            {
+                _Status["importMode"] = _ImportMode->second;
+            }
+
+            auto _Diagnostic = pTopology_->Metadata.find("diagnostic");
+            if (_Diagnostic != pTopology_->Metadata.end())
+            {
+                _Status["diagnostic"] = _Diagnostic->second;
+            }
+        }
         return _Status;
     }
 
@@ -1212,6 +1270,7 @@ namespace
         ObjectMap _Scene;
         _Scene["root"] = _MakeRootPayload(_pRoot);
         _Scene["workpiece"] = _Workpiece;
+        _Scene["workpieces"] = _MakeWorkpieceArray(_Repository);
         _Scene["model"] = _Workpiece;
         _Scene["topology"] = _MakeTopologyStatusPayload(_pTopology);
         _Scene["faces"] = _pTopology ? _pTopology->Faces : VariantArray{};
@@ -1237,6 +1296,20 @@ namespace
         return _Name.empty() ? strSourcePath_ : _Name;
     }
 
+    std::string _ToLowerASCII(IN std::string strText_)
+    {
+        std::transform(strText_.begin(), strText_.end(), strText_.begin(), [](unsigned char ch_) {
+            return static_cast<char>(std::tolower(ch_));
+        });
+        return strText_;
+    }
+
+    bool _IsSupportedWorkpieceModelPath(IN const std::string& strSourcePath_)
+    {
+        const auto _Extension = _ToLowerASCII(std::filesystem::path(strSourcePath_).extension().string());
+        return _Extension == ".step" || _Extension == ".stp" || _Extension == ".igs" || _Extension == ".iges";
+    }
+
     iCAX::Resource::CResourceInfo _MakeResourceInfo(
         IN const std::string& strSource_,
         IN const std::string& strName_,
@@ -1259,56 +1332,538 @@ namespace
         return _PreviousVersion == 0 ? 1 : _PreviousVersion + 1;
     }
 
-    void _RegisterImportedModelResources(
-        IN iCAX::Project::ISceneContext& Scene_,
-        IN const std::string& strSourcePath_,
-        OUT std::string& strModelResourceID_,
-        OUT std::string& strTopologyResourceID_,
-        OUT std::string& strDisplayResourceID_,
-        OUT uint64_t& nTopologyVersion_)
+    struct SProjectionBounds final
     {
-        if (strSourcePath_.empty())
+        double MinX = (std::numeric_limits<double>::max)();
+        double MaxX = (std::numeric_limits<double>::lowest)();
+        double MinY = (std::numeric_limits<double>::max)();
+        double MaxY = (std::numeric_limits<double>::lowest)();
+        bool Empty = true;
+
+        void Add(IN const iCAX::GeometryData::Point3& Point_)
         {
-            throw std::invalid_argument("Cam ImportModel requires sourcePath");
+            MinX = std::min(MinX, Point_.X);
+            MaxX = std::max(MaxX, Point_.X);
+            MinY = std::min(MinY, Point_.Y);
+            MaxY = std::max(MaxY, Point_.Y);
+            Empty = false;
+        }
+    };
+
+    struct SCAMImportedCadResources final
+    {
+        std::string ModelResourceID;
+        std::string BRepResourceID;
+        std::string TopologyResourceID;
+        std::string DisplayResourceID;
+        uint64_t nTopologyVersion = 0;
+    };
+
+    template <typename TRecord>
+    const TRecord* _FindRecordByID(IN const std::vector<TRecord>& Records_, IN uint64_t nID_) noexcept
+    {
+        auto _Ite = std::find_if(Records_.begin(), Records_.end(), [nID_](IN const TRecord& Record_) {
+            return Record_.Id == nID_;
+        });
+        return _Ite == Records_.end() ? nullptr : &(*_Ite);
+    }
+
+    iCAX::GeometryData::Point3 _AddScaled(
+        IN const iCAX::GeometryData::Point3& Origin_,
+        IN const iCAX::GeometryData::Direction3& Direction_,
+        IN double dScale_)
+    {
+        return {
+            Origin_.X + Direction_.X * dScale_,
+            Origin_.Y + Direction_.Y * dScale_,
+            Origin_.Z + Direction_.Z * dScale_
+        };
+    }
+
+    iCAX::GeometryData::Point3 _EllipsePoint(
+        IN const iCAX::GeometryData::Placement3& Placement_,
+        IN double dMajorRadius_,
+        IN double dMinorRadius_,
+        IN double dAngle_)
+    {
+        const auto _Cos = std::cos(dAngle_);
+        const auto _Sin = std::sin(dAngle_);
+        return {
+            Placement_.Location.X + Placement_.XDirection.X * dMajorRadius_ * _Cos + Placement_.YDirection.X * dMinorRadius_ * _Sin,
+            Placement_.Location.Y + Placement_.XDirection.Y * dMajorRadius_ * _Cos + Placement_.YDirection.Y * dMinorRadius_ * _Sin,
+            Placement_.Location.Z + Placement_.XDirection.Z * dMajorRadius_ * _Cos + Placement_.YDirection.Z * dMinorRadius_ * _Sin
+        };
+    }
+
+    std::pair<double, double> _ResolveCurveRange(IN const iCAX::GeometryData::ParameterRange& Range_, IN double dDefaultFirst_, IN double dDefaultLast_)
+    {
+        const bool _HasFiniteRange = std::isfinite(Range_.First) && std::isfinite(Range_.Last);
+        if (_HasFiniteRange && Range_.First != Range_.Last)
+        {
+            return { Range_.First, Range_.Last };
+        }
+        return { dDefaultFirst_, dDefaultLast_ };
+    }
+
+    template <typename TPoint>
+    void _AppendControlPoints(IN OUT std::vector<iCAX::GeometryData::Point3>& Points_, IN const std::vector<TPoint>& Poles_)
+    {
+        for (const auto& _Pole : Poles_)
+        {
+            Points_.push_back({ _Pole.X, _Pole.Y, _Pole.Z });
+        }
+    }
+
+    std::vector<iCAX::GeometryData::Point3> _SampleCurve3(
+        IN const iCAX::GeometryData::Curve3& Curve_,
+        IN const iCAX::GeometryData::ParameterRange& Range_)
+    {
+        using namespace iCAX::GeometryData;
+
+        return std::visit([&Range_](IN const auto& CurveValue_) {
+            using TCurve = std::decay_t<decltype(CurveValue_)>;
+            std::vector<Point3> _Points;
+
+            if constexpr (std::is_same_v<TCurve, Segment3>)
+            {
+                _Points.push_back(CurveValue_.Start);
+                _Points.push_back(CurveValue_.End);
+            }
+            else if constexpr (std::is_same_v<TCurve, Line3>)
+            {
+                const auto [_First, _Last] = _ResolveCurveRange(Range_, 0.0, 1.0);
+                _Points.push_back(_AddScaled(CurveValue_.Axis.Location, CurveValue_.Axis.Direction, _First));
+                _Points.push_back(_AddScaled(CurveValue_.Axis.Location, CurveValue_.Axis.Direction, _Last));
+            }
+            else if constexpr (std::is_same_v<TCurve, Ray3>)
+            {
+                const auto [_First, _Last] = _ResolveCurveRange(Range_, CurveValue_.First, CurveValue_.First + 1.0);
+                _Points.push_back(_AddScaled(CurveValue_.Axis.Location, CurveValue_.Axis.Direction, _First));
+                _Points.push_back(_AddScaled(CurveValue_.Axis.Location, CurveValue_.Axis.Direction, _Last));
+            }
+            else if constexpr (std::is_same_v<TCurve, Circle3>)
+            {
+                const auto [_First, _Last] = _ResolveCurveRange(Range_, 0.0, 6.28318530717958647692);
+                constexpr int _SampleCount = 32;
+                for (int _Index = 0; _Index <= _SampleCount; ++_Index)
+                {
+                    const auto _T = _First + (_Last - _First) * static_cast<double>(_Index) / static_cast<double>(_SampleCount);
+                    _Points.push_back(_EllipsePoint(CurveValue_.Placement, CurveValue_.Radius, CurveValue_.Radius, _T));
+                }
+            }
+            else if constexpr (std::is_same_v<TCurve, Arc3>)
+            {
+                const auto _First = CurveValue_.Basis.Radius <= 0.0 ? 0.0 : CurveValue_.StartAngle;
+                const auto _Last = CurveValue_.Basis.Radius <= 0.0 ? 0.0 : CurveValue_.EndAngle;
+                constexpr int _SampleCount = 16;
+                for (int _Index = 0; _Index <= _SampleCount; ++_Index)
+                {
+                    const auto _T = _First + (_Last - _First) * static_cast<double>(_Index) / static_cast<double>(_SampleCount);
+                    _Points.push_back(_EllipsePoint(CurveValue_.Basis.Placement, CurveValue_.Basis.Radius, CurveValue_.Basis.Radius, _T));
+                }
+            }
+            else if constexpr (std::is_same_v<TCurve, Ellipse3>)
+            {
+                const auto [_First, _Last] = _ResolveCurveRange(Range_, 0.0, 6.28318530717958647692);
+                constexpr int _SampleCount = 32;
+                for (int _Index = 0; _Index <= _SampleCount; ++_Index)
+                {
+                    const auto _T = _First + (_Last - _First) * static_cast<double>(_Index) / static_cast<double>(_SampleCount);
+                    _Points.push_back(_EllipsePoint(CurveValue_.Placement, CurveValue_.MajorRadius, CurveValue_.MinorRadius, _T));
+                }
+            }
+            else if constexpr (std::is_same_v<TCurve, EllipseArc3>)
+            {
+                constexpr int _SampleCount = 16;
+                for (int _Index = 0; _Index <= _SampleCount; ++_Index)
+                {
+                    const auto _T = CurveValue_.StartAngle + (CurveValue_.EndAngle - CurveValue_.StartAngle) * static_cast<double>(_Index) / static_cast<double>(_SampleCount);
+                    _Points.push_back(_EllipsePoint(CurveValue_.Basis.Placement, CurveValue_.Basis.MajorRadius, CurveValue_.Basis.MinorRadius, _T));
+                }
+            }
+            else if constexpr (std::is_same_v<TCurve, Polyline3>)
+            {
+                _Points = CurveValue_.Points;
+            }
+            else if constexpr (std::is_same_v<TCurve, Bezier3>)
+            {
+                _AppendControlPoints(_Points, CurveValue_.Poles);
+            }
+            else if constexpr (std::is_same_v<TCurve, BSpline3>)
+            {
+                _AppendControlPoints(_Points, CurveValue_.Poles);
+            }
+            else if constexpr (std::is_same_v<TCurve, NURBS3>)
+            {
+                _AppendControlPoints(_Points, CurveValue_.Poles);
+            }
+            else if constexpr (std::is_same_v<TCurve, Clothoid3>)
+            {
+                _Points.push_back(CurveValue_.Placement.Location);
+                _Points.push_back(_AddScaled(CurveValue_.Placement.Location, CurveValue_.Placement.XDirection, CurveValue_.Length));
+            }
+
+            return _Points;
+        }, Curve_);
+    }
+
+    const iCAX::GeometryData::BRepVertex* _FindVertex(
+        IN const iCAX::GeometryData::BRepModel& Model_,
+        IN uint64_t nVertexID_) noexcept
+    {
+        return _FindRecordByID(Model_.Vertices, nVertexID_);
+    }
+
+    std::vector<iCAX::GeometryData::Point3> _SampleEdgePoints(
+        IN const iCAX::GeometryData::BRepModel& Model_,
+        IN const iCAX::GeometryData::BRepEdge& Edge_)
+    {
+        if (const auto* _pCurve = _FindRecordByID(Model_.Curves3, Edge_.Curve3Id))
+        {
+            auto _Points = _SampleCurve3(_pCurve->Geometry, Edge_.Range);
+            if (!_Points.empty())
+            {
+                return _Points;
+            }
         }
 
+        std::vector<iCAX::GeometryData::Point3> _Points;
+        if (const auto* _pStart = _FindVertex(Model_, Edge_.StartVertexId))
+        {
+            _Points.push_back(_pStart->Position);
+        }
+        if (const auto* _pEnd = _FindVertex(Model_, Edge_.EndVertexId))
+        {
+            _Points.push_back(_pEnd->Position);
+        }
+        return _Points;
+    }
+
+    std::vector<iCAX::GeometryData::Point3> _CollectWirePoints(
+        IN const iCAX::GeometryData::BRepModel& Model_,
+        IN const iCAX::GeometryData::BRepWire& Wire_)
+    {
+        std::vector<iCAX::GeometryData::Point3> _Points;
+        for (const auto& _Coedge : Wire_.Coedges)
+        {
+            if (const auto* _pEdge = _FindRecordByID(Model_.Edges, _Coedge.EdgeId))
+            {
+                auto _EdgePoints = _SampleEdgePoints(Model_, *_pEdge);
+                _Points.insert(_Points.end(), _EdgePoints.begin(), _EdgePoints.end());
+            }
+        }
+        return _Points;
+    }
+
+    void _CollectBRepBounds(IN const iCAX::GeometryData::BRepModel& Model_, IN OUT SProjectionBounds& Bounds_)
+    {
+        for (const auto& _Vertex : Model_.Vertices)
+        {
+            Bounds_.Add(_Vertex.Position);
+        }
+        for (const auto& _Triangulation : Model_.Triangulations3)
+        {
+            for (const auto& _Point : _Triangulation.Geometry.Vertices)
+            {
+                Bounds_.Add(_Point);
+            }
+        }
+        for (const auto& _Edge : Model_.Edges)
+        {
+            for (const auto& _Point : _SampleEdgePoints(Model_, _Edge))
+            {
+                Bounds_.Add(_Point);
+            }
+        }
+    }
+
+    Variant _MakeProjectedPoint(IN double dX_, IN double dY_)
+    {
+        ObjectMap _Point;
+        _Point["x"] = dX_;
+        _Point["y"] = dY_;
+        return Variant(_Point);
+    }
+
+    VariantArray _MakeProjectedPointArray(IN const std::vector<iCAX::GeometryData::Point3>& Points_, IN const SProjectionBounds& Bounds_)
+    {
+        const double _Width = std::max(1.0, Bounds_.MaxX - Bounds_.MinX);
+        const double _Height = std::max(1.0, Bounds_.MaxY - Bounds_.MinY);
+        const double _Scale = std::min(700.0 / _Width, 340.0 / _Height);
+        const double _OffsetX = 40.0 + (700.0 - _Width * _Scale) * 0.5;
+        const double _OffsetY = 40.0 + (340.0 - _Height * _Scale) * 0.5;
+
+        VariantArray _Result;
+        _Result.reserve(Points_.size());
+        for (const auto& _Point : Points_)
+        {
+            const double _X = _OffsetX + (_Point.X - Bounds_.MinX) * _Scale;
+            const double _Y = _OffsetY + (Bounds_.MaxY - _Point.Y) * _Scale;
+            _Result.emplace_back(_MakeProjectedPoint(_X, _Y));
+        }
+        return _Result;
+    }
+
+    ObjectMap _MakeProjectedEdge(
+        IN uint64_t nID_,
+        IN const std::string& strLabel_,
+        IN const std::vector<iCAX::GeometryData::Point3>& Points_,
+        IN const SProjectionBounds& Bounds_)
+    {
+        ObjectMap _Edge;
+        _Edge["id"] = static_cast<unsigned long long>(nID_);
+        _Edge["kind"] = std::string(kTopologyKindEdge);
+        _Edge["label"] = strLabel_;
+        _Edge["role"] = std::string("cad-edge");
+        _Edge["points"] = _MakeProjectedPointArray(Points_, Bounds_);
+        return _Edge;
+    }
+
+    ObjectMap _MakeProjectedFace(
+        IN uint64_t nID_,
+        IN const std::string& strLabel_,
+        IN const std::vector<iCAX::GeometryData::Point3>& Points_,
+        IN const SProjectionBounds& Bounds_)
+    {
+        ObjectMap _Face;
+        _Face["id"] = static_cast<unsigned long long>(nID_);
+        _Face["kind"] = std::string(kTopologyKindFace);
+        _Face["label"] = strLabel_;
+        _Face["role"] = std::string("cad-face");
+        _Face["points"] = _MakeProjectedPointArray(Points_, Bounds_);
+        return _Face;
+    }
+
+    ObjectMap _MakeProjectedLoop(
+        IN uint64_t nID_,
+        IN const std::string& strLabel_,
+        IN const std::vector<iCAX::GeometryData::Point3>& Points_,
+        IN const SProjectionBounds& Bounds_)
+    {
+        SProjectionBounds _LoopBounds;
+        for (const auto& _Point : Points_)
+        {
+            _LoopBounds.Add(_Point);
+        }
+        if (_LoopBounds.Empty)
+        {
+            _LoopBounds = Bounds_;
+        }
+
+        const auto _CenterPoints = _MakeProjectedPointArray(
+            { { (_LoopBounds.MinX + _LoopBounds.MaxX) * 0.5, (_LoopBounds.MinY + _LoopBounds.MaxY) * 0.5, 0.0 } },
+            Bounds_);
+        const auto _RadiusPoints = _MakeProjectedPointArray(
+            { { _LoopBounds.MaxX, (_LoopBounds.MinY + _LoopBounds.MaxY) * 0.5, 0.0 } },
+            Bounds_);
+
+        double _CenterX = 0.0;
+        double _CenterY = 0.0;
+        double _RadiusX = 0.0;
+        if (!_CenterPoints.empty())
+        {
+            const auto _Center = _CenterPoints.front().To<ObjectMap>();
+            _CenterX = _Center.at("x").To<double>();
+            _CenterY = _Center.at("y").To<double>();
+        }
+        if (!_RadiusPoints.empty())
+        {
+            const auto _RadiusPoint = _RadiusPoints.front().To<ObjectMap>();
+            _RadiusX = _RadiusPoint.at("x").To<double>();
+        }
+
+        ObjectMap _Loop;
+        _Loop["id"] = static_cast<unsigned long long>(nID_);
+        _Loop["kind"] = std::string(kTopologyKindLoop);
+        _Loop["label"] = strLabel_;
+        _Loop["role"] = std::string("cad-loop");
+        _Loop["center"] = _MakeProjectedPoint(_CenterX, _CenterY);
+        _Loop["radius"] = std::max(6.0, std::abs(_RadiusX - _CenterX));
+        return _Loop;
+    }
+
+    std::vector<iCAX::GeometryData::Point3> _MakeFacePreviewPolygon(
+        IN const iCAX::GeometryData::BRepModel& Model_,
+        IN const iCAX::GeometryData::BRepFace& Face_)
+    {
+        SProjectionBounds _Bounds;
+        if (const auto* _pTriangulation = _FindRecordByID(Model_.Triangulations3, Face_.Triangulation3Id))
+        {
+            for (const auto& _Point : _pTriangulation->Geometry.Vertices)
+            {
+                _Bounds.Add(_Point);
+            }
+        }
+
+        if (_Bounds.Empty)
+        {
+            for (const auto _WireID : Face_.WireIds)
+            {
+                if (const auto* _pWire = _FindRecordByID(Model_.Wires, _WireID))
+                {
+                    for (const auto& _Point : _CollectWirePoints(Model_, *_pWire))
+                    {
+                        _Bounds.Add(_Point);
+                    }
+                }
+            }
+        }
+
+        if (_Bounds.Empty)
+        {
+            return {};
+        }
+
+        return {
+            { _Bounds.MinX, _Bounds.MinY, 0.0 },
+            { _Bounds.MaxX, _Bounds.MinY, 0.0 },
+            { _Bounds.MaxX, _Bounds.MaxY, 0.0 },
+            { _Bounds.MinX, _Bounds.MaxY, 0.0 }
+        };
+    }
+
+    std::shared_ptr<iCAX::CAM::CCAMTopologyResource> _MakeTopologyResourceFromBRep(
+        IN const iCAX::GeometryData::BRepModel& Model_,
+        IN const std::string& strDisplayName_,
+        IN uint64_t nTopologyVersion_)
+    {
+        SProjectionBounds _Bounds;
+        _CollectBRepBounds(Model_, _Bounds);
+        if (_Bounds.Empty)
+        {
+            _Bounds.Add({ 0.0, 0.0, 0.0 });
+            _Bounds.Add({ 1.0, 1.0, 0.0 });
+        }
+
+        auto _pTopology = std::make_shared<iCAX::CAM::CCAMTopologyResource>();
+        _pTopology->nVersion = nTopologyVersion_;
+
+        for (const auto& _Face : Model_.Faces)
+        {
+            auto _Polygon = _MakeFacePreviewPolygon(Model_, _Face);
+            if (!_Polygon.empty())
+            {
+                _pTopology->Faces.emplace_back(_MakeProjectedFace(
+                    _Face.Id,
+                    strDisplayName_ + " face " + std::to_string(_Face.Id),
+                    _Polygon,
+                    _Bounds));
+            }
+        }
+
+        for (const auto& _Wire : Model_.Wires)
+        {
+            auto _LoopPoints = _CollectWirePoints(Model_, _Wire);
+            if (!_LoopPoints.empty())
+            {
+                _pTopology->Loops.emplace_back(_MakeProjectedLoop(
+                    _Wire.Id,
+                    "loop " + std::to_string(_Wire.Id),
+                    _LoopPoints,
+                    _Bounds));
+            }
+        }
+
+        for (const auto& _Edge : Model_.Edges)
+        {
+            auto _Points = _SampleEdgePoints(Model_, _Edge);
+            if (!_Points.empty())
+            {
+                _pTopology->Edges.emplace_back(_MakeProjectedEdge(
+                    _Edge.Id,
+                    "edge " + std::to_string(_Edge.Id),
+                    _Points,
+                    _Bounds));
+            }
+        }
+
+        _pTopology->Metadata["sourceDisplayName"] = strDisplayName_;
+        _pTopology->Metadata["faceCount"] = static_cast<unsigned long long>(_pTopology->Faces.size());
+        _pTopology->Metadata["loopCount"] = static_cast<unsigned long long>(_pTopology->Loops.size());
+        _pTopology->Metadata["edgeCount"] = static_cast<unsigned long long>(_pTopology->Edges.size());
+        return _pTopology;
+    }
+
+    std::string _FindImportedResourceID(IN const iCAX::Resource::CResourceImportResult& Result_, IN const std::string& strRole_)
+    {
+        auto _Ite = std::find_if(Result_.Items.begin(), Result_.Items.end(), [&strRole_](IN const iCAX::Resource::CResourceImportItem& Item_) {
+            return Item_.Role == strRole_;
+        });
+        return _Ite == Result_.Items.end() ? std::string() : _Ite->ResourceID;
+    }
+
+    void _RequireImportedResource(
+        IN iCAX::Project::ISceneContext& Scene_,
+        IN const std::string& strResourceID_,
+        IN const std::string& strFieldName_)
+    {
+        if (strResourceID_.empty())
+        {
+            throw std::runtime_error("Resource import returned empty resource id: " + strFieldName_);
+        }
+        if (Scene_.Resources().GetVersion(strResourceID_) == 0)
+        {
+            throw std::runtime_error("Resource import returned resource id that was not saved: " + strFieldName_);
+        }
+    }
+
+    SCAMImportedCadResources _ImportCadModel(
+        IN iCAX::Project::ISceneContext& Scene_,
+        IN const std::string& strSourcePath_,
+        IN double dTolerance_)
+    {
+        iCAX::Resource::CResourceImportRequest _Request;
+        _Request.SourcePath = strSourcePath_;
+        _Request.Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
+        _Request.Options["tolerance"] = std::to_string(dTolerance_);
+
         auto& _Resources = Scene_.Resources();
-        strModelResourceID_ = strSourcePath_;
-        strTopologyResourceID_ = iCAX::CAM::MakeCAMTopologyResourceID(strModelResourceID_);
-        strDisplayResourceID_ = iCAX::CAM::MakeCAMDisplayResourceID(strModelResourceID_);
+        auto _Result = _Resources.Import(_Request);
+        if (!_Result.IsOK())
+        {
+            throw std::runtime_error(_Result.Error.empty() ? "CAD resource import failed" : _Result.Error);
+        }
 
-        auto _pModelResource = std::make_shared<iCAX::CAM::CCAMImportedModelResource>();
-        _pModelResource->SourcePath = strSourcePath_;
-        _pModelResource->DisplayName = _GetDisplayNameFromPath(strSourcePath_);
-        _pModelResource->nVersion = _NextResourceVersion(_Resources, strModelResourceID_);
+        SCAMImportedCadResources _Imported;
+        _Imported.ModelResourceID = _FindImportedResourceID(_Result, "source");
+        if (_Imported.ModelResourceID.empty())
+        {
+            _Imported.ModelResourceID = _Result.PrimaryResourceID;
+        }
+        _Imported.BRepResourceID = _FindImportedResourceID(_Result, "geometry.brep");
+        _RequireImportedResource(Scene_, _Imported.ModelResourceID, "modelResourceId");
+        _RequireImportedResource(Scene_, _Imported.BRepResourceID, "brepResourceId");
 
-        auto _ModelInfo = _MakeResourceInfo(
-            strModelResourceID_,
-            _pModelResource->DisplayName,
-            "cam.imported-model",
-            iCAX::Resource::EResourcePersistenceMode::External,
-            _pModelResource->nVersion);
-        _Resources.Set<iCAX::CAM::CCAMImportedModelResource>(strModelResourceID_, _pModelResource, _ModelInfo);
+        auto _pBRep = _Resources.Get<iCAX::GeometryData::BRepModel>(_Imported.BRepResourceID);
+        if (!_pBRep)
+        {
+            throw std::runtime_error("Resource import returned BRep resource with unexpected runtime type");
+        }
 
-        auto _pTopologyResource = std::make_shared<iCAX::CAM::CCAMTopologyResource>();
-        _pTopologyResource->nVersion = _NextResourceVersion(_Resources, strTopologyResourceID_);
-        nTopologyVersion_ = _pTopologyResource->nVersion;
+        _Imported.TopologyResourceID = iCAX::CAM::MakeCAMTopologyResourceID(_Imported.ModelResourceID);
+        _Imported.nTopologyVersion = _NextResourceVersion(_Resources, _Imported.TopologyResourceID);
+        auto _pTopology = _MakeTopologyResourceFromBRep(*_pBRep, _GetDisplayNameFromPath(strSourcePath_), _Imported.nTopologyVersion);
+        _pTopology->Metadata["importMode"] = _Result.Metadata.contains("importer") ? _Result.Metadata.at("importer") : std::string("resource-import");
+        _pTopology->Metadata["sourcePath"] = strSourcePath_;
+        _pTopology->Metadata["sourceResourceId"] = _Imported.ModelResourceID;
+        _pTopology->Metadata["brepResourceId"] = _Imported.BRepResourceID;
+        if (auto _ContentHash = _Result.Metadata.find("contentHash"); _ContentHash != _Result.Metadata.end())
+        {
+            _pTopology->Metadata["contentHash"] = _ContentHash->second;
+        }
 
         auto _TopologyInfo = _MakeResourceInfo(
-            strTopologyResourceID_,
-            _pModelResource->DisplayName + " topology",
+            _Imported.TopologyResourceID,
+            _GetDisplayNameFromPath(strSourcePath_) + " topology",
             "cam.topology",
-            iCAX::Resource::EResourcePersistenceMode::RuntimeOnly,
-            _pTopologyResource->nVersion);
-        _Resources.Set<iCAX::CAM::CCAMTopologyResource>(strTopologyResourceID_, _pTopologyResource, _TopologyInfo);
+            iCAX::Resource::EResourcePersistenceMode::Embedded,
+            _Imported.nTopologyVersion);
+        _TopologyInfo.Metadata["sourceResourceId"] = _Imported.ModelResourceID;
+        _TopologyInfo.Metadata["brepResourceId"] = _Imported.BRepResourceID;
+        _Resources.Set<iCAX::CAM::CCAMTopologyResource>(_Imported.TopologyResourceID, _pTopology, _TopologyInfo);
 
-        auto _DisplayInfo = _MakeResourceInfo(
-            strDisplayResourceID_,
-            _pModelResource->DisplayName + " display",
-            "cam.display",
-            iCAX::Resource::EResourcePersistenceMode::RuntimeOnly,
-            nTopologyVersion_);
-        _Resources.Register(strDisplayResourceID_, _DisplayInfo);
+        _RequireImportedResource(Scene_, _Imported.TopologyResourceID, "topologyResourceId");
+        return _Imported;
     }
 
     class CCAMCommandTarget final : public iCAX::Command::CCommandTarget
@@ -1319,6 +1874,7 @@ namespace
         {
             Bind("GetScene", &CCAMCommandTarget::HandleGetScene);
             Bind("ImportModel", &CCAMCommandTarget::HandleImportModel);
+            Bind("SetActiveWorkpiece", &CCAMCommandTarget::HandleSetActiveWorkpiece);
             Bind("PickTopology", &CCAMCommandTarget::HandlePickTopology);
             Bind("RecognizeLoops", &CCAMCommandTarget::HandleRecognizeLoops);
             Bind("AddSelectionPath", &CCAMCommandTarget::HandleAddSelectionPath);
@@ -1352,43 +1908,75 @@ namespace
             {
                 throw std::invalid_argument("Cam ImportModel requires sourcePath");
             }
+            if (!_IsSupportedWorkpieceModelPath(_SourcePath))
+            {
+                throw std::invalid_argument("Cam ImportModel only supports STEP/STP and IGS/IGES workpiece files");
+            }
 
-            std::string _ModelResourceID;
-            std::string _TopologyResourceID;
-            std::string _DisplayResourceID;
-            uint64_t _TopologyVersion = 0;
-            _RegisterImportedModelResources(
-                _Scene,
-                _SourcePath,
-                _ModelResourceID,
-                _TopologyResourceID,
-                _DisplayResourceID,
-                _TopologyVersion);
+            const auto _Tolerance = _GetOptionalDouble(_Payload, "tolerance", 0.001);
+            if (_Tolerance <= 0.0)
+            {
+                throw std::invalid_argument("Cam ImportModel tolerance must be greater than zero");
+            }
+            const auto _ImportResult = _ImportCadModel(_Scene, _SourcePath, _Tolerance);
 
             auto& _Repository = _Scene.Database();
-            auto _Undo = _Repository.BeginUndoCommand("Import CAM model");
+            auto _Undo = _Repository.BeginUndoCommand("Import CAM workpiece");
             auto _pRoot = _GetOrCreateComponent<iCAX::CAM::CLaserCamRootComponent>(_Repository);
             auto _pSelection = _GetOrCreateComponent<iCAX::CAM::CCAMSelectionComponent>(_Repository);
-
-            _DeleteEntitiesWithComponent<iCAX::CAM::CCAMPathComponent>(_Repository);
-            _DeleteEntitiesWithComponent<iCAX::CAM::CCAMBlockComponent>(_Repository);
-            _DeleteEntitiesWithComponent<iCAX::CAM::CLaserWorkpieceComponent>(_Repository);
-            _DeleteEntitiesWithComponent<iCAX::CAM::CLaserCamCuttingLayerComponent>(_Repository);
-            _DeleteEntitiesWithComponent<iCAX::CAM::CLaserCamVisibleLayerComponent>(_Repository);
 
             auto [_pProgramRootEntity, _pProgramRootBlock] = _EnsureProgramRootBlock(_Repository);
             _EnsureDefaultLayers(_Repository);
             auto [_pWorkpieceEntity, _pWorkpiece] = _CreateEntityWithComponent<iCAX::CAM::CLaserWorkpieceComponent>(_Repository);
             _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_Name, _GetDisplayNameFromPath(_SourcePath));
             _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_SourcePath, _SourcePath);
-            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_ModelResourceID, _ModelResourceID);
-            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_TopologyResourceID, _TopologyResourceID);
-            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_DisplayResourceID, _DisplayResourceID);
-            _SetUInt64Property(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_TopologyVersion, _TopologyVersion);
+            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_ModelResourceID, _ImportResult.ModelResourceID);
+            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_BRepResourceID, _ImportResult.BRepResourceID);
+            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_TopologyResourceID, _ImportResult.TopologyResourceID);
+            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_DisplayResourceID, _ImportResult.DisplayResourceID);
+            _SetUInt64Property(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_TopologyVersion, _ImportResult.nTopologyVersion);
             _SetUuidProperty(_pRoot, iCAX::CAM::CLaserCamRootComponent::PropertyName_ActiveWorkpieceID, _pWorkpieceEntity->GetID());
             _SetUuidProperty(_pRoot, iCAX::CAM::CLaserCamRootComponent::PropertyName_ActiveOrderPlanID, iCAX::Data::uuid());
             _SetUuidProperty(_pRoot, iCAX::CAM::CLaserCamRootComponent::PropertyName_LatestSafetyCheckID, iCAX::Data::uuid());
             _SetUuidProperty(_pRoot, iCAX::CAM::CLaserCamRootComponent::PropertyName_ActiveSimulationID, iCAX::Data::uuid());
+            _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedKind, std::string());
+            _SetUInt64Property(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedID, 0ull);
+            _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedLabel, std::string());
+            _Undo->End();
+
+            return _MakeResponse(_BuildScenePayload(_Scene));
+        }
+
+        static iCAX::Command::CCommandResponse HandleSetActiveWorkpiece(
+            IN const iCAX::Command::CCommandRequest& Request_,
+            IN iCAX::Application::IApplicationContext&,
+            IN iCAX::Product::IProductContext*,
+            IN iCAX::Project::IProjectContext*,
+            IN iCAX::Project::ISceneContext* pSceneContext_)
+        {
+            auto& _Scene = _RequireSceneContext(pSceneContext_);
+            auto _Payload = _DecodeObjectPayload(Request_);
+            auto _WorkpieceIDText = _GetOptionalString(_Payload, "workpieceEntityId");
+            if (_WorkpieceIDText.empty())
+            {
+                _WorkpieceIDText = _GetOptionalString(_Payload, "entityId");
+            }
+            const auto _WorkpieceID = _ParseRequiredUuid(_WorkpieceIDText, "workpieceEntityId");
+
+            auto& _Repository = _Scene.Database();
+            auto _pWorkpieceEntity = _Repository.GetEntity(_WorkpieceID);
+            auto _pWorkpiece = _GetComponent<iCAX::CAM::CLaserWorkpieceComponent>(_pWorkpieceEntity);
+            if (!_pWorkpieceEntity || !_pWorkpiece)
+            {
+                throw std::invalid_argument("Cam SetActiveWorkpiece target does not exist");
+            }
+
+            auto _Undo = _Repository.BeginUndoCommand("Set active CAM workpiece");
+            auto _pRoot = _GetOrCreateComponent<iCAX::CAM::CLaserCamRootComponent>(_Repository);
+            auto _pSelection = _GetOrCreateComponent<iCAX::CAM::CCAMSelectionComponent>(_Repository);
+            _SetUuidProperty(_pRoot, iCAX::CAM::CLaserCamRootComponent::PropertyName_ActiveWorkpieceID, _WorkpieceID);
+            _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_HoverKind, std::string());
+            _SetUInt64Property(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_HoverID, 0ull);
             _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedKind, std::string());
             _SetUInt64Property(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedID, 0ull);
             _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedLabel, std::string());

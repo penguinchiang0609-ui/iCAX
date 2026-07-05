@@ -7,6 +7,7 @@ import {
   isUsableChannelId,
   ProductProxy,
   ProjectProxy,
+  SceneProxy,
   MockHostBridge,
   ProjectCommands,
   loadProductModule,
@@ -27,7 +28,7 @@ function testCommandCodes() {
 
 function testVariantSerializer() {
   const source = {
-    productId: "icax.flat-laser-cam",
+    productId: "icax.mock-product",
     enabled: true,
     count: 3,
     items: ["a", "b"],
@@ -57,11 +58,11 @@ async function testMailboxPromiseFlow() {
   const state = await app.getState();
   assert.equal(state.state, "Running");
   assert.equal(state.products.length, 1);
-  assert.equal(app.getProduct("icax.flat-laser-cam"), null);
+  assert.equal(app.getProduct("icax.mock-product"), null);
 
-  const product = await app.startProduct("icax.flat-laser-cam");
+  const product = await app.startProduct("icax.mock-product");
   assert.ok(product instanceof ProductProxy);
-  assert.equal(product.productId, "icax.flat-laser-cam");
+  assert.equal(product.productId, "icax.mock-product");
   assert.ok(product.productChannelId);
   assert.equal(app.getProduct(product.productId), product);
 
@@ -69,42 +70,54 @@ async function testMailboxPromiseFlow() {
   assert.equal(stoppedState.runningProductCount, 0);
   assert.equal(app.getProduct(product.productId), null);
 
-  const restartedProduct = await app.startProduct("icax.flat-laser-cam");
+  const restartedProduct = await app.startProduct("icax.mock-product");
   assert.ok(restartedProduct instanceof ProductProxy);
 
-  const resolved = await app.resolveProjectFile("D:/projects/mock.ilcam");
+  const resolved = await app.resolveProjectFile("D:/projects/mock.icax");
   assert.equal(resolved.resolve.status, "Resolved");
-  assert.equal(resolved.resolve.productId, "icax.flat-laser-cam");
+  assert.equal(resolved.resolve.productId, "icax.mock-product");
 
-  const opened = await app.openProjectFile("D:/projects/mock.ilcam");
+  const opened = await app.openProjectFile("D:/projects/mock.icax");
   assert.equal(opened.resolve.status, "Resolved");
   assert.equal(opened.catalog.mainProject.state, "Running");
   assert.ok(opened.projectProxy instanceof ProjectProxy);
+  assert.ok(opened.sceneProxy instanceof SceneProxy);
   assert.equal(opened.productProxy.getProject(opened.projectProxy.projectId), opened.projectProxy);
+  assert.equal(opened.projectProxy.getMainScene(), opened.sceneProxy);
 
-  const projectState = await opened.projectProxy.getState();
-  assert.equal(projectState.projectChannelId, opened.projectProxy.projectChannelId);
-  assert.equal(projectState.projectName, "Mock Project");
+  const sceneState = await opened.sceneProxy.getState();
+  assert.equal(sceneState.sceneChannelId, opened.sceneProxy.sceneChannelId);
+  assert.equal(sceneState.sceneName, "Main Scene");
 
-  const undoRedoState = await opened.projectProxy.getUndoRedoState();
+  const undoRedoState = await opened.sceneProxy.getUndoRedoState();
   assert.deepEqual(undoRedoState.undoSteps, []);
-  assert.deepEqual(await opened.projectProxy.execute(ProjectCommands.undo), undoRedoState);
+  assert.deepEqual(await opened.sceneProxy.execute(ProjectCommands.undo), undoRedoState);
 }
 
-async function testProjectChannelRegistrationFromProjectId() {
+async function testSceneChannelRegistrationFromProjectState() {
   const bridge = new MockHostBridge({ delayMs: 1 });
   const app = await connectApplication({ bridge, app: { mailbox: { timeoutMs: 1000 } } });
-  const product = await app.startProduct("icax.flat-laser-cam");
+  const product = await app.startProduct("icax.mock-product");
   bridge.projectOpened = true;
 
   const project = await product.adoptProject({
     projectId: "00000000-0000-4000-8000-000000000401",
     projectName: "Registered Later",
-    projectPath: "D:/projects/mock.ilcam",
+    projectPath: "D:/projects/mock.icax",
+    mainSceneId: "00000000-0000-4000-8000-000000000501",
+    mainScene: {
+      sceneId: "00000000-0000-4000-8000-000000000501",
+      sceneName: "Main Scene",
+    },
+    scenes: [{
+      sceneId: "00000000-0000-4000-8000-000000000501",
+      sceneName: "Main Scene",
+    }],
   });
 
   assert.ok(project instanceof ProjectProxy);
-  assert.equal(project.projectChannelId, "00000000-0000-4000-8000-000000000201");
+  assert.ok(project.getMainScene() instanceof SceneProxy);
+  assert.equal(project.getMainScene().sceneChannelId, "00000000-0000-4000-8000-000000000201");
 }
 
 async function testMailboxEventFlow() {
@@ -183,9 +196,9 @@ async function testPDOBridgeInjection() {
 
 async function testProductModuleLoader() {
   const shellBaseUrl = new URL("../../iCAX-UI/SDK/AppShell/app/bootstrap.mjs", import.meta.url).href;
-  const entry = "apps/flat-laser-cam/webpage/entry.mjs";
+  const entry = "apps/laser-3d-cam/webpage/entry.mjs";
   const moduleUrl = resolveFrontendEntry(entry, shellBaseUrl);
-  assert.ok(moduleUrl.endsWith("/src/apps/flat-laser-cam/webpage/entry.mjs"));
+  assert.ok(moduleUrl.endsWith("/src/apps/laser-3d-cam/webpage/entry.mjs"));
   assert.throws(() => resolveFrontendEntry("https://example.com/product.mjs", shellBaseUrl), /External product frontend entries/);
   assert.equal(
     resolveFrontendEntry("https://example.com/product.mjs", shellBaseUrl, { allowExternalEntries: true }),
@@ -221,7 +234,7 @@ testVariantSerializer();
 testBridgeValidation();
 testChannelIdValidation();
 await testMailboxPromiseFlow();
-await testProjectChannelRegistrationFromProjectId();
+await testSceneChannelRegistrationFromProjectState();
 await testMailboxEventFlow();
 await testMailboxDispose();
 await testPDOBridgeInjection();

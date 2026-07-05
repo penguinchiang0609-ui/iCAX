@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ProjectExport.h"
-#include "ProjectRuntimeScheduler.h"
+#include "SceneRuntimeScheduler.h"
 
 #include "ApplicationContext/IApplicationContext.h"
 #include "Behaviour/IUniverse.h"
@@ -360,7 +360,7 @@ namespace iCAX
             std::shared_ptr<CRepositoryEventForwarder> m_pRepositoryEventForwarder;
             iCAX::Resource::CResourceLibrary m_Resources;
             uint32_t m_nFrameIntervalMilliseconds = 16;
-            CProjectRuntimeScheduler m_RuntimeScheduler;
+            CSceneRuntimeScheduler m_RuntimeScheduler;
             SceneFrameHandler m_FrameHandler;
             std::atomic_uint64_t m_nNextBackendMailID = 1;
             bool m_bStartupBound = false;

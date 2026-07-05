@@ -12,7 +12,8 @@
 运行边界：
 
 - backend 产品能力来自 `src/iCAX-Plugins/cam/Laser3DCAM`。
-- 项目状态保存在 Project.Database 中。
-- 模型、拓扑、显示等大对象或运行期对象保存在 Project.Resources 中。
-- webpage 只通过前端 SDK 的 ProductProxy/ProjectProxy 发送命令，不直接持有业务数据。
+- 项目级参数保存在 ProjectSetting 中。
+- 项目数据保存在主 Scene 的 Database 中。
+- 模型、拓扑、显示等大对象或运行期对象保存在主 Scene 的 Resources 中。
+- webpage 通过前端 SDK 的 ProductProxy/ProjectProxy/SceneProxy 建立上下文，并通过 SceneProxy 发送项目数据命令，不直接持有业务数据。
 - manifest 中 backend 模块路径使用 `${Platform}` 和 `${Configuration}` 占位符，由 Application 加载产品定义时解析。

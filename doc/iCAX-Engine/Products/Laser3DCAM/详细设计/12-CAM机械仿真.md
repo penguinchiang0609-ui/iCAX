@@ -138,9 +138,9 @@ SimulationCollisionPDO
 
 ```mermaid
 sequenceDiagram
-    participant Cmd as LaserCam.StartSimulation
+    participant Cmd as Cam.StartSimulation
     participant Sim as CamSimulationService
-    participant Scheduler as ProjectRuntimeScheduler
+    participant Scheduler as SceneScheduler
     participant PDO as PDOHub
     participant UI as Frontend
 

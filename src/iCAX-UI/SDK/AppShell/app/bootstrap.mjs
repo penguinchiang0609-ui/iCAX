@@ -17,6 +17,8 @@ const state = {
   activeProductProxy: null,
   activeProjectState: null,
   activeProjectProxy: null,
+  activeSceneState: null,
+  activeSceneProxy: null,
   productModules: new Map(),
   productSurfaceErrorKey: "",
   pendingCount: 0,
@@ -62,6 +64,8 @@ const actions = {
       : null;
     state.activeProjectState = null;
     state.activeProjectProxy = null;
+    state.activeSceneState = null;
+    state.activeSceneProxy = null;
     await mountActiveProductModule();
     render();
   },
@@ -91,6 +95,8 @@ const actions = {
       state.activeProductState = response.productProxy?.state ?? response.product;
       state.activeProjectProxy = response.projectProxy;
       state.activeProjectState = response.projectProxy?.state ?? response.catalog?.mainProject ?? null;
+      state.activeSceneProxy = response.sceneProxy ?? response.projectProxy?.getMainScene?.() ?? null;
+      state.activeSceneState = state.activeSceneProxy?.state ?? state.activeProjectState?.mainScene ?? null;
       await mountActiveProductModule();
     });
   },
@@ -119,6 +125,8 @@ const actions = {
       }
       state.activeProjectProxy = response.projectProxy;
       state.activeProjectState = response.projectProxy?.state ?? response.catalog?.mainProject ?? null;
+      state.activeSceneProxy = response.sceneProxy ?? response.projectProxy?.getMainScene?.() ?? null;
+      state.activeSceneState = state.activeSceneProxy?.state ?? state.activeProjectState?.mainScene ?? null;
       await mountActiveProductModule();
     });
   },
@@ -131,7 +139,7 @@ const actions = {
       return;
     }
     const path = await bridge?.openFileDialog?.({
-      filters: [{ name: "iCAX Project", extensions: ["icax", "ilcam"] }],
+      filters: [{ name: "iCAX Project", extensions: ["icax"] }],
     });
     if (path) {
       await actions.openProjectFromPath(path);
@@ -139,26 +147,26 @@ const actions = {
   },
 
   async undoProject() {
-    if (!state.activeProjectProxy) {
+    if (!state.activeSceneProxy) {
       return;
     }
 
     await track("Project.Undo", async () => {
-      const undoRedo = await state.activeProjectProxy.undo();
-      const projectState = await state.activeProjectProxy.getState();
-      state.activeProjectState = { ...projectState, undoRedo };
+      const undoRedo = await state.activeSceneProxy.undo();
+      const sceneState = await state.activeSceneProxy.getState();
+      state.activeSceneState = { ...sceneState, undoRedo };
     });
   },
 
   async redoProject() {
-    if (!state.activeProjectProxy) {
+    if (!state.activeSceneProxy) {
       return;
     }
 
     await track("Project.Redo", async () => {
-      const undoRedo = await state.activeProjectProxy.redo();
-      const projectState = await state.activeProjectProxy.getState();
-      state.activeProjectState = { ...projectState, undoRedo };
+      const undoRedo = await state.activeSceneProxy.redo();
+      const sceneState = await state.activeSceneProxy.getState();
+      state.activeSceneState = { ...sceneState, undoRedo };
     });
   },
 };
@@ -298,7 +306,7 @@ function renderProductWorkspace() {
 }
 
 function renderProjectWorkspace() {
-  const undoRedo = state.activeProjectState?.undoRedo ?? {};
+  const undoRedo = state.activeSceneState?.undoRedo ?? {};
   return `
     <main class="workspace">
       <section class="workspace-head">
@@ -326,8 +334,9 @@ function renderInspector() {
         <dl class="property-grid">
           <dt>项目</dt><dd>${escapeText(project.projectName)}</dd>
           <dt>状态</dt><dd>${escapeText(project.state)}</dd>
-          <dt>通道</dt><dd>${escapeText(project.projectChannelId)}</dd>
-          <dt>PDO</dt><dd>${project.pdo?.enabled ? "启用" : "未启用"}</dd>
+          <dt>Scene</dt><dd>${escapeText(state.activeSceneState?.sceneName ?? "-")}</dd>
+          <dt>通道</dt><dd>${escapeText(state.activeSceneState?.sceneChannelId ?? "-")}</dd>
+          <dt>PDO</dt><dd>${state.activeSceneState?.pdo?.enabled ? "启用" : "未启用"}</dd>
         </dl>
       ` : product ? `
         <dl class="property-grid">
@@ -392,7 +401,9 @@ function mountActiveProductSurface() {
     appProxy: state.appProxy,
     productProxy: state.activeProductProxy,
     projectProxy: state.activeProjectProxy,
+    sceneProxy: state.activeSceneProxy,
     project: state.activeProjectState,
+    scene: state.activeSceneState,
     mount: productMount ?? projectMount,
     mode,
     actions,

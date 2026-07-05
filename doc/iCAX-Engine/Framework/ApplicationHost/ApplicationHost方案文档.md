@@ -134,6 +134,6 @@ ApplicationHost 对同一个 `productId` 维护启动中和停止中标记。`St
 - ProductRuntime 负责产品级入口和 ProjectCatalog 生命周期。
 - Project 负责项目实例状态、ProjectSetting 和 Scene 集合；Scene 负责线程、Repository、ResourceLibrary、Universe、PDOHub 和 Scene mailbox。
 - ProductRuntime 可以同时维护多个 ProjectCatalog。
-- 一个 ProjectCatalog 内主项目最多存在一个。
-- 临时项目靠 ProjectID 隔离，用于预览、导入和转换。
+- 一个 ProjectCatalog 内只存在一个主 Project。
+- 预览、导入、局部编辑和仿真等临时现场靠子 Scene 隔离。
 

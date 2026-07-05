@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IResourceLoader.h"
+#include "ResourceImportExport.h"
 #include "ResourceLoaderRegistrationCatalog.h"
 
 #include <map>
@@ -82,9 +83,53 @@ namespace iCAX
             */
             CResourceLoadResult LoadResource(IN const CResourceLoadContext& Context_);
 
+            /*
+            * @brief 注册资源导入器。
+            * @return true 表示注册成功；false 表示相同实例或相同 importer 类型已存在。
+            */
+            bool RegisterImporter(IN const std::shared_ptr<IResourceImporter>& pImporter_);
+
+            /*
+            * @brief 注册资源导出器。
+            * @return true 表示注册成功；false 表示相同实例或相同 exporter 类型已存在。
+            */
+            bool RegisterExporter(IN const std::shared_ptr<IResourceExporter>& pExporter_);
+
+            /*
+            * @brief 获取全部导入格式。
+            */
+            std::vector<CResourceFormatDescriptor> GetImportFormats() const;
+
+            /*
+            * @brief 获取全部导出格式。
+            */
+            std::vector<CResourceFormatDescriptor> GetExportFormats() const;
+
+            /*
+            * @brief 查找第一个可处理请求的导入器。
+            */
+            std::shared_ptr<IResourceImporter> FindImporterFor(IN const CResourceImportRequest& Request_) const;
+
+            /*
+            * @brief 查找第一个可处理请求的导出器。
+            */
+            std::shared_ptr<IResourceExporter> FindExporterFor(IN const CResourceLibrary& Library_, IN const CResourceExportRequest& Request_) const;
+
+            /*
+            * @brief 执行资源导入。
+            */
+            CResourceImportResult ImportResource(IN CResourceLibrary& Library_, IN const CResourceImportRequest& Request_);
+
+            /*
+            * @brief 执行资源导出。
+            */
+            CResourceExportResult ExportResource(IN const CResourceLibrary& Library_, IN const CResourceExportRequest& Request_);
+
         private:
             mutable std::shared_mutex m_Mutex;
             std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>> m_Loaders;
+            std::vector<std::shared_ptr<IResourceImporter>> m_Importers;
+            std::vector<std::shared_ptr<IResourceExporter>> m_Exporters;
         };
     }
 }
@@ -107,4 +152,38 @@ namespace iCAX
             } \
         }; \
         const ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceLoaderRegistration_, UniqueID) ICAX_RESOURCE_DETAIL_JOIN(g_AutoResourceLoaderRegistration_, UniqueID); \
+    }
+
+#define ICAX_REGISTER_RESOURCE_IMPORTER(ImporterType) ICAX_REGISTER_RESOURCE_IMPORTER_IMPL(ImporterType, __COUNTER__)
+#define ICAX_REGISTER_RESOURCE_IMPORTER_IMPL(ImporterType, UniqueID) \
+    namespace \
+    { \
+        struct ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceImporterRegistration_, UniqueID) final \
+        { \
+            ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceImporterRegistration_, UniqueID)() \
+            { \
+                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_) \
+                { \
+                    Registry_.RegisterImporter(std::make_shared<ImporterType>()); \
+                }, this); \
+            } \
+        }; \
+        const ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceImporterRegistration_, UniqueID) ICAX_RESOURCE_DETAIL_JOIN(g_AutoResourceImporterRegistration_, UniqueID); \
+    }
+
+#define ICAX_REGISTER_RESOURCE_EXPORTER(ExporterType) ICAX_REGISTER_RESOURCE_EXPORTER_IMPL(ExporterType, __COUNTER__)
+#define ICAX_REGISTER_RESOURCE_EXPORTER_IMPL(ExporterType, UniqueID) \
+    namespace \
+    { \
+        struct ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceExporterRegistration_, UniqueID) final \
+        { \
+            ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceExporterRegistration_, UniqueID)() \
+            { \
+                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_) \
+                { \
+                    Registry_.RegisterExporter(std::make_shared<ExporterType>()); \
+                }, this); \
+            } \
+        }; \
+        const ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceExporterRegistration_, UniqueID) ICAX_RESOURCE_DETAIL_JOIN(g_AutoResourceExporterRegistration_, UniqueID); \
     }

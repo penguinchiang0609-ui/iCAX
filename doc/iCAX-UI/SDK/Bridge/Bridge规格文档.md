@@ -16,7 +16,7 @@ bridge 至少需要提供：
 
 - `getApplicationChannelId()`
 - `registerProductChannel(productId)`
-- `registerProjectChannel(projectId)`
+- `registerSceneChannel(projectId, sceneId)`
 - `subscribeMail(channelId, handler)`
 - `postMail(mail)`
 
@@ -67,19 +67,19 @@ const channelId = await bridge.registerProductChannel(productId);
 - 调用失败时抛出异常或 reject。
 - 重复登记同一产品应返回同一个 channel id。
 
-### 5.3 registerProjectChannel
+### 5.3 registerSceneChannel
 
 ```js
-const channelId = await bridge.registerProjectChannel(projectId);
+const channelId = await bridge.registerSceneChannel(projectId, sceneId);
 ```
 
-登记已打开项目的 channel，并返回 project channel id。
+登记已打开 Scene 的 channel，并返回 scene channel id。
 
 要求：
 
-- 只能在项目已经由 backend 创建后调用。
+- 只能在项目和 Scene 已经由 backend 创建后调用。
 - 调用失败时抛出异常或 reject。
-- 重复登记同一项目应返回同一个 channel id。
+- 重复登记同一 Scene 应返回同一个 channel id。
 
 ### 5.4 subscribeMail
 

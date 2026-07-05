@@ -17,14 +17,6 @@ namespace iCAX
         }
 
         /*
-        * @brief 根据模型资源 key 生成显示资源 key。
-        */
-        inline std::string MakeCAMDisplayResourceID(IN const std::string& strModelResourceID_)
-        {
-            return strModelResourceID_.empty() ? std::string() : strModelResourceID_ + "#cam.display";
-        }
-
-        /*
         * @brief 根据刀路 EntityID 生成刀路曲线资源 key。
         */
         inline std::string MakeCAMPathCurveResourceID(IN const iCAX::Data::uuid& PathEntityID_)

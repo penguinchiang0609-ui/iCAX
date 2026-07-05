@@ -86,6 +86,7 @@ export class AppProxy {
       ...response,
       productProxy: product,
       projectProxy: project,
+      sceneProxy: project?.getMainScene() ?? null,
     };
   }
 

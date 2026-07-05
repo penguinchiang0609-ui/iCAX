@@ -127,7 +127,8 @@ auto catalog = productRuntime->OpenProjectCatalog(
     "D:/projects/robot.icax");
 
 auto project = catalog->GetMainProject();
-auto projectOffice = productRuntime->GetProjectFrontendPostOffice(project->GetProjectID());
+auto mainScene = project->GetMainScene();
+auto sceneOffice = productRuntime->GetSceneFrontendPostOffice(project->GetProjectID(), mainScene->GetSceneID());
 ```
 
 `ProductRuntime` 打开 ProjectCatalog 时使用产品定义中的 `DefaultProjectStartupComponent`，上层打开项目时不再传入 startup component。
@@ -215,17 +216,37 @@ probeBytes: unsigned_long_long
 
 ```text
 projectId: uuid
-projectChannelId: uuid
+mainSceneId: uuid
+mainSceneChannelId: uuid
 projectName: string
 projectPath: string
 startupComponent: string
-role: string
 state: string
-isMainProject: bool
-isTransientProject: bool
 isOpen: bool
 isRunning: bool
 faultMessage: string
+mainScene: object
+sceneCount: unsigned_long_long
+scenes: array<object>
+```
+
+Scene 对象包含：
+
+```text
+sceneId: uuid
+sceneChannelId: uuid
+parentSceneId: uuid
+sceneName: string
+role: string
+state: string
+isMainScene: bool
+isTransientScene: bool
+isOpen: bool
+isRunning: bool
+startupComponent: string
+faultMessage: string
+pdo: object
+undoRedo: object
 ```
 
 ## 6. 线程模型

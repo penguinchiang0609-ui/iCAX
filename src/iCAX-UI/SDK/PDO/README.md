@@ -8,4 +8,4 @@
 
 ## 边界
 
-本模块不解释具体业务数据结构。某个 PDO 的二进制布局由产品 `protocol/` 约定。产品页面通过 `project.pdo` 使用，不直接构造 `PDOClient`。
+本模块不解释具体业务数据结构。某个 PDO 的二进制布局由产品 `protocol/` 约定。产品页面通过 `scene.pdo` 使用，不直接构造 `PDOClient`。

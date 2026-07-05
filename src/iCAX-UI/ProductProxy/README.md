@@ -11,4 +11,4 @@
 
 本模块不等同于具体产品页面。具体产品页面仍放在 `src/apps/<product-id>/webpage/`，由 `productModuleLoader.mjs` 加载；本模块负责产品级 mailbox、产品级事件、项目打开入口和产品页面挂载入口。
 
-backend state 里的 `projectChannelId` 是 project runtime 身份，不等于当前 bridge 已接入该 channel。`ProductProxy` 创建或更新 `ProjectProxy` 前，必须调用 `bridge.registerProjectChannel(projectId)` 完成原生 post office 注册。
+Project 本身不拥有 mailbox。`ProductProxy` 创建或更新 `ProjectProxy` 时，会根据 backend 返回的主 Scene 信息调用 `bridge.registerSceneChannel(projectId, mainSceneId)`，让原生宿主把主 Scene 的 post office 注册到当前 bridge 会话。

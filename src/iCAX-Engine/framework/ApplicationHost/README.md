@@ -2,7 +2,7 @@
 
 `ApplicationHost` 是前端启动后最先连接的后台入口。它负责构造 `ApplicationContext`、创建应用级服务容器、维护产品定义与产品运行时、驱动应用级后台线程、发布生命周期事件，并提供应用级 mailbox。
 
-ApplicationHost 不直接打开 `ProjectCatalog`，也不直接管理项目。前端启动后先向应用级邮箱发送 `App.GetState` 或 `App.ListProducts` 获取产品清单，再发送 `App.StartProduct` 启动某个产品。产品启动后，前端使用返回的 `productChannelId` 连接产品级邮箱，由 `ProductRuntime` 负责打开 ProjectCatalog 并返回项目邮箱入口。
+ApplicationHost 不直接打开 `ProjectCatalog`，也不直接管理项目。前端启动后先向应用级邮箱发送 `App.GetState` 或 `App.ListProducts` 获取产品清单，再发送 `App.StartProduct` 启动某个产品。产品启动后，前端使用返回的 `productChannelId` 连接产品级邮箱，由 `ProductRuntime` 负责打开 ProjectCatalog 并返回主 Scene 邮箱入口。
 
 ApplicationHost 维护产品定义列表，产品定义只保存静态能力，例如前端入口、项目文件 magic 和模块路径。最近项目和产品用户设置属于产品运行数据，由对应的 ProductRuntime 读取和保存。双击项目文件启动时，ApplicationHost 只读取少量文件头，通过唯一 magic 识别产品，然后把打开动作转交给 ProductRuntime。
 

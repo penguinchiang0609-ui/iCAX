@@ -198,15 +198,6 @@ namespace iCAX
                 IN const std::string& strProjectName_ = std::string(),
                 IN const std::string& strProjectPath_ = std::string());
             /*
-            * @brief 在指定 catalog 中打开临时项目。
-            * @param [in] CatalogID_ catalog ID。
-            * @return 新打开的临时项目。
-            */
-            std::shared_ptr<iCAX::Project::CProject> OpenTransientProject(
-                IN const iCAX::Data::uuid& CatalogID_,
-                IN const std::string& strProjectName_ = std::string(),
-                IN const std::string& strProjectPath_ = std::string());
-            /*
             * @brief 关闭指定项目。
             * @return true 表示项目存在并被关闭。
             */
@@ -219,11 +210,13 @@ namespace iCAX
             bool CloseProjectCatalog(IN const iCAX::Data::uuid& CatalogID_);
 
             /*
-            * @brief 获取指定项目的前端邮局。
-            * @return 项目主 Scene 邮箱的前端端点。
-            * @throws std::runtime_error 项目不存在时抛出。
+            * @brief 获取指定 Scene 的前端邮局。
+            * @return Scene 邮箱的前端端点。
+            * @throws std::runtime_error 项目或 Scene 不存在时抛出。
             */
-            iCAX::Mail::CMailPostOffice GetProjectFrontendPostOffice(IN const iCAX::Data::uuid& ProjectID_) const;
+            iCAX::Mail::CMailPostOffice GetSceneFrontendPostOffice(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN const iCAX::Data::uuid& SceneID_) const;
 
             /*
             * @brief 构建产品状态负载。
@@ -327,11 +320,11 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_);
 
             /*
-            * @brief 分发指定项目主 Scene 或产品邮箱中的邮件。
+            * @brief 分发指定主 Scene 或产品邮箱中的邮件。
             * @param [in] PostOffice_ 后端视角邮局。
-            * @param [in] pProjectRuntime_ 项目运行时；为空表示产品邮箱。
+            * @param [in] pProjectRuntime_ 项目运行时；为空表示产品邮箱，否则分发主 Scene 邮箱。
             */
-            void DispatchProjectMails(
+            void DispatchSceneMails(
                 IN const iCAX::Mail::CMailPostOffice& PostOffice_,
                 IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_);
             /*

@@ -23,9 +23,9 @@ const iCAX::Data::uuid& iCAX::Project::CLocalProjectRuntime::GetProjectID() cons
     return RequireProject().GetProjectID();
 }
 
-const iCAX::Data::uuid& iCAX::Project::CLocalProjectRuntime::GetProjectChannelID() const
+const iCAX::Data::uuid& iCAX::Project::CLocalProjectRuntime::GetMainSceneChannelID() const
 {
-    return RequireProject().GetProjectChannelID();
+    return RequireProject().GetMainSceneChannelID();
 }
 
 std::string iCAX::Project::CLocalProjectRuntime::GetProjectName() const
@@ -41,21 +41,6 @@ std::string iCAX::Project::CLocalProjectRuntime::GetProjectPath() const
 std::string iCAX::Project::CLocalProjectRuntime::GetStartupComponent() const
 {
     return RequireProject().GetStartupComponent();
-}
-
-iCAX::Project::EProjectRole iCAX::Project::CLocalProjectRuntime::GetRole() const
-{
-    return RequireProject().GetRole();
-}
-
-bool iCAX::Project::CLocalProjectRuntime::IsMainProject() const
-{
-    return RequireProject().IsMainProject();
-}
-
-bool iCAX::Project::CLocalProjectRuntime::IsTransientProject() const
-{
-    return RequireProject().IsTransientProject();
 }
 
 bool iCAX::Project::CLocalProjectRuntime::IsOpen() const
@@ -78,21 +63,21 @@ std::optional<iCAX::Project::CProjectFault> iCAX::Project::CLocalProjectRuntime:
     return RequireProject().GetLastFault();
 }
 
-iCAX::Project::CProjectPDODescriptor iCAX::Project::CLocalProjectRuntime::GetPDODescriptor() const
+iCAX::Project::CMainScenePDODescriptor iCAX::Project::CLocalProjectRuntime::GetMainScenePDODescriptor() const
 {
-    return RequireProject().GetPDODescriptor();
+    return RequireProject().GetMainScenePDODescriptor();
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Project::CLocalProjectRuntime::GetFrontendPostOffice()
+iCAX::Mail::CMailPostOffice iCAX::Project::CLocalProjectRuntime::GetMainSceneFrontendPostOffice()
 {
-    return RequireProject().GetFrontendPostOffice();
+    return RequireProject().GetMainSceneFrontendPostOffice();
 }
 
-void iCAX::Project::CLocalProjectRuntime::SetFrameHandler(IN ProjectRuntimeFrameHandler Handler_)
+void iCAX::Project::CLocalProjectRuntime::SetMainSceneFrameHandler(IN MainSceneRuntimeFrameHandler Handler_)
 {
     {
         std::lock_guard<std::mutex> _Lock(m_FrameHandlerMutex);
-        m_FrameHandler = std::move(Handler_);
+        m_MainSceneFrameHandler = std::move(Handler_);
     }
 
     auto _pProject = m_pProject;
@@ -101,11 +86,11 @@ void iCAX::Project::CLocalProjectRuntime::SetFrameHandler(IN ProjectRuntimeFrame
         return;
     }
 
-    _pProject->SetFrameHandler(
+    _pProject->SetMainSceneFrameHandler(
         [this](
             iCAX::Project::CProject&,
             const iCAX::Mail::CMailPostOffice& BackendPostOffice_) {
-            auto _Handler = GetFrameHandler();
+            auto _Handler = GetMainSceneFrameHandler();
             if (_Handler)
             {
                 _Handler(*this, BackendPostOffice_);
@@ -130,13 +115,13 @@ void iCAX::Project::CLocalProjectRuntime::Close()
 {
     {
         std::lock_guard<std::mutex> _Lock(m_FrameHandlerMutex);
-        m_FrameHandler = nullptr;
+        m_MainSceneFrameHandler = nullptr;
     }
 
     auto _pProject = std::exchange(m_pProject, nullptr);
     if (_pProject)
     {
-        _pProject->SetFrameHandler(nullptr);
+        _pProject->SetMainSceneFrameHandler(nullptr);
         _pProject->Close();
     }
 }
@@ -146,17 +131,17 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CLocalProjectRuntime::Ge
     return m_pProject;
 }
 
-iCAX::Project::ProjectRuntimeFrameHandler iCAX::Project::CLocalProjectRuntime::GetFrameHandler() const
+iCAX::Project::MainSceneRuntimeFrameHandler iCAX::Project::CLocalProjectRuntime::GetMainSceneFrameHandler() const
 {
     std::lock_guard<std::mutex> _Lock(m_FrameHandlerMutex);
-    return m_FrameHandler;
+    return m_MainSceneFrameHandler;
 }
 
 iCAX::Project::CProject& iCAX::Project::CLocalProjectRuntime::RequireProject() const
 {
     if (!m_pProject)
     {
-        throw std::logic_error("ProjectRuntime is closed");
+        throw std::logic_error("Project runtime has no local project");
     }
     return *m_pProject;
 }

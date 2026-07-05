@@ -22,7 +22,7 @@ export async function mountProject(context) {}
 `webpage.entry` 可以是：
 
 - 绝对路径。
-- `apps/` 开头的产品入口标识，如 `apps/flat-laser-cam/webpage/entry.mjs`，由加载器解析到 `src/apps/flat-laser-cam/webpage/entry.mjs`。
+- `apps/` 开头的产品入口标识，如 `apps/laser-3d-cam/webpage/entry.mjs`，由加载器解析到 `src/apps/laser-3d-cam/webpage/entry.mjs`。
 
 默认不允许 `http(s):` 或 `file:` 外部入口。只有显式传入 `allowExternalEntries` 时才允许外部入口；产品化 manifest 应使用 `apps/<product-id>/webpage/entry.mjs`。
 

@@ -66,11 +66,14 @@ namespace iCAX
             std::string RegisterProductChannel(const std::string& strProductID_) override;
 
             /*
-            * @brief 登记项目通信通道。
-            * @param [in] strProjectID_ 项目 ID 文本。
-            * @return 项目 channel id 文本。
+            * @brief 登记 Scene 通信通道。
+            * @param [in] strProjectID_ Project ID 文本。
+            * @param [in] strSceneID_ Scene ID 文本。
+            * @return Scene channel id 文本。
             */
-            std::string RegisterProjectChannel(const std::string& strProjectID_) override;
+            std::string RegisterSceneChannel(
+                const std::string& strProjectID_,
+                const std::string& strSceneID_) override;
 
             /*
             * @brief 从 UI 向指定 Engine mail channel 投递邮件。

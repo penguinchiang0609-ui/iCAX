@@ -38,6 +38,7 @@ src/iCAX-UI/
   AppProxy/
   ProductProxy/
   ProjectProxy/
+  SceneProxy/
   UI/
   SDK/
     AppShell/
@@ -66,13 +67,15 @@ flowchart LR
     SDK --> AppProxy["AppProxy"]
     SDK --> ProductProxy["ProductProxy"]
     SDK --> ProjectProxy["ProjectProxy"]
+    SDK --> SceneProxy["SceneProxy"]
     SDK --> UI["UI"]
     SDK --> Mailbox["SDK/Mailbox"]
     SDK --> PDOClient["SDK/PDO"]
     AppProxy --> Mailbox
     ProductProxy --> Mailbox
-    ProjectProxy --> Mailbox
-    ProjectProxy --> PDOClient
+    ProjectProxy --> SceneProxy
+    SceneProxy --> Mailbox
+    SceneProxy --> PDOClient
     PDOClient --> Bridge["SDK/Bridge<br/>window.icax"]
     Mailbox --> Bridge
     Bridge --> CefHost["CefUIContainer<br/>IUIContainer 实现"]
@@ -80,9 +83,10 @@ flowchart LR
     FrontendBridge --> AppHost["Engine ApplicationHost"]
     AppHost --> ProductRuntime["ProductRuntime"]
     ProductRuntime --> Project["Project"]
-    Project --> Repo["Repository"]
-    Project --> Resources["ResourcePool"]
-    Project --> PDO["PDO Hub"]
+    Project --> Scene["Scene"]
+    Scene --> Repo["Repository"]
+    Scene --> Resources["ResourcePool"]
+    Scene --> PDO["PDO Hub"]
 ```
 
 `AppShell` 是唯一 HTML 入口。产品页面不是新的 HTML 页面，而是通过 `ProductProxy` 模块中的 loader 按 manifest 动态 import 的 ESM 模块。
@@ -166,6 +170,7 @@ SDK
   -> AppProxy
   -> ProductProxy
   -> ProjectProxy
+  -> SceneProxy
   -> UI
 ```
 
@@ -210,19 +215,20 @@ const frame = meshView.readLatest();
 
 实际数据布局由 `src/apps/<product-id>/protocol` 说明。
 
-### 7.4 AppProxy/ProductProxy/ProjectProxy
+### 7.4 AppProxy/ProductProxy/ProjectProxy/SceneProxy
 
-前端公共框架显式提供应用、产品、项目三个层级：
+前端公共框架显式提供应用、产品、项目、场景四个层级：
 
 ```text
 AppProxy
   ProductProxy
     ProjectProxy
+      SceneProxy
 ```
 
-每一层都有自己的 mailbox 入口。前端先和 application 对话，再按需进入 product 和 project。
+Application、Product、Scene 有自己的 mailbox 入口。Project 是项目容器，不拥有 mailbox。前端先和 application 对话，再按需进入 product，打开 project 后默认使用主 Scene 对话。
 
-这三层不拥有 backend 数据，只保存 channel、状态快照、事件订阅入口和 PDO 访问入口。Repository、ResourcePool、ECS 数据仍在 Engine project 内。
+这四层不拥有 backend 数据，只保存 channel、状态快照、事件订阅入口和 PDO 访问入口。Repository、ResourcePool、ECS 数据仍在 Engine scene 内。
 
 ### 7.5 ProductProxy Module Loader
 
@@ -242,15 +248,15 @@ AppProxy
 {
   "schema": "icax.product.manifest",
   "schemaVersion": 1,
-  "productId": "icax.flat-laser-cam",
-  "productName": "Flat Laser CAM",
+  "productId": "icax.laser-3d-cam",
+  "productName": "Laser 3D CAM",
   "productVersion": "0.1.0",
   "projectFile": {
-    "magic": "ICAX-FLAT-LASER-CAM",
+    "magic": "ICAX_LASER_3D_CAM",
     "formatVersion": 1,
-    "quickSaveLogMagic": "ICAX-FLAT-LASER-CAM-QSAVE",
+    "quickSaveLogMagic": "ICAX_LASER_3D_CAM_QSAVE",
     "quickSaveLogVersion": 1,
-    "fileExtensions": [".flcam"]
+    "fileExtensions": [".icax"]
   },
   "backend": {
     "modules": {
@@ -261,7 +267,7 @@ AppProxy
     }
   },
   "webpage": {
-    "entry": "apps/flat-laser-cam/webpage/entry.mjs"
+    "entry": "apps/laser-3d-cam/webpage/entry.mjs"
   }
 }
 ```
@@ -303,8 +309,9 @@ sequenceDiagram
     Page->>Product: Product.GetState
     Page->>Page: import(frontendEntry)
     Page->>Product: Product.OpenProject(path)
-    Product-->>Page: projectChannelId
-    Page->>Project: Project.GetState
+    Product-->>Page: project + mainSceneChannelId
+    Page->>Project: registerSceneChannel(projectId, mainSceneId)
+    Page->>Project: Project.GetState on scene channel
 ```
 
 ## 10. 消息流
@@ -374,13 +381,14 @@ iCAX-UI 只能：
 - `src/iCAX-UI/AppProxy`
 - `src/iCAX-UI/ProductProxy`
 - `src/iCAX-UI/ProjectProxy`
+- `src/iCAX-UI/SceneProxy`
 - `src/iCAX-UI/SDK/Bridge`
 - `src/iCAX-UI/SDK/Mailbox`
 - `src/iCAX-UI/SDK/PDO`
 - `src/iCAX-UI/UI`
 - `src/iCAX-UI/SDK`
-- `src/apps/flat-laser-cam/product.manifest.json`
-- `src/apps/flat-laser-cam/webpage/entry.mjs`
+- `src/apps/laser-3d-cam/product.manifest.json`
+- `src/apps/laser-3d-cam/webpage/entry.mjs`
 - `src/tests/iCAX-UI/SDKTest.mjs`
 
 外部集成边界：

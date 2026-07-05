@@ -7,4 +7,5 @@ export { loadProductModule, mountProductModule, resolveFrontendEntry } from "../
 export { AppProxy } from "../AppProxy/AppProxy.mjs";
 export { ProductProxy } from "../ProductProxy/ProductProxy.mjs";
 export { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
+export { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 export { escapeAttr, escapeText } from "../UI/html.mjs";

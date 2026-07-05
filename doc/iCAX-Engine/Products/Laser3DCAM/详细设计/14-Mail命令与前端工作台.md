@@ -2,16 +2,16 @@
 
 ## 1. 模块定位
 
-本模块定义产品前端工作台与后端 ProjectRuntime 的命令交互方式。
+本模块定义产品前端工作台与后端 Scene channel 的命令交互方式。
 
 Mail 命令负责低频业务操作。PDO 负责高频数据。
 
 ## 2. 命令目标
 
-产品命令按主命令 `LaserCam` 聚合。
+产品命令按主命令 `Cam` 聚合。
 
 ```text
-LaserCamCommandTarget : CommandTarget
+CAMCommandTarget : CommandTarget
 ```
 
 子命令：
@@ -20,6 +20,7 @@ LaserCamCommandTarget : CommandTarget
 GetScene
 ImportTool
 ImportModel
+SetActiveWorkpiece
 RecognizeFeatures
 PickObject
 GenerateToolpath
@@ -45,7 +46,7 @@ payload 使用 JSON 字符串。
 ```json
 {
   "requestId": "uuid",
-  "command": "LaserCam.ImportModel",
+  "command": "Cam.ImportModel",
   "payload": {}
 }
 ```
@@ -80,6 +81,7 @@ payload 使用 JSON 字符串。
 ```text
 ImportTool             -> ToolAssemblyImporter
 ImportModel            -> CadImportService
+SetActiveWorkpiece     -> Repository
 RecognizeFeatures      -> FeatureRecognitionService
 PickObject             -> PickService
 GenerateToolpath       -> ToolpathGenerationService
@@ -118,6 +120,7 @@ Viewport
   WebGL scene
 
 RightPropertyPanel
+  Workpiece list
   Selected object properties
 
 BottomPanel
@@ -149,7 +152,8 @@ BottomPanel
 前端发送命令后返回 Promise。
 
 ```text
-ProjectProxy.send("LaserCam.ImportModel", payload)
+SceneProxy.execute("Cam.ImportModel", payload)
+SceneProxy.execute("Cam.SetActiveWorkpiece", payload)
   -> requestId
   -> mailbox post
   -> response mail
