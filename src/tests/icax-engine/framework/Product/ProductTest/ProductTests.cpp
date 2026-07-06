@@ -6,6 +6,7 @@
 #include <CommandHandler/CommandTarget.h>
 #include <Database/IMetaRegistry.h>
 #include <Product/ProductCommands.h>
+#include <Product/ProductManifest.h>
 #include <Product/ProductRuntime.h>
 #include <Project/ProjectRuntime.h>
 #include <Resources/ResourceLoaderRegistry.h>
@@ -268,6 +269,81 @@ TEST(ProductDataStoreTest, RejectsUnsafeProductIDInDataPath)
     EXPECT_THROW((void)_Store.GetProductDataPath("../robot"), std::invalid_argument);
     EXPECT_THROW((void)_Store.GetProductDataPath("robot/cam"), std::invalid_argument);
     EXPECT_THROW((void)_Store.GetProductDataPath("robot..cam"), std::invalid_argument);
+
+    std::filesystem::remove_all(_Root);
+}
+
+TEST(ProductManifestTest, ParsesResourceHandlerBindings)
+{
+    auto _Root = std::filesystem::current_path()
+        / "Temp"
+        / ("ProductManifestResourceHandlerTest-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto _PluginPath = _Root / "plugins" / "Occ.dll";
+    const auto _DependencyPath = _Root / "plugins" / "RenderService.dll";
+    std::filesystem::create_directories(_PluginPath.parent_path());
+    std::ofstream(_PluginPath.string(), std::ios::binary).close();
+    std::ofstream(_DependencyPath.string(), std::ios::binary).close();
+
+    const auto _ManifestPath = _Root / "product.manifest.json";
+    std::ofstream _Output(_ManifestPath.string(), std::ios::binary);
+    _Output << R"json({
+  "schema": "icax.product.manifest",
+  "schemaVersion": 1,
+  "productId": "icax.test",
+  "productName": "Test Product",
+  "productVersion": "1.0",
+  "projectFile": {
+    "magic": "ICAX_TEST",
+    "formatVersion": "1.0",
+    "fileExtensions": [".test"]
+  },
+  "backend": {
+    "pdo": {
+      "enabled": true,
+      "arenaSize": 67108864,
+      "slotCapacity": 128
+    },
+    "modules": {
+      "dependencies": ["plugins/RenderService.dll"]
+    },
+    "resources": {
+      "handlers": [
+        {
+          "kind": "importer",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.step",
+          "extensions": [".step", ".stp"],
+          "module": "plugins/Occ.dll",
+          "provider": "occ.opencascade",
+          "priority": 100
+        }
+      ]
+    }
+  },
+  "webpage": {
+    "entry": "apps/test/webpage/entry.mjs"
+  }
+})json";
+    _Output.close();
+
+    auto _Manifest = LoadProductManifest(_ManifestPath.string());
+
+    ASSERT_EQ(1u, _Manifest.Definition.Modules.DependencyModules.size());
+    EXPECT_EQ(std::filesystem::weakly_canonical(_DependencyPath), std::filesystem::path(_Manifest.Definition.Modules.DependencyModules.front()));
+    EXPECT_TRUE(_Manifest.Definition.bEnablePDOHub);
+    EXPECT_EQ(67108864ull, _Manifest.Definition.PDOHubCreateInfo.nArenaSize);
+    EXPECT_EQ(128u, _Manifest.Definition.PDOHubCreateInfo.nSlotCapacity);
+
+    ASSERT_EQ(1u, _Manifest.Definition.ResourceHandlers.size());
+    const auto& _Handler = _Manifest.Definition.ResourceHandlers.front();
+    EXPECT_EQ("importer", _Handler.Kind);
+    EXPECT_EQ("geometry.brep", _Handler.ResourceType);
+    EXPECT_EQ("cad.step", _Handler.FormatID);
+    EXPECT_EQ((std::vector<std::string>{ ".step", ".stp" }), _Handler.Extensions);
+    EXPECT_EQ("occ.opencascade", _Handler.ProviderID);
+    EXPECT_EQ(100, _Handler.Priority);
+    EXPECT_EQ(std::filesystem::weakly_canonical(_PluginPath), std::filesystem::path(_Handler.ModulePath));
 
     std::filesystem::remove_all(_Root);
 }

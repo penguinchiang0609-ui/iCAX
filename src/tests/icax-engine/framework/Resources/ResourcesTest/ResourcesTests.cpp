@@ -27,6 +27,8 @@ namespace ResourcesTestTypes
 
     struct TextResource
     {
+        inline static constexpr const char* kResourceTypeName = "test.text.resource";
+
         std::string Text;
     };
 
@@ -151,6 +153,45 @@ namespace
             _Item.Info = _Info;
             auto _Result = CResourceImportResult::Succeeded(_ResourceID, { _Item });
             _Result.Metadata["importer"] = "test";
+            return _Result;
+        }
+    };
+
+    class AlternativeTextImporter final : public IResourceImporter
+    {
+    public:
+        std::vector<CResourceFormatDescriptor> GetImportFormats() const override
+        {
+            return { { "test.text", "Alternative Test Text", { ".txt" }, { "text/plain" }, true, false } };
+        }
+
+        bool CanImport(IN const CResourceImportRequest& Request_) const override
+        {
+            return (Request_.FormatID.empty() || Request_.FormatID == "test.text")
+                && Request_.SourcePath.ends_with(".txt");
+        }
+
+        CResourceImportResult Import(IN CResourceLibrary& Library_, IN const CResourceImportRequest& Request_) override
+        {
+            const auto _ResourceID = Request_.TargetResourceID.empty() ? Request_.SourcePath : Request_.TargetResourceID;
+            auto _pText = std::make_shared<TextResource>();
+            _pText->Text = "alternative";
+
+            CResourceInfo _Info;
+            _Info.Source = _ResourceID;
+            _Info.Name = "alternative text";
+            _Info.Persistence = Request_.Persistence;
+            _Info.nVersion = 1;
+            _Info.Metadata["kind"] = "test.text.alternative";
+
+            Library_.Set<TextResource>(_ResourceID, _pText, _Info);
+
+            CResourceImportItem _Item;
+            _Item.Role = "text";
+            _Item.ResourceID = _ResourceID;
+            _Item.Info = _Info;
+            auto _Result = CResourceImportResult::Succeeded(_ResourceID, { _Item });
+            _Result.Metadata["importer"] = "alternative";
             return _Result;
         }
     };
@@ -598,6 +639,48 @@ TEST(ResourceImportExportTest, ResourceLibraryImportUsesRegisteredImporter)
     ASSERT_TRUE(_Info.has_value());
     EXPECT_TRUE(_Info->IsEmbedded());
     EXPECT_EQ(1u, _Library.GetImportFormats().size());
+}
+
+TEST(ResourceImportExportTest, TypedImportReturnsRequestedResourceType)
+{
+    auto _pRegistry = std::make_shared<CResourceLoaderRegistry>();
+    ASSERT_TRUE(_pRegistry->RegisterImporter(std::make_shared<MemoryTextImporter>(), "memory", "memory.dll"));
+
+    CResourceLibrary _Library(_pRegistry);
+
+    CResourceImportResult _Result;
+    auto _pText = _Library.Import<TextResource>(
+        CResourceImportRequest{
+            .SourcePath = "import://typed",
+            .TargetResourceID = "memory://typed-text",
+            .Persistence = EResourcePersistenceMode::Embedded
+        },
+        &_Result);
+
+    ASSERT_TRUE(_Result.IsOK()) << _Result.Error;
+    ASSERT_NE(nullptr, _pText);
+    EXPECT_EQ("typed", _pText->Text);
+}
+
+TEST(ResourceImportExportTest, SelectionRuleChoosesConfiguredImporterProvider)
+{
+    auto _pRegistry = std::make_shared<CResourceLoaderRegistry>();
+    ASSERT_TRUE(_pRegistry->RegisterImporter(std::make_shared<MemoryTextImporter>(), "memory", "memory.dll"));
+    ASSERT_TRUE(_pRegistry->RegisterImporter(std::make_shared<AlternativeTextImporter>(), "alternative", "alternative.dll"));
+
+    CResourceLoaderRegistry::CHandlerSelectionRule _Rule;
+    _Rule.Kind = "importer";
+    _Rule.ResourceTypeName = "test.text.resource";
+    _Rule.Extensions = { ".txt" };
+    _Rule.ProviderID = "alternative";
+    _Rule.Priority = 100;
+    _pRegistry->SetSelectionRules({ _Rule });
+
+    CResourceLibrary _Library(_pRegistry);
+
+    auto _pText = _Library.Import<TextResource>("D:/asset/sample.txt");
+    ASSERT_NE(nullptr, _pText);
+    EXPECT_EQ("alternative", _pText->Text);
 }
 
 TEST(ResourceImportExportTest, ImportWithoutHandlerReturnsNoHandler)

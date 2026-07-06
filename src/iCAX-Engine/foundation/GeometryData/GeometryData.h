@@ -659,6 +659,8 @@ namespace iCAX::GeometryData
 
     struct BRepModel
     {
+        inline static constexpr const char* kResourceTypeName = "geometry.brep";
+
         std::vector<Curve2Record> Curves2;
         std::vector<Curve3Record> Curves3;
         std::vector<Surface3Record> Surfaces3;

@@ -589,11 +589,33 @@ namespace
         }
     }
 
+    std::vector<iCAX::Resource::CResourceLoaderRegistry::CHandlerSelectionRule> _MakeResourceSelectionRules(
+        IN const std::vector<iCAX::Product::CProductResourceHandlerBinding>& Bindings_)
+    {
+        std::vector<iCAX::Resource::CResourceLoaderRegistry::CHandlerSelectionRule> _Rules;
+        _Rules.reserve(Bindings_.size());
+        for (const auto& _Binding : Bindings_)
+        {
+            iCAX::Resource::CResourceLoaderRegistry::CHandlerSelectionRule _Rule;
+            _Rule.Kind = _Binding.Kind;
+            _Rule.ResourceTypeName = _Binding.ResourceType;
+            _Rule.FormatID = _Binding.FormatID;
+            _Rule.Extensions = _Binding.Extensions;
+            _Rule.ProviderID = _Binding.ProviderID;
+            _Rule.ModulePath = _NormalizeModulePath(_Binding.ModulePath);
+            _Rule.Priority = _Binding.Priority;
+            _Rules.push_back(std::move(_Rule));
+        }
+        return _Rules;
+    }
+
     std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> _CreateResourceLoaderRegistryFromModulePaths(
-        IN const std::vector<std::string>& ModulePaths_)
+        IN const std::vector<std::string>& ModulePaths_,
+        IN const std::vector<iCAX::Resource::CResourceLoaderRegistry::CHandlerSelectionRule>& Rules_)
     {
         auto _pRegistry = std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
         iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(*_pRegistry, ModulePaths_);
+        _pRegistry->SetSelectionRules(Rules_);
         return _pRegistry;
     }
 }
@@ -708,6 +730,8 @@ void iCAX::Product::CProductRuntime::Start()
         iCAX::Behaviour::CBehaviourRegistrationCatalog::ReplayByModulePaths(*m_pProductBehaviourRegistry, m_LoadedModulePaths);
         iCAX::Services::CServiceRegistrationCatalog::ReplayByModulePaths(*m_pApplicationServiceProvider, m_LoadedModulePaths);
         iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(*m_pProductResourceLoaderRegistry, m_LoadedModulePaths);
+        const auto _ResourceSelectionRules = _MakeResourceSelectionRules(m_Definition.ResourceHandlers);
+        m_pProductResourceLoaderRegistry->SetSelectionRules(_ResourceSelectionRules);
         iCAX::Command::CCommandRegistrationCatalog::ReplayByModulePaths(*m_pCommandRegistry, m_LoadedModulePaths);
         m_bRegistrationsReplayed = true;
     }
@@ -963,10 +987,11 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     _CatalogInfo.bEnablePDOHub = m_Definition.bEnablePDOHub;
     _CatalogInfo.PDOHubCreateInfo = m_Definition.PDOHubCreateInfo;
     const auto _ModulePaths = m_LoadedModulePaths;
+    const auto _ResourceSelectionRules = _MakeResourceSelectionRules(m_Definition.ResourceHandlers);
     // 每个 Scene 都创建自己的资源 loader registry。
-    // registry 内容来自产品模块回放，但资源缓存和加载器集合归 Scene 隔离。
-    _CatalogInfo.ResourceLoaderRegistryFactory = [_ModulePaths]() {
-        return _CreateResourceLoaderRegistryFromModulePaths(_ModulePaths);
+    // registry 内容和选择规则来自产品配置，但资源缓存和加载器集合归 Scene 隔离。
+    _CatalogInfo.ResourceLoaderRegistryFactory = [_ModulePaths, _ResourceSelectionRules]() {
+        return _CreateResourceLoaderRegistryFromModulePaths(_ModulePaths, _ResourceSelectionRules);
     };
     auto _pCatalog = std::make_shared<iCAX::Project::CProjectCatalog>(_CatalogInfo);
     auto _pProject = _pCatalog->OpenMainProject(
@@ -1263,7 +1288,9 @@ iCAX::Product::CProductData iCAX::Product::CProductRuntime::SnapshotProductData(
 
 std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> iCAX::Product::CProductRuntime::CreateProjectResourceLoaderRegistry() const
 {
-    return _CreateResourceLoaderRegistryFromModulePaths(m_LoadedModulePaths);
+    return _CreateResourceLoaderRegistryFromModulePaths(
+        m_LoadedModulePaths,
+        _MakeResourceSelectionRules(m_Definition.ResourceHandlers));
 }
 
 std::shared_ptr<iCAX::Project::IProjectRuntime> iCAX::Product::CProductRuntime::FindProjectRuntime(
@@ -1435,6 +1462,10 @@ void iCAX::Product::CProductRuntime::LoadProductModules()
 
     // LoadLibrary 只负责把 DLL 装入进程；模块内静态注册对象会登记到各 RegistrationCatalog。
     // 真正写入产品注册表发生在 Start() 的 ReplayByModulePaths 阶段。
+    for (const auto& _Path : m_Definition.Modules.DependencyModules)
+    {
+        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "dependency"));
+    }
     for (const auto& _Path : m_Definition.Modules.ComponentModules)
     {
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "component"));
@@ -1450,6 +1481,10 @@ void iCAX::Product::CProductRuntime::LoadProductModules()
     for (const auto& _Path : m_Definition.Modules.CommandModules)
     {
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "command"));
+    }
+    for (const auto& _Binding : m_Definition.ResourceHandlers)
+    {
+        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Binding.ModulePath, "resource"));
     }
     for (const auto& _Module : m_Definition.Modules.ModuleGroups)
     {

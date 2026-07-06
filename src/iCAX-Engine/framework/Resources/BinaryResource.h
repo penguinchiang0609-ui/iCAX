@@ -19,6 +19,8 @@ namespace iCAX
         */
         struct _RESOURCES_EXP CBinaryResource final
         {
+            inline static constexpr const char* kResourceTypeName = "resource.binary";
+
             CBinaryResource();
             ~CBinaryResource();
 

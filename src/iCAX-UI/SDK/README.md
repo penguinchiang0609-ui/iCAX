@@ -8,9 +8,10 @@
 - `CommandHandler` 64 位主/子命令编码
 - `VariantSerializer` 文本格式
 - PDO shared memory 读写租约
+- H5 内置三维 viewport
 - AppProxy/ProductProxy/ProjectProxy 三层运行时 channel id
 
-产品前端只通过 `connectApplication()`、`AppProxy`、`ProductProxy`、`ProjectProxy` 和产品扩展上下文工作。
+产品前端只通过 `connectApplication()`、`AppProxy`、`ProductProxy`、`ProjectProxy`、`SceneProxy` 和 SDK 导出的公共能力工作。
 
 ## 目录结构
 
@@ -20,10 +21,12 @@
 - `Bridge/`：真实宿主 bridge 发现、校验和 mock bridge。
 - `Mailbox/`：mailbox client、命令编码和 Variant 文本编解码。
 - `PDO/`：PDO 前端访问代理，面向 shared memory lease。
+- `Viewport/`：RenderPDO 解析和 H5 默认 Three.js 视口。
+- `ThirdParty/`：SDK 自带的 H5 runtime 依赖，目前包含 Three.js。
 
 ## 边界
 
-`AppShell/Bridge/Mailbox/PDO` 是 SDK 内部模块。产品页面不直接 import 这些目录。
+`AppShell/Bridge/Mailbox/PDO/Viewport` 是 SDK 内部模块。产品页面通过 `SDK/index.mjs` 使用能力，不直接 import 这些目录。
 
 公开三层对象仍放在同级模块：
 

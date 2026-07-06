@@ -12,6 +12,15 @@
   <Folder Name="/iCAX-Engine/foundation/Data/">
     <Project Path="iCAX-Engine/foundation/Data/Data.vcxproj" />
   </Folder>
+  <Folder Name="/iCAX-Engine/foundation/FontData/">
+    <Project Path="iCAX-Engine/foundation/FontData/FontData.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/FontAdapter/">
+    <Project Path="iCAX-Engine/foundation/FontAdapter/FontAdapter.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/FontAlgo/">
+    <Project Path="iCAX-Engine/foundation/FontAlgo/FontAlgo.vcxproj" />
+  </Folder>
   <Folder Name="/iCAX-Engine/foundation/GeometryData/">
     <Project Path="iCAX-Engine/foundation/GeometryData/GeometryData.vcxproj" />
   </Folder>
@@ -20,6 +29,15 @@
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/GeometryAlgo/">
     <Project Path="iCAX-Engine/foundation/GeometryAlgo/GeometryAlgo.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/ImageData/">
+    <Project Path="iCAX-Engine/foundation/ImageData/ImageData.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/ImageAdapter/">
+    <Project Path="iCAX-Engine/foundation/ImageAdapter/ImageAdapter.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/foundation/ImageAlgo/">
+    <Project Path="iCAX-Engine/foundation/ImageAlgo/ImageAlgo.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/Task/">
     <Project Path="iCAX-Engine/foundation/Task/Task.vcxproj" />

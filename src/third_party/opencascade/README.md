@@ -18,7 +18,7 @@ OCCT is an implementation dependency of geometry adapter and CAD import plugins.
 - `GeometryData` remains the neutral iCAX geometry data model.
 - `GeometryAlgo` owns generic geometry operations.
 - `GeometryAdapter` or product CAD import plugins may call OCCT and convert results into `GeometryData`.
-- Product code should depend on `ICadImportService` or neutral resources, not OCCT classes.
+- Product code should depend on `Scene.Resources().Import<T>()` and neutral resources, not OCCT classes.
 
 ## Build
 

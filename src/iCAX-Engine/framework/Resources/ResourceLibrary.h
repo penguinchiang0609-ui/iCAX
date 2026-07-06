@@ -2,6 +2,7 @@
 
 #include "ResourceImportExport.h"
 #include "ResourceInfo.h"
+#include "ResourceTypeName.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -77,6 +78,80 @@ namespace iCAX
                     return nullptr;
                 }
                 return std::static_pointer_cast<TResource>(_pResource);
+            }
+
+            template <typename T>
+            /*
+            * @brief 按目标资源类型导入外部文件。
+            * @param [in] strSourcePath_ 外部文件路径或 URI。
+            * @param [in] Persistence_ 导入后资源持久化语义。
+            * @param [in] Options_ 导入选项。
+            * @param [in] strFormatID_ 可选格式 ID；为空时导入器按后缀、magic 或自身规则判断。
+            * @return 导入后保存到资源库中的第一个 T 类型资源；找不到导入器、导入失败或结果没有 T 类型资源时返回 nullptr。
+            * @details
+            *   这是上层推荐使用的导入入口。调用方只需要表达“我要什么类型”和“从哪里来”，
+            *   ResourceLibrary 会把目标 C++ 类型写入请求，并由 ResourceLoaderRegistry 选择导入器。
+            */
+            std::shared_ptr<T> Import(
+                IN const std::string& strSourcePath_,
+                IN EResourcePersistenceMode Persistence_ = EResourcePersistenceMode::Embedded,
+                IN const std::map<std::string, std::string>& Options_ = {},
+                IN const std::string& strFormatID_ = {})
+            {
+                using TResource = std::remove_cv_t<std::remove_reference_t<T>>;
+                CResourceImportRequest _Request;
+                _Request.SourcePath = strSourcePath_;
+                _Request.Persistence = Persistence_;
+                _Request.Options = Options_;
+                _Request.FormatID = strFormatID_;
+                _Request.TargetResourceTypeName = GetResourceTypeName<TResource>();
+                return Import<T>(std::move(_Request));
+            }
+
+            template <typename T>
+            /*
+            * @brief 按目标资源类型导入外部资源，并可取回完整导入结果。
+            * @param [in] Request_ 导入请求；TargetResourceType 会被模板类型覆盖。
+            * @param [out] pResult_ 可选完整导入结果，用于需要读取附带资源角色的场景。
+            */
+            std::shared_ptr<T> Import(IN CResourceImportRequest Request_, CResourceImportResult* pResult_ = nullptr)
+            {
+                using TResource = std::remove_cv_t<std::remove_reference_t<T>>;
+                Request_.TargetResourceType = std::type_index(typeid(TResource));
+                if (Request_.TargetResourceTypeName.empty())
+                {
+                    Request_.TargetResourceTypeName = GetResourceTypeName<TResource>();
+                }
+
+                auto _Result = Import(Request_);
+                if (pResult_)
+                {
+                    *pResult_ = _Result;
+                }
+                if (!_Result.IsOK())
+                {
+                    return nullptr;
+                }
+
+                if (!_Result.PrimaryResourceID.empty())
+                {
+                    auto _pPrimary = Get<TResource>(_Result.PrimaryResourceID);
+                    if (_pPrimary)
+                    {
+                        return _pPrimary;
+                    }
+                }
+
+                for (const auto& _Item : _Result.Items)
+                {
+                    auto _pResource = Get<TResource>(_Item.ResourceID);
+                    if (_pResource)
+                    {
+                        return _pResource;
+                    }
+                }
+
+                return nullptr;
             }
 
             template <typename T>
@@ -229,6 +304,32 @@ namespace iCAX
             * @return 导出结果。
             */
             CResourceExportResult Export(IN const CResourceExportRequest& Request_) const;
+
+            template <typename T>
+            /*
+            * @brief 按源资源类型导出资源到外部文件。
+            * @param [in] strResourceID_ 资源库中的资源 ID。
+            * @param [in] strTargetPath_ 目标文件路径。
+            * @param [in] Options_ 导出选项。
+            * @param [in] strFormatID_ 可选格式 ID；为空时导出器按目标后缀或自身规则判断。
+            */
+            CResourceExportResult Export(
+                IN const std::string& strResourceID_,
+                IN const std::string& strTargetPath_,
+                IN const std::map<std::string, std::string>& Options_ = {},
+                IN const std::string& strFormatID_ = {}) const
+            {
+                using TResource = std::remove_cv_t<std::remove_reference_t<T>>;
+
+                CResourceExportRequest _Request;
+                _Request.ResourceID = strResourceID_;
+                _Request.TargetPath = strTargetPath_;
+                _Request.FormatID = strFormatID_;
+                _Request.Options = Options_;
+                _Request.SourceResourceType = std::type_index(typeid(TResource));
+                _Request.SourceResourceTypeName = GetResourceTypeName<TResource>();
+                return Export(_Request);
+            }
 
         private:
             /*

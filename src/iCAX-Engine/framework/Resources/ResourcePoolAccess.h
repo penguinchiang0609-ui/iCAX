@@ -2,6 +2,7 @@
 
 #include "ResourceLoaderRegistry.h"
 #include "ResourcePool.h"
+#include "ResourceTypeName.h"
 
 #include <map>
 #include <memory>
@@ -96,11 +97,15 @@ namespace iCAX
             IN std::type_index TargetResourceType_,
             IN const std::string& strSource_,
             IN const CResourceInfo& Info_,
-            IN const std::map<std::string, std::string>& Options_)
+            IN const std::map<std::string, std::string>& Options_,
+            IN const std::string& strTargetResourceTypeName_ = {})
         {
             CResourceLoadContext _Context;
             _Context.TargetKey = Key_;
             _Context.TargetResourceType = TargetResourceType_;
+            _Context.TargetResourceTypeName = strTargetResourceTypeName_.empty()
+                ? TargetResourceType_.name()
+                : strTargetResourceTypeName_;
             _Context.Info = BuildLoadInfo(Pool_, Key_, strSource_, Info_);
             _Context.Source = strSource_.empty() ? _Context.Info.Source : strSource_;
             _Context.Options = Options_;
@@ -173,7 +178,14 @@ namespace iCAX
             }
 
             const auto _TargetResourceType = std::type_index(typeid(TResource));
-            auto _Context = MakeLoadContext(Pool_, Key_, _TargetResourceType, Key_.Source, Info_, Options_);
+            auto _Context = MakeLoadContext(
+                Pool_,
+                Key_,
+                _TargetResourceType,
+                Key_.Source,
+                Info_,
+                Options_,
+                GetResourceTypeName<TResource>());
             auto _Result = LoaderRegistry_.LoadResource(_Context);
             if (!_Result.IsOK())
             {

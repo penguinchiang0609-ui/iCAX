@@ -32,6 +32,9 @@ export function validateBridge(bridge, name = "bridge") {
   if (bridge.pdo !== undefined && bridge.pdo !== null && typeof bridge.pdo.withRead !== "function") {
     throw new TypeError(`${name}.pdo.withRead must be a function when pdo is provided`);
   }
+  if (bridge.pdo?.withWrite !== undefined && typeof bridge.pdo.withWrite !== "function") {
+    throw new TypeError(`${name}.pdo.withWrite must be a function when provided`);
+  }
 
   return bridge;
 }

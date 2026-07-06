@@ -51,6 +51,9 @@
     <ClInclude Include="ResourcePoolAccess.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="ResourceTypeName.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Resources.h">
       <Filter>头文件</Filter>
     </ClInclude>

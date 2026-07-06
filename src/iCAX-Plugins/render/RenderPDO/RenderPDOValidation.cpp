@@ -230,25 +230,44 @@ bool iCAX::RenderPDO::ValidateInstanceListPDOHeader(
         && _ValidateOptionalRange(Header_.nStylesOffset, Header_.nStyleCount, sizeof(SRenderStyleData), _MinOffset, _PayloadSize, "Render styles", pError_);
 }
 
-bool iCAX::RenderPDO::ValidateViewStatePDOHeader(
-    IN const SRenderViewStatePDOHeader& Header_,
+bool iCAX::RenderPDO::ValidateCameraPDOHeader(
+    IN const SRenderCameraPDOHeader& Header_,
     IN uint64_t nPayloadCapacity_,
     OUT std::string* pError_)
 {
-    if (!ValidateRenderPDOHeader(Header_.Header, ERenderPDOPayloadKind::ViewState, sizeof(SRenderViewStatePDOHeader), nPayloadCapacity_, pError_))
+    if (!ValidateRenderPDOHeader(Header_.Header, ERenderPDOPayloadKind::Camera, sizeof(SRenderCameraPDOHeader), nPayloadCapacity_, pError_))
     {
         return false;
     }
-    if (Header_.nViewCount == 0)
+    if (Header_.nCameraCount == 0)
     {
-        return _SetError(pError_, "View state PDO view count cannot be zero");
+        return _SetError(pError_, "Camera PDO camera count cannot be zero");
     }
-    if (Header_.nActiveViewIndex >= Header_.nViewCount)
+    if (Header_.nActiveCameraID == 0)
     {
-        return _SetError(pError_, "View state PDO active view index is out of range");
+        return _SetError(pError_, "Camera PDO active camera id cannot be zero");
     }
-
     const uint64_t _PayloadSize = Header_.Header.nPayloadSize;
     const uint64_t _MinOffset = Header_.Header.nHeaderSize;
-    return _ValidateRange(Header_.nViewsOffset, Header_.nViewCount, sizeof(SRenderViewStateData), _MinOffset, _PayloadSize, "Render view states", pError_);
+    return _ValidateRange(Header_.nCamerasOffset, Header_.nCameraCount, sizeof(SRenderCameraData), _MinOffset, _PayloadSize, "Render cameras", pError_);
+}
+
+bool iCAX::RenderPDO::ValidateTransformPDOHeader(
+    IN const SRenderTransformPDOHeader& Header_,
+    IN uint64_t nPayloadCapacity_,
+    OUT std::string* pError_)
+{
+    if (!ValidateRenderPDOHeader(Header_.Header, ERenderPDOPayloadKind::Transform, sizeof(SRenderTransformPDOHeader), nPayloadCapacity_, pError_))
+    {
+        return false;
+    }
+    if (Header_.nTransformID == 0)
+    {
+        return _SetError(pError_, "Transform PDO id cannot be zero");
+    }
+    if (Header_.Header.nPayloadSize != sizeof(SRenderTransformPDOHeader))
+    {
+        return _SetError(pError_, "Transform PDO payload size must match header size");
+    }
+    return true;
 }

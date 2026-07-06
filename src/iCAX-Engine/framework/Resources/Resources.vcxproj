@@ -162,6 +162,7 @@
     <ClInclude Include="ResourceLoadResult.h" />
     <ClInclude Include="ResourcePool.h" />
     <ClInclude Include="ResourcePoolAccess.h" />
+    <ClInclude Include="ResourceTypeName.h" />
     <ClInclude Include="Resources.h" />
     <ClInclude Include="ResourcesExport.h" />
   </ItemGroup>

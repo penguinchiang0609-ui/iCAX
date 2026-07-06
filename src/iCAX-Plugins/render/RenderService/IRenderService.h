@@ -127,11 +127,17 @@ namespace iCAX
                 IN const std::vector<SRenderStyleData>& Styles_,
                 IN RenderDataVersion nDataVersion_) = 0;
 
-            virtual bool SetViewStates(
+            virtual bool SetTransforms(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN RenderSceneID nSceneID_,
-                IN const std::vector<SRenderViewStateData>& Views_,
-                IN uint32_t nActiveViewIndex_,
+                IN const std::vector<SRenderTransformData>& Transforms_,
+                IN RenderDataVersion nDataVersion_) = 0;
+
+            virtual bool SetCameras(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN RenderSceneID nSceneID_,
+                IN const std::vector<SRenderCameraData>& Cameras_,
+                IN RenderCameraID nActiveCameraID_,
                 IN RenderDataVersion nDataVersion_) = 0;
 
             /*

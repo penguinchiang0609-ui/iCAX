@@ -21,6 +21,7 @@ namespace iCAX
         {
             CResourceKey TargetKey; //!< 目标资源键。
             std::type_index TargetResourceType = std::type_index(typeid(void)); //!< 调用方请求的 C++ 资源类型。
+            std::string TargetResourceTypeName; //!< 调用方请求的稳定/运行期资源类型名。
             std::string Source; //!< 原始来源字符串，通常与 TargetKey.Source 一致。
             CResourceInfo Info; //!< 合并后的资源信息。
             std::map<std::string, std::string> Options; //!< 调用方传入的加载选项。

@@ -12,7 +12,8 @@
 
 - `mountProduct`：显示产品入口，并通过 ApplicationShell 创建项目 catalog。
 - `mountProject`：绑定当前 ProjectProxy 和 SceneProxy，调用 `Cam.GetScene` 获取项目场景状态。
-- 视口只绘制 backend 返回的 `faces/loops/edges/toolpaths`，不内置产品拓扑 mock。
+- 如果当前 Scene 启用了 PDO，视口使用 `iCAX-UI/SDK` 内置的 `ThreeRenderViewport` 显示 RenderPDO 数据。
+- 如果当前 Scene 未启用 PDO，视口使用 backend 返回的 `faces/loops/edges/toolpaths` 做 SVG 后备预览。
 - 模型导入调用 `Cam.ImportModel`，当前只接受 STEP/STP、IGS/IGES 工件路径。
 - 当前 backend 使用 OCCT 导入 STEP/IGES，并返回可拾取拓扑的二维投影；页面只负责显示和拾取，不承担 CAD 解析。
 - 如果未来 backend 返回 `topology.importMode=fallback-preview`，页面仍会显示后端诊断提示，但当前主路径应为 `opencascade`。

@@ -36,7 +36,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
@@ -72,6 +72,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\render\RenderData\RenderData.vcxproj">
+      <Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\render\RenderService\RenderService.vcxproj">
+      <Project>{f47e9162-6fe2-4995-92c4-51d8ed9ec474}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\CommandHandler\CommandHandler.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>

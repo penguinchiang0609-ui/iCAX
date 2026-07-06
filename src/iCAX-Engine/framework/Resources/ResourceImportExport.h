@@ -6,7 +6,9 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
+#include <typeindex>
 #include <vector>
 
 namespace iCAX
@@ -40,6 +42,8 @@ namespace iCAX
             std::string SourcePath; //!< 外部来源文件路径或 URI。
             std::string FormatID; //!< 可选格式 ID；为空时由导入器按来源自行判断。
             std::string TargetResourceID; //!< 可选主资源 ID；为空时导入器按来源生成。
+            std::optional<std::type_index> TargetResourceType; //!< 可选目标 C++ 资源类型；模板 Import<T> 会自动填写。
+            std::string TargetResourceTypeName; //!< 可选目标资源类型名；用于配置化选择导入器。
             EResourcePersistenceMode Persistence = EResourcePersistenceMode::Embedded; //!< 导入后持久化语义。
             std::map<std::string, std::string> Options; //!< 导入器扩展参数。
         };
@@ -97,6 +101,8 @@ namespace iCAX
             std::string ResourceID; //!< 要导出的资源 key。
             std::string TargetPath; //!< 目标文件路径。
             std::string FormatID; //!< 可选格式 ID。
+            std::optional<std::type_index> SourceResourceType; //!< 可选源 C++ 资源类型；模板 Export<T> 会自动填写。
+            std::string SourceResourceTypeName; //!< 可选源资源类型名；用于配置化选择导出器。
             std::map<std::string, std::string> Options; //!< 导出器扩展参数。
         };
 

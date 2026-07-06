@@ -14,13 +14,46 @@
     "probeBytes": 256
   },
   "backend": {
+    "pdo": {
+      "enabled": true,
+      "arenaSize": 134217728,
+      "slotCapacity": 4096
+    },
     "modules": {
+      "dependencies": [
+        "../../iCAX-Plugins/render/RenderData/${Platform}/${Configuration}/RenderData.dll",
+        "../../iCAX-Plugins/render/RenderService/${Platform}/${Configuration}/RenderService.dll",
+        "../../iCAX-Plugins/render/RenderPDO/${Platform}/${Configuration}/RenderPDO.dll",
+        "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll"
+      ],
       "components": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
       "services": [
-        "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll",
-        "../../iCAX-Plugins/cad/OpenCascadeResourceImport/${Platform}/${Configuration}/OpenCascadeResourceImport.dll"
+        "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll",
+        "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
       "commands": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"]
+    },
+    "resources": {
+      "handlers": [
+        {
+          "kind": "importer",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.step",
+          "extensions": [".step", ".stp"],
+          "module": "../../iCAX-Plugins/cad/OpenCascadeResourceImport/${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "provider": "occ.opencascade",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.iges",
+          "extensions": [".igs", ".iges"],
+          "module": "../../iCAX-Plugins/cad/OpenCascadeResourceImport/${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "provider": "occ.opencascade",
+          "priority": 100
+        }
+      ]
     }
   },
   "webpage": {

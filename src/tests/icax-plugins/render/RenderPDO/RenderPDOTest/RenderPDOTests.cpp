@@ -38,10 +38,12 @@ TEST(RenderPDOLayoutTest, LayoutsAreBinarySafe)
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderToolpathPDOHeader>);
     EXPECT_TRUE(std::is_standard_layout_v<SRenderInstanceListPDOHeader>);
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderInstanceListPDOHeader>);
-    EXPECT_TRUE(std::is_standard_layout_v<SRenderViewStateData>);
-    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderViewStateData>);
-    EXPECT_TRUE(std::is_standard_layout_v<SRenderViewStatePDOHeader>);
-    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderViewStatePDOHeader>);
+    EXPECT_TRUE(std::is_standard_layout_v<SRenderCameraData>);
+    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderCameraData>);
+    EXPECT_TRUE(std::is_standard_layout_v<SRenderCameraPDOHeader>);
+    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderCameraPDOHeader>);
+    EXPECT_TRUE(std::is_standard_layout_v<SRenderTransformPDOHeader>);
+    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderTransformPDOHeader>);
 }
 
 TEST(RenderPDODeclTest, CreatesPDODeclarationForRenderPayload)
@@ -57,7 +59,8 @@ TEST(RenderPDODeclTest, CreatesPDODeclarationForRenderPayload)
     EXPECT_EQ(iCAX::PDO::kDirection2External, _Decl.eDirection);
     EXPECT_EQ(4096, _Decl.nPayloadSize);
     EXPECT_STREQ("render.mesh", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::Mesh));
-    EXPECT_STREQ("render.view_state", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::ViewState));
+    EXPECT_STREQ("render.camera", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::Camera));
+    EXPECT_STREQ("render.transform", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::Transform));
 
     EXPECT_THROW(MakeRenderPDODecl(ERenderPDOPayloadKind::Unknown, "main", iCAX::PDO::kDirection2External, 16), std::invalid_argument);
     EXPECT_THROW(MakeRenderPDODecl(ERenderPDOPayloadKind::Mesh, "", iCAX::PDO::kDirection2External, 16), std::invalid_argument);
@@ -163,26 +166,40 @@ TEST(RenderPDOValidationTest, InstanceListAllowsEmptyListAndOptionalStyles)
     EXPECT_FALSE(_Error.empty());
 }
 
-TEST(RenderPDOValidationTest, ViewStateHeaderValidatesViewArrayAndActiveIndex)
+TEST(RenderPDOValidationTest, CameraHeaderValidatesCameraArrayAndActiveIndex)
 {
-    SRenderViewStatePDOHeader _Header;
-    const uint64_t _ViewsOffset = sizeof(SRenderViewStatePDOHeader);
-    const uint64_t _PayloadSize = _ViewsOffset + sizeof(SRenderViewStateData) * 2;
+    SRenderCameraPDOHeader _Header;
+    const uint64_t _CamerasOffset = sizeof(SRenderCameraPDOHeader);
+    const uint64_t _PayloadSize = _CamerasOffset + sizeof(SRenderCameraData) * 2;
 
-    InitializeHeader(_Header, ERenderPDOPayloadKind::ViewState, _PayloadSize, 7);
-    _Header.nViewCount = 2;
-    _Header.nActiveViewIndex = 1;
-    _Header.nViewsOffset = _ViewsOffset;
+    InitializeHeader(_Header, ERenderPDOPayloadKind::Camera, _PayloadSize, 7);
+    _Header.nCameraCount = 2;
+    _Header.nActiveCameraID = 1;
+    _Header.nCamerasOffset = _CamerasOffset;
 
-    EXPECT_TRUE(ValidateViewStatePDOHeader(_Header, _PayloadSize));
+    EXPECT_TRUE(ValidateCameraPDOHeader(_Header, _PayloadSize));
 
-    _Header.nActiveViewIndex = 2;
+    _Header.nActiveCameraID = 0;
     std::string _Error;
-    EXPECT_FALSE(ValidateViewStatePDOHeader(_Header, _PayloadSize, &_Error));
+    EXPECT_FALSE(ValidateCameraPDOHeader(_Header, _PayloadSize, &_Error));
     EXPECT_FALSE(_Error.empty());
 
-    _Header.nActiveViewIndex = 1;
-    _Header.nViewsOffset = _PayloadSize + 1;
-    EXPECT_FALSE(ValidateViewStatePDOHeader(_Header, _PayloadSize, &_Error));
+    _Header.nActiveCameraID = 1;
+    _Header.nCamerasOffset = _PayloadSize + 1;
+    EXPECT_FALSE(ValidateCameraPDOHeader(_Header, _PayloadSize, &_Error));
+    EXPECT_FALSE(_Error.empty());
+}
+
+TEST(RenderPDOValidationTest, TransformHeaderValidatesTransformID)
+{
+    SRenderTransformPDOHeader _Header;
+    InitializeHeader(_Header, ERenderPDOPayloadKind::Transform, sizeof(SRenderTransformPDOHeader), 8);
+    _Header.nTransformID = 101;
+
+    EXPECT_TRUE(ValidateTransformPDOHeader(_Header, sizeof(SRenderTransformPDOHeader)));
+
+    _Header.nTransformID = 0;
+    std::string _Error;
+    EXPECT_FALSE(ValidateTransformPDOHeader(_Header, sizeof(SRenderTransformPDOHeader), &_Error));
     EXPECT_FALSE(_Error.empty());
 }

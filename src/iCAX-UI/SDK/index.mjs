@@ -9,3 +9,16 @@ export { ProductProxy } from "../ProductProxy/ProductProxy.mjs";
 export { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 export { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 export { escapeAttr, escapeText } from "../UI/html.mjs";
+export {
+  RenderFlags,
+  RenderGeometryKind,
+  RenderPDOCommands,
+  RenderPDOLayout,
+  RenderPDOPayloadKind,
+  RenderPDOTypeCodes,
+  ThreeRenderViewport,
+  createThreeViewport,
+  parseRenderPDOEvent,
+  parseRenderPDOPayload,
+  rgbaToCssColor,
+} from "./Viewport/index.mjs";

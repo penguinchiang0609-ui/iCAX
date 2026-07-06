@@ -42,4 +42,81 @@ export class PDOClient {
       payloadSize: declaration.payloadSize,
     }, reader);
   }
+
+  findDeclarationById(id) {
+    const textId = String(id ?? "");
+    if (!textId) {
+      return null;
+    }
+    return (this.descriptor.declarations ?? []).find((decl) => String(decl.id) === textId) ?? null;
+  }
+
+  async withReadDescriptor(descriptor, reader) {
+    if (!this.enabled) {
+      return null;
+    }
+    if (!descriptor?.id) {
+      throw new TypeError("PDO descriptor.id is required");
+    }
+    if (typeof reader !== "function") {
+      throw new TypeError("PDO reader must be a function");
+    }
+    if (!this.bridge?.pdo?.withRead) {
+      throw new Error("Host bridge does not provide PDO read leases");
+    }
+
+    const declaration = this.findDeclarationById(descriptor.id);
+    const version = descriptor.version ?? declaration?.version;
+    const payloadSize = descriptor.payloadSize ?? descriptor.payloadCapacity ?? declaration?.payloadSize;
+    if (!version) {
+      throw new Error(`PDO descriptor.version is required: ${descriptor.id}`);
+    }
+    if (!payloadSize) {
+      throw new Error(`PDO descriptor.payloadSize is required: ${descriptor.id}`);
+    }
+
+    return this.bridge.pdo.withRead({
+      arenaName: descriptor.arenaName ?? this.descriptor.sharedArenaName,
+      id: String(descriptor.id),
+      version,
+      payloadSize,
+    }, reader);
+  }
+
+  async withWriteDescriptor(descriptor, writer) {
+    if (!this.enabled) {
+      return false;
+    }
+    if (!descriptor?.id) {
+      throw new TypeError("PDO descriptor.id is required");
+    }
+    if (typeof writer !== "function") {
+      throw new TypeError("PDO writer must be a function");
+    }
+    if (!this.bridge?.pdo?.withWrite) {
+      throw new Error("Host bridge does not provide PDO write leases");
+    }
+
+    const declaration = this.findDeclarationById(descriptor.id);
+    const version = descriptor.version ?? declaration?.version;
+    const payloadSize = descriptor.payloadSize ?? descriptor.payloadCapacity ?? declaration?.payloadSize;
+    const dataVersion = descriptor.dataVersion;
+    if (!version) {
+      throw new Error(`PDO descriptor.version is required: ${descriptor.id}`);
+    }
+    if (!payloadSize) {
+      throw new Error(`PDO descriptor.payloadSize is required: ${descriptor.id}`);
+    }
+    if (!dataVersion) {
+      throw new Error(`PDO descriptor.dataVersion is required: ${descriptor.id}`);
+    }
+
+    return this.bridge.pdo.withWrite({
+      arenaName: descriptor.arenaName ?? this.descriptor.sharedArenaName,
+      id: String(descriptor.id),
+      version,
+      payloadSize,
+      dataVersion: String(dataVersion),
+    }, writer);
+  }
 }

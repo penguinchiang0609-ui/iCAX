@@ -22,6 +22,8 @@ namespace iCAX
         */
         struct CCAMTopologyResource final
         {
+            inline static constexpr const char* kResourceTypeName = "cam.topology";
+
             uint64_t nVersion = 0;              //!< 拓扑数据版本。
             iCAX::Data::VariantArray Faces;     //!< 可拾取面集合。
             iCAX::Data::VariantArray Loops;     //!< 可拾取 loop 集合。
@@ -38,6 +40,8 @@ namespace iCAX
         */
         struct CCAMPathCurveResource final
         {
+            inline static constexpr const char* kResourceTypeName = "cam.path.curve";
+
             uint64_t nVersion = 0;                    //!< 曲线资源版本。
             std::string TopologyKind;                  //!< 来源拓扑类型：face/loop/edge。
             unsigned long long TopologyID = 0;         //!< 来源拓扑 ID。
@@ -70,6 +74,8 @@ namespace iCAX
         */
         struct CCAMPoseFieldResource final
         {
+            inline static constexpr const char* kResourceTypeName = "cam.pose.field";
+
             uint64_t nVersion = 0;                   //!< 姿态场资源版本。
             std::vector<SCAMPoseSample> Samples;      //!< 姿态采样点数组。
         };

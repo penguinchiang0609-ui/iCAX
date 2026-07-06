@@ -1,3 +1,5 @@
+import { createThreeViewport } from "../../../iCAX-UI/SDK/index.mjs";
+
 const projectViews = new Map();
 
 export function mountProduct(context) {
@@ -50,6 +52,8 @@ function getProjectView(projectId) {
       pending: false,
       error: "",
       sourcePath: "",
+      viewport: null,
+      viewportSceneProxy: null,
     });
   }
   return projectViews.get(projectId);
@@ -76,7 +80,7 @@ function renderProject(context, view) {
       ${renderImportNotice(topology)}
       <div class="cam-main">
         <section class="cam-viewport">
-          ${renderViewport(scene)}
+          ${renderViewport(context, scene)}
         </section>
         <aside class="cam-side">
           <section class="cam-panel">
@@ -135,6 +139,8 @@ function renderProject(context, view) {
       runProjectCommand(context, view, "Cam.PickTopology", { kind, id, label });
     }
   };
+
+  mountRenderViewport(context, view);
 }
 
 function renderImportNotice(topology) {
@@ -149,8 +155,16 @@ function renderImportNotice(topology) {
   `;
 }
 
-function renderViewport(scene) {
+function renderViewport(context, scene) {
   const model = scene.model ?? {};
+  if (context.sceneProxy?.pdo?.enabled) {
+    return `
+      <div class="cam-render-viewport-shell">
+        <div class="cam-render-viewport" data-cam-render-viewport></div>
+      </div>
+    `;
+  }
+
   if (!model.isLoaded) {
     return `
       <div class="cam-empty-model">
@@ -194,6 +208,25 @@ function renderViewport(scene) {
       </g>
     </svg>
   `;
+}
+
+function mountRenderViewport(context, view) {
+  const host = context.mount?.querySelector?.("[data-cam-render-viewport]");
+  if (!host) {
+    return;
+  }
+
+  if (!view.viewport) {
+    view.viewport = createThreeViewport({
+      backgroundColor: 0x182128,
+    });
+  }
+  if (view.viewportSceneProxy !== context.sceneProxy) {
+    view.viewport.connectScene(context.sceneProxy);
+    view.viewportSceneProxy = context.sceneProxy;
+  }
+  view.viewport.mount(host);
+  view.viewport.refreshAll();
 }
 
 function renderFace(face, selectedKey, index) {
@@ -468,6 +501,13 @@ function ensureStyles() {
 
     .cam-svg {
       display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 500px;
+    }
+
+    .cam-render-viewport-shell,
+    .cam-render-viewport {
       width: 100%;
       height: 100%;
       min-height: 500px;

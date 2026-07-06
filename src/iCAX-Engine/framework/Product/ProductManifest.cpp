@@ -90,6 +90,23 @@ namespace
         return std::string(_pValue->as_string().c_str());
     }
 
+    bool _OptionalBool(
+        IN const json::object& Object_,
+        IN const std::string& strName_,
+        IN bool bDefault_)
+    {
+        const auto* _pValue = Object_.if_contains(strName_);
+        if (!_pValue || _pValue->is_null())
+        {
+            return bDefault_;
+        }
+        if (!_pValue->is_bool())
+        {
+            throw std::runtime_error("Manifest field must be bool: " + strName_);
+        }
+        return _pValue->as_bool();
+    }
+
     uint32_t _OptionalUInt32(
         IN const json::object& Object_,
         IN const std::string& strName_,
@@ -249,6 +266,80 @@ namespace
         auto _Items = _ResolveBackendPaths(ProductRoot_, _OptionalStringArray(Modules_, strName_));
         Target_.insert(Target_.end(), _Items.begin(), _Items.end());
     }
+
+    void _AppendResourceHandlers(
+        IN const json::object& Backend_,
+        IN const std::filesystem::path& ProductRoot_,
+        IN OUT std::vector<iCAX::Product::CProductResourceHandlerBinding>& Target_)
+    {
+        const auto* _pResources = Backend_.if_contains("resources");
+        if (!_pResources || _pResources->is_null())
+        {
+            return;
+        }
+        const auto& _Resources = _RequireObject(*_pResources, "backend.resources");
+        const auto* _pHandlers = _Resources.if_contains("handlers");
+        if (!_pHandlers || _pHandlers->is_null())
+        {
+            return;
+        }
+        if (!_pHandlers->is_array())
+        {
+            throw std::runtime_error("Manifest field must be array: backend.resources.handlers");
+        }
+
+        for (const auto& _Item : _pHandlers->as_array())
+        {
+            const auto& _Handler = _RequireObject(_Item, "backend.resources.handlers[]");
+            iCAX::Product::CProductResourceHandlerBinding _Binding;
+            _Binding.Kind = _RequireString(_Handler, "kind");
+            _Binding.ResourceType = _OptionalString(_Handler, "resourceType");
+            _Binding.FormatID = _OptionalString(_Handler, "formatId");
+            _Binding.Extensions = _OptionalStringArray(_Handler, "extensions");
+            _Binding.ProviderID = _OptionalString(_Handler, "provider");
+            _Binding.ModulePath = _ResolveBackendPath(ProductRoot_, _OptionalString(_Handler, "module"));
+            _Binding.Priority = static_cast<int>(_OptionalUInt32(_Handler, "priority", 0));
+            if (_Binding.ProviderID.empty() && _Binding.ModulePath.empty())
+            {
+                throw std::runtime_error("Resource handler binding requires provider or module");
+            }
+            Target_.push_back(std::move(_Binding));
+        }
+    }
+
+    void _ApplyPDOHubConfig(
+        IN const json::object& Backend_,
+        IN OUT iCAX::Product::CProductDefinition& Definition_)
+    {
+        const auto* _pPDO = Backend_.if_contains("pdo");
+        if (!_pPDO || _pPDO->is_null())
+        {
+            return;
+        }
+
+        const auto& _PDO = _RequireObject(*_pPDO, "backend.pdo");
+        Definition_.bEnablePDOHub = _OptionalBool(_PDO, "enabled", false);
+        Definition_.PDOHubCreateInfo.nArenaSize = _OptionalUInt64(
+            _PDO,
+            "arenaSize",
+            Definition_.PDOHubCreateInfo.nArenaSize);
+        Definition_.PDOHubCreateInfo.nSlotCapacity = _OptionalUInt32(
+            _PDO,
+            "slotCapacity",
+            Definition_.PDOHubCreateInfo.nSlotCapacity);
+
+        if (Definition_.bEnablePDOHub)
+        {
+            if (Definition_.PDOHubCreateInfo.nArenaSize == 0)
+            {
+                throw std::runtime_error("Manifest backend.pdo.arenaSize must be greater than zero");
+            }
+            if (Definition_.PDOHubCreateInfo.nSlotCapacity == 0)
+            {
+                throw std::runtime_error("Manifest backend.pdo.slotCapacity must be greater than zero");
+            }
+        }
+    }
 }
 
 iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std::string& strManifestPath_)
@@ -290,12 +381,15 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
     if (const auto* _pModules = _Backend.if_contains("modules"))
     {
         const auto& _Modules = _RequireObject(*_pModules, "backend.modules");
+        _AppendModuleArray(_Modules, "dependencies", _ProductRoot, _Definition.Modules.DependencyModules);
         _AppendModuleArray(_Modules, "components", _ProductRoot, _Definition.Modules.ComponentModules);
         _AppendModuleArray(_Modules, "behaviours", _ProductRoot, _Definition.Modules.BehaviourModules);
         _AppendModuleArray(_Modules, "behaviors", _ProductRoot, _Definition.Modules.BehaviourModules);
         _AppendModuleArray(_Modules, "services", _ProductRoot, _Definition.Modules.ServiceModules);
         _AppendModuleArray(_Modules, "commands", _ProductRoot, _Definition.Modules.CommandModules);
     }
+    _ApplyPDOHubConfig(_Backend, _Definition);
+    _AppendResourceHandlers(_Backend, _ProductRoot, _Definition.ResourceHandlers);
 
     if (const auto* _pWebPage = _Root.if_contains("webpage"))
     {

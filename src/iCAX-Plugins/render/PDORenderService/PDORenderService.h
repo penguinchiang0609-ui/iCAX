@@ -56,8 +56,9 @@ namespace iCAX
                 std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> MeshSlots;
                 std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> PolylineSlots;
                 std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> ToolpathSlots;
+                std::unordered_map<iCAX::Render::RenderTransformID, SSlotAssignment> TransformSlots;
                 std::unordered_map<iCAX::Render::RenderObjectID, SSlotAssignment> ObjectSlots;
-                SSlotAssignment ViewSlot;
+                SSlotAssignment CameraSlot;
             };
 
         public:
@@ -126,11 +127,17 @@ namespace iCAX
                 IN const std::vector<iCAX::Render::SRenderStyleData>& Styles_,
                 IN iCAX::Render::RenderDataVersion nDataVersion_) override;
 
-            bool SetViewStates(
+            bool SetTransforms(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN const std::vector<iCAX::Render::SRenderViewStateData>& Views_,
-                IN uint32_t nActiveViewIndex_,
+                IN const std::vector<iCAX::Render::SRenderTransformData>& Transforms_,
+                IN iCAX::Render::RenderDataVersion nDataVersion_) override;
+
+            bool SetCameras(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN const std::vector<iCAX::Render::SRenderCameraData>& Cameras_,
+                IN iCAX::Render::RenderCameraID nActiveCameraID_,
                 IN iCAX::Render::RenderDataVersion nDataVersion_) override;
 
             iCAX::Render::SRenderSceneSnapshot GetSceneSnapshot(
@@ -158,9 +165,19 @@ namespace iCAX
                 IN iCAX::Render::RenderObjectID nObjectID_);
 
             /*
-            * @brief 构造一个 scene 视图状态 PDOID。
+            * @brief 构造一个 Transform PDOID。
+            * @details Transform 与其他组件按 ID 拼装；Transform payload 不知道自己属于哪个上层对象。
             */
-            static iCAX::PDO::PDOID MakeViewStatePDOID(
+            static iCAX::PDO::PDOID MakeTransformPDOID(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Render::RenderTransformID nTransformID_);
+
+            /*
+            * @brief 构造一个 scene 相机 PDOID。
+            * @details Camera PDO 由后端写、前端读，用于发布一个或多个相机以及当前激活相机。
+            */
+            static iCAX::PDO::PDOID MakeCameraPDOID(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_);
 
@@ -214,6 +231,12 @@ namespace iCAX
                 IN iCAX::Render::RenderSceneID nSceneID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
+            bool WriteTransformToPDO(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Render::RenderTransformID nTransformID_,
+                IN iCAX::PDO::IPDOSlot& Slot_) const;
+
             /*
             * @brief 将单个渲染对象写入一个 InstanceList PDO slot。
             * @details
@@ -226,7 +249,7 @@ namespace iCAX
                 IN iCAX::Render::RenderObjectID nObjectID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
-            bool WriteViewStatesToPDO(
+            bool WriteCamerasToPDO(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
@@ -266,6 +289,7 @@ namespace iCAX
                 IN iCAX::PDO::PDOID nPDOID_,
                 IN iCAX::Render::RenderGeometryID nGeometryID_,
                 IN iCAX::Render::RenderObjectID nObjectID_,
+                IN iCAX::Render::RenderTransformID nTransformID_,
                 IN const char* pPayloadKind_,
                 IN uint64_t nPayloadCapacity_) const;
 

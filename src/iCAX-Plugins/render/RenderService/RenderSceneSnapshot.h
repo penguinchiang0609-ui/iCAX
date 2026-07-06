@@ -22,12 +22,14 @@ namespace iCAX
             std::unordered_map<RenderGeometryID, SRenderMeshData> Meshes;
             std::unordered_map<RenderGeometryID, SRenderPolylineData> Polylines;
             std::unordered_map<RenderGeometryID, SRenderToolpathData> Toolpaths;
+            std::vector<SRenderTransformData> Transforms;
             std::vector<SRenderInstanceData> Instances;
             std::vector<SRenderStyleData> Styles;
-            std::vector<SRenderViewStateData> Views;
-            uint32_t nActiveViewIndex = 0;
+            std::vector<SRenderCameraData> Cameras;
+            RenderCameraID nActiveCameraID = kInvalidRenderCameraID;
+            RenderDataVersion nTransformDataVersion = 0;
             RenderDataVersion nInstanceDataVersion = 0;
-            RenderDataVersion nViewDataVersion = 0;
+            RenderDataVersion nCameraDataVersion = 0;
         };
     }
 }

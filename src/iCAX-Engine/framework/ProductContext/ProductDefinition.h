@@ -28,11 +28,29 @@ namespace iCAX
         */
         struct _PRODUCT_CONTEXT_EXP CProductModules final
         {
+            std::vector<std::string> DependencyModules; //!< 仅用于提前装载依赖 DLL，不表达组件/服务/命令职责。
             std::vector<std::string> ComponentModules; //!< 单独组件模块列表。
             std::vector<std::string> BehaviourModules; //!< 单独行为模块列表。
             std::vector<std::string> ServiceModules;   //!< 单独服务模块列表。
             std::vector<std::string> CommandModules;   //!< 单独命令模块列表。
             std::vector<CProductModuleGroup> ModuleGroups; //!< 成组发布的模块列表。
+        };
+
+        /*
+        * @brief 资源处理器选择规则。
+        * @details
+        *   该结构只保存 manifest 中的纯配置，不依赖 Resources 项目。
+        *   ProductRuntime 会把它转换成资源注册表可以执行的选择规则。
+        */
+        struct _PRODUCT_CONTEXT_EXP CProductResourceHandlerBinding final
+        {
+            std::string Kind; //!< importer、exporter 或 loader。
+            std::string ResourceType; //!< 可选稳定资源类型名，例如 geometry.brep；为空时表示不限制资源类型。
+            std::string FormatID; //!< 可选格式 ID。
+            std::vector<std::string> Extensions; //!< 可选文件扩展名列表，例如 .step、.png。
+            std::string ProviderID; //!< 可选 provider ID，推荐由注册宏显式指定为稳定字符串。
+            std::string ModulePath; //!< 可选 DLL 路径；运行时会解析成绝对路径。
+            int Priority = 0; //!< 数值越大越优先。
         };
 
         /*
@@ -63,6 +81,7 @@ namespace iCAX
             std::string DefaultProjectStartupComponent; //!< 打开项目后默认绑定的启动组件。
             CProductFileDefinition ProjectFile; //!< 产品项目文件识别规则。
             CProductModules Modules; //!< 产品需要加载的模块定义。
+            std::vector<CProductResourceHandlerBinding> ResourceHandlers; //!< 资源导入导出/加载选择规则。
             bool bEnablePDOHub = false; //!< true 表示项目主 Scene 默认创建一块可动态分配 slot 的 PDO Arena。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 默认主 Scene PDOHub 创建参数。
         };

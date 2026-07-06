@@ -16,8 +16,10 @@ const char* iCAX::RenderPDO::GetRenderPDOPayloadTypeName(IN ERenderPDOPayloadKin
         return "render.toolpath";
     case ERenderPDOPayloadKind::InstanceList:
         return "render.instance_list";
-    case ERenderPDOPayloadKind::ViewState:
-        return "render.view_state";
+    case ERenderPDOPayloadKind::Camera:
+        return "render.camera";
+    case ERenderPDOPayloadKind::Transform:
+        return "render.transform";
     default:
         return "";
     }

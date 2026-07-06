@@ -115,7 +115,6 @@ namespace iCAX
             uint32_t nRenderClass = static_cast<uint32_t>(ERenderClass::Unknown);
             RenderStyleID nStyleID = 0;
             uint32_t nFlags = kRenderFlagVisible | kRenderFlagSelectable;
-            SMatrix4 Transform = SMatrix4::Identity();
         };
 
         /*
@@ -133,46 +132,62 @@ namespace iCAX
         };
 
         /*
-        * @brief 视图状态数据。
+        * @brief 相机数据。
         * @details
-        *   视图状态表达 viewport 尺寸、相机语义和矩阵。它不是 renderer 状态，不包含 shader、pipeline 或 GPU 资源。
-        *   前端可以写入该 PDO 供后端做拾取/LOD，也可以读取后端写入的默认视角或仿真同步视角。
+        *   Camera 表达后端控制的渲染相机。它不是 viewport 状态，不包含窗口尺寸、DPI、shader、pipeline 或 GPU 资源。
+        *   一个 Camera payload 可以包含多个相机，并通过 activeCameraID 指定当前相机。
         */
-        struct _RENDER_PDO_EXP SRenderViewStateData final
+        struct _RENDER_PDO_EXP SRenderCameraData final
         {
-            RenderViewID nViewID = 0;
-            uint32_t nWidth = 0;
-            uint32_t nHeight = 0;
-            float nDpiScale = 1.0f;
-            uint32_t nFlags = kViewFlagPerspective;
-            SFloat3 Eye;
-            SFloat3 Target;
-            SFloat3 Up = { 0.0f, 0.0f, 1.0f };
+            RenderCameraID nCameraID = 0;
+            uint32_t nFlags = kCameraFlagPerspective;
+            uint32_t nReserved = 0;
             float nNearPlane = 0.1f;
             float nFarPlane = 1000000.0f;
             float nVerticalFovRadians = 0.785398185f;
             float nOrthographicHeight = 1.0f;
-            SMatrix4 ViewMatrix = SMatrix4::Identity();
-            SMatrix4 ProjectionMatrix = SMatrix4::Identity();
         };
 
         /*
-        * @brief 视图状态 PDO payload 头。
+        * @brief 相机 PDO payload 头。
         */
-        struct _RENDER_PDO_EXP SRenderViewStatePDOHeader final
+        struct _RENDER_PDO_EXP SRenderCameraPDOHeader final
         {
             SRenderPDOHeader Header;
-            uint32_t nViewCount = 0;
-            uint32_t nActiveViewIndex = 0;
-            uint64_t nViewsOffset = 0;          // SRenderViewStateData[nViewCount]
+            uint32_t nCameraCount = 0;
+            uint32_t nReserved = 0;
+            RenderCameraID nActiveCameraID = 0;
+            uint64_t nCamerasOffset = 0;          // SRenderCameraData[nCameraCount]
+        };
+
+        /*
+        * @brief Transform PDO payload。
+        * @details
+        *   Transform 是 EC 风格的独立组件，只包含 ID 和 local-to-world 矩阵。
+        *   Render instance、camera、collider 等组件使用相同 ID 时，前端或其他消费者即可把它们拼到同一个逻辑物体上。
+        */
+        struct _RENDER_PDO_EXP SRenderTransformPDOHeader final
+        {
+            SRenderPDOHeader Header;
+            RenderTransformID nTransformID = 0;
+            uint32_t nFlags = 0;
+            uint32_t nReserved = 0;
+            SMatrix4 LocalToWorld = SMatrix4::Identity();
         };
 
         static_assert(std::is_standard_layout_v<SRenderAABB>);
         static_assert(std::is_trivially_copyable_v<SRenderAABB>);
         static_assert(std::is_standard_layout_v<SRenderPDOHeader>);
         static_assert(std::is_trivially_copyable_v<SRenderPDOHeader>);
-        static_assert(std::is_standard_layout_v<SRenderViewStateData>);
-        static_assert(std::is_trivially_copyable_v<SRenderViewStateData>);
+        static_assert(std::is_standard_layout_v<SRenderCameraData>);
+        static_assert(std::is_trivially_copyable_v<SRenderCameraData>);
+        static_assert(sizeof(SRenderCameraData) == 32);
+        static_assert(std::is_standard_layout_v<SRenderInstanceData>);
+        static_assert(std::is_trivially_copyable_v<SRenderInstanceData>);
+        static_assert(sizeof(SRenderInstanceData) == 32);
+        static_assert(std::is_standard_layout_v<SRenderTransformPDOHeader>);
+        static_assert(std::is_trivially_copyable_v<SRenderTransformPDOHeader>);
+        static_assert(sizeof(SRenderTransformPDOHeader) == 112);
         static_assert(std::is_standard_layout_v<SRenderMeshPDOHeader>);
         static_assert(std::is_trivially_copyable_v<SRenderMeshPDOHeader>);
         static_assert(std::is_standard_layout_v<SRenderPolylinePDOHeader>);
@@ -181,7 +196,8 @@ namespace iCAX
         static_assert(std::is_trivially_copyable_v<SRenderToolpathPDOHeader>);
         static_assert(std::is_standard_layout_v<SRenderInstanceListPDOHeader>);
         static_assert(std::is_trivially_copyable_v<SRenderInstanceListPDOHeader>);
-        static_assert(std::is_standard_layout_v<SRenderViewStatePDOHeader>);
-        static_assert(std::is_trivially_copyable_v<SRenderViewStatePDOHeader>);
+        static_assert(std::is_standard_layout_v<SRenderCameraPDOHeader>);
+        static_assert(std::is_trivially_copyable_v<SRenderCameraPDOHeader>);
+        static_assert(sizeof(SRenderCameraPDOHeader) == 56);
     }
 }

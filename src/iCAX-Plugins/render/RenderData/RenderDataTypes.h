@@ -13,12 +13,16 @@ namespace iCAX
         using RenderSceneID = uint64_t;
         using RenderObjectID = uint64_t;
         using RenderGeometryID = uint64_t;
+        using RenderTransformID = uint64_t;
+        using RenderCameraID = uint64_t;
         using RenderDataVersion = uint64_t;
         using RenderStyleID = uint32_t;
 
         inline constexpr RenderSceneID kInvalidRenderSceneID = 0;
         inline constexpr RenderObjectID kInvalidRenderObjectID = 0;
         inline constexpr RenderGeometryID kInvalidRenderGeometryID = 0;
+        inline constexpr RenderTransformID kInvalidRenderTransformID = 0;
+        inline constexpr RenderCameraID kInvalidRenderCameraID = 0;
 
         enum class ERenderGeometryKind : uint32_t
         {
@@ -65,9 +69,9 @@ namespace iCAX
         inline constexpr uint32_t kRenderMeshFlagHasNormals = 1u << 0;
         inline constexpr uint32_t kRenderMeshFlagHasVertexColors = 1u << 1;
 
-        inline constexpr uint32_t kRenderViewFlagPerspective = 1u << 0;
-        inline constexpr uint32_t kRenderViewFlagOrthographic = 1u << 1;
-        inline constexpr uint32_t kRenderViewFlagCameraLocked = 1u << 2;
+        inline constexpr uint32_t kRenderCameraFlagPerspective = 1u << 0;
+        inline constexpr uint32_t kRenderCameraFlagOrthographic = 1u << 1;
+        inline constexpr uint32_t kRenderCameraFlagCameraLocked = 1u << 2;
 
         struct _RENDER_DATA_EXP SFloat3 final
         {
@@ -177,25 +181,30 @@ namespace iCAX
             ERenderClass eRenderClass = ERenderClass::Model;
             RenderStyleID nStyleID = 0;
             uint32_t nFlags = kRenderFlagVisible | kRenderFlagSelectable;
-            SMatrix4 Transform = SMatrix4::Identity();
         };
 
-        struct _RENDER_DATA_EXP SRenderViewStateData final
+        /*
+        * @brief 场景 Transform 组件。
+        * @details
+        *   Transform 只表达 ID 与 local-to-world 矩阵，不知道自己属于 render object、camera、collider 或其他组件。
+        *   同一 scene 内其他组件使用相同 ID 时，即视为挂载在同一个逻辑物体上。
+        */
+        struct _RENDER_DATA_EXP SRenderTransformData final
         {
-            uint64_t nViewID = 0;
-            uint32_t nWidth = 0;
-            uint32_t nHeight = 0;
-            float nDpiScale = 1.0f;
-            uint32_t nFlags = kRenderViewFlagPerspective;
-            SFloat3 Eye;
-            SFloat3 Target;
-            SFloat3 Up = { 0.0f, 0.0f, 1.0f };
+            RenderTransformID nTransformID = kInvalidRenderTransformID;
+            RenderDataVersion nDataVersion = 0;
+            uint32_t nFlags = 0;
+            SMatrix4 LocalToWorld = SMatrix4::Identity();
+        };
+
+        struct _RENDER_DATA_EXP SRenderCameraData final
+        {
+            RenderCameraID nCameraID = kInvalidRenderCameraID;
+            uint32_t nFlags = kRenderCameraFlagPerspective;
             float nNearPlane = 0.1f;
             float nFarPlane = 1000000.0f;
             float nVerticalFovRadians = 0.785398185f;
             float nOrthographicHeight = 1.0f;
-            SMatrix4 ViewMatrix = SMatrix4::Identity();
-            SMatrix4 ProjectionMatrix = SMatrix4::Identity();
         };
     }
 }

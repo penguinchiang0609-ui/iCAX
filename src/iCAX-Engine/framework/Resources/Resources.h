@@ -9,3 +9,4 @@
 #include "ResourceLoadContext.h"
 #include "ResourceLoadResult.h"
 #include "ResourceLoaderRegistry.h"
+#include "ResourceTypeName.h"

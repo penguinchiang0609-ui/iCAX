@@ -6,6 +6,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <shared_mutex>
 #include <type_traits>
 #include <typeindex>
@@ -26,6 +27,24 @@ namespace iCAX
         class _RESOURCES_EXP CResourceLoaderRegistry final
         {
         public:
+            /*
+            * @brief 资源处理器选择规则。
+            * @details
+            *   规则来自产品配置或运行期配置。注册表选择 importer/exporter/loader 时会先匹配规则，
+            *   再退回默认注册顺序。数值越大的 Priority 越优先。
+            */
+            struct CHandlerSelectionRule final
+            {
+                std::string Kind; //!< loader、importer 或 exporter。
+                std::string ResourceTypeName; //!< 可选稳定资源类型名，例如 geometry.brep；为空表示不限制。
+                std::string FormatID; //!< 可选格式 ID。
+                std::vector<std::string> Extensions; //!< 可选扩展名列表。
+                std::string ProviderID; //!< 可选 provider ID。
+                std::string ModulePath; //!< 可选模块路径。
+                int Priority = 0;
+            };
+
+        public:
             CResourceLoaderRegistry() = default;
             ~CResourceLoaderRegistry() = default;
 
@@ -40,6 +59,15 @@ namespace iCAX
             * @return true 表示注册成功；false 表示相同实例或相同 loader 类型已存在。
             */
             bool RegisterLoader(IN const std::type_info& ResourceType_, IN const std::shared_ptr<IResourceLoader>& pLoader_);
+
+            /*
+            * @brief 注册加载器并附带运行期可选择的 provider/module 信息。
+            */
+            bool RegisterLoader(
+                IN const std::type_info& ResourceType_,
+                IN const std::shared_ptr<IResourceLoader>& pLoader_,
+                IN const std::string& strProviderID_,
+                IN const std::string& strModulePath_);
 
             template <typename TResource>
             /*
@@ -90,10 +118,61 @@ namespace iCAX
             bool RegisterImporter(IN const std::shared_ptr<IResourceImporter>& pImporter_);
 
             /*
+            * @brief 注册导入器并附带运行期可选择的 provider/module 信息。
+            */
+            bool RegisterImporter(
+                IN const std::shared_ptr<IResourceImporter>& pImporter_,
+                IN const std::string& strProviderID_,
+                IN const std::string& strModulePath_);
+
+            /*
             * @brief 注册资源导出器。
             * @return true 表示注册成功；false 表示相同实例或相同 exporter 类型已存在。
             */
             bool RegisterExporter(IN const std::shared_ptr<IResourceExporter>& pExporter_);
+
+            /*
+            * @brief 注册导出器并附带运行期可选择的 provider/module 信息。
+            */
+            bool RegisterExporter(
+                IN const std::shared_ptr<IResourceExporter>& pExporter_,
+                IN const std::string& strProviderID_,
+                IN const std::string& strModulePath_);
+
+            /*
+            * @brief 设置资源处理器选择规则。
+            */
+            void SetSelectionRules(IN std::vector<CHandlerSelectionRule> Rules_);
+
+            /*
+            * @brief 追加一条资源处理器选择规则。
+            */
+            void AddSelectionRule(IN CHandlerSelectionRule Rule_);
+
+            struct CLoaderEntry final
+            {
+                std::shared_ptr<IResourceLoader> Loader;
+                std::string ProviderID;
+                std::string ModulePath;
+                std::type_index ResourceType = std::type_index(typeid(void));
+                size_t Order = 0;
+            };
+
+            struct CImporterEntry final
+            {
+                std::shared_ptr<IResourceImporter> Importer;
+                std::string ProviderID;
+                std::string ModulePath;
+                size_t Order = 0;
+            };
+
+            struct CExporterEntry final
+            {
+                std::shared_ptr<IResourceExporter> Exporter;
+                std::string ProviderID;
+                std::string ModulePath;
+                size_t Order = 0;
+            };
 
             /*
             * @brief 获取全部导入格式。
@@ -127,9 +206,11 @@ namespace iCAX
 
         private:
             mutable std::shared_mutex m_Mutex;
-            std::map<std::type_index, std::vector<std::shared_ptr<IResourceLoader>>> m_Loaders;
-            std::vector<std::shared_ptr<IResourceImporter>> m_Importers;
-            std::vector<std::shared_ptr<IResourceExporter>> m_Exporters;
+            size_t m_nNextRegistrationOrder = 0;
+            std::map<std::type_index, std::vector<CLoaderEntry>> m_Loaders;
+            std::vector<CImporterEntry> m_Importers;
+            std::vector<CExporterEntry> m_Exporters;
+            std::vector<CHandlerSelectionRule> m_SelectionRules;
         };
     }
 }
@@ -137,51 +218,54 @@ namespace iCAX
 #define ICAX_RESOURCE_DETAIL_JOIN_IMPL(x, y) x##y
 #define ICAX_RESOURCE_DETAIL_JOIN(x, y) ICAX_RESOURCE_DETAIL_JOIN_IMPL(x, y)
 
-#define ICAX_REGISTER_RESOURCE_LOADER(ResourceClass, LoaderType) ICAX_REGISTER_RESOURCE_LOADER_IMPL(ResourceClass, LoaderType, __COUNTER__)
-#define ICAX_REGISTER_RESOURCE_LOADER_IMPL(ResourceClass, LoaderType, UniqueID) \
+#define ICAX_REGISTER_RESOURCE_LOADER(ResourceClass, LoaderType) ICAX_REGISTER_RESOURCE_LOADER_PROVIDER(ResourceClass, #LoaderType, LoaderType)
+#define ICAX_REGISTER_RESOURCE_LOADER_PROVIDER(ResourceClass, ProviderID, LoaderType) ICAX_REGISTER_RESOURCE_LOADER_IMPL(ResourceClass, ProviderID, LoaderType, __COUNTER__)
+#define ICAX_REGISTER_RESOURCE_LOADER_IMPL(ResourceClass, ProviderID, LoaderType, UniqueID) \
     namespace \
     { \
         struct ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceLoaderRegistration_, UniqueID) final \
         { \
             ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceLoaderRegistration_, UniqueID)() \
             { \
-                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_) \
+                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_, const std::string& ModulePath_) \
                 { \
-                    Registry_.RegisterLoader(typeid(ResourceClass), std::make_shared<LoaderType>()); \
+                    Registry_.RegisterLoader(typeid(ResourceClass), std::make_shared<LoaderType>(), ProviderID, ModulePath_); \
                 }, this); \
             } \
         }; \
         const ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceLoaderRegistration_, UniqueID) ICAX_RESOURCE_DETAIL_JOIN(g_AutoResourceLoaderRegistration_, UniqueID); \
     }
 
-#define ICAX_REGISTER_RESOURCE_IMPORTER(ImporterType) ICAX_REGISTER_RESOURCE_IMPORTER_IMPL(ImporterType, __COUNTER__)
-#define ICAX_REGISTER_RESOURCE_IMPORTER_IMPL(ImporterType, UniqueID) \
+#define ICAX_REGISTER_RESOURCE_IMPORTER(ImporterType) ICAX_REGISTER_RESOURCE_IMPORTER_PROVIDER(#ImporterType, ImporterType)
+#define ICAX_REGISTER_RESOURCE_IMPORTER_PROVIDER(ProviderID, ImporterType) ICAX_REGISTER_RESOURCE_IMPORTER_IMPL(ProviderID, ImporterType, __COUNTER__)
+#define ICAX_REGISTER_RESOURCE_IMPORTER_IMPL(ProviderID, ImporterType, UniqueID) \
     namespace \
     { \
         struct ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceImporterRegistration_, UniqueID) final \
         { \
             ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceImporterRegistration_, UniqueID)() \
             { \
-                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_) \
+                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_, const std::string& ModulePath_) \
                 { \
-                    Registry_.RegisterImporter(std::make_shared<ImporterType>()); \
+                    Registry_.RegisterImporter(std::make_shared<ImporterType>(), ProviderID, ModulePath_); \
                 }, this); \
             } \
         }; \
         const ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceImporterRegistration_, UniqueID) ICAX_RESOURCE_DETAIL_JOIN(g_AutoResourceImporterRegistration_, UniqueID); \
     }
 
-#define ICAX_REGISTER_RESOURCE_EXPORTER(ExporterType) ICAX_REGISTER_RESOURCE_EXPORTER_IMPL(ExporterType, __COUNTER__)
-#define ICAX_REGISTER_RESOURCE_EXPORTER_IMPL(ExporterType, UniqueID) \
+#define ICAX_REGISTER_RESOURCE_EXPORTER(ExporterType) ICAX_REGISTER_RESOURCE_EXPORTER_PROVIDER(#ExporterType, ExporterType)
+#define ICAX_REGISTER_RESOURCE_EXPORTER_PROVIDER(ProviderID, ExporterType) ICAX_REGISTER_RESOURCE_EXPORTER_IMPL(ProviderID, ExporterType, __COUNTER__)
+#define ICAX_REGISTER_RESOURCE_EXPORTER_IMPL(ProviderID, ExporterType, UniqueID) \
     namespace \
     { \
         struct ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceExporterRegistration_, UniqueID) final \
         { \
             ICAX_RESOURCE_DETAIL_JOIN(CAutoResourceExporterRegistration_, UniqueID)() \
             { \
-                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_) \
+                ::iCAX::Resource::CResourceLoaderRegistrationCatalog::Register([](::iCAX::Resource::CResourceLoaderRegistry& Registry_, const std::string& ModulePath_) \
                 { \
-                    Registry_.RegisterExporter(std::make_shared<ExporterType>()); \
+                    Registry_.RegisterExporter(std::make_shared<ExporterType>(), ProviderID, ModulePath_); \
                 }, this); \
             } \
         }; \

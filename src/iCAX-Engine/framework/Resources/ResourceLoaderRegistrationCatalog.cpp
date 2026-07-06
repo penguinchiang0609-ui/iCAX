@@ -136,7 +136,7 @@ size_t iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayFrom(IN size_t 
     // 回放用户注册函数前释放 catalog 锁，避免注册函数内部再次触发 catalog 查询或模块加载。
     for (const auto& _Registration : _Registrations)
     {
-        _Registration.Replay(Registry_);
+        _Registration.Replay(Registry_, _Registration.ModulePath);
     }
     return nFirstIndex_;
 }
@@ -162,7 +162,7 @@ void iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(
     {
         if (std::find(_ModulePaths.begin(), _ModulePaths.end(), _Registration.ModulePath) != _ModulePaths.end())
         {
-            _Registration.Replay(Registry_);
+            _Registration.Replay(Registry_, _Registration.ModulePath);
         }
     }
 }

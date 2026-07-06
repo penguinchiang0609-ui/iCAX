@@ -22,6 +22,21 @@
 
 STEP/STP、IGS/IGES 的具体导入由 `iCAX-Plugins/cad/OpenCascadeResourceImport` 提供。该插件通过 OCCT 8.0.0-p1 把 CAD 文件转换成 `iCAX::Resource::CBinaryResource` 和中立 `GeometryData::BRepModel`。Laser3DCAM 不直接依赖 OCCT；后续如果替换为 CGAL 或其他内核，只需要替换资源导入插件。
 
+导入后的 H5 显示链路：
+
+```text
+Cam.ImportModel
+  -> Scene.Resources().Import<BRepModel>()
+  -> 写入 Workpiece Entity + CAM Topology Resource
+  -> BRepModel.Triangulations3 转为 RenderData.SRenderMeshData
+  -> IRenderService.UpsertMesh / SetInstances / SetTransforms / SetCameras
+  -> IRenderService.Update()
+  -> PDORenderService 分配 RenderPDO slot，并通过 Scene mailbox 通知前端
+  -> H5 ThreeRenderViewport 读取 PDO slot 并显示网格
+```
+
+三角化在后端完成，前端只消费 `render.mesh`、`render.instance_list`、`render.transform` 和 `render.camera` 等 RenderPDO 数据。一个 Workpiece 对应一个 render geometry、一个 render object 和同 ID 的 transform；连续导入多个工件时，RenderService 保留已有 geometry，并重发当前 Workpiece 实例列表与 Transform。相机由后端发布，camera ID 与 transform ID 相同，前端不自行控制相机。
+
 目录结构：
 
 - `ToolpathComponents.h`：toolpath root、workpiece、selection、program node、block、path 组件。

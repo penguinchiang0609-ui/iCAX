@@ -25,6 +25,7 @@
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <cstring>
 #include <filesystem>
 #include <functional>
 #include <mutex>
@@ -33,6 +34,7 @@
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -284,6 +286,13 @@ namespace
           throw new Error("CEF PDO bridge is not available");
         }
         return window.__icaxPDOWithRead(descriptor, reader);
+      },
+
+      withWrite(descriptor, writer) {
+        if (typeof window.__icaxPDOWithWrite !== "function") {
+          throw new Error("CEF PDO bridge is not available");
+        }
+        return window.__icaxPDOWithWrite(descriptor, writer);
       }
     },
 
@@ -390,6 +399,15 @@ namespace
         uint32_t nPayloadSize = 0;
     };
 
+    struct CPDOWriteDescriptor final
+    {
+        std::wstring ArenaName;
+        iCAX::PDO::PDOID nID = 0;
+        uint32_t nVersion = 0;
+        uint32_t nPayloadSize = 0;
+        uint64_t nDataVersion = 0;
+    };
+
     CPDOReadDescriptor _ParsePDOReadDescriptor(IN CefRefPtr<CefV8Value> Descriptor_)
     {
         CPDOReadDescriptor _Descriptor;
@@ -417,6 +435,38 @@ namespace
         return _Descriptor;
     }
 
+    CPDOWriteDescriptor _ParsePDOWriteDescriptor(IN CefRefPtr<CefV8Value> Descriptor_)
+    {
+        CPDOWriteDescriptor _Descriptor;
+        _Descriptor.ArenaName = _UTF8ToWide(_V8ToString(_RequireV8ObjectField(Descriptor_, "arenaName"), "arenaName"));
+        _Descriptor.nID = _V8ToUInt64(_RequireV8ObjectField(Descriptor_, "id"), "id");
+        _Descriptor.nVersion = _V8ToUInt32(_RequireV8ObjectField(Descriptor_, "version"), "version");
+        _Descriptor.nPayloadSize = _V8ToUInt32(_RequireV8ObjectField(Descriptor_, "payloadSize"), "payloadSize");
+        _Descriptor.nDataVersion = _V8ToUInt64(_RequireV8ObjectField(Descriptor_, "dataVersion"), "dataVersion");
+
+        if (_Descriptor.ArenaName.empty())
+        {
+            throw std::invalid_argument("PDO arenaName cannot be empty");
+        }
+        if (_Descriptor.nID == 0)
+        {
+            throw std::invalid_argument("PDO id cannot be zero");
+        }
+        if (_Descriptor.nVersion == 0)
+        {
+            throw std::invalid_argument("PDO version cannot be zero");
+        }
+        if (_Descriptor.nPayloadSize == 0)
+        {
+            throw std::invalid_argument("PDO payloadSize cannot be zero");
+        }
+        if (_Descriptor.nDataVersion == 0)
+        {
+            throw std::invalid_argument("PDO dataVersion cannot be zero");
+        }
+        return _Descriptor;
+    }
+
     CefRefPtr<CefV8Value> _MakePDOReadMeta(
         IN const CPDOReadDescriptor& Descriptor_,
         IN const iCAX::PDO::CPDOReadLease& Lease_)
@@ -431,7 +481,17 @@ namespace
         return _Meta;
     }
 
-    class CPDOV8ReadHandler final : public CefV8Handler
+    CefRefPtr<CefV8Value> _MakePDOWriteMeta(IN const CPDOWriteDescriptor& Descriptor_)
+    {
+        auto _Meta = CefV8Value::CreateObject(nullptr, nullptr);
+        _Meta->SetValue("id", CefV8Value::CreateString(std::to_string(Descriptor_.nID)), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("version", CefV8Value::CreateUInt(Descriptor_.nVersion), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("payloadSize", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("dataVersion", CefV8Value::CreateString(std::to_string(Descriptor_.nDataVersion)), V8_PROPERTY_ATTRIBUTE_READONLY);
+        return _Meta;
+    }
+
+    class CPDOV8BridgeHandler final : public CefV8Handler
     {
     public:
         bool Execute(
@@ -443,53 +503,18 @@ namespace
         {
             try
             {
-                if (Name_.ToString() != "__icaxPDOWithRead")
+                const auto _FunctionName = Name_.ToString();
+                if (_FunctionName == "__icaxPDOWithRead")
                 {
-                    return false;
+                    ReturnValue_ = ExecuteRead(Arguments_);
+                    return true;
                 }
-                if (Arguments_.size() != 2)
+                if (_FunctionName == "__icaxPDOWithWrite")
                 {
-                    throw std::invalid_argument("PDO withRead expects descriptor and reader arguments");
+                    ReturnValue_ = ExecuteWrite(Arguments_);
+                    return true;
                 }
-                if (!Arguments_[1] || !Arguments_[1]->IsFunction())
-                {
-                    throw std::invalid_argument("PDO reader must be a function");
-                }
-
-                const auto _Descriptor = _ParsePDOReadDescriptor(Arguments_[0]);
-                auto _pArena = OpenArena(_Descriptor.ArenaName);
-                auto _Slot = _pArena->GetSlot(_Descriptor.nID);
-                ValidateSlot(_Slot, _Descriptor);
-
-                iCAX::PDO::CPDOReadLease _Lease(_Slot);
-                // Official CEF binaries enable the V8 sandbox. V8 therefore cannot wrap
-                // arbitrary process memory as an external ArrayBuffer; copy the current
-                // shared-memory snapshot into V8-owned backing storage.
-                auto _ArrayBuffer = CefV8Value::CreateArrayBufferWithCopy(
-                    const_cast<void*>(_Lease.Data()),
-                    _Descriptor.nPayloadSize);
-                if (!_ArrayBuffer)
-                {
-                    throw std::runtime_error("Failed to create PDO ArrayBuffer");
-                }
-                auto _Meta = _MakePDOReadMeta(_Descriptor, _Lease);
-
-                CefV8ValueList _ReaderArguments;
-                _ReaderArguments.push_back(_ArrayBuffer);
-                _ReaderArguments.push_back(_Meta);
-                auto _Result = Arguments_[1]->ExecuteFunction(nullptr, _ReaderArguments);
-
-                if (!_Result)
-                {
-                    throw std::runtime_error("PDO reader callback failed");
-                }
-                if (_Result->IsPromise())
-                {
-                    throw std::logic_error("PDO reader callback must be synchronous");
-                }
-
-                ReturnValue_ = _Result;
-                return true;
+                return false;
             }
             catch (const std::exception& _Error)
             {
@@ -499,6 +524,107 @@ namespace
         }
 
     private:
+        CefRefPtr<CefV8Value> ExecuteRead(IN const CefV8ValueList& Arguments_)
+        {
+            if (Arguments_.size() != 2)
+            {
+                throw std::invalid_argument("PDO withRead expects descriptor and reader arguments");
+            }
+            if (!Arguments_[1] || !Arguments_[1]->IsFunction())
+            {
+                throw std::invalid_argument("PDO reader must be a function");
+            }
+
+            const auto _Descriptor = _ParsePDOReadDescriptor(Arguments_[0]);
+            auto _pArena = OpenArena(_Descriptor.ArenaName);
+            auto _Slot = _pArena->GetSlot(_Descriptor.nID);
+            ValidateSlot(_Slot, _Descriptor, iCAX::PDO::kDirection2External);
+
+            iCAX::PDO::CPDOReadLease _Lease(_Slot);
+            // Official CEF binaries enable the V8 sandbox. V8 therefore cannot wrap
+            // arbitrary process memory as an external ArrayBuffer; copy the current
+            // shared-memory snapshot into V8-owned backing storage.
+            auto _ArrayBuffer = CefV8Value::CreateArrayBufferWithCopy(
+                const_cast<void*>(_Lease.Data()),
+                _Descriptor.nPayloadSize);
+            if (!_ArrayBuffer)
+            {
+                throw std::runtime_error("Failed to create PDO ArrayBuffer");
+            }
+            auto _Meta = _MakePDOReadMeta(_Descriptor, _Lease);
+
+            CefV8ValueList _ReaderArguments;
+            _ReaderArguments.push_back(_ArrayBuffer);
+            _ReaderArguments.push_back(_Meta);
+            auto _Result = Arguments_[1]->ExecuteFunction(nullptr, _ReaderArguments);
+
+            if (!_Result)
+            {
+                throw std::runtime_error("PDO reader callback failed");
+            }
+            if (_Result->IsPromise())
+            {
+                throw std::logic_error("PDO reader callback must be synchronous");
+            }
+            return _Result;
+        }
+
+        CefRefPtr<CefV8Value> ExecuteWrite(IN const CefV8ValueList& Arguments_)
+        {
+            if (Arguments_.size() != 2)
+            {
+                throw std::invalid_argument("PDO withWrite expects descriptor and writer arguments");
+            }
+            if (!Arguments_[1] || !Arguments_[1]->IsFunction())
+            {
+                throw std::invalid_argument("PDO writer must be a function");
+            }
+
+            const auto _Descriptor = _ParsePDOWriteDescriptor(Arguments_[0]);
+            auto _pArena = OpenArena(_Descriptor.ArenaName);
+            auto _Slot = _pArena->GetSlot(_Descriptor.nID);
+            ValidateSlot(_Slot, _Descriptor, iCAX::PDO::kDirection2Inner);
+
+            std::vector<uint8_t> _Scratch(_Descriptor.nPayloadSize, 0);
+            auto _ArrayBuffer = CefV8Value::CreateArrayBufferWithCopy(_Scratch.data(), _Scratch.size());
+            if (!_ArrayBuffer)
+            {
+                throw std::runtime_error("Failed to create PDO ArrayBuffer");
+            }
+
+            CefV8ValueList _WriterArguments;
+            _WriterArguments.push_back(_ArrayBuffer);
+            _WriterArguments.push_back(_MakePDOWriteMeta(_Descriptor));
+            auto _Result = Arguments_[1]->ExecuteFunction(nullptr, _WriterArguments);
+            if (!_Result)
+            {
+                throw std::runtime_error("PDO writer callback failed");
+            }
+            if (_Result->IsPromise())
+            {
+                throw std::logic_error("PDO writer callback must be synchronous");
+            }
+            if (!_ArrayBuffer->IsArrayBuffer() || _ArrayBuffer->GetArrayBufferByteLength() != _Descriptor.nPayloadSize)
+            {
+                throw std::logic_error("PDO writer ArrayBuffer size changed");
+            }
+
+            auto _WriteLease = iCAX::PDO::CPDOWriteLease::TryBeginIfNewer(_Slot, _Descriptor.nDataVersion);
+            if (!_WriteLease)
+            {
+                return CefV8Value::CreateBool(false);
+            }
+
+            const auto _pData = _ArrayBuffer->GetArrayBufferData();
+            if (!_pData)
+            {
+                throw std::runtime_error("PDO writer ArrayBuffer has no backing data");
+            }
+            std::memcpy(_WriteLease->Data(), _pData, _Descriptor.nPayloadSize);
+            _WriteLease->Commit();
+            return CefV8Value::CreateBool(true);
+        }
+
         std::shared_ptr<iCAX::PDO::CSharedPDOArena> OpenArena(IN const std::wstring& ArenaName_)
         {
             std::lock_guard<std::mutex> _Lock(m_Mutex);
@@ -513,9 +639,11 @@ namespace
             return _pArena;
         }
 
+        template <typename TDescriptor>
         static void ValidateSlot(
             IN const iCAX::PDO::CSharedPDOSlot& Slot_,
-            IN const CPDOReadDescriptor& Descriptor_)
+            IN const TDescriptor& Descriptor_,
+            IN iCAX::PDO::PDODirection eExpectedDirection_)
         {
             const auto& _Decl = Slot_.GetHeader();
             if (_Decl.nID != Descriptor_.nID)
@@ -530,13 +658,17 @@ namespace
             {
                 throw std::logic_error("PDO slot payload size does not match descriptor");
             }
+            if (_Decl.eDirection != eExpectedDirection_)
+            {
+                throw std::logic_error("PDO slot direction does not match bridge access mode");
+            }
         }
 
     private:
         std::mutex m_Mutex;
         std::unordered_map<std::wstring, std::shared_ptr<iCAX::PDO::CSharedPDOArena>> m_Arenas;
 
-        IMPLEMENT_REFCOUNTING(CPDOV8ReadHandler);
+        IMPLEMENT_REFCOUNTING(CPDOV8BridgeHandler);
     };
 
     void _InstallPDOV8Bridge(IN CefRefPtr<CefV8Context> Context_)
@@ -552,9 +684,11 @@ namespace
             return;
         }
 
-        auto _Handler = new CPDOV8ReadHandler();
-        auto _Function = CefV8Value::CreateFunction("__icaxPDOWithRead", _Handler);
-        _Global->SetValue("__icaxPDOWithRead", _Function, V8_PROPERTY_ATTRIBUTE_DONTENUM);
+        auto _Handler = new CPDOV8BridgeHandler();
+        auto _ReadFunction = CefV8Value::CreateFunction("__icaxPDOWithRead", _Handler);
+        auto _WriteFunction = CefV8Value::CreateFunction("__icaxPDOWithWrite", _Handler);
+        _Global->SetValue("__icaxPDOWithRead", _ReadFunction, V8_PROPERTY_ATTRIBUTE_DONTENUM);
+        _Global->SetValue("__icaxPDOWithWrite", _WriteFunction, V8_PROPERTY_ATTRIBUTE_DONTENUM);
     }
 
     class CInternalCefApp final :

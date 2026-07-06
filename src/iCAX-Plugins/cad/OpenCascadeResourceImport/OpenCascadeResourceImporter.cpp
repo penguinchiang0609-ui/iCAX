@@ -76,6 +76,8 @@ namespace
     constexpr const char* kIgesFormatID = "cad.iges";
     constexpr const char* kSourceRole = "source";
     constexpr const char* kBRepRole = "geometry.brep";
+    constexpr const char* kBinaryResourceType = "resource.binary";
+    constexpr const char* kBRepResourceType = "geometry.brep";
 
     using ShapeMap = NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher>;
 
@@ -916,6 +918,12 @@ namespace
             {
                 return false;
             }
+            if (!Request_.TargetResourceTypeName.empty()
+                && Request_.TargetResourceTypeName != kBRepResourceType
+                && Request_.TargetResourceTypeName != kBinaryResourceType)
+            {
+                return false;
+            }
             if (!Request_.FormatID.empty() && Request_.FormatID != "cad")
             {
                 const auto _Detected = GetFormatIDFromPath(Request_.SourcePath);
@@ -1048,5 +1056,5 @@ namespace
         }
     };
 
-    ICAX_REGISTER_RESOURCE_IMPORTER(COpenCascadeResourceImporter)
+    ICAX_REGISTER_RESOURCE_IMPORTER_PROVIDER("occ.opencascade", COpenCascadeResourceImporter)
 }

@@ -24,7 +24,7 @@ namespace iCAX
             /*
             * @brief 注册回放函数类型。
             */
-            using ReplayFunc = std::function<void(CResourceLoaderRegistry&)>;
+            using ReplayFunc = std::function<void(CResourceLoaderRegistry&, const std::string&)>;
 
             /*
             * @brief 一条加载器注册记录。

@@ -7,7 +7,7 @@
 ## 边界
 
 - 物理引擎在 backend 内部运行，不通过 PDO 和主程序对接。
-- PDO 只用于 UI 边界，如 `render.view_state`、`interaction.pointer`、`interaction.hit_result`。
+- PDO 只用于 UI 边界，如 `render.camera`、`interaction.pointer`、`interaction.hit_result`。
 - Jolt 不进入 `iCAX-Engine/framework`，只作为可选 plugin。
 - 当前提供 box、sphere 和 triangle mesh body，先覆盖刚体、模型拾取和静态碰撞的基础场景。
 

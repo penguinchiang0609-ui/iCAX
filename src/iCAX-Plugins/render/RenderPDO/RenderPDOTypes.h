@@ -14,7 +14,8 @@ namespace iCAX
 
         using RenderObjectID = uint64_t;
         using RenderGeometryID = uint64_t;
-        using RenderViewID = uint64_t;
+        using RenderTransformID = uint64_t;
+        using RenderCameraID = uint64_t;
         using RenderDataVersion = uint64_t;
         using RenderStyleID = uint32_t;
 
@@ -25,7 +26,8 @@ namespace iCAX
             Polyline = 2,
             Toolpath = 3,
             InstanceList = 4,
-            ViewState = 5
+            Camera = 5,
+            Transform = 6
         };
 
         enum class ERenderGeometryKind : uint32_t
@@ -78,9 +80,9 @@ namespace iCAX
         inline constexpr uint32_t kMeshFlagHasNormals = 1u << 0;
         inline constexpr uint32_t kMeshFlagHasVertexColors = 1u << 1;
 
-        inline constexpr uint32_t kViewFlagPerspective = 1u << 0;
-        inline constexpr uint32_t kViewFlagOrthographic = 1u << 1;
-        inline constexpr uint32_t kViewFlagCameraLocked = 1u << 2;
+        inline constexpr uint32_t kCameraFlagPerspective = 1u << 0;
+        inline constexpr uint32_t kCameraFlagOrthographic = 1u << 1;
+        inline constexpr uint32_t kCameraFlagCameraLocked = 1u << 2;
 
         struct _RENDER_PDO_EXP SFloat3 final
         {
