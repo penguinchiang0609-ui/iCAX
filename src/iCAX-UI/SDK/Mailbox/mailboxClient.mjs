@@ -196,7 +196,8 @@ export class MailboxClient {
 
     const stamp = Number(mail.stamp ?? 0);
     if (stamp !== STAMP_OK) {
-      pending.reject(new MailboxError(`Mailbox response failed: ${stamp}`, mail));
+      const responseText = String(mail.payloadText ?? "").trim();
+      pending.reject(new MailboxError(responseText || `Mailbox response failed: ${stamp}`, mail));
       return true;
     }
 

@@ -49,6 +49,7 @@ namespace iCAX
             {
                 iCAX::PDO::PDOID nPDOID = 0;
                 uint64_t nPayloadCapacity = 0;
+                bool bNeedPublishAllocatedEvent = false;
             };
 
             struct SScenePDOOutputState final

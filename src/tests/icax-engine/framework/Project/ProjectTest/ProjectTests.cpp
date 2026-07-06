@@ -736,7 +736,7 @@ TEST(ProjectCatalogTest, CloseChildSceneKeepsMainSceneOpen)
     EXPECT_EQ(1u, _Catalog.Count());
 }
 
-TEST(ProjectTest, StartRunsMainSceneFrameHandlerOnSceneThread)
+TEST(ProjectTest, StartRunsSceneFrameHandlerOnSceneThread)
 {
     std::mutex _Mutex;
     std::condition_variable _Condition;
@@ -747,8 +747,8 @@ TEST(ProjectTest, StartRunsMainSceneFrameHandlerOnSceneThread)
     auto _Info = MakeProjectInfo();
     _Info.ProjectName = "Threaded";
     _Info.nFrameIntervalMilliseconds = 1;
-    _Info.OnMainSceneFrame = [&](
-        CProject&,
+    _Info.OnSceneFrame = [&](
+        CProjectScene&,
         const iCAX::Mail::CMailPostOffice& PostOffice_) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
@@ -769,6 +769,38 @@ TEST(ProjectTest, StartRunsMainSceneFrameHandlerOnSceneThread)
     EXPECT_TRUE(_bPostOfficeValid);
     EXPECT_NE(std::thread::id{}, _HandlerThreadID);
     EXPECT_NE(std::this_thread::get_id(), _HandlerThreadID);
+}
+
+TEST(ProjectTest, ChildSceneUsesProjectFrameHandlerWithOwnSceneContext)
+{
+    std::mutex _Mutex;
+    std::condition_variable _Condition;
+    iCAX::Data::uuid _ObservedSceneID;
+
+    auto _Info = MakeProjectInfo();
+    _Info.ProjectName = "Child Scene Handler";
+    _Info.OnSceneFrame = [&](
+        CProjectScene& Scene_,
+        const iCAX::Mail::CMailPostOffice& PostOffice_) {
+        if (!Scene_.IsTransientScene() || !PostOffice_.IsValid())
+        {
+            return;
+        }
+
+        {
+            std::lock_guard<std::mutex> _Lock(_Mutex);
+            _ObservedSceneID = Scene_.GetSceneID();
+        }
+        _Condition.notify_all();
+    };
+
+    CProject _Project(_Info);
+    auto _pChildScene = _Project.OpenChildScene(_Project.GetMainSceneID(), CProjectSceneCreateInfo{});
+    const auto _ChildSceneID = _pChildScene->GetSceneID();
+
+    _pChildScene->Start();
+    EXPECT_TRUE(WaitFor(_Condition, _Mutex, [&]() { return _ObservedSceneID == _ChildSceneID; }));
+    _pChildScene->Stop();
 }
 
 TEST(ProjectTest, TickUsesSceneRuntimeSchedulerFrameTime)
@@ -842,8 +874,8 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     auto _SlowInfo = MakeProjectInfo();
     _SlowInfo.ProjectName = "Slow";
     _SlowInfo.nFrameIntervalMilliseconds = 1;
-    _SlowInfo.OnMainSceneFrame = [&](
-        CProject&,
+    _SlowInfo.OnSceneFrame = [&](
+        CProjectScene&,
         const iCAX::Mail::CMailPostOffice&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
@@ -857,8 +889,8 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     auto _FastInfo = MakeProjectInfo();
     _FastInfo.ProjectName = "Fast";
     _FastInfo.nFrameIntervalMilliseconds = 1;
-    _FastInfo.OnMainSceneFrame = [&](
-        CProject&,
+    _FastInfo.OnSceneFrame = [&](
+        CProjectScene&,
         const iCAX::Mail::CMailPostOffice&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
@@ -898,8 +930,8 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     auto _FaultInfo = MakeProjectInfo();
     _FaultInfo.ProjectName = "Fault";
     _FaultInfo.nFrameIntervalMilliseconds = 1;
-    _FaultInfo.OnMainSceneFrame = [&](
-        CProject&,
+    _FaultInfo.OnSceneFrame = [&](
+        CProjectScene&,
         const iCAX::Mail::CMailPostOffice&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
@@ -912,8 +944,8 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     auto _HealthyInfo = MakeProjectInfo();
     _HealthyInfo.ProjectName = "Healthy";
     _HealthyInfo.nFrameIntervalMilliseconds = 1;
-    _HealthyInfo.OnMainSceneFrame = [&](
-        CProject&,
+    _HealthyInfo.OnSceneFrame = [&](
+        CProjectScene&,
         const iCAX::Mail::CMailPostOffice&) {
         ++_HealthyFrames;
         _Condition.notify_all();

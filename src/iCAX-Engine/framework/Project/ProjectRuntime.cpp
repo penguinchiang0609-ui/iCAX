@@ -73,11 +73,11 @@ iCAX::Mail::CMailPostOffice iCAX::Project::CLocalProjectRuntime::GetMainSceneFro
     return RequireProject().GetMainSceneFrontendPostOffice();
 }
 
-void iCAX::Project::CLocalProjectRuntime::SetMainSceneFrameHandler(IN MainSceneRuntimeFrameHandler Handler_)
+void iCAX::Project::CLocalProjectRuntime::SetSceneFrameHandler(IN SceneRuntimeFrameHandler Handler_)
 {
     {
         std::lock_guard<std::mutex> _Lock(m_FrameHandlerMutex);
-        m_MainSceneFrameHandler = std::move(Handler_);
+        m_SceneFrameHandler = std::move(Handler_);
     }
 
     auto _pProject = m_pProject;
@@ -86,14 +86,14 @@ void iCAX::Project::CLocalProjectRuntime::SetMainSceneFrameHandler(IN MainSceneR
         return;
     }
 
-    _pProject->SetMainSceneFrameHandler(
+    _pProject->SetSceneFrameHandler(
         [this](
-            iCAX::Project::CProject&,
+            iCAX::Project::CProjectScene& Scene_,
             const iCAX::Mail::CMailPostOffice& BackendPostOffice_) {
-            auto _Handler = GetMainSceneFrameHandler();
+            auto _Handler = GetSceneFrameHandler();
             if (_Handler)
             {
-                _Handler(*this, BackendPostOffice_);
+                _Handler(*this, Scene_, BackendPostOffice_);
             }
         });
 }
@@ -115,13 +115,13 @@ void iCAX::Project::CLocalProjectRuntime::Close()
 {
     {
         std::lock_guard<std::mutex> _Lock(m_FrameHandlerMutex);
-        m_MainSceneFrameHandler = nullptr;
+        m_SceneFrameHandler = nullptr;
     }
 
     auto _pProject = std::exchange(m_pProject, nullptr);
     if (_pProject)
     {
-        _pProject->SetMainSceneFrameHandler(nullptr);
+        _pProject->SetSceneFrameHandler(nullptr);
         _pProject->Close();
     }
 }
@@ -131,10 +131,10 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CLocalProjectRuntime::Ge
     return m_pProject;
 }
 
-iCAX::Project::MainSceneRuntimeFrameHandler iCAX::Project::CLocalProjectRuntime::GetMainSceneFrameHandler() const
+iCAX::Project::SceneRuntimeFrameHandler iCAX::Project::CLocalProjectRuntime::GetSceneFrameHandler() const
 {
     std::lock_guard<std::mutex> _Lock(m_FrameHandlerMutex);
-    return m_MainSceneFrameHandler;
+    return m_SceneFrameHandler;
 }
 
 iCAX::Project::CProject& iCAX::Project::CLocalProjectRuntime::RequireProject() const

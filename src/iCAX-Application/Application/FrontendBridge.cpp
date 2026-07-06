@@ -7,9 +7,11 @@
 #include "Mailbox/MailPostOffice.h"
 
 #include <map>
+#include <functional>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace
 {
@@ -56,9 +58,17 @@ namespace
 class iCAX::Application::CFrontendBridge::Impl final
 {
 public:
+    using PostOfficeResolver = std::function<iCAX::Mail::CMailPostOffice()>;
+
+    struct RegisteredChannel final
+    {
+        PostOfficeResolver Resolver;
+        bool bApplicationChannel = false;
+    };
+
     mutable std::mutex Mutex;
     iCAX::ApplicationHost::CApplicationHost* pEngine = nullptr;
-    std::map<iCAX::Data::uuid, iCAX::Mail::CMailPostOffice> FrontendPostOffices;
+    std::map<iCAX::Data::uuid, RegisteredChannel> FrontendChannels;
     FrontendMailHandler MailHandler;
 
 public:
@@ -72,15 +82,22 @@ public:
         return *pEngine;
     }
 
-    void RegisterPostOffice(
+    void RegisterChannel(
         IN const iCAX::Data::uuid& ChannelID_,
-        IN const iCAX::Mail::CMailPostOffice& PostOffice_)
+        IN PostOfficeResolver Resolver_,
+        IN bool bApplicationChannel_)
     {
         if (ChannelID_.is_nil())
         {
             throw std::invalid_argument("Channel id cannot be nil");
         }
-        if (!PostOffice_.IsValid())
+        if (!Resolver_)
+        {
+            throw std::invalid_argument("Frontend post office resolver is empty");
+        }
+
+        auto _PostOffice = Resolver_();
+        if (!_PostOffice.IsValid())
         {
             throw std::invalid_argument("Frontend post office is not valid");
         }
@@ -90,18 +107,49 @@ public:
         {
             throw std::logic_error("FrontendBridge is not attached to ApplicationHost");
         }
-        FrontendPostOffices[ChannelID_] = PostOffice_;
+        FrontendChannels[ChannelID_] = RegisteredChannel{ std::move(Resolver_), bApplicationChannel_ };
     }
 
-    iCAX::Mail::CMailPostOffice GetRegisteredPostOffice(IN const iCAX::Data::uuid& ChannelID_) const
+    iCAX::Mail::CMailPostOffice ResolveRegisteredPostOffice(IN const iCAX::Data::uuid& ChannelID_) const
+    {
+        RegisteredChannel _Channel;
+        {
+            std::lock_guard<std::mutex> _Lock(Mutex);
+            auto _Iter = FrontendChannels.find(ChannelID_);
+            if (_Iter == FrontendChannels.end())
+            {
+                throw std::runtime_error("Frontend post office is not registered: " + _ToString(ChannelID_));
+            }
+            _Channel = _Iter->second;
+        }
+        return _Channel.Resolver();
+    }
+
+    std::vector<std::pair<iCAX::Data::uuid, RegisteredChannel>> SnapshotChannels() const
     {
         std::lock_guard<std::mutex> _Lock(Mutex);
-        auto _Iter = FrontendPostOffices.find(ChannelID_);
-        if (_Iter == FrontendPostOffices.end())
+        std::vector<std::pair<iCAX::Data::uuid, RegisteredChannel>> _Channels;
+        _Channels.reserve(FrontendChannels.size());
+        for (const auto& _Item : FrontendChannels)
         {
-            throw std::runtime_error("Frontend post office is not registered: " + _ToString(ChannelID_));
+            _Channels.emplace_back(_Item.first, _Item.second);
         }
-        return _Iter->second;
+        return _Channels;
+    }
+
+    void RemoveChannelIfCurrent(IN const iCAX::Data::uuid& ChannelID_, IN bool bAllowApplicationChannel_)
+    {
+        std::lock_guard<std::mutex> _Lock(Mutex);
+        auto _Iter = FrontendChannels.find(ChannelID_);
+        if (_Iter == FrontendChannels.end())
+        {
+            return;
+        }
+        if (_Iter->second.bApplicationChannel && !bAllowApplicationChannel_)
+        {
+            return;
+        }
+        FrontendChannels.erase(_Iter);
     }
 };
 
@@ -121,28 +169,33 @@ void iCAX::Application::CFrontendBridge::Attach(iCAX::ApplicationHost::CApplicat
 
     std::lock_guard<std::mutex> _Lock(m_pImpl->Mutex);
     m_pImpl->pEngine = &Engine_;
-    m_pImpl->FrontendPostOffices.clear();
+    m_pImpl->FrontendChannels.clear();
 
     const auto _ApplicationChannelID = Engine_.GetApplicationChannelID();
-    auto _ApplicationPostOffice = Engine_.GetApplicationFrontendPostOffice();
     if (_ApplicationChannelID.is_nil())
     {
         m_pImpl->pEngine = nullptr;
         throw std::logic_error("Application channel id is nil");
     }
+    auto _ApplicationPostOffice = Engine_.GetApplicationFrontendPostOffice();
     if (!_ApplicationPostOffice.IsValid())
     {
         m_pImpl->pEngine = nullptr;
         throw std::logic_error("Application frontend post office is not valid");
     }
-    m_pImpl->FrontendPostOffices[_ApplicationChannelID] = _ApplicationPostOffice;
+    m_pImpl->FrontendChannels[_ApplicationChannelID] = Impl::RegisteredChannel{
+        [&Engine_]() {
+            return Engine_.GetApplicationFrontendPostOffice();
+        },
+        true
+    };
 }
 
 void iCAX::Application::CFrontendBridge::Detach()
 {
     std::lock_guard<std::mutex> _Lock(m_pImpl->Mutex);
     m_pImpl->MailHandler = nullptr;
-    m_pImpl->FrontendPostOffices.clear();
+    m_pImpl->FrontendChannels.clear();
     m_pImpl->pEngine = nullptr;
 }
 
@@ -168,7 +221,12 @@ std::string iCAX::Application::CFrontendBridge::RegisterProductChannel(const std
     }
 
     const auto _ChannelID = _pRuntime->GetProductChannelID();
-    m_pImpl->RegisterPostOffice(_ChannelID, _Engine.GetProductFrontendPostOffice(strProductID_));
+    m_pImpl->RegisterChannel(
+        _ChannelID,
+        [&_Engine, strProductID_]() {
+            return _Engine.GetProductFrontendPostOffice(strProductID_);
+        },
+        false);
     return _ToString(_ChannelID);
 }
 
@@ -179,8 +237,6 @@ std::string iCAX::Application::CFrontendBridge::RegisterSceneChannel(
     auto& _Engine = m_pImpl->RequireEngine();
     auto _ProjectID = _ParseChannelID(strProjectID_);
     auto _SceneID = _ParseChannelID(strSceneID_);
-    auto _PostOffice = _Engine.GetSceneFrontendPostOffice(_ProjectID, _SceneID);
-
     for (const auto& _pRuntime : _Engine.GetProductRuntimes())
     {
         if (!_pRuntime)
@@ -207,7 +263,12 @@ std::string iCAX::Application::CFrontendBridge::RegisterSceneChannel(
         }
 
         const auto _SceneChannelID = _pScene->GetSceneChannelID();
-        m_pImpl->RegisterPostOffice(_SceneChannelID, _PostOffice);
+        m_pImpl->RegisterChannel(
+            _SceneChannelID,
+            [&_Engine, _ProjectID, _SceneID]() {
+                return _Engine.GetSceneFrontendPostOffice(_ProjectID, _SceneID);
+            },
+            false);
         return _ToString(_SceneChannelID);
     }
 
@@ -217,7 +278,7 @@ std::string iCAX::Application::CFrontendBridge::RegisterSceneChannel(
 void iCAX::Application::CFrontendBridge::PostMail(const CFrontendMailEnvelope& Envelope_)
 {
     const auto _ChannelID = _ParseChannelID(Envelope_.ChannelID);
-    auto _PostOffice = m_pImpl->GetRegisteredPostOffice(_ChannelID);
+    auto _PostOffice = m_pImpl->ResolveRegisteredPostOffice(_ChannelID);
     auto _Mail = _ToMail(Envelope_);
 
     try
@@ -235,20 +296,28 @@ void iCAX::Application::CFrontendBridge::PostMail(const CFrontendMailEnvelope& E
 
 std::vector<iCAX::Application::CFrontendMailEnvelope> iCAX::Application::CFrontendBridge::PollMails()
 {
-    std::vector<std::pair<iCAX::Data::uuid, iCAX::Mail::CMailPostOffice>> _PostOffices;
-    {
-        std::lock_guard<std::mutex> _Lock(m_pImpl->Mutex);
-        _PostOffices.reserve(m_pImpl->FrontendPostOffices.size());
-        for (const auto& _Item : m_pImpl->FrontendPostOffices)
-        {
-            _PostOffices.emplace_back(_Item.first, _Item.second);
-        }
-    }
+    auto _Channels = m_pImpl->SnapshotChannels();
 
     std::vector<CFrontendMailEnvelope> _Result;
-    for (const auto& _Item : _PostOffices)
+    for (const auto& _Item : _Channels)
     {
-        auto _Mails = _Item.second.Receive();
+        iCAX::Mail::CMailPostOffice _PostOffice;
+        try
+        {
+            _PostOffice = _Item.second.Resolver();
+            if (!_PostOffice.IsValid())
+            {
+                m_pImpl->RemoveChannelIfCurrent(_Item.first, false);
+                continue;
+            }
+        }
+        catch (...)
+        {
+            m_pImpl->RemoveChannelIfCurrent(_Item.first, false);
+            continue;
+        }
+
+        auto _Mails = _PostOffice.Receive();
         for (auto& _Mail : _Mails)
         {
             auto _Envelope = _ToEnvelope(_Item.first, _Mail);

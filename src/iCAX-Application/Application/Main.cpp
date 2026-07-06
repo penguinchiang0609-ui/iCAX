@@ -129,6 +129,16 @@ namespace
                 break;
             }
         }
+
+        const auto _UserDataPath = std::filesystem::weakly_canonical(_Current / "UserData");
+        const auto _CachePath = std::filesystem::weakly_canonical(_UserDataPath / "Cache");
+        std::filesystem::create_directories(_UserDataPath);
+        std::filesystem::create_directories(_CachePath);
+        _Config.Properties.emplace_back("userDataPath", ToUTF8(_UserDataPath));
+        _Config.Properties.emplace_back("cachePath", ToUTF8(_CachePath));
+        _Config.Properties.emplace_back("logFile", ToUTF8(std::filesystem::absolute(_Current / "cef.log")));
+        _Config.Properties.emplace_back("disableGpu", "true");
+
         return _Config;
     }
 }

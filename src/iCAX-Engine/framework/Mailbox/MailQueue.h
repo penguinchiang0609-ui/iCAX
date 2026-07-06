@@ -21,7 +21,7 @@ namespace iCAX
         {
             size_t nMaxMailCount = 4096; //!< 队列中 pending + leased 邮件的最大数量。
             size_t nPayloadPoolBytes = 4ull * 1024ull * 1024ull; //!< Payload 预分配池大小。
-            size_t nMaxPayloadBytesPerMail = 256ull * 1024ull; //!< 单封邮件允许的最大 payload。
+            size_t nMaxPayloadBytesPerMail = 4ull * 1024ull * 1024ull; //!< 单封邮件允许的最大 payload。
         };
 
         /*

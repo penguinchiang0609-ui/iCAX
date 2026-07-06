@@ -320,13 +320,15 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_);
 
             /*
-            * @brief 分发指定主 Scene 或产品邮箱中的邮件。
+            * @brief 分发指定 Scene 或产品邮箱中的邮件。
             * @param [in] PostOffice_ 后端视角邮局。
-            * @param [in] pProjectRuntime_ 项目运行时；为空表示产品邮箱，否则分发主 Scene 邮箱。
+            * @param [in] pProjectRuntime_ 项目运行时；为空表示产品邮箱。
+            * @param [in] pSceneContext_ 当前 Scene 上下文；为空表示产品邮箱。
             */
             void DispatchSceneMails(
                 IN const iCAX::Mail::CMailPostOffice& PostOffice_,
-                IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_);
+                IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
             /*
             * @brief 启动项目 runtime 并接入项目帧回调。
             */

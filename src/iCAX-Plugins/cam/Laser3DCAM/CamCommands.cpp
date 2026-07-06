@@ -31,6 +31,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -46,6 +47,7 @@ namespace
     constexpr const char* kTopologyKindEdge = "edge";
     constexpr const char* kProgramChildKindBlock = "block";
     constexpr const char* kProgramChildKindPath = "path";
+    constexpr size_t kMaxInlineTopologyPickItems = 10000;
 
     std::vector<uint8_t> _EncodePayload(IN const Variant& Payload_)
     {
@@ -1262,6 +1264,11 @@ namespace
         _Status["faceCount"] = pTopology_ ? static_cast<unsigned long long>(pTopology_->Faces.size()) : 0ull;
         _Status["loopCount"] = pTopology_ ? static_cast<unsigned long long>(pTopology_->Loops.size()) : 0ull;
         _Status["edgeCount"] = pTopology_ ? static_cast<unsigned long long>(pTopology_->Edges.size()) : 0ull;
+        _Status["inlinePickMapLimit"] = static_cast<unsigned long long>(kMaxInlineTopologyPickItems);
+        _Status["inlinePickMapTruncated"] = pTopology_
+            && (pTopology_->Faces.size() > kMaxInlineTopologyPickItems
+                || pTopology_->Loops.size() > kMaxInlineTopologyPickItems
+                || pTopology_->Edges.size() > kMaxInlineTopologyPickItems);
         _Status["metadata"] = pTopology_ ? pTopology_->Metadata : ObjectMap{};
 
         if (pTopology_)
@@ -1281,6 +1288,40 @@ namespace
         return _Status;
     }
 
+    ObjectMap _MakeTopologyPickItemPayload(IN const Variant& Item_)
+    {
+        if (!Item_.Is<ObjectMap>())
+        {
+            return ObjectMap{};
+        }
+
+        const auto _Source = Item_.To<ObjectMap>();
+        ObjectMap _Item;
+        _Item["id"] = _GetObjectUInt64(_Source, "id");
+        _Item["kind"] = _GetObjectString(_Source, "kind");
+        _Item["label"] = _GetObjectString(_Source, "label");
+        _Item["role"] = _GetObjectString(_Source, "role");
+        _Item["triangleStart"] = _GetObjectUInt64(_Source, "triangleStart");
+        _Item["triangleCount"] = _GetObjectUInt64(_Source, "triangleCount");
+        return _Item;
+    }
+
+    VariantArray _MakeTopologyPickArray(IN const VariantArray& Items_)
+    {
+        VariantArray _Result;
+        if (Items_.size() > kMaxInlineTopologyPickItems)
+        {
+            return _Result;
+        }
+
+        _Result.reserve(Items_.size());
+        for (const auto& _Item : Items_)
+        {
+            _Result.emplace_back(_MakeTopologyPickItemPayload(_Item));
+        }
+        return _Result;
+    }
+
     Variant _BuildScenePayload(IN iCAX::Project::ISceneContext& Scene_)
     {
         auto& _Repository = Scene_.Database();
@@ -1296,9 +1337,9 @@ namespace
         _Scene["workpieces"] = _MakeWorkpieceArray(_Repository);
         _Scene["model"] = _Workpiece;
         _Scene["topology"] = _MakeTopologyStatusPayload(_pTopology);
-        _Scene["faces"] = _pTopology ? _pTopology->Faces : VariantArray{};
-        _Scene["loops"] = _pTopology ? _pTopology->Loops : VariantArray{};
-        _Scene["edges"] = _pTopology ? _pTopology->Edges : VariantArray{};
+        _Scene["faces"] = _pTopology ? _MakeTopologyPickArray(_pTopology->Faces) : VariantArray{};
+        _Scene["loops"] = _pTopology ? _MakeTopologyPickArray(_pTopology->Loops) : VariantArray{};
+        _Scene["edges"] = _pTopology ? _MakeTopologyPickArray(_pTopology->Edges) : VariantArray{};
         _Scene["selection"] = _MakeSelectionPayload(_pSelection);
         _Scene["cuttingLayers"] = _MakeCuttingLayerArray(_Repository);
         _Scene["visibleLayers"] = _MakeVisibleLayerArray(_Repository);
@@ -1948,7 +1989,9 @@ namespace
         IN uint64_t nID_,
         IN const std::string& strLabel_,
         IN const std::vector<iCAX::GeometryData::Point3>& Points_,
-        IN const SProjectionBounds& Bounds_)
+        IN const SProjectionBounds& Bounds_,
+        IN uint64_t nTriangleStart_,
+        IN uint64_t nTriangleCount_)
     {
         ObjectMap _Face;
         _Face["id"] = static_cast<unsigned long long>(nID_);
@@ -1956,6 +1999,11 @@ namespace
         _Face["label"] = strLabel_;
         _Face["role"] = std::string("cad-face");
         _Face["points"] = _MakeProjectedPointArray(Points_, Bounds_);
+        if (nTriangleCount_ > 0)
+        {
+            _Face["triangleStart"] = static_cast<unsigned long long>(nTriangleStart_);
+            _Face["triangleCount"] = static_cast<unsigned long long>(nTriangleCount_);
+        }
         return _Face;
     }
 
@@ -1963,7 +2011,8 @@ namespace
         IN uint64_t nID_,
         IN const std::string& strLabel_,
         IN const std::vector<iCAX::GeometryData::Point3>& Points_,
-        IN const SProjectionBounds& Bounds_)
+        IN const SProjectionBounds& Bounds_,
+        IN const std::string& strRole_)
     {
         SProjectionBounds _LoopBounds;
         for (const auto& _Point : Points_)
@@ -2001,7 +2050,7 @@ namespace
         _Loop["id"] = static_cast<unsigned long long>(nID_);
         _Loop["kind"] = std::string(kTopologyKindLoop);
         _Loop["label"] = strLabel_;
-        _Loop["role"] = std::string("cad-loop");
+        _Loop["role"] = strRole_;
         _Loop["center"] = _MakeProjectedPoint(_CenterX, _CenterY);
         _Loop["radius"] = std::max(6.0, std::abs(_RadiusX - _CenterX));
         return _Loop;
@@ -2047,6 +2096,50 @@ namespace
         };
     }
 
+    std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> _BuildTriangulationTriangleRanges(
+        IN const iCAX::GeometryData::BRepModel& Model_)
+    {
+        std::unordered_map<uint64_t, std::pair<uint64_t, uint64_t>> _Ranges;
+        uint64_t _TriangleStart = 0;
+        for (const auto& _TriangulationRecord : Model_.Triangulations3)
+        {
+            const auto& _Geometry = _TriangulationRecord.Geometry;
+            if (_Geometry.Vertices.empty() || _Geometry.Triangles.empty())
+            {
+                continue;
+            }
+
+            const auto _TriangleCount = static_cast<uint64_t>(_Geometry.Triangles.size());
+            _Ranges[_TriangulationRecord.Id] = { _TriangleStart, _TriangleCount };
+            _TriangleStart += _TriangleCount;
+        }
+        return _Ranges;
+    }
+
+    std::unordered_map<uint64_t, std::string> _BuildWireRoles(IN const iCAX::GeometryData::BRepModel& Model_)
+    {
+        std::unordered_map<uint64_t, std::string> _Roles;
+        for (const auto& _Face : Model_.Faces)
+        {
+            for (size_t _Index = 0; _Index < _Face.WireIds.size(); ++_Index)
+            {
+                const auto _WireID = _Face.WireIds[_Index];
+                if (_WireID == 0)
+                {
+                    continue;
+                }
+
+                const auto _Role = _Index == 0 ? std::string("cut") : std::string("hole");
+                auto _Iter = _Roles.find(_WireID);
+                if (_Iter == _Roles.end() || _Role == "hole")
+                {
+                    _Roles[_WireID] = _Role;
+                }
+            }
+        }
+        return _Roles;
+    }
+
     std::shared_ptr<iCAX::CAM::CCAMTopologyResource> _MakeTopologyResourceFromBRep(
         IN const iCAX::GeometryData::BRepModel& Model_,
         IN const std::string& strDisplayName_,
@@ -2062,17 +2155,24 @@ namespace
 
         auto _pTopology = std::make_shared<iCAX::CAM::CCAMTopologyResource>();
         _pTopology->nVersion = nTopologyVersion_;
+        const auto _TriangleRanges = _BuildTriangulationTriangleRanges(Model_);
+        const auto _WireRoles = _BuildWireRoles(Model_);
 
         for (const auto& _Face : Model_.Faces)
         {
             auto _Polygon = _MakeFacePreviewPolygon(Model_, _Face);
             if (!_Polygon.empty())
             {
+                const auto _RangeIter = _TriangleRanges.find(_Face.Triangulation3Id);
+                const auto _TriangleStart = _RangeIter == _TriangleRanges.end() ? 0ull : _RangeIter->second.first;
+                const auto _TriangleCount = _RangeIter == _TriangleRanges.end() ? 0ull : _RangeIter->second.second;
                 _pTopology->Faces.emplace_back(_MakeProjectedFace(
                     _Face.Id,
                     strDisplayName_ + " face " + std::to_string(_Face.Id),
                     _Polygon,
-                    _Bounds));
+                    _Bounds,
+                    _TriangleStart,
+                    _TriangleCount));
             }
         }
 
@@ -2081,11 +2181,13 @@ namespace
             auto _LoopPoints = _CollectWirePoints(Model_, _Wire);
             if (!_LoopPoints.empty())
             {
+                const auto _RoleIter = _WireRoles.find(_Wire.Id);
                 _pTopology->Loops.emplace_back(_MakeProjectedLoop(
                     _Wire.Id,
                     "loop " + std::to_string(_Wire.Id),
                     _LoopPoints,
-                    _Bounds));
+                    _Bounds,
+                    _RoleIter == _WireRoles.end() ? std::string("cut") : _RoleIter->second));
             }
         }
 

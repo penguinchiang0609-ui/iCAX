@@ -72,6 +72,7 @@ function renderProject(context, view) {
     <div class="cam-workspace">
       <div class="cam-toolbar">
         <input class="cam-path-input" type="text" data-cam-model-path value="${escapeAttr(view.sourcePath || model.sourcePath || "")}" placeholder="STEP/STP/IGS/IGES 文件路径" />
+        <button class="tool-button" type="button" data-cam-action="choose-model">选择</button>
         <button class="tool-button" type="button" data-cam-action="import-model">导入模型</button>
         <button class="tool-button" type="button" data-cam-action="recognize-loops" ${model.isLoaded && topology.hasTopology ? "" : "disabled"}>识别孔 loop</button>
         <button class="primary-button" type="button" data-cam-action="add-selection" ${selection.id ? "" : "disabled"}>加入刀路列表</button>
@@ -219,6 +220,7 @@ function mountRenderViewport(context, view) {
   if (!view.viewport) {
     view.viewport = createThreeViewport({
       backgroundColor: 0x182128,
+      onPick: (userData, hit) => handleViewportPick(context, view, userData, hit),
     });
   }
   if (view.viewportSceneProxy !== context.sceneProxy) {
@@ -351,6 +353,11 @@ function renderToolpathList(toolpaths) {
 }
 
 function runCamAction(context, view, action) {
+  if (action === "choose-model") {
+    chooseModelFile(context, view);
+    return;
+  }
+
   if (action === "import-model") {
     const input = context.mount?.querySelector?.("[data-cam-model-path]");
     const sourcePath = String(input?.value ?? view.sourcePath ?? "").trim();
@@ -360,7 +367,7 @@ function runCamAction(context, view, action) {
       renderProject(context, view);
       return;
     }
-    runProjectCommand(context, view, "Cam.ImportModel", { sourcePath });
+    runProjectCommand(context, view, "Cam.ImportModel", { sourcePath }, { timeoutMs: 120000 });
   } else if (action === "recognize-loops") {
     runProjectCommand(context, view, "Cam.RecognizeLoops", {});
   } else if (action === "add-selection") {
@@ -370,11 +377,79 @@ function runCamAction(context, view, action) {
   }
 }
 
+async function chooseModelFile(context, view) {
+  const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge ?? null;
+  if (typeof bridge?.openFileDialog !== "function") {
+    view.error = "当前宿主没有提供文件选择能力";
+    renderProject(context, view);
+    return;
+  }
+
+  try {
+    const path = await bridge.openFileDialog({
+      title: "选择工件模型",
+      filters: [
+        { name: "CAD Model", extensions: ["step", "stp", "igs", "iges"] },
+      ],
+    });
+    if (!path) {
+      return;
+    }
+    view.sourcePath = path;
+    const input = context.mount?.querySelector?.("[data-cam-model-path]");
+    if (input) {
+      input.value = path;
+    }
+    view.error = "";
+  } catch (error) {
+    view.error = error?.message ?? String(error);
+  }
+  renderProject(context, view);
+}
+
+function handleViewportPick(context, view, userData, hit) {
+  if (!userData || !hit) {
+    view.error = "未命中可选择对象";
+    renderProject(context, view);
+    return;
+  }
+
+  const faceIndex = Number(hit.faceIndex);
+  if (Number.isInteger(faceIndex) && faceIndex >= 0) {
+    const face = findFaceByTriangleIndex(view.scene, faceIndex);
+    if (face) {
+      runProjectCommand(context, view, "Cam.PickTopology", {
+        kind: "face",
+        id: Number(face.id),
+        label: face.label ?? `face ${face.id}`,
+      });
+      return;
+    }
+  }
+
+  view.error = "当前渲染数据缺少 edge/loop 拾取映射，已命中工件但无法定位拓扑对象";
+  renderProject(context, view);
+}
+
+function findFaceByTriangleIndex(scene, faceIndex) {
+  for (const face of scene?.faces ?? []) {
+    const start = Number(face.triangleStart);
+    const count = Number(face.triangleCount);
+    if (!Number.isInteger(start) || !Number.isInteger(count) || count <= 0) {
+      continue;
+    }
+    if (faceIndex >= start && faceIndex < start + count) {
+      return face;
+    }
+  }
+  return null;
+}
+
 function refreshScene(context, view) {
   runProjectCommand(context, view, "Cam.GetScene", {});
 }
 
-async function runProjectCommand(context, view, command, payload) {
+async function runProjectCommand(context, view, command, payload, options = {}) {
   if (!context.sceneProxy) {
     return;
   }
@@ -383,7 +458,7 @@ async function runProjectCommand(context, view, command, payload) {
   view.error = "";
   renderProject(context, view);
   try {
-    view.scene = await context.sceneProxy.execute(command, payload);
+    view.scene = await context.sceneProxy.execute(command, payload, options);
   } catch (error) {
     view.error = error?.message ?? String(error);
   } finally {

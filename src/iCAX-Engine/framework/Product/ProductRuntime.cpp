@@ -545,7 +545,10 @@ namespace
         }
 
         const auto _LoadPath = _RequestedPath.empty() ? strPath_ : _RequestedPath;
-        HMODULE _Module = LoadLibraryW(_UTF8ToWide(_LoadPath).c_str());
+        HMODULE _Module = LoadLibraryExW(
+            _UTF8ToWide(_LoadPath).c_str(),
+            nullptr,
+            LOAD_WITH_ALTERED_SEARCH_PATH);
         if (!_Module)
         {
             DWORD code = GetLastError();
@@ -920,7 +923,7 @@ void iCAX::Product::CProductRuntime::DispatchProductMails()
         return;
     }
 
-    DispatchSceneMails(GetBackendPostOffice(), nullptr);
+    DispatchSceneMails(GetBackendPostOffice(), nullptr, nullptr);
 }
 
 std::vector<std::shared_ptr<iCAX::Project::CProjectCatalog>> iCAX::Product::CProductRuntime::GetProjectCatalogs() const
@@ -1338,7 +1341,8 @@ std::shared_ptr<iCAX::Project::IProjectRuntime> iCAX::Product::CProductRuntime::
 
 void iCAX::Product::CProductRuntime::DispatchSceneMails(
     IN const iCAX::Mail::CMailPostOffice& PostOffice_,
-    IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_)
+    IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
 {
     if (!PostOffice_.IsValid() || !m_pCommandDispatcher)
     {
@@ -1346,12 +1350,10 @@ void iCAX::Product::CProductRuntime::DispatchSceneMails(
     }
 
     iCAX::Project::IProjectContext* _pProjectContext = nullptr;
-    iCAX::Project::ISceneContext* _pSceneContext = nullptr;
     auto _pLocalProject = pProjectRuntime_ ? pProjectRuntime_->GetLocalProject() : nullptr;
     if (_pLocalProject)
     {
         _pProjectContext = static_cast<iCAX::Project::IProjectContext*>(_pLocalProject.get());
-        _pSceneContext = &_pLocalProject->GetMainScene();
     }
 
     m_pMailCommandHandler->DispatchAvailableMails(
@@ -1360,7 +1362,7 @@ void iCAX::Product::CProductRuntime::DispatchSceneMails(
         *m_pApplicationContext,
         static_cast<iCAX::Product::IProductContext*>(this),
         _pProjectContext,
-        _pSceneContext,
+        pSceneContext_,
         [this]() { return AllocateBackendMailID(); });
 }
 
@@ -1373,9 +1375,10 @@ void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX:
 
     std::weak_ptr<CProductRuntime> _WeakRuntime = shared_from_this();
     std::weak_ptr<iCAX::Project::IProjectRuntime> _WeakProjectRuntime = pProjectRuntime_;
-    pProjectRuntime_->SetMainSceneFrameHandler(
+    pProjectRuntime_->SetSceneFrameHandler(
         [_WeakRuntime, _WeakProjectRuntime](
             iCAX::Project::IProjectRuntime&,
+            iCAX::Project::ISceneContext& SceneContext_,
             const iCAX::Mail::CMailPostOffice& BackendPostOffice_) {
             auto _pRuntime = _WeakRuntime.lock();
             auto _pProjectRuntime = _WeakProjectRuntime.lock();
@@ -1383,8 +1386,8 @@ void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX:
             {
                 return;
             }
-            // 主 Scene 线程每帧进入这里，产品 runtime 只做邮件分发，不直接驱动 Scene 数据。
-            _pRuntime->DispatchSceneMails(BackendPostOffice_, _pProjectRuntime);
+            // Scene 线程每帧进入这里，产品 runtime 只做邮件分发，不直接驱动 Scene 数据。
+            _pRuntime->DispatchSceneMails(BackendPostOffice_, _pProjectRuntime, &SceneContext_);
         });
     pProjectRuntime_->Start();
 }

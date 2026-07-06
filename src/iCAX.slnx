@@ -201,6 +201,11 @@
     <Project Path="tests/icax-engine/framework/Services/ServicesTest/ServicesTest.vcxproj" />
   </Folder>
   <Folder Name="/tests/icax-plugins/" />
+  <Folder Name="/tests/icax-plugins/cam/" />
+  <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/" />
+  <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/">
+    <Project Path="tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/Laser3DCAMTest.vcxproj" />
+  </Folder>
   <Folder Name="/tests/icax-plugins/input/" />
   <Folder Name="/tests/icax-plugins/input/InputPDO/" />
   <Folder Name="/tests/icax-plugins/input/InputPDO/InputPDOTest/">

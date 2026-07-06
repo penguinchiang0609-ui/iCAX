@@ -37,6 +37,8 @@ Cam.ImportModel
 
 三角化在后端完成，前端只消费 `render.mesh`、`render.instance_list`、`render.transform` 和 `render.camera` 等 RenderPDO 数据。一个 Workpiece 对应一个 render geometry、一个 render object 和同 ID 的 transform；连续导入多个工件时，RenderService 保留已有 geometry，并重发当前 Workpiece 实例列表与 Transform。相机由后端发布，camera ID 与 transform ID 相同，前端不自行控制相机。
 
+CAM 拓扑资源中的 face 会记录 `triangleStart/triangleCount`，该范围与导入时写入 RenderMesh 的三角面顺序一致。H5 Three 视口拾取到 `faceIndex` 后，可以映射回 `Cam.PickTopology(kind="face")`。edge/loop 精确拾取不复用 RenderPDO mesh，后续由拓扑拾取服务或 collider 数据继续补齐。
+
 目录结构：
 
 - `ToolpathComponents.h`：toolpath root、workpiece、selection、program node、block、path 组件。
@@ -130,3 +132,9 @@ Workpiece.BRepResourceID + FeatureDefinition[]
 ```
 
 `RecognizedFeature` 是参数化特征，例如孔可以表达为 path、depth、axis、radius、bevelType、bevelAngle 等。它不是 Entity，也不是 Resource 对 Data 的反向引用。
+
+当前基础算法状态：
+
+- 导入生成 CAM topology 时，会把 BRep face 的第一个 wire 标为 `cut`，其余 wire 标为 `hole`；`Cam.RecognizeLoops` 会基于这些角色生成 Path。
+- `FeatureRecognitionService` 已提供 BRep wire 拓扑启发式识别：按 `Hole/BevelHole/OuterLoop/Loop` 等定义筛选闭合 wire，输出参数化特征、来源 face/edge/wire 引用和 `polyline3` 预览曲线。
+- `ToolpathOrderService` 已提供基础 `NearestNeighbor` 排序：只重排同一 Block 内连续、且能读取几何起止点的 Path；Block 节点和无几何信息的 Path 保持原位置。`Original/Manual/Preserve` 策略保持当前顺序。

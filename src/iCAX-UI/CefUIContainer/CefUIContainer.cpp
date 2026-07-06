@@ -20,6 +20,8 @@
 #include <boost/json.hpp>
 #include <boost/json/src.hpp>
 
+#include <commdlg.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -27,14 +29,18 @@
 #include <condition_variable>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#pragma comment(lib, "Comdlg32.lib")
 
 namespace
 {
@@ -196,6 +202,118 @@ namespace
         return json::value(strValue_);
     }
 
+    std::wstring _MakeDialogFilterPattern(IN const json::array& Extensions_)
+    {
+        std::wstring _Pattern;
+        for (const auto& _ExtensionValue : Extensions_)
+        {
+            auto _Extension = _AsString(_ExtensionValue, "extension");
+            if (_Extension.empty())
+            {
+                continue;
+            }
+            if (!_Pattern.empty())
+            {
+                _Pattern += L';';
+            }
+            if (_Extension == "*")
+            {
+                _Pattern += L"*.*";
+                continue;
+            }
+            if (_Extension.front() == '.')
+            {
+                _Extension.erase(_Extension.begin());
+            }
+            _Pattern += L"*.";
+            _Pattern += _UTF8ToWide(_Extension);
+        }
+        return _Pattern.empty() ? L"*.*" : _Pattern;
+    }
+
+    std::wstring _BuildDialogFilterSpec(IN const json::object& Payload_)
+    {
+        std::wstring _Filter;
+        const auto _FiltersIter = Payload_.find("filters");
+        if (_FiltersIter != Payload_.end() && _FiltersIter->value().is_array())
+        {
+            for (const auto& _FilterValue : _FiltersIter->value().as_array())
+            {
+                if (!_FilterValue.is_object())
+                {
+                    continue;
+                }
+
+                const auto& _FilterObject = _FilterValue.as_object();
+                const auto _NameIter = _FilterObject.find("name");
+                const auto _ExtIter = _FilterObject.find("extensions");
+                if (_ExtIter == _FilterObject.end() || !_ExtIter->value().is_array())
+                {
+                    continue;
+                }
+
+                const auto _Pattern = _MakeDialogFilterPattern(_ExtIter->value().as_array());
+                const auto _Name = _NameIter != _FilterObject.end() && _NameIter->value().is_string()
+                    ? _UTF8ToWide(_AsString(_NameIter->value(), "name"))
+                    : std::wstring(L"Files");
+                _Filter += _Name + L" (" + _Pattern + L")";
+                _Filter.push_back(L'\0');
+                _Filter += _Pattern;
+                _Filter.push_back(L'\0');
+            }
+        }
+
+        _Filter += L"All Files (*.*)";
+        _Filter.push_back(L'\0');
+        _Filter += L"*.*";
+        _Filter.push_back(L'\0');
+        _Filter.push_back(L'\0');
+        return _Filter;
+    }
+
+    std::optional<std::string> _OpenFileDialog(
+        IN CefRefPtr<CefBrowser> Browser_,
+        IN const json::object& Payload_)
+    {
+        std::vector<wchar_t> _FileBuffer(32768, L'\0');
+        const auto _Filter = _BuildDialogFilterSpec(Payload_);
+
+        std::wstring _Title;
+        const auto _TitleIter = Payload_.find("title");
+        if (_TitleIter != Payload_.end() && _TitleIter->value().is_string())
+        {
+            _Title = _UTF8ToWide(_AsString(_TitleIter->value(), "title"));
+        }
+
+        HWND _Owner = nullptr;
+        if (Browser_ && Browser_->GetHost())
+        {
+            _Owner = Browser_->GetHost()->GetWindowHandle();
+        }
+
+        OPENFILENAMEW _OpenFileName{};
+        _OpenFileName.lStructSize = sizeof(_OpenFileName);
+        _OpenFileName.hwndOwner = _Owner;
+        _OpenFileName.lpstrFilter = _Filter.c_str();
+        _OpenFileName.lpstrFile = _FileBuffer.data();
+        _OpenFileName.nMaxFile = static_cast<DWORD>(_FileBuffer.size());
+        _OpenFileName.nFilterIndex = 1;
+        _OpenFileName.lpstrTitle = _Title.empty() ? nullptr : _Title.c_str();
+        _OpenFileName.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+        if (::GetOpenFileNameW(&_OpenFileName))
+        {
+            return _ToUtf8(std::wstring(_FileBuffer.data()));
+        }
+
+        const auto _Error = ::CommDlgExtendedError();
+        if (_Error != 0)
+        {
+            throw std::runtime_error("Windows open file dialog failed: " + std::to_string(_Error));
+        }
+        return std::nullopt;
+    }
+
     json::object _ToJsonEnvelope(IN const iCAX::Frontend::CFrontendMailEnvelope& Envelope_)
     {
         json::object _Object;
@@ -266,6 +384,10 @@ namespace
 
     postMail(mail) {
       return queryNative("postMail", { mail }).then(() => undefined);
+    },
+
+    openFileDialog(options) {
+      return queryNative("openFileDialog", options || {});
     },
 
     subscribeMail(channelId, handler) {
@@ -783,7 +905,7 @@ namespace
         }
 
         bool OnQuery(
-            CefRefPtr<CefBrowser>,
+            CefRefPtr<CefBrowser> Browser_,
             CefRefPtr<CefFrame>,
             int64_t,
             const CefString& Request_,
@@ -831,6 +953,20 @@ namespace
                     return true;
                 }
 
+                if (_Method == "openFileDialog")
+                {
+                    const auto _Path = _OpenFileDialog(Browser_, _Payload);
+                    if (_Path.has_value())
+                    {
+                        Callback_->Success(json::serialize(_ToJsonValue(*_Path)));
+                    }
+                    else
+                    {
+                        Callback_->Success("null");
+                    }
+                    return true;
+                }
+
                 throw std::invalid_argument("Unsupported CEF bridge method: " + _Method);
             }
             catch (const std::exception& _Error)
@@ -860,6 +996,22 @@ namespace
         IMPLEMENT_REFCOUNTING(CDispatchMailTask);
     };
 
+    class CCloseBrowserTask final : public CefTask
+    {
+    public:
+        explicit CCloseBrowserTask(CefRefPtr<CInternalCefClient> pClient_)
+            : m_pClient(std::move(pClient_))
+        {
+        }
+
+        void Execute() override;
+
+    private:
+        CefRefPtr<CInternalCefClient> m_pClient;
+
+        IMPLEMENT_REFCOUNTING(CCloseBrowserTask);
+    };
+
     class CInternalCefClient final :
         public CefClient,
         public CefDisplayHandler,
@@ -873,10 +1025,7 @@ namespace
             IN std::function<void()> OnBrowserClosed_)
             : m_OnBrowserClosed(std::move(OnBrowserClosed_))
         {
-            CefMessageRouterConfig _Config;
-            m_pMessageRouter = CefMessageRouterBrowserSide::Create(_Config);
             m_pBridgeQueryHandler = std::make_unique<CInternalBridgeQueryHandler>(pBridge_);
-            m_pMessageRouter->AddHandler(m_pBridgeQueryHandler.get(), false);
         }
 
         CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override
@@ -902,6 +1051,7 @@ namespace
         void OnAfterCreated(CefRefPtr<CefBrowser> Browser_) override
         {
             CEF_REQUIRE_UI_THREAD();
+            EnsureMessageRouterOnUI();
             m_pBrowser = Browser_;
         }
 
@@ -921,6 +1071,7 @@ namespace
         void OnBeforeClose(CefRefPtr<CefBrowser> Browser_) override
         {
             CEF_REQUIRE_UI_THREAD();
+            EnsureMessageRouterOnUI();
             if (m_pMessageRouter)
             {
                 m_pMessageRouter->OnBeforeClose(Browser_);
@@ -940,6 +1091,7 @@ namespace
             bool) override
         {
             CEF_REQUIRE_UI_THREAD();
+            EnsureMessageRouterOnUI();
             if (m_pMessageRouter)
             {
                 m_pMessageRouter->OnBeforeBrowse(Browser_, Frame_);
@@ -954,6 +1106,7 @@ namespace
             const CefString&) override
         {
             CEF_REQUIRE_UI_THREAD();
+            EnsureMessageRouterOnUI();
             if (m_pMessageRouter)
             {
                 m_pMessageRouter->OnRenderProcessTerminated(Browser_);
@@ -976,13 +1129,25 @@ namespace
             CefRefPtr<CefProcessMessage> Message_) override
         {
             CEF_REQUIRE_UI_THREAD();
+            EnsureMessageRouterOnUI();
             return m_pMessageRouter
                 && m_pMessageRouter->OnProcessMessageReceived(Browser_, Frame_, SourceProcess_, Message_);
         }
 
         void CloseBrowser()
         {
-            if (m_pBrowser)
+            auto _TaskRunner = CefTaskRunner::GetForThread(TID_UI);
+            if (!_TaskRunner)
+            {
+                return;
+            }
+            _TaskRunner->PostTask(new CCloseBrowserTask(this));
+        }
+
+        void CloseBrowserOnUI()
+        {
+            CEF_REQUIRE_UI_THREAD();
+            if (m_pBrowser && m_pBrowser->GetHost())
             {
                 m_pBrowser->GetHost()->CloseBrowser(false);
             }
@@ -1013,6 +1178,20 @@ namespace
         }
 
     private:
+        void EnsureMessageRouterOnUI()
+        {
+            CEF_REQUIRE_UI_THREAD();
+            if (m_pMessageRouter)
+            {
+                return;
+            }
+
+            CefMessageRouterConfig _Config;
+            m_pMessageRouter = CefMessageRouterBrowserSide::Create(_Config);
+            m_pMessageRouter->AddHandler(m_pBridgeQueryHandler.get(), false);
+        }
+
+    private:
         CefRefPtr<CefBrowser> m_pBrowser;
         CefRefPtr<CefMessageRouterBrowserSide> m_pMessageRouter;
         std::unique_ptr<CInternalBridgeQueryHandler> m_pBridgeQueryHandler;
@@ -1032,6 +1211,14 @@ namespace
         if (m_pClient)
         {
             m_pClient->DispatchMailOnUI(m_strEnvelopeJson);
+        }
+    }
+
+    void CCloseBrowserTask::Execute()
+    {
+        if (m_pClient)
+        {
+            m_pClient->CloseBrowserOnUI();
         }
     }
 
@@ -1145,7 +1332,18 @@ public:
             const auto _Interval = std::chrono::milliseconds(std::max(1, nIntervalMS_));
             while (!bStopPolling.load())
             {
-                PollMails();
+                try
+                {
+                    PollMails();
+                }
+                catch (const std::exception& Error_)
+                {
+                    throw;
+                }
+                catch (...)
+                {
+                    throw;
+                }
                 std::this_thread::sleep_for(_Interval);
             }
         });

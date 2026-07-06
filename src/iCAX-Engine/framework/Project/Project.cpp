@@ -116,7 +116,7 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
     , m_pMailChannelRegistry(RequireMailChannelRegistry(CreateInfo_))
-    , m_MainSceneFrameHandler(CreateInfo_.OnMainSceneFrame)
+    , m_SceneFrameHandler(CreateInfo_.OnSceneFrame)
 {
     if (m_ProjectName.empty())
     {
@@ -351,6 +351,20 @@ std::shared_ptr<iCAX::Project::CProjectScene> iCAX::Project::CProject::OpenChild
     CreateInfo_.pBehaviourRegistry = CreateInfo_.pBehaviourRegistry ? CreateInfo_.pBehaviourRegistry : m_pBehaviourRegistry;
     CreateInfo_.pResourceLoaderRegistry = CreateInfo_.pResourceLoaderRegistry ? CreateInfo_.pResourceLoaderRegistry : m_pResourceLoaderRegistry;
     CreateInfo_.pMailChannelRegistry = CreateInfo_.pMailChannelRegistry ? CreateInfo_.pMailChannelRegistry : m_pMailChannelRegistry;
+    if (!CreateInfo_.FrameHandler)
+    {
+        CreateInfo_.FrameHandler = [this](IN CProjectScene& Scene_, IN const iCAX::Mail::CMailPostOffice& PostOffice_) {
+            SceneFrameHandler _Handler;
+            {
+                std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+                _Handler = m_SceneFrameHandler;
+            }
+            if (_Handler)
+            {
+                _Handler(Scene_, PostOffice_);
+            }
+        };
+    }
 
     auto _pScene = std::make_shared<CProjectScene>(*this, CreateInfo_);
     if (!m_Scenes.emplace(_pScene->GetSceneID(), _pScene).second)
@@ -411,10 +425,10 @@ std::optional<iCAX::Project::CProjectFault> iCAX::Project::CProject::GetLastFaul
     return _Fault ? std::make_optional(ConvertSceneFault(*_Fault)) : std::nullopt;
 }
 
-void iCAX::Project::CProject::SetMainSceneFrameHandler(IN MainSceneFrameHandler Handler_)
+void iCAX::Project::CProject::SetSceneFrameHandler(IN SceneFrameHandler Handler_)
 {
     std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
-    m_MainSceneFrameHandler = std::move(Handler_);
+    m_SceneFrameHandler = std::move(Handler_);
 }
 
 iCAX::Database::IRepository& iCAX::Project::CProject::MainSceneDatabase()
@@ -577,15 +591,15 @@ iCAX::Project::CProjectSceneCreateInfo iCAX::Project::CProject::MakeMainSceneCre
     _SceneInfo.bEnablePDOHub = CreateInfo_.bEnablePDOHub;
     _SceneInfo.PDOHubCreateInfo = CreateInfo_.PDOHubCreateInfo;
     _SceneInfo.nFrameIntervalMilliseconds = CreateInfo_.nFrameIntervalMilliseconds;
-    _SceneInfo.FrameHandler = [this](IN CProjectScene&, IN const iCAX::Mail::CMailPostOffice& PostOffice_) {
-        MainSceneFrameHandler _Handler;
+    _SceneInfo.FrameHandler = [this](IN CProjectScene& Scene_, IN const iCAX::Mail::CMailPostOffice& PostOffice_) {
+        SceneFrameHandler _Handler;
         {
             std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
-            _Handler = m_MainSceneFrameHandler;
+            _Handler = m_SceneFrameHandler;
         }
         if (_Handler)
         {
-            _Handler(*const_cast<CProject*>(this), PostOffice_);
+            _Handler(Scene_, PostOffice_);
         }
     };
     return _SceneInfo;

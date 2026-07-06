@@ -87,19 +87,50 @@ size_t iCAX::MailHandler::CMailCommandHandler::DispatchAvailableMails(
     {
         CMailPayloadScope _RequestPayloadScope(_Mail);
 
-        auto _Request = ToCommandRequest(_Mail);
-        auto _Response = Dispatcher_.Dispatch(
-            _Request,
-            ApplicationContext_,
-            pProductContext_,
-            pProjectContext_,
-            pSceneContext_);
+        iCAX::Command::CCommandResponse _Response;
+        try
+        {
+            auto _Request = ToCommandRequest(_Mail);
+            _Response = Dispatcher_.Dispatch(
+                _Request,
+                ApplicationContext_,
+                pProductContext_,
+                pProjectContext_,
+                pSceneContext_);
+        }
+        catch (const std::exception& Error_)
+        {
+            _Response.Route = iCAX::Command::MakeCommandRoute(_Mail.Header.nTypeCode);
+            _Response.nStatus = iCAX::Command::ECommandStatusCode::InvalidRequest;
+            _Response.strError = Error_.what();
+        }
+        catch (...)
+        {
+            _Response.Route = iCAX::Command::MakeCommandRoute(_Mail.Header.nTypeCode);
+            _Response.nStatus = iCAX::Command::ECommandStatusCode::InvalidRequest;
+            _Response.strError = "Command handler caught a non-standard exception";
+        }
 
-        SendCommandResponse(
-            PostOffice_,
-            _Mail,
-            _Response,
-            AllocateResponseMailID_());
+        try
+        {
+            SendCommandResponse(
+                PostOffice_,
+                _Mail,
+                _Response,
+                AllocateResponseMailID_());
+        }
+        catch (const std::exception& Error_)
+        {
+            iCAX::Command::CCommandResponse _FailureResponse;
+            _FailureResponse.Route = iCAX::Command::MakeCommandRoute(_Mail.Header.nTypeCode);
+            _FailureResponse.nStatus = iCAX::Command::ECommandStatusCode::InvalidRequest;
+            _FailureResponse.strError = Error_.what();
+            SendCommandResponse(
+                PostOffice_,
+                _Mail,
+                _FailureResponse,
+                AllocateResponseMailID_());
+        }
         ++_HandledCount;
     }
     return _HandledCount;

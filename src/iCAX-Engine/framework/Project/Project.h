@@ -43,12 +43,6 @@ namespace iCAX
         using CMainScenePDODescriptor = CScenePDODescriptor;
 
         /*
-        * @brief 项目每帧回调。
-        * @details 回调由主 Scene 的工作线程触发；CProject 只作为项目级上下文传入。
-        */
-        using MainSceneFrameHandler = std::function<void(CProject&, const iCAX::Mail::CMailPostOffice&)>;
-
-        /*
         * @brief 项目创建参数。
         * @details
         *   Project 自身只承载项目身份、路径和 ProjectSetting。
@@ -73,7 +67,7 @@ namespace iCAX
             bool bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo;
             uint32_t nFrameIntervalMilliseconds = 16;
-            MainSceneFrameHandler OnMainSceneFrame;
+            SceneFrameHandler OnSceneFrame;
         };
 
         /*
@@ -135,7 +129,7 @@ namespace iCAX
             bool IsRunning() const;
             EProjectState GetState() const;
             std::optional<CProjectFault> GetLastFault() const;
-            void SetMainSceneFrameHandler(IN MainSceneFrameHandler Handler_);
+            void SetSceneFrameHandler(IN SceneFrameHandler Handler_);
 
             iCAX::Database::IRepository& MainSceneDatabase();
             const iCAX::Database::IRepository& MainSceneDatabase() const;
@@ -184,7 +178,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
             iCAX::Data::uuid m_MainSceneID;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProjectScene>> m_Scenes;
-            MainSceneFrameHandler m_MainSceneFrameHandler;
+            SceneFrameHandler m_SceneFrameHandler;
         };
     }
 }

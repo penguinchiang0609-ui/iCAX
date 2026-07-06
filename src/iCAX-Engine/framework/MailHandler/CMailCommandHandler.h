@@ -63,7 +63,7 @@ namespace iCAX
             * @param [in] pSceneContext_ 场景上下文；非场景命令可为空。
             * @param [in] AllocateResponseMailID_ 响应邮件 ID 分配器，不能为空。
             * @return 已处理邮件数量。
-            * @throws 命令 handler 抛出的异常会原样向外传播。
+            * @details 单封邮件的命令异常会被转换为失败响应，避免 UI 请求超时或运行体被单个请求打断。
             */
             size_t DispatchAvailableMails(
                 IN const iCAX::Mail::CMailPostOffice& PostOffice_,

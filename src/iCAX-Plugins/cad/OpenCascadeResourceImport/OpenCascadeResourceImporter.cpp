@@ -494,8 +494,7 @@ namespace
         }
         default:
         {
-            PlaneSurface3 _Result;
-            return _Result;
+            throw std::runtime_error("Unsupported OCCT surface type for neutral BRep conversion: " + std::to_string(static_cast<int>(Surface_.GetType())));
         }
         }
     }

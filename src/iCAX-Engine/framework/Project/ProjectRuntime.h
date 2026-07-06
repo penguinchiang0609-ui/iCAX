@@ -17,8 +17,9 @@ namespace iCAX
         /*
         * @brief 项目运行时每帧回调。
         */
-        using MainSceneRuntimeFrameHandler = std::function<void(
+        using SceneRuntimeFrameHandler = std::function<void(
             IProjectRuntime&,
+            iCAX::Project::ISceneContext&,
             const iCAX::Mail::CMailPostOffice&)>;
 
         /*
@@ -79,7 +80,7 @@ namespace iCAX
             /*
             * @brief 设置 runtime 每帧回调。
             */
-            virtual void SetMainSceneFrameHandler(IN MainSceneRuntimeFrameHandler Handler_) = 0;
+            virtual void SetSceneFrameHandler(IN SceneRuntimeFrameHandler Handler_) = 0;
             /*
             * @brief 启动项目 runtime。
             */
@@ -103,7 +104,7 @@ namespace iCAX
         /*
         * @brief 本地项目运行时适配器。
         * @details
-        *   包装 CProject 并转发生命周期调用。FrameHandler 会被转接到主 Scene 的每帧回调中。
+        *   包装 CProject 并转发生命周期调用。FrameHandler 会被转接到每个 Scene 的每帧回调中。
         */
         class _PROJECT_EXP CLocalProjectRuntime final : public IProjectRuntime
         {
@@ -166,7 +167,7 @@ namespace iCAX
             /*
             * @brief 设置每帧回调。
             */
-            void SetMainSceneFrameHandler(IN MainSceneRuntimeFrameHandler Handler_) override;
+            void SetSceneFrameHandler(IN SceneRuntimeFrameHandler Handler_) override;
             /*
             * @brief 启动本地项目。
             */
@@ -188,7 +189,7 @@ namespace iCAX
             /*
             * @brief 获取每帧回调快照。
             */
-            MainSceneRuntimeFrameHandler GetMainSceneFrameHandler() const;
+            SceneRuntimeFrameHandler GetSceneFrameHandler() const;
 
             /*
             * @brief 获取本地项目引用。
@@ -199,7 +200,7 @@ namespace iCAX
         private:
             std::shared_ptr<CProject> m_pProject;
             mutable std::mutex m_FrameHandlerMutex;
-            MainSceneRuntimeFrameHandler m_MainSceneFrameHandler;
+            SceneRuntimeFrameHandler m_SceneFrameHandler;
         };
 
         /*

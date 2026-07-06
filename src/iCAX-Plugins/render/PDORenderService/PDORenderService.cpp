@@ -430,6 +430,7 @@ namespace
         }
         std::memcpy(_Lease->Data(), Payload_.data(), Payload_.size());
         _Lease->Commit();
+        Slot_.SwapBuffersIfReady();
         return true;
     }
 }
@@ -1395,26 +1396,13 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             IN uint64_t nPayloadCapacity_,
             IN OUT SSlotAssignment& Assignment_)
         {
-            const char* _pPayloadKindName = iCAX::RenderPDO::GetRenderPDOPayloadTypeName(ePayloadKind_);
             if (Assignment_.nPDOID == 0)
             {
                 const auto _Decl = MakeRenderDeclWithID(ePayloadKind_, nPDOID_, eDirection_, nPayloadCapacity_);
                 _PDOHub.AllocateSlot(_Decl, _AllocationCallbacks);
                 Assignment_.nPDOID = nPDOID_;
                 Assignment_.nPayloadCapacity = nPayloadCapacity_;
-                SendSlotEvent(
-                    ProjectID_,
-                    SceneContext_,
-                    kPDORenderSlotAllocatedEvent,
-                    "SlotAllocated",
-                    pSlotRole_,
-                    _SceneID,
-                    nPDOID_,
-                    nGeometryID_,
-                    nObjectID_,
-                    nTransformID_,
-                    _pPayloadKindName,
-                    nPayloadCapacity_);
+                Assignment_.bNeedPublishAllocatedEvent = true;
                 return;
             }
 
@@ -1429,20 +1417,38 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
                 const auto _Decl = MakeRenderDeclWithID(ePayloadKind_, nPDOID_, eDirection_, nPayloadCapacity_);
                 _PDOHub.AllocateSlot(_Decl, _AllocationCallbacks);
                 Assignment_.nPayloadCapacity = nPayloadCapacity_;
-                SendSlotEvent(
-                    ProjectID_,
-                    SceneContext_,
-                    kPDORenderSlotMovedEvent,
-                    "SlotMoved",
-                    pSlotRole_,
-                    _SceneID,
-                    nPDOID_,
-                    nGeometryID_,
-                    nObjectID_,
-                    nTransformID_,
-                    _pPayloadKindName,
-                    nPayloadCapacity_);
+                Assignment_.bNeedPublishAllocatedEvent = true;
             }
+        };
+
+    auto _PublishAssignmentIfReady =
+        [this, &ProjectID_, &SceneContext_, _SceneID](
+            IN const char* pSlotRole_,
+            IN const char* pPayloadKind_,
+            IN iCAX::Render::RenderGeometryID nGeometryID_,
+            IN iCAX::Render::RenderObjectID nObjectID_,
+            IN iCAX::Render::RenderTransformID nTransformID_,
+            IN OUT SSlotAssignment& Assignment_)
+        {
+            if (!Assignment_.bNeedPublishAllocatedEvent)
+            {
+                return;
+            }
+
+            SendSlotEvent(
+                ProjectID_,
+                SceneContext_,
+                kPDORenderSlotAllocatedEvent,
+                "SlotAllocated",
+                pSlotRole_,
+                _SceneID,
+                Assignment_.nPDOID,
+                nGeometryID_,
+                nObjectID_,
+                nTransformID_,
+                pPayloadKind_,
+                Assignment_.nPayloadCapacity);
+            Assignment_.bNeedPublishAllocatedEvent = false;
         };
 
     for (auto _Iter = State_.MeshSlots.begin(); _Iter != State_.MeshSlots.end();)
@@ -1536,7 +1542,10 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             iCAX::PDO::kDirection2External,
             CalculateMeshPayloadCapacity(_Mesh),
             _Assignment);
-        (void)WriteMeshToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID));
+        if (WriteMeshToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID)))
+        {
+            _PublishAssignmentIfReady("Geometry", "render.mesh", _GeometryID, 0, 0, _Assignment);
+        }
     }
 
     for (const auto& [_GeometryID, _Polyline] : pScene_->Polylines)
@@ -1553,7 +1562,10 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             iCAX::PDO::kDirection2External,
             CalculatePolylinePayloadCapacity(_Polyline),
             _Assignment);
-        (void)WritePolylineToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID));
+        if (WritePolylineToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID)))
+        {
+            _PublishAssignmentIfReady("Geometry", "render.polyline", _GeometryID, 0, 0, _Assignment);
+        }
     }
 
     for (const auto& [_GeometryID, _Toolpath] : pScene_->Toolpaths)
@@ -1570,7 +1582,10 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             iCAX::PDO::kDirection2External,
             CalculateToolpathPayloadCapacity(_Toolpath),
             _Assignment);
-        (void)WriteToolpathToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID));
+        if (WriteToolpathToPDO(ProjectID_, _SceneID, _GeometryID, _PDOHub.GetSlot(_Assignment.nPDOID)))
+        {
+            _PublishAssignmentIfReady("Geometry", "render.toolpath", _GeometryID, 0, 0, _Assignment);
+        }
     }
 
     for (const auto& _Transform : pScene_->Transforms)
@@ -1587,7 +1602,10 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             iCAX::PDO::kDirection2External,
             CalculateTransformPayloadCapacity(),
             _Assignment);
-        (void)WriteTransformToPDO(ProjectID_, _SceneID, _Transform.nTransformID, _PDOHub.GetSlot(_Assignment.nPDOID));
+        if (WriteTransformToPDO(ProjectID_, _SceneID, _Transform.nTransformID, _PDOHub.GetSlot(_Assignment.nPDOID)))
+        {
+            _PublishAssignmentIfReady("Transform", "render.transform", 0, 0, _Transform.nTransformID, _Assignment);
+        }
     }
 
     for (const auto& _Instance : pScene_->Instances)
@@ -1604,7 +1622,10 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             iCAX::PDO::kDirection2External,
             CalculateObjectPayloadCapacity(),
             _Assignment);
-        (void)WriteObjectToPDO(ProjectID_, _SceneID, _Instance.nObjectID, _PDOHub.GetSlot(_Assignment.nPDOID));
+        if (WriteObjectToPDO(ProjectID_, _SceneID, _Instance.nObjectID, _PDOHub.GetSlot(_Assignment.nPDOID)))
+        {
+            _PublishAssignmentIfReady("Object", "render.instance_list", _Instance.nGeometryID, _Instance.nObjectID, _Instance.nObjectID, _Assignment);
+        }
     }
 
     if (pScene_->Cameras.empty() || pScene_->nCameraDataVersion == 0)
@@ -1625,7 +1646,10 @@ void iCAX::PDORenderService::CPDORenderService::SynchronizeScenePDOOutput(
             iCAX::PDO::kDirection2External,
             _CameraPayloadCapacity,
             State_.CameraSlot);
-        (void)WriteCamerasToPDO(ProjectID_, _SceneID, _PDOHub.GetSlot(State_.CameraSlot.nPDOID));
+        if (WriteCamerasToPDO(ProjectID_, _SceneID, _PDOHub.GetSlot(State_.CameraSlot.nPDOID)))
+        {
+            _PublishAssignmentIfReady("Camera", "render.camera", 0, 0, pScene_->nActiveCameraID, State_.CameraSlot);
+        }
     }
 }
 
