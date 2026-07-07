@@ -60,6 +60,7 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FeatureRecognitionService.cpp" />
     <ClCompile Include="Laser3DCAM.cpp" />
+    <ClCompile Include="LaserCamRenderBehaviour.cpp" />
     <ClCompile Include="ToolpathGenerationService.cpp" />
     <ClCompile Include="ToolpathOrderService.cpp" />
     <ClCompile Include="pch.cpp">
@@ -78,6 +79,9 @@
     </ProjectReference>
     <ProjectReference Include="..\..\render\RenderService\RenderService.vcxproj">
       <Project>{f47e9162-6fe2-4995-92c4-51d8ed9ec474}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Behaviour\Behaviour.vcxproj">
+      <Project>{1c150fbb-3418-414d-8a3c-f7b57c6d18b7}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\CommandHandler\CommandHandler.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>

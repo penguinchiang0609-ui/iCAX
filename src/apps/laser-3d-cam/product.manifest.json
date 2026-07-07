@@ -14,6 +14,7 @@
     "probeBytes": 256
   },
   "backend": {
+    "startupComponent": "CLaserCamRootComponent",
     "pdo": {
       "enabled": true,
       "arenaSize": 134217728,
@@ -27,6 +28,7 @@
         "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll"
       ],
       "components": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
+      "behaviours": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
       "services": [
         "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll",
         "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"

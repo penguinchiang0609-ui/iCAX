@@ -14,17 +14,12 @@
 #include "ProductContext/IProductContext.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
-#include "RenderData/RenderDataTypes.h"
-#include "RenderService/RenderService.h"
 #include "Resources/ResourceImportExport.h"
 #include "Resources/ResourceInfo.h"
 #include "Resources/ResourceLibrary.h"
-#include "Services/ServiceProvider.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cctype>
-#include <cmath>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -1419,311 +1414,8 @@ namespace
         std::string ModelResourceID;
         std::string BRepResourceID;
         std::string TopologyResourceID;
-        std::string DisplayResourceID;
         uint64_t nTopologyVersion = 0;
-        std::shared_ptr<iCAX::GeometryData::BRepModel> pBRep;
     };
-
-    uint64_t _MakeStableRenderID(IN const std::string& strText_) noexcept
-    {
-        uint64_t _Hash = 14695981039346656037ull;
-        for (const auto _Char : strText_)
-        {
-            _Hash ^= static_cast<unsigned char>(_Char);
-            _Hash *= 1099511628211ull;
-        }
-        return _Hash == 0 ? 1 : _Hash;
-    }
-
-    iCAX::Render::RenderSceneID _MakeRenderSceneID(IN const iCAX::Data::uuid& SceneID_) noexcept
-    {
-        return static_cast<iCAX::Render::RenderSceneID>(_MakeStableRenderID("scene:" + iCAX::Data::to_string(SceneID_)));
-    }
-
-    iCAX::Render::RenderGeometryID _MakeRenderGeometryID(IN const std::string& strDisplayResourceID_) noexcept
-    {
-        return static_cast<iCAX::Render::RenderGeometryID>(_MakeStableRenderID("mesh:" + strDisplayResourceID_));
-    }
-
-    iCAX::Render::RenderObjectID _MakeRenderObjectID(IN const iCAX::Data::uuid& EntityID_) noexcept
-    {
-        return static_cast<iCAX::Render::RenderObjectID>(_MakeStableRenderID("object:" + iCAX::Data::to_string(EntityID_)));
-    }
-
-    iCAX::Render::RenderCameraID _MakeDefaultRenderCameraID() noexcept
-    {
-        return static_cast<iCAX::Render::RenderCameraID>(_MakeStableRenderID("camera:laser-3d-cam.default"));
-    }
-
-    uint64_t _NextRenderDataVersion() noexcept
-    {
-        static std::atomic_uint64_t _Version{ 1 };
-        return _Version.fetch_add(1, std::memory_order_relaxed);
-    }
-
-    iCAX::Render::SFloat3 _ToRenderFloat3(IN const iCAX::GeometryData::Point3& Point_) noexcept
-    {
-        return {
-            static_cast<float>(Point_.X),
-            static_cast<float>(Point_.Y),
-            static_cast<float>(Point_.Z)
-        };
-    }
-
-    iCAX::Render::SFloat3 _Sub(
-        IN const iCAX::Render::SFloat3& Left_,
-        IN const iCAX::Render::SFloat3& Right_) noexcept
-    {
-        return { Left_.x - Right_.x, Left_.y - Right_.y, Left_.z - Right_.z };
-    }
-
-    iCAX::Render::SFloat3 _Cross(
-        IN const iCAX::Render::SFloat3& Left_,
-        IN const iCAX::Render::SFloat3& Right_) noexcept
-    {
-        return {
-            Left_.y * Right_.z - Left_.z * Right_.y,
-            Left_.z * Right_.x - Left_.x * Right_.z,
-            Left_.x * Right_.y - Left_.y * Right_.x
-        };
-    }
-
-    float _Length(IN const iCAX::Render::SFloat3& Value_) noexcept
-    {
-        return std::sqrt(Value_.x * Value_.x + Value_.y * Value_.y + Value_.z * Value_.z);
-    }
-
-    iCAX::Render::SFloat3 _NormalizeOr(
-        IN const iCAX::Render::SFloat3& Value_,
-        IN const iCAX::Render::SFloat3& Fallback_) noexcept
-    {
-        const auto _LengthValue = _Length(Value_);
-        if (_LengthValue <= 0.000001f)
-        {
-            return Fallback_;
-        }
-        return { Value_.x / _LengthValue, Value_.y / _LengthValue, Value_.z / _LengthValue };
-    }
-
-    iCAX::Render::SMatrix4 _MakeCameraLocalToWorld(
-        IN const iCAX::Render::SFloat3& CameraPosition_,
-        IN const iCAX::Render::SFloat3& LookAtPoint_,
-        IN const iCAX::Render::SFloat3& Up_) noexcept
-    {
-        const auto _Forward = _NormalizeOr(_Sub(LookAtPoint_, CameraPosition_), { 0.0f, 0.0f, -1.0f });
-        const auto _Back = iCAX::Render::SFloat3{ -_Forward.x, -_Forward.y, -_Forward.z };
-        const auto _Right = _NormalizeOr(_Cross(Up_, _Back), { 1.0f, 0.0f, 0.0f });
-        const auto _Up = _NormalizeOr(_Cross(_Back, _Right), { 0.0f, 0.0f, 1.0f });
-
-        auto _Matrix = iCAX::Render::SMatrix4::Identity();
-        _Matrix.Values[0] = _Right.x;
-        _Matrix.Values[1] = _Right.y;
-        _Matrix.Values[2] = _Right.z;
-        _Matrix.Values[4] = _Up.x;
-        _Matrix.Values[5] = _Up.y;
-        _Matrix.Values[6] = _Up.z;
-        _Matrix.Values[8] = _Back.x;
-        _Matrix.Values[9] = _Back.y;
-        _Matrix.Values[10] = _Back.z;
-        _Matrix.Values[12] = CameraPosition_.x;
-        _Matrix.Values[13] = CameraPosition_.y;
-        _Matrix.Values[14] = CameraPosition_.z;
-        return _Matrix;
-    }
-
-    iCAX::Render::SFloat3 _ToRenderFloat3(IN const iCAX::GeometryData::Vector3& Vector_) noexcept
-    {
-        return {
-            static_cast<float>(Vector_.X),
-            static_cast<float>(Vector_.Y),
-            static_cast<float>(Vector_.Z)
-        };
-    }
-
-    void _AddBoundsPoint(
-        IN OUT iCAX::Render::SFloat3& Min_,
-        IN OUT iCAX::Render::SFloat3& Max_,
-        IN const iCAX::Render::SFloat3& Point_,
-        IN OUT bool& bEmpty_) noexcept
-    {
-        if (bEmpty_)
-        {
-            Min_ = Point_;
-            Max_ = Point_;
-            bEmpty_ = false;
-            return;
-        }
-
-        Min_.x = std::min(Min_.x, Point_.x);
-        Min_.y = std::min(Min_.y, Point_.y);
-        Min_.z = std::min(Min_.z, Point_.z);
-        Max_.x = std::max(Max_.x, Point_.x);
-        Max_.y = std::max(Max_.y, Point_.y);
-        Max_.z = std::max(Max_.z, Point_.z);
-    }
-
-    iCAX::Render::SRenderMeshData _MakeRenderMeshFromBRep(
-        IN const iCAX::GeometryData::BRepModel& Model_,
-        IN const std::string& strDisplayResourceID_,
-        IN uint64_t nDataVersion_)
-    {
-        if (strDisplayResourceID_.empty())
-        {
-            throw std::runtime_error("CAM display resource id cannot be empty");
-        }
-
-        iCAX::Render::SRenderMeshData _Mesh;
-        _Mesh.nGeometryID = _MakeRenderGeometryID(strDisplayResourceID_);
-        _Mesh.nDataVersion = std::max<uint64_t>(1, nDataVersion_);
-        _Mesh.eTopology = iCAX::Render::ERenderTopology::TriangleList;
-
-        iCAX::Render::SFloat3 _Min;
-        iCAX::Render::SFloat3 _Max;
-        bool _bBoundsEmpty = true;
-        bool _bAllTriangulationsHaveNormals = true;
-        bool _bAnyTriangulationHasNormals = false;
-
-        for (const auto& _TriangulationRecord : Model_.Triangulations3)
-        {
-            const auto& _Geometry = _TriangulationRecord.Geometry;
-            if (_Geometry.Vertices.empty() || _Geometry.Triangles.empty())
-            {
-                continue;
-            }
-            if (_Mesh.Positions.size() + _Geometry.Vertices.size() > static_cast<size_t>((std::numeric_limits<uint32_t>::max)()))
-            {
-                throw std::runtime_error("CAM display mesh has too many vertices for uint32 indices");
-            }
-
-            const auto _BaseVertex = static_cast<uint32_t>(_Mesh.Positions.size());
-            for (const auto& _Point : _Geometry.Vertices)
-            {
-                const auto _RenderPoint = _ToRenderFloat3(_Point);
-                _Mesh.Positions.push_back(_RenderPoint);
-                _AddBoundsPoint(_Min, _Max, _RenderPoint, _bBoundsEmpty);
-            }
-
-            if (_Geometry.Normals.size() == _Geometry.Vertices.size())
-            {
-                _bAnyTriangulationHasNormals = true;
-                for (const auto& _Normal : _Geometry.Normals)
-                {
-                    _Mesh.Normals.push_back(_ToRenderFloat3(_Normal));
-                }
-            }
-            else
-            {
-                _bAllTriangulationsHaveNormals = false;
-            }
-
-            for (const auto& _Triangle : _Geometry.Triangles)
-            {
-                for (const auto _Index : _Triangle)
-                {
-                    if (_Index >= _Geometry.Vertices.size())
-                    {
-                        throw std::runtime_error("CAM display mesh triangulation index is out of range");
-                    }
-                    _Mesh.Indices.push_back(_BaseVertex + _Index);
-                }
-            }
-        }
-
-        if (_Mesh.Positions.empty() || _Mesh.Indices.empty())
-        {
-            throw std::runtime_error("CAD import did not produce display triangulation");
-        }
-
-        if (_bAnyTriangulationHasNormals && _bAllTriangulationsHaveNormals && _Mesh.Normals.size() == _Mesh.Positions.size())
-        {
-            _Mesh.nFlags |= iCAX::Render::kRenderMeshFlagHasNormals;
-        }
-        else
-        {
-            _Mesh.Normals.clear();
-        }
-
-        _Mesh.Bounds.Min = _Min;
-        _Mesh.Bounds.Max = _Max;
-        return _Mesh;
-    }
-
-    iCAX::Render::SRenderStyleData _MakeDefaultModelStyle() noexcept
-    {
-        iCAX::Render::SRenderStyleData _Style;
-        _Style.nStyleID = 1;
-        _Style.nColorRGBA = 0x8FB8C9FFu;
-        _Style.nLineWidth = 1.0f;
-        _Style.nFlags = iCAX::Render::kRenderFlagVisible | iCAX::Render::kRenderFlagSelectable;
-        return _Style;
-    }
-
-    iCAX::Render::SRenderInstanceData _MakeWorkpieceRenderInstance(
-        IN const iCAX::Data::uuid& WorkpieceEntityID_,
-        IN const std::string& strDisplayResourceID_) noexcept
-    {
-        iCAX::Render::SRenderInstanceData _Instance;
-        _Instance.nObjectID = _MakeRenderObjectID(WorkpieceEntityID_);
-        _Instance.nGeometryID = _MakeRenderGeometryID(strDisplayResourceID_);
-        _Instance.eGeometryKind = iCAX::Render::ERenderGeometryKind::Mesh;
-        _Instance.eRenderClass = iCAX::Render::ERenderClass::Model;
-        _Instance.nStyleID = 1;
-        _Instance.nFlags = iCAX::Render::kRenderFlagVisible | iCAX::Render::kRenderFlagSelectable;
-        return _Instance;
-    }
-
-    iCAX::Render::SRenderTransformData _MakeIdentityTransform(
-        IN iCAX::Render::RenderTransformID nTransformID_,
-        IN iCAX::Render::RenderDataVersion nVersion_) noexcept
-    {
-        iCAX::Render::SRenderTransformData _Transform;
-        _Transform.nTransformID = nTransformID_;
-        _Transform.nDataVersion = nVersion_;
-        _Transform.LocalToWorld = iCAX::Render::SMatrix4::Identity();
-        return _Transform;
-    }
-
-    iCAX::Render::SRenderCameraData _MakeDefaultCamera(
-        IN iCAX::Render::RenderCameraID nCameraID_,
-        IN const iCAX::Render::SRenderAABB& Bounds_) noexcept
-    {
-        const auto _SizeX = std::max(1.0f, Bounds_.Max.x - Bounds_.Min.x);
-        const auto _SizeY = std::max(1.0f, Bounds_.Max.y - Bounds_.Min.y);
-        const auto _SizeZ = std::max(1.0f, Bounds_.Max.z - Bounds_.Min.z);
-        const auto _Radius = std::max({ _SizeX, _SizeY, _SizeZ }) * 1.8f;
-
-        iCAX::Render::SRenderCameraData _Camera;
-        _Camera.nCameraID = nCameraID_;
-        _Camera.nFlags = iCAX::Render::kRenderCameraFlagPerspective;
-        _Camera.nNearPlane = 0.1f;
-        _Camera.nFarPlane = std::max(100000.0f, _Radius * 20.0f);
-        _Camera.nVerticalFovRadians = 0.785398185f;
-        return _Camera;
-    }
-
-    iCAX::Render::SRenderTransformData _MakeDefaultCameraTransform(
-        IN iCAX::Render::RenderCameraID nCameraID_,
-        IN const iCAX::Render::SRenderAABB& Bounds_,
-        IN iCAX::Render::RenderDataVersion nVersion_) noexcept
-    {
-        const auto _CenterX = (Bounds_.Min.x + Bounds_.Max.x) * 0.5f;
-        const auto _CenterY = (Bounds_.Min.y + Bounds_.Max.y) * 0.5f;
-        const auto _CenterZ = (Bounds_.Min.z + Bounds_.Max.z) * 0.5f;
-        const auto _SizeX = std::max(1.0f, Bounds_.Max.x - Bounds_.Min.x);
-        const auto _SizeY = std::max(1.0f, Bounds_.Max.y - Bounds_.Min.y);
-        const auto _SizeZ = std::max(1.0f, Bounds_.Max.z - Bounds_.Min.z);
-        const auto _Radius = std::max({ _SizeX, _SizeY, _SizeZ }) * 1.8f;
-
-        const iCAX::Render::SFloat3 _CameraPosition{ _CenterX + _Radius, _CenterY - _Radius, _CenterZ + _Radius * 0.75f };
-        const iCAX::Render::SFloat3 _LookAtPoint{ _CenterX, _CenterY, _CenterZ };
-        const iCAX::Render::SFloat3 _Up{ 0.0f, 0.0f, 1.0f };
-
-        iCAX::Render::SRenderTransformData _Transform;
-        _Transform.nTransformID = nCameraID_;
-        _Transform.nDataVersion = nVersion_;
-        _Transform.LocalToWorld = _MakeCameraLocalToWorld(_CameraPosition, _LookAtPoint, _Up);
-        return _Transform;
-    }
 
     template <typename TRecord>
     const TRecord* _FindRecordByID(IN const std::vector<TRecord>& Records_, IN uint64_t nID_) noexcept
@@ -2261,13 +1953,11 @@ namespace
         _Imported.BRepResourceID = _FindImportedResourceID(_Result, "geometry.brep");
         _RequireImportedResource(Scene_, _Imported.ModelResourceID, "modelResourceId");
         _RequireImportedResource(Scene_, _Imported.BRepResourceID, "brepResourceId");
-        _Imported.DisplayResourceID = iCAX::CAM::MakeCAMDisplayResourceID(_Imported.ModelResourceID);
 
         if (!_pBRep)
         {
             throw std::runtime_error("Resource import returned BRep resource with unexpected runtime type");
         }
-        _Imported.pBRep = _pBRep;
 
         _Imported.TopologyResourceID = iCAX::CAM::MakeCAMTopologyResourceID(_Imported.ModelResourceID);
         _Imported.nTopologyVersion = _NextResourceVersion(_Resources, _Imported.TopologyResourceID);
@@ -2293,82 +1983,6 @@ namespace
 
         _RequireImportedResource(Scene_, _Imported.TopologyResourceID, "topologyResourceId");
         return _Imported;
-    }
-
-    void _PublishWorkpieceRenderData(
-        IN const iCAX::Application::IApplicationContext& ApplicationContext_,
-        IN iCAX::Product::IProductContext& ProductContext_,
-        IN iCAX::Project::IProjectContext& ProjectContext_,
-        IN iCAX::Project::ISceneContext& Scene_,
-        IN const SCAMImportedCadResources& ImportResult_)
-    {
-        if (!Scene_.HasPDOHub())
-        {
-            throw std::logic_error("Laser CAM product requires Scene PDO hub for H5 render output");
-        }
-        if (!ImportResult_.pBRep)
-        {
-            throw std::runtime_error("CAM import result has no BRep data for render output");
-        }
-
-        const auto _RenderVersion = _NextRenderDataVersion();
-        auto _Mesh = _MakeRenderMeshFromBRep(*ImportResult_.pBRep, ImportResult_.DisplayResourceID, _RenderVersion);
-        const auto _RenderSceneID = _MakeRenderSceneID(Scene_.GetSceneID());
-        auto _pRenderService = Scene_.Services().Resolve<iCAX::Render::IRenderService>();
-        const auto& _ProjectID = ProjectContext_.GetProjectID();
-
-        if (!_pRenderService->HasScene(_ProjectID, _RenderSceneID))
-        {
-            (void)_pRenderService->CreateScene(_ProjectID, _RenderSceneID);
-        }
-        if (!_pRenderService->UpsertMesh(_ProjectID, _RenderSceneID, _Mesh))
-        {
-            throw std::runtime_error("Render scene is not available for imported workpiece mesh");
-        }
-
-        std::vector<iCAX::Render::SRenderInstanceData> _Instances;
-        std::vector<iCAX::Render::SRenderTransformData> _Transforms;
-        auto& _Repository = Scene_.Database();
-        for (const auto& [_pEntity, _pWorkpiece] : _CollectEntitiesWithComponent<iCAX::CAM::CLaserWorkpieceComponent>(_Repository))
-        {
-            if (!_pEntity || !_pWorkpiece)
-            {
-                continue;
-            }
-            const auto _DisplayResourceID = _pWorkpiece->GetDisplayResourceID();
-            if (_DisplayResourceID.empty())
-            {
-                continue;
-            }
-            auto _Instance = _MakeWorkpieceRenderInstance(_pEntity->GetID(), _DisplayResourceID);
-            _Transforms.push_back(_MakeIdentityTransform(_Instance.nObjectID, _RenderVersion));
-            _Instances.push_back(_Instance);
-        }
-        if (_Instances.empty())
-        {
-            throw std::runtime_error("No CAM workpiece instance is available for render output");
-        }
-
-        const std::vector<iCAX::Render::SRenderStyleData> _Styles{ _MakeDefaultModelStyle() };
-        if (!_pRenderService->SetInstances(_ProjectID, _RenderSceneID, _Instances, _Styles, _RenderVersion))
-        {
-            throw std::runtime_error("Render scene is not available for imported workpiece instances");
-        }
-
-        const auto _CameraID = _MakeDefaultRenderCameraID();
-        _Transforms.push_back(_MakeDefaultCameraTransform(_CameraID, _Mesh.Bounds, _RenderVersion));
-        if (!_pRenderService->SetTransforms(_ProjectID, _RenderSceneID, _Transforms, _RenderVersion))
-        {
-            throw std::runtime_error("Render scene is not available for imported workpiece transforms");
-        }
-
-        const std::vector<iCAX::Render::SRenderCameraData> _Cameras{ _MakeDefaultCamera(_CameraID, _Mesh.Bounds) };
-        if (!_pRenderService->SetCameras(_ProjectID, _RenderSceneID, _Cameras, _CameraID, _RenderVersion))
-        {
-            throw std::runtime_error("Render scene is not available for imported workpiece camera");
-        }
-
-        _pRenderService->Update(ApplicationContext_, ProductContext_, ProjectContext_, Scene_, 0.0, 0.0);
     }
 
     class CCAMCommandTarget final : public iCAX::Command::CCommandTarget
@@ -2401,14 +2015,14 @@ namespace
 
         static iCAX::Command::CCommandResponse HandleImportModel(
             IN const iCAX::Command::CCommandRequest& Request_,
-            IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_)
         {
             auto& _Scene = _RequireSceneContext(pSceneContext_);
-            auto& _ProductContext = _RequireProductContext(pProductContext_);
-            auto& _ProjectContext = _RequireProjectContext(pProjectContext_);
+            (void)_RequireProductContext(pProductContext_);
+            (void)_RequireProjectContext(pProjectContext_);
             auto _Payload = _DecodeObjectPayload(Request_);
             auto _SourcePath = _GetOptionalString(_Payload, "sourcePath");
             if (_SourcePath.empty())
@@ -2440,7 +2054,6 @@ namespace
             _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_ModelResourceID, _ImportResult.ModelResourceID);
             _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_BRepResourceID, _ImportResult.BRepResourceID);
             _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_TopologyResourceID, _ImportResult.TopologyResourceID);
-            _SetStringProperty(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_DisplayResourceID, _ImportResult.DisplayResourceID);
             _SetUInt64Property(_pWorkpiece, iCAX::CAM::CLaserWorkpieceComponent::PropertyName_TopologyVersion, _ImportResult.nTopologyVersion);
             _SetUuidProperty(_pRoot, iCAX::CAM::CLaserCamRootComponent::PropertyName_ActiveWorkpieceID, _pWorkpieceEntity->GetID());
             _SetUuidProperty(_pRoot, iCAX::CAM::CLaserCamRootComponent::PropertyName_ActiveOrderPlanID, iCAX::Data::uuid());
@@ -2450,8 +2063,6 @@ namespace
             _SetUInt64Property(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedID, 0ull);
             _SetStringProperty(_pSelection, iCAX::CAM::CCAMSelectionComponent::PropertyName_SelectedLabel, std::string());
             _Undo->End();
-
-            _PublishWorkpieceRenderData(ApplicationContext_, _ProductContext, _ProjectContext, _Scene, _ImportResult);
 
             return _MakeResponse(_BuildScenePayload(_Scene));
         }

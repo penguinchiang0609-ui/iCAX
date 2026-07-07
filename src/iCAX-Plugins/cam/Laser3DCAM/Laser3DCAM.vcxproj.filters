@@ -21,6 +21,7 @@
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="FeatureRecognitionService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Laser3DCAM.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="LaserCamRenderBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathGenerationService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathOrderService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
