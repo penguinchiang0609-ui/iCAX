@@ -15,6 +15,7 @@
 #include <Mailbox/MailChannel.h>
 #include <PDO/IPDOHub.h>
 #include <ProjectContext/ISceneContext.h>
+#include <ProjectContext/SceneObjectRegistry.h>
 #include <Resources/ResourceInfo.h>
 #include <Resources/ResourceLibrary.h>
 #include <Services/ServiceProvider.h>
@@ -98,6 +99,16 @@ namespace
             return m_Resources;
         }
 
+        iCAX::Project::CSceneObjectRegistry& Objects() override
+        {
+            return m_Objects;
+        }
+
+        const iCAX::Project::CSceneObjectRegistry& Objects() const override
+        {
+            return m_Objects;
+        }
+
         bool HasPDOHub() const override
         {
             return false;
@@ -124,6 +135,7 @@ namespace
         std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
         iCAX::Resource::CResourceLibrary m_Resources;
+        iCAX::Project::CSceneObjectRegistry m_Objects;
         mutable iCAX::Services::CServiceProvider m_ServiceProvider;
         std::shared_ptr<iCAX::Mail::CMailChannel> m_pChannel;
         std::string m_SceneName = "Laser3DCAM Test Scene";
@@ -235,7 +247,7 @@ namespace
         return _Model;
     }
 
-    std::shared_ptr<iCAX::CAM::CCAMPathComponent> AddPath(
+    std::shared_ptr<iCAX::CAM::CPathComponent> AddPath(
         IN CTestSceneContext& Scene_,
         IN const iCAX::Data::uuid& PathID_,
         IN const std::string& strCurveResourceID_,
@@ -243,17 +255,17 @@ namespace
         IN double dEndX_)
     {
         auto _pEntity = Scene_.Database().CreateEntity(PathID_);
-        auto _pPath = _pEntity->AddComponent<iCAX::CAM::CCAMPathComponent>();
+        auto _pPath = _pEntity->AddComponent<iCAX::CAM::CPathComponent>();
         std::string _strError;
         EXPECT_TRUE(_pPath->SetCurveResourceID(strCurveResourceID_, _strError)) << _strError;
 
-        auto _pCurve = std::make_shared<iCAX::CAM::CCAMPathCurveResource>();
+        auto _pCurve = std::make_shared<iCAX::CAM::CPathCurveResource>();
         _pCurve->nVersion = 1;
         _pCurve->SourceTopology["points"] = VariantArray{
             MakePoint(dStartX_, 0.0),
             MakePoint(dEndX_, 0.0)
         };
-        Scene_.Resources().Set<iCAX::CAM::CCAMPathCurveResource>(
+        Scene_.Resources().Set<iCAX::CAM::CPathCurveResource>(
             strCurveResourceID_,
             _pCurve,
             MakeResourceInfo(strCurveResourceID_, _pCurve->nVersion));
@@ -308,12 +320,12 @@ TEST(Laser3DCAMToolpathOrderTest, NearestNeighborReordersConsecutivePathRun)
     const auto _PathB = iCAX::Data::GenerateNewUUID();
     const auto _PathC = iCAX::Data::GenerateNewUUID();
 
-    auto _pRoot = _Repository.GetMetaEntity()->AddComponent<iCAX::CAM::CLaserCamRootComponent>();
+    auto _pRoot = _Repository.GetMetaEntity()->AddComponent<iCAX::CAM::CRootComponent>();
     std::string _strError;
     ASSERT_TRUE(_pRoot->SetProgramRootBlockID(_BlockID, _strError)) << _strError;
 
     auto _pBlockEntity = _Repository.CreateEntity(_BlockID);
-    auto _pBlock = _pBlockEntity->AddComponent<iCAX::CAM::CCAMBlockComponent>();
+    auto _pBlock = _pBlockEntity->AddComponent<iCAX::CAM::CBlockComponent>();
     AddPath(_Scene, _PathA, "curve.a", 100.0, 101.0);
     AddPath(_Scene, _PathB, "curve.b", 0.0, 1.0);
     AddPath(_Scene, _PathC, "curve.c", 2.0, 3.0);

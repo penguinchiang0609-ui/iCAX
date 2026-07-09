@@ -7,10 +7,10 @@
 iCAX::Command::CCommandTarget::CCommandTarget(IN std::string strMainName_)
     : m_strMainName(std::move(strMainName_))
 {
-    if (!IsValidCommandName(m_strMainName))
+    if (!IsValidCommandMainName(m_strMainName))
     {
         throw std::invalid_argument(
-            "Command target main name must match [A-Z][A-Za-z0-9_]*: " +
+            "Command target main name must be one or more [A-Z][A-Za-z0-9_]* parts separated by '.': " +
             m_strMainName);
     }
     m_nMainCode = CommandHash32(m_strMainName);

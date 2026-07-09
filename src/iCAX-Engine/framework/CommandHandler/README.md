@@ -4,7 +4,7 @@
 
 本项目不直接依赖 Mailbox，也不保存业务状态。`framework/MailHandler` 负责把邮件转换为 `CCommandRequest`，再交给 `CCommandDispatcher`。
 
-CommandHandler 使用主/子命令模型。`CCommandRoute` 的高 32 位是主命令码，低 32 位是子命令码；上层使用 `Main.Sub` 命令名定义协议，底层使用合成后的 64 位 route code 分发。main/sub 单段名称必须匹配 `[A-Z][A-Za-z0-9_]*`。`CCommandRegistry` 注册的是 `ICommandTarget`，一个 command target 负责一个主命令，并在内部把多个子命令分发到不同函数。`CCommandTarget` 是具体主命令类的基类，业务模块通过继承它实现自己的主命令。
+CommandHandler 使用主/子命令模型。`CCommandRoute` 的高 32 位是主命令码，低 32 位是子命令码；底层使用合成后的 64 位 route code 分发。主命令可以是命名空间化名称，例如 `Cam.Machine`、`Cam.Workpiece`；子命令必须是单段动作名称，例如 `Import`、`SetActive`。完整命令字符串按最后一个点切分，因此 `Cam.Machine.Import` 会被解释为主命令 `Cam.Machine`、子命令 `Import`。每个名称分段必须匹配 `[A-Z][A-Za-z0-9_]*`。`CCommandRegistry` 注册的是 `ICommandTarget`，一个 command target 负责一个主命令，并在内部把多个子命令分发到不同函数。`CCommandTarget` 是具体主命令类的基类，业务模块通过继承它实现自己的主命令。
 
 CommandTarget 的入口会直接收到 `ApplicationContext`、可选的 `ProductContext`、可选的 `ProjectContext` 和可选的 `SceneContext`。应用级命令没有产品/项目/场景上下文，产品级命令没有项目/场景上下文；进入具体 Scene 的命令会同时拿到 ProjectContext 和 SceneContext。项目级 Settings 从 ProjectContext 读取，Repository、资源库、PDO、mail 和 Scene 服务从 SceneContext 读取，二者不能互相遮盖。
 

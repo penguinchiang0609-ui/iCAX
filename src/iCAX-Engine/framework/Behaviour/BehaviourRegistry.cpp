@@ -54,6 +54,7 @@ void iCAX::Behaviour::CBehaviourRegistry::RegisterBehaviourFactory(IN const CBeh
     m_Behaviours.emplace(Descriptor_.Type, Descriptor_);
     m_BehaviourTypesByName.emplace(Descriptor_.BehaviourClass, Descriptor_.Type);
     m_BehaviourTypesByComponent.emplace(Descriptor_.ComponentClass, Descriptor_.Type);
+    m_BehaviourRegistrationOrder.push_back(Descriptor_.Type);
 }
 
 //! 是否已包含
@@ -118,4 +119,9 @@ std::vector<std::type_index> iCAX::Behaviour::CBehaviourRegistry::GetTypeIndexBy
         _vec.push_back(_Ite->second);
     }
     return _vec;
+}
+
+std::vector<std::type_index> iCAX::Behaviour::CBehaviourRegistry::ListBehaviourTypes() const
+{
+    return m_BehaviourRegistrationOrder;
 }

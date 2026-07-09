@@ -46,6 +46,7 @@
   <ItemGroup>
     <ClInclude Include="IRenderService.h" />
     <ClInclude Include="RenderSceneSnapshot.h" />
+    <ClInclude Include="RenderSceneIds.h" />
     <ClInclude Include="RenderService.h" />
     <ClInclude Include="RenderServiceExport.h" />
     <ClInclude Include="framework.h" />
@@ -53,6 +54,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="RenderService.cpp" />
+    <ClCompile Include="RenderSceneIds.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

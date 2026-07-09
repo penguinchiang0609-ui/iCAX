@@ -42,7 +42,7 @@ namespace iCAX
             OUT std::string* pError_ = nullptr);
 
         _RENDER_PDO_EXP bool ValidateTransformPDOHeader(
-            IN const SRenderTransformPDOHeader& Header_,
+            IN const STransformPDOHeader& Header_,
             IN uint64_t nPayloadCapacity_,
             OUT std::string* pError_ = nullptr);
     }

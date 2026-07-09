@@ -10,6 +10,26 @@
 
 namespace
 {
+    void EnableProcessDpiAwareness()
+    {
+        using SetProcessDpiAwarenessContextFunction = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT);
+        auto _SetProcessDpiAwarenessContext = reinterpret_cast<SetProcessDpiAwarenessContextFunction>(
+            ::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "SetProcessDpiAwarenessContext"));
+        if (_SetProcessDpiAwarenessContext
+            && _SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+        {
+            return;
+        }
+
+        using SetProcessDPIAwareFunction = BOOL(WINAPI*)();
+        auto _SetProcessDPIAware = reinterpret_cast<SetProcessDPIAwareFunction>(
+            ::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "SetProcessDPIAware"));
+        if (_SetProcessDPIAware)
+        {
+            _SetProcessDPIAware();
+        }
+    }
+
     std::string Trim(IN const std::string& Text_)
     {
         const auto _Begin = Text_.find_first_not_of(" \t\r\n");
@@ -178,6 +198,8 @@ int WINAPI wWinMain(HINSTANCE hInstance_, HINSTANCE, PWSTR, int)
 {
     try
     {
+        EnableProcessDpiAwareness();
+
         auto _UIConfig = LoadUIContainerConfig();
         const int _nSubProcessResult = iCAX::Frontend::CUIContainerFactory::ExecuteSubProcessIfNeeded(
             _UIConfig,

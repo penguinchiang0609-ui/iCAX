@@ -54,6 +54,11 @@ export class ProductProxy {
       projectName: options.projectName ?? "",
     });
 
+    if (response?.state) {
+      this.updateState({ ...this.state, ...response.state });
+      await this.#syncProjectsFromCatalogs(this.state?.catalogs ?? []);
+    }
+
     const project = response.catalog?.mainProject;
     const projectProxy = project ? await this.adoptProject(project) : null;
     return { ...response, projectProxy, sceneProxy: projectProxy?.getMainScene() ?? null };

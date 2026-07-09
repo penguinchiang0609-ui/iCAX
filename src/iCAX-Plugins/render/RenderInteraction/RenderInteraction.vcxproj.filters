@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files"><UniqueIdentifier>{801f4764-5498-472d-9c8e-201324d022c7}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{d93ea4f8-4760-45b6-9999-7d1635453f1e}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="RenderInteractionComponents.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="RenderInteraction.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="RenderInteractionExport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="CameraBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RenderInstanceBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RenderTransformBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+</Project>

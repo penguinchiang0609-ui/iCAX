@@ -5,3 +5,4 @@
 目录结构：
 
 - `InputPDO/`：InputPDO 契约测试。
+- `InputService/`：InputService 状态读取与按键边沿测试。

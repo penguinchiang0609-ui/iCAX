@@ -4,6 +4,7 @@
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
 #include <ProjectContext/ISceneContext.h>
+#include <ProjectContext/SceneObjectRegistry.h>
 #include <PDORenderService/PDORenderService.h>
 #include <RenderPDO/RenderPDO.h>
 #include <PDO/IPDOHub.h>
@@ -190,6 +191,16 @@ namespace
             throw std::logic_error("Resources are not used by render service tests");
         }
 
+        iCAX::Project::CSceneObjectRegistry& Objects() override
+        {
+            return m_Objects;
+        }
+
+        const iCAX::Project::CSceneObjectRegistry& Objects() const override
+        {
+            return m_Objects;
+        }
+
         bool HasPDOHub() const override
         {
             return m_pPDOHub != nullptr;
@@ -222,6 +233,7 @@ namespace
         iCAX::Data::uuid m_SceneID;
         iCAX::Data::uuid m_SceneChannelID;
         std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
+        iCAX::Project::CSceneObjectRegistry m_Objects;
         std::shared_ptr<iCAX::Mail::CMailChannel> m_pChannel;
         std::string m_SceneName = "Render Service Test Scene";
     };
@@ -234,8 +246,6 @@ namespace
         iCAX::Render::SRenderMeshData _Mesh;
         _Mesh.nGeometryID = nGeometryID_;
         _Mesh.nDataVersion = nVersion_;
-        _Mesh.Bounds.Min = { 0.0f, 0.0f, nZ_ };
-        _Mesh.Bounds.Max = { 1.0f, 1.0f, nZ_ };
         _Mesh.Positions = {
             { 0.0f, 0.0f, nZ_ },
             { 1.0f, 0.0f, nZ_ },
@@ -290,12 +300,12 @@ namespace
         return _Toolpath;
     }
 
-    iCAX::Render::SRenderTransformData MakeTransform(
-        IN iCAX::Render::RenderTransformID nTransformID_,
+    iCAX::Render::STransformData MakeTransform(
+        IN iCAX::Render::TransformID nTransformID_,
         IN iCAX::Render::RenderDataVersion nVersion_,
         IN float nX_)
     {
-        iCAX::Render::SRenderTransformData _Transform;
+        iCAX::Render::STransformData _Transform;
         _Transform.nTransformID = nTransformID_;
         _Transform.nDataVersion = nVersion_;
         _Transform.LocalToWorld = iCAX::Render::SMatrix4::Identity();
@@ -410,7 +420,7 @@ TEST(PDORenderServiceTest, WritesGeometryInstanceAndCameraPayloadsToPDO)
     EXPECT_EQ(12u, _InstanceHeader.Header.nDataVersion);
 
     iCAX::PDO::CPDOReadLease _TransformRead(_TransformSlot);
-    const auto& _TransformHeader = _TransformRead.As<iCAX::RenderPDO::SRenderTransformPDOHeader>();
+    const auto& _TransformHeader = _TransformRead.As<iCAX::RenderPDO::STransformPDOHeader>();
     EXPECT_EQ(_Instance.nObjectID, _TransformHeader.nTransformID);
     EXPECT_EQ(16u, _TransformHeader.Header.nDataVersion);
 
@@ -427,7 +437,17 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     _Service.OnLoad();
 
     const auto _ProjectID = iCAX::Data::GenerateNewUUID();
-    constexpr iCAX::Render::RenderSceneID _SceneID = 3;
+    iCAX::PDO::CPDOHubCreateInfo _PDOHubCreateInfo;
+    _PDOHubCreateInfo.nArenaSize = 1024ull * 1024ull;
+    _PDOHubCreateInfo.nSlotCapacity = 32;
+    auto _Hub = iCAX::PDO::GeneratePDOHub(_PDOHubCreateInfo);
+
+    CTestApplicationContext _ApplicationContext;
+    CTestProductContext _ProductContext;
+    CTestProjectContext _ProjectContext(_ProjectID);
+    CTestSceneContext _SceneContext(_Hub);
+
+    const auto _SceneID = iCAX::Render::MakeRenderSceneID(_SceneContext.GetSceneID());
     constexpr iCAX::Render::RenderGeometryID _MeshID = 201;
     constexpr iCAX::Render::RenderGeometryID _PolylineID = 202;
     constexpr iCAX::Render::RenderGeometryID _ToolpathID = 203;
@@ -450,11 +470,6 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     iCAX::Render::SRenderCameraData _Camera;
     _Camera.nCameraID = 9;
     ASSERT_TRUE(_Service.SetCameras(_ProjectID, _SceneID, { _Camera }, _Camera.nCameraID, 25));
-
-    iCAX::PDO::CPDOHubCreateInfo _PDOHubCreateInfo;
-    _PDOHubCreateInfo.nArenaSize = 1024ull * 1024ull;
-    _PDOHubCreateInfo.nSlotCapacity = 32;
-    auto _Hub = iCAX::PDO::GeneratePDOHub(_PDOHubCreateInfo);
 
     const auto _MeshPDOID = iCAX::PDORenderService::CPDORenderService::MakeGeometryPDOID(
         _ProjectID,
@@ -484,11 +499,6 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         _SceneID,
         _Camera.nCameraID);
     const auto _CameraPDOID = iCAX::PDORenderService::CPDORenderService::MakeCameraPDOID(_ProjectID, _SceneID);
-
-    CTestApplicationContext _ApplicationContext;
-    CTestProductContext _ProductContext;
-    CTestProjectContext _ProjectContext(_ProjectID);
-    CTestSceneContext _SceneContext(_Hub);
 
     _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, _SceneContext, 0.016, 1.0);
     _Hub->SwapOutSlot();
@@ -524,7 +534,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         EXPECT_EQ(24u, _InstanceHeader.Header.nDataVersion);
 
         iCAX::PDO::CPDOReadLease _TransformRead(_Hub->GetSlot(_ObjectTransformPDOID));
-        const auto& _TransformHeader = _TransformRead.As<iCAX::RenderPDO::SRenderTransformPDOHeader>();
+        const auto& _TransformHeader = _TransformRead.As<iCAX::RenderPDO::STransformPDOHeader>();
         EXPECT_EQ(_Instance.nObjectID, _TransformHeader.nTransformID);
         EXPECT_EQ(26u, _TransformHeader.Header.nDataVersion);
 

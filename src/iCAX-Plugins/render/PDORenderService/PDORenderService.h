@@ -57,8 +57,8 @@ namespace iCAX
                 std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> MeshSlots;
                 std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> PolylineSlots;
                 std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> ToolpathSlots;
-                std::unordered_map<iCAX::Render::RenderTransformID, SSlotAssignment> TransformSlots;
-                std::unordered_map<iCAX::Render::RenderObjectID, SSlotAssignment> ObjectSlots;
+                std::unordered_map<iCAX::Render::TransformID, SSlotAssignment> TransformSlots;
+                std::unordered_map<iCAX::Render::SceneObjectID, SSlotAssignment> ObjectSlots;
                 SSlotAssignment CameraSlot;
             };
 
@@ -131,7 +131,7 @@ namespace iCAX
             bool SetTransforms(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN const std::vector<iCAX::Render::SRenderTransformData>& Transforms_,
+                IN const std::vector<iCAX::Render::STransformData>& Transforms_,
                 IN iCAX::Render::RenderDataVersion nDataVersion_) override;
 
             bool SetCameras(
@@ -163,7 +163,7 @@ namespace iCAX
             static iCAX::PDO::PDOID MakeObjectPDOID(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN iCAX::Render::RenderObjectID nObjectID_);
+                IN iCAX::Render::SceneObjectID nObjectID_);
 
             /*
             * @brief 构造一个 Transform PDOID。
@@ -172,7 +172,7 @@ namespace iCAX
             static iCAX::PDO::PDOID MakeTransformPDOID(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN iCAX::Render::RenderTransformID nTransformID_);
+                IN iCAX::Render::TransformID nTransformID_);
 
             /*
             * @brief 构造一个 scene 相机 PDOID。
@@ -235,7 +235,7 @@ namespace iCAX
             bool WriteTransformToPDO(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN iCAX::Render::RenderTransformID nTransformID_,
+                IN iCAX::Render::TransformID nTransformID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
             /*
@@ -247,7 +247,7 @@ namespace iCAX
             bool WriteObjectToPDO(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN iCAX::Render::RenderObjectID nObjectID_,
+                IN iCAX::Render::SceneObjectID nObjectID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
             bool WriteCamerasToPDO(
@@ -289,8 +289,8 @@ namespace iCAX
                 IN iCAX::Render::RenderSceneID nSceneID_,
                 IN iCAX::PDO::PDOID nPDOID_,
                 IN iCAX::Render::RenderGeometryID nGeometryID_,
-                IN iCAX::Render::RenderObjectID nObjectID_,
-                IN iCAX::Render::RenderTransformID nTransformID_,
+                IN iCAX::Render::SceneObjectID nObjectID_,
+                IN iCAX::Render::TransformID nTransformID_,
                 IN const char* pPayloadKind_,
                 IN uint64_t nPayloadCapacity_) const;
 

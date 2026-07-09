@@ -284,6 +284,18 @@ const iCAX::Resource::CResourceLibrary& iCAX::Project::CProjectScene::Resources(
     return m_Resources;
 }
 
+iCAX::Project::CSceneObjectRegistry& iCAX::Project::CProjectScene::Objects()
+{
+    EnsureSceneThreadAccess("Scene::Objects");
+    return m_Objects;
+}
+
+const iCAX::Project::CSceneObjectRegistry& iCAX::Project::CProjectScene::Objects() const
+{
+    EnsureSceneThreadAccess("Scene::Objects");
+    return m_Objects;
+}
+
 bool iCAX::Project::CProjectScene::HasPDOHub() const
 {
     return m_pPDOHub != nullptr;
@@ -451,23 +463,35 @@ void iCAX::Project::CProjectScene::Stop()
 void iCAX::Project::CProjectScene::BindStartup()
 {
     EnsureOpen();
-    if (m_bStartupBound || m_StartupComponent.empty())
+    if (m_bStartupBound)
     {
         return;
     }
 
-    auto _vecIndexs = m_pBehaviourRegistry->GetTypeIndexByComponentType(m_StartupComponent);
-    if (_vecIndexs.empty())
+    if (!m_StartupComponent.empty())
     {
-        throw std::runtime_error("startup behaviour to component does not exist: " + m_StartupComponent);
-    }
-    if (_vecIndexs.size() >= 2)
-    {
-        throw std::runtime_error("startup behaviour to component is not unique: " + m_StartupComponent);
+        auto _vecIndexs = m_pBehaviourRegistry->GetTypeIndexByComponentType(m_StartupComponent);
+        if (_vecIndexs.empty())
+        {
+            throw std::runtime_error("startup behaviour to component does not exist: " + m_StartupComponent);
+        }
+        if (_vecIndexs.size() >= 2)
+        {
+            throw std::runtime_error("startup behaviour to component is not unique: " + m_StartupComponent);
+        }
+
+        m_pUniverse->BindBehaviourByIndex(_vecIndexs[0]);
     }
 
-    m_pUniverse->BindBehaviourByIndex(_vecIndexs[0]);
-    m_pRepository->GetMetaEntity()->AddComponent(m_StartupComponent);
+    for (const auto& _Type : m_pBehaviourRegistry->ListBehaviourTypes())
+    {
+        (void)m_pUniverse->BindBehaviourByIndex(_Type);
+    }
+
+    if (!m_StartupComponent.empty())
+    {
+        m_pRepository->GetMetaEntity()->AddComponent(m_StartupComponent);
+    }
     m_bStartupBound = true;
 }
 
@@ -486,6 +510,13 @@ void iCAX::Project::CProjectScene::Tick()
     EnsureOpen();
     const auto _FrameTime = m_RuntimeScheduler.Tick();
     m_pUniverse->Tick(
+        *m_pApplicationContext,
+        *m_pProductContext,
+        m_Project,
+        *this,
+        _FrameTime.DeltaTime,
+        _FrameTime.TotalTime);
+    m_pServiceProvider->UpdateSceneServices(
         *m_pApplicationContext,
         *m_pProductContext,
         m_Project,
@@ -529,6 +560,7 @@ void iCAX::Project::CProjectScene::Close()
         m_pRepository.reset();
     }
     m_pPDOHub.reset();
+    m_Objects.Clear();
     m_Resources.Clear();
     if (m_pMailChannelRegistry && !m_SceneChannelID.is_nil())
     {

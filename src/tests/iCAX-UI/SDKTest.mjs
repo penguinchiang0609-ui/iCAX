@@ -23,6 +23,7 @@ import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
 function testCommandCodes() {
   assert.equal(makeCommandTypeCode("App", "GetState"), makeCommandTypeCodeFromCommand(AppCommands.getState));
   assert.equal(makeCommandTypeCode("Product", "OpenProjectCatalog"), "5952739237587920785");
+  assert.equal(makeCommandTypeCode("Cam.Machine", "Import"), makeCommandTypeCodeFromCommand("Cam.Machine.Import"));
   assert.equal(makePDOID("PreviewMesh", "MainViewport"), makeCommandTypeCode("PreviewMesh", "MainViewport"));
 }
 
@@ -72,6 +73,16 @@ async function testMailboxPromiseFlow() {
 
   const restartedProduct = await app.startProduct("icax.mock-product");
   assert.ok(restartedProduct instanceof ProductProxy);
+
+  const created = await restartedProduct.openProjectCatalog("D:/projects/created.icax", {
+    catalogName: "Created Catalog",
+    projectName: "Created Project",
+  });
+  assert.ok(created.projectProxy instanceof ProjectProxy);
+  assert.ok(created.sceneProxy instanceof SceneProxy);
+  assert.equal(restartedProduct.getProject(created.projectProxy.projectId), created.projectProxy);
+  assert.equal(restartedProduct.state.catalogs.length, 1);
+  assert.equal(restartedProduct.state.catalogs[0].catalogPath, "D:/projects/created.icax");
 
   const resolved = await app.resolveProjectFile("D:/projects/mock.icax");
   assert.equal(resolved.resolve.status, "Resolved");

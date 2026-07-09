@@ -12,9 +12,9 @@ namespace iCAX
         inline constexpr uint32_t kRenderPDOMagic = 0x4F445052u; // "RPDO", little endian.
         inline constexpr uint32_t kRenderPDOLayoutVersion = 1;
 
-        using RenderObjectID = uint64_t;
+        using SceneObjectID = uint64_t;
         using RenderGeometryID = uint64_t;
-        using RenderTransformID = uint64_t;
+        using TransformID = uint64_t;
         using RenderCameraID = uint64_t;
         using RenderDataVersion = uint64_t;
         using RenderStyleID = uint32_t;
@@ -76,6 +76,7 @@ namespace iCAX
         inline constexpr uint32_t kRenderFlagHighlighted = 1u << 2;
         inline constexpr uint32_t kRenderFlagSelected = 1u << 3;
         inline constexpr uint32_t kRenderFlagDirty = 1u << 4;
+        inline constexpr uint32_t kRenderFlagDisabled = 1u << 5;
 
         inline constexpr uint32_t kMeshFlagHasNormals = 1u << 0;
         inline constexpr uint32_t kMeshFlagHasVertexColors = 1u << 1;

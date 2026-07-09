@@ -3,6 +3,7 @@
 
 #include <format>
 #include <stdexcept>
+#include <string_view>
 
 namespace
 {
@@ -32,9 +33,26 @@ namespace
         }
     }
 
+    void RequireCommandMainName(IN const std::string& strName_)
+    {
+        if (!iCAX::Command::IsValidCommandMainName(strName_))
+        {
+            throw std::invalid_argument(
+                "Main command name must be one or more [A-Z][A-Za-z0-9_]* parts separated by '.': " +
+                strName_);
+        }
+    }
+
     uint32_t MakeValidatedCommandCode(IN const char* pKind_, IN const std::string& strName_)
     {
-        RequireCommandName(pKind_, strName_);
+        if (std::string_view(pKind_) == "Main")
+        {
+            RequireCommandMainName(strName_);
+        }
+        else
+        {
+            RequireCommandName(pKind_, strName_);
+        }
         const auto _Code = iCAX::Command::CommandHash32(strName_);
         if (_Code == 0)
         {
@@ -80,6 +98,31 @@ bool iCAX::Command::IsValidCommandName(IN const std::string& strName_)
         }
     }
     return true;
+}
+
+bool iCAX::Command::IsValidCommandMainName(IN const std::string& strName_)
+{
+    if (strName_.empty())
+    {
+        return false;
+    }
+
+    size_t _Start = 0;
+    while (_Start < strName_.size())
+    {
+        const auto _Dot = strName_.find('.', _Start);
+        const auto _Count = (_Dot == std::string::npos) ? std::string::npos : _Dot - _Start;
+        if (!IsValidCommandName(strName_.substr(_Start, _Count)))
+        {
+            return false;
+        }
+        if (_Dot == std::string::npos)
+        {
+            return true;
+        }
+        _Start = _Dot + 1;
+    }
+    return false;
 }
 
 iCAX::Command::CCommandRoute iCAX::Command::MakeCommandRoute(

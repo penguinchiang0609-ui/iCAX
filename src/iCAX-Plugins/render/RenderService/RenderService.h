@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IRenderService.h"
+#include "RenderSceneIds.h"
 
 namespace iCAX
 {

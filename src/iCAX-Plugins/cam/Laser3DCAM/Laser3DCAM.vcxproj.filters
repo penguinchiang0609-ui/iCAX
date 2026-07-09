@@ -7,8 +7,11 @@
   <ItemGroup>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CommandHandlers.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CommandInternal.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="FeatureRecognitionService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Laser3DCAM.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SDFMachineParser.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolpathGenerationService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolpathOrderService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolpathComponents.h"><Filter>Header Files</Filter></ClInclude>
@@ -17,11 +20,29 @@
     <ClInclude Include="Laser3DCAMExport.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CamCommands.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CommandInternal.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachineCommandHandlers.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachineCommandTarget.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachineCommandImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolpathCommandImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SceneCommandHandlers.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SceneCommandTarget.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ScenePayloadInternal.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SelectionCommandHandlers.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SelectionCommandTarget.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolpathCommandHandlers.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolpathCommandTarget.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CameraViewCommandHandlers.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CameraViewCommandTarget.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CameraViewCommandImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WorkpieceCommandHandlers.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WorkpieceCommandTarget.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WorkpieceCommandImplement.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="FeatureRecognitionService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Laser3DCAM.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="LaserCamRenderBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SceneBootstrapBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SDFMachineParser.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathGenerationService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathOrderService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>

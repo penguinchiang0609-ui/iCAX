@@ -42,8 +42,8 @@ TEST(RenderPDOLayoutTest, LayoutsAreBinarySafe)
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderCameraData>);
     EXPECT_TRUE(std::is_standard_layout_v<SRenderCameraPDOHeader>);
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderCameraPDOHeader>);
-    EXPECT_TRUE(std::is_standard_layout_v<SRenderTransformPDOHeader>);
-    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderTransformPDOHeader>);
+    EXPECT_TRUE(std::is_standard_layout_v<STransformPDOHeader>);
+    EXPECT_TRUE(std::is_trivially_copyable_v<STransformPDOHeader>);
 }
 
 TEST(RenderPDODeclTest, CreatesPDODeclarationForRenderPayload)
@@ -192,14 +192,14 @@ TEST(RenderPDOValidationTest, CameraHeaderValidatesCameraArrayAndActiveIndex)
 
 TEST(RenderPDOValidationTest, TransformHeaderValidatesTransformID)
 {
-    SRenderTransformPDOHeader _Header;
-    InitializeHeader(_Header, ERenderPDOPayloadKind::Transform, sizeof(SRenderTransformPDOHeader), 8);
+    STransformPDOHeader _Header;
+    InitializeHeader(_Header, ERenderPDOPayloadKind::Transform, sizeof(STransformPDOHeader), 8);
     _Header.nTransformID = 101;
 
-    EXPECT_TRUE(ValidateTransformPDOHeader(_Header, sizeof(SRenderTransformPDOHeader)));
+    EXPECT_TRUE(ValidateTransformPDOHeader(_Header, sizeof(STransformPDOHeader)));
 
     _Header.nTransformID = 0;
     std::string _Error;
-    EXPECT_FALSE(ValidateTransformPDOHeader(_Header, sizeof(SRenderTransformPDOHeader), &_Error));
+    EXPECT_FALSE(ValidateTransformPDOHeader(_Header, sizeof(STransformPDOHeader), &_Error));
     EXPECT_FALSE(_Error.empty());
 }

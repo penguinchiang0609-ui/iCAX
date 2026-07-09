@@ -81,8 +81,12 @@ TEST(InputPDOStateTest, ValidatesKeyboardAndPointerState)
     auto _State = MakeInputState(8);
     EXPECT_TRUE(SetInputKeyDown(_State.Keyboard, 65, true));
     EXPECT_TRUE(SetInputKeyDown(_State.Keyboard, 256, true));
+    EXPECT_TRUE(SetInputKeyDown(_State.Keyboard, static_cast<InputKeyCode>(EInputKeyCode::ArrowUp), true));
+    EXPECT_TRUE(SetInputKeyDown(_State.Keyboard, static_cast<InputKeyCode>(EInputKeyCode::PageDown), true));
     EXPECT_TRUE(IsInputKeyDown(_State.Keyboard, 65));
     EXPECT_TRUE(IsInputKeyDown(_State.Keyboard, 256));
+    EXPECT_TRUE(IsInputKeyDown(_State.Keyboard, static_cast<InputKeyCode>(EInputKeyCode::ArrowUp)));
+    EXPECT_TRUE(IsInputKeyDown(_State.Keyboard, static_cast<InputKeyCode>(EInputKeyCode::PageDown)));
     EXPECT_FALSE(IsInputKeyDown(_State.Keyboard, 66));
     EXPECT_FALSE(SetInputKeyDown(_State.Keyboard, 512, true));
 

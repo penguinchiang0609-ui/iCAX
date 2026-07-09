@@ -93,6 +93,23 @@ namespace iCAX
                 IN const double& nDeltaTime_,
                 IN const double& nTotalTime_) = 0;
 
+            void OnSceneTick(
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+                IN const iCAX::Product::IProductContext& ProductContext_,
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
+                IN const double& nDeltaTime_,
+                IN const double& nTotalTime_) override
+            {
+                Update(
+                    ApplicationContext_,
+                    ProductContext_,
+                    ProjectContext_,
+                    SceneContext_,
+                    nDeltaTime_,
+                    nTotalTime_);
+            }
+
             /*
             * @brief 清空场景内所有渲染数据，但保留场景本身。
             */
@@ -130,7 +147,7 @@ namespace iCAX
             virtual bool SetTransforms(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN RenderSceneID nSceneID_,
-                IN const std::vector<SRenderTransformData>& Transforms_,
+                IN const std::vector<STransformData>& Transforms_,
                 IN RenderDataVersion nDataVersion_) = 0;
 
             virtual bool SetCameras(

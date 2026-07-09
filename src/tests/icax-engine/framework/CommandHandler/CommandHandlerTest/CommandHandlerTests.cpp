@@ -171,6 +171,9 @@ TEST(CommandRouteTest, RejectsInvalidCommandNames)
     EXPECT_TRUE(IsValidCommandName("Product"));
     EXPECT_TRUE(IsValidCommandName("OpenProjectCatalog"));
     EXPECT_TRUE(IsValidCommandName("Command_2"));
+    EXPECT_TRUE(IsValidCommandMainName("Product"));
+    EXPECT_TRUE(IsValidCommandMainName("Product.Command"));
+    EXPECT_TRUE(IsValidCommandMainName("Cam.Machine"));
 
     EXPECT_FALSE(IsValidCommandName(""));
     EXPECT_FALSE(IsValidCommandName("1Command"));
@@ -178,10 +181,15 @@ TEST(CommandRouteTest, RejectsInvalidCommandNames)
     EXPECT_FALSE(IsValidCommandName("Command.Name"));
     EXPECT_FALSE(IsValidCommandName("Command-Name"));
     EXPECT_FALSE(IsValidCommandName("Command Name"));
+    EXPECT_FALSE(IsValidCommandMainName(""));
+    EXPECT_FALSE(IsValidCommandMainName("Product."));
+    EXPECT_FALSE(IsValidCommandMainName(".Product"));
+    EXPECT_FALSE(IsValidCommandMainName("Product.command"));
+    EXPECT_FALSE(IsValidCommandMainName("Product.Bad-Command"));
 
     EXPECT_THROW((void)MakeCommandRoute("", "Ping"), std::invalid_argument);
     EXPECT_THROW((void)MakeCommandRoute("Product", ""), std::invalid_argument);
-    EXPECT_THROW((void)MakeCommandRoute("Product.Command", "Ping"), std::invalid_argument);
+    EXPECT_NO_THROW((void)MakeCommandRoute("Product.Command", "Ping"));
     EXPECT_THROW((void)MakeCommandRoute("Product", "Bad.Command"), std::invalid_argument);
 }
 
@@ -218,10 +226,13 @@ TEST(CommandTargetTest, BindRejectsDuplicateSubCommandAndInvalidInputs)
     EXPECT_THROW((void)_CommandTarget.Bind("Empty", CCommandTarget::SubCommandFunc{}), std::invalid_argument);
 }
 
-TEST(CommandTargetTest, ConstructorRejectsInvalidMainName)
+TEST(CommandTargetTest, ConstructorAcceptsNamespacedMainNameAndRejectsInvalidMainName)
 {
+    EXPECT_NO_THROW(CTestCommandTarget("Main.Command"));
     EXPECT_THROW(CTestCommandTarget(""), std::invalid_argument);
-    EXPECT_THROW(CTestCommandTarget("Main.Command"), std::invalid_argument);
+    EXPECT_THROW(CTestCommandTarget("Main."), std::invalid_argument);
+    EXPECT_THROW(CTestCommandTarget("Main..Command"), std::invalid_argument);
+    EXPECT_THROW(CTestCommandTarget("main.Command"), std::invalid_argument);
     EXPECT_THROW(CTestCommandTarget("1Main"), std::invalid_argument);
 }
 

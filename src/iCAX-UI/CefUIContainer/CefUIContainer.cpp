@@ -50,6 +50,9 @@ namespace
     std::atomic_bool g_bAllowFileAccessFromFiles = true;
     std::atomic_bool g_bDisableGPU = false;
     std::mutex g_CefRuntimeMutex;
+    constexpr int g_nMinWindowWidthDIP = 1024;
+    constexpr int g_nMinWindowHeightDIP = 680;
+    constexpr wchar_t g_szOriginalWindowProcProperty[] = L"iCAX.CefUIContainer.OriginalWindowProc";
 
     std::string _ToUtf8(IN const std::wstring& Text_)
     {
@@ -314,6 +317,181 @@ namespace
         return std::nullopt;
     }
 
+    HWND _GetBrowserWindowHandle(IN CefRefPtr<CefBrowser> Browser_)
+    {
+        if (!Browser_ || !Browser_->GetHost())
+        {
+            return nullptr;
+        }
+        return Browser_->GetHost()->GetWindowHandle();
+    }
+
+    HWND _GetTopLevelBrowserWindowHandle(IN CefRefPtr<CefBrowser> Browser_)
+    {
+        HWND _hWindow = _GetBrowserWindowHandle(Browser_);
+        if (!_hWindow)
+        {
+            return nullptr;
+        }
+
+        HWND _hRootWindow = ::GetAncestor(_hWindow, GA_ROOT);
+        return _hRootWindow ? _hRootWindow : _hWindow;
+    }
+
+    UINT _GetWindowDpiOrDefault(IN HWND hWindow_)
+    {
+        const UINT _nDpi = hWindow_ ? ::GetDpiForWindow(hWindow_) : 0;
+        return _nDpi == 0 ? USER_DEFAULT_SCREEN_DPI : _nDpi;
+    }
+
+    int _ScaleByDpi(IN int nValue_, IN UINT nDpi_)
+    {
+        return ::MulDiv(nValue_, static_cast<int>(nDpi_), USER_DEFAULT_SCREEN_DPI);
+    }
+
+    SIZE _GetMinimumWindowSize(IN HWND hWindow_)
+    {
+        const UINT _nDpi = _GetWindowDpiOrDefault(hWindow_);
+        return SIZE{
+            _ScaleByDpi(g_nMinWindowWidthDIP, _nDpi),
+            _ScaleByDpi(g_nMinWindowHeightDIP, _nDpi)
+        };
+    }
+
+    LRESULT CALLBACK _BorderlessWindowProc(
+        IN HWND hWindow_,
+        IN UINT nMessage_,
+        IN WPARAM wParam_,
+        IN LPARAM lParam_)
+    {
+        auto _pOriginalProc = reinterpret_cast<WNDPROC>(::GetPropW(hWindow_, g_szOriginalWindowProcProperty));
+
+        if (nMessage_ == WM_GETMINMAXINFO)
+        {
+            auto* _pInfo = reinterpret_cast<MINMAXINFO*>(lParam_);
+            const SIZE _MinSize = _GetMinimumWindowSize(hWindow_);
+            _pInfo->ptMinTrackSize.x = std::max(_pInfo->ptMinTrackSize.x, static_cast<LONG>(_MinSize.cx));
+            _pInfo->ptMinTrackSize.y = std::max(_pInfo->ptMinTrackSize.y, static_cast<LONG>(_MinSize.cy));
+            return 0;
+        }
+
+        if (nMessage_ == WM_WINDOWPOSCHANGING)
+        {
+            auto* _pWindowPos = reinterpret_cast<WINDOWPOS*>(lParam_);
+            if (_pWindowPos && !(_pWindowPos->flags & SWP_NOSIZE) && !(_pWindowPos->flags & SWP_HIDEWINDOW) && !::IsIconic(hWindow_))
+            {
+                const SIZE _MinSize = _GetMinimumWindowSize(hWindow_);
+                _pWindowPos->cx = std::max(_pWindowPos->cx, static_cast<int>(_MinSize.cx));
+                _pWindowPos->cy = std::max(_pWindowPos->cy, static_cast<int>(_MinSize.cy));
+            }
+        }
+
+        if (nMessage_ == WM_NCDESTROY && _pOriginalProc)
+        {
+            ::RemovePropW(hWindow_, g_szOriginalWindowProcProperty);
+            ::SetWindowLongPtrW(hWindow_, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(_pOriginalProc));
+            return ::CallWindowProcW(_pOriginalProc, hWindow_, nMessage_, wParam_, lParam_);
+        }
+
+        return _pOriginalProc
+            ? ::CallWindowProcW(_pOriginalProc, hWindow_, nMessage_, wParam_, lParam_)
+            : ::DefWindowProcW(hWindow_, nMessage_, wParam_, lParam_);
+    }
+
+    void _InstallBorderlessWindowProc(IN CefRefPtr<CefBrowser> Browser_)
+    {
+        HWND _hWindow = _GetTopLevelBrowserWindowHandle(Browser_);
+        if (!_hWindow || ::GetPropW(_hWindow, g_szOriginalWindowProcProperty))
+        {
+            return;
+        }
+
+        auto _pOriginalProc = reinterpret_cast<WNDPROC>(
+            ::SetWindowLongPtrW(_hWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&_BorderlessWindowProc)));
+        if (!_pOriginalProc)
+        {
+            return;
+        }
+
+        if (!::SetPropW(_hWindow, g_szOriginalWindowProcProperty, reinterpret_cast<HANDLE>(_pOriginalProc)))
+        {
+            ::SetWindowLongPtrW(_hWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(_pOriginalProc));
+        }
+    }
+
+    void _ExecuteWindowCommand(IN CefRefPtr<CefBrowser> Browser_, IN const std::string& strCommand_)
+    {
+        HWND _hWindow = _GetTopLevelBrowserWindowHandle(Browser_);
+        if (!_hWindow)
+        {
+            throw std::runtime_error("CEF browser window is not available");
+        }
+
+        if (strCommand_ == "minimize")
+        {
+            ::ShowWindow(_hWindow, SW_MINIMIZE);
+            return;
+        }
+
+        if (strCommand_ == "maximize")
+        {
+            ::ShowWindow(_hWindow, ::IsZoomed(_hWindow) ? SW_RESTORE : SW_MAXIMIZE);
+            return;
+        }
+
+        if (strCommand_ == "close")
+        {
+            Browser_->GetHost()->CloseBrowser(false);
+            return;
+        }
+
+        throw std::invalid_argument("Unsupported window command: " + strCommand_);
+    }
+
+    void _BeginWindowDrag(IN CefRefPtr<CefBrowser> Browser_)
+    {
+        HWND _hWindow = _GetTopLevelBrowserWindowHandle(Browser_);
+        if (!_hWindow)
+        {
+            throw std::runtime_error("CEF browser window is not available");
+        }
+
+        ::SetForegroundWindow(_hWindow);
+        ::ReleaseCapture();
+        ::SendMessageW(_hWindow, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
+    }
+
+    CefRect _MakeInitialWindowBounds()
+    {
+        RECT _WorkArea{};
+        if (!::SystemParametersInfoW(SPI_GETWORKAREA, 0, &_WorkArea, 0))
+        {
+            _WorkArea = { 0, 0, 1280, 820 };
+        }
+
+        const int _WorkWidth = std::max(1L, _WorkArea.right - _WorkArea.left);
+        const int _WorkHeight = std::max(1L, _WorkArea.bottom - _WorkArea.top);
+        const int _Width = std::min(1320, _WorkWidth);
+        const int _Height = std::min(860, _WorkHeight);
+        const int _Left = _WorkArea.left + (_WorkWidth - _Width) / 2;
+        const int _Top = _WorkArea.top + (_WorkHeight - _Height) / 2;
+        return CefRect(_Left, _Top, _Width, _Height);
+    }
+
+    void _ShowInitialBrowserWindow(IN CefRefPtr<CefBrowser> Browser_)
+    {
+        _InstallBorderlessWindowProc(Browser_);
+
+        HWND _hWindow = _GetTopLevelBrowserWindowHandle(Browser_);
+        if (!_hWindow)
+        {
+            return;
+        }
+
+        ::ShowWindow(_hWindow, SW_MAXIMIZE);
+        ::UpdateWindow(_hWindow);
+    }
+
     json::object _ToJsonEnvelope(IN const iCAX::Frontend::CFrontendMailEnvelope& Envelope_)
     {
         json::object _Object;
@@ -388,6 +566,14 @@ namespace
 
     openFileDialog(options) {
       return queryNative("openFileDialog", options || {});
+    },
+
+    windowCommand(command) {
+      return queryNative("windowCommand", { command }).then(() => undefined);
+    },
+
+    beginWindowDrag() {
+      return queryNative("beginWindowDrag").then(() => undefined);
     },
 
     subscribeMail(channelId, handler) {
@@ -967,6 +1153,21 @@ namespace
                     return true;
                 }
 
+                if (_Method == "windowCommand")
+                {
+                    const auto _Command = _AsString(_RequireField(_Payload, "command"), "command");
+                    _ExecuteWindowCommand(Browser_, _Command);
+                    Callback_->Success("null");
+                    return true;
+                }
+
+                if (_Method == "beginWindowDrag")
+                {
+                    _BeginWindowDrag(Browser_);
+                    Callback_->Success("null");
+                    return true;
+                }
+
                 throw std::invalid_argument("Unsupported CEF bridge method: " + _Method);
             }
             catch (const std::exception& _Error)
@@ -1053,6 +1254,7 @@ namespace
             CEF_REQUIRE_UI_THREAD();
             EnsureMessageRouterOnUI();
             m_pBrowser = Browser_;
+            _ShowInitialBrowserWindow(Browser_);
         }
 
         void OnTitleChange(CefRefPtr<CefBrowser> Browser_, const CefString& Title_) override
@@ -1332,18 +1534,7 @@ public:
             const auto _Interval = std::chrono::milliseconds(std::max(1, nIntervalMS_));
             while (!bStopPolling.load())
             {
-                try
-                {
-                    PollMails();
-                }
-                catch (const std::exception& Error_)
-                {
-                    throw;
-                }
-                catch (...)
-                {
-                    throw;
-                }
+                PollMails();
                 std::this_thread::sleep_for(_Interval);
             }
         });
@@ -1495,6 +1686,10 @@ void iCAX::Frontend::Cef::CCefUIContainer::Start()
 
     CefWindowInfo _WindowInfo;
     _WindowInfo.SetAsPopup(nullptr, L"iCAX");
+    _WindowInfo.style = WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VISIBLE | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+    _WindowInfo.ex_style = WS_EX_APPWINDOW;
+    _WindowInfo.bounds = _MakeInitialWindowBounds();
+    _WindowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
 
     CefBrowserSettings _BrowserSettings;
     const auto _StartURL = _ResolveStartURL(m_pImpl->Config);

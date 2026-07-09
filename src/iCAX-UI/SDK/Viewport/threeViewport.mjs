@@ -1,5 +1,11 @@
 import * as THREE from "../ThirdParty/three/three.module.js";
 import {
+  InputModifierFlags,
+  InputStateFlags,
+  mapKeyboardEventCode,
+  writeInputStatePDO,
+} from "../Input/inputPDO.mjs";
+import {
   RenderFlags,
   RenderGeometryKind,
   RenderPDOCommands,
@@ -29,14 +35,38 @@ export class ThreeRenderViewport {
     this.slotDescriptors = new Map();
     this.geometryPayloads = new Map();
     this.geometryObjects = new Map();
+    this.instancePayloads = new Map();
     this.transformPayloads = new Map();
     this.objectSlots = new Map();
     this.sceneObjects = new Map();
     this.cameras = new Map();
     this.activeCameraId = null;
     this.styles = new Map();
+    this.diagnosticKeys = new Set();
+    this.domListeners = [];
     this.isDefragging = false;
     this.isDisposed = false;
+    this.dynamicReadPending = false;
+    this.input = {
+      keys: new Set(),
+      dataVersion: 1n,
+      sequence: 1n,
+      viewportId: BigInt(options.viewportId ?? 1),
+      pointerX: 0,
+      pointerY: 0,
+      lastPointerX: 0,
+      lastPointerY: 0,
+      pointerDeltaX: 0,
+      pointerDeltaY: 0,
+      wheelX: 0,
+      wheelY: 0,
+      buttonMask: 0,
+      modifierMask: 0,
+      hasFocus: false,
+      pointerInside: false,
+      pointerCaptured: false,
+      writePending: false,
+    };
 
     this.root = document.createElement("div");
     this.root.className = "icax-three-viewport";
@@ -63,6 +93,7 @@ export class ThreeRenderViewport {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.domElement.className = "icax-three-viewport-canvas";
+    this.renderer.domElement.tabIndex = 0;
     this.root.appendChild(this.renderer.domElement);
 
     this.raycaster = new THREE.Raycaster();
@@ -98,9 +129,11 @@ export class ThreeRenderViewport {
       return this;
     }
     this.#unsubscribe();
+    this.#resetInputState();
     this.sceneProxy = sceneProxy ?? null;
     this.slotDescriptors.clear();
     this.objectSlots.clear();
+    this.dynamicReadPending = false;
     this.#clearRenderContent();
 
     if (!this.sceneProxy) {
@@ -134,6 +167,7 @@ export class ThreeRenderViewport {
   dispose() {
     this.isDisposed = true;
     this.#unsubscribe();
+    this.#removeDomListeners();
     this.resizeObserver?.disconnect?.();
     this.resizeObserver = null;
     if (this.animationFrame) {
@@ -181,6 +215,11 @@ export class ThreeRenderViewport {
       version: RenderPDOLayout.version,
     };
     this.slotDescriptors.set(descriptor.pdoId, descriptor);
+    this.#emitDiagnosticOnce(
+      `slot:${payload.event}:${descriptor.pdoId}`,
+      `RenderPDO slot ${payload.event}: role=${descriptor.slotRole}, pdo=${descriptor.pdoId}`,
+      "info",
+    );
     await this.#readSlot(descriptor);
   }
 
@@ -198,18 +237,40 @@ export class ThreeRenderViewport {
     if (!this.sceneProxy?.pdo?.enabled || this.isDefragging || !descriptor?.payloadCapacity) {
       return;
     }
-    try {
-      await this.sceneProxy.pdo.withReadDescriptor({
-        id: descriptor.pdoId,
-        version: descriptor.version,
-        payloadSize: descriptor.payloadCapacity,
-      }, (buffer) => {
-        const payload = parseRenderPDOPayload(buffer);
-        this.#applyPayload(descriptor, payload);
-      });
-    } catch (error) {
-      this.#setStatus(`RenderPDO 读取失败: ${error.message}`);
+
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        await this.sceneProxy.pdo.withReadDescriptor({
+          id: descriptor.pdoId,
+          version: descriptor.version,
+          payloadSize: descriptor.payloadCapacity,
+        }, (buffer) => {
+          const payload = parseRenderPDOPayload(buffer);
+          this.#applyPayload(descriptor, payload);
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (this.#isTransientPDOReadError(error) && attempt < 2) {
+          await delay(24 * (attempt + 1));
+          continue;
+        }
+        break;
+      }
     }
+
+    if (lastError) {
+      this.#setStatus(`RenderPDO 读取失败: ${lastError.message}`);
+      this.#emitDiagnostic(`RenderPDO 读取失败：${lastError.message}`, "error");
+    }
+  }
+
+  #isTransientPDOReadError(error) {
+    const message = String(error?.message ?? error ?? "");
+    return message.includes("slot buffer index is invalid")
+      || message.includes("PDO 正在整理")
+      || message.includes("defrag");
   }
 
   #applyPayload(descriptor, payload) {
@@ -217,21 +278,42 @@ export class ThreeRenderViewport {
       this.geometryPayloads.set(payload.geometryId, payload);
       this.geometryObjects.set(payload.geometryId, this.#makeGeometryObject(payload));
       this.#updateObjectsUsingGeometry(payload.geometryId);
+      this.#upsertObjectsUsingGeometry(payload.geometryId);
+      this.#emitDiagnosticOnce(
+        `geometry:${payload.geometryId}:${payload.header?.dataVersion ?? ""}`,
+        `RenderPDO ${payload.kind} 已读取：geometry=${payload.geometryId}`,
+        "ok",
+      );
       this.#setStatus("");
       return;
     }
     if (payload.kind === "instance_list") {
       this.#applyInstanceList(descriptor, payload);
+      this.#emitDiagnosticOnce(
+        `instance:${descriptor.pdoId}:${payload.header?.dataVersion ?? ""}`,
+        `RenderPDO 实例已读取：${payload.instances?.length ?? 0} 个对象`,
+        "ok",
+      );
       this.#setStatus("");
       return;
     }
     if (payload.kind === "transform") {
       this.#applyTransform(payload);
+      this.#emitDiagnosticOnce(
+        `transform:${payload.transformId}:${payload.header?.dataVersion ?? ""}`,
+        `RenderPDO Transform 已读取：transform=${payload.transformId}`,
+        "info",
+      );
       this.#setStatus("");
       return;
     }
     if (payload.kind === "camera") {
       this.#applyCamera(payload);
+      this.#emitDiagnosticOnce(
+        `camera:${payload.activeCameraId}:${payload.header?.dataVersion ?? ""}`,
+        `RenderPDO 相机已读取：active=${payload.activeCameraId ?? "-"}`,
+        "ok",
+      );
     }
   }
 
@@ -244,17 +326,24 @@ export class ThreeRenderViewport {
     for (const instance of payload.instances ?? []) {
       liveObjectIds.add(instance.objectId);
       this.objectSlots.set(instance.objectId, descriptor.pdoId);
+      this.instancePayloads.set(String(instance.objectId), instance);
       this.#upsertSceneObject(instance);
     }
 
     if (descriptor.objectId && payload.instances?.length === 0) {
       this.#removeSceneObject(descriptor.objectId);
+      this.instancePayloads.delete(String(descriptor.objectId));
     }
   }
 
   #upsertSceneObject(instance) {
     const geometryObject = this.geometryObjects.get(instance.geometryId);
     if (!geometryObject) {
+      this.#emitDiagnosticOnce(
+        `pending-instance:${instance.objectId}:${instance.geometryId}`,
+        `RenderPDO 实例等待几何：object=${instance.objectId}, geometry=${instance.geometryId}`,
+        "info",
+      );
       return;
     }
 
@@ -266,6 +355,11 @@ export class ThreeRenderViewport {
       object = this.#instantiateObject(instance, geometryObject);
       this.sceneObjects.set(instance.objectId, object);
       this.content.add(object);
+      this.#emitDiagnosticOnce(
+        `scene-object:${instance.objectId}:${instance.geometryId}`,
+        `视口对象已创建：object=${instance.objectId}, geometry=${instance.geometryId}`,
+        "ok",
+      );
     }
 
     object.visible = Boolean(instance.flags & RenderFlags.visible);
@@ -274,6 +368,14 @@ export class ThreeRenderViewport {
     const transform = this.transformPayloads.get(instance.transformId);
     object.matrix.fromArray(transform?.localToWorld ?? identityMatrixArray());
     object.matrixWorldNeedsUpdate = true;
+  }
+
+  #upsertObjectsUsingGeometry(geometryId) {
+    for (const instance of this.instancePayloads.values()) {
+      if (instance.geometryId === geometryId) {
+        this.#upsertSceneObject(instance);
+      }
+    }
   }
 
   #instantiateObject(instance, geometryObject) {
@@ -286,7 +388,7 @@ export class ThreeRenderViewport {
     } else {
       object = new THREE.Object3D();
     }
-    object.name = `RenderObject:${instance.objectId}`;
+    object.name = `SceneObject:${instance.objectId}`;
     object.userData = {
       objectId: instance.objectId,
       geometryId: instance.geometryId,
@@ -311,6 +413,11 @@ export class ThreeRenderViewport {
         geometry.computeVertexNormals();
       }
       geometry.computeBoundingSphere();
+      this.#emitDiagnosticOnce(
+        `mesh-size:${payload.geometryId}:${payload.positions?.length ?? 0}:${payload.indices?.length ?? 0}`,
+        `RenderPDO Mesh 数据：geometry=${payload.geometryId}, vertices=${Math.floor((payload.positions?.length ?? 0) / 3)}, indices=${payload.indices?.length ?? 0}`,
+        "info",
+      );
       return geometry;
     }
 
@@ -418,6 +525,7 @@ export class ThreeRenderViewport {
     if (payload.slotRole === "Object" && payload.objectId) {
       this.#removeSceneObject(payload.objectId);
       this.objectSlots.delete(payload.objectId);
+      this.instancePayloads.delete(String(payload.objectId));
       return;
     }
     if (payload.geometryId) {
@@ -449,9 +557,11 @@ export class ThreeRenderViewport {
     this.sceneObjects.clear();
     this.geometryObjects.clear();
     this.geometryPayloads.clear();
+    this.instancePayloads.clear();
     this.transformPayloads.clear();
     this.cameras.clear();
     this.activeCameraId = null;
+    this.diagnosticKeys.clear();
   }
 
   #applyTransform(payload) {
@@ -506,17 +616,118 @@ export class ThreeRenderViewport {
   }
 
   #installPointerControls() {
-    this.renderer.domElement.addEventListener("pointerdown", (event) => {
+    const canvas = this.renderer.domElement;
+    this.#listen(canvas, "pointerdown", (event) => {
+      canvas.focus?.();
+      this.input.hasFocus = true;
+      this.input.pointerInside = true;
+      this.input.pointerCaptured = true;
+      this.#updatePointerFromEvent(event);
+      this.input.buttonMask = event.buttons || buttonToMask(event.button);
       this.renderer.domElement.setPointerCapture?.(event.pointerId);
     });
-    this.renderer.domElement.addEventListener("pointerup", (event) => {
+    this.#listen(canvas, "pointerup", (event) => {
+      this.#updatePointerFromEvent(event);
+      this.input.buttonMask = event.buttons || 0;
+      if (!this.input.buttonMask) {
+        this.input.pointerCaptured = false;
+      }
       this.renderer.domElement.releasePointerCapture?.(event.pointerId);
       this.#emitPick(event);
     });
-    this.renderer.domElement.addEventListener("wheel", (event) => {
+    this.#listen(canvas, "pointermove", (event) => {
+      this.#updatePointerFromEvent(event);
+      this.input.buttonMask = event.buttons || this.input.buttonMask;
+    });
+    this.#listen(canvas, "pointerenter", (event) => {
+      this.input.pointerInside = true;
+      this.#updatePointerFromEvent(event, false);
+    });
+    this.#listen(canvas, "pointerleave", () => {
+      this.input.pointerInside = false;
+    });
+    this.#listen(canvas, "focus", () => {
+      this.input.hasFocus = true;
+    });
+    this.#listen(canvas, "blur", () => {
+      this.input.hasFocus = false;
+      this.input.keys.clear();
+      this.input.buttonMask = 0;
+      this.input.pointerCaptured = false;
+    });
+    this.#listen(canvas, "wheel", (event) => {
       event.preventDefault();
+      this.#updatePointerFromEvent(event, false);
+      this.input.wheelX += event.deltaX || 0;
+      this.input.wheelY += event.deltaY || 0;
     }, { passive: false });
-    this.renderer.domElement.addEventListener("contextmenu", (event) => event.preventDefault());
+    this.#listen(canvas, "contextmenu", (event) => event.preventDefault());
+    this.#listen(window, "keydown", (event) => this.#handleKeyboard(event, true));
+    this.#listen(window, "keyup", (event) => this.#handleKeyboard(event, false));
+    this.#listen(window, "blur", () => {
+      this.input.keys.clear();
+      this.input.buttonMask = 0;
+      this.input.pointerCaptured = false;
+    });
+  }
+
+  #listen(target, type, handler, options) {
+    target.addEventListener(type, handler, options);
+    this.domListeners.push(() => target.removeEventListener(type, handler, options));
+  }
+
+  #removeDomListeners() {
+    for (const remove of this.domListeners.splice(0)) {
+      remove();
+    }
+  }
+
+  #handleKeyboard(event, isDown) {
+    if (!this.#shouldCaptureKeyboard(event)) {
+      return;
+    }
+
+    const keyCode = mapKeyboardEventCode(event);
+    if (!keyCode) {
+      return;
+    }
+
+    this.input.modifierMask = modifierMaskFromEvent(event);
+    if (isDown) {
+      this.input.keys.add(keyCode);
+    } else {
+      this.input.keys.delete(keyCode);
+    }
+    event.preventDefault();
+  }
+
+  #shouldCaptureKeyboard(event) {
+    if (isEditableTarget(event.target)) {
+      return false;
+    }
+    return this.input.hasFocus || this.input.pointerInside || this.input.pointerCaptured;
+  }
+
+  #updatePointerFromEvent(event, accumulateDelta = true) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    this.input.pointerX = Number.isFinite(x) ? x : this.input.pointerX;
+    this.input.pointerY = Number.isFinite(y) ? y : this.input.pointerY;
+    this.input.modifierMask = modifierMaskFromEvent(event);
+
+    if (!accumulateDelta) {
+      this.input.lastPointerX = this.input.pointerX;
+      this.input.lastPointerY = this.input.pointerY;
+      return;
+    }
+
+    const dx = Number.isFinite(event.movementX) ? event.movementX : this.input.pointerX - this.input.lastPointerX;
+    const dy = Number.isFinite(event.movementY) ? event.movementY : this.input.pointerY - this.input.lastPointerY;
+    this.input.pointerDeltaX += dx || 0;
+    this.input.pointerDeltaY += dy || 0;
+    this.input.lastPointerX = this.input.pointerX;
+    this.input.lastPointerY = this.input.pointerY;
   }
 
   #emitPick(event) {
@@ -550,6 +761,8 @@ export class ThreeRenderViewport {
     const tick = () => {
       this.animationFrame = 0;
       if (!this.isDisposed) {
+        void this.#flushInputPDO();
+        void this.#refreshDynamicRenderPDO();
         this.#renderOnce();
         this.animationFrame = requestAnimationFrame(tick);
       }
@@ -564,6 +777,125 @@ export class ThreeRenderViewport {
   #setStatus(message) {
     this.status.textContent = message ?? "";
     this.status.hidden = !message;
+  }
+
+  #emitDiagnosticOnce(key, message, level = "info") {
+    if (this.diagnosticKeys.has(key)) {
+      return;
+    }
+    this.diagnosticKeys.add(key);
+    this.#emitDiagnostic(message, level);
+  }
+
+  #emitDiagnostic(message, level = "info") {
+    if (typeof this.options.onDiagnostic === "function") {
+      this.options.onDiagnostic({ level, message });
+    }
+  }
+
+  async #flushInputPDO() {
+    if (!this.sceneProxy?.pdo?.enabled) {
+      this.#clearTransientInput();
+      return;
+    }
+    if (this.input.writePending) {
+      return;
+    }
+
+    this.input.writePending = true;
+    const dataVersion = this.input.dataVersion++;
+    const sequence = this.input.sequence++;
+    const sentTransient = {
+      pointerDeltaX: this.input.pointerDeltaX,
+      pointerDeltaY: this.input.pointerDeltaY,
+      wheelX: this.input.wheelX,
+      wheelY: this.input.wheelY,
+    };
+    const flags = (this.input.hasFocus ? InputStateFlags.focused : 0)
+      | (this.input.pointerInside ? InputStateFlags.pointerInside : 0)
+      | (this.input.pointerCaptured ? InputStateFlags.pointerCaptured : 0);
+    try {
+      await writeInputStatePDO(this.sceneProxy, {
+        dataVersion,
+        sequence,
+        sceneId: this.sceneProxy.pdo.makeId("input.scene", this.sceneProxy.sceneId ?? "scene"),
+        viewportId: this.input.viewportId,
+        flags,
+        modifierMask: this.input.modifierMask,
+        lockMask: 0,
+        keys: this.input.keys,
+        pointer: {
+          pointerKind: 1,
+          buttonMask: this.input.buttonMask,
+          flags: 0,
+          deviceId: 1,
+          x: this.input.pointerX,
+          y: this.input.pointerY,
+          deltaX: sentTransient.pointerDeltaX,
+          deltaY: sentTransient.pointerDeltaY,
+          wheelX: sentTransient.wheelX,
+          wheelY: sentTransient.wheelY,
+        },
+      });
+    } catch {
+      // 输入 PDO 是可丢帧通道：slot 尚未由后端创建或当前帧写缓冲不可用时，直接丢弃本帧输入。
+    } finally {
+      this.input.writePending = false;
+      this.#subtractTransientInput(sentTransient);
+    }
+  }
+
+  async #refreshDynamicRenderPDO() {
+    if (!this.sceneProxy?.pdo?.enabled || this.isDefragging || this.dynamicReadPending) {
+      return;
+    }
+
+    const descriptors = [...this.slotDescriptors.values()].filter((descriptor) =>
+      descriptor.slotRole === "Transform" || descriptor.slotRole === "Camera");
+    if (!descriptors.length) {
+      return;
+    }
+
+    this.dynamicReadPending = true;
+    try {
+      await Promise.allSettled(descriptors.map((descriptor) => this.#readSlot(descriptor)));
+    } finally {
+      this.dynamicReadPending = false;
+    }
+  }
+
+  #clearTransientInput() {
+    this.input.pointerDeltaX = 0;
+    this.input.pointerDeltaY = 0;
+    this.input.wheelX = 0;
+    this.input.wheelY = 0;
+  }
+
+  #subtractTransientInput(transient) {
+    this.input.pointerDeltaX -= transient.pointerDeltaX;
+    this.input.pointerDeltaY -= transient.pointerDeltaY;
+    this.input.wheelX -= transient.wheelX;
+    this.input.wheelY -= transient.wheelY;
+    if (Math.abs(this.input.pointerDeltaX) < 0.000001) {
+      this.input.pointerDeltaX = 0;
+    }
+    if (Math.abs(this.input.pointerDeltaY) < 0.000001) {
+      this.input.pointerDeltaY = 0;
+    }
+    if (Math.abs(this.input.wheelX) < 0.000001) {
+      this.input.wheelX = 0;
+    }
+    if (Math.abs(this.input.wheelY) < 0.000001) {
+      this.input.wheelY = 0;
+    }
+  }
+
+  #resetInputState() {
+    this.input.keys.clear();
+    this.input.buttonMask = 0;
+    this.input.modifierMask = 0;
+    this.input.pointerCaptured = false;
+    this.#clearTransientInput();
   }
 
   #unsubscribe() {
@@ -582,6 +914,43 @@ const IDENTITY_MATRIX = Object.freeze([
 
 function identityMatrixArray() {
   return IDENTITY_MATRIX;
+}
+
+function modifierMaskFromEvent(event) {
+  return (event.shiftKey ? InputModifierFlags.shift : 0)
+    | (event.ctrlKey ? InputModifierFlags.ctrl : 0)
+    | (event.altKey ? InputModifierFlags.alt : 0)
+    | (event.metaKey ? InputModifierFlags.super : 0);
+}
+
+function buttonToMask(button) {
+  switch (button) {
+    case 0:
+      return 1;
+    case 1:
+      return 4;
+    case 2:
+      return 2;
+    case 3:
+      return 8;
+    case 4:
+      return 16;
+    default:
+      return 0;
+  }
+}
+
+function isEditableTarget(target) {
+  const element = target instanceof Element ? target : null;
+  if (!element) {
+    return false;
+  }
+  const tagName = element.tagName?.toLowerCase?.() ?? "";
+  return element.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+}
+
+function delay(durationMs) {
+  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
 function ensureThreeViewportStyles() {

@@ -38,25 +38,34 @@ export function validateCommandNamePart(name, kind = "command name") {
   }
 }
 
+export function validateCommandMainName(name, kind = "main command name") {
+  if (typeof name !== "string" || name.length === 0) {
+    throw new TypeError(`${kind} cannot be empty`);
+  }
+  for (const part of name.split(".")) {
+    validateCommandNamePart(part, kind);
+  }
+}
+
 export function parseCommand(command) {
   if (typeof command !== "string") {
     throw new TypeError("command must be a string");
   }
 
-  const dotIndex = command.indexOf(".");
-  if (dotIndex <= 0 || dotIndex !== command.lastIndexOf(".") || dotIndex === command.length - 1) {
-    throw new TypeError(`command must use Main.Sub format: ${command}`);
+  const dotIndex = command.lastIndexOf(".");
+  if (dotIndex <= 0 || dotIndex === command.length - 1) {
+    throw new TypeError(`command must use Main.Sub format with optional main namespace: ${command}`);
   }
 
   const main = command.slice(0, dotIndex);
   const sub = command.slice(dotIndex + 1);
-  validateCommandNamePart(main, "main command name");
+  validateCommandMainName(main, "main command name");
   validateCommandNamePart(sub, "sub command name");
   return { main, sub };
 }
 
 export function makeCommandTypeCode(main, sub) {
-  validateCommandNamePart(main, "main command name");
+  validateCommandMainName(main, "main command name");
   validateCommandNamePart(sub, "sub command name");
   return ((BigInt(fnv1a32(main)) << 32n) | BigInt(fnv1a32(sub))).toString();
 }

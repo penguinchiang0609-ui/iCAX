@@ -98,6 +98,9 @@
   <Folder Name="/iCAX-Plugins/input/InputPDO/">
     <Project Path="iCAX-Plugins/input/InputPDO/InputPDO.vcxproj" />
   </Folder>
+  <Folder Name="/iCAX-Plugins/input/InputService/">
+    <Project Path="iCAX-Plugins/input/InputService/InputService.vcxproj" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/physics/" />
   <Folder Name="/iCAX-Plugins/physics/ColliderData/">
     <Project Path="iCAX-Plugins/physics/ColliderData/ColliderData.vcxproj" />
@@ -127,6 +130,12 @@
   </Folder>
   <Folder Name="/iCAX-Plugins/render/RenderService/">
     <Project Path="iCAX-Plugins/render/RenderService/RenderService.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/render/RenderInteraction/">
+    <Project Path="iCAX-Plugins/render/RenderInteraction/RenderInteraction.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/render/CameraNavigation/">
+    <Project Path="iCAX-Plugins/render/CameraNavigation/CameraNavigation.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-UI/" />
   <Folder Name="/iCAX-UI/CefUIContainer/">
@@ -210,6 +219,10 @@
   <Folder Name="/tests/icax-plugins/input/InputPDO/" />
   <Folder Name="/tests/icax-plugins/input/InputPDO/InputPDOTest/">
     <Project Path="tests/icax-plugins/input/InputPDO/InputPDOTest/InputPDOTest.vcxproj" />
+  </Folder>
+  <Folder Name="/tests/icax-plugins/input/InputService/" />
+  <Folder Name="/tests/icax-plugins/input/InputService/InputServiceTest/">
+    <Project Path="tests/icax-plugins/input/InputService/InputServiceTest/InputServiceTest.vcxproj" />
   </Folder>
   <Folder Name="/tests/icax-plugins/physics/" />
   <Folder Name="/tests/icax-plugins/physics/ColliderService/" />

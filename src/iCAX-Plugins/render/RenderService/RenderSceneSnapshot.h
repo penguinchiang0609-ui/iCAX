@@ -22,7 +22,7 @@ namespace iCAX
             std::unordered_map<RenderGeometryID, SRenderMeshData> Meshes;
             std::unordered_map<RenderGeometryID, SRenderPolylineData> Polylines;
             std::unordered_map<RenderGeometryID, SRenderToolpathData> Toolpaths;
-            std::vector<SRenderTransformData> Transforms;
+            std::vector<STransformData> Transforms;
             std::vector<SRenderInstanceData> Instances;
             std::vector<SRenderStyleData> Styles;
             std::vector<SRenderCameraData> Cameras;

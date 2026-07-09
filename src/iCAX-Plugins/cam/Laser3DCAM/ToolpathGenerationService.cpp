@@ -43,7 +43,7 @@ namespace iCAX
                 }
 
                 auto _pWorkpieceEntity = Scene_.Database().GetEntity(Request_.WorkpieceEntityID);
-                if (!_pWorkpieceEntity || !_pWorkpieceEntity->GetComponent<CLaserWorkpieceComponent>())
+                if (!_pWorkpieceEntity || !_pWorkpieceEntity->GetComponent<CWorkpieceComponent>())
                 {
                     throw std::invalid_argument("Toolpath generation workpiece does not exist");
                 }

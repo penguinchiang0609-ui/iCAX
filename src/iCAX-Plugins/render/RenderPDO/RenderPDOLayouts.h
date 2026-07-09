@@ -46,7 +46,6 @@ namespace iCAX
         {
             SRenderPDOHeader Header;
             RenderGeometryID nGeometryID = 0;
-            SRenderAABB Bounds;
             uint32_t nTopology = static_cast<uint32_t>(ERenderTopology::TriangleList);
             uint32_t nVertexCount = 0;
             uint32_t nIndexCount = 0;
@@ -109,7 +108,7 @@ namespace iCAX
 
         struct _RENDER_PDO_EXP SRenderInstanceData final
         {
-            RenderObjectID nObjectID = 0;
+            SceneObjectID nObjectID = 0;
             RenderGeometryID nGeometryID = 0;
             uint32_t nGeometryKind = static_cast<uint32_t>(ERenderGeometryKind::Unknown);
             uint32_t nRenderClass = static_cast<uint32_t>(ERenderClass::Unknown);
@@ -166,10 +165,10 @@ namespace iCAX
         *   Transform 是 EC 风格的独立组件，只包含 ID 和 local-to-world 矩阵。
         *   Render instance、camera、collider 等组件使用相同 ID 时，前端或其他消费者即可把它们拼到同一个逻辑物体上。
         */
-        struct _RENDER_PDO_EXP SRenderTransformPDOHeader final
+        struct _RENDER_PDO_EXP STransformPDOHeader final
         {
             SRenderPDOHeader Header;
-            RenderTransformID nTransformID = 0;
+            TransformID nTransformID = 0;
             uint32_t nFlags = 0;
             uint32_t nReserved = 0;
             SMatrix4 LocalToWorld = SMatrix4::Identity();
@@ -185,9 +184,10 @@ namespace iCAX
         static_assert(std::is_standard_layout_v<SRenderInstanceData>);
         static_assert(std::is_trivially_copyable_v<SRenderInstanceData>);
         static_assert(sizeof(SRenderInstanceData) == 32);
-        static_assert(std::is_standard_layout_v<SRenderTransformPDOHeader>);
-        static_assert(std::is_trivially_copyable_v<SRenderTransformPDOHeader>);
-        static_assert(sizeof(SRenderTransformPDOHeader) == 112);
+        static_assert(sizeof(SRenderMeshPDOHeader) == 88);
+        static_assert(std::is_standard_layout_v<STransformPDOHeader>);
+        static_assert(std::is_trivially_copyable_v<STransformPDOHeader>);
+        static_assert(sizeof(STransformPDOHeader) == 112);
         static_assert(std::is_standard_layout_v<SRenderMeshPDOHeader>);
         static_assert(std::is_trivially_copyable_v<SRenderMeshPDOHeader>);
         static_assert(std::is_standard_layout_v<SRenderPolylinePDOHeader>);

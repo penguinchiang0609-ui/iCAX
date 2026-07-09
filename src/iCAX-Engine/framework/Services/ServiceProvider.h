@@ -4,12 +4,29 @@
 #include <typeindex>
 #include <functional>
 #include <mutex>
+#include <vector>
 #include "Services.h"
 #include <stdexcept>
 #include "IService.h"
 
 namespace iCAX
 {
+    namespace Application
+    {
+        class IApplicationContext;
+    }
+
+    namespace Product
+    {
+        class IProductContext;
+    }
+
+    namespace Project
+    {
+        class IProjectContext;
+        class ISceneContext;
+    }
+
     namespace Services
     {
         /*
@@ -124,6 +141,21 @@ namespace iCAX
             *   卸载后如果再使用，会重新实例化，走加载
             */
             void UnloadAll();
+
+            /*
+            * @brief 驱动当前 Scene 的服务帧刷新。
+            * @details
+            *   这里只调用已经实例化的单例服务，不会为了帧刷新而创建服务实例。
+            *   每个服务拿到的是当前 Application/Product/Project/Scene 上下文；
+            *   共享服务必须在自己的实现中按 ProjectID + SceneID 隔离运行态数据。
+            */
+            void UpdateSceneServices(
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+                IN const iCAX::Product::IProductContext& ProductContext_,
+                IN iCAX::Project::IProjectContext& ProjectContext_,
+                IN iCAX::Project::ISceneContext& SceneContext_,
+                IN const double& nDeltaTime_,
+                IN const double& nTotalTime_);
 
         private:
             mutable std::recursive_mutex m_Mutex;

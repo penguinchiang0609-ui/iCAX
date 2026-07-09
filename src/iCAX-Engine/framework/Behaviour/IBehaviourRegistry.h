@@ -116,6 +116,15 @@ namespace iCAX
             virtual std::vector<std::type_index> GetTypeIndexByComponentType(IN const std::string& strComponent_) const = 0;
 
             /*
+            * @brief 列出当前注册表中所有 Behaviour 类型。
+            * @return Behaviour C++ 类型列表，顺序为注册顺序。
+            * @details
+            *   Scene 启动时会把产品注册表里的 Behaviour 都绑定到自己的 Universe。
+            *   这样后续新增组件时，Dispatcher 已经具备对应 Behaviour 实例，可以正确接收 Awake/Update。
+            */
+            virtual std::vector<std::type_index> ListBehaviourTypes() const = 0;
+
+            /*
             * @brief 注册Behaviour
             * @param_template [in] T Behaviour 类型。
             * @param [in] args 构造参数。

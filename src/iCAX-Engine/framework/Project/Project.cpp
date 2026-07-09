@@ -91,9 +91,15 @@ namespace
         return strProjectPath_ + ".log";
     }
 
+    std::filesystem::path PathFromUTF8(IN const std::string& strPath_)
+    {
+        std::u8string _Text(strPath_.begin(), strPath_.end());
+        return std::filesystem::path(_Text);
+    }
+
     void EnsureParentDirectory(IN const std::string& strPath_)
     {
-        const std::filesystem::path _Path(strPath_);
+        const auto _Path = PathFromUTF8(strPath_);
         const auto _Parent = _Path.parent_path();
         if (!_Parent.empty())
         {
@@ -184,7 +190,8 @@ void iCAX::Project::CProject::SetQuickSaveLogPath(IN const std::string& strPath_
 void iCAX::Project::CProject::ReplayQuickSaveLog(IN const std::string& strMagic_, IN uint32_t nVersion_)
 {
     auto _LogPath = GetQuickSaveLogPath();
-    if (_LogPath.empty() || !std::filesystem::exists(_LogPath) || std::filesystem::file_size(_LogPath) == 0)
+    const auto _FilePath = PathFromUTF8(_LogPath);
+    if (_LogPath.empty() || !std::filesystem::exists(_FilePath) || std::filesystem::file_size(_FilePath) == 0)
     {
         return;
     }

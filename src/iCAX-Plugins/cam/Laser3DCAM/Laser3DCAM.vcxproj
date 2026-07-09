@@ -36,7 +36,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\input;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
@@ -46,8 +46,11 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="CommandHandlers.h" />
+    <ClInclude Include="CommandInternal.h" />
     <ClInclude Include="FeatureRecognitionService.h" />
     <ClInclude Include="Laser3DCAM.h" />
+    <ClInclude Include="SDFMachineParser.h" />
     <ClInclude Include="ToolpathGenerationService.h" />
     <ClInclude Include="ToolpathOrderService.h" />
     <ClInclude Include="ToolpathComponents.h" />
@@ -56,11 +59,29 @@
     <ClInclude Include="Laser3DCAMExport.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CamCommands.cpp" />
+    <ClCompile Include="CommandInternal.cpp" />
+    <ClCompile Include="MachineCommandHandlers.cpp" />
+    <ClCompile Include="MachineCommandTarget.cpp" />
+    <ClCompile Include="MachineCommandImplement.cpp" />
+    <ClCompile Include="ToolpathCommandImplement.cpp" />
+    <ClCompile Include="SceneCommandHandlers.cpp" />
+    <ClCompile Include="SceneCommandTarget.cpp" />
+    <ClCompile Include="ScenePayloadInternal.cpp" />
+    <ClCompile Include="SelectionCommandHandlers.cpp" />
+    <ClCompile Include="SelectionCommandTarget.cpp" />
+    <ClCompile Include="ToolpathCommandHandlers.cpp" />
+    <ClCompile Include="ToolpathCommandTarget.cpp" />
+    <ClCompile Include="CameraViewCommandHandlers.cpp" />
+    <ClCompile Include="CameraViewCommandTarget.cpp" />
+    <ClCompile Include="CameraViewCommandImplement.cpp" />
+    <ClCompile Include="WorkpieceCommandHandlers.cpp" />
+    <ClCompile Include="WorkpieceCommandTarget.cpp" />
+    <ClCompile Include="WorkpieceCommandImplement.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FeatureRecognitionService.cpp" />
     <ClCompile Include="Laser3DCAM.cpp" />
-    <ClCompile Include="LaserCamRenderBehaviour.cpp" />
+    <ClCompile Include="SceneBootstrapBehaviour.cpp" />
+    <ClCompile Include="SDFMachineParser.cpp" />
     <ClCompile Include="ToolpathGenerationService.cpp" />
     <ClCompile Include="ToolpathOrderService.cpp" />
     <ClCompile Include="pch.cpp">
@@ -79,6 +100,12 @@
     </ProjectReference>
     <ProjectReference Include="..\..\render\RenderService\RenderService.vcxproj">
       <Project>{f47e9162-6fe2-4995-92c4-51d8ed9ec474}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\render\RenderInteraction\RenderInteraction.vcxproj">
+      <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\render\CameraNavigation\CameraNavigation.vcxproj">
+      <Project>{353d4baa-e949-4618-8be3-3179f5046fc1}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Behaviour\Behaviour.vcxproj">
       <Project>{1c150fbb-3418-414d-8a3c-f7b57c6d18b7}</Project>

@@ -3,6 +3,7 @@
 #include <Project/ProjectCatalog.h>
 #include <Project/Project.h>
 #include <Project/ProjectRuntime.h>
+#include <ProjectContext/SceneObjectRegistry.h>
 #include <ApplicationContext/ApplicationContext.h>
 #include <Behaviour/BehaviourBase.h>
 #include <Behaviour/IBehaviourRegistry.h>
@@ -1127,5 +1128,99 @@ TEST(ProjectRuntimeTest, CloseReleasesLocalProjectReference)
     EXPECT_FALSE(_pRuntime->IsOpen());
     EXPECT_FALSE(_pProject->IsOpen());
     EXPECT_THROW((void)_pRuntime->GetProjectName(), std::logic_error);
+}
+
+TEST(SceneObjectRegistryTest, EntityObjectUsesOneSceneIdentity)
+{
+    CSceneObjectRegistry _Registry;
+    const auto _EntityID = iCAX::Data::GenerateNewUUID();
+
+    const auto _ObjectID = _Registry.GetOrCreateEntityObject(_EntityID);
+    const auto _ObjectIDAgain = _Registry.GetOrCreateEntityObject(_EntityID);
+    const auto _TransformID = _Registry.GetTransformID(_ObjectID);
+
+    EXPECT_NE(kInvalidSceneObjectID, _ObjectID);
+    EXPECT_EQ(_ObjectID, _ObjectIDAgain);
+    EXPECT_EQ(_ObjectID, _TransformID);
+    EXPECT_EQ(_EntityID, _Registry.GetEntityID(_ObjectID));
+    ASSERT_TRUE(_Registry.FindObjectByEntity(_EntityID).has_value());
+    EXPECT_EQ(_ObjectID, _Registry.FindObjectByEntity(_EntityID).value());
+    ASSERT_TRUE(_Registry.FindObjectByTransform(_TransformID).has_value());
+    EXPECT_EQ(_ObjectID, _Registry.FindObjectByTransform(_TransformID).value());
+}
+
+TEST(SceneObjectRegistryTest, AliasObjectUsesCallerDefinedNamespace)
+{
+    CSceneObjectRegistry _Registry;
+
+    const auto _CameraObjectID = _Registry.GetOrCreateAliasObject(
+        "render.camera",
+        "default",
+        "Default Camera");
+    const auto _CameraObjectIDAgain = _Registry.GetOrCreateAliasObject(
+        "render.camera",
+        "default",
+        "Ignored Name");
+
+    EXPECT_NE(kInvalidSceneObjectID, _CameraObjectID);
+    EXPECT_EQ(_CameraObjectID, _CameraObjectIDAgain);
+    ASSERT_TRUE(_Registry.FindObjectByAlias("render.camera", "default").has_value());
+    EXPECT_EQ(_CameraObjectID, _Registry.FindObjectByAlias("render.camera", "default").value());
+
+    const auto* _pBinding = _Registry.FindObject(_CameraObjectID);
+    ASSERT_NE(nullptr, _pBinding);
+    EXPECT_TRUE(_pBinding->EntityID.is_nil());
+    ASSERT_EQ(1u, _pBinding->Aliases.size());
+    EXPECT_EQ("render.camera", _pBinding->Aliases[0].Namespace);
+    EXPECT_EQ("default", _pBinding->Aliases[0].Key);
+}
+
+TEST(SceneObjectRegistryTest, AliasCanBindExternalSystemToEntityObject)
+{
+    CSceneObjectRegistry _Registry;
+    const auto _EntityID = iCAX::Data::GenerateNewUUID();
+    const auto _EntityObjectID = _Registry.GetOrCreateEntityObject(_EntityID);
+
+    EXPECT_TRUE(_Registry.BindAlias(_EntityObjectID, "physics.body", "42"));
+    EXPECT_TRUE(_Registry.BindAlias(_EntityObjectID, "physics.body", "42"));
+    ASSERT_TRUE(_Registry.FindObjectByAlias("physics.body", "42").has_value());
+    EXPECT_EQ(_EntityObjectID, _Registry.FindObjectByAlias("physics.body", "42").value());
+
+    const auto _OtherObjectID = _Registry.GetOrCreateAliasObject("render.camera", "default");
+    EXPECT_THROW((void)_Registry.BindAlias(_OtherObjectID, "physics.body", "42"), std::invalid_argument);
+}
+
+TEST(SceneObjectRegistryTest, GeometryIdentityIsSeparatedByPurpose)
+{
+    CSceneObjectRegistry _Registry;
+
+    const auto _RenderGeometryID = _Registry.GetOrCreateGeometry("robot.step#geometry.brep", "render.mesh");
+    const auto _ColliderGeometryID = _Registry.GetOrCreateGeometry("robot.step#geometry.brep", "collider.mesh");
+    const auto _RenderGeometryIDAgain = _Registry.GetOrCreateGeometry("robot.step#geometry.brep", "render.mesh");
+
+    EXPECT_NE(kInvalidSceneGeometryID, _RenderGeometryID);
+    EXPECT_NE(_RenderGeometryID, _ColliderGeometryID);
+    EXPECT_EQ(_RenderGeometryID, _RenderGeometryIDAgain);
+
+    const auto* _pBinding = _Registry.FindGeometry(_RenderGeometryID);
+    ASSERT_NE(nullptr, _pBinding);
+    EXPECT_EQ("robot.step#geometry.brep", _pBinding->ResourceID);
+    EXPECT_EQ("render.mesh", _pBinding->Purpose);
+}
+
+TEST(SceneObjectRegistryTest, ColliderMapsBackToBusinessObject)
+{
+    CSceneObjectRegistry _Registry;
+    const auto _EntityID = iCAX::Data::GenerateNewUUID();
+    const auto _ObjectID = _Registry.GetOrCreateEntityObject(_EntityID);
+
+    const auto _ColliderID = _Registry.GetOrCreateCollider(_ObjectID, "robot.step#collider.mesh", "pick.body");
+    const auto _ColliderIDAgain = _Registry.GetOrCreateCollider(_ObjectID, "robot.step#collider.mesh", "pick.body");
+
+    EXPECT_NE(kInvalidSceneColliderID, _ColliderID);
+    EXPECT_EQ(_ColliderID, _ColliderIDAgain);
+    ASSERT_TRUE(_Registry.FindObjectByCollider(_ColliderID).has_value());
+    EXPECT_EQ(_ObjectID, _Registry.FindObjectByCollider(_ColliderID).value());
+    EXPECT_EQ(_EntityID, _Registry.GetEntityID(_ObjectID));
 }
 

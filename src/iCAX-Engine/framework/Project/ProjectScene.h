@@ -14,6 +14,7 @@
 #include "PDO/IPDOHub.h"
 #include "ProductContext/IProductContext.h"
 #include "ProjectContext/ISceneContext.h"
+#include "ProjectContext/SceneObjectRegistry.h"
 #include "Resources/ResourceLibrary.h"
 #include "Resources/ResourceLoaderRegistry.h"
 #include "Services/ServiceProvider.h"
@@ -245,6 +246,12 @@ namespace iCAX
             const iCAX::Resource::CResourceLibrary& Resources() const override;
 
             /*
+            * @brief 获取 Scene 运行时对象注册表。
+            */
+            CSceneObjectRegistry& Objects() override;
+            const CSceneObjectRegistry& Objects() const override;
+
+            /*
             * @brief 当前 Scene 是否配置 PDO Hub。
             */
             bool HasPDOHub() const override;
@@ -358,6 +365,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Behaviour::IUniverse> m_pUniverse;
             std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
             std::shared_ptr<CRepositoryEventForwarder> m_pRepositoryEventForwarder;
+            CSceneObjectRegistry m_Objects;
             iCAX::Resource::CResourceLibrary m_Resources;
             uint32_t m_nFrameIntervalMilliseconds = 16;
             CSceneRuntimeScheduler m_RuntimeScheduler;

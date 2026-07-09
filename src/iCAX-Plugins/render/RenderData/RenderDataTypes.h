@@ -11,17 +11,17 @@ namespace iCAX
     namespace Render
     {
         using RenderSceneID = uint64_t;
-        using RenderObjectID = uint64_t;
+        using SceneObjectID = uint64_t;
         using RenderGeometryID = uint64_t;
-        using RenderTransformID = uint64_t;
+        using TransformID = uint64_t;
         using RenderCameraID = uint64_t;
         using RenderDataVersion = uint64_t;
         using RenderStyleID = uint32_t;
 
         inline constexpr RenderSceneID kInvalidRenderSceneID = 0;
-        inline constexpr RenderObjectID kInvalidRenderObjectID = 0;
+        inline constexpr SceneObjectID kInvalidSceneObjectID = 0;
         inline constexpr RenderGeometryID kInvalidRenderGeometryID = 0;
-        inline constexpr RenderTransformID kInvalidRenderTransformID = 0;
+        inline constexpr TransformID kInvalidTransformID = 0;
         inline constexpr RenderCameraID kInvalidRenderCameraID = 0;
 
         enum class ERenderGeometryKind : uint32_t
@@ -65,6 +65,7 @@ namespace iCAX
         inline constexpr uint32_t kRenderFlagSelectable = 1u << 1;
         inline constexpr uint32_t kRenderFlagHighlighted = 1u << 2;
         inline constexpr uint32_t kRenderFlagSelected = 1u << 3;
+        inline constexpr uint32_t kRenderFlagDisabled = 1u << 5;
 
         inline constexpr uint32_t kRenderMeshFlagHasNormals = 1u << 0;
         inline constexpr uint32_t kRenderMeshFlagHasVertexColors = 1u << 1;
@@ -119,7 +120,6 @@ namespace iCAX
         {
             RenderGeometryID nGeometryID = kInvalidRenderGeometryID;
             RenderDataVersion nDataVersion = 0;
-            SRenderAABB Bounds;
             ERenderTopology eTopology = ERenderTopology::TriangleList;
             uint32_t nFlags = 0;
             std::vector<SFloat3> Positions;
@@ -175,7 +175,7 @@ namespace iCAX
 
         struct _RENDER_DATA_EXP SRenderInstanceData final
         {
-            RenderObjectID nObjectID = kInvalidRenderObjectID;
+            SceneObjectID nObjectID = kInvalidSceneObjectID;
             RenderGeometryID nGeometryID = kInvalidRenderGeometryID;
             ERenderGeometryKind eGeometryKind = ERenderGeometryKind::Mesh;
             ERenderClass eRenderClass = ERenderClass::Model;
@@ -189,9 +189,9 @@ namespace iCAX
         *   Transform 只表达 ID 与 local-to-world 矩阵，不知道自己属于 render object、camera、collider 或其他组件。
         *   同一 scene 内其他组件使用相同 ID 时，即视为挂载在同一个逻辑物体上。
         */
-        struct _RENDER_DATA_EXP SRenderTransformData final
+        struct _RENDER_DATA_EXP STransformData final
         {
-            RenderTransformID nTransformID = kInvalidRenderTransformID;
+            TransformID nTransformID = kInvalidTransformID;
             RenderDataVersion nDataVersion = 0;
             uint32_t nFlags = 0;
             SMatrix4 LocalToWorld = SMatrix4::Identity();

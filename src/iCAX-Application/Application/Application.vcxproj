@@ -175,6 +175,9 @@ if exist "$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <Manifest Include="Application.manifest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>

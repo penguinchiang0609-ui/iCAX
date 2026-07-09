@@ -1002,17 +1002,9 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
         _ProjectPath,
         m_Definition.DefaultProjectStartupComponent);
     auto _pProjectRuntime = iCAX::Project::CreateLocalProjectRuntime(_pProject);
-    const auto _QuickSaveLogMagic = _GetQuickSaveLogMagic(m_Definition.ProjectFile);
-    const auto _QuickSaveLogVersion = m_Definition.ProjectFile.QuickSaveLogVersion;
-
     bool _bCatalogRegistered = false;
     try
     {
-        if (!_pProject->GetQuickSaveLogPath().empty())
-        {
-            _pProject->ReplayQuickSaveLog(_QuickSaveLogMagic, _QuickSaveLogVersion);
-            _pProject->OpenQuickSaveLog(false, _QuickSaveLogMagic, _QuickSaveLogVersion);
-        }
         {
             std::lock_guard<std::mutex> _Lock(m_ProjectCatalogMutex);
             const auto _CatalogID = _pCatalog->GetCatalogID();

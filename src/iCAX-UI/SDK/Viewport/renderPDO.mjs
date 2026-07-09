@@ -35,6 +35,7 @@ export const RenderFlags = Object.freeze({
   highlighted: 1 << 2,
   selected: 1 << 3,
   dirty: 1 << 4,
+  disabled: 1 << 5,
   meshHasNormals: 1 << 0,
   meshHasVertexColors: 1 << 1,
 });
@@ -43,7 +44,7 @@ export const RenderPDOLayout = Object.freeze({
   magic: 0x4F445052,
   version: 1,
   headerSize: 32,
-  meshHeaderSize: 112,
+  meshHeaderSize: 88,
   polylineHeaderSize: 88,
   toolpathHeaderSize: 88,
   instanceListHeaderSize: 56,
@@ -126,19 +127,18 @@ export function readRenderHeader(dataView, offset) {
 }
 
 export function parseMeshPayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
-  const flags = dataView.getUint32(76, true);
-  const vertexCount = dataView.getUint32(68, true);
-  const indexCount = dataView.getUint32(72, true);
-  const positionsOffset = readUint64Number(dataView, 80);
-  const normalsOffset = readUint64Number(dataView, 88);
-  const vertexColorsOffset = readUint64Number(dataView, 96);
-  const indicesOffset = readUint64Number(dataView, 104);
+  const flags = dataView.getUint32(52, true);
+  const vertexCount = dataView.getUint32(44, true);
+  const indexCount = dataView.getUint32(48, true);
+  const positionsOffset = readUint64Number(dataView, 56);
+  const normalsOffset = readUint64Number(dataView, 64);
+  const vertexColorsOffset = readUint64Number(dataView, 72);
+  const indicesOffset = readUint64Number(dataView, 80);
   return {
     kind: "mesh",
     header,
     geometryId: readUint64Text(dataView, 32),
-    bounds: readAABB(dataView, 40),
-    topology: dataView.getUint32(64, true),
+    topology: dataView.getUint32(40, true),
     vertexCount,
     indexCount,
     flags,

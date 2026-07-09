@@ -273,7 +273,7 @@ namespace
 
     bool _TryReadPathEndpoints(
         IN iCAX::Project::ISceneContext& Scene_,
-        IN const std::shared_ptr<iCAX::CAM::CCAMPathComponent>& pPath_,
+        IN const std::shared_ptr<iCAX::CAM::CPathComponent>& pPath_,
         OUT iCAX::GeometryData::Point3& Start_,
         OUT iCAX::GeometryData::Point3& End_)
     {
@@ -282,7 +282,7 @@ namespace
             return false;
         }
 
-        auto _pCurve = Scene_.Resources().Get<iCAX::CAM::CCAMPathCurveResource>(pPath_->GetCurveResourceID());
+        auto _pCurve = Scene_.Resources().Get<iCAX::CAM::CPathCurveResource>(pPath_->GetCurveResourceID());
         if (!_pCurve)
         {
             return false;
@@ -343,13 +343,13 @@ namespace
         return _Ordered;
     }
 
-    std::shared_ptr<iCAX::CAM::CLaserCamRootComponent> _GetRoot(IN iCAX::Database::IRepository& Repository_)
+    std::shared_ptr<iCAX::CAM::CRootComponent> _GetRoot(IN iCAX::Database::IRepository& Repository_)
     {
         auto _pMetaEntity = Repository_.GetMetaEntity();
-        return _GetComponent<iCAX::CAM::CLaserCamRootComponent>(_pMetaEntity);
+        return _GetComponent<iCAX::CAM::CRootComponent>(_pMetaEntity);
     }
 
-    std::pair<std::shared_ptr<iCAX::Database::IEntity>, std::shared_ptr<iCAX::CAM::CCAMBlockComponent>> _RequireBlock(
+    std::pair<std::shared_ptr<iCAX::Database::IEntity>, std::shared_ptr<iCAX::CAM::CBlockComponent>> _RequireBlock(
         IN iCAX::Database::IRepository& Repository_,
         IN const iCAX::Data::uuid& BlockEntityID_)
     {
@@ -365,7 +365,7 @@ namespace
         }
 
         auto _pBlockEntity = Repository_.GetEntity(_BlockID);
-        auto _pBlock = _GetComponent<iCAX::CAM::CCAMBlockComponent>(_pBlockEntity);
+        auto _pBlock = _GetComponent<iCAX::CAM::CBlockComponent>(_pBlockEntity);
         if (!_pBlockEntity || !_pBlock)
         {
             throw std::invalid_argument("Toolpath order target block does not exist");
@@ -386,7 +386,7 @@ namespace
         }
         if (Child_.Kind == kProgramChildKindPath)
         {
-            if (!_GetComponent<iCAX::CAM::CCAMPathComponent>(_pEntity))
+            if (!_GetComponent<iCAX::CAM::CPathComponent>(_pEntity))
             {
                 strError_ = "Toolpath order path child has no path component";
                 return false;
@@ -395,7 +395,7 @@ namespace
         }
         if (Child_.Kind == kProgramChildKindBlock)
         {
-            if (!_GetComponent<iCAX::CAM::CCAMBlockComponent>(_pEntity))
+            if (!_GetComponent<iCAX::CAM::CBlockComponent>(_pEntity))
             {
                 strError_ = "Toolpath order block child has no block component";
                 return false;
@@ -408,12 +408,12 @@ namespace
     }
 
     bool _SetBlockChildren(
-        IN const std::shared_ptr<iCAX::CAM::CCAMBlockComponent>& pBlock_,
+        IN const std::shared_ptr<iCAX::CAM::CBlockComponent>& pBlock_,
         IN const VariantArray& Children_,
         OUT std::string& strError_)
     {
         if (!pBlock_->SetProperty(
-            iCAX::CAM::CCAMBlockComponent::PropertyName_Children,
+            iCAX::CAM::CBlockComponent::PropertyName_Children,
             iCAX::Data::PropertyValue(Children_),
             strError_))
         {
@@ -502,7 +502,7 @@ namespace iCAX
                     if (_NormalizedStrategy == "nearestneighbor" && _ChildRef.Kind == kProgramChildKindPath)
                     {
                         auto _pPathEntity = _Repository.GetEntity(_ChildRef.EntityID);
-                        auto _pPath = _GetComponent<CCAMPathComponent>(_pPathEntity);
+                        auto _pPath = _GetComponent<CPathComponent>(_pPathEntity);
                         SOrderedChildCandidate _Candidate;
                         _Candidate.Child = std::move(_ChildRef);
                         _Candidate.bHasPathGeometry = _TryReadPathEndpoints(

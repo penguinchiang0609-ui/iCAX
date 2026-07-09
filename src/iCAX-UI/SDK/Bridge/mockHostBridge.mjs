@@ -15,6 +15,7 @@ export class MockHostBridge {
     this.listeners = new Map();
     this.productStarted = false;
     this.projectOpened = false;
+    this.projectPath = "D:/projects/mock.icax";
   }
 
   async getApplicationChannelId() {
@@ -78,6 +79,14 @@ export class MockHostBridge {
     return "D:/projects/mock.icax";
   }
 
+  async windowCommand(command) {
+    this.lastWindowCommand = command;
+  }
+
+  async beginWindowDrag() {
+    this.windowDragRequested = true;
+  }
+
   emitMail(channelId, command, payload = {}, options = {}) {
     const eventMail = {
       channelId,
@@ -123,6 +132,7 @@ export class MockHostBridge {
     if (typeCode === makeCommandTypeCodeFromCommand(AppCommands.openProjectFile)) {
       this.productStarted = true;
       this.projectOpened = true;
+      this.projectPath = payload.projectPath || this.projectPath;
       return {
         applicationChannelId: appChannelId,
         resolve: this.#resolveProjectFile(payload.projectPath),
@@ -139,6 +149,7 @@ export class MockHostBridge {
 
     if (typeCode === makeCommandTypeCodeFromCommand(ProductCommands.openProjectCatalog)) {
       this.projectOpened = true;
+      this.projectPath = payload.projectPath || this.projectPath;
       return { catalog: this.#catalogState(payload.projectPath), state: this.#runningProductState() };
     }
 
@@ -209,7 +220,7 @@ export class MockHostBridge {
     return {
       productId: mockProductId,
       productChannelId,
-      catalogs: this.projectOpened ? [this.#catalogState("D:/projects/mock.icax")] : [],
+      catalogs: this.projectOpened ? [this.#catalogState(this.projectPath)] : [],
     };
   }
 

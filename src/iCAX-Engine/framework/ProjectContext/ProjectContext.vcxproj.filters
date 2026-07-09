@@ -27,6 +27,9 @@
     <ClInclude Include="ISceneContext.h">
       <Filter>extern</Filter>
     </ClInclude>
+    <ClInclude Include="SceneObjectRegistry.h">
+      <Filter>extern</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -39,6 +42,9 @@
       <Filter>extern</Filter>
     </ClCompile>
     <ClCompile Include="ISceneContext.cpp">
+      <Filter>extern</Filter>
+    </ClCompile>
+    <ClCompile Include="SceneObjectRegistry.cpp">
       <Filter>extern</Filter>
     </ClCompile>
   </ItemGroup>

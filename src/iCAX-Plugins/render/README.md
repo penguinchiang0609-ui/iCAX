@@ -10,3 +10,5 @@
 - `RenderService/`：渲染服务接口，按 ProjectID + SceneID 管理渲染现场。
 - `RenderPDO/`：渲染 PDO 协议插件，表达后端通过 PDO 发布给前方的 mesh、polyline、toolpath 和实例列表 layout。
 - `PDORenderService/`：基于 PDO 的 RenderService 实现，将 RenderData 写入 RenderPDO slot。
+- `RenderInteraction/`：通用渲染切面插件，发布 RenderInstance、Transform 与 Camera，不绑定具体产品。
+- `CameraNavigation/`：可选相机漫游插件，读取 InputService 并修改相机 Entity 上的 Transform。

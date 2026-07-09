@@ -92,10 +92,17 @@ namespace iCAX
         /*
         * @brief 判断单段命令名称是否合法。
         * @details
-        *   单段命令名称用于 main 或 sub，必须匹配 [A-Z][A-Za-z0-9_]*。
-        *   前端可使用 Main.Sub 组合命令，但 main/sub 本身不允许包含点号。
+        *   单段命令名称必须匹配 [A-Z][A-Za-z0-9_]*。
         */
         _COMMAND_HANDLER_EXP bool IsValidCommandName(IN const std::string& strName_);
+
+        /*
+        * @brief 判断主命令名称是否合法。
+        * @details
+        *   主命令允许用点号分隔命名空间，例如 Cam.Machine；每个分段仍必须是合法单段命令名称。
+        *   子命令仍然只能是单段名称，例如 Import。
+        */
+        _COMMAND_HANDLER_EXP bool IsValidCommandMainName(IN const std::string& strName_);
 
         /*
         * @brief 根据主/子命令名创建完整路由。

@@ -80,10 +80,10 @@ void iCAX::Command::CCommandRegistry::ValidateCommandTarget(IN const std::shared
     {
         throw std::invalid_argument("Command target main code cannot be zero");
     }
-    if (!IsValidCommandName(pCommandTarget_->GetMainName()))
+    if (!IsValidCommandMainName(pCommandTarget_->GetMainName()))
     {
         throw std::invalid_argument(
-            "Command target main name must match [A-Z][A-Za-z0-9_]*: " +
+            "Command target main name must be one or more [A-Z][A-Za-z0-9_]* parts separated by '.': " +
             pCommandTarget_->GetMainName());
     }
 }

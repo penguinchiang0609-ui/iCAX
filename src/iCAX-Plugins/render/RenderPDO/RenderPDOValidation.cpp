@@ -253,11 +253,11 @@ bool iCAX::RenderPDO::ValidateCameraPDOHeader(
 }
 
 bool iCAX::RenderPDO::ValidateTransformPDOHeader(
-    IN const SRenderTransformPDOHeader& Header_,
+    IN const STransformPDOHeader& Header_,
     IN uint64_t nPayloadCapacity_,
     OUT std::string* pError_)
 {
-    if (!ValidateRenderPDOHeader(Header_.Header, ERenderPDOPayloadKind::Transform, sizeof(SRenderTransformPDOHeader), nPayloadCapacity_, pError_))
+    if (!ValidateRenderPDOHeader(Header_.Header, ERenderPDOPayloadKind::Transform, sizeof(STransformPDOHeader), nPayloadCapacity_, pError_))
     {
         return false;
     }
@@ -265,7 +265,7 @@ bool iCAX::RenderPDO::ValidateTransformPDOHeader(
     {
         return _SetError(pError_, "Transform PDO id cannot be zero");
     }
-    if (Header_.Header.nPayloadSize != sizeof(SRenderTransformPDOHeader))
+    if (Header_.Header.nPayloadSize != sizeof(STransformPDOHeader))
     {
         return _SetError(pError_, "Transform PDO payload size must match header size");
     }

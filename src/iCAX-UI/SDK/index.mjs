@@ -10,6 +10,16 @@ export { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 export { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 export { escapeAttr, escapeText } from "../UI/html.mjs";
 export {
+  InputKeyCodes,
+  InputModifierFlags,
+  InputPDOLayout,
+  InputStateFlags,
+  makeInputStatePDOID,
+  mapKeyboardEventCode,
+  writeInputStatePDO,
+  writeInputStatePayload,
+} from "./Input/index.mjs";
+export {
   RenderFlags,
   RenderGeometryKind,
   RenderPDOCommands,

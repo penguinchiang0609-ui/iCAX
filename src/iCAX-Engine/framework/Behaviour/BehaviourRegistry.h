@@ -77,10 +77,16 @@ namespace iCAX
             */
             virtual std::vector<std::type_index> GetTypeIndexByComponentType(IN const std::string& strComponent_) const override;
 
+            /*
+            * @brief 列出所有已注册 Behaviour 类型。
+            */
+            virtual std::vector<std::type_index> ListBehaviourTypes() const override;
+
         private:
             std::unordered_map<std::type_index, CBehaviourDescriptor> m_Behaviours;
             std::unordered_map<std::string, std::type_index> m_BehaviourTypesByName;
             std::unordered_map<std::string, std::type_index> m_BehaviourTypesByComponent;
+            std::vector<std::type_index> m_BehaviourRegistrationOrder;
         };
 
     }

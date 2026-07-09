@@ -19,6 +19,7 @@ namespace iCAX
 
         inline constexpr InputSceneID kInvalidInputSceneID = 0;
         inline constexpr InputViewportID kInvalidInputViewportID = 0;
+        inline constexpr const char* kDefaultInputStatePDOInstanceName = "default";
         inline constexpr uint32_t kInputKeyBitCount = 512;
         inline constexpr uint32_t kInputKeyBitWordCount = kInputKeyBitCount / 64;
 
@@ -34,6 +35,27 @@ namespace iCAX
             Mouse = 1,
             Pen = 2,
             Touch = 3
+        };
+
+        enum class EInputKeyCode : InputKeyCode
+        {
+            Escape = 27,
+            Space = 32,
+            PageUp = 33,
+            PageDown = 34,
+            ArrowLeft = 37,
+            ArrowUp = 38,
+            ArrowRight = 39,
+            ArrowDown = 40,
+            Shift = 16,
+            Ctrl = 17,
+            Alt = 18,
+            KeyA = 65,
+            KeyD = 68,
+            KeyE = 69,
+            KeyQ = 81,
+            KeyS = 83,
+            KeyW = 87
         };
 
         inline constexpr uint32_t kInputStateFlagFocused = 1u << 0;

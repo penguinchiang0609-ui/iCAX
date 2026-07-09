@@ -7,6 +7,7 @@
   <ItemGroup>
     <ClInclude Include="IRenderService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RenderSceneSnapshot.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="RenderSceneIds.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RenderService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RenderServiceExport.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
@@ -14,6 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="RenderService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RenderSceneIds.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>

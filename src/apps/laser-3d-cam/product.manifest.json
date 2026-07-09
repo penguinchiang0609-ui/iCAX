@@ -14,7 +14,7 @@
     "probeBytes": 256
   },
   "backend": {
-    "startupComponent": "CLaserCamRootComponent",
+    "startupComponent": "CLaserCamSceneBootstrapComponent",
     "pdo": {
       "enabled": true,
       "arenaSize": 134217728,
@@ -25,11 +25,24 @@
         "../../iCAX-Plugins/render/RenderData/${Platform}/${Configuration}/RenderData.dll",
         "../../iCAX-Plugins/render/RenderService/${Platform}/${Configuration}/RenderService.dll",
         "../../iCAX-Plugins/render/RenderPDO/${Platform}/${Configuration}/RenderPDO.dll",
-        "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll"
+        "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll",
+        "../../iCAX-Plugins/input/InputPDO/${Platform}/${Configuration}/InputPDO.dll",
+        "../../iCAX-Plugins/input/InputService/${Platform}/${Configuration}/InputService.dll",
+        "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll"
       ],
-      "components": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
-      "behaviours": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"],
+      "components": [
+        "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll",
+        "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
+      ],
+      "behaviours": [
+        "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll",
+        "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
+      ],
       "services": [
+        "../../iCAX-Plugins/input/InputService/${Platform}/${Configuration}/InputService.dll",
         "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll",
         "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
