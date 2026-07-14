@@ -67,15 +67,20 @@ export function exposeLaserCamAutomation(context, view, commands) {
       viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: true, includeObjects: true }),
     };
   };
-  window.__icaxLaser3DCAM.getMachineDomState = () => ({
-    hasMachineImportPathInput: Boolean(document.querySelector("[data-cam-machine-path]")),
-    accordionCount: document.querySelectorAll(".cam-accordion-item").length,
-    viewCubeButtonCount: document.querySelectorAll(".cam-viewcube [data-cam-action='view-standard']").length,
-    hasAxisGizmo: Boolean(document.querySelector(".icax-three-axis-gizmo")),
-    hasAppearanceEditor: Boolean(document.querySelector("[data-cam-appearance-editor]")),
-    hasCollisionToggle: Boolean(document.querySelector("[data-cam-machine-show-collider]")),
-    selectedTreeRows: document.querySelectorAll(".cam-tree-row.selected").length,
-  });
+  window.__icaxLaser3DCAM.getMachineDomState = () => {
+    const viewCube = document.querySelector("[data-cam-viewcube-cube]");
+    return {
+      hasMachineImportPathInput: Boolean(document.querySelector("[data-cam-machine-path]")),
+      accordionCount: document.querySelectorAll(".cam-accordion-item").length,
+      viewCubeButtonCount: document.querySelectorAll(".cam-viewcube [data-cam-action='view-standard']").length,
+      viewCubePitch: viewCube?.style.getPropertyValue("--viewcube-pitch") ?? "",
+      viewCubeYaw: viewCube?.style.getPropertyValue("--viewcube-yaw") ?? "",
+      hasAxisGizmo: Boolean(document.querySelector(".icax-three-axis-gizmo")),
+      hasAppearanceEditor: Boolean(document.querySelector("[data-cam-appearance-editor]")),
+      hasCollisionToggle: Boolean(document.querySelector("[data-cam-machine-show-collider]")),
+      selectedTreeRows: document.querySelectorAll(".cam-tree-row.selected").length,
+    };
+  };
   window.__icaxLaser3DCAM.currentProjectId = context.project?.projectId ?? "";
 }
 

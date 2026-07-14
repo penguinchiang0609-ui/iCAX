@@ -29,6 +29,7 @@
         "../../iCAX-Plugins/input/InputPDO/${Platform}/${Configuration}/InputPDO.dll",
         "../../iCAX-Plugins/input/InputService/${Platform}/${Configuration}/InputService.dll",
         "../../iCAX-Plugins/common/Transform/${Platform}/${Configuration}/Transform.dll",
+        "../../iCAX-Plugins/physics/ColliderData/${Platform}/${Configuration}/ColliderData.dll",
         "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
         "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll"
       ],

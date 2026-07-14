@@ -10,6 +10,7 @@ import { getMachineId, getMachineSubtreeEntityIds, getMachines, getSelectedMachi
 import { renderToolpathOverlay } from "./toolpath/toolpathViews.mjs";
 import { escapeText, formatNumber } from "./utils/format.mjs";
 import { renderViewLeftPane, renderViewRightPane } from "./view/viewArea.mjs";
+import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "./viewport/viewCube.mjs";
 import { ensureStyles } from "./styles/ensureStyles.mjs";
 import { handleWorkpieceAction, handleWorkpieceRibbonCommand } from "./workpiece/workpieceActions.mjs";
 import { renderWorkpieceLeftPane, renderWorkpieceRightPane } from "./workpiece/workpieceArea.mjs";
@@ -428,15 +429,7 @@ function renderViewport(context, scene) {
     return `
       <div class="cam-render-viewport-shell">
         <div class="cam-render-viewport" data-cam-render-viewport></div>
-        <div class="cam-viewcube" data-no-window-drag aria-label="视角切换">
-          <div class="cam-viewcube-cube" aria-hidden="false">
-            <button class="cam-viewcube-face cam-viewcube-face-top" type="button" data-cam-action="view-standard" data-cam-view="top" title="顶视图">TOP</button>
-            <button class="cam-viewcube-face cam-viewcube-face-front" type="button" data-cam-action="view-standard" data-cam-view="front" title="前视图">FRONT</button>
-            <button class="cam-viewcube-face cam-viewcube-face-right" type="button" data-cam-action="view-standard" data-cam-view="right" title="右视图">RIGHT</button>
-            <button class="cam-viewcube-face cam-viewcube-face-left" type="button" data-cam-action="view-standard" data-cam-view="left" title="左视图">LEFT</button>
-          </div>
-          <button class="cam-viewcube-iso" type="button" data-cam-action="view-standard" data-cam-view="iso" title="等轴测">ISO</button>
-        </div>
+        ${renderViewCube()}
       </div>
     `;
   }
@@ -490,6 +483,7 @@ function mountRenderViewport(context, view) {
   const mount = resolveProjectMount(context);
   const host = mount?.querySelector?.("[data-cam-render-viewport]");
   if (!host) {
+    stopViewCubeAnimation(view);
     return;
   }
 
@@ -505,6 +499,7 @@ function mountRenderViewport(context, view) {
     view.viewportSceneProxy = context.sceneProxy;
   }
   view.viewport.mount(host);
+  attachViewCube(view, mount);
   syncViewportSelection(view, view.scene);
   exposeLaserCamAutomation(context, view, {
     importMachineDefinition: (commandContext, commandView, sourcePath) =>
@@ -537,7 +532,7 @@ function runAction(context, view, action, actionTarget = null) {
   const ops = getProjectOps();
   if (action === "view-standard") {
     const viewName = String(actionTarget?.dataset?.camView ?? "iso").trim() || "iso";
-    runProjectCommand(context, view, "CameraView.SetStandard", { view: viewName });
+    runProjectCommand(context, view, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 });
     return;
   }
   if (handleMachineAction(context, view, action, actionTarget, ops)) {
@@ -731,6 +726,7 @@ async function runProjectCommandPayload(context, view, command, payload, options
 function shouldRefreshSceneAfterCommand(command) {
   return ![
     "CameraView.Fit",
+    "CameraView.SetStandard",
     "Machine.GetElement",
     "Selection.Get",
     "Selection.PickMachineObject",

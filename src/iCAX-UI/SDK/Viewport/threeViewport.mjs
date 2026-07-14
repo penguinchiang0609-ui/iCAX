@@ -226,6 +226,27 @@ export class ThreeRenderViewport {
     }
   }
 
+  getViewCubeState() {
+    const direction = new THREE.Vector3();
+    this.camera.getWorldDirection(direction);
+    if (direction.lengthSq() <= Number.EPSILON) {
+      direction.set(-0.55, 0.68, -0.46);
+    }
+    direction.normalize();
+
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+    if (up.lengthSq() <= Number.EPSILON) {
+      up.set(0, 0, 1);
+    }
+    up.normalize();
+
+    return {
+      activeCameraId: this.activeCameraId,
+      direction: { x: direction.x, y: direction.y, z: direction.z },
+      up: { x: up.x, y: up.y, z: up.z },
+    };
+  }
+
   setSelectedObjectId(objectId) {
     return this.setSelectedObjectIds(objectId ? [objectId] : [], objectId);
   }
@@ -261,6 +282,12 @@ export class ThreeRenderViewport {
       : sphere.center.clone().project(this.camera);
     const cameraDirection = new THREE.Vector3();
     this.camera.getWorldDirection(cameraDirection);
+    const colliderObjects = [...this.colliderObjects.values()];
+    const visibleColliderObjects = colliderObjects.filter((object) => object.visible);
+    const colliderShapeCount = [...this.colliderPayloads.values()].reduce(
+      (sum, payload) => sum + Number(payload?.shapeCount ?? payload?.shapes?.length ?? 0),
+      0,
+    );
     const state = {
       mounted: Boolean(this.host && this.root.parentElement),
       canvasClientWidth: canvas.clientWidth,
@@ -268,6 +295,7 @@ export class ThreeRenderViewport {
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
       slotCount: this.slotDescriptors.size,
+      colliderSlotCount: this.colliderSlotDescriptors.size,
       slots: [...this.slotDescriptors.values()].map((descriptor) => ({
         pdoId: String(descriptor.pdoId ?? ""),
         payloadKind: String(descriptor.payloadKind ?? ""),
@@ -284,6 +312,9 @@ export class ThreeRenderViewport {
       objectCount: this.sceneObjects.size,
       transformCount: this.transformPayloads.size,
       cameraCount: this.cameras.size,
+      colliderObjectCount: this.colliderObjects.size,
+      visibleColliderObjectCount: visibleColliderObjects.length,
+      colliderShapeCount,
       activeCameraId: this.activeCameraId,
       selectedObjectId: this.selectedObjectId,
       selectedObjectIds: [...this.selectedObjectIds],
@@ -322,6 +353,12 @@ export class ThreeRenderViewport {
         renderClass: Number(object.userData?.renderClass ?? 0),
         geometryKind: Number(object.userData?.geometryKind ?? 0),
         materialId: String(object.userData?.materialId ?? ""),
+        visible: Boolean(object.visible),
+      }));
+      state.colliders = colliderObjects.map((object) => ({
+        objectId: String(object.userData?.objectId ?? ""),
+        dataVersion: String(object.userData?.dataVersion ?? ""),
+        shapeCount: Number(this.colliderPayloads.get(String(object.userData?.objectId ?? ""))?.shapeCount ?? object.children.length),
         visible: Boolean(object.visible),
       }));
     }

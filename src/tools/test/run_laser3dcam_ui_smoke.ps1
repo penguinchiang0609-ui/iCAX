@@ -64,6 +64,7 @@ function Sync-ApplicationRuntimeDependencies {
         "iCAX-Plugins\geometry\STLResourceImport",
         "iCAX-Plugins\input\InputPDO",
         "iCAX-Plugins\input\InputService",
+        "iCAX-Plugins\physics\ColliderData",
         "iCAX-Plugins\render\CameraNavigation",
         "iCAX-Plugins\render\PDORenderService",
         "iCAX-Plugins\render\RenderData",
@@ -406,7 +407,13 @@ try {
       colorHex: "#cc6633",
       showCollision: true
     });
-    machineSelectionResult.standardView = await window.__icaxLaser3DCAM.setStandardView("front");
+    machineSelectionResult.collider = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getViewportDebugState?.({ samplePixels: true, includeObjects: true });
+      return Number(state?.visibleColliderObjectCount ?? 0) > 0 && Number(state?.colliderShapeCount ?? 0) > 0
+        ? state
+        : null;
+    }, "machine ColliderPDO wire objects");
+    machineSelectionResult.standardView = await window.__icaxLaser3DCAM.setStandardView("top-front-right");
   }
 
   let workbenchResizeResult = null;
@@ -556,12 +563,27 @@ try {
                 $appearanceText = $state.machineSelectionResult.appearance | ConvertTo-Json -Depth 16 -Compress
                 throw "Machine appearance workflow failed: $appearanceText"
             }
+            if (-not $state.machineSelectionResult.collider) {
+                throw "Machine collider PDO wire state was not observed after enabling collision display."
+            }
+            if ([int]$state.machineSelectionResult.collider.visibleColliderObjectCount -le 0) {
+                $colliderText = $state.machineSelectionResult.collider | ConvertTo-Json -Depth 16 -Compress
+                throw "Machine collider PDO produced no visible wire objects: $colliderText"
+            }
+            if ([int]$state.machineSelectionResult.collider.colliderShapeCount -le 0) {
+                $colliderText = $state.machineSelectionResult.collider | ConvertTo-Json -Depth 16 -Compress
+                throw "Machine collider PDO produced no primitive shapes: $colliderText"
+            }
             if (-not $state.machineSelectionResult.standardView -or -not $state.machineSelectionResult.standardView.result) {
                 $viewText = $state.machineSelectionResult.standardView | ConvertTo-Json -Depth 16 -Compress
                 throw "Machine standard view workflow failed: $viewText"
             }
-            if (-not $state.machineDomState -or [int]$state.machineDomState.viewCubeButtonCount -lt 4) {
+            if (-not $state.machineDomState -or [int]$state.machineDomState.viewCubeButtonCount -lt 20) {
                 throw "Machine viewport view cube is missing."
+            }
+            if (-not $state.machineDomState.viewCubePitch -or -not $state.machineDomState.viewCubeYaw) {
+                $viewCubeText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
+                throw "Machine viewport view cube did not synchronize camera orientation: $viewCubeText"
             }
             if (-not $state.machineDomState.hasAxisGizmo) {
                 throw "Machine viewport axis gizmo is missing."

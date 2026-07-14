@@ -69,6 +69,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <IntDir>$(MSBuildProjectDirectory)\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -149,15 +152,6 @@
       <EnableUAC>false</EnableUAC>
     </Link>
   </ItemDefinitionGroup>
-  <ItemDefinitionGroup>
-    <PostBuildEvent>
-      <Command>if exist "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\$(Platform)\$(Configuration)\*.dll" copy /Y "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\$(Platform)\$(Configuration)\*.dll" "$(OutDir)" &gt;nul
-if exist "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" copy /Y "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" "$(OutDir)" &gt;nul
-for /D %%D in ("$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework\*") do if exist "%%~fD\$(Platform)\$(Configuration)\*.dll" copy /Y "%%~fD\$(Platform)\$(Configuration)\*.dll" "$(OutDir)" &gt;nul
-if exist "$(MSBuildProjectDirectory)\..\..\iCAX-UI\UIContainer\$(Platform)\$(Configuration)\UIContainer.dll" copy /Y "$(MSBuildProjectDirectory)\..\..\iCAX-UI\UIContainer\$(Platform)\$(Configuration)\UIContainer.dll" "$(OutDir)" &gt;nul
-if exist "$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(Configuration)\*" xcopy /E /I /Y "$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(Configuration)\*" "$(OutDir)" &gt;nul</Command>
-    </PostBuildEvent>
-  </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Application.h" />
     <ClInclude Include="framework.h" />
@@ -200,7 +194,79 @@ if exist "$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(
     <ProjectReference Include="..\..\iCAX-UI\UIContainer\UIContainer.vcxproj">
       <Project>{f41f583c-9368-41b8-9b05-0c92c1e91f30}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-UI\CefUIContainer\CefUIContainer.vcxproj">
+      <Project>{7d65df92-6f59-4787-8905-e15402278dd6}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\common\Transform\Transform.vcxproj">
+      <Project>{14df2d69-19bd-4340-b859-7c4ca916b42b}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">
+      <Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\geometry\DAEResourceImport\DAEResourceImport.vcxproj">
+      <Project>{570029a9-3ab1-4ea5-a4e1-bfe2e31a8802}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\geometry\STLResourceImport\STLResourceImport.vcxproj">
+      <Project>{82a38ce6-9bad-43de-8294-41526be44e23}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\cam\Laser3DCAM\Laser3DCAM.vcxproj">
+      <Project>{41e6e443-2614-4e0d-914a-bfc4d5802cd4}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\input\InputPDO\InputPDO.vcxproj">
+      <Project>{0e5b6210-7ac4-4af9-8628-709d45cd3f26}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\input\InputService\InputService.vcxproj">
+      <Project>{6fb149f0-d81e-4ac6-8bf4-08a3393ac191}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\physics\ColliderData\ColliderData.vcxproj">
+      <Project>{a50a9e89-b30b-4ca8-a682-1e48d9dd4263}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\render\RenderPDO\RenderPDO.vcxproj">
+      <Project>{0a97c65b-f587-4559-a709-a4e8f661b48f}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\render\PDORenderService\PDORenderService.vcxproj">
+      <Project>{5906f6ac-f859-4f4d-8e07-9055980a8fd4}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\render\RenderData\RenderData.vcxproj">
+      <Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\render\RenderService\RenderService.vcxproj">
+      <Project>{f47e9162-6fe2-4995-92c4-51d8ed9ec474}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\render\RenderInteraction\RenderInteraction.vcxproj">
+      <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\render\CameraNavigation\CameraNavigation.vcxproj">
+      <Project>{353d4baa-e949-4618-8be3-3179f5046fc1}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="StageApplicationRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\$(Platform)\$(Configuration)\*.dll" />
+      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\**\$(Platform)\$(Configuration)\*.dll" />
+      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework\**\$(Platform)\$(Configuration)\*.dll" />
+      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-Plugins\**\$(Platform)\$(Configuration)\*.dll" />
+      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-UI\UIContainer\$(Platform)\$(Configuration)\UIContainer.dll" />
+      <CefRuntimeContent Include="$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(Configuration)\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ApplicationRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(CefRuntimeContent)" DestinationFiles="@(CefRuntimeContent->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets" />
 </Project>

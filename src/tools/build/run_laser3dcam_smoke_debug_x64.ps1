@@ -65,6 +65,7 @@ $script:RuntimePaths = @()
     "src\iCAX-Plugins\render\CameraNavigation\$Platform\$Configuration",
     "src\iCAX-Plugins\input\InputPDO\$Platform\$Configuration",
     "src\iCAX-Plugins\input\InputService\$Platform\$Configuration",
+    "src\iCAX-Plugins\physics\ColliderData\$Platform\$Configuration",
     "src\iCAX-Plugins\cam\Laser3DCAM\$Platform\$Configuration"
 ) | ForEach-Object { Add-PathIfExists $_ }
 

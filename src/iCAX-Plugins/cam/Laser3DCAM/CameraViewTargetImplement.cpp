@@ -197,6 +197,63 @@ namespace iCAX::CAM::Commands::Internal
         std::transform(strViewName_.begin(), strViewName_.end(), strViewName_.begin(), [](IN unsigned char ch_) {
             return static_cast<char>(std::tolower(ch_));
         });
+        auto _AppendPart = [](IN const std::string& strPart_, IN OUT SFitVec3& Forward_) -> bool
+        {
+            if (strPart_ == "front")
+            {
+                Forward_.y += 1.0;
+                return true;
+            }
+            if (strPart_ == "back")
+            {
+                Forward_.y -= 1.0;
+                return true;
+            }
+            if (strPart_ == "right")
+            {
+                Forward_.x -= 1.0;
+                return true;
+            }
+            if (strPart_ == "left")
+            {
+                Forward_.x += 1.0;
+                return true;
+            }
+            if (strPart_ == "top")
+            {
+                Forward_.z -= 1.0;
+                return true;
+            }
+            if (strPart_ == "bottom")
+            {
+                Forward_.z += 1.0;
+                return true;
+            }
+            return false;
+        };
+
+        if (strViewName_.find('-') != std::string::npos)
+        {
+            SFitVec3 _Forward;
+            bool _HasPart = false;
+            std::string _Part;
+            for (const auto _Char : strViewName_)
+            {
+                if (_Char == '-')
+                {
+                    _HasPart = _AppendPart(_Part, _Forward) || _HasPart;
+                    _Part.clear();
+                    continue;
+                }
+                _Part.push_back(_Char);
+            }
+            _HasPart = _AppendPart(_Part, _Forward) || _HasPart;
+            if (_HasPart)
+            {
+                return _Forward;
+            }
+        }
+
         if (strViewName_ == "front")
         {
             return { 0.0, 1.0, 0.0 };
@@ -397,16 +454,28 @@ namespace iCAX::CAM::Commands::Internal
         auto _pTransform = _GetOrAddTransform(_pCameraEntity);
         auto _pNavigation = _GetOrAddEntityComponent<iCAX::CameraNavigation::CCameraNavigationComponent>(_pCameraEntity);
 
-        const auto _Center = _Scale(_Add(_Bounds.Min, _Bounds.Max), 0.5);
+        const auto _BoundsCenter = _Scale(_Add(_Bounds.Min, _Bounds.Max), 0.5);
         const auto _Extent = _Sub(_Bounds.Max, _Bounds.Min);
         const auto _Radius = (std::max)(1.0, _Length(_Extent) * 0.5);
         const auto _Fov = (std::max)(0.1, _pCamera->GetVerticalFovRadians());
-        const auto _Distance = (std::max)(10.0, _Radius / std::sin(_Fov * 0.5) * 1.25);
+        const auto _FitDistance = (std::max)(10.0, _Radius / std::sin(_Fov * 0.5) * 1.25);
+        const auto _Target = SFitVec3{
+            _pNavigation->GetOrbitTargetX(),
+            _pNavigation->GetOrbitTargetY(),
+            _pNavigation->GetOrbitTargetZ()
+        };
+        const auto _CurrentPosition = SFitVec3{
+            _pTransform->GetPositionX(),
+            _pTransform->GetPositionY(),
+            _pTransform->GetPositionZ()
+        };
+        const auto _CurrentDistance = _Length(_Sub(_CurrentPosition, _Target));
+        const auto _Distance = _CurrentDistance > 1.0 ? _CurrentDistance : _FitDistance;
         const auto _Forward = _NormalizeOr(
             _ForwardForStandardView(strViewName_),
             _ForwardFromYawPitch(iCAX::CAM::kDefaultCameraYawRadians, iCAX::CAM::kDefaultCameraPitchRadians));
         const auto [_CameraYaw, _CameraPitch] = _YawPitchFromForward(_Forward);
-        const auto _Position = _Sub(_Center, _Scale(_Forward, _Distance));
+        const auto _Position = _Sub(_Target, _Scale(_Forward, _Distance));
         const auto _MoveSpeed = (std::max)(20.0, _Radius * 0.85);
         const auto _FarPlane = (std::max)(1000.0, _Distance + _Radius * 6.0);
         const auto _NearPlane = (std::max)(0.01, (std::min)(10.0, _Radius / 5000.0));
@@ -419,16 +488,16 @@ namespace iCAX::CAM::Commands::Internal
         _SetDoubleProperty(_pTransform, iCAX::Transform::CTransformComponent::PropertyName_RollRadians, iCAX::CAM::kDefaultCameraRollRadians);
 
         _SetDoubleProperty(_pNavigation, iCAX::CameraNavigation::CCameraNavigationComponent::PropertyName_MoveSpeed, _MoveSpeed);
-        _SetDoubleProperty(_pNavigation, iCAX::CameraNavigation::CCameraNavigationComponent::PropertyName_OrbitTargetX, _Center.x);
-        _SetDoubleProperty(_pNavigation, iCAX::CameraNavigation::CCameraNavigationComponent::PropertyName_OrbitTargetY, _Center.y);
-        _SetDoubleProperty(_pNavigation, iCAX::CameraNavigation::CCameraNavigationComponent::PropertyName_OrbitTargetZ, _Center.z);
         _SetDoubleProperty(_pCamera, iCAX::RenderInteraction::CCameraComponent::PropertyName_NearPlane, _NearPlane);
         _SetDoubleProperty(_pCamera, iCAX::RenderInteraction::CCameraComponent::PropertyName_FarPlane, _FarPlane);
 
         _Result["applied"] = true;
-        _Result["centerX"] = _Center.x;
-        _Result["centerY"] = _Center.y;
-        _Result["centerZ"] = _Center.z;
+        _Result["targetX"] = _Target.x;
+        _Result["targetY"] = _Target.y;
+        _Result["targetZ"] = _Target.z;
+        _Result["boundsCenterX"] = _BoundsCenter.x;
+        _Result["boundsCenterY"] = _BoundsCenter.y;
+        _Result["boundsCenterZ"] = _BoundsCenter.z;
         _Result["radius"] = _Radius;
         _Result["distance"] = _Distance;
         _Result["moveSpeed"] = _MoveSpeed;

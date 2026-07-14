@@ -5,158 +5,158 @@
   </Configurations>
   <Folder Name="/iCAX-Application/" />
   <Folder Name="/iCAX-Application/Application/">
-    <Project Path="iCAX-Application/Application/Application.vcxproj" />
+    <Project Path="iCAX-Application/Application/Application.vcxproj" Id="990f67a4-bf1e-4e2f-95d8-8525abadb7cf" />
   </Folder>
   <Folder Name="/iCAX-Engine/" />
   <Folder Name="/iCAX-Engine/foundation/" />
   <Folder Name="/iCAX-Engine/foundation/Data/">
-    <Project Path="iCAX-Engine/foundation/Data/Data.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/Data/Data.vcxproj" Id="b1c027d1-b2ef-4f4b-8147-9fce3ec31c52" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/FontData/">
-    <Project Path="iCAX-Engine/foundation/FontData/FontData.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/FontData/FontData.vcxproj" Id="2a90aaa1-6c48-4c46-9400-9614f0dfdcce" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/FontAdapter/">
-    <Project Path="iCAX-Engine/foundation/FontAdapter/FontAdapter.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/FontAdapter/FontAdapter.vcxproj" Id="7e6ece8f-056a-4a2e-a1ff-4d3fbadf49fa" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/FontAlgo/">
-    <Project Path="iCAX-Engine/foundation/FontAlgo/FontAlgo.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/FontAlgo/FontAlgo.vcxproj" Id="66d1ef88-b05f-4a0b-a4a8-33471398cb52" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/GeometryData/">
-    <Project Path="iCAX-Engine/foundation/GeometryData/GeometryData.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/GeometryData/GeometryData.vcxproj" Id="e1ddad3f-12a0-4dbb-9d0e-0f77959726b1" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/GeometryAdapter/">
-    <Project Path="iCAX-Engine/foundation/GeometryAdapter/GeometryAdapter.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/GeometryAdapter/GeometryAdapter.vcxproj" Id="31f55cc7-e0db-4861-af7c-f7976a12208b" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/GeometryAlgo/">
-    <Project Path="iCAX-Engine/foundation/GeometryAlgo/GeometryAlgo.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/GeometryAlgo/GeometryAlgo.vcxproj" Id="9d763025-4802-45a0-a25e-512561f5a8c7" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/ImageData/">
-    <Project Path="iCAX-Engine/foundation/ImageData/ImageData.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/ImageData/ImageData.vcxproj" Id="245cc45b-7db4-43da-803f-d5347feb603f" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/ImageAdapter/">
-    <Project Path="iCAX-Engine/foundation/ImageAdapter/ImageAdapter.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/ImageAdapter/ImageAdapter.vcxproj" Id="24aab28d-6e2c-4267-8461-72ab87d74725" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/ImageAlgo/">
-    <Project Path="iCAX-Engine/foundation/ImageAlgo/ImageAlgo.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/ImageAlgo/ImageAlgo.vcxproj" Id="b4623457-d279-4f72-ae18-beb23fc39ef1" />
   </Folder>
   <Folder Name="/iCAX-Engine/foundation/Task/">
-    <Project Path="iCAX-Engine/foundation/Task/Task.vcxproj" />
+    <Project Path="iCAX-Engine/foundation/Task/Task.vcxproj" Id="93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/" />
   <Folder Name="/iCAX-Engine/framework/ApplicationContext/">
-    <Project Path="iCAX-Engine/framework/ApplicationContext/ApplicationContext.vcxproj" />
+    <Project Path="iCAX-Engine/framework/ApplicationContext/ApplicationContext.vcxproj" Id="890ea74b-81b1-44f8-a740-94da104478a1" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/ApplicationHost/">
-    <Project Path="iCAX-Engine/framework/ApplicationHost/ApplicationHost.vcxproj" />
+    <Project Path="iCAX-Engine/framework/ApplicationHost/ApplicationHost.vcxproj" Id="ddcef11c-6370-4be7-90e0-173c972669a9" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Behaviour/">
-    <Project Path="iCAX-Engine/framework/Behaviour/Behaviour.vcxproj" />
+    <Project Path="iCAX-Engine/framework/Behaviour/Behaviour.vcxproj" Id="1c150fbb-3418-414d-8a3c-f7b57c6d18b7" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/CommandTargets/">
-    <Project Path="iCAX-Engine/framework/CommandTargets/CommandTargets.vcxproj" />
+    <Project Path="iCAX-Engine/framework/CommandTargets/CommandTargets.vcxproj" Id="1f194886-5b7e-4fa9-816c-1b48865633e6" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Database/">
-    <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" />
+    <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" Id="c746f6a5-c34a-4649-a3f4-ad185002dedd" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Mailbox/">
-    <Project Path="iCAX-Engine/framework/Mailbox/Mailbox.vcxproj" />
+    <Project Path="iCAX-Engine/framework/Mailbox/Mailbox.vcxproj" Id="5b637d1e-2672-4f50-8f72-612824bb5f96" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/MailHandler/">
-    <Project Path="iCAX-Engine/framework/MailHandler/MailHandler.vcxproj" />
+    <Project Path="iCAX-Engine/framework/MailHandler/MailHandler.vcxproj" Id="dfe34a7a-53d1-4b0e-85c3-5ddc2c9d2b1e" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/PDO/">
-    <Project Path="iCAX-Engine/framework/PDO/PDO.vcxproj" />
+    <Project Path="iCAX-Engine/framework/PDO/PDO.vcxproj" Id="cf722912-d223-4b78-a672-fd2264db4bbf" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Product/">
-    <Project Path="iCAX-Engine/framework/Product/Product.vcxproj" />
+    <Project Path="iCAX-Engine/framework/Product/Product.vcxproj" Id="a7a9b776-78e1-460b-af6a-bca1b32c26c7" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/ProductContext/">
-    <Project Path="iCAX-Engine/framework/ProductContext/ProductContext.vcxproj" />
+    <Project Path="iCAX-Engine/framework/ProductContext/ProductContext.vcxproj" Id="74d665ef-d89e-4104-ae6f-e31c7bff0f46" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Project/">
-    <Project Path="iCAX-Engine/framework/Project/Project.vcxproj" />
+    <Project Path="iCAX-Engine/framework/Project/Project.vcxproj" Id="d0b2bd35-1f9f-464b-a6d6-38b77c319f9f" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/ProjectContext/">
-    <Project Path="iCAX-Engine/framework/ProjectContext/ProjectContext.vcxproj" />
+    <Project Path="iCAX-Engine/framework/ProjectContext/ProjectContext.vcxproj" Id="d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Resources/">
-    <Project Path="iCAX-Engine/framework/Resources/Resources.vcxproj" />
+    <Project Path="iCAX-Engine/framework/Resources/Resources.vcxproj" Id="cd223cde-a7d0-4525-9bf4-2a59ba16eda5" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Services/">
-    <Project Path="iCAX-Engine/framework/Services/Services.vcxproj" />
+    <Project Path="iCAX-Engine/framework/Services/Services.vcxproj" Id="dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847" />
   </Folder>
   <Folder Name="/iCAX-Plugins/" />
   <Folder Name="/iCAX-Plugins/common/" />
   <Folder Name="/iCAX-Plugins/common/Transform/">
-    <Project Path="iCAX-Plugins/common/Transform/Transform.vcxproj" />
+    <Project Path="iCAX-Plugins/common/Transform/Transform.vcxproj" Id="14df2d69-19bd-4340-b859-7c4ca916b42b" />
   </Folder>
   <Folder Name="/iCAX-Plugins/cad/" />
   <Folder Name="/iCAX-Plugins/cad/OpenCascadeResourceImport/">
-    <Project Path="iCAX-Plugins/cad/OpenCascadeResourceImport/OpenCascadeResourceImport.vcxproj" />
+    <Project Path="iCAX-Plugins/cad/OpenCascadeResourceImport/OpenCascadeResourceImport.vcxproj" Id="30dbd734-7124-4d09-b022-cc2e586cc4ee" />
   </Folder>
   <Folder Name="/iCAX-Plugins/geometry/" />
   <Folder Name="/iCAX-Plugins/geometry/DAEResourceImport/">
-    <Project Path="iCAX-Plugins/geometry/DAEResourceImport/DAEResourceImport.vcxproj" />
+    <Project Path="iCAX-Plugins/geometry/DAEResourceImport/DAEResourceImport.vcxproj" Id="570029a9-3ab1-4ea5-a4e1-bfe2e31a8802" />
   </Folder>
   <Folder Name="/iCAX-Plugins/geometry/STLResourceImport/">
-    <Project Path="iCAX-Plugins/geometry/STLResourceImport/STLResourceImport.vcxproj" />
+    <Project Path="iCAX-Plugins/geometry/STLResourceImport/STLResourceImport.vcxproj" Id="82a38ce6-9bad-43de-8294-41526be44e23" />
   </Folder>
   <Folder Name="/iCAX-Plugins/cam/" />
   <Folder Name="/iCAX-Plugins/cam/Laser3DCAM/">
-    <Project Path="iCAX-Plugins/cam/Laser3DCAM/Laser3DCAM.vcxproj" />
+    <Project Path="iCAX-Plugins/cam/Laser3DCAM/Laser3DCAM.vcxproj" Id="41e6e443-2614-4e0d-914a-bfc4d5802cd4" />
   </Folder>
   <Folder Name="/iCAX-Plugins/input/" />
   <Folder Name="/iCAX-Plugins/input/InputPDO/">
-    <Project Path="iCAX-Plugins/input/InputPDO/InputPDO.vcxproj" />
+    <Project Path="iCAX-Plugins/input/InputPDO/InputPDO.vcxproj" Id="0e5b6210-7ac4-4af9-8628-709d45cd3f26" />
   </Folder>
   <Folder Name="/iCAX-Plugins/input/InputService/">
-    <Project Path="iCAX-Plugins/input/InputService/InputService.vcxproj" />
+    <Project Path="iCAX-Plugins/input/InputService/InputService.vcxproj" Id="6fb149f0-d81e-4ac6-8bf4-08a3393ac191" />
   </Folder>
   <Folder Name="/iCAX-Plugins/physics/" />
   <Folder Name="/iCAX-Plugins/physics/ColliderData/">
-    <Project Path="iCAX-Plugins/physics/ColliderData/ColliderData.vcxproj" />
+    <Project Path="iCAX-Plugins/physics/ColliderData/ColliderData.vcxproj" Id="a50a9e89-b30b-4ca8-a682-1e48d9dd4263" />
   </Folder>
   <Folder Name="/iCAX-Plugins/physics/ColliderService/">
-    <Project Path="iCAX-Plugins/physics/ColliderService/ColliderService.vcxproj" />
+    <Project Path="iCAX-Plugins/physics/ColliderService/ColliderService.vcxproj" Id="02b4014a-e35e-4d10-8a68-cff160bdeaee" />
   </Folder>
   <Folder Name="/iCAX-Plugins/physics/JoltColliderService/">
-    <Project Path="iCAX-Plugins/physics/JoltColliderService/JoltColliderService.vcxproj">
+    <Project Path="iCAX-Plugins/physics/JoltColliderService/JoltColliderService.vcxproj" Id="ee88ebd1-05de-47a0-aa59-f1994c571989">
       <Build Project="false" />
     </Project>
   </Folder>
   <Folder Name="/iCAX-Plugins/physics/JoltPhysics/">
-    <Project Path="iCAX-Plugins/physics/JoltPhysics/JoltPhysics.vcxproj">
+    <Project Path="iCAX-Plugins/physics/JoltPhysics/JoltPhysics.vcxproj" Id="c5183a32-6d8c-45f3-8f2f-9ee6761d44cb">
       <Build Project="false" />
     </Project>
   </Folder>
   <Folder Name="/iCAX-Plugins/render/" />
   <Folder Name="/iCAX-Plugins/render/RenderPDO/">
-    <Project Path="iCAX-Plugins/render/RenderPDO/RenderPDO.vcxproj" />
+    <Project Path="iCAX-Plugins/render/RenderPDO/RenderPDO.vcxproj" Id="0a97c65b-f587-4559-a709-a4e8f661b48f" />
   </Folder>
   <Folder Name="/iCAX-Plugins/render/PDORenderService/">
-    <Project Path="iCAX-Plugins/render/PDORenderService/PDORenderService.vcxproj" />
+    <Project Path="iCAX-Plugins/render/PDORenderService/PDORenderService.vcxproj" Id="5906f6ac-f859-4f4d-8e07-9055980a8fd4" />
   </Folder>
   <Folder Name="/iCAX-Plugins/render/RenderData/">
-    <Project Path="iCAX-Plugins/render/RenderData/RenderData.vcxproj" />
+    <Project Path="iCAX-Plugins/render/RenderData/RenderData.vcxproj" Id="3d99f471-ba76-4007-af70-e82022efd424" />
   </Folder>
   <Folder Name="/iCAX-Plugins/render/RenderService/">
-    <Project Path="iCAX-Plugins/render/RenderService/RenderService.vcxproj" />
+    <Project Path="iCAX-Plugins/render/RenderService/RenderService.vcxproj" Id="f47e9162-6fe2-4995-92c4-51d8ed9ec474" />
   </Folder>
   <Folder Name="/iCAX-Plugins/render/RenderInteraction/">
-    <Project Path="iCAX-Plugins/render/RenderInteraction/RenderInteraction.vcxproj" />
+    <Project Path="iCAX-Plugins/render/RenderInteraction/RenderInteraction.vcxproj" Id="c1da507c-9e08-4013-8dae-9829c7f2c722" />
   </Folder>
   <Folder Name="/iCAX-Plugins/render/CameraNavigation/">
-    <Project Path="iCAX-Plugins/render/CameraNavigation/CameraNavigation.vcxproj" />
+    <Project Path="iCAX-Plugins/render/CameraNavigation/CameraNavigation.vcxproj" Id="353d4baa-e949-4618-8be3-3179f5046fc1" />
   </Folder>
   <Folder Name="/iCAX-UI/" />
   <Folder Name="/iCAX-UI/CefUIContainer/">
-    <Project Path="iCAX-UI/CefUIContainer/CefUIContainer.vcxproj" />
+    <Project Path="iCAX-UI/CefUIContainer/CefUIContainer.vcxproj" Id="7d65df92-6f59-4787-8905-e15402278dd6" />
   </Folder>
   <Folder Name="/iCAX-UI/UIContainer/">
-    <Project Path="iCAX-UI/UIContainer/UIContainer.vcxproj" />
+    <Project Path="iCAX-UI/UIContainer/UIContainer.vcxproj" Id="f41f583c-9368-41b8-9b05-0c92c1e91f30" />
   </Folder>
   <Folder Name="/iCAX-UI/WpfUIContainer/">
-    <Project Path="iCAX-UI/WpfUIContainer/WpfUIContainer.vcxproj">
+    <Project Path="iCAX-UI/WpfUIContainer/WpfUIContainer.vcxproj" Id="bd3b90c0-32b5-4428-b83b-3918861d19a8">
       <Build Project="false" />
     </Project>
   </Folder>
@@ -165,96 +165,96 @@
   <Folder Name="/tests/icax-engine/foundation/" />
   <Folder Name="/tests/icax-engine/foundation/Data/" />
   <Folder Name="/tests/icax-engine/foundation/Data/DataTest/">
-    <Project Path="tests/icax-engine/foundation/Data/DataTest/DataTest.vcxproj" />
+    <Project Path="tests/icax-engine/foundation/Data/DataTest/DataTest.vcxproj" Id="c58d75c9-0f60-49f4-b9a2-760e10c2fc2d" />
   </Folder>
   <Folder Name="/tests/icax-engine/foundation/Task/" />
   <Folder Name="/tests/icax-engine/foundation/Task/TaskTest/">
-    <Project Path="tests/icax-engine/foundation/Task/TaskTest/TaskTest.vcxproj" />
+    <Project Path="tests/icax-engine/foundation/Task/TaskTest/TaskTest.vcxproj" Id="65c6e36b-6404-4d8a-9127-9030f5a51efe" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/" />
   <Folder Name="/tests/icax-engine/framework/ApplicationContext/" />
   <Folder Name="/tests/icax-engine/framework/ApplicationContext/ApplicationContextTest/">
-    <Project Path="tests/icax-engine/framework/ApplicationContext/ApplicationContextTest/ApplicationContextTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/ApplicationContext/ApplicationContextTest/ApplicationContextTest.vcxproj" Id="c72085a3-16d3-4541-a764-bd5b442b3653" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/ApplicationHost/" />
   <Folder Name="/tests/icax-engine/framework/ApplicationHost/ApplicationHostTest/">
-    <Project Path="tests/icax-engine/framework/ApplicationHost/ApplicationHostTest/ApplicationHostTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/ApplicationHost/ApplicationHostTest/ApplicationHostTest.vcxproj" Id="7ebd1132-3516-4d3e-a125-350b9e651eeb" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Behaviour/" />
   <Folder Name="/tests/icax-engine/framework/Behaviour/BehaviourTest/">
-    <Project Path="tests/icax-engine/framework/Behaviour/BehaviourTest/BehaviourTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/Behaviour/BehaviourTest/BehaviourTest.vcxproj" Id="6be97c5d-6098-4fc1-9e47-3c22a65f4ac1" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/CommandTargets/" />
   <Folder Name="/tests/icax-engine/framework/CommandTargets/CommandTargetsTest/">
-    <Project Path="tests/icax-engine/framework/CommandTargets/CommandTargetsTest/CommandTargetsTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/CommandTargets/CommandTargetsTest/CommandTargetsTest.vcxproj" Id="7ff89591-2955-47dd-a507-82362d56da4e" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Database/" />
   <Folder Name="/tests/icax-engine/framework/Database/DatabaseTest/">
-    <Project Path="tests/icax-engine/framework/Database/DatabaseTest/DatabaseTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/Database/DatabaseTest/DatabaseTest.vcxproj" Id="9f2f26d5-40dc-4e6d-a9ab-0f126e219f90" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Mailbox/" />
   <Folder Name="/tests/icax-engine/framework/Mailbox/MailboxTest/">
-    <Project Path="tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj" Id="2f32c915-4f2b-4f69-8147-b86cf470b786" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/MailHandler/" />
   <Folder Name="/tests/icax-engine/framework/MailHandler/MailHandlerTest/">
-    <Project Path="tests/icax-engine/framework/MailHandler/MailHandlerTest/MailHandlerTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/MailHandler/MailHandlerTest/MailHandlerTest.vcxproj" Id="dcbc9249-bad2-483c-b88f-8d6d1a1004e4" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/PDO/" />
   <Folder Name="/tests/icax-engine/framework/PDO/PDOTest/">
-    <Project Path="tests/icax-engine/framework/PDO/PDOTest/PDOTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/PDO/PDOTest/PDOTest.vcxproj" Id="79e803b2-5b88-4667-b4e5-b83dcfb9f9b8" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Product/" />
   <Folder Name="/tests/icax-engine/framework/Product/ProductTest/">
-    <Project Path="tests/icax-engine/framework/Product/ProductTest/ProductTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/Product/ProductTest/ProductTest.vcxproj" Id="167504d4-1e29-47a6-abd7-9b890a7960d2" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Project/" />
   <Folder Name="/tests/icax-engine/framework/Project/ProjectTest/">
-    <Project Path="tests/icax-engine/framework/Project/ProjectTest/ProjectTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/Project/ProjectTest/ProjectTest.vcxproj" Id="f978181b-f87d-46ff-b67b-7c060a22fa35" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Resources/" />
   <Folder Name="/tests/icax-engine/framework/Resources/ResourcesTest/">
-    <Project Path="tests/icax-engine/framework/Resources/ResourcesTest/ResourcesTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/Resources/ResourcesTest/ResourcesTest.vcxproj" Id="a7ac2f2e-cbe7-4291-8b94-6a0a3fcbcaf4" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Services/" />
   <Folder Name="/tests/icax-engine/framework/Services/ServicesTest/">
-    <Project Path="tests/icax-engine/framework/Services/ServicesTest/ServicesTest.vcxproj" />
+    <Project Path="tests/icax-engine/framework/Services/ServicesTest/ServicesTest.vcxproj" Id="caa4f5e3-1f6f-4a41-bc5a-5535a1f8cb07" />
   </Folder>
   <Folder Name="/tests/icax-plugins/" />
   <Folder Name="/tests/icax-plugins/cam/" />
   <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/" />
   <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/">
-    <Project Path="tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/Laser3DCAMTest.vcxproj" />
+    <Project Path="tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/Laser3DCAMTest.vcxproj" Id="98fc70c1-b23d-4c66-9e4d-b6492e2354c1" />
   </Folder>
   <Folder Name="/tests/icax-plugins/input/" />
   <Folder Name="/tests/icax-plugins/input/InputPDO/" />
   <Folder Name="/tests/icax-plugins/input/InputPDO/InputPDOTest/">
-    <Project Path="tests/icax-plugins/input/InputPDO/InputPDOTest/InputPDOTest.vcxproj" />
+    <Project Path="tests/icax-plugins/input/InputPDO/InputPDOTest/InputPDOTest.vcxproj" Id="51d6a51d-a767-4606-a9dd-3182abbe4d30" />
   </Folder>
   <Folder Name="/tests/icax-plugins/input/InputService/" />
   <Folder Name="/tests/icax-plugins/input/InputService/InputServiceTest/">
-    <Project Path="tests/icax-plugins/input/InputService/InputServiceTest/InputServiceTest.vcxproj" />
+    <Project Path="tests/icax-plugins/input/InputService/InputServiceTest/InputServiceTest.vcxproj" Id="b23b2465-9001-432b-ac0e-e8fc22bb7c60" />
   </Folder>
   <Folder Name="/tests/icax-plugins/physics/" />
   <Folder Name="/tests/icax-plugins/physics/ColliderService/" />
   <Folder Name="/tests/icax-plugins/physics/ColliderService/ColliderServiceTest/">
-    <Project Path="tests/icax-plugins/physics/ColliderService/ColliderServiceTest/ColliderServiceTest.vcxproj">
+    <Project Path="tests/icax-plugins/physics/ColliderService/ColliderServiceTest/ColliderServiceTest.vcxproj" Id="34263058-7e00-43c0-8726-9b74b49bb320">
       <Build Project="false" />
     </Project>
   </Folder>
   <Folder Name="/tests/icax-plugins/physics/JoltPhysics/" />
   <Folder Name="/tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/">
-    <Project Path="tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/JoltPhysicsTest.vcxproj">
+    <Project Path="tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/JoltPhysicsTest.vcxproj" Id="76e8e3b4-192a-4d63-a2e9-6e65eb6123ea">
       <Build Project="false" />
     </Project>
   </Folder>
   <Folder Name="/tests/icax-plugins/render/" />
   <Folder Name="/tests/icax-plugins/render/RenderPDO/" />
   <Folder Name="/tests/icax-plugins/render/RenderPDO/RenderPDOTest/">
-    <Project Path="tests/icax-plugins/render/RenderPDO/RenderPDOTest/RenderPDOTest.vcxproj" />
+    <Project Path="tests/icax-plugins/render/RenderPDO/RenderPDOTest/RenderPDOTest.vcxproj" Id="35bb2a80-1eb0-4519-a035-774382946417" />
   </Folder>
   <Folder Name="/tests/icax-plugins/render/RenderService/" />
   <Folder Name="/tests/icax-plugins/render/RenderService/RenderServiceTest/">
-    <Project Path="tests/icax-plugins/render/RenderService/RenderServiceTest/RenderServiceTest.vcxproj" />
+    <Project Path="tests/icax-plugins/render/RenderService/RenderServiceTest/RenderServiceTest.vcxproj" Id="13020922-436b-483a-9f68-0de95481d5b7" />
   </Folder>
 </Solution>
