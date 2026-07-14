@@ -14,7 +14,6 @@
 #include "PDO/IPDOHub.h"
 #include "ProductContext/IProductContext.h"
 #include "ProjectContext/ISceneContext.h"
-#include "ProjectContext/SceneObjectRegistry.h"
 #include "Resources/ResourceLibrary.h"
 #include "Resources/ResourceLoaderRegistry.h"
 #include "Services/ServiceProvider.h"
@@ -125,6 +124,7 @@ namespace iCAX
         * @details
         *   Scene 是完整运行现场，拥有自己的 Repository、Undo/Redo、Transaction、Universe、
         *   ResourceLibrary、PDOHub、MailChannel 和工作线程。Project 只作为管理容器存在。
+        *   渲染、碰撞、拾取等外部交互身份直接使用 EntityID，不再维护 Scene 运行期对象映射表。
         */
         class _PROJECT_EXP CProjectScene final
             : public ISceneContext
@@ -246,12 +246,6 @@ namespace iCAX
             const iCAX::Resource::CResourceLibrary& Resources() const override;
 
             /*
-            * @brief 获取 Scene 运行时对象注册表。
-            */
-            CSceneObjectRegistry& Objects() override;
-            const CSceneObjectRegistry& Objects() const override;
-
-            /*
             * @brief 当前 Scene 是否配置 PDO Hub。
             */
             bool HasPDOHub() const override;
@@ -365,7 +359,6 @@ namespace iCAX
             std::shared_ptr<iCAX::Behaviour::IUniverse> m_pUniverse;
             std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
             std::shared_ptr<CRepositoryEventForwarder> m_pRepositoryEventForwarder;
-            CSceneObjectRegistry m_Objects;
             iCAX::Resource::CResourceLibrary m_Resources;
             uint32_t m_nFrameIntervalMilliseconds = 16;
             CSceneRuntimeScheduler m_RuntimeScheduler;

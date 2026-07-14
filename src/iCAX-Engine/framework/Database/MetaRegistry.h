@@ -38,6 +38,7 @@ namespace iCAX
                 std::string strComponentClass;          //!< 组件类型名称
                 std::function<std::shared_ptr<CComponentBase>(IN std::shared_ptr<IEntity>)> Creator;//!< 组件的构建方法
                 std::unordered_set<std::shared_ptr<IAttribute>> vecAttributes;        //!< 所有特性
+                std::vector<std::shared_ptr<IFieldPolicyProvider>> vecFieldPolicyProviders;        //!< 字段实例编辑策略提供者，按注册顺序查询。
                 std::unordered_set<std::shared_ptr<IChecker>> vecCheckers;            //!< 约束器
                 std::vector<uint32_t> vecPropertyOrder;                               //!< 属性注册顺序
                 std::unordered_map<uint32_t, PropertyMeta> mapProperties;                       //!< 属性元数据
@@ -179,6 +180,20 @@ namespace iCAX
             */
             virtual std::unordered_set<std::shared_ptr<IAttribute>> GetAttributesByName(IN const std::string& strComponentClass_) const override;
 
+        public://! 字段实例编辑策略
+            /*
+            * @brief 注册字段实例编辑策略提供者
+            * @param [in] pProvider_
+            * @param [in] strComponentClass_
+            */
+            virtual void RegistFieldPolicyProviderByName(IN const std::shared_ptr<IFieldPolicyProvider>& pProvider_, IN const std::string& strComponentClass_) override;
+
+            /*
+            * @brief 获取字段实例编辑策略提供者列表
+            * @param [in] strComponentClass_
+            */
+            virtual std::vector<std::shared_ptr<IFieldPolicyProvider>> GetFieldPolicyProvidersByName(IN const std::string& strComponentClass_) const override;
+
         public://! 约束器
             /*
             * @brief 注册约束器
@@ -238,6 +253,12 @@ namespace iCAX
             * @param [in] strComponentClass_ 组件类型
             */
             std::unordered_set<std::shared_ptr<IAttribute>> GetAttributesByName(IN const uint32_t& nComponentClass_) const;
+
+            /*
+            * @brief 获取字段实例编辑策略提供者列表
+            * @param [in] strComponentClass_ 组件类型
+            */
+            std::vector<std::shared_ptr<IFieldPolicyProvider>> GetFieldPolicyProvidersByName(IN const uint32_t& nComponentClass_) const;
 
             /*
             * @brief 获取约束列表

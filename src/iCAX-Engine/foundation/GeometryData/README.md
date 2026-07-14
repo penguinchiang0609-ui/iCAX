@@ -16,6 +16,7 @@
 - `BRepShapeRef` 表达形体引用、方向和形体级变换，可对应 OCC `TopoDS_Shape` 的 orientation/location，也可用于 STEP 装配实例。
 - `BRepEdge` 支持退化边、same-parameter、same-range；退化边可以没有三维曲线，但对应的 `BRepCoedge` 必须有二维 p-curve。
 - `Triangulation3` 支持三角形、法线、UV 和 triangle-to-face 映射，可承接 CGAL polygon mesh 或 OCC face triangulation 的轻量结果。
+- `CTriangleMeshResource` 是资源池中的中立三角网格资源，适合 STL、OBJ、PLY 等文件导入后的数据承载；渲染、碰撞和拾取只消费该资源，不把格式解析写进业务模块。
 - `Transform2` 使用 3x3 行主序矩阵，`Transform3` 使用 4x4 行主序矩阵；点按列向量应用，平移分量位于最后一列。
 - 几何求值、离散、校验、反转、长度、相交等行为放到 `GeometryAlgo`。
 - 调用 OCC、CGAL 等外部内核的桥接逻辑放到 `GeometryAdapter`。

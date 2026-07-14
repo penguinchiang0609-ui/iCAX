@@ -49,6 +49,7 @@ namespace
     std::atomic_bool g_bCefRuntimeInitialized = false;
     std::atomic_bool g_bAllowFileAccessFromFiles = true;
     std::atomic_bool g_bDisableGPU = false;
+    std::atomic_int g_nRemoteDebuggingPort = 0;
     std::mutex g_CefRuntimeMutex;
     constexpr int g_nMinWindowWidthDIP = 1024;
     constexpr int g_nMinWindowHeightDIP = 680;
@@ -596,6 +597,13 @@ namespace
         return window.__icaxPDOWithRead(descriptor, reader);
       },
 
+      getMeta(descriptor) {
+        if (typeof window.__icaxPDOGetMeta !== "function") {
+          throw new Error("CEF PDO metadata bridge is not available");
+        }
+        return window.__icaxPDOGetMeta(descriptor);
+      },
+
       withWrite(descriptor, writer) {
         if (typeof window.__icaxPDOWithWrite !== "function") {
           throw new Error("CEF PDO bridge is not available");
@@ -799,6 +807,21 @@ namespace
         return _Meta;
     }
 
+    CefRefPtr<CefV8Value> _MakePDOSlotMeta(
+        IN const CPDOReadDescriptor& Descriptor_,
+        IN const iCAX::PDO::CSharedPDOSlot& Slot_)
+    {
+        auto _Meta = CefV8Value::CreateObject(nullptr, nullptr);
+        _Meta->SetValue("id", CefV8Value::CreateString(std::to_string(Descriptor_.nID)), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("version", CefV8Value::CreateUInt(Descriptor_.nVersion), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("payloadSize", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("sequence", CefV8Value::CreateUInt(Slot_.GetSequence()), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("publishedIndex", CefV8Value::CreateUInt(Slot_.GetPublishedIndex()), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("publishedDataVersion", CefV8Value::CreateString(std::to_string(Slot_.GetPublishedDataVersion())), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("latestDataVersion", CefV8Value::CreateString(std::to_string(Slot_.GetLatestDataVersion())), V8_PROPERTY_ATTRIBUTE_READONLY);
+        return _Meta;
+    }
+
     class CPDOV8BridgeHandler final : public CefV8Handler
     {
     public:
@@ -815,6 +838,11 @@ namespace
                 if (_FunctionName == "__icaxPDOWithRead")
                 {
                     ReturnValue_ = ExecuteRead(Arguments_);
+                    return true;
+                }
+                if (_FunctionName == "__icaxPDOGetMeta")
+                {
+                    ReturnValue_ = ExecuteMeta(Arguments_);
                     return true;
                 }
                 if (_FunctionName == "__icaxPDOWithWrite")
@@ -844,9 +872,7 @@ namespace
             }
 
             const auto _Descriptor = _ParsePDOReadDescriptor(Arguments_[0]);
-            auto _pArena = OpenArena(_Descriptor.ArenaName);
-            auto _Slot = _pArena->GetSlot(_Descriptor.nID);
-            ValidateSlot(_Slot, _Descriptor, iCAX::PDO::kDirection2External);
+            auto _Slot = OpenValidatedSlot(_Descriptor, iCAX::PDO::kDirection2External);
 
             iCAX::PDO::CPDOReadLease _Lease(_Slot);
             // Official CEF binaries enable the V8 sandbox. V8 therefore cannot wrap
@@ -877,6 +903,18 @@ namespace
             return _Result;
         }
 
+        CefRefPtr<CefV8Value> ExecuteMeta(IN const CefV8ValueList& Arguments_)
+        {
+            if (Arguments_.size() != 1)
+            {
+                throw std::invalid_argument("PDO getMeta expects descriptor argument");
+            }
+
+            const auto _Descriptor = _ParsePDOReadDescriptor(Arguments_[0]);
+            auto _Slot = OpenValidatedSlot(_Descriptor, iCAX::PDO::kDirection2External);
+            return _MakePDOSlotMeta(_Descriptor, _Slot);
+        }
+
         CefRefPtr<CefV8Value> ExecuteWrite(IN const CefV8ValueList& Arguments_)
         {
             if (Arguments_.size() != 2)
@@ -889,9 +927,7 @@ namespace
             }
 
             const auto _Descriptor = _ParsePDOWriteDescriptor(Arguments_[0]);
-            auto _pArena = OpenArena(_Descriptor.ArenaName);
-            auto _Slot = _pArena->GetSlot(_Descriptor.nID);
-            ValidateSlot(_Slot, _Descriptor, iCAX::PDO::kDirection2Inner);
+            auto _Slot = OpenValidatedSlot(_Descriptor, iCAX::PDO::kDirection2Inner);
 
             std::vector<uint8_t> _Scratch(_Descriptor.nPayloadSize, 0);
             auto _ArrayBuffer = CefV8Value::CreateArrayBufferWithCopy(_Scratch.data(), _Scratch.size());
@@ -933,18 +969,50 @@ namespace
             return CefV8Value::CreateBool(true);
         }
 
-        std::shared_ptr<iCAX::PDO::CSharedPDOArena> OpenArena(IN const std::wstring& ArenaName_)
+        std::shared_ptr<iCAX::PDO::CSharedPDOArena> OpenArena(
+            IN const std::wstring& ArenaName_,
+            IN bool bForceReopen_ = false)
         {
             std::lock_guard<std::mutex> _Lock(m_Mutex);
-            auto _Iter = m_Arenas.find(ArenaName_);
-            if (_Iter != m_Arenas.end())
+            if (!bForceReopen_)
             {
-                return _Iter->second;
+                auto _Iter = m_Arenas.find(ArenaName_);
+                if (_Iter != m_Arenas.end())
+                {
+                    return _Iter->second;
+                }
             }
 
+            m_Arenas.erase(ArenaName_);
             auto _pArena = iCAX::PDO::CSharedPDOArena::Open(ArenaName_);
             m_Arenas.emplace(ArenaName_, _pArena);
             return _pArena;
+        }
+
+        template <typename TDescriptor>
+        iCAX::PDO::CSharedPDOSlot OpenValidatedSlot(
+            IN const TDescriptor& Descriptor_,
+            IN iCAX::PDO::PDODirection eExpectedDirection_)
+        {
+            for (int _nAttempt = 0; _nAttempt < 2; ++_nAttempt)
+            {
+                try
+                {
+                    auto _pArena = OpenArena(Descriptor_.ArenaName, _nAttempt > 0);
+                    auto _Slot = _pArena->GetSlot(Descriptor_.nID);
+                    ValidateSlot(_Slot, Descriptor_, eExpectedDirection_);
+                    return _Slot;
+                }
+                catch (const std::logic_error&)
+                {
+                    if (_nAttempt != 0)
+                    {
+                        throw;
+                    }
+                }
+            }
+
+            throw std::logic_error("PDO slot validation failed");
         }
 
         template <typename TDescriptor>
@@ -960,11 +1028,27 @@ namespace
             }
             if (_Decl.nVersion != Descriptor_.nVersion)
             {
-                throw std::logic_error("PDO slot version does not match descriptor");
+                std::ostringstream _Message;
+                _Message
+                    << "PDO slot version does not match descriptor: expected="
+                    << Descriptor_.nVersion
+                    << ", actual="
+                    << _Decl.nVersion
+                    << ", id="
+                    << Descriptor_.nID;
+                throw std::logic_error(_Message.str());
             }
             if (_Decl.nPayloadSize != Descriptor_.nPayloadSize)
             {
-                throw std::logic_error("PDO slot payload size does not match descriptor");
+                std::ostringstream _Message;
+                _Message
+                    << "PDO slot payload size does not match descriptor: expected="
+                    << Descriptor_.nPayloadSize
+                    << ", actual="
+                    << _Decl.nPayloadSize
+                    << ", id="
+                    << Descriptor_.nID;
+                throw std::logic_error(_Message.str());
             }
             if (_Decl.eDirection != eExpectedDirection_)
             {
@@ -994,8 +1078,10 @@ namespace
 
         auto _Handler = new CPDOV8BridgeHandler();
         auto _ReadFunction = CefV8Value::CreateFunction("__icaxPDOWithRead", _Handler);
+        auto _MetaFunction = CefV8Value::CreateFunction("__icaxPDOGetMeta", _Handler);
         auto _WriteFunction = CefV8Value::CreateFunction("__icaxPDOWithWrite", _Handler);
         _Global->SetValue("__icaxPDOWithRead", _ReadFunction, V8_PROPERTY_ATTRIBUTE_DONTENUM);
+        _Global->SetValue("__icaxPDOGetMeta", _MetaFunction, V8_PROPERTY_ATTRIBUTE_DONTENUM);
         _Global->SetValue("__icaxPDOWithWrite", _WriteFunction, V8_PROPERTY_ATTRIBUTE_DONTENUM);
     }
 
@@ -1027,6 +1113,13 @@ namespace
             {
                 CommandLine_->AppendSwitch("disable-gpu");
                 CommandLine_->AppendSwitch("disable-gpu-compositing");
+            }
+            const int _nRemoteDebuggingPort = g_nRemoteDebuggingPort.load();
+            if (_nRemoteDebuggingPort > 0)
+            {
+                CommandLine_->AppendSwitchWithValue(
+                    "remote-debugging-port",
+                    std::to_string(_nRemoteDebuggingPort));
             }
         }
 
@@ -1595,6 +1688,7 @@ void iCAX::Frontend::Cef::CCefUIContainer::InitializeRuntime(IN const CCefRuntim
     CefSettings _Settings;
     g_bAllowFileAccessFromFiles = Config_.bAllowFileAccessFromFiles;
     g_bDisableGPU = Config_.bDisableGPU;
+    g_nRemoteDebuggingPort = Config_.nRemoteDebuggingPort;
     _Settings.no_sandbox = true;
     _Settings.multi_threaded_message_loop = Config_.bMultiThreadedMessageLoop;
     _Settings.windowless_rendering_enabled = Config_.bWindowlessRenderingEnabled;

@@ -1219,8 +1219,7 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
         }
         if (!IsValidBufferIndex(_Slot.nPublishedIndex)
             || !IsValidBufferIndex(_Slot.nWriteIndex)
-            || !IsValidReadyIndex(_Slot.nReadyIndex)
-            || _Slot.nPublishedIndex == _Slot.nWriteIndex)
+            || !IsValidReadyIndex(_Slot.nReadyIndex))
         {
             throw std::runtime_error("Shared PDO arena slot buffer index is invalid");
         }
@@ -1228,33 +1227,16 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
         {
             throw std::runtime_error("Shared PDO arena reader count is invalid");
         }
-        if (_Slot.nLatestDataVersion < _Slot.nPublishedDataVersion)
-        {
-            throw std::runtime_error("Shared PDO arena latest data version is invalid");
-        }
-        if (_Slot.nBufferState[_Slot.nPublishedIndex] != kSharedPDOBufferPublished
-            && _Slot.nBufferState[_Slot.nPublishedIndex] != kSharedPDOBufferReading)
-        {
-            throw std::runtime_error("Shared PDO arena published buffer state is invalid");
-        }
-        if (_Slot.nPublishedDataVersion != _Slot.nBufferDataVersion[_Slot.nPublishedIndex])
-        {
-            throw std::runtime_error("Shared PDO arena published data version is invalid");
-        }
+        /*
+        * The published index and its state are updated by separate atomics while
+        * the writer swaps buffers. A renderer process can open or query the arena
+        * exactly in that small window. Treat this as dynamic state owned by
+        * BeginRead instead of rejecting the whole arena as structurally invalid.
+        */
         if (_Slot.nReadyIndex != kSharedPDOReadyNone
             && _Slot.nBufferState[_Slot.nReadyIndex] != kSharedPDOBufferReady)
         {
             throw std::runtime_error("Shared PDO arena ready buffer state is invalid");
-        }
-        if (_Slot.nReadyIndex != kSharedPDOReadyNone
-            && _Slot.nBufferDataVersion[_Slot.nReadyIndex] <= _Slot.nPublishedDataVersion)
-        {
-            throw std::runtime_error("Shared PDO arena ready data version is invalid");
-        }
-        if (_Slot.nReadyIndex != kSharedPDOReadyNone
-            && _Slot.nLatestDataVersion < _Slot.nBufferDataVersion[_Slot.nReadyIndex])
-        {
-            throw std::runtime_error("Shared PDO arena latest ready data version is invalid");
         }
 
         for (uint32_t _BufferIndex = 0; _BufferIndex < kSharedPDOBufferCount; ++_BufferIndex)
@@ -1263,11 +1245,26 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
             {
                 throw std::runtime_error("Shared PDO arena slot buffer state is invalid");
             }
-            if (_Slot.nBufferState[_BufferIndex] == kSharedPDOBufferReading
-                && _Slot.nReaderCount[_BufferIndex] <= 0)
+            /*
+            * The designated write buffer can be observed in writing state while
+            * the producer is alive. Any other buffer in writing state means the
+            * published/ready side was corrupted and readers could see half-written
+            * bytes, so reject the arena immediately.
+            */
+            if (_Slot.nBufferState[_BufferIndex] == kSharedPDOBufferWriting
+                && static_cast<long>(_BufferIndex) != _Slot.nWriteIndex)
             {
-                throw std::runtime_error("Shared PDO arena reading buffer has no reader");
+                throw std::runtime_error("Shared PDO arena slot buffer is being written");
             }
+            /*
+            * Reading + readerCount == 0 can be observed briefly between EndRead
+            * decrementing the reader count and publishing the final buffer state.
+            * Opened arenas are live cross-process memory. The writer may be in the
+            * middle of SwapBuffersIfReady while another process opens the arena:
+            * publishedIndex can already point at the ready buffer before its state
+            * and publishedDataVersion are updated. Therefore this validator only
+            * checks structural invariants; BeginRead owns dynamic state validation.
+            */
             const auto _BufferOffset = _Slot.nBufferOffset[_BufferIndex];
             if (!IsAligned(_BufferOffset)
                 || !IsRangeInsideArena(_BufferOffset, _Slot.nPayloadSize, _Header->nArenaSize)

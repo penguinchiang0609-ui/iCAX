@@ -1,0 +1,21 @@
+
+  Services.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Services\x64\Debug\Services.dll
+  CommandTargets.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\CommandTargets\x64\Debug\CommandTargets.dll
+  GeometryData.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\foundation\GeometryData\x64\Debug\GeometryData.dll
+  Data.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\foundation\Data\x64\Debug\Data.dll
+  RenderData.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\RenderData\x64\Debug\RenderData.dll
+  Resources.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Resources\x64\Debug\Resources.dll
+  PDO.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\PDO\x64\Debug\PDO.dll
+  ProjectContext.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\ProjectContext\x64\Debug\ProjectContext.dll
+  Database.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Database\x64\Debug\Database.dll
+  InputPDO.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\input\InputPDO\x64\Debug\InputPDO.dll
+  ProductContext.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\ProductContext\x64\Debug\ProductContext.dll
+  RenderService.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\RenderService\x64\Debug\RenderService.dll
+  Transform.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\common\Transform\x64\Debug\Transform.dll
+  InputService.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\input\InputService\x64\Debug\InputService.dll
+  Behaviour.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Behaviour\x64\Debug\Behaviour.dll
+  RenderInteraction.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\RenderInteraction\x64\Debug\RenderInteraction.dll
+  CameraNavigation.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\CameraNavigation\x64\Debug\CameraNavigation.dll
+  MachineTargetImplement.cpp
+    正在创建库 D:\penguinchinage0609\iCAX\src\iCAX-Plugins\cam\Laser3DCAM\x64\Debug\Laser3DCAM.lib 和对象 D:\penguinchinage0609\iCAX\src\iCAX-Plugins\cam\Laser3DCAM\x64\Debug\Laser3DCAM.exp
+  Laser3DCAM.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\cam\Laser3DCAM\x64\Debug\Laser3DCAM.dll

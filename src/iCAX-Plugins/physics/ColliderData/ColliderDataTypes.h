@@ -28,7 +28,8 @@ namespace iCAX
             Sphere = 2,
             Capsule = 3,
             TriangleMesh = 4,
-            ConvexHull = 5
+            ConvexHull = 5,
+            Cylinder = 6
         };
 
         enum class EColliderMotionType : uint32_t
@@ -100,6 +101,20 @@ namespace iCAX
             SColliderTransform Transform;
             float nHalfHeight = 0.5f;
             float nRadius = 0.1f;
+            SColliderMaterial Material;
+            CollisionLayer nLayer = kDefaultCollisionLayer;
+            CollisionMask nMask = kCollisionMaskAll;
+            bool bActive = true;
+        };
+
+        struct _COLLIDER_DATA_EXP SCylinderColliderData final
+        {
+            ColliderObjectID nOwnerObjectID = kInvalidColliderObjectID;
+            ColliderDataVersion nDataVersion = 1;
+            EColliderMotionType eMotionType = EColliderMotionType::Static;
+            SColliderTransform Transform;
+            float nLength = 1.0f;
+            float nRadius = 0.5f;
             SColliderMaterial Material;
             CollisionLayer nLayer = kDefaultCollisionLayer;
             CollisionMask nMask = kCollisionMaskAll;

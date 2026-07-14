@@ -34,7 +34,7 @@
       <PreprocessorDefinitions>NOMINMAX;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\cam;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\foundation;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\cam;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\common;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\foundation;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -44,9 +44,7 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render\RenderInteraction\$(Platform)\$(Configuration)\RenderInteraction.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\input\InputService\$(Platform)\$(Configuration)\InputService.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\input\InputPDO\$(Platform)\$(Configuration)\InputPDO.dll" "$(OutDir)"</Command>
+      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(MSBuildProjectDirectory)\..\..\..\..\..\tools\test\sync_laser3dcam_test_runtime.ps1" -RepoRoot "$(MSBuildProjectDirectory)\..\..\..\..\.." -OutDir "$(OutDir)." -Configuration "$(Configuration)" -Platform "$(Platform)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
@@ -61,8 +59,23 @@ copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\input\InputPDO\$
     <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\cam\Laser3DCAM\Laser3DCAM.vcxproj">
       <Project>{41e6e443-2614-4e0d-914a-bfc4d5802cd4}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\common\Transform\Transform.vcxproj">
+      <Project>{d1b1bba3-23a7-4312-a5c7-390097406fe1}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\render\RenderInteraction\RenderInteraction.vcxproj">
+      <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj">
+      <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ProductContext\ProductContext.vcxproj">
+      <Project>{74d665ef-d89e-4104-ae6f-e31c7bff0f46}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\CommandTargets\CommandTargets.vcxproj">
+      <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">
       <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>

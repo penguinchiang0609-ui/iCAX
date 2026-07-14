@@ -1,4 +1,7 @@
 #include "pch.h"
+#include "LayerComponents.h"
+#include "SceneComponents.h"
+#include "SelectionComponents.h"
 #include "ToolpathComponents.h"
 
 #include "Behaviour/BehaviourBase.h"
@@ -8,7 +11,9 @@
 #include "Database/IRepository.h"
 #include "ProjectContext/ISceneContext.h"
 #include "CameraNavigation/CameraNavigation.h"
+#include "Laser3DCAM.h"
 #include "RenderInteraction/RenderInteraction.h"
+#include "Transform/Transform.h"
 
 #include <memory>
 #include <stdexcept>
@@ -89,21 +94,21 @@ namespace
 
         (void)_AddComponent<iCAX::RenderInteraction::CCameraComponent>(_pCameraEntity);
         (void)_AddComponent<iCAX::CameraNavigation::CCameraNavigationComponent>(_pCameraEntity);
-        auto _pTransform = _AddComponent<iCAX::RenderInteraction::CRenderTransformComponent>(_pCameraEntity);
+        auto _pTransform = _AddComponent<iCAX::Transform::CTransformComponent>(_pCameraEntity);
 
         iCAX::Data::PropertySet _Properties;
-        _Properties[iCAX::RenderInteraction::CRenderTransformComponent::PropertyName_PositionX] =
-            iCAX::Data::PropertyValue(iCAX::RenderInteraction::kDefaultCameraPositionX);
-        _Properties[iCAX::RenderInteraction::CRenderTransformComponent::PropertyName_PositionY] =
-            iCAX::Data::PropertyValue(iCAX::RenderInteraction::kDefaultCameraPositionY);
-        _Properties[iCAX::RenderInteraction::CRenderTransformComponent::PropertyName_PositionZ] =
-            iCAX::Data::PropertyValue(iCAX::RenderInteraction::kDefaultCameraPositionZ);
-        _Properties[iCAX::RenderInteraction::CRenderTransformComponent::PropertyName_YawRadians] =
-            iCAX::Data::PropertyValue(iCAX::RenderInteraction::kDefaultCameraYawRadians);
-        _Properties[iCAX::RenderInteraction::CRenderTransformComponent::PropertyName_PitchRadians] =
-            iCAX::Data::PropertyValue(iCAX::RenderInteraction::kDefaultCameraPitchRadians);
-        _Properties[iCAX::RenderInteraction::CRenderTransformComponent::PropertyName_RollRadians] =
-            iCAX::Data::PropertyValue(iCAX::RenderInteraction::kDefaultCameraRollRadians);
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionX] =
+            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPositionX);
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionY] =
+            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPositionY);
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionZ] =
+            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPositionZ);
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_YawRadians] =
+            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraYawRadians);
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PitchRadians] =
+            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPitchRadians);
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_RollRadians] =
+            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraRollRadians);
 
         if (!_pTransform->SetProperties(_Properties, _strError))
         {

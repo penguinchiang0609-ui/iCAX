@@ -284,18 +284,6 @@ const iCAX::Resource::CResourceLibrary& iCAX::Project::CProjectScene::Resources(
     return m_Resources;
 }
 
-iCAX::Project::CSceneObjectRegistry& iCAX::Project::CProjectScene::Objects()
-{
-    EnsureSceneThreadAccess("Scene::Objects");
-    return m_Objects;
-}
-
-const iCAX::Project::CSceneObjectRegistry& iCAX::Project::CProjectScene::Objects() const
-{
-    EnsureSceneThreadAccess("Scene::Objects");
-    return m_Objects;
-}
-
 bool iCAX::Project::CProjectScene::HasPDOHub() const
 {
     return m_pPDOHub != nullptr;
@@ -560,7 +548,6 @@ void iCAX::Project::CProjectScene::Close()
         m_pRepository.reset();
     }
     m_pPDOHub.reset();
-    m_Objects.Clear();
     m_Resources.Clear();
     if (m_pMailChannelRegistry && !m_SceneChannelID.is_nil())
     {

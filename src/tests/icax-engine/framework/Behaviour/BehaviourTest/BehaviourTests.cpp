@@ -5,7 +5,7 @@
 #include <Behaviour/IBehaviourRegistry.h>
 #include <Behaviour/IUniverse.h>
 #include <ApplicationContext/ApplicationContext.h>
-#include <CommandHandler/CommandRegistry.h>
+#include <CommandTargets/CommandRegistry.h>
 #include <Data/PropertyBag.h>
 #include <Data/uuid.h>
 #include <Database/ComponentBase.h>
@@ -18,7 +18,6 @@
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
 #include <ProjectContext/ISceneContext.h>
-#include <ProjectContext/SceneObjectRegistry.h>
 #include <Services/ServiceProvider.h>
 
 #include <memory>
@@ -494,16 +493,6 @@ namespace
             return m_Resources;
         }
 
-        iCAX::Project::CSceneObjectRegistry& Objects() override
-        {
-            return m_Objects;
-        }
-
-        const iCAX::Project::CSceneObjectRegistry& Objects() const override
-        {
-            return m_Objects;
-        }
-
         bool HasPDOHub() const override
         {
             return false;
@@ -530,7 +519,6 @@ namespace
         std::string m_strSceneName;
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
         iCAX::Resource::CResourceLibrary m_Resources;
-        iCAX::Project::CSceneObjectRegistry m_Objects;
         std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
     };
 

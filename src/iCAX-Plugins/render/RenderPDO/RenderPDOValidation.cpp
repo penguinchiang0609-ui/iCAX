@@ -113,7 +113,7 @@ bool iCAX::RenderPDO::ValidateMeshPDOHeader(
     {
         return false;
     }
-    if (Header_.nGeometryID == 0)
+    if (IsNilRenderID(Header_.nGeometryID))
     {
         return _SetError(pError_, "Mesh PDO geometry id cannot be zero");
     }
@@ -132,6 +132,10 @@ bool iCAX::RenderPDO::ValidateMeshPDOHeader(
     if ((Header_.nFlags & kMeshFlagHasVertexColors) != 0 && Header_.nVertexColorsOffset == 0)
     {
         return _SetError(pError_, "Mesh PDO vertex color offset is required when vertex color flag is set");
+    }
+    if ((Header_.nFlags & kMeshFlagHasTextureCoordinates) != 0 && Header_.nTextureCoordinatesOffset == 0)
+    {
+        return _SetError(pError_, "Mesh PDO texture coordinate offset is required when texture coordinate flag is set");
     }
     if (Header_.nTopology == static_cast<uint32_t>(ERenderTopology::TriangleList))
     {
@@ -159,6 +163,10 @@ bool iCAX::RenderPDO::ValidateMeshPDOHeader(
     {
         return false;
     }
+    if (!_ValidateOptionalRange(Header_.nTextureCoordinatesOffset, Header_.nVertexCount, sizeof(SFloat2), _MinOffset, _PayloadSize, "Mesh texture coordinates", pError_))
+    {
+        return false;
+    }
     if (!_ValidateOptionalRange(Header_.nIndicesOffset, Header_.nIndexCount, sizeof(uint32_t), _MinOffset, _PayloadSize, "Mesh indices", pError_))
     {
         return false;
@@ -175,7 +183,7 @@ bool iCAX::RenderPDO::ValidatePolylinePDOHeader(
     {
         return false;
     }
-    if (Header_.nGeometryID == 0)
+    if (IsNilRenderID(Header_.nGeometryID))
     {
         return _SetError(pError_, "Polyline PDO geometry id cannot be zero");
     }
@@ -199,7 +207,7 @@ bool iCAX::RenderPDO::ValidateToolpathPDOHeader(
     {
         return false;
     }
-    if (Header_.nGeometryID == 0)
+    if (IsNilRenderID(Header_.nGeometryID))
     {
         return _SetError(pError_, "Toolpath PDO geometry id cannot be zero");
     }
@@ -214,20 +222,36 @@ bool iCAX::RenderPDO::ValidateToolpathPDOHeader(
         && _ValidateRange(Header_.nSpansOffset, Header_.nSpanCount, sizeof(SRenderToolpathSpanData), _MinOffset, _PayloadSize, "Toolpath spans", pError_);
 }
 
-bool iCAX::RenderPDO::ValidateInstanceListPDOHeader(
-    IN const SRenderInstanceListPDOHeader& Header_,
+bool iCAX::RenderPDO::ValidateObjectPDOHeader(
+    IN const SRenderObjectPDOHeader& Header_,
     IN uint64_t nPayloadCapacity_,
     OUT std::string* pError_)
 {
-    if (!ValidateRenderPDOHeader(Header_.Header, ERenderPDOPayloadKind::InstanceList, sizeof(SRenderInstanceListPDOHeader), nPayloadCapacity_, pError_))
+    if (!ValidateRenderPDOHeader(Header_.Header, ERenderPDOPayloadKind::Object, sizeof(SRenderObjectPDOHeader), nPayloadCapacity_, pError_))
     {
         return false;
     }
-
-    const uint64_t _PayloadSize = Header_.Header.nPayloadSize;
-    const uint64_t _MinOffset = Header_.Header.nHeaderSize;
-    return _ValidateRange(Header_.nInstancesOffset, Header_.nInstanceCount, sizeof(SRenderInstanceData), _MinOffset, _PayloadSize, "Render instances", pError_)
-        && _ValidateOptionalRange(Header_.nStylesOffset, Header_.nStyleCount, sizeof(SRenderStyleData), _MinOffset, _PayloadSize, "Render styles", pError_);
+    if (IsNilRenderID(Header_.nObjectID))
+    {
+        return _SetError(pError_, "Object PDO entity id cannot be zero");
+    }
+    if (IsNilRenderID(Header_.nGeometryID))
+    {
+        return _SetError(pError_, "Object PDO geometry id cannot be zero");
+    }
+    if (Header_.nGeometryKind == static_cast<uint32_t>(ERenderGeometryKind::Unknown))
+    {
+        return _SetError(pError_, "Object PDO geometry kind cannot be unknown");
+    }
+    if (Header_.nRenderClass == static_cast<uint32_t>(ERenderClass::Unknown))
+    {
+        return _SetError(pError_, "Object PDO render class cannot be unknown");
+    }
+    if (Header_.Header.nPayloadSize != sizeof(SRenderObjectPDOHeader))
+    {
+        return _SetError(pError_, "Object PDO payload size must match header size");
+    }
+    return true;
 }
 
 bool iCAX::RenderPDO::ValidateCameraPDOHeader(
@@ -239,17 +263,15 @@ bool iCAX::RenderPDO::ValidateCameraPDOHeader(
     {
         return false;
     }
-    if (Header_.nCameraCount == 0)
+    if (IsNilRenderID(Header_.nCameraID))
     {
-        return _SetError(pError_, "Camera PDO camera count cannot be zero");
+        return _SetError(pError_, "Camera PDO entity id cannot be zero");
     }
-    if (Header_.nActiveCameraID == 0)
+    if (Header_.Header.nPayloadSize != sizeof(SRenderCameraPDOHeader))
     {
-        return _SetError(pError_, "Camera PDO active camera id cannot be zero");
+        return _SetError(pError_, "Camera PDO payload size must match header size");
     }
-    const uint64_t _PayloadSize = Header_.Header.nPayloadSize;
-    const uint64_t _MinOffset = Header_.Header.nHeaderSize;
-    return _ValidateRange(Header_.nCamerasOffset, Header_.nCameraCount, sizeof(SRenderCameraData), _MinOffset, _PayloadSize, "Render cameras", pError_);
+    return true;
 }
 
 bool iCAX::RenderPDO::ValidateTransformPDOHeader(
@@ -261,7 +283,7 @@ bool iCAX::RenderPDO::ValidateTransformPDOHeader(
     {
         return false;
     }
-    if (Header_.nTransformID == 0)
+    if (IsNilRenderID(Header_.nTransformID))
     {
         return _SetError(pError_, "Transform PDO id cannot be zero");
     }

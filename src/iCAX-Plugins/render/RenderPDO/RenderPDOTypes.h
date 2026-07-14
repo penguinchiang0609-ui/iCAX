@@ -10,14 +10,33 @@ namespace iCAX
     namespace RenderPDO
     {
         inline constexpr uint32_t kRenderPDOMagic = 0x4F445052u; // "RPDO", little endian.
-        inline constexpr uint32_t kRenderPDOLayoutVersion = 1;
+        inline constexpr uint32_t kRenderPDOLayoutVersion = 4;
 
-        using SceneObjectID = uint64_t;
-        using RenderGeometryID = uint64_t;
-        using TransformID = uint64_t;
-        using RenderCameraID = uint64_t;
+        struct _RENDER_PDO_EXP SRenderID final
+        {
+            std::array<uint8_t, 16> Bytes = {};
+        };
+
+        using SceneObjectID = SRenderID;
+        using RenderGeometryID = SRenderID;
+        using RenderMaterialID = SRenderID;
+        using RenderTextureID = SRenderID;
+        using TransformID = SRenderID;
+        using RenderCameraID = SRenderID;
         using RenderDataVersion = uint64_t;
         using RenderStyleID = uint32_t;
+
+        inline bool IsNilRenderID(const SRenderID& ID_) noexcept
+        {
+            for (const auto _Byte : ID_.Bytes)
+            {
+                if (_Byte != 0)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
 
         enum class ERenderPDOPayloadKind : uint32_t
         {
@@ -25,7 +44,7 @@ namespace iCAX
             Mesh = 1,
             Polyline = 2,
             Toolpath = 3,
-            InstanceList = 4,
+            Object = 4,
             Camera = 5,
             Transform = 6
         };
@@ -80,10 +99,21 @@ namespace iCAX
 
         inline constexpr uint32_t kMeshFlagHasNormals = 1u << 0;
         inline constexpr uint32_t kMeshFlagHasVertexColors = 1u << 1;
+        inline constexpr uint32_t kMeshFlagHasTextureCoordinates = 1u << 2;
+
+        inline constexpr uint32_t kRenderStyleFlagLightingDisabled = 1u << 0;
+        inline constexpr uint32_t kRenderStyleFlagHasBaseColorTexture = 1u << 1;
 
         inline constexpr uint32_t kCameraFlagPerspective = 1u << 0;
         inline constexpr uint32_t kCameraFlagOrthographic = 1u << 1;
         inline constexpr uint32_t kCameraFlagCameraLocked = 1u << 2;
+        inline constexpr uint32_t kCameraFlagActive = 1u << 3;
+
+        struct _RENDER_PDO_EXP SFloat2 final
+        {
+            float x = 0.0f;
+            float y = 0.0f;
+        };
 
         struct _RENDER_PDO_EXP SFloat3 final
         {

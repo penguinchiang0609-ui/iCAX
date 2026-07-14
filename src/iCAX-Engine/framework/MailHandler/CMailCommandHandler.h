@@ -3,7 +3,7 @@
 #include "MailHandlerExport.h"
 
 #include <ApplicationContext/IApplicationContext.h>
-#include <CommandHandler/CommandDispatcher.h>
+#include <CommandTargets/CommandDispatcher.h>
 #include <Mailbox/Mail.h>
 #include <Mailbox/MailPostOffice.h>
 #include <ProductContext/IProductContext.h>
@@ -19,7 +19,7 @@ namespace iCAX
     namespace MailHandler
     {
         /*
-        * @brief Mailbox 到 CommandHandler 的桥接器。
+        * @brief Mailbox 到 CommandTargets 的桥接器。
         * @details
         *   CMailCommandHandler 不拥有 PostOffice、CommandDispatcher 或上下文。
         *   它只负责把收到的 Mail 转成 CommandRequest，调用 CommandDispatcher，

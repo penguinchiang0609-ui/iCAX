@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -742,6 +743,115 @@ TEST(PDOTest, SharedSlotHandlesHighFrequencyReadWriteWithLeases)
     EXPECT_EQ(201u, version);
     EXPECT_EQ(200u, slot.GetLatestDataVersion());
     EXPECT_EQ(200u, slot.GetPublishedDataVersion());
+    EXPECT_GT(observedVersion.load(std::memory_order_relaxed), 0u);
+}
+
+TEST(PDOTest, SharedArenaOpenToleratesPublishedReadyTransientSnapshot)
+{
+    const auto id = MakePDOID("Render.Mesh", "OpenDuringSwapTransient");
+    const auto arenaName = MakeSharedArenaName();
+    auto arena = CSharedPDOArena::Create(arenaName, { MakeDecl(id, kDirection2External) });
+    auto* slots = GetMutableSlots(arena);
+
+    slots[0].nPublishedIndex = 1;
+    slots[0].nWriteIndex = 1;
+    slots[0].nReadyIndex = kSharedPDOReadyNone;
+    slots[0].nBufferState[0] = kSharedPDOBufferFree;
+    slots[0].nBufferState[1] = kSharedPDOBufferReady;
+    slots[0].nBufferDataVersion[1] = 1;
+    slots[0].nLatestDataVersion = 1;
+    slots[0].nPublishedDataVersion = 0;
+
+    EXPECT_NO_THROW((void)CSharedPDOArena::Open(arenaName));
+}
+
+TEST(PDOTest, SharedArenaCanBeOpenedRepeatedlyWhileWriterPublishes)
+{
+    const auto id = MakePDOID("Render.Mesh", "OpenWhilePublishing");
+    const auto arenaName = MakeSharedArenaName();
+    auto ownerArena = CSharedPDOArena::Create(arenaName, { MakeDecl(id, kDirection2External) });
+    auto ownerSlot = ownerArena->GetSlot(id);
+
+    std::atomic_bool start = false;
+    std::atomic_bool done = false;
+    std::atomic<int> openFailures = 0;
+    std::atomic<uint64_t> observedVersion = 0;
+    std::mutex firstOpenErrorMutex;
+    std::string firstOpenError;
+
+    std::thread reader([&]() {
+        while (!start.load(std::memory_order_acquire))
+        {
+            std::this_thread::yield();
+        }
+
+        while (!done.load(std::memory_order_acquire))
+        {
+            std::shared_ptr<CSharedPDOArena> viewArena;
+            try
+            {
+                viewArena = CSharedPDOArena::Open(arenaName);
+            }
+            catch (const std::exception& error)
+            {
+                std::lock_guard<std::mutex> lock(firstOpenErrorMutex);
+                if (firstOpenError.empty())
+                {
+                    firstOpenError = error.what();
+                }
+                openFailures.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+
+            try
+            {
+                auto viewSlot = viewArena->GetSlot(id);
+                CPDOReadLease readLease(viewSlot);
+                observedVersion.store(
+                    (std::max)(observedVersion.load(std::memory_order_relaxed), readLease.DataVersion()),
+                    std::memory_order_relaxed);
+            }
+            catch (const std::exception&)
+            {
+                // A reader may attach before the first publish. This test is about
+                // opening the live shared arena while the writer swaps buffers.
+            }
+        }
+    });
+
+    start.store(true, std::memory_order_release);
+    for (uint64_t version = 1; version <= 500; ++version)
+    {
+        for (;;)
+        {
+            auto writeLease = CPDOWriteLease::TryBeginIfNewer(ownerSlot, version);
+            if (writeLease.has_value())
+            {
+                const Payload payload{ static_cast<int>(version), static_cast<double>(version) };
+                std::memcpy(writeLease->Data(), &payload, sizeof(payload));
+                writeLease->Commit();
+                ownerSlot.SwapBuffersIfReady();
+                if ((version % 16) == 0)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(50));
+                }
+                break;
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    for (int spin = 0; spin < 200 && observedVersion.load(std::memory_order_relaxed) == 0; ++spin)
+    {
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+    }
+
+    done.store(true, std::memory_order_release);
+    reader.join();
+
+    EXPECT_EQ(0, openFailures.load(std::memory_order_relaxed)) << firstOpenError;
+    EXPECT_EQ(500u, ownerSlot.GetLatestDataVersion());
+    EXPECT_EQ(500u, ownerSlot.GetPublishedDataVersion());
     EXPECT_GT(observedVersion.load(std::memory_order_relaxed), 0u);
 }
 

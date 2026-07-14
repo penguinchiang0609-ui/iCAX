@@ -1,0 +1,232 @@
+{
+    "href":  "file:///D:/penguinchinage0609/iCAX/src/iCAX-UI/SDK/AppShell/index.html",
+    "title":  "iCAX",
+    "app":  {
+                "bridgeStatus":  "Connected",
+                "selectedProductId":  "icax.laser-3d-cam",
+                "activeProductId":  "icax.laser-3d-cam",
+                "activeProjectId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                "activeProjectName":  "Laser3DCAM UI Smoke",
+                "activeProjectPath":  "D:\\penguinchinage0609\\iCAX\\src\\.codex_tmp\\ui-smoke\\laser3dcam-ui-smoke-20260712-114532-584.i3cam",
+                "activeSceneId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                "startCenterOpen":  false,
+                "pendingCount":  0,
+                "error":  "",
+                "products":  [
+                                 {
+                                     "productId":  "icax.laser-3d-cam",
+                                     "productName":  "三维线条切割 CAM"
+                                 }
+                             ]
+            },
+    "productDiagnosticsReady":  true,
+    "product":  {
+                    "projectId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                    "sceneId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                    "selectedMachineDefinitionId":  "31f69463-905e-4540-9a00-ef5a7c8c4331",
+                    "selectedMachineInstanceId":  "9acae9b6-263d-411f-8101-e618c03fb9f3",
+                    "machineDefinitionCount":  1,
+                    "machineInstanceCount":  1,
+                    "enabledMachineInstanceCount":  1,
+                    "machineInstances":  [
+                                             {
+                                                 "id":  "9acae9b6-263d-411f-8101-e618c03fb9f3",
+                                                 "name":  "icax_gantry_ac5_machine",
+                                                 "enabled":  true
+                                             }
+                                         ],
+                    "jobMachineId":  "9acae9b6-263d-411f-8101-e618c03fb9f3",
+                    "error":  ""
+                },
+    "createProjectResult":  {
+                                "bridgeStatus":  "Connected",
+                                "selectedProductId":  "icax.laser-3d-cam",
+                                "activeProductId":  "icax.laser-3d-cam",
+                                "activeProjectId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                                "activeProjectName":  "Laser3DCAM UI Smoke",
+                                "activeProjectPath":  "D:\\penguinchinage0609\\iCAX\\src\\.codex_tmp\\ui-smoke\\laser3dcam-ui-smoke-20260712-114532-584.i3cam",
+                                "activeSceneId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                                "startCenterOpen":  false,
+                                "pendingCount":  0,
+                                "error":  "",
+                                "products":  [
+                                                 {
+                                                     "productId":  "icax.laser-3d-cam",
+                                                     "productName":  "三维线条切割 CAM"
+                                                 }
+                                             ]
+                            },
+    "importMachineResult":  {
+                                "state":  {
+                                              "projectId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                                              "sceneId":  "aae8a135-2a7a-43e0-ab7f-2e810a87402f",
+                                              "selectedMachineDefinitionId":  "31f69463-905e-4540-9a00-ef5a7c8c4331",
+                                              "selectedMachineInstanceId":  "9acae9b6-263d-411f-8101-e618c03fb9f3",
+                                              "machineDefinitionCount":  1,
+                                              "machineInstanceCount":  1,
+                                              "enabledMachineInstanceCount":  1,
+                                              "machineInstances":  [
+                                                                       {
+                                                                           "id":  "9acae9b6-263d-411f-8101-e618c03fb9f3",
+                                                                           "name":  "icax_gantry_ac5_machine",
+                                                                           "enabled":  true
+                                                                       }
+                                                                   ],
+                                              "jobMachineId":  "9acae9b6-263d-411f-8101-e618c03fb9f3",
+                                              "error":  ""
+                                          },
+                                "viewport":  {
+                                                 "mounted":  true,
+                                                 "canvasClientWidth":  910,
+                                                 "canvasClientHeight":  738,
+                                                 "canvasWidth":  1820,
+                                                 "canvasHeight":  1476,
+                                                 "slotCount":  77,
+                                                 "slots":  [
+                                                               {
+                                                                   "pdoId":  "14868746180774046708",
+                                                                   "payloadKind":  "render.transform",
+                                                                   "slotRole":  "Transform",
+                                                                   "geometryId":  "",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "dd728175-9acb-4ca6-a1f4-6f8198915f36",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  120,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "14801874375031394066",
+                                                                   "payloadKind":  "render.camera",
+                                                                   "slotRole":  "Camera",
+                                                                   "geometryId":  "",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "dd728175-9acb-4ca6-a1f4-6f8198915f36",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045385064642297",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "96e7219b-6331-5815-ac81-3aecc097ca28",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045384905598990",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "bb6bd3f1-9db1-508a-a48e-61e21fc164d5",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045381962627874",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "6ad2104c-5f25-5c48-a34b-0476ba3f4271",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045384619018268",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "aa572694-453b-5c82-900a-e3279f9e6d63",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  21600,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045382792000408",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "bc3eed49-2c43-5de5-b9c5-8179fdc764c5",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045384017502608",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "230203e8-072e-576d-8dae-7deead70fe03",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045384698668160",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "eb39d249-4e18-5e7e-af91-51568e7d26ea",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  21600,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045382224102332",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "96b83a0e-d592-53a7-b1ea-3bd45c4860fd",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045384992842778",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "469a248c-5f38-5887-aa37-3876b81cbee1",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  21600,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045381028359299",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "33e04f95-ae9f-577b-9cfd-b755005d6af3",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045384366453565",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",
+                                                                   "geometryId":  "b7d28dbc-66d1-5847-ad6a-8c728297e900",
+                                                                   "objectId":  "",
+                                                                   "transformId":  "",
+                                                                   "version":  2,
+                                                                   "payloadCapacity":  1104,
+                                                                   "lastReadDataVersion":  ""
+                                                               },
+                                                               {
+                                                                   "pdoId":  "1597045382285646188",
+                                                                   "payloadKind":  "render.mesh",
+                                                                   "slotRole":  "Geometry",

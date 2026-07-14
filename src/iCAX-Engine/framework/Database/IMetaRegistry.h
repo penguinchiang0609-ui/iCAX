@@ -4,8 +4,10 @@
 #include "ComponentBase.h"
 #include "DerivedProperty.h"
 #include <unordered_set>
+#include <vector>
 #include "IAttribute.h"
 #include "IChecker.h"
+#include "IFieldPolicyProvider.h"
 
 namespace iCAX
 {
@@ -245,6 +247,73 @@ namespace iCAX
             * @param [in] strComponentClass_ 组件类型
             */
             virtual std::unordered_set<std::shared_ptr<IAttribute>> GetAttributesByName(IN const std::string& strComponentClass_) const = 0;
+
+        public://! 字段实例编辑策略
+            /*
+            * @brief 注册字段实例编辑策略提供者
+            * @param [in] pProvider_ 字段策略提供者
+            * @details
+            *   注册按组件类型组织，但策略计算时会传入具体 Entity、Component 和 PropertyName。
+            */
+            template<typename T>
+            void RegistFieldPolicyProvider(IN std::shared_ptr<IFieldPolicyProvider> pProvider_)
+            {
+                static_assert(std::is_base_of<CComponentBase, T>::value, "T must be derived from CComponentBase");
+                RegistFieldPolicyProviderByName(pProvider_, T::S_ClassName);
+            }
+
+            /*
+            * @brief 注册字段实例编辑策略提供者
+            * @param [in] pProvider_ 字段策略提供者
+            * @param [in] strComponentClass_ 组件类型，默认为空表示全局字段策略
+            */
+            virtual void RegistFieldPolicyProviderByName(IN const std::shared_ptr<IFieldPolicyProvider>& pProvider_, IN const std::string& strComponentClass_ = std::string()) = 0;
+
+            /*
+            * @brief 获取字段实例编辑策略提供者列表
+            * @param [in] strComponentClass_ 组件类型
+            */
+            virtual std::vector<std::shared_ptr<IFieldPolicyProvider>> GetFieldPolicyProvidersByName(IN const std::string& strComponentClass_) const = 0;
+
+            /*
+            * @brief 尝试获取某个实体实例上的字段编辑策略
+            * @param [in] Entity_ 字段所属实体
+            * @param [in] Component_ 字段所属组件
+            * @param [in] strPropertyName_ 字段名称
+            * @param [out] Policy_ 通用编辑策略
+            * @return true 表示存在 Provider 处理了该字段；false 表示可使用默认 UI 策略。
+            */
+            inline bool TryGetFieldPolicy(
+                IN const IEntity& Entity_,
+                IN const CComponentBase& Component_,
+                IN const std::string& strPropertyName_,
+                OUT SFieldEditPolicy& Policy_) const
+            {
+                Policy_ = SFieldEditPolicy();
+                auto _vecProviders = GetFieldPolicyProvidersByName(Component_.GetComponentClass());
+                for (const auto& _pProvider : _vecProviders)
+                {
+                    if (_pProvider && _pProvider->TryGetFieldPolicy(Entity_, Component_, strPropertyName_, Policy_))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            /*
+            * @brief 获取某个实体实例上的字段编辑策略
+            * @details 如果没有 Provider 处理该字段，返回默认可见、可编辑、无范围的 number 策略。
+            */
+            inline SFieldEditPolicy GetFieldPolicy(
+                IN const IEntity& Entity_,
+                IN const CComponentBase& Component_,
+                IN const std::string& strPropertyName_) const
+            {
+                SFieldEditPolicy _Policy;
+                (void)TryGetFieldPolicy(Entity_, Component_, strPropertyName_, _Policy);
+                return _Policy;
+            }
 
         public://! 约束器
             /*

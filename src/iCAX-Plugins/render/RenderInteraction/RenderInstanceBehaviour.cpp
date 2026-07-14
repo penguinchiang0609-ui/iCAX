@@ -7,15 +7,14 @@
 #include "GeometryData/GeometryData.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
-#include "ProjectContext/SceneObjectRegistry.h"
 #include "RenderData/RenderData.h"
 #include "RenderService/RenderService.h"
 #include "Resources/ResourceLibrary.h"
 #include "Services/ServiceProvider.h"
+#include "Transform/Transform.h"
 
 #include <algorithm>
 #include <atomic>
-#include <cmath>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -25,8 +24,6 @@
 
 namespace
 {
-    constexpr double kEpsilon = 0.000001;
-
     uint64_t NextRenderVersion() noexcept
     {
         static std::atomic_uint64_t _Version{ 1 };
@@ -118,26 +115,21 @@ namespace
         }
     }
 
-    iCAX::Render::SRenderStyleData MakeStyle(
+    iCAX::Render::RenderMaterialID ResolveMaterialID(
         IN const iCAX::RenderInteraction::CRenderInstanceComponent& Component_,
-        IN bool bEnabled_) noexcept
+        IN iCAX::Resource::CResourceLibrary& Resources_)
     {
-        iCAX::Render::SRenderStyleData _Style;
-        _Style.nStyleID = static_cast<iCAX::Render::RenderStyleID>(Component_.GetStyleID());
-        _Style.nColorRGBA = static_cast<uint32_t>(Component_.GetColorRGBA());
-        _Style.nLineWidth = static_cast<float>(Component_.GetLineWidth());
-        _Style.nFlags = MakeRenderFlags(Component_, bEnabled_);
-        return _Style;
-    }
+        const auto _MaterialResourceID = Component_.GetMaterialResourceID();
+        if (_MaterialResourceID.empty())
+        {
+            return iCAX::Render::kInvalidRenderMaterialID;
+        }
 
-    bool SameStyle(
-        IN const iCAX::Render::SRenderStyleData& Left_,
-        IN const iCAX::Render::SRenderStyleData& Right_) noexcept
-    {
-        return Left_.nStyleID == Right_.nStyleID
-            && Left_.nColorRGBA == Right_.nColorRGBA
-            && std::abs(Left_.nLineWidth - Right_.nLineWidth) <= static_cast<float>(kEpsilon)
-            && Left_.nFlags == Right_.nFlags;
+        if (!Resources_.Contains(_MaterialResourceID))
+        {
+            throw std::runtime_error("Render material resource does not exist: " + _MaterialResourceID);
+        }
+        return iCAX::Render::MakeRenderMaterialID(_MaterialResourceID);
     }
 
     bool SameInstance(
@@ -145,10 +137,10 @@ namespace
         IN const iCAX::Render::SRenderInstanceData& Right_) noexcept
     {
         return Left_.nObjectID == Right_.nObjectID
+            && Left_.nMaterialID == Right_.nMaterialID
             && Left_.nGeometryID == Right_.nGeometryID
             && Left_.eGeometryKind == Right_.eGeometryKind
             && Left_.eRenderClass == Right_.eRenderClass
-            && Left_.nStyleID == Right_.nStyleID
             && Left_.nFlags == Right_.nFlags;
     }
 
@@ -156,14 +148,17 @@ namespace
         IN const iCAX::RenderInteraction::CRenderInstanceComponent& Component_,
         IN iCAX::Render::SceneObjectID nObjectID_,
         IN iCAX::Render::RenderGeometryID nGeometryID_,
+        IN iCAX::Render::RenderMaterialID nMaterialID_,
+        IN iCAX::Render::RenderDataVersion nDataVersion_,
         IN bool bEnabled_)
     {
         iCAX::Render::SRenderInstanceData _Instance;
         _Instance.nObjectID = nObjectID_;
+        _Instance.nDataVersion = MakeNonZeroVersion(nDataVersion_);
         _Instance.nGeometryID = nGeometryID_;
+        _Instance.nMaterialID = nMaterialID_;
         _Instance.eGeometryKind = ToGeometryKind(Component_.GetGeometryKind());
         _Instance.eRenderClass = ToRenderClass(Component_.GetRenderClass());
-        _Instance.nStyleID = static_cast<iCAX::Render::RenderStyleID>(Component_.GetStyleID());
         _Instance.nFlags = MakeRenderFlags(Component_, bEnabled_);
         return _Instance;
     }
@@ -183,6 +178,14 @@ namespace
             static_cast<float>(Vector_.X),
             static_cast<float>(Vector_.Y),
             static_cast<float>(Vector_.Z)
+        };
+    }
+
+    iCAX::Render::SFloat2 ToRenderFloat2(IN const iCAX::GeometryData::TextureCoordinate2& TextureCoordinate_) noexcept
+    {
+        return {
+            static_cast<float>(TextureCoordinate_.U),
+            static_cast<float>(TextureCoordinate_.V)
         };
     }
 
@@ -256,6 +259,60 @@ namespace
         return _Mesh;
     }
 
+    iCAX::Render::SRenderMeshData MakeRenderMeshFromTriangleMesh(
+        IN const iCAX::GeometryData::CTriangleMeshResource& Resource_,
+        IN uint64_t nDataVersion_)
+    {
+        const auto& _Geometry = Resource_.Mesh;
+        if (_Geometry.Vertices.empty() || _Geometry.Triangles.empty())
+        {
+            throw std::runtime_error("Triangle mesh resource does not contain display triangles");
+        }
+
+        iCAX::Render::SRenderMeshData _Mesh;
+        _Mesh.nDataVersion = MakeNonZeroVersion(nDataVersion_);
+        _Mesh.eTopology = iCAX::Render::ERenderTopology::TriangleList;
+        _Mesh.Positions.reserve(_Geometry.Vertices.size());
+        for (const auto& _Point : _Geometry.Vertices)
+        {
+            _Mesh.Positions.push_back(ToRenderFloat3(_Point));
+        }
+
+        if (_Geometry.Normals.size() == _Geometry.Vertices.size())
+        {
+            _Mesh.Normals.reserve(_Geometry.Normals.size());
+            for (const auto& _Normal : _Geometry.Normals)
+            {
+                _Mesh.Normals.push_back(ToRenderFloat3(_Normal));
+            }
+            _Mesh.nFlags |= iCAX::Render::kRenderMeshFlagHasNormals;
+        }
+
+        if (_Geometry.TextureCoordinates.size() == _Geometry.Vertices.size())
+        {
+            _Mesh.TextureCoordinates.reserve(_Geometry.TextureCoordinates.size());
+            for (const auto& _TextureCoordinate : _Geometry.TextureCoordinates)
+            {
+                _Mesh.TextureCoordinates.push_back(ToRenderFloat2(_TextureCoordinate));
+            }
+            _Mesh.nFlags |= iCAX::Render::kRenderMeshFlagHasTextureCoordinates;
+        }
+
+        _Mesh.Indices.reserve(_Geometry.Triangles.size() * 3);
+        for (const auto& _Triangle : _Geometry.Triangles)
+        {
+            for (const auto _Index : _Triangle)
+            {
+                if (_Index >= _Geometry.Vertices.size())
+                {
+                    throw std::runtime_error("Triangle mesh resource index is out of range");
+                }
+                _Mesh.Indices.push_back(_Index);
+            }
+        }
+        return _Mesh;
+    }
+
     bool HasCurrentMeshGeometry(
         IN iCAX::Render::IRenderService& RenderService_,
         IN const iCAX::Data::uuid& ProjectID_,
@@ -305,9 +362,26 @@ namespace
             }
 
             auto _pBRep = Resources_.Get<iCAX::GeometryData::BRepModel>(strGeometryResourceID_);
+            auto _pTriangleMesh = Resources_.Get<iCAX::GeometryData::CTriangleMeshResource>(strGeometryResourceID_);
+            if (_pTriangleMesh)
+            {
+                if (HasCurrentMeshGeometry(RenderService_, ProjectID_, nSceneID_, nGeometryID_, _ResourceVersion))
+                {
+                    return;
+                }
+
+                auto _Mesh = MakeRenderMeshFromTriangleMesh(*_pTriangleMesh, _ResourceVersion);
+                _Mesh.nGeometryID = nGeometryID_;
+                if (!RenderService_.UpsertMesh(ProjectID_, nSceneID_, _Mesh))
+                {
+                    throw std::runtime_error("RenderService rejected triangle mesh resource: " + strGeometryResourceID_);
+                }
+                return;
+            }
+
             if (!_pBRep)
             {
-                throw std::runtime_error("Render geometry resource is not mesh or BRep data: " + strGeometryResourceID_);
+                throw std::runtime_error("Render geometry resource is not mesh, triangle mesh, or BRep data: " + strGeometryResourceID_);
             }
             if (HasCurrentMeshGeometry(RenderService_, ProjectID_, nSceneID_, nGeometryID_, _ResourceVersion))
             {
@@ -362,52 +436,36 @@ namespace
         throw std::invalid_argument("RenderInstanceComponent has unsupported geometry kind");
     }
 
-    bool UpsertInstanceAndStyle(
+    bool UpsertObject(
         IN iCAX::Render::IRenderService& RenderService_,
         IN const iCAX::Data::uuid& ProjectID_,
         IN iCAX::Render::RenderSceneID nSceneID_,
-        IN const iCAX::Render::SRenderInstanceData& Instance_,
-        IN const iCAX::Render::SRenderStyleData& Style_,
-        IN uint64_t nVersion_)
+        IN const iCAX::Render::SRenderInstanceData& Object_)
     {
         auto _Snapshot = RenderService_.GetSceneSnapshot(ProjectID_, nSceneID_);
-        auto _Instances = _Snapshot.Instances;
-        auto _Styles = _Snapshot.Styles;
+        auto _Objects = _Snapshot.Objects;
         bool _bDirty = false;
 
-        auto _InstanceIter = std::find_if(
-            _Instances.begin(),
-            _Instances.end(),
-            [&Instance_](IN const iCAX::Render::SRenderInstanceData& Item_)
+        auto _ObjectIter = std::find_if(
+            _Objects.begin(),
+            _Objects.end(),
+            [&Object_](IN const iCAX::Render::SRenderInstanceData& Item_)
             {
-                return Item_.nObjectID == Instance_.nObjectID;
+                return Item_.nObjectID == Object_.nObjectID;
             });
-        if (_InstanceIter == _Instances.end())
+        if (_ObjectIter == _Objects.end())
         {
-            _Instances.push_back(Instance_);
+            _Objects.push_back(Object_);
             _bDirty = true;
         }
-        else if (!SameInstance(*_InstanceIter, Instance_))
+        else if (!SameInstance(*_ObjectIter, Object_))
         {
-            *_InstanceIter = Instance_;
+            *_ObjectIter = Object_;
             _bDirty = true;
         }
-
-        auto _StyleIter = std::find_if(
-            _Styles.begin(),
-            _Styles.end(),
-            [&Style_](IN const iCAX::Render::SRenderStyleData& Item_)
-            {
-                return Item_.nStyleID == Style_.nStyleID;
-            });
-        if (_StyleIter == _Styles.end())
+        else if (_ObjectIter->nDataVersion < Object_.nDataVersion)
         {
-            _Styles.push_back(Style_);
-            _bDirty = true;
-        }
-        else if (!SameStyle(*_StyleIter, Style_))
-        {
-            *_StyleIter = Style_;
+            _ObjectIter->nDataVersion = Object_.nDataVersion;
             _bDirty = true;
         }
 
@@ -416,9 +474,9 @@ namespace
             return false;
         }
 
-        if (!RenderService_.SetInstances(ProjectID_, nSceneID_, _Instances, _Styles, MakeNonZeroVersion(nVersion_)))
+        if (!RenderService_.SetObjects(ProjectID_, nSceneID_, _Objects))
         {
-            throw std::runtime_error("RenderService rejected render instance update");
+            throw std::runtime_error("RenderService rejected render object update");
         }
         return true;
     }
@@ -436,7 +494,7 @@ namespace
 
         auto _Snapshot = RenderService_.GetSceneSnapshot(ProjectID_, nSceneID_);
         std::optional<iCAX::Render::RenderGeometryID> _RemovedGeometryID;
-        for (const auto& _Instance : _Snapshot.Instances)
+        for (const auto& _Instance : _Snapshot.Objects)
         {
             if (_Instance.nObjectID == nObjectID_)
             {
@@ -449,25 +507,25 @@ namespace
             return std::nullopt;
         }
 
-        auto _Instances = _Snapshot.Instances;
-        const auto _OriginalSize = _Instances.size();
-        std::erase_if(_Instances, [nObjectID_](IN const iCAX::Render::SRenderInstanceData& Item_)
+        auto _Objects = _Snapshot.Objects;
+        const auto _OriginalSize = _Objects.size();
+        std::erase_if(_Objects, [nObjectID_](IN const iCAX::Render::SRenderInstanceData& Item_)
         {
             return Item_.nObjectID == nObjectID_;
         });
-        if (_Instances.size() == _OriginalSize)
+        if (_Objects.size() == _OriginalSize)
         {
             return std::nullopt;
         }
 
-        if (!RenderService_.SetInstances(ProjectID_, nSceneID_, _Instances, _Snapshot.Styles, NextRenderVersion()))
+        if (!RenderService_.SetObjects(ProjectID_, nSceneID_, _Objects))
         {
-            throw std::runtime_error("RenderService rejected render instance removal");
+            throw std::runtime_error("RenderService rejected render object removal");
         }
 
         const auto _StillReferenced = std::any_of(
-            _Instances.begin(),
-            _Instances.end(),
+            _Objects.begin(),
+            _Objects.end(),
             [_RemovedGeometryID](IN const iCAX::Render::SRenderInstanceData& Item_)
             {
                 return Item_.nGeometryID == *_RemovedGeometryID;
@@ -581,10 +639,7 @@ namespace
         {
             auto _pRenderService = SceneContext_.Services().Resolve<iCAX::Render::IRenderService>();
             const auto _RenderSceneID = iCAX::Render::MakeRenderSceneID(SceneContext_.GetSceneID());
-            if (const auto _ObjectID = SceneContext_.Objects().FindObjectByEntity(EntityID_))
-            {
-                (void)RemoveInstance(*_pRenderService, ProjectContext_.GetProjectID(), _RenderSceneID, *_ObjectID);
-            }
+            (void)RemoveInstance(*_pRenderService, ProjectContext_.GetProjectID(), _RenderSceneID, EntityID_);
         }
 
         void Publish(
@@ -604,9 +659,9 @@ namespace
             {
                 throw std::runtime_error("RenderInstanceComponent is detached from entity");
             }
-            if (!_pEntity->GetComponent<iCAX::RenderInteraction::CRenderTransformComponent>())
+            if (!_pEntity->GetComponent<iCAX::Transform::CTransformComponent>())
             {
-                (void)_pEntity->AddComponent<iCAX::RenderInteraction::CRenderTransformComponent>();
+                (void)_pEntity->AddComponent<iCAX::Transform::CTransformComponent>();
             }
 
             auto _pRenderService = SceneContext_.Services().Resolve<iCAX::Render::IRenderService>();
@@ -614,10 +669,8 @@ namespace
             const auto _RenderSceneID = iCAX::Render::MakeRenderSceneID(SceneContext_.GetSceneID());
             EnsureRenderScene(*_pRenderService, _ProjectID, _RenderSceneID);
 
-            const auto _ObjectID = static_cast<iCAX::Render::SceneObjectID>(
-                SceneContext_.Objects().GetOrCreateEntityObject(_pEntity->GetID()));
-            const auto _GeometryID = static_cast<iCAX::Render::RenderGeometryID>(
-                SceneContext_.Objects().GetOrCreateGeometry(_Component.GetGeometryResourceID(), "render.geometry"));
+            const auto _ObjectID = _pEntity->GetID();
+            const auto _GeometryID = iCAX::Render::MakeRenderGeometryID(_Component.GetGeometryResourceID());
             const auto _GeometryKind = ToGeometryKind(_Component.GetGeometryKind());
             UpsertGeometryResource(
                 *_pRenderService,
@@ -628,10 +681,9 @@ namespace
                 _GeometryID,
                 _GeometryKind);
 
-            const auto _Instance = MakeInstance(_Component, _ObjectID, _GeometryID, bEnabled_);
-            const auto _Style = MakeStyle(_Component, bEnabled_);
-            (void)UpsertInstanceAndStyle(*_pRenderService, _ProjectID, _RenderSceneID, _Instance, _Style, _Component.Version());
+            const auto _MaterialID = ResolveMaterialID(_Component, SceneContext_.Resources());
+            const auto _Instance = MakeInstance(_Component, _ObjectID, _GeometryID, _MaterialID, _Component.Version(), bEnabled_);
+            (void)UpsertObject(*_pRenderService, _ProjectID, _RenderSceneID, _Instance);
         }
     };
-
 }

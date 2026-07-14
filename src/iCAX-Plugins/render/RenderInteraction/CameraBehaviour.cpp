@@ -6,10 +6,10 @@
 #include "Database/IEntity.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
-#include "ProjectContext/SceneObjectRegistry.h"
 #include "RenderData/RenderDataTypes.h"
 #include "RenderService/RenderService.h"
 #include "Services/ServiceProvider.h"
+#include "Transform/Transform.h"
 
 #include <algorithm>
 #include <atomic>
@@ -34,10 +34,12 @@ namespace
 
     iCAX::Render::SRenderCameraData MakeCameraData(
         IN const iCAX::RenderInteraction::CCameraComponent& Camera_,
-        IN const iCAX::Render::RenderCameraID nCameraID_) noexcept
+        IN const iCAX::Render::RenderCameraID nCameraID_,
+        IN const uint64_t nCameraVersion_) noexcept
     {
         iCAX::Render::SRenderCameraData _Data;
         _Data.nCameraID = nCameraID_;
+        _Data.nDataVersion = MakeNonZeroVersion(nCameraVersion_);
         _Data.nFlags = iCAX::Render::kRenderCameraFlagPerspective;
         _Data.nNearPlane = static_cast<float>(Camera_.GetNearPlane());
         _Data.nFarPlane = static_cast<float>(Camera_.GetFarPlane());
@@ -89,12 +91,14 @@ namespace
         }
 
         auto _ActiveCameraID = Snapshot_.nActiveCameraID;
+        bool _bActiveChanged = false;
         if (bActive_ || _ActiveCameraID == iCAX::Render::kInvalidRenderCameraID)
         {
             if (_ActiveCameraID != Camera_.nCameraID)
             {
                 _ActiveCameraID = Camera_.nCameraID;
                 _bChanged = true;
+                _bActiveChanged = true;
             }
         }
 
@@ -109,9 +113,61 @@ namespace
             _ActiveCameraID = Camera_.nCameraID;
         }
 
-        if (!RenderService_.SetCameras(ProjectID_, nRenderSceneID_, _Cameras, _ActiveCameraID, MakeNonZeroVersion(nCameraVersion_)))
+        if (_bActiveChanged)
+        {
+            const auto _Version = MakeNonZeroVersion(nCameraVersion_);
+            for (auto& _Camera : _Cameras)
+            {
+                _Camera.nDataVersion = _Version;
+            }
+        }
+
+        if (!RenderService_.SetCameras(ProjectID_, nRenderSceneID_, _Cameras, _ActiveCameraID))
         {
             throw std::runtime_error("Camera behaviour cannot publish camera component to render service");
+        }
+        return true;
+    }
+
+    bool RemoveCamera(
+        IN iCAX::Render::IRenderService& RenderService_,
+        IN const iCAX::Data::uuid& ProjectID_,
+        IN iCAX::Render::RenderSceneID nRenderSceneID_,
+        IN iCAX::Render::RenderCameraID nCameraID_)
+    {
+        if (!RenderService_.HasScene(ProjectID_, nRenderSceneID_))
+        {
+            return false;
+        }
+
+        auto _Snapshot = RenderService_.GetSceneSnapshot(ProjectID_, nRenderSceneID_);
+        auto _Cameras = _Snapshot.Cameras;
+        const auto _OriginalSize = _Cameras.size();
+        std::erase_if(
+            _Cameras,
+            [nCameraID_](IN const iCAX::Render::SRenderCameraData& Camera_)
+            {
+                return Camera_.nCameraID == nCameraID_;
+            });
+        if (_Cameras.size() == _OriginalSize)
+        {
+            return false;
+        }
+
+        auto _ActiveCameraID = _Snapshot.nActiveCameraID;
+        if (_ActiveCameraID == nCameraID_)
+        {
+            _ActiveCameraID = _Cameras.empty()
+                ? iCAX::Render::kInvalidRenderCameraID
+                : _Cameras.front().nCameraID;
+            if (!_Cameras.empty())
+            {
+                _Cameras.front().nDataVersion = NextRenderVersion();
+            }
+        }
+        if (!RenderService_.SetCameras(ProjectID_, nRenderSceneID_, _Cameras, _ActiveCameraID))
+        {
+            throw std::runtime_error("Camera behaviour cannot remove camera component from render service");
         }
         return true;
     }
@@ -134,6 +190,26 @@ namespace
         }
 
     protected:
+        void OnAwake(
+            IN iCAX::Database::CComponentBase& Component_,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_) override
+        {
+            Publish(Component_, ProjectContext_, SceneContext_, true);
+        }
+
+        void OnStart(
+            IN iCAX::Database::CComponentBase& Component_,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_) override
+        {
+            Publish(Component_, ProjectContext_, SceneContext_, true);
+        }
+
         void OnUpdate(
             IN iCAX::Database::CComponentBase& Component_,
             IN const iCAX::Application::IApplicationContext&,
@@ -143,12 +219,71 @@ namespace
             IN const double&,
             IN const double&) override
         {
-            auto& _Camera = static_cast<iCAX::RenderInteraction::CCameraComponent&>(Component_);
-            if (!_Camera.GetEnabled())
-            {
-                return;
-            }
+            Publish(Component_, ProjectContext_, SceneContext_, true);
+        }
 
+        void OnEnable(
+            IN iCAX::Database::CComponentBase& Component_,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_) override
+        {
+            Publish(Component_, ProjectContext_, SceneContext_, true);
+        }
+
+        void OnDisable(
+            IN iCAX::Database::CComponentBase& Component_,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_) override
+        {
+            Publish(Component_, ProjectContext_, SceneContext_, false);
+        }
+
+        void OnDestroyImmediate(
+            IN iCAX::Database::CComponentBase& Component_,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_) override
+        {
+            auto _pEntity = Component_.GetEntity();
+            if (_pEntity)
+            {
+                RemoveByEntityID(_pEntity->GetID(), ProjectContext_, SceneContext_);
+            }
+        }
+
+        void OnDestroy(
+            IN const iCAX::Behaviour::CComponentDestroyInfo& DestroyInfo_,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_) override
+        {
+            RemoveByEntityID(DestroyInfo_.EntityID, ProjectContext_, SceneContext_);
+        }
+
+    private:
+        void RemoveByEntityID(
+            IN const iCAX::Data::uuid& EntityID_,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_)
+        {
+            auto _pRenderService = SceneContext_.Services().Resolve<iCAX::Render::IRenderService>();
+            const auto _RenderSceneID = iCAX::Render::MakeRenderSceneID(SceneContext_.GetSceneID());
+            (void)RemoveCamera(*_pRenderService, ProjectContext_.GetProjectID(), _RenderSceneID, EntityID_);
+        }
+
+        void Publish(
+            IN iCAX::Database::CComponentBase& Component_,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_,
+            IN bool bLifecycleEnabled_)
+        {
+            auto& _Camera = static_cast<iCAX::RenderInteraction::CCameraComponent&>(Component_);
             auto _pEntity = _Camera.GetEntity();
             if (!_pEntity)
             {
@@ -163,14 +298,21 @@ namespace
                 (void)_pRenderService->CreateScene(_ProjectID, _RenderSceneID);
             }
 
-            const auto _ObjectID = static_cast<iCAX::Render::SceneObjectID>(
-                SceneContext_.Objects().GetOrCreateEntityObject(_pEntity->GetID()));
-            const auto _TransformID = static_cast<iCAX::Render::TransformID>(
-                SceneContext_.Objects().GetTransformID(_ObjectID));
-            const auto _CameraID = static_cast<iCAX::Render::RenderCameraID>(_TransformID);
+            if (!_pEntity->GetComponent<iCAX::Transform::CTransformComponent>())
+            {
+                (void)_pEntity->AddComponent<iCAX::Transform::CTransformComponent>();
+            }
+
+            const auto _CameraID = _pEntity->GetID();
+
+            if (!bLifecycleEnabled_ || !_Camera.GetEnabled())
+            {
+                (void)RemoveCamera(*_pRenderService, _ProjectID, _RenderSceneID, _CameraID);
+                return;
+            }
 
             auto _Snapshot = _pRenderService->GetSceneSnapshot(_ProjectID, _RenderSceneID);
-            const auto _CameraData = MakeCameraData(_Camera, _CameraID);
+            const auto _CameraData = MakeCameraData(_Camera, _CameraID, _Camera.Version());
             (void)UpsertCamera(
                 *_pRenderService,
                 _ProjectID,

@@ -31,14 +31,12 @@ namespace iCAX
 
     namespace Project
     {
-        class CSceneObjectRegistry;
-
         /*
         * @brief Scene 级运行上下文。
         * @details
         *   ProjectContext 表达项目级管理容器；SceneContext 表达具体运行现场。
         *   Repository、Undo/Redo、Transaction、Universe、ResourceLibrary、PDOHub、
-        *   MailChannel、SceneObjectRegistry 和工作线程都归属 SceneContext。
+        *   MailChannel 和工作线程都归属 SceneContext。
         */
         class _PROJECT_CONTEXT_EXP ISceneContext
         {
@@ -96,15 +94,6 @@ namespace iCAX
             */
             virtual iCAX::Resource::CResourceLibrary& Resources() = 0;
             virtual const iCAX::Resource::CResourceLibrary& Resources() const = 0;
-
-            /*
-            * @brief 获取 Scene 运行时对象注册表。
-            * @details
-            *   前端拾取、渲染实例、碰撞体和 Transform 都应通过这里统一映射到业务 Entity，
-            *   不允许各服务维护互相独立的对象身份体系。
-            */
-            virtual CSceneObjectRegistry& Objects() = 0;
-            virtual const CSceneObjectRegistry& Objects() const = 0;
 
             /*
             * @brief 当前 Scene 是否配置 PDO Hub。

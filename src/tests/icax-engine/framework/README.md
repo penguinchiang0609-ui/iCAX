@@ -5,7 +5,7 @@
 ## 目录结构
 
 - `ApplicationContext/`：对应 `src/icax-engine/framework/ApplicationContext` 的 ApplicationContext 单元测试。
-- `CommandHandler/`：对应 `src/icax-engine/framework/CommandHandler` 的 CommandHandler 单元测试。
+- `CommandTargets/`：对应 `src/icax-engine/framework/CommandTargets` 的 CommandTargets 单元测试。
 - `Database/`：对应 `src/icax-engine/framework/Database` 的 Database 单元测试。
 - `Mailbox/`：对应 `src/icax-engine/framework/Mailbox` 的 Mail 通信单元测试。
 - `MailHandler/`：对应 `src/icax-engine/framework/MailHandler` 的 Mail 到 Command 桥接单元测试。

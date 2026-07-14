@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ToolpathOrderService.h"
 
+#include "SceneComponents.h"
 #include "ToolpathComponents.h"
 #include "ToolpathResources.h"
 

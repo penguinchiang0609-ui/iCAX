@@ -8,6 +8,8 @@
     <ClInclude Include="ColliderData.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ColliderDataExport.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ColliderDataTypes.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ColliderPDODecl.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ColliderPDOLayouts.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>

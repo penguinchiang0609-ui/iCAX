@@ -52,8 +52,8 @@
   <Folder Name="/iCAX-Engine/framework/Behaviour/">
     <Project Path="iCAX-Engine/framework/Behaviour/Behaviour.vcxproj" />
   </Folder>
-  <Folder Name="/iCAX-Engine/framework/CommandHandler/">
-    <Project Path="iCAX-Engine/framework/CommandHandler/CommandHandler.vcxproj" />
+  <Folder Name="/iCAX-Engine/framework/CommandTargets/">
+    <Project Path="iCAX-Engine/framework/CommandTargets/CommandTargets.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Database/">
     <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" />
@@ -86,9 +86,20 @@
     <Project Path="iCAX-Engine/framework/Services/Services.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Plugins/" />
+  <Folder Name="/iCAX-Plugins/common/" />
+  <Folder Name="/iCAX-Plugins/common/Transform/">
+    <Project Path="iCAX-Plugins/common/Transform/Transform.vcxproj" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/cad/" />
   <Folder Name="/iCAX-Plugins/cad/OpenCascadeResourceImport/">
     <Project Path="iCAX-Plugins/cad/OpenCascadeResourceImport/OpenCascadeResourceImport.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/geometry/" />
+  <Folder Name="/iCAX-Plugins/geometry/DAEResourceImport/">
+    <Project Path="iCAX-Plugins/geometry/DAEResourceImport/DAEResourceImport.vcxproj" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/geometry/STLResourceImport/">
+    <Project Path="iCAX-Plugins/geometry/STLResourceImport/STLResourceImport.vcxproj" />
   </Folder>
   <Folder Name="/iCAX-Plugins/cam/" />
   <Folder Name="/iCAX-Plugins/cam/Laser3DCAM/">
@@ -173,9 +184,9 @@
   <Folder Name="/tests/icax-engine/framework/Behaviour/BehaviourTest/">
     <Project Path="tests/icax-engine/framework/Behaviour/BehaviourTest/BehaviourTest.vcxproj" />
   </Folder>
-  <Folder Name="/tests/icax-engine/framework/CommandHandler/" />
-  <Folder Name="/tests/icax-engine/framework/CommandHandler/CommandHandlerTest/">
-    <Project Path="tests/icax-engine/framework/CommandHandler/CommandHandlerTest/CommandHandlerTest.vcxproj" />
+  <Folder Name="/tests/icax-engine/framework/CommandTargets/" />
+  <Folder Name="/tests/icax-engine/framework/CommandTargets/CommandTargetsTest/">
+    <Project Path="tests/icax-engine/framework/CommandTargets/CommandTargetsTest/CommandTargetsTest.vcxproj" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Database/" />
   <Folder Name="/tests/icax-engine/framework/Database/DatabaseTest/">

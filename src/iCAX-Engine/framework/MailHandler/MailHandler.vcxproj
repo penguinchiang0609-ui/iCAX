@@ -165,7 +165,7 @@
     <ProjectReference Include="..\ApplicationContext\ApplicationContext.vcxproj">
       <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\CommandHandler\CommandHandler.vcxproj">
+    <ProjectReference Include="..\CommandTargets\CommandTargets.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\Mailbox\Mailbox.vcxproj">

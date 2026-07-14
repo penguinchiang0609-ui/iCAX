@@ -2,8 +2,8 @@
 
 #include <ApplicationContext/ApplicationContext.h>
 #include <Behaviour/IBehaviourRegistry.h>
-#include <CommandHandler/CommandRoute.h>
-#include <CommandHandler/CommandTarget.h>
+#include <CommandTargets/CommandRoute.h>
+#include <CommandTargets/CommandTarget.h>
 #include <Database/IMetaRegistry.h>
 #include <Product/ProductCommands.h>
 #include <Product/ProductManifest.h>

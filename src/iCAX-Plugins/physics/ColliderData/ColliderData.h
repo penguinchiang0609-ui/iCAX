@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ColliderPDODecl.h"
+#include "ColliderPDOLayouts.h"
 #include "ColliderDataTypes.h"
 
 namespace iCAX

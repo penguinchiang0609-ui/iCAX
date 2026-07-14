@@ -123,16 +123,6 @@ namespace
             throw std::logic_error("Resources are not used by InputService tests");
         }
 
-        iCAX::Project::CSceneObjectRegistry& Objects() override
-        {
-            throw std::logic_error("Scene objects are not used by InputService tests");
-        }
-
-        const iCAX::Project::CSceneObjectRegistry& Objects() const override
-        {
-            throw std::logic_error("Scene objects are not used by InputService tests");
-        }
-
         bool HasPDOHub() const override
         {
             return m_pPDOHub != nullptr;
@@ -249,6 +239,16 @@ TEST(InputServiceTest, ReadsKeyboardTransitionsAndPointerSnapshotFromInputPDO)
     EXPECT_EQ(1u, _Snapshot.nDataVersion);
     EXPECT_EQ(3.0f, _Snapshot.Pointer.nDeltaX);
     EXPECT_EQ(-120.0f, _Snapshot.Pointer.nWheelY);
+    EXPECT_EQ(iCAX::InputPDO::kInputMouseButtonRight, _Snapshot.Pointer.nButtonMask);
+
+    _pService->UpdateFromPDO(_ProjectContext, _SceneContext);
+    EXPECT_TRUE(_pService->GetKey(_ProjectID, _SceneID, kViewportID, kW));
+    EXPECT_FALSE(_pService->GetKeyDown(_ProjectID, _SceneID, kViewportID, kW));
+    _Snapshot = _pService->GetFrameSnapshot(_ProjectID, _SceneID, kViewportID);
+    EXPECT_TRUE(_Snapshot.bHasState);
+    EXPECT_EQ(1u, _Snapshot.nDataVersion);
+    EXPECT_EQ(0.0f, _Snapshot.Pointer.nDeltaX);
+    EXPECT_EQ(0.0f, _Snapshot.Pointer.nWheelY);
     EXPECT_EQ(iCAX::InputPDO::kInputMouseButtonRight, _Snapshot.Pointer.nButtonMask);
 
     WriteInputState(*_pPDOHub, 2, kViewportID, true, true, 0.0f, 0.0f);

@@ -48,7 +48,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ApplicationHost", "framewor
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Behaviour", "framework\Behaviour\Behaviour.vcxproj", "{1C150FBB-3418-414D-8A3C-F7B57C6D18B7}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CommandHandler", "framework\CommandHandler\CommandHandler.vcxproj", "{1F194886-5B7E-4FA9-816C-1B48865633E6}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CommandTargets", "framework\CommandTargets\CommandTargets.vcxproj", "{1F194886-5B7E-4FA9-816C-1B48865633E6}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Database", "framework\Database\Database.vcxproj", "{C746F6A5-C34A-4649-A3F4-AD185002DEDD}"
 EndProject
@@ -106,7 +106,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ApplicationHostTest", "..\t
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "BehaviourTest", "..\tests\icax-engine\framework\Behaviour\BehaviourTest\BehaviourTest.vcxproj", "{6BE97C5D-6098-4FC1-9E47-3C22A65F4AC1}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CommandHandlerTest", "..\tests\icax-engine\framework\CommandHandler\CommandHandlerTest\CommandHandlerTest.vcxproj", "{7FF89591-2955-47DD-A507-82362D56DA4E}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CommandTargetsTest", "..\tests\icax-engine\framework\CommandTargets\CommandTargetsTest\CommandTargetsTest.vcxproj", "{7FF89591-2955-47DD-A507-82362D56DA4E}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DatabaseTest", "..\tests\icax-engine\framework\Database\DatabaseTest\DatabaseTest.vcxproj", "{9F2F26D5-40DC-4E6D-A9AB-0F126E219F90}"
 EndProject

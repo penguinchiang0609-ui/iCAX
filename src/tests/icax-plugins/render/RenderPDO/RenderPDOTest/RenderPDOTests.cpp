@@ -22,6 +22,14 @@ namespace
         Header_.Header.nPayloadSize = nPayloadSize_;
         Header_.Header.nDataVersion = nDataVersion_;
     }
+
+    SRenderID MakeID(IN uint16_t nValue_)
+    {
+        SRenderID _ID;
+        _ID.Bytes[0] = static_cast<uint8_t>(nValue_ & 0xFFu);
+        _ID.Bytes[1] = static_cast<uint8_t>((nValue_ >> 8) & 0xFFu);
+        return _ID;
+    }
 }
 
 TEST(RenderPDOLayoutTest, LayoutsAreBinarySafe)
@@ -32,16 +40,17 @@ TEST(RenderPDOLayoutTest, LayoutsAreBinarySafe)
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderAABB>);
     EXPECT_TRUE(std::is_standard_layout_v<SRenderMeshPDOHeader>);
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderMeshPDOHeader>);
+    EXPECT_EQ(104u, sizeof(SRenderMeshPDOHeader));
     EXPECT_TRUE(std::is_standard_layout_v<SRenderPolylinePDOHeader>);
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderPolylinePDOHeader>);
     EXPECT_TRUE(std::is_standard_layout_v<SRenderToolpathPDOHeader>);
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderToolpathPDOHeader>);
-    EXPECT_TRUE(std::is_standard_layout_v<SRenderInstanceListPDOHeader>);
-    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderInstanceListPDOHeader>);
-    EXPECT_TRUE(std::is_standard_layout_v<SRenderCameraData>);
-    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderCameraData>);
+    EXPECT_TRUE(std::is_standard_layout_v<SRenderObjectPDOHeader>);
+    EXPECT_TRUE(std::is_trivially_copyable_v<SRenderObjectPDOHeader>);
+    EXPECT_EQ(96u, sizeof(SRenderObjectPDOHeader));
     EXPECT_TRUE(std::is_standard_layout_v<SRenderCameraPDOHeader>);
     EXPECT_TRUE(std::is_trivially_copyable_v<SRenderCameraPDOHeader>);
+    EXPECT_EQ(72u, sizeof(SRenderCameraPDOHeader));
     EXPECT_TRUE(std::is_standard_layout_v<STransformPDOHeader>);
     EXPECT_TRUE(std::is_trivially_copyable_v<STransformPDOHeader>);
 }
@@ -59,6 +68,7 @@ TEST(RenderPDODeclTest, CreatesPDODeclarationForRenderPayload)
     EXPECT_EQ(iCAX::PDO::kDirection2External, _Decl.eDirection);
     EXPECT_EQ(4096, _Decl.nPayloadSize);
     EXPECT_STREQ("render.mesh", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::Mesh));
+    EXPECT_STREQ("render.object", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::Object));
     EXPECT_STREQ("render.camera", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::Camera));
     EXPECT_STREQ("render.transform", GetRenderPDOPayloadTypeName(ERenderPDOPayloadKind::Transform));
 
@@ -76,7 +86,7 @@ TEST(RenderPDOValidationTest, MeshHeaderValidatesOffsetsAndTriangleTopology)
     const uint64_t _PayloadSize = _IndicesOffset + sizeof(uint32_t) * 6;
 
     InitializeHeader(_Header, ERenderPDOPayloadKind::Mesh, _PayloadSize, 8);
-    _Header.nGeometryID = 101;
+    _Header.nGeometryID = MakeID(101);
     _Header.nTopology = static_cast<uint32_t>(ERenderTopology::TriangleList);
     _Header.nVertexCount = 4;
     _Header.nIndexCount = 6;
@@ -91,7 +101,22 @@ TEST(RenderPDOValidationTest, MeshHeaderValidatesOffsetsAndTriangleTopology)
     EXPECT_FALSE(ValidateMeshPDOHeader(_Header, _PayloadSize, &_Error));
     EXPECT_FALSE(_Error.empty());
 
+    const uint64_t _TextureCoordinatesOffset = _PayloadSize;
+    const uint64_t _PayloadSizeWithTextureCoordinates = _TextureCoordinatesOffset + sizeof(SFloat2) * 4;
+    _Header.nFlags = kMeshFlagHasTextureCoordinates;
+    _Header.nTextureCoordinatesOffset = _TextureCoordinatesOffset;
+    _Header.Header.nPayloadSize = _PayloadSizeWithTextureCoordinates;
+    _Error.clear();
+    EXPECT_TRUE(ValidateMeshPDOHeader(_Header, _PayloadSizeWithTextureCoordinates, &_Error));
+    EXPECT_TRUE(_Error.empty());
+
+    _Header.nTextureCoordinatesOffset = 0;
+    EXPECT_FALSE(ValidateMeshPDOHeader(_Header, _PayloadSizeWithTextureCoordinates, &_Error));
+    EXPECT_FALSE(_Error.empty());
+
     _Header.nFlags = 0;
+    _Header.nTextureCoordinatesOffset = 0;
+    _Header.Header.nPayloadSize = _PayloadSize;
     _Header.nIndexCount = 5;
     EXPECT_FALSE(ValidateMeshPDOHeader(_Header, _PayloadSize, &_Error));
     EXPECT_FALSE(_Error.empty());
@@ -105,7 +130,7 @@ TEST(RenderPDOValidationTest, PolylineHeaderValidatesPointAndRangeBlocks)
     const uint64_t _PayloadSize = _RangesOffset + sizeof(SRenderPolylineRangeData) * 1;
 
     InitializeHeader(_Header, ERenderPDOPayloadKind::Polyline, _PayloadSize, 3);
-    _Header.nGeometryID = 202;
+    _Header.nGeometryID = MakeID(202);
     _Header.nPointCount = 3;
     _Header.nRangeCount = 1;
     _Header.nPointsOffset = _PointsOffset;
@@ -127,7 +152,7 @@ TEST(RenderPDOValidationTest, ToolpathHeaderValidatesPointAndSpanBlocks)
     const uint64_t _PayloadSize = _SpansOffset + sizeof(SRenderToolpathSpanData) * 1;
 
     InitializeHeader(_Header, ERenderPDOPayloadKind::Toolpath, _PayloadSize, 4);
-    _Header.nGeometryID = 303;
+    _Header.nGeometryID = MakeID(303);
     _Header.nPointCount = 2;
     _Header.nSpanCount = 1;
     _Header.nPointsOffset = _PointsOffset;
@@ -141,52 +166,51 @@ TEST(RenderPDOValidationTest, ToolpathHeaderValidatesPointAndSpanBlocks)
     EXPECT_FALSE(_Error.empty());
 }
 
-TEST(RenderPDOValidationTest, InstanceListAllowsEmptyListAndOptionalStyles)
+TEST(RenderPDOValidationTest, ObjectHeaderValidatesOneEntityObject)
 {
-    SRenderInstanceListPDOHeader _Empty;
-    InitializeHeader(_Empty, ERenderPDOPayloadKind::InstanceList, sizeof(SRenderInstanceListPDOHeader), 5);
-    EXPECT_TRUE(ValidateInstanceListPDOHeader(_Empty, sizeof(SRenderInstanceListPDOHeader)));
+    SRenderObjectPDOHeader _Header;
+    const uint64_t _PayloadSize = sizeof(SRenderObjectPDOHeader);
 
-    SRenderInstanceListPDOHeader _Header;
-    const uint64_t _InstancesOffset = sizeof(SRenderInstanceListPDOHeader);
-    const uint64_t _StylesOffset = _InstancesOffset + sizeof(SRenderInstanceData) * 2;
-    const uint64_t _PayloadSize = _StylesOffset + sizeof(SRenderStyleData);
+    InitializeHeader(_Header, ERenderPDOPayloadKind::Object, _PayloadSize, 6);
+    _Header.nObjectID = MakeID(1);
+    _Header.nGeometryID = MakeID(2);
+    _Header.nMaterialID = MakeID(3);
+    _Header.nGeometryKind = static_cast<uint32_t>(ERenderGeometryKind::Mesh);
+    _Header.nRenderClass = static_cast<uint32_t>(ERenderClass::Model);
 
-    InitializeHeader(_Header, ERenderPDOPayloadKind::InstanceList, _PayloadSize, 6);
-    _Header.nInstanceCount = 2;
-    _Header.nStyleCount = 1;
-    _Header.nInstancesOffset = _InstancesOffset;
-    _Header.nStylesOffset = _StylesOffset;
+    EXPECT_TRUE(ValidateObjectPDOHeader(_Header, _PayloadSize));
 
-    EXPECT_TRUE(ValidateInstanceListPDOHeader(_Header, _PayloadSize));
-
-    _Header.nStylesOffset = sizeof(SRenderInstanceListPDOHeader) - 1;
+    _Header.nObjectID = {};
     std::string _Error;
-    EXPECT_FALSE(ValidateInstanceListPDOHeader(_Header, _PayloadSize, &_Error));
+    EXPECT_FALSE(ValidateObjectPDOHeader(_Header, _PayloadSize, &_Error));
+    EXPECT_FALSE(_Error.empty());
+
+    _Header.nObjectID = MakeID(1);
+    _Header.Header.nPayloadSize = _PayloadSize + 1;
+    _Error.clear();
+    EXPECT_FALSE(ValidateObjectPDOHeader(_Header, _PayloadSize + 1, &_Error));
     EXPECT_FALSE(_Error.empty());
 }
 
-TEST(RenderPDOValidationTest, CameraHeaderValidatesCameraArrayAndActiveIndex)
+TEST(RenderPDOValidationTest, CameraHeaderValidatesOneEntityCamera)
 {
     SRenderCameraPDOHeader _Header;
-    const uint64_t _CamerasOffset = sizeof(SRenderCameraPDOHeader);
-    const uint64_t _PayloadSize = _CamerasOffset + sizeof(SRenderCameraData) * 2;
+    const uint64_t _PayloadSize = sizeof(SRenderCameraPDOHeader);
 
     InitializeHeader(_Header, ERenderPDOPayloadKind::Camera, _PayloadSize, 7);
-    _Header.nCameraCount = 2;
-    _Header.nActiveCameraID = 1;
-    _Header.nCamerasOffset = _CamerasOffset;
+    _Header.nCameraID = MakeID(1);
 
     EXPECT_TRUE(ValidateCameraPDOHeader(_Header, _PayloadSize));
 
-    _Header.nActiveCameraID = 0;
+    _Header.nCameraID = {};
     std::string _Error;
     EXPECT_FALSE(ValidateCameraPDOHeader(_Header, _PayloadSize, &_Error));
     EXPECT_FALSE(_Error.empty());
 
-    _Header.nActiveCameraID = 1;
-    _Header.nCamerasOffset = _PayloadSize + 1;
-    EXPECT_FALSE(ValidateCameraPDOHeader(_Header, _PayloadSize, &_Error));
+    _Header.nCameraID = MakeID(1);
+    _Header.Header.nPayloadSize = _PayloadSize + 1;
+    _Error.clear();
+    EXPECT_FALSE(ValidateCameraPDOHeader(_Header, _PayloadSize + 1, &_Error));
     EXPECT_FALSE(_Error.empty());
 }
 
@@ -194,11 +218,11 @@ TEST(RenderPDOValidationTest, TransformHeaderValidatesTransformID)
 {
     STransformPDOHeader _Header;
     InitializeHeader(_Header, ERenderPDOPayloadKind::Transform, sizeof(STransformPDOHeader), 8);
-    _Header.nTransformID = 101;
+    _Header.nTransformID = MakeID(101);
 
     EXPECT_TRUE(ValidateTransformPDOHeader(_Header, sizeof(STransformPDOHeader)));
 
-    _Header.nTransformID = 0;
+    _Header.nTransformID = {};
     std::string _Error;
     EXPECT_FALSE(ValidateTransformPDOHeader(_Header, sizeof(STransformPDOHeader), &_Error));
     EXPECT_FALSE(_Error.empty());

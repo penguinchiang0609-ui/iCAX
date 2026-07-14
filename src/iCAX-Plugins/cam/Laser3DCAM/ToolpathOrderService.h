@@ -57,7 +57,7 @@ namespace iCAX
         /*
         * @brief 刀路排序服务。
         * @details
-        *   服务负责生成排序计划和应用排序计划。CommandHandler 负责解析命令、开启 undo step 和返回结果。
+        *   服务负责生成排序计划和应用排序计划。CommandTargets 负责解析命令、开启 undo step 和返回结果。
         */
         class _LASER_3D_CAM_EXP IToolpathOrderService : public iCAX::Services::IService
         {

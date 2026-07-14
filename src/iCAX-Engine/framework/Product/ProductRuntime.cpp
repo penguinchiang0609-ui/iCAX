@@ -1,8 +1,8 @@
 #include "pch.h"
 #include "ProductRuntime.h"
 
-#include "CommandHandler/CommandRegistrationCatalog.h"
-#include "CommandHandler/CommandTarget.h"
+#include "CommandTargets/CommandRegistrationCatalog.h"
+#include "CommandTargets/CommandTarget.h"
 #include "Project/ProjectCommands.h"
 
 #include <algorithm>

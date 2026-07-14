@@ -77,6 +77,16 @@ namespace
         return _Result;
     }
 
+    void ClearOneFrameInput(IN OUT ViewportState& State_) noexcept
+    {
+        State_.KeyDownThisFrame = {};
+        State_.KeyUpThisFrame = {};
+        State_.Current.Pointer.nDeltaX = 0.0f;
+        State_.Current.Pointer.nDeltaY = 0.0f;
+        State_.Current.Pointer.nWheelX = 0.0f;
+        State_.Current.Pointer.nWheelY = 0.0f;
+    }
+
     iCAX::Input::SInputPointerSnapshot MakePointerSnapshot(IN const iCAX::InputPDO::SInputPointerState& Pointer_) noexcept
     {
         return {
@@ -154,6 +164,7 @@ namespace
             auto& _Viewport = m_Scenes[SceneKey{ _ProjectID, _SceneID }][_State.nViewportID];
             if (_Viewport.bHasState && _Viewport.nLastProcessedDataVersion == _State.Header.nDataVersion)
             {
+                ClearOneFrameInput(_Viewport);
                 return;
             }
 

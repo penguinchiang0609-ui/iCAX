@@ -1,6 +1,6 @@
 # CameraNavigation
 
-`CameraNavigation` 是可选的场景交互插件，负责把 `InputService` 中的高频键鼠输入转换为相机 Entity 上的 `CRenderTransformComponent` 修改。
+`CameraNavigation` 是可选的场景交互插件，负责把 `InputService` 中的高频键鼠输入转换为相机 Entity 上的 `Transform::CTransformComponent` 修改。
 
 它不发布 RenderPDO，也不解释业务对象。相机参数发布仍由 `RenderInteraction::CameraBehaviour` 负责，Transform 发布仍由 `RenderInteraction::RenderTransformBehaviour` 负责。
 
@@ -19,4 +19,3 @@
 - `CameraNavigation.h`：统一入口头。
 - `CameraNavigationExport.h`：DLL 导出宏。
 - `pch.*` / `framework.h` / `dllmain.cpp`：Windows DLL 工程基础文件。
-

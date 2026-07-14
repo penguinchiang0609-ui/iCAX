@@ -14,7 +14,7 @@
     "probeBytes": 256
   },
   "backend": {
-    "startupComponent": "CLaserCamSceneBootstrapComponent",
+    "startupComponent": "CSceneBootstrapComponent",
     "pdo": {
       "enabled": true,
       "arenaSize": 134217728,
@@ -28,10 +28,12 @@
         "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll",
         "../../iCAX-Plugins/input/InputPDO/${Platform}/${Configuration}/InputPDO.dll",
         "../../iCAX-Plugins/input/InputService/${Platform}/${Configuration}/InputService.dll",
+        "../../iCAX-Plugins/common/Transform/${Platform}/${Configuration}/Transform.dll",
         "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
         "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll"
       ],
       "components": [
+        "../../iCAX-Plugins/common/Transform/${Platform}/${Configuration}/Transform.dll",
         "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
         "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll",
         "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
@@ -66,6 +68,24 @@
           "extensions": [".igs", ".iges"],
           "module": "../../iCAX-Plugins/cad/OpenCascadeResourceImport/${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
           "provider": "occ.opencascade",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.triangle_mesh",
+          "formatId": "geometry.stl",
+          "extensions": [".stl"],
+          "module": "../../iCAX-Plugins/geometry/STLResourceImport/${Platform}/${Configuration}/STLResourceImport.dll",
+          "provider": "icax.stl",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.triangle_mesh",
+          "formatId": "geometry.dae",
+          "extensions": [".dae"],
+          "module": "../../iCAX-Plugins/geometry/DAEResourceImport/${Platform}/${Configuration}/DAEResourceImport.dll",
+          "provider": "icax.dae",
           "priority": 100
         }
       ]

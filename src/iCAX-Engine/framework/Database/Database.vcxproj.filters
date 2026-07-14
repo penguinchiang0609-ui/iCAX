@@ -78,6 +78,9 @@
     <ClInclude Include="IAttribute.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
+    <ClInclude Include="IFieldPolicyProvider.h">
+      <Filter>extern\interface</Filter>
+    </ClInclude>
     <ClInclude Include="VersionTable.h">
       <Filter>inner</Filter>
     </ClInclude>

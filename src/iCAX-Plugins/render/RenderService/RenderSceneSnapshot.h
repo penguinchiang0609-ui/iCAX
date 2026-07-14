@@ -23,13 +23,10 @@ namespace iCAX
             std::unordered_map<RenderGeometryID, SRenderPolylineData> Polylines;
             std::unordered_map<RenderGeometryID, SRenderToolpathData> Toolpaths;
             std::vector<STransformData> Transforms;
-            std::vector<SRenderInstanceData> Instances;
-            std::vector<SRenderStyleData> Styles;
+            std::vector<SRenderInstanceData> Objects;
             std::vector<SRenderCameraData> Cameras;
             RenderCameraID nActiveCameraID = kInvalidRenderCameraID;
             RenderDataVersion nTransformDataVersion = 0;
-            RenderDataVersion nInstanceDataVersion = 0;
-            RenderDataVersion nCameraDataVersion = 0;
         };
     }
 }

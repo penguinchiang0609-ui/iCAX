@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <ApplicationContext/IApplicationContext.h>
-#include <CommandHandler/CommandDispatcher.h>
-#include <CommandHandler/CommandRegistry.h>
-#include <CommandHandler/CommandRoute.h>
-#include <CommandHandler/CommandTarget.h>
+#include <CommandTargets/CommandDispatcher.h>
+#include <CommandTargets/CommandRegistry.h>
+#include <CommandTargets/CommandRoute.h>
+#include <CommandTargets/CommandTarget.h>
 #include <Mailbox/MailChannel.h>
 #include <Mailbox/MailPayload.h>
 #include <MailHandler/CMailCommandHandler.h>
@@ -64,7 +64,7 @@ namespace
     }
 }
 
-TEST(MailCommandHandlerTest, ConvertsMailToCommandRequest)
+TEST(MailCommandTargetsTest, ConvertsMailToCommandRequest)
 {
     CMailCommandHandler _Handler;
     const auto _RouteCode = iCAX::Command::MakeCommandCode("Echo", "Ping");
@@ -81,7 +81,7 @@ TEST(MailCommandHandlerTest, ConvertsMailToCommandRequest)
     iCAX::Mail::ReleaseMailPayload(_Mail);
 }
 
-TEST(MailCommandHandlerTest, DispatchesMailCommandAndSendsResponse)
+TEST(MailCommandTargetsTest, DispatchesMailCommandAndSendsResponse)
 {
     auto _pRegistry = std::make_shared<iCAX::Command::CCommandRegistry>();
     auto _pTarget = std::make_shared<CTestCommandTarget>("Echo");
@@ -129,7 +129,7 @@ TEST(MailCommandHandlerTest, DispatchesMailCommandAndSendsResponse)
     iCAX::Mail::ReleaseMailPayload(_Responses[0]);
 }
 
-TEST(MailCommandHandlerTest, NoHandlerResponseUsesMailNoHandlerStampAndErrorPayload)
+TEST(MailCommandTargetsTest, NoHandlerResponseUsesMailNoHandlerStampAndErrorPayload)
 {
     auto _pRegistry = std::make_shared<iCAX::Command::CCommandRegistry>();
     iCAX::Command::CCommandDispatcher _Dispatcher(_pRegistry);

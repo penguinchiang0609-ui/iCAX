@@ -17,7 +17,7 @@ export const RenderPDOPayloadKind = Object.freeze({
   mesh: 1,
   polyline: 2,
   toolpath: 3,
-  instanceList: 4,
+  object: 4,
   camera: 5,
   transform: 6,
 });
@@ -38,25 +38,29 @@ export const RenderFlags = Object.freeze({
   disabled: 1 << 5,
   meshHasNormals: 1 << 0,
   meshHasVertexColors: 1 << 1,
+  meshHasTextureCoordinates: 1 << 2,
+});
+
+export const RenderStyleFlags = Object.freeze({
+  lightingDisabled: 1 << 0,
+  hasBaseColorTexture: 1 << 1,
 });
 
 export const RenderPDOLayout = Object.freeze({
   magic: 0x4F445052,
-  version: 1,
+  version: 4,
   headerSize: 32,
-  meshHeaderSize: 88,
-  polylineHeaderSize: 88,
-  toolpathHeaderSize: 88,
-  instanceListHeaderSize: 56,
-  cameraHeaderSize: 56,
-  transformHeaderSize: 112,
+  meshHeaderSize: 104,
+  polylineHeaderSize: 96,
+  toolpathHeaderSize: 96,
+  objectHeaderSize: 96,
+  cameraHeaderSize: 72,
+  transformHeaderSize: 120,
+  float2Size: 8,
   float3Size: 12,
   polylineRangeSize: 24,
   toolpathPointSize: 32,
   toolpathSpanSize: 24,
-  instanceSize: 32,
-  styleSize: 16,
-  cameraSize: 32,
 });
 
 export function parseRenderPDOEvent(event) {
@@ -75,7 +79,7 @@ export function parseRenderPDOEvent(event) {
 
 export function normalizeRenderEventPayload(payload) {
   const result = { ...payload };
-  for (const key of ["pdoId", "geometryId", "objectId", "transformId", "sceneId", "payloadCapacity"]) {
+  for (const key of ["pdoId", "geometryId", "objectId", "entityId", "materialId", "transformId", "cameraId", "sceneId", "slotVersion", "payloadCapacity"]) {
     if (result[key] !== undefined && result[key] !== null) {
       result[key] = String(result[key]);
     }
@@ -96,8 +100,8 @@ export function parseRenderPDOPayload(buffer) {
       return parsePolylinePayload(buffer, dataView, header);
     case RenderPDOPayloadKind.toolpath:
       return parseToolpathPayload(buffer, dataView, header);
-    case RenderPDOPayloadKind.instanceList:
-      return parseInstanceListPayload(buffer, dataView, header);
+    case RenderPDOPayloadKind.object:
+      return parseObjectPayload(buffer, dataView, header);
     case RenderPDOPayloadKind.camera:
       return parseCameraPayload(buffer, dataView, header);
     case RenderPDOPayloadKind.transform:
@@ -127,33 +131,35 @@ export function readRenderHeader(dataView, offset) {
 }
 
 export function parseMeshPayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
-  const flags = dataView.getUint32(52, true);
-  const vertexCount = dataView.getUint32(44, true);
-  const indexCount = dataView.getUint32(48, true);
-  const positionsOffset = readUint64Number(dataView, 56);
-  const normalsOffset = readUint64Number(dataView, 64);
-  const vertexColorsOffset = readUint64Number(dataView, 72);
-  const indicesOffset = readUint64Number(dataView, 80);
+  const flags = dataView.getUint32(60, true);
+  const vertexCount = dataView.getUint32(52, true);
+  const indexCount = dataView.getUint32(56, true);
+  const positionsOffset = readUint64Number(dataView, 64);
+  const normalsOffset = readUint64Number(dataView, 72);
+  const vertexColorsOffset = readUint64Number(dataView, 80);
+  const textureCoordinatesOffset = readUint64Number(dataView, 88);
+  const indicesOffset = readUint64Number(dataView, 96);
   return {
     kind: "mesh",
     header,
-    geometryId: readUint64Text(dataView, 32),
-    topology: dataView.getUint32(40, true),
+    geometryId: readUuidText(dataView, 32),
+    topology: dataView.getUint32(48, true),
     vertexCount,
     indexCount,
     flags,
     positions: makeFloat32View(buffer, positionsOffset, vertexCount * 3),
     normals: (flags & RenderFlags.meshHasNormals) && normalsOffset ? makeFloat32View(buffer, normalsOffset, vertexCount * 3) : null,
     vertexColors: (flags & RenderFlags.meshHasVertexColors) && vertexColorsOffset ? makeUint32View(buffer, vertexColorsOffset, vertexCount) : null,
+    textureCoordinates: (flags & RenderFlags.meshHasTextureCoordinates) && textureCoordinatesOffset ? makeFloat32View(buffer, textureCoordinatesOffset, vertexCount * 2) : null,
     indices: indexCount && indicesOffset ? makeUint32View(buffer, indicesOffset, indexCount) : null,
   };
 }
 
 export function parsePolylinePayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
-  const pointCount = dataView.getUint32(64, true);
-  const rangeCount = dataView.getUint32(68, true);
-  const pointsOffset = readUint64Number(dataView, 72);
-  const rangesOffset = readUint64Number(dataView, 80);
+  const pointCount = dataView.getUint32(72, true);
+  const rangeCount = dataView.getUint32(76, true);
+  const pointsOffset = readUint64Number(dataView, 80);
+  const rangesOffset = readUint64Number(dataView, 88);
   const ranges = [];
   for (let index = 0; index < rangeCount; index += 1) {
     const offset = rangesOffset + index * RenderPDOLayout.polylineRangeSize;
@@ -168,8 +174,8 @@ export function parsePolylinePayload(buffer, dataView, header = readRenderHeader
   return {
     kind: "polyline",
     header,
-    geometryId: readUint64Text(dataView, 32),
-    bounds: readAABB(dataView, 40),
+    geometryId: readUuidText(dataView, 32),
+    bounds: readAABB(dataView, 48),
     pointCount,
     rangeCount,
     points: makeFloat32View(buffer, pointsOffset, pointCount * 3),
@@ -178,10 +184,10 @@ export function parsePolylinePayload(buffer, dataView, header = readRenderHeader
 }
 
 export function parseToolpathPayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
-  const pointCount = dataView.getUint32(64, true);
-  const spanCount = dataView.getUint32(68, true);
-  const pointsOffset = readUint64Number(dataView, 72);
-  const spansOffset = readUint64Number(dataView, 80);
+  const pointCount = dataView.getUint32(72, true);
+  const spanCount = dataView.getUint32(76, true);
+  const pointsOffset = readUint64Number(dataView, 80);
+  const spansOffset = readUint64Number(dataView, 88);
   const points = [];
   const spans = [];
   for (let index = 0; index < pointCount; index += 1) {
@@ -207,8 +213,8 @@ export function parseToolpathPayload(buffer, dataView, header = readRenderHeader
   return {
     kind: "toolpath",
     header,
-    geometryId: readUint64Text(dataView, 32),
-    bounds: readAABB(dataView, 40),
+    geometryId: readUuidText(dataView, 32),
+    bounds: readAABB(dataView, 48),
     pointCount,
     spanCount,
     points,
@@ -216,66 +222,48 @@ export function parseToolpathPayload(buffer, dataView, header = readRenderHeader
   };
 }
 
-export function parseInstanceListPayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
-  const instanceCount = dataView.getUint32(32, true);
-  const styleCount = dataView.getUint32(36, true);
-  const instancesOffset = readUint64Number(dataView, 40);
-  const stylesOffset = readUint64Number(dataView, 48);
-  const instances = [];
-  const styles = [];
-  for (let index = 0; index < instanceCount; index += 1) {
-    const offset = instancesOffset + index * RenderPDOLayout.instanceSize;
-    const objectId = readUint64Text(dataView, offset);
-    instances.push({
-      objectId,
-      geometryId: readUint64Text(dataView, offset + 8),
-      geometryKind: dataView.getUint32(offset + 16, true),
-      renderClass: dataView.getUint32(offset + 20, true),
-      styleId: dataView.getUint32(offset + 24, true),
-      flags: dataView.getUint32(offset + 28, true),
-      transformId: objectId,
-    });
-  }
-  for (let index = 0; index < styleCount; index += 1) {
-    const offset = stylesOffset + index * RenderPDOLayout.styleSize;
-    styles.push({
-      styleId: dataView.getUint32(offset, true),
-      colorRGBA: dataView.getUint32(offset + 4, true),
-      lineWidth: dataView.getFloat32(offset + 8, true),
-      flags: dataView.getUint32(offset + 12, true),
-    });
-  }
-  return { kind: "instance_list", header, instanceCount, styleCount, instances, styles };
+export function parseObjectPayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
+  const objectId = readUuidText(dataView, 32);
+  return {
+    kind: "object",
+    header,
+    objectId,
+    entityId: objectId,
+    transformId: objectId,
+    geometryId: readUuidText(dataView, 48),
+    materialId: readUuidText(dataView, 64),
+    geometryKind: dataView.getUint32(80, true),
+    renderClass: dataView.getUint32(84, true),
+    flags: dataView.getUint32(88, true),
+  };
 }
 
 export function parseCameraPayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
-  const cameraCount = dataView.getUint32(32, true);
-  const activeCameraId = readUint64Text(dataView, 40);
-  const camerasOffset = readUint64Number(dataView, 48);
-  const cameras = [];
-  for (let index = 0; index < cameraCount; index += 1) {
-    const offset = camerasOffset + index * RenderPDOLayout.cameraSize;
-    const cameraId = readUint64Text(dataView, offset);
-    cameras.push({
-      cameraId,
-      transformId: cameraId,
-      flags: dataView.getUint32(offset + 8, true),
-      nearPlane: dataView.getFloat32(offset + 16, true),
-      farPlane: dataView.getFloat32(offset + 20, true),
-      verticalFovRadians: dataView.getFloat32(offset + 24, true),
-      orthographicHeight: dataView.getFloat32(offset + 28, true),
-    });
-  }
-  return { kind: "camera", header, cameraCount, activeCameraId, cameras };
+  const cameraId = readUuidText(dataView, 32);
+  const flags = dataView.getUint32(48, true);
+  return {
+    kind: "camera",
+    header,
+    cameraId,
+    entityId: cameraId,
+    transformId: cameraId,
+    flags,
+    active: Boolean(flags & (1 << 3)),
+    nearPlane: dataView.getFloat32(56, true),
+    farPlane: dataView.getFloat32(60, true),
+    verticalFovRadians: dataView.getFloat32(64, true),
+    orthographicHeight: dataView.getFloat32(68, true),
+  };
 }
 
 export function parseTransformPayload(buffer, dataView, header = readRenderHeader(dataView, 0)) {
   return {
     kind: "transform",
     header,
-    transformId: readUint64Text(dataView, 32),
-    flags: dataView.getUint32(40, true),
-    localToWorld: readMatrix4(dataView, 48),
+    transformId: readUuidText(dataView, 32),
+    entityId: readUuidText(dataView, 32),
+    flags: dataView.getUint32(48, true),
+    localToWorld: readMatrix4(dataView, 56),
   };
 }
 
@@ -317,6 +305,21 @@ function readUint64Text(dataView, offset) {
   const lo = BigInt(dataView.getUint32(offset, true));
   const hi = BigInt(dataView.getUint32(offset + 4, true));
   return ((hi << 32n) | lo).toString();
+}
+
+function readUuidText(dataView, offset) {
+  const bytes = [];
+  let nonZero = false;
+  for (let index = 0; index < 16; index += 1) {
+    const value = dataView.getUint8(offset + index);
+    bytes.push(value.toString(16).padStart(2, "0"));
+    nonZero ||= value !== 0;
+  }
+  if (!nonZero) {
+    return "";
+  }
+  const hex = bytes.join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 function readUint64Number(dataView, offset) {

@@ -251,6 +251,24 @@ std::unordered_set<std::shared_ptr<iCAX::Database::IAttribute>> iCAX::Database::
     return GetAttributesByName(FNV1a32(strComponentClass_.c_str()));
 }
 
+//! 注册字段实例编辑策略提供者
+void iCAX::Database::CMetaRegistry::RegistFieldPolicyProviderByName(
+    IN const std::shared_ptr<IFieldPolicyProvider>& pProvider_,
+    IN const std::string& strComponentClass_)
+{
+    auto _pMate = GetMeta(FNV1a32(strComponentClass_.c_str()));
+    if (_pMate != nullptr)
+    {
+        _pMate->vecFieldPolicyProviders.emplace_back(pProvider_);
+    }
+}
+
+//! 获取字段实例编辑策略提供者列表
+std::vector<std::shared_ptr<iCAX::Database::IFieldPolicyProvider>> iCAX::Database::CMetaRegistry::GetFieldPolicyProvidersByName(IN const std::string& strComponentClass_) const
+{
+    return GetFieldPolicyProvidersByName(FNV1a32(strComponentClass_.c_str()));
+}
+
 //! 注册约束器
 void iCAX::Database::CMetaRegistry::RegistCheckerByName(IN const std::shared_ptr<IChecker>& pChecker_, IN const std::string& strComponentClass_)
 {
@@ -468,6 +486,66 @@ std::unordered_set<std::shared_ptr<iCAX::Database::IAttribute>> iCAX::Database::
                 }
                 if (existed.insert(std::type_index(typeid(*_Item))).second)
                     result.emplace(_Item);
+            }
+        }
+    }
+
+    return result;
+}
+
+//! 获取字段实例编辑策略提供者，子类优先
+std::vector<std::shared_ptr<iCAX::Database::IFieldPolicyProvider>> iCAX::Database::CMetaRegistry::GetFieldPolicyProvidersByName(IN const uint32_t& nComponentClass_) const
+{
+    std::vector<std::shared_ptr<IFieldPolicyProvider>> result;
+    std::unordered_set<const IFieldPolicyProvider*> existed;
+
+    if (auto meta = GetMeta(nComponentClass_))
+    {
+        for (const auto& _Item : meta->vecFieldPolicyProviders)
+        {
+            if (!_Item)
+            {
+                continue;
+            }
+            if (existed.insert(_Item.get()).second)
+            {
+                result.emplace_back(_Item);
+            }
+        }
+    }
+
+    auto itType = m_mapType.find(nComponentClass_);
+    if (itType != m_mapType.end())
+    {
+        auto parentProviders = GetFieldPolicyProvidersByName(itType->second);
+        for (auto _Item : parentProviders)
+        {
+            if (!_Item)
+            {
+                continue;
+            }
+            if (existed.insert(_Item.get()).second)
+            {
+                result.emplace_back(_Item);
+            }
+        }
+    }
+
+    const uint32_t _nGlobalClass = FNV1a32("");
+    if (nComponentClass_ != _nGlobalClass)
+    {
+        if (auto meta = GetMeta(_nGlobalClass))
+        {
+            for (const auto& _Item : meta->vecFieldPolicyProviders)
+            {
+                if (!_Item)
+                {
+                    continue;
+                }
+                if (existed.insert(_Item.get()).second)
+                {
+                    result.emplace_back(_Item);
+                }
             }
         }
     }

@@ -137,12 +137,10 @@ namespace iCAX
                 IN RenderSceneID nSceneID_,
                 IN RenderGeometryID nGeometryID_) = 0;
 
-            virtual bool SetInstances(
+            virtual bool SetObjects(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN RenderSceneID nSceneID_,
-                IN const std::vector<SRenderInstanceData>& Instances_,
-                IN const std::vector<SRenderStyleData>& Styles_,
-                IN RenderDataVersion nDataVersion_) = 0;
+                IN const std::vector<SRenderInstanceData>& Objects_) = 0;
 
             virtual bool SetTransforms(
                 IN const iCAX::Data::uuid& ProjectID_,
@@ -154,8 +152,7 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN RenderSceneID nSceneID_,
                 IN const std::vector<SRenderCameraData>& Cameras_,
-                IN RenderCameraID nActiveCameraID_,
-                IN RenderDataVersion nDataVersion_) = 0;
+                IN RenderCameraID nActiveCameraID_) = 0;
 
             /*
             * @brief 获取场景快照。

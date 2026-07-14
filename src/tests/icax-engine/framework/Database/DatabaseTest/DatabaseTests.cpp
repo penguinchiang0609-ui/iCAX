@@ -2,6 +2,7 @@
 
 #include <Database/ComponentHelper.h>
 #include <Database/IEntity.h>
+#include <Database/IFieldPolicyProvider.h>
 #include <Database/IRepository.h>
 #include <Database/OperationLog.h>
 #include <Data/uuid.h>
@@ -12,7 +13,9 @@
 #include <fstream>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace
@@ -510,6 +513,45 @@ namespace
         {
             return true;
         }
+    };
+
+    class CNamedFieldPolicyProvider final : public IFieldPolicyProvider
+    {
+    public:
+        CNamedFieldPolicyProvider(std::string strName_, bool bHandles_)
+            : m_strName(std::move(strName_))
+            , m_bHandles(bHandles_)
+        {
+        }
+
+        bool TryGetFieldPolicy(
+            const IEntity& Entity_,
+            const CComponentBase& Component_,
+            const std::string& strPropertyName_,
+            SFieldEditPolicy& Policy_) const override
+        {
+            ++CallCount;
+            if (!m_bHandles)
+            {
+                return false;
+            }
+
+            Policy_.bEditable = true;
+            Policy_.bHasRange = true;
+            Policy_.dMin = static_cast<double>(Component_.GetProperty(strPropertyName_).To<int>());
+            Policy_.dMax = Policy_.dMin + 10.0;
+            Policy_.dStep = 1.0;
+            Policy_.nPrecision = 0;
+            Policy_.strUnit = "test";
+            Policy_.strReason = m_strName + ":" + to_string(Entity_.GetID());
+            return true;
+        }
+
+        mutable int CallCount = 0;
+
+    private:
+        std::string m_strName;
+        bool m_bHandles = false;
     };
 
     class CRejectNegativeSumChecker final : public IChecker
@@ -2425,4 +2467,50 @@ TEST(DatabaseMetaRegistryTest, GlobalAttributeAndCheckerApplyToSpecificComponent
 
     EXPECT_TRUE(_Attributes.contains(_Attribute));
     EXPECT_TRUE(_Checkers.contains(_Checker));
+}
+
+TEST(DatabaseMetaRegistryTest, FieldPolicyProviderCanUseInstanceData)
+{
+    auto _Meta = CreateTestMetaRegistry();
+    auto _Provider = std::make_shared<CNamedFieldPolicyProvider>("specific", true);
+    _Meta->RegistFieldPolicyProvider<CPolicyComponent>(_Provider);
+
+    auto _Repository = GenerateRepository(GenerateNewUUID(), _Meta);
+    auto _Entity = _Repository->CreateEntity(GenerateNewUUID());
+    auto _Component = _Entity->AddComponent<CPolicyComponent>();
+    EXPECT_TRUE(_Component->SetPersistentValue(7));
+
+    SFieldEditPolicy _Policy;
+    EXPECT_TRUE(_Meta->TryGetFieldPolicy(*_Entity, *_Component, CPolicyComponent::PropertyName_PersistentValue, _Policy));
+    EXPECT_TRUE(_Policy.bEditable);
+    EXPECT_TRUE(_Policy.bHasRange);
+    EXPECT_EQ(7.0, _Policy.dMin);
+    EXPECT_EQ(17.0, _Policy.dMax);
+    EXPECT_EQ(1.0, _Policy.dStep);
+    EXPECT_EQ(0, _Policy.nPrecision);
+    EXPECT_EQ("test", _Policy.strUnit);
+    EXPECT_NE(std::string::npos, _Policy.strReason.find("specific:"));
+    EXPECT_EQ(1, _Provider->CallCount);
+}
+
+TEST(DatabaseMetaRegistryTest, FieldPolicyProviderFallsBackToGlobalWhenSpecificDoesNotHandle)
+{
+    auto _Meta = CreateTestMetaRegistry();
+    auto _Specific = std::make_shared<CNamedFieldPolicyProvider>("specific", false);
+    auto _Global = std::make_shared<CNamedFieldPolicyProvider>("global", true);
+
+    _Meta->RegistFieldPolicyProvider<CPolicyComponent>(_Specific);
+    _Meta->RegistFieldPolicyProviderByName(_Global);
+
+    auto _Repository = GenerateRepository(GenerateNewUUID(), _Meta);
+    auto _Entity = _Repository->CreateEntity(GenerateNewUUID());
+    auto _Component = _Entity->AddComponent<CPolicyComponent>();
+    EXPECT_TRUE(_Component->SetRuntimeValue(3));
+
+    SFieldEditPolicy _Policy;
+    EXPECT_TRUE(_Meta->TryGetFieldPolicy(*_Entity, *_Component, CPolicyComponent::PropertyName_RuntimeValue, _Policy));
+    EXPECT_EQ(3.0, _Policy.dMin);
+    EXPECT_NE(std::string::npos, _Policy.strReason.find("global:"));
+    EXPECT_EQ(1, _Specific->CallCount);
+    EXPECT_EQ(1, _Global->CallCount);
 }

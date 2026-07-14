@@ -2,8 +2,8 @@
 
 #include <ApplicationHost/ApplicationHost.h>
 #include <ApplicationHost/ApplicationHostCommands.h>
-#include <CommandHandler/CommandRoute.h>
-#include <CommandHandler/CommandTarget.h>
+#include <CommandTargets/CommandRoute.h>
+#include <CommandTargets/CommandTarget.h>
 #include <Data/Variant.h>
 #include <Database/ComponentBase.h>
 #include <Mailbox/Mail.h>

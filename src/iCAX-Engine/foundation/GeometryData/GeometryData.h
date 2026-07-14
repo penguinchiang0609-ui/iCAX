@@ -564,6 +564,20 @@ namespace iCAX::GeometryData
         EntityMetadata Metadata;
     };
 
+    /*
+    * @brief 中立三角网格资源。
+    * @details
+    *   该资源只保存三角网格数据，不表达渲染、碰撞或 STL/OBJ/PLY 等具体来源格式。
+    *   渲染、碰撞等消费者可以把它转换成自己的运行时数据，但资源本身不反向依赖消费者。
+    */
+    struct CTriangleMeshResource
+    {
+        inline static constexpr const char* kResourceTypeName = "geometry.triangle_mesh";
+
+        Triangulation3 Mesh;
+        EntityMetadata Metadata;
+    };
+
     struct BRepShapeRef
     {
         EBRepShapeKind Kind = EBRepShapeKind::Face;

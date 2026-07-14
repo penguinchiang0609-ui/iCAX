@@ -151,7 +151,8 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup>
     <PostBuildEvent>
-      <Command>if exist "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" copy /Y "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" "$(OutDir)" &gt;nul
+      <Command>if exist "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\$(Platform)\$(Configuration)\*.dll" copy /Y "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\$(Platform)\$(Configuration)\*.dll" "$(OutDir)" &gt;nul
+if exist "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" copy /Y "$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" "$(OutDir)" &gt;nul
 for /D %%D in ("$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework\*") do if exist "%%~fD\$(Platform)\$(Configuration)\*.dll" copy /Y "%%~fD\$(Platform)\$(Configuration)\*.dll" "$(OutDir)" &gt;nul
 if exist "$(MSBuildProjectDirectory)\..\..\iCAX-UI\UIContainer\$(Platform)\$(Configuration)\UIContainer.dll" copy /Y "$(MSBuildProjectDirectory)\..\..\iCAX-UI\UIContainer\$(Platform)\$(Configuration)\UIContainer.dll" "$(OutDir)" &gt;nul
 if exist "$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(Configuration)\*" xcopy /E /I /Y "$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(Configuration)\*" "$(OutDir)" &gt;nul</Command>

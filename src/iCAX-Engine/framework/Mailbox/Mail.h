@@ -28,7 +28,7 @@ namespace iCAX
         * @brief 邮件头。
         * @details
         *   nMailId 标识本封邮件；响应邮件会把请求邮件 ID 写到 nOriginId。
-        *   nTypeCode 是上层业务类型码。当前 CommandHandler 使用它承载 64 位命令路由码。
+        *   nTypeCode 是上层业务类型码。当前 CommandTargets 使用它承载 64 位命令路由码。
         */
         struct _MAIL_EXP MailHeader
         {

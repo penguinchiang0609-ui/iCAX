@@ -163,6 +163,7 @@
     <ClInclude Include="ComponentMask.h" />
     <ClInclude Include="IAttribute.h" />
     <ClInclude Include="IChecker.h" />
+    <ClInclude Include="IFieldPolicyProvider.h" />
     <ClInclude Include="IEntityEvent.h" />
     <ClInclude Include="IEntitiesView.h" />
     <ClInclude Include="IEntity.h" />

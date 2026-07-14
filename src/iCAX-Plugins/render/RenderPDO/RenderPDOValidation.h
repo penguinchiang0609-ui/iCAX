@@ -31,8 +31,8 @@ namespace iCAX
             IN uint64_t nPayloadCapacity_,
             OUT std::string* pError_ = nullptr);
 
-        _RENDER_PDO_EXP bool ValidateInstanceListPDOHeader(
-            IN const SRenderInstanceListPDOHeader& Header_,
+        _RENDER_PDO_EXP bool ValidateObjectPDOHeader(
+            IN const SRenderObjectPDOHeader& Header_,
             IN uint64_t nPayloadCapacity_,
             OUT std::string* pError_ = nullptr);
 

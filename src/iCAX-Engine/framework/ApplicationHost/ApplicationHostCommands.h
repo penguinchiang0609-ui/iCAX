@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ApplicationHostExport.h"
-#include "CommandHandler/CommandRoute.h"
+#include "CommandTargets/CommandRoute.h"
 #include "Data/Variant.h"
 
 #include <cstdint>

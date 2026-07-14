@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PDORenderServiceExport.h"
-#include "CommandHandler/CommandRoute.h"
+#include "CommandTargets/CommandRoute.h"
 #include "RenderService/RenderService.h"
 #include "PDO/IPDOSlot.h"
 #include "Services/ServicesHelper.h"
@@ -48,6 +48,7 @@ namespace iCAX
             struct SSlotAssignment final
             {
                 iCAX::PDO::PDOID nPDOID = 0;
+                uint32_t nSlotVersion = 0;
                 uint64_t nPayloadCapacity = 0;
                 bool bNeedPublishAllocatedEvent = false;
             };
@@ -59,7 +60,7 @@ namespace iCAX
                 std::unordered_map<iCAX::Render::RenderGeometryID, SSlotAssignment> ToolpathSlots;
                 std::unordered_map<iCAX::Render::TransformID, SSlotAssignment> TransformSlots;
                 std::unordered_map<iCAX::Render::SceneObjectID, SSlotAssignment> ObjectSlots;
-                SSlotAssignment CameraSlot;
+                std::unordered_map<iCAX::Render::RenderCameraID, SSlotAssignment> CameraSlots;
             };
 
         public:
@@ -121,12 +122,10 @@ namespace iCAX
                 IN iCAX::Render::RenderSceneID nSceneID_,
                 IN iCAX::Render::RenderGeometryID nGeometryID_) override;
 
-            bool SetInstances(
+            bool SetObjects(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
-                IN const std::vector<iCAX::Render::SRenderInstanceData>& Instances_,
-                IN const std::vector<iCAX::Render::SRenderStyleData>& Styles_,
-                IN iCAX::Render::RenderDataVersion nDataVersion_) override;
+                IN const std::vector<iCAX::Render::SRenderInstanceData>& Objects_) override;
 
             bool SetTransforms(
                 IN const iCAX::Data::uuid& ProjectID_,
@@ -138,8 +137,7 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
                 IN const std::vector<iCAX::Render::SRenderCameraData>& Cameras_,
-                IN iCAX::Render::RenderCameraID nActiveCameraID_,
-                IN iCAX::Render::RenderDataVersion nDataVersion_) override;
+                IN iCAX::Render::RenderCameraID nActiveCameraID_) override;
 
             iCAX::Render::SRenderSceneSnapshot GetSceneSnapshot(
                 IN const iCAX::Data::uuid& ProjectID_,
@@ -158,7 +156,7 @@ namespace iCAX
 
             /*
             * @brief 构造一个渲染对象 PDOID。
-            * @details 一个对象对应一个 InstanceList PDO slot，payload 中只包含该对象自己的 transform/style。
+            * @details 一个对象对应一个 Object PDO slot，payload 中只包含对象自己的 EntityID、GeometryID、MaterialID 和显示标志。
             */
             static iCAX::PDO::PDOID MakeObjectPDOID(
                 IN const iCAX::Data::uuid& ProjectID_,
@@ -175,12 +173,13 @@ namespace iCAX
                 IN iCAX::Render::TransformID nTransformID_);
 
             /*
-            * @brief 构造一个 scene 相机 PDOID。
-            * @details Camera PDO 由后端写、前端读，用于发布一个或多个相机以及当前激活相机。
+            * @brief 构造一个相机 PDOID。
+            * @details Camera PDO 由后端写、前端读；一个 camera entity 对应一个 PDO slot。
             */
             static iCAX::PDO::PDOID MakeCameraPDOID(
                 IN const iCAX::Data::uuid& ProjectID_,
-                IN iCAX::Render::RenderSceneID nSceneID_);
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Render::RenderCameraID nCameraID_);
 
             /*
             * @brief 通知前端 PDO arena 即将开始碎片整理。
@@ -227,11 +226,6 @@ namespace iCAX
                 IN iCAX::Render::RenderGeometryID nGeometryID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
-            bool WriteInstanceListToPDO(
-                IN const iCAX::Data::uuid& ProjectID_,
-                IN iCAX::Render::RenderSceneID nSceneID_,
-                IN iCAX::PDO::IPDOSlot& Slot_) const;
-
             bool WriteTransformToPDO(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
@@ -239,10 +233,7 @@ namespace iCAX
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
             /*
-            * @brief 将单个渲染对象写入一个 InstanceList PDO slot。
-            * @details
-            *   PDORenderService 的常规输出模型是一个对象一个 PDO slot。该函数序列化出的 InstanceList
-            *   只包含一个 instance，并按该 instance 引用的 style 写入最多一个 style。
+            * @brief 将单个渲染对象写入一个 Object PDO slot。
             */
             bool WriteObjectToPDO(
                 IN const iCAX::Data::uuid& ProjectID_,
@@ -250,9 +241,10 @@ namespace iCAX
                 IN iCAX::Render::SceneObjectID nObjectID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
-            bool WriteCamerasToPDO(
+            bool WriteCameraToPDO(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_,
+                IN iCAX::Render::RenderCameraID nCameraID_,
                 IN iCAX::PDO::IPDOSlot& Slot_) const;
 
         private:
@@ -292,6 +284,7 @@ namespace iCAX
                 IN iCAX::Render::SceneObjectID nObjectID_,
                 IN iCAX::Render::TransformID nTransformID_,
                 IN const char* pPayloadKind_,
+                IN uint32_t nSlotVersion_,
                 IN uint64_t nPayloadCapacity_) const;
 
             void SendDefragEvent(

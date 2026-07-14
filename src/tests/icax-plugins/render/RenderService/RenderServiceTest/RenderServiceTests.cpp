@@ -4,7 +4,6 @@
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
 #include <ProjectContext/ISceneContext.h>
-#include <ProjectContext/SceneObjectRegistry.h>
 #include <PDORenderService/PDORenderService.h>
 #include <RenderPDO/RenderPDO.h>
 #include <PDO/IPDOHub.h>
@@ -12,6 +11,7 @@
 #include <Mailbox/MailChannel.h>
 #include <Mailbox/MailPayload.h>
 
+#include <cstddef>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -191,16 +191,6 @@ namespace
             throw std::logic_error("Resources are not used by render service tests");
         }
 
-        iCAX::Project::CSceneObjectRegistry& Objects() override
-        {
-            return m_Objects;
-        }
-
-        const iCAX::Project::CSceneObjectRegistry& Objects() const override
-        {
-            return m_Objects;
-        }
-
         bool HasPDOHub() const override
         {
             return m_pPDOHub != nullptr;
@@ -233,7 +223,6 @@ namespace
         iCAX::Data::uuid m_SceneID;
         iCAX::Data::uuid m_SceneChannelID;
         std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
-        iCAX::Project::CSceneObjectRegistry m_Objects;
         std::shared_ptr<iCAX::Mail::CMailChannel> m_pChannel;
         std::string m_SceneName = "Render Service Test Scene";
     };
@@ -312,6 +301,24 @@ namespace
         _Transform.LocalToWorld.Values[12] = nX_;
         return _Transform;
     }
+
+    iCAX::RenderPDO::SRenderID ToPDOID(IN const iCAX::Data::uuid& ID_)
+    {
+        iCAX::RenderPDO::SRenderID _Result;
+        const auto _Bytes = ID_.as_bytes();
+        for (size_t _Index = 0; _Index < _Result.Bytes.size(); ++_Index)
+        {
+            _Result.Bytes[_Index] = std::to_integer<uint8_t>(_Bytes[_Index]);
+        }
+        return _Result;
+    }
+
+    void ExpectRenderIDEq(
+        IN const iCAX::Data::uuid& Expected_,
+        IN const iCAX::RenderPDO::SRenderID& Actual_)
+    {
+        EXPECT_EQ(ToPDOID(Expected_).Bytes, Actual_.Bytes);
+    }
 }
 
 TEST(PDORenderServiceTest, KeepsScenesIsolatedByProject)
@@ -321,19 +328,21 @@ TEST(PDORenderServiceTest, KeepsScenesIsolatedByProject)
 
     const auto _ProjectA = iCAX::Data::GenerateNewUUID();
     const auto _ProjectB = iCAX::Data::GenerateNewUUID();
+    const auto _MeshIDA = iCAX::Render::MakeRenderGeometryID("test.project-a.mesh");
+    const auto _MeshIDB = iCAX::Render::MakeRenderGeometryID("test.project-b.mesh");
     constexpr iCAX::Render::RenderSceneID _SceneID = 1;
 
     EXPECT_TRUE(_Service.CreateScene(_ProjectA, _SceneID));
     EXPECT_TRUE(_Service.CreateScene(_ProjectB, _SceneID));
-    EXPECT_TRUE(_Service.UpsertMesh(_ProjectA, _SceneID, MakeTriangleMesh(10, 1, 0.0f)));
-    EXPECT_TRUE(_Service.UpsertMesh(_ProjectB, _SceneID, MakeTriangleMesh(20, 2, 5.0f)));
+    EXPECT_TRUE(_Service.UpsertMesh(_ProjectA, _SceneID, MakeTriangleMesh(_MeshIDA, 1, 0.0f)));
+    EXPECT_TRUE(_Service.UpsertMesh(_ProjectB, _SceneID, MakeTriangleMesh(_MeshIDB, 2, 5.0f)));
 
     const auto _SnapshotA = _Service.GetSceneSnapshot(_ProjectA, _SceneID);
     const auto _SnapshotB = _Service.GetSceneSnapshot(_ProjectB, _SceneID);
     EXPECT_EQ(1u, _SnapshotA.Meshes.size());
     EXPECT_EQ(1u, _SnapshotB.Meshes.size());
-    EXPECT_TRUE(_SnapshotA.Meshes.contains(10));
-    EXPECT_TRUE(_SnapshotB.Meshes.contains(20));
+    EXPECT_TRUE(_SnapshotA.Meshes.contains(_MeshIDA));
+    EXPECT_TRUE(_SnapshotB.Meshes.contains(_MeshIDB));
 
     _Service.DestroyProject(_ProjectA);
     EXPECT_FALSE(_Service.HasScene(_ProjectA, _SceneID));
@@ -347,9 +356,11 @@ TEST(PDORenderServiceTest, WritesGeometryInstanceAndCameraPayloadsToPDO)
 
     const auto _ProjectID = iCAX::Data::GenerateNewUUID();
     constexpr iCAX::Render::RenderSceneID _SceneID = 7;
-    constexpr iCAX::Render::RenderGeometryID _MeshID = 88;
-    constexpr iCAX::Render::RenderGeometryID _PolylineID = 89;
-    constexpr iCAX::Render::RenderGeometryID _ToolpathID = 90;
+    const auto _MeshID = iCAX::Render::MakeRenderGeometryID("test.main.mesh");
+    const auto _PolylineID = iCAX::Render::MakeRenderGeometryID("test.main.polyline");
+    const auto _ToolpathID = iCAX::Render::MakeRenderGeometryID("test.main.toolpath");
+    const auto _ObjectID = iCAX::Data::GenerateNewUUID();
+    const auto _CameraID = iCAX::Data::GenerateNewUUID();
 
     ASSERT_TRUE(_Service.CreateScene(_ProjectID, _SceneID));
     ASSERT_TRUE(_Service.UpsertMesh(_ProjectID, _SceneID, MakeTriangleMesh(_MeshID, 11, 0.0f)));
@@ -357,24 +368,26 @@ TEST(PDORenderServiceTest, WritesGeometryInstanceAndCameraPayloadsToPDO)
     ASSERT_TRUE(_Service.UpsertToolpath(_ProjectID, _SceneID, MakeToolpath(_ToolpathID, 15)));
 
     iCAX::Render::SRenderInstanceData _Instance;
-    _Instance.nObjectID = 100;
+    _Instance.nObjectID = _ObjectID;
+    _Instance.nDataVersion = 12;
     _Instance.nGeometryID = _MeshID;
     _Instance.eGeometryKind = iCAX::Render::ERenderGeometryKind::Mesh;
-    ASSERT_TRUE(_Service.SetInstances(_ProjectID, _SceneID, { _Instance }, {}, 12));
+    ASSERT_TRUE(_Service.SetObjects(_ProjectID, _SceneID, { _Instance }));
     ASSERT_TRUE(_Service.SetTransforms(_ProjectID, _SceneID, {
         MakeTransform(_Instance.nObjectID, 16, 10.0f),
-        MakeTransform(1, 17, 20.0f)
+        MakeTransform(_CameraID, 17, 20.0f)
     }, 16));
 
     iCAX::Render::SRenderCameraData _Camera;
-    _Camera.nCameraID = 1;
-    ASSERT_TRUE(_Service.SetCameras(_ProjectID, _SceneID, { _Camera }, _Camera.nCameraID, 13));
+    _Camera.nCameraID = _CameraID;
+    _Camera.nDataVersion = 13;
+    ASSERT_TRUE(_Service.SetCameras(_ProjectID, _SceneID, { _Camera }, _Camera.nCameraID));
 
     auto _Hub = iCAX::PDO::GeneratePDOHub({
         iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::Mesh, "main.mesh", iCAX::PDO::kDirection2External, 1024),
         iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::Polyline, "main.polyline", iCAX::PDO::kDirection2External, 1024),
         iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::Toolpath, "main.toolpath", iCAX::PDO::kDirection2External, 2048),
-        iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::InstanceList, "main.instances", iCAX::PDO::kDirection2External, 1024),
+        iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::Object, "main.object", iCAX::PDO::kDirection2External, 1024),
         iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::Transform, "main.transform", iCAX::PDO::kDirection2External, 1024),
         iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::Camera, "main.camera", iCAX::PDO::kDirection2External, 2048)
     });
@@ -382,53 +395,93 @@ TEST(PDORenderServiceTest, WritesGeometryInstanceAndCameraPayloadsToPDO)
     auto& _MeshSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.mesh", "main.mesh"));
     auto& _PolylineSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.polyline", "main.polyline"));
     auto& _ToolpathSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.toolpath", "main.toolpath"));
-    auto& _InstanceSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.instance_list", "main.instances"));
+    auto& _ObjectSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.object", "main.object"));
     auto& _TransformSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.transform", "main.transform"));
     auto& _CameraSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.camera", "main.camera"));
 
     EXPECT_TRUE(_Service.WriteMeshToPDO(_ProjectID, _SceneID, _MeshID, _MeshSlot));
     EXPECT_TRUE(_Service.WritePolylineToPDO(_ProjectID, _SceneID, _PolylineID, _PolylineSlot));
     EXPECT_TRUE(_Service.WriteToolpathToPDO(_ProjectID, _SceneID, _ToolpathID, _ToolpathSlot));
-    EXPECT_TRUE(_Service.WriteInstanceListToPDO(_ProjectID, _SceneID, _InstanceSlot));
+    EXPECT_TRUE(_Service.WriteObjectToPDO(_ProjectID, _SceneID, _Instance.nObjectID, _ObjectSlot));
     EXPECT_TRUE(_Service.WriteTransformToPDO(_ProjectID, _SceneID, _Instance.nObjectID, _TransformSlot));
-    EXPECT_TRUE(_Service.WriteCamerasToPDO(_ProjectID, _SceneID, _CameraSlot));
+    EXPECT_TRUE(_Service.WriteCameraToPDO(_ProjectID, _SceneID, _Camera.nCameraID, _CameraSlot));
     _Hub->SwapOutSlot();
 
     iCAX::PDO::CPDOReadLease _MeshRead(_MeshSlot);
     const auto& _MeshHeader = _MeshRead.As<iCAX::RenderPDO::SRenderMeshPDOHeader>();
-    EXPECT_EQ(_MeshID, _MeshHeader.nGeometryID);
+    ExpectRenderIDEq(_MeshID, _MeshHeader.nGeometryID);
     EXPECT_EQ(3u, _MeshHeader.nVertexCount);
     EXPECT_EQ(11u, _MeshHeader.Header.nDataVersion);
 
     iCAX::PDO::CPDOReadLease _PolylineRead(_PolylineSlot);
     const auto& _PolylineHeader = _PolylineRead.As<iCAX::RenderPDO::SRenderPolylinePDOHeader>();
-    EXPECT_EQ(_PolylineID, _PolylineHeader.nGeometryID);
+    ExpectRenderIDEq(_PolylineID, _PolylineHeader.nGeometryID);
     EXPECT_EQ(3u, _PolylineHeader.nPointCount);
     EXPECT_EQ(1u, _PolylineHeader.nRangeCount);
     EXPECT_EQ(14u, _PolylineHeader.Header.nDataVersion);
 
     iCAX::PDO::CPDOReadLease _ToolpathRead(_ToolpathSlot);
     const auto& _ToolpathHeader = _ToolpathRead.As<iCAX::RenderPDO::SRenderToolpathPDOHeader>();
-    EXPECT_EQ(_ToolpathID, _ToolpathHeader.nGeometryID);
+    ExpectRenderIDEq(_ToolpathID, _ToolpathHeader.nGeometryID);
     EXPECT_EQ(3u, _ToolpathHeader.nPointCount);
     EXPECT_EQ(1u, _ToolpathHeader.nSpanCount);
     EXPECT_EQ(15u, _ToolpathHeader.Header.nDataVersion);
 
-    iCAX::PDO::CPDOReadLease _InstanceRead(_InstanceSlot);
-    const auto& _InstanceHeader = _InstanceRead.As<iCAX::RenderPDO::SRenderInstanceListPDOHeader>();
-    EXPECT_EQ(1u, _InstanceHeader.nInstanceCount);
-    EXPECT_EQ(12u, _InstanceHeader.Header.nDataVersion);
+    iCAX::PDO::CPDOReadLease _ObjectRead(_ObjectSlot);
+    const auto& _ObjectHeader = _ObjectRead.As<iCAX::RenderPDO::SRenderObjectPDOHeader>();
+    ExpectRenderIDEq(_Instance.nObjectID, _ObjectHeader.nObjectID);
+    ExpectRenderIDEq(_Instance.nGeometryID, _ObjectHeader.nGeometryID);
+    EXPECT_EQ(static_cast<uint32_t>(iCAX::RenderPDO::ERenderGeometryKind::Mesh), _ObjectHeader.nGeometryKind);
+    EXPECT_EQ(12u, _ObjectHeader.Header.nDataVersion);
 
     iCAX::PDO::CPDOReadLease _TransformRead(_TransformSlot);
     const auto& _TransformHeader = _TransformRead.As<iCAX::RenderPDO::STransformPDOHeader>();
-    EXPECT_EQ(_Instance.nObjectID, _TransformHeader.nTransformID);
+    ExpectRenderIDEq(_Instance.nObjectID, _TransformHeader.nTransformID);
     EXPECT_EQ(16u, _TransformHeader.Header.nDataVersion);
 
     iCAX::PDO::CPDOReadLease _CameraRead(_CameraSlot);
     const auto& _CameraHeader = _CameraRead.As<iCAX::RenderPDO::SRenderCameraPDOHeader>();
-    EXPECT_EQ(1u, _CameraHeader.nCameraCount);
-    EXPECT_EQ(_Camera.nCameraID, _CameraHeader.nActiveCameraID);
+    ExpectRenderIDEq(_Camera.nCameraID, _CameraHeader.nCameraID);
+    EXPECT_NE(0u, _CameraHeader.nFlags & iCAX::RenderPDO::kCameraFlagActive);
     EXPECT_EQ(13u, _CameraHeader.Header.nDataVersion);
+}
+
+TEST(PDORenderServiceTest, WritesTransformWhenMatrixChangesWithoutCallerVersionBump)
+{
+    iCAX::PDORenderService::CPDORenderService _Service;
+    _Service.OnLoad();
+
+    const auto _ProjectID = iCAX::Data::GenerateNewUUID();
+    constexpr iCAX::Render::RenderSceneID _SceneID = 8;
+    const auto _TransformID = iCAX::Data::GenerateNewUUID();
+    ASSERT_TRUE(_Service.CreateScene(_ProjectID, _SceneID));
+
+    auto _Hub = iCAX::PDO::GeneratePDOHub({
+        iCAX::RenderPDO::MakeRenderPDODecl(iCAX::RenderPDO::ERenderPDOPayloadKind::Transform, "main.transform.live", iCAX::PDO::kDirection2External, 1024),
+    });
+    auto& _TransformSlot = _Hub->GetSlot(iCAX::PDO::MakePDOID("render.transform", "main.transform.live"));
+
+    ASSERT_TRUE(_Service.SetTransforms(_ProjectID, _SceneID, { MakeTransform(_TransformID, 5, 1.0f) }, 5));
+    ASSERT_TRUE(_Service.WriteTransformToPDO(_ProjectID, _SceneID, _TransformID, _TransformSlot));
+    _Hub->SwapOutSlot();
+    iCAX::Render::RenderDataVersion _FirstVersion = 0;
+    {
+        iCAX::PDO::CPDOReadLease _Read(_TransformSlot);
+        const auto& _Header = _Read.As<iCAX::RenderPDO::STransformPDOHeader>();
+        _FirstVersion = _Header.Header.nDataVersion;
+        EXPECT_EQ(5u, _FirstVersion);
+        EXPECT_FLOAT_EQ(1.0f, _Header.LocalToWorld.Values[12]);
+    }
+
+    ASSERT_TRUE(_Service.SetTransforms(_ProjectID, _SceneID, { MakeTransform(_TransformID, 5, 2.0f) }, 5));
+    ASSERT_TRUE(_Service.WriteTransformToPDO(_ProjectID, _SceneID, _TransformID, _TransformSlot));
+    _Hub->SwapOutSlot();
+    {
+        iCAX::PDO::CPDOReadLease _Read(_TransformSlot);
+        const auto& _Header = _Read.As<iCAX::RenderPDO::STransformPDOHeader>();
+        EXPECT_GT(_Header.Header.nDataVersion, _FirstVersion);
+        EXPECT_FLOAT_EQ(2.0f, _Header.LocalToWorld.Values[12]);
+    }
 }
 
 TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEvents)
@@ -448,9 +501,11 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     CTestSceneContext _SceneContext(_Hub);
 
     const auto _SceneID = iCAX::Render::MakeRenderSceneID(_SceneContext.GetSceneID());
-    constexpr iCAX::Render::RenderGeometryID _MeshID = 201;
-    constexpr iCAX::Render::RenderGeometryID _PolylineID = 202;
-    constexpr iCAX::Render::RenderGeometryID _ToolpathID = 203;
+    const auto _MeshID = iCAX::Render::MakeRenderGeometryID("test.dynamic.mesh");
+    const auto _PolylineID = iCAX::Render::MakeRenderGeometryID("test.dynamic.polyline");
+    const auto _ToolpathID = iCAX::Render::MakeRenderGeometryID("test.dynamic.toolpath");
+    const auto _ObjectID = iCAX::Data::GenerateNewUUID();
+    const auto _CameraID = iCAX::Data::GenerateNewUUID();
 
     ASSERT_TRUE(_Service.CreateScene(_ProjectID, _SceneID));
     ASSERT_TRUE(_Service.UpsertMesh(_ProjectID, _SceneID, MakeTriangleMesh(_MeshID, 21, 0.0f)));
@@ -458,18 +513,20 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     ASSERT_TRUE(_Service.UpsertToolpath(_ProjectID, _SceneID, MakeToolpath(_ToolpathID, 23)));
 
     iCAX::Render::SRenderInstanceData _Instance;
-    _Instance.nObjectID = 300;
+    _Instance.nObjectID = _ObjectID;
+    _Instance.nDataVersion = 24;
     _Instance.nGeometryID = _MeshID;
     _Instance.eGeometryKind = iCAX::Render::ERenderGeometryKind::Mesh;
-    ASSERT_TRUE(_Service.SetInstances(_ProjectID, _SceneID, { _Instance }, {}, 24));
+    ASSERT_TRUE(_Service.SetObjects(_ProjectID, _SceneID, { _Instance }));
     ASSERT_TRUE(_Service.SetTransforms(_ProjectID, _SceneID, {
         MakeTransform(_Instance.nObjectID, 26, 30.0f),
-        MakeTransform(9, 27, 40.0f)
+        MakeTransform(_CameraID, 27, 40.0f)
     }, 26));
 
     iCAX::Render::SRenderCameraData _Camera;
-    _Camera.nCameraID = 9;
-    ASSERT_TRUE(_Service.SetCameras(_ProjectID, _SceneID, { _Camera }, _Camera.nCameraID, 25));
+    _Camera.nCameraID = _CameraID;
+    _Camera.nDataVersion = 25;
+    ASSERT_TRUE(_Service.SetCameras(_ProjectID, _SceneID, { _Camera }, _Camera.nCameraID));
 
     const auto _MeshPDOID = iCAX::PDORenderService::CPDORenderService::MakeGeometryPDOID(
         _ProjectID,
@@ -498,7 +555,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         _ProjectID,
         _SceneID,
         _Camera.nCameraID);
-    const auto _CameraPDOID = iCAX::PDORenderService::CPDORenderService::MakeCameraPDOID(_ProjectID, _SceneID);
+    const auto _CameraPDOID = iCAX::PDORenderService::CPDORenderService::MakeCameraPDOID(_ProjectID, _SceneID, _Camera.nCameraID);
 
     _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, _SceneContext, 0.016, 1.0);
     _Hub->SwapOutSlot();
@@ -514,34 +571,35 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     {
         iCAX::PDO::CPDOReadLease _MeshRead(_Hub->GetSlot(_MeshPDOID));
         const auto& _MeshHeader = _MeshRead.As<iCAX::RenderPDO::SRenderMeshPDOHeader>();
-        EXPECT_EQ(_MeshID, _MeshHeader.nGeometryID);
+        ExpectRenderIDEq(_MeshID, _MeshHeader.nGeometryID);
         EXPECT_EQ(21u, _MeshHeader.Header.nDataVersion);
 
         iCAX::PDO::CPDOReadLease _PolylineRead(_Hub->GetSlot(_PolylinePDOID));
         const auto& _PolylineHeader = _PolylineRead.As<iCAX::RenderPDO::SRenderPolylinePDOHeader>();
-        EXPECT_EQ(_PolylineID, _PolylineHeader.nGeometryID);
+        ExpectRenderIDEq(_PolylineID, _PolylineHeader.nGeometryID);
         EXPECT_EQ(22u, _PolylineHeader.Header.nDataVersion);
 
         iCAX::PDO::CPDOReadLease _ToolpathRead(_Hub->GetSlot(_ToolpathPDOID));
         const auto& _ToolpathHeader = _ToolpathRead.As<iCAX::RenderPDO::SRenderToolpathPDOHeader>();
-        EXPECT_EQ(_ToolpathID, _ToolpathHeader.nGeometryID);
+        ExpectRenderIDEq(_ToolpathID, _ToolpathHeader.nGeometryID);
         EXPECT_EQ(23u, _ToolpathHeader.Header.nDataVersion);
 
-        iCAX::PDO::CPDOReadLease _InstanceRead(_Hub->GetSlot(_ObjectPDOID));
-        const auto& _InstanceHeader = _InstanceRead.As<iCAX::RenderPDO::SRenderInstanceListPDOHeader>();
-        EXPECT_EQ(1u, _InstanceHeader.nInstanceCount);
-        EXPECT_EQ(1u, _InstanceHeader.nStyleCount);
-        EXPECT_EQ(24u, _InstanceHeader.Header.nDataVersion);
+        iCAX::PDO::CPDOReadLease _ObjectRead(_Hub->GetSlot(_ObjectPDOID));
+        const auto& _ObjectHeader = _ObjectRead.As<iCAX::RenderPDO::SRenderObjectPDOHeader>();
+        ExpectRenderIDEq(_Instance.nObjectID, _ObjectHeader.nObjectID);
+        ExpectRenderIDEq(_Instance.nGeometryID, _ObjectHeader.nGeometryID);
+        EXPECT_EQ(static_cast<uint32_t>(iCAX::RenderPDO::ERenderGeometryKind::Mesh), _ObjectHeader.nGeometryKind);
+        EXPECT_EQ(24u, _ObjectHeader.Header.nDataVersion);
 
         iCAX::PDO::CPDOReadLease _TransformRead(_Hub->GetSlot(_ObjectTransformPDOID));
         const auto& _TransformHeader = _TransformRead.As<iCAX::RenderPDO::STransformPDOHeader>();
-        EXPECT_EQ(_Instance.nObjectID, _TransformHeader.nTransformID);
+        ExpectRenderIDEq(_Instance.nObjectID, _TransformHeader.nTransformID);
         EXPECT_EQ(26u, _TransformHeader.Header.nDataVersion);
 
         iCAX::PDO::CPDOReadLease _CameraRead(_Hub->GetSlot(_CameraPDOID));
         const auto& _CameraHeader = _CameraRead.As<iCAX::RenderPDO::SRenderCameraPDOHeader>();
-        EXPECT_EQ(1u, _CameraHeader.nCameraCount);
-        EXPECT_EQ(_Camera.nCameraID, _CameraHeader.nActiveCameraID);
+        ExpectRenderIDEq(_Camera.nCameraID, _CameraHeader.nCameraID);
+        EXPECT_NE(0u, _CameraHeader.nFlags & iCAX::RenderPDO::kCameraFlagActive);
         EXPECT_EQ(25u, _CameraHeader.Header.nDataVersion);
     }
 
@@ -561,7 +619,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     }
     EXPECT_EQ(7u, _AllocatedCount);
 
-    ASSERT_TRUE(_Service.SetInstances(_ProjectID, _SceneID, {}, {}, 26));
+    ASSERT_TRUE(_Service.SetObjects(_ProjectID, _SceneID, {}));
     _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, _SceneContext, 0.016, 1.016);
     EXPECT_FALSE(_Hub->HasSlot(_ObjectPDOID));
 

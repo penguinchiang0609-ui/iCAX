@@ -6,6 +6,7 @@
 #include "ProjectContext/ISceneContext.h"
 #include "Services/ServicesHelper.h"
 #include "ToolpathComponents.h"
+#include "WorkpieceComponents.h"
 
 #include <stdexcept>
 

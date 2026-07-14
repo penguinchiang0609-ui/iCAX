@@ -5,7 +5,7 @@
 它隐藏以下 backend 和宿主通信细节：
 
 - `Mail` / `MailPostOffice`
-- `CommandHandler` 64 位主/子命令编码
+- `CommandTargets` 64 位主/子命令编码
 - `VariantSerializer` 文本格式
 - PDO shared memory 读写租约
 - H5 内置三维 viewport

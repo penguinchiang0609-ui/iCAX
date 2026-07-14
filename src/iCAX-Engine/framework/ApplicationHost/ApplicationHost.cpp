@@ -2,7 +2,7 @@
 #include "ApplicationHost.h"
 
 #include "ApplicationContext/FileApplicationConfigStore.h"
-#include "CommandHandler/CommandTarget.h"
+#include "CommandTargets/CommandTarget.h"
 #include "Mailbox/MailChannelRegistry.h"
 
 #include <chrono>

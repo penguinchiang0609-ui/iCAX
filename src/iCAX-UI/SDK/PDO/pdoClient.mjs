@@ -83,6 +83,35 @@ export class PDOClient {
     }, reader);
   }
 
+  async getMetaDescriptor(descriptor) {
+    if (!this.enabled) {
+      return null;
+    }
+    if (!descriptor?.id) {
+      throw new TypeError("PDO descriptor.id is required");
+    }
+    if (!this.bridge?.pdo?.getMeta) {
+      throw new Error("Host bridge does not provide PDO slot metadata");
+    }
+
+    const declaration = this.findDeclarationById(descriptor.id);
+    const version = descriptor.version ?? declaration?.version;
+    const payloadSize = descriptor.payloadSize ?? descriptor.payloadCapacity ?? declaration?.payloadSize;
+    if (!version) {
+      throw new Error(`PDO descriptor.version is required: ${descriptor.id}`);
+    }
+    if (!payloadSize) {
+      throw new Error(`PDO descriptor.payloadSize is required: ${descriptor.id}`);
+    }
+
+    return this.bridge.pdo.getMeta({
+      arenaName: descriptor.arenaName ?? this.descriptor.sharedArenaName,
+      id: String(descriptor.id),
+      version,
+      payloadSize,
+    });
+  }
+
   async withWriteDescriptor(descriptor, writer) {
     if (!this.enabled) {
       return false;

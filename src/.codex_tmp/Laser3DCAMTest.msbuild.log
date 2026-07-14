@@ -1,0 +1,23 @@
+
+  CommandTargets.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\CommandTargets\x64\Debug\CommandTargets.dll
+  Services.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Services\x64\Debug\Services.dll
+  Data.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\foundation\Data\x64\Debug\Data.dll
+  ProjectContext.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\ProjectContext\x64\Debug\ProjectContext.dll
+  Resources.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Resources\x64\Debug\Resources.dll
+  Mailbox.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Mailbox\x64\Debug\Mailbox.dll
+  Database.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Database\x64\Debug\Database.dll
+  GeometryData.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\foundation\GeometryData\x64\Debug\GeometryData.dll
+  ApplicationContext.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\ApplicationContext\x64\Debug\ApplicationContext.dll
+  Transform.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\common\Transform\x64\Debug\Transform.dll
+  RenderData.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\RenderData\x64\Debug\RenderData.dll
+  PDO.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\PDO\x64\Debug\PDO.dll
+  ProductContext.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\ProductContext\x64\Debug\ProductContext.dll
+  InputPDO.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\input\InputPDO\x64\Debug\InputPDO.dll
+  RenderService.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\RenderService\x64\Debug\RenderService.dll
+  InputService.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\input\InputService\x64\Debug\InputService.dll
+  Behaviour.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Engine\framework\Behaviour\x64\Debug\Behaviour.dll
+  RenderInteraction.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\RenderInteraction\x64\Debug\RenderInteraction.dll
+  CameraNavigation.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\render\CameraNavigation\x64\Debug\CameraNavigation.dll
+  Laser3DCAM.vcxproj -> D:\penguinchinage0609\iCAX\src\iCAX-Plugins\cam\Laser3DCAM\x64\Debug\Laser3DCAM.dll
+  Laser3DCAMTests.cpp
+  Laser3DCAMTest.vcxproj -> D:\penguinchinage0609\iCAX\src\tests\icax-plugins\cam\Laser3DCAM\Laser3DCAMTest\x64\Debug\Laser3DCAMTest.exe

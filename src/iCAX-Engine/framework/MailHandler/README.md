@@ -1,8 +1,8 @@
 # MailHandler
 
-本目录提供 Mailbox 与 CommandHandler 之间的桥接能力。
+本目录提供 Mailbox 与 CommandTargets 之间的桥接能力。
 
-Mailbox 只负责收发 `Mail`，CommandHandler 只负责命令路由与分发。MailHandler 负责把运行体收到的邮件转换为 `CCommandRequest`，调用 `CCommandDispatcher`，再把 `CCommandResponse` 转成回复邮件发送回去。
+Mailbox 只负责收发 `Mail`，CommandTargets 只负责命令路由与分发。MailHandler 负责把运行体收到的邮件转换为 `CCommandRequest`，调用 `CCommandDispatcher`，再把 `CCommandResponse` 转成回复邮件发送回去。
 
 MailHandler 不拥有运行体、上下文、通道或注册表，也不依赖 ApplicationHost / Product / Project。
 

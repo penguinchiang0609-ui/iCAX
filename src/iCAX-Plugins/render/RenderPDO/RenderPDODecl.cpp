@@ -14,8 +14,8 @@ const char* iCAX::RenderPDO::GetRenderPDOPayloadTypeName(IN ERenderPDOPayloadKin
         return "render.polyline";
     case ERenderPDOPayloadKind::Toolpath:
         return "render.toolpath";
-    case ERenderPDOPayloadKind::InstanceList:
-        return "render.instance_list";
+    case ERenderPDOPayloadKind::Object:
+        return "render.object";
     case ERenderPDOPayloadKind::Camera:
         return "render.camera";
     case ERenderPDOPayloadKind::Transform:

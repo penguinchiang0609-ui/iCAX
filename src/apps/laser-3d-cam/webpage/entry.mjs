@@ -1,154 +1,46 @@
 import { createThreeViewport } from "../../../iCAX-UI/SDK/index.mjs";
+import { renderProgress } from "./layout/commonViews.mjs";
+import { attachMachineAppearanceAutoApply, attachMachineJointLimitAutoApply, attachMachineToolTCPAutoApply, attachMachineTransformAutoApply, handleMachineAction, handleMachineRibbonCommand, importMachinePath as importMachinePathAction, selectMachineDefinition as selectMachineDefinitionAction, selectMachineInstance as selectMachineInstanceAction, setMachineInstanceEnabled as setMachineInstanceEnabledAction } from "./machine/machineActions.mjs";
+import { renderMachineLeftPane, renderMachineRightPane } from "./machine/machineArea.mjs";
+import { handleMachiningAction, handleMachiningRibbonCommand, setJobMachine as setJobMachineAction } from "./machining/machiningActions.mjs";
+import { renderMachiningLeftPane, renderMachiningRightPane } from "./machining/machiningArea.mjs";
+import { findCommandTitle, getTabTitle, normalizeCamTab } from "./ribbon/ribbonDefinition.mjs";
+import { getProjectView } from "./state/projectViewStore.mjs";
+import { getMachineId, getMachineSubtreeEntityIds, getMachines, getSelectedMachine, reconcileSelectedMachine } from "./state/sceneSelectors.mjs";
+import { renderToolpathOverlay } from "./toolpath/toolpathViews.mjs";
+import { escapeText, formatNumber } from "./utils/format.mjs";
+import { renderViewLeftPane, renderViewRightPane } from "./view/viewArea.mjs";
+import { ensureStyles } from "./styles/ensureStyles.mjs";
+import { handleWorkpieceAction, handleWorkpieceRibbonCommand } from "./workpiece/workpieceActions.mjs";
+import { renderWorkpieceLeftPane, renderWorkpieceRightPane } from "./workpiece/workpieceArea.mjs";
+import { renderEdge, renderFace, renderLoop } from "./workpiece/workpieceViews.mjs";
+import { exposeLaserCamAutomation } from "./automation/laserCamAutomation.mjs";
 
-const projectViews = new Map();
+export { getRibbonDefinition } from "./ribbon/ribbonDefinition.mjs";
 
-const ribbonDefinition = {
-  tabs: [
-    {
-      id: "machine",
-      title: "机床",
-      groups: [
-        {
-          title: "机器",
-          commands: [
-            { id: "machine.import", title: "导入机器", icon: "M", size: "large" },
-            { id: "machine.parameters", title: "机器参数", icon: "P" },
-            { id: "machine.tcp", title: "TCP", icon: "T" },
-          ],
-        },
-        {
-          title: "驱动",
-          commands: [
-            { id: "machine.jog", title: "点动", icon: "J" },
-            { id: "machine.home", title: "回零", icon: "H" },
-            { id: "machine.reset", title: "复位", icon: "R" },
-          ],
-        },
-        {
-          title: "检查",
-          commands: [
-            { id: "machine.limit-check", title: "轴限位", icon: "L" },
-            { id: "machine.reach-check", title: "行程检查", icon: "C" },
-          ],
-        },
-      ],
-    },
-    {
-      id: "workpiece",
-      title: "工件",
-      groups: [
-        {
-          title: "工件",
-          commands: [
-            { id: "workpiece.import", title: "导入工件", icon: "I", size: "large" },
-            { id: "workpiece.update", title: "更新", icon: "U" },
-            { id: "workpiece.delete", title: "删除", icon: "D" },
-          ],
-        },
-        {
-          title: "检查修复",
-          commands: [
-            { id: "workpiece.check", title: "模型检查", icon: "K" },
-            { id: "workpiece.repair", title: "自动修复", icon: "R" },
-            { id: "workpiece.place", title: "摆放", icon: "P" },
-          ],
-        },
-        {
-          title: "支撑夹具",
-          commands: [
-            { id: "support.generate", title: "生成支架", icon: "S" },
-            { id: "support.export-dxf", title: "导出 DXF", icon: "X" },
-          ],
-        },
-      ],
-    },
-    {
-      id: "toolpath",
-      title: "刀路",
-      groups: [
-        {
-          title: "选择",
-          commands: [
-            { id: "toolpath.pick-edge", title: "拾取 Edge", icon: "E" },
-            { id: "toolpath.pick-loop", title: "拾取 Loop", icon: "L" },
-            { id: "toolpath.clear-selection", title: "清除选择", icon: "C" },
-          ],
-        },
-        {
-          title: "生成",
-          commands: [
-            { id: "toolpath.recognize-holes", title: "识别孔", icon: "H", size: "large" },
-            { id: "toolpath.add-selection", title: "生成刀路", icon: "G", size: "large" },
-          ],
-        },
-        {
-          title: "编辑工艺",
-          commands: [
-            { id: "toolpath.layer", title: "切割图层", icon: "Y" },
-            { id: "toolpath.lead", title: "引入引出", icon: "N" },
-            { id: "toolpath.microjoint", title: "微联", icon: "W" },
-            { id: "toolpath.clear", title: "清空刀路", icon: "D" },
-          ],
-        },
-      ],
-    },
-    {
-      id: "job",
-      title: "作业",
-      groups: [
-        {
-          title: "作业",
-          commands: [
-            { id: "job.create", title: "新建作业", icon: "J", size: "large" },
-            { id: "job.select-paths", title: "选择刀路", icon: "S" },
-            { id: "job.block", title: "块/指令", icon: "B" },
-          ],
-        },
-        {
-          title: "规划检查",
-          commands: [
-            { id: "job.plan-motion", title: "轨迹规划", icon: "P", size: "large" },
-            { id: "job.collision", title: "碰撞检测", icon: "C" },
-            { id: "job.simulate", title: "运动仿真", icon: "F" },
-          ],
-        },
-        {
-          title: "输出",
-          commands: [
-            { id: "job.postprocessor", title: "厂家", icon: "V" },
-            { id: "job.preview-nc", title: "NC 预览", icon: "N" },
-            { id: "job.export-nc", title: "导出 NC", icon: "O" },
-          ],
-        },
-      ],
-    },
-    {
-      id: "view",
-      title: "视图",
-      groups: [
-        {
-          title: "视口",
-          commands: [
-            { id: "view.fit", title: "适合窗口", icon: "F", size: "large" },
-            { id: "view.standard", title: "标准视图", icon: "V" },
-            { id: "view.display", title: "显示模式", icon: "D" },
-          ],
-        },
-        {
-          title: "面板",
-          commands: [
-            { id: "view.left-panel", title: "左侧面板", icon: "L" },
-            { id: "view.right-panel", title: "右侧面板", icon: "R" },
-            { id: "view.reset-layout", title: "重置布局", icon: "Q" },
-          ],
-        },
-      ],
-    },
-  ],
-};
+const DEFAULT_WORKBENCH_LAYOUT = Object.freeze({
+  leftWidth: 320,
+  rightWidth: 340,
+});
+const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
+  minLeftWidth: 190,
+  maxLeftWidth: 560,
+  minRightWidth: 220,
+  maxRightWidth: 620,
+  minViewerWidth: 420,
+  splitterTotalWidth: 12,
+});
 
-export function getRibbonDefinition() {
-  return ribbonDefinition;
+function getProjectOps() {
+  return {
+    renderProject,
+    runProjectCommand,
+    runProjectCommandPayload,
+    refreshSceneState,
+    appendProjectLog,
+    fitViewAfterRenderPublish,
+    showNotice,
+  };
 }
 
 export function mountProduct(context) {
@@ -186,73 +78,50 @@ export async function handleRibbonCommand(context, commandId) {
   if (!view) {
     return;
   }
+  const ops = getProjectOps();
 
-  if (commandId === "machine.import") {
-    await chooseMachineFile(context, view, true);
-  } else if (commandId === "machine.parameters") {
-    saveMachineParameters(context, view);
-  } else if (commandId === "machine.tcp") {
-    saveMachineTCP(context, view);
-  } else if (commandId === "machine.jog") {
-    jogMachine(context, view, "positive");
-  } else if (commandId === "machine.home") {
-    runProjectCommand(context, view, "Machine.Home", {});
-  } else if (commandId === "machine.reset") {
-    runProjectCommand(context, view, "Machine.Reset", {});
-  } else if (commandId === "machine.limit-check") {
-    runProjectCommand(context, view, "Machine.CheckLimits", {});
-  } else if (commandId === "machine.reach-check") {
-    runProjectCommand(context, view, "Machine.CheckReach", {});
-  } else if (commandId === "workpiece.import") {
-    await chooseModelFile(context, view, true);
-  } else if (commandId === "toolpath.recognize-holes") {
-    runProjectCommand(context, view, "Toolpath.RecognizeLoops", {});
-  } else if (commandId === "toolpath.add-selection") {
-    runProjectCommand(context, view, "Toolpath.AddSelectionPath", {});
-  } else if (commandId === "toolpath.clear") {
-    runProjectCommand(context, view, "Toolpath.ClearProgram", {});
-  } else if (commandId === "toolpath.clear-selection") {
-    runProjectCommand(context, view, "Selection.PickTopology", { kind: "", id: 0, label: "" });
-  } else if (commandId === "toolpath.pick-edge") {
-    showNotice(context, view, "已进入 Edge 拾取意图：请在视口中选择边。");
-  } else if (commandId === "toolpath.pick-loop") {
-    showNotice(context, view, "已进入 Loop 拾取意图：请在视口中选择闭合环。");
-  } else if (commandId === "view.fit") {
+  if (await handleMachineRibbonCommand(context, view, commandId, ops)) {
+    return;
+  }
+  if (await handleWorkpieceRibbonCommand(context, view, commandId, ops)) {
+    return;
+  }
+  if (handleMachiningRibbonCommand(context, view, commandId, ops)) {
+    return;
+  }
+
+  if (commandId === "view.fit") {
     runProjectCommand(context, view, "CameraView.Fit", {});
+  } else if (commandId === "view.reset-layout") {
+    resetWorkbenchLayout(view);
+    showNotice(context, view, "布局已恢复默认尺寸。");
   } else {
     showNotice(context, view, `${findCommandTitle(commandId)} 功能入口已就位，等待后端能力接入。`);
   }
 }
 
-function getProjectView(projectId) {
-  if (!projectViews.has(projectId)) {
-    projectViews.set(projectId, {
-      scene: null,
-      pending: false,
-      error: "",
-      notice: "",
-      machineSourcePath: "",
-      sourcePath: "",
-      viewport: null,
-      viewportSceneProxy: null,
-      progress: null,
-    });
-  }
-  return projectViews.get(projectId);
-}
-
 function renderProject(context, view) {
-  const { mount, project } = context;
-  const tab = context.activeRibbonTabId || "machine";
+  const mount = resolveProjectMount(context);
+  const { project } = context;
+  if (!mount) {
+    return;
+  }
+  const tab = normalizeCamTab(context.activeRibbonTabId);
   const scene = view.scene ?? {};
+  reconcileSelectedMachine(view, scene);
   const topology = scene.topology ?? {};
+  const layout = getWorkbenchLayout(view);
 
   mount.innerHTML = `
-    <div class="cam-workbench">
+    <div class="cam-workbench" style="${renderWorkbenchLayoutStyle(layout)}">
       ${renderImportNotice(topology)}
       <aside class="cam-context-pane">
         ${renderLeftPane(tab, context, view)}
       </aside>
+      <div class="cam-splitter cam-splitter-left"
+           data-cam-resize-pane="left"
+           data-no-window-drag
+           title="拖拽调整左侧区域宽度"></div>
       <section class="cam-viewer">
         <div class="cam-viewer-head">
           <strong>${escapeText(project.projectName)}</strong>
@@ -265,6 +134,10 @@ function renderProject(context, view) {
           ${renderViewport(context, scene)}
         </div>
       </section>
+      <div class="cam-splitter cam-splitter-right"
+           data-cam-resize-pane="right"
+           data-no-window-drag
+           title="拖拽调整右侧区域宽度"></div>
       <aside class="cam-info-pane">
         ${renderRightPane(tab, context, view)}
       </aside>
@@ -273,6 +146,8 @@ function renderProject(context, view) {
       ${view.error ? `<div class="cam-status error">${escapeText(view.error)}</div>` : ""}
     </div>
   `;
+
+  attachWorkbenchResizeHandlers(mount, view);
 
   const pathInput = mount.querySelector("[data-cam-model-path]");
   pathInput?.addEventListener("input", () => {
@@ -283,11 +158,34 @@ function renderProject(context, view) {
   machinePathInput?.addEventListener("input", () => {
     view.machineSourcePath = machinePathInput.value;
   });
+  attachMachineTransformAutoApply(context, view, getProjectOps());
+  attachMachineJointLimitAutoApply(context, view, getProjectOps());
+  attachMachineAppearanceAutoApply(context, view, getProjectOps());
+  attachMachineToolTCPAutoApply(context, view, getProjectOps());
 
   mount.onclick = (event) => {
     const actionTarget = event.target instanceof Element ? event.target.closest("[data-cam-action]") : null;
     if (actionTarget && !actionTarget.hasAttribute("disabled")) {
-      runAction(context, view, actionTarget.dataset.camAction);
+      runAction(context, view, actionTarget.dataset.camAction, actionTarget);
+      return;
+    }
+
+    const machineDefinitionTarget = event.target instanceof Element ? event.target.closest("[data-cam-machine-definition-id]") : null;
+    if (machineDefinitionTarget) {
+      if (view.pending) {
+        return;
+      }
+      const machineDefinitionId = machineDefinitionTarget.dataset.camMachineDefinitionId ?? "";
+      selectMachineDefinitionAction(context, view, machineDefinitionId, getProjectOps());
+      return;
+    }
+
+    const machineInstanceTarget = event.target instanceof Element ? event.target.closest("[data-cam-machine-instance-id]") : null;
+    if (machineInstanceTarget) {
+      if (view.pending) {
+        return;
+      }
+      selectMachineInstanceAction(context, view, machineInstanceTarget.dataset.camMachineInstanceId ?? "", getProjectOps());
       return;
     }
 
@@ -299,11 +197,19 @@ function renderProject(context, view) {
 
     const machinePickTarget = event.target instanceof Element ? event.target.closest("[data-cam-machine-pick]") : null;
     if (machinePickTarget) {
-      runProjectCommand(context, view, "Selection.PickMachineObject", {
+      const id = Number(machinePickTarget.dataset.camMachineId ?? 0);
+      const entityId = String(machinePickTarget.dataset.camMachineEntityId ?? "").trim();
+      const payload = {
         kind: machinePickTarget.dataset.camMachineKind ?? "machine",
-        id: Number(machinePickTarget.dataset.camMachineId ?? 0),
+        entityId,
+        objectId: entityId,
+        machineId: machinePickTarget.dataset.camMachineRootId ?? "",
         label: machinePickTarget.dataset.camMachineLabel ?? "",
-      });
+      };
+      if (Number.isFinite(id) && id > 0) {
+        payload.id = id;
+      }
+      pickMachineObject(context, view, payload);
       return;
     }
 
@@ -316,464 +222,192 @@ function renderProject(context, view) {
     }
   };
 
+  const jobMachineSelect = mount.querySelector("[data-cam-job-machine-select]");
+  jobMachineSelect?.addEventListener("change", () => {
+    if (view.pending) {
+      return;
+    }
+    setJobMachineAction(context, view, jobMachineSelect.value, getProjectOps());
+  });
+
   mountRenderViewport(context, view);
+  scrollSelectedMachineTreeNodeIntoView(mount, view);
 }
 
 function renderLeftPane(tab, context, view) {
-  const scene = view.scene ?? {};
-  const machine = scene.machine ?? {};
-  const machines = scene.machines ?? [];
-  const model = scene.model ?? {};
-  const workpieces = scene.workpieces ?? [];
-  const toolpaths = scene.toolpaths ?? [];
-
   if (tab === "machine") {
-    return `
-      ${renderPanel("机器", renderMachineList(machines, machine.entityId))}
-      ${renderPanel("工位", `<div class="cam-list-row active"><strong>${escapeText(machine.workstationName || "默认工位")}</strong><small>第一版采用单机器单工位</small></div>`)}
-      ${renderPanel("Link", renderMachineLinkList(machine))}
-      ${renderPanel("Joint", renderMachineJointStructureList(machine))}
-      ${renderPanel("Visual", renderMachineVisualList(machine))}
-      ${renderPanel("轴位置", renderMachineJointList(machine))}
-    `;
+    return renderMachineLeftPane(context, view);
   }
 
   if (tab === "workpiece") {
-    return `
-      ${renderPanel("工件列表", renderWorkpieceList(workpieces, model.entityId))}
-      ${renderPanel("模型检查", `
-        <dl class="cam-facts">
-          <dt>拓扑</dt><dd>${scene.topology?.hasTopology ? "可用" : "未生成"}</dd>
-          <dt>面</dt><dd>${escapeText(scene.topology?.faceCount ?? 0)}</dd>
-          <dt>Loop</dt><dd>${escapeText(scene.topology?.loopCount ?? 0)}</dd>
-          <dt>边</dt><dd>${escapeText(scene.topology?.edgeCount ?? 0)}</dd>
-        </dl>
-      `)}
-    `;
+    return renderWorkpieceLeftPane(context, view);
   }
 
-  if (tab === "toolpath") {
-    return `
-      ${renderPanel("刀路列表", renderToolpathList(toolpaths))}
-      ${renderPanel("当前选择", renderSelection(scene.selection))}
-    `;
+  if (tab === "machining") {
+    return renderMachiningLeftPane(context, view);
   }
 
-  if (tab === "job") {
-    return `
-      ${renderPanel("作业列表", `
-        <div class="cam-list-row active"><strong>默认作业</strong><small>${escapeText(toolpaths.length)} 条理想刀路</small></div>
-      `)}
-      ${renderPanel("块与指令", `
-        <div class="cam-empty-row">可在这里组织刀路块、前指令和后指令。</div>
-      `)}
-    `;
-  }
-
-  return `
-    ${renderPanel("显示对象", `
-      <div class="cam-list-row active"><strong>工件</strong><small>显示</small></div>
-      <div class="cam-list-row active"><strong>刀路</strong><small>显示</small></div>
-      <div class="cam-list-row"><strong>机床</strong><small>未导入</small></div>
-    `)}
-    ${renderPanel("面板", `
-      <div class="cam-list-row active"><strong>左侧上下文</strong><small>显示</small></div>
-      <div class="cam-list-row active"><strong>右侧参数</strong><small>显示</small></div>
-    `)}
-  `;
+  return renderViewLeftPane(context, view);
 }
 
 function renderRightPane(tab, context, view) {
-  const scene = view.scene ?? {};
-  const machine = scene.machine ?? {};
-  const model = scene.model ?? {};
-  const workpieces = scene.workpieces ?? [];
-  const toolpaths = scene.toolpaths ?? [];
-
   if (tab === "machine") {
-    const disabled = view.pending ? "disabled" : "";
-    const sourcePath = view.machineSourcePath || machine.sourcePath || "";
-    return `
-      ${renderPanel("机器参数", `
-        <dl class="cam-facts">
-          <dt>结构</dt><dd>${escapeText(machine.descriptionFormat || "SDF")}</dd>
-          <dt>SDF</dt><dd>${escapeText(machine.sdfVersion || "-")}</dd>
-          <dt>模型</dt><dd>${machine.isLoaded ? escapeText(machine.modelName || machine.name || machine.entityId) : "未导入"}</dd>
-          <dt>Link</dt><dd>${escapeText(machine.links?.length ?? 0)}</dd>
-          <dt>Joint</dt><dd>${escapeText(machine.joints?.length ?? 0)}</dd>
-          <dt>Visual</dt><dd>${escapeText(machine.visuals?.length ?? 0)}</dd>
-          <dt>Collision</dt><dd>${escapeText(machine.collisions?.length ?? 0)}</dd>
-          <dt>状态</dt><dd>${escapeText(machine.status || "NotLoaded")}</dd>
-          <dt>检查</dt><dd>${escapeText(machine.lastCheckResult || "-")}</dd>
-        </dl>
-      `)}
-      ${renderPanel("导入", `
-        <div class="cam-file-strip">
-          <input class="cam-path-input" type="text" data-cam-machine-path value="${escapeAttr(sourcePath)}" placeholder="SDF/XML 机器描述文件路径" />
-          <button class="tool-button" type="button" data-cam-action="choose-machine" ${disabled}>浏览</button>
-          <button class="primary-button" type="button" data-cam-action="import-machine" ${disabled}>导入</button>
-        </div>
-        <div class="cam-hint">导入后解析 link、joint、visual、collision 和 material，并发布到三维视口。</div>
-      `)}
-      ${renderPanel("材质 / 插件", renderMachineMaterialSummary(machine))}
-      ${renderPanel("运动参数", `
-        <div class="cam-form-grid">
-          <label class="cam-field">
-            <span>最大速度</span>
-            <input class="cam-small-input" type="number" step="1" min="1" data-cam-machine-max-velocity value="${escapeAttr(formatNumber(machine.maxVelocity || 1000, 3))}" />
-          </label>
-          <label class="cam-field">
-            <span>最大加速度</span>
-            <input class="cam-small-input" type="number" step="1" min="1" data-cam-machine-max-acceleration value="${escapeAttr(formatNumber(machine.maxAcceleration || 2000, 3))}" />
-          </label>
-        </div>
-        <button class="tool-button" type="button" data-cam-action="save-machine-parameters" ${machine.isLoaded ? "" : "disabled"}>保存参数</button>
-      `)}
-      ${renderPanel("TCP", `
-        <div class="cam-form-grid three">
-          ${renderNumberField("X", "data-cam-machine-tcp-x", getArrayValue(machine.tcp, 0, 0))}
-          ${renderNumberField("Y", "data-cam-machine-tcp-y", getArrayValue(machine.tcp, 1, 0))}
-          ${renderNumberField("Z", "data-cam-machine-tcp-z", getArrayValue(machine.tcp, 2, 0))}
-          ${renderNumberField("光束 X", "data-cam-machine-beam-x", getArrayValue(machine.beamDirection, 0, 0))}
-          ${renderNumberField("光束 Y", "data-cam-machine-beam-y", getArrayValue(machine.beamDirection, 1, 0))}
-          ${renderNumberField("光束 Z", "data-cam-machine-beam-z", getArrayValue(machine.beamDirection, 2, 1))}
-        </div>
-        <button class="tool-button" type="button" data-cam-action="save-machine-tcp" ${machine.isLoaded ? "" : "disabled"}>保存 TCP</button>
-      `)}
-      ${renderPanel("点动", `
-        <div class="cam-jog-row">
-          <select class="cam-select" data-cam-machine-jog-axis>${renderMachineAxisOptions(machine)}</select>
-          <input class="cam-small-input" type="number" step="1" min="0.001" data-cam-machine-jog-delta value="10" />
-          <button class="tool-button" type="button" data-cam-action="machine-jog-negative" ${machine.isLoaded ? "" : "disabled"}>-</button>
-          <button class="tool-button" type="button" data-cam-action="machine-jog-positive" ${machine.isLoaded ? "" : "disabled"}>+</button>
-        </div>
-        <div class="cam-button-row">
-          <button class="tool-button" type="button" data-cam-action="home-machine" ${machine.isLoaded ? "" : "disabled"}>回零</button>
-          <button class="tool-button" type="button" data-cam-action="reset-machine" ${machine.isLoaded ? "" : "disabled"}>复位</button>
-          <button class="tool-button" type="button" data-cam-action="check-machine-limits" ${machine.isLoaded ? "" : "disabled"}>轴限位</button>
-          <button class="tool-button" type="button" data-cam-action="check-machine-reach" ${machine.isLoaded ? "" : "disabled"}>行程检查</button>
-        </div>
-      `)}
-    `;
+    return renderMachineRightPane(context, view);
   }
 
   if (tab === "workpiece") {
-    return `
-      ${renderPanel("导入工件", `
-        <div class="cam-file-strip">
-          <input class="cam-path-input" type="text" data-cam-model-path value="${escapeAttr(view.sourcePath || model.sourcePath || "")}" placeholder="STEP/STP/IGS/IGES 文件路径" />
-          <button class="tool-button" type="button" data-cam-action="choose-model" ${view.pending ? "disabled" : ""}>浏览</button>
-          <button class="primary-button" type="button" data-cam-action="import-model" ${view.pending ? "disabled" : ""}>导入</button>
-        </div>
-      `)}
-      ${renderPanel("工件属性", `
-        <dl class="cam-facts">
-          <dt>数量</dt><dd>${escapeText(workpieces.length)}</dd>
-          <dt>当前</dt><dd>${escapeText(model.entityId || "-")}</dd>
-          <dt>文件</dt><dd>${model.isLoaded ? escapeText(model.sourcePath) : "未导入"}</dd>
-        </dl>
-      `)}
-      ${renderPanel("支撑/夹具", `
-        <button class="tool-button" type="button" data-cam-action="support-placeholder">生成支架</button>
-        <button class="tool-button" type="button" data-cam-action="support-placeholder">导出支架 DXF</button>
-        <div class="cam-hint">支架拆单与排样交给平面激光 CAM 处理。</div>
-      `)}
-    `;
+    return renderWorkpieceRightPane(context, view);
   }
 
-  if (tab === "toolpath") {
-    return `
-      ${renderPanel("理想刀路", `
-        <dl class="cam-facts">
-          <dt>刀路</dt><dd>${escapeText(toolpaths.length)}</dd>
-          <dt>图层</dt><dd>切割图层</dd>
-          <dt>工艺</dt><dd>微联 / 引入引出</dd>
-        </dl>
-      `)}
-      ${renderPanel("选择与生成", `
-        ${renderSelection(scene.selection)}
-        <div class="cam-button-row">
-          <button class="tool-button" type="button" data-cam-action="recognize-loops" ${model.isLoaded && scene.topology?.hasTopology ? "" : "disabled"}>识别孔</button>
-          <button class="primary-button" type="button" data-cam-action="add-selection" ${scene.selection?.id ? "" : "disabled"}>生成刀路</button>
-          <button class="tool-button" type="button" data-cam-action="clear-toolpaths" ${toolpaths.length ? "" : "disabled"}>清空</button>
-        </div>
-      `)}
-    `;
+  if (tab === "machining") {
+    return renderMachiningRightPane(context, view);
   }
 
-  if (tab === "job") {
-    return `
-      ${renderPanel("当前作业", `
-        <dl class="cam-facts">
-          <dt>机床</dt><dd>当前单机器</dd>
-          <dt>刀路</dt><dd>${escapeText(toolpaths.length)}</dd>
-          <dt>状态</dt><dd>未规划</dd>
-        </dl>
-      `)}
-      ${renderPanel("运动与检查", `
-        <div class="cam-list-row"><strong>轨迹规划</strong><small>避奇异点 / 减少下刀 / 蛙跳</small></div>
-        <div class="cam-list-row"><strong>碰撞检测</strong><small>等待规划结果</small></div>
-        <div class="cam-list-row"><strong>运动仿真</strong><small>等待规划结果</small></div>
-      `)}
-      ${renderPanel("输出", `
-        <div class="cam-list-row"><strong>厂家</strong><small>待选择</small></div>
-        <button class="primary-button" type="button" data-cam-action="job-placeholder">生成 NC</button>
-      `)}
-    `;
-  }
-
-  return `
-    ${renderPanel("视图参数", `
-      <dl class="cam-facts">
-        <dt>相机</dt><dd>后端控制</dd>
-        <dt>拾取</dt><dd>视口对象</dd>
-        <dt>显示</dt><dd>实体 / 刀路 / 机床</dd>
-      </dl>
-    `)}
-  `;
+  return renderViewRightPane(context, view);
 }
 
-function renderPanel(title, content) {
-  return `
-    <section class="cam-panel">
-      <div class="cam-panel-title">${escapeText(title)}</div>
-      <div class="cam-panel-body">${content}</div>
-    </section>
-  `;
+function getWorkbenchLayout(view) {
+  view.layout ??= {};
+  view.layout.leftWidth = Number.isFinite(Number(view.layout.leftWidth))
+    ? Number(view.layout.leftWidth)
+    : DEFAULT_WORKBENCH_LAYOUT.leftWidth;
+  view.layout.rightWidth = Number.isFinite(Number(view.layout.rightWidth))
+    ? Number(view.layout.rightWidth)
+    : DEFAULT_WORKBENCH_LAYOUT.rightWidth;
+  return view.layout;
 }
 
-function renderProgress(progress = {}) {
-  return `
-    <div class="cam-progress-backdrop" aria-live="polite" aria-modal="true" role="dialog">
-      <section class="cam-progress-dialog">
-        <div class="cam-progress-gauge" aria-hidden="true">
-          <div class="cam-progress-face">
-            ${Array.from({ length: 32 }, (_, index) => `<span style="--tick:${index}"></span>`).join("")}
-            <div class="cam-progress-sweep"></div>
-            <div class="cam-progress-needle"></div>
-            <div class="cam-progress-core">
-              <strong>RUN</strong>
-              <small>${escapeText(progress.mode ?? "CAM")}</small>
-            </div>
-          </div>
-        </div>
-        <div class="cam-progress-copy">
-          <strong>${escapeText(progress.title ?? "项目任务")}</strong>
-          <span>${escapeText(progress.detail ?? "正在等待后台任务完成")}</span>
-          <div class="cam-progress-stage">
-            <span>${escapeText(progress.stage ?? "后台执行")}</span>
-            <span>${escapeText(progress.mode ?? "CAM")}</span>
-          </div>
-        </div>
-      </section>
-    </div>
-  `;
+function resetWorkbenchLayout(view) {
+  view.layout = { ...DEFAULT_WORKBENCH_LAYOUT };
 }
 
-function renderSelection(selection = {}) {
-  if (!selection.id) {
-    return `<div class="cam-empty-row">未选择对象。</div>`;
-  }
-  return `
-    <dl class="cam-facts">
-      <dt>类型</dt><dd>${escapeText(selection.kind)}</dd>
-      <dt>ID</dt><dd>${escapeText(selection.id)}</dd>
-      <dt>名称</dt><dd>${escapeText(selection.label)}</dd>
-    </dl>
-  `;
+function renderWorkbenchLayoutStyle(layout) {
+  return [
+    `--cam-left-width:${escapeText(Math.round(layout.leftWidth))}px`,
+    `--cam-right-width:${escapeText(Math.round(layout.rightWidth))}px`,
+  ].join(";");
 }
 
-function renderMachineList(machines, activeMachineId) {
-  if (!machines.length) {
-    return `<div class="cam-empty-row">未导入机器。请导入 SDF 机器描述文件。</div>`;
+function attachWorkbenchResizeHandlers(mount, view) {
+  const handles = mount.querySelectorAll("[data-cam-resize-pane]");
+  for (const handle of handles) {
+    handle.addEventListener("pointerdown", (event) => beginWorkbenchPaneResize(event, mount, view));
   }
-
-  return `
-    <div class="cam-list">
-      ${machines.map((item) => {
-        const isActive = String(item.entityId ?? "") === String(activeMachineId ?? "");
-        return `
-          <div class="cam-list-row ${isActive ? "active" : ""}">
-            <strong>${escapeText(item.name || item.sourcePath || item.entityId)}</strong>
-            <small>${escapeText(item.sourcePath || "SDF 机器描述")}</small>
-          </div>
-        `;
-      }).join("")}
-    </div>
-  `;
 }
 
-function renderMachineLinkList(machine = {}) {
-  const links = machine.links ?? [];
-  if (!machine.isLoaded) {
-    return `<div class="cam-empty-row">机器导入后显示 Link。</div>`;
+function beginWorkbenchPaneResize(event, mount, view) {
+  if (event.button !== 0) {
+    return;
   }
-  if (!links.length) {
-    return `<div class="cam-empty-row">SDF 中没有 link。</div>`;
+
+  const handle = event.currentTarget;
+  if (!(handle instanceof Element)) {
+    return;
   }
-  return `
-    <div class="cam-list compact">
-      ${links.slice(0, 24).map((link, index) => {
-        const name = link?.name || `link ${index + 1}`;
-        const visualCount = link?.visuals?.length ?? 0;
-        const collisionCount = link?.collisions?.length ?? 0;
-        return `
-          <button class="cam-list-row" type="button"
-                  data-cam-machine-pick
-                  data-cam-machine-kind="machine.link"
-                  data-cam-machine-id="${escapeAttr(index + 1)}"
-                  data-cam-machine-label="${escapeAttr(name)}">
-            <strong>${escapeText(name)}</strong>
-            <small>${escapeText(visualCount)} visual / ${escapeText(collisionCount)} collision</small>
-          </button>
-        `;
-      }).join("")}
-      ${links.length > 24 ? `<div class="cam-empty-row">还有 ${escapeText(links.length - 24)} 个 link 未展开。</div>` : ""}
-    </div>
-  `;
+
+  const side = handle.dataset.camResizePane;
+  if (side !== "left" && side !== "right") {
+    return;
+  }
+
+  const workbench = mount.querySelector(".cam-workbench");
+  if (!(workbench instanceof HTMLElement)) {
+    return;
+  }
+
+  event.preventDefault();
+  try {
+    handle.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Synthetic pointer events used by smoke tests may not create a capturable pointer.
+  }
+  const startLayout = { ...getWorkbenchLayout(view) };
+  const resizeState = {
+    side,
+    startX: event.clientX,
+    startLayout,
+    workbench,
+  };
+
+  document.body.classList.add("cam-pane-resizing");
+
+  const onPointerMove = (moveEvent) => {
+    const deltaX = moveEvent.clientX - resizeState.startX;
+    const nextLayout = { ...resizeState.startLayout };
+    if (resizeState.side === "left") {
+      nextLayout.leftWidth = resizeState.startLayout.leftWidth + deltaX;
+    } else {
+      nextLayout.rightWidth = resizeState.startLayout.rightWidth - deltaX;
+    }
+    applyWorkbenchLayout(view, resizeState.workbench, nextLayout, resizeState.side);
+  };
+
+  const endResize = () => {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", endResize);
+    window.removeEventListener("pointercancel", endResize);
+    document.body.classList.remove("cam-pane-resizing");
+    try {
+      handle.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // Pointer capture may be absent when the resize was driven by automation.
+    }
+    view.viewport?.resize?.();
+  };
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", endResize, { once: true });
+  window.addEventListener("pointercancel", endResize, { once: true });
 }
 
-function renderMachineJointStructureList(machine = {}) {
-  const joints = machine.joints ?? [];
-  if (!machine.isLoaded) {
-    return `<div class="cam-empty-row">机器导入后显示 Joint。</div>`;
-  }
-  if (!joints.length) {
-    return `<div class="cam-empty-row">SDF 中没有 joint。</div>`;
-  }
-  return `
-    <div class="cam-list compact">
-      ${joints.slice(0, 24).map((joint, index) => {
-        const name = joint?.name || `joint ${index + 1}`;
-        const type = joint?.type || "unknown";
-        const parent = joint?.parent || "-";
-        const child = joint?.child || "-";
-        return `
-          <button class="cam-list-row" type="button"
-                  data-cam-machine-pick
-                  data-cam-machine-kind="machine.joint"
-                  data-cam-machine-id="${escapeAttr(index + 1)}"
-                  data-cam-machine-label="${escapeAttr(name)}">
-            <strong>${escapeText(name)} · ${escapeText(type)}</strong>
-            <small>${escapeText(parent)} → ${escapeText(child)}</small>
-          </button>
-        `;
-      }).join("")}
-      ${joints.length > 24 ? `<div class="cam-empty-row">还有 ${escapeText(joints.length - 24)} 个 joint 未展开。</div>` : ""}
-    </div>
-  `;
+function applyWorkbenchLayout(view, workbench, nextLayout, activeSide) {
+  const normalized = normalizeWorkbenchLayout(nextLayout, workbench.getBoundingClientRect().width, activeSide);
+  view.layout = normalized;
+  workbench.style.setProperty("--cam-left-width", `${Math.round(normalized.leftWidth)}px`);
+  workbench.style.setProperty("--cam-right-width", `${Math.round(normalized.rightWidth)}px`);
 }
 
-function renderMachineVisualList(machine = {}) {
-  const visuals = machine.visuals ?? [];
-  if (!machine.isLoaded) {
-    return `<div class="cam-empty-row">机器导入后显示 Visual。</div>`;
+function normalizeWorkbenchLayout(layout, width, activeSide = "") {
+  const limits = WORKBENCH_LAYOUT_LIMITS;
+  const availableWidth = Number.isFinite(width) && width > 0 ? width : 1200;
+  const maxSidebarTotal = Math.max(
+    limits.minLeftWidth + limits.minRightWidth,
+    availableWidth - limits.minViewerWidth - limits.splitterTotalWidth,
+  );
+
+  let leftWidth = clampNumber(
+    Number(layout.leftWidth),
+    limits.minLeftWidth,
+    Math.min(limits.maxLeftWidth, maxSidebarTotal - limits.minRightWidth),
+  );
+  let rightWidth = clampNumber(
+    Number(layout.rightWidth),
+    limits.minRightWidth,
+    Math.min(limits.maxRightWidth, maxSidebarTotal - limits.minLeftWidth),
+  );
+
+  const overflow = leftWidth + rightWidth - maxSidebarTotal;
+  if (overflow > 0) {
+    if (activeSide === "left") {
+      leftWidth = Math.max(limits.minLeftWidth, leftWidth - overflow);
+    } else if (activeSide === "right") {
+      rightWidth = Math.max(limits.minRightWidth, rightWidth - overflow);
+    } else {
+      const half = overflow / 2;
+      leftWidth = Math.max(limits.minLeftWidth, leftWidth - half);
+      rightWidth = Math.max(limits.minRightWidth, rightWidth - (overflow - half));
+    }
   }
-  if (!visuals.length) {
-    return `<div class="cam-empty-row">SDF 中没有 visual。</div>`;
-  }
-  return `
-    <div class="cam-list compact">
-      ${visuals.slice(0, 24).map((visual, index) => {
-        const name = visual?.name || `visual ${index + 1}`;
-        const linkName = visual?.linkName || "-";
-        const geometryType = visual?.geometry?.type || "unknown";
-        const material = describeMaterial(visual?.material);
-        return `
-          <button class="cam-list-row" type="button"
-                  data-cam-machine-pick
-                  data-cam-machine-kind="machine.visual"
-                  data-cam-machine-id="${escapeAttr(index + 1)}"
-                  data-cam-machine-label="${escapeAttr(`${linkName}/${name}`)}">
-            <strong>${escapeText(name)} · ${escapeText(geometryType)}</strong>
-            <small>${escapeText(linkName)} · ${escapeText(material)}</small>
-          </button>
-        `;
-      }).join("")}
-      ${visuals.length > 24 ? `<div class="cam-empty-row">还有 ${escapeText(visuals.length - 24)} 个 visual 未展开。</div>` : ""}
-    </div>
-  `;
+
+  return {
+    leftWidth: Math.round(leftWidth),
+    rightWidth: Math.round(rightWidth),
+  };
 }
 
-function renderMachineMaterialSummary(machine = {}) {
-  if (!machine.isLoaded) {
-    return `<div class="cam-empty-row">机器导入后显示材质摘要。</div>`;
-  }
-  const materials = machine.materials ?? [];
-  const includes = machine.includes ?? [];
-  const frames = machine.frames ?? [];
-  const plugins = machine.plugins ?? [];
-  return `
-    <dl class="cam-facts">
-      <dt>Material</dt><dd>${escapeText(materials.length)}</dd>
-      <dt>Include</dt><dd>${escapeText(includes.length)}</dd>
-      <dt>Frame</dt><dd>${escapeText(frames.length)}</dd>
-      <dt>Plugin</dt><dd>${escapeText(plugins.length)}</dd>
-    </dl>
-    ${materials.length ? `
-      <div class="cam-list compact">
-        ${materials.slice(0, 8).map((material, index) => `
-          <div class="cam-list-row">
-            <strong>${escapeText(material?.linkName || "-")} / ${escapeText(material?.visualName || `material ${index + 1}`)}</strong>
-            <small>${escapeText(describeMaterial(material))}</small>
-          </div>
-        `).join("")}
-      </div>
-    ` : ""}
-  `;
-}
-
-function describeMaterial(material) {
-  if (!material) {
-    return "默认材质";
-  }
-  if (material.script?.name) {
-    return `script: ${material.script.name}`;
-  }
-  const diffuse = material.diffuse ?? [];
-  if (diffuse.length >= 3) {
-    return `rgba(${formatNumber(diffuse[0], 2)}, ${formatNumber(diffuse[1], 2)}, ${formatNumber(diffuse[2], 2)}, ${formatNumber(diffuse[3] ?? 1, 2)})`;
-  }
-  return "material";
-}
-
-function renderMachineJointList(machine = {}) {
-  if (!machine.isLoaded) {
-    return `<div class="cam-empty-row">机器导入后显示轴位置。</div>`;
-  }
-
-  const names = machine.jointNames ?? [];
-  if (!names.length) {
-    return `<div class="cam-empty-row">SDF 中没有可点动的运动关节。</div>`;
-  }
-  const positions = machine.jointPositions ?? [];
-  const lowerLimits = machine.jointLowerLimits ?? [];
-  const upperLimits = machine.jointUpperLimits ?? [];
-  return `
-    <div class="cam-joint-grid">
-      ${names.map((name, index) => `
-        <div class="cam-joint-row">
-          <strong>${escapeText(name)}</strong>
-          <span>${escapeText(formatNumber(getArrayValue(positions, index, 0), 3))}</span>
-          <small>${escapeText(formatNumber(getArrayValue(lowerLimits, index, 0), 0))} ~ ${escapeText(formatNumber(getArrayValue(upperLimits, index, 0), 0))}</small>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
-function renderMachineAxisOptions(machine = {}) {
-  const names = machine.jointNames?.length ? machine.jointNames : ["X", "Y", "Z", "A", "C"];
-  return names.map((name) => `<option value="${escapeAttr(name)}">${escapeText(name)}</option>`).join("");
-}
-
-function renderNumberField(label, attrName, value) {
-  return `
-    <label class="cam-field">
-      <span>${escapeText(label)}</span>
-      <input class="cam-small-input" type="number" step="0.001" ${attrName} value="${escapeAttr(formatNumber(value, 3))}" />
-    </label>
-  `;
+function clampNumber(value, min, max) {
+  const finite = Number.isFinite(value) ? value : min;
+  return Math.max(min, Math.min(max, finite));
 }
 
 function renderImportNotice(topology) {
@@ -794,6 +428,15 @@ function renderViewport(context, scene) {
     return `
       <div class="cam-render-viewport-shell">
         <div class="cam-render-viewport" data-cam-render-viewport></div>
+        <div class="cam-viewcube" data-no-window-drag aria-label="视角切换">
+          <div class="cam-viewcube-cube" aria-hidden="false">
+            <button class="cam-viewcube-face cam-viewcube-face-top" type="button" data-cam-action="view-standard" data-cam-view="top" title="顶视图">TOP</button>
+            <button class="cam-viewcube-face cam-viewcube-face-front" type="button" data-cam-action="view-standard" data-cam-view="front" title="前视图">FRONT</button>
+            <button class="cam-viewcube-face cam-viewcube-face-right" type="button" data-cam-action="view-standard" data-cam-view="right" title="右视图">RIGHT</button>
+            <button class="cam-viewcube-face cam-viewcube-face-left" type="button" data-cam-action="view-standard" data-cam-view="left" title="左视图">LEFT</button>
+          </div>
+          <button class="cam-viewcube-iso" type="button" data-cam-action="view-standard" data-cam-view="iso" title="等轴测">ISO</button>
+        </div>
       </div>
     `;
   }
@@ -802,7 +445,7 @@ function renderViewport(context, scene) {
     return `
       <div class="cam-empty-model">
         <strong>三维线条切割 CAM</strong>
-        <span>请在“工件”大区导入 STEP / IGS 工件文件</span>
+        <span>请先准备机床定义和工件资源，然后进入“加工”大区编程</span>
       </div>
     `;
   }
@@ -844,7 +487,8 @@ function renderViewport(context, scene) {
 }
 
 function mountRenderViewport(context, view) {
-  const host = context.mount?.querySelector?.("[data-cam-render-viewport]");
+  const mount = resolveProjectMount(context);
+  const host = mount?.querySelector?.("[data-cam-render-viewport]");
   if (!host) {
     return;
   }
@@ -861,330 +505,68 @@ function mountRenderViewport(context, view) {
     view.viewportSceneProxy = context.sceneProxy;
   }
   view.viewport.mount(host);
+  syncViewportSelection(view, view.scene);
+  exposeLaserCamAutomation(context, view, {
+    importMachineDefinition: (commandContext, commandView, sourcePath) =>
+      importMachinePathAction(commandContext, commandView, sourcePath, getProjectOps()),
+    setMachineInstanceEnabled: (commandContext, commandView, machineEntityId, enabled) =>
+      setMachineInstanceEnabledAction(commandContext, commandView, machineEntityId, enabled, getProjectOps()),
+    setJobMachine: (commandContext, commandView, machineEntityId) =>
+      setJobMachineAction(commandContext, commandView, machineEntityId, getProjectOps()),
+    pickMachineObject: (commandContext, commandView, payload) =>
+      pickMachineObject(commandContext, commandView, payload),
+    setMachineElementAppearance: (commandContext, commandView, payload) =>
+      runProjectCommandPayload(commandContext, commandView, "Machine.SetElementAppearance", payload, { timeoutMs: 10000 }),
+    setStandardCameraView: (commandContext, commandView, viewName) =>
+      runProjectCommand(commandContext, commandView, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 }),
+    fitView: (commandContext, commandView) => runProjectCommand(commandContext, commandView, "CameraView.Fit", {}),
+  });
   view.viewport.refreshAll();
 }
 
-function renderFace(face, selectedKey, index) {
-  const points = (face.points ?? []).map((point) => `${point.x},${point.y}`).join(" ");
-  const key = `face:${face.id}`;
-  const selected = key === selectedKey ? " selected" : "";
-  const fill = index === 0 ? "url(#cam-face)" : "url(#cam-side)";
-  return `
-    <polygon class="cam-face${selected}"
-             points="${escapeAttr(points)}"
-             fill="${fill}"
-             data-cam-pick
-             data-cam-kind="face"
-             data-cam-id="${escapeAttr(face.id)}"
-             data-cam-label="${escapeAttr(face.label)}" />
-  `;
+function resolveProjectMount(context) {
+  const liveMount = document.querySelector("[data-product-surface='project']");
+  if (liveMount) {
+    context.mount = liveMount;
+    return liveMount;
+  }
+  return context.mount?.isConnected ? context.mount : null;
 }
 
-function renderLoop(loop, selectedKey) {
-  if (!Number(loop.radius)) {
-    return "";
-  }
-  const key = `loop:${loop.id}`;
-  const selected = key === selectedKey ? " selected" : "";
-  return `
-    <circle class="cam-loop${selected}"
-            cx="${escapeAttr(loop.center?.x ?? 0)}"
-            cy="${escapeAttr(loop.center?.y ?? 0)}"
-            r="${escapeAttr(loop.radius)}"
-            data-cam-pick
-            data-cam-kind="loop"
-            data-cam-id="${escapeAttr(loop.id)}"
-            data-cam-label="${escapeAttr(loop.label)}" />
-    <text class="cam-loop-label" x="${escapeAttr((loop.center?.x ?? 0) - 22)}" y="${escapeAttr((loop.center?.y ?? 0) + 4)}">${escapeText(loop.label)}</text>
-  `;
-}
-
-function renderEdge(edge, selectedKey) {
-  const points = (edge.points ?? []).map((point) => `${point.x},${point.y}`).join(" ");
-  const key = `edge:${edge.id}`;
-  const selected = key === selectedKey ? " selected" : "";
-  return `
-    <polyline class="cam-edge${selected}"
-              points="${escapeAttr(points)}"
-              data-cam-pick
-              data-cam-kind="edge"
-              data-cam-id="${escapeAttr(edge.id)}"
-              data-cam-label="${escapeAttr(edge.label)}" />
-  `;
-}
-
-function renderToolpathOverlay(scene, item, index) {
-  const color = index % 2 === 0 ? "#f8d66d" : "#7ee6a8";
-  const topology = findTopologyObject(scene, item.topologyKind, item.topologyId);
-  if (!topology) {
-    return "";
-  }
-  if (item.topologyKind === "loop" && Number(topology.radius)) {
-    return `<circle class="cam-toolpath" cx="${escapeAttr(topology.center?.x ?? 0)}" cy="${escapeAttr(topology.center?.y ?? 0)}" r="${escapeAttr(Number(topology.radius) + 10)}" stroke="${color}" />`;
-  }
-  if (item.topologyKind === "edge") {
-    const points = (topology.points ?? []).map((point) => `${point.x},${point.y}`).join(" ");
-    return `<polyline class="cam-toolpath" points="${escapeAttr(points)}" stroke="${color}" />`;
-  }
-  if (item.topologyKind === "face") {
-    const points = (topology.points ?? []).map((point) => `${point.x},${point.y}`).join(" ");
-    return `<polygon class="cam-toolpath-fill" points="${escapeAttr(points)}" stroke="${color}" />`;
-  }
-  return "";
-}
-
-function findTopologyObject(scene, kind, id) {
-  const list = kind === "face"
-    ? scene.faces
-    : kind === "loop"
-      ? scene.loops
-      : kind === "edge"
-        ? scene.edges
-        : [];
-  return (list ?? []).find((item) => String(item.id) === String(id)) ?? null;
-}
-
-function renderWorkpieceList(workpieces, activeWorkpieceId) {
-  if (!workpieces.length) {
-    return `<div class="cam-empty-row">暂无工件。</div>`;
-  }
-
-  return `
-    <div class="cam-list">
-      ${workpieces.map((item, index) => {
-        const isActive = String(item.entityId ?? "") === String(activeWorkpieceId ?? "");
-        return `
-          <button class="cam-list-row ${isActive ? "active" : ""}"
-                  type="button"
-                  data-cam-workpiece-id="${escapeAttr(item.entityId)}">
-            <strong>${escapeText(index + 1)}. ${escapeText(item.name || item.sourcePath || item.entityId)}</strong>
-            <small>${escapeText(item.sourcePath || item.modelResourceId || "")}</small>
-          </button>
-        `;
-      }).join("")}
-    </div>
-  `;
-}
-
-function renderToolpathList(toolpaths) {
-  if (!toolpaths.length) {
-    return `<div class="cam-empty-row">暂无刀路。</div>`;
-  }
-
-  return `
-    <div class="cam-list">
-      ${toolpaths.map((item) => `
-        <div class="cam-list-row">
-          <strong>#${escapeText(item.id)} ${escapeText(item.label)}</strong>
-          <small>${escapeText(item.operation)} · ${escapeText(item.source)}</small>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
-function runAction(context, view, action) {
-  if (action === "choose-machine") {
-    chooseMachineFile(context, view, false);
+function runAction(context, view, action, actionTarget = null) {
+  const ops = getProjectOps();
+  if (action === "view-standard") {
+    const viewName = String(actionTarget?.dataset?.camView ?? "iso").trim() || "iso";
+    runProjectCommand(context, view, "CameraView.SetStandard", { view: viewName });
     return;
   }
-
-  if (action === "import-machine") {
-    const input = context.mount?.querySelector?.("[data-cam-machine-path]");
-    const sourcePath = String(input?.value ?? view.machineSourcePath ?? "").trim();
-    importMachinePath(context, view, sourcePath);
+  if (handleMachineAction(context, view, action, actionTarget, ops)) {
     return;
   }
-
-  if (action === "save-machine-parameters") {
-    saveMachineParameters(context, view);
+  if (handleWorkpieceAction(context, view, action, ops)) {
     return;
   }
-
-  if (action === "save-machine-tcp") {
-    saveMachineTCP(context, view);
+  if (handleMachiningAction(context, view, action, ops)) {
     return;
   }
-
-  if (action === "machine-jog-negative" || action === "machine-jog-positive") {
-    jogMachine(context, view, action === "machine-jog-negative" ? "negative" : "positive");
-    return;
-  }
-
-  if (action === "home-machine") {
-    runProjectCommand(context, view, "Machine.Home", {});
-    return;
-  }
-
-  if (action === "reset-machine") {
-    runProjectCommand(context, view, "Machine.Reset", {});
-    return;
-  }
-
-  if (action === "check-machine-limits") {
-    runProjectCommand(context, view, "Machine.CheckLimits", {});
-    return;
-  }
-
-  if (action === "check-machine-reach") {
-    runProjectCommand(context, view, "Machine.CheckReach", {});
-    return;
-  }
-
-  if (action === "choose-model") {
-    chooseModelFile(context, view, false);
-    return;
-  }
-
-  if (action === "import-model") {
-    const input = context.mount?.querySelector?.("[data-cam-model-path]");
-    const sourcePath = String(input?.value ?? view.sourcePath ?? "").trim();
-    importModelPath(context, view, sourcePath);
-  } else if (action === "recognize-loops") {
-    runProjectCommand(context, view, "Toolpath.RecognizeLoops", {});
-  } else if (action === "add-selection") {
-    runProjectCommand(context, view, "Toolpath.AddSelectionPath", {});
-  } else if (action === "clear-toolpaths") {
-    runProjectCommand(context, view, "Toolpath.ClearProgram", {});
-  } else {
-    showNotice(context, view, "该功能入口已就位，等待后端能力接入。");
-  }
-}
-
-async function chooseMachineFile(context, view, importAfterChoose) {
-  const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge ?? null;
-  if (typeof bridge?.openFileDialog !== "function") {
-    view.error = "当前宿主没有提供文件选择能力";
-    renderProject(context, view);
-    return;
-  }
-
-  try {
-    const path = await bridge.openFileDialog({
-      title: "选择机器描述文件",
-      filters: [
-        { name: "SDF Machine", extensions: ["sdf", "xml"] },
-      ],
-    });
-    if (!path) {
-      return;
-    }
-    appendProjectLog(context, "info", `选择 SDF 机器文件：${path}`);
-    view.machineSourcePath = path;
-    view.error = "";
-    if (importAfterChoose) {
-      importMachinePath(context, view, path);
-      return;
-    }
-  } catch (error) {
-    view.error = error?.message ?? String(error);
-  }
-  renderProject(context, view);
-}
-
-async function chooseModelFile(context, view, importAfterChoose) {
-  const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge ?? null;
-  if (typeof bridge?.openFileDialog !== "function") {
-    view.error = "当前宿主没有提供文件选择能力";
-    renderProject(context, view);
-    return;
-  }
-
-  try {
-    const path = await bridge.openFileDialog({
-      title: "选择工件",
-      filters: [
-        { name: "CAD Model", extensions: ["step", "stp", "igs", "iges"] },
-      ],
-    });
-    if (!path) {
-      return;
-    }
-    appendProjectLog(context, "info", `选择工件模型：${path}`);
-    view.sourcePath = path;
-    view.error = "";
-    if (importAfterChoose) {
-      importModelPath(context, view, path);
-      return;
-    }
-  } catch (error) {
-    view.error = error?.message ?? String(error);
-  }
-  renderProject(context, view);
-}
-
-function importModelPath(context, view, sourcePath) {
-  const path = String(sourcePath ?? "").trim();
-  view.sourcePath = path;
-  if (!path) {
-    view.error = "请输入 STEP/STP/IGS/IGES 文件路径";
-    renderProject(context, view);
-    return;
-  }
-  runProjectCommand(context, view, "Workpiece.Import", { sourcePath: path }, { timeoutMs: 120000 })
-    .then((ok) => ok ? fitViewAfterRenderPublish(context, view) : null);
-}
-
-function importMachinePath(context, view, sourcePath) {
-  const path = String(sourcePath ?? "").trim();
-  view.machineSourcePath = path;
-  if (!path) {
-    view.error = "请输入 SDF/XML 机器描述文件路径";
-    renderProject(context, view);
-    return;
-  }
-  runProjectCommand(context, view, "Machine.Import", { sourcePath: path }, { timeoutMs: 60000 })
-    .then((ok) => ok ? fitViewAfterRenderPublish(context, view) : null);
-}
-
-function saveMachineParameters(context, view) {
-  const maxVelocity = readNumberInput(context, "[data-cam-machine-max-velocity]", 1000);
-  const maxAcceleration = readNumberInput(context, "[data-cam-machine-max-acceleration]", 2000);
-  runProjectCommand(context, view, "Machine.SetParameters", {
-    maxVelocity,
-    maxAcceleration,
-  });
-}
-
-function saveMachineTCP(context, view) {
-  runProjectCommand(context, view, "Machine.SetTCP", {
-    tcp: [
-      readNumberInput(context, "[data-cam-machine-tcp-x]", 0),
-      readNumberInput(context, "[data-cam-machine-tcp-y]", 0),
-      readNumberInput(context, "[data-cam-machine-tcp-z]", 0),
-    ],
-    beamDirection: [
-      readNumberInput(context, "[data-cam-machine-beam-x]", 0),
-      readNumberInput(context, "[data-cam-machine-beam-y]", 0),
-      readNumberInput(context, "[data-cam-machine-beam-z]", 1),
-    ],
-  });
-}
-
-function jogMachine(context, view, direction) {
-  const axis = context.mount?.querySelector?.("[data-cam-machine-jog-axis]")?.value || "X";
-  const distance = Math.abs(readNumberInput(context, "[data-cam-machine-jog-delta]", 10));
-  const delta = direction === "negative" ? -distance : distance;
-  runProjectCommand(context, view, "Machine.Jog", { axis, delta });
-}
-
-function readNumberInput(context, selector, fallback) {
-  const value = Number(context.mount?.querySelector?.(selector)?.value);
-  return Number.isFinite(value) ? value : fallback;
+  showNotice(context, view, "该功能入口已就位，等待后端能力接入。");
 }
 
 function handleViewportPick(context, view, userData, hit) {
   if (!userData || !hit) {
     view.error = "未命中可选择对象";
+    selectSceneObjectLocally(view, "");
     renderProject(context, view);
     return;
   }
 
-  if (Number(userData.renderClass) === 4 && userData.objectId) {
-    runProjectCommand(context, view, "Selection.PickMachineObject", {
-      objectId: Number(userData.objectId),
-      kind: "machine.visual",
-      label: `machine object ${userData.objectId}`,
+  const objectId = String(userData.objectId ?? "").trim();
+  if (Number(userData.renderClass) === 4 && objectId && objectId !== "0") {
+    pickMachineObject(context, view, {
+      objectId,
+      entityId: objectId,
+      kind: "machine.part",
+      label: `machine object ${objectId}`,
     });
     return;
   }
@@ -1193,6 +575,7 @@ function handleViewportPick(context, view, userData, hit) {
   if (Number.isInteger(faceIndex) && faceIndex >= 0) {
     const face = findFaceByTriangleIndex(view.scene, faceIndex);
     if (face) {
+      selectSceneObjectLocally(view, "");
       runProjectCommand(context, view, "Selection.PickTopology", {
         kind: "face",
         id: Number(face.id),
@@ -1203,6 +586,7 @@ function handleViewportPick(context, view, userData, hit) {
   }
 
   view.error = "当前渲染数据缺少 edge/loop 拾取映射，已命中工件但无法定位拓扑对象";
+  selectSceneObjectLocally(view, "");
   renderProject(context, view);
 }
 
@@ -1221,14 +605,81 @@ function findFaceByTriangleIndex(scene, faceIndex) {
 }
 
 function refreshScene(context, view) {
-  runProjectCommand(context, view, "Scene.Get", {});
+  refreshSceneState(context, view);
 }
 
-async function runProjectCommand(context, view, command, payload, options = {}) {
+async function refreshSceneState(context, view) {
   if (!context.sceneProxy) {
     return false;
   }
 
+  view.pending = true;
+  view.error = "";
+  renderProject(context, view);
+  try {
+    const scene = {};
+    for (const command of [
+      "Job.Get",
+      "MachineDefinition.List",
+      "Machine.List",
+      "Workpiece.List",
+      "Toolpath.List",
+      "Selection.Get",
+    ]) {
+      mergeScenePayload(scene, await context.sceneProxy.execute(command, {}, { timeoutMs: 30000 }));
+    }
+    scene.readiness = buildReadiness(scene);
+    view.scene = scene;
+    syncViewportSelection(view, scene);
+    await refreshSelectedMachineElement(context, view, scene);
+    return true;
+  } catch (error) {
+    view.error = error?.message ?? String(error);
+    appendProjectLog(context, "error", `刷新项目状态失败：${view.error}`);
+    return false;
+  } finally {
+    view.pending = false;
+    renderProject(context, view);
+  }
+}
+
+async function refreshSelectedMachineElement(context, view, scene = {}) {
+  const selection = scene.selection ?? {};
+  const kind = String(selection.kind ?? "");
+  const entityId = String(selection.entityId ?? "").trim();
+  if (!entityId || !kind.startsWith("machine")) {
+    scene.machineElement = null;
+    return;
+  }
+
+  try {
+    mergeScenePayload(scene, await context.sceneProxy.execute("Machine.GetElement", { entityId }, { timeoutMs: 10000 }));
+    syncViewportSelection(view, scene);
+  } catch (error) {
+    scene.machineElement = null;
+    appendProjectLog(context, "error", `读取机床元素属性失败：${error?.message ?? String(error)}`);
+  }
+}
+
+async function runProjectCommand(context, view, command, payload, options = {}) {
+  const { refreshScene: shouldRefreshScene = shouldRefreshSceneAfterCommand(command), ...executeOptions } = options;
+  const result = await runProjectCommandPayload(context, view, command, payload, { ...executeOptions, expectScene: false });
+  if (result.ok) {
+    mergeScenePayload(view.scene ??= {}, result.payload);
+    syncViewportSelection(view, view.scene);
+    if (shouldRefreshScene) {
+      await refreshSceneState(context, view);
+    }
+  }
+  return result.ok;
+}
+
+async function runProjectCommandPayload(context, view, command, payload, options = {}) {
+  if (!context.sceneProxy) {
+    return { ok: false, payload: null };
+  }
+
+  const { expectScene = false, ...executeOptions } = options;
   appendProjectLog(context, "info", makeCommandStartLog(command, payload));
   const showProgress = isLongProjectCommand(command);
   const progress = showProgress ? createCommandProgress(command) : null;
@@ -1242,19 +693,31 @@ async function runProjectCommand(context, view, command, payload, options = {}) 
   renderProject(context, view);
   const progressStartedAt = performance.now();
   try {
-    const execute = () => context.sceneProxy.execute(command, payload, options);
+    const execute = () => context.sceneProxy.execute(command, payload, executeOptions);
     await waitForPaint();
+    let responsePayload = null;
     if (useShellProjectProgress) {
-      view.scene = await context.actions.withProjectProgress(context.project.projectId, progress, execute);
+      responsePayload = await context.actions.withProjectProgress(context.project.projectId, progress, execute);
     } else {
-      view.scene = await execute();
+      responsePayload = await execute();
     }
-    appendProjectLog(context, command === "CameraView.Fit" && !view.scene?.fitView?.fitted ? "info" : "ok", makeCommandSuccessLog(command, view.scene));
-    return true;
+    if (expectScene) {
+      view.scene = responsePayload;
+      syncViewportSelection(view, responsePayload);
+    } else {
+      mergeScenePayload(view.scene ??= {}, responsePayload);
+      syncViewportSelection(view, view.scene);
+    }
+    appendProjectLog(
+      context,
+      command === "CameraView.Fit" && !view.scene?.fitView?.fitted ? "info" : "ok",
+      makeCommandSuccessLog(command, expectScene ? view.scene : responsePayload),
+    );
+    return { ok: true, payload: responsePayload };
   } catch (error) {
     view.error = error?.message ?? String(error);
     appendProjectLog(context, "error", `${command} 失败：${view.error}`);
-    return false;
+    return { ok: false, payload: null };
   } finally {
     if (!useShellProjectProgress) {
       await waitForMinimumDuration(progressStartedAt, progress?.minimumVisibleMs ?? 0);
@@ -1263,6 +726,200 @@ async function runProjectCommand(context, view, command, payload, options = {}) 
     view.progress = null;
     renderProject(context, view);
   }
+}
+
+function shouldRefreshSceneAfterCommand(command) {
+  return ![
+    "CameraView.Fit",
+    "Machine.GetElement",
+    "Selection.Get",
+    "Selection.PickMachineObject",
+    "Selection.PickTopology",
+  ].includes(command);
+}
+
+function mergeScenePayload(scene, payload) {
+  if (!scene || !payload || typeof payload !== "object") {
+    return scene;
+  }
+  for (const key of [
+    "job",
+    "jobs",
+    "machineDefinitions",
+    "definitions",
+    "machines",
+    "machine",
+    "machineElement",
+    "workpiece",
+    "workpieces",
+    "model",
+    "topology",
+    "faces",
+    "loops",
+    "edges",
+    "selection",
+    "cuttingLayers",
+    "visibleLayers",
+    "program",
+    "toolpaths",
+    "fitView",
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      if (key === "definitions") {
+        scene.machineDefinitions = payload.definitions;
+      } else if (key !== "machine") {
+        scene[key] = payload[key];
+      }
+    }
+  }
+  if (payload.machine && Array.isArray(scene.machines)) {
+    const machineId = String(payload.machine.entityId || payload.machine.id || "");
+    const index = scene.machines.findIndex((item) => String(item?.entityId || item?.id || "") === machineId);
+    if (index >= 0) {
+      scene.machines[index] = payload.machine;
+    } else if (machineId) {
+      scene.machines.push(payload.machine);
+    }
+  }
+  scene.readiness = buildReadiness(scene);
+  return scene;
+}
+
+function buildReadiness(scene = {}) {
+  const machine = getSelectedMachine(scene, {});
+  const model = scene.model ?? scene.workpiece ?? {};
+  const topology = scene.topology ?? {};
+  const toolpaths = Array.isArray(scene.toolpaths) ? scene.toolpaths : [];
+  const machineReady = Boolean(machine?.enabled !== false && (machine?.machineResourceId || machine?.resourceId));
+  const workpieceReady = Boolean(model?.brepResourceId || model?.modelResourceId);
+  const topologyReady = Boolean(topology?.hasTopology);
+  const toolpathReady = toolpaths.length > 0;
+  return {
+    machineReady,
+    workpieceReady,
+    topologyReady,
+    toolpathReady,
+    jobReady: machineReady && workpieceReady && toolpathReady,
+    nextStep: !machineReady
+      ? "machine-definition"
+      : !workpieceReady
+        ? "workpiece-model"
+        : !topologyReady
+          ? "topology"
+          : !toolpathReady
+            ? "toolpath"
+            : "job",
+  };
+}
+
+function selectSceneObjectLocally(view, objectId) {
+  const selectedId = String(objectId ?? "").trim();
+  const previousId = String(view.selectedSceneObjectId ?? "").trim();
+  view.selectedSceneObjectId = selectedId;
+  if (previousId !== selectedId && view.scene?.machineElement) {
+    view.scene.machineElement = null;
+  }
+  syncViewportHighlightedObjects(view, view.scene);
+}
+
+function syncViewportSelection(view, scene = {}) {
+  if (scene?.selection) {
+    view.selectedSceneObjectId = String(scene.selection.entityId || scene.selection.objectId || "").trim();
+    syncSelectedMachineInstanceFromSelection(view, scene, scene.selection);
+  }
+  if (scene?.machineElement && String(scene.machineElement.entityId || "") !== String(view.selectedSceneObjectId || "")) {
+    scene.machineElement = null;
+  }
+  if (scene?.machineElement) {
+    syncSelectedMachineInstanceFromSelection(view, scene, scene.machineElement);
+  }
+  syncViewportHighlightedObjects(view, scene);
+}
+
+async function pickMachineObject(context, view, payload = {}) {
+  const entityId = String(payload.entityId || payload.objectId || "").trim();
+  const machineId = String(payload.machineId || "").trim();
+  if (machineId) {
+    view.selectedMachineInstanceId = machineId;
+  }
+  selectSceneObjectLocally(view, entityId);
+  if (!entityId) {
+    renderProject(context, view);
+    return { ok: false, payload: null };
+  }
+
+  const pickResult = await runProjectCommandPayload(
+    context,
+    view,
+    "Selection.PickMachineObject",
+    { ...payload, entityId, objectId: entityId },
+    { expectScene: false },
+  );
+  if (!pickResult.ok) {
+    return pickResult;
+  }
+
+  const elementResult = await runProjectCommandPayload(
+    context,
+    view,
+    "Machine.GetElement",
+    { entityId },
+    { expectScene: false, timeoutMs: 10000 },
+  );
+  if (!elementResult.ok) {
+    return elementResult;
+  }
+
+  return {
+    ok: true,
+    payload: {
+      ...(pickResult.payload ?? {}),
+      ...(elementResult.payload ?? {}),
+    },
+  };
+}
+
+function syncSelectedMachineInstanceFromSelection(view, scene = {}, selection = {}) {
+  const machineId = String(selection.machineId || "").trim();
+  if (!machineId) {
+    return;
+  }
+  const machines = getMachines(scene);
+  if (machines.some((item) => getMachineId(item) === machineId)) {
+    view.selectedMachineInstanceId = machineId;
+  }
+}
+
+function getSelectedSceneObjectIds(view, scene = {}) {
+  const selectedId = String(view.selectedSceneObjectId ?? "").trim();
+  if (!selectedId) {
+    return [];
+  }
+  const machine = getSelectedMachine(scene, view);
+  const subtreeIds = getMachineSubtreeEntityIds(machine, selectedId);
+  return subtreeIds.length ? subtreeIds : [selectedId];
+}
+
+function syncViewportHighlightedObjects(view, scene = {}) {
+  const selectedIds = getSelectedSceneObjectIds(view, scene);
+  if (typeof view.viewport?.setSelectedObjectIds === "function") {
+    view.viewport.setSelectedObjectIds(selectedIds, view.selectedSceneObjectId || "");
+    return;
+  }
+  view.viewport?.setSelectedObjectId?.(view.selectedSceneObjectId || "");
+}
+
+function scrollSelectedMachineTreeNodeIntoView(mount, view) {
+  if (!view.selectedSceneObjectId) {
+    return;
+  }
+  const selectedRow = mount.querySelector("[data-cam-selected-machine-node='true']");
+  if (!selectedRow) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    selectedRow.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
 }
 
 function appendProjectLog(context, level, message) {
@@ -1279,11 +936,20 @@ function appendProjectLog(context, level, message) {
 
 function makeCommandStartLog(command, payload) {
   const sourcePath = payload?.sourcePath ? `：${payload.sourcePath}` : "";
-  if (command === "Machine.Import") {
-    return `开始导入 SDF 机器${sourcePath}`;
+  if (command === "MachineDefinition.Import") {
+    return `开始导入机床定义${sourcePath}`;
   }
-  if (command === "Workpiece.Import") {
-    return `开始导入工件模型${sourcePath}`;
+  if (command === "Machine.Instantiate") {
+    return `开始实例化机床：${payload?.machineDefinitionId ?? payload?.machineResourceId ?? payload?.resourceId ?? "-"}`;
+  }
+  if (command === "Machine.SetEnabled") {
+    return `${payload?.enabled === false ? "禁用" : "启用"}机床实例：${payload?.machineEntityId ?? "-"}`;
+  }
+  if (command === "WorkpieceModel.Import") {
+    return `开始导入工件模型资源${sourcePath}`;
+  }
+  if (command === "Workpiece.Instantiate") {
+    return `开始实例化工件：${payload?.modelResourceId ?? "-"}`;
   }
   if (command === "CameraView.Fit") {
     return "开始自动适配最佳视角";
@@ -1292,13 +958,30 @@ function makeCommandStartLog(command, payload) {
 }
 
 function makeCommandSuccessLog(command, scene) {
-  if (command === "Machine.Import") {
-    const machine = scene?.machine ?? {};
-    return `SDF 机器导入完成：links=${machine.links?.length ?? 0}, joints=${machine.joints?.length ?? 0}, visuals=${machine.visuals?.length ?? 0}, collisions=${machine.collisions?.length ?? 0}, includes=${machine.includes?.length ?? 0}`;
+  if (command === "MachineDefinition.Import") {
+    return `机床定义导入完成：definition=${scene?.machineDefinitionId ?? "-"}, resource=${scene?.machineResourceId ?? scene?.resourceId ?? "-"}, links=${scene?.linkCount ?? 0}, joints=${scene?.jointCount ?? 0}, visuals=${scene?.visualCount ?? 0}, collisions=${scene?.collisionCount ?? 0}`;
   }
-  if (command === "Workpiece.Import") {
+  if (command === "Machine.Instantiate") {
+    const machines = getMachines(scene);
+    const machine = machines[machines.length - 1] ?? {};
+    const visualCount = machine.visuals?.length ?? 0;
+    const collisionCount = machine.collisions?.length ?? 0;
+    const includeCount = machine.includes?.length ?? 0;
+    const suffix = visualCount || collisionCount || includeCount
+      ? ""
+      : "。该定义没有可显示几何，视口保持为空是正常结果";
+    return `机床实例化完成：links=${machine.links?.length ?? 0}, joints=${machine.joints?.length ?? 0}, visuals=${visualCount}, collisions=${collisionCount}, includes=${includeCount}${suffix}`;
+  }
+  if (command === "Machine.SetEnabled") {
+    const machine = scene?.machine ?? getSelectedMachine(scene, {});
+    return `机床实例状态已更新：${machine.enabled === false ? "已禁用" : "已启用"}`;
+  }
+  if (command === "WorkpieceModel.Import") {
+    return `工件模型资源导入完成：model=${scene?.modelResourceId ?? "-"}, brep=${scene?.brepResourceId ?? "-"}, topology=${scene?.topologyResourceId ?? "-"}`;
+  }
+  if (command === "Workpiece.Instantiate") {
     const topology = scene?.topology ?? {};
-    return `工件导入完成：faces=${topology.faceCount ?? 0}, loops=${topology.loopCount ?? 0}, edges=${topology.edgeCount ?? 0}`;
+    return `工件实例化完成：faces=${topology.faceCount ?? 0}, loops=${topology.loopCount ?? 0}, edges=${topology.edgeCount ?? 0}`;
   }
   if (command === "CameraView.Fit") {
     const fit = scene?.fitView ?? {};
@@ -1309,8 +992,10 @@ function makeCommandSuccessLog(command, scene) {
         `visual=${fit.machineVisualCount ?? 0}`,
         `collision=${fit.machineCollisionCount ?? 0}`,
         `include=${fit.machineIncludeCount ?? 0}`,
+        `workpiece=${fit.workpieceCount ?? 0}`,
+        `renderable=${fit.renderInstanceComponentCount ?? 0}`,
         `mesh=${fit.renderMeshCount ?? 0}`,
-        `instance=${fit.renderInstanceCount ?? 0}`,
+        `object=${fit.renderObjectCount ?? 0}`,
         `transform=${fit.renderTransformCount ?? 0}`,
         `camera=${fit.renderCameraCount ?? 0}`,
         `marker=${fit.hasRenderMarker ? "yes" : "no"}`
@@ -1328,7 +1013,27 @@ async function fitViewAfterRenderPublish(context, view) {
     if (ok && view.scene?.fitView?.fitted) {
       return;
     }
+    if (ok && isFitBlockedByNoRenderableSource(view.scene?.fitView)) {
+      return;
+    }
   }
+}
+
+function isFitBlockedByNoRenderableSource(fit = null) {
+  if (!fit || fit.fitted || fit.reason !== "render scene is empty") {
+    return false;
+  }
+  const sourceCount =
+    Number(fit.machineVisualCount ?? 0)
+    + Number(fit.machineCollisionCount ?? 0)
+    + Number(fit.machineIncludeCount ?? 0)
+    + Number(fit.workpieceCount ?? 0)
+    + Number(fit.renderInstanceComponentCount ?? 0)
+    + Number(fit.renderObjectCount ?? 0)
+    + Number(fit.renderMeshCount ?? 0)
+    + Number(fit.renderPolylineCount ?? 0)
+    + Number(fit.renderToolpathCount ?? 0);
+  return sourceCount === 0;
 }
 
 function sleep(durationMs) {
@@ -1354,32 +1059,50 @@ function waitForMinimumDuration(startedAt, minimumVisibleMs) {
 }
 
 function isLongProjectCommand(command) {
-  return command === "Machine.Import"
-    || command === "Workpiece.Import"
+  return command === "MachineDefinition.Import"
+    || command === "Machine.Instantiate"
+    || command === "WorkpieceModel.Import"
+    || command === "Workpiece.Instantiate"
     || command === "Toolpath.RecognizeLoops"
     || command === "Toolpath.AddSelectionPath";
 }
 
 function createCommandProgress(command) {
-  if (command === "Machine.Import") {
+  if (command === "MachineDefinition.Import") {
     return {
-      title: "导入机床",
-      detail: "正在解析 SDF 机器描述文件",
-      stage: "机器导入",
+      title: "导入机床定义",
+      detail: "正在解析 SDF 机床定义文件",
+      stage: "机床定义导入",
       mode: "Machine",
       minimumVisibleMs: 1600,
       steps: [
         ["文件检查", "正在校验 SDF/XML 路径"],
         ["SDF 解析", "正在解析 link、joint、visual、collision 和 material"],
-        ["项目写入", "正在写入机床 Entity 与结构数据"],
-        ["显示同步", "正在发布机器 visual 到 RenderPDO"],
-        ["交互刷新", "正在刷新机床结构面板"],
+        ["资源入库", "正在保存机床定义资源"],
+        ["定义登记", "正在写入机床定义组件"],
+        ["结果返回", "正在返回机床定义 ID"],
       ],
     };
   }
-  if (command === "Workpiece.Import") {
+  if (command === "Machine.Instantiate") {
     return {
-      title: "导入工件",
+      title: "实例化机床",
+      detail: "正在把机床定义展开到当前加工场景",
+      stage: "机床实例化",
+      mode: "Machine",
+      minimumVisibleMs: 1200,
+      steps: [
+        ["资源读取", "正在读取机床定义资源"],
+        ["结构展开", "正在创建 link、joint、visual 和 collision Entity"],
+        ["参数初始化", "正在初始化 TCP、轴限位和机床状态"],
+        ["显示同步", "正在发布机床 visual 到 RenderPDO"],
+        ["面板刷新", "正在刷新机床结构面板"],
+      ],
+    };
+  }
+  if (command === "WorkpieceModel.Import") {
+    return {
+      title: "导入工件模型",
       detail: "正在读取模型文件",
       stage: "文件读取",
       mode: "CAD Import",
@@ -1387,8 +1110,24 @@ function createCommandProgress(command) {
       steps: [
         ["文件读取", "正在读取 STEP/IGS 文件"],
         ["CAD 内核解析", "正在解析 B-Rep 拓扑"],
-        ["拓扑归档", "正在写入工件与拓扑资源"],
+        ["拓扑归档", "正在写入 BRep 与拓扑资源"],
         ["显示数据", "正在生成轻量显示网格"],
+        ["结果返回", "正在返回资源句柄"],
+      ],
+    };
+  }
+  if (command === "Workpiece.Instantiate") {
+    return {
+      title: "实例化工件",
+      detail: "正在把工件资源加入当前加工场景",
+      stage: "工件实例化",
+      mode: "Workpiece",
+      minimumVisibleMs: 1000,
+      steps: [
+        ["资源检查", "正在校验 BRep 与拓扑资源"],
+        ["场景写入", "正在创建工件 Entity"],
+        ["显示实例", "正在绑定 RenderInstance 与 Transform"],
+        ["激活工件", "正在更新当前激活工件"],
         ["PDO 同步", "正在同步显示数据到前端"],
       ],
     };
@@ -1435,641 +1174,4 @@ function showNotice(context, view, message) {
   view.notice = message;
   view.error = "";
   renderProject(context, view);
-}
-
-function getTabTitle(tabId) {
-  return ribbonDefinition.tabs.find((tab) => tab.id === tabId)?.title ?? "机床";
-}
-
-function findCommandTitle(commandId) {
-  for (const tab of ribbonDefinition.tabs) {
-    for (const group of tab.groups) {
-      const command = group.commands.find((item) => item.id === commandId);
-      if (command) {
-        return command.title;
-      }
-    }
-  }
-  return "该";
-}
-
-function getArrayValue(values, index, fallback = 0) {
-  const value = Number(values?.[index]);
-  return Number.isFinite(value) ? value : fallback;
-}
-
-function formatNumber(value, digits = 3) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) {
-    return "0";
-  }
-  return String(Number(number.toFixed(digits)));
-}
-
-function escapeText(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function escapeAttr(value) {
-  return escapeText(value)
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function ensureStyles() {
-  if (document.getElementById("laser-3d-cam-style")) {
-    return;
-  }
-
-  const style = document.createElement("style");
-  style.id = "laser-3d-cam-style";
-  style.textContent = `
-    .cam-product-home {
-      display: grid;
-      gap: 4px;
-      padding: 8px 0;
-    }
-
-    .cam-product-home strong {
-      font-size: 14px;
-    }
-
-    .cam-product-home span {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .cam-workbench {
-      position: relative;
-      display: grid;
-      grid-template-columns: 258px minmax(420px, 1fr) 318px;
-      grid-template-rows: auto minmax(0, 1fr);
-      grid-template-areas:
-        "notice notice notice"
-        "left viewer right";
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      background: #dfe4e7;
-    }
-
-    .cam-import-notice {
-      grid-area: notice;
-      padding: 7px 10px;
-      border-bottom: 1px solid #d7c088;
-      background: #fff7df;
-      color: #785d16;
-      font-size: 12px;
-      line-height: 1.45;
-    }
-
-    .cam-context-pane,
-    .cam-info-pane {
-      min-width: 0;
-      min-height: 0;
-      display: grid;
-      align-content: start;
-      gap: 8px;
-      padding: 8px;
-      overflow: auto;
-      background: #eef2f4;
-    }
-
-    .cam-context-pane {
-      grid-area: left;
-      border-right: 1px solid #c4ccd1;
-    }
-
-    .cam-info-pane {
-      grid-area: right;
-      border-left: 1px solid #c4ccd1;
-    }
-
-    .cam-viewer {
-      grid-area: viewer;
-      min-width: 0;
-      min-height: 0;
-      display: grid;
-      grid-template-rows: 32px minmax(0, 1fr);
-      background: #d7dde1;
-    }
-
-    .cam-viewer-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-width: 0;
-      padding: 0 10px;
-      border-bottom: 1px solid #bdc7cd;
-      background: #f2f4f5;
-      color: #252d32;
-      font-size: 12px;
-    }
-
-    .cam-viewer-head strong {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-weight: 650;
-    }
-
-    .cam-viewer-head div {
-      display: flex;
-      gap: 6px;
-      color: #61707a;
-    }
-
-    .cam-viewer-head span {
-      border: 1px solid #cbd3d8;
-      background: #ffffff;
-      padding: 2px 7px;
-    }
-
-    .cam-viewport {
-      min-width: 0;
-      min-height: 0;
-      margin: 8px;
-      border: 1px solid #293236;
-      background: #1d2020;
-      overflow: hidden;
-    }
-
-    .cam-svg,
-    .cam-render-viewport-shell,
-    .cam-render-viewport {
-      display: block;
-      width: 100%;
-      height: 100%;
-      min-height: 420px;
-    }
-
-    .cam-empty-model {
-      min-height: 420px;
-      display: grid;
-      place-items: center;
-      align-content: center;
-      gap: 8px;
-      color: #e9ece8;
-    }
-
-    .cam-empty-model strong {
-      font-size: 22px;
-      font-weight: 650;
-    }
-
-    .cam-empty-model span {
-      color: #aeb9bd;
-      font-size: 12px;
-    }
-
-    .cam-panel {
-      min-width: 0;
-      border: 1px solid #c8d0d5;
-      background: #ffffff;
-    }
-
-    .cam-panel-title {
-      min-height: 30px;
-      display: flex;
-      align-items: center;
-      padding: 0 9px;
-      border-bottom: 1px solid #d9e0e4;
-      background: #f8f9fa;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .cam-panel-body {
-      display: grid;
-      gap: 7px;
-      padding: 7px;
-      font-size: 12px;
-    }
-
-    .cam-list {
-      display: grid;
-      gap: 1px;
-    }
-
-    .cam-list-row {
-      display: grid;
-      gap: 2px;
-      width: 100%;
-      min-height: 42px;
-      padding: 6px 7px;
-      border: 1px solid transparent;
-      background: #ffffff;
-      color: #20272c;
-      text-align: left;
-    }
-
-    button.cam-list-row {
-      font: inherit;
-      cursor: pointer;
-    }
-
-    .cam-list.compact .cam-list-row {
-      min-height: 34px;
-      padding: 5px 6px;
-    }
-
-    .cam-list-row:hover,
-    .cam-list-row.active {
-      border-color: #2f735f;
-      background: #e7f1ed;
-    }
-
-    .cam-list-row strong {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      font-size: 12px;
-      font-weight: 650;
-    }
-
-    .cam-list-row small,
-    .cam-empty-row,
-    .cam-hint {
-      color: #65727b;
-      font-size: 11px;
-      line-height: 1.45;
-    }
-
-    .cam-empty-row {
-      min-height: 28px;
-      display: flex;
-      align-items: center;
-    }
-
-    .cam-facts {
-      display: grid;
-      grid-template-columns: 70px minmax(0, 1fr);
-      gap: 7px;
-      margin: 0;
-      font-size: 12px;
-    }
-
-    .cam-facts dt {
-      color: #65727b;
-    }
-
-    .cam-facts dd {
-      min-width: 0;
-      margin: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .cam-file-strip {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 58px 58px;
-      gap: 6px;
-    }
-
-    .cam-path-input {
-      min-width: 0;
-      height: 28px;
-      padding: 0 8px;
-      border: 1px solid #9aa8b0;
-      background: #ffffff;
-      color: #20272c;
-      font-size: 12px;
-      outline: none;
-    }
-
-    .cam-path-input:focus {
-      border-color: #2f735f;
-      box-shadow: 0 0 0 2px rgba(47, 115, 95, 0.16);
-    }
-
-    .cam-form-grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 6px;
-    }
-
-    .cam-form-grid.three {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .cam-field {
-      min-width: 0;
-      display: grid;
-      gap: 3px;
-      color: #65727b;
-      font-size: 11px;
-    }
-
-    .cam-small-input,
-    .cam-select {
-      width: 100%;
-      min-width: 0;
-      height: 28px;
-      padding: 0 7px;
-      border: 1px solid #9aa8b0;
-      background: #ffffff;
-      color: #20272c;
-      font-size: 12px;
-      outline: none;
-    }
-
-    .cam-small-input:focus,
-    .cam-select:focus {
-      border-color: #2f735f;
-      box-shadow: 0 0 0 2px rgba(47, 115, 95, 0.16);
-    }
-
-    .cam-jog-row {
-      display: grid;
-      grid-template-columns: 58px minmax(0, 1fr) 38px 38px;
-      gap: 6px;
-      align-items: end;
-    }
-
-    .cam-joint-grid {
-      display: grid;
-      gap: 4px;
-    }
-
-    .cam-joint-row {
-      display: grid;
-      grid-template-columns: 38px minmax(0, 1fr) auto;
-      align-items: center;
-      gap: 7px;
-      min-height: 28px;
-      padding: 4px 6px;
-      border: 1px solid #d4dce0;
-      background: #ffffff;
-      color: #20272c;
-      font-size: 12px;
-    }
-
-    .cam-joint-row strong {
-      font-weight: 700;
-    }
-
-    .cam-joint-row span {
-      font-variant-numeric: tabular-nums;
-    }
-
-    .cam-joint-row small {
-      color: #65727b;
-      font-size: 11px;
-    }
-
-    .cam-button-row {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
-
-    .cam-face,
-    .cam-loop,
-    .cam-edge {
-      cursor: pointer;
-      transition: opacity 120ms ease, stroke-width 120ms ease, filter 120ms ease;
-    }
-
-    .cam-face {
-      stroke: rgba(255, 255, 255, 0.42);
-      stroke-width: 2;
-    }
-
-    .cam-face:hover,
-    .cam-loop:hover,
-    .cam-edge:hover {
-      filter: brightness(1.16);
-    }
-
-    .cam-face.selected {
-      stroke: #d8a43a;
-      stroke-width: 4;
-    }
-
-    .cam-loop {
-      fill: rgba(29, 32, 32, 0.86);
-      stroke: #e6e2d6;
-      stroke-width: 3;
-    }
-
-    .cam-loop.selected {
-      stroke: #d8a43a;
-      stroke-width: 5;
-    }
-
-    .cam-loop-label {
-      fill: #e6e2d6;
-      font-size: 13px;
-      pointer-events: none;
-    }
-
-    .cam-edge {
-      fill: none;
-      stroke: #c86548;
-      stroke-width: 6;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-
-    .cam-edge.selected {
-      stroke: #d8a43a;
-      stroke-width: 8;
-    }
-
-    .cam-toolpath {
-      fill: none;
-      stroke-width: 5;
-      stroke-dasharray: 10 7;
-      pointer-events: none;
-    }
-
-    .cam-toolpath-fill {
-      fill: rgba(216, 164, 58, 0.16);
-      stroke-width: 4;
-      stroke-dasharray: 10 7;
-      pointer-events: none;
-    }
-
-    .cam-status {
-      position: absolute;
-      right: 16px;
-      bottom: 16px;
-      max-width: 420px;
-      padding: 7px 10px;
-      border: 1px solid #2f735f;
-      background: #eaf3ef;
-      color: #1f5a49;
-      font-size: 12px;
-      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
-    }
-
-    .cam-status.notice {
-      border-color: #d8a43a;
-      background: #fff8e8;
-      color: #785d16;
-    }
-
-    .cam-status.error {
-      border-color: #a84646;
-      background: #f8e7e7;
-      color: #8a2d2d;
-    }
-
-    .cam-progress-backdrop {
-      position: absolute;
-      inset: 0;
-      z-index: 20;
-      display: grid;
-      place-items: center;
-      padding: 24px;
-      background: rgba(21, 27, 30, 0.46);
-      backdrop-filter: blur(2px);
-      pointer-events: auto;
-    }
-
-    .cam-progress-dialog {
-      width: min(520px, 92%);
-      min-height: 190px;
-      display: grid;
-      grid-template-columns: 168px minmax(0, 1fr);
-      align-items: center;
-      gap: 24px;
-      padding: 22px 24px;
-      border: 1px solid rgba(136, 165, 173, 0.82);
-      background: linear-gradient(135deg, rgba(27, 34, 37, 0.96), rgba(41, 49, 51, 0.96));
-      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-      color: #f4f7f7;
-    }
-
-    .cam-progress-gauge {
-      width: 148px;
-      aspect-ratio: 1;
-      display: grid;
-      place-items: center;
-    }
-
-    .cam-progress-face {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      border: 1px solid rgba(169, 190, 195, 0.72);
-      background:
-        radial-gradient(circle at 50% 52%, rgba(38, 48, 51, 1) 0 39%, transparent 40%),
-        conic-gradient(from -120deg, rgba(61, 186, 146, 0.2), rgba(216, 164, 58, 0.78), rgba(61, 186, 146, 0.2));
-      box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.45), 0 0 34px rgba(61, 186, 146, 0.16);
-      overflow: hidden;
-    }
-
-    .cam-progress-face span {
-      position: absolute;
-      left: 50%;
-      top: 7px;
-      width: 1px;
-      height: 11px;
-      transform-origin: 0 67px;
-      transform: rotate(calc(var(--tick) * 11.25deg));
-      background: rgba(232, 238, 238, 0.72);
-    }
-
-    .cam-progress-sweep {
-      position: absolute;
-      inset: 13px;
-      border-radius: 50%;
-      border: 3px solid transparent;
-      border-top-color: #7ee6a8;
-      border-right-color: rgba(126, 230, 168, 0.35);
-      animation: cam-progress-sweep 1.55s linear infinite;
-    }
-
-    .cam-progress-needle {
-      position: absolute;
-      left: 50%;
-      bottom: 50%;
-      width: 3px;
-      height: 52px;
-      transform-origin: 50% 100%;
-      background: #d8a43a;
-      box-shadow: 0 0 14px rgba(216, 164, 58, 0.75);
-      animation: cam-progress-needle 1.35s ease-in-out infinite;
-    }
-
-    .cam-progress-core {
-      position: absolute;
-      inset: 47px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      align-content: center;
-      gap: 2px;
-      background: #1e2729;
-      border: 1px solid rgba(232, 238, 238, 0.34);
-    }
-
-    .cam-progress-core strong,
-    .cam-progress-core small {
-      letter-spacing: 0;
-      line-height: 1;
-    }
-
-    .cam-progress-core strong {
-      font-size: 16px;
-    }
-
-    .cam-progress-core small {
-      color: #9fb1b6;
-      font-size: 10px;
-    }
-
-    .cam-progress-copy {
-      min-width: 0;
-      display: grid;
-      gap: 10px;
-    }
-
-    .cam-progress-copy strong {
-      font-size: 20px;
-      font-weight: 700;
-    }
-
-    .cam-progress-copy > span {
-      color: #c8d4d7;
-      font-size: 13px;
-      line-height: 1.55;
-    }
-
-    .cam-progress-stage {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .cam-progress-stage span {
-      border: 1px solid rgba(126, 230, 168, 0.28);
-      background: rgba(126, 230, 168, 0.1);
-      color: #d7eee5;
-      padding: 4px 8px;
-      font-size: 12px;
-    }
-
-    @keyframes cam-progress-sweep {
-      to { transform: rotate(360deg); }
-    }
-
-    @keyframes cam-progress-needle {
-      0%, 100% { transform: rotate(-42deg); }
-      50% { transform: rotate(58deg); }
-    }
-
-    @media (max-width: 1240px) {
-      .cam-workbench {
-        grid-template-columns: 220px minmax(360px, 1fr) 280px;
-      }
-    }
-  `;
-  document.head.appendChild(style);
 }

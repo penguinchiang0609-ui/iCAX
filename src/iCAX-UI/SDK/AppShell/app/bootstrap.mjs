@@ -296,6 +296,8 @@ const actions = {
   },
 };
 
+exposeAppShellAutomation();
+
 root.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target || target.hasAttribute("disabled")) {
@@ -457,6 +459,49 @@ function render() {
   }
 
   mountActiveProductSurface();
+}
+
+function exposeAppShellAutomation() {
+  window.__icaxAppShell = {
+    getState() {
+      return {
+        bridgeStatus: state.bridgeStatus,
+        selectedProductId: state.selectedProductId,
+        activeProductId: state.activeProductState?.productId ?? "",
+        activeProjectId: state.activeProjectState?.projectId ?? "",
+        activeProjectName: state.activeProjectState?.projectName ?? "",
+        activeProjectPath: state.activeProjectState?.projectPath ?? "",
+        activeSceneId: state.activeSceneState?.sceneId ?? "",
+        startCenterOpen: state.startCenterOpen,
+        pendingCount: state.pendingCount,
+        error: state.error,
+        products: getProducts().map((product) => ({
+          productId: product.productId ?? "",
+          productName: product.productName ?? product.name ?? "",
+        })),
+      };
+    },
+    async refresh() {
+      await actions.refresh();
+      return this.getState();
+    },
+    async selectProduct(productId) {
+      await actions.selectProduct(productId);
+      return this.getState();
+    },
+    async createProject(options = {}) {
+      await actions.newProjectCatalog(options);
+      return this.getState();
+    },
+    async openProject(projectPath, productId) {
+      await actions.openProjectFromPath(projectPath, productId);
+      return this.getState();
+    },
+    async executeRibbonCommand(commandId) {
+      await actions.executeRibbonCommand(commandId);
+      return this.getState();
+    },
+  };
 }
 
 function renderStartCenter({ overlay }) {
