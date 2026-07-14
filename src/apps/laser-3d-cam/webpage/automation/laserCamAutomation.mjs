@@ -75,6 +75,7 @@ export function exposeLaserCamAutomation(context, view, commands) {
       hasMachineImportPathInput: Boolean(document.querySelector("[data-cam-machine-path]")),
       accordionCount: document.querySelectorAll(".cam-accordion-item").length,
       viewCubeButtonCount: document.querySelectorAll(".cam-viewcube [data-cam-action='view-standard']").length,
+      viewCubeExternalHotZoneCount: document.querySelectorAll(".cam-viewcube-edge, .cam-viewcube-corner").length,
       viewCubePitch: viewCube?.style.getPropertyValue("--viewcube-pitch") ?? "",
       viewCubeYaw: viewCube?.style.getPropertyValue("--viewcube-yaw") ?? "",
       hasViewCubeEmbeddedAxis: Boolean(document.querySelector(".cam-viewcube-axis")),

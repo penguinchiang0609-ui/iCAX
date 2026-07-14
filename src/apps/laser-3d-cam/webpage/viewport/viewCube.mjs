@@ -1,30 +1,34 @@
-const VIEW_CUBE_BUTTONS = Object.freeze([
-  { kind: "face", name: "top", label: "TOP", title: "顶视图" },
-  { kind: "face", name: "bottom", label: "BOTTOM", title: "底视图" },
-  { kind: "face", name: "front", label: "FRONT", title: "前视图" },
-  { kind: "face", name: "back", label: "BACK", title: "后视图" },
-  { kind: "face", name: "right", label: "RIGHT", title: "右视图" },
-  { kind: "face", name: "left", label: "LEFT", title: "左视图" },
-  { kind: "edge", name: "top-front", title: "顶前斜视图" },
-  { kind: "edge", name: "top-back", title: "顶后斜视图" },
-  { kind: "edge", name: "top-right", title: "顶右斜视图" },
-  { kind: "edge", name: "top-left", title: "顶左斜视图" },
-  { kind: "edge", name: "bottom-front", title: "底前斜视图" },
-  { kind: "edge", name: "bottom-back", title: "底后斜视图" },
-  { kind: "edge", name: "bottom-right", title: "底右斜视图" },
-  { kind: "edge", name: "bottom-left", title: "底左斜视图" },
-  { kind: "edge", name: "front-right", title: "前右斜视图" },
-  { kind: "edge", name: "front-left", title: "前左斜视图" },
-  { kind: "edge", name: "back-right", title: "后右斜视图" },
-  { kind: "edge", name: "back-left", title: "后左斜视图" },
-  { kind: "corner", name: "top-front-right", title: "顶前右等轴测" },
-  { kind: "corner", name: "top-front-left", title: "顶前左等轴测" },
-  { kind: "corner", name: "top-back-right", title: "顶后右等轴测" },
-  { kind: "corner", name: "top-back-left", title: "顶后左等轴测" },
-  { kind: "corner", name: "bottom-front-right", title: "底前右等轴测" },
-  { kind: "corner", name: "bottom-front-left", title: "底前左等轴测" },
-  { kind: "corner", name: "bottom-back-right", title: "底后右等轴测" },
-  { kind: "corner", name: "bottom-back-left", title: "底后左等轴测" },
+const VIEW_CUBE_FACES = Object.freeze([
+  makeFace("top", "TOP", [
+    ["top-back-left", "top-back", "top-back-right"],
+    ["top-left", "top", "top-right"],
+    ["top-front-left", "top-front", "top-front-right"],
+  ]),
+  makeFace("bottom", "BOTTOM", [
+    ["bottom-front-left", "bottom-front", "bottom-front-right"],
+    ["bottom-left", "bottom", "bottom-right"],
+    ["bottom-back-left", "bottom-back", "bottom-back-right"],
+  ]),
+  makeFace("front", "FRONT", [
+    ["top-front-left", "top-front", "top-front-right"],
+    ["front-left", "front", "front-right"],
+    ["bottom-front-left", "bottom-front", "bottom-front-right"],
+  ]),
+  makeFace("back", "BACK", [
+    ["top-back-right", "top-back", "top-back-left"],
+    ["back-right", "back", "back-left"],
+    ["bottom-back-right", "bottom-back", "bottom-back-left"],
+  ]),
+  makeFace("right", "RIGHT", [
+    ["top-front-right", "top-right", "top-back-right"],
+    ["front-right", "right", "back-right"],
+    ["bottom-front-right", "bottom-right", "bottom-back-right"],
+  ]),
+  makeFace("left", "LEFT", [
+    ["top-back-left", "top-left", "top-front-left"],
+    ["back-left", "left", "front-left"],
+    ["bottom-back-left", "bottom-left", "bottom-front-left"],
+  ]),
 ]);
 
 const VIEW_CUBE_ANIMATION_KEY = Symbol("laser3d.viewCubeAnimation");
@@ -34,7 +38,7 @@ export function renderViewCube() {
     <div class="cam-viewcube" data-cam-viewcube data-no-window-drag aria-label="视角导航">
       <div class="cam-viewcube-stage">
         <div class="cam-viewcube-cube" data-cam-viewcube-cube>
-          ${VIEW_CUBE_BUTTONS.map(renderViewCubeButton).join("")}
+          ${VIEW_CUBE_FACES.map(renderViewCubeFace).join("")}
         </div>
       </div>
     </div>
@@ -81,18 +85,35 @@ export function stopViewCubeAnimation(view) {
   view[VIEW_CUBE_ANIMATION_KEY] = null;
 }
 
-function renderViewCubeButton(button) {
-  const label = button.label ?? "";
+function makeFace(name, label, rows) {
+  return Object.freeze({ name, label, rows });
+}
+
+function renderViewCubeFace(face) {
+  return `
+    <div class="cam-viewcube-face cam-viewcube-face-${face.name}" aria-label="${viewTitle(face.name)}">
+      ${face.rows.map((row, rowIndex) => row.map((viewName, columnIndex) =>
+        renderViewCubeCell(face, viewName, rowIndex, columnIndex)).join("")).join("")}
+    </div>
+  `;
+}
+
+function renderViewCubeCell(face, viewName, rowIndex, columnIndex) {
+  const isCenter = rowIndex === 1 && columnIndex === 1;
   return `
     <button
-      class="cam-viewcube-${button.kind} cam-viewcube-${button.kind}-${button.name}"
+      class="cam-viewcube-cell cam-viewcube-cell-${rowIndex}-${columnIndex}${isCenter ? " cam-viewcube-cell-center" : ""}"
       type="button"
       data-cam-action="view-standard"
-      data-cam-view="${button.name}"
-      title="${button.title}"
-      aria-label="${button.title}"
-    >${label}</button>
+      data-cam-view="${viewName}"
+      title="${viewTitle(viewName)}"
+      aria-label="${viewTitle(viewName)}"
+    >${isCenter ? face.label : ""}</button>
   `;
+}
+
+function viewTitle(viewName) {
+  return `${viewName.replaceAll("-", " ")} 视图`;
 }
 
 function updateViewCubeOrientation(view, animation) {

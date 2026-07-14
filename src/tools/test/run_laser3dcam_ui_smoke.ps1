@@ -591,6 +591,10 @@ try {
             if ($state.machineDomState.hasViewCubeEmbeddedAxis) {
                 throw "Machine viewport view cube still embeds the world axis gizmo."
             }
+            if ([int]$state.machineDomState.viewCubeExternalHotZoneCount -ne 0) {
+                $viewCubeText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
+                throw "Machine viewport view cube still uses external edge/corner hot zones: $viewCubeText"
+            }
             if (-not $state.machineDomState.axisGizmoLeft -or -not $state.machineDomState.axisGizmoBottom) {
                 $axisText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
                 throw "Machine viewport world axis gizmo is not placed at the left-bottom corner: $axisText"
