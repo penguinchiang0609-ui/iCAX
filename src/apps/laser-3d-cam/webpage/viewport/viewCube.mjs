@@ -32,7 +32,6 @@ const VIEW_CUBE_ANIMATION_KEY = Symbol("laser3d.viewCubeAnimation");
 export function renderViewCube() {
   return `
     <div class="cam-viewcube" data-cam-viewcube data-no-window-drag aria-label="视角导航">
-      <button class="cam-viewcube-home" type="button" data-cam-action="view-standard" data-cam-view="iso" title="等轴测视图">HOME</button>
       <div class="cam-viewcube-stage">
         <div class="cam-viewcube-cube" data-cam-viewcube-cube>
           ${VIEW_CUBE_BUTTONS.map(renderViewCubeButton).join("")}

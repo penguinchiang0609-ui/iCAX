@@ -588,6 +588,13 @@ try {
             if (-not $state.machineDomState.hasAxisGizmo) {
                 throw "Machine viewport axis gizmo is missing."
             }
+            if ($state.machineDomState.hasViewCubeEmbeddedAxis) {
+                throw "Machine viewport view cube still embeds the world axis gizmo."
+            }
+            if (-not $state.machineDomState.axisGizmoLeft -or -not $state.machineDomState.axisGizmoBottom) {
+                $axisText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
+                throw "Machine viewport world axis gizmo is not placed at the left-bottom corner: $axisText"
+            }
             if ($state.machineDomState.hasMachineImportPathInput) {
                 throw "Machine left pane still contains the removed import path input."
             }

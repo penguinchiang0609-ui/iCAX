@@ -69,13 +69,18 @@ export function exposeLaserCamAutomation(context, view, commands) {
   };
   window.__icaxLaser3DCAM.getMachineDomState = () => {
     const viewCube = document.querySelector("[data-cam-viewcube-cube]");
+    const axisGizmo = document.querySelector(".icax-three-axis-gizmo");
+    const axisStyle = axisGizmo ? window.getComputedStyle(axisGizmo) : null;
     return {
       hasMachineImportPathInput: Boolean(document.querySelector("[data-cam-machine-path]")),
       accordionCount: document.querySelectorAll(".cam-accordion-item").length,
       viewCubeButtonCount: document.querySelectorAll(".cam-viewcube [data-cam-action='view-standard']").length,
       viewCubePitch: viewCube?.style.getPropertyValue("--viewcube-pitch") ?? "",
       viewCubeYaw: viewCube?.style.getPropertyValue("--viewcube-yaw") ?? "",
-      hasAxisGizmo: Boolean(document.querySelector(".icax-three-axis-gizmo")),
+      hasViewCubeEmbeddedAxis: Boolean(document.querySelector(".cam-viewcube-axis")),
+      hasAxisGizmo: Boolean(axisGizmo),
+      axisGizmoLeft: axisStyle?.left ?? "",
+      axisGizmoBottom: axisStyle?.bottom ?? "",
       hasAppearanceEditor: Boolean(document.querySelector("[data-cam-appearance-editor]")),
       hasCollisionToggle: Boolean(document.querySelector("[data-cam-machine-show-collider]")),
       selectedTreeRows: document.querySelectorAll(".cam-tree-row.selected").length,

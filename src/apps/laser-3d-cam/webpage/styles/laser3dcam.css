@@ -175,28 +175,28 @@
   top: 12px;
   right: 12px;
   z-index: 5;
-  width: 118px;
-  height: 122px;
+  width: 116px;
+  height: 112px;
   pointer-events: auto;
   user-select: none;
 }
 
 .cam-viewcube-stage {
   position: relative;
-  width: 96px;
-  height: 92px;
-  margin: 0 auto;
-  perspective: 560px;
+  width: 112px;
+  height: 108px;
+  margin: 0;
+  perspective: 520px;
 }
 
 .cam-viewcube-cube {
   --viewcube-pitch: -24deg;
   --viewcube-yaw: 38deg;
   position: absolute;
-  left: 16px;
-  top: 17px;
-  width: 64px;
-  height: 64px;
+  left: 24px;
+  top: 22px;
+  width: 58px;
+  height: 58px;
   transform-style: preserve-3d;
   transform: rotateX(var(--viewcube-pitch)) rotateY(var(--viewcube-yaw));
   transition: transform 90ms linear;
@@ -204,46 +204,57 @@
 
 .cam-viewcube-face {
   position: absolute;
-  left: 5px;
-  top: 5px;
+  left: 0;
+  top: 0;
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
-  border: 1px solid #d23acb;
-  background: rgba(251, 252, 253, 0.94);
-  color: #243034;
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(161, 103, 4, 0.72);
+  border-radius: 2px;
+  background: linear-gradient(135deg, #f4c032 0%, #df9f14 100%);
+  color: #0b36a8;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.74);
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 226, 126, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 122, 0.64),
+    inset -5px -5px 0 rgba(145, 88, 0, 0.16);
   cursor: pointer;
   backface-visibility: visible;
   padding: 0;
 }
 
 .cam-viewcube-face-top {
-  transform: rotateX(90deg) translateZ(27px);
+  background: linear-gradient(135deg, #ffd653 0%, #e9ae20 100%);
+  transform: rotateX(90deg) translateZ(29px);
 }
 
 .cam-viewcube-face-bottom {
-  transform: rotateX(-90deg) translateZ(27px);
+  background: linear-gradient(135deg, #c2820d 0%, #9d6708 100%);
+  transform: rotateX(-90deg) translateZ(29px);
 }
 
 .cam-viewcube-face-front {
-  transform: translateZ(27px);
+  background: linear-gradient(135deg, #f2b82a 0%, #d28a0d 100%);
+  transform: translateZ(29px);
 }
 
 .cam-viewcube-face-back {
-  transform: rotateY(180deg) translateZ(27px);
+  background: linear-gradient(135deg, #d49111 0%, #a96d07 100%);
+  transform: rotateY(180deg) translateZ(29px);
 }
 
 .cam-viewcube-face-right {
-  transform: rotateY(90deg) translateZ(27px);
+  background: linear-gradient(135deg, #e5a719 0%, #bc7908 100%);
+  transform: rotateY(90deg) translateZ(29px);
 }
 
 .cam-viewcube-face-left {
-  transform: rotateY(-90deg) translateZ(27px);
+  background: linear-gradient(135deg, #f0b629 0%, #c7830c 100%);
+  transform: rotateY(-90deg) translateZ(29px);
 }
 
 .cam-viewcube-edge,
@@ -251,64 +262,52 @@
   position: absolute;
   display: block;
   padding: 0;
-  border: 1px solid rgba(207, 57, 203, 0.75);
-  background: rgba(249, 251, 252, 0.78);
+  border: 0;
+  background: rgba(255, 215, 70, 0.32);
   color: transparent;
   cursor: pointer;
   font-size: 0;
   backface-visibility: visible;
+  opacity: 0.74;
 }
 
 .cam-viewcube-edge {
-  width: 18px;
-  height: 7px;
+  width: 20px;
+  height: 8px;
+  border-radius: 2px;
 }
 
 .cam-viewcube-corner {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
 }
 
-.cam-viewcube-edge-top-front { left: 23px; top: 1px; transform: rotateX(90deg) translateZ(31px); }
-.cam-viewcube-edge-top-back { left: 23px; top: 56px; transform: rotateX(90deg) rotateY(180deg) translateZ(31px); }
-.cam-viewcube-edge-top-right { left: 55px; top: 23px; transform: rotateX(90deg) rotateZ(90deg) translateZ(31px); }
-.cam-viewcube-edge-top-left { left: -9px; top: 23px; transform: rotateX(90deg) rotateZ(90deg) translateZ(31px); }
-.cam-viewcube-edge-bottom-front { left: 23px; top: 56px; transform: rotateX(-90deg) translateZ(31px); }
-.cam-viewcube-edge-bottom-back { left: 23px; top: 1px; transform: rotateX(-90deg) rotateY(180deg) translateZ(31px); }
-.cam-viewcube-edge-bottom-right { left: 55px; top: 34px; transform: rotateX(-90deg) rotateZ(90deg) translateZ(31px); }
-.cam-viewcube-edge-bottom-left { left: -9px; top: 34px; transform: rotateX(-90deg) rotateZ(90deg) translateZ(31px); }
-.cam-viewcube-edge-front-right { left: 56px; top: 28px; transform: rotateY(90deg) translateZ(31px); }
-.cam-viewcube-edge-front-left { left: -10px; top: 28px; transform: rotateY(-90deg) translateZ(31px); }
-.cam-viewcube-edge-back-right { left: 56px; top: 28px; transform: rotateY(90deg) rotateX(180deg) translateZ(31px); }
-.cam-viewcube-edge-back-left { left: -10px; top: 28px; transform: rotateY(-90deg) rotateX(180deg) translateZ(31px); }
+.cam-viewcube-edge-top-front { left: 19px; top: -4px; transform: rotateX(90deg) translateZ(33px); }
+.cam-viewcube-edge-top-back { left: 19px; top: 54px; transform: rotateX(90deg) rotateY(180deg) translateZ(33px); }
+.cam-viewcube-edge-top-right { left: 51px; top: 20px; transform: rotateX(90deg) rotateZ(90deg) translateZ(33px); }
+.cam-viewcube-edge-top-left { left: -13px; top: 20px; transform: rotateX(90deg) rotateZ(90deg) translateZ(33px); }
+.cam-viewcube-edge-bottom-front { left: 19px; top: 54px; transform: rotateX(-90deg) translateZ(33px); }
+.cam-viewcube-edge-bottom-back { left: 19px; top: -4px; transform: rotateX(-90deg) rotateY(180deg) translateZ(33px); }
+.cam-viewcube-edge-bottom-right { left: 51px; top: 30px; transform: rotateX(-90deg) rotateZ(90deg) translateZ(33px); }
+.cam-viewcube-edge-bottom-left { left: -13px; top: 30px; transform: rotateX(-90deg) rotateZ(90deg) translateZ(33px); }
+.cam-viewcube-edge-front-right { left: 54px; top: 25px; transform: rotateY(90deg) translateZ(33px); }
+.cam-viewcube-edge-front-left { left: -16px; top: 25px; transform: rotateY(-90deg) translateZ(33px); }
+.cam-viewcube-edge-back-right { left: 54px; top: 25px; transform: rotateY(90deg) rotateX(180deg) translateZ(33px); }
+.cam-viewcube-edge-back-left { left: -16px; top: 25px; transform: rotateY(-90deg) rotateX(180deg) translateZ(33px); }
 
-.cam-viewcube-corner-top-front-right { left: 55px; top: 1px; transform: translateZ(34px); }
-.cam-viewcube-corner-top-front-left { left: -1px; top: 1px; transform: translateZ(34px); }
-.cam-viewcube-corner-top-back-right { left: 55px; top: 55px; transform: rotateY(180deg) translateZ(34px); }
-.cam-viewcube-corner-top-back-left { left: -1px; top: 55px; transform: rotateY(180deg) translateZ(34px); }
-.cam-viewcube-corner-bottom-front-right { left: 55px; top: 55px; transform: translateZ(34px); }
-.cam-viewcube-corner-bottom-front-left { left: -1px; top: 55px; transform: translateZ(34px); }
-.cam-viewcube-corner-bottom-back-right { left: 55px; top: -1px; transform: rotateY(180deg) translateZ(34px); }
-.cam-viewcube-corner-bottom-back-left { left: -1px; top: -1px; transform: rotateY(180deg) translateZ(34px); }
+.cam-viewcube-corner-top-front-right { left: 52px; top: -5px; transform: translateZ(36px); }
+.cam-viewcube-corner-top-front-left { left: -6px; top: -5px; transform: translateZ(36px); }
+.cam-viewcube-corner-top-back-right { left: 52px; top: 52px; transform: rotateY(180deg) translateZ(36px); }
+.cam-viewcube-corner-top-back-left { left: -6px; top: 52px; transform: rotateY(180deg) translateZ(36px); }
+.cam-viewcube-corner-bottom-front-right { left: 52px; top: 52px; transform: translateZ(36px); }
+.cam-viewcube-corner-bottom-front-left { left: -6px; top: 52px; transform: translateZ(36px); }
+.cam-viewcube-corner-bottom-back-right { left: 52px; top: -6px; transform: rotateY(180deg) translateZ(36px); }
+.cam-viewcube-corner-bottom-back-left { left: -6px; top: -6px; transform: rotateY(180deg) translateZ(36px); }
 
 .cam-viewcube button:hover {
-  border-color: #d8a43a;
-  background: #fff7df;
-}
-
-.cam-viewcube-home {
-  position: absolute;
-  left: 8px;
-  bottom: 2px;
-  width: 48px;
-  height: 23px;
-  border: 1px solid rgba(207, 220, 226, 0.72);
-  background: rgba(13, 21, 26, 0.72);
-  color: #eef4f7;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0;
-  cursor: pointer;
+  outline: 1px solid rgba(255, 247, 191, 0.8);
+  filter: brightness(1.15);
 }
 
 .cam-empty-model {

@@ -1906,14 +1906,13 @@ function ensureThreeViewportStyles() {
 
     .icax-three-axis-gizmo {
       position: absolute;
-      top: 12px;
-      right: 116px;
+      left: 14px;
+      bottom: 14px;
       z-index: 4;
       width: 86px;
       height: 86px;
       pointer-events: none;
-      border: 1px solid rgba(168, 188, 198, 0.38);
-      background: rgba(13, 21, 26, 0.38);
+      background: transparent;
     }
 
     .icax-three-axis-canvas {
