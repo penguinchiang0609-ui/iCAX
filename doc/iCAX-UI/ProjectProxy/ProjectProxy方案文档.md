@@ -28,13 +28,13 @@ ProjectProxy.syncScenes(projectState)
   -> dispose closed SceneProxy
 ```
 
-标准项目命令由 `SceneProxy` 执行。`SDK/Mailbox/commandRoute.mjs` 中的 `ProjectCommands` 仍表示后端 scene command handler 上的项目数据命令：
+标准项目方法由 `SceneProxy` 调用。`SDK/Mailbox/facadeMethod.mjs` 中的 `ProjectFacade` 表示后端对外提供的项目 Facade 方法：
 
 ```js
-ProjectCommands.getState;
-ProjectCommands.undo;
-ProjectCommands.redo;
-ProjectCommands.getUndoRedoState;
+ProjectFacade.getState;
+ProjectFacade.undo;
+ProjectFacade.redo;
+ProjectFacade.getUndoRedoState;
 ```
 
 `SceneProxy` 在这些命令之上提供便捷方法：
@@ -47,7 +47,7 @@ await scene.redo();
 const state = await scene.getUndoRedoState();
 ```
 
-这些方法只表达前端公共约定。项目文件保存由具体产品/文件模块定义命令，因为保存格式、路径策略和资源打包方式都属于产品协议。
+这些方法只表达前端公共约定。项目文件保存由具体产品/文件模块定义 Facade 方法，因为保存格式、路径策略和资源打包方式都属于产品协议。
 
 ## 4. PDO 流程
 

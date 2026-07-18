@@ -7,11 +7,11 @@
 后台以 `ApplicationHost -> ProductRuntime -> Project -> Scene` 四层组织：
 
 - `ApplicationHost` 是应用级入口，拥有应用上下文、应用级 mailbox 和应用级服务容器。
-- `ProductRuntime` 表达一个已启动产品，负责产品模块加载、产品级 mailbox、产品命令、产品数据和 ProjectCatalog 生命周期。产品模块通过宏登记的 ComponentMeta、Behaviour、ResourceLoader 和 CommandTargets 会被回放到产品级注册表中，Service 回放到应用级服务容器。
-- `Project` 表达一个已打开项目的管理容器，只承载项目身份、路径和跟图纸走的 ProjectSetting，并作为 `IProjectContext` 传入 Behaviour/Command 调度。
-- `Scene` 表达一个独立运行或编辑现场。每个 Scene 独占 Repository、ResourceLibrary/ResourcePool、Universe、Scene mail channel、PDOHub 和后台工作线程，并作为 `ISceneContext` 传入 Behaviour/Command 调度。
+- `ProductRuntime` 表达一个已启动产品，负责产品模块加载、产品级 mailbox、产品命令、产品数据和 ProjectCatalog 生命周期。产品模块通过宏登记的 ComponentMeta、Behaviour、ResourceLoader 和 Facades 会被回放到产品级注册表中，Service 回放到应用级服务容器。
+- `Project` 表达一个已打开项目的管理容器，只承载项目身份、路径和跟图纸走的 ProjectSetting，并作为 `IProjectContext` 传入 Behaviour/Facade 调用。
+- `Scene` 表达一个独立运行或编辑现场。每个 Scene 独占 Repository、ResourceLibrary/ResourcePool、Universe、Scene mail channel、PDOHub 和后台工作线程，并作为 `ISceneContext` 传入 Behaviour/Facade 调用。
 
-Service 在整个 Application 内共享，但通信通道不进入 ServiceProvider。`ApplicationHost` 直接持有应用级 `CMailChannelRegistry`，并显式注入 ProductRuntime / Project / Scene；PDO 由 Scene 自己持有并通过 `ISceneContext::PDOHub()` 暴露。ComponentMeta、Behaviour、ResourceLoader 和 CommandTargets 按 ProductRuntime 隔离；`Universe` 实例、Repository、资源对象、Scene ResourceLoaderRegistry、Scene 邮箱、Scene PDO 和 Scene 线程全部按 Scene 隔离。
+Service 在整个 Application 内共享，但通信通道不进入 ServiceProvider。`ApplicationHost` 直接持有应用级 `CMailChannelRegistry`，并显式注入 ProductRuntime / Project / Scene；PDO 由 Scene 自己持有并通过 `ISceneContext::PDOHub()` 暴露。ComponentMeta、Behaviour、ResourceLoader 和 Facades 按 ProductRuntime 隔离；`Universe` 实例、Repository、资源对象、Scene ResourceLoaderRegistry、Scene 邮箱、Scene PDO 和 Scene 线程全部按 Scene 隔离。
 
 ## 目录结构
 
@@ -25,8 +25,8 @@ Service 在整个 Application 内共享，但通信通道不进入 ServiceProvid
 - `Project/`：项目管理容器和 Scene 运行现场实现。Project 管理主 Scene 与子 Scene；Scene 独占 Repository、ResourceLibrary、Universe、mail channel、PDOHub 和后台工作线程。
 - `Resources/`：工程资源系统，用资源来源字符串统一索引资源条目、对象、元信息、持久化策略和资源加载器。
 - `Mailbox/`：后台与前台之间的普通 Mail 通信通道，用于命令、事件、请求响应和低频状态同步；`CMailChannelRegistry` 位于本目录。
-- `MailHandler/`：Mailbox 与 CommandTargets 之间的桥接层，负责把邮件转换成命令请求并发送命令响应，不承载业务逻辑。
+- `MailHandler/`：Mailbox 与 Facades 之间的适配层，负责在 Mail 和 Facade 调用/结果之间转换，不承载业务逻辑。
 - `PDO/`：后台与前台之间的高频可丢弃数据通道，用于同步过程数据；运行时归属 SceneContext，不作为 Service。
-- `CommandTargets/`：Mailbox 之上的后端命令请求、上下文、注册和分发抽象。
+- `Facades/`：Mailbox 之上的后端命令请求、上下文、注册和分发抽象。
 - `Behaviour/`：行为运行容器、行为注册和行为调度。
 

@@ -13,7 +13,7 @@ src/icax-engine/framework/ApplicationHost/
 ```text
 ApplicationHost
   ApplicationContext
-  Application CommandRegistry / CommandDispatcher
+  Application FacadeRegistry / FacadeInvoker
   Application mail id
   CMailChannelRegistry
   ProductDefinition*
@@ -45,7 +45,7 @@ WorkThread
   -> Create MailChannelRegistry
   -> Create application mail channel
   -> Bind ApplicationContext runtime capabilities
-  -> RegisterBuiltInApplicationCommands
+  -> RegisterBuiltInApplicationFacades
   -> Start startup product?
   -> Phase Running
   -> Notify Started
@@ -74,7 +74,7 @@ MainLoop
 
 ```text
 ApplicationContext
-CommandRegistry
+FacadeRegistry
 ProductDefinition list snapshot
 ProductRuntime list snapshot
 CServiceProvider

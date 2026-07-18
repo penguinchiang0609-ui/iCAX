@@ -23,7 +23,7 @@ product.ProjectFile.ProbeBytes = 256;
 product.Modules.ComponentModules.push_back("bin/RobotComponent.dll");
 product.Modules.BehaviourModules.push_back("bin/RobotBehaviour.dll");
 product.Modules.ServiceModules.push_back("bin/RobotService.dll");
-product.Modules.CommandModules.push_back("bin/RobotCommand.dll");
+product.Modules.FacadeModules.push_back("bin/RobotCommand.dll");
 ```
 
 `CProductDefinition` 只表达产品静态定义，包含产品 ID、名称、版本、前端入口、默认项目启动组件、项目文件格式和产品模块路径。最近项目、用户偏好等会变化的数据不放在产品定义中。
@@ -68,7 +68,7 @@ backend.startupComponent          -> CProductDefinition.DefaultProjectStartupCom
 backend.modules.components        -> CProductDefinition.Modules.ComponentModules
 backend.modules.behaviours        -> CProductDefinition.Modules.BehaviourModules
 backend.modules.services          -> CProductDefinition.Modules.ServiceModules
-backend.modules.commands          -> CProductDefinition.Modules.CommandModules
+backend.modules.commands          -> CProductDefinition.Modules.FacadeModules
 webpage.entry                     -> CProductDefinition.FrontendEntry
 ```
 
@@ -142,10 +142,10 @@ ProductRuntime
   Product MetaRegistry
   Product BehaviourRegistry
   Product ResourceLoaderRegistry
-  Product CommandRegistry
+  Product FacadeRegistry
 ```
 
-产品模块加载后，`ComponentMeta`、`Behaviour`、`ResourceLoader` 和 `CommandHandler` 的宏注册动作只回放到当前产品运行时。Service 注册动作回放到 Application 级 `CServiceProvider`，因为服务是应用级共享能力。
+产品模块加载后，`ComponentMeta`、`Behaviour`、`ResourceLoader` 和 `Facades` 的宏注册动作只回放到当前产品运行时。Service 注册动作回放到 Application 级 `CServiceProvider`，因为服务是应用级共享能力。
 
 每个 Scene 创建时会得到自己的 `ResourceLoaderRegistry`，该 registry 从当前产品模块重新回放 ResourceLoader 注册动作。这样 loader 实例、资源对象和资源池都按 Scene 隔离。
 
@@ -153,10 +153,10 @@ ProductRuntime
 
 ## 6. 产品级命令
 
-- `kProductGetStateCommand` / `Product.GetState`：查询产品状态和 ProjectCatalog 列表。
-- `kProductListProjectCatalogsCommand` / `Product.ListProjectCatalogs`：查询 ProjectCatalog 列表，响应与 `Product.GetState` 一致。
-- `kProductOpenProjectCatalogCommand` / `Product.OpenProjectCatalog`：打开 ProjectCatalog 并创建主项目。
-- `kProductCloseProjectCatalogCommand` / `Product.CloseProjectCatalog`：关闭指定 ProjectCatalog。
+- `kProductGetStateMethodCode` / `Product.GetState`：查询产品状态和 ProjectCatalog 列表。
+- `kProductListProjectCatalogsMethodCode` / `Product.ListProjectCatalogs`：查询 ProjectCatalog 列表，响应与 `Product.GetState` 一致。
+- `kProductOpenProjectCatalogMethodCode` / `Product.OpenProjectCatalog`：打开 ProjectCatalog 并创建主项目。
+- `kProductCloseProjectCatalogMethodCode` / `Product.CloseProjectCatalog`：关闭指定 ProjectCatalog。
 
 `Product.OpenProjectCatalog` 请求 payload：
 

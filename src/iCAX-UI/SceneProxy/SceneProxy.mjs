@@ -1,5 +1,5 @@
 import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
-import { ProjectCommands } from "../SDK/Mailbox/commandRoute.mjs";
+import { ProjectFacade } from "../SDK/Mailbox/facadeMethod.mjs";
 import { PDOClient } from "../SDK/PDO/pdoClient.mjs";
 
 export class SceneProxy {
@@ -33,7 +33,7 @@ export class SceneProxy {
   }
 
   async getState(options = {}) {
-    const response = await this.execute(ProjectCommands.getState, {}, options);
+    const response = await this.invoke(ProjectFacade.getState, {}, options);
     const sceneState = response?.activeScene ?? findSceneInProjectState(response, this.sceneId);
     if (sceneState?.sceneChannelId) {
       this.updateState(sceneState);
@@ -41,24 +41,24 @@ export class SceneProxy {
     return sceneState ?? this.state;
   }
 
-  execute(command, payload = {}, options = {}) {
-    return this.mailboxClient.request(this.sceneChannelId, command, payload, options);
+  invoke(facadeMethod, payload = {}, options = {}) {
+    return this.mailboxClient.invoke(this.sceneChannelId, facadeMethod, payload, options);
   }
 
   undo(options = {}) {
-    return this.execute(ProjectCommands.undo, {}, options);
+    return this.invoke(ProjectFacade.undo, {}, options);
   }
 
   redo(options = {}) {
-    return this.execute(ProjectCommands.redo, {}, options);
+    return this.invoke(ProjectFacade.redo, {}, options);
   }
 
   getUndoRedoState(options = {}) {
-    return this.execute(ProjectCommands.getUndoRedoState, {}, options);
+    return this.invoke(ProjectFacade.getUndoRedoState, {}, options);
   }
 
-  subscribe(command, handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.sceneChannelId, command, handler));
+  subscribe(facadeMember, handler) {
+    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.sceneChannelId, facadeMember, handler));
   }
 
   subscribeAll(handler) {

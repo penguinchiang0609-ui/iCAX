@@ -9,9 +9,9 @@ namespace iCAX
         /*
         * @brief 三维线条切割 CAM 机床根身份组件。
         * @details
-        *   该组件只表达“这个 Entity 是一台机床”，并保存机床定义 ID 与机床描述资源句柄。
-        *   机床描述文件解析后的结构默认存放在 Scene.Resources 中；需要展示或驱动时，再从资源实例化出
-        *   独立子 Entity。每个子 Entity 通过 CMachineElementComponent 表达自己属于哪台机床以及元素类型，
+        *   该组件只表达“这个 Entity 是一台机床”，并保存机床定义 ID、源文件路径和实例资源命名空间。
+        *   机床定义文件在实例化时低频解析，不作为可复用机床定义对象存放在 Scene.Resources 中。
+        *   实例化后会生成独立子 Entity。每个子 Entity 通过 CMachineElementComponent 表达自己属于哪台机床以及元素类型，
         *   父子关系统一由 TransformComponent 维护，再挂 Link/Joint/Visual/Collision 等具体组件。
         */
         class CMachineInstanceComponent final : public iCAX::Database::CComponentBase
@@ -21,7 +21,7 @@ namespace iCAX
 
             DECLARED_ICAX_FIELD(CMachineInstanceComponent, std::string, Name, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CMachineInstanceComponent, std::string, SourcePath, std::string(), StringEqual, ToStringVariant, FromStringVariant)
-            DECLARED_ICAX_FIELD(CMachineInstanceComponent, std::string, MachineResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CMachineInstanceComponent, std::string, ResourceScopeID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CMachineInstanceComponent, std::string, DescriptionFormat, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CMachineInstanceComponent, std::string, DescriptionVersion, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CMachineInstanceComponent, std::string, ModelName, std::string(), StringEqual, ToStringVariant, FromStringVariant)
@@ -74,7 +74,7 @@ namespace iCAX
         /*
         * @brief 机床元素身份组件。
         * @details
-        *   机床描述资源展开后，每个中性 MachineElement 会成为一个可管理的 Entity。
+        *   机床描述数据展开后，每个中性 MachineElement 会成为一个可管理的 Entity。
         *   ElementKind 表达该 Entity 在机床树中的中性角色，例如 part。
         *   Visual/Collision 是 MachineElement 的附件数据，直接挂在该 Entity 上，不创建额外的
         *   visual/collision 辅助 Entity。前端拾取、渲染对象、Transform 和后续碰撞对象都使用同一 EntityID。
@@ -182,7 +182,7 @@ namespace iCAX
         /*
         * @brief 机床实例元素外观覆盖组件。
         * @details
-        *   该组件只作用于当前项目中的某个 MachineElement Entity，不修改机床定义资源，也不影响子元素。
+        *   该组件只作用于当前项目中的某个 MachineElement Entity，不修改机床定义源文件，也不影响子元素。
         *   Visual/Collision 的原始材质仍保存在资源与附件组件中；本组件用于调机时临时覆盖部件颜色，
         *   以及决定是否显示该部件的 collider 线框辅助。Collider 由独立通道发布，不混入 Render mesh。
         */

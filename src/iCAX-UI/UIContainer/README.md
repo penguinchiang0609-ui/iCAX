@@ -50,4 +50,4 @@ startupHandshakeTimeoutMS=5000
 
 ## 边界
 
-`UIContainer` 不拥有 Engine，不解析产品 manifest，不实现业务命令，不解释 PDO payload。它只定义前端容器和后端桥之间的稳定契约。
+`UIContainer` 不拥有 Engine，不解析产品 manifest，不实现产品 Facade，不解释 PDO payload。它只定义前端容器和后端桥之间的稳定契约。

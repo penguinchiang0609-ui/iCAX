@@ -5,7 +5,7 @@
 #include "Behaviour/BehaviourBase.h"
 #include "Behaviour/IBehaviourRegistry.h"
 #include "ColliderData/ColliderData.h"
-#include "CommandTargets/CommandRoute.h"
+#include "Facades/FacadeMethod.h"
 #include "Data/Variant.h"
 #include "Database/IEntity.h"
 #include "Mailbox/MailPayload.h"
@@ -37,15 +37,15 @@ namespace
     constexpr double kMachineDescriptionLengthToWorld = 1000.0;
 
     inline constexpr uint64_t kPDOColliderSlotAllocatedEvent =
-        iCAX::Command::MakeCommandCode("PDOCollider", "SlotAllocated");
+        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "SlotAllocated");
     inline constexpr uint64_t kPDOColliderSlotFreedEvent =
-        iCAX::Command::MakeCommandCode("PDOCollider", "SlotFreed");
+        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "SlotFreed");
     inline constexpr uint64_t kPDOColliderSlotMovedEvent =
-        iCAX::Command::MakeCommandCode("PDOCollider", "SlotMoved");
+        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "SlotMoved");
     inline constexpr uint64_t kPDOColliderDefragBeginEvent =
-        iCAX::Command::MakeCommandCode("PDOCollider", "DefragBegin");
+        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "DefragBegin");
     inline constexpr uint64_t kPDOColliderDefragEndEvent =
-        iCAX::Command::MakeCommandCode("PDOCollider", "DefragEnd");
+        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "DefragEnd");
 
     struct SSlotAssignment final
     {

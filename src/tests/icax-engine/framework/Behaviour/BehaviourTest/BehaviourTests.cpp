@@ -5,7 +5,7 @@
 #include <Behaviour/IBehaviourRegistry.h>
 #include <Behaviour/IUniverse.h>
 #include <ApplicationContext/ApplicationContext.h>
-#include <CommandTargets/CommandRegistry.h>
+#include <Facades/FacadeRegistry.h>
 #include <Data/PropertyBag.h>
 #include <Data/uuid.h>
 #include <Database/ComponentBase.h>
@@ -319,12 +319,12 @@ namespace
             IN std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry_,
             IN std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry_,
             IN std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider_,
-            IN std::shared_ptr<iCAX::Command::CCommandRegistry> pCommandRegistry_)
+            IN std::shared_ptr<iCAX::Interaction::CFacadeRegistry> pFacadeRegistry_)
             : m_pMetaRegistry(std::move(pMetaRegistry_))
             , m_pBehaviourRegistry(std::move(pBehaviourRegistry_))
             , m_pResourceLoaderRegistry(std::move(pResourceLoaderRegistry_))
             , m_pServiceProvider(std::move(pServiceProvider_))
-            , m_pCommandRegistry(std::move(pCommandRegistry_))
+            , m_pFacadeRegistry(std::move(pFacadeRegistry_))
         {
             m_Definition.ProductID = "behaviour-test-product";
             m_Definition.ProductName = "Behaviour Test Product";
@@ -365,9 +365,9 @@ namespace
             return *m_pResourceLoaderRegistry;
         }
 
-        iCAX::Command::CCommandRegistry& GetCommandRegistry() const override
+        iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override
         {
-            return *m_pCommandRegistry;
+            return *m_pFacadeRegistry;
         }
 
     private:
@@ -377,7 +377,7 @@ namespace
         std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
         std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
         std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
-        std::shared_ptr<iCAX::Command::CCommandRegistry> m_pCommandRegistry;
+        std::shared_ptr<iCAX::Interaction::CFacadeRegistry> m_pFacadeRegistry;
     };
 
     class CTestProjectContext final : public iCAX::Project::IProjectContext
@@ -532,8 +532,8 @@ namespace
             , pMetaRegistry(pRepository->GetMetaRegistry())
             , pResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
             , pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
-            , pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
-            , Product(pMetaRegistry, pBehaviourRegistry, pResourceLoaderRegistry, pServiceProvider, pCommandRegistry)
+            , pFacadeRegistry(std::make_shared<iCAX::Interaction::CFacadeRegistry>())
+            , Product(pMetaRegistry, pBehaviourRegistry, pResourceLoaderRegistry, pServiceProvider, pFacadeRegistry)
             , Project(pRepository->GetID())
             , Scene(pRepository, pResourceLoaderRegistry, pServiceProvider)
         {
@@ -544,7 +544,7 @@ namespace
         std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry;
         std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry;
         std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider;
-        std::shared_ptr<iCAX::Command::CCommandRegistry> pCommandRegistry;
+        std::shared_ptr<iCAX::Interaction::CFacadeRegistry> pFacadeRegistry;
         iCAX::Application::CApplicationContext Application;
         CTestProductContext Product;
         CTestProjectContext Project;

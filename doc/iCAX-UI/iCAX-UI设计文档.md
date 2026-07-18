@@ -327,7 +327,7 @@ WebPage
   -> FrontendBridge
   -> MailChannelRegistry
   -> ApplicationHost/ProductRuntime/Project
-  -> CommandHandler
+  -> Facades
   -> response mail
   -> FrontendBridge
   -> UIContainer

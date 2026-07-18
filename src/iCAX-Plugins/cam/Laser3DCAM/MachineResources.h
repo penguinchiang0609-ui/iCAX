@@ -114,7 +114,7 @@ namespace iCAX
         };
 
         /*
-        * @brief 机床描述资源中的结构元素。
+        * @brief 机床描述数据中的结构元素。
         * @details
         *   Elements 是唯一的中性机床结构树。结构、运动副、显示几何、碰撞几何都在这棵树内表达。
         *   SDF link、URDF link 或未来自定义格式的部件都会转换成 part；节点不携带 sdf.link 这类格式语义。
@@ -142,9 +142,9 @@ namespace iCAX
         };
 
         /*
-        * @brief 机床描述资源。
+        * @brief 机床描述数据。
         * @details
-        *   这是资源池中的正式机床结构数据。它不反向引用 Database 或 Entity。
+        *   这是从 SDF、URDF 或未来自定义格式解析出的中性机床结构数据。它不反向引用 Database 或 Entity。
         *   Elements 是唯一结构树。ParentElementID 表达父子关系，JointToParent 表达父子边上的运动副，
         *   Visual/Collision 作为元素附件参与同一棵树的数据表达。SourceFormat 只保存在资源层，
         *   用来说明该资源来自 SDF、URDF 或其他文件格式；具体节点不暴露格式专属类型。

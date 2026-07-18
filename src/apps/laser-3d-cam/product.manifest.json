@@ -4,6 +4,22 @@
   "productId": "icax.laser-3d-cam",
   "productName": "三维线条切割 CAM",
   "productVersion": "0.1.0",
+  "capabilities": {
+    "machineDefinition": {
+      "supportedFormats": [
+        {
+          "formatId": "machine.sdf",
+          "name": "SDF 机床定义",
+          "extensions": [".sdf", ".xml"]
+        },
+        {
+          "formatId": "machine.urdf",
+          "name": "URDF 机床定义",
+          "extensions": [".urdf"]
+        }
+      ]
+    }
+  },
   "projectFile": {
     "magic": "ICAX_LASER_3D_CAM",
     "formatVersion": "0.1",
@@ -22,34 +38,34 @@
     },
     "modules": {
       "dependencies": [
-        "../../iCAX-Plugins/render/RenderData/${Platform}/${Configuration}/RenderData.dll",
-        "../../iCAX-Plugins/render/RenderService/${Platform}/${Configuration}/RenderService.dll",
-        "../../iCAX-Plugins/render/RenderPDO/${Platform}/${Configuration}/RenderPDO.dll",
-        "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll",
-        "../../iCAX-Plugins/input/InputPDO/${Platform}/${Configuration}/InputPDO.dll",
-        "../../iCAX-Plugins/input/InputService/${Platform}/${Configuration}/InputService.dll",
-        "../../iCAX-Plugins/common/Transform/${Platform}/${Configuration}/Transform.dll",
-        "../../iCAX-Plugins/physics/ColliderData/${Platform}/${Configuration}/ColliderData.dll",
-        "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll"
+        "../../${Platform}/${Configuration}/RenderData.dll",
+        "../../${Platform}/${Configuration}/RenderService.dll",
+        "../../${Platform}/${Configuration}/RenderPDO.dll",
+        "../../${Platform}/${Configuration}/PDORenderService.dll",
+        "../../${Platform}/${Configuration}/InputPDO.dll",
+        "../../${Platform}/${Configuration}/InputService.dll",
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/ColliderData.dll",
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/CameraNavigation.dll"
       ],
       "components": [
-        "../../iCAX-Plugins/common/Transform/${Platform}/${Configuration}/Transform.dll",
-        "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll",
-        "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/CameraNavigation.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
       "behaviours": [
-        "../../iCAX-Plugins/render/RenderInteraction/${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../iCAX-Plugins/render/CameraNavigation/${Platform}/${Configuration}/CameraNavigation.dll",
-        "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/CameraNavigation.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
       "services": [
-        "../../iCAX-Plugins/input/InputService/${Platform}/${Configuration}/InputService.dll",
-        "../../iCAX-Plugins/render/PDORenderService/${Platform}/${Configuration}/PDORenderService.dll",
-        "../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/InputService.dll",
+        "../../${Platform}/${Configuration}/PDORenderService.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
-      "commands": ["../../iCAX-Plugins/cam/Laser3DCAM/${Platform}/${Configuration}/Laser3DCAM.dll"]
+      "facades": ["../../${Platform}/${Configuration}/Laser3DCAM.dll"]
     },
     "resources": {
       "handlers": [
@@ -58,7 +74,7 @@
           "resourceType": "geometry.brep",
           "formatId": "cad.step",
           "extensions": [".step", ".stp"],
-          "module": "../../iCAX-Plugins/cad/OpenCascadeResourceImport/${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "module": "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
           "provider": "occ.opencascade",
           "priority": 100
         },
@@ -67,7 +83,7 @@
           "resourceType": "geometry.brep",
           "formatId": "cad.iges",
           "extensions": [".igs", ".iges"],
-          "module": "../../iCAX-Plugins/cad/OpenCascadeResourceImport/${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "module": "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
           "provider": "occ.opencascade",
           "priority": 100
         },
@@ -76,7 +92,7 @@
           "resourceType": "geometry.triangle_mesh",
           "formatId": "geometry.stl",
           "extensions": [".stl"],
-          "module": "../../iCAX-Plugins/geometry/STLResourceImport/${Platform}/${Configuration}/STLResourceImport.dll",
+          "module": "../../${Platform}/${Configuration}/STLResourceImport.dll",
           "provider": "icax.stl",
           "priority": 100
         },
@@ -85,7 +101,7 @@
           "resourceType": "geometry.triangle_mesh",
           "formatId": "geometry.dae",
           "extensions": [".dae"],
-          "module": "../../iCAX-Plugins/geometry/DAEResourceImport/${Platform}/${Configuration}/DAEResourceImport.dll",
+          "module": "../../${Platform}/${Configuration}/DAEResourceImport.dll",
           "provider": "icax.dae",
           "priority": 100
         }

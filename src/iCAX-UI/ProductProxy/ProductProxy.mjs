@@ -1,5 +1,5 @@
 import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
-import { ProductCommands } from "../SDK/Mailbox/commandRoute.mjs";
+import { ProductFacade } from "../SDK/Mailbox/facadeMethod.mjs";
 import { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 
 export class ProductProxy {
@@ -32,7 +32,7 @@ export class ProductProxy {
   }
 
   async getState() {
-    const state = await this.mailboxClient.request(this.productChannelId, ProductCommands.getState);
+    const state = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.getState);
     if (state?.productChannelId) {
       this.updateState({ ...this.state, ...state });
     }
@@ -41,13 +41,13 @@ export class ProductProxy {
   }
 
   async listProjectCatalogs() {
-    const response = await this.mailboxClient.request(this.productChannelId, ProductCommands.listProjectCatalogs);
+    const response = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.listProjectCatalogs);
     await this.#syncProjectsFromCatalogs(response?.catalogs ?? []);
     return response;
   }
 
   async openProjectCatalog(projectPath, options = {}) {
-    const response = await this.mailboxClient.request(this.productChannelId, ProductCommands.openProjectCatalog, {
+    const response = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.openProjectCatalog, {
       projectPath,
       catalogPath: options.catalogPath ?? projectPath,
       catalogName: options.catalogName ?? "",
@@ -65,7 +65,7 @@ export class ProductProxy {
   }
 
   async closeProjectCatalog(catalogId) {
-    const response = await this.mailboxClient.request(this.productChannelId, ProductCommands.closeProjectCatalog, { catalogId });
+    const response = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.closeProjectCatalog, { catalogId });
     if (response?.productChannelId) {
       this.updateState({ ...this.state, ...response });
     }
@@ -73,8 +73,8 @@ export class ProductProxy {
     return response;
   }
 
-  subscribe(command, handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.productChannelId, command, handler));
+  subscribe(facadeMember, handler) {
+    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.productChannelId, facadeMember, handler));
   }
 
   subscribeAll(handler) {

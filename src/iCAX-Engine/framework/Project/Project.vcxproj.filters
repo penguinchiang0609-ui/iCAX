@@ -24,7 +24,7 @@
     <ClInclude Include="ProjectCatalog.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ProjectCommands.h">
+    <ClInclude Include="ProjectFacades.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ProjectRuntime.h">

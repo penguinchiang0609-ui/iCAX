@@ -2,10 +2,10 @@
 
 #include <ApplicationContext/ApplicationContext.h>
 #include <Behaviour/IBehaviourRegistry.h>
-#include <CommandTargets/CommandRoute.h>
-#include <CommandTargets/CommandTarget.h>
+#include <Facades/FacadeMethod.h>
+#include <Facades/Facade.h>
 #include <Database/IMetaRegistry.h>
-#include <Product/ProductCommands.h>
+#include <Product/ProductFacades.h>
 #include <Product/ProductManifest.h>
 #include <Product/ProductRuntime.h>
 #include <Project/ProjectRuntime.h>
@@ -32,15 +32,15 @@ using namespace iCAX::Product;
 
 namespace
 {
-    class CTestProductCommandTarget final : public iCAX::Command::CCommandTarget
+    class CTestProductFacade final : public iCAX::Interaction::CFacade
     {
     public:
-        explicit CTestProductCommandTarget(IN std::string strMainName_)
-            : CCommandTarget(std::move(strMainName_))
+        explicit CTestProductFacade(IN std::string strFacadeName_)
+            : CFacade(std::move(strFacadeName_))
         {
         }
 
-        using CCommandTarget::Bind;
+        using CFacade::ExposeMethod;
     };
 
     class CMemoryProductDataStore final : public IProductDataStore
@@ -131,21 +131,6 @@ namespace
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         return {};
-    }
-
-    std::optional<iCAX::Project::CProjectFault> WaitForProjectFault(
-        IN const std::shared_ptr<iCAX::Project::CProject>& pProject_)
-    {
-        for (int _Index = 0; _Index < 200; ++_Index)
-        {
-            auto _Fault = pProject_->GetLastFault();
-            if (_Fault)
-            {
-                return _Fault;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        return std::nullopt;
     }
 
     iCAX::Data::ObjectMap DecodeObjectPayload(IN const iCAX::Mail::Mail& Mail_)
@@ -439,7 +424,7 @@ TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
     _OpenPayload["catalogPath"] = std::string("memory://robot-catalog");
     _OpenPayload["projectName"] = std::string("Robot Cell");
     _OpenPayload["projectPath"] = std::string("memory://robot-cell");
-    auto _OpenRequest = MakeRequestMail(2001, kProductOpenProjectCatalogCommand, iCAX::Data::Variant(_OpenPayload));
+    auto _OpenRequest = MakeRequestMail(2001, kProductOpenProjectCatalogMethodCode, iCAX::Data::Variant(_OpenPayload));
     _FrontendPostOffice.Send(_OpenRequest);
     ReleaseTestMailPayload(_OpenRequest);
 
@@ -474,7 +459,7 @@ TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
 
     iCAX::Data::ObjectMap _ClosePayload;
     _ClosePayload["catalogId"] = _CatalogID;
-    auto _CloseRequest = MakeRequestMail(2002, kProductCloseProjectCatalogCommand, iCAX::Data::Variant(_ClosePayload));
+    auto _CloseRequest = MakeRequestMail(2002, kProductCloseProjectCatalogMethodCode, iCAX::Data::Variant(_ClosePayload));
     _FrontendPostOffice.Send(_CloseRequest);
     ReleaseTestMailPayload(_CloseRequest);
 
@@ -493,7 +478,7 @@ TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
 
 TEST(ProductRuntimeMailboxTest, ProductRuntimeCanSendFrontendEvent)
 {
-    constexpr uint64_t kProductStateChangedEvent = iCAX::Command::MakeCommandCode("Product", "StateChanged");
+    constexpr uint64_t kProductStateChangedEvent = iCAX::Interaction::MakeFacadeMethodCode("Product", "StateChanged");
 
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
@@ -512,7 +497,7 @@ TEST(ProductRuntimeMailboxTest, ProductRuntimeCanSendFrontendEvent)
     _pRuntime->Stop();
 }
 
-TEST(ProductRuntimeMailboxTest, ProductCommandSentToSceneMailboxIsRejected)
+TEST(ProductRuntimeMailboxTest, ProductFacadeCallSentToSceneMailboxReturnsInvalidCall)
 {
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
@@ -524,21 +509,26 @@ TEST(ProductRuntimeMailboxTest, ProductCommandSentToSceneMailboxIsRejected)
     auto _ScenePostOffice = _pRuntime->GetSceneFrontendPostOffice(
         _pProject->GetProjectID(),
         _pProject->GetMainSceneID());
-    auto _Request = MakeRequestMail(3001, kProductGetStateCommand);
+    auto _Request = MakeRequestMail(3001, kProductGetStateMethodCode);
     _ScenePostOffice.Send(_Request);
     ReleaseTestMailPayload(_Request);
 
-    auto _Fault = WaitForProjectFault(_pProject);
-    ASSERT_TRUE(_Fault.has_value());
-    EXPECT_NE(std::string::npos, _Fault->Message.find("Product command must be sent to the product mailbox"));
-    EXPECT_TRUE(_ScenePostOffice.Receive().empty());
+    auto _Results = WaitForMails(_ScenePostOffice);
+    ASSERT_EQ(1u, _Results.size());
+    EXPECT_EQ(iCAX::Mail::kMailInvalidPayload, _Results[0].Header.nStamp);
+    EXPECT_NE(
+        std::string::npos,
+        iCAX::Mail::GetMailPayloadText(_Results[0]).find(
+            "Product facade call must be sent to the product mailbox"));
+    EXPECT_FALSE(_pProject->GetLastFault().has_value());
+    ReleaseMailPayloads(_Results);
     _pRuntime->Stop();
 }
 
 TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
 {
-    constexpr uint64_t kInspectProjectContextCommand =
-        iCAX::Command::MakeCommandCode("InspectProject", "ProjectContext");
+    constexpr uint64_t kInspectProjectContextMethod =
+        iCAX::Interaction::MakeFacadeMethodCode("InspectProject", "ProjectContext");
 
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
@@ -548,11 +538,11 @@ TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
     ASSERT_NE(nullptr, _pProject);
 
     const auto _ProjectID = _pProject->GetProjectID();
-    auto _pCommandTarget = std::make_shared<CTestProductCommandTarget>("InspectProject");
-    _pCommandTarget->Bind(
+    auto _pFacade = std::make_shared<CTestProductFacade>("InspectProject");
+    _pFacade->ExposeMethod(
         "ProjectContext",
         [_ProjectID](
-            IN const iCAX::Command::CCommandRequest&,
+            IN const iCAX::Interaction::CFacadeCall&,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -567,14 +557,14 @@ TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
             _Payload["sameProject"] = pProjectContext_
                 && pProjectContext_->GetProjectID() == _ProjectID;
 
-            iCAX::Command::CCommandResponse _Response;
+            iCAX::Interaction::CFacadeResult _Response;
             _Response.Payload = EncodeProductPayload(iCAX::Data::Variant(_Payload));
             return _Response;
         });
-    ASSERT_TRUE(_pRuntime->GetCommandRegistry().Register(_pCommandTarget));
+    ASSERT_TRUE(_pRuntime->GetFacadeRegistry().Register(_pFacade));
 
     auto _ScenePostOffice = _pRuntime->GetSceneFrontendPostOffice(_ProjectID, _pProject->GetMainSceneID());
-    auto _Request = MakeRequestMail(4001, kInspectProjectContextCommand);
+    auto _Request = MakeRequestMail(4001, kInspectProjectContextMethod);
     _ScenePostOffice.Send(_Request);
     ReleaseTestMailPayload(_Request);
 

@@ -1,0 +1,86 @@
+solid a_yoke_arm
+  facet normal 0 0 -1
+    outer loop
+      vertex -0.04 -0.05 -0.23
+      vertex 0.04 0.05 -0.23
+      vertex 0.04 -0.05 -0.23
+    endloop
+  endfacet
+  facet normal 0 0 -1
+    outer loop
+      vertex -0.04 -0.05 -0.23
+      vertex -0.04 0.05 -0.23
+      vertex 0.04 0.05 -0.23
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex -0.04 -0.05 0.23
+      vertex 0.04 -0.05 0.23
+      vertex 0.04 0.05 0.23
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex -0.04 -0.05 0.23
+      vertex 0.04 0.05 0.23
+      vertex -0.04 0.05 0.23
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex -0.04 -0.05 -0.23
+      vertex 0.04 -0.05 -0.23
+      vertex 0.04 -0.05 0.23
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex -0.04 -0.05 -0.23
+      vertex 0.04 -0.05 0.23
+      vertex -0.04 -0.05 0.23
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 0.04 -0.05 -0.23
+      vertex 0.04 0.05 -0.23
+      vertex 0.04 0.05 0.23
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 0.04 -0.05 -0.23
+      vertex 0.04 0.05 0.23
+      vertex 0.04 -0.05 0.23
+    endloop
+  endfacet
+  facet normal 0 1 0
+    outer loop
+      vertex 0.04 0.05 -0.23
+      vertex -0.04 0.05 -0.23
+      vertex -0.04 0.05 0.23
+    endloop
+  endfacet
+  facet normal 0 1 -0
+    outer loop
+      vertex 0.04 0.05 -0.23
+      vertex -0.04 0.05 0.23
+      vertex 0.04 0.05 0.23
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex -0.04 0.05 -0.23
+      vertex -0.04 -0.05 -0.23
+      vertex -0.04 -0.05 0.23
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex -0.04 0.05 -0.23
+      vertex -0.04 -0.05 0.23
+      vertex -0.04 0.05 0.23
+    endloop
+  endfacet
+endsolid a_yoke_arm

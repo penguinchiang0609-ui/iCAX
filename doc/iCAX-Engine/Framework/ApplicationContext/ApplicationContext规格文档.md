@@ -6,7 +6,7 @@
 
 它描述当前应用能识别什么、运行在哪些目录、当前应用级配置是什么。它不保存项目数据，不拥有 `Database`，不拥有 `Universe`，不负责主循环。
 
-`ApplicationHost` 在启动时读取配置并构造 `ApplicationContext`，再把它传给 Behaviour、Service、CommandHandler、文件读写模块等需要应用上下文的地方。
+`ApplicationHost` 在启动时读取配置并构造 `ApplicationContext`，再把它传给 Behaviour、Service、Facades、文件读写模块等需要应用上下文的地方。
 
 ## 2. 核心概念
 
@@ -85,7 +85,7 @@ settingsService.Reload();
 
 ## 3. 使用边界
 
-- `ApplicationContext` 可以被 `Behaviour`、`Service`、`CommandHandler`、`ApplicationHost` 依赖。
+- `ApplicationContext` 可以被 `Behaviour`、`Service`、`Facades`、`ApplicationHost` 依赖。
 - `ApplicationContext` 不依赖 `Behaviour`、`Service`、`Database`、`ApplicationHost`。
 - 项目作者、创建日期、资源清单、项目业务设置等项目语义数据进入 `Database`。
 - 文件 offset、size、chunk index 等物理布局是文件读写过程中的临时数据，不进入 `ApplicationContext`。

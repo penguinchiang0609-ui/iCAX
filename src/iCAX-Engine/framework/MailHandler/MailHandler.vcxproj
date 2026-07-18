@@ -146,13 +146,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="CMailCommandHandler.h" />
+    <ClInclude Include="CMailFacadeHandler.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="MailHandlerExport.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CMailCommandHandler.cpp" />
+    <ClCompile Include="CMailFacadeHandler.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -165,7 +165,7 @@
     <ProjectReference Include="..\ApplicationContext\ApplicationContext.vcxproj">
       <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\CommandTargets\CommandTargets.vcxproj">
+    <ProjectReference Include="..\Facades\Facades.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\Mailbox\Mailbox.vcxproj">

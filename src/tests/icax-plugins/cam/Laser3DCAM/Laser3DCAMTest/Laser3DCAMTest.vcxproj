@@ -74,7 +74,7 @@
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ProductContext\ProductContext.vcxproj">
       <Project>{74d665ef-d89e-4104-ae6f-e31c7bff0f46}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\CommandTargets\CommandTargets.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Facades\Facades.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">

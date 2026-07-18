@@ -12,7 +12,7 @@
 
 namespace
 {
-    constexpr uint32_t _CommandHash32(IN const char* pText_) noexcept
+    constexpr uint32_t _InteractionNameHash32(IN const char* pText_) noexcept
     {
         uint32_t _Hash = 2166136261u;
         while (*pText_)
@@ -24,13 +24,13 @@ namespace
         return _Hash;
     }
 
-    constexpr uint64_t _MakeCommandCode(IN const char* pMainName_, IN const char* pSubName_) noexcept
+    constexpr uint64_t _MakeFacadeMethodCode(IN const char* pFacadeName_, IN const char* pMethodName_) noexcept
     {
-        return (static_cast<uint64_t>(_CommandHash32(pMainName_)) << 32)
-            | static_cast<uint64_t>(_CommandHash32(pSubName_));
+        return (static_cast<uint64_t>(_InteractionNameHash32(pFacadeName_)) << 32)
+            | static_cast<uint64_t>(_InteractionNameHash32(pMethodName_));
     }
 
-    constexpr uint64_t kApplicationGetStateCommand = _MakeCommandCode("App", "GetState");
+    constexpr uint64_t kApplicationGetStateMethod = _MakeFacadeMethodCode("App", "GetState");
     constexpr uint64_t kStartupHandshakeRequestID = 0x4955435841505055ull;
     constexpr const char* kEmptyObjectPayloadText = "{\"__variant_type\":\"Object\",\"value\":{}}";
 
@@ -280,7 +280,7 @@ namespace
             _Request.ChannelID = _ApplicationChannelID;
             _Request.nID = kStartupHandshakeRequestID;
             _Request.nOriginID = 0;
-            _Request.nTypeCode = kApplicationGetStateCommand;
+            _Request.nTypeCode = kApplicationGetStateMethod;
             _Request.nStamp = 0;
             _Request.PayloadText = kEmptyObjectPayloadText;
 

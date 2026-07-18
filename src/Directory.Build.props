@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <!--
+      iCAX uses the solution-level output directory as the only runtime directory.
+      Object/PCH/intermediate files stay under each project directory, while DLL/EXE/PDB/LIB
+      outputs are written to src/$(Platform)/$(Configuration). Do not add per-project
+      post-build DLL copying between project output folders.
+    -->
+    <ICAXSourceRoot>$(MSBuildThisFileDirectory)</ICAXSourceRoot>
+    <OutDir>$(ICAXSourceRoot)$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildProjectDirectory)\$(Platform)\$(Configuration)\$(MSBuildProjectName)\</IntDir>
+  </PropertyGroup>
+</Project>

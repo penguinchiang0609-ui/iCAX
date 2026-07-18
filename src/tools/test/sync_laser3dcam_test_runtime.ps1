@@ -20,7 +20,7 @@ $RuntimeProjects = @(
     "iCAX-Engine\foundation\GeometryData",
     "iCAX-Engine\framework\ApplicationContext",
     "iCAX-Engine\framework\Behaviour",
-    "iCAX-Engine\framework\CommandTargets",
+    "iCAX-Engine\framework\Facades",
     "iCAX-Engine\framework\Database",
     "iCAX-Engine\framework\Mailbox",
     "iCAX-Engine\framework\PDO",
@@ -41,10 +41,10 @@ $RuntimeProjects = @(
 foreach ($Project in $RuntimeProjects) {
     $Name = Split-Path -Path $Project -Leaf
     $SharedDll = Join-Path $Root ("{0}\{1}\{2}.dll" -f $Platform, $Configuration, $Name)
-    $ProjectDll = Join-Path $Root ("{0}\{1}\{2}\{3}.dll" -f $Project, $Platform, $Configuration, $Name)
-    $Dll = if (Test-Path -LiteralPath $ProjectDll) { $ProjectDll } else { $SharedDll }
+    $ProjectDll = Join-Path $Root ("{0}\{1}\{2}\{3}\{4}.dll" -f $Project, $Platform, $Configuration, $Name, $Name)
+    $Dll = if (Test-Path -LiteralPath $SharedDll) { $SharedDll } else { $ProjectDll }
     if (!(Test-Path -LiteralPath $Dll)) {
-        throw "Laser3DCAM test runtime dependency is missing: $ProjectDll"
+        throw "Laser3DCAM test runtime dependency is missing: $SharedDll"
     }
 
     $SourceDll = Get-Item -LiteralPath $Dll

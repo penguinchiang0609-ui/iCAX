@@ -1,7 +1,14 @@
 export { connectApplication } from "./runtime.mjs";
 export { createBridge, validateBridge } from "./Bridge/createBridge.mjs";
 export { MockHostBridge } from "./Bridge/mockHostBridge.mjs";
-export { AppCommands, ProductCommands, ProjectCommands } from "./Mailbox/commandRoute.mjs";
+export {
+  AppFacade,
+  ProductFacade,
+  ProjectFacade,
+  makeFacadeMethodCode,
+  makeFacadeMethodCodeFromName,
+  parseFacadeMethod,
+} from "./Mailbox/facadeMethod.mjs";
 export { ensureUsableChannelId, isUsableChannelId } from "./Mailbox/channelId.mjs";
 export { loadProductModule, mountProductModule, resolveFrontendEntry } from "../ProductProxy/productModuleLoader.mjs";
 export { AppProxy } from "../AppProxy/AppProxy.mjs";
@@ -22,7 +29,7 @@ export {
 export {
   RenderFlags,
   RenderGeometryKind,
-  RenderPDOCommands,
+  RenderPDOEvents,
   RenderPDOLayout,
   RenderPDOPayloadKind,
   RenderPDOTypeCodes,

@@ -78,7 +78,7 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Mailbox\Mailbox.vcxproj">
       <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\iCAX-Engine\framework\CommandTargets\CommandTargets.vcxproj">
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Facades\Facades.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj">

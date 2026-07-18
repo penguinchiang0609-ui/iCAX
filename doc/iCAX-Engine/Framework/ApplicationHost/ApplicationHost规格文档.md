@@ -36,7 +36,7 @@ robot.ProjectFile.ProbeBytes = 256;
 robot.Modules.ComponentModules.push_back("bin/RobotComponent.dll");
 robot.Modules.BehaviourModules.push_back("bin/RobotBehaviour.dll");
 robot.Modules.ServiceModules.push_back("bin/RobotService.dll");
-robot.Modules.CommandModules.push_back("bin/RobotCommand.dll");
+robot.Modules.FacadeModules.push_back("bin/RobotCommand.dll");
 robot.DefaultProjectStartupComponent = "RobotStartupComponent";
 
 config.Products.push_back(robot);
@@ -81,12 +81,12 @@ Start configured startup product?
 
 应用级命令通过 `GetApplicationFrontendPostOffice()` 发送，payload 使用 `VariantSerializer` 编码的 `ObjectMap`。
 
-- `kAppGetStateCommand` / `App.GetState`：查询宿主状态、产品清单和已启动产品。
-- `kAppListProductsCommand` / `App.ListProducts`：查询产品清单，响应结构与 `App.GetState` 一致。
-- `kAppStartProductCommand` / `App.StartProduct`：启动产品。payload 可包含 `productId`。当只有一个产品时可省略。
-- `kAppStopProductCommand` / `App.StopProduct`：停止产品。payload 必须包含 `productId`。
-- `kAppResolveProjectFileCommand` / `App.ResolveProjectFile`：根据项目文件快速识别产品。
-- `kAppOpenProjectFileCommand` / `App.OpenProjectFile`：根据项目文件识别产品、启动产品并打开 ProjectCatalog。
+- `kAppGetStateMethodCode` / `App.GetState`：查询宿主状态、产品清单和已启动产品。
+- `kAppListProductsMethodCode` / `App.ListProducts`：查询产品清单，响应结构与 `App.GetState` 一致。
+- `kAppStartProductMethodCode` / `App.StartProduct`：启动产品。payload 可包含 `productId`。当只有一个产品时可省略。
+- `kAppStopProductMethodCode` / `App.StopProduct`：停止产品。payload 必须包含 `productId`。
+- `kAppResolveProjectFileMethodCode` / `App.ResolveProjectFile`：根据项目文件快速识别产品。
+- `kAppOpenProjectFileMethodCode` / `App.OpenProjectFile`：根据项目文件识别产品、启动产品并打开 ProjectCatalog。
 
 同一 `productId` 的 `StartProduct` 和 `StopProduct` 严格串行。产品停止期间，新的 `StartProduct` 会等待旧 `ProductRuntime` 完成停止并从宿主表中移除后，再创建新的运行时实例。
 
@@ -217,7 +217,7 @@ Frontend
 `ApplicationHost` 可以依赖：
 
 - `ApplicationContext`
-- `CommandHandler`
+- `Facades`
 - `Mailbox`
 - `Product`
 - `Services`

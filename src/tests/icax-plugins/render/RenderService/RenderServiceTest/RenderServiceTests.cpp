@@ -76,7 +76,7 @@ namespace
             throw std::logic_error("Resource loader registry is not used by render service tests");
         }
 
-        iCAX::Command::CCommandRegistry& GetCommandRegistry() const override
+        iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override
         {
             throw std::logic_error("Command registry is not used by render service tests");
         }

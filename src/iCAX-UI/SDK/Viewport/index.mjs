@@ -1,7 +1,7 @@
 export {
   RenderFlags,
   RenderGeometryKind,
-  RenderPDOCommands,
+  RenderPDOEvents,
   RenderPDOLayout,
   RenderPDOPayloadKind,
   RenderPDOTypeCodes,

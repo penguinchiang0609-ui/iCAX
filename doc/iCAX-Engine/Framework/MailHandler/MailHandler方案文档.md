@@ -1,76 +1,49 @@
 # MailHandler 方案文档
 
-## 1. 设计目标
+## 1. 定位
 
-MailHandler 的目标是把运行体中的邮件分发逻辑从 ApplicationHost / ProductRuntime 中抽出来，形成单独的桥接项目。
-
-拆分后的依赖关系：
+MailHandler 把运行体中的 Mail 适配逻辑从 ApplicationHost 和 ProductRuntime 中抽离。依赖关系为：
 
 ```text
-Mailbox          CommandHandler
-   \                 /
-    \               /
+Mailbox          Facades
+   \               /
        MailHandler
 ```
 
-运行体依赖 MailHandler，但 MailHandler 不反向依赖运行体。
+运行体依赖 MailHandler，MailHandler 不反向依赖具体运行体。
 
-## 2. 处理流程
+## 2. 流程
 
 ```text
 PostOffice.Receive()
   -> Mail
-  -> CMailCommandHandler::ToCommandRequest()
-  -> CCommandDispatcher::Dispatch()
-  -> CCommandResponse
+  -> CMailFacadeHandler::ToFacadeCall()
+  -> CFacadeInvoker::Invoke()
+  -> CFacadeResult
+  -> CMailFacadeHandler::SendFacadeResult()
   -> PostOffice.SendPayload()
 ```
 
-回复直接使用 `SendPayload`，不再为了回复临时构造一封带 `new[]` payload 的 `Mail`。
+Mail 的 64 位 `typeCode` 直接承载 `FacadeName.MethodName` 编码，payload 承载参数。适配层不增加 Command、Target 或 Route 概念。
 
 ## 3. Payload 生命周期
 
-MailHandler 从 `Receive()` 拿到的邮件归它处理。每封邮件进入处理循环后都会创建作用域清理对象：
+MailHandler 处理 `Receive()` 返回的邮件，并保证每封请求 Mail 的 payload 在正常结束或异常路径释放。回复直接使用 `SendPayload`，避免构造带临时 `new[]` payload 的 Mail。
 
-```text
-正常处理结束 -> ReleaseMailPayload(requestMail)
-命令 handler 抛异常 -> 栈展开 -> ReleaseMailPayload(requestMail)
-```
+## 4. 上下文
 
-异常不会被吞掉，仍然停在第一现场。
+- 应用范围：只有 `ApplicationContext`；
+- 产品范围：包含 `ApplicationContext` 和 `ProductContext`；
+- Scene 范围：同时包含 Application、Product、Project 和 Scene Context。
 
-## 4. 上下文选择
-
-MailHandler 不决定当前邮件属于应用、产品还是 Scene。
-
-运行体负责传入：
-
-- 应用级：`productContext == nullptr`，`projectContext == nullptr`，`sceneContext == nullptr`
-- 产品级：`productContext != nullptr`，`projectContext == nullptr`，`sceneContext == nullptr`
-- Scene 级：`productContext != nullptr`，`projectContext != nullptr`，`sceneContext != nullptr`
-
-例如 ProductRuntime 知道某个 Scene 邮箱对应哪个 ProjectRuntime 和 Scene，因此仍由 ProductRuntime 同时获取 ProjectContext 与 SceneContext，再传给 MailHandler。
+运行体决定上下文，MailHandler 只转交。
 
 ## 5. 状态映射
 
-命令状态到邮件状态戳：
-
 ```text
-Ok             -> kMailOk
-NoHandler      -> kMailNoHandler
-InvalidRequest -> kMailInvalidPayload
+Ok                         -> kMailOk
+FacadeNotFound/MethodNotFound -> kMailNotFound
+InvalidCall                -> kMailInvalidPayload
 ```
 
-未识别命令状态按 `kMailInvalidPayload` 处理。
-
-## 6. 项目位置
-
-```text
-src/iCAX-Engine/framework/MailHandler/
-```
-
-测试位置：
-
-```text
-src/tests/icax-engine/framework/MailHandler/MailHandlerTest/
-```
+Facade 方法异常会在 Mail 边界转换为 `InvalidCall` 结果，错误文本写入回复 payload，避免异常击穿运行线程。

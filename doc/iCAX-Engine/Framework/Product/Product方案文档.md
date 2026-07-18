@@ -16,7 +16,7 @@ ProductRuntime
     Product MetaRegistry
     Product BehaviourRegistry
     Product ResourceLoaderRegistry
-    Product CommandRegistry / CommandDispatcher
+    Product FacadeRegistry / FacadeInvoker
     Product mail id
     IProjectRuntime*
     ProjectCatalog*
@@ -45,7 +45,7 @@ ApplicationHost::StartProduct(productId)
   -> return productChannelId
 ```
 
-产品模块加载使用 `LoadLibraryA`，同一 DLL 在进程内只加载一次。当前阶段保留已有自动注册宏，但宏本身只把注册动作记录到注册目录；`ProductRuntime::Start()` 会把当前产品模块对应的 ComponentMeta、Behaviour、ResourceLoader 和 CommandHandler 回放到产品级注册表，把 Service 回放到 ApplicationHost 持有的应用级 ServiceProvider。
+产品模块加载使用 `LoadLibraryA`，同一 DLL 在进程内只加载一次。当前阶段保留已有自动注册宏，但宏本身只把注册动作记录到注册目录；`ProductRuntime::Start()` 会把当前产品模块对应的 ComponentMeta、Behaviour、ResourceLoader 和 Facades 回放到产品级注册表，把 Service 回放到 ApplicationHost 持有的应用级 ServiceProvider。
 
 默认 ProductData 文件位于 `{UserConfigDirectory}/Products/{productId}/Product.Data`，为空时回退到 `Setting/Products/{productId}/Product.Data`。
 
@@ -91,7 +91,7 @@ Product.OpenProjectCatalog
 ```text
 ApplicationContext
 ProductRuntime
-CommandRegistry
+FacadeRegistry
 ProjectCatalog list snapshot
 CServiceProvider
 IMetaRegistry
@@ -104,7 +104,7 @@ CResourceLoaderRegistry
 ```text
 ApplicationContext
 ProductRuntime
-CommandRegistry
+FacadeRegistry
 owning ProjectCatalog
 ProjectCatalog list snapshot
 IProjectRuntime

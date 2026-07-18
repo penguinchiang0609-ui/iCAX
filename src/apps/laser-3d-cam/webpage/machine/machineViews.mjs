@@ -1,8 +1,8 @@
 import { getMachineId } from "../state/sceneSelectors.mjs";
 import { escapeAttr, escapeText, formatNumber, getArrayValue } from "../utils/format.mjs";
-export function renderMachineDefinitionList(definitions = [], activeDefinitionId = "", selectedDefinitionId = "", pending = false, usedDefinitionIds = new Set()) {
+export function renderMachineDefinitionList(definitions = [], activeDefinitionId = "", selectedDefinitionId = "", pending = false) {
   if (!definitions.length) {
-    return `<div class="cam-empty-row">未导入机床定义。请导入 SDF/XML 机床定义文件。</div>`;
+    return `<div class="cam-empty-row">未导入机床定义。请通过菜单导入当前产品支持的机床定义文件。</div>`;
   }
 
   return `
@@ -12,7 +12,6 @@ export function renderMachineDefinitionList(definitions = [], activeDefinitionId
         const enabled = definition.enabled !== false;
         const isActive = id && id === String(activeDefinitionId ?? "");
         const isSelected = id && id === String(selectedDefinitionId || activeDefinitionId || "");
-        const isUsed = usedDefinitionIds?.has?.(id) === true;
         return `
           <div class="cam-list-row ${isActive ? "active" : ""} ${isSelected ? "selected" : ""} ${enabled ? "" : "disabled"}"
                data-cam-machine-definition-id="${escapeAttr(id)}"
@@ -20,7 +19,7 @@ export function renderMachineDefinitionList(definitions = [], activeDefinitionId
                role="button"
                tabindex="0">
             <strong>${escapeText(definition.name || definition.modelName || id)}</strong>
-            <small>${escapeText(definition.sourcePath || "SDF 机床定义")}</small>
+            <small>${escapeText(definition.sourcePath || "机床定义")}</small>
             <div class="cam-list-actions">
               <span>${enabled ? "已启用" : "已禁用"}${isActive ? " · 当前实例" : isSelected ? " · 已选中" : ""}</span>
               <button class="tool-button" type="button"
@@ -35,8 +34,8 @@ export function renderMachineDefinitionList(definitions = [], activeDefinitionId
               <button class="tool-button danger" type="button"
                       data-cam-action="delete-machine-definition"
                       data-cam-definition-id="${escapeAttr(id)}"
-                      title="${escapeAttr(isUsed ? "该定义已有实例，不能删除" : "删除未使用的机床定义")}"
-                      ${pending || isUsed ? "disabled" : ""}>删除</button>
+                      title="删除产品级机床定义；已有项目实例不受影响"
+                      ${pending ? "disabled" : ""}>删除</button>
             </div>
           </div>
         `;
@@ -85,7 +84,7 @@ export function renderMachineDefinitionSummary(machine = {}) {
     <dl class="cam-facts">
       <dt>实例</dt><dd>${escapeText(machine.entityId || "-")}</dd>
       <dt>启用</dt><dd>${machine.enabled === false ? "否" : "是"}</dd>
-      <dt>定义资源</dt><dd>${escapeText(machine.machineResourceId || machine.resourceId || "-")}</dd>
+      <dt>资源域</dt><dd>${escapeText(machine.resourceScopeId || "-")}</dd>
       <dt>模型</dt><dd>${escapeText(machine.modelName || machine.name || "-")}</dd>
       <dt>部件</dt><dd>${escapeText(machine.links?.length ?? 0)}</dd>
       <dt>运动轴</dt><dd>${escapeText(machine.joints?.length ?? 0)}</dd>

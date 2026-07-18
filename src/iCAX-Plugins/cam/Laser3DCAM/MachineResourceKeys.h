@@ -9,39 +9,38 @@ namespace iCAX
     namespace CAM
     {
         /*
-        * @brief 根据独立资源 ID 生成机床定义资源 key。
-        * @details
-        *   机床定义资源先进入 Scene.Resources，后续 MachineInstanceComponent 再引用它。
-        *   这样“导入定义”和“实例化机床”不会被同一个 Machine EntityID 绑死。
+        * @brief 根据机床实例 EntityID 生成实例资源命名空间。
+        * @details 机床定义源文件不会作为资源入库；实例化后的 mesh、material、texture 等资源
+        *   仍需要稳定 key，因此直接使用 Machine EntityID 派生命名空间。
         */
-        inline std::string MakeMachineDefinitionResourceID(IN const iCAX::Data::uuid& DefinitionID_)
+        inline std::string MakeMachineInstanceResourceScopeID(IN const iCAX::Data::uuid& MachineID_)
         {
-            return DefinitionID_.is_nil() ? std::string() : "machine-definition/" + iCAX::Data::to_string(DefinitionID_) + "#description";
+            return MachineID_.is_nil() ? std::string() : "machine/" + iCAX::Data::to_string(MachineID_);
         }
 
         inline std::string MakeMachineMaterialResourceID(
-            IN const std::string& strMachineResourceID_,
+            IN const std::string& strResourceScopeID_,
             IN const std::string& strAttachmentKind_,
             IN size_t nSourceIndex_)
         {
-            return strMachineResourceID_.empty()
+            return strResourceScopeID_.empty()
                 ? std::string()
-                : strMachineResourceID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "#render.material";
+                : strResourceScopeID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "#render.material";
         }
 
-        inline std::string MakeMachineVisualMaterialResourceID(IN const std::string& strMachineResourceID_, IN size_t nVisualIndex_)
+        inline std::string MakeMachineVisualMaterialResourceID(IN const std::string& strResourceScopeID_, IN size_t nVisualIndex_)
         {
-            return MakeMachineMaterialResourceID(strMachineResourceID_, "visual", nVisualIndex_);
+            return MakeMachineMaterialResourceID(strResourceScopeID_, "visual", nVisualIndex_);
         }
 
         inline std::string MakeMachineTextureResourceID(
-            IN const std::string& strMachineResourceID_,
+            IN const std::string& strResourceScopeID_,
             IN const std::string& strAttachmentKind_,
             IN size_t nSourceIndex_)
         {
-            return strMachineResourceID_.empty()
+            return strResourceScopeID_.empty()
                 ? std::string()
-                : strMachineResourceID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "#render.texture";
+                : strResourceScopeID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "#render.texture";
         }
     }
 }

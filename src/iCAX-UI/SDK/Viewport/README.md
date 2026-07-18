@@ -12,7 +12,7 @@
 
 - `RenderPDO`：后端/前端共享的二进制渲染协议；几何、实例、Transform、相机分开传输。
 - `ThreeRenderViewport`：H5 默认三维视口实现，使用 SDK 内置 Three.js。
-- 产品 `webpage`：只负责布局、业务命令和把 viewport 放进页面。
+- 产品 `webpage`：只负责布局、Facade 调用和把 viewport 放进页面。
 
 `render.mesh` 不携带 bounds。Viewport 应从 position buffer 和对象 transform 计算自己的运行时包围盒/包围球，用于取景、裁剪和显示缓存；不要把 bounds 视为后端 RenderPDO 契约的一部分。
 

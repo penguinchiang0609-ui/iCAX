@@ -14,7 +14,7 @@ Project 负责协调快速保存日志生命周期，但具体日志写入和回
 
 - `Project.*`：单个已打开项目的管理容器，实现 `IProjectContext`，保存 `ProjectID`、项目名称、项目路径和项目级 Settings，并管理 MainScene/ChildScene。
 - `ProjectScene.*`：单个 Scene 的运行单元，实现 `ISceneContext`，负责 Scene 线程、Scene 邮箱、数据库、资源、可选 PDOHub 和 Universe 生命周期，并标识自身是 MainScene 还是临时 Scene。
-- `ProjectCommands.h`：项目级公共命令常量，当前包含 `Project.GetState`、`Project.Undo`、`Project.Redo`、`Project.GetUndoRedoState`。这些命令操作项目数据，但执行时要求 mail 来自具体 Scene mailbox，并同时携带 ProjectContext 和 SceneContext。
+- `ProjectFacades.h`：项目级公共 Facade 方法常量，当前包含 `Project.GetState`、`Project.Undo`、`Project.Redo`、`Project.GetUndoRedoState`。这些方法操作项目数据，但调用时要求 Mail 来自具体 Scene mailbox，并同时携带 ProjectContext 和 SceneContext。
 - `SceneRuntimeScheduler.*`：Scene 运行时调度器，负责帧时间统计、目标帧间隔和下一帧唤醒时间；Scene 每帧把调度器产生的 `deltaTime/totalTime` 传给 Universe。
 - `ProjectCatalog.*`：一个项目目录，拥有自己的 `catalogId/name/path`，负责打开、关闭和查询目录内的主 Project，不负责 Tick；Scene 线程由 ProjectScene 自己持有。Catalog 构造时必须拿到完整上下文、注册表、邮件通道注册表和资源加载器注册表工厂。
 - `ProjectRuntime.*`：项目运行时抽象与本地实现。`CLocalProjectRuntime` 包装进程内 `CProject`，并把产品 runtime 的 `SetSceneFrameHandler` 转接给 Project；后续进程级隔离可以实现同一个 `IProjectRuntime` 接口。

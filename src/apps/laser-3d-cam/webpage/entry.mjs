@@ -1,6 +1,6 @@
 import { createThreeViewport } from "../../../iCAX-UI/SDK/index.mjs";
 import { renderProgress } from "./layout/commonViews.mjs";
-import { attachMachineAppearanceAutoApply, attachMachineJointLimitAutoApply, attachMachineToolTCPAutoApply, attachMachineTransformAutoApply, handleMachineAction, handleMachineRibbonCommand, importMachinePath as importMachinePathAction, selectMachineDefinition as selectMachineDefinitionAction, selectMachineInstance as selectMachineInstanceAction, setMachineInstanceEnabled as setMachineInstanceEnabledAction } from "./machine/machineActions.mjs";
+import { attachMachineAppearanceAutoApply, attachMachineInstanceNameAutoApply, attachMachineJointLimitAutoApply, attachMachineToolTCPAutoApply, attachMachineTransformAutoApply, handleMachineAction, handleMachineRibbonCommand, importMachinePath as importMachinePathAction, selectMachineDefinition as selectMachineDefinitionAction, selectMachineInstance as selectMachineInstanceAction, setMachineInstanceEnabled as setMachineInstanceEnabledAction } from "./machine/machineActions.mjs";
 import { renderMachineLeftPane, renderMachineRightPane } from "./machine/machineArea.mjs";
 import { handleMachiningAction, handleMachiningRibbonCommand, setJobMachine as setJobMachineAction } from "./machining/machiningActions.mjs";
 import { renderMachiningLeftPane, renderMachiningRightPane } from "./machining/machiningArea.mjs";
@@ -35,8 +35,8 @@ const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
 function getProjectOps() {
   return {
     renderProject,
-    runProjectCommand,
-    runProjectCommandPayload,
+    invokeFacadeMethod,
+    invokeFacadeMethodPayload,
     refreshSceneState,
     appendProjectLog,
     fitViewAfterRenderPublish,
@@ -92,7 +92,7 @@ export async function handleRibbonCommand(context, commandId) {
   }
 
   if (commandId === "view.fit") {
-    runProjectCommand(context, view, "CameraView.Fit", {});
+    invokeFacadeMethod(context, view, "CameraView.Fit", {});
   } else if (commandId === "view.reset-layout") {
     resetWorkbenchLayout(view);
     showNotice(context, view, "布局已恢复默认尺寸。");
@@ -163,6 +163,7 @@ function renderProject(context, view) {
   attachMachineJointLimitAutoApply(context, view, getProjectOps());
   attachMachineAppearanceAutoApply(context, view, getProjectOps());
   attachMachineToolTCPAutoApply(context, view, getProjectOps());
+  attachMachineInstanceNameAutoApply(context, view, getProjectOps());
 
   mount.onclick = (event) => {
     const actionTarget = event.target instanceof Element ? event.target.closest("[data-cam-action]") : null;
@@ -192,7 +193,7 @@ function renderProject(context, view) {
 
     const workpieceTarget = event.target instanceof Element ? event.target.closest("[data-cam-workpiece-id]") : null;
     if (workpieceTarget) {
-      runProjectCommand(context, view, "Workpiece.SetActive", { workpieceEntityId: workpieceTarget.dataset.camWorkpieceId });
+      invokeFacadeMethod(context, view, "Workpiece.SetActive", { workpieceEntityId: workpieceTarget.dataset.camWorkpieceId });
       return;
     }
 
@@ -219,7 +220,7 @@ function renderProject(context, view) {
       const kind = pickTarget.dataset.camKind;
       const id = Number(pickTarget.dataset.camId);
       const label = pickTarget.dataset.camLabel ?? "";
-      runProjectCommand(context, view, "Selection.PickTopology", { kind, id, label });
+      invokeFacadeMethod(context, view, "Selection.PickTopology", { kind, id, label });
     }
   };
 
@@ -506,15 +507,17 @@ function mountRenderViewport(context, view) {
       importMachinePathAction(commandContext, commandView, sourcePath, getProjectOps()),
     setMachineInstanceEnabled: (commandContext, commandView, machineEntityId, enabled) =>
       setMachineInstanceEnabledAction(commandContext, commandView, machineEntityId, enabled, getProjectOps()),
+    setMachineInstanceName: (commandContext, commandView, machineEntityId, name) =>
+      invokeFacadeMethod(commandContext, commandView, "Machine.SetName", { machineEntityId, name }, { timeoutMs: 10000 }),
     setJobMachine: (commandContext, commandView, machineEntityId) =>
       setJobMachineAction(commandContext, commandView, machineEntityId, getProjectOps()),
     pickMachineObject: (commandContext, commandView, payload) =>
       pickMachineObject(commandContext, commandView, payload),
     setMachineElementAppearance: (commandContext, commandView, payload) =>
-      runProjectCommandPayload(commandContext, commandView, "Machine.SetElementAppearance", payload, { timeoutMs: 10000 }),
+      invokeFacadeMethodPayload(commandContext, commandView, "Machine.SetElementAppearance", payload, { timeoutMs: 10000 }),
     setStandardCameraView: (commandContext, commandView, viewName) =>
-      runProjectCommand(commandContext, commandView, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 }),
-    fitView: (commandContext, commandView) => runProjectCommand(commandContext, commandView, "CameraView.Fit", {}),
+      invokeFacadeMethod(commandContext, commandView, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 }),
+    fitView: (commandContext, commandView) => invokeFacadeMethod(commandContext, commandView, "CameraView.Fit", {}),
   });
   view.viewport.refreshAll();
 }
@@ -532,7 +535,7 @@ function runAction(context, view, action, actionTarget = null) {
   const ops = getProjectOps();
   if (action === "view-standard") {
     const viewName = String(actionTarget?.dataset?.camView ?? "iso").trim() || "iso";
-    runProjectCommand(context, view, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 });
+    invokeFacadeMethod(context, view, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 });
     return;
   }
   if (handleMachineAction(context, view, action, actionTarget, ops)) {
@@ -571,7 +574,7 @@ function handleViewportPick(context, view, userData, hit) {
     const face = findFaceByTriangleIndex(view.scene, faceIndex);
     if (face) {
       selectSceneObjectLocally(view, "");
-      runProjectCommand(context, view, "Selection.PickTopology", {
+      invokeFacadeMethod(context, view, "Selection.PickTopology", {
         kind: "face",
         id: Number(face.id),
         label: face.label ?? `face ${face.id}`,
@@ -613,15 +616,16 @@ async function refreshSceneState(context, view) {
   renderProject(context, view);
   try {
     const scene = {};
-    for (const command of [
+    for (const facadeMethod of [
       "Job.Get",
       "MachineDefinition.List",
       "Machine.List",
       "Workpiece.List",
+      "IntentToolpath.List",
       "Toolpath.List",
       "Selection.Get",
     ]) {
-      mergeScenePayload(scene, await context.sceneProxy.execute(command, {}, { timeoutMs: 30000 }));
+      mergeScenePayload(scene, await context.sceneProxy.invoke(facadeMethod, {}, { timeoutMs: 30000 }));
     }
     scene.readiness = buildReadiness(scene);
     view.scene = scene;
@@ -648,7 +652,7 @@ async function refreshSelectedMachineElement(context, view, scene = {}) {
   }
 
   try {
-    mergeScenePayload(scene, await context.sceneProxy.execute("Machine.GetElement", { entityId }, { timeoutMs: 10000 }));
+    mergeScenePayload(scene, await context.sceneProxy.invoke("Machine.GetElement", { entityId }, { timeoutMs: 10000 }));
     syncViewportSelection(view, scene);
   } catch (error) {
     scene.machineElement = null;
@@ -656,9 +660,9 @@ async function refreshSelectedMachineElement(context, view, scene = {}) {
   }
 }
 
-async function runProjectCommand(context, view, command, payload, options = {}) {
-  const { refreshScene: shouldRefreshScene = shouldRefreshSceneAfterCommand(command), ...executeOptions } = options;
-  const result = await runProjectCommandPayload(context, view, command, payload, { ...executeOptions, expectScene: false });
+async function invokeFacadeMethod(context, view, facadeMethod, payload, options = {}) {
+  const { refreshScene: shouldRefreshScene = shouldRefreshSceneAfterFacadeCall(facadeMethod), ...invokeOptions } = options;
+  const result = await invokeFacadeMethodPayload(context, view, facadeMethod, payload, { ...invokeOptions, expectScene: false });
   if (result.ok) {
     mergeScenePayload(view.scene ??= {}, result.payload);
     syncViewportSelection(view, view.scene);
@@ -669,15 +673,15 @@ async function runProjectCommand(context, view, command, payload, options = {}) 
   return result.ok;
 }
 
-async function runProjectCommandPayload(context, view, command, payload, options = {}) {
+async function invokeFacadeMethodPayload(context, view, facadeMethod, payload, options = {}) {
   if (!context.sceneProxy) {
     return { ok: false, payload: null };
   }
 
-  const { expectScene = false, ...executeOptions } = options;
-  appendProjectLog(context, "info", makeCommandStartLog(command, payload));
-  const showProgress = isLongProjectCommand(command);
-  const progress = showProgress ? createCommandProgress(command) : null;
+  const { expectScene = false, ...invokeOptions } = options;
+  appendProjectLog(context, "info", makeFacadeCallStartLog(facadeMethod, payload));
+  const showProgress = isLongFacadeCall(facadeMethod);
+  const progress = showProgress ? createFacadeCallProgress(facadeMethod) : null;
   const useShellProjectProgress = showProgress
     && typeof context.actions?.withProjectProgress === "function"
     && context.project?.projectId;
@@ -688,13 +692,13 @@ async function runProjectCommandPayload(context, view, command, payload, options
   renderProject(context, view);
   const progressStartedAt = performance.now();
   try {
-    const execute = () => context.sceneProxy.execute(command, payload, executeOptions);
+    const invoke = () => context.sceneProxy.invoke(facadeMethod, payload, invokeOptions);
     await waitForPaint();
     let responsePayload = null;
     if (useShellProjectProgress) {
-      responsePayload = await context.actions.withProjectProgress(context.project.projectId, progress, execute);
+      responsePayload = await context.actions.withProjectProgress(context.project.projectId, progress, invoke);
     } else {
-      responsePayload = await execute();
+      responsePayload = await invoke();
     }
     if (expectScene) {
       view.scene = responsePayload;
@@ -705,13 +709,13 @@ async function runProjectCommandPayload(context, view, command, payload, options
     }
     appendProjectLog(
       context,
-      command === "CameraView.Fit" && !view.scene?.fitView?.fitted ? "info" : "ok",
-      makeCommandSuccessLog(command, expectScene ? view.scene : responsePayload),
+      facadeMethod === "CameraView.Fit" && !view.scene?.fitView?.fitted ? "info" : "ok",
+      makeFacadeCallSuccessLog(facadeMethod, expectScene ? view.scene : responsePayload),
     );
     return { ok: true, payload: responsePayload };
   } catch (error) {
     view.error = error?.message ?? String(error);
-    appendProjectLog(context, "error", `${command} 失败：${view.error}`);
+    appendProjectLog(context, "error", `${facadeMethod} 失败：${view.error}`);
     return { ok: false, payload: null };
   } finally {
     if (!useShellProjectProgress) {
@@ -723,7 +727,7 @@ async function runProjectCommandPayload(context, view, command, payload, options
   }
 }
 
-function shouldRefreshSceneAfterCommand(command) {
+function shouldRefreshSceneAfterFacadeCall(facadeMethod) {
   return ![
     "CameraView.Fit",
     "CameraView.SetStandard",
@@ -731,7 +735,7 @@ function shouldRefreshSceneAfterCommand(command) {
     "Selection.Get",
     "Selection.PickMachineObject",
     "Selection.PickTopology",
-  ].includes(command);
+  ].includes(facadeMethod);
 }
 
 function mergeScenePayload(scene, payload) {
@@ -743,6 +747,7 @@ function mergeScenePayload(scene, payload) {
     "jobs",
     "machineDefinitions",
     "definitions",
+    "supportedFormats",
     "machines",
     "machine",
     "machineElement",
@@ -753,16 +758,21 @@ function mergeScenePayload(scene, payload) {
     "faces",
     "loops",
     "edges",
+    "cadInspection",
     "selection",
     "cuttingLayers",
     "visibleLayers",
     "program",
     "toolpaths",
+    "intentDocumentId",
+    "intentToolpaths",
     "fitView",
   ]) {
     if (Object.prototype.hasOwnProperty.call(payload, key)) {
       if (key === "definitions") {
         scene.machineDefinitions = payload.definitions;
+      } else if (key === "supportedFormats") {
+        scene.machineDefinitionSupportedFormats = payload.supportedFormats;
       } else if (key !== "machine") {
         scene[key] = payload[key];
       }
@@ -786,7 +796,7 @@ function buildReadiness(scene = {}) {
   const model = scene.model ?? scene.workpiece ?? {};
   const topology = scene.topology ?? {};
   const toolpaths = Array.isArray(scene.toolpaths) ? scene.toolpaths : [];
-  const machineReady = Boolean(machine?.enabled !== false && (machine?.machineResourceId || machine?.resourceId));
+  const machineReady = Boolean(machine?.enabled !== false && (machine?.entityId || machine?.id));
   const workpieceReady = Boolean(model?.brepResourceId || model?.modelResourceId);
   const topologyReady = Boolean(topology?.hasTopology);
   const toolpathReady = toolpaths.length > 0;
@@ -844,7 +854,7 @@ async function pickMachineObject(context, view, payload = {}) {
     return { ok: false, payload: null };
   }
 
-  const pickResult = await runProjectCommandPayload(
+  const pickResult = await invokeFacadeMethodPayload(
     context,
     view,
     "Selection.PickMachineObject",
@@ -855,7 +865,7 @@ async function pickMachineObject(context, view, payload = {}) {
     return pickResult;
   }
 
-  const elementResult = await runProjectCommandPayload(
+  const elementResult = await invokeFacadeMethodPayload(
     context,
     view,
     "Machine.GetElement",
@@ -930,34 +940,34 @@ function appendProjectLog(context, level, message) {
   console[level === "error" ? "error" : "log"](text);
 }
 
-function makeCommandStartLog(command, payload) {
+function makeFacadeCallStartLog(facadeMethod, payload) {
   const sourcePath = payload?.sourcePath ? `：${payload.sourcePath}` : "";
-  if (command === "MachineDefinition.Import") {
+  if (facadeMethod === "MachineDefinition.Import") {
     return `开始导入机床定义${sourcePath}`;
   }
-  if (command === "Machine.Instantiate") {
-    return `开始实例化机床：${payload?.machineDefinitionId ?? payload?.machineResourceId ?? payload?.resourceId ?? "-"}`;
+  if (facadeMethod === "Machine.Instantiate") {
+    return `开始实例化机床：${payload?.machineDefinitionId ?? "-"}`;
   }
-  if (command === "Machine.SetEnabled") {
+  if (facadeMethod === "Machine.SetEnabled") {
     return `${payload?.enabled === false ? "禁用" : "启用"}机床实例：${payload?.machineEntityId ?? "-"}`;
   }
-  if (command === "WorkpieceModel.Import") {
+  if (facadeMethod === "WorkpieceModel.Import") {
     return `开始导入工件模型资源${sourcePath}`;
   }
-  if (command === "Workpiece.Instantiate") {
+  if (facadeMethod === "Workpiece.Instantiate") {
     return `开始实例化工件：${payload?.modelResourceId ?? "-"}`;
   }
-  if (command === "CameraView.Fit") {
+  if (facadeMethod === "CameraView.Fit") {
     return "开始自动适配最佳视角";
   }
-  return `执行 ${command}`;
+  return `调用 ${facadeMethod}`;
 }
 
-function makeCommandSuccessLog(command, scene) {
-  if (command === "MachineDefinition.Import") {
-    return `机床定义导入完成：definition=${scene?.machineDefinitionId ?? "-"}, resource=${scene?.machineResourceId ?? scene?.resourceId ?? "-"}, links=${scene?.linkCount ?? 0}, joints=${scene?.jointCount ?? 0}, visuals=${scene?.visualCount ?? 0}, collisions=${scene?.collisionCount ?? 0}`;
+function makeFacadeCallSuccessLog(facadeMethod, scene) {
+  if (facadeMethod === "MachineDefinition.Import") {
+    return `机床定义导入完成：definition=${scene?.machineDefinitionId ?? "-"}, path=${scene?.managedPath ?? scene?.sourcePath ?? "-"}`;
   }
-  if (command === "Machine.Instantiate") {
+  if (facadeMethod === "Machine.Instantiate") {
     const machines = getMachines(scene);
     const machine = machines[machines.length - 1] ?? {};
     const visualCount = machine.visuals?.length ?? 0;
@@ -968,18 +978,18 @@ function makeCommandSuccessLog(command, scene) {
       : "。该定义没有可显示几何，视口保持为空是正常结果";
     return `机床实例化完成：links=${machine.links?.length ?? 0}, joints=${machine.joints?.length ?? 0}, visuals=${visualCount}, collisions=${collisionCount}, includes=${includeCount}${suffix}`;
   }
-  if (command === "Machine.SetEnabled") {
+  if (facadeMethod === "Machine.SetEnabled") {
     const machine = scene?.machine ?? getSelectedMachine(scene, {});
     return `机床实例状态已更新：${machine.enabled === false ? "已禁用" : "已启用"}`;
   }
-  if (command === "WorkpieceModel.Import") {
+  if (facadeMethod === "WorkpieceModel.Import") {
     return `工件模型资源导入完成：model=${scene?.modelResourceId ?? "-"}, brep=${scene?.brepResourceId ?? "-"}, topology=${scene?.topologyResourceId ?? "-"}`;
   }
-  if (command === "Workpiece.Instantiate") {
+  if (facadeMethod === "Workpiece.Instantiate") {
     const topology = scene?.topology ?? {};
     return `工件实例化完成：faces=${topology.faceCount ?? 0}, loops=${topology.loopCount ?? 0}, edges=${topology.edgeCount ?? 0}`;
   }
-  if (command === "CameraView.Fit") {
+  if (facadeMethod === "CameraView.Fit") {
     const fit = scene?.fitView ?? {};
     if (!fit.fitted) {
       return [
@@ -999,13 +1009,13 @@ function makeCommandSuccessLog(command, scene) {
     }
     return `最佳视角已适配：radius=${formatNumber(fit.radius ?? 0, 2)}, distance=${formatNumber(fit.distance ?? 0, 2)}, speed=${formatNumber(fit.moveSpeed ?? 0, 2)}`;
   }
-  return `${command} 完成`;
+  return `${facadeMethod} 完成`;
 }
 
 async function fitViewAfterRenderPublish(context, view) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await sleep(attempt === 0 ? 120 : 180);
-    const ok = await runProjectCommand(context, view, "CameraView.Fit", {});
+    const ok = await invokeFacadeMethod(context, view, "CameraView.Fit", {});
     if (ok && view.scene?.fitView?.fitted) {
       return;
     }
@@ -1054,33 +1064,32 @@ function waitForMinimumDuration(startedAt, minimumVisibleMs) {
   return new Promise((resolve) => window.setTimeout(resolve, remaining));
 }
 
-function isLongProjectCommand(command) {
-  return command === "MachineDefinition.Import"
-    || command === "Machine.Instantiate"
-    || command === "WorkpieceModel.Import"
-    || command === "Workpiece.Instantiate"
-    || command === "Toolpath.RecognizeLoops"
-    || command === "Toolpath.AddSelectionPath";
+function isLongFacadeCall(facadeMethod) {
+  return facadeMethod === "MachineDefinition.Import"
+    || facadeMethod === "Machine.Instantiate"
+    || facadeMethod === "WorkpieceModel.Import"
+    || facadeMethod === "Workpiece.Instantiate"
+    || facadeMethod === "Toolpath.RecognizeLoops"
+    || facadeMethod === "Toolpath.AddSelectionPath";
 }
 
-function createCommandProgress(command) {
-  if (command === "MachineDefinition.Import") {
+function createFacadeCallProgress(facadeMethod) {
+  if (facadeMethod === "MachineDefinition.Import") {
     return {
       title: "导入机床定义",
-      detail: "正在解析 SDF 机床定义文件",
+      detail: "正在托管机床定义源文件",
       stage: "机床定义导入",
       mode: "Machine",
       minimumVisibleMs: 1600,
       steps: [
-        ["文件检查", "正在校验 SDF/XML 路径"],
-        ["SDF 解析", "正在解析 link、joint、visual、collision 和 material"],
-        ["资源入库", "正在保存机床定义资源"],
-        ["定义登记", "正在写入机床定义组件"],
+        ["格式检查", "正在校验当前产品支持的机床定义格式"],
+        ["文件托管", "正在把源文件目录托管到产品数据区"],
+        ["定义登记", "正在写入产品级机床定义目录"],
         ["结果返回", "正在返回机床定义 ID"],
       ],
     };
   }
-  if (command === "Machine.Instantiate") {
+  if (facadeMethod === "Machine.Instantiate") {
     return {
       title: "实例化机床",
       detail: "正在把机床定义展开到当前加工场景",
@@ -1088,7 +1097,7 @@ function createCommandProgress(command) {
       mode: "Machine",
       minimumVisibleMs: 1200,
       steps: [
-        ["资源读取", "正在读取机床定义资源"],
+        ["源文件读取", "正在读取机床定义源文件"],
         ["结构展开", "正在创建 link、joint、visual 和 collision Entity"],
         ["参数初始化", "正在初始化 TCP、轴限位和机床状态"],
         ["显示同步", "正在发布机床 visual 到 RenderPDO"],
@@ -1096,7 +1105,7 @@ function createCommandProgress(command) {
       ],
     };
   }
-  if (command === "WorkpieceModel.Import") {
+  if (facadeMethod === "WorkpieceModel.Import") {
     return {
       title: "导入工件模型",
       detail: "正在读取模型文件",
@@ -1112,7 +1121,7 @@ function createCommandProgress(command) {
       ],
     };
   }
-  if (command === "Workpiece.Instantiate") {
+  if (facadeMethod === "Workpiece.Instantiate") {
     return {
       title: "实例化工件",
       detail: "正在把工件资源加入当前加工场景",
@@ -1128,7 +1137,7 @@ function createCommandProgress(command) {
       ],
     };
   }
-  if (command === "Toolpath.RecognizeLoops") {
+  if (facadeMethod === "Toolpath.RecognizeLoops") {
     return {
       title: "识别孔特征",
       detail: "正在扫描模型拓扑",
@@ -1142,7 +1151,7 @@ function createCommandProgress(command) {
       ],
     };
   }
-  if (command === "Toolpath.AddSelectionPath") {
+  if (facadeMethod === "Toolpath.AddSelectionPath") {
     return {
       title: "生成刀路",
       detail: "正在从当前选择生成空间曲线",
@@ -1158,11 +1167,11 @@ function createCommandProgress(command) {
   }
   return {
     title: "后台执行",
-    detail: "正在等待后台命令完成",
-    stage: command,
-    mode: "Command",
+    detail: "正在等待后台调用完成",
+    stage: facadeMethod,
+    mode: "Facade",
     minimumVisibleMs: 800,
-    steps: [[command, "正在等待后台命令完成"]],
+    steps: [[facadeMethod, "正在等待后台调用完成"]],
   };
 }
 

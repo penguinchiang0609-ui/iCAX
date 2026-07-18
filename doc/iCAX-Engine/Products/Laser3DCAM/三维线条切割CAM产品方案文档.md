@@ -683,7 +683,7 @@ SimulationState
 - 将 RecognizedFeature 转为三维空间曲线。
 - 支持 line、arc、polyline、ellipse、三阶 B 样条和 Bezier。
 - 控制默认最大几何偏差 `0.001 mm`。
-- 输出 GeneratedToolpath，由 CommandHandler 写入 PathCurveResource、PathEntity 和 Block.Children。
+- 输出 GeneratedToolpath，由 Facades 写入 PathCurveResource、PathEntity 和 Block.Children。
 - 不让刀路主身份依赖 CAD 拓扑。
 
 ### 10.6 PoseFieldService
@@ -823,7 +823,7 @@ Cam.ResetSimulation
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as Cam CommandTarget
+    participant Cmd as Cam Facade
     participant Tool as ToolAssemblyImporter
     participant Repo as Database
     participant Res as Resources
@@ -844,7 +844,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam CommandTarget
+    participant Cmd as LaserCam Facade
     participant Cad as CadImportService
     participant Repo as Database
     participant Res as Resources
@@ -868,7 +868,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam CommandTarget
+    participant Cmd as LaserCam Facade
     participant Rec as FeatureRecognitionService
     participant Pick as PickService
     participant Gen as ToolpathGenerationService
@@ -894,7 +894,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam CommandTarget
+    participant Cmd as LaserCam Facade
     participant Pose as PoseFieldService
     participant Motion as MotionPlanningService
     participant IK as KinematicsService
@@ -919,7 +919,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam CommandTarget
+    participant Cmd as LaserCam Facade
     participant Sim as CamSimulationService
     participant PDO as PDOHub
     participant Render as 前端渲染

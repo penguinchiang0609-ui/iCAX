@@ -6,8 +6,8 @@
 #include <ApplicationContext/ApplicationContext.h>
 #include <Behaviour/BehaviourBase.h>
 #include <Behaviour/IBehaviourRegistry.h>
-#include <CommandTargets/CommandRoute.h>
-#include <CommandTargets/CommandRegistry.h>
+#include <Facades/FacadeMethod.h>
+#include <Facades/FacadeRegistry.h>
 #include <Database/ComponentBase.h>
 #include <Database/IMetaRegistry.h>
 #include <PDO/PDOLease.h>
@@ -296,12 +296,12 @@ namespace
             IN std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry_,
             IN std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry_,
             IN std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider_,
-            IN std::shared_ptr<iCAX::Command::CCommandRegistry> pCommandRegistry_)
+            IN std::shared_ptr<iCAX::Interaction::CFacadeRegistry> pFacadeRegistry_)
             : m_pMetaRegistry(std::move(pMetaRegistry_))
             , m_pBehaviourRegistry(std::move(pBehaviourRegistry_))
             , m_pResourceLoaderRegistry(std::move(pResourceLoaderRegistry_))
             , m_pServiceProvider(std::move(pServiceProvider_))
-            , m_pCommandRegistry(std::move(pCommandRegistry_))
+            , m_pFacadeRegistry(std::move(pFacadeRegistry_))
         {
             m_Definition.ProductID = "project-test-product";
             m_Definition.ProductName = "Project Test Product";
@@ -342,9 +342,9 @@ namespace
             return *m_pResourceLoaderRegistry;
         }
 
-        iCAX::Command::CCommandRegistry& GetCommandRegistry() const override
+        iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override
         {
-            return *m_pCommandRegistry;
+            return *m_pFacadeRegistry;
         }
 
     private:
@@ -354,7 +354,7 @@ namespace
         std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
         std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
         std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
-        std::shared_ptr<iCAX::Command::CCommandRegistry> m_pCommandRegistry;
+        std::shared_ptr<iCAX::Interaction::CFacadeRegistry> m_pFacadeRegistry;
     };
 
     std::shared_ptr<iCAX::Product::IProductContext> MakeProductContext(
@@ -368,7 +368,7 @@ namespace
             pBehaviourRegistry_,
             pResourceLoaderRegistry_,
             pServiceProvider_,
-            std::make_shared<iCAX::Command::CCommandRegistry>());
+            std::make_shared<iCAX::Interaction::CFacadeRegistry>());
     }
 
     bool WaitFor(std::condition_variable& Condition_, std::mutex& Mutex_, const std::function<bool()>& Predicate_)
@@ -993,7 +993,7 @@ TEST(ProjectTest, CloseInvalidatesMainSceneMailPostOffices)
 
 TEST(ProjectTest, MainSceneCanSendFrontendEvent)
 {
-    constexpr uint64_t kRepositoryChangedEvent = iCAX::Command::MakeCommandCode("Project", "RepositoryChanged");
+    constexpr uint64_t kRepositoryChangedEvent = iCAX::Interaction::MakeFacadeMethodCode("Project", "RepositoryChanged");
 
     CProject _Project(MakeProjectInfo());
     auto _FrontendPostOffice = _Project.GetMainSceneFrontendPostOffice();

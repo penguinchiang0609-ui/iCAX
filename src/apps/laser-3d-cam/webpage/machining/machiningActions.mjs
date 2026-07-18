@@ -2,19 +2,19 @@ import { getMachineId, getMachines } from "../state/sceneSelectors.mjs";
 
 export function handleMachiningRibbonCommand(context, view, commandId, ops) {
   if (commandId === "toolpath.recognize-holes") {
-    ops.runProjectCommand(context, view, "Toolpath.RecognizeLoops", {});
+    ops.invokeFacadeMethod(context, view, "Toolpath.RecognizeLoops", {});
     return true;
   }
   if (commandId === "toolpath.add-selection") {
-    ops.runProjectCommand(context, view, "Toolpath.AddSelectionPath", {});
+    ops.invokeFacadeMethod(context, view, "Toolpath.AddSelectionPath", {});
     return true;
   }
   if (commandId === "toolpath.clear") {
-    ops.runProjectCommand(context, view, "Toolpath.ClearProgram", {});
+    ops.invokeFacadeMethod(context, view, "Toolpath.ClearProgram", {});
     return true;
   }
   if (commandId === "toolpath.clear-selection") {
-    ops.runProjectCommand(context, view, "Selection.PickTopology", { kind: "", id: 0, label: "" });
+    ops.invokeFacadeMethod(context, view, "Selection.PickTopology", { kind: "", id: 0, label: "" });
     return true;
   }
   if (commandId === "toolpath.pick-edge") {
@@ -30,15 +30,15 @@ export function handleMachiningRibbonCommand(context, view, commandId, ops) {
 
 export function handleMachiningAction(context, view, action, ops) {
   if (action === "recognize-loops") {
-    ops.runProjectCommand(context, view, "Toolpath.RecognizeLoops", {});
+    ops.invokeFacadeMethod(context, view, "Toolpath.RecognizeLoops", {});
     return true;
   }
   if (action === "add-selection") {
-    ops.runProjectCommand(context, view, "Toolpath.AddSelectionPath", {});
+    ops.invokeFacadeMethod(context, view, "Toolpath.AddSelectionPath", {});
     return true;
   }
   if (action === "clear-toolpaths") {
-    ops.runProjectCommand(context, view, "Toolpath.ClearProgram", {});
+    ops.invokeFacadeMethod(context, view, "Toolpath.ClearProgram", {});
     return true;
   }
   return false;
@@ -58,5 +58,5 @@ export async function setJobMachine(context, view, machineEntityId, ops) {
     return;
   }
   view.selectedMachineInstanceId = id;
-  await ops.runProjectCommand(context, view, "Job.SetMachine", { machineEntityId: id });
+  await ops.invokeFacadeMethod(context, view, "Job.SetMachine", { machineEntityId: id });
 }

@@ -1,6 +1,6 @@
-import { makeCommandTypeCodeFromCommand } from "../Mailbox/commandRoute.mjs";
+import { makeFacadeMethodCodeFromName } from "../Mailbox/facadeMethod.mjs";
 
-export const RenderPDOCommands = Object.freeze({
+export const RenderPDOEvents = Object.freeze({
   slotAllocated: "PDORender.SlotAllocated",
   slotFreed: "PDORender.SlotFreed",
   slotMoved: "PDORender.SlotMoved",
@@ -9,7 +9,7 @@ export const RenderPDOCommands = Object.freeze({
 });
 
 export const RenderPDOTypeCodes = Object.freeze(Object.fromEntries(
-  Object.entries(RenderPDOCommands).map(([key, command]) => [key, makeCommandTypeCodeFromCommand(command)]),
+  Object.entries(RenderPDOEvents).map(([key, facadeEvent]) => [key, makeFacadeMethodCodeFromName(facadeEvent)]),
 ));
 
 export const RenderPDOPayloadKind = Object.freeze({

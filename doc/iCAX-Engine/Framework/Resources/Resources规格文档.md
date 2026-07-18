@@ -4,7 +4,7 @@
 
 `Resources` 是 framework 层的工程资源系统。
 
-它解决的问题是：模型、图片、文字、材质、渲染缓存等资源可以统一通过资源路径或来源字符串访问。Database、CommandHandler、Behaviour 或业务代码不需要直接持有资源对象，也不需要手动构造资源 key。
+它解决的问题是：模型、图片、文字、材质、渲染缓存等资源可以统一通过资源路径或来源字符串访问。Database、Facades、Behaviour 或业务代码不需要直接持有资源对象，也不需要手动构造资源 key。
 
 核心模型：
 

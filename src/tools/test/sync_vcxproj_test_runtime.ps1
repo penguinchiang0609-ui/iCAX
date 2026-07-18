@@ -92,7 +92,10 @@ function Sync-ReferencedProject {
 
     $projectName = Get-ProjectName $fullProjectPath $xml
     $projectDir = Split-Path -Parent $fullProjectPath
-    $dllPath = Join-Path $projectDir (Join-Path $Platform (Join-Path $Configuration "$projectName.dll"))
+    $sourceRoot = Resolve-FullPath (Join-Path $PSScriptRoot "..")
+    $sharedDllPath = Join-Path $sourceRoot (Join-Path $Platform (Join-Path $Configuration "$projectName.dll"))
+    $projectDllPath = Join-Path $projectDir (Join-Path $Platform (Join-Path $Configuration (Join-Path $projectName "$projectName.dll")))
+    $dllPath = if (Test-Path -LiteralPath $sharedDllPath) { $sharedDllPath } else { $projectDllPath }
 
     if (Test-Path -LiteralPath $dllPath) {
         Copy-Item -LiteralPath $dllPath -Destination $DestinationDir -Force

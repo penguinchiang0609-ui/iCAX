@@ -2,7 +2,7 @@
 
 `ApplicationContext` 是 framework 层的应用运行上下文项目。它描述应用程序级信息、路径和用户配置，不承载项目数据、EC 数据、资源对象或业务行为。
 
-`ApplicationContext` 可以被 Behaviour、Service、CommandTargets、ApplicationHost 使用；它本身不依赖这些项目。
+`ApplicationContext` 可以被 Behaviour、Service、Facades、ApplicationHost 使用；它本身不依赖这些项目。
 
 应用级设置是与具体产品和具体项目都无关的 iCAX 应用程序参数。它跟随当前 iCAX 安装或当前用户环境，不跟随产品，也不跟随项目文件。
 

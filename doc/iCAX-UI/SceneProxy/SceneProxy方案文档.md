@@ -18,20 +18,20 @@ src/iCAX-UI/SceneProxy/
 
 它不依赖 `AppProxy`，只通过构造参数持有上级 `ProjectProxy` 引用。
 
-## 3. 命令流程
+## 3. Facade 调用流程
 
 ```text
-SceneProxy.execute(command, payload)
-  -> MailboxClient.request(sceneChannelId, command, payload)
+SceneProxy.invoke(facadeMethod, payload)
+  -> MailboxClient.invoke(sceneChannelId, facadeMethod, payload)
   -> bridge.postMail()
   -> UIContainer
   -> backend scene mail handler
-  -> CommandHandler(application, product, project, scene)
+  -> Facades(application, product, project, scene)
   <- response mail
   -> Promise resolve/reject
 ```
 
-标准命令由 `SDK/Mailbox/commandRoute.mjs` 中的 `ProjectCommands` 定义。这里保留 `Project` 命令名，是因为命令操作的是项目数据；投递入口是当前 Scene channel。
+标准方法由 `SDK/Mailbox/facadeMethod.mjs` 中的 `ProjectFacade` 定义。这里保留 `Project` Facade 名，是因为方法操作的是项目数据；当前 Scene channel 只是 Mail 的传输边界，不属于 Facade 方法名。
 
 ## 4. PDO 流程
 

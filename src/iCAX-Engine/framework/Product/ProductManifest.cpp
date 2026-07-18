@@ -179,6 +179,66 @@ namespace
         return _Items;
     }
 
+    iCAX::Data::Variant _JsonToVariant(IN const json::value& Value_);
+
+    iCAX::Data::VariantArray _JsonArrayToVariantArray(IN const json::array& Array_)
+    {
+        iCAX::Data::VariantArray _Result;
+        _Result.reserve(Array_.size());
+        for (const auto& _Item : Array_)
+        {
+            _Result.emplace_back(_JsonToVariant(_Item));
+        }
+        return _Result;
+    }
+
+    iCAX::Data::ObjectMap _JsonObjectToObjectMap(IN const json::object& Object_)
+    {
+        iCAX::Data::ObjectMap _Result;
+        for (const auto& _Item : Object_)
+        {
+            _Result[std::string(_Item.key_c_str())] = _JsonToVariant(_Item.value());
+        }
+        return _Result;
+    }
+
+    iCAX::Data::Variant _JsonToVariant(IN const json::value& Value_)
+    {
+        if (Value_.is_null())
+        {
+            return iCAX::Data::Variant{};
+        }
+        if (Value_.is_bool())
+        {
+            return Value_.as_bool();
+        }
+        if (Value_.is_string())
+        {
+            return std::string(Value_.as_string().c_str());
+        }
+        if (Value_.is_int64())
+        {
+            return static_cast<long long>(Value_.as_int64());
+        }
+        if (Value_.is_uint64())
+        {
+            return static_cast<unsigned long long>(Value_.as_uint64());
+        }
+        if (Value_.is_double())
+        {
+            return Value_.as_double();
+        }
+        if (Value_.is_array())
+        {
+            return _JsonArrayToVariantArray(Value_.as_array());
+        }
+        if (Value_.is_object())
+        {
+            return _JsonObjectToObjectMap(Value_.as_object());
+        }
+        return iCAX::Data::Variant{};
+    }
+
     void _ReplaceAll(
         IN OUT std::string& strText_,
         IN const std::string& strFrom_,
@@ -365,6 +425,10 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
     _Definition.ProductID = _RequireString(_Root, "productId");
     _Definition.ProductName = _RequireString(_Root, "productName");
     _Definition.ProductVersion = _OptionalString(_Root, "productVersion");
+    if (const auto* _pCapabilities = _Root.if_contains("capabilities"))
+    {
+        _Definition.Capabilities = _JsonObjectToObjectMap(_RequireObject(*_pCapabilities, "capabilities"));
+    }
 
     const auto& _ProjectFile = _RequireChildObject(_Root, "projectFile");
     _Definition.ProjectFile.Magic = _RequireString(_ProjectFile, "magic");
@@ -386,7 +450,7 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
         _AppendModuleArray(_Modules, "behaviours", _ProductRoot, _Definition.Modules.BehaviourModules);
         _AppendModuleArray(_Modules, "behaviors", _ProductRoot, _Definition.Modules.BehaviourModules);
         _AppendModuleArray(_Modules, "services", _ProductRoot, _Definition.Modules.ServiceModules);
-        _AppendModuleArray(_Modules, "commands", _ProductRoot, _Definition.Modules.CommandModules);
+        _AppendModuleArray(_Modules, "facades", _ProductRoot, _Definition.Modules.FacadeModules);
     }
     _ApplyPDOHubConfig(_Backend, _Definition);
     _AppendResourceHandlers(_Backend, _ProductRoot, _Definition.ResourceHandlers);

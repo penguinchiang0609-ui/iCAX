@@ -9,7 +9,7 @@ namespace iCAX
         /*
         * @brief CAM 当前拓扑选择组件。
         * @details
-        *   选择态是运行时 UI/交互数据，保存在 Database 中便于行为、命令和服务统一读取；
+        *   选择态是运行时 UI/交互数据，保存在 Database 中便于行为、Facade 和服务统一读取；
         *   字段是 NonPersistent + Observable，不进入项目文件、快速保存日志和撤销还原。
         */
         class CSelectionComponent final : public iCAX::Database::CComponentBase

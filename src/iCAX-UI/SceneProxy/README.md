@@ -8,6 +8,6 @@
 
 使用边界：
 
-- 产品页面通过 `sceneProxy.execute()` 向后端发送业务命令。
+- 产品页面通过 `sceneProxy.invoke("Machine.Jog", { machineId, axis, delta })` 调用 Facade 方法。
 - 产品页面通过 `sceneProxy.pdo` 读取当前 Scene 的 PDO。
-- `SceneProxy` 不解释业务 payload，不直接访问 Database、Resource 或 Component。
+- `SceneProxy` 不解释业务参数和结果，不直接访问 Database、Resource 或 Component。

@@ -22,7 +22,7 @@ namespace iCAX
             std::string ChannelID;    //!< 目标 channel id。
             uint64_t nID = 0;         //!< 本封邮件 ID，由 UI 侧分配。
             uint64_t nOriginID = 0;   //!< 响应来源 ID；请求和主动事件为 0。
-            uint64_t nTypeCode = 0;   //!< CommandTargets 64 位主/子命令路由码。
+            uint64_t nTypeCode = 0;   //!< FacadeName.MethodName 的 64 位紧凑编码。
             uint16_t nStamp = 0;      //!< Mail::StampCode 数值。
             std::string PayloadText;  //!< UTF-8 文本 payload。
         };

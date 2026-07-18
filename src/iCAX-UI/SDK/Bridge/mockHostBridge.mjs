@@ -1,4 +1,4 @@
-import { AppCommands, ProductCommands, ProjectCommands, makeCommandTypeCodeFromCommand } from "../Mailbox/commandRoute.mjs";
+import { AppFacade, ProductFacade, ProjectFacade, makeFacadeMethodCodeFromName } from "../Mailbox/facadeMethod.mjs";
 import { deserializeVariantText, serializeVariantText } from "../Mailbox/variantSerializer.mjs";
 
 const appChannelId = "00000000-0000-4000-8000-000000000001";
@@ -58,7 +58,7 @@ export class MockHostBridge {
 
   async postMail(mail) {
     const payload = deserializeVariantText(mail.payloadText);
-    const responsePayload = this.#handleCommand(String(mail.typeCode), payload);
+    const responsePayload = this.#invokeFacadeMethod(String(mail.typeCode), payload);
     const response = {
       channelId: mail.channelId,
       id: Date.now(),
@@ -87,12 +87,12 @@ export class MockHostBridge {
     this.windowDragRequested = true;
   }
 
-  emitMail(channelId, command, payload = {}, options = {}) {
+  emitMail(channelId, facadeMember, payload = {}, options = {}) {
     const eventMail = {
       channelId,
       id: options.id ?? Date.now(),
       originId: options.originId ?? 0,
-      typeCode: makeCommandTypeCodeFromCommand(command),
+      typeCode: makeFacadeMethodCodeFromName(facadeMember),
       stamp: options.stamp ?? 0,
       payloadText: serializeVariantText(payload),
     };
@@ -105,31 +105,31 @@ export class MockHostBridge {
     return eventMail;
   }
 
-  #handleCommand(typeCode, payload) {
-    if (typeCode === makeCommandTypeCodeFromCommand(AppCommands.getState)
-      || typeCode === makeCommandTypeCodeFromCommand(AppCommands.listProducts)) {
+  #invokeFacadeMethod(typeCode, payload) {
+    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.getState)
+      || typeCode === makeFacadeMethodCodeFromName(AppFacade.listProducts)) {
       return this.#applicationState();
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(AppCommands.startProduct)) {
+    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.startProduct)) {
       this.productStarted = true;
       return { applicationChannelId: appChannelId, product: this.#productState(), state: this.#applicationState() };
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(AppCommands.stopProduct)) {
+    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.stopProduct)) {
       this.productStarted = false;
       this.projectOpened = false;
       return this.#applicationState();
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(AppCommands.resolveProjectFile)) {
+    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.resolveProjectFile)) {
       return {
         applicationChannelId: appChannelId,
         resolve: this.#resolveProjectFile(payload.projectPath),
       };
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(AppCommands.openProjectFile)) {
+    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.openProjectFile)) {
       this.productStarted = true;
       this.projectOpened = true;
       this.projectPath = payload.projectPath || this.projectPath;
@@ -142,27 +142,27 @@ export class MockHostBridge {
       };
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(ProductCommands.getState)
-      || typeCode === makeCommandTypeCodeFromCommand(ProductCommands.listProjectCatalogs)) {
+    if (typeCode === makeFacadeMethodCodeFromName(ProductFacade.getState)
+      || typeCode === makeFacadeMethodCodeFromName(ProductFacade.listProjectCatalogs)) {
       return this.#runningProductState();
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(ProductCommands.openProjectCatalog)) {
+    if (typeCode === makeFacadeMethodCodeFromName(ProductFacade.openProjectCatalog)) {
       this.projectOpened = true;
       this.projectPath = payload.projectPath || this.projectPath;
       return { catalog: this.#catalogState(payload.projectPath), state: this.#runningProductState() };
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(ProjectCommands.getState)) {
+    if (typeCode === makeFacadeMethodCodeFromName(ProjectFacade.getState)) {
       return this.#projectState();
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(ProjectCommands.undo)
-      || typeCode === makeCommandTypeCodeFromCommand(ProjectCommands.redo)) {
+    if (typeCode === makeFacadeMethodCodeFromName(ProjectFacade.undo)
+      || typeCode === makeFacadeMethodCodeFromName(ProjectFacade.redo)) {
       return this.#undoRedoState();
     }
 
-    if (typeCode === makeCommandTypeCodeFromCommand(ProjectCommands.getUndoRedoState)) {
+    if (typeCode === makeFacadeMethodCodeFromName(ProjectFacade.getUndoRedoState)) {
       return this.#undoRedoState();
     }
 

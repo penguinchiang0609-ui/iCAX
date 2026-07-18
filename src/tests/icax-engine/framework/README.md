@@ -5,10 +5,10 @@
 ## 目录结构
 
 - `ApplicationContext/`：对应 `src/icax-engine/framework/ApplicationContext` 的 ApplicationContext 单元测试。
-- `CommandTargets/`：对应 `src/icax-engine/framework/CommandTargets` 的 CommandTargets 单元测试。
+- `Facades/`：对应 `src/icax-engine/framework/Facades` 的 Facades 单元测试。
 - `Database/`：对应 `src/icax-engine/framework/Database` 的 Database 单元测试。
 - `Mailbox/`：对应 `src/icax-engine/framework/Mailbox` 的 Mail 通信单元测试。
-- `MailHandler/`：对应 `src/icax-engine/framework/MailHandler` 的 Mail 到 Command 桥接单元测试。
+- `MailHandler/`：对应 `src/icax-engine/framework/MailHandler` 的 Mail 到 Facade 调用适配单元测试。
 - `PDO/`：对应 `src/icax-engine/framework/PDO` 的 PDO 单元测试。
 - `Project/`：对应 `src/icax-engine/framework/Project` 的 Project、ProjectCatalog 和 Scene 隔离单元测试。
 - `Resources/`：对应 `src/icax-engine/framework/Resources` 的 Resources 单元测试。

@@ -4,7 +4,7 @@
 
 框架层承接 Foundation 基础能力，并向 ApplicationHost、插件和业务代码提供可复用的后台应用框架能力。
 
-当前后台以 `ApplicationHost -> ProductRuntime -> Project -> Scene` 四层组织。ApplicationHost 持有应用级 ServiceProvider 和 MailChannelRegistry；ProductRuntime 持有产品级 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry、CommandRegistry、产品 mailbox 和 ProductData；Project 是项目管理容器，承载项目身份、路径和 ProjectSetting；Scene 是运行现场隔离边界，独占 Repository、ResourceLibrary/ResourcePool、Scene ResourceLoaderRegistry、Universe、Scene mail channel、PDOHub 和 Scene 线程。
+当前后台以 `ApplicationHost -> ProductRuntime -> Project -> Scene` 四层组织。ApplicationHost 持有应用级 ServiceProvider 和 MailChannelRegistry；ProductRuntime 持有产品级 MetaRegistry、BehaviourRegistry、ResourceLoaderRegistry、FacadeRegistry、产品 mailbox 和 ProductData；Project 是项目管理容器，承载项目身份、路径和 ProjectSetting；Scene 是运行现场隔离边界，独占 Repository、ResourceLibrary/ResourcePool、Scene ResourceLoaderRegistry、Universe、Scene mail channel、PDOHub 和 Scene 线程。
 
 ## 目录结构
 
@@ -22,9 +22,9 @@ Framework/
     Behaviour规格文档.md
     Behaviour方案文档.md
     README.md
-  CommandHandler/
-    CommandHandler规格文档.md
-    CommandHandler方案文档.md
+  Facades/
+    Facades规格文档.md
+    Facades方案文档.md
     README.md
   Database/
     Database规格文档.md
@@ -61,7 +61,7 @@ Framework/
 - `ApplicationContext`：应用描述、路径、应用级配置和配置读写边界。
 - `ApplicationHost`：应用级后台宿主，负责应用上下文、产品清单、产品运行时、应用级 mailbox、事件订阅和后台工作线程。
 - `Behaviour`：Component 对应的行为系统，负责 Universe、Behaviour 注册、生命周期回调、调度顺序和销毁队列。
-- `CommandHandler`：Mailbox 之上的后端命令处理抽象。
+- `Facades`：产品和宿主的 `FacadeName.MethodName` 面向对象交互协议；可由 Mail 承载，但不依赖 Mailbox。
 - `Database`：Repository 单 EC 数据容器、实体组件管理、字段元数据、事件、版本和派生字段。
 - `Mailbox`：后台与前台之间的普通 Mail 通信通道。
 - `PDO`：后台与前台之间的高频可丢弃数据通道。

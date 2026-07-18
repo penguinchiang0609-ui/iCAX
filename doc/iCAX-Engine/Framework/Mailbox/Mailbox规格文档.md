@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-Mail 通信用于同一进程内两个运行单元之间传递低频消息，包括命令、事件、请求响应和低频状态同步。
+Mail 通信用于同一进程内两个运行单元之间传递低频消息，包括 Facade 调用、结果、事件和低频状态同步。
 
 Mailbox 只提供通用双端点模型：
 
@@ -33,7 +33,7 @@ struct MailHeader
 
 - `nMailId`：本封邮件 ID，由发送侧分配。
 - `nOriginId`：原始邮件 ID，回复邮件用它关联请求；`0` 表示非回复邮件。
-- `nTypeCode`：上层业务类型码。当前 CommandHandler 使用它承载 64 位命令路由码。
+- `nTypeCode`：上层业务类型码。当前 Facades 使用它承载 `FacadeName.MethodName` 的 64 位紧凑编码。
 - `nStamp`：通用处理状态。业务错误细节由业务 payload 表达。
 
 ### 2.2 StampCode
@@ -42,7 +42,7 @@ struct MailHeader
 enum StampCode : uint16_t
 {
     kMailOk = 0,
-    kMailNoHandler = 1,
+    kMailNotFound = 1,
     kMailInvalidPayload = 2,
     kMailExecutionError = 3,
     kMailTimeout = 4,
@@ -78,7 +78,7 @@ struct Mail
 };
 ```
 
-Mailbox 不解释 payload。面向 H5 的普通命令建议 payload 使用 UTF-8 JSON 文本。
+Mailbox 不解释 payload。面向 H5 的普通 Facade 调用建议 payload 使用 UTF-8 Variant 文本。
 
 ## 3. CMailQueue
 
@@ -150,7 +150,7 @@ public:
 
 - `Send(mail)` 将邮件写入对端收件队列。
 - `SendPayload` 直接发送 bytes，避免调用方先构造临时 `Mail` payload。
-- `SendText` 直接发送 UTF-8 文本 payload，H5 命令通常使用该接口发送 JSON 字符串。
+- `SendText` 直接发送 UTF-8 文本 payload，H5 Facade 调用通常使用该接口发送 Variant 文本。
 - `Receive()` 从本端收件队列取出当前全部邮件。
 - `ClearIncoming()` 清空本端收件队列。
 - `ClearOutgoing()` 清空本端发件队列，也就是对端收件队列。
@@ -244,7 +244,7 @@ Mailbox 底层仍只认识 EndA/EndB。
 
 ## 7. 使用样例
 
-### 7.1 发送 UTF-8 JSON 命令
+### 7.1 发送 UTF-8 Facade 调用
 
 ```cpp
 CMailChannel channel;
@@ -253,7 +253,7 @@ auto backend = channel.GetEndBPostOffice();
 
 MailHeader header;
 header.nMailId = 1;
-header.nTypeCode = MakeCommandCode("Project", "Open");
+header.nTypeCode = MakeFacadeMethodCode("Project", "Open");
 
 frontend.SendText(header, R"({"path":"D:/demo.robot"})");
 

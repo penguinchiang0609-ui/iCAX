@@ -30,7 +30,7 @@
     <ClInclude Include="ApplicationHostConfig.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ApplicationHostCommands.h">
+    <ClInclude Include="ApplicationHostFacades.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ProductFileResolver.h">
@@ -47,7 +47,7 @@
     <ClCompile Include="ApplicationHost.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ApplicationHostCommands.cpp">
+    <ClCompile Include="ApplicationHostFacades.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ProductFileResolver.cpp">

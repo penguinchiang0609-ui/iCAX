@@ -13,7 +13,7 @@ SDK 公开导出：
 - `connectApplication()`：连接宿主 bridge，创建 `AppProxy`。
 - `createBridge()` / `validateBridge()`：宿主 bridge 创建与校验能力，主要用于 Shell 和测试。
 - `MockHostBridge`：开发期和白盒测试使用的 mock bridge。
-- `AppCommands` / `ProductCommands` / `ProjectCommands`：框架标准命令名。
+- `AppFacade` / `ProductFacade` / `ProjectFacade`：框架标准 Facade 方法名。
 - `AppProxy` / `ProductProxy` / `ProjectProxy` / `SceneProxy`：前端四层代理对象。
 - `resolveFrontendEntry()` / `loadProductModule()` / `mountProductModule()`：产品 H5 模块加载能力。
 - `escapeText()` / `escapeAttr()`：公共 HTML 转义工具。
@@ -24,10 +24,10 @@ SDK 公开导出：
 
 - `SDK/AppShell`：SDK 自带的 H5 应用壳，由宿主加载 `index.html`。
 - `SDK/Bridge`：真实宿主 bridge 发现、校验和 mock bridge。
-- `SDK/Mailbox`：mailbox client、命令码、Variant 文本编解码。
+- `SDK/Mailbox`：mailbox client、Facade 方法编码、Variant 文本编解码。
 - `SDK/PDO`：PDO 前端访问代理。
 
-产品页面不应该直接 new `MailboxClient`，也不应该直接操作 PDO header。产品页面通过 `AppProxy/ProductProxy/ProjectProxy/SceneProxy` 发送命令、订阅事件，通过 `scene.pdo` 读取 PDO。
+产品页面不应该直接 new `MailboxClient`，也不应该直接操作 PDO header。产品页面通过 `AppProxy/ProductProxy/ProjectProxy/SceneProxy` 调用 Facade、订阅事件，通过 `scene.pdo` 读取 PDO。
 
 ## 4. 边界
 
@@ -54,7 +54,7 @@ const app = await connectApplication();
 const product = await app.startProduct("icax.laser-3d-cam");
 const opened = await product.openProjectCatalog("D:/projects/a.icax");
 
-await opened.sceneProxy.execute("Project.Save", {
+await opened.sceneProxy.invoke("Laser3DCAM.SaveProject", {
   path: "D:/projects/a.icax",
 });
 ```

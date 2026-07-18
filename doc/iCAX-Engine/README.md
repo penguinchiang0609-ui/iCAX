@@ -9,6 +9,6 @@
 - `Products/`：基于 iCAX Engine 的具体产品设计文档，例如平面激光 CAM。
 - `EC介绍.md`：Entity-Component 数据表达的基础说明。
 - `Foundation/`：不依赖 framework 的基础能力文档。
-- `Framework/`：ApplicationHost、Product、Project、Database、Resources、Mailbox、PDO、CommandHandler、Behaviour、Services 等框架能力文档。
+- `Framework/`：ApplicationHost、Product、Project、Database、Resources、Mailbox、PDO、Facades、Behaviour、Services 等框架能力文档。
 
 H5 前端公共框架文档位于同级 `doc/iCAX-UI/`。

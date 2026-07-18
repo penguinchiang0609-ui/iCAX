@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
-  AppCommands,
+  AppFacade,
   connectApplication,
   ensureUsableChannelId,
   isUsableChannelId,
@@ -9,22 +9,23 @@ import {
   ProjectProxy,
   SceneProxy,
   MockHostBridge,
-  ProjectCommands,
+  ProjectFacade,
   loadProductModule,
   mountProductModule,
   resolveFrontendEntry,
   validateBridge,
 } from "../../iCAX-UI/SDK/index.mjs";
 import { MailboxClient } from "../../iCAX-UI/SDK/Mailbox/mailboxClient.mjs";
-import { makeCommandTypeCode, makeCommandTypeCodeFromCommand, makePDOID } from "../../iCAX-UI/SDK/Mailbox/commandRoute.mjs";
+import { makeFacadeMethodCode, makeFacadeMethodCodeFromName, makePDOID } from "../../iCAX-UI/SDK/Mailbox/facadeMethod.mjs";
 import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/Mailbox/variantSerializer.mjs";
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
 
-function testCommandCodes() {
-  assert.equal(makeCommandTypeCode("App", "GetState"), makeCommandTypeCodeFromCommand(AppCommands.getState));
-  assert.equal(makeCommandTypeCode("Product", "OpenProjectCatalog"), "5952739237587920785");
-  assert.equal(makeCommandTypeCode("Cam.Machine", "Import"), makeCommandTypeCodeFromCommand("Cam.Machine.Import"));
-  assert.equal(makePDOID("PreviewMesh", "MainViewport"), makeCommandTypeCode("PreviewMesh", "MainViewport"));
+function testFacadeMethodCodes() {
+  assert.equal(makeFacadeMethodCode("App", "GetState"), makeFacadeMethodCodeFromName(AppFacade.getState));
+  assert.equal(makeFacadeMethodCode("Product", "OpenProjectCatalog"), "5952739237587920785");
+  assert.equal(makeFacadeMethodCode("Machine", "Import"), makeFacadeMethodCodeFromName("Machine.Import"));
+  assert.throws(() => makeFacadeMethodCodeFromName("Cam.Machine.Import"), /FacadeName\.MethodName/);
+  assert.equal(makePDOID("PreviewMesh", "MainViewport"), makeFacadeMethodCode("PreviewMesh", "MainViewport"));
 }
 
 function testVariantSerializer() {
@@ -102,7 +103,7 @@ async function testMailboxPromiseFlow() {
 
   const undoRedoState = await opened.sceneProxy.getUndoRedoState();
   assert.deepEqual(undoRedoState.undoSteps, []);
-  assert.deepEqual(await opened.sceneProxy.execute(ProjectCommands.undo), undoRedoState);
+  assert.deepEqual(await opened.sceneProxy.invoke(ProjectFacade.undo), undoRedoState);
 }
 
 async function testSceneChannelRegistrationFromProjectState() {
@@ -240,7 +241,7 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-testCommandCodes();
+testFacadeMethodCodes();
 testVariantSerializer();
 testBridgeValidation();
 testChannelIdValidation();

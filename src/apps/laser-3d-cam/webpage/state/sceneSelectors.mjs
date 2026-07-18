@@ -6,10 +6,13 @@ export function getMachineDefinitionId(definition) {
 }
 
 export function getMachineDefinitions(scene = {}) {
+  scene ??= {};
   return Array.isArray(scene.machineDefinitions) ? scene.machineDefinitions.filter(Boolean) : [];
 }
 
 export function getSelectedMachineDefinition(scene = {}, view = {}) {
+  scene ??= {};
+  view ??= {};
   const definitions = getMachineDefinitions(scene);
   const selectedId = view.selectedMachineDefinitionId || getSelectedMachine(scene, view).machineDefinitionId || "";
   return definitions.find((definition) => getMachineDefinitionId(definition) === String(selectedId)) ?? definitions[0] ?? null;
@@ -20,6 +23,7 @@ export function getMachineId(machine = {}) {
 }
 
 export function getMachines(scene = {}) {
+  scene ??= {};
   return Array.isArray(scene.machines) ? scene.machines : [];
 }
 
@@ -28,10 +32,12 @@ export function getEnabledMachines(scene = {}) {
 }
 
 export function getJobMachineId(scene = {}) {
+  scene ??= {};
   return String(scene?.job?.machineEntityId ?? "").trim();
 }
 
 export function getJobMachine(scene = {}) {
+  scene ??= {};
   const jobMachineId = getJobMachineId(scene);
   if (!jobMachineId) {
     return {};
@@ -40,6 +46,8 @@ export function getJobMachine(scene = {}) {
 }
 
 export function getSelectedMachine(scene = {}, view = {}) {
+  scene ??= {};
+  view ??= {};
   const machines = getMachines(scene);
   const selectedId = String(view.selectedMachineInstanceId ?? "").trim();
   const jobMachineId = getJobMachineId(scene);
@@ -54,6 +62,8 @@ export function getSelectedMachine(scene = {}, view = {}) {
 }
 
 export function reconcileSelectedMachine(view, scene = {}) {
+  scene ??= {};
+  view ??= {};
   const machines = getMachines(scene);
   const selectedId = String(view.selectedMachineInstanceId ?? "").trim();
   if (selectedId && machines.some((item) => getMachineId(item) === selectedId)) {
@@ -69,6 +79,7 @@ export function getSelectedMachineId(scene = {}, view = {}) {
 }
 
 export function getMachineSubtreeEntityIds(machine = {}, rootEntityId = "") {
+  machine ??= {};
   const rootId = String(rootEntityId ?? "").trim();
   if (!rootId) {
     return [];
@@ -137,12 +148,14 @@ export function getMachineSubtreeEntityIds(machine = {}, rootEntityId = "") {
 }
 
 export function getFirstEnabledMachineDefinitionId(scene = {}) {
+  scene ??= {};
   const definitions = getMachineDefinitions(scene);
   const definition = definitions.find((item) => item.enabled !== false) ?? definitions[0] ?? null;
   return definition ? getMachineDefinitionId(definition) : "";
 }
 
 export function findMachineDefinition(scene = {}, machineDefinitionId = "") {
+  scene ??= {};
   const id = String(machineDefinitionId ?? "").trim();
   if (!id) {
     return null;

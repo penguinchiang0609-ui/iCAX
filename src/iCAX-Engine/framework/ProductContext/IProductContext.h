@@ -13,9 +13,9 @@ namespace iCAX
         class IBehaviourRegistry;
     }
 
-    namespace Command
+    namespace Interaction
     {
-        class CCommandRegistry;
+        class CFacadeRegistry;
     }
 
     namespace Database
@@ -120,7 +120,7 @@ namespace iCAX
             /*
             * @brief 获取产品命令注册表。
             */
-            virtual iCAX::Command::CCommandRegistry& GetCommandRegistry() const = 0;
+            virtual iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const = 0;
         };
     }
 }

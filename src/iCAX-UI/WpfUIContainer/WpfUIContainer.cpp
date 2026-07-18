@@ -61,7 +61,7 @@ namespace
         return std::string(reinterpret_cast<const char*>(_Pinned), static_cast<size_t>(_Bytes->Length));
     }
 
-    uint32_t _CommandHash32(IN String^ Text_)
+    uint32_t _InteractionNameHash32(IN String^ Text_)
     {
         if (String::IsNullOrEmpty(Text_))
         {
@@ -78,10 +78,10 @@ namespace
         return _Hash;
     }
 
-    uint64_t _MakeCommandCode(IN String^ MainName_, IN String^ SubName_)
+    uint64_t _MakeFacadeMethodCode(IN String^ FacadeName_, IN String^ MethodName_)
     {
-        return (static_cast<uint64_t>(_CommandHash32(MainName_)) << 32)
-            | static_cast<uint64_t>(_CommandHash32(SubName_));
+        return (static_cast<uint64_t>(_InteractionNameHash32(FacadeName_)) << 32)
+            | static_cast<uint64_t>(_InteractionNameHash32(MethodName_));
     }
 
     String^ _EmptyObjectPayload()
@@ -181,7 +181,7 @@ namespace iCAX
             public:
                 void SetApplicationChannelID(String^ ChannelID_);
                 void SetStatus(String^ Text_);
-                void AppendMail(CManagedMailEnvelope^ Mail_, String^ CommandName_);
+                void AppendMail(CManagedMailEnvelope^ Mail_, String^ FacadeMemberName_);
                 void SetLastPayload(String^ PayloadText_);
 
             private:
@@ -207,7 +207,7 @@ namespace iCAX
                 CWpfRuntime()
                     : m_Started(gcnew ManualResetEventSlim(false))
                     , m_Closed(gcnew ManualResetEventSlim(true))
-                    , m_PendingCommands(gcnew Dictionary<UInt64, String^>())
+                    , m_PendingFacadeCalls(gcnew Dictionary<UInt64, String^>())
                 {
                 }
 
@@ -281,9 +281,9 @@ namespace iCAX
                     return m_Running;
                 }
 
-                UInt64 SendApplicationCommand(IN String^ SubCommandName_, IN String^ PayloadText_)
+                UInt64 InvokeApplicationMethod(IN String^ MethodName_, IN String^ PayloadText_)
                 {
-                    return SendCommand(m_ApplicationChannelID, "App", SubCommandName_, PayloadText_);
+                    return InvokeFacadeMethod(m_ApplicationChannelID, "App", MethodName_, PayloadText_);
                 }
 
                 void OpenProjectFile()
@@ -295,20 +295,20 @@ namespace iCAX
                     auto _Result = _Dialog->ShowDialog();
                     if (_Result.HasValue && _Result.Value)
                     {
-                        SendApplicationCommand("OpenProjectFile", _StringObjectPayload("projectPath", _Dialog->FileName));
+                        InvokeApplicationMethod("OpenProjectFile", _StringObjectPayload("projectPath", _Dialog->FileName));
                     }
                 }
 
             private:
-                UInt64 SendCommand(
+                UInt64 InvokeFacadeMethod(
                     IN String^ ChannelID_,
-                    IN String^ MainCommandName_,
-                    IN String^ SubCommandName_,
+                    IN String^ FacadeName_,
+                    IN String^ MethodName_,
                     IN String^ PayloadText_)
                 {
                     if (String::IsNullOrWhiteSpace(ChannelID_))
                     {
-                        throw gcnew InvalidOperationException("Command channel id is empty.");
+                        throw gcnew InvalidOperationException("Facade channel id is empty.");
                     }
                     if (m_pBridge == nullptr)
                     {
@@ -321,12 +321,12 @@ namespace iCAX
                         _Envelope.ChannelID = _ToNativeUTF8(ChannelID_);
                         _Envelope.nID = static_cast<uint64_t>(Interlocked::Increment(m_NextMailID));
                         _Envelope.nOriginID = 0;
-                        _Envelope.nTypeCode = _MakeCommandCode(MainCommandName_, SubCommandName_);
+                        _Envelope.nTypeCode = _MakeFacadeMethodCode(FacadeName_, MethodName_);
                         _Envelope.nStamp = 0;
                         _Envelope.PayloadText = _ToNativeUTF8(String::IsNullOrEmpty(PayloadText_) ? _EmptyObjectPayload() : PayloadText_);
 
                         m_pBridge->PostMail(_Envelope);
-                        m_PendingCommands[_Envelope.nID] = String::Format("{0}.{1}", MainCommandName_, SubCommandName_);
+                        m_PendingFacadeCalls[_Envelope.nID] = String::Format("{0}.{1}", FacadeName_, MethodName_);
                         return _Envelope.nID;
                     }
                     catch (const std::exception& _Error)
@@ -364,8 +364,8 @@ namespace iCAX
                         m_Running = true;
                         m_Started->Set();
 
-                        SendApplicationCommand("GetState", _EmptyObjectPayload());
-                        SendApplicationCommand("ListProducts", _EmptyObjectPayload());
+                        InvokeApplicationMethod("GetState", _EmptyObjectPayload());
+                        InvokeApplicationMethod("ListProducts", _EmptyObjectPayload());
 
                         m_Application->Run(m_Window);
                     }
@@ -417,15 +417,15 @@ namespace iCAX
                             _ManagedMail->Stamp = _Mail.nStamp;
                             _ManagedMail->PayloadText = _ToManagedUTF8(_Mail.PayloadText);
 
-                            String^ _CommandName = "Event";
-                            if (_ManagedMail->OriginID != 0 && m_PendingCommands->ContainsKey(_ManagedMail->OriginID))
+                            String^ _FacadeMemberName = "Event";
+                            if (_ManagedMail->OriginID != 0 && m_PendingFacadeCalls->ContainsKey(_ManagedMail->OriginID))
                             {
-                                _CommandName = m_PendingCommands[_ManagedMail->OriginID];
-                                m_PendingCommands->Remove(_ManagedMail->OriginID);
+                                _FacadeMemberName = m_PendingFacadeCalls[_ManagedMail->OriginID];
+                                m_PendingFacadeCalls->Remove(_ManagedMail->OriginID);
                             }
 
-                            m_Window->AppendMail(_ManagedMail, _CommandName);
-                            if (_ManagedMail->OriginID == kStartupHandshakeRequestID || _CommandName == "App.GetState")
+                            m_Window->AppendMail(_ManagedMail, _FacadeMemberName);
+                            if (_ManagedMail->OriginID == kStartupHandshakeRequestID || _FacadeMemberName == "App.GetState")
                             {
                                 m_Window->SetStatus(_ManagedMail->Stamp == 0 ? "Backend connected" : "Backend returned an error");
                             }
@@ -455,7 +455,7 @@ namespace iCAX
                 ManualResetEventSlim^ m_Started;
                 ManualResetEventSlim^ m_Closed;
                 Exception^ m_StartupException;
-                Dictionary<UInt64, String^>^ m_PendingCommands;
+                Dictionary<UInt64, String^>^ m_PendingFacadeCalls;
                 String^ m_ApplicationChannelID;
                 Int64 m_NextMailID = static_cast<Int64>(kStartupHandshakeRequestID);
                 volatile bool m_Running = false;
@@ -634,12 +634,12 @@ namespace iCAX
                 m_StatusText->Text = Text_;
             }
 
-            void CWpfMainWindow::AppendMail(CManagedMailEnvelope^ Mail_, String^ CommandName_)
+            void CWpfMainWindow::AppendMail(CManagedMailEnvelope^ Mail_, String^ FacadeMemberName_)
             {
                 auto _Line = String::Format(
                     "{0:HH:mm:ss.fff} {1} origin={2} {3}",
                     DateTime::Now,
-                    CommandName_,
+                    FacadeMemberName_,
                     Mail_->OriginID,
                     _FormatStamp(Mail_->Stamp));
                 m_MailList->Items->Insert(0, _Line);
@@ -658,7 +658,7 @@ namespace iCAX
             {
                 try
                 {
-                    m_Runtime->SendApplicationCommand("GetState", _EmptyObjectPayload());
+                    m_Runtime->InvokeApplicationMethod("GetState", _EmptyObjectPayload());
                     SetStatus("Refreshing application state");
                 }
                 catch (Exception^ _Error)
@@ -671,7 +671,7 @@ namespace iCAX
             {
                 try
                 {
-                    m_Runtime->SendApplicationCommand("ListProducts", _EmptyObjectPayload());
+                    m_Runtime->InvokeApplicationMethod("ListProducts", _EmptyObjectPayload());
                     SetStatus("Listing products");
                 }
                 catch (Exception^ _Error)
@@ -684,7 +684,7 @@ namespace iCAX
             {
                 try
                 {
-                    m_Runtime->SendApplicationCommand("StartProduct", _EmptyObjectPayload());
+                    m_Runtime->InvokeApplicationMethod("StartProduct", _EmptyObjectPayload());
                     SetStatus("Starting product");
                 }
                 catch (Exception^ _Error)

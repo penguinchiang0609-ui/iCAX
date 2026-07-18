@@ -365,7 +365,7 @@ class CameraPDOView {
 - CEF bridge 中增加 V8 ArrayBuffer release callback 的生命周期联动。
 - 为 `ICAX_DECLARE_PDO_PAYLOAD` 对应的 C++ payload 生成 TypeScript wrapper，降低产品侧手写偏移的风险。
 - 增加更明确的 Arena 名称分配策略，便于日志诊断和前端调试。
-- 在 Mailbox/CommandHandler 层补充项目关闭通知，提醒前端宿主停止访问对应 Arena。
+- 在 Mailbox/Facades 层补充项目关闭通知，提醒前端宿主停止访问对应 Arena。
 
 ## 14. 测试
 

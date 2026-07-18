@@ -1,6 +1,6 @@
-import { makeCommandTypeCodeFromCommand } from "../Mailbox/commandRoute.mjs";
+import { makeFacadeMethodCodeFromName } from "../Mailbox/facadeMethod.mjs";
 
-export const ColliderPDOCommands = Object.freeze({
+export const ColliderPDOEvents = Object.freeze({
   slotAllocated: "PDOCollider.SlotAllocated",
   slotFreed: "PDOCollider.SlotFreed",
   slotMoved: "PDOCollider.SlotMoved",
@@ -9,7 +9,7 @@ export const ColliderPDOCommands = Object.freeze({
 });
 
 export const ColliderPDOTypeCodes = Object.freeze(Object.fromEntries(
-  Object.entries(ColliderPDOCommands).map(([key, command]) => [key, makeCommandTypeCodeFromCommand(command)]),
+  Object.entries(ColliderPDOEvents).map(([key, facadeEvent]) => [key, makeFacadeMethodCodeFromName(facadeEvent)]),
 ));
 
 export const ColliderPDOPayloadKind = Object.freeze({

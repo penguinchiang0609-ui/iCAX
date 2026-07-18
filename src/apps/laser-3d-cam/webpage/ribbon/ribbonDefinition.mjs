@@ -5,25 +5,10 @@ export const ribbonDefinition = {
       title: "机床",
       groups: [
         {
-          title: "定义资源",
+          title: "机床定义",
           commands: [
             { id: "machine.import", title: "导入定义", icon: "M", size: "large" },
             { id: "machine.design", title: "机床设计", icon: "E", disabled: true },
-          ],
-        },
-        {
-          title: "参数",
-          commands: [
-            { id: "machine.parameters", title: "运动参数", icon: "P" },
-            { id: "machine.tcp", title: "TCP", icon: "T" },
-          ],
-        },
-        {
-          title: "实例调试",
-          commands: [
-            { id: "machine.jog", title: "点动", icon: "J" },
-            { id: "machine.home", title: "回零", icon: "H" },
-            { id: "machine.reset", title: "复位", icon: "R" },
           ],
         },
       ],
@@ -44,71 +29,69 @@ export const ribbonDefinition = {
           title: "检查修复",
           commands: [
             { id: "workpiece.check", title: "模型检查", icon: "K" },
-            { id: "workpiece.repair", title: "自动修复", icon: "R" },
+            { id: "workpiece.repair", title: "CAD 编辑", icon: "R" },
             { id: "workpiece.place", title: "摆放", icon: "P" },
           ],
         },
         {
-          title: "支撑夹具",
+          title: "意图刀路",
           commands: [
-            { id: "support.generate", title: "生成支架", icon: "S" },
-            { id: "support.export-dxf", title: "导出 DXF", icon: "X" },
+            { id: "intent.from-selection", title: "从选择创建", icon: "C", size: "large" },
+            { id: "intent.draw", title: "绘制", icon: "D", disabled: true },
+            { id: "intent.micro-joint", title: "添加微联", icon: "M", disabled: true },
+            { id: "intent.lead", title: "引入引出", icon: "L", disabled: true },
+            { id: "intent.break", title: "打断", icon: "B", disabled: true },
+            { id: "intent.merge", title: "合并", icon: "G", disabled: true },
           ],
         },
       ],
     },
     {
       id: "machining",
-      title: "加工",
+      title: "作业",
       groups: [
         {
-          title: "现场",
+          title: "作业设置",
           commands: [
-            { id: "machine.import", title: "机床定义", icon: "M", size: "large" },
-            { id: "workpiece.import", title: "工件模型", icon: "W", size: "large" },
-            { id: "view.fit", title: "适合窗口", icon: "F" },
+            { id: "job.create", title: "新建作业", icon: "J", size: "large" },
+            { id: "job.machine", title: "机床/控制器", icon: "M" },
+            { id: "job.setup", title: "装夹/工件", icon: "S", disabled: true },
+            { id: "job.operations", title: "加工操作", icon: "O", disabled: true },
           ],
         },
         {
-          title: "拾取",
+          title: "轨迹生成",
           commands: [
-            { id: "toolpath.pick-edge", title: "拾取 Edge", icon: "E" },
-            { id: "toolpath.pick-loop", title: "拾取 Loop", icon: "L" },
-            { id: "toolpath.clear-selection", title: "清除选择", icon: "C" },
+            { id: "job.generate-toolpath", title: "生成 Toolpath", icon: "T", size: "large", disabled: true },
+            { id: "job.link-paths", title: "连接路径", icon: "L", disabled: true },
+            { id: "job.orientation", title: "姿态场", icon: "A", disabled: true },
+            { id: "job.process-events", title: "工艺事件", icon: "E", disabled: true },
           ],
         },
         {
-          title: "生成",
+          title: "运动规划",
           commands: [
-            { id: "toolpath.recognize-holes", title: "识别孔", icon: "H", size: "large" },
-            { id: "toolpath.add-selection", title: "生成刀路", icon: "G", size: "large" },
-          ],
-        },
-        {
-          title: "编辑工艺",
-          commands: [
-            { id: "toolpath.layer", title: "切割图层", icon: "Y" },
-            { id: "toolpath.lead", title: "引入引出", icon: "N" },
-            { id: "toolpath.microjoint", title: "微联", icon: "W" },
-            { id: "toolpath.clear", title: "清空刀路", icon: "D" },
-          ],
-        },
-        {
-          title: "规划",
-          commands: [
-            { id: "job.create", title: "新建作业", icon: "J" },
             { id: "job.block", title: "块/指令", icon: "B" },
             { id: "job.plan-motion", title: "轨迹规划", icon: "P", size: "large" },
+            { id: "job.inverse-kinematics", title: "逆解", icon: "I", disabled: true },
+            { id: "job.joint-limits", title: "轴限位", icon: "L", disabled: true },
             { id: "job.collision", title: "碰撞检测", icon: "C" },
-            { id: "job.simulate", title: "运动仿真", icon: "F" },
+          ],
+        },
+        {
+          title: "验证",
+          commands: [
+            { id: "job.simulate", title: "运动仿真", icon: "F", size: "large" },
+            { id: "job.cycle-time", title: "节拍估算", icon: "T", disabled: true },
+            { id: "job.safety-report", title: "安全报告", icon: "R", disabled: true },
           ],
         },
         {
           title: "输出",
           commands: [
-            { id: "job.postprocessor", title: "厂家", icon: "V" },
+            { id: "job.postprocessor", title: "后处理器", icon: "P" },
             { id: "job.preview-nc", title: "NC 预览", icon: "N" },
-            { id: "job.export-nc", title: "导出 NC", icon: "O" },
+            { id: "job.export-nc", title: "导出 NC", icon: "O", size: "large" },
           ],
         },
       ],

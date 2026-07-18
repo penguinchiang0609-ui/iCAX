@@ -86,7 +86,7 @@ Scene PreSwapPDO
   -> Universe PreSwapPDO()
 FrameHandler(scene backend mailbox)
   -> MailHandler
-  -> CommandHandler(application, product, project, scene)
+  -> Facades(application, product, project, scene)
 Scene Tick
   -> Universe Tick(application, product, project, scene)
 Scene PostSwapPDO
@@ -150,11 +150,11 @@ sceneChannelId       -> Project MainScene / ChildScene
 
 `ProductRuntime::GetSceneFrontendPostOffice(projectId, sceneId)` 会找到对应 ProjectRuntime，再返回指定 Scene 的 frontend post office。ApplicationHost 的同名接口只是跨已启动产品做一次查找代理。
 
-应用级命令发到应用 mailbox；产品级命令发到产品 mailbox；数据编辑、撤销重做、渲染同步等 Scene 级命令发到对应 Scene mailbox，并由 CommandHandler 同时接收 ProjectContext 和 SceneContext。
+应用级命令发到应用 mailbox；产品级命令发到产品 mailbox；数据编辑、撤销重做、渲染同步等 Scene 级命令发到对应 Scene mailbox，并由 Facades 同时接收 ProjectContext 和 SceneContext。
 
 ## 7. 与产品级注册表的关系
 
-ComponentMeta、Behaviour 定义、ResourceLoader 和 CommandHandler 都在 ProductRuntime 级装配。产品模块加载后，模块中的宏注册项会被 ProductRuntime 回放到当前产品的注册表。Service 仍在 Application 级 ServiceProvider 中共享。
+ComponentMeta、Behaviour 定义、ResourceLoader 和 Facades 都在 ProductRuntime 级装配。产品模块加载后，模块中的宏注册项会被 ProductRuntime 回放到当前产品的注册表。Service 仍在 Application 级 ServiceProvider 中共享。
 
 Scene 创建 Repository 和 Universe 时引用产品级定义能力；创建 ResourceLibrary 时使用 Scene 自己的 ResourceLoaderRegistry。实体数据、组件实例、资源对象、Scene 消息和 Scene 线程完全归属当前 Scene。
 
@@ -162,7 +162,7 @@ Scene 创建 Repository 和 Universe 时引用产品级定义能力；创建 Res
 
 PDO Arena 由产品或文件/启动模块决定，通过 Project 创建参数转给主 Scene。Scene 不理解 payload 字段含义，只负责创建、交换和释放 Scene PDOHub。具体 slot 可以由 RenderService、InputService 或其他业务服务在运行期动态分配和释放。
 
-Behaviour、CommandHandler 和 RenderService 通过 `ISceneContext::HasPDOHub()` 和 `ISceneContext::PDOHub()` 访问 Scene PDO。未配置 PDO 的 Scene 会在访问 `PDOHub()` 时抛出异常。
+Behaviour、Facades 和 RenderService 通过 `ISceneContext::HasPDOHub()` 和 `ISceneContext::PDOHub()` 访问 Scene PDO。未配置 PDO 的 Scene 会在访问 `PDOHub()` 时抛出异常。
 
 前端宿主通过 Mailbox 获取 Scene PDO Arena name，再打开对应 shared memory。Scene 关闭时释放 PDOHub；前端宿主收到 Scene 关闭后必须停止访问该 Arena。
 

@@ -40,6 +40,10 @@ export function exposeLaserCamAutomation(context, view, commands) {
     await commands.setMachineInstanceEnabled(context, view, machineEntityId, enabled);
     return window.__icaxLaser3DCAM.getState();
   };
+  window.__icaxLaser3DCAM.setMachineInstanceName = async (machineEntityId, name) => {
+    await commands.setMachineInstanceName(context, view, machineEntityId, name);
+    return window.__icaxLaser3DCAM.getState();
+  };
   window.__icaxLaser3DCAM.setJobMachine = async (machineEntityId) => {
     await commands.setJobMachine(context, view, machineEntityId);
     return window.__icaxLaser3DCAM.getState();
@@ -68,18 +72,23 @@ export function exposeLaserCamAutomation(context, view, commands) {
     };
   };
   window.__icaxLaser3DCAM.getMachineDomState = () => {
-    const viewCube = document.querySelector("[data-cam-viewcube-cube]");
+    const viewCube = document.querySelector("[data-cam-viewcube]");
     const axisGizmo = document.querySelector(".icax-three-axis-gizmo");
     const axisStyle = axisGizmo ? window.getComputedStyle(axisGizmo) : null;
     return {
       hasMachineImportPathInput: Boolean(document.querySelector("[data-cam-machine-path]")),
       accordionCount: document.querySelectorAll(".cam-accordion-item").length,
+      hasViewCube: Boolean(viewCube),
       viewCubeButtonCount: document.querySelectorAll(".cam-viewcube [data-cam-action='view-standard']").length,
-      viewCubeExternalHotZoneCount: document.querySelectorAll(".cam-viewcube-edge, .cam-viewcube-corner").length,
+      viewCubePieceCount: Number(viewCube?.dataset.camViewCubePieceCount ?? 0),
+      viewCubeCanvasCount: document.querySelectorAll(".cam-viewcube canvas").length,
+      viewCubeCellCount: document.querySelectorAll(".cam-viewcube-cell").length,
       viewCubePitch: viewCube?.style.getPropertyValue("--viewcube-pitch") ?? "",
       viewCubeYaw: viewCube?.style.getPropertyValue("--viewcube-yaw") ?? "",
       hasViewCubeEmbeddedAxis: Boolean(document.querySelector(".cam-viewcube-axis")),
       hasAxisGizmo: Boolean(axisGizmo),
+      viewportCanvasCount: document.querySelectorAll(".icax-three-viewport-canvas").length,
+      axisCanvasCount: document.querySelectorAll(".icax-three-axis-canvas").length,
       axisGizmoLeft: axisStyle?.left ?? "",
       axisGizmoBottom: axisStyle?.bottom ?? "",
       hasAppearanceEditor: Boolean(document.querySelector("[data-cam-appearance-editor]")),

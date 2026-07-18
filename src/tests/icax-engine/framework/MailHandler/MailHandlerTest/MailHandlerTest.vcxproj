@@ -146,7 +146,7 @@
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\ApplicationContext\ApplicationContext.vcxproj">
       <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\CommandTargets\CommandTargets.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Facades\Facades.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Mailbox\Mailbox.vcxproj">

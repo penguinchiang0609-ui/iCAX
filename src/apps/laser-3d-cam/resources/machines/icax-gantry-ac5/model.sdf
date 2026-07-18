@@ -1,0 +1,155 @@
+<?xml version="1.0" ?>
+<sdf version="1.7">
+  <model name="icax_gantry_ac5_machine">
+    <static>false</static>
+
+    <plugin name="icax_machine_control" filename="icax.machine.control">
+      <linear_jog_step_mm>10</linear_jog_step_mm>
+      <angular_jog_step_deg>1</angular_jog_step_deg>
+    </plugin>
+
+    <!-- Coordinate convention:
+         X: beam forward/back, Y: spindle left/right, Z: spindle up/down.
+         Kinematic chain: base -> X beam -> Y carriage -> Z slide -> C axis -> A axis -> laser head. -->
+
+    <link name="base_link">
+      <pose>0 0 0 0 0 0</pose>
+
+      <visual name="floor_base_visual"><pose>0.55 0 0.035 0 0 0</pose><geometry><box><size>5.80 4.20 0.07</size></box></geometry><material><diffuse>0.34 0.38 0.40 1</diffuse><ambient>0.22 0.25 0.27 1</ambient></material></visual>
+      <collision name="floor_base_collision"><pose>0.55 0 0.035 0 0 0</pose><geometry><box><size>5.80 4.20 0.07</size></box></geometry></collision>
+
+      <visual name="work_table_visual"><pose>0.75 0 0.16 0 0 0</pose><geometry><box><size>3.40 2.60 0.12</size></box></geometry><material><diffuse>0.74 0.53 0.18 1</diffuse><ambient>0.46 0.34 0.12 1</ambient></material></visual>
+      <collision name="work_table_collision"><pose>0.75 0 0.16 0 0 0</pose><geometry><box><size>3.40 2.60 0.12</size></box></geometry></collision>
+      <visual name="table_slot_01_visual"><pose>-0.60 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_02_visual"><pose>-0.30 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_03_visual"><pose>0.00 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_04_visual"><pose>0.30 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_05_visual"><pose>0.60 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_06_visual"><pose>0.90 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_07_visual"><pose>1.20 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_08_visual"><pose>1.50 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_09_visual"><pose>1.80 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+      <visual name="table_slot_10_visual"><pose>2.10 0 0.235 0 0 0</pose><geometry><box><size>0.018 2.48 0.015</size></box></geometry><material><diffuse>0.16 0.19 0.20 1</diffuse><ambient>0.10 0.12 0.13 1</ambient></material></visual>
+
+      <visual name="left_x_base_visual"><pose>0 -1.70 0.42 0 0 0</pose><geometry><box><size>5.40 0.36 0.70</size></box></geometry><material><diffuse>0.33 0.42 0.46 1</diffuse><ambient>0.21 0.28 0.31 1</ambient></material></visual>
+      <collision name="left_x_base_collision"><pose>0 -1.70 0.42 0 0 0</pose><geometry><box><size>5.40 0.36 0.70</size></box></geometry></collision>
+      <visual name="right_x_base_visual"><pose>0 1.70 0.42 0 0 0</pose><geometry><box><size>5.40 0.36 0.70</size></box></geometry><material><diffuse>0.33 0.42 0.46 1</diffuse><ambient>0.21 0.28 0.31 1</ambient></material></visual>
+      <collision name="right_x_base_collision"><pose>0 1.70 0.42 0 0 0</pose><geometry><box><size>5.40 0.36 0.70</size></box></geometry></collision>
+      <visual name="left_x_rail_visual"><pose>0 -1.70 0.83 0 0 0</pose><geometry><box><size>5.00 0.08 0.08</size></box></geometry><material><diffuse>0.08 0.12 0.15 1</diffuse><ambient>0.05 0.08 0.10 1</ambient></material></visual>
+      <collision name="left_x_rail_collision"><pose>0 -1.70 0.83 0 0 0</pose><geometry><box><size>5.00 0.08 0.08</size></box></geometry></collision>
+      <visual name="right_x_rail_visual"><pose>0 1.70 0.83 0 0 0</pose><geometry><box><size>5.00 0.08 0.08</size></box></geometry><material><diffuse>0.08 0.12 0.15 1</diffuse><ambient>0.05 0.08 0.10 1</ambient></material></visual>
+      <collision name="right_x_rail_collision"><pose>0 1.70 0.83 0 0 0</pose><geometry><box><size>5.00 0.08 0.08</size></box></geometry></collision>
+    </link>
+
+    <link name="x_beam_link">
+      <pose>0 0 0 0 0 0</pose>
+      <visual name="left_column_visual"><pose>0 -1.70 2.25 0 0 0</pose><geometry><box><size>0.30 0.30 2.64</size></box></geometry><material><diffuse>0.60 0.67 0.71 1</diffuse><ambient>0.38 0.43 0.47 1</ambient></material></visual>
+      <collision name="left_column_collision"><pose>0 -1.70 2.25 0 0 0</pose><geometry><box><size>0.30 0.30 2.64</size></box></geometry></collision>
+      <visual name="right_column_visual"><pose>0 1.70 2.25 0 0 0</pose><geometry><box><size>0.30 0.30 2.64</size></box></geometry><material><diffuse>0.60 0.67 0.71 1</diffuse><ambient>0.38 0.43 0.47 1</ambient></material></visual>
+      <collision name="right_column_collision"><pose>0 1.70 2.25 0 0 0</pose><geometry><box><size>0.30 0.30 2.64</size></box></geometry></collision>
+      <visual name="bridge_beam_visual"><pose>0 0 3.72 0 0 0</pose><geometry><box><size>0.38 3.85 0.30</size></box></geometry><material><diffuse>0.12 0.44 0.62 1</diffuse><ambient>0.08 0.28 0.40 1</ambient></material></visual>
+      <collision name="bridge_beam_collision"><pose>0 0 3.72 0 0 0</pose><geometry><box><size>0.38 3.85 0.30</size></box></geometry></collision>
+      <visual name="y_axis_rail_visual"><pose>0.24 0 3.55 0 0 0</pose><geometry><box><size>0.08 3.35 0.08</size></box></geometry><material><diffuse>0.08 0.12 0.15 1</diffuse><ambient>0.05 0.08 0.10 1</ambient></material></visual>
+      <collision name="y_axis_rail_collision"><pose>0.24 0 3.55 0 0 0</pose><geometry><box><size>0.08 3.35 0.08</size></box></geometry></collision>
+      <visual name="left_x_truck_visual"><pose>0 -1.70 0.91 0 0 0</pose><geometry><box><size>0.46 0.28 0.04</size></box></geometry><material><diffuse>0.18 0.22 0.24 1</diffuse><ambient>0.12 0.15 0.17 1</ambient></material></visual>
+      <collision name="left_x_truck_collision"><pose>0 -1.70 0.91 0 0 0</pose><geometry><box><size>0.46 0.28 0.04</size></box></geometry></collision>
+      <visual name="right_x_truck_visual"><pose>0 1.70 0.91 0 0 0</pose><geometry><box><size>0.46 0.28 0.04</size></box></geometry><material><diffuse>0.18 0.22 0.24 1</diffuse><ambient>0.12 0.15 0.17 1</ambient></material></visual>
+      <collision name="right_x_truck_collision"><pose>0 1.70 0.91 0 0 0</pose><geometry><box><size>0.46 0.28 0.04</size></box></geometry></collision>
+    </link>
+
+    <link name="y_carriage_link">
+      <pose>0 0 0 0 0 0</pose>
+      <visual name="y_carriage_block_visual"><pose>0.38 0 0 0 0 0</pose><geometry><box><size>0.20 0.36 0.28</size></box></geometry><material><diffuse>0.12 0.58 0.46 1</diffuse><ambient>0.08 0.36 0.29 1</ambient></material></visual>
+      <collision name="y_carriage_block_collision"><pose>0.38 0 0 0 0 0</pose><geometry><box><size>0.20 0.36 0.28</size></box></geometry></collision>
+      <visual name="z_fixed_column_visual"><pose>0.59 0 -0.78 0 0 0</pose><geometry><box><size>0.20 0.24 2.20</size></box></geometry><material><diffuse>0.46 0.68 0.56 1</diffuse><ambient>0.29 0.43 0.35 1</ambient></material></visual>
+      <collision name="z_fixed_column_collision"><pose>0.59 0 -0.78 0 0 0</pose><geometry><box><size>0.20 0.24 2.20</size></box></geometry></collision>
+      <visual name="z_left_linear_rail_visual"><pose>0.725 -0.095 -0.78 0 0 0</pose><geometry><box><size>0.035 0.04 2.05</size></box></geometry><material><diffuse>0.08 0.12 0.15 1</diffuse><ambient>0.05 0.08 0.10 1</ambient></material></visual>
+      <collision name="z_left_linear_rail_collision"><pose>0.725 -0.095 -0.78 0 0 0</pose><geometry><box><size>0.035 0.04 2.05</size></box></geometry></collision>
+      <visual name="z_right_linear_rail_visual"><pose>0.725 0.095 -0.78 0 0 0</pose><geometry><box><size>0.035 0.04 2.05</size></box></geometry><material><diffuse>0.08 0.12 0.15 1</diffuse><ambient>0.05 0.08 0.10 1</ambient></material></visual>
+      <collision name="z_right_linear_rail_collision"><pose>0.725 0.095 -0.78 0 0 0</pose><geometry><box><size>0.035 0.04 2.05</size></box></geometry></collision>
+    </link>
+
+    <link name="z_slide_link">
+      <pose>0 0 0 0 0 0</pose>
+      <visual name="z_slide_saddle_visual"><pose>0 0 0 0 0 0</pose><geometry><box><size>0.12 0.30 0.30</size></box></geometry><material><diffuse>0.84 0.57 0.16 1</diffuse><ambient>0.54 0.36 0.10 1</ambient></material></visual>
+      <collision name="z_slide_saddle_collision"><pose>0 0 0 0 0 0</pose><geometry><box><size>0.12 0.30 0.30</size></box></geometry></collision>
+      <visual name="z_spindle_ram_visual"><pose>0.16 0 -0.55 0 0 0</pose><geometry><box><size>0.20 0.20 1.02</size></box></geometry><material><diffuse>0.90 0.64 0.18 1</diffuse><ambient>0.58 0.40 0.11 1</ambient></material></visual>
+      <collision name="z_spindle_ram_collision"><pose>0.16 0 -0.55 0 0 0</pose><geometry><box><size>0.20 0.20 1.02</size></box></geometry></collision>
+    </link>
+
+    <link name="c_axis_link">
+      <pose>0 0 0 0 0 0</pose>
+      <visual name="c_axis_rotor_visual"><pose>0 0 0 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.16</length></cylinder></geometry><material><diffuse>0.40 0.30 0.74 1</diffuse><ambient>0.25 0.19 0.47 1</ambient></material></visual>
+      <collision name="c_axis_rotor_collision"><pose>0 0 0 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.16</length></cylinder></geometry></collision>
+      <visual name="c_axis_lower_plate_visual"><pose>0 0 -0.145 0 0 0</pose><geometry><box><size>0.26 0.22 0.08</size></box></geometry><material><diffuse>0.47 0.34 0.78 1</diffuse><ambient>0.30 0.21 0.50 1</ambient></material></visual>
+      <collision name="c_axis_lower_plate_collision"><pose>0 0 -0.145 0 0 0</pose><geometry><box><size>0.26 0.22 0.08</size></box></geometry></collision>
+    </link>
+
+    <link name="a_axis_link">
+      <pose>0 0 0 0 0 0</pose>
+      <visual name="a_axis_shaft_visual"><pose>0 0 0 0 1.57079632679 0</pose><geometry><cylinder><radius>0.055</radius><length>0.34</length></cylinder></geometry><material><diffuse>0.26 0.26 0.28 1</diffuse><ambient>0.16 0.16 0.18 1</ambient></material></visual>
+      <collision name="a_axis_shaft_collision"><pose>0 0 0 0 1.57079632679 0</pose><geometry><cylinder><radius>0.055</radius><length>0.34</length></cylinder></geometry></collision>
+      <visual name="a_yoke_left_visual"><pose>-0.16 0 -0.12 0 0 0</pose><geometry><box><size>0.055 0.08 0.26</size></box></geometry><material><diffuse>0.88 0.35 0.16 1</diffuse><ambient>0.56 0.22 0.10 1</ambient></material></visual>
+      <collision name="a_yoke_left_collision"><pose>-0.16 0 -0.12 0 0 0</pose><geometry><box><size>0.055 0.08 0.26</size></box></geometry></collision>
+      <visual name="a_yoke_right_visual"><pose>0.16 0 -0.12 0 0 0</pose><geometry><box><size>0.055 0.08 0.26</size></box></geometry><material><diffuse>0.88 0.35 0.16 1</diffuse><ambient>0.56 0.22 0.10 1</ambient></material></visual>
+      <collision name="a_yoke_right_collision"><pose>0.16 0 -0.12 0 0 0</pose><geometry><box><size>0.055 0.08 0.26</size></box></geometry></collision>
+    </link>
+
+    <link name="laser_head_link">
+      <pose>0 0 0 0 0 0</pose>
+      <plugin name="icax_tool_tcp" filename="icax.machine.tool">
+        <tool_name>Laser TCP</tool_name>
+        <tool_type>laser_cutting_head</tool_type>
+        <tcp_position_mm>0 0 -400</tcp_position_mm>
+        <beam_direction>0 0 -1</beam_direction>
+      </plugin>
+      <visual name="laser_head_body_visual"><pose>0 0 0 0 0 0</pose><geometry><box><size>0.16 0.14 0.22</size></box></geometry><material><diffuse>0.93 0.76 0.22 1</diffuse><ambient>0.60 0.48 0.14 1</ambient></material></visual>
+      <collision name="laser_head_body_collision"><pose>0 0 0 0 0 0</pose><geometry><box><size>0.16 0.14 0.22</size></box></geometry></collision>
+      <visual name="laser_nozzle_visual"><pose>0 0 -0.21 0 0 0</pose><geometry><cylinder><radius>0.045</radius><length>0.16</length></cylinder></geometry><material><diffuse>0.18 0.18 0.16 1</diffuse><ambient>0.12 0.12 0.11 1</ambient></material></visual>
+      <collision name="laser_nozzle_collision"><pose>0 0 -0.21 0 0 0</pose><geometry><cylinder><radius>0.045</radius><length>0.16</length></cylinder></geometry></collision>
+      <visual name="laser_tip_visual"><pose>0 0 -0.36 0 0 0</pose><geometry><cylinder><radius>0.022</radius><length>0.08</length></cylinder></geometry><material><diffuse>0.86 0.18 0.14 1</diffuse><ambient>0.55 0.10 0.08 1</ambient></material></visual>
+      <collision name="laser_tip_collision"><pose>0 0 -0.36 0 0 0</pose><geometry><cylinder><radius>0.022</radius><length>0.08</length></cylinder></geometry></collision>
+    </link>
+
+    <joint name="x_axis" type="prismatic">
+      <parent>base_link</parent>
+      <child>x_beam_link</child>
+      <pose>0 0 0 0 0 0</pose>
+      <axis><xyz>1 0 0</xyz><limit><lower>-2.20</lower><upper>1.20</upper></limit></axis>
+    </joint>
+
+    <joint name="y_axis" type="prismatic">
+      <parent>x_beam_link</parent>
+      <child>y_carriage_link</child>
+      <pose>0 0 3.55 0 0 0</pose>
+      <axis><xyz>0 1 0</xyz><limit><lower>-1.15</lower><upper>1.15</upper></limit></axis>
+    </joint>
+
+    <joint name="z_axis" type="prismatic">
+      <parent>y_carriage_link</parent>
+      <child>z_slide_link</child>
+      <pose>0.83 0 -0.54 0 0 0</pose>
+      <axis><xyz>0 0 1</xyz><limit><lower>-1.10</lower><upper>0.20</upper></limit></axis>
+    </joint>
+
+    <joint name="c_axis" type="revolute">
+      <parent>z_slide_link</parent>
+      <child>c_axis_link</child>
+      <pose>0.16 0 -1.04 0 0 0</pose>
+      <axis><xyz>0 0 1</xyz><limit><lower>-3.14159265359</lower><upper>3.14159265359</upper></limit></axis>
+    </joint>
+
+    <joint name="a_axis" type="revolute">
+      <parent>c_axis_link</parent>
+      <child>a_axis_link</child>
+      <pose>0 0 -0.28 0 0 0</pose>
+      <axis><xyz>1 0 0</xyz><limit><lower>-2.35619449019</lower><upper>2.35619449019</upper></limit></axis>
+    </joint>
+
+    <joint name="laser_head_fixed" type="fixed">
+      <parent>a_axis_link</parent>
+      <child>laser_head_link</child>
+      <pose>0 0 -0.28 0 0 0</pose>
+    </joint>
+  </model>
+</sdf>

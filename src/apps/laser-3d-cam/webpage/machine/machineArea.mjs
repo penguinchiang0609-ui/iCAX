@@ -38,7 +38,7 @@ export function renderMachineRightPane(context, view) {
   }
 
   if (machine.isLoaded) {
-    return renderPanel("机床实例属性", renderMachineInstanceInspector(machine));
+    return renderPanel("机床实例属性", renderMachineInstanceInspector(machine, view.pending));
   }
 
   if (selectedMachineDefinition) {
@@ -63,9 +63,23 @@ function renderMachineDefinitionInspector(definition = {}) {
   ]);
 }
 
-function renderMachineInstanceInspector(machine = {}) {
-  return renderFacts([
-    ["实例", machine.name || machine.modelName || "机床实例"],
+function renderMachineInstanceInspector(machine = {}, pending = false) {
+  const machineId = getMachineId(machine);
+  const disabled = pending || !machineId ? "disabled" : "";
+  return `
+    <div class="cam-transform-editor"
+         data-cam-machine-name-editor
+         data-cam-machine-id="${escapeAttr(machineId)}">
+      <label class="cam-field ${disabled ? "locked" : "editable"}">
+        <span>实例名称</span>
+        <input class="cam-small-input"
+               type="text"
+               data-cam-machine-instance-name
+               value="${escapeAttr(machine.name || machine.modelName || "机床实例")}"
+               ${disabled} />
+      </label>
+    </div>
+    ${renderFacts([
     ["启用", machine.enabled === false ? "否" : "是"],
     ["机床定义", machine.modelName || machine.name || "-"],
     ["线性点动", `${formatNumber(getLinearJogStepMm(machine), 3)} mm`],
@@ -75,7 +89,8 @@ function renderMachineInstanceInspector(machine = {}) {
     ["显示几何", machine.visuals?.length ?? 0],
     ["碰撞包络", machine.collisions?.length ?? 0],
     ["状态", machine.status || "Loaded"],
-  ]);
+  ])}
+  `;
 }
 
 function renderMachineElementPropertyPanels(item = {}, machine = {}, pending = false) {
@@ -89,11 +104,6 @@ function renderMachineElementPropertyPanels(item = {}, machine = {}, pending = f
 }
 
 function renderMachineResourceAccordion(machineDefinitions = [], machines = [], machine = {}, view = {}) {
-  const usedDefinitionIds = new Set(
-    machines
-      .map((item) => String(item?.machineDefinitionId ?? "").trim())
-      .filter(Boolean),
-  );
   return `
     <div class="cam-accordion">
       <details class="cam-accordion-item" open>
@@ -102,7 +112,7 @@ function renderMachineResourceAccordion(machineDefinitions = [], machines = [], 
           <span>${machineDefinitions.length} 项</span>
         </summary>
         <div class="cam-accordion-body">
-          ${renderMachineDefinitionList(machineDefinitions, machine.machineDefinitionId, view.selectedMachineDefinitionId, view.pending, usedDefinitionIds)}
+          ${renderMachineDefinitionList(machineDefinitions, machine.machineDefinitionId, view.selectedMachineDefinitionId, view.pending)}
         </div>
       </details>
       <details class="cam-accordion-item" open>
@@ -184,7 +194,7 @@ function renderMachineElementAppearanceEditor(item = {}, pending = false) {
     <div class="cam-appearance-editor"
          data-cam-appearance-editor
          data-cam-entity-id="${escapeAttr(item.entityId || "")}">
-      <div class="cam-hint">颜色只覆盖当前选中部件，不影响子部件，也不回写机床定义资源。</div>
+      <div class="cam-hint">颜色只覆盖当前选中部件，不影响子部件，也不回写机床定义源文件。</div>
       <div class="cam-appearance-row">
         <label class="cam-field editable">
           <span>部件颜色</span>

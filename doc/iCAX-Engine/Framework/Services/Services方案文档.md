@@ -75,5 +75,5 @@ src/icax-engine/framework/Services/
 
 - 区分全局服务、应用宿主服务和项目服务的生命周期。
 - 为服务卸载顺序补充更明确的依赖约束。
-- 将 CommandHandler 接入 ApplicationHost 后，业务命令通过服务解析具体能力。
+- 将 Facades 接入 ApplicationHost 后，业务命令通过服务解析具体能力。
 

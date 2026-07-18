@@ -11,7 +11,7 @@
 - `IProjectContext`：只提供 ProjectID、ProjectName、ProjectPath 和 ProjectSetting。
 - `ISceneContext`：提供 SceneID、Scene mail、Repository、ResourceLibrary、PDOHub、ServiceProvider 和 Scene 运行现场。
 
-Behaviour、CommandHandler 和 RenderService 需要同时拿到 ProjectContext 与 SceneContext。ProjectContext 不能替代 SceneContext，SceneContext 也不能遮盖 ProjectContext。
+Behaviour、Facades 和 RenderService 需要同时拿到 ProjectContext 与 SceneContext。ProjectContext 不能替代 SceneContext，SceneContext 也不能遮盖 ProjectContext。
 
 ## 3. Project
 

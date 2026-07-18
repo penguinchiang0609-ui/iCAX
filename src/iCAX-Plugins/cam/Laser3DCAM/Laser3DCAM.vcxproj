@@ -36,7 +36,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\input;$(MSBuildProjectDirectory)\..\..\physics;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\IntentToolpath;$(MSBuildProjectDirectory)\..\ProcessPath;$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\input;$(MSBuildProjectDirectory)\..\..\physics;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
@@ -46,60 +46,58 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="Targets.h" />
-    <ClInclude Include="CameraViewTargetImplement.h" />
-    <ClInclude Include="CommandTargetSupport.h" />
+    <ClInclude Include="Facades.h" />
+    <ClInclude Include="CameraViewFacadeImplement.h" />
+    <ClInclude Include="FacadeSupport.h" />
     <ClInclude Include="ComponentValueHelpers.h" />
     <ClInclude Include="FeatureRecognitionService.h" />
     <ClInclude Include="JobComponents.h" />
     <ClInclude Include="LayerComponents.h" />
     <ClInclude Include="Laser3DCAM.h" />
-    <ClInclude Include="MachineDefinitionComponents.h" />
-    <ClInclude Include="MachineDefinitionTargetImplement.h" />
+    <ClInclude Include="MachineDefinitionFacadeImplement.h" />
     <ClInclude Include="MachineInstanceComponents.h" />
     <ClInclude Include="MachineDescriptionLoader.h" />
     <ClInclude Include="MachineResourceKeys.h" />
     <ClInclude Include="MachineResources.h" />
-    <ClInclude Include="MachineTargetImplement.h" />
+    <ClInclude Include="MachineFacadeImplement.h" />
     <ClInclude Include="MachineTransformConstraints.h" />
     <ClInclude Include="SDFLoader.h" />
+    <ClInclude Include="URDFLoader.h" />
     <ClInclude Include="SceneComponents.h" />
     <ClInclude Include="SelectionComponents.h" />
     <ClInclude Include="ToolpathGenerationService.h" />
     <ClInclude Include="ToolpathOrderService.h" />
     <ClInclude Include="ToolpathComponents.h" />
-    <ClInclude Include="ToolpathTargetImplement.h" />
+    <ClInclude Include="ToolpathFacadeImplement.h" />
     <ClInclude Include="TopologyPayloadNames.h" />
     <ClInclude Include="ToolpathResourceKeys.h" />
     <ClInclude Include="ToolpathResources.h" />
     <ClInclude Include="WorkpieceComponents.h" />
-    <ClInclude Include="WorkpieceTargetImplement.h" />
+    <ClInclude Include="WorkpieceFacadeImplement.h" />
     <ClInclude Include="WorkpieceResourceKeys.h" />
     <ClInclude Include="Laser3DCAMExport.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CommandTargetSupport.cpp" />
-    <ClCompile Include="JobTarget.cpp" />
-    <ClCompile Include="MachineDescriptionLoader.cpp" />
-    <ClCompile Include="MachineColliderBehaviour.cpp" />
-    <ClCompile Include="MachineDefinitionTarget.cpp" />
-    <ClCompile Include="MachineDefinitionTargetImplement.cpp" />
-    <ClCompile Include="MachineTarget.cpp" />
-    <ClCompile Include="MachineTargetImplement.cpp" />
-    <ClCompile Include="MachineTransformConstraints.cpp" />
-    <ClCompile Include="ToolpathTargetImplement.cpp" />
-    <ClCompile Include="SelectionTarget.cpp" />
-    <ClCompile Include="ToolpathTarget.cpp" />
-    <ClCompile Include="CameraViewTarget.cpp" />
-    <ClCompile Include="CameraViewTargetImplement.cpp" />
-    <ClCompile Include="WorkpieceModelTarget.cpp" />
-    <ClCompile Include="WorkpieceTarget.cpp" />
-    <ClCompile Include="WorkpieceTargetImplement.cpp" />
+    <ClCompile Include="FacadeSupport.cpp" />
+    <ClCompile Include="JobFacade.cpp" />
+    <ClCompile Include="IntentToolpathFacade.cpp" />
+    <ClCompile Include="MachineDefinitionFacade.cpp" />
+    <ClCompile Include="MachineDefinitionFacadeImplement.cpp" />
+    <ClCompile Include="MachineFacade.cpp" />
+    <ClCompile Include="MachineFacadeImplement.cpp" />
+    <ClCompile Include="ToolpathFacadeImplement.cpp" />
+    <ClCompile Include="SelectionFacade.cpp" />
+    <ClCompile Include="ToolpathFacade.cpp" />
+    <ClCompile Include="CameraViewFacade.cpp" />
+    <ClCompile Include="CameraViewFacadeImplement.cpp" />
+    <ClCompile Include="WorkpieceModelFacade.cpp" />
+    <ClCompile Include="WorkpieceEditFacade.cpp" />
+    <ClCompile Include="WorkpieceFacade.cpp" />
+    <ClCompile Include="WorkpieceFacadeImplement.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FeatureRecognitionService.cpp" />
     <ClCompile Include="Laser3DCAM.cpp" />
     <ClCompile Include="SceneBootstrapBehaviour.cpp" />
-    <ClCompile Include="SDFLoader.cpp" />
     <ClCompile Include="ToolpathGenerationService.cpp" />
     <ClCompile Include="ToolpathOrderService.cpp" />
     <ClCompile Include="pch.cpp">
@@ -110,6 +108,15 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Machine\Machine.vcxproj">
+      <Project>{90c52ed8-ab1d-48d8-bff3-4109f5d3757c}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\IntentToolpath\IntentToolpath.vcxproj">
+      <Project>{7f21c2a4-bda0-4f50-a60f-4b95ab58cb85}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\ProcessPath\ProcessPath.vcxproj">
+      <Project>{c55984df-c3bf-4ed2-85f7-04d06d582a18}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
@@ -131,7 +138,7 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Behaviour\Behaviour.vcxproj">
       <Project>{1c150fbb-3418-414d-8a3c-f7b57c6d18b7}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\iCAX-Engine\framework\CommandTargets\CommandTargets.vcxproj">
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Facades\Facades.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">

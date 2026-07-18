@@ -121,7 +121,7 @@ Workspace 根据运行态显示：
 const app = await icax.connectApplication();
 const product = await app.startProduct("icax.laser-3d-cam");
 const opened = await product.openProjectCatalog("D:/projects/a.icax");
-await opened.sceneProxy.execute("Laser3DCAM.Toolpath.RecognizeHole", {});
+await opened.sceneProxy.invoke("Laser3DCAM.RecognizeHole", {});
 ```
 
 ## 5. 产品 manifest

@@ -51,7 +51,7 @@ AppProxy/ProductProxy/ProjectProxy/SceneProxy
 Shell 或产品前端应这样使用：
 
 ```js
-import { connectApplication, ProjectCommands } from "../../iCAX-UI/SDK/index.mjs";
+import { connectApplication, ProjectFacade } from "../../iCAX-UI/SDK/index.mjs";
 
 const app = await connectApplication();
 const product = await app.startProduct("icax.laser-3d-cam");

@@ -18,7 +18,7 @@ namespace iCAX
         enum StampCode : uint16_t
         {
             kMailOk = 0,
-            kMailNoHandler = 1,
+            kMailNotFound = 1,
             kMailInvalidPayload = 2,
             kMailExecutionError = 3,
             kMailTimeout = 4,
@@ -28,7 +28,7 @@ namespace iCAX
         * @brief 邮件头。
         * @details
         *   nMailId 标识本封邮件；响应邮件会把请求邮件 ID 写到 nOriginId。
-        *   nTypeCode 是上层业务类型码。当前 CommandTargets 使用它承载 64 位命令路由码。
+        *   nTypeCode 是上层业务类型码。当前 Facades 使用它承载 FacadeName.MethodName 的 64 位紧凑编码。
         */
         struct _MAIL_EXP MailHeader
         {

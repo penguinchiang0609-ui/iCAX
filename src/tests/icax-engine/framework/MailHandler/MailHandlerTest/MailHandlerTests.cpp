@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
 
 #include <ApplicationContext/IApplicationContext.h>
-#include <CommandTargets/CommandDispatcher.h>
-#include <CommandTargets/CommandRegistry.h>
-#include <CommandTargets/CommandRoute.h>
-#include <CommandTargets/CommandTarget.h>
+#include <Facades/FacadeInvoker.h>
+#include <Facades/FacadeRegistry.h>
+#include <Facades/FacadeMethod.h>
+#include <Facades/Facade.h>
 #include <Mailbox/MailChannel.h>
 #include <Mailbox/MailPayload.h>
-#include <MailHandler/CMailCommandHandler.h>
+#include <MailHandler/CMailFacadeHandler.h>
 
 #include <cstdint>
 #include <memory>
@@ -41,15 +41,15 @@ namespace
         iCAX::Data::PropertyBag Settings;
     };
 
-    class CTestCommandTarget final : public iCAX::Command::CCommandTarget
+    class CTestFacade final : public iCAX::Interaction::CFacade
     {
     public:
-        explicit CTestCommandTarget(IN std::string strMainName_)
-            : CCommandTarget(std::move(strMainName_))
+        explicit CTestFacade(IN std::string strFacadeName_)
+            : CFacade(std::move(strFacadeName_))
         {
         }
 
-        using CCommandTarget::Bind;
+        using CFacade::ExposeMethod;
     };
 
     iCAX::Mail::Mail MakeTextMail(
@@ -64,54 +64,54 @@ namespace
     }
 }
 
-TEST(MailCommandTargetsTest, ConvertsMailToCommandRequest)
+TEST(MailFacadesTest, ConvertsMailToFacadeCall)
 {
-    CMailCommandHandler _Handler;
-    const auto _RouteCode = iCAX::Command::MakeCommandCode("Echo", "Ping");
-    auto _Mail = MakeTextMail(11, _RouteCode, "hello");
+    CMailFacadeHandler _Handler;
+    const auto _MethodCode = iCAX::Interaction::MakeFacadeMethodCode("Echo", "Ping");
+    auto _Mail = MakeTextMail(11, _MethodCode, "hello");
 
-    auto _Request = _Handler.ToCommandRequest(_Mail);
+    auto _Request = _Handler.ToFacadeCall(_Mail);
 
-    EXPECT_EQ(11u, _Request.nCommandID);
+    EXPECT_EQ(11u, _Request.nCallID);
     EXPECT_EQ(0u, _Request.nOriginID);
-    EXPECT_EQ(_RouteCode, _Request.Route.GetRouteCode());
+    EXPECT_EQ(_MethodCode, _Request.Method.GetCode());
     ASSERT_EQ(5u, _Request.Payload.size());
     EXPECT_EQ('h', static_cast<char>(_Request.Payload[0]));
 
     iCAX::Mail::ReleaseMailPayload(_Mail);
 }
 
-TEST(MailCommandTargetsTest, DispatchesMailCommandAndSendsResponse)
+TEST(MailFacadesTest, InvokesFacadeMethodAndSendsResult)
 {
-    auto _pRegistry = std::make_shared<iCAX::Command::CCommandRegistry>();
-    auto _pTarget = std::make_shared<CTestCommandTarget>("Echo");
-    ASSERT_TRUE(_pTarget->Bind(
+    auto _pRegistry = std::make_shared<iCAX::Interaction::CFacadeRegistry>();
+    auto _pFacade = std::make_shared<CTestFacade>("Echo");
+    ASSERT_TRUE(_pFacade->ExposeMethod(
         "Ping",
         [](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
             IN iCAX::Project::IProjectContext*,
             IN iCAX::Project::ISceneContext*) {
-            iCAX::Command::CCommandResponse _Response;
+            iCAX::Interaction::CFacadeResult _Response;
             _Response.Payload = Request_.Payload;
             return _Response;
         }));
-    ASSERT_TRUE(_pRegistry->Register(_pTarget));
+    ASSERT_TRUE(_pRegistry->Register(_pFacade));
 
-    iCAX::Command::CCommandDispatcher _Dispatcher(_pRegistry);
-    CMailCommandHandler _Handler;
+    iCAX::Interaction::CFacadeInvoker _Dispatcher(_pRegistry);
+    CMailFacadeHandler _Handler;
     CTestApplicationContext _ApplicationContext;
     iCAX::Mail::CMailChannel _Channel;
     auto _Frontend = _Channel.GetEndAPostOffice();
     auto _Backend = _Channel.GetEndBPostOffice();
 
-    auto _RequestMail = MakeTextMail(21, iCAX::Command::MakeCommandCode("Echo", "Ping"), "pong");
+    auto _RequestMail = MakeTextMail(21, iCAX::Interaction::MakeFacadeMethodCode("Echo", "Ping"), "pong");
     _Frontend.Send(_RequestMail);
     iCAX::Mail::ReleaseMailPayload(_RequestMail);
 
     uint64_t _NextResponseMailID = 100;
-    EXPECT_EQ(1u, _Handler.DispatchAvailableMails(
+    EXPECT_EQ(1u, _Handler.HandleAvailableMails(
         _Backend,
         _Dispatcher,
         _ApplicationContext,
@@ -129,21 +129,21 @@ TEST(MailCommandTargetsTest, DispatchesMailCommandAndSendsResponse)
     iCAX::Mail::ReleaseMailPayload(_Responses[0]);
 }
 
-TEST(MailCommandTargetsTest, NoHandlerResponseUsesMailNoHandlerStampAndErrorPayload)
+TEST(MailFacadesTest, NotFoundResponseUsesMailNotFoundStampAndErrorPayload)
 {
-    auto _pRegistry = std::make_shared<iCAX::Command::CCommandRegistry>();
-    iCAX::Command::CCommandDispatcher _Dispatcher(_pRegistry);
-    CMailCommandHandler _Handler;
+    auto _pRegistry = std::make_shared<iCAX::Interaction::CFacadeRegistry>();
+    iCAX::Interaction::CFacadeInvoker _Dispatcher(_pRegistry);
+    CMailFacadeHandler _Handler;
     CTestApplicationContext _ApplicationContext;
     iCAX::Mail::CMailChannel _Channel;
     auto _Frontend = _Channel.GetEndAPostOffice();
     auto _Backend = _Channel.GetEndBPostOffice();
 
-    auto _RequestMail = MakeTextMail(31, iCAX::Command::MakeCommandCode("Missing", "Ping"), "{}");
+    auto _RequestMail = MakeTextMail(31, iCAX::Interaction::MakeFacadeMethodCode("Missing", "Ping"), "{}");
     _Frontend.Send(_RequestMail);
     iCAX::Mail::ReleaseMailPayload(_RequestMail);
 
-    EXPECT_EQ(1u, _Handler.DispatchAvailableMails(
+    EXPECT_EQ(1u, _Handler.HandleAvailableMails(
         _Backend,
         _Dispatcher,
         _ApplicationContext,
@@ -154,7 +154,7 @@ TEST(MailCommandTargetsTest, NoHandlerResponseUsesMailNoHandlerStampAndErrorPayl
 
     auto _Responses = _Frontend.Receive();
     ASSERT_EQ(1u, _Responses.size());
-    EXPECT_EQ(iCAX::Mail::kMailNoHandler, _Responses[0].Header.nStamp);
-    EXPECT_NE(std::string::npos, iCAX::Mail::GetMailPayloadText(_Responses[0]).find("Command target not found"));
+    EXPECT_EQ(iCAX::Mail::kMailNotFound, _Responses[0].Header.nStamp);
+    EXPECT_NE(std::string::npos, iCAX::Mail::GetMailPayloadText(_Responses[0]).find("Facade not found"));
     iCAX::Mail::ReleaseMailPayload(_Responses[0]);
 }

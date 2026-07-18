@@ -24,6 +24,11 @@ namespace iCAX
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, BRepResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, TopologyResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, unsigned long long, TopologyVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, unsigned long long, GeometryRevision, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, EditState, std::string("Current"), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, DraftBRepResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, DraftTopologyResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, unsigned long long, DraftTopologyVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         };
     }
 }

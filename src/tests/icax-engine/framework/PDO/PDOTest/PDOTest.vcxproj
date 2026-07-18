@@ -158,9 +158,6 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <Target Name="CopyRuntimeDependencies" AfterTargets="Build">
-    <Copy SourceFiles="..\..\..\..\..\icax-engine\framework\PDO\$(Platform)\$(Configuration)\PDO.dll;..\..\..\..\..\icax-engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-  </Target>
   <ImportGroup Label="ExtensionTargets">
     <Import Project="..\..\..\..\..\icax-engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets" Condition="Exists('..\..\..\..\..\icax-engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
   </ImportGroup>

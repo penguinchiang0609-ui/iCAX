@@ -52,8 +52,8 @@
   <Folder Name="/iCAX-Engine/framework/Behaviour/">
     <Project Path="iCAX-Engine/framework/Behaviour/Behaviour.vcxproj" Id="1c150fbb-3418-414d-8a3c-f7b57c6d18b7" />
   </Folder>
-  <Folder Name="/iCAX-Engine/framework/CommandTargets/">
-    <Project Path="iCAX-Engine/framework/CommandTargets/CommandTargets.vcxproj" Id="1f194886-5b7e-4fa9-816c-1b48865633e6" />
+  <Folder Name="/iCAX-Engine/framework/Facades/">
+    <Project Path="iCAX-Engine/framework/Facades/Facades.vcxproj" Id="1f194886-5b7e-4fa9-816c-1b48865633e6" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Database/">
     <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" Id="c746f6a5-c34a-4649-a3f4-ad185002dedd" />
@@ -102,9 +102,16 @@
     <Project Path="iCAX-Plugins/geometry/STLResourceImport/STLResourceImport.vcxproj" Id="82a38ce6-9bad-43de-8294-41526be44e23" />
   </Folder>
   <Folder Name="/iCAX-Plugins/cam/" />
+  <Folder Name="/iCAX-Plugins/cam/IntentToolpath/">
+    <Project Path="iCAX-Plugins/cam/IntentToolpath/IntentToolpath.vcxproj" Id="7f21c2a4-bda0-4f50-a60f-4b95ab58cb85" />
+  </Folder>
+  <Folder Name="/iCAX-Plugins/cam/ProcessPath/">
+    <Project Path="iCAX-Plugins/cam/ProcessPath/ProcessPath.vcxproj" Id="c55984df-c3bf-4ed2-85f7-04d06d582a18" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/cam/Laser3DCAM/">
     <Project Path="iCAX-Plugins/cam/Laser3DCAM/Laser3DCAM.vcxproj" Id="41e6e443-2614-4e0d-914a-bfc4d5802cd4" />
   </Folder>
+  <Folder Name="/iCAX-Plugins/cam/Machine/"><Project Path="iCAX-Plugins/cam/Machine/Machine.vcxproj" Id="90c52ed8-ab1d-48d8-bff3-4109f5d3757c" /></Folder>
   <Folder Name="/iCAX-Plugins/input/" />
   <Folder Name="/iCAX-Plugins/input/InputPDO/">
     <Project Path="iCAX-Plugins/input/InputPDO/InputPDO.vcxproj" Id="0e5b6210-7ac4-4af9-8628-709d45cd3f26" />
@@ -184,9 +191,9 @@
   <Folder Name="/tests/icax-engine/framework/Behaviour/BehaviourTest/">
     <Project Path="tests/icax-engine/framework/Behaviour/BehaviourTest/BehaviourTest.vcxproj" Id="6be97c5d-6098-4fc1-9e47-3c22a65f4ac1" />
   </Folder>
-  <Folder Name="/tests/icax-engine/framework/CommandTargets/" />
-  <Folder Name="/tests/icax-engine/framework/CommandTargets/CommandTargetsTest/">
-    <Project Path="tests/icax-engine/framework/CommandTargets/CommandTargetsTest/CommandTargetsTest.vcxproj" Id="7ff89591-2955-47dd-a507-82362d56da4e" />
+  <Folder Name="/tests/icax-engine/framework/Facades/" />
+  <Folder Name="/tests/icax-engine/framework/Facades/FacadesTest/">
+    <Project Path="tests/icax-engine/framework/Facades/FacadesTest/FacadesTest.vcxproj" Id="7ff89591-2955-47dd-a507-82362d56da4e" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Database/" />
   <Folder Name="/tests/icax-engine/framework/Database/DatabaseTest/">

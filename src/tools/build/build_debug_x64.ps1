@@ -31,7 +31,7 @@ $Projects = @(
     "src\icax-engine\framework\ApplicationContext\ApplicationContext.vcxproj",
     "src\icax-engine\framework\ProductContext\ProductContext.vcxproj",
     "src\icax-engine\framework\ProjectContext\ProjectContext.vcxproj",
-    "src\icax-engine\framework\CommandTargets\CommandTargets.vcxproj",
+    "src\icax-engine\framework\Facades\Facades.vcxproj",
     "src\icax-engine\framework\Database\Database.vcxproj",
     "src\icax-engine\framework\Services\Services.vcxproj",
     "src\icax-engine\framework\Behaviour\Behaviour.vcxproj",

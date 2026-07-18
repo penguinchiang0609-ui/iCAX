@@ -1,15 +1,15 @@
 #pragma once
 #include "ApplicationHostExport.h"
 #include "ApplicationContext/ApplicationContext.h"
-#include "ApplicationHostCommands.h"
+#include "ApplicationHostFacades.h"
 #include "ApplicationHostConfig.h"
 #include "ProductFileResolver.h"
-#include "CommandTargets/CommandDispatcher.h"
-#include "CommandTargets/CommandMessage.h"
-#include "CommandTargets/CommandRegistry.h"
+#include "Facades/FacadeInvoker.h"
+#include "Facades/FacadeCall.h"
+#include "Facades/FacadeRegistry.h"
 #include "Data/Variant.h"
 #include "Mailbox/MailPostOffice.h"
-#include "MailHandler/CMailCommandHandler.h"
+#include "MailHandler/CMailFacadeHandler.h"
 #include "Product/ProductRuntime.h"
 #include "Mailbox/MailChannelRegistry.h"
 #include "Services/ServiceProvider.h"
@@ -229,70 +229,70 @@ namespace iCAX
             std::shared_ptr<iCAX::Application::CApplicationContext> CreateApplicationContext() const;
 
             /*
-            * @brief 注册 ApplicationHost 内建命令。
+            * @brief 注册 ApplicationHost 内建 Facade。
             */
-            void RegisterBuiltInApplicationCommands();
+            void RegisterBuiltInApplicationFacades();
 
             /*
-            * @brief 处理获取应用状态命令。
+            * @brief 处理获取应用状态方法。
             */
-            iCAX::Command::CCommandResponse HandleGetStateCommand(
-                IN const iCAX::Command::CCommandRequest& Request_,
+            iCAX::Interaction::CFacadeResult HandleGetState(
+                IN const iCAX::Interaction::CFacadeCall& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
-            * @brief 处理列出产品命令。
+            * @brief 处理列出产品 Facade 方法。
             * @details 当前实现返回完整应用状态，其中包含产品定义和运行态信息。
             */
-            iCAX::Command::CCommandResponse HandleListProductsCommand(
-                IN const iCAX::Command::CCommandRequest& Request_,
+            iCAX::Interaction::CFacadeResult HandleListProducts(
+                IN const iCAX::Interaction::CFacadeCall& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
-            * @brief 处理启动产品命令。
+            * @brief 处理启动产品 Facade 方法。
             * @param [in] Request_ Payload 可包含 productId；单产品时可省略。
             */
-            iCAX::Command::CCommandResponse HandleStartProductCommand(
-                IN const iCAX::Command::CCommandRequest& Request_,
+            iCAX::Interaction::CFacadeResult HandleStartProduct(
+                IN const iCAX::Interaction::CFacadeCall& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
-            * @brief 处理停止产品命令。
+            * @brief 处理停止产品 Facade 方法。
             * @param [in] Request_ Payload 必须包含 productId。
             */
-            iCAX::Command::CCommandResponse HandleStopProductCommand(
-                IN const iCAX::Command::CCommandRequest& Request_,
+            iCAX::Interaction::CFacadeResult HandleStopProduct(
+                IN const iCAX::Interaction::CFacadeCall& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
-            * @brief 处理识别项目文件产品命令。
+            * @brief 处理识别项目文件产品 Facade 方法。
             * @param [in] Request_ Payload 必须包含 projectPath。
             */
-            iCAX::Command::CCommandResponse HandleResolveProjectFileCommand(
-                IN const iCAX::Command::CCommandRequest& Request_,
+            iCAX::Interaction::CFacadeResult HandleResolveProjectFile(
+                IN const iCAX::Interaction::CFacadeCall& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
-            * @brief 处理打开项目文件命令。
+            * @brief 处理打开项目文件方法。
             * @param [in] Request_ Payload 必须包含 projectPath，可包含 catalogName/projectName。
             */
-            iCAX::Command::CCommandResponse HandleOpenProjectFileCommand(
-                IN const iCAX::Command::CCommandRequest& Request_,
+            iCAX::Interaction::CFacadeResult HandleOpenProjectFile(
+                IN const iCAX::Interaction::CFacadeCall& Request_,
                 IN iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -378,7 +378,7 @@ namespace iCAX
 
             /*
             * @brief 向应用级前端邮箱主动发送事件邮件。
-            * @param [in] nTypeCode_ 事件类型码，使用 CommandRoute 的 64 位主/子编码。
+            * @param [in] nTypeCode_ 事件类型码，使用 FacadeMethod 的 64 位主/子编码。
             * @param [in] strPayloadText_ UTF-8 文本负载，通常是 VariantSerializer 文本。
             * @details
             *   主动事件邮件的 nOriginId 固定为 0，前端通过 FrontendMailbox.subscribe/subscribeAll 接收。
@@ -407,9 +407,9 @@ namespace iCAX
                 return *m_pApplicationContext;
             }
 
-            iCAX::Command::CCommandRegistry& GetCommandRegistry() const
+            iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const
             {
-                return *m_pCommandRegistry;
+                return *m_pFacadeRegistry;
             }
 
         private:
@@ -428,9 +428,9 @@ namespace iCAX
             std::map<uint64_t, ApplicationHostEventHandler> m_mapEventHandlers;
             uint64_t m_nNextEventSubscriptionID = 1;
             iCAX::Data::uuid m_ApplicationChannelID;
-            std::shared_ptr<iCAX::Command::CCommandRegistry> m_pCommandRegistry;
-            std::unique_ptr<iCAX::Command::CCommandDispatcher> m_pCommandDispatcher;
-            std::unique_ptr<iCAX::MailHandler::CMailCommandHandler> m_pMailCommandHandler;
+            std::shared_ptr<iCAX::Interaction::CFacadeRegistry> m_pFacadeRegistry;
+            std::unique_ptr<iCAX::Interaction::CFacadeInvoker> m_pFacadeInvoker;
+            std::unique_ptr<iCAX::MailHandler::CMailFacadeHandler> m_pMailFacadeHandler;
             std::atomic_uint64_t m_nNextBackendMailID = 1;
             std::shared_ptr<iCAX::Application::CApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pApplicationServiceProvider;

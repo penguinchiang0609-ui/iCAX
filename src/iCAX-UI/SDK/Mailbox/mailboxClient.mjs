@@ -1,5 +1,5 @@
 import { ensureUsableChannelId } from "./channelId.mjs";
-import { makeCommandTypeCodeFromCommand } from "./commandRoute.mjs";
+import { makeFacadeMethodCodeFromName } from "./facadeMethod.mjs";
 import { deserializeVariantText, serializeVariantText } from "./variantSerializer.mjs";
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -82,10 +82,10 @@ export class MailboxClient {
     this.eventHandlers.clear();
   }
 
-  request(channelId, command, payload = {}, options = {}) {
+  invoke(channelId, facadeMethod, payload = {}, options = {}) {
     ensureChannelId(channelId);
-    if (!command) {
-      throw new TypeError("command is required");
+    if (!facadeMethod) {
+      throw new TypeError("facadeMethod is required");
     }
 
     this.start(channelId);
@@ -95,7 +95,7 @@ export class MailboxClient {
       channelId,
       id: requestId,
       originId: 0,
-      typeCode: makeCommandTypeCodeFromCommand(command),
+      typeCode: makeFacadeMethodCodeFromName(facadeMethod),
       stamp: STAMP_OK,
       payloadText: serializeVariantText(payload),
     };
@@ -108,11 +108,11 @@ export class MailboxClient {
     const promise = new Promise((resolve, reject) => {
       const timeoutHandle = setTimeout(() => {
         this.pending.delete(requestId);
-        reject(new MailboxTimeoutError(`Mailbox request timed out: ${command}`, requestMail));
+        reject(new MailboxTimeoutError(`Facade call timed out: ${facadeMethod}`, requestMail));
       }, timeoutMs);
 
       this.pending.set(requestId, {
-        command,
+        facadeMethod,
         requestMail,
         resolve,
         reject,
@@ -132,10 +132,10 @@ export class MailboxClient {
     return promise;
   }
 
-  subscribe(channelId, command, handler) {
+  subscribe(channelId, facadeMember, handler) {
     ensureChannelId(channelId);
-    if (!command) {
-      throw new TypeError("command is required");
+    if (!facadeMember) {
+      throw new TypeError("facadeMember is required");
     }
     if (typeof handler !== "function") {
       throw new TypeError("handler must be a function");
@@ -143,7 +143,7 @@ export class MailboxClient {
 
     this.start(channelId);
 
-    const key = this.#makeEventKey(channelId, makeCommandTypeCodeFromCommand(command));
+    const key = this.#makeEventKey(channelId, makeFacadeMethodCodeFromName(facadeMember));
     if (!this.eventHandlers.has(key)) {
       this.eventHandlers.set(key, new Set());
     }

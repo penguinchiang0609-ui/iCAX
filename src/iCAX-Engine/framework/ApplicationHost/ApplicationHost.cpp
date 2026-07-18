@@ -2,7 +2,7 @@
 #include "ApplicationHost.h"
 
 #include "ApplicationContext/FileApplicationConfigStore.h"
-#include "CommandTargets/CommandTarget.h"
+#include "Facades/Facade.h"
 #include "Mailbox/MailChannelRegistry.h"
 
 #include <chrono>
@@ -15,22 +15,22 @@
 
 namespace
 {
-    class CStaticApplicationCommandTarget final : public iCAX::Command::CCommandTarget
+    class CStaticApplicationFacade final : public iCAX::Interaction::CFacade
     {
     public:
-        using CommandRecord = std::pair<std::string, SubCommandFunc>;
+        using MethodRecord = std::pair<std::string, MethodFunc>;
 
-        CStaticApplicationCommandTarget(
-            IN std::string strMainName_,
-            IN std::vector<CommandRecord> Commands_)
-            : CCommandTarget(std::move(strMainName_))
+        CStaticApplicationFacade(
+            IN std::string strFacadeName_,
+            IN std::vector<MethodRecord> Methods_)
+            : CFacade(std::move(strFacadeName_))
         {
-            for (auto& _Command : Commands_)
+            for (auto& _Method : Methods_)
             {
-                auto _SubName = _Command.first;
-                if (!Bind(std::move(_Command.first), std::move(_Command.second)))
+                auto _MethodName = _Method.first;
+                if (!ExposeMethod(std::move(_Method.first), std::move(_Method.second)))
                 {
-                    throw std::runtime_error("Built-in application command is already bound: " + _SubName);
+                    throw std::runtime_error("Built-in application method is already exposed: " + _MethodName);
                 }
             }
         }
@@ -76,12 +76,12 @@ namespace
         }
     }
 
-    iCAX::Data::ObjectMap _DecodeObjectPayload(IN const iCAX::Command::CCommandRequest& Request_)
+    iCAX::Data::ObjectMap _DecodeObjectPayload(IN const iCAX::Interaction::CFacadeCall& Request_)
     {
         auto _Payload = iCAX::ApplicationHost::DecodeApplicationHostPayload(Request_.Payload);
         if (!_Payload.Is<iCAX::Data::ObjectMap>())
         {
-            throw std::invalid_argument("ApplicationHost command payload must be an object");
+            throw std::invalid_argument("ApplicationHost facade call payload must be an object");
         }
         return _Payload.To<iCAX::Data::ObjectMap>();
     }
@@ -200,14 +200,14 @@ namespace
     {
         if (pProductContext_ || pProjectContext_ || pSceneContext_)
         {
-            throw std::invalid_argument("ApplicationHost command must be sent to the application mailbox");
+            throw std::invalid_argument("ApplicationHost facade call must be sent to the application mailbox");
         }
     }
 
-    iCAX::Command::CCommandResponse _MakeApplicationPayloadResponse(IN const iCAX::Data::Variant& Payload_)
+    iCAX::Interaction::CFacadeResult _MakeApplicationPayloadResponse(IN const iCAX::Data::Variant& Payload_)
     {
-        iCAX::Command::CCommandResponse _Response;
-        _Response.nStatus = iCAX::Command::ECommandStatusCode::Ok;
+        iCAX::Interaction::CFacadeResult _Response;
+        _Response.nStatus = iCAX::Interaction::EFacadeCallStatus::Ok;
         _Response.Payload = iCAX::ApplicationHost::EncodeApplicationHostPayload(Payload_);
         return _Response;
     }
@@ -253,9 +253,9 @@ namespace
 iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
     : m_Config()
     , m_ApplicationChannelID(iCAX::Data::GenerateNewUUID())
-    , m_pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
-    , m_pCommandDispatcher(std::make_unique<iCAX::Command::CCommandDispatcher>(m_pCommandRegistry))
-    , m_pMailCommandHandler(std::make_unique<iCAX::MailHandler::CMailCommandHandler>())
+    , m_pFacadeRegistry(std::make_shared<iCAX::Interaction::CFacadeRegistry>())
+    , m_pFacadeInvoker(std::make_unique<iCAX::Interaction::CFacadeInvoker>(m_pFacadeRegistry))
+    , m_pMailFacadeHandler(std::make_unique<iCAX::MailHandler::CMailFacadeHandler>())
 {
     m_Config.strApplicationSettingsPath = "Setting/Application.Setting";
     m_Config.Descriptor.AppID = "icax";
@@ -276,7 +276,7 @@ iCAX::ApplicationHost::CApplicationHost::CApplicationHost()
     m_Config.Products.push_back(_DefaultProduct);
     _ValidateProductDefinitions(m_Config.Products);
 
-    RegisterBuiltInApplicationCommands();
+    RegisterBuiltInApplicationFacades();
 }
 
 iCAX::ApplicationHost::CApplicationHost::~CApplicationHost()
@@ -471,7 +471,7 @@ void iCAX::ApplicationHost::CApplicationHost::WorkerMain()
             }
             if (_NextFrameTime < std::chrono::steady_clock::now() - _FrameInterval)
             {
-                // 宿主主循环不追赶积压帧，避免长耗时命令导致空转补帧。
+                // 宿主主循环不追赶积压帧，避免长耗时调用导致空转补帧。
                 _NextFrameTime = std::chrono::steady_clock::now();
             }
         }
@@ -686,7 +686,7 @@ std::string iCAX::ApplicationHost::CApplicationHost::GetExceptionMessage(IN std:
 
 void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
 {
-    if (!m_pCommandDispatcher)
+    if (!m_pFacadeInvoker)
     {
         return;
     }
@@ -702,9 +702,9 @@ void iCAX::ApplicationHost::CApplicationHost::DispatchApplicationMails()
         return;
     }
 
-    m_pMailCommandHandler->DispatchAvailableMails(
+    m_pMailFacadeHandler->HandleAvailableMails(
         _PostOffice,
-        *m_pCommandDispatcher,
+        *m_pFacadeInvoker,
         *m_pApplicationContext,
         nullptr,
         nullptr,
@@ -731,79 +731,79 @@ std::shared_ptr<iCAX::Application::CApplicationContext> iCAX::ApplicationHost::C
         LoadApplicationSettings());
 }
 
-void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationCommands()
+void iCAX::ApplicationHost::CApplicationHost::RegisterBuiltInApplicationFacades()
 {
-    std::vector<CStaticApplicationCommandTarget::CommandRecord> _Commands;
-    _Commands.emplace_back(
+    std::vector<CStaticApplicationFacade::MethodRecord> _Methods;
+    _Methods.emplace_back(
         kAppGetStateName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleGetState(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kAppListProductsName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleListProductsCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleListProducts(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kAppStartProductName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleStartProductCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleStartProduct(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kAppStopProductName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleStopProductCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleStopProduct(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kAppResolveProjectFileName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleResolveProjectFileCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleResolveProjectFile(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kAppOpenProjectFileName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleOpenProjectFileCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleOpenProjectFile(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
-    auto _pCommandTarget = std::make_shared<CStaticApplicationCommandTarget>(kAppCommandMainName, std::move(_Commands));
-    if (!m_pCommandRegistry->Register(_pCommandTarget))
+    auto _pFacade = std::make_shared<CStaticApplicationFacade>(kAppFacadeName, std::move(_Methods));
+    if (!m_pFacadeRegistry->Register(_pFacade))
     {
-        throw std::runtime_error("Built-in application command target is already registered: " + _pCommandTarget->GetMainName());
+        throw std::runtime_error("Built-in application facade is already registered: " + _pFacade->GetName());
     }
 }
 
-iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleGetStateCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::ApplicationHost::CApplicationHost::HandleGetState(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -813,8 +813,8 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleG
     return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
 }
 
-iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleListProductsCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::ApplicationHost::CApplicationHost::HandleListProducts(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -824,8 +824,8 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleL
     return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
 }
 
-iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleStartProductCommand(
-    IN const iCAX::Command::CCommandRequest& Request_,
+iCAX::Interaction::CFacadeResult iCAX::ApplicationHost::CApplicationHost::HandleStartProduct(
+    IN const iCAX::Interaction::CFacadeCall& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -842,8 +842,8 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleS
     return _MakeApplicationPayloadResponse(iCAX::Data::Variant(_Response));
 }
 
-iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleStopProductCommand(
-    IN const iCAX::Command::CCommandRequest& Request_,
+iCAX::Interaction::CFacadeResult iCAX::ApplicationHost::CApplicationHost::HandleStopProduct(
+    IN const iCAX::Interaction::CFacadeCall& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -860,8 +860,8 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleS
     return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
 }
 
-iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleResolveProjectFileCommand(
-    IN const iCAX::Command::CCommandRequest& Request_,
+iCAX::Interaction::CFacadeResult iCAX::ApplicationHost::CApplicationHost::HandleResolveProjectFile(
+    IN const iCAX::Interaction::CFacadeCall& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -877,8 +877,8 @@ iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleR
     return _MakeApplicationPayloadResponse(iCAX::Data::Variant(_Response));
 }
 
-iCAX::Command::CCommandResponse iCAX::ApplicationHost::CApplicationHost::HandleOpenProjectFileCommand(
-    IN const iCAX::Command::CCommandRequest& Request_,
+iCAX::Interaction::CFacadeResult iCAX::ApplicationHost::CApplicationHost::HandleOpenProjectFile(
+    IN const iCAX::Interaction::CFacadeCall& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,

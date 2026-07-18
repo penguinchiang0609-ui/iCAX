@@ -3,6 +3,20 @@ export async function handleWorkpieceRibbonCommand(context, view, commandId, ops
     await chooseModelFile(context, view, true, ops);
     return true;
   }
+  if (commandId === "workpiece.check") {
+    await invokeCadMethod(context, view, "WorkpieceEdit.Inspect", ops);
+    return true;
+  }
+  if (commandId === "workpiece.repair") {
+    if (!view.scene?.model?.hasDraft) {
+      await invokeCadMethod(context, view, "WorkpieceEdit.Begin", ops);
+    }
+    return true;
+  }
+  if (commandId === "intent.from-selection") {
+    await invokeCadMethod(context, view, "IntentToolpath.CreateFromSelection", ops);
+    return true;
+  }
   return false;
 }
 
@@ -17,7 +31,25 @@ export function handleWorkpieceAction(context, view, action, ops) {
     importModelPath(context, view, sourcePath, ops);
     return true;
   }
+  const cadMethods = {
+    "cad-begin": "WorkpieceEdit.Begin",
+    "cad-inspect": "WorkpieceEdit.Inspect",
+    "cad-commit": "WorkpieceEdit.Commit",
+    "cad-discard": "WorkpieceEdit.Discard",
+    "intent-from-selection": "IntentToolpath.CreateFromSelection",
+  };
+  if (cadMethods[action]) {
+    invokeCadMethod(context, view, cadMethods[action], ops);
+    return true;
+  }
   return false;
+}
+
+async function invokeCadMethod(context, view, facadeMethod, ops) {
+  const ok = await ops.invokeFacadeMethod(context, view, facadeMethod, {});
+  if (ok && facadeMethod === "WorkpieceEdit.Inspect") {
+    view.notice = "模型检查完成";
+  }
 }
 
 export async function chooseModelFile(context, view, importAfterChoose, ops) {
@@ -59,7 +91,7 @@ export async function importModelPath(context, view, sourcePath, ops) {
     ops.renderProject(context, view);
     return;
   }
-  const imported = await ops.runProjectCommandPayload(
+  const imported = await ops.invokeFacadeMethodPayload(
     context,
     view,
     "WorkpieceModel.Import",
@@ -69,7 +101,7 @@ export async function importModelPath(context, view, sourcePath, ops) {
   if (!imported.ok) {
     return;
   }
-  const ok = await ops.runProjectCommand(context, view, "Workpiece.Instantiate", imported.payload, { timeoutMs: 60000 });
+  const ok = await ops.invokeFacadeMethod(context, view, "Workpiece.Instantiate", imported.payload, { timeoutMs: 60000 });
   if (ok) {
     await ops.fitViewAfterRenderPublish(context, view);
   }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Data/Variant.h"
 #include "ProductContextExport.h"
 #include "PDO/IPDOHub.h"
 
@@ -13,14 +14,14 @@ namespace iCAX
     {
         /*
         * @brief 产品模块组
-        * @details 一组通常共同发布的组件、行为、服务和命令模块。
+        * @details 一组通常共同发布的组件、行为、服务和 Facade 模块。
         */
         struct _PRODUCT_CONTEXT_EXP CProductModuleGroup final
         {
             std::string strComponentPath; //!< 组件模块路径。
             std::string strBehaviourPath; //!< 行为模块路径。
             std::string strServicePath;   //!< 服务模块路径。
-            std::string strCommandPath;   //!< 命令模块路径。
+            std::string strFacadePath;   //!< Facade 模块路径。
         };
 
         /*
@@ -28,11 +29,11 @@ namespace iCAX
         */
         struct _PRODUCT_CONTEXT_EXP CProductModules final
         {
-            std::vector<std::string> DependencyModules; //!< 仅用于提前装载依赖 DLL，不表达组件/服务/命令职责。
+            std::vector<std::string> DependencyModules; //!< 仅用于提前装载依赖 DLL，不表达组件、服务或 Facade 职责。
             std::vector<std::string> ComponentModules; //!< 单独组件模块列表。
             std::vector<std::string> BehaviourModules; //!< 单独行为模块列表。
             std::vector<std::string> ServiceModules;   //!< 单独服务模块列表。
-            std::vector<std::string> CommandModules;   //!< 单独命令模块列表。
+            std::vector<std::string> FacadeModules;   //!< 单独 Facade 模块列表。
             std::vector<CProductModuleGroup> ModuleGroups; //!< 成组发布的模块列表。
         };
 
@@ -82,6 +83,7 @@ namespace iCAX
             CProductFileDefinition ProjectFile; //!< 产品项目文件识别规则。
             CProductModules Modules; //!< 产品需要加载的模块定义。
             std::vector<CProductResourceHandlerBinding> ResourceHandlers; //!< 资源导入导出/加载选择规则。
+            iCAX::Data::ObjectMap Capabilities; //!< 产品自定义静态能力。framework 只保存，不解释其中的业务含义。
             bool bEnablePDOHub = false; //!< true 表示项目主 Scene 默认创建一块可动态分配 slot 的 PDO Arena。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 默认主 Scene PDOHub 创建参数。
         };

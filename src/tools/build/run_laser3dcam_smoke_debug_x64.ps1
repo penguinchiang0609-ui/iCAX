@@ -51,7 +51,7 @@ $script:RuntimePaths = @()
     "src\iCAX-Engine\framework\ApplicationContext\$Platform\$Configuration",
     "src\iCAX-Engine\framework\ProductContext\$Platform\$Configuration",
     "src\iCAX-Engine\framework\ProjectContext\$Platform\$Configuration",
-    "src\iCAX-Engine\framework\CommandTargets\$Platform\$Configuration",
+    "src\iCAX-Engine\framework\Facades\$Platform\$Configuration",
     "src\iCAX-Engine\framework\Database\$Platform\$Configuration",
     "src\iCAX-Engine\framework\Resources\$Platform\$Configuration",
     "src\iCAX-Engine\framework\Services\$Platform\$Configuration",

@@ -62,10 +62,27 @@ export function renderWorkpieceList(workpieces, activeWorkpieceId) {
                   type="button"
                   data-cam-workpiece-id="${escapeAttr(item.entityId)}">
             <strong>${escapeText(index + 1)}. ${escapeText(item.name || item.sourcePath || item.entityId)}</strong>
-            <small>${escapeText(item.sourcePath || item.modelResourceId || "")}</small>
+            <small>v${escapeText(item.geometryRevision ?? 0)} · ${item.hasDraft ? "CAD 草稿" : "当前版本"} · ${escapeText(item.sourcePath || item.modelResourceId || "")}</small>
           </button>
         `;
       }).join("")}
     </div>
   `;
+}
+
+export function renderIntentToolpathTree(nodes = [], depth = 0) {
+  if (!nodes.length && depth === 0) {
+    return `<div class="cam-empty-row">暂无意图刀路。请在场景中选择CAD轮廓后创建。</div>`;
+  }
+  return nodes.map((node) => {
+    const children = Array.isArray(node.children) ? node.children : [];
+    const state = node.superseded ? "已替代" : node.sourceState === "Current" ? "有效" : node.sourceState;
+    return `<div class="cam-intent-node" style="--cam-tree-depth:${depth}">
+      <button class="cam-list-row ${node.superseded ? "superseded" : ""}" type="button" data-cam-intent-id="${escapeAttr(node.entityId)}">
+        <strong>${escapeText(node.name || "未命名意图")}</strong>
+        <small>${escapeText(node.kind || "Cut")} · ${escapeText(state || "-")}</small>
+      </button>
+      ${children.length ? `<div class="cam-intent-children">${renderIntentToolpathTree(children, depth + 1)}</div>` : ""}
+    </div>`;
+  }).join("");
 }

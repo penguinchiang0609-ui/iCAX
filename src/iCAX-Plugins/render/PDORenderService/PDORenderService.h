@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PDORenderServiceExport.h"
-#include "CommandTargets/CommandRoute.h"
+#include "Facades/FacadeMethod.h"
 #include "RenderService/RenderService.h"
 #include "PDO/IPDOSlot.h"
 #include "Services/ServicesHelper.h"
@@ -24,15 +24,15 @@ namespace iCAX
         *   不允许长期缓存 offset。碎片整理或扩容后，同一个 PDOID 对应的 offset 可能变化。
         */
         inline constexpr uint64_t kPDORenderSlotAllocatedEvent =
-            iCAX::Command::MakeCommandCode("PDORender", "SlotAllocated");
+            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "SlotAllocated");
         inline constexpr uint64_t kPDORenderSlotFreedEvent =
-            iCAX::Command::MakeCommandCode("PDORender", "SlotFreed");
+            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "SlotFreed");
         inline constexpr uint64_t kPDORenderSlotMovedEvent =
-            iCAX::Command::MakeCommandCode("PDORender", "SlotMoved");
+            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "SlotMoved");
         inline constexpr uint64_t kPDORenderDefragBeginEvent =
-            iCAX::Command::MakeCommandCode("PDORender", "DefragBegin");
+            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "DefragBegin");
         inline constexpr uint64_t kPDORenderDefragEndEvent =
-            iCAX::Command::MakeCommandCode("PDORender", "DefragEnd");
+            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "DefragEnd");
 
         /*
         * @brief 基于 PDO 的 RenderService 实现。

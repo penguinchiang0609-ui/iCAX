@@ -154,7 +154,7 @@
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Behaviour\Behaviour.vcxproj">
       <Project>{1c150fbb-3418-414d-8a3c-f7b57c6d18b7}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\CommandTargets\CommandTargets.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Facades\Facades.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Database\Database.vcxproj">

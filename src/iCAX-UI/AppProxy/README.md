@@ -1,6 +1,6 @@
 # AppProxy
 
-`AppProxy` 是前端应用代理模块，负责连接宿主 bridge，获得 application channel，并把应用级命令封装成前端对象。
+`AppProxy` 是前端应用代理模块，负责连接宿主 bridge，获得 application channel，并把应用级 Facade 调用封装成前端对象。
 
 ## 目录结构
 

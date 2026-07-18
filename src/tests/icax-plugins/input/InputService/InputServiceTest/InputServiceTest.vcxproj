@@ -43,15 +43,6 @@
       <AdditionalLibraryDirectories>$(SolutionDir)x64\$(Configuration);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\input\InputService\$(Platform)\$(Configuration)\InputService.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\input\InputPDO\$(Platform)\$(Configuration)\InputPDO.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework\PDO\$(Platform)\$(Configuration)\PDO.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework\ProjectContext\$(Platform)\$(Configuration)\ProjectContext.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework\Mailbox\$(Platform)\$(Configuration)\Mailbox.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework\Services\$(Platform)\$(Configuration)\Services.dll" "$(OutDir)"
-copy /Y "$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\foundation\Data\$(Platform)\$(Configuration)\Data.dll" "$(OutDir)"</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>

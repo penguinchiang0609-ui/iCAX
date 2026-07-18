@@ -1,9 +1,9 @@
 #include "pch.h"
 #include "ProductRuntime.h"
 
-#include "CommandTargets/CommandRegistrationCatalog.h"
-#include "CommandTargets/CommandTarget.h"
-#include "Project/ProjectCommands.h"
+#include "Facades/FacadeRegistrationCatalog.h"
+#include "Facades/Facade.h"
+#include "Project/ProjectFacades.h"
 
 #include <algorithm>
 #include <cctype>
@@ -20,22 +20,22 @@
 
 namespace
 {
-    class CStaticProductCommandTarget final : public iCAX::Command::CCommandTarget
+    class CStaticProductFacade final : public iCAX::Interaction::CFacade
     {
     public:
-        using CommandRecord = std::pair<std::string, SubCommandFunc>;
+        using MethodRecord = std::pair<std::string, MethodFunc>;
 
-        CStaticProductCommandTarget(
-            IN std::string strMainName_,
-            IN std::vector<CommandRecord> Commands_)
-            : CCommandTarget(std::move(strMainName_))
+        CStaticProductFacade(
+            IN std::string strFacadeName_,
+            IN std::vector<MethodRecord> Methods_)
+            : CFacade(std::move(strFacadeName_))
         {
-            for (auto& _Command : Commands_)
+            for (auto& _Method : Methods_)
             {
-                auto _SubName = _Command.first;
-                if (!Bind(std::move(_Command.first), std::move(_Command.second)))
+                auto _MethodName = _Method.first;
+                if (!ExposeMethod(std::move(_Method.first), std::move(_Method.second)))
                 {
-                    throw std::runtime_error("Built-in product command is already bound: " + _SubName);
+                    throw std::runtime_error("Built-in product method is already exposed: " + _MethodName);
                 }
             }
         }
@@ -360,12 +360,12 @@ namespace
         return _Stream.str();
     }
 
-    iCAX::Data::ObjectMap _DecodeObjectPayload(IN const iCAX::Command::CCommandRequest& Request_)
+    iCAX::Data::ObjectMap _DecodeObjectPayload(IN const iCAX::Interaction::CFacadeCall& Request_)
     {
         auto _Payload = iCAX::Product::DecodeProductPayload(Request_.Payload);
         if (!_Payload.Is<iCAX::Data::ObjectMap>())
         {
-            throw std::invalid_argument("Product command payload must be an object");
+            throw std::invalid_argument("Product facade call payload must be an object");
         }
         return _Payload.To<iCAX::Data::ObjectMap>();
     }
@@ -426,11 +426,11 @@ namespace
     {
         if (pProjectContext_ || pSceneContext_)
         {
-            throw std::invalid_argument("Product command must be sent to the product mailbox");
+            throw std::invalid_argument("Product facade call must be sent to the product mailbox");
         }
         if (!pProductContext_)
         {
-            throw std::invalid_argument("Product command context is missing ProductContext");
+            throw std::invalid_argument("Product facade call context is missing ProductContext");
         }
     }
 
@@ -441,22 +441,22 @@ namespace
     {
         if (!pProductContext_)
         {
-            throw std::invalid_argument("Scene command context is missing ProductContext");
+            throw std::invalid_argument("Scene facade call context is missing ProductContext");
         }
         if (!pProjectContext_)
         {
-            throw std::invalid_argument("Scene command context is missing ProjectContext");
+            throw std::invalid_argument("Scene facade call context is missing ProjectContext");
         }
         if (!pSceneContext_)
         {
-            throw std::invalid_argument("Scene command context is missing SceneContext");
+            throw std::invalid_argument("Scene facade call context is missing SceneContext");
         }
     }
 
-    iCAX::Command::CCommandResponse _MakeProductPayloadResponse(IN const iCAX::Data::Variant& Payload_)
+    iCAX::Interaction::CFacadeResult _MakeProductPayloadResponse(IN const iCAX::Data::Variant& Payload_)
     {
-        iCAX::Command::CCommandResponse _Response;
-        _Response.nStatus = iCAX::Command::ECommandStatusCode::Ok;
+        iCAX::Interaction::CFacadeResult _Response;
+        _Response.nStatus = iCAX::Interaction::EFacadeCallStatus::Ok;
         _Response.Payload = iCAX::Product::EncodeProductPayload(Payload_);
         return _Response;
     }
@@ -640,9 +640,9 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     , m_pProductBehaviourRegistry(iCAX::Behaviour::CreateBehaviourRegistry())
     , m_pProductResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
     , m_pProductDataStore(std::move(pProductDataStore_))
-    , m_pCommandRegistry(std::make_shared<iCAX::Command::CCommandRegistry>())
-    , m_pCommandDispatcher(std::make_unique<iCAX::Command::CCommandDispatcher>(m_pCommandRegistry))
-    , m_pMailCommandHandler(std::make_unique<iCAX::MailHandler::CMailCommandHandler>())
+    , m_pFacadeRegistry(std::make_shared<iCAX::Interaction::CFacadeRegistry>())
+    , m_pFacadeInvoker(std::make_unique<iCAX::Interaction::CFacadeInvoker>(m_pFacadeRegistry))
+    , m_pMailFacadeHandler(std::make_unique<iCAX::MailHandler::CMailFacadeHandler>())
     , m_nFrameIntervalMilliseconds(nFrameIntervalMilliseconds_ == 0 ? 1 : nFrameIntervalMilliseconds_)
 {
     if (!IsValidProductID(m_Definition.ProductID))
@@ -690,7 +690,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
         m_pProductDataStore = std::make_shared<CFileProductDataStore>(_GetProductDataRoot(*m_pApplicationContext));
     }
 
-    RegisterBuiltInProductCommands();
+    RegisterBuiltInProductFacades();
 }
 
 iCAX::Product::CProductRuntime::~CProductRuntime()
@@ -735,7 +735,7 @@ void iCAX::Product::CProductRuntime::Start()
         iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(*m_pProductResourceLoaderRegistry, m_LoadedModulePaths);
         const auto _ResourceSelectionRules = _MakeResourceSelectionRules(m_Definition.ResourceHandlers);
         m_pProductResourceLoaderRegistry->SetSelectionRules(_ResourceSelectionRules);
-        iCAX::Command::CCommandRegistrationCatalog::ReplayByModulePaths(*m_pCommandRegistry, m_LoadedModulePaths);
+        iCAX::Interaction::CFacadeRegistrationCatalog::ReplayByModulePaths(*m_pFacadeRegistry, m_LoadedModulePaths);
         m_bRegistrationsReplayed = true;
     }
     if (!m_pMailChannelRegistry->CreateChannel(m_ProductChannelID))
@@ -918,7 +918,7 @@ void iCAX::Product::CProductRuntime::SendFrontendEvent(
 
 void iCAX::Product::CProductRuntime::DispatchProductMails()
 {
-    if (!IsStarted() || !m_pCommandDispatcher)
+    if (!IsStarted() || !m_pFacadeInvoker)
     {
         return;
     }
@@ -1163,9 +1163,9 @@ iCAX::Data::Variant iCAX::Product::CProductRuntime::BuildProjectCatalogPayload(
     return iCAX::Data::Variant(_Catalog);
 }
 
-iCAX::Command::CCommandRegistry& iCAX::Product::CProductRuntime::GetCommandRegistry() const
+iCAX::Interaction::CFacadeRegistry& iCAX::Product::CProductRuntime::GetFacadeRegistry() const
 {
-    return *m_pCommandRegistry;
+    return *m_pFacadeRegistry;
 }
 
 iCAX::Services::CServiceProvider& iCAX::Product::CProductRuntime::GetServiceProvider() const
@@ -1336,7 +1336,7 @@ void iCAX::Product::CProductRuntime::DispatchSceneMails(
     IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    if (!PostOffice_.IsValid() || !m_pCommandDispatcher)
+    if (!PostOffice_.IsValid() || !m_pFacadeInvoker)
     {
         return;
     }
@@ -1348,9 +1348,9 @@ void iCAX::Product::CProductRuntime::DispatchSceneMails(
         _pProjectContext = static_cast<iCAX::Project::IProjectContext*>(_pLocalProject.get());
     }
 
-    m_pMailCommandHandler->DispatchAvailableMails(
+    m_pMailFacadeHandler->HandleAvailableMails(
         PostOffice_,
-        *m_pCommandDispatcher,
+        *m_pFacadeInvoker,
         *m_pApplicationContext,
         static_cast<iCAX::Product::IProductContext*>(this),
         _pProjectContext,
@@ -1473,9 +1473,9 @@ void iCAX::Product::CProductRuntime::LoadProductModules()
     {
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "service"));
     }
-    for (const auto& _Path : m_Definition.Modules.CommandModules)
+    for (const auto& _Path : m_Definition.Modules.FacadeModules)
     {
-        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "command"));
+        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "facade"));
     }
     for (const auto& _Binding : m_Definition.ResourceHandlers)
     {
@@ -1486,113 +1486,113 @@ void iCAX::Product::CProductRuntime::LoadProductModules()
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strComponentPath, "component"));
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strBehaviourPath, "behaviour"));
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strServicePath, "service"));
-        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strCommandPath, "command"));
+        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strFacadePath, "facade"));
     }
 }
 
-void iCAX::Product::CProductRuntime::RegisterBuiltInProductCommands()
+void iCAX::Product::CProductRuntime::RegisterBuiltInProductFacades()
 {
-    std::vector<CStaticProductCommandTarget::CommandRecord> _Commands;
-    _Commands.emplace_back(
+    std::vector<CStaticProductFacade::MethodRecord> _Methods;
+    _Methods.emplace_back(
         kProductGetStateName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleGetState(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kProductListProjectCatalogsName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleListProjectCatalogsCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleListProjectCatalogs(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kProductOpenProjectCatalogName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleOpenProjectCatalogCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleOpenProjectCatalog(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _Commands.emplace_back(
+    _Methods.emplace_back(
         kProductCloseProjectCatalogName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleCloseProjectCatalogCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleCloseProjectCatalog(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
-    auto _pCommandTarget = std::make_shared<CStaticProductCommandTarget>(kProductCommandMainName, std::move(_Commands));
-    if (!m_pCommandRegistry->Register(_pCommandTarget))
+    auto _pFacade = std::make_shared<CStaticProductFacade>(kProductFacadeName, std::move(_Methods));
+    if (!m_pFacadeRegistry->Register(_pFacade))
     {
-        throw std::runtime_error("Built-in product command target is already registered: " + _pCommandTarget->GetMainName());
+        throw std::runtime_error("Built-in product facade is already registered: " + _pFacade->GetName());
     }
 
-    std::vector<CStaticProductCommandTarget::CommandRecord> _ProjectCommands;
-    _ProjectCommands.emplace_back(
+    std::vector<CStaticProductFacade::MethodRecord> _ProjectMethods;
+    _ProjectMethods.emplace_back(
         iCAX::Project::kProjectGetStateName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleProjectGetStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleProjectGetState(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _ProjectCommands.emplace_back(
+    _ProjectMethods.emplace_back(
         iCAX::Project::kProjectUndoName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleProjectUndoCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleProjectUndo(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _ProjectCommands.emplace_back(
+    _ProjectMethods.emplace_back(
         iCAX::Project::kProjectRedoName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleProjectRedoCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleProjectRedo(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
-    _ProjectCommands.emplace_back(
+    _ProjectMethods.emplace_back(
         iCAX::Project::kProjectGetUndoRedoStateName,
         [this](
-            IN const iCAX::Command::CCommandRequest& Request_,
+            IN const iCAX::Interaction::CFacadeCall& Request_,
             IN iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
-            return HandleProjectGetUndoRedoStateCommand(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+            return HandleProjectGetUndoRedoState(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
-    auto _pProjectCommandTarget = std::make_shared<CStaticProductCommandTarget>(
-        iCAX::Project::kProjectCommandMainName,
-        std::move(_ProjectCommands));
-    if (!m_pCommandRegistry->Register(_pProjectCommandTarget))
+    auto _pProjectFacade = std::make_shared<CStaticProductFacade>(
+        iCAX::Project::kProjectFacadeName,
+        std::move(_ProjectMethods));
+    if (!m_pFacadeRegistry->Register(_pProjectFacade))
     {
-        throw std::runtime_error("Built-in project command target is already registered: " + _pProjectCommandTarget->GetMainName());
+        throw std::runtime_error("Built-in project facade is already registered: " + _pProjectFacade->GetName());
     }
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleGetStateCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleGetState(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -1602,8 +1602,8 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleGetStateCo
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleListProjectCatalogsCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleListProjectCatalogs(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -1613,8 +1613,8 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleListProjec
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleOpenProjectCatalogCommand(
-    IN const iCAX::Command::CCommandRequest& Request_,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleOpenProjectCatalog(
+    IN const iCAX::Interaction::CFacadeCall& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -1637,8 +1637,8 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleOpenProjec
     return _MakeProductPayloadResponse(iCAX::Data::Variant(_Response));
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleCloseProjectCatalogCommand(
-    IN const iCAX::Command::CCommandRequest& Request_,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleCloseProjectCatalog(
+    IN const iCAX::Interaction::CFacadeCall& Request_,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -1650,8 +1650,8 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleCloseProje
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGetStateCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleProjectGetState(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -1679,8 +1679,8 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGet
     return _MakeProductPayloadResponse(iCAX::Data::Variant(_Project));
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGetUndoRedoStateCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleProjectGetUndoRedoState(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -1690,8 +1690,8 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectGet
     return _MakeProductPayloadResponse(_MakeUndoRedoStatePayload(pSceneContext_->Database()));
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectUndoCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleProjectUndo(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
@@ -1706,8 +1706,8 @@ iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectUnd
     return _MakeProductPayloadResponse(iCAX::Data::Variant(_Payload));
 }
 
-iCAX::Command::CCommandResponse iCAX::Product::CProductRuntime::HandleProjectRedoCommand(
-    IN const iCAX::Command::CCommandRequest&,
+iCAX::Interaction::CFacadeResult iCAX::Product::CProductRuntime::HandleProjectRedo(
+    IN const iCAX::Interaction::CFacadeCall&,
     IN iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,

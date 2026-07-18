@@ -1,6 +1,6 @@
 import { renderPanel } from "../layout/commonViews.mjs";
 import { escapeAttr, escapeText } from "../utils/format.mjs";
-import { renderWorkpieceList } from "./workpieceViews.mjs";
+import { renderIntentToolpathTree, renderWorkpieceList } from "./workpieceViews.mjs";
 
 export function renderWorkpieceLeftPane(context, view) {
   const scene = view.scene ?? {};
@@ -9,6 +9,12 @@ export function renderWorkpieceLeftPane(context, view) {
 
   return `
     ${renderPanel("工件资源", renderWorkpieceList(workpieces, model.entityId))}
+    ${renderPanel("意图刀路", `
+      <div class="cam-intent-tree">${renderIntentToolpathTree(scene.intentToolpaths ?? [])}</div>
+      <div class="cam-button-row">
+        <button class="primary-button" type="button" data-cam-action="intent-from-selection" ${scene.selection?.kind || scene.selection?.selectedKind ? "" : "disabled"}>从当前选择创建</button>
+      </div>
+    `)}
     ${renderPanel("模型检查", `
       <dl class="cam-facts">
         <dt>拓扑</dt><dd>${scene.topology?.hasTopology ? "可用" : "未生成"}</dd>
@@ -24,6 +30,8 @@ export function renderWorkpieceRightPane(context, view) {
   const scene = view.scene ?? {};
   const model = scene.model ?? {};
   const workpieces = scene.workpieces ?? [];
+  const inspection = scene.cadInspection ?? {};
+  const hasDraft = Boolean(model.hasDraft);
 
   return `
     ${renderPanel("导入工件", `
@@ -40,18 +48,24 @@ export function renderWorkpieceRightPane(context, view) {
         <dt>文件</dt><dd>${model.isLoaded ? escapeText(model.sourcePath) : "未导入"}</dd>
       </dl>
     `)}
-    ${renderPanel("修复编辑", `
-      <div class="cam-list-row"><strong>模型检查</strong><small>检查拓扑闭合、退化边、缝隙和法向</small></div>
-      <div class="cam-list-row"><strong>修复会话</strong><small>后续打开独立 WorkpieceEditScene，提交后生成新 BRep 资源</small></div>
+    ${renderPanel("CAD for CAM", `
+      <dl class="cam-facts">
+        <dt>几何版本</dt><dd>v${escapeText(model.geometryRevision ?? 0)}</dd>
+        <dt>编辑状态</dt><dd>${hasDraft ? "草稿编辑中" : "当前版本"}</dd>
+        <dt>检查对象</dt><dd>${escapeText(inspection.scope || "-")}</dd>
+        <dt>检查结果</dt><dd>${escapeText(inspection.status || "未检查")}</dd>
+        <dt>开放 Wire</dt><dd>${escapeText(inspection.openWireCount ?? "-")}</dd>
+        <dt>开放 Shell</dt><dd>${escapeText(inspection.openShellCount ?? "-")}</dd>
+        <dt>退化边</dt><dd>${escapeText(inspection.degeneratedEdgeCount ?? "-")}</dd>
+        <dt>Solid</dt><dd>${escapeText(inspection.solidCount ?? "-")}</dd>
+      </dl>
       <div class="cam-button-row">
-        <button class="tool-button" type="button" data-cam-action="workpiece-placeholder" ${model.isLoaded ? "" : "disabled"}>模型检查</button>
-        <button class="tool-button" type="button" data-cam-action="workpiece-placeholder" ${model.isLoaded ? "" : "disabled"}>进入修复</button>
+        <button class="tool-button" type="button" data-cam-action="cad-inspect" ${model.isLoaded ? "" : "disabled"}>模型检查</button>
+        <button class="tool-button" type="button" data-cam-action="cad-begin" ${model.isLoaded && !hasDraft ? "" : "disabled"}>进入编辑</button>
+        <button class="primary-button" type="button" data-cam-action="cad-commit" ${hasDraft ? "" : "disabled"}>提交版本</button>
+        <button class="tool-button" type="button" data-cam-action="cad-discard" ${hasDraft ? "" : "disabled"}>放弃编辑</button>
       </div>
-    `)}
-    ${renderPanel("支撑/夹具", `
-      <button class="tool-button" type="button" data-cam-action="support-placeholder">生成支架</button>
-      <button class="tool-button" type="button" data-cam-action="support-placeholder">导出支架 DXF</button>
-      <div class="cam-hint">支架拆单与排样交给平面激光 CAM 处理。</div>
+      <div class="cam-hint">CAD 操作只修改草稿资源；提交后才切换正式 BRep 与拓扑版本。</div>
     `)}
   `;
 }

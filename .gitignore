@@ -8,8 +8,13 @@
 /.codex_tmp/
 /.deps/
 /outputs/
+/build-logs/
 /doc/项目申报/
 /X Other/legacy/build-output/
+/src/packages/
+/src/iCAX-Application/Application/Setting/
+/src/iCAX-Application/Application/UserData/
+/src/iCAX-Application/Application/cef.log
 
 # Visual Studio / MSBuild 生成产物
 **/.vs/

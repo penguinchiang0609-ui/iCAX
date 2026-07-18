@@ -8,7 +8,9 @@ param(
     [string]$ProjectName = "Laser3DCAM UI Smoke",
     [string]$ProjectPath = "",
     [string]$MachineDefinitionPath = "",
+    [switch]$CheckDefaultMachine,
     [switch]$CheckMachineEnableWorkflow,
+    [switch]$CheckMachineRenameWorkflow,
     [switch]$CheckMachineSelectionWorkflow,
     [switch]$CheckWorkbenchResizeWorkflow,
     [switch]$RequireRenderable,
@@ -19,11 +21,15 @@ $ErrorActionPreference = "Stop"
 
 function Resolve-DefaultApplicationPath {
     $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
-    $central = Join-Path $root "iCAX-Engine\x64\Debug\Application.exe"
+    $central = Join-Path $root "x64\Debug\Application.exe"
     if (Test-Path -LiteralPath $central) {
         return $central
     }
-    return Join-Path $root "iCAX-Application\Application\x64\Debug\Application.exe"
+    $projectOutput = Join-Path $root "iCAX-Application\Application\x64\Debug\Application.exe"
+    if (Test-Path -LiteralPath $projectOutput) {
+        return $projectOutput
+    }
+    return Join-Path $root "iCAX-Engine\x64\Debug\Application.exe"
 }
 
 function New-DefaultProjectPath {
@@ -39,14 +45,14 @@ function Sync-ApplicationRuntimeDependencies {
 
     $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
     $appDir = Split-Path $ApplicationPath
-    $engineRuntime = Join-Path $root "iCAX-Engine\x64\Debug"
+    $engineRuntime = Join-Path $root "x64\Debug"
     $runtimeProjects = @(
         "iCAX-Engine\foundation\Data",
         "iCAX-Engine\foundation\GeometryData",
         "iCAX-Engine\framework\ApplicationContext",
         "iCAX-Engine\framework\ApplicationHost",
         "iCAX-Engine\framework\Behaviour",
-        "iCAX-Engine\framework\CommandTargets",
+        "iCAX-Engine\framework\Facades",
         "iCAX-Engine\framework\Database",
         "iCAX-Engine\framework\Mailbox",
         "iCAX-Engine\framework\MailHandler",
@@ -105,12 +111,15 @@ function Sync-ApplicationRuntimeDependencies {
             $name = Split-Path -Path $project -Leaf
             $projectDll = Join-Path $root ("{0}\x64\Debug\{1}.dll" -f $project, $name)
             $sharedDll = Join-Path $root ("x64\Debug\{0}.dll" -f $name)
+            $candidates = @()
             if (Test-Path -LiteralPath $projectDll) {
-                Get-Item -LiteralPath $projectDll
-                continue
+                $candidates += Get-Item -LiteralPath $projectDll
             }
             if (Test-Path -LiteralPath $sharedDll) {
-                Get-Item -LiteralPath $sharedDll
+                $candidates += Get-Item -LiteralPath $sharedDll
+            }
+            if ($candidates.Count -gt 0) {
+                $candidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
             }
         }
     }
@@ -174,7 +183,7 @@ function Sync-ApplicationRuntimeDependencies {
             Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.components
             Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.behaviours
             Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.services
-            Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.commands
+            Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.facades
         }
 
         if ($manifest.backend.resources.handlers) {
@@ -197,6 +206,24 @@ function Sync-ApplicationRuntimeDependencies {
     foreach ($moduleDir in Get-Laser3DCamModuleDirectories) {
         Copy-RuntimeDlls -TargetDirectory $moduleDir
         Copy-ProjectRuntimeDlls -TargetDirectory $moduleDir
+    }
+}
+
+function Assert-ApplicationRuntimeDependencies {
+    param([string]$ApplicationPath)
+
+    $appDir = Split-Path $ApplicationPath
+    $requiredFiles = @(
+        "Application.exe",
+        "UIContainer.dll",
+        "CefUIContainer.dll",
+        "libcef.dll"
+    )
+    foreach ($fileName in $requiredFiles) {
+        $path = Join-Path $appDir $fileName
+        if (-not (Test-Path -LiteralPath $path)) {
+            throw "Application runtime dependency is missing: $path"
+        }
     }
 }
 
@@ -296,6 +323,7 @@ if (-not $WorkingDirectory) {
 }
 $WorkingDirectory = (Resolve-Path $WorkingDirectory).Path
 Sync-ApplicationRuntimeDependencies -ApplicationPath $ApplicationPath
+Assert-ApplicationRuntimeDependencies -ApplicationPath $ApplicationPath
 Ensure-UIContainerSmokeConfig -WorkingDirectory $WorkingDirectory -RemoteDebuggingPort $RemoteDebuggingPort
 if (-not $ProjectPath) {
     $ProjectPath = New-DefaultProjectPath
@@ -317,7 +345,9 @@ try {
         $machinePathLiteral = ConvertTo-JsLiteral $MachineDefinitionPath
         $createProjectLiteral = if ($CreateProject -or $MachineDefinitionPath) { "true" } else { "false" }
         $importMachineLiteral = if ($MachineDefinitionPath) { "true" } else { "false" }
+        $checkDefaultMachineLiteral = if ($CheckDefaultMachine) { "true" } else { "false" }
         $checkMachineEnableWorkflowLiteral = if ($CheckMachineEnableWorkflow) { "true" } else { "false" }
+        $checkMachineRenameWorkflowLiteral = if ($CheckMachineRenameWorkflow) { "true" } else { "false" }
         $checkMachineSelectionWorkflowLiteral = if ($CheckMachineSelectionWorkflow) { "true" } else { "false" }
         $checkWorkbenchResizeWorkflowLiteral = if ($CheckWorkbenchResizeWorkflow) { "true" } else { "false" }
         $requireRenderableLiteral = if ($RequireRenderable) { "true" } else { "false" }
@@ -356,6 +386,21 @@ try {
     await waitUntil(() => window.__icaxLaser3DCAM, "Laser3DCAM automation");
   }
 
+  let defaultMachineResult = null;
+  let defaultMachineViewport = null;
+  if ($checkDefaultMachineLiteral) {
+    defaultMachineResult = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getState?.();
+      return Number(state?.machineDefinitionCount ?? 0) > 0 && Number(state?.machineInstanceCount ?? 0) > 0 ? state : null;
+    }, "default machine definition and instance");
+    if ($requireRenderableLiteral && !$importMachineLiteral) {
+      defaultMachineViewport = await window.__icaxLaser3DCAM.waitForRenderableViewport({
+        timeoutMs: $timeoutMs,
+        includeObjects: true
+      });
+    }
+  }
+
   let importMachineResult = null;
   if ($importMachineLiteral) {
     importMachineResult = await window.__icaxLaser3DCAM.importMachineDefinition($machinePathLiteral);
@@ -382,6 +427,22 @@ try {
     await delay(200);
     const afterEnable = window.__icaxLaser3DCAM.getState();
     machineEnableResult = { machineId, before, afterDisable, afterEnable };
+  }
+
+  let machineRenameResult = null;
+  if ($checkMachineRenameWorkflowLiteral) {
+    const before = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getState?.();
+      return state?.machineInstances?.length ? state : null;
+    }, "machine instance for rename workflow");
+    const machineId = before.machineInstances[0].id;
+    const targetName = "UI Smoke Renamed Machine";
+    await window.__icaxLaser3DCAM.setMachineInstanceName(machineId, targetName);
+    const afterRename = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getState?.();
+      return state?.machineInstances?.some((item) => item?.id === machineId && item?.name === targetName) ? state : null;
+    }, "renamed machine instance");
+    machineRenameResult = { machineId, targetName, before, afterRename };
   }
 
   let machineSelectionResult = null;
@@ -460,7 +521,7 @@ try {
     workbenchResizeResult = { beforeLeft, afterLeft, beforeRight, afterRight };
   }
 
-  const viewport = window.__icaxLaser3DCAM?.getViewportDebugState?.({ samplePixels: true, includeObjects: $checkMachineSelectionWorkflowLiteral }) ?? null;
+  const viewport = defaultMachineViewport ?? window.__icaxLaser3DCAM?.getViewportDebugState?.({ samplePixels: true, includeObjects: $checkMachineSelectionWorkflowLiteral }) ?? null;
   return {
     href: location.href,
     title: document.title,
@@ -468,8 +529,10 @@ try {
     productDiagnosticsReady: Boolean(window.__icaxLaser3DCAM),
     product: window.__icaxLaser3DCAM?.getState?.() ?? null,
     createProjectResult,
+    defaultMachineResult,
     importMachineResult,
     machineEnableResult,
+    machineRenameResult,
     machineSelectionResult,
     machineDomState: window.__icaxLaser3DCAM?.getMachineDomState?.() ?? null,
     workbenchResizeResult,
@@ -518,6 +581,21 @@ try {
             }
         }
 
+        if ($CheckDefaultMachine) {
+            if (-not $state.defaultMachineResult) {
+                throw "Default machine result is missing."
+            }
+            if ([int]$state.defaultMachineResult.machineDefinitionCount -le 0) {
+                throw "Default machine definition was not created."
+            }
+            if ([int]$state.defaultMachineResult.machineInstanceCount -le 0) {
+                throw "Default machine instance was not created."
+            }
+            if ([int]$state.defaultMachineResult.enabledMachineInstanceCount -le 0) {
+                throw "Default machine instance is not enabled."
+            }
+        }
+
         if ($CheckMachineEnableWorkflow) {
             if (-not $state.machineEnableResult) {
                 throw "Machine enable workflow result is missing."
@@ -532,6 +610,22 @@ try {
             }
             if ([int]$afterEnable.enabledMachineInstanceCount -le 0) {
                 throw "Re-enabled machine instance was not restored as a job candidate."
+            }
+        }
+
+        if ($CheckMachineRenameWorkflow) {
+            if (-not $state.machineRenameResult) {
+                throw "Machine rename workflow result is missing."
+            }
+            $renamed = $false
+            foreach ($machine in @($state.machineRenameResult.afterRename.machineInstances)) {
+                if ([string]$machine.id -eq [string]$state.machineRenameResult.machineId -and [string]$machine.name -eq [string]$state.machineRenameResult.targetName) {
+                    $renamed = $true
+                }
+            }
+            if (-not $renamed) {
+                $renameText = $state.machineRenameResult | ConvertTo-Json -Depth 16 -Compress
+                throw "Machine rename workflow did not update the instance name: $renameText"
             }
         }
 
@@ -578,7 +672,7 @@ try {
                 $viewText = $state.machineSelectionResult.standardView | ConvertTo-Json -Depth 16 -Compress
                 throw "Machine standard view workflow failed: $viewText"
             }
-            if (-not $state.machineDomState -or [int]$state.machineDomState.viewCubeButtonCount -lt 20) {
+            if (-not $state.machineDomState -or -not $state.machineDomState.hasViewCube) {
                 throw "Machine viewport view cube is missing."
             }
             if (-not $state.machineDomState.viewCubePitch -or -not $state.machineDomState.viewCubeYaw) {
@@ -591,9 +685,21 @@ try {
             if ($state.machineDomState.hasViewCubeEmbeddedAxis) {
                 throw "Machine viewport view cube still embeds the world axis gizmo."
             }
-            if ([int]$state.machineDomState.viewCubeExternalHotZoneCount -ne 0) {
+            if ([int]$state.machineDomState.viewCubePieceCount -ne 26) {
                 $viewCubeText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
-                throw "Machine viewport view cube still uses external edge/corner hot zones: $viewCubeText"
+                throw "Machine viewport view cube is not assembled from 26 clickable pieces: $viewCubeText"
+            }
+            if ([int]$state.machineDomState.viewCubeCanvasCount -ne 0) {
+                $viewCubeText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
+                throw "Machine viewport view cube must not allocate its own WebGL canvas: $viewCubeText"
+            }
+            if ([int]$state.machineDomState.viewCubeCellCount -ne 0) {
+                $viewCubeText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
+                throw "Machine viewport view cube still uses 3x3 cell hot zones: $viewCubeText"
+            }
+            if ([int]$state.machineDomState.viewportCanvasCount -lt 1 -or [int]$state.machineDomState.axisCanvasCount -lt 1) {
+                $canvasText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress
+                throw "Machine viewport lost the main or world-axis WebGL canvas: $canvasText"
             }
             if (-not $state.machineDomState.axisGizmoLeft -or -not $state.machineDomState.axisGizmoBottom) {
                 $axisText = $state.machineDomState | ConvertTo-Json -Depth 8 -Compress

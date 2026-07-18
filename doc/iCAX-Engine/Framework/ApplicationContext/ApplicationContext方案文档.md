@@ -6,7 +6,7 @@
 src/icax-engine/framework/ApplicationContext/
 ```
 
-`ApplicationContext` 放在 framework，是因为它描述应用运行环境，会被 ApplicationHost、Behaviour、Service、CommandHandler 使用；但它本身不应依赖这些上层项目。
+`ApplicationContext` 放在 framework，是因为它描述应用运行环境，会被 ApplicationHost、Behaviour、Service、Facades 使用；但它本身不应依赖这些上层项目。
 
 ## 2. 和 ApplicationHost 的关系
 
@@ -26,7 +26,7 @@ ApplicationHost
   -> Start ProductRuntime
   -> ProductRuntime opens ProjectCatalog
   -> Project creates Repository / Universe
-  -> Pass application context to Service / CommandHandler
+  -> Pass application context to Service / Facades
 ```
 
 ## 3. 配置读写
@@ -56,7 +56,7 @@ CApplicationConfigService
 ```text
 Behaviour -> ApplicationContext
 Service -> ApplicationContext
-CommandHandler -> ApplicationContext
+Facades -> ApplicationContext
 ApplicationHost -> ApplicationContext
 ```
 
@@ -79,4 +79,4 @@ ApplicationContext -> ApplicationHost
 - 项目资源管理。
 - 用户账户系统。
 
-这些能力由 ApplicationHost、ProductRuntime、CommandHandler、ResourceService 或业务服务承载。
+这些能力由 ApplicationHost、ProductRuntime、Facades、ResourceService 或业务服务承载。

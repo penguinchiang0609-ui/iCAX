@@ -1,0 +1,86 @@
+solid gantry_bridge_y
+  facet normal 0 0 -1
+    outer loop
+      vertex -0.17 -1.525 -0.14
+      vertex 0.17 1.525 -0.14
+      vertex 0.17 -1.525 -0.14
+    endloop
+  endfacet
+  facet normal 0 0 -1
+    outer loop
+      vertex -0.17 -1.525 -0.14
+      vertex -0.17 1.525 -0.14
+      vertex 0.17 1.525 -0.14
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex -0.17 -1.525 0.14
+      vertex 0.17 -1.525 0.14
+      vertex 0.17 1.525 0.14
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex -0.17 -1.525 0.14
+      vertex 0.17 1.525 0.14
+      vertex -0.17 1.525 0.14
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex -0.17 -1.525 -0.14
+      vertex 0.17 -1.525 -0.14
+      vertex 0.17 -1.525 0.14
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex -0.17 -1.525 -0.14
+      vertex 0.17 -1.525 0.14
+      vertex -0.17 -1.525 0.14
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 0.17 -1.525 -0.14
+      vertex 0.17 1.525 -0.14
+      vertex 0.17 1.525 0.14
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 0.17 -1.525 -0.14
+      vertex 0.17 1.525 0.14
+      vertex 0.17 -1.525 0.14
+    endloop
+  endfacet
+  facet normal 0 1 0
+    outer loop
+      vertex 0.17 1.525 -0.14
+      vertex -0.17 1.525 -0.14
+      vertex -0.17 1.525 0.14
+    endloop
+  endfacet
+  facet normal 0 1 -0
+    outer loop
+      vertex 0.17 1.525 -0.14
+      vertex -0.17 1.525 0.14
+      vertex 0.17 1.525 0.14
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex -0.17 1.525 -0.14
+      vertex -0.17 -1.525 -0.14
+      vertex -0.17 -1.525 0.14
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex -0.17 1.525 -0.14
+      vertex -0.17 -1.525 0.14
+      vertex -0.17 1.525 0.14
+    endloop
+  endfacet
+endsolid gantry_bridge_y

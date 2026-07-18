@@ -6,6 +6,7 @@
 
 #include "Behaviour/BehaviourBase.h"
 #include "Behaviour/IBehaviourRegistry.h"
+#include "FacadeSupport.h"
 #include "Data/uuid.h"
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"

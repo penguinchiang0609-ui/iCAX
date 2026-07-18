@@ -69,9 +69,6 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
-  <PropertyGroup>
-    <IntDir>$(MSBuildProjectDirectory)\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
-  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -256,17 +253,5 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <Target Name="StageApplicationRuntime" AfterTargets="Build">
-    <ItemGroup>
-      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\$(Platform)\$(Configuration)\*.dll" />
-      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-Engine\foundation\**\$(Platform)\$(Configuration)\*.dll" />
-      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-Engine\framework\**\$(Platform)\$(Configuration)\*.dll" />
-      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-Plugins\**\$(Platform)\$(Configuration)\*.dll" />
-      <ApplicationRuntimeDll Include="$(MSBuildProjectDirectory)\..\..\iCAX-UI\UIContainer\$(Platform)\$(Configuration)\UIContainer.dll" />
-      <CefRuntimeContent Include="$(MSBuildProjectDirectory)\..\..\iCAX-UI\CefUIContainer\$(Platform)\$(Configuration)\**\*.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(ApplicationRuntimeDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(CefRuntimeContent)" DestinationFiles="@(CefRuntimeContent->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-  </Target>
   <ImportGroup Label="ExtensionTargets" />
 </Project>
