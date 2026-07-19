@@ -10,10 +10,6 @@
 #include "ToolpathFacadeImplement.h"
 #include "Transform/Transform.h"
 
-#include <algorithm>
-#include <cctype>
-#include <cmath>
-#include <limits>
 
 namespace iCAX::CAM::Facades::Internal
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FacadeCall.h"
+#include "Invocation.h"
 
 #include <functional>
 #include <map>
@@ -39,9 +39,9 @@ namespace iCAX::Interaction
         virtual bool HasMethod(IN uint32_t nMethodCode_) const = 0;
         virtual std::vector<CFacadeMethod> GetMethods() const = 0;
 
-        virtual CFacadeResult Invoke(
-            IN const CFacadeCall& Call_,
-            IN iCAX::Application::IApplicationContext& ApplicationContext_,
+        virtual CInvocationResult Invoke(
+            IN const CInvocation& Call_,
+            IN const iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) = 0;
@@ -50,9 +50,9 @@ namespace iCAX::Interaction
     class _FACADES_EXP CFacade : public IFacade
     {
     public:
-        using MethodFunc = std::function<CFacadeResult(
-            const CFacadeCall&,
-            iCAX::Application::IApplicationContext&,
+        using MethodFunc = std::function<CInvocationResult(
+            const CInvocation&,
+            const iCAX::Application::IApplicationContext&,
             iCAX::Product::IProductContext*,
             iCAX::Project::IProjectContext*,
             iCAX::Project::ISceneContext*)>;
@@ -71,9 +71,9 @@ namespace iCAX::Interaction
         bool HasMethod(IN uint32_t nMethodCode_) const override;
         std::vector<CFacadeMethod> GetMethods() const override;
 
-        CFacadeResult Invoke(
-            IN const CFacadeCall& Call_,
-            IN iCAX::Application::IApplicationContext& ApplicationContext_,
+        CInvocationResult Invoke(
+            IN const CInvocation& Call_,
+            IN const iCAX::Application::IApplicationContext& ApplicationContext_,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) override;

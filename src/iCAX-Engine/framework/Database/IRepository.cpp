@@ -2,7 +2,6 @@
 #include "IRepository.h"
 #include "Repository.h"
 
-#include <utility>
 
 std::shared_ptr<iCAX::Database::IRepository> iCAX::Database::GenerateRepository(
     IN const iCAX::Data::uuid& RepositoryID_,

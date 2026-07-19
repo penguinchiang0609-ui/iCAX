@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <ApplicationContext/ApplicationContext.h>
 #include <Behaviour/IBehaviourRegistry.h>
@@ -10,23 +11,12 @@
 #include <Product/ProductRuntime.h>
 #include <Project/ProjectRuntime.h>
 #include <Resources/ResourceLoaderRegistry.h>
-#include <Mailbox/MailChannelRegistry.h>
+#include <Facades/FacadeChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 #include <Data/Variant.h>
-#include <Mailbox/Mail.h>
-#include <Mailbox/MailPayload.h>
+#include <Facades/FacadeFrame.h>
+#include <Facades/FacadePayload.h>
 
-#include <chrono>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <memory>
-#include <map>
-#include <optional>
-#include <stdexcept>
-#include <string>
-#include <thread>
-#include <vector>
 
 using namespace iCAX::Product;
 
@@ -65,83 +55,63 @@ namespace
         mutable std::map<std::string, CProductData> m_Data;
     };
 
-    void ReleaseTestMailPayload(IN OUT iCAX::Mail::Mail& Mail_) noexcept
+    void ClearFrames(IN OUT std::vector<iCAX::Interaction::CFacadeFrame>& Frames_) noexcept
     {
-        iCAX::Mail::ReleaseMailPayload(Mail_);
+        Frames_.clear();
     }
 
-    void ReleaseMailPayloads(IN OUT std::vector<iCAX::Mail::Mail>& Mails_) noexcept
-    {
-        for (auto& _Mail : Mails_)
-        {
-            ReleaseTestMailPayload(_Mail);
-        }
-        Mails_.clear();
-    }
-
-    iCAX::Mail::Mail MakeRequestMail(
-        IN uint64_t nMailID_,
-        IN uint64_t nTypeCode_,
+    iCAX::Interaction::CFacadeFrame MakeRequestFrame(
+        IN uint64_t nCallID_,
+        IN uint64_t nMethodCode_,
         IN const std::optional<iCAX::Data::Variant>& Payload_ = std::nullopt)
     {
-        iCAX::Mail::Mail _Mail;
-        _Mail.Header.nMailId = nMailID_;
-        _Mail.Header.nTypeCode = nTypeCode_;
+        iCAX::Interaction::CFacadeFrame _Frame;
+        _Frame.nCallID = nCallID_;
+        _Frame.nMethodCode = nMethodCode_;
+        _Frame.nKind = iCAX::Interaction::EFacadeFrameKind::Request;
 
         if (Payload_)
         {
-            auto _Bytes = EncodeProductPayload(*Payload_);
-            if (!_Bytes.empty())
-            {
-                _Mail.Payload.nSize = _Bytes.size();
-                _Mail.Payload.pData = new uint8_t[_Mail.Payload.nSize];
-                std::memcpy(_Mail.Payload.pData, _Bytes.data(), _Mail.Payload.nSize);
-            }
+            _Frame.Payload = EncodeProductPayload(*Payload_);
         }
 
-        return _Mail;
+        return _Frame;
     }
 
-    std::vector<iCAX::Mail::Mail> WaitForMails(IN const iCAX::Mail::CMailPostOffice& PostOffice_)
+    std::vector<iCAX::Interaction::CFacadeFrame> WaitForFrames(IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_)
     {
         for (int _Index = 0; _Index < 200; ++_Index)
         {
-            auto _Mails = PostOffice_.Receive();
-            if (!_Mails.empty())
+            auto _Frames = Endpoint_.Receive();
+            if (!_Frames.empty())
             {
-                return _Mails;
+                return _Frames;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         return {};
     }
 
-    std::vector<iCAX::Mail::Mail> WaitForProductMails(
+    std::vector<iCAX::Interaction::CFacadeFrame> WaitForProductFrames(
         IN const std::shared_ptr<CProductRuntime>& pRuntime_,
-        IN const iCAX::Mail::CMailPostOffice& PostOffice_)
+        IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_)
     {
         for (int _Index = 0; _Index < 200; ++_Index)
         {
-            pRuntime_->DispatchProductMails();
-            auto _Mails = PostOffice_.Receive();
-            if (!_Mails.empty())
+            pRuntime_->DispatchProductFacadeFrames();
+            auto _Frames = Endpoint_.Receive();
+            if (!_Frames.empty())
             {
-                return _Mails;
+                return _Frames;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         return {};
     }
 
-    iCAX::Data::ObjectMap DecodeObjectPayload(IN const iCAX::Mail::Mail& Mail_)
+    iCAX::Data::ObjectMap DecodeObjectPayload(IN const iCAX::Interaction::CFacadeFrame& Frame_)
     {
-        std::vector<uint8_t> _Payload;
-        if (Mail_.Payload.nSize > 0)
-        {
-            _Payload.assign(Mail_.Payload.pData, Mail_.Payload.pData + Mail_.Payload.nSize);
-        }
-
-        auto _Variant = DecodeProductPayload(_Payload);
+        auto _Variant = DecodeProductPayload(Frame_.Payload);
         if (!_Variant.Is<iCAX::Data::ObjectMap>())
         {
             throw std::runtime_error("Expected object payload");
@@ -162,8 +132,7 @@ namespace
 
         iCAX::Data::PropertyBag _Settings;
         auto _pContext = std::make_shared<iCAX::Application::CApplicationContext>(_Descriptor, _Paths, _Settings);
-        auto _pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
-        auto _pMailChannelRegistry = std::make_shared<iCAX::Mail::CMailChannelRegistry>();
+        auto _pFacadeChannelRegistry = std::make_shared<iCAX::Interaction::CFacadeChannelRegistry>();
 
         CProductDefinition _Definition;
         _Definition.ProductID = strProductID_;
@@ -187,8 +156,7 @@ namespace
         return std::make_shared<CProductRuntime>(
             _Definition,
             _pContext,
-            _pServiceProvider,
-            _pMailChannelRegistry,
+            _pFacadeChannelRegistry,
             _pProductDataStore);
     }
 
@@ -205,6 +173,21 @@ namespace
         std::error_code _Error;
         std::filesystem::remove(ProjectPath_, _Error);
         std::filesystem::remove(ProjectPath_.string() + ".log", _Error);
+    }
+
+    iCAX::Coroutines::CCoroutine<std::thread::id> ResumeThreadAfterNextProductFrame()
+    {
+        co_await iCAX::Coroutines::NextFrame();
+        co_return std::this_thread::get_id();
+    }
+
+    iCAX::Coroutines::CCoroutine<> RunUntilProductStops(std::atomic_int& ResumeCount_)
+    {
+        while (true)
+        {
+            ++ResumeCount_;
+            co_await iCAX::Coroutines::NextFrame();
+        }
     }
 }
 
@@ -350,17 +333,25 @@ TEST(ProductRuntimeTest, OpensAndClosesProjectCatalogDirectly)
     EXPECT_EQ("Robot Cell", _pProject->GetProjectName());
     EXPECT_EQ("memory://robot-cell", _pProject->GetProjectPath());
     EXPECT_TRUE(_pProject->IsRunning());
-    EXPECT_TRUE(_pRuntime->GetSceneFrontendPostOffice(
+    EXPECT_TRUE(_pRuntime->GetSceneFrontendFacadeEndpoint(
         _pProject->GetProjectID(),
         _pProject->GetMainSceneID()).IsValid());
 
     EXPECT_TRUE(_pRuntime->CloseProjectCatalog(_pCatalog->GetCatalogID()));
     EXPECT_EQ(nullptr, _pRuntime->FindProjectCatalog(_pCatalog->GetCatalogID()));
     EXPECT_THROW(
-        _pRuntime->GetSceneFrontendPostOffice(_pProject->GetProjectID(), _pProject->GetMainSceneID()),
+        _pRuntime->GetSceneFrontendFacadeEndpoint(_pProject->GetProjectID(), _pProject->GetMainSceneID()),
         std::runtime_error);
 
     _pRuntime->Stop();
+}
+
+TEST(ProductRuntimeTest, OwnsIndependentProductServiceEnvironment)
+{
+    auto _pFirstRuntime = MakeRuntime("robot-a");
+    auto _pSecondRuntime = MakeRuntime("robot-b");
+
+    EXPECT_NE(&_pFirstRuntime->GetServiceProvider(), &_pSecondRuntime->GetServiceProvider());
 }
 
 TEST(ProductRuntimeTest, LocalProjectPathStartsQuickSaveLog)
@@ -413,24 +404,23 @@ TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
             .To<std::string>());
 }
 
-TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
+TEST(ProductRuntimeFacadeTest, ProductFacadeCanOpenAndListProjectCatalogs)
 {
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
-    auto _FrontendPostOffice = _pRuntime->GetProductFrontendPostOffice();
+    auto _FrontendEndpoint = _pRuntime->GetProductFrontendFacadeEndpoint();
 
     iCAX::Data::ObjectMap _OpenPayload;
     _OpenPayload["catalogName"] = std::string("Robot Catalog");
     _OpenPayload["catalogPath"] = std::string("memory://robot-catalog");
     _OpenPayload["projectName"] = std::string("Robot Cell");
     _OpenPayload["projectPath"] = std::string("memory://robot-cell");
-    auto _OpenRequest = MakeRequestMail(2001, kProductOpenProjectCatalogMethodCode, iCAX::Data::Variant(_OpenPayload));
-    _FrontendPostOffice.Send(_OpenRequest);
-    ReleaseTestMailPayload(_OpenRequest);
+    auto _OpenRequest = MakeRequestFrame(2001, kProductOpenProjectCatalogMethodCode, iCAX::Data::Variant(_OpenPayload));
+    _FrontendEndpoint.Send(_OpenRequest);
 
-    auto _OpenResponses = WaitForProductMails(_pRuntime, _FrontendPostOffice);
+    auto _OpenResponses = WaitForProductFrames(_pRuntime, _FrontendEndpoint);
     ASSERT_EQ(1u, _OpenResponses.size());
-    EXPECT_EQ(iCAX::Mail::kMailOk, _OpenResponses[0].Header.nStamp);
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _OpenResponses[0].nStatus);
 
     auto _OpenPayloadObject = DecodeObjectPayload(_OpenResponses[0]);
     ASSERT_TRUE(_OpenPayloadObject.contains("catalog"));
@@ -455,49 +445,49 @@ TEST(ProductRuntimeMailboxTest, ProductMailboxCanOpenAndListProjectCatalogs)
     EXPECT_EQ(1u, _State.at("catalogs").To<iCAX::Data::VariantArray>().size());
 
     const auto _CatalogID = _Catalog.at("catalogId").To<iCAX::Data::uuid>();
-    ReleaseMailPayloads(_OpenResponses);
+    ClearFrames(_OpenResponses);
 
     iCAX::Data::ObjectMap _ClosePayload;
     _ClosePayload["catalogId"] = _CatalogID;
-    auto _CloseRequest = MakeRequestMail(2002, kProductCloseProjectCatalogMethodCode, iCAX::Data::Variant(_ClosePayload));
-    _FrontendPostOffice.Send(_CloseRequest);
-    ReleaseTestMailPayload(_CloseRequest);
+    auto _CloseRequest = MakeRequestFrame(2002, kProductCloseProjectCatalogMethodCode, iCAX::Data::Variant(_ClosePayload));
+    _FrontendEndpoint.Send(_CloseRequest);
 
-    auto _CloseResponses = WaitForProductMails(_pRuntime, _FrontendPostOffice);
+    auto _CloseResponses = WaitForProductFrames(_pRuntime, _FrontendEndpoint);
     ASSERT_EQ(1u, _CloseResponses.size());
-    EXPECT_EQ(iCAX::Mail::kMailOk, _CloseResponses[0].Header.nStamp);
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _CloseResponses[0].nStatus);
 
     auto _CloseState = DecodeObjectPayload(_CloseResponses[0]);
     EXPECT_EQ(0ull, _CloseState.at("catalogCount").To<unsigned long long>());
     EXPECT_TRUE(_CloseState.at("catalogs").To<iCAX::Data::VariantArray>().empty());
-    ReleaseMailPayloads(_CloseResponses);
+    ClearFrames(_CloseResponses);
 
     _pRuntime->Stop();
-    EXPECT_FALSE(_FrontendPostOffice.IsValid());
+    EXPECT_FALSE(_FrontendEndpoint.IsValid());
 }
 
-TEST(ProductRuntimeMailboxTest, ProductRuntimeCanSendFrontendEvent)
+TEST(ProductRuntimeFacadeTest, ProductRuntimeCanSendFrontendEvent)
 {
     constexpr uint64_t kProductStateChangedEvent = iCAX::Interaction::MakeFacadeMethodCode("Product", "StateChanged");
 
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
-    auto _FrontendPostOffice = _pRuntime->GetProductFrontendPostOffice();
+    auto _FrontendEndpoint = _pRuntime->GetProductFrontendFacadeEndpoint();
 
     _pRuntime->SendFrontendEvent(kProductStateChangedEvent, "product-event");
 
-    auto _Events = WaitForMails(_FrontendPostOffice);
+    auto _Events = WaitForFrames(_FrontendEndpoint);
     ASSERT_EQ(1u, _Events.size());
-    EXPECT_EQ(iCAX::Mail::kMailOk, _Events[0].Header.nStamp);
-    EXPECT_EQ(0u, _Events[0].Header.nOriginId);
-    EXPECT_EQ(kProductStateChangedEvent, _Events[0].Header.nTypeCode);
-    EXPECT_EQ("product-event", iCAX::Mail::GetMailPayloadText(_Events[0]));
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Events[0].nStatus);
+    EXPECT_EQ(iCAX::Interaction::EFacadeFrameKind::Event, _Events[0].nKind);
+    EXPECT_EQ(0u, _Events[0].nCallID);
+    EXPECT_EQ(kProductStateChangedEvent, _Events[0].nMethodCode);
+    EXPECT_EQ("product-event", iCAX::Interaction::GetFacadePayloadText(_Events[0]));
 
-    ReleaseMailPayloads(_Events);
+    ClearFrames(_Events);
     _pRuntime->Stop();
 }
 
-TEST(ProductRuntimeMailboxTest, ProductFacadeCallSentToSceneMailboxReturnsInvalidCall)
+TEST(ProductRuntimeFacadeTest, ProductFacadeCallSentToSceneFacadeReturnsInvalidInvocation)
 {
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
@@ -506,26 +496,25 @@ TEST(ProductRuntimeMailboxTest, ProductFacadeCallSentToSceneMailboxReturnsInvali
     auto _pProject = _pCatalog->GetMainProject();
     ASSERT_NE(nullptr, _pProject);
 
-    auto _ScenePostOffice = _pRuntime->GetSceneFrontendPostOffice(
+    auto _SceneEndpoint = _pRuntime->GetSceneFrontendFacadeEndpoint(
         _pProject->GetProjectID(),
         _pProject->GetMainSceneID());
-    auto _Request = MakeRequestMail(3001, kProductGetStateMethodCode);
-    _ScenePostOffice.Send(_Request);
-    ReleaseTestMailPayload(_Request);
+    auto _Request = MakeRequestFrame(3001, kProductGetStateMethodCode);
+    _SceneEndpoint.Send(_Request);
 
-    auto _Results = WaitForMails(_ScenePostOffice);
+    auto _Results = WaitForFrames(_SceneEndpoint);
     ASSERT_EQ(1u, _Results.size());
-    EXPECT_EQ(iCAX::Mail::kMailInvalidPayload, _Results[0].Header.nStamp);
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::InvalidInvocation, _Results[0].nStatus);
     EXPECT_NE(
         std::string::npos,
-        iCAX::Mail::GetMailPayloadText(_Results[0]).find(
-            "Product facade call must be sent to the product mailbox"));
+        iCAX::Interaction::GetFacadePayloadText(_Results[0]).find(
+            "Product Facade invocation requires the product scope"));
     EXPECT_FALSE(_pProject->GetLastFault().has_value());
-    ReleaseMailPayloads(_Results);
+    ClearFrames(_Results);
     _pRuntime->Stop();
 }
 
-TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
+TEST(ProductRuntimeFacadeTest, SceneFacadeProvidesProjectAndSceneContext)
 {
     constexpr uint64_t kInspectProjectContextMethod =
         iCAX::Interaction::MakeFacadeMethodCode("InspectProject", "ProjectContext");
@@ -542,8 +531,8 @@ TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
     _pFacade->ExposeMethod(
         "ProjectContext",
         [_ProjectID](
-            IN const iCAX::Interaction::CFacadeCall&,
-            IN iCAX::Application::IApplicationContext&,
+            IN const iCAX::Interaction::CInvocation&,
+            IN const iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext* pProductContext_,
             IN iCAX::Project::IProjectContext* pProjectContext_,
             IN iCAX::Project::ISceneContext* pSceneContext_) {
@@ -557,20 +546,19 @@ TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
             _Payload["sameProject"] = pProjectContext_
                 && pProjectContext_->GetProjectID() == _ProjectID;
 
-            iCAX::Interaction::CFacadeResult _Response;
+            iCAX::Interaction::CInvocationResult _Response;
             _Response.Payload = EncodeProductPayload(iCAX::Data::Variant(_Payload));
             return _Response;
         });
     ASSERT_TRUE(_pRuntime->GetFacadeRegistry().Register(_pFacade));
 
-    auto _ScenePostOffice = _pRuntime->GetSceneFrontendPostOffice(_ProjectID, _pProject->GetMainSceneID());
-    auto _Request = MakeRequestMail(4001, kInspectProjectContextMethod);
-    _ScenePostOffice.Send(_Request);
-    ReleaseTestMailPayload(_Request);
+    auto _SceneEndpoint = _pRuntime->GetSceneFrontendFacadeEndpoint(_ProjectID, _pProject->GetMainSceneID());
+    auto _Request = MakeRequestFrame(4001, kInspectProjectContextMethod);
+    _SceneEndpoint.Send(_Request);
 
-    auto _Responses = WaitForMails(_ScenePostOffice);
+    auto _Responses = WaitForFrames(_SceneEndpoint);
     ASSERT_EQ(1u, _Responses.size());
-    EXPECT_EQ(iCAX::Mail::kMailOk, _Responses[0].Header.nStamp);
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Responses[0].nStatus);
 
     auto _Payload = DecodeObjectPayload(_Responses[0]);
     EXPECT_EQ(_ProjectID, _Payload.at("projectId").To<iCAX::Data::uuid>());
@@ -580,7 +568,73 @@ TEST(ProductRuntimeMailboxTest, SceneMailboxProvidesProjectAndSceneContext)
     EXPECT_TRUE(_Payload.at("hasProjectContext").To<bool>());
     EXPECT_TRUE(_Payload.at("sameProject").To<bool>());
 
-    ReleaseMailPayloads(_Responses);
+    ClearFrames(_Responses);
+    _pRuntime->Stop();
+}
+
+TEST(ProductRuntimeCoroutineTest, RunsOnProductWorkerAndCancelsWithProduct)
+{
+    auto _pRuntime = MakeRuntime();
+    _pRuntime->Start();
+
+    EXPECT_THROW(
+        (void)_pRuntime->StartCoroutine(ResumeThreadAfterNextProductFrame()),
+        std::logic_error);
+
+    std::atomic_int _ResumeCount = 0;
+    iCAX::Tasks::TaskCompletionSource<std::thread::id> _StartThreadSource;
+    iCAX::Tasks::TaskCompletionSource<iCAX::Coroutines::CCoroutineHandle<std::thread::id>>
+        _ResultHandleSource;
+    iCAX::Tasks::TaskCompletionSource<iCAX::Coroutines::CCoroutineHandle<>>
+        _LifetimeHandleSource;
+
+    _pRuntime->GetProductTaskScheduler()->Schedule([&]() {
+        _StartThreadSource.SetResult(std::this_thread::get_id());
+        _ResultHandleSource.SetResult(
+            _pRuntime->StartCoroutine(ResumeThreadAfterNextProductFrame()));
+        _LifetimeHandleSource.SetResult(
+            _pRuntime->StartCoroutine(RunUntilProductStops(_ResumeCount)));
+    });
+
+    ASSERT_TRUE(_ResultHandleSource.GetTask().WaitFor(std::chrono::seconds(2)));
+    ASSERT_TRUE(_LifetimeHandleSource.GetTask().WaitFor(std::chrono::seconds(2)));
+    const auto _ResultHandle = _ResultHandleSource.GetTask().Result();
+    const auto _LifetimeHandle = _LifetimeHandleSource.GetTask().Result();
+    const auto _ProductThreadID = _StartThreadSource.GetTask().Result();
+    ASSERT_TRUE(_ResultHandle.Completion().WaitFor(std::chrono::seconds(2)));
+    EXPECT_EQ(_ProductThreadID, _ResultHandle.Completion().Result());
+
+    auto _CancellationContinuation = _LifetimeHandle.Completion().ContinueWith(
+        [](iCAX::Tasks::Task<void> Completed_) {
+            if (!Completed_.IsCanceled())
+            {
+                throw std::logic_error("Product coroutine should be canceled during product shutdown");
+            }
+            return std::this_thread::get_id();
+        });
+
+    for (int _Index = 0; _Index < 200 && _ResumeCount.load() < 2; ++_Index)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_GE(_ResumeCount.load(), 2);
+
+    _pRuntime->Stop();
+    EXPECT_TRUE(_LifetimeHandle.Completion().IsCanceled());
+    ASSERT_TRUE(_CancellationContinuation.IsCompletedSuccessfully());
+    EXPECT_EQ(_ProductThreadID, _CancellationContinuation.Result());
+
+    _pRuntime->Start();
+    iCAX::Tasks::TaskCompletionSource<iCAX::Coroutines::CCoroutineHandle<std::thread::id>>
+        _RestartHandleSource;
+    _pRuntime->GetProductTaskScheduler()->Schedule([&]() {
+        _RestartHandleSource.SetResult(
+            _pRuntime->StartCoroutine(ResumeThreadAfterNextProductFrame()));
+    });
+    ASSERT_TRUE(_RestartHandleSource.GetTask().WaitFor(std::chrono::seconds(2)));
+    const auto _RestartHandle = _RestartHandleSource.GetTask().Result();
+    ASSERT_TRUE(_RestartHandle.Completion().WaitFor(std::chrono::seconds(2)));
+    EXPECT_TRUE(_RestartHandle.Completion().IsCompletedSuccessfully());
     _pRuntime->Stop();
 }
 

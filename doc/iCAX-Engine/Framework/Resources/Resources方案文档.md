@@ -14,7 +14,7 @@ src/icax-engine/framework/Resources/
 - Database、ProjectStorage、Facades、Behaviour 和业务插件都通过资源路径或来源字符串引用资源，`ResourceKey` 只作为 Resources 内部索引。
 - 资源是否运行时临时、内嵌保存或外部引用，属于工程框架语义，不适合放在 foundation。
 
-`Resources` 仍然不依赖 `Database`、`Services`、`ApplicationHost` 或业务扩展，避免形成框架内部循环依赖。
+`Resources` 仍然不依赖 `Database`、`Services`、`ApplicationRuntime` 或业务扩展，避免形成框架内部循环依赖。
 
 ## 2. 项目组成
 

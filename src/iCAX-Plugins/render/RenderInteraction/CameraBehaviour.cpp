@@ -11,11 +11,6 @@
 #include "Services/ServiceProvider.h"
 #include "Transform/Transform.h"
 
-#include <algorithm>
-#include <atomic>
-#include <cmath>
-#include <stdexcept>
-#include <vector>
 
 namespace
 {

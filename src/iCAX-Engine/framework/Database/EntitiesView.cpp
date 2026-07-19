@@ -3,7 +3,6 @@
 #include "IRepository.h"
 #include "MaskRegistry.h"
 
-#include <set>
 
 //!< 构造函数
 iCAX::Database::CEntitiesView::CEntitiesView(IN std::shared_ptr<IRepository> pRepository_)

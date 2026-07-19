@@ -176,9 +176,6 @@
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\Mailbox\Mailbox.vcxproj">
-      <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\Services\Services.vcxproj">
       <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
     </ProjectReference>

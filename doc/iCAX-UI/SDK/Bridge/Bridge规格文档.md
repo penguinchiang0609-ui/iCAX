@@ -17,8 +17,8 @@ bridge 至少需要提供：
 - `getApplicationChannelId()`
 - `registerProductChannel(productId)`
 - `registerSceneChannel(projectId, sceneId)`
-- `subscribeMail(channelId, handler)`
-- `postMail(mail)`
+- `subscribeFacadeFrames(channelId, handler)`
+- `postFacadeFrame(frame)`
 
 可选宿主能力：
 
@@ -81,39 +81,42 @@ const channelId = await bridge.registerSceneChannel(projectId, sceneId);
 - 调用失败时抛出异常或 reject。
 - 重复登记同一 Scene 应返回同一个 channel id。
 
-### 5.4 subscribeMail
+### 5.4 subscribeFacadeFrames
 
 ```js
-const unsubscribe = bridge.subscribeMail(channelId, handler);
+const unsubscribe = bridge.subscribeFacadeFrames(channelId, handler);
 ```
 
-订阅指定 mailbox 的返回消息或事件。
+订阅指定 channel 上到达的 Facade frame。
 
-该回调会收到两类 mail：
+frame 的 `kind` 包括：
 
-- response mail：`originId != 0`，对应前端某个 request。
-- event mail：`originId == 0`，由 backend 主动发送。
+- `Request`：后端调用前端提供的 Facade；
+- `Report`：一次调用的中间汇报；
+- `Response`：完成对应 Promise；
+- `Event`：对端主动发送的事件。
 
 要求：
 
-- `handler` 接收 mail envelope。
+- `handler` 接收 Facade frame。
 - 返回值必须是可调用的取消订阅函数。
-- 同一个 mailbox 可以有多个订阅者。
+- 同一个 channel 可以有多个订阅者。
 - 取消订阅后不得再调用该 handler。
 
-### 5.5 postMail
+### 5.5 postFacadeFrame
 
 ```js
-await bridge.postMail(envelope);
+await bridge.postFacadeFrame(frame);
 ```
 
-将前端 envelope 投递到 backend。
+将前端 Facade frame 投递到 backend。
 
 要求：
 
-- `postMail` 只表达投递成功，不表达业务成功。
-- 业务成功或失败通过后续 response mail 表达。
-- `postMail` 不允许同步阻塞等待 backend 执行业务命令。
+- `postFacadeFrame` 只表达投递成功，不表达业务成功；
+- 业务成功或失败通过后续 Response 表达；
+- `postFacadeFrame` 不允许同步阻塞等待 backend 执行业务方法；
+- Request、Report 和 Response 必须保持同一个 `callId`。
 
 ### 5.6 openFileDialog
 

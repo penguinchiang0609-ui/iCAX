@@ -4,8 +4,6 @@
 #include "IMetaRegistry.h"
 #include "Data/VariantSerializer.h"
 
-#include <cctype>
-#include <stdexcept>
 
 namespace
 {

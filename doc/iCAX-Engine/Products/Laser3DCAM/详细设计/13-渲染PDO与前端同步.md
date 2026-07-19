@@ -2,12 +2,12 @@
 
 ## 1. 模块定位
 
-本模块负责把后端 CAM 数据转换为前端可渲染的数据，并通过 PDO 和 Mailbox 同步。
+本模块负责把后端 CAM 数据转换为前端可渲染的数据，并通过 PDO 和 Facades 同步。
 
 原则：
 
 - 大数据走 PDO。
-- slot 分配、释放和迁移通知走 Mailbox。
+- slot 分配、释放和迁移通知走 Facades。
 - 前端只渲染，不维护项目主数据。
 
 ## 2. 参与模块
@@ -19,7 +19,7 @@
 - RenderPDO。
 - PDORenderService。
 - PDOHub。
-- MailChannel。
+- FacadeChannel。
 
 前端：
 
@@ -76,7 +76,7 @@ PayloadOffset
 
 前端只在 `DataVersion` 变化时重新读取。
 
-## 6. Mail 通知
+## 6. Facade 事件
 
 ```text
 Render.SlotCreated
@@ -110,13 +110,13 @@ Render.PDOCompactionEnd
 4. 转换为 RenderData
 5. 分配或复用 PDO slot
 6. 写入 PDO
-7. 必要时 mail 通知前端
+7. 必要时 Facade 事件前端
 ```
 
 ## 8. 前端读取流程
 
 ```text
-1. ProjectProxy 订阅 render mail
+1. ProjectProxy 订阅 render Facade
 2. 收到 SlotCreated
 3. PDO client 绑定 slot
 4. 创建 WebGL object
@@ -131,7 +131,7 @@ Render.PDOCompactionEnd
 
 未来 WPF/QT 前端可以复用：
 
-- Mail 命令。
+- Facade 调用。
 - PDO slot 通知。
 - RenderData 契约。
 

@@ -16,9 +16,6 @@
     <Filter Include="Service">
       <UniqueIdentifier>{d5602d3c-6e00-4012-baff-6b5ad0a0fe8b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Mail">
-      <UniqueIdentifier>{2e97c3fb-e6a7-4c9c-a083-2db9a249d28e}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -42,12 +39,6 @@
     <ClInclude Include="ServiceRegistrationCatalog.h">
       <Filter>Service</Filter>
     </ClInclude>
-    <ClInclude Include="IMailChannelService.h">
-      <Filter>Mail</Filter>
-    </ClInclude>
-    <ClInclude Include="MailChannelService.h">
-      <Filter>Mail</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -61,9 +52,6 @@
     </ClCompile>
     <ClCompile Include="ServiceRegistrationCatalog.cpp">
       <Filter>Service</Filter>
-    </ClCompile>
-    <ClCompile Include="MailChannelService.cpp">
-      <Filter>Mail</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

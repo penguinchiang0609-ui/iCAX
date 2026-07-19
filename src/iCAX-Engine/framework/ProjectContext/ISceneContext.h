@@ -3,7 +3,7 @@
 #include "Data/uuid.h"
 #include "ProjectContextExport.h"
 
-#include "Mailbox/MailPostOffice.h"
+#include "Facades/FacadeEndpoint.h"
 
 #include <string>
 
@@ -32,11 +32,11 @@ namespace iCAX
     namespace Project
     {
         /*
-        * @brief Scene 级运行上下文。
+        * @brief Scene 作用域环境。
         * @details
-        *   ProjectContext 表达项目级管理容器；SceneContext 表达具体运行现场。
-        *   Repository、Undo/Redo、Transaction、Universe、ResourceLibrary、PDOHub、
-        *   MailChannel 和工作线程都归属 SceneContext。
+        *   SceneContext 管理当前现场的 Repository、Undo/Redo、Transaction、Universe、
+        *   ResourceLibrary、PDOHub 和服务环境。Scene Runtime 管理线程、调度、协程、
+        *   Facade 分发以及 Context 的创建和销毁。
         */
         class _PROJECT_CONTEXT_EXP ISceneContext
         {
@@ -64,14 +64,14 @@ namespace iCAX
             virtual const std::string& GetSceneName() const = 0;
 
             /*
-            * @brief 获取后端视角 Scene 邮局。
+            * @brief 获取后端视角 Scene Facade 端点。
             */
-            virtual iCAX::Mail::CMailPostOffice GetBackendPostOffice() const = 0;
+            virtual iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const = 0;
 
             /*
-            * @brief 获取前端视角 Scene 邮局。
+            * @brief 获取前端视角 Scene Facade 端点。
             */
-            virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const = 0;
+            virtual iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const = 0;
 
             /*
             * @brief 判断是否为主 Scene。

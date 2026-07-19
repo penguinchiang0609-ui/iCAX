@@ -147,9 +147,6 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj">
       <Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Mailbox\Mailbox.vcxproj">
-      <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\PDO\PDO.vcxproj">
       <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
     </ProjectReference>

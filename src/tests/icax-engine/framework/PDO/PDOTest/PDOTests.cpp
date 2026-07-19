@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Data/StableId.h>
 #include <PDO/IPDOHub.h>
@@ -7,17 +8,6 @@
 #include <PDO/PDOHub.h>
 #include <PDO/SharedPDOArena.h>
 
-#include <array>
-#include <atomic>
-#include <chrono>
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <mutex>
-#include <stdexcept>
-#include <string>
-#include <thread>
-#include <vector>
 
 using namespace iCAX::PDO;
 

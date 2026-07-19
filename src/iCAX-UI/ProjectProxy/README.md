@@ -16,4 +16,4 @@
 
 ## 边界
 
-本模块不持有 repository、resource pool、ECS 数据、mailbox 或 PDO。项目级数据归 backend project 所有；可运行现场归 backend scene 所有。前端通过 `SceneProxy` 调用 Facade 方法、订阅事件和读取 PDO。
+本模块不持有 repository、resource pool、ECS 数据、Facade 或 PDO。项目级数据归 backend project 所有；可运行现场归 backend scene 所有。前端通过 `SceneProxy` 调用 Facade 方法、订阅事件和读取 PDO。

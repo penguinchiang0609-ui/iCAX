@@ -37,7 +37,7 @@ namespace iCAX
             * @brief CEF UI 容器。
             * @details
             *   本类直接实现 IUIContainer。它负责 CEF runtime、浏览器窗口、JS bridge 注入、
-            *   backend -> frontend 邮件轮询和 JS 派发，不再依赖额外的中间 adapter。
+            *   backend -> frontend Facade frame 轮询和 JS 派发，不再依赖额外的中间 adapter。
             */
             class _CEF_UI_CONTAINER_EXP CCefUIContainer final : public IUIContainer
             {
@@ -73,10 +73,10 @@ namespace iCAX
                 bool IsRunning() const override;
 
                 /*
-                * @brief 手动轮询一次 Engine 发给 H5 的邮件。
+                * @brief 手动轮询一次 Engine 发给 H5 的 Facade frame。
                 * @details Start 后会有内部轮询线程；该方法主要用于集成测试或外部消息泵手动驱动。
                 */
-                void PollMails();
+                void PollFacadeFrames();
 
             private:
                 class Impl;

@@ -1,8 +1,5 @@
 #include "pch.h"
 #include "MaskRegistry.h"
-#include <cassert>
-#include <stdexcept>
-#include <unordered_map>
 #include "ComponentMask.h"
 
 std::unordered_map<std::string, size_t> iCAX::Database::CMaskRegistry::s_mapNameToIndex;

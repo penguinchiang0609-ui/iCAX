@@ -11,17 +11,6 @@
 #include "Resources/ResourceLibrary.h"
 #include "Transform/Transform.h"
 
-#include <algorithm>
-#include <atomic>
-#include <array>
-#include <cctype>
-#include <cmath>
-#include <filesystem>
-#include <iomanip>
-#include <limits>
-#include <sstream>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace iCAX::CAM::Facades::Internal
 {

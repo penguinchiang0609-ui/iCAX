@@ -24,7 +24,7 @@
     <ClInclude Include="FacadesExport.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="FacadeCall.h">
+    <ClInclude Include="Invocation.h">
       <Filter>extern</Filter>
     </ClInclude>
     <ClInclude Include="FacadeRegistry.h">
@@ -42,6 +42,24 @@
     <ClInclude Include="Facade.h">
       <Filter>inner</Filter>
     </ClInclude>
+    <ClInclude Include="FacadeFrame.h">
+      <Filter>extern</Filter>
+    </ClInclude>
+    <ClInclude Include="FacadePayload.h">
+      <Filter>inner</Filter>
+    </ClInclude>
+    <ClInclude Include="FacadeQueue.h">
+      <Filter>inner</Filter>
+    </ClInclude>
+    <ClInclude Include="FacadeEndpoint.h">
+      <Filter>extern</Filter>
+    </ClInclude>
+    <ClInclude Include="FacadeChannel.h">
+      <Filter>inner</Filter>
+    </ClInclude>
+    <ClInclude Include="FacadeChannelRegistry.h">
+      <Filter>inner</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -50,7 +68,7 @@
     <ClCompile Include="pch.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="FacadeCall.cpp">
+    <ClCompile Include="Invocation.cpp">
       <Filter>extern</Filter>
     </ClCompile>
     <ClCompile Include="FacadeRegistry.cpp">
@@ -66,6 +84,21 @@
       <Filter>extern</Filter>
     </ClCompile>
     <ClCompile Include="Facade.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="FacadePayload.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="FacadeQueue.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="FacadeEndpoint.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="FacadeChannel.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="FacadeChannelRegistry.cpp">
       <Filter>inner</Filter>
     </ClCompile>
   </ItemGroup>

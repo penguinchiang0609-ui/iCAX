@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "ChangeSet.h"
 
-#include <iterator>
 
 namespace
 {

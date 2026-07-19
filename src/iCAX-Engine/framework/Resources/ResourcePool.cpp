@@ -1,9 +1,6 @@
 #include "pch.h"
 #include "ResourcePool.h"
 
-#include <limits>
-#include <mutex>
-#include <stdexcept>
 
 void iCAX::Resource::CResourcePool::Register(IN const CResourceInfo& Info_)
 {

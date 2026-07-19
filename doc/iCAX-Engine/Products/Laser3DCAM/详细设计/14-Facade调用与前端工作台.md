@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-产品前端通过 SceneProxy 调用 Laser3DCAM 对外 Facade。Mail 承载低频调用、结果和事件，PDO 承载高频显示和交互状态。
+产品前端通过 SceneProxy 调用 Laser3DCAM 对外 Facade。Facade 表达低频调用、结果和事件，PDO 承载高频显示和交互状态。
 
 ## 2. 方法身份
 
@@ -34,7 +34,7 @@ sceneProxy.invoke("Machine.Jog", {
 
 ## 3. 调用 envelope
 
-JS SDK 把 `Machine.Jog` 的两段名称编码为 Mail `typeCode`，把参数序列化到 `payloadText`。Mail `id/originId` 负责关联调用与结果；业务 payload 不重复携带方法名或 requestId。
+JS SDK 把 `Machine.Jog` 的两段名称编码为内部 frame 的 `methodCode`，把参数序列化到 `payloadText`。同一次 Request、Report 和 Response 使用同一个 `callId`；业务 payload 不重复携带方法名或 requestId。
 
 成功结果完成 Promise，失败 stamp 或错误 payload 拒绝 Promise。
 
@@ -69,11 +69,11 @@ await sceneProxy.invoke(
 );
 ```
 
-前端不直接构造 Mail，不直接计算 typeCode，也不访问后端 Entity/Component。
+前端不直接构造 Facade，不直接计算 methodCode，也不访问后端 Entity/Component。
 
 ## 6. 事件
 
-主动事件同样使用两个名称段，例如 `PDORender.SlotAllocated`、`Machine.Changed`。事件 Mail 的 `originId` 为 0，通过 `SceneProxy.subscribe()` 接收。事件不替代方法结果。
+主动事件同样使用两个名称段，例如 `PDORender.SlotAllocated`、`Machine.Changed`。Event frame 的 `callId` 为 0，通过 `SceneProxy.subscribe()` 接收。事件不替代方法结果。
 
 ## 7. 本地与后端状态
 
@@ -86,6 +86,6 @@ await sceneProxy.invoke(
 - `Machine.Jog` 可通过参数操作任意机床实例和轴；
 - 不存在实例级 Facade 注册；
 - 不接受三段方法名；
-- Promise 可由结果 Mail 正确完成或拒绝；
-- 跨 mailbox 范围调用返回失败结果，不使 Scene 线程故障；
-- C++ 与 JS 对两段名称生成一致 typeCode。
+- Promise 可由结果 Facade 正确完成或拒绝；
+- 跨 Facade 范围调用返回失败结果，不使 Scene 线程故障；
+- C++ 与 JS 对两段名称生成一致 methodCode。

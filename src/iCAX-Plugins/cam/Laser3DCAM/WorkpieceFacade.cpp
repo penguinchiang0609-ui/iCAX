@@ -38,7 +38,7 @@ namespace Facades
 {
 using namespace Internal;
 
-iCAX::Interaction::CFacadeResult Internal::_MakeWorkpieceListResponse(IN iCAX::Project::ISceneContext& Scene_)
+iCAX::Interaction::CInvocationResult Internal::_MakeWorkpieceListResponse(IN iCAX::Project::ISceneContext& Scene_)
 {
     auto& _Repository = Scene_.Database();
     auto [_pWorkpieceEntity, _pWorkpiece] = _GetActiveWorkpiece(_Repository);
@@ -90,9 +90,9 @@ namespace
     }
 }
 
-iCAX::Interaction::CFacadeResult HandleListWorkpieces(
-    IN const iCAX::Interaction::CFacadeCall&,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleListWorkpieces(
+    IN const iCAX::Interaction::CInvocation&,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -101,9 +101,9 @@ iCAX::Interaction::CFacadeResult HandleListWorkpieces(
     return _MakeWorkpieceListResponse(_Scene);
 }
 
-iCAX::Interaction::CFacadeResult HandleInstantiateWorkpiece(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleInstantiateWorkpiece(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *pProductContext_,
     IN iCAX::Project::IProjectContext *pProjectContext_,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -180,9 +180,9 @@ iCAX::Interaction::CFacadeResult HandleInstantiateWorkpiece(
     return _MakeWorkpieceListResponse(_Scene);
 }
 
-iCAX::Interaction::CFacadeResult HandleSetActiveWorkpiece(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleSetActiveWorkpiece(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)

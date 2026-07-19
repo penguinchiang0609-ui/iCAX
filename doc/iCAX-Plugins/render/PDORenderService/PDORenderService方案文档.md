@@ -42,7 +42,7 @@ CPDORenderService
 4. 对已经不存在的 scene 释放全部已分配 slot，并发 SlotFreed。
 5. 对仍存在的 scene：
    5.1 释放已删除的 geometry/object/view slot，并发 SlotFreed。
-   5.2 为新增的 geometry/object/view 分配 slot；分配时把 PDOHub 的碎片整理回调接到 Scene mailbox。
+   5.2 为新增的 geometry/object/view 分配 slot；分配时把 PDOHub 的碎片整理回调接到 Scene Facade。
    5.3 分配成功后发送 SlotAllocated。
    5.4 如果 payload 变大且旧容量不足，保持 PDOID 不变，释放旧 slot 后重新分配容量，并发 SlotMoved。
    5.5 将 RenderData 序列化写入对应 slot。
@@ -73,7 +73,7 @@ PDO arena 的碎片整理由 PDOHub 在 `AllocateSlot()` 内部自动触发。`P
 - `OnDefragmentBegin`：发送 `DefragBegin`。
 - `OnDefragmentEnd(moves)`：按 `moves` 发送 `SlotMoved(PDOID)`，最后发送 `DefragEnd`。
 
-邮件顺序为：
+Facade Event 顺序为：
 
 ```text
 DefragBegin

@@ -9,7 +9,7 @@
 - Repository 直接承载 EC 数据。
 - Entity 只表达身份。
 - Component 只表达数据、状态或能力。
-- Behaviour、Project、ApplicationHost 不依赖内部数据空间实现。
+- Behaviour、Project、ApplicationRuntime 不依赖内部数据空间实现。
 - 日志、事务、撤销还原和快速保存统一基于有序 OperationBatch；ChangeSet 只作为提交后的净变更摘要。
 - 项目文件 schema/version/migration 属于 File 模块；Database 不维护文件版本升级链，快速保存日志只回放当前程序写出的操作批次。
 

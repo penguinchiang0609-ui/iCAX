@@ -4,7 +4,6 @@
 #include "IMetaRegistry.h"
 #include "ModifyFilter.h"
 
-#include <stdexcept>
 
 namespace
 {

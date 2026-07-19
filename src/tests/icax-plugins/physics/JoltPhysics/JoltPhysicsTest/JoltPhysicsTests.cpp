@@ -1,10 +1,8 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <JoltPhysics/JoltPhysics.h>
 
-#include <array>
-#include <cmath>
-#include <stdexcept>
 
 using namespace iCAX::JoltPhysics;
 

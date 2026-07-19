@@ -17,12 +17,12 @@ $Destination = (Resolve-Path -LiteralPath $OutDir).Path
 
 $RuntimeProjects = @(
     "iCAX-Engine\foundation\Data",
+    "iCAX-Engine\foundation\Task",
     "iCAX-Engine\foundation\GeometryData",
     "iCAX-Engine\framework\ApplicationContext",
     "iCAX-Engine\framework\Behaviour",
     "iCAX-Engine\framework\Facades",
     "iCAX-Engine\framework\Database",
-    "iCAX-Engine\framework\Mailbox",
     "iCAX-Engine\framework\PDO",
     "iCAX-Engine\framework\ProductContext",
     "iCAX-Engine\framework\ProjectContext",

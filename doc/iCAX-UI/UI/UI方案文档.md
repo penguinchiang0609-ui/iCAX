@@ -53,5 +53,5 @@ import { escapeText } from "../SDK/index.mjs";
 
 - `escapeText()` 正确转义 `& < > "`。
 - `escapeAttr()` 在 `escapeText()` 基础上转义 `'`。
-- 公共 UI 文件不导入 mailbox、PDO、runtime。
+- 公共 UI 文件不导入 Facade、PDO、runtime。
 

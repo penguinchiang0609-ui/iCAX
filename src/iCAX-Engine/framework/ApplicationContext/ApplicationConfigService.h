@@ -1,8 +1,6 @@
 #pragma once
 
 #include "ApplicationContext.h"
-#include "IApplicationConfigStore.h"
-
 #include <memory>
 
 namespace iCAX
@@ -12,8 +10,7 @@ namespace iCAX
         /*
         * @brief 应用配置服务。
         * @details
-        *   封装 ApplicationContext 与配置存储。
-        *   修改设置时会复制当前 Settings、写入新值，再整体替换到 Context。
+        *   ApplicationRuntime 的应用级 Facade 使用该写入器修改 Context 管理的配置。
         */
         class _APPLICATION_CONTEXT_EXP CApplicationConfigService final
         {
@@ -21,10 +18,8 @@ namespace iCAX
             /*
             * @brief 构造应用配置服务。
             * @param [in] pContext_ 应用上下文，不能为空。
-            * @param [in] pStore_ 配置存储，不能为空。
-            * @param [in] strConfigPath_ 配置文件路径。
             */
-            CApplicationConfigService(IN std::shared_ptr<CApplicationContext> pContext_, IN std::shared_ptr<IApplicationConfigStore> pStore_, IN const std::string& strConfigPath_);
+            explicit CApplicationConfigService(IN std::shared_ptr<CApplicationContext> pContext_);
             ~CApplicationConfigService() = default;
 
             CApplicationConfigService(IN const CApplicationConfigService&) = delete;
@@ -59,8 +54,6 @@ namespace iCAX
 
         private:
             std::shared_ptr<CApplicationContext> m_pContext;
-            std::shared_ptr<IApplicationConfigStore> m_pStore;
-            std::string m_strConfigPath;
         };
     }
 }

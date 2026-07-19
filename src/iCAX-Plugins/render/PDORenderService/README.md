@@ -11,7 +11,7 @@ Transform 是独立 PDO 组件，只表达 `transformId + localToWorld`。Render
 - `Camera`：`kDirection2External`，由后端写给前端。
 - `Transform`：`kDirection2External`，由后端写给前端，表达 object/camera 等组件的位姿。
 
-前端不控制相机，不向 `render.camera` 或 `render.transform` 写入相机位姿。用户输入后续走 InputPDO 或 mailbox，由后端业务更新 Camera/Transform，再由 `PDORenderService` 发布。
+前端不控制相机，不向 `render.camera` 或 `render.transform` 写入相机位姿。用户输入后续走 InputPDO 或 Facade，由后端业务更新 Camera/Transform，再由 `PDORenderService` 发布。
 
 目录结构：
 

@@ -117,7 +117,7 @@ namespace
         return _Jobs;
     }
 
-    iCAX::Interaction::CFacadeResult MakeJobResponse(IN iCAX::Database::IRepository& Repository_)
+    iCAX::Interaction::CInvocationResult MakeJobResponse(IN iCAX::Database::IRepository& Repository_)
     {
         auto _Jobs = _CollectEntitiesWithComponent<iCAX::CAM::CJobComponent>(Repository_);
         std::shared_ptr<iCAX::Database::IEntity> _pJobEntity;
@@ -135,9 +135,9 @@ namespace
     }
 }
 
-iCAX::Interaction::CFacadeResult HandleGetJob(
-    IN const iCAX::Interaction::CFacadeCall&,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleGetJob(
+    IN const iCAX::Interaction::CInvocation&,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -146,9 +146,9 @@ iCAX::Interaction::CFacadeResult HandleGetJob(
     return MakeJobResponse(_Scene.Database());
 }
 
-iCAX::Interaction::CFacadeResult HandleSetJobMachine(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetJobMachine(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)

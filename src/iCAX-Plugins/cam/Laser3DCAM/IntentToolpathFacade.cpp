@@ -50,7 +50,7 @@ ObjectMap MakeIntentNode(iCAX::Database::IRepository& Repository_, const iCAX::D
     return _Node;
 }
 
-Interaction::CFacadeResult MakeListResponse(Project::ISceneContext& Scene_)
+Interaction::CInvocationResult MakeListResponse(Project::ISceneContext& Scene_)
 {
     auto& _Repository = Scene_.Database();
     auto [WorkpieceEntity_, Workpiece_] = _GetActiveWorkpiece(_Repository);
@@ -76,12 +76,12 @@ Interaction::CFacadeResult MakeListResponse(Project::ISceneContext& Scene_)
 }
 }
 
-Interaction::CFacadeResult HandleListIntentToolpaths(const Interaction::CFacadeCall&, Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* Scene_)
+Interaction::CInvocationResult HandleListIntentToolpaths(const Interaction::CInvocation&, const Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* Scene_)
 {
     return MakeListResponse(_RequireSceneContext(Scene_));
 }
 
-Interaction::CFacadeResult HandleCreateIntentFromSelection(const Interaction::CFacadeCall&, Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* Scene_)
+Interaction::CInvocationResult HandleCreateIntentFromSelection(const Interaction::CInvocation&, const Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* Scene_)
 {
     auto& _Scene = _RequireSceneContext(Scene_);
     auto& _Repository = _Scene.Database();

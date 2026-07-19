@@ -1,8 +1,8 @@
 # ApplicationContext
 
-`ApplicationContext` 是 framework 层的应用运行上下文项目。它描述应用程序级信息、路径和用户配置，不承载项目数据、EC 数据、资源对象或业务行为。
+`ApplicationContext` 是 framework 层的应用作用域环境项目。它管理应用程序级描述、路径、用户配置、配置存储和应用服务环境；不承载项目数据、EC 数据或 Scene 资源。
 
-`ApplicationContext` 可以被 Behaviour、Service、Facades、ApplicationHost 使用；它本身不依赖这些项目。
+`ApplicationRuntime` 创建并销毁 `ApplicationContext`，负责线程、调度和生命周期。Behaviour、Service、Product、Project、Scene 和普通 Facade 只获得 `const IApplicationContext` 视图；修改配置或应用服务环境必须回到 ApplicationRuntime 工作线程中的应用级 Facade。
 
 应用级设置是与具体产品和具体项目都无关的 iCAX 应用程序参数。它跟随当前 iCAX 安装或当前用户环境，不跟随产品，也不跟随项目文件。
 
@@ -25,7 +25,7 @@
 
 - `ApplicationDescriptor.*`：应用描述、支持的项目 magic 和版本。
 - `ApplicationPaths.h`：应用安装、配置、缓存、临时和日志目录。
-- `ApplicationContext.*` / `IApplicationContext.h`：上下文只读接口和默认实现，内部直接持有应用级 `PropertyBag`。
+- `ApplicationContext.*` / `IApplicationContext.h`：上下文只读接口和默认实现，内部持有应用级 `PropertyBag`、配置存储和 `CServiceProvider`。
 - `IApplicationConfigStore.h` / `FileApplicationConfigStore.*`：配置读写抽象与文件实现。
-- `ApplicationConfigService.*`：修改、保存、重载应用配置的服务类。
+- `ApplicationConfigService.*`：ApplicationRuntime 应用级 Facade 使用的配置写入器；实际配置状态和存储仍由 Context 管理。
 - `ApplicationContextExport.h`：DLL 导出宏。

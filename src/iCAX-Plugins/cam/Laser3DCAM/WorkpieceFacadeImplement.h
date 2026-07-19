@@ -25,5 +25,5 @@ ObjectMap _MakeWorkpiecePayload(
 VariantArray _MakeWorkpieceArray(IN iCAX::Database::IRepository& Repository_);
 ObjectMap _MakeTopologyStatusPayload(IN const std::shared_ptr<iCAX::CAM::CTopologyResource>& pTopology_);
 VariantArray _MakeTopologyPickArray(IN const VariantArray& Items_);
-Interaction::CFacadeResult _MakeWorkpieceListResponse(IN iCAX::Project::ISceneContext& Scene_);
+Interaction::CInvocationResult _MakeWorkpieceListResponse(IN iCAX::Project::ISceneContext& Scene_);
 } // namespace iCAX::CAM::Facades::Internal

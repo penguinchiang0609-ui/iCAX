@@ -15,9 +15,9 @@ import {
   resolveFrontendEntry,
   validateBridge,
 } from "../../iCAX-UI/SDK/index.mjs";
-import { MailboxClient } from "../../iCAX-UI/SDK/Mailbox/mailboxClient.mjs";
-import { makeFacadeMethodCode, makeFacadeMethodCodeFromName, makePDOID } from "../../iCAX-UI/SDK/Mailbox/facadeMethod.mjs";
-import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/Mailbox/variantSerializer.mjs";
+import { FacadeClient, FacadeFrameKind } from "../../iCAX-UI/SDK/Facades/facadeClient.mjs";
+import { makeFacadeMethodCode, makeFacadeMethodCodeFromName, makePDOID } from "../../iCAX-UI/SDK/Facades/facadeMethod.mjs";
+import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/Facades/variantSerializer.mjs";
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
 
 function testFacadeMethodCodes() {
@@ -53,9 +53,9 @@ function testChannelIdValidation() {
   assert.throws(() => ensureUsableChannelId("00000000-0000-0000-0000-000000000000"), /non-nil channel id/);
 }
 
-async function testMailboxPromiseFlow() {
+async function testFacadePromiseFlow() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const app = await connectApplication({ bridge, app: { mailbox: { timeoutMs: 1000 } } });
+  const app = await connectApplication({ bridge, app: { facades: { timeoutMs: 1000 } } });
 
   const state = await app.getState();
   assert.equal(state.state, "Running");
@@ -108,7 +108,7 @@ async function testMailboxPromiseFlow() {
 
 async function testSceneChannelRegistrationFromProjectState() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const app = await connectApplication({ bridge, app: { mailbox: { timeoutMs: 1000 } } });
+  const app = await connectApplication({ bridge, app: { facades: { timeoutMs: 1000 } } });
   const product = await app.startProduct("icax.mock-product");
   bridge.projectOpened = true;
 
@@ -132,20 +132,21 @@ async function testSceneChannelRegistrationFromProjectState() {
   assert.equal(project.getMainScene().sceneChannelId, "00000000-0000-4000-8000-000000000201");
 }
 
-async function testMailboxEventFlow() {
+async function testFacadeEventFlow() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const mailbox = new MailboxClient(bridge, { timeoutMs: 1000 });
+  const facades = new FacadeClient(bridge, { timeoutMs: 1000 });
   const channelId = await bridge.getApplicationChannelId();
 
   const events = [];
-  const unsubscribeStateChanged = mailbox.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
-  const unsubscribeAll = mailbox.subscribeAll(channelId, (event) => events.push({ wildcard: true, event }));
+  const unsubscribeStateChanged = facades.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
+  const unsubscribeAll = facades.subscribeAll(channelId, (event) => events.push({ wildcard: true, event }));
 
-  bridge.emitMail(channelId, "App.StateChanged", { state: "Running", phase: "Running" });
+  bridge.emitFacadeFrame(channelId, "App.StateChanged", { state: "Running", phase: "Running" });
   await delay(10);
 
   assert.equal(events.length, 2);
-  assert.equal(events[0].originId, 0);
+  assert.equal(events[0].callId, 0);
+  assert.equal(events[0].kind, FacadeFrameKind.Event);
   assert.equal(events[0].ok, true);
   assert.equal(events[0].payload.state, "Running");
   assert.equal(events[1].wildcard, true);
@@ -153,24 +154,86 @@ async function testMailboxEventFlow() {
 
   unsubscribeStateChanged();
   unsubscribeAll();
-  bridge.emitMail(channelId, "App.StateChanged", { state: "Stopped" });
+  bridge.emitFacadeFrame(channelId, "App.StateChanged", { state: "Stopped" });
   await delay(10);
   assert.equal(events.length, 2);
 }
 
-async function testMailboxDispose() {
+async function testFacadeReportFlow() {
+  const bridge = new MockHostBridge({ delayMs: 50 });
+  const facades = new FacadeClient(bridge, { timeoutMs: 40 });
+  const channelId = await bridge.getApplicationChannelId();
+  const reports = [];
+  let completed = false;
+
+  const task = facades.invoke(channelId, AppFacade.getState, {}, {
+    onReport: (report) => reports.push(report),
+  });
+  task.then(() => {
+    completed = true;
+  });
+
+  assert.equal(task.callId > 0, true);
+  assert.equal(typeof task.onReport, "function");
+  assert.equal(facades.pending.has(String(task.callId)), true);
+
+  bridge.emitReport(channelId, task.callId, AppFacade.getState, {
+    progress: 0.25,
+    state: "Recognizing",
+    message: "Recognizing features",
+  }, { delayMs: 20 });
+
+  await delay(30);
+  assert.equal(completed, false);
+  assert.equal(facades.pending.has(String(task.callId)), true);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].payload.progress, 0.25);
+  assert.equal(reports[0].payload.state, "Recognizing");
+  assert.equal(reports[0].kind, FacadeFrameKind.Report);
+  assert.equal(task.getLatestReport(), reports[0]);
+
+  const state = await task;
+  assert.equal(state.state, "Running");
+  assert.equal(facades.pending.has(String(task.callId)), false);
+}
+
+async function testFrontendFacadeExposure() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const mailbox = new MailboxClient(bridge, { timeoutMs: 1000 });
+  const facades = new FacadeClient(bridge, { timeoutMs: 1000 });
+  const channelId = await bridge.getApplicationChannelId();
+  const callId = 7001;
+
+  const unexpose = facades.expose(channelId, "Frontend.GetSelection", async (payload, call) => {
+    await call.report({ phase: "Reading" });
+    return { selection: [payload.requestedId] };
+  });
+
+  bridge.emitRequest(channelId, callId, "Frontend.GetSelection", { requestedId: "part-42" });
+  await delay(15);
+
+  const frames = bridge.postedFrames.filter((frame) => Number(frame.callId) === callId);
+  assert.deepEqual(frames.map((frame) => frame.kind), [FacadeFrameKind.Report, FacadeFrameKind.Response]);
+  assert.equal(frames.every((frame) => Number(frame.callId) === callId), true);
+  assert.equal(deserializeVariantText(frames[0].payloadText).phase, "Reading");
+  assert.deepEqual(deserializeVariantText(frames[1].payloadText).selection, ["part-42"]);
+
+  unexpose();
+  facades.dispose();
+}
+
+async function testFacadeDispose() {
+  const bridge = new MockHostBridge({ delayMs: 1 });
+  const facades = new FacadeClient(bridge, { timeoutMs: 1000 });
   const channelId = await bridge.getApplicationChannelId();
 
   const events = [];
-  mailbox.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
-  assert.equal(mailbox.startedChannelIds.has(channelId), true);
+  facades.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
+  assert.equal(facades.startedChannelIds.has(channelId), true);
 
-  mailbox.dispose();
-  assert.equal(mailbox.startedChannelIds.has(channelId), false);
+  facades.dispose();
+  assert.equal(facades.startedChannelIds.has(channelId), false);
 
-  bridge.emitMail(channelId, "App.StateChanged", { state: "Running" });
+  bridge.emitFacadeFrame(channelId, "App.StateChanged", { state: "Running" });
   await delay(10);
   assert.equal(events.length, 0);
 }
@@ -245,10 +308,12 @@ testFacadeMethodCodes();
 testVariantSerializer();
 testBridgeValidation();
 testChannelIdValidation();
-await testMailboxPromiseFlow();
+await testFacadePromiseFlow();
 await testSceneChannelRegistrationFromProjectState();
-await testMailboxEventFlow();
-await testMailboxDispose();
+await testFacadeEventFlow();
+await testFacadeReportFlow();
+await testFrontendFacadeExposure();
+await testFacadeDispose();
 await testPDOBridgeInjection();
 await testProductModuleLoader();
 

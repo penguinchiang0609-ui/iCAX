@@ -12,7 +12,7 @@
 
 - 初始化 SDK。
 - 连接 `window.icax`。
-- 获取 application mailbox 入口。
+- 获取 application Facade 入口。
 - 查询可用产品。
 - 启动产品。
 - 打开项目文件。
@@ -115,7 +115,7 @@ Shell 只负责展示错误。
 错误来源：
 
 - bridge 初始化失败。
-- mailbox 请求失败。
+- Facade 请求失败。
 - 产品模块加载失败。
 - 产品模块挂载失败。
 - 用户输入为空或非法。

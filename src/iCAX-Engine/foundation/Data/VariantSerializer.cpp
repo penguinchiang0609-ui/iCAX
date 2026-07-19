@@ -1,11 +1,5 @@
 #include "pch.h"
 #include "VariantSerializer.h"
-#include <codecvt>
-#include <cctype>
-#include <locale>
-#include <iomanip>
-#include <sstream>
-#include <regex>
 
 using namespace iCAX::Data;
 

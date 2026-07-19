@@ -4,7 +4,7 @@
 
 `Task` 是 iCAX Engine Foundation 层的 C++ 异步任务基础库，用于表达一次可能尚未完成的计算、延迟、等待、取消或异常结果。
 
-它面向 C++ 后台代码，提供尽量接近 C# `Task` 的调用体验，但当前不提供协程、语言级 `await`、任务层级 attach、同步上下文捕获或 UI 线程消息泵。
+它面向 C++ 后台代码，提供尽量接近 C# `Task` 的调用体验，并提供显式 `Await(Task<T>)` 的 C++20 Coroutine 适配；当前不提供 Task 自身的隐式 `co_await`、任务层级 attach、同步上下文捕获或 UI 线程消息泵。
 
 ## 2. 设计目标
 
@@ -13,16 +13,16 @@
 - 支持手动完成、后台执行、延迟、超时、取消、组合等待和 continuation。
 - API 命名和使用习惯尽量贴近 C# `Task` / `TaskCompletionSource`。
 - 只依赖 C++ 标准库，保持 Foundation 层独立。
-- 不引入协程，不依赖 backend/frontend 线程模型，不直接依赖 Mail 通信或 PDO。
+- Coroutine runtime 只依赖抽象 scheduler 与显式 owner scope，不依赖 backend/frontend 线程模型，也不直接依赖 Facade 调用或 PDO。
 
 ## 3. 非目标
 
-- 不提供 C++ coroutine / `co_await` 支持。
+- 不让 Task 隐式捕获线程或同步上下文；Coroutine 必须由显式 manager/scope 驱动。
 - 不提供 C# `async/await` 编译器级状态机。
 - 不提供 `SynchronizationContext` 的真实 UI 消息循环语义。
 - 不提供父子任务 attach 语义。
 - 不提供 `ValueTask`、`IAsyncEnumerable` 或 async stream。
-- 不负责 backend 与 frontend bridge 的 Mail 通信/PDO 通信。
+- 不负责 backend 与 frontend bridge 的 Facade 调用/PDO 通信。
 
 ## 4. 公开能力
 
@@ -57,7 +57,8 @@
 - `SetException()` / `TrySetException()`：设置异常。
 - `SetCanceled()` / `TrySetCanceled()`：设置取消。
 - `MarkRunning()`：标记任务进入 running 状态。
-- 构造时可传入 `AsyncState` 与 `TaskCreationOptions`。
+- 构造时可只传入 `TaskScheduler`，也可同时传入 `AsyncState`、`TaskCreationOptions` 与 `TaskScheduler`。
+- 未指定 scheduler 时绑定 `DefaultScheduler()`；指定 scheduler 后，返回的 Task 默认使用该 scheduler 调度 continuation。
 
 ### 4.3 任务创建
 
@@ -65,7 +66,7 @@
 - `Run(work, scheduler)`：在指定调度器上执行工作。
 - `Run(work, cancellationToken)`：使用默认调度器并支持取消。
 - `Run(work, scheduler, cancellationToken)`：指定调度器并支持取消。
-- `StartNew(work, token, creationOptions, scheduler, asyncState)`：支持更完整的创建选项。
+- `StartNew(work, token, creationOptions, scheduler, asyncState)`：支持更完整的创建选项；省略 scheduler 时使用 `DefaultScheduler()`，不会隐式继承当前线程的 scheduler。
 - `TaskFactory`：封装默认取消令牌、创建选项和调度器；`continuationOptions` 当前保存并暴露为配置，不会自动套用到普通 `ContinueWith`。
 
 工作函数可选择接收 `CancellationToken`。如果可调用对象签名支持 `CancellationToken`，Task 会把令牌传入；否则按无参函数调用。
@@ -99,6 +100,8 @@
 - 指定 `TaskScheduler`。
 - 指定 `CancellationToken`。
 
+每个 Task 都保存创建时绑定的 scheduler。`ContinueWith(continuation)` 和 `ContinueWith(continuation, options)` 默认继承前序 Task 的 scheduler；带 `scheduler` 参数的重载覆盖本次 continuation 的执行位置，且返回的 Task 继承被覆盖后的 scheduler，便于后续链式调用保持同一线程语义。
+
 `TaskContinuationOptions` 包括：
 
 - 条件执行：`OnlyOnRanToCompletion`、`OnlyOnFaulted`、`OnlyOnCanceled`。
@@ -120,7 +123,7 @@
 - `DefaultScheduler()`：默认调度器，当前等同于共享线程池。
 - `CurrentScheduler()`：返回当前线程可见调度器，无显式设置时返回默认调度器。
 - `FromCurrentSynchronizationContext()`：当前返回 `CurrentScheduler()`，为后续同步上下文扩展保留。
-- `ManualTaskScheduler`：手动调度器，适合单元测试和单线程主循环集成。
+- `EventLoopTaskScheduler`：只做线程安全入队、不创建线程，由 Engine/UI 等单线程 event loop 调用 `RunOne()` / `RunAll()` 消费。
 - `CurrentTaskSchedulerScope`：在当前作用域内设置可见调度器。
 
 ### 4.7 取消
@@ -152,6 +155,18 @@
 - `WaitAny(tasks)`：同步等待任意任务并返回完成任务索引。
 - `Unwrap(taskOfTask)`：展开嵌套任务。
 
+### 4.9 Coroutine runtime
+
+- `CCoroutine<TResult>`：冷启动、move-only 的 C++20 coroutine frame；无返回值时使用 `CCoroutine<>`。
+- `CCoroutineRuntime`：由 owner event loop 每帧调用 `Tick(deltaTime, totalTime)` 推进，并按 handle 暂停、恢复或取消协程。
+- `CCoroutineHandle<TResult>`：控制单个协程，并通过 `Completion()` 暴露 `Task<TResult>`。
+- `NextFrame()`、`WaitForSeconds()`、`WaitUntil()`：逐帧等待器。
+- `Await(Task<T>)`：显式等待 Task。Task 完成后只向 runtime scheduler 投递唤醒，不能在 Task 完成线程直接恢复 coroutine。
+
+runtime 使用的 scheduler 必须与其 owner event loop 串行消费。Foundation 不识别 Universe、Component、WPF 或 CEF；上层保存 handle，并把自身生命周期事件翻译为 `Pause`、`Resume` 和 `Cancel`。
+
+`co_return value` 完成 typed completion Task；未处理异常使其 faulted；handle 取消使其 canceled。move-only 结果受支持，调用方通过 completion Task 的 `TakeResult()` 移出。
+
 ## 5. 状态模型
 
 任务状态包括：
@@ -176,7 +191,7 @@
 
 `Task` 内部使用 mutex、condition_variable 和 atomic 保护状态。
 
-本库允许任务在多个 C++ 线程之间使用，但它不改变 iCAX 的主体执行模型。当前 backend 由 ApplicationHost、ProductRuntime 和 Project 组织；ApplicationHost 拥有应用级工作线程，每个 Project 拥有自己的项目线程，前端通过 bridge 使用 Mailbox、PDO 和 Resource 与 backend 交互。
+本库允许任务在多个 C++ 线程之间使用，但它不改变 iCAX 的主体执行模型。当前 backend 由 ApplicationRuntime、ProductRuntime 和 Project 组织；ApplicationRuntime 拥有应用级工作线程，每个 Project 拥有自己的项目线程，前端通过 bridge 使用 Facades、PDO 和 Resource 与 backend 交互。
 
 Task 只作为 Foundation 能力提供，不作为 backend/frontend 通信协议。
 
@@ -489,7 +504,7 @@ std::size_t index = WaitAny<int>({
 适用于需要显式手动泵的单线程主循环或单元测试中，不希望任务自动在线程池运行。
 
 ```cpp
-auto scheduler = std::make_shared<ManualTaskScheduler>();
+auto scheduler = std::make_shared<EventLoopTaskScheduler>();
 
 auto task = Run([] {
     return 42;
@@ -501,21 +516,20 @@ scheduler->RunAll();
 int value = task.Result();
 ```
 
-continuation 也可以进入同一个手动调度器：
+初始 Task 绑定 event-loop scheduler 后，continuation 会自动继承，不需要逐次传参：
 
 ```cpp
-auto scheduler = std::make_shared<ManualTaskScheduler>();
+auto scheduler = std::make_shared<EventLoopTaskScheduler>();
 
-auto task = Run([] {
-    return 21;
-}, scheduler);
+TaskCompletionSource<int> source(scheduler);
+auto task = source.GetTask();
 
 auto next = task.ContinueWith(
     [](Task<int> completed) {
         return completed.Result() * 2;
-    },
-    scheduler);
+    });
 
+source.SetResult(21);
 scheduler->RunAll();
 int value = next.Result();
 ```
@@ -525,7 +539,7 @@ int value = next.Result();
 适用于某个模块内希望统一调度器、取消令牌和创建选项。
 
 ```cpp
-auto scheduler = std::make_shared<ManualTaskScheduler>();
+auto scheduler = std::make_shared<EventLoopTaskScheduler>();
 auto state = std::make_shared<int>(1001);
 
 TaskFactory factory(

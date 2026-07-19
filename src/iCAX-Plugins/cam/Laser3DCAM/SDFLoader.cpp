@@ -1,22 +1,7 @@
 #include "pch.h"
 #include "SDFLoader.h"
 
-#include <algorithm>
-#include <cctype>
-#include <cmath>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
 #include <initializer_list>
-#include <map>
-#include <memory>
-#include <sstream>
-#include <stdexcept>
-#include <unordered_map>
-#include <vector>
-#include <unknwn.h>
-#include <objidl.h>
-#include <xmllite.h>
 
 #pragma comment(lib, "xmllite.lib")
 #pragma comment(lib, "ole32.lib")

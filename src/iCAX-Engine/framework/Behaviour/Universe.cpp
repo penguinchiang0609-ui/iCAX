@@ -2,27 +2,29 @@
 #include "Universe.h"
 #include "BehaviourDispatcher.h"
 #include "IBehaviourRegistry.h"
+#include "Task/Coroutine.h"
 
-#include <stdexcept>
-#include <utility>
 
 //!< 构造函数
 iCAX::Behaviour::CUniverse::CUniverse(IN std::shared_ptr<IBehaviourRegistry> pRegistry_)
     : m_ID(iCAX::Data::GenerateNewUUID())
     , m_pDispatcher()
     , m_pRegistry(std::move(pRegistry_))
+    , m_pEngineTaskScheduler(std::make_shared<iCAX::Tasks::EventLoopTaskScheduler>())
+    , m_pCoroutineRuntime(std::make_shared<iCAX::Coroutines::CCoroutineRuntime>(m_pEngineTaskScheduler))
 {
     if (!m_pRegistry)
     {
         throw std::invalid_argument("Universe behaviour registry cannot be null");
     }
 
-    m_pDispatcher = std::make_shared<CBehaviourDispatcher>(m_pRegistry);
+    m_pDispatcher = std::make_shared<CBehaviourDispatcher>(m_pRegistry, m_pCoroutineRuntime);
 }
 
 //!< 析构函数
 iCAX::Behaviour::CUniverse::~CUniverse()
 {
+    Cleanup(true);
 }
 
 //!< 获取宇宙ID
@@ -47,7 +49,19 @@ void iCAX::Behaviour::CUniverse::Tick(
 {
     if (m_pDispatcher != nullptr)
     {
-        m_pDispatcher->Tick(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_, nDeltaTime_, nTotalTime_);
+        iCAX::Tasks::CurrentTaskSchedulerScope _SchedulerScope(m_pEngineTaskScheduler);
+        m_pEngineTaskScheduler->RunAll();
+        m_pDispatcher->Tick(
+            ApplicationContext_,
+            ProductContext_,
+            ProjectContext_,
+            SceneContext_,
+            nDeltaTime_,
+            nTotalTime_,
+            [this, nDeltaTime_, nTotalTime_]()
+            {
+                m_pCoroutineRuntime->Tick(nDeltaTime_, nTotalTime_);
+            });
     }
 }
 
@@ -66,6 +80,7 @@ void iCAX::Behaviour::CUniverse::Cleanup(IN const bool& bForced_)
             m_pDispatcher->Shutdown();
         }
         m_pDispatcher = nullptr;
+        m_pCoroutineRuntime = nullptr;
     }
 }
 
@@ -150,4 +165,9 @@ std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> iCAX::Behaviour::C
 std::vector<std::shared_ptr<iCAX::Behaviour::CBehaviourBase>> iCAX::Behaviour::CUniverse::GetAllBehaviours() const
 {
     return m_pDispatcher ? m_pDispatcher->GetAll() : std::vector<std::shared_ptr<CBehaviourBase>>{};
+}
+
+iCAX::Tasks::TaskSchedulerPtr iCAX::Behaviour::CUniverse::GetEngineTaskScheduler() const
+{
+    return m_pEngineTaskScheduler;
 }

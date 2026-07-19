@@ -4,7 +4,7 @@
 
 `SDK` 是前端公共能力的唯一稳定入口。
 
-产品 `webpage` 和 `AppShell` 应优先只依赖 `SDK/index.mjs`，避免直接感知 Bridge、Mailbox、PDO 等底层通信模块路径。
+产品 `webpage` 和 `AppShell` 应优先只依赖 `SDK/index.mjs`，避免直接感知 Bridge、Facades、PDO 等底层通信模块路径。
 
 ## 2. 公开导出
 
@@ -24,10 +24,10 @@ SDK 公开导出：
 
 - `SDK/AppShell`：SDK 自带的 H5 应用壳，由宿主加载 `index.html`。
 - `SDK/Bridge`：真实宿主 bridge 发现、校验和 mock bridge。
-- `SDK/Mailbox`：mailbox client、Facade 方法编码、Variant 文本编解码。
+- `SDK/Facades`：Facade client、Facade 方法编码、Variant 文本编解码。
 - `SDK/PDO`：PDO 前端访问代理。
 
-产品页面不应该直接 new `MailboxClient`，也不应该直接操作 PDO header。产品页面通过 `AppProxy/ProductProxy/ProjectProxy/SceneProxy` 调用 Facade、订阅事件，通过 `scene.pdo` 读取 PDO。
+产品页面不应该直接 new `FacadeClient`，也不应该直接操作 PDO header。产品页面通过 `AppProxy/ProductProxy/ProjectProxy/SceneProxy` 调用 Facade、订阅事件，通过 `scene.pdo` 读取 PDO。
 
 ## 4. 边界
 
@@ -62,8 +62,8 @@ await opened.sceneProxy.invoke("Laser3DCAM.SaveProject", {
 ## 7. 验收要求
 
 - `SDK/AppShell` 可以只从 SDK 入口导入公共能力。
-- 产品目录不需要 import `SDK/Mailbox` 或 `SDK/PDO`。
+- 产品目录不需要 import `SDK/Facades` 或 `SDK/PDO`。
 - SDK 不包含具体产品代码。
 - SDK 不直接实现业务逻辑。
-- 白盒测试可以直接 import `SDK/Mailbox`、`SDK/PDO` 验证内部实现。
+- 白盒测试可以直接 import `SDK/Facades`、`SDK/PDO` 验证内部实现。
 

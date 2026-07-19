@@ -154,6 +154,9 @@ function renderMachineElementTransformEditor(item = {}, machine = {}, pending = 
   if (transform.hasTransform === false) {
     return `<div class="cam-empty-row">该元素没有 Transform 组件。</div>`;
   }
+  if (item.joint) {
+    return `<div class="cam-empty-row">关节 Transform 是机床定义中的结构原点，不是运动自由度。请在“运动学 / 约束”中编辑轴位置。</div>`;
+  }
 
   const position = normalizeVector(transform.position, [0, 0, 0]);
   const rotation = normalizeVector(transform.rotationRadians, [0, 0, 0]).map((value) => value * 180 / Math.PI);
@@ -249,7 +252,9 @@ function renderMachineElementKinematicsInspector(item = {}, machine = {}, pendin
   }
 
   const facts = rows.length ? renderFacts(rows) : `<div class="cam-empty-row">该元素没有运动学参数。</div>`;
-  return item.joint ? `${facts}${renderMachineJointLimitEditor(item, machine, pending)}` : facts;
+  return item.joint
+    ? `${facts}${renderMachineJointPositionEditor(item, machine, pending)}${renderMachineJointLimitEditor(item, machine, pending)}`
+    : facts;
 }
 
 function renderMachineToolTCPEditor(item = {}, pending = false) {
@@ -329,6 +334,45 @@ function renderMachineJointLimitEditor(item = {}, machine = {}, pending = false)
         })}
         ${renderEditableNumberField(`上限 ${unit}`, "data-cam-joint-upper-limit", displayUpper, {
           editable: !pending,
+          step,
+          precision,
+          reason: title,
+        })}
+      </div>
+    </div>
+  `;
+}
+
+function renderMachineJointPositionEditor(item = {}, machine = {}, pending = false) {
+  const joint = item.joint ?? {};
+  if (joint.type === "fixed") {
+    return "";
+  }
+
+  const isRotary = isRotaryJoint(joint.type);
+  const position = Number(joint.position ?? 0);
+  const lower = Number(joint.lower ?? 0);
+  const upper = Number(joint.upper ?? 0);
+  const scale = isRotary ? 180 / Math.PI : 1;
+  const unit = isRotary ? "°" : "mm";
+  const step = isRotary ? getAngularJogStepDeg(machine) : getLinearJogStepMm(machine);
+  const precision = isRotary ? 2 : 3;
+  const title = isRotary
+    ? "旋转轴唯一运动自由度；界面使用角度，后端保存弧度。"
+    : "平移轴唯一运动自由度，单位 mm。";
+
+  return `
+    <div class="cam-transform-editor"
+         data-cam-joint-position-editor
+         data-cam-entity-id="${escapeAttr(item.entityId || "")}"
+         data-cam-joint-type="${escapeAttr(joint.type || "")}">
+      <div class="cam-hint">${escapeText(title)}</div>
+      <div class="cam-form-grid one">
+        ${renderEditableNumberField(`轴位置 ${unit}`, "data-cam-joint-position", position * scale, {
+          editable: !pending,
+          hasRange: Number.isFinite(lower) && Number.isFinite(upper),
+          min: lower * scale,
+          max: upper * scale,
           step,
           precision,
           reason: title,

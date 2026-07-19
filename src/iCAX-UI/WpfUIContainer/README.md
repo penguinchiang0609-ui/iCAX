@@ -6,9 +6,11 @@
 
 - 通过 `ICAX_REGISTER_UI_CONTAINER("wpf", CWpfUIContainer)` 注册到 `CUIContainerFactory`。
 - 在 native `Application.exe` 进程内启动 WPF UI 线程。
-- 使用 `IFrontendBridge` 直接连接 backend `ApplicationHost`。
-- 通过 mailbox 发送 application/product/project 命令并轮询 response/event。
+- 使用 `IFrontendBridge` 直接连接 backend `ApplicationRuntime`。
+- 通过 Facade 发送 application/product/project 请求并轮询 report/response/event；Report 保留 pending 调用，Response 才结束调用。
 - 为后续 native viewport 留出中心区域，便于用 `HwndHost` 嵌入 C++ 渲染窗口。
+
+WPF 的 Facade 定时器运行在 UI Dispatcher 线程；每次轮询帧前会调用 `IFrontendBridge::RunFrontTasks()`，因此绑定 Front Task scheduler 的 continuation 始终在该 UI 线程执行。
 
 ## 边界
 

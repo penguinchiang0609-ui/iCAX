@@ -1,17 +1,17 @@
-import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
+import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
 import { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 
 export class ProjectProxy {
-  constructor(mailboxClient, projectState, options = {}) {
-    if (!mailboxClient) {
-      throw new TypeError("mailboxClient is required");
+  constructor(facadeClient, projectState, options = {}) {
+    if (!facadeClient) {
+      throw new TypeError("facadeClient is required");
     }
     if (!projectState?.projectId) {
       throw new TypeError("projectState.projectId is required");
     }
 
-    this.mailboxClient = mailboxClient;
-    this.bridge = options.bridge ?? mailboxClient.bridge ?? null;
+    this.facadeClient = facadeClient;
+    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
     this.product = options.product ?? null;
     this.state = projectState;
     this.projectId = projectState.projectId;
@@ -68,7 +68,7 @@ export class ProjectProxy {
       return existing;
     }
 
-    const scene = new SceneProxy(this.mailboxClient, registeredState, {
+    const scene = new SceneProxy(this.facadeClient, registeredState, {
       bridge: this.bridge,
       project: this,
     });

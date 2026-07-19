@@ -46,8 +46,8 @@
   <Folder Name="/iCAX-Engine/framework/ApplicationContext/">
     <Project Path="iCAX-Engine/framework/ApplicationContext/ApplicationContext.vcxproj" Id="890ea74b-81b1-44f8-a740-94da104478a1" />
   </Folder>
-  <Folder Name="/iCAX-Engine/framework/ApplicationHost/">
-    <Project Path="iCAX-Engine/framework/ApplicationHost/ApplicationHost.vcxproj" Id="ddcef11c-6370-4be7-90e0-173c972669a9" />
+  <Folder Name="/iCAX-Engine/framework/ApplicationRuntime/">
+    <Project Path="iCAX-Engine/framework/ApplicationRuntime/ApplicationRuntime.vcxproj" Id="ddcef11c-6370-4be7-90e0-173c972669a9" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Behaviour/">
     <Project Path="iCAX-Engine/framework/Behaviour/Behaviour.vcxproj" Id="1c150fbb-3418-414d-8a3c-f7b57c6d18b7" />
@@ -57,12 +57,6 @@
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Database/">
     <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" Id="c746f6a5-c34a-4649-a3f4-ad185002dedd" />
-  </Folder>
-  <Folder Name="/iCAX-Engine/framework/Mailbox/">
-    <Project Path="iCAX-Engine/framework/Mailbox/Mailbox.vcxproj" Id="5b637d1e-2672-4f50-8f72-612824bb5f96" />
-  </Folder>
-  <Folder Name="/iCAX-Engine/framework/MailHandler/">
-    <Project Path="iCAX-Engine/framework/MailHandler/MailHandler.vcxproj" Id="dfe34a7a-53d1-4b0e-85c3-5ddc2c9d2b1e" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/PDO/">
     <Project Path="iCAX-Engine/framework/PDO/PDO.vcxproj" Id="cf722912-d223-4b78-a672-fd2264db4bbf" />
@@ -183,9 +177,9 @@
   <Folder Name="/tests/icax-engine/framework/ApplicationContext/ApplicationContextTest/">
     <Project Path="tests/icax-engine/framework/ApplicationContext/ApplicationContextTest/ApplicationContextTest.vcxproj" Id="c72085a3-16d3-4541-a764-bd5b442b3653" />
   </Folder>
-  <Folder Name="/tests/icax-engine/framework/ApplicationHost/" />
-  <Folder Name="/tests/icax-engine/framework/ApplicationHost/ApplicationHostTest/">
-    <Project Path="tests/icax-engine/framework/ApplicationHost/ApplicationHostTest/ApplicationHostTest.vcxproj" Id="7ebd1132-3516-4d3e-a125-350b9e651eeb" />
+  <Folder Name="/tests/icax-engine/framework/ApplicationRuntime/" />
+  <Folder Name="/tests/icax-engine/framework/ApplicationRuntime/ApplicationRuntimeTest/">
+    <Project Path="tests/icax-engine/framework/ApplicationRuntime/ApplicationRuntimeTest/ApplicationRuntimeTest.vcxproj" Id="7ebd1132-3516-4d3e-a125-350b9e651eeb" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Behaviour/" />
   <Folder Name="/tests/icax-engine/framework/Behaviour/BehaviourTest/">
@@ -198,14 +192,6 @@
   <Folder Name="/tests/icax-engine/framework/Database/" />
   <Folder Name="/tests/icax-engine/framework/Database/DatabaseTest/">
     <Project Path="tests/icax-engine/framework/Database/DatabaseTest/DatabaseTest.vcxproj" Id="9f2f26d5-40dc-4e6d-a9ab-0f126e219f90" />
-  </Folder>
-  <Folder Name="/tests/icax-engine/framework/Mailbox/" />
-  <Folder Name="/tests/icax-engine/framework/Mailbox/MailboxTest/">
-    <Project Path="tests/icax-engine/framework/Mailbox/MailboxTest/MailboxTest.vcxproj" Id="2f32c915-4f2b-4f69-8147-b86cf470b786" />
-  </Folder>
-  <Folder Name="/tests/icax-engine/framework/MailHandler/" />
-  <Folder Name="/tests/icax-engine/framework/MailHandler/MailHandlerTest/">
-    <Project Path="tests/icax-engine/framework/MailHandler/MailHandlerTest/MailHandlerTest.vcxproj" Id="dcbc9249-bad2-483c-b88f-8d6d1a1004e4" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/PDO/" />
   <Folder Name="/tests/icax-engine/framework/PDO/PDOTest/">

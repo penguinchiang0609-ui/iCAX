@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "FacadeRegistry.h"
 
-#include <stdexcept>
-#include <utility>
 
 bool iCAX::Interaction::CFacadeRegistry::Register(IN std::shared_ptr<IFacade> pFacade_)
 {

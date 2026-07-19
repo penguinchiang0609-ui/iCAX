@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Behaviour/BehaviourBase.h>
 #include <Behaviour/BehaviourRegistrationCatalog.h>
@@ -19,14 +20,10 @@
 #include <ProjectContext/IProjectContext.h>
 #include <ProjectContext/ISceneContext.h>
 #include <Services/ServiceProvider.h>
+#include <Task/Task.h>
+#include <Task/Coroutine.h>
 
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <utility>
-#include <vector>
 
-#include <Windows.h>
 
 namespace
 {
@@ -42,6 +39,7 @@ namespace
     constexpr const char* S_CycleBComponentClass = "BehaviourTest.CycleBComponent";
     constexpr const char* S_CascadeAComponentClass = "BehaviourTest.CascadeAComponent";
     constexpr const char* S_CascadeBComponentClass = "BehaviourTest.CascadeBComponent";
+    constexpr const char* S_CoroutineComponentClass = "BehaviourTest.CoroutineComponent";
 
     class CBehaviourTestValueComponent final : public iCAX::Database::CComponentBase
     {
@@ -131,6 +129,7 @@ namespace
         RegisterBehaviourTestValueComponent(*_pMeta, S_CycleBComponentClass);
         RegisterBehaviourTestValueComponent(*_pMeta, S_CascadeAComponentClass);
         RegisterBehaviourTestValueComponent(*_pMeta, S_CascadeBComponentClass);
+        RegisterBehaviourTestValueComponent(*_pMeta, S_CoroutineComponentClass);
         return _pMeta;
     }
 
@@ -311,6 +310,111 @@ namespace
         }
     };
 
+    class CCoroutineBehaviour final : public iCAX::Behaviour::CBehaviourBase
+    {
+    public:
+        std::string GetBehaviourClass() const override
+        {
+            return "CCoroutineBehaviour";
+        }
+
+        std::string GetComponentClass() const override
+        {
+            return S_CoroutineComponentClass;
+        }
+
+        std::vector<std::string> FrameOrder;
+        int ResumeCount = 0;
+        bool FrameDestroyed = false;
+        bool FrameDestroyedBeforeDestroyImmediate = false;
+        std::thread::id CoroutineThreadID;
+        iCAX::Tasks::TaskCompletionSource<int> ExternalCompletion;
+        iCAX::Coroutines::CCoroutineHandle<> Handle;
+        iCAX::Coroutines::CCoroutineHandle<int> ResultHandle;
+
+    protected:
+        void OnStart(
+            IN iCAX::Database::CComponentBase& Component_,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
+        {
+            Handle = StartCoroutine(Component_, Run());
+            ResultHandle = StartCoroutine(Component_, ReturnValue());
+        }
+
+        void OnUpdate(
+            IN iCAX::Database::CComponentBase&,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&,
+            IN const double&,
+            IN const double&) override
+        {
+            FrameOrder.emplace_back("Update");
+        }
+
+        void OnPostUpdate(
+            IN iCAX::Database::CComponentBase&,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&,
+            IN const double&,
+            IN const double&) override
+        {
+            FrameOrder.emplace_back("PostUpdate");
+        }
+
+        void OnDestroyImmediate(
+            IN iCAX::Database::CComponentBase&,
+            IN const iCAX::Application::IApplicationContext&,
+            IN const iCAX::Product::IProductContext&,
+            IN iCAX::Project::IProjectContext&,
+            IN iCAX::Project::ISceneContext&) override
+        {
+            FrameDestroyedBeforeDestroyImmediate = FrameDestroyed;
+        }
+
+    private:
+        struct CFrameLifetime final
+        {
+            bool* pDestroyed = nullptr;
+
+            ~CFrameLifetime()
+            {
+                if (pDestroyed)
+                {
+                    *pDestroyed = true;
+                }
+            }
+        };
+
+        iCAX::Coroutines::CCoroutine<> Run()
+        {
+            CFrameLifetime _Lifetime{ &FrameDestroyed };
+            CoroutineThreadID = std::this_thread::get_id();
+            ++ResumeCount;
+            FrameOrder.emplace_back("Coroutine");
+
+            co_await iCAX::Coroutines::NextFrame();
+
+            CoroutineThreadID = std::this_thread::get_id();
+            ++ResumeCount;
+            (void)co_await iCAX::Coroutines::Await(ExternalCompletion.GetTask());
+
+            CoroutineThreadID = std::this_thread::get_id();
+            ++ResumeCount;
+        }
+
+        iCAX::Coroutines::CCoroutine<int> ReturnValue()
+        {
+            co_return 9;
+        }
+    };
+
     class CTestProductContext final : public iCAX::Product::IProductContext
     {
     public:
@@ -453,14 +557,14 @@ namespace
             return m_strSceneName;
         }
 
-        iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
         {
-            throw std::logic_error("Backend post office is not used by behaviour tests");
+            throw std::logic_error("Backend Facade endpoint is not used by behaviour tests");
         }
 
-        iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
         {
-            throw std::logic_error("Frontend post office is not used by behaviour tests");
+            throw std::logic_error("Frontend Facade endpoint is not used by behaviour tests");
         }
 
         bool IsMainScene() const override
@@ -991,6 +1095,19 @@ namespace
         return std::dynamic_pointer_cast<CCountingBehaviour>(_Behaviours.front());
     }
 
+    std::shared_ptr<CCoroutineBehaviour> GetCoroutineBehaviour(
+        IN const std::shared_ptr<iCAX::Behaviour::IUniverse>& pUniverse_)
+    {
+        for (const auto& _pBehaviour : pUniverse_->GetAllBehaviours())
+        {
+            if (auto _pCoroutineBehaviour = std::dynamic_pointer_cast<CCoroutineBehaviour>(_pBehaviour))
+            {
+                return _pCoroutineBehaviour;
+            }
+        }
+        return nullptr;
+    }
+
     std::string GetCurrentModulePathWithToggledCase()
     {
         std::vector<char> _Buffer(MAX_PATH);
@@ -1039,6 +1156,140 @@ TEST(BehaviourRegistryTest, CreatesIndependentBehaviourInstancesPerUniverse)
 
     _pBehaviourA->AwakeCount = 10;
     EXPECT_EQ(0, _pBehaviourB->AwakeCount);
+}
+
+TEST(BehaviourUniverseTest, EngineTaskSchedulerRunsContinuationOnlyDuringUniverseTick)
+{
+    auto _pRepository = CreateRepository();
+    auto _pRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
+    CTestContextBundle _Runtime(_pRepository, _pRegistry);
+    auto _pUniverse = iCAX::Behaviour::GenerateUniverse(_pRegistry);
+
+    iCAX::Tasks::TaskCompletionSource<int> _CompletionSource(
+        _pUniverse->GetEngineTaskScheduler());
+    auto _Task = _CompletionSource.GetTask();
+    std::thread::id _CompletionThreadID;
+    std::thread::id _ContinuationThreadID;
+    auto _Continuation = _Task.ContinueWith(
+        [&](iCAX::Tasks::Task<int> Completed_) {
+            _ContinuationThreadID = std::this_thread::get_id();
+            return Completed_.Result() + 1;
+        });
+
+    std::thread _Completer([&]() {
+        _CompletionThreadID = std::this_thread::get_id();
+        _CompletionSource.SetResult(41);
+    });
+    _Completer.join();
+
+    EXPECT_TRUE(_Task.IsCompletedSuccessfully());
+    EXPECT_FALSE(_Continuation.IsCompleted());
+
+    const auto _UniverseThreadID = std::this_thread::get_id();
+    _pUniverse->Tick(
+        _Runtime.Application,
+        _Runtime.Product,
+        _Runtime.Project,
+        _Runtime.Scene,
+        0.016,
+        0.016);
+
+    ASSERT_TRUE(_Continuation.IsCompletedSuccessfully());
+    EXPECT_EQ(42, _Continuation.Result());
+    EXPECT_EQ(_UniverseThreadID, _ContinuationThreadID);
+    EXPECT_NE(_CompletionThreadID, _ContinuationThreadID);
+}
+
+TEST(BehaviourCoroutineTest, RunsInUniversePhaseAndDiesWithOwningComponent)
+{
+    auto _pRepository = CreateRepository();
+    auto _pRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
+    _pRegistry->RegisterBehaviour<CCoroutineBehaviour>();
+    CTestContextBundle _Runtime(_pRepository, _pRegistry);
+    auto _pUniverse = iCAX::Behaviour::GenerateUniverse(_pRegistry);
+    ASSERT_TRUE(_pUniverse->BindBehaviour<CCoroutineBehaviour>());
+    auto _pBehaviour = GetCoroutineBehaviour(_pUniverse);
+    ASSERT_NE(nullptr, _pBehaviour);
+
+    auto _pForwarder = std::make_shared<CUniverseForwarder>(
+        *_pUniverse,
+        _Runtime.Application,
+        _Runtime.Product,
+        _Runtime.Project,
+        _Runtime.Scene);
+    _pRepository->AddObserver(_pForwarder);
+
+    auto _pEntity = _pRepository->CreateEntity(iCAX::Data::GenerateNewUUID());
+    auto _pComponent = _pEntity->AddComponent(S_CoroutineComponentClass);
+    ASSERT_NE(nullptr, _pComponent);
+
+    const auto _UniverseThreadID = std::this_thread::get_id();
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
+
+    const std::vector<std::string> _ExpectedFirstFrame = { "Update", "Coroutine", "PostUpdate" };
+    EXPECT_EQ(_ExpectedFirstFrame, _pBehaviour->FrameOrder);
+    EXPECT_EQ(1, _pBehaviour->ResumeCount);
+    EXPECT_EQ(_UniverseThreadID, _pBehaviour->CoroutineThreadID);
+    EXPECT_TRUE(_pBehaviour->Handle.Completion().Valid());
+    EXPECT_FALSE(_pBehaviour->Handle.Completion().IsCompleted());
+    ASSERT_TRUE(_pBehaviour->ResultHandle.Completion().IsCompletedSuccessfully());
+    EXPECT_EQ(9, _pBehaviour->ResultHandle.Completion().Result());
+
+    _pComponent->Disable();
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
+    EXPECT_EQ(1, _pBehaviour->ResumeCount);
+
+    _pComponent->Enable();
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.048);
+    EXPECT_EQ(2, _pBehaviour->ResumeCount);
+    EXPECT_EQ(_UniverseThreadID, _pBehaviour->CoroutineThreadID);
+
+    std::string _strError;
+    ASSERT_TRUE(_pEntity->RemoveComponent(S_CoroutineComponentClass, _strError)) << _strError;
+    EXPECT_TRUE(_pBehaviour->FrameDestroyed);
+    EXPECT_TRUE(_pBehaviour->FrameDestroyedBeforeDestroyImmediate);
+    EXPECT_TRUE(_pBehaviour->Handle.Completion().IsCanceled());
+
+    std::thread _Completer([&]() {
+        _pBehaviour->ExternalCompletion.SetResult(42);
+    });
+    _Completer.join();
+    _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.064);
+    EXPECT_EQ(2, _pBehaviour->ResumeCount);
+}
+
+TEST(BehaviourUniverseTest, EngineTaskSchedulerQueuesAlreadyCompletedTask)
+{
+    auto _pRepository = CreateRepository();
+    auto _pRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
+    CTestContextBundle _Runtime(_pRepository, _pRegistry);
+    auto _pUniverse = iCAX::Behaviour::GenerateUniverse(_pRegistry);
+    iCAX::Tasks::TaskCompletionSource<int> _CompletionSource(
+        _pUniverse->GetEngineTaskScheduler());
+    _CompletionSource.SetResult(7);
+    auto _Task = _CompletionSource.GetTask();
+    bool _bContinuationRan = false;
+
+    auto _Continuation = _Task.ContinueWith(
+        [&](iCAX::Tasks::Task<int> Completed_) {
+            _bContinuationRan = true;
+            return Completed_.Result();
+        });
+
+    EXPECT_FALSE(_bContinuationRan);
+    EXPECT_FALSE(_Continuation.IsCompleted());
+
+    _pUniverse->Tick(
+        _Runtime.Application,
+        _Runtime.Product,
+        _Runtime.Project,
+        _Runtime.Scene,
+        0.016,
+        0.016);
+
+    EXPECT_TRUE(_bContinuationRan);
+    ASSERT_TRUE(_Continuation.IsCompletedSuccessfully());
+    EXPECT_EQ(7, _Continuation.Result());
 }
 
 TEST(BehaviourRegistrationCatalogTest, ReplaysModulePathCaseInsensitively)

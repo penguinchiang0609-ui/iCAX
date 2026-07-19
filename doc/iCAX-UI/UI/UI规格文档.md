@@ -22,7 +22,7 @@
 
 ## 3. 边界
 
-本模块不包含业务状态，不调用 mailbox，不访问 PDO。
+本模块不包含业务状态，不调用 Facade，不访问 PDO。
 
 ## 4. HTML 安全规则
 
@@ -67,6 +67,6 @@ escapeAttr(value)
 ## 6. 验收要求
 
 - 动态文本插入 DOM 前有转义。
-- 公共 UI 不依赖 mailbox/PDO/runtime。
+- 公共 UI 不依赖 Facade/PDO/runtime。
 - 产品专用 UI 不进入公共模块。
 

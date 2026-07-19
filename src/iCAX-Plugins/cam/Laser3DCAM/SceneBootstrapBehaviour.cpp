@@ -16,9 +16,6 @@
 #include "RenderInteraction/RenderInteraction.h"
 #include "Transform/Transform.h"
 
-#include <memory>
-#include <stdexcept>
-#include <string>
 
 namespace
 {

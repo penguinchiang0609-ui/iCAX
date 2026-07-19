@@ -1,7 +1,7 @@
 #pragma once
 
 #include "FrontendBridge.h"
-#include "ApplicationHost/ApplicationHost.h"
+#include "ApplicationRuntime/ApplicationRuntime.h"
 
 #include <mutex>
 #include <string>
@@ -12,20 +12,20 @@ namespace iCAX
     {
         /*
         * @brief 进程级 Application 配置。
-        * @details EngineConfig 由启动层准备，产品 manifest 应在进入 CApplication 前完成解析。
+        * @details RuntimeConfig 由启动层准备，产品 manifest 应在进入 CApplication 前完成解析。
         */
         struct CApplicationConfig final
         {
-            iCAX::ApplicationHost::ApplicationHostConfig EngineConfig;
+            iCAX::Application::ApplicationRuntimeConfig RuntimeConfig;
             std::string UIName; //!< 可选 UI 名称，例如 H5/WPF/QT，仅用于上层标识。
         };
 
         /*
         * @brief iCAX 进程级应用容器。
         * @details
-        *   CApplication 是 Engine 和 UI 之间更大的拥有者。
-        *   它拥有 ApplicationHost 和 FrontendBridge；具体 UI 宿主只接入 FrontendBridge，
-        *   不再直接创建或停止 Engine。
+        *   CApplication 是 ApplicationRuntime 和 UI 之间更大的拥有者。
+        *   它拥有 ApplicationRuntime 和 FrontendBridge；具体 UI 宿主只接入 FrontendBridge，
+        *   不再直接创建或停止 ApplicationRuntime。
         */
         class CApplication final
         {
@@ -45,12 +45,12 @@ namespace iCAX
             void SetConfig(const CApplicationConfig& Config_);
 
             /*
-            * @brief 启动 Engine 并把 FrontendBridge 绑定到 Engine。
+            * @brief 启动 ApplicationRuntime 并把 FrontendBridge 绑定到 ApplicationRuntime。
             */
             void Start();
 
             /*
-            * @brief 停止 Engine 并解除 FrontendBridge 绑定。
+            * @brief 停止 ApplicationRuntime 并解除 FrontendBridge 绑定。
             */
             void Stop();
 
@@ -60,10 +60,10 @@ namespace iCAX
             bool IsRunning() const;
 
             /*
-            * @brief 获取 Engine 后台宿主。
+            * @brief 获取 ApplicationRuntime。
             */
-            iCAX::ApplicationHost::CApplicationHost& Engine();
-            const iCAX::ApplicationHost::CApplicationHost& Engine() const;
+            iCAX::Application::CApplicationRuntime& Runtime();
+            const iCAX::Application::CApplicationRuntime& Runtime() const;
 
             /*
             * @brief 获取 UI 通用桥接器。
@@ -74,7 +74,7 @@ namespace iCAX
         private:
             mutable std::mutex m_Mutex;
             CApplicationConfig m_Config;
-            iCAX::ApplicationHost::CApplicationHost m_Engine;
+            iCAX::Application::CApplicationRuntime m_Runtime;
             CFrontendBridge m_FrontendBridge;
             bool m_bStarted = false;
         };

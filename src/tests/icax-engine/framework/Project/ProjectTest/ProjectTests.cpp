@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Project/ProjectCatalog.h>
 #include <Project/Project.h>
@@ -15,25 +16,11 @@
 #include <Resources/IResourceLoader.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <ProductContext/IProductContext.h>
-#include <Mailbox/MailPayload.h>
-#include <Mailbox/MailChannelRegistry.h>
+#include <Facades/FacadePayload.h>
+#include <Facades/FacadeChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <functional>
-#include <fstream>
-#include <memory>
-#include <mutex>
-#include <stdexcept>
-#include <string>
-#include <thread>
 #include <typeindex>
-#include <utility>
 
 using namespace iCAX::Project;
 
@@ -377,9 +364,9 @@ namespace
         return Condition_.wait_for(_Lock, std::chrono::seconds(2), Predicate_);
     }
 
-    std::shared_ptr<iCAX::Mail::CMailChannelRegistry> MakeMailChannelRegistry()
+    std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> MakeFacadeChannelRegistry()
     {
-        return std::make_shared<iCAX::Mail::CMailChannelRegistry>();
+        return std::make_shared<iCAX::Interaction::CFacadeChannelRegistry>();
     }
 
     std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> MakeResourceLoaderRegistry()
@@ -392,7 +379,7 @@ namespace
         CProjectCatalogCreateInfo _Info;
         _Info.pMetaRegistry = CreateProjectTestMetaRegistry();
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
-        _Info.pMailChannelRegistry = MakeMailChannelRegistry();
+        _Info.pFacadeChannelRegistry = MakeFacadeChannelRegistry();
         _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
@@ -412,7 +399,7 @@ namespace
         _Info.pMetaRegistry = CreateProjectTestMetaRegistry();
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
         _Info.pResourceLoaderRegistry = MakeResourceLoaderRegistry();
-        _Info.pMailChannelRegistry = MakeMailChannelRegistry();
+        _Info.pFacadeChannelRegistry = MakeFacadeChannelRegistry();
         _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
@@ -687,7 +674,7 @@ TEST(ProjectCatalogTest, CatalogCreationRequiresExplicitDependencies)
     EXPECT_THROW({ CProjectCatalog _Catalog(_Info); }, std::invalid_argument);
 
     _Info = MakeCatalogInfo();
-    _Info.pMailChannelRegistry.reset();
+    _Info.pFacadeChannelRegistry.reset();
     EXPECT_THROW({ CProjectCatalog _Catalog(_Info); }, std::invalid_argument);
 }
 
@@ -741,7 +728,7 @@ TEST(ProjectTest, StartRunsSceneFrameHandlerOnSceneThread)
     std::mutex _Mutex;
     std::condition_variable _Condition;
     int _FrameCount = 0;
-    bool _bPostOfficeValid = false;
+    bool _bEndpointValid = false;
     std::thread::id _HandlerThreadID;
 
     auto _Info = MakeProjectInfo();
@@ -749,11 +736,11 @@ TEST(ProjectTest, StartRunsSceneFrameHandlerOnSceneThread)
     _Info.nFrameIntervalMilliseconds = 1;
     _Info.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Mail::CMailPostOffice& PostOffice_) {
+        const iCAX::Interaction::CFacadeEndpoint& Endpoint_) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _HandlerThreadID = std::this_thread::get_id();
-            _bPostOfficeValid = PostOffice_.IsValid();
+            _bEndpointValid = Endpoint_.IsValid();
             ++_FrameCount;
         }
         _Condition.notify_all();
@@ -766,7 +753,7 @@ TEST(ProjectTest, StartRunsSceneFrameHandlerOnSceneThread)
     _Project.Stop();
 
     EXPECT_FALSE(_Project.IsRunning());
-    EXPECT_TRUE(_bPostOfficeValid);
+    EXPECT_TRUE(_bEndpointValid);
     EXPECT_NE(std::thread::id{}, _HandlerThreadID);
     EXPECT_NE(std::this_thread::get_id(), _HandlerThreadID);
 }
@@ -781,8 +768,8 @@ TEST(ProjectTest, ChildSceneUsesProjectFrameHandlerWithOwnSceneContext)
     _Info.ProjectName = "Child Scene Handler";
     _Info.OnSceneFrame = [&](
         CProjectScene& Scene_,
-        const iCAX::Mail::CMailPostOffice& PostOffice_) {
-        if (!Scene_.IsTransientScene() || !PostOffice_.IsValid())
+        const iCAX::Interaction::CFacadeEndpoint& Endpoint_) {
+        if (!Scene_.IsTransientScene() || !Endpoint_.IsValid())
         {
             return;
         }
@@ -876,7 +863,7 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     _SlowInfo.nFrameIntervalMilliseconds = 1;
     _SlowInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Mail::CMailPostOffice&) {
+        const iCAX::Interaction::CFacadeEndpoint&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _SlowThreadID = std::this_thread::get_id();
@@ -891,7 +878,7 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     _FastInfo.nFrameIntervalMilliseconds = 1;
     _FastInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Mail::CMailPostOffice&) {
+        const iCAX::Interaction::CFacadeEndpoint&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _FastThreadID = std::this_thread::get_id();
@@ -932,7 +919,7 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     _FaultInfo.nFrameIntervalMilliseconds = 1;
     _FaultInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Mail::CMailPostOffice&) {
+        const iCAX::Interaction::CFacadeEndpoint&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _bFaultProjectEnteredFrame = true;
@@ -946,7 +933,7 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     _HealthyInfo.nFrameIntervalMilliseconds = 1;
     _HealthyInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Mail::CMailPostOffice&) {
+        const iCAX::Interaction::CFacadeEndpoint&) {
         ++_HealthyFrames;
         _Condition.notify_all();
     };
@@ -971,24 +958,24 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     _HealthyProject.Stop();
 }
 
-TEST(ProjectTest, CloseInvalidatesMainSceneMailPostOffices)
+TEST(ProjectTest, CloseInvalidatesMainSceneFacadeEndpoints)
 {
     auto _Info = MakeProjectInfo();
-    _Info.ProjectName = "Mail";
+    _Info.ProjectName = "Facade";
 
     CProject _Project(_Info);
-    auto _FrontendPostOffice = _Project.GetMainSceneFrontendPostOffice();
-    auto _BackendPostOffice = _Project.GetMainSceneBackendPostOffice();
-    ASSERT_TRUE(_FrontendPostOffice.IsValid());
-    ASSERT_TRUE(_BackendPostOffice.IsValid());
+    auto _FrontendEndpoint = _Project.GetMainSceneFrontendFacadeEndpoint();
+    auto _BackendEndpoint = _Project.GetMainSceneBackendFacadeEndpoint();
+    ASSERT_TRUE(_FrontendEndpoint.IsValid());
+    ASSERT_TRUE(_BackendEndpoint.IsValid());
 
     _Project.Close();
 
-    EXPECT_FALSE(_FrontendPostOffice.IsValid());
-    EXPECT_FALSE(_BackendPostOffice.IsValid());
-    EXPECT_THROW(_FrontendPostOffice.Send(iCAX::Mail::Mail{}), std::logic_error);
-    EXPECT_THROW(_BackendPostOffice.Receive(), std::logic_error);
-    EXPECT_THROW(_Project.GetMainSceneFrontendPostOffice(), std::logic_error);
+    EXPECT_FALSE(_FrontendEndpoint.IsValid());
+    EXPECT_FALSE(_BackendEndpoint.IsValid());
+    EXPECT_THROW(_FrontendEndpoint.Send(iCAX::Interaction::CFacadeFrame{}), std::logic_error);
+    EXPECT_THROW(_BackendEndpoint.Receive(), std::logic_error);
+    EXPECT_THROW(_Project.GetMainSceneFrontendFacadeEndpoint(), std::logic_error);
 }
 
 TEST(ProjectTest, MainSceneCanSendFrontendEvent)
@@ -996,18 +983,18 @@ TEST(ProjectTest, MainSceneCanSendFrontendEvent)
     constexpr uint64_t kRepositoryChangedEvent = iCAX::Interaction::MakeFacadeMethodCode("Project", "RepositoryChanged");
 
     CProject _Project(MakeProjectInfo());
-    auto _FrontendPostOffice = _Project.GetMainSceneFrontendPostOffice();
+    auto _FrontendEndpoint = _Project.GetMainSceneFrontendFacadeEndpoint();
 
     _Project.SendMainSceneFrontendEvent(kRepositoryChangedEvent, "project-event");
 
-    auto _Events = _FrontendPostOffice.Receive();
+    auto _Events = _FrontendEndpoint.Receive();
     ASSERT_EQ(1u, _Events.size());
-    EXPECT_EQ(iCAX::Mail::kMailOk, _Events[0].Header.nStamp);
-    EXPECT_EQ(0u, _Events[0].Header.nOriginId);
-    EXPECT_EQ(kRepositoryChangedEvent, _Events[0].Header.nTypeCode);
-    EXPECT_EQ("project-event", iCAX::Mail::GetMailPayloadText(_Events[0]));
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Events[0].nStatus);
+    EXPECT_EQ(iCAX::Interaction::EFacadeFrameKind::Event, _Events[0].nKind);
+    EXPECT_EQ(0u, _Events[0].nCallID);
+    EXPECT_EQ(kRepositoryChangedEvent, _Events[0].nMethodCode);
+    EXPECT_EQ("project-event", iCAX::Interaction::GetFacadePayloadText(_Events[0]));
 
-    iCAX::Mail::ReleaseMailPayload(_Events[0]);
 }
 
 TEST(ProjectQuickSaveTest, ReplaysExistingLogAndContinuesAppending)
@@ -1116,7 +1103,7 @@ TEST(ProjectRuntimeTest, CloseReleasesLocalProjectReference)
     auto _Info = MakeProjectInfo();
     _Info.ProjectName = "Runtime Local Project";
     auto _pProject = std::make_shared<CProject>(_Info);
-    auto _pRuntime = CreateLocalProjectRuntime(_pProject);
+    auto _pRuntime = CreateProjectRuntime(_pProject);
 
     ASSERT_NE(nullptr, _pRuntime->GetLocalProject());
     EXPECT_TRUE(_pRuntime->IsOpen());

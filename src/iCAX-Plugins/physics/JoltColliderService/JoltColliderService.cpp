@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "JoltColliderService.h"
 
-#include <algorithm>
-#include <stdexcept>
 
 namespace
 {

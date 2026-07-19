@@ -1,7 +1,11 @@
 #pragma once
 #include "System.h"
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 #include "../Database/ComponentBase.h"
 #include "Data/uuid.h"
@@ -9,11 +13,14 @@
 #include "ProductContext/IProductContext.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
+#include "Task/Coroutine.h"
 
 namespace iCAX
 {
     namespace Behaviour
     {
+        class CBehaviourDispatcher;
+
         /*
         * @brief Behaviour 调度描述。
         * @details
@@ -233,6 +240,60 @@ namespace iCAX
             virtual void* GetFunction(const std::string& strFnName_) const { return nullptr; };
 
         protected:
+            /*
+            * @brief 为指定 Component 启动受其生命周期管理的协程。
+            * @details Component 销毁时 Coroutine frame 会在 DestroyImmediate 前同步销毁。
+            */
+            template<typename TResult>
+            iCAX::Coroutines::CCoroutineHandle<TResult> StartCoroutine(
+                IN iCAX::Database::CComponentBase& Component_,
+                IN iCAX::Coroutines::CCoroutine<TResult> Coroutine_)
+            {
+                auto _pRuntime = m_pCoroutineRuntime.lock();
+                if (!_pRuntime)
+                {
+                    throw std::logic_error("Behaviour is not attached to a coroutine runtime");
+                }
+                if (m_ClosingCoroutineComponents.contains(&Component_))
+                {
+                    throw std::logic_error("Cannot start a coroutine while the component is being destroyed");
+                }
+
+                const auto _Found = m_ComponentCoroutines.find(&Component_);
+                if (_Found == m_ComponentCoroutines.end())
+                {
+                    throw std::logic_error("Component is not attached to this behaviour");
+                }
+
+                std::erase_if(
+                    _Found->second,
+                    [&_pRuntime](const iCAX::Coroutines::CCoroutineHandleBase& Handle_)
+                    {
+                        return !_pRuntime->IsRunning(Handle_);
+                    });
+
+                auto _Handle = _pRuntime->Start(std::move(Coroutine_));
+                try
+                {
+                    _Found->second.emplace_back(_Handle);
+                }
+                catch (...)
+                {
+                    _pRuntime->Cancel(_Handle);
+                    throw;
+                }
+                if (!Component_.IsEnable())
+                {
+                    _pRuntime->Pause(_Handle);
+                }
+                return _Handle;
+            }
+
+            void CancelCoroutine(IN const iCAX::Coroutines::CCoroutineHandleBase& Handle_);
+            void CancelAllCoroutines(IN iCAX::Database::CComponentBase& Component_);
+            bool IsCoroutineRunning(IN const iCAX::Coroutines::CCoroutineHandleBase& Handle_) const;
+
+        protected:
             virtual void OnAwake(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
                 IN iCAX::Project::ISceneContext& SceneContext_) {}
             virtual void OnStart(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
@@ -256,6 +317,28 @@ namespace iCAX
             virtual void OnModified(IN iCAX::Database::CComponentBase& Component_, IN const iCAX::Data::PropertySet& NewValues_, IN const iCAX::Application::IApplicationContext& ApplicationContext_, IN const iCAX::Product::IProductContext& ProductContext_, IN iCAX::Project::IProjectContext& ProjectContext_,
                 IN iCAX::Project::ISceneContext& SceneContext_) {}
             virtual void OnDetach() {}
+
+        private:
+            void BindCoroutineRuntime(
+                IN const std::shared_ptr<iCAX::Coroutines::CCoroutineRuntime>& pRuntime_);
+            void UnbindCoroutineRuntime();
+            void AttachComponentCoroutines(IN iCAX::Database::CComponentBase& Component_);
+            void SetComponentCoroutinesEnabled(
+                IN iCAX::Database::CComponentBase& Component_,
+                IN bool Enabled_);
+            void DetachComponentCoroutines(IN iCAX::Database::CComponentBase& Component_);
+            void CompleteComponentCoroutineDetach(IN iCAX::Database::CComponentBase& Component_) noexcept;
+            void CancelAllTrackedCoroutines();
+            void ClearTrackedCoroutines() noexcept;
+
+        private:
+            std::weak_ptr<iCAX::Coroutines::CCoroutineRuntime> m_pCoroutineRuntime;
+            std::unordered_map<
+                iCAX::Database::CComponentBase*,
+                std::vector<iCAX::Coroutines::CCoroutineHandleBase>> m_ComponentCoroutines;
+            std::unordered_set<iCAX::Database::CComponentBase*> m_ClosingCoroutineComponents;
+
+            friend class CBehaviourDispatcher;
         };
     }
 }

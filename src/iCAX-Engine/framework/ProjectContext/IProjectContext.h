@@ -13,8 +13,9 @@ namespace iCAX
         /*
         * @brief 项目级运行上下文。
         * @details
-        *   ProjectContext 表达项目级管理容器。Project 只承载跟图纸走的项目身份、路径和 ProjectSetting。
-        *   Repository、Universe、ResourceLibrary、PDOHub、MailChannel 和工作线程都归属 SceneContext。
+        *   ProjectContext 管理跟图纸走的项目身份、路径和 ProjectSetting。
+        *   Repository、Universe、ResourceLibrary、PDOHub 和场景服务属于 SceneContext；
+        *   Scene Runtime 负责该 Context 的工作线程、调度、协程和生命周期。
         */
         class _PROJECT_CONTEXT_EXP IProjectContext
         {

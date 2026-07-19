@@ -8,12 +8,6 @@
 #include "ProjectContext/ISceneContext.h"
 #include "Services/ServicesHelper.h"
 
-#include <algorithm>
-#include <array>
-#include <cstring>
-#include <mutex>
-#include <stdexcept>
-#include <unordered_map>
 
 namespace
 {

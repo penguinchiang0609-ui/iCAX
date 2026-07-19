@@ -1,19 +1,14 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Facades/FacadeInvoker.h>
 #include <Facades/FacadeRegistrationCatalog.h>
 #include <Facades/Facade.h>
 
 #include <ApplicationContext/IApplicationContext.h>
+#include <Services/ServiceProvider.h>
 
-#include <cstdint>
-#include <cstring>
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <vector>
 
-#include <Windows.h>
 
 using namespace iCAX::Interaction;
 
@@ -37,9 +32,15 @@ namespace
             return Settings;
         }
 
+        const iCAX::Services::CServiceProvider& Services() const override
+        {
+            return ServiceProvider;
+        }
+
         iCAX::Application::CApplicationDescriptor Descriptor;
         iCAX::Application::CApplicationPaths Paths;
         iCAX::Data::PropertyBag Settings;
+        iCAX::Services::CServiceProvider ServiceProvider;
     };
 
     class CTestFacade final : public CFacade
@@ -82,14 +83,14 @@ namespace
             return {};
         }
 
-        CFacadeResult Invoke(
-            IN const CFacadeCall&,
-            IN iCAX::Application::IApplicationContext&,
+        CInvocationResult Invoke(
+            IN const CInvocation&,
+            IN const iCAX::Application::IApplicationContext&,
             IN iCAX::Product::IProductContext*,
             IN iCAX::Project::IProjectContext*,
             IN iCAX::Project::ISceneContext*) override
         {
-            return CFacadeResult{};
+            return CInvocationResult{};
         }
 
     private:
@@ -130,12 +131,12 @@ namespace
     CFacade::MethodFunc MakeNoopMethod()
     {
         return [](
-            const CFacadeCall&,
-            iCAX::Application::IApplicationContext&,
+            const CInvocation&,
+            const iCAX::Application::IApplicationContext&,
             iCAX::Product::IProductContext*,
             iCAX::Project::IProjectContext*,
             iCAX::Project::ISceneContext*) {
-            return CFacadeResult{};
+            return CInvocationResult{};
         };
     }
 
@@ -254,12 +255,12 @@ TEST(FacadeRegistrationCatalogTest, ReplayFromRegistersIntoIndependentRegistries
     CFacadeRegistrationCatalog::Register([](CFacadeRegistry& Registry_) {
         auto _pFacade = std::make_shared<CTestFacade>("CatalogReplay");
         _pFacade->ExposeMethod("Ping", [](
-            const CFacadeCall&,
-            iCAX::Application::IApplicationContext&,
+            const CInvocation&,
+            const iCAX::Application::IApplicationContext&,
             iCAX::Product::IProductContext*,
             iCAX::Project::IProjectContext*,
             iCAX::Project::ISceneContext*) {
-            return CFacadeResult{};
+            return CInvocationResult{};
         });
         if (!Registry_.Register(_pFacade))
         {
@@ -310,8 +311,8 @@ TEST(FacadeInvokerTest, InvokesRegisteredMethod)
 
     auto _pFacade = std::make_shared<CTestFacade>("Test");
     _pFacade->ExposeMethod("Echo", [](
-        const CFacadeCall& Request_,
-        iCAX::Application::IApplicationContext& ApplicationContext_,
+        const CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext* pProductContext_,
         iCAX::Project::IProjectContext* pProjectContext_,
         iCAX::Project::ISceneContext* pSceneContext_) {
@@ -321,22 +322,20 @@ TEST(FacadeInvokerTest, InvokesRegisteredMethod)
             throw std::runtime_error("unexpected non-application context");
         }
 
-        CFacadeResult _Response;
+        CInvocationResult _Response;
         _Response.Payload = MakePayload(static_cast<int>(Request_.Method.nMethodCode + 1));
         return _Response;
     });
     _pRegistry->Register(_pFacade);
 
-    CFacadeCall _Request;
+    CInvocation _Request;
     _Request.nCallID = 7;
-    _Request.nOriginID = 3;
     _Request.Method = MakeFacadeMethod("Test", "Echo");
 
     auto _Response = _Dispatcher.Invoke(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_TRUE(_Response.IsOK());
     EXPECT_EQ(7u, _Response.nCallID);
-    EXPECT_EQ(3u, _Response.nOriginID);
     EXPECT_EQ(_Request.Method.GetCode(), _Response.Method.GetCode());
     EXPECT_EQ(static_cast<int>(_Request.Method.nMethodCode + 1), ReadPayload(_Response.Payload));
 }
@@ -347,32 +346,32 @@ TEST(FacadeInvokerTest, MissingFacadeReturnsFacadeNotFound)
     CFacadeInvoker _Dispatcher(_pRegistry);
     CTestApplicationContext _ApplicationContext;
 
-    CFacadeCall _Request;
+    CInvocation _Request;
     _Request.nCallID = 9;
     _Request.Method = MakeFacadeMethod("Missing", "Ping");
 
     auto _Response = _Dispatcher.Invoke(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_FALSE(_Response.IsOK());
-    EXPECT_EQ(EFacadeCallStatus::FacadeNotFound, _Response.nStatus);
+    EXPECT_EQ(EInvocationStatus::FacadeNotFound, _Response.nStatus);
     EXPECT_EQ(9u, _Response.nCallID);
     EXPECT_EQ(_Request.Method.GetCode(), _Response.Method.GetCode());
 }
 
-TEST(FacadeInvokerTest, InvalidMethodCodeReturnsInvalidCall)
+TEST(FacadeInvokerTest, InvalidMethodCodeReturnsInvalidInvocation)
 {
     auto _pRegistry = std::make_shared<CFacadeRegistry>();
     CFacadeInvoker _Dispatcher(_pRegistry);
     CTestApplicationContext _ApplicationContext;
 
-    CFacadeCall _Request;
+    CInvocation _Request;
     _Request.nCallID = 11;
     _Request.Method = MakeFacadeMethod(0);
 
     auto _Response = _Dispatcher.Invoke(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_FALSE(_Response.IsOK());
-    EXPECT_EQ(EFacadeCallStatus::InvalidCall, _Response.nStatus);
+    EXPECT_EQ(EInvocationStatus::InvalidInvocation, _Response.nStatus);
     EXPECT_EQ(11u, _Response.nCallID);
     EXPECT_EQ(0u, _Response.Method.GetCode());
 }
@@ -385,23 +384,23 @@ TEST(FacadeInvokerTest, MissingMethodReturnsMethodNotFound)
 
     auto _pFacade = std::make_shared<CTestFacade>("Test");
     _pFacade->ExposeMethod("Known", [](
-        const CFacadeCall&,
-        iCAX::Application::IApplicationContext&,
+        const CInvocation&,
+        const iCAX::Application::IApplicationContext&,
         iCAX::Product::IProductContext*,
         iCAX::Project::IProjectContext*,
             iCAX::Project::ISceneContext*) {
-        return CFacadeResult{};
+        return CInvocationResult{};
     });
     _pRegistry->Register(_pFacade);
 
-    CFacadeCall _Request;
+    CInvocation _Request;
     _Request.nCallID = 10;
     _Request.Method = MakeFacadeMethod("Test", "Missing");
 
     auto _Response = _Dispatcher.Invoke(_Request, _ApplicationContext, nullptr, nullptr, nullptr);
 
     EXPECT_FALSE(_Response.IsOK());
-    EXPECT_EQ(EFacadeCallStatus::MethodNotFound, _Response.nStatus);
+    EXPECT_EQ(EInvocationStatus::MethodNotFound, _Response.nStatus);
     EXPECT_EQ(_Request.Method.GetCode(), _Response.Method.GetCode());
 }
 
@@ -413,30 +412,30 @@ TEST(FacadeInvokerTest, HandlerExceptionsPropagate)
 
     auto _pFacade = std::make_shared<CTestFacade>("Test");
     _pFacade->ExposeMethod("Invalid", [](
-        const CFacadeCall&,
-        iCAX::Application::IApplicationContext&,
+        const CInvocation&,
+        const iCAX::Application::IApplicationContext&,
         iCAX::Product::IProductContext*,
         iCAX::Project::IProjectContext*,
-            iCAX::Project::ISceneContext*) -> CFacadeResult {
+            iCAX::Project::ISceneContext*) -> CInvocationResult {
         throw std::invalid_argument("bad payload");
     });
     _pFacade->ExposeMethod("Failed", [](
-        const CFacadeCall&,
-        iCAX::Application::IApplicationContext&,
+        const CInvocation&,
+        const iCAX::Application::IApplicationContext&,
         iCAX::Product::IProductContext*,
         iCAX::Project::IProjectContext*,
-            iCAX::Project::ISceneContext*) -> CFacadeResult {
+            iCAX::Project::ISceneContext*) -> CInvocationResult {
         throw std::runtime_error("boom");
     });
     _pRegistry->Register(_pFacade);
 
-    CFacadeCall _InvalidRequest;
+    CInvocation _InvalidRequest;
     _InvalidRequest.Method = MakeFacadeMethod("Test", "Invalid");
     EXPECT_THROW(
         (void)_Dispatcher.Invoke(_InvalidRequest, _ApplicationContext, nullptr, nullptr, nullptr),
         std::invalid_argument);
 
-    CFacadeCall _FailedRequest;
+    CInvocation _FailedRequest;
     _FailedRequest.Method = MakeFacadeMethod("Test", "Failed");
     EXPECT_THROW(
         (void)_Dispatcher.Invoke(_FailedRequest, _ApplicationContext, nullptr, nullptr, nullptr),

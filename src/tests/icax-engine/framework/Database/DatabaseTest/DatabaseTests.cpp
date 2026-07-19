@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Database/ComponentHelper.h>
 #include <Database/IEntity.h>
@@ -7,16 +8,6 @@
 #include <Database/OperationLog.h>
 #include <Data/uuid.h>
 
-#include <algorithm>
-#include <cstdint>
-#include <filesystem>
-#include <fstream>
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <type_traits>
-#include <utility>
-#include <vector>
 
 namespace
 {

@@ -1,10 +1,8 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <RenderPDO/RenderPDO.h>
 
-#include <stdexcept>
-#include <string>
-#include <type_traits>
 
 using namespace iCAX::RenderPDO;
 

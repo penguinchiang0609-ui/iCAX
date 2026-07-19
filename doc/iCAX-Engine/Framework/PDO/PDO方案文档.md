@@ -257,15 +257,15 @@ Frame End
 
 跨进程只传 Arena name 和必要元信息，不传当前进程 base address。
 
-## 8. 与 Mailbox 的关系
+## 8. 与 Facades 的关系
 
-Mailbox 负责低频、必须被处理的消息。
+Facades 负责低频、必须被处理的消息。
 
 PDO 负责高频、只关心最新值的状态。
 
 二者可以同时存在，但互不调用。
 
-在 CEF/H5 场景下，Mailbox 负责控制面：
+在 CEF/H5 场景下，Facades 负责控制面：
 
 ```text
 打开项目
@@ -308,7 +308,7 @@ if (write.has_value())
 }
 ```
 
-`CPDOHub` 使用 mutex 保护 slot map、动态分配和释放。释放 slot 后，旧 `IPDOSlot&` 引用立即失效；业务层必须通过生命周期和 mailbox 事件保证读写方不继续访问已释放 slot。
+`CPDOHub` 使用 mutex 保护 slot map、动态分配和释放。释放 slot 后，旧 `IPDOSlot&` 引用立即失效；业务层必须通过生命周期和 Facade 事件保证读写方不继续访问已释放 slot。
 
 ## 11. Arena 校验
 
@@ -365,7 +365,7 @@ class CameraPDOView {
 - CEF bridge 中增加 V8 ArrayBuffer release callback 的生命周期联动。
 - 为 `ICAX_DECLARE_PDO_PAYLOAD` 对应的 C++ payload 生成 TypeScript wrapper，降低产品侧手写偏移的风险。
 - 增加更明确的 Arena 名称分配策略，便于日志诊断和前端调试。
-- 在 Mailbox/Facades 层补充项目关闭通知，提醒前端宿主停止访问对应 Arena。
+- 在 Facades/Facades 层补充项目关闭通知，提醒前端宿主停止访问对应 Arena。
 
 ## 14. 测试
 

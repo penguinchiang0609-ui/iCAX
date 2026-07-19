@@ -22,6 +22,7 @@ if (-not $MSBuild) {
 
 $BuildProjects = @(
     "src\icax-engine\foundation\Data\Data.vcxproj",
+    "src\icax-engine\foundation\Task\Task.vcxproj",
     "src\tests\icax-engine\foundation\Data\DataTest\DataTest.vcxproj",
     "src\icax-engine\framework\Resources\Resources.vcxproj",
     "src\tests\icax-engine\framework\Resources\ResourcesTest\ResourcesTest.vcxproj",
@@ -31,8 +32,6 @@ $BuildProjects = @(
     "src\tests\icax-engine\framework\Facades\FacadesTest\FacadesTest.vcxproj",
     "src\icax-engine\framework\Database\Database.vcxproj",
     "src\tests\icax-engine\framework\Database\DatabaseTest\DatabaseTest.vcxproj",
-    "src\icax-engine\framework\Mailbox\Mailbox.vcxproj",
-    "src\tests\icax-engine\framework\Mailbox\MailboxTest\MailboxTest.vcxproj",
     "src\icax-engine\framework\PDO\PDO.vcxproj",
     "src\tests\icax-engine\framework\PDO\PDOTest\PDOTest.vcxproj",
     "src\icax-engine\framework\ProductContext\ProductContext.vcxproj",
@@ -43,9 +42,8 @@ $BuildProjects = @(
     "src\tests\icax-engine\framework\Project\ProjectTest\ProjectTest.vcxproj",
     "src\icax-engine\framework\Product\Product.vcxproj",
     "src\tests\icax-engine\framework\Product\ProductTest\ProductTest.vcxproj",
-    "src\icax-engine\framework\ApplicationHost\ApplicationHost.vcxproj",
-    "src\tests\icax-engine\framework\ApplicationHost\ApplicationHostTest\ApplicationHostTest.vcxproj",
-    "src\icax-engine\foundation\Task\Task.vcxproj",
+    "src\icax-engine\framework\ApplicationRuntime\ApplicationRuntime.vcxproj",
+    "src\tests\icax-engine\framework\ApplicationRuntime\ApplicationRuntimeTest\ApplicationRuntimeTest.vcxproj",
     "src\tests\icax-engine\foundation\Task\TaskTest\TaskTest.vcxproj"
 )
 
@@ -57,8 +55,7 @@ $TestExecutables = @(
     "src\icax-engine\$Platform\$Configuration\DatabaseTest.exe",
     "src\icax-engine\$Platform\$Configuration\ProjectTest.exe",
     "src\icax-engine\$Platform\$Configuration\ProductTest.exe",
-    "src\icax-engine\$Platform\$Configuration\ApplicationHostTest.exe",
-    "src\icax-engine\$Platform\$Configuration\MailboxTest.exe",
+    "src\icax-engine\$Platform\$Configuration\ApplicationRuntimeTest.exe",
     "src\icax-engine\$Platform\$Configuration\PDOTest.exe",
     "src\icax-engine\$Platform\$Configuration\TaskTest.exe"
 )

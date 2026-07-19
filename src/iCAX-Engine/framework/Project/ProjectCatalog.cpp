@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "ProjectCatalog.h"
 
-#include <stdexcept>
 
 iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateInfo& CreateInfo_)
     : m_CatalogID(CreateInfo_.CatalogID.is_nil() ? iCAX::Data::GenerateNewUUID() : CreateInfo_.CatalogID)
@@ -12,7 +11,7 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     , m_pServiceProvider(CreateInfo_.pServiceProvider)
     , m_pMetaRegistry(CreateInfo_.pMetaRegistry)
     , m_pBehaviourRegistry(CreateInfo_.pBehaviourRegistry)
-    , m_pMailChannelRegistry(CreateInfo_.pMailChannelRegistry)
+    , m_pFacadeChannelRegistry(CreateInfo_.pFacadeChannelRegistry)
     , m_bEnablePDOHub(CreateInfo_.bEnablePDOHub)
     , m_PDOHubCreateInfo(CreateInfo_.PDOHubCreateInfo)
     , m_ResourceLoaderRegistryFactory(CreateInfo_.ResourceLoaderRegistryFactory)
@@ -39,9 +38,9 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     {
         throw std::invalid_argument("ProjectCatalog BehaviourRegistry cannot be null");
     }
-    if (!m_pMailChannelRegistry)
+    if (!m_pFacadeChannelRegistry)
     {
-        throw std::invalid_argument("ProjectCatalog MailChannelRegistry cannot be null");
+        throw std::invalid_argument("ProjectCatalog FacadeChannelRegistry cannot be null");
     }
     if (!m_ResourceLoaderRegistryFactory)
     {
@@ -235,9 +234,9 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         CreateInfo_.pBehaviourRegistry = m_pBehaviourRegistry;
     }
-    if (!CreateInfo_.pMailChannelRegistry)
+    if (!CreateInfo_.pFacadeChannelRegistry)
     {
-        CreateInfo_.pMailChannelRegistry = m_pMailChannelRegistry;
+        CreateInfo_.pFacadeChannelRegistry = m_pFacadeChannelRegistry;
     }
     if (!CreateInfo_.pResourceLoaderRegistry && m_ResourceLoaderRegistryFactory)
     {
@@ -268,9 +267,9 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         throw std::invalid_argument("ProjectCatalog BehaviourRegistry cannot be null");
     }
-    if (!CreateInfo_.pMailChannelRegistry)
+    if (!CreateInfo_.pFacadeChannelRegistry)
     {
-        throw std::invalid_argument("ProjectCatalog MailChannelRegistry cannot be null");
+        throw std::invalid_argument("ProjectCatalog FacadeChannelRegistry cannot be null");
     }
     if (!CreateInfo_.pResourceLoaderRegistry)
     {

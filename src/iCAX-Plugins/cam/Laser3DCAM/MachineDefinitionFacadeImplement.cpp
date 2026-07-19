@@ -2,11 +2,6 @@
 #include "MachineDefinitionFacadeImplement.h"
 #include "FacadeSupport.h"
 
-#include <algorithm>
-#include <cctype>
-#include <filesystem>
-#include <fstream>
-#include <stdexcept>
 
 namespace iCAX::CAM::Facades::Internal
 {

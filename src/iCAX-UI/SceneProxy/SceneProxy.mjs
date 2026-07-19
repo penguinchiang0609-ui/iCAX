@@ -1,18 +1,18 @@
-import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
-import { ProjectFacade } from "../SDK/Mailbox/facadeMethod.mjs";
+import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
+import { ProjectFacade } from "../SDK/Facades/facadeMethod.mjs";
 import { PDOClient } from "../SDK/PDO/pdoClient.mjs";
 
 export class SceneProxy {
-  constructor(mailboxClient, sceneState, options = {}) {
-    if (!mailboxClient) {
-      throw new TypeError("mailboxClient is required");
+  constructor(facadeClient, sceneState, options = {}) {
+    if (!facadeClient) {
+      throw new TypeError("facadeClient is required");
     }
     if (!isUsableChannelId(sceneState?.sceneChannelId)) {
       throw new TypeError("sceneState.sceneChannelId must be a non-nil channel id");
     }
 
-    this.mailboxClient = mailboxClient;
-    this.bridge = options.bridge ?? mailboxClient.bridge ?? null;
+    this.facadeClient = facadeClient;
+    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
     this.project = options.project ?? null;
     this.state = sceneState;
     this.sceneId = sceneState.sceneId;
@@ -42,7 +42,7 @@ export class SceneProxy {
   }
 
   invoke(facadeMethod, payload = {}, options = {}) {
-    return this.mailboxClient.invoke(this.sceneChannelId, facadeMethod, payload, options);
+    return this.facadeClient.invoke(this.sceneChannelId, facadeMethod, payload, options);
   }
 
   undo(options = {}) {
@@ -58,11 +58,11 @@ export class SceneProxy {
   }
 
   subscribe(facadeMember, handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.sceneChannelId, facadeMember, handler));
+    return this.#trackUnsubscribe(this.facadeClient.subscribe(this.sceneChannelId, facadeMember, handler));
   }
 
   subscribeAll(handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribeAll(this.sceneChannelId, handler));
+    return this.#trackUnsubscribe(this.facadeClient.subscribeAll(this.sceneChannelId, handler));
   }
 
   dispose() {
@@ -70,7 +70,7 @@ export class SceneProxy {
       unsubscribe();
     }
     this.unsubscribers.clear();
-    this.mailboxClient.stop(this.sceneChannelId);
+    this.facadeClient.stop(this.sceneChannelId);
   }
 
   #trackUnsubscribe(unsubscribe) {

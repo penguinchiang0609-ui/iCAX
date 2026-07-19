@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "FacadeMethod.h"
 
-#include <format>
-#include <stdexcept>
 
 namespace
 {

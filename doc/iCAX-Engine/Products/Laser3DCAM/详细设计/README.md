@@ -33,7 +33,7 @@
 - 产品逻辑不得写入 `iCAX-Engine` framework。
 - 项目主数据进入主 Scene.Database。
 - 大资源进入主 Scene.Resources，并随项目文件内嵌。
-- Mailbox 只传命令和小型 JSON。
+- Facades 只传命令和小型 JSON。
 - PDO 承担高频和大块数据同步。
 - 目标工件只支持 STEP/STP、IGS/IGES。
 - STL 只用于切割头子部件模型或碰撞包络资源。

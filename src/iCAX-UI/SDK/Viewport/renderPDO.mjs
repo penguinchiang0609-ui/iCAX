@@ -1,4 +1,4 @@
-import { makeFacadeMethodCodeFromName } from "../Mailbox/facadeMethod.mjs";
+import { makeFacadeMethodCodeFromName } from "../Facades/facadeMethod.mjs";
 
 export const RenderPDOEvents = Object.freeze({
   slotAllocated: "PDORender.SlotAllocated",

@@ -57,13 +57,13 @@ namespace iCAX
             iCAX::Data::PropertyBag Settings;
             std::string QuickSaveLogPath;
             std::string StartupComponent;
-            std::shared_ptr<iCAX::Application::IApplicationContext> pApplicationContext;
+            std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext;
             std::shared_ptr<iCAX::Product::IProductContext> pProductContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider;
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry;
-            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry;
             bool bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo;
             uint32_t nFrameIntervalMilliseconds = 16;
@@ -73,7 +73,7 @@ namespace iCAX
         /*
         * @brief Project 是项目级管理容器。
         * @details
-        *   Project 不拥有 Repository、Universe、ResourceLibrary、PDOHub、MailChannel 或工作线程。
+        *   Project 不拥有 Repository、Universe、ResourceLibrary、PDOHub、FacadeChannel 或工作线程。
         *   这些运行期对象归属 Scene。Project 启动时会创建一个 MainScene；
         *   需要临时编辑、导入预览或刀路局部编辑时，由已有 Scene 打开子 Scene。
         */
@@ -142,9 +142,9 @@ namespace iCAX
             iCAX::PDO::IPDOHub& MainScenePDOHub();
             const iCAX::PDO::IPDOHub& MainScenePDOHub() const;
             iCAX::Services::CServiceProvider& MainSceneServices() const;
-            iCAX::Mail::CMailPostOffice GetMainSceneBackendPostOffice() const;
-            void SendMainSceneFrontendEvent(IN uint64_t nTypeCode_, IN const std::string& strPayloadText_);
-            iCAX::Mail::CMailPostOffice GetMainSceneFrontendPostOffice() const;
+            iCAX::Interaction::CFacadeEndpoint GetMainSceneBackendFacadeEndpoint() const;
+            void SendMainSceneFrontendEvent(IN uint64_t nMethodCode_, IN const std::string& strPayloadText_);
+            iCAX::Interaction::CFacadeEndpoint GetMainSceneFrontendFacadeEndpoint() const;
 
             void Start();
             void Stop();
@@ -169,13 +169,13 @@ namespace iCAX
             std::string m_QuickSaveLogPath;
             bool m_bQuickSaveLogOpen = false;
             std::string m_StartupComponent;
-            std::shared_ptr<iCAX::Application::IApplicationContext> m_pApplicationContext;
+            std::shared_ptr<const iCAX::Application::IApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Product::IProductContext> m_pProductContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
-            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> m_pFacadeChannelRegistry;
             iCAX::Data::uuid m_MainSceneID;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProjectScene>> m_Scenes;
             SceneFrameHandler m_SceneFrameHandler;

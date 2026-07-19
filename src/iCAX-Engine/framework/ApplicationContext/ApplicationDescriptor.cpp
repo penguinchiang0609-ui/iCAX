@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "ApplicationDescriptor.h"
 
-#include <algorithm>
 
 bool iCAX::Application::CApplicationDescriptor::SupportsProjectMagic(IN const std::string& strMagic_) const
 {

@@ -3,17 +3,10 @@
 #include "ApplicationDescriptor.h"
 #include "ApplicationPaths.h"
 #include "Data/PropertyBag.h"
-#include "Data/uuid.h"
-#include "Mailbox/MailPostOffice.h"
 
-#include <stdexcept>
-
-namespace iCAX
+namespace iCAX::Services
 {
-    namespace Services
-    {
-        class CServiceProvider;
-    }
+    class CServiceProvider;
 }
 
 namespace iCAX
@@ -23,8 +16,9 @@ namespace iCAX
         /*
         * @brief 应用上下文接口。
         * @details
-        *   ApplicationContext 保存应用级只读描述、路径和当前设置。
-        *   产品、项目、命令处理器可以通过它读取应用环境，但不应把项目数据塞进这里。
+        *   ApplicationContext 管理应用作用域内的描述、路径、配置数据和服务环境。
+        *   ApplicationRuntime 管理它的线程与生命周期；产品、项目、场景和普通 Facade
+        *   只能通过 const 接口读取，修改必须回到 ApplicationRuntime 的应用级 Facade。
         */
         class _APPLICATION_CONTEXT_EXP IApplicationContext
         {
@@ -53,41 +47,12 @@ namespace iCAX
             virtual iCAX::Data::PropertyBag GetSettings() const = 0;
 
             /*
-            * @brief 获取应用级通信通道 ID。
-            * @return ApplicationHost 创建的应用 channel id。
+            * @brief 获取应用作用域服务环境的只读入口。
+            * @details 只能取得已由 ApplicationRuntime 初始化的 const 服务实例；
+            *   不能触发构造，也不能修改注册关系或卸载服务。
             */
-            virtual const iCAX::Data::uuid& GetApplicationChannelID() const
-            {
-                static const iCAX::Data::uuid _Nil = iCAX::Data::GenerateNilUUID();
-                return _Nil;
-            }
+            virtual const iCAX::Services::CServiceProvider& Services() const = 0;
 
-            /*
-            * @brief 获取后端视角应用邮局。
-            * @return 应用 channel 的后端端点。
-            */
-            virtual iCAX::Mail::CMailPostOffice GetBackendPostOffice() const
-            {
-                throw std::logic_error("Application backend post office is not configured");
-            }
-
-            /*
-            * @brief 获取前端视角应用邮局。
-            * @return 应用 channel 的前端端点。
-            */
-            virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const
-            {
-                throw std::logic_error("Application frontend post office is not configured");
-            }
-
-            /*
-            * @brief 获取应用级服务容器。
-            * @return Application 范围共享的服务容器。
-            */
-            virtual iCAX::Services::CServiceProvider& Services() const
-            {
-                throw std::logic_error("Application service provider is not configured");
-            }
         };
     }
 }

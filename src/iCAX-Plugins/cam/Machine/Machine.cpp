@@ -1,3 +1,2 @@
-#include "../Laser3DCAM/pch.h"
-#include <cstdint>
+#include "pch.h"
 extern "C" __declspec(dllexport) std::uint32_t GetMachinePluginContractVersion() noexcept { return 1; }

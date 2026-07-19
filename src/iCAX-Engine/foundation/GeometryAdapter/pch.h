@@ -2,3 +2,6 @@
 
 #include "framework.h"
 
+#include <string>
+#include <vector>
+#include <windows.h>

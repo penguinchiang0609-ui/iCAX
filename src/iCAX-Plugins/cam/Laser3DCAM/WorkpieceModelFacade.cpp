@@ -31,9 +31,9 @@ namespace Facades
 {
 using namespace Internal;
 
-iCAX::Interaction::CFacadeResult HandleImportWorkpieceModel(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleImportWorkpieceModel(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *pProductContext_,
     IN iCAX::Project::IProjectContext *pProjectContext_,
     IN iCAX::Project::ISceneContext *pSceneContext_)

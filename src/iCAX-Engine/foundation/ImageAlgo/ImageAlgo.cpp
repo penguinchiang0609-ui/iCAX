@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "ImageAlgo.h"
 
-#include <algorithm>
-#include <cmath>
 
 namespace
 {

@@ -4,7 +4,7 @@
 
 `CPDORenderService` 实现 `IRenderService`，用于 H5 或其他外部前端路线。它把 `RenderData` 序列化为 `RenderPDO` payload，并写入当前 Scene 的 `PDOHub`。
 
-`PDORenderService` 不负责渲染屏幕。它只负责把后端渲染数据同步到 Scene PDO，并通过 Scene mailbox 告知前端 slot 的分配、释放和移动。
+`PDORenderService` 不负责渲染屏幕。它只负责把后端渲染数据同步到 Scene PDO，并通过 Scene Facade 告知前端 slot 的分配、释放和移动。
 
 ## 核心接口
 
@@ -35,9 +35,9 @@
 
 前端必须使用 `PDOID` 作为 slot 身份，并在 shared memory arena 中按 `PDOID` 解析当前 offset。前端不得长期缓存 offset。
 
-## 邮件事件
+## Facade 事件
 
-`PDORenderService` 通过 Scene 后端邮局发送事件，前端从 Scene 前端邮局接收。payload 是 UTF-8 JSON 文本。所有 64 位 ID 都以字符串形式写入，避免 JS `Number` 精度问题。
+`PDORenderService` 通过 Scene 后端 Facade endpoint 发送 Event，前端从对应 endpoint 接收。payload 是 UTF-8 JSON 文本。所有 64 位 ID 都以字符串形式写入，避免 JS `Number` 精度问题。
 
 事件码：
 

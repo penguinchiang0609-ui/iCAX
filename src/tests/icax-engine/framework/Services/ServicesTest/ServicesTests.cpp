@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Services/ServiceProvider.h>
 
@@ -79,4 +80,20 @@ TEST(ServiceProviderTest, ResolveUnregisteredServiceThrows)
     CServiceProvider _Provider;
 
     EXPECT_THROW(_Provider.Resolve<ITestService>(), std::runtime_error);
+}
+
+TEST(ServiceProviderTest, ConstResolveOnlyReturnsServiceInitializedByOwningRuntime)
+{
+    CServiceProvider _Provider;
+    _Provider.RegisterSingleton<ITestService, CTestService>();
+
+    const auto& _ReadOnlyProvider = _Provider;
+    EXPECT_THROW(_ReadOnlyProvider.Resolve<ITestService>(), std::logic_error);
+
+    auto _pInitialized = _Provider.Resolve<ITestService>();
+    auto _pReadOnly = _ReadOnlyProvider.Resolve<ITestService>();
+
+    static_assert(std::is_same_v<decltype(_pReadOnly), std::shared_ptr<const ITestService>>);
+    EXPECT_EQ(_pInitialized, _pReadOnly);
+    EXPECT_TRUE(_pReadOnly->IsLoaded());
 }

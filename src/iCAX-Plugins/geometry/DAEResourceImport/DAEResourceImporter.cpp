@@ -7,25 +7,6 @@
 #include "Resources/ResourceLibrary.h"
 #include "Resources/ResourceLoaderRegistry.h"
 
-#include <algorithm>
-#include <array>
-#include <cctype>
-#include <cstdint>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <iomanip>
-#include <limits>
-#include <map>
-#include <memory>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-#include <unordered_map>
-#include <vector>
-#include <unknwn.h>
-#include <objidl.h>
-#include <xmllite.h>
 
 #pragma comment(lib, "xmllite.lib")
 #pragma comment(lib, "ole32.lib")

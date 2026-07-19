@@ -6,7 +6,7 @@
 
 它用于同步可以被覆盖、可以丢弃旧值的状态数据，例如视图状态、光标状态、预览状态、渲染实例矩阵等连续刷新数据。
 
-低频命令、事件、请求响应不使用 PDO，应该走 Mailbox。
+低频命令、事件、请求响应不使用 PDO，应该走 Facades。
 
 PDO 不做运行时字段自描述。它模拟硬件 PDO 的思路：通信双方提前约定 `PDOID + payload protocol version + payload size + 固定二进制 layout`。C++ 侧用固定结构写入，前端 JS 侧用配套 TypeScript wrapper 和 `ArrayBuffer/DataView/TypedArray` 解释。
 
@@ -161,7 +161,7 @@ auto arena = iCAX::PDO::CSharedPDOArena::Open(L"Local\\iCAX.PDO.Project.1");
 
 Arena 的生命周期由持有 `CSharedPDOArena` 的进程对象控制。最后一个 mapping handle 关闭后，Windows 会释放对应共享内存对象。
 
-Arena 通常由 Scene 通过创建参数中的 `PDOHubCreateInfo` 创建和持有。Mailbox 可以用于通知前端：“某个 Scene 的 PDO Arena 名称是什么，以及某个 PDOID 对应的 slot 何时创建或释放”。Scene 关闭后会释放自己的 PDOHub，前端宿主应停止访问对应 Arena。
+Arena 通常由 Scene 通过创建参数中的 `PDOHubCreateInfo` 创建和持有。Facades 可以用于通知前端：“某个 Scene 的 PDO Arena 名称是什么，以及某个 PDOID 对应的 slot 何时创建或释放”。Scene 关闭后会释放自己的 PDOHub，前端宿主应停止访问对应 Arena。
 
 前端不得缓存 payload offset。动态 Arena 允许 slot 被释放、复用，后续碎片整理也可能移动 slot。前端应始终用 `PDOID` 在 Arena 的 active slot table 中重新定位当前 offset。
 

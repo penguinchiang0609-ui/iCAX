@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Facades/FacadeCall.h"
+#include "Facades/Invocation.h"
 #include "Data/VariantSerializer.h"
 #include "Data/uuid.h"
 #include "Database/IEntity.h"
@@ -25,8 +25,8 @@ using iCAX::Data::ObjectMap;
 using iCAX::Data::Variant;
 using iCAX::Data::VariantArray;
 
-ObjectMap _DecodeObjectPayload(IN const iCAX::Interaction::CFacadeCall& Request_);
-iCAX::Interaction::CFacadeResult _MakeResponse(IN const Variant& Payload_);
+ObjectMap _DecodeObjectPayload(IN const iCAX::Interaction::CInvocation& Request_);
+iCAX::Interaction::CInvocationResult _MakeResponse(IN const Variant& Payload_);
 
 iCAX::Project::ISceneContext& _RequireSceneContext(IN iCAX::Project::ISceneContext* pSceneContext_);
 iCAX::Product::IProductContext& _RequireProductContext(IN iCAX::Product::IProductContext* pProductContext_);

@@ -4,7 +4,7 @@
 
 `PDO` 是 SDK 内部的前端高频数据访问模块。
 
-PDO 面向 shared memory，不走 mailbox payload。
+PDO 面向 shared memory，不走 Facade payload。
 
 ## 2. 使用模型
 
@@ -105,4 +105,4 @@ scene.pdo.withRead(typeName, instanceName, (buffer, meta) => {
 - 能调用 bridge 获取 read lease。
 - 对不存在的 PDO 给出明确错误。
 - CEF 宿主下 H5 能读取 C++ 写入 shared memory arena 的 payload 和 `dataVersion`。
-- MAIL 仍走 mailbox/JSON，不受 PDO shared memory 改造影响。
+- Facade 仍走 Facade/JSON，不受 PDO shared memory 改造影响。

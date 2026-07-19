@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "Facade.h"
 
-#include <stdexcept>
-#include <utility>
 
 iCAX::Interaction::CFacade::CFacade(IN std::string strName_)
     : m_strName(std::move(strName_))
@@ -48,18 +46,18 @@ std::vector<iCAX::Interaction::CFacadeMethod> iCAX::Interaction::CFacade::GetMet
     return _Methods;
 }
 
-iCAX::Interaction::CFacadeResult iCAX::Interaction::CFacade::Invoke(
-    IN const CFacadeCall& Call_,
-    IN iCAX::Application::IApplicationContext& ApplicationContext_,
+iCAX::Interaction::CInvocationResult iCAX::Interaction::CFacade::Invoke(
+    IN const CInvocation& Call_,
+    IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
     if (Call_.Method.nFacadeCode != m_nCode)
     {
-        CFacadeResult _Result;
-        _Result.nStatus = EFacadeCallStatus::InvalidCall;
-        _Result.strError = "Facade call does not belong to " + m_strName + ": " + FormatFacadeMethod(Call_.Method);
+        CInvocationResult _Result;
+        _Result.nStatus = EInvocationStatus::InvalidInvocation;
+        _Result.strError = "Facade invocation does not belong to " + m_strName + ": " + FormatFacadeMethod(Call_.Method);
         return _Result;
     }
 
@@ -69,8 +67,8 @@ iCAX::Interaction::CFacadeResult iCAX::Interaction::CFacade::Invoke(
         const auto _Iter = m_mapMethods.find(Call_.Method.nMethodCode);
         if (_Iter == m_mapMethods.end())
         {
-            CFacadeResult _Result;
-            _Result.nStatus = EFacadeCallStatus::MethodNotFound;
+            CInvocationResult _Result;
+            _Result.nStatus = EInvocationStatus::MethodNotFound;
             _Result.strError = "Facade method not found: " + FormatFacadeMethod(Call_.Method);
             return _Result;
         }

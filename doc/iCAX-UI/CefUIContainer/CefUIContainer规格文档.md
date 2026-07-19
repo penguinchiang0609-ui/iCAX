@@ -12,7 +12,7 @@
 - 加载 `AppShell/index.html` 或配置中的 `startURL`。
 - 注入 `window.icax`。
 - 将 JS bridge 调用转发给 `IFrontendBridge`。
-- 轮询后端邮件并通过 `window.icax.__dispatchMail(mail)` 派发给 JS。
+- 轮询后端 Facade frame，并通过 `window.icax.__dispatchFacadeFrame(frame)` 派发给 JS。
 
 ## 3. 静态注册
 
@@ -28,7 +28,7 @@ ICAX_REGISTER_UI_CONTAINER("cef", iCAX::Frontend::Cef::CCefUIContainer)
 type=cef
 modulePath=CefUIContainer.dll
 webPageRoot=.../src/iCAX-UI/SDK/AppShell
-mailPollIntervalMS=16
+facadePollIntervalMS=16
 ```
 
 ## 4. CEF SDK
@@ -70,7 +70,7 @@ cmake --build .deps\cef\cef_binary_149.0.5+g6770623+chromium-149.0.7827.197_wind
 type=cef
 modulePath=CefUIContainer.dll
 webPageRoot=.../src/iCAX-UI/SDK/AppShell
-mailPollIntervalMS=16
+facadePollIntervalMS=16
 remoteDebuggingPort=9223
 allowFileAccessFromFiles=true
 disableGpu=true

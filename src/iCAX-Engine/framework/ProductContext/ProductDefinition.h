@@ -60,7 +60,7 @@ namespace iCAX
         */
         struct _PRODUCT_CONTEXT_EXP CProductFileDefinition final
         {
-            std::string Magic; //!< 项目文件 magic，必须存在且在 ApplicationHost 内唯一。
+            std::string Magic; //!< 项目文件 magic，必须存在且在 ApplicationRuntime 内唯一。
             std::string FormatVersion; //!< 项目文件格式版本文本。
             std::string QuickSaveLogMagic; //!< 快速保存日志 magic；为空时由产品运行时基于 Magic 派生。
             uint32_t QuickSaveLogVersion = 1; //!< 快速保存日志格式版本，只用于严格匹配，不做迁移。
@@ -71,7 +71,7 @@ namespace iCAX
 
         /*
         * @brief 产品定义
-        * @details ApplicationHost 只根据产品定义启动产品运行时，不直接打开项目。
+        * @details ApplicationRuntime 只根据产品定义启动产品运行时，不直接打开项目。
         */
         struct _PRODUCT_CONTEXT_EXP CProductDefinition final
         {

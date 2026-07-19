@@ -3,14 +3,7 @@
 
 #include "ResourceLoaderRegistry.h"
 
-#include <algorithm>
-#include <cctype>
-#include <mutex>
-#include <stdexcept>
-#include <utility>
-#include <vector>
 
-#include <Windows.h>
 
 namespace
 {

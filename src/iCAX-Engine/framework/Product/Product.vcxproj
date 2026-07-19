@@ -171,6 +171,9 @@
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\foundation\Task\Task.vcxproj">
+      <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\ApplicationContext\ApplicationContext.vcxproj">
       <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
     </ProjectReference>
@@ -182,12 +185,6 @@
     </ProjectReference>
     <ProjectReference Include="..\Database\Database.vcxproj">
       <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\Mailbox\Mailbox.vcxproj">
-      <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\MailHandler\MailHandler.vcxproj">
-      <Project>{dfe34a7a-53d1-4b0e-85c3-5ddc2c9d2b1e}</Project>
     </ProjectReference>
     <ProjectReference Include="..\PDO\PDO.vcxproj">
       <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>

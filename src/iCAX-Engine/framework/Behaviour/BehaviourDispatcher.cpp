@@ -3,14 +3,7 @@
 #include "IBehaviourRegistry.h"
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
-#include <algorithm>
 #include "../Database/ComponentBase.h"
-#include <limits>
-#include <map>
-#include <set>
-#include <stdexcept>
-#include <string>
-#include <utility>
 
 namespace
 {
@@ -104,7 +97,9 @@ namespace
 }
 
 //!< 构造函数
-iCAX::Behaviour::CBehaviourDispatcher::CBehaviourDispatcher(IN std::shared_ptr<IBehaviourRegistry> pRegistry_)
+iCAX::Behaviour::CBehaviourDispatcher::CBehaviourDispatcher(
+    IN std::shared_ptr<IBehaviourRegistry> pRegistry_,
+    IN std::shared_ptr<iCAX::Coroutines::CCoroutineRuntime> pCoroutineRuntime_)
     : m_setBehaviourIndex()
     , m_BehavioursMap()
     , m_OrderedList()
@@ -114,10 +109,15 @@ iCAX::Behaviour::CBehaviourDispatcher::CBehaviourDispatcher(IN std::shared_ptr<I
     , m_PendingDestroyNotifications()
     , m_nNextPendingDestroySequence(0)
     , m_pRegistry(std::move(pRegistry_))
+    , m_pCoroutineRuntime(std::move(pCoroutineRuntime_))
 {
     if (!m_pRegistry)
     {
         throw std::invalid_argument("BehaviourDispatcher registry cannot be null");
+    }
+    if (!m_pCoroutineRuntime)
+    {
+        throw std::invalid_argument("BehaviourDispatcher coroutine runtime cannot be null");
     }
 }
 
@@ -144,6 +144,8 @@ bool iCAX::Behaviour::CBehaviourDispatcher::BindBehaviour(IN const std::type_ind
         throw std::runtime_error("Component already has a bound behaviour: " + _strComponentClass);
     }
 
+    _pBehaviour->BindCoroutineRuntime(m_pCoroutineRuntime);
+
     m_setBehaviourIndex.emplace(nType_);
     m_OrderedList.push_back(_pBehaviour);
     m_BehavioursMap.emplace(_strComponentClass, _pBehaviour);
@@ -153,6 +155,7 @@ bool iCAX::Behaviour::CBehaviourDispatcher::BindBehaviour(IN const std::type_ind
     }
     catch (...)
     {
+        _pBehaviour->UnbindCoroutineRuntime();
         m_BehavioursMap.erase(_strComponentClass);
         m_OrderedList.pop_back();
         m_setBehaviourIndex.erase(nType_);
@@ -231,21 +234,26 @@ void iCAX::Behaviour::CBehaviourDispatcher::UnbindBehaviour(IN const std::type_i
     }
 
     auto _pBehaviour = *_Ite;
+    _pBehaviour->CancelAllTrackedCoroutines();
     m_setBehaviourIndex.erase(nType_);
     m_FrameUpdatePausedBehaviourTypes.erase(nType_);
     m_BehavioursMap.erase(_pBehaviour->GetComponentClass());
     _pBehaviour->Detach();
+    _pBehaviour->UnbindCoroutineRuntime();
     m_OrderedList.erase(_Ite);
     RebuildExecutionPlan();
 }
 
 void iCAX::Behaviour::CBehaviourDispatcher::Shutdown()
 {
+    m_pCoroutineRuntime->CancelAll();
     for (const auto& _pBehaviour : m_OrderedList)
     {
         if (_pBehaviour)
         {
             _pBehaviour->Detach();
+            _pBehaviour->ClearTrackedCoroutines();
+            _pBehaviour->UnbindCoroutineRuntime();
         }
     }
     m_setBehaviourIndex.clear();
@@ -426,7 +434,17 @@ void iCAX::Behaviour::CBehaviourDispatcher::DispatchDestroyImmediateAndQueue(
 
     if (pComponent_)
     {
-        _Ite->second->DestroyImmediate(*pComponent_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
+        _Ite->second->DetachComponentCoroutines(*pComponent_);
+        try
+        {
+            _Ite->second->DestroyImmediate(*pComponent_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
+        }
+        catch (...)
+        {
+            _Ite->second->CompleteComponentCoroutineDetach(*pComponent_);
+            throw;
+        }
+        _Ite->second->CompleteComponentCoroutineDetach(*pComponent_);
     }
     QueueDestroyNotification(DestroyInfo_);
 }
@@ -507,9 +525,10 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
     IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN const iCAX::Product::IProductContext& ProductContext_,
     IN iCAX::Project::IProjectContext& ProjectContext_,
-                IN iCAX::Project::ISceneContext& SceneContext_,
+    IN iCAX::Project::ISceneContext& SceneContext_,
     IN const double& nDeltaTime_,
-    IN const double& nTotalTime_) const
+    IN const double& nTotalTime_,
+    IN std::function<void()> CoroutinePhase_) const
 {
     auto& _View = SceneContext_.Database().GetView();
     FlushPendingDestroyNotifications(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
@@ -583,7 +602,12 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
         }
     }
 
-    //!< OnPostUpdate
+    //!< Component Coroutine：固定在 Universe 线程，位于 Update 与 PostUpdate 之间。
+    if (CoroutinePhase_)
+    {
+        CoroutinePhase_();
+    }
+
     for (const auto& _pBehaviour : m_ExecutionList)
     {
         if (!_pBehaviour)
@@ -844,12 +868,15 @@ void iCAX::Behaviour::CBehaviourDispatcher::OnNotify(
     switch (nType_)
     {
     case kAddComponent:
+        _Ite->second->AttachComponentCoroutines(Component_);
         _Ite->second->Awake(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     case kEnableComponent:
+        _Ite->second->SetComponentCoroutinesEnabled(Component_, true);
         _Ite->second->Enable(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     case kDisableComponent:
+        _Ite->second->SetComponentCoroutinesEnabled(Component_, false);
         _Ite->second->Disable(Component_, ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
         break;
     case kDestroyComponent:

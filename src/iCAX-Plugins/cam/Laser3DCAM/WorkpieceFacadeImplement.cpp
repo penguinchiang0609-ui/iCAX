@@ -6,10 +6,6 @@
 #include "TopologyPayloadNames.h"
 #include "WorkpieceResourceKeys.h"
 
-#include <algorithm>
-#include <cctype>
-#include <filesystem>
-#include <limits>
 
 namespace iCAX::CAM::Facades::Internal
 {

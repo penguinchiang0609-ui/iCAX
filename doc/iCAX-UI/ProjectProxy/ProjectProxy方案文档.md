@@ -12,7 +12,7 @@ src/iCAX-UI/ProjectProxy/
 
 `ProjectProxy` 依赖：
 
-- `SDK/Mailbox`
+- `SDK/Facades`
 - `SceneProxy`
 
 它不依赖 `AppProxy`，只通过构造参数持有上级 `ProductProxy` 引用。
@@ -28,7 +28,7 @@ ProjectProxy.syncScenes(projectState)
   -> dispose closed SceneProxy
 ```
 
-标准项目方法由 `SceneProxy` 调用。`SDK/Mailbox/facadeMethod.mjs` 中的 `ProjectFacade` 表示后端对外提供的项目 Facade 方法：
+标准项目方法由 `SceneProxy` 调用。`SDK/Facades/facadeMethod.mjs` 中的 `ProjectFacade` 表示后端对外提供的项目 Facade 方法：
 
 ```js
 ProjectFacade.getState;

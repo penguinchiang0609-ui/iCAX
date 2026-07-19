@@ -48,7 +48,7 @@ Scene Tick
   -> IRenderService.UpsertMesh / SetInstances / SetTransforms 写入当前 scene snapshot
   -> ProjectScene 在所有 Behaviour 之后调用 ServiceProvider.UpdateSceneServices()
   -> IRenderService.OnSceneTick() 调用 IRenderService.Update()
-  -> PDORenderService 分配 RenderPDO slot，并通过 Scene mailbox 通知前端
+  -> PDORenderService 分配 RenderPDO slot，并通过 Scene Facade 通知前端
   -> H5 ThreeRenderViewport 读取 PDO slot 并显示网格
 ```
 

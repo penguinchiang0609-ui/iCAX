@@ -15,8 +15,8 @@ iCAX-UI 的核心原则：
 
 - 公共框架和具体产品分离。
 - 前端不直接访问 C++ 对象，只通过 host bridge 访问 Engine 能力。
-- 普通交互走 mailbox，返回值以 Promise 形式表达。
-- 高频数据走 PDO，mailbox 只传递控制命令和状态通知。
+- 普通交互走 Facade，返回值以 Promise 形式表达。
+- 高频数据走 PDO，Facade 只传递控制命令和状态通知。
 - 产品 UI 是插件式 ESM 模块，由 manifest 指向入口。
 - Engine 生命周期属于 `iCAX-Application`，H5/CEF 是当前默认前端实现；WPF/QT 可以作为同一 `UIContainer` 契约下的替代实现。
 
@@ -43,7 +43,7 @@ src/iCAX-UI/
   SDK/
     AppShell/
     Bridge/
-    Mailbox/
+    Facades/
     PDO/
 ```
 
@@ -69,18 +69,18 @@ flowchart LR
     SDK --> ProjectProxy["ProjectProxy"]
     SDK --> SceneProxy["SceneProxy"]
     SDK --> UI["UI"]
-    SDK --> Mailbox["SDK/Mailbox"]
+    SDK --> Facades["SDK/Facades"]
     SDK --> PDOClient["SDK/PDO"]
-    AppProxy --> Mailbox
-    ProductProxy --> Mailbox
+    AppProxy --> Facades
+    ProductProxy --> Facades
     ProjectProxy --> SceneProxy
-    SceneProxy --> Mailbox
+    SceneProxy --> Facades
     SceneProxy --> PDOClient
     PDOClient --> Bridge["SDK/Bridge<br/>window.icax"]
-    Mailbox --> Bridge
+    Facades --> Bridge
     Bridge --> CefHost["CefUIContainer<br/>IUIContainer 实现"]
     CefHost --> FrontendBridge["iCAX-Application<br/>FrontendBridge"]
-    FrontendBridge --> AppHost["Engine ApplicationHost"]
+    FrontendBridge --> AppHost["Engine ApplicationRuntime"]
     AppHost --> ProductRuntime["ProductRuntime"]
     ProductRuntime --> Project["Project"]
     Project --> Scene["Scene"]
@@ -97,7 +97,7 @@ flowchart LR
 
 ```text
 CApplication
-  ApplicationHost
+  ApplicationRuntime
   FrontendBridge
   UIContainerFactory
 ```
@@ -105,7 +105,7 @@ CApplication
 它负责：
 
 - 配置并启动 Engine。
-- 将 `FrontendBridge` attach 到 `ApplicationHost`。
+- 将 `FrontendBridge` attach 到 `ApplicationRuntime`。
 - 向 UI container 暴露稳定的前端桥。
 - 在关闭时先停止 UI，再停止 Engine。
 
@@ -123,9 +123,9 @@ CApplication
 - 提供静态注册宏。
 - 提供内置 headless 容器用于启动握手验证。
 
-`UIContainer` 不实现任何具体产品逻辑，不启动/停止 `ApplicationHost`，不缓存 post office。
+`UIContainer` 不实现任何具体产品逻辑，不启动/停止 `ApplicationRuntime`，不缓存 Facade endpoint。
 
-`CefUIContainer` 负责 CEF runtime、浏览器窗口、`window.icax` 注入和 Engine mail 推送。PDO shared memory 到 JS `ArrayBuffer`、文件对话框、窗口标题、拖拽文件属于 `CefUIContainer` 的后续宿主能力。
+`CefUIContainer` 负责 CEF runtime、浏览器窗口、`window.icax` 注入和 Engine Facade 推送。PDO shared memory 到 JS `ArrayBuffer`、文件对话框、窗口标题、拖拽文件属于 `CefUIContainer` 的后续宿主能力。
 
 ## 6. AppShell 设计
 
@@ -135,7 +135,7 @@ CApplication
 
 - 初始化 `SDK`。
 - 连接 `window.icax`。
-- 获取 application mail 入口。
+- 获取 application Facade 入口。
 - 查询可用产品列表。
 - 选择产品后启动产品 runtime。
 - 根据产品 manifest 动态加载产品 `webpage` 模块。
@@ -165,7 +165,7 @@ BottomDock
 ```text
 SDK
   -> Bridge
-  -> Mailbox
+  -> Facades
   -> PDO
   -> AppProxy
   -> ProductProxy
@@ -186,9 +186,9 @@ window.icax
 
 开发期如果没有真实 `window.icax`，可以自动使用 mock bridge 运行 AppShell。
 
-### 7.2 Mailbox
+### 7.2 Facades
 
-mailbox 用于低频控制消息和业务命令。
+Facade 用于低频控制消息和业务命令。
 
 JS 调用表现为 Promise：
 
@@ -198,7 +198,7 @@ const result = await project.Commands.invoke("Project", "Save", {
 });
 ```
 
-底层会生成 command route，序列化 payload，发送 mail，并等待 Engine 通过 `originId` 返回 response。
+底层会生成 command route，序列化 payload，发送 Facade，并等待 Engine 通过 `callId` 返回 response。
 
 ### 7.3 PDO
 
@@ -226,7 +226,7 @@ AppProxy
       SceneProxy
 ```
 
-Application、Product、Scene 有自己的 mailbox 入口。Project 是项目容器，不拥有 mailbox。前端先和 application 对话，再按需进入 product，打开 project 后默认使用主 Scene 对话。
+Application、Product、Scene 有自己的 Facade 入口。Project 是项目容器，不拥有 Facade。前端先和 application 对话，再按需进入 product，打开 project 后默认使用主 Scene 对话。
 
 这四层不拥有 backend 数据，只保存 channel、状态快照、事件订阅入口和 PDO 访问入口。Repository、ResourcePool、ECS 数据仍在 Engine scene 内。
 
@@ -289,7 +289,7 @@ export async function mountProject(context) {
 ```mermaid
 sequenceDiagram
     participant NativeApp as CApplication
-    participant Engine as ApplicationHost
+    participant Engine as ApplicationRuntime
     participant Bridge as FrontendBridge
     participant Host as UIContainer
     participant Page as WebPage
@@ -321,14 +321,14 @@ sequenceDiagram
 ```text
 WebPage
   -> SDK CommandClient
-  -> window.icax.postMail
+  -> window.icax.postFacadeFrame
   -> CefUIContainer
   -> UIContainer
   -> FrontendBridge
-  -> MailChannelRegistry
-  -> ApplicationHost/ProductRuntime/Project
+  -> FacadeChannelRegistry
+  -> ApplicationRuntime/ProductRuntime/Project
   -> Facades
-  -> response mail
+  -> Response frame
   -> FrontendBridge
   -> UIContainer
   -> SDK Promise resolve/reject
@@ -338,11 +338,11 @@ WebPage
 
 ```text
 backend observer/event
-  -> backend post office Send(originId = 0)
+  -> backend Facade endpoint Send(callId = 0)
   -> FrontendBridge
   -> UIContainer
   -> window.icax event callback
-  -> Mailbox subscribe/subscribeAll
+  -> Facades subscribe/subscribeAll
   -> UI update
 ```
 
@@ -363,7 +363,7 @@ iCAX-UI 不关心 Repository 内部结构，不直接修改 component。
 iCAX-UI 只能：
 
 - 发送 command。
-- 接收 command response。
+- 接收 Facade response。
 - 订阅 event。
 - 读取 PDO。
 - 调用 host 能力。
@@ -383,7 +383,7 @@ iCAX-UI 只能：
 - `src/iCAX-UI/ProjectProxy`
 - `src/iCAX-UI/SceneProxy`
 - `src/iCAX-UI/SDK/Bridge`
-- `src/iCAX-UI/SDK/Mailbox`
+- `src/iCAX-UI/SDK/Facades`
 - `src/iCAX-UI/SDK/PDO`
 - `src/iCAX-UI/UI`
 - `src/iCAX-UI/SDK`
@@ -393,7 +393,7 @@ iCAX-UI 只能：
 
 外部集成边界：
 
-- CEF/宿主适配器属于原生宿主集成层，应接入 `UIContainer`，不进入 `ApplicationHost`。
+- CEF/宿主适配器属于原生宿主集成层，应接入 `UIContainer`，不进入 `ApplicationRuntime`。
 - PDO shared memory 到 JS `ArrayBuffer` 的映射属于 host bridge 能力，应通过 `Bridge` 暴露。
 - 产品级 UI 组件属于 `src/apps/<product-id>/webpage`，公共 UI 才进入 `UI`。
 - 产品协议定义属于 `src/apps/<product-id>/protocol`，公共框架只提供加载和调用机制。

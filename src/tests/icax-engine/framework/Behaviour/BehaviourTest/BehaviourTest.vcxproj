@@ -181,6 +181,9 @@
     <ProjectReference Include="..\..\..\..\..\icax-engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\icax-engine\foundation\Task\Task.vcxproj">
+      <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -4,7 +4,7 @@
 
 它负责把 backend 发布的 RenderPDO 数据解释成具体前端 renderer 可消费的对象。产品页面不直接解析 RenderPDO，也不直接持有 renderer 细节；产品页面只创建 SDK 暴露的 viewport 并绑定当前 `SceneProxy`。
 
-相机由后端通过 `render.camera` PDO 发布，位姿由同 ID 的 `render.transform` PDO 发布。Three.js 视口只读取相机、Transform 和 scene object，并按 ID 拼装 renderer camera 或 scene object，不通过鼠标滚轮或拖拽自行改变相机，也不向后端写回相机数据。用户输入后续走 InputPDO 或 mailbox，由后端决定如何更新相机和 Transform。
+相机由后端通过 `render.camera` PDO 发布，位姿由同 ID 的 `render.transform` PDO 发布。Three.js 视口只读取相机、Transform 和 scene object，并按 ID 拼装 renderer camera 或 scene object，不通过鼠标滚轮或拖拽自行改变相机，也不向后端写回相机数据。用户输入后续走 InputPDO 或 Facade，由后端决定如何更新相机和 Transform。
 
 默认 H5 视口只负责采集键鼠状态并写入 `input.state/default`。后端可选的 `CameraNavigationBehaviour` 消费这些输入：`W/S/A/D` 或方向键用于前后左右移动，`Q/E` 或 `PageDown/PageUp` 用于下降/上升，按住 `Shift` 加速，按住鼠标右键拖拽旋转视角，滚轮沿当前视线方向移动。前端不直接修改相机。
 

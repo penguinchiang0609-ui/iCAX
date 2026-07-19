@@ -112,23 +112,47 @@ namespace iCAX
                 std::type_index _TypeIndex = std::type_index(typeid(TService));
                 std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
 
-                // 如果是单例，返回已注册的单例实例
                 auto _IteSingleton = m_mapSingletons.find(_TypeIndex);
                 if (_IteSingleton != m_mapSingletons.end())
                 {
                     return std::static_pointer_cast<TService>(_IteSingleton->second);
                 }
 
-                // 否则，使用工厂创建新实例
                 auto _IteFactory = m_mapFactories.find(_TypeIndex);
                 if (_IteFactory != m_mapFactories.end())
                 {
                     auto _pService = std::static_pointer_cast<TService>(_IteFactory->second());
-                    if (m_mapSingletonMask[_TypeIndex])
+                    const auto _IteSingletonMask = m_mapSingletonMask.find(_TypeIndex);
+                    if (_IteSingletonMask != m_mapSingletonMask.end() && _IteSingletonMask->second)
                     {
                         m_mapSingletons[_TypeIndex] = _pService;
                     }
                     return _pService;
+                }
+
+                throw std::runtime_error("Service not registered");
+            }
+
+            /*
+            * @brief 通过只读 Provider 获取已经初始化的服务。
+            * @details 不会调用工厂或触发 OnLoad。应用级服务必须先由 ApplicationRuntime
+            *   工作线程初始化，其他线程才能通过 Context 的只读视图取得实例。
+            */
+            template<typename TService>
+            std::shared_ptr<const TService> Resolve() const
+            {
+                std::type_index _TypeIndex = std::type_index(typeid(TService));
+                std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
+
+                auto _IteSingleton = m_mapSingletons.find(_TypeIndex);
+                if (_IteSingleton != m_mapSingletons.end())
+                {
+                    return std::static_pointer_cast<const TService>(_IteSingleton->second);
+                }
+
+                if (m_mapFactories.find(_TypeIndex) != m_mapFactories.end())
+                {
+                    throw std::logic_error("Service is registered but not initialized in its owning runtime");
                 }
 
                 throw std::runtime_error("Service not registered");

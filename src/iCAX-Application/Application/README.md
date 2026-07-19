@@ -4,10 +4,12 @@
 
 本目录的职责：
 
-- 拥有并启动 `ApplicationHost`。
-- 拥有 `CFrontendBridge`，为 H5/CEF、WPF、QT 等 UI 宿主提供统一的 mailbox 入口。
+- 拥有并启动 `ApplicationRuntime`。
+- 拥有 `CFrontendBridge`，为 H5/CEF、WPF、QT 等 UI 宿主提供统一的 Facade 入口。
 - 隔离 Engine 生命周期和 UI 技术选择。
 - 提供进程入口 `wWinMain`，负责创建应用对象、读取 `UIContainer.Setting`、通过 `CUIContainerFactory` 挂载 UI 容器并按顺序启动/停止。
+
+`CFrontendBridge` 拥有前端 `EventLoopTaskScheduler`。前端原生异步操作在初始 Task/`TaskCompletionSource` 创建时绑定 `GetFrontTaskScheduler()`，后续 `ContinueWith()` 默认继承；具体 UI 容器负责在自己的单线程 event loop 调用 `RunFrontTasks()`。
 
 本目录不负责：
 

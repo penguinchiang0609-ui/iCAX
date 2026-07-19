@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "PDORenderService.h"
 
-#include "Mailbox/MailPayload.h"
+#include "Facades/FacadePayload.h"
 #include "RenderPDO/RenderPDODecl.h"
 #include "RenderPDO/RenderPDOLayouts.h"
 #include "RenderPDO/RenderPDOValidation.h"
@@ -10,16 +10,6 @@
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
 
-#include <algorithm>
-#include <cstddef>
-#include <cstring>
-#include <limits>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-#include <unordered_set>
-#include <utility>
-#include <vector>
 
 namespace
 {
@@ -1838,11 +1828,11 @@ void iCAX::PDORenderService::CPDORenderService::SendSlotEvent(
         << "\",\"payloadCapacity\":\"" << nPayloadCapacity_
         << "\"}";
 
-    iCAX::Mail::MailHeader _Header;
-    _Header.nMailId = m_nNextEventMailID.fetch_add(1);
-    _Header.nTypeCode = nEventTypeCode_;
-    _Header.nStamp = iCAX::Mail::kMailOk;
-    SceneContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
+    SceneContext_.GetBackendFacadeEndpoint().SendText(
+        0,
+        nEventTypeCode_,
+        iCAX::Interaction::EFacadeFrameKind::Event,
+        _Payload.str());
 }
 
 void iCAX::PDORenderService::CPDORenderService::SendDefragEvent(
@@ -1860,9 +1850,9 @@ void iCAX::PDORenderService::CPDORenderService::SendDefragEvent(
         << "\",\"pdoId\":\"" << nPDOID_
         << "\"}";
 
-    iCAX::Mail::MailHeader _Header;
-    _Header.nMailId = m_nNextEventMailID.fetch_add(1);
-    _Header.nTypeCode = nEventTypeCode_;
-    _Header.nStamp = iCAX::Mail::kMailOk;
-    SceneContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
+    SceneContext_.GetBackendFacadeEndpoint().SendText(
+        0,
+        nEventTypeCode_,
+        iCAX::Interaction::EFacadeFrameKind::Event,
+        _Payload.str());
 }

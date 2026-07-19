@@ -180,9 +180,6 @@
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Database\Database.vcxproj">
       <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Mailbox\Mailbox.vcxproj">
-      <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\PDO\PDO.vcxproj">
       <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
     </ProjectReference>

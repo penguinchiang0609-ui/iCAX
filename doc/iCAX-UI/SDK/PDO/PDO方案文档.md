@@ -14,7 +14,7 @@ src/iCAX-UI/SDK/PDO/
 
 ## 2. ID 生成
 
-`PDOClient.makeId(typeName, instanceName)` 复用 `Mailbox` 的 hash 算法，和 C++ `PDOID` 保持一致。
+`PDOClient.makeId(typeName, instanceName)` 复用 `Facades` 的 hash 算法，和 C++ `PDOID` 保持一致。
 
 ## 3. 读取流程
 
@@ -48,7 +48,7 @@ ProjectProxy
 - reader 必须同步执行，避免上层把 PDO 租约生命周期误解成异步资源。
 - 真正的 JS external ArrayBuffer 零拷贝需要定制 CEF 构建或改用其他 native/GPU interop 路径。
 
-MAIL 不参与上述共享内存路径。MAIL 仍通过 `cefQuery`、JSON payload 和 mailbox response/event 机制交互。
+Facade 不参与上述共享内存路径。Facade 仍通过 `cefQuery`、JSON payload 和 Facade response/event 机制交互。
 
 ## 5. 双缓冲/版本方案
 

@@ -9,6 +9,27 @@
 
 // 添加要在此处预编译的标头
 #include "framework.h"
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <exception>
+#include <format>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+#include <windows.h>
 #define IN
 #define OUT
 

@@ -9,5 +9,24 @@
 
 // 添加要在此处预编译的标头
 #include "framework.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
+#include <functional>
+#include <limits>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <tuple>
+#include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+#include <windows.h>
 #define _SYSTEM
 #endif //PCH_H

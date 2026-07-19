@@ -3,7 +3,6 @@
 #include "ResourceLoaderRegistry.h"
 #include "ResourcePoolAccess.h"
 
-#include <stdexcept>
 
 namespace
 {

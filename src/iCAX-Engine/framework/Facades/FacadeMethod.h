@@ -9,7 +9,7 @@ namespace iCAX::Interaction
 {
     /*
     * @brief 计算交互名称的 32 位稳定码。
-    * @details 名称是公开身份，稳定码只用于 Mail 中的紧凑表示和进程内快速查找。
+    * @details 名称是公开身份，稳定码只用于 FacadeFrame 中的紧凑表示和进程内快速查找。
     */
     inline constexpr uint32_t InteractionNameHash32(IN const char* pText_) noexcept
     {
@@ -24,7 +24,7 @@ namespace iCAX::Interaction
     }
 
     /*
-    * @brief 把 Facade 名称码和 Method 名称码组合为 Mail 使用的 64 位类型码。
+    * @brief 把 Facade 名称码和 Method 名称码组合为 FacadeFrame 使用的 64 位方法码。
     */
     inline constexpr uint64_t MakeFacadeMethodCode(IN uint32_t nFacadeCode_, IN uint32_t nMethodCode_) noexcept
     {

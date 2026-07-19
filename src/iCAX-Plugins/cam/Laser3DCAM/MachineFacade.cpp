@@ -10,9 +10,6 @@
 #include "Facades/Facade.h"
 #include "Transform/Transform.h"
 
-#include <algorithm>
-#include <cctype>
-#include <cmath>
 #include <initializer_list>
 
 namespace
@@ -28,6 +25,7 @@ namespace
             ExposeMethod("GetElement", &iCAX::CAM::Facades::HandleGetMachineElement);
             ExposeMethod("SetElementTransform", &iCAX::CAM::Facades::HandleSetMachineElementTransform);
             ExposeMethod("SetElementAppearance", &iCAX::CAM::Facades::HandleSetMachineElementAppearance);
+            ExposeMethod("SetJointPosition", &iCAX::CAM::Facades::HandleSetMachineJointPosition);
             ExposeMethod("SetJointLimits", &iCAX::CAM::Facades::HandleSetMachineJointLimits);
             ExposeMethod("SetParameters", &iCAX::CAM::Facades::HandleSetMachineParameters);
             ExposeMethod("SetTCP", &iCAX::CAM::Facades::HandleSetMachineTCP);
@@ -312,14 +310,14 @@ namespace
         return dDefault_;
     }
 
-    iCAX::Interaction::CFacadeResult MakeMachineListResponse(IN iCAX::Project::ISceneContext& Scene_)
+    iCAX::Interaction::CInvocationResult MakeMachineListResponse(IN iCAX::Project::ISceneContext& Scene_)
     {
         ObjectMap _Result;
         _Result["machines"] = _MakeMachineArray(Scene_.Resources(), Scene_.Database());
         return _MakeResponse(Variant(_Result));
     }
 
-    iCAX::Interaction::CFacadeResult MakeMachineResponse(
+    iCAX::Interaction::CInvocationResult MakeMachineResponse(
         IN iCAX::Project::ISceneContext& Scene_,
         IN const std::shared_ptr<iCAX::Database::IEntity>& pMachineEntity_,
         IN const std::shared_ptr<iCAX::CAM::CMachineInstanceComponent>& pMachine_)
@@ -331,9 +329,9 @@ namespace
     }
 }
 
-iCAX::Interaction::CFacadeResult HandleListMachines(
-    IN const iCAX::Interaction::CFacadeCall&,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleListMachines(
+    IN const iCAX::Interaction::CInvocation&,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -342,9 +340,9 @@ iCAX::Interaction::CFacadeResult HandleListMachines(
     return MakeMachineListResponse(_Scene);
 }
 
-iCAX::Interaction::CFacadeResult HandleGetMachineElement(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleGetMachineElement(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -368,9 +366,9 @@ iCAX::Interaction::CFacadeResult HandleGetMachineElement(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineElementTransform(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetMachineElementTransform(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -443,9 +441,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineElementTransform(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineElementAppearance(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetMachineElementAppearance(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -513,9 +511,76 @@ iCAX::Interaction::CFacadeResult HandleSetMachineElementAppearance(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineJointLimits(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetMachineJointPosition(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
+    IN iCAX::Product::IProductContext*,
+    IN iCAX::Project::IProjectContext*,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
+{
+    auto& _Scene = _RequireSceneContext(pSceneContext_);
+    auto _Payload = _DecodeObjectPayload(Request_);
+    auto _EntityIDText = _GetOptionalString(_Payload, "entityId");
+    if (_EntityIDText.empty())
+    {
+        _EntityIDText = _GetOptionalString(_Payload, "jointEntityId");
+    }
+    if (_EntityIDText.empty())
+    {
+        throw std::invalid_argument("Cam Machine.SetJointPosition requires entityId");
+    }
+
+    auto& _Repository = _Scene.Database();
+    const auto _EntityID = _ParseRequiredUuid(_EntityIDText, "entityId");
+    auto _pEntity = _Repository.GetEntity(_EntityID);
+    auto _pElement = _GetComponent<iCAX::CAM::CMachineElementComponent>(_pEntity);
+    auto _pJoint = _GetComponent<iCAX::CAM::CMachineJointComponent>(_pEntity);
+    if (!_pEntity || !_pElement || !_pJoint)
+    {
+        throw std::invalid_argument("Cam Machine.SetJointPosition entity is not a machine joint: " + _EntityIDText);
+    }
+    if (_pJoint->GetJointType() == "fixed")
+    {
+        throw std::invalid_argument("Cam Machine.SetJointPosition cannot move a fixed joint: " + _pJoint->GetJointName());
+    }
+
+    bool _HasPosition = false;
+    const auto _Position = GetOptionalFiniteDoubleByNames(_Payload, { "position" }, _pJoint->GetPosition(), _HasPosition);
+    if (!_HasPosition)
+    {
+        throw std::invalid_argument("Cam Machine.SetJointPosition requires position");
+    }
+
+    iCAX::Data::PropertySet _Properties;
+    _Properties[iCAX::CAM::CMachineJointComponent::PropertyName_Position] = _Position;
+    std::string _strError;
+    if (!_pJoint->SetProperties(_Properties, _strError))
+    {
+        throw std::invalid_argument(_strError.empty() ? "Cam Machine.SetJointPosition is rejected by modify filter" : _strError);
+    }
+
+    auto _pMachineEntity = _Repository.GetEntity(_pElement->GetMachineID());
+    auto _pMachine = _GetComponent<iCAX::CAM::CMachineInstanceComponent>(_pMachineEntity);
+    if (_pMachineEntity)
+    {
+        auto _pStatus = _GetOrAddMachineStatus(_pMachineEntity);
+        _SetStringProperty(_pStatus, iCAX::CAM::CMachineStatusComponent::PropertyName_Status, "Positioned");
+        _SetStringProperty(_pStatus, iCAX::CAM::CMachineStatusComponent::PropertyName_LastCheckResult, _pJoint->GetJointName() + " 轴位置已更新");
+    }
+
+    ObjectMap _Result;
+    _Result["machineElement"] = _MakeMachineElementDetailPayload(_Repository, _EntityID);
+    if (_pMachineEntity && _pMachine)
+    {
+        _Result["machine"] = _MakeMachinePayload(_Scene.Resources(), _Repository, _pMachineEntity, _pMachine);
+        _Result["machines"] = _MakeMachineArray(_Scene.Resources(), _Repository);
+    }
+    return _MakeResponse(Variant(_Result));
+}
+
+iCAX::Interaction::CInvocationResult HandleSetMachineJointLimits(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -596,9 +661,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineJointLimits(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleInstantiateMachine(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &ApplicationContext_,
+iCAX::Interaction::CInvocationResult HandleInstantiateMachine(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&ApplicationContext_,
     IN iCAX::Product::IProductContext *pProductContext_,
     IN iCAX::Project::IProjectContext *pProjectContext_,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -698,9 +763,9 @@ iCAX::Interaction::CFacadeResult HandleInstantiateMachine(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineEnabled(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetMachineEnabled(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -720,9 +785,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineEnabled(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineName(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetMachineName(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -746,9 +811,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineName(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineParameters(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleSetMachineParameters(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -797,9 +862,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineParameters(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineTCP(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleSetMachineTCP(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -821,9 +886,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineTCP(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineToolTCP(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetMachineToolTCP(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -913,9 +978,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineToolTCP(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleJogMachine(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleJogMachine(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -951,9 +1016,9 @@ iCAX::Interaction::CFacadeResult HandleJogMachine(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleHomeMachine(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleHomeMachine(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -973,9 +1038,9 @@ iCAX::Interaction::CFacadeResult HandleHomeMachine(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleResetMachine(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleResetMachine(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -990,9 +1055,9 @@ iCAX::Interaction::CFacadeResult HandleResetMachine(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleCheckMachineLimits(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleCheckMachineLimits(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -1008,9 +1073,9 @@ iCAX::Interaction::CFacadeResult HandleCheckMachineLimits(
     return MakeMachineResponse(_Scene, _pMachineEntity, _pMachine);
 }
 
-iCAX::Interaction::CFacadeResult HandleCheckMachineReach(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleCheckMachineReach(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)

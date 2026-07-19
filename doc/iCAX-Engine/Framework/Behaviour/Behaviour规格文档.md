@@ -15,7 +15,7 @@ OnUpdate(component, applicationContext, productContext, projectContext, sceneCon
 - `ApplicationContext`：应用级上下文，如应用配置、路径和应用级依赖。
 - `ProductContext`：产品级上下文，如产品定义、产品数据、产品级注册表和产品服务。
 - `ProjectContext`：项目级上下文，只包含项目身份、路径和跟图纸走的 ProjectSetting。
-- `SceneContext`：场景级上下文，包含 Repository、资源库、PDO、mail 和场景可用服务。
+- `SceneContext`：场景级上下文，包含 Repository、资源库、PDO、Facade 和场景可用服务。
 - `Universe`：Scene 内的 Behaviour 运行容器。每个 Scene 拥有自己的 Universe。
 - `BehaviourRegistry`：保存 Behaviour 类型和创建工厂，通常按 Product 隔离。
 
@@ -95,9 +95,19 @@ iCAX::Behaviour::CBehaviourSchedule GetSchedule() const override
 
 Behaviour 遵循 Scene 单线程模型。Scene 工作线程驱动 Repository、Universe 和 Behaviour。外部线程不应直接调用 Behaviour，也不应直接修改 Behaviour 内部状态。
 
-跨线程输入应通过 Mailbox、PDO 或命令通道进入对应 Scene 线程，再由 Scene 线程修改 Repository 或驱动 Universe。
+跨线程输入应通过 Facades、PDO 或命令通道进入对应 Scene。异步操作创建初始 Task 或 `TaskCompletionSource` 时应绑定 `Universe::GetEngineTaskScheduler()`；无 scheduler 参数的 `ContinueWith()` 会自动继承它。scheduler 只入队，由下一次 Universe Tick 在 Scene 工作线程执行 continuation，之后才能修改 Repository、Component 或 Behaviour 状态。只有明确需要切换线程时，才给 `ContinueWith()` 传入另一个 scheduler。
 
-## 8. 非目标
+## 8. Component Coroutine
+
+Universe 拥有通用 `CCoroutineRuntime`，它只管理协程 handle，不认识 Component。Behaviour 保存自己启动的“Component → handles”关联；Dispatcher 把 Component 生命周期事件显式翻译成对应 handle 的暂停、恢复和取消。Component 与 Database 不依赖 Coroutine 或 Behaviour。
+
+`StartCoroutine(Component, CCoroutine<TResult>)` 返回 `CCoroutineHandle<TResult>`；`co_return value` 通过 `Completion()` 的 `Task<TResult>` 交付。无返回值流程使用 `CCoroutine<>`。
+
+帧内顺序固定为 `Engine Task -> Start -> PreUpdate -> Update -> Component Coroutine -> PostUpdate`。Coroutine 只能由 Universe 所属 Scene 工作线程恢复；`Await(Task<T>)` 的完成通知会先投递到 Engine Task scheduler，不能从线程池直接恢复。
+
+Component 禁用时，Behaviour 必须暂停对应 handle，重新启用后恢复。Component 移除时必须在 `DestroyImmediate` 前取消对应 handle 并同步销毁 frame；Behaviour 解绑或 Universe 关闭时也必须取消相关协程。迟到的 Task completion 不得访问已销毁的 coroutine frame。
+
+## 9. 非目标
 
 - 不负责 Repository 生命周期。
 - 不负责 Scene 线程和帧节奏。

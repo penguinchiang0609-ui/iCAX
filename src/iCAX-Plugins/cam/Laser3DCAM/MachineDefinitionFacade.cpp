@@ -68,9 +68,9 @@ namespace
     }
 }
 
-iCAX::Interaction::CFacadeResult HandleImportMachineDefinition(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext& ApplicationContext_,
+iCAX::Interaction::CInvocationResult HandleImportMachineDefinition(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -130,9 +130,9 @@ iCAX::Interaction::CFacadeResult HandleImportMachineDefinition(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleListMachineDefinitions(
-    IN const iCAX::Interaction::CFacadeCall&,
-    IN iCAX::Application::IApplicationContext& ApplicationContext_,
+iCAX::Interaction::CInvocationResult HandleListMachineDefinitions(
+    IN const iCAX::Interaction::CInvocation&,
+    IN const iCAX::Application::IApplicationContext& ApplicationContext_,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -147,9 +147,9 @@ iCAX::Interaction::CFacadeResult HandleListMachineDefinitions(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleGetSupportedMachineDefinitionFormats(
-    IN const iCAX::Interaction::CFacadeCall&,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleGetSupportedMachineDefinitionFormats(
+    IN const iCAX::Interaction::CInvocation&,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -163,9 +163,9 @@ iCAX::Interaction::CFacadeResult HandleGetSupportedMachineDefinitionFormats(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleSetMachineDefinitionEnabled(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetMachineDefinitionEnabled(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -186,9 +186,9 @@ iCAX::Interaction::CFacadeResult HandleSetMachineDefinitionEnabled(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleSetDefaultMachineDefinition(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetDefaultMachineDefinition(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -209,9 +209,9 @@ iCAX::Interaction::CFacadeResult HandleSetDefaultMachineDefinition(
     return _MakeResponse(Variant(_Result));
 }
 
-iCAX::Interaction::CFacadeResult HandleDeleteMachineDefinition(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleDeleteMachineDefinition(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext* pProductContext_,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)

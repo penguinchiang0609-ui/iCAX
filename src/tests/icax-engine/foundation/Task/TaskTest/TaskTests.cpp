@@ -1,15 +1,90 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Task/Task.h>
+#include <Task/Coroutine.h>
 
-#include <chrono>
-#include <memory>
-#include <stdexcept>
-#include <thread>
-#include <vector>
 
 using namespace std::chrono_literals;
+using namespace iCAX::Coroutines;
 using namespace iCAX::Tasks;
+
+namespace
+{
+    CCoroutine<> RunAcrossTwoFrames(int& count_)
+    {
+        ++count_;
+        co_await NextFrame();
+        ++count_;
+    }
+
+    CCoroutine<> RunAfterDelay(int& count_)
+    {
+        ++count_;
+        co_await WaitForSeconds(0.5);
+        ++count_;
+    }
+
+    CCoroutine<> RunWhenReady(bool& ready_, int& count_)
+    {
+        ++count_;
+        co_await WaitUntil([&ready_] { return ready_; });
+        ++count_;
+    }
+
+    CCoroutine<> RunAfterTask(Task<int> task_, int& result_)
+    {
+        result_ = co_await Await(std::move(task_));
+    }
+
+    struct CCoroutineLifetimeProbe final
+    {
+        bool* pDestroyed = nullptr;
+
+        ~CCoroutineLifetimeProbe()
+        {
+            if (pDestroyed)
+            {
+                *pDestroyed = true;
+            }
+        }
+    };
+
+    CCoroutine<> HoldUntilTask(Task<void> task_, bool& frameDestroyed_)
+    {
+        CCoroutineLifetimeProbe probe{ &frameDestroyed_ };
+        co_await Await(std::move(task_));
+    }
+
+    CCoroutine<> ThrowFromCoroutine()
+    {
+        throw std::runtime_error("coroutine failure");
+        co_return;
+    }
+
+    CCoroutine<int> ReturnValueAfterFrame()
+    {
+        co_await NextFrame();
+        co_return 42;
+    }
+
+    CCoroutine<std::unique_ptr<int>> ReturnMoveOnlyValue()
+    {
+        co_return std::make_unique<int>(17);
+    }
+
+    CCoroutine<int> ThrowFromResultCoroutine()
+    {
+        throw std::runtime_error("typed coroutine failure");
+        co_return 0;
+    }
+
+    CCoroutine<int> AwaitMoveOnlyTask(Task<std::unique_ptr<int>> task_)
+    {
+        auto value = co_await Await(std::move(task_));
+        co_return value ? *value : 0;
+    }
+}
 
 TEST(TaskTest, FromResultReturnsValue)
 {
@@ -33,9 +108,57 @@ TEST(TaskTest, TaskCompletionSourceControlsTaskCompletion)
     EXPECT_EQ(7, task.Result());
 }
 
-TEST(TaskTest, ManualSchedulerRunsQueuedWork)
+TEST(TaskTest, TaskCompletionSourceUsesDefaultScheduler)
 {
-    auto scheduler = std::make_shared<ManualTaskScheduler>();
+    TaskCompletionSource<int> source;
+    auto task = source.GetTask();
+
+    EXPECT_EQ(DefaultScheduler(), source.Scheduler());
+    EXPECT_EQ(DefaultScheduler(), task.Scheduler());
+}
+
+TEST(TaskTest, TaskCompletionSourceSchedulerIsInheritedByContinueWith)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    TaskCompletionSource<int> source(scheduler);
+    auto task = source.GetTask();
+    auto continuation = task.ContinueWith(
+        [](Task<int> completed) {
+            return completed.Result() + 1;
+        });
+
+    source.SetResult(41);
+
+    EXPECT_EQ(scheduler, task.Scheduler());
+    EXPECT_EQ(scheduler, continuation.Scheduler());
+    EXPECT_FALSE(continuation.IsCompleted());
+    EXPECT_EQ(1u, scheduler->RunAll());
+    EXPECT_EQ(42, continuation.Result());
+}
+
+TEST(TaskTest, ContinueWithSchedulerOverridesTaskScheduler)
+{
+    auto taskScheduler = std::make_shared<EventLoopTaskScheduler>();
+    auto continuationScheduler = std::make_shared<EventLoopTaskScheduler>();
+    TaskCompletionSource<int> source(taskScheduler);
+    auto continuation = source.GetTask().ContinueWith(
+        [](Task<int> completed) {
+            return completed.Result() * 2;
+        },
+        continuationScheduler);
+
+    source.SetResult(3);
+
+    EXPECT_EQ(0u, taskScheduler->PendingCount());
+    EXPECT_EQ(1u, continuationScheduler->PendingCount());
+    EXPECT_EQ(continuationScheduler, continuation.Scheduler());
+    EXPECT_EQ(1u, continuationScheduler->RunAll());
+    EXPECT_EQ(6, continuation.Result());
+}
+
+TEST(TaskTest, EventLoopSchedulerRunsQueuedWork)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
 
     auto task = iCAX::Tasks::Run([] { return 21; }, scheduler);
     auto next = task.ContinueWith(
@@ -57,6 +180,24 @@ TEST(TaskTest, ThreadPoolSchedulerRunsWorkByDefault)
     EXPECT_EQ(5, task.Result());
 }
 
+TEST(TaskTest, StartNewUsesDefaultSchedulerInsideCurrentSchedulerScope)
+{
+    auto eventLoopScheduler = std::make_shared<EventLoopTaskScheduler>();
+    Task<int> task;
+
+    {
+        CurrentTaskSchedulerScope scope(eventLoopScheduler);
+        task = StartNew([] {
+            return CurrentScheduler() == DefaultScheduler() ? 1 : 0;
+        });
+    }
+
+    EXPECT_EQ(DefaultScheduler(), task.Scheduler());
+    EXPECT_TRUE(task.WaitFor(2s));
+    EXPECT_EQ(1, task.Result());
+    EXPECT_EQ(0u, eventLoopScheduler->PendingCount());
+}
+
 TEST(TaskTest, CancellationBeforeRunProducesCanceledTask)
 {
     CancellationTokenSource source;
@@ -71,7 +212,7 @@ TEST(TaskTest, CancellationBeforeRunProducesCanceledTask)
 
 TEST(TaskTest, WorkCanObserveCancellationToken)
 {
-    auto scheduler = std::make_shared<ManualTaskScheduler>();
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
     CancellationTokenSource source;
 
     auto task = iCAX::Tasks::Run(
@@ -112,6 +253,7 @@ TEST(TaskTest, ContinueWithCancelsWhenConditionDoesNotMatch)
         },
         TaskContinuationOptions::NotOnFaulted);
 
+    ASSERT_TRUE(skipped.WaitFor(2s));
     EXPECT_TRUE(skipped.IsCanceled());
     EXPECT_THROW(skipped.Result(), TaskCanceledException);
 }
@@ -202,7 +344,7 @@ TEST(TaskTest, WaitAsyncCanBeCanceled)
 
 TEST(TaskTest, TaskHasStableIdAndCurrentIdDuringExecution)
 {
-    auto scheduler = std::make_shared<ManualTaskScheduler>();
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
 
     auto task = StartNew(
         [] {
@@ -256,7 +398,7 @@ TEST(TaskTest, RunContinuationsAsynchronouslySchedulesStoredContinuations)
 
 TEST(TaskTest, TaskFactoryUsesSchedulerAsyncStateAndHideScheduler)
 {
-    auto scheduler = std::make_shared<ManualTaskScheduler>();
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
     auto state = std::make_shared<int>(11);
     TaskFactory factory(
         CancellationToken::None(),
@@ -278,7 +420,7 @@ TEST(TaskTest, TaskFactoryUsesSchedulerAsyncStateAndHideScheduler)
     EXPECT_TRUE(task.Result());
 }
 
-TEST(TaskTest, StartNewLongRunningRunsWithoutManualScheduler)
+TEST(TaskTest, StartNewLongRunningRunsWithoutEventLoopPump)
 {
     auto task = StartNew(
         [] {
@@ -351,7 +493,7 @@ TEST(TaskTest, ContinueWithLazyCancellationWaitsForAntecedentCompletion)
 
 TEST(TaskTest, ContinueWithHideSchedulerExposesDefaultScheduler)
 {
-    auto scheduler = std::make_shared<ManualTaskScheduler>();
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
     auto task = Task<int>::FromResult(1);
 
     auto continuation = task.ContinueWith(
@@ -455,7 +597,7 @@ TEST(TaskTest, UnwrapReturnsInnerTaskResult)
 
 TEST(TaskTest, CurrentTaskSchedulerScopeRestoresPreviousScheduler)
 {
-    auto scheduler = std::make_shared<ManualTaskScheduler>();
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
     const auto original = CurrentScheduler();
 
     {
@@ -464,4 +606,222 @@ TEST(TaskTest, CurrentTaskSchedulerScopeRestoresPreviousScheduler)
     }
 
     EXPECT_EQ(original, CurrentScheduler());
+}
+
+TEST(CoroutineTest, NextFrameResumesAtMostOncePerTick)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    int count = 0;
+
+    const auto handle = manager.Start(RunAcrossTwoFrames(count));
+
+    EXPECT_EQ(1u, manager.Tick(0.016, 0.016));
+    EXPECT_EQ(1, count);
+    EXPECT_TRUE(manager.IsRunning(handle));
+
+    EXPECT_EQ(1u, manager.Tick(0.016, 0.032));
+    EXPECT_EQ(2, count);
+    EXPECT_FALSE(manager.IsRunning(handle));
+    EXPECT_TRUE(handle.Completion().IsCompletedSuccessfully());
+}
+
+TEST(CoroutineTest, WaitForSecondsUsesRuntimeFrameTime)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    int count = 0;
+
+    manager.Start(RunAfterDelay(count));
+    manager.Tick(0.1, 1.0);
+    EXPECT_EQ(1, count);
+
+    manager.Tick(0.2, 1.2);
+    EXPECT_EQ(1, count);
+
+    manager.Tick(0.3, 1.5);
+    EXPECT_EQ(2, count);
+}
+
+TEST(CoroutineTest, WaitUntilRunsPredicateOnRuntimeTick)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    bool ready = false;
+    int count = 0;
+
+    manager.Start(RunWhenReady(ready, count));
+    manager.Tick(0.016, 0.016);
+    manager.Tick(0.016, 0.032);
+    EXPECT_EQ(1, count);
+
+    ready = true;
+    manager.Tick(0.016, 0.048);
+    EXPECT_EQ(2, count);
+}
+
+TEST(CoroutineTest, AwaitTaskWakesThroughRuntimeScheduler)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    TaskCompletionSource<int> source;
+    int result = 0;
+
+    manager.Start(RunAfterTask(source.GetTask(), result));
+    manager.Tick(0.016, 0.016);
+    source.SetResult(42);
+
+    manager.Tick(0.016, 0.032);
+    EXPECT_EQ(0, result);
+    EXPECT_EQ(1u, scheduler->RunAll());
+
+    manager.Tick(0.016, 0.048);
+    EXPECT_EQ(42, result);
+}
+
+TEST(CoroutineTest, CancelDestroysFrameAndIgnoresLateTaskWake)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    TaskCompletionSource<void> source;
+    bool frameDestroyed = false;
+
+    const auto handle = manager.Start(HoldUntilTask(source.GetTask(), frameDestroyed));
+    manager.Tick(0.016, 0.016);
+    manager.Cancel(handle);
+
+    EXPECT_TRUE(frameDestroyed);
+    EXPECT_TRUE(handle.Completion().IsCanceled());
+    EXPECT_EQ(0u, manager.RunningCount());
+
+    source.SetResult();
+    EXPECT_EQ(1u, scheduler->RunAll());
+    EXPECT_EQ(0u, manager.Tick(0.016, 0.032));
+}
+
+TEST(CoroutineTest, PauseAndResumeControlCoroutine)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    int count = 0;
+
+    const auto handle = manager.Start(RunAcrossTwoFrames(count));
+    manager.Pause(handle);
+    EXPECT_EQ(0u, manager.Tick(0.016, 0.016));
+    EXPECT_EQ(ECoroutineStatus::Paused, manager.Status(handle));
+
+    manager.Resume(handle);
+    EXPECT_EQ(1u, manager.Tick(0.016, 0.032));
+    EXPECT_EQ(1, count);
+}
+
+TEST(CoroutineTest, PauseFreezesWaitForSeconds)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime runtime(scheduler);
+    int count = 0;
+
+    const auto handle = runtime.Start(RunAfterDelay(count));
+    runtime.Tick(0.1, 1.0);
+    ASSERT_EQ(1, count);
+
+    runtime.Pause(handle);
+    runtime.Tick(0.8, 1.8);
+    EXPECT_EQ(1, count);
+
+    runtime.Resume(handle);
+    runtime.Tick(0.1, 1.9);
+    EXPECT_EQ(1, count);
+
+    runtime.Tick(0.41, 2.31);
+    EXPECT_EQ(2, count);
+}
+
+TEST(CoroutineTest, ExceptionFaultsOnlyTheCoroutine)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    std::exception_ptr reported;
+    manager.SetExceptionHandler(
+        [&](const CCoroutineHandleBase&, std::exception_ptr exception_) {
+            reported = exception_;
+        });
+
+    const auto handle = manager.Start(ThrowFromCoroutine());
+    EXPECT_EQ(1u, manager.Tick(0.016, 0.016));
+
+    EXPECT_TRUE(handle.Completion().IsFaulted());
+    EXPECT_NE(nullptr, reported);
+    EXPECT_EQ(0u, manager.RunningCount());
+}
+
+TEST(CoroutineTest, ResultCoroutineCompletesWithTypedValue)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+
+    const auto handle = manager.Start(ReturnValueAfterFrame());
+    manager.Tick(0.016, 0.016);
+    EXPECT_FALSE(handle.Completion().IsCompleted());
+
+    manager.Tick(0.016, 0.032);
+    ASSERT_TRUE(handle.Completion().IsCompletedSuccessfully());
+    EXPECT_EQ(42, handle.Completion().Result());
+    EXPECT_EQ(ECoroutineStatus::Completed, manager.Status(handle));
+}
+
+TEST(CoroutineTest, ResultCoroutineSupportsMoveOnlyValue)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+
+    const auto handle = manager.Start(ReturnMoveOnlyValue());
+    manager.Tick(0.016, 0.016);
+
+    ASSERT_TRUE(handle.Completion().IsCompletedSuccessfully());
+    auto value = handle.Completion().TakeResult();
+    ASSERT_NE(nullptr, value);
+    EXPECT_EQ(17, *value);
+}
+
+TEST(CoroutineTest, ResultCoroutineCancellationCancelsTypedCompletion)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+
+    const auto handle = manager.Start(ReturnValueAfterFrame());
+    manager.Tick(0.016, 0.016);
+    manager.Cancel(handle);
+
+    EXPECT_TRUE(handle.Completion().IsCanceled());
+    EXPECT_EQ(ECoroutineStatus::Canceled, manager.Status(handle));
+}
+
+TEST(CoroutineTest, ResultCoroutineExceptionFaultsTypedCompletion)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+
+    const auto handle = manager.Start(ThrowFromResultCoroutine());
+    manager.Tick(0.016, 0.016);
+
+    EXPECT_TRUE(handle.Completion().IsFaulted());
+    EXPECT_EQ(ECoroutineStatus::Faulted, manager.Status(handle));
+    EXPECT_THROW(handle.Completion().Result(), std::runtime_error);
+}
+
+TEST(CoroutineTest, ResultCoroutineCanAwaitMoveOnlyTaskValue)
+{
+    auto scheduler = std::make_shared<EventLoopTaskScheduler>();
+    CCoroutineRuntime manager(scheduler);
+    TaskCompletionSource<std::unique_ptr<int>> source;
+
+    const auto handle = manager.Start(AwaitMoveOnlyTask(source.GetTask()));
+    manager.Tick(0.016, 0.016);
+    source.SetResult(std::make_unique<int>(23));
+    scheduler->RunAll();
+    manager.Tick(0.016, 0.032);
+
+    ASSERT_TRUE(handle.Completion().IsCompletedSuccessfully());
+    EXPECT_EQ(23, handle.Completion().Result());
 }

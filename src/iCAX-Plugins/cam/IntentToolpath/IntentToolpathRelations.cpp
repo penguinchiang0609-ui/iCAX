@@ -4,8 +4,6 @@
 #include "IntentToolpathComponents.h"
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
-#include <algorithm>
-#include <unordered_set>
 
 namespace
 {

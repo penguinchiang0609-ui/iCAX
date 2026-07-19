@@ -1,5 +1,6 @@
-import { AppFacade, ProductFacade, ProjectFacade, makeFacadeMethodCodeFromName } from "../Mailbox/facadeMethod.mjs";
-import { deserializeVariantText, serializeVariantText } from "../Mailbox/variantSerializer.mjs";
+import { AppFacade, ProductFacade, ProjectFacade, makeFacadeMethodCodeFromName } from "../Facades/facadeMethod.mjs";
+import { FacadeFrameKind } from "../Facades/facadeClient.mjs";
+import { deserializeVariantText, serializeVariantText } from "../Facades/variantSerializer.mjs";
 
 const appChannelId = "00000000-0000-4000-8000-000000000001";
 const productChannelId = "00000000-0000-4000-8000-000000000101";
@@ -13,6 +14,7 @@ export class MockHostBridge {
   constructor(options = {}) {
     this.delayMs = options.delayMs ?? 16;
     this.listeners = new Map();
+    this.postedFrames = [];
     this.productStarted = false;
     this.projectOpened = false;
     this.projectPath = "D:/projects/mock.icax";
@@ -48,7 +50,7 @@ export class MockHostBridge {
     return sceneChannelId;
   }
 
-  subscribeMail(channelId, handler) {
+  subscribeFacadeFrames(channelId, handler) {
     if (!this.listeners.has(channelId)) {
       this.listeners.set(channelId, new Set());
     }
@@ -56,20 +58,25 @@ export class MockHostBridge {
     return () => this.listeners.get(channelId)?.delete(handler);
   }
 
-  async postMail(mail) {
-    const payload = deserializeVariantText(mail.payloadText);
-    const responsePayload = this.#invokeFacadeMethod(String(mail.typeCode), payload);
+  async postFacadeFrame(frame) {
+    this.postedFrames.push(frame);
+    if (Number(frame.kind) !== FacadeFrameKind.Request) {
+      return;
+    }
+
+    const payload = deserializeVariantText(frame.payloadText);
+    const responsePayload = this.#invokeFacadeMethod(String(frame.methodCode), payload);
     const response = {
-      channelId: mail.channelId,
-      id: Date.now(),
-      originId: mail.id,
-      typeCode: mail.typeCode,
-      stamp: 0,
+      channelId: frame.channelId,
+      callId: frame.callId,
+      methodCode: frame.methodCode,
+      kind: FacadeFrameKind.Response,
+      status: 0,
       payloadText: serializeVariantText(responsePayload),
     };
 
     setTimeout(() => {
-      for (const listener of this.listeners.get(mail.channelId) ?? []) {
+      for (const listener of this.listeners.get(frame.channelId) ?? []) {
         listener(response);
       }
     }, this.delayMs);
@@ -87,49 +94,71 @@ export class MockHostBridge {
     this.windowDragRequested = true;
   }
 
-  emitMail(channelId, facadeMember, payload = {}, options = {}) {
-    const eventMail = {
+  emitFacadeFrame(channelId, facadeMember, payload = {}, options = {}) {
+    const frame = {
       channelId,
-      id: options.id ?? Date.now(),
-      originId: options.originId ?? 0,
-      typeCode: makeFacadeMethodCodeFromName(facadeMember),
-      stamp: options.stamp ?? 0,
+      callId: options.callId ?? 0,
+      methodCode: makeFacadeMethodCodeFromName(facadeMember),
+      kind: options.kind ?? FacadeFrameKind.Event,
+      status: options.status ?? 0,
       payloadText: serializeVariantText(payload),
     };
 
     setTimeout(() => {
       for (const listener of this.listeners.get(channelId) ?? []) {
-        listener(eventMail);
+        listener(frame);
       }
     }, options.delayMs ?? this.delayMs);
-    return eventMail;
+    return frame;
   }
 
-  #invokeFacadeMethod(typeCode, payload) {
-    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.getState)
-      || typeCode === makeFacadeMethodCodeFromName(AppFacade.listProducts)) {
+  emitReport(channelId, callId, facadeMember, payload = {}, options = {}) {
+    if (!callId) {
+      throw new TypeError("callId is required for a Facade report");
+    }
+    return this.emitFacadeFrame(channelId, facadeMember, payload, {
+      ...options,
+      callId,
+      kind: FacadeFrameKind.Report,
+    });
+  }
+
+  emitRequest(channelId, callId, facadeMethod, payload = {}, options = {}) {
+    if (!callId) {
+      throw new TypeError("callId is required for a Facade request");
+    }
+    return this.emitFacadeFrame(channelId, facadeMethod, payload, {
+      ...options,
+      callId,
+      kind: FacadeFrameKind.Request,
+    });
+  }
+
+  #invokeFacadeMethod(methodCode, payload) {
+    if (methodCode === makeFacadeMethodCodeFromName(AppFacade.getState)
+      || methodCode === makeFacadeMethodCodeFromName(AppFacade.listProducts)) {
       return this.#applicationState();
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.startProduct)) {
+    if (methodCode === makeFacadeMethodCodeFromName(AppFacade.startProduct)) {
       this.productStarted = true;
       return { applicationChannelId: appChannelId, product: this.#productState(), state: this.#applicationState() };
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.stopProduct)) {
+    if (methodCode === makeFacadeMethodCodeFromName(AppFacade.stopProduct)) {
       this.productStarted = false;
       this.projectOpened = false;
       return this.#applicationState();
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.resolveProjectFile)) {
+    if (methodCode === makeFacadeMethodCodeFromName(AppFacade.resolveProjectFile)) {
       return {
         applicationChannelId: appChannelId,
         resolve: this.#resolveProjectFile(payload.projectPath),
       };
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(AppFacade.openProjectFile)) {
+    if (methodCode === makeFacadeMethodCodeFromName(AppFacade.openProjectFile)) {
       this.productStarted = true;
       this.projectOpened = true;
       this.projectPath = payload.projectPath || this.projectPath;
@@ -142,27 +171,27 @@ export class MockHostBridge {
       };
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(ProductFacade.getState)
-      || typeCode === makeFacadeMethodCodeFromName(ProductFacade.listProjectCatalogs)) {
+    if (methodCode === makeFacadeMethodCodeFromName(ProductFacade.getState)
+      || methodCode === makeFacadeMethodCodeFromName(ProductFacade.listProjectCatalogs)) {
       return this.#runningProductState();
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(ProductFacade.openProjectCatalog)) {
+    if (methodCode === makeFacadeMethodCodeFromName(ProductFacade.openProjectCatalog)) {
       this.projectOpened = true;
       this.projectPath = payload.projectPath || this.projectPath;
       return { catalog: this.#catalogState(payload.projectPath), state: this.#runningProductState() };
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(ProjectFacade.getState)) {
+    if (methodCode === makeFacadeMethodCodeFromName(ProjectFacade.getState)) {
       return this.#projectState();
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(ProjectFacade.undo)
-      || typeCode === makeFacadeMethodCodeFromName(ProjectFacade.redo)) {
+    if (methodCode === makeFacadeMethodCodeFromName(ProjectFacade.undo)
+      || methodCode === makeFacadeMethodCodeFromName(ProjectFacade.redo)) {
       return this.#undoRedoState();
     }
 
-    if (typeCode === makeFacadeMethodCodeFromName(ProjectFacade.getUndoRedoState)) {
+    if (methodCode === makeFacadeMethodCodeFromName(ProjectFacade.getUndoRedoState)) {
       return this.#undoRedoState();
     }
 

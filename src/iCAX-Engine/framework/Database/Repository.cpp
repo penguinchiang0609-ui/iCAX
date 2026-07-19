@@ -3,11 +3,6 @@
 #include "MetaRegistry.h"
 #include "RepositoryUndoRedoHistory.h"
 
-#include <map>
-#include <format>
-#include <set>
-#include <tuple>
-#include <utility>
 
 namespace
 {

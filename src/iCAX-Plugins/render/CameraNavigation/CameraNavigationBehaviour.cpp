@@ -11,10 +11,6 @@
 #include "Services/ServiceProvider.h"
 #include "Transform/Transform.h"
 
-#include <algorithm>
-#include <cmath>
-#include <stdexcept>
-#include <unordered_map>
 
 namespace
 {

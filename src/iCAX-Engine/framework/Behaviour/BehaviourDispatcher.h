@@ -3,6 +3,7 @@
 #include "BehaviourBase.h"
 #include "../Database/IRepositoryEvent.h"
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <typeindex>
 #include <unordered_map>
@@ -52,7 +53,9 @@ namespace iCAX
             /*
             * @brief 构造函数
             */
-            explicit CBehaviourDispatcher(IN std::shared_ptr<IBehaviourRegistry> pRegistry_);
+            CBehaviourDispatcher(
+                IN std::shared_ptr<IBehaviourRegistry> pRegistry_,
+                IN std::shared_ptr<iCAX::Coroutines::CCoroutineRuntime> pCoroutineRuntime_);
 
             /*
             * @brief 追加行为
@@ -131,7 +134,8 @@ namespace iCAX
                 IN iCAX::Project::IProjectContext& ProjectContext_,
                 IN iCAX::Project::ISceneContext& SceneContext_,
                 IN const double& nDeltaTime_,
-                IN const double& nTotalTime_) const;
+                IN const double& nTotalTime_,
+                IN std::function<void()> CoroutinePhase_ = {}) const;
 
             /*
             * @brief Repository 修改前通知入口。
@@ -207,6 +211,7 @@ namespace iCAX
             mutable std::vector<NotifyRequest> m_PendingDestroyNotifications;
             mutable size_t m_nNextPendingDestroySequence = 0;
             std::shared_ptr<IBehaviourRegistry> m_pRegistry;
+            std::shared_ptr<iCAX::Coroutines::CCoroutineRuntime> m_pCoroutineRuntime;
         };
     }
 }

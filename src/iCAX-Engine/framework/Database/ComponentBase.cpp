@@ -7,9 +7,6 @@
 #include "IMetaRegistry.h"
 #include "ModifyFilter.h"
 
-#include <exception>
-#include <format>
-#include <vector>
 
 namespace
 {

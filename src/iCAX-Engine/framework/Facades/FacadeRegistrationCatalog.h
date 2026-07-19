@@ -14,7 +14,7 @@ namespace iCAX::Interaction
 {
     /*
     * @brief Facade 静态注册目录。
-    * @details 注册时保存回放函数，ApplicationHost 或 ProductRuntime 决定回放到哪个 Registry。
+    * @details 注册时保存回放函数，ApplicationRuntime 或 ProductRuntime 决定回放到哪个 Registry。
     */
     class _FACADES_EXP CFacadeRegistrationCatalog final
     {

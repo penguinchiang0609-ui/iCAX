@@ -8,7 +8,6 @@
 #include "ToolpathComponents.h"
 #include "WorkpieceComponents.h"
 
-#include <stdexcept>
 
 namespace iCAX
 {

@@ -32,9 +32,9 @@ namespace Facades
 {
 using namespace Internal;
 
-iCAX::Interaction::CFacadeResult HandleFitCameraView(
-    IN const iCAX::Interaction::CFacadeCall &,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleFitCameraView(
+    IN const iCAX::Interaction::CInvocation &,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *pProjectContext_,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -47,9 +47,9 @@ iCAX::Interaction::CFacadeResult HandleFitCameraView(
     return _MakeResponse(Variant(_Payload));
 }
 
-iCAX::Interaction::CFacadeResult HandleSetStandardCameraView(
-    IN const iCAX::Interaction::CFacadeCall& Request_,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleSetStandardCameraView(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)

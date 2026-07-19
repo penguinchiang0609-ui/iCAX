@@ -2,12 +2,12 @@
 
 ## 1. 定位
 
-`AppProxy` 是前端应用代理层。它是 H5 进入 Engine 的第一层对象，对应 Engine `ApplicationHost` 的前端会话表达。
+`AppProxy` 是前端应用代理层。它是 H5 进入 Engine 的第一层对象，对应 Engine `ApplicationRuntime` 的前端会话表达。
 
 前端 app proxy 不拥有业务数据，只保存：
 
 - application channel id。
-- 全局 `MailboxClient`。
+- 全局 `FacadeClient`。
 - application state 快照。
 - 已启动 product 的 `ProductProxy` 对象表。
 
@@ -34,17 +34,17 @@ const app = await AppProxy.create(bridge);
 
 ## 3. 生命周期
 
-`AppProxy.create()` 必须先从 bridge 获取 application channel，然后创建 `MailboxClient`。
+`AppProxy.create()` 必须先从 bridge 获取 application channel，然后创建 `FacadeClient`。
 
 产品启动、停止、项目文件打开都通过 application channel 发起。`AppProxy` 收到 backend state 后，同步本地 `ProductProxy` 对象表。
 
-backend state 中的 `productChannelId` 只表示 product runtime 的通信身份，不表示当前 H5 bridge 已经可以向该 channel 投递邮件。只要 product runtime 处于 started 状态，`AppProxy` 在创建或更新 `ProductProxy` 前必须调用 `bridge.registerProductChannel(productId)`，让原生宿主把 product frontend post office 注册到当前 bridge 会话。
+backend state 中的 `productChannelId` 只表示 product runtime 的通信身份，不表示当前 H5 bridge 已经可以向该 channel 投递 Facade frame。只要 product runtime 处于 started 状态，`AppProxy` 在创建或更新 `ProductProxy` 前必须调用 `bridge.registerProductChannel(productId)`，让原生宿主把 product frontend Facade endpoint 注册到当前 bridge 会话。
 
 `bridge.registerProductChannel(productId)` 返回的 channel id 才是本次前端会话实际可用的 `productChannelId`。如果返回空、nil 或非法 channel id，必须立即抛出异常。
 
 ## 4. 错误处理
 
-缺少 `bridge`、`mailboxClient` 或 application channel id 时立即抛出异常。命令失败和超时由 `MailboxClient` 转换为 rejected Promise。
+缺少 `bridge`、`FacadeClient` 或 application channel id 时立即抛出异常。命令失败和超时由 `FacadeClient` 转换为 rejected Promise。
 
 ## 5. 验收要求
 

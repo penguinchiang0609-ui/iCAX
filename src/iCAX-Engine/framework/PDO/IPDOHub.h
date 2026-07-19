@@ -39,7 +39,7 @@ namespace iCAX
         /*
         * @brief PDOHub 分配过程回调。
         * @details
-        *   PDOHub 只在分配 slot 时内部判断是否需要碎片整理。它不依赖 Context、Mailbox 或前端，
+        *   PDOHub 只在分配 slot 时内部判断是否需要碎片整理。它不依赖 Context、Facades 或前端，
         *   只在整理开始和整理结束两个时刻调用外部传入的回调。
         *   结束回调携带本次移动的 slot 列表，外部可据此通知前端按 PDOID 重新解析 offset。
         */

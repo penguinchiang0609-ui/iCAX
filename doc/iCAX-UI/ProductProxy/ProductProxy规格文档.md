@@ -33,7 +33,7 @@
 
 `ProductProxy` 模块不解释产品协议。具体产品命令、事件和 PDO payload 由 `src/apps/<product-id>/protocol` 定义。
 
-Project 本身不拥有 mailbox。backend project state 必须提供 `mainSceneId`、`mainScene` 和 `scenes`。只要 `ProductProxy` 根据 catalog/project state 创建或更新 `ProjectProxy`，就必须先根据主 Scene 调用 `bridge.registerSceneChannel(projectId, mainSceneId)`，让原生宿主把主 Scene 的 frontend post office 注册到当前 bridge 会话。
+Project 本身不拥有 Facade。backend project state 必须提供 `mainSceneId`、`mainScene` 和 `scenes`。只要 `ProductProxy` 根据 catalog/project state 创建或更新 `ProjectProxy`，就必须先根据主 Scene 调用 `bridge.registerSceneChannel(projectId, mainSceneId)`，让原生宿主把主 Scene 的 frontend Facade endpoint 注册到当前 bridge 会话。
 
 `bridge.registerSceneChannel(projectId, sceneId)` 返回的 channel id 才是本次前端会话实际可用的 `sceneChannelId`。如果返回空、nil 或非法 channel id，必须立即抛出异常。
 

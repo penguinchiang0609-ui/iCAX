@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "JoltPhysicsSceneCatalog.h"
 
-#include <stdexcept>
-#include <unordered_map>
 
 class iCAX::JoltPhysics::CJoltPhysicsSceneCatalog::Impl final
 {

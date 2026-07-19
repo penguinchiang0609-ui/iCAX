@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include "Data/PropertyBag.h"
 #include "Data/uuid.h"
@@ -11,9 +12,6 @@
 #include "Services/ServiceProvider.h"
 #include "Services/ServiceRegistrationCatalog.h"
 
-#include <memory>
-#include <stdexcept>
-#include <string>
 
 namespace
 {
@@ -83,12 +81,12 @@ namespace
             return m_strSceneName;
         }
 
-        iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
         {
             return {};
         }
 
-        iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
         {
             return {};
         }

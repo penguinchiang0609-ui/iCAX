@@ -5,18 +5,17 @@
 #include "ProductContext/ProductData.h"
 #include "ProductFacades.h"
 
-#include "ApplicationContext/ApplicationContext.h"
+#include "ApplicationContext/IApplicationContext.h"
 #include "Behaviour/IBehaviourRegistry.h"
 #include "Behaviour/BehaviourRegistrationCatalog.h"
 #include "Facades/FacadeInvoker.h"
-#include "Facades/FacadeCall.h"
+#include "Facades/Invocation.h"
 #include "Facades/FacadeRegistry.h"
 #include "Data/Variant.h"
 #include "Database/IMetaRegistry.h"
 #include "Database/MetaRegistrationCatalog.h"
-#include "Mailbox/MailChannelRegistry.h"
-#include "Mailbox/MailPostOffice.h"
-#include "MailHandler/CMailFacadeHandler.h"
+#include "Facades/FacadeChannelRegistry.h"
+#include "Facades/FacadeEndpoint.h"
 #include "Project/Project.h"
 #include "Project/ProjectCatalog.h"
 #include "Project/ProjectRuntime.h"
@@ -25,6 +24,7 @@
 #include "ProductContext/IProductContext.h"
 #include "Services/ServiceProvider.h"
 #include "Services/ServiceRegistrationCatalog.h"
+#include "Task/Coroutine.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -34,6 +34,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace iCAX
@@ -55,14 +56,12 @@ namespace iCAX
             * @brief 构造产品运行时。
             * @param [in] Definition_ 产品静态定义。
             * @param [in] pApplicationContext_ 应用上下文，不能为空。
-            * @param [in] pApplicationServiceProvider_ 应用级服务容器，不能为空。
             * @param [in] pProductDataStore_ 产品数据存储，可为空；为空时使用默认文件存储。
             */
             CProductRuntime(
                 IN const CProductDefinition& Definition_,
-                IN std::shared_ptr<iCAX::Application::CApplicationContext> pApplicationContext_,
-                IN std::shared_ptr<iCAX::Services::CServiceProvider> pApplicationServiceProvider_,
-                IN std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry_,
+                IN std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext_,
+                IN std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry_,
                 IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr,
                 IN uint32_t nFrameIntervalMilliseconds_ = 16);
             ~CProductRuntime();
@@ -84,6 +83,43 @@ namespace iCAX
             * @details 会关闭所有项目 runtime/catalog，移除产品邮箱，并清空 Facade 上下文。
             */
             void Stop();
+
+            /*
+            * @brief 获取 ProductRuntime 工作循环的 Task 调度器。
+            * @details Schedule 只负责线程安全入队，任务由产品工作线程在后续循环中执行。
+            */
+            iCAX::Tasks::TaskSchedulerPtr GetProductTaskScheduler() const noexcept;
+
+            /*
+            * @brief 在 ProductRuntime 工作循环中启动协程。
+            * @details 只能在产品工作线程调用；协程由产品循环逐帧恢复，产品停止时自动取消。
+            */
+            template<typename TResult>
+            iCAX::Coroutines::CCoroutineHandle<TResult> StartCoroutine(
+                iCAX::Coroutines::CCoroutine<TResult> coroutine_)
+            {
+                return RequireProductCoroutineRuntimeOnWorker().Start(std::move(coroutine_));
+            }
+
+            /*
+            * @brief 停止一个 ProductRuntime 协程。
+            * @details 只能在产品工作线程调用。
+            */
+            void PauseCoroutine(IN const iCAX::Coroutines::CCoroutineHandleBase& Handle_);
+            void ResumeCoroutine(IN const iCAX::Coroutines::CCoroutineHandleBase& Handle_);
+            void CancelCoroutine(IN const iCAX::Coroutines::CCoroutineHandleBase& Handle_);
+
+            /*
+            * @brief 取消当前 ProductRuntime 中的全部协程。
+            * @details 取消后仍可启动新协程；只能在产品工作线程调用。
+            */
+            void CancelAllCoroutines();
+
+            /*
+            * @brief 判断指定产品协程是否仍在运行。
+            * @details 只能在产品工作线程调用。
+            */
+            bool IsCoroutineRunning(IN const iCAX::Coroutines::CCoroutineHandleBase& Handle_) const;
 
             /*
             * @brief 判断产品是否已启动。
@@ -131,38 +167,38 @@ namespace iCAX
             const iCAX::Data::uuid& GetProductChannelID() const override;
 
             /*
-            * @brief 获取后端视角的产品邮局。
+            * @brief 获取后端视角的产品Facade 端点。
             * @return 产品邮箱的后端端点。
             * @throws std::logic_error 产品未启动时抛出。
             */
-            iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override;
+            iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override;
 
             /*
-            * @brief 获取前端视角的产品邮局。
+            * @brief 获取前端视角的产品Facade 端点。
             */
-            iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override;
+            iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override;
 
             /*
-            * @brief 获取前端视角的产品邮局。
-            * @return 产品邮箱的前端端点。
+            * @brief 获取前端视角的产品 Facade 端点。
+            * @return 产品 channel 的前端端点。
             * @throws std::logic_error 产品未启动时抛出。
             */
-            iCAX::Mail::CMailPostOffice GetProductFrontendPostOffice() const;
+            iCAX::Interaction::CFacadeEndpoint GetProductFrontendFacadeEndpoint() const;
 
             /*
-            * @brief 向产品级前端邮箱主动发送事件邮件。
-            * @param [in] nTypeCode_ 事件类型码，使用 FacadeMethod 的 64 位主/子编码。
+            * @brief 向产品级前端主动发送 Facade Event。
+            * @param [in] nMethodCode_ 事件方法码，使用 FacadeMethod 的 64 位主/子编码。
             * @param [in] strPayloadText_ UTF-8 文本负载，通常是 VariantSerializer 文本。
             * @details
-            *   主动事件邮件的 nOriginId 固定为 0，前端通过 FrontendMailbox.subscribe/subscribeAll 接收。
+            *   主动事件使用 Event 帧，前端通过 FacadeClient.subscribe/subscribeAll 接收。
             */
-            void SendFrontendEvent(IN uint64_t nTypeCode_, IN const std::string& strPayloadText_);
+            void SendFrontendEvent(IN uint64_t nMethodCode_, IN const std::string& strPayloadText_);
 
             /*
-            * @brief 分发产品邮箱中的邮件。
+            * @brief 分发产品级 Facade frame。
             * @details ProductRuntime 自己的工作线程会调用；白盒测试也可以手动调用一次以加快响应。
             */
-            void DispatchProductMails();
+            void DispatchProductFacadeFrames();
 
             /*
             * @brief 获取当前项目 catalog 快照。
@@ -210,11 +246,11 @@ namespace iCAX
             bool CloseProjectCatalog(IN const iCAX::Data::uuid& CatalogID_);
 
             /*
-            * @brief 获取指定 Scene 的前端邮局。
+            * @brief 获取指定 Scene 的前端Facade 端点。
             * @return Scene 邮箱的前端端点。
             * @throws std::runtime_error 项目或 Scene 不存在时抛出。
             */
-            iCAX::Mail::CMailPostOffice GetSceneFrontendPostOffice(
+            iCAX::Interaction::CFacadeEndpoint GetSceneFrontendFacadeEndpoint(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN const iCAX::Data::uuid& SceneID_) const;
 
@@ -269,6 +305,11 @@ namespace iCAX
             */
             void WorkerMain();
 
+            void InitializeProductCoroutinesOnWorker();
+            void ShutdownProductCoroutinesOnWorker() noexcept;
+            iCAX::Coroutines::CCoroutineRuntime& RequireProductCoroutineRuntimeOnWorker();
+            const iCAX::Coroutines::CCoroutineRuntime& RequireProductCoroutineRuntimeOnWorker() const;
+
             /*
             * @brief 关闭项目、catalog 和产品邮箱。
             * @details 调用方必须已经停止产品工作线程，或当前就在产品工作线程的异常退出路径中。
@@ -320,24 +361,19 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_);
 
             /*
-            * @brief 分发指定 Scene 或产品邮箱中的邮件。
-            * @param [in] PostOffice_ 后端视角邮局。
-            * @param [in] pProjectRuntime_ 项目运行时；为空表示产品邮箱。
-            * @param [in] pSceneContext_ 当前 Scene 上下文；为空表示产品邮箱。
+            * @brief 分发指定 Scene 或产品 channel 中的 Facade frame。
+            * @param [in] Endpoint_ 后端视角 Facade 端点。
+            * @param [in] pProjectRuntime_ 项目运行时；为空表示产品级 channel。
+            * @param [in] pSceneContext_ 当前 Scene 上下文；为空表示产品级 channel。
             */
-            void DispatchSceneMails(
-                IN const iCAX::Mail::CMailPostOffice& PostOffice_,
+            void DispatchSceneFacadeFrames(
+                IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_,
                 IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
             /*
             * @brief 启动项目 runtime 并接入项目帧回调。
             */
             void StartProject(IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_);
-
-            /*
-            * @brief 分配后端响应邮件 ID。
-            */
-            uint64_t AllocateBackendMailID();
 
             /*
             * @brief 加载产品数据。
@@ -369,9 +405,9 @@ namespace iCAX
             * @brief 处理获取产品状态方法。
             * @return 包含产品状态的调用结果。
             */
-            iCAX::Interaction::CFacadeResult HandleGetState(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleGetState(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
@@ -380,9 +416,9 @@ namespace iCAX
             * @brief 处理列出项目 catalog 方法。
             * @return 当前实现返回完整产品状态，其中包含 catalog 列表。
             */
-            iCAX::Interaction::CFacadeResult HandleListProjectCatalogs(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleListProjectCatalogs(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
@@ -392,9 +428,9 @@ namespace iCAX
             * @param [in] Request_ Payload 可包含 catalogName/catalogPath/projectName/projectPath。
             * @return 打开的 catalog 状态和产品状态。
             */
-            iCAX::Interaction::CFacadeResult HandleOpenProjectCatalog(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleOpenProjectCatalog(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
@@ -404,20 +440,20 @@ namespace iCAX
             * @param [in] Request_ Payload 必须包含 catalogId。
             * @return 关闭后的产品状态。
             */
-            iCAX::Interaction::CFacadeResult HandleCloseProjectCatalog(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleCloseProjectCatalog(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
 
             /*
             * @brief 处理项目状态查询方法。
-            * @details 必须发送到项目 mailbox；响应包含 project state 和 undoRedo 快照。
+            * @details 必须在项目 Scene 的 Facade scope 调用；响应包含 project state 和 undoRedo 快照。
             */
-            iCAX::Interaction::CFacadeResult HandleProjectGetState(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleProjectGetState(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
@@ -425,9 +461,9 @@ namespace iCAX
             /*
             * @brief 处理项目撤销重做状态查询方法。
             */
-            iCAX::Interaction::CFacadeResult HandleProjectGetUndoRedoState(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleProjectGetUndoRedoState(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
@@ -435,9 +471,9 @@ namespace iCAX
             /*
             * @brief 处理项目撤销方法。
             */
-            iCAX::Interaction::CFacadeResult HandleProjectUndo(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleProjectUndo(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
@@ -445,9 +481,9 @@ namespace iCAX
             /*
             * @brief 处理项目重做方法。
             */
-            iCAX::Interaction::CFacadeResult HandleProjectRedo(
-                IN const iCAX::Interaction::CFacadeCall& Request_,
-                IN iCAX::Application::IApplicationContext& ApplicationContext_,
+            iCAX::Interaction::CInvocationResult HandleProjectRedo(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,
                 IN iCAX::Project::IProjectContext* pProjectContext_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
@@ -456,25 +492,26 @@ namespace iCAX
             CProductDefinition m_Definition;
             CProductData m_ProductData;
             iCAX::Data::uuid m_ProductChannelID;
-            std::shared_ptr<iCAX::Application::CApplicationContext> m_pApplicationContext;
-            std::shared_ptr<iCAX::Services::CServiceProvider> m_pApplicationServiceProvider;
-            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
+            std::shared_ptr<const iCAX::Application::IApplicationContext> m_pApplicationContext;
+            std::shared_ptr<iCAX::Services::CServiceProvider> m_pProductServiceProvider;
+            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> m_pFacadeChannelRegistry;
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pProductMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pProductBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pProductResourceLoaderRegistry;
             std::shared_ptr<IProductDataStore> m_pProductDataStore;
             std::shared_ptr<iCAX::Interaction::CFacadeRegistry> m_pFacadeRegistry;
             std::unique_ptr<iCAX::Interaction::CFacadeInvoker> m_pFacadeInvoker;
-            std::unique_ptr<iCAX::MailHandler::CMailFacadeHandler> m_pMailFacadeHandler;
-            std::atomic_uint64_t m_nNextBackendMailID = 1;
             mutable std::mutex m_RuntimeMutex;
             std::condition_variable m_WorkerCondition;
             std::thread m_WorkThread;
+            std::thread::id m_WorkThreadID;
             std::atomic_bool m_bStopWorkerRequested = false;
             bool m_bStarted = false;
             bool m_bFaulted = false;
             std::string m_strFaultMessage;
             std::exception_ptr m_pFaultException = nullptr;
+            std::shared_ptr<iCAX::Tasks::EventLoopTaskScheduler> m_pProductTaskScheduler;
+            std::unique_ptr<iCAX::Coroutines::CCoroutineRuntime> m_pProductCoroutineRuntime;
             uint32_t m_nFrameIntervalMilliseconds = 16;
             bool m_bModulesLoaded = false;
             bool m_bRegistrationsReplayed = false;

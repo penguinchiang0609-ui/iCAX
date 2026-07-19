@@ -10,6 +10,18 @@
 // 添加要在此处预编译的标头
 #include "framework.h"
 
+#include <algorithm>
+#include <cctype>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include <windows.h>
+
 #define _SERVICE
 
 

@@ -1,11 +1,6 @@
 #include "pch.h"
 #include "GeometryAlgo.h"
 
-#include <algorithm>
-#include <cmath>
-#include <numeric>
-#include <type_traits>
-#include <unordered_set>
 
 namespace
 {

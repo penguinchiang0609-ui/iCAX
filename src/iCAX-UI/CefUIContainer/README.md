@@ -8,9 +8,11 @@
 - 创建 CEF browser。
 - 加载 `AppShell/index.html` 或配置指定的 `startURL`。
 - 注入 `window.icax` bridge。
-- 将 JS 的 `getApplicationChannelId/registerProductChannel/registerSceneChannel/postMail` 直接转发到 `IFrontendBridge`。
+- 将 JS 的 `getApplicationChannelId/registerProductChannel/registerSceneChannel/postFacadeFrame` 直接转发到 `IFrontendBridge`。
 - 提供 `openFileDialog(options)` 宿主能力，返回用户选择的 UTF-8 文件路径；用户取消时返回 `null`。
-- 轮询 `IFrontendBridge::PollMails()`，把后端 response/event 派发给 JS 订阅者。
+- 轮询 `IFrontendBridge::PollFacadeFrames()`，把后端 request/report/response/event 派发给 JS 订阅者。
+
+Facade 轮询同时向 CEF UI task runner 投递 Front Task pump；`IFrontendBridge::RunFrontTasks()` 因而在 CEF UI 线程执行，绑定 Front Task scheduler 的 continuation 不会落到后台线程池。
 
 ## CEF SDK
 
@@ -53,7 +55,7 @@ cmake --build .deps\cef\cef_binary_149.0.5+g6770623+chromium-149.0.7827.197_wind
 type=cef
 modulePath=CefUIContainer.dll
 webPageRoot=.../src/iCAX-UI/SDK/AppShell
-mailPollIntervalMS=16
+facadePollIntervalMS=16
 remoteDebuggingPort=9223
 allowFileAccessFromFiles=true
 disableGpu=true

@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Data/Array1.h>
 #include <Data/Array2.h>
@@ -8,10 +9,6 @@
 #include <Data/VariantSerializer.h>
 #include <Data/uuid.h>
 
-#include <cstdint>
-#include <stdexcept>
-#include <string>
-#include <vector>
 
 using namespace iCAX::Data;
 

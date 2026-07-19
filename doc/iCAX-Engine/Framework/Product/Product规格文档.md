@@ -2,9 +2,9 @@
 
 ## 1. 定位
 
-`Product` 是产品级运行时。它位于 `ApplicationHost` 和 `Project` 之间。
+`Product` 是产品级运行时。它位于 `ApplicationRuntime` 和 `Project` 之间。
 
-`ApplicationHost` 负责列出和启动产品；`ProductRuntime` 负责产品级 mailbox、产品模块加载、最近项目列表和 ProjectCatalog 生命周期。产品级 mailbox 的底层 channel 由应用级 `CMailChannelRegistry` 按 `productChannelId` 托管。产品 UI 入口由 `FrontendEntry` 描述，但后端不绑定 H5、WPF 或 Qt。
+`ApplicationRuntime` 负责列出和启动产品；`ProductRuntime` 负责产品级 Facade、产品模块加载、最近项目列表和 ProjectCatalog 生命周期。产品级 Facade 的底层 channel 由应用级 `CFacadeChannelRegistry` 按 `productChannelId` 托管。产品 UI 入口由 `FrontendEntry` 描述，但后端不绑定 H5、WPF 或 Qt。
 
 ## 2. 产品定义
 
@@ -38,7 +38,7 @@ magicOffset: unsigned_long_long
 probeBytes: unsigned_long_long
 ```
 
-`magic` 是识别项目文件归属产品的唯一依据，不能为空，且同一 ApplicationHost 下不能重复。`magicOffset` 表示 magic 在文件头中的偏移；`probeBytes` 表示 ApplicationHost 为识别产品最多读取的探测字节数。ApplicationHost 只做轻量文件探测，不解析完整项目文件。
+`magic` 是识别项目文件归属产品的唯一依据，不能为空，且同一 ApplicationRuntime 下不能重复。`magicOffset` 表示 magic 在文件头中的偏移；`probeBytes` 表示 ApplicationRuntime 为识别产品最多读取的探测字节数。ApplicationRuntime 只做轻量文件探测，不解析完整项目文件。
 
 ## 3. 产品 Manifest
 
@@ -72,7 +72,7 @@ backend.modules.commands          -> CProductDefinition.Modules.FacadeModules
 webpage.entry                     -> CProductDefinition.FrontendEntry
 ```
 
-模块路径按 manifest 所在产品目录解析为规范化路径。`UIContainer` 不解析 manifest；启动层负责调用上述接口并把结果写入 `ApplicationHostConfig.Products`。
+模块路径按 manifest 所在产品目录解析为规范化路径。`UIContainer` 不解析 manifest；启动层负责调用上述接口并把结果写入 `ApplicationRuntimeConfig.Products`。
 
 ## 4. 产品数据
 
@@ -114,7 +114,7 @@ lastOpenedTime: string
 
 ```cpp
 auto productRuntime = host.StartProduct("robot");
-auto productOffice = host.GetProductFrontendPostOffice("robot");
+auto productOffice = host.GetProductFrontendFacadeEndpoint("robot");
 ```
 
 直接调用方式：
@@ -128,12 +128,12 @@ auto catalog = productRuntime->OpenProjectCatalog(
 
 auto project = catalog->GetMainProject();
 auto mainScene = project->GetMainScene();
-auto sceneOffice = productRuntime->GetSceneFrontendPostOffice(project->GetProjectID(), mainScene->GetSceneID());
+auto sceneOffice = productRuntime->GetSceneFrontendFacadeEndpoint(project->GetProjectID(), mainScene->GetSceneID());
 ```
 
 `ProductRuntime` 打开 ProjectCatalog 时使用产品定义中的 `DefaultProjectStartupComponent`，上层打开项目时不再传入 startup component。
 
-`ProductRuntime` 内部通过 `IProjectRuntime` 管理项目运行实例。当前实现使用 `CLocalProjectRuntime` 包装进程内 `CProject`；上层只应依赖项目 ID、状态和主 Scene mailbox，不应假设项目一定和 ProductRuntime 位于同一个地址空间。
+`ProductRuntime` 内部通过 `IProjectRuntime` 管理项目运行实例。当前实现使用 `CProjectRuntime` 包装进程内 `CProject`；上层只应依赖项目 ID、状态和主 Scene Facade，不应假设项目一定和 ProductRuntime 位于同一个地址空间。
 
 产品运行时拥有自己的产品级注册表：
 
@@ -149,7 +149,7 @@ ProductRuntime
 
 每个 Scene 创建时会得到自己的 `ResourceLoaderRegistry`，该 registry 从当前产品模块重新回放 ResourceLoader 注册动作。这样 loader 实例、资源对象和资源池都按 Scene 隔离。
 
-产品 DLL 进程内只加载一次。由于自动注册宏只提供注册、不提供注销，模块加载后按进程常驻处理；停止产品只关闭 mailbox、ProjectCatalog、ProjectRuntime 和产品数据，不卸载 DLL。
+产品 DLL 进程内只加载一次。由于自动注册宏只提供注册、不提供注销，模块加载后按进程常驻处理；停止产品只关闭 Facade、ProjectCatalog、ProjectRuntime 和产品数据，不卸载 DLL。
 
 ## 6. 产品级命令
 
@@ -251,9 +251,9 @@ undoRedo: object
 
 ## 6. 线程模型
 
-`ProductRuntime` 创建自己的产品级工作线程，并由该线程轮询产品级 mailbox。
+`ProductRuntime` 创建自己的产品级工作线程，并由该线程轮询产品级 Facade。
 
-每个 `Project` 会创建主 Scene；主 Scene 自己创建工作线程，并在 Scene 线程内处理 Scene mailbox、Repository 事件和 Behaviour Tick。Scene channel 由 `CMailChannelRegistry` 托管，Scene 关闭时删除。
+每个 `Project` 会创建主 Scene；主 Scene 自己创建工作线程，并在 Scene 线程内处理 Scene Facade、Repository 事件和 Behaviour Tick。Scene channel 由 `CFacadeChannelRegistry` 托管，Scene 关闭时删除。
 
 Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。若要隔离访问冲突、堆破坏或整个项目崩溃，需要将 `IProjectRuntime` 实现替换为每 Project 一个 Worker 进程。
 

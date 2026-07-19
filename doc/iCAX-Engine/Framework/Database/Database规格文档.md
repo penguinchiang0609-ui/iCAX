@@ -266,4 +266,4 @@ DECLARED_ICAX_DERIVED_FIELD(CSumComponent, int, Sum, ToIntVariant,
 
 当前 `Repository` 面向单后台线程使用，不提供完整并发读写保护。
 
-前端交互应通过 MailChannel 进入后台线程；高频可丢弃状态通过 PDO 传递。
+前端交互应通过 FacadeChannel 进入后台线程；高频可丢弃状态通过 PDO 传递。

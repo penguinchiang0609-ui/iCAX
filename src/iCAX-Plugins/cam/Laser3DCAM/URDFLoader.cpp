@@ -1,22 +1,6 @@
 #include "pch.h"
 #include "URDFLoader.h"
 
-#include <algorithm>
-#include <cctype>
-#include <cmath>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <map>
-#include <memory>
-#include <sstream>
-#include <stdexcept>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-#include <unknwn.h>
-#include <objidl.h>
-#include <xmllite.h>
 
 #pragma comment(lib, "xmllite.lib")
 #pragma comment(lib, "ole32.lib")

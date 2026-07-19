@@ -1,12 +1,10 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <InputPDO/InputPDO.h>
 #include <PDO/IPDOHub.h>
 #include <PDO/PDOLease.h>
 
-#include <stdexcept>
-#include <string>
-#include <type_traits>
 
 using namespace iCAX::InputPDO;
 

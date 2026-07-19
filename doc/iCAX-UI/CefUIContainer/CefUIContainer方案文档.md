@@ -21,23 +21,23 @@ window.icax = {
   getApplicationChannelId,
   registerProductChannel,
   registerSceneChannel,
-  postMail,
-  subscribeMail,
+  postFacadeFrame,
+  subscribeFacadeFrames,
   pdo,
-  __dispatchMail
+  __dispatchFacadeFrame
 }
 ```
 
-`postMail` 进入 CEF query handler 后调用 `IFrontendBridge::PostMail`。后端 response/event 由轮询线程调用 `IFrontendBridge::PollMails` 后派发给 JS。
+`postFacadeFrame` 进入 CEF query handler 后调用 `IFrontendBridge::PostFacadeFrame`。后端 Request、Report、Response 和 Event 由轮询线程调用 `IFrontendBridge::PollFacadeFrames` 后派发给 JS。Bridge 只完成异步投递，不同步等待业务执行。
 
 `pdo.withRead()` 不走 CEF query handler。该能力安装在 renderer 进程的 V8 context 中，renderer 进程按 arena 名称打开 PDO shared memory，并在同步 reader 回调期间提供当前 payload 的 `ArrayBuffer` 快照。
 
 CEF 进程边界：
 
-- browser/main 进程：拥有 `CCefUIContainer`、mail polling、`IFrontendBridge`。
+- browser/main 进程：拥有 `CCefUIContainer`、Facade frame polling、`IFrontendBridge`。
 - renderer 进程：拥有 H5、V8、`window.icax` 和 PDO read bridge。
-- MAIL：browser/main 进程经 `cefQuery` 转发 JSON。
-- PDO：renderer 进程直接打开 shared memory arena，不影响 MAIL。
+- Facade frame：browser/main 进程经 `cefQuery` 转发 JSON。
+- PDO：renderer 进程直接打开 shared memory arena，不影响 Facade 调用。
 
 官方 CEF 的 V8 sandbox 不支持把任意共享内存直接作为 external `ArrayBuffer` 暴露给 JS。当前实现会在 read lease 内把 payload 拷贝为 V8 `ArrayBuffer`，保证语义正确；若后续要求 JS 侧完全零拷贝，需要定制 CEF 或另行设计 native/GPU interop。
 
@@ -89,7 +89,7 @@ msbuild src\iCAX-UI\CefUIContainer\CefUIContainer.vcxproj `
 type=cef
 modulePath=CefUIContainer.dll
 webPageRoot=.../src/iCAX-UI/SDK/AppShell
-mailPollIntervalMS=16
+facadePollIntervalMS=16
 remoteDebuggingPort=9223
 allowFileAccessFromFiles=true
 disableGpu=true
@@ -99,11 +99,11 @@ disableGpu=true
 
 ```text
 Application.exe
-  -> ApplicationHost.Start()
+  -> ApplicationRuntime.Start()
   -> CUIContainerFactory.Create(type=cef)
   -> CCefUIContainer.Start()
   -> CEF Browser loads AppShell/index.html
-  -> JS ApplicationProxy connects to backend ApplicationHost channel
+  -> JS ApplicationProxy connects to backend ApplicationRuntime channel
 ```
 
 运行目录必须包含 CEF runtime 文件。`CefUIContainer.vcxproj` 的 post-build 会复制 `libcef.dll`、`*.pak`、`icudtl.dat`、`locales/`、`Resources/` 等文件到输出目录。

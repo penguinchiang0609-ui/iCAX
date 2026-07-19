@@ -3,8 +3,6 @@
 
 #include "ToolpathResourceKeys.h"
 
-#include <algorithm>
-#include <unordered_set>
 
 namespace iCAX::CAM::Facades::Internal
 {

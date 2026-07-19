@@ -65,7 +65,7 @@ namespace
         return _Selection;
     }
 
-    iCAX::Interaction::CFacadeResult MakeSelectionResponse(IN iCAX::Database::IRepository& Repository_)
+    iCAX::Interaction::CInvocationResult MakeSelectionResponse(IN iCAX::Database::IRepository& Repository_)
     {
         ObjectMap _Result;
         _Result["selection"] = MakeSelectionPayload(Repository_, _GetComponent<iCAX::CAM::CSelectionComponent>(Repository_));
@@ -73,9 +73,9 @@ namespace
     }
 }
 
-iCAX::Interaction::CFacadeResult HandleGetSelection(
-    IN const iCAX::Interaction::CFacadeCall&,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleGetSelection(
+    IN const iCAX::Interaction::CInvocation&,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -84,9 +84,9 @@ iCAX::Interaction::CFacadeResult HandleGetSelection(
     return MakeSelectionResponse(_Scene.Database());
 }
 
-iCAX::Interaction::CFacadeResult HandlePickTopology(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandlePickTopology(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -124,9 +124,9 @@ iCAX::Interaction::CFacadeResult HandlePickTopology(
     return MakeSelectionResponse(_Repository);
 }
 
-iCAX::Interaction::CFacadeResult HandlePickMachineObject(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandlePickMachineObject(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)

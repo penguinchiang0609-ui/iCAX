@@ -1,14 +1,6 @@
 #include "pch.h"
 #include "UIContainer.h"
 
-#include <algorithm>
-#include <cctype>
-#include <chrono>
-#include <map>
-#include <mutex>
-#include <stdexcept>
-#include <thread>
-#include <utility>
 
 namespace
 {
@@ -178,11 +170,11 @@ namespace
         }
     }
 
-    void _ValidateStartupResponse(IN const iCAX::Frontend::CFrontendMailEnvelope& Response_)
+    void _ValidateStartupResponse(IN const iCAX::Frontend::CFrontendFacadeFrame& Response_)
     {
-        if (Response_.nStamp != 0)
+        if (Response_.nStatus != 0)
         {
-            throw std::runtime_error("ApplicationProxy startup handshake failed with stamp: " + std::to_string(Response_.nStamp));
+            throw std::runtime_error("ApplicationProxy startup handshake failed with status: " + std::to_string(Response_.nStatus));
         }
         if (Response_.PayloadText.find("applicationChannelId") == std::string::npos
             || Response_.PayloadText.find("\"state\"") == std::string::npos)
@@ -244,7 +236,7 @@ namespace
 
             if (_pBridge)
             {
-                _pBridge->SetMailHandler(nullptr);
+                _pBridge->SetFacadeFrameHandler(nullptr);
             }
         }
 
@@ -276,26 +268,28 @@ namespace
                 throw std::logic_error("Application channel id cannot be empty");
             }
 
-            iCAX::Frontend::CFrontendMailEnvelope _Request;
+            iCAX::Frontend::CFrontendFacadeFrame _Request;
             _Request.ChannelID = _ApplicationChannelID;
-            _Request.nID = kStartupHandshakeRequestID;
-            _Request.nOriginID = 0;
-            _Request.nTypeCode = kApplicationGetStateMethod;
-            _Request.nStamp = 0;
+            _Request.nCallID = kStartupHandshakeRequestID;
+            _Request.nMethodCode = kApplicationGetStateMethod;
+            _Request.nKind = iCAX::Frontend::kFrontendFacadeRequest;
+            _Request.nStatus = 0;
             _Request.PayloadText = kEmptyObjectPayloadText;
 
-            Config_.pFrontendBridge->PostMail(_Request);
+            Config_.pFrontendBridge->PostFacadeFrame(_Request);
 
             const auto _Timeout = std::chrono::milliseconds(Config_.nStartupHandshakeTimeoutMS);
             const auto _Deadline = std::chrono::steady_clock::now() + _Timeout;
             while (std::chrono::steady_clock::now() < _Deadline)
             {
-                auto _Mails = Config_.pFrontendBridge->PollMails();
-                for (const auto& _Mail : _Mails)
+                auto _Frames = Config_.pFrontendBridge->PollFacadeFrames();
+                for (const auto& _Frame : _Frames)
                 {
-                    if (_Mail.ChannelID == _ApplicationChannelID && _Mail.nOriginID == kStartupHandshakeRequestID)
+                    if (_Frame.ChannelID == _ApplicationChannelID
+                        && _Frame.nKind == iCAX::Frontend::kFrontendFacadeResponse
+                        && _Frame.nCallID == kStartupHandshakeRequestID)
                     {
-                        _ValidateStartupResponse(_Mail);
+                        _ValidateStartupResponse(_Frame);
                         return;
                     }
                 }

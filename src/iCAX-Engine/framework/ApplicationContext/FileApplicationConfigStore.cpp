@@ -3,10 +3,6 @@
 
 #include <Data/VariantSerializer.h>
 
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <stdexcept>
 
 iCAX::Data::PropertyBag iCAX::Application::CFileApplicationConfigStore::Load(IN const std::string& strPath_) const
 {

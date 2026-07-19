@@ -2,7 +2,7 @@
 
 `PDO` 是 iCAX Engine Framework 层的高频可丢弃数据通道，对应源码目录 `src/icax-engine/framework/PDO/`。
 
-PDO 用于 backend 与 frontend 之间同步高频过程状态。普通命令、事件和请求响应使用 Mailbox。
+PDO 用于 backend 与 frontend 之间同步高频过程状态。普通命令、事件和请求响应使用 Facades。
 
 PDO 不做运行时字段自描述，而是模拟硬件 PDO：双方预先约定 `PDOID + payload protocol version + payload size + 固定二进制 layout`。CEF 前端场景下，PDO 可通过 OS shared memory arena 映射到 renderer 进程，再由 JS 使用 TypedArray 读取。
 

@@ -19,7 +19,7 @@ namespace iCAX
         /*
         * @brief PDORenderService 发给前端的事件码。
         * @details
-        *   事件通过 Scene mailbox 发送，payload 使用 UTF-8 JSON 文本。
+        *   事件通过 Scene Facade channel 发送，payload 使用 UTF-8 JSON 文本。
         *   前端必须把 PDOID 当作 slot 身份，并在 shared memory arena 中按 PDOID 解析当前 offset，
         *   不允许长期缓存 offset。碎片整理或扩容后，同一个 PDOID 对应的 offset 可能变化。
         */
@@ -296,7 +296,6 @@ namespace iCAX
 
         private:
             mutable std::mutex m_Mutex;
-            mutable std::atomic_uint64_t m_nNextEventMailID = 1;
             std::unordered_map<
                 iCAX::Data::uuid,
                 std::unordered_map<iCAX::Render::RenderSceneID, iCAX::Render::SRenderSceneSnapshot>> m_Projects;

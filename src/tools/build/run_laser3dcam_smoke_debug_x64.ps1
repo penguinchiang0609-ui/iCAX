@@ -47,6 +47,7 @@ Invoke-MSBuildProject "src\tests\icax-plugins\cam\Laser3DCAM\Laser3DCAMTest\Lase
 $script:RuntimePaths = @()
 @(
     "src\iCAX-Engine\foundation\Data\$Platform\$Configuration",
+    "src\iCAX-Engine\foundation\Task\$Platform\$Configuration",
     "src\iCAX-Engine\foundation\GeometryData\$Platform\$Configuration",
     "src\iCAX-Engine\framework\ApplicationContext\$Platform\$Configuration",
     "src\iCAX-Engine\framework\ProductContext\$Platform\$Configuration",
@@ -55,7 +56,6 @@ $script:RuntimePaths = @()
     "src\iCAX-Engine\framework\Database\$Platform\$Configuration",
     "src\iCAX-Engine\framework\Resources\$Platform\$Configuration",
     "src\iCAX-Engine\framework\Services\$Platform\$Configuration",
-    "src\iCAX-Engine\framework\Mailbox\$Platform\$Configuration",
     "src\iCAX-Engine\framework\PDO\$Platform\$Configuration",
     "src\iCAX-Engine\framework\Behaviour\$Platform\$Configuration",
     "src\iCAX-Plugins\common\Transform\$Platform\$Configuration",

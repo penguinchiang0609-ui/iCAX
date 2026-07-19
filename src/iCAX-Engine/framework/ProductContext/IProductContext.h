@@ -2,7 +2,7 @@
 
 #include "ProductContextExport.h"
 #include "Data/uuid.h"
-#include "Mailbox/MailPostOffice.h"
+#include "Facades/FacadeEndpoint.h"
 #include "ProductData.h"
 #include "ProductDefinition.h"
 
@@ -36,10 +36,12 @@ namespace iCAX
     namespace Product
     {
         /*
-        * @brief 产品级运行上下文。
+        * @brief 产品作用域环境。
         * @details
-        *   ProductContext 表达当前产品的定义、产品数据、产品级注册表和服务入口。
-        *   它不拥有项目数据；项目数据通过 IProjectContext 访问。
+        *   ProductContext 管理当前产品的定义、产品数据、资源加载器、元数据、
+        *   Behaviour、Facade 注册表和产品级服务环境。ProductRuntime 管理线程、
+        *   调度、协程、模块加载以及 Context 和 ProjectCatalog 的生命周期。
+        *   ProductContext 不拥有项目数据；项目数据通过 IProjectContext 访问。
         */
         class _PRODUCT_CONTEXT_EXP IProductContext
         {
@@ -88,14 +90,14 @@ namespace iCAX
             virtual const iCAX::Data::uuid& GetProductChannelID() const;
 
             /*
-            * @brief 获取后端视角产品邮局。
+            * @brief 获取后端视角产品Facade 端点。
             */
-            virtual iCAX::Mail::CMailPostOffice GetBackendPostOffice() const;
+            virtual iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const;
 
             /*
-            * @brief 获取前端视角产品邮局。
+            * @brief 获取前端视角产品Facade 端点。
             */
-            virtual iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const;
+            virtual iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const;
 
             /*
             * @brief 获取当前产品可用的服务容器。

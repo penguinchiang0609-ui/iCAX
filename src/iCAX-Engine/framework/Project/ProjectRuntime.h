@@ -20,7 +20,7 @@ namespace iCAX
         using SceneRuntimeFrameHandler = std::function<void(
             IProjectRuntime&,
             iCAX::Project::ISceneContext&,
-            const iCAX::Mail::CMailPostOffice&)>;
+            const iCAX::Interaction::CFacadeEndpoint&)>;
 
         /*
         * @brief 项目运行时接口。
@@ -74,9 +74,9 @@ namespace iCAX
             */
             virtual CMainScenePDODescriptor GetMainScenePDODescriptor() const = 0;
             /*
-            * @brief 获取前端视角项目主 Scene 邮局。
+            * @brief 获取前端视角项目主 Scene Facade 端点。
             */
-            virtual iCAX::Mail::CMailPostOffice GetMainSceneFrontendPostOffice() = 0;
+            virtual iCAX::Interaction::CFacadeEndpoint GetMainSceneFrontendFacadeEndpoint() = 0;
             /*
             * @brief 设置 runtime 每帧回调。
             */
@@ -106,18 +106,18 @@ namespace iCAX
         * @details
         *   包装 CProject 并转发生命周期调用。FrameHandler 会被转接到每个 Scene 的每帧回调中。
         */
-        class _PROJECT_EXP CLocalProjectRuntime final : public IProjectRuntime
+        class _PROJECT_EXP CProjectRuntime final : public IProjectRuntime
         {
         public:
             /*
             * @brief 构造本地项目运行时。
             * @param [in] pProject_ 本地项目，不能为空。
             */
-            explicit CLocalProjectRuntime(IN std::shared_ptr<CProject> pProject_);
-            ~CLocalProjectRuntime() override;
+            explicit CProjectRuntime(IN std::shared_ptr<CProject> pProject_);
+            ~CProjectRuntime() override;
 
-            CLocalProjectRuntime(IN const CLocalProjectRuntime&) = delete;
-            CLocalProjectRuntime& operator=(IN const CLocalProjectRuntime&) = delete;
+            CProjectRuntime(IN const CProjectRuntime&) = delete;
+            CProjectRuntime& operator=(IN const CProjectRuntime&) = delete;
 
         public:
             /*
@@ -161,9 +161,9 @@ namespace iCAX
             */
             CMainScenePDODescriptor GetMainScenePDODescriptor() const override;
             /*
-            * @brief 获取前端视角项目主 Scene 邮局。
+            * @brief 获取前端视角项目主 Scene Facade 端点。
             */
-            iCAX::Mail::CMailPostOffice GetMainSceneFrontendPostOffice() override;
+            iCAX::Interaction::CFacadeEndpoint GetMainSceneFrontendFacadeEndpoint() override;
             /*
             * @brief 设置每帧回调。
             */
@@ -208,7 +208,7 @@ namespace iCAX
         * @param [in] pProject_ 本地项目。
         * @return IProjectRuntime 接口。
         */
-        _PROJECT_EXP std::shared_ptr<IProjectRuntime> CreateLocalProjectRuntime(
+        _PROJECT_EXP std::shared_ptr<IProjectRuntime> CreateProjectRuntime(
             IN std::shared_ptr<CProject> pProject_);
     }
 }

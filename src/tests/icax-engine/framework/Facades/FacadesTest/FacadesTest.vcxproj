@@ -144,6 +144,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="FacadeRequestDispatchTests.cpp" />
+    <ClCompile Include="FacadeTransportTests.cpp" />
     <ClCompile Include="FacadesTests.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -153,11 +155,17 @@
     <ProjectReference Include="..\..\..\..\..\icax-engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\icax-engine\foundation\Task\Task.vcxproj">
+      <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\ApplicationContext\ApplicationContext.vcxproj">
       <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Facades\Facades.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Services\Services.vcxproj">
+      <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

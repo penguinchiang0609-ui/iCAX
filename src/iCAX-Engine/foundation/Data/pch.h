@@ -10,6 +10,35 @@
 // 添加要在此处预编译的标头
 #include "framework.h"
 
+#include <array>
+#include <atomic>
+#include <cctype>
+#include <chrono>
+#include <cmath>
+#include <codecvt>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <iomanip>
+#include <iterator>
+#include <list>
+#include <locale>
+#include <map>
+#include <memory>
+#include <numeric>
+#include <optional>
+#include <regex>
+#include <span>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <unordered_set>
+#include <variant>
+#include <vector>
+#include <Windows.h>
+
 #ifndef _DATA
 #define _DATA
 #endif

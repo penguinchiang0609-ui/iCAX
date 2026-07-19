@@ -8,8 +8,15 @@ export {
   makeFacadeMethodCode,
   makeFacadeMethodCodeFromName,
   parseFacadeMethod,
-} from "./Mailbox/facadeMethod.mjs";
-export { ensureUsableChannelId, isUsableChannelId } from "./Mailbox/channelId.mjs";
+} from "./Facades/facadeMethod.mjs";
+export { ensureUsableChannelId, isUsableChannelId } from "./Facades/channelId.mjs";
+export {
+  InvocationStatus,
+  FacadeClient,
+  FacadeError,
+  FacadeFrameKind,
+  FacadeTimeoutError,
+} from "./Facades/facadeClient.mjs";
 export { loadProductModule, mountProductModule, resolveFrontendEntry } from "../ProductProxy/productModuleLoader.mjs";
 export { AppProxy } from "../AppProxy/AppProxy.mjs";
 export { ProductProxy } from "../ProductProxy/ProductProxy.mjs";

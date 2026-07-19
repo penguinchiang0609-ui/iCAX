@@ -6,13 +6,10 @@
 #include "Behaviour/IBehaviourRegistry.h"
 #include "Database/IMetaRegistry.h"
 
-#include <chrono>
-#include <stdexcept>
-#include <utility>
 
 namespace
 {
-    std::shared_ptr<iCAX::Application::IApplicationContext> RequireApplicationContext(
+    std::shared_ptr<const iCAX::Application::IApplicationContext> RequireApplicationContext(
         IN const iCAX::Project::CProjectSceneCreateInfo& CreateInfo_)
     {
         if (!CreateInfo_.pApplicationContext)
@@ -72,14 +69,14 @@ namespace
         return CreateInfo_.pResourceLoaderRegistry;
     }
 
-    std::shared_ptr<iCAX::Mail::CMailChannelRegistry> RequireMailChannelRegistry(
+    std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> RequireFacadeChannelRegistry(
         IN const iCAX::Project::CProjectSceneCreateInfo& CreateInfo_)
     {
-        if (!CreateInfo_.pMailChannelRegistry)
+        if (!CreateInfo_.pFacadeChannelRegistry)
         {
-            throw std::invalid_argument("Scene MailChannelRegistry cannot be null");
+            throw std::invalid_argument("Scene FacadeChannelRegistry cannot be null");
         }
-        return CreateInfo_.pMailChannelRegistry;
+        return CreateInfo_.pFacadeChannelRegistry;
     }
 }
 
@@ -127,7 +124,7 @@ iCAX::Project::CProjectScene::CProjectScene(
     , m_pMetaRegistry(RequireMetaRegistry(CreateInfo_))
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
-    , m_pMailChannelRegistry(RequireMailChannelRegistry(CreateInfo_))
+    , m_pFacadeChannelRegistry(RequireFacadeChannelRegistry(CreateInfo_))
     , m_pRepository(iCAX::Database::GenerateRepository(m_SceneID, m_pMetaRegistry))
     , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
     , m_pPDOHub(CreateInfo_.bEnablePDOHub ? iCAX::PDO::GeneratePDOHub(CreateInfo_.PDOHubCreateInfo) : nullptr)
@@ -142,9 +139,9 @@ iCAX::Project::CProjectScene::CProjectScene(
         m_SceneName = m_Role == ESceneRole::Main ? "Main Scene" : "Transient Scene";
     }
     m_pRepository->AddObserver(m_pRepositoryEventForwarder);
-    if (!m_pMailChannelRegistry->CreateChannel(m_SceneChannelID))
+    if (!m_pFacadeChannelRegistry->CreateChannel(m_SceneChannelID))
     {
-        throw std::runtime_error("Scene mail channel already exists");
+        throw std::runtime_error("Scene Facade channel already exists");
     }
 }
 
@@ -334,31 +331,29 @@ iCAX::Services::CServiceProvider& iCAX::Project::CProjectScene::Services() const
     return *m_pServiceProvider;
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Project::CProjectScene::GetBackendPostOffice() const
+iCAX::Interaction::CFacadeEndpoint iCAX::Project::CProjectScene::GetBackendFacadeEndpoint() const
 {
     EnsureOpen();
-    return m_pMailChannelRegistry->GetBackendPostOffice(m_SceneChannelID);
+    return m_pFacadeChannelRegistry->GetBackendEndpoint(m_SceneChannelID);
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Project::CProjectScene::GetFrontendPostOffice() const
+iCAX::Interaction::CFacadeEndpoint iCAX::Project::CProjectScene::GetFrontendFacadeEndpoint() const
 {
     EnsureOpen();
-    return m_pMailChannelRegistry->GetFrontendPostOffice(m_SceneChannelID);
+    return m_pFacadeChannelRegistry->GetFrontendEndpoint(m_SceneChannelID);
 }
 
 void iCAX::Project::CProjectScene::SendFrontendEvent(
-    IN uint64_t nTypeCode_,
+    IN uint64_t nMethodCode_,
     IN const std::string& strPayloadText_)
 {
     EnsureOpen();
 
-    iCAX::Mail::MailHeader _Header;
-    _Header.nMailId = m_nNextBackendMailID.fetch_add(1, std::memory_order_relaxed);
-    _Header.nOriginId = 0;
-    _Header.nTypeCode = nTypeCode_;
-    _Header.nStamp = iCAX::Mail::kMailOk;
-
-    GetBackendPostOffice().SendText(_Header, strPayloadText_);
+    GetBackendFacadeEndpoint().SendText(
+        0,
+        nMethodCode_,
+        iCAX::Interaction::EFacadeFrameKind::Event,
+        strPayloadText_);
 }
 
 std::shared_ptr<iCAX::Project::CProjectScene> iCAX::Project::CProjectScene::OpenChildScene(
@@ -549,9 +544,9 @@ void iCAX::Project::CProjectScene::Close()
     }
     m_pPDOHub.reset();
     m_Resources.Clear();
-    if (m_pMailChannelRegistry && !m_SceneChannelID.is_nil())
+    if (m_pFacadeChannelRegistry && !m_SceneChannelID.is_nil())
     {
-        (void)m_pMailChannelRegistry->RemoveChannel(m_SceneChannelID);
+        (void)m_pFacadeChannelRegistry->RemoveChannel(m_SceneChannelID);
     }
     m_bStartupBound = false;
     if (GetState() != ESceneState::Faulted)
@@ -582,7 +577,7 @@ void iCAX::Project::CProjectScene::WorkerMain()
             auto _Handler = GetFrameHandler();
             if (_Handler)
             {
-                _Handler(*this, GetBackendPostOffice());
+                _Handler(*this, GetBackendFacadeEndpoint());
             }
 
             Tick();

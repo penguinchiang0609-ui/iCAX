@@ -11,11 +11,6 @@
 #include "Database/MetaRegistrationCatalog.h"
 #include "Transform/TransformComponent.h"
 
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <memory>
-#include <string>
 
 namespace
 {
@@ -359,44 +354,9 @@ namespace
             _Field = MakeDisabledPolicy(_AngularJogStepRadians, "运动副约束禁用该旋转自由度", "rad", 6);
         }
 
-        if (_JointType == "fixed" || _JointType.empty())
-        {
-            _Policy.Reason = "固定轴不允许编辑本地位移或姿态";
-            return _Policy;
-        }
-
-        const auto _Axis = ResolveAxis(_pJoint->GetAxis());
-        if (!_Axis.bAxisAligned || _Axis.eKind == EAxisKind::None)
-        {
-            _Policy.Reason = "当前属性面板只开放坐标轴对齐的运动副";
-            return _Policy;
-        }
-
-        if (_JointType == "prismatic")
-        {
-            const auto _Index = static_cast<size_t>(_Axis.eKind);
-            const auto [_Min, _Max] = SignedRange(_pJoint->GetLowerLimit(), _pJoint->GetUpperLimit(), _Axis.dSign);
-            _Policy.Position[_Index] = MakeEditablePolicy(_Min, _Max, _LinearJogStep, "平移轴只允许沿轴向编辑，单位 mm", "mm", 3);
-            _Policy.Reason = "平移轴只开放轴向位移";
-            return _Policy;
-        }
-
-        if (_JointType == "revolute" || _JointType == "continuous")
-        {
-            const auto _Index = RotationPolicyIndexFromAxis(_Axis.eKind);
-            const auto [_Min, _Max] = SignedRange(_pJoint->GetLowerLimit(), _pJoint->GetUpperLimit(), _Axis.dSign);
-            _Policy.RotationRadians[_Index] = MakeEditablePolicy(
-                _Min,
-                _Max,
-                _AngularJogStepRadians,
-                "旋转轴只允许沿轴向编辑，单位弧度",
-                "rad",
-                6);
-            _Policy.Reason = "旋转轴只开放轴向角度";
-            return _Policy;
-        }
-
-        _Policy.Reason = "未知运动副类型不开放 Transform 直接编辑";
+        _Policy.Reason = _JointType == "fixed" || _JointType.empty()
+            ? "固定关节的结构位姿由机床定义决定"
+            : "关节 Transform 表达结构原点；运动自由度请编辑轴位置";
         return _Policy;
     }
 

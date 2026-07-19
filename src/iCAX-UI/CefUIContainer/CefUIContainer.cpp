@@ -1,44 +1,13 @@
 #include "pch.h"
 #include "CefUIContainer.h"
 
-#include "include/cef_app.h"
-#include "include/cef_browser.h"
-#include "include/cef_client.h"
-#include "include/cef_command_line.h"
-#include "include/cef_display_handler.h"
-#include "include/cef_frame.h"
-#include "include/cef_parser.h"
-#include "include/cef_request_handler.h"
-#include "include/cef_task.h"
-#include "include/cef_v8.h"
-#include "include/wrapper/cef_helpers.h"
-#include "include/wrapper/cef_message_router.h"
 
 #include "PDO/PDOLease.h"
 #include "PDO/SharedPDOArena.h"
 
-#include <boost/json.hpp>
 #include <boost/json/src.hpp>
 
-#include <commdlg.h>
 
-#include <algorithm>
-#include <atomic>
-#include <cctype>
-#include <chrono>
-#include <condition_variable>
-#include <cstring>
-#include <filesystem>
-#include <fstream>
-#include <functional>
-#include <mutex>
-#include <optional>
-#include <sstream>
-#include <stdexcept>
-#include <thread>
-#include <unordered_map>
-#include <utility>
-#include <vector>
 
 #pragma comment(lib, "Comdlg32.lib")
 
@@ -189,16 +158,16 @@ namespace
         throw std::invalid_argument(std::string(szName_) + " must be an unsigned integer");
     }
 
-    iCAX::Frontend::CFrontendMailEnvelope _ParseEnvelope(IN const json::object& Object_)
+    iCAX::Frontend::CFrontendFacadeFrame _ParseFacadeFrame(IN const json::object& Object_)
     {
-        iCAX::Frontend::CFrontendMailEnvelope _Envelope;
-        _Envelope.ChannelID = _AsString(_RequireField(Object_, "channelId"), "channelId");
-        _Envelope.nID = _AsUInt64(_RequireField(Object_, "id"), "id");
-        _Envelope.nOriginID = _AsUInt64(_RequireField(Object_, "originId"), "originId");
-        _Envelope.nTypeCode = _AsUInt64(_RequireField(Object_, "typeCode"), "typeCode");
-        _Envelope.nStamp = static_cast<uint16_t>(_AsUInt64(_RequireField(Object_, "stamp"), "stamp"));
-        _Envelope.PayloadText = _AsString(_RequireField(Object_, "payloadText"), "payloadText");
-        return _Envelope;
+        iCAX::Frontend::CFrontendFacadeFrame _Frame;
+        _Frame.ChannelID = _AsString(_RequireField(Object_, "channelId"), "channelId");
+        _Frame.nCallID = _AsUInt64(_RequireField(Object_, "callId"), "callId");
+        _Frame.nMethodCode = _AsUInt64(_RequireField(Object_, "methodCode"), "methodCode");
+        _Frame.nKind = static_cast<uint16_t>(_AsUInt64(_RequireField(Object_, "kind"), "kind"));
+        _Frame.nStatus = static_cast<uint16_t>(_AsUInt64(_RequireField(Object_, "status"), "status"));
+        _Frame.PayloadText = _AsString(_RequireField(Object_, "payloadText"), "payloadText");
+        return _Frame;
     }
 
     json::value _ToJsonValue(IN const std::string& strValue_)
@@ -493,15 +462,15 @@ namespace
         ::UpdateWindow(_hWindow);
     }
 
-    json::object _ToJsonEnvelope(IN const iCAX::Frontend::CFrontendMailEnvelope& Envelope_)
+    json::object _ToJsonFacadeFrame(IN const iCAX::Frontend::CFrontendFacadeFrame& Frame_)
     {
         json::object _Object;
-        _Object["channelId"] = Envelope_.ChannelID;
-        _Object["id"] = Envelope_.nID;
-        _Object["originId"] = Envelope_.nOriginID;
-        _Object["typeCode"] = std::to_string(Envelope_.nTypeCode);
-        _Object["stamp"] = Envelope_.nStamp;
-        _Object["payloadText"] = Envelope_.PayloadText;
+        _Object["channelId"] = Frame_.ChannelID;
+        _Object["callId"] = std::to_string(Frame_.nCallID);
+        _Object["methodCode"] = std::to_string(Frame_.nMethodCode);
+        _Object["kind"] = Frame_.nKind;
+        _Object["status"] = Frame_.nStatus;
+        _Object["payloadText"] = Frame_.PayloadText;
         return _Object;
     }
 
@@ -561,8 +530,8 @@ namespace
       return queryNative("registerSceneChannel", { projectId, sceneId });
     },
 
-    postMail(mail) {
-      return queryNative("postMail", { mail }).then(() => undefined);
+    postFacadeFrame(frame) {
+      return queryNative("postFacadeFrame", { frame }).then(() => undefined);
     },
 
     openFileDialog(options) {
@@ -577,7 +546,7 @@ namespace
       return queryNative("beginWindowDrag").then(() => undefined);
     },
 
-    subscribeMail(channelId, handler) {
+    subscribeFacadeFrames(channelId, handler) {
       if (typeof handler !== "function") {
         throw new TypeError("handler must be a function");
       }
@@ -612,14 +581,14 @@ namespace
       }
     },
 
-    __dispatchMail(mail) {
-      const channelId = String(mail && mail.channelId || "");
+    __dispatchFacadeFrame(frame) {
+      const channelId = String(frame && frame.channelId || "");
       const handlers = subscribers.get(channelId);
       if (!handlers) {
         return;
       }
       for (const handler of Array.from(handlers)) {
-        handler(mail);
+        handler(frame);
       }
     }
   };
@@ -1224,10 +1193,10 @@ namespace
                     return true;
                 }
 
-                if (_Method == "postMail")
+                if (_Method == "postFacadeFrame")
                 {
-                    const auto& _Mail = _AsObject(_RequireField(_Payload, "mail"), "mail");
-                    m_pBridge->PostMail(_ParseEnvelope(_Mail));
+                    const auto& _Frame = _AsObject(_RequireField(_Payload, "frame"), "frame");
+                    m_pBridge->PostFacadeFrame(_ParseFacadeFrame(_Frame));
                     Callback_->Success("null");
                     return true;
                 }
@@ -1276,10 +1245,10 @@ namespace
 
     class CInternalCefClient;
 
-    class CDispatchMailTask final : public CefTask
+    class CDispatchFacadeFrameTask final : public CefTask
     {
     public:
-        CDispatchMailTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_);
+        CDispatchFacadeFrameTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_);
 
         void Execute() override;
 
@@ -1287,7 +1256,23 @@ namespace
         CefRefPtr<CInternalCefClient> m_pClient;
         std::string m_strEnvelopeJson;
 
-        IMPLEMENT_REFCOUNTING(CDispatchMailTask);
+        IMPLEMENT_REFCOUNTING(CDispatchFacadeFrameTask);
+    };
+
+    class CRunFrontTasksTask final : public CefTask
+    {
+    public:
+        explicit CRunFrontTasksTask(CefRefPtr<CInternalCefClient> pClient_)
+            : m_pClient(std::move(pClient_))
+        {
+        }
+
+        void Execute() override;
+
+    private:
+        CefRefPtr<CInternalCefClient> m_pClient;
+
+        IMPLEMENT_REFCOUNTING(CRunFrontTasksTask);
     };
 
     class CCloseBrowserTask final : public CefTask
@@ -1317,7 +1302,8 @@ namespace
         explicit CInternalCefClient(
             IN iCAX::Frontend::IFrontendBridge* pBridge_,
             IN std::function<void()> OnBrowserClosed_)
-            : m_OnBrowserClosed(std::move(OnBrowserClosed_))
+            : m_pBridge(pBridge_)
+            , m_OnBrowserClosed(std::move(OnBrowserClosed_))
         {
             m_pBridgeQueryHandler = std::make_unique<CInternalBridgeQueryHandler>(pBridge_);
         }
@@ -1448,18 +1434,37 @@ namespace
             }
         }
 
-        void DispatchMail(IN const iCAX::Frontend::CFrontendMailEnvelope& Envelope_)
+        void DispatchFacadeFrame(IN const iCAX::Frontend::CFrontendFacadeFrame& Envelope_)
         {
-            const auto _EnvelopeJson = json::serialize(_ToJsonEnvelope(Envelope_));
+            const auto _EnvelopeJson = json::serialize(_ToJsonFacadeFrame(Envelope_));
             auto _TaskRunner = CefTaskRunner::GetForThread(TID_UI);
             if (!_TaskRunner)
             {
                 return;
             }
-            _TaskRunner->PostTask(new CDispatchMailTask(this, _EnvelopeJson));
+            _TaskRunner->PostTask(new CDispatchFacadeFrameTask(this, _EnvelopeJson));
         }
 
-        void DispatchMailOnUI(IN const std::string& strEnvelopeJson_)
+        void DispatchFrontTasks()
+        {
+            auto _TaskRunner = CefTaskRunner::GetForThread(TID_UI);
+            if (_TaskRunner)
+            {
+                _TaskRunner->PostTask(new CRunFrontTasksTask(this));
+            }
+        }
+
+        void RunFrontTasksOnUI()
+        {
+            CEF_REQUIRE_UI_THREAD();
+            if (m_pBridge)
+            {
+                m_pBridge->RunFrontTasks();
+                m_pBridge->RunFrontCoroutines();
+            }
+        }
+
+        void DispatchFacadeFrameOnUI(IN const std::string& strEnvelopeJson_)
         {
             CEF_REQUIRE_UI_THREAD();
             if (!m_pBrowser || !m_pBrowser->GetMainFrame())
@@ -1467,7 +1472,7 @@ namespace
                 return;
             }
 
-            const std::string _Script = "window.icax && window.icax.__dispatchMail && window.icax.__dispatchMail("
+            const std::string _Script = "window.icax && window.icax.__dispatchFacadeFrame && window.icax.__dispatchFacadeFrame("
                 + strEnvelopeJson_ + ");";
             m_pBrowser->GetMainFrame()->ExecuteJavaScript(_Script, m_pBrowser->GetMainFrame()->GetURL(), 0);
         }
@@ -1490,22 +1495,23 @@ namespace
         CefRefPtr<CefBrowser> m_pBrowser;
         CefRefPtr<CefMessageRouterBrowserSide> m_pMessageRouter;
         std::unique_ptr<CInternalBridgeQueryHandler> m_pBridgeQueryHandler;
+        iCAX::Frontend::IFrontendBridge* m_pBridge = nullptr;
         std::function<void()> m_OnBrowserClosed;
 
         IMPLEMENT_REFCOUNTING(CInternalCefClient);
     };
 
-    CDispatchMailTask::CDispatchMailTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_)
+    CDispatchFacadeFrameTask::CDispatchFacadeFrameTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_)
         : m_pClient(std::move(pClient_))
         , m_strEnvelopeJson(std::move(strEnvelopeJson_))
     {
     }
 
-    void CDispatchMailTask::Execute()
+    void CDispatchFacadeFrameTask::Execute()
     {
         if (m_pClient)
         {
-            m_pClient->DispatchMailOnUI(m_strEnvelopeJson);
+            m_pClient->DispatchFacadeFrameOnUI(m_strEnvelopeJson);
         }
     }
 
@@ -1514,6 +1520,14 @@ namespace
         if (m_pClient)
         {
             m_pClient->CloseBrowserOnUI();
+        }
+    }
+
+    void CRunFrontTasksTask::Execute()
+    {
+        if (m_pClient)
+        {
+            m_pClient->RunFrontTasksOnUI();
         }
     }
 
@@ -1627,7 +1641,7 @@ public:
             const auto _Interval = std::chrono::milliseconds(std::max(1, nIntervalMS_));
             while (!bStopPolling.load())
             {
-                PollMails();
+                PollFacadeFrames();
                 std::this_thread::sleep_for(_Interval);
             }
         });
@@ -1642,18 +1656,19 @@ public:
         }
     }
 
-    void PollMails()
+    void PollFacadeFrames()
     {
         if (!Client)
         {
             return;
         }
 
-        auto _Mails = pBridge->PollMails();
-        for (const auto& _Mail : _Mails)
+        auto _Frames = pBridge->PollFacadeFrames();
+        for (const auto& _Frame : _Frames)
         {
-            Client->DispatchMail(_Mail);
+            Client->DispatchFacadeFrame(_Frame);
         }
+        Client->DispatchFrontTasks();
     }
 };
 
@@ -1793,7 +1808,7 @@ void iCAX::Frontend::Cef::CCefUIContainer::Start()
         throw std::runtime_error("CefBrowserHost::CreateBrowser failed");
     }
 
-    m_pImpl->StartPolling(_GetIntProperty(m_pImpl->Config, "mailPollIntervalMS", 16));
+    m_pImpl->StartPolling(_GetIntProperty(m_pImpl->Config, "facadePollIntervalMS", 16));
     m_pImpl->bStarted = true;
 }
 
@@ -1826,9 +1841,9 @@ bool iCAX::Frontend::Cef::CCefUIContainer::IsRunning() const
     return m_pImpl->bStarted;
 }
 
-void iCAX::Frontend::Cef::CCefUIContainer::PollMails()
+void iCAX::Frontend::Cef::CCefUIContainer::PollFacadeFrames()
 {
-    m_pImpl->PollMails();
+    m_pImpl->PollFacadeFrames();
 }
 
 ICAX_REGISTER_UI_CONTAINER_WITH_SUBPROCESS("cef", iCAX::Frontend::Cef::CCefUIContainer, &_ExecuteCefUISubProcess)

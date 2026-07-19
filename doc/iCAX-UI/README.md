@@ -4,7 +4,7 @@
 
 当前默认真实前端容器是 CEF/H5。前端不直接拥有 Engine 数据，也不直接访问 C++ 对象；H5 通过 `window.icax` host bridge 与 backend 通信。
 
-设计上必须支持切换为 WPF/QT 等其他前端技术。切换条件不是改 backend，而是对应前端容器实现 `IUIContainer`，通过 `IFrontendBridge` 发送/接收 mailbox，并按需暴露 PDO 读取能力。
+设计上必须支持切换为 WPF/QT 等其他前端技术。切换条件不是改 backend，而是对应前端容器实现 `IUIContainer`，通过 `IFrontendBridge` 发送/接收 Facade，并按需暴露 PDO 读取能力。
 
 ## 目录结构
 
@@ -21,7 +21,7 @@
 - `ProductProxy/`：前端产品层与产品 webpage 加载模块规格和方案。
 - `ProjectProxy/`：前端项目层模块规格和方案。
 - `UI/`：公共 UI 基础模块规格和方案。
-- `SDK/`：前端统一导出门面规格和方案，内部包含 AppShell、Bridge、Mailbox、PDO 文档。
+- `SDK/`：前端统一导出门面规格和方案，内部包含 AppShell、Bridge、Facades、PDO 文档。
 
 ## 文档完整性约定
 

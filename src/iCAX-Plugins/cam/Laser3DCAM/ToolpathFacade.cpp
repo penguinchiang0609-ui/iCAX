@@ -38,7 +38,7 @@ using namespace Internal;
 
 namespace
 {
-    iCAX::Interaction::CFacadeResult MakeToolpathListResponse(IN iCAX::Project::ISceneContext& Scene_)
+    iCAX::Interaction::CInvocationResult MakeToolpathListResponse(IN iCAX::Project::ISceneContext& Scene_)
     {
         auto& _Repository = Scene_.Database();
         ObjectMap _Result;
@@ -50,9 +50,9 @@ namespace
     }
 }
 
-iCAX::Interaction::CFacadeResult HandleListToolpaths(
-    IN const iCAX::Interaction::CFacadeCall&,
-    IN iCAX::Application::IApplicationContext&,
+iCAX::Interaction::CInvocationResult HandleListToolpaths(
+    IN const iCAX::Interaction::CInvocation&,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext*,
     IN iCAX::Project::IProjectContext*,
     IN iCAX::Project::ISceneContext* pSceneContext_)
@@ -61,9 +61,9 @@ iCAX::Interaction::CFacadeResult HandleListToolpaths(
     return MakeToolpathListResponse(_Scene);
 }
 
-iCAX::Interaction::CFacadeResult HandleRecognizeLoops(
-    IN const iCAX::Interaction::CFacadeCall &,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleRecognizeLoops(
+    IN const iCAX::Interaction::CInvocation &,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -104,9 +104,9 @@ iCAX::Interaction::CFacadeResult HandleRecognizeLoops(
     return MakeToolpathListResponse(_Scene);
 }
 
-iCAX::Interaction::CFacadeResult HandleAddSelectionPath(
-    IN const iCAX::Interaction::CFacadeCall &,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleAddSelectionPath(
+    IN const iCAX::Interaction::CInvocation &,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -148,9 +148,9 @@ iCAX::Interaction::CFacadeResult HandleAddSelectionPath(
     return MakeToolpathListResponse(_Scene);
 }
 
-iCAX::Interaction::CFacadeResult HandleSetPoseField(
-    IN const iCAX::Interaction::CFacadeCall &Request_,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleSetPoseField(
+    IN const iCAX::Interaction::CInvocation &Request_,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)
@@ -197,9 +197,9 @@ iCAX::Interaction::CFacadeResult HandleSetPoseField(
     return MakeToolpathListResponse(_Scene);
 }
 
-iCAX::Interaction::CFacadeResult HandleClearProgram(
-    IN const iCAX::Interaction::CFacadeCall &,
-    IN iCAX::Application::IApplicationContext &,
+iCAX::Interaction::CInvocationResult HandleClearProgram(
+    IN const iCAX::Interaction::CInvocation &,
+    IN const iCAX::Application::IApplicationContext&,
     IN iCAX::Product::IProductContext *,
     IN iCAX::Project::IProjectContext *,
     IN iCAX::Project::ISceneContext *pSceneContext_)

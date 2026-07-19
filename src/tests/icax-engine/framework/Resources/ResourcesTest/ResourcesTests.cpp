@@ -1,15 +1,10 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Resources/ResourcePoolAccess.h>
 #include <Resources/Resources.h>
 
-#include <atomic>
-#include <memory>
-#include <string>
-#include <thread>
 #include <typeindex>
-#include <utility>
-#include <vector>
 
 using namespace iCAX::Resource;
 

@@ -8,25 +8,13 @@
 #include "Facades/FacadeMethod.h"
 #include "Data/Variant.h"
 #include "Database/IEntity.h"
-#include "Mailbox/MailPayload.h"
+#include "Facades/FacadePayload.h"
 #include "PDO/IPDOHub.h"
 #include "PDO/PDOLease.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
 #include "Transform/Transform.h"
 
-#include <algorithm>
-#include <array>
-#include <atomic>
-#include <cstddef>
-#include <cstring>
-#include <limits>
-#include <optional>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace
 {
@@ -55,7 +43,6 @@ namespace
         bool bNeedPublishAllocatedEvent = false;
     };
 
-    std::atomic_uint64_t g_nNextColliderEventMailID{ 0x4000000000000000ull };
     std::unordered_map<std::string, SSlotAssignment> g_ColliderSlots;
 
     uint64_t NextColliderVersion() noexcept
@@ -384,11 +371,11 @@ namespace
             << "\",\"payloadCapacity\":\"" << nPayloadCapacity_
             << "\"}";
 
-        iCAX::Mail::MailHeader _Header;
-        _Header.nMailId = g_nNextColliderEventMailID.fetch_add(1, std::memory_order_relaxed);
-        _Header.nTypeCode = nEventTypeCode_;
-        _Header.nStamp = iCAX::Mail::kMailOk;
-        SceneContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
+        SceneContext_.GetBackendFacadeEndpoint().SendText(
+            0,
+            nEventTypeCode_,
+            iCAX::Interaction::EFacadeFrameKind::Event,
+            _Payload.str());
     }
 
     void SendColliderDefragEvent(
@@ -407,11 +394,11 @@ namespace
             << "\",\"pdoId\":\"" << nPDOID_
             << "\"}";
 
-        iCAX::Mail::MailHeader _Header;
-        _Header.nMailId = g_nNextColliderEventMailID.fetch_add(1, std::memory_order_relaxed);
-        _Header.nTypeCode = nEventTypeCode_;
-        _Header.nStamp = iCAX::Mail::kMailOk;
-        SceneContext_.GetBackendPostOffice().SendText(_Header, _Payload.str());
+        SceneContext_.GetBackendFacadeEndpoint().SendText(
+            0,
+            nEventTypeCode_,
+            iCAX::Interaction::EFacadeFrameKind::Event,
+            _Payload.str());
     }
 
     iCAX::PDO::CPDOHubAllocationCallbacks MakeAllocationCallbacks(

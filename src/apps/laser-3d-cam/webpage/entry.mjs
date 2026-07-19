@@ -1,6 +1,6 @@
 import { createThreeViewport } from "../../../iCAX-UI/SDK/index.mjs";
 import { renderProgress } from "./layout/commonViews.mjs";
-import { attachMachineAppearanceAutoApply, attachMachineInstanceNameAutoApply, attachMachineJointLimitAutoApply, attachMachineToolTCPAutoApply, attachMachineTransformAutoApply, handleMachineAction, handleMachineRibbonCommand, importMachinePath as importMachinePathAction, selectMachineDefinition as selectMachineDefinitionAction, selectMachineInstance as selectMachineInstanceAction, setMachineInstanceEnabled as setMachineInstanceEnabledAction } from "./machine/machineActions.mjs";
+import { attachMachineAppearanceAutoApply, attachMachineInstanceNameAutoApply, attachMachineJointLimitAutoApply, attachMachineJointPositionAutoApply, attachMachineToolTCPAutoApply, attachMachineTransformAutoApply, handleMachineAction, handleMachineRibbonCommand, importMachinePath as importMachinePathAction, selectMachineDefinition as selectMachineDefinitionAction, selectMachineInstance as selectMachineInstanceAction, setMachineInstanceEnabled as setMachineInstanceEnabledAction } from "./machine/machineActions.mjs";
 import { renderMachineLeftPane, renderMachineRightPane } from "./machine/machineArea.mjs";
 import { handleMachiningAction, handleMachiningRibbonCommand, setJobMachine as setJobMachineAction } from "./machining/machiningActions.mjs";
 import { renderMachiningLeftPane, renderMachiningRightPane } from "./machining/machiningArea.mjs";
@@ -160,6 +160,7 @@ function renderProject(context, view) {
     view.machineSourcePath = machinePathInput.value;
   });
   attachMachineTransformAutoApply(context, view, getProjectOps());
+  attachMachineJointPositionAutoApply(context, view, getProjectOps());
   attachMachineJointLimitAutoApply(context, view, getProjectOps());
   attachMachineAppearanceAutoApply(context, view, getProjectOps());
   attachMachineToolTCPAutoApply(context, view, getProjectOps());

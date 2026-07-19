@@ -4,7 +4,6 @@
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
 
-#include <algorithm>
 
 uint32_t iCAX::Transform::GetTransformContractVersion() noexcept
 {

@@ -3,10 +3,6 @@
 
 #include "Product/ProductManifest.h"
 
-#include <filesystem>
-#include <stdexcept>
-#include <utility>
-#include <vector>
 
 namespace
 {
@@ -58,22 +54,22 @@ namespace
         auto _Products = iCAX::Product::LoadProductDefinitions(_PathToUTF8(_ProductRoot));
         if (!_Products.empty())
         {
-            Config_.EngineConfig.Products = std::move(_Products);
+            Config_.RuntimeConfig.Products = std::move(_Products);
         }
     }
 
     iCAX::Application::CApplicationConfig _MakeDefaultApplicationConfig()
     {
         iCAX::Application::CApplicationConfig _Config;
-        _Config.EngineConfig.strApplicationSettingsPath = "Setting/Application.Setting";
-        _Config.EngineConfig.Descriptor.AppID = "icax";
-        _Config.EngineConfig.Descriptor.AppName = "iCAX";
-        _Config.EngineConfig.Paths.InstallDirectory = _PathToUTF8(std::filesystem::current_path());
-        _Config.EngineConfig.Paths.UserConfigDirectory = "Setting";
-        _Config.EngineConfig.Paths.CacheDirectory = "Cache";
-        _Config.EngineConfig.Paths.TempDirectory = "Temp";
-        _Config.EngineConfig.Paths.LogDirectory = "Log";
-        _Config.EngineConfig.nFrameIntervalMilliseconds = 16;
+        _Config.RuntimeConfig.strApplicationSettingsPath = "Setting/Application.Setting";
+        _Config.RuntimeConfig.Descriptor.AppID = "icax";
+        _Config.RuntimeConfig.Descriptor.AppName = "iCAX";
+        _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(std::filesystem::current_path());
+        _Config.RuntimeConfig.Paths.UserConfigDirectory = "Setting";
+        _Config.RuntimeConfig.Paths.CacheDirectory = "Cache";
+        _Config.RuntimeConfig.Paths.TempDirectory = "Temp";
+        _Config.RuntimeConfig.Paths.LogDirectory = "Log";
+        _Config.RuntimeConfig.nFrameIntervalMilliseconds = 16;
 
         iCAX::Product::CProductDefinition _DefaultProduct;
         _DefaultProduct.ProductID = "icax.default";
@@ -82,7 +78,7 @@ namespace
         _DefaultProduct.ProjectFile.Magic = "ICAX_DEFAULT";
         _DefaultProduct.ProjectFile.FormatVersion = "1.0";
         _DefaultProduct.ProjectFile.FileExtensions.push_back(".icax");
-        _Config.EngineConfig.Products.push_back(_DefaultProduct);
+        _Config.RuntimeConfig.Products.push_back(_DefaultProduct);
 
         _LoadProductDefinitions(_Config);
         return _Config;
@@ -122,16 +118,16 @@ void iCAX::Application::CApplication::Start()
         }
     }
 
-    m_Engine.SetConfig(m_Config.EngineConfig);
-    m_Engine.Start();
+    m_Runtime.SetConfig(m_Config.RuntimeConfig);
+    m_Runtime.Start();
 
     try
     {
-        m_FrontendBridge.Attach(m_Engine);
+        m_FrontendBridge.Attach(m_Runtime);
     }
     catch (...)
     {
-        m_Engine.Stop();
+        m_Runtime.Stop();
         throw;
     }
 
@@ -153,23 +149,23 @@ void iCAX::Application::CApplication::Stop()
     }
 
     m_FrontendBridge.Detach();
-    m_Engine.Stop();
+    m_Runtime.Stop();
 }
 
 bool iCAX::Application::CApplication::IsRunning() const
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
-    return m_bStarted && m_Engine.IsRunning();
+    return m_bStarted && m_Runtime.IsRunning();
 }
 
-iCAX::ApplicationHost::CApplicationHost& iCAX::Application::CApplication::Engine()
+iCAX::Application::CApplicationRuntime& iCAX::Application::CApplication::Runtime()
 {
-    return m_Engine;
+    return m_Runtime;
 }
 
-const iCAX::ApplicationHost::CApplicationHost& iCAX::Application::CApplication::Engine() const
+const iCAX::Application::CApplicationRuntime& iCAX::Application::CApplication::Runtime() const
 {
-    return m_Engine;
+    return m_Runtime;
 }
 
 iCAX::Application::CFrontendBridge& iCAX::Application::CApplication::Frontend()

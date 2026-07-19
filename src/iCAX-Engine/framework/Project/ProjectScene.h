@@ -9,8 +9,8 @@
 #include "Data/uuid.h"
 #include "Database/IRepository.h"
 #include "Database/IRepositoryEvent.h"
-#include "Mailbox/MailChannelRegistry.h"
-#include "Mailbox/MailPostOffice.h"
+#include "Facades/FacadeChannelRegistry.h"
+#include "Facades/FacadeEndpoint.h"
 #include "PDO/IPDOHub.h"
 #include "ProductContext/IProductContext.h"
 #include "ProjectContext/ISceneContext.h"
@@ -92,7 +92,7 @@ namespace iCAX
         /*
         * @brief Scene 每帧回调。
         */
-        using SceneFrameHandler = std::function<void(CProjectScene&, const iCAX::Mail::CMailPostOffice&)>;
+        using SceneFrameHandler = std::function<void(CProjectScene&, const iCAX::Interaction::CFacadeEndpoint&)>;
 
         /*
         * @brief Scene 创建参数。
@@ -106,13 +106,13 @@ namespace iCAX
             std::string SceneName; //!< Scene 名称。
             iCAX::Data::PropertyBag Settings; //!< Scene 运行期设置，默认不持久化。
             std::string StartupComponent; //!< 启动组件类型名。
-            std::shared_ptr<iCAX::Application::IApplicationContext> pApplicationContext; //!< 应用上下文。
+            std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext; //!< 应用上下文只读视图。
             std::shared_ptr<iCAX::Product::IProductContext> pProductContext; //!< 产品上下文。
             std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider; //!< 服务容器。
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry; //!< 产品级元数据注册表。
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 产品级行为注册表。
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry; //!< Scene 资源加载器注册表。
-            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry; //!< 邮件通道注册表。
+            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry; //!< Facade channel 注册表。
             bool bEnablePDOHub = false; //!< true 表示创建 Scene 级动态 PDOHub。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 动态 PDOHub 创建参数。
             uint32_t nFrameIntervalMilliseconds = 16; //!< Scene 工作线程帧间隔。
@@ -122,8 +122,9 @@ namespace iCAX
         /*
         * @brief Project 内部的独立运行/编辑现场。
         * @details
-        *   Scene 是完整运行现场，拥有自己的 Repository、Undo/Redo、Transaction、Universe、
-        *   ResourceLibrary、PDOHub、MailChannel 和工作线程。Project 只作为管理容器存在。
+        *   SceneContext 部分管理 Repository、Undo/Redo、Transaction、Universe、ResourceLibrary、
+        *   PDOHub 和服务环境；Scene Runtime 部分管理 FacadeChannel、工作线程、调度和协程。
+        *   当前 CProjectScene 同时实现这两个职责，Project 只作为上层管理容器存在。
         *   渲染、碰撞、拾取等外部交互身份直接使用 EntityID，不再维护 Scene 运行期对象映射表。
         */
         class _PROJECT_EXP CProjectScene final
@@ -267,19 +268,19 @@ namespace iCAX
             iCAX::Services::CServiceProvider& Services() const override;
 
             /*
-            * @brief 获取后端视角 Scene 邮局。
+            * @brief 获取后端视角 Scene Facade 端点。
             */
-            iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override;
+            iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override;
 
             /*
-            * @brief 获取前端视角 Scene 邮局。
+            * @brief 获取前端视角 Scene Facade 端点。
             */
-            iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override;
+            iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override;
 
             /*
-            * @brief 向 Scene 前端邮箱主动发送事件邮件。
+            * @brief 向 Scene 前端主动发送 Facade Event。
             */
-            void SendFrontendEvent(IN uint64_t nTypeCode_, IN const std::string& strPayloadText_);
+            void SendFrontendEvent(IN uint64_t nMethodCode_, IN const std::string& strPayloadText_);
 
             /*
             * @brief 由当前 Scene 打开子 Scene。
@@ -317,7 +318,7 @@ namespace iCAX
             void PostSwapPDO();
 
             /*
-            * @brief 关闭 Scene 并释放 Repository/Universe/Resource/mail channel。
+            * @brief 关闭 Scene 并释放 Repository/Universe/Resource/Facade channel。
             */
             void Close();
 
@@ -348,13 +349,13 @@ namespace iCAX
             std::string m_SceneName;
             iCAX::Data::PropertyBag m_SceneSettings;
             std::string m_StartupComponent;
-            std::shared_ptr<iCAX::Application::IApplicationContext> m_pApplicationContext;
+            std::shared_ptr<const iCAX::Application::IApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Product::IProductContext> m_pProductContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
-            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> m_pFacadeChannelRegistry;
             std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
             std::shared_ptr<iCAX::Behaviour::IUniverse> m_pUniverse;
             std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
@@ -363,7 +364,6 @@ namespace iCAX
             uint32_t m_nFrameIntervalMilliseconds = 16;
             CSceneRuntimeScheduler m_RuntimeScheduler;
             SceneFrameHandler m_FrameHandler;
-            std::atomic_uint64_t m_nNextBackendMailID = 1;
             bool m_bStartupBound = false;
         };
     }

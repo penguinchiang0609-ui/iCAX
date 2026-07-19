@@ -1,10 +1,6 @@
 #include "pch.h"
 #include "ResourceLoaderRegistry.h"
 
-#include <algorithm>
-#include <cctype>
-#include <mutex>
-#include <stdexcept>
 
 namespace
 {

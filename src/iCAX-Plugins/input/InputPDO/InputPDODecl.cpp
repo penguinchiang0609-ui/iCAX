@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "InputPDODecl.h"
 
-#include <limits>
-#include <stdexcept>
 
 const char* iCAX::InputPDO::GetInputPDOPayloadTypeName(IN EInputPDOPayloadKind eKind_)
 {

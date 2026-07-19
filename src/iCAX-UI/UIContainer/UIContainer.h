@@ -50,7 +50,7 @@ namespace iCAX
 
             /*
             * @brief 启动 UI 容器。
-            * @details 后端 ApplicationHost 必须已经启动，FrontendBridge 必须已经 attach。
+            * @details 后端 ApplicationRuntime 必须已经启动，FrontendBridge 必须已经 attach。
             */
             virtual void Start() = 0;
 

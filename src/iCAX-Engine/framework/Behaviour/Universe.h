@@ -3,6 +3,11 @@
 
 namespace iCAX
 {
+    namespace Coroutines
+    {
+        class CCoroutineRuntime;
+    }
+
     namespace Behaviour
     {
         class CBehaviourDispatcher;
@@ -98,11 +103,14 @@ namespace iCAX
             virtual void ResumeFrameUpdateByIndex(IN const std::type_index& nType_) override;
             virtual std::vector<std::shared_ptr<CBehaviourBase>> GetFrameUpdatePausedBehaviours() const override;
             virtual std::vector<std::shared_ptr<CBehaviourBase>> GetAllBehaviours() const override;
+            virtual iCAX::Tasks::TaskSchedulerPtr GetEngineTaskScheduler() const override;
 
         private:
             iCAX::Data::uuid m_ID;
             std::shared_ptr<CBehaviourDispatcher> m_pDispatcher;
             std::shared_ptr<IBehaviourRegistry> m_pRegistry;
+            std::shared_ptr<iCAX::Tasks::EventLoopTaskScheduler> m_pEngineTaskScheduler;
+            std::shared_ptr<iCAX::Coroutines::CCoroutineRuntime> m_pCoroutineRuntime;
         };
     }
 }

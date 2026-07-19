@@ -17,7 +17,7 @@ src/iCAX-UI/
   SDK/
     AppShell/
     Bridge/
-    Mailbox/
+    Facades/
     PDO/
 
 src/apps/
@@ -28,7 +28,7 @@ src/apps/
     protocol/
 ```
 
-`src/iCAX-UI` 是公共 H5 前端框架。`src/iCAX-Application` 是应用容器，负责组合 Engine 与 UI bridge。`src/apps` 是具体产品。三者通过 manifest、mailbox 和 PDO 契约连接。
+`src/iCAX-UI` 是公共 H5 前端框架。`src/iCAX-Application` 是应用容器，负责组合 Engine 与 UI bridge。`src/apps` 是具体产品。三者通过 manifest、Facade 和 PDO 契约连接。
 
 ## 2. UIContainer 方案
 
@@ -38,7 +38,7 @@ src/apps/
 
 ```text
 iCAX-Application
-  ApplicationHost
+  ApplicationRuntime
   FrontendBridge
 
 UIContainer
@@ -58,7 +58,7 @@ CefUIContainer
 当前 `src/iCAX-UI/UIContainer` 已落地：
 
 - `IFrontendBridge` 前端桥契约。
-- `CFrontendMailEnvelope` 邮件信封。
+- `CFrontendFacadeFrame` Facade 调用帧。
 - `IUIContainer` UI 容器接口。
 - `CUIContainerFactory` 静态注册工厂。
 - 内置 `headless` 容器，用于验证 `ApplicationProxy` 启动握手。
@@ -70,7 +70,7 @@ CefUIContainer
 - 加载 `AppShell/index.html`。
 - 注入 `window.icax`。
 - 将 JS bridge 调用直接转发到 `IFrontendBridge`。
-- 轮询 `IFrontendBridge::PollMails()` 并推送 JS。
+- 轮询 `IFrontendBridge::PollFacadeFrames()` 并推送 JS。
 
 后续仍需要补：
 
@@ -106,12 +106,12 @@ Workspace 根据运行态显示：
 公共前端拆成多个模块：
 
 - `Bridge`：选择真实 `window.icax` 或 mock bridge。
-- `Mailbox`：命令路由、payload 文本编解码、Promise mailbox client。
+- `Facades`：命令路由、payload 文本编解码、Promise Facade client。
 - `PDO`：PDO ID 和 PDO read lease 入口。
 - `AppProxy`：前端 application 代理对象。
 - `ProductProxy`：前端 product 代理对象和产品 ESM 模块加载。
 - `ProjectProxy`：前端 project 容器代理对象，管理 SceneProxy。
-- `SceneProxy`：前端 scene 代理对象，挂接 scene mailbox 和 PDO client。
+- `SceneProxy`：前端 scene 代理对象，挂接 scene Facade 和 PDO client。
 - `UI`：公共 UI 工具和公共组件。
 - `SDK`：统一导出门面。
 
@@ -181,18 +181,18 @@ export function mountProject(context) {}
 
 ## 7. 后端主动事件
 
-Engine 主动发给前端的事件仍然走 mailbox，但不是 request/response。
+Engine 主动发给前端的事件仍然走 Facade，但不是 request/response。
 
 约定：
 
-- `originId = 0` 表示主动事件。
-- `typeCode` 表示事件类型。
+- `callId = 0` 表示主动事件。
+- `methodCode` 表示事件类型。
 - `payloadText` 使用 UTF-8 文本。
 
 前端侧订阅：
 
 ```js
-const unsubscribe = mailbox.subscribe(sceneChannelId, "Project.RepositoryChanged", event => {
+const unsubscribe = Facade.subscribe(sceneChannelId, "Project.RepositoryChanged", event => {
   console.log(event.payload);
 });
 ```
@@ -210,7 +210,7 @@ const unsubscribe = mailbox.subscribe(sceneChannelId, "Project.RepositoryChanged
 - `src/iCAX-UI/ProjectProxy`
 - `src/iCAX-UI/SceneProxy`
 - `src/iCAX-UI/SDK/Bridge`
-- `src/iCAX-UI/SDK/Mailbox`
+- `src/iCAX-UI/SDK/Facades`
 - `src/iCAX-UI/SDK/PDO`
 - `src/iCAX-UI/UI`
 - `src/iCAX-UI/SDK`

@@ -27,12 +27,12 @@ globalThis.icax
 
 `MockHostBridge` 模拟：
 
-- application mailbox。
-- product mailbox。
-- scene mailbox。
+- application Facade。
+- product Facade。
+- scene Facade。
 - 产品启动。
 - 项目打开与主 Scene 登记。
-- command response。
+- Facade response。
 
 它只用于开发期和前端白盒测试，不作为产品运行时能力。
 
@@ -54,7 +54,7 @@ window.icaxNativeBridge
 
 ## 5. Mock 命令处理
 
-`MockHostBridge` 内部用 command typeCode 分发 mock command。
+`MockHostBridge` 内部用 command methodCode 分发 mock command。
 
 模拟内容：
 
@@ -68,14 +68,15 @@ window.icaxNativeBridge
 - `Project.Undo`
 - `Project.Redo`
 - `Project.GetUndoRedoState`
-- backend 主动 event mail，通过 `emitMail(channelId, command, payload)` 触发。
+- backend 主动 Event，通过 `emitEvent(channelId, facadeMember, payload)` 触发。
 
-mock response 使用和真实 bridge 一样的 mail envelope 返回，确保 `Mailbox` 测试覆盖真实交互形态。
+mock 使用和真实 bridge 一样的 Facade frame 返回 Report、Response 和 Event，确保测试覆盖真实交互形态；它也可注入 Request，验证后端调用前端 Facade。
 
 ## 6. 验收标准
 
 - `createBridge()` 在存在 `globalThis.icax` 时返回真实对象。
 - `createBridge()` 在没有真实对象时返回 `MockHostBridge`。
 - mock bridge 能完成 application/product/project 基础流程。
-- `subscribeMail()` 返回的取消订阅函数生效。
+- `subscribeFacadeFrames()` 返回的取消订阅函数生效。
+- `postFacadeFrame()` 与真实宿主使用同一 frame 字段和异步投递语义。
 

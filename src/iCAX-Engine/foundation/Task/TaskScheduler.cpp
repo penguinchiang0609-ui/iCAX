@@ -1,13 +1,6 @@
 #include "pch.h"
 #include "TaskScheduler.h"
 
-#include <atomic>
-#include <condition_variable>
-#include <chrono>
-#include <map>
-#include <stdexcept>
-#include <thread>
-#include <vector>
 
 namespace
 {

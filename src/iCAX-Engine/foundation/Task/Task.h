@@ -147,10 +147,12 @@ namespace iCAX::Tasks
         public:
             TaskState(
                 std::shared_ptr<void> asyncState_ = nullptr,
-                TaskCreationOptions creationOptions_ = TaskCreationOptions::None)
+                TaskCreationOptions creationOptions_ = TaskCreationOptions::None,
+                TaskSchedulerPtr scheduler_ = DefaultScheduler())
                 : m_id(NextTaskId())
                 , m_asyncState(std::move(asyncState_))
                 , m_creationOptions(creationOptions_)
+                , m_scheduler(RequireScheduler(std::move(scheduler_)))
             {
             }
 
@@ -167,6 +169,11 @@ namespace iCAX::Tasks
             TaskCreationOptions CreationOptions() const noexcept
             {
                 return m_creationOptions;
+            }
+
+            TaskSchedulerPtr Scheduler() const noexcept
+            {
+                return m_scheduler;
             }
 
             TaskStatus Status() const
@@ -362,6 +369,7 @@ namespace iCAX::Tasks
             std::size_t m_id = 0;
             std::shared_ptr<void> m_asyncState;
             TaskCreationOptions m_creationOptions = TaskCreationOptions::None;
+            TaskSchedulerPtr m_scheduler;
             TaskStatus m_status = TaskStatus::Created;
             std::optional<T> m_value;
             std::exception_ptr m_exception;
@@ -374,10 +382,12 @@ namespace iCAX::Tasks
         public:
             TaskState(
                 std::shared_ptr<void> asyncState_ = nullptr,
-                TaskCreationOptions creationOptions_ = TaskCreationOptions::None)
+                TaskCreationOptions creationOptions_ = TaskCreationOptions::None,
+                TaskSchedulerPtr scheduler_ = DefaultScheduler())
                 : m_id(NextTaskId())
                 , m_asyncState(std::move(asyncState_))
                 , m_creationOptions(creationOptions_)
+                , m_scheduler(RequireScheduler(std::move(scheduler_)))
             {
             }
 
@@ -394,6 +404,11 @@ namespace iCAX::Tasks
             TaskCreationOptions CreationOptions() const noexcept
             {
                 return m_creationOptions;
+            }
+
+            TaskSchedulerPtr Scheduler() const noexcept
+            {
+                return m_scheduler;
             }
 
             TaskStatus Status() const
@@ -563,6 +578,7 @@ namespace iCAX::Tasks
             std::size_t m_id = 0;
             std::shared_ptr<void> m_asyncState;
             TaskCreationOptions m_creationOptions = TaskCreationOptions::None;
+            TaskSchedulerPtr m_scheduler;
             TaskStatus m_status = TaskStatus::Created;
             std::exception_ptr m_exception;
             std::vector<std::function<void()>> m_continuations;
@@ -605,6 +621,11 @@ namespace iCAX::Tasks
         TaskCreationOptions CreationOptions() const
         {
             return State().CreationOptions();
+        }
+
+        TaskSchedulerPtr Scheduler() const
+        {
+            return State().Scheduler();
         }
 
         bool IsCompleted() const
@@ -665,14 +686,24 @@ namespace iCAX::Tasks
         }
 
         template<typename F>
-        auto ContinueWith(F&& continuation_, TaskSchedulerPtr scheduler_ = InlineScheduler()) const
+        auto ContinueWith(F&& continuation_) const
+            -> Task<std::invoke_result_t<std::decay_t<F>, Task<T>>>;
+
+        template<typename F>
+        auto ContinueWith(F&& continuation_, TaskSchedulerPtr scheduler_) const
+            -> Task<std::invoke_result_t<std::decay_t<F>, Task<T>>>;
+
+        template<typename F>
+        auto ContinueWith(
+            F&& continuation_,
+            TaskContinuationOptions options_) const
             -> Task<std::invoke_result_t<std::decay_t<F>, Task<T>>>;
 
         template<typename F>
         auto ContinueWith(
             F&& continuation_,
             TaskContinuationOptions options_,
-            TaskSchedulerPtr scheduler_ = InlineScheduler()) const
+            TaskSchedulerPtr scheduler_) const
             -> Task<std::invoke_result_t<std::decay_t<F>, Task<T>>>;
 
         template<typename F>
@@ -752,6 +783,11 @@ namespace iCAX::Tasks
             return State().CreationOptions();
         }
 
+        TaskSchedulerPtr Scheduler() const
+        {
+            return State().Scheduler();
+        }
+
         bool IsCompleted() const
         {
             return State().IsCompleted();
@@ -800,14 +836,24 @@ namespace iCAX::Tasks
         }
 
         template<typename F>
-        auto ContinueWith(F&& continuation_, TaskSchedulerPtr scheduler_ = InlineScheduler()) const
+        auto ContinueWith(F&& continuation_) const
+            -> Task<std::invoke_result_t<std::decay_t<F>, Task<void>>>;
+
+        template<typename F>
+        auto ContinueWith(F&& continuation_, TaskSchedulerPtr scheduler_) const
+            -> Task<std::invoke_result_t<std::decay_t<F>, Task<void>>>;
+
+        template<typename F>
+        auto ContinueWith(
+            F&& continuation_,
+            TaskContinuationOptions options_) const
             -> Task<std::invoke_result_t<std::decay_t<F>, Task<void>>>;
 
         template<typename F>
         auto ContinueWith(
             F&& continuation_,
             TaskContinuationOptions options_,
-            TaskSchedulerPtr scheduler_ = InlineScheduler()) const
+            TaskSchedulerPtr scheduler_) const
             -> Task<std::invoke_result_t<std::decay_t<F>, Task<void>>>;
 
         template<typename F>
@@ -853,12 +899,30 @@ namespace iCAX::Tasks
     class TaskCompletionSource
     {
     public:
+        explicit TaskCompletionSource(TaskSchedulerPtr scheduler_)
+            : TaskCompletionSource(
+                nullptr,
+                TaskCreationOptions::None,
+                std::move(scheduler_))
+        {
+        }
+
+        template<
+            typename Scheduler,
+            std::enable_if_t<std::is_base_of_v<ITaskScheduler, Scheduler>, int> = 0>
+        explicit TaskCompletionSource(std::shared_ptr<Scheduler> scheduler_)
+            : TaskCompletionSource(std::static_pointer_cast<ITaskScheduler>(std::move(scheduler_)))
+        {
+        }
+
         explicit TaskCompletionSource(
             std::shared_ptr<void> asyncState_ = nullptr,
-            TaskCreationOptions creationOptions_ = TaskCreationOptions::None)
+            TaskCreationOptions creationOptions_ = TaskCreationOptions::None,
+            TaskSchedulerPtr scheduler_ = DefaultScheduler())
             : m_state(std::make_shared<detail::TaskState<T>>(
                 std::move(asyncState_),
-                creationOptions_))
+                creationOptions_,
+                std::move(scheduler_)))
         {
         }
 
@@ -870,6 +934,11 @@ namespace iCAX::Tasks
         std::size_t Id() const
         {
             return m_state->Id();
+        }
+
+        TaskSchedulerPtr Scheduler() const
+        {
+            return m_state->Scheduler();
         }
 
         void MarkRunning() const
@@ -924,12 +993,30 @@ namespace iCAX::Tasks
     class TaskCompletionSource<void>
     {
     public:
+        explicit TaskCompletionSource(TaskSchedulerPtr scheduler_)
+            : TaskCompletionSource(
+                nullptr,
+                TaskCreationOptions::None,
+                std::move(scheduler_))
+        {
+        }
+
+        template<
+            typename Scheduler,
+            std::enable_if_t<std::is_base_of_v<ITaskScheduler, Scheduler>, int> = 0>
+        explicit TaskCompletionSource(std::shared_ptr<Scheduler> scheduler_)
+            : TaskCompletionSource(std::static_pointer_cast<ITaskScheduler>(std::move(scheduler_)))
+        {
+        }
+
         explicit TaskCompletionSource(
             std::shared_ptr<void> asyncState_ = nullptr,
-            TaskCreationOptions creationOptions_ = TaskCreationOptions::None)
+            TaskCreationOptions creationOptions_ = TaskCreationOptions::None,
+            TaskSchedulerPtr scheduler_ = DefaultScheduler())
             : m_state(std::make_shared<detail::TaskState<void>>(
                 std::move(asyncState_),
-                creationOptions_))
+                creationOptions_,
+                std::move(scheduler_)))
         {
         }
 
@@ -941,6 +1028,11 @@ namespace iCAX::Tasks
         std::size_t Id() const
         {
             return m_state->Id();
+        }
+
+        TaskSchedulerPtr Scheduler() const
+        {
+            return m_state->Scheduler();
         }
 
         void MarkRunning() const
@@ -1071,6 +1163,15 @@ namespace iCAX::Tasks
 
     template<typename T>
     template<typename F>
+    auto Task<T>::ContinueWith(F&& continuation_) const
+        -> Task<std::invoke_result_t<std::decay_t<F>, Task<T>>>
+    {
+        auto scheduler = m_state ? m_state->Scheduler() : DefaultScheduler();
+        return ContinueWith(std::forward<F>(continuation_), std::move(scheduler));
+    }
+
+    template<typename T>
+    template<typename F>
     auto Task<T>::ContinueWith(F&& continuation_, TaskSchedulerPtr scheduler_) const
         -> Task<std::invoke_result_t<std::decay_t<F>, Task<T>>>
     {
@@ -1078,6 +1179,20 @@ namespace iCAX::Tasks
             std::forward<F>(continuation_),
             TaskContinuationOptions::None,
             std::move(scheduler_));
+    }
+
+    template<typename T>
+    template<typename F>
+    auto Task<T>::ContinueWith(
+        F&& continuation_,
+        TaskContinuationOptions options_) const
+        -> Task<std::invoke_result_t<std::decay_t<F>, Task<T>>>
+    {
+        auto scheduler = m_state ? m_state->Scheduler() : DefaultScheduler();
+        return ContinueWith(
+            std::forward<F>(continuation_),
+            options_,
+            std::move(scheduler));
     }
 
     template<typename T>
@@ -1106,7 +1221,11 @@ namespace iCAX::Tasks
     {
         using ReturnType = std::invoke_result_t<std::decay_t<F>, Task<T>>;
 
-        TaskCompletionSource<ReturnType> source;
+        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
+        TaskCompletionSource<ReturnType> source(
+            nullptr,
+            TaskCreationOptions::None,
+            scheduler);
         auto resultTask = source.GetTask();
 
         if (!m_state)
@@ -1122,7 +1241,6 @@ namespace iCAX::Tasks
             return resultTask;
         }
 
-        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
         auto callback = std::make_shared<std::decay_t<F>>(std::forward<F>(continuation_));
         auto sourceState = m_state;
         auto registration = std::make_shared<CancellationTokenRegistration>();
@@ -1212,7 +1330,11 @@ namespace iCAX::Tasks
         using WorkType = std::decay_t<F>;
         using ReturnType = detail::RunReturnT<WorkType>;
 
-        TaskCompletionSource<ReturnType> source;
+        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
+        TaskCompletionSource<ReturnType> source(
+            nullptr,
+            TaskCreationOptions::None,
+            scheduler);
         auto resultTask = source.GetTask();
 
         if (cancellationToken_.IsCancellationRequested())
@@ -1221,7 +1343,6 @@ namespace iCAX::Tasks
             return resultTask;
         }
 
-        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
         auto work = std::make_shared<WorkType>(std::forward<F>(work_));
 
         try
@@ -1298,14 +1419,18 @@ namespace iCAX::Tasks
         F&& work_,
         CancellationToken cancellationToken_ = CancellationToken::None(),
         TaskCreationOptions creationOptions_ = TaskCreationOptions::None,
-        TaskSchedulerPtr scheduler_ = CurrentScheduler(),
+        TaskSchedulerPtr scheduler_ = DefaultScheduler(),
         std::shared_ptr<void> asyncState_ = nullptr)
         -> Task<detail::RunReturnT<std::decay_t<F>>>
     {
         using WorkType = std::decay_t<F>;
         using ReturnType = detail::RunReturnT<WorkType>;
 
-        TaskCompletionSource<ReturnType> source(std::move(asyncState_), creationOptions_);
+        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
+        TaskCompletionSource<ReturnType> source(
+            std::move(asyncState_),
+            creationOptions_,
+            scheduler);
         auto resultTask = source.GetTask();
 
         if (cancellationToken_.IsCancellationRequested())
@@ -1314,7 +1439,6 @@ namespace iCAX::Tasks
             return resultTask;
         }
 
-        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
         auto work = std::make_shared<WorkType>(std::forward<F>(work_));
         auto action = [source, work, cancellationToken_, scheduler, creationOptions_]() mutable
         {
@@ -2100,6 +2224,14 @@ namespace iCAX::Tasks
     }
 
     template<typename F>
+    auto Task<void>::ContinueWith(F&& continuation_) const
+        -> Task<std::invoke_result_t<std::decay_t<F>, Task<void>>>
+    {
+        auto scheduler = m_state ? m_state->Scheduler() : DefaultScheduler();
+        return ContinueWith(std::forward<F>(continuation_), std::move(scheduler));
+    }
+
+    template<typename F>
     auto Task<void>::ContinueWith(F&& continuation_, TaskSchedulerPtr scheduler_) const
         -> Task<std::invoke_result_t<std::decay_t<F>, Task<void>>>
     {
@@ -2107,6 +2239,19 @@ namespace iCAX::Tasks
             std::forward<F>(continuation_),
             TaskContinuationOptions::None,
             std::move(scheduler_));
+    }
+
+    template<typename F>
+    auto Task<void>::ContinueWith(
+        F&& continuation_,
+        TaskContinuationOptions options_) const
+        -> Task<std::invoke_result_t<std::decay_t<F>, Task<void>>>
+    {
+        auto scheduler = m_state ? m_state->Scheduler() : DefaultScheduler();
+        return ContinueWith(
+            std::forward<F>(continuation_),
+            options_,
+            std::move(scheduler));
     }
 
     template<typename F>
@@ -2133,7 +2278,11 @@ namespace iCAX::Tasks
     {
         using ReturnType = std::invoke_result_t<std::decay_t<F>, Task<void>>;
 
-        TaskCompletionSource<ReturnType> source;
+        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
+        TaskCompletionSource<ReturnType> source(
+            nullptr,
+            TaskCreationOptions::None,
+            scheduler);
         auto resultTask = source.GetTask();
 
         if (!m_state)
@@ -2149,7 +2298,6 @@ namespace iCAX::Tasks
             return resultTask;
         }
 
-        auto scheduler = detail::RequireScheduler(std::move(scheduler_));
         auto callback = std::make_shared<std::decay_t<F>>(std::forward<F>(continuation_));
         auto sourceState = m_state;
         auto registration = std::make_shared<CancellationTokenRegistration>();

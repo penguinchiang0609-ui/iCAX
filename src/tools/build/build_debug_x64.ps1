@@ -26,7 +26,6 @@ $Projects = @(
     "src\icax-engine\foundation\Geometry\Geometry.vcxproj",
     "src\icax-engine\foundation\Task\Task.vcxproj",
     "src\icax-engine\framework\Resources\Resources.vcxproj",
-    "src\icax-engine\framework\Mailbox\Mailbox.vcxproj",
     "src\icax-engine\framework\PDO\PDO.vcxproj",
     "src\icax-engine\framework\ApplicationContext\ApplicationContext.vcxproj",
     "src\icax-engine\framework\ProductContext\ProductContext.vcxproj",
@@ -40,7 +39,7 @@ $Projects = @(
     "src\apps\sample\backend\component\SampleComponent\SampleComponent.vcxproj",
     "src\apps\sample\backend\service\SampleService\SampleService.vcxproj",
     "src\apps\sample\backend\behaviour\SampleBehaviour\SampleBehaviour.vcxproj",
-    "src\icax-engine\framework\ApplicationHost\ApplicationHost.vcxproj",
+    "src\icax-engine\framework\ApplicationRuntime\ApplicationRuntime.vcxproj",
     "src\iCAX-UI\WebPageHost\WebPageHost.vcxproj",
     "src\apps\cax-host\backend\CAXHost\CAXHost.vcxproj",
     "src\apps\mfc-sample\backend\MFCSample\MFCSample.vcxproj"

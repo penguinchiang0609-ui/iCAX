@@ -10,6 +10,31 @@
 // 添加要在此处预编译的标头
 #include "framework.h"
 
+#include <algorithm>
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <deque>
+#include <exception>
+#include <format>
+#include <fstream>
+#include <functional>
+#include <iterator>
+#include <list>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+#include <windows.h>
+
 #define _DATABASE
 
 #endif //PCH_H

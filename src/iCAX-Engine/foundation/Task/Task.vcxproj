@@ -145,6 +145,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="CancellationToken.h" />
+    <ClInclude Include="Coroutine.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="Task.h" />
@@ -155,6 +156,7 @@
     <ClInclude Include="TaskStatus.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Coroutine.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>

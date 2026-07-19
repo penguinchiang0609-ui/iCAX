@@ -34,7 +34,7 @@ src/iCAX-UI/
   SDK/
     AppShell/
     Bridge/
-    Mailbox/
+    Facades/
     PDO/
 
 src/apps/<product-id>/
@@ -51,7 +51,7 @@ src/apps/<product-id>/
 - `iCAX-Application/Application`：应用容器，拥有 Engine 和通用 `FrontendBridge`。
 - `UIContainer`：UI 容器公共契约、工厂和 headless 启动验证。
 - `CefUIContainer`：CEF 版 `IUIContainer`，负责浏览器窗口和 JS bridge。
-- `WpfUIContainer`：WPF 版 `IUIContainer` 可选实现，负责 WPF 主窗口和 mailbox 连接。
+- `WpfUIContainer`：WPF 版 `IUIContainer` 可选实现，负责 WPF 主窗口和 Facade 连接。
 - `QtUIContainer`：未来可选 QT 版 `IUIContainer`，只要遵守同一契约即可接入。
 - `SDK/AppShell`：SDK 自带的 H5 单页应用壳。
 - `AppProxy`：前端应用代理，封装 application channel、产品列表、产品启动和按文件打开项目。
@@ -59,7 +59,7 @@ src/apps/<product-id>/
 - `ProjectProxy`：前端项目代理，封装项目状态、Scene 列表和主 Scene 入口。
 - `SceneProxy`：前端 Scene 代理，封装 scene channel、Scene 命令、撤销重做、事件订阅和 PDO 访问。
 - `UI`：公共 UI 工具和组件。
-- `SDK`：对 Shell 和产品前端暴露的统一导出入口，内部封装 Bridge、Mailbox、PDO。
+- `SDK`：对 Shell 和产品前端暴露的统一导出入口，内部封装 Bridge、Facades、PDO。
 
 `AppProxy/ProductProxy/ProjectProxy/SceneProxy` 是前端自己的四层结构，与 backend 概念对齐，但不拥有 backend 数据。它们只保存前端通信入口、状态快照、事件订阅和视图所需的轻量引用。
 
@@ -74,9 +74,9 @@ src/apps/<product-id>/
 - 支持 UI 容器 DLL 静态注册。
 - 提供内置 headless 容器，验证 application channel 和 `App.GetState` 握手。
 
-`UIContainer` 不写具体产品逻辑，不知道平切、五轴、焊接等业务细节，不启动或停止 `ApplicationHost`。
+`UIContainer` 不写具体产品逻辑，不知道平切、五轴、焊接等业务细节，不启动或停止 `ApplicationRuntime`。
 
-CEF 浏览器窗口、`window.icax` 注入、PDO shared memory 到 JS 视图的映射、文件对话框、窗口标题和拖拽文件属于 `CefUIContainer` 或更外层宿主适配器。WPF/QT 容器不需要模拟 `window.icax`，但必须提供等价的 mailbox/PDO 调用能力。
+CEF 浏览器窗口、`window.icax` 注入、PDO shared memory 到 JS 视图的映射、文件对话框、窗口标题和拖拽文件属于 `CefUIContainer` 或更外层宿主适配器。WPF/QT 容器不需要模拟 `window.icax`，但必须提供等价的 Facade/PDO 调用能力。
 
 ## 5. WebPage
 
@@ -116,32 +116,32 @@ interface IcaxBridge {
   getApplicationChannelId(): Promise<string>;
   registerProductChannel(productId: string): Promise<string>;
   registerSceneChannel(projectId: string, sceneId: string): Promise<string>;
-  postMail(mail: IcaxMailEnvelope): void | Promise<void>;
-  subscribeMail(channelId: string, handler: (mail: IcaxMailEnvelope) => void): () => void;
+  postFacadeFrame(frame: IcaxFacadeFrame): void | Promise<void>;
+  subscribeFacadeFrames(channelId: string, handler: (frame: IcaxFacadeFrame) => void): () => void;
   openFileDialog?(options: OpenFileDialogOptions): Promise<string | null>;
   onProjectFileOpen?(handler: (path: string) => void): () => void;
   pdo?: IcaxPDOBridge;
 }
 ```
 
-邮件信封：
+Facade 内部传输帧：
 
 ```ts
-interface IcaxMailEnvelope {
+interface IcaxFacadeFrame {
   channelId: string;
-  id: number;
-  originId: number;
-  typeCode: string;
-  stamp: number;
+  callId: number;
+  methodCode: string;
+  kind: 0 | 1 | 2 | 3; // Request / Report / Response / Event
+  status: number;
   payloadText: string;
 }
 ```
 
 `payloadText` 是 UTF-8 文本。页面业务代码不直接拼底层协议文本，由 `SDK` 负责封装。
 
-## 7. Mailbox Promise 语义
+## 7. Facades Promise 语义
 
-前端和 Engine 线程独立。H5 发出 mail 后不能同步得到业务结果。
+前端和 Engine 线程独立。H5 发出 Request frame 后不能同步得到业务结果。
 
 所有命令 API 返回 `Promise`：
 
@@ -153,10 +153,11 @@ const opened = await app.openProjectFile("D:/projects/a.icax");
 
 完成规则：
 
-- request mail 带唯一 `id`。
-- response mail 的 `originId` 等于 request mail 的 `id`。
-- `stamp == 0` 表示成功。
-- 非 0 stamp 或超时都会 reject。
+- Request 带唯一 `callId`；
+- 同一次调用的 Report 与 Response 保持相同 `callId`；
+- `status == 0` 的 Response 完成 Promise；
+- 非 0 status、投递失败或超时都会 reject；
+- 后端也可以发送 Request 调用前端通过 `expose()` 提供的 Facade。
 
 ## 8. 运行流程
 
@@ -164,8 +165,8 @@ const opened = await app.openProjectFile("D:/projects/a.icax");
 
 ```text
 CApplication.Start()
-  -> Engine ApplicationHost.Start()
-  -> FrontendBridge.Attach(ApplicationHost)
+  -> Engine ApplicationRuntime.Start()
+  -> FrontendBridge.Attach(ApplicationRuntime)
 CEF host starts
   -> UIContainer.Start()
   -> AppShell loads
@@ -180,7 +181,7 @@ CEF host starts
 
 ```text
 OS passes file path to application container
-  -> ApplicationHost resolves product by magic
+  -> ApplicationRuntime resolves product by magic
   -> ProductRuntime opens Project and MainScene
   -> AppShell loads product webpage entry
   -> render project workspace
@@ -190,7 +191,7 @@ OS passes file path to application container
 
 ## 9. PDO
 
-Mailbox 用于低频命令和事件；PDO 用于高频、可丢弃状态数据。
+Facades 用于低频命令和事件；PDO 用于高频、可丢弃状态数据。
 
 H5 不直接操作 PDO header。宿主适配器负责：
 

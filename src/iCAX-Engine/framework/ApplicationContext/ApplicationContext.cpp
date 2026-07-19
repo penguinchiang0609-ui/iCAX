@@ -1,10 +1,13 @@
 #include "pch.h"
 #include "ApplicationContext.h"
 
-#include "Services/ServiceProvider.h"
-
 #include <stdexcept>
 #include <utility>
+
+iCAX::Application::CApplicationContext::CApplicationContext()
+    : m_pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
+{
+}
 
 iCAX::Application::CApplicationContext::CApplicationContext(
     IN const CApplicationDescriptor& Descriptor_,
@@ -13,8 +16,33 @@ iCAX::Application::CApplicationContext::CApplicationContext(
     : m_Descriptor(Descriptor_)
     , m_Paths(Paths_)
     , m_Settings(Settings_)
+    , m_pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
 {
 }
+
+iCAX::Application::CApplicationContext::CApplicationContext(
+    IN const CApplicationDescriptor& Descriptor_,
+    IN const CApplicationPaths& Paths_,
+    IN std::shared_ptr<IApplicationConfigStore> pConfigStore_,
+    IN std::string strConfigPath_)
+    : m_Descriptor(Descriptor_)
+    , m_Paths(Paths_)
+    , m_pConfigStore(std::move(pConfigStore_))
+    , m_strConfigPath(std::move(strConfigPath_))
+    , m_pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
+{
+    if (!m_pConfigStore)
+    {
+        throw std::invalid_argument("Application config store cannot be null");
+    }
+    if (m_strConfigPath.empty())
+    {
+        throw std::invalid_argument("Application config path cannot be empty");
+    }
+    m_Settings = m_pConfigStore->Load(m_strConfigPath);
+}
+
+iCAX::Application::CApplicationContext::~CApplicationContext() = default;
 
 const iCAX::Application::CApplicationDescriptor& iCAX::Application::CApplicationContext::GetDescriptor() const
 {
@@ -32,66 +60,53 @@ iCAX::Data::PropertyBag iCAX::Application::CApplicationContext::GetSettings() co
     return m_Settings;
 }
 
+const iCAX::Services::CServiceProvider& iCAX::Application::CApplicationContext::Services() const
+{
+    return *m_pServiceProvider;
+}
+
 void iCAX::Application::CApplicationContext::ReplaceSettings(IN const iCAX::Data::PropertyBag& Settings_)
 {
     std::lock_guard<std::mutex> _Lock(m_SettingsMutex);
     m_Settings = Settings_;
 }
 
-void iCAX::Application::CApplicationContext::BindRuntimeCapabilities(
-    IN const iCAX::Data::uuid& ApplicationChannelID_,
-    IN std::weak_ptr<iCAX::Services::CServiceProvider> pServiceProvider_,
-    IN PostOfficeProvider BackendPostOfficeProvider_,
-    IN PostOfficeProvider FrontendPostOfficeProvider_)
+void iCAX::Application::CApplicationContext::SetValue(
+    IN const std::string& strKey_,
+    IN const iCAX::Data::Variant& Value_)
 {
-    if (ApplicationChannelID_.is_nil())
-    {
-        throw std::invalid_argument("Application channel id cannot be nil");
-    }
-    if (!BackendPostOfficeProvider_)
-    {
-        throw std::invalid_argument("Application backend post office provider cannot be empty");
-    }
-    if (!FrontendPostOfficeProvider_)
-    {
-        throw std::invalid_argument("Application frontend post office provider cannot be empty");
-    }
-
-    m_ApplicationChannelID = ApplicationChannelID_;
-    m_pServiceProvider = std::move(pServiceProvider_);
-    m_BackendPostOfficeProvider = std::move(BackendPostOfficeProvider_);
-    m_FrontendPostOfficeProvider = std::move(FrontendPostOfficeProvider_);
+    std::lock_guard<std::mutex> _Lock(m_SettingsMutex);
+    m_Settings.Set(strKey_, Value_);
 }
 
-const iCAX::Data::uuid& iCAX::Application::CApplicationContext::GetApplicationChannelID() const
+void iCAX::Application::CApplicationContext::SetValue(
+    IN const std::string& strKey_,
+    IN const std::string& strPath_,
+    IN const iCAX::Data::Variant& Value_)
 {
-    return m_ApplicationChannelID;
+    std::lock_guard<std::mutex> _Lock(m_SettingsMutex);
+    m_Settings.Set(strKey_, strPath_, Value_);
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Application::CApplicationContext::GetBackendPostOffice() const
+void iCAX::Application::CApplicationContext::SaveSettings() const
 {
-    if (!m_BackendPostOfficeProvider)
+    if (!m_pConfigStore)
     {
-        throw std::logic_error("Application backend post office is not configured");
+        throw std::logic_error("Application context has no config store");
     }
-    return m_BackendPostOfficeProvider();
+    m_pConfigStore->Save(m_strConfigPath, GetSettings());
 }
 
-iCAX::Mail::CMailPostOffice iCAX::Application::CApplicationContext::GetFrontendPostOffice() const
+void iCAX::Application::CApplicationContext::ReloadSettings()
 {
-    if (!m_FrontendPostOfficeProvider)
+    if (!m_pConfigStore)
     {
-        throw std::logic_error("Application frontend post office is not configured");
+        throw std::logic_error("Application context has no config store");
     }
-    return m_FrontendPostOfficeProvider();
+    ReplaceSettings(m_pConfigStore->Load(m_strConfigPath));
 }
 
-iCAX::Services::CServiceProvider& iCAX::Application::CApplicationContext::Services() const
+iCAX::Services::CServiceProvider& iCAX::Application::CApplicationContext::MutableServices()
 {
-    auto _pServiceProvider = m_pServiceProvider.lock();
-    if (!_pServiceProvider)
-    {
-        throw std::logic_error("Application service provider is not available");
-    }
-    return *_pServiceProvider;
+    return *m_pServiceProvider;
 }

@@ -173,11 +173,14 @@
     <ProjectReference Include="..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Engine\framework\ApplicationHost\ApplicationHost.vcxproj">
+    <ProjectReference Include="..\..\iCAX-Engine\foundation\Task\Task.vcxproj">
+      <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Engine\framework\ApplicationRuntime\ApplicationRuntime.vcxproj">
       <Project>{ddcef11c-6370-4be7-90e0-173c972669a9}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Engine\framework\Mailbox\Mailbox.vcxproj">
-      <Project>{5b637d1e-2672-4f50-8f72-612824bb5f96}</Project>
+    <ProjectReference Include="..\..\iCAX-Engine\framework\Facades\Facades.vcxproj">
+      <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Engine\framework\Product\Product.vcxproj">
       <Project>{a7a9b776-78e1-460b-af6a-bca1b32c26c7}</Project>

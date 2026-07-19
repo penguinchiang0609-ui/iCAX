@@ -1,13 +1,12 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <ApplicationContext/ApplicationContext.h>
 #include <ApplicationContext/ApplicationConfigService.h>
 #include <ApplicationContext/FileApplicationConfigStore.h>
 
-#include <chrono>
-#include <filesystem>
-#include <memory>
-#include <string>
+#include <type_traits>
+
 
 using namespace iCAX::Application;
 
@@ -53,6 +52,11 @@ TEST(ApplicationContextTest, HoldsDescriptorPathsAndSettings)
     EXPECT_EQ("iCAX", _Context.GetDescriptor().AppName);
     EXPECT_EQ("Setting", _Context.GetPaths().UserConfigDirectory);
     EXPECT_EQ("dark", _Context.GetSettings().Get("ui.theme").To<std::string>());
+    const IApplicationContext& _ReadView = _Context;
+    static_assert(std::is_same_v<
+        decltype(_ReadView.Services()),
+        const iCAX::Services::CServiceProvider&>);
+    EXPECT_EQ(&_Context.Services(), &_ReadView.Services());
 }
 
 TEST(ApplicationConfigStoreTest, SaveAndLoadSettings)
@@ -82,16 +86,21 @@ TEST(ApplicationConfigServiceTest, UpdatesContextAndPersistsSettings)
     iCAX::Data::PropertyBag _Settings;
     _Settings.Set("ui.theme", iCAX::Data::Variant(std::string("light")));
 
-    auto _pContext = std::make_shared<CApplicationContext>(_Descriptor, _Paths, _Settings);
     auto _pStore = std::make_shared<CFileApplicationConfigStore>();
-    CApplicationConfigService _Service(_pContext, _pStore, _Path.string());
+    _pStore->Save(_Path.string(), _Settings);
+    auto _pContext = std::make_shared<CApplicationContext>(
+        _Descriptor,
+        _Paths,
+        _pStore,
+        _Path.string());
+    CApplicationConfigService _Service(_pContext);
 
     _Service.SetValue("ui.theme", iCAX::Data::Variant(std::string("dark")));
     EXPECT_EQ("dark", _pContext->GetSettings().Get("ui.theme").To<std::string>());
 
     _Service.Save();
-    _pContext->ReplaceSettings(iCAX::Data::PropertyBag());
-    EXPECT_EQ("default", _pContext->GetSettings().Get("ui.theme", iCAX::Data::Variant(std::string("default"))).To<std::string>());
+    _Service.SetValue("ui.theme", iCAX::Data::Variant(std::string("temporary")));
+    EXPECT_EQ("temporary", _pContext->GetSettings().Get("ui.theme").To<std::string>());
 
     _Service.Reload();
     EXPECT_EQ("dark", _pContext->GetSettings().Get("ui.theme").To<std::string>());

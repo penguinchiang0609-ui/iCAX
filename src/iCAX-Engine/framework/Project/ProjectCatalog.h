@@ -23,12 +23,12 @@ namespace iCAX
             iCAX::Data::uuid CatalogID; //!< Catalog ID，nil 时自动生成。
             std::string CatalogName; //!< Catalog 名称。
             std::string CatalogPath; //!< Catalog 路径。
-            std::shared_ptr<iCAX::Application::IApplicationContext> pApplicationContext; //!< 应用上下文。
+            std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext; //!< 应用上下文只读视图。
             std::shared_ptr<iCAX::Product::IProductContext> pProductContext; //!< 产品上下文。
             std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider; //!< 服务容器。
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry; //!< 产品级元数据注册表。
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 产品级行为注册表。
-            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> pMailChannelRegistry; //!< 邮件通道注册表。
+            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry; //!< Facade channel 注册表。
             bool bEnablePDOHub = false; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 开关。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 创建参数。
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> ResourceLoaderRegistryFactory; //!< Scene 级资源加载器注册表工厂。
@@ -156,12 +156,12 @@ namespace iCAX
             iCAX::Data::uuid m_CatalogID;
             std::string m_CatalogName;
             std::string m_CatalogPath;
-            std::shared_ptr<iCAX::Application::IApplicationContext> m_pApplicationContext;
+            std::shared_ptr<const iCAX::Application::IApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Product::IProductContext> m_pProductContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
-            std::shared_ptr<iCAX::Mail::CMailChannelRegistry> m_pMailChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> m_pFacadeChannelRegistry;
             bool m_bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo m_PDOHubCreateInfo;
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> m_ResourceLoaderRegistryFactory;

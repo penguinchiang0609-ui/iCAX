@@ -1,3 +1,31 @@
 #pragma once
 
 #include "framework.h"
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cctype>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <limits>
+#include <map>
+#include <memory>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <variant>
+#include <vector>
+#include <objidl.h>
+#include <unknwn.h>
+#include <windows.h>
+#include <xmllite.h>

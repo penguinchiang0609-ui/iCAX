@@ -1,18 +1,18 @@
-import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
-import { ProductFacade } from "../SDK/Mailbox/facadeMethod.mjs";
+import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
+import { ProductFacade } from "../SDK/Facades/facadeMethod.mjs";
 import { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 
 export class ProductProxy {
-  constructor(mailboxClient, productState, options = {}) {
-    if (!mailboxClient) {
-      throw new TypeError("mailboxClient is required");
+  constructor(facadeClient, productState, options = {}) {
+    if (!facadeClient) {
+      throw new TypeError("facadeClient is required");
     }
     if (!isUsableChannelId(productState?.productChannelId)) {
       throw new TypeError("productState.productChannelId must be a non-nil channel id");
     }
 
-    this.mailboxClient = mailboxClient;
-    this.bridge = options.bridge ?? mailboxClient.bridge ?? null;
+    this.facadeClient = facadeClient;
+    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
     this.appProxy = options.appProxy ?? null;
     this.state = productState;
     this.productId = productState.productId;
@@ -32,7 +32,7 @@ export class ProductProxy {
   }
 
   async getState() {
-    const state = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.getState);
+    const state = await this.facadeClient.invoke(this.productChannelId, ProductFacade.getState);
     if (state?.productChannelId) {
       this.updateState({ ...this.state, ...state });
     }
@@ -41,13 +41,13 @@ export class ProductProxy {
   }
 
   async listProjectCatalogs() {
-    const response = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.listProjectCatalogs);
+    const response = await this.facadeClient.invoke(this.productChannelId, ProductFacade.listProjectCatalogs);
     await this.#syncProjectsFromCatalogs(response?.catalogs ?? []);
     return response;
   }
 
   async openProjectCatalog(projectPath, options = {}) {
-    const response = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.openProjectCatalog, {
+    const response = await this.facadeClient.invoke(this.productChannelId, ProductFacade.openProjectCatalog, {
       projectPath,
       catalogPath: options.catalogPath ?? projectPath,
       catalogName: options.catalogName ?? "",
@@ -65,7 +65,7 @@ export class ProductProxy {
   }
 
   async closeProjectCatalog(catalogId) {
-    const response = await this.mailboxClient.invoke(this.productChannelId, ProductFacade.closeProjectCatalog, { catalogId });
+    const response = await this.facadeClient.invoke(this.productChannelId, ProductFacade.closeProjectCatalog, { catalogId });
     if (response?.productChannelId) {
       this.updateState({ ...this.state, ...response });
     }
@@ -74,11 +74,11 @@ export class ProductProxy {
   }
 
   subscribe(facadeMember, handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.productChannelId, facadeMember, handler));
+    return this.#trackUnsubscribe(this.facadeClient.subscribe(this.productChannelId, facadeMember, handler));
   }
 
   subscribeAll(handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribeAll(this.productChannelId, handler));
+    return this.#trackUnsubscribe(this.facadeClient.subscribeAll(this.productChannelId, handler));
   }
 
   getProject(projectId) {
@@ -98,7 +98,7 @@ export class ProductProxy {
       return existing;
     }
 
-    const project = new ProjectProxy(this.mailboxClient, registeredState, {
+    const project = new ProjectProxy(this.facadeClient, registeredState, {
       bridge: this.bridge,
       product: this,
     });
@@ -118,7 +118,7 @@ export class ProductProxy {
     }
     this.unsubscribers.clear();
 
-    this.mailboxClient.stop(this.productChannelId);
+    this.facadeClient.stop(this.productChannelId);
   }
 
   #trackUnsubscribe(unsubscribe) {

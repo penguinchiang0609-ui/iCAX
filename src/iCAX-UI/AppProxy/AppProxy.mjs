@@ -1,6 +1,6 @@
-import { AppFacade } from "../SDK/Mailbox/facadeMethod.mjs";
-import { isUsableChannelId } from "../SDK/Mailbox/channelId.mjs";
-import { MailboxClient } from "../SDK/Mailbox/mailboxClient.mjs";
+import { AppFacade } from "../SDK/Facades/facadeMethod.mjs";
+import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
+import { FacadeClient } from "../SDK/Facades/facadeClient.mjs";
 import { ProductProxy } from "../ProductProxy/ProductProxy.mjs";
 
 export class AppProxy {
@@ -9,21 +9,21 @@ export class AppProxy {
       throw new TypeError("bridge is required");
     }
 
-    const mailboxClient = options.mailboxClient ?? new MailboxClient(bridge, options.mailbox ?? {});
+    const facadeClient = options.facadeClient ?? new FacadeClient(bridge, options.facades ?? {});
     const applicationChannelId = options.applicationChannelId ?? await bridge.getApplicationChannelId();
-    return new AppProxy(mailboxClient, applicationChannelId, { bridge });
+    return new AppProxy(facadeClient, applicationChannelId, { bridge });
   }
 
-  constructor(mailboxClient, applicationChannelId, options = {}) {
-    if (!mailboxClient) {
-      throw new TypeError("mailboxClient is required");
+  constructor(facadeClient, applicationChannelId, options = {}) {
+    if (!facadeClient) {
+      throw new TypeError("facadeClient is required");
     }
     if (!applicationChannelId) {
       throw new TypeError("applicationChannelId is required");
     }
 
-    this.mailboxClient = mailboxClient;
-    this.bridge = options.bridge ?? mailboxClient.bridge ?? null;
+    this.facadeClient = facadeClient;
+    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
     this.applicationChannelId = applicationChannelId;
     this.state = null;
     this.products = new Map();
@@ -31,19 +31,19 @@ export class AppProxy {
   }
 
   async getState() {
-    const state = await this.mailboxClient.invoke(this.applicationChannelId, AppFacade.getState);
+    const state = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.getState);
     await this.#syncProductsFromState(state);
     return state;
   }
 
   async listProducts() {
-    const state = await this.mailboxClient.invoke(this.applicationChannelId, AppFacade.listProducts);
+    const state = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.listProducts);
     await this.#syncProductsFromState(state);
     return state;
   }
 
   async startProduct(productId = "") {
-    const response = await this.mailboxClient.invoke(
+    const response = await this.facadeClient.invoke(
       this.applicationChannelId,
       AppFacade.startProduct,
       productId ? { productId } : {},
@@ -53,7 +53,7 @@ export class AppProxy {
   }
 
   async stopProduct(productId) {
-    const state = await this.mailboxClient.invoke(this.applicationChannelId, AppFacade.stopProduct, { productId });
+    const state = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.stopProduct, { productId });
     await this.#syncProductsFromState(state);
     const product = this.products.get(productId);
     product?.dispose();
@@ -62,7 +62,7 @@ export class AppProxy {
   }
 
   resolveProjectFile(projectPath) {
-    return this.mailboxClient.invoke(this.applicationChannelId, AppFacade.resolveProjectFile, { projectPath });
+    return this.facadeClient.invoke(this.applicationChannelId, AppFacade.resolveProjectFile, { projectPath });
   }
 
   openProjectFile(projectPath, options = {}) {
@@ -70,7 +70,7 @@ export class AppProxy {
   }
 
   async openProject(projectPath, options = {}) {
-    const response = await this.mailboxClient.invoke(this.applicationChannelId, AppFacade.openProjectFile, {
+    const response = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.openProjectFile, {
       projectPath,
       catalogName: options.catalogName ?? "",
       projectName: options.projectName ?? "",
@@ -91,11 +91,11 @@ export class AppProxy {
   }
 
   subscribe(facadeMember, handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribe(this.applicationChannelId, facadeMember, handler));
+    return this.#trackUnsubscribe(this.facadeClient.subscribe(this.applicationChannelId, facadeMember, handler));
   }
 
   subscribeAll(handler) {
-    return this.#trackUnsubscribe(this.mailboxClient.subscribeAll(this.applicationChannelId, handler));
+    return this.#trackUnsubscribe(this.facadeClient.subscribeAll(this.applicationChannelId, handler));
   }
 
   getProduct(productId) {
@@ -118,7 +118,7 @@ export class AppProxy {
       return existing;
     }
 
-    const product = new ProductProxy(this.mailboxClient, registeredState, {
+    const product = new ProductProxy(this.facadeClient, registeredState, {
       bridge: this.bridge,
       appProxy: this,
     });
@@ -137,7 +137,7 @@ export class AppProxy {
     }
     this.unsubscribers.clear();
 
-    this.mailboxClient.stop(this.applicationChannelId);
+    this.facadeClient.stop(this.applicationChannelId);
   }
 
   #trackUnsubscribe(unsubscribe) {

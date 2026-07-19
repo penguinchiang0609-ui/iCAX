@@ -1,10 +1,6 @@
 #include "pch.h"
 #include "FacadeSupport.h"
 
-#include <algorithm>
-#include <cmath>
-#include <cctype>
-#include <filesystem>
 #include <initializer_list>
 
 namespace iCAX::CAM::Facades::Internal
@@ -26,7 +22,7 @@ namespace iCAX::CAM::Facades::Internal
         return iCAX::Data::VariantSerializer::Deserialize(_Text);
     }
 
-    ObjectMap _DecodeObjectPayload(IN const iCAX::Interaction::CFacadeCall& Request_)
+    ObjectMap _DecodeObjectPayload(IN const iCAX::Interaction::CInvocation& Request_)
     {
         auto _Payload = _DecodePayload(Request_.Payload);
         if (!_Payload.Is<ObjectMap>())
@@ -36,10 +32,10 @@ namespace iCAX::CAM::Facades::Internal
         return _Payload.To<ObjectMap>();
     }
 
-    iCAX::Interaction::CFacadeResult _MakeResponse(IN const Variant& Payload_)
+    iCAX::Interaction::CInvocationResult _MakeResponse(IN const Variant& Payload_)
     {
-        iCAX::Interaction::CFacadeResult _Response;
-        _Response.nStatus = iCAX::Interaction::EFacadeCallStatus::Ok;
+        iCAX::Interaction::CInvocationResult _Response;
+        _Response.nStatus = iCAX::Interaction::EInvocationStatus::Ok;
         _Response.Payload = _EncodePayload(Payload_);
         return _Response;
     }
@@ -48,7 +44,7 @@ namespace iCAX::CAM::Facades::Internal
     {
         if (!pSceneContext_)
         {
-            throw std::invalid_argument("Cam command must be sent to a scene mailbox");
+            throw std::invalid_argument("Cam Facade invocation requires a scene scope");
         }
         return *pSceneContext_;
     }

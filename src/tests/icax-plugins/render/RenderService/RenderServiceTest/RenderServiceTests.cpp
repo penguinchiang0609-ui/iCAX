@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <ApplicationContext/IApplicationContext.h>
 #include <ProductContext/IProductContext.h>
@@ -8,14 +9,9 @@
 #include <RenderPDO/RenderPDO.h>
 #include <PDO/IPDOHub.h>
 #include <PDO/PDOLease.h>
-#include <Mailbox/MailChannel.h>
-#include <Mailbox/MailPayload.h>
+#include <Facades/FacadeChannel.h>
+#include <Facades/FacadePayload.h>
 
-#include <cstddef>
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <utility>
 
 namespace
 {
@@ -35,6 +31,11 @@ namespace
         iCAX::Data::PropertyBag GetSettings() const override
         {
             return {};
+        }
+
+        const iCAX::Services::CServiceProvider& Services() const override
+        {
+            throw std::logic_error("Application services are not used by render service tests");
         }
     };
 
@@ -132,7 +133,7 @@ namespace
             : m_SceneID(iCAX::Data::GenerateNewUUID())
             , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
             , m_pPDOHub(std::move(pPDOHub_))
-            , m_pChannel(std::make_shared<iCAX::Mail::CMailChannel>())
+            , m_pChannel(std::make_shared<iCAX::Interaction::CFacadeChannel>())
         {
         }
 
@@ -151,14 +152,14 @@ namespace
             return m_SceneName;
         }
 
-        iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
         {
-            return m_pChannel->GetEndAPostOffice();
+            return m_pChannel->GetEndAEndpoint();
         }
 
-        iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
         {
-            return m_pChannel->GetEndBPostOffice();
+            return m_pChannel->GetEndBEndpoint();
         }
 
         bool IsMainScene() const override
@@ -223,7 +224,7 @@ namespace
         iCAX::Data::uuid m_SceneID;
         iCAX::Data::uuid m_SceneChannelID;
         std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
-        std::shared_ptr<iCAX::Mail::CMailChannel> m_pChannel;
+        std::shared_ptr<iCAX::Interaction::CFacadeChannel> m_pChannel;
         std::string m_SceneName = "Render Service Test Scene";
     };
 
@@ -603,19 +604,18 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         EXPECT_EQ(25u, _CameraHeader.Header.nDataVersion);
     }
 
-    auto _Mails = _SceneContext.GetFrontendPostOffice().Receive();
-    ASSERT_GE(_Mails.size(), 7u);
+    auto _Frames = _SceneContext.GetFrontendFacadeEndpoint().Receive();
+    ASSERT_GE(_Frames.size(), 7u);
     size_t _AllocatedCount = 0;
-    for (auto& _Mail : _Mails)
+    for (auto& _Frame : _Frames)
     {
-        if (_Mail.Header.nTypeCode == iCAX::PDORenderService::kPDORenderSlotAllocatedEvent)
+        if (_Frame.nMethodCode == iCAX::PDORenderService::kPDORenderSlotAllocatedEvent)
         {
             ++_AllocatedCount;
-            const auto _Payload = iCAX::Mail::GetMailPayloadText(_Mail);
+            const auto _Payload = iCAX::Interaction::GetFacadePayloadText(_Frame);
             EXPECT_NE(std::string::npos, _Payload.find("\"event\":\"SlotAllocated\""));
             EXPECT_NE(std::string::npos, _Payload.find("\"pdoId\":\""));
         }
-        iCAX::Mail::ReleaseMailPayload(_Mail);
     }
     EXPECT_EQ(7u, _AllocatedCount);
 
@@ -623,23 +623,22 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, _SceneContext, 0.016, 1.016);
     EXPECT_FALSE(_Hub->HasSlot(_ObjectPDOID));
 
-    auto _RemovalMails = _SceneContext.GetFrontendPostOffice().Receive();
+    auto _RemovalFrames = _SceneContext.GetFrontendFacadeEndpoint().Receive();
     bool _bFoundObjectFreed = false;
-    for (auto& _Mail : _RemovalMails)
+    for (auto& _Frame : _RemovalFrames)
     {
-        if (_Mail.Header.nTypeCode == iCAX::PDORenderService::kPDORenderSlotFreedEvent)
+        if (_Frame.nMethodCode == iCAX::PDORenderService::kPDORenderSlotFreedEvent)
         {
-            const auto _Payload = iCAX::Mail::GetMailPayloadText(_Mail);
+            const auto _Payload = iCAX::Interaction::GetFacadePayloadText(_Frame);
             _bFoundObjectFreed = _Payload.find("\"event\":\"SlotFreed\"") != std::string::npos
                 && _Payload.find("\"slotRole\":\"Object\"") != std::string::npos
                 && _Payload.find("\"pdoId\":\"" + std::to_string(_ObjectPDOID) + "\"") != std::string::npos;
         }
-        iCAX::Mail::ReleaseMailPayload(_Mail);
     }
     EXPECT_TRUE(_bFoundObjectFreed);
 }
 
-TEST(PDORenderServiceTest, SendsDefragNotificationsThroughSceneMailbox)
+TEST(PDORenderServiceTest, SendsDefragNotificationsThroughSceneFacade)
 {
     iCAX::PDORenderService::CPDORenderService _Service;
     const auto _ProjectID = iCAX::Data::GenerateNewUUID();
@@ -651,22 +650,17 @@ TEST(PDORenderServiceTest, SendsDefragNotificationsThroughSceneMailbox)
     _Service.NotifyPDOSlotMoved(_ProjectContext.GetProjectID(), _SceneContext, _MovedPDOID);
     _Service.NotifyPDODefragEnd(_ProjectContext.GetProjectID(), _SceneContext);
 
-    auto _Mails = _SceneContext.GetFrontendPostOffice().Receive();
-    ASSERT_EQ(3u, _Mails.size());
+    auto _Frames = _SceneContext.GetFrontendFacadeEndpoint().Receive();
+    ASSERT_EQ(3u, _Frames.size());
 
-    EXPECT_EQ(iCAX::PDORenderService::kPDORenderDefragBeginEvent, _Mails[0].Header.nTypeCode);
-    EXPECT_NE(std::string::npos, iCAX::Mail::GetMailPayloadText(_Mails[0]).find("\"event\":\"DefragBegin\""));
+    EXPECT_EQ(iCAX::PDORenderService::kPDORenderDefragBeginEvent, _Frames[0].nMethodCode);
+    EXPECT_NE(std::string::npos, iCAX::Interaction::GetFacadePayloadText(_Frames[0]).find("\"event\":\"DefragBegin\""));
 
-    EXPECT_EQ(iCAX::PDORenderService::kPDORenderSlotMovedEvent, _Mails[1].Header.nTypeCode);
-    const auto _MovedPayload = iCAX::Mail::GetMailPayloadText(_Mails[1]);
+    EXPECT_EQ(iCAX::PDORenderService::kPDORenderSlotMovedEvent, _Frames[1].nMethodCode);
+    const auto _MovedPayload = iCAX::Interaction::GetFacadePayloadText(_Frames[1]);
     EXPECT_NE(std::string::npos, _MovedPayload.find("\"event\":\"SlotMoved\""));
     EXPECT_NE(std::string::npos, _MovedPayload.find("\"pdoId\":\"" + std::to_string(_MovedPDOID) + "\""));
 
-    EXPECT_EQ(iCAX::PDORenderService::kPDORenderDefragEndEvent, _Mails[2].Header.nTypeCode);
-    EXPECT_NE(std::string::npos, iCAX::Mail::GetMailPayloadText(_Mails[2]).find("\"event\":\"DefragEnd\""));
-
-    for (auto& _Mail : _Mails)
-    {
-        iCAX::Mail::ReleaseMailPayload(_Mail);
-    }
+    EXPECT_EQ(iCAX::PDORenderService::kPDORenderDefragEndEvent, _Frames[2].nMethodCode);
+    EXPECT_NE(std::string::npos, iCAX::Interaction::GetFacadePayloadText(_Frames[2]).find("\"event\":\"DefragEnd\""));
 }

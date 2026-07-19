@@ -73,7 +73,7 @@ ProjectContext
   Repository
   Resources
   PDOHub
-  MailChannel
+  FacadeChannel
 ServiceProvider
 ```
 

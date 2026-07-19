@@ -72,8 +72,8 @@ ObjectMap _MakeInspection(
 }
 }
 
-Interaction::CFacadeResult HandleBeginWorkpieceEdit(
-    const Interaction::CFacadeCall&, Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
+Interaction::CInvocationResult HandleBeginWorkpieceEdit(
+    const Interaction::CInvocation&, const Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
 {
     auto& _Scene = _RequireSceneContext(pScene_);
     auto [_pEntity, _pWorkpiece] = _RequireEditableWorkpiece(_Scene);
@@ -117,8 +117,8 @@ Interaction::CFacadeResult HandleBeginWorkpieceEdit(
     return _MakeWorkpieceListResponse(_Scene);
 }
 
-Interaction::CFacadeResult HandleInspectWorkpieceEdit(
-    const Interaction::CFacadeCall&, Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
+Interaction::CInvocationResult HandleInspectWorkpieceEdit(
+    const Interaction::CInvocation&, const Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
 {
     auto& _Scene = _RequireSceneContext(pScene_);
     auto [_pEntity, _pWorkpiece] = _RequireEditableWorkpiece(_Scene);
@@ -134,8 +134,8 @@ Interaction::CFacadeResult HandleInspectWorkpieceEdit(
     return _MakeResponse(Variant(_Result));
 }
 
-Interaction::CFacadeResult HandleCommitWorkpieceEdit(
-    const Interaction::CFacadeCall&, Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
+Interaction::CInvocationResult HandleCommitWorkpieceEdit(
+    const Interaction::CInvocation&, const Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
 {
     auto& _Scene = _RequireSceneContext(pScene_);
     auto [_pEntity, _pWorkpiece] = _RequireEditableWorkpiece(_Scene);
@@ -158,8 +158,8 @@ Interaction::CFacadeResult HandleCommitWorkpieceEdit(
     return _MakeWorkpieceListResponse(_Scene);
 }
 
-Interaction::CFacadeResult HandleDiscardWorkpieceEdit(
-    const Interaction::CFacadeCall&, Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
+Interaction::CInvocationResult HandleDiscardWorkpieceEdit(
+    const Interaction::CInvocation&, const Application::IApplicationContext&, Product::IProductContext*, Project::IProjectContext*, Project::ISceneContext* pScene_)
 {
     auto& _Scene = _RequireSceneContext(pScene_);
     auto [_pEntity, _pWorkpiece] = _RequireEditableWorkpiece(_Scene);

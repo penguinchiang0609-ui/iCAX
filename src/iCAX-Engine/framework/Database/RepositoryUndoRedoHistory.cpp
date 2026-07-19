@@ -2,9 +2,6 @@
 #include "RepositoryUndoRedoHistory.h"
 #include "IMetaRegistry.h"
 
-#include <algorithm>
-#include <stdexcept>
-#include <utility>
 
 namespace
 {

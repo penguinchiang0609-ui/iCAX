@@ -26,7 +26,7 @@ CWpfRuntime
   -> STA Thread
   -> System.Windows.Application
   -> CWpfMainWindow
-  -> DispatcherTimer PollMails()
+  -> DispatcherTimer PollFacadeFrames()
 ```
 
 这样可以保留 native `Application.exe` 和 `IFrontendBridge`，同时使用 WPF 构建桌面 UI。
@@ -36,11 +36,11 @@ CWpfRuntime
 ```text
 WPF Button
   -> CWpfRuntime.SendApplicationCommand()
-  -> IFrontendBridge.PostMail()
-  -> ApplicationHost mailbox
+  -> IFrontendBridge.PostFacadeFrame()
+  -> ApplicationRuntime Facade
   -> backend command handler
-  -> frontend post office
-  -> IFrontendBridge.PollMails()
+  -> frontend Facade endpoint
+  -> IFrontendBridge.PollFacadeFrames()
   -> WPF DispatcherTimer
   -> CWpfMainWindow
 ```
@@ -54,7 +54,7 @@ WPF Button
 - 顶部 toolbar：刷新、产品列表、启动产品、打开项目、退出。
 - 左侧 application 面板：显示 application channel 和当前项目入口。
 - 中心 viewport 区域：预留 native viewport。
-- 右侧 mailbox/payload 面板：显示后端响应和 payload。
+- 右侧 Facade/payload 面板：显示后端响应和 payload。
 - 底部 status bar：显示连接状态和操作状态。
 
 ## 5. Native Viewport

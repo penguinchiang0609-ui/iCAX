@@ -4,7 +4,9 @@
 
 `Universe` 只表达行为运行容器，不拥有 `Repository`，也不代表 `Project`。Behaviour 需要访问运行现场时，由 Scene 在调度时显式传入 `ApplicationContext`、`ProductContext`、`ProjectContext` 和 `SceneContext`。每个 `Universe` 持有自己的 Behaviour 实例，Behaviour 之间不跨 Scene 共享运行状态。
 
-`Universe` 不拥有计时器，也不决定帧节奏。Scene 负责运行时调度，在每帧调用 `Universe::Tick` 时显式传入 `deltaTime/totalTime`。
+`Universe` 不拥有计时器，也不决定帧节奏。Scene 负责运行时调度，在每帧调用 `Universe::Tick` 时显式传入 `deltaTime/totalTime`。Universe 持有一个 Engine Task scheduler；它只接受线程安全入队，不创建线程，并在下一次 `Tick` 开始时由所属 Scene 工作线程消费。
+
+Universe 同时持有一个通用 `CCoroutineRuntime`。Runtime 只认识协程 handle，不认识 Component。每个 Behaviour 保存自己启动的“Component → handles”关联；Dispatcher 在组件启用、禁用和销毁时显式通知 Behaviour，由 Behaviour 对相应 handle 调用 Resume、Pause 和 Cancel。Component/Database 不依赖 Coroutine、Behaviour 或 Runtime。
 
 `IBehaviourRegistry` 保存 Behaviour 的类型描述和创建工厂，不保存可执行实例。Application/Product 可以创建自己的注册表并回放自动注册目录；Scene 创建 `Universe` 时注入对应注册表，由 Dispatcher 在绑定 Behaviour 时创建 Scene 私有实例。
 
@@ -58,11 +60,25 @@ Behaviour 的自动注册宏只把“注册回放函数”追加到进程级 `Be
 
 组件默认处于启用状态。调用 `ComponentBase::Disable()` 后，Dispatcher 会跳过该组件的 `PreUpdate / Update / PostUpdate`，直到组件再次 `Enable()`。组件禁用不影响 Repository 生命周期事件，也不影响已经进入视图缓存时触发的一次性 `Start`。
 
+## Component Coroutine
+
+Component Coroutine 固定由所属 Universe 的 Scene 工作线程恢复，帧内顺序为：
+
+```text
+Engine Task -> Start -> PreUpdate -> Update -> Component Coroutine -> PostUpdate
+```
+
+Coroutine 可等待 `NextFrame()`、`WaitForSeconds()`、`WaitUntil()` 或 `Await(Task<T>)`。即便被等待的 Task 在线程池完成，恢复动作也只会进入 Universe 的 Engine Task scheduler，随后在 Scene 工作线程推进，不会从线程池并发访问 Component/Repository。
+
+`StartCoroutine(Component, CCoroutine<TResult>)` 返回 `CCoroutineHandle<TResult>`。协程可用 `co_return value` 产生结果，并通过 `handle.Completion()` 的 `Task<TResult>` 继续处理；无返回值流程使用 `CCoroutine<>`。
+
+Component 禁用时，Behaviour 会暂停它记录的全部 handle，重新启用后恢复。Component 移除时，Dispatcher 会在 `OnDestroyImmediate` 之前要求 Behaviour 取消对应 handle，从而同步销毁所有 coroutine frame；迟到的 Task completion 只会成为无效唤醒，不能恢复已销毁的 frame。解绑 Behaviour 或关闭 Universe 也会取消对应协程。
+
 ## 线程模型与并发边界
 
 Behaviour 不提供内部并发保护。标准运行模型是：每个 Scene 的工作线程驱动自己的 `Repository`、`Universe` 和 Behaviour 实例；`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新都应在同一个 Scene 线程内发生。
 
-前端线程、ApplicationHost 线程或其他 Scene 线程不应直接调用 Behaviour，也不应直接修改 Behaviour 保存的运行态。跨线程输入应先进入 Mailbox/PDO/命令通道，再由对应 Scene 线程消费并修改 Repository 或驱动 Universe。
+前端线程、ApplicationRuntime 线程或其他 Scene 线程不应直接调用 Behaviour，也不应直接修改 Behaviour 保存的运行态。跨线程输入应先进入 Facades/PDO/命令通道；异步操作应在初始 Task 或 `TaskCompletionSource` 创建时绑定 `Universe::GetEngineTaskScheduler()`，后续 `ContinueWith()` 默认继承它，回到对应 Scene 线程后再修改 Repository、Component 或 Behaviour 运行态。
 
 在上述约束下，Behaviour 可以保存 Scene 内轻量状态而不加锁。如果未来需要多线程计算，应由上层服务明确交付结果，再回到 Scene 线程应用数据修改；Behaviour 本身仍保持单线程回调语义。
 

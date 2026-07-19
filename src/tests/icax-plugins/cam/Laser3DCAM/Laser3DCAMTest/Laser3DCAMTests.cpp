@@ -1,4 +1,5 @@
-#include <gtest/gtest.h>
+#include "pch.h"
+
 
 #include <Laser3DCAM/FeatureRecognitionService.h>
 #include <Laser3DCAM/JobComponents.h>
@@ -13,7 +14,7 @@
 
 #include <ApplicationContext/IApplicationContext.h>
 #include <Facades/FacadeMethod.h>
-#include <Facades/FacadeCall.h>
+#include <Facades/Invocation.h>
 #include <Data/Variant.h>
 #include <Data/VariantSerializer.h>
 #include <Database/IEntity.h>
@@ -21,7 +22,7 @@
 #include <Database/IRepository.h>
 #include <Database/MetaRegistrationCatalog.h>
 #include <GeometryData/GeometryData.h>
-#include <Mailbox/MailChannel.h>
+#include <Facades/FacadeChannel.h>
 #include <PDO/IPDOHub.h>
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
@@ -35,14 +36,6 @@
 #include <Services/ServiceRegistrationCatalog.h>
 #include <Transform/Transform.h>
 
-#include <algorithm>
-#include <filesystem>
-#include <fstream>
-#include <memory>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-#include <utility>
 
 namespace
 {
@@ -76,6 +69,11 @@ namespace
         iCAX::Data::PropertyBag GetSettings() const override
         {
             return {};
+        }
+
+        const iCAX::Services::CServiceProvider& Services() const override
+        {
+            throw std::logic_error("Application services are not used by Laser3DCAM tests");
         }
 
     private:
@@ -212,7 +210,7 @@ namespace
             , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
             , m_pMetaRegistry(iCAX::Database::CreateMetaRegistry())
             , m_pRepository(iCAX::Database::GenerateRepository(iCAX::Data::GenerateNewUUID(), m_pMetaRegistry))
-            , m_pChannel(std::make_shared<iCAX::Mail::CMailChannel>())
+            , m_pChannel(std::make_shared<iCAX::Interaction::CFacadeChannel>())
         {
             iCAX::Database::CMetaRegistrationCatalog::ReplayAll(*m_pMetaRegistry);
         }
@@ -232,14 +230,14 @@ namespace
             return m_SceneName;
         }
 
-        iCAX::Mail::CMailPostOffice GetBackendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
         {
-            return m_pChannel->GetEndAPostOffice();
+            return m_pChannel->GetEndAEndpoint();
         }
 
-        iCAX::Mail::CMailPostOffice GetFrontendPostOffice() const override
+        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
         {
-            return m_pChannel->GetEndBPostOffice();
+            return m_pChannel->GetEndBEndpoint();
         }
 
         bool IsMainScene() const override
@@ -299,7 +297,7 @@ namespace
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
         iCAX::Resource::CResourceLibrary m_Resources;
         mutable iCAX::Services::CServiceProvider m_ServiceProvider;
-        std::shared_ptr<iCAX::Mail::CMailChannel> m_pChannel;
+        std::shared_ptr<iCAX::Interaction::CFacadeChannel> m_pChannel;
         std::string m_SceneName = "Laser3DCAM Test Scene";
     };
 
@@ -325,23 +323,23 @@ namespace
         return _Variant.To<ObjectMap>();
     }
 
-    iCAX::Interaction::CFacadeCall MakeFacadeCall(
+    iCAX::Interaction::CInvocation MakeFacadeCall(
         IN const std::string& strFacadeName_,
         IN const std::string& strMethodName_,
         IN const ObjectMap& Payload_)
     {
-        iCAX::Interaction::CFacadeCall _Request;
+        iCAX::Interaction::CInvocation _Request;
         _Request.nCallID = 1;
         _Request.Method = iCAX::Interaction::MakeFacadeMethod(strFacadeName_, strMethodName_);
         _Request.Payload = EncodeVariant(iCAX::Data::Variant(Payload_));
         return _Request;
     }
 
-    ObjectMap DecodeResponseObject(IN const iCAX::Interaction::CFacadeResult& Response_)
+    ObjectMap DecodeResponseObject(IN const iCAX::Interaction::CInvocationResult& Response_)
     {
         if (!Response_.IsOK())
         {
-            throw std::runtime_error(Response_.strError.empty() ? "Facade call failed" : Response_.strError);
+            throw std::runtime_error(Response_.strError.empty() ? "Facade invocation failed" : Response_.strError);
         }
         return DecodeObjectPayload(Response_.Payload);
     }
@@ -1089,18 +1087,16 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
 
     ObjectMap _ValidPayload;
     _ValidPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
-    _ValidPayload["position"] = VariantArray{ 5.0, 0.0, 0.0 };
-    const auto _ValidRequest = MakeFacadeCall("Machine", "SetElementTransform", _ValidPayload);
+    _ValidPayload["position"] = 5.0;
+    const auto _ValidRequest = MakeFacadeCall("Machine", "SetJointPosition", _ValidPayload);
     const auto _ValidResult = DecodeResponseObject(
-        iCAX::CAM::Facades::HandleSetMachineElementTransform(_ValidRequest, _Application, &_Product, &_Project, &_Scene));
+        iCAX::CAM::Facades::HandleSetMachineJointPosition(_ValidRequest, _Application, &_Product, &_Project, &_Scene));
     const auto _Policy = _ValidResult.at("machineElement").To<ObjectMap>().at("transformEditPolicy").To<ObjectMap>();
     const auto _PositionPolicy = _Policy.at("position").To<VariantArray>();
     const auto _RotationPolicy = _Policy.at("rotationRadians").To<VariantArray>();
     ASSERT_EQ(3u, _PositionPolicy.size());
     ASSERT_EQ(3u, _RotationPolicy.size());
-    EXPECT_TRUE(_PositionPolicy[0].To<ObjectMap>().at("editable").To<bool>());
-    EXPECT_NEAR(0.0, _PositionPolicy[0].To<ObjectMap>().at("min").To<double>(), 0.0001);
-    EXPECT_NEAR(10.0, _PositionPolicy[0].To<ObjectMap>().at("max").To<double>(), 0.0001);
+    EXPECT_FALSE(_PositionPolicy[0].To<ObjectMap>().at("editable").To<bool>());
     EXPECT_NEAR(25.0, _PositionPolicy[0].To<ObjectMap>().at("step").To<double>(), 0.0001);
     EXPECT_FALSE(_PositionPolicy[1].To<ObjectMap>().at("editable").To<bool>());
     EXPECT_FALSE(_PositionPolicy[2].To<ObjectMap>().at("editable").To<bool>());
@@ -1108,6 +1104,7 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
     EXPECT_FALSE(_RotationPolicy[1].To<ObjectMap>().at("editable").To<bool>());
     EXPECT_FALSE(_RotationPolicy[2].To<ObjectMap>().at("editable").To<bool>());
     EXPECT_NEAR(2.0 * 3.14159265358979323846 / 180.0, _RotationPolicy[0].To<ObjectMap>().at("step").To<double>(), 0.0001);
+    EXPECT_NEAR(5.0, _pJoint->GetPosition(), 0.0001);
 
     ObjectMap _LimitPayload;
     _LimitPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
@@ -1134,7 +1131,7 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
 
     ObjectMap _CurrentPositionOutsideLimitPayload;
     _CurrentPositionOutsideLimitPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
-    _CurrentPositionOutsideLimitPayload["lower"] = 1.0;
+    _CurrentPositionOutsideLimitPayload["lower"] = 6.0;
     _CurrentPositionOutsideLimitPayload["upper"] = 15.0;
     const auto _CurrentPositionOutsideLimitRequest = MakeFacadeCall("Machine", "SetJointLimits", _CurrentPositionOutsideLimitPayload);
     EXPECT_THROW(
@@ -1143,15 +1140,15 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
 
     ObjectMap _OutOfRangePayload;
     _OutOfRangePayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
-    _OutOfRangePayload["position"] = VariantArray{ 16.0, 0.0, 0.0 };
-    const auto _OutOfRangeRequest = MakeFacadeCall("Machine", "SetElementTransform", _OutOfRangePayload);
+    _OutOfRangePayload["position"] = 16.0;
+    const auto _OutOfRangeRequest = MakeFacadeCall("Machine", "SetJointPosition", _OutOfRangePayload);
     EXPECT_THROW(
-        (void)iCAX::CAM::Facades::HandleSetMachineElementTransform(_OutOfRangeRequest, _Application, &_Product, &_Project, &_Scene),
+        (void)iCAX::CAM::Facades::HandleSetMachineJointPosition(_OutOfRangeRequest, _Application, &_Product, &_Project, &_Scene),
         std::invalid_argument);
 
     ObjectMap _OffAxisPayload;
     _OffAxisPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
-    _OffAxisPayload["position"] = VariantArray{ 5.0, 1.0, 0.0 };
+    _OffAxisPayload["position"] = VariantArray{ 1.0, 0.0, 0.0 };
     const auto _OffAxisRequest = MakeFacadeCall("Machine", "SetElementTransform", _OffAxisPayload);
     EXPECT_THROW(
         (void)iCAX::CAM::Facades::HandleSetMachineElementTransform(_OffAxisRequest, _Application, &_Product, &_Project, &_Scene),

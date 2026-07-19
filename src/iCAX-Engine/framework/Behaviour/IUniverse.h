@@ -2,6 +2,7 @@
 #include "System.h"
 #include "BehaviourBase.h"
 #include "Data/uuid.h"
+#include "Task/TaskScheduler.h"
 #include "../Database/IRepositoryEvent.h"
 #include <memory>
 #include <typeindex>
@@ -20,7 +21,7 @@ namespace iCAX
         *   Scene 在每帧把 Application/Product/Project/Scene 四层上下文传入 Universe，
         *   Universe 再调度已绑定行为。
         *   Universe 和其中的 Behaviour 实例按 Scene 单线程模型运行，不做内部并发保护；
-        *   外部线程应通过 Mailbox/PDO/命令通道把工作交给所属 Scene 线程。
+        *   外部线程应通过 Facades/PDO 把工作交给所属 Scene 线程。
         */
         class _SYSTEM_EXP IUniverse
         {
@@ -176,6 +177,15 @@ namespace iCAX
             */
             virtual std::vector<std::shared_ptr<CBehaviourBase>> GetAllBehaviours() const = 0;
 
+            /*
+            * @brief 获取 Engine Task 调度器。
+            * @details
+            *   Scheduler::Schedule() 只入队，不创建线程；队列在下一次 Universe Tick 开始时
+            *   由所属 Scene 工作线程消费。创建 Scene 范围的 Task/TaskCompletionSource 时应
+            *   绑定本调度器，后续 ContinueWith() 会默认继承它。
+            */
+            virtual iCAX::Tasks::TaskSchedulerPtr GetEngineTaskScheduler() const = 0;
+
             template<typename T>
             bool BindBehaviour()
             {
@@ -216,6 +226,7 @@ namespace iCAX
             {
                 UnbindBehaviourByIndex(std::type_index(typeid(T)));
             }
+
         };
 
         /*

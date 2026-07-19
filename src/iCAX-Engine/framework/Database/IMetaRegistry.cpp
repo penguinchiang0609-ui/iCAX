@@ -2,7 +2,6 @@
 #include "IMetaRegistry.h"
 #include "MetaRegistry.h"
 #include "IRepository.h"
-#include <stdexcept>
 
 //! 创建独立元数据注册表实例
 std::shared_ptr<iCAX::Database::IMetaRegistry> iCAX::Database::CreateMetaRegistry()

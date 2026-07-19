@@ -1,4 +1,4 @@
-import { makePDOID } from "../Mailbox/facadeMethod.mjs";
+import { makePDOID } from "../Facades/facadeMethod.mjs";
 
 export class PDOClient {
   constructor(descriptor = {}, bridge = globalThis.icax) {

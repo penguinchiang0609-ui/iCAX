@@ -1,21 +1,5 @@
-#include "framework.h"
+#include "pch.h"
 #include "WpfUIContainer.h"
-
-#include <msclr/gcroot.h>
-
-#include <atomic>
-#include <cstdint>
-#include <cstring>
-#include <mutex>
-#include <stdexcept>
-#include <string>
-#include <utility>
-
-#using <System.dll>
-#using <WindowsBase.dll>
-#using <PresentationCore.dll>
-#using <PresentationFramework.dll>
-#using <System.Xaml.dll>
 
 using namespace System;
 using namespace System::Collections::Generic;
@@ -146,11 +130,26 @@ namespace
             _JsonEscape(Value_));
     }
 
-    String^ _FormatStamp(IN uint16_t nStamp_)
+    String^ _FormatStatus(IN uint16_t nStatus_)
     {
-        return nStamp_ == 0
+        return nStatus_ == 0
             ? "OK"
-            : String::Format("Stamp {0}", nStamp_);
+            : String::Format("Status {0}", nStatus_);
+    }
+
+    String^ _FormatFacadeFrameKind(IN uint16_t nKind_)
+    {
+        switch (nKind_)
+        {
+        case iCAX::Frontend::kFrontendFacadeRequest:
+            return "Request";
+        case iCAX::Frontend::kFrontendFacadeReport:
+            return "Report";
+        case iCAX::Frontend::kFrontendFacadeResponse:
+            return "Response";
+        default:
+            return "Event";
+        }
     }
 }
 
@@ -162,14 +161,14 @@ namespace iCAX
         {
             ref class CWpfRuntime;
 
-            ref class CManagedMailEnvelope sealed
+            ref class CManagedFacadeFrame sealed
             {
             public:
                 String^ ChannelID;
-                UInt64 ID = 0;
-                UInt64 OriginID = 0;
-                UInt64 TypeCode = 0;
-                UInt16 Stamp = 0;
+                UInt64 CallID = 0;
+                UInt64 MethodCode = 0;
+                UInt16 Kind = 0;
+                UInt16 Status = 0;
                 String^ PayloadText;
             };
 
@@ -181,7 +180,7 @@ namespace iCAX
             public:
                 void SetApplicationChannelID(String^ ChannelID_);
                 void SetStatus(String^ Text_);
-                void AppendMail(CManagedMailEnvelope^ Mail_, String^ FacadeMemberName_);
+                void AppendFacadeFrame(CManagedFacadeFrame^ Frame_, String^ FacadeMemberName_);
                 void SetLastPayload(String^ PayloadText_);
 
             private:
@@ -197,7 +196,7 @@ namespace iCAX
                 CWpfRuntime^ m_Runtime;
                 TextBlock^ m_StatusText;
                 TextBlock^ m_ChannelText;
-                ListBox^ m_MailList;
+                ListBox^ m_FacadeFrameList;
                 TextBox^ m_PayloadText;
             };
 
@@ -317,17 +316,17 @@ namespace iCAX
 
                     try
                     {
-                        iCAX::Frontend::CFrontendMailEnvelope _Envelope;
-                        _Envelope.ChannelID = _ToNativeUTF8(ChannelID_);
-                        _Envelope.nID = static_cast<uint64_t>(Interlocked::Increment(m_NextMailID));
-                        _Envelope.nOriginID = 0;
-                        _Envelope.nTypeCode = _MakeFacadeMethodCode(FacadeName_, MethodName_);
-                        _Envelope.nStamp = 0;
-                        _Envelope.PayloadText = _ToNativeUTF8(String::IsNullOrEmpty(PayloadText_) ? _EmptyObjectPayload() : PayloadText_);
+                        iCAX::Frontend::CFrontendFacadeFrame _Frame;
+                        _Frame.ChannelID = _ToNativeUTF8(ChannelID_);
+                        _Frame.nCallID = static_cast<uint64_t>(Interlocked::Increment(m_NextCallID));
+                        _Frame.nMethodCode = _MakeFacadeMethodCode(FacadeName_, MethodName_);
+                        _Frame.nKind = iCAX::Frontend::kFrontendFacadeRequest;
+                        _Frame.nStatus = 0;
+                        _Frame.PayloadText = _ToNativeUTF8(String::IsNullOrEmpty(PayloadText_) ? _EmptyObjectPayload() : PayloadText_);
 
-                        m_pBridge->PostMail(_Envelope);
-                        m_PendingFacadeCalls[_Envelope.nID] = String::Format("{0}.{1}", FacadeName_, MethodName_);
-                        return _Envelope.nID;
+                        m_pBridge->PostFacadeFrame(_Frame);
+                        m_PendingFacadeCalls[_Frame.nCallID] = String::Format("{0}.{1}", FacadeName_, MethodName_);
+                        return _Frame.nCallID;
                     }
                     catch (const std::exception& _Error)
                     {
@@ -356,10 +355,10 @@ namespace iCAX
                         m_Window->SetApplicationChannelID(m_ApplicationChannelID);
 
                         m_Dispatcher = Dispatcher::CurrentDispatcher;
-                        m_MailTimer = gcnew DispatcherTimer();
-                        m_MailTimer->Interval = TimeSpan::FromMilliseconds(16);
-                        m_MailTimer->Tick += gcnew EventHandler(this, &CWpfRuntime::OnMailTimerTick);
-                        m_MailTimer->Start();
+                        m_FacadeFrameTimer = gcnew DispatcherTimer();
+                        m_FacadeFrameTimer->Interval = TimeSpan::FromMilliseconds(16);
+                        m_FacadeFrameTimer->Tick += gcnew EventHandler(this, &CWpfRuntime::OnFacadeFrameTimerTick);
+                        m_FacadeFrameTimer->Start();
 
                         m_Running = true;
                         m_Started->Set();
@@ -377,7 +376,7 @@ namespace iCAX
                     finally
                     {
                         m_Running = false;
-                        m_MailTimer = nullptr;
+                        m_FacadeFrameTimer = nullptr;
                         m_Window = nullptr;
                         m_Application = nullptr;
                         m_Dispatcher = nullptr;
@@ -387,9 +386,9 @@ namespace iCAX
 
                 void ShutdownOnUIThread()
                 {
-                    if (m_MailTimer != nullptr)
+                    if (m_FacadeFrameTimer != nullptr)
                     {
-                        m_MailTimer->Stop();
+                        m_FacadeFrameTimer->Stop();
                     }
                     if (m_Application != nullptr)
                     {
@@ -397,7 +396,7 @@ namespace iCAX
                     }
                 }
 
-                void OnMailTimerTick(Object^, EventArgs^)
+                void OnFacadeFrameTimerTick(Object^, EventArgs^)
                 {
                     if (m_pBridge == nullptr || m_Window == nullptr)
                     {
@@ -406,42 +405,48 @@ namespace iCAX
 
                     try
                     {
-                        auto _Mails = m_pBridge->PollMails();
-                        for (const auto& _Mail : _Mails)
+                        m_pBridge->RunFrontTasks();
+                        m_pBridge->RunFrontCoroutines();
+                        auto _Frames = m_pBridge->PollFacadeFrames();
+                        for (const auto& _Frame : _Frames)
                         {
-                            auto _ManagedMail = gcnew CManagedMailEnvelope();
-                            _ManagedMail->ChannelID = _ToManagedUTF8(_Mail.ChannelID);
-                            _ManagedMail->ID = _Mail.nID;
-                            _ManagedMail->OriginID = _Mail.nOriginID;
-                            _ManagedMail->TypeCode = _Mail.nTypeCode;
-                            _ManagedMail->Stamp = _Mail.nStamp;
-                            _ManagedMail->PayloadText = _ToManagedUTF8(_Mail.PayloadText);
+                            auto _ManagedFrame = gcnew CManagedFacadeFrame();
+                            _ManagedFrame->ChannelID = _ToManagedUTF8(_Frame.ChannelID);
+                            _ManagedFrame->CallID = _Frame.nCallID;
+                            _ManagedFrame->MethodCode = _Frame.nMethodCode;
+                            _ManagedFrame->Kind = _Frame.nKind;
+                            _ManagedFrame->Status = _Frame.nStatus;
+                            _ManagedFrame->PayloadText = _ToManagedUTF8(_Frame.PayloadText);
 
                             String^ _FacadeMemberName = "Event";
-                            if (_ManagedMail->OriginID != 0 && m_PendingFacadeCalls->ContainsKey(_ManagedMail->OriginID))
+                            if (_ManagedFrame->CallID != 0 && m_PendingFacadeCalls->ContainsKey(_ManagedFrame->CallID))
                             {
-                                _FacadeMemberName = m_PendingFacadeCalls[_ManagedMail->OriginID];
-                                m_PendingFacadeCalls->Remove(_ManagedMail->OriginID);
+                                _FacadeMemberName = m_PendingFacadeCalls[_ManagedFrame->CallID];
+                                if (_ManagedFrame->Kind == iCAX::Frontend::kFrontendFacadeResponse)
+                                {
+                                    m_PendingFacadeCalls->Remove(_ManagedFrame->CallID);
+                                }
                             }
 
-                            m_Window->AppendMail(_ManagedMail, _FacadeMemberName);
-                            if (_ManagedMail->OriginID == kStartupHandshakeRequestID || _FacadeMemberName == "App.GetState")
+                            m_Window->AppendFacadeFrame(_ManagedFrame, _FacadeMemberName);
+                            if (_ManagedFrame->Kind == iCAX::Frontend::kFrontendFacadeResponse
+                                && (_ManagedFrame->CallID == kStartupHandshakeRequestID || _FacadeMemberName == "App.GetState"))
                             {
-                                m_Window->SetStatus(_ManagedMail->Stamp == 0 ? "Backend connected" : "Backend returned an error");
+                                m_Window->SetStatus(_ManagedFrame->Status == 0 ? "Backend connected" : "Backend returned an error");
                             }
-                            if (_ManagedMail->Stamp == 0 && !String::IsNullOrEmpty(_ManagedMail->PayloadText))
+                            if (_ManagedFrame->Status == 0 && !String::IsNullOrEmpty(_ManagedFrame->PayloadText))
                             {
-                                m_Window->SetLastPayload(_ManagedMail->PayloadText);
+                                m_Window->SetLastPayload(_ManagedFrame->PayloadText);
                             }
                         }
                     }
                     catch (const std::exception& _Error)
                     {
-                        m_Window->SetStatus("Mailbox polling failed: " + _ToManagedUTF8(_Error.what()));
+                        m_Window->SetStatus("Facade polling failed: " + _ToManagedUTF8(_Error.what()));
                     }
                     catch (Exception^ _Error)
                     {
-                        m_Window->SetStatus("Mailbox polling failed: " + _Error->Message);
+                        m_Window->SetStatus("Facade polling failed: " + _Error->Message);
                     }
                 }
 
@@ -451,13 +456,13 @@ namespace iCAX
                 Application^ m_Application;
                 CWpfMainWindow^ m_Window;
                 Dispatcher^ m_Dispatcher;
-                DispatcherTimer^ m_MailTimer;
+                DispatcherTimer^ m_FacadeFrameTimer;
                 ManualResetEventSlim^ m_Started;
                 ManualResetEventSlim^ m_Closed;
                 Exception^ m_StartupException;
                 Dictionary<UInt64, String^>^ m_PendingFacadeCalls;
                 String^ m_ApplicationChannelID;
-                Int64 m_NextMailID = static_cast<Int64>(kStartupHandshakeRequestID);
+                Int64 m_NextCallID = static_cast<Int64>(kStartupHandshakeRequestID);
                 volatile bool m_Running = false;
             };
 
@@ -555,12 +560,12 @@ namespace iCAX
                 _RightGrid->RowDefinitions[1]->Height = GridLength(1, GridUnitType::Star);
                 _RightGrid->Margin = Thickness(10, 0, 0, 0);
 
-                m_MailList = gcnew ListBox();
-                m_MailList->FontFamily = gcnew System::Windows::Media::FontFamily("Consolas");
-                m_MailList->FontSize = 12;
-                auto _MailPanel = MakePanel("Mailbox", m_MailList);
-                Grid::SetRow(_MailPanel, 0);
-                _RightGrid->Children->Add(_MailPanel);
+                m_FacadeFrameList = gcnew ListBox();
+                m_FacadeFrameList->FontFamily = gcnew System::Windows::Media::FontFamily("Consolas");
+                m_FacadeFrameList->FontSize = 12;
+                auto _FacadePanel = MakePanel("Facades", m_FacadeFrameList);
+                Grid::SetRow(_FacadePanel, 0);
+                _RightGrid->Children->Add(_FacadePanel);
 
                 m_PayloadText = gcnew TextBox();
                 m_PayloadText->FontFamily = gcnew System::Windows::Media::FontFamily("Consolas");
@@ -634,18 +639,19 @@ namespace iCAX
                 m_StatusText->Text = Text_;
             }
 
-            void CWpfMainWindow::AppendMail(CManagedMailEnvelope^ Mail_, String^ FacadeMemberName_)
+            void CWpfMainWindow::AppendFacadeFrame(CManagedFacadeFrame^ Frame_, String^ FacadeMemberName_)
             {
                 auto _Line = String::Format(
-                    "{0:HH:mm:ss.fff} {1} origin={2} {3}",
+                    "{0:HH:mm:ss.fff} {1} {2} call={3} {4}",
                     DateTime::Now,
                     FacadeMemberName_,
-                    Mail_->OriginID,
-                    _FormatStamp(Mail_->Stamp));
-                m_MailList->Items->Insert(0, _Line);
-                while (m_MailList->Items->Count > 200)
+                    _FormatFacadeFrameKind(Frame_->Kind),
+                    Frame_->CallID,
+                    _FormatStatus(Frame_->Status));
+                m_FacadeFrameList->Items->Insert(0, _Line);
+                while (m_FacadeFrameList->Items->Count > 200)
                 {
-                    m_MailList->Items->RemoveAt(m_MailList->Items->Count - 1);
+                    m_FacadeFrameList->Items->RemoveAt(m_FacadeFrameList->Items->Count - 1);
                 }
             }
 

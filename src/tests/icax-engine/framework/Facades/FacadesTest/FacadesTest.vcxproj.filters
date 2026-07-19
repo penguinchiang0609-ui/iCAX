@@ -6,6 +6,12 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="FacadeRequestDispatchTests.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="FacadeTransportTests.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="FacadesTests.cpp">
       <Filter>源文件</Filter>
     </ClCompile>

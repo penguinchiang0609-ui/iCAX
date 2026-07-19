@@ -4,11 +4,6 @@
 #include "Data/VariantSerializer.h"
 #include "ProductDefinition.h"
 
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <stdexcept>
-#include <utility>
 
 namespace
 {

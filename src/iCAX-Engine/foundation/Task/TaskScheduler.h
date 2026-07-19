@@ -62,7 +62,13 @@ namespace iCAX::Tasks
         std::unique_ptr<Impl> m_impl;
     };
 
-    class ManualTaskScheduler final : public ITaskScheduler
+    /*
+    * @brief 由所属单线程事件循环主动消费的任务调度器。
+    * @details
+    *   Schedule() 只负责线程安全入队，不创建线程。Engine loop、UI loop 等拥有线程的
+    *   上层在自己的线程调用 RunOne()/RunAll()，即可保证 continuation 的单线程语义。
+    */
+    class EventLoopTaskScheduler final : public ITaskScheduler
     {
     public:
         void Schedule(std::function<void()> action_) override
@@ -111,8 +117,16 @@ namespace iCAX::Tasks
             return m_actions.size();
         }
 
+        void Clear()
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            std::queue<std::function<void()>> empty;
+            m_actions.swap(empty);
+        }
+
     private:
         mutable std::mutex m_mutex;
         std::queue<std::function<void()>> m_actions;
     };
+
 }

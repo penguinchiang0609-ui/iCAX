@@ -12,7 +12,7 @@ src/iCAX-UI/SceneProxy/
 
 `SceneProxy` 依赖：
 
-- `SDK/Mailbox`
+- `SDK/Facades`
 - `SDK/PDO`
 - `Bridge` 提供的已注册 scene channel。
 
@@ -22,16 +22,16 @@ src/iCAX-UI/SceneProxy/
 
 ```text
 SceneProxy.invoke(facadeMethod, payload)
-  -> MailboxClient.invoke(sceneChannelId, facadeMethod, payload)
-  -> bridge.postMail()
+  -> FacadeClient.invoke(sceneChannelId, facadeMethod, payload)
+  -> bridge.postFacadeFrame()
   -> UIContainer
-  -> backend scene mail handler
+  -> backend scene Facade invoker
   -> Facades(application, product, project, scene)
-  <- response mail
+  <- Response frame
   -> Promise resolve/reject
 ```
 
-标准方法由 `SDK/Mailbox/facadeMethod.mjs` 中的 `ProjectFacade` 定义。这里保留 `Project` Facade 名，是因为方法操作的是项目数据；当前 Scene channel 只是 Mail 的传输边界，不属于 Facade 方法名。
+标准方法由 `SDK/Facades/facadeMethod.mjs` 中的 `ProjectFacade` 定义。这里保留 `Project` Facade 名，是因为方法操作的是项目数据；当前 Scene channel 只是 Facade 的传输边界，不属于 Facade 方法名。
 
 ## 4. PDO 流程
 

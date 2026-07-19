@@ -9,7 +9,7 @@
 ## 2. 核心类型
 
 - `IFrontendBridge`：Application 提供的后端桥接口。
-- `CFrontendMailEnvelope`：UI 与 Engine 之间传递的邮件信封。
+- `CFrontendFacadeFrame`：UI 与 Engine 之间传递的 Facade 调用帧。
 - `CUIContainerConfig`：UI 容器启动配置。
 - `IUIContainer`：真实 UI 容器接口。
 - `CUIContainerFactory`：根据配置创建容器。
@@ -69,13 +69,21 @@ CUIContainerFactory.Create(config)
 
 ```text
 GetApplicationChannelIDText()
-PostMail(App.GetState)
-PollMails()
+PostFacadeFrame(App.GetState Request)
+PollFacadeFrames()
 validate response
 ```
 
 这条路径等价于前端 `ApplicationProxy` 初始化阶段对后端 application channel 的第一次握手。
 
-## 6. 边界
+## 6. Front Task 与 Front Coroutine
 
-`UIContainer` 不拥有 Engine，不启动/停止 `ApplicationHost`，不解析业务 payload，不管理 PDO shared memory。真实 UI 容器只通过 `IFrontendBridge` 与后端交互。
+`IFrontendBridge::GetFrontTaskScheduler()` 返回只由前端 event loop 消费的 scheduler。WPF/CEF 等真实容器必须在 UI 线程先调用 `RunFrontTasks()`，再调用 `RunFrontCoroutines()`。
+
+前端页面、窗口或原生模块通过 `StartFrontCoroutine()` 启动协程并保存 handle，在 owner 禁用、启用、销毁时分别调用 `PauseFrontCoroutine()`、`ResumeFrontCoroutine()`、`CancelFrontCoroutine()`。取消 handle 会同步销毁对应 coroutine frame；`FrontendBridge::Detach()` 会取消仍存活的全部前端协程。
+
+`StartFrontCoroutine()` 保留 `CCoroutine<TResult>` 的结果类型并返回 `CCoroutineHandle<TResult>`；typed completion Task 仍绑定 Front Task scheduler。
+
+## 7. 边界
+
+`UIContainer` 不拥有 Engine，不启动/停止 `ApplicationRuntime`，不解析业务 payload，不管理 PDO shared memory。真实 UI 容器只通过 `IFrontendBridge` 与后端交互。

@@ -1,7 +1,6 @@
 #include "pch.h"
 #include "FontAlgo.h"
 
-#include <cmath>
 
 namespace
 {
