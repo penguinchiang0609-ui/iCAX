@@ -5,6 +5,7 @@
 #include "MachineDescriptionLoader.h"
 #include "MachineResourceKeys.h"
 #include "MachineFacadeImplement.h"
+#include "MachineTransformConstraints.h"
 
 #include "Facades/FacadeRegistrationCatalog.h"
 #include "Facades/Facade.h"
@@ -551,6 +552,7 @@ iCAX::Interaction::CInvocationResult HandleSetMachineJointPosition(
         throw std::invalid_argument("Cam Machine.SetJointPosition requires position");
     }
 
+    const auto _PreviousPosition = _pJoint->GetPosition();
     iCAX::Data::PropertySet _Properties;
     _Properties[iCAX::CAM::CMachineJointComponent::PropertyName_Position] = _Position;
     std::string _strError;
@@ -558,9 +560,14 @@ iCAX::Interaction::CInvocationResult HandleSetMachineJointPosition(
     {
         throw std::invalid_argument(_strError.empty() ? "Cam Machine.SetJointPosition is rejected by modify filter" : _strError);
     }
+    if (!iCAX::CAM::ApplyMachineJointPositionToTransform(*_pEntity, _PreviousPosition, _Position, _strError))
+    {
+        std::string _strRollbackError;
+        (void)_pJoint->SetPosition(_PreviousPosition, _strRollbackError);
+        throw std::runtime_error(_strError.empty() ? "Cam Machine.SetJointPosition failed to update Transform" : _strError);
+    }
 
     auto _pMachineEntity = _Repository.GetEntity(_pElement->GetMachineID());
-    auto _pMachine = _GetComponent<iCAX::CAM::CMachineInstanceComponent>(_pMachineEntity);
     if (_pMachineEntity)
     {
         auto _pStatus = _GetOrAddMachineStatus(_pMachineEntity);
@@ -568,14 +575,7 @@ iCAX::Interaction::CInvocationResult HandleSetMachineJointPosition(
         _SetStringProperty(_pStatus, iCAX::CAM::CMachineStatusComponent::PropertyName_LastCheckResult, _pJoint->GetJointName() + " 轴位置已更新");
     }
 
-    ObjectMap _Result;
-    _Result["machineElement"] = _MakeMachineElementDetailPayload(_Repository, _EntityID);
-    if (_pMachineEntity && _pMachine)
-    {
-        _Result["machine"] = _MakeMachinePayload(_Scene.Resources(), _Repository, _pMachineEntity, _pMachine);
-        _Result["machines"] = _MakeMachineArray(_Scene.Resources(), _Repository);
-    }
-    return _MakeResponse(Variant(_Result));
+    return _MakeResponse(Variant(ObjectMap{}));
 }
 
 iCAX::Interaction::CInvocationResult HandleSetMachineJointLimits(

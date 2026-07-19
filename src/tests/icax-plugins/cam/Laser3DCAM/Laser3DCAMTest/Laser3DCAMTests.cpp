@@ -1091,7 +1091,13 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
     const auto _ValidRequest = MakeFacadeCall("Machine", "SetJointPosition", _ValidPayload);
     const auto _ValidResult = DecodeResponseObject(
         iCAX::CAM::Facades::HandleSetMachineJointPosition(_ValidRequest, _Application, &_Product, &_Project, &_Scene));
-    const auto _Policy = _ValidResult.at("machineElement").To<ObjectMap>().at("transformEditPolicy").To<ObjectMap>();
+    EXPECT_TRUE(_ValidResult.empty());
+    ObjectMap _GetElementPayload;
+    _GetElementPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
+    const auto _GetElementRequest = MakeFacadeCall("Machine", "GetElement", _GetElementPayload);
+    const auto _ElementResult = DecodeResponseObject(
+        iCAX::CAM::Facades::HandleGetMachineElement(_GetElementRequest, _Application, &_Product, &_Project, &_Scene));
+    const auto _Policy = _ElementResult.at("machineElement").To<ObjectMap>().at("transformEditPolicy").To<ObjectMap>();
     const auto _PositionPolicy = _Policy.at("position").To<VariantArray>();
     const auto _RotationPolicy = _Policy.at("rotationRadians").To<VariantArray>();
     ASSERT_EQ(3u, _PositionPolicy.size());
@@ -1105,6 +1111,10 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
     EXPECT_FALSE(_RotationPolicy[2].To<ObjectMap>().at("editable").To<bool>());
     EXPECT_NEAR(2.0 * 3.14159265358979323846 / 180.0, _RotationPolicy[0].To<ObjectMap>().at("step").To<double>(), 0.0001);
     EXPECT_NEAR(5.0, _pJoint->GetPosition(), 0.0001);
+    EXPECT_NEAR(5.0, _pTransform->GetPositionX(), 0.0001);
+    EXPECT_NEAR(0.0, _pTransform->GetPositionY(), 0.0001);
+    EXPECT_NEAR(0.0, _pTransform->GetPositionZ(), 0.0001);
+    EXPECT_NEAR(5.0, _pTransform->GetLocalToWorldMatrix()(0, 3), 0.0001);
 
     ObjectMap _LimitPayload;
     _LimitPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);

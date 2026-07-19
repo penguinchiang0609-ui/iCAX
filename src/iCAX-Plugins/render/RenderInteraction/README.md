@@ -10,7 +10,7 @@
 
 - `RenderInteractionComponents.h`：通用 RenderInstance 与 Camera 组件。
 - `RenderInstanceBehaviour.cpp`：RenderInstance 的通用发布行为；负责把 Entity 的几何显示切面同步到 `IRenderService`。
-- `RenderTransformBehaviour.cpp`：通用 Transform 的渲染发布行为；负责把 Entity 的位姿切面同步到 `IRenderService`。
+- `TransformBehaviour.cpp`：通用 Transform 的渲染发布行为；负责把 Entity 的位姿切面同步到 `IRenderService`。
 - `CameraBehaviour.cpp`：基于 CameraComponent 发布 camera 参数，不处理键鼠输入。
 - `RenderInteraction.h`：统一入口头。
 - `RenderInteractionExport.h`：DLL 导出宏。

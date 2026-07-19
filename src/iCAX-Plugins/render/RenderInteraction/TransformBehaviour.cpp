@@ -158,9 +158,9 @@ namespace
         return true;
     }
 
-    class CRenderTransformBehaviour final : public iCAX::Behaviour::CBehaviourBase
+    class CTransformBehaviour final : public iCAX::Behaviour::CBehaviourBase
     {
-        AUTO_REGIST_BEHAVIOUR(CRenderTransformBehaviour)
+        AUTO_REGIST_BEHAVIOUR(CTransformBehaviour)
 
     public:
         std::string GetComponentClass() const override

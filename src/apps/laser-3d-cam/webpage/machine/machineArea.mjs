@@ -154,30 +154,71 @@ function renderMachineElementTransformEditor(item = {}, machine = {}, pending = 
   if (transform.hasTransform === false) {
     return `<div class="cam-empty-row">该元素没有 Transform 组件。</div>`;
   }
-  if (item.joint) {
-    return `<div class="cam-empty-row">关节 Transform 是机床定义中的结构原点，不是运动自由度。请在“运动学 / 约束”中编辑轴位置。</div>`;
-  }
 
-  const position = normalizeVector(transform.position, [0, 0, 0]);
-  const rotation = normalizeVector(transform.rotationRadians, [0, 0, 0]).map((value) => value * 180 / Math.PI);
+  let position = normalizeVector(transform.position, [0, 0, 0]);
+  let rotation = normalizeVector(transform.rotationRadians, [0, 0, 0]).map((value) => value * 180 / Math.PI);
   const scale = normalizeVector(transform.scale, [1, 1, 1]);
   const policy = item.transformEditPolicy ?? {};
   const linearStep = getLinearJogStepMm(machine);
   const angularStep = getAngularJogStepDeg(machine);
+  const positionPolicies = [0, 1, 2].map((index) => resolveFieldPolicy(policy, "position", index, pending, linearStep));
+  const rotationPolicies = [0, 1, 2].map((index) => resolveRotationDegreePolicy(policy, index, pending, angularStep));
+  const positionAttributes = [
+    "data-cam-transform-position-x",
+    "data-cam-transform-position-y",
+    "data-cam-transform-position-z",
+  ];
+  const rotationAttributes = [
+    "data-cam-transform-rotation-yaw",
+    "data-cam-transform-rotation-pitch",
+    "data-cam-transform-rotation-roll",
+  ];
+  let hint = policy.reason || "此处编辑本地位姿，即相对父对象的 Transform；输入合法后自动同步到后端并由 PDO 刷新场景。";
+  let jointEditorAttributes = "";
+
+  if (item.joint) {
+    const lockedByJoint = {
+      editable: false,
+      hasRange: false,
+      reason: "该字段不属于当前关节的运动自由度。",
+    };
+    for (let index = 0; index < 3; index += 1) {
+      positionPolicies[index] = { ...positionPolicies[index], ...lockedByJoint };
+      rotationPolicies[index] = { ...rotationPolicies[index], ...lockedByJoint };
+    }
+
+    const jointPresentation = makeJointTransformPresentation(item.joint, pending, linearStep, angularStep);
+    hint = jointPresentation.hint;
+    if (jointPresentation.editableGroup === "position") {
+      position = [...position];
+      position[jointPresentation.fieldIndex] = jointPresentation.displayValue;
+      positionPolicies[jointPresentation.fieldIndex] = jointPresentation.policy;
+      positionAttributes[jointPresentation.fieldIndex] += " data-cam-joint-position";
+      jointEditorAttributes = `data-cam-joint-transform-editor data-cam-joint-position-factor="${escapeAttr(jointPresentation.toInternalFactor)}"`;
+    } else if (jointPresentation.editableGroup === "rotation") {
+      rotation = [...rotation];
+      rotation[jointPresentation.fieldIndex] = jointPresentation.displayValue;
+      rotationPolicies[jointPresentation.fieldIndex] = jointPresentation.policy;
+      rotationAttributes[jointPresentation.fieldIndex] += " data-cam-joint-position";
+      jointEditorAttributes = `data-cam-joint-transform-editor data-cam-joint-position-factor="${escapeAttr(jointPresentation.toInternalFactor)}"`;
+    }
+  }
+
   return `
     <div class="cam-transform-editor"
          data-cam-transform-editor
-         data-cam-entity-id="${escapeAttr(item.entityId || "")}">
-      <div class="cam-hint">${escapeText(policy.reason || "此处编辑本地位姿，即相对父对象的 Transform；输入合法后自动同步到后端并由 PDO 刷新场景。")}</div>
+         data-cam-entity-id="${escapeAttr(item.entityId || "")}"
+         ${jointEditorAttributes}>
+      <div class="cam-hint">${escapeText(hint)}</div>
       <div class="cam-form-grid three">
-        ${renderEditableNumberField("X mm", "data-cam-transform-position-x", position[0], resolveFieldPolicy(policy, "position", 0, pending, linearStep))}
-        ${renderEditableNumberField("Y mm", "data-cam-transform-position-y", position[1], resolveFieldPolicy(policy, "position", 1, pending, linearStep))}
-        ${renderEditableNumberField("Z mm", "data-cam-transform-position-z", position[2], resolveFieldPolicy(policy, "position", 2, pending, linearStep))}
+        ${renderEditableNumberField("X mm", positionAttributes[0], position[0], positionPolicies[0])}
+        ${renderEditableNumberField("Y mm", positionAttributes[1], position[1], positionPolicies[1])}
+        ${renderEditableNumberField("Z mm", positionAttributes[2], position[2], positionPolicies[2])}
       </div>
       <div class="cam-form-grid three">
-        ${renderEditableNumberField("Yaw °", "data-cam-transform-rotation-yaw", rotation[0], resolveRotationDegreePolicy(policy, 0, pending, angularStep))}
-        ${renderEditableNumberField("Pitch °", "data-cam-transform-rotation-pitch", rotation[1], resolveRotationDegreePolicy(policy, 1, pending, angularStep))}
-        ${renderEditableNumberField("Roll °", "data-cam-transform-rotation-roll", rotation[2], resolveRotationDegreePolicy(policy, 2, pending, angularStep))}
+        ${renderEditableNumberField("Yaw °", rotationAttributes[0], rotation[0], rotationPolicies[0])}
+        ${renderEditableNumberField("Pitch °", rotationAttributes[1], rotation[1], rotationPolicies[1])}
+        ${renderEditableNumberField("Roll °", rotationAttributes[2], rotation[2], rotationPolicies[2])}
       </div>
       <div class="cam-form-grid three">
         ${renderEditableNumberField("Scale X", "data-cam-transform-scale-x", scale[0], resolveFieldPolicy(policy, "scale", 0, true, 0.001))}
@@ -186,6 +227,93 @@ function renderMachineElementTransformEditor(item = {}, machine = {}, pending = 
       </div>
     </div>
   `;
+}
+
+function makeJointTransformPresentation(joint = {}, pending = false, linearStep = 1, angularStep = 1) {
+  const jointType = String(joint.type || "").trim();
+  const axis = resolveAlignedJointAxis(joint.axis);
+  const movable = jointType === "prismatic" || isRotaryJoint(jointType);
+  const baseHint = "Transform 面板显示当前关节自由度；只开放与关节轴对应的字段，其他字段由机床结构约束锁定。";
+  if (pending || !movable || !axis) {
+    const reason = jointType === "fixed"
+      ? "固定关节没有可修改的 Transform 自由度，所有字段均由机床结构约束锁定。"
+      : !axis
+        ? "该关节轴不是单一 X/Y/Z 方向，无法映射到单个 Transform 字段，因此当前全部锁定。"
+        : baseHint;
+    return { hint: reason, editableGroup: "", fieldIndex: -1 };
+  }
+
+  const lower = Number(joint.lower);
+  const upper = Number(joint.upper);
+  const position = Number(joint.position ?? 0);
+  const hasRange = Number.isFinite(lower) && Number.isFinite(upper);
+  const signedRange = hasRange ? makeSignedRange(lower, upper, axis.sign) : [0, 0];
+  if (jointType === "prismatic") {
+    return {
+      hint: baseHint,
+      editableGroup: "position",
+      fieldIndex: axis.index,
+      displayValue: (Number.isFinite(position) ? position : 0) * axis.sign,
+      toInternalFactor: axis.sign,
+      policy: {
+        editable: true,
+        hasRange,
+        min: signedRange[0],
+        max: signedRange[1],
+        step: linearStep,
+        precision: 3,
+        reason: "平移轴唯一自由度；修改后写入当前机床实例的轴位置。",
+      },
+    };
+  }
+
+  const radiansToDegrees = 180 / Math.PI;
+  return {
+    hint: baseHint,
+    editableGroup: "rotation",
+    fieldIndex: rotationFieldIndexFromAxis(axis.index),
+    displayValue: (Number.isFinite(position) ? position : 0) * axis.sign * radiansToDegrees,
+    toInternalFactor: axis.sign / radiansToDegrees,
+    policy: {
+      editable: true,
+      hasRange,
+      min: signedRange[0] * radiansToDegrees,
+      max: signedRange[1] * radiansToDegrees,
+      step: angularStep,
+      precision: 2,
+      reason: "旋转轴唯一自由度；界面使用角度，修改后写入当前机床实例的轴位置。",
+    },
+  };
+}
+
+function resolveAlignedJointAxis(values) {
+  const axis = normalizeVector(values, [0, 0, 1]);
+  const length = Math.hypot(axis[0], axis[1], axis[2]);
+  if (!Number.isFinite(length) || length <= Number.EPSILON) {
+    return null;
+  }
+  const normalized = axis.map((value) => value / length);
+  let index = 0;
+  for (let candidate = 1; candidate < normalized.length; candidate += 1) {
+    if (Math.abs(normalized[candidate]) > Math.abs(normalized[index])) {
+      index = candidate;
+    }
+  }
+  if (Math.abs(Math.abs(normalized[index]) - 1) > 1e-5
+      || normalized.some((value, candidate) => candidate !== index && Math.abs(value) > 1e-5)) {
+    return null;
+  }
+  return { index, sign: normalized[index] < 0 ? -1 : 1 };
+}
+
+function rotationFieldIndexFromAxis(axisIndex) {
+  return axisIndex === 0 ? 2 : axisIndex === 1 ? 1 : 0;
+}
+
+function makeSignedRange(lower, upper, sign) {
+  const first = lower * sign;
+  const second = upper * sign;
+  return first <= second ? [first, second] : [second, first];
 }
 
 function renderMachineElementAppearanceEditor(item = {}, pending = false) {
@@ -253,7 +381,7 @@ function renderMachineElementKinematicsInspector(item = {}, machine = {}, pendin
 
   const facts = rows.length ? renderFacts(rows) : `<div class="cam-empty-row">该元素没有运动学参数。</div>`;
   return item.joint
-    ? `${facts}${renderMachineJointPositionEditor(item, machine, pending)}${renderMachineJointLimitEditor(item, machine, pending)}`
+    ? `${facts}${renderMachineJointLimitEditor(item, machine, pending)}`
     : facts;
 }
 
@@ -334,45 +462,6 @@ function renderMachineJointLimitEditor(item = {}, machine = {}, pending = false)
         })}
         ${renderEditableNumberField(`上限 ${unit}`, "data-cam-joint-upper-limit", displayUpper, {
           editable: !pending,
-          step,
-          precision,
-          reason: title,
-        })}
-      </div>
-    </div>
-  `;
-}
-
-function renderMachineJointPositionEditor(item = {}, machine = {}, pending = false) {
-  const joint = item.joint ?? {};
-  if (joint.type === "fixed") {
-    return "";
-  }
-
-  const isRotary = isRotaryJoint(joint.type);
-  const position = Number(joint.position ?? 0);
-  const lower = Number(joint.lower ?? 0);
-  const upper = Number(joint.upper ?? 0);
-  const scale = isRotary ? 180 / Math.PI : 1;
-  const unit = isRotary ? "°" : "mm";
-  const step = isRotary ? getAngularJogStepDeg(machine) : getLinearJogStepMm(machine);
-  const precision = isRotary ? 2 : 3;
-  const title = isRotary
-    ? "旋转轴唯一运动自由度；界面使用角度，后端保存弧度。"
-    : "平移轴唯一运动自由度，单位 mm。";
-
-  return `
-    <div class="cam-transform-editor"
-         data-cam-joint-position-editor
-         data-cam-entity-id="${escapeAttr(item.entityId || "")}"
-         data-cam-joint-type="${escapeAttr(joint.type || "")}">
-      <div class="cam-hint">${escapeText(title)}</div>
-      <div class="cam-form-grid one">
-        ${renderEditableNumberField(`轴位置 ${unit}`, "data-cam-joint-position", position * scale, {
-          editable: !pending,
-          hasRange: Number.isFinite(lower) && Number.isFinite(upper),
-          min: lower * scale,
-          max: upper * scale,
           step,
           precision,
           reason: title,

@@ -492,7 +492,7 @@ namespace
         {
             iCAX::Behaviour::CBehaviourSchedule _Schedule;
             _Schedule.ExecutionOrder = 3200;
-            _Schedule.RunAfter = { "CRenderTransformBehaviour" };
+            _Schedule.RunAfter = { "CTransformBehaviour" };
             return _Schedule;
         }
 

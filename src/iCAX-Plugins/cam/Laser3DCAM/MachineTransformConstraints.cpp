@@ -23,6 +23,8 @@ namespace
     using iCAX::Data::VariantArray;
     using iCAX::Database::SFieldEditPolicy;
 
+    thread_local const iCAX::Transform::CTransformComponent* g_pApplyingJointMotionTransform = nullptr;
+
     enum class EAxisKind
     {
         X = 0,
@@ -155,6 +157,94 @@ namespace
         }
         return _Axis;
     }
+
+    bool TryResolveNormalizedAxis(
+        IN const VariantArray& Axis_,
+        OUT std::array<double, 3>& AxisValues_) noexcept
+    {
+        if (!TryReadAxis(Axis_, AxisValues_))
+        {
+            return false;
+        }
+
+        const auto _Length = std::sqrt(
+            AxisValues_[0] * AxisValues_[0]
+            + AxisValues_[1] * AxisValues_[1]
+            + AxisValues_[2] * AxisValues_[2]);
+        if (!IsFinite(_Length) || _Length <= kEpsilon)
+        {
+            return false;
+        }
+        for (auto& _Value : AxisValues_)
+        {
+            _Value /= _Length;
+        }
+        return true;
+    }
+
+    iCAX::Data::Double4x4 MakeAxisRotationMatrix(
+        IN const std::array<double, 3>& Axis_,
+        IN double dRadians_) noexcept
+    {
+        const auto _Cos = std::cos(dRadians_);
+        const auto _Sin = std::sin(dRadians_);
+        const auto _OneMinusCos = 1.0 - _Cos;
+        const auto _X = Axis_[0];
+        const auto _Y = Axis_[1];
+        const auto _Z = Axis_[2];
+
+        auto _Matrix = iCAX::Transform::MakeIdentityMatrix();
+        _Matrix(0, 0) = _Cos + _X * _X * _OneMinusCos;
+        _Matrix(0, 1) = _X * _Y * _OneMinusCos - _Z * _Sin;
+        _Matrix(0, 2) = _X * _Z * _OneMinusCos + _Y * _Sin;
+        _Matrix(1, 0) = _Y * _X * _OneMinusCos + _Z * _Sin;
+        _Matrix(1, 1) = _Cos + _Y * _Y * _OneMinusCos;
+        _Matrix(1, 2) = _Y * _Z * _OneMinusCos - _X * _Sin;
+        _Matrix(2, 0) = _Z * _X * _OneMinusCos - _Y * _Sin;
+        _Matrix(2, 1) = _Z * _Y * _OneMinusCos + _X * _Sin;
+        _Matrix(2, 2) = _Cos + _Z * _Z * _OneMinusCos;
+        return _Matrix;
+    }
+
+    std::array<double, 3> ExtractYawPitchRoll(
+        IN const iCAX::Data::Double4x4& Matrix_) noexcept
+    {
+        const auto _Pitch = std::asin((std::max)(-1.0, (std::min)(1.0, -Matrix_(2, 0))));
+        const auto _CosPitch = std::cos(_Pitch);
+        if (std::abs(_CosPitch) > kEpsilon)
+        {
+            return {
+                std::atan2(Matrix_(1, 0), Matrix_(0, 0)),
+                _Pitch,
+                std::atan2(Matrix_(2, 1), Matrix_(2, 2))
+            };
+        }
+
+        return {
+            std::atan2(-Matrix_(0, 1), Matrix_(1, 1)),
+            _Pitch,
+            0.0
+        };
+    }
+
+    class CScopedJointMotionTransformMutation final
+    {
+    public:
+        explicit CScopedJointMotionTransformMutation(
+            IN const iCAX::Transform::CTransformComponent* pTransform_) noexcept
+            : m_pPrevious(g_pApplyingJointMotionTransform)
+        {
+            g_pApplyingJointMotionTransform = pTransform_;
+        }
+
+        ~CScopedJointMotionTransformMutation()
+        {
+            g_pApplyingJointMotionTransform = m_pPrevious;
+        }
+
+    private:
+        const iCAX::Transform::CTransformComponent* m_pPrevious = nullptr;
+    };
 
     int PositionIndex(IN const std::string& strPropertyName_) noexcept
     {
@@ -418,6 +508,11 @@ namespace
         IN const PropertySet& Properties_,
         OUT std::string& strError_)
     {
+        if (g_pApplyingJointMotionTransform == &Transform_)
+        {
+            return true;
+        }
+
         if (!IsMachineTransform(Transform_))
         {
             return true;
@@ -663,4 +758,80 @@ iCAX::Data::ObjectMap iCAX::CAM::MakeMachineTransformEditPolicyPayload(
     _Payload["rotationRadians"] = MakeFieldPolicyArray(_RotationRadians);
     _Payload["scale"] = MakeFieldPolicyArray(_Scale);
     return _Payload;
+}
+
+bool iCAX::CAM::ApplyMachineJointPositionToTransform(
+    IN iCAX::Database::IEntity& Entity_,
+    IN double dPreviousPosition_,
+    IN double dCurrentPosition_,
+    OUT std::string& strError_)
+{
+    if (!IsFinite(dPreviousPosition_) || !IsFinite(dCurrentPosition_))
+    {
+        strError_ = "Machine joint position must be finite";
+        return false;
+    }
+
+    const auto _pJoint = Entity_.GetComponent<iCAX::CAM::CMachineJointComponent>();
+    const auto _pTransform = Entity_.GetComponent<iCAX::Transform::CTransformComponent>();
+    if (!_pJoint || !_pTransform)
+    {
+        strError_ = "Machine joint motion requires Joint and Transform components";
+        return false;
+    }
+
+    std::array<double, 3> _Axis{};
+    if (!TryResolveNormalizedAxis(_pJoint->GetAxis(), _Axis))
+    {
+        strError_ = "Machine joint axis must be a finite non-zero vector";
+        return false;
+    }
+
+    const auto _Delta = dCurrentPosition_ - dPreviousPosition_;
+    if (std::abs(_Delta) <= kEpsilon)
+    {
+        return true;
+    }
+
+    const auto _CurrentRotation = iCAX::Transform::MakeLocalMatrix(
+        0.0,
+        0.0,
+        0.0,
+        _pTransform->GetYawRadians(),
+        _pTransform->GetPitchRadians(),
+        _pTransform->GetRollRadians(),
+        1.0,
+        1.0,
+        1.0);
+    PropertySet _Properties;
+    const auto _JointType = _pJoint->GetJointType();
+    if (_JointType == "prismatic")
+    {
+        const std::array<double, 3> _Motion = {
+            (_CurrentRotation(0, 0) * _Axis[0] + _CurrentRotation(0, 1) * _Axis[1] + _CurrentRotation(0, 2) * _Axis[2]) * _Delta,
+            (_CurrentRotation(1, 0) * _Axis[0] + _CurrentRotation(1, 1) * _Axis[1] + _CurrentRotation(1, 2) * _Axis[2]) * _Delta,
+            (_CurrentRotation(2, 0) * _Axis[0] + _CurrentRotation(2, 1) * _Axis[1] + _CurrentRotation(2, 2) * _Axis[2]) * _Delta
+        };
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionX] = _pTransform->GetPositionX() + _Motion[0];
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionY] = _pTransform->GetPositionY() + _Motion[1];
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionZ] = _pTransform->GetPositionZ() + _Motion[2];
+    }
+    else if (_JointType == "revolute" || _JointType == "continuous")
+    {
+        const auto _NextRotation = iCAX::Transform::MultiplyMatrix(
+            _CurrentRotation,
+            MakeAxisRotationMatrix(_Axis, _Delta));
+        const auto _Angles = ExtractYawPitchRoll(_NextRotation);
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_YawRadians] = _Angles[0];
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PitchRadians] = _Angles[1];
+        _Properties[iCAX::Transform::CTransformComponent::PropertyName_RollRadians] = _Angles[2];
+    }
+    else
+    {
+        strError_ = "Machine joint type does not have a single position-driven Transform: " + _JointType;
+        return false;
+    }
+
+    CScopedJointMotionTransformMutation _Mutation(_pTransform.get());
+    return _pTransform->SetProperties(_Properties, strError_);
 }

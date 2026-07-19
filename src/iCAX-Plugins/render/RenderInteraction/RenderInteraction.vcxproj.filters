@@ -14,7 +14,7 @@
   <ItemGroup>
     <ClCompile Include="CameraBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="RenderInstanceBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="RenderTransformBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TransformBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>

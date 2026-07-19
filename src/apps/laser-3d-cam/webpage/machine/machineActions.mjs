@@ -107,9 +107,9 @@ export function attachMachineTransformAutoApply(context, view, ops) {
     return;
   }
 
-  const inputs = editor.querySelectorAll("input");
+  const inputs = editor.querySelectorAll("input:not(:disabled)");
   for (const input of inputs) {
-    input.addEventListener("input", () => scheduleMachineElementTransformApply(context, view, editor, ops, 40));
+    input.addEventListener("input", () => scheduleMachineElementTransformApply(context, view, editor, ops, 0));
     input.addEventListener("change", () => scheduleMachineElementTransformApply(context, view, editor, ops, 0));
     input.addEventListener("keyup", (event) => {
       if (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "PageUp" || event.key === "PageDown") {
@@ -151,30 +151,6 @@ export function attachMachineJointLimitAutoApply(context, view, ops) {
       }
     });
   }
-}
-
-export function attachMachineJointPositionAutoApply(context, view, ops) {
-  const editor = context.mount?.querySelector?.("[data-cam-joint-position-editor]");
-  const input = editor?.querySelector?.("[data-cam-joint-position]");
-  if (!editor || !input) {
-    return;
-  }
-
-  input.addEventListener("input", () => scheduleMachineJointPositionApply(context, view, editor, ops, 40));
-  input.addEventListener("change", () => scheduleMachineJointPositionApply(context, view, editor, ops, 0));
-  input.addEventListener("keyup", (event) => {
-    if (event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "PageUp" || event.key === "PageDown") {
-      scheduleMachineJointPositionApply(context, view, editor, ops, 0);
-    }
-  });
-  input.addEventListener("pointerup", () => {
-    window.setTimeout(() => scheduleMachineJointPositionApply(context, view, editor, ops, 0), 0);
-  });
-  input.addEventListener("wheel", () => {
-    if (document.activeElement === input) {
-      window.setTimeout(() => scheduleMachineJointPositionApply(context, view, editor, ops, 0), 0);
-    }
-  });
 }
 
 export function attachMachineAppearanceAutoApply(context, view, ops) {
@@ -603,7 +579,10 @@ async function applyMachineElementTransformLive(context, view, editor, ops) {
     return;
   }
 
-  const payload = readTransformEditorPayload(editor, view);
+  const isJointTransform = editor.hasAttribute("data-cam-joint-transform-editor");
+  const payload = isJointTransform
+    ? readJointTransformEditorPayload(editor, view)
+    : readTransformEditorPayload(editor, view);
   editor.classList.toggle("invalid", !payload);
   if (!payload) {
     return;
@@ -615,11 +594,12 @@ async function applyMachineElementTransformLive(context, view, editor, ops) {
   const sequence = state.sequence;
 
   try {
-    const responsePayload = await context.sceneProxy.invoke("Machine.SetElementTransform", payload, { timeoutMs: 10000 });
+    const method = isJointTransform ? "Machine.SetJointPosition" : "Machine.SetElementTransform";
+    const responsePayload = await context.sceneProxy.invoke(method, payload, { timeoutMs: 10000 });
     if (sequence !== state.sequence) {
       return;
     }
-    if (responsePayload?.machineElement && view.scene) {
+    if (!isJointTransform && responsePayload?.machineElement && view.scene) {
       view.scene.machineElement = responsePayload.machineElement;
     }
   } catch (error) {
@@ -627,7 +607,8 @@ async function applyMachineElementTransformLive(context, view, editor, ops) {
       return;
     }
     view.error = error?.message ?? String(error);
-    ops.appendProjectLog(context, "error", `Machine.SetElementTransform 失败：${view.error}`);
+    const method = isJointTransform ? "Machine.SetJointPosition" : "Machine.SetElementTransform";
+    ops.appendProjectLog(context, "error", `${method} 失败：${view.error}`);
     ops.renderProject(context, view);
   }
 }
@@ -644,53 +625,6 @@ function scheduleMachineJointLimitApply(context, view, editor, ops, delayMs = 12
     state.timer = 0;
     applyMachineJointLimitsLive(context, view, editor, ops);
   }, delayMs);
-}
-
-function scheduleMachineJointPositionApply(context, view, editor, ops, delayMs = 80) {
-  view.machineJointPositionAutoApply ??= {};
-  const state = view.machineJointPositionAutoApply;
-  if (state.timer) {
-    window.clearTimeout(state.timer);
-  }
-  state.timer = window.setTimeout(() => {
-    state.timer = 0;
-    applyMachineJointPositionLive(context, view, editor, ops);
-  }, delayMs);
-}
-
-async function applyMachineJointPositionLive(context, view, editor, ops) {
-  if (!editor?.isConnected || !context.sceneProxy) {
-    return;
-  }
-  const entityId = String(editor.dataset.camEntityId || "").trim();
-  const displayPosition = readFiniteEditorNumber(editor, "[data-cam-joint-position]");
-  const isRotary = isRotaryJointType(String(editor.dataset.camJointType || ""));
-  const payload = entityId && displayPosition !== null
-    ? { entityId, position: displayPosition * (isRotary ? Math.PI / 180 : 1) }
-    : null;
-  editor.classList.toggle("invalid", !payload);
-  if (!payload) {
-    return;
-  }
-
-  view.machineJointPositionAutoApply ??= {};
-  const state = view.machineJointPositionAutoApply;
-  state.sequence = Number(state.sequence ?? 0) + 1;
-  const sequence = state.sequence;
-  try {
-    const responsePayload = await context.sceneProxy.invoke("Machine.SetJointPosition", payload, { timeoutMs: 10000 });
-    if (sequence !== state.sequence) {
-      return;
-    }
-    mergeMachineFacadeResult(view, responsePayload);
-  } catch (error) {
-    if (sequence !== state.sequence) {
-      return;
-    }
-    view.error = error?.message ?? String(error);
-    ops.appendProjectLog(context, "error", `Machine.SetJointPosition 失败：${view.error}`);
-    ops.renderProject(context, view);
-  }
 }
 
 async function applyMachineJointLimitsLive(context, view, editor, ops) {
@@ -882,6 +816,19 @@ function readTransformEditorPayload(editor, view) {
     position,
     rotationRadians: rotationDegrees.map((value) => value * degreesToRadians),
     scale,
+  };
+}
+
+function readJointTransformEditorPayload(editor, view) {
+  const entityId = String(editor?.dataset?.camEntityId || view.selectedSceneObjectId || view.scene?.selection?.entityId || "").trim();
+  const displayPosition = readFiniteEditorNumber(editor, "[data-cam-joint-position]");
+  const factor = Number(editor?.dataset?.camJointPositionFactor);
+  if (!entityId || displayPosition === null || !Number.isFinite(factor) || factor === 0) {
+    return null;
+  }
+  return {
+    entityId,
+    position: displayPosition * factor,
   };
 }
 

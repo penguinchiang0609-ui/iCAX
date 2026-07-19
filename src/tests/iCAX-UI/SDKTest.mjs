@@ -19,6 +19,7 @@ import { FacadeClient, FacadeFrameKind } from "../../iCAX-UI/SDK/Facades/facadeC
 import { makeFacadeMethodCode, makeFacadeMethodCodeFromName, makePDOID } from "../../iCAX-UI/SDK/Facades/facadeMethod.mjs";
 import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/Facades/variantSerializer.mjs";
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
+import { renderMachineRightPane } from "../../apps/laser-3d-cam/webpage/machine/machineArea.mjs";
 
 function testFacadeMethodCodes() {
   assert.equal(makeFacadeMethodCode("App", "GetState"), makeFacadeMethodCodeFromName(AppFacade.getState));
@@ -300,6 +301,74 @@ async function testProductModuleLoader() {
   assert.deepEqual(calls, ["product:product", "project:project"]);
 }
 
+function testMachineJointTransformPanel() {
+  const backendEditable = { editable: true, hasRange: false, step: 1, precision: 3 };
+  const makeView = (joint) => ({
+    selectedMachineInstanceId: "machine-1",
+    selectedSceneObjectId: "joint-1",
+    pending: false,
+    scene: {
+      machines: [{ entityId: "machine-1", isLoaded: true, linearJogStep: 10, angularJogStep: 1 }],
+      machineElement: {
+        entityId: "joint-1",
+        kind: "link",
+        name: "axis",
+        transform: { position: [10, 20, 30], rotationRadians: [0.1, 0.2, 0.3], scale: [1, 1, 1] },
+        transformEditPolicy: {
+          reason: "joint",
+          position: [backendEditable, backendEditable, backendEditable],
+          rotationRadians: [backendEditable, backendEditable, backendEditable],
+          scale: [backendEditable, backendEditable, backendEditable],
+        },
+        joint,
+      },
+    },
+  });
+
+  const linear = renderMachineRightPane({}, makeView({
+    type: "prismatic",
+    axis: [-1, 0, 0],
+    position: 25,
+    lower: -100,
+    upper: 200,
+  }));
+  const input = (html, attribute) => html.match(new RegExp(`<input[^>]*${attribute}[^>]*>`))?.[0] ?? "";
+  assert.match(input(linear, "data-cam-transform-position-x"), /data-cam-joint-position/);
+  assert.doesNotMatch(input(linear, "data-cam-transform-position-x"), /\bdisabled\b/);
+  for (const attribute of [
+    "data-cam-transform-position-y",
+    "data-cam-transform-position-z",
+    "data-cam-transform-rotation-yaw",
+    "data-cam-transform-rotation-pitch",
+    "data-cam-transform-rotation-roll",
+    "data-cam-transform-scale-x",
+    "data-cam-transform-scale-y",
+    "data-cam-transform-scale-z",
+  ]) {
+    assert.match(input(linear, attribute), /\bdisabled\b/);
+  }
+  assert.doesNotMatch(linear, /data-cam-joint-position-editor/);
+
+  const rotary = renderMachineRightPane({}, makeView({
+    type: "revolute",
+    axis: [1, 0, 0],
+    position: Math.PI / 4,
+    lower: -Math.PI,
+    upper: Math.PI,
+  }));
+  assert.match(input(rotary, "data-cam-transform-rotation-roll"), /data-cam-joint-position/);
+  assert.doesNotMatch(input(rotary, "data-cam-transform-rotation-roll"), /\bdisabled\b/);
+  for (const attribute of [
+    "data-cam-transform-position-x",
+    "data-cam-transform-position-y",
+    "data-cam-transform-position-z",
+    "data-cam-transform-rotation-yaw",
+    "data-cam-transform-rotation-pitch",
+  ]) {
+    assert.match(input(rotary, attribute), /\bdisabled\b/);
+  }
+}
+
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -316,6 +385,7 @@ await testFrontendFacadeExposure();
 await testFacadeDispose();
 await testPDOBridgeInjection();
 await testProductModuleLoader();
+testMachineJointTransformPanel();
 
 console.log("SDK tests passed");
 

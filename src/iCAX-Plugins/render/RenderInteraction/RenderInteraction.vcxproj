@@ -53,7 +53,7 @@
   <ItemGroup>
     <ClCompile Include="CameraBehaviour.cpp" />
     <ClCompile Include="RenderInstanceBehaviour.cpp" />
-    <ClCompile Include="RenderTransformBehaviour.cpp" />
+    <ClCompile Include="TransformBehaviour.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
