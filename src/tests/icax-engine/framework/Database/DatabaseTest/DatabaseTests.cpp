@@ -6,6 +6,7 @@
 #include <Database/IFieldPolicyProvider.h>
 #include <Database/IRepository.h>
 #include <Database/OperationLog.h>
+#include <DatabaseLanguage/EntityLanguage.h>
 #include <Data/uuid.h>
 
 
@@ -162,7 +163,11 @@ namespace
         {
         }
 
-        void AttachComponent(const uuid&, const std::string&, const PropertySet&) override
+        void AttachComponent(
+            const uuid&,
+            const std::string&,
+            const PropertySet&,
+            std::optional<bool>) override
         {
         }
 
@@ -1092,7 +1097,750 @@ TEST(DatabaseRepositoryTest, RepositoryIsInitialized)
     ASSERT_NE(nullptr, _Space->GetMetaEntity());
     EXPECT_EQ(_Repository->GetID(), _Space->GetMetaEntity()->GetID());
     EXPECT_EQ(1, _Space->EntityCount());
-    EXPECT_NO_THROW(_Space->GetView().BuildCache(CSumComponent::S_ClassName, true));
+    EXPECT_NO_THROW(_Space->GetComponentFrameCache().EnsureComponentCache(CSumComponent::S_ClassName, true));
+}
+
+TEST(DatabaseRepositoryTest, EntityViewMaintainsMembershipAndRevisionIncrementally)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+    const auto _Where = Where::Build(Where::All({
+        Where::Has<CChainComponent>(),
+        Where::Has<CSumComponent>(),
+    }));
+    auto _pView = _Space->CreateEntityView(_Where);
+    ASSERT_NE(nullptr, _pView);
+    EXPECT_EQ(1u, _pView->GetRevision());
+    EXPECT_TRUE(_pView->GetEntityIDs().empty());
+
+    const auto _EquivalentWhere = Where::Build(Where::All({
+        Where::Has<CSumComponent>(),
+        Where::Has<CChainComponent>(),
+        Where::Has<CSumComponent>(),
+    }));
+    EXPECT_EQ(_pView.get(), _Space->CreateEntityView(_EquivalentWhere).get());
+
+    const auto _EntityID = GenerateNewUUID();
+    auto _pEntity = _Space->CreateEntity(_EntityID);
+    EXPECT_EQ(1u, _pView->GetRevision());
+    auto _pSum = _pEntity->AddComponent<CSumComponent>();
+    EXPECT_EQ(1u, _pView->GetRevision());
+    ASSERT_TRUE(_pSum->SetA(42));
+    EXPECT_EQ(1u, _pView->GetRevision());
+
+    ASSERT_NE(nullptr, _pEntity->AddComponent<CChainComponent>());
+    EXPECT_EQ(2u, _pView->GetRevision());
+    EXPECT_TRUE(_pView->Contains(_EntityID));
+    EXPECT_EQ(std::vector<uuid>{ _EntityID }, _pView->GetEntityIDs());
+
+    ASSERT_NE(nullptr, _pEntity->AddComponent<CPolicyComponent>());
+    EXPECT_EQ(2u, _pView->GetRevision());
+    _pEntity->RemoveComponent<CChainComponent>();
+    EXPECT_EQ(3u, _pView->GetRevision());
+    EXPECT_FALSE(_pView->Contains(_EntityID));
+
+    const auto _BatchEntityID = GenerateNewUUID();
+    _Space->BeginBatch();
+    auto _pBatchEntity = _Space->CreateEntity(_BatchEntityID);
+    ASSERT_NE(nullptr, _pBatchEntity->AddComponent<CSumComponent>());
+    ASSERT_NE(nullptr, _pBatchEntity->AddComponent<CChainComponent>());
+    _Space->EndBatch();
+    EXPECT_EQ(4u, _pView->GetRevision());
+    EXPECT_EQ(std::vector<uuid>{ _BatchEntityID }, _pView->GetEntityIDs());
+
+    _Space->DeleteEntity(_BatchEntityID);
+    EXPECT_EQ(5u, _pView->GetRevision());
+    EXPECT_TRUE(_pView->GetEntityIDs().empty());
+
+    const auto _BaselineEntityID = GenerateNewUUID();
+    _Space->BeginLoadBaseline();
+    auto _pBaselineEntity = _Space->CreateEntity(_BaselineEntityID);
+    ASSERT_NE(nullptr, _pBaselineEntity->AddComponent<CSumComponent>());
+    ASSERT_NE(nullptr, _pBaselineEntity->AddComponent<CChainComponent>());
+    _Space->EndLoadBaseline();
+    EXPECT_EQ(6u, _pView->GetRevision());
+    EXPECT_EQ(std::vector<uuid>{ _BaselineEntityID }, _pView->GetEntityIDs());
+
+    auto _pNever = _Space->CreateEntityView(Where::Build(Where::All({
+        Where::Has<CSumComponent>(),
+        Where::Not(Where::Has<CSumComponent>()),
+    })));
+    EXPECT_TRUE(_pNever->GetEntityIDs().empty());
+    EXPECT_EQ(
+        _pNever.get(),
+        _Space->CreateEntityView(Where::Build(Where::Constant(false))).get());
+}
+
+TEST(DatabaseRepositoryTest, EntityViewSupportsAnyOfAndNoneOf)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+    auto _pView = _Space->CreateEntityView(Where::Build(Where::All({
+        Where::Any({
+            Where::Has<CChainComponent>(),
+            Where::Has<CSumComponent>(),
+        }),
+        Where::Not(Where::Has<CPolicyComponent>()),
+    })));
+
+    const auto _EntityID = GenerateNewUUID();
+    auto _pEntity = _Space->CreateEntity(_EntityID);
+    ASSERT_NE(nullptr, _pEntity->AddComponent<CChainComponent>());
+    EXPECT_TRUE(_pView->Contains(_EntityID));
+    EXPECT_EQ(2u, _pView->GetRevision());
+
+    ASSERT_NE(nullptr, _pEntity->AddComponent<CSumComponent>());
+    EXPECT_EQ(2u, _pView->GetRevision());
+    ASSERT_NE(nullptr, _pEntity->AddComponent<CPolicyComponent>());
+    EXPECT_FALSE(_pView->Contains(_EntityID));
+    EXPECT_EQ(3u, _pView->GetRevision());
+
+    _pEntity->RemoveComponent<CPolicyComponent>();
+    EXPECT_TRUE(_pView->Contains(_EntityID));
+    EXPECT_EQ(4u, _pView->GetRevision());
+}
+
+TEST(DatabaseRepositoryTest, EntityViewSupportsFieldsParametersAndComponentState)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+
+    const auto _ParameterizedWhere = Where::Build(
+        Where::CompareParameter<CSumComponent>(
+            CSumComponent::PropertyName_A,
+            EEntityWhereComparison::Greater,
+            "minimum"));
+    const ObjectMap _Parameters{
+        { "minimum", PropertyValue(10.0) },
+        { "unused", PropertyValue(100) },
+    };
+    auto _pView = _Space->CreateEntityView(_ParameterizedWhere, _Parameters);
+    ASSERT_NE(nullptr, _pView);
+    EXPECT_EQ(ObjectMap({ { "minimum", PropertyValue(10.0) } }), _pView->GetParameters());
+    EXPECT_EQ(
+        _pView.get(),
+        _Space->CreateEntityView(
+            _ParameterizedWhere,
+            {
+                { "minimum", PropertyValue(10.0) },
+                { "differentUnusedValue", PropertyValue(std::string("ignored")) },
+            }).get());
+    EXPECT_NE(
+        _pView.get(),
+        _Space->CreateEntityView(
+            _ParameterizedWhere,
+            { { "minimum", PropertyValue(20) } }).get());
+    EXPECT_THROW(
+        _Space->CreateEntityView(_ParameterizedWhere),
+        std::invalid_argument);
+
+    const auto _EntityID = GenerateNewUUID();
+    auto _pEntity = _Space->CreateEntity(_EntityID);
+    auto _pComponent = _pEntity->AddComponent<CSumComponent>();
+    EXPECT_EQ(1u, _pView->GetRevision());
+
+    ASSERT_TRUE(_pComponent->SetB(99));
+    EXPECT_EQ(1u, _pView->GetRevision());
+    ASSERT_TRUE(_pComponent->SetA(11));
+    EXPECT_TRUE(_pView->Contains(_EntityID));
+    EXPECT_EQ(2u, _pView->GetRevision());
+    ASSERT_TRUE(_pComponent->SetB(100));
+    EXPECT_EQ(2u, _pView->GetRevision());
+    ASSERT_TRUE(_pComponent->SetA(10));
+    EXPECT_FALSE(_pView->Contains(_EntityID));
+    EXPECT_EQ(3u, _pView->GetRevision());
+
+    auto _pNaNView = _Space->CreateEntityView(Where::Build(
+        Where::Compare<CSumComponent>(
+            CSumComponent::PropertyName_A,
+            EEntityWhereComparison::LessOrEqual,
+            PropertyValue(std::numeric_limits<double>::quiet_NaN()))));
+    EXPECT_FALSE(_pNaNView->Contains(_EntityID));
+
+    EXPECT_THROW(
+        _Space->CreateEntityView(Where::Build(Where::Compare(
+            CSumComponent::S_ClassName,
+            "MissingProperty",
+            EEntityWhereComparison::Equal,
+            Where::Literal(PropertyValue(0))))),
+        std::invalid_argument);
+    EXPECT_THROW(
+        _Space->CreateEntityView(Where::Build(
+            Where::HasComponent("CUnregisteredComponent"))),
+        std::invalid_argument);
+
+    auto _pEnabledView = _Space->CreateEntityView(
+        Where::Build(Where::Enabled<CSumComponent>()));
+    EXPECT_TRUE(_pEnabledView->Contains(_EntityID));
+    const auto _nEnabledRevision = _pEnabledView->GetRevision();
+    _pComponent->Disable();
+    EXPECT_FALSE(_pEnabledView->Contains(_EntityID));
+    EXPECT_EQ(_nEnabledRevision + 1, _pEnabledView->GetRevision());
+    _pComponent->Enable();
+    EXPECT_TRUE(_pEnabledView->Contains(_EntityID));
+    EXPECT_EQ(_nEnabledRevision + 2, _pEnabledView->GetRevision());
+}
+
+TEST(DatabaseRepositoryTest, EntityWhereLambdaBuildsTheSameDeclarativeView)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+
+    const auto _ManualWhere = Where::Build(Where::All({
+        Where::Has<CSumComponent>(),
+        Where::Not(Where::Has<CPolicyComponent>()),
+        Where::CompareParameter<CSumComponent>(
+            CSumComponent::PropertyName_A,
+            EEntityWhereComparison::GreaterOrEqual,
+            "minimum"),
+    }));
+    const auto _LambdaWhere = Where::From([](Where::Entity& Entity_)
+    {
+        return Entity_.Has<CSumComponent>()
+            && !Entity_.Has<CPolicyComponent>()
+            && Entity_.Field<CSumComponent>(
+                CSumComponent::PropertyName_A) >= Entity_.Parameter("minimum");
+    });
+
+    const ObjectMap _Parameters{
+        { "minimum", PropertyValue(5) },
+    };
+    auto _pManualView = _Space->CreateEntityView(_ManualWhere, _Parameters);
+    auto _pLambdaView = _Space->CreateEntityView(_LambdaWhere, _Parameters);
+    EXPECT_EQ(_pManualView.get(), _pLambdaView.get());
+
+    const auto _EntityID = GenerateNewUUID();
+    auto _pEntity = _Space->CreateEntity(_EntityID);
+    auto _pSum = _pEntity->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_pSum->SetA(5));
+    EXPECT_TRUE(_pLambdaView->Contains(_EntityID));
+
+    ASSERT_NE(nullptr, _pEntity->AddComponent<CPolicyComponent>());
+    EXPECT_FALSE(_pLambdaView->Contains(_EntityID));
+
+    const int _nMaximum = 10;
+    const auto _CapturedLiteralWhere = Where::From([_nMaximum](Where::Entity& Entity_)
+    {
+        return Entity_.Field<CSumComponent>(
+            CSumComponent::PropertyName_A) < _nMaximum;
+    });
+    auto _pCapturedLiteralView = _Space->CreateEntityView(_CapturedLiteralWhere);
+    EXPECT_TRUE(_pCapturedLiteralView->Contains(_EntityID));
+
+    const auto _AnyWhere = Where::From([](Where::Entity& Entity_)
+    {
+        return Entity_.Has<CChainComponent>()
+            || Entity_.Has<CSumComponent>();
+    });
+    EXPECT_TRUE(_Space->CreateEntityView(_AnyWhere)->Contains(_EntityID));
+}
+
+TEST(DatabaseRepositoryTest, EntityViewTracksReferencedEntityDependencies)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+
+    const auto _Where = Where::Build(Where::All({
+        Where::Has<CChainComponent>(),
+        Where::Reference<CChainComponent>(
+            CChainComponent::PropertyName_ParentID,
+            Where::CompareParameter<CSumComponent>(
+                CSumComponent::PropertyName_A,
+                EEntityWhereComparison::GreaterOrEqual,
+                "minimum")),
+    }));
+    auto _pView = _Space->CreateEntityView(
+        _Where,
+        { { "minimum", PropertyValue(5) } });
+    const auto _LambdaWhere = Where::From([](Where::Entity& Entity_)
+    {
+        return Entity_.Has<CChainComponent>()
+            && Entity_.Ref<CChainComponent>(
+                CChainComponent::PropertyName_ParentID)
+                .Any([](Where::Entity& Parent_)
+                {
+                    return Parent_.Field<CSumComponent>(
+                        CSumComponent::PropertyName_A)
+                        >= Parent_.Parameter("minimum");
+                });
+    });
+    EXPECT_EQ(
+        _pView.get(),
+        _Space->CreateEntityView(
+            _LambdaWhere,
+            { { "minimum", PropertyValue(5) } }).get());
+
+    const auto _TargetID = GenerateNewUUID();
+    const auto _OtherTargetID = GenerateNewUUID();
+    const auto _CandidateID = GenerateNewUUID();
+    auto _pTarget = _Space->CreateEntity(_TargetID);
+    auto _pTargetSum = _pTarget->AddComponent<CSumComponent>();
+    auto _pOtherTarget = _Space->CreateEntity(_OtherTargetID);
+    auto _pOtherTargetSum = _pOtherTarget->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_pOtherTargetSum->SetA(8));
+    auto _pCandidate = _Space->CreateEntity(_CandidateID);
+    auto _pChain = _pCandidate->AddComponent<CChainComponent>();
+    ASSERT_TRUE(_pChain->SetParentID(_TargetID));
+    EXPECT_FALSE(_pView->Contains(_CandidateID));
+
+    const auto _nBeforeTargetChange = _pView->GetRevision();
+    ASSERT_TRUE(_pTargetSum->SetB(100));
+    EXPECT_EQ(_nBeforeTargetChange, _pView->GetRevision());
+    ASSERT_TRUE(_pTargetSum->SetA(5));
+    EXPECT_TRUE(_pView->Contains(_CandidateID));
+    EXPECT_EQ(_nBeforeTargetChange + 1, _pView->GetRevision());
+
+    ASSERT_TRUE(_pChain->SetParentID(_OtherTargetID));
+    EXPECT_TRUE(_pView->Contains(_CandidateID));
+    const auto _nAfterRetarget = _pView->GetRevision();
+    ASSERT_TRUE(_pTargetSum->SetA(0));
+    EXPECT_EQ(_nAfterRetarget, _pView->GetRevision());
+
+    _Space->BeginBatch();
+    ASSERT_TRUE(_pOtherTargetSum->SetA(1));
+    ASSERT_TRUE(_pOtherTargetSum->SetA(6));
+    _Space->EndBatch();
+    EXPECT_TRUE(_pView->Contains(_CandidateID));
+    EXPECT_EQ(_nAfterRetarget, _pView->GetRevision());
+
+    _Space->BeginBatch();
+    ASSERT_TRUE(_pOtherTargetSum->SetA(4));
+    ASSERT_TRUE(_pOtherTargetSum->SetA(3));
+    _Space->EndBatch();
+    EXPECT_FALSE(_pView->Contains(_CandidateID));
+    EXPECT_EQ(_nAfterRetarget + 1, _pView->GetRevision());
+
+    const auto _MissingTargetID = GenerateNewUUID();
+    ASSERT_TRUE(_pChain->SetParentID(_MissingTargetID));
+    auto _pMissingTarget = _Space->CreateEntity(_MissingTargetID);
+    auto _pMissingTargetSum = _pMissingTarget->AddComponent<CSumComponent>();
+    EXPECT_FALSE(_pView->Contains(_CandidateID));
+    ASSERT_TRUE(_pMissingTargetSum->SetA(9));
+    EXPECT_TRUE(_pView->Contains(_CandidateID));
+
+    _Space->DeleteEntity(_MissingTargetID);
+    EXPECT_FALSE(_pView->Contains(_CandidateID));
+}
+
+TEST(DatabaseRepositoryTest, EntityViewTracksDerivedPropertyDependencies)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+
+    auto _pSumView = _Space->CreateEntityView(Where::Build(
+        Where::Compare<CSumComponent>(
+            CSumComponent::PropertyName_Sum,
+            EEntityWhereComparison::GreaterOrEqual,
+            PropertyValue(5))));
+
+    const auto _SumEntityID = GenerateNewUUID();
+    auto _pSumEntity = _Space->CreateEntity(_SumEntityID);
+    auto _pSum = _pSumEntity->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_pSum->SetA(2));
+    EXPECT_FALSE(_pSumView->Contains(_SumEntityID));
+    ASSERT_TRUE(_pSum->SetB(3));
+    EXPECT_TRUE(_pSumView->Contains(_SumEntityID));
+    const auto _nSumRevision = _pSumView->GetRevision();
+    ASSERT_TRUE(_pSum->SetA(1));
+    EXPECT_FALSE(_pSumView->Contains(_SumEntityID));
+    EXPECT_EQ(_nSumRevision + 1, _pSumView->GetRevision());
+
+    const auto _NilID = uuid();
+    auto _pChainView = _Space->CreateEntityView(Where::Build(Where::All({
+        Where::Compare<CChainComponent>(
+            CChainComponent::PropertyName_ParentID,
+            EEntityWhereComparison::NotEqual,
+            PropertyValue(_NilID)),
+        Where::Compare<CChainComponent>(
+            CChainComponent::PropertyName_Total,
+            EEntityWhereComparison::GreaterOrEqual,
+            PropertyValue(10)),
+    })));
+
+    const auto _ParentID = GenerateNewUUID();
+    const auto _ChildID = GenerateNewUUID();
+    auto _pParentEntity = _Space->CreateEntity(_ParentID);
+    auto _pParent = _pParentEntity->AddComponent<CChainComponent>();
+    ASSERT_TRUE(_pParent->SetLocal(5));
+    auto _pChildEntity = _Space->CreateEntity(_ChildID);
+    auto _pChild = _pChildEntity->AddComponent<CChainComponent>();
+    ASSERT_TRUE(_pChild->SetLocal(1));
+    ASSERT_TRUE(_pChild->SetParentID(_ParentID));
+    EXPECT_FALSE(_pChainView->Contains(_ChildID));
+
+    ASSERT_TRUE(_pParent->SetLocal(10));
+    EXPECT_TRUE(_pChainView->Contains(_ChildID));
+    const auto _nChainRevision = _pChainView->GetRevision();
+    ASSERT_TRUE(_pParent->SetLocal(2));
+    EXPECT_FALSE(_pChainView->Contains(_ChildID));
+    EXPECT_EQ(_nChainRevision + 1, _pChainView->GetRevision());
+}
+
+TEST(DatabaseRepositoryTest, EntityWhereSupportsOneShotQueryAndExplicitViewLifetime)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+
+    const auto _FirstID = GenerateNewUUID();
+    const auto _SecondID = GenerateNewUUID();
+    auto _First = _Space->CreateEntity(_FirstID)->AddComponent<CSumComponent>();
+    auto _Second = _Space->CreateEntity(_SecondID)->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_First->SetA(1));
+    ASSERT_TRUE(_Second->SetA(5));
+
+    const auto _Where = Where::From([](Where::Entity& Entity_)
+    {
+        return Entity_.Field<CSumComponent>(
+            CSumComponent::PropertyName_A) >= Entity_.Parameter("minimum");
+    });
+    const ObjectMap _Parameters{
+        { "minimum", PropertyValue(3) },
+    };
+
+    EXPECT_EQ(
+        std::vector<uuid>{ _SecondID },
+        _Space->Query(_Where, _Parameters));
+
+    auto _FirstUse = _Space->CreateEntityView(_Where, _Parameters);
+    auto _SecondUse = _Space->CreateEntityView(_Where, _Parameters);
+    ASSERT_EQ(_FirstUse.get(), _SecondUse.get());
+
+    _Space->ReleaseEntityView(_FirstUse);
+    ASSERT_TRUE(_Second->SetA(0));
+    EXPECT_TRUE(_SecondUse->GetEntityIDs().empty());
+
+    _Space->ReleaseEntityView(_SecondUse);
+    const auto _ReleasedRevision = _SecondUse->GetRevision();
+    ASSERT_TRUE(_First->SetA(10));
+    EXPECT_EQ(_ReleasedRevision, _SecondUse->GetRevision());
+    EXPECT_THROW(
+        _Space->ReleaseEntityView(_SecondUse),
+        std::invalid_argument);
+
+    auto _Recreated = _Space->CreateEntityView(_Where, _Parameters);
+    EXPECT_NE(_SecondUse.get(), _Recreated.get());
+    EXPECT_EQ(std::vector<uuid>{ _FirstID }, _Recreated->GetEntityIDs());
+    _Space->ReleaseEntityView(_Recreated);
+}
+
+TEST(DatabaseRepositoryTest, EntityUpdateLambdaModifiesAddsAndRemovesAtomically)
+{
+    auto _Repository = GenerateTestRepository();
+    _Repository->BeginLoadBaseline();
+    auto _Space = GetRepositorySpace(_Repository);
+
+    const auto _FirstID = GenerateNewUUID();
+    const auto _SecondID = GenerateNewUUID();
+    auto _FirstEntity = _Space->CreateEntity(_FirstID);
+    auto _FirstSum = _FirstEntity->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_FirstSum->SetA(5));
+    ASSERT_NE(nullptr, _FirstEntity->AddComponent<CChainComponent>());
+    auto _SecondEntity = _Space->CreateEntity(_SecondID);
+    auto _SecondSum = _SecondEntity->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_SecondSum->SetA(1));
+    ASSERT_NE(nullptr, _SecondEntity->AddComponent<CChainComponent>());
+    _Repository->EndLoadBaseline();
+
+    using Where = CEntityWhereBuilder;
+    using Update = CEntityUpdateBuilder;
+    const auto _Where = Where::From([](Where::Entity& Entity_)
+    {
+        return Entity_.Field<CSumComponent>(
+            CSumComponent::PropertyName_A) >= Entity_.Parameter("minimum");
+    });
+    const auto _Update = Update::From([](Update::Entity& Entity_)
+    {
+        Entity_.Modify<CSumComponent>()
+            .Set(
+                CSumComponent::PropertyName_A,
+                Entity_.Parameter("target"))
+            .Enabled(false);
+        Entity_.Add<CPolicyComponent>()
+            .Set(CPolicyComponent::PropertyName_PersistentValue, 7)
+            .Enabled(false);
+        Entity_.Remove<CChainComponent>();
+    });
+    const ObjectMap _Parameters{
+        { "minimum", PropertyValue(5) },
+        { "target", PropertyValue(9) },
+    };
+
+    auto _View = _Space->CreateEntityView(_Where, _Parameters);
+    ASSERT_EQ(std::vector<uuid>{ _FirstID }, _View->GetEntityIDs());
+
+    const auto _Result = _Space->Update(_Where, _Update, _Parameters);
+    EXPECT_EQ(1u, _Result.MatchedCount);
+    EXPECT_EQ(1u, _Result.ChangedCount);
+
+    EXPECT_EQ(9, _FirstSum->GetA());
+    EXPECT_FALSE(_FirstSum->IsEnable());
+    auto _Policy = _FirstEntity->GetComponent<CPolicyComponent>();
+    ASSERT_NE(nullptr, _Policy);
+    EXPECT_EQ(7, _Policy->GetPersistentValue());
+    EXPECT_FALSE(_Policy->IsEnable());
+    EXPECT_FALSE(_FirstEntity->HasComponent<CChainComponent>());
+    EXPECT_EQ(1, _SecondSum->GetA());
+    EXPECT_TRUE(_SecondSum->IsEnable());
+    EXPECT_FALSE(_SecondEntity->HasComponent<CPolicyComponent>());
+    EXPECT_TRUE(_SecondEntity->HasComponent<CChainComponent>());
+    EXPECT_EQ(std::vector<uuid>{ _FirstID }, _View->GetEntityIDs());
+
+    ASSERT_TRUE(_Repository->CanUndo());
+    ASSERT_TRUE(_Repository->Undo());
+    EXPECT_EQ(5, _FirstSum->GetA());
+    EXPECT_TRUE(_FirstSum->IsEnable());
+    EXPECT_FALSE(_FirstEntity->HasComponent<CPolicyComponent>());
+    EXPECT_TRUE(_FirstEntity->HasComponent<CChainComponent>());
+
+    _Space->ReleaseEntityView(_View);
+}
+
+TEST(DatabaseRepositoryTest, EntityUpdatePreflightFailureDoesNotPartiallyModify)
+{
+    auto _Repository = GenerateTestRepository();
+    _Repository->BeginLoadBaseline();
+    auto _Space = GetRepositorySpace(_Repository);
+
+    auto _FirstEntity = _Space->CreateEntity(GenerateNewUUID());
+    auto _FirstSum = _FirstEntity->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_FirstSum->SetA(1));
+    auto _SecondEntity = _Space->CreateEntity(GenerateNewUUID());
+    auto _SecondSum = _SecondEntity->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_SecondSum->SetA(2));
+    ASSERT_NE(nullptr, _SecondEntity->AddComponent<CPolicyComponent>());
+    _Repository->EndLoadBaseline();
+
+    using Where = CEntityWhereBuilder;
+    using Update = CEntityUpdateBuilder;
+    const auto _Where = Where::Build(Where::Has<CSumComponent>());
+    const auto _Update = Update::Build({
+        Update::Modify<CSumComponent>({
+            {
+                CSumComponent::PropertyName_A,
+                Where::Literal(PropertyValue(100)),
+            },
+        }),
+        Update::Add<CPolicyComponent>(),
+    });
+
+    SEntityMutationResult _Result;
+    std::string _Error;
+    EXPECT_FALSE(_Space->Update(_Where, _Update, {}, _Result, _Error));
+    EXPECT_EQ(2u, _Result.MatchedCount);
+    EXPECT_EQ(0u, _Result.ChangedCount);
+    EXPECT_FALSE(_Error.empty());
+    EXPECT_EQ(1, _FirstSum->GetA());
+    EXPECT_EQ(2, _SecondSum->GetA());
+    EXPECT_FALSE(_FirstEntity->HasComponent<CPolicyComponent>());
+    EXPECT_TRUE(_SecondEntity->HasComponent<CPolicyComponent>());
+    EXPECT_FALSE(_Repository->CanUndo());
+}
+
+TEST(DatabaseRepositoryTest, EntityDeleteIsAtomicAndUndoable)
+{
+    auto _Repository = GenerateTestRepository();
+    _Repository->BeginLoadBaseline();
+    auto _Space = GetRepositorySpace(_Repository);
+
+    const auto _FirstID = GenerateNewUUID();
+    const auto _SecondID = GenerateNewUUID();
+    ASSERT_NE(
+        nullptr,
+        _Space->CreateEntity(_FirstID)->AddComponent<CSumComponent>());
+    ASSERT_NE(
+        nullptr,
+        _Space->CreateEntity(_SecondID)->AddComponent<CSumComponent>());
+    _Repository->EndLoadBaseline();
+
+    using Where = CEntityWhereBuilder;
+    const auto _Where = Where::Build(Where::Has<CSumComponent>());
+    const auto _Result = _Space->Delete(_Where);
+    EXPECT_EQ(2u, _Result.MatchedCount);
+    EXPECT_EQ(2u, _Result.ChangedCount);
+    EXPECT_FALSE(_Space->HasEntity(_FirstID));
+    EXPECT_FALSE(_Space->HasEntity(_SecondID));
+
+    ASSERT_TRUE(_Repository->CanUndo());
+    ASSERT_TRUE(_Repository->Undo());
+    ASSERT_NE(nullptr, _Space->GetEntity(_FirstID));
+    ASSERT_NE(nullptr, _Space->GetEntity(_SecondID));
+    EXPECT_TRUE(_Space->GetEntity(_FirstID)->HasComponent<CSumComponent>());
+    EXPECT_TRUE(_Space->GetEntity(_SecondID)->HasComponent<CSumComponent>());
+}
+
+TEST(DatabaseLanguageTest, LambdaStringAndEntitySqlCompileToDatabaseStructures)
+{
+    using Where = CEntityWhereBuilder;
+    using Update = CEntityUpdateBuilder;
+    using iCAX::DatabaseLanguage::CEntityLambda;
+    using iCAX::DatabaseLanguage::CEntitySql;
+    using iCAX::DatabaseLanguage::EEntityStatementType;
+
+    const auto _CppWhere = Where::From([](Where::Entity& Entity_)
+    {
+        return Entity_.Has<CSumComponent>()
+            && Entity_.Field<CSumComponent>(
+                CSumComponent::PropertyName_A) >= Entity_.Parameter("minimum");
+    });
+    const auto _LambdaWhere = CEntityLambda::ParseWhere(R"(
+        (entity) =>
+            entity.Has("CSumComponent")
+            && entity.Field("CSumComponent", "A")
+                >= entity.Parameter("minimum")
+    )");
+    const auto _SqlWhere = CEntitySql::ParseWhere(
+        "WHERE HAS CSumComponent AND CSumComponent.A >= :minimum");
+    EXPECT_EQ(
+        Where::Normalize(_CppWhere),
+        Where::Normalize(_LambdaWhere));
+    EXPECT_EQ(
+        Where::Normalize(_CppWhere),
+        Where::Normalize(_SqlWhere));
+
+    const auto _CppReferenceWhere = Where::From(
+        [](Where::Entity& Entity_)
+        {
+            return Entity_.Ref<CChainComponent>(
+                CChainComponent::PropertyName_ParentID)
+                .Any([](Where::Entity& Parent_)
+                {
+                    return Parent_.Field<CSumComponent>(
+                        CSumComponent::PropertyName_A)
+                        >= Parent_.Parameter("minimum");
+                });
+        });
+    const auto _LambdaReferenceWhere =
+        CEntityLambda::ParseWhere(R"(
+            (entity) =>
+                entity.Ref("CChainComponent", "ParentID").Any(
+                    (parent) =>
+                        parent.Field("CSumComponent", "A")
+                            >= parent.Parameter("minimum")
+                )
+        )");
+    const auto _SqlReferenceWhere = CEntitySql::ParseWhere(
+        "WHERE REF CChainComponent.ParentID ANY ("
+        "CSumComponent.A >= :minimum)");
+    EXPECT_EQ(
+        Where::Normalize(_CppReferenceWhere),
+        Where::Normalize(_LambdaReferenceWhere));
+    EXPECT_EQ(
+        Where::Normalize(_CppReferenceWhere),
+        Where::Normalize(_SqlReferenceWhere));
+
+    const auto _CppUpdate = Update::From([](Update::Entity& Entity_)
+    {
+        Entity_.Modify<CSumComponent>()
+            .Set(
+                CSumComponent::PropertyName_A,
+                Entity_.Parameter("target"))
+            .Enabled(false);
+        Entity_.Add<CPolicyComponent>()
+            .Set(CPolicyComponent::PropertyName_PersistentValue, 7)
+            .Enabled(false);
+        Entity_.Remove<CChainComponent>();
+    });
+    const auto _LambdaUpdate = CEntityLambda::ParseUpdate(R"(
+        (entity) => {
+            entity.Modify("CSumComponent")
+                .Set("A", entity.Parameter("target"))
+                .Enabled(false);
+            entity.Add("CPolicyComponent")
+                .Set("PersistentValue", 7)
+                .Enabled(false);
+            entity.Remove("CChainComponent");
+        }
+    )");
+    EXPECT_EQ(_CppUpdate, _LambdaUpdate);
+
+    const auto _SqlStatement = CEntitySql::Parse(R"(
+        UPDATE ENTITY
+            MODIFY CSumComponent SET A = :target, ENABLED = FALSE
+            ADD CPolicyComponent WITH PersistentValue = 7, ENABLED = FALSE
+            REMOVE CChainComponent
+        WHERE HAS CSumComponent AND CSumComponent.A >= :minimum
+    )");
+    EXPECT_EQ(EEntityStatementType::Update, _SqlStatement.Type);
+    EXPECT_EQ(
+        Where::Normalize(_CppWhere),
+        Where::Normalize(_SqlStatement.Where));
+    EXPECT_EQ(_CppUpdate, _SqlStatement.Update);
+
+    const auto _DefaultAddStatement = CEntitySql::Parse(
+        "UPDATE ENTITY ADD CPolicyComponent "
+        "WHERE HAS CSumComponent");
+    EXPECT_EQ(
+        Update::Build({ Update::Add<CPolicyComponent>() }),
+        _DefaultAddStatement.Update);
+    EXPECT_THROW(
+        CEntitySql::Parse(
+            "UPDATE ENTITY ADD CPolicyComponent"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        CEntitySql::Parse("DELETE ENTITY"),
+        std::invalid_argument);
+}
+
+TEST(DatabaseLanguageTest, EntitySqlExecutesQueryUpdateAndDelete)
+{
+    using iCAX::DatabaseLanguage::CEntitySql;
+    using iCAX::DatabaseLanguage::EEntityStatementType;
+
+    auto _Repository = GenerateTestRepository();
+    _Repository->BeginLoadBaseline();
+    auto _Space = GetRepositorySpace(_Repository);
+    const auto _EntityID = GenerateNewUUID();
+    auto _Entity = _Space->CreateEntity(_EntityID);
+    auto _Sum = _Entity->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_Sum->SetA(5));
+    ASSERT_NE(nullptr, _Entity->AddComponent<CChainComponent>());
+    _Repository->EndLoadBaseline();
+
+    const ObjectMap _Parameters{
+        { "minimum", PropertyValue(5) },
+        { "target", PropertyValue(12) },
+    };
+    const auto _QueryResult = CEntitySql::Execute(
+        *_Space,
+        "SELECT ENTITY WHERE CSumComponent.A >= :minimum",
+        _Parameters);
+    EXPECT_EQ(EEntityStatementType::Query, _QueryResult.Type);
+    EXPECT_EQ(std::vector<uuid>{ _EntityID }, _QueryResult.EntityIDs);
+
+    const auto _UpdateResult = CEntitySql::Execute(
+        *_Space,
+        R"(
+            UPDATE ENTITY
+                MODIFY CSumComponent SET A = :target
+                ADD CPolicyComponent WITH PersistentValue = 8
+                REMOVE CChainComponent
+            WHERE CSumComponent.A >= :minimum
+        )",
+        _Parameters);
+    EXPECT_EQ(EEntityStatementType::Update, _UpdateResult.Type);
+    EXPECT_EQ(1u, _UpdateResult.Mutation.MatchedCount);
+    EXPECT_EQ(1u, _UpdateResult.Mutation.ChangedCount);
+    EXPECT_EQ(12, _Sum->GetA());
+    ASSERT_NE(nullptr, _Entity->GetComponent<CPolicyComponent>());
+    EXPECT_EQ(
+        8,
+        _Entity->GetComponent<CPolicyComponent>()->GetPersistentValue());
+    EXPECT_FALSE(_Entity->HasComponent<CChainComponent>());
+
+    const auto _DeleteResult = CEntitySql::Execute(
+        *_Space,
+        "DELETE ENTITY WHERE HAS CPolicyComponent");
+    EXPECT_EQ(EEntityStatementType::Delete, _DeleteResult.Type);
+    EXPECT_EQ(1u, _DeleteResult.Mutation.MatchedCount);
+    EXPECT_EQ(1u, _DeleteResult.Mutation.ChangedCount);
+    EXPECT_FALSE(_Space->HasEntity(_EntityID));
 }
 
 TEST(DatabaseRepositoryTest, ComponentVersionUsesPdoDataVersionType)

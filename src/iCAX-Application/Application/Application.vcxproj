@@ -188,6 +188,10 @@
     <ProjectReference Include="..\..\iCAX-Engine\framework\Project\Project.vcxproj">
       <Project>{d0b2bd35-1f9f-464b-a6d6-38b77c319f9f}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Engine\framework\View\View.vcxproj">
+      <Project>{a6f5442b-30df-4d32-bd8e-85945e806b1d}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Engine\framework\ProductContext\ProductContext.vcxproj">
       <Project>{74d665ef-d89e-4104-ae6f-e31c7bff0f46}</Project>
     </ProjectReference>

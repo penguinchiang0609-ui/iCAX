@@ -5,7 +5,7 @@ import { renderMachineLeftPane, renderMachineRightPane } from "./machine/machine
 import { handleMachiningAction, handleMachiningRibbonCommand, setJobMachine as setJobMachineAction } from "./machining/machiningActions.mjs";
 import { renderMachiningLeftPane, renderMachiningRightPane } from "./machining/machiningArea.mjs";
 import { findCommandTitle, getTabTitle, normalizeCamTab } from "./ribbon/ribbonDefinition.mjs";
-import { getProjectView } from "./state/projectViewStore.mjs";
+import { activateProjectArea, getProjectArea, getProjectView, setProjectAreaViewContent } from "./state/projectViewStore.mjs";
 import { getMachineId, getMachineSubtreeEntityIds, getMachines, getSelectedMachine, reconcileSelectedMachine } from "./state/sceneSelectors.mjs";
 import { renderToolpathOverlay } from "./toolpath/toolpathViews.mjs";
 import { escapeText, formatNumber } from "./utils/format.mjs";
@@ -30,6 +30,12 @@ const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
   maxRightWidth: 620,
   minViewerWidth: 420,
   splitterTotalWidth: 12,
+});
+const AREA_VIEW_DEFINITION_IDS = Object.freeze({
+  machine: "icax.laser-3d-cam.view.machine",
+  workpiece: "icax.laser-3d-cam.view.workpiece",
+  machining: "icax.laser-3d-cam.view.machining",
+  view: "icax.laser-3d-cam.view.general",
 });
 
 function getProjectOps() {
@@ -108,6 +114,7 @@ function renderProject(context, view) {
     return;
   }
   const tab = normalizeCamTab(context.activeRibbonTabId);
+  activateProjectArea(view, tab);
   const scene = view.scene ?? {};
   reconcileSelectedMachine(view, scene);
   const topology = scene.topology ?? {};
@@ -159,11 +166,13 @@ function renderProject(context, view) {
   machinePathInput?.addEventListener("input", () => {
     view.machineSourcePath = machinePathInput.value;
   });
-  attachMachineTransformAutoApply(context, view, getProjectOps());
-  attachMachineJointLimitAutoApply(context, view, getProjectOps());
-  attachMachineAppearanceAutoApply(context, view, getProjectOps());
-  attachMachineToolTCPAutoApply(context, view, getProjectOps());
-  attachMachineInstanceNameAutoApply(context, view, getProjectOps());
+  if (tab === "machine") {
+    attachMachineTransformAutoApply(context, view, getProjectOps());
+    attachMachineJointLimitAutoApply(context, view, getProjectOps());
+    attachMachineAppearanceAutoApply(context, view, getProjectOps());
+    attachMachineToolTCPAutoApply(context, view, getProjectOps());
+    attachMachineInstanceNameAutoApply(context, view, getProjectOps());
+  }
 
   mount.onclick = (event) => {
     const actionTarget = event.target instanceof Element ? event.target.closest("[data-cam-action]") : null;
@@ -233,6 +242,7 @@ function renderProject(context, view) {
   });
 
   mountRenderViewport(context, view);
+  void ensureAreaViewContent(context, view, tab);
   scrollSelectedMachineTreeNodeIntoView(mount, view);
 }
 
@@ -499,6 +509,9 @@ function mountRenderViewport(context, view) {
     view.viewport.connectScene(context.sceneProxy);
     view.viewportSceneProxy = context.sceneProxy;
   }
+  const activeAreaId = normalizeCamTab(context.activeRibbonTabId);
+  const area = getProjectArea(view, activeAreaId);
+  view.viewport.setVisibleEntityIds(area.viewContent?.entityIds ?? []);
   view.viewport.mount(host);
   attachViewCube(view, mount);
   syncViewportSelection(view, view.scene);
@@ -631,6 +644,11 @@ async function refreshSceneState(context, view) {
     view.scene = scene;
     syncViewportSelection(view, scene);
     await refreshSelectedMachineElement(context, view, scene);
+    await ensureAreaViewContent(context, view, view.activeAreaId || normalizeCamTab(context.activeRibbonTabId), {
+      force: true,
+      render: false,
+    });
+    syncViewportSelection(view, scene);
     return true;
   } catch (error) {
     view.error = error?.message ?? String(error);
@@ -640,6 +658,49 @@ async function refreshSceneState(context, view) {
     view.pending = false;
     renderProject(context, view);
   }
+}
+
+async function ensureAreaViewContent(context, view, areaId, options = {}) {
+  const { force = false, render = true } = options;
+  const definitionId = AREA_VIEW_DEFINITION_IDS[areaId];
+  if (!context.sceneProxy || !definitionId) {
+    return null;
+  }
+
+  const area = getProjectArea(view, areaId);
+  if (area.viewContentRequest) {
+    return area.viewContentRequest;
+  }
+  if (area.viewContent && !force) {
+    return area.viewContent;
+  }
+
+  const request = context.sceneProxy
+    .invoke("View.GetContent", { viewDefinitionId: definitionId }, { timeoutMs: 10000 })
+    .then((payload) => {
+      const content = setProjectAreaViewContent(view, areaId, payload);
+      if (view.activeAreaId === areaId) {
+        view.viewport?.setVisibleEntityIds(content.entityIds);
+        syncViewportSelection(view, view.scene);
+        if (render) {
+          renderProject(context, view);
+        }
+      }
+      return content;
+    })
+    .catch((error) => {
+      const message = error?.message ?? String(error);
+      view.error = `读取视图内容失败：${message}`;
+      appendProjectLog(context, "error", view.error);
+      return null;
+    })
+    .finally(() => {
+      if (area.viewContentRequest === request) {
+        area.viewContentRequest = null;
+      }
+    });
+  area.viewContentRequest = request;
+  return request;
 }
 
 async function refreshSelectedMachineElement(context, view, scene = {}) {
@@ -829,7 +890,7 @@ function selectSceneObjectLocally(view, objectId) {
 }
 
 function syncViewportSelection(view, scene = {}) {
-  if (scene?.selection) {
+  if (scene?.selection && isSelectionVisibleInArea(view, scene.selection)) {
     view.selectedSceneObjectId = String(scene.selection.entityId || scene.selection.objectId || "").trim();
     syncSelectedMachineInstanceFromSelection(view, scene, scene.selection);
   }
@@ -840,6 +901,15 @@ function syncViewportSelection(view, scene = {}) {
     syncSelectedMachineInstanceFromSelection(view, scene, scene.machineElement);
   }
   syncViewportHighlightedObjects(view, scene);
+}
+
+function isSelectionVisibleInArea(view, selection = {}) {
+  const entityId = String(selection.entityId || selection.objectId || "").trim();
+  if (!entityId) {
+    return true;
+  }
+  const content = getProjectArea(view, view.activeAreaId).viewContent;
+  return Boolean(content?.entityIds.has(entityId));
 }
 
 async function pickMachineObject(context, view, payload = {}) {

@@ -246,6 +246,10 @@ bool iCAX::RenderPDO::ValidateObjectPDOHeader(
     {
         return _SetError(pError_, "Object PDO render class cannot be unknown");
     }
+    if (Header_.nLayerMask == 0)
+    {
+        return _SetError(pError_, "Object PDO layer mask cannot be zero");
+    }
     if (Header_.Header.nPayloadSize != sizeof(SRenderObjectPDOHeader))
     {
         return _SetError(pError_, "Object PDO payload size must match header size");

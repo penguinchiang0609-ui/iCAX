@@ -373,6 +373,7 @@ TEST(PDORenderServiceTest, WritesGeometryInstanceAndCameraPayloadsToPDO)
     _Instance.nDataVersion = 12;
     _Instance.nGeometryID = _MeshID;
     _Instance.eGeometryKind = iCAX::Render::ERenderGeometryKind::Mesh;
+    _Instance.nLayerMask = 1u << 7;
     ASSERT_TRUE(_Service.SetObjects(_ProjectID, _SceneID, { _Instance }));
     ASSERT_TRUE(_Service.SetTransforms(_ProjectID, _SceneID, {
         MakeTransform(_Instance.nObjectID, 16, 10.0f),
@@ -433,6 +434,7 @@ TEST(PDORenderServiceTest, WritesGeometryInstanceAndCameraPayloadsToPDO)
     ExpectRenderIDEq(_Instance.nObjectID, _ObjectHeader.nObjectID);
     ExpectRenderIDEq(_Instance.nGeometryID, _ObjectHeader.nGeometryID);
     EXPECT_EQ(static_cast<uint32_t>(iCAX::RenderPDO::ERenderGeometryKind::Mesh), _ObjectHeader.nGeometryKind);
+    EXPECT_EQ(1u << 7, _ObjectHeader.nLayerMask);
     EXPECT_EQ(12u, _ObjectHeader.Header.nDataVersion);
 
     iCAX::PDO::CPDOReadLease _TransformRead(_TransformSlot);
@@ -518,6 +520,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     _Instance.nDataVersion = 24;
     _Instance.nGeometryID = _MeshID;
     _Instance.eGeometryKind = iCAX::Render::ERenderGeometryKind::Mesh;
+    _Instance.nLayerMask = 1u << 8;
     ASSERT_TRUE(_Service.SetObjects(_ProjectID, _SceneID, { _Instance }));
     ASSERT_TRUE(_Service.SetTransforms(_ProjectID, _SceneID, {
         MakeTransform(_Instance.nObjectID, 26, 30.0f),
@@ -590,6 +593,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         ExpectRenderIDEq(_Instance.nObjectID, _ObjectHeader.nObjectID);
         ExpectRenderIDEq(_Instance.nGeometryID, _ObjectHeader.nGeometryID);
         EXPECT_EQ(static_cast<uint32_t>(iCAX::RenderPDO::ERenderGeometryKind::Mesh), _ObjectHeader.nGeometryKind);
+        EXPECT_EQ(1u << 8, _ObjectHeader.nLayerMask);
         EXPECT_EQ(24u, _ObjectHeader.Header.nDataVersion);
 
         iCAX::PDO::CPDOReadLease _TransformRead(_Hub->GetSlot(_ObjectTransformPDOID));

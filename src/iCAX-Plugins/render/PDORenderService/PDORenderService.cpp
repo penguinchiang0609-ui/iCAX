@@ -303,6 +303,10 @@ namespace
         {
             throw std::invalid_argument("Render object geometry id cannot be zero");
         }
+        if (Object_.nLayerMask == 0)
+        {
+            throw std::invalid_argument("Render object layer mask cannot be zero");
+        }
         ValidateVersion(Object_.nDataVersion);
     }
 
@@ -1219,6 +1223,7 @@ bool iCAX::PDORenderService::CPDORenderService::WriteObjectToPDO(
     _Header.nGeometryKind = ToRenderGeometryKind(_InstanceIter->eGeometryKind);
     _Header.nRenderClass = ToRenderClass(_InstanceIter->eRenderClass);
     _Header.nFlags = _InstanceIter->nFlags;
+    _Header.nLayerMask = _InstanceIter->nLayerMask;
 
     std::vector<std::byte> _Payload(sizeof(iCAX::RenderPDO::SRenderObjectPDOHeader));
     std::memcpy(_Payload.data(), &_Header, sizeof(_Header));

@@ -10,6 +10,10 @@ import {
   SceneProxy,
   MockHostBridge,
   ProjectFacade,
+  RenderLayers,
+  RenderPDOLayout,
+  RenderPDOPayloadKind,
+  parseRenderPDOPayload,
   loadProductModule,
   mountProductModule,
   resolveFrontendEntry,
@@ -20,6 +24,7 @@ import { makeFacadeMethodCode, makeFacadeMethodCodeFromName, makePDOID } from ".
 import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/Facades/variantSerializer.mjs";
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
 import { renderMachineRightPane } from "../../apps/laser-3d-cam/webpage/machine/machineArea.mjs";
+import { activateProjectArea, getProjectArea, setProjectAreaViewContent } from "../../apps/laser-3d-cam/webpage/state/projectViewStore.mjs";
 
 function testFacadeMethodCodes() {
   assert.equal(makeFacadeMethodCode("App", "GetState"), makeFacadeMethodCodeFromName(AppFacade.getState));
@@ -41,6 +46,61 @@ function testVariantSerializer() {
   const text = serializeVariantText(source);
   assert.match(text, /"__variant_type":"Object"/);
   assert.deepEqual(deserializeVariantText(text), source);
+}
+
+function testRenderObjectLayerMaskParsing() {
+  const buffer = new ArrayBuffer(RenderPDOLayout.objectHeaderSize);
+  const view = new DataView(buffer);
+  view.setUint32(0, RenderPDOLayout.magic, true);
+  view.setUint32(4, RenderPDOLayout.version, true);
+  view.setUint32(8, RenderPDOPayloadKind.object, true);
+  view.setUint32(12, RenderPDOLayout.objectHeaderSize, true);
+  view.setBigUint64(16, BigInt(RenderPDOLayout.objectHeaderSize), true);
+  view.setBigUint64(24, 1n, true);
+  view.setUint32(80, 1, true);
+  view.setUint32(84, 1, true);
+  view.setUint32(88, 1, true);
+  view.setUint32(92, RenderLayers.default, true);
+
+  const payload = parseRenderPDOPayload(buffer);
+  assert.equal(payload.layerMask, RenderLayers.default);
+}
+
+function testProjectAreaPresentationIsolation() {
+  const projectView = {
+    activeAreaId: "",
+    areas: {},
+    layout: { leftWidth: 320, rightWidth: 340 },
+    selectedSceneObjectId: "",
+    selectedMachineInstanceId: "",
+  };
+  activateProjectArea(projectView, "machine");
+  setProjectAreaViewContent(projectView, "machine", {
+    viewDefinitionId: "icax.laser-3d-cam.view.machine",
+    revision: 1,
+    objects: [{ entityId: "machine-axis" }],
+  });
+  projectView.layout.leftWidth = 410;
+  projectView.selectedSceneObjectId = "machine-axis";
+  activateProjectArea(projectView, "machine");
+  assert.equal(projectView.layout.leftWidth, 410);
+  assert.equal(projectView.selectedSceneObjectId, "machine-axis");
+  activateProjectArea(projectView, "workpiece");
+  setProjectAreaViewContent(projectView, "workpiece", {
+    viewDefinitionId: "icax.laser-3d-cam.view.workpiece",
+    revision: 4,
+    objects: [{ entityId: "workpiece-1", presentation: { color: "blue" } }],
+  });
+  assert.equal(projectView.layout.leftWidth, 320);
+  assert.equal(projectView.selectedSceneObjectId, "");
+  assert.deepEqual([...getProjectArea(projectView, "workpiece").viewContent.entityIds], ["workpiece-1"]);
+  assert.equal(getProjectArea(projectView, "workpiece").viewContent.renderOverrides.get("workpiece-1").color, "blue");
+  projectView.layout.leftWidth = 270;
+  projectView.selectedSceneObjectId = "workpiece-1";
+  activateProjectArea(projectView, "machine");
+  assert.equal(projectView.layout.leftWidth, 410);
+  assert.equal(projectView.selectedSceneObjectId, "machine-axis");
+  assert.deepEqual([...getProjectArea(projectView, "machine").viewContent.entityIds], ["machine-axis"]);
 }
 
 function testBridgeValidation() {
@@ -375,6 +435,8 @@ function delay(milliseconds) {
 
 testFacadeMethodCodes();
 testVariantSerializer();
+testRenderObjectLayerMaskParsing();
+testProjectAreaPresentationIsolation();
 testBridgeValidation();
 testChannelIdValidation();
 await testFacadePromiseFlow();

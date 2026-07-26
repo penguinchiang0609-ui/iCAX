@@ -1514,7 +1514,9 @@ TEST(BehaviourUniverseTest, BatchChangesDispatchLifecycleAndRefreshView)
     EXPECT_EQ(0, _pBehaviour->ModifyingCount);
     EXPECT_EQ(0, _pBehaviour->ModifiedCount);
     EXPECT_EQ(7, _pBehaviour->LastAwakeProperties[S_ValueProperty].To<int>());
-    EXPECT_EQ(1u, _pRepository->GetView().GetEntities(S_TestComponentClass).size());
+    EXPECT_EQ(
+        1u,
+        _pRepository->GetComponentFrameCache().GetCurrentComponents(S_TestComponentClass).size());
 
     _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.016);
     EXPECT_EQ(1, _pBehaviour->StartCount);
@@ -1546,7 +1548,8 @@ TEST(BehaviourUniverseTest, BatchChangesDispatchLifecycleAndRefreshView)
     _pUniverse->Tick(_Runtime.Application, _Runtime.Product, _Runtime.Project, _Runtime.Scene, 0.016, 0.032);
     EXPECT_EQ(1, _pBehaviour->DestroyCount);
     EXPECT_EQ(9, _pBehaviour->LastDestroyProperties[S_ValueProperty].To<int>());
-    EXPECT_TRUE(_pRepository->GetView().GetEntities(S_TestComponentClass).empty());
+    EXPECT_TRUE(
+        _pRepository->GetComponentFrameCache().GetCurrentComponents(S_TestComponentClass).empty());
 }
 
 TEST(BehaviourUniverseTest, SingleModifyDispatchesModifyingBeforeModified)

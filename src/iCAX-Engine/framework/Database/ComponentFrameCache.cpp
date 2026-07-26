@@ -1,11 +1,10 @@
 #include "pch.h"
-#include "EntitiesView.h"
+#include "ComponentFrameCache.h"
 #include "IRepository.h"
 #include "MaskRegistry.h"
 
 
-//!< 构造函数
-iCAX::Database::CEntitiesView::CEntitiesView(IN std::shared_ptr<IRepository> pRepository_)
+iCAX::Database::CComponentFrameCache::CComponentFrameCache(IN std::shared_ptr<IRepository> pRepository_)
     : m_pRepository(pRepository_)
     , m_Cache()
     , m_PreCache()
@@ -13,18 +12,17 @@ iCAX::Database::CEntitiesView::CEntitiesView(IN std::shared_ptr<IRepository> pRe
 {
 }
 
-//!< 析构函数
-iCAX::Database::CEntitiesView::~CEntitiesView()
+iCAX::Database::CComponentFrameCache::~CComponentFrameCache()
 {
 }
 
 //! 修改前事件
-void iCAX::Database::CEntitiesView::OnRepositoryChanging(IN void* pSender_, IN const RepositoryEventArgs& Args_)
+void iCAX::Database::CComponentFrameCache::OnRepositoryChanging(IN void* pSender_, IN const RepositoryEventArgs& Args_)
 {
 }
 
 //!< 更改后事件
-void iCAX::Database::CEntitiesView::OnRepositoryChanged(IN void* pSender_, IN const RepositoryEventArgs& Args_)
+void iCAX::Database::CComponentFrameCache::OnRepositoryChanged(IN void* pSender_, IN const RepositoryEventArgs& Args_)
 {
     if (Args_.nType == RepositoryEventArgs::kBatchChanged)
     {
@@ -44,7 +42,7 @@ void iCAX::Database::CEntitiesView::OnRepositoryChanged(IN void* pSender_, IN co
 
         for (const auto& _strComponentClass : _AffectedComponentClasses)
         {
-            BuildCache(_strComponentClass, true);
+            EnsureComponentCache(_strComponentClass, true);
         }
         return;
     }
@@ -103,7 +101,9 @@ void iCAX::Database::CEntitiesView::OnRepositoryChanged(IN void* pSender_, IN co
 }
 
 //!< 构建缓存
-void iCAX::Database::CEntitiesView::BuildCache(IN const std::string& strClassName_, IN const bool bForceReset_)
+void iCAX::Database::CComponentFrameCache::EnsureComponentCache(
+    IN const std::string& strClassName_,
+    IN const bool bForceReset_)
 {
     if (m_pRepository.expired())
     {
@@ -156,7 +156,8 @@ void iCAX::Database::CEntitiesView::BuildCache(IN const std::string& strClassNam
 }
 
 //!< 获取缓存
-std::vector<std::shared_ptr<iCAX::Database::CComponentBase>> iCAX::Database::CEntitiesView::GetEntities(IN const std::string& strClassName_)
+std::vector<std::shared_ptr<iCAX::Database::CComponentBase>>
+iCAX::Database::CComponentFrameCache::GetCurrentComponents(IN const std::string& strClassName_)
 {
     size_t _nCode = CMaskRegistry::GetComponentIndex(strClassName_);
     auto _Ite = m_Cache.find(_nCode);
@@ -179,7 +180,8 @@ std::vector<std::shared_ptr<iCAX::Database::CComponentBase>> iCAX::Database::CEn
 }
 
 //!< 获取上一帧缓存
-std::vector<std::shared_ptr<iCAX::Database::CComponentBase>> iCAX::Database::CEntitiesView::GetPreEntities(IN const std::string& strClassName_)
+std::vector<std::shared_ptr<iCAX::Database::CComponentBase>>
+iCAX::Database::CComponentFrameCache::GetPreviousComponents(IN const std::string& strClassName_)
 {
     size_t _nCode = CMaskRegistry::GetComponentIndex(strClassName_);
 
@@ -200,7 +202,7 @@ std::vector<std::shared_ptr<iCAX::Database::CComponentBase>> iCAX::Database::CEn
 }
 
 //!< 备份
-void iCAX::Database::CEntitiesView::RefreshPreCache()
+void iCAX::Database::CComponentFrameCache::CaptureCurrentAsPrevious()
 {
     m_PreCache = m_Cache;
 }

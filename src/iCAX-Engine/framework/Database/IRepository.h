@@ -3,12 +3,15 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <tuple>
 #include <vector>
 #include "Data/Variant.h"
-#include "IEntitiesView.h"
+#include "EntityUpdate.h"
+#include "IComponentFrameCache.h"
+#include "IEntityView.h"
 #include "IEntity.h"
 #include "IRepositoryEvent.h"
 #include "DerivedProperty.h"
@@ -47,7 +50,11 @@ namespace iCAX
             /*
             * @brief 在事务中记录附加组件操作。
             */
-            virtual void AttachComponent(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const iCAX::Data::PropertySet& Properties_ = {}) = 0;
+            virtual void AttachComponent(
+                IN const iCAX::Data::uuid& EntityID_,
+                IN const std::string& strClassName_,
+                IN const iCAX::Data::PropertySet& Properties_ = {},
+                IN std::optional<bool> Enabled_ = std::nullopt) = 0;
 
             /*
             * @brief 在事务中记录移除组件操作。
@@ -309,9 +316,83 @@ namespace iCAX
             virtual std::vector<iCAX::Data::uuid> GetEntityIDs() const = 0;
 
             /*
-            * @brief 获取实体视图
+            * @brief 获取 Behaviour 使用的组件帧缓存
             */
-            virtual IEntitiesView& GetView() const = 0;
+            virtual IComponentFrameCache& GetComponentFrameCache() const = 0;
+
+            /*
+            * @brief 按 Where 一次性查询 Entity ID 快照。
+            * @details 不创建缓存、不注册事件监听，返回后结果不再自动变化。
+            */
+            virtual std::vector<iCAX::Data::uuid> Query(
+                IN const SEntityWhere& Where_,
+                IN const iCAX::Data::ObjectMap& Parameters_ = {}) = 0;
+
+            /*
+            * @brief 创建由 Repository 增量维护的 Entity 物化视图。
+            * @details
+            *   等价 Where 和实际引用的等价参数在同一个 Repository 内共享同一个视图实例；
+            *   每次成功创建都必须与一次 ReleaseEntityView 配对。
+            */
+            virtual std::shared_ptr<IEntityView> CreateEntityView(
+                IN const SEntityWhere& Where_,
+                IN const iCAX::Data::ObjectMap& Parameters_ = {}) = 0;
+
+            /*
+            * @brief 释放一次 EntityView 使用权。
+            * @details 创建计数归零时注销事件监听并释放物化结果；释放后调用方不得继续使用该 View。
+            */
+            virtual void ReleaseEntityView(
+                IN const std::shared_ptr<IEntityView>& pView_) = 0;
+
+            /*
+            * @brief 对命令开始时由 Where 选中的 Entity 快照执行结构化修改。
+            * @details 默认原子执行；任何目标失败都会回滚整个命令。
+            */
+            [[nodiscard]] virtual bool Update(
+                IN const SEntityWhere& Where_,
+                IN const SEntityUpdate& Update_,
+                IN const iCAX::Data::ObjectMap& Parameters_,
+                OUT SEntityMutationResult& Result_,
+                OUT std::string& strError_) = 0;
+
+            SEntityMutationResult Update(
+                IN const SEntityWhere& Where_,
+                IN const SEntityUpdate& Update_,
+                IN const iCAX::Data::ObjectMap& Parameters_ = {})
+            {
+                SEntityMutationResult _Result;
+                std::string _strError;
+                if (!Update(Where_, Update_, Parameters_, _Result, _strError))
+                {
+                    throw std::runtime_error(
+                        _strError.empty() ? "Entity update failed" : _strError);
+                }
+                return _Result;
+            }
+
+            /*
+            * @brief 删除命令开始时由 Where 选中的完整 Entity 快照。
+            */
+            [[nodiscard]] virtual bool Delete(
+                IN const SEntityWhere& Where_,
+                IN const iCAX::Data::ObjectMap& Parameters_,
+                OUT SEntityMutationResult& Result_,
+                OUT std::string& strError_) = 0;
+
+            SEntityMutationResult Delete(
+                IN const SEntityWhere& Where_,
+                IN const iCAX::Data::ObjectMap& Parameters_ = {})
+            {
+                SEntityMutationResult _Result;
+                std::string _strError;
+                if (!Delete(Where_, Parameters_, _Result, _strError))
+                {
+                    throw std::runtime_error(
+                        _strError.empty() ? "Entity delete failed" : _strError);
+                }
+                return _Result;
+            }
 
             /*
             * @brief 获取MetaEntity

@@ -25,6 +25,8 @@ Framework/
   Database/
     Database规格文档.md
     Database方案文档.md
+    EntityWhere与EntityView规格文档.md
+    Entity数据操作与语言规格文档.md
     README.md
   Facades/
     Facades规格文档.md
@@ -58,7 +60,8 @@ Framework/
 - `ApplicationRuntime`：应用级后台宿主，负责应用上下文、产品清单、产品运行时、应用级 Facade、事件订阅和后台工作线程。
 - `Behaviour`：Component 对应的行为系统，负责 Universe、Behaviour 注册、生命周期回调、调度顺序和销毁队列。
 - `Facades`：产品、宿主和前端的 `FacadeName.MethodName` 面向对象交互协议，并内含跨端调用所需的 Frame、Endpoint、Channel 与 Registry。
-- `Database`：Repository 单 EC 数据容器、实体组件管理、字段元数据、事件、版本和派生字段。
+- `Database`：Repository 单 EC 数据容器、实体组件管理、字段元数据、事件、版本、派生字段、结构化 Entity 数据操作和增量 EntityView。
+- `DatabaseLanguage`：单向依赖 Database 的可选文本语言扩展，提供 Lambda 字符串和 EntitySQL。
 - `PDO`：后台与前台之间的高频可丢弃数据通道。
 - `Product`：产品级运行时，负责产品模块加载、产品级 Facade、最近项目列表和 ProjectCatalog 生命周期。
 - `Project`：项目管理容器和 Scene 运行现场。Project 管理主 Scene 与子 Scene；Scene 独占数据、资源、Universe、Facade channel、PDOHub 和线程。

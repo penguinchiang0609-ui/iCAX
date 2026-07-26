@@ -28,6 +28,7 @@ $RuntimeProjects = @(
     "iCAX-Engine\framework\ProjectContext",
     "iCAX-Engine\framework\Resources",
     "iCAX-Engine\framework\Services",
+    "iCAX-Engine\framework\View",
     "iCAX-Plugins\cam\Laser3DCAM",
     "iCAX-Plugins\common\Transform",
     "iCAX-Plugins\input\InputPDO",

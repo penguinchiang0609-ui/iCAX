@@ -35,6 +35,7 @@ export {
 } from "./Input/index.mjs";
 export {
   RenderFlags,
+  RenderLayers,
   RenderGeometryKind,
   RenderPDOEvents,
   RenderPDOLayout,

@@ -14,6 +14,12 @@ Database/
   Database方案文档.md
     面向实现维护者，描述当前代码结构、事件链路、派生字段失效和测试方案。
 
+  EntityWhere与EntityView规格文档.md
+    描述 Where、一次性 Query、Entity 成员物化视图、参数、引用、增量维护和职责边界。
+
+  Entity数据操作与语言规格文档.md
+    描述结构化 Update/Delete、C++ Lambda、Lambda 字符串、EntitySQL 与工程依赖边界。
+
   README.md
     本目录说明。
 ```

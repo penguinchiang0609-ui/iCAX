@@ -41,6 +41,11 @@ export const RenderFlags = Object.freeze({
   meshHasTextureCoordinates: 1 << 2,
 });
 
+export const RenderLayers = Object.freeze({
+  default: 1 << 0,
+  all: 0xFFFFFFFF,
+});
+
 export const RenderStyleFlags = Object.freeze({
   lightingDisabled: 1 << 0,
   hasBaseColorTexture: 1 << 1,
@@ -48,7 +53,7 @@ export const RenderStyleFlags = Object.freeze({
 
 export const RenderPDOLayout = Object.freeze({
   magic: 0x4F445052,
-  version: 4,
+  version: 5,
   headerSize: 32,
   meshHeaderSize: 104,
   polylineHeaderSize: 96,
@@ -235,6 +240,7 @@ export function parseObjectPayload(buffer, dataView, header = readRenderHeader(d
     geometryKind: dataView.getUint32(80, true),
     renderClass: dataView.getUint32(84, true),
     flags: dataView.getUint32(88, true),
+    layerMask: dataView.getUint32(92, true),
   };
 }
 

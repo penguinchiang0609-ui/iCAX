@@ -3,7 +3,7 @@
 #include "IRepositoryEvent.h"
 #include "ComponentMask.h"
 #include <unordered_set>
-#include "IEntitiesView.h"
+#include "IComponentFrameCache.h"
 #include <memory>
 #include <set>
 
@@ -13,23 +13,18 @@ namespace iCAX
     namespace Database
     {
         /*
-        * @brief 实体视图
+        * @brief 组件帧缓存
         * @details
         *   监听 Repository 事件并维护组件类型到组件集合的缓存。
-        *   当前缓存用于行为遍历，前缓存用于判断组件是否是本帧新出现。
+        *   当前帧缓存用于行为遍历，上一帧缓存用于判断组件是否是本帧新出现。
         */
-        class _DATABASE_EXP CEntitiesView final : public IRepositoryEventListener, public IEntitiesView
+        class _DATABASE_EXP CComponentFrameCache final
+            : public IRepositoryEventListener
+            , public IComponentFrameCache
         {
         public:
-            /*
-            * @brief 构造函数
-            */
-            CEntitiesView(IN std::shared_ptr<IRepository> pRepository_);
-
-            /*
-            * @brief 析构函数
-            */
-            virtual ~CEntitiesView();
+            CComponentFrameCache(IN std::shared_ptr<IRepository> pRepository_);
+            ~CComponentFrameCache() override;
 
         public:
             /*
@@ -37,14 +32,14 @@ namespace iCAX
             * @param [in] pSender_
             * @param [in] Args_
             */
-            virtual void OnRepositoryChanging(IN void* pSender_, IN const RepositoryEventArgs& Args_) override;
+            void OnRepositoryChanging(IN void* pSender_, IN const RepositoryEventArgs& Args_) override;
 
             /*
             * @brief 更改后事件
             * @param [in] pSender_
             * @param [in] Args_
             */
-            virtual void OnRepositoryChanged(IN void* pSender_, IN const RepositoryEventArgs& Args_) override;
+            void OnRepositoryChanged(IN void* pSender_, IN const RepositoryEventArgs& Args_) override;
 
         public:
             /*
@@ -52,26 +47,30 @@ namespace iCAX
             * @param [in] strClassName_ 组件类名
             * @param [in] bForceReset_ 是否强制重建
             */
-            virtual void BuildCache(IN const std::string& strClassName_, IN const bool bForceReset_ = false) override;
+            void EnsureComponentCache(
+                IN const std::string& strClassName_,
+                IN const bool bForceReset_ = false) override;
 
             /*
             * @brief 获取缓存
             * @param [in] strClassName_ 组件类名
             * @return std::vector<std::shared_ptr<CComponentBase>>
             */
-            virtual std::vector<std::shared_ptr<CComponentBase>> GetEntities(IN const std::string& strClassName_) override;
+            std::vector<std::shared_ptr<CComponentBase>> GetCurrentComponents(
+                IN const std::string& strClassName_) override;
 
             /*
             * @brief 获取前缓存
             * @param [in] strClassName_ 组件类名
             * @return std::vector<std::shared_ptr<CComponentBase>>
             */
-            virtual std::vector<std::shared_ptr<CComponentBase>> GetPreEntities(IN const std::string& strClassName_) override;
+            std::vector<std::shared_ptr<CComponentBase>> GetPreviousComponents(
+                IN const std::string& strClassName_) override;
 
             /*
             * @brief 刷线前缓存
             */
-            virtual void RefreshPreCache() override;
+            void CaptureCurrentAsPrevious() override;
 
         private:
             std::unordered_map<iCAX::Data::uuid, CComponentMask> m_EntityMask;

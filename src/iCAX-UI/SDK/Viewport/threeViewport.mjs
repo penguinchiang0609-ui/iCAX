@@ -8,6 +8,7 @@ import {
 import {
   RenderFlags,
   RenderGeometryKind,
+  RenderLayers,
   RenderPDOEvents,
   RenderPDOLayout,
   parseRenderPDOEvent,
@@ -61,6 +62,10 @@ export class ThreeRenderViewport {
     this.sceneObjects = new Map();
     this.cameras = new Map();
     this.activeCameraId = null;
+    this.visibleLayerMask = Number(options.visibleLayerMask ?? RenderLayers.all) >>> 0;
+    this.visibleEntityIds = options.visibleEntityIds == null
+      ? null
+      : new Set(normalizeEntityIds(options.visibleEntityIds));
     this.selectedObjectId = "";
     this.selectedObjectIds = new Set();
     this.diagnosticKeys = new Set();
@@ -251,6 +256,41 @@ export class ThreeRenderViewport {
     return this.setSelectedObjectIds(objectId ? [objectId] : [], objectId);
   }
 
+  setVisibleLayerMask(layerMask) {
+    const nextMask = Number(layerMask) >>> 0;
+    if (nextMask === this.visibleLayerMask) {
+      return this;
+    }
+    this.visibleLayerMask = nextMask;
+    for (const object of this.sceneObjects.values()) {
+      this.#applyObjectVisibility(object);
+    }
+    for (const [objectId, object] of this.colliderObjects) {
+      this.#applyColliderVisibility(objectId, object);
+    }
+    this.#updateSelectionHelper();
+    this.#renderOnce();
+    return this;
+  }
+
+  setVisibleEntityIds(entityIds = null) {
+    const nextIds = entityIds == null ? null : new Set(normalizeEntityIds(entityIds));
+    if ((nextIds === null && this.visibleEntityIds === null)
+      || (nextIds !== null && this.visibleEntityIds !== null && setsEqual(nextIds, this.visibleEntityIds))) {
+      return this;
+    }
+    this.visibleEntityIds = nextIds;
+    for (const object of this.sceneObjects.values()) {
+      this.#applyObjectVisibility(object);
+    }
+    for (const [objectId, object] of this.colliderObjects) {
+      this.#applyColliderVisibility(objectId, object);
+    }
+    this.#updateSelectionHelper();
+    this.#renderOnce();
+    return this;
+  }
+
   setSelectedObjectIds(objectIds = [], primaryObjectId = "") {
     const nextIds = new Set((Array.isArray(objectIds) ? objectIds : [objectIds])
       .map((id) => String(id ?? "").trim())
@@ -316,6 +356,7 @@ export class ThreeRenderViewport {
       visibleColliderObjectCount: visibleColliderObjects.length,
       colliderShapeCount,
       activeCameraId: this.activeCameraId,
+      visibleEntityFilterCount: this.visibleEntityIds?.size ?? null,
       selectedObjectId: this.selectedObjectId,
       selectedObjectIds: [...this.selectedObjectIds],
       cameraPosition: {
@@ -351,6 +392,7 @@ export class ThreeRenderViewport {
         objectId: String(object.userData?.objectId ?? ""),
         geometryId: String(object.userData?.geometryId ?? ""),
         renderClass: Number(object.userData?.renderClass ?? 0),
+        layerMask: Number(object.userData?.layerMask ?? RenderLayers.default),
         geometryKind: Number(object.userData?.geometryKind ?? 0),
         materialId: String(object.userData?.materialId ?? ""),
         visible: Boolean(object.visible),
@@ -648,7 +690,7 @@ export class ThreeRenderViewport {
     }
 
     object = this.#makeColliderObject(payload);
-    object.visible = Boolean(payload.flags & ColliderFlags.visible) && Boolean(payload.flags & ColliderFlags.enabled);
+    this.#applyColliderVisibility(payload.objectId, object, payload);
     object.matrixAutoUpdate = false;
     object.userData.objectId = payload.objectId;
     object.userData.dataVersion = payload.header?.dataVersion ?? "";
@@ -774,6 +816,10 @@ export class ThreeRenderViewport {
     this.objectSlots.set(payload.objectId, descriptor.pdoId);
     this.instancePayloads.set(String(payload.objectId), payload);
     this.#upsertSceneObject(payload);
+    const colliderObject = this.colliderObjects.get(payload.objectId);
+    if (colliderObject) {
+      this.#applyColliderVisibility(payload.objectId, colliderObject);
+    }
   }
 
   #upsertSceneObject(instance) {
@@ -802,7 +848,7 @@ export class ThreeRenderViewport {
       );
     }
 
-    object.visible = Boolean(instance.flags & RenderFlags.visible);
+    this.#applyObjectVisibility(object, instance);
     object.userData.instance = instance;
     object.matrixAutoUpdate = false;
     this.#refreshObjectMaterial(object, instance);
@@ -838,10 +884,38 @@ export class ThreeRenderViewport {
       geometryId: instance.geometryId,
       geometryKind: instance.geometryKind,
       renderClass: instance.renderClass,
+      layerMask: instance.layerMask,
       materialId: instance.materialId,
       hasVertexColors,
     };
     return object;
+  }
+
+  #applyObjectVisibility(object, instance = object?.userData?.instance) {
+    if (!object || !instance) {
+      return;
+    }
+    const layerMask = Number(instance.layerMask ?? RenderLayers.default) >>> 0;
+    object.visible = Boolean(instance.flags & RenderFlags.visible)
+      && this.#isEntityVisible(instance.objectId)
+      && Boolean(layerMask & this.visibleLayerMask);
+  }
+
+  #applyColliderVisibility(objectId, object, payload = this.colliderPayloads.get(objectId)) {
+    if (!object || !payload) {
+      return;
+    }
+    const instance = this.instancePayloads.get(String(objectId));
+    const layerMask = Number(instance?.layerMask ?? RenderLayers.default) >>> 0;
+    object.visible = Boolean(payload.flags & ColliderFlags.visible)
+      && Boolean(payload.flags & ColliderFlags.enabled)
+      && this.#isEntityVisible(objectId)
+      && Boolean(layerMask & this.visibleLayerMask);
+  }
+
+  #isEntityVisible(objectId) {
+    return this.visibleEntityIds === null
+      || this.visibleEntityIds.has(String(objectId ?? "").trim());
   }
 
   #makeGeometryObject(payload) {
@@ -1492,7 +1566,10 @@ export class ThreeRenderViewport {
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const hits = this.raycaster.intersectObjects([...this.sceneObjects.values()], false);
+    const hits = this.raycaster.intersectObjects(
+      [...this.sceneObjects.values()].filter((object) => object.visible),
+      false,
+    );
     this.options.onPick(hits[0]?.object?.userData ?? null, hits[0] ?? null);
   }
 
@@ -1779,6 +1856,15 @@ function disposeObject3D(object) {
       child.material?.dispose?.();
     }
   });
+}
+
+function normalizeEntityIds(entityIds) {
+  const values = entityIds instanceof Set
+    ? [...entityIds]
+    : (Array.isArray(entityIds) ? entityIds : [entityIds]);
+  return values
+    .map((id) => String(id ?? "").trim())
+    .filter(Boolean);
 }
 
 function setsEqual(left, right) {

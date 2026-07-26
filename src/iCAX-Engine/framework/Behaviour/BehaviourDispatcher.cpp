@@ -530,20 +530,20 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
     IN const double& nTotalTime_,
     IN std::function<void()> CoroutinePhase_) const
 {
-    auto& _View = SceneContext_.Database().GetView();
+    auto& _ComponentFrameCache = SceneContext_.Database().GetComponentFrameCache();
     FlushPendingDestroyNotifications(ApplicationContext_, ProductContext_, ProjectContext_, SceneContext_);
 
     // Start 只针对本帧首次出现在当前组件缓存中的组件调用。
-    // GetPreEntities 保存上一帧快照，RefreshPreCache 在 Start 阶段结束后推进。
+    // GetPreviousComponents 保存上一帧快照，CaptureCurrentAsPrevious 在 Start 阶段结束后推进。
     for (const auto& _pBehaviour : m_ExecutionList) 
     {
         if (!_pBehaviour)
         {
             continue;
         }
-        _View.BuildCache(_pBehaviour->GetComponentClass(), false);
-        auto _pCache = _View.GetEntities(_pBehaviour->GetComponentClass());
-        auto _p2ndCache = _View.GetPreEntities(_pBehaviour->GetComponentClass());
+        _ComponentFrameCache.EnsureComponentCache(_pBehaviour->GetComponentClass(), false);
+        auto _pCache = _ComponentFrameCache.GetCurrentComponents(_pBehaviour->GetComponentClass());
+        auto _p2ndCache = _ComponentFrameCache.GetPreviousComponents(_pBehaviour->GetComponentClass());
 
         for (auto& _pComponent : _pCache)
         {
@@ -556,7 +556,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
             }
         }
     }
-    _View.RefreshPreCache();
+    _ComponentFrameCache.CaptureCurrentAsPrevious();
 
     // PreUpdate、Update、PostUpdate 都按行为调度计划执行；每个行为内部遍历它关注的组件缓存。
     for (const auto& _pBehaviour : m_ExecutionList)
@@ -569,7 +569,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
         {
             continue;
         }
-        auto _pCache = _View.GetEntities(_pBehaviour->GetComponentClass());
+        auto _pCache = _ComponentFrameCache.GetCurrentComponents(_pBehaviour->GetComponentClass());
         for (auto& _pComponent : _pCache)
         {
             if (!_pComponent || !_pComponent->IsEnable())
@@ -591,7 +591,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
         {
             continue;
         }
-        auto _pCache = _View.GetEntities(_pBehaviour->GetComponentClass());
+        auto _pCache = _ComponentFrameCache.GetCurrentComponents(_pBehaviour->GetComponentClass());
         for (auto& _pComponent : _pCache)
         {
             if (!_pComponent || !_pComponent->IsEnable())
@@ -618,7 +618,7 @@ void iCAX::Behaviour::CBehaviourDispatcher::Tick(
         {
             continue;
         }
-        auto _pCache = _View.GetEntities(_pBehaviour->GetComponentClass());
+        auto _pCache = _ComponentFrameCache.GetCurrentComponents(_pBehaviour->GetComponentClass());
         for (auto& _pComponent : _pCache)
         {
             if (!_pComponent || !_pComponent->IsEnable())

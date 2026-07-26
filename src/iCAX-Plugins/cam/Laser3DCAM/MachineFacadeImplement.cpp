@@ -2103,7 +2103,7 @@ namespace
         _SetStringProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID, _RenderMeshResourceID);
         _SetStringProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceID, std::string());
         _SetUInt64Property(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryKind, 1ull);
-        _SetUInt64Property(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_RenderClass, 4ull);
+        _SetUInt64Property(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_RenderClass, 1ull);
         _SetUInt64Property(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_StyleID, 1000ull + pElement_->GetSourceIndex());
         _SetBoolProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_Visible, true);
         _SetBoolProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_Selectable, true);

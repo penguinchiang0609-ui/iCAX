@@ -23,6 +23,7 @@
 - 发布结构和字段变更事件。
 - 维护组件版本和 changed 标记。
 - 管理字段元数据和派生字段缓存。
+- 管理声明式 Entity 查询及其增量物化视图。
 - 提供批量变更、事务、撤销还原和快速保存日志。
 
 典型创建方式：
@@ -81,9 +82,89 @@ auto ids = repo->GetEntityIDs();
 repo->DeleteEntity(entityId);
 ```
 
-`Repository::GetView()` 提供按组件类型构建和读取实体视图，主要供 Behaviour 调度器使用。
+### 3.2 Behaviour 组件帧缓存
 
-### 3.2 Meta Entity
+`Repository::GetComponentFrameCache()` 返回 `IComponentFrameCache`，主要供 Behaviour 调度器使用。
+
+它按组件类型维护当前帧和上一帧的组件集合，不表达产品级 View，也不承担任意 Entity 查询。其旧名称 `EntitiesView` 已废弃。
+
+### 3.3 Entity 查询与物化视图
+
+同一份 `SEntityWhere` 既可以一次性查询，也可以创建增量维护的物化视图：
+
+```cpp
+using Where = iCAX::Database::CEntityWhereBuilder;
+
+auto where = Where::Build(Where::All({
+    Where::Has<CWorkpieceComponent>(),
+    Where::Has<CRenderInstanceComponent>(),
+}));
+
+auto snapshot = repo->Query(where);
+
+auto view = repo->CreateEntityView(where);
+auto entityIDs = view->GetEntityIDs();
+
+repo->ReleaseEntityView(view);
+```
+
+同一查询也可以用 Lambda 表达式代理构造：
+
+```cpp
+auto where = Where::From([](Where::Entity& entity)
+{
+    return entity.Has<CWorkpieceComponent>()
+        && entity.Has<CRenderInstanceComponent>();
+});
+```
+
+该 Lambda 只执行一次并生成查询 AST，不会作为任意谓词逐个调用真实 Entity。
+
+查询支持：
+
+- `All`、`Any`、`Not`。
+- 组件存在和组件启用状态。
+- 组件字段与字面量或运行参数比较。
+- Variant 嵌套字段路径。
+- 沿 UUID 字段匹配目标 Entity。
+- Derived 字段及其同 Entity、跨 Entity 传递依赖。
+
+首次创建视图时会对 Repository 当前 Entity 求值一次；此后根据 Repository 事件和运行时依赖图增量维护，不需要上层逐帧扫描。
+
+相同规范化查询和相同有效参数在同一个 Repository 内共享物化视图。Repository 为每次创建单独计数，计数归零时注销事件监听并释放物化结果。成员集合实际变化时，视图 Revision 才递增。
+
+规范化 Where 与绑定参数共同构成 EntityView 身份，创建后均不可原地修改。Repository 数据变化由 EntityView 自动增量维护；Where 或参数变化必须通过“创建新 View、切换引用、释放旧 View”表达，不能修改已经创建的 EntityView。
+
+`Query` 不创建缓存和监听；`CreateEntityView` 每次创建必须与一次 `ReleaseEntityView` 配对。完整查询语义、更新规则和边界参见 [EntityWhere 与 EntityView 规格文档](EntityWhere与EntityView规格文档.md)。
+
+### 3.4 结构化 Update 和 Delete
+
+`Where` 也可以直接用于 Entity 级结构化修改：
+
+```cpp
+using Update = iCAX::Database::CEntityUpdateBuilder;
+
+auto update = Update::From([](Update::Entity& entity)
+{
+    entity.Modify<CSumComponent>()
+        .Set(CSumComponent::PropertyName_A, entity.Parameter("target"));
+    entity.Add<CPolicyComponent>()
+        .Set(CPolicyComponent::PropertyName_PersistentValue, 7);
+    entity.Remove<CChainComponent>();
+});
+
+auto result = repo->Update(where, update, {
+    { "target", PropertyValue(100) },
+});
+
+auto deleted = repo->Delete(where);
+```
+
+Update 可以修改字段/启用状态、添加并初始化组件、删除组件。Update 和 Delete 都先取得命令开始时的匹配 Entity ID 快照，严格预检后在一个事务中原子执行，并形成一个 Undo/Redo 步骤。
+
+运行时 Lambda 字符串和 EntitySQL 由独立的 `DatabaseLanguage` 工程解析，再落到相同的 `SEntityWhere` / `SEntityUpdate` 和 Repository 执行路径。完整规格见 [Entity 数据操作与语言规格文档](Entity数据操作与语言规格文档.md)。
+
+### 3.5 Meta Entity
 
 `GetMetaEntity()` 返回仓储自身的描述实体，用于启动组件这类仓储自身描述。
 项目级参数不放在 Meta Entity 中，而是通过 `ProjectContext.Settings()` 访问并跟随项目文件保存。

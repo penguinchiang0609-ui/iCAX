@@ -159,6 +159,13 @@ namespace iCAX
             */
             void Clear();
 
+            /*
+            * @brief 获取派生字段当前已登记的传递依赖。
+            * @details Evaluate 后可用；结果同时包含直接源字段和源派生字段继续展开后的依赖。
+            */
+            std::vector<CPropertyKey> GetDependencies(
+                IN const CPropertyKey& Derived_) const;
+
         private:
             /*
             * @brief 根据组件和字段名生成 key。

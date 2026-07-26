@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Repository.h"
+#include "EntityView.h"
 #include "MetaRegistry.h"
 #include "RepositoryUndoRedoHistory.h"
 
@@ -117,6 +118,163 @@ namespace
         }
         return pMetaRegistry_;
     }
+
+    void ValidateEntityWhereSchema(
+        IN const iCAX::Database::SEntityWhereNode& Node_,
+        IN const iCAX::Database::IMetaRegistry& Meta_)
+    {
+        const auto _ValidateComponent = [&Meta_](IN const std::string& Class_)
+        {
+            if (!Meta_.HasTypeByName(Class_))
+            {
+                throw std::invalid_argument(
+                    "Entity where references an unregistered component type: " + Class_);
+            }
+        };
+        const auto _ValidateProperty = [&Meta_, &_ValidateComponent](
+            IN const std::string& Class_,
+            IN const std::string& Path_)
+        {
+            _ValidateComponent(Class_);
+            const auto _nSeparator = Path_.find_first_of(".[");
+            const auto _Name = Path_.substr(0, _nSeparator);
+            if (!Meta_.HasPropertyByName(Class_, _Name))
+            {
+                throw std::invalid_argument(
+                    "Entity where references an unregistered component property: "
+                    + Class_ + "." + _Name);
+            }
+        };
+
+        switch (Node_.Type)
+        {
+        case iCAX::Database::EEntityWhereNodeType::HasComponent:
+        case iCAX::Database::EEntityWhereNodeType::ComponentEnabled:
+            _ValidateComponent(Node_.ComponentClass);
+            break;
+        case iCAX::Database::EEntityWhereNodeType::PropertyComparison:
+        case iCAX::Database::EEntityWhereNodeType::Reference:
+            _ValidateProperty(Node_.ComponentClass, Node_.PropertyPath);
+            break;
+        case iCAX::Database::EEntityWhereNodeType::Constant:
+        case iCAX::Database::EEntityWhereNodeType::All:
+        case iCAX::Database::EEntityWhereNodeType::Any:
+        case iCAX::Database::EEntityWhereNodeType::Not:
+            break;
+        }
+
+        for (const auto& _Child : Node_.Children)
+        {
+            ValidateEntityWhereSchema(_Child, Meta_);
+        }
+    }
+
+    struct SBoundComponentUpdate final
+    {
+        iCAX::Database::EComponentUpdateType Type =
+            iCAX::Database::EComponentUpdateType::Modify;
+        std::string ComponentClass;
+        iCAX::Data::PropertySet Properties;
+        std::optional<bool> Enabled;
+    };
+
+    std::vector<SBoundComponentUpdate> BindAndValidateEntityUpdate(
+        IN const iCAX::Database::SEntityUpdate& Update_,
+        IN const iCAX::Data::ObjectMap& Parameters_,
+        IN const iCAX::Database::IMetaRegistry& Meta_)
+    {
+        using namespace iCAX::Database;
+
+        // 重新走 Builder 的结构校验，拒绝手工构造出的半有效 Update。
+        const auto _Validated = CEntityUpdateBuilder::Build(Update_.Components);
+        std::vector<SBoundComponentUpdate> _Result;
+        _Result.reserve(_Validated.Components.size());
+
+        for (const auto& _Component : _Validated.Components)
+        {
+            if (!Meta_.HasTypeByName(_Component.ComponentClass))
+            {
+                throw std::invalid_argument(
+                    "Entity update references an unregistered component type: "
+                    + _Component.ComponentClass);
+            }
+            if (_Component.Type == EComponentUpdateType::Add
+                && !Meta_.HasCreatorByName(_Component.ComponentClass))
+            {
+                throw std::invalid_argument(
+                    "Entity update component has no registered creator: "
+                    + _Component.ComponentClass);
+            }
+
+            SBoundComponentUpdate _Bound;
+            _Bound.Type = _Component.Type;
+            _Bound.ComponentClass = _Component.ComponentClass;
+            _Bound.Enabled = _Component.Enabled;
+            for (const auto& [_PropertyName, _Operand] : _Component.Properties)
+            {
+                if (_PropertyName.find_first_of(".[") != std::string::npos)
+                {
+                    throw std::invalid_argument(
+                        "Entity update only supports registered top-level properties: "
+                        + _Component.ComponentClass + "." + _PropertyName);
+                }
+                if (!Meta_.HasPropertyByName(
+                    _Component.ComponentClass,
+                    _PropertyName))
+                {
+                    throw std::invalid_argument(
+                        "Entity update references an unregistered component property: "
+                        + _Component.ComponentClass + "." + _PropertyName);
+                }
+                if (Meta_.GetPropertyKindByName(
+                    _Component.ComponentClass,
+                    _PropertyName) != EPropertyKind::Value)
+                {
+                    throw std::invalid_argument(
+                        "Entity update cannot write a derived component property: "
+                        + _Component.ComponentClass + "." + _PropertyName);
+                }
+
+                if (_Operand.Type == EEntityValueOperandType::Literal)
+                {
+                    _Bound.Properties.emplace(
+                        _PropertyName,
+                        _Operand.Literal);
+                    continue;
+                }
+
+                const auto _Parameter =
+                    Parameters_.find(_Operand.ParameterName);
+                if (_Parameter == Parameters_.end())
+                {
+                    throw std::invalid_argument(
+                        "Entity update parameter is missing: "
+                        + _Operand.ParameterName);
+                }
+                _Bound.Properties.emplace(
+                    _PropertyName,
+                    _Parameter->second);
+            }
+            _Result.push_back(std::move(_Bound));
+        }
+        return _Result;
+    }
+
+    std::string CurrentExceptionText(IN const std::string& strFallback_)
+    {
+        try
+        {
+            throw;
+        }
+        catch (const std::exception& _Exception)
+        {
+            return _Exception.what();
+        }
+        catch (...)
+        {
+            return strFallback_;
+        }
+    }
 }
 
 namespace iCAX
@@ -149,13 +307,18 @@ namespace iCAX
                 m_Operations.push_back(std::move(_Operation));
             }
 
-            void AttachComponent(IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const iCAX::Data::PropertySet& Properties_) override
+            void AttachComponent(
+                IN const iCAX::Data::uuid& EntityID_,
+                IN const std::string& strClassName_,
+                IN const iCAX::Data::PropertySet& Properties_,
+                IN std::optional<bool> Enabled_) override
             {
                 CRepositoryOperation _Operation;
                 _Operation.Type = RepositoryEventArgs::kAddComponent;
                 _Operation.EntityID = EntityID_;
                 _Operation.ComponentClass = strClassName_;
                 _Operation.NewProperties = Properties_;
+                _Operation.NewEnabled = Enabled_;
                 m_Operations.push_back(std::move(_Operation));
             }
 
@@ -582,8 +745,8 @@ void iCAX::Database::CRepository::Initialzie()
     _pMetaEntity->AddObserver(shared_from_this());
     m_mapEntities[m_UID] = _pMetaEntity;
 
-    m_pEntitesView = std::make_shared<CEntitiesView>(shared_from_this());
-    AddObserver(m_pEntitesView);
+    m_pComponentFrameCache = std::make_shared<CComponentFrameCache>(shared_from_this());
+    AddObserver(m_pComponentFrameCache);
 }
 
 bool iCAX::Database::CRepository::CreateEntity(IN const iCAX::Data::uuid& ID_, OUT std::shared_ptr<IEntity>& pEntity_, OUT std::string& strError_)
@@ -678,13 +841,349 @@ std::vector<iCAX::Data::uuid> iCAX::Database::CRepository::GetEntityIDs() const
     return _vecTemp;
 }
 
-iCAX::Database::IEntitiesView& iCAX::Database::CRepository::GetView() const
+iCAX::Database::IComponentFrameCache& iCAX::Database::CRepository::GetComponentFrameCache() const
 {
-    if (!m_pEntitesView)
+    if (!m_pComponentFrameCache)
     {
-        throw std::runtime_error("Repository entity view is missing");
+        throw std::runtime_error("Repository component frame cache is missing");
     }
-    return *m_pEntitesView;
+    return *m_pComponentFrameCache;
+}
+
+std::vector<iCAX::Data::uuid>
+iCAX::Database::CRepository::Query(
+    IN const SEntityWhere& Where_,
+    IN const iCAX::Data::ObjectMap& Parameters_)
+{
+    auto _Where = CEntityWhereBuilder::Normalize(Where_);
+    ValidateEntityWhereSchema(_Where.Root, *m_pMetaRegistry);
+    auto _Parameters = CEntityWhereBuilder::BindParameters(_Where, Parameters_);
+    CEntityWhereEvaluator _Evaluator(
+        shared_from_this(),
+        std::move(_Where),
+        std::move(_Parameters));
+
+    std::vector<iCAX::Data::uuid> _Result;
+    for (const auto& _EntityID : GetEntityIDs())
+    {
+        if (_Evaluator.EvaluateEntity(_EntityID).bMatches)
+        {
+            _Result.push_back(_EntityID);
+        }
+    }
+    return _Result;
+}
+
+std::shared_ptr<iCAX::Database::IEntityView>
+iCAX::Database::CRepository::CreateEntityView(
+    IN const SEntityWhere& Where_,
+    IN const iCAX::Data::ObjectMap& Parameters_)
+{
+    auto _Where = CEntityWhereBuilder::Normalize(Where_);
+    ValidateEntityWhereSchema(_Where.Root, *m_pMetaRegistry);
+    auto _Parameters = CEntityWhereBuilder::BindParameters(_Where, Parameters_);
+    auto _Key = std::make_pair(_Where, _Parameters);
+    const auto _Existing = m_EntityViews.find(_Key);
+    if (_Existing != m_EntityViews.end())
+    {
+        ++_Existing->second.nCreateCount;
+        return _Existing->second.pView;
+    }
+
+    auto _pView = std::make_shared<CEntityView>(
+        shared_from_this(),
+        std::move(_Where),
+        std::move(_Parameters));
+    _pView->Initialize();
+    m_EntityViews.emplace(
+        std::move(_Key),
+        SEntityViewEntry{ _pView, 1 });
+    AddObserver(_pView);
+    return _pView;
+}
+
+void iCAX::Database::CRepository::ReleaseEntityView(
+    IN const std::shared_ptr<IEntityView>& pView_)
+{
+    if (!pView_)
+    {
+        throw std::invalid_argument("Entity view cannot be null");
+    }
+
+    for (auto _Entry = m_EntityViews.begin(); _Entry != m_EntityViews.end(); ++_Entry)
+    {
+        if (_Entry->second.pView.get() != pView_.get())
+        {
+            continue;
+        }
+        if (_Entry->second.nCreateCount == 0)
+        {
+            throw std::logic_error("Entity view create count is already zero");
+        }
+
+        --_Entry->second.nCreateCount;
+        if (_Entry->second.nCreateCount == 0)
+        {
+            RemoveObserver(_Entry->second.pView);
+            m_EntityViews.erase(_Entry);
+        }
+        return;
+    }
+
+    throw std::invalid_argument(
+        "Entity view does not belong to this repository or has already been released");
+}
+
+bool iCAX::Database::CRepository::Update(
+    IN const SEntityWhere& Where_,
+    IN const SEntityUpdate& Update_,
+    IN const iCAX::Data::ObjectMap& Parameters_,
+    OUT SEntityMutationResult& Result_,
+    OUT std::string& strError_)
+{
+    Result_ = {};
+    strError_.clear();
+    ITransaction* _pTransaction = nullptr;
+
+    try
+    {
+        const auto _Components = BindAndValidateEntityUpdate(
+            Update_,
+            Parameters_,
+            *m_pMetaRegistry);
+        const auto _EntityIDs = Query(Where_, Parameters_);
+        Result_.MatchedCount = _EntityIDs.size();
+
+        std::vector<iCAX::Data::uuid> _ChangedEntityIDs;
+        for (const auto& _EntityID : _EntityIDs)
+        {
+            const auto _pEntity = GetEntity(_EntityID);
+            if (!_pEntity)
+            {
+                throw std::runtime_error(
+                    "Entity update target does not exist: "
+                    + iCAX::Data::to_string(_EntityID));
+            }
+
+            bool _bEntityChanged = false;
+            for (const auto& _ComponentUpdate : _Components)
+            {
+                const auto _pComponent =
+                    _pEntity->GetComponent(_ComponentUpdate.ComponentClass);
+                switch (_ComponentUpdate.Type)
+                {
+                case EComponentUpdateType::Modify:
+                    if (!_pComponent)
+                    {
+                        throw std::runtime_error(
+                            "Entity update component does not exist: "
+                            + _ComponentUpdate.ComponentClass);
+                    }
+                    for (const auto& [_PropertyName, _Value]
+                        : _ComponentUpdate.Properties)
+                    {
+                        if (_pComponent->GetProperty(_PropertyName) != _Value)
+                        {
+                            _bEntityChanged = true;
+                        }
+                    }
+                    if (_ComponentUpdate.Enabled.has_value()
+                        && _pComponent->IsEnable()
+                            != *_ComponentUpdate.Enabled)
+                    {
+                        _bEntityChanged = true;
+                    }
+                    break;
+                case EComponentUpdateType::Add:
+                    if (_pComponent)
+                    {
+                        throw std::runtime_error(
+                            "Entity update component already exists: "
+                            + _ComponentUpdate.ComponentClass);
+                    }
+                    _bEntityChanged = true;
+                    break;
+                case EComponentUpdateType::Remove:
+                    if (!_pComponent)
+                    {
+                        throw std::runtime_error(
+                            "Entity update component does not exist: "
+                            + _ComponentUpdate.ComponentClass);
+                    }
+                    _bEntityChanged = true;
+                    break;
+                }
+            }
+            if (_bEntityChanged)
+            {
+                _ChangedEntityIDs.push_back(_EntityID);
+            }
+        }
+
+        if (_ChangedEntityIDs.empty())
+        {
+            return true;
+        }
+
+        std::unique_ptr<IRepositoryUndoScope> _pUndoScope;
+        if (!IsUndoCommandRecording())
+        {
+            _pUndoScope = BeginUndoCommand("Update entities");
+        }
+
+        auto& _Transaction = BeginTransaction("Update entities where");
+        _pTransaction = &_Transaction;
+        for (const auto& _EntityID : _ChangedEntityIDs)
+        {
+            const auto _pEntity = GetEntity(_EntityID);
+            for (const auto& _ComponentUpdate : _Components)
+            {
+                switch (_ComponentUpdate.Type)
+                {
+                case EComponentUpdateType::Modify:
+                {
+                    const auto _pComponent =
+                        _pEntity->GetComponent(_ComponentUpdate.ComponentClass);
+                    if (!_ComponentUpdate.Properties.empty())
+                    {
+                        _Transaction.ModifyComponent(
+                            _EntityID,
+                            _ComponentUpdate.ComponentClass,
+                            _ComponentUpdate.Properties);
+                    }
+                    if (_ComponentUpdate.Enabled.has_value()
+                        && _pComponent->IsEnable()
+                            != *_ComponentUpdate.Enabled)
+                    {
+                        if (*_ComponentUpdate.Enabled)
+                        {
+                            _Transaction.EnableComponent(
+                                _EntityID,
+                                _ComponentUpdate.ComponentClass);
+                        }
+                        else
+                        {
+                            _Transaction.DisableComponent(
+                                _EntityID,
+                                _ComponentUpdate.ComponentClass);
+                        }
+                    }
+                    break;
+                }
+                case EComponentUpdateType::Add:
+                    _Transaction.AttachComponent(
+                        _EntityID,
+                        _ComponentUpdate.ComponentClass,
+                        _ComponentUpdate.Properties,
+                        _ComponentUpdate.Enabled);
+                    break;
+                case EComponentUpdateType::Remove:
+                    _Transaction.DetachComponent(
+                        _EntityID,
+                        _ComponentUpdate.ComponentClass);
+                    break;
+                }
+            }
+        }
+
+        if (!CommitTransaction(_Transaction, strError_))
+        {
+            _pTransaction = nullptr;
+            return false;
+        }
+        _pTransaction = nullptr;
+        if (_pUndoScope)
+        {
+            _pUndoScope->End();
+        }
+        Result_.ChangedCount = _ChangedEntityIDs.size();
+        return true;
+    }
+    catch (...)
+    {
+        if (_pTransaction
+            && m_pCurrentTransaction
+            && static_cast<ITransaction*>(m_pCurrentTransaction.get())
+                == _pTransaction)
+        {
+            CancelTransaction(*_pTransaction);
+        }
+        strError_ = CurrentExceptionText(
+            "Entity update threw a non-standard exception");
+        Result_.ChangedCount = 0;
+        return false;
+    }
+}
+
+bool iCAX::Database::CRepository::Delete(
+    IN const SEntityWhere& Where_,
+    IN const iCAX::Data::ObjectMap& Parameters_,
+    OUT SEntityMutationResult& Result_,
+    OUT std::string& strError_)
+{
+    Result_ = {};
+    strError_.clear();
+    ITransaction* _pTransaction = nullptr;
+
+    try
+    {
+        const auto _EntityIDs = Query(Where_, Parameters_);
+        Result_.MatchedCount = _EntityIDs.size();
+
+        std::vector<iCAX::Data::uuid> _DeletableEntityIDs;
+        _DeletableEntityIDs.reserve(_EntityIDs.size());
+        for (const auto& _EntityID : _EntityIDs)
+        {
+            // Repository 的 Meta Entity 是仓储本体，DeleteEntity 对它保持 no-op。
+            if (_EntityID != m_UID)
+            {
+                _DeletableEntityIDs.push_back(_EntityID);
+            }
+        }
+        if (_DeletableEntityIDs.empty())
+        {
+            return true;
+        }
+
+        std::unique_ptr<IRepositoryUndoScope> _pUndoScope;
+        if (!IsUndoCommandRecording())
+        {
+            _pUndoScope = BeginUndoCommand("Delete entities");
+        }
+
+        auto& _Transaction = BeginTransaction("Delete entities where");
+        _pTransaction = &_Transaction;
+        for (const auto& _EntityID : _DeletableEntityIDs)
+        {
+            _Transaction.DisposeEntity(_EntityID);
+        }
+        if (!CommitTransaction(_Transaction, strError_))
+        {
+            _pTransaction = nullptr;
+            return false;
+        }
+        _pTransaction = nullptr;
+        if (_pUndoScope)
+        {
+            _pUndoScope->End();
+        }
+        Result_.ChangedCount = _DeletableEntityIDs.size();
+        return true;
+    }
+    catch (...)
+    {
+        if (_pTransaction
+            && m_pCurrentTransaction
+            && static_cast<ITransaction*>(m_pCurrentTransaction.get())
+                == _pTransaction)
+        {
+            CancelTransaction(*_pTransaction);
+        }
+        strError_ = CurrentExceptionText(
+            "Entity delete threw a non-standard exception");
+        Result_.ChangedCount = 0;
+        return false;
+    }
 }
 
 std::shared_ptr<iCAX::Database::IEntity> iCAX::Database::CRepository::GetMetaEntity()
@@ -751,6 +1250,13 @@ void iCAX::Database::CRepository::BumpComponentVersion(IN const iCAX::Data::uuid
 iCAX::Data::PropertyValue iCAX::Database::CRepository::EvaluateDerivedProperty(IN const CComponentBase& Component_, IN const std::string& strPropertyName_, IN const DerivedPropertyEvaluator& Evaluator_)
 {
     return m_pDerivedPropertyManager->Evaluate(Component_, strPropertyName_, Evaluator_);
+}
+
+std::vector<iCAX::Database::CPropertyKey>
+iCAX::Database::CRepository::GetDerivedPropertyDependencies(
+    IN const CPropertyKey& Derived_) const
+{
+    return m_pDerivedPropertyManager->GetDependencies(Derived_);
 }
 
 bool iCAX::Database::CRepository::IsComponentChanged(IN const iCAX::Data::uuid& nEntityID_, IN const std::string& strComponentType_) const
@@ -964,6 +1470,12 @@ void iCAX::Database::CRepository::EndOperationBatch()
         m_pVerisonTable->Clear();
         m_pDerivedPropertyManager->Clear();
         m_pHistory->Clear();
+        // LoadBaseline 不发布 Repository 事件；已经存在的派生查询视图需要在基线完成后统一对齐。
+        for (const auto& [_Key, _Entry] : m_EntityViews)
+        {
+            (void)_Key;
+            _Entry.pView->RefreshFromRepository();
+        }
         return;
     }
 

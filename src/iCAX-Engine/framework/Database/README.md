@@ -7,6 +7,10 @@
 当前目录直接放置 `Database.vcxproj` 及其源码文件。
 
 - `ChangeSet.*`：Repository 内部净变更摘要与合并逻辑，不作为公开事件契约。
+- `ComponentFrameCache.*`：Behaviour 使用的当前帧和上一帧组件缓存；旧名 `EntitiesView` 已废弃。
+- `EntityWhere.h` / `EntityWhereEvaluator.h`：结构化 `Where`、C++ Lambda Builder 和共享求值器。
+- `IEntityView.h` / `EntityView.*`：Repository 增量维护的 Entity 成员物化视图。
+- `EntityUpdate.h` / `EntityUpdate.cpp`：Entity 级结构化组件修改。
 - `ModifyFilter.*`：正式写入前的统一准入过滤，调用 checker，失败时返回错误信息且不落地。
 - `OperationLog.*`：有序操作批次、事务回滚、撤销还原和快速保存日志；操作顺序是日志事实来源。
 - `RepositoryUndoRedoHistory.*`：外挂式撤销重做记录器和历史栈；`Repository` 之外的 EC 对象不保存历史状态。
@@ -22,3 +26,9 @@
 组件字段修改、组件添加和组件移除在事件触发前先经过 `ModifyFilter`。正式写入 API 提供 `bool + out string` 形式表达业务失败；失败不会触发事件、日志或撤销记录。
 
 `ChangeSet` 只表达提交后的净变更摘要，用于 Repository 内部版本更新、派生字段失效和是否发布批量事件的判断；它会合并字段修改，不作为撤销、重做或快速保存的回放依据，也不会通过 `RepositoryEventArgs` 暴露给上层。
+
+`Repository::Query(where, parameters)` 一次性返回 Entity ID 快照；`CreateEntityView(where, parameters)` 创建增量维护的物化结果，且必须与 `ReleaseEntityView(view)` 配对。`Repository::Update(where, update, parameters)` 和 `Delete(where, parameters)` 对命令开始时匹配的 Entity ID 快照原子执行。
+
+`Where` 和 `Update` 既可直接构造结构，也可用 C++ Lambda 表达式代理生成同一结构。运行时 Lambda 字符串与 EntitySQL 不在本工程解析，而由单向依赖 `Database` 的 `DatabaseLanguage` 工程提供。
+
+Database 的 EntityView 只表达成员关系，不负责产品 View ID、相机、LayerMask、PDO 或表现覆盖。正式规格见 `doc/iCAX-Engine/Framework/Database/EntityWhere与EntityView规格文档.md` 和 `doc/iCAX-Engine/Framework/Database/Entity数据操作与语言规格文档.md`。

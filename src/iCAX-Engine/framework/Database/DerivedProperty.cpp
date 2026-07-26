@@ -236,6 +236,32 @@ void iCAX::Database::CDerivedPropertyManager::Clear()
     m_DerivedToSources.clear();
 }
 
+std::vector<iCAX::Database::CPropertyKey>
+iCAX::Database::CDerivedPropertyManager::GetDependencies(
+    IN const CPropertyKey& Derived_) const
+{
+    std::unordered_set<CPropertyKey, CPropertyKeyHash> _Visited;
+    const auto _Collect = [this, &_Visited](
+        IN const auto& Self_,
+        IN const CPropertyKey& Key_) -> void
+    {
+        const auto _Sources = m_DerivedToSources.find(Key_);
+        if (_Sources == m_DerivedToSources.end())
+        {
+            return;
+        }
+        for (const auto& _Source : _Sources->second)
+        {
+            if (_Visited.insert(_Source).second)
+            {
+                Self_(Self_, _Source);
+            }
+        }
+    };
+    _Collect(_Collect, Derived_);
+    return { _Visited.begin(), _Visited.end() };
+}
+
 iCAX::Database::CPropertyKey iCAX::Database::CDerivedPropertyManager::MakeKey(IN const CComponentBase& Component_, IN const std::string& strPropertyName_) const
 {
     auto _pEntity = Component_.GetEntity();

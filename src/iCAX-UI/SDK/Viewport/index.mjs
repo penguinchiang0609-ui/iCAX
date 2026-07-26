@@ -1,5 +1,6 @@
 export {
   RenderFlags,
+  RenderLayers,
   RenderGeometryKind,
   RenderPDOEvents,
   RenderPDOLayout,

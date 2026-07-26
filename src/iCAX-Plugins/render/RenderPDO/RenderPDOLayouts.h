@@ -109,7 +109,7 @@ namespace iCAX
             uint32_t nGeometryKind = static_cast<uint32_t>(ERenderGeometryKind::Unknown);
             uint32_t nRenderClass = static_cast<uint32_t>(ERenderClass::Unknown);
             uint32_t nFlags = kRenderFlagVisible | kRenderFlagSelectable;
-            uint32_t nReserved = 0;
+            uint32_t nLayerMask = kRenderLayerDefault;
         };
 
         /*

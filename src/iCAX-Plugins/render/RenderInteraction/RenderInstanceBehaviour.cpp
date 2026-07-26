@@ -133,6 +133,7 @@ namespace
             && Left_.nGeometryID == Right_.nGeometryID
             && Left_.eGeometryKind == Right_.eGeometryKind
             && Left_.eRenderClass == Right_.eRenderClass
+            && Left_.nLayerMask == Right_.nLayerMask
             && Left_.nFlags == Right_.nFlags;
     }
 
@@ -151,6 +152,7 @@ namespace
         _Instance.nMaterialID = nMaterialID_;
         _Instance.eGeometryKind = ToGeometryKind(Component_.GetGeometryKind());
         _Instance.eRenderClass = ToRenderClass(Component_.GetRenderClass());
+        _Instance.nLayerMask = static_cast<uint32_t>(Component_.GetLayerMask());
         _Instance.nFlags = MakeRenderFlags(Component_, bEnabled_);
         return _Instance;
     }

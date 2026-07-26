@@ -45,11 +45,24 @@ Database/
   DerivedProperty.*
     -> 派生字段缓存、依赖和失效
 
+  ComponentFrameCache.*
+    -> Behaviour 使用的当前帧/上一帧组件缓存
+
+  EntityWhere.h / EntityWhereEvaluator.h
+    -> 结构化 Where、C++ Lambda Builder 和 Query/View 共用求值器
+
+  EntityUpdate.*
+    -> Entity 级结构化组件修改
+
+  IEntityView.h
+  EntityView.*
+    -> 声明式 Entity Where、物化成员集合和运行时依赖索引
+
   VersionTable.*
     -> 组件版本和 changed 标记；版本类型为 uint64_t，可直接作为 PDO dataVersion
 ```
 
-实现内部由 Repository 直接持有 Entity 表、EntityView、事件汇总、版本表和派生字段管理器。外部代码只通过 `Repository` 访问 EC 数据。
+实现内部由 Repository 直接持有 Entity 表、ComponentFrameCache、EntityView 集合、事件汇总、版本表和派生字段管理器。外部代码只通过 `Repository` 访问 EC 数据。
 
 组件版本只表达 Repository 内该组件内容的运行期变更序号，不表达项目文件 schema、日志格式版本或字段布局版本。高频同步时，Behaviour 可以读取 `component->Version()` 或 `repository->GetComponentVersion(...)`，将其作为 PDO `dataVersion`；如果 Slot 最新版本已经不小于该值，就可以跳过本帧序列化。
 
@@ -65,10 +78,24 @@ std::shared_ptr<IEntity> GetEntity(const uuid& id) const;
 void DeleteEntity(const uuid& id);
 bool DeleteEntity(const uuid& id, std::string& error);
 std::vector<uuid> GetEntityIDs() const;
-IEntitiesView& GetView() const;
+IComponentFrameCache& GetComponentFrameCache() const;
+std::vector<uuid> Query(
+    const SEntityWhere& where,
+    const ObjectMap& parameters = {});
+std::shared_ptr<IEntityView> CreateEntityView(
+    const SEntityWhere& where,
+    const ObjectMap& parameters = {});
+void ReleaseEntityView(const std::shared_ptr<IEntityView>& view);
+SEntityMutationResult Update(
+    const SEntityWhere& where,
+    const SEntityUpdate& update,
+    const ObjectMap& parameters = {});
+SEntityMutationResult Delete(
+    const SEntityWhere& where,
+    const ObjectMap& parameters = {});
 ```
 
-Behaviour 调度器使用 `Repository::GetView()` 枚举组件；插件行为使用 `Repository::GetEntity()` 和 `Repository::DeleteEntity()` 处理实体关系。
+Behaviour 调度器使用 `Repository::GetComponentFrameCache()` 枚举当前帧和上一帧组件；一次性读取使用 `Query()`；产品或 Framework 查询服务使用 `CreateEntityView()` 创建或共享增量维护的 Entity 成员集合，并使用 `ReleaseEntityView()` 结束使用权；批量数据命令使用结构化 `Update()` / `Delete()`。
 
 ## 4. ModifyFilter 写入管线
 
@@ -245,10 +272,96 @@ derived property -> source properties
 - `Silent` 字段不触发默认失效。
 - `Derived` 字段自身不写入日志。
 
-## 12. 与其他 Framework 项目的关系
+## 12. Entity 查询物化视图
 
-Behaviour 通过 `Repository::GetView()` 枚举组件并执行行为。
+`CEntityView` 是 Repository 内部维护的只读派生索引。公开定义和读取接口位于 `IEntityView.h`，实现位于 `EntityView.*`。
+
+### 12.1 创建、缓存和释放
+
+`CRepository::CreateEntityView()` 执行：
+
+1. 规范化查询 AST。
+2. 使用 `IMetaRegistry` 校验组件类型和顶层字段。
+3. 只绑定查询实际引用的参数。
+4. 使用“规范化查询 + 绑定参数”查找缓存。
+5. 缓存未命中时创建 `CEntityView`。
+6. 初次遍历 Repository Entity 建立成员集合和依赖索引。
+7. 将物化视图注册为 Repository 事件观察者。
+
+相同实例键被重复创建时复用同一个 View，并增加 Repository 独立维护的创建计数。每次成功创建必须与一次 `ReleaseEntityView()` 配对；创建计数归零时，Repository 注销事件监听、删除缓存项并释放物化结果。该计数不能用 `shared_ptr::use_count()` 代替。
+
+规范化 Where 与绑定参数共同构成 View 身份，创建后不可变。Repository 数据变化由 View 自动增量维护；Where 或参数变化必须先创建新 View、由调用方切换引用，再释放旧 View。不得在共享实例上原地修改 Where 或参数。
+
+Repository 在 View 存活期间强持有物化视图，事件发布器只保存观察者弱引用。视图不单独持久化，也不进入操作日志或撤销历史。
+
+### 12.2 查询 AST
+
+AST 节点包括：
+
+- 常量。
+- 组件存在。
+- 组件启用。
+- 字段比较。
+- `All`、`Any`、`Not`。
+- Entity 引用。
+
+业务代码可以直接通过 `CEntityWhereBuilder` 构造节点，也可以通过 `CEntityWhereBuilder::From(lambda)` 使用表达式代理生成同一 AST。Lambda 接收 `Where::Entity` 假 Entity，所有成员调用和运算符只拼装节点；Lambda 在构造期执行一次，不会保存为运行期 Entity 谓词。
+
+组件模板参数必须继承 `CComponentBase`，字段使用组件的 `PropertyName_*` 常量。底层结构仍保存 Meta 类名和字段路径，以支持规范化、缓存和运行时校验。
+
+### 12.3 运行时依赖
+
+每次候选 Entity 求值都会生成精确依赖：
+
+```text
+candidate Entity
+  -> dependency Entity
+    -> existence
+    -> component presence
+    -> component enabled state
+    -> component property
+```
+
+同时维护反向索引：
+
+```text
+dependency Entity -> candidate Entities
+```
+
+Repository 事件到来时，视图根据事件 Entity、组件类型、字段名和事件类型，从反向索引中找到受影响候选 Entity，只重新求值这些候选项。
+
+重新求值会整体替换该候选 Entity 的旧依赖。因此引用字段从 A 改为 B 后，A 的后续变化不再触发该候选 Entity，B 的变化开始触发。
+
+### 12.4 派生字段
+
+字段查询读取 Derived 字段后，`CEntityView` 从 `CDerivedPropertyManager` 取得当前已登记的传递源字段，并将这些源字段加入运行时依赖。
+
+该读取路径只存在于 `CRepository` 和 `CEntityView` 内部，不扩展公共 `IRepository` 接口。
+
+### 12.5 批量和基线
+
+`kBatchChanged` 中的原始事件记录用于合并受影响候选 Entity；视图在批次提交后按最终 Repository 状态统一求值，Revision 最多递增一次。
+
+`LoadBaseline` 不发布普通变更事件。基线完成后，Repository 主动调用已有物化视图的完整刷新，使成员集合和依赖图重新对齐。
+
+完整外部语义参见 [EntityView 规格文档](EntityWhere与EntityView规格文档.md)。
+
+### 12.6 共用求值器与结构化写入
+
+`CEntityWhereEvaluator` 是 `Query` 和 `CEntityView` 共用的 Where 求值器。Update/Delete 先调用一次性 Query 取得命令初始 Entity ID 快照，因此四种入口不会出现选择语义分叉。
+
+`CRepository::Update` 先绑定 `SComponentUpdate` 中的字面量和参数并校验 Meta Schema，再对全部目标执行严格预检。只有全部目标均满足 Modify/Add/Remove 的前置条件时，才把所有操作写入一个 `CRepositoryTransaction`。Delete 同样将全部目标放入一个事务。失败时沿用 Repository 现有事务回滚路径。
+
+文本解析不进入 Database 工程。`DatabaseLanguage` 单向依赖 Database，把 Lambda 字符串和 EntitySQL 编译为相同的 `SEntityWhere` / `SEntityUpdate`；Database 不反向依赖语言层，也不维护第二套文本执行器。
+
+完整数据操作和语言规格参见 [Entity 数据操作与语言规格文档](Entity数据操作与语言规格文档.md)。
+
+## 13. 与其他 Framework 项目的关系
+
+Behaviour 通过 `Repository::GetComponentFrameCache()` 枚举组件并执行行为。
 
 Scene 负责资源库和 Repository 生命周期；Project 负责项目身份、ProjectSetting 和 Scene 集合。Database 不关心项目或 Scene 的打开方式。
 
 Scene 级 Facades 通过 `SceneContext::Database()` 获取 `IRepository`，执行命令时显式创建撤销记录边界。ProjectContext 只提供项目身份、路径和 ProjectSetting。
+
+Framework 或产品级场景 View 可以使用 `IEntityView` 的 Entity ID 集合，但产品 View ID、表现覆盖、相机、LayerMask、PDO 和前端布局均不属于 Database。

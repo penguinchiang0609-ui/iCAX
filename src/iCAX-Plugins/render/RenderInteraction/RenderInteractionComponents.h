@@ -93,6 +93,7 @@ namespace iCAX
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, std::string, MaterialResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, unsigned long long, GeometryKind, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, unsigned long long, RenderClass, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+            DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, unsigned long long, LayerMask, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, unsigned long long, StyleID, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, bool, Visible, true, BoolEqual, ToBoolVariant, FromBoolVariant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, bool, Selectable, true, BoolEqual, ToBoolVariant, FromBoolVariant)

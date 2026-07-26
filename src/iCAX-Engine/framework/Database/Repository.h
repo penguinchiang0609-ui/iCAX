@@ -5,7 +5,7 @@
 #include <vector>
 #include "IRepository.h"
 #include "Entity.h"
-#include "EntitiesView.h"
+#include "ComponentFrameCache.h"
 #include "VersionTable.h"
 #include "DerivedProperty.h"
 #include "OperationLog.h"
@@ -15,6 +15,8 @@ namespace iCAX
     namespace Database
     {
         class COperationBatchJournal;
+        class CEntityView;
+        class CEntityWhereEvaluator;
         class CRepositoryTransaction;
         class CRepositoryUndoRedoHistory;
         class IMetaRegistry;
@@ -25,6 +27,8 @@ namespace iCAX
         class CRepository final : public IRepository, public IEntityEventListener, public std::enable_shared_from_this<CRepository>
         {
             friend class CRepositoryEventSuppressor;
+            friend class CEntityView;
+            friend class CEntityWhereEvaluator;
             friend class CRepositoryTransaction;
 
         public:
@@ -187,9 +191,36 @@ namespace iCAX
             virtual std::vector<iCAX::Data::uuid> GetEntityIDs() const override;
 
             /*
-            * @brief 获取实体视图
+            * @brief 获取 Behaviour 使用的组件帧缓存
             */
-            virtual IEntitiesView& GetView() const override;
+            IComponentFrameCache& GetComponentFrameCache() const override;
+
+            std::vector<iCAX::Data::uuid> Query(
+                IN const SEntityWhere& Where_,
+                IN const iCAX::Data::ObjectMap& Parameters_) override;
+
+            using IRepository::Delete;
+            using IRepository::Update;
+
+            std::shared_ptr<IEntityView> CreateEntityView(
+                IN const SEntityWhere& Where_,
+                IN const iCAX::Data::ObjectMap& Parameters_) override;
+
+            void ReleaseEntityView(
+                IN const std::shared_ptr<IEntityView>& pView_) override;
+
+            [[nodiscard]] bool Update(
+                IN const SEntityWhere& Where_,
+                IN const SEntityUpdate& Update_,
+                IN const iCAX::Data::ObjectMap& Parameters_,
+                OUT SEntityMutationResult& Result_,
+                OUT std::string& strError_) override;
+
+            [[nodiscard]] bool Delete(
+                IN const SEntityWhere& Where_,
+                IN const iCAX::Data::ObjectMap& Parameters_,
+                OUT SEntityMutationResult& Result_,
+                OUT std::string& strError_) override;
 
             /*
             * @brief 获取MetaEntity
@@ -297,6 +328,12 @@ namespace iCAX
             void TriggerRepositoryChanged(IN const RepositoryEventArgs::EventType& nType_, IN const iCAX::Data::uuid& EntityID_, IN const std::string& strClassName_, IN const PropertySet& Previous_, IN const PropertySet& New_, IN std::shared_ptr<CComponentBase> pComponent_, IN std::shared_ptr<IEntity> pEntity_, IN std::shared_ptr<const RepositoryEventBatch> pBatch_ = nullptr);
 
         private:
+            /*
+            * @brief 仅供 Repository 内部派生视图读取派生字段的传递依赖。
+            */
+            std::vector<CPropertyKey> GetDerivedPropertyDependencies(
+                IN const CPropertyKey& Derived_) const;
+
             /*
             * @brief 创建 Repository 内部操作批次。
             * @param [in] Kind_ 批次语义。
@@ -416,6 +453,12 @@ namespace iCAX
             void AppendOperationLog(IN const COperationBatch& Batch_);
 
         private:
+            struct SEntityViewEntry final
+            {
+                std::shared_ptr<CEntityView> pView;
+                uint64_t nCreateCount = 0;
+            };
+
             std::list<std::weak_ptr<IRepositoryEventListener>> m_Observers;
             std::unique_ptr<COperationBatchBuilder> m_pOperationBatchBuilder;
             EOperationBatchKind m_nOperationBatchKind = EOperationBatchKind::UserCommand;
@@ -430,7 +473,10 @@ namespace iCAX
         private:
             iCAX::Data::uuid m_UID;                                                           //!< 仓储ID
             std::map<iCAX::Data::uuid, std::shared_ptr<CEntity>> m_mapEntities;               //!< 实体字典
-            std::shared_ptr<CEntitiesView> m_pEntitesView;                                    //!< 视图数据
+            std::shared_ptr<CComponentFrameCache> m_pComponentFrameCache;                     //!< Behaviour 组件帧缓存
+            std::map<
+                std::pair<SEntityWhere, iCAX::Data::ObjectMap>,
+                SEntityViewEntry> m_EntityViews;                                    //!< Where + 绑定参数对应的共享物化视图和显式创建计数
             std::shared_ptr<VersionTable> m_pVerisonTable;                                     //!< 版本号表
             std::shared_ptr<CDerivedPropertyManager> m_pDerivedPropertyManager;                 //!< 派生字段管理器
             std::shared_ptr<IMetaRegistry> m_pMetaRegistry;

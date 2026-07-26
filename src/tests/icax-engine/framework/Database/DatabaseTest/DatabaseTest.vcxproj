@@ -156,6 +156,9 @@
     <ProjectReference Include="..\..\..\..\..\icax-engine\framework\Database\Database.vcxproj">
       <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\icax-engine\framework\DatabaseLanguage\DatabaseLanguage.vcxproj">
+      <Project>{ab9cfcc5-90ec-4b1a-80ea-c566c85568ba}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

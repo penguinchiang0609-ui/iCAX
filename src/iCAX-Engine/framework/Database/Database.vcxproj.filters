@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -66,10 +66,25 @@
     <ClInclude Include="MaskRegistry.h">
       <Filter>inner</Filter>
     </ClInclude>
-    <ClInclude Include="IEntitiesView.h">
+    <ClInclude Include="IComponentFrameCache.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
-    <ClInclude Include="EntitiesView.h">
+    <ClInclude Include="ComponentFrameCache.h">
+      <Filter>inner</Filter>
+    </ClInclude>
+    <ClInclude Include="IEntityView.h">
+      <Filter>extern\interface</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityWhere.h">
+      <Filter>extern\class</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityUpdate.h">
+      <Filter>extern\class</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityWhereEvaluator.h">
+      <Filter>inner</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityView.h">
       <Filter>inner</Filter>
     </ClInclude>
     <ClInclude Include="IChecker.h">
@@ -128,8 +143,14 @@
     <ClCompile Include="MaskRegistry.cpp">
       <Filter>inner</Filter>
     </ClCompile>
-    <ClCompile Include="EntitiesView.cpp">
+    <ClCompile Include="ComponentFrameCache.cpp">
       <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="EntityView.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="EntityUpdate.cpp">
+      <Filter>extern\class</Filter>
     </ClCompile>
     <ClCompile Include="Repository.cpp">
       <Filter>inner</Filter>

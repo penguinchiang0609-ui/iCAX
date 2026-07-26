@@ -11,6 +11,8 @@
 #include <Laser3DCAM/ToolpathComponents.h>
 #include <Laser3DCAM/ToolpathOrderService.h>
 #include <Laser3DCAM/ToolpathResources.h>
+#include <Laser3DCAM/ViewDefinitions.h>
+#include <Laser3DCAM/WorkpieceComponents.h>
 
 #include <ApplicationContext/IApplicationContext.h>
 #include <Facades/FacadeMethod.h>
@@ -35,6 +37,7 @@
 #include <Services/ServiceProvider.h>
 #include <Services/ServiceRegistrationCatalog.h>
 #include <Transform/Transform.h>
+#include <View/IViewContentService.h>
 
 
 namespace
@@ -563,6 +566,57 @@ TEST(Laser3DCAMFeatureRecognitionTest, RecognizesInnerWireAsHoleFeature)
     ASSERT_EQ(1u, _Result.Features.front().PreviewCurves.size());
 }
 
+TEST(Laser3DCAMViewContentTest, ProductViewsProjectSceneEntitiesWithoutPersistingMembership)
+{
+    CTestSceneContext _Scene;
+    iCAX::Services::CServiceProvider _Provider;
+    RegisterLaserServices(_Provider);
+    auto _pService = _Provider.Resolve<iCAX::View::IViewContentService>();
+    ASSERT_NE(nullptr, _pService);
+
+    const auto _MachineID = iCAX::Data::GenerateNewUUID();
+    const auto _WorkpieceID = iCAX::Data::GenerateNewUUID();
+    auto _pMachine = _Scene.Database().CreateEntity(_MachineID);
+    ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
+    ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
+    auto _pWorkpiece = _Scene.Database().CreateEntity(_WorkpieceID);
+    ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
+    ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::CAM::CWorkpieceComponent>());
+
+    const auto _ToIDs = [](IN const iCAX::View::SViewContent& Content_)
+    {
+        std::set<std::string> _IDs;
+        for (const auto& _Object : Content_.Objects)
+        {
+            _IDs.insert(iCAX::Data::to_string(_Object.EntityID));
+        }
+        return _IDs;
+    };
+
+    const auto _MachineContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine);
+    const auto _WorkpieceContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kWorkpiece);
+    const auto _GeneralContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kGeneral);
+    EXPECT_EQ(std::set<std::string>{ iCAX::Data::to_string(_MachineID) }, _ToIDs(_MachineContent));
+    EXPECT_EQ(std::set<std::string>{ iCAX::Data::to_string(_WorkpieceID) }, _ToIDs(_WorkpieceContent));
+    EXPECT_EQ(
+        (std::set<std::string>{ iCAX::Data::to_string(_MachineID), iCAX::Data::to_string(_WorkpieceID) }),
+        _ToIDs(_GeneralContent));
+    EXPECT_EQ(_MachineContent.nRevision, _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine).nRevision);
+
+    ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::Transform::CTransformComponent>());
+    EXPECT_EQ(_MachineContent.nRevision, _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine).nRevision);
+
+    const auto _SecondMachineID = iCAX::Data::GenerateNewUUID();
+    auto _pSecondMachine = _Scene.Database().CreateEntity(_SecondMachineID);
+    ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
+    ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
+    const auto _UpdatedMachineContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine);
+    EXPECT_GT(_UpdatedMachineContent.nRevision, _MachineContent.nRevision);
+    EXPECT_EQ(
+        (std::set<std::string>{ iCAX::Data::to_string(_MachineID), iCAX::Data::to_string(_SecondMachineID) }),
+        _ToIDs(_UpdatedMachineContent));
+}
+
 TEST(Laser3DCAMManifestTest, StartupComponentMatchesRegisteredSceneBootstrapComponent)
 {
     const auto _ManifestPath = GetSourceRoot() / "apps" / "laser-3d-cam" / "product.manifest.json";
@@ -895,6 +949,8 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         ASSERT_NE(nullptr, _pBaseEntity);
         auto _pBaseRender = _pBaseEntity->GetComponent<iCAX::RenderInteraction::CRenderInstanceComponent>();
         ASSERT_NE(nullptr, _pBaseRender);
+        EXPECT_EQ(1ull, _pBaseRender->GetRenderClass());
+        EXPECT_EQ(iCAX::Render::kRenderLayerDefault, _pBaseRender->GetLayerMask());
         const auto _BaseRenderResourceID = _pBaseRender->GetGeometryResourceID();
         auto _pBaseMeshBefore = _Scene.Resources().Get<iCAX::Render::SRenderMeshData>(_BaseRenderResourceID);
         ASSERT_NE(nullptr, _pBaseMeshBefore);

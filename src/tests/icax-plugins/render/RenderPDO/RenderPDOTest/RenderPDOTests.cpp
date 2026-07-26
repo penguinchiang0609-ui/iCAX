@@ -178,6 +178,12 @@ TEST(RenderPDOValidationTest, ObjectHeaderValidatesOneEntityObject)
 
     EXPECT_TRUE(ValidateObjectPDOHeader(_Header, _PayloadSize));
 
+    _Header.nLayerMask = 0;
+    std::string _LayerError;
+    EXPECT_FALSE(ValidateObjectPDOHeader(_Header, _PayloadSize, &_LayerError));
+    EXPECT_FALSE(_LayerError.empty());
+    _Header.nLayerMask = kRenderLayerDefault;
+
     _Header.nObjectID = {};
     std::string _Error;
     EXPECT_FALSE(ValidateObjectPDOHeader(_Header, _PayloadSize, &_Error));

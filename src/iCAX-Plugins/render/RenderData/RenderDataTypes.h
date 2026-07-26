@@ -116,6 +116,9 @@ namespace iCAX
         inline constexpr uint32_t kRenderFlagSelected = 1u << 3;
         inline constexpr uint32_t kRenderFlagDisabled = 1u << 5;
 
+        inline constexpr uint32_t kRenderLayerDefault = 1u << 0;
+        inline constexpr uint32_t kRenderLayerAll = 0xFFFFFFFFu;
+
         inline constexpr uint32_t kRenderMeshFlagHasNormals = 1u << 0;
         inline constexpr uint32_t kRenderMeshFlagHasVertexColors = 1u << 1;
         inline constexpr uint32_t kRenderMeshFlagHasTextureCoordinates = 1u << 2;
@@ -284,6 +287,7 @@ namespace iCAX
             ERenderGeometryKind eGeometryKind = ERenderGeometryKind::Mesh;
             ERenderClass eRenderClass = ERenderClass::Model;
             uint32_t nFlags = kRenderFlagVisible | kRenderFlagSelectable;
+            uint32_t nLayerMask = kRenderLayerDefault;
         };
 
         /*

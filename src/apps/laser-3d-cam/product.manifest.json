@@ -38,6 +38,7 @@
     },
     "modules": {
       "dependencies": [
+        "../../${Platform}/${Configuration}/View.dll",
         "../../${Platform}/${Configuration}/RenderData.dll",
         "../../${Platform}/${Configuration}/RenderService.dll",
         "../../${Platform}/${Configuration}/RenderPDO.dll",
@@ -65,7 +66,10 @@
         "../../${Platform}/${Configuration}/PDORenderService.dll",
         "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
-      "facades": ["../../${Platform}/${Configuration}/Laser3DCAM.dll"]
+      "facades": [
+        "../../${Platform}/${Configuration}/View.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+      ]
     },
     "resources": {
       "handlers": [
