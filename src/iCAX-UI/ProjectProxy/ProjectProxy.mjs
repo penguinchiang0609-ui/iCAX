@@ -1,17 +1,17 @@
-import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
+import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
 import { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 
 export class ProjectProxy {
-  constructor(facadeClient, projectState, options = {}) {
-    if (!facadeClient) {
-      throw new TypeError("facadeClient is required");
+  constructor(sdoClient, projectState, options = {}) {
+    if (!sdoClient) {
+      throw new TypeError("sdoClient is required");
     }
     if (!projectState?.projectId) {
       throw new TypeError("projectState.projectId is required");
     }
 
-    this.facadeClient = facadeClient;
-    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
+    this.sdoClient = sdoClient;
+    this.bridge = options.bridge ?? sdoClient.bridge ?? null;
     this.product = options.product ?? null;
     this.state = projectState;
     this.projectId = projectState.projectId;
@@ -68,7 +68,7 @@ export class ProjectProxy {
       return existing;
     }
 
-    const scene = new SceneProxy(this.facadeClient, registeredState, {
+    const scene = new SceneProxy(this.sdoClient, registeredState, {
       bridge: this.bridge,
       project: this,
     });

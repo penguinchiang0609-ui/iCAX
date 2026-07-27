@@ -1,0 +1,103 @@
+#pragma once
+
+#include "Invocation.h"
+
+#include <functional>
+#include <map>
+#include <mutex>
+#include <string>
+#include <vector>
+
+namespace iCAX
+{
+    namespace Application { class IApplicationContext; }
+    namespace Product { class IProductContext; }
+    namespace Project
+    {
+        class IProjectContext;
+        class ISceneContext;
+    }
+}
+
+namespace iCAX::Interaction
+{
+    /*
+    * @brief 产品或宿主对外提供的一组方法。
+    * @details SDO 只定义稳定交互面，不对应后端对象、Entity 或 Component。
+    */
+    class _SDO_EXP ISDO
+    {
+    public:
+        ISDO() = default;
+        virtual ~ISDO() = default;
+
+        ISDO(IN const ISDO&) = delete;
+        ISDO& operator=(IN const ISDO&) = delete;
+
+        virtual const std::string& GetName() const = 0;
+        virtual uint32_t GetCode() const = 0;
+        virtual bool HasMethod(IN uint32_t nMethodCode_) const = 0;
+        virtual std::vector<CSDOMethod> GetMethods() const = 0;
+
+        virtual CInvocationResult Invoke(
+            IN const CInvocation& Call_,
+            IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+            IN iCAX::Product::IProductContext* pProductContext_,
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) = 0;
+    };
+
+    class _SDO_EXP CSDO : public ISDO
+    {
+    public:
+        using MethodFunc = std::function<CInvocationResult(
+            const CInvocation&,
+            const iCAX::Application::IApplicationContext&,
+            iCAX::Product::IProductContext*,
+            iCAX::Project::IProjectContext*,
+            iCAX::Project::ISceneContext*)>;
+
+    protected:
+        explicit CSDO(IN std::string strName_);
+
+    public:
+        ~CSDO() override = default;
+
+        CSDO(IN const CSDO&) = delete;
+        CSDO& operator=(IN const CSDO&) = delete;
+
+        const std::string& GetName() const override;
+        uint32_t GetCode() const override;
+        bool HasMethod(IN uint32_t nMethodCode_) const override;
+        std::vector<CSDOMethod> GetMethods() const override;
+
+        CInvocationResult Invoke(
+            IN const CInvocation& Call_,
+            IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+            IN iCAX::Product::IProductContext* pProductContext_,
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) override;
+
+    protected:
+        /*
+        * @brief 声明一个对外方法。
+        * @details SDO 构造完成后没有替换或移除方法的入口，保证交互协议稳定。
+        */
+        bool ExposeMethod(IN std::string strMethodName_, IN MethodFunc Func_);
+
+    private:
+        struct MethodRecord final
+        {
+            CSDOMethod Method;
+            MethodFunc Func;
+        };
+
+        static void ValidateMethodFunc(IN const MethodFunc& Func_);
+
+    private:
+        std::string m_strName;
+        uint32_t m_nCode = 0;
+        mutable std::mutex m_Mutex;
+        std::map<uint32_t, MethodRecord> m_mapMethods;
+    };
+}

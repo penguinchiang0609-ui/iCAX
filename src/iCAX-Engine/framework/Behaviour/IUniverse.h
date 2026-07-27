@@ -21,7 +21,7 @@ namespace iCAX
         *   Scene 在每帧把 Application/Product/Project/Scene 四层上下文传入 Universe，
         *   Universe 再调度已绑定行为。
         *   Universe 和其中的 Behaviour 实例按 Scene 单线程模型运行，不做内部并发保护；
-        *   外部线程应通过 Facades/PDO 把工作交给所属 Scene 线程。
+        *   外部线程应通过 SDO/PDO 把工作交给所属 Scene 线程。
         */
         class _SYSTEM_EXP IUniverse
         {

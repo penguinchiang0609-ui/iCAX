@@ -10,7 +10,7 @@ namespace iCAX
         /*
         * @brief 应用配置服务。
         * @details
-        *   ApplicationRuntime 的应用级 Facade 使用该写入器修改 Context 管理的配置。
+        *   ApplicationRuntime 的应用级 SDO 使用该写入器修改 Context 管理的配置。
         */
         class _APPLICATION_CONTEXT_EXP CApplicationConfigService final
         {

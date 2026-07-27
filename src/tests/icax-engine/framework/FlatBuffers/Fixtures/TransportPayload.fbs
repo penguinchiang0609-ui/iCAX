@@ -1,0 +1,13 @@
+namespace iCAX.FlatBufferFixtures;
+
+file_identifier "ICXD";
+file_extension "icxd";
+
+table TransportPayload {
+  schema_version:uint = 1;
+  value:ulong;
+  label:string;
+  values:[uint];
+}
+
+root_type TransportPayload;

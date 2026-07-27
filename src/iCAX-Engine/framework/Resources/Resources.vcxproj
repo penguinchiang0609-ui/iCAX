@@ -147,12 +147,17 @@
       <EnableUAC>false</EnableUAC>
     </Link>
   </ItemDefinitionGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="..\..\..\third_party\flatbuffers\FlatBuffers.props" />
+  </ImportGroup>
   <ItemGroup>
     <ClInclude Include="BinaryResource.h" />
+    <ClInclude Include="FlatBufferResource.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="IResourceLoader.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="ResourceImportExport.h" />
+    <ClInclude Include="ResourceAccess.h" />
     <ClInclude Include="ResourceInfo.h" />
     <ClInclude Include="ResourceKey.h" />
     <ClInclude Include="ResourceLibrary.h" />
@@ -162,12 +167,15 @@
     <ClInclude Include="ResourceLoadResult.h" />
     <ClInclude Include="ResourcePool.h" />
     <ClInclude Include="ResourcePoolAccess.h" />
+    <ClInclude Include="ResourceFlatBuffer.h" />
     <ClInclude Include="ResourceTypeName.h" />
+    <ClInclude Include="ResourceVersionStorage.h" />
     <ClInclude Include="Resources.h" />
     <ClInclude Include="ResourcesExport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BinaryResource.cpp" />
+    <ClCompile Include="FlatBufferResource.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -177,6 +185,7 @@
     </ClCompile>
     <ClCompile Include="ResourceKey.cpp" />
     <ClCompile Include="ResourceImportExport.cpp" />
+    <ClCompile Include="ResourceAccess.cpp" />
     <ClCompile Include="ResourceLoaderRegistrationCatalog.cpp" />
     <ClCompile Include="ResourceLoaderRegistry.cpp" />
     <ClCompile Include="ResourcePool.cpp" />

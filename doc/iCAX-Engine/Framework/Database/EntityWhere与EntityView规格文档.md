@@ -90,6 +90,30 @@ virtual bool Contains(const uuid& entityID) const = 0;
 
 `GetWhere()` 和 `GetParameters()` 返回的是 Repository 规范化、绑定后的不可变定义。
 
+`IEntityView` 同时实现 `IEntityViewEventPublisher`。上层可以通过
+`AddObserver` / `RemoveObserver` 监听成员集合变化：
+
+```cpp
+struct EntityViewEventArgs
+{
+    uint64_t nPreviousRevision;
+    uint64_t nRevision;
+    std::vector<uuid> AddedEntityIDs;
+    std::vector<uuid> RemovedEntityIDs;
+};
+
+class IEntityViewEventListener
+{
+public:
+    virtual void OnEntityViewChanged(
+        void* sender,
+        const EntityViewEventArgs& args) = 0;
+};
+```
+
+事件是 Database 内部的同步成员变化通知，不包含邮件、Scene、产品 View 或前端协议。
+持有 EntityView 的上层负责把该事件转换成自己的失效、消息或前端通知机制。
+
 ## 4. 一次性查询
 
 Repository 可以直接执行 Where 并返回当前 Entity ID 快照：
@@ -613,6 +637,20 @@ Revision 规则：
 Revision 只表示成员集合版本，不表示 Entity 内容版本，也不表示上层表现版本。
 
 如果上层结果还包含颜色、材质等 View 局部表现，上层必须维护自己的内容 Revision。
+
+### 16.1 成员变化事件
+
+- 首次初始化把 Revision 建立为 `1`，不发布成员变化事件。
+- 只有最终成员集合实际变化时才发布 `OnEntityViewChanged`。
+- 回调发生前，成员集合和 Revision 已经更新完成。
+- `AddedEntityIDs` 和 `RemovedEntityIDs` 表示上一个 Revision 到当前 Revision 的净变化。
+- 两组 Entity ID 都按 UUID 稳定排序。
+- 一个 Repository 批次最多让同一个 EntityView 发布一次事件。
+- 批次中相互抵消、最终成员不变时不发布事件。
+- `LoadBaseline` 完成后的全量对齐如果改变已有 View 的成员，也发布一次净变化事件。
+- Entity 内容变化但成员资格不变时不发布 EntityView 事件；该变化仍由 Repository 事件表达。
+- 观察者由 EntityView 弱引用，观察者异常被隔离，不影响已经提交的数据或其他观察者。
+- 事件回调中的嵌套数据修改按 Revision 排队派发，保证观察者看到的事件顺序不倒置。
 
 ## 17. 结果顺序
 

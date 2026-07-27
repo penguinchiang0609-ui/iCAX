@@ -46,20 +46,20 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="Facades.h" />
-    <ClInclude Include="CameraViewFacadeImplement.h" />
-    <ClInclude Include="FacadeSupport.h" />
+    <ClInclude Include="SDO.h" />
+    <ClInclude Include="CameraViewSDOImplement.h" />
+    <ClInclude Include="SDOSupport.h" />
     <ClInclude Include="ComponentValueHelpers.h" />
     <ClInclude Include="FeatureRecognitionService.h" />
     <ClInclude Include="JobComponents.h" />
     <ClInclude Include="LayerComponents.h" />
     <ClInclude Include="Laser3DCAM.h" />
-    <ClInclude Include="MachineDefinitionFacadeImplement.h" />
+    <ClInclude Include="MachineDefinitionSDOImplement.h" />
     <ClInclude Include="MachineInstanceComponents.h" />
     <ClInclude Include="MachineDescriptionLoader.h" />
     <ClInclude Include="MachineResourceKeys.h" />
     <ClInclude Include="MachineResources.h" />
-    <ClInclude Include="MachineFacadeImplement.h" />
+    <ClInclude Include="MachineSDOImplement.h" />
     <ClInclude Include="MachineTransformConstraints.h" />
     <ClInclude Include="SDFLoader.h" />
     <ClInclude Include="URDFLoader.h" />
@@ -68,33 +68,34 @@
     <ClInclude Include="ToolpathGenerationService.h" />
     <ClInclude Include="ToolpathOrderService.h" />
     <ClInclude Include="ToolpathComponents.h" />
-    <ClInclude Include="ToolpathFacadeImplement.h" />
+    <ClInclude Include="ToolpathSDOImplement.h" />
     <ClInclude Include="TopologyPayloadNames.h" />
     <ClInclude Include="ToolpathResourceKeys.h" />
     <ClInclude Include="ToolpathResources.h" />
     <ClInclude Include="WorkpieceComponents.h" />
-    <ClInclude Include="WorkpieceFacadeImplement.h" />
+    <ClInclude Include="WorkpieceSDOImplement.h" />
     <ClInclude Include="WorkpieceResourceKeys.h" />
     <ClInclude Include="ViewDefinitions.h" />
+    <ClInclude Include="RenderViewOutputProvider.h" />
     <ClInclude Include="Laser3DCAMExport.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FacadeSupport.cpp" />
-    <ClCompile Include="JobFacade.cpp" />
-    <ClCompile Include="IntentToolpathFacade.cpp" />
-    <ClCompile Include="MachineDefinitionFacade.cpp" />
-    <ClCompile Include="MachineDefinitionFacadeImplement.cpp" />
-    <ClCompile Include="MachineFacade.cpp" />
-    <ClCompile Include="MachineFacadeImplement.cpp" />
-    <ClCompile Include="ToolpathFacadeImplement.cpp" />
-    <ClCompile Include="SelectionFacade.cpp" />
-    <ClCompile Include="ToolpathFacade.cpp" />
-    <ClCompile Include="CameraViewFacade.cpp" />
-    <ClCompile Include="CameraViewFacadeImplement.cpp" />
-    <ClCompile Include="WorkpieceModelFacade.cpp" />
-    <ClCompile Include="WorkpieceEditFacade.cpp" />
-    <ClCompile Include="WorkpieceFacade.cpp" />
-    <ClCompile Include="WorkpieceFacadeImplement.cpp" />
+    <ClCompile Include="SDOSupport.cpp" />
+    <ClCompile Include="JobSDO.cpp" />
+    <ClCompile Include="IntentToolpathSDO.cpp" />
+    <ClCompile Include="MachineDefinitionSDO.cpp" />
+    <ClCompile Include="MachineDefinitionSDOImplement.cpp" />
+    <ClCompile Include="MachineSDO.cpp" />
+    <ClCompile Include="MachineSDOImplement.cpp" />
+    <ClCompile Include="ToolpathSDOImplement.cpp" />
+    <ClCompile Include="SelectionSDO.cpp" />
+    <ClCompile Include="ToolpathSDO.cpp" />
+    <ClCompile Include="CameraViewSDO.cpp" />
+    <ClCompile Include="CameraViewSDOImplement.cpp" />
+    <ClCompile Include="WorkpieceModelSDO.cpp" />
+    <ClCompile Include="WorkpieceEditSDO.cpp" />
+    <ClCompile Include="WorkpieceSDO.cpp" />
+    <ClCompile Include="WorkpieceSDOImplement.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FeatureRecognitionService.cpp" />
     <ClCompile Include="Laser3DCAM.cpp" />
@@ -102,6 +103,7 @@
     <ClCompile Include="ToolpathGenerationService.cpp" />
     <ClCompile Include="ToolpathOrderService.cpp" />
     <ClCompile Include="ViewContentService.cpp" />
+    <ClCompile Include="RenderViewOutputProvider.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -140,7 +142,7 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Behaviour\Behaviour.vcxproj">
       <Project>{1c150fbb-3418-414d-8a3c-f7b57c6d18b7}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Facades\Facades.vcxproj">
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\SDO\SDO.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">

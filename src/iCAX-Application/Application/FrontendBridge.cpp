@@ -3,8 +3,10 @@
 
 #include "ApplicationRuntime/ApplicationRuntime.h"
 #include "Data/uuid.h"
-#include "Facades/FacadePayload.h"
-#include "Facades/FacadeEndpoint.h"
+#include "SDO/SDOText.h"
+#include "SDO/SDOEndpoint.h"
+#include "Resources/ResourceAccess.h"
+#include "Resources/ResourceLibrary.h"
 
 #include <chrono>
 
@@ -26,26 +28,26 @@ namespace
         return *_ID;
     }
 
-    iCAX::Frontend::CFrontendFacadeFrame _ToFrontendFrame(
+    iCAX::Frontend::CFrontendSDOFrame _ToFrontendFrame(
         IN const iCAX::Data::uuid& ChannelID_,
-        IN const iCAX::Interaction::CFacadeFrame& Frame_)
+        IN const iCAX::Interaction::CSDOFrame& Frame_)
     {
-        iCAX::Frontend::CFrontendFacadeFrame _Result;
+        iCAX::Frontend::CFrontendSDOFrame _Result;
         _Result.ChannelID = _ToString(ChannelID_);
         _Result.nCallID = Frame_.nCallID;
         _Result.nMethodCode = Frame_.nMethodCode;
         _Result.nKind = static_cast<uint16_t>(Frame_.nKind);
         _Result.nStatus = static_cast<uint16_t>(Frame_.nStatus);
-        _Result.PayloadText = iCAX::Interaction::GetFacadePayloadText(Frame_);
+        _Result.PayloadText = iCAX::Interaction::GetSDOPayloadText(Frame_);
         return _Result;
     }
 
-    iCAX::Interaction::CFacadeFrame _ToFacadeFrame(IN const iCAX::Frontend::CFrontendFacadeFrame& Frame_)
+    iCAX::Interaction::CSDOFrame _ToSDOFrame(IN const iCAX::Frontend::CFrontendSDOFrame& Frame_)
     {
-        return iCAX::Interaction::CreateTextFacadeFrame(
+        return iCAX::Interaction::CreateTextSDOFrame(
             Frame_.nCallID,
             Frame_.nMethodCode,
-            static_cast<iCAX::Interaction::EFacadeFrameKind>(Frame_.nKind),
+            static_cast<iCAX::Interaction::ESDOFrameKind>(Frame_.nKind),
             Frame_.PayloadText,
             static_cast<iCAX::Interaction::EInvocationStatus>(Frame_.nStatus));
     }
@@ -54,7 +56,7 @@ namespace
 class iCAX::Application::CFrontendBridge::Impl final
 {
 public:
-    using EndpointResolver = std::function<iCAX::Interaction::CFacadeEndpoint()>;
+    using EndpointResolver = std::function<iCAX::Interaction::CSDOEndpoint()>;
 
     struct RegisteredChannel final
     {
@@ -65,7 +67,7 @@ public:
     mutable std::mutex Mutex;
     iCAX::Application::CApplicationRuntime* pRuntime = nullptr;
     std::map<iCAX::Data::uuid, RegisteredChannel> FrontendChannels;
-    FrontendFacadeFrameHandler FrameHandler;
+    FrontendSDOFrameHandler FrameHandler;
     std::shared_ptr<iCAX::Tasks::EventLoopTaskScheduler> pFrontTaskScheduler =
         std::make_shared<iCAX::Tasks::EventLoopTaskScheduler>();
     iCAX::Coroutines::CCoroutineRuntime FrontCoroutineRuntime{ pFrontTaskScheduler };
@@ -95,13 +97,13 @@ public:
         }
         if (!Resolver_)
         {
-            throw std::invalid_argument("Frontend Facade endpoint resolver is empty");
+            throw std::invalid_argument("Frontend SDO endpoint resolver is empty");
         }
 
         auto _Endpoint = Resolver_();
         if (!_Endpoint.IsValid())
         {
-            throw std::invalid_argument("Frontend Facade endpoint is not valid");
+            throw std::invalid_argument("Frontend SDO endpoint is not valid");
         }
 
         std::lock_guard<std::mutex> _Lock(Mutex);
@@ -112,7 +114,7 @@ public:
         FrontendChannels[ChannelID_] = RegisteredChannel{ std::move(Resolver_), bApplicationChannel_ };
     }
 
-    iCAX::Interaction::CFacadeEndpoint ResolveRegisteredEndpoint(IN const iCAX::Data::uuid& ChannelID_) const
+    iCAX::Interaction::CSDOEndpoint ResolveRegisteredEndpoint(IN const iCAX::Data::uuid& ChannelID_) const
     {
         RegisteredChannel _Channel;
         {
@@ -120,7 +122,7 @@ public:
             auto _Iter = FrontendChannels.find(ChannelID_);
             if (_Iter == FrontendChannels.end())
             {
-                throw std::runtime_error("Frontend Facade endpoint is not registered: " + _ToString(ChannelID_));
+                throw std::runtime_error("Frontend SDO endpoint is not registered: " + _ToString(ChannelID_));
             }
             _Channel = _Iter->second;
         }
@@ -183,15 +185,15 @@ void iCAX::Application::CFrontendBridge::Attach(iCAX::Application::CApplicationR
         m_pImpl->pRuntime = nullptr;
         throw std::logic_error("Application channel id is nil");
     }
-    auto _ApplicationEndpoint = Runtime_.GetApplicationFrontendFacadeEndpoint();
+    auto _ApplicationEndpoint = Runtime_.GetApplicationFrontendSDOEndpoint();
     if (!_ApplicationEndpoint.IsValid())
     {
         m_pImpl->pRuntime = nullptr;
-        throw std::logic_error("Application frontend Facade endpoint is not valid");
+        throw std::logic_error("Application frontend SDO endpoint is not valid");
     }
     m_pImpl->FrontendChannels[_ApplicationChannelID] = Impl::RegisteredChannel{
         [&Runtime_]() {
-            return Runtime_.GetApplicationFrontendFacadeEndpoint();
+            return Runtime_.GetApplicationFrontendSDOEndpoint();
         },
         true
     };
@@ -235,7 +237,7 @@ std::string iCAX::Application::CFrontendBridge::RegisterProductChannel(const std
     m_pImpl->RegisterChannel(
         _ChannelID,
         [&_Runtime, strProductID_]() {
-            return _Runtime.GetProductFrontendFacadeEndpoint(strProductID_);
+            return _Runtime.GetProductFrontendSDOEndpoint(strProductID_);
         },
         false);
     return _ToString(_ChannelID);
@@ -277,7 +279,7 @@ std::string iCAX::Application::CFrontendBridge::RegisterSceneChannel(
         m_pImpl->RegisterChannel(
             _SceneChannelID,
             [&_Runtime, _ProjectID, _SceneID]() {
-                return _Runtime.GetSceneFrontendFacadeEndpoint(_ProjectID, _SceneID);
+                return _Runtime.GetSceneFrontendSDOEndpoint(_ProjectID, _SceneID);
             },
             false);
         return _ToString(_SceneChannelID);
@@ -286,21 +288,21 @@ std::string iCAX::Application::CFrontendBridge::RegisterSceneChannel(
     throw std::runtime_error("Scene runtime is not found: " + strProjectID_ + "/" + strSceneID_);
 }
 
-void iCAX::Application::CFrontendBridge::PostFacadeFrame(const CFrontendFacadeFrame& Frame_)
+void iCAX::Application::CFrontendBridge::PostSDOFrame(const CFrontendSDOFrame& Frame_)
 {
     const auto _ChannelID = _ParseChannelID(Frame_.ChannelID);
     auto _Endpoint = m_pImpl->ResolveRegisteredEndpoint(_ChannelID);
-    _Endpoint.Send(_ToFacadeFrame(Frame_));
+    _Endpoint.Send(_ToSDOFrame(Frame_));
 }
 
-std::vector<iCAX::Application::CFrontendFacadeFrame> iCAX::Application::CFrontendBridge::PollFacadeFrames()
+std::vector<iCAX::Application::CFrontendSDOFrame> iCAX::Application::CFrontendBridge::PollSDOFrames()
 {
     auto _Channels = m_pImpl->SnapshotChannels();
 
-    std::vector<CFrontendFacadeFrame> _Result;
+    std::vector<CFrontendSDOFrame> _Result;
     for (const auto& _Item : _Channels)
     {
-        iCAX::Interaction::CFacadeEndpoint _Endpoint;
+        iCAX::Interaction::CSDOEndpoint _Endpoint;
         try
         {
             _Endpoint = _Item.second.Resolver();
@@ -322,7 +324,7 @@ std::vector<iCAX::Application::CFrontendFacadeFrame> iCAX::Application::CFronten
             auto _Envelope = _ToFrontendFrame(_Item.first, _Frame);
             _Result.push_back(_Envelope);
 
-            FrontendFacadeFrameHandler _Handler;
+            FrontendSDOFrameHandler _Handler;
             {
                 std::lock_guard<std::mutex> _Lock(m_pImpl->Mutex);
                 _Handler = m_pImpl->FrameHandler;
@@ -337,10 +339,91 @@ std::vector<iCAX::Application::CFrontendFacadeFrame> iCAX::Application::CFronten
     return _Result;
 }
 
-void iCAX::Application::CFrontendBridge::SetFacadeFrameHandler(FrontendFacadeFrameHandler Handler_)
+void iCAX::Application::CFrontendBridge::SetSDOFrameHandler(FrontendSDOFrameHandler Handler_)
 {
     std::lock_guard<std::mutex> _Lock(m_pImpl->Mutex);
     m_pImpl->FrameHandler = std::move(Handler_);
+}
+
+iCAX::Application::CFrontendResourceResponse
+iCAX::Application::CFrontendBridge::RequestResource(
+    IN const CFrontendResourceRequest& Request_)
+{
+    auto& _Runtime = m_pImpl->RequireRuntime();
+    const auto _ProjectID = _ParseChannelID(Request_.ProjectID);
+    const auto _SceneID = _ParseChannelID(Request_.SceneID);
+
+    std::shared_ptr<iCAX::Project::CProjectScene> _pScene;
+    for (const auto& _pProductRuntime : _Runtime.GetProductRuntimes())
+    {
+        if (!_pProductRuntime)
+        {
+            continue;
+        }
+
+        const auto _pCatalog =
+            _pProductRuntime->FindProjectCatalogByProjectID(_ProjectID);
+        if (!_pCatalog)
+        {
+            continue;
+        }
+
+        const auto _pProject = _pCatalog->FindProject(_ProjectID);
+        if (!_pProject)
+        {
+            continue;
+        }
+
+        _pScene = _pProject->GetScene(_SceneID);
+        if (_pScene)
+        {
+            break;
+        }
+    }
+
+    if (!_pScene)
+    {
+        throw std::runtime_error(
+            "Scene runtime is not found: " +
+            Request_.ProjectID +
+            "/" +
+            Request_.SceneID);
+    }
+
+    iCAX::Resource::CResourceRequest _Request;
+    try
+    {
+        _Request.Method =
+            iCAX::Resource::ParseResourceMethod(Request_.Method);
+    }
+    catch (const std::invalid_argument&)
+    {
+        CFrontendResourceResponse _Response;
+        _Response.nStatus = 405;
+        _Response.Headers["Allow"] =
+            "HEAD, GET, PUT, DELETE, OPTIONS";
+        return _Response;
+    }
+    _Request.URL = Request_.URL;
+    _Request.Headers = Request_.Headers;
+    if (!Request_.Body.empty())
+    {
+        _Request.Body =
+            iCAX::Resource::CFlatBufferResource(Request_.Body);
+    }
+
+    const auto _ResourceResponse =
+        _pScene->Resources().Request(_Request);
+
+    CFrontendResourceResponse _Response;
+    _Response.nStatus = _ResourceResponse.nStatus;
+    _Response.Headers = _ResourceResponse.Headers;
+    if (_ResourceResponse.HasBody())
+    {
+        const auto _Bytes = _ResourceResponse.Body.Bytes();
+        _Response.Body.assign(_Bytes.begin(), _Bytes.end());
+    }
+    return _Response;
 }
 
 iCAX::Tasks::TaskSchedulerPtr iCAX::Application::CFrontendBridge::GetFrontTaskScheduler() const

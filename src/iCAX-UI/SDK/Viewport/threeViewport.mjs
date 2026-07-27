@@ -62,6 +62,9 @@ export class ThreeRenderViewport {
     this.sceneObjects = new Map();
     this.cameras = new Map();
     this.activeCameraId = null;
+    this.renderSceneId = options.renderSceneId == null
+      ? null
+      : String(options.renderSceneId);
     this.visibleLayerMask = Number(options.visibleLayerMask ?? RenderLayers.all) >>> 0;
     this.visibleEntityIds = options.visibleEntityIds == null
       ? null
@@ -223,7 +226,8 @@ export class ThreeRenderViewport {
   }
 
   async refreshAll() {
-    for (const descriptor of this.slotDescriptors.values()) {
+    for (const descriptor of [...this.slotDescriptors.values()]
+      .filter((item) => this.#isActiveRenderScene(item.sceneId))) {
       await Promise.race([this.#readSlot(descriptor), delay(300)]);
     }
     for (const descriptor of this.colliderSlotDescriptors.values()) {
@@ -269,6 +273,24 @@ export class ThreeRenderViewport {
       this.#applyColliderVisibility(objectId, object);
     }
     this.#updateSelectionHelper();
+    this.#renderOnce();
+    return this;
+  }
+
+  setRenderSceneId(renderSceneId = null) {
+    const nextSceneId = renderSceneId == null ? null : String(renderSceneId);
+    if (nextSceneId === this.renderSceneId) {
+      return this;
+    }
+    this.renderSceneId = nextSceneId;
+    this.#clearRenderPDOContent();
+    const descriptors = [...this.slotDescriptors.values()]
+      .filter((descriptor) => this.#isActiveRenderScene(descriptor.sceneId));
+    for (const descriptor of descriptors) {
+      descriptor.lastReadDataVersion = null;
+      void this.#readSlot(descriptor, { force: true });
+    }
+    this.#setStatus(descriptors.length ? "" : "等待当前 View 的 RenderPDO slot");
     this.#renderOnce();
     return this;
   }
@@ -335,6 +357,7 @@ export class ThreeRenderViewport {
       canvasWidth: canvas.width,
       canvasHeight: canvas.height,
       slotCount: this.slotDescriptors.size,
+      renderSceneId: this.renderSceneId,
       colliderSlotCount: this.colliderSlotDescriptors.size,
       slots: [...this.slotDescriptors.values()].map((descriptor) => ({
         pdoId: String(descriptor.pdoId ?? ""),
@@ -343,6 +366,7 @@ export class ThreeRenderViewport {
         geometryId: String(descriptor.geometryId ?? ""),
         objectId: String(descriptor.objectId ?? ""),
         transformId: String(descriptor.transformId ?? ""),
+        sceneId: String(descriptor.sceneId ?? ""),
         version: Number(descriptor.version ?? 0),
         slotVersion: Number(descriptor.version ?? 0),
         payloadCapacity: Number(descriptor.payloadCapacity ?? 0),
@@ -420,12 +444,13 @@ export class ThreeRenderViewport {
     }
 
     if (payload.event === "SlotFreed") {
-      this.#removeSlot(payload);
+      this.#removeSlot(payload, this.#isActiveRenderScene(payload.sceneId));
       return;
     }
 
     const descriptor = {
       pdoId: payload.pdoId,
+      sceneId: String(payload.sceneId ?? ""),
       payloadKind: payload.payloadKind,
       slotRole: payload.slotRole,
       geometryId: payload.geometryId,
@@ -441,7 +466,9 @@ export class ThreeRenderViewport {
       `RenderPDO slot ${payload.event}: role=${descriptor.slotRole}, pdo=${descriptor.pdoId}`,
       "info",
     );
-    await this.#readSlot(descriptor, { force: true });
+    if (this.#isActiveRenderScene(descriptor.sceneId)) {
+      await this.#readSlot(descriptor, { force: true });
+    }
   }
 
   async #handleColliderSlotEvent(event) {
@@ -490,7 +517,10 @@ export class ThreeRenderViewport {
   }
 
   async #readSlot(descriptor, options = {}) {
-    if (!this.sceneProxy?.pdo?.enabled || this.isDefragging || !descriptor?.payloadCapacity) {
+    if (!this.sceneProxy?.pdo?.enabled
+      || this.isDefragging
+      || !descriptor?.payloadCapacity
+      || !this.#isActiveRenderScene(descriptor.sceneId)) {
       return;
     }
 
@@ -513,6 +543,9 @@ export class ThreeRenderViewport {
           version: descriptor.version,
           payloadSize: descriptor.payloadCapacity,
         }, (buffer) => {
+          if (!this.#isActiveRenderScene(descriptor.sceneId)) {
+            return;
+          }
           const payload = parseRenderPDOPayload(buffer);
           const dataVersion = String(payload.header?.dataVersion ?? "");
           if (!force && dataVersion && dataVersion === descriptor.lastReadDataVersion) {
@@ -1099,8 +1132,11 @@ export class ThreeRenderViewport {
     object.matrixWorldNeedsUpdate = true;
   }
 
-  #removeSlot(payload) {
+  #removeSlot(payload, removeContent = true) {
     this.slotDescriptors.delete(payload.pdoId);
+    if (!removeContent) {
+      return;
+    }
     if (payload.slotRole === "Transform" && payload.transformId) {
       this.transformPayloads.delete(payload.transformId);
       this.#updateObjectsUsingTransform(payload.transformId);
@@ -1154,7 +1190,7 @@ export class ThreeRenderViewport {
     this.#updateSelectionHelper();
   }
 
-  #clearRenderContent() {
+  #clearRenderPDOContent() {
     for (const object of this.sceneObjects.values()) {
       this.#setObjectSelectedVisual(object, false);
       object.parent?.remove(object);
@@ -1167,6 +1203,15 @@ export class ThreeRenderViewport {
     this.geometryObjects.clear();
     this.geometryPayloads.clear();
     this.instancePayloads.clear();
+    this.objectSlots.clear();
+    this.transformPayloads.clear();
+    this.cameras.clear();
+    this.activeCameraId = null;
+    this.selectionAxisHelper.visible = false;
+  }
+
+  #clearRenderContent() {
+    this.#clearRenderPDOContent();
     for (const object of this.colliderObjects.values()) {
       object.parent?.remove(object);
       disposeObject3D(object);
@@ -1174,9 +1219,6 @@ export class ThreeRenderViewport {
     this.colliderObjects.clear();
     this.colliderPayloads.clear();
     this.colliderSlotDescriptors.clear();
-    this.transformPayloads.clear();
-    this.cameras.clear();
-    this.activeCameraId = null;
     this.selectedObjectId = "";
     this.selectedObjectIds.clear();
     this.selectionAxisHelper.visible = false;
@@ -1749,7 +1791,8 @@ export class ThreeRenderViewport {
     }
 
     const renderDescriptors = [...this.slotDescriptors.values()].filter((descriptor) =>
-      descriptor.slotRole === "Transform" || descriptor.slotRole === "Camera");
+      this.#isActiveRenderScene(descriptor.sceneId)
+      && (descriptor.slotRole === "Transform" || descriptor.slotRole === "Camera"));
     const colliderDescriptors = [...this.colliderSlotDescriptors.values()];
     if (!renderDescriptors.length && !colliderDescriptors.length) {
       return;
@@ -1766,6 +1809,11 @@ export class ThreeRenderViewport {
     } finally {
       this.dynamicReadPending = false;
     }
+  }
+
+  #isActiveRenderScene(sceneId) {
+    return this.renderSceneId === null
+      || String(sceneId ?? "") === this.renderSceneId;
   }
 
   #clearTransientInput() {

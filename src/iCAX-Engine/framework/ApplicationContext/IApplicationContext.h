@@ -17,8 +17,8 @@ namespace iCAX
         * @brief 应用上下文接口。
         * @details
         *   ApplicationContext 管理应用作用域内的描述、路径、配置数据和服务环境。
-        *   ApplicationRuntime 管理它的线程与生命周期；产品、项目、场景和普通 Facade
-        *   只能通过 const 接口读取，修改必须回到 ApplicationRuntime 的应用级 Facade。
+        *   ApplicationRuntime 管理它的线程与生命周期；产品、项目、场景和普通 SDO
+        *   只能通过 const 接口读取，修改必须回到 ApplicationRuntime 的应用级 SDO。
         */
         class _APPLICATION_CONTEXT_EXP IApplicationContext
         {

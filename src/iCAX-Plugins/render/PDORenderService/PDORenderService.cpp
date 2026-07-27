@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "PDORenderService.h"
 
-#include "Facades/FacadePayload.h"
+#include "SDO/SDOText.h"
 #include "RenderPDO/RenderPDODecl.h"
 #include "RenderPDO/RenderPDOLayouts.h"
 #include "RenderPDO/RenderPDOValidation.h"
@@ -490,6 +490,15 @@ namespace
         Slot_.SwapBuffersIfReady();
         return true;
     }
+
+    RenderDataVersion NextSceneRevision(IN RenderDataVersion nRevision_)
+    {
+        if (nRevision_ == (std::numeric_limits<RenderDataVersion>::max)())
+        {
+            throw std::overflow_error("Render scene revision overflow");
+        }
+        return nRevision_ + 1;
+    }
 }
 
 iCAX::PDORenderService::CPDORenderService::CPDORenderService() = default;
@@ -505,11 +514,13 @@ void iCAX::PDORenderService::CPDORenderService::OnUnload()
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     m_Projects.clear();
     m_PDOOutputs.clear();
+    m_OutputSceneOwners.clear();
 }
 
 bool iCAX::PDORenderService::CPDORenderService::CreateScene(
     IN const iCAX::Data::uuid& ProjectID_,
-    IN iCAX::Render::RenderSceneID nSceneID_)
+    IN iCAX::Render::RenderSceneID nSceneID_,
+    IN const iCAX::Data::uuid& OutputSceneID_)
 {
     ValidateProjectAndScene(ProjectID_, nSceneID_);
 
@@ -522,7 +533,12 @@ bool iCAX::PDORenderService::CPDORenderService::CreateScene(
 
     iCAX::Render::SRenderSceneSnapshot _Scene;
     _Scene.nSceneID = nSceneID_;
+    _Scene.nRevision = 1;
     _Scenes.emplace(nSceneID_, std::move(_Scene));
+    if (!OutputSceneID_.is_nil())
+    {
+        m_OutputSceneOwners[ProjectID_][nSceneID_] = OutputSceneID_;
+    }
     return true;
 }
 
@@ -556,6 +572,7 @@ void iCAX::PDORenderService::CPDORenderService::DestroyProject(IN const iCAX::Da
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     m_Projects.erase(ProjectID_);
     m_PDOOutputs.erase(ProjectID_);
+    m_OutputSceneOwners.erase(ProjectID_);
 }
 
 bool iCAX::PDORenderService::CPDORenderService::HasScene(
@@ -611,61 +628,27 @@ void iCAX::PDORenderService::CPDORenderService::Update(
         throw std::invalid_argument("Render project id cannot be nil");
     }
 
-    const auto _RenderSceneID = iCAX::Render::MakeRenderSceneID(SceneContext_.GetSceneID());
-    iCAX::Render::SRenderSceneSnapshot _Scene;
-    SScenePDOOutputState _State;
-    bool _bHasScene = false;
-    bool _bHasState = false;
+    std::vector<iCAX::Render::RenderSceneID> _RenderSceneIDs{
+        iCAX::Render::MakeRenderSceneID(SceneContext_.GetSceneID()),
+    };
     {
         std::lock_guard<std::mutex> _Lock(m_Mutex);
-        auto _ProjectIter = m_Projects.find(_ProjectID);
-        if (_ProjectIter != m_Projects.end())
+        const auto _OwnerProjectIter = m_OutputSceneOwners.find(_ProjectID);
+        if (_OwnerProjectIter != m_OutputSceneOwners.end())
         {
-            auto _SceneIter = _ProjectIter->second.find(_RenderSceneID);
-            if (_SceneIter != _ProjectIter->second.end())
+            for (const auto& [_RenderSceneID, _OutputSceneID] : _OwnerProjectIter->second)
             {
-                _Scene = _SceneIter->second;
-                _bHasScene = true;
-            }
-        }
-        auto _StateProjectIter = m_PDOOutputs.find(_ProjectID);
-        if (_StateProjectIter != m_PDOOutputs.end())
-        {
-            auto _StateIter = _StateProjectIter->second.find(_RenderSceneID);
-            if (_StateIter != _StateProjectIter->second.end())
-            {
-                _State = _StateIter->second;
-                _bHasState = true;
+                if (_OutputSceneID == SceneContext_.GetSceneID())
+                {
+                    _RenderSceneIDs.push_back(_RenderSceneID);
+                }
             }
         }
     }
-
-    if (!_bHasScene && !_bHasState)
-    {
-        return;
-    }
-    if (!SceneContext_.HasPDOHub())
-    {
-        throw std::logic_error("PDORenderService requires project PDO hub");
-    }
-
-    if (!_bHasScene)
-    {
-        FreeScenePDOOutput(_ProjectID, _RenderSceneID, SceneContext_, _State);
-        std::lock_guard<std::mutex> _Lock(m_Mutex);
-        auto _StateProjectIter = m_PDOOutputs.find(_ProjectID);
-        if (_StateProjectIter != m_PDOOutputs.end())
-        {
-            _StateProjectIter->second.erase(_RenderSceneID);
-            if (_StateProjectIter->second.empty())
-            {
-                m_PDOOutputs.erase(_StateProjectIter);
-            }
-        }
-        return;
-    }
-
-    SynchronizeScenePDOOutput(_ProjectID, &_Scene, SceneContext_, _State);
+    std::sort(_RenderSceneIDs.begin(), _RenderSceneIDs.end());
+    _RenderSceneIDs.erase(
+        std::unique(_RenderSceneIDs.begin(), _RenderSceneIDs.end()),
+        _RenderSceneIDs.end());
 
     const auto _IsStateEmpty = [](IN const SScenePDOOutputState& State_) noexcept
     {
@@ -677,23 +660,95 @@ void iCAX::PDORenderService::CPDORenderService::Update(
             && State_.CameraSlots.empty();
     };
 
+    for (const auto _RenderSceneID : _RenderSceneIDs)
     {
-        std::lock_guard<std::mutex> _Lock(m_Mutex);
-        if (_IsStateEmpty(_State))
+        iCAX::Render::SRenderSceneSnapshot _Scene;
+        SScenePDOOutputState _State;
+        bool _bHasScene = false;
+        bool _bHasState = false;
         {
-            auto _StateProjectIter = m_PDOOutputs.find(_ProjectID);
+            std::lock_guard<std::mutex> _Lock(m_Mutex);
+            const auto _ProjectIter = m_Projects.find(_ProjectID);
+            if (_ProjectIter != m_Projects.end())
+            {
+                const auto _SceneIter = _ProjectIter->second.find(_RenderSceneID);
+                if (_SceneIter != _ProjectIter->second.end())
+                {
+                    _Scene = _SceneIter->second;
+                    _bHasScene = true;
+                }
+            }
+            const auto _StateProjectIter = m_PDOOutputs.find(_ProjectID);
             if (_StateProjectIter != m_PDOOutputs.end())
             {
-                _StateProjectIter->second.erase(_RenderSceneID);
-                if (_StateProjectIter->second.empty())
+                const auto _StateIter = _StateProjectIter->second.find(_RenderSceneID);
+                if (_StateIter != _StateProjectIter->second.end())
                 {
-                    m_PDOOutputs.erase(_StateProjectIter);
+                    _State = _StateIter->second;
+                    _bHasState = true;
                 }
             }
         }
+
+        if (!_bHasScene && !_bHasState)
+        {
+            std::lock_guard<std::mutex> _Lock(m_Mutex);
+            const auto _OwnerProjectIter = m_OutputSceneOwners.find(_ProjectID);
+            if (_OwnerProjectIter != m_OutputSceneOwners.end())
+            {
+                _OwnerProjectIter->second.erase(_RenderSceneID);
+                if (_OwnerProjectIter->second.empty())
+                {
+                    m_OutputSceneOwners.erase(_OwnerProjectIter);
+                }
+            }
+            continue;
+        }
+        if (!SceneContext_.HasPDOHub())
+        {
+            throw std::logic_error("PDORenderService requires scene PDO hub");
+        }
+
+        if (!_bHasScene)
+        {
+            FreeScenePDOOutput(_ProjectID, _RenderSceneID, SceneContext_, _State);
+        }
         else
         {
-            m_PDOOutputs[_ProjectID][_RenderSceneID] = std::move(_State);
+            SynchronizeScenePDOOutput(_ProjectID, &_Scene, SceneContext_, _State);
+        }
+
+        {
+            std::lock_guard<std::mutex> _Lock(m_Mutex);
+            if (_IsStateEmpty(_State))
+            {
+                auto _StateProjectIter = m_PDOOutputs.find(_ProjectID);
+                if (_StateProjectIter != m_PDOOutputs.end())
+                {
+                    _StateProjectIter->second.erase(_RenderSceneID);
+                    if (_StateProjectIter->second.empty())
+                    {
+                        m_PDOOutputs.erase(_StateProjectIter);
+                    }
+                }
+            }
+            else
+            {
+                m_PDOOutputs[_ProjectID][_RenderSceneID] = std::move(_State);
+            }
+
+            if (!_bHasScene)
+            {
+                const auto _OwnerProjectIter = m_OutputSceneOwners.find(_ProjectID);
+                if (_OwnerProjectIter != m_OutputSceneOwners.end())
+                {
+                    _OwnerProjectIter->second.erase(_RenderSceneID);
+                    if (_OwnerProjectIter->second.empty())
+                    {
+                        m_OutputSceneOwners.erase(_OwnerProjectIter);
+                    }
+                }
+            }
         }
     }
 }
@@ -710,8 +765,10 @@ bool iCAX::PDORenderService::CPDORenderService::ClearScene(
     {
         return false;
     }
+    const auto _nNextRevision = NextSceneRevision(_pScene->nRevision);
     *_pScene = iCAX::Render::SRenderSceneSnapshot{};
     _pScene->nSceneID = nSceneID_;
+    _pScene->nRevision = _nNextRevision;
     return true;
 }
 
@@ -730,6 +787,7 @@ bool iCAX::PDORenderService::CPDORenderService::UpsertMesh(
         return false;
     }
     _pScene->Meshes[Mesh_.nGeometryID] = Mesh_;
+    _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
     return true;
 }
 
@@ -748,6 +806,7 @@ bool iCAX::PDORenderService::CPDORenderService::UpsertPolyline(
         return false;
     }
     _pScene->Polylines[Polyline_.nGeometryID] = Polyline_;
+    _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
     return true;
 }
 
@@ -766,6 +825,7 @@ bool iCAX::PDORenderService::CPDORenderService::UpsertToolpath(
         return false;
     }
     _pScene->Toolpaths[Toolpath_.nGeometryID] = Toolpath_;
+    _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
     return true;
 }
 
@@ -790,6 +850,10 @@ bool iCAX::PDORenderService::CPDORenderService::RemoveGeometry(
         _pScene->Meshes.erase(nGeometryID_)
         + _pScene->Polylines.erase(nGeometryID_)
         + _pScene->Toolpaths.erase(nGeometryID_);
+    if (_Count > 0)
+    {
+        _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
+    }
     return _Count > 0;
 }
 
@@ -811,6 +875,7 @@ bool iCAX::PDORenderService::CPDORenderService::SetObjects(
         return false;
     }
     _pScene->Objects = Objects_;
+    _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
     return true;
 }
 
@@ -856,6 +921,7 @@ bool iCAX::PDORenderService::CPDORenderService::SetTransforms(
 
     _pScene->Transforms = std::move(_NextTransforms);
     _pScene->nTransformDataVersion = _NextSceneVersion;
+    _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
     return true;
 }
 
@@ -881,6 +947,7 @@ bool iCAX::PDORenderService::CPDORenderService::SetCameras(
         }
         _pScene->Cameras.clear();
         _pScene->nActiveCameraID = iCAX::Render::kInvalidRenderCameraID;
+        _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
         return true;
     }
     for (const auto& _Camera : Cameras_)
@@ -911,6 +978,7 @@ bool iCAX::PDORenderService::CPDORenderService::SetCameras(
     }
     _pScene->Cameras = Cameras_;
     _pScene->nActiveCameraID = nActiveCameraID_;
+    _pScene->nRevision = NextSceneRevision(_pScene->nRevision);
     return true;
 }
 
@@ -927,6 +995,22 @@ iCAX::Render::SRenderSceneSnapshot iCAX::PDORenderService::CPDORenderService::Ge
         throw std::logic_error("Render scene does not exist");
     }
     return *_pScene;
+}
+
+iCAX::Render::RenderDataVersion
+iCAX::PDORenderService::CPDORenderService::GetSceneRevision(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN iCAX::Render::RenderSceneID nSceneID_) const
+{
+    ValidateProjectAndScene(ProjectID_, nSceneID_);
+
+    std::lock_guard<std::mutex> _Lock(m_Mutex);
+    const auto* _pScene = FindSceneNoLock(ProjectID_, nSceneID_);
+    if (!_pScene)
+    {
+        throw std::logic_error("Render scene does not exist");
+    }
+    return _pScene->nRevision;
 }
 
 iCAX::PDO::PDOID iCAX::PDORenderService::CPDORenderService::MakeGeometryPDOID(
@@ -1833,10 +1917,10 @@ void iCAX::PDORenderService::CPDORenderService::SendSlotEvent(
         << "\",\"payloadCapacity\":\"" << nPayloadCapacity_
         << "\"}";
 
-    SceneContext_.GetBackendFacadeEndpoint().SendText(
+    SceneContext_.GetBackendSDOEndpoint().SendText(
         0,
         nEventTypeCode_,
-        iCAX::Interaction::EFacadeFrameKind::Event,
+        iCAX::Interaction::ESDOFrameKind::Event,
         _Payload.str());
 }
 
@@ -1855,9 +1939,9 @@ void iCAX::PDORenderService::CPDORenderService::SendDefragEvent(
         << "\",\"pdoId\":\"" << nPDOID_
         << "\"}";
 
-    SceneContext_.GetBackendFacadeEndpoint().SendText(
+    SceneContext_.GetBackendSDOEndpoint().SendText(
         0,
         nEventTypeCode_,
-        iCAX::Interaction::EFacadeFrameKind::Event,
+        iCAX::Interaction::ESDOFrameKind::Event,
         _Payload.str());
 }

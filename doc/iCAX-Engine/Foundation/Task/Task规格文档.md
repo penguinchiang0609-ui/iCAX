@@ -13,7 +13,7 @@
 - 支持手动完成、后台执行、延迟、超时、取消、组合等待和 continuation。
 - API 命名和使用习惯尽量贴近 C# `Task` / `TaskCompletionSource`。
 - 只依赖 C++ 标准库，保持 Foundation 层独立。
-- Coroutine runtime 只依赖抽象 scheduler 与显式 owner scope，不依赖 backend/frontend 线程模型，也不直接依赖 Facade 调用或 PDO。
+- Coroutine runtime 只依赖抽象 scheduler 与显式 owner scope，不依赖 backend/frontend 线程模型，也不直接依赖 SDO 调用或 PDO。
 
 ## 3. 非目标
 
@@ -22,7 +22,7 @@
 - 不提供 `SynchronizationContext` 的真实 UI 消息循环语义。
 - 不提供父子任务 attach 语义。
 - 不提供 `ValueTask`、`IAsyncEnumerable` 或 async stream。
-- 不负责 backend 与 frontend bridge 的 Facade 调用/PDO 通信。
+- 不负责 backend 与 frontend bridge 的 SDO 调用/PDO 通信。
 
 ## 4. 公开能力
 
@@ -191,7 +191,7 @@ runtime 使用的 scheduler 必须与其 owner event loop 串行消费。Foundat
 
 `Task` 内部使用 mutex、condition_variable 和 atomic 保护状态。
 
-本库允许任务在多个 C++ 线程之间使用，但它不改变 iCAX 的主体执行模型。当前 backend 由 ApplicationRuntime、ProductRuntime 和 Project 组织；ApplicationRuntime 拥有应用级工作线程，每个 Project 拥有自己的项目线程，前端通过 bridge 使用 Facades、PDO 和 Resource 与 backend 交互。
+本库允许任务在多个 C++ 线程之间使用，但它不改变 iCAX 的主体执行模型。当前 backend 由 ApplicationRuntime、ProductRuntime 和 Project 组织；ApplicationRuntime 拥有应用级工作线程，每个 Project 拥有自己的项目线程，前端通过 bridge 使用 SDO、PDO 和 Resource 与 backend 交互。
 
 Task 只作为 Foundation 能力提供，不作为 backend/frontend 通信协议。
 

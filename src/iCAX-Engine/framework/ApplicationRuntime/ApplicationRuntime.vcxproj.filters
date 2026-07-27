@@ -30,7 +30,7 @@
     <ClInclude Include="ApplicationRuntimeConfig.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ApplicationRuntimeFacades.h">
+    <ClInclude Include="ApplicationRuntimeSDO.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ProductFileResolver.h">
@@ -47,7 +47,7 @@
     <ClCompile Include="ApplicationRuntime.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ApplicationRuntimeFacades.cpp">
+    <ClCompile Include="ApplicationRuntimeSDO.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ProductFileResolver.cpp">

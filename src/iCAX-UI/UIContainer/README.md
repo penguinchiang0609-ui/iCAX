@@ -3,7 +3,7 @@
 `UIContainer` 是 Application 启动层看到的 UI 抽象层。它不代表某一种具体 UI 技术，而是定义：
 
 - `IFrontendBridge`：UI 容器连接后端 `ApplicationRuntime` 的桥。
-- `CFrontendFacadeFrame`：前后端跨 UI 边界传递的 Facade 调用帧。
+- `CFrontendSDOFrame`：前后端跨 UI 边界传递的 SDO 调用帧。
 - `IUIContainer`：CEF、WPF、QT、Headless 等 UI 容器共同实现的接口。
 - `CUIContainerFactory`：根据配置创建 UI 容器实例。
 - `ICAX_REGISTER_UI_CONTAINER`：供 UI 容器 DLL 静态注册到工厂。
@@ -56,4 +56,4 @@ startupHandshakeTimeoutMS=5000
 
 ## 边界
 
-`UIContainer` 不拥有 Engine，不解析产品 manifest，不实现产品 Facade，不解释 PDO payload。它只定义前端容器和后端桥之间的稳定契约。
+`UIContainer` 不拥有 Engine，不解析产品 manifest，不实现产品 SDO，不解释 PDO payload。它只定义前端容器和后端桥之间的稳定契约。

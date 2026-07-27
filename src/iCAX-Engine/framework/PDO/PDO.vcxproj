@@ -145,6 +145,9 @@
       <EnableUAC>false</EnableUAC>
     </Link>
   </ItemDefinitionGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="..\..\..\third_party\flatbuffers\FlatBuffers.props" />
+  </ImportGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="IPDOHub.h" />
@@ -153,6 +156,7 @@
     <ClInclude Include="PDODecl.h" />
     <ClInclude Include="PDOHub.h" />
     <ClInclude Include="PDO.h" />
+    <ClInclude Include="PDOFlatBuffer.h" />
     <ClInclude Include="PDOLease.h" />
     <ClInclude Include="PDOPayload.h" />
     <ClInclude Include="SharedPDOArena.h" />

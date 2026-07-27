@@ -1,7 +1,9 @@
 #pragma once
 
 #include "ResourceInfo.h"
+#include "ResourceVersionStorage.h"
 
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
@@ -16,6 +18,13 @@ namespace iCAX
 {
     namespace Resource
     {
+        struct CResourceSnapshot final
+        {
+            CResourceInfo Info;
+            std::optional<std::type_index> RuntimeType;
+            std::shared_ptr<void> pResource;
+        };
+
         /*
         * @brief Scene 级资源池。
         * @details
@@ -25,8 +34,10 @@ namespace iCAX
         class _RESOURCES_EXP CResourcePool final
         {
         public:
-            CResourcePool() = default;
-            ~CResourcePool() = default;
+            CResourcePool();
+            explicit CResourcePool(
+                IN const CResourceVersionStorageOptions& VersionStorageOptions_);
+            ~CResourcePool();
 
             CResourcePool(IN const CResourcePool&) = delete;
             CResourcePool& operator=(IN const CResourcePool&) = delete;
@@ -80,9 +91,28 @@ namespace iCAX
             std::shared_ptr<void> GetUntyped(IN const CResourceKey& Key_, IN const std::type_info& ExpectedRuntimeType_) const;
 
             /*
+            * @brief 获取指定历史版本的无类型资源对象。
+            * @details 冷版本会从临时目录按需反序列化；池只保存弱缓存，不因此永久增加内存占用。
+            */
+            std::shared_ptr<void> GetUntyped(
+                IN const CResourceKey& Key_,
+                IN uint64_t nVersion_) const;
+            std::shared_ptr<void> GetUntyped(
+                IN const CResourceKey& Key_,
+                IN uint64_t nVersion_,
+                IN const std::type_info& ExpectedRuntimeType_) const;
+
+            /*
             * @brief 判断资源记录是否存在。
             */
             bool Contains(IN const CResourceKey& Key_) const;
+
+            /*
+            * @brief 判断指定版本是否仍可用于撤销/还原。
+            */
+            bool ContainsVersion(
+                IN const CResourceKey& Key_,
+                IN uint64_t nVersion_) const;
 
             /*
             * @brief 判断资源对象是否已加载。
@@ -96,8 +126,9 @@ namespace iCAX
             bool Unload(IN const CResourceKey& Key_);
 
             /*
-            * @brief 移除资源记录和对象。
-            * @return true 表示移除了已有记录。
+            * @brief 永久移除当前记录、全部历史版本和对象。
+            * @return true 表示移除了当前记录或历史记录。
+            * @details 这是管理级硬删除；普通用户删除应使用 RemoveVersioned。
             */
             bool Remove(IN const CResourceKey& Key_);
 
@@ -116,6 +147,13 @@ namespace iCAX
             * @return 找到时返回 CResourceInfo，否则返回 std::nullopt。
             */
             std::optional<CResourceInfo> GetInfo(IN const CResourceKey& Key_) const;
+
+            /*
+            * @brief 获取指定当前或历史版本的资源信息。
+            */
+            std::optional<CResourceInfo> GetInfo(
+                IN const CResourceKey& Key_,
+                IN uint64_t nVersion_) const;
 
             /*
             * @brief 获取资源内容版本。
@@ -161,6 +199,77 @@ namespace iCAX
             */
             std::string GetRuntimeTypeName(IN const CResourceKey& Key_) const;
 
+            /*
+            * @brief 原子获取资源信息和对象快照。
+            */
+            std::optional<CResourceSnapshot> GetSnapshot(
+                IN const CResourceKey& Key_) const;
+
+            /*
+            * @brief 原子获取指定当前或历史版本快照。
+            * @details 历史版本位于冷存储时会按需加载；失败时仍返回 Info，但 pResource 为空。
+            */
+            std::optional<CResourceSnapshot> GetSnapshot(
+                IN const CResourceKey& Key_,
+                IN uint64_t nVersion_) const;
+
+            /*
+            * @brief 获取某个 URL 当前仍保留的全部版本号。
+            */
+            std::vector<uint64_t> GetVersions(
+                IN const CResourceKey& Key_) const;
+
+            /*
+            * @brief 注册业务资源历史版本编解码器。
+            * @param [in] bReplaceExisting_ true 表示替换同运行期类型的现有编解码器。
+            */
+            bool RegisterVersionCodec(
+                IN const std::type_info& RuntimeType_,
+                IN CResourceVersionCodec Codec_,
+                IN bool bReplaceExisting_ = false);
+
+            /*
+            * @brief 查询版本是否已经从池持有的内存对象转为磁盘冷版本。
+            */
+            bool IsVersionCold(
+                IN const CResourceKey& Key_,
+                IN uint64_t nVersion_) const;
+
+            /*
+            * @brief 获取历史版本冷存储统计和本池独占的临时目录。
+            */
+            CResourceVersionStorageStats GetVersionStorageStats() const;
+            std::filesystem::path GetVersionStorageDirectory() const;
+
+            /*
+            * @brief 显式永久丢弃一个非当前版本。
+            * @details 资源池不会自动调用；仅应在撤销/重做栈和所有组件都不再引用该版本后调用。
+            */
+            bool DiscardVersion(
+                IN const CResourceKey& Key_,
+                IN uint64_t nVersion_);
+
+            /*
+            * @brief 按资源版本条件原子创建或替换对象。
+            * @details 成功写入时由池生成严格递增的资源版本。
+            */
+            EResourceMutationResult PutUntypedVersioned(
+                IN const CResourceKey& Key_,
+                IN std::shared_ptr<void> pResource_,
+                IN const std::type_info& RuntimeType_,
+                IN const CResourceInfo& Info_,
+                IN EResourceVersionCondition Condition_,
+                IN uint64_t nExpectedVersion_,
+                OUT CResourceInfo* pStoredInfo_ = nullptr);
+
+            /*
+            * @brief 按资源版本条件原子移除记录。
+            */
+            EResourceMutationResult RemoveVersioned(
+                IN const CResourceKey& Key_,
+                IN EResourceVersionCondition Condition_,
+                IN uint64_t nExpectedVersion_);
+
             template <typename T>
             /*
             * @brief 设置指定类型资源对象。
@@ -201,6 +310,26 @@ namespace iCAX
                 return std::static_pointer_cast<TResource>(_pResource);
             }
 
+            template <typename T>
+            /*
+            * @brief 获取指定资源版本；冷版本会从磁盘按需加载。
+            */
+            std::shared_ptr<T> Get(
+                IN const std::string& strSource_,
+                IN uint64_t nVersion_) const
+            {
+                using TResource = std::remove_cv_t<std::remove_reference_t<T>>;
+                auto _pResource = GetUntyped(
+                    CResourceKey{ strSource_ },
+                    nVersion_,
+                    typeid(TResource));
+                if (!_pResource)
+                {
+                    return nullptr;
+                }
+                return std::static_pointer_cast<TResource>(_pResource);
+            }
+
             /*
             * @brief 标记指定来源资源内容发生变化。
             * @return 递增后的版本；资源不存在时返回 0。
@@ -218,6 +347,19 @@ namespace iCAX
                 std::shared_ptr<void> pResource;
             };
 
+            struct CArchivedResourceRecord final
+            {
+                CResourceInfo Info;
+                std::optional<std::type_index> RuntimeType;
+                std::weak_ptr<void> CachedResource;
+                std::shared_ptr<void> pResidentResource;
+                std::filesystem::path ColdStoragePath;
+                uint64_t nStoredSize = 0;
+            };
+
+            using CArchivedVersionMap =
+                std::map<uint64_t, CArchivedResourceRecord>;
+
             /*
             * @brief 校验资源键。
             * @throws std::invalid_argument Key 无效时抛出。
@@ -230,9 +372,35 @@ namespace iCAX
             */
             static CResourceInfo NormalizeInfo(IN const CResourceKey& Key_, IN const CResourceInfo& Info_);
 
+            /*
+            * @brief 在持有 m_Mutex 独占锁时归档一个即将过期的当前版本。
+            */
+            void ArchiveRecordLocked(
+                IN const CResourceKey& Key_,
+                IN const CResourceRecord& Record_);
+
+            /*
+            * @brief 在持有 m_Mutex 独占锁时删除指定 URL 的全部冷存储文件。
+            */
+            void DeleteArchivedFilesLocked(
+                IN const CResourceKey& Key_) noexcept;
+
+            /*
+            * @brief 初始化内置编解码器和本池独占的临时目录。
+            */
+            void InitializeVersionStorage();
+
         private:
             mutable std::shared_mutex m_Mutex;
             std::map<CResourceKey, CResourceRecord> m_mapResources;
+            mutable std::map<CResourceKey, CArchivedVersionMap>
+                m_mapArchivedVersions;
+            std::map<CResourceKey, uint64_t> m_mapVersionHighWaterMarks;
+            std::map<std::type_index, CResourceVersionCodec>
+                m_mapVersionCodecs;
+            CResourceVersionStorageOptions m_VersionStorageOptions;
+            std::filesystem::path m_VersionStorageDirectory;
+            uint64_t m_nArchiveFileSequence = 0;
         };
     }
 }

@@ -155,6 +155,8 @@
     <ClInclude Include="MaskRegistry.h" />
     <ClInclude Include="ComponentBase.h" />
     <ClInclude Include="DerivedProperty.h" />
+    <ClInclude Include="EntityInsert.h" />
+    <ClInclude Include="EntityQuery.h" />
     <ClInclude Include="EntityUpdate.h" />
     <ClInclude Include="EntityWhere.h" />
     <ClInclude Include="EntityWhereEvaluator.h" />
@@ -169,6 +171,7 @@
     <ClInclude Include="IChecker.h" />
     <ClInclude Include="IFieldPolicyProvider.h" />
     <ClInclude Include="IEntityEvent.h" />
+    <ClInclude Include="IEntityViewEvent.h" />
     <ClInclude Include="IEntityView.h" />
     <ClInclude Include="IComponentFrameCache.h" />
     <ClInclude Include="IEntity.h" />
@@ -188,6 +191,7 @@
     <ClCompile Include="ChangeSet.cpp" />
     <ClCompile Include="ComponentBase.cpp" />
     <ClCompile Include="DerivedProperty.cpp" />
+    <ClCompile Include="EntityQuery.cpp" />
     <ClCompile Include="EntityUpdate.cpp" />
     <ClCompile Include="EntityView.cpp" />
     <ClCompile Include="IMetaRegistry.cpp" />

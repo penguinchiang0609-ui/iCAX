@@ -2,6 +2,9 @@
 #include "PDO.h"
 #include "PDODecl.h"
 
+#include <cstdint>
+#include <stdexcept>
+
 namespace iCAX
 {
     namespace PDO
@@ -78,6 +81,26 @@ namespace iCAX
             virtual void MarkWriteReady(IN uint64_t nDataVersion_) = 0;
 
             /*
+            * @brief 按实际有效字节数标记写结束。
+            * @param [in] nDataVersion_ 本次写入对应的源数据版本。
+            * @param [in] nPayloadSize_ 当前缓冲内的实际有效字节数。
+            * @details
+            *   可变长载荷（例如 FlatBuffer）必须调用该重载，读侧才能只校验
+            *   当前帧的精确字节范围。旧的固定布局 Slot 默认只接受完整容量。
+            */
+            virtual void MarkWriteReady(
+                IN uint64_t nDataVersion_,
+                IN uint64_t nPayloadSize_)
+            {
+                if (nPayloadSize_ != static_cast<uint64_t>(GetHeader().nPayloadSize))
+                {
+                    throw std::invalid_argument(
+                        "PDO slot does not support variable payload sizes");
+                }
+                MarkWriteReady(nDataVersion_);
+            }
+
+            /*
             * @brief 取消当前写入。
             * @details
             *   调用方已经取得写缓冲但决定不发布时，应调用该接口。
@@ -119,6 +142,17 @@ namespace iCAX
             *   写侧判断是否需要重序列化时应使用该接口，而不是只看 published 版本。
             */
             virtual uint64_t GetLatestDataVersion() const noexcept = 0;
+
+            /*
+            * @brief 获取指定缓冲区当前保存的实际有效字节数。
+            * @details 固定布局 Slot 默认返回声明容量；可变长 Slot 应覆盖该接口。
+            */
+            virtual uint64_t GetBufferPayloadSize(
+                IN uint32_t nBufferIndex_) const
+            {
+                (void)nBufferIndex_;
+                return static_cast<uint64_t>(GetHeader().nPayloadSize);
+            }
 
             /*
             * @brief 双缓冲交换

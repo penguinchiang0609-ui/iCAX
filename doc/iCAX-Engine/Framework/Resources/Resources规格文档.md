@@ -4,7 +4,7 @@
 
 `Resources` 是 framework 层的工程资源系统。
 
-它解决的问题是：模型、图片、文字、材质、渲染缓存等资源可以统一通过资源路径或来源字符串访问。Database、Facades、Behaviour 或业务代码不需要直接持有资源对象，也不需要手动构造资源 key。
+它解决的问题是：模型、图片、文字、材质、渲染缓存等资源可以统一通过资源路径或来源字符串访问。Database、SDO、Behaviour 或业务代码不需要直接持有资源对象，也不需要手动构造资源 key。
 
 核心模型：
 
@@ -54,9 +54,14 @@ struct CResourceInfo
     CResourceKey Key;
     std::string Name;
     std::string Source;
+    std::string MediaType;
+    std::string ResourceTypeID;
+    std::string FlatBufferIdentifier;
     std::string ContentHash;
     uint64_t nVersion;
     uint64_t nSize;
+    uint32_t nSchemaVersion;
+    uint32_t nMinimumReaderVersion;
     uint32_t nFlags;
     EResourcePersistenceMode Persistence;
     std::map<std::string, std::string> Metadata;
@@ -70,6 +75,8 @@ struct CResourceInfo
 - `External`：资源以外部引用形式保存，工程文件记录引用信息。
 
 `nVersion` 是资源内容版本，类型为 `uint64_t`。它不是文件格式版本，也不是 loader 版本，而是当前资源对象内容的运行期版本。运行期生成的 mesh、渲染缓存、识别结果等资源发生内容变化时，应调用 `Touch(source)` 递增版本；这个版本可以直接作为 PDO 的 `dataVersion` 使用，避免未变化资源每帧重复序列化。
+
+`nSchemaVersion` 和 `nMinimumReaderVersion` 描述 Google FlatBuffers 业务 Schema；`FlatBufferIdentifier` 保存四字节 `file_identifier`。它们决定如何解释资源内容，不参与资源内容版本递增。
 
 ### 2.3 ResourceLibrary
 
@@ -134,6 +141,13 @@ bool UpdateInfo(std::string source, CResourceInfo info);
 std::vector<CResourceKey> GetKeys() const;
 std::vector<CResourceInfo> GetInfos() const;
 std::vector<CResourceInfo> GetManifest(bool includeRuntimeOnly = false);
+
+CResourceResponse Request(CResourceRequest request);
+CResourceResponse Head(std::string url, CResourceHeaders headers = {});
+CResourceResponse Get(std::string url, CResourceHeaders headers = {});
+CResourceResponse Put(std::string url, CFlatBufferResource body, CResourceHeaders headers = {});
+CResourceResponse Delete(std::string url, CResourceHeaders headers = {});
+CResourceResponse Options(std::string url, CResourceHeaders headers = {});
 ```
 
 ### 2.4 ResourcePool
@@ -259,6 +273,58 @@ auto resource = scene.Resources().Load<T>(source);
 如果 `CResourceLibrary` 是裸创建且没有注入 registry，则只拥有一个空的私有 registry，不会回退到静态全局 registry。
 
 底层资源池仍然使用 `CResourceKey` 做索引，但这是 Resources 内部机制，不作为上层加载资源时必须提供的额外 key。
+
+### 2.8 直接 Resource API
+
+Resource API 是资源数据面的公开入口，不经过 SDO、SDO 或邮件帧。它采用 HTTP/REST 的方法、Headers、状态码和条件请求语义，但底层可以是同进程调用、前端宿主 Bridge 或远程 Provider。
+
+```text
+Frontend/Backend
+  Resource Request(method, URL, headers, body)
+    -> Scene ResourceLibrary
+      -> ResourcePool
+```
+
+支持的方法：
+
+| 方法 | 语义 |
+|---|---|
+| `HEAD` | 获取描述，不返回 Body；正文未加载时也可直接读取 manifest |
+| `GET` | 获取 Google FlatBuffer Body |
+| `PUT` | 创建或完整替换 URL 对应资源 |
+| `DELETE` | 删除资源 |
+| `OPTIONS` | 获取 `Allow` 和可写入媒体类型 |
+
+资源表示 Headers：
+
+```text
+Content-Type: application/vnd.icax.flatbuffer
+Content-Length: <GET body bytes>
+ETag: "icax-v42"
+ICAX-Resource-Type: geometry.mesh
+ICAX-FlatBuffer-Identifier: ICMS
+ICAX-Schema-Version: 3
+ICAX-Min-Reader-Version: 2
+ICAX-Resource-Version: 42
+ICAX-Content-Hash: <optional>
+```
+
+`PUT` 对 FlatBuffer 做无 Schema 的基本 root offset 检查；请求提供 `ICAX-FlatBuffer-Identifier` 时还会校验 Body 中的 identifier。具体业务读取器仍必须通过生成代码和 `flatbuffers::Verifier` 完成完整 Schema 校验。
+
+结构化写入必须使用 `application/vnd.icax.flatbuffer` 或明确的
+`application/*+flatbuffer(s)` 媒体类型。`application/octet-stream`
+不会被猜测为 FlatBuffer。调用方先通过 `HEAD` 的 `Content-Type`
+判断资源表示，再按 `ICAX-Schema-Version` 和
+`ICAX-FlatBuffer-Identifier` 选择对应 Layout/生成代码。
+
+条件请求：
+
+- `GET/HEAD + If-None-Match` 命中时返回 `304`。
+- `PUT/DELETE + If-Match` 不匹配时返回 `412`。
+- `PUT + If-None-Match: *` 只允许创建，不允许覆盖。
+- 写入的比较和资源版本递增在 ResourcePool 同一个写锁内完成。
+
+`DELETE` 删除资源；`Unload` 只卸载 C++ 运行时对象。两者不能互相映射。
 
 ## 3. 使用样例
 

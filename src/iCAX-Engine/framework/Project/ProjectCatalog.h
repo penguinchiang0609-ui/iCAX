@@ -28,7 +28,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider; //!< 服务容器。
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry; //!< 产品级元数据注册表。
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 产品级行为注册表。
-            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry; //!< Facade channel 注册表。
+            std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry; //!< SDO channel 注册表。
             bool bEnablePDOHub = false; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 开关。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 创建参数。
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> ResourceLoaderRegistryFactory; //!< Scene 级资源加载器注册表工厂。
@@ -161,7 +161,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
-            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> m_pFacadeChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> m_pSDOChannelRegistry;
             bool m_bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo m_PDOHubCreateInfo;
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> m_ResourceLoaderRegistryFactory;

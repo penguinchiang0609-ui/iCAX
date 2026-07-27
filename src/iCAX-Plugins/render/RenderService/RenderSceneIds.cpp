@@ -22,3 +22,11 @@ iCAX::Render::RenderSceneID iCAX::Render::MakeRenderSceneID(IN const iCAX::Data:
     return static_cast<RenderSceneID>(MakeStableRenderID("scene:" + iCAX::Data::to_string(SceneID_)));
 }
 
+iCAX::Render::RenderSceneID iCAX::Render::MakeViewRenderSceneID(
+    IN const iCAX::Data::uuid& SceneID_,
+    IN const iCAX::Data::uuid& ViewInstanceID_) noexcept
+{
+    return static_cast<RenderSceneID>(MakeStableRenderID(
+        "scene:" + iCAX::Data::to_string(SceneID_)
+        + ".view:" + iCAX::Data::to_string(ViewInstanceID_)));
+}

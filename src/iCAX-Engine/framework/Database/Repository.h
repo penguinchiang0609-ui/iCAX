@@ -199,7 +199,12 @@ namespace iCAX
                 IN const SEntityWhere& Where_,
                 IN const iCAX::Data::ObjectMap& Parameters_) override;
 
+            SEntityQueryResult Select(
+                IN const SEntityQuery& Query_,
+                IN const iCAX::Data::ObjectMap& Parameters_) override;
+
             using IRepository::Delete;
+            using IRepository::Insert;
             using IRepository::Update;
 
             std::shared_ptr<IEntityView> CreateEntityView(
@@ -220,6 +225,12 @@ namespace iCAX
                 IN const SEntityWhere& Where_,
                 IN const iCAX::Data::ObjectMap& Parameters_,
                 OUT SEntityMutationResult& Result_,
+                OUT std::string& strError_) override;
+
+            [[nodiscard]] bool Insert(
+                IN const SEntityInsert& Insert_,
+                IN const iCAX::Data::ObjectMap& Parameters_,
+                OUT SEntityInsertResult& Result_,
                 OUT std::string& strError_) override;
 
             /*

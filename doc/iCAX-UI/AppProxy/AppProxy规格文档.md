@@ -7,7 +7,7 @@
 前端 app proxy 不拥有业务数据，只保存：
 
 - application channel id。
-- 全局 `FacadeClient`。
+- 全局 `SDOClient`。
 - application state 快照。
 - 已启动 product 的 `ProductProxy` 对象表。
 
@@ -34,17 +34,17 @@ const app = await AppProxy.create(bridge);
 
 ## 3. 生命周期
 
-`AppProxy.create()` 必须先从 bridge 获取 application channel，然后创建 `FacadeClient`。
+`AppProxy.create()` 必须先从 bridge 获取 application channel，然后创建 `SDOClient`。
 
 产品启动、停止、项目文件打开都通过 application channel 发起。`AppProxy` 收到 backend state 后，同步本地 `ProductProxy` 对象表。
 
-backend state 中的 `productChannelId` 只表示 product runtime 的通信身份，不表示当前 H5 bridge 已经可以向该 channel 投递 Facade frame。只要 product runtime 处于 started 状态，`AppProxy` 在创建或更新 `ProductProxy` 前必须调用 `bridge.registerProductChannel(productId)`，让原生宿主把 product frontend Facade endpoint 注册到当前 bridge 会话。
+backend state 中的 `productChannelId` 只表示 product runtime 的通信身份，不表示当前 H5 bridge 已经可以向该 channel 投递 SDO frame。只要 product runtime 处于 started 状态，`AppProxy` 在创建或更新 `ProductProxy` 前必须调用 `bridge.registerProductChannel(productId)`，让原生宿主把 product frontend SDO endpoint 注册到当前 bridge 会话。
 
 `bridge.registerProductChannel(productId)` 返回的 channel id 才是本次前端会话实际可用的 `productChannelId`。如果返回空、nil 或非法 channel id，必须立即抛出异常。
 
 ## 4. 错误处理
 
-缺少 `bridge`、`FacadeClient` 或 application channel id 时立即抛出异常。命令失败和超时由 `FacadeClient` 转换为 rejected Promise。
+缺少 `bridge`、`SDOClient` 或 application channel id 时立即抛出异常。命令失败和超时由 `SDOClient` 转换为 rejected Promise。
 
 ## 5. 验收要求
 

@@ -21,7 +21,7 @@ IRenderService
 
 ```text
 Scene PreSwapPDO
-    -> Facade 调用处理
+    -> SDO 调用处理
     -> Universe Tick
     -> RenderService.Update
 Scene PostSwapPDO

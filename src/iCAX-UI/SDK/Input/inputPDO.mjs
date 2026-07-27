@@ -1,4 +1,4 @@
-import { makePDOID } from "../Facades/facadeMethod.mjs";
+import { makePDOID } from "../SDO/sdoMethod.mjs";
 
 export const InputPDOLayout = Object.freeze({
   magic: 0x4F445049,

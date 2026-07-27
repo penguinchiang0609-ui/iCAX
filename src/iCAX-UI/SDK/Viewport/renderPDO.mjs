@@ -1,4 +1,4 @@
-import { makeFacadeMethodCodeFromName } from "../Facades/facadeMethod.mjs";
+import { makeSDOMethodCodeFromName } from "../SDO/sdoMethod.mjs";
 
 export const RenderPDOEvents = Object.freeze({
   slotAllocated: "PDORender.SlotAllocated",
@@ -9,7 +9,7 @@ export const RenderPDOEvents = Object.freeze({
 });
 
 export const RenderPDOTypeCodes = Object.freeze(Object.fromEntries(
-  Object.entries(RenderPDOEvents).map(([key, facadeEvent]) => [key, makeFacadeMethodCodeFromName(facadeEvent)]),
+  Object.entries(RenderPDOEvents).map(([key, sdoEvent]) => [key, makeSDOMethodCodeFromName(sdoEvent)]),
 ));
 
 export const RenderPDOPayloadKind = Object.freeze({

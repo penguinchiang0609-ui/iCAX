@@ -56,9 +56,15 @@ export function getProjectArea(view, areaId) {
 export function setProjectAreaViewContent(view, areaId, payload = {}) {
   const area = getProjectArea(view, areaId);
   const objects = Array.isArray(payload.objects) ? payload.objects : [];
+  const outputs = Array.isArray(payload.outputs) ? payload.outputs : [];
+  const renderOutput = outputs.find((output) => String(output?.type ?? "") === "render");
+  area.viewInstanceId = String(payload.viewInstanceId ?? area.viewInstanceId ?? "").trim();
   area.viewContent = {
+    viewInstanceId: area.viewInstanceId,
     viewDefinitionId: String(payload.viewDefinitionId ?? ""),
     revision: Number(payload.revision ?? 0),
+    outputs,
+    renderSceneId: String(renderOutput?.properties?.renderSceneId ?? "").trim(),
     entityIds: new Set(objects
       .map((object) => String(object?.entityId ?? "").trim())
       .filter(Boolean)),
@@ -74,6 +80,7 @@ function getOrCreateArea(view, areaId) {
     layout: { ...DEFAULT_AREA_LAYOUT },
     selectedSceneObjectId: "",
     selectedMachineInstanceId: "",
+    viewInstanceId: "",
     viewContent: null,
     viewContentRequest: null,
   };

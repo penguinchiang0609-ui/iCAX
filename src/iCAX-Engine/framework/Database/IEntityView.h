@@ -2,6 +2,7 @@
 
 #include "Database.h"
 #include "EntityWhere.h"
+#include "IEntityViewEvent.h"
 
 #include "Data/Variant.h"
 #include "Data/uuid.h"
@@ -18,6 +19,7 @@ namespace iCAX::Database
     *   Revision 只在最终 Entity ID 集合实际变化时递增。
     */
     class _DATABASE_EXP IEntityView
+        : public IEntityViewEventPublisher
     {
     public:
         IEntityView() = default;

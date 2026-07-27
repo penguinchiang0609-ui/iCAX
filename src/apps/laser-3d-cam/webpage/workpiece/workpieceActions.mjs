@@ -45,9 +45,9 @@ export function handleWorkpieceAction(context, view, action, ops) {
   return false;
 }
 
-async function invokeCadMethod(context, view, facadeMethod, ops) {
-  const ok = await ops.invokeFacadeMethod(context, view, facadeMethod, {});
-  if (ok && facadeMethod === "WorkpieceEdit.Inspect") {
+async function invokeCadMethod(context, view, sdoMethod, ops) {
+  const ok = await ops.invokeSDOMethod(context, view, sdoMethod, {});
+  if (ok && sdoMethod === "WorkpieceEdit.Inspect") {
     view.notice = "模型检查完成";
   }
 }
@@ -91,7 +91,7 @@ export async function importModelPath(context, view, sourcePath, ops) {
     ops.renderProject(context, view);
     return;
   }
-  const imported = await ops.invokeFacadeMethodPayload(
+  const imported = await ops.invokeSDOMethodPayload(
     context,
     view,
     "WorkpieceModel.Import",
@@ -101,7 +101,7 @@ export async function importModelPath(context, view, sourcePath, ops) {
   if (!imported.ok) {
     return;
   }
-  const ok = await ops.invokeFacadeMethod(context, view, "Workpiece.Instantiate", imported.payload, { timeoutMs: 60000 });
+  const ok = await ops.invokeSDOMethod(context, view, "Workpiece.Instantiate", imported.payload, { timeoutMs: 60000 });
   if (ok) {
     await ops.fitViewAfterRenderPublish(context, view);
   }

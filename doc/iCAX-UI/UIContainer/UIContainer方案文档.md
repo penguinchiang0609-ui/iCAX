@@ -66,17 +66,17 @@ modulePath=QtUIContainer.dll
 
 工厂只负责创建实例，不理解产品、不调度业务、不维护 Engine 生命周期。
 
-## 4. Facades 边界
+## 4. SDO 边界
 
 具体 UI 技术只通过 `IFrontendBridge` 进入 backend。H5/CEF 容器会把 JS 的 `window.icax` 调用转成该接口；WPF/QT 容器可以直接封装这些调用：
 
 - `getApplicationChannelId()`
 - `registerProductChannel(productId)`
 - `registerSceneChannel(projectId, sceneId)`
-- `postFacadeFrame(frame)`
-- `subscribeFacadeFrames(channelId, handler)`
+- `postSDOFrame(frame)`
+- `subscribeSDOFrames(channelId, handler)`
 
-具体 UI 容器负责把这些调用转成 `IFrontendBridge` 调用。H5 前端 Promise 由 `iCAX-UI/SDK/Facades` 管理；原生后端使用 `Task<CInvocationResult>`。无论调用方向如何，Bridge 都只异步投递 frame，不在收帧线程同步等待业务完成。WPF/QT 前端也应使用 Task/async 包装同一 Request/Report/Response 语义。
+具体 UI 容器负责把这些调用转成 `IFrontendBridge` 调用。H5 前端 Promise 由 `iCAX-UI/SDK/SDO` 管理；原生后端使用 `Task<CInvocationResult>`。无论调用方向如何，Bridge 都只异步投递 frame，不在收帧线程同步等待业务完成。WPF/QT 前端也应使用 Task/async 包装同一 Request/Report/Response 语义。
 
 ## 5. 验收
 

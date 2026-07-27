@@ -52,8 +52,8 @@
   <Folder Name="/iCAX-Engine/framework/Behaviour/">
     <Project Path="iCAX-Engine/framework/Behaviour/Behaviour.vcxproj" Id="1c150fbb-3418-414d-8a3c-f7b57c6d18b7" />
   </Folder>
-  <Folder Name="/iCAX-Engine/framework/Facades/">
-    <Project Path="iCAX-Engine/framework/Facades/Facades.vcxproj" Id="1f194886-5b7e-4fa9-816c-1b48865633e6" />
+  <Folder Name="/iCAX-Engine/framework/SDO/">
+    <Project Path="iCAX-Engine/framework/SDO/SDO.vcxproj" Id="1f194886-5b7e-4fa9-816c-1b48865633e6" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Database/">
     <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" Id="c746f6a5-c34a-4649-a3f4-ad185002dedd" />
@@ -185,9 +185,9 @@
   <Folder Name="/tests/icax-engine/framework/Behaviour/BehaviourTest/">
     <Project Path="tests/icax-engine/framework/Behaviour/BehaviourTest/BehaviourTest.vcxproj" Id="6be97c5d-6098-4fc1-9e47-3c22a65f4ac1" />
   </Folder>
-  <Folder Name="/tests/icax-engine/framework/Facades/" />
-  <Folder Name="/tests/icax-engine/framework/Facades/FacadesTest/">
-    <Project Path="tests/icax-engine/framework/Facades/FacadesTest/FacadesTest.vcxproj" Id="7ff89591-2955-47dd-a507-82362d56da4e" />
+  <Folder Name="/tests/icax-engine/framework/SDO/" />
+  <Folder Name="/tests/icax-engine/framework/SDO/SDOTest/">
+    <Project Path="tests/icax-engine/framework/SDO/SDOTest/SDOTest.vcxproj" Id="7ff89591-2955-47dd-a507-82362d56da4e" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/Database/" />
   <Folder Name="/tests/icax-engine/framework/Database/DatabaseTest/">

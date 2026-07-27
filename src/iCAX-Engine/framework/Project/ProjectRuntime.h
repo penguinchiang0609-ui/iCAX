@@ -20,7 +20,7 @@ namespace iCAX
         using SceneRuntimeFrameHandler = std::function<void(
             IProjectRuntime&,
             iCAX::Project::ISceneContext&,
-            const iCAX::Interaction::CFacadeEndpoint&)>;
+            const iCAX::Interaction::CSDOEndpoint&)>;
 
         /*
         * @brief 项目运行时接口。
@@ -74,9 +74,9 @@ namespace iCAX
             */
             virtual CMainScenePDODescriptor GetMainScenePDODescriptor() const = 0;
             /*
-            * @brief 获取前端视角项目主 Scene Facade 端点。
+            * @brief 获取前端视角项目主 Scene SDO 端点。
             */
-            virtual iCAX::Interaction::CFacadeEndpoint GetMainSceneFrontendFacadeEndpoint() = 0;
+            virtual iCAX::Interaction::CSDOEndpoint GetMainSceneFrontendSDOEndpoint() = 0;
             /*
             * @brief 设置 runtime 每帧回调。
             */
@@ -161,9 +161,9 @@ namespace iCAX
             */
             CMainScenePDODescriptor GetMainScenePDODescriptor() const override;
             /*
-            * @brief 获取前端视角项目主 Scene Facade 端点。
+            * @brief 获取前端视角项目主 Scene SDO 端点。
             */
-            iCAX::Interaction::CFacadeEndpoint GetMainSceneFrontendFacadeEndpoint() override;
+            iCAX::Interaction::CSDOEndpoint GetMainSceneFrontendSDOEndpoint() override;
             /*
             * @brief 设置每帧回调。
             */

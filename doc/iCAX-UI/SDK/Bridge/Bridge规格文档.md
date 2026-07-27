@@ -17,8 +17,8 @@ bridge 至少需要提供：
 - `getApplicationChannelId()`
 - `registerProductChannel(productId)`
 - `registerSceneChannel(projectId, sceneId)`
-- `subscribeFacadeFrames(channelId, handler)`
-- `postFacadeFrame(frame)`
+- `subscribeSDOFrames(channelId, handler)`
+- `postSDOFrame(frame)`
 
 可选宿主能力：
 
@@ -81,41 +81,41 @@ const channelId = await bridge.registerSceneChannel(projectId, sceneId);
 - 调用失败时抛出异常或 reject。
 - 重复登记同一 Scene 应返回同一个 channel id。
 
-### 5.4 subscribeFacadeFrames
+### 5.4 subscribeSDOFrames
 
 ```js
-const unsubscribe = bridge.subscribeFacadeFrames(channelId, handler);
+const unsubscribe = bridge.subscribeSDOFrames(channelId, handler);
 ```
 
-订阅指定 channel 上到达的 Facade frame。
+订阅指定 channel 上到达的 SDO frame。
 
 frame 的 `kind` 包括：
 
-- `Request`：后端调用前端提供的 Facade；
+- `Request`：后端调用前端提供的 SDO；
 - `Report`：一次调用的中间汇报；
 - `Response`：完成对应 Promise；
 - `Event`：对端主动发送的事件。
 
 要求：
 
-- `handler` 接收 Facade frame。
+- `handler` 接收 SDO frame。
 - 返回值必须是可调用的取消订阅函数。
 - 同一个 channel 可以有多个订阅者。
 - 取消订阅后不得再调用该 handler。
 
-### 5.5 postFacadeFrame
+### 5.5 postSDOFrame
 
 ```js
-await bridge.postFacadeFrame(frame);
+await bridge.postSDOFrame(frame);
 ```
 
-将前端 Facade frame 投递到 backend。
+将前端 SDO frame 投递到 backend。
 
 要求：
 
-- `postFacadeFrame` 只表达投递成功，不表达业务成功；
+- `postSDOFrame` 只表达投递成功，不表达业务成功；
 - 业务成功或失败通过后续 Response 表达；
-- `postFacadeFrame` 不允许同步阻塞等待 backend 执行业务方法；
+- `postSDOFrame` 不允许同步阻塞等待 backend 执行业务方法；
 - Request、Report 和 Response 必须保持同一个 `callId`。
 
 ### 5.6 openFileDialog

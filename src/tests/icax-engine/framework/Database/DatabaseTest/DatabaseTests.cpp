@@ -3,6 +3,7 @@
 
 #include <Database/ComponentHelper.h>
 #include <Database/IEntity.h>
+#include <Database/IEntityViewEvent.h>
 #include <Database/IFieldPolicyProvider.h>
 #include <Database/IRepository.h>
 #include <Database/OperationLog.h>
@@ -614,6 +615,35 @@ namespace
         }
     };
 
+    class CEntityViewEventCollector final : public IEntityViewEventListener
+    {
+    public:
+        std::vector<void*> Senders;
+        std::vector<EntityViewEventArgs> Events;
+
+        void OnEntityViewChanged(
+            void* pSender_,
+            const EntityViewEventArgs& Args_) override
+        {
+            Senders.push_back(pSender_);
+            Events.push_back(Args_);
+        }
+    };
+
+    class CThrowingEntityViewObserver final : public IEntityViewEventListener
+    {
+    public:
+        void OnEntityViewChanged(
+            void*,
+            const EntityViewEventArgs&) override
+        {
+            ++CallCount;
+            throw std::runtime_error("entity view observer failed");
+        }
+
+        int CallCount = 0;
+    };
+
     class CThrowingRepositoryObserver final : public IRepositoryEventListener
     {
     public:
@@ -1170,6 +1200,82 @@ TEST(DatabaseRepositoryTest, EntityViewMaintainsMembershipAndRevisionIncremental
     EXPECT_EQ(
         _pNever.get(),
         _Space->CreateEntityView(Where::Build(Where::Constant(false))).get());
+}
+
+TEST(DatabaseRepositoryTest, EntityViewPublishesCommittedMembershipDeltas)
+{
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    using Where = CEntityWhereBuilder;
+    auto _pView = _Space->CreateEntityView(Where::Build(Where::All({
+        Where::Has<CSumComponent>(),
+        Where::Has<CChainComponent>(),
+    })));
+    auto _ThrowingObserver = std::make_shared<CThrowingEntityViewObserver>();
+    auto _Collector = std::make_shared<CEntityViewEventCollector>();
+    _pView->AddObserver(_ThrowingObserver);
+    _pView->AddObserver(_Collector);
+
+    const auto _FirstID = GenerateNewUUID();
+    auto _pFirst = _Space->CreateEntity(_FirstID);
+    ASSERT_NE(nullptr, _pFirst->AddComponent<CSumComponent>());
+    EXPECT_TRUE(_Collector->Events.empty());
+
+    ASSERT_NE(nullptr, _pFirst->AddComponent<CChainComponent>());
+    ASSERT_EQ(1, _ThrowingObserver->CallCount);
+    ASSERT_EQ(1, _Collector->Events.size());
+    EXPECT_EQ(_pView.get(), _Collector->Senders.front());
+    EXPECT_EQ(1u, _Collector->Events.front().nPreviousRevision);
+    EXPECT_EQ(2u, _Collector->Events.front().nRevision);
+    EXPECT_EQ(std::vector<uuid>{ _FirstID }, _Collector->Events.front().AddedEntityIDs);
+    EXPECT_TRUE(_Collector->Events.front().RemovedEntityIDs.empty());
+    EXPECT_EQ(2u, _pView->GetRevision());
+    EXPECT_TRUE(_pView->Contains(_FirstID));
+
+    ASSERT_NE(nullptr, _pFirst->AddComponent<CPolicyComponent>());
+    EXPECT_EQ(1u, _Collector->Events.size());
+
+    const auto _SecondID = GenerateNewUUID();
+    const auto _ThirdID = GenerateNewUUID();
+    _Space->BeginBatch();
+    auto _pSecond = _Space->CreateEntity(_SecondID);
+    ASSERT_NE(nullptr, _pSecond->AddComponent<CSumComponent>());
+    ASSERT_NE(nullptr, _pSecond->AddComponent<CChainComponent>());
+    auto _pThird = _Space->CreateEntity(_ThirdID);
+    ASSERT_NE(nullptr, _pThird->AddComponent<CSumComponent>());
+    ASSERT_NE(nullptr, _pThird->AddComponent<CChainComponent>());
+    _Space->EndBatch();
+
+    ASSERT_EQ(2, _ThrowingObserver->CallCount);
+    ASSERT_EQ(2u, _Collector->Events.size());
+    const std::vector<uuid> _ExpectedAdded =
+        _SecondID < _ThirdID
+        ? std::vector<uuid>{ _SecondID, _ThirdID }
+        : std::vector<uuid>{ _ThirdID, _SecondID };
+    EXPECT_EQ(2u, _Collector->Events.back().nPreviousRevision);
+    EXPECT_EQ(3u, _Collector->Events.back().nRevision);
+    EXPECT_EQ(_ExpectedAdded, _Collector->Events.back().AddedEntityIDs);
+    EXPECT_TRUE(_Collector->Events.back().RemovedEntityIDs.empty());
+
+    _Space->BeginBatch();
+    _pFirst->RemoveComponent<CChainComponent>();
+    _Space->DeleteEntity(_SecondID);
+    _Space->EndBatch();
+
+    ASSERT_EQ(3u, _Collector->Events.size());
+    const std::vector<uuid> _ExpectedRemoved =
+        _FirstID < _SecondID
+        ? std::vector<uuid>{ _FirstID, _SecondID }
+        : std::vector<uuid>{ _SecondID, _FirstID };
+    EXPECT_EQ(3u, _Collector->Events.back().nPreviousRevision);
+    EXPECT_EQ(4u, _Collector->Events.back().nRevision);
+    EXPECT_TRUE(_Collector->Events.back().AddedEntityIDs.empty());
+    EXPECT_EQ(_ExpectedRemoved, _Collector->Events.back().RemovedEntityIDs);
+
+    _pView->RemoveObserver(_Collector);
+    _pThird->RemoveComponent<CChainComponent>();
+    EXPECT_EQ(3u, _Collector->Events.size());
+    EXPECT_EQ(5u, _pView->GetRevision());
 }
 
 TEST(DatabaseRepositoryTest, EntityViewSupportsAnyOfAndNoneOf)
@@ -1841,6 +1947,318 @@ TEST(DatabaseLanguageTest, EntitySqlExecutesQueryUpdateAndDelete)
     EXPECT_EQ(1u, _DeleteResult.Mutation.MatchedCount);
     EXPECT_EQ(1u, _DeleteResult.Mutation.ChangedCount);
     EXPECT_FALSE(_Space->HasEntity(_EntityID));
+}
+
+TEST(DatabaseLanguageTest, EntitySqlProjectsOrdersAndGroupsEntityFields)
+{
+    using iCAX::DatabaseLanguage::CEntitySql;
+
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    _Repository->BeginLoadBaseline();
+
+    const auto _FirstID = GenerateNewUUID();
+    auto _First = _Space->CreateEntity(_FirstID);
+    auto _FirstSum = _First->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_FirstSum->SetA(2));
+    ASSERT_TRUE(_FirstSum->SetB(30));
+    auto _FirstPolicy = _First->AddComponent<CPolicyComponent>();
+    ASSERT_TRUE(_FirstPolicy->SetPersistentValue(1));
+
+    const auto _SecondID = GenerateNewUUID();
+    auto _Second = _Space->CreateEntity(_SecondID);
+    auto _SecondSum = _Second->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_SecondSum->SetA(5));
+    ASSERT_TRUE(_SecondSum->SetB(10));
+    auto _SecondPolicy = _Second->AddComponent<CPolicyComponent>();
+    ASSERT_TRUE(_SecondPolicy->SetPersistentValue(1));
+
+    const auto _ThirdID = GenerateNewUUID();
+    auto _Third = _Space->CreateEntity(_ThirdID);
+    auto _ThirdSum = _Third->AddComponent<CSumComponent>();
+    ASSERT_TRUE(_ThirdSum->SetA(3));
+    ASSERT_TRUE(_ThirdSum->SetB(20));
+    auto _ThirdPolicy = _Third->AddComponent<CPolicyComponent>();
+    ASSERT_TRUE(_ThirdPolicy->SetPersistentValue(2));
+
+    const auto _PolicyOnlyID = GenerateNewUUID();
+    auto _PolicyOnly = _Space->CreateEntity(_PolicyOnlyID);
+    auto _PolicyOnlyComponent =
+        _PolicyOnly->AddComponent<CPolicyComponent>();
+    ASSERT_TRUE(_PolicyOnlyComponent->SetPersistentValue(1));
+    _Repository->EndLoadBaseline();
+
+    const auto _Projection = CEntitySql::Execute(
+        *_Space,
+        R"(
+            SELECT
+                CSumComponent.A AS A,
+                CSumComponent.B AS B
+            WHERE HAS CSumComponent
+            ORDER BY A DESC, CSumComponent.B ASC
+        )");
+    EXPECT_EQ(
+        (std::vector<std::string>{ "ENTITYID", "A", "B" }),
+        _Projection.Query.Columns);
+    EXPECT_EQ(3u, _Projection.Query.TotalCount);
+    ASSERT_EQ(3u, _Projection.Query.Rows.size());
+    EXPECT_EQ(_SecondID, _Projection.Query.Rows[0][0].To<uuid>());
+    EXPECT_EQ(5, _Projection.Query.Rows[0][1].To<int>());
+    EXPECT_EQ(_ThirdID, _Projection.Query.Rows[1][0].To<uuid>());
+    EXPECT_EQ(3, _Projection.Query.Rows[1][1].To<int>());
+    EXPECT_EQ(_FirstID, _Projection.Query.Rows[2][0].To<uuid>());
+    EXPECT_EQ(2, _Projection.Query.Rows[2][1].To<int>());
+    EXPECT_EQ(
+        (std::vector<uuid>{ _SecondID, _ThirdID, _FirstID }),
+        _Projection.EntityIDs);
+
+    const auto _MissingProjection = CEntitySql::Execute(
+        *_Space,
+        R"(
+            SELECT CSumComponent.A AS A
+            WHERE HAS CPolicyComponent
+            ORDER BY ENTITYID
+        )");
+    const auto _MissingRow = std::find_if(
+        _MissingProjection.Query.Rows.begin(),
+        _MissingProjection.Query.Rows.end(),
+        [&_PolicyOnlyID](const PropertyArray& Row_)
+        {
+            return Row_[0].To<uuid>() == _PolicyOnlyID;
+        });
+    ASSERT_NE(_MissingProjection.Query.Rows.end(), _MissingRow);
+    EXPECT_TRUE((*_MissingRow)[1].Is<std::monostate>());
+
+    const auto _Grouped = CEntitySql::Execute(
+        *_Space,
+        R"(
+            SELECT
+                CPolicyComponent.PersistentValue AS Policy,
+                COUNT(*) AS EntityCount,
+                SUM(CSumComponent.A) AS Total,
+                AVG(CSumComponent.A) AS Average,
+                MIN(CSumComponent.A) AS Minimum,
+                MAX(CSumComponent.A) AS Maximum
+            WHERE HAS CPolicyComponent
+            GROUP BY CPolicyComponent.PersistentValue
+            ORDER BY Policy ASC
+        )");
+    EXPECT_EQ(
+        (std::vector<std::string>{
+            "ENTITYID",
+            "Policy",
+            "EntityCount",
+            "Total",
+            "Average",
+            "Minimum",
+            "Maximum",
+        }),
+        _Grouped.Query.Columns);
+    EXPECT_EQ(2u, _Grouped.Query.TotalCount);
+    ASSERT_EQ(2u, _Grouped.Query.Rows.size());
+
+    const auto& _FirstGroup = _Grouped.Query.Rows[0];
+    ASSERT_TRUE(_FirstGroup[0].Is<VariantArray>());
+    EXPECT_EQ(3u, _FirstGroup[0].To<VariantArray>().size());
+    EXPECT_EQ(1, _FirstGroup[1].To<int>());
+    EXPECT_EQ(3ull, _FirstGroup[2].To<unsigned long long>());
+    EXPECT_DOUBLE_EQ(7.0, _FirstGroup[3].To<double>());
+    EXPECT_DOUBLE_EQ(3.5, _FirstGroup[4].To<double>());
+    EXPECT_EQ(2, _FirstGroup[5].To<int>());
+    EXPECT_EQ(5, _FirstGroup[6].To<int>());
+
+    const auto& _SecondGroup = _Grouped.Query.Rows[1];
+    ASSERT_TRUE(_SecondGroup[0].Is<VariantArray>());
+    EXPECT_EQ(1u, _SecondGroup[0].To<VariantArray>().size());
+    EXPECT_EQ(2, _SecondGroup[1].To<int>());
+    EXPECT_EQ(1ull, _SecondGroup[2].To<unsigned long long>());
+    EXPECT_DOUBLE_EQ(3.0, _SecondGroup[3].To<double>());
+    EXPECT_DOUBLE_EQ(3.0, _SecondGroup[4].To<double>());
+    EXPECT_EQ(3, _SecondGroup[5].To<int>());
+    EXPECT_EQ(3, _SecondGroup[6].To<int>());
+
+    const auto _GroupedPage = CEntitySql::Execute(
+        *_Space,
+        R"(
+            SELECT
+                CPolicyComponent.PersistentValue AS Policy,
+                COUNT(*) AS EntityCount
+            WHERE HAS CPolicyComponent
+            GROUP BY CPolicyComponent.PersistentValue
+            ORDER BY Policy ASC
+            SKIP 1
+            TAKE 1
+        )");
+    EXPECT_EQ(2u, _GroupedPage.Query.TotalCount);
+    ASSERT_EQ(1u, _GroupedPage.Query.Rows.size());
+    EXPECT_EQ(2, _GroupedPage.Query.Rows.front()[1].To<int>());
+    EXPECT_EQ(
+        1ull,
+        _GroupedPage.Query.Rows.front()[2].To<unsigned long long>());
+
+    EXPECT_THROW(
+        CEntitySql::Execute(
+            *_Space,
+            R"(
+                SELECT
+                    CPolicyComponent.PersistentValue AS Policy,
+                    CSumComponent.A AS A
+                WHERE HAS CPolicyComponent
+                GROUP BY CPolicyComponent.PersistentValue
+            )"),
+        std::invalid_argument);
+}
+
+TEST(DatabaseLanguageTest, EntitySqlPaginatesOrderedRowsWithTotalCount)
+{
+    using iCAX::DatabaseLanguage::CEntitySql;
+
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    _Repository->BeginLoadBaseline();
+
+    std::vector<uuid> _EntityIDs;
+    for (size_t _Index = 0; _Index < 4; ++_Index)
+    {
+        const auto _EntityID = GenerateNewUUID();
+        _EntityIDs.push_back(_EntityID);
+        auto _Entity = _Space->CreateEntity(_EntityID);
+        auto _Sum = _Entity->AddComponent<CSumComponent>();
+        ASSERT_TRUE(_Sum->SetA(7));
+    }
+    _Repository->EndLoadBaseline();
+    std::sort(_EntityIDs.begin(), _EntityIDs.end());
+
+    const ObjectMap _Parameters{
+        { "skip", PropertyValue(1) },
+        { "take", PropertyValue(2) },
+    };
+    const auto _Page = CEntitySql::Execute(
+        *_Space,
+        R"(
+            SELECT CSumComponent.A AS A
+            WHERE HAS CSumComponent
+            ORDER BY A ASC
+            SKIP :skip
+            TAKE :take
+        )",
+        _Parameters);
+
+    EXPECT_EQ(4u, _Page.Query.TotalCount);
+    ASSERT_EQ(2u, _Page.Query.Rows.size());
+    EXPECT_EQ(_EntityIDs[1], _Page.Query.Rows[0][0].To<uuid>());
+    EXPECT_EQ(_EntityIDs[2], _Page.Query.Rows[1][0].To<uuid>());
+    EXPECT_EQ(
+        (std::vector<uuid>{ _EntityIDs[1], _EntityIDs[2] }),
+        _Page.Query.EntityIDs);
+    EXPECT_EQ(_Page.Query.EntityIDs, _Page.EntityIDs);
+
+    const auto _EmptyPage = CEntitySql::Execute(
+        *_Space,
+        R"(
+            SELECT ENTITY
+            WHERE HAS CSumComponent
+            ORDER BY ENTITYID
+            TAKE 0
+        )");
+    EXPECT_EQ(4u, _EmptyPage.Query.TotalCount);
+    EXPECT_TRUE(_EmptyPage.Query.Rows.empty());
+    EXPECT_TRUE(_EmptyPage.Query.EntityIDs.empty());
+
+    EXPECT_THROW(
+        CEntitySql::Parse(
+            "SELECT ENTITY SKIP 1 TAKE 1"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        CEntitySql::Execute(
+            *_Space,
+            "SELECT ENTITY ORDER BY ENTITYID SKIP -1 TAKE 1"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        CEntitySql::Execute(
+            *_Space,
+            "SELECT ENTITY ORDER BY ENTITYID SKIP :missing TAKE 1"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        CEntitySql::Execute(
+            *_Space,
+            "SELECT ENTITY ORDER BY ENTITYID SKIP 0 TAKE 1.5"),
+        std::invalid_argument);
+
+    auto _InvalidIR = CEntitySql::Parse(
+        "SELECT ENTITY ORDER BY ENTITYID TAKE 1").Query;
+    _InvalidIR.OrderBy.clear();
+    EXPECT_THROW(
+        _Space->Select(_InvalidIR),
+        std::invalid_argument);
+}
+
+TEST(DatabaseLanguageTest, EntitySqlInsertIsAtomicAndUndoable)
+{
+    using iCAX::DatabaseLanguage::CEntitySql;
+    using iCAX::DatabaseLanguage::EEntityStatementType;
+
+    auto _Repository = GenerateTestRepository();
+    auto _Space = GetRepositorySpace(_Repository);
+    const auto _EntityID = GenerateNewUUID();
+    const ObjectMap _Parameters{
+        { "entityID", PropertyValue(_EntityID) },
+        { "a", PropertyValue(12) },
+    };
+
+    const auto _Result = CEntitySql::Execute(
+        *_Space,
+        R"(
+            INSERT ENTITY WITH ENTITYID = :entityID
+                ADD CSumComponent
+                    WITH A = :a, B = 8, ENABLED = FALSE
+                ADD CPolicyComponent
+                    WITH PersistentValue = 7
+        )",
+        _Parameters);
+
+    EXPECT_EQ(EEntityStatementType::Insert, _Result.Type);
+    EXPECT_EQ(_EntityID, _Result.Insert.EntityID);
+    EXPECT_EQ(std::vector<uuid>{ _EntityID }, _Result.EntityIDs);
+    auto _Entity = _Space->GetEntity(_EntityID);
+    ASSERT_NE(nullptr, _Entity);
+    auto _Sum = _Entity->GetComponent<CSumComponent>();
+    ASSERT_NE(nullptr, _Sum);
+    EXPECT_EQ(12, _Sum->GetA());
+    EXPECT_EQ(8, _Sum->GetB());
+    EXPECT_FALSE(_Sum->IsEnable());
+    ASSERT_NE(nullptr, _Entity->GetComponent<CPolicyComponent>());
+
+    ASSERT_TRUE(_Repository->CanUndo());
+    ASSERT_TRUE(_Repository->Undo());
+    EXPECT_FALSE(_Space->HasEntity(_EntityID));
+    ASSERT_TRUE(_Repository->Redo());
+    EXPECT_TRUE(_Space->HasEntity(_EntityID));
+
+    const auto _Generated = CEntitySql::Execute(
+        *_Space,
+        "INSERT ENTITY");
+    ASSERT_EQ(1u, _Generated.EntityIDs.size());
+    EXPECT_EQ(_Generated.EntityIDs.front(), _Generated.Insert.EntityID);
+    EXPECT_TRUE(_Space->HasEntity(_Generated.Insert.EntityID));
+    EXPECT_EQ(
+        0,
+        _Space->GetEntity(_Generated.Insert.EntityID)->ComponentsCount());
+
+    const auto _FailedEntityID = GenerateNewUUID();
+    const ObjectMap _FailedParameters{
+        { "entityID", PropertyValue(_FailedEntityID) },
+    };
+    EXPECT_THROW(
+        CEntitySql::Execute(
+            *_Space,
+            R"(
+                INSERT ENTITY WITH ENTITYID = :entityID
+                    ADD CSumComponent WITH Missing = 1
+            )",
+            _FailedParameters),
+        std::runtime_error);
+    EXPECT_FALSE(_Space->HasEntity(_FailedEntityID));
 }
 
 TEST(DatabaseRepositoryTest, ComponentVersionUsesPdoDataVersionType)

@@ -62,9 +62,9 @@ namespace
         return _Hash;
     }
 
-    uint64_t _MakeFacadeMethodCode(IN String^ FacadeName_, IN String^ MethodName_)
+    uint64_t _MakeSDOMethodCode(IN String^ SDOName_, IN String^ MethodName_)
     {
-        return (static_cast<uint64_t>(_InteractionNameHash32(FacadeName_)) << 32)
+        return (static_cast<uint64_t>(_InteractionNameHash32(SDOName_)) << 32)
             | static_cast<uint64_t>(_InteractionNameHash32(MethodName_));
     }
 
@@ -137,15 +137,15 @@ namespace
             : String::Format("Status {0}", nStatus_);
     }
 
-    String^ _FormatFacadeFrameKind(IN uint16_t nKind_)
+    String^ _FormatSDOFrameKind(IN uint16_t nKind_)
     {
         switch (nKind_)
         {
-        case iCAX::Frontend::kFrontendFacadeRequest:
+        case iCAX::Frontend::kFrontendSDORequest:
             return "Request";
-        case iCAX::Frontend::kFrontendFacadeReport:
+        case iCAX::Frontend::kFrontendSDOReport:
             return "Report";
-        case iCAX::Frontend::kFrontendFacadeResponse:
+        case iCAX::Frontend::kFrontendSDOResponse:
             return "Response";
         default:
             return "Event";
@@ -161,7 +161,7 @@ namespace iCAX
         {
             ref class CWpfRuntime;
 
-            ref class CManagedFacadeFrame sealed
+            ref class CManagedSDOFrame sealed
             {
             public:
                 String^ ChannelID;
@@ -180,7 +180,7 @@ namespace iCAX
             public:
                 void SetApplicationChannelID(String^ ChannelID_);
                 void SetStatus(String^ Text_);
-                void AppendFacadeFrame(CManagedFacadeFrame^ Frame_, String^ FacadeMemberName_);
+                void AppendSDOFrame(CManagedSDOFrame^ Frame_, String^ SDOMemberName_);
                 void SetLastPayload(String^ PayloadText_);
 
             private:
@@ -196,7 +196,7 @@ namespace iCAX
                 CWpfRuntime^ m_Runtime;
                 TextBlock^ m_StatusText;
                 TextBlock^ m_ChannelText;
-                ListBox^ m_FacadeFrameList;
+                ListBox^ m_SDOFrameList;
                 TextBox^ m_PayloadText;
             };
 
@@ -206,7 +206,7 @@ namespace iCAX
                 CWpfRuntime()
                     : m_Started(gcnew ManualResetEventSlim(false))
                     , m_Closed(gcnew ManualResetEventSlim(true))
-                    , m_PendingFacadeCalls(gcnew Dictionary<UInt64, String^>())
+                    , m_PendingSDOCalls(gcnew Dictionary<UInt64, String^>())
                 {
                 }
 
@@ -282,7 +282,7 @@ namespace iCAX
 
                 UInt64 InvokeApplicationMethod(IN String^ MethodName_, IN String^ PayloadText_)
                 {
-                    return InvokeFacadeMethod(m_ApplicationChannelID, "App", MethodName_, PayloadText_);
+                    return InvokeSDOMethod(m_ApplicationChannelID, "App", MethodName_, PayloadText_);
                 }
 
                 void OpenProjectFile()
@@ -299,15 +299,15 @@ namespace iCAX
                 }
 
             private:
-                UInt64 InvokeFacadeMethod(
+                UInt64 InvokeSDOMethod(
                     IN String^ ChannelID_,
-                    IN String^ FacadeName_,
+                    IN String^ SDOName_,
                     IN String^ MethodName_,
                     IN String^ PayloadText_)
                 {
                     if (String::IsNullOrWhiteSpace(ChannelID_))
                     {
-                        throw gcnew InvalidOperationException("Facade channel id is empty.");
+                        throw gcnew InvalidOperationException("SDO channel id is empty.");
                     }
                     if (m_pBridge == nullptr)
                     {
@@ -316,16 +316,16 @@ namespace iCAX
 
                     try
                     {
-                        iCAX::Frontend::CFrontendFacadeFrame _Frame;
+                        iCAX::Frontend::CFrontendSDOFrame _Frame;
                         _Frame.ChannelID = _ToNativeUTF8(ChannelID_);
                         _Frame.nCallID = static_cast<uint64_t>(Interlocked::Increment(m_NextCallID));
-                        _Frame.nMethodCode = _MakeFacadeMethodCode(FacadeName_, MethodName_);
-                        _Frame.nKind = iCAX::Frontend::kFrontendFacadeRequest;
+                        _Frame.nMethodCode = _MakeSDOMethodCode(SDOName_, MethodName_);
+                        _Frame.nKind = iCAX::Frontend::kFrontendSDORequest;
                         _Frame.nStatus = 0;
                         _Frame.PayloadText = _ToNativeUTF8(String::IsNullOrEmpty(PayloadText_) ? _EmptyObjectPayload() : PayloadText_);
 
-                        m_pBridge->PostFacadeFrame(_Frame);
-                        m_PendingFacadeCalls[_Frame.nCallID] = String::Format("{0}.{1}", FacadeName_, MethodName_);
+                        m_pBridge->PostSDOFrame(_Frame);
+                        m_PendingSDOCalls[_Frame.nCallID] = String::Format("{0}.{1}", SDOName_, MethodName_);
                         return _Frame.nCallID;
                     }
                     catch (const std::exception& _Error)
@@ -355,10 +355,10 @@ namespace iCAX
                         m_Window->SetApplicationChannelID(m_ApplicationChannelID);
 
                         m_Dispatcher = Dispatcher::CurrentDispatcher;
-                        m_FacadeFrameTimer = gcnew DispatcherTimer();
-                        m_FacadeFrameTimer->Interval = TimeSpan::FromMilliseconds(16);
-                        m_FacadeFrameTimer->Tick += gcnew EventHandler(this, &CWpfRuntime::OnFacadeFrameTimerTick);
-                        m_FacadeFrameTimer->Start();
+                        m_SDOFrameTimer = gcnew DispatcherTimer();
+                        m_SDOFrameTimer->Interval = TimeSpan::FromMilliseconds(16);
+                        m_SDOFrameTimer->Tick += gcnew EventHandler(this, &CWpfRuntime::OnSDOFrameTimerTick);
+                        m_SDOFrameTimer->Start();
 
                         m_Running = true;
                         m_Started->Set();
@@ -376,7 +376,7 @@ namespace iCAX
                     finally
                     {
                         m_Running = false;
-                        m_FacadeFrameTimer = nullptr;
+                        m_SDOFrameTimer = nullptr;
                         m_Window = nullptr;
                         m_Application = nullptr;
                         m_Dispatcher = nullptr;
@@ -386,9 +386,9 @@ namespace iCAX
 
                 void ShutdownOnUIThread()
                 {
-                    if (m_FacadeFrameTimer != nullptr)
+                    if (m_SDOFrameTimer != nullptr)
                     {
-                        m_FacadeFrameTimer->Stop();
+                        m_SDOFrameTimer->Stop();
                     }
                     if (m_Application != nullptr)
                     {
@@ -396,7 +396,7 @@ namespace iCAX
                     }
                 }
 
-                void OnFacadeFrameTimerTick(Object^, EventArgs^)
+                void OnSDOFrameTimerTick(Object^, EventArgs^)
                 {
                     if (m_pBridge == nullptr || m_Window == nullptr)
                     {
@@ -407,10 +407,10 @@ namespace iCAX
                     {
                         m_pBridge->RunFrontTasks();
                         m_pBridge->RunFrontCoroutines();
-                        auto _Frames = m_pBridge->PollFacadeFrames();
+                        auto _Frames = m_pBridge->PollSDOFrames();
                         for (const auto& _Frame : _Frames)
                         {
-                            auto _ManagedFrame = gcnew CManagedFacadeFrame();
+                            auto _ManagedFrame = gcnew CManagedSDOFrame();
                             _ManagedFrame->ChannelID = _ToManagedUTF8(_Frame.ChannelID);
                             _ManagedFrame->CallID = _Frame.nCallID;
                             _ManagedFrame->MethodCode = _Frame.nMethodCode;
@@ -418,19 +418,19 @@ namespace iCAX
                             _ManagedFrame->Status = _Frame.nStatus;
                             _ManagedFrame->PayloadText = _ToManagedUTF8(_Frame.PayloadText);
 
-                            String^ _FacadeMemberName = "Event";
-                            if (_ManagedFrame->CallID != 0 && m_PendingFacadeCalls->ContainsKey(_ManagedFrame->CallID))
+                            String^ _SDOMemberName = "Event";
+                            if (_ManagedFrame->CallID != 0 && m_PendingSDOCalls->ContainsKey(_ManagedFrame->CallID))
                             {
-                                _FacadeMemberName = m_PendingFacadeCalls[_ManagedFrame->CallID];
-                                if (_ManagedFrame->Kind == iCAX::Frontend::kFrontendFacadeResponse)
+                                _SDOMemberName = m_PendingSDOCalls[_ManagedFrame->CallID];
+                                if (_ManagedFrame->Kind == iCAX::Frontend::kFrontendSDOResponse)
                                 {
-                                    m_PendingFacadeCalls->Remove(_ManagedFrame->CallID);
+                                    m_PendingSDOCalls->Remove(_ManagedFrame->CallID);
                                 }
                             }
 
-                            m_Window->AppendFacadeFrame(_ManagedFrame, _FacadeMemberName);
-                            if (_ManagedFrame->Kind == iCAX::Frontend::kFrontendFacadeResponse
-                                && (_ManagedFrame->CallID == kStartupHandshakeRequestID || _FacadeMemberName == "App.GetState"))
+                            m_Window->AppendSDOFrame(_ManagedFrame, _SDOMemberName);
+                            if (_ManagedFrame->Kind == iCAX::Frontend::kFrontendSDOResponse
+                                && (_ManagedFrame->CallID == kStartupHandshakeRequestID || _SDOMemberName == "App.GetState"))
                             {
                                 m_Window->SetStatus(_ManagedFrame->Status == 0 ? "Backend connected" : "Backend returned an error");
                             }
@@ -442,11 +442,11 @@ namespace iCAX
                     }
                     catch (const std::exception& _Error)
                     {
-                        m_Window->SetStatus("Facade polling failed: " + _ToManagedUTF8(_Error.what()));
+                        m_Window->SetStatus("SDO polling failed: " + _ToManagedUTF8(_Error.what()));
                     }
                     catch (Exception^ _Error)
                     {
-                        m_Window->SetStatus("Facade polling failed: " + _Error->Message);
+                        m_Window->SetStatus("SDO polling failed: " + _Error->Message);
                     }
                 }
 
@@ -456,11 +456,11 @@ namespace iCAX
                 Application^ m_Application;
                 CWpfMainWindow^ m_Window;
                 Dispatcher^ m_Dispatcher;
-                DispatcherTimer^ m_FacadeFrameTimer;
+                DispatcherTimer^ m_SDOFrameTimer;
                 ManualResetEventSlim^ m_Started;
                 ManualResetEventSlim^ m_Closed;
                 Exception^ m_StartupException;
-                Dictionary<UInt64, String^>^ m_PendingFacadeCalls;
+                Dictionary<UInt64, String^>^ m_PendingSDOCalls;
                 String^ m_ApplicationChannelID;
                 Int64 m_NextCallID = static_cast<Int64>(kStartupHandshakeRequestID);
                 volatile bool m_Running = false;
@@ -560,12 +560,12 @@ namespace iCAX
                 _RightGrid->RowDefinitions[1]->Height = GridLength(1, GridUnitType::Star);
                 _RightGrid->Margin = Thickness(10, 0, 0, 0);
 
-                m_FacadeFrameList = gcnew ListBox();
-                m_FacadeFrameList->FontFamily = gcnew System::Windows::Media::FontFamily("Consolas");
-                m_FacadeFrameList->FontSize = 12;
-                auto _FacadePanel = MakePanel("Facades", m_FacadeFrameList);
-                Grid::SetRow(_FacadePanel, 0);
-                _RightGrid->Children->Add(_FacadePanel);
+                m_SDOFrameList = gcnew ListBox();
+                m_SDOFrameList->FontFamily = gcnew System::Windows::Media::FontFamily("Consolas");
+                m_SDOFrameList->FontSize = 12;
+                auto _SDOPanel = MakePanel("SDO", m_SDOFrameList);
+                Grid::SetRow(_SDOPanel, 0);
+                _RightGrid->Children->Add(_SDOPanel);
 
                 m_PayloadText = gcnew TextBox();
                 m_PayloadText->FontFamily = gcnew System::Windows::Media::FontFamily("Consolas");
@@ -639,19 +639,19 @@ namespace iCAX
                 m_StatusText->Text = Text_;
             }
 
-            void CWpfMainWindow::AppendFacadeFrame(CManagedFacadeFrame^ Frame_, String^ FacadeMemberName_)
+            void CWpfMainWindow::AppendSDOFrame(CManagedSDOFrame^ Frame_, String^ SDOMemberName_)
             {
                 auto _Line = String::Format(
                     "{0:HH:mm:ss.fff} {1} {2} call={3} {4}",
                     DateTime::Now,
-                    FacadeMemberName_,
-                    _FormatFacadeFrameKind(Frame_->Kind),
+                    SDOMemberName_,
+                    _FormatSDOFrameKind(Frame_->Kind),
                     Frame_->CallID,
                     _FormatStatus(Frame_->Status));
-                m_FacadeFrameList->Items->Insert(0, _Line);
-                while (m_FacadeFrameList->Items->Count > 200)
+                m_SDOFrameList->Items->Insert(0, _Line);
+                while (m_SDOFrameList->Items->Count > 200)
                 {
-                    m_FacadeFrameList->Items->RemoveAt(m_FacadeFrameList->Items->Count - 1);
+                    m_SDOFrameList->Items->RemoveAt(m_SDOFrameList->Items->Count - 1);
                 }
             }
 

@@ -4,7 +4,7 @@
 
 iCAX backend 是 C++ 后台框架，负责应用宿主、产品运行时、项目数据、资源、行为调度、命令分发和高频状态同步。
 
-backend 不绑定具体 UI 技术。Qt、WPF、H5 或其他前端宿主都应通过 bridge 获取 Facade endpoint，并通过 Facades、PDO 和 Resource 与 backend 交互。
+backend 不绑定具体 UI 技术。Qt、WPF、H5 或其他前端宿主都应通过 bridge 获取 SDO endpoint，并通过 SDO、PDO 和 Resource 与 backend 交互。
 
 ## 2. 总体结构
 
@@ -12,18 +12,18 @@ backend 不绑定具体 UI 技术。Qt、WPF、H5 或其他前端宿主都应通
 ApplicationRuntime
   ApplicationContext
   CServiceProvider
-  CFacadeChannelRegistry
-    applicationChannelId -> CFacadeChannel
-    productChannelId*    -> CFacadeChannel
-    sceneChannelId*      -> CFacadeChannel
+  CSDOChannelRegistry
+    applicationChannelId -> CSDOChannel
+    productChannelId*    -> CSDOChannel
+    sceneChannelId*      -> CSDOChannel
   ProductRuntime*
     ProductDefinition
     ProductData
-    Product Facade channel id
+    Product SDO channel id
     Product IMetaRegistry
     Product IBehaviourRegistry
     Product ResourceLoaderRegistry
-    Product FacadeRegistry / FacadeInvoker
+    Product SDORegistry / SDOInvoker
     ProjectCatalog*
       Project*
         ProjectID / ProjectPath / ProjectSetting
@@ -31,14 +31,14 @@ ApplicationRuntime
           Repository
           ResourceLibrary / ResourcePool
           Universe
-          Scene Facade channel id
+          Scene SDO channel id
           Scene PDOHub
           Scene WorkThread
         Child Scene*
           Repository
           ResourceLibrary / ResourcePool
           Universe
-          Scene Facade channel id
+          Scene SDO channel id
           Scene PDOHub
           Scene WorkThread
 ```
@@ -50,22 +50,22 @@ ApplicationRuntime
 - Project 是项目级管理容器，承载项目身份、路径和跟图纸走的 ProjectSetting。
 - Scene 是数据和运行隔离边界。
 - ServiceProvider 在 Application 级共享。
-- ComponentMeta、Behaviour 定义、ResourceLoader 和 Facades 按 ProductRuntime 回放到产品级注册表。
-- FacadeChannelRegistry 在 ApplicationRuntime 中共享，但不进入 ServiceProvider；channel 按 Facade channel id 显式创建和删除。
+- ComponentMeta、Behaviour 定义、ResourceLoader 和 SDO 按 ProductRuntime 回放到产品级注册表。
+- SDOChannelRegistry 在 ApplicationRuntime 中共享，但不进入 ServiceProvider；channel 按 SDO channel id 显式创建和删除。
 - PDO 不进入 ServiceProvider；Scene PDOHub 归 Scene 持有，并通过 SceneContext 暴露。
-- Repository、资源对象、Scene ResourceLoaderRegistry、Universe 实例、Scene Facade channel、Scene PDO 和 Scene 线程按 Scene 隔离。
+- Repository、资源对象、Scene ResourceLoaderRegistry、Universe 实例、Scene SDO channel、Scene PDO 和 Scene 线程按 Scene 隔离。
 
 ## 3. 启动流程
 
 ```text
 Host process
   -> create ApplicationRuntime
-  -> frontend bridge receives ApplicationRuntime frontend Facade endpoint
+  -> frontend bridge receives ApplicationRuntime frontend SDO endpoint
   -> ApplicationRuntime.Start()
        create ApplicationContext
        create application ServiceProvider
-       create CFacadeChannelRegistry
-       create application Facade channel
+       create CSDOChannelRegistry
+       create application SDO channel
        bind ApplicationContext runtime capabilities
        replay framework registrations
        register application commands
@@ -88,8 +88,8 @@ ApplicationRuntime
        replay module ComponentMeta registrations to product MetaRegistry
        replay module Behaviour registrations to product BehaviourRegistry
        replay module ResourceLoader registrations to product ResourceLoaderRegistry
-       replay module Command registrations to product FacadeRegistry
-       create product Facade channel
+       replay module Command registrations to product SDORegistry
+       create product SDO channel
        register product commands
   <- productChannelId / frontendEntry / recentProjects
 ```
@@ -105,27 +105,27 @@ ProductRuntime
   -> open main Project
   -> create main Scene
   -> create scene-local ResourceLoaderRegistry from product modules
-  -> create scene Facade channel
+  -> create scene SDO channel
   -> create LocalProjectRuntime
   -> start main Scene thread
-  <- catalogId / projectId / mainSceneId / mainSceneChannelId / scene frontend Facade endpoint
+  <- catalogId / projectId / mainSceneId / mainSceneChannelId / scene frontend SDO endpoint
 ```
 
 ## 4. 通信模型
 
-`Facades` 提供基础 `CFacadeQueue`、`CFacadeChannel`、`CFacadeEndpoint` 和 `CFacadeChannelRegistry`。`ApplicationRuntime` 直接持有应用级 channel 目录：
+`SDO` 提供基础 `CSDOQueue`、`CSDOChannel`、`CSDOEndpoint` 和 `CSDOChannelRegistry`。`ApplicationRuntime` 直接持有应用级 channel 目录：
 
 ```text
-applicationChannelId -> application CFacadeChannel
-productChannelId     -> product CFacadeChannel
-sceneChannelId       -> scene CFacadeChannel
+applicationChannelId -> application CSDOChannel
+productChannelId     -> product CSDOChannel
+sceneChannelId       -> scene CSDOChannel
 ```
 
-`ApplicationRuntime`、`ProductRuntime` 和 `Scene` 只保存自己的 Facade channel id，并从显式注入的 `CFacadeChannelRegistry` 获取 frontend/backend Facade endpoint。`GetFrontendFacadeEndpoint` / `GetBackendFacadeEndpoint` 不隐式创建 channel；创建和删除必须显式走 `CreateChannel` / `RemoveChannel`。通信端点由拥有运行时与 channel 生命周期的 `ApplicationRuntime`、`ProductRuntime`、`ProjectScene` 暴露，不放入 `ApplicationContext`；调用方也不需要从 ServiceProvider 解析通信能力。
+`ApplicationRuntime`、`ProductRuntime` 和 `Scene` 只保存自己的 SDO channel id，并从显式注入的 `CSDOChannelRegistry` 获取 frontend/backend SDO endpoint。`GetFrontendSDOEndpoint` / `GetBackendSDOEndpoint` 不隐式创建 channel；创建和删除必须显式走 `CreateChannel` / `RemoveChannel`。通信端点由拥有运行时与 channel 生命周期的 `ApplicationRuntime`、`ProductRuntime`、`ProjectScene` 暴露，不放入 `ApplicationContext`；调用方也不需要从 ServiceProvider 解析通信能力。
 
-`CFacadeEndpoint` 是轻量 endpoint 视图，不拥有队列。上级运行体负责向前端 bridge 发放下级运行体的 frontend Facade endpoint。运行体停止或关闭时删除自己的 channel，旧 Facade endpoint 自动失效。
+`CSDOEndpoint` 是轻量 endpoint 视图，不拥有队列。上级运行体负责向前端 bridge 发放下级运行体的 frontend SDO endpoint。运行体停止或关闭时删除自己的 channel，旧 SDO endpoint 自动失效。
 
-Facades 用于命令、事件、请求响应和低频状态；PDO 用于高频、可丢弃、可批量覆盖的过程状态。大资源不应塞进 Facade payload，应通过 Resource 机制按 source/id 获取。
+SDO 用于命令、事件、请求响应和低频状态；PDO 用于高频、可丢弃、可批量覆盖的过程状态。大资源不应塞进 SDO payload，应通过 Resource 机制按 source/id 获取。
 
 ## 5. 数据模型
 
@@ -194,7 +194,7 @@ ProductRuntime 加载产品模块后，按模块路径回放注册动作：
 - ComponentMeta 回放到 ProductRuntime 的产品级 MetaRegistry。
 - Behaviour 回放到 ProductRuntime 的产品级 BehaviourRegistry。
 - ResourceLoader 回放到 ProductRuntime 的产品级 ResourceLoaderRegistry，并在创建 Scene 时再次回放到 Scene 级 ResourceLoaderRegistry。
-- Facades 回放到 ProductRuntime 的产品级 FacadeRegistry。
+- SDO 回放到 ProductRuntime 的产品级 SDORegistry。
 
 产品 DLL 在进程内只加载一次。由于自动注册宏不提供注销能力，模块加载后按进程常驻处理。
 
@@ -204,11 +204,11 @@ ProductRuntime 加载产品模块后，按模块路径回放注册动作：
 
 当前进程内线程边界：
 
-- ApplicationRuntime 拥有应用级工作线程，轮询 application Facade。
-- ProductRuntime 拥有产品级工作线程，轮询 product Facade。
+- ApplicationRuntime 拥有应用级工作线程，轮询 application SDO。
+- ProductRuntime 拥有产品级工作线程，轮询 product SDO。
 - 每个 Scene 拥有自己的 Scene 线程，并由该线程驱动本 Scene 的 Repository、Universe 和 Behaviour 实例。
 
-Behaviour 不提供内部并发保护。`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新应在同一个 Scene 线程内发生。暂停帧更新只跳过 `PreUpdate / Update / PostUpdate`，不拦截 `Start` 和 Repository 生命周期事件。组件移除时，`OnDestroyImmediate` 在 Repository remove 链路内同步触发，`OnDestroy` 在下一次 `Tick` 开始的统一销毁阶段触发。`OnDestroy` 接收 `CComponentDestroyInfo` 快照，不接收已经脱离 Entity/Repository 的组件对象；若 `OnDestroy` 中继续删除其他组件，同一销毁阶段会持续处理到队列为空。前端线程、ApplicationRuntime 线程或其他 Scene 线程不直接调用 Behaviour；跨线程输入通过 Facades、PDO 或命令通道进入目标 Scene，再由目标 Scene 线程消费。
+Behaviour 不提供内部并发保护。`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新应在同一个 Scene 线程内发生。暂停帧更新只跳过 `PreUpdate / Update / PostUpdate`，不拦截 `Start` 和 Repository 生命周期事件。组件移除时，`OnDestroyImmediate` 在 Repository remove 链路内同步触发，`OnDestroy` 在下一次 `Tick` 开始的统一销毁阶段触发。`OnDestroy` 接收 `CComponentDestroyInfo` 快照，不接收已经脱离 Entity/Repository 的组件对象；若 `OnDestroy` 中继续删除其他组件，同一销毁阶段会持续处理到队列为空。前端线程、ApplicationRuntime 线程或其他 Scene 线程不直接调用 Behaviour；跨线程输入通过 SDO、PDO 或命令通道进入目标 Scene，再由目标 Scene 线程消费。
 
 Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露。访问冲突、堆破坏等 native 崩溃仍可能影响整个进程；若未来需要硬隔离，应通过 `IProjectRuntime` 增加每 Project 一个 worker process 的实现。
 
@@ -219,8 +219,8 @@ Behaviour 回调不做异常拦截或过滤，运行错误按第一现场暴露�
 - `Framework/Project/`
 - `Framework/Database/`
 - `Framework/Resources/`
-- `Framework/Facades/`
+- `Framework/SDO/`
 - `Framework/PDO/`
-- `Framework/Facades/`
+- `Framework/SDO/`
 - `Framework/Behaviour/`
 

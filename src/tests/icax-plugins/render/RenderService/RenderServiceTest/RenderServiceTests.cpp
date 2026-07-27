@@ -9,8 +9,8 @@
 #include <RenderPDO/RenderPDO.h>
 #include <PDO/IPDOHub.h>
 #include <PDO/PDOLease.h>
-#include <Facades/FacadeChannel.h>
-#include <Facades/FacadePayload.h>
+#include <SDO/SDOChannel.h>
+#include <SDO/SDOText.h>
 
 
 namespace
@@ -77,7 +77,7 @@ namespace
             throw std::logic_error("Resource loader registry is not used by render service tests");
         }
 
-        iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override
+        iCAX::Interaction::CSDORegistry& GetSDORegistry() const override
         {
             throw std::logic_error("Command registry is not used by render service tests");
         }
@@ -133,7 +133,7 @@ namespace
             : m_SceneID(iCAX::Data::GenerateNewUUID())
             , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
             , m_pPDOHub(std::move(pPDOHub_))
-            , m_pChannel(std::make_shared<iCAX::Interaction::CFacadeChannel>())
+            , m_pChannel(std::make_shared<iCAX::Interaction::CSDOChannel>())
         {
         }
 
@@ -152,12 +152,12 @@ namespace
             return m_SceneName;
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetBackendSDOEndpoint() const override
         {
             return m_pChannel->GetEndAEndpoint();
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetFrontendSDOEndpoint() const override
         {
             return m_pChannel->GetEndBEndpoint();
         }
@@ -224,7 +224,7 @@ namespace
         iCAX::Data::uuid m_SceneID;
         iCAX::Data::uuid m_SceneChannelID;
         std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
-        std::shared_ptr<iCAX::Interaction::CFacadeChannel> m_pChannel;
+        std::shared_ptr<iCAX::Interaction::CSDOChannel> m_pChannel;
         std::string m_SceneName = "Render Service Test Scene";
     };
 
@@ -608,7 +608,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         EXPECT_EQ(25u, _CameraHeader.Header.nDataVersion);
     }
 
-    auto _Frames = _SceneContext.GetFrontendFacadeEndpoint().Receive();
+    auto _Frames = _SceneContext.GetFrontendSDOEndpoint().Receive();
     ASSERT_GE(_Frames.size(), 7u);
     size_t _AllocatedCount = 0;
     for (auto& _Frame : _Frames)
@@ -616,7 +616,7 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
         if (_Frame.nMethodCode == iCAX::PDORenderService::kPDORenderSlotAllocatedEvent)
         {
             ++_AllocatedCount;
-            const auto _Payload = iCAX::Interaction::GetFacadePayloadText(_Frame);
+            const auto _Payload = iCAX::Interaction::GetSDOPayloadText(_Frame);
             EXPECT_NE(std::string::npos, _Payload.find("\"event\":\"SlotAllocated\""));
             EXPECT_NE(std::string::npos, _Payload.find("\"pdoId\":\""));
         }
@@ -627,13 +627,13 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     _Service.Update(_ApplicationContext, _ProductContext, _ProjectContext, _SceneContext, 0.016, 1.016);
     EXPECT_FALSE(_Hub->HasSlot(_ObjectPDOID));
 
-    auto _RemovalFrames = _SceneContext.GetFrontendFacadeEndpoint().Receive();
+    auto _RemovalFrames = _SceneContext.GetFrontendSDOEndpoint().Receive();
     bool _bFoundObjectFreed = false;
     for (auto& _Frame : _RemovalFrames)
     {
         if (_Frame.nMethodCode == iCAX::PDORenderService::kPDORenderSlotFreedEvent)
         {
-            const auto _Payload = iCAX::Interaction::GetFacadePayloadText(_Frame);
+            const auto _Payload = iCAX::Interaction::GetSDOPayloadText(_Frame);
             _bFoundObjectFreed = _Payload.find("\"event\":\"SlotFreed\"") != std::string::npos
                 && _Payload.find("\"slotRole\":\"Object\"") != std::string::npos
                 && _Payload.find("\"pdoId\":\"" + std::to_string(_ObjectPDOID) + "\"") != std::string::npos;
@@ -642,7 +642,85 @@ TEST(PDORenderServiceTest, UpdateAllocatesObjectLevelPDOSlotsAndSendsFrontendEve
     EXPECT_TRUE(_bFoundObjectFreed);
 }
 
-TEST(PDORenderServiceTest, SendsDefragNotificationsThroughSceneFacade)
+TEST(PDORenderServiceTest, OutputsViewRenderSceneThroughItsOwningDatabaseScene)
+{
+    iCAX::PDORenderService::CPDORenderService _Service;
+    _Service.OnLoad();
+
+    const auto _ProjectID = iCAX::Data::GenerateNewUUID();
+    auto _Hub = iCAX::PDO::GeneratePDOHub({
+        .nArenaSize = 1024ull * 1024ull,
+        .nSlotCapacity = 16,
+    });
+    CTestApplicationContext _ApplicationContext;
+    CTestProductContext _ProductContext;
+    CTestProjectContext _ProjectContext(_ProjectID);
+    CTestSceneContext _SceneContext(_Hub);
+
+    const auto _ViewInstanceID = iCAX::Data::GenerateNewUUID();
+    const auto _RenderSceneID = iCAX::Render::MakeViewRenderSceneID(
+        _SceneContext.GetSceneID(),
+        _ViewInstanceID);
+    const auto _GeometryID =
+        iCAX::Render::MakeRenderGeometryID("test.view-output.mesh");
+    const auto _ObjectID = iCAX::Data::GenerateNewUUID();
+
+    ASSERT_TRUE(_Service.CreateScene(
+        _ProjectID,
+        _RenderSceneID,
+        _SceneContext.GetSceneID()));
+    const auto _nCreatedRevision =
+        _Service.GetSceneRevision(_ProjectID, _RenderSceneID);
+    ASSERT_TRUE(_Service.UpsertMesh(
+        _ProjectID,
+        _RenderSceneID,
+        MakeTriangleMesh(_GeometryID, 31, 0.0f)));
+    EXPECT_GT(
+        _Service.GetSceneRevision(_ProjectID, _RenderSceneID),
+        _nCreatedRevision);
+
+    iCAX::Render::SRenderInstanceData _Object;
+    _Object.nObjectID = _ObjectID;
+    _Object.nDataVersion = 32;
+    _Object.nGeometryID = _GeometryID;
+    _Object.eGeometryKind = iCAX::Render::ERenderGeometryKind::Mesh;
+    ASSERT_TRUE(_Service.SetObjects(_ProjectID, _RenderSceneID, { _Object }));
+
+    const auto _GeometryPDOID =
+        iCAX::PDORenderService::CPDORenderService::MakeGeometryPDOID(
+            _ProjectID,
+            _RenderSceneID,
+            iCAX::Render::ERenderGeometryKind::Mesh,
+            _GeometryID);
+    const auto _ObjectPDOID =
+        iCAX::PDORenderService::CPDORenderService::MakeObjectPDOID(
+            _ProjectID,
+            _RenderSceneID,
+            _ObjectID);
+
+    _Service.Update(
+        _ApplicationContext,
+        _ProductContext,
+        _ProjectContext,
+        _SceneContext,
+        0.016,
+        1.0);
+    EXPECT_TRUE(_Hub->HasSlot(_GeometryPDOID));
+    EXPECT_TRUE(_Hub->HasSlot(_ObjectPDOID));
+
+    ASSERT_TRUE(_Service.DestroyScene(_ProjectID, _RenderSceneID));
+    _Service.Update(
+        _ApplicationContext,
+        _ProductContext,
+        _ProjectContext,
+        _SceneContext,
+        0.016,
+        1.016);
+    EXPECT_FALSE(_Hub->HasSlot(_GeometryPDOID));
+    EXPECT_FALSE(_Hub->HasSlot(_ObjectPDOID));
+}
+
+TEST(PDORenderServiceTest, SendsDefragNotificationsThroughSceneSDO)
 {
     iCAX::PDORenderService::CPDORenderService _Service;
     const auto _ProjectID = iCAX::Data::GenerateNewUUID();
@@ -654,17 +732,17 @@ TEST(PDORenderServiceTest, SendsDefragNotificationsThroughSceneFacade)
     _Service.NotifyPDOSlotMoved(_ProjectContext.GetProjectID(), _SceneContext, _MovedPDOID);
     _Service.NotifyPDODefragEnd(_ProjectContext.GetProjectID(), _SceneContext);
 
-    auto _Frames = _SceneContext.GetFrontendFacadeEndpoint().Receive();
+    auto _Frames = _SceneContext.GetFrontendSDOEndpoint().Receive();
     ASSERT_EQ(3u, _Frames.size());
 
     EXPECT_EQ(iCAX::PDORenderService::kPDORenderDefragBeginEvent, _Frames[0].nMethodCode);
-    EXPECT_NE(std::string::npos, iCAX::Interaction::GetFacadePayloadText(_Frames[0]).find("\"event\":\"DefragBegin\""));
+    EXPECT_NE(std::string::npos, iCAX::Interaction::GetSDOPayloadText(_Frames[0]).find("\"event\":\"DefragBegin\""));
 
     EXPECT_EQ(iCAX::PDORenderService::kPDORenderSlotMovedEvent, _Frames[1].nMethodCode);
-    const auto _MovedPayload = iCAX::Interaction::GetFacadePayloadText(_Frames[1]);
+    const auto _MovedPayload = iCAX::Interaction::GetSDOPayloadText(_Frames[1]);
     EXPECT_NE(std::string::npos, _MovedPayload.find("\"event\":\"SlotMoved\""));
     EXPECT_NE(std::string::npos, _MovedPayload.find("\"pdoId\":\"" + std::to_string(_MovedPDOID) + "\""));
 
     EXPECT_EQ(iCAX::PDORenderService::kPDORenderDefragEndEvent, _Frames[2].nMethodCode);
-    EXPECT_NE(std::string::npos, iCAX::Interaction::GetFacadePayloadText(_Frames[2]).find("\"event\":\"DefragEnd\""));
+    EXPECT_NE(std::string::npos, iCAX::Interaction::GetSDOPayloadText(_Frames[2]).find("\"event\":\"DefragEnd\""));
 }

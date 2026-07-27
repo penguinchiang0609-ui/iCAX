@@ -1,6 +1,6 @@
 # Laser3DCAM
 
-`Laser3DCAM` 是三维线条切割 CAM 产品的后端插件。它不保存插件私有项目状态，而是向 Database 注册组件，并向 Facades 注册 `FacadeName.MethodName` 项目方法。
+`Laser3DCAM` 是三维线条切割 CAM 产品的后端插件。它不保存插件私有项目状态，而是向 Database 注册组件，并向 SDO 注册 `SDOName.MethodName` 项目方法。
 
 当前插件只落地产品数据边界：
 
@@ -22,7 +22,7 @@
 - 显示是独立切面：需要显示的 Entity 同时挂 `CRenderInstanceComponent` 和通用 `Transform::CTransformComponent`，业务组件不保存显示状态。
 - 刀路曲线以 `CPathCurveResource` 进入 Scene.Resources，当前阶段先记录来源拓扑和资源壳。
 - 产品业务算法以 service 形式注册：`FeatureRecognitionService`、`ToolpathGenerationService`、`ToolpathOrderService`。
-- 前端只能通过 `FacadeName.MethodName` 调用读取和修改项目状态；Facades 只做入口、上下文解析和提交，不承载算法。
+- 前端只能通过 `SDOName.MethodName` 调用读取和修改项目状态；SDO 只做入口、上下文解析和提交，不承载算法。
 - 插件不在 framework 中写入任何产品专属逻辑。
 
 STEP/STP、IGS/IGES 的具体导入由 `iCAX-Plugins/cad/OpenCascadeResourceImport` 提供。该插件通过 OCCT 8.0.0-p1 把 CAD 文件转换成 `iCAX::Resource::CBinaryResource` 和中立 `GeometryData::BRepModel`。Laser3DCAM 不直接依赖 OCCT；后续如果替换为 CGAL 或其他内核，只需要替换资源导入插件。
@@ -48,7 +48,7 @@ Scene Tick
   -> IRenderService.UpsertMesh / SetInstances / SetTransforms 写入当前 scene snapshot
   -> ProjectScene 在所有 Behaviour 之后调用 ServiceProvider.UpdateSceneServices()
   -> IRenderService.OnSceneTick() 调用 IRenderService.Update()
-  -> PDORenderService 分配 RenderPDO slot，并通过 Scene Facade 通知前端
+  -> PDORenderService 分配 RenderPDO slot，并通过 Scene SDO 通知前端
   -> H5 ThreeRenderViewport 读取 PDO slot 并显示网格
 ```
 
@@ -91,12 +91,12 @@ Machine.Instantiate
 - `SceneBootstrapBehaviour.cpp`：Scene 启动行为，确保 `CRootComponent`、`CSelectionComponent` 和默认相机 Entity 存在。
 - `ToolpathGenerationService.h/.cpp`：把参数化特征转换成可落库的刀路曲线数据。
 - `ToolpathOrderService.h/.cpp`：根据 Block 和排序策略生成/应用加工顺序计划。
-- `*Facade.cpp`：各 Facade 的声明、静态注册和方法入口。
-- `*FacadeImplement.cpp/.h`：Facade 方法背后的私有实现细节，不对产品外暴露。
+- `*SDO.cpp`：各 SDO 的声明、静态注册和方法入口。
+- `*SDOImplement.cpp/.h`：SDO 方法背后的私有实现细节，不对产品外暴露。
 - `Laser3DCAM.h/.cpp`：插件契约版本入口。
 - `Laser3DCAM.vcxproj`：插件 DLL 工程，不直接链接具体 CAD 内核。
 
-Facade 方法：
+SDO 方法：
 
 - `MachineDefinition.GetSupportedFormats`：返回当前产品 manifest 中声明的机床定义文件格式能力。
 - `MachineDefinition.Import`：导入产品级机床定义源文件；只托管源文件目录并更新 `ProductSettings.machineDefinitions`，不解析、不写项目 Database、不创建机床描述资源。
@@ -201,7 +201,7 @@ Workpiece.BRepResourceID + FeatureDefinition[]
   -> RecognizedFeature[]
   -> ToolpathGenerationService
   -> GeneratedToolpath
-  -> Facades 写入 PathEntity + PathCurveResource + Block.Children[]
+  -> SDO 写入 PathEntity + PathCurveResource + Block.Children[]
   -> ToolpathOrderService
   -> Block.Children[] 排序计划
 ```

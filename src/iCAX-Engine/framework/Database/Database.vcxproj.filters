@@ -60,6 +60,9 @@
     <ClInclude Include="IRepositoryEvent.h">
       <Filter>extern\interface</Filter>
     </ClInclude>
+    <ClInclude Include="IEntityViewEvent.h">
+      <Filter>extern\interface</Filter>
+    </ClInclude>
     <ClInclude Include="Database.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -79,6 +82,12 @@
       <Filter>extern\class</Filter>
     </ClInclude>
     <ClInclude Include="EntityUpdate.h">
+      <Filter>extern\class</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityInsert.h">
+      <Filter>extern\class</Filter>
+    </ClInclude>
+    <ClInclude Include="EntityQuery.h">
       <Filter>extern\class</Filter>
     </ClInclude>
     <ClInclude Include="EntityWhereEvaluator.h">
@@ -150,6 +159,9 @@
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="EntityUpdate.cpp">
+      <Filter>extern\class</Filter>
+    </ClCompile>
+    <ClCompile Include="EntityQuery.cpp">
       <Filter>extern\class</Filter>
     </ClCompile>
     <ClCompile Include="Repository.cpp">

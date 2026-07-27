@@ -19,6 +19,7 @@ namespace iCAX
             std::string UserConfigDirectory; //!< 用户配置目录。
             std::string CacheDirectory; //!< 缓存目录。
             std::string TempDirectory; //!< 临时目录。
+            std::string ResourceVersionDirectory; //!< 资源历史版本临时根目录；为空时使用 TempDirectory/ResourceVersions。
             std::string LogDirectory; //!< 日志目录。
         };
     }

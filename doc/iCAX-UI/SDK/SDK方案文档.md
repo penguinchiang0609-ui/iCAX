@@ -10,11 +10,11 @@ src/iCAX-UI/SDK/
   runtime.mjs
   AppShell/
   Bridge/
-  Facades/
+  SDO/
   PDO/
 ```
 
-`index.mjs` 是公开门面。`runtime.mjs` 提供高层连接入口。`AppShell` 是 SDK 自带的 H5 应用容器。`Bridge/Facades/PDO` 是 SDK 内部通信模块。
+`index.mjs` 是公开门面。`runtime.mjs` 提供高层连接入口。`AppShell` 是 SDK 自带的 H5 应用容器。`Bridge/SDO/PDO` 是 SDK 内部通信模块。
 
 ## 2. 依赖关系
 
@@ -40,18 +40,18 @@ SDK/runtime
   -> AppProxy
 
 AppProxy/ProductProxy/ProjectProxy/SceneProxy
-  -> SDK/Facades
+  -> SDK/SDO
   -> SDK/PDO
 ```
 
-`SDK/Facades`、`SDK/PDO` 不依赖 `AppProxy/ProductProxy/ProjectProxy`，避免循环依赖。
+`SDK/SDO`、`SDK/PDO` 不依赖 `AppProxy/ProductProxy/ProjectProxy`，避免循环依赖。
 
 ## 3. 使用方式
 
 Shell 或产品前端应这样使用：
 
 ```js
-import { connectApplication, ProjectFacade } from "../../iCAX-UI/SDK/index.mjs";
+import { connectApplication, ProjectSDO } from "../../iCAX-UI/SDK/index.mjs";
 
 const app = await connectApplication();
 const product = await app.startProduct("icax.laser-3d-cam");
@@ -60,7 +60,7 @@ const product = await app.startProduct("icax.laser-3d-cam");
 产品前端不直接 import：
 
 ```text
-SDK/Facades/*
+SDK/SDO/*
 SDK/PDO/*
 ```
 
@@ -68,11 +68,11 @@ SDK/PDO/*
 
 ## 4. 封装策略
 
-Facades 封装在代理对象中：
+SDO 封装在代理对象中：
 
 - `AppProxy` 使用 application channel。
 - `ProductProxy` 使用 product channel。
-- `ProjectProxy` 管理项目容器，不使用 Facade。
+- `ProjectProxy` 管理项目容器，不使用 SDO。
 - `SceneProxy` 使用 scene channel。
 
 PDO 封装在 `SceneProxy` 中：
@@ -96,25 +96,25 @@ SDK/AppShell -> SDK/index
 SDK/index -> AppProxy/ProductProxy/ProjectProxy/SceneProxy
 SDK/index -> ProductProxy module loader
 SDK/index -> UI
-AppProxy/ProductProxy/SceneProxy -> SDK/Facades
+AppProxy/ProductProxy/SceneProxy -> SDK/SDO
 SceneProxy -> SDK/PDO
-SDK/PDO -> SDK/Facades command route
-SDK/Bridge -> SDK/Facades
+SDK/PDO -> SDK/SDO command route
+SDK/Bridge -> SDK/SDO
 ```
 
 不允许：
 
 ```text
-SDK/Facades -> AppProxy/ProductProxy/ProjectProxy/SceneProxy
+SDK/SDO -> AppProxy/ProductProxy/ProjectProxy/SceneProxy
 SDK/PDO -> SceneProxy
 SDK/Bridge -> AppProxy/ProductProxy/ProjectProxy/SceneProxy
-产品 webpage -> SDK/Facades 或 SDK/PDO
+产品 webpage -> SDK/SDO 或 SDK/PDO
 ```
 
 ## 6. 验收标准
 
 - `AppShell` 只从 `SDK/index.mjs` 导入公共能力。
 - `SDKTest.mjs` 公开 API 测试从 SDK 入口导入。
-- 内部 Facades/PDO 白盒测试直接使用 `SDK/Facades`、`SDK/PDO` 路径。
+- 内部 SDO/PDO 白盒测试直接使用 `SDK/SDO`、`SDK/PDO` 路径。
 - 产品目录下不需要 import SDK 内部深层路径。
 

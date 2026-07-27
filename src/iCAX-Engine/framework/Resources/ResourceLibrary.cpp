@@ -26,8 +26,29 @@ iCAX::Resource::CResourceLibrary::CResourceLibrary()
 {
 }
 
+iCAX::Resource::CResourceLibrary::CResourceLibrary(
+    IN const CResourceVersionStorageOptions&
+        VersionStorageOptions_)
+    : m_pPool(std::make_unique<CResourcePool>(
+        VersionStorageOptions_))
+    , m_pLoaderRegistry(
+        std::make_shared<CResourceLoaderRegistry>())
+{
+}
+
 iCAX::Resource::CResourceLibrary::CResourceLibrary(IN std::shared_ptr<CResourceLoaderRegistry> pLoaderRegistry_)
     : m_pPool(std::make_unique<CResourcePool>())
+    , m_pLoaderRegistry(std::move(pLoaderRegistry_))
+{
+}
+
+iCAX::Resource::CResourceLibrary::CResourceLibrary(
+    IN std::shared_ptr<CResourceLoaderRegistry>
+        pLoaderRegistry_,
+    IN const CResourceVersionStorageOptions&
+        VersionStorageOptions_)
+    : m_pPool(std::make_unique<CResourcePool>(
+        VersionStorageOptions_))
     , m_pLoaderRegistry(std::move(pLoaderRegistry_))
 {
 }
@@ -53,6 +74,15 @@ bool iCAX::Resource::CResourceLibrary::Contains(IN const std::string& strSource_
     return GetPool().Contains(MakeResourceKeyFromSource(strSource_));
 }
 
+bool iCAX::Resource::CResourceLibrary::Contains(
+    IN const std::string& strSource_,
+    IN const uint64_t nVersion_) const
+{
+    return GetPool().ContainsVersion(
+        MakeResourceKeyFromSource(strSource_),
+        nVersion_);
+}
+
 bool iCAX::Resource::CResourceLibrary::HasObject(IN const std::string& strSource_) const
 {
     return GetPool().HasObject(MakeResourceKeyFromSource(strSource_));
@@ -65,7 +95,10 @@ bool iCAX::Resource::CResourceLibrary::Unload(IN const std::string& strSource_)
 
 bool iCAX::Resource::CResourceLibrary::Remove(IN const std::string& strSource_)
 {
-    return GetPool().Remove(MakeResourceKeyFromSource(strSource_));
+    return GetPool().RemoveVersioned(
+        MakeResourceKeyFromSource(strSource_),
+        EResourceVersionCondition::None,
+        0) == EResourceMutationResult::Removed;
 }
 
 void iCAX::Resource::CResourceLibrary::Clear()
@@ -81,6 +114,16 @@ size_t iCAX::Resource::CResourceLibrary::Count() const
 std::optional<iCAX::Resource::CResourceInfo> iCAX::Resource::CResourceLibrary::GetInfo(IN const std::string& strSource_) const
 {
     return GetPool().GetInfo(MakeResourceKeyFromSource(strSource_));
+}
+
+std::optional<iCAX::Resource::CResourceInfo>
+iCAX::Resource::CResourceLibrary::GetInfo(
+    IN const std::string& strSource_,
+    IN const uint64_t nVersion_) const
+{
+    return GetPool().GetInfo(
+        MakeResourceKeyFromSource(strSource_),
+        nVersion_);
 }
 
 uint64_t iCAX::Resource::CResourceLibrary::GetVersion(IN const std::string& strSource_) const
@@ -111,6 +154,141 @@ std::vector<iCAX::Resource::CResourceInfo> iCAX::Resource::CResourceLibrary::Get
 std::vector<iCAX::Resource::CResourceInfo> iCAX::Resource::CResourceLibrary::GetManifest(IN bool bIncludeRuntimeOnly_) const
 {
     return GetPool().GetManifest(bIncludeRuntimeOnly_);
+}
+
+std::vector<uint64_t>
+iCAX::Resource::CResourceLibrary::GetVersions(
+    IN const std::string& strSource_) const
+{
+    return GetPool().GetVersions(
+        MakeResourceKeyFromSource(strSource_));
+}
+
+bool iCAX::Resource::CResourceLibrary::RegisterVersionCodec(
+    IN const std::type_info& RuntimeType_,
+    IN CResourceVersionCodec Codec_,
+    IN const bool bReplaceExisting_)
+{
+    return GetPool().RegisterVersionCodec(
+        RuntimeType_,
+        std::move(Codec_),
+        bReplaceExisting_);
+}
+
+iCAX::Resource::CResourceVersionStorageStats
+iCAX::Resource::CResourceLibrary::GetVersionStorageStats() const
+{
+    return GetPool().GetVersionStorageStats();
+}
+
+std::filesystem::path
+iCAX::Resource::CResourceLibrary::GetVersionStorageDirectory() const
+{
+    return GetPool().GetVersionStorageDirectory();
+}
+
+bool iCAX::Resource::CResourceLibrary::DiscardVersion(
+    IN const std::string& strSource_,
+    IN const uint64_t nVersion_)
+{
+    return GetPool().DiscardVersion(
+        MakeResourceKeyFromSource(strSource_),
+        nVersion_);
+}
+
+iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Request(
+    IN const CResourceRequest& Request_)
+{
+    return CResourceAccessService(*this).Request(Request_);
+}
+
+iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Head(
+    IN const std::string& strURL_,
+    IN const CResourceHeaders& Headers_)
+{
+    return Request(CResourceRequest{
+        EResourceMethod::Head,
+        strURL_,
+        Headers_,
+        {}
+    });
+}
+
+iCAX::Resource::CResourceResponse
+iCAX::Resource::CResourceLibrary::Head(
+    IN const std::string& strURL_,
+    IN const uint64_t nVersion_,
+    IN const CResourceHeaders& Headers_)
+{
+    auto _Headers = Headers_;
+    SetResourceHeader(
+        _Headers,
+        "ICAX-Resource-Version",
+        std::to_string(nVersion_));
+    return Head(strURL_, _Headers);
+}
+
+iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Get(
+    IN const std::string& strURL_,
+    IN const CResourceHeaders& Headers_)
+{
+    return Request(CResourceRequest{
+        EResourceMethod::Get,
+        strURL_,
+        Headers_,
+        {}
+    });
+}
+
+iCAX::Resource::CResourceResponse
+iCAX::Resource::CResourceLibrary::Get(
+    IN const std::string& strURL_,
+    IN const uint64_t nVersion_,
+    IN const CResourceHeaders& Headers_)
+{
+    auto _Headers = Headers_;
+    SetResourceHeader(
+        _Headers,
+        "ICAX-Resource-Version",
+        std::to_string(nVersion_));
+    return Get(strURL_, _Headers);
+}
+
+iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Put(
+    IN const std::string& strURL_,
+    IN const CFlatBufferResource& Body_,
+    IN const CResourceHeaders& Headers_)
+{
+    return Request(CResourceRequest{
+        EResourceMethod::Put,
+        strURL_,
+        Headers_,
+        Body_
+    });
+}
+
+iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Delete(
+    IN const std::string& strURL_,
+    IN const CResourceHeaders& Headers_)
+{
+    return Request(CResourceRequest{
+        EResourceMethod::Delete,
+        strURL_,
+        Headers_,
+        {}
+    });
+}
+
+iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Options(
+    IN const std::string& strURL_,
+    IN const CResourceHeaders& Headers_)
+{
+    return Request(CResourceRequest{
+        EResourceMethod::Options,
+        strURL_,
+        Headers_,
+        {}
+    });
 }
 
 std::vector<iCAX::Resource::CResourceFormatDescriptor> iCAX::Resource::CResourceLibrary::GetImportFormats() const
@@ -223,6 +401,26 @@ void iCAX::Resource::CResourceLibrary::SetUntyped(
     GetPool().SetUntyped(MakeResourceKeyFromSource(strSource_), std::move(pResource_), RuntimeType_, Info_);
 }
 
+iCAX::Resource::EResourceMutationResult
+iCAX::Resource::CResourceLibrary::PutUntypedVersioned(
+    IN const std::string& strSource_,
+    IN std::shared_ptr<void> pResource_,
+    IN const std::type_info& RuntimeType_,
+    IN const CResourceInfo& Info_,
+    IN const EResourceVersionCondition Condition_,
+    IN const uint64_t nExpectedVersion_,
+    OUT CResourceInfo* pStoredInfo_)
+{
+    return GetPool().PutUntypedVersioned(
+        MakeResourceKeyFromSource(strSource_),
+        std::move(pResource_),
+        RuntimeType_,
+        Info_,
+        Condition_,
+        nExpectedVersion_,
+        pStoredInfo_);
+}
+
 bool iCAX::Resource::CResourceLibrary::TryAddUntyped(
     IN const std::string& strSource_,
     IN std::shared_ptr<void> pResource_,
@@ -237,4 +435,16 @@ std::shared_ptr<void> iCAX::Resource::CResourceLibrary::GetUntyped(
     IN const std::type_info& RuntimeType_) const
 {
     return GetPool().GetUntyped(MakeResourceKeyFromSource(strSource_), RuntimeType_);
+}
+
+std::shared_ptr<void>
+iCAX::Resource::CResourceLibrary::GetUntyped(
+    IN const std::string& strSource_,
+    IN const uint64_t nVersion_,
+    IN const std::type_info& RuntimeType_) const
+{
+    return GetPool().GetUntyped(
+        MakeResourceKeyFromSource(strSource_),
+        nVersion_,
+        RuntimeType_);
 }

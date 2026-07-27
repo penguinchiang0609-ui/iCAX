@@ -22,7 +22,7 @@
 页面职责：
 
 - `mountProduct`：显示产品入口，并通过 ApplicationShell 创建项目 catalog。
-- `mountProject`：绑定当前 ProjectProxy 和 SceneProxy；页面按需要分别调用 `MachineDefinition.List`、`Machine.List`、`Job.Get`、`Selection.Get` 等产品 Facade 方法查询状态，不使用大而杂的统一主场景入口。
+- `mountProject`：绑定当前 ProjectProxy 和 SceneProxy；页面按需要分别调用 `MachineDefinition.List`、`Machine.List`、`Job.Get`、`Selection.Get` 等产品 SDO 方法查询状态，不使用大而杂的统一主场景入口。
 - Ribbon 采用 `机床定义 / 工件编辑 / 加工 / 视图`。前两个大区是资源准备入口；`加工` 大区操作正式主 Scene。
 - 如果当前 Scene 启用了 PDO，视口使用 `iCAX-UI/SDK` 内置的 `ThreeRenderViewport` 显示 RenderPDO 数据。
 - 如果当前 Scene 未启用 PDO，视口使用 backend 返回的 `faces/loops/edges/toolpaths` 做 SVG 后备预览。

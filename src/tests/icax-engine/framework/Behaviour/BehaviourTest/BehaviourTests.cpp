@@ -6,7 +6,7 @@
 #include <Behaviour/IBehaviourRegistry.h>
 #include <Behaviour/IUniverse.h>
 #include <ApplicationContext/ApplicationContext.h>
-#include <Facades/FacadeRegistry.h>
+#include <SDO/SDORegistry.h>
 #include <Data/PropertyBag.h>
 #include <Data/uuid.h>
 #include <Database/ComponentBase.h>
@@ -423,12 +423,12 @@ namespace
             IN std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry_,
             IN std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry_,
             IN std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider_,
-            IN std::shared_ptr<iCAX::Interaction::CFacadeRegistry> pFacadeRegistry_)
+            IN std::shared_ptr<iCAX::Interaction::CSDORegistry> pSDORegistry_)
             : m_pMetaRegistry(std::move(pMetaRegistry_))
             , m_pBehaviourRegistry(std::move(pBehaviourRegistry_))
             , m_pResourceLoaderRegistry(std::move(pResourceLoaderRegistry_))
             , m_pServiceProvider(std::move(pServiceProvider_))
-            , m_pFacadeRegistry(std::move(pFacadeRegistry_))
+            , m_pSDORegistry(std::move(pSDORegistry_))
         {
             m_Definition.ProductID = "behaviour-test-product";
             m_Definition.ProductName = "Behaviour Test Product";
@@ -469,9 +469,9 @@ namespace
             return *m_pResourceLoaderRegistry;
         }
 
-        iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override
+        iCAX::Interaction::CSDORegistry& GetSDORegistry() const override
         {
-            return *m_pFacadeRegistry;
+            return *m_pSDORegistry;
         }
 
     private:
@@ -481,7 +481,7 @@ namespace
         std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
         std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
         std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
-        std::shared_ptr<iCAX::Interaction::CFacadeRegistry> m_pFacadeRegistry;
+        std::shared_ptr<iCAX::Interaction::CSDORegistry> m_pSDORegistry;
     };
 
     class CTestProjectContext final : public iCAX::Project::IProjectContext
@@ -557,14 +557,14 @@ namespace
             return m_strSceneName;
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetBackendSDOEndpoint() const override
         {
-            throw std::logic_error("Backend Facade endpoint is not used by behaviour tests");
+            throw std::logic_error("Backend SDO endpoint is not used by behaviour tests");
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetFrontendSDOEndpoint() const override
         {
-            throw std::logic_error("Frontend Facade endpoint is not used by behaviour tests");
+            throw std::logic_error("Frontend SDO endpoint is not used by behaviour tests");
         }
 
         bool IsMainScene() const override
@@ -636,8 +636,8 @@ namespace
             , pMetaRegistry(pRepository->GetMetaRegistry())
             , pResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
             , pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
-            , pFacadeRegistry(std::make_shared<iCAX::Interaction::CFacadeRegistry>())
-            , Product(pMetaRegistry, pBehaviourRegistry, pResourceLoaderRegistry, pServiceProvider, pFacadeRegistry)
+            , pSDORegistry(std::make_shared<iCAX::Interaction::CSDORegistry>())
+            , Product(pMetaRegistry, pBehaviourRegistry, pResourceLoaderRegistry, pServiceProvider, pSDORegistry)
             , Project(pRepository->GetID())
             , Scene(pRepository, pResourceLoaderRegistry, pServiceProvider)
         {
@@ -648,7 +648,7 @@ namespace
         std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry;
         std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry;
         std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider;
-        std::shared_ptr<iCAX::Interaction::CFacadeRegistry> pFacadeRegistry;
+        std::shared_ptr<iCAX::Interaction::CSDORegistry> pSDORegistry;
         iCAX::Application::CApplicationContext Application;
         CTestProductContext Product;
         CTestProjectContext Project;

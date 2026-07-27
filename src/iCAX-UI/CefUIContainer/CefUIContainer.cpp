@@ -158,9 +158,9 @@ namespace
         throw std::invalid_argument(std::string(szName_) + " must be an unsigned integer");
     }
 
-    iCAX::Frontend::CFrontendFacadeFrame _ParseFacadeFrame(IN const json::object& Object_)
+    iCAX::Frontend::CFrontendSDOFrame _ParseSDOFrame(IN const json::object& Object_)
     {
-        iCAX::Frontend::CFrontendFacadeFrame _Frame;
+        iCAX::Frontend::CFrontendSDOFrame _Frame;
         _Frame.ChannelID = _AsString(_RequireField(Object_, "channelId"), "channelId");
         _Frame.nCallID = _AsUInt64(_RequireField(Object_, "callId"), "callId");
         _Frame.nMethodCode = _AsUInt64(_RequireField(Object_, "methodCode"), "methodCode");
@@ -173,6 +173,170 @@ namespace
     json::value _ToJsonValue(IN const std::string& strValue_)
     {
         return json::value(strValue_);
+    }
+
+    std::string _EncodeBase64(IN const std::vector<uint8_t>& Bytes_)
+    {
+        static constexpr char _Alphabet[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "abcdefghijklmnopqrstuvwxyz"
+            "0123456789+/";
+
+        std::string _Result;
+        _Result.reserve(((Bytes_.size() + 2) / 3) * 4);
+        for (std::size_t _Index = 0; _Index < Bytes_.size(); _Index += 3)
+        {
+            const uint32_t _A = Bytes_[_Index];
+            const uint32_t _B =
+                _Index + 1 < Bytes_.size() ? Bytes_[_Index + 1] : 0;
+            const uint32_t _C =
+                _Index + 2 < Bytes_.size() ? Bytes_[_Index + 2] : 0;
+            const uint32_t _Combined = (_A << 16) | (_B << 8) | _C;
+
+            _Result.push_back(_Alphabet[(_Combined >> 18) & 0x3f]);
+            _Result.push_back(_Alphabet[(_Combined >> 12) & 0x3f]);
+            _Result.push_back(
+                _Index + 1 < Bytes_.size()
+                    ? _Alphabet[(_Combined >> 6) & 0x3f]
+                    : '=');
+            _Result.push_back(
+                _Index + 2 < Bytes_.size()
+                    ? _Alphabet[_Combined & 0x3f]
+                    : '=');
+        }
+        return _Result;
+    }
+
+    int _DecodeBase64Character(IN const char Value_)
+    {
+        if (Value_ >= 'A' && Value_ <= 'Z')
+        {
+            return Value_ - 'A';
+        }
+        if (Value_ >= 'a' && Value_ <= 'z')
+        {
+            return Value_ - 'a' + 26;
+        }
+        if (Value_ >= '0' && Value_ <= '9')
+        {
+            return Value_ - '0' + 52;
+        }
+        if (Value_ == '+')
+        {
+            return 62;
+        }
+        if (Value_ == '/')
+        {
+            return 63;
+        }
+        return -1;
+    }
+
+    std::vector<uint8_t> _DecodeBase64(IN const std::string& strValue_)
+    {
+        if (strValue_.empty())
+        {
+            return {};
+        }
+        if (strValue_.size() % 4 != 0)
+        {
+            throw std::invalid_argument("resource bodyBase64 is invalid");
+        }
+
+        std::vector<uint8_t> _Result;
+        _Result.reserve((strValue_.size() / 4) * 3);
+        for (std::size_t _Index = 0;
+            _Index < strValue_.size();
+            _Index += 4)
+        {
+            const int _A = _DecodeBase64Character(strValue_[_Index]);
+            const int _B = _DecodeBase64Character(strValue_[_Index + 1]);
+            const bool _bPaddingC = strValue_[_Index + 2] == '=';
+            const bool _bPaddingD = strValue_[_Index + 3] == '=';
+            const int _C = _bPaddingC
+                ? 0
+                : _DecodeBase64Character(strValue_[_Index + 2]);
+            const int _D = _bPaddingD
+                ? 0
+                : _DecodeBase64Character(strValue_[_Index + 3]);
+            if (_A < 0 || _B < 0 || _C < 0 || _D < 0 ||
+                (_bPaddingC && !_bPaddingD) ||
+                ((_bPaddingC || _bPaddingD) &&
+                    _Index + 4 != strValue_.size()))
+            {
+                throw std::invalid_argument("resource bodyBase64 is invalid");
+            }
+
+            const uint32_t _Combined =
+                (static_cast<uint32_t>(_A) << 18) |
+                (static_cast<uint32_t>(_B) << 12) |
+                (static_cast<uint32_t>(_C) << 6) |
+                static_cast<uint32_t>(_D);
+            _Result.push_back(
+                static_cast<uint8_t>((_Combined >> 16) & 0xff));
+            if (!_bPaddingC)
+            {
+                _Result.push_back(
+                    static_cast<uint8_t>((_Combined >> 8) & 0xff));
+            }
+            if (!_bPaddingD)
+            {
+                _Result.push_back(
+                    static_cast<uint8_t>(_Combined & 0xff));
+            }
+        }
+        return _Result;
+    }
+
+    iCAX::Frontend::CFrontendResourceRequest _ParseResourceRequest(
+        IN const json::object& Object_)
+    {
+        iCAX::Frontend::CFrontendResourceRequest _Request;
+        _Request.ProjectID =
+            _AsString(_RequireField(Object_, "projectId"), "projectId");
+        _Request.SceneID =
+            _AsString(_RequireField(Object_, "sceneId"), "sceneId");
+        _Request.Method =
+            _AsString(_RequireField(Object_, "method"), "method");
+        _Request.URL =
+            _AsString(_RequireField(Object_, "url"), "url");
+
+        if (const auto _Headers = Object_.find("headers");
+            _Headers != Object_.end())
+        {
+            const auto& _HeaderObject =
+                _AsObject(_Headers->value(), "headers");
+            for (const auto& _Header : _HeaderObject)
+            {
+                _Request.Headers.emplace(
+                    std::string(_Header.key()),
+                    _AsString(_Header.value(), "header value"));
+            }
+        }
+
+        if (const auto _Body = Object_.find("bodyBase64");
+            _Body != Object_.end())
+        {
+            _Request.Body = _DecodeBase64(
+                _AsString(_Body->value(), "bodyBase64"));
+        }
+        return _Request;
+    }
+
+    json::object _ToJsonResourceResponse(
+        IN const iCAX::Frontend::CFrontendResourceResponse& Response_)
+    {
+        json::object _Headers;
+        for (const auto& _Header : Response_.Headers)
+        {
+            _Headers[_Header.first] = _Header.second;
+        }
+
+        json::object _Response;
+        _Response["status"] = Response_.nStatus;
+        _Response["headers"] = std::move(_Headers);
+        _Response["bodyBase64"] = _EncodeBase64(Response_.Body);
+        return _Response;
     }
 
     std::wstring _MakeDialogFilterPattern(IN const json::array& Extensions_)
@@ -462,7 +626,7 @@ namespace
         ::UpdateWindow(_hWindow);
     }
 
-    json::object _ToJsonFacadeFrame(IN const iCAX::Frontend::CFrontendFacadeFrame& Frame_)
+    json::object _ToJsonSDOFrame(IN const iCAX::Frontend::CFrontendSDOFrame& Frame_)
     {
         json::object _Object;
         _Object["channelId"] = Frame_.ChannelID;
@@ -507,6 +671,43 @@ namespace
     });
   }
 
+  async function bodyToBase64(body) {
+    if (body === undefined || body === null) {
+      return "";
+    }
+
+    let bytes;
+    if (body instanceof ArrayBuffer) {
+      bytes = new Uint8Array(body);
+    } else if (ArrayBuffer.isView(body)) {
+      bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+    } else if (typeof Blob !== "undefined" && body instanceof Blob) {
+      bytes = new Uint8Array(await body.arrayBuffer());
+    } else {
+      throw new TypeError("resource request body must be an ArrayBuffer, ArrayBufferView, or Blob");
+    }
+
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+      const chunk = bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length));
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return btoa(binary);
+  }
+
+  function base64ToArrayBuffer(text) {
+    if (!text) {
+      return new ArrayBuffer(0);
+    }
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes.buffer;
+  }
+
   function ensureSubscriberSet(channelId) {
     const key = String(channelId || "");
     if (!subscribers.has(key)) {
@@ -530,8 +731,27 @@ namespace
       return queryNative("registerSceneChannel", { projectId, sceneId });
     },
 
-    postFacadeFrame(frame) {
-      return queryNative("postFacadeFrame", { frame }).then(() => undefined);
+    postSDOFrame(frame) {
+      return queryNative("postSDOFrame", { frame }).then(() => undefined);
+    },
+
+    async requestResource(request) {
+      if (!request || typeof request !== "object") {
+        throw new TypeError("resource request is required");
+      }
+      const response = await queryNative("requestResource", {
+        projectId: String(request.projectId || ""),
+        sceneId: String(request.sceneId || ""),
+        method: String(request.method || "GET"),
+        url: String(request.url || ""),
+        headers: request.headers || {},
+        bodyBase64: await bodyToBase64(request.body)
+      });
+      return {
+        status: Number(response && response.status || 500),
+        headers: response && response.headers || {},
+        body: base64ToArrayBuffer(response && response.bodyBase64 || "")
+      };
     },
 
     openFileDialog(options) {
@@ -546,7 +766,7 @@ namespace
       return queryNative("beginWindowDrag").then(() => undefined);
     },
 
-    subscribeFacadeFrames(channelId, handler) {
+    subscribeSDOFrames(channelId, handler) {
       if (typeof handler !== "function") {
         throw new TypeError("handler must be a function");
       }
@@ -581,7 +801,7 @@ namespace
       }
     },
 
-    __dispatchFacadeFrame(frame) {
+    __dispatchSDOFrame(frame) {
       const channelId = String(frame && frame.channelId || "");
       const handlers = subscribers.get(channelId);
       if (!handlers) {
@@ -759,7 +979,8 @@ namespace
         auto _Meta = CefV8Value::CreateObject(nullptr, nullptr);
         _Meta->SetValue("id", CefV8Value::CreateString(std::to_string(Descriptor_.nID)), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("version", CefV8Value::CreateUInt(Descriptor_.nVersion), V8_PROPERTY_ATTRIBUTE_READONLY);
-        _Meta->SetValue("payloadSize", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("payloadCapacity", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("payloadSize", CefV8Value::CreateUInt(static_cast<uint32_t>(Lease_.PayloadSize())), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("sequence", CefV8Value::CreateUInt(Lease_.Sequence()), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("bufferIndex", CefV8Value::CreateUInt(Lease_.BufferIndex()), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("dataVersion", CefV8Value::CreateString(std::to_string(Lease_.DataVersion())), V8_PROPERTY_ATTRIBUTE_READONLY);
@@ -771,6 +992,7 @@ namespace
         auto _Meta = CefV8Value::CreateObject(nullptr, nullptr);
         _Meta->SetValue("id", CefV8Value::CreateString(std::to_string(Descriptor_.nID)), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("version", CefV8Value::CreateUInt(Descriptor_.nVersion), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("payloadCapacity", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("payloadSize", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("dataVersion", CefV8Value::CreateString(std::to_string(Descriptor_.nDataVersion)), V8_PROPERTY_ATTRIBUTE_READONLY);
         return _Meta;
@@ -778,15 +1000,17 @@ namespace
 
     CefRefPtr<CefV8Value> _MakePDOSlotMeta(
         IN const CPDOReadDescriptor& Descriptor_,
-        IN const iCAX::PDO::CSharedPDOSlot& Slot_)
+        IN const iCAX::PDO::CSharedPDOSlot& Slot_,
+        IN const iCAX::PDO::CPDOReadLease& Lease_)
     {
         auto _Meta = CefV8Value::CreateObject(nullptr, nullptr);
         _Meta->SetValue("id", CefV8Value::CreateString(std::to_string(Descriptor_.nID)), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("version", CefV8Value::CreateUInt(Descriptor_.nVersion), V8_PROPERTY_ATTRIBUTE_READONLY);
-        _Meta->SetValue("payloadSize", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
-        _Meta->SetValue("sequence", CefV8Value::CreateUInt(Slot_.GetSequence()), V8_PROPERTY_ATTRIBUTE_READONLY);
-        _Meta->SetValue("publishedIndex", CefV8Value::CreateUInt(Slot_.GetPublishedIndex()), V8_PROPERTY_ATTRIBUTE_READONLY);
-        _Meta->SetValue("publishedDataVersion", CefV8Value::CreateString(std::to_string(Slot_.GetPublishedDataVersion())), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("payloadCapacity", CefV8Value::CreateUInt(Descriptor_.nPayloadSize), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("payloadSize", CefV8Value::CreateUInt(static_cast<uint32_t>(Lease_.PayloadSize())), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("sequence", CefV8Value::CreateUInt(Lease_.Sequence()), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("publishedIndex", CefV8Value::CreateUInt(Lease_.BufferIndex()), V8_PROPERTY_ATTRIBUTE_READONLY);
+        _Meta->SetValue("publishedDataVersion", CefV8Value::CreateString(std::to_string(Lease_.DataVersion())), V8_PROPERTY_ATTRIBUTE_READONLY);
         _Meta->SetValue("latestDataVersion", CefV8Value::CreateString(std::to_string(Slot_.GetLatestDataVersion())), V8_PROPERTY_ATTRIBUTE_READONLY);
         return _Meta;
     }
@@ -849,7 +1073,7 @@ namespace
             // shared-memory snapshot into V8-owned backing storage.
             auto _ArrayBuffer = CefV8Value::CreateArrayBufferWithCopy(
                 const_cast<void*>(_Lease.Data()),
-                _Descriptor.nPayloadSize);
+                static_cast<size_t>(_Lease.PayloadSize()));
             if (!_ArrayBuffer)
             {
                 throw std::runtime_error("Failed to create PDO ArrayBuffer");
@@ -881,7 +1105,11 @@ namespace
 
             const auto _Descriptor = _ParsePDOReadDescriptor(Arguments_[0]);
             auto _Slot = OpenValidatedSlot(_Descriptor, iCAX::PDO::kDirection2External);
-            return _MakePDOSlotMeta(_Descriptor, _Slot);
+            iCAX::PDO::CPDOReadLease _Lease(_Slot);
+            return _MakePDOSlotMeta(
+                _Descriptor,
+                _Slot,
+                _Lease);
         }
 
         CefRefPtr<CefV8Value> ExecuteWrite(IN const CefV8ValueList& Arguments_)
@@ -933,8 +1161,40 @@ namespace
             {
                 throw std::runtime_error("PDO writer ArrayBuffer has no backing data");
             }
-            std::memcpy(_WriteLease->Data(), _pData, _Descriptor.nPayloadSize);
-            _WriteLease->Commit();
+
+            uint32_t _nActualPayloadSize = _Descriptor.nPayloadSize;
+            if (_Result->IsUInt() || _Result->IsInt())
+            {
+                _nActualPayloadSize = _V8ToUInt32(
+                    _Result,
+                    "PDO writer result");
+            }
+            else if (_Result->IsDouble())
+            {
+                const auto _Value = _Result->GetDoubleValue();
+                if (_Value != _Value
+                    || _Value < 1.0
+                    || _Value > static_cast<double>(UINT32_MAX)
+                    || static_cast<double>(
+                        static_cast<uint32_t>(_Value)) != _Value)
+                {
+                    throw std::invalid_argument(
+                        "PDO writer result must be an unsigned integer");
+                }
+                _nActualPayloadSize = static_cast<uint32_t>(_Value);
+            }
+            if (_nActualPayloadSize == 0
+                || _nActualPayloadSize > _Descriptor.nPayloadSize)
+            {
+                throw std::out_of_range(
+                    "PDO writer result is outside the slot capacity");
+            }
+
+            std::memcpy(
+                _WriteLease->Data(),
+                _pData,
+                _nActualPayloadSize);
+            _WriteLease->Commit(_nActualPayloadSize);
             return CefV8Value::CreateBool(true);
         }
 
@@ -1193,10 +1453,10 @@ namespace
                     return true;
                 }
 
-                if (_Method == "postFacadeFrame")
+                if (_Method == "postSDOFrame")
                 {
                     const auto& _Frame = _AsObject(_RequireField(_Payload, "frame"), "frame");
-                    m_pBridge->PostFacadeFrame(_ParseFacadeFrame(_Frame));
+                    m_pBridge->PostSDOFrame(_ParseSDOFrame(_Frame));
                     Callback_->Success("null");
                     return true;
                 }
@@ -1212,6 +1472,16 @@ namespace
                     {
                         Callback_->Success("null");
                     }
+                    return true;
+                }
+
+                if (_Method == "requestResource")
+                {
+                    const auto _Response = m_pBridge->RequestResource(
+                        _ParseResourceRequest(_Payload));
+                    Callback_->Success(
+                        json::serialize(
+                            _ToJsonResourceResponse(_Response)));
                     return true;
                 }
 
@@ -1245,10 +1515,10 @@ namespace
 
     class CInternalCefClient;
 
-    class CDispatchFacadeFrameTask final : public CefTask
+    class CDispatchSDOFrameTask final : public CefTask
     {
     public:
-        CDispatchFacadeFrameTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_);
+        CDispatchSDOFrameTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_);
 
         void Execute() override;
 
@@ -1256,7 +1526,7 @@ namespace
         CefRefPtr<CInternalCefClient> m_pClient;
         std::string m_strEnvelopeJson;
 
-        IMPLEMENT_REFCOUNTING(CDispatchFacadeFrameTask);
+        IMPLEMENT_REFCOUNTING(CDispatchSDOFrameTask);
     };
 
     class CRunFrontTasksTask final : public CefTask
@@ -1434,15 +1704,15 @@ namespace
             }
         }
 
-        void DispatchFacadeFrame(IN const iCAX::Frontend::CFrontendFacadeFrame& Envelope_)
+        void DispatchSDOFrame(IN const iCAX::Frontend::CFrontendSDOFrame& Envelope_)
         {
-            const auto _EnvelopeJson = json::serialize(_ToJsonFacadeFrame(Envelope_));
+            const auto _EnvelopeJson = json::serialize(_ToJsonSDOFrame(Envelope_));
             auto _TaskRunner = CefTaskRunner::GetForThread(TID_UI);
             if (!_TaskRunner)
             {
                 return;
             }
-            _TaskRunner->PostTask(new CDispatchFacadeFrameTask(this, _EnvelopeJson));
+            _TaskRunner->PostTask(new CDispatchSDOFrameTask(this, _EnvelopeJson));
         }
 
         void DispatchFrontTasks()
@@ -1464,7 +1734,7 @@ namespace
             }
         }
 
-        void DispatchFacadeFrameOnUI(IN const std::string& strEnvelopeJson_)
+        void DispatchSDOFrameOnUI(IN const std::string& strEnvelopeJson_)
         {
             CEF_REQUIRE_UI_THREAD();
             if (!m_pBrowser || !m_pBrowser->GetMainFrame())
@@ -1472,7 +1742,7 @@ namespace
                 return;
             }
 
-            const std::string _Script = "window.icax && window.icax.__dispatchFacadeFrame && window.icax.__dispatchFacadeFrame("
+            const std::string _Script = "window.icax && window.icax.__dispatchSDOFrame && window.icax.__dispatchSDOFrame("
                 + strEnvelopeJson_ + ");";
             m_pBrowser->GetMainFrame()->ExecuteJavaScript(_Script, m_pBrowser->GetMainFrame()->GetURL(), 0);
         }
@@ -1501,17 +1771,17 @@ namespace
         IMPLEMENT_REFCOUNTING(CInternalCefClient);
     };
 
-    CDispatchFacadeFrameTask::CDispatchFacadeFrameTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_)
+    CDispatchSDOFrameTask::CDispatchSDOFrameTask(CefRefPtr<CInternalCefClient> pClient_, std::string strEnvelopeJson_)
         : m_pClient(std::move(pClient_))
         , m_strEnvelopeJson(std::move(strEnvelopeJson_))
     {
     }
 
-    void CDispatchFacadeFrameTask::Execute()
+    void CDispatchSDOFrameTask::Execute()
     {
         if (m_pClient)
         {
-            m_pClient->DispatchFacadeFrameOnUI(m_strEnvelopeJson);
+            m_pClient->DispatchSDOFrameOnUI(m_strEnvelopeJson);
         }
     }
 
@@ -1641,7 +1911,7 @@ public:
             const auto _Interval = std::chrono::milliseconds(std::max(1, nIntervalMS_));
             while (!bStopPolling.load())
             {
-                PollFacadeFrames();
+                PollSDOFrames();
                 std::this_thread::sleep_for(_Interval);
             }
         });
@@ -1656,17 +1926,17 @@ public:
         }
     }
 
-    void PollFacadeFrames()
+    void PollSDOFrames()
     {
         if (!Client)
         {
             return;
         }
 
-        auto _Frames = pBridge->PollFacadeFrames();
+        auto _Frames = pBridge->PollSDOFrames();
         for (const auto& _Frame : _Frames)
         {
-            Client->DispatchFacadeFrame(_Frame);
+            Client->DispatchSDOFrame(_Frame);
         }
         Client->DispatchFrontTasks();
     }
@@ -1808,7 +2078,7 @@ void iCAX::Frontend::Cef::CCefUIContainer::Start()
         throw std::runtime_error("CefBrowserHost::CreateBrowser failed");
     }
 
-    m_pImpl->StartPolling(_GetIntProperty(m_pImpl->Config, "facadePollIntervalMS", 16));
+    m_pImpl->StartPolling(_GetIntProperty(m_pImpl->Config, "sdoPollIntervalMS", 16));
     m_pImpl->bStarted = true;
 }
 
@@ -1841,9 +2111,9 @@ bool iCAX::Frontend::Cef::CCefUIContainer::IsRunning() const
     return m_pImpl->bStarted;
 }
 
-void iCAX::Frontend::Cef::CCefUIContainer::PollFacadeFrames()
+void iCAX::Frontend::Cef::CCefUIContainer::PollSDOFrames()
 {
-    m_pImpl->PollFacadeFrames();
+    m_pImpl->PollSDOFrames();
 }
 
 ICAX_REGISTER_UI_CONTAINER_WITH_SUBPROCESS("cef", iCAX::Frontend::Cef::CCefUIContainer, &_ExecuteCefUISubProcess)

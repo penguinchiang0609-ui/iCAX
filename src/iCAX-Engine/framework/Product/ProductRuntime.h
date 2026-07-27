@@ -3,19 +3,19 @@
 #include "ProductExport.h"
 #include "ProductContext/ProductDefinition.h"
 #include "ProductContext/ProductData.h"
-#include "ProductFacades.h"
+#include "ProductSDO.h"
 
 #include "ApplicationContext/IApplicationContext.h"
 #include "Behaviour/IBehaviourRegistry.h"
 #include "Behaviour/BehaviourRegistrationCatalog.h"
-#include "Facades/FacadeInvoker.h"
-#include "Facades/Invocation.h"
-#include "Facades/FacadeRegistry.h"
+#include "SDO/SDOInvoker.h"
+#include "SDO/Invocation.h"
+#include "SDO/SDORegistry.h"
 #include "Data/Variant.h"
 #include "Database/IMetaRegistry.h"
 #include "Database/MetaRegistrationCatalog.h"
-#include "Facades/FacadeChannelRegistry.h"
-#include "Facades/FacadeEndpoint.h"
+#include "SDO/SDOChannelRegistry.h"
+#include "SDO/SDOEndpoint.h"
 #include "Project/Project.h"
 #include "Project/ProjectCatalog.h"
 #include "Project/ProjectRuntime.h"
@@ -61,7 +61,7 @@ namespace iCAX
             CProductRuntime(
                 IN const CProductDefinition& Definition_,
                 IN std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext_,
-                IN std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry_,
+                IN std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry_,
                 IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr,
                 IN uint32_t nFrameIntervalMilliseconds_ = 16);
             ~CProductRuntime();
@@ -73,14 +73,14 @@ namespace iCAX
             /*
             * @brief 启动产品运行时。
             * @details
-            *   加载产品数据和模块，按模块路径回放组件/行为/服务/资源/Facade 注册，并创建产品邮箱通道。
+            *   加载产品数据和模块，按模块路径回放组件/行为/服务/资源/SDO 注册，并创建产品邮箱通道。
             *   重复调用无副作用。
             */
             void Start();
 
             /*
             * @brief 停止产品运行时。
-            * @details 会关闭所有项目 runtime/catalog，移除产品邮箱，并清空 Facade 上下文。
+            * @details 会关闭所有项目 runtime/catalog，移除产品邮箱，并清空 SDO 上下文。
             */
             void Stop();
 
@@ -167,38 +167,38 @@ namespace iCAX
             const iCAX::Data::uuid& GetProductChannelID() const override;
 
             /*
-            * @brief 获取后端视角的产品Facade 端点。
+            * @brief 获取后端视角的产品SDO 端点。
             * @return 产品邮箱的后端端点。
             * @throws std::logic_error 产品未启动时抛出。
             */
-            iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override;
+            iCAX::Interaction::CSDOEndpoint GetBackendSDOEndpoint() const override;
 
             /*
-            * @brief 获取前端视角的产品Facade 端点。
+            * @brief 获取前端视角的产品SDO 端点。
             */
-            iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override;
+            iCAX::Interaction::CSDOEndpoint GetFrontendSDOEndpoint() const override;
 
             /*
-            * @brief 获取前端视角的产品 Facade 端点。
+            * @brief 获取前端视角的产品 SDO 端点。
             * @return 产品 channel 的前端端点。
             * @throws std::logic_error 产品未启动时抛出。
             */
-            iCAX::Interaction::CFacadeEndpoint GetProductFrontendFacadeEndpoint() const;
+            iCAX::Interaction::CSDOEndpoint GetProductFrontendSDOEndpoint() const;
 
             /*
-            * @brief 向产品级前端主动发送 Facade Event。
-            * @param [in] nMethodCode_ 事件方法码，使用 FacadeMethod 的 64 位主/子编码。
+            * @brief 向产品级前端主动发送 SDO Event。
+            * @param [in] nMethodCode_ 事件方法码，使用 SDOMethod 的 64 位主/子编码。
             * @param [in] strPayloadText_ UTF-8 文本负载，通常是 VariantSerializer 文本。
             * @details
-            *   主动事件使用 Event 帧，前端通过 FacadeClient.subscribe/subscribeAll 接收。
+            *   主动事件使用 Event 帧，前端通过 SDOClient.subscribe/subscribeAll 接收。
             */
             void SendFrontendEvent(IN uint64_t nMethodCode_, IN const std::string& strPayloadText_);
 
             /*
-            * @brief 分发产品级 Facade frame。
+            * @brief 分发产品级 SDO frame。
             * @details ProductRuntime 自己的工作线程会调用；白盒测试也可以手动调用一次以加快响应。
             */
-            void DispatchProductFacadeFrames();
+            void DispatchProductSDOFrames();
 
             /*
             * @brief 获取当前项目 catalog 快照。
@@ -246,11 +246,11 @@ namespace iCAX
             bool CloseProjectCatalog(IN const iCAX::Data::uuid& CatalogID_);
 
             /*
-            * @brief 获取指定 Scene 的前端Facade 端点。
+            * @brief 获取指定 Scene 的前端SDO 端点。
             * @return Scene 邮箱的前端端点。
             * @throws std::runtime_error 项目或 Scene 不存在时抛出。
             */
-            iCAX::Interaction::CFacadeEndpoint GetSceneFrontendFacadeEndpoint(
+            iCAX::Interaction::CSDOEndpoint GetSceneFrontendSDOEndpoint(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN const iCAX::Data::uuid& SceneID_) const;
 
@@ -267,9 +267,9 @@ namespace iCAX
                 IN const std::shared_ptr<iCAX::Project::CProjectCatalog>& pCatalog_) const;
 
             /*
-            * @brief 获取产品 Facade 注册表。
+            * @brief 获取产品 SDO 注册表。
             */
-            iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override;
+            iCAX::Interaction::CSDORegistry& GetSDORegistry() const override;
 
             /*
             * @brief 获取应用级服务容器。
@@ -361,13 +361,13 @@ namespace iCAX
                 IN const iCAX::Data::uuid& ProjectID_);
 
             /*
-            * @brief 分发指定 Scene 或产品 channel 中的 Facade frame。
-            * @param [in] Endpoint_ 后端视角 Facade 端点。
+            * @brief 分发指定 Scene 或产品 channel 中的 SDO frame。
+            * @param [in] Endpoint_ 后端视角 SDO 端点。
             * @param [in] pProjectRuntime_ 项目运行时；为空表示产品级 channel。
             * @param [in] pSceneContext_ 当前 Scene 上下文；为空表示产品级 channel。
             */
-            void DispatchSceneFacadeFrames(
-                IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_,
+            void DispatchSceneSDOFrames(
+                IN const iCAX::Interaction::CSDOEndpoint& Endpoint_,
                 IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_,
                 IN iCAX::Project::ISceneContext* pSceneContext_);
             /*
@@ -397,9 +397,9 @@ namespace iCAX
             void LoadProductModules();
 
             /*
-            * @brief 注册产品内建 Facade。
+            * @brief 注册产品内建 SDO。
             */
-            void RegisterBuiltInProductFacades();
+            void RegisterBuiltInProductSDO();
 
             /*
             * @brief 处理获取产品状态方法。
@@ -449,7 +449,7 @@ namespace iCAX
 
             /*
             * @brief 处理项目状态查询方法。
-            * @details 必须在项目 Scene 的 Facade scope 调用；响应包含 project state 和 undoRedo 快照。
+            * @details 必须在项目 Scene 的 SDO scope 调用；响应包含 project state 和 undoRedo 快照。
             */
             iCAX::Interaction::CInvocationResult HandleProjectGetState(
                 IN const iCAX::Interaction::CInvocation& Request_,
@@ -494,13 +494,13 @@ namespace iCAX
             iCAX::Data::uuid m_ProductChannelID;
             std::shared_ptr<const iCAX::Application::IApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pProductServiceProvider;
-            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> m_pFacadeChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> m_pSDOChannelRegistry;
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pProductMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pProductBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pProductResourceLoaderRegistry;
             std::shared_ptr<IProductDataStore> m_pProductDataStore;
-            std::shared_ptr<iCAX::Interaction::CFacadeRegistry> m_pFacadeRegistry;
-            std::unique_ptr<iCAX::Interaction::CFacadeInvoker> m_pFacadeInvoker;
+            std::shared_ptr<iCAX::Interaction::CSDORegistry> m_pSDORegistry;
+            std::unique_ptr<iCAX::Interaction::CSDOInvoker> m_pSDOInvoker;
             mutable std::mutex m_RuntimeMutex;
             std::condition_variable m_WorkerCondition;
             std::thread m_WorkThread;

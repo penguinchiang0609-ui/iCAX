@@ -11,12 +11,12 @@
 - `ProjectProxy`：项目容器代理，负责项目状态、Scene 列表和主 Scene 入口。
 - `SceneProxy`：场景会话代理，负责 Scene 命令、Scene 事件、撤销重做和 PDO 访问。
 
-Facade、PDO、Bridge 是 `SDK` 内部通信能力，Viewport 是 H5 前端内置三维显示能力，UI 是公共界面能力。前端不拥有 repository、resource pool、ECS 等业务数据；这些数据仍由 Engine 管理，前端只持有状态快照、通道和视图状态。
+SDO、PDO、Bridge 是 `SDK` 内部通信能力，Viewport 是 H5 前端内置三维显示能力，UI 是公共界面能力。前端不拥有 repository、resource pool、ECS 等业务数据；这些数据仍由 Engine 管理，前端只持有状态快照、通道和视图状态。
 
 ## 目录结构
 
 - `UIContainer/`：UI 容器公共契约、静态注册工厂和内置 headless 容器。
-- `CefUIContainer/`：CEF 版 `IUIContainer` 实现，负责 CEF runtime、浏览器窗口、JS bridge 注入和 Engine Facade frame 推送。
+- `CefUIContainer/`：CEF 版 `IUIContainer` 实现，负责 CEF runtime、浏览器窗口、JS bridge 注入和 Engine SDO frame 推送。
 - `WpfUIContainer/`：WPF 版 `IUIContainer` 可选实现，不是当前默认前端。
 - `SDK/AppShell/`：SDK 自带的唯一 H5 页面入口。它承载应用首页、产品工作区、项目工作区和产品前端模块挂载点。
 - `AppProxy/`：前端应用层对象，封装 application channel 和应用级命令。
@@ -24,7 +24,7 @@ Facade、PDO、Bridge 是 `SDK` 内部通信能力，Viewport 是 H5 前端内�
 - `ProjectProxy/`：前端项目层对象，封装项目状态、Scene 列表和主 Scene 入口。
 - `SceneProxy/`：前端场景层对象，封装 scene channel、Scene 状态、命令和 PDO client。
 - `UI/`：公共 UI 基础工具、主题和后续公共组件。
-- `SDK/`：给 `AppShell` 和产品 `webpage` 模块使用的统一导出门面，内部包含 Bridge、Facades、PDO、Viewport 和 H5 runtime 依赖。
+- `SDK/`：给 `AppShell` 和产品 `webpage` 模块使用的统一导出门面，内部包含 Bridge、SDO、PDO、Viewport 和 H5 runtime 依赖。
 
 ## 与产品目录的关系
 
@@ -46,7 +46,7 @@ src/apps/<product-id>/
 AppShell
   -> SDK
     -> AppProxy / ProductProxy / ProjectProxy / SceneProxy
-    -> Bridge / Facades / PDO
+    -> Bridge / SDO / PDO
     -> UI
     -> window.icax
       -> CefUIContainer / WpfUIContainer / QtUIContainer
@@ -58,4 +58,4 @@ AppShell
                 -> Scene
 ```
 
-H5 页面只看到普通 JS 对象和 Promise。`FacadeEndpoint`、`VariantSerializer`、`PDO` header 和共享内存租约都由 `iCAX-Application`、具体 `IUIContainer` 与 `SDK` 隐藏。
+H5 页面只看到普通 JS 对象和 Promise。`SDOEndpoint`、`VariantSerializer`、`PDO` header 和共享内存租约都由 `iCAX-Application`、具体 `IUIContainer` 与 `SDK` 隐藏。

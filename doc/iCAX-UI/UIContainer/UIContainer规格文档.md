@@ -9,7 +9,7 @@
 ## 2. 核心类型
 
 - `IFrontendBridge`：Application 提供的后端桥接口。
-- `CFrontendFacadeFrame`：UI 与 Engine 之间传递的 Facade 调用帧。
+- `CFrontendSDOFrame`：UI 与 Engine 之间传递的 SDO 调用帧。
 - `CUIContainerConfig`：UI 容器启动配置。
 - `IUIContainer`：真实 UI 容器接口。
 - `CUIContainerFactory`：根据配置创建容器。
@@ -69,8 +69,8 @@ CUIContainerFactory.Create(config)
 
 ```text
 GetApplicationChannelIDText()
-PostFacadeFrame(App.GetState Request)
-PollFacadeFrames()
+PostSDOFrame(App.GetState Request)
+PollSDOFrames()
 validate response
 ```
 

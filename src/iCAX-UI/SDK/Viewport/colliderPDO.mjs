@@ -1,4 +1,4 @@
-import { makeFacadeMethodCodeFromName } from "../Facades/facadeMethod.mjs";
+import { makeSDOMethodCodeFromName } from "../SDO/sdoMethod.mjs";
 
 export const ColliderPDOEvents = Object.freeze({
   slotAllocated: "PDOCollider.SlotAllocated",
@@ -9,7 +9,7 @@ export const ColliderPDOEvents = Object.freeze({
 });
 
 export const ColliderPDOTypeCodes = Object.freeze(Object.fromEntries(
-  Object.entries(ColliderPDOEvents).map(([key, facadeEvent]) => [key, makeFacadeMethodCodeFromName(facadeEvent)]),
+  Object.entries(ColliderPDOEvents).map(([key, sdoEvent]) => [key, makeSDOMethodCodeFromName(sdoEvent)]),
 ));
 
 export const ColliderPDOPayloadKind = Object.freeze({

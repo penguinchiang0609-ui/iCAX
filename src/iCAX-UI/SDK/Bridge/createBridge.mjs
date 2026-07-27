@@ -20,8 +20,9 @@ export function validateBridge(bridge, name = "bridge") {
     "getApplicationChannelId",
     "registerProductChannel",
     "registerSceneChannel",
-    "postFacadeFrame",
-    "subscribeFacadeFrames",
+    "postSDOFrame",
+    "requestResource",
+    "subscribeSDOFrames",
   ];
   for (const method of requiredMethods) {
     if (typeof bridge[method] !== "function") {

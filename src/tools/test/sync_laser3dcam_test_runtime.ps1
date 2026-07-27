@@ -21,7 +21,7 @@ $RuntimeProjects = @(
     "iCAX-Engine\foundation\GeometryData",
     "iCAX-Engine\framework\ApplicationContext",
     "iCAX-Engine\framework\Behaviour",
-    "iCAX-Engine\framework\Facades",
+    "iCAX-Engine\framework\SDO",
     "iCAX-Engine\framework\Database",
     "iCAX-Engine\framework\PDO",
     "iCAX-Engine\framework\ProductContext",
@@ -34,8 +34,10 @@ $RuntimeProjects = @(
     "iCAX-Plugins\input\InputPDO",
     "iCAX-Plugins\input\InputService",
     "iCAX-Plugins\render\CameraNavigation",
+    "iCAX-Plugins\render\PDORenderService",
     "iCAX-Plugins\render\RenderData",
     "iCAX-Plugins\render\RenderInteraction",
+    "iCAX-Plugins\render\RenderPDO",
     "iCAX-Plugins\render\RenderService"
 )
 

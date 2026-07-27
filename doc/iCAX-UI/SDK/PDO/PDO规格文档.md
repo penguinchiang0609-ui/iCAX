@@ -4,7 +4,7 @@
 
 `PDO` 是 SDK 内部的前端高频数据访问模块。
 
-PDO 面向 shared memory，不走 Facade payload。
+PDO 面向 shared memory，不走 SDO payload。
 
 ## 2. 使用模型
 
@@ -33,7 +33,7 @@ project state 中的 PDO descriptor 至少包含：
 每个 declaration 至少包含：
 
 - `id`：PDO ID，使用字符串表达。
-- `payloadSize`：payload 字节数。
+- `payloadSize`：Slot 声明容量（历史字段名）；每次发布的实际字节数由双缓冲元数据单独保存。
 - `version`：PDO 布局版本。
 - `dataVersion`：数据版本。
 
@@ -59,6 +59,8 @@ await scene.pdo.withRead(typeName, instanceName, view => {
 
 当前 CEF 宿主中，renderer 进程会打开同名 shared memory arena 并取得 C++ PDO 读租约。由于官方 CEF 启用了 V8 sandbox，V8 不允许直接把任意进程内存包装成 external `ArrayBuffer`，所以传给 reader 的 `ArrayBuffer` 是当前 PDO payload 的 V8 快照。它保证读取语义正确，但不是 JS 层零拷贝。
 
+快照只复制当前 buffer 的实际有效范围，而不是整个 Slot 容量。该边界允许前端直接把 `ArrayBuffer` 交给 FlatBuffers 生成代码。
+
 reader 的第二个参数是只读元信息：
 
 ```js
@@ -74,10 +76,22 @@ scene.pdo.withRead(typeName, instanceName, (buffer, meta) => {
 
 - `id`
 - `version`
-- `payloadSize`
+- `payloadCapacity`：Slot 声明容量。
+- `payloadSize`：当前发布 buffer 的实际有效字节数；等于传入 `ArrayBuffer.byteLength`。
 - `sequence`
 - `bufferIndex`
 - `dataVersion`
+
+前端写 PDO 时，writer 可以返回本次实际写入字节数；省略返回值则按完整声明容量发布，兼容固定布局：
+
+```js
+await scene.pdo.withWriteDescriptor(descriptor, buffer => {
+  new Uint8Array(buffer).set(flatBufferBytes);
+  return flatBufferBytes.byteLength;
+});
+```
+
+返回值必须是 `1..payloadCapacity` 范围内的整数。
 
 ## 7. 版本语义
 
@@ -105,4 +119,4 @@ scene.pdo.withRead(typeName, instanceName, (buffer, meta) => {
 - 能调用 bridge 获取 read lease。
 - 对不存在的 PDO 给出明确错误。
 - CEF 宿主下 H5 能读取 C++ 写入 shared memory arena 的 payload 和 `dataVersion`。
-- Facade 仍走 Facade/JSON，不受 PDO shared memory 改造影响。
+- SDO 仍走 SDO/JSON，不受 PDO shared memory 改造影响。

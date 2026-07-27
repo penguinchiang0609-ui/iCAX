@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 
 import {
-  AppFacade,
+  AppSDO,
   connectApplication,
   ensureUsableChannelId,
   isUsableChannelId,
   ProductProxy,
   ProjectProxy,
+  ResourceClient,
   SceneProxy,
   MockHostBridge,
-  ProjectFacade,
+  ProjectSDO,
   RenderLayers,
   RenderPDOLayout,
   RenderPDOPayloadKind,
@@ -19,19 +20,19 @@ import {
   resolveFrontendEntry,
   validateBridge,
 } from "../../iCAX-UI/SDK/index.mjs";
-import { FacadeClient, FacadeFrameKind } from "../../iCAX-UI/SDK/Facades/facadeClient.mjs";
-import { makeFacadeMethodCode, makeFacadeMethodCodeFromName, makePDOID } from "../../iCAX-UI/SDK/Facades/facadeMethod.mjs";
-import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/Facades/variantSerializer.mjs";
+import { SDOClient, SDOFrameKind } from "../../iCAX-UI/SDK/SDO/sdoClient.mjs";
+import { makeSDOMethodCode, makeSDOMethodCodeFromName, makePDOID } from "../../iCAX-UI/SDK/SDO/sdoMethod.mjs";
+import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/SDO/variantSerializer.mjs";
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
 import { renderMachineRightPane } from "../../apps/laser-3d-cam/webpage/machine/machineArea.mjs";
 import { activateProjectArea, getProjectArea, setProjectAreaViewContent } from "../../apps/laser-3d-cam/webpage/state/projectViewStore.mjs";
 
-function testFacadeMethodCodes() {
-  assert.equal(makeFacadeMethodCode("App", "GetState"), makeFacadeMethodCodeFromName(AppFacade.getState));
-  assert.equal(makeFacadeMethodCode("Product", "OpenProjectCatalog"), "5952739237587920785");
-  assert.equal(makeFacadeMethodCode("Machine", "Import"), makeFacadeMethodCodeFromName("Machine.Import"));
-  assert.throws(() => makeFacadeMethodCodeFromName("Cam.Machine.Import"), /FacadeName\.MethodName/);
-  assert.equal(makePDOID("PreviewMesh", "MainViewport"), makeFacadeMethodCode("PreviewMesh", "MainViewport"));
+function testSDOMethodCodes() {
+  assert.equal(makeSDOMethodCode("App", "GetState"), makeSDOMethodCodeFromName(AppSDO.getState));
+  assert.equal(makeSDOMethodCode("Product", "OpenProjectCatalog"), "5952739237587920785");
+  assert.equal(makeSDOMethodCode("Machine", "Import"), makeSDOMethodCodeFromName("Machine.Import"));
+  assert.throws(() => makeSDOMethodCodeFromName("Cam.Machine.Import"), /SDOName\.MethodName/);
+  assert.equal(makePDOID("PreviewMesh", "MainViewport"), makeSDOMethodCode("PreviewMesh", "MainViewport"));
 }
 
 function testVariantSerializer() {
@@ -114,9 +115,9 @@ function testChannelIdValidation() {
   assert.throws(() => ensureUsableChannelId("00000000-0000-0000-0000-000000000000"), /non-nil channel id/);
 }
 
-async function testFacadePromiseFlow() {
+async function testSDOPromiseFlow() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const app = await connectApplication({ bridge, app: { facades: { timeoutMs: 1000 } } });
+  const app = await connectApplication({ bridge, app: { sdo: { timeoutMs: 1000 } } });
 
   const state = await app.getState();
   assert.equal(state.state, "Running");
@@ -164,12 +165,12 @@ async function testFacadePromiseFlow() {
 
   const undoRedoState = await opened.sceneProxy.getUndoRedoState();
   assert.deepEqual(undoRedoState.undoSteps, []);
-  assert.deepEqual(await opened.sceneProxy.invoke(ProjectFacade.undo), undoRedoState);
+  assert.deepEqual(await opened.sceneProxy.invoke(ProjectSDO.undo), undoRedoState);
 }
 
 async function testSceneChannelRegistrationFromProjectState() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const app = await connectApplication({ bridge, app: { facades: { timeoutMs: 1000 } } });
+  const app = await connectApplication({ bridge, app: { sdo: { timeoutMs: 1000 } } });
   const product = await app.startProduct("icax.mock-product");
   bridge.projectOpened = true;
 
@@ -193,21 +194,66 @@ async function testSceneChannelRegistrationFromProjectState() {
   assert.equal(project.getMainScene().sceneChannelId, "00000000-0000-4000-8000-000000000201");
 }
 
-async function testFacadeEventFlow() {
+async function testDirectResourceAccess() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const facades = new FacadeClient(bridge, { timeoutMs: 1000 });
+  const app = await connectApplication({ bridge, app: { sdo: { timeoutMs: 1000 } } });
+  const opened = await app.openProjectFile("D:/projects/resources.icax");
+  const resources = opened.sceneProxy.resources;
+  assert.ok(resources instanceof ResourceClient);
+
+  const url = "resource://scene/mock/resources/transport";
+  const source = new Uint8Array([8, 0, 0, 0, 73, 67, 82, 83, 1, 2, 3, 4]);
+  const created = await resources.put(url, source, {
+    headers: {
+      "Content-Type": "application/vnd.icax.flatbuffer",
+      "ICAX-Resource-Type": "test.transport",
+      "ICAX-Schema-Version": "1",
+      "If-None-Match": "*",
+    },
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.headers.get("ETag"), "\"icax-v1\"");
+
+  const head = await resources.head(url);
+  assert.equal(head.status, 200);
+  assert.equal(head.headers.get("Content-Length"), String(source.byteLength));
+  assert.equal(head.headers.get("ICAX-Schema-Version"), "1");
+  assert.equal((await head.arrayBuffer()).byteLength, 0);
+
+  const fetched = await opened.sceneProxy.fetchResource(url);
+  assert.equal(fetched.status, 200);
+  assert.deepEqual(
+    [...new Uint8Array(await fetched.arrayBuffer())],
+    [...source],
+  );
+
+  const cached = await resources.get(url, {
+    headers: { "If-None-Match": "\"icax-v1\"" },
+  });
+  assert.equal(cached.status, 304);
+
+  const removed = await resources.delete(url, {
+    headers: { "If-Match": "\"icax-v1\"" },
+  });
+  assert.equal(removed.status, 204);
+  assert.equal((await resources.get(url)).status, 404);
+}
+
+async function testSDOEventFlow() {
+  const bridge = new MockHostBridge({ delayMs: 1 });
+  const sdo = new SDOClient(bridge, { timeoutMs: 1000 });
   const channelId = await bridge.getApplicationChannelId();
 
   const events = [];
-  const unsubscribeStateChanged = facades.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
-  const unsubscribeAll = facades.subscribeAll(channelId, (event) => events.push({ wildcard: true, event }));
+  const unsubscribeStateChanged = sdo.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
+  const unsubscribeAll = sdo.subscribeAll(channelId, (event) => events.push({ wildcard: true, event }));
 
-  bridge.emitFacadeFrame(channelId, "App.StateChanged", { state: "Running", phase: "Running" });
+  bridge.emitSDOFrame(channelId, "App.StateChanged", { state: "Running", phase: "Running" });
   await delay(10);
 
   assert.equal(events.length, 2);
   assert.equal(events[0].callId, 0);
-  assert.equal(events[0].kind, FacadeFrameKind.Event);
+  assert.equal(events[0].kind, SDOFrameKind.Event);
   assert.equal(events[0].ok, true);
   assert.equal(events[0].payload.state, "Running");
   assert.equal(events[1].wildcard, true);
@@ -215,19 +261,19 @@ async function testFacadeEventFlow() {
 
   unsubscribeStateChanged();
   unsubscribeAll();
-  bridge.emitFacadeFrame(channelId, "App.StateChanged", { state: "Stopped" });
+  bridge.emitSDOFrame(channelId, "App.StateChanged", { state: "Stopped" });
   await delay(10);
   assert.equal(events.length, 2);
 }
 
-async function testFacadeReportFlow() {
+async function testSDOReportFlow() {
   const bridge = new MockHostBridge({ delayMs: 50 });
-  const facades = new FacadeClient(bridge, { timeoutMs: 40 });
+  const sdo = new SDOClient(bridge, { timeoutMs: 40 });
   const channelId = await bridge.getApplicationChannelId();
   const reports = [];
   let completed = false;
 
-  const task = facades.invoke(channelId, AppFacade.getState, {}, {
+  const task = sdo.invoke(channelId, AppSDO.getState, {}, {
     onReport: (report) => reports.push(report),
   });
   task.then(() => {
@@ -236,9 +282,9 @@ async function testFacadeReportFlow() {
 
   assert.equal(task.callId > 0, true);
   assert.equal(typeof task.onReport, "function");
-  assert.equal(facades.pending.has(String(task.callId)), true);
+  assert.equal(sdo.pending.has(String(task.callId)), true);
 
-  bridge.emitReport(channelId, task.callId, AppFacade.getState, {
+  bridge.emitReport(channelId, task.callId, AppSDO.getState, {
     progress: 0.25,
     state: "Recognizing",
     message: "Recognizing features",
@@ -246,25 +292,25 @@ async function testFacadeReportFlow() {
 
   await delay(30);
   assert.equal(completed, false);
-  assert.equal(facades.pending.has(String(task.callId)), true);
+  assert.equal(sdo.pending.has(String(task.callId)), true);
   assert.equal(reports.length, 1);
   assert.equal(reports[0].payload.progress, 0.25);
   assert.equal(reports[0].payload.state, "Recognizing");
-  assert.equal(reports[0].kind, FacadeFrameKind.Report);
+  assert.equal(reports[0].kind, SDOFrameKind.Report);
   assert.equal(task.getLatestReport(), reports[0]);
 
   const state = await task;
   assert.equal(state.state, "Running");
-  assert.equal(facades.pending.has(String(task.callId)), false);
+  assert.equal(sdo.pending.has(String(task.callId)), false);
 }
 
-async function testFrontendFacadeExposure() {
+async function testFrontendSDOExposure() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const facades = new FacadeClient(bridge, { timeoutMs: 1000 });
+  const sdo = new SDOClient(bridge, { timeoutMs: 1000 });
   const channelId = await bridge.getApplicationChannelId();
   const callId = 7001;
 
-  const unexpose = facades.expose(channelId, "Frontend.GetSelection", async (payload, call) => {
+  const unexpose = sdo.expose(channelId, "Frontend.GetSelection", async (payload, call) => {
     await call.report({ phase: "Reading" });
     return { selection: [payload.requestedId] };
   });
@@ -273,28 +319,28 @@ async function testFrontendFacadeExposure() {
   await delay(15);
 
   const frames = bridge.postedFrames.filter((frame) => Number(frame.callId) === callId);
-  assert.deepEqual(frames.map((frame) => frame.kind), [FacadeFrameKind.Report, FacadeFrameKind.Response]);
+  assert.deepEqual(frames.map((frame) => frame.kind), [SDOFrameKind.Report, SDOFrameKind.Response]);
   assert.equal(frames.every((frame) => Number(frame.callId) === callId), true);
   assert.equal(deserializeVariantText(frames[0].payloadText).phase, "Reading");
   assert.deepEqual(deserializeVariantText(frames[1].payloadText).selection, ["part-42"]);
 
   unexpose();
-  facades.dispose();
+  sdo.dispose();
 }
 
-async function testFacadeDispose() {
+async function testSDODispose() {
   const bridge = new MockHostBridge({ delayMs: 1 });
-  const facades = new FacadeClient(bridge, { timeoutMs: 1000 });
+  const sdo = new SDOClient(bridge, { timeoutMs: 1000 });
   const channelId = await bridge.getApplicationChannelId();
 
   const events = [];
-  facades.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
-  assert.equal(facades.startedChannelIds.has(channelId), true);
+  sdo.subscribe(channelId, "App.StateChanged", (event) => events.push(event));
+  assert.equal(sdo.startedChannelIds.has(channelId), true);
 
-  facades.dispose();
-  assert.equal(facades.startedChannelIds.has(channelId), false);
+  sdo.dispose();
+  assert.equal(sdo.startedChannelIds.has(channelId), false);
 
-  bridge.emitFacadeFrame(channelId, "App.StateChanged", { state: "Running" });
+  bridge.emitSDOFrame(channelId, "App.StateChanged", { state: "Running" });
   await delay(10);
   assert.equal(events.length, 0);
 }
@@ -433,18 +479,19 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-testFacadeMethodCodes();
+testSDOMethodCodes();
 testVariantSerializer();
 testRenderObjectLayerMaskParsing();
 testProjectAreaPresentationIsolation();
 testBridgeValidation();
 testChannelIdValidation();
-await testFacadePromiseFlow();
+await testSDOPromiseFlow();
 await testSceneChannelRegistrationFromProjectState();
-await testFacadeEventFlow();
-await testFacadeReportFlow();
-await testFrontendFacadeExposure();
-await testFacadeDispose();
+await testDirectResourceAccess();
+await testSDOEventFlow();
+await testSDOReportFlow();
+await testFrontendSDOExposure();
+await testSDODispose();
 await testPDOBridgeInjection();
 await testProductModuleLoader();
 testMachineJointTransformPanel();

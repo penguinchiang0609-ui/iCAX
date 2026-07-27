@@ -43,6 +43,8 @@ TEST(ApplicationContextTest, HoldsDescriptorPathsAndSettings)
 
     CApplicationPaths _Paths;
     _Paths.UserConfigDirectory = "Setting";
+    _Paths.ResourceVersionDirectory =
+        "Temp/ResourceVersions";
 
     iCAX::Data::PropertyBag _Settings;
     _Settings.Set("ui.theme", iCAX::Data::Variant(std::string("dark")));
@@ -51,6 +53,9 @@ TEST(ApplicationContextTest, HoldsDescriptorPathsAndSettings)
 
     EXPECT_EQ("iCAX", _Context.GetDescriptor().AppName);
     EXPECT_EQ("Setting", _Context.GetPaths().UserConfigDirectory);
+    EXPECT_EQ(
+        "Temp/ResourceVersions",
+        _Context.GetPaths().ResourceVersionDirectory);
     EXPECT_EQ("dark", _Context.GetSettings().Get("ui.theme").To<std::string>());
     const IApplicationContext& _ReadView = _Context;
     static_assert(std::is_same_v<

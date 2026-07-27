@@ -5,10 +5,10 @@
 #include "Behaviour/BehaviourBase.h"
 #include "Behaviour/IBehaviourRegistry.h"
 #include "ColliderData/ColliderData.h"
-#include "Facades/FacadeMethod.h"
+#include "SDO/SDOMethod.h"
 #include "Data/Variant.h"
 #include "Database/IEntity.h"
-#include "Facades/FacadePayload.h"
+#include "SDO/SDOText.h"
 #include "PDO/IPDOHub.h"
 #include "PDO/PDOLease.h"
 #include "ProjectContext/IProjectContext.h"
@@ -25,15 +25,15 @@ namespace
     constexpr double kMachineDescriptionLengthToWorld = 1000.0;
 
     inline constexpr uint64_t kPDOColliderSlotAllocatedEvent =
-        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "SlotAllocated");
+        iCAX::Interaction::MakeSDOMethodCode("PDOCollider", "SlotAllocated");
     inline constexpr uint64_t kPDOColliderSlotFreedEvent =
-        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "SlotFreed");
+        iCAX::Interaction::MakeSDOMethodCode("PDOCollider", "SlotFreed");
     inline constexpr uint64_t kPDOColliderSlotMovedEvent =
-        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "SlotMoved");
+        iCAX::Interaction::MakeSDOMethodCode("PDOCollider", "SlotMoved");
     inline constexpr uint64_t kPDOColliderDefragBeginEvent =
-        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "DefragBegin");
+        iCAX::Interaction::MakeSDOMethodCode("PDOCollider", "DefragBegin");
     inline constexpr uint64_t kPDOColliderDefragEndEvent =
-        iCAX::Interaction::MakeFacadeMethodCode("PDOCollider", "DefragEnd");
+        iCAX::Interaction::MakeSDOMethodCode("PDOCollider", "DefragEnd");
 
     struct SSlotAssignment final
     {
@@ -371,10 +371,10 @@ namespace
             << "\",\"payloadCapacity\":\"" << nPayloadCapacity_
             << "\"}";
 
-        SceneContext_.GetBackendFacadeEndpoint().SendText(
+        SceneContext_.GetBackendSDOEndpoint().SendText(
             0,
             nEventTypeCode_,
-            iCAX::Interaction::EFacadeFrameKind::Event,
+            iCAX::Interaction::ESDOFrameKind::Event,
             _Payload.str());
     }
 
@@ -394,10 +394,10 @@ namespace
             << "\",\"pdoId\":\"" << nPDOID_
             << "\"}";
 
-        SceneContext_.GetBackendFacadeEndpoint().SendText(
+        SceneContext_.GetBackendSDOEndpoint().SendText(
             0,
             nEventTypeCode_,
-            iCAX::Interaction::EFacadeFrameKind::Event,
+            iCAX::Interaction::ESDOFrameKind::Event,
             _Payload.str());
     }
 

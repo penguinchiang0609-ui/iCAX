@@ -14,14 +14,16 @@ namespace iCAX
 
     namespace Application
     {
-        using CFrontendFacadeFrame = iCAX::Frontend::CFrontendFacadeFrame;
-        using FrontendFacadeFrameHandler = iCAX::Frontend::FrontendFacadeFrameHandler;
+        using CFrontendSDOFrame = iCAX::Frontend::CFrontendSDOFrame;
+        using FrontendSDOFrameHandler = iCAX::Frontend::FrontendSDOFrameHandler;
+        using CFrontendResourceRequest = iCAX::Frontend::CFrontendResourceRequest;
+        using CFrontendResourceResponse = iCAX::Frontend::CFrontendResourceResponse;
 
         /*
         * @brief 前端桥接器。
         * @details
         *   CFrontendBridge 是 Application 级别的 UI 桥，不属于任何具体 UI 技术。
-        *   它在 UI 与 Engine 之间双向传递 Facade request/report/response/event。
+        *   它在 UI 与 Engine 之间双向传递 SDO request/report/response/event。
         *   H5/CEF、WPF、QT 等 UI 宿主都应复用该桥接入后台。
         */
         class CFrontendBridge final : public iCAX::Frontend::IFrontendBridge
@@ -38,7 +40,7 @@ namespace iCAX
             * @brief 绑定已经启动的 ApplicationRuntime。
             * @param [in] Runtime_ 已启动的 ApplicationRuntime。
             * @throws std::logic_error Engine 未运行时抛出。
-            * @details Attach 后会登记 application channel 的前端 Facade endpoint。
+            * @details Attach 后会登记 application channel 的前端 SDO endpoint。
             */
             void Attach(iCAX::Application::CApplicationRuntime& Runtime_);
 
@@ -76,20 +78,26 @@ namespace iCAX
                 const std::string& strSceneID_) override;
 
             /*
-            * @brief 从 UI 向指定 Facade channel 投递调用帧。
+            * @brief 从 UI 向指定 SDO channel 投递调用帧。
             */
-            void PostFacadeFrame(const CFrontendFacadeFrame& Frame_) override;
+            void PostSDOFrame(const CFrontendSDOFrame& Frame_) override;
 
             /*
-            * @brief 轮询所有已登记 endpoint，取出 ApplicationRuntime 发给 UI 的 Facade 帧。
+            * @brief 轮询所有已登记 endpoint，取出 ApplicationRuntime 发给 UI 的 SDO 帧。
             */
-            std::vector<CFrontendFacadeFrame> PollFacadeFrames() override;
+            std::vector<CFrontendSDOFrame> PollSDOFrames() override;
 
             /*
-            * @brief 设置收到 ApplicationRuntime Facade 帧时的回调。
-            * @details 如果设置了回调，PollFacadeFrames 仍返回帧，同时逐帧调用回调。
+            * @brief 设置收到 ApplicationRuntime SDO 帧时的回调。
+            * @details 如果设置了回调，PollSDOFrames 仍返回帧，同时逐帧调用回调。
             */
-            void SetFacadeFrameHandler(FrontendFacadeFrameHandler Handler_) override;
+            void SetSDOFrameHandler(FrontendSDOFrameHandler Handler_) override;
+
+            /*
+            * @brief 不经过 SDO 邮件，直接访问指定 Scene 的资源 API。
+            */
+            CFrontendResourceResponse RequestResource(
+                const CFrontendResourceRequest& Request_) override;
 
             /*
             * @brief 获取只由前端 event loop 消费的 Front Task 调度器。

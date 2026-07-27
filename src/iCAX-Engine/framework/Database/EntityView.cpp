@@ -693,18 +693,43 @@ void iCAX::Database::CEntityView::RefreshFromRepository()
         }
     }
 
-    std::lock_guard<std::mutex> _Lock(m_Mutex);
-    if (m_nRevision == 0)
+    EntityViewEventArgs _EventArgs;
+    bool _bPublish = false;
     {
-        m_nRevision = 1;
+        std::lock_guard<std::mutex> _Lock(m_Mutex);
+        if (m_nRevision == 0)
+        {
+            m_nRevision = 1;
+        }
+        else if (m_EntityIDs != _EntityIDs)
+        {
+            _EventArgs.nPreviousRevision = m_nRevision;
+            for (const auto& _EntityID : _EntityIDs)
+            {
+                if (!m_EntityIDs.contains(_EntityID))
+                {
+                    _EventArgs.AddedEntityIDs.push_back(_EntityID);
+                }
+            }
+            for (const auto& _EntityID : m_EntityIDs)
+            {
+                if (!_EntityIDs.contains(_EntityID))
+                {
+                    _EventArgs.RemovedEntityIDs.push_back(_EntityID);
+                }
+            }
+            _EventArgs.nRevision = ++m_nRevision;
+            _bPublish = true;
+        }
+        m_EntityIDs = std::move(_EntityIDs);
+        m_DependenciesByEntity = std::move(_DependenciesByEntity);
+        m_EntitiesByDependency = std::move(_EntitiesByDependency);
     }
-    else if (m_EntityIDs != _EntityIDs)
+
+    if (_bPublish)
     {
-        ++m_nRevision;
+        PublishChanged(std::move(_EventArgs));
     }
-    m_EntityIDs = std::move(_EntityIDs);
-    m_DependenciesByEntity = std::move(_DependenciesByEntity);
-    m_EntitiesByDependency = std::move(_EntitiesByDependency);
 }
 
 const iCAX::Database::SEntityWhere&
@@ -737,6 +762,29 @@ bool iCAX::Database::CEntityView::Contains(
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     return m_EntityIDs.contains(EntityID_);
+}
+
+void iCAX::Database::CEntityView::AddObserver(
+    IN std::shared_ptr<IEntityViewEventListener> Observer_)
+{
+    if (!Observer_)
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> _Lock(m_Mutex);
+    m_Observers.push_back(std::move(Observer_));
+}
+
+void iCAX::Database::CEntityView::RemoveObserver(
+    IN std::shared_ptr<IEntityViewEventListener> Observer_)
+{
+    std::lock_guard<std::mutex> _Lock(m_Mutex);
+    m_Observers.remove_if(
+        [&](const std::weak_ptr<IEntityViewEventListener>& WeakObserver_)
+        {
+            return WeakObserver_.expired() || WeakObserver_.lock() == Observer_;
+        });
 }
 
 void iCAX::Database::CEntityView::OnRepositoryChanging(
@@ -1082,26 +1130,93 @@ void iCAX::Database::CEntityView::ApplyEntityChanges(
         _Evaluations.emplace(_EntityID, m_Evaluator.EvaluateEntity(_EntityID));
     }
 
-    bool _bChanged = false;
-    std::lock_guard<std::mutex> _Lock(m_Mutex);
-    for (const auto& [_EntityID, _Evaluation] : _Evaluations)
+    EntityViewEventArgs _EventArgs;
+    bool _bPublish = false;
     {
-        ReplaceDependencies(_EntityID, _Evaluation.Dependencies);
-        const bool _bContains = m_EntityIDs.contains(_EntityID);
-        if (_Evaluation.bMatches && !_bContains)
+        std::lock_guard<std::mutex> _Lock(m_Mutex);
+        _EventArgs.nPreviousRevision = m_nRevision;
+        for (const auto& [_EntityID, _Evaluation] : _Evaluations)
         {
-            m_EntityIDs.insert(_EntityID);
-            _bChanged = true;
+            ReplaceDependencies(_EntityID, _Evaluation.Dependencies);
+            const bool _bContains = m_EntityIDs.contains(_EntityID);
+            if (_Evaluation.bMatches && !_bContains)
+            {
+                m_EntityIDs.insert(_EntityID);
+                _EventArgs.AddedEntityIDs.push_back(_EntityID);
+            }
+            else if (!_Evaluation.bMatches && _bContains)
+            {
+                m_EntityIDs.erase(_EntityID);
+                _EventArgs.RemovedEntityIDs.push_back(_EntityID);
+            }
         }
-        else if (!_Evaluation.bMatches && _bContains)
+
+        if (!_EventArgs.AddedEntityIDs.empty()
+            || !_EventArgs.RemovedEntityIDs.empty())
         {
-            m_EntityIDs.erase(_EntityID);
-            _bChanged = true;
+            _EventArgs.nRevision = ++m_nRevision;
+            _bPublish = true;
         }
     }
 
-    if (_bChanged)
+    if (_bPublish)
     {
-        ++m_nRevision;
+        PublishChanged(std::move(_EventArgs));
+    }
+}
+
+void iCAX::Database::CEntityView::PublishChanged(
+    IN EntityViewEventArgs Args_)
+{
+    {
+        std::lock_guard<std::mutex> _Lock(m_Mutex);
+        m_PendingEvents.push_back(std::move(Args_));
+        if (m_bPublishingEvents)
+        {
+            return;
+        }
+        m_bPublishingEvents = true;
+    }
+
+    for (;;)
+    {
+        EntityViewEventArgs _EventArgs;
+        std::vector<std::shared_ptr<IEntityViewEventListener>> _Observers;
+        {
+            std::lock_guard<std::mutex> _Lock(m_Mutex);
+            if (m_PendingEvents.empty())
+            {
+                m_bPublishingEvents = false;
+                return;
+            }
+
+            _EventArgs = std::move(m_PendingEvents.front());
+            m_PendingEvents.pop_front();
+            for (auto _Observer = m_Observers.begin(); _Observer != m_Observers.end();)
+            {
+                if (auto _pObserver = _Observer->lock())
+                {
+                    _Observers.push_back(std::move(_pObserver));
+                    ++_Observer;
+                }
+                else
+                {
+                    _Observer = m_Observers.erase(_Observer);
+                }
+            }
+        }
+
+        for (const auto& _Observer : _Observers)
+        {
+            try
+            {
+                _Observer->OnEntityViewChanged(this, _EventArgs);
+            }
+            catch (...)
+            {
+                // EntityView observers are notification-only. A failed observer
+                // must not affect committed Repository data or other observers.
+            }
+        }
     }
 }

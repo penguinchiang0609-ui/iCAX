@@ -12,7 +12,7 @@
 - `CApplicationConfig`
 - `CFrontendBridge`
 
-`CFrontendFacadeFrame` 和 `IFrontendBridge` 契约定义在 `iCAX-UI/UIContainer/FrontendBridgeContract.h`，用于隔离 UI adapter 和 Application 可执行程序。
+`CFrontendSDOFrame` 和 `IFrontendBridge` 契约定义在 `iCAX-UI/UIContainer/FrontendBridgeContract.h`，用于隔离 UI adapter 和 Application 可执行程序。
 
 ## 3. 生命周期
 
@@ -39,9 +39,9 @@ CApplication.Stop()
 - `GetApplicationChannelIDText()`
 - `RegisterProductChannel(productId)`
 - `RegisterSceneChannel(projectId, sceneId)`
-- `PostFacadeFrame(frame)`
-- `PollFacadeFrames()`
-- `SetFacadeFrameHandler(handler)`
+- `PostSDOFrame(frame)`
+- `PollSDOFrames()`
+- `SetSDOFrameHandler(handler)`
 
 这些能力不属于 H5，也不属于 CEF。Qt 或 WPF UI 也应复用同一套桥。
 
@@ -51,8 +51,8 @@ CApplication.Stop()
 - UI 宿主不停止 Engine。
 - UI 宿主不链接 `Application.exe`，只通过 `IFrontendBridge` 指针回调 Application 持有的桥实现。
 - 产品 manifest 必须在进入 `CApplicationConfig::RuntimeConfig` 前完成解析。
-- `RegisterProductChannel` 只缓存 Facade endpoint，不启动产品。
-- `RegisterSceneChannel` 只缓存 Facade endpoint，不打开项目或 Scene。
+- `RegisterProductChannel` 只缓存 SDO endpoint，不启动产品。
+- `RegisterSceneChannel` 只缓存 SDO endpoint，不打开项目或 Scene。
 
 ## 6. 默认启动
 
@@ -60,7 +60,7 @@ CApplication.Stop()
 
 ```text
 getApplicationChannelId
-postFacadeFrame(App.GetState Request)
+postSDOFrame(App.GetState Request)
 poll response
 ```
 

@@ -78,7 +78,7 @@ Component 禁用时，Behaviour 会暂停它记录的全部 handle，重新启�
 
 Behaviour 不提供内部并发保护。标准运行模型是：每个 Scene 的工作线程驱动自己的 `Repository`、`Universe` 和 Behaviour 实例；`Tick`、Repository 事件转发、Behaviour 绑定/解绑、暂停/恢复帧更新都应在同一个 Scene 线程内发生。
 
-前端线程、ApplicationRuntime 线程或其他 Scene 线程不应直接调用 Behaviour，也不应直接修改 Behaviour 保存的运行态。跨线程输入应先进入 Facades/PDO/命令通道；异步操作应在初始 Task 或 `TaskCompletionSource` 创建时绑定 `Universe::GetEngineTaskScheduler()`，后续 `ContinueWith()` 默认继承它，回到对应 Scene 线程后再修改 Repository、Component 或 Behaviour 运行态。
+前端线程、ApplicationRuntime 线程或其他 Scene 线程不应直接调用 Behaviour，也不应直接修改 Behaviour 保存的运行态。跨线程输入应先进入 SDO/PDO/命令通道；异步操作应在初始 Task 或 `TaskCompletionSource` 创建时绑定 `Universe::GetEngineTaskScheduler()`，后续 `ContinueWith()` 默认继承它，回到对应 Scene 线程后再修改 Repository、Component 或 Behaviour 运行态。
 
 在上述约束下，Behaviour 可以保存 Scene 内轻量状态而不加锁。如果未来需要多线程计算，应由上层服务明确交付结果，再回到 Scene 线程应用数据修改；Behaviour 本身仍保持单线程回调语义。
 

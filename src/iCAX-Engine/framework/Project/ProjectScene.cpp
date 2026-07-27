@@ -9,6 +9,52 @@
 
 namespace
 {
+    std::filesystem::path PathFromUTF8(
+        IN const std::string& strPath_)
+    {
+        const std::u8string _Text(
+            strPath_.begin(),
+            strPath_.end());
+        return std::filesystem::path(_Text);
+    }
+
+    iCAX::Resource::CResourceVersionStorageOptions
+    MakeResourceVersionStorageOptions(
+        IN const iCAX::Application::IApplicationContext&
+            ApplicationContext_)
+    {
+        const auto& _Paths =
+            ApplicationContext_.GetPaths();
+
+        std::filesystem::path _Directory;
+        if (!_Paths.ResourceVersionDirectory.empty())
+        {
+            _Directory = PathFromUTF8(
+                _Paths.ResourceVersionDirectory);
+        }
+        else if (!_Paths.TempDirectory.empty())
+        {
+            _Directory =
+                PathFromUTF8(_Paths.TempDirectory) /
+                "ResourceVersions";
+        }
+
+        if (!_Directory.empty() &&
+            _Directory.is_relative() &&
+            !_Paths.InstallDirectory.empty())
+        {
+            _Directory =
+                PathFromUTF8(_Paths.InstallDirectory) /
+                _Directory;
+        }
+
+        iCAX::Resource::CResourceVersionStorageOptions
+            _Options;
+        _Options.TemporaryRootDirectory =
+            _Directory.lexically_normal();
+        return _Options;
+    }
+
     std::shared_ptr<const iCAX::Application::IApplicationContext> RequireApplicationContext(
         IN const iCAX::Project::CProjectSceneCreateInfo& CreateInfo_)
     {
@@ -69,14 +115,14 @@ namespace
         return CreateInfo_.pResourceLoaderRegistry;
     }
 
-    std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> RequireFacadeChannelRegistry(
+    std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> RequireSDOChannelRegistry(
         IN const iCAX::Project::CProjectSceneCreateInfo& CreateInfo_)
     {
-        if (!CreateInfo_.pFacadeChannelRegistry)
+        if (!CreateInfo_.pSDOChannelRegistry)
         {
-            throw std::invalid_argument("Scene FacadeChannelRegistry cannot be null");
+            throw std::invalid_argument("Scene SDOChannelRegistry cannot be null");
         }
-        return CreateInfo_.pFacadeChannelRegistry;
+        return CreateInfo_.pSDOChannelRegistry;
     }
 }
 
@@ -124,12 +170,15 @@ iCAX::Project::CProjectScene::CProjectScene(
     , m_pMetaRegistry(RequireMetaRegistry(CreateInfo_))
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
-    , m_pFacadeChannelRegistry(RequireFacadeChannelRegistry(CreateInfo_))
+    , m_pSDOChannelRegistry(RequireSDOChannelRegistry(CreateInfo_))
     , m_pRepository(iCAX::Database::GenerateRepository(m_SceneID, m_pMetaRegistry))
     , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
     , m_pPDOHub(CreateInfo_.bEnablePDOHub ? iCAX::PDO::GeneratePDOHub(CreateInfo_.PDOHubCreateInfo) : nullptr)
     , m_pRepositoryEventForwarder(std::make_shared<CRepositoryEventForwarder>(*this))
-    , m_Resources(m_pResourceLoaderRegistry)
+    , m_Resources(
+        m_pResourceLoaderRegistry,
+        MakeResourceVersionStorageOptions(
+            *m_pApplicationContext))
     , m_nFrameIntervalMilliseconds(CreateInfo_.nFrameIntervalMilliseconds == 0 ? 1 : CreateInfo_.nFrameIntervalMilliseconds)
     , m_RuntimeScheduler(m_nFrameIntervalMilliseconds)
     , m_FrameHandler(CreateInfo_.FrameHandler)
@@ -139,9 +188,9 @@ iCAX::Project::CProjectScene::CProjectScene(
         m_SceneName = m_Role == ESceneRole::Main ? "Main Scene" : "Transient Scene";
     }
     m_pRepository->AddObserver(m_pRepositoryEventForwarder);
-    if (!m_pFacadeChannelRegistry->CreateChannel(m_SceneChannelID))
+    if (!m_pSDOChannelRegistry->CreateChannel(m_SceneChannelID))
     {
-        throw std::runtime_error("Scene Facade channel already exists");
+        throw std::runtime_error("Scene SDO channel already exists");
     }
 }
 
@@ -331,16 +380,16 @@ iCAX::Services::CServiceProvider& iCAX::Project::CProjectScene::Services() const
     return *m_pServiceProvider;
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Project::CProjectScene::GetBackendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Project::CProjectScene::GetBackendSDOEndpoint() const
 {
     EnsureOpen();
-    return m_pFacadeChannelRegistry->GetBackendEndpoint(m_SceneChannelID);
+    return m_pSDOChannelRegistry->GetBackendEndpoint(m_SceneChannelID);
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Project::CProjectScene::GetFrontendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Project::CProjectScene::GetFrontendSDOEndpoint() const
 {
     EnsureOpen();
-    return m_pFacadeChannelRegistry->GetFrontendEndpoint(m_SceneChannelID);
+    return m_pSDOChannelRegistry->GetFrontendEndpoint(m_SceneChannelID);
 }
 
 void iCAX::Project::CProjectScene::SendFrontendEvent(
@@ -349,10 +398,10 @@ void iCAX::Project::CProjectScene::SendFrontendEvent(
 {
     EnsureOpen();
 
-    GetBackendFacadeEndpoint().SendText(
+    GetBackendSDOEndpoint().SendText(
         0,
         nMethodCode_,
-        iCAX::Interaction::EFacadeFrameKind::Event,
+        iCAX::Interaction::ESDOFrameKind::Event,
         strPayloadText_);
 }
 
@@ -544,9 +593,9 @@ void iCAX::Project::CProjectScene::Close()
     }
     m_pPDOHub.reset();
     m_Resources.Clear();
-    if (m_pFacadeChannelRegistry && !m_SceneChannelID.is_nil())
+    if (m_pSDOChannelRegistry && !m_SceneChannelID.is_nil())
     {
-        (void)m_pFacadeChannelRegistry->RemoveChannel(m_SceneChannelID);
+        (void)m_pSDOChannelRegistry->RemoveChannel(m_SceneChannelID);
     }
     m_bStartupBound = false;
     if (GetState() != ESceneState::Faulted)
@@ -577,7 +626,7 @@ void iCAX::Project::CProjectScene::WorkerMain()
             auto _Handler = GetFrameHandler();
             if (_Handler)
             {
-                _Handler(*this, GetBackendFacadeEndpoint());
+                _Handler(*this, GetBackendSDOEndpoint());
             }
 
             Tick();

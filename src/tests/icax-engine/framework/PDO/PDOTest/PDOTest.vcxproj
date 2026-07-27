@@ -143,6 +143,9 @@
       <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="..\..\..\..\..\third_party\flatbuffers\FlatBuffers.props" />
+  </ImportGroup>
   <ItemGroup>
     <ClCompile Include="PDOTests.cpp" />
   </ItemGroup>

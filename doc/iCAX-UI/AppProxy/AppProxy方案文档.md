@@ -12,7 +12,7 @@ src/iCAX-UI/AppProxy/
 
 `AppProxy` 依赖：
 
-- `Facades`
+- `SDO`
 - `ProductProxy`
 - `Bridge` 的 bridge 契约
 
@@ -23,8 +23,8 @@ src/iCAX-UI/AppProxy/
 ```text
 AppProxy.create(bridge)
   -> bridge.getApplicationChannelId()
-  -> new FacadeClient(bridge)
-  -> new AppProxy(FacadeClient, applicationChannelId)
+  -> new SDOClient(bridge)
+  -> new AppProxy(SDOClient, applicationChannelId)
 ```
 
 ## 4. 产品同步流程
@@ -38,7 +38,7 @@ App.GetState / App.ListProducts / App.StartProduct / App.OpenProjectFile
   -> new/update ProductProxy
 ```
 
-`registerProductChannel` 只是让 `FrontendBridge` 缓存 product Facade endpoint，不代表业务启动。业务启动由 `App.StartProduct` 决定。
+`registerProductChannel` 只是让 `FrontendBridge` 缓存 product SDO endpoint，不代表业务启动。业务启动由 `App.StartProduct` 决定。
 
 ## 5. 按文件打开项目
 

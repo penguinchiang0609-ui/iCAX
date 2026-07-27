@@ -40,7 +40,7 @@ FlatLaserCAM
 - 不做三维五轴切割。
 - 不绑定柏楚控制卡或某一家控制器。
 - 不在第一阶段实现云排样、MES、报价系统。
-- 不把大量几何点、刀路点塞进 Facades。
+- 不把大量几何点、刀路点塞进 SDO。
 
 ## 3. 产品定义
 
@@ -63,7 +63,7 @@ product.ProjectFile.ProbeBytes = 64;
 product.Modules.ComponentModules.push_back("bin/FlatLaserCamComponent.dll");
 product.Modules.BehaviourModules.push_back("bin/FlatLaserCamBehaviour.dll");
 product.Modules.ServiceModules.push_back("bin/FlatLaserCamService.dll");
-product.Modules.FacadeModules.push_back("bin/FlatLaserCamCommand.dll");
+product.Modules.SDOModules.push_back("bin/FlatLaserCamCommand.dll");
 ```
 
 文件类型建议：
@@ -173,7 +173,7 @@ IControllerAdapterService    机床控制适配，MVP 只提供 mock 或离线�
 
 Command 把前端操作映射到后端用例。
 
-当前框架已有 `FacadeRegistry`、`FacadeInvoker` 和 `FacadeRegistrationCatalog`。产品命令模块通过 `ICAX_REGISTER_FACADE` 自动注册，ProductRuntime 加载产品 DLL 后按模块路径回放注册。
+当前框架已有 `SDORegistry`、`SDOInvoker` 和 `SDORegistrationCatalog`。产品命令模块通过 `ICAX_REGISTER_SDO` 自动注册，ProductRuntime 加载产品 DLL 后按模块路径回放注册。
 
 ### 5.5 ResourceLoader 模块
 
@@ -217,7 +217,7 @@ Project
   Universe
     behaviours
 
-  FacadeChannel
+  SDOChannel
     project commands
 
   PDO
@@ -651,7 +651,7 @@ ProcessLibraryResource   工艺库
 
 ### 10.1 Product 级命令
 
-发往 product Facade。
+发往 product SDO。
 
 ```text
 FlatLaser.Product.GetState
@@ -663,7 +663,7 @@ FlatLaser.Product.CreateProject
 
 ### 10.2 Project 级命令
 
-发往 project Facade。
+发往 project SDO。
 
 ```text
 flatLaser.importDrawing
@@ -701,7 +701,7 @@ flatLaser.generateNc
 }
 ```
 
-大型结果不走 Facades：
+大型结果不走 SDO：
 
 - 导入后的几何放 Resource。
 - 刀路放 Resource。
@@ -717,7 +717,7 @@ flatLaser.generateNc
 - MVP 阶段在 Project 线程串行执行。
 - 命令立即返回一个 operationId。
 - 进度通过 PDO 推送。
-- 完成后通过 Facades 事件或下一次状态查询获得结果。
+- 完成后通过 SDO 事件或下一次状态查询获得结果。
 
 ```text
 Command response:
@@ -834,7 +834,7 @@ Payload：
 
 - 30 到 60 Hz。
 - latest-only。
-- 报警明细用 Facades 事件，实时状态用 PDO。
+- 报警明细用 SDO 事件，实时状态用 PDO。
 
 ## 12. Frontend 设计
 
@@ -912,7 +912,7 @@ MVP 阶段：
 - 增加坐标系、寻边、回零、暂停、继续、停止等命令。
 - 增加安全确认和权限控制。
 - 将实时机床状态通过 PDO 推送。
-- 将报警、急停、加工完成通过 Facades 事件推送。
+- 将报警、急停、加工完成通过 SDO 事件推送。
 
 安全原则：
 
@@ -945,7 +945,7 @@ Universe
 Services
   几何导入、排样、路径规划、后处理、报表、控制器适配
 
-Facades
+SDO
   导入、排样、生成刀路、导出 NC 等命令
 
 PDO
@@ -1132,7 +1132,7 @@ CAD 图纸质量不可控。断线、重线、极短线、自交、单位错误�
 
 - iCAX Product/Project 生命周期。
 - Repository/Resource 分工。
-- Facades Promise 命令。
+- SDO Promise 命令。
 - PDO 进度和仿真帧。
 - H5 工作台的产品扩展方式。
 

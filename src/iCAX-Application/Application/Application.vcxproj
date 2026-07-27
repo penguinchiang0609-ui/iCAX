@@ -179,7 +179,7 @@
     <ProjectReference Include="..\..\iCAX-Engine\framework\ApplicationRuntime\ApplicationRuntime.vcxproj">
       <Project>{ddcef11c-6370-4be7-90e0-173c972669a9}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Engine\framework\Facades\Facades.vcxproj">
+    <ProjectReference Include="..\..\iCAX-Engine\framework\SDO\SDO.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Engine\framework\Product\Product.vcxproj">
@@ -187,6 +187,9 @@
     </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Engine\framework\Project\Project.vcxproj">
       <Project>{d0b2bd35-1f9f-464b-a6d6-38b77c319f9f}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Engine\framework\Resources\Resources.vcxproj">
+      <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Engine\framework\View\View.vcxproj">
       <Project>{a6f5442b-30df-4d32-bd8e-85945e806b1d}</Project>

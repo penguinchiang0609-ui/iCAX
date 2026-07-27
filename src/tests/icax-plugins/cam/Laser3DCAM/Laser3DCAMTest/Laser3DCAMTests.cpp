@@ -7,7 +7,7 @@
 #include <Laser3DCAM/MachineInstanceComponents.h>
 #include <Laser3DCAM/MachineResources.h>
 #include <Laser3DCAM/SceneComponents.h>
-#include <Laser3DCAM/Facades.h>
+#include <Laser3DCAM/SDO.h>
 #include <Laser3DCAM/ToolpathComponents.h>
 #include <Laser3DCAM/ToolpathOrderService.h>
 #include <Laser3DCAM/ToolpathResources.h>
@@ -15,8 +15,8 @@
 #include <Laser3DCAM/WorkpieceComponents.h>
 
 #include <ApplicationContext/IApplicationContext.h>
-#include <Facades/FacadeMethod.h>
-#include <Facades/Invocation.h>
+#include <SDO/SDOMethod.h>
+#include <SDO/Invocation.h>
 #include <Data/Variant.h>
 #include <Data/VariantSerializer.h>
 #include <Database/IEntity.h>
@@ -24,13 +24,15 @@
 #include <Database/IRepository.h>
 #include <Database/MetaRegistrationCatalog.h>
 #include <GeometryData/GeometryData.h>
-#include <Facades/FacadeChannel.h>
+#include <SDO/SDOChannel.h>
 #include <PDO/IPDOHub.h>
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
 #include <ProjectContext/ISceneContext.h>
+#include <PDORenderService/PDORenderService.h>
 #include <RenderData/RenderData.h>
 #include <RenderInteraction/RenderInteraction.h>
+#include <RenderService/RenderSceneIds.h>
 #include <Resources/ResourceInfo.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <Resources/ResourceLibrary.h>
@@ -152,7 +154,7 @@ namespace
             return m_ResourceLoaderRegistry;
         }
 
-        iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override
+        iCAX::Interaction::CSDORegistry& GetSDORegistry() const override
         {
             throw std::logic_error("Product command registry is not used by Laser3DCAM command tests");
         }
@@ -213,7 +215,7 @@ namespace
             , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
             , m_pMetaRegistry(iCAX::Database::CreateMetaRegistry())
             , m_pRepository(iCAX::Database::GenerateRepository(iCAX::Data::GenerateNewUUID(), m_pMetaRegistry))
-            , m_pChannel(std::make_shared<iCAX::Interaction::CFacadeChannel>())
+            , m_pChannel(std::make_shared<iCAX::Interaction::CSDOChannel>())
         {
             iCAX::Database::CMetaRegistrationCatalog::ReplayAll(*m_pMetaRegistry);
         }
@@ -233,12 +235,12 @@ namespace
             return m_SceneName;
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetBackendSDOEndpoint() const override
         {
             return m_pChannel->GetEndAEndpoint();
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetFrontendSDOEndpoint() const override
         {
             return m_pChannel->GetEndBEndpoint();
         }
@@ -300,7 +302,7 @@ namespace
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
         iCAX::Resource::CResourceLibrary m_Resources;
         mutable iCAX::Services::CServiceProvider m_ServiceProvider;
-        std::shared_ptr<iCAX::Interaction::CFacadeChannel> m_pChannel;
+        std::shared_ptr<iCAX::Interaction::CSDOChannel> m_pChannel;
         std::string m_SceneName = "Laser3DCAM Test Scene";
     };
 
@@ -326,14 +328,14 @@ namespace
         return _Variant.To<ObjectMap>();
     }
 
-    iCAX::Interaction::CInvocation MakeFacadeCall(
-        IN const std::string& strFacadeName_,
+    iCAX::Interaction::CInvocation MakeSDOCall(
+        IN const std::string& strSDOName_,
         IN const std::string& strMethodName_,
         IN const ObjectMap& Payload_)
     {
         iCAX::Interaction::CInvocation _Request;
         _Request.nCallID = 1;
-        _Request.Method = iCAX::Interaction::MakeFacadeMethod(strFacadeName_, strMethodName_);
+        _Request.Method = iCAX::Interaction::MakeSDOMethod(strSDOName_, strMethodName_);
         _Request.Payload = EncodeVariant(iCAX::Data::Variant(Payload_));
         return _Request;
     }
@@ -342,7 +344,7 @@ namespace
     {
         if (!Response_.IsOK())
         {
-            throw std::runtime_error(Response_.strError.empty() ? "Facade invocation failed" : Response_.strError);
+            throw std::runtime_error(Response_.strError.empty() ? "SDO invocation failed" : Response_.strError);
         }
         return DecodeObjectPayload(Response_.Payload);
     }
@@ -617,6 +619,158 @@ TEST(Laser3DCAMViewContentTest, ProductViewsProjectSceneEntitiesWithoutPersistin
         _ToIDs(_UpdatedMachineContent));
 }
 
+TEST(Laser3DCAMViewContentTest, ViewInstancesOwnIndependentProjectedRenderScenes)
+{
+    CTestApplicationContext _Application;
+    CTestProductContext _Product;
+    CTestProjectContext _Project;
+    CTestSceneContext _Scene;
+    _Scene.Services().RegisterSingleton<
+        iCAX::Render::IRenderService,
+        iCAX::PDORenderService::CPDORenderService>();
+
+    iCAX::Services::CServiceProvider _Provider;
+    RegisterLaserServices(_Provider);
+    auto _pViewService = _Provider.Resolve<iCAX::View::IViewContentService>();
+    auto _pRenderService = _Scene.Services().Resolve<iCAX::Render::IRenderService>();
+    ASSERT_NE(nullptr, _pViewService);
+    ASSERT_NE(nullptr, _pRenderService);
+
+    const auto _MachineID = iCAX::Data::GenerateNewUUID();
+    const auto _WorkpieceID = iCAX::Data::GenerateNewUUID();
+    auto _pMachine = _Scene.Database().CreateEntity(_MachineID);
+    ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
+    ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
+    auto _pWorkpiece = _Scene.Database().CreateEntity(_WorkpieceID);
+    ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
+    ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::CAM::CWorkpieceComponent>());
+
+    const auto _SourceSceneID =
+        iCAX::Render::MakeRenderSceneID(_Scene.GetSceneID());
+    ASSERT_TRUE(_pRenderService->CreateScene(
+        _Project.GetProjectID(),
+        _SourceSceneID));
+
+    const auto _MakeMesh = [](IN const std::string& strName_, IN uint64_t nVersion_)
+    {
+        iCAX::Render::SRenderMeshData _Mesh;
+        _Mesh.nGeometryID = iCAX::Render::MakeRenderGeometryID(strName_);
+        _Mesh.nDataVersion = nVersion_;
+        _Mesh.Positions = {
+            { 0.0f, 0.0f, 0.0f },
+            { 1.0f, 0.0f, 0.0f },
+            { 0.0f, 1.0f, 0.0f },
+        };
+        _Mesh.Indices = { 0, 1, 2 };
+        return _Mesh;
+    };
+    const auto _MachineMesh = _MakeMesh("test.view.machine", 1);
+    const auto _WorkpieceMesh = _MakeMesh("test.view.workpiece", 2);
+    ASSERT_TRUE(_pRenderService->UpsertMesh(
+        _Project.GetProjectID(),
+        _SourceSceneID,
+        _MachineMesh));
+    ASSERT_TRUE(_pRenderService->UpsertMesh(
+        _Project.GetProjectID(),
+        _SourceSceneID,
+        _WorkpieceMesh));
+
+    const auto _MakeObject = [](
+        IN const iCAX::Data::uuid& EntityID_,
+        IN const iCAX::Data::uuid& GeometryID_,
+        IN uint64_t nVersion_)
+    {
+        iCAX::Render::SRenderInstanceData _Object;
+        _Object.nObjectID = EntityID_;
+        _Object.nGeometryID = GeometryID_;
+        _Object.nDataVersion = nVersion_;
+        return _Object;
+    };
+    ASSERT_TRUE(_pRenderService->SetObjects(
+        _Project.GetProjectID(),
+        _SourceSceneID,
+        {
+            _MakeObject(_MachineID, _MachineMesh.nGeometryID, 3),
+            _MakeObject(_WorkpieceID, _WorkpieceMesh.nGeometryID, 4),
+        }));
+
+    const auto _MachineContent = _pViewService->OpenView(
+        _Project,
+        _Scene,
+        iCAX::CAM::Views::kMachine);
+    const auto _WorkpieceContent = _pViewService->OpenView(
+        _Project,
+        _Scene,
+        iCAX::CAM::Views::kWorkpiece);
+    ASSERT_FALSE(_MachineContent.InstanceID.is_nil());
+    ASSERT_FALSE(_WorkpieceContent.InstanceID.is_nil());
+    EXPECT_NE(_MachineContent.InstanceID, _WorkpieceContent.InstanceID);
+    ASSERT_EQ(1u, _MachineContent.Outputs.size());
+    ASSERT_EQ(1u, _WorkpieceContent.Outputs.size());
+
+    const auto _MachineRenderSceneID = std::stoull(
+        _MachineContent.Outputs.front().Properties.at("renderSceneId").To<std::string>());
+    const auto _WorkpieceRenderSceneID = std::stoull(
+        _WorkpieceContent.Outputs.front().Properties.at("renderSceneId").To<std::string>());
+    EXPECT_NE(_MachineRenderSceneID, _WorkpieceRenderSceneID);
+
+    const auto _MachineSnapshot = _pRenderService->GetSceneSnapshot(
+        _Project.GetProjectID(),
+        _MachineRenderSceneID);
+    const auto _WorkpieceSnapshot = _pRenderService->GetSceneSnapshot(
+        _Project.GetProjectID(),
+        _WorkpieceRenderSceneID);
+    ASSERT_EQ(1u, _MachineSnapshot.Objects.size());
+    ASSERT_EQ(1u, _WorkpieceSnapshot.Objects.size());
+    EXPECT_EQ(_MachineID, _MachineSnapshot.Objects.front().nObjectID);
+    EXPECT_EQ(_WorkpieceID, _WorkpieceSnapshot.Objects.front().nObjectID);
+
+    const auto _SecondMachineID = iCAX::Data::GenerateNewUUID();
+    const auto _SecondMachineMesh = _MakeMesh("test.view.machine.second", 5);
+    auto _pSecondMachine = _Scene.Database().CreateEntity(_SecondMachineID);
+    ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
+    ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
+    ASSERT_TRUE(_pRenderService->UpsertMesh(
+        _Project.GetProjectID(),
+        _SourceSceneID,
+        _SecondMachineMesh));
+    ASSERT_TRUE(_pRenderService->SetObjects(
+        _Project.GetProjectID(),
+        _SourceSceneID,
+        {
+            _MakeObject(_MachineID, _MachineMesh.nGeometryID, 3),
+            _MakeObject(_WorkpieceID, _WorkpieceMesh.nGeometryID, 4),
+            _MakeObject(_SecondMachineID, _SecondMachineMesh.nGeometryID, 6),
+        }));
+
+    _pViewService->OnSceneTick(
+        _Application,
+        _Product,
+        _Project,
+        _Scene,
+        0.016,
+        1.0);
+    const auto _UpdatedMachineSnapshot = _pRenderService->GetSceneSnapshot(
+        _Project.GetProjectID(),
+        _MachineRenderSceneID);
+    EXPECT_EQ(2u, _UpdatedMachineSnapshot.Objects.size());
+
+    EXPECT_TRUE(_pViewService->CloseView(
+        _Project,
+        _Scene,
+        _MachineContent.InstanceID));
+    EXPECT_TRUE(_pViewService->CloseView(
+        _Project,
+        _Scene,
+        _WorkpieceContent.InstanceID));
+    EXPECT_FALSE(_pRenderService->HasScene(
+        _Project.GetProjectID(),
+        _MachineRenderSceneID));
+    EXPECT_FALSE(_pRenderService->HasScene(
+        _Project.GetProjectID(),
+        _WorkpieceRenderSceneID));
+}
+
 TEST(Laser3DCAMManifestTest, StartupComponentMatchesRegisteredSceneBootstrapComponent)
 {
     const auto _ManifestPath = GetSourceRoot() / "apps" / "laser-3d-cam" / "product.manifest.json";
@@ -705,12 +859,12 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
     ObjectMap _ImportPayload;
     _ImportPayload["sourcePath"] = _SDFPath.string();
     _ImportPayload["name"] = std::string("Unit Machine");
-    const auto _ImportRequest = MakeFacadeCall("MachineDefinition", "Import", _ImportPayload);
+    const auto _ImportRequest = MakeSDOCall("MachineDefinition", "Import", _ImportPayload);
     ObjectMap _ImportResult;
     {
         SCOPED_TRACE("import machine definition");
         _ImportResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleImportMachineDefinition(_ImportRequest, _Application, &_Product, &_Project, &_Scene));
+            iCAX::CAM::SDO::HandleImportMachineDefinition(_ImportRequest, _Application, &_Product, &_Project, &_Scene));
     }
 
     ASSERT_TRUE(_ImportResult.contains("machineDefinitionId"));
@@ -729,12 +883,12 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
     ObjectMap _InstantiatePayload;
     _InstantiatePayload["machineDefinitionId"] = _DefinitionIDText;
     _InstantiatePayload["name"] = std::string("Unit Machine Instance");
-    const auto _InstantiateRequest = MakeFacadeCall("Machine", "Instantiate", _InstantiatePayload);
+    const auto _InstantiateRequest = MakeSDOCall("Machine", "Instantiate", _InstantiatePayload);
     ObjectMap _MachineList;
     {
         SCOPED_TRACE("instantiate machine");
         _MachineList = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleInstantiateMachine(_InstantiateRequest, _Application, &_Product, &_Project, &_Scene));
+            iCAX::CAM::SDO::HandleInstantiateMachine(_InstantiateRequest, _Application, &_Product, &_Project, &_Scene));
     }
 
     ASSERT_TRUE(_MachineList.contains("machines"));
@@ -864,9 +1018,9 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
 
         ObjectMap _GetPayload;
         _GetPayload["entityId"] = iCAX::Data::to_string(_HeadLinkID);
-        const auto _GetRequest = MakeFacadeCall("Machine", "GetElement", _GetPayload);
+        const auto _GetRequest = MakeSDOCall("Machine", "GetElement", _GetPayload);
         const auto _GetResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleGetMachineElement(_GetRequest, _Application, &_Product, &_Project, &_Scene));
+            iCAX::CAM::SDO::HandleGetMachineElement(_GetRequest, _Application, &_Product, &_Project, &_Scene));
         const auto _ToolPayload = _GetResult.at("machineElement").To<ObjectMap>().at("tool").To<ObjectMap>();
         ASSERT_TRUE(_ToolPayload.contains("tcpWorldPosition"));
         ASSERT_TRUE(_ToolPayload.contains("beamWorldDirection"));
@@ -881,9 +1035,9 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         _SetPayload["entityId"] = iCAX::Data::to_string(_HeadLinkID);
         _SetPayload["tcpLocalPosition"] = VariantArray{ 1.0, 2.0, -40.0 };
         _SetPayload["beamLocalDirection"] = VariantArray{ 0.0, 0.0, -2.0 };
-        const auto _SetRequest = MakeFacadeCall("Machine", "SetToolTCP", _SetPayload);
+        const auto _SetRequest = MakeSDOCall("Machine", "SetToolTCP", _SetPayload);
         const auto _SetResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleSetMachineToolTCP(_SetRequest, _Application, &_Product, &_Project, &_Scene));
+            iCAX::CAM::SDO::HandleSetMachineToolTCP(_SetRequest, _Application, &_Product, &_Project, &_Scene));
         const auto _EditedTool = _SetResult.at("machineElement").To<ObjectMap>().at("tool").To<ObjectMap>();
         const auto _EditedTCP = _EditedTool.at("tcpLocalPosition").To<VariantArray>();
         const auto _EditedBeam = _EditedTool.at("beamLocalDirection").To<VariantArray>();
@@ -961,9 +1115,9 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         _AppearancePayload["entityId"] = iCAX::Data::to_string(_BaseLinkID);
         _AppearancePayload["colorHex"] = std::string("#3366CC");
         _AppearancePayload["showCollision"] = false;
-        const auto _AppearanceRequest = MakeFacadeCall("Machine", "SetElementAppearance", _AppearancePayload);
+        const auto _AppearanceRequest = MakeSDOCall("Machine", "SetElementAppearance", _AppearancePayload);
         const auto _AppearanceResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleSetMachineElementAppearance(_AppearanceRequest, _Application, &_Product, &_Project, &_Scene));
+            iCAX::CAM::SDO::HandleSetMachineElementAppearance(_AppearanceRequest, _Application, &_Product, &_Project, &_Scene));
 
         ASSERT_TRUE(_AppearanceResult.contains("machineElement"));
         const auto _Element = _AppearanceResult.at("machineElement").To<ObjectMap>();
@@ -999,9 +1153,9 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         _RootTransformPayload["entityId"] = iCAX::Data::to_string(_MachineID);
         _RootTransformPayload["position"] = VariantArray{ 1.0, 2.0, 3.0 };
         _RootTransformPayload["rotationRadians"] = VariantArray{ 0.1, 0.2, 0.3 };
-        const auto _RootTransformRequest = MakeFacadeCall("Machine", "SetElementTransform", _RootTransformPayload);
+        const auto _RootTransformRequest = MakeSDOCall("Machine", "SetElementTransform", _RootTransformPayload);
         const auto _RootTransformResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleSetMachineElementTransform(_RootTransformRequest, _Application, &_Product, &_Project, &_Scene));
+            iCAX::CAM::SDO::HandleSetMachineElementTransform(_RootTransformRequest, _Application, &_Product, &_Project, &_Scene));
 
         ASSERT_TRUE(_RootTransformResult.contains("machineElement"));
         const auto _RootPayload = _RootTransformResult.at("machineElement").To<ObjectMap>();
@@ -1045,33 +1199,33 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         ObjectMap _BasePayload;
         _BasePayload["entityId"] = iCAX::Data::to_string(_BaseLinkID);
         _BasePayload["position"] = VariantArray{ 4.0, 5.0, 6.0 };
-        const auto _BaseRequest = MakeFacadeCall("Machine", "SetElementTransform", _BasePayload);
+        const auto _BaseRequest = MakeSDOCall("Machine", "SetElementTransform", _BasePayload);
         EXPECT_THROW(
-            (void)iCAX::CAM::Facades::HandleSetMachineElementTransform(_BaseRequest, _Application, &_Product, &_Project, &_Scene),
+            (void)iCAX::CAM::SDO::HandleSetMachineElementTransform(_BaseRequest, _Application, &_Product, &_Project, &_Scene),
             std::invalid_argument);
 
         ObjectMap _ScalePayload;
         _ScalePayload["entityId"] = iCAX::Data::to_string(_MachineID);
         _ScalePayload["scale"] = VariantArray{ 1.1, 1.0, 1.0 };
-        const auto _ScaleRequest = MakeFacadeCall("Machine", "SetElementTransform", _ScalePayload);
+        const auto _ScaleRequest = MakeSDOCall("Machine", "SetElementTransform", _ScalePayload);
         EXPECT_THROW(
-            (void)iCAX::CAM::Facades::HandleSetMachineElementTransform(_ScaleRequest, _Application, &_Product, &_Project, &_Scene),
+            (void)iCAX::CAM::SDO::HandleSetMachineElementTransform(_ScaleRequest, _Application, &_Product, &_Project, &_Scene),
             std::invalid_argument);
 
         ObjectMap _FixedPayload;
         _FixedPayload["entityId"] = iCAX::Data::to_string(_HeadLinkID);
         _FixedPayload["position"] = VariantArray{ 4.0, 5.0, 6.0 };
-        const auto _FixedRequest = MakeFacadeCall("Machine", "SetElementTransform", _FixedPayload);
+        const auto _FixedRequest = MakeSDOCall("Machine", "SetElementTransform", _FixedPayload);
         EXPECT_THROW(
-            (void)iCAX::CAM::Facades::HandleSetMachineElementTransform(_FixedRequest, _Application, &_Product, &_Project, &_Scene),
+            (void)iCAX::CAM::SDO::HandleSetMachineElementTransform(_FixedRequest, _Application, &_Product, &_Project, &_Scene),
             std::invalid_argument);
 
         const auto _AssertLockedPolicy = [&](const iCAX::Data::uuid& EntityID_) {
             ObjectMap _GetPayload;
             _GetPayload["entityId"] = iCAX::Data::to_string(EntityID_);
-            const auto _GetRequest = MakeFacadeCall("Machine", "GetElement", _GetPayload);
+            const auto _GetRequest = MakeSDOCall("Machine", "GetElement", _GetPayload);
             const auto _GetResult = DecodeResponseObject(
-                iCAX::CAM::Facades::HandleGetMachineElement(_GetRequest, _Application, &_Product, &_Project, &_Scene));
+                iCAX::CAM::SDO::HandleGetMachineElement(_GetRequest, _Application, &_Product, &_Project, &_Scene));
             const auto _Policy = _GetResult.at("machineElement").To<ObjectMap>().at("transformEditPolicy").To<ObjectMap>();
             const auto _PositionPolicy = _Policy.at("position").To<VariantArray>();
             const auto _RotationPolicy = _Policy.at("rotationRadians").To<VariantArray>();
@@ -1092,9 +1246,9 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         ObjectMap _PickPayload;
         _PickPayload["entityId"] = iCAX::Data::to_string(_HeadLinkID);
         _PickPayload["objectId"] = iCAX::Data::to_string(_HeadLinkID);
-        const auto _PickRequest = MakeFacadeCall("Selection", "PickMachineObject", _PickPayload);
+        const auto _PickRequest = MakeSDOCall("Selection", "PickMachineObject", _PickPayload);
         const auto _PickResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandlePickMachineObject(_PickRequest, _Application, &_Product, &_Project, &_Scene));
+            iCAX::CAM::SDO::HandlePickMachineObject(_PickRequest, _Application, &_Product, &_Project, &_Scene));
 
         ASSERT_TRUE(_PickResult.contains("selection"));
         const auto _Selection = _PickResult.at("selection").To<ObjectMap>();
@@ -1144,15 +1298,15 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
     ObjectMap _ValidPayload;
     _ValidPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
     _ValidPayload["position"] = 5.0;
-    const auto _ValidRequest = MakeFacadeCall("Machine", "SetJointPosition", _ValidPayload);
+    const auto _ValidRequest = MakeSDOCall("Machine", "SetJointPosition", _ValidPayload);
     const auto _ValidResult = DecodeResponseObject(
-        iCAX::CAM::Facades::HandleSetMachineJointPosition(_ValidRequest, _Application, &_Product, &_Project, &_Scene));
+        iCAX::CAM::SDO::HandleSetMachineJointPosition(_ValidRequest, _Application, &_Product, &_Project, &_Scene));
     EXPECT_TRUE(_ValidResult.empty());
     ObjectMap _GetElementPayload;
     _GetElementPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
-    const auto _GetElementRequest = MakeFacadeCall("Machine", "GetElement", _GetElementPayload);
+    const auto _GetElementRequest = MakeSDOCall("Machine", "GetElement", _GetElementPayload);
     const auto _ElementResult = DecodeResponseObject(
-        iCAX::CAM::Facades::HandleGetMachineElement(_GetElementRequest, _Application, &_Product, &_Project, &_Scene));
+        iCAX::CAM::SDO::HandleGetMachineElement(_GetElementRequest, _Application, &_Product, &_Project, &_Scene));
     const auto _Policy = _ElementResult.at("machineElement").To<ObjectMap>().at("transformEditPolicy").To<ObjectMap>();
     const auto _PositionPolicy = _Policy.at("position").To<VariantArray>();
     const auto _RotationPolicy = _Policy.at("rotationRadians").To<VariantArray>();
@@ -1176,9 +1330,9 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
     _LimitPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
     _LimitPayload["lower"] = -5.0;
     _LimitPayload["upper"] = 15.0;
-    const auto _LimitRequest = MakeFacadeCall("Machine", "SetJointLimits", _LimitPayload);
+    const auto _LimitRequest = MakeSDOCall("Machine", "SetJointLimits", _LimitPayload);
     const auto _LimitResult = DecodeResponseObject(
-        iCAX::CAM::Facades::HandleSetMachineJointLimits(_LimitRequest, _Application, &_Product, &_Project, &_Scene));
+        iCAX::CAM::SDO::HandleSetMachineJointLimits(_LimitRequest, _Application, &_Product, &_Project, &_Scene));
     ASSERT_TRUE(_LimitResult.contains("machineElement"));
     const auto _JointPayload = _LimitResult.at("machineElement").To<ObjectMap>().at("joint").To<ObjectMap>();
     EXPECT_NEAR(-5.0, _JointPayload.at("lower").To<double>(), 0.0001);
@@ -1190,42 +1344,42 @@ TEST(Laser3DCAMMachineDefinitionTest, PrismaticMachineElementUsesInstanceFieldPo
     _InvalidLimitPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
     _InvalidLimitPayload["lower"] = 16.0;
     _InvalidLimitPayload["upper"] = 15.0;
-    const auto _InvalidLimitRequest = MakeFacadeCall("Machine", "SetJointLimits", _InvalidLimitPayload);
+    const auto _InvalidLimitRequest = MakeSDOCall("Machine", "SetJointLimits", _InvalidLimitPayload);
     EXPECT_THROW(
-        (void)iCAX::CAM::Facades::HandleSetMachineJointLimits(_InvalidLimitRequest, _Application, &_Product, &_Project, &_Scene),
+        (void)iCAX::CAM::SDO::HandleSetMachineJointLimits(_InvalidLimitRequest, _Application, &_Product, &_Project, &_Scene),
         std::invalid_argument);
 
     ObjectMap _CurrentPositionOutsideLimitPayload;
     _CurrentPositionOutsideLimitPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
     _CurrentPositionOutsideLimitPayload["lower"] = 6.0;
     _CurrentPositionOutsideLimitPayload["upper"] = 15.0;
-    const auto _CurrentPositionOutsideLimitRequest = MakeFacadeCall("Machine", "SetJointLimits", _CurrentPositionOutsideLimitPayload);
+    const auto _CurrentPositionOutsideLimitRequest = MakeSDOCall("Machine", "SetJointLimits", _CurrentPositionOutsideLimitPayload);
     EXPECT_THROW(
-        (void)iCAX::CAM::Facades::HandleSetMachineJointLimits(_CurrentPositionOutsideLimitRequest, _Application, &_Product, &_Project, &_Scene),
+        (void)iCAX::CAM::SDO::HandleSetMachineJointLimits(_CurrentPositionOutsideLimitRequest, _Application, &_Product, &_Project, &_Scene),
         std::invalid_argument);
 
     ObjectMap _OutOfRangePayload;
     _OutOfRangePayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
     _OutOfRangePayload["position"] = 16.0;
-    const auto _OutOfRangeRequest = MakeFacadeCall("Machine", "SetJointPosition", _OutOfRangePayload);
+    const auto _OutOfRangeRequest = MakeSDOCall("Machine", "SetJointPosition", _OutOfRangePayload);
     EXPECT_THROW(
-        (void)iCAX::CAM::Facades::HandleSetMachineJointPosition(_OutOfRangeRequest, _Application, &_Product, &_Project, &_Scene),
+        (void)iCAX::CAM::SDO::HandleSetMachineJointPosition(_OutOfRangeRequest, _Application, &_Product, &_Project, &_Scene),
         std::invalid_argument);
 
     ObjectMap _OffAxisPayload;
     _OffAxisPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
     _OffAxisPayload["position"] = VariantArray{ 1.0, 0.0, 0.0 };
-    const auto _OffAxisRequest = MakeFacadeCall("Machine", "SetElementTransform", _OffAxisPayload);
+    const auto _OffAxisRequest = MakeSDOCall("Machine", "SetElementTransform", _OffAxisPayload);
     EXPECT_THROW(
-        (void)iCAX::CAM::Facades::HandleSetMachineElementTransform(_OffAxisRequest, _Application, &_Product, &_Project, &_Scene),
+        (void)iCAX::CAM::SDO::HandleSetMachineElementTransform(_OffAxisRequest, _Application, &_Product, &_Project, &_Scene),
         std::invalid_argument);
 
     ObjectMap _RotationPayload;
     _RotationPayload["entityId"] = iCAX::Data::to_string(_AxisElementID);
     _RotationPayload["rotationRadians"] = VariantArray{ 0.1, 0.0, 0.0 };
-    const auto _RotationRequest = MakeFacadeCall("Machine", "SetElementTransform", _RotationPayload);
+    const auto _RotationRequest = MakeSDOCall("Machine", "SetElementTransform", _RotationPayload);
     EXPECT_THROW(
-        (void)iCAX::CAM::Facades::HandleSetMachineElementTransform(_RotationRequest, _Application, &_Product, &_Project, &_Scene),
+        (void)iCAX::CAM::SDO::HandleSetMachineElementTransform(_RotationRequest, _Application, &_Product, &_Project, &_Scene),
         std::invalid_argument);
 }
 
@@ -1261,8 +1415,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
     {
         SCOPED_TRACE("product exposes machine definition formats from product definition capabilities");
         const auto _FormatsResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleGetSupportedMachineDefinitionFormats(
-                MakeFacadeCall("MachineDefinition", "GetSupportedFormats", ObjectMap{}),
+            iCAX::CAM::SDO::HandleGetSupportedMachineDefinitionFormats(
+                MakeSDOCall("MachineDefinition", "GetSupportedFormats", ObjectMap{}),
                 _Application,
                 &_Product,
                 &_Project,
@@ -1277,8 +1431,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
     _ImportPayload["name"] = std::string("Settings Machine");
     _ImportPayload["default"] = true;
     const auto _ImportResult = DecodeResponseObject(
-        iCAX::CAM::Facades::HandleImportMachineDefinition(
-            MakeFacadeCall("MachineDefinition", "Import", _ImportPayload),
+        iCAX::CAM::SDO::HandleImportMachineDefinition(
+            MakeSDOCall("MachineDefinition", "Import", _ImportPayload),
             _Application,
             &_Product,
             &_Project,
@@ -1294,8 +1448,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
     {
         SCOPED_TRACE("definition list is product data, not project repository data");
         const auto _ListResult = DecodeResponseObject(
-            iCAX::CAM::Facades::HandleListMachineDefinitions(
-                MakeFacadeCall("MachineDefinition", "List", ObjectMap{}),
+            iCAX::CAM::SDO::HandleListMachineDefinitions(
+                MakeSDOCall("MachineDefinition", "List", ObjectMap{}),
                 _Application,
                 &_Product,
                 &_Project,
@@ -1311,8 +1465,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
         ObjectMap _DisablePayload;
         _DisablePayload["machineDefinitionId"] = _DefinitionID;
         _DisablePayload["enabled"] = false;
-        (void)iCAX::CAM::Facades::HandleSetMachineDefinitionEnabled(
-            MakeFacadeCall("MachineDefinition", "SetEnabled", _DisablePayload),
+        (void)iCAX::CAM::SDO::HandleSetMachineDefinitionEnabled(
+            MakeSDOCall("MachineDefinition", "SetEnabled", _DisablePayload),
             _Application,
             &_Product,
             &_Project,
@@ -1321,8 +1475,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
         ObjectMap _InstantiatePayload;
         _InstantiatePayload["machineDefinitionId"] = _DefinitionID;
         EXPECT_THROW(
-            (void)iCAX::CAM::Facades::HandleInstantiateMachine(
-                MakeFacadeCall("Machine", "Instantiate", _InstantiatePayload),
+            (void)iCAX::CAM::SDO::HandleInstantiateMachine(
+                MakeSDOCall("Machine", "Instantiate", _InstantiatePayload),
                 _Application,
                 &_Product,
                 &_Project,
@@ -1330,8 +1484,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
             std::runtime_error);
 
         _DisablePayload["enabled"] = true;
-        (void)iCAX::CAM::Facades::HandleSetMachineDefinitionEnabled(
-            MakeFacadeCall("MachineDefinition", "SetEnabled", _DisablePayload),
+        (void)iCAX::CAM::SDO::HandleSetMachineDefinitionEnabled(
+            MakeSDOCall("MachineDefinition", "SetEnabled", _DisablePayload),
             _Application,
             &_Product,
             &_Project,
@@ -1342,8 +1496,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
     _InstantiatePayload["machineDefinitionId"] = _DefinitionID;
     _InstantiatePayload["name"] = std::string("Project Machine");
     const auto _MachineResult = DecodeResponseObject(
-        iCAX::CAM::Facades::HandleInstantiateMachine(
-            MakeFacadeCall("Machine", "Instantiate", _InstantiatePayload),
+        iCAX::CAM::SDO::HandleInstantiateMachine(
+            MakeSDOCall("Machine", "Instantiate", _InstantiatePayload),
             _Application,
             &_Product,
             &_Project,
@@ -1360,8 +1514,8 @@ TEST(Laser3DCAMMachineDefinitionTest, ProductDefinitionSettingsAreSeparatedFromP
     ObjectMap _DeletePayload;
     _DeletePayload["machineDefinitionId"] = _DefinitionID;
     const auto _DeleteResult = DecodeResponseObject(
-        iCAX::CAM::Facades::HandleDeleteMachineDefinition(
-            MakeFacadeCall("MachineDefinition", "Delete", _DeletePayload),
+        iCAX::CAM::SDO::HandleDeleteMachineDefinition(
+            MakeSDOCall("MachineDefinition", "Delete", _DeletePayload),
             _Application,
             &_Product,
             &_Project,

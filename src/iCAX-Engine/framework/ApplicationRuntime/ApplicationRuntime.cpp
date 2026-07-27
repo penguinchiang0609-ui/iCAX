@@ -2,21 +2,21 @@
 #include "ApplicationRuntime.h"
 
 #include "ApplicationContext/FileApplicationConfigStore.h"
-#include "Facades/Facade.h"
-#include "Facades/FacadeChannelRegistry.h"
+#include "SDO/SDO.h"
+#include "SDO/SDOChannelRegistry.h"
 
 
 namespace
 {
-    class CStaticApplicationFacade final : public iCAX::Interaction::CFacade
+    class CStaticApplicationSDO final : public iCAX::Interaction::CSDO
     {
     public:
         using MethodRecord = std::pair<std::string, MethodFunc>;
 
-        CStaticApplicationFacade(
-            IN std::string strFacadeName_,
+        CStaticApplicationSDO(
+            IN std::string strSDOName_,
             IN std::vector<MethodRecord> Methods_)
-            : CFacade(std::move(strFacadeName_))
+            : CSDO(std::move(strSDOName_))
         {
             for (auto& _Method : Methods_)
             {
@@ -74,7 +74,7 @@ namespace
         auto _Payload = iCAX::Application::DecodeApplicationRuntimePayload(Request_.Payload);
         if (!_Payload.Is<iCAX::Data::ObjectMap>())
         {
-            throw std::invalid_argument("ApplicationRuntime facade call payload must be an object");
+            throw std::invalid_argument("ApplicationRuntime sdo call payload must be an object");
         }
         return _Payload.To<iCAX::Data::ObjectMap>();
     }
@@ -186,14 +186,14 @@ namespace
         }
     }
 
-    void _RequireApplicationFacadeContext(
+    void _RequireApplicationSDOContext(
         IN const iCAX::Product::IProductContext* pProductContext_,
         IN const iCAX::Project::IProjectContext* pProjectContext_,
         IN const iCAX::Project::ISceneContext* pSceneContext_)
     {
         if (pProductContext_ || pProjectContext_ || pSceneContext_)
         {
-            throw std::invalid_argument("ApplicationRuntime Facade invocation requires the application scope");
+            throw std::invalid_argument("ApplicationRuntime SDO invocation requires the application scope");
         }
     }
 
@@ -247,8 +247,8 @@ iCAX::Application::CApplicationRuntime::CApplicationRuntime()
     : m_Config()
     , m_pApplicationTaskScheduler(std::make_shared<iCAX::Tasks::EventLoopTaskScheduler>())
     , m_ApplicationChannelID(iCAX::Data::GenerateNewUUID())
-    , m_pFacadeRegistry(std::make_shared<iCAX::Interaction::CFacadeRegistry>())
-    , m_pFacadeInvoker(std::make_unique<iCAX::Interaction::CFacadeInvoker>(m_pFacadeRegistry))
+    , m_pSDORegistry(std::make_shared<iCAX::Interaction::CSDORegistry>())
+    , m_pSDOInvoker(std::make_unique<iCAX::Interaction::CSDOInvoker>(m_pSDORegistry))
 {
     m_Config.strApplicationSettingsPath = "Setting/Application.Setting";
     m_Config.Descriptor.AppID = "icax";
@@ -257,6 +257,8 @@ iCAX::Application::CApplicationRuntime::CApplicationRuntime()
     m_Config.Paths.UserConfigDirectory = "Setting";
     m_Config.Paths.CacheDirectory = "Cache";
     m_Config.Paths.TempDirectory = "Temp";
+    m_Config.Paths.ResourceVersionDirectory =
+        "Temp/ResourceVersions";
     m_Config.Paths.LogDirectory = "Log";
 
     iCAX::Product::CProductDefinition _DefaultProduct;
@@ -269,7 +271,7 @@ iCAX::Application::CApplicationRuntime::CApplicationRuntime()
     m_Config.Products.push_back(_DefaultProduct);
     _ValidateProductDefinitions(m_Config.Products);
 
-    RegisterBuiltInApplicationFacades();
+    RegisterBuiltInApplicationSDO();
 }
 
 iCAX::Application::CApplicationRuntime::~CApplicationRuntime()
@@ -650,10 +652,10 @@ void iCAX::Application::CApplicationRuntime::WorkerMain()
 
 void iCAX::Application::CApplicationRuntime::Load()
 {
-    m_pFacadeChannelRegistry = std::make_shared<iCAX::Interaction::CFacadeChannelRegistry>();
-    if (!m_pFacadeChannelRegistry->CreateChannel(m_ApplicationChannelID))
+    m_pSDOChannelRegistry = std::make_shared<iCAX::Interaction::CSDOChannelRegistry>();
+    if (!m_pSDOChannelRegistry->CreateChannel(m_ApplicationChannelID))
     {
-        throw std::runtime_error("Application Facade channel already exists");
+        throw std::runtime_error("Application SDO channel already exists");
     }
     m_pApplicationContext = CreateApplicationContext();
 
@@ -665,7 +667,7 @@ void iCAX::Application::CApplicationRuntime::Load()
 
 void iCAX::Application::CApplicationRuntime::MainLoop()
 {
-    DispatchApplicationFacadeFrames();
+    DispatchApplicationSDOFrames();
 }
 
 void iCAX::Application::CApplicationRuntime::Unload()
@@ -692,11 +694,11 @@ void iCAX::Application::CApplicationRuntime::Unload()
         }
     }
 
-    if (m_pFacadeChannelRegistry && !m_ApplicationChannelID.is_nil())
+    if (m_pSDOChannelRegistry && !m_ApplicationChannelID.is_nil())
     {
-        (void)m_pFacadeChannelRegistry->RemoveChannel(m_ApplicationChannelID);
+        (void)m_pSDOChannelRegistry->RemoveChannel(m_ApplicationChannelID);
     }
-    m_pFacadeChannelRegistry.reset();
+    m_pSDOChannelRegistry.reset();
     m_pApplicationContext.reset();
 }
 
@@ -771,25 +773,25 @@ std::string iCAX::Application::CApplicationRuntime::GetExceptionMessage(IN std::
     }
 }
 
-void iCAX::Application::CApplicationRuntime::DispatchApplicationFacadeFrames()
+void iCAX::Application::CApplicationRuntime::DispatchApplicationSDOFrames()
 {
-    if (!m_pFacadeInvoker)
+    if (!m_pSDOInvoker)
     {
         return;
     }
 
-    if (!m_pFacadeChannelRegistry || !m_pFacadeChannelRegistry->HasChannel(m_ApplicationChannelID))
+    if (!m_pSDOChannelRegistry || !m_pSDOChannelRegistry->HasChannel(m_ApplicationChannelID))
     {
         return;
     }
 
-    auto _Endpoint = m_pFacadeChannelRegistry->GetBackendEndpoint(m_ApplicationChannelID);
+    auto _Endpoint = m_pSDOChannelRegistry->GetBackendEndpoint(m_ApplicationChannelID);
     if (!_Endpoint.IsValid())
     {
         return;
     }
 
-    m_pFacadeInvoker->DispatchAvailableFrames(
+    m_pSDOInvoker->DispatchAvailableFrames(
         _Endpoint,
         *m_pApplicationContext,
         nullptr,
@@ -806,9 +808,9 @@ std::shared_ptr<iCAX::Application::CApplicationContext> iCAX::Application::CAppl
         m_Config.strApplicationSettingsPath);
 }
 
-void iCAX::Application::CApplicationRuntime::RegisterBuiltInApplicationFacades()
+void iCAX::Application::CApplicationRuntime::RegisterBuiltInApplicationSDO()
 {
-    std::vector<CStaticApplicationFacade::MethodRecord> _Methods;
+    std::vector<CStaticApplicationSDO::MethodRecord> _Methods;
     _Methods.emplace_back(
         kAppGetStateName,
         [this](
@@ -870,10 +872,10 @@ void iCAX::Application::CApplicationRuntime::RegisterBuiltInApplicationFacades()
             return HandleOpenProjectFile(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
-    auto _pFacade = std::make_shared<CStaticApplicationFacade>(kAppFacadeName, std::move(_Methods));
-    if (!m_pFacadeRegistry->Register(_pFacade))
+    auto _pSDO = std::make_shared<CStaticApplicationSDO>(kAppSDOName, std::move(_Methods));
+    if (!m_pSDORegistry->Register(_pSDO))
     {
-        throw std::runtime_error("Built-in application facade is already registered: " + _pFacade->GetName());
+        throw std::runtime_error("Built-in application sdo is already registered: " + _pSDO->GetName());
     }
 }
 
@@ -884,7 +886,7 @@ iCAX::Interaction::CInvocationResult iCAX::Application::CApplicationRuntime::Han
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireApplicationSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
 }
 
@@ -895,7 +897,7 @@ iCAX::Interaction::CInvocationResult iCAX::Application::CApplicationRuntime::Han
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireApplicationSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeApplicationPayloadResponse(BuildApplicationStatePayload());
 }
 
@@ -906,7 +908,7 @@ iCAX::Interaction::CInvocationResult iCAX::Application::CApplicationRuntime::Han
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireApplicationSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     auto _pRuntime = StartProduct(_GetOptionalString(_Payload, "productId"));
 
@@ -924,7 +926,7 @@ iCAX::Interaction::CInvocationResult iCAX::Application::CApplicationRuntime::Han
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireApplicationSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     const auto _ProductID = _GetOptionalString(_Payload, "productId");
     if (_ProductID.empty())
@@ -942,7 +944,7 @@ iCAX::Interaction::CInvocationResult iCAX::Application::CApplicationRuntime::Han
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireApplicationSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     auto _ResolveResult = ResolveProjectFileProduct(_GetRequiredString(_Payload, "projectPath"));
 
@@ -959,7 +961,7 @@ iCAX::Interaction::CInvocationResult iCAX::Application::CApplicationRuntime::Han
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireApplicationFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireApplicationSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
 
     const auto _ProjectPath = _GetRequiredString(_Payload, "projectPath");
@@ -1168,7 +1170,7 @@ std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::Application::CApplicationR
                 }
             }
             if (!m_pApplicationContext
-                || !m_pFacadeChannelRegistry)
+                || !m_pSDOChannelRegistry)
             {
                 throw std::logic_error("ApplicationRuntime is not loaded");
             }
@@ -1203,7 +1205,7 @@ std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::Application::CApplicationR
         _pRuntime = std::make_shared<iCAX::Product::CProductRuntime>(
             _Definition,
             m_pApplicationContext,
-            m_pFacadeChannelRegistry,
+            m_pSDOChannelRegistry,
             nullptr,
             m_Config.nFrameIntervalMilliseconds);
         _pRuntime->Start();
@@ -1293,32 +1295,32 @@ bool iCAX::Application::CApplicationRuntime::StopProduct(IN const std::string& s
     return true;
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Application::CApplicationRuntime::GetApplicationFrontendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Application::CApplicationRuntime::GetApplicationFrontendSDOEndpoint() const
 {
-    if (!m_pFacadeChannelRegistry)
+    if (!m_pSDOChannelRegistry)
     {
         throw std::logic_error("ApplicationRuntime is not loaded");
     }
-    return m_pFacadeChannelRegistry->GetFrontendEndpoint(m_ApplicationChannelID);
+    return m_pSDOChannelRegistry->GetFrontendEndpoint(m_ApplicationChannelID);
 }
 
 void iCAX::Application::CApplicationRuntime::SendFrontendEvent(
     IN uint64_t nMethodCode_,
     IN const std::string& strPayloadText_)
 {
-    if (!m_pFacadeChannelRegistry || m_ApplicationChannelID.is_nil())
+    if (!m_pSDOChannelRegistry || m_ApplicationChannelID.is_nil())
     {
-        throw std::logic_error("ApplicationRuntime Facade channel is not available");
+        throw std::logic_error("ApplicationRuntime SDO channel is not available");
     }
 
-    m_pFacadeChannelRegistry->GetBackendEndpoint(m_ApplicationChannelID).SendText(
+    m_pSDOChannelRegistry->GetBackendEndpoint(m_ApplicationChannelID).SendText(
         0,
         nMethodCode_,
-        iCAX::Interaction::EFacadeFrameKind::Event,
+        iCAX::Interaction::ESDOFrameKind::Event,
         strPayloadText_);
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Application::CApplicationRuntime::GetProductFrontendFacadeEndpoint(
+iCAX::Interaction::CSDOEndpoint iCAX::Application::CApplicationRuntime::GetProductFrontendSDOEndpoint(
     IN const std::string& strProductID_) const
 {
     auto _pRuntime = FindProductRuntime(strProductID_);
@@ -1326,10 +1328,10 @@ iCAX::Interaction::CFacadeEndpoint iCAX::Application::CApplicationRuntime::GetPr
     {
         throw std::runtime_error("ProductRuntime not found");
     }
-    return _pRuntime->GetProductFrontendFacadeEndpoint();
+    return _pRuntime->GetProductFrontendSDOEndpoint();
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Application::CApplicationRuntime::GetSceneFrontendFacadeEndpoint(
+iCAX::Interaction::CSDOEndpoint iCAX::Application::CApplicationRuntime::GetSceneFrontendSDOEndpoint(
     IN const iCAX::Data::uuid& ProjectID_,
     IN const iCAX::Data::uuid& SceneID_) const
 {
@@ -1338,7 +1340,7 @@ iCAX::Interaction::CFacadeEndpoint iCAX::Application::CApplicationRuntime::GetSc
     {
         if (_pRuntime && _pRuntime->FindProjectCatalogByProjectID(ProjectID_))
         {
-            return _pRuntime->GetSceneFrontendFacadeEndpoint(ProjectID_, SceneID_);
+            return _pRuntime->GetSceneFrontendSDOEndpoint(ProjectID_, SceneID_);
         }
     }
     throw std::runtime_error("Project not found");

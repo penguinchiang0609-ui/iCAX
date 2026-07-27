@@ -4,7 +4,7 @@
 
 本文描述 `icax.laser-3d-cam` 产品在当前 iCAX 框架下的落地方案。
 
-规格文档回答“产品要做什么”，本文回答“在现有 Application、Product、Project、Database、Resources、Facade、PDO、Service、Behaviour、UI SDK 体系中如何落地”。
+规格文档回答“产品要做什么”，本文回答“在现有 Application、Product、Project、Database、Resources、SDO、PDO、Service、Behaviour、UI SDK 体系中如何落地”。
 
 本文只描述三维线条切割 CAM 产品方案。通用框架能力仍由 `iCAX-Engine`、`iCAX-UI` 和通用插件目录维护，产品专属逻辑不得写入 framework。
 
@@ -14,7 +14,7 @@
 - 大资源和二进制资源进入主 Scene.Resources，并随项目文件内嵌保存。
 - 产品逻辑进入 `src/iCAX-Plugins` 下的 CAM 插件，不进入 framework。
 - 前端页面进入 `src/apps/laser-3d-cam/webpage`，只通过 AppProxy、ProductProxy、ProjectProxy 与后端交互。
-- Facades 只传命令、状态和小型 JSON payload，不传大模型、大 mesh、大采样点。
+- SDO 只传命令、状态和小型 JSON payload，不传大模型、大 mesh、大采样点。
 - PDO 用于渲染、高频输入、仿真状态等高频或大块数据。
 - H5 是当前前端形态，但产品页面不得绑定 H5 独有能力；未来 WPF/QT 前端只要实现同一 UI 契约即可替换。
 - 工艺参数如功率、速度、气体、焦点、穿孔策略暂不进入 MVP，后续由切割系统侧或工艺模块处理。
@@ -89,7 +89,7 @@ Application.exe
       -> ProductRuntime(icax.laser-3d-cam)
         -> ProductContext
         -> ProductData
-        -> Product Facade channel
+        -> Product SDO channel
         -> ProjectCatalog
           -> Project(main project)
             -> ProjectContext
@@ -99,7 +99,7 @@ Application.exe
                 - Repository(Database)
                 - ResourcePool
                 - PDOHub
-                - Facade channel
+                - SDO channel
                 - Universe
                 - SceneScheduler
       -> FrontendBridge
@@ -115,7 +115,7 @@ Application.exe
 
 - ApplicationRuntime 负责产品发现、产品选择、项目打开和项目创建。
 - ProductRuntime 负责加载产品插件、产品级命令和产品级数据。
-- Project 负责项目级参数和 Scene 管理；Scene 负责数据库、资源、PDO、Facade、universe 和 tick。
+- Project 负责项目级参数和 Scene 管理；Scene 负责数据库、资源、PDO、SDO、universe 和 tick。
 - Laser3DCAM 插件负责注册组件、资源、命令目标、服务和 behaviour。
 
 前端职责：
@@ -258,11 +258,11 @@ PDO 保存前后端高频同步数据。
 - 已切割路径状态。
 - 前端高频输入状态。
 
-### 7.4 Facades
+### 7.4 SDO
 
-Facades 保存命令交互。payload 使用 JSON 字符串表达，返回值也使用 JSON 字符串表达。
+SDO 保存命令交互。payload 使用 JSON 字符串表达，返回值也使用 JSON 字符串表达。
 
-Facades 不传：
+SDO 不传：
 
 - 大模型。
 - 大 mesh。
@@ -632,7 +632,7 @@ SimulationState
 
 ## 10. 服务设计
 
-服务从 ProjectContext 获取 Repository、Resources、PDOHub、FacadeChannel、ServiceProvider 和 Universe。
+服务从 ProjectContext 获取 Repository、Resources、PDOHub、SDOChannel、ServiceProvider 和 Universe。
 
 ### 10.1 ToolAssemblyImporter
 
@@ -683,7 +683,7 @@ SimulationState
 - 将 RecognizedFeature 转为三维空间曲线。
 - 支持 line、arc、polyline、ellipse、三阶 B 样条和 Bezier。
 - 控制默认最大几何偏差 `0.001 mm`。
-- 输出 GeneratedToolpath，由 Facades 写入 PathCurveResource、PathEntity 和 Block.Children。
+- 输出 GeneratedToolpath，由 SDO 写入 PathCurveResource、PathEntity 和 Block.Children。
 - 不让刀路主身份依赖 CAD 拓扑。
 
 ### 10.6 PoseFieldService
@@ -778,7 +778,7 @@ SimulationState
 
 - 将 Database 和 Resources 中的渲染相关状态同步到 RenderPDO。
 - 分配和释放 PDO slot。
-- 将 PDO slot 创建、释放、整理后的映射通过 Facade 事件前端。
+- 将 PDO slot 创建、释放、整理后的映射通过 SDO 事件前端。
 - 不直接维护产品主数据。
 
 ## 11. 命令设计
@@ -810,7 +810,7 @@ Cam.ResetSimulation
 
 命令原则：
 
-- 命令只走 Facades。
+- 命令只走 SDO。
 - payload 是 JSON 字符串。
 - 大对象通过 ResourceID 或 PDO slot 引用。
 - 命令处理者只修改 Database 和 Resources，不直接修改前端状态。
@@ -823,7 +823,7 @@ Cam.ResetSimulation
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as Cam Facade
+    participant Cmd as Cam SDO
     participant Tool as ToolAssemblyImporter
     participant Repo as Database
     participant Res as Resources
@@ -844,7 +844,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam Facade
+    participant Cmd as LaserCam SDO
     participant Cad as CadImportService
     participant Repo as Database
     participant Res as Resources
@@ -868,7 +868,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam Facade
+    participant Cmd as LaserCam SDO
     participant Rec as FeatureRecognitionService
     participant Pick as PickService
     participant Gen as ToolpathGenerationService
@@ -894,7 +894,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam Facade
+    participant Cmd as LaserCam SDO
     participant Pose as PoseFieldService
     participant Motion as MotionPlanningService
     participant IK as KinematicsService
@@ -919,7 +919,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant UI as ProjectProxy
-    participant Cmd as LaserCam Facade
+    participant Cmd as LaserCam SDO
     participant Sim as CamSimulationService
     participant PDO as PDOHub
     participant Render as 前端渲染
@@ -999,7 +999,7 @@ H5 当前使用 Three.js 或等价 WebGL 渲染实现。
 slot 规则：
 
 - 一个可独立变换的显示对象对应一个 PDO slot。
-- 大对象创建、删除、slot 迁移通过 Facade 事件前端。
+- 大对象创建、删除、slot 迁移通过 SDO 事件前端。
 - 高频变换、颜色、状态通过 PDO 更新。
 
 ## 15. 碰撞方案
@@ -1009,7 +1009,7 @@ slot 规则：
 多场景处理：
 
 - 每个 Scene 拥有自己的 SceneContext。
-- 每个 SceneContext 管理独立 Repository、ResourcePool、PDOHub、服务环境和 Universe；Scene Runtime 管理工作线程、调度、FacadeChannel 和该 Context 的生命周期。
+- 每个 SceneContext 管理独立 Repository、ResourcePool、PDOHub、服务环境和 Universe；Scene Runtime 管理工作线程、调度、SDOChannel 和该 Context 的生命周期。
 - CollisionSceneBuilder 基于 SceneContext 构建本 Scene 的碰撞场景。
 - JoltColliderService 内部可维护多个 collision scene，但 scene ID 必须由 SceneContext 绑定。
 

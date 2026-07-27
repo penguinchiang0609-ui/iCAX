@@ -3,11 +3,15 @@
 
 #include <Data/StableId.h>
 #include <PDO/IPDOHub.h>
+#include <PDO/PDOFlatBuffer.h>
 #include <PDO/PDOLease.h>
 #include <PDO/PDOPayload.h>
 #include <PDO/PDOHub.h>
 #include <PDO/SharedPDOArena.h>
 
+#include "../../FlatBuffers/Fixtures/Generated/TransportPayload_generated.h"
+
+#include <array>
 
 using namespace iCAX::PDO;
 
@@ -933,4 +937,122 @@ TEST(PDOTest, SharedArenaRejectsCorruptedSlotsWhenOpened)
         GetMutableSlots(arena)[0].nBufferState[0] = kSharedPDOBufferWriting;
         EXPECT_THROW((void)CSharedPDOArena::Open(arenaName), std::runtime_error);
     }
+
+    {
+        const auto arenaName = MakeSharedArenaName();
+        auto arena = CSharedPDOArena::Create(arenaName, { MakeDecl(id, kDirection2External) });
+        auto& slot = GetMutableSlots(arena)[0];
+        slot.nBufferPayloadSize[0] =
+            static_cast<uint64_t>(slot.nPayloadSize) + 1;
+        EXPECT_THROW((void)CSharedPDOArena::Open(arenaName), std::runtime_error);
+    }
+}
+
+TEST(PDOTest, CarriesVerifiedGoogleFlatBufferWithExactPayloadSize)
+{
+    using namespace iCAX::FlatBufferFixtures;
+
+    flatbuffers::FlatBufferBuilder _Builder;
+    const std::array<uint32_t, 3> _Values{ 3, 5, 8 };
+    const auto _Label = _Builder.CreateString("pdo");
+    const auto _ValueVector =
+        _Builder.CreateVector(_Values.data(), _Values.size());
+    const auto _Root = CreateTransportPayload(
+        _Builder,
+        1,
+        42,
+        _Label,
+        _ValueVector);
+    FinishTransportPayloadBuffer(_Builder, _Root);
+
+    const auto _ID = MakePDOID("Test.FlatBuffer", "Main");
+    const auto _Decl = MakeFlatBufferPDODecl(
+        _ID,
+        kDirection2External,
+        1,
+        512);
+    auto _Arena = CSharedPDOArena::Create(
+        MakeSharedArenaName(),
+        { _Decl });
+    auto _Slot = _Arena->GetSlot(_ID);
+
+    CPDOWriteLease _Write(_Slot, 7);
+    EXPECT_EQ(512u, _Write.PayloadCapacity());
+    WriteFlatBuffer(_Write, _Builder);
+    EXPECT_EQ(_Builder.GetSize(), _Write.PayloadSize());
+    _Write.Commit();
+    _Slot.SwapBuffersIfReady();
+
+    CPDOReadLease _Read(_Slot);
+    EXPECT_EQ(_Builder.GetSize(), _Read.PayloadSize());
+    const auto* _Payload =
+        TryGetPDOFlatBufferRoot<TransportPayload>(
+            _Read,
+            TransportPayloadIdentifier());
+    ASSERT_NE(nullptr, _Payload);
+    EXPECT_EQ(1u, _Payload->schema_version());
+    EXPECT_EQ(42u, _Payload->value());
+    ASSERT_NE(nullptr, _Payload->label());
+    EXPECT_EQ("pdo", _Payload->label()->str());
+    ASSERT_NE(nullptr, _Payload->values());
+    EXPECT_EQ(3u, _Payload->values()->size());
+    EXPECT_EQ(8u, _Payload->values()->Get(2));
+    EXPECT_FALSE(VerifyPDOFlatBuffer<TransportPayload>(
+        _Read,
+        nullptr));
+}
+
+TEST(PDOTest, RejectsOversizedOrTruncatedGoogleFlatBuffer)
+{
+    using namespace iCAX::FlatBufferFixtures;
+
+    flatbuffers::FlatBufferBuilder _OversizedBuilder;
+    const std::string _LargeLabel(512, 'x');
+    const auto _OversizedRoot = CreateTransportPayload(
+        _OversizedBuilder,
+        1,
+        9,
+        _OversizedBuilder.CreateString(_LargeLabel),
+        0);
+    FinishTransportPayloadBuffer(
+        _OversizedBuilder,
+        _OversizedRoot);
+
+    const auto _ID = MakePDOID("Test.FlatBuffer", "Invalid");
+    auto _Arena = CSharedPDOArena::Create(
+        MakeSharedArenaName(),
+        {
+            MakeFlatBufferPDODecl(
+                _ID,
+                kDirection2External,
+                1,
+                256)
+        });
+    auto _Slot = _Arena->GetSlot(_ID);
+
+    CPDOWriteLease _Write(_Slot, 1);
+    EXPECT_THROW(
+        WriteFlatBuffer(_Write, _OversizedBuilder),
+        std::length_error);
+    _Write.Cancel();
+
+    flatbuffers::FlatBufferBuilder _Builder;
+    const auto _Root = CreateTransportPayload(
+        _Builder,
+        1,
+        10,
+        _Builder.CreateString("truncated"),
+        0);
+    FinishTransportPayloadBuffer(_Builder, _Root);
+
+    CPDOWriteLease _TruncatedWrite(_Slot, 2);
+    WriteFlatBuffer(_TruncatedWrite, _Builder);
+    ASSERT_GT(_TruncatedWrite.PayloadSize(), 8u);
+    _TruncatedWrite.Commit(8);
+    _Slot.SwapBuffersIfReady();
+
+    CPDOReadLease _Read(_Slot);
+    EXPECT_FALSE(VerifyPDOFlatBuffer<TransportPayload>(
+        _Read,
+        TransportPayloadIdentifier()));
 }

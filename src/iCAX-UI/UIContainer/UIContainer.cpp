@@ -16,13 +16,13 @@ namespace
         return _Hash;
     }
 
-    constexpr uint64_t _MakeFacadeMethodCode(IN const char* pFacadeName_, IN const char* pMethodName_) noexcept
+    constexpr uint64_t _MakeSDOMethodCode(IN const char* pSDOName_, IN const char* pMethodName_) noexcept
     {
-        return (static_cast<uint64_t>(_InteractionNameHash32(pFacadeName_)) << 32)
+        return (static_cast<uint64_t>(_InteractionNameHash32(pSDOName_)) << 32)
             | static_cast<uint64_t>(_InteractionNameHash32(pMethodName_));
     }
 
-    constexpr uint64_t kApplicationGetStateMethod = _MakeFacadeMethodCode("App", "GetState");
+    constexpr uint64_t kApplicationGetStateMethod = _MakeSDOMethodCode("App", "GetState");
     constexpr uint64_t kStartupHandshakeRequestID = 0x4955435841505055ull;
     constexpr const char* kEmptyObjectPayloadText = "{\"__variant_type\":\"Object\",\"value\":{}}";
 
@@ -170,7 +170,7 @@ namespace
         }
     }
 
-    void _ValidateStartupResponse(IN const iCAX::Frontend::CFrontendFacadeFrame& Response_)
+    void _ValidateStartupResponse(IN const iCAX::Frontend::CFrontendSDOFrame& Response_)
     {
         if (Response_.nStatus != 0)
         {
@@ -236,7 +236,7 @@ namespace
 
             if (_pBridge)
             {
-                _pBridge->SetFacadeFrameHandler(nullptr);
+                _pBridge->SetSDOFrameHandler(nullptr);
             }
         }
 
@@ -268,25 +268,25 @@ namespace
                 throw std::logic_error("Application channel id cannot be empty");
             }
 
-            iCAX::Frontend::CFrontendFacadeFrame _Request;
+            iCAX::Frontend::CFrontendSDOFrame _Request;
             _Request.ChannelID = _ApplicationChannelID;
             _Request.nCallID = kStartupHandshakeRequestID;
             _Request.nMethodCode = kApplicationGetStateMethod;
-            _Request.nKind = iCAX::Frontend::kFrontendFacadeRequest;
+            _Request.nKind = iCAX::Frontend::kFrontendSDORequest;
             _Request.nStatus = 0;
             _Request.PayloadText = kEmptyObjectPayloadText;
 
-            Config_.pFrontendBridge->PostFacadeFrame(_Request);
+            Config_.pFrontendBridge->PostSDOFrame(_Request);
 
             const auto _Timeout = std::chrono::milliseconds(Config_.nStartupHandshakeTimeoutMS);
             const auto _Deadline = std::chrono::steady_clock::now() + _Timeout;
             while (std::chrono::steady_clock::now() < _Deadline)
             {
-                auto _Frames = Config_.pFrontendBridge->PollFacadeFrames();
+                auto _Frames = Config_.pFrontendBridge->PollSDOFrames();
                 for (const auto& _Frame : _Frames)
                 {
                     if (_Frame.ChannelID == _ApplicationChannelID
-                        && _Frame.nKind == iCAX::Frontend::kFrontendFacadeResponse
+                        && _Frame.nKind == iCAX::Frontend::kFrontendSDOResponse
                         && _Frame.nCallID == kStartupHandshakeRequestID)
                     {
                         _ValidateStartupResponse(_Frame);

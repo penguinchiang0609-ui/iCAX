@@ -11,7 +11,7 @@ namespace iCAX
     namespace PDO
     {
         inline constexpr uint32_t kSharedPDOArenaMagic = 0x4F445049u; // "IPDO", little endian.
-        inline constexpr uint32_t kSharedPDOArenaVersion = 2;
+        inline constexpr uint32_t kSharedPDOArenaVersion = 3;
         inline constexpr uint32_t kSharedPDOBufferCount = 2;
         inline constexpr int32_t kSharedPDOReadyNone = -1;
         inline constexpr long kSharedPDOBufferFree = 0;
@@ -66,6 +66,7 @@ namespace iCAX
             volatile long nReadyIndex = kSharedPDOReadyNone;
             volatile long nSequence = 0;
             volatile unsigned long long nBufferDataVersion[kSharedPDOBufferCount]{};
+            volatile unsigned long long nBufferPayloadSize[kSharedPDOBufferCount]{};
             volatile unsigned long long nPublishedDataVersion = 0;
             volatile unsigned long long nLatestDataVersion = 0;
         };
@@ -93,6 +94,7 @@ namespace iCAX
             uint32_t GetBufferState(IN uint32_t nIndex_) const;
             uint32_t GetReaderCount(IN uint32_t nIndex_) const;
             uint64_t GetBufferDataVersion(IN uint32_t nIndex_) const;
+            uint64_t GetBufferPayloadSize(IN uint32_t nIndex_) const override;
             bool IsReadSnapshotValid(IN uint32_t nSequence_, IN uint32_t nPublishedIndex_) const noexcept;
             uint64_t GetReadBufferOffset() const;
             uint64_t GetWriteBufferOffset() const;
@@ -104,6 +106,9 @@ namespace iCAX
             bool TryBeginWrite(OUT void*& pWriteData_) override;
             bool TryBeginWriteIfNewer(IN uint64_t nDataVersion_, OUT void*& pWriteData_) override;
             void MarkWriteReady(IN uint64_t nDataVersion_) override;
+            void MarkWriteReady(
+                IN uint64_t nDataVersion_,
+                IN uint64_t nPayloadSize_) override;
             void CancelWrite() override;
             const void* BeginRead(
                 OUT uint32_t& nSequence_,

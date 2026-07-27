@@ -13,12 +13,12 @@ src/icax-engine/framework/ApplicationRuntime/
 ```text
 ApplicationRuntime
   ApplicationContext
-  Application FacadeRegistry / FacadeInvoker
-  Application Facade channel id
-  CFacadeChannelRegistry
+  Application SDORegistry / SDOInvoker
+  Application SDO channel id
+  CSDOChannelRegistry
   ProductDefinition*
   ProductRuntime*
-    Product Facade channel id
+    Product SDO channel id
     ProjectCatalog*
       Project*
 ```
@@ -39,12 +39,12 @@ CApplicationRuntime::Start
 WorkThread
   -> Notify Starting
   -> Phase Loading
-  -> Create FacadeChannelRegistry
-  -> Create application Facade channel
+  -> Create SDOChannelRegistry
+  -> Create application SDO channel
   -> Create ApplicationContext
        -> own and load application config store
        -> own application ServiceProvider
-  -> RegisterBuiltInApplicationFacades
+  -> RegisterBuiltInApplicationSDO
   -> Start startup product?
   -> Phase Running
   -> Notify Started
@@ -53,7 +53,7 @@ WorkThread
   -> Notify Stopping
   -> Phase Unloading
   -> Stop all ProductRuntime
-  -> Remove application Facade channel
+  -> Remove application SDO channel
   -> Destroy ApplicationContext
        -> unload application service instances
   -> Notify Stopped
@@ -63,10 +63,10 @@ WorkThread
 
 ```text
 MainLoop
-  -> Dispatch application Facade
+  -> Dispatch application SDO
 ```
 
-`ApplicationRuntime` 只处理应用级 Facade。`ProductRuntime` 拥有自己的产品级工作线程并处理产品级 Facade；每个 `Scene` 拥有自己的 Scene 线程并处理 Scene Facade。因此应用、产品和 Scene 运行现场互不共享主循环。
+`ApplicationRuntime` 只处理应用级 SDO。`ProductRuntime` 拥有自己的产品级工作线程并处理产品级 SDO；每个 `Scene` 拥有自己的 Scene 线程并处理 Scene SDO。因此应用、产品和 Scene 运行现场互不共享主循环。
 
 ## 5. 命令上下文
 
@@ -74,22 +74,22 @@ MainLoop
 
 ```text
 ApplicationContext
-FacadeRegistry
+SDORegistry
 ProductDefinition list snapshot
 ProductRuntime list snapshot
-CFacadeChannelRegistry
+CSDOChannelRegistry
 ```
 
-其中应用配置、应用路径、应用数据与应用级 `CServiceProvider` 属于 `ApplicationContext`；线程、循环、Facade channel 与 ProductRuntime 生命周期属于 `ApplicationRuntime`。
+其中应用配置、应用路径、应用数据与应用级 `CServiceProvider` 属于 `ApplicationContext`；线程、循环、SDO channel 与 ProductRuntime 生命周期属于 `ApplicationRuntime`。
 
-产品级 Facade 上下文由 `ProductRuntime` 组装。Scene 级 Request 进入具体 Scene channel 时，ProductRuntime 会额外放入当前 ProjectContext 和 SceneContext；业务代码通过 ProjectContext 访问项目身份、路径和 ProjectSetting，通过 SceneContext 访问 Repository、Universe、ResourceLibrary、PDOHub、Scene Facade endpoint 和服务容器。
+产品级 SDO 上下文由 `ProductRuntime` 组装。Scene 级 Request 进入具体 Scene channel 时，ProductRuntime 会额外放入当前 ProjectContext 和 SceneContext；业务代码通过 ProjectContext 访问项目身份、路径和 ProjectSetting，通过 SceneContext 访问 Repository、Universe、ResourceLibrary、PDOHub、Scene SDO endpoint 和服务容器。
 
 ## 6. 通信通道
 
 应用级通道：
 
 ```text
-application Facade channel id -> App.GetState / App.ListProducts / App.StartProduct / App.StopProduct / App.ResolveProjectFile / App.OpenProjectFile
+application SDO channel id -> App.GetState / App.ListProducts / App.StartProduct / App.StopProduct / App.ResolveProjectFile / App.OpenProjectFile
 ```
 
 双击文件打开流程：
@@ -102,7 +102,7 @@ Frontend shell receives project file path
        match ProjectFile.Magic at ProjectFile.MagicOffset
   -> StartProduct(productId)
   -> ProductRuntime.OpenProjectCatalog(projectPath)
-  -> return product Facade channel id, catalog and main project id
+  -> return product SDO channel id, catalog and main project id
 ```
 
 如果 magic 未命中，ApplicationRuntime 返回 `NotFound`。如果同一个文件命中多个产品，说明产品定义中的 magic 存在歧义，应作为配置错误处理，而不是交给前端选择。
@@ -110,16 +110,16 @@ Frontend shell receives project file path
 产品级通道：
 
 ```text
-product Facade channel id -> Product.GetState / Product.OpenProjectCatalog / Product.CloseProjectCatalog
+product SDO channel id -> Product.GetState / Product.OpenProjectCatalog / Product.CloseProjectCatalog
 ```
 
 Scene 级通道：
 
 ```text
-scene Facade channel id -> scene/project commands
+scene SDO channel id -> scene/project commands
 ```
 
-`CFacadeChannelRegistry` 统一持有所有 `CFacadeChannel`。ApplicationRuntime 直接持有 registry，并显式注入 ProductRuntime、Project 和 Scene；ApplicationRuntime、ProductRuntime 和 Scene 只持有自己的 Facade channel id，并通过 context 暴露 frontend/backend Facade endpoint。上级运行体负责向前端 bridge 发放下级 Facade channel id 对应的 frontend Facade endpoint。运行体停止或关闭时删除对应 channel，旧 Endpoint 随之失效。
+`CSDOChannelRegistry` 统一持有所有 `CSDOChannel`。ApplicationRuntime 直接持有 registry，并显式注入 ProductRuntime、Project 和 Scene；ApplicationRuntime、ProductRuntime 和 Scene 只持有自己的 SDO channel id，并通过 context 暴露 frontend/backend SDO endpoint。上级运行体负责向前端 bridge 发放下级 SDO channel id 对应的 frontend SDO endpoint。运行体停止或关闭时删除对应 channel，旧 Endpoint 随之失效。
 
 ApplicationRuntime 对同一个 `productId` 维护启动中和停止中标记。`StopProduct` 会先标记产品停止中，等 `ProductRuntime::Stop()` 完成后才从运行时表移除；`StartProduct` 遇到同一产品正在停止时等待。这样可以避免关闭再打开时同一产品短时间内出现两个后台运行时。
 
@@ -133,7 +133,7 @@ ApplicationRuntime 对同一个 `productId` 维护启动中和停止中标记。
 
 - ApplicationRuntime 只负责应用级入口和产品运行时生命周期。
 - ProductRuntime 负责产品级入口和 ProjectCatalog 生命周期。
-- Project 负责项目实例状态、ProjectSetting 和 Scene 集合；Scene 负责线程、Repository、ResourceLibrary、Universe、PDOHub 和 Scene Facade。
+- Project 负责项目实例状态、ProjectSetting 和 Scene 集合；Scene 负责线程、Repository、ResourceLibrary、Universe、PDOHub 和 Scene SDO。
 - ProductRuntime 可以同时维护多个 ProjectCatalog。
 - 一个 ProjectCatalog 内只存在一个主 Project。
 - 预览、导入、局部编辑和仿真等临时现场靠子 Scene 隔离。

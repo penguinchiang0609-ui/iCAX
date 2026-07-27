@@ -17,6 +17,6 @@
     <ClCompile Include="pch.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ViewContent.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="ViewContentService.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ViewFacade.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ViewSDO.cpp"><Filter>源文件</Filter></ClCompile>
   </ItemGroup>
 </Project>

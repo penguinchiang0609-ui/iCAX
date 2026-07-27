@@ -2,7 +2,7 @@
 
 `Task` 是 foundation 中的异步任务基础工程，目标是为 C++ 上层代码提供接近 C# `Task` 的调用体验。
 
-本工程只依赖 C++ 标准库，不依赖 `services`、Facade 调用、`pdo` 或插件框架。
+本工程只依赖 C++ 标准库，不依赖 `services`、SDO 调用、`pdo` 或插件框架。
 
 ## 目录结构
 

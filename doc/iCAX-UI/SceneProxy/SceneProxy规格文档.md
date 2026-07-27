@@ -2,17 +2,17 @@
 
 ## 1. 定位
 
-`SceneProxy` 是前端 Scene 代理层。Project 是项目容器，Scene 是运行现场；Scene 范围的 Facade 调用、事件订阅和 PDO 入口归 `SceneProxy`。
+`SceneProxy` 是前端 Scene 代理层。Project 是项目容器，Scene 是运行现场；Scene 范围的 SDO 调用、事件订阅和 PDO 入口归 `SceneProxy`。
 
 ## 2. 对外接口
 
 - `updateState(sceneState)`：更新 Scene 状态与 PDO 描述；
 - `getState(options)`：调用 `Project.GetState`；
-- `invoke(facadeMethod, payload, options)`：通过 Scene channel 调用 Facade 方法；
+- `invoke(sdoMethod, payload, options)`：通过 Scene channel 调用 SDO 方法；
 - `undo(options)`：调用 `Project.Undo`；
 - `redo(options)`：调用 `Project.Redo`；
 - `getUndoRedoState(options)`：调用 `Project.GetUndoRedoState`；
-- `subscribe(facadeMember, handler)`：订阅指定事件；
+- `subscribe(sdoMember, handler)`：订阅指定事件；
 - `subscribeAll(handler)`：订阅全部事件；
 - `dispose()`：释放订阅并停止 channel。
 

@@ -20,6 +20,29 @@ namespace iCAX::View
         void OnLoad() override;
         void OnUnload() override;
 
+        void OnSceneTick(
+            IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+            IN const iCAX::Product::IProductContext& ProductContext_,
+            IN iCAX::Project::IProjectContext& ProjectContext_,
+            IN iCAX::Project::ISceneContext& SceneContext_,
+            IN const double& nDeltaTime_,
+            IN const double& nTotalTime_) override;
+
+        SViewContent OpenView(
+            IN iCAX::Project::IProjectContext& Project_,
+            IN iCAX::Project::ISceneContext& Scene_,
+            IN const ViewDefinitionID& DefinitionID_,
+            IN const iCAX::Data::ObjectMap& Context_ = {}) override;
+
+        SViewContent GetContent(
+            IN iCAX::Project::ISceneContext& Scene_,
+            IN const ViewInstanceID& InstanceID_) override;
+
+        bool CloseView(
+            IN iCAX::Project::IProjectContext& Project_,
+            IN iCAX::Project::ISceneContext& Scene_,
+            IN const ViewInstanceID& InstanceID_) override;
+
         SViewContent GetContent(
             IN iCAX::Project::ISceneContext& Scene_,
             IN const ViewDefinitionID& DefinitionID_,

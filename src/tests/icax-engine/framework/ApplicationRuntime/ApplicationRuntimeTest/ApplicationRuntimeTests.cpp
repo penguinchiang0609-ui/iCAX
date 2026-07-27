@@ -2,25 +2,25 @@
 
 
 #include <ApplicationRuntime/ApplicationRuntime.h>
-#include <ApplicationRuntime/ApplicationRuntimeFacades.h>
-#include <Facades/FacadeMethod.h>
-#include <Facades/Facade.h>
+#include <ApplicationRuntime/ApplicationRuntimeSDO.h>
+#include <SDO/SDOMethod.h>
+#include <SDO/SDO.h>
 #include <Data/Variant.h>
 #include <Database/ComponentBase.h>
-#include <Facades/FacadeFrame.h>
-#include <Facades/FacadePayload.h>
-#include <Product/ProductFacades.h>
+#include <SDO/SDOFrame.h>
+#include <SDO/SDOText.h>
+#include <Product/ProductSDO.h>
 
 
 using namespace iCAX::Application;
 
 namespace
 {
-    class CReopenProbeFacade final : public iCAX::Interaction::CFacade
+    class CReopenProbeSDO final : public iCAX::Interaction::CSDO
     {
     public:
-        CReopenProbeFacade()
-            : CFacade("ReopenProbe")
+        CReopenProbeSDO()
+            : CSDO("ReopenProbe")
         {
             ExposeMethod(
                 "Ping",
@@ -35,34 +35,34 @@ namespace
         }
     };
 
-    void ClearFrames(IN OUT std::vector<iCAX::Interaction::CFacadeFrame>& Frames_) noexcept
+    void ClearFrames(IN OUT std::vector<iCAX::Interaction::CSDOFrame>& Frames_) noexcept
     {
         Frames_.clear();
     }
 
     void SendFrame(
-        IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_,
-        IN const iCAX::Interaction::CFacadeFrame& Frame_)
+        IN const iCAX::Interaction::CSDOEndpoint& Endpoint_,
+        IN const iCAX::Interaction::CSDOFrame& Frame_)
     {
         Endpoint_.Send(Frame_);
     }
 
     void SendFrame(
-        IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_,
-        IN iCAX::Interaction::CFacadeFrame&& Frame_)
+        IN const iCAX::Interaction::CSDOEndpoint& Endpoint_,
+        IN iCAX::Interaction::CSDOFrame&& Frame_)
     {
         Endpoint_.Send(std::move(Frame_));
     }
 
-    iCAX::Interaction::CFacadeFrame MakeApplicationRequestFrame(
+    iCAX::Interaction::CSDOFrame MakeApplicationRequestFrame(
         IN uint64_t nCallID_,
         IN uint64_t nMethodCode_,
         IN const std::optional<iCAX::Data::Variant>& Payload_ = std::nullopt)
     {
-        iCAX::Interaction::CFacadeFrame _Frame;
+        iCAX::Interaction::CSDOFrame _Frame;
         _Frame.nCallID = nCallID_;
         _Frame.nMethodCode = nMethodCode_;
-        _Frame.nKind = iCAX::Interaction::EFacadeFrameKind::Request;
+        _Frame.nKind = iCAX::Interaction::ESDOFrameKind::Request;
 
         if (Payload_)
         {
@@ -72,15 +72,15 @@ namespace
         return _Frame;
     }
 
-    iCAX::Interaction::CFacadeFrame MakeProductRequestFrame(
+    iCAX::Interaction::CSDOFrame MakeProductRequestFrame(
         IN uint64_t nCallID_,
         IN uint64_t nMethodCode_,
         IN const std::optional<iCAX::Data::Variant>& Payload_ = std::nullopt)
     {
-        iCAX::Interaction::CFacadeFrame _Frame;
+        iCAX::Interaction::CSDOFrame _Frame;
         _Frame.nCallID = nCallID_;
         _Frame.nMethodCode = nMethodCode_;
-        _Frame.nKind = iCAX::Interaction::EFacadeFrameKind::Request;
+        _Frame.nKind = iCAX::Interaction::ESDOFrameKind::Request;
 
         if (Payload_)
         {
@@ -90,7 +90,7 @@ namespace
         return _Frame;
     }
 
-    std::vector<iCAX::Interaction::CFacadeFrame> WaitForFrames(IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_)
+    std::vector<iCAX::Interaction::CSDOFrame> WaitForFrames(IN const iCAX::Interaction::CSDOEndpoint& Endpoint_)
     {
         for (int _Index = 0; _Index < 200; ++_Index)
         {
@@ -104,7 +104,7 @@ namespace
         return {};
     }
 
-    iCAX::Data::ObjectMap DecodeApplicationObjectPayload(IN const iCAX::Interaction::CFacadeFrame& Frame_)
+    iCAX::Data::ObjectMap DecodeApplicationObjectPayload(IN const iCAX::Interaction::CSDOFrame& Frame_)
     {
         auto _Variant = DecodeApplicationRuntimePayload(Frame_.Payload);
         if (!_Variant.Is<iCAX::Data::ObjectMap>())
@@ -114,7 +114,7 @@ namespace
         return _Variant.To<iCAX::Data::ObjectMap>();
     }
 
-    iCAX::Data::ObjectMap DecodeProductObjectPayload(IN const iCAX::Interaction::CFacadeFrame& Frame_)
+    iCAX::Data::ObjectMap DecodeProductObjectPayload(IN const iCAX::Interaction::CSDOFrame& Frame_)
     {
         auto _Variant = iCAX::Product::DecodeProductPayload(Frame_.Payload);
         if (!_Variant.Is<iCAX::Data::ObjectMap>())
@@ -134,6 +134,8 @@ namespace
         _Config.Paths.UserConfigDirectory = "Setting";
         _Config.Paths.CacheDirectory = "Cache";
         _Config.Paths.TempDirectory = "Temp";
+        _Config.Paths.ResourceVersionDirectory =
+            "Temp/ResourceVersions";
         _Config.Paths.LogDirectory = "Log";
 
         iCAX::Product::CProductDefinition _Robot;
@@ -172,12 +174,12 @@ namespace
     }
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeReturnsProductListBeforeProductIsStarted)
+TEST(ApplicationRuntimeSDOTest, ApplicationSDOReturnsProductListBeforeProductIsStarted)
 {
     CApplicationRuntime _Runtime;
     _Runtime.Start();
 
-    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendFacadeEndpoint();
+    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
     auto _Request = MakeApplicationRequestFrame(1001, kAppGetStateMethodCode);
     SendFrame(_FrontendEndpoint, _Request);
 
@@ -206,13 +208,13 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeReturnsProductListBeforeProd
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationFrontendEndpointIsAvailableAfterStart)
+TEST(ApplicationRuntimeSDOTest, ApplicationFrontendEndpointIsAvailableAfterStart)
 {
     CApplicationRuntime _Runtime;
-    EXPECT_THROW(_Runtime.GetApplicationFrontendFacadeEndpoint(), std::logic_error);
+    EXPECT_THROW(_Runtime.GetApplicationFrontendSDOEndpoint(), std::logic_error);
 
     _Runtime.Start();
-    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendFacadeEndpoint();
+    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
     ASSERT_TRUE(_FrontendEndpoint.IsValid());
 
     auto _Request = MakeApplicationRequestFrame(1501, kAppGetStateMethodCode);
@@ -227,34 +229,34 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationFrontendEndpointIsAvailableAfterSt
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationRuntimeCanSendFrontendEvent)
+TEST(ApplicationRuntimeSDOTest, ApplicationRuntimeCanSendFrontendEvent)
 {
-    constexpr uint64_t kStateChangedEvent = iCAX::Interaction::MakeFacadeMethodCode("App", "StateChanged");
+    constexpr uint64_t kStateChangedEvent = iCAX::Interaction::MakeSDOMethodCode("App", "StateChanged");
 
     CApplicationRuntime _Runtime;
     _Runtime.Start();
 
-    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendFacadeEndpoint();
+    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
     _Runtime.SendFrontendEvent(kStateChangedEvent, "application-event");
 
     auto _Events = WaitForFrames(_FrontendEndpoint);
     ASSERT_EQ(1u, _Events.size());
     EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Events[0].nStatus);
-    EXPECT_EQ(iCAX::Interaction::EFacadeFrameKind::Event, _Events[0].nKind);
+    EXPECT_EQ(iCAX::Interaction::ESDOFrameKind::Event, _Events[0].nKind);
     EXPECT_EQ(0u, _Events[0].nCallID);
     EXPECT_EQ(kStateChangedEvent, _Events[0].nMethodCode);
-    EXPECT_EQ("application-event", iCAX::Interaction::GetFacadePayloadText(_Events[0]));
+    EXPECT_EQ("application-event", iCAX::Interaction::GetSDOPayloadText(_Events[0]));
 
     ClearFrames(_Events);
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeCanStartProduct)
+TEST(ApplicationRuntimeSDOTest, ApplicationSDOCanStartProduct)
 {
     CApplicationRuntime _Runtime;
     _Runtime.Start();
 
-    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendFacadeEndpoint();
+    auto _FrontendEndpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
     auto _Request = MakeApplicationRequestFrame(2001, kAppStartProductMethodCode);
     SendFrame(_FrontendEndpoint, _Request);
 
@@ -268,7 +270,7 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeCanStartProduct)
     EXPECT_TRUE(_Product.at("isStarted").To<bool>());
     EXPECT_FALSE(_Product.at("productChannelId").To<iCAX::Data::uuid>().is_nil());
     ASSERT_NE(nullptr, _Runtime.FindProductRuntime("icax.default"));
-    EXPECT_TRUE(_Runtime.GetProductFrontendFacadeEndpoint("icax.default").IsValid());
+    EXPECT_TRUE(_Runtime.GetProductFrontendSDOEndpoint("icax.default").IsValid());
 
     auto _State = _Payload.at("state").To<iCAX::Data::ObjectMap>();
     EXPECT_EQ(1ull, _State.at("runningProductCount").To<unsigned long long>());
@@ -276,14 +278,14 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeCanStartProduct)
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, ProductFacadeCanOpenAndCloseProjectCatalogAfterProductStarts)
+TEST(ApplicationRuntimeSDOTest, ProductSDOCanOpenAndCloseProjectCatalogAfterProductStarts)
 {
     CApplicationRuntime _Runtime;
     _Runtime.Start();
     auto _pRuntime = _Runtime.StartProduct();
     ASSERT_NE(nullptr, _pRuntime);
 
-    auto _ProductEndpoint = _Runtime.GetProductFrontendFacadeEndpoint(_pRuntime->GetProductID());
+    auto _ProductEndpoint = _Runtime.GetProductFrontendSDOEndpoint(_pRuntime->GetProductID());
 
     iCAX::Data::ObjectMap _OpenPayload;
     _OpenPayload["catalogName"] = std::string("Robot Catalog");
@@ -314,7 +316,7 @@ TEST(ApplicationRuntimeFacadeTest, ProductFacadeCanOpenAndCloseProjectCatalogAft
     const auto _ProjectID = _Project.at("projectId").To<iCAX::Data::uuid>();
     const auto _MainSceneID = _Project.at("mainSceneId").To<iCAX::Data::uuid>();
     const auto _CatalogID = _Catalog.at("catalogId").To<iCAX::Data::uuid>();
-    EXPECT_TRUE(_Runtime.GetSceneFrontendFacadeEndpoint(_ProjectID, _MainSceneID).IsValid());
+    EXPECT_TRUE(_Runtime.GetSceneFrontendSDOEndpoint(_ProjectID, _MainSceneID).IsValid());
     ASSERT_NE(nullptr, _pRuntime->FindProjectCatalog(_CatalogID));
     ClearFrames(_OpenResponses);
 
@@ -332,19 +334,19 @@ TEST(ApplicationRuntimeFacadeTest, ProductFacadeCanOpenAndCloseProjectCatalogAft
     auto _CloseState = DecodeProductObjectPayload(_CloseResponses[0]);
     EXPECT_EQ(0ull, _CloseState.at("catalogCount").To<unsigned long long>());
     EXPECT_EQ(nullptr, _pRuntime->FindProjectCatalog(_CatalogID));
-    EXPECT_THROW(_Runtime.GetSceneFrontendFacadeEndpoint(_ProjectID, _MainSceneID), std::runtime_error);
+    EXPECT_THROW(_Runtime.GetSceneFrontendSDOEndpoint(_ProjectID, _MainSceneID), std::runtime_error);
     ClearFrames(_CloseResponses);
 
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationRuntimeCanStartMultipleConfiguredProducts)
+TEST(ApplicationRuntimeSDOTest, ApplicationRuntimeCanStartMultipleConfiguredProducts)
 {
     CApplicationRuntime _Runtime;
     _Runtime.SetConfig(MakeTwoProductConfig());
     _Runtime.Start();
 
-    auto _ApplicationEndpoint = _Runtime.GetApplicationFrontendFacadeEndpoint();
+    auto _ApplicationEndpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
 
     iCAX::Data::ObjectMap _RobotPayload;
     _RobotPayload["productId"] = std::string("robot");
@@ -383,7 +385,7 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationRuntimeCanStartMultipleConfiguredP
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, StartProductReturnsSingleRuntimeAcrossConcurrentCallers)
+TEST(ApplicationRuntimeSDOTest, StartProductReturnsSingleRuntimeAcrossConcurrentCallers)
 {
     CApplicationRuntime _Runtime;
     _Runtime.SetConfig(MakeTwoProductConfig());
@@ -429,12 +431,12 @@ TEST(ApplicationRuntimeFacadeTest, StartProductReturnsSingleRuntimeAcrossConcurr
 
     EXPECT_EQ(1u, _Runtime.GetProductRuntimes().size());
     EXPECT_EQ(_Runtimes[0], _Runtime.FindProductRuntime("robot"));
-    EXPECT_TRUE(_Runtime.GetProductFrontendFacadeEndpoint("robot").IsValid());
+    EXPECT_TRUE(_Runtime.GetProductFrontendSDOEndpoint("robot").IsValid());
 
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, StopProductThenStartProductCreatesFreshRuntimeAndRegistries)
+TEST(ApplicationRuntimeSDOTest, StopProductThenStartProductCreatesFreshRuntimeAndRegistries)
 {
     CApplicationRuntime _Runtime;
     _Runtime.SetConfig(MakeTwoProductConfig());
@@ -443,13 +445,13 @@ TEST(ApplicationRuntimeFacadeTest, StopProductThenStartProductCreatesFreshRuntim
     auto _pFirstRuntime = _Runtime.StartProduct("robot");
     ASSERT_NE(nullptr, _pFirstRuntime);
     const auto _FirstProductChannelID = _pFirstRuntime->GetProductChannelID();
-    auto _FirstEndpoint = _Runtime.GetProductFrontendFacadeEndpoint("robot");
+    auto _FirstEndpoint = _Runtime.GetProductFrontendSDOEndpoint("robot");
     ASSERT_TRUE(_FirstEndpoint.IsValid());
 
-    constexpr uint64_t kReopenProbeMethod = iCAX::Interaction::MakeFacadeMethodCode("ReopenProbe", "Ping");
-    const auto _ReopenProbeFacadeCode = iCAX::Interaction::GetFacadeCode(kReopenProbeMethod);
-    ASSERT_TRUE(_pFirstRuntime->GetFacadeRegistry().Register(std::make_shared<CReopenProbeFacade>()));
-    EXPECT_TRUE(_pFirstRuntime->GetFacadeRegistry().Has(_ReopenProbeFacadeCode));
+    constexpr uint64_t kReopenProbeMethod = iCAX::Interaction::MakeSDOMethodCode("ReopenProbe", "Ping");
+    const auto _ReopenProbeSDOCode = iCAX::Interaction::GetSDOCode(kReopenProbeMethod);
+    ASSERT_TRUE(_pFirstRuntime->GetSDORegistry().Register(std::make_shared<CReopenProbeSDO>()));
+    EXPECT_TRUE(_pFirstRuntime->GetSDORegistry().Has(_ReopenProbeSDOCode));
     _pFirstRuntime->GetMetaRegistry().RegistType(
         "ReopenProbe.Component",
         iCAX::Database::CComponentBase::S_ClassName);
@@ -465,14 +467,14 @@ TEST(ApplicationRuntimeFacadeTest, StopProductThenStartProductCreatesFreshRuntim
     EXPECT_NE(_pFirstRuntime, _pSecondRuntime);
     EXPECT_TRUE(_pSecondRuntime->IsStarted());
     EXPECT_NE(_FirstProductChannelID, _pSecondRuntime->GetProductChannelID());
-    EXPECT_TRUE(_Runtime.GetProductFrontendFacadeEndpoint("robot").IsValid());
-    EXPECT_FALSE(_pSecondRuntime->GetFacadeRegistry().Has(_ReopenProbeFacadeCode));
+    EXPECT_TRUE(_Runtime.GetProductFrontendSDOEndpoint("robot").IsValid());
+    EXPECT_FALSE(_pSecondRuntime->GetSDORegistry().Has(_ReopenProbeSDOCode));
     EXPECT_FALSE(_pSecondRuntime->GetMetaRegistry().HasTypeByName("ReopenProbe.Component"));
 
     _Runtime.Stop();
 }
 
-TEST(ApplicationRuntimeFacadeTest, StartProductIsRejectedAfterRuntimeStops)
+TEST(ApplicationRuntimeSDOTest, StartProductIsRejectedAfterRuntimeStops)
 {
     CApplicationRuntime _Runtime;
     _Runtime.SetConfig(MakeTwoProductConfig());
@@ -482,7 +484,7 @@ TEST(ApplicationRuntimeFacadeTest, StartProductIsRejectedAfterRuntimeStops)
     EXPECT_THROW(_Runtime.StartProduct("robot"), std::logic_error);
 }
 
-TEST(ApplicationRuntimeFacadeTest, ProductDefinitionRequiresProjectFileMagic)
+TEST(ApplicationRuntimeSDOTest, ProductDefinitionRequiresProjectFileMagic)
 {
     auto _Config = MakeTwoProductConfig();
     _Config.Products.front().ProjectFile.Magic.clear();
@@ -491,7 +493,7 @@ TEST(ApplicationRuntimeFacadeTest, ProductDefinitionRequiresProjectFileMagic)
     EXPECT_THROW(_Runtime.SetConfig(_Config), std::invalid_argument);
 }
 
-TEST(ApplicationRuntimeFacadeTest, ProductDefinitionRequiresSafeProductID)
+TEST(ApplicationRuntimeSDOTest, ProductDefinitionRequiresSafeProductID)
 {
     auto _Config = MakeTwoProductConfig();
     _Config.Products.front().ProductID = "../robot";
@@ -500,7 +502,7 @@ TEST(ApplicationRuntimeFacadeTest, ProductDefinitionRequiresSafeProductID)
     EXPECT_THROW(_Runtime.SetConfig(_Config), std::invalid_argument);
 }
 
-TEST(ApplicationRuntimeFacadeTest, ProductDefinitionRequiresUniqueProjectFileMagic)
+TEST(ApplicationRuntimeSDOTest, ProductDefinitionRequiresUniqueProjectFileMagic)
 {
     auto _Config = MakeTwoProductConfig();
     _Config.Products.back().ProjectFile.Magic = _Config.Products.front().ProjectFile.Magic;
@@ -509,7 +511,7 @@ TEST(ApplicationRuntimeFacadeTest, ProductDefinitionRequiresUniqueProjectFileMag
     EXPECT_THROW(_Runtime.SetConfig(_Config), std::invalid_argument);
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeCanResolveAndOpenProjectFile)
+TEST(ApplicationRuntimeSDOTest, ApplicationSDOCanResolveAndOpenProjectFile)
 {
     auto _Root = std::filesystem::current_path()
         / "Temp"
@@ -529,7 +531,7 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeCanResolveAndOpenProjectFile
     _Runtime.SetConfig(_Config);
     _Runtime.Start();
 
-    auto _ApplicationEndpoint = _Runtime.GetApplicationFrontendFacadeEndpoint();
+    auto _ApplicationEndpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
 
     iCAX::Data::ObjectMap _ResolvePayload;
     _ResolvePayload["projectPath"] = _ProjectPath.string();
@@ -582,7 +584,7 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeCanResolveAndOpenProjectFile
     std::filesystem::remove_all(_Root);
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationRuntimeCanOpenProjectFileDirectly)
+TEST(ApplicationRuntimeSDOTest, ApplicationRuntimeCanOpenProjectFileDirectly)
 {
     auto _Root = std::filesystem::current_path()
         / "Temp"
@@ -618,20 +620,20 @@ TEST(ApplicationRuntimeFacadeTest, ApplicationRuntimeCanOpenProjectFileDirectly)
     std::filesystem::remove_all(_Root);
 }
 
-TEST(ApplicationRuntimeFacadeTest, ApplicationFacadeCallSentToProductFacadeReturnsNotFound)
+TEST(ApplicationRuntimeSDOTest, ApplicationSDOCallSentToProductSDOReturnsNotFound)
 {
     CApplicationRuntime _Runtime;
     _Runtime.Start();
     auto _pRuntime = _Runtime.StartProduct();
     ASSERT_NE(nullptr, _pRuntime);
 
-    auto _ProductEndpoint = _Runtime.GetProductFrontendFacadeEndpoint(_pRuntime->GetProductID());
+    auto _ProductEndpoint = _Runtime.GetProductFrontendSDOEndpoint(_pRuntime->GetProductID());
     auto _Request = MakeApplicationRequestFrame(5001, kAppGetStateMethodCode);
     SendFrame(_ProductEndpoint, _Request);
 
     auto _Responses = WaitForFrames(_ProductEndpoint);
     ASSERT_EQ(1u, _Responses.size());
-    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::FacadeNotFound, _Responses[0].nStatus);
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::SDONotFound, _Responses[0].nStatus);
     EXPECT_EQ(5001u, _Responses[0].nCallID);
 
     ClearFrames(_Responses);

@@ -19,6 +19,7 @@ namespace iCAX
         struct _RENDER_SERVICE_EXP SRenderSceneSnapshot final
         {
             RenderSceneID nSceneID = kInvalidRenderSceneID;
+            RenderDataVersion nRevision = 0;
             std::unordered_map<RenderGeometryID, SRenderMeshData> Meshes;
             std::unordered_map<RenderGeometryID, SRenderPolylineData> Polylines;
             std::unordered_map<RenderGeometryID, SRenderToolpathData> Toolpaths;

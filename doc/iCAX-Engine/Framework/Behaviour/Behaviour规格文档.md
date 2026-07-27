@@ -15,7 +15,7 @@ OnUpdate(component, applicationContext, productContext, projectContext, sceneCon
 - `ApplicationContext`：应用级上下文，如应用配置、路径和应用级依赖。
 - `ProductContext`：产品级上下文，如产品定义、产品数据、产品级注册表和产品服务。
 - `ProjectContext`：项目级上下文，只包含项目身份、路径和跟图纸走的 ProjectSetting。
-- `SceneContext`：场景级上下文，包含 Repository、资源库、PDO、Facade 和场景可用服务。
+- `SceneContext`：场景级上下文，包含 Repository、资源库、PDO、SDO 和场景可用服务。
 - `Universe`：Scene 内的 Behaviour 运行容器。每个 Scene 拥有自己的 Universe。
 - `BehaviourRegistry`：保存 Behaviour 类型和创建工厂，通常按 Product 隔离。
 
@@ -95,7 +95,7 @@ iCAX::Behaviour::CBehaviourSchedule GetSchedule() const override
 
 Behaviour 遵循 Scene 单线程模型。Scene 工作线程驱动 Repository、Universe 和 Behaviour。外部线程不应直接调用 Behaviour，也不应直接修改 Behaviour 内部状态。
 
-跨线程输入应通过 Facades、PDO 或命令通道进入对应 Scene。异步操作创建初始 Task 或 `TaskCompletionSource` 时应绑定 `Universe::GetEngineTaskScheduler()`；无 scheduler 参数的 `ContinueWith()` 会自动继承它。scheduler 只入队，由下一次 Universe Tick 在 Scene 工作线程执行 continuation，之后才能修改 Repository、Component 或 Behaviour 状态。只有明确需要切换线程时，才给 `ContinueWith()` 传入另一个 scheduler。
+跨线程输入应通过 SDO、PDO 或命令通道进入对应 Scene。异步操作创建初始 Task 或 `TaskCompletionSource` 时应绑定 `Universe::GetEngineTaskScheduler()`；无 scheduler 参数的 `ContinueWith()` 会自动继承它。scheduler 只入队，由下一次 Universe Tick 在 Scene 工作线程执行 continuation，之后才能修改 Repository、Component 或 Behaviour 状态。只有明确需要切换线程时，才给 `ContinueWith()` 传入另一个 scheduler。
 
 ## 8. Component Coroutine
 

@@ -6,7 +6,7 @@
 src/iCAX-Engine/framework/Project/
 ```
 
-`Project` 是 framework 层的项目管理能力。它不再把 Database、Resources、Behaviour、Facades 和 PDO 全部压在 Project 自身，而是用 `Project -> Scene` 的结构把项目级信息和运行现场分开。
+`Project` 是 framework 层的项目管理能力。它不再把 Database、Resources、Behaviour、SDO 和 PDO 全部压在 Project 自身，而是用 `Project -> Scene` 的结构把项目级信息和运行现场分开。
 
 ## 2. 分层
 
@@ -21,18 +21,18 @@ ApplicationRuntime
           ResourceLibrary
           Universe
           PDOHub?
-          Scene Facade channel id
+          Scene SDO channel id
           WorkThread
         Child Scene*
           Repository
           ResourceLibrary
           Universe
           PDOHub?
-          Scene Facade channel id
+          Scene SDO channel id
           WorkThread
 ```
 
-`ApplicationRuntime` 负责应用级生命周期和产品运行时；`ProductRuntime` 负责产品模块、产品 Facade、产品数据和 ProjectCatalog；`ProjectCatalog` 管理主 Project；`Project` 管理主 Scene 与子 Scene；`Scene` 才是运行现场。
+`ApplicationRuntime` 负责应用级生命周期和产品运行时；`ProductRuntime` 负责产品模块、产品 SDO、产品数据和 ProjectCatalog；`ProjectCatalog` 管理主 Project；`Project` 管理主 Scene 与子 Scene；`Scene` 才是运行现场。
 
 ## 3. Project 与 Scene 的职责
 
@@ -49,11 +49,11 @@ Scene 负责：
 - Repository 和 EC 数据。
 - ResourceLibrary 和资源对象。
 - Universe 和 Behaviour 实例。
-- Scene Facade channel。
+- Scene SDO channel。
 - 可选 PDOHub。
 - Scene 工作线程和帧调度。
 
-这条边界是硬规则：ProjectContext 只管理项目级环境；Repository、Resource、PDO 和场景服务由 SceneContext 管理。Scene Runtime 负责 SceneContext 的线程、调度、Facade 分发和生命周期。
+这条边界是硬规则：ProjectContext 只管理项目级环境；Repository、Resource、PDO 和场景服务由 SceneContext 管理。Scene Runtime 负责 SceneContext 的线程、调度、SDO 分发和生命周期。
 
 ## 4. 运行流程
 
@@ -69,11 +69,11 @@ ProductRuntime::OpenProjectCatalog(name, path)
             -> create Universe(product BehaviourRegistry)
             -> create ResourceLibrary(scene ResourceLoaderRegistry)
             -> create PDOHub if enabled
-            -> create scene Facade channel through CFacadeChannelRegistry
+            -> create scene SDO channel through CSDOChannelRegistry
             -> subscribe repository events
   -> replay quick-save log on MainScene Repository
   -> CreateProjectRuntime(project)
-  -> ProjectRuntime.SetMainSceneFrameHandler(dispatch main scene Facade)
+  -> ProjectRuntime.SetMainSceneFrameHandler(dispatch main scene SDO)
   -> ProjectRuntime.Start()
   -> open quick-save log for append
 ```
@@ -84,8 +84,8 @@ Scene 每帧：
 Scene PreSwapPDO
   -> Scene PDOHub SwapInSlot()
   -> Universe PreSwapPDO()
-FrameHandler(scene backend Facade)
-  -> Facades(application, product, project, scene)
+FrameHandler(scene backend SDO)
+  -> SDO(application, product, project, scene)
 Scene Tick
   -> Universe Tick(application, product, project, scene)
 Scene PostSwapPDO
@@ -139,7 +139,7 @@ Project 不直接序列化主项目文件。正确流程是：
 
 ## 6. 通信
 
-Application、Product、Scene 各自拥有自己的 Facade channel。Project 本身不拥有 channel；外部默认项目交互使用主 Scene channel。
+Application、Product、Scene 各自拥有自己的 SDO channel。Project 本身不拥有 channel；外部默认项目交互使用主 Scene channel。
 
 ```text
 applicationChannelId -> ApplicationRuntime
@@ -147,13 +147,13 @@ productChannelId     -> ProductRuntime
 sceneChannelId       -> Project MainScene / ChildScene
 ```
 
-`ProductRuntime::GetSceneFrontendFacadeEndpoint(projectId, sceneId)` 会找到对应 ProjectRuntime，再返回指定 Scene 的 frontend Facade endpoint。ApplicationRuntime 的同名接口只是跨已启动产品做一次查找代理。
+`ProductRuntime::GetSceneFrontendSDOEndpoint(projectId, sceneId)` 会找到对应 ProjectRuntime，再返回指定 Scene 的 frontend SDO endpoint。ApplicationRuntime 的同名接口只是跨已启动产品做一次查找代理。
 
-应用级命令发到应用 Facade；产品级命令发到产品 Facade；数据编辑、撤销重做、渲染同步等 Scene 级命令发到对应 Scene Facade，并由 Facades 同时接收 ProjectContext 和 SceneContext。
+应用级命令发到应用 SDO；产品级命令发到产品 SDO；数据编辑、撤销重做、渲染同步等 Scene 级命令发到对应 Scene SDO，并由 SDO 同时接收 ProjectContext 和 SceneContext。
 
 ## 7. 与产品级注册表的关系
 
-ComponentMeta、Behaviour 定义、ResourceLoader 和 Facades 都在 ProductRuntime 级装配。产品模块加载后，模块中的宏注册项会被 ProductRuntime 回放到当前产品的注册表。Service 仍在 Application 级 ServiceProvider 中共享。
+ComponentMeta、Behaviour 定义、ResourceLoader 和 SDO 都在 ProductRuntime 级装配。产品模块加载后，模块中的宏注册项会被 ProductRuntime 回放到当前产品的注册表。Service 仍在 Application 级 ServiceProvider 中共享。
 
 Scene 创建 Repository 和 Universe 时引用产品级定义能力；创建 ResourceLibrary 时使用 Scene 自己的 ResourceLoaderRegistry。实体数据、组件实例、资源对象、Scene 消息和 Scene 线程完全归属当前 Scene。
 
@@ -161,9 +161,9 @@ Scene 创建 Repository 和 Universe 时引用产品级定义能力；创建 Res
 
 PDO Arena 由产品或文件/启动模块决定，通过 Project 创建参数转给主 Scene。Scene 不理解 payload 字段含义，只负责创建、交换和释放 Scene PDOHub。具体 slot 可以由 RenderService、InputService 或其他业务服务在运行期动态分配和释放。
 
-Behaviour、Facades 和 RenderService 通过 `ISceneContext::HasPDOHub()` 和 `ISceneContext::PDOHub()` 访问 Scene PDO。未配置 PDO 的 Scene 会在访问 `PDOHub()` 时抛出异常。
+Behaviour、SDO 和 RenderService 通过 `ISceneContext::HasPDOHub()` 和 `ISceneContext::PDOHub()` 访问 Scene PDO。未配置 PDO 的 Scene 会在访问 `PDOHub()` 时抛出异常。
 
-前端宿主通过 Facades 获取 Scene PDO Arena name，再打开对应 shared memory。Scene 关闭时释放 PDOHub；前端宿主收到 Scene 关闭后必须停止访问该 Arena。
+前端宿主通过 SDO 获取 Scene PDO Arena name，再打开对应 shared memory。Scene 关闭时释放 PDOHub；前端宿主收到 Scene 关闭后必须停止访问该 Arena。
 
 ## 9. 内存隔离
 

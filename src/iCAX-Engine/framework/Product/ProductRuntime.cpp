@@ -1,22 +1,22 @@
 #include "pch.h"
 #include "ProductRuntime.h"
 
-#include "Facades/FacadeRegistrationCatalog.h"
-#include "Facades/Facade.h"
-#include "Project/ProjectFacades.h"
+#include "SDO/SDORegistrationCatalog.h"
+#include "SDO/SDO.h"
+#include "Project/ProjectSDO.h"
 
 
 namespace
 {
-    class CStaticProductFacade final : public iCAX::Interaction::CFacade
+    class CStaticProductSDO final : public iCAX::Interaction::CSDO
     {
     public:
         using MethodRecord = std::pair<std::string, MethodFunc>;
 
-        CStaticProductFacade(
-            IN std::string strFacadeName_,
+        CStaticProductSDO(
+            IN std::string strSDOName_,
             IN std::vector<MethodRecord> Methods_)
-            : CFacade(std::move(strFacadeName_))
+            : CSDO(std::move(strSDOName_))
         {
             for (auto& _Method : Methods_)
             {
@@ -353,7 +353,7 @@ namespace
         auto _Payload = iCAX::Product::DecodeProductPayload(Request_.Payload);
         if (!_Payload.Is<iCAX::Data::ObjectMap>())
         {
-            throw std::invalid_argument("Product facade call payload must be an object");
+            throw std::invalid_argument("Product sdo call payload must be an object");
         }
         return _Payload.To<iCAX::Data::ObjectMap>();
     }
@@ -407,37 +407,37 @@ namespace
         throw std::invalid_argument("Product payload field must be a uuid or string: " + strName_);
     }
 
-    void _RequireProductFacadeContext(
+    void _RequireProductSDOContext(
         IN const iCAX::Product::IProductContext* pProductContext_,
         IN const iCAX::Project::IProjectContext* pProjectContext_,
         IN const iCAX::Project::ISceneContext* pSceneContext_)
     {
         if (pProjectContext_ || pSceneContext_)
         {
-            throw std::invalid_argument("Product Facade invocation requires the product scope");
+            throw std::invalid_argument("Product SDO invocation requires the product scope");
         }
         if (!pProductContext_)
         {
-            throw std::invalid_argument("Product facade call context is missing ProductContext");
+            throw std::invalid_argument("Product sdo call context is missing ProductContext");
         }
     }
 
-    void _RequireSceneFacadeContext(
+    void _RequireSceneSDOContext(
         IN const iCAX::Product::IProductContext* pProductContext_,
         IN const iCAX::Project::IProjectContext* pProjectContext_,
         IN const iCAX::Project::ISceneContext* pSceneContext_)
     {
         if (!pProductContext_)
         {
-            throw std::invalid_argument("Scene facade call context is missing ProductContext");
+            throw std::invalid_argument("Scene sdo call context is missing ProductContext");
         }
         if (!pProjectContext_)
         {
-            throw std::invalid_argument("Scene facade call context is missing ProjectContext");
+            throw std::invalid_argument("Scene sdo call context is missing ProjectContext");
         }
         if (!pSceneContext_)
         {
-            throw std::invalid_argument("Scene facade call context is missing SceneContext");
+            throw std::invalid_argument("Scene sdo call context is missing SceneContext");
         }
     }
 
@@ -614,7 +614,7 @@ namespace
 iCAX::Product::CProductRuntime::CProductRuntime(
     IN const CProductDefinition& Definition_,
     IN std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext_,
-    IN std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry_,
+    IN std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry_,
     IN std::shared_ptr<IProductDataStore> pProductDataStore_,
     IN uint32_t nFrameIntervalMilliseconds_)
     : m_Definition(Definition_)
@@ -622,13 +622,13 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     , m_ProductChannelID(iCAX::Data::GenerateNewUUID())
     , m_pApplicationContext(std::move(pApplicationContext_))
     , m_pProductServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
-    , m_pFacadeChannelRegistry(std::move(pFacadeChannelRegistry_))
+    , m_pSDOChannelRegistry(std::move(pSDOChannelRegistry_))
     , m_pProductMetaRegistry(iCAX::Database::CreateMetaRegistry())
     , m_pProductBehaviourRegistry(iCAX::Behaviour::CreateBehaviourRegistry())
     , m_pProductResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
     , m_pProductDataStore(std::move(pProductDataStore_))
-    , m_pFacadeRegistry(std::make_shared<iCAX::Interaction::CFacadeRegistry>())
-    , m_pFacadeInvoker(std::make_unique<iCAX::Interaction::CFacadeInvoker>(m_pFacadeRegistry))
+    , m_pSDORegistry(std::make_shared<iCAX::Interaction::CSDORegistry>())
+    , m_pSDOInvoker(std::make_unique<iCAX::Interaction::CSDOInvoker>(m_pSDORegistry))
     , m_pProductTaskScheduler(std::make_shared<iCAX::Tasks::EventLoopTaskScheduler>())
     , m_nFrameIntervalMilliseconds(nFrameIntervalMilliseconds_ == 0 ? 1 : nFrameIntervalMilliseconds_)
 {
@@ -652,9 +652,9 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     {
         throw std::invalid_argument("ApplicationContext cannot be null");
     }
-    if (!m_pFacadeChannelRegistry)
+    if (!m_pSDOChannelRegistry)
     {
-        throw std::invalid_argument("FacadeChannelRegistry cannot be null");
+        throw std::invalid_argument("SDOChannelRegistry cannot be null");
     }
     if (!m_pProductMetaRegistry)
     {
@@ -673,7 +673,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
         m_pProductDataStore = std::make_shared<CFileProductDataStore>(_GetProductDataRoot(*m_pApplicationContext));
     }
 
-    RegisterBuiltInProductFacades();
+    RegisterBuiltInProductSDO();
 }
 
 iCAX::Product::CProductRuntime::~CProductRuntime()
@@ -718,12 +718,12 @@ void iCAX::Product::CProductRuntime::Start()
         iCAX::Resource::CResourceLoaderRegistrationCatalog::ReplayByModulePaths(*m_pProductResourceLoaderRegistry, m_LoadedModulePaths);
         const auto _ResourceSelectionRules = _MakeResourceSelectionRules(m_Definition.ResourceHandlers);
         m_pProductResourceLoaderRegistry->SetSelectionRules(_ResourceSelectionRules);
-        iCAX::Interaction::CFacadeRegistrationCatalog::ReplayByModulePaths(*m_pFacadeRegistry, m_LoadedModulePaths);
+        iCAX::Interaction::CSDORegistrationCatalog::ReplayByModulePaths(*m_pSDORegistry, m_LoadedModulePaths);
         m_bRegistrationsReplayed = true;
     }
-    if (!m_pFacadeChannelRegistry->CreateChannel(m_ProductChannelID))
+    if (!m_pSDOChannelRegistry->CreateChannel(m_ProductChannelID))
     {
-        throw std::runtime_error("Product Facade channel already exists");
+        throw std::runtime_error("Product SDO channel already exists");
     }
     m_bStarted = true;
     m_bFaulted = false;
@@ -738,7 +738,7 @@ void iCAX::Product::CProductRuntime::Start()
     catch (...)
     {
         m_bStarted = false;
-        (void)m_pFacadeChannelRegistry->RemoveChannel(m_ProductChannelID);
+        (void)m_pSDOChannelRegistry->RemoveChannel(m_ProductChannelID);
         throw;
     }
 }
@@ -884,9 +884,9 @@ void iCAX::Product::CProductRuntime::CloseRuntimeObjects()
     auto _Runtimes = SnapshotProjectRuntimes();
     if (_Catalogs.empty() && _Runtimes.empty())
     {
-        if (m_pFacadeChannelRegistry && !m_ProductChannelID.is_nil())
+        if (m_pSDOChannelRegistry && !m_ProductChannelID.is_nil())
         {
-            (void)m_pFacadeChannelRegistry->RemoveChannel(m_ProductChannelID);
+            (void)m_pSDOChannelRegistry->RemoveChannel(m_ProductChannelID);
         }
         return;
     }
@@ -913,9 +913,9 @@ void iCAX::Product::CProductRuntime::CloseRuntimeObjects()
             _pCatalog->CloseAll();
         }
     }
-    if (m_pFacadeChannelRegistry && !m_ProductChannelID.is_nil())
+    if (m_pSDOChannelRegistry && !m_ProductChannelID.is_nil())
     {
-        (void)m_pFacadeChannelRegistry->RemoveChannel(m_ProductChannelID);
+        (void)m_pSDOChannelRegistry->RemoveChannel(m_ProductChannelID);
     }
 }
 
@@ -975,21 +975,21 @@ const iCAX::Data::uuid& iCAX::Product::CProductRuntime::GetProductChannelID() co
     return m_ProductChannelID;
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Product::CProductRuntime::GetProductFrontendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Product::CProductRuntime::GetProductFrontendSDOEndpoint() const
 {
-    return GetFrontendFacadeEndpoint();
+    return GetFrontendSDOEndpoint();
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Product::CProductRuntime::GetBackendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Product::CProductRuntime::GetBackendSDOEndpoint() const
 {
     EnsureStarted();
-    return m_pFacadeChannelRegistry->GetBackendEndpoint(m_ProductChannelID);
+    return m_pSDOChannelRegistry->GetBackendEndpoint(m_ProductChannelID);
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Product::CProductRuntime::GetFrontendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Product::CProductRuntime::GetFrontendSDOEndpoint() const
 {
     EnsureStarted();
-    return m_pFacadeChannelRegistry->GetFrontendEndpoint(m_ProductChannelID);
+    return m_pSDOChannelRegistry->GetFrontendEndpoint(m_ProductChannelID);
 }
 
 void iCAX::Product::CProductRuntime::SendFrontendEvent(
@@ -998,21 +998,21 @@ void iCAX::Product::CProductRuntime::SendFrontendEvent(
 {
     EnsureStarted();
 
-    GetBackendFacadeEndpoint().SendText(
+    GetBackendSDOEndpoint().SendText(
         0,
         nMethodCode_,
-        iCAX::Interaction::EFacadeFrameKind::Event,
+        iCAX::Interaction::ESDOFrameKind::Event,
         strPayloadText_);
 }
 
-void iCAX::Product::CProductRuntime::DispatchProductFacadeFrames()
+void iCAX::Product::CProductRuntime::DispatchProductSDOFrames()
 {
-    if (!IsStarted() || !m_pFacadeInvoker)
+    if (!IsStarted() || !m_pSDOInvoker)
     {
         return;
     }
 
-    DispatchSceneFacadeFrames(GetBackendFacadeEndpoint(), nullptr, nullptr);
+    DispatchSceneSDOFrames(GetBackendSDOEndpoint(), nullptr, nullptr);
 }
 
 std::vector<std::shared_ptr<iCAX::Project::CProjectCatalog>> iCAX::Product::CProductRuntime::GetProjectCatalogs() const
@@ -1075,7 +1075,7 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     _CatalogInfo.pServiceProvider = m_pProductServiceProvider;
     _CatalogInfo.pMetaRegistry = m_pProductMetaRegistry;
     _CatalogInfo.pBehaviourRegistry = m_pProductBehaviourRegistry;
-    _CatalogInfo.pFacadeChannelRegistry = m_pFacadeChannelRegistry;
+    _CatalogInfo.pSDOChannelRegistry = m_pSDOChannelRegistry;
     _CatalogInfo.bEnablePDOHub = m_Definition.bEnablePDOHub;
     _CatalogInfo.PDOHubCreateInfo = m_Definition.PDOHubCreateInfo;
     const auto _ModulePaths = m_LoadedModulePaths;
@@ -1171,7 +1171,7 @@ bool iCAX::Product::CProductRuntime::CloseProjectCatalog(IN const iCAX::Data::uu
     return true;
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Product::CProductRuntime::GetSceneFrontendFacadeEndpoint(
+iCAX::Interaction::CSDOEndpoint iCAX::Product::CProductRuntime::GetSceneFrontendSDOEndpoint(
     IN const iCAX::Data::uuid& ProjectID_,
     IN const iCAX::Data::uuid& SceneID_) const
 {
@@ -1190,7 +1190,7 @@ iCAX::Interaction::CFacadeEndpoint iCAX::Product::CProductRuntime::GetSceneFront
     {
         throw std::runtime_error("Scene not found");
     }
-    return _pScene->GetFrontendFacadeEndpoint();
+    return _pScene->GetFrontendSDOEndpoint();
 }
 
 iCAX::Data::Variant iCAX::Product::CProductRuntime::BuildProductStatePayload() const
@@ -1252,9 +1252,9 @@ iCAX::Data::Variant iCAX::Product::CProductRuntime::BuildProjectCatalogPayload(
     return iCAX::Data::Variant(_Catalog);
 }
 
-iCAX::Interaction::CFacadeRegistry& iCAX::Product::CProductRuntime::GetFacadeRegistry() const
+iCAX::Interaction::CSDORegistry& iCAX::Product::CProductRuntime::GetSDORegistry() const
 {
-    return *m_pFacadeRegistry;
+    return *m_pSDORegistry;
 }
 
 iCAX::Services::CServiceProvider& iCAX::Product::CProductRuntime::GetServiceProvider() const
@@ -1307,7 +1307,7 @@ void iCAX::Product::CProductRuntime::WorkerMain()
 
             iCAX::Tasks::CurrentTaskSchedulerScope _SchedulerScope(m_pProductTaskScheduler);
             m_pProductTaskScheduler->RunAll();
-            DispatchProductFacadeFrames();
+            DispatchProductSDOFrames();
             RequireProductCoroutineRuntimeOnWorker().Tick(_DeltaTime, _TotalTime);
 
             _NextFrameTime += _FrameInterval;
@@ -1437,12 +1437,12 @@ std::shared_ptr<iCAX::Project::IProjectRuntime> iCAX::Product::CProductRuntime::
     return _pRuntime;
 }
 
-void iCAX::Product::CProductRuntime::DispatchSceneFacadeFrames(
-    IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_,
+void iCAX::Product::CProductRuntime::DispatchSceneSDOFrames(
+    IN const iCAX::Interaction::CSDOEndpoint& Endpoint_,
     IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    if (!Endpoint_.IsValid() || !m_pFacadeInvoker)
+    if (!Endpoint_.IsValid() || !m_pSDOInvoker)
     {
         return;
     }
@@ -1454,7 +1454,7 @@ void iCAX::Product::CProductRuntime::DispatchSceneFacadeFrames(
         _pProjectContext = static_cast<iCAX::Project::IProjectContext*>(_pLocalProject.get());
     }
 
-    m_pFacadeInvoker->DispatchAvailableFrames(
+    m_pSDOInvoker->DispatchAvailableFrames(
         Endpoint_,
         *m_pApplicationContext,
         static_cast<iCAX::Product::IProductContext*>(this),
@@ -1475,15 +1475,15 @@ void iCAX::Product::CProductRuntime::StartProject(IN const std::shared_ptr<iCAX:
         [_WeakRuntime, _WeakProjectRuntime](
             iCAX::Project::IProjectRuntime&,
             iCAX::Project::ISceneContext& SceneContext_,
-            const iCAX::Interaction::CFacadeEndpoint& BackendEndpoint_) {
+            const iCAX::Interaction::CSDOEndpoint& BackendEndpoint_) {
             auto _pRuntime = _WeakRuntime.lock();
             auto _pProjectRuntime = _WeakProjectRuntime.lock();
             if (!_pRuntime || !_pProjectRuntime)
             {
                 return;
             }
-            // Scene 线程每帧进入这里，产品 runtime 只做 Facade 帧分发，不直接驱动 Scene 数据。
-            _pRuntime->DispatchSceneFacadeFrames(BackendEndpoint_, _pProjectRuntime, &SceneContext_);
+            // Scene 线程每帧进入这里，产品 runtime 只做 SDO 帧分发，不直接驱动 Scene 数据。
+            _pRuntime->DispatchSceneSDOFrames(BackendEndpoint_, _pProjectRuntime, &SceneContext_);
         });
     pProjectRuntime_->Start();
 }
@@ -1572,9 +1572,9 @@ void iCAX::Product::CProductRuntime::LoadProductModules()
     {
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "service"));
     }
-    for (const auto& _Path : m_Definition.Modules.FacadeModules)
+    for (const auto& _Path : m_Definition.Modules.SDOModules)
     {
-        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "facade"));
+        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Path, "sdo"));
     }
     for (const auto& _Binding : m_Definition.ResourceHandlers)
     {
@@ -1585,13 +1585,13 @@ void iCAX::Product::CProductRuntime::LoadProductModules()
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strComponentPath, "component"));
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strBehaviourPath, "behaviour"));
         _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strServicePath, "service"));
-        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strFacadePath, "facade"));
+        _AppendUniqueModulePath(m_LoadedModulePaths, _LoadModule(_Module.strSDOPath, "sdo"));
     }
 }
 
-void iCAX::Product::CProductRuntime::RegisterBuiltInProductFacades()
+void iCAX::Product::CProductRuntime::RegisterBuiltInProductSDO()
 {
-    std::vector<CStaticProductFacade::MethodRecord> _Methods;
+    std::vector<CStaticProductSDO::MethodRecord> _Methods;
     _Methods.emplace_back(
         kProductGetStateName,
         [this](
@@ -1633,13 +1633,13 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductFacades()
             return HandleCloseProjectCatalog(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
-    auto _pFacade = std::make_shared<CStaticProductFacade>(kProductFacadeName, std::move(_Methods));
-    if (!m_pFacadeRegistry->Register(_pFacade))
+    auto _pSDO = std::make_shared<CStaticProductSDO>(kProductSDOName, std::move(_Methods));
+    if (!m_pSDORegistry->Register(_pSDO))
     {
-        throw std::runtime_error("Built-in product facade is already registered: " + _pFacade->GetName());
+        throw std::runtime_error("Built-in product sdo is already registered: " + _pSDO->GetName());
     }
 
-    std::vector<CStaticProductFacade::MethodRecord> _ProjectMethods;
+    std::vector<CStaticProductSDO::MethodRecord> _ProjectMethods;
     _ProjectMethods.emplace_back(
         iCAX::Project::kProjectGetStateName,
         [this](
@@ -1681,12 +1681,12 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductFacades()
             return HandleProjectGetUndoRedoState(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
 
-    auto _pProjectFacade = std::make_shared<CStaticProductFacade>(
-        iCAX::Project::kProjectFacadeName,
+    auto _pProjectSDO = std::make_shared<CStaticProductSDO>(
+        iCAX::Project::kProjectSDOName,
         std::move(_ProjectMethods));
-    if (!m_pFacadeRegistry->Register(_pProjectFacade))
+    if (!m_pSDORegistry->Register(_pProjectSDO))
     {
-        throw std::runtime_error("Built-in project facade is already registered: " + _pProjectFacade->GetName());
+        throw std::runtime_error("Built-in project sdo is already registered: " + _pProjectSDO->GetName());
     }
 }
 
@@ -1697,7 +1697,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleGetSt
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireProductSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 
@@ -1708,7 +1708,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleListP
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireProductSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeProductPayloadResponse(BuildProductStatePayload());
 }
 
@@ -1719,7 +1719,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleOpenP
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireProductSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
 
     auto _pCatalog = OpenProjectCatalog(
@@ -1743,7 +1743,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleClose
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireProductFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireProductSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     auto _Payload = _DecodeObjectPayload(Request_);
     (void)CloseProjectCatalog(_GetRequiredUUID(_Payload, "catalogId"));
     return _MakeProductPayloadResponse(BuildProductStatePayload());
@@ -1756,7 +1756,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleProje
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireSceneFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
 
     auto _Payload = _MakeProjectPayload(FindProjectRuntime(pProjectContext_->GetProjectID()));
     auto _Project = _Payload.Is<iCAX::Data::ObjectMap>()
@@ -1785,7 +1785,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleProje
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireSceneFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
     return _MakeProductPayloadResponse(_MakeUndoRedoStatePayload(pSceneContext_->Database()));
 }
 
@@ -1796,7 +1796,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleProje
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireSceneFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
 
     auto& _Repository = pSceneContext_->Database();
     const auto _Applied = _Repository.Undo();
@@ -1812,7 +1812,7 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleProje
     IN iCAX::Project::IProjectContext* pProjectContext_,
     IN iCAX::Project::ISceneContext* pSceneContext_)
 {
-    _RequireSceneFacadeContext(pProductContext_, pProjectContext_, pSceneContext_);
+    _RequireSceneSDOContext(pProductContext_, pProjectContext_, pSceneContext_);
 
     auto& _Repository = pSceneContext_->Database();
     const auto _Applied = _Repository.Redo();

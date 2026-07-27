@@ -9,6 +9,8 @@
 #include <tuple>
 #include <vector>
 #include "Data/Variant.h"
+#include "EntityInsert.h"
+#include "EntityQuery.h"
 #include "EntityUpdate.h"
 #include "IComponentFrameCache.h"
 #include "IEntityView.h"
@@ -329,6 +331,14 @@ namespace iCAX
                 IN const iCAX::Data::ObjectMap& Parameters_ = {}) = 0;
 
             /*
+            * @brief 执行字段投影、分组和排序查询。
+            * @details 结果第一列固定为 ENTITYID；分组结果中该列为组内 EntityID 数组。
+            */
+            virtual SEntityQueryResult Select(
+                IN const SEntityQuery& Query_,
+                IN const iCAX::Data::ObjectMap& Parameters_ = {}) = 0;
+
+            /*
             * @brief 创建由 Repository 增量维护的 Entity 物化视图。
             * @details
             *   等价 Where 和实际引用的等价参数在同一个 Repository 内共享同一个视图实例；
@@ -390,6 +400,29 @@ namespace iCAX
                 {
                     throw std::runtime_error(
                         _strError.empty() ? "Entity delete failed" : _strError);
+                }
+                return _Result;
+            }
+
+            /*
+            * @brief 原子创建一个 Entity，并按初始化表达附加组件。
+            */
+            [[nodiscard]] virtual bool Insert(
+                IN const SEntityInsert& Insert_,
+                IN const iCAX::Data::ObjectMap& Parameters_,
+                OUT SEntityInsertResult& Result_,
+                OUT std::string& strError_) = 0;
+
+            SEntityInsertResult Insert(
+                IN const SEntityInsert& Insert_,
+                IN const iCAX::Data::ObjectMap& Parameters_ = {})
+            {
+                SEntityInsertResult _Result;
+                std::string _strError;
+                if (!Insert(Insert_, Parameters_, _Result, _strError))
+                {
+                    throw std::runtime_error(
+                        _strError.empty() ? "Entity insert failed" : _strError);
                 }
                 return _Result;
             }

@@ -1,18 +1,18 @@
-import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
-import { ProductFacade } from "../SDK/Facades/facadeMethod.mjs";
+import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
+import { ProductSDO } from "../SDK/SDO/sdoMethod.mjs";
 import { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 
 export class ProductProxy {
-  constructor(facadeClient, productState, options = {}) {
-    if (!facadeClient) {
-      throw new TypeError("facadeClient is required");
+  constructor(sdoClient, productState, options = {}) {
+    if (!sdoClient) {
+      throw new TypeError("sdoClient is required");
     }
     if (!isUsableChannelId(productState?.productChannelId)) {
       throw new TypeError("productState.productChannelId must be a non-nil channel id");
     }
 
-    this.facadeClient = facadeClient;
-    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
+    this.sdoClient = sdoClient;
+    this.bridge = options.bridge ?? sdoClient.bridge ?? null;
     this.appProxy = options.appProxy ?? null;
     this.state = productState;
     this.productId = productState.productId;
@@ -32,7 +32,7 @@ export class ProductProxy {
   }
 
   async getState() {
-    const state = await this.facadeClient.invoke(this.productChannelId, ProductFacade.getState);
+    const state = await this.sdoClient.invoke(this.productChannelId, ProductSDO.getState);
     if (state?.productChannelId) {
       this.updateState({ ...this.state, ...state });
     }
@@ -41,13 +41,13 @@ export class ProductProxy {
   }
 
   async listProjectCatalogs() {
-    const response = await this.facadeClient.invoke(this.productChannelId, ProductFacade.listProjectCatalogs);
+    const response = await this.sdoClient.invoke(this.productChannelId, ProductSDO.listProjectCatalogs);
     await this.#syncProjectsFromCatalogs(response?.catalogs ?? []);
     return response;
   }
 
   async openProjectCatalog(projectPath, options = {}) {
-    const response = await this.facadeClient.invoke(this.productChannelId, ProductFacade.openProjectCatalog, {
+    const response = await this.sdoClient.invoke(this.productChannelId, ProductSDO.openProjectCatalog, {
       projectPath,
       catalogPath: options.catalogPath ?? projectPath,
       catalogName: options.catalogName ?? "",
@@ -65,7 +65,7 @@ export class ProductProxy {
   }
 
   async closeProjectCatalog(catalogId) {
-    const response = await this.facadeClient.invoke(this.productChannelId, ProductFacade.closeProjectCatalog, { catalogId });
+    const response = await this.sdoClient.invoke(this.productChannelId, ProductSDO.closeProjectCatalog, { catalogId });
     if (response?.productChannelId) {
       this.updateState({ ...this.state, ...response });
     }
@@ -73,12 +73,12 @@ export class ProductProxy {
     return response;
   }
 
-  subscribe(facadeMember, handler) {
-    return this.#trackUnsubscribe(this.facadeClient.subscribe(this.productChannelId, facadeMember, handler));
+  subscribe(sdoMember, handler) {
+    return this.#trackUnsubscribe(this.sdoClient.subscribe(this.productChannelId, sdoMember, handler));
   }
 
   subscribeAll(handler) {
-    return this.#trackUnsubscribe(this.facadeClient.subscribeAll(this.productChannelId, handler));
+    return this.#trackUnsubscribe(this.sdoClient.subscribeAll(this.productChannelId, handler));
   }
 
   getProject(projectId) {
@@ -98,7 +98,7 @@ export class ProductProxy {
       return existing;
     }
 
-    const project = new ProjectProxy(this.facadeClient, registeredState, {
+    const project = new ProjectProxy(this.sdoClient, registeredState, {
       bridge: this.bridge,
       product: this,
     });
@@ -118,7 +118,7 @@ export class ProductProxy {
     }
     this.unsubscribers.clear();
 
-    this.facadeClient.stop(this.productChannelId);
+    this.sdoClient.stop(this.productChannelId);
   }
 
   #trackUnsubscribe(unsubscribe) {

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,34 +16,57 @@ namespace iCAX
 {
     namespace Frontend
     {
-        inline constexpr uint16_t kFrontendFacadeRequest = 0;
-        inline constexpr uint16_t kFrontendFacadeReport = 1;
-        inline constexpr uint16_t kFrontendFacadeResponse = 2;
-        inline constexpr uint16_t kFrontendFacadeEvent = 3;
+        inline constexpr uint16_t kFrontendSDORequest = 0;
+        inline constexpr uint16_t kFrontendSDOReport = 1;
+        inline constexpr uint16_t kFrontendSDOResponse = 2;
+        inline constexpr uint16_t kFrontendSDOEvent = 3;
 
         /*
-        * @brief UI 与 Engine 之间传递的 Facade 调用帧。
+        * @brief UI 与 Engine 之间传递的 SDO 调用帧。
         * @details
-        *   该结构只表达 Facade 调用边界，不绑定 H5/CEF/WPF/QT 等具体前端技术。
+        *   该结构只表达 SDO 调用边界，不绑定 H5/CEF/WPF/QT 等具体前端技术。
         *   PayloadText 是 UTF-8 文本，通常是 Data::VariantSerializer 产生的文本。
         */
-        struct _UI_CONTAINER_EXP CFrontendFacadeFrame final
+        struct _UI_CONTAINER_EXP CFrontendSDOFrame final
         {
             std::string ChannelID;    //!< 目标 channel id。
             uint64_t nCallID = 0;     //!< 一次调用的 ID；request/report/response 全程保持不变。
-            uint64_t nMethodCode = 0; //!< FacadeName.MethodName 的 64 位紧凑编码。
-            uint16_t nKind = kFrontendFacadeRequest;
+            uint64_t nMethodCode = 0; //!< SDOName.MethodName 的 64 位紧凑编码。
+            uint16_t nKind = kFrontendSDORequest;
             uint16_t nStatus = 0;
             std::string PayloadText;  //!< UTF-8 文本 payload。
         };
 
-        using FrontendFacadeFrameHandler = std::function<void(const CFrontendFacadeFrame&)>;
+        using FrontendSDOFrameHandler = std::function<void(const CFrontendSDOFrame&)>;
+
+        /*
+        * @brief 前端直接资源请求。
+        * @details
+        *   结构采用 HTTP/REST 语义，但通过宿主 API 直接调用，不进入 SDO 邮件。
+        *   ProjectID 和 SceneID 用于把 URL 路由到对应 Scene ResourceLibrary。
+        */
+        struct _UI_CONTAINER_EXP CFrontendResourceRequest final
+        {
+            std::string ProjectID;
+            std::string SceneID;
+            std::string Method = "GET";
+            std::string URL;
+            std::map<std::string, std::string> Headers;
+            std::vector<uint8_t> Body;
+        };
+
+        struct _UI_CONTAINER_EXP CFrontendResourceResponse final
+        {
+            uint16_t nStatus = 500;
+            std::map<std::string, std::string> Headers;
+            std::vector<uint8_t> Body;
+        };
 
         /*
         * @brief UI 容器依赖的前端桥接口。
         * @details
         *   UI 容器不能反向链接 Application.exe。Application.exe 持有具体实现，
-        *   并通过该接口双向传递 Facade 调用帧。
+        *   并通过该接口双向传递 SDO 调用帧。
         */
         class _UI_CONTAINER_EXP IFrontendBridge
         {
@@ -56,9 +80,16 @@ namespace iCAX
             virtual std::string RegisterSceneChannel(
                 const std::string& strProjectID_,
                 const std::string& strSceneID_) = 0;
-            virtual void PostFacadeFrame(const CFrontendFacadeFrame& Frame_) = 0;
-            virtual std::vector<CFrontendFacadeFrame> PollFacadeFrames() = 0;
-            virtual void SetFacadeFrameHandler(FrontendFacadeFrameHandler Handler_) = 0;
+            virtual void PostSDOFrame(const CFrontendSDOFrame& Frame_) = 0;
+            virtual std::vector<CFrontendSDOFrame> PollSDOFrames() = 0;
+            virtual void SetSDOFrameHandler(FrontendSDOFrameHandler Handler_) = 0;
+
+            /*
+            * @brief 直接访问 Scene 资源。
+            * @details 此调用不经过 SDO 帧。
+            */
+            virtual CFrontendResourceResponse RequestResource(
+                const CFrontendResourceRequest& Request_) = 0;
 
             /*
             * @brief 获取 Front Task 调度器。

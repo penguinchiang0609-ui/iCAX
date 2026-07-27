@@ -1,8 +1,10 @@
 #pragma once
 
 #include "ResourceImportExport.h"
+#include "ResourceAccess.h"
 #include "ResourceInfo.h"
 #include "ResourceTypeName.h"
+#include "ResourceVersionStorage.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +23,7 @@ namespace iCAX
     {
         class CResourceLoaderRegistry;
         class CResourcePool;
+        class CResourceAccessService;
 
         /*
         * @brief 资源库。
@@ -36,12 +39,20 @@ namespace iCAX
             * @details 默认创建自己的 ResourcePool 和 LoaderRegistry。
             */
             CResourceLibrary();
+            explicit CResourceLibrary(
+                IN const CResourceVersionStorageOptions&
+                    VersionStorageOptions_);
 
             /*
             * @brief 构造使用指定加载器注册表的资源库。
             * @param [in] pLoaderRegistry_ 加载器注册表；为空时加载会抛出逻辑错误。
             */
             explicit CResourceLibrary(IN std::shared_ptr<CResourceLoaderRegistry> pLoaderRegistry_);
+            CResourceLibrary(
+                IN std::shared_ptr<CResourceLoaderRegistry>
+                    pLoaderRegistry_,
+                IN const CResourceVersionStorageOptions&
+                    VersionStorageOptions_);
             ~CResourceLibrary();
 
             CResourceLibrary(IN const CResourceLibrary&) = delete;
@@ -169,6 +180,36 @@ namespace iCAX
 
             template <typename T>
             /*
+            * @brief 提交一个新的不可变资源版本。
+            * @details
+            *   成功时由 ResourcePool 分配严格递增版本，并把被替换版本转入历史冷存储。
+            *   BREP 等可编辑业务资源应使用此入口提交编辑结果，而不是原地修改池内对象。
+            */
+            EResourceMutationResult PutVersioned(
+                IN const std::string& strSource_,
+                IN std::shared_ptr<T> pResource_,
+                IN const CResourceInfo& Info_ = CResourceInfo(),
+                IN EResourceVersionCondition Condition_ =
+                    EResourceVersionCondition::None,
+                IN uint64_t nExpectedVersion_ = 0,
+                OUT CResourceInfo* pStoredInfo_ = nullptr)
+            {
+                using TResource =
+                    std::remove_cv_t<
+                        std::remove_reference_t<T>>;
+                return PutUntypedVersioned(
+                    strSource_,
+                    std::static_pointer_cast<void>(
+                        std::move(pResource_)),
+                    typeid(TResource),
+                    Info_,
+                    Condition_,
+                    nExpectedVersion_,
+                    pStoredInfo_);
+            }
+
+            template <typename T>
+            /*
             * @brief 尝试手动新增资源对象。
             * @return true 表示新增成功；false 表示同来源资源已存在。
             */
@@ -194,6 +235,26 @@ namespace iCAX
                 return std::static_pointer_cast<TResource>(_pResource);
             }
 
+            template <typename T>
+            /*
+            * @brief 获取指定资源版本；冷版本会从临时目录按需加载。
+            */
+            std::shared_ptr<T> Get(
+                IN const std::string& strSource_,
+                IN uint64_t nVersion_) const
+            {
+                using TResource = std::remove_cv_t<std::remove_reference_t<T>>;
+                auto _pResource = GetUntyped(
+                    strSource_,
+                    nVersion_,
+                    typeid(TResource));
+                if (!_pResource)
+                {
+                    return nullptr;
+                }
+                return std::static_pointer_cast<TResource>(_pResource);
+            }
+
             /*
             * @brief 登记资源信息。
             * @param [in] strSource_ 资源来源，同时作为 key。
@@ -211,6 +272,9 @@ namespace iCAX
             * @brief 判断资源记录是否存在。
             */
             bool Contains(IN const std::string& strSource_) const;
+            bool Contains(
+                IN const std::string& strSource_,
+                IN uint64_t nVersion_) const;
 
             /*
             * @brief 判断资源对象是否已加载。
@@ -223,7 +287,8 @@ namespace iCAX
             bool Unload(IN const std::string& strSource_);
 
             /*
-            * @brief 移除资源记录和对象。
+            * @brief 移除当前资源记录和对象。
+            * @details 当前版本仍作为历史版本保留，供组件撤销/还原按 URL + version 读取。
             */
             bool Remove(IN const std::string& strSource_);
 
@@ -241,6 +306,9 @@ namespace iCAX
             * @brief 获取资源信息。
             */
             std::optional<CResourceInfo> GetInfo(IN const std::string& strSource_) const;
+            std::optional<CResourceInfo> GetInfo(
+                IN const std::string& strSource_,
+                IN uint64_t nVersion_) const;
 
             /*
             * @brief 获取资源内容版本。
@@ -274,6 +342,61 @@ namespace iCAX
             * @param [in] bIncludeRuntimeOnly_ true 表示包含运行期资源。
             */
             std::vector<CResourceInfo> GetManifest(IN bool bIncludeRuntimeOnly_ = false) const;
+
+            /*
+            * @brief 获取 URL 的全部可用版本并管理历史版本冷存储。
+            */
+            std::vector<uint64_t> GetVersions(
+                IN const std::string& strSource_) const;
+            bool RegisterVersionCodec(
+                IN const std::type_info& RuntimeType_,
+                IN CResourceVersionCodec Codec_,
+                IN bool bReplaceExisting_ = false);
+            CResourceVersionStorageStats
+                GetVersionStorageStats() const;
+            std::filesystem::path
+                GetVersionStorageDirectory() const;
+            bool DiscardVersion(
+                IN const std::string& strSource_,
+                IN uint64_t nVersion_);
+
+            /*
+            * @brief 直接执行 HTTP/REST 语义的资源访问。
+            * @details 此入口不经过 SDO 或 SDO 邮件。
+            */
+            CResourceResponse Request(IN const CResourceRequest& Request_);
+
+            /*
+            * @brief REST 风格便利入口；等价于构造对应方法的 CResourceRequest。
+            */
+            CResourceResponse Head(
+                IN const std::string& strURL_,
+                IN const CResourceHeaders& Headers_ = {});
+            CResourceResponse Head(
+                IN const std::string& strURL_,
+                IN uint64_t nVersion_,
+                IN const CResourceHeaders& Headers_ = {});
+
+            CResourceResponse Get(
+                IN const std::string& strURL_,
+                IN const CResourceHeaders& Headers_ = {});
+            CResourceResponse Get(
+                IN const std::string& strURL_,
+                IN uint64_t nVersion_,
+                IN const CResourceHeaders& Headers_ = {});
+
+            CResourceResponse Put(
+                IN const std::string& strURL_,
+                IN const CFlatBufferResource& Body_,
+                IN const CResourceHeaders& Headers_ = {});
+
+            CResourceResponse Delete(
+                IN const std::string& strURL_,
+                IN const CResourceHeaders& Headers_ = {});
+
+            CResourceResponse Options(
+                IN const std::string& strURL_,
+                IN const CResourceHeaders& Headers_ = {});
 
             /*
             * @brief 获取当前资源库可用的导入格式。
@@ -332,6 +455,8 @@ namespace iCAX
             }
 
         private:
+            friend class CResourceAccessService;
+
             /*
             * @brief 获取资源池。
             * @return 内部资源池引用；如果移动后资源池为空，会重新创建。
@@ -362,6 +487,14 @@ namespace iCAX
                 IN std::shared_ptr<void> pResource_,
                 IN const std::type_info& RuntimeType_,
                 IN const CResourceInfo& Info_);
+            EResourceMutationResult PutUntypedVersioned(
+                IN const std::string& strSource_,
+                IN std::shared_ptr<void> pResource_,
+                IN const std::type_info& RuntimeType_,
+                IN const CResourceInfo& Info_,
+                IN EResourceVersionCondition Condition_,
+                IN uint64_t nExpectedVersion_,
+                OUT CResourceInfo* pStoredInfo_);
             /*
             * @brief 无类型尝试新增资源对象。
             */
@@ -375,6 +508,10 @@ namespace iCAX
             */
             std::shared_ptr<void> GetUntyped(
                 IN const std::string& strSource_,
+                IN const std::type_info& RuntimeType_) const;
+            std::shared_ptr<void> GetUntyped(
+                IN const std::string& strSource_,
+                IN uint64_t nVersion_,
                 IN const std::type_info& RuntimeType_) const;
 
         private:

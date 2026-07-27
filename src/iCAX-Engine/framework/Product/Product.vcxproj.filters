@@ -15,7 +15,7 @@
     <ClInclude Include="pch.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="ProductFacades.h">
+    <ClInclude Include="ProductSDO.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ProductExport.h">
@@ -35,7 +35,7 @@
     <ClCompile Include="pch.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="ProductFacades.cpp">
+    <ClCompile Include="ProductSDO.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ProductManifest.cpp">

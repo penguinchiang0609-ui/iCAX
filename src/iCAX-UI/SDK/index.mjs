@@ -1,22 +1,23 @@
 export { connectApplication } from "./runtime.mjs";
 export { createBridge, validateBridge } from "./Bridge/createBridge.mjs";
 export { MockHostBridge } from "./Bridge/mockHostBridge.mjs";
+export { ResourceClient } from "./Resources/resourceClient.mjs";
 export {
-  AppFacade,
-  ProductFacade,
-  ProjectFacade,
-  makeFacadeMethodCode,
-  makeFacadeMethodCodeFromName,
-  parseFacadeMethod,
-} from "./Facades/facadeMethod.mjs";
-export { ensureUsableChannelId, isUsableChannelId } from "./Facades/channelId.mjs";
+  AppSDO,
+  ProductSDO,
+  ProjectSDO,
+  makeSDOMethodCode,
+  makeSDOMethodCodeFromName,
+  parseSDOMethod,
+} from "./SDO/sdoMethod.mjs";
+export { ensureUsableChannelId, isUsableChannelId } from "./SDO/channelId.mjs";
 export {
   InvocationStatus,
-  FacadeClient,
-  FacadeError,
-  FacadeFrameKind,
-  FacadeTimeoutError,
-} from "./Facades/facadeClient.mjs";
+  SDOClient,
+  SDOError,
+  SDOFrameKind,
+  SDOTimeoutError,
+} from "./SDO/sdoClient.mjs";
 export { loadProductModule, mountProductModule, resolveFrontendEntry } from "../ProductProxy/productModuleLoader.mjs";
 export { AppProxy } from "../AppProxy/AppProxy.mjs";
 export { ProductProxy } from "../ProductProxy/ProductProxy.mjs";

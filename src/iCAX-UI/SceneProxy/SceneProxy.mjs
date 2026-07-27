@@ -1,23 +1,29 @@
-import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
-import { ProjectFacade } from "../SDK/Facades/facadeMethod.mjs";
+import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
+import { ProjectSDO } from "../SDK/SDO/sdoMethod.mjs";
 import { PDOClient } from "../SDK/PDO/pdoClient.mjs";
+import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 
 export class SceneProxy {
-  constructor(facadeClient, sceneState, options = {}) {
-    if (!facadeClient) {
-      throw new TypeError("facadeClient is required");
+  constructor(sdoClient, sceneState, options = {}) {
+    if (!sdoClient) {
+      throw new TypeError("sdoClient is required");
     }
     if (!isUsableChannelId(sceneState?.sceneChannelId)) {
       throw new TypeError("sceneState.sceneChannelId must be a non-nil channel id");
     }
 
-    this.facadeClient = facadeClient;
-    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
+    this.sdoClient = sdoClient;
+    this.bridge = options.bridge ?? sdoClient.bridge ?? null;
     this.project = options.project ?? null;
     this.state = sceneState;
     this.sceneId = sceneState.sceneId;
     this.sceneChannelId = sceneState.sceneChannelId;
     this.pdo = new PDOClient(sceneState.pdo, this.bridge);
+    this.resources = new ResourceClient({
+      bridge: this.bridge,
+      projectId: this.project?.projectId,
+      sceneId: this.sceneId,
+    });
     this.unsubscribers = new Set();
   }
 
@@ -30,10 +36,15 @@ export class SceneProxy {
     this.sceneId = sceneState.sceneId;
     this.sceneChannelId = sceneState.sceneChannelId;
     this.pdo = new PDOClient(sceneState.pdo, this.bridge);
+    this.resources.updateScope({
+      bridge: this.bridge,
+      projectId: this.project?.projectId,
+      sceneId: this.sceneId,
+    });
   }
 
   async getState(options = {}) {
-    const response = await this.invoke(ProjectFacade.getState, {}, options);
+    const response = await this.invoke(ProjectSDO.getState, {}, options);
     const sceneState = response?.activeScene ?? findSceneInProjectState(response, this.sceneId);
     if (sceneState?.sceneChannelId) {
       this.updateState(sceneState);
@@ -41,28 +52,32 @@ export class SceneProxy {
     return sceneState ?? this.state;
   }
 
-  invoke(facadeMethod, payload = {}, options = {}) {
-    return this.facadeClient.invoke(this.sceneChannelId, facadeMethod, payload, options);
+  invoke(sdoMethod, payload = {}, options = {}) {
+    return this.sdoClient.invoke(this.sceneChannelId, sdoMethod, payload, options);
+  }
+
+  fetchResource(url, init = {}) {
+    return this.resources.fetch(url, init);
   }
 
   undo(options = {}) {
-    return this.invoke(ProjectFacade.undo, {}, options);
+    return this.invoke(ProjectSDO.undo, {}, options);
   }
 
   redo(options = {}) {
-    return this.invoke(ProjectFacade.redo, {}, options);
+    return this.invoke(ProjectSDO.redo, {}, options);
   }
 
   getUndoRedoState(options = {}) {
-    return this.invoke(ProjectFacade.getUndoRedoState, {}, options);
+    return this.invoke(ProjectSDO.getUndoRedoState, {}, options);
   }
 
-  subscribe(facadeMember, handler) {
-    return this.#trackUnsubscribe(this.facadeClient.subscribe(this.sceneChannelId, facadeMember, handler));
+  subscribe(sdoMember, handler) {
+    return this.#trackUnsubscribe(this.sdoClient.subscribe(this.sceneChannelId, sdoMember, handler));
   }
 
   subscribeAll(handler) {
-    return this.#trackUnsubscribe(this.facadeClient.subscribeAll(this.sceneChannelId, handler));
+    return this.#trackUnsubscribe(this.sdoClient.subscribeAll(this.sceneChannelId, handler));
   }
 
   dispose() {
@@ -70,7 +85,7 @@ export class SceneProxy {
       unsubscribe();
     }
     this.unsubscribers.clear();
-    this.facadeClient.stop(this.sceneChannelId);
+    this.sdoClient.stop(this.sceneChannelId);
   }
 
   #trackUnsubscribe(unsubscribe) {

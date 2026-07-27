@@ -8,10 +8,10 @@
 
 - 构造 `ApplicationContext`。
 - 创建并销毁应用级环境；应用配置和应用级服务容器由 `ApplicationContext` 自身持有。
-- 直接持有 `CFacadeChannelRegistry`，并托管应用、产品和 Scene Facade channel。
+- 直接持有 `CSDOChannelRegistry`，并托管应用、产品和 Scene SDO channel。
 - 维护支持的产品定义列表。
 - 启动、停止和查询 `ProductRuntime`。
-- 提供应用级 Facade 和应用级内置命令。
+- 提供应用级 SDO 和应用级内置命令。
 - 发布运行时生命周期事件。
 
 `ApplicationRuntime` 不直接维护 `ProjectCatalog`，也不直接打开项目。项目目录和项目实例归属 `ProductRuntime`。
@@ -36,7 +36,7 @@ robot.ProjectFile.ProbeBytes = 256;
 robot.Modules.ComponentModules.push_back("bin/RobotComponent.dll");
 robot.Modules.BehaviourModules.push_back("bin/RobotBehaviour.dll");
 robot.Modules.ServiceModules.push_back("bin/RobotService.dll");
-robot.Modules.FacadeModules.push_back("bin/RobotCommand.dll");
+robot.Modules.SDOModules.push_back("bin/RobotCommand.dll");
 robot.DefaultProjectStartupComponent = "RobotStartupComponent";
 
 config.Products.push_back(robot);
@@ -62,8 +62,8 @@ runtime.SetConfig(config);
 加载阶段：
 
 ```text
-Create FacadeChannelRegistry
-Create application Facade channel
+Create SDOChannelRegistry
+Create application SDO channel
 Create ApplicationContext
   -> own and load application config store
   -> own application ServiceProvider
@@ -74,11 +74,11 @@ Start configured startup product?
 
 `Stop` 请求后台线程停止，并等待线程退出。
 
-卸载阶段会停止所有已启动产品、删除应用级 Facade channel并释放应用上下文；应用上下文析构时卸载其拥有的应用级服务实例。
+卸载阶段会停止所有已启动产品、删除应用级 SDO channel并释放应用上下文；应用上下文析构时卸载其拥有的应用级服务实例。
 
 ## 4. 应用级命令
 
-应用级命令通过 `GetApplicationFrontendFacadeEndpoint()` 发送，payload 使用 `VariantSerializer` 编码的 `ObjectMap`。
+应用级命令通过 `GetApplicationFrontendSDOEndpoint()` 发送，payload 使用 `VariantSerializer` 编码的 `ObjectMap`。
 
 - `kAppGetStateMethodCode` / `App.GetState`：查询运行时状态、产品清单和已启动产品。
 - `kAppListProductsMethodCode` / `App.ListProducts`：查询产品清单，响应结构与 `App.GetState` 一致。
@@ -200,15 +200,15 @@ state: object
 ```text
 Frontend
   -> ApplicationRuntime.Start()
-  -> ApplicationRuntime.GetApplicationFrontendFacadeEndpoint()
+  -> ApplicationRuntime.GetApplicationFrontendSDOEndpoint()
   -> App.GetState / App.ListProducts
   -> App.OpenProjectFile(filePath)?       // 双击文件启动时
   -> App.StartProduct(productId)
   <- productChannelId, frontendEntry, recentProjects
   -> product frontend initializes by frontendEntry
-  -> Product Facade handles Product.OpenProjectCatalog
+  -> Product SDO handles Product.OpenProjectCatalog
   <- catalogId, main projectId, mainSceneChannelId
-  -> Main Scene Facade handles scene/project commands
+  -> Main Scene SDO handles scene/project commands
 ```
 
 ## 6. 依赖边界
@@ -216,8 +216,8 @@ Frontend
 `ApplicationRuntime` 可以依赖：
 
 - `ApplicationContext`
-- `Facades`
-- `Facades`
+- `SDO`
+- `SDO`
 - `Product`
 - `Services`
 - `Database`

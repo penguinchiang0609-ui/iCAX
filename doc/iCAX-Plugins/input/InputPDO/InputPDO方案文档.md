@@ -32,7 +32,7 @@ Project frame begin
 
 键盘和鼠标当前状态是可覆盖数据。后端只关心某一帧看到的状态，不要求每一次状态变化都可靠送达，因此适合 PDO。
 
-可靠输入事件仍走 Facade：
+可靠输入事件仍走 SDO：
 
 - `KeyDown / KeyUp`
 - `MouseDown / MouseUp`

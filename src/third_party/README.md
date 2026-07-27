@@ -7,3 +7,4 @@ This directory is different from `iCAX-Engine/packages`: `packages` is the Visua
 ## Directory Structure
 
 - `opencascade/`: Open CASCADE Technology source, build script, and MSBuild integration files.
+- `flatbuffers/`: pinned Google FlatBuffers source, `flatc` build script, and header-only MSBuild integration.

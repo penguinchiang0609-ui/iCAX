@@ -79,7 +79,7 @@ namespace iCAX
             /*
             * @brief 整体替换应用设置。
             * @details 活跃 Context 的写入口只对 ApplicationRuntime 及其配置服务开放；
-            *   Product/Project/Scene/Facade 只能持有 const IApplicationContext 视图。
+            *   Product/Project/Scene/SDO 只能持有 const IApplicationContext 视图。
             */
             void ReplaceSettings(IN const iCAX::Data::PropertyBag& Settings_);
 

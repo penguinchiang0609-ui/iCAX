@@ -7,8 +7,8 @@
 #include <ApplicationContext/ApplicationContext.h>
 #include <Behaviour/BehaviourBase.h>
 #include <Behaviour/IBehaviourRegistry.h>
-#include <Facades/FacadeMethod.h>
-#include <Facades/FacadeRegistry.h>
+#include <SDO/SDOMethod.h>
+#include <SDO/SDORegistry.h>
 #include <Database/ComponentBase.h>
 #include <Database/IMetaRegistry.h>
 #include <PDO/PDOLease.h>
@@ -16,8 +16,8 @@
 #include <Resources/IResourceLoader.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <ProductContext/IProductContext.h>
-#include <Facades/FacadePayload.h>
-#include <Facades/FacadeChannelRegistry.h>
+#include <SDO/SDOText.h>
+#include <SDO/SDOChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 
 #include <typeindex>
@@ -283,12 +283,12 @@ namespace
             IN std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry_,
             IN std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry_,
             IN std::shared_ptr<iCAX::Services::CServiceProvider> pServiceProvider_,
-            IN std::shared_ptr<iCAX::Interaction::CFacadeRegistry> pFacadeRegistry_)
+            IN std::shared_ptr<iCAX::Interaction::CSDORegistry> pSDORegistry_)
             : m_pMetaRegistry(std::move(pMetaRegistry_))
             , m_pBehaviourRegistry(std::move(pBehaviourRegistry_))
             , m_pResourceLoaderRegistry(std::move(pResourceLoaderRegistry_))
             , m_pServiceProvider(std::move(pServiceProvider_))
-            , m_pFacadeRegistry(std::move(pFacadeRegistry_))
+            , m_pSDORegistry(std::move(pSDORegistry_))
         {
             m_Definition.ProductID = "project-test-product";
             m_Definition.ProductName = "Project Test Product";
@@ -329,9 +329,9 @@ namespace
             return *m_pResourceLoaderRegistry;
         }
 
-        iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const override
+        iCAX::Interaction::CSDORegistry& GetSDORegistry() const override
         {
-            return *m_pFacadeRegistry;
+            return *m_pSDORegistry;
         }
 
     private:
@@ -341,7 +341,7 @@ namespace
         std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
         std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
         std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
-        std::shared_ptr<iCAX::Interaction::CFacadeRegistry> m_pFacadeRegistry;
+        std::shared_ptr<iCAX::Interaction::CSDORegistry> m_pSDORegistry;
     };
 
     std::shared_ptr<iCAX::Product::IProductContext> MakeProductContext(
@@ -355,7 +355,7 @@ namespace
             pBehaviourRegistry_,
             pResourceLoaderRegistry_,
             pServiceProvider_,
-            std::make_shared<iCAX::Interaction::CFacadeRegistry>());
+            std::make_shared<iCAX::Interaction::CSDORegistry>());
     }
 
     bool WaitFor(std::condition_variable& Condition_, std::mutex& Mutex_, const std::function<bool()>& Predicate_)
@@ -364,9 +364,9 @@ namespace
         return Condition_.wait_for(_Lock, std::chrono::seconds(2), Predicate_);
     }
 
-    std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> MakeFacadeChannelRegistry()
+    std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> MakeSDOChannelRegistry()
     {
-        return std::make_shared<iCAX::Interaction::CFacadeChannelRegistry>();
+        return std::make_shared<iCAX::Interaction::CSDOChannelRegistry>();
     }
 
     std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> MakeResourceLoaderRegistry()
@@ -379,7 +379,7 @@ namespace
         CProjectCatalogCreateInfo _Info;
         _Info.pMetaRegistry = CreateProjectTestMetaRegistry();
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
-        _Info.pFacadeChannelRegistry = MakeFacadeChannelRegistry();
+        _Info.pSDOChannelRegistry = MakeSDOChannelRegistry();
         _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
@@ -399,7 +399,7 @@ namespace
         _Info.pMetaRegistry = CreateProjectTestMetaRegistry();
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
         _Info.pResourceLoaderRegistry = MakeResourceLoaderRegistry();
-        _Info.pFacadeChannelRegistry = MakeFacadeChannelRegistry();
+        _Info.pSDOChannelRegistry = MakeSDOChannelRegistry();
         _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
@@ -547,6 +547,69 @@ TEST(ProjectCatalogTest, SceneResourcesAreIsolated)
         _pChildScene->Resources().Get<TextResource>("memory://shared-id").get());
 }
 
+TEST(ProjectTest, ApplicationPathConfiguresSceneResourceVersionStorage)
+{
+    const auto _Root =
+        std::filesystem::temp_directory_path() /
+        ("icax-project-resource-versions-" +
+            iCAX::Data::to_string(
+                iCAX::Data::GenerateNewUUID()));
+    const auto _ExpectedRoot =
+        (_Root / "Configured" / "ResourceVersions")
+            .lexically_normal();
+
+    iCAX::Application::CApplicationDescriptor
+        _Descriptor;
+    iCAX::Application::CApplicationPaths _Paths;
+    _Paths.InstallDirectory = _Root.string();
+    _Paths.TempDirectory = "FallbackTemp";
+    _Paths.ResourceVersionDirectory =
+        "Configured/ResourceVersions";
+    auto _pApplicationContext =
+        std::make_shared<
+            iCAX::Application::CApplicationContext>(
+                _Descriptor,
+                _Paths,
+                iCAX::Data::PropertyBag{});
+
+    {
+        auto _Info = MakeProjectInfo();
+        _Info.pApplicationContext =
+            _pApplicationContext;
+        CProject _Project(_Info);
+
+        const auto _MainDirectory =
+            _Project.MainSceneResources()
+                .GetVersionStorageDirectory();
+        EXPECT_EQ(
+            _ExpectedRoot,
+            _MainDirectory.parent_path());
+
+        auto _pChildScene =
+            _Project.OpenChildScene(
+                _Project.GetMainSceneID(),
+                CProjectSceneCreateInfo{});
+        const auto _ChildDirectory =
+            _pChildScene->Resources()
+                .GetVersionStorageDirectory();
+        EXPECT_EQ(
+            _ExpectedRoot,
+            _ChildDirectory.parent_path());
+        EXPECT_NE(
+            _MainDirectory,
+            _ChildDirectory);
+    }
+
+    EXPECT_TRUE(
+        std::filesystem::is_directory(
+            _ExpectedRoot));
+    EXPECT_TRUE(
+        std::filesystem::is_empty(
+            _ExpectedRoot));
+    std::error_code _Error;
+    std::filesystem::remove_all(_Root, _Error);
+}
+
 TEST(ProjectCatalogTest, ProjectUsesInjectedMetaRegistry)
 {
     auto _pMeta = CreateProjectTestMetaRegistry();
@@ -674,7 +737,7 @@ TEST(ProjectCatalogTest, CatalogCreationRequiresExplicitDependencies)
     EXPECT_THROW({ CProjectCatalog _Catalog(_Info); }, std::invalid_argument);
 
     _Info = MakeCatalogInfo();
-    _Info.pFacadeChannelRegistry.reset();
+    _Info.pSDOChannelRegistry.reset();
     EXPECT_THROW({ CProjectCatalog _Catalog(_Info); }, std::invalid_argument);
 }
 
@@ -736,7 +799,7 @@ TEST(ProjectTest, StartRunsSceneFrameHandlerOnSceneThread)
     _Info.nFrameIntervalMilliseconds = 1;
     _Info.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Interaction::CFacadeEndpoint& Endpoint_) {
+        const iCAX::Interaction::CSDOEndpoint& Endpoint_) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _HandlerThreadID = std::this_thread::get_id();
@@ -768,7 +831,7 @@ TEST(ProjectTest, ChildSceneUsesProjectFrameHandlerWithOwnSceneContext)
     _Info.ProjectName = "Child Scene Handler";
     _Info.OnSceneFrame = [&](
         CProjectScene& Scene_,
-        const iCAX::Interaction::CFacadeEndpoint& Endpoint_) {
+        const iCAX::Interaction::CSDOEndpoint& Endpoint_) {
         if (!Scene_.IsTransientScene() || !Endpoint_.IsValid())
         {
             return;
@@ -863,7 +926,7 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     _SlowInfo.nFrameIntervalMilliseconds = 1;
     _SlowInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Interaction::CFacadeEndpoint&) {
+        const iCAX::Interaction::CSDOEndpoint&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _SlowThreadID = std::this_thread::get_id();
@@ -878,7 +941,7 @@ TEST(ProjectTest, ProjectsRunOnIndependentThreads)
     _FastInfo.nFrameIntervalMilliseconds = 1;
     _FastInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Interaction::CFacadeEndpoint&) {
+        const iCAX::Interaction::CSDOEndpoint&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _FastThreadID = std::this_thread::get_id();
@@ -919,7 +982,7 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     _FaultInfo.nFrameIntervalMilliseconds = 1;
     _FaultInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Interaction::CFacadeEndpoint&) {
+        const iCAX::Interaction::CSDOEndpoint&) {
         {
             std::lock_guard<std::mutex> _Lock(_Mutex);
             _bFaultProjectEnteredFrame = true;
@@ -933,7 +996,7 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     _HealthyInfo.nFrameIntervalMilliseconds = 1;
     _HealthyInfo.OnSceneFrame = [&](
         CProjectScene&,
-        const iCAX::Interaction::CFacadeEndpoint&) {
+        const iCAX::Interaction::CSDOEndpoint&) {
         ++_HealthyFrames;
         _Condition.notify_all();
     };
@@ -958,14 +1021,14 @@ TEST(ProjectTest, FaultedProjectDoesNotStopOtherProjects)
     _HealthyProject.Stop();
 }
 
-TEST(ProjectTest, CloseInvalidatesMainSceneFacadeEndpoints)
+TEST(ProjectTest, CloseInvalidatesMainSceneSDOEndpoints)
 {
     auto _Info = MakeProjectInfo();
-    _Info.ProjectName = "Facade";
+    _Info.ProjectName = "SDO";
 
     CProject _Project(_Info);
-    auto _FrontendEndpoint = _Project.GetMainSceneFrontendFacadeEndpoint();
-    auto _BackendEndpoint = _Project.GetMainSceneBackendFacadeEndpoint();
+    auto _FrontendEndpoint = _Project.GetMainSceneFrontendSDOEndpoint();
+    auto _BackendEndpoint = _Project.GetMainSceneBackendSDOEndpoint();
     ASSERT_TRUE(_FrontendEndpoint.IsValid());
     ASSERT_TRUE(_BackendEndpoint.IsValid());
 
@@ -973,27 +1036,27 @@ TEST(ProjectTest, CloseInvalidatesMainSceneFacadeEndpoints)
 
     EXPECT_FALSE(_FrontendEndpoint.IsValid());
     EXPECT_FALSE(_BackendEndpoint.IsValid());
-    EXPECT_THROW(_FrontendEndpoint.Send(iCAX::Interaction::CFacadeFrame{}), std::logic_error);
+    EXPECT_THROW(_FrontendEndpoint.Send(iCAX::Interaction::CSDOFrame{}), std::logic_error);
     EXPECT_THROW(_BackendEndpoint.Receive(), std::logic_error);
-    EXPECT_THROW(_Project.GetMainSceneFrontendFacadeEndpoint(), std::logic_error);
+    EXPECT_THROW(_Project.GetMainSceneFrontendSDOEndpoint(), std::logic_error);
 }
 
 TEST(ProjectTest, MainSceneCanSendFrontendEvent)
 {
-    constexpr uint64_t kRepositoryChangedEvent = iCAX::Interaction::MakeFacadeMethodCode("Project", "RepositoryChanged");
+    constexpr uint64_t kRepositoryChangedEvent = iCAX::Interaction::MakeSDOMethodCode("Project", "RepositoryChanged");
 
     CProject _Project(MakeProjectInfo());
-    auto _FrontendEndpoint = _Project.GetMainSceneFrontendFacadeEndpoint();
+    auto _FrontendEndpoint = _Project.GetMainSceneFrontendSDOEndpoint();
 
     _Project.SendMainSceneFrontendEvent(kRepositoryChangedEvent, "project-event");
 
     auto _Events = _FrontendEndpoint.Receive();
     ASSERT_EQ(1u, _Events.size());
     EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Events[0].nStatus);
-    EXPECT_EQ(iCAX::Interaction::EFacadeFrameKind::Event, _Events[0].nKind);
+    EXPECT_EQ(iCAX::Interaction::ESDOFrameKind::Event, _Events[0].nKind);
     EXPECT_EQ(0u, _Events[0].nCallID);
     EXPECT_EQ(kRepositoryChangedEvent, _Events[0].nMethodCode);
-    EXPECT_EQ("project-event", iCAX::Interaction::GetFacadePayloadText(_Events[0]));
+    EXPECT_EQ("project-event", iCAX::Interaction::GetSDOPayloadText(_Events[0]));
 
 }
 

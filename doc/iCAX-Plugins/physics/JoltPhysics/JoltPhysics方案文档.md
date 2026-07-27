@@ -42,7 +42,7 @@ Project worker thread
     -> update backend state or write PDO result
 ```
 
-这样做的原因是物理查询依赖 Repository、Resource、当前命令和产品上下文。把物理拆成独立端点会引入额外同步协议，并让同一进程内的数据又绕回 Facade/PDO。
+这样做的原因是物理查询依赖 Repository、Resource、当前命令和产品上下文。把物理拆成独立端点会引入额外同步协议，并让同一进程内的数据又绕回 SDO/PDO。
 
 ## 5. 多场景
 
@@ -78,7 +78,7 @@ Body 的 `nOwnerObjectID` 用来回到产品对象、Entity 或显示对象。�
 - `RenderPDO`：告诉前方画什么。
 - `JoltPhysics`：告诉后端如何碰撞、拾取和查询。
 
-前端使用 H5、WPF 或 QT 都不影响 JoltPhysics。前端只需要按契约读写 PDO 或发送 Facade。
+前端使用 H5、WPF 或 QT 都不影响 JoltPhysics。前端只需要按契约读写 PDO 或发送 SDO。
 
 ## 8. Jolt SDK 接入
 

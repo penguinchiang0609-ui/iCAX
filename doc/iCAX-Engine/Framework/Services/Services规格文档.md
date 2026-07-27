@@ -28,15 +28,15 @@
 
 ### 2.4 通信通道边界
 
-`Services` 不承载 Facades，也不承载 PDO。通信和共享内存能力属于运行时上下文：
+`Services` 不承载 SDO，也不承载 PDO。通信和共享内存能力属于运行时上下文：
 
-- Facades 位于 `framework/Facades`，由 `ApplicationRuntime` 直接持有 `CFacadeChannelRegistry` 并显式注入 ProductRuntime / Project / Scene。
+- SDO 位于 `framework/SDO`，由 `ApplicationRuntime` 直接持有 `CSDOChannelRegistry` 并显式注入 ProductRuntime / Project / Scene。
 - PDO 位于 `framework/PDO`，由 `Scene` 直接持有 `IPDOHub` 并通过 `ISceneContext::PDOHub()` 暴露。
 
 约束：
 
 - ServiceProvider 只管理实现 `IService` 的服务对象。
-- Facades / PDO 不允许注册成 Service。
+- SDO / PDO 不允许注册成 Service。
 - 业务代码需要通信能力时从 Application/Product/Project/Scene context 获取；项目级设置走 ProjectContext，运行现场能力走 SceneContext。
 
 ## 3. 依赖边界

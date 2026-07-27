@@ -11,7 +11,7 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     , m_pServiceProvider(CreateInfo_.pServiceProvider)
     , m_pMetaRegistry(CreateInfo_.pMetaRegistry)
     , m_pBehaviourRegistry(CreateInfo_.pBehaviourRegistry)
-    , m_pFacadeChannelRegistry(CreateInfo_.pFacadeChannelRegistry)
+    , m_pSDOChannelRegistry(CreateInfo_.pSDOChannelRegistry)
     , m_bEnablePDOHub(CreateInfo_.bEnablePDOHub)
     , m_PDOHubCreateInfo(CreateInfo_.PDOHubCreateInfo)
     , m_ResourceLoaderRegistryFactory(CreateInfo_.ResourceLoaderRegistryFactory)
@@ -38,9 +38,9 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     {
         throw std::invalid_argument("ProjectCatalog BehaviourRegistry cannot be null");
     }
-    if (!m_pFacadeChannelRegistry)
+    if (!m_pSDOChannelRegistry)
     {
-        throw std::invalid_argument("ProjectCatalog FacadeChannelRegistry cannot be null");
+        throw std::invalid_argument("ProjectCatalog SDOChannelRegistry cannot be null");
     }
     if (!m_ResourceLoaderRegistryFactory)
     {
@@ -234,9 +234,9 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         CreateInfo_.pBehaviourRegistry = m_pBehaviourRegistry;
     }
-    if (!CreateInfo_.pFacadeChannelRegistry)
+    if (!CreateInfo_.pSDOChannelRegistry)
     {
-        CreateInfo_.pFacadeChannelRegistry = m_pFacadeChannelRegistry;
+        CreateInfo_.pSDOChannelRegistry = m_pSDOChannelRegistry;
     }
     if (!CreateInfo_.pResourceLoaderRegistry && m_ResourceLoaderRegistryFactory)
     {
@@ -267,9 +267,9 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     {
         throw std::invalid_argument("ProjectCatalog BehaviourRegistry cannot be null");
     }
-    if (!CreateInfo_.pFacadeChannelRegistry)
+    if (!CreateInfo_.pSDOChannelRegistry)
     {
-        throw std::invalid_argument("ProjectCatalog FacadeChannelRegistry cannot be null");
+        throw std::invalid_argument("ProjectCatalog SDOChannelRegistry cannot be null");
     }
     if (!CreateInfo_.pResourceLoaderRegistry)
     {

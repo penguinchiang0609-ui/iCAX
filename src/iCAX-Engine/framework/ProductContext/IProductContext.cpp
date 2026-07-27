@@ -22,12 +22,12 @@ const iCAX::Data::uuid& iCAX::Product::IProductContext::GetProductChannelID() co
     return _Nil;
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Product::IProductContext::GetBackendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Product::IProductContext::GetBackendSDOEndpoint() const
 {
-    throw std::logic_error("Product backend Facade endpoint is not configured");
+    throw std::logic_error("Product backend SDO endpoint is not configured");
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Product::IProductContext::GetFrontendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Product::IProductContext::GetFrontendSDOEndpoint() const
 {
-    throw std::logic_error("Product frontend Facade endpoint is not configured");
+    throw std::logic_error("Product frontend SDO endpoint is not configured");
 }

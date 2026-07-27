@@ -231,7 +231,7 @@ async function applyMachineInstanceName(context, view, editor, input, ops) {
     if (sequence !== state.sequence) {
       return;
     }
-    mergeMachineFacadeResult(view, responsePayload);
+    mergeMachineSDOResult(view, responsePayload);
     ops.appendProjectLog(context, "ok", `机床实例已重命名：${name}`);
     ops.renderProject(context, view);
   } catch (error) {
@@ -279,7 +279,7 @@ async function applyMachineAppearanceLive(context, view, editor, ops) {
     if (sequence !== state.sequence) {
       return;
     }
-    mergeMachineFacadeResult(view, responsePayload);
+    mergeMachineSDOResult(view, responsePayload);
   } catch (error) {
     if (sequence !== state.sequence) {
       return;
@@ -358,7 +358,7 @@ export async function importMachinePath(context, view, sourcePath, ops) {
     ops.renderProject(context, view);
     return;
   }
-  const imported = await ops.invokeFacadeMethodPayload(
+  const imported = await ops.invokeSDOMethodPayload(
     context,
     view,
     "MachineDefinition.Import",
@@ -436,7 +436,7 @@ export async function instantiateMachineDefinition(context, view, machineDefinit
   }
 
   view.selectedMachineDefinitionId = id;
-  const ok = await ops.invokeFacadeMethod(context, view, "Machine.Instantiate", { machineDefinitionId: id }, { timeoutMs: 60000 });
+  const ok = await ops.invokeSDOMethod(context, view, "Machine.Instantiate", { machineDefinitionId: id }, { timeoutMs: 60000 });
   if (ok) {
     view.selectedMachineInstanceId = findLatestMachineInstanceId(view.scene, id) || getSelectedMachineId(view.scene, view);
     await ops.fitViewAfterRenderPublish(context, view);
@@ -499,7 +499,7 @@ export async function setMachineDefinitionEnabled(context, view, machineDefiniti
   }
 
   view.selectedMachineDefinitionId = id;
-  await ops.invokeFacadeMethod(context, view, "MachineDefinition.SetEnabled", { machineDefinitionId: id, enabled: Boolean(enabled) });
+  await ops.invokeSDOMethod(context, view, "MachineDefinition.SetEnabled", { machineDefinitionId: id, enabled: Boolean(enabled) });
 }
 
 export async function deleteMachineDefinition(context, view, machineDefinitionId, ops) {
@@ -510,7 +510,7 @@ export async function deleteMachineDefinition(context, view, machineDefinitionId
     return;
   }
 
-  const ok = await ops.invokeFacadeMethod(context, view, "MachineDefinition.Delete", { machineDefinitionId: id });
+  const ok = await ops.invokeSDOMethod(context, view, "MachineDefinition.Delete", { machineDefinitionId: id });
   if (ok && view.selectedMachineDefinitionId === id) {
     view.selectedMachineDefinitionId = "";
   }
@@ -525,7 +525,7 @@ export async function setMachineInstanceEnabled(context, view, machineEntityId, 
   }
 
   view.selectedMachineInstanceId = id;
-  const result = await ops.invokeFacadeMethod(context, view, "Machine.SetEnabled", { machineEntityId: id, enabled: Boolean(enabled) });
+  const result = await ops.invokeSDOMethod(context, view, "Machine.SetEnabled", { machineEntityId: id, enabled: Boolean(enabled) });
   if (result) {
     await ops.fitViewAfterRenderPublish(context, view);
   }
@@ -648,7 +648,7 @@ async function applyMachineJointLimitsLive(context, view, editor, ops) {
     if (sequence !== state.sequence) {
       return;
     }
-    mergeMachineFacadeResult(view, responsePayload);
+    mergeMachineSDOResult(view, responsePayload);
   } catch (error) {
     if (sequence !== state.sequence) {
       return;
@@ -716,7 +716,7 @@ async function applyMachineToolTCPLive(context, view, editor, ops) {
     if (sequence !== state.sequence) {
       return;
     }
-    mergeMachineFacadeResult(view, responsePayload);
+    mergeMachineSDOResult(view, responsePayload);
   } catch (error) {
     if (sequence !== state.sequence) {
       return;
@@ -757,7 +757,7 @@ function readToolTCPEditorPayload(editor, view) {
   };
 }
 
-function mergeMachineFacadeResult(view, payload) {
+function mergeMachineSDOResult(view, payload) {
   if (!payload || typeof payload !== "object") {
     return;
   }
@@ -865,14 +865,14 @@ export function jogMachine(context, view, direction, ops) {
   invokeMachineMethod(context, view, "Machine.Jog", { axis, delta }, {}, ops);
 }
 
-export function invokeMachineMethod(context, view, facadeMethod, payload = {}, options = {}, ops) {
+export function invokeMachineMethod(context, view, sdoMethod, payload = {}, options = {}, ops) {
   const machineEntityId = getSelectedMachineId(view.scene ?? {}, view);
   if (!machineEntityId) {
     view.error = "请选择机床实例";
     ops.renderProject(context, view);
     return;
   }
-  ops.invokeFacadeMethod(context, view, facadeMethod, { machineEntityId, ...payload }, options);
+  ops.invokeSDOMethod(context, view, sdoMethod, { machineEntityId, ...payload }, options);
 }
 
 function findLatestMachineInstanceId(scene = {}, machineDefinitionId = "") {

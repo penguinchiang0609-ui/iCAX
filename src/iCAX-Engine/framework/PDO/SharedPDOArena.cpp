@@ -334,6 +334,16 @@ uint64_t iCAX::PDO::CSharedPDOSlot::GetBufferDataVersion(IN uint32_t nIndex_) co
     return ReadAtomicUInt64(&m_pHeader->nBufferDataVersion[nIndex_]);
 }
 
+uint64_t iCAX::PDO::CSharedPDOSlot::GetBufferPayloadSize(IN uint32_t nIndex_) const
+{
+    RequireValid();
+    if (nIndex_ >= kSharedPDOBufferCount)
+    {
+        throw std::out_of_range("Shared PDO payload size index is out of range");
+    }
+    return ReadAtomicUInt64(&m_pHeader->nBufferPayloadSize[nIndex_]);
+}
+
 bool iCAX::PDO::CSharedPDOSlot::IsReadSnapshotValid(
     IN uint32_t nSequence_,
     IN uint32_t nPublishedIndex_) const noexcept
@@ -445,6 +455,15 @@ bool iCAX::PDO::CSharedPDOSlot::TryBeginWriteIfNewer(
 
 void iCAX::PDO::CSharedPDOSlot::MarkWriteReady(IN uint64_t nDataVersion_)
 {
+    MarkWriteReady(
+        nDataVersion_,
+        static_cast<uint64_t>(GetHeader().nPayloadSize));
+}
+
+void iCAX::PDO::CSharedPDOSlot::MarkWriteReady(
+    IN uint64_t nDataVersion_,
+    IN uint64_t nPayloadSize_)
+{
     RequireValid();
     if (nDataVersion_ == 0)
     {
@@ -454,9 +473,16 @@ void iCAX::PDO::CSharedPDOSlot::MarkWriteReady(IN uint64_t nDataVersion_)
     {
         throw std::logic_error("Shared PDO data version must be newer than the slot version");
     }
+    if (nPayloadSize_ == 0
+        || nPayloadSize_ > static_cast<uint64_t>(m_pHeader->nPayloadSize))
+    {
+        throw std::out_of_range(
+            "Shared PDO payload size is outside the slot capacity");
+    }
 
     const auto _WriteIndex = InterlockedCompareExchange(&m_pHeader->nWriteIndex, 0, 0);
     WriteAtomicUInt64(&m_pHeader->nBufferDataVersion[_WriteIndex], nDataVersion_);
+    WriteAtomicUInt64(&m_pHeader->nBufferPayloadSize[_WriteIndex], nPayloadSize_);
     WriteAtomicUInt64(&m_pHeader->nLatestDataVersion, nDataVersion_);
     InterlockedExchange(&m_pHeader->nBufferState[_WriteIndex], kSharedPDOBufferReady);
     InterlockedExchange(&m_pHeader->nReadyIndex, _WriteIndex);
@@ -1034,6 +1060,8 @@ iCAX::PDO::CSharedPDOSlot iCAX::PDO::CSharedPDOArena::InitializeSlot(
     Slot_.nSequence = 0;
     Slot_.nBufferDataVersion[0] = 0;
     Slot_.nBufferDataVersion[1] = 0;
+    Slot_.nBufferPayloadSize[0] = 0;
+    Slot_.nBufferPayloadSize[1] = 0;
     Slot_.nPublishedDataVersion = 0;
     Slot_.nLatestDataVersion = 0;
     ++GetMutableHeader()->nSlotCount;
@@ -1250,6 +1278,14 @@ void iCAX::PDO::CSharedPDOArena::ValidateOpenedArena() const
                 && static_cast<long>(_BufferIndex) != _Slot.nWriteIndex)
             {
                 throw std::runtime_error("Shared PDO arena slot buffer is being written");
+            }
+            if (ReadAtomicUInt64(
+                    const_cast<volatile unsigned long long*>(
+                        &_Slot.nBufferPayloadSize[_BufferIndex]))
+                > static_cast<uint64_t>(_Slot.nPayloadSize))
+            {
+                throw std::runtime_error(
+                    "Shared PDO arena slot buffer payload size is invalid");
             }
             /*
             * Reading + readerCount == 0 can be observed briefly between EndRead

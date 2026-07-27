@@ -2,7 +2,7 @@
 
 `Services` 是 framework 层的服务体系工程，负责服务接口、服务提供器和自动注册辅助。
 
-Facade 调用位于 `Facades`，PDO 位于 `PDO`。二者都是运行时通信/共享数据能力，不进入 ServiceProvider。`ApplicationRuntime` 直接持有 `CFacadeChannelRegistry`，Scene 直接持有自己的 PDOHub。
+SDO 调用位于 `SDO`，PDO 位于 `PDO`。二者都是运行时通信/共享数据能力，不进入 ServiceProvider。`ApplicationRuntime` 直接持有 `CSDOChannelRegistry`，Scene 直接持有自己的 PDOHub。
 
 框架级服务实现放在本工程内。产品级服务实现放在对应 `src/apps/<product-id>/backend/service` 工程，并通过本工程提供的服务注册体系接入。
 

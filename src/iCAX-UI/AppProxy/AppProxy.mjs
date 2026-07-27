@@ -1,6 +1,6 @@
-import { AppFacade } from "../SDK/Facades/facadeMethod.mjs";
-import { isUsableChannelId } from "../SDK/Facades/channelId.mjs";
-import { FacadeClient } from "../SDK/Facades/facadeClient.mjs";
+import { AppSDO } from "../SDK/SDO/sdoMethod.mjs";
+import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
+import { SDOClient } from "../SDK/SDO/sdoClient.mjs";
 import { ProductProxy } from "../ProductProxy/ProductProxy.mjs";
 
 export class AppProxy {
@@ -9,21 +9,21 @@ export class AppProxy {
       throw new TypeError("bridge is required");
     }
 
-    const facadeClient = options.facadeClient ?? new FacadeClient(bridge, options.facades ?? {});
+    const sdoClient = options.sdoClient ?? new SDOClient(bridge, options.sdo ?? {});
     const applicationChannelId = options.applicationChannelId ?? await bridge.getApplicationChannelId();
-    return new AppProxy(facadeClient, applicationChannelId, { bridge });
+    return new AppProxy(sdoClient, applicationChannelId, { bridge });
   }
 
-  constructor(facadeClient, applicationChannelId, options = {}) {
-    if (!facadeClient) {
-      throw new TypeError("facadeClient is required");
+  constructor(sdoClient, applicationChannelId, options = {}) {
+    if (!sdoClient) {
+      throw new TypeError("sdoClient is required");
     }
     if (!applicationChannelId) {
       throw new TypeError("applicationChannelId is required");
     }
 
-    this.facadeClient = facadeClient;
-    this.bridge = options.bridge ?? facadeClient.bridge ?? null;
+    this.sdoClient = sdoClient;
+    this.bridge = options.bridge ?? sdoClient.bridge ?? null;
     this.applicationChannelId = applicationChannelId;
     this.state = null;
     this.products = new Map();
@@ -31,21 +31,21 @@ export class AppProxy {
   }
 
   async getState() {
-    const state = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.getState);
+    const state = await this.sdoClient.invoke(this.applicationChannelId, AppSDO.getState);
     await this.#syncProductsFromState(state);
     return state;
   }
 
   async listProducts() {
-    const state = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.listProducts);
+    const state = await this.sdoClient.invoke(this.applicationChannelId, AppSDO.listProducts);
     await this.#syncProductsFromState(state);
     return state;
   }
 
   async startProduct(productId = "") {
-    const response = await this.facadeClient.invoke(
+    const response = await this.sdoClient.invoke(
       this.applicationChannelId,
-      AppFacade.startProduct,
+      AppSDO.startProduct,
       productId ? { productId } : {},
     );
     await this.#syncProductsFromState(response.state);
@@ -53,7 +53,7 @@ export class AppProxy {
   }
 
   async stopProduct(productId) {
-    const state = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.stopProduct, { productId });
+    const state = await this.sdoClient.invoke(this.applicationChannelId, AppSDO.stopProduct, { productId });
     await this.#syncProductsFromState(state);
     const product = this.products.get(productId);
     product?.dispose();
@@ -62,7 +62,7 @@ export class AppProxy {
   }
 
   resolveProjectFile(projectPath) {
-    return this.facadeClient.invoke(this.applicationChannelId, AppFacade.resolveProjectFile, { projectPath });
+    return this.sdoClient.invoke(this.applicationChannelId, AppSDO.resolveProjectFile, { projectPath });
   }
 
   openProjectFile(projectPath, options = {}) {
@@ -70,7 +70,7 @@ export class AppProxy {
   }
 
   async openProject(projectPath, options = {}) {
-    const response = await this.facadeClient.invoke(this.applicationChannelId, AppFacade.openProjectFile, {
+    const response = await this.sdoClient.invoke(this.applicationChannelId, AppSDO.openProjectFile, {
       projectPath,
       catalogName: options.catalogName ?? "",
       projectName: options.projectName ?? "",
@@ -90,12 +90,12 @@ export class AppProxy {
     };
   }
 
-  subscribe(facadeMember, handler) {
-    return this.#trackUnsubscribe(this.facadeClient.subscribe(this.applicationChannelId, facadeMember, handler));
+  subscribe(sdoMember, handler) {
+    return this.#trackUnsubscribe(this.sdoClient.subscribe(this.applicationChannelId, sdoMember, handler));
   }
 
   subscribeAll(handler) {
-    return this.#trackUnsubscribe(this.facadeClient.subscribeAll(this.applicationChannelId, handler));
+    return this.#trackUnsubscribe(this.sdoClient.subscribeAll(this.applicationChannelId, handler));
   }
 
   getProduct(productId) {
@@ -118,7 +118,7 @@ export class AppProxy {
       return existing;
     }
 
-    const product = new ProductProxy(this.facadeClient, registeredState, {
+    const product = new ProductProxy(this.sdoClient, registeredState, {
       bridge: this.bridge,
       appProxy: this,
     });
@@ -137,7 +137,7 @@ export class AppProxy {
     }
     this.unsubscribers.clear();
 
-    this.facadeClient.stop(this.applicationChannelId);
+    this.sdoClient.stop(this.applicationChannelId);
   }
 
   #trackUnsubscribe(unsubscribe) {

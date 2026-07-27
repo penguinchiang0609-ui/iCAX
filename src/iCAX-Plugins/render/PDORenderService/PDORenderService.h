@@ -1,7 +1,7 @@
 #pragma once
 
 #include "PDORenderServiceExport.h"
-#include "Facades/FacadeMethod.h"
+#include "SDO/SDOMethod.h"
 #include "RenderService/RenderService.h"
 #include "PDO/IPDOSlot.h"
 #include "Services/ServicesHelper.h"
@@ -19,20 +19,20 @@ namespace iCAX
         /*
         * @brief PDORenderService 发给前端的事件码。
         * @details
-        *   事件通过 Scene Facade channel 发送，payload 使用 UTF-8 JSON 文本。
+        *   事件通过 Scene SDO channel 发送，payload 使用 UTF-8 JSON 文本。
         *   前端必须把 PDOID 当作 slot 身份，并在 shared memory arena 中按 PDOID 解析当前 offset，
         *   不允许长期缓存 offset。碎片整理或扩容后，同一个 PDOID 对应的 offset 可能变化。
         */
         inline constexpr uint64_t kPDORenderSlotAllocatedEvent =
-            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "SlotAllocated");
+            iCAX::Interaction::MakeSDOMethodCode("PDORender", "SlotAllocated");
         inline constexpr uint64_t kPDORenderSlotFreedEvent =
-            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "SlotFreed");
+            iCAX::Interaction::MakeSDOMethodCode("PDORender", "SlotFreed");
         inline constexpr uint64_t kPDORenderSlotMovedEvent =
-            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "SlotMoved");
+            iCAX::Interaction::MakeSDOMethodCode("PDORender", "SlotMoved");
         inline constexpr uint64_t kPDORenderDefragBeginEvent =
-            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "DefragBegin");
+            iCAX::Interaction::MakeSDOMethodCode("PDORender", "DefragBegin");
         inline constexpr uint64_t kPDORenderDefragEndEvent =
-            iCAX::Interaction::MakeFacadeMethodCode("PDORender", "DefragEnd");
+            iCAX::Interaction::MakeSDOMethodCode("PDORender", "DefragEnd");
 
         /*
         * @brief 基于 PDO 的 RenderService 实现。
@@ -76,7 +76,8 @@ namespace iCAX
 
             bool CreateScene(
                 IN const iCAX::Data::uuid& ProjectID_,
-                IN iCAX::Render::RenderSceneID nSceneID_) override;
+                IN iCAX::Render::RenderSceneID nSceneID_,
+                IN const iCAX::Data::uuid& OutputSceneID_ = {}) override;
 
             bool DestroyScene(
                 IN const iCAX::Data::uuid& ProjectID_,
@@ -140,6 +141,10 @@ namespace iCAX
                 IN iCAX::Render::RenderCameraID nActiveCameraID_) override;
 
             iCAX::Render::SRenderSceneSnapshot GetSceneSnapshot(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN iCAX::Render::RenderSceneID nSceneID_) const override;
+
+            iCAX::Render::RenderDataVersion GetSceneRevision(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN iCAX::Render::RenderSceneID nSceneID_) const override;
 
@@ -302,6 +307,9 @@ namespace iCAX
             std::unordered_map<
                 iCAX::Data::uuid,
                 std::unordered_map<iCAX::Render::RenderSceneID, SScenePDOOutputState>> m_PDOOutputs;
+            std::unordered_map<
+                iCAX::Data::uuid,
+                std::unordered_map<iCAX::Render::RenderSceneID, iCAX::Data::uuid>> m_OutputSceneOwners;
         };
     }
 }

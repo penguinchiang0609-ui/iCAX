@@ -130,7 +130,7 @@ namespace
                     continue;
                 }
 
-                if (std::string_view("(){}[];,.=!<>:+").find(_Character)
+                if (std::string_view("(){}[];,.=!<>:+*").find(_Character)
                     != std::string_view::npos)
                 {
                     ++m_Position;
@@ -402,10 +402,65 @@ namespace
             if (MatchKeyword("SELECT") || MatchKeyword("QUERY"))
             {
                 _Statement.Type = EEntityStatementType::Query;
-                ExpectKeyword("ENTITY");
+                _Statement.Query.Projections = ParseSqlProjectionList();
                 _Statement.Where = MatchKeyword("WHERE")
                     ? CEntityWhereBuilder::Build(ParseSqlOr())
                     : CEntityWhereBuilder::MatchAll();
+                _Statement.Query.Where = _Statement.Where;
+                if (MatchKeyword("GROUP"))
+                {
+                    ExpectKeyword("BY");
+                    do
+                    {
+                        _Statement.Query.GroupBy.push_back(
+                            ParseSqlQueryField());
+                    } while (MatchSymbol(","));
+                }
+                if (MatchKeyword("ORDER"))
+                {
+                    ExpectKeyword("BY");
+                    do
+                    {
+                        _Statement.Query.OrderBy.push_back(
+                            ParseSqlOrder(
+                                _Statement.Query.Projections));
+                    } while (MatchSymbol(","));
+                }
+                if (MatchKeyword("SKIP"))
+                {
+                    _Statement.Query.Skip = ParseSqlOperand(false);
+                }
+                if (MatchKeyword("TAKE"))
+                {
+                    _Statement.Query.Take = ParseSqlOperand(false);
+                }
+                if ((_Statement.Query.Skip || _Statement.Query.Take)
+                    && _Statement.Query.OrderBy.empty())
+                {
+                    Fail("SELECT SKIP/TAKE requires ORDER BY");
+                }
+            }
+            else if (MatchKeyword("INSERT"))
+            {
+                _Statement.Type = EEntityStatementType::Insert;
+                ExpectKeyword("ENTITY");
+                if (MatchKeyword("WITH"))
+                {
+                    ExpectKeyword("ENTITYID");
+                    ExpectSymbol("=");
+                    _Statement.Insert.EntityID =
+                        ParseSqlOperand(false);
+                }
+                while (!IsEnd() && !IsSymbol(";"))
+                {
+                    auto _Component = ParseSqlComponentUpdate();
+                    if (_Component.Type != EComponentUpdateType::Add)
+                    {
+                        Fail("INSERT ENTITY only supports ADD components");
+                    }
+                    _Statement.Insert.Initializer.Components.push_back(
+                        std::move(_Component));
+                }
             }
             else if (MatchKeyword("UPDATE"))
             {
@@ -436,7 +491,7 @@ namespace
             }
             else
             {
-                Fail("Expected SELECT, QUERY, UPDATE or DELETE");
+                Fail("Expected SELECT, QUERY, INSERT, UPDATE or DELETE");
             }
 
             MatchSymbol(";");
@@ -445,6 +500,181 @@ namespace
         }
 
     private:
+        SEntityQueryField ParseSqlQueryField()
+        {
+            SEntityQueryField _Field;
+            if (MatchKeyword("ENTITY") || MatchKeyword("ENTITYID"))
+            {
+                _Field.Type = EEntityQueryFieldType::EntityID;
+                return _Field;
+            }
+
+            const auto [_ComponentClass, _PropertyPath] =
+                ParseSqlFieldPath();
+            _Field.Type = EEntityQueryFieldType::Property;
+            _Field.ComponentClass = _ComponentClass;
+            _Field.PropertyPath = _PropertyPath;
+            return _Field;
+        }
+
+        std::string DefaultProjectionName(
+            IN const SEntityQueryProjection& Projection_) const
+        {
+            const auto _strField =
+                Projection_.Field.Type == EEntityQueryFieldType::EntityID
+                ? std::string("ENTITYID")
+                : Projection_.Field.ComponentClass
+                    + "." + Projection_.Field.PropertyPath;
+            switch (Projection_.Aggregate)
+            {
+            case EEntityQueryAggregate::None:
+                return _strField;
+            case EEntityQueryAggregate::Count:
+                return Projection_.bCountAll
+                    ? "COUNT(*)"
+                    : "COUNT(" + _strField + ")";
+            case EEntityQueryAggregate::Sum:
+                return "SUM(" + _strField + ")";
+            case EEntityQueryAggregate::Average:
+                return "AVG(" + _strField + ")";
+            case EEntityQueryAggregate::Minimum:
+                return "MIN(" + _strField + ")";
+            case EEntityQueryAggregate::Maximum:
+                return "MAX(" + _strField + ")";
+            }
+            return _strField;
+        }
+
+        SEntityQueryProjection ParseSqlProjection()
+        {
+            SEntityQueryProjection _Projection;
+            EEntityQueryAggregate _Aggregate =
+                EEntityQueryAggregate::None;
+            if (MatchKeyword("COUNT"))
+            {
+                _Aggregate = EEntityQueryAggregate::Count;
+            }
+            else if (MatchKeyword("SUM"))
+            {
+                _Aggregate = EEntityQueryAggregate::Sum;
+            }
+            else if (MatchKeyword("AVG")
+                || MatchKeyword("AVERAGE"))
+            {
+                _Aggregate = EEntityQueryAggregate::Average;
+            }
+            else if (MatchKeyword("MIN"))
+            {
+                _Aggregate = EEntityQueryAggregate::Minimum;
+            }
+            else if (MatchKeyword("MAX"))
+            {
+                _Aggregate = EEntityQueryAggregate::Maximum;
+            }
+
+            _Projection.Aggregate = _Aggregate;
+            if (_Aggregate != EEntityQueryAggregate::None)
+            {
+                ExpectSymbol("(");
+                if (_Aggregate == EEntityQueryAggregate::Count
+                    && MatchSymbol("*"))
+                {
+                    _Projection.bCountAll = true;
+                }
+                else
+                {
+                    _Projection.Field = ParseSqlQueryField();
+                }
+                ExpectSymbol(")");
+            }
+            else
+            {
+                _Projection.Field = ParseSqlQueryField();
+            }
+
+            if (MatchKeyword("AS"))
+            {
+                _Projection.Alias = ParseName();
+            }
+            else
+            {
+                _Projection.Alias =
+                    DefaultProjectionName(_Projection);
+            }
+            return _Projection;
+        }
+
+        std::vector<SEntityQueryProjection> ParseSqlProjectionList()
+        {
+            std::vector<SEntityQueryProjection> _Result;
+            SEntityQueryProjection _EntityID;
+            _EntityID.Field.Type = EEntityQueryFieldType::EntityID;
+            _EntityID.Alias = "ENTITYID";
+            _Result.push_back(_EntityID);
+
+            bool _bParsedAny = false;
+            while (true)
+            {
+                auto _Projection = ParseSqlProjection();
+                _bParsedAny = true;
+                if (_Projection.Aggregate != EEntityQueryAggregate::None
+                    || _Projection.Field.Type
+                        != EEntityQueryFieldType::EntityID)
+                {
+                    _Result.push_back(std::move(_Projection));
+                }
+                if (!MatchSymbol(","))
+                {
+                    break;
+                }
+            }
+            if (!_bParsedAny)
+            {
+                Fail("SELECT requires a projection");
+            }
+            return _Result;
+        }
+
+        SEntityQueryOrder ParseSqlOrder(
+            IN const std::vector<SEntityQueryProjection>& Projections_)
+        {
+            SEntityQueryOrder _Order;
+            if (Peek().Kind == ETokenKind::Identifier
+                && !IsSymbol(".", 1))
+            {
+                const auto _strCandidate = Upper(Peek().Text);
+                for (size_t _Index = 0;
+                    _Index < Projections_.size();
+                    ++_Index)
+                {
+                    if (Upper(Projections_[_Index].Alias)
+                        == _strCandidate)
+                    {
+                        Consume();
+                        _Order.bUseProjection = true;
+                        _Order.ProjectionAlias =
+                            Projections_[_Index].Alias;
+                        break;
+                    }
+                }
+            }
+            if (!_Order.bUseProjection)
+            {
+                _Order.Field = ParseSqlQueryField();
+            }
+
+            if (MatchKeyword("DESC"))
+            {
+                _Order.Direction =
+                    EEntityQueryOrderDirection::Descending;
+            }
+            else
+            {
+                MatchKeyword("ASC");
+            }
+            return _Order;
+        }
+
         std::string ParseLambdaHeader()
         {
             std::string _Variable;
@@ -1217,9 +1447,16 @@ iCAX::DatabaseLanguage::CEntitySql::Execute(
     switch (_Statement.Type)
     {
     case EEntityStatementType::Query:
-        _Result.EntityIDs = Repository_.Query(
-            _Statement.Where,
+        _Result.Query = Repository_.Select(
+            _Statement.Query,
             Parameters_);
+        _Result.EntityIDs = _Result.Query.EntityIDs;
+        break;
+    case EEntityStatementType::Insert:
+        _Result.Insert = Repository_.Insert(
+            _Statement.Insert,
+            Parameters_);
+        _Result.EntityIDs = { _Result.Insert.EntityID };
         break;
     case EEntityStatementType::Update:
         _Result.Mutation = Repository_.Update(

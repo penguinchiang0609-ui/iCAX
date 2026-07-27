@@ -42,11 +42,14 @@ namespace iCAX
             * @brief 创建渲染场景。
             * @param [in] ProjectID_ 场景所属项目 ID。
             * @param [in] nSceneID_ 项目内渲染场景 ID，不能为 0。
+            * @param [in] OutputSceneID_ 可选的输出宿主 Scene。需要由某个 Scene Tick
+            *   驱动外部输出的实现可使用该值；nil 表示采用实现的默认规则。
             * @return true 表示创建成功；false 表示场景已存在。
             */
             virtual bool CreateScene(
                 IN const iCAX::Data::uuid& ProjectID_,
-                IN RenderSceneID nSceneID_) = 0;
+                IN RenderSceneID nSceneID_,
+                IN const iCAX::Data::uuid& OutputSceneID_ = {}) = 0;
 
             /*
             * @brief 销毁指定渲染场景。
@@ -159,6 +162,14 @@ namespace iCAX
             * @throws std::logic_error 场景不存在时抛出。
             */
             virtual SRenderSceneSnapshot GetSceneSnapshot(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN RenderSceneID nSceneID_) const = 0;
+
+            /*
+            * @brief 获取轻量场景 revision，不复制完整快照。
+            * @details 任一成功的语义渲染数据修改都会推进 revision。
+            */
+            virtual RenderDataVersion GetSceneRevision(
                 IN const iCAX::Data::uuid& ProjectID_,
                 IN RenderSceneID nSceneID_) const = 0;
         };

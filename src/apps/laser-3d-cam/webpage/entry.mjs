@@ -41,8 +41,8 @@ const AREA_VIEW_DEFINITION_IDS = Object.freeze({
 function getProjectOps() {
   return {
     renderProject,
-    invokeFacadeMethod,
-    invokeFacadeMethodPayload,
+    invokeSDOMethod,
+    invokeSDOMethodPayload,
     refreshSceneState,
     appendProjectLog,
     fitViewAfterRenderPublish,
@@ -98,7 +98,7 @@ export async function handleRibbonCommand(context, commandId) {
   }
 
   if (commandId === "view.fit") {
-    invokeFacadeMethod(context, view, "CameraView.Fit", {});
+    invokeSDOMethod(context, view, "CameraView.Fit", {});
   } else if (commandId === "view.reset-layout") {
     resetWorkbenchLayout(view);
     showNotice(context, view, "布局已恢复默认尺寸。");
@@ -202,7 +202,7 @@ function renderProject(context, view) {
 
     const workpieceTarget = event.target instanceof Element ? event.target.closest("[data-cam-workpiece-id]") : null;
     if (workpieceTarget) {
-      invokeFacadeMethod(context, view, "Workpiece.SetActive", { workpieceEntityId: workpieceTarget.dataset.camWorkpieceId });
+      invokeSDOMethod(context, view, "Workpiece.SetActive", { workpieceEntityId: workpieceTarget.dataset.camWorkpieceId });
       return;
     }
 
@@ -229,7 +229,7 @@ function renderProject(context, view) {
       const kind = pickTarget.dataset.camKind;
       const id = Number(pickTarget.dataset.camId);
       const label = pickTarget.dataset.camLabel ?? "";
-      invokeFacadeMethod(context, view, "Selection.PickTopology", { kind, id, label });
+      invokeSDOMethod(context, view, "Selection.PickTopology", { kind, id, label });
     }
   };
 
@@ -508,9 +508,15 @@ function mountRenderViewport(context, view) {
   if (view.viewportSceneProxy !== context.sceneProxy) {
     view.viewport.connectScene(context.sceneProxy);
     view.viewportSceneProxy = context.sceneProxy;
+    view.viewContentUnsubscribe?.();
+    view.viewContentUnsubscribe = context.sceneProxy?.subscribe?.(
+      "View.ContentChanged",
+      (event) => handleViewContentChanged(context, view, event),
+    ) ?? null;
   }
   const activeAreaId = normalizeCamTab(context.activeRibbonTabId);
   const area = getProjectArea(view, activeAreaId);
+  view.viewport.setRenderSceneId(area.viewContent?.renderSceneId ?? "");
   view.viewport.setVisibleEntityIds(area.viewContent?.entityIds ?? []);
   view.viewport.mount(host);
   attachViewCube(view, mount);
@@ -521,16 +527,16 @@ function mountRenderViewport(context, view) {
     setMachineInstanceEnabled: (commandContext, commandView, machineEntityId, enabled) =>
       setMachineInstanceEnabledAction(commandContext, commandView, machineEntityId, enabled, getProjectOps()),
     setMachineInstanceName: (commandContext, commandView, machineEntityId, name) =>
-      invokeFacadeMethod(commandContext, commandView, "Machine.SetName", { machineEntityId, name }, { timeoutMs: 10000 }),
+      invokeSDOMethod(commandContext, commandView, "Machine.SetName", { machineEntityId, name }, { timeoutMs: 10000 }),
     setJobMachine: (commandContext, commandView, machineEntityId) =>
       setJobMachineAction(commandContext, commandView, machineEntityId, getProjectOps()),
     pickMachineObject: (commandContext, commandView, payload) =>
       pickMachineObject(commandContext, commandView, payload),
     setMachineElementAppearance: (commandContext, commandView, payload) =>
-      invokeFacadeMethodPayload(commandContext, commandView, "Machine.SetElementAppearance", payload, { timeoutMs: 10000 }),
+      invokeSDOMethodPayload(commandContext, commandView, "Machine.SetElementAppearance", payload, { timeoutMs: 10000 }),
     setStandardCameraView: (commandContext, commandView, viewName) =>
-      invokeFacadeMethod(commandContext, commandView, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 }),
-    fitView: (commandContext, commandView) => invokeFacadeMethod(commandContext, commandView, "CameraView.Fit", {}),
+      invokeSDOMethod(commandContext, commandView, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 }),
+    fitView: (commandContext, commandView) => invokeSDOMethod(commandContext, commandView, "CameraView.Fit", {}),
   });
   view.viewport.refreshAll();
 }
@@ -548,7 +554,7 @@ function runAction(context, view, action, actionTarget = null) {
   const ops = getProjectOps();
   if (action === "view-standard") {
     const viewName = String(actionTarget?.dataset?.camView ?? "iso").trim() || "iso";
-    invokeFacadeMethod(context, view, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 });
+    invokeSDOMethod(context, view, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 });
     return;
   }
   if (handleMachineAction(context, view, action, actionTarget, ops)) {
@@ -587,7 +593,7 @@ function handleViewportPick(context, view, userData, hit) {
     const face = findFaceByTriangleIndex(view.scene, faceIndex);
     if (face) {
       selectSceneObjectLocally(view, "");
-      invokeFacadeMethod(context, view, "Selection.PickTopology", {
+      invokeSDOMethod(context, view, "Selection.PickTopology", {
         kind: "face",
         id: Number(face.id),
         label: face.label ?? `face ${face.id}`,
@@ -629,7 +635,7 @@ async function refreshSceneState(context, view) {
   renderProject(context, view);
   try {
     const scene = {};
-    for (const facadeMethod of [
+    for (const sdoMethod of [
       "Job.Get",
       "MachineDefinition.List",
       "Machine.List",
@@ -638,7 +644,7 @@ async function refreshSceneState(context, view) {
       "Toolpath.List",
       "Selection.Get",
     ]) {
-      mergeScenePayload(scene, await context.sceneProxy.invoke(facadeMethod, {}, { timeoutMs: 30000 }));
+      mergeScenePayload(scene, await context.sceneProxy.invoke(sdoMethod, {}, { timeoutMs: 30000 }));
     }
     scene.readiness = buildReadiness(scene);
     view.scene = scene;
@@ -675,11 +681,16 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
     return area.viewContent;
   }
 
+  const sdoMethod = area.viewInstanceId ? "View.GetContent" : "View.Open";
+  const payload = area.viewInstanceId
+    ? { viewInstanceId: area.viewInstanceId }
+    : { viewDefinitionId: definitionId };
   const request = context.sceneProxy
-    .invoke("View.GetContent", { viewDefinitionId: definitionId }, { timeoutMs: 10000 })
+    .invoke(sdoMethod, payload, { timeoutMs: 10000 })
     .then((payload) => {
       const content = setProjectAreaViewContent(view, areaId, payload);
       if (view.activeAreaId === areaId) {
+        view.viewport?.setRenderSceneId(content.renderSceneId);
         view.viewport?.setVisibleEntityIds(content.entityIds);
         syncViewportSelection(view, view.scene);
         if (render) {
@@ -703,6 +714,35 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
   return request;
 }
 
+function handleViewContentChanged(context, view, event) {
+  let payload = event?.payload;
+  if (!payload || typeof payload !== "object") {
+    const text = String(event?.raw?.payloadText ?? "");
+    if (!text) {
+      return;
+    }
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      return;
+    }
+  }
+
+  const instanceId = String(payload.viewInstanceId ?? "").trim();
+  if (!instanceId) {
+    return;
+  }
+  const areaEntry = Object.entries(view.areas ?? {})
+    .find(([, area]) => area?.viewInstanceId === instanceId);
+  if (!areaEntry) {
+    return;
+  }
+  void ensureAreaViewContent(context, view, areaEntry[0], {
+    force: true,
+    render: view.activeAreaId === areaEntry[0],
+  });
+}
+
 async function refreshSelectedMachineElement(context, view, scene = {}) {
   const selection = scene.selection ?? {};
   const kind = String(selection.kind ?? "");
@@ -721,9 +761,9 @@ async function refreshSelectedMachineElement(context, view, scene = {}) {
   }
 }
 
-async function invokeFacadeMethod(context, view, facadeMethod, payload, options = {}) {
-  const { refreshScene: shouldRefreshScene = shouldRefreshSceneAfterFacadeCall(facadeMethod), ...invokeOptions } = options;
-  const result = await invokeFacadeMethodPayload(context, view, facadeMethod, payload, { ...invokeOptions, expectScene: false });
+async function invokeSDOMethod(context, view, sdoMethod, payload, options = {}) {
+  const { refreshScene: shouldRefreshScene = shouldRefreshSceneAfterSDOCall(sdoMethod), ...invokeOptions } = options;
+  const result = await invokeSDOMethodPayload(context, view, sdoMethod, payload, { ...invokeOptions, expectScene: false });
   if (result.ok) {
     mergeScenePayload(view.scene ??= {}, result.payload);
     syncViewportSelection(view, view.scene);
@@ -734,15 +774,15 @@ async function invokeFacadeMethod(context, view, facadeMethod, payload, options 
   return result.ok;
 }
 
-async function invokeFacadeMethodPayload(context, view, facadeMethod, payload, options = {}) {
+async function invokeSDOMethodPayload(context, view, sdoMethod, payload, options = {}) {
   if (!context.sceneProxy) {
     return { ok: false, payload: null };
   }
 
   const { expectScene = false, ...invokeOptions } = options;
-  appendProjectLog(context, "info", makeFacadeCallStartLog(facadeMethod, payload));
-  const showProgress = isLongFacadeCall(facadeMethod);
-  const progress = showProgress ? createFacadeCallProgress(facadeMethod) : null;
+  appendProjectLog(context, "info", makeSDOCallStartLog(sdoMethod, payload));
+  const showProgress = isLongSDOCall(sdoMethod);
+  const progress = showProgress ? createSDOCallProgress(sdoMethod) : null;
   const useShellProjectProgress = showProgress
     && typeof context.actions?.withProjectProgress === "function"
     && context.project?.projectId;
@@ -753,7 +793,7 @@ async function invokeFacadeMethodPayload(context, view, facadeMethod, payload, o
   renderProject(context, view);
   const progressStartedAt = performance.now();
   try {
-    const invoke = () => context.sceneProxy.invoke(facadeMethod, payload, invokeOptions);
+    const invoke = () => context.sceneProxy.invoke(sdoMethod, payload, invokeOptions);
     await waitForPaint();
     let responsePayload = null;
     if (useShellProjectProgress) {
@@ -770,13 +810,13 @@ async function invokeFacadeMethodPayload(context, view, facadeMethod, payload, o
     }
     appendProjectLog(
       context,
-      facadeMethod === "CameraView.Fit" && !view.scene?.fitView?.fitted ? "info" : "ok",
-      makeFacadeCallSuccessLog(facadeMethod, expectScene ? view.scene : responsePayload),
+      sdoMethod === "CameraView.Fit" && !view.scene?.fitView?.fitted ? "info" : "ok",
+      makeSDOCallSuccessLog(sdoMethod, expectScene ? view.scene : responsePayload),
     );
     return { ok: true, payload: responsePayload };
   } catch (error) {
     view.error = error?.message ?? String(error);
-    appendProjectLog(context, "error", `${facadeMethod} 失败：${view.error}`);
+    appendProjectLog(context, "error", `${sdoMethod} 失败：${view.error}`);
     return { ok: false, payload: null };
   } finally {
     if (!useShellProjectProgress) {
@@ -788,7 +828,7 @@ async function invokeFacadeMethodPayload(context, view, facadeMethod, payload, o
   }
 }
 
-function shouldRefreshSceneAfterFacadeCall(facadeMethod) {
+function shouldRefreshSceneAfterSDOCall(sdoMethod) {
   return ![
     "CameraView.Fit",
     "CameraView.SetStandard",
@@ -796,7 +836,7 @@ function shouldRefreshSceneAfterFacadeCall(facadeMethod) {
     "Selection.Get",
     "Selection.PickMachineObject",
     "Selection.PickTopology",
-  ].includes(facadeMethod);
+  ].includes(sdoMethod);
 }
 
 function mergeScenePayload(scene, payload) {
@@ -924,7 +964,7 @@ async function pickMachineObject(context, view, payload = {}) {
     return { ok: false, payload: null };
   }
 
-  const pickResult = await invokeFacadeMethodPayload(
+  const pickResult = await invokeSDOMethodPayload(
     context,
     view,
     "Selection.PickMachineObject",
@@ -935,7 +975,7 @@ async function pickMachineObject(context, view, payload = {}) {
     return pickResult;
   }
 
-  const elementResult = await invokeFacadeMethodPayload(
+  const elementResult = await invokeSDOMethodPayload(
     context,
     view,
     "Machine.GetElement",
@@ -1010,34 +1050,34 @@ function appendProjectLog(context, level, message) {
   console[level === "error" ? "error" : "log"](text);
 }
 
-function makeFacadeCallStartLog(facadeMethod, payload) {
+function makeSDOCallStartLog(sdoMethod, payload) {
   const sourcePath = payload?.sourcePath ? `：${payload.sourcePath}` : "";
-  if (facadeMethod === "MachineDefinition.Import") {
+  if (sdoMethod === "MachineDefinition.Import") {
     return `开始导入机床定义${sourcePath}`;
   }
-  if (facadeMethod === "Machine.Instantiate") {
+  if (sdoMethod === "Machine.Instantiate") {
     return `开始实例化机床：${payload?.machineDefinitionId ?? "-"}`;
   }
-  if (facadeMethod === "Machine.SetEnabled") {
+  if (sdoMethod === "Machine.SetEnabled") {
     return `${payload?.enabled === false ? "禁用" : "启用"}机床实例：${payload?.machineEntityId ?? "-"}`;
   }
-  if (facadeMethod === "WorkpieceModel.Import") {
+  if (sdoMethod === "WorkpieceModel.Import") {
     return `开始导入工件模型资源${sourcePath}`;
   }
-  if (facadeMethod === "Workpiece.Instantiate") {
+  if (sdoMethod === "Workpiece.Instantiate") {
     return `开始实例化工件：${payload?.modelResourceId ?? "-"}`;
   }
-  if (facadeMethod === "CameraView.Fit") {
+  if (sdoMethod === "CameraView.Fit") {
     return "开始自动适配最佳视角";
   }
-  return `调用 ${facadeMethod}`;
+  return `调用 ${sdoMethod}`;
 }
 
-function makeFacadeCallSuccessLog(facadeMethod, scene) {
-  if (facadeMethod === "MachineDefinition.Import") {
+function makeSDOCallSuccessLog(sdoMethod, scene) {
+  if (sdoMethod === "MachineDefinition.Import") {
     return `机床定义导入完成：definition=${scene?.machineDefinitionId ?? "-"}, path=${scene?.managedPath ?? scene?.sourcePath ?? "-"}`;
   }
-  if (facadeMethod === "Machine.Instantiate") {
+  if (sdoMethod === "Machine.Instantiate") {
     const machines = getMachines(scene);
     const machine = machines[machines.length - 1] ?? {};
     const visualCount = machine.visuals?.length ?? 0;
@@ -1048,18 +1088,18 @@ function makeFacadeCallSuccessLog(facadeMethod, scene) {
       : "。该定义没有可显示几何，视口保持为空是正常结果";
     return `机床实例化完成：links=${machine.links?.length ?? 0}, joints=${machine.joints?.length ?? 0}, visuals=${visualCount}, collisions=${collisionCount}, includes=${includeCount}${suffix}`;
   }
-  if (facadeMethod === "Machine.SetEnabled") {
+  if (sdoMethod === "Machine.SetEnabled") {
     const machine = scene?.machine ?? getSelectedMachine(scene, {});
     return `机床实例状态已更新：${machine.enabled === false ? "已禁用" : "已启用"}`;
   }
-  if (facadeMethod === "WorkpieceModel.Import") {
+  if (sdoMethod === "WorkpieceModel.Import") {
     return `工件模型资源导入完成：model=${scene?.modelResourceId ?? "-"}, brep=${scene?.brepResourceId ?? "-"}, topology=${scene?.topologyResourceId ?? "-"}`;
   }
-  if (facadeMethod === "Workpiece.Instantiate") {
+  if (sdoMethod === "Workpiece.Instantiate") {
     const topology = scene?.topology ?? {};
     return `工件实例化完成：faces=${topology.faceCount ?? 0}, loops=${topology.loopCount ?? 0}, edges=${topology.edgeCount ?? 0}`;
   }
-  if (facadeMethod === "CameraView.Fit") {
+  if (sdoMethod === "CameraView.Fit") {
     const fit = scene?.fitView ?? {};
     if (!fit.fitted) {
       return [
@@ -1079,13 +1119,13 @@ function makeFacadeCallSuccessLog(facadeMethod, scene) {
     }
     return `最佳视角已适配：radius=${formatNumber(fit.radius ?? 0, 2)}, distance=${formatNumber(fit.distance ?? 0, 2)}, speed=${formatNumber(fit.moveSpeed ?? 0, 2)}`;
   }
-  return `${facadeMethod} 完成`;
+  return `${sdoMethod} 完成`;
 }
 
 async function fitViewAfterRenderPublish(context, view) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await sleep(attempt === 0 ? 120 : 180);
-    const ok = await invokeFacadeMethod(context, view, "CameraView.Fit", {});
+    const ok = await invokeSDOMethod(context, view, "CameraView.Fit", {});
     if (ok && view.scene?.fitView?.fitted) {
       return;
     }
@@ -1134,17 +1174,17 @@ function waitForMinimumDuration(startedAt, minimumVisibleMs) {
   return new Promise((resolve) => window.setTimeout(resolve, remaining));
 }
 
-function isLongFacadeCall(facadeMethod) {
-  return facadeMethod === "MachineDefinition.Import"
-    || facadeMethod === "Machine.Instantiate"
-    || facadeMethod === "WorkpieceModel.Import"
-    || facadeMethod === "Workpiece.Instantiate"
-    || facadeMethod === "Toolpath.RecognizeLoops"
-    || facadeMethod === "Toolpath.AddSelectionPath";
+function isLongSDOCall(sdoMethod) {
+  return sdoMethod === "MachineDefinition.Import"
+    || sdoMethod === "Machine.Instantiate"
+    || sdoMethod === "WorkpieceModel.Import"
+    || sdoMethod === "Workpiece.Instantiate"
+    || sdoMethod === "Toolpath.RecognizeLoops"
+    || sdoMethod === "Toolpath.AddSelectionPath";
 }
 
-function createFacadeCallProgress(facadeMethod) {
-  if (facadeMethod === "MachineDefinition.Import") {
+function createSDOCallProgress(sdoMethod) {
+  if (sdoMethod === "MachineDefinition.Import") {
     return {
       title: "导入机床定义",
       detail: "正在托管机床定义源文件",
@@ -1159,7 +1199,7 @@ function createFacadeCallProgress(facadeMethod) {
       ],
     };
   }
-  if (facadeMethod === "Machine.Instantiate") {
+  if (sdoMethod === "Machine.Instantiate") {
     return {
       title: "实例化机床",
       detail: "正在把机床定义展开到当前加工场景",
@@ -1175,7 +1215,7 @@ function createFacadeCallProgress(facadeMethod) {
       ],
     };
   }
-  if (facadeMethod === "WorkpieceModel.Import") {
+  if (sdoMethod === "WorkpieceModel.Import") {
     return {
       title: "导入工件模型",
       detail: "正在读取模型文件",
@@ -1191,7 +1231,7 @@ function createFacadeCallProgress(facadeMethod) {
       ],
     };
   }
-  if (facadeMethod === "Workpiece.Instantiate") {
+  if (sdoMethod === "Workpiece.Instantiate") {
     return {
       title: "实例化工件",
       detail: "正在把工件资源加入当前加工场景",
@@ -1207,7 +1247,7 @@ function createFacadeCallProgress(facadeMethod) {
       ],
     };
   }
-  if (facadeMethod === "Toolpath.RecognizeLoops") {
+  if (sdoMethod === "Toolpath.RecognizeLoops") {
     return {
       title: "识别孔特征",
       detail: "正在扫描模型拓扑",
@@ -1221,7 +1261,7 @@ function createFacadeCallProgress(facadeMethod) {
       ],
     };
   }
-  if (facadeMethod === "Toolpath.AddSelectionPath") {
+  if (sdoMethod === "Toolpath.AddSelectionPath") {
     return {
       title: "生成刀路",
       detail: "正在从当前选择生成空间曲线",
@@ -1238,10 +1278,10 @@ function createFacadeCallProgress(facadeMethod) {
   return {
     title: "后台执行",
     detail: "正在等待后台调用完成",
-    stage: facadeMethod,
-    mode: "Facade",
+    stage: sdoMethod,
+    mode: "SDO",
     minimumVisibleMs: 800,
-    steps: [[facadeMethod, "正在等待后台调用完成"]],
+    steps: [[sdoMethod, "正在等待后台调用完成"]],
   };
 }
 

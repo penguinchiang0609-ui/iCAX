@@ -1,0 +1,12 @@
+namespace iCAX.FlatBuffersPolicyTest;
+
+file_identifier "ICFT";
+file_extension "icft";
+
+table TestEnvelope {
+  schema_version:uint = 1;
+  name:string;
+  values:[uint];
+}
+
+root_type TestEnvelope;

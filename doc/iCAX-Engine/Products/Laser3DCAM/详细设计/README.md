@@ -17,7 +17,7 @@
 11. `11-碰撞检测与安全检查.md`
 12. `12-CAM机械仿真.md`
 13. `13-渲染PDO与前端同步.md`
-14. `14-Facade调用与前端工作台.md`
+14. `14-SDO调用与前端工作台.md`
 15. `15-持久化撤销还原快速保存.md`
 16. `16-CADForCAM工件编辑与刀路关联.md`
 17. `17-工件区意图刀路衍生模型.md`
@@ -33,7 +33,7 @@
 - 产品逻辑不得写入 `iCAX-Engine` framework。
 - 项目主数据进入主 Scene.Database。
 - 大资源进入主 Scene.Resources，并随项目文件内嵌。
-- Facades 只传命令和小型 JSON。
+- SDO 只传命令和小型 JSON。
 - PDO 承担高频和大块数据同步。
 - 目标工件只支持 STEP/STP、IGS/IGES。
 - STL 只用于切割头子部件模型或碰撞包络资源。

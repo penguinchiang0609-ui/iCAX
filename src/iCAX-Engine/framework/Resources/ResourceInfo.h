@@ -33,9 +33,14 @@ namespace iCAX
             CResourceKey Key;                 //!< 资源唯一键。
             std::string Name;                 //!< 展示名称。
             std::string Source;               //!< 原始来源；为空时通常用 Key.Source 补齐。
+            std::string MediaType;            //!< 规范资源表示的媒体类型。
+            std::string ResourceTypeID;       //!< 跨语言稳定资源类型 ID。
+            std::string FlatBufferIdentifier; //!< Google FlatBuffers 四字节 file_identifier；非 FlatBuffer 时为空。
             std::string ContentHash;          //!< 内容哈希，可用于增量保存或缓存校验。
             uint64_t nVersion = 0;            //!< 资源内容版本；运行期生成资源可递增该值作为 PDO dataVersion。
             uint64_t nSize = 0;               //!< 资源大小，单位字节；未知时为 0。
+            uint32_t nSchemaVersion = 0;       //!< 业务 Schema/Layout 版本；未知时为 0。
+            uint32_t nMinimumReaderVersion = 0; //!< 能正确解释资源所需的最低读取器版本。
             uint32_t nFlags = 0;              //!< 调用方自定义标志位。
             EResourcePersistenceMode Persistence = EResourcePersistenceMode::RuntimeOnly; //!< 持久化语义。
             std::map<std::string, std::string> Metadata; //!< 扩展元数据。

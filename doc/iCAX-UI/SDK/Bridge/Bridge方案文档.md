@@ -27,12 +27,12 @@ globalThis.icax
 
 `MockHostBridge` 模拟：
 
-- application Facade。
-- product Facade。
-- scene Facade。
+- application SDO。
+- product SDO。
+- scene SDO。
 - 产品启动。
 - 项目打开与主 Scene 登记。
-- Facade response。
+- SDO response。
 
 它只用于开发期和前端白盒测试，不作为产品运行时能力。
 
@@ -68,15 +68,15 @@ window.icaxNativeBridge
 - `Project.Undo`
 - `Project.Redo`
 - `Project.GetUndoRedoState`
-- backend 主动 Event，通过 `emitEvent(channelId, facadeMember, payload)` 触发。
+- backend 主动 Event，通过 `emitEvent(channelId, sdoMember, payload)` 触发。
 
-mock 使用和真实 bridge 一样的 Facade frame 返回 Report、Response 和 Event，确保测试覆盖真实交互形态；它也可注入 Request，验证后端调用前端 Facade。
+mock 使用和真实 bridge 一样的 SDO frame 返回 Report、Response 和 Event，确保测试覆盖真实交互形态；它也可注入 Request，验证后端调用前端 SDO。
 
 ## 6. 验收标准
 
 - `createBridge()` 在存在 `globalThis.icax` 时返回真实对象。
 - `createBridge()` 在没有真实对象时返回 `MockHostBridge`。
 - mock bridge 能完成 application/product/project 基础流程。
-- `subscribeFacadeFrames()` 返回的取消订阅函数生效。
-- `postFacadeFrame()` 与真实宿主使用同一 frame 字段和异步投递语义。
+- `subscribeSDOFrames()` 返回的取消订阅函数生效。
+- `postSDOFrame()` 与真实宿主使用同一 frame 字段和异步投递语义。
 

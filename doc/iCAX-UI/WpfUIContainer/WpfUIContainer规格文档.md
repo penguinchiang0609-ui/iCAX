@@ -11,7 +11,7 @@
 - 注册容器类型 `wpf`。
 - 启动 WPF 主窗口。
 - 获取 application channel id。
-- 发送 application/product/project Facade 命令。
+- 发送 application/product/project SDO 命令。
 - 轮询 backend response/event 并更新 UI。
 - 预留 native viewport 区域，后续通过 `HwndHost` 嵌入 C++ 渲染窗口。
 
@@ -48,13 +48,13 @@ Application.exe
 
 WPF UI 线程必须是 STA。
 
-## 6. Facades 语义
+## 6. SDO 语义
 
 WPF 容器直接调用 `IFrontendBridge`：
 
 - `GetApplicationChannelIDText()`
-- `PostFacadeFrame()`
-- `PollFacadeFrames()`
+- `PostSDOFrame()`
+- `PollSDOFrames()`
 
 当前窗口提供 application 级基础操作：
 

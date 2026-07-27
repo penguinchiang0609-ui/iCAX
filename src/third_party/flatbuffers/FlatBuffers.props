@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ICAXFlatBuffersVersion>25.12.19</ICAXFlatBuffersVersion>
+    <ICAXFlatBuffersRoot>$(MSBuildThisFileDirectory)flatbuffers-25.12.19\</ICAXFlatBuffersRoot>
+    <ICAXFlatBuffersIncludeDir>$(ICAXFlatBuffersRoot)include\</ICAXFlatBuffersIncludeDir>
+    <ExternalIncludePath>$(ICAXFlatBuffersIncludeDir);$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions>NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>

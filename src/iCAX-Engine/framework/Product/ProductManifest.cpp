@@ -445,7 +445,7 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
         _AppendModuleArray(_Modules, "behaviours", _ProductRoot, _Definition.Modules.BehaviourModules);
         _AppendModuleArray(_Modules, "behaviors", _ProductRoot, _Definition.Modules.BehaviourModules);
         _AppendModuleArray(_Modules, "services", _ProductRoot, _Definition.Modules.ServiceModules);
-        _AppendModuleArray(_Modules, "facades", _ProductRoot, _Definition.Modules.FacadeModules);
+        _AppendModuleArray(_Modules, "sdo", _ProductRoot, _Definition.Modules.SDOModules);
     }
     _ApplyPDOHubConfig(_Backend, _Definition);
     _AppendResourceHandlers(_Backend, _ProductRoot, _Definition.ResourceHandlers);

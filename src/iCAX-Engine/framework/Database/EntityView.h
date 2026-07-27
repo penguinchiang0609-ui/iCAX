@@ -4,6 +4,8 @@
 #include "IEntityView.h"
 #include "IRepositoryEvent.h"
 
+#include <deque>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -36,6 +38,10 @@ namespace iCAX::Database
         uint64_t GetRevision() const override;
         std::vector<iCAX::Data::uuid> GetEntityIDs() const override;
         bool Contains(IN const iCAX::Data::uuid& EntityID_) const override;
+        void AddObserver(
+            IN std::shared_ptr<IEntityViewEventListener> Observer_) override;
+        void RemoveObserver(
+            IN std::shared_ptr<IEntityViewEventListener> Observer_) override;
 
         void OnRepositoryChanging(
             IN void* pSender_,
@@ -66,6 +72,7 @@ namespace iCAX::Database
             IN const iCAX::Data::uuid& EntityID_,
             IN const std::map<iCAX::Data::uuid, SDependencySet>& Dependencies_);
         void ApplyEntityChanges(IN const std::set<iCAX::Data::uuid>& EntityIDs_);
+        void PublishChanged(IN EntityViewEventArgs Args_);
 
     private:
         std::weak_ptr<CRepository> m_pRepository;
@@ -77,5 +84,8 @@ namespace iCAX::Database
             std::map<iCAX::Data::uuid, SDependencySet>> m_DependenciesByEntity;
         std::map<iCAX::Data::uuid, std::set<iCAX::Data::uuid>> m_EntitiesByDependency;
         uint64_t m_nRevision = 0;
+        std::list<std::weak_ptr<IEntityViewEventListener>> m_Observers;
+        std::deque<EntityViewEventArgs> m_PendingEvents;
+        bool m_bPublishingEvents = false;
     };
 }

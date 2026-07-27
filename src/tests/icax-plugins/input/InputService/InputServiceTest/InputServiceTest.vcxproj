@@ -65,7 +65,7 @@
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj">
       <Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Facades\Facades.vcxproj">
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\SDO\SDO.vcxproj">
       <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Services\Services.vcxproj">

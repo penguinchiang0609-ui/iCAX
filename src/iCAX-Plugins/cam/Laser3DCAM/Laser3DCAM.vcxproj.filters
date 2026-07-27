@@ -7,20 +7,20 @@
   <ItemGroup>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="Facades.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="CameraViewFacadeImplement.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="FacadeSupport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SDO.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="CameraViewSDOImplement.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SDOSupport.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ComponentValueHelpers.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="FeatureRecognitionService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="JobComponents.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="LayerComponents.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Laser3DCAM.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="MachineDefinitionFacadeImplement.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="MachineDefinitionSDOImplement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="MachineInstanceComponents.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="MachineDescriptionLoader.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="MachineResourceKeys.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="MachineResources.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="MachineFacadeImplement.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="MachineSDOImplement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="MachineTransformConstraints.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SDFLoader.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="URDFLoader.h"><Filter>Header Files</Filter></ClInclude>
@@ -29,34 +29,35 @@
     <ClInclude Include="ToolpathGenerationService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolpathOrderService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolpathComponents.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="ToolpathFacadeImplement.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ToolpathSDOImplement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="TopologyPayloadNames.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolpathResourceKeys.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ToolpathResources.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="WorkpieceComponents.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="WorkpieceFacadeImplement.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="WorkpieceSDOImplement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="WorkpieceResourceKeys.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ViewDefinitions.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="RenderViewOutputProvider.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Laser3DCAMExport.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FacadeSupport.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="JobFacade.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SDOSupport.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="JobSDO.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="MachineDescriptionLoader.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="MachineColliderBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="MachineDefinitionFacade.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="MachineDefinitionFacadeImplement.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="MachineFacade.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="MachineFacadeImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachineDefinitionSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachineDefinitionSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachineSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="MachineSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="MachineTransformConstraints.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="ToolpathFacadeImplement.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SelectionFacade.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="ToolpathFacade.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="CameraViewFacade.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="CameraViewFacadeImplement.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="WorkpieceModelFacade.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="WorkpieceFacade.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="WorkpieceFacadeImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolpathSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SelectionSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ToolpathSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CameraViewSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="CameraViewSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WorkpieceModelSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WorkpieceSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WorkpieceSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="FeatureRecognitionService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="Laser3DCAM.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -66,6 +67,7 @@
     <ClCompile Include="ToolpathGenerationService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathOrderService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ViewContentService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RenderViewOutputProvider.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>

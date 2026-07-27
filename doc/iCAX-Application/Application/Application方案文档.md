@@ -15,7 +15,7 @@ src/iCAX-Application/Application/
 
 `CApplication` 负责拥有 `ApplicationRuntime` 和 `CFrontendBridge`。
 
-`CFrontendBridge` 负责在 UI frame 与 Engine `CFacadeFrame` 之间转换，并双向传递 Request、Report、Response 和 Event。
+`CFrontendBridge` 负责在 UI frame 与 Engine `CSDOFrame` 之间转换，并双向传递 Request、Report、Response 和 Event。
 
 ## 2. 与 UI 的关系
 
@@ -41,25 +41,25 @@ CApplication
 
 因此具体 UI 容器不再是 Engine 宿主，也不链接 `Application.exe`，只是通过 `IFrontendBridge` 连接后端。
 
-## 3. Facade 调用流程
+## 3. SDO 调用流程
 
 ```text
 UI
-  -> CFrontendBridge.PostFacadeFrame()
-  -> Engine frontend Facade endpoint
-  -> ApplicationRuntime/ProductRuntime/Project Facade invoker
+  -> CFrontendBridge.PostSDOFrame()
+  -> Engine frontend SDO endpoint
+  -> ApplicationRuntime/ProductRuntime/Project SDO invoker
   -> response frame
-  -> CFrontendBridge.PollFacadeFrames()
+  -> CFrontendBridge.PollSDOFrames()
   -> UI
 ```
 
-反向调用复用相同流程：Engine 通过 endpoint 发送 Request，前端公开的 Facade 异步处理后返回 Response。C++ 调用方得到 Task，H5 调用方得到 Promise；continuation 不在 frame 收取/分发线程执行。
+反向调用复用相同流程：Engine 通过 endpoint 发送 Request，前端公开的 SDO 异步处理后返回 Response。C++ 调用方得到 Task，H5 调用方得到 Promise；continuation 不在 frame 收取/分发线程执行。
 
 ## 4. 失败策略
 
 `CApplication.Start()` 中如果 Engine 启动成功但 bridge attach 失败，应立即停止 Engine 并重新抛出异常。
 
-`CFrontendBridge` 不吞业务异常。投递失败、channel 未注册、Facade endpoint 无效都应在调用现场抛出。
+`CFrontendBridge` 不吞业务异常。投递失败、channel 未注册、SDO endpoint 无效都应在调用现场抛出。
 
 ## 5. UI 容器配置
 

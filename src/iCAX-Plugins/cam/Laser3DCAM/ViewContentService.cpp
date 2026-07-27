@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "MachineInstanceComponents.h"
+#include "RenderViewOutputProvider.h"
 #include "ViewDefinitions.h"
 #include "WorkpieceComponents.h"
 
@@ -20,6 +21,8 @@ namespace
             using Where = iCAX::Database::CEntityWhereBuilder;
             const auto _AllRenderable = Where::Build(
                 Where::Has<iCAX::RenderInteraction::CRenderInstanceComponent>());
+            const auto _pRenderOutput =
+                std::make_shared<iCAX::CAM::CLaser3DCAMRenderViewOutputProvider>();
 
             const bool _bRegistered =
                 RegisterDefinition({
@@ -29,6 +32,7 @@ namespace
                         Where::Has<iCAX::RenderInteraction::CRenderInstanceComponent>(),
                     })),
                     nullptr,
+                    { _pRenderOutput },
                 })
                 && RegisterDefinition({
                     iCAX::CAM::Views::kWorkpiece,
@@ -37,16 +41,19 @@ namespace
                         Where::Has<iCAX::RenderInteraction::CRenderInstanceComponent>(),
                     })),
                     nullptr,
+                    { _pRenderOutput },
                 })
                 && RegisterDefinition({
                     iCAX::CAM::Views::kMachining,
                     _AllRenderable,
                     nullptr,
+                    { _pRenderOutput },
                 })
                 && RegisterDefinition({
                     iCAX::CAM::Views::kGeneral,
                     _AllRenderable,
                     nullptr,
+                    { _pRenderOutput },
                 });
 
             if (!_bRegistered)

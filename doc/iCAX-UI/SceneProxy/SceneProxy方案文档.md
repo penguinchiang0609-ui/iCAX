@@ -12,26 +12,26 @@ src/iCAX-UI/SceneProxy/
 
 `SceneProxy` 依赖：
 
-- `SDK/Facades`
+- `SDK/SDO`
 - `SDK/PDO`
 - `Bridge` 提供的已注册 scene channel。
 
 它不依赖 `AppProxy`，只通过构造参数持有上级 `ProjectProxy` 引用。
 
-## 3. Facade 调用流程
+## 3. SDO 调用流程
 
 ```text
-SceneProxy.invoke(facadeMethod, payload)
-  -> FacadeClient.invoke(sceneChannelId, facadeMethod, payload)
-  -> bridge.postFacadeFrame()
+SceneProxy.invoke(sdoMethod, payload)
+  -> SDOClient.invoke(sceneChannelId, sdoMethod, payload)
+  -> bridge.postSDOFrame()
   -> UIContainer
-  -> backend scene Facade invoker
-  -> Facades(application, product, project, scene)
+  -> backend scene SDO invoker
+  -> SDO(application, product, project, scene)
   <- Response frame
   -> Promise resolve/reject
 ```
 
-标准方法由 `SDK/Facades/facadeMethod.mjs` 中的 `ProjectFacade` 定义。这里保留 `Project` Facade 名，是因为方法操作的是项目数据；当前 Scene channel 只是 Facade 的传输边界，不属于 Facade 方法名。
+标准方法由 `SDK/SDO/sdoMethod.mjs` 中的 `ProjectSDO` 定义。这里保留 `Project` SDO 名，是因为方法操作的是项目数据；当前 Scene channel 只是 SDO 的传输边界，不属于 SDO 方法名。
 
 ## 4. PDO 流程
 

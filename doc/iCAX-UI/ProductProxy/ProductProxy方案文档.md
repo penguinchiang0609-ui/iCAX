@@ -13,7 +13,7 @@ src/iCAX-UI/ProductProxy/
 
 `ProductProxy` 依赖：
 
-- `Facades`
+- `SDO`
 - `ProjectProxy`
 - `Bridge` 的 product/scene channel 登记能力
 
@@ -23,7 +23,7 @@ src/iCAX-UI/ProductProxy/
 
 ```text
 ProductProxy.openProjectCatalog(path)
-  -> Facade.request(productChannelId, Product.OpenProjectCatalog)
+  -> SDO.request(productChannelId, Product.OpenProjectCatalog)
   <- catalog.mainProject + mainScene
   -> adoptProject(mainProject)
   -> bridge.registerSceneChannel(projectId, mainSceneId)

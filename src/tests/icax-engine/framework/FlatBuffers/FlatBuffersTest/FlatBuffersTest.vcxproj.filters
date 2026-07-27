@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{82ffcbad-2491-4700-bd90-e63c29eeb9c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{fb39389d-159c-4c35-849f-9c04f1a94afe}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Schema">
+      <UniqueIdentifier>{0293cc66-f02e-46e6-8308-69c973e969c3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Generated">
+      <UniqueIdentifier>{350ccdf3-f62a-46c2-867e-8ea66a9dd574}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FlatBuffersTests.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="V1Reader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="V2Builder.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TestInterop.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Generated\V1\TestEnvelopeV1_generated.h">
+      <Filter>Generated</Filter>
+    </ClInclude>
+    <ClInclude Include="Generated\V2\TestEnvelopeV2_generated.h">
+      <Filter>Generated</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Schema\TestEnvelopeV1.fbs">
+      <Filter>Schema</Filter>
+    </None>
+    <None Include="Schema\TestEnvelopeV2.fbs">
+      <Filter>Schema</Filter>
+    </None>
+    <None Include="generate.ps1" />
+    <None Include="packages.config" />
+  </ItemGroup>
+</Project>

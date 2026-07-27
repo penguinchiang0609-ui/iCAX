@@ -4,6 +4,8 @@
 
 #include "Database/EntityUpdate.h"
 #include "Database/EntityWhere.h"
+#include "Database/EntityInsert.h"
+#include "Database/EntityQuery.h"
 #include "Database/IRepository.h"
 
 #include <string_view>
@@ -14,6 +16,7 @@ namespace iCAX::DatabaseLanguage
     enum class EEntityStatementType
     {
         Query,
+        Insert,
         Update,
         Delete,
     };
@@ -22,6 +25,8 @@ namespace iCAX::DatabaseLanguage
     {
         EEntityStatementType Type = EEntityStatementType::Query;
         iCAX::Database::SEntityWhere Where;
+        iCAX::Database::SEntityQuery Query;
+        iCAX::Database::SEntityInsert Insert;
         iCAX::Database::SEntityUpdate Update;
     };
 
@@ -29,6 +34,8 @@ namespace iCAX::DatabaseLanguage
     {
         EEntityStatementType Type = EEntityStatementType::Query;
         std::vector<iCAX::Data::uuid> EntityIDs;
+        iCAX::Database::SEntityQueryResult Query;
+        iCAX::Database::SEntityInsertResult Insert;
         iCAX::Database::SEntityMutationResult Mutation;
     };
 

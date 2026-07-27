@@ -260,6 +260,47 @@ namespace
         return _Result;
     }
 
+    iCAX::Data::uuid BindInsertEntityID(
+        IN const std::optional<iCAX::Database::SEntityValueOperand>& Operand_,
+        IN const iCAX::Data::ObjectMap& Parameters_)
+    {
+        if (!Operand_)
+        {
+            return iCAX::Data::GenerateNewUUID();
+        }
+
+        const iCAX::Data::PropertyValue* _pValue = &Operand_->Literal;
+        if (Operand_->Type
+            == iCAX::Database::EEntityValueOperandType::Parameter)
+        {
+            const auto _Parameter =
+                Parameters_.find(Operand_->ParameterName);
+            if (_Parameter == Parameters_.end())
+            {
+                throw std::invalid_argument(
+                    "Entity insert parameter is missing: "
+                    + Operand_->ParameterName);
+            }
+            _pValue = &_Parameter->second;
+        }
+
+        if (_pValue->Is<iCAX::Data::uuid>())
+        {
+            return _pValue->To<iCAX::Data::uuid>();
+        }
+        if (_pValue->Is<std::string>())
+        {
+            const auto _ID = iCAX::Data::uuid::from_string(
+                _pValue->To<std::string>());
+            if (_ID)
+            {
+                return *_ID;
+            }
+        }
+        throw std::invalid_argument(
+            "Entity insert ENTITYID must be a UUID or UUID string");
+    }
+
     std::string CurrentExceptionText(IN const std::string& strFallback_)
     {
         try
@@ -1182,6 +1223,98 @@ bool iCAX::Database::CRepository::Delete(
         strError_ = CurrentExceptionText(
             "Entity delete threw a non-standard exception");
         Result_.ChangedCount = 0;
+        return false;
+    }
+}
+
+bool iCAX::Database::CRepository::Insert(
+    IN const SEntityInsert& Insert_,
+    IN const iCAX::Data::ObjectMap& Parameters_,
+    OUT SEntityInsertResult& Result_,
+    OUT std::string& strError_)
+{
+    Result_ = {};
+    strError_.clear();
+    ITransaction* _pTransaction = nullptr;
+
+    try
+    {
+        auto _EntityID = BindInsertEntityID(
+            Insert_.EntityID,
+            Parameters_);
+        if (!Insert_.EntityID)
+        {
+            while (HasEntity(_EntityID))
+            {
+                _EntityID = iCAX::Data::GenerateNewUUID();
+            }
+        }
+        else if (HasEntity(_EntityID))
+        {
+            throw std::invalid_argument(
+                "Entity insert ENTITYID already exists: "
+                + iCAX::Data::to_string(_EntityID));
+        }
+
+        std::vector<SBoundComponentUpdate> _Components;
+        if (!Insert_.Initializer.Components.empty())
+        {
+            for (const auto& _Component
+                : Insert_.Initializer.Components)
+            {
+                if (_Component.Type != EComponentUpdateType::Add)
+                {
+                    throw std::invalid_argument(
+                        "Entity insert initializer only supports Add components");
+                }
+            }
+            _Components = BindAndValidateEntityUpdate(
+                Insert_.Initializer,
+                Parameters_,
+                *m_pMetaRegistry);
+        }
+
+        std::unique_ptr<IRepositoryUndoScope> _pUndoScope;
+        if (!IsUndoCommandRecording())
+        {
+            _pUndoScope = BeginUndoCommand("Insert entity");
+        }
+
+        auto& _Transaction = BeginTransaction("Insert entity");
+        _pTransaction = &_Transaction;
+        _Transaction.CreateEntity(_EntityID);
+        for (const auto& _Component : _Components)
+        {
+            _Transaction.AttachComponent(
+                _EntityID,
+                _Component.ComponentClass,
+                _Component.Properties,
+                _Component.Enabled);
+        }
+        if (!CommitTransaction(_Transaction, strError_))
+        {
+            _pTransaction = nullptr;
+            return false;
+        }
+        _pTransaction = nullptr;
+        if (_pUndoScope)
+        {
+            _pUndoScope->End();
+        }
+        Result_.EntityID = _EntityID;
+        return true;
+    }
+    catch (...)
+    {
+        if (_pTransaction
+            && m_pCurrentTransaction
+            && static_cast<ITransaction*>(m_pCurrentTransaction.get())
+                == _pTransaction)
+        {
+            CancelTransaction(*_pTransaction);
+        }
+        strError_ = CurrentExceptionText(
+            "Entity insert threw a non-standard exception");
         return false;
     }
 }

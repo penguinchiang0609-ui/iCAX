@@ -3,34 +3,34 @@
 
 #include <ApplicationContext/ApplicationContext.h>
 #include <Behaviour/IBehaviourRegistry.h>
-#include <Facades/FacadeMethod.h>
-#include <Facades/Facade.h>
+#include <SDO/SDOMethod.h>
+#include <SDO/SDO.h>
 #include <Database/IMetaRegistry.h>
-#include <Product/ProductFacades.h>
+#include <Product/ProductSDO.h>
 #include <Product/ProductManifest.h>
 #include <Product/ProductRuntime.h>
 #include <Project/ProjectRuntime.h>
 #include <Resources/ResourceLoaderRegistry.h>
-#include <Facades/FacadeChannelRegistry.h>
+#include <SDO/SDOChannelRegistry.h>
 #include <Services/ServiceProvider.h>
 #include <Data/Variant.h>
-#include <Facades/FacadeFrame.h>
-#include <Facades/FacadePayload.h>
+#include <SDO/SDOFrame.h>
+#include <SDO/SDOText.h>
 
 
 using namespace iCAX::Product;
 
 namespace
 {
-    class CTestProductFacade final : public iCAX::Interaction::CFacade
+    class CTestProductSDO final : public iCAX::Interaction::CSDO
     {
     public:
-        explicit CTestProductFacade(IN std::string strFacadeName_)
-            : CFacade(std::move(strFacadeName_))
+        explicit CTestProductSDO(IN std::string strSDOName_)
+            : CSDO(std::move(strSDOName_))
         {
         }
 
-        using CFacade::ExposeMethod;
+        using CSDO::ExposeMethod;
     };
 
     class CMemoryProductDataStore final : public IProductDataStore
@@ -55,20 +55,20 @@ namespace
         mutable std::map<std::string, CProductData> m_Data;
     };
 
-    void ClearFrames(IN OUT std::vector<iCAX::Interaction::CFacadeFrame>& Frames_) noexcept
+    void ClearFrames(IN OUT std::vector<iCAX::Interaction::CSDOFrame>& Frames_) noexcept
     {
         Frames_.clear();
     }
 
-    iCAX::Interaction::CFacadeFrame MakeRequestFrame(
+    iCAX::Interaction::CSDOFrame MakeRequestFrame(
         IN uint64_t nCallID_,
         IN uint64_t nMethodCode_,
         IN const std::optional<iCAX::Data::Variant>& Payload_ = std::nullopt)
     {
-        iCAX::Interaction::CFacadeFrame _Frame;
+        iCAX::Interaction::CSDOFrame _Frame;
         _Frame.nCallID = nCallID_;
         _Frame.nMethodCode = nMethodCode_;
-        _Frame.nKind = iCAX::Interaction::EFacadeFrameKind::Request;
+        _Frame.nKind = iCAX::Interaction::ESDOFrameKind::Request;
 
         if (Payload_)
         {
@@ -78,7 +78,7 @@ namespace
         return _Frame;
     }
 
-    std::vector<iCAX::Interaction::CFacadeFrame> WaitForFrames(IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_)
+    std::vector<iCAX::Interaction::CSDOFrame> WaitForFrames(IN const iCAX::Interaction::CSDOEndpoint& Endpoint_)
     {
         for (int _Index = 0; _Index < 200; ++_Index)
         {
@@ -92,13 +92,13 @@ namespace
         return {};
     }
 
-    std::vector<iCAX::Interaction::CFacadeFrame> WaitForProductFrames(
+    std::vector<iCAX::Interaction::CSDOFrame> WaitForProductFrames(
         IN const std::shared_ptr<CProductRuntime>& pRuntime_,
-        IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_)
+        IN const iCAX::Interaction::CSDOEndpoint& Endpoint_)
     {
         for (int _Index = 0; _Index < 200; ++_Index)
         {
-            pRuntime_->DispatchProductFacadeFrames();
+            pRuntime_->DispatchProductSDOFrames();
             auto _Frames = Endpoint_.Receive();
             if (!_Frames.empty())
             {
@@ -109,7 +109,7 @@ namespace
         return {};
     }
 
-    iCAX::Data::ObjectMap DecodeObjectPayload(IN const iCAX::Interaction::CFacadeFrame& Frame_)
+    iCAX::Data::ObjectMap DecodeObjectPayload(IN const iCAX::Interaction::CSDOFrame& Frame_)
     {
         auto _Variant = DecodeProductPayload(Frame_.Payload);
         if (!_Variant.Is<iCAX::Data::ObjectMap>())
@@ -132,7 +132,7 @@ namespace
 
         iCAX::Data::PropertyBag _Settings;
         auto _pContext = std::make_shared<iCAX::Application::CApplicationContext>(_Descriptor, _Paths, _Settings);
-        auto _pFacadeChannelRegistry = std::make_shared<iCAX::Interaction::CFacadeChannelRegistry>();
+        auto _pSDOChannelRegistry = std::make_shared<iCAX::Interaction::CSDOChannelRegistry>();
 
         CProductDefinition _Definition;
         _Definition.ProductID = strProductID_;
@@ -156,7 +156,7 @@ namespace
         return std::make_shared<CProductRuntime>(
             _Definition,
             _pContext,
-            _pFacadeChannelRegistry,
+            _pSDOChannelRegistry,
             _pProductDataStore);
     }
 
@@ -333,14 +333,14 @@ TEST(ProductRuntimeTest, OpensAndClosesProjectCatalogDirectly)
     EXPECT_EQ("Robot Cell", _pProject->GetProjectName());
     EXPECT_EQ("memory://robot-cell", _pProject->GetProjectPath());
     EXPECT_TRUE(_pProject->IsRunning());
-    EXPECT_TRUE(_pRuntime->GetSceneFrontendFacadeEndpoint(
+    EXPECT_TRUE(_pRuntime->GetSceneFrontendSDOEndpoint(
         _pProject->GetProjectID(),
         _pProject->GetMainSceneID()).IsValid());
 
     EXPECT_TRUE(_pRuntime->CloseProjectCatalog(_pCatalog->GetCatalogID()));
     EXPECT_EQ(nullptr, _pRuntime->FindProjectCatalog(_pCatalog->GetCatalogID()));
     EXPECT_THROW(
-        _pRuntime->GetSceneFrontendFacadeEndpoint(_pProject->GetProjectID(), _pProject->GetMainSceneID()),
+        _pRuntime->GetSceneFrontendSDOEndpoint(_pProject->GetProjectID(), _pProject->GetMainSceneID()),
         std::runtime_error);
 
     _pRuntime->Stop();
@@ -404,11 +404,11 @@ TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
             .To<std::string>());
 }
 
-TEST(ProductRuntimeFacadeTest, ProductFacadeCanOpenAndListProjectCatalogs)
+TEST(ProductRuntimeSDOTest, ProductSDOCanOpenAndListProjectCatalogs)
 {
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
-    auto _FrontendEndpoint = _pRuntime->GetProductFrontendFacadeEndpoint();
+    auto _FrontendEndpoint = _pRuntime->GetProductFrontendSDOEndpoint();
 
     iCAX::Data::ObjectMap _OpenPayload;
     _OpenPayload["catalogName"] = std::string("Robot Catalog");
@@ -465,29 +465,29 @@ TEST(ProductRuntimeFacadeTest, ProductFacadeCanOpenAndListProjectCatalogs)
     EXPECT_FALSE(_FrontendEndpoint.IsValid());
 }
 
-TEST(ProductRuntimeFacadeTest, ProductRuntimeCanSendFrontendEvent)
+TEST(ProductRuntimeSDOTest, ProductRuntimeCanSendFrontendEvent)
 {
-    constexpr uint64_t kProductStateChangedEvent = iCAX::Interaction::MakeFacadeMethodCode("Product", "StateChanged");
+    constexpr uint64_t kProductStateChangedEvent = iCAX::Interaction::MakeSDOMethodCode("Product", "StateChanged");
 
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
-    auto _FrontendEndpoint = _pRuntime->GetProductFrontendFacadeEndpoint();
+    auto _FrontendEndpoint = _pRuntime->GetProductFrontendSDOEndpoint();
 
     _pRuntime->SendFrontendEvent(kProductStateChangedEvent, "product-event");
 
     auto _Events = WaitForFrames(_FrontendEndpoint);
     ASSERT_EQ(1u, _Events.size());
     EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Events[0].nStatus);
-    EXPECT_EQ(iCAX::Interaction::EFacadeFrameKind::Event, _Events[0].nKind);
+    EXPECT_EQ(iCAX::Interaction::ESDOFrameKind::Event, _Events[0].nKind);
     EXPECT_EQ(0u, _Events[0].nCallID);
     EXPECT_EQ(kProductStateChangedEvent, _Events[0].nMethodCode);
-    EXPECT_EQ("product-event", iCAX::Interaction::GetFacadePayloadText(_Events[0]));
+    EXPECT_EQ("product-event", iCAX::Interaction::GetSDOPayloadText(_Events[0]));
 
     ClearFrames(_Events);
     _pRuntime->Stop();
 }
 
-TEST(ProductRuntimeFacadeTest, ProductFacadeCallSentToSceneFacadeReturnsInvalidInvocation)
+TEST(ProductRuntimeSDOTest, ProductSDOCallSentToSceneSDOReturnsInvalidInvocation)
 {
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
@@ -496,7 +496,7 @@ TEST(ProductRuntimeFacadeTest, ProductFacadeCallSentToSceneFacadeReturnsInvalidI
     auto _pProject = _pCatalog->GetMainProject();
     ASSERT_NE(nullptr, _pProject);
 
-    auto _SceneEndpoint = _pRuntime->GetSceneFrontendFacadeEndpoint(
+    auto _SceneEndpoint = _pRuntime->GetSceneFrontendSDOEndpoint(
         _pProject->GetProjectID(),
         _pProject->GetMainSceneID());
     auto _Request = MakeRequestFrame(3001, kProductGetStateMethodCode);
@@ -507,17 +507,17 @@ TEST(ProductRuntimeFacadeTest, ProductFacadeCallSentToSceneFacadeReturnsInvalidI
     EXPECT_EQ(iCAX::Interaction::EInvocationStatus::InvalidInvocation, _Results[0].nStatus);
     EXPECT_NE(
         std::string::npos,
-        iCAX::Interaction::GetFacadePayloadText(_Results[0]).find(
-            "Product Facade invocation requires the product scope"));
+        iCAX::Interaction::GetSDOPayloadText(_Results[0]).find(
+            "Product SDO invocation requires the product scope"));
     EXPECT_FALSE(_pProject->GetLastFault().has_value());
     ClearFrames(_Results);
     _pRuntime->Stop();
 }
 
-TEST(ProductRuntimeFacadeTest, SceneFacadeProvidesProjectAndSceneContext)
+TEST(ProductRuntimeSDOTest, SceneSDOProvidesProjectAndSceneContext)
 {
     constexpr uint64_t kInspectProjectContextMethod =
-        iCAX::Interaction::MakeFacadeMethodCode("InspectProject", "ProjectContext");
+        iCAX::Interaction::MakeSDOMethodCode("InspectProject", "ProjectContext");
 
     auto _pRuntime = MakeRuntime();
     _pRuntime->Start();
@@ -527,8 +527,8 @@ TEST(ProductRuntimeFacadeTest, SceneFacadeProvidesProjectAndSceneContext)
     ASSERT_NE(nullptr, _pProject);
 
     const auto _ProjectID = _pProject->GetProjectID();
-    auto _pFacade = std::make_shared<CTestProductFacade>("InspectProject");
-    _pFacade->ExposeMethod(
+    auto _pSDO = std::make_shared<CTestProductSDO>("InspectProject");
+    _pSDO->ExposeMethod(
         "ProjectContext",
         [_ProjectID](
             IN const iCAX::Interaction::CInvocation&,
@@ -550,9 +550,9 @@ TEST(ProductRuntimeFacadeTest, SceneFacadeProvidesProjectAndSceneContext)
             _Response.Payload = EncodeProductPayload(iCAX::Data::Variant(_Payload));
             return _Response;
         });
-    ASSERT_TRUE(_pRuntime->GetFacadeRegistry().Register(_pFacade));
+    ASSERT_TRUE(_pRuntime->GetSDORegistry().Register(_pSDO));
 
-    auto _SceneEndpoint = _pRuntime->GetSceneFrontendFacadeEndpoint(_ProjectID, _pProject->GetMainSceneID());
+    auto _SceneEndpoint = _pRuntime->GetSceneFrontendSDOEndpoint(_ProjectID, _pProject->GetMainSceneID());
     auto _Request = MakeRequestFrame(4001, kInspectProjectContextMethod);
     _SceneEndpoint.Send(_Request);
 

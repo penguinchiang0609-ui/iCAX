@@ -2,8 +2,12 @@
 
 
 #include <Resources/ResourcePoolAccess.h>
+#include <Resources/ResourceFlatBuffer.h>
 #include <Resources/Resources.h>
 
+#include "../../FlatBuffers/Fixtures/Generated/TransportPayload_generated.h"
+
+#include <array>
 #include <typeindex>
 
 using namespace iCAX::Resource;
@@ -47,6 +51,24 @@ using namespace ResourcesTestTypes;
 
 namespace
 {
+    CFlatBufferResource MakeTransportFlatBuffer(
+        IN const uint64_t nValue_,
+        IN const std::string& strLabel_)
+    {
+        using namespace iCAX::FlatBufferFixtures;
+
+        flatbuffers::FlatBufferBuilder _Builder;
+        const std::array<uint32_t, 2> _Values{ 34, 55 };
+        const auto _Root = CreateTransportPayload(
+            _Builder,
+            1,
+            nValue_,
+            _Builder.CreateString(strLabel_),
+            _Builder.CreateVector(_Values.data(), _Values.size()));
+        FinishTransportPayloadBuffer(_Builder, _Root);
+        return MakeFlatBufferResource(_Builder);
+    }
+
     class MemoryTextLoader final : public IResourceLoader
     {
     public:
@@ -963,4 +985,490 @@ TEST(ResourceLibraryTest, CanMoveProjectResourceLibrary)
     auto _pLoaded = _Moved.Get<TextResource>("memory://move");
     ASSERT_NE(nullptr, _pLoaded);
     EXPECT_EQ("moved", _pLoaded->Text);
+}
+
+TEST(FlatBufferResourceTest, OwnsImmutableVerifiedGoogleFlatBuffer)
+{
+    using namespace iCAX::FlatBufferFixtures;
+
+    flatbuffers::FlatBufferBuilder _Builder;
+    const std::array<uint32_t, 2> _Values{ 34, 55 };
+    const auto _Root = CreateTransportPayload(
+        _Builder,
+        1,
+        233,
+        _Builder.CreateString("resource"),
+        _Builder.CreateVector(_Values.data(), _Values.size()));
+    FinishTransportPayloadBuffer(_Builder, _Root);
+
+    auto _Resource = MakeFlatBufferResource(_Builder);
+    auto _SharedResource = _Resource;
+    EXPECT_FALSE(_Resource.Empty());
+    EXPECT_EQ(_Builder.GetSize(), _Resource.Size());
+    EXPECT_EQ(_Resource.Data(), _SharedResource.Data());
+
+    const auto* _Payload =
+        TryGetFlatBufferResourceRoot<TransportPayload>(
+            _Resource,
+            TransportPayloadIdentifier());
+    ASSERT_NE(nullptr, _Payload);
+    EXPECT_EQ(233u, _Payload->value());
+    ASSERT_NE(nullptr, _Payload->label());
+    EXPECT_EQ("resource", _Payload->label()->str());
+    EXPECT_FALSE(VerifyFlatBufferResource<TransportPayload>(
+        _Resource,
+        nullptr));
+
+    auto _TruncatedBytes = std::vector<uint8_t>(
+        _Resource.Bytes().begin(),
+        _Resource.Bytes().end() - 1);
+    CFlatBufferResource _Truncated(std::move(_TruncatedBytes));
+    EXPECT_EQ(
+        nullptr,
+        TryGetFlatBufferResourceRoot<TransportPayload>(
+            _Truncated,
+            TransportPayloadIdentifier()));
+}
+
+TEST(ResourceAccessTest, SupportsRestHeadGetPutDeleteAndOptions)
+{
+    using namespace iCAX::FlatBufferFixtures;
+
+    CResourceLibrary _Library;
+    const std::string _URL =
+        "resource://scene/test/resources/transport";
+
+    CResourceRequest _Put;
+    _Put.Method = EResourceMethod::Put;
+    _Put.URL = _URL;
+    _Put.Body = MakeTransportFlatBuffer(233, "created");
+    _Put.Headers["Content-Type"] =
+        "application/vnd.icax.flatbuffer";
+    _Put.Headers["ICAX-Resource-Type"] =
+        "test.transport";
+    _Put.Headers["ICAX-Schema-Version"] = "1";
+    _Put.Headers["ICAX-Min-Reader-Version"] = "1";
+    _Put.Headers["ICAX-FlatBuffer-Identifier"] =
+        TransportPayloadIdentifier();
+    _Put.Headers["If-None-Match"] = "*";
+
+    const auto _Created =
+        _Library.Put(_URL, _Put.Body, _Put.Headers);
+    EXPECT_EQ(201, _Created.nStatus);
+    EXPECT_FALSE(_Created.HasBody());
+    EXPECT_EQ(
+        _URL,
+        GetResourceHeader(_Created.Headers, "location").value_or(""));
+    EXPECT_EQ(
+        "\"icax-v1\"",
+        GetResourceHeader(_Created.Headers, "etag").value_or(""));
+
+    const auto _Capabilities = _Library.Options(_URL);
+    EXPECT_EQ(204, _Capabilities.nStatus);
+    EXPECT_EQ(
+        "HEAD, GET, PUT, DELETE, OPTIONS",
+        GetResourceHeader(_Capabilities.Headers, "Allow").value_or(""));
+
+    const auto _Description = _Library.Head(_URL);
+    EXPECT_EQ(200, _Description.nStatus);
+    EXPECT_FALSE(_Description.HasBody());
+    EXPECT_EQ(
+        std::to_string(_Put.Body.Size()),
+        GetResourceHeader(_Description.Headers, "content-length").value_or(""));
+    EXPECT_EQ(
+        "test.transport",
+        GetResourceHeader(_Description.Headers, "icax-resource-type").value_or(""));
+    EXPECT_EQ(
+        "1",
+        GetResourceHeader(_Description.Headers, "icax-schema-version").value_or(""));
+    EXPECT_EQ(
+        TransportPayloadIdentifier(),
+        GetResourceHeader(
+            _Description.Headers,
+            "icax-flatbuffer-identifier").value_or(""));
+
+    CResourceHeaders _GetHeaders{
+        { "Accept", "application/vnd.icax.flatbuffer" }
+    };
+    const auto _Fetched = _Library.Get(_URL, _GetHeaders);
+    EXPECT_EQ(200, _Fetched.nStatus);
+    EXPECT_EQ(_Put.Body.Size(), _Fetched.Body.Size());
+    const auto* _Payload =
+        TryGetFlatBufferResourceRoot<TransportPayload>(
+            _Fetched.Body,
+            TransportPayloadIdentifier());
+    ASSERT_NE(nullptr, _Payload);
+    EXPECT_EQ(233u, _Payload->value());
+
+    _GetHeaders["If-None-Match"] = "\"icax-v1\"";
+    const auto _NotModified = _Library.Get(_URL, _GetHeaders);
+    EXPECT_EQ(304, _NotModified.nStatus);
+    EXPECT_FALSE(_NotModified.HasBody());
+
+    CResourceRequest _Replace = _Put;
+    _Replace.Body = MakeTransportFlatBuffer(377, "replaced");
+    _Replace.Headers.erase("If-None-Match");
+    _Replace.Headers["If-Match"] = "\"icax-v0\"";
+    EXPECT_EQ(412, _Library.Request(_Replace).nStatus);
+
+    _Replace.Headers["If-Match"] = "\"icax-v1\"";
+    const auto _Replaced = _Library.Request(_Replace);
+    EXPECT_EQ(204, _Replaced.nStatus);
+    EXPECT_EQ(
+        "\"icax-v2\"",
+        GetResourceHeader(_Replaced.Headers, "ETag").value_or(""));
+
+    const auto _Historical = _Library.Get(_URL, 1);
+    EXPECT_EQ(200, _Historical.nStatus);
+    EXPECT_EQ(
+        "1",
+        GetResourceHeader(
+            _Historical.Headers,
+            "ICAX-Resource-Version").value_or(""));
+    const auto* _HistoricalPayload =
+        TryGetFlatBufferResourceRoot<TransportPayload>(
+            _Historical.Body,
+            TransportPayloadIdentifier());
+    ASSERT_NE(nullptr, _HistoricalPayload);
+    EXPECT_EQ(233u, _HistoricalPayload->value());
+
+    CResourceHeaders _DeleteHeaders{
+        { "If-Match", "\"icax-v1\"" }
+    };
+    EXPECT_EQ(412, _Library.Delete(_URL, _DeleteHeaders).nStatus);
+
+    _DeleteHeaders["If-Match"] = "\"icax-v2\"";
+    EXPECT_EQ(204, _Library.Delete(_URL, _DeleteHeaders).nStatus);
+    EXPECT_EQ(404, _Library.Get(_URL).nStatus);
+
+    const auto _DeletedCurrentVersion = _Library.Get(_URL, 2);
+    EXPECT_EQ(200, _DeletedCurrentVersion.nStatus);
+    const auto* _DeletedCurrentPayload =
+        TryGetFlatBufferResourceRoot<TransportPayload>(
+            _DeletedCurrentVersion.Body,
+            TransportPayloadIdentifier());
+    ASSERT_NE(nullptr, _DeletedCurrentPayload);
+    EXPECT_EQ(377u, _DeletedCurrentPayload->value());
+    EXPECT_EQ(
+        (std::vector<uint64_t>{ 1, 2 }),
+        _Library.GetVersions(_URL));
+}
+
+TEST(ResourceAccessTest, RejectsInvalidOrUnrepresentableResources)
+{
+    CResourceLibrary _Library;
+
+    CResourceRequest _InvalidPut;
+    _InvalidPut.Method = EResourceMethod::Put;
+    _InvalidPut.URL = "resource://scene/test/resources/invalid";
+    _InvalidPut.Body = CFlatBufferResource({ 1, 2, 3, 4 });
+    EXPECT_EQ(400, _Library.Request(_InvalidPut).nStatus);
+
+    CResourceRequest _AmbiguousMediaPut;
+    _AmbiguousMediaPut.Method = EResourceMethod::Put;
+    _AmbiguousMediaPut.URL =
+        "resource://scene/test/resources/ambiguous-media";
+    _AmbiguousMediaPut.Body =
+        MakeTransportFlatBuffer(1, "media");
+    _AmbiguousMediaPut.Headers["Content-Type"] =
+        "application/octet-stream";
+    EXPECT_EQ(415, _Library.Request(_AmbiguousMediaPut).nStatus);
+
+    CResourceRequest _WrongIdentifierPut;
+    _WrongIdentifierPut.Method = EResourceMethod::Put;
+    _WrongIdentifierPut.URL =
+        "resource://scene/test/resources/wrong-identifier";
+    _WrongIdentifierPut.Body =
+        MakeTransportFlatBuffer(1, "identifier");
+    _WrongIdentifierPut.Headers["ICAX-FlatBuffer-Identifier"] = "NOPE";
+    EXPECT_EQ(422, _Library.Request(_WrongIdentifierPut).nStatus);
+
+    _Library.Set<TextResource>(
+        "resource://scene/test/resources/legacy",
+        std::make_shared<TextResource>());
+    CResourceRequest _LegacyGet;
+    _LegacyGet.Method = EResourceMethod::Get;
+    _LegacyGet.URL = "resource://scene/test/resources/legacy";
+    EXPECT_EQ(406, _Library.Request(_LegacyGet).nStatus);
+
+    CResourceRequest _MissingURL;
+    _MissingURL.Method = EResourceMethod::Get;
+    EXPECT_EQ(400, _Library.Request(_MissingURL).nStatus);
+}
+
+TEST(ResourceAccessTest, HeadUsesManifestWithoutLoadingTheBody)
+{
+    CResourceLibrary _Library;
+    const std::string _URL =
+        "resource://scene/test/resources/manifest-only";
+
+    CResourceInfo _Info;
+    _Info.MediaType = "application/vnd.example.mesh+flatbuffer; version=3";
+    _Info.ResourceTypeID = "example.mesh";
+    _Info.FlatBufferIdentifier = "MESH";
+    _Info.nSchemaVersion = 3;
+    _Info.nMinimumReaderVersion = 2;
+    _Info.nSize = 4096;
+    _Library.Register(_URL, _Info);
+
+    const auto _Description = _Library.Head(
+        _URL,
+        { { "Accept", "application/vnd.example.mesh+flatbuffer" } });
+    EXPECT_EQ(200, _Description.nStatus);
+    EXPECT_FALSE(_Description.HasBody());
+    EXPECT_EQ(
+        "4096",
+        GetResourceHeader(
+            _Description.Headers,
+            "Content-Length").value_or(""));
+    EXPECT_EQ(
+        "3",
+        GetResourceHeader(
+            _Description.Headers,
+            "ICAX-Schema-Version").value_or(""));
+    EXPECT_EQ(406, _Library.Get(_URL).nStatus);
+}
+
+TEST(ResourceVersionStorageTest, ColdStoresAndReloadsExpiredVersions)
+{
+    using namespace iCAX::FlatBufferFixtures;
+
+    const auto _TestRoot =
+        std::filesystem::temp_directory_path() /
+        ("icax-resource-version-test-" +
+            std::to_string(GetCurrentProcessId()) + "-" +
+            std::to_string(
+                std::chrono::steady_clock::now()
+                    .time_since_epoch()
+                    .count()));
+    CResourceVersionStorageOptions _Options;
+    _Options.TemporaryRootDirectory = _TestRoot;
+
+    std::filesystem::path _PoolDirectory;
+    {
+        CResourcePool _Pool(_Options);
+        _PoolDirectory =
+            _Pool.GetVersionStorageDirectory();
+        ASSERT_FALSE(_PoolDirectory.empty());
+        EXPECT_TRUE(
+            std::filesystem::is_directory(
+                _PoolDirectory));
+
+        const CResourceKey _Key{
+            "resource://scene/test/resources/cold-history"
+        };
+        CResourceInfo _Info;
+        _Info.nSize = 128;
+
+        auto _pVersion1 =
+            std::make_shared<CFlatBufferResource>(
+                MakeTransportFlatBuffer(101, "version-1"));
+        CResourceInfo _StoredVersion1;
+        EXPECT_EQ(
+            EResourceMutationResult::Created,
+            _Pool.PutUntypedVersioned(
+                _Key,
+                std::static_pointer_cast<void>(_pVersion1),
+                typeid(CFlatBufferResource),
+                _Info,
+                EResourceVersionCondition::None,
+                0,
+                &_StoredVersion1));
+        EXPECT_EQ(1u, _StoredVersion1.nVersion);
+
+        auto _pVersion2 =
+            std::make_shared<CFlatBufferResource>(
+                MakeTransportFlatBuffer(202, "version-2"));
+        CResourceInfo _StoredVersion2;
+        EXPECT_EQ(
+            EResourceMutationResult::Replaced,
+            _Pool.PutUntypedVersioned(
+                _Key,
+                std::static_pointer_cast<void>(_pVersion2),
+                typeid(CFlatBufferResource),
+                _Info,
+                EResourceVersionCondition::VersionMatches,
+                1,
+                &_StoredVersion2));
+        EXPECT_EQ(2u, _StoredVersion2.nVersion);
+
+        _pVersion1.reset();
+        EXPECT_TRUE(_Pool.ContainsVersion(_Key, 1));
+        EXPECT_TRUE(_Pool.IsVersionCold(_Key, 1));
+
+        const auto _Stats =
+            _Pool.GetVersionStorageStats();
+        EXPECT_EQ(1u, _Stats.nArchivedVersionCount);
+        EXPECT_EQ(1u, _Stats.nColdVersionCount);
+        EXPECT_EQ(0u, _Stats.nResidentVersionCount);
+        EXPECT_GT(_Stats.nColdBytes, 0u);
+
+        const auto _Version1 =
+            _Pool.Get<CFlatBufferResource>(
+                _Key.Source,
+                1);
+        ASSERT_NE(nullptr, _Version1);
+        const auto* _Version1Payload =
+            TryGetFlatBufferResourceRoot<TransportPayload>(
+                *_Version1,
+                TransportPayloadIdentifier());
+        ASSERT_NE(nullptr, _Version1Payload);
+        EXPECT_EQ(101u, _Version1Payload->value());
+
+        EXPECT_EQ(
+            EResourceMutationResult::Removed,
+            _Pool.RemoveVersioned(
+                _Key,
+                EResourceVersionCondition::VersionMatches,
+                2));
+        EXPECT_FALSE(_Pool.Contains(_Key));
+        EXPECT_TRUE(_Pool.ContainsVersion(_Key, 2));
+
+        auto _pVersion3 =
+            std::make_shared<CFlatBufferResource>(
+                MakeTransportFlatBuffer(303, "version-3"));
+        CResourceInfo _StoredVersion3;
+        EXPECT_EQ(
+            EResourceMutationResult::Created,
+            _Pool.PutUntypedVersioned(
+                _Key,
+                std::static_pointer_cast<void>(_pVersion3),
+                typeid(CFlatBufferResource),
+                _Info,
+                EResourceVersionCondition::MustNotExist,
+                0,
+                &_StoredVersion3));
+        EXPECT_EQ(3u, _StoredVersion3.nVersion);
+        EXPECT_EQ(
+            (std::vector<uint64_t>{ 1, 2, 3 }),
+            _Pool.GetVersions(_Key));
+    }
+
+    EXPECT_FALSE(
+        std::filesystem::exists(_PoolDirectory));
+    std::error_code _CleanupError;
+    std::filesystem::remove_all(
+        _TestRoot,
+        _CleanupError);
+}
+
+TEST(ResourceVersionStorageTest, KeepsUnsupportedTypesResidentInsteadOfLosingThem)
+{
+    CResourcePool _Pool;
+    const CResourceKey _Key{
+        "resource://scene/test/resources/custom-history"
+    };
+
+    CResourceInfo _Info;
+    _Info.nSize = 64;
+    auto _pVersion1 =
+        std::make_shared<TextResource>();
+    _pVersion1->Text = "version-1";
+    EXPECT_EQ(
+        EResourceMutationResult::Created,
+        _Pool.PutUntypedVersioned(
+            _Key,
+            std::static_pointer_cast<void>(_pVersion1),
+            typeid(TextResource),
+            _Info,
+            EResourceVersionCondition::None,
+            0));
+
+    auto _pVersion2 =
+        std::make_shared<TextResource>();
+    _pVersion2->Text = "version-2";
+    EXPECT_EQ(
+        EResourceMutationResult::Replaced,
+        _Pool.PutUntypedVersioned(
+            _Key,
+            std::static_pointer_cast<void>(_pVersion2),
+            typeid(TextResource),
+            _Info,
+            EResourceVersionCondition::VersionMatches,
+            1));
+    _pVersion1.reset();
+
+    const auto _Stats =
+        _Pool.GetVersionStorageStats();
+    EXPECT_EQ(1u, _Stats.nArchivedVersionCount);
+    EXPECT_EQ(0u, _Stats.nColdVersionCount);
+    EXPECT_EQ(1u, _Stats.nResidentVersionCount);
+    EXPECT_EQ(64u, _Stats.nResidentBytes);
+
+    const auto _Restored =
+        _Pool.Get<TextResource>(_Key.Source, 1);
+    ASSERT_NE(nullptr, _Restored);
+    EXPECT_EQ("version-1", _Restored->Text);
+}
+
+TEST(ResourceVersionStorageTest, PluginCodecMovesBusinessResourceHistoryToDisk)
+{
+    CResourceLibrary _Library;
+    CResourceVersionCodec _TextCodec;
+    _TextCodec.Serialize =
+        [](const std::shared_ptr<void>& pResource_)
+        -> std::optional<std::vector<uint8_t>>
+        {
+            const auto _pText =
+                std::static_pointer_cast<TextResource>(
+                    pResource_);
+            return std::vector<uint8_t>(
+                _pText->Text.begin(),
+                _pText->Text.end());
+        };
+    _TextCodec.Deserialize =
+        [](const std::span<const uint8_t> Bytes_)
+        -> std::shared_ptr<void>
+        {
+            auto _pText =
+                std::make_shared<TextResource>();
+            _pText->Text.assign(
+                Bytes_.begin(),
+                Bytes_.end());
+            return std::static_pointer_cast<void>(_pText);
+        };
+    EXPECT_TRUE(
+        _Library.RegisterVersionCodec(
+            typeid(TextResource),
+            std::move(_TextCodec)));
+
+    const std::string _URL =
+        "resource://scene/test/resources/plugin-history";
+    CResourceInfo _Info;
+    _Info.Key = MakeResourceKeyFromSource(_URL);
+    _Info.nSize = 9;
+
+    auto _pVersion1 =
+        std::make_shared<TextResource>();
+    _pVersion1->Text = "version-1";
+    EXPECT_EQ(
+        EResourceMutationResult::Created,
+        _Library.PutVersioned<TextResource>(
+            _URL,
+            _pVersion1,
+            _Info));
+
+    auto _pVersion2 =
+        std::make_shared<TextResource>();
+    _pVersion2->Text = "version-2";
+    EXPECT_EQ(
+        EResourceMutationResult::Replaced,
+        _Library.PutVersioned<TextResource>(
+            _URL,
+            _pVersion2,
+            _Info,
+            EResourceVersionCondition::VersionMatches,
+            1));
+    _pVersion1.reset();
+
+    const auto _Stats =
+        _Library.GetVersionStorageStats();
+    EXPECT_EQ(1u, _Stats.nArchivedVersionCount);
+    EXPECT_EQ(1u, _Stats.nColdVersionCount);
+    EXPECT_EQ(0u, _Stats.nResidentVersionCount);
+
+    const auto _Restored =
+        _Library.Get<TextResource>(_URL, 1);
+    ASSERT_NE(nullptr, _Restored);
+    EXPECT_EQ("version-1", _Restored->Text);
 }

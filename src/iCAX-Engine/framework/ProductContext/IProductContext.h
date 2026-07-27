@@ -2,7 +2,7 @@
 
 #include "ProductContextExport.h"
 #include "Data/uuid.h"
-#include "Facades/FacadeEndpoint.h"
+#include "SDO/SDOEndpoint.h"
 #include "ProductData.h"
 #include "ProductDefinition.h"
 
@@ -15,7 +15,7 @@ namespace iCAX
 
     namespace Interaction
     {
-        class CFacadeRegistry;
+        class CSDORegistry;
     }
 
     namespace Database
@@ -39,7 +39,7 @@ namespace iCAX
         * @brief 产品作用域环境。
         * @details
         *   ProductContext 管理当前产品的定义、产品数据、资源加载器、元数据、
-        *   Behaviour、Facade 注册表和产品级服务环境。ProductRuntime 管理线程、
+        *   Behaviour、SDO 注册表和产品级服务环境。ProductRuntime 管理线程、
         *   调度、协程、模块加载以及 Context 和 ProjectCatalog 的生命周期。
         *   ProductContext 不拥有项目数据；项目数据通过 IProjectContext 访问。
         */
@@ -90,14 +90,14 @@ namespace iCAX
             virtual const iCAX::Data::uuid& GetProductChannelID() const;
 
             /*
-            * @brief 获取后端视角产品Facade 端点。
+            * @brief 获取后端视角产品SDO 端点。
             */
-            virtual iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const;
+            virtual iCAX::Interaction::CSDOEndpoint GetBackendSDOEndpoint() const;
 
             /*
-            * @brief 获取前端视角产品Facade 端点。
+            * @brief 获取前端视角产品SDO 端点。
             */
-            virtual iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const;
+            virtual iCAX::Interaction::CSDOEndpoint GetFrontendSDOEndpoint() const;
 
             /*
             * @brief 获取当前产品可用的服务容器。
@@ -122,7 +122,7 @@ namespace iCAX
             /*
             * @brief 获取产品命令注册表。
             */
-            virtual iCAX::Interaction::CFacadeRegistry& GetFacadeRegistry() const = 0;
+            virtual iCAX::Interaction::CSDORegistry& GetSDORegistry() const = 0;
         };
     }
 }

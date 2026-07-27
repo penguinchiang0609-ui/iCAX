@@ -3,7 +3,7 @@
 #include "Data/uuid.h"
 #include "ProjectContextExport.h"
 
-#include "Facades/FacadeEndpoint.h"
+#include "SDO/SDOEndpoint.h"
 
 #include <string>
 
@@ -36,7 +36,7 @@ namespace iCAX
         * @details
         *   SceneContext 管理当前现场的 Repository、Undo/Redo、Transaction、Universe、
         *   ResourceLibrary、PDOHub 和服务环境。Scene Runtime 管理线程、调度、协程、
-        *   Facade 分发以及 Context 的创建和销毁。
+        *   SDO 分发以及 Context 的创建和销毁。
         */
         class _PROJECT_CONTEXT_EXP ISceneContext
         {
@@ -64,14 +64,14 @@ namespace iCAX
             virtual const std::string& GetSceneName() const = 0;
 
             /*
-            * @brief 获取后端视角 Scene Facade 端点。
+            * @brief 获取后端视角 Scene SDO 端点。
             */
-            virtual iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const = 0;
+            virtual iCAX::Interaction::CSDOEndpoint GetBackendSDOEndpoint() const = 0;
 
             /*
-            * @brief 获取前端视角 Scene Facade 端点。
+            * @brief 获取前端视角 Scene SDO 端点。
             */
-            virtual iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const = 0;
+            virtual iCAX::Interaction::CSDOEndpoint GetFrontendSDOEndpoint() const = 0;
 
             /*
             * @brief 判断是否为主 Scene。

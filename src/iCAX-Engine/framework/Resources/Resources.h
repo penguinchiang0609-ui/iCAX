@@ -1,8 +1,10 @@
 #pragma once
 
 #include "BinaryResource.h"
+#include "FlatBufferResource.h"
 #include "IResourceLoader.h"
 #include "ResourceImportExport.h"
+#include "ResourceAccess.h"
 #include "ResourceInfo.h"
 #include "ResourceKey.h"
 #include "ResourceLibrary.h"
@@ -10,3 +12,4 @@
 #include "ResourceLoadResult.h"
 #include "ResourceLoaderRegistry.h"
 #include "ResourceTypeName.h"
+#include "ResourceVersionStorage.h"

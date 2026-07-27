@@ -63,7 +63,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry;
-            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> pFacadeChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry;
             bool bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo;
             uint32_t nFrameIntervalMilliseconds = 16;
@@ -73,7 +73,7 @@ namespace iCAX
         /*
         * @brief Project 是项目级管理容器。
         * @details
-        *   Project 不拥有 Repository、Universe、ResourceLibrary、PDOHub、FacadeChannel 或工作线程。
+        *   Project 不拥有 Repository、Universe、ResourceLibrary、PDOHub、SDOChannel 或工作线程。
         *   这些运行期对象归属 Scene。Project 启动时会创建一个 MainScene；
         *   需要临时编辑、导入预览或刀路局部编辑时，由已有 Scene 打开子 Scene。
         */
@@ -142,9 +142,9 @@ namespace iCAX
             iCAX::PDO::IPDOHub& MainScenePDOHub();
             const iCAX::PDO::IPDOHub& MainScenePDOHub() const;
             iCAX::Services::CServiceProvider& MainSceneServices() const;
-            iCAX::Interaction::CFacadeEndpoint GetMainSceneBackendFacadeEndpoint() const;
+            iCAX::Interaction::CSDOEndpoint GetMainSceneBackendSDOEndpoint() const;
             void SendMainSceneFrontendEvent(IN uint64_t nMethodCode_, IN const std::string& strPayloadText_);
-            iCAX::Interaction::CFacadeEndpoint GetMainSceneFrontendFacadeEndpoint() const;
+            iCAX::Interaction::CSDOEndpoint GetMainSceneFrontendSDOEndpoint() const;
 
             void Start();
             void Stop();
@@ -175,7 +175,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
-            std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> m_pFacadeChannelRegistry;
+            std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> m_pSDOChannelRegistry;
             iCAX::Data::uuid m_MainSceneID;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProjectScene>> m_Scenes;
             SceneFrameHandler m_SceneFrameHandler;

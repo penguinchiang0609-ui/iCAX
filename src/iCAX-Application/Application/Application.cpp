@@ -68,6 +68,8 @@ namespace
         _Config.RuntimeConfig.Paths.UserConfigDirectory = "Setting";
         _Config.RuntimeConfig.Paths.CacheDirectory = "Cache";
         _Config.RuntimeConfig.Paths.TempDirectory = "Temp";
+        _Config.RuntimeConfig.Paths.ResourceVersionDirectory =
+            "Temp/ResourceVersions";
         _Config.RuntimeConfig.Paths.LogDirectory = "Log";
         _Config.RuntimeConfig.nFrameIntervalMilliseconds = 16;
 

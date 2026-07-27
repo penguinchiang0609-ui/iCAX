@@ -362,6 +362,6 @@ Behaviour 通过 `Repository::GetComponentFrameCache()` 枚举组件并执行行
 
 Scene 负责资源库和 Repository 生命周期；Project 负责项目身份、ProjectSetting 和 Scene 集合。Database 不关心项目或 Scene 的打开方式。
 
-Scene 级 Facades 通过 `SceneContext::Database()` 获取 `IRepository`，执行命令时显式创建撤销记录边界。ProjectContext 只提供项目身份、路径和 ProjectSetting。
+Scene 级 SDO 通过 `SceneContext::Database()` 获取 `IRepository`，执行命令时显式创建撤销记录边界。ProjectContext 只提供项目身份、路径和 ProjectSetting。
 
 Framework 或产品级场景 View 可以使用 `IEntityView` 的 Entity ID 集合，但产品 View ID、表现覆盖、相机、LayerMask、PDO 和前端布局均不属于 Database。

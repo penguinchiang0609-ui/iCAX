@@ -53,7 +53,7 @@ function Sync-ApplicationRuntimeDependencies {
         "iCAX-Engine\framework\ApplicationContext",
         "iCAX-Engine\framework\ApplicationRuntime",
         "iCAX-Engine\framework\Behaviour",
-        "iCAX-Engine\framework\Facades",
+        "iCAX-Engine\framework\SDO",
         "iCAX-Engine\framework\Database",
         "iCAX-Engine\framework\PDO",
         "iCAX-Engine\framework\Product",
@@ -182,7 +182,7 @@ function Sync-ApplicationRuntimeDependencies {
             Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.components
             Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.behaviours
             Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.services
-            Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.facades
+            Add-ModulePath -Paths $modulePaths -Value $manifest.backend.modules.sdo
         }
 
         if ($manifest.backend.resources.handlers) {
@@ -239,7 +239,7 @@ function Ensure-UIContainerSmokeConfig {
         "type=cef",
         "modulePath=CefUIContainer.dll",
         "remoteDebuggingPort=$RemoteDebuggingPort",
-        "facadePollIntervalMS=16"
+        "sdoPollIntervalMS=16"
     ) | Set-Content -LiteralPath $configPath -Encoding UTF8
 }
 

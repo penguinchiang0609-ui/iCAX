@@ -81,12 +81,12 @@ namespace
             return m_strSceneName;
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetBackendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetBackendSDOEndpoint() const override
         {
             return {};
         }
 
-        iCAX::Interaction::CFacadeEndpoint GetFrontendFacadeEndpoint() const override
+        iCAX::Interaction::CSDOEndpoint GetFrontendSDOEndpoint() const override
         {
             return {};
         }

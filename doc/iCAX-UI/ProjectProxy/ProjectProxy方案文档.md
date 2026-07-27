@@ -12,7 +12,7 @@ src/iCAX-UI/ProjectProxy/
 
 `ProjectProxy` 依赖：
 
-- `SDK/Facades`
+- `SDK/SDO`
 - `SceneProxy`
 
 它不依赖 `AppProxy`，只通过构造参数持有上级 `ProductProxy` 引用。
@@ -28,13 +28,13 @@ ProjectProxy.syncScenes(projectState)
   -> dispose closed SceneProxy
 ```
 
-标准项目方法由 `SceneProxy` 调用。`SDK/Facades/facadeMethod.mjs` 中的 `ProjectFacade` 表示后端对外提供的项目 Facade 方法：
+标准项目方法由 `SceneProxy` 调用。`SDK/SDO/sdoMethod.mjs` 中的 `ProjectSDO` 表示后端对外提供的项目 SDO 方法：
 
 ```js
-ProjectFacade.getState;
-ProjectFacade.undo;
-ProjectFacade.redo;
-ProjectFacade.getUndoRedoState;
+ProjectSDO.getState;
+ProjectSDO.undo;
+ProjectSDO.redo;
+ProjectSDO.getUndoRedoState;
 ```
 
 `SceneProxy` 在这些命令之上提供便捷方法：
@@ -47,7 +47,7 @@ await scene.redo();
 const state = await scene.getUndoRedoState();
 ```
 
-这些方法只表达前端公共约定。项目文件保存由具体产品/文件模块定义 Facade 方法，因为保存格式、路径策略和资源打包方式都属于产品协议。
+这些方法只表达前端公共约定。项目文件保存由具体产品/文件模块定义 SDO 方法，因为保存格式、路径策略和资源打包方式都属于产品协议。
 
 ## 4. PDO 流程
 

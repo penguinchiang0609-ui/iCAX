@@ -64,14 +64,14 @@ namespace
         return CreateInfo_.pResourceLoaderRegistry;
     }
 
-    std::shared_ptr<iCAX::Interaction::CFacadeChannelRegistry> RequireFacadeChannelRegistry(
+    std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> RequireSDOChannelRegistry(
         IN const iCAX::Project::CProjectCreateInfo& CreateInfo_)
     {
-        if (!CreateInfo_.pFacadeChannelRegistry)
+        if (!CreateInfo_.pSDOChannelRegistry)
         {
-            throw std::invalid_argument("Project FacadeChannelRegistry cannot be null");
+            throw std::invalid_argument("Project SDOChannelRegistry cannot be null");
         }
-        return CreateInfo_.pFacadeChannelRegistry;
+        return CreateInfo_.pSDOChannelRegistry;
     }
 
     bool IsExternalPath(IN const std::string& strPath_)
@@ -118,7 +118,7 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_pMetaRegistry(RequireMetaRegistry(CreateInfo_))
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
-    , m_pFacadeChannelRegistry(RequireFacadeChannelRegistry(CreateInfo_))
+    , m_pSDOChannelRegistry(RequireSDOChannelRegistry(CreateInfo_))
     , m_SceneFrameHandler(CreateInfo_.OnSceneFrame)
 {
     if (m_ProjectName.empty())
@@ -354,10 +354,10 @@ std::shared_ptr<iCAX::Project::CProjectScene> iCAX::Project::CProject::OpenChild
     CreateInfo_.pMetaRegistry = CreateInfo_.pMetaRegistry ? CreateInfo_.pMetaRegistry : m_pMetaRegistry;
     CreateInfo_.pBehaviourRegistry = CreateInfo_.pBehaviourRegistry ? CreateInfo_.pBehaviourRegistry : m_pBehaviourRegistry;
     CreateInfo_.pResourceLoaderRegistry = CreateInfo_.pResourceLoaderRegistry ? CreateInfo_.pResourceLoaderRegistry : m_pResourceLoaderRegistry;
-    CreateInfo_.pFacadeChannelRegistry = CreateInfo_.pFacadeChannelRegistry ? CreateInfo_.pFacadeChannelRegistry : m_pFacadeChannelRegistry;
+    CreateInfo_.pSDOChannelRegistry = CreateInfo_.pSDOChannelRegistry ? CreateInfo_.pSDOChannelRegistry : m_pSDOChannelRegistry;
     if (!CreateInfo_.FrameHandler)
     {
-        CreateInfo_.FrameHandler = [this](IN CProjectScene& Scene_, IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_) {
+        CreateInfo_.FrameHandler = [this](IN CProjectScene& Scene_, IN const iCAX::Interaction::CSDOEndpoint& Endpoint_) {
             SceneFrameHandler _Handler;
             {
                 std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);
@@ -492,9 +492,9 @@ iCAX::Services::CServiceProvider& iCAX::Project::CProject::MainSceneServices() c
     return GetMainScene().Services();
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Project::CProject::GetMainSceneBackendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Project::CProject::GetMainSceneBackendSDOEndpoint() const
 {
-    return GetMainScene().GetBackendFacadeEndpoint();
+    return GetMainScene().GetBackendSDOEndpoint();
 }
 
 void iCAX::Project::CProject::SendMainSceneFrontendEvent(
@@ -504,9 +504,9 @@ void iCAX::Project::CProject::SendMainSceneFrontendEvent(
     GetMainScene().SendFrontendEvent(nMethodCode_, strPayloadText_);
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Project::CProject::GetMainSceneFrontendFacadeEndpoint() const
+iCAX::Interaction::CSDOEndpoint iCAX::Project::CProject::GetMainSceneFrontendSDOEndpoint() const
 {
-    return GetMainScene().GetFrontendFacadeEndpoint();
+    return GetMainScene().GetFrontendSDOEndpoint();
 }
 
 void iCAX::Project::CProject::Start()
@@ -591,11 +591,11 @@ iCAX::Project::CProjectSceneCreateInfo iCAX::Project::CProject::MakeMainSceneCre
     _SceneInfo.pMetaRegistry = m_pMetaRegistry;
     _SceneInfo.pBehaviourRegistry = m_pBehaviourRegistry;
     _SceneInfo.pResourceLoaderRegistry = m_pResourceLoaderRegistry;
-    _SceneInfo.pFacadeChannelRegistry = m_pFacadeChannelRegistry;
+    _SceneInfo.pSDOChannelRegistry = m_pSDOChannelRegistry;
     _SceneInfo.bEnablePDOHub = CreateInfo_.bEnablePDOHub;
     _SceneInfo.PDOHubCreateInfo = CreateInfo_.PDOHubCreateInfo;
     _SceneInfo.nFrameIntervalMilliseconds = CreateInfo_.nFrameIntervalMilliseconds;
-    _SceneInfo.FrameHandler = [this](IN CProjectScene& Scene_, IN const iCAX::Interaction::CFacadeEndpoint& Endpoint_) {
+    _SceneInfo.FrameHandler = [this](IN CProjectScene& Scene_, IN const iCAX::Interaction::CSDOEndpoint& Endpoint_) {
         SceneFrameHandler _Handler;
         {
             std::lock_guard<std::recursive_mutex> _Lock(m_Mutex);

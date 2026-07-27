@@ -28,9 +28,10 @@ $BuildProjects = @(
     "src\tests\icax-engine\framework\Resources\ResourcesTest\ResourcesTest.vcxproj",
     "src\icax-engine\framework\ApplicationContext\ApplicationContext.vcxproj",
     "src\tests\icax-engine\framework\ApplicationContext\ApplicationContextTest\ApplicationContextTest.vcxproj",
-    "src\icax-engine\framework\Facades\Facades.vcxproj",
-    "src\tests\icax-engine\framework\Facades\FacadesTest\FacadesTest.vcxproj",
+    "src\icax-engine\framework\SDO\SDO.vcxproj",
+    "src\tests\icax-engine\framework\SDO\SDOTest\SDOTest.vcxproj",
     "src\icax-engine\framework\Database\Database.vcxproj",
+    "src\icax-engine\framework\DatabaseLanguage\DatabaseLanguage.vcxproj",
     "src\tests\icax-engine\framework\Database\DatabaseTest\DatabaseTest.vcxproj",
     "src\icax-engine\framework\PDO\PDO.vcxproj",
     "src\tests\icax-engine\framework\PDO\PDOTest\PDOTest.vcxproj",
@@ -51,7 +52,7 @@ $TestExecutables = @(
     "src\icax-engine\$Platform\$Configuration\DataTest.exe",
     "src\icax-engine\$Platform\$Configuration\ResourcesTest.exe",
     "src\icax-engine\$Platform\$Configuration\ApplicationContextTest.exe",
-    "src\icax-engine\$Platform\$Configuration\FacadesTest.exe",
+    "src\icax-engine\$Platform\$Configuration\SDOTest.exe",
     "src\icax-engine\$Platform\$Configuration\DatabaseTest.exe",
     "src\icax-engine\$Platform\$Configuration\ProjectTest.exe",
     "src\icax-engine\$Platform\$Configuration\ProductTest.exe",
@@ -141,7 +142,12 @@ foreach ($Project in $BuildProjects) {
     }
 }
 
-$env:PATH = (Join-Path $RepoRoot "src\icax-engine\$Platform\$Configuration") + ";" + $env:PATH
+$env:PATH =
+    (Join-Path $RepoRoot "src\$Platform\$Configuration") +
+    ";" +
+    (Join-Path $RepoRoot "src\icax-engine\$Platform\$Configuration") +
+    ";" +
+    $env:PATH
 
 foreach ($TestExecutable in $TestExecutables) {
     $ExecutablePath = Join-Path $RepoRoot $TestExecutable

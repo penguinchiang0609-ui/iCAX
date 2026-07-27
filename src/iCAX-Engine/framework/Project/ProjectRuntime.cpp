@@ -66,9 +66,9 @@ iCAX::Project::CMainScenePDODescriptor iCAX::Project::CProjectRuntime::GetMainSc
     return RequireProject().GetMainScenePDODescriptor();
 }
 
-iCAX::Interaction::CFacadeEndpoint iCAX::Project::CProjectRuntime::GetMainSceneFrontendFacadeEndpoint()
+iCAX::Interaction::CSDOEndpoint iCAX::Project::CProjectRuntime::GetMainSceneFrontendSDOEndpoint()
 {
-    return RequireProject().GetMainSceneFrontendFacadeEndpoint();
+    return RequireProject().GetMainSceneFrontendSDOEndpoint();
 }
 
 void iCAX::Project::CProjectRuntime::SetSceneFrameHandler(IN SceneRuntimeFrameHandler Handler_)
@@ -87,7 +87,7 @@ void iCAX::Project::CProjectRuntime::SetSceneFrameHandler(IN SceneRuntimeFrameHa
     _pProject->SetSceneFrameHandler(
         [this](
             iCAX::Project::CProjectScene& Scene_,
-            const iCAX::Interaction::CFacadeEndpoint& BackendEndpoint_) {
+            const iCAX::Interaction::CSDOEndpoint& BackendEndpoint_) {
             auto _Handler = GetSceneFrameHandler();
             if (_Handler)
             {

@@ -24,6 +24,17 @@ namespace iCAX
                 : m_pSlot(&Slot_)
             {
                 m_pData = m_pSlot->BeginRead(m_nSequence, m_nBufferIndex, m_nDataVersion);
+                try
+                {
+                    m_nPayloadSize = m_pSlot->GetBufferPayloadSize(m_nBufferIndex);
+                }
+                catch (...)
+                {
+                    m_pSlot->EndRead(m_nBufferIndex);
+                    m_pSlot = nullptr;
+                    m_pData = nullptr;
+                    throw;
+                }
             }
 
             ~CPDOReadLease()
@@ -81,6 +92,19 @@ namespace iCAX
                 return m_pSlot != nullptr;
             }
 
+            uint64_t PayloadCapacity() const noexcept
+            {
+                return m_pSlot == nullptr
+                    ? 0
+                    : static_cast<uint64_t>(
+                        m_pSlot->GetHeader().nPayloadSize);
+            }
+
+            uint64_t PayloadSize() const noexcept
+            {
+                return m_nPayloadSize;
+            }
+
             void Release()
             {
                 if (m_pSlot)
@@ -91,6 +115,7 @@ namespace iCAX
                     m_nSequence = 0;
                     m_nBufferIndex = 0;
                     m_nDataVersion = 0;
+                    m_nPayloadSize = 0;
                 }
             }
 
@@ -102,12 +127,14 @@ namespace iCAX
                 m_nSequence = Other_.m_nSequence;
                 m_nBufferIndex = Other_.m_nBufferIndex;
                 m_nDataVersion = Other_.m_nDataVersion;
+                m_nPayloadSize = Other_.m_nPayloadSize;
 
                 Other_.m_pSlot = nullptr;
                 Other_.m_pData = nullptr;
                 Other_.m_nSequence = 0;
                 Other_.m_nBufferIndex = 0;
                 Other_.m_nDataVersion = 0;
+                Other_.m_nPayloadSize = 0;
             }
 
         private:
@@ -116,6 +143,7 @@ namespace iCAX
             uint32_t m_nSequence = 0;
             uint32_t m_nBufferIndex = 0;
             uint64_t m_nDataVersion = 0;
+            uint64_t m_nPayloadSize = 0;
         };
 
         /*
@@ -137,6 +165,7 @@ namespace iCAX
                     throw std::invalid_argument("PDO write lease data version cannot be zero");
                 }
                 m_pData = Slot_.BeginWrite();
+                m_nPayloadSize = PayloadCapacity();
             }
 
             ~CPDOWriteLease()
@@ -197,13 +226,46 @@ namespace iCAX
                 return m_pSlot != nullptr;
             }
 
+            uint64_t PayloadCapacity() const noexcept
+            {
+                return m_pSlot == nullptr
+                    ? 0
+                    : static_cast<uint64_t>(
+                        m_pSlot->GetHeader().nPayloadSize);
+            }
+
+            uint64_t PayloadSize() const noexcept
+            {
+                return m_nPayloadSize;
+            }
+
+            void SetPayloadSize(IN uint64_t nPayloadSize_)
+            {
+                if (!m_pSlot)
+                {
+                    throw std::logic_error("PDO write lease is not active");
+                }
+                if (nPayloadSize_ == 0 || nPayloadSize_ > PayloadCapacity())
+                {
+                    throw std::out_of_range(
+                        "PDO payload size is outside the slot capacity");
+                }
+                m_nPayloadSize = nPayloadSize_;
+            }
+
             void Commit()
             {
                 if (m_pSlot)
                 {
-                    m_pSlot->MarkWriteReady(m_nDataVersion);
+                    m_pSlot->MarkWriteReady(m_nDataVersion, m_nPayloadSize);
                     Reset();
                 }
+            }
+
+            void Commit(IN uint64_t nPayloadSize_)
+            {
+                SetPayloadSize(nPayloadSize_);
+                Commit();
             }
 
             void Cancel()
@@ -229,6 +291,7 @@ namespace iCAX
                 , m_nDataVersion(nDataVersion_)
                 , m_pData(pData_)
             {
+                m_nPayloadSize = PayloadCapacity();
             }
 
             void Reset() noexcept
@@ -236,6 +299,7 @@ namespace iCAX
                 m_pSlot = nullptr;
                 m_pData = nullptr;
                 m_nDataVersion = 0;
+                m_nPayloadSize = 0;
             }
 
             void MoveFrom(IN CPDOWriteLease&& Other_) noexcept
@@ -243,12 +307,14 @@ namespace iCAX
                 m_pSlot = Other_.m_pSlot;
                 m_pData = Other_.m_pData;
                 m_nDataVersion = Other_.m_nDataVersion;
+                m_nPayloadSize = Other_.m_nPayloadSize;
                 Other_.Reset();
             }
 
         private:
             IPDOSlot* m_pSlot = nullptr;
             uint64_t m_nDataVersion = 0;
+            uint64_t m_nPayloadSize = 0;
             void* m_pData = nullptr;
         };
     }

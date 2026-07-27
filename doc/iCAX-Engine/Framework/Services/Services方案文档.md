@@ -25,28 +25,28 @@ src/icax-engine/framework/Services/
 
 ## 3. 通信通道边界
 
-`Facades` 提供 Facade、FacadeFrame、FacadeQueue、FacadeChannel、FacadeEndpoint 和 FacadeChannelRegistry 等调用与内部传输对象。
+`SDO` 提供 SDO、SDOFrame、SDOQueue、SDOChannel、SDOEndpoint 和 SDOChannelRegistry 等调用与内部传输对象。
 
-`CFacadeChannelRegistry` 不是 Service。`ApplicationRuntime` 直接持有一个应用级 registry，并显式注入 ProductRuntime / Project / Scene：
+`CSDOChannelRegistry` 不是 Service。`ApplicationRuntime` 直接持有一个应用级 registry，并显式注入 ProductRuntime / Project / Scene：
 
 ```text
 ApplicationRuntime
   CServiceProvider
-  CFacadeChannelRegistry
-    applicationChannelId -> CFacadeChannel
-    productChannelId     -> CFacadeChannel
-    sceneChannelId       -> CFacadeChannel
+  CSDOChannelRegistry
+    applicationChannelId -> CSDOChannel
+    productChannelId     -> CSDOChannel
+    sceneChannelId       -> CSDOChannel
 ```
 
-运行体只保存自己的 Facade channel id：
+运行体只保存自己的 SDO channel id：
 
 - `ApplicationRuntime` 保存 `applicationChannelId`。
 - `ProductRuntime` 保存 `productChannelId`。
 - `Scene` 保存 `sceneChannelId`。
 
-上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 Facade channel id 对应的 frontend Facade endpoint。Application/Product/SceneContext 暴露本层 Facade endpoint。`CFacadeEndpoint` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧 Endpoint 会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
+上级运行体创建或启动下级运行体后，向前端 bridge 发放下级 SDO channel id 对应的 frontend SDO endpoint。Application/Product/SceneContext 暴露本层 SDO endpoint。`CSDOEndpoint` 是弱引用视图；`RemoveChannel` 或 `ClearChannels` 删除底层 channel 后，旧 Endpoint 会失效，继续收发会抛出 `std::logic_error`，不会悬空访问已释放队列。
 
-`GetFrontendFacadeEndpoint(id)` / `GetBackendFacadeEndpoint(id)` 只查询既有 channel，不隐式创建。channel 创建必须走 `CreateChannel(id)`，销毁必须走 `RemoveChannel(id)`。
+`GetFrontendSDOEndpoint(id)` / `GetBackendSDOEndpoint(id)` 只查询既有 channel，不隐式创建。channel 创建必须走 `CreateChannel(id)`，销毁必须走 `RemoveChannel(id)`。
 
 ## 4. 迁移说明
 
@@ -75,5 +75,5 @@ src/icax-engine/framework/Services/
 
 - 区分全局服务、应用宿主服务和项目服务的生命周期。
 - 为服务卸载顺序补充更明确的依赖约束。
-- 将 Facades 接入 ApplicationRuntime 后，业务命令通过服务解析具体能力。
+- 将 SDO 接入 ApplicationRuntime 后，业务命令通过服务解析具体能力。
 
