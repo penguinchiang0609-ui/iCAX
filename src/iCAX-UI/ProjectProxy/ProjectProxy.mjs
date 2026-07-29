@@ -1,4 +1,5 @@
 import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
+import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 import { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 
 export class ProjectProxy {
@@ -16,6 +17,7 @@ export class ProjectProxy {
     this.state = projectState;
     this.projectId = projectState.projectId;
     this.mainSceneId = projectState.mainSceneId ?? projectState.mainScene?.sceneId ?? "";
+    this.resources = new ResourceClient({ bridge: this.bridge });
     this.scenes = new Map();
     this.mainSceneProxy = null;
   }
@@ -85,6 +87,10 @@ export class ProjectProxy {
 
   getMainScene() {
     return this.mainSceneProxy;
+  }
+
+  fetchResource(url, init = {}) {
+    return this.resources.fetch(url, init);
   }
 
   dispose() {

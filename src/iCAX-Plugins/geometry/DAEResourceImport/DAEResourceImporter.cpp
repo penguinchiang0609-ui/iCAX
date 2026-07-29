@@ -106,9 +106,19 @@ namespace
         return Request_.TargetResourceID.empty() ? Request_.SourcePath : Request_.TargetResourceID;
     }
 
-    std::string MakeTriangleMeshResourceID(IN const std::string& SourceResourceID_)
+    std::string MakeTriangleMeshResourceID(
+        IN iCAX::Resource::CResourceLibrary& Library_,
+        IN const std::string& SourceResourceID_)
     {
-        return SourceResourceID_.empty() ? std::string() : SourceResourceID_ + "#geometry.triangle_mesh";
+        if (SourceResourceID_.empty())
+        {
+            return {};
+        }
+        return Library_.HasScope()
+            ? Library_.MakeDerivedResourceURL(
+                SourceResourceID_,
+                "geometry.triangle_mesh")
+            : SourceResourceID_ + "#geometry.triangle_mesh";
     }
 
     void CheckHR(IN HRESULT hr_, IN const std::string& Message_)
@@ -841,7 +851,10 @@ namespace
                 const auto _ContentHash = ToHex(HashBytes(_Bytes));
                 const auto _DisplayName = GetDisplayNameFromPath(Request_.SourcePath);
                 const auto _SourceResourceID = MakeSourceResourceID(Request_);
-                const auto _TriangleMeshResourceID = MakeTriangleMeshResourceID(_SourceResourceID);
+                const auto _TriangleMeshResourceID =
+                    MakeTriangleMeshResourceID(
+                        Library_,
+                        _SourceResourceID);
                 const auto _SourceVersion = NextResourceVersion(Library_, _SourceResourceID);
                 const auto _TriangleMeshVersion = NextResourceVersion(Library_, _TriangleMeshResourceID);
 
@@ -864,6 +877,7 @@ namespace
                     _SourceVersion,
                     static_cast<std::uint64_t>(_pSource->Content.size()),
                     _ContentHash);
+                _SourceInfo.Source = Request_.SourcePath;
                 _SourceInfo.Metadata["sourcePath"] = Request_.SourcePath;
                 Library_.Set<iCAX::Resource::CBinaryResource>(_SourceResourceID, _pSource, _SourceInfo);
 
@@ -877,6 +891,7 @@ namespace
                     _TriangleMeshVersion,
                     0,
                     _ContentHash);
+                _TriangleMeshInfo.Source = Request_.SourcePath;
                 _TriangleMeshInfo.Metadata["sourceResourceId"] = _SourceResourceID;
                 _TriangleMeshInfo.Metadata["sourcePath"] = Request_.SourcePath;
                 _TriangleMeshInfo.Metadata["vertexCount"] = std::to_string(_pTriangleMesh->Mesh.Vertices.size());

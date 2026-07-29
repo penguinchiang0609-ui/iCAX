@@ -447,14 +447,17 @@ namespace iCAX::CAM::SDO::Internal
     }
 
     iCAX::Resource::CResourceInfo _MakeResourceInfo(
-        IN const std::string& strSource_,
+        IN const std::string& strResourceURL_,
         IN const std::string& strName_,
         IN const std::string& strKind_,
         IN iCAX::Resource::EResourcePersistenceMode Persistence_,
         IN uint64_t nVersion_)
     {
         iCAX::Resource::CResourceInfo _Info;
-        _Info.Source = strSource_;
+        if (const auto _URL = iCAX::Resource::TryParseResourceURL(strResourceURL_))
+        {
+            _Info.ResourceID = _URL->ResourceID;
+        }
         _Info.Name = strName_;
         _Info.Persistence = Persistence_;
         _Info.nVersion = nVersion_;

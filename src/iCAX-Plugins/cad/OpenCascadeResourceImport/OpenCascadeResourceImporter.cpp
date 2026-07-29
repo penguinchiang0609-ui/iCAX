@@ -104,9 +104,19 @@ namespace
         return Request_.TargetResourceID.empty() ? Request_.SourcePath : Request_.TargetResourceID;
     }
 
-    std::string MakeBRepResourceID(IN const std::string& strSourceResourceID_)
+    std::string MakeBRepResourceID(
+        IN iCAX::Resource::CResourceLibrary& Library_,
+        IN const std::string& strSourceResourceID_)
     {
-        return strSourceResourceID_.empty() ? std::string() : strSourceResourceID_ + "#geometry.brep";
+        if (strSourceResourceID_.empty())
+        {
+            return {};
+        }
+        return Library_.HasScope()
+            ? Library_.MakeDerivedResourceURL(
+                strSourceResourceID_,
+                "geometry.brep")
+            : strSourceResourceID_ + "#geometry.brep";
     }
 
     std::vector<uint8_t> ReadAllBytes(IN const std::string& strSourcePath_)
@@ -905,7 +915,10 @@ namespace
                 const auto _ContentHash = ToHex(HashBytes(_Bytes));
                 const auto _DisplayName = GetDisplayNameFromPath(Request_.SourcePath);
                 const auto _SourceResourceID = MakeSourceResourceID(Request_);
-                const auto _BRepResourceID = MakeBRepResourceID(_SourceResourceID);
+                const auto _BRepResourceID =
+                    MakeBRepResourceID(
+                        Library_,
+                        _SourceResourceID);
                 const auto _SourceVersion = NextResourceVersion(Library_, _SourceResourceID);
                 const auto _BRepVersion = NextResourceVersion(Library_, _BRepResourceID);
                 const auto _Tolerance = ReadTolerance(Request_);
@@ -937,6 +950,7 @@ namespace
                     static_cast<uint64_t>(_pSource->Content.size()),
                     _ContentHash,
                     _FormatID);
+                _SourceInfo.Source = Request_.SourcePath;
                 _SourceInfo.Metadata["sourcePath"] = Request_.SourcePath;
 
                 Library_.Set<iCAX::Resource::CBinaryResource>(_SourceResourceID, _pSource, _SourceInfo);
@@ -952,6 +966,7 @@ namespace
                     0,
                     _ContentHash,
                     _FormatID);
+                _BRepInfo.Source = Request_.SourcePath;
                 _BRepInfo.Metadata["sourceResourceId"] = _SourceResourceID;
                 _BRepInfo.Metadata["sourcePath"] = Request_.SourcePath;
                 _BRepInfo.Metadata["faceCount"] = std::to_string(_pBRep->Faces.size());

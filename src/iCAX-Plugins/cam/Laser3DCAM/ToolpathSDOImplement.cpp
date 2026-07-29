@@ -497,7 +497,7 @@ namespace
     }
 
     iCAX::Resource::CResourceInfo _MakeResourceInfo(
-        IN const std::string& strSource_,
+        IN const std::string& strResourceURL_,
         IN const std::string& strName_,
         IN const std::string& strKind_,
         IN iCAX::Resource::EResourcePersistenceMode Persistence_,
@@ -508,7 +508,10 @@ namespace
         IN const iCAX::Data::uuid& PathEntityID_,
         IN const std::string& strPathName_)
     {
-        const auto _PoseFieldResourceID = iCAX::CAM::MakePoseFieldResourceID(PathEntityID_);
+        const auto _PoseFieldResourceID =
+            iCAX::CAM::MakePoseFieldResourceID(
+                Scene_.Resources(),
+                PathEntityID_);
         auto _pPoseField = std::make_shared<iCAX::CAM::CPoseFieldResource>();
         _pPoseField->nVersion = 1;
 
@@ -535,7 +538,10 @@ namespace
         auto& _Repository = Scene_.Database();
         const auto [_DefaultCuttingLayerID, _DefaultVisibleLayerID] = _EnsureDefaultLayers(_Repository);
         auto [_pEntity, _pPath] = _CreateEntityWithComponent<iCAX::CAM::CPathComponent>(_Repository);
-        const auto _CurveResourceID = iCAX::CAM::MakePathCurveResourceID(_pEntity->GetID());
+        const auto _CurveResourceID =
+            iCAX::CAM::MakePathCurveResourceID(
+                Scene_.Resources(),
+                _pEntity->GetID());
 
         auto _pCurve = std::make_shared<iCAX::CAM::CPathCurveResource>();
         _pCurve->nVersion = 1;

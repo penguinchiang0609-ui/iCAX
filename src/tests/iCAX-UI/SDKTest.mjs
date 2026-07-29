@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   AppSDO,
+  allocateResourceURL,
   connectApplication,
   ensureUsableChannelId,
   isUsableChannelId,
@@ -17,6 +18,8 @@ import {
   parseRenderPDOPayload,
   loadProductModule,
   mountProductModule,
+  makeResourceCollectionURL,
+  parseResourceURL,
   resolveFrontendEntry,
   validateBridge,
 } from "../../iCAX-UI/SDK/index.mjs";
@@ -199,16 +202,40 @@ async function testDirectResourceAccess() {
   const app = await connectApplication({ bridge, app: { sdo: { timeoutMs: 1000 } } });
   const opened = await app.openProjectFile("D:/projects/resources.icax");
   const resources = opened.sceneProxy.resources;
+  assert.ok(app.resources instanceof ResourceClient);
+  assert.ok(opened.productProxy.resources instanceof ResourceClient);
+  assert.ok(opened.projectProxy.resources instanceof ResourceClient);
   assert.ok(resources instanceof ResourceClient);
 
-  const url = "resource://scene/mock/resources/transport";
+  const scope = {
+    applicationId: "icax",
+    productId: "icax.mock-product",
+    projectId: opened.projectProxy.projectId,
+    sceneId: opened.sceneProxy.sceneId,
+  };
+  const allocated = allocateResourceURL(scope);
+  const url = allocated.url;
+  assert.equal(parseResourceURL(url).resourceId, allocated.resourceId);
+  assert.throws(
+    () => parseResourceURL(`${makeResourceCollectionURL(scope)}/`),
+    /empty path segment/,
+  );
+  assert.throws(
+    () => parseResourceURL(url.replace("/resources/", "//resources/")),
+    /empty path segment/,
+  );
+  assert.throws(
+    () => makeResourceCollectionURL({
+      applicationId: "icax..unsafe",
+    }),
+    /URL-safe stable ID/,
+  );
   const source = new Uint8Array([8, 0, 0, 0, 73, 67, 82, 83, 1, 2, 3, 4]);
-  const created = await resources.put(url, source, {
+  const created = await resources.create(url, source, {
     headers: {
       "Content-Type": "application/vnd.icax.flatbuffer",
       "ICAX-Resource-Type": "test.transport",
       "ICAX-Schema-Version": "1",
-      "If-None-Match": "*",
     },
   });
   assert.equal(created.status, 201);
@@ -237,6 +264,20 @@ async function testDirectResourceAccess() {
   });
   assert.equal(removed.status, 204);
   assert.equal((await resources.get(url)).status, 404);
+
+  const posted = await resources.post(
+    makeResourceCollectionURL(scope),
+    source,
+    {
+      headers: {
+        "Content-Type": "application/vnd.icax.flatbuffer",
+      },
+    },
+  );
+  assert.equal(posted.status, 201);
+  const postedURL = posted.headers.get("Location");
+  assert.equal(parseResourceURL(postedURL).scope, "scene");
+  assert.equal((await resources.get(postedURL)).status, 200);
 }
 
 async function testSDOEventFlow() {

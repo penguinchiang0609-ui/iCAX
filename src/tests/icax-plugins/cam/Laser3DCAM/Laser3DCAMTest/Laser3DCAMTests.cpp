@@ -211,13 +211,20 @@ namespace
     {
     public:
         CTestSceneContext()
-            : m_SceneID(iCAX::Data::GenerateNewUUID())
+            : m_ProjectID(iCAX::Data::GenerateNewUUID())
+            , m_SceneID(iCAX::Data::GenerateNewUUID())
             , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
             , m_pMetaRegistry(iCAX::Database::CreateMetaRegistry())
             , m_pRepository(iCAX::Database::GenerateRepository(iCAX::Data::GenerateNewUUID(), m_pMetaRegistry))
             , m_pChannel(std::make_shared<iCAX::Interaction::CSDOChannel>())
         {
             iCAX::Database::CMetaRegistrationCatalog::ReplayAll(*m_pMetaRegistry);
+            m_Resources.SetScope(
+                iCAX::Resource::MakeSceneResourceScope(
+                    "icax-test",
+                    "laser-3d-cam-test",
+                    m_ProjectID,
+                    m_SceneID));
         }
 
         const iCAX::Data::uuid& GetSceneID() const override
@@ -296,6 +303,7 @@ namespace
         }
 
     private:
+        iCAX::Data::uuid m_ProjectID;
         iCAX::Data::uuid m_SceneID;
         iCAX::Data::uuid m_SceneChannelID;
         std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;

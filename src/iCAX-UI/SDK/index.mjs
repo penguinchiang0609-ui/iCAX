@@ -3,6 +3,13 @@ export { createBridge, validateBridge } from "./Bridge/createBridge.mjs";
 export { MockHostBridge } from "./Bridge/mockHostBridge.mjs";
 export { ResourceClient } from "./Resources/resourceClient.mjs";
 export {
+  allocateResourceURL,
+  generateResourceId,
+  makeResourceCollectionURL,
+  makeResourceURL,
+  parseResourceURL,
+} from "./Resources/resourceURL.mjs";
+export {
   AppSDO,
   ProductSDO,
   ProjectSDO,

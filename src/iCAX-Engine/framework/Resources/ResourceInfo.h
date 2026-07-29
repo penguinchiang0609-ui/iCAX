@@ -1,15 +1,60 @@
 #pragma once
 
 #include "ResourceKey.h"
+#include "Data/uuid.h"
 
 #include <cstdint>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace iCAX
 {
     namespace Resource
     {
+        /*
+        * @brief 对一个不可变资源版本的精确引用。
+        * @details
+        *   URL 表示稳定资源身份，nVersion 锁定具体内容版本。
+        *   资源依赖禁止使用“最新版本”语义，避免子资源更新时隐式改变父资源。
+        */
+        struct _RESOURCES_EXP CResourceReference final
+        {
+            std::string URL;
+            uint64_t nVersion = 0;
+
+            bool IsValid() const noexcept
+            {
+                return !URL.empty() && nVersion != 0;
+            }
+        };
+
+        inline bool operator==(
+            IN const CResourceReference& Left_,
+            IN const CResourceReference& Right_) noexcept
+        {
+            return Left_.URL == Right_.URL &&
+                Left_.nVersion == Right_.nVersion;
+        }
+
+        inline bool operator!=(
+            IN const CResourceReference& Left_,
+            IN const CResourceReference& Right_) noexcept
+        {
+            return !(Left_ == Right_);
+        }
+
+        inline bool operator<(
+            IN const CResourceReference& Left_,
+            IN const CResourceReference& Right_) noexcept
+        {
+            if (Left_.URL != Right_.URL)
+            {
+                return Left_.URL < Right_.URL;
+            }
+            return Left_.nVersion < Right_.nVersion;
+        }
+
         /*
         * @brief 资源持久化方式。
         * @details
@@ -31,8 +76,9 @@ namespace iCAX
         struct _RESOURCES_EXP CResourceInfo final
         {
             CResourceKey Key;                 //!< 资源唯一键。
+            iCAX::Data::uuid ResourceID;       //!< URL 最后一段的稳定 GUID；旧格式资源可为 nil。
             std::string Name;                 //!< 展示名称。
-            std::string Source;               //!< 原始来源；为空时通常用 Key.Source 补齐。
+            std::string Source;               //!< 原始文件或外部 URI；不参与资源身份。
             std::string MediaType;            //!< 规范资源表示的媒体类型。
             std::string ResourceTypeID;       //!< 跨语言稳定资源类型 ID。
             std::string FlatBufferIdentifier; //!< Google FlatBuffers 四字节 file_identifier；非 FlatBuffer 时为空。
@@ -44,6 +90,7 @@ namespace iCAX
             uint32_t nFlags = 0;              //!< 调用方自定义标志位。
             EResourcePersistenceMode Persistence = EResourcePersistenceMode::RuntimeOnly; //!< 持久化语义。
             std::map<std::string, std::string> Metadata; //!< 扩展元数据。
+            std::vector<CResourceReference> Dependencies; //!< 本版本锁定的直接依赖；资源版本创建后不可修改。
 
             /*
             * @brief 是否仅运行期存在。
@@ -75,6 +122,21 @@ namespace iCAX
             bool IsPersistent() const noexcept
             {
                 return Persistence != EResourcePersistenceMode::RuntimeOnly;
+            }
+        };
+
+        /*
+        * @brief 从一组组件/文档根引用收集资源版本闭包的结果。
+        * @details Resources 按依赖优先顺序排列，同一 {URL, version} 只出现一次。
+        */
+        struct _RESOURCES_EXP CResourceReachabilityResult final
+        {
+            std::vector<CResourceInfo> Resources;
+            std::vector<CResourceReference> Missing;
+
+            bool IsComplete() const noexcept
+            {
+                return Missing.empty();
             }
         };
     }

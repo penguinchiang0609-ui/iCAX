@@ -1,5 +1,6 @@
 import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
 import { ProductSDO } from "../SDK/SDO/sdoMethod.mjs";
+import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 import { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 
 export class ProductProxy {
@@ -17,6 +18,7 @@ export class ProductProxy {
     this.state = productState;
     this.productId = productState.productId;
     this.productChannelId = productState.productChannelId;
+    this.resources = new ResourceClient({ bridge: this.bridge });
     this.projects = new Map();
     this.unsubscribers = new Set();
   }
@@ -71,6 +73,10 @@ export class ProductProxy {
     }
     await this.#syncProjectsFromCatalogs(response?.catalogs ?? []);
     return response;
+  }
+
+  fetchResource(url, init = {}) {
+    return this.resources.fetch(url, init);
   }
 
   subscribe(sdoMember, handler) {

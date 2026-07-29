@@ -10,6 +10,7 @@
 #include "Data/Variant.h"
 #include "SDO/SDOEndpoint.h"
 #include "Product/ProductRuntime.h"
+#include "Resources/ResourceLibrary.h"
 #include "SDO/SDOChannelRegistry.h"
 #include "Task/Coroutine.h"
 #include <atomic>
@@ -374,6 +375,18 @@ namespace iCAX
             std::shared_ptr<iCAX::Product::CProductRuntime> FindProductRuntime(IN const std::string& strProductID_) const;
 
             /*
+            * @brief 应用级资源库，以及按规范 URL 路由到四级资源库的统一入口。
+            */
+            iCAX::Resource::CResourceLibrary& Resources();
+            const iCAX::Resource::CResourceLibrary& Resources() const;
+            std::shared_ptr<iCAX::Resource::CResourceLibrary>
+                ResolveResourceLibrary(
+                IN const iCAX::Resource::CResourceURL& URL_);
+            std::shared_ptr<const iCAX::Resource::CResourceLibrary>
+                ResolveResourceLibrary(
+                IN const iCAX::Resource::CResourceURL& URL_) const;
+
+            /*
             * @brief 启动产品。
             * @param [in] strProductID_ 产品 ID；为空且只有一个产品时启动唯一产品。
             * @return 产品运行时。
@@ -466,6 +479,7 @@ namespace iCAX
             std::unique_ptr<iCAX::Interaction::CSDOInvoker> m_pSDOInvoker;
             std::shared_ptr<iCAX::Application::CApplicationContext> m_pApplicationContext;
             std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> m_pSDOChannelRegistry;
+            iCAX::Resource::CResourceLibrary m_Resources;
             mutable std::mutex m_ProductRuntimeMutex;
             std::condition_variable m_ProductRuntimeCondition;
             std::set<std::string> m_StartingProductIDs;

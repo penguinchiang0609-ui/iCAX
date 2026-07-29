@@ -183,6 +183,12 @@ iCAX::Project::CProjectScene::CProjectScene(
     , m_RuntimeScheduler(m_nFrameIntervalMilliseconds)
     , m_FrameHandler(CreateInfo_.FrameHandler)
 {
+    m_Resources.SetScope(
+        iCAX::Resource::MakeSceneResourceScope(
+            m_pApplicationContext->GetDescriptor().AppID,
+            m_pProductContext->GetProductID(),
+            m_Project.GetProjectID(),
+            m_SceneID));
     if (m_SceneName.empty())
     {
         m_SceneName = m_Role == ESceneRole::Main ? "Main Scene" : "Transient Scene";
@@ -320,13 +326,11 @@ const iCAX::Behaviour::IUniverse& iCAX::Project::CProjectScene::Universe() const
 
 iCAX::Resource::CResourceLibrary& iCAX::Project::CProjectScene::Resources()
 {
-    EnsureSceneThreadAccess("Scene::Resources");
     return m_Resources;
 }
 
 const iCAX::Resource::CResourceLibrary& iCAX::Project::CProjectScene::Resources() const
 {
-    EnsureSceneThreadAccess("Scene::Resources");
     return m_Resources;
 }
 

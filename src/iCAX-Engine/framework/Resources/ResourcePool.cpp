@@ -3,11 +3,14 @@
 
 #include "BinaryResource.h"
 #include "FlatBufferResource.h"
+#include "ResourceURL.h"
 
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <fstream>
+#include <functional>
+#include <set>
 
 namespace
 {
@@ -389,6 +392,7 @@ void iCAX::Resource::CResourcePool::Register(IN const CResourceInfo& Info_)
     auto _Ite = m_mapResources.find(_Info.Key);
     if (_Ite == m_mapResources.end())
     {
+        ValidateDependenciesLocked(_Info);
         CResourceRecord _Record;
         _Record.Info = std::move(_Info);
         const auto _Key = _Record.Info.Key;
@@ -402,6 +406,25 @@ void iCAX::Resource::CResourcePool::Register(IN const CResourceInfo& Info_)
     if (_Info.nVersion == 0)
     {
         _Info.nVersion = _Ite->second.Info.nVersion;
+    }
+    if (_Info.nVersion == _Ite->second.Info.nVersion)
+    {
+        if (_Info.Dependencies.empty())
+        {
+            _Info.Dependencies =
+                _Ite->second.Info.Dependencies;
+        }
+        else if (_Info.Dependencies !=
+            _Ite->second.Info.Dependencies)
+        {
+            throw std::invalid_argument(
+                "Resource dependencies are immutable within a version");
+        }
+    }
+    ValidateDependenciesLocked(_Info);
+    if (_Info.nVersion != _Ite->second.Info.nVersion)
+    {
+        ArchiveRecordLocked(_Info.Key, _Ite->second);
     }
     _Ite->second.Info = std::move(_Info);
     m_mapVersionHighWaterMarks[_Ite->first] = (std::max)(
@@ -418,6 +441,12 @@ bool iCAX::Resource::CResourcePool::TryRegister(IN const CResourceInfo& Info_)
     const auto _Key = _Record.Info.Key;
 
     std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
+    if (m_mapResources.find(_Key) !=
+        m_mapResources.end())
+    {
+        return false;
+    }
+    ValidateDependenciesLocked(_Record.Info);
     const auto _Result =
         m_mapResources.emplace(_Key, std::move(_Record));
     if (_Result.second)
@@ -454,6 +483,22 @@ void iCAX::Resource::CResourcePool::SetUntyped(IN const CResourceKey& Key_, IN s
         _Record.Info.nVersion = _Ite->second.Info.nVersion;
     }
     if (_Ite != m_mapResources.end() &&
+        _Record.Info.nVersion == _Ite->second.Info.nVersion)
+    {
+        if (_Record.Info.Dependencies.empty())
+        {
+            _Record.Info.Dependencies =
+                _Ite->second.Info.Dependencies;
+        }
+        else if (_Record.Info.Dependencies !=
+            _Ite->second.Info.Dependencies)
+        {
+            throw std::invalid_argument(
+                "Resource dependencies are immutable within a version");
+        }
+    }
+    ValidateDependenciesLocked(_Record.Info);
+    if (_Ite != m_mapResources.end() &&
         _Ite->second.Info.nVersion != _Record.Info.nVersion)
     {
         ArchiveRecordLocked(Key_, _Ite->second);
@@ -483,6 +528,12 @@ bool iCAX::Resource::CResourcePool::TryAddUntyped(IN const CResourceKey& Key_, I
     _Record.pResource = std::move(pResource_);
 
     std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
+    if (m_mapResources.find(Key_) !=
+        m_mapResources.end())
+    {
+        return false;
+    }
+    ValidateDependenciesLocked(_Record.Info);
     const auto _Result =
         m_mapResources.emplace(Key_, std::move(_Record));
     if (_Result.second)
@@ -593,19 +644,6 @@ bool iCAX::Resource::CResourcePool::Unload(IN const CResourceKey& Key_)
     return true;
 }
 
-bool iCAX::Resource::CResourcePool::Remove(IN const CResourceKey& Key_)
-{
-    std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
-    const bool _bHadCurrent = m_mapResources.erase(Key_) > 0;
-    const bool _bHadHistory =
-        m_mapArchivedVersions.find(Key_) !=
-        m_mapArchivedVersions.end();
-    DeleteArchivedFilesLocked(Key_);
-    m_mapArchivedVersions.erase(Key_);
-    m_mapVersionHighWaterMarks.erase(Key_);
-    return _bHadCurrent || _bHadHistory;
-}
-
 void iCAX::Resource::CResourcePool::Clear()
 {
     std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
@@ -695,6 +733,10 @@ uint64_t iCAX::Resource::CResourcePool::Touch(IN const CResourceKey& Key_)
     {
         throw std::overflow_error("Resource version overflow");
     }
+    if (_Ite->second.Info.nVersion != 0)
+    {
+        ArchiveRecordLocked(Key_, _Ite->second);
+    }
     ++_Ite->second.Info.nVersion;
     m_mapVersionHighWaterMarks[Key_] = (std::max)(
         m_mapVersionHighWaterMarks[Key_],
@@ -713,10 +755,16 @@ bool iCAX::Resource::CResourcePool::UpdateInfo(IN const CResourceKey& Key_, IN c
         return false;
     }
     auto _Info = NormalizeInfo(Key_, Info_);
-    if (_Info.nVersion == 0)
+    if (!_Info.Dependencies.empty() &&
+        _Info.Dependencies !=
+            _Ite->second.Info.Dependencies)
     {
-        _Info.nVersion = _Ite->second.Info.nVersion;
+        throw std::invalid_argument(
+            "Resource dependencies are immutable within a version");
     }
+    _Info.nVersion = _Ite->second.Info.nVersion;
+    _Info.Dependencies =
+        _Ite->second.Info.Dependencies;
     _Ite->second.Info = std::move(_Info);
     m_mapVersionHighWaterMarks[Key_] = (std::max)(
         m_mapVersionHighWaterMarks[Key_],
@@ -921,6 +969,102 @@ iCAX::Resource::CResourcePool::GetVersions(
     return _Versions;
 }
 
+std::vector<iCAX::Resource::CResourceReference>
+iCAX::Resource::CResourcePool::GetDependents(
+    IN const CResourceReference& Target_) const
+{
+    if (!Target_.IsValid())
+    {
+        throw std::invalid_argument(
+            "Resource reference must contain URL and non-zero version");
+    }
+
+    std::set<CResourceReference> _Unique;
+    std::shared_lock<std::shared_mutex> _Lock(m_Mutex);
+    const auto _Collect =
+        [&Target_, &_Unique](const CResourceInfo& Info_)
+        {
+            if (std::find(
+                Info_.Dependencies.begin(),
+                Info_.Dependencies.end(),
+                Target_) != Info_.Dependencies.end())
+            {
+                _Unique.insert(CResourceReference{
+                    Info_.Key.Source,
+                    Info_.nVersion });
+            }
+        };
+
+    for (const auto& _Resource : m_mapResources)
+    {
+        _Collect(_Resource.second.Info);
+    }
+    for (const auto& _History : m_mapArchivedVersions)
+    {
+        for (const auto& _Version : _History.second)
+        {
+            _Collect(_Version.second.Info);
+        }
+    }
+    return std::vector<CResourceReference>(
+        _Unique.begin(),
+        _Unique.end());
+}
+
+iCAX::Resource::CResourceReachabilityResult
+iCAX::Resource::CResourcePool::CollectReachable(
+    IN const std::vector<CResourceReference>& Roots_) const
+{
+    for (const auto& _Root : Roots_)
+    {
+        if (!_Root.IsValid())
+        {
+            throw std::invalid_argument(
+                "Resource root must contain URL and non-zero version");
+        }
+    }
+
+    CResourceReachabilityResult _Result;
+    std::set<CResourceReference> _Visited;
+    std::set<CResourceReference> _Missing;
+    std::shared_lock<std::shared_mutex> _Lock(m_Mutex);
+
+    std::function<void(const CResourceReference&)> _Visit;
+    _Visit =
+        [this, &_Result, &_Visited, &_Missing, &_Visit](
+            const CResourceReference& Reference_)
+        {
+            if (!_Visited.insert(Reference_).second)
+            {
+                return;
+            }
+
+            const auto* _Info =
+                FindInfoLocked(Reference_);
+            if (!_Info)
+            {
+                if (_Missing.insert(Reference_).second)
+                {
+                    _Result.Missing.push_back(Reference_);
+                }
+                return;
+            }
+
+            for (const auto& _Dependency :
+                _Info->Dependencies)
+            {
+                _Visit(_Dependency);
+            }
+            _Result.Resources.push_back(*_Info);
+        };
+
+    for (const auto& _Root : Roots_)
+    {
+        _Visit(_Root);
+    }
+    return _Result;
+}
+
 bool iCAX::Resource::CResourcePool::RegisterVersionCodec(
     IN const std::type_info& RuntimeType_,
     IN CResourceVersionCodec Codec_,
@@ -1001,51 +1145,31 @@ iCAX::Resource::CResourcePool::GetVersionStorageDirectory() const
     return m_VersionStorageDirectory;
 }
 
-bool iCAX::Resource::CResourcePool::DiscardVersion(
+iCAX::Resource::EResourceMutationResult
+iCAX::Resource::CResourcePool::PutUntypedVersioned(
     IN const CResourceKey& Key_,
-    IN const uint64_t nVersion_)
+    IN std::shared_ptr<void> pResource_,
+    IN const std::type_info& RuntimeType_,
+    IN const CResourceInfo& Info_,
+    IN const EResourceVersionCondition Condition_,
+    IN const uint64_t nExpectedVersion_,
+    OUT CResourceInfo* pStoredInfo_)
 {
-    std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
-    const auto _Current = m_mapResources.find(Key_);
-    if (_Current != m_mapResources.end() &&
-        _Current->second.Info.nVersion == nVersion_)
-    {
-        return false;
-    }
-
-    const auto _History =
-        m_mapArchivedVersions.find(Key_);
-    if (_History == m_mapArchivedVersions.end())
-    {
-        return false;
-    }
-    const auto _Version =
-        _History->second.find(nVersion_);
-    if (_Version == _History->second.end())
-    {
-        return false;
-    }
-
-    if (!_Version->second.ColdStoragePath.empty())
-    {
-        std::error_code _Error;
-        std::filesystem::remove(
-            _Version->second.ColdStoragePath,
-            _Error);
-    }
-    _History->second.erase(_Version);
-    if (_History->second.empty())
-    {
-        m_mapArchivedVersions.erase(_History);
-    }
-    return true;
+    return PutUntypedVersioned(
+        Key_,
+        std::move(pResource_),
+        std::type_index(RuntimeType_),
+        Info_,
+        Condition_,
+        nExpectedVersion_,
+        pStoredInfo_);
 }
 
 iCAX::Resource::EResourceMutationResult
 iCAX::Resource::CResourcePool::PutUntypedVersioned(
     IN const CResourceKey& Key_,
     IN std::shared_ptr<void> pResource_,
-    IN const std::type_info& RuntimeType_,
+    IN const std::type_index RuntimeType_,
     IN const CResourceInfo& Info_,
     IN const EResourceVersionCondition Condition_,
     IN const uint64_t nExpectedVersion_,
@@ -1102,10 +1226,11 @@ iCAX::Resource::CResourcePool::PutUntypedVersioned(
         throw std::overflow_error("Resource version overflow");
     }
     _Info.nVersion = _nHighestVersion + 1;
+    ValidateDependenciesLocked(_Info);
 
     CResourceRecord _Record;
     _Record.Info = std::move(_Info);
-    _Record.RuntimeType = std::type_index(RuntimeType_);
+    _Record.RuntimeType = RuntimeType_;
     _Record.pResource = std::move(pResource_);
 
     const auto _Result = _bExists
@@ -1126,7 +1251,63 @@ iCAX::Resource::CResourcePool::PutUntypedVersioned(
 }
 
 iCAX::Resource::EResourceMutationResult
-iCAX::Resource::CResourcePool::RemoveVersioned(
+iCAX::Resource::CResourcePool::RebindDependencyVersioned(
+    IN const CResourceReference& Parent_,
+    IN const CResourceReference& OldDependency_,
+    IN const CResourceReference& NewDependency_,
+    OUT CResourceInfo* pStoredInfo_)
+{
+    if (!Parent_.IsValid() ||
+        !OldDependency_.IsValid() ||
+        !NewDependency_.IsValid())
+    {
+        throw std::invalid_argument(
+            "Parent and dependency references must contain URL and non-zero version");
+    }
+    if (OldDependency_ == NewDependency_)
+    {
+        throw std::invalid_argument(
+            "Old and new resource dependencies must differ");
+    }
+
+    const auto _ParentKey =
+        MakeResourceKeyFromSource(Parent_.URL);
+    const auto _Snapshot =
+        GetSnapshot(
+            _ParentKey,
+            Parent_.nVersion);
+    if (!_Snapshot ||
+        !_Snapshot->pResource ||
+        !_Snapshot->RuntimeType)
+    {
+        return EResourceMutationResult::NotFound;
+    }
+
+    auto _Info = _Snapshot->Info;
+    const auto _Dependency =
+        std::find(
+            _Info.Dependencies.begin(),
+            _Info.Dependencies.end(),
+            OldDependency_);
+    if (_Dependency == _Info.Dependencies.end())
+    {
+        throw std::invalid_argument(
+            "Parent resource version does not reference the old dependency");
+    }
+    *_Dependency = NewDependency_;
+
+    return PutUntypedVersioned(
+        _ParentKey,
+        _Snapshot->pResource,
+        *_Snapshot->RuntimeType,
+        _Info,
+        EResourceVersionCondition::VersionMatches,
+        Parent_.nVersion,
+        pStoredInfo_);
+}
+
+iCAX::Resource::EResourceMutationResult
+iCAX::Resource::CResourcePool::DeleteCurrentVersioned(
     IN const CResourceKey& Key_,
     IN const EResourceVersionCondition Condition_,
     IN const uint64_t nExpectedVersion_)
@@ -1201,11 +1382,130 @@ iCAX::Resource::CResourceInfo iCAX::Resource::CResourcePool::NormalizeInfo(IN co
 {
     auto _Info = Info_;
     _Info.Key = Key_;
-    if (_Info.Source.empty())
+    if (const auto _URL =
+        TryParseResourceURL(Key_.Source);
+        _URL && _URL->IsResource())
+    {
+        _Info.ResourceID = _URL->ResourceID;
+    }
+    else if (_Info.Source.empty())
     {
         _Info.Source = Key_.Source;
     }
+    for (const auto& _Dependency :
+        _Info.Dependencies)
+    {
+        if (!_Dependency.IsValid())
+        {
+            throw std::invalid_argument(
+                "Resource dependency must contain URL and non-zero version");
+        }
+    }
+    std::sort(
+        _Info.Dependencies.begin(),
+        _Info.Dependencies.end());
+    _Info.Dependencies.erase(
+        std::unique(
+            _Info.Dependencies.begin(),
+            _Info.Dependencies.end()),
+        _Info.Dependencies.end());
     return _Info;
+}
+
+const iCAX::Resource::CResourceInfo*
+iCAX::Resource::CResourcePool::FindInfoLocked(
+    IN const CResourceReference& Reference_) const noexcept
+{
+    const CResourceKey _Key{ Reference_.URL };
+    const auto _Current = m_mapResources.find(_Key);
+    if (_Current != m_mapResources.end() &&
+        _Current->second.Info.nVersion ==
+            Reference_.nVersion)
+    {
+        return &_Current->second.Info;
+    }
+
+    const auto _History =
+        m_mapArchivedVersions.find(_Key);
+    if (_History == m_mapArchivedVersions.end())
+    {
+        return nullptr;
+    }
+    const auto _Version =
+        _History->second.find(Reference_.nVersion);
+    return _Version == _History->second.end()
+        ? nullptr
+        : &_Version->second.Info;
+}
+
+void iCAX::Resource::CResourcePool::ValidateDependenciesLocked(
+    IN const CResourceInfo& Info_) const
+{
+    if (!Info_.Dependencies.empty() &&
+        Info_.nVersion == 0)
+    {
+        throw std::invalid_argument(
+            "A resource with dependencies must have a non-zero version");
+    }
+
+    const CResourceReference _Self{
+        Info_.Key.Source,
+        Info_.nVersion };
+    std::set<CResourceReference> _Visited;
+    std::function<bool(const CResourceReference&)> _ReachesSelf;
+    _ReachesSelf =
+        [this, &_Self, &_Visited, &_ReachesSelf](
+            const CResourceReference& Reference_)
+        {
+            if (Reference_ == _Self)
+            {
+                return true;
+            }
+            if (!_Visited.insert(Reference_).second)
+            {
+                return false;
+            }
+            const auto* _Info =
+                FindInfoLocked(Reference_);
+            if (!_Info)
+            {
+                return false;
+            }
+            for (const auto& _Dependency :
+                _Info->Dependencies)
+            {
+                if (_ReachesSelf(_Dependency))
+                {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+    for (const auto& _Dependency :
+        Info_.Dependencies)
+    {
+        const auto* _DependencyInfo =
+            FindInfoLocked(_Dependency);
+        if (!_DependencyInfo)
+        {
+            throw std::invalid_argument(
+                "Resource dependency does not exist: " +
+                _Dependency.URL + "@" +
+                std::to_string(_Dependency.nVersion));
+        }
+        if (Info_.IsPersistent() &&
+            _DependencyInfo->IsRuntimeOnly())
+        {
+            throw std::invalid_argument(
+                "Persistent resource cannot strongly depend on a runtime-only resource");
+        }
+        if (_ReachesSelf(_Dependency))
+        {
+            throw std::invalid_argument(
+                "Resource dependency cycle is not allowed");
+        }
+    }
 }
 
 void iCAX::Resource::CResourcePool::ArchiveRecordLocked(
@@ -1278,30 +1578,6 @@ void iCAX::Resource::CResourcePool::ArchiveRecordLocked(
     }
     _Versions[Record_.Info.nVersion] =
         std::move(_Archived);
-}
-
-void iCAX::Resource::CResourcePool::DeleteArchivedFilesLocked(
-    IN const CResourceKey& Key_) noexcept
-{
-    const auto _History =
-        m_mapArchivedVersions.find(Key_);
-    if (_History == m_mapArchivedVersions.end())
-    {
-        return;
-    }
-
-    for (const auto& _Version :
-        _History->second)
-    {
-        if (_Version.second.ColdStoragePath.empty())
-        {
-            continue;
-        }
-        std::error_code _Error;
-        std::filesystem::remove(
-            _Version.second.ColdStoragePath,
-            _Error);
-    }
 }
 
 void iCAX::Resource::CResourcePool::InitializeVersionStorage()

@@ -169,6 +169,7 @@
     <ClInclude Include="ResourcePoolAccess.h" />
     <ClInclude Include="ResourceFlatBuffer.h" />
     <ClInclude Include="ResourceTypeName.h" />
+    <ClInclude Include="ResourceURL.h" />
     <ClInclude Include="ResourceVersionStorage.h" />
     <ClInclude Include="Resources.h" />
     <ClInclude Include="ResourcesExport.h" />
@@ -190,6 +191,7 @@
     <ClCompile Include="ResourceLoaderRegistry.cpp" />
     <ClCompile Include="ResourcePool.cpp" />
     <ClCompile Include="ResourceLibrary.cpp" />
+    <ClCompile Include="ResourceURL.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj">

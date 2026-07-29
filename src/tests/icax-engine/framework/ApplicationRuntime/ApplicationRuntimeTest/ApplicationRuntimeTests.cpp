@@ -317,7 +317,36 @@ TEST(ApplicationRuntimeSDOTest, ProductSDOCanOpenAndCloseProjectCatalogAfterProd
     const auto _MainSceneID = _Project.at("mainSceneId").To<iCAX::Data::uuid>();
     const auto _CatalogID = _Catalog.at("catalogId").To<iCAX::Data::uuid>();
     EXPECT_TRUE(_Runtime.GetSceneFrontendSDOEndpoint(_ProjectID, _MainSceneID).IsValid());
-    ASSERT_NE(nullptr, _pRuntime->FindProjectCatalog(_CatalogID));
+    const auto _pCatalog = _pRuntime->FindProjectCatalog(_CatalogID);
+    ASSERT_NE(nullptr, _pCatalog);
+    const auto _pProject = _pCatalog->GetMainProject();
+    ASSERT_NE(nullptr, _pProject);
+
+    const auto _ApplicationURL =
+        iCAX::Resource::ParseResourceURL(
+            _Runtime.Resources().AllocateResourceURL());
+    const auto _ProductURL =
+        iCAX::Resource::ParseResourceURL(
+            _pRuntime->Resources().AllocateResourceURL());
+    const auto _ProjectURL =
+        iCAX::Resource::ParseResourceURL(
+            _pProject->Resources().AllocateResourceURL());
+    const auto _SceneURL =
+        iCAX::Resource::ParseResourceURL(
+            _pProject->GetMainScene().Resources().AllocateResourceURL());
+
+    EXPECT_EQ(
+        &_Runtime.Resources(),
+        _Runtime.ResolveResourceLibrary(_ApplicationURL).get());
+    EXPECT_EQ(
+        &_pRuntime->Resources(),
+        _Runtime.ResolveResourceLibrary(_ProductURL).get());
+    EXPECT_EQ(
+        &_pProject->Resources(),
+        _Runtime.ResolveResourceLibrary(_ProjectURL).get());
+    EXPECT_EQ(
+        &_pProject->GetMainScene().Resources(),
+        _Runtime.ResolveResourceLibrary(_SceneURL).get());
     ClearFrames(_OpenResponses);
 
     iCAX::Data::ObjectMap _ClosePayload;

@@ -84,19 +84,33 @@ export class MockHostBridge {
   }
 
   async requestResource(request = {}) {
-    if (!request.projectId || !request.sceneId || !request.url) {
-      throw new TypeError("projectId, sceneId, and url are required");
+    if (!request.url) {
+      throw new TypeError("url is required");
     }
 
     const method = String(request.method ?? "GET").toUpperCase();
-    const key = `${request.projectId}\n${request.sceneId}\n${request.url}`;
+    const key = String(request.url);
     const requestHeaders = new Headers(request.headers ?? {});
     const current = this.resourceRecords.get(key) ?? null;
 
     if (method === "OPTIONS") {
       return mockResourceResponse(204, {
-        Allow: "HEAD, GET, PUT, DELETE, OPTIONS",
+        Allow: "HEAD, GET, POST, PUT, DELETE, OPTIONS",
         "Accept-Put": "application/vnd.icax.flatbuffer",
+      });
+    }
+
+    if (method === "POST") {
+      const resourceUrl =
+        `${String(request.url).replace(/\/+$/, "")}/${makeMockResourceId(this.resourceRecords.size + 1)}`;
+      return this.requestResource({
+        ...request,
+        method: "PUT",
+        url: resourceUrl,
+        headers: {
+          ...Object.fromEntries(requestHeaders),
+          "If-None-Match": "*",
+        },
       });
     }
 
@@ -160,7 +174,7 @@ export class MockHostBridge {
     }
 
     return mockResourceResponse(405, {
-      Allow: "HEAD, GET, PUT, DELETE, OPTIONS",
+      Allow: "HEAD, GET, POST, PUT, DELETE, OPTIONS",
     });
   }
 
@@ -409,6 +423,13 @@ function copyArrayBuffer(body) {
     return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
   }
   throw new TypeError("mock resource body must be an ArrayBuffer or ArrayBufferView");
+}
+
+function makeMockResourceId(sequence) {
+  return `70000000-0000-4000-8000-${Number(sequence)
+    .toString(16)
+    .padStart(12, "0")
+    .slice(-12)}`;
 }
 
 function mockResourceResponse(status, headers = {}, body = undefined) {

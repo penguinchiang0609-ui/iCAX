@@ -118,6 +118,7 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_pMetaRegistry(RequireMetaRegistry(CreateInfo_))
     , m_pBehaviourRegistry(RequireBehaviourRegistry(CreateInfo_))
     , m_pResourceLoaderRegistry(RequireResourceLoaderRegistry(CreateInfo_))
+    , m_Resources(m_pResourceLoaderRegistry)
     , m_pSDOChannelRegistry(RequireSDOChannelRegistry(CreateInfo_))
     , m_SceneFrameHandler(CreateInfo_.OnSceneFrame)
 {
@@ -125,6 +126,11 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     {
         m_ProjectName = "Project";
     }
+    m_Resources.SetScope(
+        iCAX::Resource::MakeProjectResourceScope(
+            m_pApplicationContext->GetDescriptor().AppID,
+            m_pProductContext->GetProductID(),
+            m_ProjectID));
 
     auto _SceneInfo = MakeMainSceneCreateInfo(CreateInfo_);
     auto _pMainScene = std::make_shared<CProjectScene>(*this, _SceneInfo);
@@ -463,6 +469,18 @@ iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::MainSceneResources()
 const iCAX::Resource::CResourceLibrary& iCAX::Project::CProject::MainSceneResources() const
 {
     return GetMainScene().Resources();
+}
+
+iCAX::Resource::CResourceLibrary&
+iCAX::Project::CProject::Resources()
+{
+    return m_Resources;
+}
+
+const iCAX::Resource::CResourceLibrary&
+iCAX::Project::CProject::Resources() const
+{
+    return m_Resources;
 }
 
 bool iCAX::Project::CProject::MainSceneHasPDOHub() const

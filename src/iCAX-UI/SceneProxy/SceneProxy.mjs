@@ -21,8 +21,6 @@ export class SceneProxy {
     this.pdo = new PDOClient(sceneState.pdo, this.bridge);
     this.resources = new ResourceClient({
       bridge: this.bridge,
-      projectId: this.project?.projectId,
-      sceneId: this.sceneId,
     });
     this.unsubscribers = new Set();
   }
@@ -38,8 +36,6 @@ export class SceneProxy {
     this.pdo = new PDOClient(sceneState.pdo, this.bridge);
     this.resources.updateScope({
       bridge: this.bridge,
-      projectId: this.project?.projectId,
-      sceneId: this.sceneId,
     });
   }
 

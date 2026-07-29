@@ -176,7 +176,9 @@ iCAX::Interaction::CInvocationResult HandleSetPoseField(
     auto _PoseFieldResourceID = _pPath->GetPoseFieldResourceID();
     if (_PoseFieldResourceID.empty())
     {
-        _PoseFieldResourceID = iCAX::CAM::MakePoseFieldResourceID(_PathID);
+        _PoseFieldResourceID = iCAX::CAM::MakePoseFieldResourceID(
+            _Resources,
+            _PathID);
     }
     auto _pPoseField = std::make_shared<iCAX::CAM::CPoseFieldResource>();
     _pPoseField->nVersion = _NextResourceVersion(_Resources, _PoseFieldResourceID);

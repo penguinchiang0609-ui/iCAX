@@ -12,7 +12,13 @@ namespace
     {
         auto _Info = Info_;
         _Info.Key = iCAX::Resource::MakeResourceKeyFromSource(strSource_);
-        if (_Info.Source.empty())
+        if (const auto _URL =
+            iCAX::Resource::TryParseResourceURL(strSource_);
+            _URL && _URL->IsResource())
+        {
+            _Info.ResourceID = _URL->ResourceID;
+        }
+        else if (_Info.Source.empty())
         {
             _Info.Source = strSource_;
         }
@@ -59,6 +65,117 @@ iCAX::Resource::CResourceLibrary::CResourceLibrary(IN CResourceLibrary&& Other_)
 
 iCAX::Resource::CResourceLibrary& iCAX::Resource::CResourceLibrary::operator=(IN CResourceLibrary&& Other_) noexcept = default;
 
+void iCAX::Resource::CResourceLibrary::SetScope(
+    IN const CResourceScope& Scope_)
+{
+    if (!Scope_.IsValid())
+    {
+        throw std::invalid_argument(
+            "Resource library scope is invalid");
+    }
+    if (m_Scope &&
+        ResourceScopeEquals(*m_Scope, Scope_))
+    {
+        return;
+    }
+    if (Count() != 0)
+    {
+        throw std::logic_error(
+            "Resource library scope cannot change after resources are stored");
+    }
+    m_Scope = Scope_;
+}
+
+bool iCAX::Resource::CResourceLibrary::HasScope() const noexcept
+{
+    return m_Scope.has_value();
+}
+
+const iCAX::Resource::CResourceScope&
+iCAX::Resource::CResourceLibrary::GetScope() const
+{
+    if (!m_Scope)
+    {
+        throw std::logic_error(
+            "Resource library has no bound scope");
+    }
+    return *m_Scope;
+}
+
+iCAX::Data::uuid
+iCAX::Resource::CResourceLibrary::AllocateResourceID() const
+{
+    (void)GetScope();
+    return GenerateResourceID();
+}
+
+std::string
+iCAX::Resource::CResourceLibrary::GetResourceCollectionURL() const
+{
+    return MakeResourceCollectionURL(GetScope());
+}
+
+std::string
+iCAX::Resource::CResourceLibrary::MakeResourceURL(
+    IN const iCAX::Data::uuid& ResourceID_) const
+{
+    return iCAX::Resource::MakeResourceURL(
+        GetScope(),
+        ResourceID_);
+}
+
+std::string
+iCAX::Resource::CResourceLibrary::AllocateResourceURL() const
+{
+    return MakeResourceURL(AllocateResourceID());
+}
+
+std::string
+iCAX::Resource::CResourceLibrary::MakeNamedResourceURL(
+    IN const std::string& strStableName_) const
+{
+    if (strStableName_.empty())
+    {
+        throw std::invalid_argument(
+            "Stable resource name cannot be empty");
+    }
+    iCAX::Data::uuid_name_generator _Generator(
+        iCAX::Data::uuid_namespace_url);
+    return MakeResourceURL(
+        _Generator(
+            GetResourceCollectionURL() +
+            "\n" +
+            strStableName_));
+}
+
+std::string
+iCAX::Resource::CResourceLibrary::MakeDerivedResourceURL(
+    IN const std::string& strParentResourceURL_,
+    IN const std::string& strRole_) const
+{
+    const auto _Parent =
+        ParseResourceURL(strParentResourceURL_);
+    if (!_Parent.IsResource() ||
+        !ResourceScopeEquals(GetScope(), _Parent.Owner))
+    {
+        throw std::invalid_argument(
+            "Parent resource URL is outside this resource library scope");
+    }
+    if (strRole_.empty())
+    {
+        throw std::invalid_argument(
+            "Derived resource role cannot be empty");
+    }
+
+    iCAX::Data::uuid_name_generator _Generator(
+        iCAX::Data::uuid_namespace_url);
+    return MakeResourceURL(
+        _Generator(
+            strParentResourceURL_ +
+            "\n" +
+            strRole_));
+}
+
 void iCAX::Resource::CResourceLibrary::Register(IN const std::string& strSource_, IN const CResourceInfo& Info_)
 {
     GetPool().Register(MakeLibraryInfo(strSource_, Info_));
@@ -91,14 +208,6 @@ bool iCAX::Resource::CResourceLibrary::HasObject(IN const std::string& strSource
 bool iCAX::Resource::CResourceLibrary::Unload(IN const std::string& strSource_)
 {
     return GetPool().Unload(MakeResourceKeyFromSource(strSource_));
-}
-
-bool iCAX::Resource::CResourceLibrary::Remove(IN const std::string& strSource_)
-{
-    return GetPool().RemoveVersioned(
-        MakeResourceKeyFromSource(strSource_),
-        EResourceVersionCondition::None,
-        0) == EResourceMutationResult::Removed;
 }
 
 void iCAX::Resource::CResourceLibrary::Clear()
@@ -164,6 +273,34 @@ iCAX::Resource::CResourceLibrary::GetVersions(
         MakeResourceKeyFromSource(strSource_));
 }
 
+std::vector<iCAX::Resource::CResourceReference>
+iCAX::Resource::CResourceLibrary::GetDependents(
+    IN const CResourceReference& Target_) const
+{
+    return GetPool().GetDependents(Target_);
+}
+
+iCAX::Resource::CResourceReachabilityResult
+iCAX::Resource::CResourceLibrary::CollectReachable(
+    IN const std::vector<CResourceReference>& Roots_) const
+{
+    return GetPool().CollectReachable(Roots_);
+}
+
+iCAX::Resource::EResourceMutationResult
+iCAX::Resource::CResourceLibrary::RebindDependencyVersioned(
+    IN const CResourceReference& Parent_,
+    IN const CResourceReference& OldDependency_,
+    IN const CResourceReference& NewDependency_,
+    OUT CResourceInfo* pStoredInfo_)
+{
+    return GetPool().RebindDependencyVersioned(
+        Parent_,
+        OldDependency_,
+        NewDependency_,
+        pStoredInfo_);
+}
+
 bool iCAX::Resource::CResourceLibrary::RegisterVersionCodec(
     IN const std::type_info& RuntimeType_,
     IN CResourceVersionCodec Codec_,
@@ -185,15 +322,6 @@ std::filesystem::path
 iCAX::Resource::CResourceLibrary::GetVersionStorageDirectory() const
 {
     return GetPool().GetVersionStorageDirectory();
-}
-
-bool iCAX::Resource::CResourceLibrary::DiscardVersion(
-    IN const std::string& strSource_,
-    IN const uint64_t nVersion_)
-{
-    return GetPool().DiscardVersion(
-        MakeResourceKeyFromSource(strSource_),
-        nVersion_);
 }
 
 iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Request(
@@ -237,6 +365,20 @@ iCAX::Resource::CResourceResponse iCAX::Resource::CResourceLibrary::Get(
         strURL_,
         Headers_,
         {}
+    });
+}
+
+iCAX::Resource::CResourceResponse
+iCAX::Resource::CResourceLibrary::Post(
+    IN const std::string& strCollectionURL_,
+    IN const CFlatBufferResource& Body_,
+    IN const CResourceHeaders& Headers_)
+{
+    return Request(CResourceRequest{
+        EResourceMethod::Post,
+        strCollectionURL_,
+        Headers_,
+        Body_
     });
 }
 
@@ -315,7 +457,32 @@ iCAX::Resource::CResourceImportResult iCAX::Resource::CResourceLibrary::Import(I
     {
         throw std::logic_error("Resource library has no loader registry");
     }
-    return m_pLoaderRegistry->ImportResource(*this, Request_);
+    auto _Request = Request_;
+    if (HasScope())
+    {
+        if (_Request.TargetResourceID.empty())
+        {
+            _Request.TargetResourceID =
+                AllocateResourceURL();
+        }
+        else
+        {
+            const auto _URL =
+                TryParseResourceURL(
+                    _Request.TargetResourceID);
+            if (!_URL ||
+                !_URL->IsResource() ||
+                !ResourceScopeEquals(
+                    GetScope(),
+                    _URL->Owner))
+            {
+                return CResourceImportResult::Invalid(
+                    _Request,
+                    "TargetResourceID is not a canonical URL in the target resource scope");
+            }
+        }
+    }
+    return m_pLoaderRegistry->ImportResource(*this, _Request);
 }
 
 iCAX::Resource::CResourceExportResult iCAX::Resource::CResourceLibrary::Export(IN const CResourceExportRequest& Request_) const

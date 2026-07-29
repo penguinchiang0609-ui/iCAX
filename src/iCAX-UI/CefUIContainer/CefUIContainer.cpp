@@ -292,10 +292,6 @@ namespace
         IN const json::object& Object_)
     {
         iCAX::Frontend::CFrontendResourceRequest _Request;
-        _Request.ProjectID =
-            _AsString(_RequireField(Object_, "projectId"), "projectId");
-        _Request.SceneID =
-            _AsString(_RequireField(Object_, "sceneId"), "sceneId");
         _Request.Method =
             _AsString(_RequireField(Object_, "method"), "method");
         _Request.URL =
@@ -740,8 +736,6 @@ namespace
         throw new TypeError("resource request is required");
       }
       const response = await queryNative("requestResource", {
-        projectId: String(request.projectId || ""),
-        sceneId: String(request.sceneId || ""),
         method: String(request.method || "GET"),
         url: String(request.url || ""),
         headers: request.headers || {},

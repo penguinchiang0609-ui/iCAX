@@ -1,6 +1,7 @@
 import { AppSDO } from "../SDK/SDO/sdoMethod.mjs";
 import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
 import { SDOClient } from "../SDK/SDO/sdoClient.mjs";
+import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 import { ProductProxy } from "../ProductProxy/ProductProxy.mjs";
 
 export class AppProxy {
@@ -25,6 +26,7 @@ export class AppProxy {
     this.sdoClient = sdoClient;
     this.bridge = options.bridge ?? sdoClient.bridge ?? null;
     this.applicationChannelId = applicationChannelId;
+    this.resources = new ResourceClient({ bridge: this.bridge });
     this.state = null;
     this.products = new Map();
     this.unsubscribers = new Set();
@@ -88,6 +90,10 @@ export class AppProxy {
       projectProxy: project,
       sceneProxy: project?.getMainScene() ?? null,
     };
+  }
+
+  fetchResource(url, init = {}) {
+    return this.resources.fetch(url, init);
   }
 
   subscribe(sdoMember, handler) {

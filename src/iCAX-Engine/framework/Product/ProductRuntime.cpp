@@ -626,6 +626,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     , m_pProductMetaRegistry(iCAX::Database::CreateMetaRegistry())
     , m_pProductBehaviourRegistry(iCAX::Behaviour::CreateBehaviourRegistry())
     , m_pProductResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
+    , m_Resources(m_pProductResourceLoaderRegistry)
     , m_pProductDataStore(std::move(pProductDataStore_))
     , m_pSDORegistry(std::make_shared<iCAX::Interaction::CSDORegistry>())
     , m_pSDOInvoker(std::make_unique<iCAX::Interaction::CSDOInvoker>(m_pSDORegistry))
@@ -668,6 +669,10 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     {
         throw std::invalid_argument("Product ResourceLoaderRegistry cannot be null");
     }
+    m_Resources.SetScope(
+        iCAX::Resource::MakeProductResourceScope(
+            m_pApplicationContext->GetDescriptor().AppID,
+            m_Definition.ProductID));
     if (!m_pProductDataStore)
     {
         m_pProductDataStore = std::make_shared<CFileProductDataStore>(_GetProductDataRoot(*m_pApplicationContext));
@@ -968,6 +973,18 @@ void iCAX::Product::CProductRuntime::ReplaceSettings(IN const iCAX::Data::Proper
 const std::string& iCAX::Product::CProductRuntime::GetProductID() const
 {
     return m_Definition.ProductID;
+}
+
+iCAX::Resource::CResourceLibrary&
+iCAX::Product::CProductRuntime::Resources()
+{
+    return m_Resources;
+}
+
+const iCAX::Resource::CResourceLibrary&
+iCAX::Product::CProductRuntime::Resources() const
+{
+    return m_Resources;
 }
 
 const iCAX::Data::uuid& iCAX::Product::CProductRuntime::GetProductChannelID() const

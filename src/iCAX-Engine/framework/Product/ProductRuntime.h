@@ -21,6 +21,7 @@
 #include "Project/ProjectRuntime.h"
 #include "Resources/ResourceLoaderRegistrationCatalog.h"
 #include "Resources/ResourceLoaderRegistry.h"
+#include "Resources/ResourceLibrary.h"
 #include "ProductContext/IProductContext.h"
 #include "Services/ServiceProvider.h"
 #include "Services/ServiceRegistrationCatalog.h"
@@ -160,6 +161,12 @@ namespace iCAX
             * @brief 获取产品 ID。
             */
             const std::string& GetProductID() const override;
+
+            /*
+            * @brief 产品级资源库。
+            */
+            iCAX::Resource::CResourceLibrary& Resources();
+            const iCAX::Resource::CResourceLibrary& Resources() const;
 
             /*
             * @brief 获取产品通信通道 ID。
@@ -498,6 +505,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pProductMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pProductBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pProductResourceLoaderRegistry;
+            iCAX::Resource::CResourceLibrary m_Resources;
             std::shared_ptr<IProductDataStore> m_pProductDataStore;
             std::shared_ptr<iCAX::Interaction::CSDORegistry> m_pSDORegistry;
             std::unique_ptr<iCAX::Interaction::CSDOInvoker> m_pSDOInvoker;

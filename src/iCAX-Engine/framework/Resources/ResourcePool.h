@@ -18,6 +18,8 @@ namespace iCAX
 {
     namespace Resource
     {
+        class CResourceAccessService;
+
         struct CResourceSnapshot final
         {
             CResourceInfo Info;
@@ -126,13 +128,6 @@ namespace iCAX
             bool Unload(IN const CResourceKey& Key_);
 
             /*
-            * @brief 永久移除当前记录、全部历史版本和对象。
-            * @return true 表示移除了当前记录或历史记录。
-            * @details 这是管理级硬删除；普通用户删除应使用 RemoveVersioned。
-            */
-            bool Remove(IN const CResourceKey& Key_);
-
-            /*
             * @brief 清空资源池。
             */
             void Clear();
@@ -220,6 +215,22 @@ namespace iCAX
                 IN const CResourceKey& Key_) const;
 
             /*
+            * @brief 获取直接引用指定资源版本的全部资源版本。
+            * @details 返回的是精确版本引用；当前版本和历史版本都会参与查询。
+            */
+            std::vector<CResourceReference> GetDependents(
+                IN const CResourceReference& Target_) const;
+
+            /*
+            * @brief 从组件/文档根引用收集完整资源版本闭包。
+            * @details
+            *   结果按依赖优先顺序排列并自动去重；只读取版本元数据，不加载冷存储正文。
+            *   Missing 非空表示根引用或依赖已经损坏，保存方不应提交不完整项目文件。
+            */
+            CResourceReachabilityResult CollectReachable(
+                IN const std::vector<CResourceReference>& Roots_) const;
+
+            /*
             * @brief 注册业务资源历史版本编解码器。
             * @param [in] bReplaceExisting_ true 表示替换同运行期类型的现有编解码器。
             */
@@ -242,14 +253,6 @@ namespace iCAX
             std::filesystem::path GetVersionStorageDirectory() const;
 
             /*
-            * @brief 显式永久丢弃一个非当前版本。
-            * @details 资源池不会自动调用；仅应在撤销/重做栈和所有组件都不再引用该版本后调用。
-            */
-            bool DiscardVersion(
-                IN const CResourceKey& Key_,
-                IN uint64_t nVersion_);
-
-            /*
             * @brief 按资源版本条件原子创建或替换对象。
             * @details 成功写入时由池生成严格递增的资源版本。
             */
@@ -261,14 +264,24 @@ namespace iCAX
                 IN EResourceVersionCondition Condition_,
                 IN uint64_t nExpectedVersion_,
                 OUT CResourceInfo* pStoredInfo_ = nullptr);
+            EResourceMutationResult PutUntypedVersioned(
+                IN const CResourceKey& Key_,
+                IN std::shared_ptr<void> pResource_,
+                IN std::type_index RuntimeType_,
+                IN const CResourceInfo& Info_,
+                IN EResourceVersionCondition Condition_,
+                IN uint64_t nExpectedVersion_,
+                OUT CResourceInfo* pStoredInfo_ = nullptr);
 
             /*
-            * @brief 按资源版本条件原子移除记录。
+            * @brief 复用父资源不可变正文，仅重绑定一个直接依赖并生成父资源新版本。
+            * @details Parent_ 必须是当前版本；并发变化时返回 PreconditionFailed。
             */
-            EResourceMutationResult RemoveVersioned(
-                IN const CResourceKey& Key_,
-                IN EResourceVersionCondition Condition_,
-                IN uint64_t nExpectedVersion_);
+            EResourceMutationResult RebindDependencyVersioned(
+                IN const CResourceReference& Parent_,
+                IN const CResourceReference& OldDependency_,
+                IN const CResourceReference& NewDependency_,
+                OUT CResourceInfo* pStoredInfo_ = nullptr);
 
             template <typename T>
             /*
@@ -340,6 +353,8 @@ namespace iCAX
             }
 
         private:
+            friend class CResourceAccessService;
+
             struct CResourceRecord final
             {
                 CResourceInfo Info;
@@ -373,6 +388,18 @@ namespace iCAX
             static CResourceInfo NormalizeInfo(IN const CResourceKey& Key_, IN const CResourceInfo& Info_);
 
             /*
+            * @brief 在已持锁时查找精确版本元数据。
+            */
+            const CResourceInfo* FindInfoLocked(
+                IN const CResourceReference& Reference_) const noexcept;
+
+            /*
+            * @brief 校验新资源版本的依赖都存在且满足持久化约束。
+            */
+            void ValidateDependenciesLocked(
+                IN const CResourceInfo& Info_) const;
+
+            /*
             * @brief 在持有 m_Mutex 独占锁时归档一个即将过期的当前版本。
             */
             void ArchiveRecordLocked(
@@ -380,10 +407,12 @@ namespace iCAX
                 IN const CResourceRecord& Record_);
 
             /*
-            * @brief 在持有 m_Mutex 独占锁时删除指定 URL 的全部冷存储文件。
+            * @brief DELETE 的内部实现：移除当前入口并把当前版本归档。
             */
-            void DeleteArchivedFilesLocked(
-                IN const CResourceKey& Key_) noexcept;
+            EResourceMutationResult DeleteCurrentVersioned(
+                IN const CResourceKey& Key_,
+                IN EResourceVersionCondition Condition_,
+                IN uint64_t nExpectedVersion_);
 
             /*
             * @brief 初始化内置编解码器和本池独占的临时目录。

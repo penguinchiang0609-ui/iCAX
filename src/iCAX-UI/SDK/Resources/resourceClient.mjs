@@ -1,13 +1,9 @@
 export class ResourceClient {
   constructor(options = {}) {
     this.bridge = options.bridge ?? globalThis.icax ?? null;
-    this.projectId = String(options.projectId ?? "");
-    this.sceneId = String(options.sceneId ?? "");
   }
 
   updateScope(options = {}) {
-    this.projectId = String(options.projectId ?? this.projectId ?? "");
-    this.sceneId = String(options.sceneId ?? this.sceneId ?? "");
     if (options.bridge !== undefined) {
       this.bridge = options.bridge;
     }
@@ -18,16 +14,10 @@ export class ResourceClient {
     if (typeof this.bridge?.requestResource !== "function") {
       throw new Error("Host bridge does not provide direct resource access");
     }
-    if (!this.projectId || !this.sceneId) {
-      throw new Error("ResourceClient requires projectId and sceneId");
-    }
-
     const method = String(init.method ?? "GET").toUpperCase();
     const requestHeaders = normalizeHeaders(init.headers);
     const body = await normalizeBody(init.body);
     const result = await this.bridge.requestResource({
-      projectId: this.projectId,
-      sceneId: this.sceneId,
       method,
       url: String(url ?? ""),
       headers: requestHeaders,
@@ -53,6 +43,25 @@ export class ResourceClient {
 
   get(url, init = {}) {
     return this.fetch(url, { ...init, method: "GET" });
+  }
+
+  post(collectionUrl, body, init = {}) {
+    return this.fetch(collectionUrl, {
+      ...init,
+      method: "POST",
+      body,
+    });
+  }
+
+  create(url, body, init = {}) {
+    const headers = new Headers(init.headers);
+    headers.set("If-None-Match", "*");
+    return this.fetch(url, {
+      ...init,
+      method: "PUT",
+      headers,
+      body,
+    });
   }
 
   put(url, body, init = {}) {

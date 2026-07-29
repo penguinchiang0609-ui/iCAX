@@ -12,4 +12,5 @@
 #include "ResourceLoadResult.h"
 #include "ResourceLoaderRegistry.h"
 #include "ResourceTypeName.h"
+#include "ResourceURL.h"
 #include "ResourceVersionStorage.h"

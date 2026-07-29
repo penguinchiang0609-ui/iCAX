@@ -689,7 +689,10 @@ namespace
             throw std::runtime_error("Resource import returned BRep resource with unexpected runtime type");
         }
 
-        _Imported.TopologyResourceID = iCAX::CAM::MakeTopologyResourceID(_Imported.ModelResourceID);
+        _Imported.TopologyResourceID =
+            iCAX::CAM::MakeTopologyResourceID(
+                _Resources,
+                _Imported.ModelResourceID);
         _Imported.nTopologyVersion = _NextResourceVersion(_Resources, _Imported.TopologyResourceID);
         auto _pTopology = _MakeTopologyResourceFromBRep(*_pBRep, _GetDisplayNameFromPath(strSourcePath_), _Imported.nTopologyVersion);
         _pTopology->Metadata["importMode"] = _Result.Metadata.contains("importer") ? _Result.Metadata.at("importer") : std::string("resource-import");
@@ -707,6 +710,7 @@ namespace
             "topology",
             iCAX::Resource::EResourcePersistenceMode::Embedded,
             _Imported.nTopologyVersion);
+        _TopologyInfo.Source = strSourcePath_;
         _TopologyInfo.Metadata["sourceResourceId"] = _Imported.ModelResourceID;
         _TopologyInfo.Metadata["brepResourceId"] = _Imported.BRepResourceID;
         _Resources.Set<iCAX::CAM::CTopologyResource>(_Imported.TopologyResourceID, _pTopology, _TopologyInfo);

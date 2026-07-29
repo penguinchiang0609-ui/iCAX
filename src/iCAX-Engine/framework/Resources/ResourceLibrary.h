@@ -4,6 +4,7 @@
 #include "ResourceAccess.h"
 #include "ResourceInfo.h"
 #include "ResourceTypeName.h"
+#include "ResourceURL.h"
 #include "ResourceVersionStorage.h"
 
 #include <cstddef>
@@ -28,8 +29,9 @@ namespace iCAX
         /*
         * @brief 资源库。
         * @details
-        *   ResourceLibrary 是 Scene 对外暴露的资源入口，内部拥有一个 ResourcePool，并使用注入的 LoaderRegistry 执行加载。
-        *   上层推荐通过 scene.Resources().Load<T>(path) 使用资源，而不是直接操作全局 loader 或静态资源池。
+        *   ResourceLibrary 是 Application/Product/Project/Scene 对外暴露的线程安全资源入口，
+        *   内部拥有一个 ResourcePool，并使用注入的 LoaderRegistry 执行加载。
+        *   上层推荐通过所属作用域的 Resources() 使用资源，而不是直接操作全局 loader 或静态资源池。
         */
         class _RESOURCES_EXP CResourceLibrary final
         {
@@ -61,6 +63,28 @@ namespace iCAX
             CResourceLibrary& operator=(IN CResourceLibrary&& Other_) noexcept;
 
         public:
+            /*
+            * @brief 绑定该资源库所属的 Application/Product/Project/Scene 作用域。
+            * @details 已存有资源时不能切换到另一作用域。
+            */
+            void SetScope(IN const CResourceScope& Scope_);
+            bool HasScope() const noexcept;
+            const CResourceScope& GetScope() const;
+
+            /*
+            * @brief 调用方提前分配 ResourceID，并构造本作用域规范 URL。
+            */
+            iCAX::Data::uuid AllocateResourceID() const;
+            std::string GetResourceCollectionURL() const;
+            std::string MakeResourceURL(
+                IN const iCAX::Data::uuid& ResourceID_) const;
+            std::string AllocateResourceURL() const;
+            std::string MakeNamedResourceURL(
+                IN const std::string& strStableName_) const;
+            std::string MakeDerivedResourceURL(
+                IN const std::string& strParentResourceURL_,
+                IN const std::string& strRole_) const;
+
             template <typename T>
             /*
             * @brief 加载或获取资源。
@@ -287,12 +311,6 @@ namespace iCAX
             bool Unload(IN const std::string& strSource_);
 
             /*
-            * @brief 移除当前资源记录和对象。
-            * @details 当前版本仍作为历史版本保留，供组件撤销/还原按 URL + version 读取。
-            */
-            bool Remove(IN const std::string& strSource_);
-
-            /*
             * @brief 清空资源库。
             */
             void Clear();
@@ -348,6 +366,15 @@ namespace iCAX
             */
             std::vector<uint64_t> GetVersions(
                 IN const std::string& strSource_) const;
+            std::vector<CResourceReference> GetDependents(
+                IN const CResourceReference& Target_) const;
+            CResourceReachabilityResult CollectReachable(
+                IN const std::vector<CResourceReference>& Roots_) const;
+            EResourceMutationResult RebindDependencyVersioned(
+                IN const CResourceReference& Parent_,
+                IN const CResourceReference& OldDependency_,
+                IN const CResourceReference& NewDependency_,
+                OUT CResourceInfo* pStoredInfo_ = nullptr);
             bool RegisterVersionCodec(
                 IN const std::type_info& RuntimeType_,
                 IN CResourceVersionCodec Codec_,
@@ -356,9 +383,6 @@ namespace iCAX
                 GetVersionStorageStats() const;
             std::filesystem::path
                 GetVersionStorageDirectory() const;
-            bool DiscardVersion(
-                IN const std::string& strSource_,
-                IN uint64_t nVersion_);
 
             /*
             * @brief 直接执行 HTTP/REST 语义的资源访问。
@@ -383,6 +407,11 @@ namespace iCAX
             CResourceResponse Get(
                 IN const std::string& strURL_,
                 IN uint64_t nVersion_,
+                IN const CResourceHeaders& Headers_ = {});
+
+            CResourceResponse Post(
+                IN const std::string& strCollectionURL_,
+                IN const CFlatBufferResource& Body_,
                 IN const CResourceHeaders& Headers_ = {});
 
             CResourceResponse Put(
@@ -517,6 +546,7 @@ namespace iCAX
         private:
             std::unique_ptr<CResourcePool> m_pPool;
             std::shared_ptr<CResourceLoaderRegistry> m_pLoaderRegistry;
+            std::optional<CResourceScope> m_Scope;
         };
     }
 }

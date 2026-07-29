@@ -20,9 +20,10 @@ namespace iCAX::Resource
     {
         Head = 0,
         Get = 1,
-        Put = 2,
-        Delete = 3,
-        Options = 4
+        Post = 2,
+        Put = 3,
+        Delete = 4,
+        Options = 5
     };
 
     using CResourceHeaders = std::map<std::string, std::string>;
@@ -100,6 +101,7 @@ namespace iCAX::Resource
 
     private:
         CResourceResponse HeadOrGet(const CResourceRequest& Request_, bool bIncludeBody_);
+        CResourceResponse Post(const CResourceRequest& Request_);
         CResourceResponse Put(const CResourceRequest& Request_);
         CResourceResponse Delete(const CResourceRequest& Request_);
         CResourceResponse Options(const CResourceRequest& Request_) const;

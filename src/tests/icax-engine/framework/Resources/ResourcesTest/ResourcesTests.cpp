@@ -51,6 +51,27 @@ using namespace ResourcesTestTypes;
 
 namespace
 {
+    CResourceScope MakeTestSceneScope()
+    {
+        return MakeSceneResourceScope(
+            "icax",
+            "icax.test",
+            *iCAX::Data::uuid::from_string(
+                "10000000-0000-4000-8000-000000000001"),
+            *iCAX::Data::uuid::from_string(
+                "20000000-0000-4000-8000-000000000002"));
+    }
+
+    std::string MakeTestResourceURL(
+        IN const std::string& strName_)
+    {
+        iCAX::Data::uuid_name_generator _Generator(
+            iCAX::Data::uuid_namespace_url);
+        return MakeResourceURL(
+            MakeTestSceneScope(),
+            _Generator("icax.resources.test/" + strName_));
+    }
+
     CFlatBufferResource MakeTransportFlatBuffer(
         IN const uint64_t nValue_,
         IN const std::string& strLabel_)
@@ -472,7 +493,7 @@ TEST(ResourcePoolTest, ManifestSkipsRuntimeOnlyEntriesByDefault)
     EXPECT_EQ(3u, _Pool.GetInfos().size());
 }
 
-TEST(ResourcePoolTest, RemoveClearAndListWork)
+TEST(ResourcePoolTest, ClearAndListWork)
 {
     CResourcePool _Pool;
 
@@ -482,10 +503,6 @@ TEST(ResourcePoolTest, RemoveClearAndListWork)
 
     EXPECT_EQ(3u, _Pool.GetKeys().size());
     EXPECT_EQ(3u, _Pool.GetInfos().size());
-
-    EXPECT_TRUE(_Pool.Remove(CResourceKey{ "memory://text-1" }));
-    EXPECT_FALSE(_Pool.Remove(CResourceKey{ "memory://text-1" }));
-    EXPECT_EQ(2u, _Pool.Count());
 
     _Pool.Clear();
     EXPECT_EQ(0u, _Pool.Count());
@@ -865,6 +882,123 @@ TEST(ResourceKeyTest, SourcePathKeyIsStable)
     EXPECT_EQ("memory://stable", _KeyA.Source);
 }
 
+TEST(ResourceURLTest, BuildsAndParsesHierarchicalGUIDURLs)
+{
+    const auto _ProjectID =
+        *iCAX::Data::uuid::from_string(
+            "30000000-0000-4000-8000-000000000003");
+    const auto _SceneID =
+        *iCAX::Data::uuid::from_string(
+            "40000000-0000-4000-8000-000000000004");
+    const auto _ResourceID =
+        *iCAX::Data::uuid::from_string(
+            "50000000-0000-4000-8000-000000000005");
+
+    const auto _Application =
+        MakeApplicationResourceScope("icax");
+    const auto _Product =
+        MakeProductResourceScope("icax", "icax.cam");
+    const auto _Project =
+        MakeProjectResourceScope(
+            "icax",
+            "icax.cam",
+            _ProjectID);
+    const auto _Scene =
+        MakeSceneResourceScope(
+            "icax",
+            "icax.cam",
+            _ProjectID,
+            _SceneID);
+
+    EXPECT_EQ(
+        "resource://icax/resources",
+        MakeResourceCollectionURL(_Application));
+    EXPECT_EQ(
+        "resource://icax/products/icax.cam/resources",
+        MakeResourceCollectionURL(_Product));
+    EXPECT_EQ(
+        "resource://icax/products/icax.cam/projects/"
+        "30000000-0000-4000-8000-000000000003/resources",
+        MakeResourceCollectionURL(_Project));
+
+    const auto _URL = MakeResourceURL(_Scene, _ResourceID);
+    EXPECT_EQ(
+        "resource://icax/products/icax.cam/projects/"
+        "30000000-0000-4000-8000-000000000003/scenes/"
+        "40000000-0000-4000-8000-000000000004/resources/"
+        "50000000-0000-4000-8000-000000000005",
+        _URL);
+
+    const auto _Parsed = ParseResourceURL(_URL);
+    EXPECT_TRUE(_Parsed.IsResource());
+    EXPECT_TRUE(ResourceScopeEquals(_Scene, _Parsed.Owner));
+    EXPECT_EQ(_ResourceID, _Parsed.ResourceID);
+    EXPECT_TRUE(
+        ParseResourceURL(
+            MakeResourceCollectionURL(_Scene))
+        .IsCollection());
+}
+
+TEST(ResourceURLTest, RejectsAmbiguousOrNonCanonicalIdentity)
+{
+    EXPECT_THROW(
+        ParseResourceURL(
+            "resource://icax/product/project/resource"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        ParseResourceURL(
+            "resource://icax/resources/"
+            "50000000-0000-4000-8000-000000000005#mesh"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        ParseResourceURL(
+            "resource://icax/resources/"
+            "00000000-0000-0000-0000-000000000000"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        ParseResourceURL(
+            "resource://icax/resources/"
+            "50000000-0000-4000-8000-000000000005/"
+            "extra"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        ParseResourceURL("resource://icax/resources/"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        ParseResourceURL(
+            "resource://icax//resources/"
+            "50000000-0000-4000-8000-000000000005"),
+        std::invalid_argument);
+    EXPECT_THROW(
+        MakeApplicationResourceScope("icax..unsafe"),
+        std::invalid_argument);
+}
+
+TEST(ResourceLibraryTest, AllocatesGUIDIdentityWithinBoundScope)
+{
+    CResourceLibrary _Resources;
+    _Resources.SetScope(MakeTestSceneScope());
+
+    const auto _ResourceID =
+        _Resources.AllocateResourceID();
+    ASSERT_FALSE(_ResourceID.is_nil());
+    const auto _URL =
+        _Resources.MakeResourceURL(_ResourceID);
+    const auto _Parsed = ParseResourceURL(_URL);
+    EXPECT_EQ(_ResourceID, _Parsed.ResourceID);
+    EXPECT_TRUE(
+        ResourceScopeEquals(
+            _Resources.GetScope(),
+            _Parsed.Owner));
+
+    auto _pText = std::make_shared<TextResource>();
+    _Resources.Set<TextResource>(_URL, _pText);
+    const auto _Info = _Resources.GetInfo(_URL);
+    ASSERT_TRUE(_Info.has_value());
+    EXPECT_EQ(_ResourceID, _Info->ResourceID);
+    EXPECT_TRUE(_Info->Source.empty());
+}
+
 TEST(ResourceLibraryTest, LoadsWithoutExposingPool)
 {
     CResourceLibrary _Resources(MakeMemoryTextRegistry());
@@ -889,17 +1023,21 @@ TEST(ResourceLibraryTest, LoadsWithoutExposingPool)
 TEST(ResourceLibraryTest, ManagesMetadataAndLifetime)
 {
     CResourceLibrary _Resources;
+    _Resources.SetScope(MakeTestSceneScope());
+    const auto _URL =
+        _Resources.AllocateResourceURL();
 
     CResourceInfo _Info;
     _Info.Name = "ProjectManifest";
+    _Info.Source = "file://asset/project.fbx";
     _Info.Persistence = EResourcePersistenceMode::External;
 
-    _Resources.Register("file://asset/project.fbx", _Info);
+    _Resources.Register(_URL, _Info);
 
-    EXPECT_TRUE(_Resources.Contains("file://asset/project.fbx"));
-    EXPECT_FALSE(_Resources.HasObject("file://asset/project.fbx"));
+    EXPECT_TRUE(_Resources.Contains(_URL));
+    EXPECT_FALSE(_Resources.HasObject(_URL));
 
-    const auto _StoredInfo = _Resources.GetInfo("file://asset/project.fbx");
+    const auto _StoredInfo = _Resources.GetInfo(_URL);
     ASSERT_TRUE(_StoredInfo.has_value());
     EXPECT_EQ("ProjectManifest", _StoredInfo->Name);
     EXPECT_EQ("file://asset/project.fbx", _StoredInfo->Source);
@@ -908,8 +1046,11 @@ TEST(ResourceLibraryTest, ManagesMetadataAndLifetime)
     ASSERT_EQ(1u, _Manifest.size());
     EXPECT_TRUE(_Manifest[0].IsExternal());
 
-    EXPECT_TRUE(_Resources.Remove("file://asset/project.fbx"));
-    EXPECT_FALSE(_Resources.Contains("file://asset/project.fbx"));
+    EXPECT_EQ(
+        204,
+        _Resources.Delete(
+            _URL).nStatus);
+    EXPECT_FALSE(_Resources.Contains(_URL));
 }
 
 TEST(ResourceLibraryTest, ExposesResourceVersionForRuntimeGeneratedResources)
@@ -1035,8 +1176,9 @@ TEST(ResourceAccessTest, SupportsRestHeadGetPutDeleteAndOptions)
     using namespace iCAX::FlatBufferFixtures;
 
     CResourceLibrary _Library;
+    _Library.SetScope(MakeTestSceneScope());
     const std::string _URL =
-        "resource://scene/test/resources/transport";
+        MakeTestResourceURL("transport");
 
     CResourceRequest _Put;
     _Put.Method = EResourceMethod::Put;
@@ -1066,7 +1208,7 @@ TEST(ResourceAccessTest, SupportsRestHeadGetPutDeleteAndOptions)
     const auto _Capabilities = _Library.Options(_URL);
     EXPECT_EQ(204, _Capabilities.nStatus);
     EXPECT_EQ(
-        "HEAD, GET, PUT, DELETE, OPTIONS",
+        "HEAD, GET, POST, PUT, DELETE, OPTIONS",
         GetResourceHeader(_Capabilities.Headers, "Allow").value_or(""));
 
     const auto _Description = _Library.Head(_URL);
@@ -1152,22 +1294,35 @@ TEST(ResourceAccessTest, SupportsRestHeadGetPutDeleteAndOptions)
     EXPECT_EQ(
         (std::vector<uint64_t>{ 1, 2 }),
         _Library.GetVersions(_URL));
+
+    const auto _Recreated =
+        _Library.Request(_Put);
+    EXPECT_EQ(201, _Recreated.nStatus);
+    EXPECT_EQ(
+        "\"icax-v3\"",
+        GetResourceHeader(
+            _Recreated.Headers,
+            "ETag").value_or(""));
+    EXPECT_EQ(
+        (std::vector<uint64_t>{ 1, 2, 3 }),
+        _Library.GetVersions(_URL));
 }
 
 TEST(ResourceAccessTest, RejectsInvalidOrUnrepresentableResources)
 {
     CResourceLibrary _Library;
+    _Library.SetScope(MakeTestSceneScope());
 
     CResourceRequest _InvalidPut;
     _InvalidPut.Method = EResourceMethod::Put;
-    _InvalidPut.URL = "resource://scene/test/resources/invalid";
+    _InvalidPut.URL = MakeTestResourceURL("invalid");
     _InvalidPut.Body = CFlatBufferResource({ 1, 2, 3, 4 });
     EXPECT_EQ(400, _Library.Request(_InvalidPut).nStatus);
 
     CResourceRequest _AmbiguousMediaPut;
     _AmbiguousMediaPut.Method = EResourceMethod::Put;
     _AmbiguousMediaPut.URL =
-        "resource://scene/test/resources/ambiguous-media";
+        MakeTestResourceURL("ambiguous-media");
     _AmbiguousMediaPut.Body =
         MakeTransportFlatBuffer(1, "media");
     _AmbiguousMediaPut.Headers["Content-Type"] =
@@ -1177,30 +1332,36 @@ TEST(ResourceAccessTest, RejectsInvalidOrUnrepresentableResources)
     CResourceRequest _WrongIdentifierPut;
     _WrongIdentifierPut.Method = EResourceMethod::Put;
     _WrongIdentifierPut.URL =
-        "resource://scene/test/resources/wrong-identifier";
+        MakeTestResourceURL("wrong-identifier");
     _WrongIdentifierPut.Body =
         MakeTransportFlatBuffer(1, "identifier");
     _WrongIdentifierPut.Headers["ICAX-FlatBuffer-Identifier"] = "NOPE";
     EXPECT_EQ(422, _Library.Request(_WrongIdentifierPut).nStatus);
 
     _Library.Set<TextResource>(
-        "resource://scene/test/resources/legacy",
+        MakeTestResourceURL("legacy"),
         std::make_shared<TextResource>());
     CResourceRequest _LegacyGet;
     _LegacyGet.Method = EResourceMethod::Get;
-    _LegacyGet.URL = "resource://scene/test/resources/legacy";
+    _LegacyGet.URL = MakeTestResourceURL("legacy");
     EXPECT_EQ(406, _Library.Request(_LegacyGet).nStatus);
 
     CResourceRequest _MissingURL;
     _MissingURL.Method = EResourceMethod::Get;
     EXPECT_EQ(400, _Library.Request(_MissingURL).nStatus);
+
+    const auto _OtherScopeURL = MakeResourceURL(
+        MakeApplicationResourceScope("other-app"),
+        GenerateResourceID());
+    EXPECT_EQ(404, _Library.Get(_OtherScopeURL).nStatus);
 }
 
 TEST(ResourceAccessTest, HeadUsesManifestWithoutLoadingTheBody)
 {
     CResourceLibrary _Library;
+    _Library.SetScope(MakeTestSceneScope());
     const std::string _URL =
-        "resource://scene/test/resources/manifest-only";
+        MakeTestResourceURL("manifest-only");
 
     CResourceInfo _Info;
     _Info.MediaType = "application/vnd.example.mesh+flatbuffer; version=3";
@@ -1229,6 +1390,45 @@ TEST(ResourceAccessTest, HeadUsesManifestWithoutLoadingTheBody)
     EXPECT_EQ(406, _Library.Get(_URL).nStatus);
 }
 
+TEST(ResourceAccessTest, PostAllocatesGUIDAndReturnsLocation)
+{
+    CResourceLibrary _Library;
+    _Library.SetScope(MakeTestSceneScope());
+
+    const auto _Body =
+        MakeTransportFlatBuffer(610, "post");
+    const auto _Created = _Library.Post(
+        _Library.GetResourceCollectionURL(),
+        _Body,
+        {
+            {
+                "Content-Type",
+                "application/vnd.icax.flatbuffer"
+            }
+        });
+    EXPECT_EQ(201, _Created.nStatus);
+
+    const auto _Location =
+        GetResourceHeader(
+            _Created.Headers,
+            "Location");
+    ASSERT_TRUE(_Location.has_value());
+    const auto _Parsed =
+        ParseResourceURL(*_Location);
+    EXPECT_TRUE(_Parsed.IsResource());
+    EXPECT_TRUE(
+        ResourceScopeEquals(
+            _Library.GetScope(),
+            _Parsed.Owner));
+    EXPECT_FALSE(_Parsed.ResourceID.is_nil());
+    EXPECT_EQ(
+        iCAX::Data::to_string(_Parsed.ResourceID),
+        GetResourceHeader(
+            _Created.Headers,
+            "ICAX-Resource-ID").value_or(""));
+    EXPECT_EQ(200, _Library.Get(*_Location).nStatus);
+}
+
 TEST(ResourceVersionStorageTest, ColdStoresAndReloadsExpiredVersions)
 {
     using namespace iCAX::FlatBufferFixtures;
@@ -1255,7 +1455,7 @@ TEST(ResourceVersionStorageTest, ColdStoresAndReloadsExpiredVersions)
                 _PoolDirectory));
 
         const CResourceKey _Key{
-            "resource://scene/test/resources/cold-history"
+            MakeTestResourceURL("cold-history")
         };
         CResourceInfo _Info;
         _Info.nSize = 128;
@@ -1316,32 +1516,17 @@ TEST(ResourceVersionStorageTest, ColdStoresAndReloadsExpiredVersions)
         EXPECT_EQ(101u, _Version1Payload->value());
 
         EXPECT_EQ(
-            EResourceMutationResult::Removed,
-            _Pool.RemoveVersioned(
-                _Key,
-                EResourceVersionCondition::VersionMatches,
-                2));
-        EXPECT_FALSE(_Pool.Contains(_Key));
-        EXPECT_TRUE(_Pool.ContainsVersion(_Key, 2));
-
-        auto _pVersion3 =
-            std::make_shared<CFlatBufferResource>(
-                MakeTransportFlatBuffer(303, "version-3"));
-        CResourceInfo _StoredVersion3;
-        EXPECT_EQ(
-            EResourceMutationResult::Created,
-            _Pool.PutUntypedVersioned(
-                _Key,
-                std::static_pointer_cast<void>(_pVersion3),
-                typeid(CFlatBufferResource),
-                _Info,
-                EResourceVersionCondition::MustNotExist,
-                0,
-                &_StoredVersion3));
-        EXPECT_EQ(3u, _StoredVersion3.nVersion);
-        EXPECT_EQ(
-            (std::vector<uint64_t>{ 1, 2, 3 }),
+            (std::vector<uint64_t>{ 1, 2 }),
             _Pool.GetVersions(_Key));
+
+        _Pool.Clear();
+        EXPECT_EQ(0u, _Pool.Count());
+        EXPECT_TRUE(
+            std::filesystem::is_directory(
+                _PoolDirectory));
+        EXPECT_TRUE(
+            std::filesystem::is_empty(
+                _PoolDirectory));
     }
 
     EXPECT_FALSE(
@@ -1356,7 +1541,7 @@ TEST(ResourceVersionStorageTest, KeepsUnsupportedTypesResidentInsteadOfLosingThe
 {
     CResourcePool _Pool;
     const CResourceKey _Key{
-        "resource://scene/test/resources/custom-history"
+        MakeTestResourceURL("custom-history")
     };
 
     CResourceInfo _Info;
@@ -1433,7 +1618,7 @@ TEST(ResourceVersionStorageTest, PluginCodecMovesBusinessResourceHistoryToDisk)
             std::move(_TextCodec)));
 
     const std::string _URL =
-        "resource://scene/test/resources/plugin-history";
+        MakeTestResourceURL("plugin-history");
     CResourceInfo _Info;
     _Info.Key = MakeResourceKeyFromSource(_URL);
     _Info.nSize = 9;
@@ -1471,4 +1656,288 @@ TEST(ResourceVersionStorageTest, PluginCodecMovesBusinessResourceHistoryToDisk)
         _Library.Get<TextResource>(_URL, 1);
     ASSERT_NE(nullptr, _Restored);
     EXPECT_EQ("version-1", _Restored->Text);
+}
+
+TEST(ResourceDependencyTest, RebuildsOnlyChangedPathAndSharesUnchangedVersions)
+{
+    CResourceLibrary _Library;
+
+    const std::string _Texture =
+        MakeTestResourceURL("texture");
+    const std::string _Material =
+        MakeTestResourceURL("material");
+    const std::string _UnchangedPart =
+        MakeTestResourceURL("unchanged-part");
+    const std::string _Assembly =
+        MakeTestResourceURL("assembly");
+
+    const auto _Put =
+        [&_Library](
+            const std::string& URL_,
+            const std::string& Text_,
+            std::vector<CResourceReference> Dependencies_,
+            const uint64_t nExpectedVersion_ = 0)
+        {
+            auto _pResource =
+                std::make_shared<TextResource>();
+            _pResource->Text = Text_;
+            CResourceInfo _Info;
+            _Info.Dependencies =
+                std::move(Dependencies_);
+            CResourceInfo _Stored;
+            const auto _Result =
+                _Library.PutVersioned<TextResource>(
+                    URL_,
+                    _pResource,
+                    _Info,
+                    nExpectedVersion_ == 0
+                        ? EResourceVersionCondition::None
+                        : EResourceVersionCondition::VersionMatches,
+                    nExpectedVersion_,
+                    &_Stored);
+            EXPECT_TRUE(
+                _Result == EResourceMutationResult::Created ||
+                _Result == EResourceMutationResult::Replaced);
+            return _Stored;
+        };
+
+    const auto _TextureV1 =
+        _Put(_Texture, "texture-v1", {});
+    const auto _PartV1 =
+        _Put(_UnchangedPart, "part-v1", {});
+    const auto _MaterialV1 =
+        _Put(
+            _Material,
+            "material-v1",
+            { { _Texture, _TextureV1.nVersion } });
+    const auto _AssemblyV1 =
+        _Put(
+            _Assembly,
+            "assembly-v1",
+            {
+                { _Material, _MaterialV1.nVersion },
+                { _UnchangedPart, _PartV1.nVersion }
+            });
+
+    const auto _TextureV2 =
+        _Put(
+            _Texture,
+            "texture-v2",
+            {},
+            _TextureV1.nVersion);
+    CResourceInfo _MaterialV2;
+    ASSERT_EQ(
+        EResourceMutationResult::Replaced,
+        _Library.RebindDependencyVersioned(
+            { _Material, _MaterialV1.nVersion },
+            { _Texture, _TextureV1.nVersion },
+            { _Texture, _TextureV2.nVersion },
+            &_MaterialV2));
+    CResourceInfo _AssemblyV2;
+    ASSERT_EQ(
+        EResourceMutationResult::Replaced,
+        _Library.RebindDependencyVersioned(
+            { _Assembly, _AssemblyV1.nVersion },
+            { _Material, _MaterialV1.nVersion },
+            { _Material, _MaterialV2.nVersion },
+            &_AssemblyV2));
+    EXPECT_EQ(
+        _Library.Get<TextResource>(
+            _Material,
+            _MaterialV1.nVersion),
+        _Library.Get<TextResource>(
+            _Material,
+            _MaterialV2.nVersion));
+    EXPECT_EQ(
+        _Library.Get<TextResource>(
+            _Assembly,
+            _AssemblyV1.nVersion),
+        _Library.Get<TextResource>(
+            _Assembly,
+            _AssemblyV2.nVersion));
+
+    // 把共享节点的 v1 转成历史版本，验证引用保护同样覆盖冷/历史记录。
+    const auto _PartV2 =
+        _Put(
+            _UnchangedPart,
+            "part-v2",
+            {},
+            _PartV1.nVersion);
+    EXPECT_EQ(2u, _PartV2.nVersion);
+
+    const auto _Closure =
+        _Library.CollectReachable({
+            { _Assembly, _AssemblyV1.nVersion },
+            { _Assembly, _AssemblyV2.nVersion }
+        });
+    ASSERT_TRUE(_Closure.IsComplete());
+    EXPECT_EQ(7u, _Closure.Resources.size());
+
+    const auto _SharedCount =
+        std::count_if(
+            _Closure.Resources.begin(),
+            _Closure.Resources.end(),
+            [&_UnchangedPart, &_PartV1](
+                const CResourceInfo& Info_)
+            {
+                return Info_.Key.Source ==
+                    _UnchangedPart &&
+                    Info_.nVersion ==
+                    _PartV1.nVersion;
+            });
+    EXPECT_EQ(1, _SharedCount);
+
+    const auto _AssemblyV1Info =
+        _Library.GetInfo(
+            _Assembly,
+            _AssemblyV1.nVersion);
+    const auto _AssemblyV2Info =
+        _Library.GetInfo(
+            _Assembly,
+            _AssemblyV2.nVersion);
+    ASSERT_TRUE(_AssemblyV1Info.has_value());
+    ASSERT_TRUE(_AssemblyV2Info.has_value());
+    EXPECT_NE(
+        _AssemblyV1Info->Dependencies[0],
+        _AssemblyV2Info->Dependencies[0]);
+    EXPECT_EQ(
+        _AssemblyV1Info->Dependencies[1],
+        _AssemblyV2Info->Dependencies[1]);
+
+    const CResourceReference _SharedPart{
+        _UnchangedPart,
+        _PartV1.nVersion };
+    const auto _Dependents =
+        _Library.GetDependents(_SharedPart);
+    EXPECT_EQ(2u, _Dependents.size());
+    EXPECT_TRUE(
+        _Library.Contains(
+            _SharedPart.URL,
+            _SharedPart.nVersion));
+}
+
+TEST(ResourceDependencyTest, RejectsMissingAndMutableDependencies)
+{
+    CResourceLibrary _Library;
+    const std::string _Child =
+        MakeTestResourceURL("dependency-child");
+    const std::string _OtherChild =
+        MakeTestResourceURL("dependency-other-child");
+    const std::string _Parent =
+        MakeTestResourceURL("dependency-parent");
+
+    auto _pChild = std::make_shared<TextResource>();
+    CResourceInfo _ChildInfo;
+    CResourceInfo _StoredChild;
+    ASSERT_EQ(
+        EResourceMutationResult::Created,
+        _Library.PutVersioned<TextResource>(
+            _Child,
+            _pChild,
+            _ChildInfo,
+            EResourceVersionCondition::None,
+            0,
+            &_StoredChild));
+
+    auto _pParent = std::make_shared<TextResource>();
+    CResourceInfo _MissingDependencyInfo;
+    _MissingDependencyInfo.Dependencies = {
+        {
+            MakeTestResourceURL("missing"),
+            1
+        }
+    };
+    EXPECT_THROW(
+        _Library.PutVersioned<TextResource>(
+            _Parent,
+            _pParent,
+            _MissingDependencyInfo),
+        std::invalid_argument);
+
+    CResourceInfo _PersistentParentInfo;
+    _PersistentParentInfo.Persistence =
+        EResourcePersistenceMode::Embedded;
+    _PersistentParentInfo.Dependencies = {
+        { _Child, _StoredChild.nVersion }
+    };
+    EXPECT_THROW(
+        _Library.PutVersioned<TextResource>(
+            _Parent,
+            _pParent,
+            _PersistentParentInfo),
+        std::invalid_argument);
+
+    CResourceInfo _ParentInfo;
+    _ParentInfo.Dependencies = {
+        { _Child, _StoredChild.nVersion }
+    };
+    CResourceInfo _StoredParent;
+    ASSERT_EQ(
+        EResourceMutationResult::Created,
+        _Library.PutVersioned<TextResource>(
+            _Parent,
+            _pParent,
+            _ParentInfo,
+            EResourceVersionCondition::None,
+            0,
+            &_StoredParent));
+
+    auto _pOtherChild =
+        std::make_shared<TextResource>();
+    CResourceInfo _StoredOtherChild;
+    ASSERT_EQ(
+        EResourceMutationResult::Created,
+        _Library.PutVersioned<TextResource>(
+            _OtherChild,
+            _pOtherChild,
+            {},
+            EResourceVersionCondition::None,
+            0,
+            &_StoredOtherChild));
+
+    auto _MutatedParentInfo = _StoredParent;
+    _MutatedParentInfo.Dependencies = {
+        {
+            _OtherChild,
+            _StoredOtherChild.nVersion
+        }
+    };
+    EXPECT_THROW(
+        _Library.Register(
+            _Parent,
+            _MutatedParentInfo),
+        std::invalid_argument);
+
+    CResourceInfo _MetadataOnlyUpdate;
+    _MetadataOnlyUpdate.Name = "renamed";
+    _MetadataOnlyUpdate.Dependencies = {
+        {
+            _OtherChild,
+            _StoredOtherChild.nVersion
+        }
+    };
+    EXPECT_THROW(
+        _Library.UpdateInfo(
+            _Parent,
+            _MetadataOnlyUpdate),
+        std::invalid_argument);
+    const auto _UpdatedParent =
+        _Library.GetInfo(_Parent);
+    ASSERT_TRUE(_UpdatedParent.has_value());
+    EXPECT_EQ(
+        _StoredParent.Dependencies,
+        _UpdatedParent->Dependencies);
+
+    const auto _Incomplete =
+        _Library.CollectReachable({
+            {
+                MakeTestResourceURL("missing-root"),
+                1
+            }
+        });
+    EXPECT_FALSE(_Incomplete.IsComplete());
+    ASSERT_EQ(1u, _Incomplete.Missing.size());
+    EXPECT_EQ(
+        MakeTestResourceURL("missing-root"),
+        _Incomplete.Missing.front().URL);
 }

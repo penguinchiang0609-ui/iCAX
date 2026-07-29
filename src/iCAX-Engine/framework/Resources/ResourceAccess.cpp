@@ -18,7 +18,7 @@ namespace
     inline constexpr const char* kFlatBufferMediaType =
         "application/vnd.icax.flatbuffer";
     inline constexpr const char* kAllowedMethods =
-        "HEAD, GET, PUT, DELETE, OPTIONS";
+        "HEAD, GET, POST, PUT, DELETE, OPTIONS";
 
     std::string Trim(IN const std::string& strValue_)
     {
@@ -239,6 +239,13 @@ namespace
             Response_.Headers,
             "ICAX-Resource-Version",
             std::to_string(Info_.nVersion));
+        if (!Info_.ResourceID.is_nil())
+        {
+            SetResourceHeader(
+                Response_.Headers,
+                "ICAX-Resource-ID",
+                iCAX::Data::to_string(Info_.ResourceID));
+        }
 
         if (!Info_.ResourceTypeID.empty())
         {
@@ -371,6 +378,10 @@ iCAX::Resource::ParseResourceMethod(IN const std::string& strMethod_)
     {
         return EResourceMethod::Get;
     }
+    if (_Method == "post")
+    {
+        return EResourceMethod::Post;
+    }
     if (_Method == "put")
     {
         return EResourceMethod::Put;
@@ -395,6 +406,8 @@ iCAX::Resource::ToString(IN const EResourceMethod Method_) noexcept
         return "HEAD";
     case EResourceMethod::Get:
         return "GET";
+    case EResourceMethod::Post:
+        return "POST";
     case EResourceMethod::Put:
         return "PUT";
     case EResourceMethod::Delete:
@@ -457,12 +470,35 @@ iCAX::Resource::CResourceAccessService::Request(
 
     try
     {
+        const auto _URL = ParseResourceURL(Request_.URL);
+        if (m_Library.HasScope() &&
+            !ResourceScopeEquals(
+                m_Library.GetScope(),
+                _URL.Owner))
+        {
+            return MakeResponse(404);
+        }
+        if (Request_.Method == EResourceMethod::Post)
+        {
+            if (!_URL.IsCollection())
+            {
+                return MakeResponse(400);
+            }
+        }
+        else if (Request_.Method != EResourceMethod::Options &&
+            !_URL.IsResource())
+        {
+            return MakeResponse(400);
+        }
+
         switch (Request_.Method)
         {
         case EResourceMethod::Head:
             return HeadOrGet(Request_, false);
         case EResourceMethod::Get:
             return HeadOrGet(Request_, true);
+        case EResourceMethod::Post:
+            return Post(Request_);
         case EResourceMethod::Put:
             return Put(Request_);
         case EResourceMethod::Delete:
@@ -557,6 +593,30 @@ iCAX::Resource::CResourceAccessService::HeadOrGet(
 }
 
 iCAX::Resource::CResourceResponse
+iCAX::Resource::CResourceAccessService::Post(
+    IN const CResourceRequest& Request_)
+{
+    if (GetResourceHeader(Request_.Headers, "If-Match") ||
+        GetResourceHeader(Request_.Headers, "If-None-Match"))
+    {
+        return MakeResponse(400);
+    }
+
+    const auto _Collection =
+        ParseResourceURL(Request_.URL);
+    CResourceRequest _PutRequest = Request_;
+    _PutRequest.Method = EResourceMethod::Put;
+    _PutRequest.URL = iCAX::Resource::MakeResourceURL(
+        _Collection.Owner,
+        GenerateResourceID());
+    SetResourceHeader(
+        _PutRequest.Headers,
+        "If-None-Match",
+        "*");
+    return Put(_PutRequest);
+}
+
+iCAX::Resource::CResourceResponse
 iCAX::Resource::CResourceAccessService::Put(
     IN const CResourceRequest& Request_)
 {
@@ -581,7 +641,8 @@ iCAX::Resource::CResourceAccessService::Put(
 
     CResourceInfo _Info;
     _Info.Key = MakeResourceKeyFromSource(Request_.URL);
-    _Info.Source = Request_.URL;
+    _Info.ResourceID =
+        ParseResourceURL(Request_.URL).ResourceID;
     _Info.MediaType = _ContentType;
     _Info.ResourceTypeID =
         GetResourceHeader(Request_.Headers, "ICAX-Resource-Type")
@@ -687,7 +748,7 @@ iCAX::Resource::CResourceAccessService::Delete(
         return MakeResponse(412);
     }
 
-    const auto _Result = m_Library.GetPool().RemoveVersioned(
+    const auto _Result = m_Library.GetPool().DeleteCurrentVersioned(
         MakeResourceKeyFromSource(Request_.URL),
         _Condition,
         _nExpectedVersion);

@@ -43,12 +43,10 @@ namespace iCAX
         * @brief 前端直接资源请求。
         * @details
         *   结构采用 HTTP/REST 语义，但通过宿主 API 直接调用，不进入 SDO 邮件。
-        *   ProjectID 和 SceneID 用于把 URL 路由到对应 Scene ResourceLibrary。
+        *   规范 URL 自带 Application/Product/Project/Scene 完整路由。
         */
         struct _UI_CONTAINER_EXP CFrontendResourceRequest final
         {
-            std::string ProjectID;
-            std::string SceneID;
             std::string Method = "GET";
             std::string URL;
             std::map<std::string, std::string> Headers;

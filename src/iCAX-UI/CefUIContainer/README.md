@@ -9,7 +9,7 @@
 - 加载 `AppShell/index.html` 或配置指定的 `startURL`。
 - 注入 `window.icax` bridge。
 - 将 JS 的 `getApplicationChannelId/registerProductChannel/registerSceneChannel/postSDOFrame` 直接转发到 `IFrontendBridge`。
-- 提供 `requestResource`，把 Fetch 风格资源请求直接转发到 Scene `ResourceLibrary`，不生成 SDO 邮件。
+- 提供 `requestResource`，按完整 Resource URL 将 Fetch 风格请求路由到 Application/Product/Project/Scene 对应的 `ResourceLibrary`，不生成 SDO 邮件。
 - 提供 `openFileDialog(options)` 宿主能力，返回用户选择的 UTF-8 文件路径；用户取消时返回 `null`。
 - 轮询 `IFrontendBridge::PollSDOFrames()`，把后端 request/report/response/event 派发给 JS 订阅者。
 

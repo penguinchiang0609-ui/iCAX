@@ -270,6 +270,9 @@ iCAX::Application::CApplicationRuntime::CApplicationRuntime()
     _DefaultProduct.ProjectFile.FileExtensions.push_back(".icax");
     m_Config.Products.push_back(_DefaultProduct);
     _ValidateProductDefinitions(m_Config.Products);
+    m_Resources.SetScope(
+        iCAX::Resource::MakeApplicationResourceScope(
+            m_Config.Descriptor.AppID));
 
     RegisterBuiltInApplicationSDO();
 }
@@ -288,6 +291,9 @@ void iCAX::Application::CApplicationRuntime::SetConfig(IN const ApplicationRunti
     {
         throw std::logic_error("ApplicationRuntime config cannot be changed while runtime is running");
     }
+    m_Resources.SetScope(
+        iCAX::Resource::MakeApplicationResourceScope(
+            Config_.Descriptor.AppID));
     _ValidateProductDefinitions(Config_.Products);
     m_Config = Config_;
 }
@@ -1115,6 +1121,85 @@ std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::Application::CApplicationR
         return nullptr;
     }
     return _Iter->second;
+}
+
+iCAX::Resource::CResourceLibrary&
+iCAX::Application::CApplicationRuntime::Resources()
+{
+    return m_Resources;
+}
+
+const iCAX::Resource::CResourceLibrary&
+iCAX::Application::CApplicationRuntime::Resources() const
+{
+    return m_Resources;
+}
+
+std::shared_ptr<iCAX::Resource::CResourceLibrary>
+iCAX::Application::CApplicationRuntime::ResolveResourceLibrary(
+    IN const iCAX::Resource::CResourceURL& URL_)
+{
+    if (!URL_.Owner.IsValid() ||
+        URL_.Owner.ApplicationID !=
+            m_Config.Descriptor.AppID)
+    {
+        return nullptr;
+    }
+    if (URL_.Owner.Scope ==
+        iCAX::Resource::EResourceScope::Application)
+    {
+        return std::shared_ptr<iCAX::Resource::CResourceLibrary>(
+            &m_Resources,
+            [](iCAX::Resource::CResourceLibrary*) noexcept {});
+    }
+
+    const auto _pProductRuntime =
+        FindProductRuntime(URL_.Owner.ProductID);
+    if (!_pProductRuntime)
+    {
+        return nullptr;
+    }
+    if (URL_.Owner.Scope ==
+        iCAX::Resource::EResourceScope::Product)
+    {
+        return std::shared_ptr<iCAX::Resource::CResourceLibrary>(
+            _pProductRuntime,
+            &_pProductRuntime->Resources());
+    }
+
+    const auto _pCatalog =
+        _pProductRuntime->FindProjectCatalogByProjectID(
+            URL_.Owner.ProjectID);
+    const auto _pProject = _pCatalog
+        ? _pCatalog->FindProject(URL_.Owner.ProjectID)
+        : nullptr;
+    if (!_pProject)
+    {
+        return nullptr;
+    }
+    if (URL_.Owner.Scope ==
+        iCAX::Resource::EResourceScope::Project)
+    {
+        return std::shared_ptr<iCAX::Resource::CResourceLibrary>(
+            _pProject,
+            &_pProject->Resources());
+    }
+
+    const auto _pScene =
+        _pProject->GetScene(URL_.Owner.SceneID);
+    return _pScene
+        ? std::shared_ptr<iCAX::Resource::CResourceLibrary>(
+            _pScene,
+            &_pScene->Resources())
+        : nullptr;
+}
+
+std::shared_ptr<const iCAX::Resource::CResourceLibrary>
+iCAX::Application::CApplicationRuntime::ResolveResourceLibrary(
+    IN const iCAX::Resource::CResourceURL& URL_) const
+{
+    return const_cast<CApplicationRuntime*>(this)
+        ->ResolveResourceLibrary(URL_);
 }
 
 std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Application::CApplicationRuntime::OpenProjectFile(

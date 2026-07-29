@@ -22,7 +22,7 @@
 - `Bridge/`：真实宿主 bridge 发现、校验和 mock bridge。
 - `SDO/`：SDO client、SDO 方法编码和 Variant 文本编解码。
 - `PDO/`：PDO 前端访问代理，面向 shared memory lease。
-- `Resources/`：Fetch 风格的 `HEAD/GET/PUT/DELETE/OPTIONS` 资源客户端。
+- `Resources/`：GUID URL 构造/解析，以及 Fetch 风格的 `HEAD/GET/POST/PUT/DELETE/OPTIONS` 资源客户端。
 - `Viewport/`：RenderPDO 解析和 H5 默认 Three.js 视口。
 - `ThirdParty/`：SDK 自带的 H5 runtime 依赖，目前包含 Three.js。
 

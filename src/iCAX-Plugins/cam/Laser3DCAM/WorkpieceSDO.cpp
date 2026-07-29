@@ -63,7 +63,10 @@ namespace
         IN const std::string& strModelResourceID_,
         IN const std::string& strName_)
     {
-        const auto _MaterialResourceID = iCAX::CAM::MakeWorkpieceMaterialResourceID(strModelResourceID_);
+        const auto _MaterialResourceID =
+            iCAX::CAM::MakeWorkpieceMaterialResourceID(
+                Scene_.Resources(),
+                strModelResourceID_);
         if (_MaterialResourceID.empty())
         {
             throw std::invalid_argument("Cam workpiece material requires model resource id");

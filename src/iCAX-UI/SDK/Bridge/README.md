@@ -11,5 +11,5 @@
 
 本模块只处理 JS 与宿主 bridge 的入口差异，不解释 SDO 业务语义，不解析 PDO 数据。产品页面不直接依赖本目录。
 
-宿主 bridge 的必需能力是 application/product/scene channel 注册、`postSDOFrame`、`subscribeSDOFrames` 和直接资源访问 `requestResource`。`openFileDialog(options)` 是可选 UI 容器能力，CEF 容器会提供；没有该方法时，产品页面仍可以让用户手动输入路径。
+宿主 bridge 的必需能力是 application/product/scene channel 注册、`postSDOFrame`、`subscribeSDOFrames` 和直接资源访问 `requestResource`。资源请求只传 method、完整 URL、headers 和 body；URL 自身决定 Application/Product/Project/Scene 资源库。`openFileDialog(options)` 是可选 UI 容器能力，CEF 容器会提供；没有该方法时，产品页面仍可以让用户手动输入路径。
 

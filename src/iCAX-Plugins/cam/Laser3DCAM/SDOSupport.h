@@ -232,7 +232,7 @@ VariantArray _NormalizeDoubleArray(IN const VariantArray& Values_, IN const std:
 VariantArray _NormalizeDirectionArray(IN const VariantArray& Values_, IN const std::string& strFieldName_);
 
 iCAX::Resource::CResourceInfo _MakeResourceInfo(
-    IN const std::string& strSource_,
+    IN const std::string& strResourceURL_,
     IN const std::string& strName_,
     IN const std::string& strKind_,
     IN iCAX::Resource::EResourcePersistenceMode Persistence_,

@@ -4,4 +4,4 @@
 
 ## 目录结构
 
-- `ResourcesTest/`：基于 GoogleTest 的 Resources 单元测试工程，覆盖 `CResourceLibrary`、`CResourcePool`、路径即资源身份和 `CResourceLoaderRegistry`。
+- `ResourcesTest/`：基于 GoogleTest 的 Resources 单元测试工程，覆盖 `CResourceLibrary`、`CResourcePool`、分层 GUID Resource URL、REST 条件请求、POST/PUT 创建语义和 `CResourceLoaderRegistry`。

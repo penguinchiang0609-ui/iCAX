@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Data/uuid.h"
+#include "Resources/ResourceLibrary.h"
 
 #include <string>
 
@@ -19,28 +20,35 @@ namespace iCAX
         }
 
         inline std::string MakeMachineMaterialResourceID(
+            IN const iCAX::Resource::CResourceLibrary& Resources_,
             IN const std::string& strResourceScopeID_,
             IN const std::string& strAttachmentKind_,
             IN size_t nSourceIndex_)
         {
             return strResourceScopeID_.empty()
                 ? std::string()
-                : strResourceScopeID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "#render.material";
+                : Resources_.MakeNamedResourceURL(
+                    strResourceScopeID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "/render.material");
         }
 
-        inline std::string MakeMachineVisualMaterialResourceID(IN const std::string& strResourceScopeID_, IN size_t nVisualIndex_)
+        inline std::string MakeMachineVisualMaterialResourceID(
+            IN const iCAX::Resource::CResourceLibrary& Resources_,
+            IN const std::string& strResourceScopeID_,
+            IN size_t nVisualIndex_)
         {
-            return MakeMachineMaterialResourceID(strResourceScopeID_, "visual", nVisualIndex_);
+            return MakeMachineMaterialResourceID(Resources_, strResourceScopeID_, "visual", nVisualIndex_);
         }
 
         inline std::string MakeMachineTextureResourceID(
+            IN const iCAX::Resource::CResourceLibrary& Resources_,
             IN const std::string& strResourceScopeID_,
             IN const std::string& strAttachmentKind_,
             IN size_t nSourceIndex_)
         {
             return strResourceScopeID_.empty()
                 ? std::string()
-                : strResourceScopeID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "#render.texture";
+                : Resources_.MakeNamedResourceURL(
+                    strResourceScopeID_ + "/" + strAttachmentKind_ + "/" + std::to_string(nSourceIndex_) + "/render.texture");
         }
     }
 }

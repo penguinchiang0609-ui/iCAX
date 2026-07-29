@@ -73,8 +73,8 @@ namespace iCAX
         /*
         * @brief Project 是项目级管理容器。
         * @details
-        *   Project 不拥有 Repository、Universe、ResourceLibrary、PDOHub、SDOChannel 或工作线程。
-        *   这些运行期对象归属 Scene。Project 启动时会创建一个 MainScene；
+        *   Project 拥有项目级 ResourceLibrary，但不拥有 Repository、Universe、PDOHub、SDOChannel 或工作线程。
+        *   Scene 级运行期对象仍归属各 Scene。Project 启动时会创建一个 MainScene；
         *   需要临时编辑、导入预览或刀路局部编辑时，由已有 Scene 打开子 Scene。
         */
         class _PROJECT_EXP CProject final
@@ -137,6 +137,8 @@ namespace iCAX
             const iCAX::Behaviour::IUniverse& MainSceneUniverse() const;
             iCAX::Resource::CResourceLibrary& MainSceneResources();
             const iCAX::Resource::CResourceLibrary& MainSceneResources() const;
+            iCAX::Resource::CResourceLibrary& Resources();
+            const iCAX::Resource::CResourceLibrary& Resources() const;
             bool MainSceneHasPDOHub() const;
             CMainScenePDODescriptor GetMainScenePDODescriptor() const;
             iCAX::PDO::IPDOHub& MainScenePDOHub();
@@ -175,6 +177,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> m_pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pResourceLoaderRegistry;
+            iCAX::Resource::CResourceLibrary m_Resources;
             std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> m_pSDOChannelRegistry;
             iCAX::Data::uuid m_MainSceneID;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProjectScene>> m_Scenes;

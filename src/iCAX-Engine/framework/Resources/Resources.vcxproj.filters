@@ -63,6 +63,9 @@
     <ClInclude Include="ResourceTypeName.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="ResourceURL.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="ResourceVersionStorage.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -105,6 +108,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ResourceLibrary.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ResourceURL.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

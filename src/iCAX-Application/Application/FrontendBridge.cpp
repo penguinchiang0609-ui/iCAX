@@ -350,44 +350,26 @@ iCAX::Application::CFrontendBridge::RequestResource(
     IN const CFrontendResourceRequest& Request_)
 {
     auto& _Runtime = m_pImpl->RequireRuntime();
-    const auto _ProjectID = _ParseChannelID(Request_.ProjectID);
-    const auto _SceneID = _ParseChannelID(Request_.SceneID);
-
-    std::shared_ptr<iCAX::Project::CProjectScene> _pScene;
-    for (const auto& _pProductRuntime : _Runtime.GetProductRuntimes())
+    iCAX::Resource::CResourceURL _URL;
+    try
     {
-        if (!_pProductRuntime)
-        {
-            continue;
-        }
-
-        const auto _pCatalog =
-            _pProductRuntime->FindProjectCatalogByProjectID(_ProjectID);
-        if (!_pCatalog)
-        {
-            continue;
-        }
-
-        const auto _pProject = _pCatalog->FindProject(_ProjectID);
-        if (!_pProject)
-        {
-            continue;
-        }
-
-        _pScene = _pProject->GetScene(_SceneID);
-        if (_pScene)
-        {
-            break;
-        }
+        _URL =
+            iCAX::Resource::ParseResourceURL(
+                Request_.URL);
     }
-
-    if (!_pScene)
+    catch (const std::invalid_argument&)
     {
-        throw std::runtime_error(
-            "Scene runtime is not found: " +
-            Request_.ProjectID +
-            "/" +
-            Request_.SceneID);
+        CFrontendResourceResponse _Response;
+        _Response.nStatus = 400;
+        return _Response;
+    }
+    auto _pLibrary =
+        _Runtime.ResolveResourceLibrary(_URL);
+    if (!_pLibrary)
+    {
+        CFrontendResourceResponse _Response;
+        _Response.nStatus = 404;
+        return _Response;
     }
 
     iCAX::Resource::CResourceRequest _Request;
@@ -401,7 +383,7 @@ iCAX::Application::CFrontendBridge::RequestResource(
         CFrontendResourceResponse _Response;
         _Response.nStatus = 405;
         _Response.Headers["Allow"] =
-            "HEAD, GET, PUT, DELETE, OPTIONS";
+            "HEAD, GET, POST, PUT, DELETE, OPTIONS";
         return _Response;
     }
     _Request.URL = Request_.URL;
@@ -413,7 +395,7 @@ iCAX::Application::CFrontendBridge::RequestResource(
     }
 
     const auto _ResourceResponse =
-        _pScene->Resources().Request(_Request);
+        _pLibrary->Request(_Request);
 
     CFrontendResourceResponse _Response;
     _Response.nStatus = _ResourceResponse.nStatus;

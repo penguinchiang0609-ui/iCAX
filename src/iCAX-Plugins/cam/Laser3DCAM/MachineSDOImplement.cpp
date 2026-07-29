@@ -1381,11 +1381,13 @@ namespace
     }
 
     std::string _MakeMachineGeometryResourceID(
+        IN const iCAX::Resource::CResourceLibrary& Resources_,
         IN const iCAX::Data::uuid& MachineID_,
         IN const std::string& strAttachmentKind_,
         IN size_t nIndex_)
     {
-        return "machine/" + iCAX::Data::to_string(MachineID_) + "/" + strAttachmentKind_ + "/" + std::to_string(nIndex_) + "#render.mesh";
+        return Resources_.MakeNamedResourceURL(
+            "machine/" + iCAX::Data::to_string(MachineID_) + "/" + strAttachmentKind_ + "/" + std::to_string(nIndex_) + "/render.mesh");
     }
 
     std::string _NormalizeFileUri(IN std::string Uri_)
@@ -1587,12 +1589,11 @@ namespace
         IN const std::string& strAttachmentKind_,
         IN size_t nIndex_)
     {
-        const auto _ResourceID = _MakeMachineGeometryResourceID(MachineID_, strAttachmentKind_, nIndex_);
+        const auto _ResourceID = _MakeMachineGeometryResourceID(Scene_.Resources(), MachineID_, strAttachmentKind_, nIndex_);
         auto _Mesh = std::make_shared<iCAX::Render::SRenderMeshData>(_MakeMachinePrimitiveRenderMesh(Source_));
         _Mesh->nDataVersion = _NextMachineRenderResourceVersion();
 
         iCAX::Resource::CResourceInfo _Info;
-        _Info.Source = _ResourceID;
         _Info.Name = (strMachineName_.empty() ? std::string("Machine") : strMachineName_) + "/" + strLinkName_ + "/" + strNodeName_;
         _Info.Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
         _Info.nVersion = _Mesh->nDataVersion;
@@ -1620,7 +1621,8 @@ namespace
         }
 
         const auto _ResolvedPath = _ResolveMachineTextureUri(Description_, _TextureURI);
-        const auto _ResourceID = iCAX::CAM::MakeMachineTextureResourceID(strResourceScopeID_, strAttachmentKind_, nIndex_);
+        const auto _ResourceID = iCAX::CAM::MakeMachineTextureResourceID(
+            Scene_.Resources(), strResourceScopeID_, strAttachmentKind_, nIndex_);
         if (_ResourceID.empty())
         {
             throw std::invalid_argument("Machine texture resource id cannot be empty");
@@ -1657,7 +1659,8 @@ namespace
         IN const std::string& strAttachmentKind_,
         IN size_t nIndex_)
     {
-        const auto _ResourceID = iCAX::CAM::MakeMachineMaterialResourceID(strResourceScopeID_, strAttachmentKind_, nIndex_);
+        const auto _ResourceID = iCAX::CAM::MakeMachineMaterialResourceID(
+            Scene_.Resources(), strResourceScopeID_, strAttachmentKind_, nIndex_);
         if (_ResourceID.empty())
         {
             throw std::invalid_argument("Machine material resource id cannot be empty");
@@ -1958,10 +1961,12 @@ namespace
         IN const iCAX::CAM::SMachineCollisionData& Collision_);
 
     std::string _MakeMachineElementRenderMeshResourceID(
+        IN const iCAX::Resource::CResourceLibrary& Resources_,
         IN const iCAX::Data::uuid& MachineID_,
         IN const iCAX::Data::uuid& ElementEntityID_)
     {
-        return "machine/" + iCAX::Data::to_string(MachineID_) + "/element/" + iCAX::Data::to_string(ElementEntityID_) + "#render.mesh";
+        return Resources_.MakeNamedResourceURL(
+            "machine/" + iCAX::Data::to_string(MachineID_) + "/element/" + iCAX::Data::to_string(ElementEntityID_) + "/render.mesh");
     }
 
     ObjectMap _MakeVisualAttachmentPayload(
@@ -2081,7 +2086,8 @@ namespace
 
         _AggregateMesh.nDataVersion = _NextMachineRenderResourceVersion();
         const auto _MachineID = pElement_->GetMachineID();
-        const auto _RenderMeshResourceID = _MakeMachineElementRenderMeshResourceID(_MachineID, pElementEntity_->GetID());
+        const auto _RenderMeshResourceID =
+            _MakeMachineElementRenderMeshResourceID(Scene_.Resources(), _MachineID, pElementEntity_->GetID());
         auto _pAggregateMesh = std::make_shared<iCAX::Render::SRenderMeshData>(_AggregateMesh);
 
         auto _pMachineEntity = Scene_.Database().GetEntity(_MachineID);

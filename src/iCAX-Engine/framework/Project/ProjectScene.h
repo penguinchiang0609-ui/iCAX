@@ -242,6 +242,9 @@ namespace iCAX
 
             /*
             * @brief 获取 Scene 资源库。
+            * @details
+            *   ResourceLibrary 是线程安全的数据面入口，可以由 Scene worker、
+            *   前端 Resource API 或后端服务线程直接访问。
             */
             iCAX::Resource::CResourceLibrary& Resources() override;
             const iCAX::Resource::CResourceLibrary& Resources() const override;
