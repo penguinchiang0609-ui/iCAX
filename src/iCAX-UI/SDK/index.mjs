@@ -2,6 +2,13 @@ export { connectApplication } from "./runtime.mjs";
 export { createBridge, validateBridge } from "./Bridge/createBridge.mjs";
 export { MockHostBridge } from "./Bridge/mockHostBridge.mjs";
 export { ResourceClient } from "./Resources/resourceClient.mjs";
+export { PDOClient } from "./PDO/pdoClient.mjs";
+export { PDOStore } from "./PDO/pdoStore.mjs";
+export {
+  EntityViewClient,
+  EntityViewPDOLayout,
+  parseEntityViewPDO,
+} from "./EntityView/index.mjs";
 export {
   allocateResourceURL,
   generateResourceId,

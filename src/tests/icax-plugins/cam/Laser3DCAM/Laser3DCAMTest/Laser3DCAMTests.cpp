@@ -11,7 +11,6 @@
 #include <Laser3DCAM/ToolpathComponents.h>
 #include <Laser3DCAM/ToolpathOrderService.h>
 #include <Laser3DCAM/ToolpathResources.h>
-#include <Laser3DCAM/ViewDefinitions.h>
 #include <Laser3DCAM/WorkpieceComponents.h>
 
 #include <ApplicationContext/IApplicationContext.h>
@@ -20,12 +19,14 @@
 #include <Data/Variant.h>
 #include <Data/VariantSerializer.h>
 #include <Database/IEntity.h>
+#include <Database/EntityWhere.h>
 #include <Database/IMetaRegistry.h>
 #include <Database/IRepository.h>
 #include <Database/MetaRegistrationCatalog.h>
 #include <GeometryData/GeometryData.h>
 #include <SDO/SDOChannel.h>
 #include <PDO/IPDOHub.h>
+#include <PDO/PDOLease.h>
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
 #include <ProjectContext/ISceneContext.h>
@@ -39,7 +40,8 @@
 #include <Services/ServiceProvider.h>
 #include <Services/ServiceRegistrationCatalog.h>
 #include <Transform/Transform.h>
-#include <View/IViewContentService.h>
+#include <EntityViewRuntime/EntityViewPDO.h>
+#include <EntityViewRuntime/EntityViewSet.h>
 
 
 namespace
@@ -216,9 +218,13 @@ namespace
             , m_SceneChannelID(iCAX::Data::GenerateNewUUID())
             , m_pMetaRegistry(iCAX::Database::CreateMetaRegistry())
             , m_pRepository(iCAX::Database::GenerateRepository(iCAX::Data::GenerateNewUUID(), m_pMetaRegistry))
+            , m_pPDOHub(iCAX::PDO::GeneratePDOHub(iCAX::PDO::CPDOHubCreateInfo{}))
             , m_pChannel(std::make_shared<iCAX::Interaction::CSDOChannel>())
         {
             iCAX::Database::CMetaRegistrationCatalog::ReplayAll(*m_pMetaRegistry);
+            m_pEntityViews = std::make_unique<iCAX::View::CEntityViewSet>(
+                *m_pRepository,
+                *m_pPDOHub);
             m_Resources.SetScope(
                 iCAX::Resource::MakeSceneResourceScope(
                     "icax-test",
@@ -284,17 +290,27 @@ namespace
 
         bool HasPDOHub() const override
         {
-            return false;
+            return true;
         }
 
         iCAX::PDO::IPDOHub& PDOHub() override
         {
-            throw std::logic_error("PDO hub is not used by Laser3DCAM tests");
+            return *m_pPDOHub;
         }
 
         const iCAX::PDO::IPDOHub& PDOHub() const override
         {
-            throw std::logic_error("PDO hub is not used by Laser3DCAM tests");
+            return *m_pPDOHub;
+        }
+
+        bool HasEntityViews() const override
+        {
+            return m_pEntityViews != nullptr;
+        }
+
+        iCAX::View::CEntityViewSet& EntityViews() const override
+        {
+            return *m_pEntityViews;
         }
 
         iCAX::Services::CServiceProvider& Services() const override
@@ -308,6 +324,8 @@ namespace
         iCAX::Data::uuid m_SceneChannelID;
         std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
+        std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
+        std::unique_ptr<iCAX::View::CEntityViewSet> m_pEntityViews;
         iCAX::Resource::CResourceLibrary m_Resources;
         mutable iCAX::Services::CServiceProvider m_ServiceProvider;
         std::shared_ptr<iCAX::Interaction::CSDOChannel> m_pChannel;
@@ -576,13 +594,10 @@ TEST(Laser3DCAMFeatureRecognitionTest, RecognizesInnerWireAsHoleFeature)
     ASSERT_EQ(1u, _Result.Features.front().PreviewCurves.size());
 }
 
-TEST(Laser3DCAMViewContentTest, ProductViewsProjectSceneEntitiesWithoutPersistingMembership)
+TEST(Laser3DCAMEntityViewTest, PublishesOnlyAtFrameBoundaryAndSharesEquivalentBackendView)
 {
     CTestSceneContext _Scene;
-    iCAX::Services::CServiceProvider _Provider;
-    RegisterLaserServices(_Provider);
-    auto _pService = _Provider.Resolve<iCAX::View::IViewContentService>();
-    ASSERT_NE(nullptr, _pService);
+    auto& _EntityViews = _Scene.EntityViews();
 
     const auto _MachineID = iCAX::Data::GenerateNewUUID();
     const auto _WorkpieceID = iCAX::Data::GenerateNewUUID();
@@ -593,190 +608,129 @@ TEST(Laser3DCAMViewContentTest, ProductViewsProjectSceneEntitiesWithoutPersistin
     ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
     ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::CAM::CWorkpieceComponent>());
 
-    const auto _ToIDs = [](IN const iCAX::View::SViewContent& Content_)
+    using Where = iCAX::Database::CEntityWhereBuilder;
+    const auto _MachineWhere = Where::Build(Where::All({
+        Where::Has<iCAX::CAM::CMachineElementComponent>(),
+        Where::Has<iCAX::RenderInteraction::CRenderInstanceComponent>(),
+    }));
+    const auto _FirstHandle = _EntityViews.GetOrCreate(_MachineWhere);
+    const auto _SecondHandle = _EntityViews.GetOrCreate(_MachineWhere);
+    ASSERT_FALSE(_FirstHandle.ViewID.is_nil());
+    EXPECT_EQ(_FirstHandle.ViewID, _SecondHandle.ViewID);
+    EXPECT_EQ(_FirstHandle.nPDOID, _SecondHandle.nPDOID);
+    ASSERT_TRUE(_Scene.PDOHub().HasSlot(_FirstHandle.nPDOID));
+    EXPECT_EQ(
+        iCAX::View::GetEntityViewPDOPayloadSize(
+            iCAX::View::kDefaultEntityViewCapacity),
+        _FirstHandle.nPDOPayloadSize);
+
+    const auto _ReadSnapshot = [&]()
     {
-        std::set<std::string> _IDs;
-        for (const auto& _Object : Content_.Objects)
+        _Scene.PDOHub().SwapOutSlot();
+        iCAX::PDO::CPDOReadLease _Lease(
+            _Scene.PDOHub().GetSlot(_FirstHandle.nPDOID));
+        const auto& _Header =
+            _Lease.As<iCAX::View::SEntityViewPDOHeader>();
+        std::vector<iCAX::Data::uuid> _IDs;
+        const auto* _pBytes = static_cast<const uint8_t*>(_Lease.Data());
+        for (uint32_t _Index = 0; _Index < _Header.nEntityCount; ++_Index)
         {
-            _IDs.insert(iCAX::Data::to_string(_Object.EntityID));
+            std::array<uint8_t, 16> _Bytes{};
+            std::memcpy(
+                _Bytes.data(),
+                _pBytes + sizeof(iCAX::View::SEntityViewPDOHeader)
+                    + static_cast<size_t>(_Index) * _Bytes.size(),
+                _Bytes.size());
+            _IDs.emplace_back(_Bytes);
         }
-        return _IDs;
+
+        const auto _nUsedSize =
+            sizeof(iCAX::View::SEntityViewPDOHeader)
+            + static_cast<size_t>(_Header.nEntityCount) * 16;
+        const bool _bUnusedBytesAreZero = std::all_of(
+            _pBytes + _nUsedSize,
+            _pBytes + _Lease.PayloadCapacity(),
+            [](uint8_t nValue_) { return nValue_ == 0; });
+        return std::make_tuple(
+            _Header.nRevision,
+            std::move(_IDs),
+            _bUnusedBytesAreZero);
     };
 
-    const auto _MachineContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine);
-    const auto _WorkpieceContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kWorkpiece);
-    const auto _GeneralContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kGeneral);
-    EXPECT_EQ(std::set<std::string>{ iCAX::Data::to_string(_MachineID) }, _ToIDs(_MachineContent));
-    EXPECT_EQ(std::set<std::string>{ iCAX::Data::to_string(_WorkpieceID) }, _ToIDs(_WorkpieceContent));
-    EXPECT_EQ(
-        (std::set<std::string>{ iCAX::Data::to_string(_MachineID), iCAX::Data::to_string(_WorkpieceID) }),
-        _ToIDs(_GeneralContent));
-    EXPECT_EQ(_MachineContent.nRevision, _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine).nRevision);
+    _EntityViews.Publish();
+    const auto [_nInitialRevision, _InitialIDs, _bInitialPaddingIsZero] =
+        _ReadSnapshot();
+    ASSERT_EQ(1u, _InitialIDs.size());
+    EXPECT_EQ(_MachineID, _InitialIDs.front());
+    EXPECT_TRUE(_bInitialPaddingIsZero);
 
     ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::Transform::CTransformComponent>());
-    EXPECT_EQ(_MachineContent.nRevision, _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine).nRevision);
+    _EntityViews.Publish();
+    const auto [_nUnchangedRevision, _UnchangedIDs, _bUnchangedPaddingIsZero] =
+        _ReadSnapshot();
+    EXPECT_EQ(_nInitialRevision, _nUnchangedRevision);
+    EXPECT_EQ(_InitialIDs, _UnchangedIDs);
+    EXPECT_TRUE(_bUnchangedPaddingIsZero);
 
     const auto _SecondMachineID = iCAX::Data::GenerateNewUUID();
     auto _pSecondMachine = _Scene.Database().CreateEntity(_SecondMachineID);
     ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
     ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
-    const auto _UpdatedMachineContent = _pService->GetContent(_Scene, iCAX::CAM::Views::kMachine);
-    EXPECT_GT(_UpdatedMachineContent.nRevision, _MachineContent.nRevision);
+
+    const auto [_nBeforeFrameEndRevision, _BeforeFrameEndIDs, _bBeforeFrameEndPaddingIsZero] =
+        _ReadSnapshot();
+    EXPECT_EQ(_nInitialRevision, _nBeforeFrameEndRevision);
+    EXPECT_EQ(_InitialIDs, _BeforeFrameEndIDs);
+    EXPECT_TRUE(_bBeforeFrameEndPaddingIsZero);
+
+    _EntityViews.Publish();
+    const auto [_nUpdatedRevision, _UpdatedIDs, _bUpdatedPaddingIsZero] =
+        _ReadSnapshot();
+    EXPECT_GT(_nUpdatedRevision, _nInitialRevision);
     EXPECT_EQ(
-        (std::set<std::string>{ iCAX::Data::to_string(_MachineID), iCAX::Data::to_string(_SecondMachineID) }),
-        _ToIDs(_UpdatedMachineContent));
+        (std::set<iCAX::Data::uuid>{ _MachineID, _SecondMachineID }),
+        (std::set<iCAX::Data::uuid>(
+            _UpdatedIDs.begin(),
+            _UpdatedIDs.end())));
+    EXPECT_TRUE(_bUpdatedPaddingIsZero);
+
+    EXPECT_TRUE(_EntityViews.Release(_FirstHandle.ViewID));
+    EXPECT_TRUE(_Scene.PDOHub().HasSlot(_FirstHandle.nPDOID));
+    EXPECT_TRUE(_EntityViews.Release(_SecondHandle.ViewID));
+    EXPECT_FALSE(_Scene.PDOHub().HasSlot(_FirstHandle.nPDOID));
 }
 
-TEST(Laser3DCAMViewContentTest, ViewInstancesOwnIndependentProjectedRenderScenes)
+TEST(Laser3DCAMEntityViewTest, SceneOwnedSetReleasesOutstandingViewsOnDestruction)
 {
-    CTestApplicationContext _Application;
-    CTestProductContext _Product;
-    CTestProjectContext _Project;
-    CTestSceneContext _Scene;
-    _Scene.Services().RegisterSingleton<
-        iCAX::Render::IRenderService,
-        iCAX::PDORenderService::CPDORenderService>();
+    auto _pMetaRegistry = iCAX::Database::CreateMetaRegistry();
+    auto _pRepository = iCAX::Database::GenerateRepository(
+        iCAX::Data::GenerateNewUUID(),
+        _pMetaRegistry);
+    auto _pPDOHub =
+        iCAX::PDO::GeneratePDOHub(iCAX::PDO::CPDOHubCreateInfo{});
+    const auto _Where =
+        iCAX::Database::CEntityWhereBuilder::MatchAll();
 
-    iCAX::Services::CServiceProvider _Provider;
-    RegisterLaserServices(_Provider);
-    auto _pViewService = _Provider.Resolve<iCAX::View::IViewContentService>();
-    auto _pRenderService = _Scene.Services().Resolve<iCAX::Render::IRenderService>();
-    ASSERT_NE(nullptr, _pViewService);
-    ASSERT_NE(nullptr, _pRenderService);
-
-    const auto _MachineID = iCAX::Data::GenerateNewUUID();
-    const auto _WorkpieceID = iCAX::Data::GenerateNewUUID();
-    auto _pMachine = _Scene.Database().CreateEntity(_MachineID);
-    ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
-    ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
-    auto _pWorkpiece = _Scene.Database().CreateEntity(_WorkpieceID);
-    ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
-    ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::CAM::CWorkpieceComponent>());
-
-    const auto _SourceSceneID =
-        iCAX::Render::MakeRenderSceneID(_Scene.GetSceneID());
-    ASSERT_TRUE(_pRenderService->CreateScene(
-        _Project.GetProjectID(),
-        _SourceSceneID));
-
-    const auto _MakeMesh = [](IN const std::string& strName_, IN uint64_t nVersion_)
+    iCAX::PDO::PDOID _nPDOID = 0;
     {
-        iCAX::Render::SRenderMeshData _Mesh;
-        _Mesh.nGeometryID = iCAX::Render::MakeRenderGeometryID(strName_);
-        _Mesh.nDataVersion = nVersion_;
-        _Mesh.Positions = {
-            { 0.0f, 0.0f, 0.0f },
-            { 1.0f, 0.0f, 0.0f },
-            { 0.0f, 1.0f, 0.0f },
-        };
-        _Mesh.Indices = { 0, 1, 2 };
-        return _Mesh;
-    };
-    const auto _MachineMesh = _MakeMesh("test.view.machine", 1);
-    const auto _WorkpieceMesh = _MakeMesh("test.view.workpiece", 2);
-    ASSERT_TRUE(_pRenderService->UpsertMesh(
-        _Project.GetProjectID(),
-        _SourceSceneID,
-        _MachineMesh));
-    ASSERT_TRUE(_pRenderService->UpsertMesh(
-        _Project.GetProjectID(),
-        _SourceSceneID,
-        _WorkpieceMesh));
+        iCAX::View::CEntityViewSet _EntityViews(
+            *_pRepository,
+            *_pPDOHub);
+        const auto _First = _EntityViews.GetOrCreate(_Where);
+        const auto _Second = _EntityViews.GetOrCreate(_Where);
+        EXPECT_EQ(_First.ViewID, _Second.ViewID);
+        EXPECT_EQ(1u, _EntityViews.Size());
+        _nPDOID = _First.nPDOID;
+        EXPECT_TRUE(_pPDOHub->HasSlot(_nPDOID));
+    }
 
-    const auto _MakeObject = [](
-        IN const iCAX::Data::uuid& EntityID_,
-        IN const iCAX::Data::uuid& GeometryID_,
-        IN uint64_t nVersion_)
-    {
-        iCAX::Render::SRenderInstanceData _Object;
-        _Object.nObjectID = EntityID_;
-        _Object.nGeometryID = GeometryID_;
-        _Object.nDataVersion = nVersion_;
-        return _Object;
-    };
-    ASSERT_TRUE(_pRenderService->SetObjects(
-        _Project.GetProjectID(),
-        _SourceSceneID,
-        {
-            _MakeObject(_MachineID, _MachineMesh.nGeometryID, 3),
-            _MakeObject(_WorkpieceID, _WorkpieceMesh.nGeometryID, 4),
-        }));
+    EXPECT_FALSE(_pPDOHub->HasSlot(_nPDOID));
 
-    const auto _MachineContent = _pViewService->OpenView(
-        _Project,
-        _Scene,
-        iCAX::CAM::Views::kMachine);
-    const auto _WorkpieceContent = _pViewService->OpenView(
-        _Project,
-        _Scene,
-        iCAX::CAM::Views::kWorkpiece);
-    ASSERT_FALSE(_MachineContent.InstanceID.is_nil());
-    ASSERT_FALSE(_WorkpieceContent.InstanceID.is_nil());
-    EXPECT_NE(_MachineContent.InstanceID, _WorkpieceContent.InstanceID);
-    ASSERT_EQ(1u, _MachineContent.Outputs.size());
-    ASSERT_EQ(1u, _WorkpieceContent.Outputs.size());
-
-    const auto _MachineRenderSceneID = std::stoull(
-        _MachineContent.Outputs.front().Properties.at("renderSceneId").To<std::string>());
-    const auto _WorkpieceRenderSceneID = std::stoull(
-        _WorkpieceContent.Outputs.front().Properties.at("renderSceneId").To<std::string>());
-    EXPECT_NE(_MachineRenderSceneID, _WorkpieceRenderSceneID);
-
-    const auto _MachineSnapshot = _pRenderService->GetSceneSnapshot(
-        _Project.GetProjectID(),
-        _MachineRenderSceneID);
-    const auto _WorkpieceSnapshot = _pRenderService->GetSceneSnapshot(
-        _Project.GetProjectID(),
-        _WorkpieceRenderSceneID);
-    ASSERT_EQ(1u, _MachineSnapshot.Objects.size());
-    ASSERT_EQ(1u, _WorkpieceSnapshot.Objects.size());
-    EXPECT_EQ(_MachineID, _MachineSnapshot.Objects.front().nObjectID);
-    EXPECT_EQ(_WorkpieceID, _WorkpieceSnapshot.Objects.front().nObjectID);
-
-    const auto _SecondMachineID = iCAX::Data::GenerateNewUUID();
-    const auto _SecondMachineMesh = _MakeMesh("test.view.machine.second", 5);
-    auto _pSecondMachine = _Scene.Database().CreateEntity(_SecondMachineID);
-    ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
-    ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
-    ASSERT_TRUE(_pRenderService->UpsertMesh(
-        _Project.GetProjectID(),
-        _SourceSceneID,
-        _SecondMachineMesh));
-    ASSERT_TRUE(_pRenderService->SetObjects(
-        _Project.GetProjectID(),
-        _SourceSceneID,
-        {
-            _MakeObject(_MachineID, _MachineMesh.nGeometryID, 3),
-            _MakeObject(_WorkpieceID, _WorkpieceMesh.nGeometryID, 4),
-            _MakeObject(_SecondMachineID, _SecondMachineMesh.nGeometryID, 6),
-        }));
-
-    _pViewService->OnSceneTick(
-        _Application,
-        _Product,
-        _Project,
-        _Scene,
-        0.016,
-        1.0);
-    const auto _UpdatedMachineSnapshot = _pRenderService->GetSceneSnapshot(
-        _Project.GetProjectID(),
-        _MachineRenderSceneID);
-    EXPECT_EQ(2u, _UpdatedMachineSnapshot.Objects.size());
-
-    EXPECT_TRUE(_pViewService->CloseView(
-        _Project,
-        _Scene,
-        _MachineContent.InstanceID));
-    EXPECT_TRUE(_pViewService->CloseView(
-        _Project,
-        _Scene,
-        _WorkpieceContent.InstanceID));
-    EXPECT_FALSE(_pRenderService->HasScene(
-        _Project.GetProjectID(),
-        _MachineRenderSceneID));
-    EXPECT_FALSE(_pRenderService->HasScene(
-        _Project.GetProjectID(),
-        _WorkpieceRenderSceneID));
+    auto _pProbe = _pRepository->CreateEntityView(_Where);
+    _pRepository->ReleaseEntityView(_pProbe);
+    EXPECT_THROW(
+        _pRepository->ReleaseEntityView(_pProbe),
+        std::invalid_argument);
 }
 
 TEST(Laser3DCAMManifestTest, StartupComponentMatchesRegisteredSceneBootstrapComponent)

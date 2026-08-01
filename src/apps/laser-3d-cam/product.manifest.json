@@ -38,7 +38,7 @@
     },
     "modules": {
       "dependencies": [
-        "../../${Platform}/${Configuration}/View.dll",
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
         "../../${Platform}/${Configuration}/RenderData.dll",
         "../../${Platform}/${Configuration}/RenderService.dll",
         "../../${Platform}/${Configuration}/RenderPDO.dll",
@@ -67,7 +67,7 @@
         "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
       "sdo": [
-        "../../${Platform}/${Configuration}/View.dll",
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
         "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ]
     },

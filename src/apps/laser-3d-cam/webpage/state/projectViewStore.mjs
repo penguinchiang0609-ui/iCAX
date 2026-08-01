@@ -56,21 +56,14 @@ export function getProjectArea(view, areaId) {
 export function setProjectAreaViewContent(view, areaId, payload = {}) {
   const area = getProjectArea(view, areaId);
   const objects = Array.isArray(payload.objects) ? payload.objects : [];
-  const outputs = Array.isArray(payload.outputs) ? payload.outputs : [];
-  const renderOutput = outputs.find((output) => String(output?.type ?? "") === "render");
-  area.viewInstanceId = String(payload.viewInstanceId ?? area.viewInstanceId ?? "").trim();
+  const entityIds = Array.isArray(payload.entityIds)
+    ? payload.entityIds
+    : objects.map((object) => object?.entityId);
   area.viewContent = {
-    viewInstanceId: area.viewInstanceId,
-    viewDefinitionId: String(payload.viewDefinitionId ?? ""),
-    revision: Number(payload.revision ?? 0),
-    outputs,
-    renderSceneId: String(renderOutput?.properties?.renderSceneId ?? "").trim(),
-    entityIds: new Set(objects
-      .map((object) => String(object?.entityId ?? "").trim())
+    revision: String(payload.revision ?? "0"),
+    entityIds: new Set(entityIds
+      .map((entityId) => String(entityId ?? "").trim())
       .filter(Boolean)),
-    renderOverrides: new Map(objects
-      .filter((object) => object?.presentation && typeof object.presentation === "object")
-      .map((object) => [String(object.entityId ?? "").trim(), object.presentation])),
   };
   return area.viewContent;
 }
@@ -80,9 +73,9 @@ function getOrCreateArea(view, areaId) {
     layout: { ...DEFAULT_AREA_LAYOUT },
     selectedSceneObjectId: "",
     selectedMachineInstanceId: "",
-    viewInstanceId: "",
     viewContent: null,
     viewContentRequest: null,
+    entityViewReader: null,
   };
   return view.areas[areaId];
 }

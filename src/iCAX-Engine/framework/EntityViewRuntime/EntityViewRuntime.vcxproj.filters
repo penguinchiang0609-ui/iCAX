@@ -5,18 +5,17 @@
     <Filter Include="源文件"><UniqueIdentifier>{2daf345a-a112-41aa-bb24-41cde360f99f}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="EntityViewPDO.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="EntityViewSet.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="IViewContentService.h"><Filter>头文件</Filter></ClInclude>
     <ClInclude Include="pch.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ViewContent.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ViewContentService.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ViewExport.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="EntityViewRuntimeExport.h"><Filter>头文件</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="EntityViewPDO.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="EntityViewSDO.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="EntityViewSet.cpp"><Filter>源文件</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ViewContent.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ViewContentService.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ViewSDO.cpp"><Filter>源文件</Filter></ClCompile>
   </ItemGroup>
 </Project>

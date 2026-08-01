@@ -1,6 +1,8 @@
 import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
 import { ProjectSDO } from "../SDK/SDO/sdoMethod.mjs";
 import { PDOClient } from "../SDK/PDO/pdoClient.mjs";
+import { PDOStore } from "../SDK/PDO/pdoStore.mjs";
+import { EntityViewClient } from "../SDK/EntityView/entityViewClient.mjs";
 import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 
 export class SceneProxy {
@@ -19,10 +21,15 @@ export class SceneProxy {
     this.sceneId = sceneState.sceneId;
     this.sceneChannelId = sceneState.sceneChannelId;
     this.pdo = new PDOClient(sceneState.pdo, this.bridge);
+    this.pdoStore = new PDOStore();
     this.resources = new ResourceClient({
       bridge: this.bridge,
     });
     this.unsubscribers = new Set();
+    this.pdoStoreUnsubscribe = this.subscribeAll(
+      (event) => this.pdoStore.ingestEvent(event),
+    );
+    this.entityViews = new EntityViewClient(this);
   }
 
   updateState(sceneState) {
@@ -77,10 +84,12 @@ export class SceneProxy {
   }
 
   dispose() {
+    void this.entityViews.dispose();
     for (const unsubscribe of [...this.unsubscribers]) {
       unsubscribe();
     }
     this.unsubscribers.clear();
+    this.pdoStore.dispose();
     this.sdoClient.stop(this.sceneChannelId);
   }
 

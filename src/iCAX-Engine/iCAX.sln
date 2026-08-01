@@ -68,7 +68,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Resources", "framework\Reso
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Services", "framework\Services\Services.vcxproj", "{DFCC3994-1C4F-4423-8CA7-3C1E1CBDB847}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "View", "framework\View\View.vcxproj", "{A6F5442B-30DF-4D32-BD8E-85945E806B1D}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "EntityViewRuntime", "framework\EntityViewRuntime\EntityViewRuntime.vcxproj", "{A6F5442B-30DF-4D32-BD8E-85945E806B1D}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CAXHost", "..\apps\cax-host\backend\CAXHost\CAXHost.vcxproj", "{33624D99-F720-4A5C-A70E-E6B74264E91B}"
 EndProject

@@ -191,7 +191,7 @@
     <ProjectReference Include="..\..\iCAX-Engine\framework\Resources\Resources.vcxproj">
       <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Engine\framework\View\View.vcxproj">
+    <ProjectReference Include="..\..\iCAX-Engine\framework\EntityViewRuntime\EntityViewRuntime.vcxproj">
       <Project>{a6f5442b-30df-4d32-bd8e-85945e806b1d}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>

@@ -5,6 +5,7 @@
 
 #include "Behaviour/IBehaviourRegistry.h"
 #include "Database/IMetaRegistry.h"
+#include "EntityViewRuntime/EntityViewSet.h"
 
 
 namespace
@@ -174,6 +175,12 @@ iCAX::Project::CProjectScene::CProjectScene(
     , m_pRepository(iCAX::Database::GenerateRepository(m_SceneID, m_pMetaRegistry))
     , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
     , m_pPDOHub(CreateInfo_.bEnablePDOHub ? iCAX::PDO::GeneratePDOHub(CreateInfo_.PDOHubCreateInfo) : nullptr)
+    , m_pEntityViews(
+        m_pPDOHub
+            ? std::make_unique<iCAX::View::CEntityViewSet>(
+                *m_pRepository,
+                *m_pPDOHub)
+            : nullptr)
     , m_pRepositoryEventForwarder(std::make_shared<CRepositoryEventForwarder>(*this))
     , m_Resources(
         m_pResourceLoaderRegistry,
@@ -375,6 +382,22 @@ const iCAX::PDO::IPDOHub& iCAX::Project::CProjectScene::PDOHub() const
     return *m_pPDOHub;
 }
 
+bool iCAX::Project::CProjectScene::HasEntityViews() const
+{
+    return m_pEntityViews != nullptr;
+}
+
+iCAX::View::CEntityViewSet&
+iCAX::Project::CProjectScene::EntityViews() const
+{
+    EnsureSceneThreadAccess("Scene::EntityViews");
+    if (!m_pEntityViews)
+    {
+        throw std::logic_error("Scene EntityView set is not configured");
+    }
+    return *m_pEntityViews;
+}
+
 iCAX::Services::CServiceProvider& iCAX::Project::CProjectScene::Services() const
 {
     if (!m_pServiceProvider)
@@ -568,6 +591,10 @@ void iCAX::Project::CProjectScene::PostSwapPDO()
     m_pUniverse->PostSwapPDO();
     if (m_pPDOHub)
     {
+        if (m_pEntityViews)
+        {
+            m_pEntityViews->Publish();
+        }
         m_pPDOHub->SwapOutSlot();
     }
 }
@@ -585,6 +612,7 @@ void iCAX::Project::CProjectScene::Close()
         m_pUniverse->Cleanup(true);
         m_pUniverse.reset();
     }
+    m_pEntityViews.reset();
     if (m_pRepository && m_pRepositoryEventForwarder)
     {
         m_pRepository->RemoveObserver(m_pRepositoryEventForwarder);

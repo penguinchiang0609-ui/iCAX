@@ -75,8 +75,6 @@
     <ClInclude Include="WorkpieceComponents.h" />
     <ClInclude Include="WorkpieceSDOImplement.h" />
     <ClInclude Include="WorkpieceResourceKeys.h" />
-    <ClInclude Include="ViewDefinitions.h" />
-    <ClInclude Include="RenderViewOutputProvider.h" />
     <ClInclude Include="Laser3DCAMExport.h" />
   </ItemGroup>
   <ItemGroup>
@@ -102,8 +100,6 @@
     <ClCompile Include="SceneBootstrapBehaviour.cpp" />
     <ClCompile Include="ToolpathGenerationService.cpp" />
     <ClCompile Include="ToolpathOrderService.cpp" />
-    <ClCompile Include="ViewContentService.cpp" />
-    <ClCompile Include="RenderViewOutputProvider.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -160,7 +156,7 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\Services\Services.vcxproj">
       <Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\iCAX-Engine\framework\View\View.vcxproj">
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\EntityViewRuntime\EntityViewRuntime.vcxproj">
       <Project>{a6f5442b-30df-4d32-bd8e-85945e806b1d}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\common\Transform\Transform.vcxproj">

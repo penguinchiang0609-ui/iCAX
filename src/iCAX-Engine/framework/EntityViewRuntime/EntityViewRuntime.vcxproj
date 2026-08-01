@@ -10,9 +10,9 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{a6f5442b-30df-4d32-bd8e-85945e806b1d}</ProjectGuid>
-    <RootNamespace>View</RootNamespace>
+    <RootNamespace>EntityViewRuntime</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>View</ProjectName>
+    <ProjectName>EntityViewRuntime</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
@@ -31,7 +31,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_VIEW;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_ENTITY_VIEW_RUNTIME;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
@@ -44,26 +44,26 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="EntityViewPDO.h" />
+    <ClInclude Include="EntityViewSet.h" />
     <ClInclude Include="framework.h" />
-    <ClInclude Include="IViewContentService.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="ViewContent.h" />
-    <ClInclude Include="ViewContentService.h" />
-    <ClInclude Include="ViewExport.h" />
+    <ClInclude Include="EntityViewRuntimeExport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="EntityViewPDO.cpp" />
+    <ClCompile Include="EntityViewSDO.cpp" />
+    <ClCompile Include="EntityViewSet.cpp" />
     <ClCompile Include="pch.cpp"><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader></ClCompile>
-    <ClCompile Include="ViewContent.cpp" />
-    <ClCompile Include="ViewContentService.cpp" />
-    <ClCompile Include="ViewSDO.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj"><Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project></ProjectReference>
+    <ProjectReference Include="..\DatabaseLanguage\DatabaseLanguage.vcxproj"><Project>{ab9cfcc5-90ec-4b1a-80ea-c566c85568ba}</Project></ProjectReference>
     <ProjectReference Include="..\SDO\SDO.vcxproj"><Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project></ProjectReference>
     <ProjectReference Include="..\Database\Database.vcxproj"><Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project></ProjectReference>
+    <ProjectReference Include="..\PDO\PDO.vcxproj"><Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project></ProjectReference>
     <ProjectReference Include="..\ProjectContext\ProjectContext.vcxproj"><Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project></ProjectReference>
-    <ProjectReference Include="..\Services\Services.vcxproj"><Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project></ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

@@ -36,8 +36,6 @@
     <ClInclude Include="WorkpieceComponents.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="WorkpieceSDOImplement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="WorkpieceResourceKeys.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="ViewDefinitions.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="RenderViewOutputProvider.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="Laser3DCAMExport.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -66,8 +64,6 @@
     <ClCompile Include="URDFLoader.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathGenerationService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathOrderService.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="ViewContentService.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="RenderViewOutputProvider.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>

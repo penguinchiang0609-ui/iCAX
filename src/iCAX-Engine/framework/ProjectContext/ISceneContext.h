@@ -29,6 +29,11 @@ namespace iCAX
         class CServiceProvider;
     }
 
+    namespace View
+    {
+        class CEntityViewSet;
+    }
+
     namespace Project
     {
         /*
@@ -105,6 +110,17 @@ namespace iCAX
             */
             virtual iCAX::PDO::IPDOHub& PDOHub() = 0;
             virtual const iCAX::PDO::IPDOHub& PDOHub() const = 0;
+
+            /*
+            * @brief 当前 Scene 是否提供 EntityView PDO 集合。
+            */
+            virtual bool HasEntityViews() const;
+
+            /*
+            * @brief 获取当前 Scene 自有的 EntityView 集合。
+            * @details EntityView 是 Scene 运行期子对象，不属于 ServiceProvider。
+            */
+            virtual iCAX::View::CEntityViewSet& EntityViews() const;
 
             /*
             * @brief 获取当前 Scene 可用的服务容器。

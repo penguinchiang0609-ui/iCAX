@@ -31,11 +31,23 @@ const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
   minViewerWidth: 420,
   splitterTotalWidth: 12,
 });
-const AREA_VIEW_DEFINITION_IDS = Object.freeze({
-  machine: "icax.laser-3d-cam.view.machine",
-  workpiece: "icax.laser-3d-cam.view.workpiece",
-  machining: "icax.laser-3d-cam.view.machining",
-  view: "icax.laser-3d-cam.view.general",
+const AREA_ENTITY_VIEW_QUERIES = Object.freeze({
+  machine: Object.freeze({
+    language: "sql",
+    where: "WHERE HAS CMachineElementComponent AND HAS CRenderInstanceComponent",
+  }),
+  workpiece: Object.freeze({
+    language: "sql",
+    where: "WHERE HAS CWorkpieceComponent AND HAS CRenderInstanceComponent",
+  }),
+  machining: Object.freeze({
+    language: "sql",
+    where: "WHERE HAS CRenderInstanceComponent",
+  }),
+  view: Object.freeze({
+    language: "sql",
+    where: "WHERE HAS CRenderInstanceComponent",
+  }),
 });
 
 function getProjectOps() {
@@ -506,17 +518,18 @@ function mountRenderViewport(context, view) {
     });
   }
   if (view.viewportSceneProxy !== context.sceneProxy) {
+    for (const areaState of Object.values(view.areas ?? {})) {
+      void areaState.entityViewReader?.stop?.();
+      areaState.entityViewReader = null;
+      areaState.viewContent = null;
+      areaState.viewContentRequest = null;
+    }
     view.viewport.connectScene(context.sceneProxy);
     view.viewportSceneProxy = context.sceneProxy;
-    view.viewContentUnsubscribe?.();
-    view.viewContentUnsubscribe = context.sceneProxy?.subscribe?.(
-      "View.ContentChanged",
-      (event) => handleViewContentChanged(context, view, event),
-    ) ?? null;
   }
   const activeAreaId = normalizeCamTab(context.activeRibbonTabId);
   const area = getProjectArea(view, activeAreaId);
-  view.viewport.setRenderSceneId(area.viewContent?.renderSceneId ?? "");
+  view.viewport.setRenderSceneId(null);
   view.viewport.setVisibleEntityIds(area.viewContent?.entityIds ?? []);
   view.viewport.mount(host);
   attachViewCube(view, mount);
@@ -668,8 +681,8 @@ async function refreshSceneState(context, view) {
 
 async function ensureAreaViewContent(context, view, areaId, options = {}) {
   const { force = false, render = true } = options;
-  const definitionId = AREA_VIEW_DEFINITION_IDS[areaId];
-  if (!context.sceneProxy || !definitionId) {
+  const query = AREA_ENTITY_VIEW_QUERIES[areaId];
+  if (!context.sceneProxy || !query) {
     return null;
   }
 
@@ -677,31 +690,40 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
   if (area.viewContentRequest) {
     return area.viewContentRequest;
   }
-  if (area.viewContent && !force) {
+  if (area.entityViewReader) {
+    if (force) {
+      const snapshot = await area.entityViewReader.poll();
+      if (snapshot) {
+        applyAreaEntityViewSnapshot(context, view, areaId, snapshot, render);
+      }
+    }
     return area.viewContent;
   }
 
-  const sdoMethod = area.viewInstanceId ? "View.GetContent" : "View.Open";
-  const payload = area.viewInstanceId
-    ? { viewInstanceId: area.viewInstanceId }
-    : { viewDefinitionId: definitionId };
-  const request = context.sceneProxy
-    .invoke(sdoMethod, payload, { timeoutMs: 10000 })
-    .then((payload) => {
-      const content = setProjectAreaViewContent(view, areaId, payload);
-      if (view.activeAreaId === areaId) {
-        view.viewport?.setRenderSceneId(content.renderSceneId);
-        view.viewport?.setVisibleEntityIds(content.entityIds);
-        syncViewportSelection(view, view.scene);
-        if (render) {
-          renderProject(context, view);
-        }
+  const request = context.sceneProxy.entityViews
+    .start(query, {
+      pollIntervalMs: 100,
+      onChange: (snapshot) => {
+        applyAreaEntityViewSnapshot(
+          context,
+          view,
+          areaId,
+          snapshot,
+          view.activeAreaId === areaId,
+        );
+      },
+    })
+    .then(async (reader) => {
+      area.entityViewReader = reader;
+      const snapshot = await reader.poll().catch(() => null);
+      if (snapshot) {
+        applyAreaEntityViewSnapshot(context, view, areaId, snapshot, render);
       }
-      return content;
+      return area.viewContent;
     })
     .catch((error) => {
       const message = error?.message ?? String(error);
-      view.error = `读取视图内容失败：${message}`;
+      view.error = `读取 EntityViewPDO 失败：${message}`;
       appendProjectLog(context, "error", view.error);
       return null;
     })
@@ -714,33 +736,18 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
   return request;
 }
 
-function handleViewContentChanged(context, view, event) {
-  let payload = event?.payload;
-  if (!payload || typeof payload !== "object") {
-    const text = String(event?.raw?.payloadText ?? "");
-    if (!text) {
-      return;
-    }
-    try {
-      payload = JSON.parse(text);
-    } catch {
-      return;
-    }
+function applyAreaEntityViewSnapshot(context, view, areaId, snapshot, render) {
+  const content = setProjectAreaViewContent(view, areaId, snapshot);
+  if (view.activeAreaId !== areaId) {
+    return content;
   }
-
-  const instanceId = String(payload.viewInstanceId ?? "").trim();
-  if (!instanceId) {
-    return;
+  view.viewport?.setRenderSceneId(null);
+  view.viewport?.setVisibleEntityIds(content.entityIds);
+  syncViewportSelection(view, view.scene);
+  if (render) {
+    renderProject(context, view);
   }
-  const areaEntry = Object.entries(view.areas ?? {})
-    .find(([, area]) => area?.viewInstanceId === instanceId);
-  if (!areaEntry) {
-    return;
-  }
-  void ensureAreaViewContent(context, view, areaEntry[0], {
-    force: true,
-    render: view.activeAreaId === areaEntry[0],
-  });
+  return content;
 }
 
 async function refreshSelectedMachineElement(context, view, scene = {}) {

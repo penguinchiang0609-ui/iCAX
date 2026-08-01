@@ -183,14 +183,17 @@ export class ThreeRenderViewport {
       return this;
     }
 
-    this.subscriptions.push(this.sceneProxy.subscribe(RenderPDOEvents.slotAllocated, (event) => this.#handleSlotEvent(event)));
-    this.subscriptions.push(this.sceneProxy.subscribe(RenderPDOEvents.slotMoved, (event) => this.#handleSlotEvent(event)));
-    this.subscriptions.push(this.sceneProxy.subscribe(RenderPDOEvents.slotFreed, (event) => this.#handleSlotEvent(event)));
+    this.subscriptions.push(this.sceneProxy.pdoStore.subscribe((change) => {
+      const type = String(change.descriptor?.type ?? "");
+      const event = { payload: change.descriptor };
+      if (type.startsWith("render.")) {
+        void this.#handleSlotEvent(event);
+      } else if (type.startsWith("collider.")) {
+        void this.#handleColliderSlotEvent(event);
+      }
+    }, { emitCurrent: true }));
     this.subscriptions.push(this.sceneProxy.subscribe(RenderPDOEvents.defragBegin, (event) => this.#handleDefragEvent(event, true)));
     this.subscriptions.push(this.sceneProxy.subscribe(RenderPDOEvents.defragEnd, (event) => this.#handleDefragEvent(event, false)));
-    this.subscriptions.push(this.sceneProxy.subscribe(ColliderPDOEvents.slotAllocated, (event) => this.#handleColliderSlotEvent(event)));
-    this.subscriptions.push(this.sceneProxy.subscribe(ColliderPDOEvents.slotMoved, (event) => this.#handleColliderSlotEvent(event)));
-    this.subscriptions.push(this.sceneProxy.subscribe(ColliderPDOEvents.slotFreed, (event) => this.#handleColliderSlotEvent(event)));
     this.subscriptions.push(this.sceneProxy.subscribe(ColliderPDOEvents.defragBegin, (event) => this.#handleDefragEvent(event, true)));
     this.subscriptions.push(this.sceneProxy.subscribe(ColliderPDOEvents.defragEnd, (event) => this.#handleDefragEvent(event, false)));
     this.#setStatus("等待 RenderPDO slot");

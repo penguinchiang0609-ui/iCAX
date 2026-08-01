@@ -12,9 +12,13 @@ import {
   SceneProxy,
   MockHostBridge,
   ProjectSDO,
+  EntityViewClient,
+  EntityViewPDOLayout,
+  PDOStore,
   RenderLayers,
   RenderPDOLayout,
   RenderPDOPayloadKind,
+  parseEntityViewPDO,
   parseRenderPDOPayload,
   loadProductModule,
   mountProductModule,
@@ -70,7 +74,63 @@ function testRenderObjectLayerMaskParsing() {
   assert.equal(payload.layerMask, RenderLayers.default);
 }
 
-function testProjectAreaPresentationIsolation() {
+function testEntityViewPDOParsing() {
+  const capacity = 4;
+  const buffer = new ArrayBuffer(
+    EntityViewPDOLayout.headerSize
+      + capacity * EntityViewPDOLayout.entityIdSize,
+  );
+  const view = new DataView(buffer);
+  view.setBigUint64(0, 9n, true);
+  view.setUint32(8, 2, true);
+  writeUuidBytes(view, 16, "00112233-4455-6677-8899-aabbccddeeff");
+  writeUuidBytes(view, 32, "10213243-5465-7687-98a9-bacbdcedfe0f");
+
+  const snapshot = parseEntityViewPDO(buffer);
+  assert.equal(snapshot.revision, "9");
+  assert.equal(snapshot.count, 2);
+  assert.deepEqual(snapshot.entityIds, [
+    "00112233-4455-6677-8899-aabbccddeeff",
+    "10213243-5465-7687-98a9-bacbdcedfe0f",
+  ]);
+  assert.deepEqual([...new Uint8Array(buffer, 48)], new Array(32).fill(0));
+
+  view.setUint32(8, capacity + 1, true);
+  assert.throws(
+    () => parseEntityViewPDO(buffer),
+    /exceeds slot capacity/,
+  );
+}
+
+function testGlobalPDOStoreKeepsDescriptorsBeforeEntityEntersView() {
+  const store = new PDOStore();
+  const entityId = "00112233-4455-6677-8899-aabbccddeeff";
+  store.ingestEvent({
+    raw: {
+      payloadText: JSON.stringify({
+        event: "SlotAllocated",
+        pdoId: "7001",
+        payloadKind: "render.transform",
+        transformId: entityId,
+        slotVersion: "5",
+        payloadCapacity: "120",
+      }),
+    },
+  });
+
+  assert.equal(store.list({
+    type: "render.transform",
+    entityId,
+  }).length, 1);
+
+  const laterViewMembership = new Set([entityId]);
+  const descriptors = store.list().filter((descriptor) =>
+    descriptor.entityIds.some((id) => laterViewMembership.has(id)));
+  assert.equal(descriptors.length, 1);
+  assert.equal(descriptors[0].pdoId, "7001");
+}
+
+function testProjectAreaMembershipIsolation() {
   const projectView = {
     activeAreaId: "",
     areas: {},
@@ -80,9 +140,8 @@ function testProjectAreaPresentationIsolation() {
   };
   activateProjectArea(projectView, "machine");
   setProjectAreaViewContent(projectView, "machine", {
-    viewDefinitionId: "icax.laser-3d-cam.view.machine",
-    revision: 1,
-    objects: [{ entityId: "machine-axis" }],
+    revision: "1",
+    entityIds: ["machine-axis"],
   });
   projectView.layout.leftWidth = 410;
   projectView.selectedSceneObjectId = "machine-axis";
@@ -91,20 +150,83 @@ function testProjectAreaPresentationIsolation() {
   assert.equal(projectView.selectedSceneObjectId, "machine-axis");
   activateProjectArea(projectView, "workpiece");
   setProjectAreaViewContent(projectView, "workpiece", {
-    viewDefinitionId: "icax.laser-3d-cam.view.workpiece",
-    revision: 4,
-    objects: [{ entityId: "workpiece-1", presentation: { color: "blue" } }],
+    revision: "4",
+    entityIds: ["workpiece-1"],
   });
   assert.equal(projectView.layout.leftWidth, 320);
   assert.equal(projectView.selectedSceneObjectId, "");
   assert.deepEqual([...getProjectArea(projectView, "workpiece").viewContent.entityIds], ["workpiece-1"]);
-  assert.equal(getProjectArea(projectView, "workpiece").viewContent.renderOverrides.get("workpiece-1").color, "blue");
   projectView.layout.leftWidth = 270;
   projectView.selectedSceneObjectId = "workpiece-1";
   activateProjectArea(projectView, "machine");
   assert.equal(projectView.layout.leftWidth, 410);
   assert.equal(projectView.selectedSceneObjectId, "machine-axis");
   assert.deepEqual([...getProjectArea(projectView, "machine").viewContent.entityIds], ["machine-axis"]);
+}
+
+function writeUuidBytes(view, offset, uuid) {
+  const bytes = uuid.replaceAll("-", "").match(/../g).map((hex) =>
+    Number.parseInt(hex, 16));
+  new Uint8Array(view.buffer, view.byteOffset + offset, 16).set(bytes);
+}
+
+async function testEntityViewReadersAreIndependentPDOConsumers() {
+  const payload = new ArrayBuffer(
+    EntityViewPDOLayout.headerSize + EntityViewPDOLayout.entityIdSize,
+  );
+  const payloadView = new DataView(payload);
+  payloadView.setBigUint64(0, 3n, true);
+  payloadView.setUint32(8, 1, true);
+  writeUuidBytes(
+    payloadView,
+    EntityViewPDOLayout.headerSize,
+    "00112233-4455-6677-8899-aabbccddeeff",
+  );
+
+  const invocations = [];
+  const sceneProxy = {
+    invoke: async (method, request) => {
+      invocations.push({ method, request });
+      if (method === "EntityView.Release") {
+        return { viewId: request.viewId, released: true };
+      }
+      return {
+        viewId: "11111111-2222-4333-8444-555555555555",
+        pdo: { id: "9001", version: 1, payloadSize: payload.byteLength },
+      };
+    },
+    pdo: {
+      withReadDescriptor: async (_descriptor, reader) => reader(payload),
+    },
+  };
+  const client = new EntityViewClient(sceneProxy);
+  const first = await client.start({
+    where: "WHERE HAS CRenderInstanceComponent",
+  });
+  const second = await client.start({
+    where: "WHERE HAS CRenderInstanceComponent",
+  });
+
+  assert.notEqual(first, second);
+  assert.equal(first.viewId, second.viewId);
+  assert.equal(invocations.length, 2);
+  assert.ok(invocations.every(({ method }) =>
+    method === "EntityView.GetOrCreate"));
+  assert.equal((await first.poll()).revision, "3");
+  assert.equal((await second.poll()).revision, "3");
+  assert.equal(await first.stop(), true);
+  assert.equal(await first.stop(), false);
+  assert.equal(await second.stop(), true);
+  assert.deepEqual(
+    invocations.map(({ method }) => method),
+    [
+      "EntityView.GetOrCreate",
+      "EntityView.GetOrCreate",
+      "EntityView.Release",
+      "EntityView.Release",
+    ],
+  );
+  await client.dispose();
 }
 
 function testBridgeValidation() {
@@ -523,7 +645,10 @@ function delay(milliseconds) {
 testSDOMethodCodes();
 testVariantSerializer();
 testRenderObjectLayerMaskParsing();
-testProjectAreaPresentationIsolation();
+testEntityViewPDOParsing();
+testGlobalPDOStoreKeepsDescriptorsBeforeEntityEntersView();
+testProjectAreaMembershipIsolation();
+await testEntityViewReadersAreIndependentPDOConsumers();
 testBridgeValidation();
 testChannelIdValidation();
 await testSDOPromiseFlow();
