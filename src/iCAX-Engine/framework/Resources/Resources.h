@@ -11,6 +11,7 @@
 #include "ResourceLoadContext.h"
 #include "ResourceLoadResult.h"
 #include "ResourceLoaderRegistry.h"
+#include "ResourcePersistenceRegistrationCatalog.h"
 #include "ResourceTypeName.h"
 #include "ResourceURL.h"
 #include "ResourceVersionStorage.h"

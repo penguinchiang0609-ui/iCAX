@@ -121,7 +121,12 @@ iCAX::Project::CProject::CProject(IN const CProjectCreateInfo& CreateInfo_)
     , m_Resources(m_pResourceLoaderRegistry)
     , m_pSDOChannelRegistry(RequireSDOChannelRegistry(CreateInfo_))
     , m_SceneFrameHandler(CreateInfo_.OnSceneFrame)
+    , m_ResourceLibraryInitializer(CreateInfo_.ResourceLibraryInitializer)
 {
+    if (m_ResourceLibraryInitializer)
+    {
+        m_ResourceLibraryInitializer(m_Resources);
+    }
     if (m_ProjectName.empty())
     {
         m_ProjectName = "Project";
@@ -360,6 +365,9 @@ std::shared_ptr<iCAX::Project::CProjectScene> iCAX::Project::CProject::OpenChild
     CreateInfo_.pMetaRegistry = CreateInfo_.pMetaRegistry ? CreateInfo_.pMetaRegistry : m_pMetaRegistry;
     CreateInfo_.pBehaviourRegistry = CreateInfo_.pBehaviourRegistry ? CreateInfo_.pBehaviourRegistry : m_pBehaviourRegistry;
     CreateInfo_.pResourceLoaderRegistry = CreateInfo_.pResourceLoaderRegistry ? CreateInfo_.pResourceLoaderRegistry : m_pResourceLoaderRegistry;
+    CreateInfo_.ResourceLibraryInitializer = CreateInfo_.ResourceLibraryInitializer
+        ? std::move(CreateInfo_.ResourceLibraryInitializer)
+        : m_ResourceLibraryInitializer;
     CreateInfo_.pSDOChannelRegistry = CreateInfo_.pSDOChannelRegistry ? CreateInfo_.pSDOChannelRegistry : m_pSDOChannelRegistry;
     if (!CreateInfo_.FrameHandler)
     {
@@ -609,6 +617,7 @@ iCAX::Project::CProjectSceneCreateInfo iCAX::Project::CProject::MakeMainSceneCre
     _SceneInfo.pMetaRegistry = m_pMetaRegistry;
     _SceneInfo.pBehaviourRegistry = m_pBehaviourRegistry;
     _SceneInfo.pResourceLoaderRegistry = m_pResourceLoaderRegistry;
+    _SceneInfo.ResourceLibraryInitializer = m_ResourceLibraryInitializer;
     _SceneInfo.pSDOChannelRegistry = m_pSDOChannelRegistry;
     _SceneInfo.bEnablePDOHub = CreateInfo_.bEnablePDOHub;
     _SceneInfo.PDOHubCreateInfo = CreateInfo_.PDOHubCreateInfo;

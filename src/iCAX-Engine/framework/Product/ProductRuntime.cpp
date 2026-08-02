@@ -4,6 +4,8 @@
 #include "SDO/SDORegistrationCatalog.h"
 #include "SDO/SDO.h"
 #include "Project/ProjectSDO.h"
+#include "ProjectFile/ProjectFile.h"
+#include "Resources/ResourcePersistenceRegistrationCatalog.h"
 
 
 namespace
@@ -182,6 +184,7 @@ namespace
         iCAX::Data::ObjectMap _File;
         _File["magic"] = Definition_.Magic;
         _File["formatVersion"] = Definition_.FormatVersion;
+        _File["formatRevision"] = static_cast<unsigned int>(Definition_.FormatRevision);
         _File["quickSaveLogMagic"] = Definition_.QuickSaveLogMagic.empty()
             ? Definition_.Magic + ".QuickSaveLog"
             : Definition_.QuickSaveLogMagic;
@@ -204,6 +207,45 @@ namespace
         return Definition_.QuickSaveLogMagic.empty()
             ? Definition_.Magic + ".QuickSaveLog"
             : Definition_.QuickSaveLogMagic;
+    }
+
+    std::filesystem::path _ProjectPathFromUTF8(
+        IN const std::string& strPath_)
+    {
+        std::u8string _Text(strPath_.begin(), strPath_.end());
+        return std::filesystem::path(_Text);
+    }
+
+    iCAX::ProjectFile::CProjectFileDefinition
+    _MakeProjectFileDefinition(
+        IN const iCAX::Product::CProductDefinition& Definition_,
+        IN const std::vector<std::string>& ModulePaths_)
+    {
+        iCAX::ProjectFile::CProjectFileDefinition _File;
+        _File.Magic = Definition_.ProjectFile.Magic;
+        _File.ProductID = Definition_.ProductID;
+        _File.CurrentFormatVersion =
+            Definition_.ProjectFile.FormatVersion;
+        _File.nCurrentFormatRevision =
+            Definition_.ProjectFile.FormatRevision;
+        _File.DefaultEncoding =
+            iCAX::ProjectFile::EProjectFileEncoding::Binary;
+        _File.MigrationModulePaths = ModulePaths_;
+        return _File;
+    }
+
+    iCAX::ProjectFile::CProjectDocumentInfo
+    _MakeProjectDocumentInfo(
+        IN const iCAX::Project::CProject& Project_)
+    {
+        iCAX::ProjectFile::CProjectDocumentInfo _Info;
+        _Info.ProjectID = Project_.GetProjectID();
+        _Info.MainSceneID = Project_.GetMainSceneID();
+        _Info.ProjectName = Project_.GetProjectName();
+        _Info.ProjectSettings = Project_.Settings().GetProperties();
+        _Info.MainSceneSettings =
+            Project_.GetMainScene().SceneSettings().GetProperties();
+        return _Info;
     }
 
     iCAX::Data::Variant _MakeRecentProjectPayload(IN const iCAX::Product::CRecentProjectItem& Item_)
@@ -644,6 +686,14 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     if (m_Definition.ProjectFile.Magic.empty())
     {
         throw std::invalid_argument("Product project file magic cannot be empty: " + m_Definition.ProductID);
+    }
+    if (m_Definition.ProjectFile.FormatVersion.empty())
+    {
+        throw std::invalid_argument("Product project file format version cannot be empty: " + m_Definition.ProductID);
+    }
+    if (m_Definition.ProjectFile.FormatRevision == 0)
+    {
+        throw std::invalid_argument("Product project file format revision cannot be zero: " + m_Definition.ProductID);
     }
     if (m_Definition.ProjectFile.QuickSaveLogVersion == 0)
     {
@@ -1102,6 +1152,11 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     _CatalogInfo.ResourceLoaderRegistryFactory = [_ModulePaths, _ResourceSelectionRules]() {
         return _CreateResourceLoaderRegistryFromModulePaths(_ModulePaths, _ResourceSelectionRules);
     };
+    _CatalogInfo.ResourceLibraryInitializer = [_ModulePaths](
+        IN iCAX::Resource::CResourceLibrary& Library_) {
+        iCAX::Resource::CResourcePersistenceRegistrationCatalog::
+            ReplayByModulePaths(Library_, _ModulePaths);
+    };
     auto _pCatalog = std::make_shared<iCAX::Project::CProjectCatalog>(_CatalogInfo);
     auto _pProject = _pCatalog->OpenMainProject(
         _ProjectName,
@@ -1122,6 +1177,13 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
             _bCatalogRegistered = true;
         }
         RegisterProjectRuntime(_pProjectRuntime);
+        if (_ShouldRecordRecentProject(_ProjectPath))
+        {
+            _pProject->OpenQuickSaveLog(
+                true,
+                _GetQuickSaveLogMagic(m_Definition.ProjectFile),
+                m_Definition.ProjectFile.QuickSaveLogVersion);
+        }
         StartProject(_pProjectRuntime);
         RecordRecentProject(_ProjectPath, _ProjectName);
     }
@@ -1141,6 +1203,223 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Product::CProductRuntime::
     }
 
     return _pCatalog;
+}
+
+std::shared_ptr<iCAX::Project::CProjectCatalog>
+iCAX::Product::CProductRuntime::OpenProjectFile(
+    IN const std::string& strProjectPath_,
+    IN const std::string& strCatalogName_)
+{
+    EnsureStarted();
+    if (strProjectPath_.empty() ||
+        strProjectPath_.find("://") != std::string::npos)
+    {
+        throw std::invalid_argument(
+            "Project file path must be a local path");
+    }
+
+    iCAX::ProjectFile::CProjectFile _ProjectFile(
+        _MakeProjectFileDefinition(
+            m_Definition,
+            m_LoadedModulePaths));
+    auto _Prepared = _ProjectFile.PrepareOpen(
+        _ProjectPathFromUTF8(strProjectPath_));
+    const auto& _DocumentInfo = _Prepared.Result().Info;
+    if (_DocumentInfo.ProjectID.is_nil() ||
+        _DocumentInfo.MainSceneID.is_nil())
+    {
+        throw std::invalid_argument(
+            "Project file contains an empty project or main scene id");
+    }
+    // 当前 Project 明确定义 MainSceneID == ProjectID。将约束放在接入层，
+    // 不污染中性的 ProjectFile 文档模型。
+    if (_DocumentInfo.ProjectID != _DocumentInfo.MainSceneID)
+    {
+        throw std::invalid_argument(
+            "Project file main scene id must equal project id");
+    }
+
+    const auto _ProjectName = !_DocumentInfo.ProjectName.empty()
+        ? _DocumentInfo.ProjectName
+        : _PathToUTF8(
+            _ProjectPathFromUTF8(strProjectPath_).stem());
+    const auto _CatalogName = !strCatalogName_.empty()
+        ? strCatalogName_
+        : _ProjectName;
+
+    iCAX::Project::CProjectCatalogCreateInfo _CatalogInfo;
+    _CatalogInfo.CatalogName = _CatalogName;
+    _CatalogInfo.CatalogPath = strProjectPath_;
+    _CatalogInfo.pApplicationContext = m_pApplicationContext;
+    _CatalogInfo.pProductContext =
+        std::static_pointer_cast<IProductContext>(shared_from_this());
+    _CatalogInfo.pServiceProvider = m_pProductServiceProvider;
+    _CatalogInfo.pMetaRegistry = m_pProductMetaRegistry;
+    _CatalogInfo.pBehaviourRegistry = m_pProductBehaviourRegistry;
+    _CatalogInfo.pSDOChannelRegistry = m_pSDOChannelRegistry;
+    _CatalogInfo.bEnablePDOHub = m_Definition.bEnablePDOHub;
+    _CatalogInfo.PDOHubCreateInfo = m_Definition.PDOHubCreateInfo;
+    const auto _ModulePaths = m_LoadedModulePaths;
+    const auto _ResourceSelectionRules =
+        _MakeResourceSelectionRules(m_Definition.ResourceHandlers);
+    _CatalogInfo.ResourceLoaderRegistryFactory =
+        [_ModulePaths, _ResourceSelectionRules]() {
+            return _CreateResourceLoaderRegistryFromModulePaths(
+                _ModulePaths,
+                _ResourceSelectionRules);
+        };
+    _CatalogInfo.ResourceLibraryInitializer = [_ModulePaths](
+        IN iCAX::Resource::CResourceLibrary& Library_) {
+        iCAX::Resource::CResourcePersistenceRegistrationCatalog::
+            ReplayByModulePaths(Library_, _ModulePaths);
+    };
+
+    auto _pCatalog =
+        std::make_shared<iCAX::Project::CProjectCatalog>(_CatalogInfo);
+    iCAX::Project::CProjectCreateInfo _CreateInfo;
+    _CreateInfo.ProjectID = _DocumentInfo.ProjectID;
+    _CreateInfo.ProjectName = _ProjectName;
+    _CreateInfo.ProjectPath = strProjectPath_;
+    _CreateInfo.Settings =
+        iCAX::Data::PropertyBag(_DocumentInfo.ProjectSettings);
+    _CreateInfo.StartupComponent =
+        m_Definition.DefaultProjectStartupComponent;
+
+    auto _pProject = _pCatalog->OpenMainProject(_CreateInfo);
+    auto _pProjectRuntime =
+        iCAX::Project::CreateProjectRuntime(_pProject);
+    bool _bCatalogRegistered = false;
+    try
+    {
+        _pProject->GetMainScene().SceneSettings() =
+            iCAX::Data::PropertyBag(
+                _DocumentInfo.MainSceneSettings);
+        _ProjectFile.Restore(
+            _Prepared,
+            _pProject->MainSceneDatabase(),
+            _pProject->MainSceneResources());
+
+        const auto _QuickSaveMagic =
+            _GetQuickSaveLogMagic(m_Definition.ProjectFile);
+        _pProject->ReplayQuickSaveLog(
+            _QuickSaveMagic,
+            m_Definition.ProjectFile.QuickSaveLogVersion);
+        _pProject->OpenQuickSaveLog(
+            false,
+            _QuickSaveMagic,
+            m_Definition.ProjectFile.QuickSaveLogVersion);
+
+        {
+            std::lock_guard<std::mutex> _Lock(
+                m_ProjectCatalogMutex);
+            const auto _CatalogID = _pCatalog->GetCatalogID();
+            if (m_ProjectCatalogs.find(_CatalogID) !=
+                m_ProjectCatalogs.end())
+            {
+                throw std::runtime_error(
+                    "ProjectCatalog already exists");
+            }
+            m_ProjectCatalogs.emplace(_CatalogID, _pCatalog);
+            _bCatalogRegistered = true;
+        }
+        RegisterProjectRuntime(_pProjectRuntime);
+        StartProject(_pProjectRuntime);
+        RecordRecentProject(strProjectPath_, _ProjectName);
+    }
+    catch (...)
+    {
+        (void)RemoveProjectRuntime(_pProject->GetProjectID());
+        if (_bCatalogRegistered)
+        {
+            (void)CloseProjectCatalog(_pCatalog->GetCatalogID());
+        }
+        else
+        {
+            _pCatalog->CloseAll();
+        }
+        throw;
+    }
+    return _pCatalog;
+}
+
+void iCAX::Product::CProductRuntime::SaveProjectFile(
+    IN const iCAX::Data::uuid& ProjectID_,
+    IN const std::string& strProjectPath_)
+{
+    EnsureStarted();
+    auto _pRuntime = FindProjectRuntime(ProjectID_);
+    if (!_pRuntime)
+    {
+        throw std::invalid_argument("Project does not exist");
+    }
+    auto _pProject = _pRuntime->GetLocalProject();
+    if (!_pProject)
+    {
+        throw std::logic_error(
+            "Project runtime does not expose a local project");
+    }
+
+    const auto _ProjectPath = !strProjectPath_.empty()
+        ? strProjectPath_
+        : _pProject->GetProjectPath();
+    if (_ProjectPath.empty() ||
+        _ProjectPath.find("://") != std::string::npos)
+    {
+        throw std::invalid_argument(
+            "Project file path must be a local path");
+    }
+
+    const bool _bWasRunning = _pRuntime->IsRunning();
+    if (_bWasRunning)
+    {
+        _pRuntime->Stop();
+    }
+
+    try
+    {
+        SaveProjectFileSnapshot(*_pProject, _ProjectPath);
+    }
+    catch (...)
+    {
+        if (_bWasRunning)
+        {
+            _pRuntime->Start();
+        }
+        throw;
+    }
+
+    if (_bWasRunning)
+    {
+        _pRuntime->Start();
+    }
+}
+
+void iCAX::Product::CProductRuntime::SaveProjectFileSnapshot(
+    IN iCAX::Project::CProject& Project_,
+    IN const std::string& strProjectPath_)
+{
+    iCAX::ProjectFile::CProjectFile _ProjectFile(
+        _MakeProjectFileDefinition(
+            m_Definition,
+            m_LoadedModulePaths));
+    _ProjectFile.Save(
+        _ProjectPathFromUTF8(strProjectPath_),
+        _MakeProjectDocumentInfo(Project_),
+        Project_.MainSceneDatabase(),
+        Project_.MainSceneResources());
+
+    Project_.MarkProjectFileSaved(
+        strProjectPath_,
+        _GetQuickSaveLogMagic(m_Definition.ProjectFile),
+        m_Definition.ProjectFile.QuickSaveLogVersion);
+    if (auto _pCatalog = FindProjectCatalogByProjectID(
+        Project_.GetProjectID()))
+    {
+        _pCatalog->SetCatalogPath(strProjectPath_);
+    }
+    RecordRecentProject(
+        strProjectPath_,
+        Project_.GetProjectName());
 }
 
 bool iCAX::Product::CProductRuntime::CloseProject(IN const iCAX::Data::uuid& ProjectID_)
@@ -1697,6 +1976,16 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductSDO()
             IN iCAX::Project::ISceneContext* pSceneContext_) {
             return HandleProjectGetUndoRedoState(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
         });
+    _ProjectMethods.emplace_back(
+        iCAX::Project::kProjectSaveName,
+        [this](
+            IN const iCAX::Interaction::CInvocation& Request_,
+            IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+            IN iCAX::Product::IProductContext* pProductContext_,
+            IN iCAX::Project::IProjectContext* pProjectContext_,
+            IN iCAX::Project::ISceneContext* pSceneContext_) {
+            return HandleProjectSave(Request_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
+        });
 
     auto _pProjectSDO = std::make_shared<CStaticProductSDO>(
         iCAX::Project::kProjectSDOName,
@@ -1836,5 +2125,56 @@ iCAX::Interaction::CInvocationResult iCAX::Product::CProductRuntime::HandleProje
     auto _Payload = _MakeUndoRedoStatePayload(_Repository).To<iCAX::Data::ObjectMap>();
     _Payload["applied"] = _Applied;
     return _MakeProductPayloadResponse(iCAX::Data::Variant(_Payload));
+}
+
+iCAX::Interaction::CInvocationResult
+iCAX::Product::CProductRuntime::HandleProjectSave(
+    IN const iCAX::Interaction::CInvocation& Request_,
+    IN const iCAX::Application::IApplicationContext&,
+    IN iCAX::Product::IProductContext* pProductContext_,
+    IN iCAX::Project::IProjectContext* pProjectContext_,
+    IN iCAX::Project::ISceneContext* pSceneContext_)
+{
+    _RequireSceneSDOContext(
+        pProductContext_, pProjectContext_, pSceneContext_);
+    if (!pSceneContext_->IsMainScene())
+    {
+        throw std::invalid_argument(
+            "Project save must be invoked on the main scene");
+    }
+
+    auto _pRuntime = FindProjectRuntime(
+        pProjectContext_->GetProjectID());
+    auto _pProject = _pRuntime
+        ? _pRuntime->GetLocalProject()
+        : nullptr;
+    if (!_pProject)
+    {
+        throw std::runtime_error("Project does not exist");
+    }
+
+    const auto _Payload = _DecodeObjectPayload(Request_);
+    const auto _RequestedPath =
+        _GetOptionalString(_Payload, "projectPath");
+    const auto _ProjectPath = !_RequestedPath.empty()
+        ? _RequestedPath
+        : _pProject->GetProjectPath();
+    if (_ProjectPath.empty() ||
+        _ProjectPath.find("://") != std::string::npos)
+    {
+        throw std::invalid_argument(
+            "Project file path must be a local path");
+    }
+
+    // Project SDO 在 Scene 每帧分发阶段执行；此处天然拥有 Database，
+    // 无需停止线程即可取得一致快照。
+    SaveProjectFileSnapshot(*_pProject, _ProjectPath);
+
+    iCAX::Data::ObjectMap _Response;
+    _Response["saved"] = true;
+    _Response["projectPath"] = _ProjectPath;
+    _Response["project"] = _MakeProjectPayload(_pRuntime);
+    return _MakeProductPayloadResponse(
+        iCAX::Data::Variant(std::move(_Response)));
 }
 

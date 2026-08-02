@@ -428,6 +428,7 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
     const auto& _ProjectFile = _RequireChildObject(_Root, "projectFile");
     _Definition.ProjectFile.Magic = _RequireString(_ProjectFile, "magic");
     _Definition.ProjectFile.FormatVersion = _OptionalString(_ProjectFile, "formatVersion");
+    _Definition.ProjectFile.FormatRevision = _OptionalUInt32(_ProjectFile, "formatRevision", 1);
     _Definition.ProjectFile.QuickSaveLogMagic = _OptionalString(_ProjectFile, "quickSaveLogMagic");
     _Definition.ProjectFile.QuickSaveLogVersion = _OptionalUInt32(_ProjectFile, "quickSaveLogVersion", 1);
     _Definition.ProjectFile.FileExtensions = _OptionalStringArray(_ProjectFile, "fileExtensions");
@@ -463,6 +464,14 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
     if (_Definition.ProjectFile.Magic.empty())
     {
         throw std::runtime_error("Product manifest projectFile.magic cannot be empty: " + _Definition.ProductID);
+    }
+    if (_Definition.ProjectFile.FormatVersion.empty())
+    {
+        throw std::runtime_error("Product manifest projectFile.formatVersion cannot be empty: " + _Definition.ProductID);
+    }
+    if (_Definition.ProjectFile.FormatRevision == 0)
+    {
+        throw std::runtime_error("Product manifest projectFile.formatRevision must be greater than zero: " + _Definition.ProductID);
     }
     if (_Definition.FrontendEntry.empty())
     {

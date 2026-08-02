@@ -63,6 +63,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry;
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry;
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry;
+            std::function<void(iCAX::Resource::CResourceLibrary&)> ResourceLibraryInitializer;
             std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry;
             bool bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo;
@@ -182,6 +183,7 @@ namespace iCAX
             iCAX::Data::uuid m_MainSceneID;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProjectScene>> m_Scenes;
             SceneFrameHandler m_SceneFrameHandler;
+            std::function<void(iCAX::Resource::CResourceLibrary&)> m_ResourceLibraryInitializer;
         };
     }
 }

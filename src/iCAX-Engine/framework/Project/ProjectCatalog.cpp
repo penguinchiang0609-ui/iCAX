@@ -15,6 +15,7 @@ iCAX::Project::CProjectCatalog::CProjectCatalog(IN const CProjectCatalogCreateIn
     , m_bEnablePDOHub(CreateInfo_.bEnablePDOHub)
     , m_PDOHubCreateInfo(CreateInfo_.PDOHubCreateInfo)
     , m_ResourceLoaderRegistryFactory(CreateInfo_.ResourceLoaderRegistryFactory)
+    , m_ResourceLibraryInitializer(CreateInfo_.ResourceLibraryInitializer)
     , m_Projects()
     , m_MainProjectID(iCAX::Data::GenerateNilUUID())
 {
@@ -241,6 +242,11 @@ std::shared_ptr<iCAX::Project::CProject> iCAX::Project::CProjectCatalog::CreateP
     if (!CreateInfo_.pResourceLoaderRegistry && m_ResourceLoaderRegistryFactory)
     {
         CreateInfo_.pResourceLoaderRegistry = m_ResourceLoaderRegistryFactory();
+    }
+    if (!CreateInfo_.ResourceLibraryInitializer)
+    {
+        CreateInfo_.ResourceLibraryInitializer =
+            m_ResourceLibraryInitializer;
     }
     if (!CreateInfo_.bEnablePDOHub && m_bEnablePDOHub)
     {

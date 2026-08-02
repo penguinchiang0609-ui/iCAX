@@ -117,6 +117,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IMetaRegistry> pMetaRegistry; //!< 产品级元数据注册表。
             std::shared_ptr<iCAX::Behaviour::IBehaviourRegistry> pBehaviourRegistry; //!< 产品级行为注册表。
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> pResourceLoaderRegistry; //!< Scene 资源加载器注册表。
+            std::function<void(iCAX::Resource::CResourceLibrary&)> ResourceLibraryInitializer; //!< 为每个 Scene 资源库回放产品持久化 Codec。
             std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry; //!< SDO channel 注册表。
             bool bEnablePDOHub = false; //!< true 表示创建 Scene 级动态 PDOHub。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 动态 PDOHub 创建参数。

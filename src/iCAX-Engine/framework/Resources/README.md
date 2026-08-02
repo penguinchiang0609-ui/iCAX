@@ -131,7 +131,7 @@ auto result = scene.Resources().PutVersioned<BRepModel>(
 
 1. `CFlatBufferResource` 和 `CBinaryResource` 内置冷存储编解码器。版本过期后立即原子写入本 ResourcePool 独占的 temp 子目录，并释放池对旧对象的强引用。
 2. 历史版本读取时从磁盘反序列化；ResourcePool 只保存弱缓存。调用方不再使用该对象后，内存可以自然释放。
-3. BREP 等业务对象由插件通过 `RegisterVersionCodec` 注册自己的序列化与反序列化逻辑。
+3. BREP 等业务对象由插件通过 `ICAX_REGISTER_RESOURCE_PERSISTENCE_CODEC("geometry.brep", BRepModel, MakeBRepCodec)` 自动登记稳定 `ResourceTypeID` 与编解码规则；ProductRuntime 只向实际加载该插件的产品 ResourceLibrary 回放。该规则同时用于项目文件和历史版本冷存储。动态场景仍可直接调用 `RegisterPersistenceCodec`；只需要冷存储、不进入项目文件的运行时类型仍可使用 `RegisterVersionCodec`。
 4. 如果类型没有编解码器、序列化失败或磁盘不可写，ResourcePool 会回退到内存强持有。可靠性优先于缓存预算，绝不会静默丢弃仍可能用于撤销的版本。
 5. ResourcePool 不提供单版本 `Discard` 或硬 `Remove`。历史版本在项目会话期间完整保留，避免撤销栈或资源依赖被物理清理破坏。
 

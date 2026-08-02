@@ -240,6 +240,22 @@ namespace iCAX
                 IN const std::string& strCatalogPath_ = std::string(),
                 IN const std::string& strProjectName_ = std::string(),
                 IN const std::string& strProjectPath_ = std::string());
+
+            /*
+            * @brief 从产品项目文件打开 catalog。
+            * @details 先读取并升级文件，再按文件身份创建 MainScene、恢复数据、回放快速日志，最后启动 Scene。
+            */
+            std::shared_ptr<iCAX::Project::CProjectCatalog> OpenProjectFile(
+                IN const std::string& strProjectPath_,
+                IN const std::string& strCatalogName_ = std::string());
+
+            /*
+            * @brief 原子保存项目主 Scene 的 Database + ResourceLibrary。
+            * @details 直接调用时会短暂停止运行中的 Scene，以取得一致快照；保存成功后才轮换快速日志。
+            */
+            void SaveProjectFile(
+                IN const iCAX::Data::uuid& ProjectID_,
+                IN const std::string& strProjectPath_ = std::string());
             /*
             * @brief 关闭指定项目。
             * @return true 表示项目存在并被关闭。
@@ -382,6 +398,10 @@ namespace iCAX
             */
             void StartProject(IN const std::shared_ptr<iCAX::Project::IProjectRuntime>& pProjectRuntime_);
 
+            void SaveProjectFileSnapshot(
+                IN iCAX::Project::CProject& Project_,
+                IN const std::string& strProjectPath_);
+
             /*
             * @brief 加载产品数据。
             */
@@ -489,6 +509,13 @@ namespace iCAX
             * @brief 处理项目重做方法。
             */
             iCAX::Interaction::CInvocationResult HandleProjectRedo(
+                IN const iCAX::Interaction::CInvocation& Request_,
+                IN const iCAX::Application::IApplicationContext& ApplicationContext_,
+                IN iCAX::Product::IProductContext* pProductContext_,
+                IN iCAX::Project::IProjectContext* pProjectContext_,
+                IN iCAX::Project::ISceneContext* pSceneContext_);
+
+            iCAX::Interaction::CInvocationResult HandleProjectSave(
                 IN const iCAX::Interaction::CInvocation& Request_,
                 IN const iCAX::Application::IApplicationContext& ApplicationContext_,
                 IN iCAX::Product::IProductContext* pProductContext_,

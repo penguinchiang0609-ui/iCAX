@@ -195,6 +195,9 @@
     <ProjectReference Include="..\Project\Project.vcxproj">
       <Project>{d0b2bd35-1f9f-464b-a6d6-38b77c319f9f}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\ProjectFile\ProjectFile.vcxproj">
+      <Project>{069A3406-81B1-49F1-9C58-E814C96498E0}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\Resources\Resources.vcxproj">
       <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
     </ProjectReference>

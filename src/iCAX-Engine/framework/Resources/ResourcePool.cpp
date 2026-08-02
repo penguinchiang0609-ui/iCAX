@@ -1091,6 +1091,191 @@ bool iCAX::Resource::CResourcePool::RegisterVersionCodec(
     return true;
 }
 
+bool iCAX::Resource::CResourcePool::RegisterPersistenceCodec(
+    IN const std::string& strResourceTypeID_,
+    IN const std::type_info& RuntimeType_,
+    IN CResourceVersionCodec Codec_,
+    IN const bool bReplaceExisting_)
+{
+    if (strResourceTypeID_.empty())
+    {
+        throw std::invalid_argument(
+            "Persistent resource type id cannot be empty");
+    }
+    if (!Codec_.IsValid())
+    {
+        throw std::invalid_argument(
+            "Resource persistence codec must provide serialize and deserialize");
+    }
+
+    const auto _RuntimeType = std::type_index(RuntimeType_);
+    std::unique_lock<std::shared_mutex> _Lock(m_Mutex);
+    const auto _ExistingType =
+        m_mapPersistenceRuntimeTypes.find(strResourceTypeID_);
+    if (_ExistingType != m_mapPersistenceRuntimeTypes.end() &&
+        !bReplaceExisting_)
+    {
+        return false;
+    }
+
+    const auto _ExistingCodec =
+        m_mapVersionCodecs.find(_RuntimeType);
+    if (_ExistingCodec == m_mapVersionCodecs.end() ||
+        bReplaceExisting_)
+    {
+        m_mapVersionCodecs.insert_or_assign(
+            _RuntimeType,
+            std::move(Codec_));
+    }
+    m_mapPersistenceRuntimeTypes.insert_or_assign(
+        strResourceTypeID_,
+        _RuntimeType);
+    return true;
+}
+
+iCAX::Resource::CResourcePersistentPayload
+iCAX::Resource::CResourcePool::SerializePersistentVersion(
+    IN const CResourceReference& Reference_) const
+{
+    if (!Reference_.IsValid())
+    {
+        throw std::invalid_argument(
+            "Persistent resource reference must contain URL and version");
+    }
+
+    const auto _Snapshot = GetSnapshot(
+        MakeResourceKeyFromSource(Reference_.URL),
+        Reference_.nVersion);
+    if (!_Snapshot)
+    {
+        throw std::runtime_error(
+            "Persistent resource version does not exist: " +
+            Reference_.URL + "@" +
+            std::to_string(Reference_.nVersion));
+    }
+    if (!_Snapshot->Info.IsPersistent())
+    {
+        throw std::runtime_error(
+            "Runtime-only resource cannot be persisted: " +
+            Reference_.URL);
+    }
+
+    CResourcePersistentPayload _Payload;
+    _Payload.Info = _Snapshot->Info;
+    if (_Payload.Info.IsExternal())
+    {
+        return _Payload;
+    }
+    if (!_Snapshot->RuntimeType || !_Snapshot->pResource)
+    {
+        throw std::runtime_error(
+            "Embedded resource has no materialized object: " +
+            Reference_.URL + "@" +
+            std::to_string(Reference_.nVersion));
+    }
+
+    CResourceVersionCodec _Codec;
+    {
+        std::shared_lock<std::shared_mutex> _Lock(m_Mutex);
+        const auto _Type = m_mapPersistenceRuntimeTypes.find(
+            _Snapshot->Info.ResourceTypeID);
+        if (_Type == m_mapPersistenceRuntimeTypes.end())
+        {
+            throw std::runtime_error(
+                "No persistence codec is registered for resource type: " +
+                _Snapshot->Info.ResourceTypeID);
+        }
+        if (_Type->second != *_Snapshot->RuntimeType)
+        {
+            throw std::runtime_error(
+                "Persistent resource runtime type does not match its stable type id: " +
+                _Snapshot->Info.ResourceTypeID);
+        }
+        const auto _CodecIter =
+            m_mapVersionCodecs.find(_Type->second);
+        if (_CodecIter == m_mapVersionCodecs.end() ||
+            !_CodecIter->second.IsValid())
+        {
+            throw std::runtime_error(
+                "Persistence codec is unavailable for resource type: " +
+                _Snapshot->Info.ResourceTypeID);
+        }
+        _Codec = _CodecIter->second;
+    }
+
+    const auto _Body = _Codec.Serialize(_Snapshot->pResource);
+    if (!_Body)
+    {
+        throw std::runtime_error(
+            "Failed to serialize persistent resource: " +
+            Reference_.URL + "@" +
+            std::to_string(Reference_.nVersion));
+    }
+    _Payload.Body = *_Body;
+    return _Payload;
+}
+
+void iCAX::Resource::CResourcePool::RestorePersistentVersion(
+    IN const CResourcePersistentPayload& Payload_)
+{
+    if (!Payload_.Info.Key.IsValid() ||
+        Payload_.Info.nVersion == 0 ||
+        !Payload_.Info.IsPersistent())
+    {
+        throw std::invalid_argument(
+            "Persistent resource payload has invalid info");
+    }
+    if (Payload_.Info.IsExternal())
+    {
+        if (!Payload_.Body.empty())
+        {
+            throw std::invalid_argument(
+                "External resource payload must not contain a body");
+        }
+        Register(Payload_.Info);
+        return;
+    }
+
+    std::type_index _RuntimeType(typeid(void));
+    CResourceVersionCodec _Codec;
+    {
+        std::shared_lock<std::shared_mutex> _Lock(m_Mutex);
+        const auto _Type = m_mapPersistenceRuntimeTypes.find(
+            Payload_.Info.ResourceTypeID);
+        if (_Type == m_mapPersistenceRuntimeTypes.end())
+        {
+            throw std::runtime_error(
+                "No persistence codec is registered for resource type: " +
+                Payload_.Info.ResourceTypeID);
+        }
+        const auto _CodecIter =
+            m_mapVersionCodecs.find(_Type->second);
+        if (_CodecIter == m_mapVersionCodecs.end() ||
+            !_CodecIter->second.IsValid())
+        {
+            throw std::runtime_error(
+                "Persistence codec is unavailable for resource type: " +
+                Payload_.Info.ResourceTypeID);
+        }
+        _RuntimeType = _Type->second;
+        _Codec = _CodecIter->second;
+    }
+
+    auto _pResource = _Codec.Deserialize(Payload_.Body);
+    if (!_pResource)
+    {
+        throw std::runtime_error(
+            "Failed to deserialize persistent resource: " +
+            Payload_.Info.Key.Source + "@" +
+            std::to_string(Payload_.Info.nVersion));
+    }
+    SetUntyped(
+        Payload_.Info.Key,
+        std::move(_pResource),
+        _RuntimeType,
+        Payload_.Info);
+}
+
 bool iCAX::Resource::CResourcePool::IsVersionCold(
     IN const CResourceKey& Key_,
     IN const uint64_t nVersion_) const
@@ -1612,6 +1797,9 @@ void iCAX::Resource::CResourcePool::InitializeVersionStorage()
     m_mapVersionCodecs.emplace(
         std::type_index(typeid(CFlatBufferResource)),
         std::move(_FlatBufferCodec));
+    m_mapPersistenceRuntimeTypes.emplace(
+        CFlatBufferResource::kResourceTypeName,
+        std::type_index(typeid(CFlatBufferResource)));
 
     CResourceVersionCodec _BinaryCodec;
     _BinaryCodec.Serialize = SerializeBinaryResource;
@@ -1619,6 +1807,9 @@ void iCAX::Resource::CResourcePool::InitializeVersionStorage()
     m_mapVersionCodecs.emplace(
         std::type_index(typeid(CBinaryResource)),
         std::move(_BinaryCodec));
+    m_mapPersistenceRuntimeTypes.emplace(
+        CBinaryResource::kResourceTypeName,
+        std::type_index(typeid(CBinaryResource)));
 
     m_VersionStorageDirectory =
         CreateVersionStorageDirectory(

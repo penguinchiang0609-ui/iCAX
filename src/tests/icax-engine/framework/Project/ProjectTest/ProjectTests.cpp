@@ -374,13 +374,26 @@ namespace
         return std::make_shared<iCAX::Resource::CResourceLoaderRegistry>();
     }
 
+    std::shared_ptr<iCAX::Application::CApplicationContext>
+    MakeApplicationContext()
+    {
+        iCAX::Application::CApplicationDescriptor _Descriptor;
+        _Descriptor.AppID = "icax-project-test";
+        _Descriptor.AppName = "Project Test";
+        return std::make_shared<
+            iCAX::Application::CApplicationContext>(
+                _Descriptor,
+                iCAX::Application::CApplicationPaths{},
+                iCAX::Data::PropertyBag{});
+    }
+
     CProjectCatalogCreateInfo MakeCatalogInfo()
     {
         CProjectCatalogCreateInfo _Info;
         _Info.pMetaRegistry = CreateProjectTestMetaRegistry();
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
         _Info.pSDOChannelRegistry = MakeSDOChannelRegistry();
-        _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
+        _Info.pApplicationContext = MakeApplicationContext();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
             _Info.pMetaRegistry,
@@ -400,7 +413,7 @@ namespace
         _Info.pBehaviourRegistry = iCAX::Behaviour::CreateBehaviourRegistry();
         _Info.pResourceLoaderRegistry = MakeResourceLoaderRegistry();
         _Info.pSDOChannelRegistry = MakeSDOChannelRegistry();
-        _Info.pApplicationContext = std::make_shared<iCAX::Application::CApplicationContext>();
+        _Info.pApplicationContext = MakeApplicationContext();
         _Info.pServiceProvider = std::make_shared<iCAX::Services::CServiceProvider>();
         _Info.pProductContext = MakeProductContext(
             _Info.pMetaRegistry,
@@ -560,6 +573,8 @@ TEST(ProjectTest, ApplicationPathConfiguresSceneResourceVersionStorage)
 
     iCAX::Application::CApplicationDescriptor
         _Descriptor;
+    _Descriptor.AppID = "icax-project-test";
+    _Descriptor.AppName = "Project Test";
     iCAX::Application::CApplicationPaths _Paths;
     _Paths.InstallDirectory = _Root.string();
     _Paths.TempDirectory = "FallbackTemp";

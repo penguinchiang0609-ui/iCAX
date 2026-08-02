@@ -379,6 +379,34 @@ namespace iCAX
                 IN const std::type_info& RuntimeType_,
                 IN CResourceVersionCodec Codec_,
                 IN bool bReplaceExisting_ = false);
+
+            /*
+            * @brief 为稳定 ResourceTypeID 注册一次项目持久化规则。
+            * @details 保存和打开项目文件时由 ProjectFile 自动调用，不需要业务层逐资源参与。
+            */
+            bool RegisterPersistenceCodec(
+                IN const std::string& strResourceTypeID_,
+                IN const std::type_info& RuntimeType_,
+                IN CResourceVersionCodec Codec_,
+                IN bool bReplaceExisting_ = false);
+
+            template <typename TResource>
+            bool RegisterPersistenceCodec(
+                IN const std::string& strResourceTypeID_,
+                IN CResourceVersionCodec Codec_,
+                IN bool bReplaceExisting_ = false)
+            {
+                return RegisterPersistenceCodec(
+                    strResourceTypeID_,
+                    typeid(TResource),
+                    std::move(Codec_),
+                    bReplaceExisting_);
+            }
+
+            CResourcePersistentPayload SerializePersistentVersion(
+                IN const CResourceReference& Reference_) const;
+            void RestorePersistentVersion(
+                IN const CResourcePersistentPayload& Payload_);
             CResourceVersionStorageStats
                 GetVersionStorageStats() const;
             std::filesystem::path

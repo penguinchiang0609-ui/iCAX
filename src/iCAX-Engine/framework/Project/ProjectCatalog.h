@@ -32,6 +32,7 @@ namespace iCAX
             bool bEnablePDOHub = false; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 开关。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< Catalog 默认传给每个项目主 Scene 的动态 PDOHub 创建参数。
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> ResourceLoaderRegistryFactory; //!< Scene 级资源加载器注册表工厂。
+            std::function<void(iCAX::Resource::CResourceLibrary&)> ResourceLibraryInitializer; //!< 每个项目/Scene 资源库的产品 Codec 初始化器。
         };
 
         /*
@@ -165,6 +166,7 @@ namespace iCAX
             bool m_bEnablePDOHub = false;
             iCAX::PDO::CPDOHubCreateInfo m_PDOHubCreateInfo;
             std::function<std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry>()> m_ResourceLoaderRegistryFactory;
+            std::function<void(iCAX::Resource::CResourceLibrary&)> m_ResourceLibraryInitializer;
             std::map<iCAX::Data::uuid, std::shared_ptr<CProject>> m_Projects;
             iCAX::Data::uuid m_MainProjectID;
         };

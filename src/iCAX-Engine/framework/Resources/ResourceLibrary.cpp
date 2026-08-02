@@ -312,6 +312,32 @@ bool iCAX::Resource::CResourceLibrary::RegisterVersionCodec(
         bReplaceExisting_);
 }
 
+bool iCAX::Resource::CResourceLibrary::RegisterPersistenceCodec(
+    IN const std::string& strResourceTypeID_,
+    IN const std::type_info& RuntimeType_,
+    IN CResourceVersionCodec Codec_,
+    IN const bool bReplaceExisting_)
+{
+    return GetPool().RegisterPersistenceCodec(
+        strResourceTypeID_,
+        RuntimeType_,
+        std::move(Codec_),
+        bReplaceExisting_);
+}
+
+iCAX::Resource::CResourcePersistentPayload
+iCAX::Resource::CResourceLibrary::SerializePersistentVersion(
+    IN const CResourceReference& Reference_) const
+{
+    return GetPool().SerializePersistentVersion(Reference_);
+}
+
+void iCAX::Resource::CResourceLibrary::RestorePersistentVersion(
+    IN const CResourcePersistentPayload& Payload_)
+{
+    GetPool().RestorePersistentVersion(Payload_);
+}
+
 iCAX::Resource::CResourceVersionStorageStats
 iCAX::Resource::CResourceLibrary::GetVersionStorageStats() const
 {

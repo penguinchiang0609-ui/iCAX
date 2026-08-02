@@ -151,6 +151,7 @@ namespace
         _Weld.ProductName = "Weld";
         _Weld.FrontendEntry = "h5://weld/index.html";
         _Weld.ProjectFile.Magic = "ICAX_WELD";
+        _Weld.ProjectFile.FormatVersion = "1.0";
 
         _Config.Products.push_back(_Robot);
         _Config.Products.push_back(_Weld);
@@ -548,10 +549,6 @@ TEST(ApplicationRuntimeSDOTest, ApplicationSDOCanResolveAndOpenProjectFile)
             std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(_Root);
     const auto _ProjectPath = _Root / "RobotCell.robot";
-    {
-        std::ofstream _Output(_ProjectPath, std::ios::binary | std::ios::trunc);
-        _Output << "ICAX_ROBOT\nproject-body";
-    }
 
     auto _Config = MakeTwoProductConfig();
     _Config.Paths.UserConfigDirectory = (_Root / "Setting").string();
@@ -559,6 +556,19 @@ TEST(ApplicationRuntimeSDOTest, ApplicationSDOCanResolveAndOpenProjectFile)
     CApplicationRuntime _Runtime;
     _Runtime.SetConfig(_Config);
     _Runtime.Start();
+
+    auto _pRobotRuntime = _Runtime.StartProduct("robot");
+    auto _pSeedCatalog = _pRobotRuntime->OpenProjectCatalog(
+        "RobotCell",
+        _ProjectPath.string(),
+        "RobotCell",
+        _ProjectPath.string());
+    auto _pSeedProject = _pSeedCatalog->GetMainProject();
+    ASSERT_NE(nullptr, _pSeedProject);
+    _pRobotRuntime->SaveProjectFile(
+        _pSeedProject->GetProjectID(), _ProjectPath.string());
+    ASSERT_TRUE(_pRobotRuntime->CloseProjectCatalog(
+        _pSeedCatalog->GetCatalogID()));
 
     auto _ApplicationEndpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
 
@@ -621,10 +631,6 @@ TEST(ApplicationRuntimeSDOTest, ApplicationRuntimeCanOpenProjectFileDirectly)
             std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(_Root);
     const auto _ProjectPath = _Root / "DirectRobot.robot";
-    {
-        std::ofstream _Output(_ProjectPath, std::ios::binary | std::ios::trunc);
-        _Output << "ICAX_ROBOT\nproject-body";
-    }
 
     auto _Config = MakeTwoProductConfig();
     _Config.Paths.UserConfigDirectory = (_Root / "Setting").string();
@@ -632,6 +638,19 @@ TEST(ApplicationRuntimeSDOTest, ApplicationRuntimeCanOpenProjectFileDirectly)
     CApplicationRuntime _Runtime;
     _Runtime.SetConfig(_Config);
     _Runtime.Start();
+
+    auto _pRobotRuntime = _Runtime.StartProduct("robot");
+    auto _pSeedCatalog = _pRobotRuntime->OpenProjectCatalog(
+        "DirectRobot",
+        _ProjectPath.string(),
+        "DirectRobot",
+        _ProjectPath.string());
+    auto _pSeedProject = _pSeedCatalog->GetMainProject();
+    ASSERT_NE(nullptr, _pSeedProject);
+    _pRobotRuntime->SaveProjectFile(
+        _pSeedProject->GetProjectID(), _ProjectPath.string());
+    ASSERT_TRUE(_pRobotRuntime->CloseProjectCatalog(
+        _pSeedCatalog->GetCatalogID()));
 
     auto _Resolve = _Runtime.ResolveProjectFileProduct(_ProjectPath.string());
     EXPECT_EQ(EProductFileResolveStatus::Resolved, _Resolve.Status);

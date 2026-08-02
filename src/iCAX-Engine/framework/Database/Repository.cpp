@@ -494,6 +494,15 @@ void iCAX::Database::CRepository::EndLoadBaseline()
     EndOperationBatch();
 }
 
+void iCAX::Database::CRepository::CancelLoadBaseline()
+{
+    if (!IsOperationBatchActive() || m_nOperationBatchKind != EOperationBatchKind::LoadBaseline)
+    {
+        throw std::runtime_error("No active repository load baseline");
+    }
+    CancelOperationBatch();
+}
+
 iCAX::Database::ITransaction& iCAX::Database::CRepository::BeginTransaction(IN const std::string& strName_)
 {
     if (IsOperationBatchActive())

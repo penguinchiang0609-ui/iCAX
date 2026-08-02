@@ -280,15 +280,71 @@ namespace
         _pRegistry->RegisterLoader(typeid(ModelResource), GetExternalModelLoader());
         return _pRegistry;
     }
+
+    CResourceVersionCodec MakeMacroTextPersistenceCodec()
+    {
+        CResourceVersionCodec _Codec;
+        _Codec.Serialize = [](const std::shared_ptr<void>& pResource_)
+            -> std::optional<std::vector<uint8_t>> {
+            const auto _pText =
+                std::static_pointer_cast<MacroTextResource>(pResource_);
+            if (!_pText)
+            {
+                return std::nullopt;
+            }
+            return std::vector<uint8_t>(
+                _pText->Text.begin(), _pText->Text.end());
+        };
+        _Codec.Deserialize = [](std::span<const uint8_t> Body_)
+            -> std::shared_ptr<void> {
+            auto _pText = std::make_shared<MacroTextResource>();
+            _pText->Text.assign(Body_.begin(), Body_.end());
+            return _pText;
+        };
+        return _Codec;
+    }
 }
 
 ICAX_REGISTER_RESOURCE_LOADER(MacroTextResource, MacroTextLoader)
+ICAX_REGISTER_RESOURCE_PERSISTENCE_CODEC(
+    "test.macro-text",
+    MacroTextResource,
+    MakeMacroTextPersistenceCodec)
 
 TEST(ResourceKeyTest, KeyRequiresNonEmptySource)
 {
     EXPECT_FALSE(CResourceKey{}.IsValid());
     EXPECT_FALSE((CResourceKey{ "" }).IsValid());
     EXPECT_TRUE((CResourceKey{ "memory://source" }).IsValid());
+}
+
+TEST(ResourcePersistenceRegistrationTest, ReplaysCodecIntoIndependentLibraries)
+{
+    CResourceLibrary _Source;
+    CResourcePersistenceRegistrationCatalog::ReplayAll(_Source);
+
+    const std::string _URL = "memory://persistent/macro-text";
+    CResourceInfo _Info;
+    _Info.Key = CResourceKey{_URL};
+    _Info.ResourceTypeID = "test.macro-text";
+    _Info.Persistence = EResourcePersistenceMode::Embedded;
+    _Info.nVersion = 1;
+    auto _pText = std::make_shared<MacroTextResource>();
+    _pText->Text = "persistent-body";
+    _Source.Set<MacroTextResource>(_URL, _pText, _Info);
+
+    const auto _Version = _Source.GetVersion(_URL);
+    ASSERT_NE(0u, _Version);
+    const auto _Payload = _Source.SerializePersistentVersion(
+        {_URL, _Version});
+
+    CResourceLibrary _Restored;
+    CResourcePersistenceRegistrationCatalog::ReplayAll(_Restored);
+    _Restored.RestorePersistentVersion(_Payload);
+    const auto _pRestored =
+        _Restored.Get<MacroTextResource>(_URL, _Version);
+    ASSERT_NE(nullptr, _pRestored);
+    EXPECT_EQ("persistent-body", _pRestored->Text);
 }
 
 TEST(ResourceKeyTest, KeyComparisonUsesSourceOnly)

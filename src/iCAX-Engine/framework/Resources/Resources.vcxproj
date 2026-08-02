@@ -164,6 +164,7 @@
     <ClInclude Include="ResourceLoadContext.h" />
     <ClInclude Include="ResourceLoaderRegistrationCatalog.h" />
     <ClInclude Include="ResourceLoaderRegistry.h" />
+    <ClInclude Include="ResourcePersistenceRegistrationCatalog.h" />
     <ClInclude Include="ResourceLoadResult.h" />
     <ClInclude Include="ResourcePool.h" />
     <ClInclude Include="ResourcePoolAccess.h" />
@@ -189,6 +190,7 @@
     <ClCompile Include="ResourceAccess.cpp" />
     <ClCompile Include="ResourceLoaderRegistrationCatalog.cpp" />
     <ClCompile Include="ResourceLoaderRegistry.cpp" />
+    <ClCompile Include="ResourcePersistenceRegistrationCatalog.cpp" />
     <ClCompile Include="ResourcePool.cpp" />
     <ClCompile Include="ResourceLibrary.cpp" />
     <ClCompile Include="ResourceURL.cpp" />

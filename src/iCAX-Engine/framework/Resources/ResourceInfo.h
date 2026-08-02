@@ -139,5 +139,16 @@ namespace iCAX
                 return Missing.empty();
             }
         };
+
+        /*
+        * @brief 一个可直接写入项目文件或从项目文件恢复的精确资源版本。
+        * @details External 资源的 Body 必须为空；Embedded 资源的 Body 由稳定
+        *   ResourceTypeID 对应的持久化编解码器生成。
+        */
+        struct _RESOURCES_EXP CResourcePersistentPayload final
+        {
+            CResourceInfo Info;
+            std::vector<uint8_t> Body;
+        };
     }
 }

@@ -62,6 +62,7 @@ namespace iCAX
         {
             std::string Magic; //!< 项目文件 magic，必须存在且在 ApplicationRuntime 内唯一。
             std::string FormatVersion; //!< 项目文件格式版本文本。
+            uint32_t FormatRevision = 1; //!< 单调递增的项目文件修订号，用于确定升级链。
             std::string QuickSaveLogMagic; //!< 快速保存日志 magic；为空时由产品运行时基于 Magic 派生。
             uint32_t QuickSaveLogVersion = 1; //!< 快速保存日志格式版本，只用于严格匹配，不做迁移。
             std::vector<std::string> FileExtensions; //!< 建议扩展名，仅用于展示或文件选择，不作为唯一判定依据。

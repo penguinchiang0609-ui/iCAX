@@ -48,6 +48,9 @@
     <ClInclude Include="ResourceLoaderRegistry.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="ResourcePersistenceRegistrationCatalog.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="ResourceLoadResult.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -102,6 +105,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ResourceLoaderRegistry.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ResourcePersistenceRegistrationCatalog.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="ResourcePool.cpp">

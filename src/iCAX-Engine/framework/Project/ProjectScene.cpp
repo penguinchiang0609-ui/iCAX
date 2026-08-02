@@ -190,6 +190,10 @@ iCAX::Project::CProjectScene::CProjectScene(
     , m_RuntimeScheduler(m_nFrameIntervalMilliseconds)
     , m_FrameHandler(CreateInfo_.FrameHandler)
 {
+    if (CreateInfo_.ResourceLibraryInitializer)
+    {
+        CreateInfo_.ResourceLibraryInitializer(m_Resources);
+    }
     m_Resources.SetScope(
         iCAX::Resource::MakeSceneResourceScope(
             m_pApplicationContext->GetDescriptor().AppID,

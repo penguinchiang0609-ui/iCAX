@@ -393,11 +393,8 @@ iCAX::Database::COperationBatchBuilder::COperationBatchBuilder(IN EOperationBatc
 
 void iCAX::Database::COperationBatchBuilder::RecordRepositoryEvent(IN const RepositoryEventArgs& Args_)
 {
-    if (m_Batch.Kind == EOperationBatchKind::LoadBaseline)
-    {
-        return;
-    }
-
+    // LoadBaseline 同样保留内存中的事实操作，以便加载失败时能够完整回滚；
+    // 成功 EndLoadBaseline 后该 Batch 会被直接丢弃，不进入历史或快速保存日志。
     AppendBatch(MakeOperationBatchFromRepositoryEvent(Args_, m_Batch.Kind, m_Batch.Name));
 }
 

@@ -77,6 +77,7 @@ namespace iCAX
             * @brief 结束加载基线
             */
             virtual void EndLoadBaseline() override;
+            virtual void CancelLoadBaseline() override;
 
             /*
             * @brief 开始事务

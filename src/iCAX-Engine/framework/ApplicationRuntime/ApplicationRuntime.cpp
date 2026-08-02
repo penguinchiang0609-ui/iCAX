@@ -175,6 +175,14 @@ namespace
             {
                 throw std::invalid_argument("Product project file magic cannot be empty: " + _Product.ProductID);
             }
+            if (_Product.ProjectFile.FormatVersion.empty())
+            {
+                throw std::invalid_argument("Product project file format version cannot be empty: " + _Product.ProductID);
+            }
+            if (_Product.ProjectFile.FormatRevision == 0)
+            {
+                throw std::invalid_argument("Product project file format revision cannot be zero: " + _Product.ProductID);
+            }
             if (_Product.ProjectFile.QuickSaveLogVersion == 0)
             {
                 throw std::invalid_argument("Product quick save log version cannot be zero: " + _Product.ProductID);
@@ -210,6 +218,7 @@ namespace
         iCAX::Data::ObjectMap _File;
         _File["magic"] = Definition_.Magic;
         _File["formatVersion"] = Definition_.FormatVersion;
+        _File["formatRevision"] = static_cast<unsigned int>(Definition_.FormatRevision);
         _File["quickSaveLogMagic"] = Definition_.QuickSaveLogMagic.empty()
             ? Definition_.Magic + ".QuickSaveLog"
             : Definition_.QuickSaveLogMagic;
@@ -267,6 +276,7 @@ iCAX::Application::CApplicationRuntime::CApplicationRuntime()
     _DefaultProduct.ProductVersion = "1.0";
     _DefaultProduct.ProjectFile.Magic = "ICAX_DEFAULT";
     _DefaultProduct.ProjectFile.FormatVersion = "1.0";
+    _DefaultProduct.ProjectFile.FormatRevision = 1;
     _DefaultProduct.ProjectFile.FileExtensions.push_back(".icax");
     m_Config.Products.push_back(_DefaultProduct);
     _ValidateProductDefinitions(m_Config.Products);
@@ -991,11 +1001,9 @@ iCAX::Interaction::CInvocationResult iCAX::Application::CApplicationRuntime::Han
     }
 
     auto _pRuntime = StartProduct(_ResolveResult.ProductID);
-    auto _pCatalog = _pRuntime->OpenProjectCatalog(
-        _CatalogName,
+    auto _pCatalog = _pRuntime->OpenProjectFile(
         _ProjectPath,
-        _ProjectName,
-        _ProjectPath);
+        _CatalogName);
 
     iCAX::Data::ObjectMap _Response;
     _Response["applicationChannelId"] = m_ApplicationChannelID;
@@ -1223,11 +1231,9 @@ std::shared_ptr<iCAX::Project::CProjectCatalog> iCAX::Application::CApplicationR
         : strCatalogName_;
 
     auto _pRuntime = StartProduct(_ResolveResult.ProductID);
-    return _pRuntime->OpenProjectCatalog(
-        _CatalogName,
+    return _pRuntime->OpenProjectFile(
         strProjectPath_,
-        _ProjectName,
-        strProjectPath_);
+        _CatalogName);
 }
 
 iCAX::Application::CProductFileResolveResult iCAX::Application::CApplicationRuntime::ResolveProjectFileProduct(

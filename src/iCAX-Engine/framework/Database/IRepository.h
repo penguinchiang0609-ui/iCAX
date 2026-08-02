@@ -154,6 +154,13 @@ namespace iCAX
             virtual void EndLoadBaseline() = 0;
 
             /*
+            * @brief 取消当前基线加载，并回滚 BeginLoadBaseline 之后的全部写入。
+            * @details
+            *   文件加载或物化任一步失败时调用，保证 Repository 不会留下半加载状态。
+            */
+            virtual void CancelLoadBaseline() = 0;
+
+            /*
             * @brief 开始事务
             * @details
             *   返回当前事务对象。上层先向事务写入操作意图，再把该事务对象传给 CommitTransaction 或 CancelTransaction。

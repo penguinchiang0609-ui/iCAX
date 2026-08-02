@@ -23,6 +23,7 @@
   "projectFile": {
     "magic": "ICAX_LASER_3D_CAM",
     "formatVersion": "0.1",
+    "formatRevision": 1,
     "quickSaveLogMagic": "ICAX_LASER_3D_CAM_QSAVE",
     "quickSaveLogVersion": 1,
     "fileExtensions": [".i3cam"],

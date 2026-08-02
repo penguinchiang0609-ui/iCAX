@@ -240,6 +240,30 @@ namespace iCAX
                 IN bool bReplaceExisting_ = false);
 
             /*
+            * @brief 注册稳定资源类型的项目持久化编解码器。
+            * @details 同一编解码器同时用于项目文件和历史版本冷存储；项目文件
+            *   只保存 ResourceTypeID，不保存编译器相关的 C++ 类型名。
+            */
+            bool RegisterPersistenceCodec(
+                IN const std::string& strResourceTypeID_,
+                IN const std::type_info& RuntimeType_,
+                IN CResourceVersionCodec Codec_,
+                IN bool bReplaceExisting_ = false);
+
+            /*
+            * @brief 将一个精确的持久化资源版本转换为稳定字节正文。
+            */
+            CResourcePersistentPayload SerializePersistentVersion(
+                IN const CResourceReference& Reference_) const;
+
+            /*
+            * @brief 从稳定字节正文恢复一个精确资源版本。
+            * @details 调用方必须按依赖优先顺序恢复。
+            */
+            void RestorePersistentVersion(
+                IN const CResourcePersistentPayload& Payload_);
+
+            /*
             * @brief 查询版本是否已经从池持有的内存对象转为磁盘冷版本。
             */
             bool IsVersionCold(
@@ -427,6 +451,8 @@ namespace iCAX
             std::map<CResourceKey, uint64_t> m_mapVersionHighWaterMarks;
             std::map<std::type_index, CResourceVersionCodec>
                 m_mapVersionCodecs;
+            std::map<std::string, std::type_index>
+                m_mapPersistenceRuntimeTypes;
             CResourceVersionStorageOptions m_VersionStorageOptions;
             std::filesystem::path m_VersionStorageDirectory;
             uint64_t m_nArchiveFileSequence = 0;

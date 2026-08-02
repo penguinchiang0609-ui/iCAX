@@ -8,7 +8,9 @@ Project 只承载项目身份、路径、项目级 Settings 和 Scene 集合。�
 
 Project 的 `OnSceneFrame/SetSceneFrameHandler` 是 Scene 级回调：MainScene 和 ChildScene 都会把自己的 `CProjectScene` 与 backend SDO endpoint 传入。`ProductRuntime` 依靠这个回调在每个 Scene 自己的线程内分发 Scene SDO frame，因此子 Scene 不会再把 frame 误投到 MainScene 的上下文。
 
-Project 负责协调快速保存日志生命周期，但具体日志写入和回放落在 Scene 的 Repository 上。主项目文件本体由产品/文件模块读写；Project 在基线加载后携带产品传入的日志 `magic/version` 回放 `ProjectPath + ".log"`，MainScene 启动后用同一组 `magic/version` 打开追加日志，项目文件保存成功后通过 `MarkProjectFileSaved` 截断并重开日志，关闭时先关日志再清理 Scene。
+Project 负责协调快速保存日志生命周期，但具体日志写入和回放落在 Scene 的 Repository 上。主项目文件本体由 ProductRuntime/ProjectFile 读写；打开顺序固定为“基线加载 → 回放 `ProjectPath + ".log"` → 打开日志追加 → 启动 MainScene”，项目文件保存成功后通过 `MarkProjectFileSaved` 截断并重开日志，关闭时先关日志再清理 Scene。
+
+当前项目文件唯一持久化数据域是 MainScene 的 Database + ResourceLibrary；Project 自身的 ResourceLibrary 和所有 Transient 子 Scene 不进入主项目文件。当前 Project 还明确采用 `MainSceneID == ProjectID`，文件接入层会校验这一约束。
 
 ## 目录结构
 

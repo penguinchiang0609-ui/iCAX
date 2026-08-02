@@ -10,6 +10,7 @@
 #include <Product/ProductManifest.h>
 #include <Product/ProductRuntime.h>
 #include <Project/ProjectRuntime.h>
+#include <Project/ProjectSDO.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <SDO/SDOChannelRegistry.h>
 #include <Services/ServiceProvider.h>
@@ -377,6 +378,50 @@ TEST(ProductRuntimeTest, LocalProjectPathStartsQuickSaveLog)
     RemoveProjectFiles(_ProjectPath);
 }
 
+TEST(ProductRuntimeTest, SavesAndReopensProjectFileWithStableIdentity)
+{
+    auto _ProjectPath = MakeTempProjectPath();
+    auto _pRuntime = MakeRuntime();
+    _pRuntime->Start();
+
+    auto _pCatalog = _pRuntime->OpenProjectCatalog(
+        "Robot Catalog",
+        _ProjectPath.string(),
+        "Robot Cell",
+        _ProjectPath.string());
+    auto _pProject = _pCatalog->GetMainProject();
+    ASSERT_NE(nullptr, _pProject);
+    const auto _ProjectID = _pProject->GetProjectID();
+    _pProject->Settings().Set(
+        "document.units", std::string("millimeter"));
+
+    EXPECT_NO_THROW(_pRuntime->SaveProjectFile(
+        _ProjectID, _ProjectPath.string()));
+    EXPECT_TRUE(_pProject->IsRunning());
+    EXPECT_TRUE(_pProject->IsQuickSaveLogOpen());
+    EXPECT_TRUE(std::filesystem::exists(_ProjectPath));
+    EXPECT_TRUE(_pRuntime->CloseProjectCatalog(
+        _pCatalog->GetCatalogID()));
+
+    auto _pReopenedCatalog = _pRuntime->OpenProjectFile(
+        _ProjectPath.string());
+    auto _pReopened = _pReopenedCatalog->GetMainProject();
+    ASSERT_NE(nullptr, _pReopened);
+    EXPECT_EQ(_ProjectID, _pReopened->GetProjectID());
+    EXPECT_EQ(_ProjectID, _pReopened->GetMainSceneID());
+    EXPECT_EQ("Robot Cell", _pReopened->GetProjectName());
+    EXPECT_EQ(
+        "millimeter",
+        _pReopened->Settings()
+            .Get("document.units")
+            .To<std::string>());
+    EXPECT_TRUE(_pReopened->IsRunning());
+    EXPECT_TRUE(_pReopened->IsQuickSaveLogOpen());
+
+    _pRuntime->Stop();
+    RemoveProjectFiles(_ProjectPath);
+}
+
 TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
 {
     auto _pProductDataStore = std::make_shared<CMemoryProductDataStore>();
@@ -485,6 +530,46 @@ TEST(ProductRuntimeSDOTest, ProductRuntimeCanSendFrontendEvent)
 
     ClearFrames(_Events);
     _pRuntime->Stop();
+}
+
+TEST(ProductRuntimeSDOTest, ProjectSDOSavesOnRunningScene)
+{
+    auto _ProjectPath = MakeTempProjectPath();
+    auto _pRuntime = MakeRuntime();
+    _pRuntime->Start();
+    auto _pCatalog = _pRuntime->OpenProjectCatalog(
+        "Robot Catalog",
+        _ProjectPath.string(),
+        "Robot Cell",
+        _ProjectPath.string());
+    auto _pProject = _pCatalog->GetMainProject();
+    ASSERT_NE(nullptr, _pProject);
+
+    auto _SceneEndpoint =
+        _pRuntime->GetSceneFrontendSDOEndpoint(
+            _pProject->GetProjectID(),
+            _pProject->GetMainSceneID());
+    _SceneEndpoint.Send(MakeRequestFrame(
+        2501,
+        iCAX::Project::kProjectSaveMethodCode));
+
+    auto _Responses = WaitForFrames(_SceneEndpoint);
+    ASSERT_EQ(1u, _Responses.size());
+    EXPECT_EQ(
+        iCAX::Interaction::EInvocationStatus::Ok,
+        _Responses[0].nStatus);
+    const auto _Payload = DecodeObjectPayload(_Responses[0]);
+    EXPECT_TRUE(_Payload.at("saved").To<bool>());
+    EXPECT_EQ(
+        _ProjectPath.string(),
+        _Payload.at("projectPath").To<std::string>());
+    EXPECT_TRUE(std::filesystem::exists(_ProjectPath));
+    EXPECT_TRUE(_pProject->IsRunning());
+    EXPECT_FALSE(_pProject->GetLastFault().has_value());
+
+    ClearFrames(_Responses);
+    _pRuntime->Stop();
+    RemoveProjectFiles(_ProjectPath);
 }
 
 TEST(ProductRuntimeSDOTest, ProductSDOCallSentToSceneSDOReturnsInvalidInvocation)
