@@ -32,6 +32,29 @@ export function exposeLaserCamAutomation(context, view, commands) {
     }) ?? null;
   window.__icaxLaser3DCAM.waitForRenderableViewport = async (options = {}) =>
     waitForRenderableViewport(view, options);
+  window.__icaxLaser3DCAM.executeAreaAction = async (action) =>
+    commands.executeAreaAction(context, view, String(action ?? ""));
+  window.__icaxLaser3DCAM.getTubeDesignerState = () => {
+    const designer = view.scene?.tubeDesigner ?? {};
+    const byStableKey = (left, right) =>
+      String(left?.stableKey ?? "").localeCompare(String(right?.stableKey ?? ""));
+    return {
+      product: designer.product ?? null,
+      generationRun: designer.generationRun ?? null,
+      members: [...(designer.members ?? [])].sort(byStableKey).map((member) => ({
+        entityId: member.entityId ?? "",
+        stableKey: member.stableKey ?? "",
+        resourceId: member.previewGeometryResourceId ?? "",
+        resourceVersion: Number(member.previewGeometryResourceVersion ?? 0),
+      })),
+      parts: [...(designer.parts ?? [])].sort(byStableKey).map((part) => ({
+        entityId: part.entityId ?? "",
+        stableKey: part.stableKey ?? "",
+        resourceId: part.manufacturingGeometryResourceId ?? "",
+        resourceVersion: Number(part.manufacturingGeometryResourceVersion ?? 0),
+      })),
+    };
+  };
   window.__icaxLaser3DCAM.importMachineDefinition = async (sourcePath) => {
     await commands.importMachineDefinition(context, view, sourcePath);
     return {

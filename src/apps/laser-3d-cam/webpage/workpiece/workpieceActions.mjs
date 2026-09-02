@@ -101,8 +101,9 @@ export async function importModelPath(context, view, sourcePath, ops) {
   if (!imported.ok) {
     return;
   }
+  const previousViewRevision = ops.getActiveAreaViewRevision(view);
   const ok = await ops.invokeSDOMethod(context, view, "Workpiece.Instantiate", imported.payload, { timeoutMs: 60000 });
   if (ok) {
-    await ops.fitViewAfterRenderPublish(context, view);
+    await ops.fitViewAfterRenderPublish(context, view, { afterRevision: previousViewRevision });
   }
 }

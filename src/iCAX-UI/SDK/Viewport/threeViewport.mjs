@@ -48,6 +48,8 @@ export class ThreeRenderViewport {
     this.materialPayloads = new Map();
     this.resourcePromises = new Map();
     this.viewApplyGeneration = 0;
+    this.appliedViewRevision = "0";
+    this.renderSequence = 0;
     this.instancePayloads = new Map();
     this.transformPayloads = new Map();
     this.colliderPayloads = new Map();
@@ -242,7 +244,11 @@ export class ThreeRenderViewport {
         this.#loadViewResource(resourceClient, reference)),
     );
     if (generation !== this.viewApplyGeneration || this.isDisposed) {
-      return false;
+      return {
+        applied: false,
+        superseded: true,
+        revision: String(snapshot?.revision ?? "0"),
+      };
     }
     for (const resource of resources) {
       if (!resource) {
@@ -302,13 +308,60 @@ export class ThreeRenderViewport {
       }
     }
     this.visibleEntityIds = desiredIds;
+    for (const object of this.sceneObjects.values()) {
+      this.#applyObjectVisibility(object);
+    }
+    for (const [objectId, object] of this.colliderObjects) {
+      this.#applyColliderVisibility(objectId, object);
+    }
     this.#refreshSceneObjectMaterials();
     this.#updateSelectionVisuals();
     this.#setStatus(rows.length && !desiredIds.size
       ? "View 中暂时没有可读取的几何资源"
       : "");
+    this.appliedViewRevision = String(snapshot?.revision ?? "0");
     this.#renderOnce();
-    return true;
+    return {
+      applied: true,
+      superseded: false,
+      revision: this.appliedViewRevision,
+      renderSequence: this.renderSequence,
+      entityIds: [...desiredIds],
+      rowCount: rows.length,
+      geometryReferenceCount: rows.filter((row) =>
+        String(row?.data?.geometry?.url ?? "").trim()).length,
+      missingGeometryEntityIds: rows
+        .filter((row) => {
+          const geometryId = String(row?.data?.geometry?.url ?? "").trim();
+          return !geometryId || !this.geometryObjects.has(geometryId);
+        })
+        .map((row) => String(row?.entityId ?? "")),
+    };
+  }
+
+  fitViewForRevision(revision, padding = 1.25) {
+    const expectedRevision = String(revision ?? "0");
+    if (expectedRevision === "0" || this.appliedViewRevision !== expectedRevision) {
+      throw new Error(
+        `Cannot fit View revision ${expectedRevision}; applied revision is ${this.appliedViewRevision}`,
+      );
+    }
+    if (!this.fitView(padding)) {
+      throw new Error(`View revision ${expectedRevision} has no visible geometry to fit`);
+    }
+    return {
+      fitted: true,
+      revision: expectedRevision,
+      renderSequence: this.renderSequence,
+    };
+  }
+
+  getAppliedViewState() {
+    return {
+      revision: this.appliedViewRevision,
+      renderSequence: this.renderSequence,
+      entityIds: [...this.sceneObjects.keys()],
+    };
   }
 
   fitView(padding = 1.25) {
@@ -1316,6 +1369,7 @@ export class ThreeRenderViewport {
     this.transformPayloads.clear();
     this.cameras.clear();
     this.activeCameraId = null;
+    this.appliedViewRevision = "0";
     this.selectionAxisHelper.visible = false;
   }
 
@@ -1756,6 +1810,8 @@ export class ThreeRenderViewport {
     this.#updateSelectionHelper();
     this.renderer.render(this.scene, this.camera);
     this.#renderOrientationGizmo();
+    this.renderSequence += 1;
+    return this.renderSequence;
   }
 
   #renderOrientationGizmo() {

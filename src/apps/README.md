@@ -6,6 +6,7 @@
 
 - `laser-3d-cam/`：三维线条切割 CAM，首版覆盖模型拓扑拾取和刀路列表。
 - `tube-one/`：TubeOne 管材 CAM，覆盖管材中性几何与 CSG 识别、刀路、仿真及 NC 输出。
+- `tube-designer/`：TubeDesigner 管材产品参数化设计、装配预览与制造拆单。
 
 ## 产品目录约定
 

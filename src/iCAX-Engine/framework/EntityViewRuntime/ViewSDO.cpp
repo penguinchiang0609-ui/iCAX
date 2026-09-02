@@ -118,6 +118,14 @@ namespace
                 _ProjectionField.bResourceReference =
                     _Resource->second.To<bool>();
             }
+            _ProjectionField.ResourceVersionPropertyName =
+                GetOptionalString(_Field, "resourceVersionProperty");
+            if (!_ProjectionField.ResourceVersionPropertyName.empty()
+                && !_ProjectionField.bResourceReference)
+            {
+                throw std::invalid_argument(
+                    "View projection resourceVersionProperty requires resourceReference");
+            }
             _Projection.push_back(std::move(_ProjectionField));
         }
         return _Projection;

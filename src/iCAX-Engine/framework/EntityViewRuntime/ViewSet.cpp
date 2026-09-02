@@ -103,6 +103,7 @@ namespace
         IN iCAX::Resource::CResourceLibrary& Resources_,
         IN const iCAX::Data::PropertyValue& Value_,
         IN const bool bResourceReference_,
+        IN const uint64_t nResourceVersion_,
         IN OUT std::vector<iCAX::Resource::CResourceReference>& Dependencies_)
     {
         if (!bResourceReference_ || !Value_.Is<std::string>())
@@ -110,11 +111,14 @@ namespace
             return iCAX::Data::Variant(Value_);
         }
         const auto _URL = Value_.To<std::string>();
-        const auto _Version = Resources_.GetVersion(_URL);
+        const auto _Version = nResourceVersion_ != 0
+            ? nResourceVersion_
+            : Resources_.GetVersion(_URL);
         iCAX::Data::ObjectMap _Reference;
         _Reference["url"] = _URL;
         _Reference["version"] = static_cast<unsigned long long>(_Version);
-        if (!_URL.empty() && _Version != 0)
+        if (!_URL.empty() && _Version != 0
+            && Resources_.Contains(_URL, _Version))
         {
             Dependencies_.push_back({ _URL, _Version });
         }
@@ -144,10 +148,31 @@ namespace
             {
                 try
                 {
+                    uint64_t _ResourceVersion = 0;
+                    if (_Field.bResourceReference
+                        && !_Field.ResourceVersionPropertyName.empty())
+                    {
+                        const auto _VersionValue = _pComponent->GetProperty(
+                            _Field.ResourceVersionPropertyName);
+                        if (_VersionValue.Is<unsigned long long>())
+                        {
+                            _ResourceVersion = _VersionValue.To<unsigned long long>();
+                        }
+                        else if (_VersionValue.Is<unsigned int>())
+                        {
+                            _ResourceVersion = _VersionValue.To<unsigned int>();
+                        }
+                        else
+                        {
+                            throw std::invalid_argument(
+                                "View resource version property must be an unsigned integer");
+                        }
+                    }
                     _Data[_Alias] = MakeProjectedValue(
                         Resources_,
                         _pComponent->GetProperty(_Field.PropertyName),
                         _Field.bResourceReference,
+                        _ResourceVersion,
                         Dependencies_);
                 }
                 catch (...)

@@ -1,0 +1,100 @@
+{
+  "schema": "icax.product.manifest",
+  "schemaVersion": 1,
+  "productId": "icax.tube-designer",
+  "productName": "TubeDesigner",
+  "productVersion": "0.1.0",
+  "capabilities": {
+    "platform": {
+      "domain": "tube-product-design",
+      "modules": ["template", "product", "assembly", "joint", "disassembly", "step-export"]
+    },
+    "tubeDesigner": {
+      "templateProtocolVersion": 1,
+      "templates": [
+        {
+          "templateId": "security-window-1",
+          "version": "1.0.0",
+          "displayName": "防盗窗 1 号 - 无把手不封闭",
+          "status": "available"
+        },
+        {
+          "templateId": "security-window-2",
+          "version": "1.0.0",
+          "displayName": "防盗窗 2 号 - 带把手区域",
+          "status": "planned"
+        },
+        {
+          "templateId": "security-window-3",
+          "version": "1.0.0",
+          "displayName": "防盗窗 3 号 - 闭合边框",
+          "status": "planned"
+        }
+      ],
+      "designGeometry": "assembly-member",
+      "manufacturingGeometry": "manufacturing-part",
+      "downstreamProductId": "icax.tube-one"
+    }
+  },
+  "projectFile": {
+    "magic": "ICAX_TUBE_DESIGNER",
+    "formatVersion": "0.1",
+    "formatRevision": 1,
+    "quickSaveLogMagic": "ICAX_TUBE_DESIGNER_QSAVE",
+    "quickSaveLogVersion": 1,
+    "fileExtensions": [".tubedesigner"],
+    "magicOffset": 0,
+    "probeBytes": 256
+  },
+  "backend": {
+    "startupComponent": "CSceneBootstrapComponent",
+    "pdo": {
+      "enabled": true,
+      "arenaSize": 134217728,
+      "slotCapacity": 4096
+    },
+    "modules": {
+      "dependencies": [
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
+        "../../${Platform}/${Configuration}/RenderData.dll",
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/ColliderData.dll",
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll"
+      ],
+      "components": [
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll",
+        "../../${Platform}/${Configuration}/TubeDesigner.dll"
+      ],
+      "behaviours": [
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+      ],
+      "services": [
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+      ],
+      "sdo": [
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll",
+        "../../${Platform}/${Configuration}/TubeDesigner.dll"
+      ]
+    },
+    "resources": {
+      "handlers": [
+        {
+          "kind": "exporter",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.step",
+          "extensions": [".step", ".stp"],
+          "module": "../../${Platform}/${Configuration}/TubeDesigner.dll",
+          "provider": "icax.tube-designer.occ-step",
+          "priority": 200
+        }
+      ]
+    }
+  },
+  "webpage": {
+    "entry": "apps/tube-designer/webpage/entry.mjs"
+  }
+}

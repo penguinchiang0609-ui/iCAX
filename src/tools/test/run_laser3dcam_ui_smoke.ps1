@@ -11,6 +11,8 @@ param(
     [string]$WorkpiecePath = "",
     [switch]$RecognizeCADIntent,
     [switch]$CheckTubeCSGWorkflow,
+    [switch]$CheckTubeDesignerWorkflow,
+    [switch]$CheckTubeDesignerStepExport,
     [switch]$CheckDefaultMachine,
     [switch]$CheckMachineEnableWorkflow,
     [switch]$CheckMachineRenameWorkflow,
@@ -51,8 +53,9 @@ function New-DefaultProjectPath {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
     $isTubeOne = [StringComparer]::OrdinalIgnoreCase.Equals($TargetProductId, "icax.tube-one")
-    $prefix = if ($isTubeOne) { "tubeone-ui-smoke" } else { "laser3dcam-ui-smoke" }
-    $extension = if ($isTubeOne) { ".tubeone" } else { ".i3cam" }
+    $isTubeDesigner = [StringComparer]::OrdinalIgnoreCase.Equals($TargetProductId, "icax.tube-designer")
+    $prefix = if ($isTubeOne) { "tubeone-ui-smoke" } elseif ($isTubeDesigner) { "tube-designer-ui-smoke" } else { "laser3dcam-ui-smoke" }
+    $extension = if ($isTubeOne) { ".tubeone" } elseif ($isTubeDesigner) { ".tubedesigner" } else { ".i3cam" }
     return Join-Path $dir "$prefix-$stamp$extension"
 }
 
@@ -86,6 +89,7 @@ function Sync-ApplicationRuntimeDependencies {
         "iCAX-Plugins\geometry\DAEResourceImport",
         "iCAX-Plugins\geometry\STLResourceImport",
         "iCAX-Plugins\physics\ColliderData",
+        "iCAX-Plugins\product\TubeDesigner",
         "iCAX-Plugins\render\RenderData",
         "iCAX-Plugins\render\RenderInteraction"
     )
@@ -339,6 +343,7 @@ Ensure-UIContainerSmokeConfig -WorkingDirectory $WorkingDirectory -RemoteDebuggi
 if (-not $ProjectPath) {
     $ProjectPath = New-DefaultProjectPath -TargetProductId $ProductId
 }
+$tubeDesignerExportDirectory = Join-Path (Split-Path -Parent $ProjectPath) (([IO.Path]::GetFileNameWithoutExtension($ProjectPath)) + "-step")
 
 $process = $null
 if ($StartApplication) {
@@ -355,11 +360,14 @@ try {
         $projectPathLiteral = ConvertTo-JsLiteral $ProjectPath
         $machinePathLiteral = ConvertTo-JsLiteral $MachineDefinitionPath
         $workpiecePathLiteral = ConvertTo-JsLiteral $WorkpiecePath
+        $tubeDesignerExportDirectoryLiteral = ConvertTo-JsLiteral $tubeDesignerExportDirectory
         $createProjectLiteral = if ($CreateProject -or $MachineDefinitionPath -or $WorkpiecePath) { "true" } else { "false" }
         $importMachineLiteral = if ($MachineDefinitionPath) { "true" } else { "false" }
         $importWorkpieceLiteral = if ($WorkpiecePath) { "true" } else { "false" }
         $recognizeCADIntentLiteral = if ($RecognizeCADIntent) { "true" } else { "false" }
         $checkTubeCSGWorkflowLiteral = if ($CheckTubeCSGWorkflow) { "true" } else { "false" }
+        $checkTubeDesignerWorkflowLiteral = if ($CheckTubeDesignerWorkflow) { "true" } else { "false" }
+        $checkTubeDesignerStepExportLiteral = if ($CheckTubeDesignerStepExport) { "true" } else { "false" }
         $checkDefaultMachineLiteral = if ($CheckDefaultMachine) { "true" } else { "false" }
         $checkMachineEnableWorkflowLiteral = if ($CheckMachineEnableWorkflow) { "true" } else { "false" }
         $checkMachineRenameWorkflowLiteral = if ($CheckMachineRenameWorkflow) { "true" } else { "false" }
@@ -435,6 +443,98 @@ try {
   if ($importWorkpieceLiteral) {
     importWorkpieceResult = await window.__icaxLaser3DCAM.importWorkpiece($workpiecePathLiteral);
     await delay(500);
+  }
+
+  let tubeDesignerResult = null;
+  if ($checkTubeDesignerWorkflowLiteral) {
+    const captureDesignerDom = () => {
+      const parts = Array.from(document.querySelectorAll(".tube-designer-part"));
+      const error = document.querySelector(".cam-status.error")?.textContent?.trim() ?? "";
+      return {
+        error,
+        partCount: parts.length,
+        partNumbers: parts.map((part) => part.querySelector("strong")?.textContent?.trim() ?? ""),
+        lengths: parts.map((part) =>
+          part.querySelector(".tube-designer-part-length")?.textContent?.trim() ?? ""),
+        notice: document.querySelector(".cam-status.notice")?.textContent?.trim() ?? ""
+      };
+    };
+    const generateOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+      "tube-designer-generate"
+    );
+    const designerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const dom = captureDesignerDom();
+    const viewport = window.__icaxLaser3DCAM.getViewportDebugState({
+      samplePixels: true,
+      includeObjects: true
+    });
+    if (!generateOperation?.handled || dom.error || dom.partCount !== 7) {
+      throw new Error("TubeDesigner generation event chain failed: " + JSON.stringify({ generateOperation, dom }));
+    }
+    const widthInput = document.querySelector("[data-tube-designer-parameter='width']");
+    if (!widthInput) {
+      throw new Error("TubeDesigner regeneration controls are missing.");
+    }
+    widthInput.value = "1400";
+    widthInput.dispatchEvent(new Event("input", { bubbles: true }));
+    const regenerateOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+      "tube-designer-generate"
+    );
+    const regeneratedDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const regeneratedDom = captureDesignerDom();
+    const regeneratedViewport = window.__icaxLaser3DCAM.getViewportDebugState({
+      samplePixels: true,
+      includeObjects: true
+    });
+    if (!regenerateOperation?.handled || regeneratedDom.error) {
+      throw new Error("TubeDesigner regeneration event chain failed: " + JSON.stringify({ regenerateOperation, regeneratedDom }));
+    }
+    await window.__icaxAppShell.executeRibbonCommand("edit.undo");
+    const undoDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const undoDom = captureDesignerDom();
+    const undoResult = {
+      partCount: undoDom.partCount,
+      lengths: undoDom.lengths,
+      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+    };
+    await window.__icaxAppShell.executeRibbonCommand("edit.redo");
+    const redoDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const redoDom = captureDesignerDom();
+    const redoResult = {
+      partCount: redoDom.partCount,
+      lengths: redoDom.lengths,
+      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+    };
+    let exportResult = null;
+    if ($checkTubeDesignerStepExportLiteral) {
+      const output = document.querySelector("[data-tube-designer-export-directory]");
+      if (!output) {
+        throw new Error("TubeDesigner STEP export controls are missing.");
+      }
+      output.value = $tubeDesignerExportDirectoryLiteral;
+      output.dispatchEvent(new Event("input", { bubbles: true }));
+      exportResult = await window.__icaxLaser3DCAM.executeAreaAction(
+        "tube-designer-export-all"
+      );
+      if (!exportResult?.handled) {
+        throw new Error("TubeDesigner STEP export event chain failed: " + JSON.stringify(exportResult));
+      }
+    }
+    tubeDesignerResult = {
+      generateOperation,
+      designerState,
+      dom,
+      viewport,
+      regenerateOperation,
+      regeneratedDesignerState,
+      regeneratedDom,
+      regeneratedViewport,
+      undoResult,
+      undoDesignerState,
+      redoResult,
+      redoDesignerState,
+      exportResult
+    };
   }
 
   const tubeMainDomState = $checkTubeCSGWorkflowLiteral
@@ -770,6 +870,7 @@ try {
     defaultMachineResult,
     importMachineResult,
     importWorkpieceResult,
+    tubeDesignerResult,
     recognizeCADIntentResult,
     tubeMainDomState,
     tubeBottomTabResult,
@@ -802,6 +903,94 @@ try {
         }
         $state = $response.result.result.value
         $state | ConvertTo-Json -Depth 32
+
+        if ($CheckTubeDesignerWorkflow) {
+            if (-not $state.tubeDesignerResult) {
+                throw "TubeDesigner workflow result is missing."
+            }
+            if ([int]$state.tubeDesignerResult.dom.partCount -ne 7) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner did not generate seven default parts: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.viewport.visibleObjectCount -ne 7) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner did not publish seven preview members: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.regeneratedDom.partCount -ne 7 -or
+                [int]$state.tubeDesignerResult.regeneratedViewport.visibleObjectCount -ne 7) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner regeneration left stale or missing members: $designerText"
+            }
+            $regeneratedWidth = [double]$state.tubeDesignerResult.regeneratedViewport.contentBounds.max.x -
+                [double]$state.tubeDesignerResult.regeneratedViewport.contentBounds.min.x
+            if ([Math]::Abs($regeneratedWidth - 1400.0) -gt 0.001) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner regeneration did not replace the preview geometry: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.undoResult.partCount -ne 7 -or
+                [int]$state.tubeDesignerResult.redoResult.partCount -ne 7) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner undo/redo did not restore a coherent design: $designerText"
+            }
+            $designerStates = @(
+                $state.tubeDesignerResult.designerState,
+                $state.tubeDesignerResult.regeneratedDesignerState,
+                $state.tubeDesignerResult.undoDesignerState,
+                $state.tubeDesignerResult.redoDesignerState
+            )
+            if (@($designerStates | Where-Object { -not $_ }).Count -gt 0) {
+                throw "TubeDesigner resource-version state capture is incomplete."
+            }
+            if (@($designerStates | Where-Object {
+                @($_.members).Count -ne 7 -or @($_.parts).Count -ne 7
+            }).Count -gt 0) {
+                $designerText = $designerStates | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner resource-version state is incomplete: $designerText"
+            }
+            for ($index = 0; $index -lt 7; $index++) {
+                foreach ($collectionName in @("members", "parts")) {
+                    $first = $designerStates[0].$collectionName[$index]
+                    $second = $designerStates[1].$collectionName[$index]
+                    $undo = $designerStates[2].$collectionName[$index]
+                    $redo = $designerStates[3].$collectionName[$index]
+                    if ($first.entityId -ne $second.entityId -or
+                        $first.entityId -ne $undo.entityId -or
+                        $first.entityId -ne $redo.entityId -or
+                        $first.resourceId -ne $second.resourceId -or
+                        $first.resourceId -ne $undo.resourceId -or
+                        $first.resourceId -ne $redo.resourceId -or
+                        [uint64]$first.resourceVersion -eq 0 -or
+                        [uint64]$second.resourceVersion -le [uint64]$first.resourceVersion -or
+                        [uint64]$undo.resourceVersion -ne [uint64]$first.resourceVersion -or
+                        [uint64]$redo.resourceVersion -ne [uint64]$second.resourceVersion) {
+                        $designerText = @($first, $second, $undo, $redo) |
+                            ConvertTo-Json -Depth 8 -Compress
+                        throw "TubeDesigner stable ID/version history failed for $collectionName[$index]: $designerText"
+                    }
+                }
+            }
+            $undoWidth = [double]$state.tubeDesignerResult.undoResult.viewport.contentBounds.max.x -
+                [double]$state.tubeDesignerResult.undoResult.viewport.contentBounds.min.x
+            $redoWidth = [double]$state.tubeDesignerResult.redoResult.viewport.contentBounds.max.x -
+                [double]$state.tubeDesignerResult.redoResult.viewport.contentBounds.min.x
+            if ([Math]::Abs($undoWidth - 1200.0) -gt 0.001 -or
+                [Math]::Abs($redoWidth - 1400.0) -gt 0.001) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner View did not render the exact undo/redo resource versions: $designerText"
+            }
+            if ([Math]::Abs([double]$state.tubeDesignerResult.viewport.contentBounds.projectedCenter.x) -gt 1 -or
+                [Math]::Abs([double]$state.tubeDesignerResult.viewport.contentBounds.projectedCenter.y) -gt 1) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner did not fit the generated product into the viewport: $designerText"
+            }
+        }
+        if ($CheckTubeDesignerStepExport) {
+            $stepFiles = @(Get-ChildItem -LiteralPath $tubeDesignerExportDirectory -Filter "*.step" -File -ErrorAction SilentlyContinue)
+            if ($stepFiles.Count -ne 7 -or @($stepFiles | Where-Object Length -le 0).Count -gt 0) {
+                $fileText = $stepFiles | Select-Object Name, Length | ConvertTo-Json -Compress
+                throw "TubeDesigner did not export seven non-empty STEP files: $fileText"
+            }
+        }
 
         if ($ScreenshotPath) {
             $screenshot = Invoke-CdpCommand -Socket $socket -Id 2 -Method "Page.captureScreenshot" -Params @{

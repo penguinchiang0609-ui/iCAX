@@ -83,6 +83,9 @@ function getOrCreateArea(view, areaId) {
     viewContent: null,
     viewContentRequest: null,
     viewReader: null,
+    viewApplyQueue: Promise.resolve(),
+    viewApplyByRevision: new Map(),
+    appliedViewRevision: "0",
   };
   return view.areas[areaId];
 }

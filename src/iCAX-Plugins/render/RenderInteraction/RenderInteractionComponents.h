@@ -89,8 +89,12 @@ namespace iCAX
             DECLARE_ICAX_COMPONENT(CRenderInstanceComponent, CComponentBase)
             DECLARE_ICAX_COMPONENT_CREATOR(CRenderInstanceComponent)
 
-            DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, std::string, GeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
-            DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, std::string, MaterialResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            // 资源身份与所引用的精确版本属于正式显示状态，必须随项目保存和撤销还原。
+            // ResourceID 保持稳定；资源内容变化只更新 Version。
+            DECLARED_ICAX_FIELD(CRenderInstanceComponent, std::string, GeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CRenderInstanceComponent, unsigned long long, GeometryResourceVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+            DECLARED_ICAX_FIELD(CRenderInstanceComponent, std::string, MaterialResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CRenderInstanceComponent, unsigned long long, MaterialResourceVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, unsigned long long, GeometryKind, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, unsigned long long, RenderClass, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
             DECLARED_ICAX_OBSERVABLE_FIELD(CRenderInstanceComponent, unsigned long long, LayerMask, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)

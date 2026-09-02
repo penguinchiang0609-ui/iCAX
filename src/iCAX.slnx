@@ -80,6 +80,10 @@
     <Project Path="iCAX-Engine/framework/Services/Services.vcxproj" Id="dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847" />
   </Folder>
   <Folder Name="/iCAX-Plugins/" />
+  <Folder Name="/iCAX-Plugins/product/" />
+  <Folder Name="/iCAX-Plugins/product/TubeDesigner/">
+    <Project Path="iCAX-Plugins/product/TubeDesigner/TubeDesigner.vcxproj" Id="b29dc027-f531-428f-9bcc-2d3e028ca044" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/common/" />
   <Folder Name="/iCAX-Plugins/common/Transform/">
     <Project Path="iCAX-Plugins/common/Transform/Transform.vcxproj" Id="14df2d69-19bd-4340-b859-7c4ca916b42b" />
@@ -220,5 +224,10 @@
     <Project Path="tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/JoltPhysicsTest.vcxproj" Id="76e8e3b4-192a-4d63-a2e9-6e65eb6123ea">
       <Build Project="false" />
     </Project>
+  </Folder>
+  <Folder Name="/tests/icax-plugins/product/" />
+  <Folder Name="/tests/icax-plugins/product/TubeDesigner/" />
+  <Folder Name="/tests/icax-plugins/product/TubeDesigner/TubeDesignerTest/">
+    <Project Path="tests/icax-plugins/product/TubeDesigner/TubeDesignerTest/TubeDesignerTest.vcxproj" Id="557945cd-abdc-43af-b76b-f61d0f102854" />
   </Folder>
 </Solution>

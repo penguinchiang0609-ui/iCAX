@@ -37,6 +37,7 @@ export class ViewClient {
       handle,
       snapshot: null,
       listener: typeof options.onChange === "function" ? options.onChange : null,
+      waiters: new Set(),
       pollPromise: null,
       timer: null,
       closed: false,
@@ -50,15 +51,21 @@ export class ViewClient {
         return state.snapshot;
       },
       poll: () => this.#poll(state),
+      waitForSnapshot: (predicate, waitOptions = {}) =>
+        this.#waitForSnapshot(state, predicate, waitOptions),
       stop: () => this.#stop(reader, state),
     };
 
     this.readers.add(reader);
     state.timer = setInterval(
-      () => void this.#poll(state),
+      () => void this.#poll(state).catch((error) => {
+        console.error("View polling failed", error);
+      }),
       normalizePollInterval(options.pollIntervalMs ?? this.defaultPollIntervalMs),
     );
-    void this.#poll(state);
+    void this.#poll(state).catch((error) => {
+      console.error("Initial View poll failed", error);
+    });
     return Object.freeze(reader);
   }
 
@@ -78,7 +85,6 @@ export class ViewClient {
       return state.pollPromise;
     }
     state.pollPromise = this.#readResourceSnapshot(state)
-      .catch(() => state.snapshot)
       .finally(() => {
         state.pollPromise = null;
       });
@@ -116,12 +122,70 @@ export class ViewClient {
     }
     state.lastResourceVersion = latestVersion;
     state.snapshot = snapshot;
+    this.#resolveSnapshotWaiters(state, snapshot);
     try {
-      state.listener?.(snapshot);
+      Promise.resolve(state.listener?.(snapshot)).catch((error) => {
+        console.error("View subscriber failed", error);
+      });
     } catch (error) {
       console.error("View subscriber failed", error);
     }
     return snapshot;
+  }
+
+  #waitForSnapshot(state, predicate, options = {}) {
+    if (typeof predicate !== "function") {
+      throw new TypeError("waitForSnapshot requires a predicate");
+    }
+    if (state.closed) {
+      return Promise.reject(new Error("View reader is closed"));
+    }
+    if (matchesSnapshot(predicate, state.snapshot)) {
+      return Promise.resolve(state.snapshot);
+    }
+
+    const signal = options.signal ?? null;
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    }
+
+    return new Promise((resolve, reject) => {
+      const waiter = { predicate, resolve, reject, signal, abort: null };
+      waiter.abort = () => {
+        state.waiters.delete(waiter);
+        reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+      };
+      signal?.addEventListener?.("abort", waiter.abort, { once: true });
+      state.waiters.add(waiter);
+
+      void this.#poll(state).catch((error) => {
+        if (!state.waiters.delete(waiter)) {
+          return;
+        }
+        signal?.removeEventListener?.("abort", waiter.abort);
+        reject(error);
+      });
+    });
+  }
+
+  #resolveSnapshotWaiters(state, snapshot) {
+    for (const waiter of [...state.waiters]) {
+      let matched = false;
+      try {
+        matched = matchesSnapshot(waiter.predicate, snapshot);
+      } catch (error) {
+        state.waiters.delete(waiter);
+        waiter.signal?.removeEventListener?.("abort", waiter.abort);
+        waiter.reject(error);
+        continue;
+      }
+      if (!matched) {
+        continue;
+      }
+      state.waiters.delete(waiter);
+      waiter.signal?.removeEventListener?.("abort", waiter.abort);
+      waiter.resolve(snapshot);
+    }
   }
 
   async #stop(reader, state) {
@@ -131,6 +195,12 @@ export class ViewClient {
     state.closed = true;
     clearInterval(state.timer);
     state.timer = null;
+    const closedError = new Error("View reader is closed");
+    for (const waiter of state.waiters) {
+      waiter.signal?.removeEventListener?.("abort", waiter.abort);
+      waiter.reject(closedError);
+    }
+    state.waiters.clear();
     this.readers.delete(reader);
     const response = await this.sceneProxy.invoke(
       ViewSDO.release,
@@ -139,6 +209,13 @@ export class ViewClient {
     );
     return Boolean(response?.released);
   }
+}
+
+function matchesSnapshot(predicate, snapshot) {
+  if (!snapshot) {
+    return false;
+  }
+  return Boolean(predicate(snapshot));
 }
 
 function normalizeDefinition(definition) {
@@ -181,10 +258,16 @@ function normalizeProjectionField(field) {
     component: String(field?.component ?? "").trim(),
     property: String(field?.property ?? "").trim(),
     resourceReference: Boolean(field?.resourceReference),
+    resourceVersionProperty: String(field?.resourceVersionProperty ?? "").trim(),
   };
   if (!normalized.alias || !normalized.component || !normalized.property) {
     throw new TypeError(
       "View projection fields require alias, component, and property",
+    );
+  }
+  if (normalized.resourceVersionProperty && !normalized.resourceReference) {
+    throw new TypeError(
+      "View projection resourceVersionProperty requires resourceReference",
     );
   }
   return normalized;

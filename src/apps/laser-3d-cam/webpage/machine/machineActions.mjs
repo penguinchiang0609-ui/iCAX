@@ -436,10 +436,11 @@ export async function instantiateMachineDefinition(context, view, machineDefinit
   }
 
   view.selectedMachineDefinitionId = id;
+  const previousViewRevision = ops.getActiveAreaViewRevision(view);
   const ok = await ops.invokeSDOMethod(context, view, "Machine.Instantiate", { machineDefinitionId: id }, { timeoutMs: 60000 });
   if (ok) {
     view.selectedMachineInstanceId = findLatestMachineInstanceId(view.scene, id) || getSelectedMachineId(view.scene, view);
-    await ops.fitViewAfterRenderPublish(context, view);
+    await ops.fitViewAfterRenderPublish(context, view, { afterRevision: previousViewRevision });
     await ops.refreshSceneState(context, view);
     view.selectedMachineInstanceId = findLatestMachineInstanceId(view.scene, id) || view.selectedMachineInstanceId || getSelectedMachineId(view.scene, view);
     ops.renderProject(context, view);
@@ -525,9 +526,10 @@ export async function setMachineInstanceEnabled(context, view, machineEntityId, 
   }
 
   view.selectedMachineInstanceId = id;
+  const previousViewRevision = ops.getActiveAreaViewRevision(view);
   const result = await ops.invokeSDOMethod(context, view, "Machine.SetEnabled", { machineEntityId: id, enabled: Boolean(enabled) });
   if (result) {
-    await ops.fitViewAfterRenderPublish(context, view);
+    await ops.fitViewAfterRenderPublish(context, view, { afterRevision: previousViewRevision });
   }
 }
 

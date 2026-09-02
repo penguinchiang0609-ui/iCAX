@@ -37,8 +37,8 @@ const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
   bottomSplitterHeight: 5,
 });
 const RENDER_ENTITY_VIEW_PROJECTION = Object.freeze([
-  { alias: "geometry", component: "CRenderInstanceComponent", property: "GeometryResourceID", resourceReference: true },
-  { alias: "material", component: "CRenderInstanceComponent", property: "MaterialResourceID", resourceReference: true },
+  { alias: "geometry", component: "CRenderInstanceComponent", property: "GeometryResourceID", resourceReference: true, resourceVersionProperty: "GeometryResourceVersion" },
+  { alias: "material", component: "CRenderInstanceComponent", property: "MaterialResourceID", resourceReference: true, resourceVersionProperty: "MaterialResourceVersion" },
   { alias: "geometryKind", component: "CRenderInstanceComponent", property: "GeometryKind" },
   { alias: "renderClass", component: "CRenderInstanceComponent", property: "RenderClass" },
   { alias: "layerMask", component: "CRenderInstanceComponent", property: "LayerMask" },
@@ -107,6 +107,8 @@ function getProjectOps() {
     invokeSDOMethod,
     invokeSDOMethodPayload,
     refreshSceneState,
+    refreshActiveAreaView,
+    getActiveAreaViewRevision,
     appendProjectLog,
     fitViewAfterRenderPublish,
     showNotice,
@@ -141,6 +143,22 @@ export function mountProject(context) {
   if (!view.scene && !view.pending) {
     refreshScene(context, view);
   }
+}
+
+export async function synchronizeActiveAreaView(context, expectation = {}) {
+  const projectId = String(context?.project?.projectId ?? "").trim();
+  if (!projectId) {
+    throw new Error("Active-area synchronization requires a project");
+  }
+  return refreshActiveAreaView(context, getProjectView(projectId), expectation);
+}
+
+export async function waitForActiveAreaAction(context) {
+  const projectId = String(context?.project?.projectId ?? "").trim();
+  if (!projectId) {
+    throw new Error("Area-action synchronization requires a project");
+  }
+  return getProjectView(projectId).activeAreaAction?.promise ?? null;
 }
 
 export async function handleRibbonCommand(context, commandId) {
@@ -258,7 +276,20 @@ function renderProject(context, view) {
   mount.onclick = (event) => {
     const actionTarget = event.target instanceof Element ? event.target.closest("[data-cam-action]") : null;
     if (actionTarget && !actionTarget.hasAttribute("disabled")) {
-      runAction(context, view, actionTarget.dataset.camAction, actionTarget);
+      const action = String(actionTarget.dataset.camAction ?? "");
+      const operation = runAction(context, view, action, actionTarget);
+      view.activeAreaAction = { action, promise: operation };
+      void operation
+        .catch((error) => {
+          view.error = error?.message ?? String(error);
+          appendProjectLog(context, "error", `${action} 失败：${view.error}`);
+          renderProject(context, view);
+        })
+        .finally(() => {
+          if (view.activeAreaAction?.promise === operation) {
+            view.activeAreaAction = null;
+          }
+        });
       return;
     }
 
@@ -641,14 +672,7 @@ function mountRenderViewport(context, view) {
     : 0x182128;
   view.viewport.setBackgroundColor?.(backgroundColor);
   view.viewport.setRenderSceneId(null);
-  if (area.viewContent?.snapshot) {
-    void view.viewport.applyViewSnapshot(
-      area.viewContent.snapshot,
-      sceneProxy?.resources,
-    ).catch((error) => {
-      appendProjectLog(context, "error", `渲染 View 资源失败：${error?.message ?? error}`);
-    });
-  } else {
+  if (!area.viewContent?.snapshot) {
     view.viewport.setVisibleEntityIds([]);
   }
   view.viewport.mount(host);
@@ -681,6 +705,8 @@ function mountRenderViewport(context, view) {
     setStandardCameraView: (commandContext, commandView, viewName) =>
       setViewportStandardView(commandContext, commandView, viewName),
     fitView: (commandContext, commandView) => fitViewport(commandContext, commandView),
+    executeAreaAction: (commandContext, commandView, action) =>
+      runAction(commandContext, commandView, action),
   });
   view.viewport.refreshAll();
 }
@@ -701,27 +727,30 @@ function resolveSceneProxy(context, view) {
   return resolved ?? context.sceneProxy ?? null;
 }
 
-function runAction(context, view, action, actionTarget = null) {
+async function runAction(context, view, action, actionTarget = null) {
   const ops = getProjectOps();
   if (action === "view-standard") {
     const viewName = String(actionTarget?.dataset?.camView ?? "iso").trim() || "iso";
     setViewportStandardView(context, view, viewName);
-    return;
+    return true;
   }
-  if (typeof context.handleAreaAction === "function"
-      && context.handleAreaAction(context, view, action, actionTarget, ops)) {
-    return;
+  if (typeof context.handleAreaAction === "function") {
+    const handled = await context.handleAreaAction(context, view, action, actionTarget, ops);
+    if (handled) {
+      return handled;
+    }
   }
   if (handleMachineAction(context, view, action, actionTarget, ops)) {
-    return;
+    return true;
   }
   if (handleWorkpieceAction(context, view, action, ops)) {
-    return;
+    return true;
   }
   if (handleMachiningAction(context, view, action, ops)) {
-    return;
+    return true;
   }
   showNotice(context, view, "该功能入口已就位，等待后端能力接入。");
+  return false;
 }
 
 function handleViewportPick(context, view, userData, hit) {
@@ -832,14 +861,18 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
 
   const area = getProjectArea(view, areaId);
   if (area.viewContentRequest) {
-    return area.viewContentRequest;
+    if (!force) {
+      return area.viewContentRequest;
+    }
+    await area.viewContentRequest;
+    return ensureAreaViewContent(context, view, areaId, options);
   }
   if (area.viewReader) {
-    if (force) {
-      const snapshot = await area.viewReader.poll();
-      if (snapshot) {
-        applyAreaViewSnapshot(context, view, areaId, snapshot, render);
-      }
+    const snapshot = force
+      ? await area.viewReader.poll()
+      : (area.viewReader.snapshot ?? await area.viewReader.poll());
+    if (snapshot) {
+      return enqueueAreaViewSnapshot(context, view, areaId, snapshot, render);
     }
     return area.viewContent;
   }
@@ -848,20 +881,22 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
     .start(definition, {
       pollIntervalMs: 100,
       onChange: (snapshot) => {
-        applyAreaViewSnapshot(
+        void enqueueAreaViewSnapshot(
           context,
           view,
           areaId,
           snapshot,
           view.activeAreaId === areaId,
-        );
+        ).catch((error) => {
+          appendProjectLog(context, "error", `应用 View revision 失败：${error?.message ?? error}`);
+        });
       },
     })
     .then(async (reader) => {
       area.viewReader = reader;
       const snapshot = await reader.poll().catch(() => null);
       if (snapshot) {
-        applyAreaViewSnapshot(context, view, areaId, snapshot, render);
+        return enqueueAreaViewSnapshot(context, view, areaId, snapshot, render);
       }
       return area.viewContent;
     })
@@ -880,23 +915,140 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
   return request;
 }
 
-function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
-  const content = setProjectAreaViewContent(view, areaId, snapshot);
+function enqueueAreaViewSnapshot(context, view, areaId, snapshot, render) {
+  const area = getProjectArea(view, areaId);
+  const revision = String(snapshot?.revision ?? "0");
+  if (revision === "0") {
+    return Promise.reject(new Error("View snapshot has no repository revision"));
+  }
+  const existing = area.viewApplyByRevision?.get(revision);
+  if (existing) {
+    return existing;
+  }
+  const viewportRevision = String(view.viewport?.getAppliedViewState?.().revision ?? "0");
+  if (area.appliedViewRevision === revision
+      && (view.activeAreaId !== areaId || viewportRevision === revision)) {
+    return Promise.resolve(area.viewContent);
+  }
+
+  area.viewApplyByRevision ??= new Map();
+  const previous = Promise.resolve(area.viewApplyQueue).catch(() => null);
+  const operation = previous.then(() =>
+    applyAreaViewSnapshot(context, view, areaId, snapshot, render));
+  area.viewApplyQueue = operation;
+  area.viewApplyByRevision.set(revision, operation);
+  operation.then(
+    () => area.viewApplyByRevision.delete(revision),
+    () => area.viewApplyByRevision.delete(revision),
+  );
+  return operation;
+}
+
+async function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
+  const area = getProjectArea(view, areaId);
+  const revision = String(snapshot?.revision ?? "0");
   if (view.activeAreaId !== areaId) {
+    const content = setProjectAreaViewContent(view, areaId, snapshot);
     return content;
   }
   view.viewport?.setRenderSceneId(null);
-  void view.viewport?.applyViewSnapshot(
-    snapshot,
-    resolveSceneProxy(context, view)?.resources,
-  ).catch((error) => {
+  let viewportReceipt = null;
+  try {
+    viewportReceipt = await view.viewport?.applyViewSnapshot(
+      snapshot,
+      resolveSceneProxy(context, view)?.resources,
+    );
+  } catch (error) {
     appendProjectLog(context, "error", `渲染 View 资源失败：${error?.message ?? error}`);
-  });
+    throw error;
+  }
+  if (!viewportReceipt?.applied || viewportReceipt.revision !== revision) {
+    throw new Error(
+      `View revision ${revision} was superseded before its geometry was applied`,
+    );
+  }
+  const content = setProjectAreaViewContent(view, areaId, snapshot);
+  content.viewportReceipt = viewportReceipt;
+  area.appliedViewRevision = revision;
   syncViewportSelection(view, view.scene);
   if (render) {
     renderProject(context, view);
   }
   return content;
+}
+
+async function refreshActiveAreaView(context, view, expectation = {}) {
+  const areaId = view.activeAreaId || normalizeCamTab(context.activeRibbonTabId);
+  await ensureAreaViewContent(context, view, areaId, { render: false });
+  const area = getProjectArea(view, areaId);
+  if (!area.viewReader?.waitForSnapshot) {
+    throw new Error(`View reader for area ${areaId} does not support revision events`);
+  }
+  const hasExpectation = (expectation.expectedEntityIds?.length ?? 0) > 0
+    || (expectation.excludedEntityIds?.length ?? 0) > 0
+    || Object.prototype.hasOwnProperty.call(expectation, "afterRevision")
+    || String(expectation.expectedRevision ?? "0") !== "0";
+  const snapshot = hasExpectation
+    ? await area.viewReader.waitForSnapshot((candidate) =>
+        snapshotMatchesExpectation(candidate, expectation))
+    : await area.viewReader.poll();
+  if (!snapshot) {
+    throw new Error(`View reader for area ${areaId} returned no snapshot`);
+  }
+  const content = await enqueueAreaViewSnapshot(context, view, areaId, snapshot, false);
+  if (hasExpectation && !snapshotMatchesExpectation(content?.snapshot, expectation)) {
+    throw new Error(
+      `Applied View revision ${content?.revision ?? "0"} does not match operation ${expectation.correlationId ?? ""}`,
+    );
+  }
+  return content;
+}
+
+function snapshotMatchesExpectation(snapshot, expectation = {}) {
+  if (!snapshot) {
+    return false;
+  }
+  const revision = String(snapshot.revision ?? "0");
+  const expectedRevision = String(expectation.expectedRevision ?? "0");
+  if (expectedRevision !== "0" && revision !== expectedRevision) {
+    return false;
+  }
+  const hasAfterRevision = Object.prototype.hasOwnProperty.call(expectation, "afterRevision");
+  const afterRevision = String(expectation.afterRevision ?? "0");
+  if (hasAfterRevision && compareViewRevisions(revision, afterRevision) <= 0) {
+    return false;
+  }
+  const entityIds = new Set((Array.isArray(snapshot.entityIds)
+    ? snapshot.entityIds
+    : (snapshot.rows ?? []).map((row) => row?.entityId))
+    .map((entityId) => String(entityId ?? "").trim())
+    .filter(Boolean));
+  for (const entityId of expectation.expectedEntityIds ?? []) {
+    if (!entityIds.has(String(entityId))) {
+      return false;
+    }
+  }
+  for (const entityId of expectation.excludedEntityIds ?? []) {
+    if (entityIds.has(String(entityId))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function compareViewRevisions(left, right) {
+  try {
+    const leftValue = BigInt(String(left ?? "0"));
+    const rightValue = BigInt(String(right ?? "0"));
+    return leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0;
+  } catch {
+    return String(left ?? "0").localeCompare(String(right ?? "0"), undefined, { numeric: true });
+  }
+}
+
+function getActiveAreaViewRevision(view) {
+  const areaId = view.activeAreaId || "view";
+  return String(getProjectArea(view, areaId).viewContent?.revision ?? "0");
 }
 
 async function refreshSelectedMachineElement(context, view, scene = {}) {
@@ -1259,13 +1411,18 @@ function makeSDOCallSuccessLog(sdoMethod, scene) {
   return `${sdoMethod} 完成`;
 }
 
-async function fitViewAfterRenderPublish(context, view) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await sleep(attempt === 0 ? 120 : 180);
-    if (fitViewport(context, view, { quiet: attempt > 0 })) {
-      return;
-    }
-  }
+async function fitViewAfterRenderPublish(context, view, expectation = {}) {
+  const content = await refreshActiveAreaView(context, view, expectation);
+  const receipt = view.viewport?.fitViewForRevision?.(content?.revision);
+  const fitted = Boolean(receipt?.fitted);
+  appendProjectLog(
+    context,
+    fitted ? "ok" : "error",
+    fitted
+      ? `View revision ${content.revision} 已适配到最佳视角`
+      : `View revision ${content?.revision ?? "0"} 未能完成视角适配`,
+  );
+  return receipt;
 }
 
 function fitViewport(context, view, options = {}) {
@@ -1288,10 +1445,6 @@ function setViewportStandardView(context, view, viewName) {
     applied ? `已切换到 ${viewName} 视图` : `不支持的标准视图：${viewName}`,
   );
   return Promise.resolve(applied);
-}
-
-function sleep(durationMs) {
-  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
 function waitForPaint() {

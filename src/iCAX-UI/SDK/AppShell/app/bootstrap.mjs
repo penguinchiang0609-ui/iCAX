@@ -33,6 +33,8 @@ const state = {
   selectedProductId: "",
   productModules: new Map(),
   productSurfaceErrorKey: "",
+  productSurfaceMountPromise: Promise.resolve(),
+  productSurfaceMountSequence: 0,
   pendingCount: 0,
   pendingOperations: [],
   projectOperations: new Map(),
@@ -76,7 +78,9 @@ const actions = {
   async selectProduct(productId) {
     state.selectedProductId = productId ?? "";
     await mountSelectedProductModule();
-    render();
+    if (await render() === false) {
+      throw new Error(state.error || "Product surface failed to mount");
+    }
   },
 
   async ensureProductStarted(productId) {
@@ -111,6 +115,9 @@ const actions = {
       await enterProject({ ...response, projectPath: path });
       state.startCenterOpen = false;
     });
+    if (await state.productSurfaceMountPromise === false) {
+      throw new Error(state.error || "Opened project surface failed to synchronize");
+    }
   },
 
   async newProjectCatalog(options = {}) {
@@ -148,6 +155,9 @@ const actions = {
         projectPath,
       });
     });
+    if (await state.productSurfaceMountPromise === false) {
+      throw new Error(state.error || "New project surface failed to synchronize");
+    }
   },
 
   async chooseProjectFile() {
@@ -175,6 +185,9 @@ const actions = {
       const sceneState = await state.activeSceneProxy.getState();
       state.activeSceneState = { ...sceneState, undoRedo };
     });
+    if (await state.productSurfaceMountPromise === false) {
+      throw new Error(state.error || "Product surface failed to synchronize after undo");
+    }
   },
 
   async redoProject() {
@@ -187,6 +200,22 @@ const actions = {
       const sceneState = await state.activeSceneProxy.getState();
       state.activeSceneState = { ...sceneState, undoRedo };
     });
+    if (await state.productSurfaceMountPromise === false) {
+      throw new Error(state.error || "Product surface failed to synchronize after redo");
+    }
+  },
+
+  async refreshActiveSceneState() {
+    if (!state.activeSceneProxy) {
+      return null;
+    }
+    const sceneState = await state.activeSceneProxy.getState();
+    state.activeSceneState = sceneState;
+    const surfaceMount = render();
+    if (await surfaceMount === false) {
+      throw new Error(state.error || "Product surface failed to synchronize with scene state");
+    }
+    return sceneState;
   },
 
   async withProgress(label, work, progress = {}) {
@@ -244,7 +273,9 @@ const actions = {
     state.startCenterOpen = false;
     await mountActiveProductModule();
     ensureActiveRibbonTab();
-    render();
+    if (await render() === false) {
+      throw new Error(state.error || "Selected project surface failed to synchronize");
+    }
   },
 
   openStartCenter() {
@@ -500,7 +531,7 @@ function render() {
     root.insertAdjacentHTML("beforeend", renderNewProjectDialog());
   }
 
-  mountActiveProductSurface();
+  return mountActiveProductSurface();
 }
 
 function resolveToolbarTooltipTarget(source) {
@@ -1150,19 +1181,27 @@ function mountActiveProductSurface() {
   const module = getActiveProductModule();
   const mount = root.querySelector("[data-product-surface='project']");
   if (!product || !module || !mount) {
-    return;
+    return Promise.resolve();
   }
 
   const mountKey = `${product.productId}:project:${state.activeRibbonTabId}`;
   if (state.productSurfaceErrorKey === mountKey) {
-    return;
+    return Promise.resolve();
   }
 
-  Promise.resolve(mountProductModule(module, buildProductContext(mount))).catch((error) => {
-    state.productSurfaceErrorKey = mountKey;
-    state.error = error?.message ?? String(error);
-    render();
-  });
+  const sequence = ++state.productSurfaceMountSequence;
+  const operation = Promise.resolve(mountProductModule(module, buildProductContext(mount)))
+    .catch((error) => {
+      if (sequence !== state.productSurfaceMountSequence) {
+        return false;
+      }
+      state.productSurfaceErrorKey = mountKey;
+      state.error = error?.message ?? String(error);
+      render();
+      return false;
+    });
+  state.productSurfaceMountPromise = operation;
+  return operation;
 }
 
 function buildProductContext(mount = root.querySelector("[data-product-surface='project']")) {
