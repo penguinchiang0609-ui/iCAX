@@ -17,6 +17,11 @@ export function getProjectView(projectId) {
       selectedMachineInstanceId: "",
       selectedSceneObjectId: "",
       sourcePath: "",
+      cadIntentRecognized: false,
+      recognizedCADIntentResourceId: "",
+      selectedCADIntentNodeId: "",
+      cadIntentPreviewNodeId: "",
+      cadIntentPreviewRequestId: 0,
       viewport: null,
       viewportSceneProxy: null,
       progress: null,
@@ -61,6 +66,8 @@ export function setProjectAreaViewContent(view, areaId, payload = {}) {
     : objects.map((object) => object?.entityId);
   area.viewContent = {
     revision: String(payload.revision ?? "0"),
+    snapshot: payload,
+    rows: Array.isArray(payload.rows) ? payload.rows : [],
     entityIds: new Set(entityIds
       .map((entityId) => String(entityId ?? "").trim())
       .filter(Boolean)),
@@ -75,7 +82,7 @@ function getOrCreateArea(view, areaId) {
     selectedMachineInstanceId: "",
     viewContent: null,
     viewContentRequest: null,
-    entityViewReader: null,
+    viewReader: null,
   };
   return view.areas[areaId];
 }

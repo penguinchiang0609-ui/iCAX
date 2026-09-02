@@ -144,12 +144,17 @@ Interaction::CInvocationResult HandleCommitWorkpieceEdit(
         throw std::invalid_argument("Cam WorkpieceEdit.Commit requires an active draft");
     }
     auto _pRender = _GetOrAddEntityComponent<iCAX::RenderInteraction::CRenderInstanceComponent>(_pEntity);
+    const auto _FrontendGeometry =
+        iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+            _Scene.Resources(),
+            _pWorkpiece->GetDraftBRepResourceID(),
+            iCAX::Render::ERenderGeometryKind::Mesh);
     auto _Undo = _Scene.Database().BeginUndoCommand("Commit CAM workpiece CAD edit");
     _SetStringProperty(_pWorkpiece, CWorkpieceComponent::PropertyName_BRepResourceID, _pWorkpiece->GetDraftBRepResourceID());
     _SetStringProperty(_pWorkpiece, CWorkpieceComponent::PropertyName_TopologyResourceID, _pWorkpiece->GetDraftTopologyResourceID());
     _SetUInt64Property(_pWorkpiece, CWorkpieceComponent::PropertyName_TopologyVersion, _pWorkpiece->GetDraftTopologyVersion());
     _SetUInt64Property(_pWorkpiece, CWorkpieceComponent::PropertyName_GeometryRevision, _pWorkpiece->GetGeometryRevision() + 1ull);
-    _SetStringProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID, _pWorkpiece->GetDraftBRepResourceID());
+    _SetStringProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID, _FrontendGeometry.URL);
     _SetStringProperty(_pWorkpiece, CWorkpieceComponent::PropertyName_DraftBRepResourceID, std::string());
     _SetStringProperty(_pWorkpiece, CWorkpieceComponent::PropertyName_DraftTopologyResourceID, std::string());
     _SetUInt64Property(_pWorkpiece, CWorkpieceComponent::PropertyName_DraftTopologyVersion, 0ull);

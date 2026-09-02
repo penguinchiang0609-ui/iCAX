@@ -105,8 +105,8 @@ namespace iCAX
         * @brief 后端控制的相机组件。
         * @details
         *   CameraComponent 只表达相机本体参数。相机的位置、姿态和缩放统一由同 entity 上的
-        *   Transform::CTransformComponent 承载，避免在 RenderService 或前端维护第二份相机状态。
-        *   键鼠漫游速度、灵敏度等交互策略由 CameraNavigation 插件承载。
+        *   Transform::CTransformComponent 承载；前端 View 可按需投影这些属性。
+        *   键鼠漫游、旋转和平移等瞬时交互由前端 viewport 本地维护。
         */
         class _RENDER_INTERACTION_EXP CCameraComponent final : public iCAX::Database::CComponentBase
         {

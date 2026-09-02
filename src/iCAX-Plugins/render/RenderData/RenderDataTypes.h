@@ -197,7 +197,7 @@ namespace iCAX
         * @brief 渲染材质资源。
         * @details
         *   Material 是可复用资源，组件和机床/工件等业务对象只保存资源 ID。
-        *   ObjectPDO 只引用 MaterialID；材质详情属于低频渲染资源同步，不塞进对象 PDO。
+        *   View 只投影 MaterialResourceID；材质详情由前端按资源 URL 低频读取。
         */
         struct _RENDER_DATA_EXP SRenderMaterialData final
         {

@@ -109,7 +109,7 @@ enum PDODirection
 - `kDirection2Inner`：外部写入，内部读取。通常在 backend 帧开始时交换。
 - `kDirection2External`：内部写入，外部读取。通常在 backend 帧结束时交换。
 
-每个 Slot 只允许一个写入方向。双向数据必须声明成两个 PDO，例如 `View.Input` 使用 `kDirection2Inner`，`View.State` 使用 `kDirection2External`。`static_cast<PDODirection>(3)` 这类双写方声明会被拒绝。
+每个 Slot 只允许一个写入方向。双向数据必须声明成两个 PDO，例如 `Simulation.Control` 使用 `kDirection2Inner`，`Simulation.State` 使用 `kDirection2External`。`static_cast<PDODirection>(3)` 这类双写方声明会被拒绝。
 
 ## 6. Shared PDO Arena 生命周期
 
@@ -121,8 +121,8 @@ enum PDODirection
 auto arena = iCAX::PDO::CSharedPDOArena::Create(
     L"Local\\iCAX.PDO.Project.1",
     {
-        { 1, cameraId, iCAX::PDO::kDirection2External, sizeof(RenderCameraPDO) },
-        { 1, inputId, iCAX::PDO::kDirection2Inner, sizeof(ViewInputPDO) }
+        { 1, collisionId, iCAX::PDO::kDirection2External, sizeof(CollisionDebugPDO) },
+        { 1, controlId, iCAX::PDO::kDirection2Inner, sizeof(SimulationControlPDO) }
     });
 ```
 
@@ -176,36 +176,36 @@ Arena 通常由 Scene 通过创建参数中的 `PDOHubCreateInfo` 创建和持�
 只有调用 `SwapBuffersIfReady()` 后，已经标记 ready 的写缓冲区才会成为新的读缓冲区。
 
 ```cpp
-struct ViewStatePDO
+struct CollisionDebugStatePDO
 {
     ICAX_DECLARE_PDO_PAYLOAD(1);
 
-    float zoom;
-    float panX;
-    float panY;
+    uint64_t frame;
+    uint32_t contactCount;
+    float maxPenetration;
 };
 
-auto id = iCAX::PDO::MakePDOID("View.State", "Main");
+auto id = iCAX::PDO::MakePDOID("Collision.DebugState", "Main");
 
 auto arena = iCAX::PDO::CSharedPDOArena::Create(
-    L"Local\\iCAX.PDO.View",
-    { iCAX::PDO::MakeTypedPDODecl<ViewStatePDO>(id, iCAX::PDO::kDirection2External) });
+    L"Local\\iCAX.PDO.Collision",
+    { iCAX::PDO::MakeTypedPDODecl<CollisionDebugStatePDO>(id, iCAX::PDO::kDirection2External) });
 
 auto slot = arena->GetSlot(id);
 
-ViewStatePDO state{ 1.5f, 10.0f, 20.0f };
-auto write = iCAX::PDO::CPDOWriteLease::TryBeginIfNewer(slot, viewStateVersion);
+CollisionDebugStatePDO state{ frame, contactCount, maxPenetration };
+auto write = iCAX::PDO::CPDOWriteLease::TryBeginIfNewer(slot, collisionStateVersion);
 if (write.has_value())
 {
-    std::memcpy(write->Data(), &state, sizeof(ViewStatePDO));
+    std::memcpy(write->Data(), &state, sizeof(CollisionDebugStatePDO));
     write->Commit();
 }
 
 slot.SwapBuffersIfReady();
 
-ViewStatePDO read{};
+CollisionDebugStatePDO read{};
 iCAX::PDO::CPDOReadLease readLease(slot);
-std::memcpy(&read, readLease.Data(), sizeof(ViewStatePDO));
+std::memcpy(&read, readLease.Data(), sizeof(CollisionDebugStatePDO));
 auto dataVersion = readLease.DataVersion();
 ```
 
@@ -217,11 +217,11 @@ auto dataVersion = readLease.DataVersion();
 
 ```cpp
 auto hub = iCAX::PDO::GeneratePDOHub({
-    { 1, cameraId, iCAX::PDO::kDirection2Inner, sizeof(CameraInputPDO) },
-    { 1, previewId, iCAX::PDO::kDirection2External, sizeof(PreviewStatePDO) }
+    { 1, controlId, iCAX::PDO::kDirection2Inner, sizeof(SimulationControlPDO) },
+    { 1, collisionId, iCAX::PDO::kDirection2External, sizeof(CollisionDebugPDO) }
 });
 
-auto& cameraSlot = hub->GetSlot(cameraId);
+auto& collisionSlot = hub->GetSlot(collisionId);
 ```
 
 动态分配方式：
@@ -300,40 +300,40 @@ PDO Payload 必须是跨进程稳定的二进制布局：
 示例：
 
 ```cpp
-struct RenderCameraPDO
+struct CollisionDebugPDO
 {
     ICAX_DECLARE_PDO_PAYLOAD(1);
 
-    uint32_t flags;
-    float viewMatrix[16];
-    float projectionMatrix[16];
+    uint64_t frame;
+    uint32_t contactCount;
+    float maxPenetration;
 };
 ```
 
 C++ 侧用同一结构生成声明：
 
 ```cpp
-auto decl = iCAX::PDO::MakeTypedPDODecl<RenderCameraPDO>(
-    cameraId,
+auto decl = iCAX::PDO::MakeTypedPDODecl<CollisionDebugPDO>(
+    collisionId,
     iCAX::PDO::kDirection2External);
 ```
 
 TS wrapper：
 
 ```ts
-class RenderCameraPDOView {
+class CollisionDebugPDOView {
   private view: DataView;
 
   constructor(private buffer: ArrayBuffer, private offset: number) {
     this.view = new DataView(buffer, offset);
   }
 
-  get flags() {
-    return this.view.getUint32(0, true);
+  get contactCount() {
+    return this.view.getUint32(8, true);
   }
 
-  get viewMatrix() {
-    return new Float32Array(this.buffer, this.offset + 4, 16);
+  get maxPenetration() {
+    return this.view.getFloat32(12, true);
   }
 }
 ```

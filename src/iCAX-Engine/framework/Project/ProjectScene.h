@@ -44,7 +44,7 @@ namespace iCAX
 
     namespace View
     {
-        class CEntityViewSet;
+        class CViewSet;
     }
 
     namespace Project
@@ -272,14 +272,14 @@ namespace iCAX
             const iCAX::PDO::IPDOHub& PDOHub() const override;
 
             /*
-            * @brief 当前 Scene 是否提供 EntityView PDO 集合。
+            * @brief 当前 Scene 是否提供正式 View 集合。
             */
-            bool HasEntityViews() const override;
+            bool HasViews() const override;
 
             /*
-            * @brief 获取当前 Scene 自有的 EntityView 集合。
+            * @brief 获取当前 Scene 自有的 View 集合。
             */
-            iCAX::View::CEntityViewSet& EntityViews() const override;
+            iCAX::View::CViewSet& Views() const override;
 
             /*
             * @brief 获取 Scene 可用服务容器。
@@ -378,9 +378,9 @@ namespace iCAX
             std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
             std::shared_ptr<iCAX::Behaviour::IUniverse> m_pUniverse;
             std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
-            std::unique_ptr<iCAX::View::CEntityViewSet> m_pEntityViews;
-            std::shared_ptr<CRepositoryEventForwarder> m_pRepositoryEventForwarder;
             iCAX::Resource::CResourceLibrary m_Resources;
+            std::unique_ptr<iCAX::View::CViewSet> m_pViews;
+            std::shared_ptr<CRepositoryEventForwarder> m_pRepositoryEventForwarder;
             uint32_t m_nFrameIntervalMilliseconds = 16;
             CSceneRuntimeScheduler m_RuntimeScheduler;
             SceneFrameHandler m_FrameHandler;

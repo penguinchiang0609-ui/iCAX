@@ -221,44 +221,24 @@
       <Project>{82a38ce6-9bad-43de-8294-41526be44e23}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\geometry\ExtrusionRecognition\ExtrusionRecognition.vcxproj">
+      <Project>{e108b465-2d5a-4904-a2fb-25f7f184d384}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Plugins\cam\Laser3DCAM\Laser3DCAM.vcxproj">
       <Project>{41e6e443-2614-4e0d-914a-bfc4d5802cd4}</Project>
-      <LinkLibraryDependencies>false</LinkLibraryDependencies>
-    </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Plugins\input\InputPDO\InputPDO.vcxproj">
-      <Project>{0e5b6210-7ac4-4af9-8628-709d45cd3f26}</Project>
-      <LinkLibraryDependencies>false</LinkLibraryDependencies>
-    </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Plugins\input\InputService\InputService.vcxproj">
-      <Project>{6fb149f0-d81e-4ac6-8bf4-08a3393ac191}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Plugins\physics\ColliderData\ColliderData.vcxproj">
       <Project>{a50a9e89-b30b-4ca8-a682-1e48d9dd4263}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Plugins\render\RenderPDO\RenderPDO.vcxproj">
-      <Project>{0a97c65b-f587-4559-a709-a4e8f661b48f}</Project>
-      <LinkLibraryDependencies>false</LinkLibraryDependencies>
-    </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Plugins\render\PDORenderService\PDORenderService.vcxproj">
-      <Project>{5906f6ac-f859-4f4d-8e07-9055980a8fd4}</Project>
-      <LinkLibraryDependencies>false</LinkLibraryDependencies>
-    </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Plugins\render\RenderData\RenderData.vcxproj">
       <Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Plugins\render\RenderService\RenderService.vcxproj">
-      <Project>{f47e9162-6fe2-4995-92c4-51d8ed9ec474}</Project>
-      <LinkLibraryDependencies>false</LinkLibraryDependencies>
-    </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Plugins\render\RenderInteraction\RenderInteraction.vcxproj">
       <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>
-      <LinkLibraryDependencies>false</LinkLibraryDependencies>
-    </ProjectReference>
-    <ProjectReference Include="..\..\iCAX-Plugins\render\CameraNavigation\CameraNavigation.vcxproj">
-      <Project>{353d4baa-e949-4618-8be3-3179f5046fc1}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>

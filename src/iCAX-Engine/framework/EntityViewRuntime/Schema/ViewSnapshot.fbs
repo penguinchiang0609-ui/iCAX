@@ -1,0 +1,32 @@
+namespace iCAX.View;
+
+file_identifier "ICVW";
+file_extension "icvw";
+
+table ViewSource {
+  source_id:string;
+  role:string;
+}
+
+table ViewComponent {
+  component_class:string;
+  present:bool;
+  enabled:bool;
+  data_json:string;
+}
+
+table ViewRow {
+  entity_id:string;
+  source_ids:[string];
+  components:[ViewComponent];
+}
+
+table ViewSnapshot {
+  schema_version:uint = 2;
+  view_id:string;
+  revision:ulong;
+  sources:[ViewSource];
+  rows:[ViewRow];
+}
+
+root_type ViewSnapshot;

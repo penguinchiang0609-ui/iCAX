@@ -169,7 +169,7 @@ CLaserWorkpieceComponent
   TopologyVersion
 ```
 
-Database 只保存资源引用和变换，不保存 BRep 指针。`ModelResourceID` 指向原始 CAD 文件资源，`BRepResourceID` 指向 `GeometryData::BRepModel` 中立几何资源。`DisplayResourceID` 是可选显示对象标识，真实显示数据由 render 插件或 PDO 渲染服务管理。
+Database 只保存资源引用和变换，不保存 BRep 指针。`ModelResourceID` 指向原始 CAD 文件资源，`BRepResourceID` 指向 `GeometryData::BRepModel` 中立几何资源。显示几何和材质由 render 插件生成资源，实体通过 RenderInstance 引用，并由 View 投影给前端。
 
 ## 6. ToolAssembly
 

@@ -6,6 +6,7 @@
 
 # 当前仓库结构的本地临时产物
 /.codex_tmp/
+/.codex-build/
 /.deps/
 /outputs/
 /build-logs/
@@ -15,6 +16,11 @@
 /src/iCAX-Application/Application/Setting/
 /src/iCAX-Application/Application/UserData/
 /src/iCAX-Application/Application/cef.log
+/src/.codex_tmp/
+/src/Setting/
+/src/UserData/
+/src/cef.log
+/standalone/**/build-ninja/
 
 # Visual Studio / MSBuild 生成产物
 **/.vs/

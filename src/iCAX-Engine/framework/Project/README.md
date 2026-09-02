@@ -4,7 +4,7 @@
 
 它表达已打开的项目管理容器。一个 `ProjectCatalog` 是一个项目打开上下文，内部只持有一个主 Project；预览、导入、局部编辑和仿真等隔离现场由 Project 内部的子 Scene 承载。`ProductRuntime` 维护 ProjectCatalog 和 `IProjectRuntime` 运行时句柄，`ApplicationRuntime` 只在需要时跨已启动产品查找项目入口。
 
-Project 只承载项目身份、路径、项目级 Settings 和 Scene 集合。具体运行现场属于 `ProjectScene`：每个 Scene 独占自己的 `Repository`、`ResourceLibrary`、`Universe`、scene SDO channel、可选 PDOHub、运行时调度器和后台工作线程；channel 实体由应用级 `CSDOChannelRegistry` 按 `sceneChannelId` 托管。主项目启动后会创建 MainScene，`CProject` 上所有运行现场便利入口都使用 `MainScene*` 前缀，不表示 Project 自己拥有这些资源。
+Project 只承载项目身份、路径、项目级 Settings 和 Scene 集合。具体运行现场属于 `ProjectScene`：每个 Scene 独占自己的 `Repository`、`ResourceLibrary`、`Universe`、scene SDO channel、可选 PDOHub、运行时调度器和后台工作线程；channel 实体由应用级 `CSDOChannelRegistry` 按 `sceneChannelId` 托管。View 是 `Scene.ViewSet` 管理的动态投影对象，不形成新的 Context 或邮件作用域。主项目启动后会创建 MainScene，`CProject` 上所有运行现场便利入口都使用 `MainScene*` 前缀，不表示 Project 自己拥有这些资源。
 
 Project 的 `OnSceneFrame/SetSceneFrameHandler` 是 Scene 级回调：MainScene 和 ChildScene 都会把自己的 `CProjectScene` 与 backend SDO endpoint 传入。`ProductRuntime` 依靠这个回调在每个 Scene 自己的线程内分发 Scene SDO frame，因此子 Scene 不会再把 frame 误投到 MainScene 的上下文。
 

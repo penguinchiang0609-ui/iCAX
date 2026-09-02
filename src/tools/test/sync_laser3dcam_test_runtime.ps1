@@ -26,19 +26,20 @@ $RuntimeProjects = @(
     "iCAX-Engine\framework\PDO",
     "iCAX-Engine\framework\ProductContext",
     "iCAX-Engine\framework\ProjectContext",
+    "iCAX-Engine\framework\Project",
     "iCAX-Engine\framework\Resources",
     "iCAX-Engine\framework\Services",
     "iCAX-Engine\framework\EntityViewRuntime",
+    "iCAX-Plugins\geometry\ExtrusionRecognition",
+    "iCAX-Plugins\cad\OpenCascadeResourceImport",
+    "iCAX-Plugins\cam\IntentToolpath",
+    # Machine owns the machine-component meta registrations used by Laser3DCAM.
+    # Keep its DLL in lockstep with the test binary to avoid cross-module layout skew.
+    "iCAX-Plugins\cam\Machine",
     "iCAX-Plugins\cam\Laser3DCAM",
     "iCAX-Plugins\common\Transform",
-    "iCAX-Plugins\input\InputPDO",
-    "iCAX-Plugins\input\InputService",
-    "iCAX-Plugins\render\CameraNavigation",
-    "iCAX-Plugins\render\PDORenderService",
     "iCAX-Plugins\render\RenderData",
-    "iCAX-Plugins\render\RenderInteraction",
-    "iCAX-Plugins\render\RenderPDO",
-    "iCAX-Plugins\render\RenderService"
+    "iCAX-Plugins\render\RenderInteraction"
 )
 
 foreach ($Project in $RuntimeProjects) {
@@ -66,5 +67,19 @@ foreach ($Project in $RuntimeProjects) {
         $TargetItem.Length -ne $SourceDll.Length -or
         $TargetItem.LastWriteTimeUtc -lt $SourceDll.LastWriteTimeUtc) {
         Copy-Item -LiteralPath $SourceDll.FullName -Destination $Destination -Force
+    }
+}
+
+# OpenCascade import and the Tube CSG converter load OCC through DLL imports.
+# Keep the test directory self-contained so an older DLL beside the test binary
+# cannot shadow the freshly built shared runtime.
+$SharedRuntimeDirectory = Join-Path $Root ("{0}\{1}" -f $Platform, $Configuration)
+Get-ChildItem -LiteralPath $SharedRuntimeDirectory -Filter "TK*.dll" | ForEach-Object {
+    $TargetDll = Join-Path $Destination $_.Name
+    $TargetItem = Get-Item -LiteralPath $TargetDll -ErrorAction SilentlyContinue
+    if ($null -eq $TargetItem -or
+        $TargetItem.Length -ne $_.Length -or
+        $TargetItem.LastWriteTimeUtc -lt $_.LastWriteTimeUtc) {
+        Copy-Item -LiteralPath $_.FullName -Destination $Destination -Force
     }
 }

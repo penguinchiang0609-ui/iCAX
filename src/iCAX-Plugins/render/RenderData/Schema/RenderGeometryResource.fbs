@@ -1,0 +1,31 @@
+namespace iCAX.Render;
+
+file_identifier "ICRG";
+file_extension "icrg";
+
+enum GeometryKind:uint {
+  Unknown = 0,
+  Mesh = 1,
+  Polyline = 2,
+  Toolpath = 3
+}
+
+table RenderGeometryResource {
+  schema_version:uint = 1;
+  kind:GeometryKind = Unknown;
+  data_version:ulong;
+  topology:uint;
+  flags:uint;
+  positions:[float];
+  normals:[float];
+  texture_coordinates:[float];
+  vertex_colors_rgba:[uint];
+  indices:[uint];
+  ranges:[uint];
+  tool_axes:[float];
+  feeds:[float];
+  point_flags:[uint];
+  spans:[uint];
+}
+
+root_type RenderGeometryResource;

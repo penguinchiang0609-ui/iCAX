@@ -12,6 +12,8 @@
 #include <Laser3DCAM/ToolpathOrderService.h>
 #include <Laser3DCAM/ToolpathResources.h>
 #include <Laser3DCAM/WorkpieceComponents.h>
+#include <ExtrusionRecognition/ExtrusionRecognitionService.h>
+#include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
 
 #include <ApplicationContext/IApplicationContext.h>
 #include <SDO/SDOMethod.h>
@@ -24,24 +26,28 @@
 #include <Database/IRepository.h>
 #include <Database/MetaRegistrationCatalog.h>
 #include <GeometryData/GeometryData.h>
+#include <GeometryData/TubeNeutralGeometry.h>
 #include <SDO/SDOChannel.h>
 #include <PDO/IPDOHub.h>
 #include <PDO/PDOLease.h>
 #include <ProductContext/IProductContext.h>
 #include <ProjectContext/IProjectContext.h>
 #include <ProjectContext/ISceneContext.h>
-#include <PDORenderService/PDORenderService.h>
 #include <RenderData/RenderData.h>
 #include <RenderInteraction/RenderInteraction.h>
-#include <RenderService/RenderSceneIds.h>
 #include <Resources/ResourceInfo.h>
+#include <Resources/FlatBufferResource.h>
 #include <Resources/ResourceLoaderRegistry.h>
 #include <Resources/ResourceLibrary.h>
 #include <Services/ServiceProvider.h>
 #include <Services/ServiceRegistrationCatalog.h>
 #include <Transform/Transform.h>
-#include <EntityViewRuntime/EntityViewPDO.h>
-#include <EntityViewRuntime/EntityViewSet.h>
+#include <EntityViewRuntime/ViewSet.h>
+
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
+#include <IFSelect_ReturnStatus.hxx>
+#include <STEPControl_Writer.hxx>
 
 
 namespace
@@ -136,6 +142,19 @@ namespace
             m_Data.Settings = Settings_;
         }
 
+        void EnableTubeExtrusionImport()
+        {
+            ObjectMap _Definition;
+            _Definition["typeId"] = std::string("tube.custom.extrusion");
+            _Definition["match"] = true;
+
+            ObjectMap _Document;
+            _Document["definitions"] = VariantArray{ _Definition };
+            ObjectMap _Tube;
+            _Tube["sectionTypeDefinitions"] = _Document;
+            m_Definition.Capabilities["tube"] = _Tube;
+        }
+
         iCAX::Services::CServiceProvider& GetServiceProvider() const override
         {
             return m_ServiceProvider;
@@ -222,15 +241,15 @@ namespace
             , m_pChannel(std::make_shared<iCAX::Interaction::CSDOChannel>())
         {
             iCAX::Database::CMetaRegistrationCatalog::ReplayAll(*m_pMetaRegistry);
-            m_pEntityViews = std::make_unique<iCAX::View::CEntityViewSet>(
-                *m_pRepository,
-                *m_pPDOHub);
             m_Resources.SetScope(
                 iCAX::Resource::MakeSceneResourceScope(
                     "icax-test",
                     "laser-3d-cam-test",
                     m_ProjectID,
                     m_SceneID));
+            m_pViews = std::make_unique<iCAX::View::CViewSet>(
+                *m_pRepository,
+                m_Resources);
         }
 
         const iCAX::Data::uuid& GetSceneID() const override
@@ -303,14 +322,19 @@ namespace
             return *m_pPDOHub;
         }
 
-        bool HasEntityViews() const override
+        bool HasViews() const override
         {
-            return m_pEntityViews != nullptr;
+            return m_pViews != nullptr;
         }
 
-        iCAX::View::CEntityViewSet& EntityViews() const override
+        iCAX::View::CViewSet& Views() const override
         {
-            return *m_pEntityViews;
+            return *m_pViews;
+        }
+
+        void DestroyViews()
+        {
+            m_pViews.reset();
         }
 
         iCAX::Services::CServiceProvider& Services() const override
@@ -325,7 +349,7 @@ namespace
         std::shared_ptr<iCAX::Database::IMetaRegistry> m_pMetaRegistry;
         std::shared_ptr<iCAX::Database::IRepository> m_pRepository;
         std::shared_ptr<iCAX::PDO::IPDOHub> m_pPDOHub;
-        std::unique_ptr<iCAX::View::CEntityViewSet> m_pEntityViews;
+        std::unique_ptr<iCAX::View::CViewSet> m_pViews;
         iCAX::Resource::CResourceLibrary m_Resources;
         mutable iCAX::Services::CServiceProvider m_ServiceProvider;
         std::shared_ptr<iCAX::Interaction::CSDOChannel> m_pChannel;
@@ -383,6 +407,14 @@ namespace
             throw std::runtime_error("Cannot write file: " + Path_.string());
         }
         _Stream << Content_;
+    }
+
+    std::filesystem::path RepositoryRoot()
+    {
+        auto _Path = std::filesystem::path(__FILE__).parent_path();
+        for (int _Index = 0; _Index < 6; ++_Index)
+            _Path = _Path.parent_path();
+        return _Path;
     }
 
     template <typename TComponent>
@@ -535,6 +567,39 @@ namespace
         return _Model;
     }
 
+    iCAX::GeometryData::Tube::SRegionLoop2 MakeRectangleRegionLoop(
+        IN const std::string& strID_,
+        IN double dMinX_,
+        IN double dMinY_,
+        IN double dMaxX_,
+        IN double dMaxY_,
+        IN bool bCounterClockwise_)
+    {
+        using namespace iCAX::GeometryData;
+        using namespace iCAX::GeometryData::Tube;
+        std::array<Point2, 4> _Points = {
+            Point2{ dMinX_, dMinY_ },
+            Point2{ dMaxX_, dMinY_ },
+            Point2{ dMaxX_, dMaxY_ },
+            Point2{ dMinX_, dMaxY_ }
+        };
+        if (!bCounterClockwise_) std::reverse(_Points.begin(), _Points.end());
+        SRegionLoop2 _Loop;
+        _Loop.ID = strID_;
+        for (std::size_t _Index = 0; _Index < _Points.size(); ++_Index)
+        {
+            SRegionCurve2 _Curve;
+            _Curve.ID = strID_ + "/curve-" + std::to_string(_Index + 1);
+            _Curve.Segment.Curve = Segment2{
+                _Points[_Index],
+                _Points[(_Index + 1) % _Points.size()]
+            };
+            _Curve.Segment.Range = { 0.0, 1.0, false };
+            _Loop.Curves.push_back(std::move(_Curve));
+        }
+        return _Loop;
+    }
+
     std::shared_ptr<iCAX::CAM::CPathComponent> AddPath(
         IN CTestSceneContext& Scene_,
         IN const iCAX::Data::uuid& PathID_,
@@ -594,10 +659,295 @@ TEST(Laser3DCAMFeatureRecognitionTest, RecognizesInnerWireAsHoleFeature)
     ASSERT_EQ(1u, _Result.Features.front().PreviewCurves.size());
 }
 
-TEST(Laser3DCAMEntityViewTest, PublishesOnlyAtFrameBoundaryAndSharesEquivalentBackendView)
+TEST(Laser3DCAMWorkpieceImportTest, RejectsNonExtrusionWithoutPublishingResources)
+{
+    CTestApplicationContext _Application;
+    CTestProductContext _Product;
+    CTestProjectContext _Project;
+    CTestSceneContext _Scene;
+    _Product.EnableTubeExtrusionImport();
+    _Scene.Services().RegisterSingleton<
+        iCAX::ExtrusionRecognition::IExtrusionRecognitionService,
+        iCAX::ExtrusionRecognition::CExtrusionRecognitionService>();
+
+    const auto _Path = std::filesystem::temp_directory_path()
+        / ("tubeone_non_extrusion_"
+            + iCAX::Data::to_string(iCAX::Data::GenerateNewUUID())
+            + ".step");
+    STEPControl_Writer _Writer;
+    ASSERT_EQ(
+        IFSelect_RetDone,
+        _Writer.Transfer(BRepPrimAPI_MakeSphere(50.0).Shape(), STEPControl_AsIs));
+    ASSERT_EQ(IFSelect_RetDone, _Writer.Write(_Path.string().c_str()));
+
+    const auto _Before = _Scene.Resources().Count();
+    EXPECT_THROW(
+        iCAX::CAM::SDO::HandleImportWorkpieceModel(
+            MakeSDOCall("WorkpieceModel", "Import", ObjectMap{
+                { "sourcePath", _Path.string() }
+            }),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene),
+        std::runtime_error);
+    EXPECT_EQ(_Before, _Scene.Resources().Count());
+
+    std::error_code _RemoveError;
+    std::filesystem::remove(_Path, _RemoveError);
+}
+
+TEST(Laser3DCAMWorkpieceImportTest, CreatesEditableCsgOnlyWhenCadIntentIsRequested)
+{
+    CTestApplicationContext _Application;
+    CTestProductContext _Product;
+    CTestProjectContext _Project;
+    CTestSceneContext _Scene;
+    _Product.EnableTubeExtrusionImport();
+    _Scene.Services().RegisterSingleton<
+        iCAX::ExtrusionRecognition::IExtrusionRecognitionService,
+        iCAX::ExtrusionRecognition::CExtrusionRecognitionService>();
+
+    const auto _Path = RepositoryRoot()
+        / "samples" / "tube-one" / "02_double_cavity_rectangular_tube.step";
+    auto _Imported = DecodeResponseObject(
+        iCAX::CAM::SDO::HandleImportWorkpieceModel(
+            MakeSDOCall("WorkpieceModel", "Import", ObjectMap{
+                { "sourcePath", _Path.string() }
+            }),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    EXPECT_TRUE(_Imported.at("tubeNeutralGeometryResourceId").To<std::string>().empty());
+    EXPECT_FALSE(_Imported.at("geometryResourceUrl").To<std::string>().empty());
+
+    _Imported["quantity"] = 1ull;
+    const auto _Instantiated = DecodeResponseObject(
+        iCAX::CAM::SDO::HandleInstantiateWorkpiece(
+            MakeSDOCall("Workpiece", "Instantiate", _Imported),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    EXPECT_FALSE(
+        _Instantiated.at("tubeGeometry").To<ObjectMap>().at("available").To<bool>());
+
+    const auto _Recognized = DecodeResponseObject(
+        iCAX::CAM::SDO::HandleRecognizeCADIntent(
+            MakeSDOCall("CADIntent", "Recognize", ObjectMap{}),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    const auto _Tube = _Recognized.at("tubeGeometry").To<ObjectMap>();
+    EXPECT_TRUE(_Tube.at("available").To<bool>());
+    EXPECT_NE("Failed", _Tube.at("status").To<std::string>());
+    const auto _Nodes = _Tube.at("solidNodes").To<VariantArray>();
+    ASSERT_FALSE(_Nodes.empty());
+    EXPECT_TRUE(std::any_of(
+        _Nodes.begin(), _Nodes.end(),
+        [](IN const auto& Node_) {
+            return Node_.To<ObjectMap>().at("previewAvailable").To<bool>();
+        }));
+    const auto _SectionPrimitives = _Tube.at("sectionPrimitives").To<VariantArray>();
+    ASSERT_EQ(3u, _SectionPrimitives.size());
+    EXPECT_EQ(
+        "base/section/outer",
+        _SectionPrimitives[0].To<ObjectMap>().at("id").To<std::string>());
+    EXPECT_TRUE(std::all_of(
+        _SectionPrimitives.begin(), _SectionPrimitives.end(),
+        [](IN const auto& Primitive_) {
+            return Primitive_.To<ObjectMap>().at("previewAvailable").To<bool>();
+        }));
+
+    const auto _Workpiece = _Recognized.at("workpiece").To<ObjectMap>();
+    const auto _NeutralResourceID =
+        _Workpiece.at("tubeNeutralGeometryResourceId").To<std::string>();
+    EXPECT_FALSE(_NeutralResourceID.empty());
+    EXPECT_NE(nullptr, _Scene.Resources().Get<
+        iCAX::GeometryData::Tube::CTubeNeutralGeometry>(_NeutralResourceID));
+}
+
+TEST(Laser3DCAMWorkpieceTest, PublishesTubeNeutralGeometrySummary)
+{
+    CTestApplicationContext _Application;
+    CTestProductContext _Product;
+    CTestProjectContext _Project;
+    CTestSceneContext _Scene;
+    auto& _Repository = _Scene.Database();
+
+    const auto _WorkpieceID = iCAX::Data::GenerateNewUUID();
+    auto _pWorkpieceEntity = _Repository.CreateEntity(_WorkpieceID);
+    auto _pWorkpiece = _pWorkpieceEntity->AddComponent<iCAX::CAM::CWorkpieceComponent>();
+    auto _pRender = _pWorkpieceEntity->AddComponent<
+        iCAX::RenderInteraction::CRenderInstanceComponent>();
+    auto _pRoot = _Repository.GetMetaEntity()->AddComponent<iCAX::CAM::CRootComponent>();
+    ASSERT_NE(nullptr, _pWorkpiece);
+    ASSERT_NE(nullptr, _pRender);
+    ASSERT_NE(nullptr, _pRoot);
+    ASSERT_TRUE(_pRoot->SetActiveWorkpieceID(_WorkpieceID));
+
+    constexpr const char* _TubeResourceID = "test.tube.neutral";
+    const auto _SourceBRepID = _Scene.Resources().AllocateResourceURL();
+    auto _pSourceBRep = std::make_shared<iCAX::GeometryData::BRepModel>(
+        iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
+            BRepPrimAPI_MakeBox(100.0, 60.0, 2400.0).Shape(),
+            "test tube source",
+            _SourceBRepID,
+            0.001));
+    _Scene.Resources().Set<iCAX::GeometryData::BRepModel>(
+        _SourceBRepID,
+        _pSourceBRep,
+        MakeResourceInfo(_SourceBRepID, 1));
+    ASSERT_TRUE(_pWorkpiece->SetTubeNeutralGeometryResourceID(_TubeResourceID));
+    ASSERT_TRUE(_pWorkpiece->SetName("editable tube"));
+    ASSERT_TRUE(_pWorkpiece->SetGeometryResourceID(_SourceBRepID));
+    ASSERT_TRUE(_pWorkpiece->SetModelResourceID(_SourceBRepID));
+    ASSERT_TRUE(_pWorkpiece->SetBRepResourceID(_SourceBRepID));
+    auto _pTube = std::make_shared<iCAX::GeometryData::Tube::CTubeNeutralGeometry>();
+    _pTube->Version = 5;
+    _pTube->RecognitionStatus = iCAX::GeometryData::Tube::ERecognitionStatus::Partial;
+    _pTube->Confidence = 0.87;
+    _pTube->BaseNodeID = "base";
+    _pTube->RootNodeID = "base";
+    _pTube->Metadata["sourceBRepResourceId"] = _SourceBRepID;
+    iCAX::GeometryData::Tube::SExtrudedRegionNode _Base;
+    _Base.Last = 2400.0;
+    _Base.Frame.ZDirection = { 1.0, 0.0, 0.0 };
+    _Base.Frame.XDirection = { 0.0, 1.0, 0.0 };
+    _Base.Frame.YDirection = { 0.0, 0.0, 1.0 };
+    _Base.Section.Boundaries = {
+        MakeRectangleRegionLoop("outer", 0.0, 0.0, 100.0, 60.0, true),
+        MakeRectangleRegionLoop("inner-1", 8.0, 8.0, 46.0, 52.0, false),
+        MakeRectangleRegionLoop("inner-2", 54.0, 8.0, 92.0, 52.0, false)
+    };
+    iCAX::GeometryData::Tube::SSolidNode _BaseNode;
+    _BaseNode.ID = "base";
+    _BaseNode.Data = _Base;
+    _pTube->SolidNodes.push_back(_BaseNode);
+    _Scene.Resources().Set<iCAX::GeometryData::Tube::CTubeNeutralGeometry>(
+        _TubeResourceID,
+        _pTube,
+        MakeResourceInfo(_TubeResourceID, _pTube->Version));
+
+    const auto _Response = DecodeResponseObject(
+        iCAX::CAM::SDO::HandleListWorkpieces(
+            MakeSDOCall("Workpiece", "List", ObjectMap{}),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    const auto _TubePayload = _Response.at("tubeGeometry").To<ObjectMap>();
+    const auto _Workpieces = _Response.at("workpieces").To<VariantArray>();
+    ASSERT_EQ(1u, _Workpieces.size());
+    const auto _WorkpiecePayload = _Workpieces.front().To<ObjectMap>();
+    EXPECT_EQ(1ull, _WorkpiecePayload.at("quantity").To<unsigned long long>());
+    EXPECT_EQ(
+        2ull,
+        _WorkpiecePayload.at("thumbnailInnerBoundaryCount").To<unsigned long long>());
+
+    EXPECT_TRUE(_TubePayload.at("available").To<bool>());
+    EXPECT_EQ("Partial", _TubePayload.at("status").To<std::string>());
+    EXPECT_DOUBLE_EQ(0.87, _TubePayload.at("confidence").To<double>());
+    EXPECT_DOUBLE_EQ(2400.0, _TubePayload.at("extrusionLength").To<double>());
+    EXPECT_EQ(3ull, _TubePayload.at("boundaryCount").To<unsigned long long>());
+    EXPECT_EQ(2ull, _TubePayload.at("innerBoundaryCount").To<unsigned long long>());
+    const auto _Nodes = _TubePayload.at("solidNodes").To<VariantArray>();
+    ASSERT_EQ(1u, _Nodes.size());
+    const auto _BasePayload = _Nodes.front().To<ObjectMap>();
+    EXPECT_EQ("ExtrudedRegion", _BasePayload.at("type").To<std::string>());
+    EXPECT_FALSE(_BasePayload.at("parameters").To<VariantArray>().empty());
+
+    const auto _Recognized = DecodeResponseObject(
+        iCAX::CAM::SDO::HandleRecognizeCADIntent(
+            MakeSDOCall("CADIntent", "Recognize", ObjectMap{}),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    EXPECT_EQ(
+        "Partial",
+        _Recognized.at("tubeGeometry").To<ObjectMap>().at("status").To<std::string>());
+
+    ObjectMap _PreviewParameters;
+    _PreviewParameters["length"] = 2500.0;
+    ObjectMap _PreviewRequest;
+    _PreviewRequest["nodeId"] = std::string("base");
+    _PreviewRequest["parameters"] = _PreviewParameters;
+    const auto _Preview = DecodeResponseObject(
+        iCAX::CAM::SDO::HandlePreviewCADIntentParameters(
+            MakeSDOCall("CADIntent", "PreviewParameters", _PreviewRequest),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    EXPECT_FALSE(_Preview.at("committed").To<bool>());
+    const auto _LivePreviewURL =
+        _Preview.at("previewResourceUrl").To<std::string>();
+    EXPECT_FALSE(_LivePreviewURL.empty());
+    EXPECT_GT(
+        _Preview.at("previewResourceVersion").To<unsigned long long>(),
+        0ull);
+    EXPECT_EQ(_SourceBRepID, _pWorkpiece->GetBRepResourceID());
+    EXPECT_EQ(1ull, _pWorkpiece->GetGeometryRevision());
+    EXPECT_TRUE(_pRender->GetGeometryResourceID().empty());
+    const auto _AfterPreviewResource = _Scene.Resources().Get<
+        iCAX::GeometryData::Tube::CTubeNeutralGeometry>(_TubeResourceID);
+    ASSERT_NE(nullptr, _AfterPreviewResource);
+    EXPECT_EQ(5ull, _AfterPreviewResource->Version);
+    EXPECT_DOUBLE_EQ(
+        2400.0,
+        std::get<iCAX::GeometryData::Tube::SExtrudedRegionNode>(
+            _AfterPreviewResource->SolidNodes.front().Data).Last);
+
+    ObjectMap _Parameters;
+    _Parameters["length"] = 2600.0;
+    ObjectMap _Update;
+    _Update["nodeId"] = std::string("base");
+    _Update["parameters"] = _Parameters;
+    const auto _Edited = DecodeResponseObject(
+        iCAX::CAM::SDO::HandleSetCADIntentParameters(
+            MakeSDOCall("CADIntent", "SetParameters", _Update),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    const auto _EditedTube = _Edited.at("tubeGeometry").To<ObjectMap>();
+    EXPECT_GT(_EditedTube.at("version").To<unsigned long long>(), 5ull);
+    const auto _EditedResource = _Scene.Resources().Get<
+        iCAX::GeometryData::Tube::CTubeNeutralGeometry>(_TubeResourceID);
+    ASSERT_NE(nullptr, _EditedResource);
+    const auto& _EditedBase = std::get<
+        iCAX::GeometryData::Tube::SExtrudedRegionNode>(
+            _EditedResource->SolidNodes.front().Data);
+    EXPECT_DOUBLE_EQ(2600.0, _EditedBase.Last - _EditedBase.First);
+    EXPECT_EQ(
+        "false",
+        _EditedResource->Metadata.at("requiresGeometricReevaluation"));
+    EXPECT_NE(_SourceBRepID, _pWorkpiece->GetBRepResourceID());
+    EXPECT_NE(nullptr, _Scene.Resources().Get<iCAX::GeometryData::BRepModel>(
+        _pWorkpiece->GetBRepResourceID()));
+    EXPECT_FALSE(_pRender->GetGeometryResourceID().empty());
+    EXPECT_GT(_pWorkpiece->GetGeometryRevision(), 1ull);
+
+    ObjectMap _Delete;
+    _Delete["workpieceEntityId"] = _WorkpiecePayload.at("entityId").To<std::string>();
+    const auto _Deleted = DecodeResponseObject(
+        iCAX::CAM::SDO::HandleDeleteWorkpiece(
+            MakeSDOCall("Workpiece", "Delete", _Delete),
+            _Application,
+            &_Product,
+            &_Project,
+            &_Scene));
+    EXPECT_TRUE(_Deleted.at("workpieces").To<VariantArray>().empty());
+    EXPECT_EQ(nullptr, _Repository.GetEntity(_WorkpieceID));
+}
+
+TEST(Laser3DCAMViewTest, ComposesMultipleEntityViewsAndPublishesComponentChanges)
 {
     CTestSceneContext _Scene;
-    auto& _EntityViews = _Scene.EntityViews();
+    auto& _Views = _Scene.Views();
 
     const auto _MachineID = iCAX::Data::GenerateNewUUID();
     const auto _WorkpieceID = iCAX::Data::GenerateNewUUID();
@@ -613,123 +963,105 @@ TEST(Laser3DCAMEntityViewTest, PublishesOnlyAtFrameBoundaryAndSharesEquivalentBa
         Where::Has<iCAX::CAM::CMachineElementComponent>(),
         Where::Has<iCAX::RenderInteraction::CRenderInstanceComponent>(),
     }));
-    const auto _FirstHandle = _EntityViews.GetOrCreate(_MachineWhere);
-    const auto _SecondHandle = _EntityViews.GetOrCreate(_MachineWhere);
-    ASSERT_FALSE(_FirstHandle.ViewID.is_nil());
-    EXPECT_EQ(_FirstHandle.ViewID, _SecondHandle.ViewID);
-    EXPECT_EQ(_FirstHandle.nPDOID, _SecondHandle.nPDOID);
-    ASSERT_TRUE(_Scene.PDOHub().HasSlot(_FirstHandle.nPDOID));
-    EXPECT_EQ(
-        iCAX::View::GetEntityViewPDOPayloadSize(
-            iCAX::View::kDefaultEntityViewCapacity),
-        _FirstHandle.nPDOPayloadSize);
-
-    const auto _ReadSnapshot = [&]()
-    {
-        _Scene.PDOHub().SwapOutSlot();
-        iCAX::PDO::CPDOReadLease _Lease(
-            _Scene.PDOHub().GetSlot(_FirstHandle.nPDOID));
-        const auto& _Header =
-            _Lease.As<iCAX::View::SEntityViewPDOHeader>();
-        std::vector<iCAX::Data::uuid> _IDs;
-        const auto* _pBytes = static_cast<const uint8_t*>(_Lease.Data());
-        for (uint32_t _Index = 0; _Index < _Header.nEntityCount; ++_Index)
+    const auto _WorkpieceWhere = Where::Build(Where::All({
+        Where::Has<iCAX::CAM::CWorkpieceComponent>(),
+        Where::Has<iCAX::RenderInteraction::CRenderInstanceComponent>(),
+    }));
+    const std::vector<iCAX::View::SViewProjectionField> _Projection{
         {
-            std::array<uint8_t, 16> _Bytes{};
-            std::memcpy(
-                _Bytes.data(),
-                _pBytes + sizeof(iCAX::View::SEntityViewPDOHeader)
-                    + static_cast<size_t>(_Index) * _Bytes.size(),
-                _Bytes.size());
-            _IDs.emplace_back(_Bytes);
-        }
-
-        const auto _nUsedSize =
-            sizeof(iCAX::View::SEntityViewPDOHeader)
-            + static_cast<size_t>(_Header.nEntityCount) * 16;
-        const bool _bUnusedBytesAreZero = std::all_of(
-            _pBytes + _nUsedSize,
-            _pBytes + _Lease.PayloadCapacity(),
-            [](uint8_t nValue_) { return nValue_ == 0; });
-        return std::make_tuple(
-            _Header.nRevision,
-            std::move(_IDs),
-            _bUnusedBytesAreZero);
+            "visible",
+            iCAX::RenderInteraction::CRenderInstanceComponent::S_ClassName,
+            iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_Visible,
+            false,
+        },
+        {
+            "localToWorldMatrix",
+            iCAX::Transform::CTransformComponent::S_ClassName,
+            iCAX::Transform::CTransformComponent::PropertyName_LocalToWorldMatrix,
+            false,
+        },
     };
-
-    _EntityViews.Publish();
-    const auto [_nInitialRevision, _InitialIDs, _bInitialPaddingIsZero] =
-        _ReadSnapshot();
-    ASSERT_EQ(1u, _InitialIDs.size());
-    EXPECT_EQ(_MachineID, _InitialIDs.front());
-    EXPECT_TRUE(_bInitialPaddingIsZero);
+    iCAX::View::SViewDefinition _Definition;
+    _Definition.Sources = {
+        { "machine", "machine", _MachineWhere, {}, _Projection },
+        { "workpiece", "workpiece", _WorkpieceWhere, {}, _Projection },
+    };
+    const auto _FirstHandle = _Views.GetOrCreate(_Definition);
+    const auto _SecondHandle = _Views.GetOrCreate(_Definition);
+    ASSERT_FALSE(_FirstHandle.ID.is_nil());
+    EXPECT_EQ(_FirstHandle.ID, _SecondHandle.ID);
+    EXPECT_EQ(_FirstHandle.Snapshot.URL, _SecondHandle.Snapshot.URL);
+    EXPECT_EQ(_FirstHandle.Snapshot.nVersion, _SecondHandle.Snapshot.nVersion);
+    ASSERT_FALSE(_FirstHandle.Snapshot.URL.empty());
+    const auto _pInitialSnapshot = _Scene.Resources().Get<
+        iCAX::Resource::CFlatBufferResource>(_FirstHandle.Snapshot.URL);
+    ASSERT_NE(nullptr, _pInitialSnapshot);
+    ASSERT_GE(_pInitialSnapshot->Size(), 8u);
+    EXPECT_EQ(0, std::memcmp(_pInitialSnapshot->Data() + 4, "ICVW", 4));
+    const auto _nInitialVersion =
+        _Scene.Resources().GetVersion(_FirstHandle.Snapshot.URL);
 
     ASSERT_NE(nullptr, _pMachine->AddComponent<iCAX::Transform::CTransformComponent>());
-    _EntityViews.Publish();
-    const auto [_nUnchangedRevision, _UnchangedIDs, _bUnchangedPaddingIsZero] =
-        _ReadSnapshot();
-    EXPECT_EQ(_nInitialRevision, _nUnchangedRevision);
-    EXPECT_EQ(_InitialIDs, _UnchangedIDs);
-    EXPECT_TRUE(_bUnchangedPaddingIsZero);
+    _Views.Publish();
+    const auto _nProjectionVersion =
+        _Scene.Resources().GetVersion(_FirstHandle.Snapshot.URL);
+    EXPECT_GT(_nProjectionVersion, _nInitialVersion);
+
+    // 同一 Entity 新命中第二个 Source 时仍只有一个 Union 行，但 sourceIds 会变化。
+    ASSERT_NE(nullptr, _pWorkpiece->AddComponent<iCAX::CAM::CMachineElementComponent>());
+    _Views.Publish();
+    const auto _nUnionVersion =
+        _Scene.Resources().GetVersion(_FirstHandle.Snapshot.URL);
+    EXPECT_GT(_nUnionVersion, _nProjectionVersion);
 
     const auto _SecondMachineID = iCAX::Data::GenerateNewUUID();
     auto _pSecondMachine = _Scene.Database().CreateEntity(_SecondMachineID);
     ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::RenderInteraction::CRenderInstanceComponent>());
     ASSERT_NE(nullptr, _pSecondMachine->AddComponent<iCAX::CAM::CMachineElementComponent>());
 
-    const auto [_nBeforeFrameEndRevision, _BeforeFrameEndIDs, _bBeforeFrameEndPaddingIsZero] =
-        _ReadSnapshot();
-    EXPECT_EQ(_nInitialRevision, _nBeforeFrameEndRevision);
-    EXPECT_EQ(_InitialIDs, _BeforeFrameEndIDs);
-    EXPECT_TRUE(_bBeforeFrameEndPaddingIsZero);
-
-    _EntityViews.Publish();
-    const auto [_nUpdatedRevision, _UpdatedIDs, _bUpdatedPaddingIsZero] =
-        _ReadSnapshot();
-    EXPECT_GT(_nUpdatedRevision, _nInitialRevision);
     EXPECT_EQ(
-        (std::set<iCAX::Data::uuid>{ _MachineID, _SecondMachineID }),
-        (std::set<iCAX::Data::uuid>(
-            _UpdatedIDs.begin(),
-            _UpdatedIDs.end())));
-    EXPECT_TRUE(_bUpdatedPaddingIsZero);
+        _nUnionVersion,
+        _Scene.Resources().GetVersion(_FirstHandle.Snapshot.URL));
 
-    EXPECT_TRUE(_EntityViews.Release(_FirstHandle.ViewID));
-    EXPECT_TRUE(_Scene.PDOHub().HasSlot(_FirstHandle.nPDOID));
-    EXPECT_TRUE(_EntityViews.Release(_SecondHandle.ViewID));
-    EXPECT_FALSE(_Scene.PDOHub().HasSlot(_FirstHandle.nPDOID));
+    _Views.Publish();
+    EXPECT_GT(
+        _Scene.Resources().GetVersion(_FirstHandle.Snapshot.URL),
+        _nUnionVersion);
+
+    EXPECT_TRUE(_Views.Release(_FirstHandle.ID));
+    EXPECT_TRUE(_Scene.Resources().Contains(_FirstHandle.Snapshot.URL));
+    EXPECT_TRUE(_Views.Release(_SecondHandle.ID));
+    EXPECT_FALSE(_Scene.Resources().Contains(_FirstHandle.Snapshot.URL));
 }
 
-TEST(Laser3DCAMEntityViewTest, SceneOwnedSetReleasesOutstandingViewsOnDestruction)
+TEST(Laser3DCAMViewTest, SceneOwnedSetReleasesOutstandingViewsOnDestruction)
 {
-    auto _pMetaRegistry = iCAX::Database::CreateMetaRegistry();
-    auto _pRepository = iCAX::Database::GenerateRepository(
-        iCAX::Data::GenerateNewUUID(),
-        _pMetaRegistry);
-    auto _pPDOHub =
-        iCAX::PDO::GeneratePDOHub(iCAX::PDO::CPDOHubCreateInfo{});
+    CTestSceneContext _Scene;
     const auto _Where =
         iCAX::Database::CEntityWhereBuilder::MatchAll();
 
-    iCAX::PDO::PDOID _nPDOID = 0;
+    std::string _SnapshotURL;
     {
-        iCAX::View::CEntityViewSet _EntityViews(
-            *_pRepository,
-            *_pPDOHub);
-        const auto _First = _EntityViews.GetOrCreate(_Where);
-        const auto _Second = _EntityViews.GetOrCreate(_Where);
-        EXPECT_EQ(_First.ViewID, _Second.ViewID);
-        EXPECT_EQ(1u, _EntityViews.Size());
-        _nPDOID = _First.nPDOID;
-        EXPECT_TRUE(_pPDOHub->HasSlot(_nPDOID));
+        auto& _Views = _Scene.Views();
+        iCAX::View::SViewDefinition _Definition;
+        _Definition.Sources = {
+            { "all", "all", _Where, {}, {} },
+        };
+        const auto _First = _Views.GetOrCreate(_Definition);
+        const auto _Second = _Views.GetOrCreate(_Definition);
+        EXPECT_EQ(_First.ID, _Second.ID);
+        EXPECT_EQ(1u, _Views.Size());
+        _SnapshotURL = _First.Snapshot.URL;
+        EXPECT_TRUE(_Scene.Resources().Contains(_SnapshotURL));
     }
 
-    EXPECT_FALSE(_pPDOHub->HasSlot(_nPDOID));
+    _Scene.DestroyViews();
+    EXPECT_FALSE(_Scene.Resources().Contains(_SnapshotURL));
 
-    auto _pProbe = _pRepository->CreateEntityView(_Where);
-    _pRepository->ReleaseEntityView(_pProbe);
+    auto _pProbe = _Scene.Database().CreateEntityView(_Where);
+    _Scene.Database().ReleaseEntityView(_pProbe);
     EXPECT_THROW(
-        _pRepository->ReleaseEntityView(_pProbe),
+        _Scene.Database().ReleaseEntityView(_pProbe),
         std::invalid_argument);
 }
 
@@ -737,10 +1069,17 @@ TEST(Laser3DCAMManifestTest, StartupComponentMatchesRegisteredSceneBootstrapComp
 {
     const auto _ManifestPath = GetSourceRoot() / "apps" / "laser-3d-cam" / "product.manifest.json";
     const auto _Manifest = ReadTextFile(_ManifestPath);
+    const auto _TubeManifestPath = GetSourceRoot() / "apps" / "tube-one" / "product.manifest.json";
+    const auto _TubeManifest = ReadTextFile(_TubeManifestPath);
     const std::string _Expected = std::string("\"startupComponent\": \"") + iCAX::CAM::CSceneBootstrapComponent::S_ClassName + "\"";
 
     EXPECT_NE(std::string::npos, _Manifest.find(_Expected));
     EXPECT_EQ(std::string::npos, _Manifest.find("CLaserCamSceneBootstrapComponent"));
+    for (const auto* _pRemovedModule : { "InputPDO.dll", "InputService.dll", "CameraNavigation.dll" })
+    {
+        EXPECT_EQ(std::string::npos, _Manifest.find(_pRemovedModule));
+        EXPECT_EQ(std::string::npos, _TubeManifest.find(_pRemovedModule));
+    }
 }
 
 TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransformTree)
@@ -1026,10 +1365,24 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         EXPECT_FALSE(_pRender->GetGeometryResourceID().empty());
         EXPECT_TRUE(_Scene.Resources().Contains(_pRender->GetGeometryResourceID()));
         EXPECT_EQ(std::string(), _pRender->GetMaterialResourceID());
-        auto _pAggregateMesh = _Scene.Resources().Get<iCAX::Render::SRenderMeshData>(_pRender->GetGeometryResourceID());
+        const auto _pFrontendMesh = _Scene.Resources().Get<
+            iCAX::Resource::CFlatBufferResource>(
+                _pRender->GetGeometryResourceID());
+        ASSERT_NE(nullptr, _pFrontendMesh);
+        ASSERT_GE(_pFrontendMesh->Size(), 8u);
+        EXPECT_EQ(0, std::memcmp(_pFrontendMesh->Data() + 4, "ICRG", 4));
+        const auto _FrontendInfo =
+            _Scene.Resources().GetInfo(_pRender->GetGeometryResourceID());
+        ASSERT_TRUE(_FrontendInfo.has_value());
+        ASSERT_EQ(1u, _FrontendInfo->Dependencies.size());
+        const auto _pAggregateMesh = _Scene.Resources().Get<
+            iCAX::Render::SRenderMeshData>(
+                _FrontendInfo->Dependencies.front().URL);
         ASSERT_NE(nullptr, _pAggregateMesh);
         EXPECT_FALSE(_pAggregateMesh->Positions.empty());
-        EXPECT_EQ(_pAggregateMesh->Positions.size(), _pAggregateMesh->VertexColorsRGBA.size());
+        EXPECT_EQ(
+            _pAggregateMesh->Positions.size(),
+            _pAggregateMesh->VertexColorsRGBA.size());
 
         const auto _VisualItems = _pVisual->GetVisuals();
         ASSERT_EQ(1u, _VisualItems.size());
@@ -1068,9 +1421,13 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         EXPECT_EQ(1ull, _pBaseRender->GetRenderClass());
         EXPECT_EQ(iCAX::Render::kRenderLayerDefault, _pBaseRender->GetLayerMask());
         const auto _BaseRenderResourceID = _pBaseRender->GetGeometryResourceID();
-        auto _pBaseMeshBefore = _Scene.Resources().Get<iCAX::Render::SRenderMeshData>(_BaseRenderResourceID);
+        const auto _FrontendInfoBefore = _Scene.Resources().GetInfo(_BaseRenderResourceID);
+        ASSERT_TRUE(_FrontendInfoBefore.has_value());
+        ASSERT_EQ(1u, _FrontendInfoBefore->Dependencies.size());
+        const auto _SourceMeshResourceID = _FrontendInfoBefore->Dependencies.front().URL;
+        auto _pBaseMeshBefore = _Scene.Resources().Get<iCAX::Render::SRenderMeshData>(_SourceMeshResourceID);
         ASSERT_NE(nullptr, _pBaseMeshBefore);
-        const auto _VersionBefore = _pBaseMeshBefore->nDataVersion;
+        const auto _VersionBefore = _FrontendInfoBefore->nVersion;
         const auto _VertexCountBefore = _pBaseMeshBefore->Positions.size();
 
         ObjectMap _AppearancePayload;
@@ -1098,9 +1455,15 @@ TEST(Laser3DCAMMachineDefinitionTest, MachineImportMethodBuildsRenderableTransfo
         _pBaseRender = _pBaseEntity->GetComponent<iCAX::RenderInteraction::CRenderInstanceComponent>();
         ASSERT_NE(nullptr, _pBaseRender);
         EXPECT_EQ(_BaseRenderResourceID, _pBaseRender->GetGeometryResourceID());
-        auto _pBaseMeshAfter = _Scene.Resources().Get<iCAX::Render::SRenderMeshData>(_BaseRenderResourceID);
+        const auto _FrontendInfoAfter = _Scene.Resources().GetInfo(_BaseRenderResourceID);
+        ASSERT_TRUE(_FrontendInfoAfter.has_value());
+        ASSERT_EQ(1u, _FrontendInfoAfter->Dependencies.size());
+        EXPECT_EQ(_SourceMeshResourceID, _FrontendInfoAfter->Dependencies.front().URL);
+        EXPECT_GT(_FrontendInfoAfter->nVersion, _VersionBefore);
+        EXPECT_EQ(_FrontendInfoAfter->nVersion, _FrontendInfoAfter->Dependencies.front().nVersion);
+        auto _pBaseMeshAfter = _Scene.Resources().Get<iCAX::Render::SRenderMeshData>(_SourceMeshResourceID);
         ASSERT_NE(nullptr, _pBaseMeshAfter);
-        EXPECT_GT(_pBaseMeshAfter->nDataVersion, _VersionBefore);
+        EXPECT_EQ(_FrontendInfoAfter->nVersion, _pBaseMeshAfter->nDataVersion);
         EXPECT_EQ(_VertexCountBefore, _pBaseMeshAfter->Positions.size());
         ASSERT_FALSE(_pBaseMeshAfter->VertexColorsRGBA.empty());
         for (const auto _Color : _pBaseMeshAfter->VertexColorsRGBA)

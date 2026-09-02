@@ -24,11 +24,11 @@
 - `mountProduct`：显示产品入口，并通过 ApplicationShell 创建项目 catalog。
 - `mountProject`：绑定当前 ProjectProxy 和 SceneProxy；页面按需要分别调用 `MachineDefinition.List`、`Machine.List`、`Job.Get`、`Selection.Get` 等产品 SDO 方法查询状态，不使用大而杂的统一主场景入口。
 - Ribbon 采用 `机床定义 / 工件编辑 / 加工 / 视图`。前两个大区是资源准备入口；`加工` 大区操作正式主 Scene。
-- 如果当前 Scene 启用了 PDO，视口使用 `iCAX-UI/SDK` 内置的 `ThreeRenderViewport` 显示 RenderPDO 数据。
-- 如果当前 Scene 未启用 PDO，视口使用 backend 返回的 `faces/loops/edges/toolpaths` 做 SVG 后备预览。
+- 页面创建可组合多个 EntityView Source 的 View，投影工件/机床 Entity 的几何 URL、材质 URL、位姿和显示属性；`ThreeRenderViewport` 按快照从资源池读取数据并在前端渲染。
+- backend 返回的 `faces/loops/edges/toolpaths` 仍可作为 SVG 拓扑后备预览，但不能替代 View 的三维场景边界。
 - 机床定义导入分两步：先在导入按钮处按需调用 `Cam.MachineDefinition.GetSupportedFormats` 读取当前产品支持的定义格式，再调用 `Cam.MachineDefinition.Import` 把源文件目录托管到产品数据区。实例化时调用 `Cam.Machine.Instantiate` 低频解析托管源文件，并展开为主 Scene 中的机床 Entity；导入本身不写项目资源库。
 - 模型导入分两步：先调用 `Cam.WorkpieceModel.Import` 生成 STEP/STP、IGS/IGES 对应的 BRep/Topology 资源，再调用 `Cam.Workpiece.Instantiate` 创建工件 Entity；CEF 宿主提供 `openFileDialog` 时页面可以直接选择模型文件。
 - 当前 backend 使用 OCCT 导入 STEP/IGES，并返回可拾取拓扑的二维投影；页面只负责显示和拾取，不承担 CAD 解析。
-- Three 视口的点击命中会使用 RenderPDO mesh 的 `faceIndex` 和 CAM topology 中的 `triangleStart/triangleCount` 映射到 `face` 拾取，再通过 `Cam.Selection.PickTopology` 回写后端选择。当前 RenderPDO 尚未携带 edge/loop 拾取映射，因此 edge/loop 精确拾取仍走 SVG 后备视图或后续碰撞/拓扑拾取服务。
+- Three 视口的点击命中使用资源几何的 `faceIndex` 和 CAM topology 中的 `triangleStart/triangleCount` 映射到 `face` 拾取，再通过 `Selection.PickTopology` 回写后端选择。edge/loop 精确拾取仍走 SVG 后备视图或独立碰撞/拓扑拾取服务。
 - 工件 CAD 修复、机床定义编辑后续应作为独立 EditScene/工具会话接入；主 Scene 只接收最终资源和组件引用更新。
 - 如果未来 backend 返回 `topology.importMode=fallback-preview`，页面仍会显示后端诊断提示，但当前主路径应为 `opencascade`。

@@ -21,7 +21,7 @@ namespace iCAX::CAM
     * @brief 将关节位置变化应用到承载该关节的 Transform。
     * @details
     *   Joint.Position 是运动状态，Transform 仍保存场景实际局部位姿。这里按位置差值叠加关节运动，
-    *   因而不会丢失机床定义提供的关节原点，并会通过 Transform 的 Observable 字段触发渲染 PDO。
+    *   因而不会丢失机床定义提供的关节原点，并会通过 Transform 的 Observable 字段触发 View 新版本。
     */
     _MACHINE_EXP bool ApplyMachineJointPositionToTransform(
         IN iCAX::Database::IEntity& Entity_,

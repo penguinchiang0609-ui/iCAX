@@ -20,6 +20,7 @@
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><ConfigurationType>DynamicLibrary</ConfigurationType><UseDebugLibraries>false</UseDebugLibraries><PlatformToolset>v143</PlatformToolset><WholeProgramOptimization>true</WholeProgramOptimization><CharacterSet>Unicode</CharacterSet></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="..\..\..\third_party\flatbuffers\FlatBuffers.props" />
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
@@ -44,17 +45,15 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="EntityViewPDO.h" />
-    <ClInclude Include="EntityViewSet.h" />
+    <ClInclude Include="ViewSet.h" />
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="EntityViewRuntimeExport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
-    <ClCompile Include="EntityViewPDO.cpp" />
-    <ClCompile Include="EntityViewSDO.cpp" />
-    <ClCompile Include="EntityViewSet.cpp" />
+    <ClCompile Include="ViewSDO.cpp" />
+    <ClCompile Include="ViewSet.cpp" />
     <ClCompile Include="pch.cpp"><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader><PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader></ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -62,8 +61,11 @@
     <ProjectReference Include="..\DatabaseLanguage\DatabaseLanguage.vcxproj"><Project>{ab9cfcc5-90ec-4b1a-80ea-c566c85568ba}</Project></ProjectReference>
     <ProjectReference Include="..\SDO\SDO.vcxproj"><Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project></ProjectReference>
     <ProjectReference Include="..\Database\Database.vcxproj"><Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project></ProjectReference>
-    <ProjectReference Include="..\PDO\PDO.vcxproj"><Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project></ProjectReference>
     <ProjectReference Include="..\ProjectContext\ProjectContext.vcxproj"><Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project></ProjectReference>
+    <ProjectReference Include="..\Resources\Resources.vcxproj"><Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project></ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Schema\ViewSnapshot.fbs" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

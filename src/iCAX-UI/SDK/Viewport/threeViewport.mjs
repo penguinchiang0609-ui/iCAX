@@ -1,21 +1,5 @@
 import * as THREE from "../ThirdParty/three/three.module.js";
 import {
-  InputModifierFlags,
-  InputStateFlags,
-  mapKeyboardEventCode,
-  writeInputStatePDO,
-} from "../Input/inputPDO.mjs";
-import {
-  RenderFlags,
-  RenderGeometryKind,
-  RenderLayers,
-  RenderPDOEvents,
-  RenderPDOLayout,
-  parseRenderPDOEvent,
-  parseRenderPDOPayload,
-  rgbaToCssColor,
-} from "./renderPDO.mjs";
-import {
   ColliderFlags,
   ColliderPDOEvents,
   ColliderPDOLayout,
@@ -23,6 +7,13 @@ import {
   parseColliderPDOEvent,
   parseColliderPDOPayload,
 } from "./colliderPDO.mjs";
+import {
+  loadRenderResource,
+  RenderFlags,
+  RenderGeometryKind,
+  RenderLayers,
+  rgbaToCssColor,
+} from "./renderResource.mjs";
 
 const DEFAULT_CAMERA = Object.freeze({
   eye: { x: 260, y: -320, z: 220 },
@@ -54,6 +45,9 @@ export class ThreeRenderViewport {
     this.colliderSlotDescriptors = new Map();
     this.geometryPayloads = new Map();
     this.geometryObjects = new Map();
+    this.materialPayloads = new Map();
+    this.resourcePromises = new Map();
+    this.viewApplyGeneration = 0;
     this.instancePayloads = new Map();
     this.transformPayloads = new Map();
     this.colliderPayloads = new Map();
@@ -71,32 +65,18 @@ export class ThreeRenderViewport {
       : new Set(normalizeEntityIds(options.visibleEntityIds));
     this.selectedObjectId = "";
     this.selectedObjectIds = new Set();
+    this.ghostPreview = null;
     this.diagnosticKeys = new Set();
     this.domListeners = [];
     this.isDefragging = false;
     this.isDisposed = false;
     this.dynamicReadPending = false;
-    this.input = {
-      keys: new Set(),
-      dataVersion: 1n,
-      sequence: 1n,
-      viewportId: BigInt(options.viewportId ?? 1),
-      pointerX: 0,
-      pointerY: 0,
-      lastPointerX: 0,
-      lastPointerY: 0,
-      pointerDeltaX: 0,
-      pointerDeltaY: 0,
-      wheelX: 0,
-      wheelY: 0,
-      buttonMask: 0,
-      modifierMask: 0,
-      hasFocus: false,
-      pointerInside: false,
-      pointerCaptured: false,
-      writePending: false,
-      lastSentSignature: null,
-      transientResetPending: false,
+    this.navigation = {
+      pointerId: null,
+      mode: null,
+      lastX: 0,
+      lastY: 0,
+      moved: false,
     };
 
     this.root = document.createElement("div");
@@ -109,7 +89,7 @@ export class ThreeRenderViewport {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(options.backgroundColor ?? 0x182128);
     this.content = new THREE.Group();
-    this.content.name = "iCAX RenderPDO Content";
+    this.content.name = "iCAX View Resource Content";
     this.scene.add(this.content);
     this.colliderContent = new THREE.Group();
     this.colliderContent.name = "iCAX ColliderPDO Content";
@@ -162,12 +142,21 @@ export class ThreeRenderViewport {
     return this;
   }
 
+  setBackgroundColor(color) {
+    const next = new THREE.Color(color ?? 0x182128);
+    if (this.scene.background?.equals?.(next)) {
+      return;
+    }
+    this.scene.background = next;
+    this.#renderOnce();
+  }
+
   connectScene(sceneProxy) {
     if (this.sceneProxy === sceneProxy) {
       return this;
     }
     this.#unsubscribe();
-    this.#resetInputState();
+    this.#resetNavigation();
     this.sceneProxy = sceneProxy ?? null;
     this.slotDescriptors.clear();
     this.objectSlots.clear();
@@ -178,25 +167,23 @@ export class ThreeRenderViewport {
       this.#setStatus("未绑定场景");
       return this;
     }
-    if (!this.sceneProxy.pdo?.enabled) {
-      this.#setStatus("当前 Scene 未启用 PDO");
-      return this;
+    if (this.sceneProxy.pdo?.enabled) {
+      this.subscriptions.push(this.sceneProxy.pdoStore.subscribe((change) => {
+        const type = String(change.descriptor?.type ?? "");
+        if (type.startsWith("collider.")) {
+          void this.#handleColliderSlotEvent({ payload: change.descriptor });
+        }
+      }, { emitCurrent: true }));
+      this.subscriptions.push(this.sceneProxy.subscribe(
+        ColliderPDOEvents.defragBegin,
+        (event) => this.#handleDefragEvent(event, true),
+      ));
+      this.subscriptions.push(this.sceneProxy.subscribe(
+        ColliderPDOEvents.defragEnd,
+        (event) => this.#handleDefragEvent(event, false),
+      ));
     }
-
-    this.subscriptions.push(this.sceneProxy.pdoStore.subscribe((change) => {
-      const type = String(change.descriptor?.type ?? "");
-      const event = { payload: change.descriptor };
-      if (type.startsWith("render.")) {
-        void this.#handleSlotEvent(event);
-      } else if (type.startsWith("collider.")) {
-        void this.#handleColliderSlotEvent(event);
-      }
-    }, { emitCurrent: true }));
-    this.subscriptions.push(this.sceneProxy.subscribe(RenderPDOEvents.defragBegin, (event) => this.#handleDefragEvent(event, true)));
-    this.subscriptions.push(this.sceneProxy.subscribe(RenderPDOEvents.defragEnd, (event) => this.#handleDefragEvent(event, false)));
-    this.subscriptions.push(this.sceneProxy.subscribe(ColliderPDOEvents.defragBegin, (event) => this.#handleDefragEvent(event, true)));
-    this.subscriptions.push(this.sceneProxy.subscribe(ColliderPDOEvents.defragEnd, (event) => this.#handleDefragEvent(event, false)));
-    this.#setStatus("等待 RenderPDO slot");
+    this.#setStatus("等待当前 View 的资源快照");
     return this;
   }
 
@@ -229,13 +216,181 @@ export class ThreeRenderViewport {
   }
 
   async refreshAll() {
-    for (const descriptor of [...this.slotDescriptors.values()]
-      .filter((item) => this.#isActiveRenderScene(item.sceneId))) {
-      await Promise.race([this.#readSlot(descriptor), delay(300)]);
-    }
     for (const descriptor of this.colliderSlotDescriptors.values()) {
       await Promise.race([this.#readColliderSlot(descriptor), delay(300)]);
     }
+  }
+
+  async applyViewSnapshot(snapshot, resourceClient = this.sceneProxy?.resources) {
+    if (!resourceClient || typeof resourceClient.get !== "function") {
+      throw new TypeError("View rendering requires a ResourceClient");
+    }
+    const generation = ++this.viewApplyGeneration;
+    const rows = Array.isArray(snapshot?.rows) ? snapshot.rows : [];
+    const references = new Map();
+    for (const { data } of rows) {
+      for (const reference of [data?.geometry, data?.material]) {
+        const url = String(reference?.url ?? "").trim();
+        if (url) {
+          references.set(`${url}@${String(reference?.version ?? 0)}`, reference);
+        }
+      }
+    }
+
+    const resources = await Promise.all(
+      [...references.values()].map((reference) =>
+        this.#loadViewResource(resourceClient, reference)),
+    );
+    if (generation !== this.viewApplyGeneration || this.isDisposed) {
+      return false;
+    }
+    for (const resource of resources) {
+      if (!resource) {
+        continue;
+      }
+      if (resource.type === "geometry") {
+        const payload = { ...resource.data, geometryId: resource.url };
+        const previous = this.geometryObjects.get(resource.url);
+        previous?.dispose?.();
+        this.geometryPayloads.set(resource.url, payload);
+        this.geometryObjects.set(resource.url, this.#makeGeometryObject(payload));
+        this.#updateObjectsUsingGeometry(resource.url);
+      } else if (resource.type === "material") {
+        this.materialPayloads.set(resource.url, resource.data);
+      }
+    }
+
+    const desiredIds = new Set();
+    for (const row of rows) {
+      const objectId = String(row?.entityId ?? "").trim();
+      const data = row?.data ?? {};
+      const geometryId = String(data.geometry?.url ?? "").trim();
+      if (!objectId || !geometryId || !this.geometryObjects.has(geometryId)) {
+        continue;
+      }
+      desiredIds.add(objectId);
+      const flags = (data.visible === false ? 0 : RenderFlags.visible)
+        | (data.selectable === false ? 0 : RenderFlags.selectable)
+        | (data.highlighted ? RenderFlags.highlighted : 0)
+        | (data.selected ? RenderFlags.selected : 0);
+      const instance = {
+        kind: "object",
+        objectId,
+        entityId: objectId,
+        transformId: objectId,
+        geometryId,
+        materialId: String(data.material?.url ?? "").trim(),
+        geometryKind: Number(data.geometryKind ?? 1),
+        renderClass: Number(data.renderClass ?? 1),
+        flags,
+        layerMask: Number(data.layerMask ?? RenderLayers.default) >>> 0,
+      };
+      this.instancePayloads.set(objectId, instance);
+      this.transformPayloads.set(objectId, {
+        kind: "transform",
+        transformId: objectId,
+        entityId: objectId,
+        localToWorld: toThreeMatrixArray(data.localToWorldMatrix),
+      });
+      this.#upsertSceneObject(instance);
+    }
+    for (const objectId of [...this.sceneObjects.keys()]) {
+      if (!desiredIds.has(objectId)) {
+        this.#removeSceneObject(objectId);
+        this.instancePayloads.delete(objectId);
+        this.transformPayloads.delete(objectId);
+      }
+    }
+    this.visibleEntityIds = desiredIds;
+    this.#refreshSceneObjectMaterials();
+    this.#updateSelectionVisuals();
+    this.#setStatus(rows.length && !desiredIds.size
+      ? "View 中暂时没有可读取的几何资源"
+      : "");
+    this.#renderOnce();
+    return true;
+  }
+
+  fitView(padding = 1.25) {
+    const bounds = new THREE.Box3();
+    for (const object of this.sceneObjects.values()) {
+      if (object.visible) {
+        bounds.expandByObject(object);
+      }
+    }
+    if (bounds.isEmpty()) {
+      return false;
+    }
+    const sphere = new THREE.Sphere();
+    bounds.getBoundingSphere(sphere);
+    this.cameraState.target.copy(sphere.center);
+    const halfFov = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
+    this.cameraState.radius = this.#clampCameraRadius(Math.max(
+      1,
+      (sphere.radius * Math.max(1, Number(padding))) / Math.sin(halfFov),
+    ));
+    this.camera.near = Math.max(0.001, this.cameraState.radius / 10000);
+    this.camera.far = Math.max(1000, this.cameraState.radius * 20);
+    this.camera.updateProjectionMatrix();
+    this.#updateCamera();
+    this.#renderOnce();
+    this.#emitCameraChange("fit");
+    return true;
+  }
+
+  setStandardView(viewName) {
+    const direction = {
+      front: [0, -1, 0],
+      back: [0, 1, 0],
+      left: [-1, 0, 0],
+      right: [1, 0, 0],
+      top: [0, 0, 1],
+      bottom: [0, 0, -1],
+      iso: [1, -1, 0.78],
+      isometric: [1, -1, 0.78],
+    }[String(viewName ?? "").trim().toLowerCase()];
+    if (!direction) {
+      return false;
+    }
+    const vector = new THREE.Vector3(...direction).normalize();
+    this.cameraState.theta = Math.atan2(vector.y, vector.x);
+    this.cameraState.phi = Math.acos(THREE.MathUtils.clamp(vector.z, -1, 1));
+    this.#updateCamera();
+    this.#renderOnce();
+    this.#emitCameraChange("standard-view");
+    return true;
+  }
+
+  getCameraState() {
+    return {
+      target: {
+        x: this.cameraState.target.x,
+        y: this.cameraState.target.y,
+        z: this.cameraState.target.z,
+      },
+      radius: this.cameraState.radius,
+      theta: this.cameraState.theta,
+      phi: this.cameraState.phi,
+    };
+  }
+
+  setCameraState(value = {}) {
+    const target = value.target ?? {};
+    const radius = Number(value.radius);
+    const theta = Number(value.theta);
+    const phi = Number(value.phi);
+    if (![target.x, target.y, target.z, radius, theta, phi]
+      .every((entry) => Number.isFinite(Number(entry)))) {
+      throw new TypeError("Camera state requires finite target, radius, theta, and phi values");
+    }
+    this.cameraState.target.set(Number(target.x), Number(target.y), Number(target.z));
+    this.cameraState.radius = this.#clampCameraRadius(radius);
+    this.cameraState.theta = theta;
+    this.cameraState.phi = THREE.MathUtils.clamp(phi, 0.001, Math.PI - 0.001);
+    this.#updateCamera();
+    this.#renderOnce();
+    this.#emitCameraChange("restore");
+    return this;
   }
 
   getViewCubeState() {
@@ -263,6 +418,82 @@ export class ThreeRenderViewport {
     return this.setSelectedObjectIds(objectId ? [objectId] : [], objectId);
   }
 
+  setGhostMesh(payload = {}) {
+    this.clearGhostMesh();
+    const positions = Array.isArray(payload.positions)
+      || ArrayBuffer.isView(payload.positions)
+      ? payload.positions
+      : [];
+    const indices = Array.isArray(payload.indices)
+      || ArrayBuffer.isView(payload.indices)
+      ? payload.indices
+      : [];
+    if (positions.length < 9 || positions.length % 3 !== 0 || indices.length < 3) {
+      return this;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(Float32Array.from(positions, Number), 3),
+    );
+    geometry.setIndex(new THREE.BufferAttribute(Uint32Array.from(indices, Number), 1));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+
+    const opacity = Math.max(0.08, Math.min(0.82, Number(payload.opacity ?? 0.34)));
+    const group = new THREE.Group();
+    group.name = `CAD intent ghost: ${String(payload.nodeId ?? "feature")}`;
+    group.userData.isGhostPreview = true;
+    group.userData.nodeId = String(payload.nodeId ?? "");
+
+    const material = new THREE.MeshPhongMaterial({
+      color: new THREE.Color(payload.color ?? "#e9a12f"),
+      emissive: new THREE.Color("#5c3100"),
+      emissiveIntensity: 0.16,
+      transparent: true,
+      opacity,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      shininess: 38,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = "CAD intent ghost body";
+    mesh.renderOrder = 20;
+    group.add(mesh);
+
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry, 22),
+      new THREE.LineBasicMaterial({
+        color: new THREE.Color("#ffd27b"),
+        transparent: true,
+        opacity: Math.min(0.9, opacity + 0.28),
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    edges.name = "CAD intent ghost outline";
+    edges.renderOrder = 21;
+    group.add(edges);
+
+    this.ghostPreview = group;
+    this.content.add(group);
+    this.#renderOnce();
+    return this;
+  }
+
+  clearGhostMesh() {
+    if (!this.ghostPreview) {
+      return this;
+    }
+    this.ghostPreview.parent?.remove(this.ghostPreview);
+    disposeObject3D(this.ghostPreview);
+    this.ghostPreview = null;
+    this.#renderOnce();
+    return this;
+  }
+
   setVisibleLayerMask(layerMask) {
     const nextMask = Number(layerMask) >>> 0;
     if (nextMask === this.visibleLayerMask) {
@@ -286,15 +517,6 @@ export class ThreeRenderViewport {
       return this;
     }
     this.renderSceneId = nextSceneId;
-    this.#clearRenderPDOContent();
-    const descriptors = [...this.slotDescriptors.values()]
-      .filter((descriptor) => this.#isActiveRenderScene(descriptor.sceneId));
-    for (const descriptor of descriptors) {
-      descriptor.lastReadDataVersion = null;
-      void this.#readSlot(descriptor, { force: true });
-    }
-    this.#setStatus(descriptors.length ? "" : "等待当前 View 的 RenderPDO slot");
-    this.#renderOnce();
     return this;
   }
 
@@ -386,6 +608,11 @@ export class ThreeRenderViewport {
       visibleEntityFilterCount: this.visibleEntityIds?.size ?? null,
       selectedObjectId: this.selectedObjectId,
       selectedObjectIds: [...this.selectedObjectIds],
+      ghostPreviewVisible: Boolean(this.ghostPreview?.visible),
+      ghostPreviewNodeId: String(this.ghostPreview?.userData?.nodeId ?? ""),
+      ghostPreviewVertexCount: Number(
+        this.ghostPreview?.children?.[0]?.geometry?.getAttribute?.("position")?.count ?? 0,
+      ),
       cameraPosition: {
         x: this.camera.position.x,
         y: this.camera.position.y,
@@ -434,46 +661,6 @@ export class ThreeRenderViewport {
     return state;
   }
 
-  async #handleSlotEvent(event) {
-    let payload = null;
-    try {
-      payload = parseRenderPDOEvent(event);
-    } catch (error) {
-      this.#setStatus(`RenderPDO 事件解析失败: ${error.message}`);
-      return;
-    }
-    if (!payload?.pdoId) {
-      return;
-    }
-
-    if (payload.event === "SlotFreed") {
-      this.#removeSlot(payload, this.#isActiveRenderScene(payload.sceneId));
-      return;
-    }
-
-    const descriptor = {
-      pdoId: payload.pdoId,
-      sceneId: String(payload.sceneId ?? ""),
-      payloadKind: payload.payloadKind,
-      slotRole: payload.slotRole,
-      geometryId: payload.geometryId,
-      objectId: payload.objectId,
-      transformId: payload.transformId,
-      payloadCapacity: Number(payload.payloadCapacity ?? 0),
-      version: Number(payload.slotVersion ?? RenderPDOLayout.version),
-      lastReadDataVersion: null,
-    };
-    this.slotDescriptors.set(descriptor.pdoId, descriptor);
-    this.#emitDiagnosticOnce(
-      `slot:${payload.event}:${descriptor.pdoId}`,
-      `RenderPDO slot ${payload.event}: role=${descriptor.slotRole}, pdo=${descriptor.pdoId}`,
-      "info",
-    );
-    if (this.#isActiveRenderScene(descriptor.sceneId)) {
-      await this.#readSlot(descriptor, { force: true });
-    }
-  }
-
   async #handleColliderSlotEvent(event) {
     let payload = null;
     try {
@@ -517,69 +704,6 @@ export class ThreeRenderViewport {
     }
     this.#setStatus("");
     this.refreshAll();
-  }
-
-  async #readSlot(descriptor, options = {}) {
-    if (!this.sceneProxy?.pdo?.enabled
-      || this.isDefragging
-      || !descriptor?.payloadCapacity
-      || !this.#isActiveRenderScene(descriptor.sceneId)) {
-      return;
-    }
-
-    const force = Boolean(options.force);
-    const silentTransient = options.silentTransient ?? !force;
-    if (!force) {
-      const meta = await this.#getSlotMeta(descriptor, { silentTransient });
-      const dataVersion = String(meta?.publishedDataVersion ?? meta?.dataVersion ?? "0");
-      if (!dataVersion || dataVersion === "0" || dataVersion === descriptor.lastReadDataVersion) {
-        return;
-      }
-    }
-
-    let lastError = null;
-    const maxAttempts = force ? 3 : 1;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      try {
-        await this.sceneProxy.pdo.withReadDescriptor({
-          id: descriptor.pdoId,
-          version: descriptor.version,
-          payloadSize: descriptor.payloadCapacity,
-        }, (buffer) => {
-          if (!this.#isActiveRenderScene(descriptor.sceneId)) {
-            return;
-          }
-          const payload = parseRenderPDOPayload(buffer);
-          const dataVersion = String(payload.header?.dataVersion ?? "");
-          if (!force && dataVersion && dataVersion === descriptor.lastReadDataVersion) {
-            return;
-          }
-          this.#applyPayload(descriptor, payload);
-          descriptor.lastReadDataVersion = dataVersion || descriptor.lastReadDataVersion;
-        });
-        return;
-      } catch (error) {
-        lastError = error;
-        if (this.#isTransientPDOReadError(error) && attempt < maxAttempts - 1) {
-          await delay(24 * (attempt + 1));
-          continue;
-        }
-        break;
-      }
-    }
-
-    if (lastError) {
-      const message = String(lastError.message ?? lastError);
-      if (this.#isTransientPDOReadError(lastError)) {
-        this.#setStatus("等待 RenderPDO 可读数据");
-        if (!silentTransient) {
-          this.#emitDiagnosticOnce(`transient-read:${descriptor.pdoId}:${message}`, `RenderPDO 等待可读数据：${message}`, "info");
-        }
-        return;
-      }
-      this.#setStatus(`RenderPDO 读取失败: ${message}`);
-      this.#emitDiagnostic(`RenderPDO 读取失败：${message}`, "error");
-    }
   }
 
   async #readColliderSlot(descriptor, options = {}) {
@@ -648,7 +772,7 @@ export class ThreeRenderViewport {
       if (this.#isTransientPDOReadError(error)) {
         if (!options.silentTransient) {
           const message = String(error.message ?? error);
-          this.#emitDiagnosticOnce(`transient-meta:${descriptor.pdoId}:${message}`, `RenderPDO 等待版本信息：${message}`, "info");
+          this.#emitDiagnosticOnce(`transient-meta:${descriptor.pdoId}:${message}`, `PDO 等待版本信息：${message}`, "info");
         }
         return null;
       }
@@ -666,42 +790,18 @@ export class ThreeRenderViewport {
       || message.includes("defrag");
   }
 
-  #applyPayload(descriptor, payload) {
-    if (payload.kind === "mesh" || payload.kind === "polyline" || payload.kind === "toolpath") {
-      this.geometryPayloads.set(payload.geometryId, payload);
-      this.geometryObjects.set(payload.geometryId, this.#makeGeometryObject(payload));
-      this.#updateObjectsUsingGeometry(payload.geometryId);
-      this.#upsertObjectsUsingGeometry(payload.geometryId);
-      this.#emitDiagnosticOnce(
-        `geometry:${payload.geometryId}:${payload.header?.dataVersion ?? ""}`,
-        `RenderPDO ${payload.kind} 已读取：geometry=${payload.geometryId}`,
-        "ok",
-      );
-      this.#setStatus("");
-      this.#renderOnce();
-      return;
+  #loadViewResource(resourceClient, reference) {
+    const key = `${String(reference?.url ?? "")}@${String(reference?.version ?? 0)}`;
+    let request = this.resourcePromises.get(key);
+    if (!request) {
+      request = loadRenderResource(resourceClient, reference)
+        .catch((error) => {
+          this.resourcePromises.delete(key);
+          throw error;
+        });
+      this.resourcePromises.set(key, request);
     }
-    if (payload.kind === "object") {
-      this.#applyObject(descriptor, payload);
-      this.#emitDiagnosticOnce(
-        `instance:${descriptor.pdoId}:${payload.header?.dataVersion ?? ""}`,
-        `RenderPDO 对象已读取：object=${payload.objectId}`,
-        "ok",
-      );
-      this.#setStatus("");
-      this.#renderOnce();
-      return;
-    }
-    if (payload.kind === "transform") {
-      this.#applyTransform(payload);
-      this.#setStatus("");
-      this.#renderOnce();
-      return;
-    }
-    if (payload.kind === "camera") {
-      this.#applyCamera(payload);
-      this.#renderOnce();
-    }
+    return request;
   }
 
   #applyColliderPayload(payload) {
@@ -863,7 +963,7 @@ export class ThreeRenderViewport {
     if (!geometryObject) {
       this.#emitDiagnosticOnce(
         `pending-instance:${instance.objectId}:${instance.geometryId}`,
-        `RenderPDO 实例等待几何：object=${instance.objectId}, geometry=${instance.geometryId}`,
+        `View 实例等待几何资源：object=${instance.objectId}, geometry=${instance.geometryId}`,
         "info",
       );
       return;
@@ -976,7 +1076,7 @@ export class ThreeRenderViewport {
       geometry.computeBoundingSphere();
       this.#emitDiagnosticOnce(
         `mesh-size:${payload.geometryId}:${payload.positions?.length ?? 0}:${payload.indices?.length ?? 0}`,
-        `RenderPDO Mesh 数据：geometry=${payload.geometryId}, vertices=${Math.floor((payload.positions?.length ?? 0) / 3)}, indices=${payload.indices?.length ?? 0}`,
+        `View Mesh 资源：geometry=${payload.geometryId}, vertices=${Math.floor((payload.positions?.length ?? 0) / 3)}, indices=${payload.indices?.length ?? 0}`,
         "info",
       );
       return geometry;
@@ -1018,7 +1118,11 @@ export class ThreeRenderViewport {
   }
 
   #makeMaterial(instance, hasVertexColors = false) {
-    const color = rgbaToCssColor(this.#defaultColorForClass(instance.renderClass));
+    const materialResource = this.materialPayloads.get(instance.materialId);
+    const color = rgbaToCssColor(
+      materialResource?.colorRGBA
+        ?? this.#defaultColorForClass(instance.renderClass),
+    );
     if (instance.geometryKind === RenderGeometryKind.mesh) {
       const materialOptions = {
         color: new THREE.Color(color.r / 255, color.g / 255, color.b / 255),
@@ -1031,7 +1135,7 @@ export class ThreeRenderViewport {
     }
     return new THREE.LineBasicMaterial({
       color: new THREE.Color(color.r / 255, color.g / 255, color.b / 255),
-      linewidth: 1,
+      linewidth: Number(materialResource?.lineWidth ?? 1),
       transparent: color.a < 1,
       opacity: Math.max(0.08, color.a),
     });
@@ -1043,6 +1147,7 @@ export class ThreeRenderViewport {
       instance.renderClass ?? "",
       instance.geometryKind ?? "",
       instance.flags ?? "",
+      this.materialPayloads.get(instance.materialId)?.dataVersion ?? "",
     ].join("|");
   }
 
@@ -1193,7 +1298,7 @@ export class ThreeRenderViewport {
     this.#updateSelectionHelper();
   }
 
-  #clearRenderPDOContent() {
+  #clearViewContent() {
     for (const object of this.sceneObjects.values()) {
       this.#setObjectSelectedVisual(object, false);
       object.parent?.remove(object);
@@ -1205,6 +1310,7 @@ export class ThreeRenderViewport {
     this.sceneObjects.clear();
     this.geometryObjects.clear();
     this.geometryPayloads.clear();
+    this.materialPayloads.clear();
     this.instancePayloads.clear();
     this.objectSlots.clear();
     this.transformPayloads.clear();
@@ -1214,7 +1320,8 @@ export class ThreeRenderViewport {
   }
 
   #clearRenderContent() {
-    this.#clearRenderPDOContent();
+    this.clearGhostMesh();
+    this.#clearViewContent();
     for (const object of this.colliderObjects.values()) {
       object.parent?.remove(object);
       disposeObject3D(object);
@@ -1492,55 +1599,57 @@ export class ThreeRenderViewport {
     const canvas = this.renderer.domElement;
     this.#listen(canvas, "pointerdown", (event) => {
       canvas.focus?.();
-      this.input.hasFocus = true;
-      this.input.pointerInside = true;
-      this.input.pointerCaptured = true;
-      this.#updatePointerFromEvent(event);
-      this.input.buttonMask = event.buttons || buttonToMask(event.button);
-      this.renderer.domElement.setPointerCapture?.(event.pointerId);
+      const mode = event.button === 2
+        ? "orbit"
+        : (event.button === 1 ? "pan" : null);
+      this.navigation.pointerId = event.pointerId;
+      this.navigation.mode = mode;
+      this.navigation.lastX = event.clientX;
+      this.navigation.lastY = event.clientY;
+      this.navigation.moved = false;
+      if (mode) {
+        event.preventDefault();
+        canvas.setPointerCapture?.(event.pointerId);
+      }
     });
     this.#listen(canvas, "pointerup", (event) => {
-      this.#updatePointerFromEvent(event);
-      this.input.buttonMask = event.buttons || 0;
-      if (!this.input.buttonMask) {
-        this.input.pointerCaptured = false;
+      const wasNavigation = this.navigation.pointerId === event.pointerId
+        && Boolean(this.navigation.mode);
+      const moved = this.navigation.moved;
+      if (this.navigation.pointerId === event.pointerId) {
+        this.#resetNavigation();
       }
-      this.renderer.domElement.releasePointerCapture?.(event.pointerId);
-      this.#emitPick(event);
+      canvas.releasePointerCapture?.(event.pointerId);
+      if (!wasNavigation && !moved && event.button === 0) {
+        this.#emitPick(event);
+      }
     });
     this.#listen(canvas, "pointermove", (event) => {
-      this.#updatePointerFromEvent(event);
-      this.input.buttonMask = event.buttons || this.input.buttonMask;
-    });
-    this.#listen(canvas, "pointerenter", (event) => {
-      this.input.pointerInside = true;
-      this.#updatePointerFromEvent(event, false);
-    });
-    this.#listen(canvas, "pointerleave", () => {
-      this.input.pointerInside = false;
-    });
-    this.#listen(canvas, "focus", () => {
-      this.input.hasFocus = true;
-    });
-    this.#listen(canvas, "blur", () => {
-      this.input.hasFocus = false;
-      this.input.keys.clear();
-      this.input.buttonMask = 0;
-      this.input.pointerCaptured = false;
+      if (this.navigation.pointerId !== event.pointerId || !this.navigation.mode) {
+        return;
+      }
+      const dx = event.clientX - this.navigation.lastX;
+      const dy = event.clientY - this.navigation.lastY;
+      this.navigation.lastX = event.clientX;
+      this.navigation.lastY = event.clientY;
+      if (Math.abs(dx) + Math.abs(dy) > 0) {
+        this.navigation.moved = true;
+        this.#applyLocalNavigation(this.navigation.mode, dx, dy, event);
+      }
     });
     this.#listen(canvas, "wheel", (event) => {
       event.preventDefault();
-      this.#updatePointerFromEvent(event, false);
-      this.input.wheelX += event.deltaX || 0;
-      this.input.wheelY += event.deltaY || 0;
+      const speed = Number(this.options.zoomSpeed ?? 0.0015);
+      this.cameraState.radius = this.#clampCameraRadius(
+        this.cameraState.radius * Math.exp((event.deltaY || 0) * speed),
+      );
+      this.#updateCamera();
+      this.#renderOnce();
+      this.#emitCameraChange("zoom");
     }, { passive: false });
     this.#listen(canvas, "contextmenu", (event) => event.preventDefault());
-    this.#listen(window, "keydown", (event) => this.#handleKeyboard(event, true));
-    this.#listen(window, "keyup", (event) => this.#handleKeyboard(event, false));
     this.#listen(window, "blur", () => {
-      this.input.keys.clear();
-      this.input.buttonMask = 0;
-      this.input.pointerCaptured = false;
+      this.#resetNavigation();
     });
   }
 
@@ -1553,54 +1662,6 @@ export class ThreeRenderViewport {
     for (const remove of this.domListeners.splice(0)) {
       remove();
     }
-  }
-
-  #handleKeyboard(event, isDown) {
-    if (!this.#shouldCaptureKeyboard(event)) {
-      return;
-    }
-
-    const keyCode = mapKeyboardEventCode(event);
-    if (!keyCode) {
-      return;
-    }
-
-    this.input.modifierMask = modifierMaskFromEvent(event);
-    if (isDown) {
-      this.input.keys.add(keyCode);
-    } else {
-      this.input.keys.delete(keyCode);
-    }
-    event.preventDefault();
-  }
-
-  #shouldCaptureKeyboard(event) {
-    if (isEditableTarget(event.target)) {
-      return false;
-    }
-    return this.input.hasFocus || this.input.pointerInside || this.input.pointerCaptured;
-  }
-
-  #updatePointerFromEvent(event, accumulateDelta = true) {
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    this.input.pointerX = Number.isFinite(x) ? x : this.input.pointerX;
-    this.input.pointerY = Number.isFinite(y) ? y : this.input.pointerY;
-    this.input.modifierMask = modifierMaskFromEvent(event);
-
-    if (!accumulateDelta) {
-      this.input.lastPointerX = this.input.pointerX;
-      this.input.lastPointerY = this.input.pointerY;
-      return;
-    }
-
-    const dx = Number.isFinite(event.movementX) ? event.movementX : this.input.pointerX - this.input.lastPointerX;
-    const dy = Number.isFinite(event.movementY) ? event.movementY : this.input.pointerY - this.input.lastPointerY;
-    this.input.pointerDeltaX += dx || 0;
-    this.input.pointerDeltaY += dy || 0;
-    this.input.lastPointerX = this.input.pointerX;
-    this.input.lastPointerY = this.input.pointerY;
   }
 
   #emitPick(event) {
@@ -1630,6 +1691,53 @@ export class ThreeRenderViewport {
     this.camera.updateMatrixWorld(true);
   }
 
+  #applyLocalNavigation(mode, dx, dy, event) {
+    const fast = event.shiftKey ? 2.5 : 1;
+    if (mode === "orbit") {
+      const speed = Number(this.options.orbitSpeed ?? 0.005) * fast;
+      this.cameraState.theta -= dx * speed;
+      this.cameraState.phi = THREE.MathUtils.clamp(
+        this.cameraState.phi - dy * speed,
+        0.001,
+        Math.PI - 0.001,
+      );
+    } else if (mode === "pan") {
+      const canvasHeight = Math.max(1, this.renderer.domElement.clientHeight);
+      const worldPerPixel = (
+        2 * this.cameraState.radius * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
+      ) / canvasHeight;
+      const speed = Number(this.options.panSpeed ?? 1) * fast * worldPerPixel;
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
+      this.cameraState.target
+        .addScaledVector(right, -dx * speed)
+        .addScaledVector(up, dy * speed);
+    }
+    this.#updateCamera();
+    this.#renderOnce();
+    this.#emitCameraChange(mode);
+  }
+
+  #clampCameraRadius(radius) {
+    const minimum = Math.max(0.000001, Number(this.options.minCameraDistance ?? 0.01));
+    const maximum = Math.max(minimum, Number(this.options.maxCameraDistance ?? 1000000000));
+    return THREE.MathUtils.clamp(Number(radius), minimum, maximum);
+  }
+
+  #emitCameraChange(reason) {
+    if (typeof this.options.onCameraChange === "function") {
+      this.options.onCameraChange(this.getCameraState(), { reason });
+    }
+  }
+
+  #resetNavigation() {
+    this.navigation.pointerId = null;
+    this.navigation.mode = null;
+    this.navigation.lastX = 0;
+    this.navigation.lastY = 0;
+    this.navigation.moved = false;
+  }
+
   #startRenderLoop() {
     if (this.animationFrame || this.isDisposed) {
       return;
@@ -1637,8 +1745,6 @@ export class ThreeRenderViewport {
     const tick = () => {
       this.animationFrame = 0;
       if (!this.isDisposed) {
-        void this.#flushInputPDO();
-        void this.#refreshDynamicRenderPDO();
         this.#renderOnce();
         this.animationFrame = requestAnimationFrame(tick);
       }
@@ -1720,141 +1826,6 @@ export class ThreeRenderViewport {
     }
   }
 
-  async #flushInputPDO() {
-    if (!this.sceneProxy?.pdo?.enabled) {
-      this.#clearTransientInput();
-      return;
-    }
-    if (this.input.writePending) {
-      return;
-    }
-
-    const sentTransient = {
-      pointerDeltaX: this.input.pointerDeltaX,
-      pointerDeltaY: this.input.pointerDeltaY,
-      wheelX: this.input.wheelX,
-      wheelY: this.input.wheelY,
-    };
-    const hasTransient = hasInputTransient(sentTransient);
-    const signature = makeInputSignature(this.input);
-    const hasState = hasInputState(this.input);
-    const shouldSendTransientReset = !hasTransient && this.input.transientResetPending;
-    if (!hasTransient && !shouldSendTransientReset && signature === this.input.lastSentSignature) {
-      return;
-    }
-    if (!hasTransient && !shouldSendTransientReset && !hasState && this.input.lastSentSignature === null) {
-      this.input.lastSentSignature = signature;
-      return;
-    }
-
-    this.input.writePending = true;
-    const dataVersion = this.input.dataVersion++;
-    const sequence = this.input.sequence++;
-    const flags = (this.input.hasFocus ? InputStateFlags.focused : 0)
-      | (this.input.pointerInside ? InputStateFlags.pointerInside : 0)
-      | (this.input.pointerCaptured ? InputStateFlags.pointerCaptured : 0);
-    try {
-      const wrote = await writeInputStatePDO(this.sceneProxy, {
-        dataVersion,
-        sequence,
-        sceneId: this.sceneProxy.pdo.makeId("input.scene", this.sceneProxy.sceneId ?? "scene"),
-        viewportId: this.input.viewportId,
-        flags,
-        modifierMask: this.input.modifierMask,
-        lockMask: 0,
-        keys: this.input.keys,
-        pointer: {
-          pointerKind: 1,
-          buttonMask: this.input.buttonMask,
-          flags: 0,
-          deviceId: 1,
-          x: this.input.pointerX,
-          y: this.input.pointerY,
-          deltaX: sentTransient.pointerDeltaX,
-          deltaY: sentTransient.pointerDeltaY,
-          wheelX: sentTransient.wheelX,
-          wheelY: sentTransient.wheelY,
-        },
-      });
-      if (wrote) {
-        this.input.lastSentSignature = signature;
-        this.input.transientResetPending = hasTransient;
-      }
-    } catch {
-      // 输入 PDO 是可丢帧通道：slot 尚未由后端创建或当前帧写缓冲不可用时，直接丢弃本帧输入。
-    } finally {
-      this.input.writePending = false;
-      this.#subtractTransientInput(sentTransient);
-    }
-  }
-
-  async #refreshDynamicRenderPDO() {
-    if (!this.sceneProxy?.pdo?.enabled || this.isDefragging || this.dynamicReadPending) {
-      return;
-    }
-
-    const renderDescriptors = [...this.slotDescriptors.values()].filter((descriptor) =>
-      this.#isActiveRenderScene(descriptor.sceneId)
-      && (descriptor.slotRole === "Transform" || descriptor.slotRole === "Camera"));
-    const colliderDescriptors = [...this.colliderSlotDescriptors.values()];
-    if (!renderDescriptors.length && !colliderDescriptors.length) {
-      return;
-    }
-
-    this.dynamicReadPending = true;
-    try {
-      for (const descriptor of renderDescriptors) {
-        await this.#readSlot(descriptor);
-      }
-      for (const descriptor of colliderDescriptors) {
-        await this.#readColliderSlot(descriptor);
-      }
-    } finally {
-      this.dynamicReadPending = false;
-    }
-  }
-
-  #isActiveRenderScene(sceneId) {
-    return this.renderSceneId === null
-      || String(sceneId ?? "") === this.renderSceneId;
-  }
-
-  #clearTransientInput() {
-    this.input.pointerDeltaX = 0;
-    this.input.pointerDeltaY = 0;
-    this.input.wheelX = 0;
-    this.input.wheelY = 0;
-  }
-
-  #subtractTransientInput(transient) {
-    this.input.pointerDeltaX -= transient.pointerDeltaX;
-    this.input.pointerDeltaY -= transient.pointerDeltaY;
-    this.input.wheelX -= transient.wheelX;
-    this.input.wheelY -= transient.wheelY;
-    if (Math.abs(this.input.pointerDeltaX) < 0.000001) {
-      this.input.pointerDeltaX = 0;
-    }
-    if (Math.abs(this.input.pointerDeltaY) < 0.000001) {
-      this.input.pointerDeltaY = 0;
-    }
-    if (Math.abs(this.input.wheelX) < 0.000001) {
-      this.input.wheelX = 0;
-    }
-    if (Math.abs(this.input.wheelY) < 0.000001) {
-      this.input.wheelY = 0;
-    }
-  }
-
-  #resetInputState() {
-    this.input.keys.clear();
-    this.input.buttonMask = 0;
-    this.input.modifierMask = 0;
-    this.input.pointerCaptured = false;
-    this.input.lastSentSignature = null;
-    this.input.transientResetPending = false;
-    this.#clearTransientInput();
-  }
-
   #unsubscribe() {
     for (const unsubscribe of this.subscriptions.splice(0)) {
       unsubscribe();
@@ -1871,6 +1842,22 @@ const IDENTITY_MATRIX = Object.freeze([
 
 function identityMatrixArray() {
   return IDENTITY_MATRIX;
+}
+
+function toThreeMatrixArray(value) {
+  if (!Array.isArray(value) && !ArrayBuffer.isView(value)) {
+    return IDENTITY_MATRIX;
+  }
+  if (value.length !== 16) {
+    return IDENTITY_MATRIX;
+  }
+  const result = new Array(16);
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 4; column += 1) {
+      result[column * 4 + row] = Number(value[row * 4 + column]);
+    }
+  }
+  return result;
 }
 
 function makeVertexColorArray(values) {
@@ -1936,67 +1923,6 @@ function setsEqual(left, right) {
 function formatNumber(value, digits = 2) {
   const number = Number(value);
   return Number.isFinite(number) ? number.toFixed(digits) : "0.00";
-}
-
-function modifierMaskFromEvent(event) {
-  return (event.shiftKey ? InputModifierFlags.shift : 0)
-    | (event.ctrlKey ? InputModifierFlags.ctrl : 0)
-    | (event.altKey ? InputModifierFlags.alt : 0)
-    | (event.metaKey ? InputModifierFlags.super : 0);
-}
-
-function buttonToMask(button) {
-  switch (button) {
-    case 0:
-      return 1;
-    case 1:
-      return 4;
-    case 2:
-      return 2;
-    case 3:
-      return 8;
-    case 4:
-      return 16;
-    default:
-      return 0;
-  }
-}
-
-function hasInputTransient(transient) {
-  return Math.abs(Number(transient.pointerDeltaX ?? 0)) > 0.000001
-    || Math.abs(Number(transient.pointerDeltaY ?? 0)) > 0.000001
-    || Math.abs(Number(transient.wheelX ?? 0)) > 0.000001
-    || Math.abs(Number(transient.wheelY ?? 0)) > 0.000001;
-}
-
-function hasInputState(input) {
-  return Boolean(input.hasFocus)
-    || Boolean(input.pointerInside)
-    || Boolean(input.pointerCaptured)
-    || Number(input.buttonMask ?? 0) !== 0
-    || Number(input.modifierMask ?? 0) !== 0
-    || (input.keys?.size ?? 0) > 0;
-}
-
-function makeInputSignature(input) {
-  const keys = [...(input.keys ?? [])].map((key) => Number(key)).sort((left, right) => left - right).join(",");
-  return [
-    input.hasFocus ? 1 : 0,
-    input.pointerInside ? 1 : 0,
-    input.pointerCaptured ? 1 : 0,
-    Number(input.buttonMask ?? 0),
-    Number(input.modifierMask ?? 0),
-    keys,
-  ].join("|");
-}
-
-function isEditableTarget(target) {
-  const element = target instanceof Element ? target : null;
-  if (!element) {
-    return false;
-  }
-  const tagName = element.tagName?.toLowerCase?.() ?? "";
-  return element.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
 }
 
 function delay(durationMs) {

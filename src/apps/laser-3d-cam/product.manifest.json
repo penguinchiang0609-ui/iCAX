@@ -41,30 +41,19 @@
       "dependencies": [
         "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
         "../../${Platform}/${Configuration}/RenderData.dll",
-        "../../${Platform}/${Configuration}/RenderService.dll",
-        "../../${Platform}/${Configuration}/RenderPDO.dll",
-        "../../${Platform}/${Configuration}/PDORenderService.dll",
-        "../../${Platform}/${Configuration}/InputPDO.dll",
-        "../../${Platform}/${Configuration}/InputService.dll",
         "../../${Platform}/${Configuration}/Transform.dll",
         "../../${Platform}/${Configuration}/ColliderData.dll",
-        "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/CameraNavigation.dll"
+        "../../${Platform}/${Configuration}/RenderInteraction.dll"
       ],
       "components": [
         "../../${Platform}/${Configuration}/Transform.dll",
-        "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/CameraNavigation.dll",
         "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
       "behaviours": [
         "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/CameraNavigation.dll",
         "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
       "services": [
-        "../../${Platform}/${Configuration}/InputService.dll",
-        "../../${Platform}/${Configuration}/PDORenderService.dll",
         "../../${Platform}/${Configuration}/Laser3DCAM.dll"
       ],
       "sdo": [

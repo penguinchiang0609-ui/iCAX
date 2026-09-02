@@ -7,6 +7,17 @@ import {
 } from "../../index.mjs";
 
 const root = document.getElementById("app");
+const TOOLBAR_TOOLTIP_SELECTOR = [
+  "[data-toolbar-tooltip]",
+  ".ribbon-command",
+  ".quick-button",
+  ".tubest-part-toolbar button",
+  ".tube-cad-tool-ribbon button",
+  ".tubest-editor-header button",
+].join(",");
+const TOOLBAR_TOOLTIP_DELAY_MS = 260;
+let toolbarTooltipTimer = 0;
+let toolbarTooltipTarget = null;
 
 const state = {
   bridgeStatus: "Disconnected",
@@ -298,7 +309,37 @@ const actions = {
 
 exposeAppShellAutomation();
 
+root.addEventListener("pointerover", (event) => {
+  const target = resolveToolbarTooltipTarget(event.target);
+  if (!target || target === toolbarTooltipTarget) return;
+  scheduleToolbarTooltip(target);
+});
+
+root.addEventListener("pointerout", (event) => {
+  if (!toolbarTooltipTarget) return;
+  const nextTarget = event.relatedTarget instanceof Element
+    ? event.relatedTarget.closest(TOOLBAR_TOOLTIP_SELECTOR)
+    : null;
+  if (nextTarget !== toolbarTooltipTarget) hideToolbarTooltip();
+});
+
+root.addEventListener("focusin", (event) => {
+  const target = resolveToolbarTooltipTarget(event.target);
+  if (target) scheduleToolbarTooltip(target, 0);
+});
+
+root.addEventListener("focusout", (event) => {
+  const nextTarget = event.relatedTarget instanceof Element
+    ? event.relatedTarget.closest(TOOLBAR_TOOLTIP_SELECTOR)
+    : null;
+  if (nextTarget !== toolbarTooltipTarget) hideToolbarTooltip();
+});
+
+window.addEventListener("resize", hideToolbarTooltip);
+window.addEventListener("scroll", hideToolbarTooltip, true);
+
 root.addEventListener("click", (event) => {
+  hideToolbarTooltip();
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
   if (!target || target.hasAttribute("disabled")) {
     return;
@@ -432,6 +473,7 @@ root.addEventListener("input", (event) => {
 });
 
 function render() {
+  hideToolbarTooltip();
   if (!state.activeProjectState) {
     root.innerHTML = `
       <div class="startup-shell">
@@ -459,6 +501,93 @@ function render() {
   }
 
   mountActiveProductSurface();
+}
+
+function resolveToolbarTooltipTarget(source) {
+  if (!(source instanceof Element)) return null;
+  const target = source.closest(TOOLBAR_TOOLTIP_SELECTOR);
+  return target instanceof HTMLElement && root.contains(target) ? target : null;
+}
+
+function scheduleToolbarTooltip(target, delay = TOOLBAR_TOOLTIP_DELAY_MS) {
+  hideToolbarTooltip();
+  const text = getToolbarTooltipText(target);
+  if (!text) return;
+  toolbarTooltipTarget = target;
+  toolbarTooltipTimer = window.setTimeout(() => {
+    if (toolbarTooltipTarget === target && target.isConnected) {
+      showToolbarTooltip(target, text);
+    }
+  }, delay);
+}
+
+function getToolbarTooltipText(target) {
+  const nativeTitle = String(target.getAttribute("title") ?? "").trim();
+  const text = String(
+    target.dataset.toolbarTooltip
+      || target.dataset.icaxToolbarTooltip
+      || nativeTitle
+      || target.getAttribute("aria-label")
+      || target.querySelector(":scope > span")?.textContent
+      || "",
+  ).trim();
+  if (nativeTitle) {
+    target.dataset.icaxToolbarTooltip = nativeTitle;
+    target.removeAttribute("title");
+  }
+  if (text && !target.hasAttribute("aria-label")) target.setAttribute("aria-label", text);
+  return text;
+}
+
+function showToolbarTooltip(target, text) {
+  const tooltip = ensureToolbarTooltip();
+  tooltip.textContent = text;
+  tooltip.hidden = false;
+  tooltip.dataset.placement = "top";
+  tooltip.style.left = "0px";
+  tooltip.style.top = "0px";
+
+  const targetRect = target.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  const gap = 8;
+  let top = targetRect.top - tooltipRect.height - gap;
+  let placement = "top";
+  if (top < 6) {
+    top = targetRect.bottom + gap;
+    placement = "bottom";
+  }
+  top = Math.min(Math.max(6, top), Math.max(6, viewportHeight - tooltipRect.height - 6));
+  const left = Math.min(
+    Math.max(6, targetRect.left + targetRect.width / 2 - tooltipRect.width / 2),
+    Math.max(6, viewportWidth - tooltipRect.width - 6),
+  );
+  tooltip.dataset.placement = placement;
+  tooltip.style.left = `${Math.round(left)}px`;
+  tooltip.style.top = `${Math.round(top)}px`;
+}
+
+function ensureToolbarTooltip() {
+  let tooltip = document.querySelector(".icax-toolbar-tooltip");
+  if (tooltip instanceof HTMLElement) return tooltip;
+  tooltip = document.createElement("div");
+  tooltip.className = "icax-toolbar-tooltip";
+  tooltip.id = "icax-toolbar-tooltip";
+  tooltip.setAttribute("role", "tooltip");
+  tooltip.hidden = true;
+  document.body.append(tooltip);
+  return tooltip;
+}
+
+function hideToolbarTooltip() {
+  if (toolbarTooltipTimer) {
+    window.clearTimeout(toolbarTooltipTimer);
+    toolbarTooltipTimer = 0;
+  }
+  toolbarTooltipTarget = null;
+  const tooltip = document.querySelector(".icax-toolbar-tooltip");
+  if (tooltip instanceof HTMLElement) tooltip.hidden = true;
 }
 
 function exposeAppShellAutomation() {
@@ -579,10 +708,13 @@ function renderStartCenter({ overlay }) {
 function renderTitleBar() {
   const undoRedo = state.activeSceneState?.undoRedo ?? {};
   const projectBusy = isActiveProjectBusy();
+  const applicationTitle = state.activeProductState?.productId === "icax.tube-one"
+    ? "TubeOne"
+    : "iCAX";
   return `
     <header class="title-bar">
       <div class="app-corner">
-        <button class="app-button" type="button" data-action="open-start-center">iCAX ▾</button>
+        <button class="app-button" type="button" data-action="open-start-center">${applicationTitle} ▾</button>
         <button class="quick-button" type="button" data-action="ribbon-command" data-command-id="app.save" ${projectBusy ? "disabled" : ""} title="保存">保存</button>
         <button class="quick-button" type="button" data-action="undo-project" ${undoRedo.canUndo && !projectBusy ? "" : "disabled"} title="撤销">撤销</button>
         <button class="quick-button" type="button" data-action="redo-project" ${undoRedo.canRedo && !projectBusy ? "" : "disabled"} title="重做">重做</button>
@@ -656,15 +788,16 @@ function renderProductRibbon() {
       </div>
       <div class="ribbon-commands">
         ${(activeTab?.groups ?? []).map((group) => `
-          <section class="ribbon-group">
+          <section class="ribbon-group" data-ribbon-scope="${escapeAttr(group.scope ?? "all")}">
             <div class="ribbon-command-list">
               ${group.commands.map((command) => `
                 <button class="ribbon-command ${command.size === "large" ? "large" : ""}"
                         type="button"
                         data-action="ribbon-command"
                         data-command-id="${escapeAttr(command.id)}"
+                        data-icon-tone="${escapeAttr(command.iconTone ?? "teal")}"
                         ${command.disabled ? "disabled" : ""}>
-                  <span class="command-icon">${escapeText(command.icon ?? "□")}</span>
+                  ${renderRibbonCommandIcon(command.iconName, command.icon)}
                   <span>${escapeText(command.title)}</span>
                 </button>
               `).join("")}
@@ -676,6 +809,50 @@ function renderProductRibbon() {
     </nav>
   `;
 }
+
+function renderRibbonCommandIcon(iconName, fallback = "□") {
+  const body = RIBBON_ICON_SHAPES[String(iconName ?? "")];
+  if (!body) {
+    return `<span class="command-icon">${escapeText(fallback)}</span>`;
+  }
+  return `<span class="command-icon vector" aria-hidden="true">
+    <svg viewBox="0 0 24 24" focusable="false">${body}</svg>
+  </span>`;
+}
+
+const RIBBON_ICON_SHAPES = Object.freeze({
+  new: `<path d="M5 3.5h9l5 5V21H5z"/><path d="M14 3.5V9h5"/><path class="accent" d="M8 14h8M12 10v8"/>`,
+  nest: `<path d="M3 5h8v6H3zM13 13h8v6h-8z"/><path class="accent" d="M13 5h8v6h-8zM3 13h8v6H3z"/>`,
+  export: `<path d="M5 3.5h9l5 5V21H5z"/><path d="M14 3.5V9h5"/><path class="accent" d="M12 17V8m-3 3 3-3 3 3"/>`,
+  report: `<path d="M6 4h12v17H6z"/><path class="accent" d="M9 8h6M9 12h6M9 16h4"/><path d="M9 2.5h6V6H9z"/>`,
+  select: `<path d="m5 3 12 9-6 1.5L8 19z"/><path class="accent" d="m12 14 4 6"/>`,
+  display: `<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 9v11"/><circle class="accent fill" cx="6" cy="6.5" r="1"/>`,
+  repair: `<path d="M4 7c3-3 7-3 10 0l2 2"/><path class="accent" d="m13 9 3 .2.2-3"/><path d="M20 17c-3 3-7 3-10 0l-2-2"/><path class="accent" d="m11 15-3-.2-.2 3"/>`,
+  edit2d: `<path d="M3 18 8 8l5 5 4-8 4 3"/><circle class="accent fill" cx="8" cy="8" r="1.5"/><path class="accent" d="m13 19 6-6 2 2-6 6-3 .5z"/>`,
+  edit3d: `<path d="m4 8 8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8"/><path class="accent" d="m14 16 5-5 2 2-5 5-3 1z"/>`,
+  process: `<circle cx="12" cy="12" r="9"/><path class="accent" d="m7.5 12 3 3 6-7"/>`,
+  hole: `<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v10c0 2 3 3 7 3s7-1 7-3V6"/><ellipse class="accent" cx="12" cy="11" rx="3" ry="1.5"/>`,
+  micro: `<path d="M3 14c4-7 7-7 10 0s5 5 8-1"/><path class="accent" d="M10 13h4M12 11v4"/>`,
+  weld: `<path d="M4 5v14M20 5v14M8 5c3 4 3 10 0 14M16 5c-3 4-3 10 0 14"/><path class="accent" d="M10 12h4"/>`,
+  manual: `<rect x="3" y="4" width="7" height="6"/><rect x="13" y="14" width="8" height="6"/><path class="accent" d="m8 18 4-8 2 5"/>`,
+  merge: `<path d="m3 8 7-4 7 4-7 4zM3 8v7l7 4 3-2"/><path class="accent" d="m11 12 5-3 5 3-5 3zM11 12v6l5 3 5-3v-6"/>`,
+  autonest: `<rect x="3" y="4" width="7" height="6"/><rect x="14" y="4" width="7" height="6"/><rect x="3" y="14" width="7" height="6"/><path class="accent" d="M14 18h7m-3-3 3 3-3 3"/>`,
+  sort: `<path d="M5 5h11M5 10h8M5 15h5"/><path class="accent" d="M18 8v11m-3-3 3 3 3-3"/>`,
+  simulate: `<circle cx="12" cy="12" r="9"/><path class="accent fill" d="m10 8 6 4-6 4z"/>`,
+  collision: `<path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6z"/><path class="accent" d="m8 12 2.5 2.5L16 9"/>`,
+  measure: `<path d="m4 17 13-13 3 3L7 20z"/><path class="accent" d="m9 15 2 2m1-5 2 2m1-5 2 2"/>`,
+  optimize: `<path d="M4 19V5m0 14h15"/><path class="accent" d="m7 15 4-5 3 2 5-7"/>`,
+  support: `<circle cx="12" cy="12" r="9"/><path class="accent" d="M12 11v6"/><circle class="accent fill" cx="12" cy="7.5" r="1"/>`,
+  delete: `<path d="M5 7h14M9 7V4h6v3M7 7l1 14h8l1-14"/><path class="accent" d="M10 10v7m4-7v7"/>`,
+  move: `<path d="M12 3v18M3 12h18"/><path class="accent" d="m9 6 3-3 3 3m-6 12 3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3"/>`,
+  boolean: `<circle cx="9" cy="12" r="6"/><circle class="accent" cx="15" cy="12" r="6"/>`,
+  base: `<ellipse cx="12" cy="5.5" rx="7" ry="3"/><path d="M5 5.5v13c0 2 3 3 7 3s7-1 7-3v-13"/><path class="accent" d="M5 15.5c0 2 3 3 7 3s7-1 7-3"/>`,
+  branch: `<path d="M4 5h6v14H4z"/><path class="accent" d="M10 9h10v6H10z"/><ellipse cx="20" cy="12" rx="2" ry="3"/>`,
+  bevel: `<path d="M4 5h16l-6 14h-4z"/><path class="accent" d="m8 5 4 8 4-8"/>`,
+  cut: `<path d="M4 5h16v14H4z"/><path class="accent" d="m5 18 14-12"/>`,
+  mark: `<path d="M5 5h14M12 5v14"/><path class="accent" d="M7 19h10"/>`,
+  apply: `<path d="M4 4h16v16H4z"/><path class="accent" d="m7 12 3 3 7-7"/>`,
+});
 
 function renderProjectWorkspace() {
   return `
@@ -1026,10 +1203,13 @@ function normalizeRibbonDefinition(ribbon) {
       title: String(tab.title ?? tab.id ?? ""),
       groups: (Array.isArray(tab.groups) ? tab.groups : []).map((group) => ({
         title: String(group.title ?? ""),
+        scope: String(group.scope ?? "all"),
         commands: (Array.isArray(group.commands) ? group.commands : []).map((command) => ({
           id: String(command.id ?? ""),
           title: String(command.title ?? command.id ?? ""),
           icon: command.icon,
+          iconName: command.iconName,
+          iconTone: command.iconTone,
           size: command.size,
           disabled: Boolean(command.disabled),
         })),

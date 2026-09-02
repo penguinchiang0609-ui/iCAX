@@ -1012,6 +1012,12 @@ namespace iCAX::GeometryAlgo
 
         for (const auto& face : model.Faces)
         {
+            if (!face.WireOrientations.empty()
+                && face.WireOrientations.size() != face.WireIds.size())
+            {
+                error = "BRepFace WireOrientations must be empty or parallel WireIds";
+                return false;
+            }
             if (!RequireId(surface3Ids, face.Surface3Id, "BRepFace", "Surface3Record", error))
             {
                 return false;
@@ -1033,6 +1039,12 @@ namespace iCAX::GeometryAlgo
 
         for (const auto& shell : model.Shells)
         {
+            if (!shell.FaceOrientations.empty()
+                && shell.FaceOrientations.size() != shell.FaceIds.size())
+            {
+                error = "BRepShell FaceOrientations must be empty or parallel FaceIds";
+                return false;
+            }
             for (const auto faceId : shell.FaceIds)
             {
                 if (!RequireId(faceIds, faceId, "BRepShell", "BRepFace", error))
@@ -1044,6 +1056,12 @@ namespace iCAX::GeometryAlgo
 
         for (const auto& solid : model.Solids)
         {
+            if (!solid.ShellOrientations.empty()
+                && solid.ShellOrientations.size() != solid.ShellIds.size())
+            {
+                error = "BRepSolid ShellOrientations must be empty or parallel ShellIds";
+                return false;
+            }
             for (const auto shellId : solid.ShellIds)
             {
                 if (!RequireId(shellIds, shellId, "BRepSolid", "BRepShell", error))

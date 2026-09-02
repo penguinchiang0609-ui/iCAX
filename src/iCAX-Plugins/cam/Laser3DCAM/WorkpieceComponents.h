@@ -19,7 +19,12 @@ namespace iCAX
             DECLARE_ICAX_COMPONENT_CREATOR(CWorkpieceComponent)
 
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, Name, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, unsigned long long, Quantity, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, SourcePath, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, GeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, SectionTypeID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, iCAX::Data::ObjectMap, SectionParameters, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, double, Length, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, ModelResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, BRepResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, TopologyResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
@@ -29,6 +34,7 @@ namespace iCAX
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, DraftBRepResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, DraftTopologyResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
             DECLARED_ICAX_FIELD(CWorkpieceComponent, unsigned long long, DraftTopologyVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+            DECLARED_ICAX_FIELD(CWorkpieceComponent, std::string, TubeNeutralGeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         };
     }
 }

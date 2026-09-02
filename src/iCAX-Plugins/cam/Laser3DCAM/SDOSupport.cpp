@@ -306,6 +306,25 @@ namespace iCAX::CAM::SDO::Internal
         return true;
     }
 
+    bool _SetObjectMapProperty(
+        IN const std::shared_ptr<iCAX::Database::CComponentBase>& pComponent_,
+        IN const std::string& strPropertyName_,
+        IN const ObjectMap& Value_)
+    {
+        std::string _strError;
+        if (!pComponent_->SetProperty(
+            strPropertyName_,
+            iCAX::Data::PropertyValue(Value_),
+            _strError))
+        {
+            throw std::runtime_error(
+                _strError.empty()
+                    ? "Cam property set failed: " + strPropertyName_
+                    : _strError);
+        }
+        return true;
+    }
+
     std::string _GetObjectString(
         IN const ObjectMap& Object_,
         IN const std::string& strName_,

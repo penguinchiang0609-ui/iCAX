@@ -1,10 +1,12 @@
-import { AppSDO, ProductSDO, ProjectSDO, makeSDOMethodCodeFromName } from "../SDO/sdoMethod.mjs";
+import { AppSDO, ProductSDO, ProjectSDO, ViewSDO, makeSDOMethodCodeFromName } from "../SDO/sdoMethod.mjs";
 import { SDOFrameKind } from "../SDO/sdoClient.mjs";
 import { deserializeVariantText, serializeVariantText } from "../SDO/variantSerializer.mjs";
 
 const appChannelId = "00000000-0000-4000-8000-000000000001";
 const productChannelId = "00000000-0000-4000-8000-000000000101";
 const sceneChannelId = "00000000-0000-4000-8000-000000000201";
+const viewId = "00000000-0000-4000-8000-000000000302";
+const viewResourceUrl = "icax-resource://mock/app/project/scene/view";
 const projectId = "00000000-0000-4000-8000-000000000401";
 const mainSceneId = "00000000-0000-4000-8000-000000000501";
 const mockProductId = "icax.mock-product";
@@ -289,6 +291,23 @@ export class MockHostBridge {
 
     if (methodCode === makeSDOMethodCodeFromName(ProjectSDO.getUndoRedoState)) {
       return this.#undoRedoState();
+    }
+
+    if (methodCode === makeSDOMethodCodeFromName(ViewSDO.getOrCreate)) {
+      return {
+        viewId,
+        revision: "1",
+        resource: {
+          url: viewResourceUrl,
+          version: "1",
+          format: "ICVW",
+          mediaType: "application/vnd.icax.flatbuffer",
+        },
+      };
+    }
+
+    if (methodCode === makeSDOMethodCodeFromName(ViewSDO.release)) {
+      return { viewId, released: true };
     }
 
     return { state: "Ok" };

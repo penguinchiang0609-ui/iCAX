@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   AppSDO,
@@ -12,14 +13,11 @@ import {
   SceneProxy,
   MockHostBridge,
   ProjectSDO,
-  EntityViewClient,
-  EntityViewPDOLayout,
-  PDOStore,
-  RenderLayers,
-  RenderPDOLayout,
-  RenderPDOPayloadKind,
-  parseEntityViewPDO,
-  parseRenderPDOPayload,
+  ViewClient,
+  loadRenderResource,
+  parseViewResource,
+  parseRenderGeometryResource,
+  parseRenderMaterialResource,
   loadProductModule,
   mountProductModule,
   makeResourceCollectionURL,
@@ -33,6 +31,7 @@ import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
 import { renderMachineRightPane } from "../../apps/laser-3d-cam/webpage/machine/machineArea.mjs";
 import { activateProjectArea, getProjectArea, setProjectAreaViewContent } from "../../apps/laser-3d-cam/webpage/state/projectViewStore.mjs";
+import { loadPreviewMeshResource } from "../../apps/tube-one/webpage/previewMeshResource.mjs";
 
 function testSDOMethodCodes() {
   assert.equal(makeSDOMethodCode("App", "GetState"), makeSDOMethodCodeFromName(AppSDO.getState));
@@ -56,78 +55,99 @@ function testVariantSerializer() {
   assert.deepEqual(deserializeVariantText(text), source);
 }
 
-function testRenderObjectLayerMaskParsing() {
-  const buffer = new ArrayBuffer(RenderPDOLayout.objectHeaderSize);
-  const view = new DataView(buffer);
-  view.setUint32(0, RenderPDOLayout.magic, true);
-  view.setUint32(4, RenderPDOLayout.version, true);
-  view.setUint32(8, RenderPDOPayloadKind.object, true);
-  view.setUint32(12, RenderPDOLayout.objectHeaderSize, true);
-  view.setBigUint64(16, BigInt(RenderPDOLayout.objectHeaderSize), true);
-  view.setBigUint64(24, 1n, true);
-  view.setUint32(80, 1, true);
-  view.setUint32(84, 1, true);
-  view.setUint32(88, 1, true);
-  view.setUint32(92, RenderLayers.default, true);
-
-  const payload = parseRenderPDOPayload(buffer);
-  assert.equal(payload.layerMask, RenderLayers.default);
+function testViewportOwnsTransientInteraction() {
+  const viewportSource = readFileSync(
+    new URL("../../iCAX-UI/SDK/Viewport/threeViewport.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(viewportSource, /InputPDO|writeInputStatePDO|flushInputPDO/);
+  assert.match(viewportSource, /#applyLocalNavigation/);
+  assert.match(viewportSource, /getCameraState\(\)/);
+  assert.match(viewportSource, /setCameraState\(value = \{\}\)/);
 }
 
-function testEntityViewPDOParsing() {
-  const capacity = 4;
-  const buffer = new ArrayBuffer(
-    EntityViewPDOLayout.headerSize
-      + capacity * EntityViewPDOLayout.entityIdSize,
-  );
-  const view = new DataView(buffer);
-  view.setBigUint64(0, 9n, true);
-  view.setUint32(8, 2, true);
-  writeUuidBytes(view, 16, "00112233-4455-6677-8899-aabbccddeeff");
-  writeUuidBytes(view, 32, "10213243-5465-7687-98a9-bacbdcedfe0f");
-
-  const snapshot = parseEntityViewPDO(buffer);
-  assert.equal(snapshot.revision, "9");
-  assert.equal(snapshot.count, 2);
+function testViewResourceParsing() {
+  const snapshot = parseViewResource(makeViewResourceFixture());
+  assert.equal(snapshot.revision, "3");
+  assert.equal(snapshot.count, 1);
+  assert.deepEqual(snapshot.sources, [
+    { sourceId: "scene", role: "scene" },
+    { sourceId: "workpieces", role: "workpiece" },
+  ]);
   assert.deepEqual(snapshot.entityIds, [
     "00112233-4455-6677-8899-aabbccddeeff",
-    "10213243-5465-7687-98a9-bacbdcedfe0f",
   ]);
-  assert.deepEqual([...new Uint8Array(buffer, 48)], new Array(32).fill(0));
-
-  view.setUint32(8, capacity + 1, true);
-  assert.throws(
-    () => parseEntityViewPDO(buffer),
-    /exceeds slot capacity/,
+  assert.deepEqual(snapshot.rows[0].sourceIds, ["scene", "workpieces"]);
+  assert.equal(snapshot.rows[0].data.visible, true);
+  assert.equal(
+    snapshot.rows[0].components.CRenderInstanceComponent.present,
+    true,
+  );
+  assert.equal(
+    snapshot.rows[0].components.CTransformComponent.present,
+    false,
   );
 }
 
-function testGlobalPDOStoreKeepsDescriptorsBeforeEntityEntersView() {
-  const store = new PDOStore();
-  const entityId = "00112233-4455-6677-8899-aabbccddeeff";
-  store.ingestEvent({
-    raw: {
-      payloadText: JSON.stringify({
-        event: "SlotAllocated",
-        pdoId: "7001",
-        payloadKind: "render.transform",
-        transformId: entityId,
-        slotVersion: "5",
-        payloadCapacity: "120",
-      }),
+function testRenderResourceParsing() {
+  const geometry = parseRenderGeometryResource(makeRenderGeometryResourceFixture());
+  assert.equal(geometry.kind, "mesh");
+  assert.equal(geometry.dataVersion, "7");
+  assert.equal(geometry.flags, 3);
+  assert.deepEqual([...geometry.positions], [0, 0, 0, 10, 0, 0, 0, 10, 0]);
+  assert.deepEqual([...geometry.indices], [0, 1, 2]);
+  assert.deepEqual([...geometry.vertexColors], [0xff3366ff, 0xff3366ff, 0xff3366ff]);
+
+  const material = parseRenderMaterialResource(makeRenderMaterialResourceFixture());
+  assert.equal(material.dataVersion, "9");
+  assert.equal(material.colorRGBA, 0x3366ccff);
+  assert.equal(material.lineWidth, 2.5);
+  assert.equal(material.baseColorTextureUrl,
+    "icax-resource://app/product/project/scene/texture");
+}
+
+async function testRenderResourceLoaderUsesViewReferenceVersion() {
+  let requestedUrl = "";
+  let requestedVersion = "";
+  const loaded = await loadRenderResource({
+    get: async (url, { headers }) => {
+      requestedUrl = url;
+      requestedVersion = headers.get("ICAX-Resource-Version");
+      return new Response(makeRenderGeometryResourceFixture().slice(0), { status: 200 });
     },
+  }, {
+    url: "icax-resource://app/product/project/scene/geometry",
+    version: "7",
   });
+  assert.equal(requestedUrl, "icax-resource://app/product/project/scene/geometry");
+  assert.equal(requestedVersion, "7");
+  assert.equal(loaded.type, "geometry");
+  assert.equal(loaded.data.dataVersion, "7");
+}
 
-  assert.equal(store.list({
-    type: "render.transform",
-    entityId,
-  }).length, 1);
-
-  const laterViewMembership = new Set([entityId]);
-  const descriptors = store.list().filter((descriptor) =>
-    descriptor.entityIds.some((id) => laterViewMembership.has(id)));
-  assert.equal(descriptors.length, 1);
-  assert.equal(descriptors[0].pdoId, "7001");
+async function testTubePreviewLoadsStandardRenderGeometry() {
+  let requestedVersion = "";
+  const preview = await loadPreviewMeshResource({
+    get: async (_url, { headers }) => {
+      requestedVersion = headers.get("ICAX-Resource-Version");
+      return new Response(makeRenderGeometryResourceFixture().slice(0), {
+        status: 200,
+        headers: {
+          "ICAX-FlatBuffer-Identifier": "ICRG",
+          "ICAX-Resource-Version": "7",
+        },
+      });
+    },
+  }, {
+    url: "icax-resource://app/product/project/scene/tube-preview",
+    version: 7,
+  });
+  assert.equal(requestedVersion, "7");
+  assert.equal(preview.format, "render-geometry");
+  assert.equal(preview.resourceVersion, 7);
+  assert.equal(preview.vertexCount, 3);
+  assert.equal(preview.triangleCount, 1);
+  assert.deepEqual([...preview.indices], [0, 1, 2]);
 }
 
 function testProjectAreaMembershipIsolation() {
@@ -164,69 +184,101 @@ function testProjectAreaMembershipIsolation() {
   assert.deepEqual([...getProjectArea(projectView, "machine").viewContent.entityIds], ["machine-axis"]);
 }
 
-function writeUuidBytes(view, offset, uuid) {
-  const bytes = uuid.replaceAll("-", "").match(/../g).map((hex) =>
-    Number.parseInt(hex, 16));
-  new Uint8Array(view.buffer, view.byteOffset + offset, 16).set(bytes);
-}
-
-async function testEntityViewReadersAreIndependentPDOConsumers() {
-  const payload = new ArrayBuffer(
-    EntityViewPDOLayout.headerSize + EntityViewPDOLayout.entityIdSize,
-  );
-  const payloadView = new DataView(payload);
-  payloadView.setBigUint64(0, 3n, true);
-  payloadView.setUint32(8, 1, true);
-  writeUuidBytes(
-    payloadView,
-    EntityViewPDOLayout.headerSize,
-    "00112233-4455-6677-8899-aabbccddeeff",
-  );
-
-  const invocations = [];
+async function testViewReadersUseSceneChannelAndResourceSnapshots() {
+  const payload = makeViewResourceFixture();
+  const sceneInvocations = [];
+  const viewId = "11111111-2222-4333-8444-555555555555";
   const sceneProxy = {
     invoke: async (method, request) => {
-      invocations.push({ method, request });
-      if (method === "EntityView.Release") {
+      sceneInvocations.push({ method, request });
+      if (method === "View.Release") {
         return { viewId: request.viewId, released: true };
       }
       return {
-        viewId: "11111111-2222-4333-8444-555555555555",
-        pdo: { id: "9001", version: 1, payloadSize: payload.byteLength },
+        viewId,
+        resource: {
+          url: "icax-resource://app/product/project/scene/view",
+          version: "3",
+          format: "ICVW",
+        },
       };
     },
-    pdo: {
-      withReadDescriptor: async (_descriptor, reader) => reader(payload),
+    resources: {
+      head: async () => new Response(null, {
+        status: 200,
+        headers: { "ICAX-Resource-Version": "3" },
+      }),
+      get: async () => new Response(payload.slice(0), {
+        status: 200,
+        headers: { "ICAX-Resource-Version": "3" },
+      }),
     },
   };
-  const client = new EntityViewClient(sceneProxy);
-  const first = await client.start({
-    where: "WHERE HAS CRenderInstanceComponent",
-  });
-  const second = await client.start({
-    where: "WHERE HAS CRenderInstanceComponent",
-  });
+  const client = new ViewClient(sceneProxy);
+  const definition = {
+    sources: [
+      {
+        sourceId: "scene",
+        role: "scene",
+        where: "WHERE HAS CRenderInstanceComponent",
+      },
+      {
+        sourceId: "workpieces",
+        role: "workpiece",
+        where: "WHERE HAS CWorkpieceComponent",
+      },
+    ],
+  };
+  const first = await client.start(definition);
+  const second = await client.start(definition);
 
   assert.notEqual(first, second);
   assert.equal(first.viewId, second.viewId);
-  assert.equal(invocations.length, 2);
-  assert.ok(invocations.every(({ method }) =>
-    method === "EntityView.GetOrCreate"));
+  assert.equal(sceneInvocations.length, 2);
+  assert.ok(sceneInvocations.every(({ method }) =>
+    method === "View.GetOrCreate"));
   assert.equal((await first.poll()).revision, "3");
   assert.equal((await second.poll()).revision, "3");
   assert.equal(await first.stop(), true);
   assert.equal(await first.stop(), false);
   assert.equal(await second.stop(), true);
   assert.deepEqual(
-    invocations.map(({ method }) => method),
+    sceneInvocations.map(({ method }) => method),
     [
-      "EntityView.GetOrCreate",
-      "EntityView.GetOrCreate",
-      "EntityView.Release",
-      "EntityView.Release",
+      "View.GetOrCreate",
+      "View.GetOrCreate",
+      "View.Release",
+      "View.Release",
     ],
   );
+  assert.equal(sceneInvocations[0].request.sources.length, 2);
+  assert.deepEqual(sceneInvocations[2].request, { viewId });
+  assert.deepEqual(sceneInvocations[3].request, { viewId });
   await client.dispose();
+}
+
+function makeViewResourceFixture() {
+  const bytes = Buffer.from(
+    "GAAAAElDVlcAAA4AGAAAAAQAEAAIAAwADgAAAPABAACIAQAADAAAAAMAAAAAAAAAAQAAABAAAAAAAAoAEAAEAAgADAAKAAAANAEAAAgBAAAEAAAAAgAAAHAAAAAQAAAADAAMAAQAAAAAAAgADAAAADQAAAAEAAAAJgAAAHsiX192YXJpYW50X3R5cGUiOiJPYmplY3QiLCJ2YWx1ZSI6e319AAATAAAAQ1RyYW5zZm9ybUNvbXBvbmVudAAMABAACAAGAAcADAAMAAAAAAABAWQAAAAEAAAAVgAAAHsiX192YXJpYW50X3R5cGUiOiJPYmplY3QiLCJ2YWx1ZSI6eyJ2aXNpYmxlIjp7Il9fdmFyaWFudF90eXBlIjoiYm9vbCIsInZhbHVlIjp0cnVlfX19AAAYAAAAQ1JlbmRlckluc3RhbmNlQ29tcG9uZW50AAAAAAIAAAAYAAAABAAAAAoAAAB3b3JrcGllY2VzAAAFAAAAc2NlbmUAAAAkAAAAMDAxMTIyMzMtNDQ1NS02Njc3LTg4OTktYWFiYmNjZGRlZWZmAAAAAAIAAAA8AAAABAAAANT///8YAAAABAAAAAkAAAB3b3JrcGllY2UAAAAKAAAAd29ya3BpZWNlcwAACAAMAAQACAAIAAAAFAAAAAQAAAAFAAAAc2NlbmUAAAAFAAAAc2NlbmUAAAAkAAAAMTExMTExMTEtMjIyMi00MzMzLTg0NDQtNTU1NTU1NTU1NTU1AAAAAA==",
+    "base64",
+  );
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function makeRenderGeometryResourceFixture() {
+  const bytes = Buffer.from(
+    "JAAAAElDUkcAAAAAGAAwAAAABAAkAAgADAAQABQAGAAcACAAGAAAAAEAAAABAAAAAwAAAIQAAABYAAAAOAAAACQAAAAQAAAABwAAAAAAAAAAAAAAAwAAAAAAAAABAAAAAgAAAAMAAAD/ZjP//2Yz//9mM/8GAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/CQAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwkAAAAAAAAAAAAAAAAAAAAAACBBAAAAAAAAAAAAAAAAAAAgQQAAAAA=",
+    "base64",
+  );
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function makeRenderMaterialResourceFixture() {
+  const bytes = Buffer.from(
+    "IAAAAElDUk0YACgAAAAgAAQACAAMAAAAEAAUABgAHAAYAAAA/8xmM/8RERH/////AAAgQAMAAAAEAAAADAAAAAkAAAAAAAAAMQAAAGljYXgtcmVzb3VyY2U6Ly9hcHAvcHJvZHVjdC9wcm9qZWN0L3NjZW5lL3RleHR1cmUAAAA=",
+    "base64",
+  );
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
 function testBridgeValidation() {
@@ -643,12 +695,14 @@ function delay(milliseconds) {
 }
 
 testSDOMethodCodes();
+testViewportOwnsTransientInteraction();
 testVariantSerializer();
-testRenderObjectLayerMaskParsing();
-testEntityViewPDOParsing();
-testGlobalPDOStoreKeepsDescriptorsBeforeEntityEntersView();
+testViewResourceParsing();
+testRenderResourceParsing();
 testProjectAreaMembershipIsolation();
-await testEntityViewReadersAreIndependentPDOConsumers();
+await testViewReadersUseSceneChannelAndResourceSnapshots();
+await testRenderResourceLoaderUsesViewReferenceVersion();
+await testTubePreviewLoadsStandardRenderGeometry();
 testBridgeValidation();
 testChannelIdValidation();
 await testSDOPromiseFlow();

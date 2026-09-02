@@ -8,7 +8,6 @@
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SDO.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="CameraViewSDOImplement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SDOSupport.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ComponentValueHelpers.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="FeatureRecognitionService.h"><Filter>Header Files</Filter></ClInclude>
@@ -51,8 +50,6 @@
     <ClCompile Include="ToolpathSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SelectionSDO.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ToolpathSDO.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="CameraViewSDO.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="CameraViewSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="WorkpieceModelSDO.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="WorkpieceSDO.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="WorkpieceSDOImplement.cpp"><Filter>Source Files</Filter></ClCompile>

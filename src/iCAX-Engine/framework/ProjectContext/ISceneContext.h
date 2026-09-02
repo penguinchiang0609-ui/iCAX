@@ -5,6 +5,7 @@
 
 #include "SDO/SDOEndpoint.h"
 
+#include <memory>
 #include <string>
 
 namespace iCAX
@@ -31,7 +32,7 @@ namespace iCAX
 
     namespace View
     {
-        class CEntityViewSet;
+        class CViewSet;
     }
 
     namespace Project
@@ -112,15 +113,17 @@ namespace iCAX
             virtual const iCAX::PDO::IPDOHub& PDOHub() const = 0;
 
             /*
-            * @brief 当前 Scene 是否提供 EntityView PDO 集合。
+            * @brief 当前 Scene 是否提供正式 View 集合。
             */
-            virtual bool HasEntityViews() const;
+            virtual bool HasViews() const;
 
             /*
-            * @brief 获取当前 Scene 自有的 EntityView 集合。
-            * @details EntityView 是 Scene 运行期子对象，不属于 ServiceProvider。
+            * @brief 获取当前 Scene 自有的 View 集合。
+            * @details View 内部可以组合多个 Database EntityView；它是 Scene
+            *   运行期子对象，不属于 ServiceProvider。
             */
-            virtual iCAX::View::CEntityViewSet& EntityViews() const;
+            virtual iCAX::View::CViewSet& Views() const;
+
 
             /*
             * @brief 获取当前 Scene 可用的服务容器。

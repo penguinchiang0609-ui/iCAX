@@ -2,7 +2,7 @@ import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
 import { ProjectSDO } from "../SDK/SDO/sdoMethod.mjs";
 import { PDOClient } from "../SDK/PDO/pdoClient.mjs";
 import { PDOStore } from "../SDK/PDO/pdoStore.mjs";
-import { EntityViewClient } from "../SDK/EntityView/entityViewClient.mjs";
+import { ViewClient } from "../SDK/View/viewClient.mjs";
 import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 
 export class SceneProxy {
@@ -29,7 +29,7 @@ export class SceneProxy {
     this.pdoStoreUnsubscribe = this.subscribeAll(
       (event) => this.pdoStore.ingestEvent(event),
     );
-    this.entityViews = new EntityViewClient(this);
+    this.views = new ViewClient(this);
   }
 
   updateState(sceneState) {
@@ -84,7 +84,7 @@ export class SceneProxy {
   }
 
   dispose() {
-    void this.entityViews.dispose();
+    void this.views.dispose();
     for (const unsubscribe of [...this.unsubscribers]) {
       unsubscribe();
     }

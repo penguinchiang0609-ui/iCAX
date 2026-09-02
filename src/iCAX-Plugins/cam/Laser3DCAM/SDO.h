@@ -32,27 +32,6 @@ namespace iCAX
         _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleDiscardWorkpieceEdit(
             IN const Interaction::CInvocation&, IN const Application::IApplicationContext&, IN Product::IProductContext*, IN Project::IProjectContext*, IN Project::ISceneContext*);
         /*
-        * @brief 请求后端计算当前渲染场景的最佳视角。
-        */
-        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleFitCameraView(
-            IN const Interaction::CInvocation& Request_,
-            IN const Application::IApplicationContext& ApplicationContext_,
-            IN Product::IProductContext* pProductContext_,
-            IN Project::IProjectContext* pProjectContext_,
-            IN Project::ISceneContext* pSceneContext_);
-
-        /*
-        * @brief 按标准方向切换当前相机视图。
-        * @details 支持 front/right/top/iso 等常用视角；视图中心仍由后端根据当前渲染对象包围盒计算。
-        */
-        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleSetStandardCameraView(
-            IN const Interaction::CInvocation& Request_,
-            IN const Application::IApplicationContext& ApplicationContext_,
-            IN Product::IProductContext* pProductContext_,
-            IN Project::IProjectContext* pProjectContext_,
-            IN Project::ISceneContext* pSceneContext_);
-
-        /*
         * @brief 查询当前场景中的机床实例列表。
         */
         _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleListMachines(
@@ -327,6 +306,84 @@ namespace iCAX
         * @brief 设置当前激活工件。
         */
         _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleSetActiveWorkpiece(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /* 删除一个工件 Entity；共享几何资源仍由资源池管理。 */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleDeleteWorkpiece(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /*
+        * @brief 发布当前工件已经由导入管线恢复的可编辑 CAD 意图图。
+        */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleRecognizeCADIntent(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /*
+        * @brief 为一个工件创建隔离的临时 CAD 编辑 Scene。
+        * @details 返回的 Scene 拥有独立 Repository、ResourceLibrary、View、Undo/Redo 和 SDO channel；
+        *   主 Scene 只负责创建会话，不承载编辑过程数据。
+        */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleOpenCADIntentEditorScene(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /*
+        * @brief 关闭由当前主 Scene 创建的 CAD 编辑 Scene。
+        */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleCloseCADIntentEditorScene(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /*
+        * @brief 修改一个参数化 CSG 节点的可观测标量参数并创建资源新版本。
+        */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleSetCADIntentParameters(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /*
+        * @brief 使用临时参数重建所选构造体预览，不修改正式零件或中性模型。
+        */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandlePreviewCADIntentParameters(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /* 新增一个内置参数化减材刀具到当前 CAD 编辑 Scene。 */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleAddCADIntentTool(
+            IN const Interaction::CInvocation& Request_,
+            IN const Application::IApplicationContext& ApplicationContext_,
+            IN Product::IProductContext* pProductContext_,
+            IN Project::IProjectContext* pProjectContext_,
+            IN Project::ISceneContext* pSceneContext_);
+
+        /*
+        * @brief 人工选择一个 AlternativeNode 的等价构造解释。
+        */
+        _LASER_3D_CAM_EXP Interaction::CInvocationResult HandleSelectCADIntentInterpretation(
             IN const Interaction::CInvocation& Request_,
             IN const Application::IApplicationContext& ApplicationContext_,
             IN Product::IProductContext* pProductContext_,

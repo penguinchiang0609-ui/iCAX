@@ -36,7 +36,8 @@ SceneObjectRegistry                      -> 场景运行期对象、alias、几�
 
 - `IProjectContext.h` / `IProjectContext.cpp`：项目级上下文接口，只包含项目身份、项目路径和 Settings。
 - `ISceneContext.h` / `ISceneContext.cpp`：场景级上下文接口，包含 Repository、ResourceLibrary、ServiceProvider、SDOChannel、PDOHub 和 SceneObjectRegistry 访问入口。
-- `SceneObjectRegistry.h/.cpp`：Scene 内运行期身份注册表。Repository Entity 可以映射为 `SceneObjectID`；非 Entity 对象通过 framework 不解释的 `alias namespace + key` 映射为 `SceneObjectID`。渲染 instance、camera、transform、collider 都使用这个身份体系，前端或物理服务返回 ID 后，后端可以通过 Registry 反查到业务 Entity 或运行期 alias。
+- `SceneObjectRegistry.h/.cpp`：Scene 内运行期身份注册表。Repository Entity 可以映射为 `SceneObjectID`；非 Entity 对象通过 framework 不解释的 `alias namespace + key` 映射为 `SceneObjectID`。物理服务返回运行期 ID 后，后端可以通过 Registry 反查到业务 Entity 或运行期 alias。渲染场景成员关系由 View 负责，不由 Registry 另建一套现场。
 
-`SceneObjectRegistry` 不定义任何产品对象类型。相机、碰撞体、资源预览、切割头、刀路等都不是 framework 的固定枚举；它们如果需要运行期身份，只能由对应产品或插件用自己的 alias 命名空间注册，例如 `render.camera/default` 或 `physics.body/42`。
+
+`SceneObjectRegistry` 不定义任何产品对象类型。碰撞体、仿真探针等都不是 framework 的固定枚举；它们如果需要非 Entity 的运行期身份，只能由对应产品或插件用自己的 alias 命名空间注册，例如 `physics.body/42`。
 - `ProjectContextExport.h`：DLL 导出宏。

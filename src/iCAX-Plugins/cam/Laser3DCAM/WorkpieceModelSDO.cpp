@@ -2,6 +2,8 @@
 #include "SDO.h"
 #include "SDOSupport.h"
 #include "WorkpieceSDOImplement.h"
+#include "RenderData/RenderData.h"
+#include "RenderInteraction/RenderResourceAdapter.h"
 
 #include "SDO/SDORegistrationCatalog.h"
 #include "SDO/SDO.h"
@@ -39,7 +41,7 @@ iCAX::Interaction::CInvocationResult HandleImportWorkpieceModel(
     IN iCAX::Project::ISceneContext *pSceneContext_)
 {
     auto &_Scene = _RequireSceneContext(pSceneContext_);
-    (void)_RequireProductContext(pProductContext_);
+    auto &_Product = _RequireProductContext(pProductContext_);
     (void)_RequireProjectContext(pProjectContext_);
 
     auto _Payload = _DecodeObjectPayload(Request_);
@@ -59,14 +61,30 @@ iCAX::Interaction::CInvocationResult HandleImportWorkpieceModel(
         throw std::invalid_argument("Cam WorkpieceModel.Import tolerance must be greater than zero");
     }
 
-    const auto _ImportResult = _ImportCadModel(_Scene, _SourcePath, _Tolerance);
+    const auto _ImportResult = _ImportCadModel(
+        _Scene,
+        _Product,
+        _SourcePath,
+        _Tolerance);
+    const auto _PreviewResource =
+        iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+            _Scene.Resources(),
+            _ImportResult.BRepResourceID,
+            iCAX::Render::ERenderGeometryKind::Mesh);
     ObjectMap _Result;
     _Result["sourcePath"] = _SourcePath;
     _Result["name"] = _GetOptionalString(_Payload, "name", _GetDisplayNameFromPath(_SourcePath));
     _Result["modelResourceId"] = _ImportResult.ModelResourceID;
     _Result["brepResourceId"] = _ImportResult.BRepResourceID;
     _Result["topologyResourceId"] = _ImportResult.TopologyResourceID;
+    _Result["tubeNeutralGeometryResourceId"] = _ImportResult.TubeNeutralGeometryResourceID;
+    _Result["geometryResourceUrl"] = _ImportResult.BRepResourceID;
+    _Result["sectionTypeId"] = _ImportResult.SectionTypeID;
+    _Result["sectionParameters"] = _ImportResult.SectionParameters;
+    _Result["length"] = _ImportResult.dLength;
     _Result["topologyVersion"] = static_cast<unsigned long long>(_ImportResult.nTopologyVersion);
+    _Result["previewResourceUrl"] = _PreviewResource.URL;
+    _Result["previewResourceVersion"] = static_cast<unsigned long long>(_PreviewResource.nVersion);
     return _MakeResponse(Variant(_Result));
 }
 

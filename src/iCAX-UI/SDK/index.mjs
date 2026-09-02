@@ -5,10 +5,10 @@ export { ResourceClient } from "./Resources/resourceClient.mjs";
 export { PDOClient } from "./PDO/pdoClient.mjs";
 export { PDOStore } from "./PDO/pdoStore.mjs";
 export {
-  EntityViewClient,
-  EntityViewPDOLayout,
-  parseEntityViewPDO,
-} from "./EntityView/index.mjs";
+  ViewClient,
+  parseViewResource,
+  unwrapVariant,
+} from "./View/index.mjs";
 export {
   allocateResourceURL,
   generateResourceId,
@@ -20,6 +20,7 @@ export {
   AppSDO,
   ProductSDO,
   ProjectSDO,
+  ViewSDO,
   makeSDOMethodCode,
   makeSDOMethodCodeFromName,
   parseSDOMethod,
@@ -39,26 +40,14 @@ export { ProjectProxy } from "../ProjectProxy/ProjectProxy.mjs";
 export { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
 export { escapeAttr, escapeText } from "../UI/html.mjs";
 export {
-  InputKeyCodes,
-  InputModifierFlags,
-  InputPDOLayout,
-  InputStateFlags,
-  makeInputStatePDOID,
-  mapKeyboardEventCode,
-  writeInputStatePDO,
-  writeInputStatePayload,
-} from "./Input/index.mjs";
-export {
   RenderFlags,
   RenderLayers,
   RenderGeometryKind,
-  RenderPDOEvents,
-  RenderPDOLayout,
-  RenderPDOPayloadKind,
-  RenderPDOTypeCodes,
   ThreeRenderViewport,
   createThreeViewport,
-  parseRenderPDOEvent,
-  parseRenderPDOPayload,
+  loadRenderResource,
+  parseRenderGeometryResource,
+  parseRenderMaterialResource,
+  RenderResourceIdentifiers,
   rgbaToCssColor,
 } from "./Viewport/index.mjs";

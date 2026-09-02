@@ -86,6 +86,20 @@ namespace iCAX
             return {};
         }
 
+        inline iCAX::Data::PropertyValue ToObjectMapVariant(
+            IN const iCAX::Data::ObjectMap& Value_)
+        {
+            return iCAX::Data::PropertyValue(Value_);
+        }
+
+        inline iCAX::Data::ObjectMap FromObjectMapVariant(
+            IN const iCAX::Data::PropertyValue& Value_)
+        {
+            return Value_.Is<iCAX::Data::ObjectMap>()
+                ? Value_.To<iCAX::Data::ObjectMap>()
+                : iCAX::Data::ObjectMap{};
+        }
+
         inline bool StringEqual(IN const std::string& Lhs_, IN const std::string& Rhs_)
         {
             return Lhs_ == Rhs_;
@@ -112,6 +126,14 @@ namespace iCAX
         }
 
         inline bool VariantArrayEqual(IN const iCAX::Data::VariantArray& Lhs_, IN const iCAX::Data::VariantArray& Rhs_)
+        {
+            return Lhs_ == Rhs_;
+        }
+
+
+        inline bool ObjectMapEqual(
+            IN const iCAX::Data::ObjectMap& Lhs_,
+            IN const iCAX::Data::ObjectMap& Rhs_)
         {
             return Lhs_ == Rhs_;
         }

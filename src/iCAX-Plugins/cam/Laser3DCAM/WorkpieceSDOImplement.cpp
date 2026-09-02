@@ -1,9 +1,15 @@
 #include "pch.h"
 #include "WorkpieceSDOImplement.h"
 
+#include "ExtrusionRecognition/ExtrusionRecognitionService.h"
+#include "OpenCascadeResourceImport/OpenCascadeBRepReader.h"
 #include "ToolpathResourceKeys.h"
 #include "ToolpathResources.h"
 #include "TopologyPayloadNames.h"
+#include "GeometryData/TubeNeutralGeometry.h"
+#include "ProductContext/IProductContext.h"
+#include "RenderInteraction/RenderInteraction.h"
+#include "Services/ServiceProvider.h"
 #include "WorkpieceResourceKeys.h"
 
 
@@ -39,12 +45,24 @@ namespace
 
     ObjectMap _MakeWorkpiecePayload(
         IN const std::shared_ptr<iCAX::Database::IEntity>& pEntity_,
-        IN const std::shared_ptr<iCAX::CAM::CWorkpieceComponent>& pWorkpiece_)
+        IN const std::shared_ptr<iCAX::CAM::CWorkpieceComponent>& pWorkpiece_,
+        IN iCAX::Project::ISceneContext* pScene_)
     {
         ObjectMap _Workpiece;
         _Workpiece["entityId"] = pEntity_ ? _UuidToString(pEntity_->GetID()) : std::string();
         _Workpiece["name"] = pWorkpiece_ ? pWorkpiece_->GetName() : std::string();
+        _Workpiece["quantity"] = pWorkpiece_ ? pWorkpiece_->GetQuantity() : 0ull;
         _Workpiece["sourcePath"] = pWorkpiece_ ? pWorkpiece_->GetSourcePath() : std::string();
+        _Workpiece["geometryResourceUrl"] = pWorkpiece_
+            ? pWorkpiece_->GetGeometryResourceID()
+            : std::string();
+        _Workpiece["sectionTypeId"] = pWorkpiece_
+            ? pWorkpiece_->GetSectionTypeID()
+            : std::string();
+        _Workpiece["sectionParameters"] = pWorkpiece_
+            ? pWorkpiece_->GetSectionParameters()
+            : iCAX::Data::ObjectMap{};
+        _Workpiece["length"] = pWorkpiece_ ? pWorkpiece_->GetLength() : 0.0;
         _Workpiece["modelResourceId"] = pWorkpiece_ ? pWorkpiece_->GetModelResourceID() : std::string();
         _Workpiece["brepResourceId"] = pWorkpiece_ ? pWorkpiece_->GetBRepResourceID() : std::string();
         _Workpiece["topologyResourceId"] = pWorkpiece_ ? pWorkpiece_->GetTopologyResourceID() : std::string();
@@ -53,16 +71,65 @@ namespace
         _Workpiece["editState"] = pWorkpiece_ ? pWorkpiece_->GetEditState() : std::string("Current");
         _Workpiece["hasDraft"] = pWorkpiece_ && !pWorkpiece_->GetDraftBRepResourceID().empty();
         _Workpiece["draftTopologyVersion"] = pWorkpiece_ ? pWorkpiece_->GetDraftTopologyVersion() : 0ull;
-        _Workpiece["isLoaded"] = pWorkpiece_ && !pWorkpiece_->GetSourcePath().empty();
+        _Workpiece["isLoaded"] = pWorkpiece_
+            && !pWorkpiece_->GetGeometryResourceID().empty();
+        _Workpiece["tubeNeutralGeometryResourceId"] = pWorkpiece_
+            ? pWorkpiece_->GetTubeNeutralGeometryResourceID()
+            : std::string();
+        const auto _pRender = pEntity_
+            ? _GetComponent<iCAX::RenderInteraction::CRenderInstanceComponent>(pEntity_)
+            : nullptr;
+        const auto _PreviewResourceURL = _pRender
+            ? _pRender->GetGeometryResourceID()
+            : std::string();
+        _Workpiece["previewResourceUrl"] = _PreviewResourceURL;
+        _Workpiece["previewResourceVersion"] = pScene_ && !_PreviewResourceURL.empty()
+            ? pScene_->Resources().GetVersion(_PreviewResourceURL)
+            : 0ull;
+        unsigned long long _BoundaryCount = 0;
+        if (pScene_ && pWorkpiece_ && !pWorkpiece_->GetTubeNeutralGeometryResourceID().empty())
+        {
+            const auto _pGeometry = pScene_->Resources().Get<
+                iCAX::GeometryData::Tube::CTubeNeutralGeometry>(
+                    pWorkpiece_->GetTubeNeutralGeometryResourceID());
+            if (_pGeometry)
+            {
+                const auto _Base = std::find_if(
+                    _pGeometry->SolidNodes.begin(),
+                    _pGeometry->SolidNodes.end(),
+                    [&_pGeometry](IN const auto& Node_) {
+                        return Node_.ID == _pGeometry->BaseNodeID;
+                    });
+                if (_Base != _pGeometry->SolidNodes.end())
+                {
+                    if (const auto _pExtrusion = std::get_if<
+                        iCAX::GeometryData::Tube::SExtrudedRegionNode>(&_Base->Data))
+                    {
+                        _BoundaryCount = static_cast<unsigned long long>(
+                            _pExtrusion->Section.Boundaries.size());
+                    }
+                    else if (const auto _pTaper = std::get_if<
+                        iCAX::GeometryData::Tube::STaperedRegionNode>(&_Base->Data))
+                    {
+                        _BoundaryCount = static_cast<unsigned long long>(
+                            _pTaper->Section.Boundaries.size());
+                    }
+                }
+            }
+        }
+        _Workpiece["thumbnailBoundaryCount"] = _BoundaryCount;
+        _Workpiece["thumbnailInnerBoundaryCount"] = _BoundaryCount > 0
+            ? _BoundaryCount - 1
+            : 0ull;
         return _Workpiece;
     }
 
-    VariantArray _MakeWorkpieceArray(IN iCAX::Database::IRepository& Repository_)
+    VariantArray _MakeWorkpieceArray(IN iCAX::Project::ISceneContext& Scene_)
     {
         VariantArray _Workpieces;
-        for (const auto& [_pEntity, _pWorkpiece] : _CollectEntitiesWithComponent<iCAX::CAM::CWorkpieceComponent>(Repository_))
+        for (const auto& [_pEntity, _pWorkpiece] : _CollectEntitiesWithComponent<iCAX::CAM::CWorkpieceComponent>(Scene_.Database()))
         {
-            _Workpieces.emplace_back(_MakeWorkpiecePayload(_pEntity, _pWorkpiece));
+            _Workpieces.emplace_back(_MakeWorkpiecePayload(_pEntity, _pWorkpiece, &Scene_));
         }
         return _Workpieces;
     }
@@ -97,6 +164,550 @@ namespace
             }
         }
         return _Status;
+    }
+
+    std::string _TubeSolidNodeType(
+        IN const iCAX::GeometryData::Tube::SSolidNode& Node_)
+    {
+        using namespace iCAX::GeometryData::Tube;
+        if (std::holds_alternative<SExtrudedRegionNode>(Node_.Data)) return "ExtrudedRegion";
+        if (std::holds_alternative<STaperedRegionNode>(Node_.Data)) return "TaperedRegion";
+        if (std::holds_alternative<SHalfSpaceNode>(Node_.Data)) return "HalfSpace";
+        if (std::holds_alternative<SBooleanNode>(Node_.Data)) return "Boolean";
+        if (std::holds_alternative<STransformNode>(Node_.Data)) return "Transform";
+        if (std::holds_alternative<SWrappedVolumeNode>(Node_.Data)) return "WrappedVolume";
+        if (std::holds_alternative<SOpeningProfileSweepNode>(Node_.Data)) return "OpeningProfileSweep";
+        if (std::holds_alternative<SCompositeVolumeNode>(Node_.Data)) return "CompositeVolume";
+        if (std::holds_alternative<SResidualBRepNode>(Node_.Data)) return "ResidualBRep";
+        if (std::holds_alternative<SAlternativeNode>(Node_.Data)) return "Alternative";
+        return "Unknown";
+    }
+
+    std::string _TubeMaterialRole(
+        IN const iCAX::GeometryData::Tube::SSolidNode& Node_)
+    {
+        using iCAX::GeometryData::Tube::EFeatureMaterialRole;
+        if (!Node_.Relations || !Node_.Relations->MaterialEffect)
+        {
+            return "None";
+        }
+        switch (Node_.Relations->MaterialEffect->Role)
+        {
+        case EFeatureMaterialRole::Penetration: return "Penetration";
+        case EFeatureMaterialRole::Truncation: return "Truncation";
+        case EFeatureMaterialRole::BoundaryProfileModifier: return "BoundaryProfileModifier";
+        case EFeatureMaterialRole::UnclassifiedRemoval: return "UnclassifiedRemoval";
+        }
+        return "UnclassifiedRemoval";
+    }
+
+    VariantArray _MakeTubeNodeChildren(
+        IN const iCAX::GeometryData::Tube::SSolidNode& Node_)
+    {
+        using namespace iCAX::GeometryData::Tube;
+        VariantArray _Children;
+        if (const auto _pBoolean = std::get_if<SBooleanNode>(&Node_.Data))
+        {
+            for (const auto& _Child : _pBoolean->Children)
+            {
+                _Children.emplace_back(_Child);
+            }
+        }
+        else if (const auto _pTransform = std::get_if<STransformNode>(&Node_.Data))
+        {
+            _Children.emplace_back(_pTransform->Child);
+        }
+        else if (const auto _pOpening = std::get_if<SOpeningProfileSweepNode>(&Node_.Data))
+        {
+            _Children.emplace_back(_pOpening->SourceCutNodeID);
+            if (!_pOpening->EvaluatedVolumeNodeID.empty())
+            {
+                _Children.emplace_back(_pOpening->EvaluatedVolumeNodeID);
+            }
+        }
+        else if (const auto _pAlternative = std::get_if<SAlternativeNode>(&Node_.Data))
+        {
+            for (const auto& _Candidate : _pAlternative->Candidates)
+            {
+                _Children.emplace_back(_Candidate.CandidateNodeID);
+            }
+        }
+        return _Children;
+    }
+
+    void _AppendParameter(
+        IN OUT VariantArray& Parameters_,
+        IN const std::string& strName_,
+        IN const std::string& strLabel_,
+        IN double dValue_,
+        IN const std::string& strUnit_,
+        IN double dStep_,
+        IN bool bEditable_)
+    {
+        ObjectMap _Parameter;
+        _Parameter["name"] = strName_;
+        _Parameter["label"] = strLabel_;
+        _Parameter["value"] = dValue_;
+        _Parameter["unit"] = strUnit_;
+        _Parameter["step"] = dStep_;
+        _Parameter["editable"] = bEditable_;
+        Parameters_.emplace_back(std::move(_Parameter));
+    }
+
+    void _AppendEditableParameter(
+        IN OUT VariantArray& Parameters_,
+        IN const std::string& strName_,
+        IN const std::string& strLabel_,
+        IN double dValue_,
+        IN const std::string& strUnit_,
+        IN double dStep_)
+    {
+        _AppendParameter(
+            Parameters_,
+            strName_,
+            strLabel_,
+            dValue_,
+            strUnit_,
+            dStep_,
+            true);
+    }
+
+    void _AppendDerivedParameter(
+        IN OUT VariantArray& Parameters_,
+        IN const std::string& strName_,
+        IN const std::string& strLabel_,
+        IN double dValue_,
+        IN const std::string& strUnit_,
+        IN double dStep_ = 0.001)
+    {
+        _AppendParameter(
+            Parameters_,
+            strName_,
+            strLabel_,
+            dValue_,
+            strUnit_,
+            dStep_,
+            false);
+    }
+
+    void _AppendFrameAxisParameters(
+        IN OUT VariantArray& Parameters_,
+        IN const iCAX::GeometryData::Direction3& Axis_)
+    {
+        _AppendDerivedParameter(Parameters_, "axisX", "构造方向 X", Axis_.X, "");
+        _AppendDerivedParameter(Parameters_, "axisY", "构造方向 Y", Axis_.Y, "");
+        _AppendDerivedParameter(Parameters_, "axisZ", "构造方向 Z", Axis_.Z, "");
+    }
+
+    ObjectMap _MakeTubeSolidNodePayload(
+        IN const iCAX::GeometryData::Tube::SSolidNode& Node_)
+    {
+        using namespace iCAX::GeometryData::Tube;
+        ObjectMap _Payload;
+        _Payload["id"] = Node_.ID;
+        _Payload["label"] = Node_.Label;
+        _Payload["type"] = _TubeSolidNodeType(Node_);
+        _Payload["materialRole"] = _TubeMaterialRole(Node_);
+        _Payload["children"] = _MakeTubeNodeChildren(Node_);
+        _Payload["previewAvailable"] =
+            Node_.Metadata.find("previewResourceUrl") != Node_.Metadata.end();
+        ObjectMap _Metadata;
+        for (const auto& [_Key, _Value] : Node_.Metadata)
+        {
+            _Metadata[_Key] = _Value;
+        }
+        _Payload["metadata"] = std::move(_Metadata);
+        VariantArray _Parameters;
+
+        if (const auto _pExtrusion = std::get_if<SExtrudedRegionNode>(&Node_.Data))
+        {
+            _AppendEditableParameter(_Parameters, "first", "起点", _pExtrusion->First, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "last", "终点", _pExtrusion->Last, "mm", 1.0);
+            _AppendEditableParameter(
+                _Parameters,
+                "length",
+                "拉伸长度",
+                _pExtrusion->Last - _pExtrusion->First,
+                "mm",
+                1.0);
+            _AppendEditableParameter(_Parameters, "locationX", "位置 X", _pExtrusion->Frame.Location.X, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "locationY", "位置 Y", _pExtrusion->Frame.Location.Y, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "locationZ", "位置 Z", _pExtrusion->Frame.Location.Z, "mm", 1.0);
+            _AppendFrameAxisParameters(_Parameters, _pExtrusion->Frame.ZDirection);
+            _Payload["sectionBoundaryCount"] = static_cast<unsigned long long>(
+                _pExtrusion->Section.Boundaries.size());
+            _Payload["sideAtlasCount"] = static_cast<unsigned long long>(
+                _pExtrusion->SideAtlases.size());
+        }
+        else if (const auto _pTaper = std::get_if<STaperedRegionNode>(&Node_.Data))
+        {
+            _AppendEditableParameter(_Parameters, "first", "起点", _pTaper->First, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "last", "终点", _pTaper->Last, "mm", 1.0);
+            _AppendEditableParameter(
+                _Parameters,
+                "length",
+                "渐缩长度",
+                _pTaper->Last - _pTaper->First,
+                "mm",
+                1.0);
+            _AppendEditableParameter(_Parameters, "firstScale", "起始比例", _pTaper->FirstScale, "", 0.01);
+            _AppendEditableParameter(_Parameters, "lastScale", "结束比例", _pTaper->LastScale, "", 0.01);
+            _AppendEditableParameter(_Parameters, "locationX", "位置 X", _pTaper->Frame.Location.X, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "locationY", "位置 Y", _pTaper->Frame.Location.Y, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "locationZ", "位置 Z", _pTaper->Frame.Location.Z, "mm", 1.0);
+            _AppendFrameAxisParameters(_Parameters, _pTaper->Frame.ZDirection);
+            _Payload["sectionBoundaryCount"] = static_cast<unsigned long long>(
+                _pTaper->Section.Boundaries.size());
+        }
+        else if (const auto _pHalfSpace = std::get_if<SHalfSpaceNode>(&Node_.Data))
+        {
+            _AppendEditableParameter(_Parameters, "locationX", "平面位置 X", _pHalfSpace->Boundary.Location.X, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "locationY", "平面位置 Y", _pHalfSpace->Boundary.Location.Y, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "locationZ", "平面位置 Z", _pHalfSpace->Boundary.Location.Z, "mm", 1.0);
+            _AppendEditableParameter(_Parameters, "normalX", "法向 X", _pHalfSpace->Boundary.Normal.X, "", 0.01);
+            _AppendEditableParameter(_Parameters, "normalY", "法向 Y", _pHalfSpace->Boundary.Normal.Y, "", 0.01);
+            _AppendEditableParameter(_Parameters, "normalZ", "法向 Z", _pHalfSpace->Boundary.Normal.Z, "", 0.01);
+        }
+        else if (const auto _pWrapped = std::get_if<SWrappedVolumeNode>(&Node_.Data))
+        {
+            if (const auto _pLower = std::get_if<double>(&_pWrapped->LowerNormalOffset))
+            {
+                _AppendEditableParameter(_Parameters, "lowerNormalOffset", "法向下界", *_pLower, "mm", 0.1);
+            }
+            if (const auto _pUpper = std::get_if<double>(&_pWrapped->UpperNormalOffset))
+            {
+                _AppendEditableParameter(_Parameters, "upperNormalOffset", "法向上界", *_pUpper, "mm", 0.1);
+            }
+            _Payload["supportLoopId"] = _pWrapped->Support.LoopID;
+            _Payload["supportCurveId"] = _pWrapped->Support.CurveID;
+            _Payload["uvBoundaryCount"] = static_cast<unsigned long long>(
+                _pWrapped->UVRegion.Boundaries.size());
+        }
+        else if (const auto _pOpening = std::get_if<SOpeningProfileSweepNode>(&Node_.Data))
+        {
+            _Payload["profileKeyCount"] = static_cast<unsigned long long>(
+                _pOpening->ProfileField.Keys.size());
+            _Payload["sourceCutNodeId"] = _pOpening->SourceCutNodeID;
+            _AppendDerivedParameter(
+                _Parameters,
+                "contourFirst",
+                "轮廓起点",
+                _pOpening->ProfileField.ContourFirst,
+                "mm");
+            _AppendDerivedParameter(
+                _Parameters,
+                "contourLast",
+                "轮廓终点",
+                _pOpening->ProfileField.ContourLast,
+                "mm");
+            if (!_pOpening->ProfileField.Keys.empty()
+                && !_pOpening->ProfileField.Keys.front().Profile.Segments.empty())
+            {
+                const auto& _Curve = _pOpening->ProfileField.Keys.front()
+                    .Profile.Segments.front().Curve;
+                if (const auto _pSegment =
+                    std::get_if<iCAX::GeometryData::Segment2>(&_Curve))
+                {
+                    _AppendEditableParameter(
+                        _Parameters, "profileStart", "剖面起点", _pSegment->Start.X, "mm", 0.1);
+                    _AppendEditableParameter(
+                        _Parameters, "profileEnd", "剖面终点", _pSegment->End.X, "mm", 0.1);
+                    _AppendEditableParameter(
+                        _Parameters, "startOffset", "起点减材偏移", _pSegment->Start.Y, "mm", 0.1);
+                    _AppendEditableParameter(
+                        _Parameters, "endOffset", "终点减材偏移", _pSegment->End.Y, "mm", 0.1);
+                }
+            }
+            const auto _Angle = _pOpening->ProfileField.Metadata.find(
+                "derivedSemiAngleRadians");
+            if (_Angle != _pOpening->ProfileField.Metadata.end())
+            {
+                try
+                {
+                    _AppendDerivedParameter(
+                        _Parameters,
+                        "derivedBevelAngle",
+                        "派生坡口角",
+                        std::stod(_Angle->second) * 180.0 / 3.14159265358979323846,
+                        "°",
+                        0.1);
+                }
+                catch (const std::exception&)
+                {
+                }
+            }
+            const auto _Land = _pOpening->ProfileField.Metadata.find("derivedLand");
+            if (_Land != _pOpening->ProfileField.Metadata.end())
+            {
+                try
+                {
+                    _AppendDerivedParameter(
+                        _Parameters,
+                        "derivedLand",
+                        "派生钝边",
+                        std::stod(_Land->second),
+                        "mm",
+                        0.1);
+                }
+                catch (const std::exception&)
+                {
+                }
+            }
+        }
+        else if (const auto _pAlternative = std::get_if<SAlternativeNode>(&Node_.Data))
+        {
+            VariantArray _Candidates;
+            for (const auto& _Source : _pAlternative->Candidates)
+            {
+                ObjectMap _Candidate;
+                _Candidate["id"] = _Source.ID;
+                _Candidate["label"] = _Source.Label;
+                _Candidate["nodeId"] = _Source.CandidateNodeID;
+                _Candidate["confidence"] = _Source.Confidence;
+                _Candidate["geometryError"] = _Source.RelativeGeometryError;
+                _Candidate["recommendationScore"] = _Source.Evaluation.RecommendationScore;
+                _Candidates.emplace_back(std::move(_Candidate));
+            }
+            _Payload["candidates"] = std::move(_Candidates);
+            _Payload["recommendedCandidateId"] = _pAlternative->RecommendedCandidateID;
+            _Payload["selectedCandidateId"] = _pAlternative->SelectedCandidateID;
+        }
+        _Payload["parameters"] = std::move(_Parameters);
+        return _Payload;
+    }
+
+    std::string _SectionPrimitiveKind(
+        IN iCAX::GeometryData::Tube::ESectionPrimitiveKind Kind_)
+    {
+        using iCAX::GeometryData::Tube::ESectionPrimitiveKind;
+        switch (Kind_)
+        {
+        case ESectionPrimitiveKind::Circle: return "Circle";
+        case ESectionPrimitiveKind::Rectangle: return "Rectangle";
+        case ESectionPrimitiveKind::CurveLoop: return "CurveLoop";
+        }
+        return "CurveLoop";
+    }
+
+    ObjectMap _MakeSectionPrimitivePayload(
+        IN const iCAX::GeometryData::Tube::SSectionPrimitive& Primitive_)
+    {
+        using iCAX::GeometryData::Tube::ESectionPrimitiveRole;
+        ObjectMap _Payload;
+        _Payload["id"] = Primitive_.ID;
+        _Payload["label"] = Primitive_.Label;
+        _Payload["type"] = Primitive_.Role == ESectionPrimitiveRole::OuterBoundary
+            ? std::string("SectionOuter")
+            : std::string("SectionCavity");
+        _Payload["primitiveKind"] = _SectionPrimitiveKind(Primitive_.Kind);
+        _Payload["materialRole"] = std::string("None");
+        _Payload["group"] = std::string("stock");
+        _Payload["loopId"] = Primitive_.LoopID;
+        _Payload["children"] = VariantArray{};
+        _Payload["previewAvailable"] =
+            Primitive_.Metadata.find("previewResourceUrl")
+                != Primitive_.Metadata.end();
+        ObjectMap _Metadata;
+        for (const auto& [_Key, _Value] : Primitive_.Metadata)
+        {
+            _Metadata[_Key] = _Value;
+        }
+        _Payload["metadata"] = std::move(_Metadata);
+        VariantArray _Parameters;
+        _AppendEditableParameter(
+            _Parameters, "centerX", "截面中心 X",
+            Primitive_.Center.X, "mm", 0.1);
+        _AppendEditableParameter(
+            _Parameters, "centerY", "截面中心 Y",
+            Primitive_.Center.Y, "mm", 0.1);
+        if (Primitive_.Kind
+            == iCAX::GeometryData::Tube::ESectionPrimitiveKind::Rectangle)
+        {
+            if (Primitive_.Width)
+            {
+                _AppendEditableParameter(
+                    _Parameters, "width", "宽度",
+                    Primitive_.Width->Value, "mm", 0.1);
+            }
+            if (Primitive_.Height)
+            {
+                _AppendEditableParameter(
+                    _Parameters, "height", "高度",
+                    Primitive_.Height->Value, "mm", 0.1);
+            }
+            _AppendEditableParameter(
+                _Parameters, "rotationRadians", "截面旋转",
+                Primitive_.RotationRadians, "rad", 0.01);
+        }
+        else if (Primitive_.Kind
+            == iCAX::GeometryData::Tube::ESectionPrimitiveKind::Circle
+            && Primitive_.Radius)
+        {
+            _AppendEditableParameter(
+                _Parameters, "radius", "半径",
+                Primitive_.Radius->Value, "mm", 0.1);
+        }
+        _Payload["parameters"] = std::move(_Parameters);
+        return _Payload;
+    }
+
+    ObjectMap _MakeTubeNeutralGeometryPayload(
+        IN const std::string& strResourceID_,
+        IN const std::shared_ptr<iCAX::GeometryData::Tube::CTubeNeutralGeometry>& pGeometry_)
+    {
+        using iCAX::GeometryData::Tube::ERecognitionStatus;
+        ObjectMap _Payload;
+        _Payload["available"] = static_cast<bool>(pGeometry_);
+        _Payload["resourceId"] = strResourceID_;
+        _Payload["version"] = pGeometry_ ? pGeometry_->Version : 0ull;
+        _Payload["confidence"] = pGeometry_ ? pGeometry_->Confidence : 0.0;
+        _Payload["relativeVolumeError"] = pGeometry_ ? pGeometry_->RelativeVolumeError : 1.0;
+        _Payload["relativeUnparameterizedVolume"] = pGeometry_
+            ? pGeometry_->RelativeUnparameterizedVolume
+            : 1.0;
+        _Payload["relativeOpaqueResidualVolume"] = pGeometry_
+            ? pGeometry_->RelativeOpaqueResidualVolume
+            : 1.0;
+        _Payload["baseNodeId"] = pGeometry_ ? pGeometry_->BaseNodeID : std::string();
+        _Payload["rootNodeId"] = pGeometry_ ? pGeometry_->RootNodeID : std::string();
+        _Payload["solidNodeCount"] = pGeometry_
+            ? static_cast<unsigned long long>(pGeometry_->SolidNodes.size())
+            : 0ull;
+        _Payload["uvFeatureCount"] = pGeometry_
+            ? static_cast<unsigned long long>(pGeometry_->UVFeatures.size())
+            : 0ull;
+        VariantArray _SolidNodes;
+        if (pGeometry_)
+        {
+            _SolidNodes.reserve(pGeometry_->SolidNodes.size());
+            for (const auto& _Node : pGeometry_->SolidNodes)
+            {
+                _SolidNodes.emplace_back(_MakeTubeSolidNodePayload(_Node));
+            }
+        }
+        _Payload["solidNodes"] = std::move(_SolidNodes);
+        VariantArray _SectionPrimitives;
+        if (pGeometry_)
+        {
+            for (const auto& _Node : pGeometry_->SolidNodes)
+            {
+                if (_Node.ID != pGeometry_->BaseNodeID)
+                {
+                    continue;
+                }
+                if (const auto* _pExtrusion = std::get_if<
+                    iCAX::GeometryData::Tube::SExtrudedRegionNode>(&_Node.Data))
+                {
+                    for (const auto& _Primitive : _pExtrusion->SectionPrimitives)
+                    {
+                        _SectionPrimitives.emplace_back(
+                            _MakeSectionPrimitivePayload(_Primitive));
+                    }
+                }
+                else if (const auto* _pTaper = std::get_if<
+                    iCAX::GeometryData::Tube::STaperedRegionNode>(&_Node.Data))
+                {
+                    for (const auto& _Primitive : _pTaper->SectionPrimitives)
+                    {
+                        _SectionPrimitives.emplace_back(
+                            _MakeSectionPrimitivePayload(_Primitive));
+                    }
+                }
+                break;
+            }
+        }
+        _Payload["sectionPrimitives"] = std::move(_SectionPrimitives);
+
+        auto _Status = std::string("Unavailable");
+        if (pGeometry_)
+        {
+            switch (pGeometry_->RecognitionStatus)
+            {
+            case ERecognitionStatus::Exact: _Status = "Exact"; break;
+            case ERecognitionStatus::EquivalentButAmbiguous: _Status = "EquivalentButAmbiguous"; break;
+            case ERecognitionStatus::Partial: _Status = "Partial"; break;
+            case ERecognitionStatus::Failed: _Status = "Failed"; break;
+            }
+        }
+        _Payload["status"] = _Status;
+
+        unsigned long long _BoundaryCount = 0;
+        unsigned long long _InnerBoundaryCount = 0;
+        unsigned long long _AlternativeCount = 0;
+        unsigned long long _UnresolvedAlternativeCount = 0;
+        unsigned long long _CompositeCount = 0;
+        unsigned long long _SurfaceEvidenceCount = 0;
+        unsigned long long _MaterialSpanCount = 0;
+        if (pGeometry_)
+        {
+            for (const auto& _Node : pGeometry_->SolidNodes)
+            {
+                if (_Node.Relations)
+                {
+                    _SurfaceEvidenceCount += static_cast<unsigned long long>(
+                        _Node.Relations->SurfaceEvidence.size());
+                    _MaterialSpanCount += static_cast<unsigned long long>(
+                        _Node.Relations->MaterialSpans.size());
+                }
+                if (std::holds_alternative<
+                    iCAX::GeometryData::Tube::SCompositeVolumeNode>(_Node.Data))
+                {
+                    ++_CompositeCount;
+                }
+                const auto _pAlternative = std::get_if<
+                    iCAX::GeometryData::Tube::SAlternativeNode>(&_Node.Data);
+                if (!_pAlternative)
+                {
+                    continue;
+                }
+                ++_AlternativeCount;
+                if (_pAlternative->SelectedCandidateID.empty())
+                {
+                    ++_UnresolvedAlternativeCount;
+                }
+            }
+            auto _BaseIter = std::find_if(
+                pGeometry_->SolidNodes.begin(),
+                pGeometry_->SolidNodes.end(),
+                [&pGeometry_](IN const iCAX::GeometryData::Tube::SSolidNode& Node_) {
+                    return Node_.ID == pGeometry_->BaseNodeID;
+                });
+            if (_BaseIter != pGeometry_->SolidNodes.end()
+                && std::holds_alternative<iCAX::GeometryData::Tube::SExtrudedRegionNode>(_BaseIter->Data))
+            {
+                const auto& _Base = std::get<iCAX::GeometryData::Tube::SExtrudedRegionNode>(_BaseIter->Data);
+                _BoundaryCount = static_cast<unsigned long long>(_Base.Section.Boundaries.size());
+                _InnerBoundaryCount = _BoundaryCount > 0 ? _BoundaryCount - 1 : 0;
+                _Payload["extrusionLength"] = std::max(0.0, _Base.Last - _Base.First);
+                _Payload["axis"] = VariantArray{
+                    _Base.Frame.ZDirection.X,
+                    _Base.Frame.ZDirection.Y,
+                    _Base.Frame.ZDirection.Z
+                };
+            }
+        }
+        _Payload["boundaryCount"] = _BoundaryCount;
+        _Payload["innerBoundaryCount"] = _InnerBoundaryCount;
+        _Payload["alternativeCount"] = _AlternativeCount;
+        _Payload["unresolvedAlternativeCount"] = _UnresolvedAlternativeCount;
+        _Payload["compositeCount"] = _CompositeCount;
+        _Payload["surfaceEvidenceCount"] = _SurfaceEvidenceCount;
+        _Payload["materialSpanCount"] = _MaterialSpanCount;
+
+        VariantArray _Diagnostics;
+        if (pGeometry_)
+        {
+            for (const auto& _Source : pGeometry_->Diagnostics)
+            {
+                ObjectMap _Diagnostic;
+                _Diagnostic["code"] = _Source.Code;
+                _Diagnostic["message"] = _Source.Message;
+                _Diagnostic["confidence"] = _Source.Confidence;
+                _Diagnostics.emplace_back(_Diagnostic);
+            }
+        }
+        _Payload["diagnostics"] = _Diagnostics;
+        return _Payload;
     }
 
     ObjectMap _MakeTopologyPickItemPayload(IN const Variant& Item_)
@@ -658,32 +1269,152 @@ namespace
 
     SImportedCadResources _ImportCadModel(
         IN iCAX::Project::ISceneContext& Scene_,
+        IN const iCAX::Product::IProductContext& Product_,
         IN const std::string& strSourcePath_,
         IN double dTolerance_)
     {
-        iCAX::Resource::CResourceImportRequest _Request;
-        _Request.SourcePath = strSourcePath_;
-        _Request.Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
-        _Request.Options["tolerance"] = std::to_string(dTolerance_);
-
         auto& _Resources = Scene_.Resources();
-        iCAX::Resource::CResourceImportResult _Result;
-        auto _pBRep = _Resources.Import<iCAX::GeometryData::BRepModel>(_Request, &_Result);
-        if (!_Result.IsOK())
+        SImportedCadResources _Imported;
+        std::shared_ptr<iCAX::GeometryData::BRepModel> _pBRep;
+        std::string _ImportMode;
+        std::string _ContentHash;
+
+        std::optional<iCAX::Data::Variant> _SectionDefinitions;
+        const auto& _Capabilities = Product_.GetDefinition().Capabilities;
+        if (const auto _Tube = _Capabilities.find("tube");
+            _Tube != _Capabilities.end()
+            && _Tube->second.Is<iCAX::Data::ObjectMap>())
         {
-            throw std::runtime_error(_Result.Error.empty() ? "CAD resource import failed" : _Result.Error);
+            const auto _TubeObject = _Tube->second.To<iCAX::Data::ObjectMap>();
+            if (const auto _Definitions = _TubeObject.find("sectionTypeDefinitions");
+                _Definitions != _TubeObject.end())
+            {
+                _SectionDefinitions = _Definitions->second;
+            }
         }
 
-        SImportedCadResources _Imported;
-        _Imported.ModelResourceID = _FindImportedResourceID(_Result, "source");
-        if (_Imported.ModelResourceID.empty())
+        if (_SectionDefinitions)
         {
-            _Imported.ModelResourceID = _Result.PrimaryResourceID;
+            const auto _Read = iCAX::OpenCascade::ReadBRepFile(
+                strSourcePath_,
+                dTolerance_);
+            if (!_Read.bOK)
+            {
+                std::ostringstream _Message;
+                _Message << "CAD 文件解析失败";
+                for (const auto& _Diagnostic : _Read.Diagnostics)
+                {
+                    _Message << ": " << _Diagnostic;
+                }
+                throw std::runtime_error(_Message.str());
+            }
+
+            const auto _pRecognition = Scene_.Services().Resolve<
+                iCAX::ExtrusionRecognition::IExtrusionRecognitionService>();
+            const auto _LoadedDefinitions = _pRecognition->DecodeDefinitions(
+                *_SectionDefinitions);
+            if (!_LoadedDefinitions.bValid)
+            {
+                std::ostringstream _Message;
+                _Message << "管型定义无效";
+                for (const auto& _Diagnostic : _LoadedDefinitions.Diagnostics)
+                {
+                    _Message << ": " << _Diagnostic;
+                }
+                throw std::runtime_error(_Message.str());
+            }
+
+            iCAX::ExtrusionRecognition::SRecognitionOptions _Options;
+            _Options.TargetAxis = { 0.0, 1.0, 0.0 };
+            _Options.dLinearTolerance = dTolerance_;
+            const auto _Recognition = _pRecognition->Recognize(
+                _Read.Geometry,
+                _LoadedDefinitions.Definitions,
+                _Options);
+            if (!_Recognition.IsOK())
+            {
+                std::ostringstream _Message;
+                _Message << "图纸并非可识别的拉伸体";
+                for (const auto& _Diagnostic : _Recognition.Diagnostics)
+                {
+                    _Message << ": " << _Diagnostic;
+                }
+                throw std::runtime_error(_Message.str());
+            }
+
+            const auto _GeometryResourceID = _Resources.AllocateResourceURL();
+            const auto _GeometryVersion = _NextResourceVersion(
+                _Resources,
+                _GeometryResourceID);
+            _pBRep = std::make_shared<iCAX::GeometryData::BRepModel>(
+                _Recognition.NormalizedGeometry);
+            auto _GeometryInfo = _MakeResourceInfo(
+                _GeometryResourceID,
+                _Read.DisplayName + " normalized geometry",
+                iCAX::GeometryData::BRepModel::kResourceTypeName,
+                iCAX::Resource::EResourcePersistenceMode::Embedded,
+                _GeometryVersion);
+            _GeometryInfo.Source = strSourcePath_;
+            _GeometryInfo.ContentHash = _Read.ContentHash;
+            _GeometryInfo.Metadata["importer"] = "occ.memory-brep";
+            _GeometryInfo.Metadata["normalization"] = "extrusion-to-positive-y";
+            _GeometryInfo.Metadata["sectionTypeId"] = _Recognition.SectionTypeID;
+            _GeometryInfo.Metadata["length"] = std::to_string(_Recognition.dLength);
+            _Resources.Set<iCAX::GeometryData::BRepModel>(
+                _GeometryResourceID,
+                _pBRep,
+                _GeometryInfo);
+
+            // 兼容现有通用 CAM 调用字段；三个字段指向同一个规范化几何资源。
+            _Imported.ModelResourceID = _GeometryResourceID;
+            _Imported.BRepResourceID = _GeometryResourceID;
+            _Imported.SectionTypeID = _Recognition.SectionTypeID;
+            _Imported.SectionParameters = _Recognition.SectionParameters;
+            _Imported.dLength = _Recognition.dLength;
+            _ImportMode = "extrusion-recognition";
+            _ContentHash = _Read.ContentHash;
         }
-        _Imported.BRepResourceID = _FindImportedResourceID(_Result, "geometry.brep");
+        else
+        {
+            iCAX::Resource::CResourceImportRequest _Request;
+            _Request.SourcePath = strSourcePath_;
+            _Request.Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
+            _Request.Options["tolerance"] = std::to_string(dTolerance_);
+
+            iCAX::Resource::CResourceImportResult _Result;
+            _pBRep = _Resources.Import<iCAX::GeometryData::BRepModel>(
+                _Request,
+                &_Result);
+            if (!_Result.IsOK())
+            {
+                throw std::runtime_error(
+                    _Result.Error.empty()
+                        ? "CAD resource import failed"
+                        : _Result.Error);
+            }
+            _Imported.ModelResourceID = _FindImportedResourceID(_Result, "source");
+            if (_Imported.ModelResourceID.empty())
+            {
+                _Imported.ModelResourceID = _Result.PrimaryResourceID;
+            }
+            _Imported.BRepResourceID = _FindImportedResourceID(
+                _Result,
+                "geometry.brep");
+            _Imported.TubeNeutralGeometryResourceID = _FindImportedResourceID(
+                _Result,
+                "tube.neutral_geometry");
+            _ImportMode = _Result.Metadata.contains("importer")
+                ? _Result.Metadata.at("importer")
+                : std::string("resource-import");
+            if (const auto _Hash = _Result.Metadata.find("contentHash");
+                _Hash != _Result.Metadata.end())
+            {
+                _ContentHash = _Hash->second;
+            }
+        }
+
         _RequireImportedResource(Scene_, _Imported.ModelResourceID, "modelResourceId");
         _RequireImportedResource(Scene_, _Imported.BRepResourceID, "brepResourceId");
-
         if (!_pBRep)
         {
             throw std::runtime_error("Resource import returned BRep resource with unexpected runtime type");
@@ -695,13 +1426,18 @@ namespace
                 _Imported.ModelResourceID);
         _Imported.nTopologyVersion = _NextResourceVersion(_Resources, _Imported.TopologyResourceID);
         auto _pTopology = _MakeTopologyResourceFromBRep(*_pBRep, _GetDisplayNameFromPath(strSourcePath_), _Imported.nTopologyVersion);
-        _pTopology->Metadata["importMode"] = _Result.Metadata.contains("importer") ? _Result.Metadata.at("importer") : std::string("resource-import");
+        _pTopology->Metadata["importMode"] = _ImportMode;
         _pTopology->Metadata["sourcePath"] = strSourcePath_;
         _pTopology->Metadata["sourceResourceId"] = _Imported.ModelResourceID;
         _pTopology->Metadata["brepResourceId"] = _Imported.BRepResourceID;
-        if (auto _ContentHash = _Result.Metadata.find("contentHash"); _ContentHash != _Result.Metadata.end())
+        if (!_ContentHash.empty())
         {
-            _pTopology->Metadata["contentHash"] = _ContentHash->second;
+            _pTopology->Metadata["contentHash"] = _ContentHash;
+        }
+        if (!_Imported.SectionTypeID.empty())
+        {
+            _pTopology->Metadata["sectionTypeId"] = _Imported.SectionTypeID;
+            _pTopology->Metadata["length"] = std::to_string(_Imported.dLength);
         }
 
         auto _TopologyInfo = _MakeResourceInfo(

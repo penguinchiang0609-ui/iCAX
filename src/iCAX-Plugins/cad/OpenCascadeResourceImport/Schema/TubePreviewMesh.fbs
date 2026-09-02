@@ -1,0 +1,14 @@
+namespace iCAX.OpenCascade;
+
+file_identifier "T1PM";
+file_extension "t1pm";
+
+// TubeOne 历史特征的轻量显示资源。精确、可编辑的几何仍由中性 CSG 表达。
+table TubePreviewMesh {
+  schema_version:uint = 1;
+  positions:[float];
+  indices:[uint];
+  node_id:string;
+}
+
+root_type TubePreviewMesh;

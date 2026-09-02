@@ -7,14 +7,10 @@
 #include "Behaviour/BehaviourBase.h"
 #include "Behaviour/IBehaviourRegistry.h"
 #include "SDOSupport.h"
-#include "Data/uuid.h"
 #include "Database/IEntity.h"
 #include "Database/IRepository.h"
 #include "ProjectContext/ISceneContext.h"
-#include "CameraNavigation/CameraNavigation.h"
 #include "Laser3DCAM.h"
-#include "RenderInteraction/RenderInteraction.h"
-#include "Transform/Transform.h"
 
 
 namespace
@@ -65,55 +61,6 @@ namespace
         return _AddComponent<TComponent>(pEntity_);
     }
 
-    bool _HasEntityComponent(
-        IN iCAX::Database::IRepository& Repository_,
-        IN const std::string& strComponentClass_)
-    {
-        auto _Entities = Repository_.FilterEntities([&strComponentClass_](std::shared_ptr<iCAX::Database::IEntity> pEntity_) {
-            return pEntity_ && pEntity_->HasComponent(strComponentClass_);
-        });
-        return !_Entities.empty();
-    }
-
-    void _EnsureDefaultCameraEntity(IN iCAX::Project::ISceneContext& SceneContext_)
-    {
-        auto& _Repository = SceneContext_.Database();
-        if (_HasEntityComponent(_Repository, iCAX::RenderInteraction::CCameraComponent::S_ClassName))
-        {
-            return;
-        }
-
-        std::shared_ptr<iCAX::Database::IEntity> _pCameraEntity;
-        std::string _strError;
-        if (!_Repository.CreateEntity(iCAX::Data::GenerateNewUUID(), _pCameraEntity, _strError) || !_pCameraEntity)
-        {
-            throw std::runtime_error(_strError.empty() ? "Failed to create default render camera entity" : _strError);
-        }
-
-        (void)_AddComponent<iCAX::RenderInteraction::CCameraComponent>(_pCameraEntity);
-        (void)_AddComponent<iCAX::CameraNavigation::CCameraNavigationComponent>(_pCameraEntity);
-        auto _pTransform = _AddComponent<iCAX::Transform::CTransformComponent>(_pCameraEntity);
-
-        iCAX::Data::PropertySet _Properties;
-        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionX] =
-            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPositionX);
-        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionY] =
-            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPositionY);
-        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PositionZ] =
-            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPositionZ);
-        _Properties[iCAX::Transform::CTransformComponent::PropertyName_YawRadians] =
-            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraYawRadians);
-        _Properties[iCAX::Transform::CTransformComponent::PropertyName_PitchRadians] =
-            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraPitchRadians);
-        _Properties[iCAX::Transform::CTransformComponent::PropertyName_RollRadians] =
-            iCAX::Data::PropertyValue(iCAX::CAM::kDefaultCameraRollRadians);
-
-        if (!_pTransform->SetProperties(_Properties, _strError))
-        {
-            throw std::runtime_error(_strError.empty() ? "Failed to initialize default render camera transform" : _strError);
-        }
-    }
-
     /*
     * @brief Laser3DCAM 场景启动行为。
     * @details
@@ -153,7 +100,6 @@ namespace
 
             (void)_GetOrAddComponent<iCAX::CAM::CRootComponent>(_pMetaEntity);
             (void)_GetOrAddComponent<iCAX::CAM::CSelectionComponent>(_pMetaEntity);
-            _EnsureDefaultCameraEntity(SceneContext_);
         }
     };
 }

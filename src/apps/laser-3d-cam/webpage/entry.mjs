@@ -12,7 +12,7 @@ import { escapeText, formatNumber } from "./utils/format.mjs";
 import { renderViewLeftPane, renderViewRightPane } from "./view/viewArea.mjs";
 import { attachViewCube, renderViewCube, stopViewCubeAnimation } from "./viewport/viewCube.mjs";
 import { ensureStyles } from "./styles/ensureStyles.mjs";
-import { handleWorkpieceAction, handleWorkpieceRibbonCommand } from "./workpiece/workpieceActions.mjs";
+import { handleWorkpieceAction, handleWorkpieceRibbonCommand, importModelPath as importModelPathAction } from "./workpiece/workpieceActions.mjs";
 import { renderWorkpieceLeftPane, renderWorkpieceRightPane } from "./workpiece/workpieceArea.mjs";
 import { renderEdge, renderFace, renderLoop } from "./workpiece/workpieceViews.mjs";
 import { exposeLaserCamAutomation } from "./automation/laserCamAutomation.mjs";
@@ -22,6 +22,7 @@ export { getRibbonDefinition } from "./ribbon/ribbonDefinition.mjs";
 const DEFAULT_WORKBENCH_LAYOUT = Object.freeze({
   leftWidth: 320,
   rightWidth: 340,
+  bottomHeight: 142,
 });
 const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
   minLeftWidth: 190,
@@ -30,25 +31,75 @@ const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
   maxRightWidth: 620,
   minViewerWidth: 420,
   splitterTotalWidth: 12,
+  minBottomHeight: 96,
+  maxBottomHeight: 420,
+  minViewerHeight: 260,
+  bottomSplitterHeight: 5,
 });
-const AREA_ENTITY_VIEW_QUERIES = Object.freeze({
+const RENDER_ENTITY_VIEW_PROJECTION = Object.freeze([
+  { alias: "geometry", component: "CRenderInstanceComponent", property: "GeometryResourceID", resourceReference: true },
+  { alias: "material", component: "CRenderInstanceComponent", property: "MaterialResourceID", resourceReference: true },
+  { alias: "geometryKind", component: "CRenderInstanceComponent", property: "GeometryKind" },
+  { alias: "renderClass", component: "CRenderInstanceComponent", property: "RenderClass" },
+  { alias: "layerMask", component: "CRenderInstanceComponent", property: "LayerMask" },
+  { alias: "visible", component: "CRenderInstanceComponent", property: "Visible" },
+  { alias: "selectable", component: "CRenderInstanceComponent", property: "Selectable" },
+  { alias: "highlighted", component: "CRenderInstanceComponent", property: "Highlighted" },
+  { alias: "selected", component: "CRenderInstanceComponent", property: "Selected" },
+  { alias: "localToWorldMatrix", component: "CTransformComponent", property: "LocalToWorldMatrix" },
+]);
+const AREA_VIEW_DEFINITIONS = Object.freeze({
   machine: Object.freeze({
-    language: "sql",
-    where: "WHERE HAS CMachineElementComponent AND HAS CRenderInstanceComponent",
+    sources: Object.freeze([Object.freeze({
+      sourceId: "machine-elements",
+      role: "machine",
+      language: "sql",
+      where: "WHERE HAS CMachineElementComponent AND HAS CRenderInstanceComponent",
+      projection: RENDER_ENTITY_VIEW_PROJECTION,
+    })]),
   }),
   workpiece: Object.freeze({
-    language: "sql",
-    where: "WHERE HAS CWorkpieceComponent AND HAS CRenderInstanceComponent",
+    sources: Object.freeze([Object.freeze({
+      sourceId: "workpieces",
+      role: "workpiece",
+      language: "sql",
+      where: "WHERE HAS CWorkpieceComponent AND HAS CRenderInstanceComponent",
+      projection: RENDER_ENTITY_VIEW_PROJECTION,
+    })]),
   }),
   machining: Object.freeze({
-    language: "sql",
-    where: "WHERE HAS CRenderInstanceComponent",
+    sources: makeSceneViewSources(),
   }),
   view: Object.freeze({
-    language: "sql",
-    where: "WHERE HAS CRenderInstanceComponent",
+    sources: makeSceneViewSources(),
   }),
 });
+
+function makeSceneViewSources() {
+  return Object.freeze([
+    Object.freeze({
+      sourceId: "scene-renderables",
+      role: "scene",
+      language: "sql",
+      where: "WHERE HAS CRenderInstanceComponent",
+      projection: RENDER_ENTITY_VIEW_PROJECTION,
+    }),
+    Object.freeze({
+      sourceId: "machine-elements",
+      role: "machine",
+      language: "sql",
+      where: "WHERE HAS CMachineElementComponent AND HAS CRenderInstanceComponent",
+      projection: RENDER_ENTITY_VIEW_PROJECTION,
+    }),
+    Object.freeze({
+      sourceId: "workpieces",
+      role: "workpiece",
+      language: "sql",
+      where: "WHERE HAS CWorkpieceComponent AND HAS CRenderInstanceComponent",
+      projection: RENDER_ENTITY_VIEW_PROJECTION,
+    }),
+  ]);
+}
 
 function getProjectOps() {
   return {
@@ -99,6 +150,10 @@ export async function handleRibbonCommand(context, commandId) {
   }
   const ops = getProjectOps();
 
+  if (typeof context.handleAreaRibbonCommand === "function"
+      && await context.handleAreaRibbonCommand(context, view, commandId, ops)) {
+    return;
+  }
   if (await handleMachineRibbonCommand(context, view, commandId, ops)) {
     return;
   }
@@ -110,7 +165,7 @@ export async function handleRibbonCommand(context, commandId) {
   }
 
   if (commandId === "view.fit") {
-    invokeSDOMethod(context, view, "CameraView.Fit", {});
+    fitViewport(context, view);
   } else if (commandId === "view.reset-layout") {
     resetWorkbenchLayout(view);
     showNotice(context, view, "布局已恢复默认尺寸。");
@@ -131,9 +186,17 @@ function renderProject(context, view) {
   reconcileSelectedMachine(view, scene);
   const topology = scene.topology ?? {};
   const layout = getWorkbenchLayout(view);
+  const workbenchPresentation = typeof context.resolveWorkbenchPresentation === "function"
+    ? (context.resolveWorkbenchPresentation(context, view, scene) ?? {})
+    : {};
+  const workbenchClass = String(workbenchPresentation.className ?? "").trim();
+  const workbenchAttributes = String(workbenchPresentation.attributes ?? "").trim();
 
   mount.innerHTML = `
-    <div class="cam-workbench" style="${renderWorkbenchLayoutStyle(layout)}">
+    <div class="cam-workbench ${escapeText(workbenchClass)}" ${workbenchAttributes} style="${renderWorkbenchLayoutStyle(layout)}">
+      ${typeof context.renderWorkbenchPrefix === "function"
+        ? context.renderWorkbenchPrefix(context, view, scene)
+        : ""}
       ${renderImportNotice(topology)}
       <aside class="cam-context-pane">
         ${renderLeftPane(tab, context, view)}
@@ -146,12 +209,15 @@ function renderProject(context, view) {
         <div class="cam-viewer-head">
           <strong>${escapeText(project.projectName)}</strong>
           <div>
-            <span>${escapeText(getTabTitle(tab))}</span>
-            <span>${context.sceneProxy?.pdo?.enabled ? "PDO" : "SVG"}</span>
+            <span>${escapeText(context.areaTitleOverrides?.[tab] ?? getTabTitle(tab))}</span>
+            <span>View / Resources</span>
           </div>
         </div>
         <div class="cam-viewport">
-          ${renderViewport(context, scene)}
+          ${renderViewport(context, view, scene)}
+          ${typeof context.renderViewportOverlay === "function"
+            ? context.renderViewportOverlay(context, view, scene)
+            : ""}
         </div>
       </section>
       <div class="cam-splitter cam-splitter-right"
@@ -161,6 +227,9 @@ function renderProject(context, view) {
       <aside class="cam-info-pane">
         ${renderRightPane(tab, context, view)}
       </aside>
+      ${typeof context.renderWorkbenchSuffix === "function"
+        ? context.renderWorkbenchSuffix(context, view, scene)
+        : ""}
       ${view.pending && view.progress ? renderProgress(view.progress) : ""}
       ${view.notice ? `<div class="cam-status notice">${escapeText(view.notice)}</div>` : ""}
       ${view.error ? `<div class="cam-status error">${escapeText(view.error)}</div>` : ""}
@@ -259,6 +328,10 @@ function renderProject(context, view) {
 }
 
 function renderLeftPane(tab, context, view) {
+  const override = context.areaRenderers?.[tab]?.left;
+  if (typeof override === "function") {
+    return override(context, view, getProjectOps());
+  }
   if (tab === "machine") {
     return renderMachineLeftPane(context, view);
   }
@@ -275,6 +348,10 @@ function renderLeftPane(tab, context, view) {
 }
 
 function renderRightPane(tab, context, view) {
+  const override = context.areaRenderers?.[tab]?.right;
+  if (typeof override === "function") {
+    return override(context, view, getProjectOps());
+  }
   if (tab === "machine") {
     return renderMachineRightPane(context, view);
   }
@@ -298,6 +375,9 @@ function getWorkbenchLayout(view) {
   view.layout.rightWidth = Number.isFinite(Number(view.layout.rightWidth))
     ? Number(view.layout.rightWidth)
     : DEFAULT_WORKBENCH_LAYOUT.rightWidth;
+  view.layout.bottomHeight = Number.isFinite(Number(view.layout.bottomHeight))
+    ? Number(view.layout.bottomHeight)
+    : DEFAULT_WORKBENCH_LAYOUT.bottomHeight;
   return view.layout;
 }
 
@@ -309,6 +389,7 @@ function renderWorkbenchLayoutStyle(layout) {
   return [
     `--cam-left-width:${escapeText(Math.round(layout.leftWidth))}px`,
     `--cam-right-width:${escapeText(Math.round(layout.rightWidth))}px`,
+    `--cam-bottom-height:${escapeText(Math.round(layout.bottomHeight))}px`,
   ].join(";");
 }
 
@@ -330,7 +411,7 @@ function beginWorkbenchPaneResize(event, mount, view) {
   }
 
   const side = handle.dataset.camResizePane;
-  if (side !== "left" && side !== "right") {
+  if (side !== "left" && side !== "right" && side !== "bottom") {
     return;
   }
 
@@ -349,19 +430,25 @@ function beginWorkbenchPaneResize(event, mount, view) {
   const resizeState = {
     side,
     startX: event.clientX,
+    startY: event.clientY,
     startLayout,
     workbench,
   };
 
-  document.body.classList.add("cam-pane-resizing");
+  document.body.classList.add(
+    resizeState.side === "bottom" ? "cam-pane-resizing-vertical" : "cam-pane-resizing",
+  );
 
   const onPointerMove = (moveEvent) => {
     const deltaX = moveEvent.clientX - resizeState.startX;
     const nextLayout = { ...resizeState.startLayout };
     if (resizeState.side === "left") {
       nextLayout.leftWidth = resizeState.startLayout.leftWidth + deltaX;
-    } else {
+    } else if (resizeState.side === "right") {
       nextLayout.rightWidth = resizeState.startLayout.rightWidth - deltaX;
+    } else {
+      const deltaY = moveEvent.clientY - resizeState.startY;
+      nextLayout.bottomHeight = resizeState.startLayout.bottomHeight - deltaY;
     }
     applyWorkbenchLayout(view, resizeState.workbench, nextLayout, resizeState.side);
   };
@@ -371,6 +458,7 @@ function beginWorkbenchPaneResize(event, mount, view) {
     window.removeEventListener("pointerup", endResize);
     window.removeEventListener("pointercancel", endResize);
     document.body.classList.remove("cam-pane-resizing");
+    document.body.classList.remove("cam-pane-resizing-vertical");
     try {
       handle.releasePointerCapture?.(event.pointerId);
     } catch {
@@ -385,13 +473,15 @@ function beginWorkbenchPaneResize(event, mount, view) {
 }
 
 function applyWorkbenchLayout(view, workbench, nextLayout, activeSide) {
-  const normalized = normalizeWorkbenchLayout(nextLayout, workbench.getBoundingClientRect().width, activeSide);
+  const bounds = workbench.getBoundingClientRect();
+  const normalized = normalizeWorkbenchLayout(nextLayout, bounds.width, activeSide, bounds.height);
   view.layout = normalized;
   workbench.style.setProperty("--cam-left-width", `${Math.round(normalized.leftWidth)}px`);
   workbench.style.setProperty("--cam-right-width", `${Math.round(normalized.rightWidth)}px`);
+  workbench.style.setProperty("--cam-bottom-height", `${Math.round(normalized.bottomHeight)}px`);
 }
 
-function normalizeWorkbenchLayout(layout, width, activeSide = "") {
+function normalizeWorkbenchLayout(layout, width, activeSide = "", height = 0) {
   const limits = WORKBENCH_LAYOUT_LIMITS;
   const availableWidth = Number.isFinite(width) && width > 0 ? width : 1200;
   const maxSidebarTotal = Math.max(
@@ -423,9 +513,24 @@ function normalizeWorkbenchLayout(layout, width, activeSide = "") {
     }
   }
 
+  const availableHeight = Number.isFinite(height) && height > 0 ? height : 760;
+  const maxBottomHeight = Math.max(
+    limits.minBottomHeight,
+    Math.min(
+      limits.maxBottomHeight,
+      availableHeight - limits.minViewerHeight - limits.bottomSplitterHeight,
+    ),
+  );
+  const bottomHeight = clampNumber(
+    Number(layout.bottomHeight),
+    limits.minBottomHeight,
+    maxBottomHeight,
+  );
+
   return {
     leftWidth: Math.round(leftWidth),
     rightWidth: Math.round(rightWidth),
+    bottomHeight: Math.round(bottomHeight),
   };
 }
 
@@ -446,9 +551,10 @@ function renderImportNotice(topology) {
   `;
 }
 
-function renderViewport(context, scene) {
+function renderViewport(context, view, scene) {
   const model = scene.model ?? {};
-  if (context.sceneProxy?.pdo?.enabled) {
+  const sceneProxy = resolveSceneProxy(context, view);
+  if (sceneProxy?.pdo?.enabled) {
     return `
       <div class="cam-render-viewport-shell">
         <div class="cam-render-viewport" data-cam-render-viewport></div>
@@ -460,8 +566,8 @@ function renderViewport(context, scene) {
   if (!model.isLoaded) {
     return `
       <div class="cam-empty-model">
-        <strong>三维线条切割 CAM</strong>
-        <span>请先准备机床定义和工件资源，然后进入“加工”大区编程</span>
+        <strong>${escapeText(context.product?.productName || "三维线条切割 CAM")}</strong>
+        <span>请先准备机床定义和工件资源，然后进入编程大区</span>
       </div>
     `;
   }
@@ -517,26 +623,51 @@ function mountRenderViewport(context, view) {
       onDiagnostic: (entry) => appendProjectLog(context, entry.level ?? "info", entry.message ?? ""),
     });
   }
-  if (view.viewportSceneProxy !== context.sceneProxy) {
+  const sceneProxy = resolveSceneProxy(context, view);
+  if (view.viewportSceneProxy !== sceneProxy) {
     for (const areaState of Object.values(view.areas ?? {})) {
-      void areaState.entityViewReader?.stop?.();
-      areaState.entityViewReader = null;
+      void areaState.viewReader?.stop?.();
+      areaState.viewReader = null;
       areaState.viewContent = null;
       areaState.viewContentRequest = null;
     }
-    view.viewport.connectScene(context.sceneProxy);
-    view.viewportSceneProxy = context.sceneProxy;
+    view.viewport.connectScene(sceneProxy);
+    view.viewportSceneProxy = sceneProxy;
   }
   const activeAreaId = normalizeCamTab(context.activeRibbonTabId);
   const area = getProjectArea(view, activeAreaId);
+  const backgroundColor = typeof context.resolveViewportBackgroundColor === "function"
+    ? context.resolveViewportBackgroundColor(context, view, activeAreaId)
+    : 0x182128;
+  view.viewport.setBackgroundColor?.(backgroundColor);
   view.viewport.setRenderSceneId(null);
-  view.viewport.setVisibleEntityIds(area.viewContent?.entityIds ?? []);
+  if (area.viewContent?.snapshot) {
+    void view.viewport.applyViewSnapshot(
+      area.viewContent.snapshot,
+      sceneProxy?.resources,
+    ).catch((error) => {
+      appendProjectLog(context, "error", `渲染 View 资源失败：${error?.message ?? error}`);
+    });
+  } else {
+    view.viewport.setVisibleEntityIds([]);
+  }
   view.viewport.mount(host);
   attachViewCube(view, mount);
   syncViewportSelection(view, view.scene);
   exposeLaserCamAutomation(context, view, {
     importMachineDefinition: (commandContext, commandView, sourcePath) =>
       importMachinePathAction(commandContext, commandView, sourcePath, getProjectOps()),
+    importWorkpiece: (commandContext, commandView, sourcePath) =>
+      importModelPathAction(commandContext, commandView, sourcePath, getProjectOps()),
+    recognizeCADIntent: (commandContext, commandView) =>
+      typeof commandContext.handleAreaRibbonCommand === "function"
+        ? commandContext.handleAreaRibbonCommand(
+            commandContext,
+            commandView,
+            "intent.recognize-cad",
+            getProjectOps(),
+          )
+        : false,
     setMachineInstanceEnabled: (commandContext, commandView, machineEntityId, enabled) =>
       setMachineInstanceEnabledAction(commandContext, commandView, machineEntityId, enabled, getProjectOps()),
     setMachineInstanceName: (commandContext, commandView, machineEntityId, name) =>
@@ -548,8 +679,8 @@ function mountRenderViewport(context, view) {
     setMachineElementAppearance: (commandContext, commandView, payload) =>
       invokeSDOMethodPayload(commandContext, commandView, "Machine.SetElementAppearance", payload, { timeoutMs: 10000 }),
     setStandardCameraView: (commandContext, commandView, viewName) =>
-      invokeSDOMethod(commandContext, commandView, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 }),
-    fitView: (commandContext, commandView) => invokeSDOMethod(commandContext, commandView, "CameraView.Fit", {}),
+      setViewportStandardView(commandContext, commandView, viewName),
+    fitView: (commandContext, commandView) => fitViewport(commandContext, commandView),
   });
   view.viewport.refreshAll();
 }
@@ -563,11 +694,22 @@ function resolveProjectMount(context) {
   return context.mount?.isConnected ? context.mount : null;
 }
 
+function resolveSceneProxy(context, view) {
+  const resolved = typeof context.resolveSceneProxy === "function"
+    ? context.resolveSceneProxy(context, view)
+    : null;
+  return resolved ?? context.sceneProxy ?? null;
+}
+
 function runAction(context, view, action, actionTarget = null) {
   const ops = getProjectOps();
   if (action === "view-standard") {
     const viewName = String(actionTarget?.dataset?.camView ?? "iso").trim() || "iso";
-    invokeSDOMethod(context, view, "CameraView.SetStandard", { view: viewName }, { refreshScene: false, timeoutMs: 10000 });
+    setViewportStandardView(context, view, viewName);
+    return;
+  }
+  if (typeof context.handleAreaAction === "function"
+      && context.handleAreaAction(context, view, action, actionTarget, ops)) {
     return;
   }
   if (handleMachineAction(context, view, action, actionTarget, ops)) {
@@ -639,7 +781,8 @@ function refreshScene(context, view) {
 }
 
 async function refreshSceneState(context, view) {
-  if (!context.sceneProxy) {
+  const sceneProxy = resolveSceneProxy(context, view);
+  if (!sceneProxy) {
     return false;
   }
 
@@ -657,7 +800,7 @@ async function refreshSceneState(context, view) {
       "Toolpath.List",
       "Selection.Get",
     ]) {
-      mergeScenePayload(scene, await context.sceneProxy.invoke(sdoMethod, {}, { timeoutMs: 30000 }));
+      mergeScenePayload(scene, await sceneProxy.invoke(sdoMethod, {}, { timeoutMs: 30000 }));
     }
     scene.readiness = buildReadiness(scene);
     view.scene = scene;
@@ -681,8 +824,9 @@ async function refreshSceneState(context, view) {
 
 async function ensureAreaViewContent(context, view, areaId, options = {}) {
   const { force = false, render = true } = options;
-  const query = AREA_ENTITY_VIEW_QUERIES[areaId];
-  if (!context.sceneProxy || !query) {
+  const definition = AREA_VIEW_DEFINITIONS[areaId];
+  const sceneProxy = resolveSceneProxy(context, view);
+  if (!sceneProxy || !definition) {
     return null;
   }
 
@@ -690,21 +834,21 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
   if (area.viewContentRequest) {
     return area.viewContentRequest;
   }
-  if (area.entityViewReader) {
+  if (area.viewReader) {
     if (force) {
-      const snapshot = await area.entityViewReader.poll();
+      const snapshot = await area.viewReader.poll();
       if (snapshot) {
-        applyAreaEntityViewSnapshot(context, view, areaId, snapshot, render);
+        applyAreaViewSnapshot(context, view, areaId, snapshot, render);
       }
     }
     return area.viewContent;
   }
 
-  const request = context.sceneProxy.entityViews
-    .start(query, {
+  const request = sceneProxy.views
+    .start(definition, {
       pollIntervalMs: 100,
       onChange: (snapshot) => {
-        applyAreaEntityViewSnapshot(
+        applyAreaViewSnapshot(
           context,
           view,
           areaId,
@@ -714,16 +858,16 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
       },
     })
     .then(async (reader) => {
-      area.entityViewReader = reader;
+      area.viewReader = reader;
       const snapshot = await reader.poll().catch(() => null);
       if (snapshot) {
-        applyAreaEntityViewSnapshot(context, view, areaId, snapshot, render);
+        applyAreaViewSnapshot(context, view, areaId, snapshot, render);
       }
       return area.viewContent;
     })
     .catch((error) => {
       const message = error?.message ?? String(error);
-      view.error = `读取 EntityViewPDO 失败：${message}`;
+      view.error = `读取 View 资源失败：${message}`;
       appendProjectLog(context, "error", view.error);
       return null;
     })
@@ -736,13 +880,18 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
   return request;
 }
 
-function applyAreaEntityViewSnapshot(context, view, areaId, snapshot, render) {
+function applyAreaViewSnapshot(context, view, areaId, snapshot, render) {
   const content = setProjectAreaViewContent(view, areaId, snapshot);
   if (view.activeAreaId !== areaId) {
     return content;
   }
   view.viewport?.setRenderSceneId(null);
-  view.viewport?.setVisibleEntityIds(content.entityIds);
+  void view.viewport?.applyViewSnapshot(
+    snapshot,
+    resolveSceneProxy(context, view)?.resources,
+  ).catch((error) => {
+    appendProjectLog(context, "error", `渲染 View 资源失败：${error?.message ?? error}`);
+  });
   syncViewportSelection(view, view.scene);
   if (render) {
     renderProject(context, view);
@@ -760,7 +909,8 @@ async function refreshSelectedMachineElement(context, view, scene = {}) {
   }
 
   try {
-    mergeScenePayload(scene, await context.sceneProxy.invoke("Machine.GetElement", { entityId }, { timeoutMs: 10000 }));
+    const sceneProxy = resolveSceneProxy(context, view);
+    mergeScenePayload(scene, await sceneProxy.invoke("Machine.GetElement", { entityId }, { timeoutMs: 10000 }));
     syncViewportSelection(view, scene);
   } catch (error) {
     scene.machineElement = null;
@@ -782,7 +932,8 @@ async function invokeSDOMethod(context, view, sdoMethod, payload, options = {}) 
 }
 
 async function invokeSDOMethodPayload(context, view, sdoMethod, payload, options = {}) {
-  if (!context.sceneProxy) {
+  const sceneProxy = resolveSceneProxy(context, view);
+  if (!sceneProxy) {
     return { ok: false, payload: null };
   }
 
@@ -800,7 +951,7 @@ async function invokeSDOMethodPayload(context, view, sdoMethod, payload, options
   renderProject(context, view);
   const progressStartedAt = performance.now();
   try {
-    const invoke = () => context.sceneProxy.invoke(sdoMethod, payload, invokeOptions);
+    const invoke = () => sceneProxy.invoke(sdoMethod, payload, invokeOptions);
     await waitForPaint();
     let responsePayload = null;
     if (useShellProjectProgress) {
@@ -817,7 +968,7 @@ async function invokeSDOMethodPayload(context, view, sdoMethod, payload, options
     }
     appendProjectLog(
       context,
-      sdoMethod === "CameraView.Fit" && !view.scene?.fitView?.fitted ? "info" : "ok",
+      "ok",
       makeSDOCallSuccessLog(sdoMethod, expectScene ? view.scene : responsePayload),
     );
     return { ok: true, payload: responsePayload };
@@ -837,8 +988,6 @@ async function invokeSDOMethodPayload(context, view, sdoMethod, payload, options
 
 function shouldRefreshSceneAfterSDOCall(sdoMethod) {
   return ![
-    "CameraView.Fit",
-    "CameraView.SetStandard",
     "Machine.GetElement",
     "Selection.Get",
     "Selection.PickMachineObject",
@@ -867,6 +1016,7 @@ function mergeScenePayload(scene, payload) {
     "loops",
     "edges",
     "cadInspection",
+    "tubeGeometry",
     "selection",
     "cuttingLayers",
     "visibleLayers",
@@ -1050,6 +1200,9 @@ function appendProjectLog(context, level, message) {
   if (!text) {
     return;
   }
+  if (typeof context.onProjectLog === "function") {
+    context.onProjectLog(context, level, text);
+  }
   if (typeof context.actions?.log === "function") {
     context.actions.log(level, text);
     return;
@@ -1073,9 +1226,6 @@ function makeSDOCallStartLog(sdoMethod, payload) {
   }
   if (sdoMethod === "Workpiece.Instantiate") {
     return `开始实例化工件：${payload?.modelResourceId ?? "-"}`;
-  }
-  if (sdoMethod === "CameraView.Fit") {
-    return "开始自动适配最佳视角";
   }
   return `调用 ${sdoMethod}`;
 }
@@ -1106,57 +1256,38 @@ function makeSDOCallSuccessLog(sdoMethod, scene) {
     const topology = scene?.topology ?? {};
     return `工件实例化完成：faces=${topology.faceCount ?? 0}, loops=${topology.loopCount ?? 0}, edges=${topology.edgeCount ?? 0}`;
   }
-  if (sdoMethod === "CameraView.Fit") {
-    const fit = scene?.fitView ?? {};
-    if (!fit.fitted) {
-      return [
-        `最佳视角暂未生效：${fit.reason ?? "等待 RenderPDO 发布"}`,
-        `machine=${fit.machineCount ?? 0}`,
-        `visual=${fit.machineVisualCount ?? 0}`,
-        `collision=${fit.machineCollisionCount ?? 0}`,
-        `include=${fit.machineIncludeCount ?? 0}`,
-        `workpiece=${fit.workpieceCount ?? 0}`,
-        `renderable=${fit.renderInstanceComponentCount ?? 0}`,
-        `mesh=${fit.renderMeshCount ?? 0}`,
-        `object=${fit.renderObjectCount ?? 0}`,
-        `transform=${fit.renderTransformCount ?? 0}`,
-        `camera=${fit.renderCameraCount ?? 0}`,
-        `marker=${fit.hasRenderMarker ? "yes" : "no"}`
-      ].join(" / ");
-    }
-    return `最佳视角已适配：radius=${formatNumber(fit.radius ?? 0, 2)}, distance=${formatNumber(fit.distance ?? 0, 2)}, speed=${formatNumber(fit.moveSpeed ?? 0, 2)}`;
-  }
   return `${sdoMethod} 完成`;
 }
 
 async function fitViewAfterRenderPublish(context, view) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await sleep(attempt === 0 ? 120 : 180);
-    const ok = await invokeSDOMethod(context, view, "CameraView.Fit", {});
-    if (ok && view.scene?.fitView?.fitted) {
-      return;
-    }
-    if (ok && isFitBlockedByNoRenderableSource(view.scene?.fitView)) {
+    if (fitViewport(context, view, { quiet: attempt > 0 })) {
       return;
     }
   }
 }
 
-function isFitBlockedByNoRenderableSource(fit = null) {
-  if (!fit || fit.fitted || fit.reason !== "render scene is empty") {
-    return false;
+function fitViewport(context, view, options = {}) {
+  const fitted = Boolean(view.viewport?.fitView?.());
+  if (!options.quiet) {
+    appendProjectLog(
+      context,
+      fitted ? "ok" : "info",
+      fitted ? "当前 View 已适配到最佳视角" : "当前 View 暂无可适配的几何",
+    );
   }
-  const sourceCount =
-    Number(fit.machineVisualCount ?? 0)
-    + Number(fit.machineCollisionCount ?? 0)
-    + Number(fit.machineIncludeCount ?? 0)
-    + Number(fit.workpieceCount ?? 0)
-    + Number(fit.renderInstanceComponentCount ?? 0)
-    + Number(fit.renderObjectCount ?? 0)
-    + Number(fit.renderMeshCount ?? 0)
-    + Number(fit.renderPolylineCount ?? 0)
-    + Number(fit.renderToolpathCount ?? 0);
-  return sourceCount === 0;
+  return fitted;
+}
+
+function setViewportStandardView(context, view, viewName) {
+  const applied = Boolean(view.viewport?.setStandardView?.(viewName));
+  appendProjectLog(
+    context,
+    applied ? "ok" : "error",
+    applied ? `已切换到 ${viewName} 视图` : `不支持的标准视图：${viewName}`,
+  );
+  return Promise.resolve(applied);
 }
 
 function sleep(durationMs) {
@@ -1217,7 +1348,7 @@ function createSDOCallProgress(sdoMethod) {
         ["源文件读取", "正在读取机床定义源文件"],
         ["结构展开", "正在创建 link、joint、visual 和 collision Entity"],
         ["参数初始化", "正在初始化 TCP、轴限位和机床状态"],
-        ["显示同步", "正在发布机床 visual 到 RenderPDO"],
+        ["显示同步", "正在生成机床 visual 资源并更新 View"],
         ["面板刷新", "正在刷新机床结构面板"],
       ],
     };
@@ -1250,7 +1381,7 @@ function createSDOCallProgress(sdoMethod) {
         ["场景写入", "正在创建工件 Entity"],
         ["显示实例", "正在绑定 RenderInstance 与 Transform"],
         ["激活工件", "正在更新当前激活工件"],
-        ["PDO 同步", "正在同步显示数据到前端"],
+        ["View 更新", "正在发布显示资源与 View 新版本"],
       ],
     };
   }

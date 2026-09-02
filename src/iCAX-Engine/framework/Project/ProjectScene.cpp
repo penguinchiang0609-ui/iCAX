@@ -5,7 +5,7 @@
 
 #include "Behaviour/IBehaviourRegistry.h"
 #include "Database/IMetaRegistry.h"
-#include "EntityViewRuntime/EntityViewSet.h"
+#include "EntityViewRuntime/ViewSet.h"
 
 
 namespace
@@ -175,17 +175,14 @@ iCAX::Project::CProjectScene::CProjectScene(
     , m_pRepository(iCAX::Database::GenerateRepository(m_SceneID, m_pMetaRegistry))
     , m_pUniverse(iCAX::Behaviour::GenerateUniverse(m_pBehaviourRegistry))
     , m_pPDOHub(CreateInfo_.bEnablePDOHub ? iCAX::PDO::GeneratePDOHub(CreateInfo_.PDOHubCreateInfo) : nullptr)
-    , m_pEntityViews(
-        m_pPDOHub
-            ? std::make_unique<iCAX::View::CEntityViewSet>(
-                *m_pRepository,
-                *m_pPDOHub)
-            : nullptr)
-    , m_pRepositoryEventForwarder(std::make_shared<CRepositoryEventForwarder>(*this))
     , m_Resources(
         m_pResourceLoaderRegistry,
         MakeResourceVersionStorageOptions(
             *m_pApplicationContext))
+    , m_pViews(std::make_unique<iCAX::View::CViewSet>(
+        *m_pRepository,
+        m_Resources))
+    , m_pRepositoryEventForwarder(std::make_shared<CRepositoryEventForwarder>(*this))
     , m_nFrameIntervalMilliseconds(CreateInfo_.nFrameIntervalMilliseconds == 0 ? 1 : CreateInfo_.nFrameIntervalMilliseconds)
     , m_RuntimeScheduler(m_nFrameIntervalMilliseconds)
     , m_FrameHandler(CreateInfo_.FrameHandler)
@@ -386,20 +383,20 @@ const iCAX::PDO::IPDOHub& iCAX::Project::CProjectScene::PDOHub() const
     return *m_pPDOHub;
 }
 
-bool iCAX::Project::CProjectScene::HasEntityViews() const
+bool iCAX::Project::CProjectScene::HasViews() const
 {
-    return m_pEntityViews != nullptr;
+    return m_pViews != nullptr;
 }
 
-iCAX::View::CEntityViewSet&
-iCAX::Project::CProjectScene::EntityViews() const
+iCAX::View::CViewSet&
+iCAX::Project::CProjectScene::Views() const
 {
-    EnsureSceneThreadAccess("Scene::EntityViews");
-    if (!m_pEntityViews)
+    EnsureSceneThreadAccess("Scene::Views");
+    if (!m_pViews)
     {
-        throw std::logic_error("Scene EntityView set is not configured");
+        throw std::logic_error("Scene View set is not configured");
     }
-    return *m_pEntityViews;
+    return *m_pViews;
 }
 
 iCAX::Services::CServiceProvider& iCAX::Project::CProjectScene::Services() const
@@ -593,12 +590,12 @@ void iCAX::Project::CProjectScene::PostSwapPDO()
 {
     EnsureOpen();
     m_pUniverse->PostSwapPDO();
+    if (m_pViews)
+    {
+        m_pViews->Publish();
+    }
     if (m_pPDOHub)
     {
-        if (m_pEntityViews)
-        {
-            m_pEntityViews->Publish();
-        }
         m_pPDOHub->SwapOutSlot();
     }
 }
@@ -616,7 +613,7 @@ void iCAX::Project::CProjectScene::Close()
         m_pUniverse->Cleanup(true);
         m_pUniverse.reset();
     }
-    m_pEntityViews.reset();
+    m_pViews.reset();
     if (m_pRepository && m_pRepositoryEventForwarder)
     {
         m_pRepository->RemoveObserver(m_pRepositoryEventForwarder);

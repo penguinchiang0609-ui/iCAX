@@ -21,6 +21,11 @@ export const ProjectSDO = Object.freeze({
   getUndoRedoState: "Project.GetUndoRedoState",
 });
 
+export const ViewSDO = Object.freeze({
+  getOrCreate: "View.GetOrCreate",
+  release: "View.Release",
+});
+
 const identifierPattern = /^[A-Z][A-Za-z0-9_]*$/;
 
 export function fnv1a32(text) {

@@ -635,6 +635,8 @@ namespace iCAX::GeometryData
         std::uint64_t Surface3Id = 0;
         std::uint64_t Triangulation3Id = 0;
         std::vector<std::uint64_t> WireIds;
+        // WireId 在该 Face 中的实际方向；为空表示兼容旧数据。
+        std::vector<ETopologyOrientation> WireOrientations;
         SurfaceParameterRange Domain;
         ETopologyOrientation Orientation = ETopologyOrientation::Forward;
         double Tolerance = 0.0;
@@ -646,6 +648,8 @@ namespace iCAX::GeometryData
     {
         std::uint64_t Id = 0;
         std::vector<std::uint64_t> FaceIds;
+        // FaceId 在该 Shell 中的实际方向；为空表示兼容旧数据并沿用 BRepFace.Orientation。
+        std::vector<ETopologyOrientation> FaceOrientations;
         bool Closed = false;
         EntityMetadata Metadata;
     };
@@ -654,6 +658,8 @@ namespace iCAX::GeometryData
     {
         std::uint64_t Id = 0;
         std::vector<std::uint64_t> ShellIds;
+        // ShellId 在该 Solid 中的实际方向；为空表示兼容旧数据。
+        std::vector<ETopologyOrientation> ShellOrientations;
         EntityMetadata Metadata;
     };
 

@@ -249,7 +249,7 @@ TEST(ProductManifestTest, ParsesResourceHandlerBindings)
         / ("ProductManifestResourceHandlerTest-" + std::to_string(
             std::chrono::steady_clock::now().time_since_epoch().count()));
     const auto _PluginPath = _Root / "plugins" / "Occ.dll";
-    const auto _DependencyPath = _Root / "plugins" / "RenderService.dll";
+    const auto _DependencyPath = _Root / "plugins" / "RuntimeDependency.dll";
     std::filesystem::create_directories(_PluginPath.parent_path());
     std::ofstream(_PluginPath.string(), std::ios::binary).close();
     std::ofstream(_DependencyPath.string(), std::ios::binary).close();
@@ -274,7 +274,7 @@ TEST(ProductManifestTest, ParsesResourceHandlerBindings)
       "slotCapacity": 128
     },
     "modules": {
-      "dependencies": ["plugins/RenderService.dll"]
+      "dependencies": ["plugins/RuntimeDependency.dll"]
     },
     "resources": {
       "handlers": [

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Header Files"><UniqueIdentifier>{6f18596b-fd88-4558-88aa-13bfd940ccaa}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{2bbb3563-7b83-4797-9a57-207844397a0f}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ExtrusionRecognitionExport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ExtrusionRecognitionService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ExtrusionRecognitionTypes.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SectionGeometry.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SectionDefinitionCodec.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="SectionRuleEngine.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ExtrusionRecognitionService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SectionGeometry.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SectionDefinitionCodec.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SectionRuleEngine.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+</Project>

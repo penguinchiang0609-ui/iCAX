@@ -78,7 +78,9 @@ iCAX::Interaction::CInvocationResult iCAX::Interaction::CSDO::Invoke(
     return _Func(Call_, ApplicationContext_, pProductContext_, pProjectContext_, pSceneContext_);
 }
 
-bool iCAX::Interaction::CSDO::ExposeMethod(IN std::string strMethodName_, IN MethodFunc Func_)
+bool iCAX::Interaction::CSDO::ExposeMethod(
+    IN std::string strMethodName_,
+    IN MethodFunc Func_)
 {
     if (!IsValidMethodName(strMethodName_))
     {
@@ -104,7 +106,8 @@ bool iCAX::Interaction::CSDO::ExposeMethod(IN std::string strMethodName_, IN Met
     return true;
 }
 
-void iCAX::Interaction::CSDO::ValidateMethodFunc(IN const MethodFunc& Func_)
+void iCAX::Interaction::CSDO::ValidateMethodFunc(
+    IN const MethodFunc& Func_)
 {
     if (!Func_)
     {

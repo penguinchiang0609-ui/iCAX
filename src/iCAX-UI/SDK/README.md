@@ -23,7 +23,8 @@
 - `SDO/`：SDO client、SDO 方法编码和 Variant 文本编解码。
 - `PDO/`：PDO 前端访问代理，面向 shared memory lease。
 - `Resources/`：GUID URL 构造/解析，以及 Fetch 风格的 `HEAD/GET/POST/PUT/DELETE/OPTIONS` 资源客户端。
-- `Viewport/`：RenderPDO 解析和 H5 默认 Three.js 视口。
+- `View/`：Scene 内多 Source View 的生命周期、快照订阅、版本检查和解析。
+- `Viewport/`：资源几何/材质解析和 H5 默认 Three.js 视口。
 - `ThirdParty/`：SDK 自带的 H5 runtime 依赖，目前包含 Three.js。
 
 ## 边界

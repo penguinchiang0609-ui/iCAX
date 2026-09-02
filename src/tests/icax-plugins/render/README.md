@@ -2,7 +2,4 @@
 
 `render` 存放渲染和显示相关插件测试。
 
-## 目录结构
-
-- `RenderPDO/`：RenderPDO 插件单元测试。
-- `RenderService/`：RenderService/PDORenderService 单元测试。
+旧的后端渲染服务和渲染 PDO 测试已经随插件删除。资源编码、View 投影和前端解析分别在对应项目的测试中覆盖。

@@ -8,16 +8,27 @@ param(
     [string]$ProjectName = "Laser3DCAM UI Smoke",
     [string]$ProjectPath = "",
     [string]$MachineDefinitionPath = "",
+    [string]$WorkpiecePath = "",
+    [switch]$RecognizeCADIntent,
+    [switch]$CheckTubeCSGWorkflow,
     [switch]$CheckDefaultMachine,
     [switch]$CheckMachineEnableWorkflow,
     [switch]$CheckMachineRenameWorkflow,
     [switch]$CheckMachineSelectionWorkflow,
     [switch]$CheckWorkbenchResizeWorkflow,
     [switch]$RequireRenderable,
+    [string]$ScreenshotPath = "",
     [int]$TimeoutSeconds = 30
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($WorkpiecePath -and (Test-Path -LiteralPath $WorkpiecePath)) {
+    $WorkpiecePath = (Resolve-Path -LiteralPath $WorkpiecePath).Path
+}
+if ($MachineDefinitionPath -and (Test-Path -LiteralPath $MachineDefinitionPath)) {
+    $MachineDefinitionPath = (Resolve-Path -LiteralPath $MachineDefinitionPath).Path
+}
 
 function Resolve-DefaultApplicationPath {
     $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
@@ -33,11 +44,16 @@ function Resolve-DefaultApplicationPath {
 }
 
 function New-DefaultProjectPath {
+    param([string]$TargetProductId)
+
     $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
     $dir = Join-Path $root ".codex_tmp\ui-smoke"
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
-    return Join-Path $dir "laser3dcam-ui-smoke-$stamp.i3cam"
+    $isTubeOne = [StringComparer]::OrdinalIgnoreCase.Equals($TargetProductId, "icax.tube-one")
+    $prefix = if ($isTubeOne) { "tubeone-ui-smoke" } else { "laser3dcam-ui-smoke" }
+    $extension = if ($isTubeOne) { ".tubeone" } else { ".i3cam" }
+    return Join-Path $dir "$prefix-$stamp$extension"
 }
 
 function Sync-ApplicationRuntimeDependencies {
@@ -55,6 +71,7 @@ function Sync-ApplicationRuntimeDependencies {
         "iCAX-Engine\framework\Behaviour",
         "iCAX-Engine\framework\SDO",
         "iCAX-Engine\framework\Database",
+        "iCAX-Engine\framework\EntityViewRuntime",
         "iCAX-Engine\framework\PDO",
         "iCAX-Engine\framework\Product",
         "iCAX-Engine\framework\ProductContext",
@@ -65,17 +82,12 @@ function Sync-ApplicationRuntimeDependencies {
         "iCAX-Plugins\cad\OpenCascadeResourceImport",
         "iCAX-Plugins\cam\Laser3DCAM",
         "iCAX-Plugins\common\Transform",
+        "iCAX-Plugins\geometry\ExtrusionRecognition",
         "iCAX-Plugins\geometry\DAEResourceImport",
         "iCAX-Plugins\geometry\STLResourceImport",
-        "iCAX-Plugins\input\InputPDO",
-        "iCAX-Plugins\input\InputService",
         "iCAX-Plugins\physics\ColliderData",
-        "iCAX-Plugins\render\CameraNavigation",
-        "iCAX-Plugins\render\PDORenderService",
         "iCAX-Plugins\render\RenderData",
-        "iCAX-Plugins\render\RenderInteraction",
-        "iCAX-Plugins\render\RenderPDO",
-        "iCAX-Plugins\render\RenderService"
+        "iCAX-Plugins\render\RenderInteraction"
     )
 
     function Copy-DllIfNeeded {
@@ -325,12 +337,12 @@ Sync-ApplicationRuntimeDependencies -ApplicationPath $ApplicationPath
 Assert-ApplicationRuntimeDependencies -ApplicationPath $ApplicationPath
 Ensure-UIContainerSmokeConfig -WorkingDirectory $WorkingDirectory -RemoteDebuggingPort $RemoteDebuggingPort
 if (-not $ProjectPath) {
-    $ProjectPath = New-DefaultProjectPath
+    $ProjectPath = New-DefaultProjectPath -TargetProductId $ProductId
 }
 
 $process = $null
 if ($StartApplication) {
-    $process = Start-Process -FilePath $ApplicationPath -WorkingDirectory $WorkingDirectory -PassThru
+    $process = Start-Process -FilePath $ApplicationPath -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
 }
 
 try {
@@ -342,8 +354,12 @@ try {
         $projectNameLiteral = ConvertTo-JsLiteral $ProjectName
         $projectPathLiteral = ConvertTo-JsLiteral $ProjectPath
         $machinePathLiteral = ConvertTo-JsLiteral $MachineDefinitionPath
-        $createProjectLiteral = if ($CreateProject -or $MachineDefinitionPath) { "true" } else { "false" }
+        $workpiecePathLiteral = ConvertTo-JsLiteral $WorkpiecePath
+        $createProjectLiteral = if ($CreateProject -or $MachineDefinitionPath -or $WorkpiecePath) { "true" } else { "false" }
         $importMachineLiteral = if ($MachineDefinitionPath) { "true" } else { "false" }
+        $importWorkpieceLiteral = if ($WorkpiecePath) { "true" } else { "false" }
+        $recognizeCADIntentLiteral = if ($RecognizeCADIntent) { "true" } else { "false" }
+        $checkTubeCSGWorkflowLiteral = if ($CheckTubeCSGWorkflow) { "true" } else { "false" }
         $checkDefaultMachineLiteral = if ($CheckDefaultMachine) { "true" } else { "false" }
         $checkMachineEnableWorkflowLiteral = if ($CheckMachineEnableWorkflow) { "true" } else { "false" }
         $checkMachineRenameWorkflowLiteral = if ($CheckMachineRenameWorkflow) { "true" } else { "false" }
@@ -382,7 +398,10 @@ try {
       projectName: $projectNameLiteral,
       projectPath: $projectPathLiteral
     });
-    await waitUntil(() => window.__icaxLaser3DCAM, "Laser3DCAM automation");
+    await waitUntil(() => window.__icaxLaser3DCAM, "Laser3DCAM automation").catch((error) => {
+      const appState = window.__icaxAppShell?.getState?.() ?? null;
+      throw new Error(error.message + "; AppShell=" + JSON.stringify(appState));
+    });
   }
 
   let defaultMachineResult = null;
@@ -411,6 +430,226 @@ try {
     }
     await delay(500);
   }
+
+  let importWorkpieceResult = null;
+  if ($importWorkpieceLiteral) {
+    importWorkpieceResult = await window.__icaxLaser3DCAM.importWorkpiece($workpiecePathLiteral);
+    await delay(500);
+  }
+
+  const tubeMainDomState = $checkTubeCSGWorkflowLiteral
+    ? await waitUntil(() => {
+        const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+        return state
+          && state.mainWorkspaceCount === 1
+          && state.workpieceCardCount > 0
+          && state.resourceWorkpieceThumbnailCount === state.workpieceCardCount
+          && state.layerStripCount === 1
+          && state.bottomDockCount === 1
+          && state.mainPropertyPaneCount === 1
+          && state.workpiecePaginationCount === 1
+          && state.nestingResultListCount === 1
+          && state.bottomTabButtonCount === 2
+          && state.activeBottomTab === "nesting"
+          && state.nestingBottomPanelCount === 1
+          && state.stockBottomPanelCount === 0
+          && state.bottomSplitterCount === 1
+          && state.visibleMainViewCubeCount === 1
+          && state.visibleMainAxisCount === 1
+          ? state
+          : null;
+      }, "TubesT-style TubeOne main workspace")
+    : null;
+
+  let tubeBottomTabResult = null;
+  let tubeBottomResizeResult = null;
+  let tubeToolbarTooltipResult = null;
+  let tubeWorkpieceSearchResult = null;
+  let tubeFilteredSelectionResult = null;
+  if ($checkTubeCSGWorkflowLiteral) {
+    const searchInput = document.querySelector("[data-tube-workpiece-search]");
+    const firstWorkpieceCard = document.querySelector(".tube-workpiece-card");
+    if (!searchInput || !firstWorkpieceCard) {
+      throw new Error("TubeOne workpiece query input is missing.");
+    }
+    const runWorkpieceQuery = async (query, expectedVisible) => {
+      searchInput.value = query;
+      searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+      return await waitUntil(() => {
+        const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+        return state?.workpieceSearchValue === query
+          && state.visibleWorkpieceCardCount === expectedVisible
+          ? state
+          : null;
+      }, "TubeOne workpiece query: " + query);
+    };
+    const originalProcessTerms = firstWorkpieceCard.dataset.tubeWorkpieceProcesses ?? "";
+    const byName = await runWorkpieceQuery("n:double n:cavity", 1);
+    firstWorkpieceCard.dataset.tubeWorkpieceProcesses = (originalProcessTerms + " 坡口 贯切").trim();
+    const byProcess = await runWorkpieceQuery("t:坡口", 1);
+    const excludedProcess = await runWorkpieceQuery("-t:坡口", 0);
+    const booleanOr = await runWorkpieceQuery("n:不存在 or t:贯切", 1);
+    const invalidFilter = await runWorkpieceQuery("x:未知", 0);
+    firstWorkpieceCard.dataset.tubeWorkpieceProcesses = originalProcessTerms;
+    const cleared = await runWorkpieceQuery("", 1);
+    tubeWorkpieceSearchResult = { byName, byProcess, excludedProcess, booleanOr, invalidFilter, cleared };
+    document.querySelector("[data-cam-action='tube-select-filtered-workpieces']")?.click();
+    const selectedAll = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      return state?.selectedWorkpieceCardCount === 1 ? state : null;
+    }, "selected filtered TubeOne workpieces");
+    document.querySelector("[data-cam-action='tube-invert-filtered-workpieces']")?.click();
+    const inverted = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      return state?.selectedWorkpieceCardCount === 0 ? state : null;
+    }, "inverted filtered TubeOne workpieces");
+    tubeFilteredSelectionResult = { selectedAll, inverted };
+    const toolbarTooltipTarget = document.querySelector(".tubest-part-toolbar button:not([disabled])");
+    if (!toolbarTooltipTarget) {
+      throw new Error("TubeOne toolbar tooltip target is missing.");
+    }
+    toolbarTooltipTarget.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    const shownTooltip = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      return state?.visibleToolbarTooltipCount === 1 && state.toolbarTooltipText ? state : null;
+    }, "TubeOne toolbar bubble tooltip");
+    toolbarTooltipTarget.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+    const hiddenTooltip = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      return state?.visibleToolbarTooltipCount === 0 ? state : null;
+    }, "hidden TubeOne toolbar bubble tooltip");
+    tubeToolbarTooltipResult = { shownTooltip, hiddenTooltip };
+    const bottomHandle = document.querySelector("[data-cam-resize-pane='bottom']");
+    const leftHandle = document.querySelector("[data-cam-resize-pane='left']");
+    const rightHandle = document.querySelector("[data-cam-resize-pane='right']");
+    const mainWorkbench = document.querySelector(".cam-workbench");
+    if (!leftHandle || !rightHandle || !bottomHandle || !mainWorkbench) {
+      throw new Error("TubeOne main workspace resize handle is missing.");
+    }
+    const parsePx = (value) => Number(String(value ?? "").trim().replace("px", ""));
+    const dragHandle = async (handle, deltaX, deltaY, pointerId) => {
+      const rect = handle.getBoundingClientRect();
+      const startX = rect.left + rect.width / 2;
+      const startY = rect.top + rect.height / 2;
+      handle.dispatchEvent(new PointerEvent("pointerdown", {
+        bubbles: true, button: 0, pointerId, clientX: startX, clientY: startY
+      }));
+      window.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true, pointerId, clientX: startX + deltaX, clientY: startY + deltaY
+      }));
+      window.dispatchEvent(new PointerEvent("pointerup", {
+        bubbles: true, pointerId, clientX: startX + deltaX, clientY: startY + deltaY
+      }));
+      await delay(100);
+    };
+    const beforeLeftWidth = parsePx(getComputedStyle(mainWorkbench).getPropertyValue("--cam-left-width"));
+    await dragHandle(leftHandle, 36, 0, 50);
+    const afterLeftWidth = parsePx(getComputedStyle(mainWorkbench).getPropertyValue("--cam-left-width"));
+    const beforeRightWidth = parsePx(getComputedStyle(mainWorkbench).getPropertyValue("--cam-right-width"));
+    await dragHandle(rightHandle, -36, 0, 51);
+    const afterRightWidth = parsePx(getComputedStyle(mainWorkbench).getPropertyValue("--cam-right-width"));
+    const beforeBottomHeight = parsePx(getComputedStyle(mainWorkbench).getPropertyValue("--cam-bottom-height"));
+    await dragHandle(bottomHandle, 0, -36, 52);
+    const afterBottomHeight = parsePx(getComputedStyle(mainWorkbench).getPropertyValue("--cam-bottom-height"));
+    tubeBottomResizeResult = {
+      beforeLeftWidth, afterLeftWidth,
+      beforeRightWidth, afterRightWidth,
+      beforeBottomHeight, afterBottomHeight
+    };
+    document.querySelector("[data-cam-action='tube-bottom-tab'][data-tube-bottom-tab='stock']")?.click();
+    const stock = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      return state?.activeBottomTab === "stock"
+        && state.stockBottomPanelCount === 1
+        && state.nestingBottomPanelCount === 0
+        ? state
+        : null;
+    }, "TubeOne stock bottom tab");
+    document.querySelector("[data-cam-action='tube-bottom-tab'][data-tube-bottom-tab='nesting']")?.click();
+    const nesting = await waitUntil(() => {
+      const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+      return state?.activeBottomTab === "nesting"
+        && state.nestingBottomPanelCount === 1
+        && state.stockBottomPanelCount === 0
+        ? state
+        : null;
+    }, "TubeOne nesting bottom tab");
+    tubeBottomTabResult = { stock, nesting };
+  }
+
+  let recognizeCADIntentResult = null;
+  if ($recognizeCADIntentLiteral) {
+    recognizeCADIntentResult = await window.__icaxLaser3DCAM.recognizeCADIntent();
+    await delay(300);
+  }
+  const tubePreviewResults = [];
+  let tubeParameterEditResult = null;
+  if ($checkTubeCSGWorkflowLiteral) {
+    const tubeGeometry = window.__icaxLaser3DCAM?.getState?.()?.tubeGeometry ?? {};
+    const intentNodes = (tubeGeometry.solidNodes ?? []).concat(tubeGeometry.sectionPrimitives ?? []);
+    const editableTool = (tubeGeometry.solidNodes ?? []).find((node) =>
+      node.materialRole
+        && node.materialRole !== "None"
+        && node.previewAvailable
+        && (node.parameters ?? []).some((item) => item.editable !== false));
+    const parameterNodeId = editableTool?.id
+      ?? window.__icaxLaser3DCAM?.getState?.()?.selectedCADIntentNodeId
+      ?? "";
+    const previewNodes = intentNodes
+      .filter((node) => node.previewAvailable);
+    for (const node of previewNodes) {
+      const selection = await window.__icaxLaser3DCAM.selectCADIntentNode(node.id);
+      tubePreviewResults.push({
+        nodeId: node.id,
+        selectedNodeId: selection.tubeDom.selectedNodeId,
+        previewNodeId: selection.tubeDom.previewNodeId,
+        ghostPreviewVisible: selection.viewport?.ghostPreviewVisible ?? false,
+        ghostPreviewVertexCount: selection.viewport?.ghostPreviewVertexCount ?? 0
+      });
+    }
+    if (parameterNodeId) {
+      await window.__icaxLaser3DCAM.selectCADIntentNode(parameterNodeId);
+      const initialGeometry = window.__icaxLaser3DCAM.getState().tubeGeometry ?? {};
+      const initialNode = (initialGeometry.solidNodes ?? [])
+        .concat(initialGeometry.sectionPrimitives ?? [])
+        .find((node) => node.id === parameterNodeId);
+      const parameter = (initialNode?.parameters ?? [])
+        .find((item) => item.editable !== false && item.name === "length")
+        ?? (initialNode?.parameters ?? []).find((item) => item.editable !== false);
+      if (parameter) {
+        const originalValue = Number(parameter.value);
+        const changedValue = originalValue + (String(parameter.name).toLowerCase().includes("scale") ? 0.1 : 1);
+        const livePreview = await window.__icaxLaser3DCAM.previewCADIntentParameter(
+          parameterNodeId,
+          parameter.name,
+          changedValue
+        );
+        const changed = await window.__icaxLaser3DCAM.setCADIntentParameter(
+          parameterNodeId,
+          parameter.name,
+          changedValue
+        );
+        const reverted = await window.__icaxLaser3DCAM.setCADIntentParameter(
+          parameterNodeId,
+          parameter.name,
+          originalValue
+        );
+        tubeParameterEditResult = { originalValue, changedValue, livePreview, changed, reverted };
+      }
+    }
+  }
+  const tubeCADIntentDomState = $checkTubeCSGWorkflowLiteral
+    ? await waitUntil(() => {
+        const state = window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null;
+        return state
+          && state.editorWorkspaceCount === 1
+          && state.manufacturingTreeCount === 1
+          && state.historyNodeCount > 0
+          && state.layerStripCount === 0
+          ? state
+          : null;
+      }, "TubeOne three-dimensional part editor")
+    : (window.__icaxLaser3DCAM?.getTubeCADIntentDomState?.() ?? null);
 
   let machineEnableResult = null;
   if ($checkMachineEnableWorkflowLiteral) {
@@ -530,6 +769,17 @@ try {
     createProjectResult,
     defaultMachineResult,
     importMachineResult,
+    importWorkpieceResult,
+    recognizeCADIntentResult,
+    tubeMainDomState,
+    tubeBottomTabResult,
+    tubeBottomResizeResult,
+    tubeToolbarTooltipResult,
+    tubeWorkpieceSearchResult,
+    tubeFilteredSelectionResult,
+    tubeCADIntentDomState,
+    tubePreviewResults,
+    tubeParameterEditResult,
     machineEnableResult,
     machineRenameResult,
     machineSelectionResult,
@@ -553,6 +803,20 @@ try {
         $state = $response.result.result.value
         $state | ConvertTo-Json -Depth 32
 
+        if ($ScreenshotPath) {
+            $screenshot = Invoke-CdpCommand -Socket $socket -Id 2 -Method "Page.captureScreenshot" -Params @{
+                format = "png"
+                fromSurface = $true
+                captureBeyondViewport = $false
+            }
+            $targetPath = [IO.Path]::GetFullPath($ScreenshotPath)
+            $targetDirectory = Split-Path -Parent $targetPath
+            if ($targetDirectory) {
+                New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+            }
+            [IO.File]::WriteAllBytes($targetPath, [Convert]::FromBase64String($screenshot.result.data))
+        }
+
         if ($RequireRenderable) {
             if (-not $state.productDiagnosticsReady) {
                 throw "Laser3DCAM frontend diagnostics are not ready."
@@ -572,11 +836,185 @@ try {
             if ([int]$state.viewport.visibleObjectCount -le 0) {
                 throw "Viewport has no visible objects."
             }
-            if ([int]$state.viewport.cameraCount -le 0 -or -not $state.viewport.activeCameraId) {
-                throw "Viewport has no active camera."
+            if (-not $state.viewport.cameraPosition -or -not $state.viewport.cameraDirection) {
+                throw "Viewport has no local camera state."
             }
             if ($state.viewport.pixelSample -and [int]$state.viewport.pixelSample.nonBackground -le 0) {
                 throw "Viewport rendered only background pixels."
+            }
+        }
+
+        if ($CheckTubeCSGWorkflow) {
+            if (-not $state.product.tubeGeometry.available) {
+                throw "Tube neutral geometry is unavailable."
+            }
+            if ([int]$state.product.tubeGeometry.solidNodeCount -le 0) {
+                throw "Tube manufacturing model has no feature nodes."
+            }
+            if (-not $state.tubeMainDomState) {
+                throw "TubesT-style TubeOne main workspace diagnostics are missing."
+            }
+            if (-not $state.tubeCADIntentDomState) {
+                throw "Tube CAD intent DOM diagnostics are missing."
+            }
+            if ([int]$state.tubeMainDomState.mainWorkspaceCount -ne 1 -or [int]$state.tubeMainDomState.bottomDockCount -ne 1 -or [int]$state.tubeMainDomState.layerStripCount -ne 1 -or [int]$state.tubeMainDomState.visibleVectorRibbonIconCount -le 0) {
+                throw "TubesT-style TubeOne main workspace is incomplete."
+            }
+            if ([int]$state.tubeCADIntentDomState.editorWorkspaceCount -ne 1 -or [int]$state.tubeCADIntentDomState.manufacturingTreeCount -ne 1 -or [int]$state.tubeCADIntentDomState.layerStripCount -ne 0 -or [int]$state.tubeCADIntentDomState.visibleVectorRibbonIconCount -le 0) {
+                throw "Tube three-dimensional part editor is incomplete."
+            }
+            if ([int]$state.tubeCADIntentDomState.editorDialogCount -ne 1) {
+                throw "Tube CAD editor is not hosted by exactly one modal dialog."
+            }
+            if (-not $state.tubeCADIntentDomState.editorSceneId -or [string]$state.tubeCADIntentDomState.editorSceneId -ne [string]$state.tubeCADIntentDomState.editorSceneProxyId) {
+                throw "Tube CAD editor did not connect to its independent Scene proxy."
+            }
+            if (-not $state.tubeCADIntentDomState.mainSceneId -or [string]$state.tubeCADIntentDomState.editorSceneId -eq [string]$state.tubeCADIntentDomState.mainSceneId) {
+                throw "Tube CAD editor reused the main Scene instead of opening an independent child Scene."
+            }
+            if ([int]$state.tubeCADIntentDomState.sectionPrimitiveCount -lt 3) {
+                throw "Tube CAD editor did not expose the stock outer profile and cavities as section primitives."
+            }
+            if (-not $state.tubeCADIntentDomState.viewportLayout.hostMatchesLiveElement) {
+                throw "Tube CAD editor viewport is not mounted in the live independent-Scene dialog."
+            }
+            if ([int]$state.tubeCADIntentDomState.historyNodeCount -le 0) {
+                throw "Tube history tree is empty."
+            }
+            if ([int]$state.tubeMainDomState.workpieceCardCount -le 0 -or [int]$state.tubeMainDomState.activeWorkpieceCardCount -ne 1) {
+                throw "Tube workpiece card list is missing or has no unique active card."
+            }
+            if ([int]$state.tubeMainDomState.workpieceThumbnailCount -ne [int]$state.tubeMainDomState.workpieceCardCount) {
+                throw "Tube workpiece cards do not all contain thumbnails."
+            }
+            if ([int]$state.tubeMainDomState.resourceWorkpieceThumbnailCount -ne [int]$state.tubeMainDomState.workpieceCardCount) {
+                throw "Tube workpiece cards did not render their resource-backed previews."
+            }
+            if ([int]$state.tubeMainDomState.workpiecePathInputCount -ne 0) {
+                throw "Tube workpiece panel still exposes a source path input."
+            }
+            if ([int]$state.tubeMainDomState.addWorkpieceButtonCount -lt 1 -or [int]$state.tubeMainDomState.deleteWorkpieceButtonCount -ne 1) {
+                throw "Tube workpiece add/delete toolbar is incomplete."
+            }
+            if ([int]$state.tubeMainDomState.legacyWorkpieceRibbonCommandCount -ne 0) {
+                throw "Tube workpiece add/delete actions are still duplicated in the ribbon."
+            }
+            if ([int]$state.tubeMainDomState.mainPropertyPaneCount -ne 1 `
+                -or [int]$state.tubeMainDomState.workpiecePaginationCount -ne 1 `
+                -or [int]$state.tubeMainDomState.nestingResultListCount -ne 1 `
+                -or [int]$state.tubeMainDomState.bottomTabButtonCount -ne 2 `
+                -or [int]$state.tubeMainDomState.bottomSplitterCount -ne 1) {
+                throw "Tube main workspace does not match the part/scene/property/tabbed-result layout."
+            }
+            if (-not $state.tubeBottomResizeResult `
+                -or [double]$state.tubeBottomResizeResult.afterLeftWidth -le [double]$state.tubeBottomResizeResult.beforeLeftWidth `
+                -or [double]$state.tubeBottomResizeResult.afterRightWidth -le [double]$state.tubeBottomResizeResult.beforeRightWidth `
+                -or [double]$state.tubeBottomResizeResult.afterBottomHeight -le [double]$state.tubeBottomResizeResult.beforeBottomHeight) {
+                throw "Tube main workspace regions did not grow after dragging their splitters."
+            }
+            if (-not $state.tubeToolbarTooltipResult `
+                -or [int]$state.tubeToolbarTooltipResult.shownTooltip.visibleToolbarTooltipCount -ne 1 `
+                -or -not [string]$state.tubeToolbarTooltipResult.shownTooltip.toolbarTooltipText `
+                -or [int]$state.tubeToolbarTooltipResult.hiddenTooltip.visibleToolbarTooltipCount -ne 0) {
+                throw "Tube toolbar icon bubble tooltip did not show and hide correctly."
+            }
+            if (-not $state.tubeWorkpieceSearchResult `
+                -or [int]$state.tubeWorkpieceSearchResult.byName.visibleWorkpieceCardCount -ne 1 `
+                -or [int]$state.tubeWorkpieceSearchResult.byProcess.visibleWorkpieceCardCount -ne 1 `
+                -or [int]$state.tubeWorkpieceSearchResult.excludedProcess.visibleWorkpieceCardCount -ne 0 `
+                -or [int]$state.tubeWorkpieceSearchResult.booleanOr.visibleWorkpieceCardCount -ne 1 `
+                -or -not $state.tubeWorkpieceSearchResult.invalidFilter.workpieceSearchInvalid `
+                -or [int]$state.tubeWorkpieceSearchResult.cleared.visibleWorkpieceCardCount -ne 1) {
+                throw "Tube Unity-style n:/t: workpiece query workflow is incomplete."
+            }
+            if (-not $state.tubeFilteredSelectionResult `
+                -or [int]$state.tubeFilteredSelectionResult.selectedAll.selectedWorkpieceCardCount -ne 1 `
+                -or [int]$state.tubeFilteredSelectionResult.inverted.selectedWorkpieceCardCount -ne 0) {
+                throw "Tube filtered all/invert selection workflow is incomplete."
+            }
+            if (-not $state.tubeBottomTabResult `
+                -or [string]$state.tubeBottomTabResult.stock.activeBottomTab -ne "stock" `
+                -or [int]$state.tubeBottomTabResult.stock.stockBottomPanelCount -ne 1 `
+                -or [int]$state.tubeBottomTabResult.stock.nestingBottomPanelCount -ne 0 `
+                -or [string]$state.tubeBottomTabResult.nesting.activeBottomTab -ne "nesting" `
+                -or [int]$state.tubeBottomTabResult.nesting.nestingBottomPanelCount -ne 1 `
+                -or [int]$state.tubeBottomTabResult.nesting.stockBottomPanelCount -ne 0) {
+                throw "Tube bottom tabs do not switch between nesting results and stock."
+            }
+            if ([int]$state.tubeMainDomState.visibleMainViewCubeCount -ne 1 `
+                -or [int]$state.tubeMainDomState.visibleMainAxisCount -ne 1) {
+                throw "Tube main viewport is missing the ViewCube or coordinate system."
+            }
+            if (@($state.tubeMainDomState.workpieceQuantityLabels).Count -ne [int]$state.tubeMainDomState.workpieceCardCount) {
+                throw "Tube workpiece cards do not all expose quantity."
+            }
+            if ([int]$state.tubeCADIntentDomState.selectedHistoryNodeCount -ne 1) {
+                throw "Tube history tree does not have exactly one selected node."
+            }
+            if ([int]$state.tubeCADIntentDomState.parameterCount -le 0) {
+                throw "Tube selected node exposes no parameters."
+            }
+            if (-not $state.tubeCADIntentDomState.previewActive) {
+                throw "Tube selected node ghost preview is not active."
+            }
+            if ([int]$state.tubePreviewResults.Count -le 0) {
+                throw "Tube manufacturing-feature tree has no previewable nodes."
+            }
+            foreach ($preview in @($state.tubePreviewResults)) {
+                if ([string]$preview.nodeId -ne [string]$preview.selectedNodeId -or [string]$preview.nodeId -ne [string]$preview.previewNodeId) {
+                    throw "Tube history selection did not activate the requested ghost preview: $($preview.nodeId)"
+                }
+                if (-not $preview.ghostPreviewVisible -or [int]$preview.ghostPreviewVertexCount -le 0) {
+                    throw "Tube history node has no renderable ghost preview: $($preview.nodeId)"
+                }
+            }
+            if (-not $state.tubeParameterEditResult) {
+                throw "Tube selected node has no editable parameter workflow."
+            }
+            if ($state.tubeParameterEditResult.changed.error -or $state.tubeParameterEditResult.reverted.error) {
+                throw "Tube parameter update reported an error."
+            }
+            $livePreview = $state.tubeParameterEditResult.livePreview
+            if (-not $livePreview -or -not $livePreview.livePreviewResourceUrl) {
+                throw "Tube parameter input did not publish a live construction-body preview."
+            }
+            if ([string]$livePreview.livePreviewNodeId -ne [string]$livePreview.nodeId `
+                -or -not $livePreview.ghostPreviewVisible `
+                -or [int]$livePreview.ghostPreviewVertexCount -le 0) {
+                throw "Tube parameter input did not display the changed tool as a ghost preview."
+            }
+            if ([int]$livePreview.afterVersion -ne [int]$livePreview.beforeVersion `
+                -or [int]$livePreview.afterGeometryRevision -ne [int]$livePreview.beforeGeometryRevision `
+                -or [string]$livePreview.afterBRepResourceId -ne [string]$livePreview.beforeBRepResourceId) {
+                throw "Tube live preview changed the committed part before Apply."
+            }
+            if ([int]$state.tubeParameterEditResult.changed.afterVersion -le [int]$state.tubeParameterEditResult.changed.beforeVersion) {
+                throw "Tube parameter update did not publish a new CSG version."
+            }
+            foreach ($edit in @($state.tubeParameterEditResult.changed, $state.tubeParameterEditResult.reverted)) {
+                if ([int]$edit.afterGeometryRevision -le [int]$edit.beforeGeometryRevision) {
+                    throw "Tube parameter update did not increment the workpiece geometry revision."
+                }
+                if (-not $edit.afterBRepResourceId -or [string]$edit.afterBRepResourceId -eq [string]$edit.beforeBRepResourceId) {
+                    throw "Tube parameter update did not publish a new evaluated BRep resource."
+                }
+                if (-not $edit.afterRenderGeometryResourceUrl -or [string]$edit.afterRenderGeometryResourceUrl -eq [string]$edit.beforeRenderGeometryResourceUrl) {
+                    throw "Tube parameter update did not replace the scene render geometry resource."
+                }
+                $previewChanged = [string]$edit.afterPreviewResourceUrl -ne [string]$edit.beforePreviewResourceUrl `
+                    -or [int]$edit.afterPreviewResourceVersion -ne [int]$edit.beforePreviewResourceVersion
+                if (-not $edit.afterPreviewResourceUrl -or -not $previewChanged) {
+                    throw "Tube parameter update did not regenerate the selected-node construction preview."
+                }
+            }
+            if ([double]$state.tubeParameterEditResult.changed.value -ne [double]$state.tubeParameterEditResult.changedValue) {
+                throw "Tube parameter update did not persist the requested value: expected $($state.tubeParameterEditResult.changedValue), actual $($state.tubeParameterEditResult.changed.value)."
+            }
+            if ([double]$state.tubeParameterEditResult.reverted.value -ne [double]$state.tubeParameterEditResult.originalValue) {
+                throw "Tube parameter update did not restore the original value: expected $($state.tubeParameterEditResult.originalValue), actual $($state.tubeParameterEditResult.reverted.value)."
+            }
+            if (-not $state.viewport.ghostPreviewVisible -or [int]$state.viewport.ghostPreviewVertexCount -le 0) {
+                throw "Tube ghost preview has no renderable geometry."
             }
         }
 

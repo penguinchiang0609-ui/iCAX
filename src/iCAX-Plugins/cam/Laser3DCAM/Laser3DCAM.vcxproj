@@ -22,6 +22,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared" />
+  <Import Project="..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
@@ -36,7 +37,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\IntentToolpath;$(MSBuildProjectDirectory)\..\ProcessPath;$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\input;$(MSBuildProjectDirectory)\..\..\physics;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\IntentToolpath;$(MSBuildProjectDirectory)\..\ProcessPath;$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\input;$(MSBuildProjectDirectory)\..\..\physics;$(MSBuildProjectDirectory)\..\..\geometry;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
@@ -47,7 +48,6 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="SDO.h" />
-    <ClInclude Include="CameraViewSDOImplement.h" />
     <ClInclude Include="SDOSupport.h" />
     <ClInclude Include="ComponentValueHelpers.h" />
     <ClInclude Include="FeatureRecognitionService.h" />
@@ -78,6 +78,7 @@
     <ClInclude Include="Laser3DCAMExport.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CADIntentSDO.cpp" />
     <ClCompile Include="SDOSupport.cpp" />
     <ClCompile Include="JobSDO.cpp" />
     <ClCompile Include="IntentToolpathSDO.cpp" />
@@ -88,8 +89,6 @@
     <ClCompile Include="ToolpathSDOImplement.cpp" />
     <ClCompile Include="SelectionSDO.cpp" />
     <ClCompile Include="ToolpathSDO.cpp" />
-    <ClCompile Include="CameraViewSDO.cpp" />
-    <ClCompile Include="CameraViewSDOImplement.cpp" />
     <ClCompile Include="WorkpieceModelSDO.cpp" />
     <ClCompile Include="WorkpieceEditSDO.cpp" />
     <ClCompile Include="WorkpieceSDO.cpp" />
@@ -108,6 +107,12 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\geometry\ExtrusionRecognition\ExtrusionRecognition.vcxproj">
+      <Project>{e108b465-2d5a-4904-a2fb-25f7f184d384}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">
+      <Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\Machine\Machine.vcxproj">
       <Project>{90c52ed8-ab1d-48d8-bff3-4109f5d3757c}</Project>
     </ProjectReference>
@@ -123,14 +128,8 @@
     <ProjectReference Include="..\..\render\RenderData\RenderData.vcxproj">
       <Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project>
     </ProjectReference>
-    <ProjectReference Include="..\..\render\RenderService\RenderService.vcxproj">
-      <Project>{f47e9162-6fe2-4995-92c4-51d8ed9ec474}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\..\render\RenderInteraction\RenderInteraction.vcxproj">
       <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\render\CameraNavigation\CameraNavigation.vcxproj">
-      <Project>{353d4baa-e949-4618-8be3-3179f5046fc1}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\physics\ColliderData\ColliderData.vcxproj">
       <Project>{a50a9e89-b30b-4ca8-a682-1e48d9dd4263}</Project>
@@ -146,6 +145,9 @@
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj">
       <Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\Project\Project.vcxproj">
+      <Project>{d0b2bd35-1f9f-464b-a6d6-38b77c319f9f}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\PDO\PDO.vcxproj">
       <Project>{cf722912-d223-4b78-a672-fd2264db4bbf}</Project>
@@ -164,5 +166,6 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

@@ -159,9 +159,9 @@ Scene 创建 Repository 和 Universe 时引用产品级定义能力；创建 Res
 
 ## 8. 与 PDO 的关系
 
-PDO Arena 由产品或文件/启动模块决定，通过 Project 创建参数转给主 Scene。Scene 不理解 payload 字段含义，只负责创建、交换和释放 Scene PDOHub。具体 slot 可以由 RenderService、InputService 或其他业务服务在运行期动态分配和释放。
+PDO Arena 由产品或文件/启动模块决定，通过 Project 创建参数转给主 Scene。Scene 不理解 payload 字段含义，只负责创建、交换和释放 Scene PDOHub。具体 slot 只用于碰撞调试结果等确实需要共享内存的高频数据，不再承载前端输入或场景渲染。
 
-Behaviour、SDO 和 RenderService 通过 `ISceneContext::HasPDOHub()` 和 `ISceneContext::PDOHub()` 访问 Scene PDO。未配置 PDO 的 Scene 会在访问 `PDOHub()` 时抛出异常。
+Behaviour 和业务服务通过 `ISceneContext::HasPDOHub()` 和 `ISceneContext::PDOHub()` 访问可选的 Scene PDO。未配置 PDO 的 Scene 会在访问 `PDOHub()` 时抛出异常。
 
 前端宿主通过 SDO 获取 Scene PDO Arena name，再打开对应 shared memory。Scene 关闭时释放 PDOHub；前端宿主收到 Scene 关闭后必须停止访问该 Arena。
 

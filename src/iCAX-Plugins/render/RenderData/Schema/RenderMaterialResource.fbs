@@ -1,0 +1,19 @@
+namespace iCAX.Render;
+
+file_identifier "ICRM";
+file_extension "icrm";
+
+table RenderMaterialResource {
+  schema_version:uint = 1;
+  data_version:ulong;
+  color_rgba:uint = 4294967295;
+  ambient_rgba:uint = 4294967295;
+  specular_rgba:uint = 255;
+  emissive_rgba:uint = 255;
+  line_width:float = 1.0;
+  flags:uint;
+  material_flags:uint;
+  base_color_texture_url:string;
+}
+
+root_type RenderMaterialResource;

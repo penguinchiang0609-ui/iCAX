@@ -7,14 +7,16 @@
 ```text
 RenderData
     ↓
-RenderService
+Scene Component + View Projection
     ↓
-PDORenderService / OpenGLRenderService / QtRenderService / WPFRenderService
+Resource URL
+    ↓
+Three.js / WebGPU / Qt / WPF viewport
 ```
 
 ## 多 project / 多 scene
 
-`RenderData` 本身不持有 project 和 scene。多项目隔离由 `RenderService` 负责，数据结构只携带几何、实例、视图和版本信息。
+`RenderData` 本身不持有 project 和 scene。多项目隔离由 Scene 的 Repository、ResourceLibrary 和 ViewSet 负责，数据结构只携带几何、材质和版本信息。
 
 ## 非目标
 

@@ -89,6 +89,20 @@ export class ProjectProxy {
     return this.mainSceneProxy;
   }
 
+  releaseScene(sceneId) {
+    const key = String(sceneId ?? "");
+    if (!key || key === String(this.mainSceneId ?? "")) {
+      return false;
+    }
+    const scene = this.scenes.get(key);
+    if (!scene) {
+      return false;
+    }
+    scene.dispose();
+    this.scenes.delete(key);
+    return true;
+  }
+
   fetchResource(url, init = {}) {
     return this.resources.fetch(url, init);
   }

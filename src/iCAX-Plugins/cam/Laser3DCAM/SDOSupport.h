@@ -209,6 +209,11 @@ bool _SetVariantArrayProperty(
     IN const std::string& strPropertyName_,
     IN const VariantArray& Value_);
 
+bool _SetObjectMapProperty(
+    IN const std::shared_ptr<iCAX::Database::CComponentBase>& pComponent_,
+    IN const std::string& strPropertyName_,
+    IN const ObjectMap& Value_);
+
 std::string _GetObjectString(
     IN const ObjectMap& Object_,
     IN const std::string& strName_,

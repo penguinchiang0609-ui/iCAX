@@ -15,7 +15,7 @@
 - 产品逻辑进入 `src/iCAX-Plugins` 下的 CAM 插件，不进入 framework。
 - 前端页面进入 `src/apps/laser-3d-cam/webpage`，只通过 AppProxy、ProductProxy、ProjectProxy 与后端交互。
 - SDO 只传命令、状态和小型 JSON payload，不传大模型、大 mesh、大采样点。
-- PDO 用于渲染、高频输入、仿真状态等高频或大块数据。
+- View 和资源池承载场景投影与渲染数据；PDO 只保留给碰撞调试等确有共享内存价值的高频结果。
 - H5 是当前前端形态，但产品页面不得绑定 H5 独有能力；未来 WPF/QT 前端只要实现同一 UI 契约即可替换。
 - 工艺参数如功率、速度、气体、焦点、穿孔策略暂不进入 MVP，后续由切割系统侧或工艺模块处理。
 
@@ -72,12 +72,11 @@ src/iCAX-Plugins/cam/Laser3DCAM/
 
 ```text
 src/iCAX-Plugins/render/RenderData/
-src/iCAX-Plugins/render/RenderPDO/
-src/iCAX-Plugins/render/PDORenderService/
+src/iCAX-Plugins/render/RenderInteraction/
 src/iCAX-Plugins/physics/ColliderData/
 src/iCAX-Plugins/physics/ColliderService/
 src/iCAX-Plugins/physics/JoltColliderService/
-src/iCAX-Plugins/input/InputPDO/
+src/iCAX-Engine/framework/EntityViewRuntime/
 ```
 
 ## 4. 总体架构
@@ -124,7 +123,7 @@ Application.exe
 - ProductProxy 连接选中的产品。
 - ProjectProxy 连接当前项目容器。
 - SceneProxy 连接当前主 Scene。
-- 产品页面通过 SceneProxy 发送项目数据命令，通过 scene PDO 读取渲染和高频状态。
+- 产品页面通过 SceneProxy 发送项目数据命令，通过 View 和资源 URL 读取场景状态；相机与拖拽预览留在前端。
 
 ## 5. 产品启动流程
 
@@ -233,7 +232,7 @@ Resources 保存项目可复原资源，随项目文件内嵌。
 - `PathCurveResource`：刀路曲线资源。
 - `PoseFieldResource`：五轴姿态场采样或插值数据。
 - `MotionPlanResource`：关节运动序列、空移段和蛙跳段。
-- 渲染显示数据由 render 插件或 PDO 渲染服务管理，不作为 CAM 产品私有资源类型。
+- 渲染几何和材质由 render 插件生成版本化资源，并由 View 投影其 URL，不作为 CAM 产品私有主数据。
 
 资源规则：
 
@@ -770,16 +769,16 @@ SimulationState
 - 按 MotionPlanResource 播放切割头机械模型。
 - 更新仿真状态。
 - 标记已切割刀路。
-- 输出切割头状态、已切割状态和碰撞状态到 PDO。
+- 把切割头状态和已切割状态写入 Component，由 View 返回；高频碰撞调试数据可使用 Collider PDO。
 
-### 10.12 CamRenderSyncService
+### 10.12 View 与资源适配
 
 职责：
 
-- 将 Database 和 Resources 中的渲染相关状态同步到 RenderPDO。
-- 分配和释放 PDO slot。
-- 将 PDO slot 创建、释放、整理后的映射通过 SDO 事件前端。
-- 不直接维护产品主数据。
+- RenderInteraction 把 BRep、mesh 和 material 编码为版本化资源。
+- Entity 上的 RenderInstance 和 Transform 表达正式显示状态。
+- ViewSet 组合 EntityView Source，并发布包含资源 URL 的快照。
+- 前端只消费 View 和资源，不维护第二套场景主数据。
 
 ## 11. 命令设计
 
@@ -976,31 +975,31 @@ sequenceDiagram
 - 前端不保存项目主数据。
 - 前端 UI 状态可以本地保存，如面板展开、临时筛选、视图相机。
 - 业务修改必须通过 SceneProxy 发命令给后端。
-- 三维显示数据通过 PDO 或 RenderData 读取。
-- 鼠标键盘高频输入通过 InputPDO 同步给后端。
+- 三维显示对象通过 View 投影，几何和材质通过资源池 URL 读取。
+- 鼠标、键盘、相机和拖拽预览由前端本地处理；正式业务修改通过语义化 SDO 提交。
 
-## 14. 渲染和 PDO 方案
+## 14. View 和前端渲染方案
 
 H5 当前使用 Three.js 或等价 WebGL 渲染实现。
 
 后端输出：
 
-- RenderData 定义显示数据结构。
-- RenderPDO 定义 PDO 布局。
-- PDORenderService 负责将 Scene 中的显示数据写入 PDO。
-- CamRenderSyncService 负责将 CAM 业务对象转换为 RenderData。
+- RenderData 定义中立的几何和材质资源格式。
+- Scene 中的 RenderInstance、Transform 等 Component 作为正式显示状态。
+- View 组合多个 EntityView Source，投影实体属性和版本化资源 URL。
+- RenderInteraction 负责把 BRep、mesh 和 material 转换为前端可读取的资源。
 
 前端读取：
 
-- SceneProxy 接收 PDO slot 分配和释放通知。
-- UI SDK 的 PDO client 读取共享数据。
-- H5 页面根据 PDO 内容创建或更新 WebGL 对象。
+- SceneProxy 通过 Scene 邮件通道创建和释放 View。
+- ViewClient 监听 View 资源版本，并从资源池读取最新快照。
+- H5 页面根据 View 快照和资源 URL 创建或更新 WebGL 对象。
 
-slot 规则：
+交互规则：
 
-- 一个可独立变换的显示对象对应一个 PDO slot。
-- 大对象创建、删除、slot 迁移通过 SDO 事件前端。
-- 高频变换、颜色、状态通过 PDO 更新。
+- 相机旋转、平移、缩放和拖拽过程不经过后端。
+- 前端可维护临时变换或特征预览，但不把它当作项目主数据。
+- 拖拽结束后只提交一次语义化 SDO；后端更新 Component/CSG，View 新版本返回正式结果。
 
 ## 15. 碰撞方案
 
@@ -1009,7 +1008,7 @@ slot 规则：
 多场景处理：
 
 - 每个 Scene 拥有自己的 SceneContext。
-- 每个 SceneContext 管理独立 Repository、ResourcePool、PDOHub、服务环境和 Universe；Scene Runtime 管理工作线程、调度、SDOChannel 和该 Context 的生命周期。
+- 每个 SceneContext 管理独立 Repository、ResourcePool、可选 PDOHub、服务环境和 Universe；Scene Runtime 管理工作线程、调度、SDOChannel 和该 Context 的生命周期。
 - CollisionSceneBuilder 基于 SceneContext 构建本 Scene 的碰撞场景。
 - JoltColliderService 内部可维护多个 collision scene，但 scene ID 必须由 SceneContext 绑定。
 
@@ -1027,7 +1026,7 @@ slot 规则：
 - 切割头与静态障碍物。
 - 切割段、空移段、蛙跳段。
 
-碰撞结果进入 SafetyCheckResult，并通过 PDO 显示到前端。
+碰撞结果进入 SafetyCheckResult；持续高频的碰撞调试形状可以保留 Collider PDO，正式结果仍通过 Component 和 View 表达。
 
 ## 16. 持久化方案
 

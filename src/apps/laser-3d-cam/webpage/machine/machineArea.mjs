@@ -173,7 +173,7 @@ function renderMachineElementTransformEditor(item = {}, machine = {}, pending = 
     "data-cam-transform-rotation-pitch",
     "data-cam-transform-rotation-roll",
   ];
-  let hint = policy.reason || "此处编辑本地位姿，即相对父对象的 Transform；输入合法后自动同步到后端并由 PDO 刷新场景。";
+  let hint = policy.reason || "此处编辑本地位姿，即相对父对象的 Transform；输入合法后通过 SDO 提交，并由 View 新版本刷新场景。";
   let jointEditorAttributes = "";
 
   if (item.joint) {

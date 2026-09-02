@@ -89,6 +89,9 @@
     <Project Path="iCAX-Plugins/cad/OpenCascadeResourceImport/OpenCascadeResourceImport.vcxproj" Id="30dbd734-7124-4d09-b022-cc2e586cc4ee" />
   </Folder>
   <Folder Name="/iCAX-Plugins/geometry/" />
+  <Folder Name="/iCAX-Plugins/geometry/ExtrusionRecognition/">
+    <Project Path="iCAX-Plugins/geometry/ExtrusionRecognition/ExtrusionRecognition.vcxproj" Id="e108b465-2d5a-4904-a2fb-25f7f184d384" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/geometry/DAEResourceImport/">
     <Project Path="iCAX-Plugins/geometry/DAEResourceImport/DAEResourceImport.vcxproj" Id="570029a9-3ab1-4ea5-a4e1-bfe2e31a8802" />
   </Folder>
@@ -106,13 +109,6 @@
     <Project Path="iCAX-Plugins/cam/Laser3DCAM/Laser3DCAM.vcxproj" Id="41e6e443-2614-4e0d-914a-bfc4d5802cd4" />
   </Folder>
   <Folder Name="/iCAX-Plugins/cam/Machine/"><Project Path="iCAX-Plugins/cam/Machine/Machine.vcxproj" Id="90c52ed8-ab1d-48d8-bff3-4109f5d3757c" /></Folder>
-  <Folder Name="/iCAX-Plugins/input/" />
-  <Folder Name="/iCAX-Plugins/input/InputPDO/">
-    <Project Path="iCAX-Plugins/input/InputPDO/InputPDO.vcxproj" Id="0e5b6210-7ac4-4af9-8628-709d45cd3f26" />
-  </Folder>
-  <Folder Name="/iCAX-Plugins/input/InputService/">
-    <Project Path="iCAX-Plugins/input/InputService/InputService.vcxproj" Id="6fb149f0-d81e-4ac6-8bf4-08a3393ac191" />
-  </Folder>
   <Folder Name="/iCAX-Plugins/physics/" />
   <Folder Name="/iCAX-Plugins/physics/ColliderData/">
     <Project Path="iCAX-Plugins/physics/ColliderData/ColliderData.vcxproj" Id="a50a9e89-b30b-4ca8-a682-1e48d9dd4263" />
@@ -131,23 +127,11 @@
     </Project>
   </Folder>
   <Folder Name="/iCAX-Plugins/render/" />
-  <Folder Name="/iCAX-Plugins/render/RenderPDO/">
-    <Project Path="iCAX-Plugins/render/RenderPDO/RenderPDO.vcxproj" Id="0a97c65b-f587-4559-a709-a4e8f661b48f" />
-  </Folder>
-  <Folder Name="/iCAX-Plugins/render/PDORenderService/">
-    <Project Path="iCAX-Plugins/render/PDORenderService/PDORenderService.vcxproj" Id="5906f6ac-f859-4f4d-8e07-9055980a8fd4" />
-  </Folder>
   <Folder Name="/iCAX-Plugins/render/RenderData/">
     <Project Path="iCAX-Plugins/render/RenderData/RenderData.vcxproj" Id="3d99f471-ba76-4007-af70-e82022efd424" />
   </Folder>
-  <Folder Name="/iCAX-Plugins/render/RenderService/">
-    <Project Path="iCAX-Plugins/render/RenderService/RenderService.vcxproj" Id="f47e9162-6fe2-4995-92c4-51d8ed9ec474" />
-  </Folder>
   <Folder Name="/iCAX-Plugins/render/RenderInteraction/">
     <Project Path="iCAX-Plugins/render/RenderInteraction/RenderInteraction.vcxproj" Id="c1da507c-9e08-4013-8dae-9829c7f2c722" />
-  </Folder>
-  <Folder Name="/iCAX-Plugins/render/CameraNavigation/">
-    <Project Path="iCAX-Plugins/render/CameraNavigation/CameraNavigation.vcxproj" Id="353d4baa-e949-4618-8be3-3179f5046fc1" />
   </Folder>
   <Folder Name="/iCAX-UI/" />
   <Folder Name="/iCAX-UI/CefUIContainer/">
@@ -214,19 +198,15 @@
     <Project Path="tests/icax-engine/framework/Services/ServicesTest/ServicesTest.vcxproj" Id="caa4f5e3-1f6f-4a41-bc5a-5535a1f8cb07" />
   </Folder>
   <Folder Name="/tests/icax-plugins/" />
+  <Folder Name="/tests/icax-plugins/geometry/" />
+  <Folder Name="/tests/icax-plugins/geometry/ExtrusionRecognition/" />
+  <Folder Name="/tests/icax-plugins/geometry/ExtrusionRecognition/ExtrusionRecognitionTest/">
+    <Project Path="tests/icax-plugins/geometry/ExtrusionRecognition/ExtrusionRecognitionTest/ExtrusionRecognitionTest.vcxproj" Id="65318d87-6cb9-42ad-8035-74d0849d1647" />
+  </Folder>
   <Folder Name="/tests/icax-plugins/cam/" />
   <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/" />
   <Folder Name="/tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/">
     <Project Path="tests/icax-plugins/cam/Laser3DCAM/Laser3DCAMTest/Laser3DCAMTest.vcxproj" Id="98fc70c1-b23d-4c66-9e4d-b6492e2354c1" />
-  </Folder>
-  <Folder Name="/tests/icax-plugins/input/" />
-  <Folder Name="/tests/icax-plugins/input/InputPDO/" />
-  <Folder Name="/tests/icax-plugins/input/InputPDO/InputPDOTest/">
-    <Project Path="tests/icax-plugins/input/InputPDO/InputPDOTest/InputPDOTest.vcxproj" Id="51d6a51d-a767-4606-a9dd-3182abbe4d30" />
-  </Folder>
-  <Folder Name="/tests/icax-plugins/input/InputService/" />
-  <Folder Name="/tests/icax-plugins/input/InputService/InputServiceTest/">
-    <Project Path="tests/icax-plugins/input/InputService/InputServiceTest/InputServiceTest.vcxproj" Id="b23b2465-9001-432b-ac0e-e8fc22bb7c60" />
   </Folder>
   <Folder Name="/tests/icax-plugins/physics/" />
   <Folder Name="/tests/icax-plugins/physics/ColliderService/" />
@@ -240,14 +220,5 @@
     <Project Path="tests/icax-plugins/physics/JoltPhysics/JoltPhysicsTest/JoltPhysicsTest.vcxproj" Id="76e8e3b4-192a-4d63-a2e9-6e65eb6123ea">
       <Build Project="false" />
     </Project>
-  </Folder>
-  <Folder Name="/tests/icax-plugins/render/" />
-  <Folder Name="/tests/icax-plugins/render/RenderPDO/" />
-  <Folder Name="/tests/icax-plugins/render/RenderPDO/RenderPDOTest/">
-    <Project Path="tests/icax-plugins/render/RenderPDO/RenderPDOTest/RenderPDOTest.vcxproj" Id="35bb2a80-1eb0-4519-a035-774382946417" />
-  </Folder>
-  <Folder Name="/tests/icax-plugins/render/RenderService/" />
-  <Folder Name="/tests/icax-plugins/render/RenderService/RenderServiceTest/">
-    <Project Path="tests/icax-plugins/render/RenderService/RenderServiceTest/RenderServiceTest.vcxproj" Id="13020922-436b-483a-9f68-0de95481d5b7" />
   </Folder>
 </Solution>

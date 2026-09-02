@@ -1052,6 +1052,45 @@ select:focus-visible {
   opacity: 0.48;
 }
 
+.icax-toolbar-tooltip {
+  position: fixed;
+  z-index: 12000;
+  max-width: min(260px, calc(100vw - 12px));
+  padding: 6px 9px;
+  border: 1px solid rgba(15, 34, 40, 0.88);
+  border-radius: 4px;
+  color: #f7fbfc;
+  background: rgba(28, 43, 49, 0.96);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.icax-toolbar-tooltip[hidden] { display: none; }
+
+.icax-toolbar-tooltip::after {
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid rgba(15, 34, 40, 0.88);
+  border-bottom: 1px solid rgba(15, 34, 40, 0.88);
+  background: rgba(28, 43, 49, 0.96);
+  content: "";
+}
+
+.icax-toolbar-tooltip[data-placement="bottom"]::after {
+  top: -5px;
+  bottom: auto;
+  border: 0;
+  border-top: 1px solid rgba(15, 34, 40, 0.88);
+  border-left: 1px solid rgba(15, 34, 40, 0.88);
+}
+
 .empty-row,
 .muted {
   color: var(--muted);

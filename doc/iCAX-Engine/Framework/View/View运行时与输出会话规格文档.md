@@ -178,11 +178,11 @@ View RenderScene 从基础 RenderScene 投影：
 - camera；
 - View 局部 Presentation 覆盖。
 
-RenderScene 通过 `OutputSceneID` 绑定到拥有 Database/PDOHub 的 Scene。`PDORenderService::Update` 只处理当前 Scene 的基础 RenderScene 和绑定到它的 View RenderScene。
+View 归属拥有 Database 和 ResourceLibrary 的 Scene。ViewSet 监听各 Source 对应的 EntityView，并把合并后的投影快照发布为版本化资源。
 
-PDOID 包含 `ProjectID + RenderSceneID + 对象身份`，所以同一个 Entity 出现在多个 View 中时拥有互不冲突的 PDO slot。
+同一个 Entity 可以进入多个 View；View 资源 URL 和 ViewID 隔离各自快照，EntityID 在单个 View 内保持稳定。
 
-View/投影层不调用 `AllocateSlot/FreeSlot`。slot 分配、版本写入、事件发送、销毁回收仍由 PDORenderService 统一负责。
+View/投影层不调用 `AllocateSlot/FreeSlot`。创建和释放通过 Scene 邮件通道上的 `View.GetOrCreate/Release`，快照只通过资源池 URL 读取。
 
 ## 6. 与 LayerMask 的边界
 

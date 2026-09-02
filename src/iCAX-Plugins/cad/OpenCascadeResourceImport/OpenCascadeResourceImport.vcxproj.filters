@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClInclude Include="OpenCascadeBRepReader.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeBRepBuilder.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeResourceImportExport.h"><Filter>Header Files</Filter></ClInclude>
     <Filter Include="Header Files"><UniqueIdentifier>{b0f9a00a-4de0-40c2-b400-bb436008168f}</UniqueIdentifier></Filter>
     <Filter Include="Source Files"><UniqueIdentifier>{1ca62587-d1b1-440c-a58f-02602518a912}</UniqueIdentifier></Filter>
   </ItemGroup>
@@ -11,7 +14,7 @@
   <ItemGroup>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OpenCascadeResourceImporter.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="OpenCascadeBRepBuilder.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>
-

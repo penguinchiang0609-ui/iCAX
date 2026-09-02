@@ -12,10 +12,12 @@
     <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CameraBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="RenderInstanceBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="TransformBehaviour.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RenderInteraction.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RenderResourceAdapter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="RenderResourceAdapter.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
 </Project>

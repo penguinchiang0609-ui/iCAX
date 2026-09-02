@@ -1,0 +1,246 @@
+{
+  "schema": "icax.product.manifest",
+  "schemaVersion": 1,
+  "productId": "icax.tube-one",
+  "productName": "TubeOne",
+  "productVersion": "0.1.0",
+  "capabilities": {
+    "platform": {
+      "domain": "tube-manufacturing",
+      "modules": ["workpiece", "feature-recognition", "toolpath", "process", "simulation", "postprocessing", "machine"]
+    },
+    "tube": {
+      "neutralGeometry": "region2d-extrusion-csg",
+      "planarRegionFillRule": "nonzero-winding",
+      "solidNodes": ["extruded-region", "tapered-region", "half-space", "boolean", "transform", "wrapped-volume", "opening-profile-sweep", "composite-volume", "residual-brep", "alternative"],
+      "featureRelations": ["surface-evidence", "material-spans", "dynamic-extent", "host-placement"],
+      "removalExtents": ["through-all-host-material", "through-selected-host-boundaries", "blind-from-host-boundary", "bubble"],
+      "uvFeatures": ["uv-vector-geometry", "uv-image"],
+      "sectionTypeDefinitions": {
+        "schema": "icax.extrusion-section-types",
+        "schemaVersion": 1,
+        "definitions": [
+          {
+            "typeId": "tube.circular.hollow",
+            "displayName": "圆管",
+            "bindings": {
+              "outer": { "op": "fit.circle", "args": ["outer"] },
+              "inner": { "op": "fit.circle", "args": ["inner:0"] }
+            },
+            "match": { "op": "all", "args": [
+              { "op": "equals", "args": [{ "path": "section.cavityCount" }, 1] },
+              { "path": "$outer.valid" },
+              { "path": "$inner.valid" }
+            ] },
+            "parameters": {
+              "outerDiameter": { "path": "$outer.diameter" },
+              "innerDiameter": { "path": "$inner.diameter" },
+              "wallThickness": { "op": "divide", "args": [
+                { "op": "subtract", "args": [{ "path": "$outer.diameter" }, { "path": "$inner.diameter" }] },
+                2
+              ] },
+              "cavityCount": { "path": "section.cavityCount" }
+            },
+            "placement": {
+              "origin": { "path": "$outer.center" },
+              "xDirection": { "op": "section.principalAxis", "args": ["long"] }
+            }
+          },
+          {
+            "typeId": "tube.rectangular.hollow",
+            "displayName": "矩形管",
+            "bindings": {
+              "outer": { "op": "fit.rectangle", "args": ["outer"] },
+              "inner": { "op": "fit.rectangle", "args": ["inner:0"] }
+            },
+            "match": { "op": "all", "args": [
+              { "op": "equals", "args": [{ "path": "section.cavityCount" }, 1] },
+              { "path": "$outer.valid" },
+              { "path": "$inner.valid" }
+            ] },
+            "parameters": {
+              "width": { "path": "$outer.width" },
+              "height": { "path": "$outer.height" },
+              "innerWidth": { "path": "$inner.width" },
+              "innerHeight": { "path": "$inner.height" },
+              "wallThickness": { "op": "min", "args": [
+                { "op": "divide", "args": [{ "op": "subtract", "args": [{ "path": "$outer.width" }, { "path": "$inner.width" }] }, 2] },
+                { "op": "divide", "args": [{ "op": "subtract", "args": [{ "path": "$outer.height" }, { "path": "$inner.height" }] }, 2] }
+              ] },
+              "cavityCount": { "path": "section.cavityCount" }
+            },
+            "placement": {
+              "origin": { "path": "$outer.center" },
+              "xDirection": { "path": "$outer.longAxis" }
+            }
+          },
+          {
+            "typeId": "tube.rectangular.multi-cavity",
+            "displayName": "多腔矩形管",
+            "bindings": {
+              "outer": { "op": "fit.rectangle", "args": ["outer"] }
+            },
+            "match": { "op": "all", "args": [
+              { "op": "greater", "args": [{ "path": "section.cavityCount" }, 1] },
+              { "path": "$outer.valid" }
+            ] },
+            "parameters": {
+              "width": { "path": "$outer.width" },
+              "height": { "path": "$outer.height" },
+              "cavityCount": { "path": "section.cavityCount" }
+            },
+            "placement": {
+              "origin": { "path": "$outer.center" },
+              "xDirection": { "path": "$outer.longAxis" }
+            }
+          },
+          {
+            "typeId": "tube.circular.solid",
+            "displayName": "圆棒",
+            "bindings": {
+              "outer": { "op": "fit.circle", "args": ["outer"] }
+            },
+            "match": { "op": "all", "args": [
+              { "op": "equals", "args": [{ "path": "section.cavityCount" }, 0] },
+              { "path": "$outer.valid" }
+            ] },
+            "parameters": {
+              "diameter": { "path": "$outer.diameter" },
+              "cavityCount": { "path": "section.cavityCount" }
+            },
+            "placement": {
+              "origin": { "path": "$outer.center" },
+              "xDirection": { "op": "section.principalAxis", "args": ["long"] }
+            }
+          },
+          {
+            "typeId": "tube.rectangular.solid",
+            "displayName": "矩形棒",
+            "bindings": {
+              "outer": { "op": "fit.rectangle", "args": ["outer"] }
+            },
+            "match": { "op": "all", "args": [
+              { "op": "equals", "args": [{ "path": "section.cavityCount" }, 0] },
+              { "path": "$outer.valid" }
+            ] },
+            "parameters": {
+              "width": { "path": "$outer.width" },
+              "height": { "path": "$outer.height" },
+              "cavityCount": { "path": "section.cavityCount" }
+            },
+            "placement": {
+              "origin": { "path": "$outer.center" },
+              "xDirection": { "path": "$outer.longAxis" }
+            }
+          },
+          {
+            "typeId": "tube.custom.extrusion",
+            "displayName": "自定义拉伸管型",
+            "match": true,
+            "parameters": {
+              "width": { "path": "section.bounds.width" },
+              "height": { "path": "section.bounds.height" },
+              "cavityCount": { "path": "section.cavityCount" },
+              "sectionArea": { "path": "section.area" }
+            },
+            "placement": {
+              "origin": { "op": "section.centroid", "args": [] },
+              "xDirection": { "op": "section.principalAxis", "args": ["long"] }
+            }
+          }
+        ]
+      }
+    },
+    "machineDefinition": {
+      "supportedFormats": [
+        {
+          "formatId": "machine.sdf",
+          "name": "SDF 机床定义",
+          "extensions": [".sdf", ".xml"]
+        },
+        {
+          "formatId": "machine.urdf",
+          "name": "URDF 机床定义",
+          "extensions": [".urdf"]
+        }
+      ]
+    }
+  },
+  "projectFile": {
+    "magic": "ICAX_TUBE_ONE",
+    "formatVersion": "0.1",
+    "formatRevision": 1,
+    "quickSaveLogMagic": "ICAX_TUBE_ONE_QSAVE",
+    "quickSaveLogVersion": 1,
+    "fileExtensions": [".tubeone"],
+    "magicOffset": 0,
+    "probeBytes": 256
+  },
+  "backend": {
+    "startupComponent": "CSceneBootstrapComponent",
+    "pdo": {
+      "enabled": true,
+      "arenaSize": 134217728,
+      "slotCapacity": 4096
+    },
+    "modules": {
+      "dependencies": [
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
+        "../../${Platform}/${Configuration}/RenderData.dll",
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/ColliderData.dll",
+        "../../${Platform}/${Configuration}/RenderInteraction.dll"
+      ],
+      "components": [
+        "../../${Platform}/${Configuration}/Transform.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+      ],
+      "behaviours": [
+        "../../${Platform}/${Configuration}/RenderInteraction.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+      ],
+      "services": [
+        "../../${Platform}/${Configuration}/ExtrusionRecognition.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+      ],
+      "sdo": [
+        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
+        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+      ]
+    },
+    "resources": {
+      "handlers": [
+        {
+          "kind": "importer",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.step",
+          "extensions": [".step", ".stp"],
+          "module": "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "provider": "occ.opencascade",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.brep",
+          "formatId": "cad.iges",
+          "extensions": [".igs", ".iges"],
+          "module": "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+          "provider": "occ.opencascade",
+          "priority": 100
+        },
+        {
+          "kind": "importer",
+          "resourceType": "geometry.triangle_mesh",
+          "formatId": "geometry.stl",
+          "extensions": [".stl"],
+          "module": "../../${Platform}/${Configuration}/STLResourceImport.dll",
+          "provider": "icax.stl",
+          "priority": 100
+        }
+      ]
+    }
+  },
+  "webpage": {
+    "entry": "apps/tube-one/webpage/entry.mjs"
+  }
+}

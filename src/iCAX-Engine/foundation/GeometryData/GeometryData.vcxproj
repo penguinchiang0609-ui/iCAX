@@ -88,6 +88,7 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="GeometryData.h" />
+    <ClInclude Include="TubeNeutralGeometry.h" />
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
@@ -102,4 +103,3 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>
-

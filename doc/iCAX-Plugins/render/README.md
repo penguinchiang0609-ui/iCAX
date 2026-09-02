@@ -4,7 +4,5 @@
 
 ## 目录结构
 
-- `RenderPDO/`：渲染 PDO 协议插件文档。
 - `RenderData/`：中立渲染数据契约文档。
-- `RenderService/`：渲染服务接口文档。
-- `PDORenderService/`：基于 PDO 的 RenderService 实现文档。
+- `RenderInteraction/`：把后端几何和材质转换为资源池中的前端资源；场景内容由 View 投影。

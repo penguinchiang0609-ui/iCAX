@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RenderInteractionComponents.h"
+#include "RenderResourceAdapter.h"
 
 namespace iCAX
 {

@@ -2104,9 +2104,14 @@ namespace
         _Info.Metadata["elementEntityID"] = iCAX::Data::to_string(pElementEntity_->GetID());
         _Info.Metadata["elementName"] = pElement_->GetName();
         Scene_.Resources().Set<iCAX::Render::SRenderMeshData>(_RenderMeshResourceID, _pAggregateMesh, _Info);
+        const auto _FrontendGeometry =
+            iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+                Scene_.Resources(),
+                _RenderMeshResourceID,
+                iCAX::Render::ERenderGeometryKind::Mesh);
 
         _pRender = _GetOrAddEntityComponent<iCAX::RenderInteraction::CRenderInstanceComponent>(pElementEntity_);
-        _SetStringProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID, _RenderMeshResourceID);
+        _SetStringProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID, _FrontendGeometry.URL);
         _SetStringProperty(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceID, std::string());
         _SetUInt64Property(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryKind, 1ull);
         _SetUInt64Property(_pRender, iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_RenderClass, 1ull);

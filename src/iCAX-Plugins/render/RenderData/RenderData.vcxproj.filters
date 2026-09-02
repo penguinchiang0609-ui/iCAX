@@ -8,12 +8,18 @@
     <ClInclude Include="RenderData.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RenderDataExport.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="RenderDataTypes.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="RenderResource.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="RenderData.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="RenderResource.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Schema\RenderGeometryResource.fbs" />
+    <None Include="Schema\RenderMaterialResource.fbs" />
   </ItemGroup>
 </Project>
