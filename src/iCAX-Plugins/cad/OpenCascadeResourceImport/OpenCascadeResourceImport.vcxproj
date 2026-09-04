@@ -51,6 +51,7 @@
     <ClInclude Include="framework.h" />
     <ClInclude Include="OpenCascadeBRepReader.h" />
     <ClInclude Include="OpenCascadeBRepBuilder.h" />
+    <ClInclude Include="OpenCascadeNeutralModelEvaluator.h" />
     <ClInclude Include="OpenCascadeResourceImportExport.h" />
     <ClInclude Include="OpenCascadeTubeCSGConverter.h" />
     <ClInclude Include="pch.h" />
@@ -59,6 +60,7 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="OpenCascadeResourceImporter.cpp" />
     <ClCompile Include="OpenCascadeBRepBuilder.cpp" />
+    <ClCompile Include="OpenCascadeNeutralModelEvaluator.cpp" />
     <ClCompile Include="OpenCascadeTubeCSGConverter.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -71,6 +73,9 @@
     <None Include="Schema\TubePreviewMesh.fbs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
+      <Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>

@@ -29,9 +29,20 @@ import { SDOClient, SDOFrameKind } from "../../iCAX-UI/SDK/SDO/sdoClient.mjs";
 import { makeSDOMethodCode, makeSDOMethodCodeFromName, makePDOID } from "../../iCAX-UI/SDK/SDO/sdoMethod.mjs";
 import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/SDO/variantSerializer.mjs";
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
+import { resolveStandardViewDirection } from "../../iCAX-UI/SDK/Viewport/threeViewport.mjs";
 import { renderMachineRightPane } from "../../apps/laser-3d-cam/webpage/machine/machineArea.mjs";
 import { activateProjectArea, getProjectArea, setProjectAreaViewContent } from "../../apps/laser-3d-cam/webpage/state/projectViewStore.mjs";
 import { loadPreviewMeshResource } from "../../apps/tube-one/webpage/previewMeshResource.mjs";
+import { projectThumbnailVertices } from "../../apps/tube-designer/webpage/partThumbnail.mjs";
+import {
+  buildAutomaticDimensionReport,
+  calculatePointMeasurement,
+} from "../../apps/tube-designer/webpage/partInspection.mjs";
+import {
+  fitDesignerDefaultView,
+  getDesignerDefaultViewDirection,
+} from "../../apps/tube-designer/webpage/designerActions.mjs";
+import { buildPartCategories, renderDesignerRightPane } from "../../apps/tube-designer/webpage/designerViews.mjs";
 
 function testSDOMethodCodes() {
   assert.equal(makeSDOMethodCode("App", "GetState"), makeSDOMethodCodeFromName(AppSDO.getState));
@@ -55,6 +66,209 @@ function testVariantSerializer() {
   assert.deepEqual(deserializeVariantText(text), source);
 }
 
+function testTubeDesignerBuildsTemplateDefinedPartCategories() {
+  const basePart = {
+    profileType: "rect",
+    sectionWidth: 25,
+    sectionDepth: 25,
+    wallThickness: 1.5,
+    cornerRadius: 2,
+    quantity: 1,
+  };
+  const parts = [
+    {
+      ...basePart,
+      entityId: "part-1",
+      name: "主竖杆 1",
+      partNumber: "产品-主竖杆-01",
+      length: 800,
+      properties: {
+        "manufacturing.categoryKey": "main.vertical",
+        "manufacturing.categoryName": "主竖杆",
+      },
+    },
+    {
+      ...basePart,
+      entityId: "part-2",
+      name: "主竖杆 2",
+      partNumber: "产品-主竖杆-02",
+      length: 420,
+      quantity: 2,
+      properties: {
+        "manufacturing.categoryKey": "main.vertical",
+        "manufacturing.categoryName": "主竖杆",
+      },
+    },
+    {
+      ...basePart,
+      entityId: "part-3",
+      name: "门内竖杆 1",
+      partNumber: "产品-门内竖杆-01",
+      length: 420,
+      properties: {
+        "manufacturing.categoryKey": "door.vertical",
+        "manufacturing.categoryName": "门内竖杆",
+      },
+    },
+  ];
+  const categories = buildPartCategories(parts, "product-1");
+
+  assert.equal(categories.length, 2);
+  assert.equal(categories[0].name, "主竖杆");
+  assert.deepEqual(categories[0].parts.map((part) => part.entityId), ["part-1", "part-2"]);
+  assert.equal(categories[0].quantity, 3);
+  assert.deepEqual(categories[0].lengths, [800, 420]);
+  assert.equal(categories[0].specifications.length, 1);
+  assert.equal(categories[1].name, "门内竖杆");
+
+  const view = {
+    pending: false,
+    tubeDesignerBreakdownOpen: true,
+    tubeDesignerSelectedPartIds: parts.map((part) => part.entityId),
+    scene: {
+      tubeDesigner: {
+        product: {
+          entityId: "product-1",
+          name: "单面防盗窗-20260904",
+          productCode: "TD-001",
+          templateId: "single-face-security-window",
+          parameters: { width: 1200, height: 1800 },
+        },
+        manufacturingGroups: [{
+          productEntityId: "product-1",
+          name: "单面防盗窗-20260904",
+          productCode: "TD-001",
+          templateId: "single-face-security-window",
+          parameters: { width: 1200, height: 1800 },
+          parts,
+        }],
+      },
+    },
+  };
+  const collapsedHtml = renderDesignerRightPane({}, view);
+  assert.doesNotMatch(collapsedHtml, /\browspan=/);
+  assert.equal((collapsedHtml.match(/data-tube-designer-product-row=/g) ?? []).length, 1);
+  assert.equal((collapsedHtml.match(/data-tube-designer-category-row=/g) ?? []).length, 2);
+  assert.equal((collapsedHtml.match(/data-tube-designer-part-row=/g) ?? []).length, 0);
+  assert.match(collapsedHtml, /tube-designer-tree-level-0[\s\S]*?单面防盗窗-20260904/);
+  assert.match(collapsedHtml, /tube-designer-tree-level-1[\s\S]*?主竖杆/);
+  assert.doesNotMatch(collapsedHtml, /[›⌄]|tube-designer-tree-leaf/);
+
+  view.tubeDesignerExpandedBreakdownCategoryIds = [categories[0].id];
+  const expandedHtml = renderDesignerRightPane({}, view);
+  assert.equal((expandedHtml.match(/data-tube-designer-part-row=/g) ?? []).length, 2);
+  assert.equal((expandedHtml.match(/<th\b/g) ?? []).length, 8);
+  assert.equal((expandedHtml.match(/>名称<\/th>/g) ?? []).length, 1);
+  assert.doesNotMatch(expandedHtml, />层级<\/th>/);
+  assert.doesNotMatch(expandedHtml, />零件编号<\/th>/);
+  assert.match(expandedHtml, /产品-主竖杆-01/);
+  assert.match(expandedHtml, /tube-designer-tree-level-2[\s\S]*?主竖杆 1/);
+  assert.match(expandedHtml, /data-cam-action="tube-designer-open-part-inspection"/);
+
+  view.tubeDesignerPartInspectionOpen = true;
+  view.tubeDesignerInspectedPartId = "part-1";
+  const inspectionHtml = renderDesignerRightPane({}, view);
+  assert.match(inspectionHtml, /零件复尺 · 主竖杆 1/);
+  assert.match(inspectionHtml, /data-tube-designer-part-inspection-viewport/);
+  assert.match(inspectionHtml, /data-cam-action="tube-designer-toggle-automatic-dimensions"/);
+  assert.match(inspectionHtml, /data-cam-action="tube-designer-toggle-part-measurement"/);
+  assert.match(inspectionHtml, /data-cam-action="tube-designer-clear-part-measurement"/);
+  view.tubeDesignerPartInspectionOpen = false;
+  view.tubeDesignerInspectedPartId = "";
+
+  view.tubeDesignerBreakdownOpen = false;
+  view.tubeDesignerDisassemblySelectorOpen = true;
+  view.scene.tubeDesigner.instances = [{
+    entityId: "product-1",
+    name: "单面防盗窗-20260904",
+    productCode: "TD-001",
+    templateId: "single-face-security-window",
+    parameters: { width: 1200, height: 1800 },
+    hasDisassembly: true,
+    partCount: 3,
+  }];
+  view.tubeDesignerSelectedInstanceIds = ["product-1"];
+  const selectionHtml = renderDesignerRightPane({}, view);
+  assert.match(selectionHtml, /选择要拆单的产品实例/);
+  assert.doesNotMatch(selectionHtml, /当前状态|等待拆单|将重新拆单/);
+}
+
+function testTubeDesignerPointMeasurement() {
+  assert.deepEqual(calculatePointMeasurement(
+    { x: 10, y: -5, z: 2 },
+    { x: 13, y: -1, z: 14 },
+  ), { dx: 3, dy: 4, dz: 12, distance: 13 });
+}
+
+function testTubeDesignerBuildsDimensionsOnlyFromFinalGeometryMeasurement() {
+  const report = buildAutomaticDimensionReport({
+    length: 9999,
+    sectionWidth: 999,
+    geometryMeasurement: {
+      available: true,
+      source: "final-brep",
+      length: 1000,
+      section: { shape: "rectangle", width: 40, height: 30, wallThickness: 1.5 },
+      linearReference: {
+        start: [0, 0, 0],
+        end: [1000, 0, 0],
+        sectionAxes: [[0, 1, 0], [0, 0, 1]],
+        dimensionOffsetDirection: [0, 0, 1],
+      },
+      features: [
+        {
+          kind: "through-opening",
+          center: [100, 0, 0],
+          station: 100,
+          shape: "circle",
+          diameter: 20,
+          openingSpanAlong: 20,
+          openingSpanAcross: 20,
+          faceTangent: [0, 1, 0],
+          centerToFaceEdgeNegative: 15,
+          centerToFaceEdgePositive: 15,
+          faceEdgeClearanceNegative: 5,
+          faceEdgeClearancePositive: 5,
+        },
+        {
+          kind: "through-opening",
+          center: [300, 0, 0],
+          station: 300,
+          shape: "circle",
+          diameter: 20,
+          openingSpanAlong: 20,
+          openingSpanAcross: 20,
+          faceTangent: [0, 1, 0],
+          centerToFaceEdgeNegative: 15,
+          centerToFaceEdgePositive: 15,
+          faceEdgeClearanceNegative: 5,
+          faceEdgeClearancePositive: 5,
+        },
+      ],
+    },
+  });
+  assert.equal(report.source, "final-brep");
+  assert.equal(report.length, 1000);
+  assert.match(report.profile, /40 × 30/);
+  assert.equal(report.holes.length, 2);
+  assert.equal(report.holes[0].startEdgeDistance, 90);
+  assert.equal(report.holes[1].endEdgeDistance, 690);
+  assert.deepEqual(report.pitches, [{ from: 1, to: 2, centerDistance: 200, edgeClearance: 180 }]);
+  assert.ok(report.annotations.length >= 7);
+
+  const ignoredTemplateData = buildAutomaticDimensionReport({
+    properties: {
+      "manufacturing.geometryMeasurement": {
+        available: true,
+        source: "template",
+        length: 7777,
+      },
+    },
+  });
+  assert.equal(ignoredTemplateData.hasLinearReference, false);
+  assert.equal(ignoredTemplateData.holes.length, 0);
+}
+
 function testViewportOwnsTransientInteraction() {
   const viewportSource = readFileSync(
     new URL("../../iCAX-UI/SDK/Viewport/threeViewport.mjs", import.meta.url),
@@ -64,6 +278,89 @@ function testViewportOwnsTransientInteraction() {
   assert.match(viewportSource, /#applyLocalNavigation/);
   assert.match(viewportSource, /getCameraState\(\)/);
   assert.match(viewportSource, /setCameraState\(value = \{\}\)/);
+  assert.match(viewportSource, /setPickingEnabled\(enabled\)/);
+  assert.match(viewportSource, /setContinuousRendering\(enabled\)/);
+  assert.match(viewportSource, /setDimensionAnnotations\(annotations = \[\]\)/);
+}
+
+function testStandardViewDirections() {
+  assert.deepEqual(resolveStandardViewDirection("front"), [0, -1, 0]);
+  assert.deepEqual(resolveStandardViewDirection("top-front-right"), [1, -1, 1]);
+  assert.deepEqual(resolveStandardViewDirection("bottom-front-left"), [-1, -1, -1]);
+  assert.deepEqual(resolveStandardViewDirection("left-bottom"), [-1, 0, -1]);
+  assert.deepEqual(resolveStandardViewDirection("iso"), [1, -1, 0.78]);
+  assert.equal(resolveStandardViewDirection("front-back"), null);
+  assert.equal(resolveStandardViewDirection("unknown"), null);
+}
+
+function testTubeDesignerAppliesDefaultViewAfterNewRevisionIsFitted() {
+  const events = [];
+  const view = {
+    viewport: {
+      fitViewForRevision(revision) {
+        events.push(["fit", revision]);
+        return { fitted: true, revision, renderSequence: 41 };
+      },
+      setViewDirection(direction) {
+        events.push(["view-direction", direction]);
+        return true;
+      },
+      getAppliedViewState() {
+        events.push(["receipt"]);
+        return { revision: "revision-42", renderSequence: 42 };
+      },
+    },
+  };
+
+  const product = {
+    templateId: "two-face-security-window",
+    parameters: { sidePosition: "right" },
+  };
+  assert.deepEqual(fitDesignerDefaultView(view, "revision-42", product), {
+    revision: "revision-42",
+    defaultViewDirection: [0.18, -1, 0.08],
+    fitRenderSequence: 41,
+    defaultViewRenderSequence: 42,
+  });
+  assert.deepEqual(events, [
+    ["fit", "revision-42"],
+    ["view-direction", [0.18, -1, 0.08]],
+    ["receipt"],
+  ]);
+  assert.deepEqual(getDesignerDefaultViewDirection({
+    templateId: "two-face-security-window",
+    parameters: { sidePosition: "left" },
+  }), [-0.18, -1, 0.08]);
+  assert.deepEqual(getDesignerDefaultViewDirection(product), [0.18, -1, 0.08]);
+}
+
+function testPartThumbnailNormalizesTheLongestAxisHorizontally() {
+  const makeTubeVertices = (start, end, radius = 2) => {
+    const values = [];
+    for (const point of [start, end]) {
+      for (const offset of [[-radius, -radius], [radius, -radius], [radius, radius], [-radius, radius]]) {
+        values.push(point[0] + offset[0], point[1] + offset[1], point[2]);
+      }
+    }
+    return values;
+  };
+  const projectedSpan = (vertices) => {
+    const points = projectThumbnailVertices(vertices);
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    return {
+      width: Math.max(...xs) - Math.min(...xs),
+      height: Math.max(...ys) - Math.min(...ys),
+    };
+  };
+  for (const vertices of [
+    makeTubeVertices([-50, 0, 0], [50, 0, 0]),
+    makeTubeVertices([0, -50, 0], [0, 50, 0]),
+    makeTubeVertices([0, 0, -50], [0, 0, 50]),
+  ]) {
+    const span = projectedSpan(vertices);
+    assert.ok(span.width > span.height * 5, `thumbnail was not horizontal: ${JSON.stringify(span)}`);
+  }
 }
 
 function testViewResourceParsing() {
@@ -281,9 +578,11 @@ function makeRenderMaterialResourceFixture() {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
-function testBridgeValidation() {
+async function testBridgeValidation() {
   assert.throws(() => validateBridge({}), /getApplicationChannelId/);
   assert.ok(validateBridge(new MockHostBridge()) instanceof MockHostBridge);
+  const bridge = new MockHostBridge({ directoryDialogPath: "D:/exports" });
+  assert.equal(await bridge.openDirectoryDialog({ title: "Choose export folder" }), "D:/exports");
 }
 
 function testChannelIdValidation() {
@@ -695,7 +994,13 @@ function delay(milliseconds) {
 }
 
 testSDOMethodCodes();
+testTubeDesignerBuildsTemplateDefinedPartCategories();
+testTubeDesignerPointMeasurement();
+testTubeDesignerBuildsDimensionsOnlyFromFinalGeometryMeasurement();
 testViewportOwnsTransientInteraction();
+testStandardViewDirections();
+testTubeDesignerAppliesDefaultViewAfterNewRevisionIsFitted();
+testPartThumbnailNormalizesTheLongestAxisHorizontally();
 testVariantSerializer();
 testViewResourceParsing();
 testRenderResourceParsing();
@@ -703,7 +1008,7 @@ testProjectAreaMembershipIsolation();
 await testViewReadersUseSceneChannelAndResourceSnapshots();
 await testRenderResourceLoaderUsesViewReferenceVersion();
 await testTubePreviewLoadsStandardRenderGeometry();
-testBridgeValidation();
+await testBridgeValidation();
 testChannelIdValidation();
 await testSDOPromiseFlow();
 await testSceneChannelRegistrationFromProjectState();

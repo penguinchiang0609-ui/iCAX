@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="StandardJsonCodec.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <Filter Include="Header Files"><UniqueIdentifier>{D759174A-6B18-456B-A07A-86492FF98C51}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files"><UniqueIdentifier>{922B9784-6E20-4A30-B8C3-D37C693F9E6B}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="StandardJsonCodec.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClInclude Include="PythonTemplateHost.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TemplateCodec.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TemplateContracts.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="TemplateRuntimeExport.h"><Filter>Header Files</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="PythonTemplateHost.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TemplateCodec.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TemplateContracts.cpp"><Filter>Source Files</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="python\icax_template_worker.py" />
+    <None Include="python\icax_template_sdk\__init__.py" />
+    <None Include="python\icax_template_sdk\model.py" />
+  </ItemGroup>
+</Project>

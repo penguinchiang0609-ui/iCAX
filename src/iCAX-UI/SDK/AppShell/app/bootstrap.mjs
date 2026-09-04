@@ -10,6 +10,8 @@ const root = document.getElementById("app");
 const TOOLBAR_TOOLTIP_SELECTOR = [
   "[data-toolbar-tooltip]",
   ".ribbon-command",
+  ".ribbon-command-menu-toggle",
+  ".ribbon-command-menu-item",
   ".quick-button",
   ".tubest-part-toolbar button",
   ".tube-cad-tool-ribbon button",
@@ -43,6 +45,7 @@ const state = {
   startCenterOpen: true,
   projectWindowStart: 0,
   activeRibbonTabId: "",
+  openRibbonMenuCommandId: "",
   projectSearchText: "",
   projectSortMode: "modified-desc",
   newProjectDialogOpen: false,
@@ -331,10 +334,20 @@ const actions = {
   },
 
   async windowCommand(command) {
+    if (command === "close") {
+      const guard = getActiveWindowCloseGuard();
+      if (guard?.blocked) {
+        state.error = guard.message || "当前任务完成前不能退出软件。";
+        pushLog("warning", state.error);
+        render();
+        return { closed: false, blocked: true };
+      }
+    }
     const bridge = state.bridge ?? state.appProxy?.bridge ?? null;
     if (typeof bridge?.windowCommand === "function") {
       await bridge.windowCommand(command);
     }
+    return { closed: command === "close", blocked: false };
   },
 };
 
@@ -368,11 +381,21 @@ root.addEventListener("focusout", (event) => {
 
 window.addEventListener("resize", hideToolbarTooltip);
 window.addEventListener("scroll", hideToolbarTooltip, true);
+window.addEventListener("beforeunload", (event) => {
+  const guard = getActiveWindowCloseGuard();
+  if (!guard?.blocked) return;
+  event.preventDefault();
+  event.returnValue = guard.message || "当前任务完成前不能退出软件。";
+});
 
 root.addEventListener("click", (event) => {
   hideToolbarTooltip();
   const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
-  if (!target || target.hasAttribute("disabled")) {
+  if (!target) {
+    closeRibbonCommandMenu();
+    return;
+  }
+  if (target.hasAttribute("disabled")) {
     return;
   }
 
@@ -427,12 +450,21 @@ root.addEventListener("click", (event) => {
     if (isActiveProjectBusy()) {
       return;
     }
+    closeRibbonCommandMenu();
     state.activeRibbonTabId = target.dataset.tabId ?? "";
+    render();
+  } else if (action === "ribbon-command-menu-toggle") {
+    if (isActiveProjectBusy()) {
+      return;
+    }
+    const commandId = String(target.dataset.commandId ?? "");
+    state.openRibbonMenuCommandId = state.openRibbonMenuCommandId === commandId ? "" : commandId;
     render();
   } else if (action === "ribbon-command") {
     if (isActiveProjectBusy()) {
       return;
     }
+    closeRibbonCommandMenu();
     runAction(() => actions.executeRibbonCommand(target.dataset.commandId));
   } else if (action === "window-minimize") {
     runAction(() => actions.windowCommand("minimize"));
@@ -444,6 +476,11 @@ root.addEventListener("click", (event) => {
 });
 
 root.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.openRibbonMenuCommandId) {
+    event.preventDefault();
+    closeRibbonCommandMenu();
+    return;
+  }
   if (event.key !== "Enter" && event.key !== " ") {
     return;
   }
@@ -821,17 +858,7 @@ function renderProductRibbon() {
         ${(activeTab?.groups ?? []).map((group) => `
           <section class="ribbon-group" data-ribbon-scope="${escapeAttr(group.scope ?? "all")}">
             <div class="ribbon-command-list">
-              ${group.commands.map((command) => `
-                <button class="ribbon-command ${command.size === "large" ? "large" : ""}"
-                        type="button"
-                        data-action="ribbon-command"
-                        data-command-id="${escapeAttr(command.id)}"
-                        data-icon-tone="${escapeAttr(command.iconTone ?? "teal")}"
-                        ${command.disabled ? "disabled" : ""}>
-                  ${renderRibbonCommandIcon(command.iconName, command.icon)}
-                  <span>${escapeText(command.title)}</span>
-                </button>
-              `).join("")}
+              ${group.commands.map(renderRibbonCommand).join("")}
             </div>
             <div class="ribbon-group-title">${escapeText(group.title)}</div>
           </section>
@@ -839,6 +866,57 @@ function renderProductRibbon() {
       </div>
     </nav>
   `;
+}
+
+function renderRibbonCommand(command) {
+  const button = `
+    <button class="ribbon-command ${command.size === "large" ? "large" : ""} ${command.menuItems.length ? "split-main" : ""}"
+            type="button"
+            data-action="ribbon-command"
+            data-command-id="${escapeAttr(command.id)}"
+            data-icon-tone="${escapeAttr(command.iconTone ?? "teal")}"
+            ${command.disabled ? "disabled" : ""}>
+      ${renderRibbonCommandIcon(command.iconName, command.icon)}
+      <span>${escapeText(command.title)}</span>
+    </button>`;
+  if (!command.menuItems.length) return button;
+
+  const open = state.openRibbonMenuCommandId === command.id;
+  return `
+    <div class="ribbon-split-command ${command.size === "large" ? "large" : ""}" data-ribbon-split-command="${escapeAttr(command.id)}">
+      ${button}
+      <button class="ribbon-command-menu-toggle"
+              type="button"
+              data-action="ribbon-command-menu-toggle"
+              data-command-id="${escapeAttr(command.id)}"
+              aria-label="展开${escapeAttr(command.title)}菜单"
+              aria-haspopup="menu"
+              aria-expanded="${open ? "true" : "false"}"
+              ${command.disabled ? "disabled" : ""}>
+        <span aria-hidden="true">⌄</span>
+      </button>
+      ${open ? `<div class="ribbon-command-menu" role="menu" aria-label="${escapeAttr(command.title)}菜单">
+        ${command.menuItems.map((item) => `
+          <button class="ribbon-command-menu-item"
+                  type="button"
+                  role="menuitem"
+                  data-action="ribbon-command"
+                  data-command-id="${escapeAttr(item.id)}"
+                  ${item.disabled ? "disabled" : ""}>
+            ${renderRibbonCommandIcon(item.iconName, item.icon)}
+            <span>${escapeText(item.title)}</span>
+          </button>
+        `).join("")}
+      </div>` : ""}
+    </div>`;
+}
+
+function closeRibbonCommandMenu() {
+  if (!state.openRibbonMenuCommandId) return;
+  state.openRibbonMenuCommandId = "";
+  root.querySelectorAll(".ribbon-command-menu").forEach((menu) => menu.remove());
+  root.querySelectorAll(".ribbon-command-menu-toggle[aria-expanded='true']")
+    .forEach((toggle) => toggle.setAttribute("aria-expanded", "false"));
 }
 
 function renderRibbonCommandIcon(iconName, fallback = "□") {
@@ -853,6 +931,9 @@ function renderRibbonCommandIcon(iconName, fallback = "□") {
 
 const RIBBON_ICON_SHAPES = Object.freeze({
   new: `<path d="M5 3.5h9l5 5V21H5z"/><path d="M14 3.5V9h5"/><path class="accent" d="M8 14h8M12 10v8"/>`,
+  "add-instance": `<rect x="3" y="4" width="13" height="16" rx="1"/><path d="M6 8h7M6 12h5"/><circle class="accent" cx="17.5" cy="16.5" r="4.5"/><path class="accent" d="M17.5 14v5M15 16.5h5"/>`,
+  excel: `<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3v18M9 8h12M9 13h12M15 8v13"/><path class="accent" d="m4.8 8.5 3 7m0-7-3 7"/>`,
+  machine: `<path d="M4 20V5h16v15M3 20h18M7 17V8h10v9zM12 5v3"/><path class="accent" d="M12 10v3m-3 3 3-3 3 3"/>`,
   nest: `<path d="M3 5h8v6H3zM13 13h8v6h-8z"/><path class="accent" d="M13 5h8v6h-8zM3 13h8v6H3z"/>`,
   export: `<path d="M5 3.5h9l5 5V21H5z"/><path d="M14 3.5V9h5"/><path class="accent" d="M12 17V8m-3 3 3-3 3 3"/>`,
   report: `<path d="M6 4h12v17H6z"/><path class="accent" d="M9 8h6M9 12h6M9 16h4"/><path d="M9 2.5h6V6H9z"/>`,
@@ -1226,6 +1307,17 @@ function getActiveProductModule() {
     : null;
 }
 
+function getActiveWindowCloseGuard() {
+  const module = getActiveProductModule();
+  if (typeof module?.getWindowCloseGuard !== "function") return null;
+  try {
+    return module.getWindowCloseGuard(buildProductContext(null)) ?? null;
+  } catch (error) {
+    pushLog("error", `检查窗口关闭状态失败：${error?.message ?? String(error)}`);
+    return null;
+  }
+}
+
 function getActiveRibbonDefinition() {
   const module = getActiveProductModule();
   if (typeof module?.getRibbonDefinition === "function") {
@@ -1251,6 +1343,13 @@ function normalizeRibbonDefinition(ribbon) {
           iconTone: command.iconTone,
           size: command.size,
           disabled: Boolean(command.disabled),
+          menuItems: (Array.isArray(command.menuItems) ? command.menuItems : []).map((item) => ({
+            id: String(item.id ?? ""),
+            title: String(item.title ?? item.id ?? ""),
+            icon: item.icon,
+            iconName: item.iconName,
+            disabled: Boolean(item.disabled),
+          })).filter((item) => item.id),
         })),
       })),
     })).filter((tab) => tab.id),

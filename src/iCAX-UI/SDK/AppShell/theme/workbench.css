@@ -225,6 +225,8 @@ button:disabled {
 }
 
 .product-ribbon {
+  position: relative;
+  z-index: 20;
   min-width: 0;
   border-bottom: 1px solid #b8c2c8;
   background: #eef1f3;
@@ -266,7 +268,7 @@ button:disabled {
   align-items: stretch;
   gap: 0;
   padding: 6px 8px 5px;
-  overflow: hidden;
+  overflow: visible;
   background: #ffffff;
 }
 
@@ -283,6 +285,7 @@ button:disabled {
   display: flex;
   align-items: stretch;
   gap: 4px;
+  overflow: visible;
 }
 
 .ribbon-command {
@@ -315,6 +318,69 @@ button:disabled {
   color: #9aa4aa;
 }
 
+.ribbon-split-command {
+  position: relative;
+  min-width: 54px;
+  max-width: 76px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 13px;
+}
+
+.ribbon-split-command.large { min-width: 72px; }
+.ribbon-split-command .ribbon-command { width: 100%; min-height: 0; }
+.ribbon-split-command .ribbon-command.split-main { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+
+.ribbon-command-menu-toggle {
+  display: grid;
+  place-items: center;
+  min-height: 13px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-top-color: #d6dee1;
+  background: transparent;
+  color: #55656c;
+  font-size: 12px;
+  line-height: 10px;
+}
+
+.ribbon-command-menu-toggle:hover,
+.ribbon-command-menu-toggle[aria-expanded="true"] {
+  border-color: #b7c3c9;
+  background: #eaf1ef;
+}
+
+.ribbon-command-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 154px;
+  padding: 4px;
+  border: 1px solid #aebbc1;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 9px 24px rgba(23, 39, 47, .24);
+}
+
+.ribbon-command-menu-item {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: #263239;
+  text-align: left;
+}
+
+.ribbon-command-menu-item:hover { border-color: #c1cdcf; background: #eaf1ef; }
+.ribbon-command-menu-item:disabled { color: #929da2; background: transparent; }
+.ribbon-command-menu-item .command-icon { width: 20px; height: 20px; }
+
 .command-icon {
   width: 20px;
   height: 20px;
@@ -328,6 +394,40 @@ button:disabled {
   font-weight: 800;
   line-height: 1;
 }
+
+.command-icon.vector {
+  border: 0;
+  background: transparent;
+  color: #40575d;
+}
+
+.command-icon.vector svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+  overflow: visible;
+}
+
+.command-icon.vector :is(path, rect, circle, ellipse) {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.command-icon.vector .accent {
+  stroke: var(--ribbon-icon-accent, #35ae71);
+}
+
+.command-icon.vector .fill {
+  fill: var(--ribbon-icon-accent, #35ae71);
+}
+
+.ribbon-command[data-icon-tone="green"] { --ribbon-icon-accent: #34ad70; }
+.ribbon-command[data-icon-tone="blue"] { --ribbon-icon-accent: #269eda; }
+.ribbon-command[data-icon-tone="magenta"] { --ribbon-icon-accent: #d84f9e; }
+.ribbon-command[data-icon-tone="orange"] { --ribbon-icon-accent: #d57c4b; }
 
 .ribbon-group-title {
   align-self: end;
@@ -1039,6 +1139,8 @@ button:disabled {
 .app-button:focus-visible,
 .ribbon-tab:focus-visible,
 .ribbon-command:focus-visible,
+.ribbon-command-menu-toggle:focus-visible,
+.ribbon-command-menu-item:focus-visible,
 input:focus-visible,
 select:focus-visible {
   outline: 2px solid var(--focus);

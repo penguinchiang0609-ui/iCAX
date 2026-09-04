@@ -36,7 +36,8 @@ const WORKBENCH_LAYOUT_LIMITS = Object.freeze({
   minViewerHeight: 260,
   bottomSplitterHeight: 5,
 });
-const RENDER_ENTITY_VIEW_PROJECTION = Object.freeze([
+const NOTICE_VISIBLE_DURATION_MS = 2400;
+export const RENDER_ENTITY_VIEW_PROJECTION = Object.freeze([
   { alias: "geometry", component: "CRenderInstanceComponent", property: "GeometryResourceID", resourceReference: true, resourceVersionProperty: "GeometryResourceVersion" },
   { alias: "material", component: "CRenderInstanceComponent", property: "MaterialResourceID", resourceReference: true, resourceVersionProperty: "MaterialResourceVersion" },
   { alias: "geometryKind", component: "CRenderInstanceComponent", property: "GeometryKind" },
@@ -254,6 +255,8 @@ function renderProject(context, view) {
     </div>
   `;
 
+  synchronizeNoticeDismiss(mount, view);
+
   attachWorkbenchResizeHandlers(mount, view);
 
   const pathInput = mount.querySelector("[data-cam-model-path]");
@@ -343,6 +346,25 @@ function renderProject(context, view) {
       const label = pickTarget.dataset.camLabel ?? "";
       invokeSDOMethod(context, view, "Selection.PickTopology", { kind, id, label });
     }
+  };
+
+  mount.onchange = (event) => {
+    const actionTarget = event.target instanceof Element
+      ? event.target.closest("[data-cam-change-action]")
+      : null;
+    if (!actionTarget || actionTarget.hasAttribute("disabled")) return;
+    const action = String(actionTarget.dataset.camChangeAction ?? "");
+    const operation = runAction(context, view, action, actionTarget);
+    view.activeAreaAction = { action, promise: operation };
+    void operation
+      .catch((error) => {
+        view.error = error?.message ?? String(error);
+        appendProjectLog(context, "error", `${action} 失败：${view.error}`);
+        renderProject(context, view);
+      })
+      .finally(() => {
+        if (view.activeAreaAction?.promise === operation) view.activeAreaAction = null;
+      });
   };
 
   const jobMachineSelect = mount.querySelector("[data-cam-job-machine-select]");
@@ -705,8 +727,8 @@ function mountRenderViewport(context, view) {
     setStandardCameraView: (commandContext, commandView, viewName) =>
       setViewportStandardView(commandContext, commandView, viewName),
     fitView: (commandContext, commandView) => fitViewport(commandContext, commandView),
-    executeAreaAction: (commandContext, commandView, action) =>
-      runAction(commandContext, commandView, action),
+    executeAreaAction: (commandContext, commandView, action, actionTarget = null) =>
+      runAction(commandContext, commandView, action, actionTarget),
   });
   view.viewport.refreshAll();
 }
@@ -755,9 +777,7 @@ async function runAction(context, view, action, actionTarget = null) {
 
 function handleViewportPick(context, view, userData, hit) {
   if (!userData || !hit) {
-    view.error = "未命中可选择对象";
     selectSceneObjectLocally(view, "");
-    renderProject(context, view);
     return;
   }
 
@@ -786,9 +806,7 @@ function handleViewportPick(context, view, userData, hit) {
     }
   }
 
-  view.error = "当前渲染数据缺少 edge/loop 拾取映射，已命中工件但无法定位拓扑对象";
-  selectSceneObjectLocally(view, "");
-  renderProject(context, view);
+  selectSceneObjectLocally(view, objectId);
 }
 
 function findFaceByTriangleIndex(scene, faceIndex) {
@@ -853,19 +871,30 @@ async function refreshSceneState(context, view) {
 
 async function ensureAreaViewContent(context, view, areaId, options = {}) {
   const { force = false, render = true } = options;
-  const definition = AREA_VIEW_DEFINITIONS[areaId];
+  const defaultDefinition = AREA_VIEW_DEFINITIONS[areaId];
+  const definition = typeof context.resolveAreaViewDefinition === "function"
+    ? (context.resolveAreaViewDefinition(context, view, areaId, defaultDefinition) ?? defaultDefinition)
+    : defaultDefinition;
   const sceneProxy = resolveSceneProxy(context, view);
   if (!sceneProxy || !definition) {
     return null;
   }
 
   const area = getProjectArea(view, areaId);
+  const definitionKey = JSON.stringify(definition);
   if (area.viewContentRequest) {
-    if (!force) {
+    if (!force && area.viewDefinitionKey === definitionKey) {
       return area.viewContentRequest;
     }
     await area.viewContentRequest;
     return ensureAreaViewContent(context, view, areaId, options);
+  }
+  if (area.viewReader && area.viewDefinitionKey !== definitionKey) {
+    await area.viewReader.stop();
+    area.viewReader = null;
+    area.viewContent = null;
+    area.appliedViewRevision = "0";
+    area.viewApplyByRevision?.clear?.();
   }
   if (area.viewReader) {
     const snapshot = force
@@ -877,6 +906,7 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
     return area.viewContent;
   }
 
+  area.viewDefinitionKey = definitionKey;
   const request = sceneProxy.views
     .start(definition, {
       pollIntervalMs: 100,
@@ -918,15 +948,17 @@ async function ensureAreaViewContent(context, view, areaId, options = {}) {
 function enqueueAreaViewSnapshot(context, view, areaId, snapshot, render) {
   const area = getProjectArea(view, areaId);
   const revision = String(snapshot?.revision ?? "0");
+  const snapshotKey = `${String(snapshot?.viewId ?? "")}:${revision}`;
   if (revision === "0") {
     return Promise.reject(new Error("View snapshot has no repository revision"));
   }
-  const existing = area.viewApplyByRevision?.get(revision);
+  const existing = area.viewApplyByRevision?.get(snapshotKey);
   if (existing) {
     return existing;
   }
   const viewportRevision = String(view.viewport?.getAppliedViewState?.().revision ?? "0");
   if (area.appliedViewRevision === revision
+      && area.viewContent?.snapshot?.viewId === snapshot?.viewId
       && (view.activeAreaId !== areaId || viewportRevision === revision)) {
     return Promise.resolve(area.viewContent);
   }
@@ -936,10 +968,10 @@ function enqueueAreaViewSnapshot(context, view, areaId, snapshot, render) {
   const operation = previous.then(() =>
     applyAreaViewSnapshot(context, view, areaId, snapshot, render));
   area.viewApplyQueue = operation;
-  area.viewApplyByRevision.set(revision, operation);
+  area.viewApplyByRevision.set(snapshotKey, operation);
   operation.then(
-    () => area.viewApplyByRevision.delete(revision),
-    () => area.viewApplyByRevision.delete(revision),
+    () => area.viewApplyByRevision.delete(snapshotKey),
+    () => area.viewApplyByRevision.delete(snapshotKey),
   );
   return operation;
 }
@@ -1578,6 +1610,46 @@ function createSDOCallProgress(sdoMethod) {
 
 function showNotice(context, view, message) {
   view.notice = message;
+  view.noticeRevision = Number(view.noticeRevision ?? 0) + 1;
   view.error = "";
   renderProject(context, view);
+}
+
+function synchronizeNoticeDismiss(mount, view) {
+  const notice = String(view.notice ?? "");
+  if (!notice) {
+    if (view.noticeDismissTimer) {
+      window.clearTimeout(view.noticeDismissTimer);
+    }
+    view.noticeDismissTimer = null;
+    view.noticeDismissValue = "";
+    view.noticeDismissRevision = Number(view.noticeRevision ?? 0);
+    return;
+  }
+
+  const revision = Number(view.noticeRevision ?? 0);
+  if (view.noticeDismissTimer
+      && view.noticeDismissValue === notice
+      && view.noticeDismissRevision === revision) {
+    return;
+  }
+  if (view.noticeDismissTimer) {
+    window.clearTimeout(view.noticeDismissTimer);
+  }
+
+  view.noticeDismissValue = notice;
+  view.noticeDismissRevision = revision;
+  view.noticeDismissTimer = window.setTimeout(() => {
+    view.noticeDismissTimer = null;
+    if (String(view.notice ?? "") !== notice
+        || Number(view.noticeRevision ?? 0) !== revision) {
+      return;
+    }
+    view.notice = "";
+    view.noticeDismissValue = "";
+    const renderedNotice = mount.querySelector(".cam-status.notice");
+    if (renderedNotice?.textContent?.trim() === notice.trim()) {
+      renderedNotice.remove();
+    }
+  }, NOTICE_VISIBLE_DURATION_MS);
 }

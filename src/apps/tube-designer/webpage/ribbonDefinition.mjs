@@ -7,28 +7,9 @@ export const ribbonDefinition = {
         {
           title: "产品",
           commands: [
-            command("designer.generate", "生成产品", "apply", { size: "large", iconTone: "green" }),
-            command("designer.reset", "恢复默认", "repair", { iconTone: "blue" }),
-          ],
-        },
-        {
-          title: "数据",
-          commands: [
-            command("designer.import-excel", "导入 Excel", "open", { disabled: true }),
-            command("designer.export-step", "导出 STEP", "export", { size: "large", iconTone: "orange" }),
-          ],
-        },
-        {
-          title: "视图",
-          commands: [
-            command("view.fit", "适合窗口", "fit", { iconTone: "blue" }),
-            command("view.reset-layout", "重置布局", "display"),
-          ],
-        },
-        {
-          title: "下游",
-          commands: [
-            command("designer.send-to-tube-one", "进入 TubeOne", "process", { disabled: true, iconTone: "magenta" }),
+            command("designer.add", "添加", "add-instance", { size: "large", iconTone: "green" }),
+            command("designer.batch-add", "批量添加", "excel", { size: "large", iconTone: "green" }),
+            command("designer.export-machining", "导出加工", "machine", { size: "large", iconTone: "orange" }),
           ],
         },
       ],

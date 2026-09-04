@@ -710,6 +710,7 @@ button.cam-list-row {
   position: absolute;
   right: 16px;
   bottom: 16px;
+  z-index: 30;
   max-width: 420px;
   padding: 7px 10px;
   border: 1px solid #2f735f;
@@ -717,12 +718,33 @@ button.cam-list-row {
   color: #1f5a49;
   font-size: 12px;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
 }
 
 .cam-status.notice {
+  top: 16px;
+  right: auto;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 9px 18px;
+  border-radius: 999px;
   border-color: #d8a43a;
   background: #fff8e8;
   color: #785d16;
+  text-align: center;
+  animation: cam-status-notice-in 140ms ease-out;
+}
+
+@keyframes cam-status-notice-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
 .cam-status.error {

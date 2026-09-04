@@ -13,6 +13,30 @@
       "templateProtocolVersion": 1,
       "templates": [
         {
+          "templateId": "single-face-security-window",
+          "version": "2.5.0",
+          "displayName": "单面防盗窗",
+          "status": "available"
+        },
+        {
+          "templateId": "two-face-security-window",
+          "version": "1.6.0",
+          "displayName": "两面防盗窗",
+          "status": "available"
+        },
+        {
+          "templateId": "three-face-security-window",
+          "version": "1.5.0",
+          "displayName": "三面防盗窗",
+          "status": "available"
+        },
+        {
+          "templateId": "five-face-security-window",
+          "version": "2.5.0",
+          "displayName": "五面防盗窗",
+          "status": "available"
+        },
+        {
           "templateId": "security-window-1",
           "version": "1.0.0",
           "displayName": "防盗窗 1 号 - 无把手不封闭",
@@ -22,13 +46,13 @@
           "templateId": "security-window-2",
           "version": "1.0.0",
           "displayName": "防盗窗 2 号 - 带把手区域",
-          "status": "planned"
+          "status": "available"
         },
         {
           "templateId": "security-window-3",
           "version": "1.0.0",
           "displayName": "防盗窗 3 号 - 闭合边框",
-          "status": "planned"
+          "status": "available"
         }
       ],
       "designGeometry": "assembly-member",
@@ -55,6 +79,7 @@
     },
     "modules": {
       "dependencies": [
+        "../../${Platform}/${Configuration}/TemplateRuntime.dll",
         "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
         "../../${Platform}/${Configuration}/RenderData.dll",
         "../../${Platform}/${Configuration}/Transform.dll",

@@ -10,6 +10,8 @@
 
 
 #pragma comment(lib, "Comdlg32.lib")
+#pragma comment(lib, "Ole32.lib")
+#pragma comment(lib, "Shell32.lib")
 
 namespace
 {
@@ -447,6 +449,122 @@ namespace
         return std::nullopt;
     }
 
+    std::optional<std::string> _OpenDirectoryDialog(
+        IN CefRefPtr<CefBrowser> Browser_,
+        IN const json::object& Payload_)
+    {
+        const auto _COMResult = ::CoInitializeEx(
+            nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+        if (FAILED(_COMResult) && _COMResult != RPC_E_CHANGED_MODE)
+        {
+            throw std::runtime_error(
+                "Windows directory dialog COM initialization failed: "
+                + std::to_string(_COMResult));
+        }
+        const auto _UninitializeCOM = SUCCEEDED(_COMResult);
+
+        IFileOpenDialog* _RawDialog = nullptr;
+        const auto _CreateResult = ::CoCreateInstance(
+            CLSID_FileOpenDialog,
+            nullptr,
+            CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(&_RawDialog));
+        if (FAILED(_CreateResult))
+        {
+            if (_UninitializeCOM) ::CoUninitialize();
+            throw std::runtime_error(
+                "Windows directory dialog creation failed: "
+                + std::to_string(_CreateResult));
+        }
+        const auto _ReleaseCOM = [](IUnknown* Value_) { if (Value_) Value_->Release(); };
+        std::unique_ptr<IFileOpenDialog, decltype(_ReleaseCOM)> _Dialog(
+            _RawDialog, _ReleaseCOM);
+
+        FILEOPENDIALOGOPTIONS _Options{};
+        auto _Result = _Dialog->GetOptions(&_Options);
+        if (SUCCEEDED(_Result))
+        {
+            _Result = _Dialog->SetOptions(
+                _Options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM
+                | FOS_PATHMUSTEXIST | FOS_DONTADDTORECENT);
+        }
+
+        const auto _TitleIter = Payload_.find("title");
+        if (SUCCEEDED(_Result)
+            && _TitleIter != Payload_.end()
+            && _TitleIter->value().is_string())
+        {
+            const auto _Title = _UTF8ToWide(_AsString(_TitleIter->value(), "title"));
+            _Result = _Dialog->SetTitle(_Title.c_str());
+        }
+
+        const auto _InitialDirectoryIter = Payload_.find("initialDirectory");
+        if (SUCCEEDED(_Result)
+            && _InitialDirectoryIter != Payload_.end()
+            && _InitialDirectoryIter->value().is_string())
+        {
+            const auto _InitialDirectory = _UTF8ToWide(
+                _AsString(_InitialDirectoryIter->value(), "initialDirectory"));
+            IShellItem* _RawInitialFolder = nullptr;
+            if (!_InitialDirectory.empty()
+                && SUCCEEDED(::SHCreateItemFromParsingName(
+                    _InitialDirectory.c_str(), nullptr,
+                    IID_PPV_ARGS(&_RawInitialFolder))))
+            {
+                std::unique_ptr<IShellItem, decltype(_ReleaseCOM)> _InitialFolder(
+                    _RawInitialFolder, _ReleaseCOM);
+                _Dialog->SetFolder(_InitialFolder.get());
+            }
+        }
+
+        HWND _Owner = nullptr;
+        if (Browser_ && Browser_->GetHost())
+        {
+            _Owner = Browser_->GetHost()->GetWindowHandle();
+        }
+        if (SUCCEEDED(_Result)) _Result = _Dialog->Show(_Owner);
+        if (_Result == HRESULT_FROM_WIN32(ERROR_CANCELLED))
+        {
+            _Dialog.reset();
+            if (_UninitializeCOM) ::CoUninitialize();
+            return std::nullopt;
+        }
+        if (FAILED(_Result))
+        {
+            _Dialog.reset();
+            if (_UninitializeCOM) ::CoUninitialize();
+            throw std::runtime_error(
+                "Windows directory dialog failed: " + std::to_string(_Result));
+        }
+
+        IShellItem* _RawSelection = nullptr;
+        _Result = _Dialog->GetResult(&_RawSelection);
+        std::unique_ptr<IShellItem, decltype(_ReleaseCOM)> _Selection(
+            _RawSelection, _ReleaseCOM);
+        PWSTR _RawPath = nullptr;
+        if (SUCCEEDED(_Result) && _Selection)
+        {
+            _Result = _Selection->GetDisplayName(SIGDN_FILESYSPATH, &_RawPath);
+        }
+        std::unique_ptr<wchar_t, decltype(&::CoTaskMemFree)> _Path(
+            _RawPath, &::CoTaskMemFree);
+        if (FAILED(_Result) || !_Path)
+        {
+            _Selection.reset();
+            _Dialog.reset();
+            if (_UninitializeCOM) ::CoUninitialize();
+            throw std::runtime_error(
+                "Windows directory dialog returned no filesystem path: "
+                + std::to_string(_Result));
+        }
+        const auto _SelectedPath = _ToUtf8(std::wstring(_Path.get()));
+        _Path.reset();
+        _Selection.reset();
+        _Dialog.reset();
+        if (_UninitializeCOM) ::CoUninitialize();
+        return _SelectedPath;
+    }
+
     HWND _GetBrowserWindowHandle(IN CefRefPtr<CefBrowser> Browser_)
     {
         if (!Browser_ || !Browser_->GetHost())
@@ -750,6 +868,10 @@ namespace
 
     openFileDialog(options) {
       return queryNative("openFileDialog", options || {});
+    },
+
+    openDirectoryDialog(options) {
+      return queryNative("openDirectoryDialog", options || {});
     },
 
     windowCommand(command) {
@@ -1458,6 +1580,20 @@ namespace
                 if (_Method == "openFileDialog")
                 {
                     const auto _Path = _OpenFileDialog(Browser_, _Payload);
+                    if (_Path.has_value())
+                    {
+                        Callback_->Success(json::serialize(_ToJsonValue(*_Path)));
+                    }
+                    else
+                    {
+                        Callback_->Success("null");
+                    }
+                    return true;
+                }
+
+                if (_Method == "openDirectoryDialog")
+                {
+                    const auto _Path = _OpenDirectoryDialog(Browser_, _Payload);
                     if (_Path.has_value())
                     {
                         Callback_->Success(json::serialize(_ToJsonValue(*_Path)));

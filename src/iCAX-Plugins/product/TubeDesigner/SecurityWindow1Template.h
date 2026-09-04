@@ -3,6 +3,8 @@
 #include "TubeDesignerExport.h"
 
 #include <cstdint>
+#include <cmath>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,6 +16,7 @@ namespace iCAX::TubeDesigner
         double Width = 0.0;
         double Depth = 0.0;
         double WallThickness = 0.0;
+        double CornerRadius = 0.0;
     };
 
     struct SSecurityWindow1Parameters final
@@ -35,15 +38,78 @@ namespace iCAX::TubeDesigner
 
     struct SGeneratedPart final
     {
+        struct SPoint2D final
+        {
+            double X = 0.0;
+            double Y = 0.0;
+        };
+
+        struct SManufacturingEdge final
+        {
+            std::string Kind = "line";
+            SPoint2D Start;
+            SPoint2D Middle;
+            SPoint2D End;
+        };
+
+        struct SManufacturingCutter final
+        {
+            std::string Kind;
+            std::string Label;
+            double StartZ = 0.0;
+            double EndZ = 0.0;
+            std::vector<SPoint2D> Points;
+            std::vector<SManufacturingEdge> Edges;
+            SPoint2D Center;
+            double Radius = 0.0;
+        };
+
+        struct SManufacturingGeometry final
+        {
+            std::string Kind = "tube-with-cutters";
+            double BaseLength = 0.0;
+            double BendAllowance = 0.0;
+            std::uint64_t BendCount = 0;
+            std::vector<SManufacturingCutter> Cutters;
+        };
+
+        struct SPreviewGeometry final
+        {
+            std::string Kind = "folded-rect-frame";
+            double OuterMinX = 0.0;
+            double OuterMinY = 0.0;
+            double OuterMaxX = 0.0;
+            double OuterMaxY = 0.0;
+            double OpeningMinX = 0.0;
+            double OpeningMinY = 0.0;
+            double OpeningMaxX = 0.0;
+            double OpeningMaxY = 0.0;
+            double HalfDepth = 0.0;
+            double WallThickness = 0.0;
+            double RoundedOuterCornerRadius = 0.0;
+            double RoundedInnerCornerRadius = 0.0;
+        };
+
         std::uint64_t Index = 0;
         std::string PartNumber;
         std::string Role;
+        std::string StartCut = "square";
+        std::string EndCut = "square";
         STubeProfile Profile;
         double X1 = 0.0;
         double Y1 = 0.0;
         double X2 = 0.0;
         double Y2 = 0.0;
         double Length = 0.0;
+        std::vector<SPoint2D> PathPoints;
+        std::optional<SManufacturingGeometry> ManufacturingGeometry;
+        std::optional<SPreviewGeometry> PreviewGeometry;
+        // Empty means this manufacturing part is also an independent preview member.
+        // Parts sharing a non-empty key are rendered and selected as one assembly unit,
+        // while disassembly still expands them into their individual manufacturing parts.
+        std::string PreviewAssemblyKey;
+        std::string PreviewAssemblyRole;
+        std::string PreviewAssemblyName;
 
         bool IsVertical() const noexcept
         {
@@ -59,6 +125,7 @@ namespace iCAX::TubeDesigner
         double Clearance = 0.0;
         double X = 0.0;
         double Y = 0.0;
+        std::string StableKey;
     };
 
     struct SGeneratedProduct final

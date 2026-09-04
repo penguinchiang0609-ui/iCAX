@@ -14,9 +14,22 @@ namespace
 {
     constexpr const char* kStepFormatID = "cad.step";
 
+    std::filesystem::path Utf8Path(const std::string& Value_)
+    {
+        const std::u8string _Text(
+            reinterpret_cast<const char8_t*>(Value_.data()), Value_.size());
+        return std::filesystem::path(_Text);
+    }
+
+    std::string Utf8PathText(const std::filesystem::path& Value_)
+    {
+        const auto _Text = Value_.u8string();
+        return { reinterpret_cast<const char*>(_Text.data()), _Text.size() };
+    }
+
     bool HasStepExtension(const std::string& Path_)
     {
-        auto _Extension = std::filesystem::path(Path_).extension().string();
+        auto _Extension = Utf8PathText(Utf8Path(Path_).extension());
         std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](unsigned char Character_) {
             return static_cast<char>(std::tolower(Character_));
         });
@@ -86,19 +99,20 @@ namespace
                 {
                     return iCAX::Resource::CResourceExportResult::Failed(Request_, "STEP export could not rebuild the OpenCascade shape");
                 }
-                const auto _Target = std::filesystem::path(Request_.TargetPath);
+                const auto _Target = Utf8Path(Request_.TargetPath);
                 if (_Target.has_parent_path()) std::filesystem::create_directories(_Target.parent_path());
                 STEPControl_Writer _Writer;
                 if (_Writer.Transfer(_Built.Shape, STEPControl_AsIs) != IFSelect_RetDone)
                 {
                     return iCAX::Resource::CResourceExportResult::Failed(Request_, "STEP writer rejected the BRep shape");
                 }
-                if (_Writer.Write(_Target.string().c_str()) != IFSelect_RetDone)
+                const auto _TargetText = Utf8PathText(_Target);
+                if (_Writer.Write(_TargetText.c_str()) != IFSelect_RetDone)
                 {
                     return iCAX::Resource::CResourceExportResult::Failed(Request_, "STEP writer could not write the target file");
                 }
                 return iCAX::Resource::CResourceExportResult::Succeeded(
-                    _Target.string(), kStepFormatID, { Request_.ResourceID });
+                    _TargetText, kStepFormatID, { Request_.ResourceID });
             }
             catch (const std::exception& Error_)
             {

@@ -29,6 +29,42 @@ const ENGINE_CAMERA_TO_THREE_CAMERA_MATRIX = new THREE.Matrix4().fromArray([
 ]);
 const SELECTION_AXIS_PIXEL_SIZE = 94;
 const SELECTION_AXIS_MIN_SCALE = 0.001;
+const STANDARD_VIEW_DIRECTIONS = Object.freeze({
+  front: Object.freeze([0, -1, 0]),
+  back: Object.freeze([0, 1, 0]),
+  left: Object.freeze([-1, 0, 0]),
+  right: Object.freeze([1, 0, 0]),
+  top: Object.freeze([0, 0, 1]),
+  bottom: Object.freeze([0, 0, -1]),
+});
+
+export function resolveStandardViewDirection(viewName) {
+  const name = String(viewName ?? "").trim().toLowerCase();
+  if (name === "iso" || name === "isometric") {
+    return [1, -1, 0.78];
+  }
+
+  const tokens = name.split("-");
+  if (!tokens.length || tokens.some((token) => !token)) {
+    return null;
+  }
+
+  const direction = [0, 0, 0];
+  const occupiedAxes = new Set();
+  for (const token of tokens) {
+    const component = STANDARD_VIEW_DIRECTIONS[token];
+    if (!component) {
+      return null;
+    }
+    const axis = component.findIndex((value) => value !== 0);
+    if (occupiedAxes.has(axis)) {
+      return null;
+    }
+    occupiedAxes.add(axis);
+    direction[axis] = component[axis];
+  }
+  return direction;
+}
 
 export function createThreeViewport(options = {}) {
   return new ThreeRenderViewport(options);
@@ -38,6 +74,8 @@ export class ThreeRenderViewport {
   constructor(options = {}) {
     ensureThreeViewportStyles();
     this.options = options;
+    this.continuousRendering = options.continuousRender !== false;
+    this.pickingEnabled = options.pickingEnabled !== false;
     this.host = null;
     this.sceneProxy = null;
     this.subscriptions = [];
@@ -93,6 +131,12 @@ export class ThreeRenderViewport {
     this.content = new THREE.Group();
     this.content.name = "iCAX View Resource Content";
     this.scene.add(this.content);
+    this.measurementContent = new THREE.Group();
+    this.measurementContent.name = "iCAX Measurement Overlay";
+    this.scene.add(this.measurementContent);
+    this.dimensionContent = new THREE.Group();
+    this.dimensionContent.name = "iCAX Dimension Overlay";
+    this.scene.add(this.dimensionContent);
     this.colliderContent = new THREE.Group();
     this.colliderContent.name = "iCAX ColliderPDO Content";
     this.scene.add(this.colliderContent);
@@ -122,6 +166,7 @@ export class ThreeRenderViewport {
     this.#installSceneBasics();
     this.#installPointerControls();
     this.#updateCamera();
+    this.root.classList.toggle("picking-enabled", this.pickingEnabled);
     this.#setStatus("等待渲染数据");
   }
 
@@ -140,7 +185,31 @@ export class ThreeRenderViewport {
     this.resizeObserver?.disconnect?.();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
-    this.#startRenderLoop();
+    if (this.continuousRendering) {
+      this.#startRenderLoop();
+    } else {
+      this.#renderOnce();
+    }
+    return this;
+  }
+
+  setContinuousRendering(enabled) {
+    const next = Boolean(enabled);
+    if (this.continuousRendering === next) return this;
+    this.continuousRendering = next;
+    if (next) {
+      this.#startRenderLoop();
+    } else if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = 0;
+    }
+    if (!this.isDisposed) this.#renderOnce();
+    return this;
+  }
+
+  setPickingEnabled(enabled) {
+    this.pickingEnabled = Boolean(enabled);
+    this.root.classList.toggle("picking-enabled", this.pickingEnabled);
     return this;
   }
 
@@ -211,6 +280,8 @@ export class ThreeRenderViewport {
       this.animationFrame = 0;
     }
     this.#clearRenderContent();
+    this.clearMeasurementPoints(false);
+    this.clearDimensionAnnotations(false);
     this.axisRenderer?.dispose?.();
     this.axisRenderer = null;
     this.renderer.dispose();
@@ -392,25 +463,30 @@ export class ThreeRenderViewport {
   }
 
   setStandardView(viewName) {
-    const direction = {
-      front: [0, -1, 0],
-      back: [0, 1, 0],
-      left: [-1, 0, 0],
-      right: [1, 0, 0],
-      top: [0, 0, 1],
-      bottom: [0, 0, -1],
-      iso: [1, -1, 0.78],
-      isometric: [1, -1, 0.78],
-    }[String(viewName ?? "").trim().toLowerCase()];
+    const direction = resolveStandardViewDirection(viewName);
     if (!direction) {
       return false;
     }
+    return this.#setViewDirection(direction, "standard-view");
+  }
+
+  setViewDirection(direction) {
+    return this.#setViewDirection(direction, "direction");
+  }
+
+  #setViewDirection(direction, reason) {
+    if (!Array.isArray(direction)
+      || direction.length !== 3
+      || !direction.every((value) => Number.isFinite(Number(value)))) {
+      return false;
+    }
     const vector = new THREE.Vector3(...direction).normalize();
+    if (vector.lengthSq() <= Number.EPSILON) return false;
     this.cameraState.theta = Math.atan2(vector.y, vector.x);
     this.cameraState.phi = Math.acos(THREE.MathUtils.clamp(vector.z, -1, 1));
     this.#updateCamera();
     this.#renderOnce();
-    this.#emitCameraChange("standard-view");
+    this.#emitCameraChange(reason);
     return true;
   }
 
@@ -443,6 +519,126 @@ export class ThreeRenderViewport {
     this.#updateCamera();
     this.#renderOnce();
     this.#emitCameraChange("restore");
+    return this;
+  }
+
+  setMeasurementPoints(points = []) {
+    this.clearMeasurementPoints(false);
+    const values = (Array.isArray(points) ? points : [])
+      .slice(0, 2)
+      .map((point) => new THREE.Vector3(Number(point?.x), Number(point?.y), Number(point?.z)))
+      .filter((point) => [point.x, point.y, point.z].every(Number.isFinite));
+    if (!values.length) {
+      this.#renderOnce();
+      return this;
+    }
+
+    const pointGeometry = new THREE.BufferGeometry().setFromPoints(values);
+    const pointMaterial = new THREE.PointsMaterial({
+      color: 0xffbd45,
+      size: 10,
+      sizeAttenuation: false,
+      depthTest: false,
+    });
+    const pointObject = new THREE.Points(pointGeometry, pointMaterial);
+    pointObject.renderOrder = 100;
+    this.measurementContent.add(pointObject);
+
+    if (values.length === 2) {
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints(values);
+      const lineMaterial = new THREE.LineBasicMaterial({
+        color: 0xffd36f,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.95,
+      });
+      const lineObject = new THREE.Line(lineGeometry, lineMaterial);
+      lineObject.renderOrder = 99;
+      this.measurementContent.add(lineObject);
+    }
+    this.#renderOnce();
+    return this;
+  }
+
+  clearMeasurementPoints(render = true) {
+    for (const object of [...this.measurementContent.children]) {
+      this.measurementContent.remove(object);
+      object.geometry?.dispose?.();
+      if (Array.isArray(object.material)) {
+        for (const material of object.material) material?.dispose?.();
+      } else {
+        object.material?.dispose?.();
+      }
+    }
+    if (render) this.#renderOnce();
+    return this;
+  }
+
+  setDimensionAnnotations(annotations = []) {
+    this.clearDimensionAnnotations(false);
+    for (const annotation of Array.isArray(annotations) ? annotations : []) {
+      const start = toFiniteVector3(annotation?.start);
+      const end = toFiniteVector3(annotation?.end);
+      if (!start || !end || start.distanceToSquared(end) <= Number.EPSILON) continue;
+      const offset = toFiniteVector3(annotation?.offset) ?? new THREE.Vector3();
+      const displayStart = start.clone().add(offset);
+      const displayEnd = end.clone().add(offset);
+      const color = new THREE.Color(annotation?.color ?? 0xffc857);
+      const vertices = [];
+      if (offset.lengthSq() > Number.EPSILON) {
+        vertices.push(start, displayStart, end, displayEnd);
+      }
+      vertices.push(displayStart, displayEnd);
+
+      const direction = displayEnd.clone().sub(displayStart).normalize();
+      let tickDirection = offset.clone();
+      if (tickDirection.lengthSq() <= Number.EPSILON) {
+        tickDirection = new THREE.Vector3(0, 0, 1);
+        if (Math.abs(direction.dot(tickDirection)) > 0.92) tickDirection.set(1, 0, 0);
+      }
+      tickDirection.normalize();
+      const tickSize = Math.max(0.8, Math.min(8, start.distanceTo(end) * 0.035));
+      const tick = tickDirection.multiplyScalar(tickSize * 0.5);
+      vertices.push(
+        displayStart.clone().sub(tick), displayStart.clone().add(tick),
+        displayEnd.clone().sub(tick), displayEnd.clone().add(tick),
+      );
+
+      const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+      const material = new THREE.LineBasicMaterial({
+        color,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.96,
+      });
+      const lines = new THREE.LineSegments(geometry, material);
+      lines.renderOrder = 120;
+      this.dimensionContent.add(lines);
+
+      const label = String(annotation?.label ?? "").trim();
+      if (label) {
+        const sprite = this.#createDimensionLabel(label, color);
+        sprite.position.copy(displayStart).lerp(displayEnd, 0.5);
+        sprite.renderOrder = 121;
+        this.dimensionContent.add(sprite);
+      }
+    }
+    this.#renderOnce();
+    return this;
+  }
+
+  clearDimensionAnnotations(render = true) {
+    for (const object of [...this.dimensionContent.children]) {
+      this.dimensionContent.remove(object);
+      object.geometry?.dispose?.();
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        material?.map?.dispose?.();
+        material?.dispose?.();
+      }
+    }
+    if (render) this.#renderOnce();
     return this;
   }
 
@@ -666,6 +862,12 @@ export class ThreeRenderViewport {
       ghostPreviewVertexCount: Number(
         this.ghostPreview?.children?.[0]?.geometry?.getAttribute?.("position")?.count ?? 0,
       ),
+      continuousRendering: this.continuousRendering,
+      pickingEnabled: this.pickingEnabled,
+      animationFrameActive: Boolean(this.animationFrame),
+      dimensionAnnotationCount: this.dimensionContent.children.filter(
+        (object) => object.userData?.dimensionLabel,
+      ).length,
       cameraPosition: {
         x: this.camera.position.x,
         y: this.camera.position.y,
@@ -1649,6 +1851,39 @@ export class ThreeRenderViewport {
     return sprite;
   }
 
+  #createDimensionLabel(text, color) {
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    context.font = "600 28px sans-serif";
+    const textWidth = Math.ceil(context.measureText(text).width);
+    canvas.width = Math.max(96, Math.min(1024, textWidth + 34));
+    canvas.height = 54;
+    context.fillStyle = "rgba(14, 31, 38, 0.92)";
+    context.strokeStyle = `#${color.getHexString()}`;
+    context.lineWidth = 2;
+    context.beginPath();
+    context.roundRect(1, 1, canvas.width - 2, canvas.height - 2, 10);
+    context.fill();
+    context.stroke();
+    context.fillStyle = "#f7fbfc";
+    context.font = "600 28px sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.userData.dimensionLabel = true;
+    sprite.userData.dimensionLabelAspect = canvas.width / canvas.height;
+    return sprite;
+  }
+
   #installPointerControls() {
     const canvas = this.renderer.domElement;
     this.#listen(canvas, "pointerdown", (event) => {
@@ -1673,7 +1908,9 @@ export class ThreeRenderViewport {
       if (this.navigation.pointerId === event.pointerId) {
         this.#resetNavigation();
       }
-      canvas.releasePointerCapture?.(event.pointerId);
+      if (canvas.hasPointerCapture?.(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
       if (!wasNavigation && !moved && event.button === 0) {
         this.#emitPick(event);
       }
@@ -1719,7 +1956,7 @@ export class ThreeRenderViewport {
   }
 
   #emitPick(event) {
-    if (typeof this.options.onPick !== "function") {
+    if (!this.pickingEnabled || typeof this.options.onPick !== "function") {
       return;
     }
     const rect = this.renderer.domElement.getBoundingClientRect();
@@ -1793,12 +2030,12 @@ export class ThreeRenderViewport {
   }
 
   #startRenderLoop() {
-    if (this.animationFrame || this.isDisposed) {
+    if (this.animationFrame || this.isDisposed || !this.continuousRendering) {
       return;
     }
     const tick = () => {
       this.animationFrame = 0;
-      if (!this.isDisposed) {
+      if (!this.isDisposed && this.continuousRendering) {
         this.#renderOnce();
         this.animationFrame = requestAnimationFrame(tick);
       }
@@ -1808,10 +2045,24 @@ export class ThreeRenderViewport {
 
   #renderOnce() {
     this.#updateSelectionHelper();
+    this.#updateDimensionLabelScales();
     this.renderer.render(this.scene, this.camera);
     this.#renderOrientationGizmo();
     this.renderSequence += 1;
     return this.renderSequence;
+  }
+
+  #updateDimensionLabelScales() {
+    const canvasHeight = Math.max(1, this.renderer.domElement.clientHeight);
+    const worldPerPixel = (
+      2 * this.cameraState.radius * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
+    ) / canvasHeight;
+    const labelHeight = Math.max(0.001, worldPerPixel * 26);
+    for (const object of this.dimensionContent.children) {
+      if (!object.userData?.dimensionLabel) continue;
+      const aspect = Math.max(1, Number(object.userData.dimensionLabelAspect ?? 1));
+      object.scale.set(labelHeight * aspect, labelHeight, 1);
+    }
   }
 
   #renderOrientationGizmo() {
@@ -1959,6 +2210,16 @@ function normalizeEntityIds(entityIds) {
   return values
     .map((id) => String(id ?? "").trim())
     .filter(Boolean);
+}
+
+function toFiniteVector3(value) {
+  const source = Array.isArray(value)
+    ? value
+    : [value?.x, value?.y, value?.z];
+  if (source.length !== 3 || !source.every((entry) => Number.isFinite(Number(entry)))) {
+    return null;
+  }
+  return new THREE.Vector3(Number(source[0]), Number(source[1]), Number(source[2]));
 }
 
 function setsEqual(left, right) {

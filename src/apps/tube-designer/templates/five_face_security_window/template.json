@@ -1,0 +1,108 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "five-face-security-window",
+  "version": "2.5.0",
+  "displayName": { "zh-CN": "五面防盗窗", "en-US": "Five-face Security Window" },
+  "description": "五面箱式防盗窗。由左侧面、正面、右侧面、上面和下面组成，背面敞开并连接建筑洞口。",
+  "extensions": {
+    "productIdentity": { "codeParameter": "productCode" },
+    "primaryDimensions": { "widthParameter": "frontWidth", "heightParameter": "height", "depthParameter": "depth" },
+    "footprint": { "kind": "openBox", "verticalFaceCount": 3, "horizontalFaceCount": 2, "faceCount": 5 },
+    "parameterPresets": {
+      "selectorParameter": "tubeSpecificationPreset", "customValue": "custom",
+      "presets": [
+        { "value": "stainless_balanced", "values": { "frameWidth": 38.0, "frameDepth": 25.0, "frameCornerRadius": 2.0, "frameWallThickness": 1.2, "horizontalWidth": 25.0, "horizontalDepth": 25.0, "horizontalCornerRadius": 2.0, "horizontalWallThickness": 1.0, "verticalProfileType": "round", "verticalWidth": 19.0, "verticalDepth": 19.0, "verticalCornerRadius": 0.0, "verticalWallThickness": 1.0 } },
+        { "value": "stainless_standard", "values": { "frameWidth": 38.0, "frameDepth": 25.0, "frameCornerRadius": 2.0, "frameWallThickness": 1.0, "horizontalWidth": 22.0, "horizontalDepth": 22.0, "horizontalCornerRadius": 2.0, "horizontalWallThickness": 1.0, "verticalProfileType": "round", "verticalWidth": 16.0, "verticalDepth": 16.0, "verticalCornerRadius": 0.0, "verticalWallThickness": 0.8 } },
+        { "value": "stainless_reinforced", "values": { "frameWidth": 38.0, "frameDepth": 38.0, "frameCornerRadius": 3.0, "frameWallThickness": 1.5, "horizontalWidth": 28.0, "horizontalDepth": 28.0, "horizontalCornerRadius": 2.0, "horizontalWallThickness": 1.2, "verticalProfileType": "round", "verticalWidth": 22.0, "verticalDepth": 22.0, "verticalCornerRadius": 0.0, "verticalWallThickness": 1.0 } },
+        { "value": "galvanized_square", "values": { "frameWidth": 32.0, "frameDepth": 32.0, "frameCornerRadius": 2.0, "frameWallThickness": 1.2, "horizontalWidth": 25.0, "horizontalDepth": 25.0, "horizontalCornerRadius": 2.0, "horizontalWallThickness": 1.0, "verticalProfileType": "rect", "verticalWidth": 19.0, "verticalDepth": 19.0, "verticalCornerRadius": 1.5, "verticalWallThickness": 0.8 } }
+      ]
+    }
+  },
+  "groups": [
+    { "key": "overall", "displayName": { "zh-CN": "基本尺寸" }, "order": 10 },
+    { "key": "grid", "displayName": { "zh-CN": "格栅布置" }, "order": 20 },
+    { "key": "door_position", "displayName": { "zh-CN": "检修口位置" }, "order": 21 },
+    { "key": "door_assembly", "displayName": { "zh-CN": "检修门装配" }, "order": 22 },
+    { "key": "door_grid", "displayName": { "zh-CN": "门扇格栅" }, "order": 23 },
+    { "key": "profile_preset", "displayName": { "zh-CN": "常用管材配套" }, "order": 25 },
+    { "key": "outer_profile", "displayName": { "zh-CN": "外框矩形管" }, "order": 30 },
+    { "key": "horizontal_profile", "displayName": { "zh-CN": "横杆矩形管" }, "order": 40 },
+    { "key": "vertical_profile", "displayName": { "zh-CN": "竖杆圆管" }, "order": 50 },
+    { "key": "door_frame_profile", "displayName": { "zh-CN": "固定门框矩形管" }, "order": 51 },
+    { "key": "door_leaf_profile", "displayName": { "zh-CN": "活动门扇框矩形管" }, "order": 52 },
+    { "key": "door_horizontal_profile", "displayName": { "zh-CN": "门内横杆矩形管" }, "order": 53 },
+    { "key": "door_vertical_profile", "displayName": { "zh-CN": "门内竖杆圆管" }, "order": 54 },
+    { "key": "assembly", "displayName": { "zh-CN": "装配" }, "order": 60 }
+  ],
+  "parameters": [
+    { "key": "productCode", "displayName": { "zh-CN": "产品编号" }, "valueType": "string", "defaultValue": "TD-5F-001", "constraints": { "minimumLength": 1, "maximumLength": 80 }, "group": "overall", "order": 10 },
+    { "key": "height", "displayName": { "zh-CN": "产品高度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1800.0, "constraints": { "minimum": 150.0, "maximum": 20000.0, "step": 1.0 }, "group": "overall", "order": 20 },
+    { "key": "frontWidth", "displayName": { "zh-CN": "正面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1200.0, "constraints": { "minimum": 150.0, "maximum": 20000.0, "step": 1.0 }, "group": "overall", "order": 30 },
+    { "key": "depth", "displayName": { "zh-CN": "出墙深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 600.0, "constraints": { "minimum": 150.0, "maximum": 20000.0, "step": 1.0 }, "group": "overall", "order": 40 },
+
+    { "key": "accessDoorEnabled", "displayName": { "zh-CN": "启用检修口" }, "valueType": "boolean", "defaultValue": false, "group": "door_position", "order": 10 },
+    { "key": "accessDoorFace", "displayName": { "zh-CN": "检修口所在面" }, "valueType": "enum", "defaultValue": "front", "choices": [{ "value": "left", "displayName": { "zh-CN": "左侧面" } }, { "value": "front", "displayName": { "zh-CN": "正面" } }, { "value": "right", "displayName": { "zh-CN": "右侧面" } }, { "value": "top", "displayName": { "zh-CN": "上面" } }, { "value": "bottom", "displayName": { "zh-CN": "下面" } }], "group": "door_position", "order": 20, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorUOffset", "displayName": { "zh-CN": "门框横向起点" }, "description": "沿所选面的横向起始边量取。", "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 80.0, "constraints": { "minimum": 0, "step": 1 }, "group": "door_position", "order": 30, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorVOffset", "displayName": { "zh-CN": "门框纵向起点" }, "description": "立面从底边量取；上下面从前边量取。", "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 80.0, "constraints": { "minimum": 0, "step": 1 }, "group": "door_position", "order": 40, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorWidth", "displayName": { "zh-CN": "门框横向尺寸" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 400.0, "constraints": { "minimum": 1, "step": 1 }, "group": "door_position", "order": 50, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHeight", "displayName": { "zh-CN": "门框纵向尺寸" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 400.0, "constraints": { "minimum": 1, "step": 1 }, "group": "door_position", "order": 60, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorGap", "displayName": { "zh-CN": "门扇与门框间隙" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 3.0, "constraints": { "minimum": 0, "step": 0.1 }, "group": "door_assembly", "order": 10, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHingeSide", "displayName": { "zh-CN": "铰链侧" }, "valueType": "enum", "defaultValue": "left", "choices": [{ "value": "left", "displayName": { "zh-CN": "左侧" } }, { "value": "right", "displayName": { "zh-CN": "右侧" } }], "group": "door_assembly", "order": 20, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHingeCount", "displayName": { "zh-CN": "铰链数量" }, "valueType": "integer", "quantity": "count", "defaultValue": 2, "constraints": { "minimum": 1, "maximum": 10, "step": 1 }, "group": "door_assembly", "order": 30, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHorizontalCount", "displayName": { "zh-CN": "门内横杆数量" }, "valueType": "integer", "quantity": "count", "defaultValue": 2, "constraints": { "minimum": 0, "maximum": 100, "step": 1 }, "group": "door_grid", "order": 10, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorVerticalCount", "displayName": { "zh-CN": "门内竖杆数量" }, "valueType": "integer", "quantity": "count", "defaultValue": 2, "constraints": { "minimum": 0, "maximum": 100, "step": 1 }, "group": "door_grid", "order": 20, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+
+    { "key": "horizontalCount", "displayName": { "zh-CN": "每个立面横杆数量" }, "valueType": "integer", "quantity": "count", "defaultValue": 4, "constraints": { "minimum": 0, "maximum": 100, "step": 1 }, "group": "grid", "order": 10 },
+    { "key": "verticalLayoutMode", "displayName": { "zh-CN": "竖杆布置" }, "valueType": "enum", "defaultValue": "maximum_clear_gap", "choices": [{ "value": "maximum_clear_gap", "displayName": { "zh-CN": "按最大净间距逐面自动计算" } }, { "value": "manual_count", "displayName": { "zh-CN": "每面手动指定数量" } }], "group": "grid", "order": 20 },
+    { "key": "maximumVerticalClearGap", "displayName": { "zh-CN": "最大竖杆净间距" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 110.0, "constraints": { "minimum": 20.0, "maximum": 500.0, "step": 1.0 }, "group": "grid", "order": 30, "visibleWhen": { "op": "eq", "parameter": "verticalLayoutMode", "value": "maximum_clear_gap" } },
+    { "key": "verticalCountPerFace", "displayName": { "zh-CN": "每个立面竖杆数量" }, "valueType": "integer", "quantity": "count", "defaultValue": 4, "constraints": { "minimum": 0, "maximum": 100, "step": 1 }, "group": "grid", "order": 40, "visibleWhen": { "op": "eq", "parameter": "verticalLayoutMode", "value": "manual_count" } },
+    { "key": "firstHorizontalTopOffset", "displayName": { "zh-CN": "首横杆距顶部" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 200.0, "constraints": { "minimum": 0, "step": 1 }, "group": "grid", "order": 50 },
+    { "key": "lastHorizontalBottomOffset", "displayName": { "zh-CN": "末横杆距底部" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 200.0, "constraints": { "minimum": 0, "step": 1 }, "group": "grid", "order": 60 },
+    { "key": "topBottomCrossbarCount", "displayName": { "zh-CN": "上下面横杆数量" }, "valueType": "integer", "quantity": "count", "defaultValue": 2, "constraints": { "minimum": 0, "maximum": 100, "step": 1 }, "group": "grid", "order": 70 },
+    { "key": "topBottomRodCount", "displayName": { "zh-CN": "上下面纵杆数量" }, "valueType": "integer", "quantity": "count", "defaultValue": 4, "constraints": { "minimum": 0, "maximum": 100, "step": 1 }, "group": "grid", "order": 80, "visibleWhen": { "op": "eq", "parameter": "verticalLayoutMode", "value": "manual_count" } },
+
+    { "key": "tubeSpecificationPreset", "displayName": { "zh-CN": "规格组合" }, "valueType": "enum", "defaultValue": "stainless_balanced", "choices": [{ "value": "stainless_balanced", "displayName": { "zh-CN": "304不锈钢·38×25 / 25×25 / Φ19（推荐）" } }, { "value": "stainless_standard", "displayName": { "zh-CN": "不锈钢轻型·38×25 / 22×22 / Φ16" } }, { "value": "stainless_reinforced", "displayName": { "zh-CN": "不锈钢加强·38×38 / 28×28 / Φ22" } }, { "value": "galvanized_square", "displayName": { "zh-CN": "镀锌方管·32×32 / 25×25 / 19×19" } }, { "value": "custom", "displayName": { "zh-CN": "自定义" } }], "group": "profile_preset", "order": 10 },
+
+    { "key": "frameProfileType", "displayName": { "zh-CN": "截面类型" }, "valueType": "enum", "defaultValue": "rect", "readOnly": true, "choices": [{ "value": "rect", "displayName": { "zh-CN": "矩形管" } }], "group": "outer_profile", "order": 10 },
+    { "key": "frameWidth", "displayName": { "zh-CN": "截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 38.0, "constraints": { "minimum": 1 }, "group": "outer_profile", "order": 20 },
+    { "key": "frameDepth", "displayName": { "zh-CN": "截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 25.0, "constraints": { "minimum": 1 }, "group": "outer_profile", "order": 30 },
+    { "key": "frameCornerRadius", "displayName": { "zh-CN": "外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 2.0, "constraints": { "minimum": 0 }, "group": "outer_profile", "order": 40 },
+    { "key": "frameWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.2, "constraints": { "minimum": 0.1 }, "group": "outer_profile", "order": 50 },
+
+    { "key": "horizontalProfileType", "displayName": { "zh-CN": "截面类型" }, "valueType": "enum", "defaultValue": "rect", "readOnly": true, "choices": [{ "value": "rect", "displayName": { "zh-CN": "矩形管" } }], "group": "horizontal_profile", "order": 10 },
+    { "key": "horizontalWidth", "displayName": { "zh-CN": "截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 25.0, "constraints": { "minimum": 1 }, "group": "horizontal_profile", "order": 20 },
+    { "key": "horizontalDepth", "displayName": { "zh-CN": "截面深度" }, "description": "必须容纳贯穿横杆的竖杆截面并保留连续管壁。", "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 25.0, "constraints": { "minimum": 1 }, "group": "horizontal_profile", "order": 30 },
+    { "key": "horizontalCornerRadius", "displayName": { "zh-CN": "外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.0, "constraints": { "minimum": 0 }, "group": "horizontal_profile", "order": 40 },
+    { "key": "horizontalWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.0, "constraints": { "minimum": 0.1 }, "group": "horizontal_profile", "order": 50 },
+
+    { "key": "verticalProfileType", "displayName": { "zh-CN": "截面类型" }, "valueType": "enum", "defaultValue": "round", "choices": [{ "value": "round", "displayName": { "zh-CN": "圆管" } }, { "value": "rect", "displayName": { "zh-CN": "方管 / 矩形管" } }], "group": "vertical_profile", "order": 10 },
+    { "key": "verticalWidth", "displayName": { "zh-CN": "外径 / 截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 19.0, "constraints": { "minimum": 1 }, "group": "vertical_profile", "order": 20 },
+    { "key": "verticalDepth", "displayName": { "zh-CN": "截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 19.0, "constraints": { "minimum": 1 }, "group": "vertical_profile", "order": 30, "visibleWhen": { "op": "eq", "parameter": "verticalProfileType", "value": "rect" } },
+    { "key": "verticalCornerRadius", "displayName": { "zh-CN": "外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 0.0, "constraints": { "minimum": 0 }, "group": "vertical_profile", "order": 40, "visibleWhen": { "op": "eq", "parameter": "verticalProfileType", "value": "rect" } },
+    { "key": "verticalWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.0, "constraints": { "minimum": 0.1 }, "group": "vertical_profile", "order": 50 },
+
+    { "key": "doorFrameProfileType", "displayName": { "zh-CN": "截面类型" }, "valueType": "enum", "defaultValue": "rect", "readOnly": true, "choices": [{ "value": "rect", "displayName": { "zh-CN": "矩形管" } }], "group": "door_frame_profile", "order": 10, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorFrameWidth", "displayName": { "zh-CN": "截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 25.0, "constraints": { "minimum": 1 }, "group": "door_frame_profile", "order": 20, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorFrameDepth", "displayName": { "zh-CN": "截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 25.0, "constraints": { "minimum": 1 }, "group": "door_frame_profile", "order": 30, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorFrameCornerRadius", "displayName": { "zh-CN": "外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 2.0, "constraints": { "minimum": 0 }, "group": "door_frame_profile", "order": 40, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorFrameWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.0, "constraints": { "minimum": 0.1 }, "group": "door_frame_profile", "order": 50, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorLeafFrameProfileType", "displayName": { "zh-CN": "截面类型" }, "valueType": "enum", "defaultValue": "rect", "readOnly": true, "choices": [{ "value": "rect", "displayName": { "zh-CN": "矩形管" } }], "group": "door_leaf_profile", "order": 10, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorLeafFrameWidth", "displayName": { "zh-CN": "截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 20.0, "constraints": { "minimum": 1 }, "group": "door_leaf_profile", "order": 20, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorLeafFrameDepth", "displayName": { "zh-CN": "截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 20.0, "constraints": { "minimum": 1 }, "group": "door_leaf_profile", "order": 30, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorLeafFrameCornerRadius", "displayName": { "zh-CN": "外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.5, "constraints": { "minimum": 0 }, "group": "door_leaf_profile", "order": 40, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorLeafFrameWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.0, "constraints": { "minimum": 0.1 }, "group": "door_leaf_profile", "order": 50, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHorizontalProfileType", "displayName": { "zh-CN": "截面类型" }, "valueType": "enum", "defaultValue": "rect", "readOnly": true, "choices": [{ "value": "rect", "displayName": { "zh-CN": "矩形管" } }], "group": "door_horizontal_profile", "order": 10, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHorizontalWidth", "displayName": { "zh-CN": "截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 20.0, "constraints": { "minimum": 1 }, "group": "door_horizontal_profile", "order": 20, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHorizontalDepth", "displayName": { "zh-CN": "截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 20.0, "constraints": { "minimum": 1 }, "group": "door_horizontal_profile", "order": 30, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHorizontalCornerRadius", "displayName": { "zh-CN": "外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.0, "constraints": { "minimum": 0 }, "group": "door_horizontal_profile", "order": 40, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorHorizontalWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 0.8, "constraints": { "minimum": 0.1 }, "group": "door_horizontal_profile", "order": 50, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorVerticalProfileType", "displayName": { "zh-CN": "截面类型" }, "valueType": "enum", "defaultValue": "round", "readOnly": true, "choices": [{ "value": "round", "displayName": { "zh-CN": "圆管" } }], "group": "door_vertical_profile", "order": 10, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorVerticalWidth", "displayName": { "zh-CN": "外径" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 16.0, "constraints": { "minimum": 1 }, "group": "door_vertical_profile", "order": 20, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+    { "key": "doorVerticalWallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 0.8, "constraints": { "minimum": 0.1 }, "group": "door_vertical_profile", "order": 30, "visibleWhen": { "op": "eq", "parameter": "accessDoorEnabled", "value": true } },
+
+    { "key": "horizontalBranchReserve", "displayName": { "zh-CN": "横杆入榫深度" }, "description": "横杆每端插入外框的深度。", "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 10.0, "constraints": { "minimum": 0, "maximum": 20, "step": 1 }, "group": "assembly", "order": 10 },
+    { "key": "verticalBranchReserve", "displayName": { "zh-CN": "竖杆入榫深度" }, "description": "竖杆每端插入上下外框的深度；经过中间横杆时仍为贯穿。", "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 10.0, "constraints": { "minimum": 0, "maximum": 20, "step": 1 }, "group": "assembly", "order": 20 },
+    { "key": "assemblyClearance", "displayName": { "zh-CN": "穿杆开孔间隙" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 0.1, "constraints": { "minimum": 0 }, "group": "assembly", "order": 30 }
+  ]
+}

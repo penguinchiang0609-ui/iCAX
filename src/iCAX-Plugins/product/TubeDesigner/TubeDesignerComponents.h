@@ -41,6 +41,7 @@ namespace iCAX::TubeDesigner
         DECLARE_ICAX_COMPONENT_CREATOR(CProductInstanceComponent)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, ProductCode, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, Name, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, CreatedAt, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, TemplateID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, TemplateVersion, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, Status, std::string("Current"), StringEqual, ToStringVariant, FromStringVariant)
@@ -56,12 +57,15 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, iCAX::Data::uuid, ManufacturingPartID, iCAX::Data::uuid(), UuidEqual, ToUuidVariant, FromUuidVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, unsigned long long, MemberIndex, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, std::string, StableKey, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CAssemblyMemberComponent, std::string, MemberType, std::string("part"), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CAssemblyMemberComponent, unsigned long long, ChildPartCount, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, std::string, Role, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, std::string, Name, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, std::string, ProfileType, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, SectionWidth, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, SectionDepth, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, WallThickness, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
+        DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, CornerRadius, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, Length, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, X1, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, Y1, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
@@ -69,6 +73,7 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, double, Y2, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, std::string, PreviewGeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, unsigned long long, PreviewGeometryResourceVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+        DECLARED_ICAX_FIELD(CAssemblyMemberComponent, iCAX::Data::ObjectMap, ItemProperties, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 
     class CManufacturingPartComponent final : public iCAX::Database::CComponentBase
@@ -83,11 +88,19 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, PartNumber, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, Role, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, Quantity, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, ProfileType, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, double, SectionWidth, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, double, SectionDepth, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, double, WallThickness, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, double, CornerRadius, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, double, Length, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, ManufacturingGeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, ManufacturingGeometryResourceVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, ThumbnailGeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, ThumbnailGeometryResourceVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, FileName, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, Status, std::string("Ready"), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, iCAX::Data::ObjectMap, ItemProperties, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 
     class CJointIntentComponent final : public iCAX::Database::CComponentBase
@@ -113,5 +126,7 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CGenerationRunComponent, std::string, Status, std::string("Succeeded"), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CGenerationRunComponent, unsigned long long, PartCount, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CGenerationRunComponent, unsigned long long, IssueCount, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, std::string, PackageDigest, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, NeutralModel, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 }

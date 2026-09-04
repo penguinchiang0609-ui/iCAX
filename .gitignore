@@ -172,3 +172,10 @@
 /src/iCAX-Engine/src/iCAX/x64
 /src/iCAX-Engine/src/iCAX/02 Framework/Tracker/x64/Debug
 /src/iCAX-Engine/src/iCAX/06 Product/CAXHost/x64/Debug
+
+# Python template runtime caches
+__pycache__/
+*.py[cod]
+
+# Local verification outputs
+/build/

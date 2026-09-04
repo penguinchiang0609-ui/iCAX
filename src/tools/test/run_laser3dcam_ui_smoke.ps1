@@ -4,6 +4,7 @@ param(
     [int]$RemoteDebuggingPort = 9223,
     [switch]$StartApplication,
     [switch]$CreateProject,
+    [switch]$OpenProject,
     [string]$ProductId = "icax.laser-3d-cam",
     [string]$ProjectName = "Laser3DCAM UI Smoke",
     [string]$ProjectPath = "",
@@ -362,6 +363,7 @@ try {
         $workpiecePathLiteral = ConvertTo-JsLiteral $WorkpiecePath
         $tubeDesignerExportDirectoryLiteral = ConvertTo-JsLiteral $tubeDesignerExportDirectory
         $createProjectLiteral = if ($CreateProject -or $MachineDefinitionPath -or $WorkpiecePath) { "true" } else { "false" }
+        $openProjectLiteral = if ($OpenProject) { "true" } else { "false" }
         $importMachineLiteral = if ($MachineDefinitionPath) { "true" } else { "false" }
         $importWorkpieceLiteral = if ($WorkpiecePath) { "true" } else { "false" }
         $recognizeCADIntentLiteral = if ($RecognizeCADIntent) { "true" } else { "false" }
@@ -400,7 +402,13 @@ try {
     return state?.products?.some((product) => product?.productId === $productIdLiteral) ? state : null;
   }, "target product in AppShell state");
   let createProjectResult = null;
-  if ($createProjectLiteral) {
+  if ($openProjectLiteral) {
+    createProjectResult = await window.__icaxAppShell.openProject($projectPathLiteral, $productIdLiteral);
+    await waitUntil(() => window.__icaxLaser3DCAM, "Laser3DCAM automation").catch((error) => {
+      const appState = window.__icaxAppShell?.getState?.() ?? null;
+      throw new Error(error.message + "; AppShell=" + JSON.stringify(appState));
+    });
+  } else if ($createProjectLiteral) {
     createProjectResult = await window.__icaxAppShell.createProject({
       productId: $productIdLiteral,
       projectName: $projectNameLiteral,
@@ -447,39 +455,177 @@ try {
 
   let tubeDesignerResult = null;
   if ($checkTubeDesignerWorkflowLiteral) {
+    if (typeof window.icax?.openDirectoryDialog !== "function") {
+      throw new Error("TubeDesigner host directory picker is unavailable.");
+    }
     const captureDesignerDom = () => {
-      const parts = Array.from(document.querySelectorAll(".tube-designer-part"));
+      const sheetRows = Array.from(document.querySelectorAll(".tube-designer-sheet-row"));
+      const productRows = Array.from(document.querySelectorAll("[data-tube-designer-product-row]"));
+      const categoryRows = Array.from(document.querySelectorAll("[data-tube-designer-category-row]"));
+      const partRows = Array.from(document.querySelectorAll("[data-tube-designer-part-row]"));
+      const thumbnails = Array.from(document.querySelectorAll("[data-tube-designer-part-thumbnail]"));
+      const partNames = Array.from(document.querySelectorAll(".tube-designer-tree-cell")).map((cell) => cell.textContent.trim());
+      const partSpecifications = Array.from(document.querySelectorAll(".tube-designer-part-specification")).map((cell) => cell.textContent.trim());
+      const resultTable = document.querySelector(".tube-designer-sheet");
+      const selectionTable = document.querySelector(".tube-designer-selection-table");
+      const breakdownSummary = document.querySelector("[data-tube-designer-breakdown-summary]")?.textContent ?? "";
+      const partCountMatch = breakdownSummary.match(/·\s*(\d+)\s*个零件/);
+      const selectedPartCountMatch = breakdownSummary.match(/已选择\s*(\d+)\s*个/);
+      const parameterPanel = document.querySelector("[data-tube-designer-parameter-form]");
+      const parameterHeader = parameterPanel?.querySelector(".tube-designer-parameter-header") ?? null;
+      const parameterSections = Array.from(parameterPanel?.querySelectorAll("[data-tube-designer-parameter-group]") ?? []);
+      const expandedParameterSections = parameterSections.filter((section) => section.open);
+      const parameterSectionViewport = parameterPanel?.querySelector(".tube-designer-parameter-sections") ?? null;
+      const visibleParameterFields = Array.from(parameterPanel?.querySelectorAll(".tube-designer-field") ?? [])
+        .filter((field) => field.closest("[data-tube-designer-parameter-group]")?.open && field.getClientRects().length > 0);
       const error = document.querySelector(".cam-status.error")?.textContent?.trim() ?? "";
+      const noticeElement = document.querySelector(".cam-status.notice");
+      const noticeRect = noticeElement?.getBoundingClientRect();
+      const inspectionViewport = document.querySelector("[data-tube-designer-part-inspection-viewport]");
+      const measurementResult = document.querySelector("[data-tube-designer-measurement-result]");
+      const breakdownDialog = document.querySelector(".tube-designer-breakdown-dialog");
+      const exportButton = document.querySelector("[data-tube-designer-export-selected]");
+      const exportProgress = document.querySelector(".tube-designer-export-wait");
       return {
         error,
-        partCount: parts.length,
-        partNumbers: parts.map((part) => part.querySelector("strong")?.textContent?.trim() ?? ""),
-        lengths: parts.map((part) =>
-          part.querySelector(".tube-designer-part-length")?.textContent?.trim() ?? ""),
-        notice: document.querySelector(".cam-status.notice")?.textContent?.trim() ?? ""
+        ribbonCommandTitles: Array.from(document.querySelectorAll(".ribbon-command")).map((button) => button.textContent.trim()),
+        ribbonCommandIds: Array.from(document.querySelectorAll(".ribbon-command")).map((button) => button.dataset.commandId),
+        vectorRibbonIconCount: document.querySelectorAll(".ribbon-command .command-icon.vector svg").length,
+        ribbonSplitToggleCount: document.querySelectorAll("[data-action='ribbon-command-menu-toggle']").length,
+        visibleViewerHeaderCount: Array.from(document.querySelectorAll(".cam-viewer-head")).filter((node) => node.offsetParent !== null).length,
+        addDialogCount: document.querySelectorAll(".tube-designer-config-dialog").length,
+        templateCardCount: document.querySelectorAll(".tube-designer-template-card").length,
+        instanceCardCount: document.querySelectorAll(".tube-designer-instance-card").length,
+        parameterFormCount: document.querySelectorAll("[data-tube-designer-parameter-form]").length,
+        disassemblyDialogCount: document.querySelectorAll(".tube-designer-selection-dialog").length,
+        disassemblyInstanceRowCount: document.querySelectorAll("[data-tube-designer-disassembly-instance-row]").length,
+        productGroupCount: productRows.length,
+        categoryRowCount: categoryRows.length,
+        visiblePartRowCount: partRows.length,
+        sheetRowCount: sheetRows.length,
+        productRowSpans: Array.from(document.querySelectorAll("[data-tube-designer-product-rowspan]"))
+          .map((cell) => Number(cell.getAttribute("rowspan"))),
+        resultTableBorderCollapse: resultTable ? getComputedStyle(resultTable).borderCollapse : "",
+        resultTableColumnCount: resultTable?.querySelectorAll("thead th").length ?? 0,
+        selectionTableBorderCollapse: selectionTable ? getComputedStyle(selectionTable).borderCollapse : "",
+        nonNativeTableCellCount: Array.from(document.querySelectorAll(".tube-designer-sheet td, .tube-designer-selection-table td"))
+          .filter((cell) => getComputedStyle(cell).display !== "table-cell").length,
+        productGroupBottomOffsets: [],
+        parameterSectionCount: parameterSections.length,
+        expandedParameterSectionCount: expandedParameterSections.length,
+        visibleParameterFieldCount: visibleParameterFields.length,
+        maximumVisibleParameterFieldHeight: visibleParameterFields.length
+          ? Math.max(...visibleParameterFields.map((field) => field.getBoundingClientRect().height))
+          : 0,
+        parameterSectionOverflowY: parameterSectionViewport
+          ? getComputedStyle(parameterSectionViewport).overflowY
+          : "",
+        parameterActionButtonCount: parameterHeader?.querySelectorAll("[data-cam-action='tube-designer-confirm-update']").length ?? 0,
+        parameterHeaderInsideScrollArea: parameterSectionViewport?.contains(parameterHeader) ?? false,
+        parameterPanelOverflowY: parameterPanel ? getComputedStyle(parameterPanel).overflowY : "",
+        parameterDisassemblyButtonCount: parameterPanel?.querySelectorAll("[data-cam-action='tube-designer-open-disassemble']").length ?? 0,
+        partCount: Number(partCountMatch?.[1] ?? 0),
+        selectedPartCount: Number(selectedPartCountMatch?.[1] ?? 0),
+        thumbnailCount: thumbnails.length,
+        resourceThumbnailCount: thumbnails.filter((canvas) => canvas.dataset.tubeThumbnailSource === "resource").length,
+        partNames,
+        partSpecifications,
+        breakdownDialogCount: document.querySelectorAll(".tube-designer-breakdown-dialog").length,
+        breakdownDialogBusy: breakdownDialog?.getAttribute("aria-busy") ?? "",
+        exportButtonDisabled: exportButton?.disabled ?? false,
+        exportProgressCount: document.querySelectorAll(".tube-designer-export-wait").length,
+        exportProgressTitle: exportProgress?.querySelector("[data-tube-designer-export-progress-title]")?.textContent?.trim() ?? "",
+        exportProgressMessage: exportProgress?.querySelector("[data-tube-designer-export-progress-message]")?.textContent?.trim() ?? "",
+        operationProgressCount: document.querySelectorAll("[data-tube-designer-operation-wait]").length,
+        operationProgressTitle: document.querySelector("[data-tube-designer-operation-title]")?.textContent?.trim() ?? "",
+        operationProgressPhase: document.querySelector("[data-tube-designer-operation-phase]")?.textContent?.trim() ?? "",
+        breakdownFooterCloseButtonCount: document.querySelectorAll(".tube-designer-breakdown-footer [data-cam-action='tube-designer-close-breakdown']").length,
+        partInspectionDialogCount: document.querySelectorAll(".tube-designer-part-inspection-dialog").length,
+        partInspectionCanvasCount: document.querySelectorAll("[data-tube-designer-part-inspection-viewport] canvas.icax-three-viewport-canvas").length,
+        partInspectionReady: inspectionViewport?.dataset.tubeInspectionReady ?? "",
+        partInspectionEntityCount: Number(inspectionViewport?.dataset.tubeInspectionEntityCount ?? 0),
+        measurementPointCount: Number(measurementResult?.dataset.measurementPointCount ?? 0),
+        notice: noticeElement?.textContent?.trim() ?? "",
+        noticeLayout: noticeElement ? {
+          centerOffset: Math.abs((noticeRect.left + noticeRect.width / 2) - window.innerWidth / 2),
+          top: noticeRect.top,
+          pointerEvents: getComputedStyle(noticeElement).pointerEvents
+        } : null
       };
     };
-    const generateOperation = await window.__icaxLaser3DCAM.executeAreaAction(
-      "tube-designer-generate"
+
+    const initialRibbonDom = captureDesignerDom();
+    const batchAddOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+      "tube-designer-batch-add",
+      { dataset: { tubeDesignerBatchPath: "D:\\orders\\security-windows.xlsx" } }
     );
+    const batchAddState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const batchAddDom = captureDesignerDom();
+
+    const initialDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const openCancelledAdd = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    const addDialogDom = captureDesignerDom();
+    const stateBeforeCancel = window.__icaxLaser3DCAM.getTubeDesignerState();
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-cancel-add");
+    const cancelledAddDom = captureDesignerDom();
+    const stateAfterCancel = window.__icaxLaser3DCAM.getTubeDesignerState();
+    if (!openCancelledAdd?.handled || addDialogDom.addDialogCount !== 1 || addDialogDom.templateCardCount < 3 ||
+        stateBeforeCancel.instances.length !== initialDesignerState.instances.length ||
+        stateAfterCancel.instances.length !== initialDesignerState.instances.length || cancelledAddDom.addDialogCount !== 0) {
+      throw new Error("TubeDesigner add/cancel contract failed: " + JSON.stringify({ addDialogDom, cancelledAddDom, initialDesignerState, stateBeforeCancel, stateAfterCancel }));
+    }
+
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    const generatePromise = window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
+    const generateBusyDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.operationProgressCount === 1 && current.operationProgressTitle === "正在生成产品预览"
+        ? current : null;
+    }, "TubeDesigner centered generation progress");
+    const generateOperation = await generatePromise;
+    const generateCompletedDom = captureDesignerDom();
     const designerState = window.__icaxLaser3DCAM.getTubeDesignerState();
     const dom = captureDesignerDom();
     const viewport = window.__icaxLaser3DCAM.getViewportDebugState({
       samplePixels: true,
       includeObjects: true
     });
-    if (!generateOperation?.handled || dom.error || dom.partCount !== 7) {
-      throw new Error("TubeDesigner generation event chain failed: " + JSON.stringify({ generateOperation, dom }));
+    if (!generateOperation?.handled || dom.error || dom.partCount !== 0 || designerState.parts.length !== 0) {
+      throw new Error("TubeDesigner preview event chain failed: " + JSON.stringify({ generateOperation, dom, designerState }));
     }
     const widthInput = document.querySelector("[data-tube-designer-parameter='width']");
     if (!widthInput) {
       throw new Error("TubeDesigner regeneration controls are missing.");
     }
+    widthInput.focus();
     widthInput.value = "1400";
-    widthInput.dispatchEvent(new Event("input", { bubbles: true }));
-    const regenerateOperation = await window.__icaxLaser3DCAM.executeAreaAction(
-      "tube-designer-generate"
+    widthInput.dispatchEvent(new Event("change", { bubbles: true }));
+    const parameterViewportBeforeRegenerate = document.querySelector(".tube-designer-parameter-sections");
+    const parameterGroupsBeforeRegenerate = Array.from(
+      document.querySelectorAll("[data-tube-designer-parameter-group]"));
+    const lastParameterGroup = parameterGroupsBeforeRegenerate.at(-1);
+    if (!parameterViewportBeforeRegenerate || !lastParameterGroup) {
+      throw new Error("TubeDesigner parameter-panel state controls are missing.");
+    }
+    for (const parameterGroup of parameterGroupsBeforeRegenerate) parameterGroup.open = true;
+    parameterViewportBeforeRegenerate.scrollTop = Math.min(
+      180,
+      Math.max(0, parameterViewportBeforeRegenerate.scrollHeight - parameterViewportBeforeRegenerate.clientHeight),
     );
+    const parameterPanelStateBeforeRegenerate = {
+      expandedGroups: parameterGroupsBeforeRegenerate
+        .filter((group) => group.open)
+        .map((group) => group.dataset.tubeDesignerParameterGroup),
+      scrollTop: parameterViewportBeforeRegenerate.scrollTop,
+    };
+    const regenerateOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-update");
+    const parameterViewportAfterRegenerate = document.querySelector(".tube-designer-parameter-sections");
+    const parameterPanelStateAfterRegenerate = {
+      expandedGroups: Array.from(document.querySelectorAll("[data-tube-designer-parameter-group][open]"))
+        .map((group) => group.dataset.tubeDesignerParameterGroup),
+      scrollTop: parameterViewportAfterRegenerate?.scrollTop ?? -1,
+      focusedParameter: document.activeElement?.dataset?.tubeDesignerParameter ?? "",
+    };
     const regeneratedDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
     const regeneratedDom = captureDesignerDom();
     const regeneratedViewport = window.__icaxLaser3DCAM.getViewportDebugState({
@@ -494,7 +640,6 @@ try {
     const undoDom = captureDesignerDom();
     const undoResult = {
       partCount: undoDom.partCount,
-      lengths: undoDom.lengths,
       viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
     };
     await window.__icaxAppShell.executeRibbonCommand("edit.redo");
@@ -502,30 +647,303 @@ try {
     const redoDom = captureDesignerDom();
     const redoResult = {
       partCount: redoDom.partCount,
-      lengths: redoDom.lengths,
       viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
     };
-    let exportResult = null;
-    if ($checkTubeDesignerStepExportLiteral) {
-      const output = document.querySelector("[data-tube-designer-export-directory]");
-      if (!output) {
-        throw new Error("TubeDesigner STEP export controls are missing.");
-      }
-      output.value = $tubeDesignerExportDirectoryLiteral;
-      output.dispatchEvent(new Event("input", { bubbles: true }));
-      exportResult = await window.__icaxLaser3DCAM.executeAreaAction(
-        "tube-designer-export-all"
-      );
-      if (!exportResult?.handled) {
-        throw new Error("TubeDesigner STEP export event chain failed: " + JSON.stringify(exportResult));
-      }
+    const firstProductId = designerState.product.entityId;
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    const template2Card = document.querySelector(".tube-designer-template-card[data-tube-designer-template-id='security-window-2']");
+    if (!template2Card || template2Card.disabled) throw new Error("TubeDesigner template 2 card is unavailable.");
+    template2Card.click();
+    await waitUntil(
+      () => document.querySelector(".tube-designer-template-card.selected[data-tube-designer-template-id='security-window-2']")
+        && document.querySelector("[data-tube-designer-parameter='handleBottom']"),
+      "TubeDesigner second-template parameter form"
+    );
+    const template2PreviewOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
+    const template2DesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const template2Viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const secondProductId = template2DesignerState.product.entityId;
+
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    const template3Card = document.querySelector(".tube-designer-template-card[data-tube-designer-template-id='security-window-3']");
+    if (!template3Card || template3Card.disabled) throw new Error("TubeDesigner template 3 card is unavailable.");
+    template3Card.click();
+    const template3ParameterDom = await waitUntil(() => {
+      const card = document.querySelector(".tube-designer-template-card.selected[data-tube-designer-template-id='security-window-3']");
+      const join = document.querySelector("select[data-tube-designer-parameter='frameJoinType']");
+      const style = document.querySelector("select[data-tube-designer-parameter='vGrooveStyle']");
+      return card && join?.value === "v_groove_90" && style?.value === "sharp_v"
+        ? { joinType: join.value, grooveStyle: style.value }
+        : null;
+    }, "TubeDesigner third-template parameter form");
+    const template3JoinSelect = document.querySelector("select[data-tube-designer-parameter='frameJoinType']");
+    template3JoinSelect.value = "butt_90";
+    template3JoinSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await waitUntil(() =>
+      document.querySelector("select[data-tube-designer-parameter='frameButtWrapMode']")
+      && !document.querySelector("select[data-tube-designer-parameter='vGrooveStyle']"),
+    "TubeDesigner third-template conditional butt parameters");
+    const restoredTemplate3JoinSelect = document.querySelector("select[data-tube-designer-parameter='frameJoinType']");
+    restoredTemplate3JoinSelect.value = "v_groove_90";
+    restoredTemplate3JoinSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    const template3ConditionalDom = await waitUntil(() => {
+      const style = document.querySelector("select[data-tube-designer-parameter='vGrooveStyle']");
+      const butt = document.querySelector("select[data-tube-designer-parameter='frameButtWrapMode']");
+      return style?.value === "sharp_v" && !butt ? { restoredJoinType: "v_groove_90", buttHidden: true } : null;
+    }, "TubeDesigner third-template restored V-groove parameters");
+    const template3PreviewOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
+    const template3DesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const template3Viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const thirdProductId = template3DesignerState.product.entityId;
+
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    const accessDoorFrameLayout = document.querySelector("[data-tube-designer-add-form] select[data-tube-designer-parameter='frameLayout']");
+    if (!accessDoorFrameLayout) throw new Error("TubeDesigner frame-layout option is missing.");
+    accessDoorFrameLayout.value = "four_sides";
+    accessDoorFrameLayout.dispatchEvent(new Event("change", { bubbles: true }));
+    const accessDoorConnectionProcess = await waitUntil(() => {
+      const process = document.querySelector("[data-tube-designer-add-form] select[data-tube-designer-parameter='frameJoinType']");
+      return process?.options.length === 6 ? process : null;
+    }, "TubeDesigner complete connection-process catalog");
+    accessDoorConnectionProcess.value = "v_groove_90:left_arc";
+    accessDoorConnectionProcess.dispatchEvent(new Event("change", { bubbles: true }));
+    await waitUntil(() =>
+      document.querySelector("[data-tube-designer-add-form] select[data-tube-designer-parameter='frameJoinType']")?.value === "v_groove_90:left_arc",
+    "TubeDesigner selected outer-frame connection process");
+    const accessDoorToggle = document.querySelector("[data-tube-designer-add-form] input[type='checkbox'][data-tube-designer-parameter='accessDoorEnabled']");
+    if (!accessDoorToggle) throw new Error("TubeDesigner access-door option is missing.");
+    accessDoorToggle.checked = true;
+    accessDoorToggle.dispatchEvent(new Event("change", { bubbles: true }));
+    const accessDoorFrameProcess = await waitUntil(() => {
+      const process = document.querySelector("[data-tube-designer-add-form] select[data-tube-designer-parameter='doorFrameJoinType']");
+      return process?.options.length === 6 ? process : null;
+    }, "TubeDesigner fixed-door-frame connection-process catalog");
+    accessDoorFrameProcess.value = "miter_45";
+    accessDoorFrameProcess.dispatchEvent(new Event("change", { bubbles: true }));
+    const accessDoorLeafFrameProcess = await waitUntil(() => {
+      const process = document.querySelector("[data-tube-designer-add-form] select[data-tube-designer-parameter='doorLeafFrameJoinType']");
+      return process?.options.length === 6 ? process : null;
+    }, "TubeDesigner door-leaf-frame connection-process catalog");
+    accessDoorLeafFrameProcess.value = "v_groove_90:rounded_v";
+    accessDoorLeafFrameProcess.dispatchEvent(new Event("change", { bubbles: true }));
+    const accessDoorParameterDom = await waitUntil(() => {
+      const form = document.querySelector("[data-tube-designer-add-form]");
+      const doorLeft = form?.querySelector("[data-tube-designer-parameter='doorLeft']");
+      const doorFrameRadius = form?.querySelector("[data-tube-designer-parameter='doorFrameCornerRadius']");
+      const doorVerticalType = form?.querySelector("[data-tube-designer-parameter='doorVerticalProfileType']");
+      const profileTypeFields = Array.from(form?.querySelectorAll("select[data-tube-designer-parameter$='ProfileType']") ?? []);
+      const profileTypeLabels = profileTypeFields.map((field) => field.selectedOptions[0]?.textContent?.trim() ?? "");
+      const outerProcess = form?.querySelector("select[data-tube-designer-parameter='frameJoinType']");
+      const fixedProcess = form?.querySelector("select[data-tube-designer-parameter='doorFrameJoinType']");
+      const leafProcess = form?.querySelector("select[data-tube-designer-parameter='doorLeafFrameJoinType']");
+      return doorLeft && doorFrameRadius && doorVerticalType?.value === "round"
+        && profileTypeFields.length === 7
+        && profileTypeLabels.join("|") === "矩形管|矩形管|圆管|矩形管|矩形管|矩形管|圆管"
+        && outerProcess?.value === "v_groove_90:left_arc"
+        && fixedProcess?.value === "miter_45"
+        && leafProcess?.value === "v_groove_90:rounded_v"
+        ? {
+            doorLeft: doorLeft.value,
+            doorFrameRadius: doorFrameRadius.value,
+            doorVerticalType: doorVerticalType.value,
+            profileTypeLabels,
+            outerProcess: outerProcess.value,
+            outerProcessCount: outerProcess.options.length,
+            fixedProcess: fixedProcess.value,
+            fixedProcessCount: fixedProcess.options.length,
+            leafProcess: leafProcess.value,
+            leafProcessCount: leafProcess.options.length,
+          }
+        : null;
+    }, "TubeDesigner access-door parameter form");
+    const accessDoorPreviewOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
+    const accessDoorDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const accessDoorViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const accessDoorInspectorDom = captureDesignerDom();
+    const accessDoorProductId = accessDoorDesignerState.product.entityId;
+
+    const activateFirstOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+      "tube-designer-select-instance",
+      { dataset: { tubeDesignerInstanceId: firstProductId } }
+    );
+    const firstActivatedState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const firstActivatedViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const firstActivationNoticeDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.notice.startsWith("已切换到 ") ? current : null;
+    }, "TubeDesigner activation notice");
+    const dismissedActivationNoticeDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.notice === "" ? current : null;
+    }, "TubeDesigner activation notice dismissal");
+    const activateSecondOperation = await window.__icaxLaser3DCAM.executeAreaAction(
+      "tube-designer-select-instance",
+      { dataset: { tubeDesignerInstanceId: secondProductId } }
+    );
+    const secondActivatedState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const secondActivatedViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+
+    const disassembleOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-disassemble");
+    const disassemblySelectionDom = captureDesignerDom();
+    const disassembleConfirmOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-disassemble");
+    const disassembledDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const breakdownDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.productGroupCount === 4 && current.partCount === 58 &&
+        current.selectedPartCount === 58 && current.categoryRowCount > 0 &&
+        current.resourceThumbnailCount === current.categoryRowCount ? current : null;
+    }, "TubeDesigner grouped manufacturing list and resource thumbnails");
+    const firstCategoryToggle = document.querySelector(
+      "[data-tube-designer-category-row] [data-cam-action='tube-designer-toggle-category-tree']");
+    if (!firstCategoryToggle) throw new Error("TubeDesigner category expansion control is missing.");
+    firstCategoryToggle.click();
+    await waitUntil(
+      () => document.querySelector("[data-tube-designer-part-row]") ?? null,
+      "TubeDesigner category child rows"
+    );
+    const partInspectionLink = document.querySelector(
+      "[data-tube-designer-part-row] [data-cam-action='tube-designer-open-part-inspection']");
+    if (!partInspectionLink) throw new Error("TubeDesigner part inspection control is missing.");
+    partInspectionLink.click();
+    const partInspectionDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.partInspectionDialogCount === 1
+        && current.partInspectionCanvasCount === 1
+        && current.partInspectionReady === "true"
+        && current.partInspectionEntityCount === 1 ? current : null;
+    }, "TubeDesigner isolated part inspection viewport");
+    const inspectionCanvas = document.querySelector(
+      "[data-tube-designer-part-inspection-viewport] canvas.icax-three-viewport-canvas");
+    const inspectionRect = inspectionCanvas.getBoundingClientRect();
+    const inspectionPickRatios = [];
+    for (let y = 0.12; y <= 0.88; y += 0.025) {
+      for (let x = 0.12; x <= 0.88; x += 0.025) inspectionPickRatios.push([x, y]);
     }
+    for (let index = 0; index < inspectionPickRatios.length; index += 1) {
+      const [xRatio, yRatio] = inspectionPickRatios[index];
+      const inspectionPick = {
+        clientX: inspectionRect.left + inspectionRect.width * xRatio,
+        clientY: inspectionRect.top + inspectionRect.height * yRatio,
+        button: 0,
+        bubbles: true,
+        pointerId: 701 + index,
+      };
+      inspectionCanvas.dispatchEvent(new PointerEvent("pointerdown", inspectionPick));
+      inspectionCanvas.dispatchEvent(new PointerEvent("pointerup", inspectionPick));
+      if (Number(document.querySelector("[data-tube-designer-measurement-result]")?.dataset.measurementPointCount ?? 0) > 0) break;
+    }
+    const partMeasurementDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.measurementPointCount === 1 ? current : null;
+    }, "TubeDesigner part point measurement");
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-clear-part-measurement");
+    const clearedPartMeasurementDom = captureDesignerDom();
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-part-inspection");
+    const closedPartInspectionDom = captureDesignerDom();
+    const partialSelectionCheckbox = Array.from(
+      document.querySelectorAll("[data-tube-designer-part-row] input[data-cam-action='tube-designer-toggle-part']"))[0];
+    if (!partialSelectionCheckbox) throw new Error("TubeDesigner manufacturing selection controls are missing.");
+    const breakdownDialogBeforeSelection = document.querySelector(".tube-designer-breakdown-dialog");
+    const breakdownTableBeforeSelection = document.querySelector(".tube-designer-sheet");
+    const firstThumbnailBeforeSelection = document.querySelector("[data-tube-designer-part-thumbnail]");
+    partialSelectionCheckbox.click();
+    const partialSelectionDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.selectedPartCount === 57 ? current : null;
+    }, "TubeDesigner partial manufacturing selection");
+    const partialSelectionPreservedDom = breakdownDialogBeforeSelection === document.querySelector(".tube-designer-breakdown-dialog")
+      && breakdownTableBeforeSelection === document.querySelector(".tube-designer-sheet")
+      && firstThumbnailBeforeSelection === document.querySelector("[data-tube-designer-part-thumbnail]");
+    let exportResult = null;
+    let exportBusyDom = null;
+    let exportLockedDom = null;
+    let exportCompletedDom = null;
+    let duplicateExportResult = null;
+    if ($checkTubeDesignerStepExportLiteral) {
+      const exportPromise = window.__icaxLaser3DCAM.executeAreaAction(
+        "tube-designer-export-selected",
+        { dataset: { tubeDesignerExportDirectory: $tubeDesignerExportDirectoryLiteral } }
+      );
+      exportBusyDom = await waitUntil(() => {
+        const current = captureDesignerDom();
+        return current.breakdownDialogBusy === "true" && current.exportProgressCount === 1
+          && current.exportButtonDisabled ? current : null;
+      }, "TubeDesigner export waiting state");
+      duplicateExportResult = await window.__icaxLaser3DCAM.executeAreaAction(
+        "tube-designer-export-selected",
+        { dataset: { tubeDesignerExportDirectory: $tubeDesignerExportDirectoryLiteral } }
+      );
+      await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-breakdown");
+      exportLockedDom = captureDesignerDom();
+      exportResult = await exportPromise;
+      if (!exportResult?.handled) throw new Error("TubeDesigner STEP export event chain failed: " + JSON.stringify(exportResult));
+      exportCompletedDom = captureDesignerDom();
+    }
+    await window.__icaxAppShell.executeRibbonCommand("edit.undo");
+    const undoDisassemblyDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const undoDisassemblyResult = {
+      dom: captureDesignerDom(),
+      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+    };
+    await window.__icaxAppShell.executeRibbonCommand("edit.redo");
+    const redoDisassemblyDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const redoDisassemblyResult = {
+      dom: captureDesignerDom(),
+      viewport: window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true })
+    };
+    const reopenBreakdownOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-breakdown");
+    const finalBreakdownDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.breakdownDialogCount === 1 && current.productGroupCount === 4 ? current : null;
+    }, "TubeDesigner reopened grouped manufacturing list");
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-breakdown");
+    const finalAccessDoorActivation = await window.__icaxLaser3DCAM.executeAreaAction(
+      "tube-designer-select-instance",
+      { dataset: { tubeDesignerInstanceId: accessDoorProductId } }
+    );
+    const finalAccessDoorState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const finalAccessDoorViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const generateMultiFaceTemplate = async (templateId, expectedMemberCount) => {
+      await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+      const card = document.querySelector(
+        ".tube-designer-template-card[data-tube-designer-template-id='" + templateId + "']");
+      if (!card || card.disabled) throw new Error("TubeDesigner template " + templateId + " is unavailable.");
+      card.click();
+      await waitUntil(
+        () => document.querySelector(".tube-designer-template-card.selected[data-tube-designer-template-id='" + templateId + "']")
+          && document.querySelector("[data-tube-designer-add-form] [data-tube-designer-parameter='frontWidth']"),
+        "TubeDesigner " + templateId + " parameter form",
+      );
+      const operation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
+      const state = window.__icaxLaser3DCAM.getTubeDesignerState();
+      const viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+      if (!operation?.handled || state.product?.templateId !== templateId
+          || state.members?.length !== expectedMemberCount
+          || viewport.visibleObjectCount !== expectedMemberCount) {
+        throw new Error("TubeDesigner " + templateId + " preview failed: " + JSON.stringify({ operation, state, viewport }));
+      }
+      return { operation, state, viewport };
+    };
+    const twoFaceTemplateResult = await generateMultiFaceTemplate("two-face-security-window", 28);
+    const threeFaceTemplateResult = await generateMultiFaceTemplate("three-face-security-window", 39);
+    const fiveFaceTemplateResult = await generateMultiFaceTemplate("five-face-security-window", 63);
     tubeDesignerResult = {
+      initialDesignerState,
+      initialRibbonDom,
+      batchAddOperation,
+      batchAddState,
+      batchAddDom,
+      addDialogDom,
+      cancelledAddDom,
       generateOperation,
+      generateBusyDom,
+      generateCompletedDom,
       designerState,
       dom,
       viewport,
       regenerateOperation,
+      parameterPanelStateBeforeRegenerate,
+      parameterPanelStateAfterRegenerate,
       regeneratedDesignerState,
       regeneratedDom,
       regeneratedViewport,
@@ -533,7 +951,59 @@ try {
       undoDesignerState,
       redoResult,
       redoDesignerState,
-      exportResult
+      firstProductId,
+      disassembleOperation,
+      disassemblySelectionDom,
+      disassembleConfirmOperation,
+      disassembledDesignerState,
+      breakdownDom,
+      partInspectionDom,
+      partMeasurementDom,
+      clearedPartMeasurementDom,
+      closedPartInspectionDom,
+      partialSelectionDom,
+      partialSelectionPreservedDom,
+      exportResult,
+      exportBusyDom,
+      exportLockedDom,
+      exportCompletedDom,
+      duplicateExportResult,
+      undoDisassemblyDesignerState,
+      undoDisassemblyResult,
+      redoDisassemblyDesignerState,
+      redoDisassemblyResult,
+      reopenBreakdownOperation,
+      finalBreakdownDom,
+      template2PreviewOperation,
+      template2DesignerState,
+      template2Viewport,
+      secondProductId,
+      template3ParameterDom,
+      template3ConditionalDom,
+      template3PreviewOperation,
+      template3DesignerState,
+      template3Viewport,
+      thirdProductId,
+      accessDoorParameterDom,
+      accessDoorPreviewOperation,
+      accessDoorDesignerState,
+      accessDoorViewport,
+      accessDoorInspectorDom,
+      accessDoorProductId,
+      finalAccessDoorActivation,
+      finalAccessDoorState,
+      finalAccessDoorViewport,
+      twoFaceTemplateResult,
+      threeFaceTemplateResult,
+      fiveFaceTemplateResult,
+      activateFirstOperation,
+      firstActivatedState,
+      firstActivatedViewport,
+      firstActivationNoticeDom,
+      dismissedActivationNoticeDom,
+      activateSecondOperation,
+      secondActivatedState,
+      secondActivatedViewport
     };
   }
 
@@ -908,18 +1378,84 @@ try {
             if (-not $state.tubeDesignerResult) {
                 throw "TubeDesigner workflow result is missing."
             }
-            if ([int]$state.tubeDesignerResult.dom.partCount -ne 7) {
+            if ([int]$state.tubeDesignerResult.dom.partCount -ne 0 -or
+                @($state.tubeDesignerResult.designerState.parts).Count -ne 0) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
-                throw "TubeDesigner did not generate seven default parts: $designerText"
+                throw "TubeDesigner preview incorrectly created manufacturing parts: $designerText"
             }
-            if ([int]$state.tubeDesignerResult.viewport.visibleObjectCount -ne 7) {
+            if (@($state.tubeDesignerResult.initialRibbonDom.ribbonCommandTitles).Count -ne 3 -or
+                $state.tubeDesignerResult.initialRibbonDom.ribbonCommandTitles[0] -ne "添加" -or
+                $state.tubeDesignerResult.initialRibbonDom.ribbonCommandTitles[1] -ne "批量添加" -or
+                $state.tubeDesignerResult.initialRibbonDom.ribbonCommandTitles[2] -ne "导出加工" -or
+                $state.tubeDesignerResult.initialRibbonDom.ribbonCommandIds[0] -ne "designer.add" -or
+                $state.tubeDesignerResult.initialRibbonDom.ribbonCommandIds[1] -ne "designer.batch-add" -or
+                $state.tubeDesignerResult.initialRibbonDom.ribbonCommandIds[2] -ne "designer.export-machining" -or
+                [int]$state.tubeDesignerResult.initialRibbonDom.vectorRibbonIconCount -ne 3 -or
+                [int]$state.tubeDesignerResult.initialRibbonDom.ribbonSplitToggleCount -ne 0 -or
+                [int]$state.tubeDesignerResult.initialRibbonDom.visibleViewerHeaderCount -ne 0 -or
+                -not $state.tubeDesignerResult.batchAddOperation.handled -or
+                $state.tubeDesignerResult.batchAddState.batchImportPath -ne "D:\orders\security-windows.xlsx" -or
+                -not $state.tubeDesignerResult.batchAddDom.notice.StartsWith("已选择 Excel 文件：")) {
+                $designerText = @{
+                    Titles = @($state.tubeDesignerResult.initialRibbonDom.ribbonCommandTitles)
+                    CommandIds = @($state.tubeDesignerResult.initialRibbonDom.ribbonCommandIds)
+                    VectorIconCount = [int]$state.tubeDesignerResult.initialRibbonDom.vectorRibbonIconCount
+                    SplitToggles = [int]$state.tubeDesignerResult.initialRibbonDom.ribbonSplitToggleCount
+                    ViewerHeaderCount = [int]$state.tubeDesignerResult.initialRibbonDom.visibleViewerHeaderCount
+                    BatchAddOperation = $state.tubeDesignerResult.batchAddOperation
+                    BatchAddState = $state.tubeDesignerResult.batchAddState
+                    BatchAddNotice = $state.tubeDesignerResult.batchAddDom.notice
+                } | ConvertTo-Json -Compress
+                throw "TubeDesigner compact ribbon or batch-add contract failed: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.addDialogDom.addDialogCount -ne 1 -or
+                [int]$state.tubeDesignerResult.addDialogDom.templateCardCount -lt 3 -or
+                [int]$state.tubeDesignerResult.cancelledAddDom.addDialogCount -ne 0 -or
+                [int]$state.tubeDesignerResult.dom.instanceCardCount -ne 1 -or
+                [int]$state.tubeDesignerResult.dom.parameterFormCount -ne 1 -or
+                @($state.tubeDesignerResult.designerState.instances).Count -ne 1) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
-                throw "TubeDesigner did not publish seven preview members: $designerText"
+                throw "TubeDesigner add dialog or instance workspace contract failed: $designerText"
             }
-            if ([int]$state.tubeDesignerResult.regeneratedDom.partCount -ne 7 -or
-                [int]$state.tubeDesignerResult.regeneratedViewport.visibleObjectCount -ne 7) {
+            if ([int]$state.tubeDesignerResult.generateBusyDom.operationProgressCount -ne 1 -or
+                $state.tubeDesignerResult.generateBusyDom.operationProgressTitle -ne "正在生成产品预览" -or
+                [int]$state.tubeDesignerResult.generateCompletedDom.operationProgressCount -ne 0) {
+                $designerText = @{
+                    Busy = $state.tubeDesignerResult.generateBusyDom
+                    Completed = $state.tubeDesignerResult.generateCompletedDom
+                } | ConvertTo-Json -Depth 8 -Compress
+                throw "TubeDesigner generation progress did not follow operation lifetime: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.viewport.visibleObjectCount -ne 15) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner did not publish the expected automatic-spacing preview members: $designerText"
+            }
+            $previewDepth = [double]$state.tubeDesignerResult.viewport.contentBounds.max.y -
+                [double]$state.tubeDesignerResult.viewport.contentBounds.min.y
+            $previewHeight = [double]$state.tubeDesignerResult.viewport.contentBounds.max.z -
+                [double]$state.tubeDesignerResult.viewport.contentBounds.min.z
+            if ([Math]::Abs($previewDepth - 25.0) -gt 0.001 -or
+                [Math]::Abs($previewHeight - 1800.0) -gt 0.001) {
+                $designerText = $state.tubeDesignerResult.viewport.contentBounds | ConvertTo-Json -Depth 8 -Compress
+                throw "TubeDesigner preview is not standing in the XZ plane: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.regeneratedDom.partCount -ne 0 -or
+                [int]$state.tubeDesignerResult.regeneratedViewport.visibleObjectCount -ne 17) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner regeneration left stale or missing members: $designerText"
+            }
+            $parameterGroupsBefore = @($state.tubeDesignerResult.parameterPanelStateBeforeRegenerate.expandedGroups)
+            $parameterGroupsAfter = @($state.tubeDesignerResult.parameterPanelStateAfterRegenerate.expandedGroups)
+            if ([Math]::Abs(
+                    [double]$state.tubeDesignerResult.parameterPanelStateBeforeRegenerate.scrollTop -
+                    [double]$state.tubeDesignerResult.parameterPanelStateAfterRegenerate.scrollTop
+                ) -gt 1 -or
+                (@($parameterGroupsBefore) -join "|") -cne (@($parameterGroupsAfter) -join "|")) {
+                $designerText = @{
+                    Before = $state.tubeDesignerResult.parameterPanelStateBeforeRegenerate
+                    After = $state.tubeDesignerResult.parameterPanelStateAfterRegenerate
+                } | ConvertTo-Json -Depth 6 -Compress
+                throw "TubeDesigner regeneration reset the parameter-panel editing context: $designerText"
             }
             $regeneratedWidth = [double]$state.tubeDesignerResult.regeneratedViewport.contentBounds.max.x -
                 [double]$state.tubeDesignerResult.regeneratedViewport.contentBounds.min.x
@@ -927,8 +1463,8 @@ try {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner regeneration did not replace the preview geometry: $designerText"
             }
-            if ([int]$state.tubeDesignerResult.undoResult.partCount -ne 7 -or
-                [int]$state.tubeDesignerResult.redoResult.partCount -ne 7) {
+            if ([int]$state.tubeDesignerResult.undoResult.partCount -ne 0 -or
+                [int]$state.tubeDesignerResult.redoResult.partCount -ne 0) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner undo/redo did not restore a coherent design: $designerText"
             }
@@ -941,32 +1477,35 @@ try {
             if (@($designerStates | Where-Object { -not $_ }).Count -gt 0) {
                 throw "TubeDesigner resource-version state capture is incomplete."
             }
-            if (@($designerStates | Where-Object {
-                @($_.members).Count -ne 7 -or @($_.parts).Count -ne 7
-            }).Count -gt 0) {
+            $designerMemberCounts = @(
+                @($designerStates[0].members).Count,
+                @($designerStates[1].members).Count,
+                @($designerStates[2].members).Count,
+                @($designerStates[3].members).Count
+            )
+            if ((@($designerMemberCounts) -join "|") -ne "15|17|15|17" -or
+                @($designerStates | Where-Object { @($_.parts).Count -ne 0 }).Count -gt 0) {
                 $designerText = $designerStates | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner resource-version state is incomplete: $designerText"
             }
-            for ($index = 0; $index -lt 7; $index++) {
-                foreach ($collectionName in @("members", "parts")) {
-                    $first = $designerStates[0].$collectionName[$index]
-                    $second = $designerStates[1].$collectionName[$index]
-                    $undo = $designerStates[2].$collectionName[$index]
-                    $redo = $designerStates[3].$collectionName[$index]
-                    if ($first.entityId -ne $second.entityId -or
-                        $first.entityId -ne $undo.entityId -or
-                        $first.entityId -ne $redo.entityId -or
-                        $first.resourceId -ne $second.resourceId -or
-                        $first.resourceId -ne $undo.resourceId -or
-                        $first.resourceId -ne $redo.resourceId -or
-                        [uint64]$first.resourceVersion -eq 0 -or
-                        [uint64]$second.resourceVersion -le [uint64]$first.resourceVersion -or
-                        [uint64]$undo.resourceVersion -ne [uint64]$first.resourceVersion -or
-                        [uint64]$redo.resourceVersion -ne [uint64]$second.resourceVersion) {
-                        $designerText = @($first, $second, $undo, $redo) |
-                            ConvertTo-Json -Depth 8 -Compress
-                        throw "TubeDesigner stable ID/version history failed for $collectionName[$index]: $designerText"
-                    }
+            for ($index = 0; $index -lt 15; $index++) {
+                $first = $designerStates[0].members[$index]
+                $second = $designerStates[1].members[$index]
+                $undo = $designerStates[2].members[$index]
+                $redo = $designerStates[3].members[$index]
+                if ($first.entityId -ne $second.entityId -or
+                    $first.entityId -ne $undo.entityId -or
+                    $first.entityId -ne $redo.entityId -or
+                    $first.resourceId -ne $second.resourceId -or
+                    $first.resourceId -ne $undo.resourceId -or
+                    $first.resourceId -ne $redo.resourceId -or
+                    [uint64]$first.resourceVersion -eq 0 -or
+                    [uint64]$second.resourceVersion -le [uint64]$first.resourceVersion -or
+                    [uint64]$undo.resourceVersion -ne [uint64]$first.resourceVersion -or
+                    [uint64]$redo.resourceVersion -ne [uint64]$second.resourceVersion) {
+                    $designerText = @($first, $second, $undo, $redo) |
+                        ConvertTo-Json -Depth 8 -Compress
+                    throw "TubeDesigner stable ID/version history failed for members[$index]: $designerText"
                 }
             }
             $undoWidth = [double]$state.tubeDesignerResult.undoResult.viewport.contentBounds.max.x -
@@ -983,12 +1522,224 @@ try {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner did not fit the generated product into the viewport: $designerText"
             }
+            if ([int]$state.tubeDesignerResult.disassemblySelectionDom.disassemblyDialogCount -ne 1 -or
+                [int]$state.tubeDesignerResult.disassemblySelectionDom.disassemblyInstanceRowCount -ne 4 -or
+                $state.tubeDesignerResult.disassemblySelectionDom.selectionTableBorderCollapse -ne "collapse" -or
+                [int]$state.tubeDesignerResult.disassemblySelectionDom.nonNativeTableCellCount -ne 0 -or
+                [int]$state.tubeDesignerResult.breakdownDom.breakdownDialogCount -ne 1 -or
+                [int]$state.tubeDesignerResult.breakdownDom.productGroupCount -ne 4 -or
+                [int]$state.tubeDesignerResult.breakdownDom.categoryRowCount -le 0 -or
+                [int]$state.tubeDesignerResult.breakdownDom.visiblePartRowCount -ne 0 -or
+                $state.tubeDesignerResult.breakdownDom.resultTableBorderCollapse -ne "collapse" -or
+                [int]$state.tubeDesignerResult.breakdownDom.resultTableColumnCount -ne 8 -or
+                [int]$state.tubeDesignerResult.breakdownDom.nonNativeTableCellCount -ne 0 -or
+                @($state.tubeDesignerResult.breakdownDom.productRowSpans).Count -ne 0 -or
+                [int]$state.tubeDesignerResult.breakdownDom.partCount -ne 58 -or
+                [int]$state.tubeDesignerResult.breakdownDom.selectedPartCount -ne 58 -or
+                [int]$state.tubeDesignerResult.breakdownDom.resourceThumbnailCount -ne
+                    [int]$state.tubeDesignerResult.breakdownDom.categoryRowCount -or
+                [int]$state.tubeDesignerResult.breakdownDom.breakdownFooterCloseButtonCount -ne 0 -or
+                @($state.tubeDesignerResult.breakdownDom.partNames | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "main" }).Count -ne 0 -or
+                @($state.tubeDesignerResult.breakdownDom.partSpecifications | Where-Object { $_ -eq "—" -or $_ -match "0\s*×\s*0" }).Count -ne 0 -or
+                @($state.tubeDesignerResult.disassembledDesignerState.manufacturingGroups).Count -ne 4) {
+                $designerText = @{
+                    DisassemblySelection = $state.tubeDesignerResult.disassemblySelectionDom
+                    Breakdown = $state.tubeDesignerResult.breakdownDom
+                    ManufacturingGroupCount = @($state.tubeDesignerResult.disassembledDesignerState.manufacturingGroups).Count
+                } | ConvertTo-Json -Depth 12 -Compress
+                throw "TubeDesigner grouped disassembly workflow is incomplete: $designerText"
+            }
+            $pythonTemplateParts = @(
+                $state.tubeDesignerResult.disassembledDesignerState.manufacturingGroups |
+                    Where-Object templateId -eq "single-face-security-window" |
+                    ForEach-Object { @($_.parts) }
+            )
+            $invalidPythonPartNumbers = @($pythonTemplateParts | Where-Object {
+                $partNumber = [string]$_.partNumber
+                $fileStem = [IO.Path]::GetFileNameWithoutExtension([string]$_.fileName)
+                [string]::IsNullOrWhiteSpace($partNumber) -or
+                    $fileStem -cne $partNumber -or
+                    $partNumber -notmatch '.+-.+-\d{2}(-段\d{2})?$'
+            })
+            if ($pythonTemplateParts.Count -eq 0 -or $invalidPythonPartNumbers.Count -gt 0) {
+                $designerText = @{
+                    PythonPartCount = $pythonTemplateParts.Count
+                    InvalidParts = $invalidPythonPartNumbers
+                } | ConvertTo-Json -Depth 8 -Compress
+                throw "TubeDesigner formal part-number/STEP filename contract failed: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.partialSelectionDom.selectedPartCount -ne 57) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner partial manufacturing selection failed: $designerText"
+            }
+            if ([int]$state.tubeDesignerResult.partInspectionDom.partInspectionDialogCount -ne 1 -or
+                [int]$state.tubeDesignerResult.partInspectionDom.partInspectionCanvasCount -ne 1 -or
+                $state.tubeDesignerResult.partInspectionDom.partInspectionReady -ne "true" -or
+                [int]$state.tubeDesignerResult.partInspectionDom.partInspectionEntityCount -ne 1 -or
+                [int]$state.tubeDesignerResult.partMeasurementDom.measurementPointCount -ne 1 -or
+                [int]$state.tubeDesignerResult.clearedPartMeasurementDom.measurementPointCount -ne 0 -or
+                [int]$state.tubeDesignerResult.closedPartInspectionDom.partInspectionDialogCount -ne 0 -or
+                [int]$state.tubeDesignerResult.closedPartInspectionDom.breakdownDialogCount -ne 1) {
+                $designerText = @{
+                    Inspection = $state.tubeDesignerResult.partInspectionDom
+                    Measurement = $state.tubeDesignerResult.partMeasurementDom
+                    Cleared = $state.tubeDesignerResult.clearedPartMeasurementDom
+                    Closed = $state.tubeDesignerResult.closedPartInspectionDom
+                } | ConvertTo-Json -Depth 10 -Compress
+                throw "TubeDesigner isolated part inspection/measurement workflow failed: $designerText"
+            }
+            if ($state.tubeDesignerResult.partialSelectionPreservedDom -ne $true) {
+                throw "TubeDesigner part selection rebuilt the breakdown dialog instead of updating it locally"
+            }
+            if ($CheckTubeDesignerStepExport -and
+                ([int]$state.tubeDesignerResult.exportResult.result.exportedCount -ne 57 -or
+                 @($state.tubeDesignerResult.exportResult.result.exportedGroups).Count -ne 4 -or
+                 [string]::IsNullOrWhiteSpace($state.tubeDesignerResult.exportResult.result.partListFile))) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner grouped STEP and Excel export failed: $designerText"
+            }
+            if ($CheckTubeDesignerStepExport -and
+                ([int]$state.tubeDesignerResult.exportBusyDom.exportProgressCount -ne 1 -or
+                 $state.tubeDesignerResult.exportBusyDom.breakdownDialogBusy -ne "true" -or
+                 $state.tubeDesignerResult.exportBusyDom.exportButtonDisabled -ne $true -or
+                 [int]$state.tubeDesignerResult.exportLockedDom.breakdownDialogCount -ne 1 -or
+                 [int]$state.tubeDesignerResult.exportLockedDom.exportProgressCount -ne 1 -or
+                 $null -ne $state.tubeDesignerResult.duplicateExportResult.result -or
+                 [int]$state.tubeDesignerResult.exportCompletedDom.exportProgressCount -ne 0 -or
+                 $state.tubeDesignerResult.exportCompletedDom.breakdownDialogBusy -ne "false")) {
+                $designerText = @{
+                    Busy = $state.tubeDesignerResult.exportBusyDom
+                    Locked = $state.tubeDesignerResult.exportLockedDom
+                    Completed = $state.tubeDesignerResult.exportCompletedDom
+                    Duplicate = $state.tubeDesignerResult.duplicateExportResult
+                } | ConvertTo-Json -Depth 10 -Compress
+                throw "TubeDesigner export waiting/locking state is incomplete: $designerText"
+            }
+            if (@($state.tubeDesignerResult.undoDisassemblyDesignerState.manufacturingGroups).Count -ne 0 -or
+                [int]$state.tubeDesignerResult.undoDisassemblyResult.viewport.visibleObjectCount -ne 11 -or
+                @($state.tubeDesignerResult.redoDisassemblyDesignerState.manufacturingGroups).Count -ne 4 -or
+                [int]$state.tubeDesignerResult.redoDisassemblyResult.viewport.visibleObjectCount -ne 11) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner disassembly undo/redo incorrectly synchronized preview state: $designerText"
+            }
+            for ($index = 0; $index -lt 11; $index++) {
+                $before = $state.tubeDesignerResult.disassembledDesignerState.parts[$index]
+                $redo = $state.tubeDesignerResult.redoDisassemblyDesignerState.parts[$index]
+                if ($before.entityId -ne $redo.entityId -or
+                    $before.resourceId -ne $redo.resourceId -or
+                    [uint64]$before.resourceVersion -ne [uint64]$redo.resourceVersion) {
+                    $designerText = @($before, $redo) | ConvertTo-Json -Depth 8 -Compress
+                    throw "TubeDesigner disassembly history changed part identity/version at index ${index}: $designerText"
+                }
+            }
+            if ($state.tubeDesignerResult.template2DesignerState.product.templateId -ne "security-window-2" -or
+                @($state.tubeDesignerResult.template2DesignerState.members).Count -ne 11 -or
+                @($state.tubeDesignerResult.template2DesignerState.parts).Count -ne 0 -or
+                @($state.tubeDesignerResult.template2DesignerState.instances).Count -ne 2 -or
+                [int]$state.tubeDesignerResult.template2Viewport.visibleObjectCount -ne 11) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner second-template preview workflow failed: $designerText"
+            }
+            if ($state.tubeDesignerResult.template3DesignerState.product.templateId -ne "security-window-3" -or
+                @($state.tubeDesignerResult.template3DesignerState.members).Count -ne 6 -or
+                @($state.tubeDesignerResult.template3DesignerState.parts).Count -ne 0 -or
+                @($state.tubeDesignerResult.template3DesignerState.instances).Count -ne 3 -or
+                [int]$state.tubeDesignerResult.template3Viewport.visibleObjectCount -ne 6 -or
+                $state.tubeDesignerResult.template3ParameterDom.joinType -ne "v_groove_90" -or
+                $state.tubeDesignerResult.template3ParameterDom.grooveStyle -ne "sharp_v" -or
+                $state.tubeDesignerResult.template3ConditionalDom.restoredJoinType -ne "v_groove_90" -or
+                -not $state.tubeDesignerResult.template3ConditionalDom.buttHidden) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner third-template preview workflow failed: $designerText"
+            }
+            if ($state.tubeDesignerResult.accessDoorDesignerState.product.templateId -ne "single-face-security-window" -or
+                $state.tubeDesignerResult.accessDoorDesignerState.product.parameters.accessDoorEnabled -ne $true -or
+                @($state.tubeDesignerResult.accessDoorDesignerState.members).Count -ne 24 -or
+                @($state.tubeDesignerResult.accessDoorDesignerState.members | Where-Object { $_.stableKey -like "*.continuous.*" }).Count -ne 2 -or
+                @($state.tubeDesignerResult.accessDoorDesignerState.members | Where-Object role -eq "access_door.fixed_frame").Count -ne 4 -or
+                @($state.tubeDesignerResult.accessDoorDesignerState.instances).Count -ne 4 -or
+                [int]$state.tubeDesignerResult.accessDoorViewport.visibleObjectCount -ne 24 -or
+                [int]$state.tubeDesignerResult.accessDoorInspectorDom.parameterSectionCount -ne 19 -or
+                [int]$state.tubeDesignerResult.accessDoorInspectorDom.expandedParameterSectionCount -ne 2 -or
+                [int]$state.tubeDesignerResult.accessDoorInspectorDom.visibleParameterFieldCount -ne 5 -or
+                [double]$state.tubeDesignerResult.accessDoorInspectorDom.maximumVisibleParameterFieldHeight -gt 32 -or
+                $state.tubeDesignerResult.accessDoorInspectorDom.parameterSectionOverflowY -ne "auto" -or
+                [int]$state.tubeDesignerResult.accessDoorInspectorDom.parameterActionButtonCount -ne 1 -or
+                $state.tubeDesignerResult.accessDoorInspectorDom.parameterHeaderInsideScrollArea -ne $false -or
+                $state.tubeDesignerResult.accessDoorInspectorDom.parameterPanelOverflowY -ne "hidden" -or
+                [int]$state.tubeDesignerResult.accessDoorInspectorDom.parameterDisassemblyButtonCount -ne 0 -or
+                $state.tubeDesignerResult.accessDoorParameterDom.doorVerticalType -ne "round" -or
+                (@($state.tubeDesignerResult.accessDoorParameterDom.profileTypeLabels) -join "|") -ne "矩形管|矩形管|圆管|矩形管|矩形管|矩形管|圆管" -or
+                $state.tubeDesignerResult.accessDoorParameterDom.outerProcess -ne "v_groove_90:left_arc" -or
+                [int]$state.tubeDesignerResult.accessDoorParameterDom.outerProcessCount -ne 6 -or
+                $state.tubeDesignerResult.accessDoorParameterDom.fixedProcess -ne "miter_45" -or
+                [int]$state.tubeDesignerResult.accessDoorParameterDom.fixedProcessCount -ne 6 -or
+                $state.tubeDesignerResult.accessDoorParameterDom.leafProcess -ne "v_groove_90:rounded_v" -or
+                [int]$state.tubeDesignerResult.accessDoorParameterDom.leafProcessCount -ne 6) {
+                $designerText = @{
+                    Designer = $state.tubeDesignerResult.accessDoorDesignerState
+                    Inspector = $state.tubeDesignerResult.accessDoorInspectorDom
+                    Parameters = $state.tubeDesignerResult.accessDoorParameterDom
+                    VisibleObjectCount = $state.tubeDesignerResult.accessDoorViewport.visibleObjectCount
+                } | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner access-door preview workflow failed: $designerText"
+            }
+            if ($state.tubeDesignerResult.finalAccessDoorState.product.entityId -ne $state.tubeDesignerResult.accessDoorProductId -or
+                @($state.tubeDesignerResult.finalAccessDoorState.members).Count -ne 24 -or
+                [int]$state.tubeDesignerResult.finalAccessDoorViewport.visibleObjectCount -ne 24) {
+                $designerText = $state.tubeDesignerResult.finalAccessDoorState | ConvertTo-Json -Depth 12 -Compress
+                throw "TubeDesigner final access-door activation failed: $designerText"
+            }
+            $multiFaceExpectations = @(
+                [pscustomobject]@{ Result = $state.tubeDesignerResult.twoFaceTemplateResult; TemplateId = "two-face-security-window"; MemberCount = 28; InstanceCount = 5 },
+                [pscustomobject]@{ Result = $state.tubeDesignerResult.threeFaceTemplateResult; TemplateId = "three-face-security-window"; MemberCount = 39; InstanceCount = 6 },
+                [pscustomobject]@{ Result = $state.tubeDesignerResult.fiveFaceTemplateResult; TemplateId = "five-face-security-window"; MemberCount = 63; InstanceCount = 7 }
+            )
+            foreach ($expectation in $multiFaceExpectations) {
+                $result = $expectation.Result
+                $templateId = [string]$expectation.TemplateId
+                $memberCount = [int]$expectation.MemberCount
+                $instanceCount = [int]$expectation.InstanceCount
+                if ($result.state.product.templateId -ne $templateId -or
+                    @($result.state.members).Count -ne $memberCount -or
+                    [int]$result.viewport.visibleObjectCount -ne $memberCount -or
+                    @($result.state.instances).Count -ne $instanceCount) {
+                    $designerText = $result | ConvertTo-Json -Depth 14 -Compress
+                    throw "TubeDesigner multi-face Python template failed (${templateId}): $designerText"
+                }
+            }
+            if ($state.tubeDesignerResult.firstActivatedState.product.entityId -ne $state.tubeDesignerResult.firstProductId -or
+                @($state.tubeDesignerResult.firstActivatedState.members).Count -ne 17 -or
+                [int]$state.tubeDesignerResult.firstActivatedViewport.visibleObjectCount -ne 17 -or
+                $state.tubeDesignerResult.secondActivatedState.product.entityId -ne $state.tubeDesignerResult.secondProductId -or
+                @($state.tubeDesignerResult.secondActivatedState.members).Count -ne 11 -or
+                [int]$state.tubeDesignerResult.secondActivatedViewport.visibleObjectCount -ne 11) {
+                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner instance selection did not exclusively drive the scene: $designerText"
+            }
+            if (-not $state.tubeDesignerResult.firstActivationNoticeDom.notice.StartsWith("已切换到 ") -or
+                [double]$state.tubeDesignerResult.firstActivationNoticeDom.noticeLayout.centerOffset -gt 1.0 -or
+                [double]$state.tubeDesignerResult.firstActivationNoticeDom.noticeLayout.top -lt 0 -or
+                $state.tubeDesignerResult.firstActivationNoticeDom.noticeLayout.pointerEvents -ne "none" -or
+                $state.tubeDesignerResult.dismissedActivationNoticeDom.notice -ne "") {
+                $designerText = @{
+                    Visible = $state.tubeDesignerResult.firstActivationNoticeDom
+                    Dismissed = $state.tubeDesignerResult.dismissedActivationNoticeDom
+                } | ConvertTo-Json -Depth 8 -Compress
+                throw "TubeDesigner activation notice placement or dismissal failed: $designerText"
+            }
         }
         if ($CheckTubeDesignerStepExport) {
-            $stepFiles = @(Get-ChildItem -LiteralPath $tubeDesignerExportDirectory -Filter "*.step" -File -ErrorAction SilentlyContinue)
-            if ($stepFiles.Count -ne 7 -or @($stepFiles | Where-Object Length -le 0).Count -gt 0) {
-                $fileText = $stepFiles | Select-Object Name, Length | ConvertTo-Json -Compress
-                throw "TubeDesigner did not export seven non-empty STEP files: $fileText"
+            $stepFiles = @(Get-ChildItem -LiteralPath $tubeDesignerExportDirectory -Filter "*.step" -File -Recurse -ErrorAction SilentlyContinue)
+            $productDirectories = @(Get-ChildItem -LiteralPath $tubeDesignerExportDirectory -Directory -ErrorAction SilentlyContinue)
+            $partListFile = Join-Path $tubeDesignerExportDirectory "零件清单.xlsx"
+            if ($stepFiles.Count -ne 37 -or $productDirectories.Count -ne 4 -or
+                -not (Test-Path -LiteralPath $partListFile -PathType Leaf) -or
+                (Get-Item -LiteralPath $partListFile).Length -le 0 -or
+                @($stepFiles | Where-Object Length -le 0).Count -gt 0 -or
+                @($productDirectories | Where-Object { @(Get-ChildItem -LiteralPath $_.FullName -Filter "*.step" -File).Count -eq 0 }).Count -gt 0) {
+                $fileText = @{ Directories = $productDirectories.Name; Files = $stepFiles | Select-Object Name, Length; PartList = $partListFile } | ConvertTo-Json -Depth 8 -Compress
+                throw "TubeDesigner did not export four product folders, 37 STEP files, and the Excel part list: $fileText"
             }
         }
 

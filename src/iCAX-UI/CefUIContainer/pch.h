@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 #include <commdlg.h>
+#include <shobjidl.h>
 #include <windows.h>
 #include <boost/json.hpp>
 #include <include/cef_app.h>

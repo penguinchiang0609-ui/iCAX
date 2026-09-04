@@ -22,6 +22,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings" />
   <ImportGroup Label="Shared" />
+  <Import Project="..\..\..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
@@ -34,7 +35,8 @@
       <PreprocessorDefinitions>NOMINMAX;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\product;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_USE_MATH_DEFINES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\product;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\cad;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\foundation;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -53,6 +55,15 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
+      <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
+      <Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">
+      <Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\product\TubeDesigner\TubeDesigner.vcxproj">
       <Project>{b29dc027-f531-428f-9bcc-2d3e028ca044}</Project>
     </ProjectReference>
@@ -61,6 +72,7 @@
   <ImportGroup Label="ExtensionTargets">
     <Import Project="..\..\..\..\..\iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets" Condition="Exists('..\..\..\..\..\iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
   </ImportGroup>
+  <Import Project="..\..\..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup><ErrorText>这台计算机上缺少此项目引用的 NuGet 程序包。使用“NuGet 程序包还原”可下载这些程序包。缺少的文件是 {0}。</ErrorText></PropertyGroup>
     <Error Condition="!Exists('..\..\..\..\..\iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\..\..\..\..\iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets'))" />

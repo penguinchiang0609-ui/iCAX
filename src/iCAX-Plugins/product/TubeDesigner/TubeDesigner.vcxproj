@@ -45,17 +45,27 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="FinalGeometryMeasurement.h" />
     <ClInclude Include="framework.h" />
+    <ClInclude Include="PartListXlsxExporter.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="SecurityWindow1Template.h" />
+    <ClInclude Include="SecurityWindow2Template.h" />
+    <ClInclude Include="SecurityWindow3Template.h" />
+    <ClInclude Include="SingleFaceSecurityWindowTemplate.h" />
     <ClInclude Include="TubeDesigner.h" />
     <ClInclude Include="TubeDesignerComponents.h" />
     <ClInclude Include="TubeDesignerExport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="FinalGeometryMeasurement.cpp" />
     <ClCompile Include="OpenCascadeStepExporter.cpp" />
+    <ClCompile Include="PartListXlsxExporter.cpp" />
     <ClCompile Include="SecurityWindow1Template.cpp" />
+    <ClCompile Include="SecurityWindow2Template.cpp" />
+    <ClCompile Include="SecurityWindow3Template.cpp" />
+    <ClCompile Include="SingleFaceSecurityWindowTemplate.cpp" />
     <ClCompile Include="TubeDesigner.cpp" />
     <ClCompile Include="TubeDesignerSDO.cpp" />
     <ClCompile Include="pch.cpp">
@@ -66,6 +76,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj"><Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project></ProjectReference>
     <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj"><Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project></ProjectReference>
     <ProjectReference Include="..\..\common\Transform\Transform.vcxproj"><Project>{14df2d69-19bd-4340-b859-7c4ca916b42b}</Project></ProjectReference>
     <ProjectReference Include="..\..\render\RenderData\RenderData.vcxproj"><Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project></ProjectReference>

@@ -20,6 +20,7 @@ export class MockHostBridge {
     this.productStarted = false;
     this.projectOpened = false;
     this.projectPath = "D:/projects/mock.icax";
+    this.directoryDialogPath = options.directoryDialogPath ?? "D:/projects";
     this.resourceRecords = new Map();
   }
 
@@ -182,6 +183,10 @@ export class MockHostBridge {
 
   async openFileDialog() {
     return "D:/projects/mock.icax";
+  }
+
+  async openDirectoryDialog() {
+    return this.directoryDialogPath;
   }
 
   async windowCommand(command) {

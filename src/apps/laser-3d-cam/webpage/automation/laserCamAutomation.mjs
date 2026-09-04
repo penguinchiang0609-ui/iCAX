@@ -32,18 +32,33 @@ export function exposeLaserCamAutomation(context, view, commands) {
     }) ?? null;
   window.__icaxLaser3DCAM.waitForRenderableViewport = async (options = {}) =>
     waitForRenderableViewport(view, options);
-  window.__icaxLaser3DCAM.executeAreaAction = async (action) =>
-    commands.executeAreaAction(context, view, String(action ?? ""));
+  window.__icaxLaser3DCAM.executeAreaAction = async (action, actionTarget = null) =>
+    commands.executeAreaAction(context, view, String(action ?? ""), actionTarget);
   window.__icaxLaser3DCAM.getTubeDesignerState = () => {
     const designer = view.scene?.tubeDesigner ?? {};
     const byStableKey = (left, right) =>
       String(left?.stableKey ?? "").localeCompare(String(right?.stableKey ?? ""));
     return {
+      templates: [...(designer.templates ?? [])].map((template) => ({
+        id: template.id ?? "",
+        version: template.version ?? "",
+        available: Boolean(template.available),
+      })),
       product: designer.product ?? null,
+      activeProductId: designer.activeProductId ?? "",
+      batchImportPath: view.tubeDesignerBatchImportPath ?? "",
+      instances: [...(designer.instances ?? [])].map((instance) => ({
+        ...instance,
+        parameters: { ...(instance.parameters ?? {}) },
+      })),
       generationRun: designer.generationRun ?? null,
       members: [...(designer.members ?? [])].sort(byStableKey).map((member) => ({
         entityId: member.entityId ?? "",
         stableKey: member.stableKey ?? "",
+        role: member.role ?? "",
+        name: member.name ?? "",
+        memberType: member.memberType ?? "part",
+        childPartCount: Number(member.childPartCount ?? 1),
         resourceId: member.previewGeometryResourceId ?? "",
         resourceVersion: Number(member.previewGeometryResourceVersion ?? 0),
       })),
@@ -52,6 +67,10 @@ export function exposeLaserCamAutomation(context, view, commands) {
         stableKey: part.stableKey ?? "",
         resourceId: part.manufacturingGeometryResourceId ?? "",
         resourceVersion: Number(part.manufacturingGeometryResourceVersion ?? 0),
+      })),
+      manufacturingGroups: [...(designer.manufacturingGroups ?? [])].map((group) => ({
+        ...group,
+        parts: [...(group.parts ?? [])].sort(byStableKey),
       })),
     };
   };
