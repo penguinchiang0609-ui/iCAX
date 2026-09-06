@@ -1,0 +1,14 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 2,
+  "id": "rect",
+  "version": "2.1.0",
+  "displayName": { "zh-CN": "矩形管", "en-US": "Rectangular hollow section" },
+  "description": "圆角矩形外轮廓和内轮廓组成的标准拉伸管型。",
+  "parameters": [
+    { "key": "width", "displayName": { "zh-CN": "外宽" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
+    { "key": "depth", "displayName": { "zh-CN": "外高" }, "valueType": "number", "defaultValue": 20.0, "min": 1.0, "step": 1.0 },
+    { "key": "wallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "defaultValue": 2.0, "min": 0.1, "step": 0.1 },
+    { "key": "cornerRadius", "displayName": { "zh-CN": "外圆角" }, "valueType": "number", "defaultValue": 2.0, "min": 0.0, "step": 0.5 }
+  ]
+}

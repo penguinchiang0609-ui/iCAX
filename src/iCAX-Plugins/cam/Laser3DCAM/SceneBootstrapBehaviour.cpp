@@ -67,14 +67,14 @@ namespace
     *   该行为绑定独立的启动 marker component，避免把启动职责塞进 CRootComponent，
     *   也避免破坏“一种 ComponentClass 只绑定一个 Behaviour”的调度规则。
     */
-    class CSceneBootstrapBehaviour final : public iCAX::Behaviour::CBehaviourBase
+    class CCamSceneBootstrapBehaviour final : public iCAX::Behaviour::CBehaviourBase
     {
-        AUTO_REGIST_BEHAVIOUR(CSceneBootstrapBehaviour)
+        AUTO_REGIST_BEHAVIOUR(CCamSceneBootstrapBehaviour)
 
     public:
         std::string GetComponentClass() const override
         {
-            return iCAX::CAM::CSceneBootstrapComponent::S_ClassName;
+            return iCAX::CAM::CCamSceneBootstrapComponent::S_ClassName;
         }
 
         iCAX::Behaviour::CBehaviourSchedule GetSchedule() const override

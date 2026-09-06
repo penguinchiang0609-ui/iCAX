@@ -427,7 +427,9 @@ SOpenCascadeBRepBuildResult BuildOpenCascadeShape(
             {
                 const auto _Edge = _Edges.find(_Coedge.EdgeId);
                 if (_Edge == _Edges.end())
-                    throw std::runtime_error("BRep wire references missing edge");
+                    throw std::runtime_error(
+                        "BRep wire " + std::to_string(_Record.Id)
+                        + " references missing edge " + std::to_string(_Coedge.EdgeId));
                 _Builder.Add(_Wire, Oriented(_Edge->second, _Coedge.Orientation));
             }
             _Wire.Closed(_Record.Closed);

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <UsingTask TaskName="ICAXCheckWritableBuildOutputs"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <OutputPaths ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        foreach (var item in OutputPaths)
+        {
+            var path = Path.GetFullPath(item.ItemSpec);
+            if (!File.Exists(path))
+                continue;
+
+            try
+            {
+                // Probe write access without changing the file. Windows refuses
+                // this while an executable or DLL is loaded by a running process.
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Write,
+                    FileShare.ReadWrite | FileShare.Delete)) { }
+            }
+            catch (IOException exception)
+            {
+                Log.LogError("iCAX", "ICAXBUILD001", null, path, 0, 0, 0, 0,
+                    "无法更新生成文件。请先保存并关闭正在运行的 iCAX 或测试程序，再重新生成。原因：{0}", exception.Message);
+                return false;
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                Log.LogError("iCAX", "ICAXBUILD001", null, path, 0, 0, 0, 0,
+                    "无法写入生成文件。请关闭正在运行的 iCAX 或测试程序，并检查文件是否只读及目录权限。原因：{0}", exception.Message);
+                return false;
+            }
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Check before CppClean removes import libraries, not just when linking.
+       ProjectReference remains responsible for dependency scheduling. -->
+  <Target Name="ICAXCheckBuildOutputLocks"
+          BeforeTargets="CoreCppClean"
+          Condition="'$(VCProjectVersion)' != '' and '$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_ICAXWritableBuildOutput Include="$(OutDir)Application.exe" />
+      <_ICAXWritableBuildOutput Include="$(TargetPath)" Condition="'$(TargetPath)' != ''" />
+    </ItemGroup>
+    <ICAXCheckWritableBuildOutputs OutputPaths="@(_ICAXWritableBuildOutput)" />
+  </Target>
+
+  <!-- MSBuild executes each target only once in a build. Use a separate check
+       here to catch a runtime started after Clean but before Link. -->
+  <Target Name="ICAXCheckLinkOutputLocks"
+          BeforeTargets="Link"
+          Condition="'$(VCProjectVersion)' != '' and '$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_ICAXWritableLinkOutput Include="$(OutDir)Application.exe" />
+      <_ICAXWritableLinkOutput Include="$(TargetPath)" Condition="'$(TargetPath)' != ''" />
+    </ItemGroup>
+    <ICAXCheckWritableBuildOutputs OutputPaths="@(_ICAXWritableLinkOutput)" />
+  </Target>
+</Project>

@@ -304,6 +304,12 @@ namespace
             return m_Definition.ProductID;
         }
 
+        std::shared_ptr<iCAX::Application::IProductUserDataStore>
+            GetUserDataStore() const override
+        {
+            return {};
+        }
+
         iCAX::Product::CProductData GetProductData() const override
         {
             return m_ProductData;

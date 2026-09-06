@@ -1,11 +1,9 @@
 #include "pch.h"
 
-#include "SecurityWindow1Template.h"
-#include "SecurityWindow2Template.h"
-#include "SecurityWindow3Template.h"
-#include "SingleFaceSecurityWindowTemplate.h"
 #include "PartListXlsxExporter.h"
 #include "FinalGeometryMeasurement.h"
+#include "NestingAdapter.h"
+#include "NestingResultExporter.h"
 #include "TubeDesignerComponents.h"
 
 #include "ApplicationContext/IApplicationContext.h"
@@ -17,6 +15,7 @@
 #include "OpenCascadeResourceImport/OpenCascadeBRepBuilder.h"
 #include "OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h"
 #include "ProductContext/IProductContext.h"
+#include "ApplicationContext/UserDataStore.h"
 #include "ProjectContext/IProjectContext.h"
 #include "ProjectContext/ISceneContext.h"
 #include "RenderData/RenderData.h"
@@ -38,30 +37,12 @@
 #undef M_PI_2
 #endif
 
-#include <array>
 #include <fstream>
 #include <mutex>
 #include <numeric>
-#include <BRepAlgoAPI_Cut.hxx>
-#include <BRep_Builder.hxx>
-#include <BRepBuilderAPI_MakeEdge.hxx>
-#include <BRepBuilderAPI_MakeFace.hxx>
-#include <BRepBuilderAPI_MakePolygon.hxx>
-#include <BRepBuilderAPI_MakeWire.hxx>
-#include <BRepBuilderAPI_Transform.hxx>
-#include <BRepPrimAPI_MakeBox.hxx>
-#include <BRepPrimAPI_MakeCylinder.hxx>
-#include <BRepPrimAPI_MakePrism.hxx>
-#include <GC_MakeArcOfCircle.hxx>
-#include <TopoDS_Edge.hxx>
-#include <TopoDS_Compound.hxx>
 #include <TopoDS_Shape.hxx>
-#include <gp_Ax2.hxx>
-#include <gp_Ax1.hxx>
-#include <gp_Dir.hxx>
-#include <gp_Pnt.hxx>
-#include <gp_Trsf.hxx>
-#include <gp_Vec.hxx>
+#include <Bnd_Box.hxx>
+#include <BRepBndLib.hxx>
 
 namespace
 {
@@ -160,6 +141,35 @@ namespace
         return static_cast<std::uint64_t>(_Value);
     }
 
+    std::string TrimText(const std::string& Text_)
+    {
+        const auto _First = std::find_if_not(Text_.begin(), Text_.end(), [](const unsigned char Character_) {
+            return std::isspace(Character_) != 0;
+        });
+        const auto _Last = std::find_if_not(Text_.rbegin(), Text_.rend(), [](const unsigned char Character_) {
+            return std::isspace(Character_) != 0;
+        }).base();
+        return _First < _Last ? std::string(_First, _Last) : std::string();
+    }
+
+    std::string GetRequiredText(
+        const ObjectMap& Payload_, const std::string& Name_, const std::size_t MaximumLength_ = 160)
+    {
+        const auto _Value = TrimText(GetString(Payload_, Name_));
+        if (_Value.empty()) throw std::invalid_argument("TubeDesigner field cannot be empty: " + Name_);
+        if (_Value.size() > MaximumLength_)
+            throw std::invalid_argument("TubeDesigner field is too long: " + Name_);
+        return _Value;
+    }
+
+    ObjectMap GetRequiredObject(const ObjectMap& Payload_, const std::string& Name_)
+    {
+        const auto _Iterator = Payload_.find(Name_);
+        if (_Iterator == Payload_.end() || !_Iterator->second.Is<ObjectMap>())
+            throw std::invalid_argument("TubeDesigner field must be an object: " + Name_);
+        return _Iterator->second.To<ObjectMap>();
+    }
+
     template <typename TComponent>
     std::shared_ptr<TComponent> GetComponent(const std::shared_ptr<iCAX::Database::IEntity>& Entity_)
     {
@@ -225,380 +235,6 @@ namespace
         }
         return *_Parsed;
     }
-
-    STubeProfile ReadProfile(const ObjectMap& Payload_, const std::string& Prefix_, const STubeProfile& Default_)
-    {
-        STubeProfile _Result = Default_;
-        _Result.Type = GetString(Payload_, Prefix_ + "ProfileType", Default_.Type);
-        _Result.Width = GetDouble(Payload_, Prefix_ + "Width", Default_.Width);
-        _Result.Depth = GetDouble(Payload_, Prefix_ + "Depth", Default_.Depth);
-        _Result.WallThickness = GetDouble(Payload_, Prefix_ + "WallThickness", Default_.WallThickness);
-        _Result.CornerRadius = GetDouble(Payload_, Prefix_ + "CornerRadius", Default_.CornerRadius);
-        return _Result;
-    }
-
-    SSecurityWindow1Parameters ReadParameters(const ObjectMap& Payload_)
-    {
-        SSecurityWindow1Parameters _Result;
-        _Result.ProductCode = GetString(Payload_, "productCode", _Result.ProductCode);
-        _Result.Height = GetDouble(Payload_, "height", _Result.Height);
-        _Result.Width = GetDouble(Payload_, "width", _Result.Width);
-        _Result.HorizontalCount = GetUInt64(Payload_, "horizontalCount", _Result.HorizontalCount);
-        _Result.MiddleVerticalCount = GetUInt64(Payload_, "middleVerticalCount", _Result.MiddleVerticalCount);
-        _Result.FirstHorizontalTopOffset = GetDouble(Payload_, "firstHorizontalTopOffset", _Result.FirstHorizontalTopOffset);
-        _Result.LastHorizontalBottomOffset = GetDouble(Payload_, "lastHorizontalBottomOffset", _Result.LastHorizontalBottomOffset);
-        _Result.HorizontalBranchReserve = GetDouble(Payload_, "horizontalBranchReserve", _Result.HorizontalBranchReserve);
-        _Result.VerticalBranchReserve = GetDouble(Payload_, "verticalBranchReserve", _Result.VerticalBranchReserve);
-        _Result.AssemblyClearance = GetDouble(Payload_, "assemblyClearance", _Result.AssemblyClearance);
-        _Result.Frame = ReadProfile(Payload_, "frame", _Result.Frame);
-        _Result.Vertical = ReadProfile(Payload_, "vertical", _Result.Vertical);
-        _Result.Horizontal = ReadProfile(Payload_, "horizontal", _Result.Horizontal);
-        return _Result;
-    }
-
-    ObjectMap MakeParameterMap(const SSecurityWindow1Parameters& Parameters_)
-    {
-        ObjectMap _Result;
-        _Result["productCode"] = Parameters_.ProductCode;
-        _Result["height"] = Parameters_.Height;
-        _Result["width"] = Parameters_.Width;
-        _Result["horizontalCount"] = static_cast<unsigned long long>(Parameters_.HorizontalCount);
-        _Result["middleVerticalCount"] = static_cast<unsigned long long>(Parameters_.MiddleVerticalCount);
-        _Result["firstHorizontalTopOffset"] = Parameters_.FirstHorizontalTopOffset;
-        _Result["lastHorizontalBottomOffset"] = Parameters_.LastHorizontalBottomOffset;
-        _Result["horizontalBranchReserve"] = Parameters_.HorizontalBranchReserve;
-        _Result["verticalBranchReserve"] = Parameters_.VerticalBranchReserve;
-        _Result["assemblyClearance"] = Parameters_.AssemblyClearance;
-        _Result["frameProfileType"] = Parameters_.Frame.Type;
-        _Result["frameWidth"] = Parameters_.Frame.Width;
-        _Result["frameDepth"] = Parameters_.Frame.Depth;
-        _Result["frameWallThickness"] = Parameters_.Frame.WallThickness;
-        _Result["frameCornerRadius"] = Parameters_.Frame.CornerRadius;
-        _Result["verticalProfileType"] = Parameters_.Vertical.Type;
-        _Result["verticalWidth"] = Parameters_.Vertical.Width;
-        _Result["verticalDepth"] = Parameters_.Vertical.Depth;
-        _Result["verticalWallThickness"] = Parameters_.Vertical.WallThickness;
-        _Result["verticalCornerRadius"] = Parameters_.Vertical.CornerRadius;
-        _Result["horizontalProfileType"] = Parameters_.Horizontal.Type;
-        _Result["horizontalWidth"] = Parameters_.Horizontal.Width;
-        _Result["horizontalDepth"] = Parameters_.Horizontal.Depth;
-        _Result["horizontalWallThickness"] = Parameters_.Horizontal.WallThickness;
-        _Result["horizontalCornerRadius"] = Parameters_.Horizontal.CornerRadius;
-        return _Result;
-    }
-
-    SSecurityWindow2Parameters ReadSecurityWindow2Parameters(const ObjectMap& Payload_)
-    {
-        SSecurityWindow2Parameters _Result;
-        _Result.ProductCode = GetString(Payload_, "productCode", _Result.ProductCode);
-        _Result.Height = GetDouble(Payload_, "height", _Result.Height);
-        _Result.Width = GetDouble(Payload_, "width", _Result.Width);
-        _Result.HandleBottom = GetDouble(Payload_, "handleBottom", _Result.HandleBottom);
-        _Result.HandleHeight = GetDouble(Payload_, "handleHeight", _Result.HandleHeight);
-        _Result.HandleWidth = GetDouble(Payload_, "handleWidth", _Result.HandleWidth);
-        _Result.HandleHorizontalCount = GetUInt64(Payload_, "handleHorizontalCount", _Result.HandleHorizontalCount);
-        _Result.TopHorizontalCount = GetUInt64(Payload_, "topHorizontalCount", _Result.TopHorizontalCount);
-        _Result.BottomHorizontalCount = GetUInt64(Payload_, "bottomHorizontalCount", _Result.BottomHorizontalCount);
-        _Result.HorizontalBranchReserve = GetDouble(Payload_, "horizontalBranchReserve", _Result.HorizontalBranchReserve);
-        _Result.VerticalBranchReserve = GetDouble(Payload_, "verticalBranchReserve", _Result.VerticalBranchReserve);
-        _Result.AssemblyClearance = GetDouble(Payload_, "assemblyClearance", _Result.AssemblyClearance);
-        _Result.Frame = ReadProfile(Payload_, "frame", _Result.Frame);
-        _Result.Vertical = ReadProfile(Payload_, "vertical", _Result.Vertical);
-        _Result.Horizontal = ReadProfile(Payload_, "horizontal", _Result.Horizontal);
-        return _Result;
-    }
-
-    ObjectMap MakeParameterMap(const SSecurityWindow2Parameters& Parameters_)
-    {
-        ObjectMap _Result;
-        _Result["productCode"] = Parameters_.ProductCode;
-        _Result["height"] = Parameters_.Height;
-        _Result["width"] = Parameters_.Width;
-        _Result["handleBottom"] = Parameters_.HandleBottom;
-        _Result["handleHeight"] = Parameters_.HandleHeight;
-        _Result["handleWidth"] = Parameters_.HandleWidth;
-        _Result["handleHorizontalCount"] = static_cast<unsigned long long>(Parameters_.HandleHorizontalCount);
-        _Result["topHorizontalCount"] = static_cast<unsigned long long>(Parameters_.TopHorizontalCount);
-        _Result["bottomHorizontalCount"] = static_cast<unsigned long long>(Parameters_.BottomHorizontalCount);
-        _Result["horizontalBranchReserve"] = Parameters_.HorizontalBranchReserve;
-        _Result["verticalBranchReserve"] = Parameters_.VerticalBranchReserve;
-        _Result["assemblyClearance"] = Parameters_.AssemblyClearance;
-        _Result["frameProfileType"] = Parameters_.Frame.Type;
-        _Result["frameWidth"] = Parameters_.Frame.Width;
-        _Result["frameDepth"] = Parameters_.Frame.Depth;
-        _Result["frameWallThickness"] = Parameters_.Frame.WallThickness;
-        _Result["frameCornerRadius"] = Parameters_.Frame.CornerRadius;
-        _Result["verticalProfileType"] = Parameters_.Vertical.Type;
-        _Result["verticalWidth"] = Parameters_.Vertical.Width;
-        _Result["verticalDepth"] = Parameters_.Vertical.Depth;
-        _Result["verticalWallThickness"] = Parameters_.Vertical.WallThickness;
-        _Result["verticalCornerRadius"] = Parameters_.Vertical.CornerRadius;
-        _Result["horizontalProfileType"] = Parameters_.Horizontal.Type;
-        _Result["horizontalWidth"] = Parameters_.Horizontal.Width;
-        _Result["horizontalDepth"] = Parameters_.Horizontal.Depth;
-        _Result["horizontalWallThickness"] = Parameters_.Horizontal.WallThickness;
-        _Result["horizontalCornerRadius"] = Parameters_.Horizontal.CornerRadius;
-        return _Result;
-    }
-
-    SSecurityWindow3Parameters ReadSecurityWindow3Parameters(const ObjectMap& Payload_)
-    {
-        SSecurityWindow3Parameters _Result;
-        _Result.ProductCode = GetString(Payload_, "productCode", _Result.ProductCode);
-        _Result.Height = GetDouble(Payload_, "height", _Result.Height);
-        _Result.Width = GetDouble(Payload_, "width", _Result.Width);
-        _Result.FrameJoinType = GetString(Payload_, "frameJoinType", _Result.FrameJoinType);
-        _Result.FrameButtWrapMode = GetString(Payload_, "frameButtWrapMode", _Result.FrameButtWrapMode);
-        _Result.VGrooveStyle = GetString(Payload_, "vGrooveStyle", _Result.VGrooveStyle);
-        _Result.VGrooveBottomDistance = GetDouble(Payload_, "vGrooveBottomDistance", _Result.VGrooveBottomDistance);
-        _Result.VGrooveRadius = GetDouble(Payload_, "vGrooveRadius", _Result.VGrooveRadius);
-        _Result.VGrooveKFactor = GetDouble(Payload_, "vGrooveKFactor", _Result.VGrooveKFactor);
-        _Result.VGrooveMaleFemale = GetString(Payload_, "vGrooveMaleFemale", "否") == "是";
-        _Result.VGrooveBottomCut = GetString(Payload_, "vGrooveBottomCut", "否") == "是";
-        _Result.VGrooveReliefHole = GetString(Payload_, "vGrooveReliefHole", "否") == "是";
-        _Result.VGrooveWallOvercut = GetString(Payload_, "vGrooveWallOvercut", "否") == "是";
-        _Result.VGrooveReliefDiameter = GetDouble(Payload_, "vGrooveReliefDiameter", _Result.VGrooveReliefDiameter);
-        _Result.VGrooveReliefNoThrough = GetString(Payload_, "vGrooveReliefNoThrough", "否") == "是";
-        _Result.HorizontalCount = GetUInt64(Payload_, "horizontalCount", _Result.HorizontalCount);
-        _Result.MiddleVerticalCount = GetUInt64(Payload_, "middleVerticalCount", _Result.MiddleVerticalCount);
-        _Result.FirstHorizontalTopOffset = GetDouble(Payload_, "firstHorizontalTopOffset", _Result.FirstHorizontalTopOffset);
-        _Result.LastHorizontalBottomOffset = GetDouble(Payload_, "lastHorizontalBottomOffset", _Result.LastHorizontalBottomOffset);
-        _Result.HorizontalBranchReserve = GetDouble(Payload_, "horizontalBranchReserve", _Result.HorizontalBranchReserve);
-        _Result.VerticalBranchReserve = GetDouble(Payload_, "verticalBranchReserve", _Result.VerticalBranchReserve);
-        _Result.AssemblyClearance = GetDouble(Payload_, "assemblyClearance", _Result.AssemblyClearance);
-        _Result.Frame = ReadProfile(Payload_, "frame", _Result.Frame);
-        _Result.Vertical = ReadProfile(Payload_, "vertical", _Result.Vertical);
-        _Result.Horizontal = ReadProfile(Payload_, "horizontal", _Result.Horizontal);
-        return _Result;
-    }
-
-    ObjectMap MakeParameterMap(const SSecurityWindow3Parameters& Parameters_)
-    {
-        ObjectMap _Result;
-        _Result["productCode"] = Parameters_.ProductCode;
-        _Result["height"] = Parameters_.Height;
-        _Result["width"] = Parameters_.Width;
-        _Result["frameJoinType"] = Parameters_.FrameJoinType;
-        _Result["frameButtWrapMode"] = Parameters_.FrameButtWrapMode;
-        _Result["vGrooveStyle"] = Parameters_.VGrooveStyle;
-        _Result["vGrooveBottomDistance"] = Parameters_.VGrooveBottomDistance;
-        _Result["vGrooveRadius"] = Parameters_.VGrooveRadius;
-        _Result["vGrooveKFactor"] = Parameters_.VGrooveKFactor;
-        _Result["vGrooveMaleFemale"] = std::string(Parameters_.VGrooveMaleFemale ? "是" : "否");
-        _Result["vGrooveBottomCut"] = std::string(Parameters_.VGrooveBottomCut ? "是" : "否");
-        _Result["vGrooveReliefHole"] = std::string(Parameters_.VGrooveReliefHole ? "是" : "否");
-        _Result["vGrooveWallOvercut"] = std::string(Parameters_.VGrooveWallOvercut ? "是" : "否");
-        _Result["vGrooveReliefDiameter"] = Parameters_.VGrooveReliefDiameter;
-        _Result["vGrooveReliefNoThrough"] = std::string(Parameters_.VGrooveReliefNoThrough ? "是" : "否");
-        _Result["horizontalCount"] = static_cast<unsigned long long>(Parameters_.HorizontalCount);
-        _Result["middleVerticalCount"] = static_cast<unsigned long long>(Parameters_.MiddleVerticalCount);
-        _Result["firstHorizontalTopOffset"] = Parameters_.FirstHorizontalTopOffset;
-        _Result["lastHorizontalBottomOffset"] = Parameters_.LastHorizontalBottomOffset;
-        _Result["horizontalBranchReserve"] = Parameters_.HorizontalBranchReserve;
-        _Result["verticalBranchReserve"] = Parameters_.VerticalBranchReserve;
-        _Result["assemblyClearance"] = Parameters_.AssemblyClearance;
-        _Result["frameProfileType"] = Parameters_.Frame.Type;
-        _Result["frameWidth"] = Parameters_.Frame.Width;
-        _Result["frameDepth"] = Parameters_.Frame.Depth;
-        _Result["frameWallThickness"] = Parameters_.Frame.WallThickness;
-        _Result["frameCornerRadius"] = Parameters_.Frame.CornerRadius;
-        _Result["verticalProfileType"] = Parameters_.Vertical.Type;
-        _Result["verticalWidth"] = Parameters_.Vertical.Width;
-        _Result["verticalDepth"] = Parameters_.Vertical.Depth;
-        _Result["verticalWallThickness"] = Parameters_.Vertical.WallThickness;
-        _Result["verticalCornerRadius"] = Parameters_.Vertical.CornerRadius;
-        _Result["horizontalProfileType"] = Parameters_.Horizontal.Type;
-        _Result["horizontalWidth"] = Parameters_.Horizontal.Width;
-        _Result["horizontalDepth"] = Parameters_.Horizontal.Depth;
-        _Result["horizontalWallThickness"] = Parameters_.Horizontal.WallThickness;
-        _Result["horizontalCornerRadius"] = Parameters_.Horizontal.CornerRadius;
-        return _Result;
-    }
-
-    void DecodeTubeCornerProcess(
-        const ObjectMap& Payload_, const std::string& ParameterName_,
-        std::string& JoinType_, std::string& VGrooveStyle_)
-    {
-        JoinType_ = GetString(Payload_, ParameterName_, JoinType_);
-        constexpr std::string_view _VGroovePrefix = "v_groove_90:";
-        if (JoinType_.starts_with(_VGroovePrefix))
-        {
-            VGrooveStyle_ = JoinType_.substr(_VGroovePrefix.size());
-            JoinType_ = "v_groove_90";
-        }
-    }
-
-    std::string EncodeTubeCornerProcess(
-        const std::string& JoinType_, const std::string& VGrooveStyle_)
-    {
-        return JoinType_ == "v_groove_90"
-            ? JoinType_ + ":" + VGrooveStyle_
-            : JoinType_;
-    }
-
-    void ReadTubeCornerProcess(
-        const ObjectMap& Payload_, const std::string& JoinParameterName_,
-        const std::string& ButtWrapParameterName_, const std::string& VGrooveStyleParameterName_,
-        STubeCornerProcessParameters& Process_)
-    {
-        Process_.ButtWrapMode = GetString(
-            Payload_, ButtWrapParameterName_, Process_.ButtWrapMode);
-        Process_.VGrooveStyle = GetString(
-            Payload_, VGrooveStyleParameterName_, Process_.VGrooveStyle);
-        DecodeTubeCornerProcess(
-            Payload_, JoinParameterName_, Process_.JoinType, Process_.VGrooveStyle);
-    }
-
-    SSingleFaceSecurityWindowParameters ReadSingleFaceSecurityWindowParameters(
-        const ObjectMap& Payload_)
-    {
-        SSingleFaceSecurityWindowParameters _Result;
-        _Result.FrameLayout = GetString(Payload_, "frameLayout", _Result.FrameLayout);
-        _Result.AccessDoorEnabled = GetString(Payload_, "accessDoorEnabled", "否") == "是";
-        _Result.ProductCode = GetString(Payload_, "productCode", _Result.ProductCode);
-        _Result.Height = GetDouble(Payload_, "height", _Result.Height);
-        _Result.Width = GetDouble(Payload_, "width", _Result.Width);
-        _Result.HorizontalCount = GetUInt64(Payload_, "horizontalCount", _Result.HorizontalCount);
-        _Result.MiddleVerticalCount = GetUInt64(Payload_, "middleVerticalCount", _Result.MiddleVerticalCount);
-        _Result.FirstHorizontalTopOffset = GetDouble(Payload_, "firstHorizontalTopOffset", _Result.FirstHorizontalTopOffset);
-        _Result.LastHorizontalBottomOffset = GetDouble(Payload_, "lastHorizontalBottomOffset", _Result.LastHorizontalBottomOffset);
-        _Result.DoorLeft = GetDouble(Payload_, "doorLeft", _Result.DoorLeft);
-        _Result.DoorBottom = GetDouble(Payload_, "doorBottom", _Result.DoorBottom);
-        _Result.DoorHeight = GetDouble(Payload_, "doorHeight", _Result.DoorHeight);
-        _Result.DoorWidth = GetDouble(Payload_, "doorWidth", _Result.DoorWidth);
-        _Result.DoorGap = GetDouble(Payload_, "doorGap", _Result.DoorGap);
-        _Result.DoorHingeSide = GetString(Payload_, "doorHingeSide", _Result.DoorHingeSide);
-        _Result.DoorHingeCount = GetUInt64(Payload_, "doorHingeCount", _Result.DoorHingeCount);
-        _Result.DoorHorizontalCount = GetUInt64(Payload_, "doorHorizontalCount", _Result.DoorHorizontalCount);
-        _Result.DoorVerticalCount = GetUInt64(Payload_, "doorVerticalCount", _Result.DoorVerticalCount);
-        auto& _OuterProcess = _Result.OuterFrameProcess;
-        ReadTubeCornerProcess(Payload_, "frameJoinType", "frameButtWrapMode",
-            "vGrooveStyle", _OuterProcess);
-        _OuterProcess.VGrooveBottomDistance = GetDouble(
-            Payload_, "vGrooveBottomDistance", _OuterProcess.VGrooveBottomDistance);
-        _OuterProcess.VGrooveRadius = GetDouble(
-            Payload_, "vGrooveRadius", _OuterProcess.VGrooveRadius);
-        _OuterProcess.VGrooveKFactor = GetDouble(
-            Payload_, "vGrooveKFactor", _OuterProcess.VGrooveKFactor);
-        _OuterProcess.VGrooveMaleFemale = GetString(Payload_, "vGrooveMaleFemale", "否") == "是";
-        _OuterProcess.VGrooveBottomCut = GetString(Payload_, "vGrooveBottomCut", "否") == "是";
-        _OuterProcess.VGrooveReliefHole = GetString(Payload_, "vGrooveReliefHole", "否") == "是";
-        _OuterProcess.VGrooveWallOvercut = GetString(Payload_, "vGrooveWallOvercut", "否") == "是";
-        _OuterProcess.VGrooveReliefDiameter = GetDouble(
-            Payload_, "vGrooveReliefDiameter", _OuterProcess.VGrooveReliefDiameter);
-        _OuterProcess.VGrooveReliefNoThrough = GetString(
-            Payload_, "vGrooveReliefNoThrough", "否") == "是";
-
-        // The current product exposes one set of detailed V-groove dimensions.
-        // Each consumer still owns its process object, so later templates can
-        // override per-corner details without changing the data model.
-        _Result.DoorFrameProcess = _OuterProcess;
-        ReadTubeCornerProcess(Payload_, "doorFrameJoinType", "doorFrameButtWrapMode",
-            "doorFrameVGrooveStyle", _Result.DoorFrameProcess);
-        _Result.DoorLeafFrameProcess = _OuterProcess;
-        ReadTubeCornerProcess(Payload_, "doorLeafFrameJoinType", "doorLeafFrameButtWrapMode",
-            "doorLeafFrameVGrooveStyle", _Result.DoorLeafFrameProcess);
-        _Result.HorizontalBranchReserve = GetDouble(Payload_, "horizontalBranchReserve", _Result.HorizontalBranchReserve);
-        _Result.VerticalBranchReserve = GetDouble(Payload_, "verticalBranchReserve", _Result.VerticalBranchReserve);
-        _Result.AssemblyClearance = GetDouble(Payload_, "assemblyClearance", _Result.AssemblyClearance);
-        _Result.Frame = ReadProfile(Payload_, "frame", _Result.Frame);
-        _Result.Vertical = ReadProfile(Payload_, "vertical", _Result.Vertical);
-        _Result.Horizontal = ReadProfile(Payload_, "horizontal", _Result.Horizontal);
-        _Result.DoorFrame = ReadProfile(Payload_, "doorFrame", _Result.DoorFrame);
-        _Result.DoorLeafFrame = ReadProfile(Payload_, "doorLeafFrame", _Result.DoorLeafFrame);
-        _Result.DoorVertical = ReadProfile(Payload_, "doorVertical", _Result.DoorVertical);
-        _Result.DoorHorizontal = ReadProfile(Payload_, "doorHorizontal", _Result.DoorHorizontal);
-        return _Result;
-    }
-
-    ObjectMap MakeParameterMap(const SSingleFaceSecurityWindowParameters& Parameters_)
-    {
-        ObjectMap _Result;
-        _Result["frameLayout"] = Parameters_.FrameLayout;
-        _Result["accessDoorEnabled"] = std::string(Parameters_.AccessDoorEnabled ? "是" : "否");
-        _Result["productCode"] = Parameters_.ProductCode;
-        _Result["height"] = Parameters_.Height;
-        _Result["width"] = Parameters_.Width;
-        _Result["horizontalCount"] = static_cast<unsigned long long>(Parameters_.HorizontalCount);
-        _Result["middleVerticalCount"] = static_cast<unsigned long long>(Parameters_.MiddleVerticalCount);
-        _Result["firstHorizontalTopOffset"] = Parameters_.FirstHorizontalTopOffset;
-        _Result["lastHorizontalBottomOffset"] = Parameters_.LastHorizontalBottomOffset;
-        _Result["doorLeft"] = Parameters_.DoorLeft;
-        _Result["doorBottom"] = Parameters_.DoorBottom;
-        _Result["doorHeight"] = Parameters_.DoorHeight;
-        _Result["doorWidth"] = Parameters_.DoorWidth;
-        _Result["doorGap"] = Parameters_.DoorGap;
-        _Result["doorHingeSide"] = Parameters_.DoorHingeSide;
-        _Result["doorHingeCount"] = static_cast<unsigned long long>(Parameters_.DoorHingeCount);
-        _Result["doorHorizontalCount"] = static_cast<unsigned long long>(Parameters_.DoorHorizontalCount);
-        _Result["doorVerticalCount"] = static_cast<unsigned long long>(Parameters_.DoorVerticalCount);
-        _Result["frameJoinType"] = EncodeTubeCornerProcess(
-            Parameters_.OuterFrameProcess.JoinType, Parameters_.OuterFrameProcess.VGrooveStyle);
-        _Result["frameButtWrapMode"] = Parameters_.OuterFrameProcess.ButtWrapMode;
-        _Result["vGrooveStyle"] = Parameters_.OuterFrameProcess.VGrooveStyle;
-        _Result["doorFrameJoinType"] = EncodeTubeCornerProcess(
-            Parameters_.DoorFrameProcess.JoinType, Parameters_.DoorFrameProcess.VGrooveStyle);
-        _Result["doorFrameButtWrapMode"] = Parameters_.DoorFrameProcess.ButtWrapMode;
-        _Result["doorFrameVGrooveStyle"] = Parameters_.DoorFrameProcess.VGrooveStyle;
-        _Result["doorLeafFrameJoinType"] = EncodeTubeCornerProcess(
-            Parameters_.DoorLeafFrameProcess.JoinType, Parameters_.DoorLeafFrameProcess.VGrooveStyle);
-        _Result["doorLeafFrameButtWrapMode"] = Parameters_.DoorLeafFrameProcess.ButtWrapMode;
-        _Result["doorLeafFrameVGrooveStyle"] = Parameters_.DoorLeafFrameProcess.VGrooveStyle;
-        _Result["vGrooveBottomDistance"] = Parameters_.OuterFrameProcess.VGrooveBottomDistance;
-        _Result["vGrooveRadius"] = Parameters_.OuterFrameProcess.VGrooveRadius;
-        _Result["vGrooveKFactor"] = Parameters_.OuterFrameProcess.VGrooveKFactor;
-        _Result["vGrooveMaleFemale"] = std::string(Parameters_.OuterFrameProcess.VGrooveMaleFemale ? "是" : "否");
-        _Result["vGrooveBottomCut"] = std::string(Parameters_.OuterFrameProcess.VGrooveBottomCut ? "是" : "否");
-        _Result["vGrooveReliefHole"] = std::string(Parameters_.OuterFrameProcess.VGrooveReliefHole ? "是" : "否");
-        _Result["vGrooveWallOvercut"] = std::string(Parameters_.OuterFrameProcess.VGrooveWallOvercut ? "是" : "否");
-        _Result["vGrooveReliefDiameter"] = Parameters_.OuterFrameProcess.VGrooveReliefDiameter;
-        _Result["vGrooveReliefNoThrough"] = std::string(Parameters_.OuterFrameProcess.VGrooveReliefNoThrough ? "是" : "否");
-        _Result["horizontalBranchReserve"] = Parameters_.HorizontalBranchReserve;
-        _Result["verticalBranchReserve"] = Parameters_.VerticalBranchReserve;
-        _Result["assemblyClearance"] = Parameters_.AssemblyClearance;
-        _Result["frameProfileType"] = Parameters_.Frame.Type;
-        _Result["frameWidth"] = Parameters_.Frame.Width;
-        _Result["frameDepth"] = Parameters_.Frame.Depth;
-        _Result["frameWallThickness"] = Parameters_.Frame.WallThickness;
-        _Result["frameCornerRadius"] = Parameters_.Frame.CornerRadius;
-        _Result["verticalProfileType"] = Parameters_.Vertical.Type;
-        _Result["verticalWidth"] = Parameters_.Vertical.Width;
-        _Result["verticalDepth"] = Parameters_.Vertical.Depth;
-        _Result["verticalWallThickness"] = Parameters_.Vertical.WallThickness;
-        _Result["verticalCornerRadius"] = Parameters_.Vertical.CornerRadius;
-        _Result["horizontalProfileType"] = Parameters_.Horizontal.Type;
-        _Result["horizontalWidth"] = Parameters_.Horizontal.Width;
-        _Result["horizontalDepth"] = Parameters_.Horizontal.Depth;
-        _Result["horizontalWallThickness"] = Parameters_.Horizontal.WallThickness;
-        _Result["horizontalCornerRadius"] = Parameters_.Horizontal.CornerRadius;
-        _Result["doorFrameProfileType"] = Parameters_.DoorFrame.Type;
-        _Result["doorFrameWidth"] = Parameters_.DoorFrame.Width;
-        _Result["doorFrameDepth"] = Parameters_.DoorFrame.Depth;
-        _Result["doorFrameWallThickness"] = Parameters_.DoorFrame.WallThickness;
-        _Result["doorFrameCornerRadius"] = Parameters_.DoorFrame.CornerRadius;
-        _Result["doorLeafFrameProfileType"] = Parameters_.DoorLeafFrame.Type;
-        _Result["doorLeafFrameWidth"] = Parameters_.DoorLeafFrame.Width;
-        _Result["doorLeafFrameDepth"] = Parameters_.DoorLeafFrame.Depth;
-        _Result["doorLeafFrameWallThickness"] = Parameters_.DoorLeafFrame.WallThickness;
-        _Result["doorLeafFrameCornerRadius"] = Parameters_.DoorLeafFrame.CornerRadius;
-        _Result["doorVerticalProfileType"] = Parameters_.DoorVertical.Type;
-        _Result["doorVerticalWidth"] = Parameters_.DoorVertical.Width;
-        _Result["doorVerticalDepth"] = Parameters_.DoorVertical.Depth;
-        _Result["doorVerticalWallThickness"] = Parameters_.DoorVertical.WallThickness;
-        _Result["doorVerticalCornerRadius"] = Parameters_.DoorVertical.CornerRadius;
-        _Result["doorHorizontalProfileType"] = Parameters_.DoorHorizontal.Type;
-        _Result["doorHorizontalWidth"] = Parameters_.DoorHorizontal.Width;
-        _Result["doorHorizontalDepth"] = Parameters_.DoorHorizontal.Depth;
-        _Result["doorHorizontalWallThickness"] = Parameters_.DoorHorizontal.WallThickness;
-        _Result["doorHorizontalCornerRadius"] = Parameters_.DoorHorizontal.CornerRadius;
-        return _Result;
-    }
-
-    struct STemplateEvaluation final
-    {
-        SGeneratedProduct Product;
-        ObjectMap Parameters;
-    };
 
     struct SPythonTemplatePackage final
     {
@@ -692,93 +328,155 @@ namespace
         throw std::runtime_error(strDescription_ + " was not found in the application installation");
     }
 
-    std::filesystem::path EnvironmentPath(const wchar_t* pName_)
+    std::filesystem::path ResolveRuntimeDirectory(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const std::vector<std::filesystem::path>& RelativeCandidates_,
+        const std::string& strDescription_)
     {
-        const auto _Size = GetEnvironmentVariableW(pName_, nullptr, 0);
-        if (_Size == 0) return {};
-        std::wstring _Value(_Size, L'\0');
-        const auto _Written = GetEnvironmentVariableW(pName_, _Value.data(), _Size);
-        if (_Written == 0 || _Written >= _Size) return {};
-        _Value.resize(_Written);
-        return std::filesystem::path(_Value);
+        std::error_code _Error;
+        for (const auto& _Root : RuntimeSearchRoots(ApplicationContext_))
+        {
+            for (const auto& _Relative : RelativeCandidates_)
+            {
+                const auto _Candidate = _Root / _Relative;
+                if (std::filesystem::is_directory(_Candidate, _Error))
+                    return std::filesystem::weakly_canonical(_Candidate, _Error);
+                _Error.clear();
+            }
+        }
+        throw std::runtime_error(strDescription_ + " was not found in the application installation");
     }
 
-    struct SPythonTemplateRegistration final
+    std::filesystem::path ResolveTemplateRoot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
-        const char* ID;
-        const char* Directory;
-    };
-
-    constexpr std::array<SPythonTemplateRegistration, 4> kPythonTemplates{
-        SPythonTemplateRegistration{ "single-face-security-window", "single_face_security_window" },
-        SPythonTemplateRegistration{ "two-face-security-window", "two_face_security_window" },
-        SPythonTemplateRegistration{ "three-face-security-window", "three_face_security_window" },
-        SPythonTemplateRegistration{ "five-face-security-window", "five_face_security_window" }
-    };
-
-    const SPythonTemplateRegistration* FindPythonTemplateRegistration(const std::string& ID_)
-    {
-        const auto _Iterator = std::find_if(
-            kPythonTemplates.begin(), kPythonTemplates.end(),
-            [&ID_](const auto& Registration_) { return ID_ == Registration_.ID; });
-        return _Iterator == kPythonTemplates.end() ? nullptr : &*_Iterator;
+        return ResolveRuntimeDirectory(ApplicationContext_, {
+            "apps/tube-designer/templates",
+            "src/apps/tube-designer/templates"
+        }, "TubeDesigner template directory");
     }
 
-    bool IsPythonTemplate(const std::string& ID_)
+    std::filesystem::path ResolveSystemProfileRoot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
-        return FindPythonTemplateRegistration(ID_) != nullptr;
+        return ResolveRuntimeDirectory(ApplicationContext_, {
+            "apps/tube-designer/templates/_shared/profiles",
+            "src/apps/tube-designer/templates/_shared/profiles"
+        }, "TubeDesigner system profile directory");
+    }
+
+    std::vector<std::filesystem::path> DiscoverPythonTemplateDirectories(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
+        std::vector<std::filesystem::path> _Directories;
+        std::error_code _Error;
+        for (std::filesystem::directory_iterator _Iterator(_TemplateRoot, _Error), _End;
+            !_Error && _Iterator != _End; _Iterator.increment(_Error))
+        {
+            if (!_Iterator->is_directory(_Error))
+            {
+                _Error.clear();
+                continue;
+            }
+            const auto _Directory = _Iterator->path();
+            const auto _Name = _Directory.filename().string();
+            if (_Name.empty() || _Name.front() == '_') continue;
+            if (std::filesystem::is_regular_file(_Directory / "template.json", _Error)
+                && std::filesystem::is_regular_file(_Directory / "template.py", _Error))
+            {
+                _Directories.push_back(_Directory);
+            }
+            _Error.clear();
+        }
+        if (_Error)
+            throw std::runtime_error("TubeDesigner failed to enumerate template packages");
+        std::sort(_Directories.begin(), _Directories.end());
+        return _Directories;
+    }
+
+    std::string SharedTemplatePackageText(const std::filesystem::path& TemplateRoot_)
+    {
+        const auto _SharedRoot = TemplateRoot_ / "_shared";
+        std::error_code _Error;
+        if (!std::filesystem::is_directory(_SharedRoot, _Error)) return {};
+        std::vector<std::filesystem::path> _Files;
+        for (std::filesystem::recursive_directory_iterator _Iterator(_SharedRoot, _Error), _End;
+            !_Error && _Iterator != _End; _Iterator.increment(_Error))
+        {
+            if (_Iterator->is_regular_file(_Error)
+                && (_Iterator->path().extension() == ".py"
+                    || _Iterator->path().extension() == ".json"))
+            {
+                _Files.push_back(_Iterator->path());
+            }
+            _Error.clear();
+        }
+        if (_Error) throw std::runtime_error("TubeDesigner failed to enumerate shared template files");
+        std::sort(_Files.begin(), _Files.end());
+        std::string _Content;
+        for (const auto& _File : _Files)
+        {
+            _Content += "\n\xffshared-file\xff";
+            _Content += PathToUTF8(std::filesystem::relative(_File, TemplateRoot_));
+            _Content += "\n";
+            _Content += ReadTextFile(_File);
+        }
+        return _Content;
+    }
+
+    SPythonTemplatePackage LoadPythonTemplatePackageFromDirectory(
+        const std::filesystem::path& Directory_,
+        const std::filesystem::path& TemplateRoot_)
+    {
+        const auto _DescriptorPath = Directory_ / "template.json";
+        const auto _ScriptPath = Directory_ / "template.py";
+        const auto _DescriptorText = ReadTextFile(_DescriptorPath);
+        const auto _ScriptText = ReadTextFile(_ScriptPath);
+        auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
+            iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
+        _Descriptor.PackageDigest = ContentDigest(
+            _DescriptorText, _ScriptText + SharedTemplatePackageText(TemplateRoot_));
+        return { std::move(_Descriptor), _DescriptorPath, _ScriptPath };
     }
 
     SPythonTemplatePackage LoadPythonTemplatePackage(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         const std::string& TemplateID_)
     {
-        const auto* _Registration = FindPythonTemplateRegistration(TemplateID_);
-        if (!_Registration)
-            throw std::invalid_argument("unsupported Python template: " + TemplateID_);
-        const auto _RelativeDescriptor = std::filesystem::path("apps/tube-designer/templates")
-            / _Registration->Directory / "template.json";
-        const auto _SourceDescriptor = std::filesystem::path("src") / _RelativeDescriptor;
-        const auto _DescriptorPath = ResolveRuntimeFile(ApplicationContext_, {
-            _RelativeDescriptor, _SourceDescriptor
-        }, "TubeDesigner Python template descriptor");
-        const auto _ScriptPath = _DescriptorPath.parent_path() / "template.py";
-        if (!std::filesystem::is_regular_file(_ScriptPath))
-            throw std::runtime_error("TubeDesigner Python template script was not found");
-        const auto _DescriptorText = ReadTextFile(_DescriptorPath);
-        const auto _ScriptText = ReadTextFile(_ScriptPath);
-        auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
-            iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
-        if (_Descriptor.ID != TemplateID_)
-            throw std::runtime_error("TubeDesigner Python template descriptor ID does not match its registration");
-        std::string _PackageScriptText = _ScriptText;
-        if (TemplateID_ != "single-face-security-window")
+        const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
+        for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
         {
-            const auto _SharedScriptPath = _DescriptorPath.parent_path().parent_path()
-                / "_shared" / "multi_face_security_window.py";
-            if (!std::filesystem::is_regular_file(_SharedScriptPath))
-                throw std::runtime_error("TubeDesigner multi-face shared template script was not found");
-            _PackageScriptText += "\n\xffshared-script\xff\n" + ReadTextFile(_SharedScriptPath);
+            auto _Package = LoadPythonTemplatePackageFromDirectory(_Directory, _TemplateRoot);
+            if (_Package.Descriptor.ID == TemplateID_) return _Package;
         }
-        _Descriptor.PackageDigest = ContentDigest(_DescriptorText, _PackageScriptText);
-        return { std::move(_Descriptor), _DescriptorPath, _ScriptPath };
+        throw std::invalid_argument("unsupported Python template: " + TemplateID_);
     }
 
-    std::filesystem::path ResolvePythonExecutable(
+    bool IsPythonTemplate(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const std::string& TemplateID_)
+    {
+        try
+        {
+            (void)LoadPythonTemplatePackage(ApplicationContext_, TemplateID_);
+            return true;
+        }
+        catch (const std::invalid_argument&)
+        {
+            return false;
+        }
+    }
+
+    std::filesystem::path ResolveEmbeddedPythonRuntimeLibrary(
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
-        const auto _Configured = EnvironmentPath(L"ICAX_PYTHON_EXECUTABLE");
-        if (!_Configured.empty())
-        {
-            if (!std::filesystem::is_regular_file(_Configured))
-                throw std::runtime_error("ICAX_PYTHON_EXECUTABLE does not point to a file");
-            return std::filesystem::weakly_canonical(_Configured);
-        }
         return ResolveRuntimeFile(ApplicationContext_, {
-            "runtime/python/python.exe",
-            "python/python.exe",
-            "src/runtime/python/python.exe"
-        }, "iCAX Python runtime (set ICAX_PYTHON_EXECUTABLE to configure it)");
+            "runtime/python/python312.dll",
+            "python/python312.dll",
+            "src/x64/Debug/runtime/python/python312.dll",
+            "src/x64/Release/runtime/python/python312.dll"
+        }, "iCAX embedded Python runtime");
     }
 
     ObjectMap InvokePythonTemplate(
@@ -787,22 +485,23 @@ namespace
     {
         static std::mutex _Mutex;
         static std::unique_ptr<iCAX::TemplateRuntime::CPythonTemplateHost> _Host;
-        static std::filesystem::path _Python;
+        static std::filesystem::path _RuntimeLibrary;
         static std::filesystem::path _Worker;
         std::scoped_lock _Lock(_Mutex);
-        const auto _ResolvedPython = ResolvePythonExecutable(ApplicationContext_);
+        const auto _ResolvedRuntimeLibrary = ResolveEmbeddedPythonRuntimeLibrary(ApplicationContext_);
         const auto _ResolvedWorker = ResolveRuntimeFile(ApplicationContext_, {
+            "runtime/template-python/icax_template_worker.py",
             "iCAX-Engine/framework/TemplateRuntime/python/icax_template_worker.py",
             "src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_worker.py",
             "TemplateRuntime/python/icax_template_worker.py"
         }, "iCAX Python template worker");
-        if (!_Host || _ResolvedPython != _Python || _ResolvedWorker != _Worker)
+        if (!_Host || _ResolvedRuntimeLibrary != _RuntimeLibrary || _ResolvedWorker != _Worker)
         {
             _Host = std::make_unique<iCAX::TemplateRuntime::CPythonTemplateHost>(
                 iCAX::TemplateRuntime::SPythonTemplateHostOptions{
-                    _ResolvedPython, _ResolvedWorker, _ResolvedWorker.parent_path()
+                    _ResolvedRuntimeLibrary, _ResolvedWorker, _ResolvedWorker.parent_path()
                 });
-            _Python = _ResolvedPython;
+            _RuntimeLibrary = _ResolvedRuntimeLibrary;
             _Worker = _ResolvedWorker;
         }
         return _Host->Invoke(Request_);
@@ -810,12 +509,18 @@ namespace
 
     SNeutralTemplateEvaluation EvaluateNeutralTemplate(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
-        const ObjectMap& Payload_)
+        const ObjectMap& Payload_,
+        const std::string& GeometryPurpose_,
+        const std::string& ExpectedPackageDigest_ = {})
     {
         const auto _RequestedTemplateID = GetString(Payload_, "templateId", "single-face-security-window");
         auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _RequestedTemplateID);
         const auto _TemplateID = GetString(Payload_, "templateId", _Package.Descriptor.ID);
         const auto _TemplateVersion = GetString(Payload_, "templateVersion", _Package.Descriptor.Version);
+        if (!ExpectedPackageDigest_.empty()
+            && (ExpectedPackageDigest_ != _Package.Descriptor.PackageDigest
+                || _TemplateID != _Package.Descriptor.ID || _TemplateVersion != _Package.Descriptor.Version))
+            throw std::runtime_error("模板已变化，请重新生成产品后再拆单");
         if (_TemplateID != _Package.Descriptor.ID || _TemplateVersion != _Package.Descriptor.Version)
             throw std::invalid_argument("requested Python template identity does not match its descriptor");
 
@@ -827,8 +532,21 @@ namespace
         }
         auto _Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
             _Package.Descriptor, _Values);
-        const auto _Request = iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
+        if (const auto _Overrides = Payload_.find("tubeDesignerProfileOverrides");
+            _Overrides != Payload_.end())
+        {
+            if (!_Overrides->second.Is<ObjectMap>())
+                throw std::invalid_argument("tubeDesignerProfileOverrides must be an object");
+            const auto _OverrideValues = _Overrides->second.To<ObjectMap>();
+            if (_OverrideValues.size() > 64)
+                throw std::invalid_argument("tubeDesignerProfileOverrides has too many entries");
+            _Parameters["tubeDesignerProfileOverrides"] = _OverrideValues;
+        }
+        auto _Request = iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
             _Package.Descriptor, _Parameters, PathToUTF8(_Package.ScriptPath));
+        auto _Context = _Request.at("context").To<ObjectMap>();
+        _Context["geometryPurpose"] = GeometryPurpose_;
+        _Request["context"] = std::move(_Context);
         auto _Document = InvokePythonTemplate(ApplicationContext_, _Request);
         auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
         if (_Model.TemplateID != _Package.Descriptor.ID
@@ -839,413 +557,40 @@ namespace
         }
         if (_Model.Parameters != _Parameters)
             throw std::runtime_error("Python template changed the normalized parameter values");
+        if (GetString(_Model.Extensions, "tubeDesigner.geometryPurpose") != GeometryPurpose_
+            || _Model.Outputs.size() != 1 || _Model.Outputs.front().Purpose != "result")
+            throw std::runtime_error("Python template must return one neutral result for the requested geometry");
+        for (const auto& _Item : _Model.Items)
+        {
+            if (_Item.Representations.size() != 1 || !_Item.Representations.contains("result"))
+                throw std::runtime_error("Python template returned alternative geometry representations");
+        }
         return {
             std::move(_Package.Descriptor), std::move(_Model),
             std::move(_Document), std::move(_Parameters)
         };
     }
 
-    STemplateEvaluation EvaluateTemplate(const ObjectMap& Payload_)
-    {
-        const auto _TemplateID = GetString(Payload_, "templateId", "security-window-1");
-        const auto _TemplateVersion = GetString(Payload_, "templateVersion", "1.0.0");
-        if (_TemplateVersion != "1.0.0")
-        {
-            throw std::invalid_argument("unsupported TubeDesigner template version: " + _TemplateVersion);
-        }
-        if (_TemplateID == "security-window-1")
-        {
-            const auto _Parameters = ReadParameters(Payload_);
-            return { GenerateSecurityWindow1(_Parameters), MakeParameterMap(_Parameters) };
-        }
-        if (_TemplateID == "security-window-2")
-        {
-            const auto _Parameters = ReadSecurityWindow2Parameters(Payload_);
-            return { GenerateSecurityWindow2(_Parameters), MakeParameterMap(_Parameters) };
-        }
-        if (_TemplateID == "security-window-3")
-        {
-            const auto _Parameters = ReadSecurityWindow3Parameters(Payload_);
-            return { GenerateSecurityWindow3(_Parameters), MakeParameterMap(_Parameters) };
-        }
-        throw std::invalid_argument("unsupported TubeDesigner template: " + _TemplateID);
-    }
-
-    ObjectMap ParameterField(
-        const std::string& Name_, const std::string& Label_, const std::string& Group_,
-        const Variant& Default_, const std::string& Type_ = "number",
-        const Variant& Minimum_ = Variant(), const Variant& Maximum_ = Variant())
-    {
-        ObjectMap _Field;
-        _Field["name"] = Name_;
-        _Field["label"] = Label_;
-        _Field["group"] = Group_;
-        _Field["type"] = Type_;
-        _Field["defaultValue"] = Default_;
-        if (!Minimum_.Is<std::monostate>()) _Field["min"] = Minimum_;
-        if (!Maximum_.Is<std::monostate>()) _Field["max"] = Maximum_;
-        return _Field;
-    }
-
-    ObjectMap ChoiceField(
-        const std::string& Name_, const std::string& Label_, const std::string& Group_,
-        const std::string& Default_,
-        const std::vector<std::pair<std::string, std::string>>& Choices_)
-    {
-        auto _Field = ParameterField(Name_, Label_, Group_, Default_, "select");
-        VariantArray _Options;
-        for (const auto& [_Value, _Label] : Choices_)
-        {
-            ObjectMap _Option;
-            _Option["value"] = _Value;
-            _Option["label"] = _Label;
-            _Options.emplace_back(_Option);
-        }
-        _Field["options"] = _Options;
-        return _Field;
-    }
-
-    ObjectMap VisibleWhen(
-        ObjectMap Field_, const std::vector<std::pair<std::string, Variant>>& Conditions_)
-    {
-        VariantArray _Conditions;
-        for (const auto& [_Name, _Value] : Conditions_)
-        {
-            ObjectMap _Condition;
-            _Condition["name"] = _Name;
-            _Condition["value"] = _Value;
-            _Conditions.emplace_back(_Condition);
-        }
-        if (_Conditions.size() == 1)
-        {
-            Field_["visibleWhen"] = _Conditions.front();
-        }
-        else
-        {
-            ObjectMap _All;
-            _All["all"] = _Conditions;
-            Field_["visibleWhen"] = _All;
-        }
-        return Field_;
-    }
-
-    ObjectMap VisibleWhenAllAny(
-        ObjectMap Field_,
-        const std::vector<std::pair<std::string, Variant>>& Required_,
-        const std::vector<std::pair<std::string, Variant>>& Alternatives_)
-    {
-        VariantArray _All;
-        for (const auto& [_Name, _Value] : Required_)
-        {
-            ObjectMap _Condition;
-            _Condition["name"] = _Name;
-            _Condition["value"] = _Value;
-            _All.emplace_back(_Condition);
-        }
-        VariantArray _AnyConditions;
-        for (const auto& [_Name, _Value] : Alternatives_)
-        {
-            ObjectMap _Condition;
-            _Condition["name"] = _Name;
-            _Condition["value"] = _Value;
-            _AnyConditions.emplace_back(_Condition);
-        }
-        ObjectMap _Any;
-        _Any["any"] = _AnyConditions;
-        _All.emplace_back(_Any);
-        ObjectMap _Visibility;
-        _Visibility["all"] = _All;
-        Field_["visibleWhen"] = _Visibility;
-        return Field_;
-    }
-
-    ObjectMap VisibleWhenAllAnyGroups(
-        ObjectMap Field_,
-        const std::vector<std::vector<std::pair<std::string, Variant>>>& Groups_)
-    {
-        VariantArray _All;
-        for (const auto& _Group : Groups_)
-        {
-            VariantArray _AnyConditions;
-            for (const auto& [_Name, _Value] : _Group)
-            {
-                ObjectMap _Condition;
-                _Condition["name"] = _Name;
-                _Condition["value"] = _Value;
-                _AnyConditions.emplace_back(_Condition);
-            }
-            ObjectMap _Any;
-            _Any["any"] = _AnyConditions;
-            _All.emplace_back(_Any);
-        }
-        ObjectMap _Visibility;
-        _Visibility["all"] = _All;
-        Field_["visibleWhen"] = _Visibility;
-        return Field_;
-    }
-
-    ObjectMap VisibleWhenAnyAll(
-        ObjectMap Field_,
-        const std::vector<std::vector<std::pair<std::string, Variant>>>& Groups_)
-    {
-        VariantArray _Any;
-        for (const auto& _Group : Groups_)
-        {
-            VariantArray _AllConditions;
-            for (const auto& [_Name, _Value] : _Group)
-            {
-                ObjectMap _Condition;
-                _Condition["name"] = _Name;
-                _Condition["value"] = _Value;
-                _AllConditions.emplace_back(_Condition);
-            }
-            ObjectMap _All;
-            _All["all"] = _AllConditions;
-            _Any.emplace_back(_All);
-        }
-        ObjectMap _Visibility;
-        _Visibility["any"] = _Any;
-        Field_["visibleWhen"] = _Visibility;
-        return Field_;
-    }
-
-    VariantArray CommonParameterSchema(const std::string& DefaultProductCode_)
-    {
-        VariantArray _Fields;
-        _Fields.emplace_back(ParameterField("productCode", "产品编号", "基本尺寸", DefaultProductCode_, "text"));
-        _Fields.emplace_back(ParameterField("height", "产品高度 L (mm)", "基本尺寸", 1800.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("width", "产品宽度 D (mm)", "基本尺寸", 1200.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("frameProfileType", "截面类型", "外框管", std::string("rect"), "readonly"));
-        _Fields.emplace_back(ParameterField("frameWidth", "截面宽度 (mm)", "外框管", 50.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("frameDepth", "截面深度 (mm)", "外框管", 50.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("frameWallThickness", "壁厚 (mm)", "外框管", 2.0, "number", 0.1));
-        _Fields.emplace_back(ParameterField("verticalProfileType", "截面类型", "竖管", std::string("rect"), "readonly"));
-        _Fields.emplace_back(ParameterField("verticalWidth", "截面宽度 (mm)", "竖管", 25.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("verticalDepth", "截面深度 (mm)", "竖管", 25.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("verticalWallThickness", "壁厚 (mm)", "竖管", 1.5, "number", 0.1));
-        _Fields.emplace_back(ParameterField("horizontalProfileType", "截面类型", "横管", std::string("rect"), "readonly"));
-        _Fields.emplace_back(ParameterField("horizontalWidth", "截面宽度 (mm)", "横管", 35.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("horizontalDepth", "截面深度 (mm)", "横管", 35.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("horizontalWallThickness", "壁厚 (mm)", "横管", 1.5, "number", 0.1));
-        _Fields.emplace_back(ParameterField("horizontalBranchReserve", "横支管安装预留 (mm)", "装配", -1.0));
-        _Fields.emplace_back(ParameterField("verticalBranchReserve", "竖支管安装预留 (mm)", "装配", -1.0));
-        _Fields.emplace_back(ParameterField("assemblyClearance", "开孔装配间隙 (mm)", "装配", 0.1, "number", 0.0));
-        return _Fields;
-    }
-
-    VariantArray SingleFaceParameterSchema()
-    {
-        VariantArray _Fields;
-        _Fields.emplace_back(ChoiceField("frameLayout", "外框布置", "结构", "left_right", {
-            { "left_right", "仅左右边框" },
-            { "top_bottom", "仅上下边框" },
-            { "four_sides", "四边边框" }
-        }));
-        _Fields.emplace_back(ChoiceField("accessDoorEnabled", "检修门", "结构", "否", {
-            { "否", "无检修门" }, { "是", "带矩形检修门" }
-        }));
-        _Fields.emplace_back(ParameterField("productCode", "产品编号", "基本尺寸", std::string("TD-SF-001"), "text"));
-        _Fields.emplace_back(ParameterField("height", "产品高度 L (mm)", "基本尺寸", 1800.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("width", "产品宽度 D (mm)", "基本尺寸", 1200.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("horizontalCount", "主横杆数量", "主格栅", 4ull, "integer", 0ull, 100ull));
-        _Fields.emplace_back(ParameterField("middleVerticalCount", "主竖杆数量", "主格栅", 1ull, "integer", 0ull, 100ull));
-        _Fields.emplace_back(ParameterField("firstHorizontalTopOffset", "首横杆距顶部 (mm)", "主格栅", 200.0, "number", 0.0));
-        _Fields.emplace_back(ParameterField("lastHorizontalBottomOffset", "末横杆距底部 (mm)", "主格栅", 200.0, "number", 0.0));
-
-        const std::vector<std::pair<std::string, Variant>> _DoorEnabled{
-            { "accessDoorEnabled", Variant(std::string("是")) }
-        };
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorLeft", "门框左边距 (mm)", "检修门位置", 450.0, "number", 0.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorBottom", "门框底边距 (mm)", "检修门位置", 700.0, "number", 0.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorWidth", "门框宽度 (mm)", "检修门位置", 300.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHeight", "门框高度 (mm)", "检修门位置", 360.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorGap", "门扇与门框间隙 (mm)", "检修门装配", 6.0, "number", 0.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ChoiceField("doorHingeSide", "铰链侧", "检修门装配", "left", {
-            { "left", "左侧" }, { "right", "右侧" }
-        }), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHingeCount", "铰链数量", "检修门装配", 2ull, "integer", 1ull, 10ull), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHorizontalCount", "门内横杆数量", "门扇格栅", 1ull, "integer", 0ull, 100ull), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorVerticalCount", "门内竖杆数量", "门扇格栅", 1ull, "integer", 0ull, 100ull), _DoorEnabled));
-
-        const std::vector<std::pair<std::string, std::string>> _TubeCornerProcesses{
-            { "v_groove_90:sharp_v", "连续折弯 · 尖角 V 槽" },
-            { "v_groove_90:rounded_v", "连续折弯 · 圆角 V 槽" },
-            { "v_groove_90:left_arc", "连续折弯 · 左圆弧 V 槽" },
-            { "v_groove_90:right_arc", "连续折弯 · 右圆弧 V 槽" },
-            { "miter_45", "45° 斜拼（四根管）" },
-            { "butt_90", "90° 直拼（四根管）" }
-        };
-        _Fields.emplace_back(VisibleWhen(ChoiceField(
-            "frameJoinType", "大外框连接工艺", "大外框工艺",
-            "v_groove_90:sharp_v", _TubeCornerProcesses), {
-                { "frameLayout", Variant(std::string("four_sides")) }
-            }));
-        _Fields.emplace_back(VisibleWhen(ChoiceField(
-            "frameButtWrapMode", "直拼包边方向", "大外框工艺", "side_wraps_horizontal", {
-            { "side_wraps_horizontal", "左右框包上下框" },
-            { "horizontal_wraps_side", "上下框包左右框" }
-        }), {
-            { "frameLayout", Variant(std::string("four_sides")) },
-            { "frameJoinType", Variant(std::string("butt_90")) }
-        }));
-        _Fields.emplace_back(VisibleWhen(ChoiceField(
-            "doorFrameJoinType", "固定门框连接工艺", "固定门框工艺",
-            "v_groove_90:sharp_v", _TubeCornerProcesses), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ChoiceField(
-            "doorFrameButtWrapMode", "直拼包边方向", "固定门框工艺", "side_wraps_horizontal", {
-                { "side_wraps_horizontal", "左右框包上下框" },
-                { "horizontal_wraps_side", "上下框包左右框" }
-            }), {
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorFrameJoinType", Variant(std::string("butt_90")) }
-            }));
-        _Fields.emplace_back(VisibleWhen(ChoiceField(
-            "doorLeafFrameJoinType", "活动门扇框连接工艺", "活动门扇框工艺",
-            "v_groove_90:sharp_v", _TubeCornerProcesses), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ChoiceField(
-            "doorLeafFrameButtWrapMode", "直拼包边方向", "活动门扇框工艺", "side_wraps_horizontal", {
-                { "side_wraps_horizontal", "左右框包上下框" },
-                { "horizontal_wraps_side", "上下框包左右框" }
-            }), {
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorLeafFrameJoinType", Variant(std::string("butt_90")) }
-            }));
-
-        const std::array<std::string, 4> _VGrooveProcessValues{
-            "v_groove_90:sharp_v", "v_groove_90:rounded_v",
-            "v_groove_90:left_arc", "v_groove_90:right_arc"
-        };
-        std::vector<std::vector<std::pair<std::string, Variant>>> _AnyVGroove;
-        for (const auto& _Process : _VGrooveProcessValues)
-        {
-            _AnyVGroove.push_back({
-                { "frameLayout", Variant(std::string("four_sides")) },
-                { "frameJoinType", Variant(_Process) }
-            });
-            _AnyVGroove.push_back({
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorFrameJoinType", Variant(_Process) }
-            });
-            _AnyVGroove.push_back({
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorLeafFrameJoinType", Variant(_Process) }
-            });
-        }
-        const std::vector<std::vector<std::pair<std::string, Variant>>> _AnyRoundedVGroove{
-            {
-                { "frameLayout", Variant(std::string("four_sides")) },
-                { "frameJoinType", Variant(std::string("v_groove_90:rounded_v")) }
-            },
-            {
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorFrameJoinType", Variant(std::string("v_groove_90:rounded_v")) }
-            },
-            {
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorLeafFrameJoinType", Variant(std::string("v_groove_90:rounded_v")) }
-            }
-        };
-        const std::vector<std::vector<std::pair<std::string, Variant>>> _AnySharpVGroove{
-            {
-                { "frameLayout", Variant(std::string("four_sides")) },
-                { "frameJoinType", Variant(std::string("v_groove_90:sharp_v")) }
-            },
-            {
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorFrameJoinType", Variant(std::string("v_groove_90:sharp_v")) }
-            },
-            {
-                { "accessDoorEnabled", Variant(std::string("是")) },
-                { "doorLeafFrameJoinType", Variant(std::string("v_groove_90:sharp_v")) }
-            }
-        };
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ParameterField("vGrooveBottomDistance", "槽底距外侧底面 (mm)", "管材转角 V 槽参数", 2.0, "number", 0.0),
-            _AnyVGroove));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ParameterField("vGrooveRadius", "圆角 V 槽 R 半径 (mm)", "管材转角 V 槽参数", 18.0, "number", 0.0),
-            _AnyRoundedVGroove));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ParameterField("vGrooveKFactor", "展开 K 因子", "管材转角 V 槽参数", 0.62, "number", 0.0, 1.0),
-            _AnyVGroove));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ChoiceField("vGrooveMaleFemale", "斜切公母", "管材转角 V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }),
-            _AnyVGroove));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ChoiceField("vGrooveBottomCut", "底部切除", "管材转角 V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }),
-            _AnySharpVGroove));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ChoiceField("vGrooveReliefHole", "释放孔", "管材转角 V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }),
-            _AnySharpVGroove));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ChoiceField("vGrooveWallOvercut", "壁厚过切", "管材转角 V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }),
-            _AnySharpVGroove));
-        auto _AnySharpVGrooveWithRelief = _AnySharpVGroove;
-        for (auto& _Group : _AnySharpVGrooveWithRelief)
-            _Group.emplace_back("vGrooveReliefHole", Variant(std::string("是")));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ParameterField("vGrooveReliefDiameter", "释放孔直径 (mm)", "管材转角 V 槽附加工艺", 10.0, "number", 0.0),
-            _AnySharpVGrooveWithRelief));
-        _Fields.emplace_back(VisibleWhenAnyAll(
-            ChoiceField("vGrooveReliefNoThrough", "释放孔不过切", "管材转角 V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }),
-            _AnySharpVGrooveWithRelief));
-
-        _Fields.emplace_back(ParameterField("frameProfileType", "截面类型", "大外框矩形管", std::string("rect"), "readonly"));
-        _Fields.emplace_back(ParameterField("frameWidth", "截面宽度 (mm)", "大外框矩形管", 50.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("frameDepth", "截面深度 (mm)", "大外框矩形管", 50.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("frameCornerRadius", "外圆角 R (mm)", "大外框矩形管", 5.0, "number", 0.0));
-        _Fields.emplace_back(ParameterField("frameWallThickness", "壁厚 (mm)", "大外框矩形管", 2.0, "number", 0.1));
-        _Fields.emplace_back(ParameterField("horizontalProfileType", "截面类型", "主横杆矩形管", std::string("rect"), "readonly"));
-        _Fields.emplace_back(ParameterField("horizontalWidth", "截面宽度 (mm)", "主横杆矩形管", 35.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("horizontalDepth", "截面深度 (mm)", "主横杆矩形管", 35.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("horizontalCornerRadius", "外圆角 R (mm)", "主横杆矩形管", 3.5, "number", 0.0));
-        _Fields.emplace_back(ParameterField("horizontalWallThickness", "壁厚 (mm)", "主横杆矩形管", 1.5, "number", 0.1));
-        _Fields.emplace_back(ParameterField("verticalProfileType", "截面类型", "主竖杆圆管", std::string("round"), "readonly"));
-        _Fields.emplace_back(ParameterField("verticalWidth", "外径 (mm)", "主竖杆圆管", 25.0, "number", 1.0));
-        _Fields.emplace_back(ParameterField("verticalWallThickness", "壁厚 (mm)", "主竖杆圆管", 1.5, "number", 0.1));
-
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorFrameProfileType", "截面类型", "固定门框矩形管", std::string("rect"), "readonly"), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorFrameWidth", "截面宽度 (mm)", "固定门框矩形管", 35.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorFrameDepth", "截面深度 (mm)", "固定门框矩形管", 35.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorFrameCornerRadius", "外圆角 R (mm)", "固定门框矩形管", 3.5, "number", 0.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorFrameWallThickness", "壁厚 (mm)", "固定门框矩形管", 1.5, "number", 0.1), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorLeafFrameProfileType", "截面类型", "活动门扇框矩形管", std::string("rect"), "readonly"), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorLeafFrameWidth", "截面宽度 (mm)", "活动门扇框矩形管", 25.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorLeafFrameDepth", "截面深度 (mm)", "活动门扇框矩形管", 25.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorLeafFrameCornerRadius", "外圆角 R (mm)", "活动门扇框矩形管", 2.5, "number", 0.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorLeafFrameWallThickness", "壁厚 (mm)", "活动门扇框矩形管", 1.5, "number", 0.1), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHorizontalProfileType", "截面类型", "门内横杆矩形管", std::string("rect"), "readonly"), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHorizontalWidth", "截面宽度 (mm)", "门内横杆矩形管", 20.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHorizontalDepth", "截面深度 (mm)", "门内横杆矩形管", 20.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHorizontalCornerRadius", "外圆角 R (mm)", "门内横杆矩形管", 2.0, "number", 0.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorHorizontalWallThickness", "壁厚 (mm)", "门内横杆矩形管", 1.2, "number", 0.1), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorVerticalProfileType", "截面类型", "门内竖杆圆管", std::string("round"), "readonly"), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorVerticalWidth", "外径 (mm)", "门内竖杆圆管", 16.0, "number", 1.0), _DoorEnabled));
-        _Fields.emplace_back(VisibleWhen(ParameterField("doorVerticalWallThickness", "壁厚 (mm)", "门内竖杆圆管", 1.2, "number", 0.1), _DoorEnabled));
-        _Fields.emplace_back(ParameterField("horizontalBranchReserve", "横杆安装预留 (mm)", "装配", -1.0));
-        _Fields.emplace_back(ParameterField("verticalBranchReserve", "竖杆安装预留 (mm)", "装配", -1.0));
-        _Fields.emplace_back(ParameterField("assemblyClearance", "穿杆开孔间隙 (mm)", "装配", 0.1, "number", 0.0));
-        return _Fields;
-    }
-
     VariantArray TemplateCatalog(
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
         VariantArray _Templates;
-        for (const auto& _Registration : kPythonTemplates)
+        const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
+        for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
         {
             try
             {
-                const auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _Registration.ID);
+                const auto _Package = LoadPythonTemplatePackageFromDirectory(
+                    _Directory, _TemplateRoot);
                 _Templates.emplace_back(iCAX::TemplateRuntime::CTemplateCodec::MakePresentationDescriptor(
                     _Package.Descriptor, "zh-CN"));
             }
             catch (const std::exception& Error_)
             {
                 ObjectMap _Unavailable;
-                _Unavailable["id"] = std::string(_Registration.ID);
+                _Unavailable["id"] = _Directory.filename().string();
                 _Unavailable["version"] = std::string();
-                _Unavailable["name"] = std::string(_Registration.ID);
+                _Unavailable["name"] = _Directory.filename().string();
                 _Unavailable["available"] = false;
                 _Unavailable["status"] = std::string("模板包不可用：") + Error_.what();
                 _Unavailable["parameters"] = VariantArray{};
@@ -1253,425 +598,7 @@ namespace
             }
         }
 
-        auto _OneFields = CommonParameterSchema("TD-001");
-        _OneFields.emplace(_OneFields.begin() + 3, ParameterField("horizontalCount", "横管数量", "基本尺寸", 4ull, "integer", 0ull, 100ull));
-        _OneFields.emplace(_OneFields.begin() + 4, ParameterField("middleVerticalCount", "中间竖管数量", "基本尺寸", 1ull, "integer", 0ull, 10ull));
-        _OneFields.emplace(_OneFields.begin() + 5, ParameterField("firstHorizontalTopOffset", "首横管距顶部 (mm)", "基本尺寸", 200.0, "number", 0.0));
-        _OneFields.emplace(_OneFields.begin() + 6, ParameterField("lastHorizontalBottomOffset", "末横管距底部 (mm)", "基本尺寸", 200.0, "number", 0.0));
-        ObjectMap _One;
-        _One["id"] = std::string("security-window-1");
-        _One["version"] = std::string("1.0.0");
-        _One["name"] = std::string("防盗窗 1 号 - 无把手不封闭");
-        _One["available"] = true;
-        _One["parameters"] = _OneFields;
-        _Templates.emplace_back(_One);
-
-        auto _TwoFields = CommonParameterSchema("TD-002");
-        _TwoFields.emplace(_TwoFields.begin() + 3, ParameterField("handleBottom", "把手底部 Z1 (mm)", "把手区域", 700.0, "number", 0.0));
-        _TwoFields.emplace(_TwoFields.begin() + 4, ParameterField("handleHeight", "把手高度 Z2 (mm)", "把手区域", 360.0, "number", 1.0));
-        _TwoFields.emplace(_TwoFields.begin() + 5, ParameterField("handleWidth", "把手宽度 W1 (mm)", "把手区域", 300.0, "number", 1.0));
-        _TwoFields.emplace(_TwoFields.begin() + 6, ParameterField("handleHorizontalCount", "把手区域横管数量", "把手区域", 1ull, "integer", 0ull, 100ull));
-        _TwoFields.emplace(_TwoFields.begin() + 7, ParameterField("topHorizontalCount", "把手上方横管数量", "把手区域", 2ull, "integer", 0ull, 100ull));
-        _TwoFields.emplace(_TwoFields.begin() + 8, ParameterField("bottomHorizontalCount", "把手下方横管数量", "把手区域", 2ull, "integer", 0ull, 100ull));
-        ObjectMap _Two;
-        _Two["id"] = std::string("security-window-2");
-        _Two["version"] = std::string("1.0.0");
-        _Two["name"] = std::string("防盗窗 2 号 - 有把手不封闭");
-        _Two["available"] = true;
-        _Two["parameters"] = _TwoFields;
-        _Templates.emplace_back(_Two);
-
-        auto _ThreeFields = CommonParameterSchema("TD-003");
-        _ThreeFields.emplace(_ThreeFields.begin() + 3, ParameterField("horizontalCount", "中间横管数量", "内部管材", 4ull, "integer", 0ull, 100ull));
-        _ThreeFields.emplace(_ThreeFields.begin() + 4, ParameterField("middleVerticalCount", "中间竖管数量", "内部管材", 1ull, "integer", 0ull, 10ull));
-        _ThreeFields.emplace(_ThreeFields.begin() + 5, ParameterField("firstHorizontalTopOffset", "首横管距顶部 (mm)", "内部管材", 200.0, "number", 0.0));
-        _ThreeFields.emplace(_ThreeFields.begin() + 6, ParameterField("lastHorizontalBottomOffset", "末横管距底部 (mm)", "内部管材", 200.0, "number", 0.0));
-        _ThreeFields.emplace(_ThreeFields.begin() + 7, ChoiceField(
-            "frameJoinType", "外框拼接方式", "外框工艺", "v_groove_90", {
-                { "v_groove_90", "90° V 槽折弯（连续一根管）" },
-                { "miter_45", "45° 斜拼（四根管）" },
-                { "butt_90", "90° 直拼（四根管）" }
-            }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 8, VisibleWhen(ChoiceField(
-            "frameButtWrapMode", "直拼包边方向", "外框工艺", "side_wraps_horizontal", {
-                { "side_wraps_horizontal", "左右框包上下框" },
-                { "horizontal_wraps_side", "上下框包左右框" }
-            }), { { "frameJoinType", Variant(std::string("butt_90")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 9, VisibleWhen(ChoiceField(
-            "vGrooveStyle", "V 槽类型", "V 槽参数", "sharp_v", {
-                { "sharp_v", "尖角 V 槽" }, { "rounded_v", "圆角 V 槽" },
-                { "left_arc", "左圆弧 V 槽" }, { "right_arc", "右圆弧 V 槽" }
-            }), { { "frameJoinType", Variant(std::string("v_groove_90")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 10, VisibleWhen(ParameterField("vGrooveBottomDistance", "槽底距外侧底面 (mm)", "V 槽参数", 2.0, "number", 0.0), { { "frameJoinType", Variant(std::string("v_groove_90")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 11, VisibleWhen(ParameterField("vGrooveRadius", "圆角/释放半径 (mm)", "V 槽参数", 18.0, "number", 0.0), { { "frameJoinType", Variant(std::string("v_groove_90")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 12, VisibleWhen(ParameterField("vGrooveKFactor", "展开 K 因子", "V 槽参数", 0.62, "number", 0.0, 1.0), { { "frameJoinType", Variant(std::string("v_groove_90")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 13, VisibleWhen(ChoiceField("vGrooveMaleFemale", "斜切公母", "V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }), { { "frameJoinType", Variant(std::string("v_groove_90")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 14, VisibleWhen(ChoiceField("vGrooveBottomCut", "底部切除", "V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }), { { "frameJoinType", Variant(std::string("v_groove_90")) }, { "vGrooveStyle", Variant(std::string("sharp_v")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 15, VisibleWhen(ChoiceField("vGrooveReliefHole", "释放孔", "V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }), { { "frameJoinType", Variant(std::string("v_groove_90")) }, { "vGrooveStyle", Variant(std::string("sharp_v")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 16, VisibleWhen(ChoiceField("vGrooveWallOvercut", "壁厚过切", "V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }), { { "frameJoinType", Variant(std::string("v_groove_90")) }, { "vGrooveStyle", Variant(std::string("sharp_v")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 17, VisibleWhen(ParameterField("vGrooveReliefDiameter", "释放孔直径 (mm)", "V 槽附加工艺", 10.0, "number", 0.0), { { "frameJoinType", Variant(std::string("v_groove_90")) }, { "vGrooveStyle", Variant(std::string("sharp_v")) }, { "vGrooveReliefHole", Variant(std::string("是")) } }));
-        _ThreeFields.emplace(_ThreeFields.begin() + 18, VisibleWhen(ChoiceField("vGrooveReliefNoThrough", "释放孔不过切", "V 槽附加工艺", "否", { { "否", "否" }, { "是", "是" } }), { { "frameJoinType", Variant(std::string("v_groove_90")) }, { "vGrooveStyle", Variant(std::string("sharp_v")) }, { "vGrooveReliefHole", Variant(std::string("是")) } }));
-        ObjectMap _Three;
-        _Three["id"] = std::string("security-window-3");
-        _Three["version"] = std::string("1.0.0");
-        _Three["name"] = std::string("防盗窗 3 号 - 四边封闭/V槽折弯");
-        _Three["available"] = true;
-        _Three["parameters"] = _ThreeFields;
-        _Templates.emplace_back(_Three);
         return _Templates;
-    }
-
-    TopoDS_Shape CutShape(
-        const TopoDS_Shape& Target_, const TopoDS_Shape& Cutter_, const std::string& Operation_)
-    {
-        BRepAlgoAPI_Cut _Cut(Target_, Cutter_);
-        if (!_Cut.IsDone() || _Cut.Shape().IsNull())
-        {
-            throw std::runtime_error("TubeDesigner boolean cut failed: " + Operation_);
-        }
-        return _Cut.Shape();
-    }
-
-    TopoDS_Edge MakeLineEdge(const gp_Pnt& Start_, const gp_Pnt& End_)
-    {
-        return BRepBuilderAPI_MakeEdge(Start_, End_).Edge();
-    }
-
-    TopoDS_Edge MakeArcEdge(
-        const gp_Pnt& Start_, const gp_Pnt& Middle_, const gp_Pnt& End_)
-    {
-        GC_MakeArcOfCircle _Arc(Start_, Middle_, End_);
-        if (!_Arc.IsDone()) throw std::runtime_error("TubeDesigner failed to build cutter arc");
-        return BRepBuilderAPI_MakeEdge(_Arc.Value()).Edge();
-    }
-
-    TopoDS_Shape MakeXyPolygonPrism(
-        const std::vector<gp_Pnt>& Points_, double StartZ_, double EndZ_)
-    {
-        if (Points_.size() < 3 || std::abs(EndZ_ - StartZ_) <= 0.001)
-            throw std::invalid_argument("TubeDesigner polygon prism dimensions are invalid");
-        BRepBuilderAPI_MakePolygon _Polygon;
-        for (const auto& _Point : Points_)
-            _Polygon.Add(gp_Pnt(_Point.X(), _Point.Y(), StartZ_));
-        _Polygon.Close();
-        if (!_Polygon.IsDone()) throw std::runtime_error("TubeDesigner failed to build polygon wire");
-        BRepBuilderAPI_MakeFace _Face(_Polygon.Wire(), true);
-        if (!_Face.IsDone()) throw std::runtime_error("TubeDesigner failed to build polygon face");
-        BRepPrimAPI_MakePrism _Prism(
-            _Face.Face(), gp_Vec(0.0, 0.0, EndZ_ - StartZ_), false, true);
-        if (!_Prism.IsDone()) throw std::runtime_error("TubeDesigner failed to build polygon prism");
-        return _Prism.Shape();
-    }
-
-    TopoDS_Shape MakeXyProfilePrism(
-        const std::vector<TopoDS_Edge>& Edges_, double StartZ_, double EndZ_)
-    {
-        if (Edges_.empty() || std::abs(EndZ_ - StartZ_) <= 0.001)
-            throw std::invalid_argument("TubeDesigner profile prism dimensions are invalid");
-        BRepBuilderAPI_MakeWire _Wire;
-        for (const auto& _Edge : Edges_) _Wire.Add(_Edge);
-        if (!_Wire.IsDone()) throw std::runtime_error("TubeDesigner failed to build profile wire");
-        BRepBuilderAPI_MakeFace _Face(_Wire.Wire(), true);
-        if (!_Face.IsDone()) throw std::runtime_error("TubeDesigner failed to build profile face");
-        BRepPrimAPI_MakePrism _Prism(
-            _Face.Face(), gp_Vec(0.0, 0.0, EndZ_ - StartZ_), false, true);
-        if (!_Prism.IsDone()) throw std::runtime_error("TubeDesigner failed to build profile prism");
-        return _Prism.Shape();
-    }
-
-    TopoDS_Shape MakeRoundedRectanglePrism(
-        double MinX_, double MinY_, double MaxX_, double MaxY_, double Radius_,
-        double StartZ_, double EndZ_)
-    {
-        if (MaxX_ <= MinX_ || MaxY_ <= MinY_ || EndZ_ <= StartZ_)
-            throw std::invalid_argument("TubeDesigner rounded rectangle bounds are invalid");
-        const auto _MaximumRadius = std::min(MaxX_ - MinX_, MaxY_ - MinY_) / 2.0 - 0.001;
-        const auto _Radius = Radius_ <= 0.001
-            ? 0.0 : std::clamp(Radius_, 0.001, std::max(0.001, _MaximumRadius));
-        if (_Radius <= 0.001)
-        {
-            return BRepPrimAPI_MakeBox(
-                gp_Pnt(MinX_, MinY_, StartZ_),
-                MaxX_ - MinX_, MaxY_ - MinY_, EndZ_ - StartZ_).Shape();
-        }
-        const auto _Diagonal = _Radius / std::sqrt(2.0);
-        const gp_Pnt _BottomLeft(MinX_ + _Radius, MinY_, StartZ_);
-        const gp_Pnt _BottomRight(MaxX_ - _Radius, MinY_, StartZ_);
-        const gp_Pnt _RightBottom(MaxX_, MinY_ + _Radius, StartZ_);
-        const gp_Pnt _RightTop(MaxX_, MaxY_ - _Radius, StartZ_);
-        const gp_Pnt _TopRight(MaxX_ - _Radius, MaxY_, StartZ_);
-        const gp_Pnt _TopLeft(MinX_ + _Radius, MaxY_, StartZ_);
-        const gp_Pnt _LeftTop(MinX_, MaxY_ - _Radius, StartZ_);
-        const gp_Pnt _LeftBottom(MinX_, MinY_ + _Radius, StartZ_);
-        return MakeXyProfilePrism({
-            MakeLineEdge(_BottomLeft, _BottomRight),
-            MakeArcEdge(_BottomRight, gp_Pnt(MaxX_ - _Radius + _Diagonal, MinY_ + _Radius - _Diagonal, StartZ_), _RightBottom),
-            MakeLineEdge(_RightBottom, _RightTop),
-            MakeArcEdge(_RightTop, gp_Pnt(MaxX_ - _Radius + _Diagonal, MaxY_ - _Radius + _Diagonal, StartZ_), _TopRight),
-            MakeLineEdge(_TopRight, _TopLeft),
-            MakeArcEdge(_TopLeft, gp_Pnt(MinX_ + _Radius - _Diagonal, MaxY_ - _Radius + _Diagonal, StartZ_), _LeftTop),
-            MakeLineEdge(_LeftTop, _LeftBottom),
-            MakeArcEdge(_LeftBottom, gp_Pnt(MinX_ + _Radius - _Diagonal, MinY_ + _Radius - _Diagonal, StartZ_), _BottomLeft)
-        }, StartZ_, EndZ_);
-    }
-
-    TopoDS_Shape MakeOrientedRoundedPrism(
-        const SGeneratedPart& Part_, double Width_, double Depth_,
-        double Radius_, double EndExtension_)
-    {
-        const auto _Length = Part_.Length + EndExtension_ * 2.0;
-        TopoDS_Shape _Local;
-        gp_Trsf _Rotation;
-        gp_Trsf _Translation;
-        if (Part_.IsVertical())
-        {
-            _Local = MakeRoundedRectanglePrism(
-                -Width_ / 2.0, -Depth_ / 2.0,
-                Width_ / 2.0, Depth_ / 2.0, Radius_, 0.0, _Length);
-            _Rotation.SetRotation(
-                gp_Ax1(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(1.0, 0.0, 0.0)),
-                -1.57079632679489661923);
-            _Translation.SetTranslation(gp_Vec(
-                (Part_.X1 + Part_.X2) / 2.0,
-                std::min(Part_.Y1, Part_.Y2) - EndExtension_, 0.0));
-        }
-        else
-        {
-            _Local = MakeRoundedRectanglePrism(
-                -Depth_ / 2.0, -Width_ / 2.0,
-                Depth_ / 2.0, Width_ / 2.0, Radius_, 0.0, _Length);
-            _Rotation.SetRotation(
-                gp_Ax1(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 1.0, 0.0)),
-                1.57079632679489661923);
-            _Translation.SetTranslation(gp_Vec(
-                std::min(Part_.X1, Part_.X2) - EndExtension_,
-                (Part_.Y1 + Part_.Y2) / 2.0, 0.0));
-        }
-        const auto _Rotated = BRepBuilderAPI_Transform(_Local, _Rotation, true).Shape();
-        return BRepBuilderAPI_Transform(_Rotated, _Translation, true).Shape();
-    }
-
-    TopoDS_Shape MakeTubeShape(const SGeneratedPart& Part_, double Extra_ = 0.0, bool Hollow_ = true)
-    {
-        if (Part_.Profile.Type == "round")
-        {
-            const auto _OuterRadius = Part_.Profile.Width / 2.0 + Extra_;
-            const auto _InnerRadius = Part_.Profile.Width / 2.0 - Part_.Profile.WallThickness;
-            if (_OuterRadius <= 0.0 || (Hollow_ && _InnerRadius <= 0.0))
-                throw std::invalid_argument("TubeDesigner round tube dimensions are invalid");
-            const auto _Epsilon = 1.0;
-            const auto _Direction = Part_.IsVertical() ? gp_Dir(0.0, 1.0, 0.0) : gp_Dir(1.0, 0.0, 0.0);
-            const auto _OuterOrigin = Part_.IsVertical()
-                ? gp_Pnt((Part_.X1 + Part_.X2) / 2.0, std::min(Part_.Y1, Part_.Y2) - Extra_, 0.0)
-                : gp_Pnt(std::min(Part_.X1, Part_.X2) - Extra_, (Part_.Y1 + Part_.Y2) / 2.0, 0.0);
-            auto _Outer = BRepPrimAPI_MakeCylinder(
-                gp_Ax2(_OuterOrigin, _Direction), _OuterRadius, Part_.Length + Extra_ * 2.0).Shape();
-            if (!Hollow_) return _Outer;
-            const auto _InnerOrigin = Part_.IsVertical()
-                ? gp_Pnt((Part_.X1 + Part_.X2) / 2.0, std::min(Part_.Y1, Part_.Y2) - _Epsilon, 0.0)
-                : gp_Pnt(std::min(Part_.X1, Part_.X2) - _Epsilon, (Part_.Y1 + Part_.Y2) / 2.0, 0.0);
-            const auto _Inner = BRepPrimAPI_MakeCylinder(
-                gp_Ax2(_InnerOrigin, _Direction), _InnerRadius, Part_.Length + _Epsilon * 2.0).Shape();
-            BRepAlgoAPI_Cut _Cut(_Outer, _Inner);
-            if (!_Cut.IsDone()) throw std::runtime_error("TubeDesigner failed to build hollow round tube");
-            return _Cut.Shape();
-        }
-        if (Part_.Profile.Type != "rect")
-            throw std::invalid_argument("TubeDesigner tube profile type is unsupported: " + Part_.Profile.Type);
-        const auto _Width = Part_.Profile.Width + Extra_ * 2.0;
-        const auto _Depth = Part_.Profile.Depth + Extra_ * 2.0;
-        const auto _Epsilon = 1.0;
-        const auto _OuterRadius = std::max(0.0, Part_.Profile.CornerRadius + Extra_);
-        auto _Outer = MakeOrientedRoundedPrism(Part_, _Width, _Depth, _OuterRadius, Extra_);
-        if (!Hollow_) return _Outer;
-        const auto _InnerWidth = Part_.Profile.Width - Part_.Profile.WallThickness * 2.0;
-        const auto _InnerDepth = Part_.Profile.Depth - Part_.Profile.WallThickness * 2.0;
-        const auto _InnerRadius = std::max(0.0,
-            Part_.Profile.CornerRadius - Part_.Profile.WallThickness);
-        const auto _Inner = MakeOrientedRoundedPrism(
-            Part_, _InnerWidth, _InnerDepth, _InnerRadius, _Epsilon);
-        BRepAlgoAPI_Cut _Cut(_Outer, _Inner);
-        if (!_Cut.IsDone()) throw std::runtime_error("TubeDesigner failed to build hollow tube");
-        return _Cut.Shape();
-    }
-
-    TopoDS_Shape MakeMiterCutter(const SGeneratedPart& Part_, bool AtStart_)
-    {
-        const auto _Width = std::max(Part_.Profile.Width, 0.1);
-        const auto _HalfWidth = _Width / 2.0;
-        auto _MinX = std::min(Part_.X1, Part_.X2);
-        auto _MaxX = std::max(Part_.X1, Part_.X2);
-        auto _MinY = std::min(Part_.Y1, Part_.Y2);
-        auto _MaxY = std::max(Part_.Y1, Part_.Y2);
-        if (Part_.IsVertical())
-        {
-            const auto _CenterX = (Part_.X1 + Part_.X2) / 2.0;
-            _MinX = _CenterX - _HalfWidth;
-            _MaxX = _CenterX + _HalfWidth;
-        }
-        else
-        {
-            const auto _CenterY = (Part_.Y1 + Part_.Y2) / 2.0;
-            _MinY = _CenterY - _HalfWidth;
-            _MaxY = _CenterY + _HalfWidth;
-        }
-
-        gp_Pnt _LineStart;
-        gp_Pnt _LineEnd;
-        bool _RemovePositive = false;
-        if (Part_.Role.ends_with("left-frame") && AtStart_)
-            { _LineStart = gp_Pnt(_MinX, _MinY, 0); _LineEnd = gp_Pnt(_MaxX, _MinY + _Width, 0); _RemovePositive = false; }
-        else if (Part_.Role.ends_with("left-frame"))
-            { _LineStart = gp_Pnt(_MinX, _MaxY, 0); _LineEnd = gp_Pnt(_MaxX, _MaxY - _Width, 0); _RemovePositive = true; }
-        else if (Part_.Role.ends_with("right-frame") && AtStart_)
-            { _LineStart = gp_Pnt(_MaxX, _MinY, 0); _LineEnd = gp_Pnt(_MinX, _MinY + _Width, 0); _RemovePositive = true; }
-        else if (Part_.Role.ends_with("right-frame"))
-            { _LineStart = gp_Pnt(_MaxX, _MaxY, 0); _LineEnd = gp_Pnt(_MinX, _MaxY - _Width, 0); _RemovePositive = false; }
-        else if (Part_.Role.ends_with("bottom-frame") && AtStart_)
-            { _LineStart = gp_Pnt(_MinX, _MinY, 0); _LineEnd = gp_Pnt(_MinX + _Width, _MaxY, 0); _RemovePositive = true; }
-        else if (Part_.Role.ends_with("bottom-frame"))
-            { _LineStart = gp_Pnt(_MaxX, _MinY, 0); _LineEnd = gp_Pnt(_MaxX - _Width, _MaxY, 0); _RemovePositive = false; }
-        else if (Part_.Role.ends_with("top-frame") && AtStart_)
-            { _LineStart = gp_Pnt(_MinX, _MaxY, 0); _LineEnd = gp_Pnt(_MinX + _Width, _MinY, 0); _RemovePositive = false; }
-        else if (Part_.Role.ends_with("top-frame"))
-            { _LineStart = gp_Pnt(_MaxX, _MaxY, 0); _LineEnd = gp_Pnt(_MaxX - _Width, _MinY, 0); _RemovePositive = true; }
-        else throw std::invalid_argument("TubeDesigner miter cut requires a frame part");
-
-        const auto _DX = _LineEnd.X() - _LineStart.X();
-        const auto _DY = _LineEnd.Y() - _LineStart.Y();
-        const auto _Length = std::hypot(_DX, _DY);
-        auto _NormalX = -_DY / _Length;
-        auto _NormalY = _DX / _Length;
-        if (!_RemovePositive) { _NormalX = -_NormalX; _NormalY = -_NormalY; }
-        const auto _UX = _DX / _Length;
-        const auto _UY = _DY / _Length;
-        const auto _Oversize = std::max(
-            std::max({ Part_.Length, Part_.Profile.Width, Part_.Profile.Depth }) * 4.0, 500.0);
-        const auto _Z = std::max(Part_.Profile.Depth * 4.0, 200.0);
-        const gp_Pnt _A(_LineStart.X() - _UX * _Oversize, _LineStart.Y() - _UY * _Oversize, 0);
-        const gp_Pnt _B(_LineEnd.X() + _UX * _Oversize, _LineEnd.Y() + _UY * _Oversize, 0);
-        const gp_Pnt _C(_B.X() + _NormalX * _Oversize, _B.Y() + _NormalY * _Oversize, 0);
-        const gp_Pnt _D(_A.X() + _NormalX * _Oversize, _A.Y() + _NormalY * _Oversize, 0);
-        return MakeXyPolygonPrism({ _A, _B, _C, _D }, -_Z, _Z);
-    }
-
-    TopoDS_Shape ApplyEndCuts(const SGeneratedPart& Part_, TopoDS_Shape Shape_)
-    {
-        if (Part_.StartCut == "miter-45")
-            Shape_ = CutShape(Shape_, MakeMiterCutter(Part_, true), Part_.PartNumber + " start miter");
-        if (Part_.EndCut == "miter-45")
-            Shape_ = CutShape(Shape_, MakeMiterCutter(Part_, false), Part_.PartNumber + " end miter");
-        return Shape_;
-    }
-
-    TopoDS_Shape MakeFoldedFramePreviewShape(const SGeneratedPart& Part_)
-    {
-        const auto& _Geometry = *Part_.PreviewGeometry;
-        auto _FrameBand = CutShape(
-            MakeRoundedRectanglePrism(
-                _Geometry.OuterMinX, _Geometry.OuterMinY,
-                _Geometry.OuterMaxX, _Geometry.OuterMaxY,
-                _Geometry.RoundedOuterCornerRadius,
-                -_Geometry.HalfDepth, _Geometry.HalfDepth),
-            MakeRoundedRectanglePrism(
-                _Geometry.OpeningMinX, _Geometry.OpeningMinY,
-                _Geometry.OpeningMaxX, _Geometry.OpeningMaxY,
-                _Geometry.RoundedInnerCornerRadius,
-                -_Geometry.HalfDepth - 2.0, _Geometry.HalfDepth + 2.0),
-            Part_.PartNumber + " preview opening");
-        auto _CavityRing = CutShape(
-            MakeRoundedRectanglePrism(
-                _Geometry.OuterMinX + _Geometry.WallThickness,
-                _Geometry.OuterMinY + _Geometry.WallThickness,
-                _Geometry.OuterMaxX - _Geometry.WallThickness,
-                _Geometry.OuterMaxY - _Geometry.WallThickness,
-                _Geometry.RoundedOuterCornerRadius > 0.0
-                    ? std::max(_Geometry.RoundedOuterCornerRadius - _Geometry.WallThickness, 0.1) : 0.0,
-                -_Geometry.HalfDepth + _Geometry.WallThickness,
-                _Geometry.HalfDepth - _Geometry.WallThickness),
-            MakeRoundedRectanglePrism(
-                _Geometry.OpeningMinX - _Geometry.WallThickness,
-                _Geometry.OpeningMinY - _Geometry.WallThickness,
-                _Geometry.OpeningMaxX + _Geometry.WallThickness,
-                _Geometry.OpeningMaxY + _Geometry.WallThickness,
-                _Geometry.RoundedInnerCornerRadius > 0.0
-                    ? _Geometry.RoundedInnerCornerRadius + _Geometry.WallThickness : 0.0,
-                -_Geometry.HalfDepth + _Geometry.WallThickness - 2.0,
-                _Geometry.HalfDepth - _Geometry.WallThickness + 2.0),
-            Part_.PartNumber + " preview cavity opening");
-        return CutShape(_FrameBand, _CavityRing, Part_.PartNumber + " hollow preview frame");
-    }
-
-    TopoDS_Shape MakeManufacturingCutterShape(
-        const SGeneratedPart& Part_, const SGeneratedPart::SManufacturingCutter& Cutter_)
-    {
-        if (Cutter_.Kind == "xy-polygon-prism")
-        {
-            std::vector<gp_Pnt> _Points;
-            _Points.reserve(Cutter_.Points.size());
-            for (const auto& _Point : Cutter_.Points) _Points.emplace_back(_Point.X, _Point.Y, 0.0);
-            return MakeXyPolygonPrism(_Points, Cutter_.StartZ, Cutter_.EndZ);
-        }
-        if (Cutter_.Kind == "xy-profile-prism")
-        {
-            std::vector<TopoDS_Edge> _Edges;
-            _Edges.reserve(Cutter_.Edges.size());
-            for (const auto& _Edge : Cutter_.Edges)
-            {
-                const gp_Pnt _Start(_Edge.Start.X, _Edge.Start.Y, Cutter_.StartZ);
-                const gp_Pnt _End(_Edge.End.X, _Edge.End.Y, Cutter_.StartZ);
-                _Edges.push_back(_Edge.Kind == "arc-3pt"
-                    ? MakeArcEdge(_Start, gp_Pnt(_Edge.Middle.X, _Edge.Middle.Y, Cutter_.StartZ), _End)
-                    : MakeLineEdge(_Start, _End));
-            }
-            return MakeXyProfilePrism(_Edges, Cutter_.StartZ, Cutter_.EndZ);
-        }
-        if (Cutter_.Kind == "z-cylinder")
-        {
-            if (Cutter_.Radius <= 0.0 || Cutter_.EndZ <= Cutter_.StartZ)
-                throw std::invalid_argument("TubeDesigner cylinder cutter dimensions are invalid");
-            return BRepPrimAPI_MakeCylinder(
-                gp_Ax2(gp_Pnt(Cutter_.Center.X, Cutter_.Center.Y, Cutter_.StartZ), gp_Dir(0, 0, 1)),
-                Cutter_.Radius, Cutter_.EndZ - Cutter_.StartZ).Shape();
-        }
-        throw std::invalid_argument("TubeDesigner manufacturing cutter kind is unsupported: " + Cutter_.Kind);
-    }
-
-    TopoDS_Shape MakePreviewShape(const SGeneratedPart& Part_)
-    {
-        if (Part_.PreviewGeometry)
-        {
-            if (Part_.PreviewGeometry->Kind != "folded-rect-frame")
-                throw std::invalid_argument("TubeDesigner preview geometry kind is unsupported");
-            return MakeFoldedFramePreviewShape(Part_);
-        }
-        return ApplyEndCuts(Part_, MakeTubeShape(Part_));
-    }
-
-    TopoDS_Shape MakeManufacturingShape(const SGeneratedPart& Part_)
-    {
-        if (!Part_.ManufacturingGeometry) return ApplyEndCuts(Part_, MakeTubeShape(Part_));
-        const auto& _Geometry = *Part_.ManufacturingGeometry;
-        if (_Geometry.Kind != "tube-with-cutters" || _Geometry.BaseLength <= 0.0)
-            throw std::invalid_argument("TubeDesigner manufacturing geometry is invalid");
-        auto _Base = Part_;
-        _Base.X1 = 0.0;
-        _Base.Y1 = 0.0;
-        _Base.X2 = _Geometry.BaseLength;
-        _Base.Y2 = 0.0;
-        _Base.Length = _Geometry.BaseLength;
-        _Base.StartCut = "square";
-        _Base.EndCut = "square";
-        _Base.PreviewGeometry.reset();
-        _Base.ManufacturingGeometry.reset();
-        auto _Shape = MakeTubeShape(_Base);
-        for (const auto& _Cutter : _Geometry.Cutters)
-        {
-            _Shape = CutShape(
-                _Shape, MakeManufacturingCutterShape(Part_, _Cutter),
-                Part_.PartNumber + " " + _Cutter.Label);
-        }
-        return _Shape;
     }
 
     iCAX::Resource::CResourceReference StoreBRep(
@@ -1684,7 +611,10 @@ namespace
         const auto _ResourceID = _Resources.MakeNamedResourceURL(StableName_);
         auto _BRep = std::make_shared<iCAX::GeometryData::BRepModel>(
             iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
-                Shape_, DisplayName_, _ResourceID, 0.001));
+                // BRep 曲线和曲面仍按原始解析几何保存；该参数只控制随资源
+                // 携带的显示三角网格。0.025 对应约 0.25 mm 的显示偏差，避免
+                // 圆/样条拉伸体因 0.01 mm 级过密网格阻塞界面数十秒。
+                Shape_, DisplayName_, _ResourceID, 0.025));
         iCAX::Resource::CResourceInfo _Info;
         _Info.Name = DisplayName_;
         _Info.ResourceTypeID = iCAX::GeometryData::BRepModel::kResourceTypeName;
@@ -1740,27 +670,6 @@ namespace
         return _Generator("tube-designer/" + Kind_ + "/" + StableKey_);
     }
 
-    std::vector<std::string> MakeStablePartKeys(const SGeneratedProduct& Product_)
-    {
-        std::map<std::string, std::uint64_t> _RoleOrdinals;
-        std::vector<std::string> _Keys;
-        _Keys.reserve(Product_.Parts.size());
-        for (const auto& _Part : Product_.Parts)
-        {
-            const auto _Ordinal = ++_RoleOrdinals[_Part.Role];
-            _Keys.push_back(_Part.Role + "/" + std::to_string(_Ordinal));
-        }
-        return _Keys;
-    }
-
-    std::string MakePreviewMemberStableKey(
-        const SGeneratedPart& Part_, const std::string& PartStableKey_)
-    {
-        return Part_.PreviewAssemblyKey.empty()
-            ? PartStableKey_
-            : "assembly/" + Part_.PreviewAssemblyKey;
-    }
-
     std::string MakeSafePathSegment(const std::string& Value_, const std::string& Fallback_)
     {
         std::string _SafeName;
@@ -1786,6 +695,15 @@ namespace
     std::string MakeStepFileName(const std::string& PartNumber_)
     {
         return MakeSafePathSegment(PartNumber_, "part") + ".step";
+    }
+
+    std::string MakePartNameFromFileName(
+        const std::string& FileName_, const std::string& Fallback_)
+    {
+        auto _Name = FileName_;
+        if (_Name.ends_with(".step")) _Name.resize(_Name.size() - 5);
+        else if (_Name.ends_with(".stp")) _Name.resize(_Name.size() - 4);
+        return _Name.empty() ? Fallback_ : _Name;
     }
 
     std::string MakeManufacturingPartNumber(
@@ -1817,38 +735,50 @@ namespace
         return { reinterpret_cast<const char*>(_Text.data()), _Text.size() };
     }
 
-    struct SPreparedPart final
+    std::filesystem::path MakeUniqueExportPath(
+        const std::filesystem::path& Directory_,
+        const std::string& BaseName_,
+        const std::string& Extension_)
     {
-        SGeneratedPart Generated;
-        std::string StableKey;
-        iCAX::Data::uuid MemberID;
-    };
+        const auto _SafeBase = MakeSafePathSegment(BaseName_, "profile");
+        auto _Candidate = Directory_ / Utf8Path(_SafeBase + Extension_);
+        for (std::uint64_t _Index = 2; std::filesystem::exists(_Candidate); ++_Index)
+        {
+            if (_Index > 10000)
+                throw std::runtime_error("TubeDesigner could not choose a unique export file name");
+            _Candidate = Directory_ / Utf8Path(
+                _SafeBase + "_" + std::to_string(_Index) + Extension_);
+        }
+        return _Candidate;
+    }
 
-    struct SPreparedPreviewMember final
+    ObjectMap OptionalProfileProperties(const ObjectMap& Properties_);
+
+    std::string ManufacturingPartKind(const ObjectMap& Properties_)
     {
-        std::string StableKey;
-        iCAX::Data::uuid MemberID;
-        std::string MemberType;
-        std::string Role;
-        std::string Name;
-        std::uint64_t MemberIndex = 0;
-        std::vector<std::size_t> PartOffsets;
-        iCAX::Resource::CResourceReference PreviewResource;
-        iCAX::Resource::CResourceReference FrontendGeometryResource;
-    };
+        return GetString(Properties_, "manufacturing.partKind",
+            GetString(Properties_, "manufacturing.materialCategory", "tube"));
+    }
 
-    struct SPreparedJoint final
+    ObjectMap ManufacturingPlate(const ObjectMap& Properties_)
     {
-        SGeneratedJoint Generated;
-        iCAX::Data::uuid JointID;
-    };
+        const auto _Found = Properties_.find("manufacturing.plate");
+        return _Found != Properties_.end() && _Found->second.Is<ObjectMap>()
+            ? _Found->second.To<ObjectMap>() : ObjectMap{};
+    }
 
-    STubeProfile OptionalTubeProfile(const ObjectMap& Properties_);
+    std::string PlateSpecification(const ObjectMap& Plate_)
+    {
+        std::ostringstream _Text;
+        _Text << GetDouble(Plate_, "width", 0) << " × " << GetDouble(Plate_, "height", 0)
+            << " × " << GetDouble(Plate_, "thickness", 0) << " mm";
+        return _Text.str();
+    }
 
     struct SResolvedPartPresentation final
     {
         std::string Name;
-        STubeProfile Profile;
+        ObjectMap Profile;
     };
 
     SResolvedPartPresentation ResolvePartPresentation(
@@ -1856,31 +786,15 @@ namespace
         const CManufacturingPartComponent& Part_)
     {
         SResolvedPartPresentation _Result{
-            Part_.GetRole().empty() || Part_.GetRole() == "main"
-                ? Part_.GetPartNumber() : Part_.GetRole(),
-            { Part_.GetProfileType(), Part_.GetSectionWidth(), Part_.GetSectionDepth(),
-                Part_.GetWallThickness(), Part_.GetCornerRadius() }
+            MakePartNameFromFileName(Part_.GetFileName(), Part_.GetPartNumber()),
+            OptionalProfileProperties(Part_.GetItemProperties())
         };
-        const auto _StoredProfile = OptionalTubeProfile(Part_.GetItemProperties());
-        if (_Result.Profile.Type.empty()) _Result.Profile.Type = _StoredProfile.Type;
-        if (_Result.Profile.Width <= 0.0) _Result.Profile.Width = _StoredProfile.Width;
-        if (_Result.Profile.Depth <= 0.0) _Result.Profile.Depth = _StoredProfile.Depth;
-        if (_Result.Profile.WallThickness <= 0.0)
-            _Result.Profile.WallThickness = _StoredProfile.WallThickness;
-        if (_Result.Profile.CornerRadius <= 0.0)
-            _Result.Profile.CornerRadius = _StoredProfile.CornerRadius;
 
         if (const auto _MemberEntity = Repository_.GetEntity(Part_.GetSourceMemberID());
             const auto _Member = GetComponent<CAssemblyMemberComponent>(_MemberEntity))
         {
-            if (!_Member->GetName().empty()) _Result.Name = _Member->GetName();
-            if (_Result.Profile.Type.empty()) _Result.Profile.Type = _Member->GetProfileType();
-            if (_Result.Profile.Width <= 0.0) _Result.Profile.Width = _Member->GetSectionWidth();
-            if (_Result.Profile.Depth <= 0.0) _Result.Profile.Depth = _Member->GetSectionDepth();
-            if (_Result.Profile.WallThickness <= 0.0)
-                _Result.Profile.WallThickness = _Member->GetWallThickness();
-            if (_Result.Profile.CornerRadius <= 0.0)
-                _Result.Profile.CornerRadius = _Member->GetCornerRadius();
+            if (_Result.Profile.empty())
+                _Result.Profile = OptionalProfileProperties(_Member->GetItemProperties());
         }
         return _Result;
     }
@@ -1917,6 +831,7 @@ namespace
             ? _Root->GetActiveProductID()
             : iCAX::Data::uuid();
         _Designer["activeProductId"] = UuidToString(_ActiveProductID);
+        _Designer["nestingSettings"] = _Root ? _Root->GetNestingSettings() : ObjectMap();
 
         auto _Products = Collect<CProductInstanceComponent>(_Repository);
         std::sort(
@@ -1964,6 +879,7 @@ namespace
             _Instance["templateVersion"] = _Product->GetTemplateVersion();
             _Instance["status"] = _Product->GetStatus();
             _Instance["parameters"] = _Product->GetParameters();
+            _Instance["sketches"] = _Product->GetSketches();
             _Instance["activeGenerationRunId"] = UuidToString(_GenerationRunID);
             _Instance["memberCount"] = _MemberCount;
             _Instance["partCount"] = _PartCount;
@@ -1997,6 +913,7 @@ namespace
             _Product["templateVersion"] = _ActiveProduct->GetTemplateVersion();
             _Product["status"] = _ActiveProduct->GetStatus();
             _Product["parameters"] = _ActiveProduct->GetParameters();
+            _Product["sketches"] = _ActiveProduct->GetSketches();
             _Product["activeGenerationRunId"] = UuidToString(
                 _ActiveProduct->GetActiveGenerationRunID());
             _Designer["product"] = _Product;
@@ -2014,11 +931,7 @@ namespace
             _Item["name"] = _Member->GetName();
             _Item["memberType"] = _Member->GetMemberType();
             _Item["childPartCount"] = _Member->GetChildPartCount();
-            _Item["profileType"] = _Member->GetProfileType();
-            _Item["sectionWidth"] = _Member->GetSectionWidth();
-            _Item["sectionDepth"] = _Member->GetSectionDepth();
-            _Item["wallThickness"] = _Member->GetWallThickness();
-            _Item["cornerRadius"] = _Member->GetCornerRadius();
+            _Item["profile"] = OptionalProfileProperties(_Member->GetItemProperties());
             _Item["length"] = _Member->GetLength();
             _Item["stableKey"] = _Member->GetStableKey();
             _Item["previewGeometryResourceId"] = _Member->GetPreviewGeometryResourceID();
@@ -2044,11 +957,9 @@ namespace
             _Item["name"] = _Presentation.Name;
             _Item["role"] = _Part->GetRole();
             _Item["quantity"] = _Part->GetQuantity();
-            _Item["profileType"] = _Presentation.Profile.Type;
-            _Item["sectionWidth"] = _Presentation.Profile.Width;
-            _Item["sectionDepth"] = _Presentation.Profile.Depth;
-            _Item["wallThickness"] = _Presentation.Profile.WallThickness;
-            _Item["cornerRadius"] = _Presentation.Profile.CornerRadius;
+            _Item["profile"] = _Presentation.Profile;
+            _Item["partKind"] = ManufacturingPartKind(_Part->GetItemProperties());
+            _Item["plate"] = ManufacturingPlate(_Part->GetItemProperties());
             _Item["length"] = _Part->GetLength();
             _Item["stableKey"] = _Part->GetStableKey();
             _Item["manufacturingGeometryResourceId"] = _Part->GetManufacturingGeometryResourceID();
@@ -2101,11 +1012,9 @@ namespace
                 _Item["name"] = _Presentation.Name;
                 _Item["role"] = _Part->GetRole();
                 _Item["quantity"] = _Part->GetQuantity();
-                _Item["profileType"] = _Presentation.Profile.Type;
-                _Item["sectionWidth"] = _Presentation.Profile.Width;
-                _Item["sectionDepth"] = _Presentation.Profile.Depth;
-                _Item["wallThickness"] = _Presentation.Profile.WallThickness;
-                _Item["cornerRadius"] = _Presentation.Profile.CornerRadius;
+                _Item["profile"] = _Presentation.Profile;
+                _Item["partKind"] = ManufacturingPartKind(_Part->GetItemProperties());
+                _Item["plate"] = ManufacturingPlate(_Part->GetItemProperties());
                 _Item["length"] = _Part->GetLength();
                 _Item["stableKey"] = _Part->GetStableKey();
                 _Item["manufacturingGeometryResourceId"] = _Part->GetManufacturingGeometryResourceID();
@@ -2181,6 +1090,1004 @@ namespace
         return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
     }
 
+    constexpr const char* kCustomerFeatureID = "customer";
+    constexpr const char* kCustomerRecordType = "profile";
+    constexpr const char* kTemplateFeatureID = "template";
+    constexpr const char* kParameterPresetRecordType = "parameter-preset";
+    constexpr const char* kProfileFeatureID = "profile";
+    constexpr const char* kImportedProfileRecordType = "imported-dxf";
+    constexpr const char* kParametricProfileRecordType = "parametric-package";
+    constexpr const char* kProductSubjectType = "product";
+    constexpr const char* kProfileDefinitionSubjectType = "profile-definition";
+    constexpr const char* kTemplateSubjectType = "template-definition";
+    constexpr const char* kCustomerRelationType = "customer";
+
+    struct SProfileReference final
+    {
+        std::string Scope;
+        std::string ID;
+    };
+
+    bool IsSystemProfileID(const std::string& Value_)
+    {
+        if (Value_.empty() || Value_.size() > 80
+            || Value_.front() < 'a' || Value_.front() > 'z')
+        {
+            return false;
+        }
+        return std::all_of(Value_.begin() + 1, Value_.end(), [](const unsigned char Character_)
+        {
+            return (Character_ >= 'a' && Character_ <= 'z')
+                || (Character_ >= '0' && Character_ <= '9')
+                || Character_ == '_' || Character_ == '-';
+        });
+    }
+
+    SProfileReference ParseProfileReference(const ObjectMap& Request_)
+    {
+        const auto _Reference = GetRequiredObject(Request_, "profileRef");
+        const auto _Scope = GetRequiredText(_Reference, "scope", 16);
+        const auto _ID = GetRequiredText(_Reference, "id", 240);
+        if (_Scope == "user")
+        {
+            return { _Scope, UuidToString(ParseRequiredUuid(_ID, "profileRef.id")) };
+        }
+        if (_Scope == "system")
+        {
+            if (!IsSystemProfileID(_ID))
+                throw std::invalid_argument("TubeDesigner system profile ID is invalid");
+            return { _Scope, _ID };
+        }
+        throw std::invalid_argument("TubeDesigner profileRef.scope must be system or user");
+    }
+
+    TopoDS_Shape BuildProfileExtrusion(
+        const ObjectMap& Profile_,
+        const double Length_)
+    {
+        if (!std::isfinite(Length_) || Length_ <= 1.0e-6)
+            throw std::invalid_argument("tube profile extrusion length is invalid");
+        const auto _Kind = GetString(Profile_, "kind");
+        const auto _Contours = Profile_.find("contours");
+        if (_Contours == Profile_.end() || !_Contours->second.Is<VariantArray>())
+            throw std::invalid_argument("imported tube profile requires contours");
+        const auto _ContourValues = _Contours->second.To<VariantArray>();
+        const VariantArray _Origin{ Variant(0.0), Variant(0.0), Variant(0.0) };
+        const VariantArray _XAxis{ Variant(1.0), Variant(0.0), Variant(0.0) };
+        const VariantArray _YAxis{ Variant(0.0), Variant(1.0), Variant(0.0) };
+        const VariantArray _Vector{ Variant(0.0), Variant(0.0), Variant(Length_) };
+        const ObjectMap _Document{
+            { "schema", std::string("icax.neutral-model") },
+            { "schemaVersion", 1ull },
+            { "template", ObjectMap{
+                { "id", std::string("icax.tube-profile-extrusion") },
+                { "version", std::string("1.0.0") },
+                { "packageDigest", GetString(Profile_, "contentDigest", _Kind) }
+            } },
+            { "geometry", VariantArray{
+                ObjectMap{
+                    { "key", std::string("profile") },
+                    { "operator", std::string("profile2d") },
+                    { "arguments", ObjectMap{
+                        { "placement", ObjectMap{
+                            { "origin", _Origin }, { "xAxis", _XAxis }, { "yAxis", _YAxis }
+                        } },
+                        { "contours", _ContourValues }
+                    } }
+                },
+                ObjectMap{
+                    { "key", std::string("solid") },
+                    { "operator", std::string("extrude") },
+                    { "inputs", VariantArray{ Variant(std::string("profile")) } },
+                    { "arguments", ObjectMap{ { "vector", _Vector } } }
+                }
+            } }
+        };
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            Variant(_Document));
+        return iCAX::OpenCascade::EvaluateNeutralModel(_Model, { "solid" }).At("solid");
+    }
+
+    void ValidateImportedProfileDefinition(const ObjectMap& Profile_)
+    {
+        if (GetString(Profile_, "schema") != "icax.imported-tube-profile"
+            || GetUInt64(Profile_, "schemaVersion", 0) != 1)
+        {
+            throw std::invalid_argument("unsupported imported tube profile schema");
+        }
+        const auto _Kind = GetString(Profile_, "kind");
+        if (_Kind != "imported-dxf" && _Kind != "parametric-package")
+            throw std::invalid_argument("imported tube profile kind is not supported");
+        const auto _Width = GetDouble(Profile_, "width", 0.0);
+        const auto _Depth = GetDouble(Profile_, "depth", 0.0);
+        if (!std::isfinite(_Width) || !std::isfinite(_Depth)
+            || _Width <= 1.0e-6 || _Depth <= 1.0e-6)
+        {
+            throw std::invalid_argument("imported tube profile bounds are invalid");
+        }
+        const auto _Contours = Profile_.find("contours");
+        if (_Contours == Profile_.end() || !_Contours->second.Is<VariantArray>())
+            throw std::invalid_argument("imported tube profile requires contours");
+        const auto _ContourValues = _Contours->second.To<VariantArray>();
+        if (_ContourValues.empty() || _ContourValues.size() > 1000)
+            throw std::invalid_argument("imported tube profile contour count is invalid");
+
+        if (BuildProfileExtrusion(Profile_, 1.0).IsNull())
+            throw std::runtime_error("tube profile validation produced no solid");
+    }
+
+    ObjectMap ImportDxfProfile(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const std::string& SourcePath_)
+    {
+        const auto _ScriptPath = ResolveRuntimeFile(ApplicationContext_, {
+            "apps/tube-designer/templates/_shared/dxf_profile_importer.py",
+            "src/apps/tube-designer/templates/_shared/dxf_profile_importer.py"
+        }, "TubeDesigner DXF profile importer");
+        const auto _ScriptText = ReadTextFile(_ScriptPath);
+        ObjectMap _Request;
+        _Request["protocol"] = std::string("icax.template-runtime");
+        _Request["protocolVersion"] = 1ull;
+        _Request["operation"] = std::string("evaluate");
+        _Request["templatePath"] = PathToUTF8(_ScriptPath);
+        _Request["template"] = ObjectMap{
+            { "id", std::string("icax.dxf-profile-importer") },
+            { "version", std::string("1.0.0") },
+            { "packageDigest", ContentDigest("dxf-profile-importer", _ScriptText) }
+        };
+        _Request["parameters"] = ObjectMap{ { "sourcePath", SourcePath_ } };
+        _Request["context"] = ObjectMap{
+            { "coordinateSystem", std::string("right-handed-x-width-y-depth") },
+            { "lengthUnit", std::string("mm") }
+        };
+        const auto _Result = InvokePythonTemplate(ApplicationContext_, _Request);
+        auto _Profile = GetRequiredObject(_Result, "profile");
+        ValidateImportedProfileDefinition(_Profile);
+        return _Profile;
+    }
+
+    ObjectMap InvokeProfilePackageRuntime(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const ObjectMap& Parameters_)
+    {
+        const auto _ScriptPath = ResolveRuntimeFile(ApplicationContext_, {
+            "apps/tube-designer/templates/_shared/profile_package_runtime.py",
+            "src/apps/tube-designer/templates/_shared/profile_package_runtime.py"
+        }, "TubeDesigner profile package runtime");
+        const auto _ScriptText = ReadTextFile(_ScriptPath);
+        ObjectMap _Request;
+        _Request["protocol"] = std::string("icax.template-runtime");
+        _Request["protocolVersion"] = 1ull;
+        _Request["operation"] = std::string("evaluate");
+        _Request["templatePath"] = PathToUTF8(_ScriptPath);
+        _Request["template"] = ObjectMap{
+            { "id", std::string("icax.profile-package-runtime") },
+            { "version", std::string("1.0.0") },
+            { "packageDigest", ContentDigest("profile-package-runtime", _ScriptText) }
+        };
+        _Request["parameters"] = Parameters_;
+        _Request["context"] = ObjectMap{
+            { "coordinateSystem", std::string("right-handed-x-width-y-depth") },
+            { "lengthUnit", std::string("mm") }
+        };
+        return InvokePythonTemplate(ApplicationContext_, _Request);
+    }
+
+    ObjectMap ExportProfileDxf(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const ObjectMap& Profile_,
+        const std::string& TargetPath_)
+    {
+        const auto _ScriptPath = ResolveRuntimeFile(ApplicationContext_, {
+            "apps/tube-designer/templates/_shared/profile_export_runtime.py",
+            "src/apps/tube-designer/templates/_shared/profile_export_runtime.py"
+        }, "TubeDesigner profile DXF exporter");
+        const auto _ScriptText = ReadTextFile(_ScriptPath);
+        ObjectMap _Request;
+        _Request["protocol"] = std::string("icax.template-runtime");
+        _Request["protocolVersion"] = 1ull;
+        _Request["operation"] = std::string("evaluate");
+        _Request["templatePath"] = PathToUTF8(_ScriptPath);
+        _Request["template"] = ObjectMap{
+            { "id", std::string("icax.profile-export-runtime") },
+            { "version", std::string("1.0.0") },
+            { "packageDigest", ContentDigest("profile-export-runtime", _ScriptText) }
+        };
+        _Request["parameters"] = ObjectMap{
+            { "profile", Profile_ }, { "targetPath", TargetPath_ }
+        };
+        _Request["context"] = ObjectMap{
+            { "coordinateSystem", std::string("right-handed-x-width-y-depth") },
+            { "lengthUnit", std::string("mm") }
+        };
+        return InvokePythonTemplate(ApplicationContext_, _Request);
+    }
+
+    void ValidateProfilePackageRecord(const ObjectMap& Package_)
+    {
+        if (GetString(Package_, "schema") != "icax.tube-profile-package-record"
+            || GetUInt64(Package_, "schemaVersion", 0) != 1
+            || GetString(Package_, "kind") != "parametric-package")
+        {
+            throw std::invalid_argument("unsupported tube profile package schema");
+        }
+        const auto _Descriptor = GetRequiredObject(Package_, "descriptor");
+        if (GetString(_Descriptor, "schema") != "icax.tube-profile-descriptor"
+            || GetUInt64(_Descriptor, "schemaVersion", 0) != 2
+            || GetString(_Descriptor, "id").empty()
+            || GetString(_Descriptor, "version").empty())
+        {
+            throw std::invalid_argument("tube profile package descriptor is invalid");
+        }
+        if (GetString(Package_, "scriptSource").empty())
+            throw std::invalid_argument("tube profile package script is empty");
+        (void)GetRequiredObject(Package_, "defaultParameters");
+        const auto _Preview = GetRequiredObject(Package_, "previewProfile");
+        ValidateImportedProfileDefinition(_Preview);
+    }
+
+    ObjectMap ImportProfilePackage(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const std::string& SourcePath_,
+        const std::string& Password_)
+    {
+        ObjectMap _Parameters;
+        _Parameters["action"] = std::string("inspect");
+        _Parameters["sourcePath"] = SourcePath_;
+        _Parameters["password"] = Password_;
+        const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
+        auto _Package = GetRequiredObject(_Result, "package");
+        ValidateProfilePackageRecord(_Package);
+        return _Package;
+    }
+
+    ObjectMap EvaluateProfilePackage(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const ObjectMap& Package_,
+        const ObjectMap& Values_)
+    {
+        ValidateProfilePackageRecord(Package_);
+        ObjectMap _Parameters;
+        _Parameters["action"] = std::string("evaluate");
+        _Parameters["descriptor"] = GetRequiredObject(Package_, "descriptor");
+        _Parameters["scriptSource"] = GetString(Package_, "scriptSource");
+        _Parameters["packageDigest"] = GetString(Package_, "packageDigest");
+        _Parameters["sourceFileName"] = GetString(Package_, "sourceFileName");
+        _Parameters["values"] = Values_;
+        const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
+        auto _Profile = GetRequiredObject(_Result, "profile");
+        ValidateImportedProfileDefinition(_Profile);
+        return _Profile;
+    }
+
+    std::vector<ObjectMap> LoadSystemProfilePackages(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        ObjectMap _Parameters;
+        _Parameters["action"] = std::string("list-system");
+        _Parameters["profileRoot"] = PathToUTF8(
+            ResolveSystemProfileRoot(ApplicationContext_));
+        const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
+        const auto _Packages = _Result.find("systemProfiles");
+        if (_Packages == _Result.end() || !_Packages->second.Is<VariantArray>())
+            throw std::runtime_error("TubeDesigner system profile catalog returned no packages");
+
+        std::vector<ObjectMap> _ResultPackages;
+        for (const auto& _Value : _Packages->second.To<VariantArray>())
+        {
+            if (!_Value.Is<ObjectMap>())
+                throw std::runtime_error("TubeDesigner system profile catalog contains an invalid package");
+            auto _Package = _Value.To<ObjectMap>();
+            ValidateProfilePackageRecord(_Package);
+            _ResultPackages.emplace_back(std::move(_Package));
+        }
+        return _ResultPackages;
+    }
+
+    ObjectMap EvaluateSystemProfile(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const std::string& ProfileID_,
+        const ObjectMap& Values_)
+    {
+        ObjectMap _Parameters;
+        _Parameters["action"] = std::string("evaluate-system");
+        _Parameters["profileRoot"] = PathToUTF8(
+            ResolveSystemProfileRoot(ApplicationContext_));
+        _Parameters["systemProfileId"] = ProfileID_;
+        _Parameters["values"] = Values_;
+        const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
+        auto _Profile = GetRequiredObject(_Result, "profile");
+        ValidateImportedProfileDefinition(_Profile);
+        return _Profile;
+    }
+
+    std::shared_ptr<iCAX::Application::IProductUserDataStore> GetUserDataStore(
+        iCAX::Product::IProductContext* ProductContext_)
+    {
+        if (!ProductContext_)
+            throw std::runtime_error("TubeDesigner user data requires a product context");
+        auto _Store = ProductContext_->GetUserDataStore();
+        if (!_Store) throw std::runtime_error("TubeDesigner user data store is not available");
+        if (_Store->GetProductID() != ProductContext_->GetProductID())
+            throw std::logic_error("Product user data store identity mismatch");
+        return _Store;
+    }
+
+    std::optional<iCAX::Application::CProductUserDataRecord> FindProfileRecord(
+        iCAX::Application::IProductUserDataStore& Store_,
+        const std::string& RecordID_)
+    {
+        for (const auto* _RecordType : {
+            kImportedProfileRecordType, kParametricProfileRecordType })
+        {
+            if (auto _Record = Store_.Get(kProfileFeatureID, _RecordType, RecordID_))
+                return _Record;
+        }
+        return std::nullopt;
+    }
+
+    ObjectMap ResolveStoredProfileSnapshot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Application::IProductUserDataStore& Store_,
+        const std::string& RecordID_,
+        const ObjectMap& Parameters_)
+    {
+        const auto _Record = FindProfileRecord(Store_, RecordID_);
+        if (!_Record)
+            throw std::invalid_argument("TubeDesigner profile does not exist");
+        if (!_Record->Payload.Is<ObjectMap>())
+            throw std::runtime_error("TubeDesigner profile payload is invalid");
+
+        auto _Stored = _Record->Payload.To<ObjectMap>();
+        ObjectMap _Profile;
+        if (_Record->RecordType == kParametricProfileRecordType)
+        {
+            const auto _Values = Parameters_.empty()
+                ? GetRequiredObject(_Stored, "defaultParameters")
+                : Parameters_;
+            _Profile = EvaluateProfilePackage(ApplicationContext_, _Stored, _Values);
+        }
+        else
+        {
+            _Profile = std::move(_Stored);
+            ValidateImportedProfileDefinition(_Profile);
+        }
+        _Profile["name"] = GetString(
+            _Record->Payload.To<ObjectMap>(), "name", GetString(_Profile, "name"));
+        _Profile["savedProfileId"] = RecordID_;
+        return _Profile;
+    }
+
+    ObjectMap ResolveProfileSnapshot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Application::IProductUserDataStore& Store_,
+        const SProfileReference& Reference_,
+        const ObjectMap& Parameters_)
+    {
+        if (Reference_.Scope == "system")
+        {
+            auto _Profile = EvaluateSystemProfile(
+                ApplicationContext_, Reference_.ID, Parameters_);
+            _Profile["profileScope"] = std::string("system");
+            _Profile["profileDefinitionId"] = Reference_.ID;
+            return _Profile;
+        }
+        auto _Profile = ResolveStoredProfileSnapshot(
+            ApplicationContext_, Store_, Reference_.ID, Parameters_);
+        _Profile["profileScope"] = std::string("user");
+        return _Profile;
+    }
+
+    ObjectMap MakeUserDataPayload(const iCAX::Application::CProductUserDataRecord& Record_)
+    {
+        ObjectMap _Payload = Record_.Payload.Is<ObjectMap>()
+            ? Record_.Payload.To<ObjectMap>()
+            : ObjectMap();
+        _Payload["id"] = Record_.RecordID;
+        _Payload["ownerScope"] = Record_.OwnerScope;
+        _Payload["revision"] = static_cast<unsigned long long>(Record_.Revision);
+        _Payload["createdAt"] = Record_.CreatedAt;
+        _Payload["updatedAt"] = Record_.UpdatedAt;
+        return _Payload;
+    }
+
+    ObjectMap MakeProfileUserDataPayload(
+        const iCAX::Application::CProductUserDataRecord& Record_)
+    {
+        auto _Payload = MakeUserDataPayload(Record_);
+        _Payload["profileType"] = Record_.RecordType;
+        _Payload["profileScope"] = std::string("user");
+        _Payload["profileRef"] = ObjectMap{
+            { "scope", std::string("user") }, { "id", Record_.RecordID }
+        };
+        if (Record_.RecordType == kParametricProfileRecordType)
+            _Payload.erase("scriptSource");
+        return _Payload;
+    }
+
+    ObjectMap MakeSystemProfilePayload(const ObjectMap& Package_)
+    {
+        auto _Payload = Package_;
+        _Payload.erase("scriptSource");
+        const auto _Descriptor = GetRequiredObject(Package_, "descriptor");
+        const auto _ProfileID = GetRequiredText(_Descriptor, "id", 80);
+        _Payload["id"] = _ProfileID;
+        _Payload["profileType"] = std::string(kParametricProfileRecordType);
+        _Payload["profileScope"] = std::string("system");
+        _Payload["profileRef"] = ObjectMap{
+            { "scope", std::string("system") }, { "id", _ProfileID }
+        };
+        _Payload["ownerScope"] = std::string("system");
+        _Payload["revision"] = 0ull;
+        _Payload["capabilities"] = ObjectMap{
+            { "editParameters", true },
+            { "preview", true },
+            { "export", true },
+            { "rename", false },
+            { "delete", false }
+        };
+        return _Payload;
+    }
+
+    ObjectMap MakeParameterPresetPayload(
+        const iCAX::Application::CProductUserDataRecord& Record_)
+    {
+        auto _Payload = MakeUserDataPayload(Record_);
+        _Payload["templateId"] = Record_.SubjectID;
+        std::string _CustomerID;
+        for (const auto& _Link : Record_.Links)
+        {
+            if (_Link.RelationType == kCustomerRelationType
+                && _Link.TargetKind == "user-record"
+                && _Link.TargetFeatureID == kCustomerFeatureID
+                && _Link.TargetType == kCustomerRecordType)
+            {
+                _CustomerID = _Link.TargetID;
+                break;
+            }
+        }
+        _Payload["customerId"] = _CustomerID;
+        return _Payload;
+    }
+
+    VariantArray ListUserDataRecords(
+        iCAX::Application::IProductUserDataStore& Store_,
+        const std::string& FeatureID_,
+        const std::string& RecordType_,
+        const bool bParameterPreset_ = false)
+    {
+        iCAX::Application::CProductUserDataQuery _Query;
+        _Query.FeatureID = FeatureID_;
+        _Query.RecordType = RecordType_;
+        VariantArray _Items;
+        for (const auto& _Record : Store_.List(_Query))
+        {
+            _Items.emplace_back(bParameterPreset_
+                ? MakeParameterPresetPayload(_Record)
+                : MakeUserDataPayload(_Record));
+        }
+        return _Items;
+    }
+
+    VariantArray ListProfileUserDataRecords(
+        iCAX::Application::IProductUserDataStore& Store_)
+    {
+        VariantArray _Items;
+        for (const auto* _RecordType : {
+            kImportedProfileRecordType, kParametricProfileRecordType })
+        {
+            iCAX::Application::CProductUserDataQuery _Query;
+            _Query.FeatureID = kProfileFeatureID;
+            _Query.RecordType = _RecordType;
+            for (const auto& _Record : Store_.List(_Query))
+                _Items.emplace_back(MakeProfileUserDataPayload(_Record));
+        }
+        return _Items;
+    }
+
+    VariantArray ListSystemProfileRecords(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        VariantArray _Items;
+        for (const auto& _Package : LoadSystemProfilePackages(ApplicationContext_))
+            _Items.emplace_back(MakeSystemProfilePayload(_Package));
+        return _Items;
+    }
+
+    iCAX::Interaction::CInvocationResult HandleListUserData(
+        const iCAX::Interaction::CInvocation&,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        auto _Store = GetUserDataStore(ProductContext_);
+        ObjectMap _Response;
+        _Response["customers"] = ListUserDataRecords(
+            *_Store, kCustomerFeatureID, kCustomerRecordType);
+        _Response["parameterPresets"] = ListUserDataRecords(
+            *_Store, kTemplateFeatureID, kParameterPresetRecordType, true);
+        _Response["profiles"] = ListProfileUserDataRecords(*_Store);
+        _Response["systemProfiles"] = ListSystemProfileRecords(ApplicationContext_);
+        _Response["profileId"] = std::string("local-default");
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleImportProfileDxf(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _SourcePath = GetRequiredText(_Request, "sourcePath", 32767);
+        const auto _Extension = [&]() {
+            auto _Value = Utf8Path(_SourcePath).extension().string();
+            std::transform(_Value.begin(), _Value.end(), _Value.begin(), [](const unsigned char Value_) {
+                return static_cast<char>(std::tolower(Value_));
+            });
+            return _Value;
+        }();
+        if (_Extension != ".dxf") throw std::invalid_argument("TubeDesigner requires a .dxf file");
+        ObjectMap _Response;
+        _Response["profile"] = ImportDxfProfile(ApplicationContext_, _SourcePath);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleImportProfilePackage(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _SourcePath = GetRequiredText(_Request, "sourcePath", 32767);
+        const auto _Extension = [&]() {
+            auto _Value = Utf8Path(_SourcePath).extension().string();
+            std::transform(_Value.begin(), _Value.end(), _Value.begin(), [](const unsigned char Value_) {
+                return static_cast<char>(std::tolower(Value_));
+            });
+            return _Value;
+        }();
+        if (_Extension != ".icaxprofile" && _Extension != ".zip")
+            throw std::invalid_argument("TubeDesigner requires an .icaxprofile package");
+        const auto _Password = GetString(_Request, "password");
+        if (_Password.size() > 256)
+            throw std::invalid_argument("TubeDesigner profile package password is too long");
+        auto _Package = ImportProfilePackage(ApplicationContext_, _SourcePath, _Password);
+        const auto _Descriptor = GetRequiredObject(_Package, "descriptor");
+
+        iCAX::Application::CProductUserDataRecord _Record;
+        _Record.FeatureID = kProfileFeatureID;
+        _Record.RecordType = kParametricProfileRecordType;
+        _Record.SubjectType = kProfileDefinitionSubjectType;
+        _Record.SubjectID = GetRequiredText(_Descriptor, "id", 80);
+        _Record.RecordID = UuidToString(iCAX::Data::GenerateNewUUID());
+        _Record.OwnerScope = "personal";
+        _Record.Payload = Variant(_Package);
+        const auto _Saved = GetUserDataStore(ProductContext_)->Put(_Record, 0);
+        ObjectMap _Response;
+        _Response["profile"] = MakeProfileUserDataPayload(_Saved);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleEvaluateProfilePackage(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RecordID = UuidToString(ParseRequiredUuid(
+            GetRequiredText(_Request, "id"), "id"));
+        auto _Store = GetUserDataStore(ProductContext_);
+        const auto _Record = _Store->Get(
+            kProfileFeatureID, kParametricProfileRecordType, _RecordID);
+        if (!_Record)
+            throw std::invalid_argument("TubeDesigner parametric profile does not exist");
+        auto _Package = _Record->Payload.Is<ObjectMap>()
+            ? _Record->Payload.To<ObjectMap>()
+            : ObjectMap();
+        const auto _Values = GetRequiredObject(_Request, "parameters");
+        auto _Profile = EvaluateProfilePackage(ApplicationContext_, _Package, _Values);
+        _Profile["name"] = GetString(_Package, "name", GetString(_Profile, "name"));
+        _Profile["savedProfileId"] = _RecordID;
+        ObjectMap _Response;
+        _Response["profile"] = _Profile;
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleGenerateProfilePreview(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_)
+            throw std::invalid_argument("TubeDesigner.GenerateProfilePreview requires a scene");
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _ProfileReference = ParseProfileReference(_Request);
+        const auto _Length = GetDouble(_Request, "length", 1000.0);
+        if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
+            throw std::invalid_argument("profile preview length must be between 1 and 100000 mm");
+        ObjectMap _Parameters;
+        if (const auto _Iterator = _Request.find("parameters");
+            _Iterator != _Request.end() && !_Iterator->second.Is<std::monostate>())
+        {
+            if (!_Iterator->second.Is<ObjectMap>())
+                throw std::invalid_argument("profile preview parameters must be an object");
+            _Parameters = _Iterator->second.To<ObjectMap>();
+        }
+        auto _Profile = ResolveProfileSnapshot(
+            ApplicationContext_, *GetUserDataStore(ProductContext_),
+            _ProfileReference, _Parameters);
+        const auto _Name = GetString(_Profile, "name", "管型");
+        const auto _Shape = BuildProfileExtrusion(_Profile, _Length);
+        if (_Shape.IsNull())
+            throw std::runtime_error("tube profile preview produced no solid");
+        const auto _BRep = StoreBRep(
+            *Scene_, "tube-designer/profile-preview/" + _ProfileReference.Scope
+                + "/" + _ProfileReference.ID,
+            _Name + " preview", _Shape);
+        const auto _Geometry = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+            Scene_->Resources(), _BRep.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+        const auto _Material = EnsureDesignerMaterial(*Scene_);
+
+        ObjectMap _Response;
+        _Response["profile"] = _Profile;
+        _Response["profileRef"] = ObjectMap{
+            { "scope", _ProfileReference.Scope }, { "id", _ProfileReference.ID }
+        };
+        _Response["length"] = _Length;
+        _Response["geometryResourceId"] = _Geometry.URL;
+        _Response["geometryResourceVersion"] = static_cast<unsigned long long>(_Geometry.nVersion);
+        _Response["materialResourceId"] = _Material.URL;
+        _Response["materialResourceVersion"] = static_cast<unsigned long long>(_Material.nVersion);
+        _Response["brepResourceId"] = _BRep.URL;
+        _Response["brepResourceVersion"] = static_cast<unsigned long long>(_BRep.nVersion);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleExportProfile(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_)
+            throw std::invalid_argument("TubeDesigner.ExportProfile requires a scene");
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _ProfileReference = ParseProfileReference(_Request);
+        const auto _Format = GetRequiredText(_Request, "format", 16);
+        if (_Format != "dxf" && _Format != "step")
+            throw std::invalid_argument("profile export format must be dxf or step");
+        const auto _Length = GetDouble(_Request, "length", 1000.0);
+        if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
+            throw std::invalid_argument("profile export length must be between 1 and 100000 mm");
+        ObjectMap _Parameters;
+        if (const auto _Iterator = _Request.find("parameters");
+            _Iterator != _Request.end() && !_Iterator->second.Is<std::monostate>())
+        {
+            if (!_Iterator->second.Is<ObjectMap>())
+                throw std::invalid_argument("profile export parameters must be an object");
+            _Parameters = _Iterator->second.To<ObjectMap>();
+        }
+        auto _Profile = ResolveProfileSnapshot(
+            ApplicationContext_, *GetUserDataStore(ProductContext_),
+            _ProfileReference, _Parameters);
+        const auto _Name = GetString(_Profile, "name", "管型");
+        const auto _TargetRoot = Utf8Path(GetRequiredText(_Request, "targetDirectory", 32767));
+        std::filesystem::create_directories(_TargetRoot);
+
+        std::filesystem::path _TargetPath;
+        if (_Format == "dxf")
+        {
+            _TargetPath = MakeUniqueExportPath(_TargetRoot, _Name, ".dxf");
+            const auto _RuntimeResult = ExportProfileDxf(
+                ApplicationContext_, _Profile, Utf8PathText(_TargetPath));
+            if (GetString(_RuntimeResult, "path").empty())
+                throw std::runtime_error("TubeDesigner DXF export returned no output path");
+        }
+        else
+        {
+            std::ostringstream _LengthText;
+            _LengthText << std::setprecision(12) << _Length;
+            _TargetPath = MakeUniqueExportPath(
+                _TargetRoot, _Name + "_L" + _LengthText.str() + "mm", ".step");
+            const auto _Shape = BuildProfileExtrusion(_Profile, _Length);
+            if (_Shape.IsNull())
+                throw std::runtime_error("tube profile STEP export produced no solid");
+            const auto _BRep = StoreBRep(
+                *Scene_, "tube-designer/profile-export/" + _ProfileReference.Scope
+                    + "/" + _ProfileReference.ID,
+                _Name + " export", _Shape);
+            const auto _Result = Scene_->Resources().Export<iCAX::GeometryData::BRepModel>(
+                _BRep.URL,
+                Utf8PathText(_TargetPath),
+                { { "resourceVersion", std::to_string(_BRep.nVersion) } },
+                "cad.step");
+            if (!_Result.IsOK())
+                throw std::runtime_error(
+                    _Result.Error.empty() ? "TubeDesigner STEP export failed" : _Result.Error);
+        }
+
+        ObjectMap _Response;
+        _Response["format"] = _Format;
+        _Response["path"] = Utf8PathText(_TargetPath);
+        _Response["profileName"] = _Name;
+        _Response["profileRef"] = ObjectMap{
+            { "scope", _ProfileReference.Scope }, { "id", _ProfileReference.ID }
+        };
+        _Response["length"] = _Length;
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleUpdateProfilePackage(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RecordID = UuidToString(ParseRequiredUuid(
+            GetRequiredText(_Request, "id"), "id"));
+        auto _Store = GetUserDataStore(ProductContext_);
+        const auto _Existing = _Store->Get(
+            kProfileFeatureID, kParametricProfileRecordType, _RecordID);
+        if (!_Existing)
+            throw std::invalid_argument("TubeDesigner parametric profile does not exist");
+        auto _Record = *_Existing;
+        auto _Package = _Record.Payload.Is<ObjectMap>()
+            ? _Record.Payload.To<ObjectMap>()
+            : ObjectMap();
+        const auto _Values = GetRequiredObject(_Request, "parameters");
+        auto _Preview = EvaluateProfilePackage(ApplicationContext_, _Package, _Values);
+        const auto _Name = GetRequiredText(_Request, "name", 120);
+        _Preview["name"] = _Name;
+        _Package["name"] = _Name;
+        _Package["defaultParameters"] = GetRequiredObject(_Preview, "parameters");
+        _Package["previewProfile"] = _Preview;
+        _Record.Payload = Variant(_Package);
+        const auto _Saved = _Store->Put(
+            _Record, GetUInt64(_Request, "revision", 0));
+        ObjectMap _Response;
+        _Response["profile"] = MakeProfileUserDataPayload(_Saved);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleSaveImportedProfile(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RequestedID = TrimText(GetString(_Request, "id"));
+        const auto _RecordID = _RequestedID.empty()
+            ? UuidToString(iCAX::Data::GenerateNewUUID())
+            : UuidToString(ParseRequiredUuid(_RequestedID, "id"));
+        auto _Payload = GetRequiredObject(_Request, "profile");
+        if (GetString(_Payload, "kind") != "imported-dxf")
+            throw std::invalid_argument(
+                "SaveImportedProfile only accepts a frozen DXF profile");
+        _Payload["name"] = GetRequiredText(_Request, "name", 120);
+        ValidateImportedProfileDefinition(_Payload);
+
+        iCAX::Application::CProductUserDataRecord _Record;
+        _Record.FeatureID = kProfileFeatureID;
+        _Record.RecordType = kImportedProfileRecordType;
+        _Record.SubjectType = kProductSubjectType;
+        _Record.SubjectID = ProductContext_->GetProductID();
+        _Record.RecordID = _RecordID;
+        _Record.OwnerScope = "personal";
+        _Record.Payload = Variant(_Payload);
+        const auto _Saved = GetUserDataStore(ProductContext_)->Put(
+            _Record, GetUInt64(_Request, "revision", 0));
+        ObjectMap _Response;
+        _Response["profile"] = MakeProfileUserDataPayload(_Saved);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleRenameImportedProfile(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RecordID = UuidToString(ParseRequiredUuid(
+            GetRequiredText(_Request, "id"), "id"));
+        auto _Store = GetUserDataStore(ProductContext_);
+        const auto _Existing = FindProfileRecord(*_Store, _RecordID);
+        if (!_Existing)
+            throw std::invalid_argument("TubeDesigner profile does not exist");
+
+        auto _Record = *_Existing;
+        auto _Payload = _Record.Payload.Is<ObjectMap>()
+            ? _Record.Payload.To<ObjectMap>()
+            : ObjectMap();
+        _Payload["name"] = GetRequiredText(_Request, "name", 120);
+        _Record.Payload = Variant(_Payload);
+        const auto _Saved = _Store->Put(
+            _Record, GetUInt64(_Request, "revision", 0));
+        ObjectMap _Response;
+        _Response["profile"] = MakeProfileUserDataPayload(_Saved);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleSaveCustomer(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RequestedID = TrimText(GetString(_Request, "id"));
+        const auto _RecordID = _RequestedID.empty()
+            ? UuidToString(iCAX::Data::GenerateNewUUID())
+            : UuidToString(ParseRequiredUuid(_RequestedID, "id"));
+        ObjectMap _Payload;
+        _Payload["name"] = GetRequiredText(_Request, "name");
+        _Payload["notes"] = TrimText(GetString(_Request, "notes"));
+
+        iCAX::Application::CProductUserDataRecord _Record;
+        _Record.FeatureID = kCustomerFeatureID;
+        _Record.RecordType = kCustomerRecordType;
+        _Record.SubjectType = kProductSubjectType;
+        _Record.SubjectID = ProductContext_->GetProductID();
+        _Record.RecordID = _RecordID;
+        _Record.OwnerScope = "personal";
+        _Record.Payload = Variant(_Payload);
+        auto _Saved = GetUserDataStore(ProductContext_)->Put(
+            _Record, GetUInt64(_Request, "revision", 0));
+        ObjectMap _Response;
+        _Response["customer"] = MakeUserDataPayload(_Saved);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleSaveParameterPreset(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RequestedID = TrimText(GetString(_Request, "id"));
+        const auto _RecordID = _RequestedID.empty()
+            ? UuidToString(iCAX::Data::GenerateNewUUID())
+            : UuidToString(ParseRequiredUuid(_RequestedID, "id"));
+        const auto _TemplateID = GetRequiredText(_Request, "templateId", 240);
+        auto _CustomerID = TrimText(GetString(_Request, "customerId"));
+        auto _Store = GetUserDataStore(ProductContext_);
+        if (!_CustomerID.empty())
+        {
+            _CustomerID = UuidToString(ParseRequiredUuid(_CustomerID, "customerId"));
+            if (!_Store->Get(kCustomerFeatureID, kCustomerRecordType, _CustomerID))
+                throw std::invalid_argument("TubeDesigner customer does not exist");
+        }
+
+        ObjectMap _Payload;
+        _Payload["name"] = GetRequiredText(_Request, "name");
+        _Payload["templateVersion"] = TrimText(GetString(_Request, "templateVersion"));
+        _Payload["values"] = GetRequiredObject(_Request, "values");
+
+        iCAX::Application::CProductUserDataRecord _Record;
+        _Record.FeatureID = kTemplateFeatureID;
+        _Record.RecordType = kParameterPresetRecordType;
+        _Record.SubjectType = kTemplateSubjectType;
+        _Record.SubjectID = _TemplateID;
+        _Record.RecordID = _RecordID;
+        _Record.OwnerScope = "personal";
+        _Record.Payload = Variant(_Payload);
+        if (!_CustomerID.empty())
+        {
+            iCAX::Application::CUserDataLink _CustomerLink;
+            _CustomerLink.RelationType = kCustomerRelationType;
+            _CustomerLink.TargetKind = "user-record";
+            _CustomerLink.TargetFeatureID = kCustomerFeatureID;
+            _CustomerLink.TargetType = kCustomerRecordType;
+            _CustomerLink.TargetID = _CustomerID;
+            _Record.Links.emplace_back(std::move(_CustomerLink));
+        }
+        auto _Saved = _Store->Put(_Record, GetUInt64(_Request, "revision", 0));
+        ObjectMap _Response;
+        _Response["parameterPreset"] = MakeParameterPresetPayload(_Saved);
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult DeleteUserDataRecord(
+        const iCAX::Interaction::CInvocation& Request_,
+        iCAX::Product::IProductContext* ProductContext_,
+        const std::string& FeatureID_,
+        const std::string& RecordType_,
+        const std::string& ResultName_)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RecordID = UuidToString(ParseRequiredUuid(
+            GetRequiredText(_Request, "id"), "id"));
+        const auto _Deleted = GetUserDataStore(ProductContext_)->Delete(
+            FeatureID_,
+            RecordType_,
+            _RecordID,
+            GetUInt64(_Request, "revision", 0));
+        ObjectMap _Response;
+        _Response[ResultName_] = _RecordID;
+        _Response["deleted"] = _Deleted;
+        return MakeResponse(Variant(_Response));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleDeleteCustomer(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        return DeleteUserDataRecord(
+            Request_, ProductContext_, kCustomerFeatureID, kCustomerRecordType, "customerId");
+    }
+
+    iCAX::Interaction::CInvocationResult HandleDeleteParameterPreset(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        return DeleteUserDataRecord(
+            Request_,
+            ProductContext_,
+            kTemplateFeatureID,
+            kParameterPresetRecordType,
+            "parameterPresetId");
+    }
+
+    iCAX::Interaction::CInvocationResult HandleDeleteImportedProfile(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        return DeleteUserDataRecord(
+            Request_, ProductContext_, kProfileFeatureID, kImportedProfileRecordType, "profileId");
+    }
+
+    iCAX::Interaction::CInvocationResult HandleDeleteProfile(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _RecordID = UuidToString(ParseRequiredUuid(
+            GetRequiredText(_Request, "id"), "id"));
+        auto _Store = GetUserDataStore(ProductContext_);
+        const auto _Existing = FindProfileRecord(*_Store, _RecordID);
+        if (!_Existing)
+            throw std::invalid_argument("TubeDesigner profile does not exist");
+        const auto _Deleted = _Store->Delete(
+            kProfileFeatureID,
+            _Existing->RecordType,
+            _RecordID,
+            GetUInt64(_Request, "revision", 0));
+        ObjectMap _Response;
+        _Response["profileId"] = _RecordID;
+        _Response["deleted"] = _Deleted;
+        return MakeResponse(Variant(_Response));
+    }
+
     iCAX::Interaction::CInvocationResult HandleActivateProduct(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -2248,6 +2155,113 @@ namespace
         return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
     }
 
+    ObjectMap ValidateSideSketch(const ObjectMap& Sketch_)
+    {
+        if (GetString(Sketch_, "schema") != "icax.tube-sketch"
+            || GetUInt64(Sketch_, "schemaVersion", 0) != 1)
+        {
+            throw std::invalid_argument("unsupported TubeDesigner sketch schema");
+        }
+        if (GetString(Sketch_, "kind") != "side")
+            throw std::invalid_argument("TubeDesigner project sketches must be side sketches");
+        const auto _Entities = Sketch_.find("entities");
+        if (_Entities == Sketch_.end() || !_Entities->second.Is<VariantArray>())
+            throw std::invalid_argument("TubeDesigner sketch requires an entity array");
+        const auto _EntityValues = _Entities->second.To<VariantArray>();
+        if (_EntityValues.empty() || _EntityValues.size() > 5000)
+            throw std::invalid_argument("TubeDesigner sketch entity count is invalid");
+        for (const auto& _Value : _EntityValues)
+        {
+            if (!_Value.Is<ObjectMap>())
+                throw std::invalid_argument("TubeDesigner sketch entities must be objects");
+            const auto _Entity = _Value.To<ObjectMap>();
+            const auto _Kind = GetRequiredText(_Entity, "kind", 32);
+            if (_Kind != "line" && _Kind != "polyline" && _Kind != "rectangle"
+                && _Kind != "circle" && _Kind != "arc" && _Kind != "spline"
+                && _Kind != "freehand" && _Kind != "text")
+            {
+                throw std::invalid_argument("TubeDesigner sketch entity kind is not supported");
+            }
+            GetRequiredText(_Entity, "id", 160);
+        }
+        const auto _Length = GetDouble(Sketch_, "length", 0.0);
+        const auto _FaceHeight = GetDouble(Sketch_, "faceHeight", 0.0);
+        if (!std::isfinite(_Length) || _Length <= 0.0
+            || !std::isfinite(_FaceHeight) || _FaceHeight <= 0.0)
+        {
+            throw std::invalid_argument("TubeDesigner side sketch bounds are invalid");
+        }
+        return Sketch_;
+    }
+
+    iCAX::Interaction::CInvocationResult HandleSaveSketch(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_) throw std::invalid_argument("TubeDesigner.SaveSketch requires a scene");
+        const auto _Payload = DecodeObjectPayload(Request_);
+        auto& _Repository = Scene_->Database();
+        const auto _Meta = _Repository.GetMetaEntity();
+        const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
+        const auto _RequestedProductID = GetString(_Payload, "productEntityId");
+        const auto _ProductID = !_RequestedProductID.empty()
+            ? ParseRequiredUuid(_RequestedProductID, "productEntityId")
+            : (_Root ? _Root->GetActiveProductID() : iCAX::Data::uuid());
+        if (_ProductID.is_nil()) throw std::invalid_argument("select a TubeDesigner product instance");
+        const auto _ProductEntity = _Repository.GetEntity(_ProductID);
+        const auto _Product = GetComponent<CProductInstanceComponent>(_ProductEntity);
+        if (!_Product) throw std::invalid_argument("TubeDesigner product instance does not exist");
+        const auto _MemberID = ParseRequiredUuid(
+            GetString(_Payload, "targetMemberId"), "targetMemberId");
+        const auto _Member = GetComponent<CAssemblyMemberComponent>(_Repository.GetEntity(_MemberID));
+        if (!_Member || _Member->GetProductID() != _ProductID)
+            throw std::invalid_argument("TubeDesigner sketch target member does not belong to the product");
+
+        auto _Sketch = ValidateSideSketch(GetRequiredObject(_Payload, "sketch"));
+        _Sketch["targetMemberId"] = UuidToString(_MemberID);
+        auto _Sketches = _Product->GetSketches();
+        _Sketches["schema"] = std::string("icax.tube-sketch-set");
+        _Sketches["schemaVersion"] = 1ull;
+        ObjectMap _Side;
+        if (const auto _Existing = _Sketches.find("side");
+            _Existing != _Sketches.end() && _Existing->second.Is<ObjectMap>())
+        {
+            _Side = _Existing->second.To<ObjectMap>();
+        }
+        _Side[UuidToString(_MemberID)] = _Sketch;
+        _Sketches["side"] = _Side;
+
+        auto _Undo = _Repository.BeginUndoCommand("Save TubeDesigner side sketch");
+        auto& _Transaction = _Repository.BeginTransaction("Update TubeDesigner side sketch");
+        bool _CommitStarted = false;
+        try
+        {
+            _Transaction.ModifyComponent(
+                _ProductID, CProductInstanceComponent::S_ClassName, {
+                    { CProductInstanceComponent::PropertyName_Sketches, PropertyValue(_Sketches) }
+                });
+            std::string _Error;
+            _CommitStarted = true;
+            if (!_Repository.CommitTransaction(_Transaction, _Error))
+                throw std::runtime_error(_Error.empty()
+                    ? "TubeDesigner failed to save side sketch" : _Error);
+        }
+        catch (...)
+        {
+            if (!_CommitStarted)
+            {
+                try { _Repository.CancelTransaction(_Transaction); }
+                catch (...) {}
+            }
+            throw;
+        }
+        _Undo->End();
+        return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
+    }
+
     const iCAX::TemplateRuntime::SOutputSet* FindOutputSet(
         const iCAX::TemplateRuntime::SNeutralModel& Model_, const std::string& strPurpose_)
     {
@@ -2266,6 +2280,26 @@ namespace
         if (_Iterator == Model_.Items.end())
             throw std::invalid_argument("neutral model output references a missing item: " + strKey_);
         return *_Iterator;
+    }
+
+    iCAX::OpenCascade::SNeutralModelEvaluation EvaluateOutputGeometry(
+        const iCAX::TemplateRuntime::SNeutralModel& Model_,
+        const iCAX::TemplateRuntime::SOutputSet& Output_)
+    {
+        std::vector<std::string> _GeometryKeys;
+        _GeometryKeys.reserve(Output_.ItemKeys.size());
+        for (const auto& _ItemKey : Output_.ItemKeys)
+        {
+            const auto& _Item = FindModelItem(Model_, _ItemKey);
+            const auto _Representation = _Item.Representations.find(Output_.Purpose);
+            if (_Representation == _Item.Representations.end())
+                throw std::runtime_error("neutral model item has no " + Output_.Purpose
+                    + " representation: " + _Item.Key);
+            _GeometryKeys.push_back(_Representation->second);
+        }
+        // Generic output dependency evaluation, retained for legacy stored documents.
+        // New requests already contain only the geometry selected by Python.
+        return iCAX::OpenCascade::EvaluateNeutralModel(Model_, _GeometryKeys);
     }
 
     std::string OptionalPropertyString(
@@ -2299,19 +2333,11 @@ namespace
         catch (...) { return nDefault_; }
     }
 
-    STubeProfile OptionalTubeProfile(const ObjectMap& Properties_)
+    ObjectMap OptionalProfileProperties(const ObjectMap& Properties_)
     {
-        STubeProfile _Profile;
-        _Profile.Type.clear();
         const auto _Iterator = Properties_.find("tubeDesigner.profile");
-        if (_Iterator == Properties_.end() || !_Iterator->second.Is<ObjectMap>()) return _Profile;
-        const auto _Properties = _Iterator->second.To<ObjectMap>();
-        _Profile.Type = OptionalPropertyString(_Properties, "kind");
-        _Profile.Width = OptionalPropertyNumber(_Properties, "width");
-        _Profile.Depth = OptionalPropertyNumber(_Properties, "depth");
-        _Profile.WallThickness = OptionalPropertyNumber(_Properties, "wallThickness");
-        _Profile.CornerRadius = OptionalPropertyNumber(_Properties, "cornerRadius");
-        return _Profile;
+        if (_Iterator == Properties_.end() || !_Iterator->second.Is<ObjectMap>()) return {};
+        return _Iterator->second.To<ObjectMap>();
     }
 
     std::string ResolveProductCode(const SNeutralTemplateEvaluation& Evaluation_)
@@ -2345,14 +2371,17 @@ namespace
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Project::ISceneContext& Scene_)
     {
-        const auto _Evaluation = EvaluateNeutralTemplate(ApplicationContext_, Payload_);
-        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Evaluation.Model);
-        const auto _DisplayOutput = FindOutputSet(_Evaluation.Model, "display");
+        const auto _Evaluation = EvaluateNeutralTemplate(ApplicationContext_, Payload_, "display");
+        const auto _DisplayOutput = FindOutputSet(_Evaluation.Model, "result");
         if (!_DisplayOutput || _DisplayOutput->ItemKeys.empty())
             throw std::runtime_error("Python template returned no display output items");
-        const auto _ExportOutput = FindOutputSet(_Evaluation.Model, "export");
-        if (!_ExportOutput || _ExportOutput->ItemKeys.empty())
-            throw std::runtime_error("Python template returned no export output items");
+        const auto _PartCount = OptionalPropertyUInt64(
+            _Evaluation.Model.Extensions, "tubeDesigner.manufacturingPartCount");
+        if (_PartCount == 0)
+            throw std::runtime_error("Python template returned no manufacturing item count");
+        // Execute the entire received document. Python, not the native evaluator,
+        // decides which operations belong in this request's neutral expression.
+        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Evaluation.Model);
 
         auto& _Repository = Scene_.Database();
         const auto _Meta = _Repository.GetMetaEntity();
@@ -2386,9 +2415,9 @@ namespace
         for (const auto& _ItemKey : _DisplayOutput->ItemKeys)
         {
             const auto& _Item = FindModelItem(_Evaluation.Model, _ItemKey);
-            const auto _Representation = _Item.Representations.find("display");
+            const auto _Representation = _Item.Representations.find("result");
             if (_Representation == _Item.Representations.end())
-                throw std::runtime_error("neutral model item has no display representation: " + _Item.Key);
+                throw std::runtime_error("neutral model item has no result representation: " + _Item.Key);
             const auto _EntityID = MakeStableEntityID(_ProductID, "member", _Item.Key);
             const auto _StablePrefix = "tube-designer/product/" + UuidToString(_ProductID)
                 + "/item/" + _Item.Key;
@@ -2433,7 +2462,7 @@ namespace
                 { CGenerationRunComponent::PropertyName_ProductID, PropertyValue(_ProductID) },
                 { CGenerationRunComponent::PropertyName_TemplateID, PropertyValue(_Evaluation.Descriptor.ID) },
                 { CGenerationRunComponent::PropertyName_TemplateVersion, PropertyValue(_Evaluation.Descriptor.Version) },
-                { CGenerationRunComponent::PropertyName_PartCount, PropertyValue(static_cast<unsigned long long>(_ExportOutput->ItemKeys.size())) },
+                { CGenerationRunComponent::PropertyName_PartCount, PropertyValue(static_cast<unsigned long long>(_PartCount)) },
                 { CGenerationRunComponent::PropertyName_IssueCount, PropertyValue(static_cast<unsigned long long>(_Evaluation.Model.Diagnostics.size())) },
                 { CGenerationRunComponent::PropertyName_PackageDigest, PropertyValue(_Evaluation.Descriptor.PackageDigest) },
                 { CGenerationRunComponent::PropertyName_NeutralModel, PropertyValue(_Evaluation.Document) }
@@ -2442,7 +2471,6 @@ namespace
             for (const auto& _Prepared : _Members)
             {
                 const auto& _Item = *_Prepared.Item;
-                const auto _Profile = OptionalTubeProfile(_Item.Properties);
                 const auto _ExistingMember = _Repository.GetEntity(_Prepared.EntityID);
                 if (!_ExistingMember) _Transaction.CreateEntity(_Prepared.EntityID);
                 QueueUpsertComponent(
@@ -2456,11 +2484,6 @@ namespace
                         { CAssemblyMemberComponent::PropertyName_ChildPartCount, PropertyValue(static_cast<unsigned long long>(std::max<std::size_t>(1, _Item.Children.size()))) },
                         { CAssemblyMemberComponent::PropertyName_Role, PropertyValue(OptionalPropertyString(_Item.Properties, "group")) },
                         { CAssemblyMemberComponent::PropertyName_Name, PropertyValue(_Item.DisplayName.Resolve("zh-CN")) },
-                        { CAssemblyMemberComponent::PropertyName_ProfileType, PropertyValue(_Profile.Type) },
-                        { CAssemblyMemberComponent::PropertyName_SectionWidth, PropertyValue(_Profile.Width) },
-                        { CAssemblyMemberComponent::PropertyName_SectionDepth, PropertyValue(_Profile.Depth) },
-                        { CAssemblyMemberComponent::PropertyName_WallThickness, PropertyValue(_Profile.WallThickness) },
-                        { CAssemblyMemberComponent::PropertyName_CornerRadius, PropertyValue(_Profile.CornerRadius) },
                         { CAssemblyMemberComponent::PropertyName_Length, PropertyValue(OptionalPropertyNumber(_Item.Properties, "length")) },
                         { CAssemblyMemberComponent::PropertyName_X1, PropertyValue(0.0) },
                         { CAssemblyMemberComponent::PropertyName_Y1, PropertyValue(0.0) },
@@ -2521,292 +2544,10 @@ namespace
     {
         if (!Scene_) throw std::invalid_argument("TubeDesigner.GeneratePreview requires a scene");
         const auto _Payload = DecodeObjectPayload(Request_);
-        if (IsPythonTemplate(GetString(_Payload, "templateId")))
-            return GenerateNeutralPreview(_Payload, ApplicationContext_, *Scene_);
-        const auto _Evaluation = EvaluateTemplate(_Payload);
-        const auto& _Generated = _Evaluation.Product;
-        auto& _Repository = Scene_->Database();
-        const auto _Meta = _Repository.GetMetaEntity();
-        if (!_Meta) throw std::runtime_error("TubeDesigner requires repository meta entity");
-        const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
-        std::shared_ptr<iCAX::Database::IEntity> _ExistingProductEntity;
-        const auto _RequestedProductID = GetString(_Payload, "productEntityId");
-        if (!_RequestedProductID.empty())
-        {
-            const auto _ProductID = ParseRequiredUuid(_RequestedProductID, "productEntityId");
-            _ExistingProductEntity = _Repository.GetEntity(_ProductID);
-            if (!GetComponent<CProductInstanceComponent>(_ExistingProductEntity))
-            {
-                throw std::invalid_argument("TubeDesigner product instance does not exist");
-            }
-        }
-        const auto _ExistingProduct = GetComponent<CProductInstanceComponent>(_ExistingProductEntity);
-        const auto _ProductID = _ExistingProductEntity
-            ? _ExistingProductEntity->GetID()
-            : iCAX::Data::GenerateNewUUID();
-        const auto _RunID = iCAX::Data::GenerateNewUUID();
-        const auto _InstanceName = GetString(
-            _Payload,
-            "instanceName",
-            _ExistingProduct ? _ExistingProduct->GetName() : "防盗窗 " + _Generated.ProductCode);
-        const auto _CreatedAt = GetString(
-            _Payload,
-            "createdAt",
-            _ExistingProduct ? _ExistingProduct->GetCreatedAt() : std::string());
-
-        std::vector<TopoDS_Shape> _PreviewShapes;
-        _PreviewShapes.reserve(_Generated.Parts.size());
-        for (const auto& _Part : _Generated.Parts)
-        {
-            _PreviewShapes.push_back(MakePreviewShape(_Part));
-        }
-
-        const auto _MaterialResource = EnsureDesignerMaterial(*Scene_);
-        const auto _StablePartKeys = MakeStablePartKeys(_Generated);
-        std::vector<SPreparedPart> _PreparedParts;
-        _PreparedParts.reserve(_Generated.Parts.size());
-        std::vector<SPreparedPreviewMember> _PreparedPreviewMembers;
-        std::map<std::string, std::size_t> _PreviewMemberOffsets;
-        for (std::size_t _Index = 0; _Index < _Generated.Parts.size(); ++_Index)
-        {
-            const auto& _GeneratedPart = _Generated.Parts[_Index];
-            const auto& _StableKey = _StablePartKeys.at(_Index);
-            const auto _PreviewMemberStableKey = MakePreviewMemberStableKey(
-                _GeneratedPart, _StableKey);
-            const auto _MemberID = MakeStableEntityID(
-                _ProductID, "member", _PreviewMemberStableKey);
-            _PreparedParts.push_back({
-                _GeneratedPart,
-                _StableKey,
-                _MemberID
-            });
-
-            const auto [_Iterator, _Inserted] = _PreviewMemberOffsets.emplace(
-                _PreviewMemberStableKey, _PreparedPreviewMembers.size());
-            if (_Inserted)
-            {
-                _PreparedPreviewMembers.push_back({
-                    _PreviewMemberStableKey,
-                    _MemberID,
-                    _GeneratedPart.PreviewAssemblyKey.empty() ? "part" : "assembly",
-                    _GeneratedPart.PreviewAssemblyRole.empty()
-                        ? _GeneratedPart.Role : _GeneratedPart.PreviewAssemblyRole,
-                    _GeneratedPart.PreviewAssemblyName.empty()
-                        ? _GeneratedPart.PartNumber : _GeneratedPart.PreviewAssemblyName,
-                    _GeneratedPart.Index,
-                    {},
-                    {},
-                    {}
-                });
-            }
-            auto& _PreviewMember = _PreparedPreviewMembers.at(_Iterator->second);
-            if (_PreviewMember.MemberID != _MemberID)
-                throw std::runtime_error("TubeDesigner preview assembly key resolved to inconsistent IDs");
-            _PreviewMember.PartOffsets.push_back(_Index);
-        }
-
-        for (auto& _PreviewMember : _PreparedPreviewMembers)
-        {
-            TopoDS_Shape _PreviewShape;
-            if (_PreviewMember.PartOffsets.size() == 1 && _PreviewMember.MemberType == "part")
-            {
-                _PreviewShape = _PreviewShapes.at(_PreviewMember.PartOffsets.front());
-            }
-            else
-            {
-                TopoDS_Compound _Compound;
-                BRep_Builder _Builder;
-                _Builder.MakeCompound(_Compound);
-                for (const auto _PartOffset : _PreviewMember.PartOffsets)
-                    _Builder.Add(_Compound, _PreviewShapes.at(_PartOffset));
-                _PreviewShape = _Compound;
-            }
-            const auto _StablePrefix = "tube-designer/product/" + UuidToString(_ProductID)
-                + (_PreviewMember.MemberType == "part" ? "/part/" : "/")
-                + _PreviewMember.StableKey;
-            _PreviewMember.PreviewResource = StoreBRep(
-                *Scene_, _StablePrefix + "/preview", _PreviewMember.Name + " preview", _PreviewShape);
-            _PreviewMember.FrontendGeometryResource =
-                iCAX::RenderInteraction::EnsureFrontendGeometryResource(
-                    Scene_->Resources(), _PreviewMember.PreviewResource.URL,
-                    iCAX::Render::ERenderGeometryKind::Mesh);
-        }
-
-        std::vector<SPreparedJoint> _PreparedJoints;
-        _PreparedJoints.reserve(_Generated.Joints.size());
-        for (const auto& _GeneratedJoint : _Generated.Joints)
-        {
-            const auto& _Target = _PreparedParts.at(
-                static_cast<std::size_t>(_GeneratedJoint.TargetPartIndex - 1));
-            const auto& _Inserted = _PreparedParts.at(
-                static_cast<std::size_t>(_GeneratedJoint.InsertedPartIndex - 1));
-            if (_Target.MemberID == _Inserted.MemberID) continue;
-            _PreparedJoints.push_back({
-                _GeneratedJoint,
-                MakeStableEntityID(
-                    _ProductID,
-                    "joint",
-                    _GeneratedJoint.StableKey.empty()
-                        ? _Target.StableKey + "/" + _Inserted.StableKey
-                        : _GeneratedJoint.StableKey)
-            });
-        }
-
-        const auto _ExistingIDs = CollectProductDesignIDs(_Repository, _ProductID);
-        std::vector<iCAX::Data::uuid> _DesiredIDs{ _ProductID, _RunID };
-        for (const auto& _Prepared : _PreparedPreviewMembers)
-        {
-            _DesiredIDs.push_back(_Prepared.MemberID);
-        }
-        for (const auto& _Prepared : _PreparedJoints)
-        {
-            _DesiredIDs.push_back(_Prepared.JointID);
-        }
-
-        auto _Undo = _Repository.BeginUndoCommand("Generate TubeDesigner preview");
-        auto& _Transaction = _Repository.BeginTransaction("Update TubeDesigner preview");
-        bool _CommitStarted = false;
-        try
-        {
-            for (const auto& _ID : _ExistingIDs)
-            {
-                if (std::find(_DesiredIDs.begin(), _DesiredIDs.end(), _ID) == _DesiredIDs.end())
-                {
-                    _Transaction.DisposeEntity(_ID);
-                }
-            }
-
-            if (!_ExistingProductEntity) _Transaction.CreateEntity(_ProductID);
-            QueueUpsertComponent(_Transaction, _ExistingProductEntity, _ProductID, CProductInstanceComponent::S_ClassName, {
-                { CProductInstanceComponent::PropertyName_ProductCode, PropertyValue(_Generated.ProductCode) },
-                { CProductInstanceComponent::PropertyName_Name, PropertyValue(_InstanceName) },
-                { CProductInstanceComponent::PropertyName_CreatedAt, PropertyValue(_CreatedAt) },
-                { CProductInstanceComponent::PropertyName_TemplateID, PropertyValue(_Generated.TemplateID) },
-                { CProductInstanceComponent::PropertyName_TemplateVersion, PropertyValue(_Generated.TemplateVersion) },
-                { CProductInstanceComponent::PropertyName_Parameters, PropertyValue(_Evaluation.Parameters) },
-                { CProductInstanceComponent::PropertyName_ActiveGenerationRunID, PropertyValue(_RunID) }
-            });
-
-            _Transaction.CreateEntity(_RunID);
-            _Transaction.AttachComponent(_RunID, CGenerationRunComponent::S_ClassName, {
-                { CGenerationRunComponent::PropertyName_ProductID, PropertyValue(_ProductID) },
-                { CGenerationRunComponent::PropertyName_TemplateID, PropertyValue(_Generated.TemplateID) },
-                { CGenerationRunComponent::PropertyName_TemplateVersion, PropertyValue(_Generated.TemplateVersion) },
-                { CGenerationRunComponent::PropertyName_PartCount, PropertyValue(static_cast<unsigned long long>(_Generated.Parts.size())) }
-            });
-
-            for (const auto& _Prepared : _PreparedPreviewMembers)
-            {
-                const auto& _Part = _Generated.Parts.at(_Prepared.PartOffsets.front());
-                auto _CombinedLength = 0.0;
-                for (const auto _PartOffset : _Prepared.PartOffsets)
-                    _CombinedLength += _Generated.Parts.at(_PartOffset).Length;
-                const auto _IsAssembly = _Prepared.MemberType == "assembly";
-                const auto _ExistingMember = _Repository.GetEntity(_Prepared.MemberID);
-                if (!_ExistingMember) _Transaction.CreateEntity(_Prepared.MemberID);
-                QueueUpsertComponent(_Transaction, _ExistingMember, _Prepared.MemberID, CAssemblyMemberComponent::S_ClassName, {
-                    { CAssemblyMemberComponent::PropertyName_ProductID, PropertyValue(_ProductID) },
-                    { CAssemblyMemberComponent::PropertyName_ManufacturingPartID, PropertyValue(iCAX::Data::uuid()) },
-                    { CAssemblyMemberComponent::PropertyName_MemberIndex, PropertyValue(static_cast<unsigned long long>(_Prepared.MemberIndex)) },
-                    { CAssemblyMemberComponent::PropertyName_StableKey, PropertyValue(_Prepared.StableKey) },
-                    { CAssemblyMemberComponent::PropertyName_MemberType, PropertyValue(_Prepared.MemberType) },
-                    { CAssemblyMemberComponent::PropertyName_ChildPartCount, PropertyValue(static_cast<unsigned long long>(_Prepared.PartOffsets.size())) },
-                    { CAssemblyMemberComponent::PropertyName_Role, PropertyValue(_Prepared.Role) },
-                    { CAssemblyMemberComponent::PropertyName_Name, PropertyValue(_Prepared.Name) },
-                    { CAssemblyMemberComponent::PropertyName_ProfileType, PropertyValue(_IsAssembly ? std::string("assembly") : _Part.Profile.Type) },
-                    { CAssemblyMemberComponent::PropertyName_SectionWidth, PropertyValue(_IsAssembly ? 0.0 : _Part.Profile.Width) },
-                    { CAssemblyMemberComponent::PropertyName_SectionDepth, PropertyValue(_IsAssembly ? 0.0 : _Part.Profile.Depth) },
-                    { CAssemblyMemberComponent::PropertyName_WallThickness, PropertyValue(_IsAssembly ? 0.0 : _Part.Profile.WallThickness) },
-                    { CAssemblyMemberComponent::PropertyName_CornerRadius, PropertyValue(_IsAssembly ? 0.0 : _Part.Profile.CornerRadius) },
-                    { CAssemblyMemberComponent::PropertyName_Length, PropertyValue(_CombinedLength) },
-                    { CAssemblyMemberComponent::PropertyName_X1, PropertyValue(_Part.X1) },
-                    { CAssemblyMemberComponent::PropertyName_Y1, PropertyValue(_Part.Y1) },
-                    { CAssemblyMemberComponent::PropertyName_X2, PropertyValue(_Part.X2) },
-                    { CAssemblyMemberComponent::PropertyName_Y2, PropertyValue(_Part.Y2) },
-                    { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceID, PropertyValue(_Prepared.PreviewResource.URL) },
-                    { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceVersion, PropertyValue(_Prepared.PreviewResource.nVersion) }
-                });
-                QueueUpsertComponent(
-                    _Transaction,
-                    _ExistingMember,
-                    _Prepared.MemberID,
-                    iCAX::RenderInteraction::CRenderInstanceComponent::S_ClassName,
-                    {
-                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID, PropertyValue(_Prepared.FrontendGeometryResource.URL) },
-                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceVersion, PropertyValue(_Prepared.FrontendGeometryResource.nVersion) },
-                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceID, PropertyValue(_MaterialResource.URL) },
-                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceVersion, PropertyValue(_MaterialResource.nVersion) }
-                    });
-                QueueUpsertComponent(
-                    _Transaction,
-                    _ExistingMember,
-                    _Prepared.MemberID,
-                    iCAX::Transform::CTransformComponent::S_ClassName,
-                    {
-                        { iCAX::Transform::CTransformComponent::PropertyName_RollRadians, PropertyValue(kPreviewRollRadians) }
-                    });
-
-            }
-
-            for (const auto& _PreparedJoint : _PreparedJoints)
-            {
-                const auto& _GeneratedJoint = _PreparedJoint.Generated;
-                const auto& _Target = _PreparedParts.at(
-                    static_cast<std::size_t>(_GeneratedJoint.TargetPartIndex - 1));
-                const auto& _Inserted = _PreparedParts.at(
-                    static_cast<std::size_t>(_GeneratedJoint.InsertedPartIndex - 1));
-                const auto _ExistingJoint = _Repository.GetEntity(_PreparedJoint.JointID);
-                if (!_ExistingJoint) _Transaction.CreateEntity(_PreparedJoint.JointID);
-                QueueUpsertComponent(_Transaction, _ExistingJoint, _PreparedJoint.JointID, CJointIntentComponent::S_ClassName, {
-                    { CJointIntentComponent::PropertyName_ProductID, PropertyValue(_ProductID) },
-                    { CJointIntentComponent::PropertyName_TargetMemberID, PropertyValue(_Target.MemberID) },
-                    { CJointIntentComponent::PropertyName_InsertedMemberID, PropertyValue(_Inserted.MemberID) },
-                    { CJointIntentComponent::PropertyName_Mode, PropertyValue(_GeneratedJoint.Mode) },
-                    { CJointIntentComponent::PropertyName_Clearance, PropertyValue(_GeneratedJoint.Clearance) },
-                    { CJointIntentComponent::PropertyName_X, PropertyValue(_GeneratedJoint.X) },
-                    { CJointIntentComponent::PropertyName_Y, PropertyValue(_GeneratedJoint.Y) }
-                });
-            }
-
-            const iCAX::Data::PropertySet _RootProperties{
-                { CTubeDesignerRootComponent::PropertyName_ActiveProductID, PropertyValue(_ProductID) }
-            };
-            if (_Root)
-            {
-                _Transaction.ModifyComponent(
-                    _Meta->GetID(),
-                    CTubeDesignerRootComponent::S_ClassName,
-                    _RootProperties);
-            }
-            else
-            {
-                _Transaction.AttachComponent(
-                    _Meta->GetID(),
-                    CTubeDesignerRootComponent::S_ClassName,
-                    _RootProperties);
-            }
-
-            std::string _Error;
-            _CommitStarted = true;
-            if (!_Repository.CommitTransaction(_Transaction, _Error))
-            {
-                throw std::runtime_error(_Error.empty()
-                    ? "TubeDesigner failed to commit generated product"
-                    : _Error);
-            }
-        }
-        catch (...)
-        {
-            if (!_CommitStarted)
-            {
-                try { _Repository.CancelTransaction(_Transaction); }
-                catch (...) {}
-            }
-            throw;
-        }
-
-        _Undo->End();
-        return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
+        const auto _TemplateID = GetString(_Payload, "templateId");
+        if (!IsPythonTemplate(ApplicationContext_, _TemplateID))
+            throw std::invalid_argument("unsupported TubeDesigner template: " + _TemplateID);
+        return GenerateNeutralPreview(_Payload, ApplicationContext_, *Scene_);
     }
 
     struct SPreparedManufacturingPart final
@@ -2816,11 +2557,6 @@ namespace
         std::string PartNumber;
         std::string Role;
         std::uint64_t Quantity = 1;
-        std::string ProfileType;
-        double SectionWidth = 0.0;
-        double SectionDepth = 0.0;
-        double WallThickness = 0.0;
-        double CornerRadius = 0.0;
         double Length = 0.0;
         ObjectMap ItemProperties;
         iCAX::Data::uuid MemberID;
@@ -2835,42 +2571,109 @@ namespace
         iCAX::Data::uuid ProductID;
         iCAX::Data::uuid GenerationRunID;
         std::vector<SPreparedManufacturingPart> Parts;
+        ObjectMap ManufacturingModel;
     };
 
+    const iCAX::TemplateRuntime::SOutputSet& ManufacturingOutput(
+        const iCAX::TemplateRuntime::SNeutralModel& Model_)
+    {
+        const auto _Purpose = GetString(Model_.Extensions, "tubeDesigner.geometryPurpose");
+        // Only explicitly manufactured results or legacy export representations
+        // are production inputs. A display result can never be a recovery source.
+        const auto _Output = _Purpose == "manufacturing"
+            ? FindOutputSet(Model_, "result")
+            : (_Purpose.empty() ? FindOutputSet(Model_, "export") : nullptr);
+        if (!_Output || _Output->ItemKeys.empty())
+            throw std::runtime_error("generation run has no manufacturing neutral expression");
+        return *_Output;
+    }
+
+    void ValidateGenerationModelIdentity(
+        const iCAX::TemplateRuntime::SNeutralModel& Model_,
+        const CGenerationRunComponent& Run_)
+    {
+        if (Model_.TemplateID != Run_.GetTemplateID()
+            || Model_.TemplateVersion != Run_.GetTemplateVersion()
+            || (!Run_.GetPackageDigest().empty() && Model_.PackageDigest != Run_.GetPackageDigest()))
+            throw std::runtime_error("stored neutral model identity does not match its generation run");
+    }
+
     SPreparedProductDisassembly PrepareNeutralModelDisassembly(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Project::ISceneContext& Scene_,
         const iCAX::Data::uuid& ProductID_,
         const iCAX::Data::uuid& GenerationRunID_,
         const CProductInstanceComponent& Product_,
         const CGenerationRunComponent& Run_)
     {
-        const auto _Document = Run_.GetNeutralModel();
-        if (_Document.empty())
+        const auto _PreviewDocument = Run_.GetNeutralModel();
+        if (_PreviewDocument.empty())
             throw std::invalid_argument("generation run has no stored neutral model");
-        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
-        if (_Model.TemplateID != Product_.GetTemplateID()
-            || _Model.TemplateVersion != Product_.GetTemplateVersion()
-            || (!Run_.GetPackageDigest().empty() && _Model.PackageDigest != Run_.GetPackageDigest()))
+        const auto _PreviewModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            Variant(_PreviewDocument));
+        ValidateGenerationModelIdentity(_PreviewModel, Run_);
+        if (Run_.GetProductID() != ProductID_
+            || _PreviewModel.TemplateID != Product_.GetTemplateID()
+            || _PreviewModel.TemplateVersion != Product_.GetTemplateVersion())
         {
             throw std::runtime_error("stored neutral model identity does not match its generation run");
         }
-        const auto _Output = FindOutputSet(_Model, "export");
-        if (!_Output || _Output->ItemKeys.empty())
-            throw std::runtime_error("stored neutral model has no export output");
-        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
+        auto _Document = Run_.GetManufacturingModel();
+        if (_Document.empty())
+        {
+            if (GetString(_PreviewModel.Extensions, "tubeDesigner.geometryPurpose") == "display")
+            {
+                // Reproduce the committed design, not current editor values. The
+                // package must still match; never silently manufacture a new design.
+                auto _Payload = _PreviewModel.Parameters;
+                _Payload["templateId"] = _PreviewModel.TemplateID;
+                _Payload["templateVersion"] = _PreviewModel.TemplateVersion;
+                _Document = EvaluateNeutralTemplate(
+                    ApplicationContext_, _Payload, "manufacturing", _PreviewModel.PackageDigest).Document;
+            }
+            else
+            {
+                // Previously saved combined documents already contain the exact
+                // production graph, so they do not require the original template.
+                _Document = _PreviewDocument;
+            }
+        }
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
+        ValidateGenerationModelIdentity(_Model, Run_);
+        if (_Model.Parameters != _PreviewModel.Parameters)
+            throw std::runtime_error("manufacturing parameters do not match the committed preview");
+        const auto& _Output = ManufacturingOutput(_Model);
+        if (_Output.ItemKeys.size() != static_cast<std::size_t>(Run_.GetPartCount()))
+            throw std::runtime_error("manufacturing item count does not match its generation run");
+        const auto _Geometry = _Output.Purpose == "result"
+            ? iCAX::OpenCascade::EvaluateNeutralModel(_Model)
+            : EvaluateOutputGeometry(_Model, _Output);
 
-        SPreparedProductDisassembly _Prepared{ ProductID_, GenerationRunID_, {} };
-        _Prepared.Parts.reserve(_Output->ItemKeys.size());
+        SPreparedProductDisassembly _Prepared{ ProductID_, GenerationRunID_, {}, std::move(_Document) };
+        _Prepared.Parts.reserve(_Output.ItemKeys.size());
         std::uint64_t _Index = 0;
         std::map<std::string, std::uint64_t> _CategoryOrdinals;
-        for (const auto& _ItemKey : _Output->ItemKeys)
+        for (const auto& _ItemKey : _Output.ItemKeys)
         {
             const auto& _Item = FindModelItem(_Model, _ItemKey);
-            const auto _Representation = _Item.Representations.find("export");
+            const auto _Representation = _Item.Representations.find(_Output.Purpose);
             if (_Representation == _Item.Representations.end())
-                throw std::runtime_error("neutral model item has no export representation: " + _Item.Key);
+                throw std::runtime_error("neutral model item has no manufacturing representation: " + _Item.Key);
             ++_Index;
             auto _ItemProperties = _Item.Properties;
+            const auto _PartKind = ManufacturingPartKind(_ItemProperties);
+            if (_PartKind == "plate")
+            {
+                const auto _Plate = ManufacturingPlate(_ItemProperties);
+                const auto _Width = GetDouble(_Plate, "width", 0);
+                const auto _Height = GetDouble(_Plate, "height", 0);
+                const auto _Thickness = GetDouble(_Plate, "thickness", 0);
+                if (!std::isfinite(_Width) || !std::isfinite(_Height) || !std::isfinite(_Thickness)
+                    || _Width <= 0 || _Height <= 0 || _Thickness <= 0
+                    || _Thickness >= std::min(_Width, _Height))
+                    throw std::invalid_argument("板件宽、高、厚度无效，无法拆单");
+                _ItemProperties["length"] = std::max(_Width, _Height);
+            }
             const auto _CategoryKey = OptionalPropertyString(
                 _ItemProperties, "manufacturing.categoryKey", _Item.Key);
             const auto _CategoryName = OptionalPropertyString(
@@ -2886,12 +2689,28 @@ namespace
             _ItemProperties["manufacturing.logicalPartKey"] = _Item.Key;
             _ItemProperties["manufacturing.segmentIndex"] = 1ull;
             _ItemProperties["manufacturing.segmentCount"] = 1ull;
+            _ItemProperties["manufacturing.coordinateSystem"] = std::string(_PartKind == "plate" ? "plate-local" : "part-local");
+            _ItemProperties["manufacturing.origin"] = VariantArray{ 0.0, 0.0, 0.0 };
+            _ItemProperties["manufacturing.lengthAxis"] = VariantArray{ 1.0, 0.0, 0.0 };
+            const auto _MemberID = MakeStableEntityID(ProductID_, "member", _Item.Key);
+            const auto _Sketches = Product_.GetSketches();
+            if (const auto _SideSketches = _Sketches.find("side");
+                _SideSketches != _Sketches.end() && _SideSketches->second.Is<ObjectMap>())
+            {
+                const auto _Side = _SideSketches->second.To<ObjectMap>();
+                if (const auto _Sketch = _Side.find(UuidToString(_MemberID));
+                    _Sketch != _Side.end() && _Sketch->second.Is<ObjectMap>())
+                {
+                    _ItemProperties["tubeDesigner.sideSketch"] = _Sketch->second;
+                }
+            }
             const auto _StablePrefix = "tube-designer/product/" + UuidToString(ProductID_)
                 + "/item/" + _Item.Key;
-            const auto _Profile = OptionalTubeProfile(_ItemProperties);
+            const auto _ManufacturingShape = NormalizeLinearPartForManufacturing(
+                _Geometry.At(_Representation->second));
             const auto _Resource = StoreBRep(
                 Scene_, _StablePrefix + "/manufacturing",
-                _PartNumber + " manufacturing", _Geometry.At(_Representation->second));
+                _PartNumber + " manufacturing", _ManufacturingShape);
             const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
                 Scene_.Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
             _Prepared.Parts.push_back({
@@ -2900,14 +2719,9 @@ namespace
                 _PartNumber,
                 OptionalPropertyString(_ItemProperties, "group"),
                 std::max<std::uint64_t>(1, OptionalPropertyUInt64(_ItemProperties, "quantity", 1)),
-                _Profile.Type,
-                _Profile.Width,
-                _Profile.Depth,
-                _Profile.WallThickness,
-                _Profile.CornerRadius,
                 OptionalPropertyNumber(_ItemProperties, "length"),
                 _ItemProperties,
-                MakeStableEntityID(ProductID_, "member", _Item.Key),
+                _MemberID,
                 MakeStableEntityID(ProductID_, "manufacturing-part", _Item.Key),
                 _Resource,
                 _Thumbnail,
@@ -2920,6 +2734,7 @@ namespace
     }
 
     SPreparedProductDisassembly PrepareProductDisassembly(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Project::ISceneContext& Scene_,
         const iCAX::Data::uuid& ProductID_)
     {
@@ -2929,90 +2744,50 @@ namespace
         if (!_Product) throw std::invalid_argument("TubeDesigner product instance does not exist");
         const auto _GenerationRunID = _Product->GetActiveGenerationRunID();
         if (_GenerationRunID.is_nil())
-        {
             throw std::runtime_error("TubeDesigner product instance has no committed preview");
-        }
 
         const auto _Run = GetComponent<CGenerationRunComponent>(
             _Repository.GetEntity(_GenerationRunID));
         if (!_Run) throw std::runtime_error("TubeDesigner product generation run does not exist");
-        if (!_Run->GetNeutralModel().empty())
-        {
-            return PrepareNeutralModelDisassembly(
-                Scene_, ProductID_, _GenerationRunID, *_Product, *_Run);
-        }
+        if (_Run->GetNeutralModel().empty())
+            throw std::invalid_argument("legacy C++ template products are no longer supported");
+        return PrepareNeutralModelDisassembly(
+            ApplicationContext_, Scene_, ProductID_, _GenerationRunID, *_Product, *_Run);
+    }
 
-        auto _TemplatePayload = _Product->GetParameters();
-        _TemplatePayload["templateId"] = _Product->GetTemplateID();
-        _TemplatePayload["templateVersion"] = _Product->GetTemplateVersion();
-        const auto _Evaluation = EvaluateTemplate(_TemplatePayload);
-        const auto& _Generated = _Evaluation.Product;
-        std::vector<TopoDS_Shape> _ManufacturingShapes;
-        _ManufacturingShapes.reserve(_Generated.Parts.size());
-        for (const auto& _Part : _Generated.Parts)
+    TopoDS_Shape RecoverManufacturingShapeFromGeneration(
+        iCAX::Database::IRepository& Repository_,
+        const CManufacturingPartComponent& Part_)
+    {
+        const auto _Run = GetComponent<CGenerationRunComponent>(
+            Repository_.GetEntity(Part_.GetGenerationRunID()));
+        if (!_Run || _Run->GetProductID() != Part_.GetProductID())
+            throw std::runtime_error("generation run has no neutral model for BRep recovery");
+        const auto _Document = _Run->GetManufacturingModel().empty()
+            ? _Run->GetNeutralModel() : _Run->GetManufacturingModel();
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            Variant(_Document));
+        ValidateGenerationModelIdentity(_Model, *_Run);
+        if (!_Run->GetManufacturingModel().empty())
         {
-            _ManufacturingShapes.push_back(MakeManufacturingShape(_Part));
+            const auto _PreviewModel = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+                Variant(_Run->GetNeutralModel()));
+            ValidateGenerationModelIdentity(_PreviewModel, *_Run);
+            if (_Model.Parameters != _PreviewModel.Parameters)
+                throw std::runtime_error("manufacturing recovery parameters do not match the generation run");
         }
-        for (const auto& _Joint : _Generated.Joints)
-        {
-            const auto _Target = static_cast<std::size_t>(_Joint.TargetPartIndex - 1);
-            const auto _Inserted = static_cast<std::size_t>(_Joint.InsertedPartIndex - 1);
-            if (_Target >= _ManufacturingShapes.size() || _Inserted >= _Generated.Parts.size())
-            {
-                throw std::runtime_error("TubeDesigner generated an invalid joint reference");
-            }
-            if (_Joint.Mode != "through") continue;
-            if (_Generated.Parts[_Target].ManufacturingGeometry)
-            {
-                // Assembly openings are positioned on the folded preview. The unfolded
-                // V-groove tube has its own explicit manufacturing geometry and must not
-                // be cut using folded XY coordinates.
-                continue;
-            }
-            const auto _Cutter = MakeTubeShape(
-                _Generated.Parts[_Inserted], _Joint.Clearance, false);
-            BRepAlgoAPI_Cut _Cut(_ManufacturingShapes[_Target], _Cutter);
-            if (!_Cut.IsDone()) throw std::runtime_error("TubeDesigner joint boolean failed");
-            _ManufacturingShapes[_Target] = _Cut.Shape();
-        }
-
-        const auto _StableKeys = MakeStablePartKeys(_Generated);
-        SPreparedProductDisassembly _Prepared{ ProductID_, _GenerationRunID, {} };
-        _Prepared.Parts.reserve(_Generated.Parts.size());
-        for (std::size_t _Index = 0; _Index < _Generated.Parts.size(); ++_Index)
-        {
-            const auto& _Part = _Generated.Parts[_Index];
-            const auto& _StableKey = _StableKeys[_Index];
-            const auto _StablePrefix = "tube-designer/product/" + UuidToString(ProductID_)
-                + "/part/" + _StableKey;
-            const auto _Resource = StoreBRep(
-                Scene_, _StablePrefix + "/manufacturing",
-                _Part.PartNumber + " manufacturing", _ManufacturingShapes[_Index]);
-            const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
-                Scene_.Resources(), _Resource.URL,
-                iCAX::Render::ERenderGeometryKind::Mesh);
-            _Prepared.Parts.push_back({
-                _Part.Index,
-                _StableKey,
-                _Part.PartNumber,
-                _Part.Role,
-                1,
-                _Part.Profile.Type,
-                _Part.Profile.Width,
-                _Part.Profile.Depth,
-                _Part.Profile.WallThickness,
-                _Part.Profile.CornerRadius,
-                _Part.Length,
-                {},
-                MakeStableEntityID(ProductID_, "member",
-                    MakePreviewMemberStableKey(_Part, _StableKey)),
-                MakeStableEntityID(ProductID_, "manufacturing-part", _StableKey),
-                _Resource,
-                _Thumbnail,
-                MakeStepFileName(_Part.PartNumber)
-            });
-        }
-        return _Prepared;
+        const auto& _Output = ManufacturingOutput(_Model);
+        if (std::find(_Output.ItemKeys.begin(), _Output.ItemKeys.end(), Part_.GetStableKey())
+            == _Output.ItemKeys.end())
+            throw std::runtime_error("manufacturing item is not part of its generation result");
+        const auto& _Item = FindModelItem(_Model, Part_.GetStableKey());
+        const auto _Representation = _Item.Representations.find(_Output.Purpose);
+        if (_Representation == _Item.Representations.end())
+            throw std::runtime_error("manufacturing item has no result representation");
+        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(
+            _Model, { _Representation->second });
+        return NormalizeLinearPartForManufacturing(
+            _Geometry.At(_Representation->second));
     }
 
     iCAX::Interaction::CInvocationResult HandleDisassemble(
@@ -3060,7 +2835,7 @@ namespace
         _PreparedProducts.reserve(_ProductIDs.size());
         for (const auto& _ProductID : _ProductIDs)
         {
-            _PreparedProducts.push_back(PrepareProductDisassembly(*Scene_, _ProductID));
+            _PreparedProducts.push_back(PrepareProductDisassembly(ApplicationContext_, *Scene_, _ProductID));
         }
 
         auto _Undo = _Repository.BeginUndoCommand("Disassemble TubeDesigner product instances");
@@ -3070,6 +2845,11 @@ namespace
         {
             for (const auto& _PreparedProduct : _PreparedProducts)
             {
+                _Transaction.ModifyComponent(
+                    _PreparedProduct.GenerationRunID, CGenerationRunComponent::S_ClassName, {
+                        { CGenerationRunComponent::PropertyName_ManufacturingModel,
+                            PropertyValue(_PreparedProduct.ManufacturingModel) }
+                    });
                 std::vector<iCAX::Data::uuid> _DesiredPartIDs;
                 _DesiredPartIDs.reserve(_PreparedProduct.Parts.size());
                 for (const auto& _Prepared : _PreparedProduct.Parts)
@@ -3100,11 +2880,6 @@ namespace
                             { CManufacturingPartComponent::PropertyName_PartNumber, PropertyValue(_Prepared.PartNumber) },
                             { CManufacturingPartComponent::PropertyName_Role, PropertyValue(_Prepared.Role) },
                             { CManufacturingPartComponent::PropertyName_Quantity, PropertyValue(static_cast<unsigned long long>(_Prepared.Quantity)) },
-                            { CManufacturingPartComponent::PropertyName_ProfileType, PropertyValue(_Prepared.ProfileType) },
-                            { CManufacturingPartComponent::PropertyName_SectionWidth, PropertyValue(_Prepared.SectionWidth) },
-                            { CManufacturingPartComponent::PropertyName_SectionDepth, PropertyValue(_Prepared.SectionDepth) },
-                            { CManufacturingPartComponent::PropertyName_WallThickness, PropertyValue(_Prepared.WallThickness) },
-                            { CManufacturingPartComponent::PropertyName_CornerRadius, PropertyValue(_Prepared.CornerRadius) },
                             { CManufacturingPartComponent::PropertyName_Length, PropertyValue(_Prepared.Length) },
                             { CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceID, PropertyValue(_Prepared.ManufacturingResource.URL) },
                             { CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceVersion, PropertyValue(_Prepared.ManufacturingResource.nVersion) },
@@ -3211,19 +2986,37 @@ namespace
             throw std::runtime_error("final BRep resource version is not available");
         }
         const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(*_BRep);
-        if (!_Rebuilt.bOK || _Rebuilt.Shape.IsNull())
+        auto _FinalShape = _Rebuilt.Shape;
+        auto _RecoveredFromGeneration = false;
+        if (!_Rebuilt.bOK || _FinalShape.IsNull())
         {
-            std::ostringstream _Message;
-            _Message << "无法读取最终零件几何";
-            for (const auto& _Diagnostic : _Rebuilt.Diagnostics)
+            try
             {
-                _Message << ": " << _Diagnostic;
+                _FinalShape = RecoverManufacturingShapeFromGeneration(
+                    _Repository, *_Part);
+                _RecoveredFromGeneration = !_FinalShape.IsNull();
             }
-            throw std::runtime_error(_Message.str());
+            catch (const std::exception& _RecoveryError)
+            {
+                std::ostringstream _Message;
+                _Message << "无法读取最终零件几何";
+                for (const auto& _Diagnostic : _Rebuilt.Diagnostics)
+                {
+                    _Message << ": " << _Diagnostic;
+                }
+                _Message << ": recovery failed: " << _RecoveryError.what();
+                throw std::runtime_error(_Message.str());
+            }
         }
-        auto _Measurement = MeasureFinalPartGeometry(
-            _Rebuilt.Shape, _ResourceID, _ResourceVersion);
+        if (_FinalShape.IsNull())
+        {
+            throw std::runtime_error("无法读取最终零件几何: recovered shape is empty");
+        }
+        auto _Measurement = ManufacturingPartKind(_Part->GetItemProperties()) == "plate"
+            ? MeasureFinalPlateGeometry(_FinalShape, _ResourceID, _ResourceVersion)
+            : MeasureFinalPartGeometry(_FinalShape, _ResourceID, _ResourceVersion);
         _Measurement["partEntityId"] = UuidToString(_PartID);
+        _Measurement["recoveredFromGeneration"] = _RecoveredFromGeneration;
         {
             const std::lock_guard _Lock(_CacheMutex);
             _Cache[_CacheKey] = _Measurement;
@@ -3361,6 +3154,9 @@ namespace
                     "已导出 " + _Part->GetFileName());
 
                 const auto _Presentation = ResolvePartPresentation(_Repository, *_Part);
+                const auto _Properties = _Part->GetItemProperties();
+                const auto _Kind = ManufacturingPartKind(_Properties);
+                const auto _Plate = ManufacturingPlate(_Properties);
                 _PartListRows.push_back({
                     _ProductIndex,
                     _Product->GetName(),
@@ -3368,15 +3164,15 @@ namespace
                     _Part->GetPartIndex(),
                     _Part->GetPartNumber(),
                     _Presentation.Name,
-                    _Presentation.Profile.Type,
-                    _Presentation.Profile.Width,
-                    _Presentation.Profile.Depth,
-                    _Presentation.Profile.WallThickness,
-                    _Presentation.Profile.CornerRadius,
+                    _Kind == "plate" ? "板件" : OptionalPropertyString(_Presentation.Profile, "displayName", "管材"),
+                    _Kind == "plate" ? PlateSpecification(_Plate) : OptionalPropertyString(_Presentation.Profile, "specification"),
                     _Part->GetLength(),
                     _Part->GetQuantity(),
                     _Part->GetFileName(),
-                    Utf8PathText(Utf8Path(_FolderName) / Utf8Path(_Part->GetFileName()))
+                    Utf8PathText(Utf8Path(_FolderName) / Utf8Path(_Part->GetFileName())),
+                    _Kind,
+                    GetDouble(_Plate, "width", 0), GetDouble(_Plate, "height", 0), GetDouble(_Plate, "thickness", 0),
+                    GetString(_Properties, "manufacturing.material")
                 });
             }
             ObjectMap _GroupResult;
@@ -3403,18 +3199,700 @@ namespace
         return MakeResponse(Variant(_Result));
     }
 
+    iCAX::Interaction::CInvocationResult HandleSaveNestingSettings(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext*,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_) throw std::invalid_argument("TubeDesigner.SaveNestingSettings requires a scene");
+        if (Request_.Payload.size() > 8 * 1024 * 1024)
+            throw std::invalid_argument("母材设置过大，请减少母材行数");
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _Settings = NormalizeNestingSettings(GetRequiredObject(_Payload, "settings"));
+        auto& _Repository = Scene_->Database();
+        const auto _Meta = _Repository.GetMetaEntity();
+        if (!_Meta) throw std::runtime_error("TubeDesigner requires repository meta entity");
+        const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
+        if (_Root && _Root->GetNestingSettings() == _Settings)
+            return MakeResponse(Variant(ObjectMap{ { "settings", _Settings } }));
+        auto _Undo = _Repository.BeginUndoCommand("Save TubeDesigner nesting settings");
+        auto& _Transaction = _Repository.BeginTransaction("Update TubeDesigner nesting settings");
+        bool _CommitStarted = false;
+        try
+        {
+            QueueUpsertComponent(
+                _Transaction, _Meta, _Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
+                { { CTubeDesignerRootComponent::PropertyName_NestingSettings, PropertyValue(_Settings) } });
+            std::string _Error;
+            _CommitStarted = true;
+            if (!_Repository.CommitTransaction(_Transaction, _Error))
+                throw std::runtime_error(_Error.empty() ? "保存排样设置失败" : _Error);
+        }
+        catch (...)
+        {
+            if (!_CommitStarted)
+            {
+                try { _Repository.CancelTransaction(_Transaction); }
+                catch (...) {}
+            }
+            throw;
+        }
+        _Undo->End();
+        return MakeResponse(Variant(ObjectMap{ { "settings", _Settings } }));
+    }
+
+    TopoDS_Shape NestingManufacturingShape(
+        iCAX::Project::ISceneContext& Scene_, const CManufacturingPartComponent& Part_)
+    {
+        const auto _BRep = Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(
+            Part_.GetManufacturingGeometryResourceID(), Part_.GetManufacturingGeometryResourceVersion());
+        if (!_BRep) throw std::invalid_argument("零件的最终制造几何资源不可用，请重新拆单");
+        const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(*_BRep);
+        auto _Shape = _Rebuilt.Shape;
+        if (!_Rebuilt.bOK || _Shape.IsNull())
+            _Shape = RecoverManufacturingShapeFromGeneration(Scene_.Database(), Part_);
+        if (_Shape.IsNull()) throw std::runtime_error("无法读取零件最终几何，已停止排样以避免截短零件");
+        return _Shape;
+    }
+
+    struct SNestingGeometrySummary final
+    {
+        double EnvelopeLength = 0.0;
+        SLinearNestingGeometry LinearGeometry;
+    };
+
+    SNestingGeometrySummary NestingGeometrySummary(
+        iCAX::Project::ISceneContext& Scene_, const CManufacturingPartComponent& Part_)
+    {
+        const auto _ResourceID = Part_.GetManufacturingGeometryResourceID();
+        const auto _Version = Part_.GetManufacturingGeometryResourceVersion();
+        if (_ResourceID.empty() || _Version == 0)
+            throw std::invalid_argument("零件缺少最终制造几何，请回到产品重新拆单");
+        const auto _Key = _ResourceID + "@" + std::to_string(_Version);
+        static std::mutex _Mutex;
+        static std::map<std::string, SNestingGeometrySummary> _Measurements;
+        {
+            const std::lock_guard _Lock(_Mutex);
+            if (const auto _Found = _Measurements.find(_Key); _Found != _Measurements.end())
+            {
+                auto _Result = _Found->second;
+                _Result.EnvelopeLength = std::max(Part_.GetLength(), _Result.EnvelopeLength);
+                return _Result;
+            }
+        }
+        const auto _Shape = NestingManufacturingShape(Scene_, Part_);
+        // Disassembly normalizes manufacturing geometry to +X with a centered box.
+        Bnd_Box _Box;
+        BRepBndLib::AddOptimal(_Shape, _Box, false, false);
+        _Box.SetGap(0.0);
+        if (_Box.IsVoid() || _Box.IsWhole())
+            throw std::runtime_error("零件轴向包围长度无效，无法安全排样");
+        double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+        _Box.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+        const auto _Length = _X1 - _X0;
+        if (!std::isfinite(_Length) || _Length <= 0.0)
+            throw std::runtime_error("零件轴向包围长度必须大于 0");
+        SNestingGeometrySummary _Result{ _Length, MeasureLinearNestingGeometry(_Shape) };
+        {
+            const std::lock_guard _Lock(_Mutex);
+            if (_Measurements.size() > 10000) _Measurements.clear();
+            _Measurements[_Key] = _Result;
+        }
+        _Result.EnvelopeLength = std::max(Part_.GetLength(), _Result.EnvelopeLength);
+        return _Result;
+    }
+
+    std::string LowerAscii(std::string Value_)
+    {
+        std::ranges::transform(Value_, Value_.begin(), [](const unsigned char Value_) {
+            return static_cast<char>(std::tolower(Value_));
+        });
+        return Value_;
+    }
+
+    bool ProfileAllowsNestingRotations(const ObjectMap& Profile_)
+    {
+        const auto _Identity = LowerAscii(GetString(Profile_, "id") + " " + GetString(Profile_, "kind"));
+        if (_Identity.find("round") != std::string::npos
+            || _Identity.find("circle") != std::string::npos
+            || _Identity.find("ellipse") != std::string::npos
+            || _Identity.find("oval") != std::string::npos
+            || _Identity.find("rect") != std::string::npos
+            || _Identity.find("square") != std::string::npos)
+            return true;
+        if (_Identity.find("polygon") == std::string::npos) return false;
+        const auto _Parameters = Profile_.find("parameters");
+        if (_Parameters == Profile_.end() || !_Parameters->second.Is<ObjectMap>()) return false;
+        const auto _Values = _Parameters->second.To<ObjectMap>();
+        const auto _SideCount = GetDouble(_Values, "sideCount", 0.0);
+        return std::isfinite(_SideCount) && _SideCount >= 4.0
+            && std::floor(_SideCount) == _SideCount
+            && static_cast<long long>(_SideCount) % 2 == 0;
+    }
+
+    std::string NestingPlaneKey(const double GradientY_, const double GradientZ_)
+    {
+        if (!std::isfinite(GradientY_) || !std::isfinite(GradientZ_)) return {};
+        constexpr double _Units = 100000.0;
+        return std::to_string(std::llround(GradientY_ * _Units)) + ":"
+            + std::to_string(std::llround(GradientZ_ * _Units));
+    }
+
+    SPlanarNestingEnd TransformedNestingEnd(
+        const SPlanarNestingEnd& Source_, const bool Reversed_, const double Rotation_)
+    {
+        auto _GradientY = Source_.GradientY;
+        auto _GradientZ = Source_.GradientZ;
+        if (Reversed_) _GradientZ = -_GradientZ;
+        const auto _Cosine = std::cos(Rotation_);
+        const auto _Sine = std::sin(Rotation_);
+        return {
+            Source_.IsPlanar,
+            Source_.Projection,
+            _Cosine * _GradientY - _Sine * _GradientZ,
+            _Sine * _GradientY + _Cosine * _GradientZ
+        };
+    }
+
+    std::vector<SNestingVariant> BuildNestingVariants(
+        const ObjectMap& Profile_, const SLinearNestingGeometry& Geometry_,
+        const double EnvelopeLength_)
+    {
+        constexpr double _Tolerance = 0.021;
+        constexpr double _Pi = 3.14159265358979323846;
+        if (!Geometry_.IsReliable || !ProfileAllowsNestingRotations(Profile_)
+            || std::abs(Geometry_.EnvelopeLength - EnvelopeLength_) > _Tolerance
+            || (Geometry_.Left.Projection <= _Tolerance
+                && Geometry_.Right.Projection <= _Tolerance))
+            return {};
+
+        std::vector<SNestingVariant> _Variants;
+        // A half-turn around the stock axis is safe for every centrally symmetric
+        // section regardless of its normalized roll. End-for-end reversal would
+        // additionally require proving a specific section mirror axis, so it is
+        // intentionally not guessed here.
+        for (const auto _Reversed : { false })
+        {
+            for (const auto _Rotation : { 0.0, _Pi })
+            {
+                const auto _LeftSource = _Reversed ? Geometry_.Right : Geometry_.Left;
+                const auto _RightSource = _Reversed ? Geometry_.Left : Geometry_.Right;
+                const auto _Left = TransformedNestingEnd(_LeftSource, _Reversed, _Rotation);
+                const auto _Right = TransformedNestingEnd(_RightSource, _Reversed, _Rotation);
+                const auto _MakeEnd = [&] (const SPlanarNestingEnd& Source_) {
+                    SNestingEnd _End;
+                    // Retain a geometric tolerance between nominally matching planes.
+                    _End.Projection = std::max(0.0, Source_.Projection - _Tolerance);
+                    _End.NestingPlane = NestingPlaneKey(Source_.GradientY, Source_.GradientZ);
+                    _End.AllowTrapezoidNesting = Source_.IsPlanar
+                        && _End.Projection > 0.0 && !_End.NestingPlane.empty();
+                    return _End;
+                };
+                SNestingVariant _Variant;
+                _Variant.ID = std::string(_Reversed ? "reverse" : "forward")
+                    + (_Rotation == 0.0 ? "-0" : "-180");
+                _Variant.EnvelopeLength = EnvelopeLength_;
+                _Variant.MaterialLength = std::clamp(
+                    Geometry_.MaterialEquivalentLength, 0.01, EnvelopeLength_);
+                _Variant.LeftEnd = _MakeEnd(_Left);
+                _Variant.RightEnd = _MakeEnd(_Right);
+                _Variant.Reversed = _Reversed;
+                _Variant.RotationRadians = _Rotation;
+                _Variants.push_back(std::move(_Variant));
+            }
+        }
+        return _Variants;
+    }
+
+    std::optional<const SNestingVariant*> FindNestingVariant(
+        const SNestingPart& Part_, const std::string& ID_,
+        const bool Reversed_, const double Rotation_)
+    {
+        if (Part_.Variants.empty())
+            return ID_ == "default" && !Reversed_ && std::abs(Rotation_) <= 1.0e-9
+                ? std::optional<const SNestingVariant*>{ nullptr } : std::nullopt;
+        const auto _Found = std::ranges::find_if(Part_.Variants, [&](const auto& Variant_) {
+            return Variant_.ID == ID_ && Variant_.Reversed == Reversed_
+                && std::abs(Variant_.RotationRadians - Rotation_) <= 1.0e-9;
+        });
+        return _Found == Part_.Variants.end()
+            ? std::nullopt : std::optional<const SNestingVariant*>{ &*_Found };
+    }
+
+    double QuantizedNestingLength(const double Value_, const bool RoundUp_)
+    {
+        return (RoundUp_ ? std::ceil(Value_ * 100.0 - 1.0e-6)
+                         : std::floor(Value_ * 100.0 + 1.0e-6)) / 100.0;
+    }
+
+    ObjectMap SolveManufacturingNestingWithLocks(
+        const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
+        const double Gap_, const VariantArray& LockedValues_)
+    {
+        if (LockedValues_.empty()) return SolveManufacturingNesting(Parts_, Stocks_, Gap_);
+        constexpr double _Tolerance = 0.011;
+        std::map<std::string, const SNestingPart*> _PartsByID;
+        std::map<std::string, const SNestingStock*> _StocksByID;
+        for (const auto& _Part : Parts_) _PartsByID.emplace(_Part.ID, &_Part);
+        for (const auto& _Stock : Stocks_) _StocksByID.emplace(_Stock.ID, &_Stock);
+        std::map<std::string, std::size_t> _LockedPartCounts, _LockedStockCounts;
+        std::set<std::string> _PlanIDs, _InstanceIDs;
+        VariantArray _LockedPlans;
+        for (const auto& _Value : LockedValues_)
+        {
+            if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("锁定的排样结果必须是对象");
+            auto _Plan = _Value.To<ObjectMap>();
+            const auto _PlanID = GetRequiredText(_Plan, "id", 320);
+            const auto _StockID = GetRequiredText(_Plan, "stockTypeId", 160);
+            const auto _ProfileKey = GetRequiredText(_Plan, "profileKey", 65536);
+            if (!_PlanIDs.insert(_PlanID).second) throw std::invalid_argument("锁定的排样结果编号重复");
+            const auto _StockFound = _StocksByID.find(_StockID);
+            if (_StockFound == _StocksByID.end() || _StockFound->second->ProfileKey != _ProfileKey)
+                throw std::invalid_argument("锁定结果使用的母材已改变，请取消锁定后重新排样");
+            const auto& _Stock = *_StockFound->second;
+            const auto _StockLength = GetDouble(_Plan, "stockLength", -1.0);
+            if (!std::isfinite(_StockLength) || std::abs(_StockLength - _Stock.Length) > _Tolerance)
+                throw std::invalid_argument("锁定结果的母材长度已改变，请取消锁定后重新排样");
+            const auto _PlacementField = _Plan.find("placements");
+            if (_PlacementField == _Plan.end() || !_PlacementField->second.Is<VariantArray>())
+                throw std::invalid_argument("锁定结果缺少零件排布");
+            auto _Placements = _PlacementField->second.To<VariantArray>();
+            if (_Placements.empty()) throw std::invalid_argument("空排样结果不能锁定");
+            double _PreviousEnd = 0.0, _PartLength = 0.0;
+            std::optional<const SNestingVariant*> _PreviousVariant;
+            for (std::size_t _Index = 0; _Index < _Placements.size(); ++_Index)
+            {
+                if (!_Placements[_Index].Is<ObjectMap>())
+                    throw std::invalid_argument("锁定结果中的零件排布必须是对象");
+                auto _Placement = _Placements[_Index].To<ObjectMap>();
+                const auto _PartID = GetRequiredText(_Placement, "partId", 160);
+                const auto _InstanceID = GetRequiredText(_Placement, "instanceId", 320);
+                const auto _PartFound = _PartsByID.find(_PartID);
+                if (_PartFound == _PartsByID.end() || _PartFound->second->ProfileKey != _ProfileKey)
+                    throw std::invalid_argument("锁定结果中的零件已改变，请取消锁定后重新排样");
+                if (!_InstanceIDs.insert(_InstanceID).second)
+                    throw std::invalid_argument("锁定结果中存在重复的零件实例");
+                const auto _Start = GetDouble(_Placement, "start", -1.0);
+                const auto _End = GetDouble(_Placement, "end", -1.0);
+                const auto _Length = GetDouble(_Placement, "length", _End - _Start);
+                const auto _ReversedField = _Placement.find("reversed");
+                const auto _NestedField = _Placement.find("nestedWithPrevious");
+                if (_ReversedField == _Placement.end() || !_ReversedField->second.Is<bool>()
+                    || _NestedField == _Placement.end() || !_NestedField->second.Is<bool>())
+                    throw std::invalid_argument("锁定结果中的零件方向或梯形套切标记无效");
+                const auto _Reversed = _ReversedField->second.To<bool>();
+                const auto _Rotation = GetDouble(_Placement, "rotationRadians", 0.0);
+                const auto _VariantID = GetRequiredText(_Placement, "variantId", 160);
+                const auto _Variant = FindNestingVariant(
+                    *_PartFound->second, _VariantID, _Reversed, _Rotation);
+                if (!_Variant) throw std::invalid_argument("锁定结果中的零件姿态已改变，请取消锁定后重新排样");
+                auto _ExpectedGap = _Index ? QuantizedNestingLength(Gap_, true) : 0.0;
+                bool _DidNest = false;
+                if (_Index && _PreviousVariant && *_PreviousVariant && *_Variant)
+                {
+                    const auto& _PreviousEndDescriptor = (*_PreviousVariant)->RightEnd;
+                    const auto& _NextEndDescriptor = (*_Variant)->LeftEnd;
+                    if (_PreviousEndDescriptor.AllowTrapezoidNesting
+                        && _NextEndDescriptor.AllowTrapezoidNesting
+                        && _PreviousEndDescriptor.NestingPlane == _NextEndDescriptor.NestingPlane)
+                    {
+                        const auto _Overlap = std::min(
+                            QuantizedNestingLength(_PreviousEndDescriptor.Projection, false),
+                            QuantizedNestingLength(_NextEndDescriptor.Projection, false));
+                        if (_Overlap > 0.0)
+                        {
+                            _ExpectedGap -= _Overlap;
+                            _DidNest = true;
+                        }
+                    }
+                }
+                const auto _GapBefore = GetDouble(_Placement, "gapBefore", std::numeric_limits<double>::quiet_NaN());
+                const auto _Nested = _NestedField->second.To<bool>();
+                if (!std::isfinite(_Start) || !std::isfinite(_End) || !std::isfinite(_Length)
+                    || !std::isfinite(_Rotation) || !std::isfinite(_GapBefore)
+                    || _Start < 0.0 || _End <= _Start
+                    || _End - _Start < _PartFound->second->Length - _Tolerance
+                    || std::abs(_Length - (_End - _Start)) > _Tolerance
+                    || std::abs(_GapBefore - _ExpectedGap) > _Tolerance
+                    || std::abs(_Start - (_PreviousEnd + _ExpectedGap)) > _Tolerance
+                    || _Nested != _DidNest
+                    || _End > _StockLength + _Tolerance)
+                    throw std::invalid_argument("锁定结果中的零件位置、长度或间距无效");
+                ++_LockedPartCounts[_PartID];
+                _PartLength += *_Variant
+                    ? std::min(
+                        QuantizedNestingLength(_PartFound->second->Length, true),
+                        QuantizedNestingLength((*_Variant)->MaterialLength, true))
+                    : QuantizedNestingLength(_PartFound->second->Length, true);
+                _PreviousEnd = _End;
+                _PreviousVariant = *_Variant;
+                _Placement["length"] = _End - _Start;
+                _Placement["gapBefore"] = _ExpectedGap;
+                _Placement["nestedWithPrevious"] = _DidNest;
+                _Placement["variantId"] = _VariantID;
+                _Placement["rotationRadians"] = _Rotation;
+                _Placements[_Index] = std::move(_Placement);
+            }
+            const auto _UsedLength = GetDouble(_Plan, "usedLength", -1.0);
+            const auto _RemainingLength = GetDouble(_Plan, "remainingLength", -1.0);
+            if (!std::isfinite(_UsedLength) || !std::isfinite(_RemainingLength)
+                || std::abs(_UsedLength - _PreviousEnd) > _Tolerance
+                || std::abs(_StockLength - _UsedLength - _RemainingLength) > _Tolerance)
+                throw std::invalid_argument("锁定结果的已用长度或余料无效");
+            ++_LockedStockCounts[_StockID];
+            _Plan["placements"] = std::move(_Placements);
+            _Plan["stockLength"] = _StockLength;
+            _Plan["usedLength"] = _UsedLength;
+            _Plan["remainingLength"] = _RemainingLength;
+            _Plan["partLength"] = _PartLength;
+            _Plan["partCount"] = static_cast<unsigned long long>(
+                _Plan.at("placements").To<VariantArray>().size());
+            _Plan["utilization"] = _StockLength > 0.0 ? _PartLength / _StockLength : 0.0;
+            _LockedPlans.emplace_back(std::move(_Plan));
+        }
+        for (const auto& _Part : Parts_)
+            if (_LockedPartCounts[_Part.ID] > _Part.Quantity)
+                throw std::invalid_argument("锁定结果使用的零件数量超过当前清单");
+        for (const auto& _Stock : Stocks_)
+            if (_Stock.Quantity >= 0 && _LockedStockCounts[_Stock.ID] > static_cast<std::size_t>(_Stock.Quantity))
+                throw std::invalid_argument("锁定结果使用的母材数量超过当前库存");
+
+        auto _RemainingParts = Parts_;
+        for (auto& _Part : _RemainingParts) _Part.Quantity -= _LockedPartCounts[_Part.ID];
+        std::erase_if(_RemainingParts, [](const auto& _Part) { return _Part.Quantity == 0; });
+        auto _RemainingStocks = Stocks_;
+        for (auto& _Stock : _RemainingStocks)
+            if (_Stock.Quantity >= 0) _Stock.Quantity -= static_cast<std::int64_t>(_LockedStockCounts[_Stock.ID]);
+
+        ObjectMap _Solved = _RemainingParts.empty()
+            ? ObjectMap{
+                { "status", std::string("feasible") }, { "plans", VariantArray{} },
+                { "unplaced", VariantArray{} }, { "diagnostics", VariantArray{} },
+                { "metrics", ObjectMap{} } }
+            : SolveManufacturingNesting(_RemainingParts, _RemainingStocks, Gap_);
+        auto _FreshPlans = _Solved.at("plans").To<VariantArray>();
+        std::map<std::string, std::size_t> _FreshPlanOrdinals, _FreshPartOrdinals;
+        for (auto& _Value : _FreshPlans)
+        {
+            auto _Plan = _Value.To<ObjectMap>();
+            auto _PlanID = GetRequiredText(_Plan, "id", 320);
+            if (_PlanIDs.contains(_PlanID))
+            {
+                const auto _StockID = GetRequiredText(_Plan, "stockTypeId", 160);
+                do { _PlanID = _StockID + "#rerun-" + std::to_string(++_FreshPlanOrdinals[_StockID]); }
+                while (_PlanIDs.contains(_PlanID));
+                _Plan["id"] = _PlanID;
+            }
+            _PlanIDs.insert(_PlanID);
+            auto _Placements = _Plan.at("placements").To<VariantArray>();
+            for (auto& _PlacementValue : _Placements)
+            {
+                auto _Placement = _PlacementValue.To<ObjectMap>();
+                auto _InstanceID = GetRequiredText(_Placement, "instanceId", 320);
+                if (_InstanceIDs.contains(_InstanceID))
+                {
+                    const auto _PartID = GetRequiredText(_Placement, "partId", 160);
+                    do { _InstanceID = _PartID + "#rerun-" + std::to_string(++_FreshPartOrdinals[_PartID]); }
+                    while (_InstanceIDs.contains(_InstanceID));
+                    _Placement["instanceId"] = _InstanceID;
+                }
+                _InstanceIDs.insert(_InstanceID);
+                _PlacementValue = std::move(_Placement);
+            }
+            _Plan["placements"] = std::move(_Placements);
+            _Value = std::move(_Plan);
+        }
+        VariantArray _Plans = std::move(_LockedPlans);
+        _Plans.insert(_Plans.end(), _FreshPlans.begin(), _FreshPlans.end());
+        auto _Unplaced = _Solved.at("unplaced").To<VariantArray>();
+        auto _Diagnostics = _Solved.at("diagnostics").To<VariantArray>();
+        _Diagnostics.insert(_Diagnostics.begin(), std::string("已固定锁定的排样结果，仅对其余零件和母材重新求解。"));
+        std::size_t _PlacedCount = 0;
+        double _TotalStock = 0.0, _PartLength = 0.0, _UsedLength = 0.0;
+        for (const auto& _Value : _Plans)
+        {
+            const auto _Plan = _Value.To<ObjectMap>();
+            _PlacedCount += _Plan.at("placements").To<VariantArray>().size();
+            _TotalStock += GetDouble(_Plan, "stockLength", 0.0);
+            _PartLength += GetDouble(_Plan, "partLength", 0.0);
+            _UsedLength += GetDouble(_Plan, "usedLength", 0.0);
+        }
+        std::size_t _UnplacedCount = 0, _RequestedCount = 0;
+        for (const auto& _Part : Parts_) _RequestedCount += _Part.Quantity;
+        for (const auto& _Value : _Unplaced)
+            _UnplacedCount += static_cast<std::size_t>(GetUInt64(_Value.To<ObjectMap>(), "quantity", 0));
+        const auto _SolvedMetrics = _Solved.at("metrics").To<ObjectMap>();
+        const auto _Status = !_Unplaced.empty() ? (_Plans.empty() ? "infeasible" : "partial") : "feasible";
+        return {
+            { "status", std::string(_Status) }, { "plans", std::move(_Plans) },
+            { "unplaced", std::move(_Unplaced) }, { "diagnostics", std::move(_Diagnostics) },
+            { "metrics", ObjectMap{
+                { "requestedPartCount", static_cast<unsigned long long>(_RequestedCount) },
+                { "placedPartCount", static_cast<unsigned long long>(_PlacedCount) },
+                { "unplacedPartCount", static_cast<unsigned long long>(_UnplacedCount) },
+                { "stockCount", static_cast<unsigned long long>(_PlanIDs.size()) },
+                { "lockedStockCount", static_cast<unsigned long long>(LockedValues_.size()) },
+                { "totalStockLength", _TotalStock }, { "partLength", _PartLength },
+                { "usedLength", _UsedLength }, { "remainingLength", _TotalStock - _UsedLength },
+                { "gapLength", _UsedLength - _PartLength },
+                { "utilization", _TotalStock > 0.0 ? _PartLength / _TotalStock : 0.0 },
+                { "searchNodes", GetUInt64(_SolvedMetrics, "searchNodes", 0) }, { "partGap", Gap_ }
+            } }
+        };
+    }
+
+    iCAX::Interaction::CInvocationResult HandleNest(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext*,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_) throw std::invalid_argument("TubeDesigner.Nest requires a scene");
+        if (Request_.Payload.size() > 8 * 1024 * 1024)
+            throw std::invalid_argument("排样请求过大，请分批排样");
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _PartField = _Payload.find("parts");
+        const auto _StockField = _Payload.find("stocks");
+        if (_PartField == _Payload.end() || !_PartField->second.Is<VariantArray>()
+            || _StockField == _Payload.end() || !_StockField->second.Is<VariantArray>())
+            throw std::invalid_argument("排样必须提供零件列表和母材列表");
+        const auto _PartItems = _PartField->second.To<VariantArray>();
+        const auto _StockItems = _StockField->second.To<VariantArray>();
+        VariantArray _LockedPlans;
+        if (const auto _LockedField = _Payload.find("lockedPlans"); _LockedField != _Payload.end())
+        {
+            if (!_LockedField->second.Is<VariantArray>())
+                throw std::invalid_argument("锁定排样结果必须是列表");
+            _LockedPlans = _LockedField->second.To<VariantArray>();
+            if (_LockedPlans.size() > 2000)
+                throw std::invalid_argument("锁定排样结果不能超过 2000 根母材");
+        }
+        if (_PartItems.empty() || _PartItems.size() > 2000 || _StockItems.size() > 1000)
+            throw std::invalid_argument("单次排样需为 1 至 2000 件零件、至多 1000 行母材");
+        const auto _Parameters = GetRequiredObject(_Payload, "parameters");
+        const auto _Gap = GetDouble(_Parameters, "partGap", 0.0);
+        if (!std::isfinite(_Gap) || _Gap < 0.0 || _Gap > 1000000.0)
+            throw std::invalid_argument("零件间距必须为 0 至 1000000 mm 的有限数值");
+        std::vector<SNestingPart> _Parts;
+        std::vector<SNestingStock> _Stocks;
+        std::set<std::string> _PartIDs, _StockIDs;
+        std::size_t _TotalParts = 0;
+        auto& _Repository = Scene_->Database();
+        for (const auto& _Item : _PartItems)
+        {
+            if (!_Item.Is<ObjectMap>()) throw std::invalid_argument("排样零件项必须是对象");
+            const auto _PartData = _Item.To<ObjectMap>();
+            const auto _PartID = ParseRequiredUuid(GetRequiredText(_PartData, "partEntityId"), "partEntityId");
+            const auto _ID = UuidToString(_PartID);
+            if (!_PartIDs.insert(_ID).second) throw std::invalid_argument("排样零件重复");
+            const auto _Part = GetComponent<CManufacturingPartComponent>(_Repository.GetEntity(_PartID));
+            if (!_Part) throw std::invalid_argument("排样零件不存在或不是拆单后的制造零件");
+            if (!IsTubeManufacturingPart(_Part->GetItemProperties()))
+                throw std::invalid_argument("板件或配件不参与管材排样，请在零件模块单独导出");
+            const auto _Product = GetComponent<CProductInstanceComponent>(_Repository.GetEntity(_Part->GetProductID()));
+            if (!_Product || _Product->GetActiveGenerationRunID() != _Part->GetGenerationRunID())
+                throw std::invalid_argument("零件已过期，请回到产品重新拆单后排样");
+            const auto _Quantity = GetUInt64(_PartData, "quantity", _Part->GetQuantity());
+            if (_Quantity == 0 || _Quantity > _Part->GetQuantity() || _Quantity > 2000 - _TotalParts)
+                throw std::invalid_argument("排样数量超出零件清单数量或单次 2000 件限制");
+            _TotalParts += static_cast<std::size_t>(_Quantity);
+            if (!std::isfinite(_Part->GetLength()) || _Part->GetLength() <= 0.0)
+                throw std::invalid_argument("零件清单中的长度无效，请重新拆单");
+            const auto _ProfileKey = GetRequiredText(_PartData, "profileKey", 65536);
+            const auto _Presentation = ResolvePartPresentation(_Repository, *_Part);
+            if (!MatchesNestingProfileKey(_ProfileKey, _Presentation.Profile, _ID))
+                throw std::invalid_argument("零件截面数据已改变或分组不匹配，请刷新零件清单后重试");
+            const auto _Geometry = NestingGeometrySummary(*Scene_, *_Part);
+            _Parts.push_back({
+                _ID,
+                _ProfileKey,
+                _Geometry.EnvelopeLength,
+                static_cast<std::size_t>(_Quantity),
+                BuildNestingVariants(
+                    _Presentation.Profile, _Geometry.LinearGeometry, _Geometry.EnvelopeLength)
+            });
+        }
+        for (const auto& _Item : _StockItems)
+        {
+            if (!_Item.Is<ObjectMap>()) throw std::invalid_argument("母材项必须是对象");
+            const auto _Data = _Item.To<ObjectMap>();
+            const auto _ID = GetRequiredText(_Data, "id");
+            if (!_StockIDs.insert(_ID).second) throw std::invalid_argument("母材编号重复");
+            const auto _Quantity = GetDouble(_Data, "quantity", 0);
+            if (!std::isfinite(_Quantity) || std::floor(_Quantity) != _Quantity
+                || _Quantity < -1.0 || _Quantity > 1000000.0)
+                throw std::invalid_argument("母材数量必须为 -1（不限量）、0（停用）或正整数");
+            if (_Quantity == 0) continue;
+            _Stocks.push_back({ _ID, GetRequiredText(_Data, "profileKey", 65536),
+                GetDouble(_Data, "length", 0.0), static_cast<std::int64_t>(_Quantity) });
+        }
+        return MakeResponse(Variant(SolveManufacturingNestingWithLocks(_Parts, _Stocks, _Gap, _LockedPlans)));
+    }
+
+    void ValidateExportPlanSnapshot(const ObjectMap& Submitted_, const ObjectMap& Verified_)
+    {
+        const auto _Changed = [] { throw std::invalid_argument("排样结果或零件数据已改变，请重新排样后再导出"); };
+        for (const auto* _Field : { "id", "stockTypeId", "profileKey" })
+            if (GetString(Submitted_, _Field) != GetString(Verified_, _Field)) _Changed();
+        for (const auto* _Field : { "stockLength", "usedLength", "remainingLength", "partLength" })
+        {
+            const auto _Value = GetDouble(Submitted_, _Field, -1.0);
+            if (!std::isfinite(_Value) || std::abs(_Value - GetDouble(Verified_, _Field, -2.0)) > 1e-6) _Changed();
+        }
+        const auto _Submitted = Submitted_.find("placements");
+        if (_Submitted == Submitted_.end() || !_Submitted->second.Is<VariantArray>()) _Changed();
+        const auto _Left = _Submitted->second.To<VariantArray>();
+        const auto _Right = Verified_.at("placements").To<VariantArray>();
+        if (_Left.size() != _Right.size()) _Changed();
+        for (std::size_t _Index = 0; _Index < _Left.size(); ++_Index)
+        {
+            if (!_Left[_Index].Is<ObjectMap>()) _Changed();
+            const auto _L = _Left[_Index].To<ObjectMap>();
+            const auto _R = _Right[_Index].To<ObjectMap>();
+            for (const auto* _Field : { "partId", "instanceId", "variantId" })
+                if (GetString(_L, _Field) != GetString(_R, _Field)) _Changed();
+            for (const auto* _Field : { "start", "end", "length", "gapBefore", "rotationRadians" })
+            {
+                const auto _Value = GetDouble(_L, _Field, -1.0);
+                if (!std::isfinite(_Value) || std::abs(_Value - GetDouble(_R, _Field, -2.0)) > 1e-6) _Changed();
+            }
+            const auto _Reversed = _L.find("reversed");
+            if (_Reversed == _L.end() || !_Reversed->second.Is<bool>()
+                || _Reversed->second.To<bool>() != _R.at("reversed").To<bool>()) _Changed();
+            const auto _Nested = _L.find("nestedWithPrevious");
+            if (_Nested == _L.end() || !_Nested->second.Is<bool>()
+                || _Nested->second.To<bool>() != _R.at("nestedWithPrevious").To<bool>()) _Changed();
+        }
+    }
+
+    iCAX::Interaction::CInvocationResult HandleExportNesting(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& Application_,
+        iCAX::Product::IProductContext* Product_,
+        iCAX::Project::IProjectContext* Project_,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_) throw std::invalid_argument("TubeDesigner.ExportNesting requires a scene");
+        if (Request_.Payload.size() > 16 * 1024 * 1024)
+            throw std::invalid_argument("导出请求过大，请分批导出");
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _Directory = GetRequiredText(_Payload, "targetDirectory", 32768);
+        const auto _PlansField = _Payload.find("plans");
+        if (_PlansField == _Payload.end() || !_PlansField->second.Is<VariantArray>())
+            throw std::invalid_argument("请选择需要导出的排样结果");
+        const auto _SelectedPlans = _PlansField->second.To<VariantArray>();
+        if (_SelectedPlans.empty() || _SelectedPlans.size() > 2000)
+            throw std::invalid_argument("请选择 1 至 2000 根母材的排样结果");
+
+        // Revalidate authoritative entities and recompute the original request before
+        // exporting. A modified browser result cannot move unrelated/stale geometry.
+        const auto _Original = GetRequiredObject(_Payload, "request");
+        auto _SolveRequest = Request_;
+        const auto _OriginalText = iCAX::Data::VariantSerializer::Serialize(Variant(_Original));
+        _SolveRequest.Payload.assign(_OriginalText.begin(), _OriginalText.end());
+        const auto _Solved = HandleNest(_SolveRequest, Application_, Product_, Project_, Scene_);
+        const auto _Verified = iCAX::Data::VariantSerializer::Deserialize(
+            std::string(_Solved.Payload.begin(), _Solved.Payload.end())).To<ObjectMap>();
+        std::map<std::string, std::pair<ObjectMap, std::size_t>> _VerifiedPlans;
+        std::size_t _Ordinal = 0;
+        for (const auto& _Value : _Verified.at("plans").To<VariantArray>())
+        {
+            const auto _Plan = _Value.To<ObjectMap>();
+            _VerifiedPlans.emplace(GetString(_Plan, "id"), std::make_pair(_Plan, ++_Ordinal));
+        }
+        std::vector<SNestingExportPlan> _Plans;
+        std::vector<SNestingExportPart> _Parts;
+        std::set<std::string> _PlanIDs, _PartIDs;
+        auto& _Repository = Scene_->Database();
+        for (const auto& _Value : _SelectedPlans)
+        {
+            if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("排样导出项必须是对象");
+            const auto _Submitted = _Value.To<ObjectMap>();
+            const auto _ID = GetRequiredText(_Submitted, "id");
+            const auto _Found = _VerifiedPlans.find(_ID);
+            if (!_PlanIDs.insert(_ID).second || _Found == _VerifiedPlans.end())
+                throw std::invalid_argument("选中的排样结果不存在或重复，请重新排样");
+            const auto& _Plan = _Found->second.first;
+            ValidateExportPlanSnapshot(_Submitted, _Plan);
+            SNestingExportPlan _ExportPlan;
+            _ExportPlan.ID = _ID;
+            _ExportPlan.Name = "母材 " + std::to_string(_Found->second.second);
+            _ExportPlan.StockLength = GetDouble(_Plan, "stockLength", 0);
+            _ExportPlan.UsedLength = GetDouble(_Plan, "usedLength", 0);
+            _ExportPlan.RemainingLength = GetDouble(_Plan, "remainingLength", 0);
+            _ExportPlan.PartLength = GetDouble(_Plan, "partLength", 0);
+            for (const auto& _PlacementValue : _Plan.at("placements").To<VariantArray>())
+            {
+                const auto _Placement = _PlacementValue.To<ObjectMap>();
+                const auto _PartID = GetString(_Placement, "partId");
+                _ExportPlan.Placements.push_back({
+                    _PartID,
+                    GetDouble(_Placement, "start", 0),
+                    GetDouble(_Placement, "end", 0),
+                    _Placement.at("reversed").To<bool>(),
+                    GetDouble(_Placement, "gapBefore", 0),
+                    _Placement.at("nestedWithPrevious").To<bool>(),
+                    GetDouble(_Placement, "rotationRadians", 0),
+                    GetString(_Placement, "variantId", "default")
+                });
+                if (_PartIDs.insert(_PartID).second)
+                {
+                    const auto _Part = GetComponent<CManufacturingPartComponent>(
+                        _Repository.GetEntity(ParseRequiredUuid(_PartID, "partId")));
+                    if (!_Part) throw std::invalid_argument("导出的制造零件不存在");
+                    const auto _Presentation = ResolvePartPresentation(_Repository, *_Part);
+                    _Parts.push_back({ _PartID, _Presentation.Name, _Part->GetPartNumber(),
+                        NestingManufacturingShape(*Scene_, *_Part) });
+                }
+                if (_ExportPlan.Profile.empty())
+                {
+                    const auto _Part = GetComponent<CManufacturingPartComponent>(
+                        _Repository.GetEntity(ParseRequiredUuid(_PartID, "partId")));
+                    const auto _Profile = ResolvePartPresentation(_Repository, *_Part).Profile;
+                    _ExportPlan.Profile = GetString(_Profile, "displayName") + " " + GetString(_Profile, "specification");
+                }
+            }
+            _Plans.push_back(std::move(_ExportPlan));
+        }
+        const auto _Gap = GetDouble(GetRequiredObject(_Original, "parameters"), "partGap", 0);
+        return MakeResponse(Variant(ExportNestingResults(Utf8Path(_Directory), _Plans, _Parts, _Gap)));
+    }
+
     class CTubeDesignerSDO final : public iCAX::Interaction::CSDO
     {
     public:
         CTubeDesignerSDO() : CSDO("TubeDesigner")
         {
             ExposeMethod("List", &HandleList);
+            ExposeMethod("ListUserData", &HandleListUserData);
+            ExposeMethod("SaveCustomer", &HandleSaveCustomer);
+            ExposeMethod("DeleteCustomer", &HandleDeleteCustomer);
+            ExposeMethod("SaveParameterPreset", &HandleSaveParameterPreset);
+            ExposeMethod("DeleteParameterPreset", &HandleDeleteParameterPreset);
+            ExposeMethod("ImportProfileDxf", &HandleImportProfileDxf);
+            ExposeMethod("ImportProfilePackage", &HandleImportProfilePackage);
+            ExposeMethod("EvaluateProfilePackage", &HandleEvaluateProfilePackage);
+            ExposeMethod("GenerateProfilePreview", &HandleGenerateProfilePreview);
+            ExposeMethod("ExportProfile", &HandleExportProfile);
+            ExposeMethod("UpdateProfilePackage", &HandleUpdateProfilePackage);
+            ExposeMethod("SaveImportedProfile", &HandleSaveImportedProfile);
+            ExposeMethod("RenameImportedProfile", &HandleRenameImportedProfile);
+            ExposeMethod("RenameProfile", &HandleRenameImportedProfile);
+            ExposeMethod("DeleteImportedProfile", &HandleDeleteImportedProfile);
+            ExposeMethod("DeleteProfile", &HandleDeleteProfile);
             ExposeMethod("ActivateProduct", &HandleActivateProduct);
+            ExposeMethod("SaveSketch", &HandleSaveSketch);
             ExposeMethod("GeneratePreview", &HandleGeneratePreview);
             ExposeMethod("Generate", &HandleGeneratePreview);
             ExposeMethod("Disassemble", &HandleDisassemble);
             ExposeMethod("DisassembleSelected", &HandleDisassemble);
             ExposeMethod("MeasurePartGeometry", &HandleMeasurePartGeometry);
+            ExposeMethod("Nest", &HandleNest);
+            ExposeMethod("SaveNestingSettings", &HandleSaveNestingSettings);
+            ExposeMethod("ExportNesting", &HandleExportNesting);
             ExposeMethod("ExportSelected", &HandleExportSelected);
             ExposeMethod("ExportAll", &HandleExportSelected);
         }

@@ -2,6 +2,7 @@
 
 
 #include <ApplicationContext/ApplicationContext.h>
+#include <ApplicationContext/UserDataStore.h>
 #include <Behaviour/IBehaviourRegistry.h>
 #include <SDO/SDOMethod.h>
 #include <SDO/SDO.h>
@@ -122,7 +123,8 @@ namespace
 
     std::shared_ptr<CProductRuntime> MakeRuntime(
         IN const std::string& strProductID_ = "robot",
-        IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr)
+        IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr,
+        IN const std::string& strUserDataProductID_ = std::string())
     {
         iCAX::Application::CApplicationDescriptor _Descriptor;
         _Descriptor.AppID = "icax-test";
@@ -158,6 +160,9 @@ namespace
             _Definition,
             _pContext,
             _pSDOChannelRegistry,
+            std::make_shared<iCAX::Application::CProductUserDataStore>(
+                std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"),
+                strUserDataProductID_.empty() ? strProductID_ : strUserDataProductID_),
             _pProductDataStore);
     }
 
@@ -242,7 +247,7 @@ TEST(ProductDataStoreTest, RejectsUnsafeProductIDInDataPath)
     std::filesystem::remove_all(_Root);
 }
 
-TEST(ProductManifestTest, ParsesResourceHandlerBindings)
+TEST(ProductManifestTest, ParsesResourceAndUserDataBindings)
 {
     auto _Root = std::filesystem::current_path()
         / "Temp"
@@ -262,6 +267,29 @@ TEST(ProductManifestTest, ParsesResourceHandlerBindings)
   "productId": "icax.test",
   "productName": "Test Product",
   "productVersion": "1.0",
+  "userData": {
+    "features": [
+      {
+        "featureId": "template",
+        "recordTypes": [
+          {
+            "recordType": "parameter-preset",
+            "subjectTypes": ["template-definition"],
+            "schemaVersion": 2,
+            "cardinality": "multiple",
+            "relations": [
+              {
+                "relationType": "customer",
+                "targetKind": "user-record",
+                "targetFeatureId": "customer",
+                "targetType": "profile"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
   "projectFile": {
     "magic": "ICAX_TEST",
     "formatVersion": "1.0",
@@ -314,7 +342,66 @@ TEST(ProductManifestTest, ParsesResourceHandlerBindings)
     EXPECT_EQ(100, _Handler.Priority);
     EXPECT_EQ(std::filesystem::weakly_canonical(_PluginPath), std::filesystem::path(_Handler.ModulePath));
 
+    ASSERT_EQ(1u, _Manifest.Definition.UserDataFeatures.size());
+    const auto& _Feature = _Manifest.Definition.UserDataFeatures.front();
+    EXPECT_EQ("template", _Feature.FeatureID);
+    ASSERT_EQ(1u, _Feature.RecordTypes.size());
+    const auto& _RecordType = _Feature.RecordTypes.front();
+    EXPECT_EQ("parameter-preset", _RecordType.RecordType);
+    EXPECT_EQ((std::vector<std::string>{ "template-definition" }), _RecordType.SubjectTypes);
+    EXPECT_EQ(2u, _RecordType.SchemaVersion);
+    EXPECT_TRUE(_RecordType.AllowMultiple);
+    ASSERT_EQ(1u, _RecordType.Relations.size());
+    EXPECT_EQ("customer", _RecordType.Relations.front().RelationType);
+    EXPECT_EQ("customer", _RecordType.Relations.front().TargetFeatureID);
+
     std::filesystem::remove_all(_Root);
+}
+
+// Opt-in integration check: requires the three products' built runtime DLLs.
+TEST(ProductRuntimeIntegrationTest, DISABLED_RealProductManifestsStartIndependentScenes)
+{
+    auto sourceRoot = std::filesystem::absolute(__FILE__).parent_path();
+    while (!std::filesystem::is_directory(sourceRoot / "apps") && sourceRoot != sourceRoot.root_path())
+        sourceRoot = sourceRoot.parent_path();
+    ASSERT_TRUE(std::filesystem::is_directory(sourceRoot / "apps"));
+
+    std::vector<std::shared_ptr<CProductRuntime>> runtimes;
+    for (const auto* folder : { "tube-designer", "tube-one", "laser-3d-cam" })
+    {
+        SCOPED_TRACE(folder);
+        const auto manifest = LoadProductManifest((sourceRoot / "apps" / folder / "product.manifest.json").string());
+        iCAX::Application::CApplicationDescriptor descriptor;
+        descriptor.AppID = "icax-product-isolation-test";
+        descriptor.AppName = "Product isolation test";
+        iCAX::Application::CApplicationPaths paths;
+        paths.InstallDirectory = sourceRoot.string();
+        auto context = std::make_shared<iCAX::Application::CApplicationContext>(descriptor, paths, iCAX::Data::PropertyBag());
+        auto runtime = std::make_shared<CProductRuntime>(
+            manifest.Definition, context,
+            std::make_shared<iCAX::Interaction::CSDOChannelRegistry>(),
+            std::make_shared<iCAX::Application::CProductUserDataStore>(
+                std::make_shared<iCAX::Application::CSqliteUserDataStore>(":memory:"), manifest.Definition.ProductID),
+            std::make_shared<CMemoryProductDataStore>());
+        try { runtime->Start(); }
+        catch (const std::exception& error) { FAIL() << error.what(); }
+        EXPECT_TRUE(runtime->GetMetaRegistry().HasTypeByName("CSceneBootstrapComponent"));
+        EXPECT_TRUE(runtime->GetBehaviourRegistry().HasBehaviourByType("CSceneBootstrapBehaviour"));
+        const bool cam = std::string(folder) != "tube-designer";
+        EXPECT_EQ(cam, runtime->GetMetaRegistry().HasTypeByName("CCamSceneBootstrapComponent"));
+        EXPECT_EQ(cam, runtime->GetBehaviourRegistry().HasBehaviourByType("CCamSceneBootstrapBehaviour"));
+        const auto path = std::string("memory://product-isolation/") + folder;
+        auto catalog = runtime->OpenProjectCatalog(folder, path, folder, path);
+        ASSERT_NE(nullptr, catalog);
+        auto project = catalog->GetMainProject();
+        ASSERT_NE(nullptr, project);
+        EXPECT_TRUE(project->IsRunning());
+        EXPECT_TRUE(runtime->GetSceneFrontendSDOEndpoint(project->GetProjectID(), project->GetMainSceneID()).IsValid());
+        runtimes.push_back(runtime);
+    }
+    // Registrations remain product-scoped even when all modules are loaded together.
+    EXPECT_FALSE(runtimes.front()->GetMetaRegistry().HasTypeByName("CCamSceneBootstrapComponent"));
+    for (auto& runtime : runtimes) runtime->Stop();
 }
 
 TEST(ProductRuntimeTest, OpensAndClosesProjectCatalogDirectly)
@@ -353,6 +440,11 @@ TEST(ProductRuntimeTest, OwnsIndependentProductServiceEnvironment)
     auto _pSecondRuntime = MakeRuntime("robot-b");
 
     EXPECT_NE(&_pFirstRuntime->GetServiceProvider(), &_pSecondRuntime->GetServiceProvider());
+}
+
+TEST(ProductRuntimeTest, RejectsUserDataStoreBoundToAnotherProduct)
+{
+    EXPECT_THROW(MakeRuntime("robot-a", nullptr, "robot-b"), std::invalid_argument);
 }
 
 TEST(ProductRuntimeTest, LocalProjectPathStartsQuickSaveLog)

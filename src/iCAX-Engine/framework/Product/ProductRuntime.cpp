@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ProductRuntime.h"
 
+#include "ApplicationContext/UserDataStore.h"
 #include "SDO/SDORegistrationCatalog.h"
 #include "SDO/SDO.h"
 #include "Project/ProjectSDO.h"
@@ -657,6 +658,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     IN const CProductDefinition& Definition_,
     IN std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext_,
     IN std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry_,
+    IN std::shared_ptr<iCAX::Application::IProductUserDataStore> pUserDataStore_,
     IN std::shared_ptr<IProductDataStore> pProductDataStore_,
     IN uint32_t nFrameIntervalMilliseconds_)
     : m_Definition(Definition_)
@@ -670,6 +672,7 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     , m_pProductResourceLoaderRegistry(std::make_shared<iCAX::Resource::CResourceLoaderRegistry>())
     , m_Resources(m_pProductResourceLoaderRegistry)
     , m_pProductDataStore(std::move(pProductDataStore_))
+    , m_pUserDataStore(std::move(pUserDataStore_))
     , m_pSDORegistry(std::make_shared<iCAX::Interaction::CSDORegistry>())
     , m_pSDOInvoker(std::make_unique<iCAX::Interaction::CSDOInvoker>(m_pSDORegistry))
     , m_pProductTaskScheduler(std::make_shared<iCAX::Tasks::EventLoopTaskScheduler>())
@@ -706,6 +709,14 @@ iCAX::Product::CProductRuntime::CProductRuntime(
     if (!m_pSDOChannelRegistry)
     {
         throw std::invalid_argument("SDOChannelRegistry cannot be null");
+    }
+    if (!m_pUserDataStore)
+    {
+        throw std::invalid_argument("Product user data store cannot be null");
+    }
+    if (m_pUserDataStore->GetProductID() != m_Definition.ProductID)
+    {
+        throw std::invalid_argument("Product user data store identity mismatch");
     }
     if (!m_pProductMetaRegistry)
     {
@@ -1023,6 +1034,12 @@ void iCAX::Product::CProductRuntime::ReplaceSettings(IN const iCAX::Data::Proper
 const std::string& iCAX::Product::CProductRuntime::GetProductID() const
 {
     return m_Definition.ProductID;
+}
+
+std::shared_ptr<iCAX::Application::IProductUserDataStore>
+iCAX::Product::CProductRuntime::GetUserDataStore() const
+{
+    return m_pUserDataStore;
 }
 
 iCAX::Resource::CResourceLibrary&

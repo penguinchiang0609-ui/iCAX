@@ -6,13 +6,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FinalGeometryMeasurement.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="NestingAdapter.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="NestingResultExporter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="PartListXlsxExporter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="pch.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="SecurityWindow1Template.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="SecurityWindow2Template.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="SecurityWindow3Template.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="SingleFaceSecurityWindowTemplate.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="TubeDesigner.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="TubeDesignerComponents.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="TubeDesignerExport.h"><Filter>Header Files</Filter></ClInclude>
@@ -20,12 +18,10 @@
   <ItemGroup>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="FinalGeometryMeasurement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="NestingAdapter.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="NestingResultExporter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OpenCascadeStepExporter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="PartListXlsxExporter.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SecurityWindow1Template.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SecurityWindow2Template.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SecurityWindow3Template.cpp"><Filter>Source Files</Filter></ClCompile>
-    <ClCompile Include="SingleFaceSecurityWindowTemplate.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TubeDesigner.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TubeDesignerSDO.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>

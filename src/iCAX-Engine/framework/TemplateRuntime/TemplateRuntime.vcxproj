@@ -59,10 +59,14 @@
     <ProjectReference Include="..\..\foundation\Data\Data.vcxproj"><Project>{B1C027D1-B2EF-4F4B-8147-9FCE3EC31C52}</Project></ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <None Include="python\icax_template_embedded.py" />
     <None Include="python\icax_template_worker.py" />
     <None Include="python\icax_template_sdk\__init__.py" />
     <None Include="python\icax_template_sdk\model.py" />
   </ItemGroup>
+  <Target Name="PrepareEmbeddedPythonRuntime" AfterTargets="Build" Condition="'$(Platform)'=='x64'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\..\tools\build\prepare_embedded_python_runtime.ps1&quot; -OutputDirectory &quot;$(OutDir)runtime&quot;" />
+  </Target>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

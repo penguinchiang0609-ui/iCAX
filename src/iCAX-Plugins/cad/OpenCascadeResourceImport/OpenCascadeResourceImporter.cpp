@@ -572,6 +572,39 @@ namespace
     {
         using namespace iCAX::GeometryData;
 
+        const auto _ToBSplineSurface = [](const Handle(Geom_BSplineSurface)& BSpline_)
+        {
+            BSplineSurface3 _Result;
+            if (!BSpline_.IsNull())
+            {
+                _Result.UDegree = BSpline_->UDegree();
+                _Result.VDegree = BSpline_->VDegree();
+                _Result.UCount = static_cast<std::uint32_t>(BSpline_->NbUPoles());
+                _Result.VCount = static_cast<std::uint32_t>(BSpline_->NbVPoles());
+                _Result.UPeriodic = BSpline_->IsUPeriodic();
+                _Result.VPeriodic = BSpline_->IsVPeriodic();
+                for (int _U = 1; _U <= BSpline_->NbUPoles(); ++_U)
+                {
+                    for (int _V = 1; _V <= BSpline_->NbVPoles(); ++_V)
+                    {
+                        _Result.Poles.push_back(ToPoint3(BSpline_->Pole(_U, _V)));
+                        _Result.Weights.push_back(BSpline_->Weight(_U, _V));
+                    }
+                }
+                for (int _Index = 1; _Index <= BSpline_->NbUKnots(); ++_Index)
+                {
+                    _Result.UKnots.push_back(BSpline_->UKnot(_Index));
+                    _Result.UMultiplicities.push_back(BSpline_->UMultiplicity(_Index));
+                }
+                for (int _Index = 1; _Index <= BSpline_->NbVKnots(); ++_Index)
+                {
+                    _Result.VKnots.push_back(BSpline_->VKnot(_Index));
+                    _Result.VMultiplicities.push_back(BSpline_->VMultiplicity(_Index));
+                }
+            }
+            return _Result;
+        };
+
         switch (Surface_.GetType())
         {
         case GeomAbs_Plane:
@@ -617,36 +650,68 @@ namespace
         }
         case GeomAbs_BSplineSurface:
         {
-            const auto _BSpline = Surface_.BSpline();
+            return _ToBSplineSurface(Surface_.BSpline());
+        }
+        case GeomAbs_SurfaceOfExtrusion:
+        {
+            const auto _Extrusion = Handle(Geom_SurfaceOfLinearExtrusion)::DownCast(
+                Surface_.GeomSurfaceOriginal());
+            if (_Extrusion.IsNull() || _Extrusion->BasisCurve().IsNull())
+                throw std::runtime_error("OCCT linear-extrusion surface has no basis curve");
+            const auto _Basis = GeomConvert::CurveToBSplineCurve(_Extrusion->BasisCurve());
+            if (_Basis.IsNull())
+                throw std::runtime_error("OCCT failed to convert an extrusion basis curve to B-spline form");
+
             BSplineSurface3 _Result;
-            if (!_BSpline.IsNull())
+            _Result.UDegree = _Basis->Degree();
+            _Result.VDegree = 1;
+            _Result.UCount = static_cast<std::uint32_t>(_Basis->NbPoles());
+            _Result.VCount = 2;
+            _Result.UPeriodic = _Basis->IsPeriodic();
+            _Result.VPeriodic = false;
+            const auto _Transform = Surface_.Trsf();
+            const auto _Direction = gp_Vec(_Extrusion->Direction());
+            const std::array<double, 2> _VParameters{
+                Surface_.FirstVParameter(), Surface_.LastVParameter()
+            };
+            _Result.Poles.reserve(static_cast<std::size_t>(_Result.UCount) * 2);
+            _Result.Weights.reserve(static_cast<std::size_t>(_Result.UCount) * 2);
+            for (int _U = 1; _U <= _Basis->NbPoles(); ++_U)
             {
-                _Result.UDegree = _BSpline->UDegree();
-                _Result.VDegree = _BSpline->VDegree();
-                _Result.UCount = static_cast<std::uint32_t>(_BSpline->NbUPoles());
-                _Result.VCount = static_cast<std::uint32_t>(_BSpline->NbVPoles());
-                _Result.UPeriodic = _BSpline->IsUPeriodic();
-                _Result.VPeriodic = _BSpline->IsVPeriodic();
-                for (int _U = 1; _U <= _BSpline->NbUPoles(); ++_U)
+                for (const auto _V : _VParameters)
                 {
-                    for (int _V = 1; _V <= _BSpline->NbVPoles(); ++_V)
-                    {
-                        _Result.Poles.push_back(ToPoint3(_BSpline->Pole(_U, _V)));
-                        _Result.Weights.push_back(_BSpline->Weight(_U, _V));
-                    }
-                }
-                for (int _Index = 1; _Index <= _BSpline->NbUKnots(); ++_Index)
-                {
-                    _Result.UKnots.push_back(_BSpline->UKnot(_Index));
-                    _Result.UMultiplicities.push_back(_BSpline->UMultiplicity(_Index));
-                }
-                for (int _Index = 1; _Index <= _BSpline->NbVKnots(); ++_Index)
-                {
-                    _Result.VKnots.push_back(_BSpline->VKnot(_Index));
-                    _Result.VMultiplicities.push_back(_BSpline->VMultiplicity(_Index));
+                    auto _Pole = _Basis->Pole(_U);
+                    _Pole.Translate(_Direction.Multiplied(_V));
+                    _Pole.Transform(_Transform);
+                    _Result.Poles.push_back(ToPoint3(_Pole));
+                    _Result.Weights.push_back(_Basis->Weight(_U));
                 }
             }
+            for (int _Index = 1; _Index <= _Basis->NbKnots(); ++_Index)
+            {
+                _Result.UKnots.push_back(_Basis->Knot(_Index));
+                _Result.UMultiplicities.push_back(_Basis->Multiplicity(_Index));
+            }
+            _Result.VKnots = { _VParameters[0], _VParameters[1] };
+            _Result.VMultiplicities = { 2, 2 };
             return _Result;
+        }
+        case GeomAbs_BezierSurface:
+        case GeomAbs_SurfaceOfRevolution:
+        {
+            const auto _Basis = Surface_.GeomSurfaceOriginal();
+            if (_Basis.IsNull())
+                throw std::runtime_error("OCCT swept surface has no basis geometry");
+            Handle(Geom_RectangularTrimmedSurface) _Trimmed =
+                new Geom_RectangularTrimmedSurface(
+                    _Basis,
+                    Surface_.FirstUParameter(), Surface_.LastUParameter(),
+                    Surface_.FirstVParameter(), Surface_.LastVParameter());
+            auto _BSpline = GeomConvert::SurfaceToBSplineSurface(_Trimmed);
+            if (_BSpline.IsNull())
+                throw std::runtime_error("OCCT failed to convert a swept surface to B-spline form");
+            _BSpline->Transform(Surface_.Trsf());
+            return _ToBSplineSurface(_BSpline);
         }
         default:
         {
@@ -906,7 +971,9 @@ namespace
 
             std::vector<std::uint64_t> _WireIDs;
             std::vector<ETopologyOrientation> _WireOrientations;
-            for (TopoDS_Iterator _WireIterator(_Face, false, false);
+            // Keep the child occurrence orientation independent, but accumulate
+            // the parent location so it resolves against the global shape maps.
+            for (TopoDS_Iterator _WireIterator(_Face, false, true);
                 _WireIterator.More(); _WireIterator.Next())
             {
                 const auto _WireOccurrence = _WireIterator.Value();
@@ -939,8 +1006,14 @@ namespace
                     const auto _Curve2ID = _Curve2Record.Id;
                     _Model.Curves2.push_back(std::move(_Curve2Record));
 
+                    const auto _EdgeID = FindShapeId(_Maps.Edges, _Edge);
+                    if (_EdgeID == 0)
+                    {
+                        throw std::runtime_error(
+                            "OCCT wire edge is absent from the global topology map");
+                    }
                     _WireRecord.Coedges.push_back({
-                        FindShapeId(_Maps.Edges, _Edge),
+                        _EdgeID,
                         _Curve2ID,
                         FindShapeId(_Maps.Vertices, _FirstVertex),
                         FindShapeId(_Maps.Vertices, _LastVertex),
@@ -988,7 +1061,7 @@ namespace
             _ShellRecord.Id = static_cast<std::uint64_t>(_Index);
             _ShellRecord.Closed = _Shell.Closed();
             _ShellRecord.Metadata = { "shell " + std::to_string(_Index), strSourceID_, {} };
-            for (TopoDS_Iterator _Iterator(_Shell, false, false);
+            for (TopoDS_Iterator _Iterator(_Shell, false, true);
                 _Iterator.More(); _Iterator.Next())
             {
                 const auto _Face = _Iterator.Value();
@@ -1010,7 +1083,7 @@ namespace
             BRepSolid _SolidRecord;
             _SolidRecord.Id = static_cast<std::uint64_t>(_Index);
             _SolidRecord.Metadata = { "solid " + std::to_string(_Index), strSourceID_, {} };
-            for (TopoDS_Iterator _Iterator(_Solid, false, false);
+            for (TopoDS_Iterator _Iterator(_Solid, false, true);
                 _Iterator.More(); _Iterator.Next())
             {
                 const auto _Shell = _Iterator.Value();

@@ -50,13 +50,42 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="TubeDesignerTests.cpp" />
+    <ClCompile Include="NestingAdapterTests.cpp">
+      <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="NestingResultExporterTests.cpp">
+      <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\TubeDesigner\NestingResultExporter.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\TubeDesigner\PartListXlsxExporter.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\TubeDesigner\NestingAdapter.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="ProfileCatalogProbe.py" />
+    <None Include="..\Fixtures\imported_profile_mm.dxf" />
+    <None Include="..\Fixtures\editable_profile_package.icaxprofile" />
+    <None Include="..\Fixtures\editable_profile_package\profile.json" />
+    <None Include="..\Fixtures\editable_profile_package\profile.py" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\TubeNesting\TubeNesting.vcxproj">
+      <Project>{70d638c0-7f90-46b8-88db-47b201ebe2a6}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">
+      <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
       <Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project>

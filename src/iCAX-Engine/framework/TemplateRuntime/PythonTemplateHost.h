@@ -4,7 +4,6 @@
 
 #include "Data/Variant.h"
 
-#include <chrono>
 #include <filesystem>
 #include <memory>
 
@@ -12,11 +11,9 @@ namespace iCAX::TemplateRuntime
 {
     struct _TEMPLATE_RUNTIME_EXP SPythonTemplateHostOptions final
     {
-        std::filesystem::path PythonExecutable;
+        std::filesystem::path PythonRuntimeLibrary;
         std::filesystem::path WorkerScript;
         std::filesystem::path WorkingDirectory;
-        std::chrono::milliseconds RequestTimeout{ 30'000 };
-        std::chrono::milliseconds ShutdownTimeout{ 2'000 };
     };
 
     class _TEMPLATE_RUNTIME_EXP CPythonTemplateHost final

@@ -127,6 +127,12 @@ namespace
             return m_ProductID;
         }
 
+        std::shared_ptr<iCAX::Application::IProductUserDataStore>
+            GetUserDataStore() const override
+        {
+            return {};
+        }
+
         iCAX::Product::CProductData GetProductData() const override
         {
             return m_Data;
@@ -1071,7 +1077,7 @@ TEST(Laser3DCAMManifestTest, StartupComponentMatchesRegisteredSceneBootstrapComp
     const auto _Manifest = ReadTextFile(_ManifestPath);
     const auto _TubeManifestPath = GetSourceRoot() / "apps" / "tube-one" / "product.manifest.json";
     const auto _TubeManifest = ReadTextFile(_TubeManifestPath);
-    const std::string _Expected = std::string("\"startupComponent\": \"") + iCAX::CAM::CSceneBootstrapComponent::S_ClassName + "\"";
+    const std::string _Expected = std::string("\"startupComponent\": \"") + iCAX::CAM::CCamSceneBootstrapComponent::S_ClassName + "\"";
 
     EXPECT_NE(std::string::npos, _Manifest.find(_Expected));
     EXPECT_EQ(std::string::npos, _Manifest.find("CLaserCamSceneBootstrapComponent"));

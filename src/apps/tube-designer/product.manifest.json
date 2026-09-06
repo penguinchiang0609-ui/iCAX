@@ -7,51 +7,77 @@
   "capabilities": {
     "platform": {
       "domain": "tube-product-design",
-      "modules": ["template", "product", "assembly", "joint", "disassembly", "step-export"]
+      "modules": ["template", "product", "assembly", "joint", "sketch", "disassembly", "step-export", "parts", "nesting"]
     },
     "tubeDesigner": {
       "templateProtocolVersion": 1,
+      "commercialFeatures": [
+        {
+          "featureId": "tube-designer.production-workflow",
+          "displayName": "下料",
+          "tier": "advanced",
+          "modules": ["parts", "nesting"],
+          "defaultAccess": false
+        }
+      ],
       "templates": [
         {
           "templateId": "single-face-security-window",
-          "version": "2.5.0",
-          "displayName": "单面防盗窗",
+          "version": "2.6.2",
+          "displayName": "防盗窗/单面防盗窗",
           "status": "available"
         },
         {
           "templateId": "two-face-security-window",
-          "version": "1.6.0",
-          "displayName": "两面防盗窗",
+          "version": "1.6.2",
+          "displayName": "防盗窗/两面防盗窗",
           "status": "available"
         },
         {
           "templateId": "three-face-security-window",
-          "version": "1.5.0",
-          "displayName": "三面防盗窗",
+          "version": "1.5.2",
+          "displayName": "防盗窗/三面防盗窗",
           "status": "available"
         },
         {
           "templateId": "five-face-security-window",
-          "version": "2.5.0",
-          "displayName": "五面防盗窗",
+          "version": "2.5.2",
+          "displayName": "防盗窗/五面防盗窗",
           "status": "available"
         },
         {
-          "templateId": "security-window-1",
-          "version": "1.0.0",
-          "displayName": "防盗窗 1 号 - 无把手不封闭",
+          "templateId": "straight-stair-railing",
+          "version": "1.1.0",
+          "displayName": "护栏/楼梯护栏/直跑楼梯护栏",
+          "industry": "护栏",
           "status": "available"
         },
         {
-          "templateId": "security-window-2",
+          "templateId": "modular-guardrail",
           "version": "1.0.0",
-          "displayName": "防盗窗 2 号 - 带把手区域",
+          "displayName": "护栏/竖杆护栏/组合式竖杆护栏",
+          "industry": "护栏",
           "status": "available"
         },
         {
-          "templateId": "security-window-3",
+          "templateId": "straight-steel-staircase",
           "version": "1.0.0",
-          "displayName": "防盗窗 3 号 - 闭合边框",
+          "displayName": "楼梯/钢楼梯/直跑钢楼梯",
+          "industry": "楼梯",
+          "status": "available"
+        },
+        {
+          "templateId": "l-turn-steel-staircase",
+          "version": "1.0.0",
+          "displayName": "楼梯/钢楼梯/L形双跑钢楼梯",
+          "industry": "楼梯",
+          "status": "available"
+        },
+        {
+          "templateId": "u-turn-steel-staircase",
+          "version": "1.0.0",
+          "displayName": "楼梯/钢楼梯/U形双跑钢楼梯",
+          "industry": "楼梯",
           "status": "available"
         }
       ],
@@ -59,6 +85,57 @@
       "manufacturingGeometry": "manufacturing-part",
       "downstreamProductId": "icax.tube-one"
     }
+  },
+  "userData": {
+    "features": [
+      {
+        "featureId": "customer",
+        "recordTypes": [
+          {
+            "recordType": "profile",
+            "subjectTypes": ["product"],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          }
+        ]
+      },
+      {
+        "featureId": "template",
+        "recordTypes": [
+          {
+            "recordType": "parameter-preset",
+            "subjectTypes": ["template-definition"],
+            "schemaVersion": 1,
+            "cardinality": "multiple",
+            "relations": [
+              {
+                "relationType": "customer",
+                "targetKind": "user-record",
+                "targetFeatureId": "customer",
+                "targetType": "profile"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "featureId": "profile",
+        "recordTypes": [
+          {
+            "recordType": "imported-dxf",
+            "subjectTypes": ["product"],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          },
+          {
+            "recordType": "parametric-package",
+            "subjectTypes": ["profile-definition"],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          }
+        ]
+      }
+    ]
   },
   "projectFile": {
     "magic": "ICAX_TUBE_DESIGNER",
@@ -85,23 +162,21 @@
         "../../${Platform}/${Configuration}/Transform.dll",
         "../../${Platform}/${Configuration}/ColliderData.dll",
         "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll"
+        "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
+        "../../${Platform}/${Configuration}/SceneBootstrap.dll"
       ],
       "components": [
         "../../${Platform}/${Configuration}/Transform.dll",
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll",
+        "../../${Platform}/${Configuration}/SceneBootstrap.dll",
         "../../${Platform}/${Configuration}/TubeDesigner.dll"
       ],
       "behaviours": [
         "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/SceneBootstrap.dll"
       ],
-      "services": [
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
-      ],
+      "services": [],
       "sdo": [
         "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll",
         "../../${Platform}/${Configuration}/TubeDesigner.dll"
       ]
     },

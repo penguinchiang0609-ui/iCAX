@@ -1,17 +1,27 @@
 import { loadRenderResource } from "../../../iCAX-UI/SDK/Viewport/renderResource.mjs";
 
+const hydrationEpochs = new WeakMap();
+
 export function scheduleDesignerPartThumbnailHydration(context) {
+  const scheduled = beginHydrationEpoch(context);
+  if (!scheduled) return;
   queueMicrotask(() => {
+    if (!isHydrationCurrent(scheduled)) return;
     const indeterminateCheckboxes = context.mount?.querySelectorAll?.("[data-tube-designer-indeterminate=\"true\"]") ?? [];
     for (const checkbox of indeterminateCheckboxes) checkbox.indeterminate = true;
-    void hydrateDesignerPartThumbnails(context);
+    void hydrateDesignerPartThumbnails(context, scheduled);
   });
 }
 
-async function hydrateDesignerPartThumbnails(context) {
+export function cancelDesignerPartThumbnailHydration(context) {
+  beginHydrationEpoch(context);
+}
+
+async function hydrateDesignerPartThumbnails(context, scheduled) {
   const resourceClient = context.sceneProxy?.resources;
   const canvases = context.mount?.querySelectorAll?.("[data-tube-designer-part-thumbnail]") ?? [];
   for (const canvas of canvases) {
+    if (!isHydrationCurrent(scheduled) || !canvas.isConnected) return;
     if (!(canvas instanceof HTMLCanvasElement) || canvas.dataset.tubeThumbnailReady === "true") continue;
     canvas.dataset.tubeThumbnailReady = "true";
     drawFallback(canvas);
@@ -23,6 +33,7 @@ async function hydrateDesignerPartThumbnails(context) {
         url,
         version: Number(canvas.dataset.tubePreviewVersion ?? 0),
       });
+      if (!isHydrationCurrent(scheduled)) return;
       if (canvas.isConnected && resource?.type === "geometry" && resource.data?.kind === "mesh") {
         drawMesh(canvas, resource.data);
         canvas.dataset.tubeThumbnailSource = "resource";
@@ -31,6 +42,19 @@ async function hydrateDesignerPartThumbnails(context) {
       // 清单仍保留中性示意图；资源服务恢复后重新打开清单即可重新加载。
     }
   }
+}
+
+function beginHydrationEpoch(context) {
+  const mount = context?.mount;
+  if (!mount || (typeof mount !== "object" && typeof mount !== "function")) return null;
+  const epoch = Number(hydrationEpochs.get(mount) ?? 0) + 1;
+  hydrationEpochs.set(mount, epoch);
+  return { mount, epoch };
+}
+
+function isHydrationCurrent(scheduled) {
+  return Boolean(scheduled)
+    && hydrationEpochs.get(scheduled.mount) === scheduled.epoch;
 }
 
 function drawMesh(canvas, mesh) {

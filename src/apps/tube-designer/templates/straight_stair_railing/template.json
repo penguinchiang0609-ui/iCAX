@@ -1,0 +1,363 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "straight-stair-railing",
+  "version": "1.1.0",
+  "displayName": {
+    "zh-CN": "护栏/楼梯护栏/直跑楼梯护栏",
+    "en-US": "Guardrail/Stair Railing/Straight Stair Railing"
+  },
+  "description": "用于直跑楼梯一侧护栏的参数化设计，生成扶手、立柱和横档或竖杆，并可直接拆单导出。",
+  "extensions": {
+    "catalog": {
+      "groupOrder": 20,
+      "templateOrder": 30
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "primaryDimensions": {
+      "widthParameter": "flightRun",
+      "heightParameter": "flightRise",
+      "depthParameter": "railingHeight"
+    },
+    "parameterPresets": {
+      "selectorParameter": "tubeSpecificationPreset",
+      "customValue": "custom",
+      "presets": [
+        {
+          "value": "steel_square_standard",
+          "values": {
+            "handrailProfileType": "rect",
+            "handrailWidth": 40.0,
+            "handrailDepth": 40.0,
+            "handrailCornerRadius": 2.0,
+            "handrailWallThickness": 1.5,
+            "postProfileType": "rect",
+            "postWidth": 40.0,
+            "postDepth": 40.0,
+            "postCornerRadius": 2.0,
+            "postWallThickness": 1.5,
+            "infillProfileType": "rect",
+            "infillWidth": 20.0,
+            "infillDepth": 20.0,
+            "infillCornerRadius": 1.5,
+            "infillWallThickness": 1.2
+          }
+        },
+        {
+          "value": "stainless_round",
+          "values": {
+            "handrailProfileType": "round",
+            "handrailWidth": 50.8,
+            "handrailDepth": 50.8,
+            "handrailCornerRadius": 0.0,
+            "handrailWallThickness": 1.2,
+            "postProfileType": "round",
+            "postWidth": 38.0,
+            "postDepth": 38.0,
+            "postCornerRadius": 0.0,
+            "postWallThickness": 1.2,
+            "infillProfileType": "round",
+            "infillWidth": 16.0,
+            "infillDepth": 16.0,
+            "infillCornerRadius": 0.0,
+            "infillWallThickness": 1.0
+          }
+        },
+        {
+          "value": "steel_reinforced",
+          "values": {
+            "handrailProfileType": "rect",
+            "handrailWidth": 50.0,
+            "handrailDepth": 40.0,
+            "handrailCornerRadius": 2.0,
+            "handrailWallThickness": 1.5,
+            "postProfileType": "rect",
+            "postWidth": 50.0,
+            "postDepth": 40.0,
+            "postCornerRadius": 2.0,
+            "postWallThickness": 1.5,
+            "infillProfileType": "rect",
+            "infillWidth": 25.0,
+            "infillDepth": 25.0,
+            "infillCornerRadius": 2.0,
+            "infillWallThickness": 1.2
+          }
+        }
+      ]
+    }
+  },
+  "groups": [
+    { "key": "basic", "displayName": { "zh-CN": "楼梯尺寸" }, "order": 10 },
+    { "key": "layout", "displayName": { "zh-CN": "护栏布置" }, "order": 20 },
+    { "key": "profile_preset", "displayName": { "zh-CN": "常用管材配套" }, "order": 30 },
+    { "key": "profiles", "displayName": { "zh-CN": "管材规格" }, "order": 40 },
+    { "key": "process", "displayName": { "zh-CN": "装配与加工" }, "order": 50 }
+  ],
+  "parameters": [
+    {
+      "key": "productCode",
+      "displayName": { "zh-CN": "产品编号" },
+      "valueType": "string",
+      "defaultValue": "ST-RUN-001",
+      "constraints": { "minimumLength": 1, "maximumLength": 80 },
+      "group": "basic",
+      "order": 10
+    },
+    {
+      "key": "flightRun",
+      "displayName": { "zh-CN": "水平投影长度" },
+      "description": "楼梯起点至终点的水平距离。",
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 3000.0,
+      "constraints": { "minimum": 300.0, "maximum": 30000.0, "step": 1.0 },
+      "group": "basic",
+      "order": 20
+    },
+    {
+      "key": "flightRise",
+      "displayName": { "zh-CN": "垂直提升高度" },
+      "description": "楼梯起点至终点的垂直高度。",
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 1800.0,
+      "constraints": { "minimum": 0.0, "maximum": 15000.0, "step": 1.0 },
+      "group": "basic",
+      "order": 30
+    },
+    {
+      "key": "railingHeight",
+      "displayName": { "zh-CN": "扶手中心线垂直高度" },
+      "description": "从楼梯坡面至扶手中心线的垂直高度，不是防护栏杆顶部净高；需根据实际场景另行校核。",
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 950.0,
+      "constraints": { "minimum": 300.0, "maximum": 2000.0, "step": 1.0 },
+      "group": "basic",
+      "order": 40
+    },
+    {
+      "key": "startExtension",
+      "displayName": { "zh-CN": "扶手/起点沿坡延伸（水平投影）" },
+      "description": "保持原坡度向起点外延伸，此值是延伸段的水平投影长度；不生成无障碍扶手的水平延伸段。",
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 150.0,
+      "constraints": { "minimum": 0.0, "maximum": 2000.0, "step": 1.0 },
+      "group": "basic",
+      "order": 50
+    },
+    {
+      "key": "endExtension",
+      "displayName": { "zh-CN": "扶手/终点沿坡延伸（水平投影）" },
+      "description": "保持原坡度向终点外延伸，此值是延伸段的水平投影长度；不生成无障碍扶手的水平延伸段。",
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 150.0,
+      "constraints": { "minimum": 0.0, "maximum": 2000.0, "step": 1.0 },
+      "group": "basic",
+      "order": 60
+    },
+    {
+      "key": "postCount",
+      "displayName": { "zh-CN": "立柱数量" },
+      "description": "包含起点和终点立柱。",
+      "valueType": "integer",
+      "quantity": "count",
+      "defaultValue": 4,
+      "constraints": { "minimum": 2, "maximum": 50, "step": 1 },
+      "group": "layout",
+      "order": 10
+    },
+    {
+      "key": "infillType",
+      "displayName": { "zh-CN": "栏杆形式" },
+      "valueType": "enum",
+      "defaultValue": "vertical",
+      "choices": [
+        { "value": "vertical", "displayName": { "zh-CN": "竖杆式" } },
+        { "value": "horizontal", "displayName": { "zh-CN": "横档式" } },
+        { "value": "none", "displayName": { "zh-CN": "仅扶手与立柱" } }
+      ],
+      "group": "layout",
+      "order": 20
+    },
+    {
+      "key": "verticalLayoutMode",
+      "displayName": { "zh-CN": "竖杆式/布置方式" },
+      "valueType": "enum",
+      "defaultValue": "maximum_clear_gap",
+      "choices": [
+        { "value": "maximum_clear_gap", "displayName": { "zh-CN": "按最大净间距自动计算" } },
+        { "value": "manual_count", "displayName": { "zh-CN": "手动指定数量" } }
+      ],
+      "visibleWhen": { "op": "eq", "parameter": "infillType", "value": "vertical" },
+      "group": "layout",
+      "order": 30
+    },
+    {
+      "key": "maximumVerticalClearGap",
+      "displayName": { "zh-CN": "竖杆式/最大净间距" },
+      "description": "每跨按实际截面外缘计算，包括竖杆与立柱之间的边距。手动数量模式下用此值检查并提示超限。",
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 110.0,
+      "constraints": { "minimum": 20.0, "maximum": 500.0, "step": 1.0 },
+      "visibleWhen": { "op": "eq", "parameter": "infillType", "value": "vertical" },
+      "group": "layout",
+      "order": 40
+    },
+    {
+      "key": "verticalBarCount",
+      "displayName": { "zh-CN": "竖杆式/竖杆总数量" },
+      "description": "整段护栏的竖杆总数，平均分配至各个立柱之间，再在每跨净空内均布；不能整段均布穿过立柱。",
+      "valueType": "integer",
+      "quantity": "count",
+      "defaultValue": 18,
+      "constraints": { "minimum": 0, "maximum": 200, "step": 1 },
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "infillType", "value": "vertical" },
+        { "op": "eq", "parameter": "verticalLayoutMode", "value": "manual_count" }
+      ] },
+      "group": "layout",
+      "order": 50
+    },
+    {
+      "key": "bottomRailHeight",
+      "displayName": { "zh-CN": "竖杆式/下横杆中心距坡面" },
+      "description": "从楼梯坡面至下横杆中心线的垂直距离，不是横杆底部净空。",
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 120.0,
+      "constraints": { "minimum": 20.0, "maximum": 1000.0, "step": 1.0 },
+      "visibleWhen": { "op": "eq", "parameter": "infillType", "value": "vertical" },
+      "group": "layout",
+      "order": 60
+    },
+    {
+      "key": "horizontalRailCount",
+      "displayName": { "zh-CN": "横档式/横档数量" },
+      "valueType": "integer",
+      "quantity": "count",
+      "defaultValue": 3,
+      "constraints": { "minimum": 1, "maximum": 20, "step": 1 },
+      "visibleWhen": { "op": "eq", "parameter": "infillType", "value": "horizontal" },
+      "group": "layout",
+      "order": 70
+    },
+    {
+      "key": "horizontalBottomClearance",
+      "displayName": { "zh-CN": "横档式/最低横档距坡面" },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 180.0,
+      "constraints": { "minimum": 20.0, "maximum": 1000.0, "step": 1.0 },
+      "visibleWhen": { "op": "eq", "parameter": "infillType", "value": "horizontal" },
+      "group": "layout",
+      "order": 80
+    },
+    {
+      "key": "tubeSpecificationPreset",
+      "displayName": { "zh-CN": "规格组合" },
+      "valueType": "enum",
+      "defaultValue": "steel_square_standard",
+      "choices": [
+        { "value": "steel_square_standard", "displayName": { "zh-CN": "钢制方管·40×40 / 40×40 / 20×20（推荐）" } },
+        { "value": "stainless_round", "displayName": { "zh-CN": "不锈钢圆管·Φ50.8 / Φ38 / Φ16" } },
+        { "value": "steel_reinforced", "displayName": { "zh-CN": "钢制加强·50×40 / 50×40 / 25×25" } },
+        { "value": "custom", "displayName": { "zh-CN": "自定义" } }
+      ],
+      "group": "profile_preset",
+      "order": 10
+    },
+    {
+      "key": "handrailProfileType",
+      "displayName": { "zh-CN": "扶手管/截面类型" },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "choices": [
+        { "value": "rect", "displayName": { "zh-CN": "矩形管" } },
+        { "value": "round", "displayName": { "zh-CN": "圆管" } },
+        { "value": "ellipse", "displayName": { "zh-CN": "椭圆管" } },
+        { "value": "flat-oval", "displayName": { "zh-CN": "腰圆管" } },
+        { "value": "polygon", "displayName": { "zh-CN": "多边形管" } }
+      ],
+      "group": "profiles",
+      "order": 10
+    },
+    { "key": "handrailWidth", "displayName": { "zh-CN": "扶手管/外径或截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 40.0, "constraints": { "minimum": 1.0, "step": 0.1 }, "group": "profiles", "order": 20 },
+    { "key": "handrailDepth", "displayName": { "zh-CN": "扶手管/截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 40.0, "constraints": { "minimum": 1.0, "step": 0.1 }, "visibleWhen": { "op": "ne", "parameter": "handrailProfileType", "value": "round" }, "group": "profiles", "order": 30 },
+    { "key": "handrailCornerRadius", "displayName": { "zh-CN": "扶手管/外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 2.0, "constraints": { "minimum": 0.0, "step": 0.1 }, "visibleWhen": { "op": "eq", "parameter": "handrailProfileType", "value": "rect" }, "group": "profiles", "order": 40 },
+    { "key": "handrailWallThickness", "displayName": { "zh-CN": "扶手管/壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.5, "constraints": { "minimum": 0.1, "step": 0.1 }, "group": "profiles", "order": 50 },
+    {
+      "key": "postProfileType",
+      "displayName": { "zh-CN": "立柱管/截面类型" },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "choices": [
+        { "value": "rect", "displayName": { "zh-CN": "矩形管" } },
+        { "value": "round", "displayName": { "zh-CN": "圆管" } },
+        { "value": "ellipse", "displayName": { "zh-CN": "椭圆管" } },
+        { "value": "flat-oval", "displayName": { "zh-CN": "腰圆管" } },
+        { "value": "polygon", "displayName": { "zh-CN": "多边形管" } }
+      ],
+      "group": "profiles",
+      "order": 60
+    },
+    { "key": "postWidth", "displayName": { "zh-CN": "立柱管/外径或截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 40.0, "constraints": { "minimum": 1.0, "step": 0.1 }, "group": "profiles", "order": 70 },
+    { "key": "postDepth", "displayName": { "zh-CN": "立柱管/截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 40.0, "constraints": { "minimum": 1.0, "step": 0.1 }, "visibleWhen": { "op": "ne", "parameter": "postProfileType", "value": "round" }, "group": "profiles", "order": 80 },
+    { "key": "postCornerRadius", "displayName": { "zh-CN": "立柱管/外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 2.0, "constraints": { "minimum": 0.0, "step": 0.1 }, "visibleWhen": { "op": "eq", "parameter": "postProfileType", "value": "rect" }, "group": "profiles", "order": 90 },
+    { "key": "postWallThickness", "displayName": { "zh-CN": "立柱管/壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.5, "constraints": { "minimum": 0.1, "step": 0.1 }, "group": "profiles", "order": 100 },
+    {
+      "key": "infillProfileType",
+      "displayName": { "zh-CN": "栏杆管/截面类型" },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "choices": [
+        { "value": "rect", "displayName": { "zh-CN": "矩形管" } },
+        { "value": "round", "displayName": { "zh-CN": "圆管" } },
+        { "value": "ellipse", "displayName": { "zh-CN": "椭圆管" } },
+        { "value": "flat-oval", "displayName": { "zh-CN": "腰圆管" } },
+        { "value": "polygon", "displayName": { "zh-CN": "多边形管" } }
+      ],
+      "visibleWhen": { "op": "ne", "parameter": "infillType", "value": "none" },
+      "group": "profiles",
+      "order": 110
+    },
+    { "key": "infillWidth", "displayName": { "zh-CN": "栏杆管/外径或截面宽度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 20.0, "constraints": { "minimum": 1.0, "step": 0.1 }, "visibleWhen": { "op": "ne", "parameter": "infillType", "value": "none" }, "group": "profiles", "order": 120 },
+    { "key": "infillDepth", "displayName": { "zh-CN": "栏杆管/截面深度" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 20.0, "constraints": { "minimum": 1.0, "step": 0.1 }, "visibleWhen": { "op": "all", "conditions": [ { "op": "ne", "parameter": "infillType", "value": "none" }, { "op": "ne", "parameter": "infillProfileType", "value": "round" } ] }, "group": "profiles", "order": 130 },
+    { "key": "infillCornerRadius", "displayName": { "zh-CN": "栏杆管/外圆角 R" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.5, "constraints": { "minimum": 0.0, "step": 0.1 }, "visibleWhen": { "op": "all", "conditions": [ { "op": "ne", "parameter": "infillType", "value": "none" }, { "op": "eq", "parameter": "infillProfileType", "value": "rect" } ] }, "group": "profiles", "order": 140 },
+    { "key": "infillWallThickness", "displayName": { "zh-CN": "栏杆管/壁厚" }, "valueType": "number", "quantity": "length", "unit": "mm", "defaultValue": 1.2, "constraints": { "minimum": 0.1, "step": 0.1 }, "visibleWhen": { "op": "ne", "parameter": "infillType", "value": "none" }, "group": "profiles", "order": 150 },
+    { "key": "handrailShapeMode", "displayName": { "zh-CN": "扶手管/多边形轮廓" }, "valueType": "enum", "defaultValue": "regular", "choices": [{ "value": "regular", "displayName": { "zh-CN": "正多边形" } }, { "value": "star", "displayName": { "zh-CN": "星形" } }], "visibleWhen": { "op": "eq", "parameter": "handrailProfileType", "value": "polygon" }, "group": "profiles", "order": 11 },
+    { "key": "handrailSideCount", "displayName": { "zh-CN": "扶手管/边数或星角数" }, "valueType": "integer", "quantity": "count", "defaultValue": 8, "constraints": { "minimum": 3, "maximum": 64, "step": 1 }, "visibleWhen": { "op": "eq", "parameter": "handrailProfileType", "value": "polygon" }, "group": "profiles", "order": 12 },
+    { "key": "handrailStarInnerRatio", "displayName": { "zh-CN": "扶手管/星谷半径比" }, "valueType": "number", "defaultValue": 0.5, "constraints": { "minimum": 0.15, "maximum": 0.9, "step": 0.05 }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "handrailProfileType", "value": "polygon" }, { "op": "eq", "parameter": "handrailShapeMode", "value": "star" }] }, "group": "profiles", "order": 13 },
+    { "key": "postShapeMode", "displayName": { "zh-CN": "立柱管/多边形轮廓" }, "valueType": "enum", "defaultValue": "regular", "choices": [{ "value": "regular", "displayName": { "zh-CN": "正多边形" } }, { "value": "star", "displayName": { "zh-CN": "星形" } }], "visibleWhen": { "op": "eq", "parameter": "postProfileType", "value": "polygon" }, "group": "profiles", "order": 61 },
+    { "key": "postSideCount", "displayName": { "zh-CN": "立柱管/边数或星角数" }, "valueType": "integer", "quantity": "count", "defaultValue": 8, "constraints": { "minimum": 3, "maximum": 64, "step": 1 }, "visibleWhen": { "op": "eq", "parameter": "postProfileType", "value": "polygon" }, "group": "profiles", "order": 62 },
+    { "key": "postStarInnerRatio", "displayName": { "zh-CN": "立柱管/星谷半径比" }, "valueType": "number", "defaultValue": 0.5, "constraints": { "minimum": 0.15, "maximum": 0.9, "step": 0.05 }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "postProfileType", "value": "polygon" }, { "op": "eq", "parameter": "postShapeMode", "value": "star" }] }, "group": "profiles", "order": 63 },
+    { "key": "infillShapeMode", "displayName": { "zh-CN": "栏杆管/多边形轮廓" }, "valueType": "enum", "defaultValue": "regular", "choices": [{ "value": "regular", "displayName": { "zh-CN": "正多边形" } }, { "value": "star", "displayName": { "zh-CN": "星形" } }], "visibleWhen": { "op": "all", "conditions": [{ "op": "ne", "parameter": "infillType", "value": "none" }, { "op": "eq", "parameter": "infillProfileType", "value": "polygon" }] }, "group": "profiles", "order": 111 },
+    { "key": "infillSideCount", "displayName": { "zh-CN": "栏杆管/边数或星角数" }, "valueType": "integer", "quantity": "count", "defaultValue": 8, "constraints": { "minimum": 3, "maximum": 64, "step": 1 }, "visibleWhen": { "op": "all", "conditions": [{ "op": "ne", "parameter": "infillType", "value": "none" }, { "op": "eq", "parameter": "infillProfileType", "value": "polygon" }] }, "group": "profiles", "order": 112 },
+    { "key": "infillStarInnerRatio", "displayName": { "zh-CN": "栏杆管/星谷半径比" }, "valueType": "number", "defaultValue": 0.5, "constraints": { "minimum": 0.15, "maximum": 0.9, "step": 0.05 }, "visibleWhen": { "op": "all", "conditions": [{ "op": "ne", "parameter": "infillType", "value": "none" }, { "op": "eq", "parameter": "infillProfileType", "value": "polygon" }, { "op": "eq", "parameter": "infillShapeMode", "value": "star" }] }, "group": "profiles", "order": 113 },
+    {
+      "key": "connectionType",
+      "displayName": { "zh-CN": "连接方式" },
+      "valueType": "enum",
+      "defaultValue": "weld",
+      "choices": [
+        { "value": "weld", "displayName": { "zh-CN": "焊接" } },
+        { "value": "site_fit", "displayName": { "zh-CN": "现场配切连接" } }
+      ],
+      "group": "process",
+      "order": 10
+    }
+  ]
+}

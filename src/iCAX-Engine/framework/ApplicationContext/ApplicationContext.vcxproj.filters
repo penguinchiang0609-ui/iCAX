@@ -36,6 +36,9 @@
     <ClInclude Include="ApplicationPaths.h">
       <Filter>extern</Filter>
     </ClInclude>
+    <ClInclude Include="UserDataStore.h">
+      <Filter>extern</Filter>
+    </ClInclude>
     <ClInclude Include="ApplicationContext.h">
       <Filter>inner</Filter>
     </ClInclude>
@@ -56,6 +59,9 @@
     <ClCompile Include="ApplicationDescriptor.cpp">
       <Filter>extern</Filter>
     </ClCompile>
+    <ClCompile Include="ApplicationPaths.cpp">
+      <Filter>extern</Filter>
+    </ClCompile>
     <ClCompile Include="ApplicationContext.cpp">
       <Filter>inner</Filter>
     </ClCompile>
@@ -63,6 +69,9 @@
       <Filter>inner</Filter>
     </ClCompile>
     <ClCompile Include="ApplicationConfigService.cpp">
+      <Filter>inner</Filter>
+    </ClCompile>
+    <ClCompile Include="UserDataStore.cpp">
       <Filter>inner</Filter>
     </ClCompile>
   </ItemGroup>

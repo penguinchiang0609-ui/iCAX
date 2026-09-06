@@ -1,0 +1,417 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from pathlib import Path, PurePosixPath
+import re
+from typing import Any
+import zipfile
+
+
+PACKAGE_SCHEMA = "icax.tube-profile-package-record"
+PACKAGE_SCHEMA_VERSION = 1
+DESCRIPTOR_SCHEMA = "icax.tube-profile-descriptor"
+DESCRIPTOR_SCHEMA_VERSION = 2
+MAX_ARCHIVE_BYTES = 8 * 1024 * 1024
+MAX_MEMBER_BYTES = 4 * 1024 * 1024
+MAX_TOTAL_BYTES = 8 * 1024 * 1024
+REQUIRED_MEMBERS = ("profile.json", "profile.py")
+
+
+def _localized_text(value: Any, name: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        for locale in ("zh-CN", "zh", "en-US", "en"):
+            text = value.get(locale)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+        for text in value.values():
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    raise ValueError(f"{name} 不能为空")
+
+
+def _finite_number(value: Any, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} 必须是数值")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{name} 必须是有限数值")
+    return result
+
+
+def _normalize_value(definition: dict[str, Any], value: Any) -> Any:
+    key = str(definition["key"])
+    value_type = definition["valueType"]
+    if value_type == "number":
+        result: Any = _finite_number(value, key)
+    elif value_type == "integer":
+        number = _finite_number(value, key)
+        if not number.is_integer():
+            raise ValueError(f"{key} 必须是整数")
+        result = int(number)
+    elif value_type == "string":
+        if not isinstance(value, str):
+            raise ValueError(f"{key} 必须是文本")
+        result = value
+    else:
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} 必须是布尔值")
+        result = value
+
+    if value_type in ("number", "integer"):
+        minimum = definition.get("min", definition.get("minimum"))
+        maximum = definition.get("max", definition.get("maximum"))
+        if minimum is not None and result < _finite_number(minimum, f"{key}.min"):
+            raise ValueError(f"{key} 小于允许的最小值")
+        if maximum is not None and result > _finite_number(maximum, f"{key}.max"):
+            raise ValueError(f"{key} 大于允许的最大值")
+    options = definition.get("options")
+    if isinstance(options, list) and options:
+        allowed = [item.get("value") if isinstance(item, dict) else item for item in options]
+        if result not in allowed:
+            raise ValueError(f"{key} 不在允许选项中")
+    return result
+
+
+def _validate_descriptor(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not isinstance(value, dict):
+        raise ValueError("profile.json 必须是 JSON 对象")
+    if value.get("schema") != DESCRIPTOR_SCHEMA:
+        raise ValueError("profile.json schema 不受支持")
+    if value.get("schemaVersion") != DESCRIPTOR_SCHEMA_VERSION:
+        raise ValueError("profile.json schemaVersion 不受支持")
+    profile_id = value.get("id")
+    if not isinstance(profile_id, str) or re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", profile_id) is None:
+        raise ValueError("profile.json id 无效")
+    version = value.get("version")
+    if not isinstance(version, str) or not version.strip() or len(version) > 64:
+        raise ValueError("profile.json version 无效")
+    _localized_text(value.get("displayName"), "profile.json displayName")
+    definitions = value.get("parameters")
+    if not isinstance(definitions, list) or not 1 <= len(definitions) <= 64:
+        raise ValueError("profile.json 必须声明 1 到 64 个 parameters")
+
+    keys: set[str] = set()
+    defaults: dict[str, Any] = {}
+    for index, definition in enumerate(definitions):
+        if not isinstance(definition, dict):
+            raise ValueError(f"parameters[{index}] 必须是对象")
+        key = definition.get("key")
+        if not isinstance(key, str) or re.fullmatch(r"[a-z][A-Za-z0-9]{0,79}", key) is None:
+            raise ValueError(f"parameters[{index}].key 无效")
+        if key in keys:
+            raise ValueError(f"管型参数重复：{key}")
+        keys.add(key)
+        if definition.get("valueType") not in ("number", "integer", "string", "boolean"):
+            raise ValueError(f"管型参数 {key} 的 valueType 无效")
+        _localized_text(definition.get("displayName"), f"管型参数 {key} 的 displayName")
+        if "defaultValue" not in definition:
+            raise ValueError(f"可编辑管型参数 {key} 必须声明 defaultValue")
+        defaults[key] = _normalize_value(definition, definition["defaultValue"])
+    return dict(value), defaults
+
+
+def _normalize_parameters(
+    descriptor: dict[str, Any], values: Any,
+) -> dict[str, Any]:
+    if not isinstance(values, dict):
+        raise ValueError("管型参数必须是对象")
+    result: dict[str, Any] = {}
+    for definition in descriptor["parameters"]:
+        key = definition["key"]
+        source = values[key] if key in values else definition["defaultValue"]
+        result[key] = _normalize_value(definition, source)
+    unknown = sorted(set(values) - set(result))
+    if unknown:
+        raise ValueError(f"管型包含未知参数：{', '.join(unknown[:5])}")
+    return result
+
+
+def _load_script(script_source: str, digest: str) -> dict[str, Any]:
+    if not isinstance(script_source, str) or not script_source.strip():
+        raise ValueError("profile.py 不能为空")
+    if len(script_source.encode("utf-8")) > MAX_MEMBER_BYTES:
+        raise ValueError("profile.py 超过大小限制")
+    namespace: dict[str, Any] = {
+        "__name__": f"icax_user_profile_{digest[:20]}",
+        "__file__": "<icaxprofile>/profile.py",
+        "__package__": None,
+    }
+    exec(compile(script_source, namespace["__file__"], "exec"), namespace)
+    if not callable(namespace.get("build")):
+        raise ValueError("profile.py 缺少 build(parameters)")
+    if not callable(namespace.get("contours")):
+        raise ValueError("profile.py 缺少 contours(profile, clearance, swap_axes)")
+    return namespace
+
+
+def _evaluate(
+    descriptor: dict[str, Any], script_source: str, values: Any,
+    package_digest: str, source_file_name: str,
+) -> dict[str, Any]:
+    descriptor, _ = _validate_descriptor(descriptor)
+    parameters = _normalize_parameters(descriptor, values)
+    namespace = _load_script(script_source, package_digest)
+    built = namespace["build"](dict(parameters))
+    if not isinstance(built, dict):
+        raise ValueError("profile.py 的 build 必须返回对象")
+    contours = namespace["contours"](
+        dict(built), clearance=0.0, swap_axes=False,
+    )
+    if not isinstance(contours, list) or not contours or len(contours) > 1000:
+        raise ValueError("profile.py 必须返回非空轮廓数组")
+    for index, contour in enumerate(contours):
+        if not isinstance(contour, dict) or not isinstance(contour.get("kind"), str):
+            raise ValueError(f"profile.py 返回的轮廓 {index} 无效")
+
+    width = _finite_number(built.get("width"), "build.width")
+    depth = _finite_number(built.get("depth"), "build.depth")
+    wall = _finite_number(built.get("wallThickness", 0.0), "build.wallThickness")
+    radius = _finite_number(built.get("cornerRadius", 0.0), "build.cornerRadius")
+    if width <= 1.0e-6 or depth <= 1.0e-6 or wall < 0 or radius < 0:
+        raise ValueError("profile.py 返回的截面尺寸无效")
+    name = _localized_text(descriptor.get("displayName"), "displayName")
+    result = {
+        "schema": "icax.imported-tube-profile",
+        "schemaVersion": 1,
+        "kind": "parametric-package",
+        "name": name,
+        "sourceFileName": source_file_name,
+        "sourceFormat": "icax.profile-package",
+        "profilePackageId": descriptor["id"],
+        "packageVersion": descriptor["version"],
+        "packageDigest": package_digest,
+        "width": width,
+        "depth": depth,
+        "wallThickness": wall,
+        "cornerRadius": radius,
+        "specification": str(built.get("specification", f"{width:g} × {depth:g} mm")),
+        "hollow": len(contours) > 1,
+        "contourCount": len(contours),
+        "contours": contours,
+        "parameters": parameters,
+        "parameterDefinitions": descriptor["parameters"],
+        "editableParameters": True,
+        "frozenGeometry": False,
+        "contentDigest": package_digest,
+    }
+    json.dumps(result, ensure_ascii=False, allow_nan=False)
+    return result
+
+
+def _member_name(info: zipfile.ZipInfo) -> str:
+    normalized = info.filename.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("管型包包含不安全的文件路径")
+    return "/".join(part for part in path.parts if part not in ("", "."))
+
+
+def _read_archive(path: Path, password: str) -> tuple[bytes, bytes, bool]:
+    if path.stat().st_size > MAX_ARCHIVE_BYTES:
+        raise ValueError("管型包超过 8 MB")
+    try:
+        archive = zipfile.ZipFile(path, "r")
+    except zipfile.BadZipFile as error:
+        raise ValueError("管型包不是有效 ZIP 文件") from error
+    with archive:
+        members: dict[str, zipfile.ZipInfo] = {}
+        total_size = 0
+        for info in archive.infolist():
+            name = _member_name(info)
+            if not name or info.is_dir():
+                continue
+            if name in members:
+                raise ValueError(f"管型包文件重复：{name}")
+            if info.file_size > MAX_MEMBER_BYTES:
+                raise ValueError(f"管型包文件超过 4 MB：{name}")
+            total_size += info.file_size
+            if total_size > MAX_TOTAL_BYTES:
+                raise ValueError("管型包解压后超过 8 MB")
+            members[name] = info
+        missing = [name for name in REQUIRED_MEMBERS if name not in members]
+        if missing:
+            raise ValueError(f"管型包缺少：{', '.join(missing)}")
+        unexpected = [name for name in members if name not in REQUIRED_MEMBERS]
+        if unexpected:
+            raise ValueError("管型包根目录只允许 profile.json 和 profile.py")
+        encrypted = any(members[name].flag_bits & 0x1 for name in REQUIRED_MEMBERS)
+        if encrypted and not password:
+            raise ValueError("管型包需要密码")
+        password_bytes = password.encode("utf-8") if password else None
+        try:
+            descriptor_bytes = archive.read(members["profile.json"], pwd=password_bytes)
+            script_bytes = archive.read(members["profile.py"], pwd=password_bytes)
+        except (RuntimeError, zipfile.BadZipFile) as error:
+            raise ValueError("管型包密码错误或加密格式不受支持") from error
+    return descriptor_bytes, script_bytes, encrypted
+
+
+def _inspect(path: Path, password: str) -> dict[str, Any]:
+    descriptor_bytes, script_bytes, encrypted = _read_archive(path, password)
+    try:
+        descriptor = json.loads(descriptor_bytes.decode("utf-8-sig"))
+        script_source = script_bytes.decode("utf-8-sig")
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("profile.json 或 profile.py 不是有效 UTF-8 内容") from error
+    descriptor, defaults = _validate_descriptor(descriptor)
+    canonical_descriptor = json.dumps(
+        descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    digest = "sha256:" + hashlib.sha256(
+        canonical_descriptor + b"\0" + script_source.encode("utf-8"),
+    ).hexdigest()
+    preview = _evaluate(descriptor, script_source, defaults, digest, path.name)
+    return {
+        "schema": PACKAGE_SCHEMA,
+        "schemaVersion": PACKAGE_SCHEMA_VERSION,
+        "kind": "parametric-package",
+        "name": _localized_text(descriptor.get("displayName"), "displayName"),
+        "sourceFileName": path.name,
+        "sourceFormat": "icax.profile-package",
+        "passwordProtected": encrypted,
+        "packageDigest": digest,
+        "descriptor": descriptor,
+        "scriptSource": script_source,
+        "defaultParameters": defaults,
+        "previewProfile": preview,
+    }
+
+
+def _system_profile_root(value: Any) -> Path:
+    if value is None:
+        root = (Path(__file__).resolve().parent / "profiles").resolve()
+    elif isinstance(value, str) and value.strip():
+        root = Path(value).expanduser().resolve()
+    else:
+        raise ValueError("系统管型目录无效")
+    if not root.is_dir():
+        raise FileNotFoundError(f"系统管型目录不存在：{root}")
+    return root
+
+
+def _system_package(directory: Path) -> dict[str, Any]:
+    descriptor_path = directory / "profile.json"
+    script_path = directory / "profile.py"
+    if not descriptor_path.is_file() or not script_path.is_file():
+        raise ValueError(f"系统管型包不完整：{directory.name}")
+    descriptor_bytes = descriptor_path.read_bytes()
+    script_bytes = script_path.read_bytes()
+    if len(descriptor_bytes) > MAX_MEMBER_BYTES or len(script_bytes) > MAX_MEMBER_BYTES:
+        raise ValueError(f"系统管型包文件超过 4 MB：{directory.name}")
+    try:
+        descriptor_source = json.loads(descriptor_bytes.decode("utf-8-sig"))
+        script_source = script_bytes.decode("utf-8-sig")
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(
+            f"系统管型 {directory.name} 的 profile.json 或 profile.py 不是有效 UTF-8 内容"
+        ) from error
+    descriptor, defaults = _validate_descriptor(descriptor_source)
+    if descriptor["id"] != directory.name:
+        raise ValueError(f"系统管型包目录与 id 不一致：{directory.name}")
+    canonical_descriptor = json.dumps(
+        descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    digest = "sha256:" + hashlib.sha256(
+        canonical_descriptor + b"\0" + script_source.encode("utf-8"),
+    ).hexdigest()
+    source_file_name = f"{directory.name}/profile.py"
+    preview = _evaluate(
+        descriptor, script_source, defaults, digest, source_file_name,
+    )
+    preview.update({
+        "profileScope": "system",
+        "profileDefinitionId": descriptor["id"],
+        "sourceFormat": "icax.system-profile",
+    })
+    return {
+        "schema": PACKAGE_SCHEMA,
+        "schemaVersion": PACKAGE_SCHEMA_VERSION,
+        "kind": "parametric-package",
+        "name": _localized_text(descriptor.get("displayName"), "displayName"),
+        "sourceFileName": source_file_name,
+        "sourceFormat": "icax.system-profile",
+        "passwordProtected": False,
+        "packageDigest": digest,
+        "descriptor": descriptor,
+        "scriptSource": script_source,
+        "defaultParameters": defaults,
+        "previewProfile": preview,
+    }
+
+
+def _find_system_package(root: Path, profile_id: Any) -> dict[str, Any]:
+    if not isinstance(profile_id, str) or re.fullmatch(
+        r"[a-z][a-z0-9_-]{0,79}", profile_id,
+    ) is None:
+        raise ValueError("系统管型 ID 无效")
+    directory = root / profile_id
+    if not directory.is_dir():
+        raise ValueError(f"系统管型不存在：{profile_id}")
+    return _system_package(directory)
+
+
+def _list_system_packages(root: Path) -> list[dict[str, Any]]:
+    packages: list[dict[str, Any]] = []
+    for directory in sorted(root.iterdir(), key=lambda item: item.name):
+        if (not directory.is_dir()
+                or re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", directory.name) is None
+                or not (directory / "profile.json").is_file()
+                or not (directory / "profile.py").is_file()):
+            continue
+        packages.append(_system_package(directory))
+    return packages
+
+
+def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    del context
+    action = str(parameters.get("action", "inspect"))
+    if action == "inspect":
+        source_path = parameters.get("sourcePath")
+        if not isinstance(source_path, str) or not source_path.strip():
+            raise ValueError("缺少管型包路径")
+        path = Path(source_path).expanduser().resolve()
+        if path.suffix.lower() not in (".icaxprofile", ".zip"):
+            raise ValueError("请选择 .icaxprofile 管型包")
+        if not path.is_file():
+            raise FileNotFoundError(f"管型包不存在：{path}")
+        password = parameters.get("password", "")
+        if not isinstance(password, str) or len(password) > 256:
+            raise ValueError("管型包密码无效")
+        return {"package": _inspect(path, password)}
+    if action == "evaluate":
+        descriptor = parameters.get("descriptor")
+        script_source = parameters.get("scriptSource")
+        package_digest = str(parameters.get("packageDigest", ""))
+        source_file_name = str(parameters.get("sourceFileName", "管型包.icaxprofile"))
+        return {"profile": _evaluate(
+            descriptor,
+            script_source,
+            parameters.get("values", {}),
+            package_digest,
+            source_file_name,
+        )}
+    if action == "list-system":
+        root = _system_profile_root(parameters.get("profileRoot"))
+        return {"systemProfiles": _list_system_packages(root)}
+    if action == "evaluate-system":
+        root = _system_profile_root(parameters.get("profileRoot"))
+        package = _find_system_package(root, parameters.get("systemProfileId"))
+        descriptor = package["descriptor"]
+        profile = _evaluate(
+            descriptor,
+            package["scriptSource"],
+            parameters.get("values", {}),
+            package["packageDigest"],
+            package["sourceFileName"],
+        )
+        profile.update({
+            "profileScope": "system",
+            "profileDefinitionId": descriptor["id"],
+            "sourceFormat": "icax.system-profile",
+        })
+        return {"profile": profile}
+    raise ValueError(f"不支持的管型包操作：{action}")

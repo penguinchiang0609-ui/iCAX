@@ -40,7 +40,7 @@ export async function loadProductModule(product, cache, options = {}) {
   const moduleUrl = resolveFrontendEntry(product.frontendEntry, options.baseUrl, options);
   const module = await import(moduleUrl);
   if (typeof module.mountProduct !== "function" && typeof module.mountProject !== "function") {
-    throw new TypeError(`Product module does not export mountProduct or mountProject: ${product.productId}`);
+    throw new TypeError("产品界面无法加载，缺少必要的界面入口。");
   }
 
   cache?.set(product.productId, module);

@@ -29,4 +29,6 @@ Application/
 
 默认没有 UI 配置文件时，`Application.exe` 使用 CEF/H5 UI 容器。需要切换 UI 技术时，可在 `Setting/UIContainer.Setting` 中配置 `type=wpf` 或 `type=qt`，前提是对应容器 DLL 实现了 `IUIContainer` 并注册到 `CUIContainerFactory`。需要无窗口验收时，可显式配置 `type=headless`。
 
+当前 Application 的产品注册配置位于 `Application.cpp` 的 `_LoadProductDefinitions`：仅将 `apps/tube-designer/product.manifest.json` 加入 `RuntimeConfig.Products`。启动页因此只显示 TubeDesigner，不自动注册其他目录中的产品，也不回退到“默认项目”。这不是 `Application.Setting` 中的运行时开关，修改后需要重新编译 Application 并重启。其他产品的代码、manifest 和用户项目仍保留，恢复注册即可重新使用；未注册期间不能从本应用打开其他产品的项目文件。
+
 应用默认把 Scene 资源历史版本根目录设置为 `Temp/ResourceVersions`。宿主也可以在启动前通过 `CApplicationConfig::RuntimeConfig.Paths.ResourceVersionDirectory` 覆盖；相对路径以 `Paths.InstallDirectory` 为基准。

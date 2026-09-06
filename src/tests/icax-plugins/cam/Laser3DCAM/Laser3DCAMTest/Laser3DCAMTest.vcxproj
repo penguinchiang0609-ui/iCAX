@@ -71,7 +71,7 @@
       <Project>{41e6e443-2614-4e0d-914a-bfc4d5802cd4}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\common\Transform\Transform.vcxproj">
-      <Project>{d1b1bba3-23a7-4312-a5c7-390097406fe1}</Project>
+      <Project>{14df2d69-19bd-4340-b859-7c4ca916b42b}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\render\RenderInteraction\RenderInteraction.vcxproj">
       <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>

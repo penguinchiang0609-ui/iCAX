@@ -6,6 +6,13 @@
 #include "ProductData.h"
 #include "ProductDefinition.h"
 
+#include <memory>
+
+namespace iCAX::Application
+{
+    class IProductUserDataStore;
+}
+
 namespace iCAX
 {
     namespace Behaviour
@@ -62,6 +69,13 @@ namespace iCAX
             * @brief 获取产品 ID。
             */
             virtual const std::string& GetProductID() const = 0;
+
+            /*
+            * @brief 获取已由框架锁定到当前 ProductID 的用户数据仓库。
+            * @details 产品只能选择集合和记录，不能选择其他产品命名空间。
+            */
+            virtual std::shared_ptr<iCAX::Application::IProductUserDataStore>
+                GetUserDataStore() const = 0;
 
             /*
             * @brief 获取产品数据快照。

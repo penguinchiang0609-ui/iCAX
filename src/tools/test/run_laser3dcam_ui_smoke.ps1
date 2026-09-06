@@ -13,6 +13,7 @@ param(
     [switch]$RecognizeCADIntent,
     [switch]$CheckTubeCSGWorkflow,
     [switch]$CheckTubeDesignerWorkflow,
+    [switch]$CheckTubeDesignerProfilePreview,
     [switch]$CheckTubeDesignerStepExport,
     [switch]$CheckDefaultMachine,
     [switch]$CheckMachineEnableWorkflow,
@@ -369,6 +370,7 @@ try {
         $recognizeCADIntentLiteral = if ($RecognizeCADIntent) { "true" } else { "false" }
         $checkTubeCSGWorkflowLiteral = if ($CheckTubeCSGWorkflow) { "true" } else { "false" }
         $checkTubeDesignerWorkflowLiteral = if ($CheckTubeDesignerWorkflow) { "true" } else { "false" }
+        $checkTubeDesignerProfilePreviewLiteral = if ($CheckTubeDesignerProfilePreview) { "true" } else { "false" }
         $checkTubeDesignerStepExportLiteral = if ($CheckTubeDesignerStepExport) { "true" } else { "false" }
         $checkDefaultMachineLiteral = if ($CheckDefaultMachine) { "true" } else { "false" }
         $checkMachineEnableWorkflowLiteral = if ($CheckMachineEnableWorkflow) { "true" } else { "false" }
@@ -453,6 +455,505 @@ try {
     await delay(500);
   }
 
+  let tubeDesignerProfilePreviewResult = null;
+  if ($checkTubeDesignerProfilePreviewLiteral) {
+    if (typeof window.__icaxAppShell?.selectRibbonTab !== "function") {
+      throw new Error("AppShell ribbon-tab automation is unavailable.");
+    }
+    if (typeof window.__icaxLaser3DCAM?.getTubeDesignerProfileLibraryState !== "function") {
+      throw new Error("TubeDesigner profile-library automation is unavailable.");
+    }
+    await window.__icaxAppShell.selectRibbonTab("profiles");
+    try {
+      await waitUntil(() => {
+        const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+        const cards = Array.from(document.querySelectorAll(".tube-profile-library-card"));
+        return state.activeAreaId === "profiles" && !state.pending && !state.progress
+          && state.profiles.length > 0 && cards.length === state.profiles.length
+          && cards.every((card) => !card.disabled)
+          ? state : null;
+      }, "enabled TubeDesigner profile library");
+    } catch (error) {
+      const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+      throw new Error(error.message + "; state=" + JSON.stringify(state)
+        + "; progressBackdrops=" + document.querySelectorAll(".cam-progress-backdrop").length
+        + "; disabledCards=" + document.querySelectorAll(".tube-profile-library-card:disabled").length);
+    }
+
+    const inspectProfileSectionSvg = (profile) => {
+      const editorSelector = "[data-tube-profile-library-editor][data-tube-designer-profile-key=\""
+        + CSS.escape(profile.selectionKey) + "\"]";
+      const editor = document.querySelector(editorSelector);
+      const miniature = editor?.querySelector(".tube-profile-library-miniature") ?? null;
+      const svg = miniature?.querySelector(".tube-profile-library-svg") ?? null;
+      const outer = svg?.querySelector(".outer") ?? null;
+      const geometry = svg?.querySelector("g") ?? null;
+      if (!svg || !outer || !geometry) {
+        return {
+          svgExists: Boolean(svg),
+          outerExists: Boolean(outer),
+          geometryExists: Boolean(geometry),
+          fullyContained: false,
+          hasSafePadding: false,
+          svgElementContained: false,
+          svgElementSizedToFrame: false,
+          curveExpected: /圆|椭圆|梅花|弧|样条|spline/i.test(profile.name),
+          smoothCurveExpression: false,
+          periodicBsplineTarget: /(^|[^0-9])06[_\s-]|五瓣梅花/i.test(profile.name),
+        };
+      }
+
+      const miniatureRect = miniature.getBoundingClientRect();
+      const svgRect = svg.getBoundingClientRect();
+      const elementTolerance = 0.75;
+      const svgElementContained = svgRect.left >= miniatureRect.left - elementTolerance
+        && svgRect.top >= miniatureRect.top - elementTolerance
+        && svgRect.right <= miniatureRect.right + elementTolerance
+        && svgRect.bottom <= miniatureRect.bottom + elementTolerance;
+      const svgWidthRatio = svgRect.width / Math.max(1, miniature.clientWidth);
+      const svgHeightRatio = svgRect.height / Math.max(1, miniature.clientHeight);
+      const svgElementSizedToFrame = svgWidthRatio >= 0.84 && svgWidthRatio <= 0.88
+        && svgHeightRatio >= 0.84 && svgHeightRatio <= 0.88;
+      const viewBox = svg.viewBox.baseVal;
+      const localBounds = geometry.getBBox();
+      const matrix = geometry.transform.baseVal.consolidate()?.matrix ?? {
+        a: 1, b: 0, c: 0, d: 1, e: 0, f: 0
+      };
+      const transformPoint = (x, y) => ({
+        x: matrix.a * x + matrix.c * y + matrix.e,
+        y: matrix.b * x + matrix.d * y + matrix.f,
+      });
+      const corners = [
+        transformPoint(localBounds.x, localBounds.y),
+        transformPoint(localBounds.x + localBounds.width, localBounds.y),
+        transformPoint(localBounds.x, localBounds.y + localBounds.height),
+        transformPoint(localBounds.x + localBounds.width, localBounds.y + localBounds.height),
+      ];
+      const renderedBounds = {
+        minX: Math.min(...corners.map((point) => point.x)),
+        minY: Math.min(...corners.map((point) => point.y)),
+        maxX: Math.max(...corners.map((point) => point.x)),
+        maxY: Math.max(...corners.map((point) => point.y)),
+      };
+      const margins = {
+        left: renderedBounds.minX - viewBox.x,
+        top: renderedBounds.minY - viewBox.y,
+        right: viewBox.x + viewBox.width - renderedBounds.maxX,
+        bottom: viewBox.y + viewBox.height - renderedBounds.maxY,
+      };
+      const tolerance = Math.max(viewBox.width, viewBox.height) * 0.0001;
+      const fullyContained = Object.values(margins).every((margin) => margin >= -tolerance);
+      const horizontalPaddingRatio = Math.min(margins.left, margins.right)
+        / Math.max(1e-9, viewBox.width);
+      const verticalPaddingRatio = Math.min(margins.top, margins.bottom)
+        / Math.max(1e-9, viewBox.height);
+      const hasSafePadding = fullyContained
+        && horizontalPaddingRatio >= 0.01
+        && verticalPaddingRatio >= 0.01;
+
+      const outerTag = outer.tagName.toLowerCase();
+      const outerPathData = outerTag === "path" ? String(outer.getAttribute("d") ?? "") : "";
+      const pathCurveCommandCount = (outerPathData.match(/[aAcCqQsStT]/g) ?? []).length;
+      const pathLineCommandCount = (outerPathData.match(/[lL]/g) ?? []).length;
+      const primitiveIsSmooth = outerTag === "circle" || outerTag === "ellipse"
+        || (outerTag === "rect" && Number(outer.getAttribute("rx") ?? 0) > 0);
+      const polygonPointCount = (outerTag === "polygon" || outerTag === "polyline")
+        ? Number(outer.points?.numberOfItems ?? 0) : 0;
+      const denseLinearApproximation = polygonPointCount >= 32 || pathLineCommandCount >= 32;
+      const smoothCurveExpression = primitiveIsSmooth
+        || pathCurveCommandCount > 0
+        || denseLinearApproximation;
+      const curveExpected = /圆|椭圆|梅花|弧|样条|spline/i.test(profile.name);
+      const periodicBsplineTarget = /(^|[^0-9])06[_\s-]|五瓣梅花/i.test(profile.name);
+      return {
+        svgExists: true,
+        outerExists: true,
+        geometryExists: true,
+        outerTag,
+        miniatureRect: {
+          left: miniatureRect.left,
+          top: miniatureRect.top,
+          right: miniatureRect.right,
+          bottom: miniatureRect.bottom,
+          width: miniatureRect.width,
+          height: miniatureRect.height,
+        },
+        svgRect: {
+          left: svgRect.left,
+          top: svgRect.top,
+          right: svgRect.right,
+          bottom: svgRect.bottom,
+          width: svgRect.width,
+          height: svgRect.height,
+        },
+        svgWidthRatio,
+        svgHeightRatio,
+        svgElementContained,
+        svgElementSizedToFrame,
+        viewBox: {
+          x: viewBox.x,
+          y: viewBox.y,
+          width: viewBox.width,
+          height: viewBox.height,
+        },
+        renderedBounds,
+        margins,
+        horizontalPaddingRatio,
+        verticalPaddingRatio,
+        fullyContained,
+        hasSafePadding,
+        curveExpected,
+        primitiveIsSmooth,
+        pathCurveCommandCount,
+        pathLineCommandCount,
+        polygonPointCount,
+        denseLinearApproximation,
+        smoothCurveExpression,
+        periodicBsplineTarget,
+      };
+    };
+
+    const initialState = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+    const systemGroup = document.querySelector('[data-tube-profile-library-group="system"]');
+    const userGroup = document.querySelector('[data-tube-profile-library-group="user"]');
+    const libraryGroups = {
+      groupCount: document.querySelectorAll("[data-tube-profile-library-group]").length,
+      systemExists: Boolean(systemGroup),
+      userExists: Boolean(userGroup),
+      systemCardCount: systemGroup?.querySelectorAll(
+        '.tube-profile-library-card[data-tube-designer-profile-scope="system"]'
+      ).length ?? 0,
+      userCardCount: userGroup?.querySelectorAll(
+        '.tube-profile-library-card[data-tube-designer-profile-scope="user"]'
+      ).length ?? 0,
+    };
+    const profileList = document.querySelector(".tube-profile-library-list");
+    if (!profileList || !systemGroup || !userGroup) {
+      throw new Error("TubeDesigner profile-list layout elements are missing.");
+    }
+    systemGroup.open = true;
+    userGroup.open = true;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rectSnapshot = (element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      };
+    };
+    const inspectExpandedGroupLayout = (group) => {
+      const content = group.querySelector(":scope > .tube-profile-library-group-content");
+      const cards = Array.from(group.querySelectorAll(":scope > .tube-profile-library-group-content > .tube-profile-library-card"));
+      const groupRect = rectSnapshot(group);
+      const contentRect = content ? rectSnapshot(content) : null;
+      const cardRects = cards.map((card) => ({
+        key: card.dataset.tubeDesignerProfileKey ?? "",
+        ...rectSnapshot(card),
+      }));
+      const tolerance = 1;
+      return {
+        open: group.open,
+        groupRect,
+        contentRect,
+        clientHeight: group.clientHeight,
+        scrollHeight: group.scrollHeight,
+        contentClientHeight: content?.clientHeight ?? 0,
+        contentScrollHeight: content?.scrollHeight ?? 0,
+        cardRects,
+        allCardsHaveHeight: cardRects.length > 0 && cardRects.every((rect) => rect.height > 0),
+        groupContainsAllCards: cardRects.every((rect) =>
+          rect.top >= groupRect.top - tolerance && rect.bottom <= groupRect.bottom + tolerance),
+        contentContainsAllCards: Boolean(contentRect) && cardRects.every((rect) =>
+          rect.top >= contentRect.top - tolerance && rect.bottom <= contentRect.bottom + tolerance),
+        groupHasNoClippedOverflow: group.scrollHeight <= group.clientHeight + tolerance,
+        contentHasNoClippedOverflow: Boolean(content)
+          && content.scrollHeight <= content.clientHeight + tolerance,
+      };
+    };
+    const expandedGroupLayout = {
+      system: inspectExpandedGroupLayout(systemGroup),
+      user: inspectExpandedGroupLayout(userGroup),
+    };
+    profileList.scrollTop = 0;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const scrollTopBefore = profileList.scrollTop;
+    const lastSystemCard = systemGroup.querySelector(
+      ':scope > .tube-profile-library-group-content > .tube-profile-library-card:last-child'
+    );
+    lastSystemCard?.scrollIntoView({ block: "end", inline: "nearest" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const scrollTopAfterSystem = profileList.scrollTop;
+    const listRect = rectSnapshot(profileList);
+    const listViewportRect = {
+      left: listRect.left + profileList.clientLeft,
+      top: listRect.top + profileList.clientTop,
+      right: listRect.left + profileList.clientLeft + profileList.clientWidth,
+      bottom: listRect.top + profileList.clientTop + profileList.clientHeight,
+      width: profileList.clientWidth,
+      height: profileList.clientHeight,
+    };
+    const lastSystemCardRect = lastSystemCard ? rectSnapshot(lastSystemCard) : null;
+    const visibilityTolerance = 1;
+    const lastSystemCardFullyVisible = Boolean(lastSystemCardRect)
+      && lastSystemCardRect.left >= listViewportRect.left - visibilityTolerance
+      && lastSystemCardRect.top >= listViewportRect.top - visibilityTolerance
+      && lastSystemCardRect.right <= listViewportRect.right + visibilityTolerance
+      && lastSystemCardRect.bottom <= listViewportRect.bottom + visibilityTolerance;
+    const lastUserCard = userGroup.querySelector(
+      ':scope > .tube-profile-library-group-content > .tube-profile-library-card:last-child'
+    );
+    lastUserCard?.scrollIntoView({ block: "end", inline: "nearest" });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const lastUserCardRect = lastUserCard ? rectSnapshot(lastUserCard) : null;
+    const lastUserCardFullyVisible = !lastUserCard || (Boolean(lastUserCardRect)
+      && lastUserCardRect.left >= listViewportRect.left - visibilityTolerance
+      && lastUserCardRect.top >= listViewportRect.top - visibilityTolerance
+      && lastUserCardRect.right <= listViewportRect.right + visibilityTolerance
+      && lastUserCardRect.bottom <= listViewportRect.bottom + visibilityTolerance);
+    const listLayout = {
+      listRect,
+      listViewportRect,
+      clientHeight: profileList.clientHeight,
+      scrollHeight: profileList.scrollHeight,
+      scrollTopBefore,
+      scrollTopAfter: profileList.scrollTop,
+      scrollTopAfterSystem,
+      lastSystemCardRect,
+      lastUserCardRect,
+      hasVerticalOverflow: profileList.scrollHeight > profileList.clientHeight + visibilityTolerance,
+      lastSystemCardFullyVisible,
+      lastUserCardFullyVisible,
+    };
+    const invalidExpandedGroups = Object.entries(expandedGroupLayout)
+      .filter(([, group]) => !group.open
+        || !group.allCardsHaveHeight
+        || !group.groupContainsAllCards
+        || !group.contentContainsAllCards
+        || !group.groupHasNoClippedOverflow
+        || !group.contentHasNoClippedOverflow)
+      .map(([scope]) => scope);
+    if (expandedGroupLayout.system.cardRects.length !== 11
+        || invalidExpandedGroups.length
+        || !listLayout.hasVerticalOverflow
+        || !listLayout.lastSystemCardFullyVisible
+        || !listLayout.lastUserCardFullyVisible) {
+      throw new Error("TubeDesigner profile-list layout clips cards: " + JSON.stringify({
+        invalidExpandedGroups,
+        expandedGroupLayout,
+        listLayout,
+      }));
+    }
+    const invalidProfileReferences = initialState.profiles.filter((profile) =>
+      !profile.id
+      || !["system", "user"].includes(profile.scope)
+      || profile.selectionKey !== profile.scope + ":" + profile.id);
+    if (initialState.systemProfileCount !== 11
+        || libraryGroups.groupCount !== 2
+        || !libraryGroups.systemExists
+        || !libraryGroups.userExists
+        || libraryGroups.systemCardCount !== 11
+        || libraryGroups.systemCardCount !== initialState.systemProfileCount
+        || libraryGroups.userCardCount !== initialState.userProfileCount
+        || initialState.profiles.length !== initialState.systemProfileCount + initialState.userProfileCount
+        || invalidProfileReferences.length) {
+      throw new Error("TubeDesigner profile groups or references are invalid: " + JSON.stringify({
+        state: initialState,
+        libraryGroups,
+        invalidProfileReferences,
+      }));
+    }
+    const progressProbe = document.createElement("div");
+    progressProbe.className = "cam-progress-backdrop";
+    progressProbe.dataset.uiSmokeProgressProbe = "true";
+    document.querySelector(".cam-workbench")?.append(progressProbe);
+    await delay(50);
+    const progressRect = progressProbe.getBoundingClientRect();
+    const progressCoverage = {
+      left: Math.round(progressRect.left),
+      top: Math.round(progressRect.top),
+      right: Math.round(progressRect.right),
+      bottom: Math.round(progressRect.bottom),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      coversViewport: progressRect.left <= 0 && progressRect.top <= 0
+        && progressRect.right >= window.innerWidth && progressRect.bottom >= window.innerHeight
+    };
+    progressProbe.remove();
+    const results = [];
+    for (const profile of initialState.profiles) {
+      const selector = ".tube-profile-library-card[data-tube-designer-profile-key=\""
+        + CSS.escape(profile.selectionKey) + "\"]";
+      let card = null;
+      try {
+        card = await waitUntil(() => {
+          const candidate = document.querySelector(selector);
+          return candidate && !candidate.disabled && !document.querySelector(".cam-progress-backdrop")
+            ? candidate : null;
+        }, "enabled profile card " + profile.name);
+      } catch (error) {
+        const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+        throw new Error(error.message + "; state=" + JSON.stringify(state)
+          + "; cardExists=" + Boolean(document.querySelector(selector))
+          + "; cardDisabled=" + Boolean(document.querySelector(selector)?.disabled)
+          + "; progressBackdrops=" + document.querySelectorAll(".cam-progress-backdrop").length);
+      }
+      card.click();
+      const startedAt = performance.now();
+      const deadline = startedAt + $timeoutMs;
+      let current = null;
+      let viewport = null;
+      let status = "";
+      let progressObserved = false;
+      let previewWaitObserved = false;
+      let previewWaitCoversViewport = false;
+      let previewWaitRect = null;
+      while (performance.now() < deadline) {
+        current = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+        viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: true, includeObjects: true });
+        const statusElement = document.querySelector("[data-tube-profile-preview-status] small");
+        const progressElement = document.querySelector("[data-tube-profile-preview-progress]");
+        const previewWait = document.querySelector("[data-tube-profile-preview-wait]");
+        status = statusElement?.textContent?.trim() ?? "";
+        progressObserved ||= Boolean(progressElement && !progressElement.hidden
+          && progressElement.getAttribute("aria-hidden") === "false");
+        const previewWaitVisible = Boolean(previewWait && !previewWait.hidden
+          && previewWait.getAttribute("aria-hidden") === "false");
+        if (previewWaitVisible) {
+          previewWaitObserved = true;
+          const rect = previewWait.getBoundingClientRect();
+          previewWaitRect = {
+            left: Math.round(rect.left),
+            top: Math.round(rect.top),
+            right: Math.round(rect.right),
+            bottom: Math.round(rect.bottom),
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+          };
+          previewWaitCoversViewport ||= rect.left <= 0 && rect.top <= 0
+            && rect.right >= window.innerWidth && rect.bottom >= window.innerHeight;
+        }
+        const statusIsError = statusElement?.classList?.contains("error") ?? false;
+        if (statusIsError || current.error.startsWith("三维管型预览失败")) {
+          throw new Error(profile.name + ": " + (status || current.error));
+        }
+        let previewIdentityMatches = false;
+        try {
+          const previewIdentity = JSON.parse(current.previewKey);
+          previewIdentityMatches = Array.isArray(previewIdentity)
+            && previewIdentity[0] === profile.scope
+            && previewIdentity[1] === profile.id;
+        } catch {
+          previewIdentityMatches = false;
+        }
+        const expectedRevisionPrefix = "profile-preview:" + profile.selectionKey + ":";
+        if (current.selectedProfileKey === profile.selectionKey
+            && !current.requestKey
+            && previewIdentityMatches
+            && current.geometryResourceId
+            && current.geometryResourceVersion > 0
+            && current.appliedView?.revision?.startsWith(expectedRevisionPrefix)
+            && current.appliedView?.entityIds?.length === 1
+            && current.appliedView.entityIds[0] === profile.selectionKey
+            && status === "三维管型已生成"
+            && Number(viewport?.geometryCount ?? 0) >= 1
+            && Number(viewport?.objectCount ?? 0) === 1
+            && Number(viewport?.visibleObjectCount ?? 0) === 1
+            && Number(viewport?.renderInfo?.triangles ?? 0) > 0
+            && viewport?.objects?.length === 1
+            && viewport.objects[0]?.objectId === profile.selectionKey
+            && viewport.objects[0]?.geometryId === current.geometryResourceId
+            && Number(viewport?.pixelSample?.nonBackground ?? 0) > 0) {
+          break;
+        }
+        await delay(100);
+      }
+      if (performance.now() >= deadline) {
+        throw new Error(profile.name + ": timed out; state=" + JSON.stringify(current)
+          + "; status=" + status + "; viewport=" + JSON.stringify(viewport));
+      }
+      const bounds = viewport?.contentBounds;
+      const spans = bounds ? [
+        Number(bounds.max.x) - Number(bounds.min.x),
+        Number(bounds.max.y) - Number(bounds.min.y),
+        Number(bounds.max.z) - Number(bounds.min.z)
+      ] : [];
+      if (!spans.some((span) => Math.abs(span - 1000) < 0.01)) {
+        throw new Error(profile.name + ": preview is not a 1000 mm extrusion; spans=" + spans.join(","));
+      }
+      const sectionSvg = inspectProfileSectionSvg(profile);
+      results.push({
+        id: profile.id,
+        scope: profile.scope,
+        selectionKey: profile.selectionKey,
+        name: profile.name,
+        profileType: profile.profileType,
+        elapsedMs: Math.round(performance.now() - startedAt),
+        status,
+        progressObserved,
+        previewWaitObserved,
+        previewWaitCoversViewport,
+        previewWaitRect,
+        geometryResourceVersion: current.geometryResourceVersion,
+        appliedRevision: current.appliedView.revision,
+        appliedEntityId: current.appliedView.entityIds[0],
+        viewportObjectId: viewport.objects[0].objectId,
+        spans,
+        visibleObjectCount: viewport.visibleObjectCount,
+        nonBackgroundPixels: viewport.pixelSample.nonBackground,
+        sectionSvg,
+      });
+    }
+    const logMessages = Array.from(document.querySelectorAll(".log-row > span:last-child"))
+      .map((element) => element.textContent?.trim() ?? "");
+    const missingStartLogs = initialState.profiles
+      .filter((profile) => !logMessages.some((message) => message === "开始生成三维管型：" + profile.name))
+      .map((profile) => profile.name);
+    const missingSuccessLogs = initialState.profiles
+      .filter((profile) => !logMessages.some((message) => message === "三维管型已生成：" + profile.name))
+      .map((profile) => profile.name);
+    if (missingStartLogs.length || missingSuccessLogs.length) {
+      throw new Error("TubeDesigner profile preview logs are incomplete: " + JSON.stringify({ missingStartLogs, missingSuccessLogs, logMessages }));
+    }
+    tubeDesignerProfilePreviewResult = {
+      profileCount: initialState.profiles.length,
+      systemProfileCount: initialState.systemProfileCount,
+      userProfileCount: initialState.userProfileCount,
+      libraryGroups,
+      expandedGroupLayout,
+      listLayout,
+      periodicBsplineTargetCount: results.filter((profile) => profile.sectionSvg.periodicBsplineTarget).length,
+      periodicBsplineOuterCount: results.filter((profile) => profile.sectionSvg.periodicBsplineTarget
+        && profile.sectionSvg.outerExists).length,
+      progressCoverage,
+      results,
+      logMessages
+    };
+    const screenshotProfile = initialState.profiles.find((profile) =>
+      profile.scope === "system" && profile.id === "round")
+      ?? initialState.profiles.find((profile) => /04[_\s-].*圆管/i.test(profile.name))
+      ?? initialState.profiles.find((profile) => /(?:^|[^椭])圆管/i.test(profile.name));
+    if (screenshotProfile) {
+      const selector = ".tube-profile-library-card[data-tube-designer-profile-key=\""
+        + CSS.escape(screenshotProfile.selectionKey) + "\"]";
+      const card = document.querySelector(selector);
+      card?.click();
+      await waitUntil(() => {
+        const state = window.__icaxLaser3DCAM.getTubeDesignerProfileLibraryState();
+        const status = document.querySelector("[data-tube-profile-preview-status] small")?.textContent?.trim() ?? "";
+        return state.selectedProfileKey === screenshotProfile.selectionKey && !state.requestKey
+          && state.appliedView?.entityIds?.length === 1
+          && state.appliedView.entityIds[0] === screenshotProfile.selectionKey
+          && status === "三维管型已生成" ? true : null;
+      }, "round profile for final clipping screenshot");
+      tubeDesignerProfilePreviewResult.screenshotProfileName = screenshotProfile.name;
+      tubeDesignerProfilePreviewResult.screenshotProfileKey = screenshotProfile.selectionKey;
+    }
+  }
+
   let tubeDesignerResult = null;
   if ($checkTubeDesignerWorkflowLiteral) {
     if (typeof window.icax?.openDirectoryDialog !== "function") {
@@ -482,7 +983,7 @@ try {
       const noticeElement = document.querySelector(".cam-status.notice");
       const noticeRect = noticeElement?.getBoundingClientRect();
       const inspectionViewport = document.querySelector("[data-tube-designer-part-inspection-viewport]");
-      const measurementResult = document.querySelector("[data-tube-designer-measurement-result]");
+      const inspectionProgress = document.querySelector("[data-tube-designer-inspection-progress]");
       const breakdownDialog = document.querySelector(".tube-designer-breakdown-dialog");
       const exportButton = document.querySelector("[data-tube-designer-export-selected]");
       const exportProgress = document.querySelector(".tube-designer-export-wait");
@@ -544,7 +1045,15 @@ try {
         partInspectionCanvasCount: document.querySelectorAll("[data-tube-designer-part-inspection-viewport] canvas.icax-three-viewport-canvas").length,
         partInspectionReady: inspectionViewport?.dataset.tubeInspectionReady ?? "",
         partInspectionEntityCount: Number(inspectionViewport?.dataset.tubeInspectionEntityCount ?? 0),
-        measurementPointCount: Number(measurementResult?.dataset.measurementPointCount ?? 0),
+        partInspectionDimensionCount: Number(inspectionViewport?.dataset.tubeInspectionDimensionCount ?? 0),
+        partInspectionMeasurementMs: Number(inspectionViewport?.dataset.tubeInspectionMeasurementMs ?? 0),
+        partInspectionProgressCount: document.querySelectorAll("[data-tube-designer-inspection-progress]").length,
+        partInspectionProgressVisible: Boolean(inspectionProgress && !inspectionProgress.hidden),
+        partInspectionProgressAriaHidden: inspectionProgress?.getAttribute("aria-hidden") ?? "",
+        partInspectionProgressMs: Number(inspectionViewport?.dataset.tubeInspectionProgressMs ?? 0),
+        partInspectionRenderMode: inspectionViewport?.dataset.tubeInspectionRenderMode ?? "",
+        partInspectionPickingEnabled: inspectionViewport?.dataset.tubeInspectionPickingEnabled ?? "",
+        partInspectionStatus: document.querySelector("[data-tube-designer-inspection-status]")?.textContent?.trim() ?? "",
         notice: noticeElement?.textContent?.trim() ?? "",
         noticeLayout: noticeElement ? {
           centerOffset: Math.abs((noticeRect.left + noticeRect.width / 2) - window.innerWidth / 2),
@@ -651,50 +1160,15 @@ try {
     };
     const firstProductId = designerState.product.entityId;
     await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
-    const template2Card = document.querySelector(".tube-designer-template-card[data-tube-designer-template-id='security-window-2']");
-    if (!template2Card || template2Card.disabled) throw new Error("TubeDesigner template 2 card is unavailable.");
-    template2Card.click();
-    await waitUntil(
-      () => document.querySelector(".tube-designer-template-card.selected[data-tube-designer-template-id='security-window-2']")
-        && document.querySelector("[data-tube-designer-parameter='handleBottom']"),
-      "TubeDesigner second-template parameter form"
-    );
-    const template2PreviewOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
-    const template2DesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const template2Viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
-    const secondProductId = template2DesignerState.product.entityId;
-
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
-    const template3Card = document.querySelector(".tube-designer-template-card[data-tube-designer-template-id='security-window-3']");
-    if (!template3Card || template3Card.disabled) throw new Error("TubeDesigner template 3 card is unavailable.");
-    template3Card.click();
-    const template3ParameterDom = await waitUntil(() => {
-      const card = document.querySelector(".tube-designer-template-card.selected[data-tube-designer-template-id='security-window-3']");
-      const join = document.querySelector("select[data-tube-designer-parameter='frameJoinType']");
-      const style = document.querySelector("select[data-tube-designer-parameter='vGrooveStyle']");
-      return card && join?.value === "v_groove_90" && style?.value === "sharp_v"
-        ? { joinType: join.value, grooveStyle: style.value }
-        : null;
-    }, "TubeDesigner third-template parameter form");
-    const template3JoinSelect = document.querySelector("select[data-tube-designer-parameter='frameJoinType']");
-    template3JoinSelect.value = "butt_90";
-    template3JoinSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    await waitUntil(() =>
-      document.querySelector("select[data-tube-designer-parameter='frameButtWrapMode']")
-      && !document.querySelector("select[data-tube-designer-parameter='vGrooveStyle']"),
-    "TubeDesigner third-template conditional butt parameters");
-    const restoredTemplate3JoinSelect = document.querySelector("select[data-tube-designer-parameter='frameJoinType']");
-    restoredTemplate3JoinSelect.value = "v_groove_90";
-    restoredTemplate3JoinSelect.dispatchEvent(new Event("change", { bubbles: true }));
-    const template3ConditionalDom = await waitUntil(() => {
-      const style = document.querySelector("select[data-tube-designer-parameter='vGrooveStyle']");
-      const butt = document.querySelector("select[data-tube-designer-parameter='frameButtWrapMode']");
-      return style?.value === "sharp_v" && !butt ? { restoredJoinType: "v_groove_90", buttHidden: true } : null;
-    }, "TubeDesigner third-template restored V-groove parameters");
-    const template3PreviewOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
-    const template3DesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
-    const template3Viewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
-    const thirdProductId = template3DesignerState.product.entityId;
+    const compatibilityTemplateCardCount = document.querySelectorAll(
+      ".tube-designer-template-card[data-tube-designer-template-id='security-window-1'], "
+      + ".tube-designer-template-card[data-tube-designer-template-id='security-window-2'], "
+      + ".tube-designer-template-card[data-tube-designer-template-id='security-window-3']"
+    ).length;
+    if (compatibilityTemplateCardCount !== 0) {
+      throw new Error("TubeDesigner removed compatibility templates are still visible.");
+    }
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-cancel-add");
 
     await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
     const accessDoorFrameLayout = document.querySelector("[data-tube-designer-add-form] select[data-tube-designer-parameter='frameLayout']");
@@ -761,6 +1235,10 @@ try {
     const accessDoorViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
     const accessDoorInspectorDom = captureDesignerDom();
     const accessDoorProductId = accessDoorDesignerState.product.entityId;
+    const secondProductId = accessDoorProductId;
+    const expectedDisassemblyProductCount = 2;
+    const expectedDisassembledPartCount = regeneratedDesignerState.members.length
+      + accessDoorDesignerState.members.length;
 
     const activateFirstOperation = await window.__icaxLaser3DCAM.executeAreaAction(
       "tube-designer-select-instance",
@@ -789,8 +1267,9 @@ try {
     const disassembledDesignerState = window.__icaxLaser3DCAM.getTubeDesignerState();
     const breakdownDom = await waitUntil(() => {
       const current = captureDesignerDom();
-      return current.productGroupCount === 4 && current.partCount === 58 &&
-        current.selectedPartCount === 58 && current.categoryRowCount > 0 &&
+      return current.productGroupCount === expectedDisassemblyProductCount
+        && current.partCount === expectedDisassembledPartCount
+        && current.selectedPartCount === expectedDisassembledPartCount && current.categoryRowCount > 0 &&
         current.resourceThumbnailCount === current.categoryRowCount ? current : null;
     }, "TubeDesigner grouped manufacturing list and resource thumbnails");
     const firstCategoryToggle = document.querySelector(
@@ -805,39 +1284,21 @@ try {
       "[data-tube-designer-part-row] [data-cam-action='tube-designer-open-part-inspection']");
     if (!partInspectionLink) throw new Error("TubeDesigner part inspection control is missing.");
     partInspectionLink.click();
+    const partInspectionProgressDom = await waitUntil(() => {
+      const current = captureDesignerDom();
+      return current.partInspectionDialogCount === 1
+        && current.partInspectionProgressCount === 1
+        && current.partInspectionProgressVisible
+        && current.partInspectionProgressAriaHidden === "false" ? current : null;
+    }, "TubeDesigner part inspection progress indicator");
     const partInspectionDom = await waitUntil(() => {
       const current = captureDesignerDom();
       return current.partInspectionDialogCount === 1
         && current.partInspectionCanvasCount === 1
         && current.partInspectionReady === "true"
-        && current.partInspectionEntityCount === 1 ? current : null;
+        && current.partInspectionEntityCount === 1
+        && current.partInspectionDimensionCount > 0 ? current : null;
     }, "TubeDesigner isolated part inspection viewport");
-    const inspectionCanvas = document.querySelector(
-      "[data-tube-designer-part-inspection-viewport] canvas.icax-three-viewport-canvas");
-    const inspectionRect = inspectionCanvas.getBoundingClientRect();
-    const inspectionPickRatios = [];
-    for (let y = 0.12; y <= 0.88; y += 0.025) {
-      for (let x = 0.12; x <= 0.88; x += 0.025) inspectionPickRatios.push([x, y]);
-    }
-    for (let index = 0; index < inspectionPickRatios.length; index += 1) {
-      const [xRatio, yRatio] = inspectionPickRatios[index];
-      const inspectionPick = {
-        clientX: inspectionRect.left + inspectionRect.width * xRatio,
-        clientY: inspectionRect.top + inspectionRect.height * yRatio,
-        button: 0,
-        bubbles: true,
-        pointerId: 701 + index,
-      };
-      inspectionCanvas.dispatchEvent(new PointerEvent("pointerdown", inspectionPick));
-      inspectionCanvas.dispatchEvent(new PointerEvent("pointerup", inspectionPick));
-      if (Number(document.querySelector("[data-tube-designer-measurement-result]")?.dataset.measurementPointCount ?? 0) > 0) break;
-    }
-    const partMeasurementDom = await waitUntil(() => {
-      const current = captureDesignerDom();
-      return current.measurementPointCount === 1 ? current : null;
-    }, "TubeDesigner part point measurement");
-    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-clear-part-measurement");
-    const clearedPartMeasurementDom = captureDesignerDom();
     await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-part-inspection");
     const closedPartInspectionDom = captureDesignerDom();
     const partialSelectionCheckbox = Array.from(
@@ -849,7 +1310,7 @@ try {
     partialSelectionCheckbox.click();
     const partialSelectionDom = await waitUntil(() => {
       const current = captureDesignerDom();
-      return current.selectedPartCount === 57 ? current : null;
+      return current.selectedPartCount === expectedDisassembledPartCount - 1 ? current : null;
     }, "TubeDesigner partial manufacturing selection");
     const partialSelectionPreservedDom = breakdownDialogBeforeSelection === document.querySelector(".tube-designer-breakdown-dialog")
       && breakdownTableBeforeSelection === document.querySelector(".tube-designer-sheet")
@@ -894,7 +1355,8 @@ try {
     const reopenBreakdownOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-breakdown");
     const finalBreakdownDom = await waitUntil(() => {
       const current = captureDesignerDom();
-      return current.breakdownDialogCount === 1 && current.productGroupCount === 4 ? current : null;
+      return current.breakdownDialogCount === 1
+        && current.productGroupCount === expectedDisassemblyProductCount ? current : null;
     }, "TubeDesigner reopened grouped manufacturing list");
     await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-close-breakdown");
     const finalAccessDoorActivation = await window.__icaxLaser3DCAM.executeAreaAction(
@@ -927,6 +1389,29 @@ try {
     const twoFaceTemplateResult = await generateMultiFaceTemplate("two-face-security-window", 28);
     const threeFaceTemplateResult = await generateMultiFaceTemplate("three-face-security-window", 39);
     const fiveFaceTemplateResult = await generateMultiFaceTemplate("five-face-security-window", 63);
+    await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-open-add");
+    const stairTemplateCard = document.querySelector(
+      ".tube-designer-template-card[data-tube-designer-template-id='straight-stair-railing']");
+    if (!stairTemplateCard || stairTemplateCard.disabled) {
+      throw new Error("TubeDesigner stair industry template is unavailable.");
+    }
+    stairTemplateCard.click();
+    await waitUntil(
+      () => document.querySelector(".tube-designer-template-card.selected[data-tube-designer-template-id='straight-stair-railing']")
+        && document.querySelector("[data-tube-designer-add-form] [data-tube-designer-parameter='flightRun']")
+        && document.querySelector("[data-tube-designer-add-form] [data-tube-designer-parameter='infillType']"),
+      "TubeDesigner stair industry parameter form",
+    );
+    const stairIndustryGroupCount = document.querySelectorAll(".tube-designer-template-industry").length;
+    const stairTemplateOperation = await window.__icaxLaser3DCAM.executeAreaAction("tube-designer-confirm-add");
+    const stairTemplateState = window.__icaxLaser3DCAM.getTubeDesignerState();
+    const stairTemplateViewport = window.__icaxLaser3DCAM.getViewportDebugState({ samplePixels: false, includeObjects: true });
+    const stairTemplateResult = {
+      operation: stairTemplateOperation,
+      state: stairTemplateState,
+      viewport: stairTemplateViewport,
+      industryGroupCount: stairIndustryGroupCount,
+    };
     tubeDesignerResult = {
       initialDesignerState,
       initialRibbonDom,
@@ -957,9 +1442,8 @@ try {
       disassembleConfirmOperation,
       disassembledDesignerState,
       breakdownDom,
+      partInspectionProgressDom,
       partInspectionDom,
-      partMeasurementDom,
-      clearedPartMeasurementDom,
       closedPartInspectionDom,
       partialSelectionDom,
       partialSelectionPreservedDom,
@@ -974,16 +1458,10 @@ try {
       redoDisassemblyResult,
       reopenBreakdownOperation,
       finalBreakdownDom,
-      template2PreviewOperation,
-      template2DesignerState,
-      template2Viewport,
+      compatibilityTemplateCardCount,
       secondProductId,
-      template3ParameterDom,
-      template3ConditionalDom,
-      template3PreviewOperation,
-      template3DesignerState,
-      template3Viewport,
-      thirdProductId,
+      expectedDisassemblyProductCount,
+      expectedDisassembledPartCount,
       accessDoorParameterDom,
       accessDoorPreviewOperation,
       accessDoorDesignerState,
@@ -996,6 +1474,7 @@ try {
       twoFaceTemplateResult,
       threeFaceTemplateResult,
       fiveFaceTemplateResult,
+      stairTemplateResult,
       activateFirstOperation,
       firstActivatedState,
       firstActivatedViewport,
@@ -1340,6 +1819,7 @@ try {
     defaultMachineResult,
     importMachineResult,
     importWorkpieceResult,
+    tubeDesignerProfilePreviewResult,
     tubeDesignerResult,
     recognizeCADIntentResult,
     tubeMainDomState,
@@ -1373,6 +1853,84 @@ try {
         }
         $state = $response.result.result.value
         $state | ConvertTo-Json -Depth 32
+
+        if ($CheckTubeDesignerProfilePreview) {
+            if (-not $state.tubeDesignerProfilePreviewResult -or
+                [int]$state.tubeDesignerProfilePreviewResult.systemProfileCount -ne 11 -or
+                [int]$state.tubeDesignerProfilePreviewResult.profileCount -ne
+                    ([int]$state.tubeDesignerProfilePreviewResult.systemProfileCount +
+                     [int]$state.tubeDesignerProfilePreviewResult.userProfileCount) -or
+                [int]$state.tubeDesignerProfilePreviewResult.libraryGroups.groupCount -ne 2 -or
+                $state.tubeDesignerProfilePreviewResult.libraryGroups.systemExists -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.libraryGroups.userExists -ne $true -or
+                [int]$state.tubeDesignerProfilePreviewResult.libraryGroups.systemCardCount -ne 11 -or
+                [int]$state.tubeDesignerProfilePreviewResult.libraryGroups.systemCardCount -ne
+                    [int]$state.tubeDesignerProfilePreviewResult.systemProfileCount -or
+                [int]$state.tubeDesignerProfilePreviewResult.libraryGroups.userCardCount -ne
+                    [int]$state.tubeDesignerProfilePreviewResult.userProfileCount -or
+                [int]$state.tubeDesignerProfilePreviewResult.expandedGroupLayout.system.cardRects.Count -ne 11 -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.system.allCardsHaveHeight -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.system.groupContainsAllCards -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.system.contentContainsAllCards -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.system.groupHasNoClippedOverflow -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.system.contentHasNoClippedOverflow -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.user.allCardsHaveHeight -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.user.groupContainsAllCards -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.user.contentContainsAllCards -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.user.groupHasNoClippedOverflow -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.expandedGroupLayout.user.contentHasNoClippedOverflow -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.listLayout.hasVerticalOverflow -ne $true -or
+                $state.tubeDesignerProfilePreviewResult.listLayout.lastSystemCardFullyVisible -ne $true -or
+                [int]$state.tubeDesignerProfilePreviewResult.periodicBsplineTargetCount -lt 1 -or
+                [int]$state.tubeDesignerProfilePreviewResult.periodicBsplineOuterCount -ne
+                    [int]$state.tubeDesignerProfilePreviewResult.periodicBsplineTargetCount -or
+                $state.tubeDesignerProfilePreviewResult.progressCoverage.coversViewport -ne $true -or
+                @($state.tubeDesignerProfilePreviewResult.results).Count -ne
+                    [int]$state.tubeDesignerProfilePreviewResult.profileCount) {
+                $profileText = $state.tubeDesignerProfilePreviewResult | ConvertTo-Json -Depth 16 -Compress
+                throw "TubeDesigner profile 3D preview workflow failed: $profileText"
+            }
+            foreach ($profile in @($state.tubeDesignerProfilePreviewResult.results)) {
+                $expectedSelectionKey = "$($profile.scope):$($profile.id)"
+                $expectedRevisionPrefix = "profile-preview:${expectedSelectionKey}:"
+                if ([string]::IsNullOrWhiteSpace([string]$profile.id) -or
+                    ($profile.scope -ne "system" -and $profile.scope -ne "user") -or
+                    $profile.selectionKey -ne $expectedSelectionKey -or
+                    $profile.appliedEntityId -ne $expectedSelectionKey -or
+                    $profile.viewportObjectId -ne $expectedSelectionKey -or
+                    -not ([string]$profile.appliedRevision).StartsWith($expectedRevisionPrefix) -or
+                    $profile.status -ne "三维管型已生成" -or
+                    $profile.progressObserved -ne $true -or
+                    $profile.previewWaitObserved -ne $true -or
+                    $profile.previewWaitCoversViewport -ne $true -or
+                    [int]$profile.elapsedMs -lt 500 -or
+                    [int]$profile.elapsedMs -ge 10000 -or
+                    [int]$profile.visibleObjectCount -ne 1 -or
+                    [int]$profile.nonBackgroundPixels -le 0 -or
+                    [uint64]$profile.geometryResourceVersion -le 0) {
+                    $profileText = $profile | ConvertTo-Json -Depth 10 -Compress
+                    throw "TubeDesigner profile 3D preview is not renderable: $profileText"
+                }
+                if (-not $profile.sectionSvg -or
+                    $profile.sectionSvg.svgExists -ne $true -or
+                    $profile.sectionSvg.outerExists -ne $true -or
+                    $profile.sectionSvg.geometryExists -ne $true -or
+                    $profile.sectionSvg.svgElementContained -ne $true -or
+                    $profile.sectionSvg.svgElementSizedToFrame -ne $true -or
+                    $profile.sectionSvg.fullyContained -ne $true -or
+                    $profile.sectionSvg.hasSafePadding -ne $true -or
+                    [double]$profile.sectionSvg.viewBox.width -le 0 -or
+                    [double]$profile.sectionSvg.viewBox.height -le 0) {
+                    $profileText = $profile | ConvertTo-Json -Depth 16 -Compress
+                    throw "TubeDesigner profile section SVG is missing or clipped: $profileText"
+                }
+                if ($profile.sectionSvg.curveExpected -eq $true -and
+                    $profile.sectionSvg.smoothCurveExpression -ne $true) {
+                    $profileText = $profile | ConvertTo-Json -Depth 16 -Compress
+                    throw "TubeDesigner curved profile section regressed to a coarse straight polygon: $profileText"
+                }
+            }
+        }
 
         if ($CheckTubeDesignerWorkflow) {
             if (-not $state.tubeDesignerResult) {
@@ -1522,26 +2080,32 @@ try {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner did not fit the generated product into the viewport: $designerText"
             }
-            if ([int]$state.tubeDesignerResult.disassemblySelectionDom.disassemblyDialogCount -ne 1 -or
-                [int]$state.tubeDesignerResult.disassemblySelectionDom.disassemblyInstanceRowCount -ne 4 -or
+            if ([int]$state.tubeDesignerResult.compatibilityTemplateCardCount -ne 0 -or
+                [int]$state.tubeDesignerResult.disassemblySelectionDom.disassemblyDialogCount -ne 1 -or
+                [int]$state.tubeDesignerResult.disassemblySelectionDom.disassemblyInstanceRowCount -ne
+                    [int]$state.tubeDesignerResult.expectedDisassemblyProductCount -or
                 $state.tubeDesignerResult.disassemblySelectionDom.selectionTableBorderCollapse -ne "collapse" -or
                 [int]$state.tubeDesignerResult.disassemblySelectionDom.nonNativeTableCellCount -ne 0 -or
                 [int]$state.tubeDesignerResult.breakdownDom.breakdownDialogCount -ne 1 -or
-                [int]$state.tubeDesignerResult.breakdownDom.productGroupCount -ne 4 -or
+                [int]$state.tubeDesignerResult.breakdownDom.productGroupCount -ne
+                    [int]$state.tubeDesignerResult.expectedDisassemblyProductCount -or
                 [int]$state.tubeDesignerResult.breakdownDom.categoryRowCount -le 0 -or
                 [int]$state.tubeDesignerResult.breakdownDom.visiblePartRowCount -ne 0 -or
                 $state.tubeDesignerResult.breakdownDom.resultTableBorderCollapse -ne "collapse" -or
                 [int]$state.tubeDesignerResult.breakdownDom.resultTableColumnCount -ne 8 -or
                 [int]$state.tubeDesignerResult.breakdownDom.nonNativeTableCellCount -ne 0 -or
                 @($state.tubeDesignerResult.breakdownDom.productRowSpans).Count -ne 0 -or
-                [int]$state.tubeDesignerResult.breakdownDom.partCount -ne 58 -or
-                [int]$state.tubeDesignerResult.breakdownDom.selectedPartCount -ne 58 -or
+                [int]$state.tubeDesignerResult.breakdownDom.partCount -ne
+                    [int]$state.tubeDesignerResult.expectedDisassembledPartCount -or
+                [int]$state.tubeDesignerResult.breakdownDom.selectedPartCount -ne
+                    [int]$state.tubeDesignerResult.expectedDisassembledPartCount -or
                 [int]$state.tubeDesignerResult.breakdownDom.resourceThumbnailCount -ne
                     [int]$state.tubeDesignerResult.breakdownDom.categoryRowCount -or
                 [int]$state.tubeDesignerResult.breakdownDom.breakdownFooterCloseButtonCount -ne 0 -or
                 @($state.tubeDesignerResult.breakdownDom.partNames | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "main" }).Count -ne 0 -or
                 @($state.tubeDesignerResult.breakdownDom.partSpecifications | Where-Object { $_ -eq "—" -or $_ -match "0\s*×\s*0" }).Count -ne 0 -or
-                @($state.tubeDesignerResult.disassembledDesignerState.manufacturingGroups).Count -ne 4) {
+                @($state.tubeDesignerResult.disassembledDesignerState.manufacturingGroups).Count -ne
+                    [int]$state.tubeDesignerResult.expectedDisassemblyProductCount) {
                 $designerText = @{
                     DisassemblySelection = $state.tubeDesignerResult.disassemblySelectionDom
                     Breakdown = $state.tubeDesignerResult.breakdownDom
@@ -1568,7 +2132,8 @@ try {
                 } | ConvertTo-Json -Depth 8 -Compress
                 throw "TubeDesigner formal part-number/STEP filename contract failed: $designerText"
             }
-            if ([int]$state.tubeDesignerResult.partialSelectionDom.selectedPartCount -ne 57) {
+            if ([int]$state.tubeDesignerResult.partialSelectionDom.selectedPartCount -ne
+                ([int]$state.tubeDesignerResult.expectedDisassembledPartCount - 1)) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner partial manufacturing selection failed: $designerText"
             }
@@ -1576,24 +2141,32 @@ try {
                 [int]$state.tubeDesignerResult.partInspectionDom.partInspectionCanvasCount -ne 1 -or
                 $state.tubeDesignerResult.partInspectionDom.partInspectionReady -ne "true" -or
                 [int]$state.tubeDesignerResult.partInspectionDom.partInspectionEntityCount -ne 1 -or
-                [int]$state.tubeDesignerResult.partMeasurementDom.measurementPointCount -ne 1 -or
-                [int]$state.tubeDesignerResult.clearedPartMeasurementDom.measurementPointCount -ne 0 -or
+                [int]$state.tubeDesignerResult.partInspectionDom.partInspectionDimensionCount -lt 1 -or
+                [int]$state.tubeDesignerResult.partInspectionProgressDom.partInspectionProgressCount -ne 1 -or
+                $state.tubeDesignerResult.partInspectionProgressDom.partInspectionProgressVisible -ne $true -or
+                $state.tubeDesignerResult.partInspectionProgressDom.partInspectionProgressAriaHidden -ne "false" -or
+                [int]$state.tubeDesignerResult.partInspectionDom.partInspectionProgressMs -lt 500 -or
+                $state.tubeDesignerResult.partInspectionDom.partInspectionProgressVisible -ne $false -or
+                $state.tubeDesignerResult.partInspectionDom.partInspectionProgressAriaHidden -ne "true" -or
+                $state.tubeDesignerResult.partInspectionDom.partInspectionRenderMode -ne "on-demand" -or
+                $state.tubeDesignerResult.partInspectionDom.partInspectionPickingEnabled -ne "false" -or
+                [int]$state.tubeDesignerResult.partInspectionDom.breakdownDialogCount -ne 0 -or
                 [int]$state.tubeDesignerResult.closedPartInspectionDom.partInspectionDialogCount -ne 0 -or
                 [int]$state.tubeDesignerResult.closedPartInspectionDom.breakdownDialogCount -ne 1) {
                 $designerText = @{
                     Inspection = $state.tubeDesignerResult.partInspectionDom
-                    Measurement = $state.tubeDesignerResult.partMeasurementDom
-                    Cleared = $state.tubeDesignerResult.clearedPartMeasurementDom
                     Closed = $state.tubeDesignerResult.closedPartInspectionDom
                 } | ConvertTo-Json -Depth 10 -Compress
-                throw "TubeDesigner isolated part inspection/measurement workflow failed: $designerText"
+                throw "TubeDesigner isolated part inspection workflow failed: $designerText"
             }
             if ($state.tubeDesignerResult.partialSelectionPreservedDom -ne $true) {
                 throw "TubeDesigner part selection rebuilt the breakdown dialog instead of updating it locally"
             }
             if ($CheckTubeDesignerStepExport -and
-                ([int]$state.tubeDesignerResult.exportResult.result.exportedCount -ne 57 -or
-                 @($state.tubeDesignerResult.exportResult.result.exportedGroups).Count -ne 4 -or
+                ([int]$state.tubeDesignerResult.exportResult.result.exportedCount -ne
+                    ([int]$state.tubeDesignerResult.expectedDisassembledPartCount - 1) -or
+                 @($state.tubeDesignerResult.exportResult.result.exportedGroups).Count -ne
+                    [int]$state.tubeDesignerResult.expectedDisassemblyProductCount -or
                  [string]::IsNullOrWhiteSpace($state.tubeDesignerResult.exportResult.result.partListFile))) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner grouped STEP and Excel export failed: $designerText"
@@ -1616,13 +2189,14 @@ try {
                 throw "TubeDesigner export waiting/locking state is incomplete: $designerText"
             }
             if (@($state.tubeDesignerResult.undoDisassemblyDesignerState.manufacturingGroups).Count -ne 0 -or
-                [int]$state.tubeDesignerResult.undoDisassemblyResult.viewport.visibleObjectCount -ne 11 -or
-                @($state.tubeDesignerResult.redoDisassemblyDesignerState.manufacturingGroups).Count -ne 4 -or
-                [int]$state.tubeDesignerResult.redoDisassemblyResult.viewport.visibleObjectCount -ne 11) {
+                [int]$state.tubeDesignerResult.undoDisassemblyResult.viewport.visibleObjectCount -ne 24 -or
+                @($state.tubeDesignerResult.redoDisassemblyDesignerState.manufacturingGroups).Count -ne
+                    [int]$state.tubeDesignerResult.expectedDisassemblyProductCount -or
+                [int]$state.tubeDesignerResult.redoDisassemblyResult.viewport.visibleObjectCount -ne 24) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner disassembly undo/redo incorrectly synchronized preview state: $designerText"
             }
-            for ($index = 0; $index -lt 11; $index++) {
+            for ($index = 0; $index -lt @($state.tubeDesignerResult.disassembledDesignerState.parts).Count; $index++) {
                 $before = $state.tubeDesignerResult.disassembledDesignerState.parts[$index]
                 $redo = $state.tubeDesignerResult.redoDisassemblyDesignerState.parts[$index]
                 if ($before.entityId -ne $redo.entityId -or
@@ -1632,32 +2206,12 @@ try {
                     throw "TubeDesigner disassembly history changed part identity/version at index ${index}: $designerText"
                 }
             }
-            if ($state.tubeDesignerResult.template2DesignerState.product.templateId -ne "security-window-2" -or
-                @($state.tubeDesignerResult.template2DesignerState.members).Count -ne 11 -or
-                @($state.tubeDesignerResult.template2DesignerState.parts).Count -ne 0 -or
-                @($state.tubeDesignerResult.template2DesignerState.instances).Count -ne 2 -or
-                [int]$state.tubeDesignerResult.template2Viewport.visibleObjectCount -ne 11) {
-                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
-                throw "TubeDesigner second-template preview workflow failed: $designerText"
-            }
-            if ($state.tubeDesignerResult.template3DesignerState.product.templateId -ne "security-window-3" -or
-                @($state.tubeDesignerResult.template3DesignerState.members).Count -ne 6 -or
-                @($state.tubeDesignerResult.template3DesignerState.parts).Count -ne 0 -or
-                @($state.tubeDesignerResult.template3DesignerState.instances).Count -ne 3 -or
-                [int]$state.tubeDesignerResult.template3Viewport.visibleObjectCount -ne 6 -or
-                $state.tubeDesignerResult.template3ParameterDom.joinType -ne "v_groove_90" -or
-                $state.tubeDesignerResult.template3ParameterDom.grooveStyle -ne "sharp_v" -or
-                $state.tubeDesignerResult.template3ConditionalDom.restoredJoinType -ne "v_groove_90" -or
-                -not $state.tubeDesignerResult.template3ConditionalDom.buttHidden) {
-                $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
-                throw "TubeDesigner third-template preview workflow failed: $designerText"
-            }
             if ($state.tubeDesignerResult.accessDoorDesignerState.product.templateId -ne "single-face-security-window" -or
                 $state.tubeDesignerResult.accessDoorDesignerState.product.parameters.accessDoorEnabled -ne $true -or
                 @($state.tubeDesignerResult.accessDoorDesignerState.members).Count -ne 24 -or
                 @($state.tubeDesignerResult.accessDoorDesignerState.members | Where-Object { $_.stableKey -like "*.continuous.*" }).Count -ne 2 -or
                 @($state.tubeDesignerResult.accessDoorDesignerState.members | Where-Object role -eq "access_door.fixed_frame").Count -ne 4 -or
-                @($state.tubeDesignerResult.accessDoorDesignerState.instances).Count -ne 4 -or
+                @($state.tubeDesignerResult.accessDoorDesignerState.instances).Count -ne 2 -or
                 [int]$state.tubeDesignerResult.accessDoorViewport.visibleObjectCount -ne 24 -or
                 [int]$state.tubeDesignerResult.accessDoorInspectorDom.parameterSectionCount -ne 19 -or
                 [int]$state.tubeDesignerResult.accessDoorInspectorDom.expandedParameterSectionCount -ne 2 -or
@@ -1691,9 +2245,9 @@ try {
                 throw "TubeDesigner final access-door activation failed: $designerText"
             }
             $multiFaceExpectations = @(
-                [pscustomobject]@{ Result = $state.tubeDesignerResult.twoFaceTemplateResult; TemplateId = "two-face-security-window"; MemberCount = 28; InstanceCount = 5 },
-                [pscustomobject]@{ Result = $state.tubeDesignerResult.threeFaceTemplateResult; TemplateId = "three-face-security-window"; MemberCount = 39; InstanceCount = 6 },
-                [pscustomobject]@{ Result = $state.tubeDesignerResult.fiveFaceTemplateResult; TemplateId = "five-face-security-window"; MemberCount = 63; InstanceCount = 7 }
+                [pscustomobject]@{ Result = $state.tubeDesignerResult.twoFaceTemplateResult; TemplateId = "two-face-security-window"; MemberCount = 28; InstanceCount = 3 },
+                [pscustomobject]@{ Result = $state.tubeDesignerResult.threeFaceTemplateResult; TemplateId = "three-face-security-window"; MemberCount = 39; InstanceCount = 4 },
+                [pscustomobject]@{ Result = $state.tubeDesignerResult.fiveFaceTemplateResult; TemplateId = "five-face-security-window"; MemberCount = 63; InstanceCount = 5 }
             )
             foreach ($expectation in $multiFaceExpectations) {
                 $result = $expectation.Result
@@ -1708,12 +2262,23 @@ try {
                     throw "TubeDesigner multi-face Python template failed (${templateId}): $designerText"
                 }
             }
+            $stairResult = $state.tubeDesignerResult.stairTemplateResult
+            if (-not $stairResult.operation.handled -or
+                $stairResult.state.product.templateId -ne "straight-stair-railing" -or
+                $stairResult.state.product.parameters.infillType -ne "vertical" -or
+                @($stairResult.state.members).Count -ne 29 -or
+                @($stairResult.state.instances).Count -ne 6 -or
+                [int]$stairResult.viewport.visibleObjectCount -ne 29 -or
+                [int]$stairResult.industryGroupCount -lt 2) {
+                $designerText = $stairResult | ConvertTo-Json -Depth 14 -Compress
+                throw "TubeDesigner stair industry template failed: $designerText"
+            }
             if ($state.tubeDesignerResult.firstActivatedState.product.entityId -ne $state.tubeDesignerResult.firstProductId -or
                 @($state.tubeDesignerResult.firstActivatedState.members).Count -ne 17 -or
                 [int]$state.tubeDesignerResult.firstActivatedViewport.visibleObjectCount -ne 17 -or
                 $state.tubeDesignerResult.secondActivatedState.product.entityId -ne $state.tubeDesignerResult.secondProductId -or
-                @($state.tubeDesignerResult.secondActivatedState.members).Count -ne 11 -or
-                [int]$state.tubeDesignerResult.secondActivatedViewport.visibleObjectCount -ne 11) {
+                @($state.tubeDesignerResult.secondActivatedState.members).Count -ne 24 -or
+                [int]$state.tubeDesignerResult.secondActivatedViewport.visibleObjectCount -ne 24) {
                 $designerText = $state.tubeDesignerResult | ConvertTo-Json -Depth 16 -Compress
                 throw "TubeDesigner instance selection did not exclusively drive the scene: $designerText"
             }
@@ -1733,13 +2298,14 @@ try {
             $stepFiles = @(Get-ChildItem -LiteralPath $tubeDesignerExportDirectory -Filter "*.step" -File -Recurse -ErrorAction SilentlyContinue)
             $productDirectories = @(Get-ChildItem -LiteralPath $tubeDesignerExportDirectory -Directory -ErrorAction SilentlyContinue)
             $partListFile = Join-Path $tubeDesignerExportDirectory "零件清单.xlsx"
-            if ($stepFiles.Count -ne 37 -or $productDirectories.Count -ne 4 -or
+            if ($stepFiles.Count -le 0 -or $productDirectories.Count -ne
+                    [int]$state.tubeDesignerResult.expectedDisassemblyProductCount -or
                 -not (Test-Path -LiteralPath $partListFile -PathType Leaf) -or
                 (Get-Item -LiteralPath $partListFile).Length -le 0 -or
                 @($stepFiles | Where-Object Length -le 0).Count -gt 0 -or
                 @($productDirectories | Where-Object { @(Get-ChildItem -LiteralPath $_.FullName -Filter "*.step" -File).Count -eq 0 }).Count -gt 0) {
                 $fileText = @{ Directories = $productDirectories.Name; Files = $stepFiles | Select-Object Name, Length; PartList = $partListFile } | ConvertTo-Json -Depth 8 -Compress
-                throw "TubeDesigner did not export four product folders, 37 STEP files, and the Excel part list: $fileText"
+                throw "TubeDesigner did not export the selected product folders, STEP files, and Excel part list: $fileText"
             }
         }
 

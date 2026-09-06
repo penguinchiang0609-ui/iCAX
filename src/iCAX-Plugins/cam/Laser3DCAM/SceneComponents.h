@@ -12,10 +12,11 @@ namespace iCAX
         *   该组件由产品 manifest 作为 startupComponent 挂到 MetaEntity 上，只负责触发
         *   SceneBootstrapBehaviour。它不保存业务数据；真实项目入口仍然是 CRootComponent。
         */
-        class CSceneBootstrapComponent final : public iCAX::Database::CComponentBase
+        // CAM-only initialization is distinct from the generic scene-start marker.
+        class CCamSceneBootstrapComponent final : public iCAX::Database::CComponentBase
         {
-            DECLARE_ICAX_COMPONENT(CSceneBootstrapComponent, CComponentBase)
-            DECLARE_ICAX_COMPONENT_CREATOR(CSceneBootstrapComponent)
+            DECLARE_ICAX_COMPONENT(CCamSceneBootstrapComponent, CComponentBase)
+            DECLARE_ICAX_COMPONENT_CREATOR(CCamSceneBootstrapComponent)
         };
 
         /*

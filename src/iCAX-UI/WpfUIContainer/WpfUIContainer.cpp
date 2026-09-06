@@ -289,7 +289,7 @@ namespace iCAX
                 {
                     auto _Dialog = gcnew Microsoft::Win32::OpenFileDialog();
                     _Dialog->Title = "Open Project";
-                    _Dialog->Filter = "iCAX project (*.icax)|*.icax|All files (*.*)|*.*";
+                    _Dialog->Filter = "项目文件 (*.icax)|*.icax|All files (*.*)|*.*";
                     _Dialog->CheckFileExists = true;
                     auto _Result = _Dialog->ShowDialog();
                     if (_Result.HasValue && _Result.Value)
@@ -469,7 +469,7 @@ namespace iCAX
             CWpfMainWindow::CWpfMainWindow(CWpfRuntime^ Runtime_)
                 : m_Runtime(Runtime_)
             {
-                Title = "iCAX";
+                Title = "工作台";
                 Width = 1280;
                 Height = 820;
                 MinWidth = 960;
@@ -493,7 +493,7 @@ namespace iCAX
                 _Root->Children->Add(_Toolbar);
 
                 auto _Title = gcnew TextBlock();
-                _Title->Text = "iCAX Workbench";
+                _Title->Text = "工作台";
                 _Title->FontSize = 16;
                 _Title->FontWeight = FontWeights::SemiBold;
                 _Title->VerticalAlignment = System::Windows::VerticalAlignment::Center;

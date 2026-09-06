@@ -1,5 +1,5 @@
-import { renderPanel } from "../../laser-3d-cam/webpage/layout/commonViews.mjs";
-import { escapeAttr, escapeText } from "../../laser-3d-cam/webpage/utils/format.mjs";
+import { renderPanel } from "../../_shared/workbench/layout/commonViews.mjs";
+import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
 import { scheduleTubeWorkpieceThumbnailHydration } from "./workpieceThumbnail.mjs";
 import { scheduleCADIntentParameterLivePreview } from "./cadIntentActions.mjs";
 

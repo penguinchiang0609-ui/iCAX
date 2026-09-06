@@ -170,6 +170,9 @@
     <Manifest Include="Application.manifest" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj">
+      <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
@@ -205,8 +208,16 @@
       <Project>{7d65df92-6f59-4787-8905-e15402278dd6}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\common\SceneBootstrap\SceneBootstrap.vcxproj">
+      <Project>{d5e0c5b3-26b7-4c31-a87d-49f0f56c3c16}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Plugins\common\Transform\Transform.vcxproj">
       <Project>{14df2d69-19bd-4340-b859-7c4ca916b42b}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+    <ProjectReference Include="..\..\iCAX-Plugins\product\TubeDesigner\TubeDesigner.vcxproj">
+      <Project>{b29dc027-f531-428f-9bcc-2d3e028ca044}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <ProjectReference Include="..\..\iCAX-Plugins\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">

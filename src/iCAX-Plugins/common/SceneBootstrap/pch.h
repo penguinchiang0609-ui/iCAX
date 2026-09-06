@@ -1,0 +1,9 @@
+#pragma once
+#include "framework.h"
+#include <Database/ComponentBase.h>
+#include <Behaviour/BehaviourBase.h>
+#include <Behaviour/IBehaviourRegistry.h>
+#include <Database/IRepository.h>
+#include <ProjectContext/ISceneContext.h>
+#include <string>
+#include <stdexcept>

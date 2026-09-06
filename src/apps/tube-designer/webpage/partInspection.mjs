@@ -1,5 +1,7 @@
 import { createThreeViewport } from "../../../iCAX-UI/SDK/Viewport/threeViewport.mjs";
 
+export const PART_INSPECTION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
+
 const controllers = new WeakMap();
 
 export function scheduleDesignerPartInspectionHydration(context, designer, view) {
@@ -7,33 +9,10 @@ export function scheduleDesignerPartInspectionHydration(context, designer, view)
     ? String(view.tubeDesignerInspectedPartId ?? "")
     : "";
   const part = inspectedPartId ? findPart(designer, inspectedPartId) : null;
-  view.viewport?.setContinuousRendering?.(!part);
+  view.viewport?.setContinuousRendering?.(!part && !view.tubeDesignerAddDialogOpen);
   queueMicrotask(() => {
     void hydrateInspection(context, part);
   });
-}
-
-export function clearDesignerPartMeasurement(context) {
-  const controller = getController(context);
-  if (!controller) return false;
-  controller.points = [];
-  controller.viewport.clearMeasurementPoints();
-  renderMeasurementState(controller);
-  return true;
-}
-
-export function toggleDesignerPartMeasurement(context) {
-  const controller = getController(context);
-  if (!controller) return false;
-  controller.measurementEnabled = !controller.measurementEnabled;
-  controller.viewport.setPickingEnabled(controller.measurementEnabled);
-  if (!controller.measurementEnabled) {
-    controller.points = [];
-    controller.viewport.clearMeasurementPoints();
-  }
-  renderMeasurementMode(controller);
-  renderMeasurementState(controller);
-  return true;
 }
 
 export function toggleDesignerAutomaticDimensions(context) {
@@ -43,28 +22,27 @@ export function toggleDesignerAutomaticDimensions(context) {
   controller.viewport.setDimensionAnnotations(
     controller.automaticDimensionsVisible ? controller.dimensionReport?.annotations ?? [] : [],
   );
+  const viewportState = controller.viewport.getDebugState();
+  controller.host.dataset.tubeInspectionDimensionCount = String(
+    viewportState.dimensionAnnotationCount ?? 0,
+  );
   renderAutomaticDimensionState(controller);
   return true;
 }
 
 export function fitDesignerInspectedPart(context) {
-  return Boolean(getController(context)?.viewport.fitView(1.22));
+  const controller = getController(context);
+  if (!controller) return false;
+  applyHorizontalPartPresentation(controller);
+  return Boolean(controller.viewport.fitViewToViewport(1.16));
 }
 
-export function setDesignerInspectedPartView(context, viewName = "iso") {
-  return Boolean(getController(context)?.viewport.setStandardView(viewName));
-}
-
-export function calculatePointMeasurement(first, second) {
-  const dx = Number(second?.x) - Number(first?.x);
-  const dy = Number(second?.y) - Number(first?.y);
-  const dz = Number(second?.z) - Number(first?.z);
-  return Object.freeze({
-    dx: Math.abs(dx),
-    dy: Math.abs(dy),
-    dz: Math.abs(dz),
-    distance: Math.hypot(dx, dy, dz),
-  });
+export function setDesignerInspectedPartView(context) {
+  const controller = getController(context);
+  if (!controller) return false;
+  const oriented = applyHorizontalPartPresentation(controller);
+  if (oriented) controller.viewport.fitViewToViewport(1.16);
+  return oriented;
 }
 
 export function buildAutomaticDimensionReport(part) {
@@ -73,6 +51,34 @@ export function buildAutomaticDimensionReport(part) {
     && String(candidate?.source ?? "") === "final-brep"
     ? candidate
     : {};
+  if (measurement.partKind === "plate" && measurement.plate) {
+    const plate = measurement.plate;
+    const center = finitePoint(plate.center);
+    const axes = (plate.axes ?? []).map(finitePoint);
+    const dimensions = [plate.longSide, plate.shortSide, plate.thickness].map(finiteNumber);
+    const valid = center && axes.length === 3 && axes.every(Boolean)
+      && dimensions.every((size) => size > 0);
+    const annotations = [];
+    if (valid) {
+      const origin = axes.reduce((point, direction, index) => add(point, scale(direction, -dimensions[index] / 2)), center);
+      for (let index = 0; index < 3; index += 1) {
+        annotations.push({ start: origin, end: add(origin, scale(axes[index], dimensions[index])),
+          offset: scale(axes[index === 0 ? 1 : 0], -Math.max(12, dimensions[1] * 0.13)),
+          label: `${["长边", "短边", "板厚"][index]} ${formatMillimeters(dimensions[index])} mm`, color: "#ffc43d" });
+      }
+    }
+    const referenceStart = finitePoint(measurement.linearReference?.start);
+    const referenceEnd = finitePoint(measurement.linearReference?.end);
+    const referenceVector = referenceStart && referenceEnd ? subtract(referenceEnd, referenceStart) : null;
+    const referenceLength = referenceVector ? magnitude(referenceVector) : 0;
+    const referenceAxis = referenceLength > 1e-7 ? scale(referenceVector, 1 / referenceLength) : null;
+    const holes = (measurement.features ?? []).map((feature, index) =>
+      normalizeHoleFeature(feature, index, referenceStart, referenceAxis, referenceLength)).filter(Boolean);
+    return Object.freeze({ length: dimensions[0] ?? 0,
+      profile: `板件 ${dimensions.map((size) => formatMillimeters(size ?? 0)).join(" × ")} mm`,
+      plate, holes, pitches: [], annotations, hasLinearReference: Boolean(valid),
+      source: "final-brep", axis: axes[0] ?? null, offsetDirection: axes[1] ?? null });
+  }
   const reference = measurement.linearReference ?? {};
   const start = finitePoint(reference.start);
   const end = finitePoint(reference.end);
@@ -99,7 +105,7 @@ export function buildAutomaticDimensionReport(part) {
     ? measurement.features
     : [];
   const holes = rawFeatures
-    .filter((feature) => ["through-opening", "throughHole"].includes(String(feature?.kind ?? "")))
+    .filter((feature) => ["through-opening", "throughHole", "side-opening"].includes(String(feature?.kind ?? "")))
     .map((feature, index) => normalizeHoleFeature(feature, index, start, axis, referenceLength))
     .filter(Boolean)
     .sort((left, right) => left.station - right.station)
@@ -127,6 +133,8 @@ export function buildAutomaticDimensionReport(part) {
     annotations,
     hasLinearReference: Boolean(measurement.available && start && end && axis),
     source: String(measurement.source ?? ""),
+    axis,
+    offsetDirection,
   });
 }
 
@@ -153,8 +161,6 @@ async function hydrateInspection(context, part) {
   const controller = {
     host,
     partKey,
-    points: [],
-    measurementEnabled: false,
     automaticDimensionsVisible: true,
     dimensionReport: null,
     viewport: null,
@@ -162,18 +168,26 @@ async function hydrateInspection(context, part) {
   controller.viewport = createThreeViewport({
     backgroundColor: 0x13252d,
     continuousRender: false,
+    constrainOrbit: false,
+    showProjectionToggle: true,
     pickingEnabled: false,
-    onPick: (_object, hit) => handleMeasurementPick(controller, hit),
+    antialias: true,
+    pixelRatioCap: 2,
   });
   controller.viewport.mount(host);
   host.dataset.tubeInspectionReady = "false";
   host.dataset.tubeInspectionEntityCount = "0";
+  host.dataset.tubeInspectionDimensionCount = "0";
+  host.dataset.tubeInspectionRenderMode = "on-demand";
+  host.dataset.tubeInspectionPickingEnabled = "false";
   controllers.set(mount, controller);
   renderAutomaticDimensionState(controller);
-  renderMeasurementMode(controller);
-  renderMeasurementState(controller);
+  setInspectionStatus(controller, "正在载入最终零件三维资源…", false);
+  setInspectionProgress(controller, "正在载入最终零件三维资源", true);
+  const progressPaintedAt = waitForProgressPaint();
 
   if (!resourceId) {
+    if (!await finishInspectionProgress(mount, controller, progressPaintedAt)) return;
     setInspectionStatus(controller, "该零件没有可读取的三维资源。", true);
     return;
   }
@@ -201,6 +215,8 @@ async function hydrateInspection(context, part) {
     host.dataset.tubeInspectionReady = "true";
     host.dataset.tubeInspectionEntityCount = String(receipt.entityIds.length);
     setInspectionStatus(controller, "正在从最终零件几何提取尺寸…", false);
+    setInspectionProgress(controller, "正在分析最终零件几何并生成自动尺寸", true);
+    const measurementStartedAt = performance.now();
     const geometryMeasurement = await context.sceneProxy?.invoke(
       "TubeDesigner.MeasurePartGeometry",
       {
@@ -224,13 +240,26 @@ async function hydrateInspection(context, part) {
     controller.viewport.setDimensionAnnotations(
       controller.automaticDimensionsVisible ? controller.dimensionReport.annotations : [],
     );
+    applyHorizontalPartPresentation(controller);
+    controller.viewport.fitViewToViewport(1.16);
+    const viewportState = controller.viewport.getDebugState();
+    const dimensionCount = Number(viewportState.dimensionAnnotationCount ?? 0);
+    host.dataset.tubeInspectionDimensionCount = String(dimensionCount);
+    host.dataset.tubeInspectionMeasurementMs = String(
+      Math.max(0, Math.round(performance.now() - measurementStartedAt)),
+    );
+    if (controller.dimensionReport.hasLinearReference && dimensionCount < 1) {
+      throw new Error("自动尺寸已经生成，但未能进入三维复尺场景。");
+    }
     renderAutomaticDimensionState(controller);
+    if (!await finishInspectionProgress(mount, controller, progressPaintedAt)) return;
     setInspectionStatus(
       controller,
-      `已从最终几何测得 ${controller.dimensionReport.holes.length} 个贯穿孔；需要补测时再打开手工测量。`,
+      `已显示 ${dimensionCount} 条自动标尺，识别到 ${controller.dimensionReport.holes.length} 个孔 / 开口。`,
       false,
     );
   } catch (error) {
+    if (!await finishInspectionProgress(mount, controller, progressPaintedAt)) return;
     setInspectionStatus(controller, error?.message ?? String(error), true);
   }
 }
@@ -242,70 +271,20 @@ function getController(context) {
     : null;
 }
 
+function applyHorizontalPartPresentation(controller) {
+  const axis = controller.dimensionReport?.axis;
+  const oriented = Array.isArray(axis)
+    && controller.viewport.setPresentationAxis(axis, [1, 0, 0]);
+  controller.viewport.setStandardView("top-front");
+  return Boolean(oriented);
+}
+
 function findPart(designer, partId) {
   for (const group of designer?.manufacturingGroups ?? []) {
     const part = (group.parts ?? []).find((item) => String(item.entityId) === partId);
     if (part) return part;
   }
   return null;
-}
-
-function handleMeasurementPick(controller, hit) {
-  if (!controller.measurementEnabled) return;
-  const point = hit?.point;
-  if (!point || ![point.x, point.y, point.z].every(Number.isFinite)) return;
-  if (controller.points.length >= 2) controller.points = [];
-  controller.points.push({ x: point.x, y: point.y, z: point.z });
-  controller.viewport.setMeasurementPoints(controller.points);
-  renderMeasurementState(controller);
-}
-
-function renderMeasurementMode(controller) {
-  const dialog = controller.host.closest(".tube-designer-part-inspection-dialog");
-  if (!dialog) return;
-  dialog.dataset.measurementEnabled = controller.measurementEnabled ? "true" : "false";
-  const toggle = dialog.querySelector("[data-cam-action='tube-designer-toggle-part-measurement']");
-  if (toggle) {
-    toggle.setAttribute("aria-pressed", controller.measurementEnabled ? "true" : "false");
-    toggle.textContent = controller.measurementEnabled ? "结束测量" : "开始测量";
-  }
-  const help = dialog.querySelector("[data-tube-designer-measurement-pick-help]");
-  if (help) help.textContent = controller.measurementEnabled
-    ? "左键：选取测量点"
-    : "左键：测量关闭，不执行拾取";
-}
-
-function renderMeasurementState(controller) {
-  const dialog = controller.host.closest(".tube-designer-part-inspection-dialog");
-  const result = dialog?.querySelector("[data-tube-designer-measurement-result]");
-  const clear = dialog?.querySelector("[data-cam-action='tube-designer-clear-part-measurement']");
-  if (clear) clear.disabled = !controller.measurementEnabled || !controller.points.length;
-  if (!result) return;
-  result.dataset.measurementPointCount = String(controller.points.length);
-  if (!controller.measurementEnabled) {
-    result.innerHTML = `<strong>测量已关闭</strong><span>查看模型不会触发拾取检测</span>`;
-    return;
-  }
-  if (!controller.points.length) {
-    result.innerHTML = `<strong>等待起点</strong><span>左键点击模型选择起点</span>`;
-    return;
-  }
-  const first = controller.points[0];
-  if (controller.points.length === 1) {
-    result.innerHTML = `<strong>已选择起点</strong><span>P1 ${formatPoint(first)}</span><small>继续点击模型选择终点</small>`;
-    return;
-  }
-  const second = controller.points[1];
-  const measurement = calculatePointMeasurement(first, second);
-  result.innerHTML = `
-    <strong>${formatMillimeters(measurement.distance)} mm</strong>
-    <span>空间直线距离</span>
-    <dl>
-      <div><dt>ΔX</dt><dd>${formatMillimeters(measurement.dx)} mm</dd></div>
-      <div><dt>ΔY</dt><dd>${formatMillimeters(measurement.dy)} mm</dd></div>
-      <div><dt>ΔZ</dt><dd>${formatMillimeters(measurement.dz)} mm</dd></div>
-    </dl>
-    <small>P1 ${formatPoint(first)}<br />P2 ${formatPoint(second)}</small>`;
 }
 
 function renderAutomaticDimensionState(controller) {
@@ -327,26 +306,26 @@ function renderAutomaticDimensionState(controller) {
     <div class="tube-designer-dimension-overview">
       <span><small>总长</small><strong>${formatMillimeters(report.length)} mm</strong></span>
       <span><small>规格</small><strong>${escapeText(report.profile)}</strong></span>
-      <span><small>贯穿孔</small><strong>${report.holes.length} 个</strong></span>
+      <span><small>孔 / 开口</small><strong>${report.holes.length} 个</strong></span>
       <span><small>数据来源</small><strong>最终几何</strong></span>
     </div>
     ${report.holes.length ? `
       <div class="tube-designer-dimension-list">
         ${report.holes.map((hole) => `
           <article>
-            <strong>孔 ${hole.index} · ${escapeText(hole.sizeLabel)}</strong>
+            <strong>${hole.kind === "side-opening" ? "单侧开口" : "孔"} ${hole.index} · ${escapeText(hole.sizeLabel)}</strong>
             <span>中心距首端 ${formatMillimeters(hole.station)} · 距末端 ${formatMillimeters(Math.max(0, report.length - hole.station))}</span>
-            <span>孔边距首端 ${formatMillimeters(hole.startEdgeDistance)} · 距末端 ${formatMillimeters(hole.endEdgeDistance)}</span>
+            <span>开口边距首端 ${formatMillimeters(hole.startEdgeDistance)} · 距末端 ${formatMillimeters(hole.endEdgeDistance)}</span>
             <span>面宽方向中心距边 ${formatMillimeters(hole.centerToFaceEdgeNegative)} / ${formatMillimeters(hole.centerToFaceEdgePositive)}</span>
-            <span>面宽方向孔边净距 ${formatMillimeters(hole.faceEdgeClearanceNegative)} / ${formatMillimeters(hole.faceEdgeClearancePositive)}</span>
+            <span>面宽方向开口边净距 ${formatMillimeters(hole.faceEdgeClearanceNegative)} / ${formatMillimeters(hole.faceEdgeClearancePositive)}</span>
           </article>`).join("")}
         ${report.pitches.map((pitch) => `
           <article class="tube-designer-dimension-pitch">
-            <strong>孔 ${pitch.from} — 孔 ${pitch.to}</strong>
-            <span>中心距 ${formatMillimeters(pitch.centerDistance)} · 最近孔边净距 ${formatMillimeters(pitch.edgeClearance)}</span>
+            <strong>开口 ${pitch.from} — 开口 ${pitch.to}</strong>
+            <span>中心距 ${formatMillimeters(pitch.centerDistance)} · 最近开口边净距 ${formatMillimeters(pitch.edgeClearance)}</span>
           </article>`).join("")}
       </div>`
-      : `<div class="tube-designer-dimension-empty">当前最终几何中未识别到贯穿孔；总长与截面仍取自当前实体。</div>`}
+      : `<div class="tube-designer-dimension-empty">当前最终几何中未识别到孔或开口；总长与截面仍取自当前实体。</div>`}
   `;
 }
 
@@ -354,26 +333,28 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
   const annotations = [{
     start,
     end,
-    offset: scale(offsetDirection, profileSpan * 3.25),
+    offset: scale(offsetDirection, profileSpan * 5.1),
     label: `总长 ${formatMillimeters(length)} mm`,
     color: 0xffc857,
   }];
   if (!holes.length) return annotations;
 
-  const centerOffset = scale(offsetDirection, profileSpan * 2.05);
-  const gapOffset = scale(offsetDirection, -profileSpan * 1.75);
+  const centerOffset = scale(offsetDirection, profileSpan * 3.35);
+  const sizeOffset = scale(offsetDirection, profileSpan * 1.55);
+  const gapOffset = scale(offsetDirection, -profileSpan * 2.1);
+  const edgeOffset = scale(offsetDirection, -profileSpan * 4.0);
   const first = holes[0];
   const last = holes[holes.length - 1];
   appendAnnotation(
     annotations, start, first.center, centerOffset,
-    `首端—孔1中心 ${formatMillimeters(first.station)} mm`, 0x73d4ca,
+    `首端距 ${formatMillimeters(first.station)}`, 0x73d4ca,
   );
   for (let index = 1; index < holes.length; index += 1) {
     const previous = holes[index - 1];
     const hole = holes[index];
     appendAnnotation(
       annotations, previous.center, hole.center, centerOffset,
-      `孔${previous.index}—孔${hole.index}中心 ${formatMillimeters(hole.station - previous.station)} mm`, 0x73d4ca,
+      `中心距 ${formatMillimeters(hole.station - previous.station)}`, 0x73d4ca,
     );
     appendAnnotation(
       annotations,
@@ -386,7 +367,7 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
   }
   appendAnnotation(
     annotations, last.center, end, centerOffset,
-    `孔${last.index}中心—末端 ${formatMillimeters(length - last.station)} mm`, 0x73d4ca,
+    `末端距 ${formatMillimeters(length - last.station)}`, 0x73d4ca,
   );
 
   for (const hole of holes) {
@@ -394,8 +375,8 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
       annotations,
       add(hole.center, scale(axis, -hole.halfSpanAlong)),
       add(hole.center, scale(axis, hole.halfSpanAlong)),
-      [0, 0, 0],
-      `孔${hole.index} ${hole.sizeLabel}`,
+      sizeOffset,
+      `开${hole.index} ${hole.sizeLabel}`,
       0x8fe0a9,
     );
     if (hole.faceTangent && hole.centerToFaceEdge > 0) {
@@ -403,8 +384,8 @@ function buildDimensionAnnotations({ start, end, length, axis, offsetDirection, 
         annotations,
         add(hole.center, scale(hole.faceTangent, -hole.centerToFaceEdge)),
         add(hole.center, scale(hole.faceTangent, hole.centerToFaceEdge)),
-        scale(axis, hole.halfSpanAlong * 1.4),
-        `孔${hole.index} 中心距边 ${formatMillimeters(hole.centerToFaceEdgeNegative)} / ${formatMillimeters(hole.centerToFaceEdgePositive)} mm`,
+        edgeOffset,
+        `开${hole.index} 距边 ${formatMillimeters(hole.centerToFaceEdgeNegative)} / ${formatMillimeters(hole.centerToFaceEdgePositive)}`,
         0xb8a4ff,
       );
     }
@@ -457,6 +438,7 @@ function normalizeHoleFeature(feature, index, start, axis, referenceLength) {
   const halfSpanAlong = spanAlong / 2;
   return {
     index: index + 1,
+    kind: String(feature.kind ?? "through-opening"),
     station: Math.max(0, station),
     center,
     shape,
@@ -505,6 +487,52 @@ function setInspectionStatus(controller, message, isError) {
   status.classList.toggle("error", Boolean(isError));
 }
 
+function setInspectionProgress(controller, message, isBusy) {
+  const progress = controller.host.closest(".tube-designer-part-inspection-dialog")
+    ?.querySelector("[data-tube-designer-inspection-progress]");
+  if (!progress) return;
+  progress.hidden = !isBusy;
+  progress.setAttribute("aria-hidden", isBusy ? "false" : "true");
+  progress.setAttribute("aria-valuetext", message || (isBusy ? "处理中" : "已完成"));
+  controller.host.dataset.tubeInspectionProgressVisible = isBusy ? "true" : "false";
+}
+
+async function finishInspectionProgress(mount, controller, progressPaintedAt) {
+  const paintedAt = await progressPaintedAt;
+  await waitMinimum(paintedAt, PART_INSPECTION_PROGRESS_MINIMUM_VISIBLE_MS);
+  if (controllers.get(mount) !== controller || !controller.host.isConnected) return false;
+  controller.host.dataset.tubeInspectionProgressMs = String(
+    Math.max(0, Math.round(performanceNow() - paintedAt)),
+  );
+  setInspectionProgress(controller, "", false);
+  return true;
+}
+
+function performanceNow() {
+  return typeof globalThis.performance?.now === "function" ? globalThis.performance.now() : Date.now();
+}
+
+async function waitForProgressPaint() {
+  if (typeof globalThis.requestAnimationFrame !== "function") return performanceNow();
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(fallback);
+      resolve();
+    };
+    const fallback = setTimeout(finish, 100);
+    globalThis.requestAnimationFrame(() => globalThis.requestAnimationFrame(finish));
+  });
+  return performanceNow();
+}
+
+async function waitMinimum(startedAt, minimum) {
+  const remaining = minimum - (performanceNow() - startedAt);
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
+}
+
 function finitePoint(value) {
   const source = Array.isArray(value) ? value : [value?.x, value?.y, value?.z];
   if (source.length !== 3 || !source.every((entry) => Number.isFinite(Number(entry)))) return null;
@@ -543,10 +571,6 @@ function magnitude(vector) {
 
 function distance(left, right) {
   return magnitude(subtract(left, right));
-}
-
-function formatPoint(point) {
-  return `(${formatMillimeters(point.x)}, ${formatMillimeters(point.y)}, ${formatMillimeters(point.z)})`;
 }
 
 function formatMillimeters(value) {

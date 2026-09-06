@@ -28,6 +28,8 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <!-- Shared CAM module; source project name retained for build compatibility. -->
+  <PropertyGroup><TargetName>CamRuntime</TargetName></PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -163,6 +165,10 @@
     </ProjectReference>
     <ProjectReference Include="..\..\common\Transform\Transform.vcxproj">
       <Project>{14df2d69-19bd-4340-b859-7c4ca916b42b}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\common\SceneBootstrap\SceneBootstrap.vcxproj">
+      <Project>{d5e0c5b3-26b7-4c31-a87d-49f0f56c3c16}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

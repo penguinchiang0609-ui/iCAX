@@ -171,7 +171,7 @@ const actions = {
       return;
     }
     const path = await bridge.openFileDialog({
-      filters: [{ name: "iCAX Project", extensions: ["icax", "i3cam"] }],
+      filters: [{ name: "项目文件", extensions: ["icax", "i3cam"] }],
     });
     if (path) {
       await actions.openProjectFromPath(path);
@@ -297,7 +297,7 @@ const actions = {
 
   openNewProjectDialog() {
     const product = getSelectedProductState();
-    state.newProjectName = `${product?.productName ?? "iCAX"} 项目`;
+    state.newProjectName = product?.productName ? `${product.productName} 项目` : "未命名项目";
     state.newProjectPath = makeDefaultProjectPath(state.newProjectName, product);
     state.newProjectPathTouched = false;
     state.newProjectError = "";
@@ -331,6 +331,20 @@ const actions = {
     if (typeof module?.handleRibbonCommand === "function") {
       await module.handleRibbonCommand(buildProductContext(), commandId);
     }
+  },
+
+  async selectRibbonTab(tabId) {
+    const ribbon = getActiveRibbonDefinition();
+    const normalizedId = String(tabId ?? "");
+    if (!ribbon.tabs.some((tab) => tab.id === normalizedId)) {
+      throw new Error(`Unknown ribbon tab: ${normalizedId}`);
+    }
+    closeRibbonCommandMenu();
+    state.activeRibbonTabId = normalizedId;
+    if (await render() === false) {
+      throw new Error(state.error || `Failed to mount ribbon tab: ${normalizedId}`);
+    }
+    return normalizedId;
   },
 
   async windowCommand(command) {
@@ -541,6 +555,7 @@ root.addEventListener("input", (event) => {
 });
 
 function render() {
+  document.title = getApplicationTitle();
   hideToolbarTooltip();
   if (!state.activeProjectState) {
     root.innerHTML = `
@@ -669,6 +684,7 @@ function exposeAppShellAutomation() {
         activeProjectName: state.activeProjectState?.projectName ?? "",
         activeProjectPath: state.activeProjectState?.projectPath ?? "",
         activeSceneId: state.activeSceneState?.sceneId ?? "",
+        activeRibbonTabId: state.activeRibbonTabId,
         startCenterOpen: state.startCenterOpen,
         pendingCount: state.pendingCount,
         error: state.error,
@@ -698,6 +714,13 @@ function exposeAppShellAutomation() {
       await actions.executeRibbonCommand(commandId);
       return this.getState();
     },
+    async selectRibbonTab(tabId) {
+      if (isActiveProjectBusy()) {
+        throw new Error("The active project is busy.");
+      }
+      await actions.selectRibbonTab(tabId);
+      return this.getState();
+    },
   };
 }
 
@@ -710,7 +733,7 @@ function renderStartCenter({ overlay }) {
       <section class="start-center">
         <header class="start-head">
           <div>
-            <strong>iCAX</strong>
+            <strong>工作台</strong>
             <span>${escapeText(state.bridgeStatus)}</span>
           </div>
           ${overlay ? `<button class="icon-button" type="button" data-action="close-start-center" title="关闭">×</button>` : ""}
@@ -725,7 +748,7 @@ function renderStartCenter({ overlay }) {
                         type="button"
                         data-action="select-product"
                         data-product-id="${escapeAttr(item.productId)}">
-                  <span>${escapeText(item.productName || item.productId)}</span>
+                  <span>${escapeText(item.productName || "未命名产品")}</span>
                   <small>${item.isStarted ? "运行中" : "待启动"}</small>
                 </button>
               `).join("")}
@@ -773,16 +796,21 @@ function renderStartCenter({ overlay }) {
   `;
 }
 
+function getApplicationTitle() {
+  if (!state.activeProjectState) return "工作台";
+  return state.activeProductState?.productName
+    || findProductState(state.activeProductState?.productId)?.productName
+    || "工作台";
+}
+
 function renderTitleBar() {
   const undoRedo = state.activeSceneState?.undoRedo ?? {};
   const projectBusy = isActiveProjectBusy();
-  const applicationTitle = state.activeProductState?.productId === "icax.tube-one"
-    ? "TubeOne"
-    : "iCAX";
+  const applicationTitle = getApplicationTitle();
   return `
     <header class="title-bar">
       <div class="app-corner">
-        <button class="app-button" type="button" data-action="open-start-center">${applicationTitle} ▾</button>
+        <button class="app-button" type="button" data-action="open-start-center">${escapeText(applicationTitle)} ▾</button>
         <button class="quick-button" type="button" data-action="ribbon-command" data-command-id="app.save" ${projectBusy ? "disabled" : ""} title="保存">保存</button>
         <button class="quick-button" type="button" data-action="undo-project" ${undoRedo.canUndo && !projectBusy ? "" : "disabled"} title="撤销">撤销</button>
         <button class="quick-button" type="button" data-action="redo-project" ${undoRedo.canRedo && !projectBusy ? "" : "disabled"} title="重做">重做</button>
@@ -797,7 +825,7 @@ function renderStartupTitleBar() {
   return `
     <header class="title-bar start-title-bar">
       <div class="app-corner">
-        <button class="app-button" type="button" disabled>iCAX</button>
+        <button class="app-button" type="button" disabled>工作台</button>
       </div>
       <div class="startup-title">选择产品与项目</div>
       ${renderWindowControls()}
@@ -941,6 +969,16 @@ const RIBBON_ICON_SHAPES = Object.freeze({
   display: `<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 9v11"/><circle class="accent fill" cx="6" cy="6.5" r="1"/>`,
   repair: `<path d="M4 7c3-3 7-3 10 0l2 2"/><path class="accent" d="m13 9 3 .2.2-3"/><path d="M20 17c-3 3-7 3-10 0l-2-2"/><path class="accent" d="m11 15-3-.2-.2 3"/>`,
   edit2d: `<path d="M3 18 8 8l5 5 4-8 4 3"/><circle class="accent fill" cx="8" cy="8" r="1.5"/><path class="accent" d="m13 19 6-6 2 2-6 6-3 .5z"/>`,
+  "profile-sketch": `<rect x="4" y="5" width="16" height="14" rx="3"/><rect class="accent" x="8" y="9" width="8" height="6" rx="1"/>`,
+  "side-sketch": `<path d="m3 8 5-3 13 3-5 3zM3 8v9l13 3v-9M16 11l5-3v9l-5 3"/><path class="accent" d="M6 13c2-3 4 3 7 0"/>`,
+  "sketch-line": `<path d="M4 19 20 5"/><circle class="accent fill" cx="4" cy="19" r="2"/><circle class="accent fill" cx="20" cy="5" r="2"/>`,
+  "sketch-polyline": `<path d="m3 18 5-9 5 5 8-10"/><circle class="accent fill" cx="8" cy="9" r="1.5"/><circle class="accent fill" cx="13" cy="14" r="1.5"/>`,
+  "sketch-rectangle": `<rect x="4" y="5" width="16" height="14" rx="1"/><path class="accent" d="M4 9V5h4"/>`,
+  "sketch-circle": `<circle cx="12" cy="12" r="8"/><circle class="accent fill" cx="12" cy="12" r="1.5"/><path class="accent" d="M12 12h8"/>`,
+  "sketch-arc": `<path d="M4 18C6 6 16 3 21 12"/><circle class="accent fill" cx="4" cy="18" r="1.5"/><circle class="accent fill" cx="21" cy="12" r="1.5"/>`,
+  "sketch-spline": `<path d="M3 17C7 3 12 22 21 7"/><circle class="accent fill" cx="3" cy="17" r="1.5"/><circle class="accent fill" cx="21" cy="7" r="1.5"/>`,
+  undo: `<path d="M9 7 4 11l5 4"/><path class="accent" d="M5 11h8c4 0 7 3 7 7"/>`,
+  redo: `<path d="m15 7 5 4-5 4"/><path class="accent" d="M19 11h-8c-4 0-7 3-7 7"/>`,
   edit3d: `<path d="m4 8 8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8"/><path class="accent" d="m14 16 5-5 2 2-5 5-3 1z"/>`,
   process: `<circle cx="12" cy="12" r="9"/><path class="accent" d="m7.5 12 3 3 6-7"/>`,
   hole: `<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v10c0 2 3 3 7 3s7-1 7-3V6"/><ellipse class="accent" cx="12" cy="11" rx="3" ry="1.5"/>`,
@@ -1517,8 +1555,8 @@ function hasFileExtension(fileName) {
 }
 
 function makeSafeProjectFileName(projectName) {
-  const text = String(projectName ?? "").trim() || "iCAX项目";
-  return text.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, " ").slice(0, 80) || "iCAX项目";
+  const text = String(projectName ?? "").trim() || "未命名项目";
+  return text.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, " ").slice(0, 80) || "未命名项目";
 }
 
 function getProjectFileExtensions(product) {
@@ -1727,7 +1765,7 @@ function getProgressMode(label) {
   if (text.includes("Product.")) {
     return "PRODUCT";
   }
-  return "ICAX";
+  return "后台任务";
 }
 
 function pushLog(level, message) {

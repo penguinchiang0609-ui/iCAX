@@ -145,13 +145,18 @@ namespace
             }
         }
 
-        const auto _UserDataPath = std::filesystem::weakly_canonical(_Current / "UserData");
-        const auto _CachePath = std::filesystem::weakly_canonical(_UserDataPath / "Cache");
-        std::filesystem::create_directories(_UserDataPath);
+        const auto _UserDataText = iCAX::Application::ResolveDefaultUserDataDirectory();
+        const auto _UserDataPath = std::filesystem::path(std::u8string(
+            _UserDataText.begin(), _UserDataText.end()));
+        const auto _BrowserDataPath = _UserDataPath / "Browser";
+        const auto _CachePath = _UserDataPath / "Cache" / "Browser";
+        const auto _LogPath = _UserDataPath / "Logs";
+        std::filesystem::create_directories(_BrowserDataPath);
         std::filesystem::create_directories(_CachePath);
-        _Config.Properties.emplace_back("userDataPath", ToUTF8(_UserDataPath));
+        std::filesystem::create_directories(_LogPath);
+        _Config.Properties.emplace_back("userDataPath", ToUTF8(_BrowserDataPath));
         _Config.Properties.emplace_back("cachePath", ToUTF8(_CachePath));
-        _Config.Properties.emplace_back("logFile", ToUTF8(std::filesystem::absolute(_Current / "cef.log")));
+        _Config.Properties.emplace_back("logFile", ToUTF8(_LogPath / "cef.log"));
         _Config.Properties.emplace_back("disableGpu", "true");
 
         return _Config;

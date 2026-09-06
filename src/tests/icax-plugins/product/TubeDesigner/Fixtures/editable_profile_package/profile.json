@@ -1,0 +1,13 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 2,
+  "id": "test-editable-rect",
+  "version": "1.0.0",
+  "displayName": { "zh-CN": "测试可编辑矩形管" },
+  "description": "用于验证可编辑管型包导入和参数重算。",
+  "parameters": [
+    { "key": "width", "displayName": { "zh-CN": "外宽" }, "valueType": "number", "defaultValue": 60.0, "min": 10.0 },
+    { "key": "depth", "displayName": { "zh-CN": "外高" }, "valueType": "number", "defaultValue": 40.0, "min": 10.0 },
+    { "key": "wallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "defaultValue": 2.0, "min": 0.5 }
+  ]
+}

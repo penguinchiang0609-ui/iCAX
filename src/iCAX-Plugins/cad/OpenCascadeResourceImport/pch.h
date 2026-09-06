@@ -3,6 +3,7 @@
 #include "framework.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -24,6 +25,9 @@
 #include <Geom_BezierCurve.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_BSplineSurface.hxx>
+#include <Geom_RectangularTrimmedSurface.hxx>
+#include <Geom_SurfaceOfLinearExtrusion.hxx>
+#include <GeomConvert.hxx>
 #include <Geom2d_BezierCurve.hxx>
 #include <Geom2d_BSplineCurve.hxx>
 #include <GeomAbs_CurveType.hxx>
@@ -42,6 +46,7 @@
 #include <gp_Pnt2d.hxx>
 #include <gp_Sphere.hxx>
 #include <gp_Torus.hxx>
+#include <gp_Vec.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <IGESControl_Reader.hxx>
 #include <NCollection_IndexedMap.hxx>

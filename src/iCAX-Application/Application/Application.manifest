@@ -4,7 +4,7 @@
     type="win32"
     name="iCAX.Application"
     version="1.0.0.0" />
-  <description>iCAX Application</description>
+  <description>工作台</description>
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>

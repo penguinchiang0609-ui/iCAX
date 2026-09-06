@@ -115,7 +115,7 @@ export class AppProxy {
 
     const registeredState = await this.#registerProductChannel(productState);
     if (!isUsableChannelId(registeredState.productChannelId)) {
-      throw new Error(`Started product has no usable channel id: ${registeredState.productId}`);
+      throw new Error("产品已启动，但连接尚未就绪。请重新打开产品。");
     }
 
     const existing = this.products.get(registeredState.productId);
@@ -165,7 +165,7 @@ export class AppProxy {
 
     const channelId = await this.bridge.registerProductChannel(productState.productId);
     if (!isUsableChannelId(channelId)) {
-      throw new Error(`Host bridge returned invalid product channel id: ${productState.productId}`);
+      throw new Error("无法建立产品连接。请重新打开产品。");
     }
 
     return { ...productState, productChannelId: channelId };

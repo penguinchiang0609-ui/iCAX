@@ -14,6 +14,15 @@ $ErrorActionPreference = "Stop"
 
 $Root = (Resolve-Path -LiteralPath $RepoRoot).Path
 $Destination = (Resolve-Path -LiteralPath $OutDir).Path
+$SharedRuntimeDirectory = [System.IO.Path]::GetFullPath(
+    (Join-Path $Root ("{0}\{1}" -f $Platform, $Configuration)))
+
+# These DLLs are already built here through ProjectReference. In particular,
+# do not fall back to stale per-project copies while a shared DLL is rebuilding.
+if ([StringComparer]::OrdinalIgnoreCase.Equals(
+    $Destination.TrimEnd('\', '/'), $SharedRuntimeDirectory.TrimEnd('\', '/'))) {
+    return
+}
 
 $RuntimeProjects = @(
     "iCAX-Engine\foundation\Data",
@@ -44,6 +53,8 @@ $RuntimeProjects = @(
 
 foreach ($Project in $RuntimeProjects) {
     $Name = Split-Path -Path $Project -Leaf
+    # The historical source project now builds the product-independent CAM runtime.
+    if ($Name -eq "Laser3DCAM") { $Name = "CamRuntime" }
     $SharedDll = Join-Path $Root ("{0}\{1}\{2}.dll" -f $Platform, $Configuration, $Name)
     $ProjectDll = Join-Path $Root ("{0}\{1}\{2}\{3}\{4}.dll" -f $Project, $Platform, $Configuration, $Name, $Name)
     $TargetDll = Join-Path $Destination ("{0}.dll" -f $Name)
@@ -73,9 +84,11 @@ foreach ($Project in $RuntimeProjects) {
 # OpenCascade import and the Tube CSG converter load OCC through DLL imports.
 # Keep the test directory self-contained so an older DLL beside the test binary
 # cannot shadow the freshly built shared runtime.
-$SharedRuntimeDirectory = Join-Path $Root ("{0}\{1}" -f $Platform, $Configuration)
 Get-ChildItem -LiteralPath $SharedRuntimeDirectory -Filter "TK*.dll" | ForEach-Object {
     $TargetDll = Join-Path $Destination $_.Name
+    if ([StringComparer]::OrdinalIgnoreCase.Equals($_.FullName, $TargetDll)) {
+        return
+    }
     $TargetItem = Get-Item -LiteralPath $TargetDll -ErrorAction SilentlyContinue
     if ($null -eq $TargetItem -or
         $TargetItem.Length -ne $_.Length -or

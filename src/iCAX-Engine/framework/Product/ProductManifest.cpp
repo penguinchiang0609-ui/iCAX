@@ -2,6 +2,7 @@
 #include "ProductManifest.h"
 
 #include <boost/json/src.hpp>
+#include <set>
 
 
 namespace
@@ -362,6 +363,92 @@ namespace
         }
     }
 
+    void _AppendUserDataFeatures(
+        IN const json::object& Root_,
+        IN OUT std::vector<iCAX::Product::CProductUserDataFeatureDefinition>& Target_)
+    {
+        const auto* _pUserData = Root_.if_contains("userData");
+        if (!_pUserData || _pUserData->is_null()) return;
+        const auto& _UserData = _RequireObject(*_pUserData, "userData");
+        const auto* _pFeatures = _UserData.if_contains("features");
+        if (!_pFeatures || !_pFeatures->is_array())
+            throw std::runtime_error("Manifest field must be array: userData.features");
+
+        std::set<std::string> _FeatureIDs;
+        for (const auto& _FeatureValue : _pFeatures->as_array())
+        {
+            const auto& _FeatureObject = _RequireObject(_FeatureValue, "userData.features[]");
+            iCAX::Product::CProductUserDataFeatureDefinition _Feature;
+            _Feature.FeatureID = _RequireString(_FeatureObject, "featureId");
+            if (!_FeatureIDs.emplace(_Feature.FeatureID).second)
+                throw std::runtime_error("Duplicate user data featureId: " + _Feature.FeatureID);
+
+            const auto* _pRecordTypes = _FeatureObject.if_contains("recordTypes");
+            if (!_pRecordTypes || !_pRecordTypes->is_array())
+                throw std::runtime_error("Manifest field must be array: userData.features[].recordTypes");
+
+            std::set<std::string> _RecordTypeIDs;
+            for (const auto& _RecordValue : _pRecordTypes->as_array())
+            {
+                const auto& _RecordObject = _RequireObject(
+                    _RecordValue, "userData.features[].recordTypes[]");
+                iCAX::Product::CProductUserDataRecordTypeDefinition _RecordType;
+                _RecordType.RecordType = _RequireString(_RecordObject, "recordType");
+                if (!_RecordTypeIDs.emplace(_RecordType.RecordType).second)
+                {
+                    throw std::runtime_error(
+                        "Duplicate user data recordType in feature " + _Feature.FeatureID
+                        + ": " + _RecordType.RecordType);
+                }
+                _RecordType.SubjectTypes = _OptionalStringArray(_RecordObject, "subjectTypes");
+                if (_RecordType.SubjectTypes.empty())
+                    throw std::runtime_error("User data recordType requires at least one subjectType");
+                std::set<std::string> _SubjectTypes(
+                    _RecordType.SubjectTypes.begin(), _RecordType.SubjectTypes.end());
+                if (_SubjectTypes.size() != _RecordType.SubjectTypes.size())
+                    throw std::runtime_error("Duplicate user data subjectType in recordType");
+                _RecordType.SchemaVersion = _OptionalUInt32(_RecordObject, "schemaVersion", 1);
+                if (_RecordType.SchemaVersion == 0)
+                    throw std::runtime_error("User data schemaVersion must be greater than zero");
+                const auto _Cardinality = _OptionalString(_RecordObject, "cardinality", "multiple");
+                if (_Cardinality == "multiple") _RecordType.AllowMultiple = true;
+                else if (_Cardinality == "single") _RecordType.AllowMultiple = false;
+                else throw std::runtime_error("User data cardinality must be single or multiple");
+
+                if (const auto* _pRelations = _RecordObject.if_contains("relations"))
+                {
+                    if (!_pRelations->is_array())
+                        throw std::runtime_error("Manifest field must be array: userData relation list");
+                    std::set<std::string> _RelationTypes;
+                    for (const auto& _RelationValue : _pRelations->as_array())
+                    {
+                        const auto& _RelationObject = _RequireObject(
+                            _RelationValue, "userData relation");
+                        iCAX::Product::CProductUserDataRelationDefinition _Relation;
+                        _Relation.RelationType = _RequireString(_RelationObject, "relationType");
+                        _Relation.TargetKind = _RequireString(_RelationObject, "targetKind");
+                        _Relation.TargetFeatureID = _OptionalString(_RelationObject, "targetFeatureId");
+                        _Relation.TargetType = _RequireString(_RelationObject, "targetType");
+                        if (!_RelationTypes.emplace(_Relation.RelationType).second)
+                            throw std::runtime_error("Duplicate user data relationType");
+                        if (_Relation.TargetKind != "definition"
+                            && _Relation.TargetKind != "user-record"
+                            && _Relation.TargetKind != "external")
+                        {
+                            throw std::runtime_error(
+                                "User data relation targetKind must be definition, user-record or external");
+                        }
+                        if (_Relation.TargetKind == "user-record" && _Relation.TargetFeatureID.empty())
+                            throw std::runtime_error("User-record relation requires targetFeatureId");
+                        _RecordType.Relations.emplace_back(std::move(_Relation));
+                    }
+                }
+                _Feature.RecordTypes.emplace_back(std::move(_RecordType));
+            }
+            Target_.emplace_back(std::move(_Feature));
+        }
+    }
+
     void _ApplyPDOHubConfig(
         IN const json::object& Backend_,
         IN OUT iCAX::Product::CProductDefinition& Definition_)
@@ -424,6 +511,7 @@ iCAX::Product::CProductManifest iCAX::Product::LoadProductManifest(IN const std:
     {
         _Definition.Capabilities = _JsonObjectToObjectMap(_RequireObject(*_pCapabilities, "capabilities"));
     }
+    _AppendUserDataFeatures(_Root, _Definition.UserDataFeatures);
 
     const auto& _ProjectFile = _RequireChildObject(_Root, "projectFile");
     _Definition.ProjectFile.Magic = _RequireString(_ProjectFile, "magic");

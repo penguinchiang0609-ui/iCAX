@@ -48,6 +48,10 @@ export class ProductProxy {
     return response;
   }
 
+  invoke(sdoMethod, payload = {}, options = {}) {
+    return this.sdoClient.invoke(this.productChannelId, sdoMethod, payload, options);
+  }
+
   async openProjectCatalog(projectPath, options = {}) {
     const response = await this.sdoClient.invoke(this.productChannelId, ProductSDO.openProjectCatalog, {
       projectPath,

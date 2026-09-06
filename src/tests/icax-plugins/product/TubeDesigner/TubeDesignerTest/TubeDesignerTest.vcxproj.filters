@@ -5,5 +5,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="TubeDesignerTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="NestingAdapterTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="NestingResultExporterTests.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\TubeDesigner\NestingResultExporter.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\TubeDesigner\PartListXlsxExporter.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="..\..\..\..\..\iCAX-Plugins\product\TubeDesigner\NestingAdapter.cpp"><Filter>源文件</Filter></ClCompile>
   </ItemGroup>
 </Project>

@@ -2194,7 +2194,7 @@ void iCAX::Frontend::Cef::CCefUIContainer::Start()
     });
 
     CefWindowInfo _WindowInfo;
-    _WindowInfo.SetAsPopup(nullptr, L"iCAX");
+    _WindowInfo.SetAsPopup(nullptr, L"工作台");
     _WindowInfo.style = WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VISIBLE | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
     _WindowInfo.ex_style = WS_EX_APPWINDOW;
     _WindowInfo.bounds = _MakeInitialWindowBounds();

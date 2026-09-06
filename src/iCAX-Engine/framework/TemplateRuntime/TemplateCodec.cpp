@@ -7,6 +7,7 @@
 #include <limits>
 #include <set>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -270,6 +271,60 @@ namespace
         return _Result;
     }
 
+    struct SNumericEnumValue
+    {
+        enum class EKind { NotNumeric, Integer, Floating } Kind = EKind::NotNumeric;
+        bool Negative = false;
+        std::uint64_t Magnitude = 0;
+        double Floating = 0.0;
+    };
+
+    SNumericEnumValue NumericEnumValue(const Variant& Value_)
+    {
+        return std::visit([](const auto& Item_) -> SNumericEnumValue {
+            using T = std::decay_t<decltype(Item_)>;
+            // bool is an enum value in its own right, not an alias for 0 or 1.
+            if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)
+            {
+                if constexpr (std::is_signed_v<T>)
+                {
+                    const auto _Signed = static_cast<std::int64_t>(Item_);
+                    if (_Signed < 0)
+                        return { SNumericEnumValue::EKind::Integer, true,
+                            static_cast<std::uint64_t>(-(_Signed + 1)) + 1 };
+                }
+                return { SNumericEnumValue::EKind::Integer, false,
+                    static_cast<std::uint64_t>(Item_) };
+            }
+            else if constexpr (std::is_floating_point_v<T>)
+            {
+                const auto _Number = static_cast<double>(Item_);
+                if (!std::isfinite(_Number)) return {};
+                const auto _Magnitude = std::abs(_Number);
+                if (std::trunc(_Number) == _Number && _Magnitude < std::ldexp(1.0, 64))
+                    return { SNumericEnumValue::EKind::Integer, _Number < 0.0,
+                        static_cast<std::uint64_t>(_Magnitude) };
+                return { SNumericEnumValue::EKind::Floating, false, 0, _Number };
+            }
+            else return {};
+        }, Value_.m_Value);
+    }
+
+    bool EnumValuesEqual(const Variant& Left_, const Variant& Right_)
+    {
+        if (Left_ == Right_) return true;
+        // Standard JSON produces int64, whereas the web bridge emits int32 for
+        // small whole numbers. Compare their values without changing Variant's
+        // global strict equality or rounding large integers through double.
+        const auto _Left = NumericEnumValue(Left_);
+        const auto _Right = NumericEnumValue(Right_);
+        if (_Left.Kind != _Right.Kind) return false;
+        if (_Left.Kind == SNumericEnumValue::EKind::Integer)
+            return _Left.Negative == _Right.Negative && _Left.Magnitude == _Right.Magnitude;
+        return _Left.Kind == SNumericEnumValue::EKind::Floating
+            && _Left.Floating == _Right.Floating;
+    }
+
     Variant NormalizeValue(const SParameterDefinition& Definition_, const Variant& Value_)
     {
         switch (Definition_.ValueType)
@@ -308,10 +363,10 @@ namespace
             return Value_;
         }
         case EParameterValueType::Enumeration:
-            if (std::none_of(Definition_.Choices.begin(), Definition_.Choices.end(),
-                [&Value_](const auto& Choice_) { return Choice_.Value == Value_; }))
-                throw std::invalid_argument(Definition_.Key + " is not an allowed value");
-            return Value_;
+            for (const auto& _Choice : Definition_.Choices)
+                if (EnumValuesEqual(_Choice.Value, Value_))
+                    return _Choice.Value; // Keep the descriptor's canonical type.
+            throw std::invalid_argument(Definition_.Key + " is not an allowed value");
         }
         throw std::logic_error("unknown parameter type");
     }
@@ -583,7 +638,7 @@ iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(const Variant& Document_)
                 if (std::any_of(
                     _Definition.Choices.begin(), _Definition.Choices.end(),
                     [&_DefinitionChoice](const auto& Existing_) {
-                        return Existing_.Value == _DefinitionChoice.Value;
+                        return EnumValuesEqual(Existing_.Value, _DefinitionChoice.Value);
                     }))
                 {
                     throw std::invalid_argument(_ChoicePath + ".value duplicates an earlier choice");

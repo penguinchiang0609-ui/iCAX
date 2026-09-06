@@ -1,0 +1,13 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 2,
+  "id": "channel",
+  "version": "2.1.0",
+  "displayName": { "zh-CN": "C/U 型槽钢", "en-US": "Channel section" },
+  "description": "等厚槽钢闭合边界形成的标准拉伸型材，截面开口朝右。",
+  "parameters": [
+    { "key": "width", "displayName": { "zh-CN": "外宽" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
+    { "key": "depth", "displayName": { "zh-CN": "外高" }, "valueType": "number", "defaultValue": 60.0, "min": 1.0, "step": 1.0 },
+    { "key": "wallThickness", "displayName": { "zh-CN": "厚度" }, "valueType": "number", "defaultValue": 3.0, "min": 0.1, "step": 0.1 }
+  ]
+}

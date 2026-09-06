@@ -57,12 +57,14 @@ namespace iCAX
             * @brief 构造产品运行时。
             * @param [in] Definition_ 产品静态定义。
             * @param [in] pApplicationContext_ 应用上下文，不能为空。
+            * @param [in] pUserDataStore_ 已锁定到 Definition_.ProductID 的用户数据仓库，不能为空。
             * @param [in] pProductDataStore_ 产品数据存储，可为空；为空时使用默认文件存储。
             */
             CProductRuntime(
                 IN const CProductDefinition& Definition_,
                 IN std::shared_ptr<const iCAX::Application::IApplicationContext> pApplicationContext_,
                 IN std::shared_ptr<iCAX::Interaction::CSDOChannelRegistry> pSDOChannelRegistry_,
+                IN std::shared_ptr<iCAX::Application::IProductUserDataStore> pUserDataStore_,
                 IN std::shared_ptr<IProductDataStore> pProductDataStore_ = nullptr,
                 IN uint32_t nFrameIntervalMilliseconds_ = 16);
             ~CProductRuntime();
@@ -161,6 +163,9 @@ namespace iCAX
             * @brief 获取产品 ID。
             */
             const std::string& GetProductID() const override;
+
+            std::shared_ptr<iCAX::Application::IProductUserDataStore>
+                GetUserDataStore() const override;
 
             /*
             * @brief 产品级资源库。
@@ -534,6 +539,7 @@ namespace iCAX
             std::shared_ptr<iCAX::Resource::CResourceLoaderRegistry> m_pProductResourceLoaderRegistry;
             iCAX::Resource::CResourceLibrary m_Resources;
             std::shared_ptr<IProductDataStore> m_pProductDataStore;
+            std::shared_ptr<iCAX::Application::IProductUserDataStore> m_pUserDataStore;
             std::shared_ptr<iCAX::Interaction::CSDORegistry> m_pSDORegistry;
             std::unique_ptr<iCAX::Interaction::CSDOInvoker> m_pSDOInvoker;
             mutable std::mutex m_RuntimeMutex;

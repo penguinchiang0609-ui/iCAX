@@ -1,9 +1,9 @@
-import * as laserCam from "../../laser-3d-cam/webpage/entry.mjs";
+import * as workbench from "../../_shared/workbench/camWorkbench.mjs";
 import { handleTubeAreaAction, handleTubeRibbonCommand } from "./cadIntentActions.mjs";
 import { renderTubeCADDialogPrefix, renderTubeCADDialogSuffix, renderTubeCSGViewportOverlay, renderTubeWorkpieceLeftPane, renderTubeWorkpieceRightPane } from "./cadIntentViews.mjs";
 import { getRibbonDefinition as getTubeRibbonDefinition } from "./ribbon/ribbonDefinition.mjs";
 import { ensureTubeOneStyles } from "./styles/ensureStyles.mjs";
-import { getProjectView } from "../../laser-3d-cam/webpage/state/projectViewStore.mjs";
+import { getProjectView } from "../../_shared/workbench/state/projectViewStore.mjs";
 
 export function getRibbonDefinition() {
   return getTubeRibbonDefinition();
@@ -11,16 +11,16 @@ export function getRibbonDefinition() {
 
 export function mountProduct(context) {
   ensureTubeOneStyles();
-  laserCam.mountProduct(context);
+  workbench.mountProduct(context);
 }
 
 export function mountProject(context) {
   ensureTubeOneStyles();
-  laserCam.mountProject(withTubeTerminology(context));
+  workbench.mountProject(withTubeTerminology(context));
 }
 
 export function handleRibbonCommand(context, commandId) {
-  return laserCam.handleRibbonCommand(withTubeTerminology(context), commandId);
+  return workbench.handleRibbonCommand(withTubeTerminology(context), commandId);
 }
 
 function withTubeTerminology(context) {

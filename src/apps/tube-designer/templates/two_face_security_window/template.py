@@ -22,7 +22,7 @@ generate_multi_face = _shared_module.generate_multi_face
 
 
 TEMPLATE_ID = "two-face-security-window"
-TEMPLATE_VERSION = "1.6.0"
+TEMPLATE_VERSION = "2.0.0"
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:

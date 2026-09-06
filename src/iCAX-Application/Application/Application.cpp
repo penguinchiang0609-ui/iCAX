@@ -48,39 +48,68 @@ namespace
         const auto _ProductRoot = _FindDefaultProductRoot();
         if (_ProductRoot.empty())
         {
-            return;
+            throw std::runtime_error("找不到产品目录，无法加载 TubeDesigner。");
         }
 
-        auto _Products = iCAX::Product::LoadProductDefinitions(_PathToUTF8(_ProductRoot));
-        if (!_Products.empty())
-        {
-            Config_.RuntimeConfig.Products = std::move(_Products);
-        }
+        // Application controls the enabled products; do not auto-register every installed manifest.
+        Config_.RuntimeConfig.Products = {
+            iCAX::Product::LoadProductManifest(
+                _PathToUTF8(_ProductRoot / "tube-designer" / "product.manifest.json")).Definition,
+        };
     }
 
     iCAX::Application::CApplicationConfig _MakeDefaultApplicationConfig()
     {
         iCAX::Application::CApplicationConfig _Config;
-        _Config.RuntimeConfig.strApplicationSettingsPath = "Setting/Application.Setting";
-        _Config.RuntimeConfig.Descriptor.AppID = "icax";
-        _Config.RuntimeConfig.Descriptor.AppName = "iCAX";
-        _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(std::filesystem::current_path());
-        _Config.RuntimeConfig.Paths.UserConfigDirectory = "Setting";
-        _Config.RuntimeConfig.Paths.CacheDirectory = "Cache";
-        _Config.RuntimeConfig.Paths.TempDirectory = "Temp";
-        _Config.RuntimeConfig.Paths.ResourceVersionDirectory =
-            "Temp/ResourceVersions";
-        _Config.RuntimeConfig.Paths.LogDirectory = "Log";
-        _Config.RuntimeConfig.nFrameIntervalMilliseconds = 16;
+        const auto _Current = std::filesystem::current_path();
+        const auto _UserDataPath = iCAX::Application::ResolveDefaultUserDataDirectory();
+        const auto _UserDataRoot = std::filesystem::path(std::u8string(
+            _UserDataPath.begin(), _UserDataPath.end()));
+        const auto _ProfileRoot = _UserDataRoot / "Profiles" / "local-default";
+        const auto _CacheRoot = _UserDataRoot / "Cache";
+        const auto _TempRoot = _UserDataRoot / "Temp";
+        const auto _LogRoot = _UserDataRoot / "Logs";
+        std::filesystem::create_directories(_ProfileRoot);
+        std::filesystem::create_directories(_CacheRoot);
+        std::filesystem::create_directories(_TempRoot);
+        std::filesystem::create_directories(_LogRoot);
 
-        iCAX::Product::CProductDefinition _DefaultProduct;
-        _DefaultProduct.ProductID = "icax.default";
-        _DefaultProduct.ProductName = "iCAX Default Product";
-        _DefaultProduct.ProductVersion = "1.0";
-        _DefaultProduct.ProjectFile.Magic = "ICAX_DEFAULT";
-        _DefaultProduct.ProjectFile.FormatVersion = "1.0";
-        _DefaultProduct.ProjectFile.FileExtensions.push_back(".icax");
-        _Config.RuntimeConfig.Products.push_back(_DefaultProduct);
+        const auto _ApplicationSettingsPath = _ProfileRoot / "Application.Setting";
+        const auto _LegacyApplicationSettingsPath = _Current / "Setting" / "Application.Setting";
+        std::error_code _MigrationError;
+        if (!std::filesystem::exists(_ApplicationSettingsPath)
+            && std::filesystem::exists(_LegacyApplicationSettingsPath))
+        {
+            std::filesystem::copy_file(
+                _LegacyApplicationSettingsPath,
+                _ApplicationSettingsPath,
+                std::filesystem::copy_options::skip_existing,
+                _MigrationError);
+        }
+        const auto _LegacyProducts = _Current / "Setting" / "Products";
+        const auto _ProfileProducts = _ProfileRoot / "Products";
+        if (std::filesystem::exists(_LegacyProducts))
+        {
+            std::filesystem::create_directories(_ProfileProducts, _MigrationError);
+            std::filesystem::copy(
+                _LegacyProducts,
+                _ProfileProducts,
+                std::filesystem::copy_options::recursive | std::filesystem::copy_options::skip_existing,
+                _MigrationError);
+        }
+
+        _Config.RuntimeConfig.strApplicationSettingsPath = _PathToUTF8(_ApplicationSettingsPath);
+        _Config.RuntimeConfig.Descriptor.AppID = "icax";
+        _Config.RuntimeConfig.Descriptor.AppName = "工作台";
+        _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(_Current);
+        _Config.RuntimeConfig.Paths.UserConfigDirectory = _PathToUTF8(_ProfileRoot);
+        _Config.RuntimeConfig.Paths.UserDataDirectory = _PathToUTF8(_UserDataRoot);
+        _Config.RuntimeConfig.Paths.BrowserDataDirectory = _PathToUTF8(_UserDataRoot / "Browser");
+        _Config.RuntimeConfig.Paths.CacheDirectory = _PathToUTF8(_CacheRoot);
+        _Config.RuntimeConfig.Paths.TempDirectory = _PathToUTF8(_TempRoot);
+        _Config.RuntimeConfig.Paths.ResourceVersionDirectory = _PathToUTF8(_TempRoot / "ResourceVersions");
+        _Config.RuntimeConfig.Paths.LogDirectory = _PathToUTF8(_LogRoot);
+        _Config.RuntimeConfig.nFrameIntervalMilliseconds = 16;
 
         _LoadProductDefinitions(_Config);
         return _Config;

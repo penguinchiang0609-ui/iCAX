@@ -51,28 +51,6 @@ namespace
         return _Text;
     }
 
-    std::string ProfileDisplayName(const std::string& Value_)
-    {
-        if (Value_ == "round" || Value_ == "circle" || Value_ == "circular") return "圆管";
-        if (Value_ == "rect" || Value_ == "rectangle" || Value_ == "rectangular") return "矩形管";
-        return Value_.empty() ? "管材" : Value_;
-    }
-
-    std::string MakeSpecification(const SPartListRow& Row_)
-    {
-        if (Row_.ProfileType == "round"
-            || Row_.ProfileType == "circle"
-            || Row_.ProfileType == "circular")
-        {
-            return "Φ" + FormatNumber(Row_.SectionWidth)
-                + " × " + FormatNumber(Row_.WallThickness);
-        }
-        return FormatNumber(Row_.SectionWidth)
-            + " × " + FormatNumber(Row_.SectionDepth)
-            + " × R" + FormatNumber(Row_.CornerRadius)
-            + " × " + FormatNumber(Row_.WallThickness);
-    }
-
     std::string TextCell(
         const std::string& Reference_, const std::string& Value_, std::uint32_t Style_)
     {
@@ -91,14 +69,15 @@ namespace
     std::string BuildWorksheet(const std::vector<SPartListRow>& Rows_)
     {
         const auto _LastRow = static_cast<std::uint64_t>(Rows_.size()) + 2;
-        std::vector<std::string> _MergeReferences{ "A1:L1" };
+        std::vector<std::string> _MergeReferences{ "A1:Q1" };
         std::ostringstream _Rows;
         _Rows << "<row r=\"1\" ht=\"28\" customHeight=\"1\">"
             << TextCell("A1", "TubeDesigner 零件清单", 1) << "</row>";
         _Rows << "<row r=\"2\" ht=\"23\" customHeight=\"1\">";
-        const std::array<std::string, 12> _Headers{
+        const std::array<std::string, 17> _Headers{
             "产品序号", "产品名称", "产品编码", "零件序号", "零件号", "零件名称",
-            "截面类型", "规格", "长度 (mm)", "数量", "文件名", "相对路径"
+            "管型 / 类别", "规格 / 板件宽×高×厚", "管材长度 (mm)", "数量", "文件名", "相对路径",
+            "零件类型", "板宽 (mm)", "板高 (mm)", "板厚 (mm)", "材料"
         };
         for (std::size_t _Index = 0; _Index < _Headers.size(); ++_Index)
         {
@@ -140,12 +119,18 @@ namespace
                 _Rows << NumberCell("D" + _RowText, std::to_string(_Row.PartIndex), 5)
                     << TextCell("E" + _RowText, _Row.PartNumber, 3)
                     << TextCell("F" + _RowText, _Row.PartName, 3)
-                    << TextCell("G" + _RowText, ProfileDisplayName(_Row.ProfileType), 3)
-                    << TextCell("H" + _RowText, MakeSpecification(_Row), 3)
-                    << NumberCell("I" + _RowText, FormatNumber(_Row.Length), 4)
+                    << TextCell("G" + _RowText, _Row.ProfileDisplayName, 3)
+                    << TextCell("H" + _RowText, _Row.ProfileSpecification, 3)
+                    << (_Row.PartKind == "plate" ? TextCell("I" + _RowText, "", 4)
+                        : NumberCell("I" + _RowText, FormatNumber(_Row.Length), 4))
                     << NumberCell("J" + _RowText, std::to_string(_Row.Quantity), 5)
                     << TextCell("K" + _RowText, _Row.FileName, 3)
                     << TextCell("L" + _RowText, _Row.RelativePath, 3)
+                    << TextCell("M" + _RowText, _Row.PartKind == "plate" ? "板件" : "管材", 3)
+                    << (_Row.PartKind == "plate" ? NumberCell("N" + _RowText, FormatNumber(_Row.PlateWidth), 4) : TextCell("N" + _RowText, "", 4))
+                    << (_Row.PartKind == "plate" ? NumberCell("O" + _RowText, FormatNumber(_Row.PlateHeight), 4) : TextCell("O" + _RowText, "", 4))
+                    << (_Row.PartKind == "plate" ? NumberCell("P" + _RowText, FormatNumber(_Row.PlateThickness), 4) : TextCell("P" + _RowText, "", 4))
+                    << TextCell("Q" + _RowText, _Row.Material, 3)
                     << "</row>";
             }
             _Offset = _End;
@@ -160,7 +145,7 @@ namespace
         std::ostringstream _Sheet;
         _Sheet << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
             << "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
-            << "<dimension ref=\"A1:L" << _LastRow << "\"/>"
+            << "<dimension ref=\"A1:Q" << _LastRow << "\"/>"
             << "<sheetViews><sheetView tabSelected=\"1\" workbookViewId=\"0\">"
             << "<pane ySplit=\"2\" topLeftCell=\"A3\" activePane=\"bottomLeft\" state=\"frozen\"/>"
             << "<selection pane=\"bottomLeft\" activeCell=\"A3\" sqref=\"A3\"/>"
@@ -175,8 +160,9 @@ namespace
             << "<col min=\"9\" max=\"10\" width=\"12\" customWidth=\"1\"/>"
             << "<col min=\"11\" max=\"11\" width=\"24\" customWidth=\"1\"/>"
             << "<col min=\"12\" max=\"12\" width=\"38\" customWidth=\"1\"/>"
+            << "<col min=\"13\" max=\"17\" width=\"14\" customWidth=\"1\"/>"
             << "</cols><sheetData>" << _Rows.str() << "</sheetData>"
-            << "<autoFilter ref=\"D2:L" << _LastRow << "\"/>" << _Merges.str()
+            << "<autoFilter ref=\"D2:Q" << _LastRow << "\"/>" << _Merges.str()
             << "<pageMargins left=\"0.3\" right=\"0.3\" top=\"0.5\" bottom=\"0.5\" header=\"0.2\" footer=\"0.2\"/>"
             << "<pageSetup orientation=\"landscape\" fitToWidth=\"1\" fitToHeight=\"0\"/>"
             << "</worksheet>";
@@ -369,6 +355,87 @@ void iCAX::TubeDesigner::WritePartListWorkbook(
     }
     catch (...)
     {
+        std::filesystem::remove(_TemporaryPath, _Ignored);
+        throw;
+    }
+}
+
+void iCAX::TubeDesigner::WriteTableWorkbook(
+    const std::filesystem::path& TargetPath_,
+    const std::string& Title_,
+    const std::vector<std::string>& Headers_,
+    const std::vector<std::vector<STableWorkbookCell>>& Rows_)
+{
+    if (TargetPath_.empty() || Headers_.empty() || Headers_.size() > 26 || Rows_.empty())
+        throw std::invalid_argument("XLSX table requires a target, 1-26 columns and data rows");
+    if (Rows_.size() > 1048574)
+        throw std::invalid_argument("XLSX table exceeds worksheet row limit");
+    if (std::filesystem::exists(TargetPath_))
+        throw std::invalid_argument("XLSX target already exists; refusing to overwrite");
+    if (!TargetPath_.parent_path().empty())
+        std::filesystem::create_directories(TargetPath_.parent_path());
+
+    const std::string _LastColumn(1, static_cast<char>('A' + Headers_.size() - 1));
+    const auto _LastRow = std::to_string(Rows_.size() + 2);
+    std::ostringstream _Rows;
+    _Rows << "<row r=\"1\" ht=\"28\" customHeight=\"1\">"
+        << TextCell("A1", Title_, 1) << "</row><row r=\"2\" ht=\"30\" customHeight=\"1\">";
+    for (std::size_t _Column = 0; _Column < Headers_.size(); ++_Column)
+        _Rows << TextCell(std::string(1, static_cast<char>('A' + _Column)) + "2", Headers_[_Column], 2);
+    _Rows << "</row>";
+    for (std::size_t _Index = 0; _Index < Rows_.size(); ++_Index)
+    {
+        const auto& _Row = Rows_[_Index];
+        if (_Row.size() != Headers_.size()) throw std::invalid_argument("XLSX table row width is inconsistent");
+        const auto _RowNumber = std::to_string(_Index + 3);
+        _Rows << "<row r=\"" << _RowNumber << "\" ht=\"24\" customHeight=\"1\">";
+        for (std::size_t _Column = 0; _Column < _Row.size(); ++_Column)
+        {
+            const auto _Reference = std::string(1, static_cast<char>('A' + _Column)) + _RowNumber;
+            if (const auto _Number = std::get_if<double>(&_Row[_Column]))
+            {
+                if (!std::isfinite(*_Number)) throw std::invalid_argument("XLSX table contains a nonfinite number");
+                _Rows << NumberCell(_Reference, FormatNumber(*_Number), 4);
+            }
+            else _Rows << TextCell(_Reference, std::get<std::string>(_Row[_Column]), 3);
+        }
+        _Rows << "</row>";
+    }
+    std::ostringstream _Sheet;
+    _Sheet << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+        << "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
+        << "<dimension ref=\"A1:" << _LastColumn << _LastRow << "\"/>"
+        << "<sheetViews><sheetView workbookViewId=\"0\"><pane ySplit=\"2\" topLeftCell=\"A3\" activePane=\"bottomLeft\" state=\"frozen\"/></sheetView></sheetViews>"
+        << "<sheetFormatPr defaultRowHeight=\"24\"/><cols><col min=\"1\" max=\"" << Headers_.size()
+        << "\" width=\"20\" customWidth=\"1\"/></cols><sheetData>" << _Rows.str() << "</sheetData>"
+        << "<autoFilter ref=\"A2:" << _LastColumn << _LastRow << "\"/>"
+        << "<mergeCells count=\"1\"><mergeCell ref=\"A1:" << _LastColumn << "1\"/></mergeCells>"
+        << "<pageMargins left=\"0.3\" right=\"0.3\" top=\"0.5\" bottom=\"0.5\" header=\"0.2\" footer=\"0.2\"/>"
+        << "<pageSetup orientation=\"landscape\" fitToWidth=\"1\" fitToHeight=\"0\"/></worksheet>";
+    auto _Entries = BuildWorkbookEntries({});
+    for (auto& _Entry : _Entries)
+    {
+        if (_Entry.Name == "xl/worksheets/sheet1.xml") _Entry.Data = _Sheet.str();
+        if (_Entry.Name == "xl/workbook.xml")
+        {
+            const auto _Name = _Entry.Data.find("name=\"零件清单\"");
+            if (_Name != std::string::npos) _Entry.Data.replace(_Name, std::string("name=\"零件清单\"").size(), "name=\"下料清单\"");
+        }
+    }
+    auto _TemporaryPath = TargetPath_;
+    _TemporaryPath += ".tmp";
+    if (std::filesystem::exists(_TemporaryPath))
+        throw std::invalid_argument("XLSX temporary target already exists; refusing to overwrite");
+    try
+    {
+        WriteZipArchive(_TemporaryPath, std::move(_Entries));
+        if (std::filesystem::exists(TargetPath_))
+            throw std::runtime_error("XLSX destination appeared during export; refusing to overwrite");
+        std::filesystem::rename(_TemporaryPath, TargetPath_);
+    }
+    catch (...)
+    {
+        std::error_code _Ignored;
         std::filesystem::remove(_TemporaryPath, _Ignored);
         throw;
     }

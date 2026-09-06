@@ -1,0 +1,25 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 2,
+  "id": "polygon",
+  "version": "1.0.0",
+  "displayName": { "zh-CN": "多边形管", "en-US": "Polygonal hollow section" },
+  "description": "由参数生成正多边形或星形外轮廓，并按名义壁厚向内偏置形成内轮廓。",
+  "parameters": [
+    {
+      "key": "shapeMode",
+      "displayName": { "zh-CN": "轮廓类型" },
+      "valueType": "string",
+      "defaultValue": "regular",
+      "options": [
+        { "value": "regular", "displayName": { "zh-CN": "正多边形" } },
+        { "value": "star", "displayName": { "zh-CN": "星形" } }
+      ]
+    },
+    { "key": "sideCount", "displayName": { "zh-CN": "边数 / 星角数" }, "valueType": "integer", "defaultValue": 8, "min": 3, "max": 64, "step": 1 },
+    { "key": "starInnerRatio", "displayName": { "zh-CN": "星谷半径比" }, "valueType": "number", "defaultValue": 0.5, "min": 0.15, "max": 0.9, "step": 0.05, "visibleWhen": { "op": "eq", "parameter": "shapeMode", "value": "star" } },
+    { "key": "width", "displayName": { "zh-CN": "外宽" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
+    { "key": "depth", "displayName": { "zh-CN": "外高" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
+    { "key": "wallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "defaultValue": 2.0, "min": 0.1, "step": 0.1 }
+  ]
+}

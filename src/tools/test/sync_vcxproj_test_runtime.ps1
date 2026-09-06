@@ -92,18 +92,38 @@ function Sync-ReferencedProject {
 
     $projectName = Get-ProjectName $fullProjectPath $xml
     $projectDir = Split-Path -Parent $fullProjectPath
-    $sourceRoot = Resolve-FullPath (Join-Path $PSScriptRoot "..")
     $sharedDllPath = Join-Path $sourceRoot (Join-Path $Platform (Join-Path $Configuration "$projectName.dll"))
     $projectDllPath = Join-Path $projectDir (Join-Path $Platform (Join-Path $Configuration (Join-Path $projectName "$projectName.dll")))
     $dllPath = if (Test-Path -LiteralPath $sharedDllPath) { $sharedDllPath } else { $projectDllPath }
 
     if (Test-Path -LiteralPath $dllPath) {
-        Copy-Item -LiteralPath $dllPath -Destination $DestinationDir -Force
+        $sourceDll = Get-Item -LiteralPath $dllPath
+        $targetDllPath = Join-Path $DestinationDir $sourceDll.Name
+        if ([StringComparer]::OrdinalIgnoreCase.Equals($sourceDll.FullName, $targetDllPath)) {
+            return
+        }
+
+        $targetDll = Get-Item -LiteralPath $targetDllPath -ErrorAction SilentlyContinue
+        if ($null -eq $targetDll -or
+            $targetDll.Length -ne $sourceDll.Length -or
+            $targetDll.LastWriteTimeUtc -lt $sourceDll.LastWriteTimeUtc) {
+            Copy-Item -LiteralPath $sourceDll.FullName -Destination $DestinationDir -Force
+        }
     }
 }
 
 $resolvedTestProject = Resolve-FullPath $TestProject
 $resolvedOutDir = Resolve-FullPath $OutDir
+$sourceRoot = Resolve-FullPath (Join-Path $PSScriptRoot "..\..")
+$sharedRuntimeDirectory = Resolve-FullPath (Join-Path $sourceRoot (Join-Path $Platform $Configuration))
+
+# ProjectReference builds directly into the shared runtime directory. Never
+# restore old per-project DLLs into it, including during a parallel rebuild.
+if ([StringComparer]::OrdinalIgnoreCase.Equals(
+    $resolvedOutDir.TrimEnd('\', '/'), $sharedRuntimeDirectory.TrimEnd('\', '/'))) {
+    return
+}
+
 New-Item -ItemType Directory -Path $resolvedOutDir -Force | Out-Null
 
 $visited = @{}

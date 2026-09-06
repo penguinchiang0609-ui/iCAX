@@ -42,6 +42,9 @@
   <Folder Name="/iCAX-Engine/foundation/Task/">
     <Project Path="iCAX-Engine/foundation/Task/Task.vcxproj" Id="93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1" />
   </Folder>
+  <Folder Name="/iCAX-Engine/foundation/TubeNesting/">
+    <Project Path="iCAX-Engine/foundation/TubeNesting/TubeNesting.vcxproj" Id="70d638c0-7f90-46b8-88db-47b201ebe2a6" />
+  </Folder>
   <Folder Name="/iCAX-Engine/framework/" />
   <Folder Name="/iCAX-Engine/framework/ApplicationContext/">
     <Project Path="iCAX-Engine/framework/ApplicationContext/ApplicationContext.vcxproj" Id="890ea74b-81b1-44f8-a740-94da104478a1" />
@@ -58,6 +61,12 @@
   <Folder Name="/iCAX-Engine/framework/Database/">
     <Project Path="iCAX-Engine/framework/Database/Database.vcxproj" Id="c746f6a5-c34a-4649-a3f4-ad185002dedd" />
   </Folder>
+  <Folder Name="/iCAX-Engine/framework/DatabaseLanguage/">
+    <Project Path="iCAX-Engine/framework/DatabaseLanguage/DatabaseLanguage.vcxproj" Id="ab9cfcc5-90ec-4b1a-80ea-c566c85568ba" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/EntityViewRuntime/">
+    <Project Path="iCAX-Engine/framework/EntityViewRuntime/EntityViewRuntime.vcxproj" Id="a6f5442b-30df-4d32-bd8e-85945e806b1d" />
+  </Folder>
   <Folder Name="/iCAX-Engine/framework/PDO/">
     <Project Path="iCAX-Engine/framework/PDO/PDO.vcxproj" Id="cf722912-d223-4b78-a672-fd2264db4bbf" />
   </Folder>
@@ -72,6 +81,9 @@
   </Folder>
   <Folder Name="/iCAX-Engine/framework/ProjectContext/">
     <Project Path="iCAX-Engine/framework/ProjectContext/ProjectContext.vcxproj" Id="d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714" />
+  </Folder>
+  <Folder Name="/iCAX-Engine/framework/ProjectFile/">
+    <Project Path="iCAX-Engine/framework/ProjectFile/ProjectFile.vcxproj" Id="069a3406-81b1-49f1-9c58-e814c96498e0" />
   </Folder>
   <Folder Name="/iCAX-Engine/framework/Resources/">
     <Project Path="iCAX-Engine/framework/Resources/Resources.vcxproj" Id="cd223cde-a7d0-4525-9bf4-2a59ba16eda5" />
@@ -88,6 +100,9 @@
     <Project Path="iCAX-Plugins/product/TubeDesigner/TubeDesigner.vcxproj" Id="b29dc027-f531-428f-9bcc-2d3e028ca044" />
   </Folder>
   <Folder Name="/iCAX-Plugins/common/" />
+  <Folder Name="/iCAX-Plugins/common/SceneBootstrap/">
+    <Project Path="iCAX-Plugins/common/SceneBootstrap/SceneBootstrap.vcxproj" Id="d5e0c5b3-26b7-4c31-a87d-49f0f56c3c16" />
+  </Folder>
   <Folder Name="/iCAX-Plugins/common/Transform/">
     <Project Path="iCAX-Plugins/common/Transform/Transform.vcxproj" Id="14df2d69-19bd-4340-b859-7c4ca916b42b" />
   </Folder>
@@ -162,6 +177,10 @@
   <Folder Name="/tests/icax-engine/foundation/Task/" />
   <Folder Name="/tests/icax-engine/foundation/Task/TaskTest/">
     <Project Path="tests/icax-engine/foundation/Task/TaskTest/TaskTest.vcxproj" Id="65c6e36b-6404-4d8a-9127-9030f5a51efe" />
+  </Folder>
+  <Folder Name="/tests/icax-engine/foundation/TubeNesting/" />
+  <Folder Name="/tests/icax-engine/foundation/TubeNesting/TubeNestingTest/">
+    <Project Path="tests/icax-engine/foundation/TubeNesting/TubeNestingTest/TubeNestingTest.vcxproj" Id="ba2d7ae9-210f-43c0-a5ce-149ec3865b95" />
   </Folder>
   <Folder Name="/tests/icax-engine/framework/" />
   <Folder Name="/tests/icax-engine/framework/ApplicationContext/" />

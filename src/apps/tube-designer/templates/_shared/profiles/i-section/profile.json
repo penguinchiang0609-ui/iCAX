@@ -1,0 +1,13 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 2,
+  "id": "i-section",
+  "version": "2.1.0",
+  "displayName": { "zh-CN": "工字钢 / H 型钢", "en-US": "I/H section" },
+  "description": "等厚上下翼缘和腹板组成的工字形标准拉伸型材。",
+  "parameters": [
+    { "key": "width", "displayName": { "zh-CN": "翼缘宽" }, "valueType": "number", "defaultValue": 100.0, "min": 1.0, "step": 1.0 },
+    { "key": "depth", "displayName": { "zh-CN": "截面高" }, "valueType": "number", "defaultValue": 100.0, "min": 1.0, "step": 1.0 },
+    { "key": "wallThickness", "displayName": { "zh-CN": "厚度" }, "valueType": "number", "defaultValue": 6.0, "min": 0.1, "step": 0.1 }
+  ]
+}

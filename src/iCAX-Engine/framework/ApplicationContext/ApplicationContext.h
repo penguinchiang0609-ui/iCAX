@@ -2,11 +2,13 @@
 
 #include "IApplicationContext.h"
 #include "IApplicationConfigStore.h"
+#include "UserDataStore.h"
 #include "Services/ServiceProvider.h"
 
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace iCAX
 {
@@ -91,12 +93,16 @@ namespace iCAX
             void SaveSettings() const;
             void ReloadSettings();
             iCAX::Services::CServiceProvider& MutableServices();
+            std::shared_ptr<IProductUserDataStore> CreateProductUserDataStore(
+                IN const std::string& strProductID_,
+                IN std::vector<CUserDataFeatureDescriptor> Descriptors_) const;
 
             CApplicationDescriptor m_Descriptor;
             CApplicationPaths m_Paths;
             mutable std::mutex m_SettingsMutex;
             iCAX::Data::PropertyBag m_Settings;
             std::shared_ptr<IApplicationConfigStore> m_pConfigStore;
+            std::shared_ptr<IUserDataStore> m_pUserDataStore;
             std::string m_strConfigPath;
             std::shared_ptr<iCAX::Services::CServiceProvider> m_pServiceProvider;
         };

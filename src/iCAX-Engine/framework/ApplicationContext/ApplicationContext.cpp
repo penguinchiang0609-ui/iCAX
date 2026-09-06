@@ -1,11 +1,26 @@
 #include "pch.h"
 #include "ApplicationContext.h"
+#include "UserDataStore.h"
 
 #include <stdexcept>
 #include <utility>
 
+namespace
+{
+    std::string _MakeUserDatabasePath(IN const iCAX::Application::CApplicationPaths& Paths_)
+    {
+        const auto _Root = Paths_.UserDataDirectory.empty()
+            ? std::filesystem::path("UserData")
+            : std::filesystem::path(std::u8string(
+                Paths_.UserDataDirectory.begin(), Paths_.UserDataDirectory.end()));
+        const auto _Text = (_Root / "Profiles" / "local-default" / "user.db").u8string();
+        return std::string(_Text.begin(), _Text.end());
+    }
+}
+
 iCAX::Application::CApplicationContext::CApplicationContext()
-    : m_pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
+    : m_pUserDataStore(std::make_shared<CSqliteUserDataStore>(_MakeUserDatabasePath(m_Paths)))
+    , m_pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
 {
 }
 
@@ -16,6 +31,7 @@ iCAX::Application::CApplicationContext::CApplicationContext(
     : m_Descriptor(Descriptor_)
     , m_Paths(Paths_)
     , m_Settings(Settings_)
+    , m_pUserDataStore(std::make_shared<CSqliteUserDataStore>(_MakeUserDatabasePath(Paths_)))
     , m_pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
 {
 }
@@ -28,6 +44,7 @@ iCAX::Application::CApplicationContext::CApplicationContext(
     : m_Descriptor(Descriptor_)
     , m_Paths(Paths_)
     , m_pConfigStore(std::move(pConfigStore_))
+    , m_pUserDataStore(std::make_shared<CSqliteUserDataStore>(_MakeUserDatabasePath(Paths_)))
     , m_strConfigPath(std::move(strConfigPath_))
     , m_pServiceProvider(std::make_shared<iCAX::Services::CServiceProvider>())
 {
@@ -109,4 +126,13 @@ void iCAX::Application::CApplicationContext::ReloadSettings()
 iCAX::Services::CServiceProvider& iCAX::Application::CApplicationContext::MutableServices()
 {
     return *m_pServiceProvider;
+}
+
+std::shared_ptr<iCAX::Application::IProductUserDataStore>
+iCAX::Application::CApplicationContext::CreateProductUserDataStore(
+    IN const std::string& strProductID_,
+    IN std::vector<CUserDataFeatureDescriptor> Descriptors_) const
+{
+    return std::make_shared<CProductUserDataStore>(
+        m_pUserDataStore, strProductID_, std::move(Descriptors_));
 }

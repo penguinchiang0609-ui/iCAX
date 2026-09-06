@@ -143,7 +143,14 @@ export class ThreeRenderViewport {
     this.selectionAxisHelper = this.#createSelectionAxisHelper();
     this.scene.add(this.selectionAxisHelper);
 
-    this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000000);
+    this.projectionMode = normalizeProjectionMode(options.projectionMode);
+    this.perspectiveFov = THREE.MathUtils.clamp(
+      Number(options.perspectiveFov ?? 45), 1, 179,
+    );
+    this.viewportAspect = 1;
+    this.camera = this.projectionMode === "orthographic"
+      ? new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000000)
+      : new THREE.PerspectiveCamera(this.perspectiveFov, 1, 0.1, 1000000);
     this.camera.up.set(0, 0, 1);
     this.cameraState = {
       target: new THREE.Vector3(DEFAULT_CAMERA.target.x, DEFAULT_CAMERA.target.y, DEFAULT_CAMERA.target.z),
@@ -152,12 +159,17 @@ export class ThreeRenderViewport {
       phi: 1.08,
     };
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: options.antialias !== false,
+      alpha: false,
+    });
+    const pixelRatioCap = Math.max(0.5, Number(options.pixelRatioCap ?? 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioCap));
     this.renderer.domElement.className = "icax-three-viewport-canvas";
     this.renderer.domElement.tabIndex = 0;
     this.root.appendChild(this.renderer.domElement);
 
+    this.#installProjectionToggle();
     this.#installOrientationGizmo();
 
     this.raycaster = new THREE.Raycaster();
@@ -165,6 +177,7 @@ export class ThreeRenderViewport {
 
     this.#installSceneBasics();
     this.#installPointerControls();
+    this.#updateProjectionMatrix();
     this.#updateCamera();
     this.root.classList.toggle("picking-enabled", this.pickingEnabled);
     this.#setStatus("等待渲染数据");
@@ -222,6 +235,71 @@ export class ThreeRenderViewport {
     this.#renderOnce();
   }
 
+  getProjectionMode() {
+    return this.projectionMode;
+  }
+
+  setProjectionMode(value, controlOptions = {}) {
+    const mode = normalizeProjectionMode(value);
+    if (mode === this.projectionMode) {
+      this.#syncProjectionToggle();
+      return this;
+    }
+    const previousCamera = this.camera;
+    const nextCamera = mode === "orthographic"
+      ? new THREE.OrthographicCamera(-1, 1, 1, -1, previousCamera.near, previousCamera.far)
+      : new THREE.PerspectiveCamera(
+        this.perspectiveFov,
+        this.viewportAspect,
+        previousCamera.near,
+        previousCamera.far,
+      );
+    nextCamera.up.copy(previousCamera.up);
+    this.camera = nextCamera;
+    this.projectionMode = mode;
+    this.#updateProjectionMatrix();
+    this.#updateCamera();
+    this.#syncProjectionToggle();
+    this.#renderOnce();
+    this.#emitCameraChange("projection");
+    if (controlOptions?.notify === true
+        && typeof this.options.onProjectionChange === "function") {
+      this.options.onProjectionChange(mode);
+    }
+    return this;
+  }
+
+  setProjectionToggleVisible(visible) {
+    const next = Boolean(visible);
+    if (this.projectionToggle) this.projectionToggle.hidden = !next;
+    this.root.classList.toggle("projection-toggle-visible", next);
+    return this;
+  }
+
+  setProjectionChangeHandler(handler) {
+    this.options.onProjectionChange = typeof handler === "function" ? handler : null;
+    return this;
+  }
+
+  setOrbitConstrained(constrained) {
+    const next = Boolean(constrained);
+    const previous = this.options.constrainOrbit !== false;
+    this.options.constrainOrbit = next;
+    this.root.dataset.orbitConstrained = String(next);
+    if (next && !previous) {
+      const offset = this.camera.position.clone().sub(this.cameraState.target);
+      if (offset.lengthSq() > Number.EPSILON) {
+        this.cameraState.radius = this.#clampCameraRadius(offset.length());
+        offset.normalize();
+        this.cameraState.theta = Math.atan2(offset.y, offset.x);
+        this.cameraState.phi = Math.acos(THREE.MathUtils.clamp(offset.z, -1, 1));
+      }
+      this.#updateCamera();
+      this.#renderOnce();
+    }
+    return this;
+  }
+
   connectScene(sceneProxy) {
     if (this.sceneProxy === sceneProxy) {
       return this;
@@ -262,8 +340,8 @@ export class ThreeRenderViewport {
     const rect = this.host?.getBoundingClientRect?.() ?? this.root.getBoundingClientRect();
     const width = Math.max(1, Math.floor(rect.width || this.root.clientWidth || 1));
     const height = Math.max(1, Math.floor(rect.height || this.root.clientHeight || 1));
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
+    this.viewportAspect = width / height;
+    this.#updateProjectionMatrix();
     this.renderer.setSize(width, height, false);
     this.axisRenderer?.setSize(86, 86, false);
     this.#renderOnce();
@@ -448,17 +526,60 @@ export class ThreeRenderViewport {
     const sphere = new THREE.Sphere();
     bounds.getBoundingSphere(sphere);
     this.cameraState.target.copy(sphere.center);
-    const halfFov = THREE.MathUtils.degToRad(this.camera.fov * 0.5);
+    const halfFov = THREE.MathUtils.degToRad(this.perspectiveFov * 0.5);
     this.cameraState.radius = this.#clampCameraRadius(Math.max(
       1,
       (sphere.radius * Math.max(1, Number(padding))) / Math.sin(halfFov),
     ));
     this.camera.near = Math.max(0.001, this.cameraState.radius / 10000);
     this.camera.far = Math.max(1000, this.cameraState.radius * 20);
-    this.camera.updateProjectionMatrix();
+    this.#updateProjectionMatrix();
     this.#updateCamera();
     this.#renderOnce();
     this.#emitCameraChange("fit");
+    return true;
+  }
+
+  fitViewToViewport(padding = 1.18) {
+    const bounds = new THREE.Box3();
+    for (const object of this.sceneObjects.values()) {
+      if (object.visible) bounds.expandByObject(object);
+    }
+    if (bounds.isEmpty()) return false;
+
+    const center = bounds.getCenter(new THREE.Vector3());
+    this.cameraState.target.copy(center);
+    this.#updateCamera();
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion).normalize();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize();
+    const towardCamera = this.camera.position.clone().sub(center).normalize();
+    let halfWidth = 0;
+    let halfHeight = 0;
+    let halfDepth = 0;
+    for (const x of [bounds.min.x, bounds.max.x]) {
+      for (const y of [bounds.min.y, bounds.max.y]) {
+        for (const z of [bounds.min.z, bounds.max.z]) {
+          const offset = new THREE.Vector3(x, y, z).sub(center);
+          halfWidth = Math.max(halfWidth, Math.abs(offset.dot(right)));
+          halfHeight = Math.max(halfHeight, Math.abs(offset.dot(up)));
+          halfDepth = Math.max(halfDepth, Math.abs(offset.dot(towardCamera)));
+        }
+      }
+    }
+    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(this.perspectiveFov * 0.5));
+    const safePadding = Math.max(1, Number(padding));
+    this.cameraState.radius = this.#clampCameraRadius(
+      Math.max(
+        halfHeight / tanHalfFov,
+        halfWidth / (tanHalfFov * Math.max(0.1, this.viewportAspect)),
+      ) * safePadding + halfDepth,
+    );
+    this.camera.near = Math.max(0.001, this.cameraState.radius / 10000);
+    this.camera.far = Math.max(1000, this.cameraState.radius * 20);
+    this.#updateProjectionMatrix();
+    this.#updateCamera();
+    this.#renderOnce();
+    this.#emitCameraChange("fit-viewport");
     return true;
   }
 
@@ -472,6 +593,31 @@ export class ThreeRenderViewport {
 
   setViewDirection(direction) {
     return this.#setViewDirection(direction, "direction");
+  }
+
+  setPresentationAxis(sourceAxis, targetAxis = [1, 0, 0]) {
+    const source = toFiniteVector3(sourceAxis);
+    const target = toFiniteVector3(targetAxis);
+    if (!source || !target
+      || source.lengthSq() <= Number.EPSILON
+      || target.lengthSq() <= Number.EPSILON) {
+      return false;
+    }
+    const rotation = new THREE.Quaternion().setFromUnitVectors(
+      source.normalize(),
+      target.normalize(),
+    );
+    for (const group of [
+      this.content,
+      this.measurementContent,
+      this.dimensionContent,
+      this.colliderContent,
+    ]) {
+      group.quaternion.copy(rotation);
+      group.updateMatrixWorld(true);
+    }
+    this.#renderOnce();
+    return true;
   }
 
   #setViewDirection(direction, reason) {
@@ -492,6 +638,8 @@ export class ThreeRenderViewport {
 
   getCameraState() {
     return {
+      projectionMode: this.projectionMode,
+      orbitConstrained: this.options.constrainOrbit !== false,
       target: {
         x: this.cameraState.target.x,
         y: this.cameraState.target.y,
@@ -512,10 +660,13 @@ export class ThreeRenderViewport {
       .every((entry) => Number.isFinite(Number(entry)))) {
       throw new TypeError("Camera state requires finite target, radius, theta, and phi values");
     }
+    if (value.projectionMode != null) {
+      this.setProjectionMode(value.projectionMode);
+    }
     this.cameraState.target.set(Number(target.x), Number(target.y), Number(target.z));
     this.cameraState.radius = this.#clampCameraRadius(radius);
     this.cameraState.theta = theta;
-    this.cameraState.phi = THREE.MathUtils.clamp(phi, 0.001, Math.PI - 0.001);
+    this.cameraState.phi = this.#resolveOrbitPhi(phi);
     this.#updateCamera();
     this.#renderOnce();
     this.#emitCameraChange("restore");
@@ -864,6 +1015,9 @@ export class ThreeRenderViewport {
       ),
       continuousRendering: this.continuousRendering,
       pickingEnabled: this.pickingEnabled,
+      projectionMode: this.projectionMode,
+      projectionToggleVisible: Boolean(this.projectionToggle && !this.projectionToggle.hidden),
+      orbitConstrained: this.options.constrainOrbit !== false,
       animationFrameActive: Boolean(this.animationFrame),
       dimensionAnnotationCount: this.dimensionContent.children.filter(
         (object) => object.userData?.dimensionLabel,
@@ -1714,7 +1868,9 @@ export class ThreeRenderViewport {
     }
     this.camera.near = camera.nearPlane || 0.1;
     this.camera.far = camera.farPlane || 1000000;
-    this.camera.fov = THREE.MathUtils.radToDeg(camera.verticalFovRadians || 0.785398185);
+    this.perspectiveFov = THREE.MathUtils.radToDeg(
+      camera.verticalFovRadians || 0.785398185,
+    );
     this.camera.matrixAutoUpdate = false;
     const transform = this.transformPayloads.get(camera.transformId);
     if (transform?.localToWorld) {
@@ -1723,7 +1879,7 @@ export class ThreeRenderViewport {
       this.camera.matrix.decompose(this.camera.position, this.camera.quaternion, this.camera.scale);
       this.camera.updateMatrixWorld(true);
     }
-    this.camera.updateProjectionMatrix();
+    this.#updateProjectionMatrix();
   }
 
   #installSceneBasics() {
@@ -1802,9 +1958,46 @@ export class ThreeRenderViewport {
     }
 
     const distance = Math.max(0.0001, this.camera.position.distanceTo(position));
-    const fovRadians = THREE.MathUtils.degToRad(this.camera.fov || 45);
+    const fovRadians = THREE.MathUtils.degToRad(this.perspectiveFov);
     const visibleHeight = 2 * Math.tan(fovRadians * 0.5) * distance;
     return Math.max(SELECTION_AXIS_MIN_SCALE, (visibleHeight / canvasHeight) * SELECTION_AXIS_PIXEL_SIZE);
+  }
+
+  #installProjectionToggle() {
+    this.projectionToggle = document.createElement("div");
+    this.projectionToggle.className = "icax-three-projection-toggle";
+    this.projectionToggle.setAttribute("role", "group");
+    this.projectionToggle.setAttribute("aria-label", "投影方式");
+    this.projectionButtons = new Map();
+    for (const [mode, label] of [["perspective", "透视"], ["orthographic", "正交"]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.dataset.projectionMode = mode;
+      button.title = mode === "perspective" ? "切换为透视投影" : "切换为正交投影";
+      this.#listen(button, "click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.setProjectionMode(mode, { notify: true });
+      });
+      this.projectionButtons.set(mode, button);
+      this.projectionToggle.appendChild(button);
+    }
+    this.root.appendChild(this.projectionToggle);
+    this.setProjectionToggleVisible(this.options.showProjectionToggle === true);
+    this.#syncProjectionToggle();
+    this.root.dataset.orbitConstrained = String(this.options.constrainOrbit !== false);
+  }
+
+  #syncProjectionToggle() {
+    for (const [mode, button] of this.projectionButtons ?? []) {
+      const active = mode === this.projectionMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+    if (this.projectionToggle) {
+      this.projectionToggle.dataset.projectionMode = this.projectionMode;
+    }
   }
 
   #installOrientationGizmo() {
@@ -1973,6 +2166,7 @@ export class ThreeRenderViewport {
   #updateCamera() {
     const state = this.cameraState;
     const sinPhi = Math.sin(state.phi);
+    this.camera.matrixAutoUpdate = true;
     this.camera.position.set(
       state.target.x + state.radius * sinPhi * Math.cos(state.theta),
       state.target.y + state.radius * sinPhi * Math.sin(state.theta),
@@ -1980,6 +2174,28 @@ export class ThreeRenderViewport {
     );
     this.camera.lookAt(state.target);
     this.camera.updateMatrixWorld(true);
+    this.#updateProjectionMatrix();
+  }
+
+  #visibleHeightAtTarget() {
+    return 2 * this.cameraState.radius
+      * Math.tan(THREE.MathUtils.degToRad(this.perspectiveFov * 0.5));
+  }
+
+  #updateProjectionMatrix() {
+    if (this.camera.isPerspectiveCamera) {
+      this.camera.fov = this.perspectiveFov;
+      this.camera.aspect = this.viewportAspect;
+    } else if (this.camera.isOrthographicCamera) {
+      const halfHeight = Math.max(0.000001, this.#visibleHeightAtTarget() * 0.5);
+      const halfWidth = halfHeight * Math.max(0.000001, this.viewportAspect);
+      this.camera.left = -halfWidth;
+      this.camera.right = halfWidth;
+      this.camera.top = halfHeight;
+      this.camera.bottom = -halfHeight;
+      this.camera.zoom = 1;
+    }
+    this.camera.updateProjectionMatrix();
   }
 
   #applyLocalNavigation(mode, dx, dy, event) {
@@ -1987,16 +2203,10 @@ export class ThreeRenderViewport {
     if (mode === "orbit") {
       const speed = Number(this.options.orbitSpeed ?? 0.005) * fast;
       this.cameraState.theta -= dx * speed;
-      this.cameraState.phi = THREE.MathUtils.clamp(
-        this.cameraState.phi - dy * speed,
-        0.001,
-        Math.PI - 0.001,
-      );
+      this.cameraState.phi = this.#resolveOrbitPhi(this.cameraState.phi - dy * speed);
     } else if (mode === "pan") {
       const canvasHeight = Math.max(1, this.renderer.domElement.clientHeight);
-      const worldPerPixel = (
-        2 * this.cameraState.radius * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
-      ) / canvasHeight;
+      const worldPerPixel = this.#visibleHeightAtTarget() / canvasHeight;
       const speed = Number(this.options.panSpeed ?? 1) * fast * worldPerPixel;
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
       const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
@@ -2013,6 +2223,14 @@ export class ThreeRenderViewport {
     const minimum = Math.max(0.000001, Number(this.options.minCameraDistance ?? 0.01));
     const maximum = Math.max(minimum, Number(this.options.maxCameraDistance ?? 1000000000));
     return THREE.MathUtils.clamp(Number(radius), minimum, maximum);
+  }
+
+  #resolveOrbitPhi(phi) {
+    const angle = Number(phi);
+    if (this.options.constrainOrbit === false) {
+      return angle;
+    }
+    return THREE.MathUtils.clamp(angle, 0.001, Math.PI - 0.001);
   }
 
   #emitCameraChange(reason) {
@@ -2054,9 +2272,7 @@ export class ThreeRenderViewport {
 
   #updateDimensionLabelScales() {
     const canvasHeight = Math.max(1, this.renderer.domElement.clientHeight);
-    const worldPerPixel = (
-      2 * this.cameraState.radius * Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5))
-    ) / canvasHeight;
+    const worldPerPixel = this.#visibleHeightAtTarget() / canvasHeight;
     const labelHeight = Math.max(0.001, worldPerPixel * 26);
     for (const object of this.dimensionContent.children) {
       if (!object.userData?.dimensionLabel) continue;
@@ -2246,6 +2462,12 @@ function delay(durationMs) {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
+function normalizeProjectionMode(value) {
+  return String(value ?? "perspective").trim().toLowerCase() === "orthographic"
+    ? "orthographic"
+    : "perspective";
+}
+
 function ensureThreeViewportStyles() {
   if (document.getElementById("icax-three-viewport-style")) {
     return;
@@ -2282,6 +2504,52 @@ function ensureThreeViewportStyles() {
       color: #dce7ed;
       font-size: 12px;
       pointer-events: none;
+    }
+
+    .icax-three-projection-toggle {
+      position: absolute;
+      left: 50%;
+      bottom: 14px;
+      z-index: 7;
+      display: flex;
+      padding: 3px;
+      border: 1px solid rgba(151, 183, 194, 0.38);
+      border-radius: 7px;
+      background: rgba(13, 29, 36, 0.88);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+      transform: translateX(-50%);
+      backdrop-filter: blur(8px);
+      pointer-events: auto;
+      user-select: none;
+    }
+
+    .icax-three-projection-toggle[hidden] {
+      display: none;
+    }
+
+    .icax-three-projection-toggle button {
+      min-width: 46px;
+      height: 27px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: #a9c0c8;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 27px;
+    }
+
+    .icax-three-projection-toggle button:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .icax-three-projection-toggle button.active {
+      background: #eef5f6;
+      color: #1f4852;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+      font-weight: 600;
     }
 
     .icax-three-axis-gizmo {

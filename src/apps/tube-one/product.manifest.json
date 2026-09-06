@@ -177,7 +177,7 @@
     "probeBytes": 256
   },
   "backend": {
-    "startupComponent": "CSceneBootstrapComponent",
+    "startupComponent": "CCamSceneBootstrapComponent",
     "pdo": {
       "enabled": true,
       "arenaSize": 134217728,
@@ -193,19 +193,21 @@
       ],
       "components": [
         "../../${Platform}/${Configuration}/Transform.dll",
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/SceneBootstrap.dll",
+        "../../${Platform}/${Configuration}/CamRuntime.dll"
       ],
       "behaviours": [
         "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/SceneBootstrap.dll",
+        "../../${Platform}/${Configuration}/CamRuntime.dll"
       ],
       "services": [
         "../../${Platform}/${Configuration}/ExtrusionRecognition.dll",
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/CamRuntime.dll"
       ],
       "sdo": [
         "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
-        "../../${Platform}/${Configuration}/Laser3DCAM.dll"
+        "../../${Platform}/${Configuration}/CamRuntime.dll"
       ]
     },
     "resources": {

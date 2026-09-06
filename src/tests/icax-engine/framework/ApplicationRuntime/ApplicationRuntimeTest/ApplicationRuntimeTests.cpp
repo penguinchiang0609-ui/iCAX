@@ -10,6 +10,7 @@
 #include <SDO/SDOFrame.h>
 #include <SDO/SDOText.h>
 #include <Product/ProductSDO.h>
+#include <ApplicationContext/UserDataStore.h>
 
 
 using namespace iCAX::Application;
@@ -285,6 +286,8 @@ TEST(ApplicationRuntimeSDOTest, ProductSDOCanOpenAndCloseProjectCatalogAfterProd
     _Runtime.Start();
     auto _pRuntime = _Runtime.StartProduct();
     ASSERT_NE(nullptr, _pRuntime);
+    ASSERT_NE(nullptr, _pRuntime->GetUserDataStore());
+    EXPECT_EQ(_pRuntime->GetProductID(), _pRuntime->GetUserDataStore()->GetProductID());
 
     auto _ProductEndpoint = _Runtime.GetProductFrontendSDOEndpoint(_pRuntime->GetProductID());
 

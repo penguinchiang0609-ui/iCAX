@@ -71,6 +71,39 @@ namespace iCAX
         };
 
         /*
+        * @brief 用户记录允许使用的一类显式关系。
+        * @details 这些定义来自产品 manifest；framework 不认识 customer、material 等业务概念。
+        */
+        struct _PRODUCT_CONTEXT_EXP CProductUserDataRelationDefinition final
+        {
+            std::string RelationType; //!< 稳定关系 ID，例如 customer。
+            std::string TargetKind; //!< definition、user-record 或 external。
+            std::string TargetFeatureID; //!< user-record 目标所属功能；其他目标可为空。
+            std::string TargetType; //!< 目标记录类型或定义类型。
+        };
+
+        /*
+        * @brief 产品声明的一种用户记录。
+        */
+        struct _PRODUCT_CONTEXT_EXP CProductUserDataRecordTypeDefinition final
+        {
+            std::string RecordType; //!< 稳定记录类型 ID。
+            std::vector<std::string> SubjectTypes; //!< 允许作为主要作用对象的类型。
+            uint32_t SchemaVersion = 1; //!< Payload 模式版本。
+            bool AllowMultiple = true; //!< false 时每个 Subject 只允许一条记录。
+            std::vector<CProductUserDataRelationDefinition> Relations; //!< 允许的附加关系。
+        };
+
+        /*
+        * @brief 产品内一个可独立演进的用户数据功能域。
+        */
+        struct _PRODUCT_CONTEXT_EXP CProductUserDataFeatureDefinition final
+        {
+            std::string FeatureID; //!< 稳定功能 ID，例如 template、sketch、nesting 或 ui。
+            std::vector<CProductUserDataRecordTypeDefinition> RecordTypes;
+        };
+
+        /*
         * @brief 产品定义
         * @details ApplicationRuntime 只根据产品定义启动产品运行时，不直接打开项目。
         */
@@ -84,6 +117,7 @@ namespace iCAX
             CProductFileDefinition ProjectFile; //!< 产品项目文件识别规则。
             CProductModules Modules; //!< 产品需要加载的模块定义。
             std::vector<CProductResourceHandlerBinding> ResourceHandlers; //!< 资源导入导出/加载选择规则。
+            std::vector<CProductUserDataFeatureDefinition> UserDataFeatures; //!< manifest 声明的用户数据模式。
             iCAX::Data::ObjectMap Capabilities; //!< 产品自定义静态能力。framework 只保存，不解释其中的业务含义。
             bool bEnablePDOHub = false; //!< true 表示项目主 Scene 默认创建一块可动态分配 slot 的 PDO Arena。
             iCAX::PDO::CPDOHubCreateInfo PDOHubCreateInfo; //!< 默认主 Scene PDOHub 创建参数。

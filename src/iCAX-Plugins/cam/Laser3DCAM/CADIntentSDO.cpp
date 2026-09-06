@@ -1421,7 +1421,7 @@ Interaction::CInvocationResult HandleOpenCADIntentEditorScene(
         : _pSourceWorkpiece->GetName();
     iCAX::Project::CProjectSceneCreateInfo _CreateInfo;
     _CreateInfo.SceneName = _PartName + "编辑视图";
-    _CreateInfo.StartupComponent = iCAX::CAM::CSceneBootstrapComponent::S_ClassName;
+    _CreateInfo.StartupComponent = iCAX::CAM::CCamSceneBootstrapComponent::S_ClassName;
     const auto& _ProductDefinition = _Product.GetDefinition();
     _CreateInfo.bEnablePDOHub = _ProductDefinition.bEnablePDOHub;
     _CreateInfo.PDOHubCreateInfo = _ProductDefinition.PDOHubCreateInfo;

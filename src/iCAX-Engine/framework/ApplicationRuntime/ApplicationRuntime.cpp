@@ -153,6 +153,40 @@ namespace
         return _Array;
     }
 
+    std::vector<iCAX::Application::CUserDataFeatureDescriptor> _MakeUserDataDescriptors(
+        IN const iCAX::Product::CProductDefinition& Definition_)
+    {
+        std::vector<iCAX::Application::CUserDataFeatureDescriptor> _Features;
+        _Features.reserve(Definition_.UserDataFeatures.size());
+        for (const auto& _SourceFeature : Definition_.UserDataFeatures)
+        {
+            iCAX::Application::CUserDataFeatureDescriptor _Feature;
+            _Feature.FeatureID = _SourceFeature.FeatureID;
+            _Feature.RecordTypes.reserve(_SourceFeature.RecordTypes.size());
+            for (const auto& _SourceRecordType : _SourceFeature.RecordTypes)
+            {
+                iCAX::Application::CUserDataRecordTypeDescriptor _RecordType;
+                _RecordType.RecordType = _SourceRecordType.RecordType;
+                _RecordType.SubjectTypes = _SourceRecordType.SubjectTypes;
+                _RecordType.SchemaVersion = _SourceRecordType.SchemaVersion;
+                _RecordType.AllowMultiple = _SourceRecordType.AllowMultiple;
+                _RecordType.Relations.reserve(_SourceRecordType.Relations.size());
+                for (const auto& _SourceRelation : _SourceRecordType.Relations)
+                {
+                    iCAX::Application::CUserDataRelationDescriptor _Relation;
+                    _Relation.RelationType = _SourceRelation.RelationType;
+                    _Relation.TargetKind = _SourceRelation.TargetKind;
+                    _Relation.TargetFeatureID = _SourceRelation.TargetFeatureID;
+                    _Relation.TargetType = _SourceRelation.TargetType;
+                    _RecordType.Relations.emplace_back(std::move(_Relation));
+                }
+                _Feature.RecordTypes.emplace_back(std::move(_RecordType));
+            }
+            _Features.emplace_back(std::move(_Feature));
+        }
+        return _Features;
+    }
+
     void _ValidateProductDefinitions(IN const std::vector<iCAX::Product::CProductDefinition>& Products_)
     {
         std::set<std::string> _ProductIDs;
@@ -259,16 +293,23 @@ iCAX::Application::CApplicationRuntime::CApplicationRuntime()
     , m_pSDORegistry(std::make_shared<iCAX::Interaction::CSDORegistry>())
     , m_pSDOInvoker(std::make_unique<iCAX::Interaction::CSDOInvoker>(m_pSDORegistry))
 {
-    m_Config.strApplicationSettingsPath = "Setting/Application.Setting";
+    const auto _UserDataPath = ResolveDefaultUserDataDirectory();
+    const auto _UserDataRoot = std::filesystem::path(std::u8string(
+        _UserDataPath.begin(), _UserDataPath.end()));
+    const auto _ProfileRoot = _UserDataRoot / "Profiles" / "local-default";
+    const auto _CacheRoot = _UserDataRoot / "Cache";
+    const auto _TempRoot = _UserDataRoot / "Temp";
+    m_Config.strApplicationSettingsPath = (_ProfileRoot / "Application.Setting").string();
     m_Config.Descriptor.AppID = "icax";
     m_Config.Descriptor.AppName = "iCAX";
     m_Config.Paths.InstallDirectory = std::filesystem::current_path().string();
-    m_Config.Paths.UserConfigDirectory = "Setting";
-    m_Config.Paths.CacheDirectory = "Cache";
-    m_Config.Paths.TempDirectory = "Temp";
-    m_Config.Paths.ResourceVersionDirectory =
-        "Temp/ResourceVersions";
-    m_Config.Paths.LogDirectory = "Log";
+    m_Config.Paths.UserConfigDirectory = _ProfileRoot.string();
+    m_Config.Paths.UserDataDirectory = _UserDataRoot.string();
+    m_Config.Paths.BrowserDataDirectory = (_UserDataRoot / "Browser").string();
+    m_Config.Paths.CacheDirectory = _CacheRoot.string();
+    m_Config.Paths.TempDirectory = _TempRoot.string();
+    m_Config.Paths.ResourceVersionDirectory = (_TempRoot / "ResourceVersions").string();
+    m_Config.Paths.LogDirectory = (_UserDataRoot / "Logs").string();
 
     iCAX::Product::CProductDefinition _DefaultProduct;
     _DefaultProduct.ProductID = "icax.default";
@@ -1297,6 +1338,9 @@ std::shared_ptr<iCAX::Product::CProductRuntime> iCAX::Application::CApplicationR
             _Definition,
             m_pApplicationContext,
             m_pSDOChannelRegistry,
+            m_pApplicationContext->CreateProductUserDataStore(
+                _Definition.ProductID,
+                _MakeUserDataDescriptors(_Definition)),
             nullptr,
             m_Config.nFrameIntervalMilliseconds);
         _pRuntime->Start();
