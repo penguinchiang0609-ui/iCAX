@@ -425,7 +425,8 @@ ObjectMap SolveManufacturingNesting(
                     { "start", Mm(_Placement.Start) }, { "end", Mm(_Placement.End) },
                     { "length", Mm(_Placement.End - _Placement.Start) },
                     { "gapBefore", Mm(_Placement.GapBefore) },
-                    { "nestedWithPrevious", _Placement.GapBefore < _Gap },
+                    // The first placement has no preceding part to nest with.
+                    { "nestedWithPrevious", !_Placements.empty() && _Placement.GapBefore < _Gap },
                     { "variantId", _Placement.VariantID },
                     { "reversed", _Placement.Reversed },
                     { "rotationRadians", _Placement.RotationRadians }
