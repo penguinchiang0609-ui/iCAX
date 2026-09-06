@@ -575,7 +575,8 @@ if (process.env.ICAX_NESTING_NATIVE_RESULTS) {
       assert.equal(h.calls.length, 1);
       assert.equal(h.view.error, "", `native case ${index + 1} was rejected: ${h.view.error}`);
       const accepted = h.view.tubeDesignerNestingResult;
-      assert.equal(accepted.status, "feasible");
+      assert.ok(["optimal", "feasible"].includes(result.status), "native fixture must report a successful solve");
+      assert.equal(accepted.status, result.status, "fully placed results preserve the native solver status");
       assert.equal(accepted.plans.length, result.plans.length);
       assert.equal(accepted.plans.reduce((count, plan) => count + plan.placements.length, 0), quantity);
       for (const [planIndex, plan] of accepted.plans.entries()) {
