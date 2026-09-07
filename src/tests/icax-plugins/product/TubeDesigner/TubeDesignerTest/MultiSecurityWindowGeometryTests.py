@@ -38,6 +38,8 @@ def parameters(**updates):
                   accessDoorEnabled=False, accessDoorFace="front", doorUOffset=80.0,
                   doorVOffset=500.0, doorWidth=400.0, doorHeight=600.0,
                   doorGap=3.0, doorHingeSide="left", doorHingeCount=2,
+                  doorFrameJoinType="butt_90", doorLeafFrameJoinType="butt_90",
+                  doorFrameButtWrapMode="side_wraps_horizontal", doorLeafFrameButtWrapMode="side_wraps_horizontal",
                   doorHorizontalCount=2, doorVerticalCount=2)
     for prefix, kind, width, depth, radius, wall in (
         ("frame", "rect", 38.0, 25.0, 2.0, 1.2),
@@ -57,16 +59,17 @@ def parameters(**updates):
 
 def build(layout="three-face", purpose=None, **updates):
     recorded = []
-    original = MODULE._emit_tube
+    original = MODULE._append_part
 
-    def emit(model, part, shared):
+    def emit(*args, **kwargs):
+        part = original(*args, **kwargs)
         recorded.append(part)
-        return original(model, part, shared)
+        return part
 
     context = {"template": {}}
     if purpose is not None:
         context["geometryPurpose"] = purpose
-    with patch.object(MODULE, "_emit_tube", side_effect=emit):
+    with patch.object(MODULE, "_append_part", side_effect=emit):
         document = MODULE._generate_multi_face_geometry(parameters(**updates), context,
                                                        template_id="test", template_version="1", layout=layout)
     return document, recorded
@@ -204,7 +207,10 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
                     self.assertFalse(has_volume_overlap(by_key[item["key"]], by_key[f"access_door.leaf.frame.{side}.0001"]))
         for side in ("bottom", "top"):
             item = items[f"access_door.leaf.frame.{side}.0001"]
-            self.assertEqual("boolean", nodes[item["representations"]["export"]]["operator"])
+            node = nodes[item["representations"]["export"]]
+            while node["operator"] == "transform":
+                node = nodes[node["inputs"][0]]
+            self.assertEqual("boolean", node["operator"])
             self.assertEqual(2, len(item["properties"]["tubeDesigner.connectionProcess"]["receives"]))
 
     def test_frame_receiver_fit_is_checked_only_for_actual_connections(self):

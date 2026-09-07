@@ -55,7 +55,7 @@ import {
 import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
 import { captureScrollAnchor, restoreScrollAnchor } from "../../apps/tube-designer/webpage/scrollAnchor.mjs";
 import {
-  PROFILE_PREVIEW_CACHE_PROGRESS_DELAY_MS,
+  PROFILE_PREVIEW_PROGRESS_DELAY_MS,
   PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS,
   renderProfileLibraryLeftPane,
   renderProfileLibraryRightPane,
@@ -281,7 +281,7 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
 function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => [tab.id, tab.title]),
-    [["view", "产品"], ["nesting", "下料"], ["profiles", "管型"], ["components", "配件库"], ["sketch", "草图"], ["about", "关于"]],
+    [["view", "产品"], ["nesting", "下料"], ["profiles", "管型库"], ["components", "配件库"], ["sketch", "草图"], ["about", "关于"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
   assert.equal(hasProductionWorkflowAccess({}), false);
@@ -555,7 +555,7 @@ function testTubeDesignerChoosesTheFirstAvailableCatalogTemplate() {
   assert.equal(getDefaultTemplate(templates)?.id, "single-face-security-window");
 }
 
-function testTubeDesignerBuildsCollapsibleTemplateHierarchyFromDisplayNames() {
+function testTubeDesignerBuildsTabbedTemplateHierarchyFromDisplayNames() {
   const templates = [
     {
       id: "single-face-security-window",
@@ -599,30 +599,22 @@ function testTubeDesignerBuildsCollapsibleTemplateHierarchyFromDisplayNames() {
     scene: { tubeDesigner: { templates } },
   };
 
-  const collapsed = renderDesignerRightPane({}, view);
-  assert.equal((collapsed.match(/data-tube-designer-template-group-depth="0"/g) ?? []).length, 2);
-  assert.equal((collapsed.match(/tube-designer-template-card/g) ?? []).length, 4);
-  assert.match(collapsed, /data-tube-designer-template-group-id="template-path:防盗窗"[^>]*aria-expanded="false"/);
-  assert.match(collapsed, /data-tube-designer-template-group-id="template-path:楼梯"[^>]*aria-expanded="false"/);
-  assert.equal((collapsed.match(/class="tube-designer-template-group-items" hidden/g) ?? []).length, 4);
+  const securityWindows = renderDesignerRightPane({}, view);
+  assert.equal((securityWindows.match(/role="tab"/g) ?? []).length, 2);
+  assert.match(securityWindows, /data-tube-designer-template-tab-id="template-path:防盗窗"[^>]*aria-selected="true"/);
+  assert.match(securityWindows, /data-tube-designer-template-tab-id="template-path:楼梯"[^>]*aria-selected="false"/);
+  assert.equal((securityWindows.match(/<button class="tube-designer-template-card /g) ?? []).length, 2);
+  assert.match(securityWindows, />单面防盗窗<\/strong>/);
+  assert.match(securityWindows, />两面防盗窗<\/strong>/);
+  assert.doesNotMatch(securityWindows, />直跑钢楼梯<\/strong>/);
 
-  view.tubeDesignerExpandedTemplateGroupIds = ["template-path:防盗窗"];
-  const securityWindowExpanded = renderDesignerRightPane({}, view);
-  assert.equal((securityWindowExpanded.match(/tube-designer-template-card/g) ?? []).length, 4);
-  assert.match(securityWindowExpanded, />单面防盗窗<\/strong>/);
-  assert.match(securityWindowExpanded, />两面防盗窗<\/strong>/);
-  assert.doesNotMatch(securityWindowExpanded, />防盗窗\/单面防盗窗<\/strong>/);
-
-  view.tubeDesignerExpandedTemplateGroupIds = [
-    "template-path:楼梯",
-    "template-path:楼梯/钢楼梯",
-  ];
-  const nestedExpanded = renderDesignerRightPane({}, view);
-  assert.match(nestedExpanded, /data-tube-designer-template-group-id="template-path:楼梯\/护栏"/);
-  assert.match(nestedExpanded, /data-tube-designer-template-group-id="template-path:楼梯\/护栏"[^>]*aria-expanded="false"/);
-  assert.match(nestedExpanded, /data-tube-designer-template-group-id="template-path:楼梯\/钢楼梯"[^>]*aria-expanded="true"/);
-  assert.match(nestedExpanded, />直跑钢楼梯<\/strong>/);
-  assert.match(nestedExpanded, />直跑楼梯护栏<\/strong>/);
+  view.tubeDesignerAddCatalogTabId = "template-path:楼梯";
+  const stairs = renderDesignerRightPane({}, view);
+  assert.match(stairs, /data-tube-designer-template-tab-id="template-path:楼梯"[^>]*aria-selected="true"/);
+  assert.match(stairs, /data-tube-designer-template-group-id="template-path:楼梯\/护栏"/);
+  assert.match(stairs, /data-tube-designer-template-group-id="template-path:楼梯\/钢楼梯"/);
+  assert.match(stairs, />直跑钢楼梯<\/strong>/);
+  assert.match(stairs, />直跑楼梯护栏<\/strong>/);
 }
 
 function testTubeDesignerOperationOverlayCoversTheWholeWindow() {
@@ -648,9 +640,8 @@ function testTubeDesignerProfileMiniatureConstrainsSvgIntrinsicSize() {
 }
 
 function testTubeDesignerProfilePreviewProgressCoversTheWholeWindow() {
+  assert.equal(PROFILE_PREVIEW_PROGRESS_DELAY_MS, 200);
   assert.equal(PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS, 500);
-  assert.ok(PROFILE_PREVIEW_CACHE_PROGRESS_DELAY_MS > 0);
-  assert.ok(PROFILE_PREVIEW_CACHE_PROGRESS_DELAY_MS < PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS);
   const rule = tubeDesignerCss.match(
     /\.tube-profile-library-preview-wait\s*\{([^}]*)\}/,
   )?.[1] ?? "";
@@ -681,22 +672,27 @@ function testTubeDesignerTemplateSwitchProgressDoesNotFlash() {
 }
 
 function testTubeDesignerExpandedGroupsKeepTheirFullContentHeight() {
+  // Add-dialog details now use normal flow. Browser layout tests additionally
+  // check actual bounds after toggling nested groups, rather than CSS alone.
+  for (const selector of [".tube-designer-config-parameters", ".tube-designer-subsection-list", ".tube-designer-config-subsection-content"]) {
+    const escapedSelector = selector.replaceAll(".", "\\.");
+    const rule = tubeDesignerCss.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
+    assert.match(rule, /display:\s*block\s*;/, `${selector} must let expanded content determine its height`);
+  }
   for (const selector of [
-    ".tube-designer-config-subsection",
     ".tube-designer-parameter-section",
     ".tube-designer-parameter-subsection",
-    ".tube-designer-template-group",
+    ".tube-designer-template-category",
   ]) {
     const escapedSelector = selector.replaceAll(".", "\\.");
     const rule = tubeDesignerCss.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
     assert.match(rule, /min-height:\s*max-content\s*;/, `${selector} must not shrink and clip expanded content`);
   }
   for (const selector of [
-    ".tube-designer-subsection-list",
     ".tube-designer-parameter-sections",
     ".tube-designer-parameter-subsection-list",
     ".tube-designer-template-list",
-    ".tube-designer-template-group-items",
+    ".tube-designer-template-category-items",
   ]) {
     const escapedSelector = selector.replaceAll(".", "\\.");
     const rule = tubeDesignerCss.match(new RegExp(`${escapedSelector}\\s*\\{([^}]*)\\}`))?.[1] ?? "";
@@ -1085,10 +1081,11 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   const previewHtml = renderProfileLibraryViewportOverlay({}, view);
   assert.match(left, /可编辑管型包/);
   assert.match(left, /DXF 冻结截面/);
-  assert.match(left, /data-tube-profile-library-group="system"[^>]*open/);
-  assert.match(left, /data-tube-profile-library-group="user"[^>]*open/);
+  assert.match(left, /data-tube-profile-library-scope="system"/);
+  assert.match(left, /data-tube-profile-library-scope="template"/);
+  assert.match(left, /data-tube-profile-library-scope="user"/);
   assert.match(left, /系统内置/);
-  assert.match(left, /data-tube-designer-profile-key="system:round"/);
+  assert.doesNotMatch(left, /data-tube-designer-profile-key="system:round"/);
   assert.match(left, /data-tube-designer-profile-key="user:profile-editable"/);
   assert.equal(view.tubeDesignerSelectedProfileId, "user:profile-editable");
   assert.match(right, /默认参数/);
@@ -1103,7 +1100,7 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   assert.match(previewHtml, /data-tube-profile-preview-wait-progress[^>]*role="progressbar"/);
   assert.match(previewHtml, /data-tube-profile-preview-wait[^>]*aria-hidden="true"[^>]*hidden/);
   assert.doesNotMatch(previewHtml, /tube-profile-library-svg/);
-  assert.ok(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "profiles" && tab.title === "管型"));
+  assert.ok(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "profiles" && tab.title === "管型库"));
   assert.ok(tubeDesignerRibbonDefinition.tabs
     .find((tab) => tab.id === "profiles")
     .groups.flatMap((group) => group.commands)
@@ -1343,27 +1340,20 @@ async function testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalView
       },
     },
   };
-  const startedAt = performance.now();
   renderProfileLibraryViewportOverlay(context, view);
   await delay(0);
-  await delay(PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS + 20);
   assert.equal(applied.length, 1);
   assert.equal(applied[0].resources, resources);
   assert.equal(applied[0].snapshot.rows[0].entityId, `user:${profile.id}`);
   assert.equal(applied[0].snapshot.rows[0].data.geometry.version, 7);
   assert.equal(fitted.length, 1);
-  assert.ok(performance.now() - startedAt >= PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS);
+  assert.equal(view.tubeDesignerProfilePreviewRequest, null, "fast generation must settle without a minimum progress duration");
   assert.ok(logs.some((entry) => entry.message.includes("三维管型已生成")));
 
-  const cachedStartedAt = performance.now();
   renderProfileLibraryViewportOverlay(context, view);
   await delay(30);
   assert.equal(applied.length, 2, "a cached preview may be reapplied when another resource is visible");
   assert.equal(view.tubeDesignerProfilePreviewRequest, null);
-  assert.ok(
-    performance.now() - cachedStartedAt < PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS,
-    "a fast cached preview must finish without forcing a half-second progress flash",
-  );
 }
 
 async function testTubeDesignerSystemProfilePreviewUsesScopedReference() {
@@ -2193,7 +2183,7 @@ testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows();
 await testTubeDesignerEntersCuttingFromThePartList();
 testTubeDesignerSketchJoinsTheMainWorkflow();
 testTubeDesignerChoosesTheFirstAvailableCatalogTemplate();
-testTubeDesignerBuildsCollapsibleTemplateHierarchyFromDisplayNames();
+testTubeDesignerBuildsTabbedTemplateHierarchyFromDisplayNames();
 testTubeDesignerOperationOverlayCoversTheWholeWindow();
 testTubeDesignerProfileMiniatureConstrainsSvgIntrinsicSize();
 testTubeDesignerProfilePreviewProgressCoversTheWholeWindow();

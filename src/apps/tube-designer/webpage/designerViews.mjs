@@ -7,9 +7,11 @@ import { manufacturingPartKind, plateDimensions } from "./manufacturingParts.mjs
 import { restoreScrollAnchor } from "./scrollAnchor.mjs";
 import { renderSecurityWindowReview, securityWindowOpeningDimensions } from "./securityWindowReview.mjs";
 import { renderComponentModelField } from "./componentLibrary.mjs";
+import { profileSelectionKey, templateProfilesForProduct } from "./profileLibrary.mjs";
 import {
   buildCatalogEntries,
   buildTemplateGroupTree,
+  getCatalogEntryGroupKeys,
   getCatalogEntry,
   getCatalogTemplatePath,
   renderGuardrailSchematic,
@@ -265,7 +267,12 @@ export function renderDesignerAddDialog(designer, view) {
   const template = getTemplateById(templates, view.tubeDesignerAddTemplateId) ?? getDefaultTemplate(templates);
   const templateGroups = buildTemplateGroupTree(templates);
   const selectedEntry = getCatalogEntry(templates, template?.id, view.tubeDesignerAddCatalogPresetId);
-  const expandedTemplateGroups = new Set(view.tubeDesignerExpandedTemplateGroupIds ?? []);
+  const selectedGroupKeys = getCatalogEntryGroupKeys(templates, template?.id, view.tubeDesignerAddCatalogPresetId);
+  const requestedTabId = String(view.tubeDesignerAddCatalogTabId ?? selectedGroupKeys[0] ?? "");
+  const activeTemplateGroup = templateGroups.find((group) => group.key === requestedTabId)
+    ?? templateGroups.find((group) => group.key === selectedGroupKeys[0])
+    ?? templateGroups[0]
+    ?? null;
   const pending = Boolean(view.pending);
   return `
     <div class="tube-designer-modal-backdrop" role="presentation">
@@ -277,16 +284,17 @@ export function renderDesignerAddDialog(designer, view) {
         <div class="tube-designer-config-body">
           <aside class="tube-designer-template-pane">
             <div class="tube-designer-pane-title"><strong>产品款式</strong><span>${buildCatalogEntries(templates).length} 款可用</span></div>
-            <div class="tube-designer-template-list">
-              ${templateGroups.map((group) => renderTemplateGroup(
-                group,
-                selectedEntry?.catalogEntryId,
-                expandedTemplateGroups,
-                pending,
-              )).join("")}
+            <div class="tube-designer-template-tabs" role="tablist" aria-label="产品大类">
+              ${templateGroups.map((group) => {
+                const active = group.key === activeTemplateGroup?.key;
+                return `<button type="button" role="tab" class="${active ? "selected" : ""}" data-cam-action="tube-designer-select-template-tab" data-tube-designer-template-tab-id="${escapeAttribute(group.key)}" aria-selected="${active}" ${pending ? "disabled" : ""}>${escapeText(group.title)}<small>${countAvailableTemplates(group)}</small></button>`;
+              }).join("")}
+            </div>
+            <div class="tube-designer-template-list" role="tabpanel" aria-label="${escapeAttribute(activeTemplateGroup?.title ?? "产品款式")}">
+              ${activeTemplateGroup ? renderTemplateCategory(activeTemplateGroup, selectedEntry?.catalogEntryId, pending) : ""}
             </div>
           </aside>
-          <main class="tube-designer-config-parameters" data-tube-designer-add-form>
+          <main class="tube-designer-config-parameters" data-tube-designer-add-form data-tube-designer-rendered-template-id="${escapeAttribute(template?.id)}">
             ${renderDesignerAddParameterContent(designer, view)}
           </main>
         </div>
@@ -312,7 +320,8 @@ export function renderDesignerAddParameterContent(designer, view) {
       <span class="tube-designer-config-preview">${renderSchematic(template?.id, values)}</span>
       <div><strong>${escapeText(view?.tubeDesignerAddInstanceName)}</strong><span>${escapeText(entry?.displayName ?? getTemplateDisplayName(template))} · ${escapeText(formatProductDimensions(template?.id, values))}</span></div>
     </div>
-    ${renderSecurityWindowReview(template, values)}
+    ${template?.extensions?.securityWindow ? `<p class="tube-designer-empty">${escapeText(template.description ?? "")} 修改参数生成产品，再拆单导出零件或进入排样。</p>` : ""}
+    ${template?.extensions?.securityWindow ? `<details class="tube-designer-review-disclosure" data-tube-designer-parameter-group="security:review" ${view.tubeDesignerAddDisclosureStates?.[template.id]?.["security:review"] ? "open" : ""}><summary>设计核对<span>安装、开启及加工注意事项</span></summary>${renderSecurityWindowReview(template, values)}</details>` : renderSecurityWindowReview(template, values)}
     ${renderParameterPresetBar(template, values, view, "add")}
     ${template?.available
       ? groupTree.map((group) => renderAddParameterGroup(group, values, pending, view, "add", template)).join("")
@@ -497,27 +506,18 @@ function renderImportedProfileLibraryDialog(view) {
     </div>`;
 }
 
-function renderTemplateGroup(group, selectedEntryId, expandedGroups, pending, depth = 0) {
-  const expanded = expandedGroups.has(group.key);
+function renderTemplateCategory(group, selectedEntryId, pending, depth = 0) {
   const availableCount = countAvailableTemplates(group);
   return `
-    <section class="tube-designer-template-group ${expanded ? "expanded" : ""}" data-tube-designer-template-group-depth="${depth}">
-      <button type="button" class="tube-designer-template-group-toggle" data-cam-action="tube-designer-toggle-template-group" data-tube-designer-template-group-id="${escapeAttribute(group.key)}" aria-expanded="${expanded ? "true" : "false"}" ${pending ? "disabled" : ""}>
-        <span><i aria-hidden="true"></i><strong>${escapeText(group.title)}</strong></span>
-        <em>${availableCount} 种</em>
-      </button>
-      <div class="tube-designer-template-group-items" ${expanded ? "" : "hidden"}>
-        ${group.children.map((child) => renderTemplateGroup(
-            child,
-            selectedEntryId,
-            expandedGroups,
-            pending,
-            depth + 1,
-          )).join("") + group.templates.map((item) => renderTemplateCard(
-            item,
-            item.catalogEntryId === selectedEntryId,
-            pending,
-          )).join("")}
+    <section class="tube-designer-template-category" data-tube-designer-template-group-id="${escapeAttribute(group.key)}" data-tube-designer-template-group-depth="${depth}">
+      <header><strong>${escapeText(group.title)}</strong><em>${availableCount} 种</em></header>
+      <div class="tube-designer-template-category-items">
+        ${group.children.map((child) => renderTemplateCategory(child, selectedEntryId, pending, depth + 1)).join("")}
+        ${group.templates.length ? `<div class="tube-designer-template-card-grid">${group.templates.map((item) => renderTemplateCard(
+          item,
+          item.catalogEntryId === selectedEntryId,
+          pending,
+        )).join("")}</div>` : ""}
       </div>
     </section>`;
 }
@@ -532,7 +532,7 @@ function renderTemplateCard(template, selected, pending) {
   return `
     <button class="tube-designer-template-card ${selected ? "selected" : ""} ${disabled ? "disabled" : ""}" data-cam-action="tube-designer-select-template" data-tube-designer-template-id="${escapeAttribute(template?.id)}" data-tube-designer-catalog-preset-id="${escapeAttribute(template?.presetId ?? "")}" data-tube-designer-catalog-entry-id="${escapeAttribute(template?.catalogEntryId)}" aria-pressed="${selected ? "true" : "false"}" ${pending || disabled ? "disabled" : ""}>
       <span class="tube-designer-template-schematic">${renderSchematic(template?.id, template?.catalogParameters ?? {})}</span>
-      <span><strong>${escapeText(template?.displayName ?? getTemplateDisplayName(template))}</strong><small>${template?.presetId ? "参数化款式 · 可调整尺寸" : `版本 ${escapeText(template?.version)}`}</small></span>
+      <span><strong>${escapeText(template?.displayName ?? getTemplateDisplayName(template))}</strong><small>${template?.extensions?.securityWindow ? (["two-face", "three-face"].includes(template.extensions.securityWindow.layout) ? "开边需现场围护补齐" : "尺寸、管材、开启口可调") : template?.presetId ? "参数化款式 · 可调整尺寸" : `版本 ${escapeText(template?.version)}`}</small></span>
       <i aria-hidden="true"></i>
     </button>
   `;
@@ -942,9 +942,6 @@ function renderSchematic(templateId, parameters = {}, className = "") {
   } else {
     content = `<line x1="${x}" y1="8" x2="${x}" y2="92" /><line x1="${x + w}" y1="8" x2="${x + w}" y2="92" /><line x1="50" y1="10" x2="50" y2="90" />${rail(24)}${rail(41)}${rail(59)}${rail(76)}`;
   }
-  if (templateId === "single-face-security-window" && !schematicDoorEnabled(parameters)) {
-    content += renderProjectedPlate(parameters, (u, v) => [x + w * u, 92 - 84 * v], .5, .5, width, height);
-  }
   return `<svg class="tube-designer-schematic ${escapeAttribute(className)}" viewBox="0 0 100 100" role="img" aria-label="产品示意图">${content}</svg>`;
 }
 
@@ -1214,20 +1211,7 @@ function renderProjectedDoor(parameters, origin, uEnd, vEnd, uLength, vLength) {
   const insetV = Math.min(0.035, (v1 - v0) * 0.18);
   return `<polygon class="multi-face-door-frame" points="${polygonPoints(u0, v0, u1, v1)}" />
     <polygon class="multi-face-door-leaf" points="${polygonPoints(u0 + insetU, v0 + insetV, u1 - insetU, v1 - insetV)}" />
-    ${renderProjectedPlate(parameters, point, (u0 + u1) / 2, (v0 + v1) / 2, safeU, safeV)}`;
-}
-
-function renderProjectedPlate(parameters, point, centerU, centerV, uLength, vLength) {
-  if (parameters.mainInfillMode !== "center_plate") return "";
-  const width = Number(parameters.centerPlateWidth ?? 300) / uLength;
-  const height = Number(parameters.centerPlateHeight ?? 600) / vLength;
-  const u = centerU + Number(parameters.centerPlateHorizontalOffset ?? 0) / uLength;
-  const v = centerV + Number(parameters.centerPlateVerticalOffset ?? 0) / vLength;
-  if (![width, height, u, v].every(Number.isFinite) || width <= 0 || height <= 0) return "";
-  const points = [[u - width / 2, v - height / 2], [u + width / 2, v - height / 2],
-    [u + width / 2, v + height / 2], [u - width / 2, v + height / 2]]
-    .map(([a, b]) => point(a, b).map((value) => value.toFixed(2)).join(",")).join(" ");
-  return `<polygon class="security-window-plate" points="${points}" />`;
+    `;
 }
 
 function formatProductDimensions(templateId, parameters = {}) {
@@ -1327,27 +1311,35 @@ function renderProfileField(field, value, disabled, context) {
     ? context.view.tubeDesignerUserData.profiles : [])
     .slice().sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? ""), "zh-CN"));
   const saved = profiles.find((item) => String(item?.id ?? "") === String(override?.savedProfileId ?? ""));
-  const selected = override ? (saved ? `saved:${saved.id}` : "current") : `builtin:${value}`;
+  const templateId = context?.template?.id ?? (context?.mode === "add" ? context?.view?.tubeDesignerAddTemplateId : context?.view?.scene?.tubeDesigner?.product?.templateId);
+  const templateProfiles = templateProfilesForProduct(context?.view ?? {}, templateId);
+  const templateProfile = override?.profileScope === "template" && String(override.templateId) === String(templateId)
+    ? templateProfiles.find((profile) => String(profile.id) === String(override.profileDefinitionId)) : null;
+  const selected = override ? (templateProfile ? profileSelectionKey(templateProfile) : saved ? `saved:${saved.id}` : "current") : `builtin:${value}`;
   const options = Array.isArray(field.options) ? field.options : [];
   const mode = context?.mode === "add" ? "add" : "right";
   return `<div class="tube-designer-field tube-designer-profile-field wide">
     <span>${label}</span>
     <select data-cam-change-action="tube-designer-profile-selection-change" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>
-      <optgroup label="模板管型">${options.map((option) => {
+      <optgroup label="系统内置">${options.map((option) => {
         const optionValue = typeof option === "object" ? option?.value : option;
         const optionLabel = typeof option === "object" ? option?.label : option;
         const sourceValue = `builtin:${optionValue}`;
         return `<option value="${escapeAttribute(sourceValue)}" ${sourceValue === selected ? "selected" : ""}>${escapeText(optionLabel)}</option>`;
       }).join("")}</optgroup>
+      ${templateProfiles.length ? `<optgroup label="模板自带">${templateProfiles.map((profile) => {
+        const sourceValue = profileSelectionKey(profile);
+        return `<option value="${escapeAttribute(sourceValue)}" ${sourceValue === selected ? "selected" : ""}>${escapeText(profile.name ?? profile.previewProfile?.name ?? profile.id)}</option>`;
+      }).join("")}</optgroup>` : ""}
       ${profiles.length ? `<optgroup label="我的管型">${profiles.map((profile) => {
         const sourceValue = `saved:${profile.id}`;
         return `<option value="${escapeAttribute(sourceValue)}" ${sourceValue === selected ? "selected" : ""}>${escapeText(profile.name ?? profile.sourceFileName ?? "DXF 管型")}</option>`;
       }).join("")}</optgroup>` : ""}
-      ${override && !saved ? `<option value="current" selected>${escapeText(override.name ?? override.sourceFileName ?? "当前导入 DXF")}</option>` : ""}
+      ${override && !saved && !templateProfile ? `<option value="current" selected>${escapeText(override.name ?? override.sourceFileName ?? "当前导入 DXF")}</option>` : ""}
     </select>
     <div class="tube-designer-profile-actions">
       <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-import-profile-dxf" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>导入 DXF</button>
-      ${override && !saved ? `<button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-open-profile-dialog" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-id="" ${disabled ? "disabled" : ""}>保存为我的管型</button>` : ""}
+      ${override && !saved && override.profileScope !== "template" ? `<button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-open-profile-dialog" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-id="" ${disabled ? "disabled" : ""}>保存为我的管型</button>` : ""}
       <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-open-profile-library" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>我的管型管理${profiles.length ? ` (${profiles.length})` : ""}</button>
       ${override ? `
       <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-clear-imported-profile" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>恢复模板管型</button>` : ""}
@@ -1436,8 +1428,9 @@ function buildParameterGroupTree(template, fields) {
   };
 
   (Array.isArray(fields) ? fields : []).forEach((field, fieldIndex) => {
-    const displayPath = String(field?.displayName ?? field?.label ?? field?.key ?? "参数")
+    let displayPath = String(field?.displayName ?? field?.label ?? field?.key ?? "参数")
       .split("/").map((part) => part.trim()).filter(Boolean);
+    if (template?.extensions?.securityWindow) displayPath = [displayPath.at(-1)];
     const groupKey = String(field?.groupKey ?? "").trim();
     const groupOrder = groupOrders.get(groupKey) ?? fieldIndex;
     if (displayPath.length > 1) {
@@ -1456,11 +1449,17 @@ function buildParameterGroupTree(template, fields) {
     }
     const title = String(field?.group ?? "参数");
     const key = `group:${groupKey || title}`;
-    ensureNode(key, title, "", groupOrder).fields.push(field);
+    ensureNode(key, title, "", groupOrder).fields.push({ ...field, displayName: displayPath.at(-1), label: displayPath.at(-1) });
   });
 
   for (const node of nodes.values()) {
-    node.fields.sort((left, right) => Number(left?.order ?? 0) - Number(right?.order ?? 0));
+    // Sort only within a group. Stable sorting preserves descriptor order for ties.
+    const fieldOrder = (field) => typeof field?.order === "number" && Number.isFinite(field.order)
+      ? field.order : Infinity;
+    node.fields.sort((left, right) => {
+      const a = fieldOrder(left), b = fieldOrder(right);
+      return a === b ? 0 : a < b ? -1 : 1;
+    });
   }
 
   const roots = [];
@@ -1475,7 +1474,22 @@ function buildParameterGroupTree(template, fields) {
     const children = node.children.map(pruneNode).filter(Boolean);
     return node.fields.length || children.length ? { ...node, children } : null;
   };
-  return sortNodes(roots).map(pruneNode).filter(Boolean);
+
+  const sorted = sortNodes(roots).map(pruneNode).filter(Boolean);
+  if (!template?.extensions?.securityWindow) return sorted;
+  // Whole-product order entry; fabrication remains available, not mixed into dimensions.
+  const orderGroups = new Set(["overall", "structure", "main_grid", "grid", "side_grid", "top_bottom_grid", "door_position", "door_grid"]);
+  const sections = [
+    { key: "security:order", title: "尺寸与格栅布置", fields: [], children: [], defaultOpen: true },
+    { key: "security:profiles", title: "管材规格与材料", fields: [], children: [], defaultOpen: false },
+    { key: "security:process", title: "加工与装配", fields: [], children: [], defaultOpen: false },
+  ];
+  for (const group of sorted) {
+    const key = group.key.replace(/^group:/, "");
+    const section = orderGroups.has(key) ? 0 : key.includes("profile") || key === "site_review" ? 1 : 2;
+    sections[section].children.push(group);
+  }
+  return sections.filter((section) => section.children.length);
 }
 
 function renderAddParameterGroup(group, values, disabled, view, mode, template, depth = 0, siblingIndex = 0) {
@@ -1495,8 +1509,9 @@ function renderAddParameterGroup(group, values, disabled, view, mode, template, 
     depth + 1,
     index,
   )).join("");
-  if (depth) {
-    return `<details class="tube-designer-config-subsection" data-tube-designer-group-depth="${depth}" ${siblingIndex === 0 ? "open" : ""}>
+  if (depth || template?.extensions?.securityWindow) {
+    const savedOpen = view.tubeDesignerAddDisclosureStates?.[template?.id]?.[group.key];
+    return `<details class="tube-designer-config-subsection" data-tube-designer-parameter-group="${escapeAttribute(group.key)}" data-tube-designer-group-depth="${depth}" ${(savedOpen ?? group.defaultOpen ?? siblingIndex === 0) ? "open" : ""}>
       <summary><span>${escapeText(group.title)}</span><small>${countParameterGroupFields(group)} 项</small></summary>
       <div class="tube-designer-config-subsection-content">
         ${fields ? `<div class="tube-designer-field-grid">${fields}</div>` : ""}

@@ -18,6 +18,12 @@ namespace iCAX::TubeDesigner
         const std::filesystem::path& Source_, const iCAX::Data::ObjectMap& Metadata_);
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap LoadSystemComponentModel(
         const std::filesystem::path& Root_, const std::string& ID_);
+    _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap LoadTemplateComponentModel(
+        const std::filesystem::path& TemplateDirectory_, const iCAX::Data::ObjectMap& DescriptorExtensions_,
+        const std::string& TemplateID_, const std::string& TemplateName_, const std::string& ID_);
+    _TUBE_DESIGNER_EXP iCAX::Data::VariantArray ListTemplateComponentModelSummaries(
+        const std::filesystem::path& TemplateDirectory_, const iCAX::Data::ObjectMap& DescriptorExtensions_,
+        const std::string& TemplateID_, const std::string& TemplateName_);
     _TUBE_DESIGNER_EXP iCAX::Data::VariantArray ListComponentModelSummaries(
         const std::filesystem::path& Root_, iCAX::Application::IProductUserDataStore* Store_);
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ResolveComponentModelSnapshot(
@@ -29,6 +35,11 @@ namespace iCAX::TubeDesigner
     _TUBE_DESIGNER_EXP void UpdateComponentModelMetadata(
         iCAX::Data::ObjectMap& Snapshot_, const iCAX::Data::ObjectMap& Metadata_);
     _TUBE_DESIGNER_EXP TopoDS_Shape ComponentModelShape(const iCAX::Data::ObjectMap& Snapshot_);
+    // Export the committed exact solid(s) in millimetres, without changing their
+    // anchor. Target must end in .step and must not already exist. The completed
+    // file is published without replacement; failed writes leave no target file.
+    _TUBE_DESIGNER_EXP void ExportComponentModelStep(
+        const iCAX::Data::ObjectMap& Snapshot_, const std::filesystem::path& TargetPath_);
 
     // File access is confined to declared template resources or the model
     // library. The generic geometry evaluator never reads an arbitrary path.

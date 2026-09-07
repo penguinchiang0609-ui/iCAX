@@ -6,6 +6,7 @@ const ANCHOR_ATTRIBUTES = Object.freeze([
   "data-tube-designer-category-id",
   "data-tube-designer-inspect-part-id",
   "data-tube-designer-preset-selection",
+  "data-tube-designer-parameter-group",
 ]);
 
 export function captureScrollAnchor(scroller, target = null) {
@@ -21,21 +22,37 @@ export function captureScrollAnchor(scroller, target = null) {
     value: locator?.value ?? "",
     viewportOffset: anchorTop == null || scrollerTop == null ? null : anchorTop - scrollerTop,
     restoreFocus: Boolean(locator?.element && contains(locator.element, activeElement)),
+    selectionStart: activeElement?.selectionStart ?? null,
+    selectionEnd: activeElement?.selectionEnd ?? null,
+    selectionDirection: activeElement?.selectionDirection ?? "none",
+    group: candidate?.closest?.("[data-tube-designer-parameter-group]")?.getAttribute?.("data-tube-designer-parameter-group") ?? "",
   };
 }
 
 export function restoreScrollAnchor(scroller, anchor, options = {}) {
   if (!scroller || !anchor) return null;
   scroller.scrollTop = finiteNumber(anchor.scrollTop);
-  const element = findStableElement(scroller, anchor.attribute, anchor.value);
+  let element = findStableElement(scroller, anchor.attribute, anchor.value);
+  const shouldRestoreFocus = options.restoreFocus ?? anchor.restoreFocus;
+  if (!element && shouldRestoreFocus && anchor.group) {
+    const group = findStableElement(scroller, "data-tube-designer-parameter-group", anchor.group);
+    element = Array.from(group?.querySelectorAll?.("input,select,textarea,button") ?? [])
+      .find((field) => !field.disabled && field.getClientRects?.().length) ?? group?.querySelector?.("summary");
+  }
   const scrollerTop = topOf(scroller);
   const elementTop = topOf(element);
   if (elementTop != null && scrollerTop != null
     && anchor.viewportOffset != null && Number.isFinite(Number(anchor.viewportOffset))) {
     scroller.scrollTop += elementTop - scrollerTop - Number(anchor.viewportOffset);
   }
-  const shouldRestoreFocus = options.restoreFocus ?? anchor.restoreFocus;
-  if (shouldRestoreFocus) element?.focus?.({ preventScroll: true });
+  if (shouldRestoreFocus) {
+    element?.focus?.({ preventScroll: true });
+    if (element?.getAttribute?.(anchor.attribute) === anchor.value
+      && anchor.selectionStart != null && anchor.selectionEnd != null) {
+      // Number/select inputs do not support text selection; never fail a refresh.
+      try { element.setSelectionRange?.(anchor.selectionStart, anchor.selectionEnd, anchor.selectionDirection); } catch {}
+    }
+  }
   return element;
 }
 

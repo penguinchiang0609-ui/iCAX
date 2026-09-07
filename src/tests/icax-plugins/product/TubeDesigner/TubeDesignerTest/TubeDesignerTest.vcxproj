@@ -52,6 +52,9 @@
     <ClCompile Include="TubeDesignerTests.cpp" />
     <ClCompile Include="ComponentResourceTests.cpp" />
     <ClCompile Include="ComponentModelLibraryTests.cpp" />
+    <ClCompile Include="ProfileGenerationPerformanceTests.cpp">
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
     <ClCompile Include="NestingAdapterTests.cpp">
       <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -94,6 +97,12 @@
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
       <Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Resources\Resources.vcxproj">
+      <Project>{cd223cde-a7d0-4525-9bf4-2a59ba16eda5}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\render\RenderInteraction\RenderInteraction.vcxproj">
+      <Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">
       <Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project>

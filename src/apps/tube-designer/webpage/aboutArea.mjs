@@ -1,3 +1,4 @@
+import { renderLicenseStatus } from "./licensing.mjs";
 const ABOUT_VIEW_REVISION = "tube-designer-about:empty";
 
 export function renderAboutLeftPane() {
@@ -18,7 +19,7 @@ export function renderAboutLeftPane() {
     </div>`;
 }
 
-export function renderAboutRightPane() {
+export function renderAboutRightPane(_context, view) {
   return `
     <div class="tube-designer-panel tube-designer-about-details">
       <div class="tube-designer-heading"><strong>产品信息</strong><span>当前版本</span></div>
@@ -28,7 +29,7 @@ export function renderAboutRightPane() {
         <div><dt>下料策略</dt><dd>锯切优先</dd></div>
         <div><dt>复杂端面</dt><dd>安全斜截近似</dd></div>
       </dl>
-    </div>`;
+    </div>${renderLicenseStatus(view)}`;
 }
 
 export function renderAboutViewportOverlay(_context, view) {

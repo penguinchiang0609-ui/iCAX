@@ -66,8 +66,8 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
                   if single and original.get("frameLayout", "four_sides") == "four_sides"
                   else "open_frame" if single else str(original.get("frameCornerJoin", "post_butt")))
     active_joins = [outer_join]
-    if single and enabled:
-        active_joins += [str(original.get(key, "miter_45"))
+    if enabled:
+        active_joins += [str(original.get(key, "miter_45" if single else "butt_90"))
                          for key in ("doorFrameJoinType", "doorLeafFrameJoinType")]
     v_groove_active = any(join.startswith("v_groove") for join in active_joins)
     miter_active = any(join in {"miter_45", "rail_miter"} for join in active_joins)

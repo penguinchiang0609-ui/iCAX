@@ -97,6 +97,23 @@ export function buildTemplateGroupTree(templates = []) {
   return roots;
 }
 
+// Return every enclosing category for one catalog card, from the root down.
+// The add dialog uses this to keep its left-hand tree in sync with its active card.
+export function getCatalogEntryGroupKeys(templates = [], templateId = "", presetId = "") {
+  const entry = getCatalogEntry(templates, templateId, presetId);
+  if (!entry) return [];
+  const find = (groups, ancestors = []) => {
+    for (const group of groups) {
+      const next = [...ancestors, group.key];
+      if (group.templates.some((item) => item.catalogEntryId === entry.catalogEntryId)) return next;
+      const nested = find(group.children, next);
+      if (nested.length) return nested;
+    }
+    return [];
+  };
+  return find(buildTemplateGroupTree(templates));
+}
+
 // Original parametric schematic: no downloaded competitor thumbnails or assets.
 export function renderGuardrailSchematic(parameters = {}) {
   const layout = String(parameters.layout ?? "straight");

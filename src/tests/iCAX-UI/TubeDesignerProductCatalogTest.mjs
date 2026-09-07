@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  buildCatalogEntries, buildTemplateGroupTree, catalogText, getCatalogEntry, getCatalogEntryId,
+  buildCatalogEntries, buildTemplateGroupTree, catalogText, getCatalogEntry, getCatalogEntryGroupKeys, getCatalogEntryId,
   getCatalogParameters, renderGuardrailSchematic,
 } from "../../apps/tube-designer/webpage/productCatalog.mjs";
-import { renderDesignerAddDialog, renderDesignerAddParameterContent } from "../../apps/tube-designer/webpage/designerViews.mjs";
+import { renderDesignerAddDialog, renderDesignerAddParameterContent, renderDesignerRightPane } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { handleDesignerAreaAction } from "../../apps/tube-designer/webpage/designerActions.mjs";
 
 const completed = [];
@@ -48,6 +48,26 @@ await test("catalog groups security windows, guardrails and stairs independently
   assert.equal(tree[1].children[0].title, "竖杆护栏");
   assert.equal(tree[1].children[0].templates.length, 3);
   assert.equal(tree[0].templates[0].templateId, "window");
+});
+
+await test("the default add style expands every category enclosing its selected card", async () => {
+  const ids = getCatalogEntryGroupKeys(templates, windowTemplate.id);
+  assert.deepEqual(ids, ["template-path:防盗窗"]);
+  const html = renderDesignerAddDialog({ templates }, {
+    tubeDesignerAddTemplateId: windowTemplate.id,
+    tubeDesignerAddInstanceName: "新防盗窗",
+  });
+  assert.match(html, /data-tube-designer-template-tab-id="template-path:防盗窗" aria-selected="true"/);
+  assert.match(html, /data-tube-designer-template-id="window"[^>]*aria-pressed="true"/);
+  const { view, act } = harness();
+  await act("open-add");
+  assert.deepEqual(view.tubeDesignerExpandedTemplateGroupIds, ids);
+  assert.equal(view.tubeDesignerAddCatalogTabId, "template-path:防盗窗");
+  const draftBeforeTab = view.tubeDesignerAddDraft;
+  await act("select-template-tab", { tubeDesignerTemplateTabId: "template-path:护栏" });
+  assert.equal(view.tubeDesignerAddCatalogTabId, "template-path:护栏");
+  assert.equal(view.tubeDesignerAddTemplateId, windowTemplate.id);
+  assert.equal(view.tubeDesignerAddDraft, draftBeforeTab, "switching tabs only changes the catalogue browser");
 });
 
 await test("presets become distinct cards without changing native template identities", () => {
@@ -223,23 +243,89 @@ await test("all 32 shipped modular guardrail styles use declared parameters and 
   assert.equal(entries.filter((entry) => entry.catalogPath.includes("围墙栏杆")).length, 4);
 });
 
-await test("shipped security window panel cards show original plate schematics with position differences", () => {
-  const descriptor = presentationDescriptor(JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/single_face_security_window/template.json", import.meta.url))));
-  const entries = buildCatalogEntries([descriptor]);
-  assert.equal(entries.length, 3);
-  const thumbnails = entries.map((entry) => renderDesignerAddParameterContent({ templates: [descriptor] }, {
-    tubeDesignerAddTemplateId: descriptor.id, tubeDesignerAddCatalogPresetId: entry.presetId,
-    tubeDesignerAddDraft: entry.catalogParameters,
-  }));
-  assert.doesNotMatch(thumbnails[0], /class="security-window-plate"/);
-  assert.match(thumbnails[1], /class="security-window-plate"/);
-  assert.match(thumbnails[2], /class="security-window-plate"/);
-  const panelPoints = (html) => html.match(/class="security-window-plate" points="([^"]+)"/)[1];
-  assert.notEqual(panelPoints(thumbnails[1]), panelPoints(thumbnails[2]));
-  const noDoor = renderDesignerAddParameterContent({ templates: [descriptor] }, {
-    tubeDesignerAddTemplateId: descriptor.id, tubeDesignerAddDraft: { ...entries[1].catalogParameters, accessDoorEnabled: false },
+await test("security catalog separates common whole products from site-dependent enclosures", () => {
+  const descriptors = ["single", "two", "three", "five"].map((kind) => presentationDescriptor(
+    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/${kind}_face_security_window/template.json`, import.meta.url)))));
+  const entries = buildCatalogEntries(descriptors);
+  assert.equal(entries.length, 4);
+  const manifest = JSON.parse(readFileSync(new URL("../../apps/tube-designer/product.manifest.json", import.meta.url)));
+  const registrations = manifest.capabilities.tubeDesigner.templates;
+  for (const descriptor of descriptors) {
+    const registration = registrations.find((item) => item.templateId === descriptor.id);
+    assert.equal(registration.version, descriptor.version);
+    assert.equal(registration.displayName, descriptor.name);
+    const folder = descriptor.id.replaceAll("-", "_");
+    const generator = readFileSync(new URL(`../../apps/tube-designer/templates/${folder}/template.py`, import.meta.url), "utf8");
+    assert.ok(generator.includes(`TEMPLATE_VERSION = "${descriptor.version}"`));
+    const groups = new Set(descriptor.groups.map((group) => group.key));
+    assert.ok(descriptor.parameters.every((field) => groups.has(field.groupKey)));
+  }
+  assert.deepEqual(entries.map((e) => e.templateId), [
+    "single-face-security-window", "five-face-security-window", "two-face-security-window", "three-face-security-window"]);
+  assert.ok(entries.slice(0, 2).every((e) => e.catalogPath.includes("常用款式")));
+  assert.ok(entries.slice(2).every((e) => e.catalogPath.includes("局部围护（需现场封闭）")));
+  for (const entry of entries) {
+    assert.equal(entry.id, entry.templateId);
+    assert.equal(entry.catalogParameters.accessDoorEnabled, true);
+    const html = renderDesignerAddParameterContent({ templates: descriptors }, {
+      tubeDesignerAddTemplateId: entry.id, tubeDesignerAddDraft: entry.catalogParameters,
+    });
+    assert.doesNotMatch(html, /封板|mainInfillMode|centerPlate/);
+    for (const title of ["尺寸与格栅布置", "管材规格与材料", "加工与装配"]) assert.ok(html.includes(title));
+    assert.match(html, /<details[^>]* open>\s*<summary><span>尺寸与格栅布置/);
+    assert.match(html, /<details[^>]*depth="0"\s*>\s*<summary><span>加工与装配/);
+  }
+});
+
+await test("opening processes share choices and hide all inactive fabrication fields", () => {
+  const descriptors = ["single", "two", "three", "five"].map((kind) => presentationDescriptor(
+    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/${kind}_face_security_window/template.json`, import.meta.url)))));
+  const reference = descriptors[0];
+  for (const descriptor of descriptors) {
+    for (const key of ["doorFrameJoinType", "doorLeafFrameJoinType", "doorGap", "doorHingeCount", "doorClearWidth", "doorClearHeight"]) {
+      const field = descriptor.parameters.find((p) => p.key === key);
+      const common = reference.parameters.find((p) => p.key === key);
+      assert.deepEqual(field.options, common.options);
+      assert.equal(field.min, common.min);
+      assert.equal(field.max, common.max);
+    }
+    const defaults = getCatalogParameters(descriptor);
+    const render = (draft) => renderDesignerAddParameterContent({ templates: [descriptor] }, {
+      tubeDesignerAddTemplateId: descriptor.id, tubeDesignerAddDraft: { ...defaults, ...draft },
+    });
+    const closed = render({ accessDoorEnabled: false, frameJoinType: "miter_45" });
+    for (const field of descriptor.parameters.filter((p) => p.key.startsWith("door") || p.key.startsWith("vGroove"))) {
+      assert.ok(!closed.includes(`data-tube-designer-parameter="${field.key}"`), field.key);
+    }
+    assert.doesNotMatch(render({ doorFrameJoinType: "miter_45", doorLeafFrameJoinType: "miter_45" }), /data-tube-designer-parameter="vGroove/);
+    const folded = render({ doorFrameJoinType: "v_groove_90:sharp_v" });
+    assert.match(folded, /data-tube-designer-parameter="vGrooveKFactor"/);
+    assert.doesNotMatch(folded, /data-tube-designer-parameter="doorFrameButtWrapMode"/);
+  }
+});
+
+await test("JSON order sorts only fields within groups in add and edit, with stable ties and visibility", () => {
+  const descriptor = presentationDescriptor({
+    id: "ordering", displayName: "排序测试",
+    groups: [{ key: "a", displayName: "A", order: 10 }, { key: "b", displayName: "B", order: 20 }],
+    parameters: [
+      { key: "missing1", group: "a" }, { key: "late", group: "a", order: 30 },
+      { key: "tie1", group: "a", order: 10 }, { key: "missing2", group: "a" },
+      { key: "tie2", group: "a", order: 10, visibleWhen: { parameter: "show", value: true } },
+      { key: "zero", group: "a", order: 0 }, { key: "negative", group: "b", order: -10 },
+    ].map((field) => ({ valueType: "string", defaultValue: "", displayName: field.key, ...field })),
   });
-  assert.match(noDoor, /class="security-window-plate"/);
+  const original = JSON.stringify(descriptor);
+  const keys = (html) => [...html.matchAll(/data-tube-designer-parameter="([^"]+)"/g)].map((match) => match[1]);
+  for (const show of [true, false, true]) {
+    const designer = { templates: [descriptor], product: { entityId: "p", templateId: descriptor.id, parameters: { show } } };
+    const expected = ["zero", "tie1", ...(show ? ["tie2"] : []), "late", "missing1", "missing2", "negative"];
+    assert.deepEqual(keys(renderDesignerAddParameterContent(designer, {
+      tubeDesignerAddTemplateId: descriptor.id, tubeDesignerAddDraft: { show },
+    })), expected);
+    assert.deepEqual(keys(renderDesignerRightPane({}, { scene: { tubeDesigner: designer } })), expected);
+  }
+  assert.equal(JSON.stringify(descriptor), original);
 });
 
 console.log(`TubeDesignerProductCatalogTest: ${completed.length} passed`);

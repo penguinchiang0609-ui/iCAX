@@ -21,19 +21,34 @@ import { captureScrollAnchor, restoreScrollAnchor } from "./scrollAnchor.mjs";
 import {
   handleProfileLibraryAction,
   handleProfileLibraryRibbonCommand,
+  profileSelectionKey,
+  resolveSelectedProfileSketchSource,
+  templateProfilesForProduct,
 } from "./profileLibrary.mjs";
 import { handlePartsAreaAction } from "./partsArea.mjs";
 import { handleNestingSettingsAction, handleNestingSettingsRibbonCommand } from "./nestingSettings.mjs";
 import { handleNestingRibbonCommand } from "./nestingWorkflow.mjs";
 import { handleNestingExportAction } from "./nestingExport.mjs";
-import { handleSketchAreaAction, handleSketchRibbonCommand } from "./sketchArea.mjs";
-import { getCatalogEntry } from "./productCatalog.mjs";
+import {
+  beginNewSectionSketch,
+  beginProfileSectionSketch,
+  handleSketchAreaAction,
+  handleSketchRibbonCommand,
+} from "./sketchArea.mjs";
+import { getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs";
 import { handleComponentLibraryAction, handleComponentLibraryRibbonCommand } from "./componentLibrary.mjs";
 
 export const DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
+import { handleLicenseCommand } from "./licensing.mjs";
 export const ADD_TEMPLATE_PROGRESS_MINIMUM_VISIBLE_MS = DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS;
 
 export async function handleDesignerAreaAction(context, view, action, target, ops) {
+  if (action === "tube-designer-profile-library-new-sketch") {
+    return { handled: true, result: await openProfileSectionSketch(context, view, ops, true) };
+  }
+  if (action === "tube-designer-profile-library-edit-sketch") {
+    return { handled: true, result: await openProfileSectionSketch(context, view, ops, false) };
+  }
   const componentResult = await handleComponentLibraryAction(context, view, action, target, ops);
   if (componentResult.handled) return componentResult;
   const nestingExportResult = await handleNestingExportAction(context, view, action, target, ops);
@@ -72,6 +87,10 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   }
   if (action === "tube-designer-toggle-template-group") {
     toggleTemplateGroup(context, view, target, ops);
+    return { handled: true };
+  }
+  if (action === "tube-designer-select-template-tab") {
+    selectTemplateTab(context, view, target, ops);
     return { handled: true };
   }
   if (action === "tube-designer-parameter-change") {
@@ -262,6 +281,11 @@ export async function handleDesignerAreaAction(context, view, action, target, op
 
 export async function handleDesignerRibbonCommand(context, view, commandId, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return true;
+  if (await handleLicenseCommand(context, view, commandId, ops)) return true;
+  if (commandId === "profiles.new-sketch") {
+    await openProfileSectionSketch(context, view, ops, true);
+    return true;
+  }
   if (await handleNestingRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleNestingSettingsRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleSketchRibbonCommand(context, view, commandId, ops)) return true;
@@ -292,6 +316,53 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
     return true;
   }
   return false;
+}
+
+async function openProfileSectionSketch(context, view, ops, createNew) {
+  if (view.pending) return null;
+  const current = view.tubeDesignerSketch?.section;
+  if (current?.dirty && typeof globalThis.confirm === "function"
+      && !globalThis.confirm("当前截面还有未保存的修改，确定开始另一个截面吗？")) return null;
+  if (createNew) {
+    const state = beginNewSectionSketch(view);
+    await selectDesignerArea(context, view, "sketch");
+    ops.renderProject(context, view);
+    return state;
+  }
+
+  view.pending = true;
+  view.error = "";
+  view.progress = {
+    title: "正在打开截面草图",
+    detail: "正在读取当前参数对应的截面轮廓",
+    stage: "准备可编辑几何",
+    mode: "Sketch",
+  };
+  ops.renderProject(context, view);
+  try {
+    const source = await resolveSelectedProfileSketchSource(context, view);
+    const state = beginProfileSectionSketch(view, source);
+    view.pending = false;
+    view.progress = null;
+    await selectDesignerArea(context, view, "sketch");
+    ops.renderProject(context, view);
+    return state;
+  } catch (error) {
+    view.pending = false;
+    view.progress = null;
+    view.error = error?.message ?? String(error);
+    ops.renderProject(context, view);
+    return null;
+  }
+}
+
+async function selectDesignerArea(context, view, areaId) {
+  await context.actions?.selectRibbonTab?.(areaId);
+  // The host may publish the selected tab on the next render tick. Keep this
+  // render on the requested area as well, otherwise it can immediately fall
+  // back to the source tab and appear as if navigation did nothing.
+  context.activeRibbonTabId = areaId;
+  view.activeAreaId = areaId;
 }
 
 async function chooseBatchAddWorkbook(context, view, ops, suppliedPath = "") {
@@ -349,6 +420,7 @@ export async function refreshDesignerUserData(context, view, ops = null) {
   if (typeof context.productProxy?.invoke !== "function") {
     view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], profileId: "" };
     view.tubeDesignerSystemProfiles ??= [];
+    view.tubeDesignerTemplateProfiles ??= [];
     return false;
   }
   try {
@@ -363,12 +435,15 @@ export async function refreshDesignerUserData(context, view, ops = null) {
     };
     view.tubeDesignerSystemProfiles = Array.isArray(response?.systemProfiles)
       ? response.systemProfiles : [];
+    view.tubeDesignerTemplateProfiles = Array.isArray(response?.templateProfiles)
+      ? response.templateProfiles : [];
     view.tubeDesignerUserDataError = "";
     ops?.renderProject?.(context, view);
     return true;
   } catch (error) {
     view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], profileId: "" };
     view.tubeDesignerSystemProfiles ??= [];
+    view.tubeDesignerTemplateProfiles ??= [];
     view.tubeDesignerUserDataError = error?.message ?? String(error);
     ops?.renderProject?.(context, view);
     return false;
@@ -403,7 +478,10 @@ function openAddDialog(context, view, ops) {
   view.tubeDesignerAddInstanceName = makeInstanceName({ ...template, name: entry?.displayName ?? template.name }, createdAt);
   view.tubeDesignerAddDraft = { ...getDefaultParameters(designer.templates, template.id), ...(entry?.catalogParameters ?? {}) };
   view.tubeDesignerAddPresetSelection = "";
-  view.tubeDesignerExpandedTemplateGroupIds = [];
+  view.tubeDesignerExpandedTemplateGroupIds = getCatalogEntryGroupKeys(
+    designer.templates, template.id, entry?.presetId ?? "",
+  );
+  view.tubeDesignerAddCatalogTabId = view.tubeDesignerExpandedTemplateGroupIds[0] ?? "";
   view.tubeDesignerAddScrollAnchor = null;
   view.tubeDesignerTemplateSwitchPending = false;
   view.tubeDesignerDisassemblySelectorOpen = false;
@@ -424,6 +502,7 @@ function closeAddDialog(context, view, ops) {
   view.tubeDesignerProfileDialog = null;
   view.tubeDesignerProfileLibraryDialog = null;
   view.tubeDesignerExpandedTemplateGroupIds = [];
+  view.tubeDesignerAddCatalogTabId = "";
   view.tubeDesignerAddScrollAnchor = null;
   view.tubeDesignerTemplateSwitchPending = false;
   view.error = "";
@@ -454,6 +533,10 @@ async function selectTemplate(context, view, target, ops) {
     view.tubeDesignerAddTemplateId = template.id;
     view.tubeDesignerAddCatalogPresetId = entry.presetId;
     view.tubeDesignerAddCatalogEntryId = entry.catalogEntryId;
+    view.tubeDesignerExpandedTemplateGroupIds = getCatalogEntryGroupKeys(
+      designer.templates, template.id, entry.presetId,
+    );
+    view.tubeDesignerAddCatalogTabId = view.tubeDesignerExpandedTemplateGroupIds[0] ?? "";
     view.tubeDesignerAddDraft = { ...getDefaultParameters(designer.templates, template.id), ...entry.catalogParameters };
     view.tubeDesignerAddPresetSelection = "";
     view.tubeDesignerAddInstanceName = makeInstanceName({ ...template, name: entry.displayName }, view.tubeDesignerAddCreatedAt);
@@ -469,6 +552,18 @@ async function selectTemplate(context, view, target, ops) {
     progress?.remove?.();
     view.tubeDesignerTemplateSwitchPending = false;
   }
+}
+
+function selectTemplateTab(context, view, target, ops) {
+  if (!view.tubeDesignerAddDialogOpen || view.pending) return;
+  const groupId = String(target?.dataset?.tubeDesignerTemplateTabId ?? "").trim();
+  if (!groupId || view.tubeDesignerAddCatalogTabId === groupId) return;
+  captureAddDialogScrollAnchor(context, view, target);
+  view.tubeDesignerAddCatalogTabId = groupId;
+  // A tab change only changes the catalogue browser; it must not reset the
+  // selected template, its parameters, or the preview on the right.
+  ops.renderProject(context, view);
+  restoreAddDialogScrollAnchor(context, view);
 }
 
 function toggleTemplateGroup(context, view, target, ops) {
@@ -582,6 +677,28 @@ function changeProfileSelection(context, view, target, ops) {
     setProfileDraft(context, view, ops, mode, prefix, null, selection.slice("builtin:".length));
     return;
   }
+  if (selection.startsWith("template:")) {
+    const { templateId } = profileActionState(view, mode);
+    const bundled = templateProfilesForProduct(view, templateId)
+      .find((item) => profileSelectionKey(item) === selection);
+    if (!bundled) {
+      view.error = "所选管型不属于当前模板，或模板资源已经不存在。";
+      ops.renderProject(context, view);
+      return;
+    }
+    const snapshot = importedProfileSnapshot({
+      ...(bundled.previewProfile ?? bundled.profile ?? {}),
+      name: bundled.name ?? bundled.previewProfile?.name,
+      profileScope: "template", templateId: bundled.templateId, profileDefinitionId: bundled.id,
+    });
+    if (!snapshot?.contours?.length) {
+      view.error = "模板自带管型缺少可用截面。";
+      ops.renderProject(context, view);
+      return;
+    }
+    setProfileDraft(context, view, ops, mode, prefix, snapshot);
+    return;
+  }
   if (selection.startsWith("saved:")) {
     const id = selection.slice("saved:".length);
     const saved = (view.tubeDesignerUserData?.profiles ?? [])
@@ -623,9 +740,11 @@ async function updateParametricProfile(context, view, target, ops) {
   const mode = String(target.dataset?.tubeDesignerProfileMode ?? "") === "add" ? "add" : "right";
   const prefix = String(target.dataset?.tubeDesignerProfilePrefix ?? "").trim();
   const parameterKey = String(target.dataset?.tubeDesignerProfileParameter ?? "").trim();
-  const { values } = profileActionState(view, mode);
+  const { values, templateId } = profileActionState(view, mode);
   const current = values.tubeDesignerProfileOverrides?.[prefix];
-  if (!prefix || !parameterKey || current?.kind !== "parametric-package" || !current?.savedProfileId) {
+  const bundled = current?.profileScope === "template";
+  if (!prefix || !parameterKey || current?.kind !== "parametric-package"
+      || (bundled ? !current.profileDefinitionId || String(current.templateId) !== templateId : !current?.savedProfileId)) {
     return null;
   }
   const definition = (current.parameterDefinitions ?? [])
@@ -646,7 +765,7 @@ async function updateParametricProfile(context, view, target, ops) {
   const result = await runDesignerOperation(context, view, ops, async () => {
     try {
       const response = await invokeProductRequest(context, "TubeDesigner.EvaluateProfilePackage", {
-        id: current.savedProfileId,
+        ...(bundled ? { profileRef: { scope: "template", templateId, id: current.profileDefinitionId } } : { id: current.savedProfileId }),
         parameters,
       }, { timeoutMs: 120000 });
       const profile = importedProfileSnapshot(response?.profile, current.savedProfileId);
@@ -745,7 +864,7 @@ function openImportedProfileDialog(context, view, target, ops) {
   const prefix = String(target?.dataset?.tubeDesignerProfilePrefix ?? "").trim();
   const { values } = profileActionState(view, mode);
   const profile = importedProfileSnapshot(values.tubeDesignerProfileOverrides?.[prefix]);
-  if (!profile) return;
+  if (!profile || profile.profileScope === "template") return;
   if (mode === "add") captureAddDialogScrollAnchor(context, view, target);
   else captureParameterPanelState(context, view, target);
   const savedProfileId = String(target?.dataset?.tubeDesignerProfileId ?? profile.savedProfileId ?? "");
@@ -881,7 +1000,7 @@ async function deleteLibraryProfile(context, view, target, ops) {
 async function saveImportedProfile(context, view, target, ops) {
   if (view.pending) return null;
   const state = view.tubeDesignerProfileDialog;
-  if (!state?.profile) return null;
+  if (!state?.profile || state.profile.profileScope === "template") return null;
   const mount = resolveDesignerMount(context);
   const name = String(mount?.querySelector?.("[data-tube-designer-profile-name]")?.value ?? "").trim();
   if (!name) {
@@ -1901,13 +2020,17 @@ function captureParameterPanelState(context, view, editedTarget = null) {
   const panel = context.mount?.querySelector?.("[data-tube-designer-parameter-form]");
   if (!panel) return;
   const sections = panel.querySelector(".tube-designer-parameter-sections");
+  const currentProductId = String(view.scene?.tubeDesigner?.product?.entityId ?? "");
+  const disclosure = view.tubeDesignerParameterPanelProductId === currentProductId
+    ? { ...(view.tubeDesignerParameterDisclosureState ?? {}) } : {};
+  for (const group of panel.querySelectorAll("[data-tube-designer-parameter-group]")) {
+    disclosure[group.dataset.tubeDesignerParameterGroup] = group.open;
+  }
+  view.tubeDesignerParameterDisclosureState = disclosure;
   view.tubeDesignerParameterPanelProductId = String(
     view.scene?.tubeDesigner?.product?.entityId ?? "",
   );
-  view.tubeDesignerExpandedParameterGroups = Array.from(
-    panel.querySelectorAll("[data-tube-designer-parameter-group][open]"),
-    (group) => String(group.dataset.tubeDesignerParameterGroup ?? ""),
-  ).filter(Boolean);
+  view.tubeDesignerExpandedParameterGroups = Object.keys(disclosure).filter((key) => disclosure[key]);
   view.tubeDesignerParameterPanelScrollTop = Number(sections?.scrollTop ?? 0);
   view.tubeDesignerParameterPanelScrollAnchor = captureScrollAnchor(sections, editedTarget);
   const parameterKey = String(editedTarget?.dataset?.tubeDesignerParameter ?? "").trim();
@@ -1942,6 +2065,16 @@ function restoreParameterPanelState(context, view) {
 }
 
 function captureAddDialogScrollAnchor(context, view, target) {
+  const form = resolveDesignerMount(context)?.querySelector?.("[data-tube-designer-add-form]");
+  const templateId = form?.dataset?.tubeDesignerRenderedTemplateId;
+  if (templateId) {
+    view.tubeDesignerAddDisclosureStates ??= {};
+    const saved = { ...(view.tubeDesignerAddDisclosureStates[templateId] ?? {}) };
+    for (const group of form.querySelectorAll?.("details[data-tube-designer-parameter-group]") ?? []) {
+      saved[group.dataset.tubeDesignerParameterGroup] = group.open;
+    }
+    view.tubeDesignerAddDisclosureStates[templateId] = saved;
+  }
   const scroller = target?.closest?.(".tube-designer-template-list, .tube-designer-config-parameters");
   if (!scroller) return;
   view.tubeDesignerAddScrollAnchor = {
@@ -1957,7 +2090,7 @@ function restoreAddDialogScrollAnchor(context, view) {
   if (!snapshot?.scrollerSelector || !snapshot.anchor) return;
   const restore = () => {
     const scroller = resolveDesignerMount(context)?.querySelector?.(snapshot.scrollerSelector);
-    restoreScrollAnchor(scroller, snapshot.anchor);
+    restoreScrollAnchor(scroller, snapshot.anchor, { restoreFocus: !view.pending && snapshot.anchor.restoreFocus });
   };
   restore();
   const restorationToken = Number(view.tubeDesignerAddScrollRestorationToken ?? 0) + 1;
@@ -1984,6 +2117,7 @@ function refreshAddParameterContent(context, designer, view) {
   const form = resolveDesignerMount(context)?.querySelector?.("[data-tube-designer-add-form]");
   if (!form) return false;
   form.innerHTML = renderDesignerAddParameterContent(designer, view);
+  if (form.dataset) form.dataset.tubeDesignerRenderedTemplateId = view.tubeDesignerAddTemplateId;
   return true;
 }
 

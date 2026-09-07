@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 from typing import Any
 import zipfile
@@ -250,8 +250,10 @@ def _read_archive(path: Path, password: str) -> tuple[bytes, bytes, bool]:
     return descriptor_bytes, script_bytes, encrypted
 
 
-def _inspect(path: Path, password: str) -> dict[str, Any]:
-    descriptor_bytes, script_bytes, encrypted = _read_archive(path, password)
+def _package_from_sources(
+    descriptor_bytes: bytes, script_bytes: bytes, source_file_name: str,
+    encrypted: bool = False,
+) -> dict[str, Any]:
     try:
         descriptor = json.loads(descriptor_bytes.decode("utf-8-sig"))
         script_source = script_bytes.decode("utf-8-sig")
@@ -264,13 +266,13 @@ def _inspect(path: Path, password: str) -> dict[str, Any]:
     digest = "sha256:" + hashlib.sha256(
         canonical_descriptor + b"\0" + script_source.encode("utf-8"),
     ).hexdigest()
-    preview = _evaluate(descriptor, script_source, defaults, digest, path.name)
+    preview = _evaluate(descriptor, script_source, defaults, digest, source_file_name)
     return {
         "schema": PACKAGE_SCHEMA,
         "schemaVersion": PACKAGE_SCHEMA_VERSION,
         "kind": "parametric-package",
         "name": _localized_text(descriptor.get("displayName"), "displayName"),
-        "sourceFileName": path.name,
+        "sourceFileName": source_file_name,
         "sourceFormat": "icax.profile-package",
         "passwordProtected": encrypted,
         "packageDigest": digest,
@@ -279,6 +281,154 @@ def _inspect(path: Path, password: str) -> dict[str, Any]:
         "defaultParameters": defaults,
         "previewProfile": preview,
     }
+
+
+def _inspect(path: Path, password: str) -> dict[str, Any]:
+    descriptor_bytes, script_bytes, encrypted = _read_archive(path, password)
+    return _package_from_sources(descriptor_bytes, script_bytes, path.name, encrypted)
+
+
+def _template_identifier(value: Any, label: str, *, template: bool = False) -> str:
+    pattern = r"[A-Za-z0-9_][A-Za-z0-9_.:-]{0,239}" if template else r"[a-z][a-z0-9_-]{0,79}"
+    if not isinstance(value, str) or re.fullmatch(pattern, value) is None:
+        raise ValueError(f"{label} 必须是稳定标识，不能是文件路径")
+    return value
+
+
+def _template_root(value: Any) -> Path:
+    if not isinstance(value, str) or not value.strip() or "\0" in value:
+        raise ValueError("模板管型目录无效")
+    root = Path(value).resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("模板管型目录必须是文件夹")
+    return root
+
+
+def _confined_profile_path(root: Path, relative: Any) -> Path:
+    if not isinstance(relative, str) or not relative or "\0" in relative:
+        raise ValueError("模板管型必须声明包内相对路径")
+    path = PurePosixPath(relative)
+    if (path.is_absolute() or PureWindowsPath(relative).drive or "\\" in relative
+            or ":" in relative or ".." in path.parts):
+        raise ValueError("模板管型路径不得越过模板包目录")
+    target = (root / relative).resolve(strict=True)
+    if not target.is_relative_to(root):
+        raise ValueError("模板管型路径不得通过符号链接或目录联接越过模板包目录")
+    return target
+
+
+def _read_template_member(root: Path, directory: Path, name: str) -> bytes:
+    relative = (directory.relative_to(root) / name).as_posix()
+    member = _confined_profile_path(root, relative)
+    if not member.is_file():
+        raise ValueError(f"模板管型缺少文件：{name}")
+    if member.stat().st_size > MAX_MEMBER_BYTES:
+        raise ValueError(f"模板管型文件超过 4 MB：{name}")
+    with member.open("rb") as stream:
+        content = stream.read(MAX_MEMBER_BYTES + 1)
+    if len(content) > MAX_MEMBER_BYTES:
+        raise ValueError(f"模板管型文件超过 4 MB：{name}")
+    return content
+
+
+def _template_identity(parameters: dict[str, Any], profile_id: Any = None) -> dict[str, Any]:
+    reference = parameters.get("profileRef", {})
+    if not isinstance(reference, dict):
+        raise ValueError("模板管型 profileRef 必须是对象")
+    template_id = _template_identifier(
+        parameters.get("templateId", reference.get("templateId")), "模板 ID", template=True,
+    )
+    definition_id = _template_identifier(
+        profile_id if profile_id is not None else parameters.get(
+            "profileDefinitionId", parameters.get("id", reference.get("id")),
+        ), "模板管型资源 ID",
+    )
+    expected_reference = {"scope": "template", "templateId": template_id, "id": definition_id}
+    if reference and reference != expected_reference:
+        raise ValueError("模板管型 profileRef 与模板和资源 ID 不一致")
+    for key in ("profileScope", "libraryScope"):
+        if key in parameters and parameters[key] != "template":
+            raise ValueError("模板管型不能使用系统或用户作用域")
+    return {
+        "profileScope": "template",
+        "libraryScope": "template",
+        "templateId": template_id,
+        "templateName": _localized_text(parameters.get("templateName", template_id), "模板名称"),
+        "profileDefinitionId": definition_id,
+        "profileRef": expected_reference,
+        "sourceFormat": "icax.template-profile",
+    }
+
+
+def _stamp_template_profile(
+    profile: dict[str, Any], identity: dict[str, Any], metadata: dict[str, Any],
+) -> dict[str, Any]:
+    profile.update(identity)
+    for key in ("name", "category"):
+        if key in metadata:
+            profile[key] = _localized_text(metadata[key], f"模板管型 {key}")
+    profile.pop("savedProfileId", None)
+    return profile
+
+
+def _template_package(parameters: dict[str, Any], profile_id: Any) -> dict[str, Any]:
+    identity = _template_identity(parameters, profile_id)
+    resources = parameters.get("profileResources")
+    if not isinstance(resources, dict):
+        raise ValueError("模板 profileResources 必须是声明对象")
+    key = identity["profileDefinitionId"]
+    if key not in resources:
+        raise ValueError(f"模板未声明此管型资源：{key}")
+    declaration = resources[key]
+    if not isinstance(declaration, dict):
+        raise ValueError(f"模板管型资源声明无效：{key}")
+    root = _template_root(parameters.get("templateDirectory"))
+    source = _confined_profile_path(root, declaration.get("path"))
+    if source.is_dir():
+        descriptor_bytes = _read_template_member(root, source, "profile.json")
+        script_bytes = _read_template_member(root, source, "profile.py")
+        if len(descriptor_bytes) + len(script_bytes) > MAX_TOTAL_BYTES:
+            raise ValueError("模板管型包超过 8 MB")
+        source_name = (source.relative_to(root) / "profile.py").as_posix()
+        package = _package_from_sources(descriptor_bytes, script_bytes, source_name)
+    elif source.is_file() and source.suffix.lower() in (".icaxprofile", ".zip"):
+        package = _inspect(source, "")
+        package["sourceFileName"] = source.relative_to(root).as_posix()
+        package["previewProfile"]["sourceFileName"] = package["sourceFileName"]
+    else:
+        raise ValueError("模板管型资源必须是含 profile.json/profile.py 的目录或 .icaxprofile/.zip 包")
+    package.update(identity)
+    package["id"] = key
+    for field in ("name", "category"):
+        if field in declaration:
+            package[field] = _localized_text(declaration[field], f"模板管型 {field}")
+        elif field in package["descriptor"]:
+            package[field] = _localized_text(package["descriptor"][field], f"模板管型 {field}")
+    _stamp_template_profile(package["previewProfile"], identity, package)
+    package.pop("savedProfileId", None)
+    return package
+
+
+def _list_template_packages(templates: Any) -> list[dict[str, Any]]:
+    if not isinstance(templates, list):
+        raise ValueError("模板管型列表必须提供 templates 数组")
+    packages: list[dict[str, Any]] = []
+    seen_templates: set[str] = set()
+    for template in templates:
+        if not isinstance(template, dict):
+            raise ValueError("模板管型列表中的模板必须是对象")
+        template_id = _template_identifier(template.get("templateId"), "模板 ID", template=True)
+        if template_id in seen_templates:
+            raise ValueError(f"模板管型列表包含重复模板 ID：{template_id}")
+        seen_templates.add(template_id)
+        resources = template.get("profileResources", {})
+        if not isinstance(resources, dict):
+            raise ValueError("模板 profileResources 必须是声明对象")
+        for key in resources:
+            _template_identifier(key, "模板管型资源 ID")
+        for key in sorted(resources):
+            packages.append(_template_package(template, key))
+    return packages
 
 
 def _system_profile_root(value: Any) -> Path:
@@ -387,13 +537,30 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         script_source = parameters.get("scriptSource")
         package_digest = str(parameters.get("packageDigest", ""))
         source_file_name = str(parameters.get("sourceFileName", "管型包.icaxprofile"))
-        return {"profile": _evaluate(
+        profile = _evaluate(
             descriptor,
             script_source,
             parameters.get("values", {}),
             package_digest,
             source_file_name,
-        )}
+        )
+        reference = parameters.get("profileRef")
+        if (parameters.get("profileScope") == "template" or parameters.get("libraryScope") == "template"
+                or isinstance(reference, dict) and reference.get("scope") == "template"):
+            # Frozen package evaluation uses only the descriptor/script supplied
+            # by the committed package; never reopen its original template path.
+            _stamp_template_profile(profile, _template_identity(parameters), parameters)
+        return {"profile": profile}
+    if action == "list-template":
+        return {"templateProfiles": _list_template_packages(parameters.get("templates"))}
+    if action == "evaluate-template":
+        package = _template_package(parameters, parameters.get("profileId"))
+        profile = _evaluate(
+            package["descriptor"], package["scriptSource"], parameters.get("values", {}),
+            package["packageDigest"], package["sourceFileName"],
+        )
+        _stamp_template_profile(profile, _template_identity(package), package)
+        return {"profile": profile}
     if action == "list-system":
         root = _system_profile_root(parameters.get("profileRoot"))
         return {"systemProfiles": _list_system_packages(root)}

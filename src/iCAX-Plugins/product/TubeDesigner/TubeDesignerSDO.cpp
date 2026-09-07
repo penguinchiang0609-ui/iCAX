@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "../../../licensing/include/LicenseRuntime.h"
 
 #include "PartListXlsxExporter.h"
 #include "ComponentModelLibrary.h"
@@ -41,6 +42,7 @@
 #include <fstream>
 #include <mutex>
 #include <numeric>
+#include <unordered_set>
 #include <TopoDS_Shape.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepBndLib.hxx>
@@ -553,6 +555,18 @@ namespace
             const auto _OverrideValues = _Overrides->second.To<ObjectMap>();
             if (_OverrideValues.size() > 64)
                 throw std::invalid_argument("tubeDesignerProfileOverrides has too many entries");
+            for (const auto& [_Prefix, _Value] : _OverrideValues)
+            {
+                if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("管型快照必须是对象");
+                const auto _Profile = _Value.To<ObjectMap>();
+                if (GetString(_Profile, "profileScope") != "template") continue;
+                if (GetString(_Profile, "templateId") != _Package.Descriptor.ID)
+                    throw std::invalid_argument("模板自带管型只能用于所属模板");
+                const auto _ResourcesIt = _Package.Descriptor.Extensions.find("profileResources");
+                if (_ResourcesIt == _Package.Descriptor.Extensions.end() || !_ResourcesIt->second.Is<ObjectMap>()
+                    || !_ResourcesIt->second.To<ObjectMap>().contains(GetString(_Profile, "profileDefinitionId")))
+                    throw std::invalid_argument("当前模板没有声明此管型资源");
+            }
             _Parameters["tubeDesignerProfileOverrides"] = _OverrideValues;
         }
         auto _Request = iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
@@ -1174,6 +1188,7 @@ namespace
     {
         std::string Scope;
         std::string ID;
+        std::string TemplateID;
     };
 
     bool IsSystemProfileID(const std::string& Value_)
@@ -1206,7 +1221,24 @@ namespace
                 throw std::invalid_argument("TubeDesigner system profile ID is invalid");
             return { _Scope, _ID };
         }
-        throw std::invalid_argument("TubeDesigner profileRef.scope must be system or user");
+        if (_Scope == "template")
+        {
+            if (!IsSystemProfileID(_ID)) throw std::invalid_argument("模板管型资源 ID 无效");
+            return { _Scope, _ID, GetRequiredText(_Reference, "templateId", 240) };
+        }
+        throw std::invalid_argument("TubeDesigner profileRef.scope must be system, template or user");
+    }
+
+    ObjectMap ProfileReferencePayload(const SProfileReference& Reference_)
+    {
+        ObjectMap _Result{ { "scope", Reference_.Scope }, { "id", Reference_.ID } };
+        if (Reference_.Scope == "template") _Result["templateId"] = Reference_.TemplateID;
+        return _Result;
+    }
+
+    std::string ProfileResourceIdentity(const SProfileReference& Reference_)
+    {
+        return Reference_.Scope + "/" + (Reference_.Scope == "template" ? Reference_.TemplateID + "/" : "") + Reference_.ID;
     }
 
     TopoDS_Shape BuildProfileExtrusion(
@@ -1486,7 +1518,7 @@ namespace
         const auto _Revision = GetDouble(Request_, "expectedRevision", -1);
         if (!std::isfinite(_Revision) || _Revision < 1 || _Revision > 9007199254740991.0
             || std::floor(_Revision) != _Revision)
-            throw std::invalid_argument("配件版本无效，请刷新配件库后重试");
+            throw std::invalid_argument("配件版本无效，无法完成操作");
         return static_cast<std::uint64_t>(_Revision);
     }
 
@@ -1497,8 +1529,16 @@ namespace
         iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
         auto _Store = GetUserDataStore(ProductContext_);
-        return MakeResponse(ObjectMap{ { "models", ListComponentModelSummaries(
-            ResolveComponentModelRoot(ApplicationContext_), _Store.get()) } });
+        auto _Models = ListComponentModelSummaries(ResolveComponentModelRoot(ApplicationContext_), _Store.get());
+        const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
+        for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
+        {
+            const auto _Package = LoadPythonTemplatePackageFromDirectory(_Directory, _TemplateRoot);
+            auto _TemplateModels = ListTemplateComponentModelSummaries(_Directory, _Package.Descriptor.Extensions,
+                _Package.Descriptor.ID, _Package.Descriptor.DisplayName.Resolve());
+            _Models.insert(_Models.end(), _TemplateModels.begin(), _TemplateModels.end());
+        }
+        return MakeResponse(ObjectMap{ { "models", std::move(_Models) } });
     }
 
     iCAX::Interaction::CInvocationResult HandleImportComponentModel(
@@ -1507,6 +1547,7 @@ namespace
         iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
+        tube::license::Enforce<110, tube::license::Feature::Design>();
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _Path = Utf8Path(GetRequiredText(_Payload, "sourcePath", 32767));
         auto _Store = GetUserDataStore(ProductContext_);
@@ -1529,6 +1570,7 @@ namespace
         iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
+        tube::license::Enforce<111, tube::license::Feature::Design>();
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _ID = UuidToString(ParseRequiredUuid(GetRequiredText(_Payload, "id"), "id"));
         auto _Store = GetUserDataStore(ProductContext_);
@@ -1555,21 +1597,70 @@ namespace
         return MakeResponse(ObjectMap{ { "deleted", _Deleted } });
     }
 
+    ObjectMap ResolveComponentModelRequest(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Application::IProductUserDataStore& Store_, const ObjectMap& Payload_)
+    {
+        const auto _Scope = GetRequiredText(Payload_, "scope", 16);
+        const auto _ID = GetRequiredText(Payload_, "id", 120);
+        if (_Scope == "template")
+        {
+            const auto _TemplateID = GetRequiredText(Payload_, "templateId", 240);
+            const auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _TemplateID);
+            return LoadTemplateComponentModel(_Package.DescriptorPath.parent_path(),
+                _Package.Descriptor.Extensions, _TemplateID, _Package.Descriptor.DisplayName.Resolve(), _ID);
+        }
+        return ResolveComponentModelSnapshot(ResolveComponentModelRoot(ApplicationContext_),
+            &Store_, _Scope, _ID);
+    }
+
+    iCAX::Interaction::CInvocationResult HandleExportComponentModel(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        tube::license::Enforce<302, tube::license::Feature::StepExport>();
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _Snapshot = ResolveComponentModelRequest(ApplicationContext_,
+            *GetUserDataStore(ProductContext_), _Payload);
+        const auto _TargetDirectory = Utf8Path(GetRequiredText(_Payload, "targetDirectory", 32767));
+        if (!_TargetDirectory.is_absolute() || !std::filesystem::is_directory(_TargetDirectory))
+            throw std::invalid_argument("请选择存在的配件 STEP 导出目录");
+        const auto _Name = GetString(_Snapshot, "name", "配件");
+        const auto _TargetPath = MakeUniqueExportPath(_TargetDirectory, _Name, ".step");
+        ExportComponentModelStep(_Snapshot, _TargetPath);
+        ObjectMap _Response{
+            { "path", Utf8PathText(_TargetPath) }, { "format", std::string("step") },
+            { "name", _Name }, { "scope", GetRequiredText(_Payload, "scope", 16) },
+            { "id", GetRequiredText(_Payload, "id", 120) }
+        };
+        if (GetString(_Payload, "scope") == "template")
+            _Response["templateId"] = GetRequiredText(_Payload, "templateId", 240);
+        return MakeResponse(Variant(_Response));
+    }
+
     iCAX::Interaction::CInvocationResult HandleGenerateComponentModelPreview(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext* Scene_)
     {
+        tube::license::Enforce<112, tube::license::Feature::Design>();
         if (!Scene_) throw std::invalid_argument("配件预览需要当前项目场景");
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _Scope = GetRequiredText(_Payload, "scope", 16);
         const auto _ID = GetRequiredText(_Payload, "id", 120);
         auto _Store = GetUserDataStore(ProductContext_);
-        const auto _Snapshot = ResolveComponentModelSnapshot(ResolveComponentModelRoot(ApplicationContext_),
-            _Store.get(), _Scope, _ID);
+        const auto _Snapshot = ResolveComponentModelRequest(ApplicationContext_, *_Store, _Payload);
+        std::string _ResourceIdentity = _Scope + "/" + _ID;
+        if (_Scope == "template")
+        {
+            const auto _TemplateID = GetRequiredText(_Payload, "templateId", 240);
+            _ResourceIdentity = _Scope + "/" + _TemplateID + "/" + _ID;
+        }
         const auto _Name = GetString(_Snapshot, "name");
-        const auto _Resource = StoreBRep(*Scene_, "tube-designer/component-preview/" + _Scope + "/" + _ID,
+        const auto _Resource = StoreBRep(*Scene_, "tube-designer/component-preview/" + _ResourceIdentity,
             _Name, ComponentModelShape(_Snapshot));
         const auto _Geometry = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
             Scene_->Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
@@ -1643,6 +1734,25 @@ namespace
                 ApplicationContext_, Reference_.ID, Parameters_);
             _Profile["profileScope"] = std::string("system");
             _Profile["profileDefinitionId"] = Reference_.ID;
+            return _Profile;
+        }
+        if (Reference_.Scope == "template")
+        {
+            const auto _Package = LoadPythonTemplatePackage(ApplicationContext_, Reference_.TemplateID);
+            const auto _Resources = GetRequiredObject(_Package.Descriptor.Extensions, "profileResources");
+            const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, ObjectMap{
+                { "action", std::string("evaluate-template") },
+                { "templateId", _Package.Descriptor.ID },
+                { "templateName", _Package.Descriptor.DisplayName.Resolve() },
+                { "templateDirectory", PathToUTF8(_Package.DescriptorPath.parent_path()) },
+                { "profileResources", _Resources }, { "profileId", Reference_.ID }, { "values", Parameters_ }
+            });
+            auto _Profile = GetRequiredObject(_Result, "profile");
+            ValidateImportedProfileDefinition(_Profile);
+            _Profile["profileScope"] = std::string("template");
+            _Profile["templateId"] = Reference_.TemplateID;
+            _Profile["profileDefinitionId"] = Reference_.ID;
+            _Profile.erase("savedProfileId");
             return _Profile;
         }
         auto _Profile = ResolveStoredProfileSnapshot(
@@ -1767,6 +1877,54 @@ namespace
         return _Items;
     }
 
+    VariantArray ListTemplateProfileRecords(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        VariantArray _Templates;
+        const auto _Root = ResolveTemplateRoot(ApplicationContext_);
+        for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
+        {
+            const auto _Package = LoadPythonTemplatePackageFromDirectory(_Directory, _Root);
+            const auto _It = _Package.Descriptor.Extensions.find("profileResources");
+            if (_It == _Package.Descriptor.Extensions.end()) continue;
+            const auto _Resources = GetRequiredObject(_Package.Descriptor.Extensions, "profileResources");
+            if (_Resources.empty()) continue;
+            _Templates.emplace_back(ObjectMap{
+                { "templateId", _Package.Descriptor.ID },
+                { "templateName", _Package.Descriptor.DisplayName.Resolve() },
+                { "templateDirectory", PathToUTF8(_Directory) }, { "profileResources", _Resources }
+            });
+        }
+        if (_Templates.empty()) return {};
+        const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, ObjectMap{
+            { "action", std::string("list-template") }, { "templates", std::move(_Templates) }
+        });
+        const auto _It = _Result.find("templateProfiles");
+        if (_It == _Result.end() || !_It->second.Is<VariantArray>())
+            throw std::runtime_error("模板管型目录返回的数据无效");
+        VariantArray _Items;
+        for (const auto& _Value : _It->second.To<VariantArray>())
+        {
+            auto _Package = _Value.To<ObjectMap>();
+            ValidateProfilePackageRecord(_Package);
+            const auto _ID = GetRequiredText(_Package, "id", 80);
+            const auto _TemplateID = GetRequiredText(_Package, "templateId", 240);
+            _Package.erase("scriptSource");
+            _Package["profileType"] = std::string(kParametricProfileRecordType);
+            _Package["libraryScope"] = std::string("template");
+            _Package["profileScope"] = std::string("template");
+            _Package["ownerScope"] = std::string("template");
+            _Package["profileRef"] = ProfileReferencePayload({ "template", _ID, _TemplateID });
+            _Package["revision"] = 0ull;
+            _Package["capabilities"] = ObjectMap{
+                { "editParameters", true }, { "preview", true }, { "export", true },
+                { "rename", false }, { "delete", false }
+            };
+            _Items.emplace_back(std::move(_Package));
+        }
+        return _Items;
+    }
+
     iCAX::Interaction::CInvocationResult HandleListUserData(
         const iCAX::Interaction::CInvocation&,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -1782,6 +1940,7 @@ namespace
             *_Store, kTemplateFeatureID, kParameterPresetRecordType, true);
         _Response["profiles"] = ListProfileUserDataRecords(*_Store);
         _Response["systemProfiles"] = ListSystemProfileRecords(ApplicationContext_);
+        _Response["templateProfiles"] = ListTemplateProfileRecords(ApplicationContext_);
         _Response["profileId"] = std::string("local-default");
         return MakeResponse(Variant(_Response));
     }
@@ -1793,6 +1952,7 @@ namespace
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext*)
     {
+        tube::license::Enforce<113, tube::license::Feature::Design>();
         const auto _Request = DecodeObjectPayload(Request_);
         const auto _SourcePath = GetRequiredText(_Request, "sourcePath", 32767);
         const auto _Extension = [&]() {
@@ -1815,6 +1975,7 @@ namespace
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext*)
     {
+        tube::license::Enforce<114, tube::license::Feature::Design>();
         const auto _Request = DecodeObjectPayload(Request_);
         const auto _SourcePath = GetRequiredText(_Request, "sourcePath", 32767);
         const auto _Extension = [&]() {
@@ -1853,7 +2014,15 @@ namespace
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext*)
     {
+        tube::license::Enforce<115, tube::license::Feature::Design>();
         const auto _Request = DecodeObjectPayload(Request_);
+        if (_Request.contains("profileRef"))
+        {
+            const auto _Reference = ParseProfileReference(_Request);
+            const auto _Profile = ResolveProfileSnapshot(ApplicationContext_, *GetUserDataStore(ProductContext_),
+                _Reference, GetRequiredObject(_Request, "parameters"));
+            return MakeResponse(ObjectMap{ { "profile", _Profile }, { "profileRef", ProfileReferencePayload(_Reference) } });
+        }
         const auto _RecordID = UuidToString(ParseRequiredUuid(
             GetRequiredText(_Request, "id"), "id"));
         auto _Store = GetUserDataStore(ProductContext_);
@@ -1880,6 +2049,7 @@ namespace
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext* Scene_)
     {
+        tube::license::Enforce<116, tube::license::Feature::Design>();
         if (!Scene_)
             throw std::invalid_argument("TubeDesigner.GenerateProfilePreview requires a scene");
         const auto _Request = DecodeObjectPayload(Request_);
@@ -1903,8 +2073,7 @@ namespace
         if (_Shape.IsNull())
             throw std::runtime_error("tube profile preview produced no solid");
         const auto _BRep = StoreBRep(
-            *Scene_, "tube-designer/profile-preview/" + _ProfileReference.Scope
-                + "/" + _ProfileReference.ID,
+            *Scene_, "tube-designer/profile-preview/" + ProfileResourceIdentity(_ProfileReference),
             _Name + " preview", _Shape);
         const auto _Geometry = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
             Scene_->Resources(), _BRep.URL, iCAX::Render::ERenderGeometryKind::Mesh);
@@ -1912,9 +2081,7 @@ namespace
 
         ObjectMap _Response;
         _Response["profile"] = _Profile;
-        _Response["profileRef"] = ObjectMap{
-            { "scope", _ProfileReference.Scope }, { "id", _ProfileReference.ID }
-        };
+        _Response["profileRef"] = ProfileReferencePayload(_ProfileReference);
         _Response["length"] = _Length;
         _Response["geometryResourceId"] = _Geometry.URL;
         _Response["geometryResourceVersion"] = static_cast<unsigned long long>(_Geometry.nVersion);
@@ -1939,6 +2106,8 @@ namespace
         const auto _Format = GetRequiredText(_Request, "format", 16);
         if (_Format != "dxf" && _Format != "step")
             throw std::invalid_argument("profile export format must be dxf or step");
+        if (_Format == "step") tube::license::Enforce<303, tube::license::Feature::StepExport>();
+        else tube::license::Enforce<103, tube::license::Feature::Design>();
         const auto _Length = GetDouble(_Request, "length", 1000.0);
         if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
             throw std::invalid_argument("profile export length must be between 1 and 100000 mm");
@@ -1976,8 +2145,7 @@ namespace
             if (_Shape.IsNull())
                 throw std::runtime_error("tube profile STEP export produced no solid");
             const auto _BRep = StoreBRep(
-                *Scene_, "tube-designer/profile-export/" + _ProfileReference.Scope
-                    + "/" + _ProfileReference.ID,
+                *Scene_, "tube-designer/profile-export/" + ProfileResourceIdentity(_ProfileReference),
                 _Name + " export", _Shape);
             const auto _Result = Scene_->Resources().Export<iCAX::GeometryData::BRepModel>(
                 _BRep.URL,
@@ -1993,9 +2161,7 @@ namespace
         _Response["format"] = _Format;
         _Response["path"] = Utf8PathText(_TargetPath);
         _Response["profileName"] = _Name;
-        _Response["profileRef"] = ObjectMap{
-            { "scope", _ProfileReference.Scope }, { "id", _ProfileReference.ID }
-        };
+        _Response["profileRef"] = ProfileReferencePayload(_ProfileReference);
         _Response["length"] = _Length;
         return MakeResponse(Variant(_Response));
     }
@@ -2007,6 +2173,7 @@ namespace
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext*)
     {
+        tube::license::Enforce<117, tube::license::Feature::Design>();
         const auto _Request = DecodeObjectPayload(Request_);
         const auto _RecordID = UuidToString(ParseRequiredUuid(
             GetRequiredText(_Request, "id"), "id"));
@@ -2041,6 +2208,7 @@ namespace
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext*)
     {
+        tube::license::Enforce<118, tube::license::Feature::Design>();
         const auto _Request = DecodeObjectPayload(Request_);
         const auto _RequestedID = TrimText(GetString(_Request, "id"));
         const auto _RecordID = _RequestedID.empty()
@@ -2328,7 +2496,44 @@ namespace
         return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
     }
 
-    ObjectMap ValidateSideSketch(const ObjectMap& Sketch_)
+    double RequiredSketchNumber(const ObjectMap& Entity_, const std::string& Name_)
+    {
+        const auto _Iterator = Entity_.find(Name_);
+        if (_Iterator == Entity_.end())
+            throw std::invalid_argument("TubeDesigner sketch entity is missing " + Name_);
+        const auto _Value = ToDouble(_Iterator->second, Name_);
+        if (!std::isfinite(_Value))
+            throw std::invalid_argument("TubeDesigner sketch entity has a non-finite " + Name_);
+        return _Value;
+    }
+
+    void ValidateSketchCoordinate(
+        const double Value_, const double Maximum_, const std::string& Name_)
+    {
+        const auto _Tolerance = std::max(1.0e-6, Maximum_ * 1.0e-9);
+        if (Value_ < -_Tolerance || Value_ > Maximum_ + _Tolerance)
+            throw std::invalid_argument("TubeDesigner sketch entity is outside the member bounds: " + Name_);
+    }
+
+    std::pair<double, double> ValidateSketchPoint(
+        const Variant& Value_, const double Length_, const double FaceHeight_,
+        const std::string& Name_)
+    {
+        if (!Value_.Is<VariantArray>())
+            throw std::invalid_argument("TubeDesigner sketch point must be an array: " + Name_);
+        const auto _Coordinates = Value_.To<VariantArray>();
+        if (_Coordinates.size() != 2)
+            throw std::invalid_argument("TubeDesigner sketch point must contain x and y: " + Name_);
+        const auto _X = ToDouble(_Coordinates[0], Name_ + ".x");
+        const auto _Y = ToDouble(_Coordinates[1], Name_ + ".y");
+        if (!std::isfinite(_X) || !std::isfinite(_Y))
+            throw std::invalid_argument("TubeDesigner sketch point must be finite: " + Name_);
+        ValidateSketchCoordinate(_X, Length_, Name_ + ".x");
+        ValidateSketchCoordinate(_Y, FaceHeight_, Name_ + ".y");
+        return { _X, _Y };
+    }
+
+    ObjectMap ValidateSideSketch(const ObjectMap& Sketch_, const double ExpectedLength_)
     {
         if (GetString(Sketch_, "schema") != "icax.tube-sketch"
             || GetUInt64(Sketch_, "schemaVersion", 0) != 1)
@@ -2341,8 +2546,26 @@ namespace
         if (_Entities == Sketch_.end() || !_Entities->second.Is<VariantArray>())
             throw std::invalid_argument("TubeDesigner sketch requires an entity array");
         const auto _EntityValues = _Entities->second.To<VariantArray>();
-        if (_EntityValues.empty() || _EntityValues.size() > 5000)
+        if (_EntityValues.size() > 5000)
             throw std::invalid_argument("TubeDesigner sketch entity count is invalid");
+        const auto _Length = GetDouble(Sketch_, "length", 0.0);
+        const auto _FaceHeight = GetDouble(Sketch_, "faceHeight", 0.0);
+        if (!std::isfinite(_Length) || _Length <= 0.0 || _Length > 1.0e7
+            || !std::isfinite(_FaceHeight) || _FaceHeight <= 0.0 || _FaceHeight > 1.0e6)
+        {
+            throw std::invalid_argument("TubeDesigner side sketch bounds are invalid");
+        }
+        const auto _LengthTolerance = std::max(1.0e-6, ExpectedLength_ * 1.0e-7);
+        if (!std::isfinite(ExpectedLength_) || ExpectedLength_ <= 0.0
+            || std::abs(_Length - ExpectedLength_) > _LengthTolerance)
+        {
+            throw std::invalid_argument("TubeDesigner side sketch does not match the current member length");
+        }
+        if (GetString(Sketch_, "unit") != "mm")
+            throw std::invalid_argument("TubeDesigner side sketch unit must be mm");
+
+        std::unordered_set<std::string> _IDs;
+        std::size_t _PointCount = 0;
         for (const auto& _Value : _EntityValues)
         {
             if (!_Value.Is<ObjectMap>())
@@ -2355,14 +2578,84 @@ namespace
             {
                 throw std::invalid_argument("TubeDesigner sketch entity kind is not supported");
             }
-            GetRequiredText(_Entity, "id", 160);
-        }
-        const auto _Length = GetDouble(Sketch_, "length", 0.0);
-        const auto _FaceHeight = GetDouble(Sketch_, "faceHeight", 0.0);
-        if (!std::isfinite(_Length) || _Length <= 0.0
-            || !std::isfinite(_FaceHeight) || _FaceHeight <= 0.0)
-        {
-            throw std::invalid_argument("TubeDesigner side sketch bounds are invalid");
+            const auto _ID = GetRequiredText(_Entity, "id", 160);
+            if (!_IDs.insert(_ID).second)
+                throw std::invalid_argument("TubeDesigner sketch entity IDs must be unique");
+
+            if (_Kind == "line")
+            {
+                const auto _X1 = RequiredSketchNumber(_Entity, "x1");
+                const auto _Y1 = RequiredSketchNumber(_Entity, "y1");
+                const auto _X2 = RequiredSketchNumber(_Entity, "x2");
+                const auto _Y2 = RequiredSketchNumber(_Entity, "y2");
+                ValidateSketchCoordinate(_X1, _Length, "x1");
+                ValidateSketchCoordinate(_X2, _Length, "x2");
+                ValidateSketchCoordinate(_Y1, _FaceHeight, "y1");
+                ValidateSketchCoordinate(_Y2, _FaceHeight, "y2");
+                if (std::hypot(_X2 - _X1, _Y2 - _Y1) <= 1.0e-6)
+                    throw std::invalid_argument("TubeDesigner sketch line cannot have zero length");
+            }
+            else if (_Kind == "rectangle")
+            {
+                const auto _X = RequiredSketchNumber(_Entity, "x");
+                const auto _Y = RequiredSketchNumber(_Entity, "y");
+                const auto _Width = RequiredSketchNumber(_Entity, "width");
+                const auto _Height = RequiredSketchNumber(_Entity, "height");
+                if (_Width <= 1.0e-6 || _Height <= 1.0e-6)
+                    throw std::invalid_argument("TubeDesigner sketch rectangle dimensions must be positive");
+                ValidateSketchCoordinate(_X, _Length, "x");
+                ValidateSketchCoordinate(_Y, _FaceHeight, "y");
+                ValidateSketchCoordinate(_X + _Width, _Length, "x + width");
+                ValidateSketchCoordinate(_Y + _Height, _FaceHeight, "y + height");
+            }
+            else if (_Kind == "circle")
+            {
+                const auto _X = RequiredSketchNumber(_Entity, "cx");
+                const auto _Y = RequiredSketchNumber(_Entity, "cy");
+                const auto _Radius = RequiredSketchNumber(_Entity, "radius");
+                if (_Radius <= 1.0e-6)
+                    throw std::invalid_argument("TubeDesigner sketch circle radius must be positive");
+                ValidateSketchCoordinate(_X - _Radius, _Length, "cx - radius");
+                ValidateSketchCoordinate(_X + _Radius, _Length, "cx + radius");
+                ValidateSketchCoordinate(_Y - _Radius, _FaceHeight, "cy - radius");
+                ValidateSketchCoordinate(_Y + _Radius, _FaceHeight, "cy + radius");
+            }
+            else if (_Kind == "text")
+            {
+                ValidateSketchCoordinate(RequiredSketchNumber(_Entity, "x"), _Length, "x");
+                ValidateSketchCoordinate(RequiredSketchNumber(_Entity, "y"), _FaceHeight, "y");
+                (void)GetRequiredText(_Entity, "value", 2000);
+            }
+            else
+            {
+                const auto _Points = _Entity.find("points");
+                if (_Points == _Entity.end() || !_Points->second.Is<VariantArray>())
+                    throw std::invalid_argument("TubeDesigner sketch curve requires points");
+                const auto _Values = _Points->second.To<VariantArray>();
+                const auto _Minimum = (_Kind == "arc" || _Kind == "spline") ? 3ull : 2ull;
+                if (_Values.size() < _Minimum || _Values.size() > 10000)
+                    throw std::invalid_argument("TubeDesigner sketch curve point count is invalid");
+                _PointCount += _Values.size();
+                if (_PointCount > 100000)
+                    throw std::invalid_argument("TubeDesigner sketch contains too many curve points");
+                auto _Previous = ValidateSketchPoint(_Values.front(), _Length, _FaceHeight, "points[0]");
+                double _CurveLength = 0.0;
+                for (std::size_t _Index = 1; _Index < _Values.size(); ++_Index)
+                {
+                    const auto _Current = ValidateSketchPoint(_Values[_Index], _Length, _FaceHeight,
+                        "points[" + std::to_string(_Index) + "]");
+                    _CurveLength += std::hypot(_Current.first - _Previous.first, _Current.second - _Previous.second);
+                    _Previous = _Current;
+                }
+                if (_CurveLength <= 1.0e-6)
+                    throw std::invalid_argument("TubeDesigner sketch curve cannot have zero length");
+            }
+
+            if (const auto _Closed = _Entity.find("closed");
+                _Closed != _Entity.end() && !_Closed->second.Is<bool>())
+            {
+                throw std::invalid_argument("TubeDesigner sketch closed flag must be boolean");
+            }
         }
         return Sketch_;
     }
@@ -2375,6 +2668,7 @@ namespace
         iCAX::Project::ISceneContext* Scene_)
     {
         if (!Scene_) throw std::invalid_argument("TubeDesigner.SaveSketch requires a scene");
+        tube::license::Enforce<102, tube::license::Feature::Design>();
         const auto _Payload = DecodeObjectPayload(Request_);
         auto& _Repository = Scene_->Database();
         const auto _Meta = _Repository.GetMetaEntity();
@@ -2393,8 +2687,9 @@ namespace
         if (!_Member || _Member->GetProductID() != _ProductID)
             throw std::invalid_argument("TubeDesigner sketch target member does not belong to the product");
 
-        auto _Sketch = ValidateSideSketch(GetRequiredObject(_Payload, "sketch"));
+        auto _Sketch = ValidateSideSketch(GetRequiredObject(_Payload, "sketch"), _Member->GetLength());
         _Sketch["targetMemberId"] = UuidToString(_MemberID);
+        _Sketch["targetMemberKey"] = _Member->GetStableKey();
         auto _Sketches = _Product->GetSketches();
         _Sketches["schema"] = std::string("icax.tube-sketch-set");
         _Sketches["schemaVersion"] = 1ull;
@@ -2404,8 +2699,18 @@ namespace
         {
             _Side = _Existing->second.To<ObjectMap>();
         }
-        _Side[UuidToString(_MemberID)] = _Sketch;
-        _Sketches["side"] = _Side;
+        for (auto _Iterator = _Side.begin(); _Iterator != _Side.end();)
+        {
+            const auto _MatchesID = _Iterator->first == UuidToString(_MemberID);
+            const auto _MatchesStableKey = !_Member->GetStableKey().empty()
+                && _Iterator->second.Is<ObjectMap>()
+                && GetString(_Iterator->second.To<ObjectMap>(), "targetMemberKey") == _Member->GetStableKey();
+            _Iterator = _MatchesID || _MatchesStableKey ? _Side.erase(_Iterator) : std::next(_Iterator);
+        }
+        if (!_Sketch.at("entities").To<VariantArray>().empty())
+            _Side[UuidToString(_MemberID)] = _Sketch;
+        if (_Side.empty()) _Sketches.erase("side");
+        else _Sketches["side"] = _Side;
 
         auto _Undo = _Repository.BeginUndoCommand("Save TubeDesigner side sketch");
         auto& _Transaction = _Repository.BeginTransaction("Update TubeDesigner side sketch");
@@ -2719,6 +3024,7 @@ namespace
         iCAX::Project::ISceneContext* Scene_)
     {
         if (!Scene_) throw std::invalid_argument("TubeDesigner.GeneratePreview requires a scene");
+        tube::license::Enforce<101, tube::license::Feature::Design>();
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _TemplateID = GetString(_Payload, "templateId");
         if (!IsPythonTemplate(ApplicationContext_, _TemplateID))
@@ -2888,8 +3194,15 @@ namespace
                 _SideSketches != _Sketches.end() && _SideSketches->second.Is<ObjectMap>())
             {
                 const auto _Side = _SideSketches->second.To<ObjectMap>();
-                if (const auto _Sketch = _Side.find(UuidToString(_MemberID));
-                    _Sketch != _Side.end() && _Sketch->second.Is<ObjectMap>())
+                auto _Sketch = _Side.find(UuidToString(_MemberID));
+                if (_Sketch == _Side.end())
+                {
+                    _Sketch = std::find_if(_Side.begin(), _Side.end(), [&](const auto& Entry_) {
+                        return Entry_.second.Is<ObjectMap>()
+                            && GetString(Entry_.second.To<ObjectMap>(), "targetMemberKey") == _Item.Key;
+                    });
+                }
+                if (_Sketch != _Side.end() && _Sketch->second.Is<ObjectMap>())
                 {
                     _ItemProperties["tubeDesigner.sideSketch"] = _Sketch->second;
                 }
@@ -2988,6 +3301,7 @@ namespace
         iCAX::Project::ISceneContext* Scene_)
     {
         if (!Scene_) throw std::invalid_argument("TubeDesigner.Disassemble requires a scene");
+        tube::license::Enforce<201, tube::license::Feature::Breakdown>();
         const auto _Payload = DecodeObjectPayload(Request_);
         auto& _Repository = Scene_->Database();
         const auto _Meta = _Repository.GetMetaEntity();
@@ -3233,6 +3547,7 @@ namespace
         iCAX::Project::ISceneContext* Scene_)
     {
         if (!Scene_) throw std::invalid_argument("TubeDesigner.ExportSelected requires a scene");
+        tube::license::Enforce<301, tube::license::Feature::StepExport>();
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _TargetDirectory = GetString(_Payload, "targetDirectory");
         const auto _ExpectedGenerationRunID = GetString(_Payload, "generationRunId");
@@ -3857,6 +4172,7 @@ namespace
         iCAX::Project::ISceneContext* Scene_)
     {
         if (!Scene_) throw std::invalid_argument("TubeDesigner.Nest requires a scene");
+        tube::license::Enforce<401, tube::license::Feature::Production>();
         if (Request_.Payload.size() > 8 * 1024 * 1024)
             throw std::invalid_argument("排样请求过大，请分批排样");
         const auto _Payload = DecodeObjectPayload(Request_);
@@ -3982,6 +4298,7 @@ namespace
         iCAX::Project::ISceneContext* Scene_)
     {
         if (!Scene_) throw std::invalid_argument("TubeDesigner.ExportNesting requires a scene");
+        tube::license::Enforce<402, tube::license::Feature::Production>();
         if (Request_.Payload.size() > 16 * 1024 * 1024)
             throw std::invalid_argument("导出请求过大，请分批导出");
         const auto _Payload = DecodeObjectPayload(Request_);
@@ -4079,6 +4396,7 @@ namespace
             ExposeMethod("UpdateComponentModel", &HandleUpdateComponentModel);
             ExposeMethod("DeleteComponentModel", &HandleDeleteComponentModel);
             ExposeMethod("GenerateComponentModelPreview", &HandleGenerateComponentModelPreview);
+            ExposeMethod("ExportComponentModel", &HandleExportComponentModel);
             ExposeMethod("SaveCustomer", &HandleSaveCustomer);
             ExposeMethod("DeleteCustomer", &HandleDeleteCustomer);
             ExposeMethod("SaveParameterPreset", &HandleSaveParameterPreset);

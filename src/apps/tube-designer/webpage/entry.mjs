@@ -208,7 +208,7 @@ export function getWindowCloseGuard(context) {
 function withDesignerContext(context) {
   return {
     ...context,
-    areaTitleOverrides: { view: "产品", nesting: "下料", profiles: "管型", components: "配件库", sketch: "草图", about: "关于" },
+    areaTitleOverrides: { view: "产品", nesting: "下料", profiles: "管型库", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {
         left: renderDesignerLeftPane,

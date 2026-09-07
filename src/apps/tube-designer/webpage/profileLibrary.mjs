@@ -2,63 +2,74 @@ import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/ut
 
 
 export const PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS = 500;
-export const PROFILE_PREVIEW_CACHE_PROGRESS_DELAY_MS = 160;
+export const PROFILE_PREVIEW_PROGRESS_DELAY_MS = 200;
 const MINIMUM_PROGRESS_MS = 500;
 const DEFAULT_PROFILE_PREVIEW_LENGTH = 1000;
 
 
 export function renderProfileLibraryLeftPane(_context, view) {
-  const profiles = libraryProfiles(view);
+  const state = profileLibraryState(view);
+  const all = libraryProfiles(view);
+  const profiles = visibleLibraryProfiles(view);
   const selectedId = ensureSelectedProfile(view, profiles);
-  const systemProfiles = profiles.filter((profile) => profileScope(profile) === "system");
-  const userProfiles = profiles.filter((profile) => profileScope(profile) === "user");
   const renderCard = (profile) => {
     const scope = profileScope(profile);
     const selectionKey = profileSelectionKey(profile);
     const editable = isParametricProfile(profile);
     return `<button type="button" class="tube-profile-library-card ${selectionKey === selectedId ? "selected" : ""}" data-cam-action="tube-designer-profile-library-select" data-tube-designer-profile-key="${escapeAttr(selectionKey)}" data-tube-designer-profile-scope="${escapeAttr(scope)}" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>
-      <span class="tube-profile-library-card-icon ${scope === "system" ? "is-system" : ""}">${scope === "system" ? "S" : (editable ? "P" : "D")}</span>
+      <span class="tube-profile-library-card-icon ${scope === "system" ? "is-system" : ""}">${scope === "template" ? "T" : scope === "system" ? "S" : (editable ? "P" : "D")}</span>
       <span class="tube-profile-library-card-copy">
         <strong>${escapeText(profileName(profile))}</strong>
-        <small>${scope === "system" ? "系统内置 · 参数化" : (editable ? "可编辑管型包" : "DXF 冻结截面")}</small>
+        <small>${scope === "template" ? escapeText(profile.templateName || profile.templateId) : scope === "system" ? "系统内置 · 参数化" : (editable ? "可编辑管型包" : "DXF 冻结截面")}</small>
         <em>${escapeText(profileSpecification(profile))}</em>
       </span>
       <i aria-hidden="true"></i>
     </button>`;
   };
-  const renderGroup = (scope, title, items) => `<details class="tube-profile-library-group" data-tube-profile-library-group="${scope}" open>
-    <summary><strong>${title}</strong><span>${items.length} 个</span></summary>
+  const renderGroup = (key, title, items) => `<details class="tube-profile-library-group" data-tube-profile-library-group="${escapeAttr(key)}" open>
+    <summary><strong>${escapeText(title)}</strong><span>${items.length} 个</span></summary>
     <div class="tube-profile-library-group-content">
-      ${items.length ? items.map(renderCard).join("") : `<div class="tube-profile-library-empty compact">
-        <strong>${scope === "system" ? "没有可用的系统管型" : "还没有我的管型"}</strong>
-        <span>${scope === "system" ? "请检查内置管型资源是否完整。" : "可导入可编辑管型包，或导入 DXF 冻结截面。"}</span>
-      </div>`}
+      ${items.map(renderCard).join("")}
     </div>
   </details>`;
+  const groups = new Map();
+  for (const profile of profiles) {
+    const key = state.scope === "template" ? String(profile.templateId) : profileCategory(profile);
+    if (!groups.has(key)) groups.set(key, { title: state.scope === "template" ? profile.templateName || profile.templateId : key, items: [] });
+    groups.get(key).items.push(profile);
+  }
   return `<div class="tube-designer-panel tube-profile-library-panel">
     <div class="tube-designer-heading tube-profile-library-heading">
-      <div><strong>管型</strong><span>${systemProfiles.length} 个系统内置 · ${userProfiles.length} 个我的管型</span></div>
+      <div><strong>管型库</strong><span>${all.length} 个管型 · 当前显示 ${profiles.length} 个</span></div>
+      <button type="button" class="tube-designer-primary" data-cam-action="tube-designer-profile-library-new-sketch" ${view?.pending ? "disabled" : ""}>草图新建</button>
     </div>
-    <div class="tube-profile-library-list">
-      ${renderGroup("system", "系统内置", systemProfiles)}
-      ${renderGroup("user", "我的管型", userProfiles)}
+    <div class="tube-component-library-filters tube-profile-library-filters">
+      <input type="search" aria-label="搜索管型" placeholder="搜索名称、规格、所属模板" value="${escapeAttr(state.search)}" data-cam-change-action="tube-designer-profile-library-search" />
+      <div role="tablist" aria-label="管型来源">${[["system", "系统内置"], ["template", "模板自带"], ["user", "我的"]].map(([scope, title]) => `<button type="button" role="tab" aria-selected="${scope === state.scope}" class="${scope === state.scope ? "selected" : ""}" data-cam-action="tube-designer-profile-library-scope" data-tube-profile-library-scope="${scope}" ${view?.pending ? "disabled" : ""}>${title}<small> ${all.filter((profile) => profileScope(profile) === scope).length}</small></button>`).join("")}</div>
+    </div>
+    <div class="tube-profile-library-list" role="tabpanel">
+      ${[...groups].map(([key, group]) => renderGroup(key, group.title, group.items)).join("")}
+      ${profiles.length ? "" : `<div class="tube-profile-library-empty compact"><strong>${state.search ? "没有匹配的管型" : { system: "没有可用的系统管型", template: "还没有模板自带管型", user: "还没有我的管型" }[state.scope]}</strong><span>${state.search ? "请调整搜索内容。" : state.scope === "template" ? "模板自带管型按所属模板管理，仅供该模板使用。" : state.scope === "user" ? "可导入可编辑管型包，或导入 DXF 冻结截面。" : "请检查内置管型资源是否完整。"}</span></div>`}
     </div>
   </div>`;
 }
 
 
 export function renderProfileLibraryRightPane(_context, view) {
-  const profiles = libraryProfiles(view);
+  const profiles = visibleLibraryProfiles(view);
   const selectedId = ensureSelectedProfile(view, profiles);
   const profile = profiles.find((item) => profileSelectionKey(item) === selectedId);
   const dialog = renderProfilePackageImportDialog(view);
   if (!profile) {
     return `<div class="tube-designer-panel tube-profile-library-editor-empty">
       <div class="tube-designer-heading"><strong>管型属性</strong><span>尚未选择管型</span></div>
-      <div class="tube-designer-empty">导入后可在这里修改名称；可编辑管型包还可以修改默认参数。</div>
+      <div class="tube-designer-empty">从左侧选择管型，中央显示三维预览；模板自带资源仅供所属模板使用。</div>
+      <button type="button" class="tube-designer-primary" data-cam-action="tube-designer-profile-library-new-sketch" ${view?.pending ? "disabled" : ""}>绘制新截面</button>
     </div>${dialog}`;
   }
   const system = profileScope(profile) === "system";
+  const template = profileScope(profile) === "template";
+  const readOnly = system || template;
   const editable = isParametricProfile(profile);
   const allDefinitions = editable && Array.isArray(profile?.descriptor?.parameters)
     ? profile.descriptor.parameters : [];
@@ -74,23 +85,24 @@ export function renderProfileLibraryRightPane(_context, view) {
   const previewLength = normalizedPreviewLength(view);
   return `<div class="tube-designer-panel tube-profile-library-editor" data-tube-profile-library-editor data-tube-designer-profile-key="${escapeAttr(profileKey)}" data-tube-designer-profile-scope="${escapeAttr(profileScope(profile))}" data-tube-designer-profile-id="${escapeAttr(profile.id)}">
     <div class="tube-designer-heading">
-      <strong>${system ? "系统内置管型" : (editable ? "可编辑管型" : "DXF 管型")}</strong>
-      <span>${system ? "参数可编辑；系统原定义保持不变" : (editable ? "参数变化会生成新的默认截面" : "截面几何已冻结")}</span>
+      <strong>${template ? "模板自带管型" : system ? "系统内置管型" : (editable ? "可编辑管型" : "DXF 管型")}</strong>
+      <span>${template ? `仅供 ${escapeText(profile.templateName || profile.templateId)} 使用` : system ? "参数可编辑；系统原定义保持不变" : (editable ? "参数变化会生成新的默认截面" : "截面几何已冻结")}</span>
     </div>
     <div class="tube-profile-library-editor-body">
-      ${system
-        ? `<div class="tube-profile-library-system-name"><span>管型名称</span><strong>${escapeText(profileName(profile))}</strong><small>系统内置名称不可修改</small></div>`
+      ${readOnly
+        ? `<div class="tube-profile-library-system-name"><span>管型名称</span><strong>${escapeText(profileName(profile))}</strong><small>${template ? "模板自带" : "系统内置"}名称不可修改</small></div>`
         : `<label class="tube-designer-field wide"><span>管型名称</span><input type="text" data-tube-profile-editor-name value="${escapeAttr(profileName(profile))}" maxlength="120" ${view?.pending ? "disabled" : ""} /></label>`}
       <div class="tube-designer-imported-profile-summary">
-        <strong>${escapeText(system ? "系统内置资源" : (profile.sourceFileName ?? "管型资源"))}</strong>
+        <strong>${escapeText(template ? `所属模板：${profile.templateName || profile.templateId}` : system ? "系统内置资源" : (profile.sourceFileName ?? "管型资源"))}</strong>
         <span>${escapeText(profileSpecification(profile))}</span>
         <small>${editable ? `${escapeText(profile?.descriptor?.id ?? "")} · 版本 ${escapeText(profile?.descriptor?.version ?? "")}` : `${escapeText(profile.sourceUnit ?? "毫米")} · ${Number(profile.contourCount ?? profile.contours?.length ?? 0)} 条轮廓`}</small>
       </div>
       ${editable ? `<section class="tube-profile-library-parameter-section">
-        <header><strong>${system ? "预览参数" : "默认参数"}</strong><span>${system ? "仅影响当前预览与本次导出" : "产品选择此管型时仍可单独修改"}</span></header>
+        <header><strong>${readOnly ? "预览参数" : "默认参数"}</strong><span>${readOnly ? "仅影响当前预览与本次导出" : "产品选择此管型时仍可单独修改"}</span></header>
         <div class="tube-profile-library-parameter-list">${definitions.map((definition) => renderPackageParameter(definition, values, view?.pending)).join("")}</div>
       </section>` : `<p class="tube-profile-library-frozen-note">DXF 描述什么就使用什么；这里只允许修改名称。</p>`}
       ${system ? `<p class="tube-profile-library-system-note">系统内置管型不可重命名或删除。修改参数只会生成当前预览和导出结果，不会覆盖系统定义。</p>` : ""}
+      ${template ? `<p class="tube-profile-library-system-note">此管型随所属模板提供，不可重命名或删除。进入草图编辑时会创建独立副本，不会覆盖模板资源。</p>` : ""}
       <section class="tube-profile-library-preview-section">
         <header><strong>截面与标准管预览</strong><span>中央显示可旋转、缩放的三维拉伸体</span></header>
         <div class="tube-profile-library-miniature">${snapshot ? renderProfileSvg(snapshot) : ""}</div>
@@ -101,16 +113,19 @@ export function renderProfileLibraryRightPane(_context, view) {
         </div>
       </section>
     </div>
-    ${system ? "" : `<footer class="tube-profile-library-editor-footer">
-      <button class="tube-designer-danger" data-cam-action="tube-designer-profile-library-delete" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>删除管型</button>
-      <button class="tube-designer-primary" data-cam-action="tube-designer-profile-library-save" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>${editable ? "保存名称和默认参数" : "保存名称"}</button>
-    </footer>`}
+    <footer class="tube-profile-library-editor-footer">
+      <div>
+        ${readOnly ? "" : `<button class="tube-designer-danger" data-cam-action="tube-designer-profile-library-delete" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>删除管型</button>`}
+        <button class="tube-designer-secondary" data-cam-action="tube-designer-profile-library-edit-sketch" data-tube-designer-profile-key="${escapeAttr(profileKey)}" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>${profileScope(profile) === "user" && !editable ? "编辑截面" : "基于此管型编辑"}</button>
+      </div>
+      ${readOnly ? "" : `<button class="tube-designer-primary" data-cam-action="tube-designer-profile-library-save" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>${editable ? "保存名称和默认参数" : "保存名称"}</button>`}
+    </footer>
   </div>${dialog}`;
 }
 
 
 export function renderProfileLibraryViewportOverlay(context, view) {
-  const profiles = libraryProfiles(view);
+  const profiles = visibleLibraryProfiles(view);
   const selectedId = ensureSelectedProfile(view, profiles);
   const profile = profiles.find((item) => profileSelectionKey(item) === selectedId);
   scheduleProfileLibraryPreview(context, view, profile);
@@ -134,12 +149,30 @@ export function renderProfileLibraryViewportOverlay(context, view) {
 
 
 export async function handleProfileLibraryAction(context, view, action, target, ops) {
+  if (action === "tube-designer-profile-library-scope" || action === "tube-designer-profile-library-search") {
+    if (!view.pending) {
+      const state = profileLibraryState(view);
+      if (action.endsWith("scope")) {
+        const scope = String(target?.dataset?.tubeProfileLibraryScope ?? "");
+        if (!["system", "template", "user"].includes(scope)) return { handled: true };
+        state.selectedByScope[state.scope] = view.tubeDesignerSelectedProfileId;
+        state.scope = scope;
+        view.tubeDesignerSelectedProfileId = state.selectedByScope[scope] ?? "";
+      } else state.search = String(target?.value ?? "");
+      clearProfilePreviewRequest(view);
+      ensureSelectedProfile(view, visibleLibraryProfiles(view));
+      view.error = "";
+      ops.renderProject(context, view);
+    }
+    return { handled: true };
+  }
   if (action === "tube-designer-profile-library-select") {
     if (!view.pending) {
       view.tubeDesignerSelectedProfileId = String(
         target?.dataset?.tubeDesignerProfileKey
         ?? `${target?.dataset?.tubeDesignerProfileScope ?? "user"}:${target?.dataset?.tubeDesignerProfileId ?? ""}`,
       );
+      clearProfilePreviewRequest(view);
       view.error = "";
       ops.renderProject(context, view);
     }
@@ -201,15 +234,49 @@ export async function handleProfileLibraryRibbonCommand(context, view, commandId
 }
 
 
-function libraryProfiles(view) {
+export function profileLibraryState(view) {
+  const current = String(view.tubeDesignerSelectedProfileId ?? "");
+  const initialScope = current.startsWith("template:") ? "template" : current.startsWith("user:")
+    || (view.tubeDesignerUserData?.profiles ?? []).some((profile) => String(profile?.id ?? "") === current) ? "user" : "system";
+  const state = view.tubeDesignerProfileLibrary ??= { scope: initialScope, search: "", selectedByScope: {} };
+  if (!["system", "template", "user"].includes(state.scope)) state.scope = "system";
+  state.selectedByScope ??= {};
+  return state;
+}
+
+
+export function libraryProfiles(view) {
   const system = (Array.isArray(view?.tubeDesignerSystemProfiles)
     ? view.tubeDesignerSystemProfiles : [])
     .map((profile) => ({ ...profile, libraryScope: "system" }));
   const user = (Array.isArray(view?.tubeDesignerUserData?.profiles)
     ? view.tubeDesignerUserData.profiles : [])
     .map((profile) => ({ ...profile, libraryScope: "user" }));
+  const template = (Array.isArray(view?.tubeDesignerTemplateProfiles) ? view.tubeDesignerTemplateProfiles : [])
+    .filter((profile) => profile?.templateId && profile?.id)
+    .map((profile) => ({ ...profile, libraryScope: "template" }));
   const byName = (left, right) => profileName(left).localeCompare(profileName(right), "zh-CN");
-  return [...system.sort(byName), ...user.sort(byName)];
+  return [...system.sort(byName), ...template.sort((left, right) => String(left.templateName || left.templateId).localeCompare(String(right.templateName || right.templateId), "zh-CN") || byName(left, right)), ...user.sort(byName)];
+}
+
+
+function profileCategory(profile) {
+  return localizedText(profile?.category ?? profile?.descriptor?.category, isParametricProfile(profile) ? "参数化管型" : "DXF 截面");
+}
+
+
+export function visibleLibraryProfiles(view) {
+  const state = profileLibraryState(view);
+  const query = String(state.search ?? "").trim().toLocaleLowerCase();
+  return libraryProfiles(view).filter((profile) => profileScope(profile) === state.scope
+    && [profileName(profile), profileSpecification(profile), profileCategory(profile), profile.templateName, profile.templateId]
+      .some((value) => String(value ?? "").toLocaleLowerCase().includes(query)));
+}
+
+
+export function templateProfilesForProduct(view, templateId) {
+  return libraryProfiles(view).filter((profile) => profileScope(profile) === "template"
+    && String(profile.templateId) === String(templateId ?? ""));
 }
 
 
@@ -224,18 +291,25 @@ function ensureSelectedProfile(view, profiles) {
   }
   const next = profiles[0] ? profileSelectionKey(profiles[0]) : "";
   view.tubeDesignerSelectedProfileId = next;
+  if (!next) {
+    clearProfilePreviewRequest(view);
+    view.viewport?.setVisibleEntityIds?.([]);
+    view.viewport?.setSelectedObjectIds?.([], "");
+    hidePreviewProgress();
+  }
   return next;
 }
 
 
-function profileScope(profile) {
-  return String(profile?.libraryScope ?? profile?.scope ?? "user") === "system"
-    ? "system" : "user";
+export function profileScope(profile) {
+  const scope = String(profile?.libraryScope ?? profile?.profileScope ?? profile?.scope ?? "user");
+  return ["system", "template"].includes(scope) ? scope : "user";
 }
 
 
-function profileSelectionKey(profile) {
-  return `${profileScope(profile)}:${String(profile?.id ?? "")}`;
+export function profileSelectionKey(profile) {
+  const scope = profileScope(profile);
+  return scope === "template" ? `template:${encodeURIComponent(String(profile?.templateId ?? ""))}:${encodeURIComponent(String(profile?.id ?? ""))}` : `${scope}:${String(profile?.id ?? "")}`;
 }
 
 
@@ -252,8 +326,9 @@ function findLibraryProfile(view, keyOrId, scope = "") {
 }
 
 
-function profileRef(profile) {
-  return { scope: profileScope(profile), id: String(profile?.id ?? "") };
+export function profileRef(profile) {
+  const scope = profileScope(profile);
+  return { scope, ...(scope === "template" ? { templateId: String(profile?.templateId ?? "") } : {}), id: String(profile?.id ?? "") };
 }
 
 
@@ -267,7 +342,7 @@ function profileName(profile) {
 
 
 function isParametricProfile(profile) {
-  return profileScope(profile) === "system" || profileType(profile) === "parametric-package";
+  return profileScope(profile) !== "user" || profileType(profile) === "parametric-package";
 }
 
 
@@ -280,6 +355,44 @@ function profileSnapshot(profile) {
   return isParametricProfile(profile)
     ? profile?.previewProfile ?? profile?.profile ?? (profile?.contours ? profile : null)
     : profile ?? null;
+}
+
+export async function resolveSelectedProfileSketchSource(context, view) {
+  const profiles = visibleLibraryProfiles(view);
+  const selectedKey = ensureSelectedProfile(view, profiles);
+  const profile = profiles.find((item) => profileSelectionKey(item) === selectedKey) ?? null;
+  if (!profile) throw new Error("请先选择一个要编辑的管型。");
+  const key = profilePreviewKey(view, profile);
+  let response = view?.tubeDesignerProfilePreview?.key === key
+    ? view.tubeDesignerProfilePreview.response
+    : null;
+  if (!response?.profile && view?.tubeDesignerProfilePreviewRequest?.key === key) {
+    response = await view.tubeDesignerProfilePreviewRequest.operation;
+  }
+  if (!response?.profile && isParametricProfile(profile)
+      && typeof context?.sceneProxy?.invoke === "function") {
+    response = await invokeSceneProduct(
+      context,
+      "TubeDesigner.GenerateProfilePreview",
+      {
+        profileRef: profileRef(profile),
+        parameters: profilePreviewParameters(view, profile),
+        length: normalizedPreviewLength(view),
+      },
+      { timeoutMs: 30000 },
+    );
+  }
+  const snapshot = response?.profile ?? profileSnapshot(profile);
+  if (!snapshot?.contours?.length) throw new Error("所选管型没有可编辑的截面轮廓。");
+  return {
+    snapshot,
+    profileId: String(profile.id ?? ""),
+    profileKey: profileSelectionKey(profile),
+    scope: profileScope(profile),
+    revision: Number(profile.revision ?? 0),
+    name: profileName(profile),
+    directUpdate: profileScope(profile) === "user" && !isParametricProfile(profile),
+  };
 }
 
 
@@ -307,11 +420,12 @@ function profilePreviewParameters(view, profile) {
 
 function profilePreviewKey(view, profile) {
   if (!profile?.id) return "";
-  const versionToken = profileScope(profile) === "system"
+  const versionToken = profileScope(profile) !== "user"
     ? profile.packageDigest ?? profile.descriptor?.version ?? profile.version ?? ""
     : profile.revision ?? profile.packageDigest ?? "";
   return JSON.stringify([
     profileScope(profile),
+    String(profile.templateId ?? ""),
     String(profile.id),
     String(versionToken),
     normalizedPreviewLength(view),
@@ -322,13 +436,28 @@ function profilePreviewKey(view, profile) {
 
 function scheduleProfileLibraryPreview(context, view, profile) {
   const key = profilePreviewKey(view, profile);
-  if (!key || typeof context?.sceneProxy?.invoke !== "function") return;
+  if (!key) {
+    clearProfilePreviewRequest(view);
+    view.viewport?.setVisibleEntityIds?.([]);
+    view.viewport?.setSelectedObjectIds?.([], "");
+    hidePreviewProgress();
+    return;
+  }
+  if (typeof context?.sceneProxy?.invoke !== "function") return;
   queueMicrotask(() => {
     if (!key || view.activeAreaId !== "profiles") {
       if (!key) view.viewport?.setVisibleEntityIds?.([]);
       return;
     }
-    if (profilePreviewKey(view, profile) !== key) return;
+    if (!isCurrentProfilePreview(view, profile, key)) return;
+    if (view.tubeDesignerProfilePreviewRequest?.key === key) {
+      restoreProfilePreviewRequestProgress(view.tubeDesignerProfilePreviewRequest);
+      if (view.tubeDesignerProfilePreview?.key === key
+          && isProfilePreviewResourceApplied(view, profile, view.tubeDesignerProfilePreview.response)) {
+        view.viewport?.setVisibleEntityIds?.([profileSelectionKey(profile)]);
+      }
+      return;
+    }
     if (view.tubeDesignerProfilePreview?.key === key) {
       if (isProfilePreviewResourceApplied(view, profile, view.tubeDesignerProfilePreview.response)) {
         view.viewport?.setVisibleEntityIds?.([profileSelectionKey(profile)]);
@@ -337,10 +466,7 @@ function scheduleProfileLibraryPreview(context, view, profile) {
       scheduleCachedProfilePreview(context, view, profile, key, view.tubeDesignerProfilePreview.response);
       return;
     }
-    if (view.tubeDesignerProfilePreviewRequest?.key === key) {
-      restoreProfilePreviewRequestProgress(view.tubeDesignerProfilePreviewRequest);
-      return;
-    }
+    clearProfilePreviewRequest(view);
     logProfilePreview(context, "info", `开始生成三维管型：${profileName(profile)}`);
     const operation = Promise.resolve().then(() => invokeSceneProduct(
       context,
@@ -355,38 +481,39 @@ function scheduleProfileLibraryPreview(context, view, profile) {
     const request = {
       key,
       operation,
-      progressVisible: true,
+      progressVisible: false,
       message: "正在生成三维管型…",
       phaseLabel: "计算截面与拉伸体",
       detail: "正在计算截面并创建标准拉伸体",
     };
     view.tubeDesignerProfilePreviewRequest = request;
-    restoreProfilePreviewRequestProgress(request);
-    const progressPaintedAt = waitForProgressPaint();
+    const delayedProgress = beginDelayedProfilePreviewProgress(view, profile, request);
     void operation.then(async (response) => {
-      if (view.tubeDesignerProfilePreviewRequest !== request) return;
+      if (view.tubeDesignerProfilePreviewRequest !== request
+          || !isCurrentProfilePreview(view, profile, key)) return;
       view.tubeDesignerProfilePreview = { key, response };
       request.message = "正在装载三维管型…";
       request.phaseLabel = "装载三维资源";
       request.detail = "三维几何已生成，正在写入中央预览视图";
       restoreProfilePreviewRequestProgress(request);
       await applyProfilePreviewResource(context, view, profile, key, response);
-      await waitMinimum(await progressPaintedAt, PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS);
+      await finishProfilePreviewProgress(delayedProgress);
       if (view.tubeDesignerProfilePreviewRequest !== request
-          || profilePreviewKey(view, profile) !== key || view.activeAreaId !== "profiles") return;
+          || !isCurrentProfilePreview(view, profile, key)) return;
       request.progressVisible = false;
       setPreviewStatus("三维管型已生成", false, false);
       logProfilePreview(context, "ok", `三维管型已生成：${profileName(profile)}`);
     }).catch(async (error) => {
       if (view.tubeDesignerProfilePreviewRequest !== request) return;
-      await waitMinimum(await progressPaintedAt, PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS);
+      await finishProfilePreviewProgress(delayedProgress);
       if (view.tubeDesignerProfilePreviewRequest !== request
-          || profilePreviewKey(view, profile) !== key || view.activeAreaId !== "profiles") return;
+          || !isCurrentProfilePreview(view, profile, key)) return;
       view.error = `三维管型预览失败：${error?.message ?? error}`;
       request.progressVisible = false;
       setPreviewStatus(view.error, true, false);
       logProfilePreview(context, "error", view.error);
     }).finally(() => {
+      delayedProgress.cancelBeforeShow();
       if (view.tubeDesignerProfilePreviewRequest === request) {
         view.tubeDesignerProfilePreviewRequest = null;
         hidePreviewProgress();
@@ -398,6 +525,7 @@ function scheduleProfileLibraryPreview(context, view, profile) {
 
 function scheduleCachedProfilePreview(context, view, profile, key, response) {
   if (view.tubeDesignerProfilePreviewRequest?.key === key) return;
+  clearProfilePreviewRequest(view);
   const operation = Promise.resolve().then(() => applyProfilePreviewResource(
     context, view, profile, key, response,
   ));
@@ -410,32 +538,25 @@ function scheduleCachedProfilePreview(context, view, profile, key, response) {
     detail: "正在把已有三维资源写入中央预览视图",
   };
   view.tubeDesignerProfilePreviewRequest = request;
-  const delayedProgress = beginDelayedCachedPreviewProgress(view, request);
+  const delayedProgress = beginDelayedProfilePreviewProgress(view, profile, request);
   void operation.then(async () => {
-    delayedProgress.cancelBeforeShow();
     if (view.tubeDesignerProfilePreviewRequest !== request) return;
-    const progressPaintedAt = await delayedProgress.paintedAt;
-    if (Number.isFinite(progressPaintedAt)) {
-      await waitMinimum(progressPaintedAt, PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS);
-    }
+    await finishProfilePreviewProgress(delayedProgress);
     if (view.tubeDesignerProfilePreviewRequest !== request
-        || profilePreviewKey(view, profile) !== key || view.activeAreaId !== "profiles") return;
+        || !isCurrentProfilePreview(view, profile, key)) return;
     request.progressVisible = false;
     setPreviewStatus("三维管型已生成", false, false);
   }).catch(async (error) => {
-    delayedProgress.cancelBeforeShow();
     if (view.tubeDesignerProfilePreviewRequest !== request) return;
-    const progressPaintedAt = await delayedProgress.paintedAt;
-    if (Number.isFinite(progressPaintedAt)) {
-      await waitMinimum(progressPaintedAt, PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS);
-    }
+    await finishProfilePreviewProgress(delayedProgress);
     if (view.tubeDesignerProfilePreviewRequest !== request
-        || profilePreviewKey(view, profile) !== key || view.activeAreaId !== "profiles") return;
+        || !isCurrentProfilePreview(view, profile, key)) return;
     view.error = `三维管型预览失败：${error?.message ?? error}`;
     request.progressVisible = false;
     setPreviewStatus(view.error, true, false);
     logProfilePreview(context, "error", view.error);
   }).finally(() => {
+    delayedProgress.cancelBeforeShow();
     if (view.tubeDesignerProfilePreviewRequest === request) {
       view.tubeDesignerProfilePreviewRequest = null;
       hidePreviewProgress();
@@ -444,7 +565,7 @@ function scheduleCachedProfilePreview(context, view, profile, key, response) {
 }
 
 
-function beginDelayedCachedPreviewProgress(view, request) {
+function beginDelayedProfilePreviewProgress(view, profile, request) {
   let timer = 0;
   let resolvePaintedAt = () => {};
   const paintedAt = new Promise((resolve) => {
@@ -452,32 +573,47 @@ function beginDelayedCachedPreviewProgress(view, request) {
     timer = setTimeout(async () => {
       timer = 0;
       if (view.tubeDesignerProfilePreviewRequest !== request
-          || view.activeAreaId !== "profiles") {
+          || !isCurrentProfilePreview(view, profile, request.key)) {
         resolve(null);
         return;
       }
       request.progressVisible = true;
       restoreProfilePreviewRequestProgress(request);
       resolve(await waitForProgressPaint());
-    }, PROFILE_PREVIEW_CACHE_PROGRESS_DELAY_MS);
+    }, PROFILE_PREVIEW_PROGRESS_DELAY_MS);
   });
-  return {
-    paintedAt,
-    cancelBeforeShow() {
-      if (!timer) return;
-      clearTimeout(timer);
-      timer = 0;
-      resolvePaintedAt(null);
-    },
+  const cancelBeforeShow = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = 0;
+    resolvePaintedAt(null);
   };
+  request.cancelProgress = cancelBeforeShow;
+  return { paintedAt, cancelBeforeShow };
+}
+
+
+async function finishProfilePreviewProgress(delayedProgress) {
+  // Fast previews never wait for the delay or the minimum display duration.
+  delayedProgress.cancelBeforeShow();
+  const paintedAt = await delayedProgress.paintedAt;
+  if (Number.isFinite(paintedAt)) {
+    await waitMinimum(paintedAt, PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS);
+  }
+}
+
+
+function clearProfilePreviewRequest(view) {
+  view.tubeDesignerProfilePreviewRequest?.cancelProgress?.();
+  view.tubeDesignerProfilePreviewRequest = null;
+  hidePreviewProgress();
 }
 
 
 async function applyProfilePreviewResource(context, view, profile, key, response) {
   const geometryId = String(response?.geometryResourceId ?? "");
   const geometryVersion = Number(response?.geometryResourceVersion ?? 0);
-  if (!geometryId || !geometryVersion || profilePreviewKey(view, profile) !== key
-      || view.activeAreaId !== "profiles" || !view.viewport) return;
+  if (!geometryId || !geometryVersion || !isCurrentProfilePreview(view, profile, key) || !view.viewport) return;
   const entityId = profileSelectionKey(profile);
   const revision = `profile-preview:${entityId}:${geometryVersion}`;
   if (isProfilePreviewResourceApplied(view, profile, response)) {
@@ -500,12 +636,28 @@ async function applyProfilePreviewResource(context, view, profile, key, response
     revision,
     rows: [{ entityId, data }],
   }, context.sceneProxy?.resources), 30000, "三维资源进入视口超时");
-  if (!receipt?.applied || profilePreviewKey(view, profile) !== key
-      || view.activeAreaId !== "profiles") return;
+  if (!receipt?.applied) return;
+  if (!isCurrentProfilePreview(view, profile, key)) {
+    // The same profile ID can represent different parameter values. Only hide
+    // this stale snapshot; never change the visibility of a newer scene.
+    if (String(view.viewport.getAppliedViewState?.()?.revision ?? "") === revision) {
+      view.viewport.setVisibleEntityIds?.([]);
+    }
+    return;
+  }
   view.viewport.setVisibleEntityIds?.([entityId]);
   view.viewport.setSelectedObjectIds?.([], "");
   view.viewport.fitViewForRevision?.(revision, 1.3);
   view.viewport.setStandardView?.("iso");
+}
+
+
+function isCurrentProfilePreview(view, profile, key) {
+  return view.activeAreaId === "profiles"
+    && view.tubeDesignerSelectedProfileId === profileSelectionKey(profile)
+    && profilePreviewKey(view, profile) === key
+    && visibleLibraryProfiles(view).some((item) => profileSelectionKey(item) === profileSelectionKey(profile)
+      && profilePreviewKey(view, item) === key);
 }
 
 
@@ -1288,6 +1440,8 @@ async function confirmProfilePackageImport(context, view, ops) {
     const profile = response?.profile;
     if (!profile?.id) throw new Error("导入管型包后没有返回记录标识。" );
     upsertProfile(view, profile);
+    profileLibraryState(view).scope = "user";
+    profileLibraryState(view).search = "";
     view.tubeDesignerSelectedProfileId = `user:${profile.id}`;
     view.tubeDesignerProfilePackageImportDialog = null;
     ops.showNotice(context, view, `已新增可编辑管型“${profile.name}”。`);
@@ -1327,6 +1481,8 @@ async function importDxfIntoLibrary(context, view, ops) {
     const saved = savedResponse?.profile;
     if (!saved?.id) throw new Error("保存 DXF 管型后没有返回记录标识。" );
     upsertProfile(view, saved);
+    profileLibraryState(view).scope = "user";
+    profileLibraryState(view).search = "";
     view.tubeDesignerSelectedProfileId = `user:${saved.id}`;
     ops.showNotice(context, view, `已新增 DXF 管型“${saved.name}”。`);
     return saved;
@@ -1461,7 +1617,7 @@ async function deleteLibraryProfile(context, view, target, ops) {
       .filter((item) => String(item?.id ?? "") !== id);
     if (view.tubeDesignerProfileDrafts) delete view.tubeDesignerProfileDrafts[profileSelectionKey(profile)];
     view.tubeDesignerProfilePreview = null;
-    ensureSelectedProfile(view, libraryProfiles(view));
+    ensureSelectedProfile(view, visibleLibraryProfiles(view));
     ops.showNotice(context, view, `已删除“${profile.name}”；历史产品不受影响。`);
     return response;
   });

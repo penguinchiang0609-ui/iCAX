@@ -6,6 +6,7 @@
 #include <TemplateRuntime/TemplateCodec.h>
 
 #include <BRepAlgoAPI_Cut.hxx>
+#include <BRep_Builder.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
@@ -15,7 +16,9 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <STEPControl_Writer.hxx>
+#include <STEPControl_Reader.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopoDS_Compound.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
@@ -107,6 +110,48 @@ namespace
         BRepAlgoAPI_Cut _Cut(_Box, _Hole);
         if (!_Cut.IsDone() || _Cut.Shape().IsNull()) throw std::runtime_error("component fixture cut failed");
         return _Cut.Shape();
+    }
+
+    TopoDS_Shape MultiSolidDrilledComponent()
+    {
+        BRep_Builder _Builder;
+        TopoDS_Compound _Compound;
+        _Builder.MakeCompound(_Compound);
+        _Builder.Add(_Compound, OffsetDrilledComponent());
+        _Builder.Add(_Compound, BRepPrimAPI_MakeBox(gp_Pnt(160, -20, 80), 10, 15, 12).Shape());
+        return _Compound;
+    }
+
+    TopoDS_Shape ReadExportedComponentStep(const std::filesystem::path& Path_)
+    {
+        STEPControl_Reader _Reader;
+        if (_Reader.ReadFile(ComponentPathText(Path_).c_str()) != IFSelect_RetDone)
+            throw std::runtime_error("exported component STEP could not be read");
+        _Reader.SetSystemLengthUnit(1.0);
+        if (_Reader.TransferRoots() <= 0 || _Reader.OneShape().IsNull())
+            throw std::runtime_error("exported component STEP contains no transferred roots");
+        return _Reader.OneShape();
+    }
+
+    void ExpectComponentGeometryEqual(const TopoDS_Shape& Expected_, const TopoDS_Shape& Actual_)
+    {
+        EXPECT_TRUE(BRepCheck_Analyzer(Actual_).IsValid());
+        EXPECT_NEAR(ComponentVolume(Expected_), ComponentVolume(Actual_), 1e-4);
+        EXPECT_EQ(ComponentFaceCount(Expected_), ComponentFaceCount(Actual_));
+        const auto _ExpectedBounds = ComponentBounds(Expected_);
+        const auto _ActualBounds = ComponentBounds(Actual_);
+        for (std::size_t _Index = 0; _Index < _ExpectedBounds.size(); ++_Index)
+            EXPECT_NEAR(_ExpectedBounds[_Index], _ActualBounds[_Index], 1e-5);
+        std::size_t _ExpectedSolids = 0, _ActualSolids = 0;
+        for (TopExp_Explorer _Solid(Expected_, TopAbs_SOLID); _Solid.More(); _Solid.Next()) ++_ExpectedSolids;
+        for (TopExp_Explorer _Solid(Actual_, TopAbs_SOLID); _Solid.More(); _Solid.Next()) ++_ActualSolids;
+        EXPECT_EQ(_ExpectedSolids, _ActualSolids);
+    }
+
+    void ExpectNoComponentStepTemporaryFiles(const std::filesystem::path& Root_)
+    {
+        for (const auto& _Entry : std::filesystem::directory_iterator(Root_))
+            EXPECT_FALSE(_Entry.path().filename().string().starts_with(".icax-component-step-"));
     }
 
     ObjectMap ComponentMetadata(const std::string& Name_ = "定位柱帽")
@@ -566,4 +611,151 @@ TEST(ComponentModelLibrary, MetadataUpdatesCannotOverwriteGeometryAndInvalidValu
     EXPECT_THROW(ImportComponentModelFile(_Root / "broken.brep", {}), std::invalid_argument);
     WriteComponentBytes(_Root / "unaccepted.json", "{}");
     EXPECT_THROW(ImportComponentModelFile(_Root / "unaccepted.json", {}), std::invalid_argument);
+}
+
+TEST(ComponentModelLibrary, TemplateCatalogKeepsOwnershipAndSameNamedModelsSeparate)
+{
+    const auto _Root = ComponentTestRoot();
+    const auto _A = _Root / "template-a";
+    const auto _B = _Root / "template-b";
+    WriteComponentBRep(_A / "resources/cap.brep", BRepPrimAPI_MakeBox(10, 20, 30).Shape());
+    WriteComponentBRep(_B / "resources/cap.brep", BRepPrimAPI_MakeBox(20, 20, 30).Shape());
+    const auto _Extensions = ComponentResourceExtensions("resources/cap.brep");
+    const auto _ACatalog = ListTemplateComponentModelSummaries(_A, _Extensions, "template-a", "护栏甲");
+    const auto _BCatalog = ListTemplateComponentModelSummaries(_B, _Extensions, "template-b", "护栏乙");
+    ASSERT_EQ(1u, _ACatalog.size());
+    ASSERT_EQ(1u, _BCatalog.size());
+    const auto _AModel = _ACatalog.front().To<ObjectMap>();
+    const auto _BModel = _BCatalog.front().To<ObjectMap>();
+    EXPECT_EQ("cap", _AModel.at("id").To<std::string>());
+    EXPECT_EQ("cap", _BModel.at("id").To<std::string>());
+    EXPECT_EQ("template", _AModel.at("scope").To<std::string>());
+    EXPECT_EQ("template-a", _AModel.at("templateId").To<std::string>());
+    EXPECT_EQ("template-b", _BModel.at("templateId").To<std::string>());
+    EXPECT_EQ("护栏甲", _AModel.at("templateName").To<std::string>());
+    EXPECT_FALSE(_AModel.contains("brep"));
+    EXPECT_NE(_AModel.at("geometryDigest").To<std::string>(), _BModel.at("geometryDigest").To<std::string>());
+    EXPECT_NEAR(6000.0, ComponentVolume(ComponentModelShape(LoadTemplateComponentModel(
+        _A, _Extensions, "template-a", "护栏甲", "cap"))), 1e-6);
+    EXPECT_NEAR(12000.0, ComponentVolume(ComponentModelShape(LoadTemplateComponentModel(
+        _B, _Extensions, "template-b", "护栏乙", "cap"))), 1e-6);
+    EXPECT_THROW(LoadTemplateComponentModel(_A, {}, "template-a", "护栏甲", "cap"), std::invalid_argument);
+    EXPECT_THROW(LoadTemplateComponentModel(_A, _Extensions, "", "", "cap"), std::invalid_argument);
+    EXPECT_THROW(LoadTemplateComponentModel(_A, _Extensions, "template-a", "", "../cap"), std::invalid_argument);
+    EXPECT_TRUE(ListTemplateComponentModelSummaries(_A, {}, "template-a", "护栏甲").empty());
+}
+
+TEST(ComponentModelLibrary, ExportsSystemAndTemplateExactStepWithHolesSolidsAndOriginalAnchors)
+{
+    const auto _Root = ComponentTestRoot();
+    const auto _Original = MultiSolidDrilledComponent();
+    // Total bounding-box volume is much larger than this drilled two-solid
+    // assembly. Volume + face + solid counts catch mesh/bounding-box substitutes.
+    EXPECT_NEAR(40.0 * 30.0 * 20.0 - std::acos(-1.0) * 9.0 * 20.0 + 10.0 * 15.0 * 12.0,
+        ComponentVolume(_Original), 1e-5);
+    WriteSystemComponent(_Root / "system", "drilled-cap", _Original);
+    WriteComponentBRep(_Root / "template/resources/cap.brep", _Original);
+    const std::array<ObjectMap, 2> _Snapshots{
+        LoadSystemComponentModel(_Root / "system", "drilled-cap"),
+        LoadTemplateComponentModel(_Root / "template", ComponentResourceExtensions("resources/cap.brep"),
+            "test-railing", "测试护栏", "cap")
+    };
+    for (std::size_t _Index = 0; _Index < _Snapshots.size(); ++_Index)
+    {
+        SCOPED_TRACE(_Index);
+        const auto _Before = CStandardJsonCodec::Serialize(_Snapshots[_Index]);
+        const auto _Target = _Root / (_Index ? "template.STEP" : "system.step");
+        ASSERT_NO_THROW(ExportComponentModelStep(_Snapshots[_Index], _Target));
+        ASSERT_GT(std::filesystem::file_size(_Target), 100u);
+        const auto _Roundtrip = ReadExportedComponentStep(_Target);
+        ExpectComponentGeometryEqual(_Original, _Roundtrip);
+        EXPECT_NEAR(100.0, ComponentBounds(_Roundtrip)[0], 1e-5);
+        EXPECT_NEAR(50.0, ComponentBounds(_Roundtrip)[2], 1e-5);
+        EXPECT_EQ(_Before, CStandardJsonCodec::Serialize(_Snapshots[_Index]));
+    }
+    ExpectNoComponentStepTemporaryFiles(_Root);
+}
+
+TEST(ComponentModelLibrary, ExportsFrozenUserStepAfterImportSourceDeletionWithNormalizedAnchor)
+{
+    const auto _Root = ComponentTestRoot();
+    const auto _Source = _Root / "original.brep";
+    WriteComponentBRep(_Source, MultiSolidDrilledComponent());
+    const auto _Snapshot = ImportComponentModelFile(_Source, ComponentMetadata("用户的带孔组合配件"));
+    ASSERT_TRUE(std::filesystem::remove(_Source));
+    const auto _Expected = ComponentModelShape(_Snapshot);
+    const auto _Directory = _Root / std::filesystem::path(u8"中文导出目录");
+    ASSERT_TRUE(std::filesystem::create_directory(_Directory));
+    const auto _Target = _Directory / std::filesystem::path(u8"组合配件-柱帽.step");
+    ASSERT_NO_THROW(ExportComponentModelStep(_Snapshot, _Target));
+    const auto _Roundtrip = ReadExportedComponentStep(_Target);
+    ExpectComponentGeometryEqual(_Expected, _Roundtrip);
+    const auto _Bounds = ComponentBounds(_Roundtrip);
+    EXPECT_NEAR(0.0, (_Bounds[0] + _Bounds[3]) / 2, 1e-5);
+    EXPECT_NEAR(0.0, (_Bounds[1] + _Bounds[4]) / 2, 1e-5);
+    EXPECT_NEAR(0.0, _Bounds[2], 1e-5);
+    ExpectNoComponentStepTemporaryFiles(_Directory);
+}
+
+TEST(ComponentModelLibrary, StepExportNeverOverwritesAndRejectsInvalidTargetPaths)
+{
+    const auto _Root = ComponentTestRoot();
+    WriteComponentBRep(_Root / "source.brep", OffsetDrilledComponent());
+    const auto _Snapshot = ImportComponentModelFile(_Root / "source.brep", ComponentMetadata());
+    const auto _Target = _Root / "keep.step";
+    const std::string _Sentinel = "Existing user data must remain byte-for-byte unchanged.";
+    WriteComponentBytes(_Target, _Sentinel);
+    EXPECT_THROW(ExportComponentModelStep(_Snapshot, _Target), std::invalid_argument);
+    std::ifstream _Saved(_Target, std::ios::binary);
+    EXPECT_EQ(_Sentinel, (std::string{ std::istreambuf_iterator<char>(_Saved), std::istreambuf_iterator<char>() }));
+    _Saved.close();
+    ASSERT_TRUE(std::filesystem::create_directory(_Root / "directory.step"));
+    for (const auto& _Invalid : std::vector<std::filesystem::path>{
+        {}, _Root / "wrong.stp", _Root / "wrong.brep", _Root / "wrong.step ",
+        _Root / "directory.step", _Root / "missing/failure.step", _Root / "NUL.step",
+        _Root / "keep.step:alternate.step", _Root / "invalid?.step",
+        _Root / std::filesystem::path(std::wstring(L"nul\0name.step", 13))
+    })
+    {
+        EXPECT_THROW(ExportComponentModelStep(_Snapshot, _Invalid), std::invalid_argument);
+    }
+    EXPECT_FALSE(std::filesystem::exists(_Root / "missing"));
+    const auto _Valid = _Root / "first.step";
+    ASSERT_NO_THROW(ExportComponentModelStep(_Snapshot, _Valid));
+    const auto _Size = std::filesystem::file_size(_Valid);
+    EXPECT_THROW(ExportComponentModelStep(_Snapshot, _Valid), std::invalid_argument);
+    EXPECT_EQ(_Size, std::filesystem::file_size(_Valid));
+    ExpectComponentGeometryEqual(ComponentModelShape(_Snapshot), ReadExportedComponentStep(_Valid));
+    ExpectNoComponentStepTemporaryFiles(_Root);
+}
+
+TEST(ComponentModelLibrary, StepExportRejectsInvalidGeometryAndUnitsWithoutLeavingTargetFiles)
+{
+    const auto _Root = ComponentTestRoot();
+    WriteComponentBRep(_Root / "source.brep", OffsetDrilledComponent());
+    const auto _Snapshot = ImportComponentModelFile(_Root / "source.brep", ComponentMetadata());
+    const auto _Target = _Root / "must-not-exist.step";
+    for (const auto& _InvalidBRep : { std::string(), std::string("not an OpenCascade BRep") })
+    {
+        auto _Invalid = _Snapshot;
+        _Invalid["brep"] = _InvalidBRep;
+        EXPECT_THROW(ExportComponentModelStep(_Invalid, _Target), std::invalid_argument);
+        EXPECT_FALSE(std::filesystem::exists(_Target));
+    }
+    BRep_Builder _Builder;
+    TopoDS_Compound _Empty;
+    _Builder.MakeCompound(_Empty);
+    std::ostringstream _EmptyBytes;
+    BRepTools::Write(_Empty, _EmptyBytes);
+    auto _Invalid = _Snapshot;
+    _Invalid["brep"] = _EmptyBytes.str();
+    EXPECT_THROW(ExportComponentModelStep(_Invalid, _Target), std::invalid_argument);
+    _Invalid = _Snapshot;
+    _Invalid["unit"] = std::string("inch");
+    EXPECT_THROW(ExportComponentModelStep(_Invalid, _Target), std::invalid_argument);
+    _Invalid = _Snapshot;
+    _Invalid["geometryDigest"] = std::string("changed snapshot");
+    EXPECT_THROW(ExportComponentModelStep(_Invalid, _Target), std::invalid_argument);
+    EXPECT_FALSE(std::filesystem::exists(_Target));
+    ExpectNoComponentStepTemporaryFiles(_Root);
 }

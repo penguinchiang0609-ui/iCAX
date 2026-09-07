@@ -908,7 +908,8 @@ iCAX::TemplateRuntime::CTemplateCodec::MakePresentationDescriptor(
         _Field["groupKey"] = _Definition.GroupKey;
         _Field["group"] = _GroupNames.contains(_Definition.GroupKey)
             ? _GroupNames.at(_Definition.GroupKey) : _Definition.GroupKey;
-        _Field["order"] = static_cast<long long>(_Definition.Order);
+        if (_Definition.Order.has_value())
+            _Field["order"] = static_cast<long long>(*_Definition.Order);
         switch (_Definition.ValueType)
         {
         case EParameterValueType::Number: _Field["type"] = std::string("number"); break;

@@ -1376,6 +1376,28 @@ TEST(TemplateRuntimeTest, NumericEnumRejectsEquivalentDuplicateChoices)
         })json")), std::invalid_argument);
 }
 
+TEST(TemplateRuntimeTest, ParameterPresentationPreservesExplicitAndMissingOrder)
+{
+    using namespace iCAX::TemplateRuntime;
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::VariantArray;
+    const auto _Descriptor = CTemplateCodec::ParseDescriptor(CStandardJsonCodec::Parse(R"json({
+        "schema":"icax.template-descriptor", "schemaVersion":1,
+        "id":"test.order", "version":"1.0.0", "displayName":"Order",
+        "parameters":[
+            {"key":"missing","displayName":"Missing","valueType":"string","defaultValue":""},
+            {"key":"zero","displayName":"Zero","valueType":"string","defaultValue":"","order":0},
+            {"key":"later","displayName":"Later","valueType":"string","defaultValue":"","order":20}
+        ]
+    })json"));
+    EXPECT_FALSE(_Descriptor.Parameters.at(0).Order.has_value());
+    EXPECT_EQ(0, _Descriptor.Parameters.at(1).Order.value());
+    const auto _Fields = CTemplateCodec::MakePresentationDescriptor(_Descriptor).at("parameters").To<VariantArray>();
+    EXPECT_FALSE(_Fields.at(0).To<ObjectMap>().contains("order"));
+    EXPECT_EQ(0, _Fields.at(1).To<ObjectMap>().at("order").To<long long>());
+    EXPECT_EQ(20, _Fields.at(2).To<ObjectMap>().at("order").To<long long>());
+}
+
 TEST(TemplateRuntimeTest, EveryGuardrailCatalogPresetAcceptsBrowserRailCountTypes)
 {
     using namespace iCAX::TemplateRuntime;
@@ -1619,7 +1641,7 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
     ExpectUnmachinedTemplateDisplay(_DoorModel, _DoorDisplay);
     // Grid-end assembly relationships coexist with hinges. Only the opening's
     // hinge count is fixed here; the default tube-grid must not create a plate.
-    EXPECT_EQ("tube_grid", _Parameters.at("mainInfillMode").To<std::string>());
+    EXPECT_FALSE(_Parameters.contains("mainInfillMode"));
     EXPECT_FALSE(std::any_of(_DoorModel.Items.begin(), _DoorModel.Items.end(),
         [](const auto& Item_) { return Item_.Key.starts_with("center_plate."); }));
     std::size_t _HingeCount = 0;
@@ -2698,37 +2720,25 @@ TEST(TemplateRuntimeTest, SecurityWindowSecondRoundRailMitersHaveCorrectBoundsAn
     }
 }
 
-TEST(TemplateRuntimeTest, SecurityWindowCenterPlateHasManufacturingVolumeAndPlateDimensions)
+TEST(TemplateRuntimeTest, SecurityWindowPublicStyleContainsOnlyTubeParts)
 {
     const auto _Root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
     auto _Fixture = TemplateProtocolFixture(_Root, "single_face_security_window");
-    _Fixture.Parameters["mainInfillMode"] = std::string("center_plate");
+    EXPECT_FALSE(_Fixture.Parameters.contains("mainInfillMode"));
+    EXPECT_FALSE(_Fixture.Parameters.contains("centerPlateWidth"));
     for (const bool _DoorEnabled : { false, true })
     {
         SCOPED_TRACE(_DoorEnabled);
         _Fixture.Parameters["accessDoorEnabled"] = _DoorEnabled;
         const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing");
         const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Raw);
-        const auto _Item = std::find_if(_Model.Items.begin(), _Model.Items.end(), [](const auto& Item_) {
-            return Item_.Key == "center_plate.panel.0001";
-        });
-        ASSERT_NE(_Model.Items.end(), _Item);
-        EXPECT_EQ("plate", _Item->Properties.at("manufacturing.partKind").To<std::string>());
-        EXPECT_FALSE(_Item->Properties.contains("tubeDesigner.profile"));
-        const auto& _RootKey = _Item->Representations.at("result");
-        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model, { _RootKey });
-        const auto& _Shape = _Geometry.At(_RootKey);
-        ASSERT_FALSE(_Shape.IsNull());
-        EXPECT_NEAR(300.0 * 600.0 * 2.0, RootSelectionShapeVolume(_Shape), 1e-5);
-        const auto _Normalized = NormalizeLinearPartForManufacturing(_Shape);
-        const auto _Measurement = MeasureFinalPlateGeometry(_Normalized, "plate-test", 1);
-        ASSERT_TRUE(_Measurement.at("available").To<bool>());
-        const auto _Plate = _Measurement.at("plate").To<iCAX::Data::ObjectMap>();
-        EXPECT_NEAR(600.0, _Plate.at("longSide").To<double>(), 0.02);
-        EXPECT_NEAR(300.0, _Plate.at("shortSide").To<double>(), 0.02);
-        EXPECT_NEAR(2.0, _Plate.at("thickness").To<double>(), 0.02);
-        EXPECT_NEAR(360000.0, RootSelectionShapeVolume(_Normalized), 1e-5);
+        ASSERT_FALSE(_Model.Items.empty());
+        for (const auto& _Item : _Model.Items)
+        {
+            EXPECT_FALSE(_Item.Key.starts_with("center_plate."));
+            EXPECT_TRUE(_Item.Properties.contains("tubeDesigner.profile"));
+        }
     }
 }
 

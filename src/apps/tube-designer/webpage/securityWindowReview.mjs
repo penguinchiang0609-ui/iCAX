@@ -80,6 +80,13 @@ function connectionReview(layout, values, enabled, rows, warnings) {
       warnings.push(miterPreview);
     }
   } else if (["two-face", "three-face", "five-face"].includes(layout)) {
+    if (enabled) {
+      const fixedJoin = values.doorFrameJoinType ?? "butt_90";
+      const leafJoin = values.doorLeafFrameJoinType ?? "butt_90";
+      rows.push(row("开启框连接", `固定框 ${frameJoinName(fixedJoin)}；窗扇 ${frameJoinName(leafJoin)}`));
+      if (isVGroove(fixedJoin) || isVGroove(leafJoin)) warnings.push("已选 V 槽折弯：须先打样确认管材、设备及折弯补偿，不能直接按示意图投产。");
+      if (fixedJoin === "miter_45" || leafJoin === "miter_45") warnings.push(miterPreview);
+    }
     rows.push(row("外框转角", { post_butt: "立柱贯通、横梁直拼", rail_miter: "横梁45°拼角" }[values.frameCornerJoin ?? "post_butt"] || "待确认"));
     if (values.frameCornerJoin === "rail_miter") warnings.push(miterPreview);
     if (layout === "five-face") {

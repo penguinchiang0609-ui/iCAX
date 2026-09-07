@@ -48,7 +48,17 @@ def side_origin(document, prefix, side):
                        or f".{side}.0001.solid" in node["key"])]
     if len(candidates) != 1:
         raise AssertionError(f"Expected one {prefix} {side} stock, got {len(candidates)}")
-    return candidates[0]["arguments"]["placement"]["origin"]
+    candidate = candidates[0]
+    origin = candidate["arguments"]["placement"]["origin"]
+    # Processed frames are authored locally, then placed onto the selected face.
+    placement_node = next((node for node in document["geometry"]
+                           if node["key"].endswith(".surface.display")
+                           and candidate["key"] in node.get("inputs", [])), None)
+    if placement_node:
+        placement = placement_node["arguments"]["placement"]
+        origin = [placement["origin"][i] + sum(origin[j] * placement[axis][i]
+                  for j, axis in enumerate(("xAxis", "yAxis", "zAxis"))) for i in range(3)]
+    return origin
 
 
 def clear_frame_size(document, prefix, section_width):

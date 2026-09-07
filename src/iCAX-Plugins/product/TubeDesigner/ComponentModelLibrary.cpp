@@ -8,6 +8,8 @@
 #include <BRepBndLib.hxx>
 #include <Bnd_Box.hxx>
 #include <STEPControl_Reader.hxx>
+#include <STEPControl_Writer.hxx>
+#include <StepData_StepModel.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS_Compound.hxx>
@@ -195,6 +197,76 @@ namespace iCAX::TubeDesigner
             UpdateComponentModelMetadata(_Snapshot, Metadata_);
             return _Snapshot;
         }
+
+        // A uniquely created directory keeps the writer away from any existing
+        // user file. It lives beside the target, so final publication is a
+        // same-volume atomic move. Never recursively remove a user directory.
+        class CComponentStepTemporary final
+        {
+        public:
+            explicit CComponentStepTemporary(const std::filesystem::path& Parent_)
+            {
+                for (int _Attempt = 0; _Attempt < 8; ++_Attempt)
+                {
+                    auto _Candidate = Parent_ / (".icax-component-step-" +
+                        iCAX::Data::to_string(iCAX::Data::GenerateNewUUID()));
+                    if (std::filesystem::create_directory(_Candidate))
+                    {
+                        Directory = std::move(_Candidate);
+                        File = Directory / "model.step";
+                        return;
+                    }
+                }
+                throw std::runtime_error("无法创建配件 STEP 临时文件夹");
+            }
+            ~CComponentStepTemporary()
+            {
+                std::error_code _Ignored;
+                std::filesystem::remove(File, _Ignored);
+                std::filesystem::remove(Directory, _Ignored);
+            }
+            CComponentStepTemporary(const CComponentStepTemporary&) = delete;
+            CComponentStepTemporary& operator=(const CComponentStepTemporary&) = delete;
+            std::filesystem::path Directory;
+            std::filesystem::path File;
+        };
+
+        std::filesystem::path ComponentStepTarget(const std::filesystem::path& Requested_)
+        {
+            if (Requested_.empty() || Requested_.native().find(L'\0') != std::wstring::npos)
+                throw std::invalid_argument("配件 STEP 导出路径无效");
+            const auto _Name = Requested_.filename().native();
+            auto _Extension = Requested_.extension().string();
+            std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](unsigned char C_) {
+                return static_cast<char>(std::tolower(C_));
+            });
+            if (_Extension != ".step" || _Name.empty()
+                || _Name.find_first_of(L"<>:\"/\\|?*") != std::wstring::npos
+                || std::any_of(_Name.begin(), _Name.end(), [](wchar_t C_) { return C_ < 32; }))
+                throw std::invalid_argument("配件导出文件必须使用有效的 .step 文件名");
+            auto _Stem = Requested_.stem().wstring();
+            const auto _Dot = _Stem.find(L'.');
+            if (_Dot != std::wstring::npos) _Stem.resize(_Dot);
+            std::transform(_Stem.begin(), _Stem.end(), _Stem.begin(), [](wchar_t C_) {
+                return static_cast<wchar_t>(C_ >= L'a' && C_ <= L'z' ? C_ - L'a' + L'A' : C_);
+            });
+            if (_Stem == L"CON" || _Stem == L"PRN" || _Stem == L"AUX" || _Stem == L"NUL"
+                || (_Stem.size() == 4 && (_Stem.starts_with(L"COM") || _Stem.starts_with(L"LPT"))
+                    && _Stem[3] >= L'1' && _Stem[3] <= L'9'))
+                throw std::invalid_argument("配件 STEP 文件名不能使用系统保留名称");
+            const auto _Absolute = std::filesystem::absolute(Requested_);
+            if (!std::filesystem::is_directory(_Absolute.parent_path()))
+                throw std::invalid_argument("配件 STEP 导出文件夹不存在");
+            const auto _Target = std::filesystem::canonical(_Absolute.parent_path()) / _Absolute.filename();
+            std::error_code _Error;
+            const auto _Status = std::filesystem::symlink_status(_Target, _Error);
+            if (_Error && _Error != std::errc::no_such_file_or_directory)
+                throw std::runtime_error("无法检查配件 STEP 目标文件：" + _Error.message());
+            // symlink_status also rejects a dangling link, not just live files.
+            if (std::filesystem::exists(_Status))
+                throw std::invalid_argument("配件 STEP 目标已存在，已停止以避免覆盖");
+            return _Target;
+        }
     }
 
     void UpdateComponentModelMetadata(ObjectMap& Snapshot_, const ObjectMap& Metadata_)
@@ -239,12 +311,51 @@ namespace iCAX::TubeDesigner
         return iCAX::OpenCascade::EvaluateNeutralModel(_Model, { "component" }).At("component");
     }
 
+    void ExportComponentModelStep(const ObjectMap& Snapshot_, const std::filesystem::path& TargetPath_)
+    {
+        const auto _Target = ComponentStepTarget(TargetPath_);
+        if (Text(Snapshot_, "unit", "mm") != "mm")
+            throw std::invalid_argument("配件 STEP 导出要求毫米单位的模型快照");
+        // Read only the frozen BRep, never the import path, bounds or display mesh.
+        const auto _Shape = ComponentModelShape(Snapshot_);
+        if (Snapshot_.contains("geometryDigest")
+            && Text(Snapshot_, "geometryDigest") != Digest(Text(Snapshot_, "brep")))
+            throw std::invalid_argument("配件模型快照校验失败");
+        STEPControl_Writer _Writer;
+        // Per-writer settings avoid changing global OCCT import/export units.
+        _Writer.Model()->SetLocalLengthUnit(1.0);
+        DESTEP_Parameters _Parameters;
+        _Parameters.WriteUnit = UnitsMethods_LengthUnit_Millimeter;
+        _Parameters.WriteTessellated = DESTEP_Parameters::RWMode_Tessellated_Off;
+        if (_Writer.Transfer(_Shape, STEPControl_AsIs, _Parameters) != IFSelect_RetDone)
+            throw std::runtime_error("配件真实实体无法转换为 STEP");
+
+        const CComponentStepTemporary _Temporary(_Target.parent_path());
+        {
+            // filesystem::path keeps Chinese/Unicode directory names intact.
+            std::ofstream _Stream(_Temporary.File, std::ios::binary | std::ios::trunc);
+            if (!_Stream || _Writer.WriteStream(_Stream) != IFSelect_RetDone)
+                throw std::runtime_error("无法写入配件 STEP 文件");
+            _Stream.flush();
+            if (!_Stream) throw std::runtime_error("配件 STEP 文件写入不完整");
+            _Stream.close();
+            if (!_Stream) throw std::runtime_error("无法完成配件 STEP 文件写入");
+        }
+        if (std::filesystem::file_size(_Temporary.File) == 0)
+            throw std::runtime_error("配件 STEP 导出产生了空文件");
+        // No MOVEFILE_REPLACE_EXISTING: even a competing export that creates
+        // the target after our existence check cannot be overwritten.
+        if (!::MoveFileExW(_Temporary.File.c_str(), _Target.c_str(), MOVEFILE_WRITE_THROUGH))
+            throw std::runtime_error("无法发布配件 STEP 文件；目标可能已存在或文件夹不可写（系统错误 "
+                + std::to_string(::GetLastError()) + "）");
+    }
+
     ObjectMap ComponentModelSummary(const ObjectMap& Snapshot_, const std::string& Scope_,
         const std::string& ID_, std::uint64_t Revision_)
     {
         ObjectMap _Summary;
         for (const auto* _Key : { "name", "category", "sourcing", "material", "description", "unit",
-            "sourceFileName", "bounds", "geometryDigest", "importTranslation" })
+            "sourceFileName", "bounds", "geometryDigest", "importTranslation", "templateId", "templateName" })
             if (const auto _It = Snapshot_.find(_Key); _It != Snapshot_.end()) _Summary[_Key] = _It->second;
         _Summary["scope"] = Scope_;
         _Summary["id"] = ID_;
@@ -279,6 +390,36 @@ namespace iCAX::TubeDesigner
         _Snapshot["revision"] = static_cast<unsigned long long>(_Record->Revision);
         _Snapshot["sourceReference"] = "library:" + ID_;
         return _Snapshot;
+    }
+
+    ObjectMap LoadTemplateComponentModel(const std::filesystem::path& TemplateDirectory_,
+        const ObjectMap& DescriptorExtensions_, const std::string& TemplateID_,
+        const std::string& TemplateName_, const std::string& ID_)
+    {
+        ValidateID(ID_);
+        if (TemplateID_.empty()) throw std::invalid_argument("模板配件必须指定所属模板");
+        const auto _Resources = Object(DescriptorExtensions_, "modelResources");
+        const auto _It = _Resources.find(ID_);
+        if (_It == _Resources.end() || !_It->second.Is<ObjectMap>())
+            throw std::invalid_argument("模板没有声明此配件资源：" + ID_);
+        const auto _Metadata = _It->second.To<ObjectMap>();
+        auto _Snapshot = SnapshotFromFile(ConfinedPath(TemplateDirectory_, Text(_Metadata, "path")), _Metadata, false);
+        _Snapshot["sourceReference"] = "template:" + ID_;
+        _Snapshot["templateId"] = TemplateID_;
+        _Snapshot["templateName"] = TemplateName_.empty() ? TemplateID_ : TemplateName_;
+        return _Snapshot;
+    }
+
+    VariantArray ListTemplateComponentModelSummaries(const std::filesystem::path& TemplateDirectory_,
+        const ObjectMap& DescriptorExtensions_, const std::string& TemplateID_, const std::string& TemplateName_)
+    {
+        VariantArray _Models;
+        const auto _Resources = Object(DescriptorExtensions_, "modelResources");
+        if (_Resources.size() > 64) throw std::invalid_argument("模板配件模型种类超过 64 种");
+        for (const auto& [_ID, _Metadata] : _Resources)
+            _Models.emplace_back(ComponentModelSummary(LoadTemplateComponentModel(
+                TemplateDirectory_, DescriptorExtensions_, TemplateID_, TemplateName_, _ID), "template", _ID));
+        return _Models;
     }
 
     VariantArray ListComponentModelSummaries(const std::filesystem::path& Root_,
@@ -342,13 +483,9 @@ namespace iCAX::TubeDesigner
             else if (_Reference.starts_with("template:"))
             {
                 const auto _Key = _Reference.substr(9);
-                ValidateID(_Key);
-                const auto _It = _Resources.find(_Key);
-                if (_It == _Resources.end() || !_It->second.Is<ObjectMap>())
-                    throw std::invalid_argument("模板没有声明此配件资源：" + _Key);
-                const auto _Metadata = _It->second.To<ObjectMap>();
-                _Snapshot = SnapshotFromFile(ConfinedPath(TemplateDirectory_, Text(_Metadata, "path")), _Metadata, false);
-                _Snapshot["sourceReference"] = _Reference;
+                const auto _Template = Object(Document_, "template");
+                _Snapshot = LoadTemplateComponentModel(TemplateDirectory_, DescriptorExtensions_,
+                    Text(_Template, "id"), Text(_Template, "id"), _Key);
             }
             else if (_Reference.starts_with("system:"))
                 _Snapshot = ResolveComponentModelSnapshot(SystemRoot_, Store_, "system", _Reference.substr(7));

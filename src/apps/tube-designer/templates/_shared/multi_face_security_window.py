@@ -61,6 +61,17 @@ if REVIEW_RULES_MODULE not in sys.modules:
     _review_spec.loader.exec_module(_review_module)
 generate_reviewed = sys.modules[REVIEW_RULES_MODULE].generate_reviewed
 
+FRAME_SCRIPT = Path(__file__).resolve().parent / "security_window_frame_geometry.py"
+FRAME_MODULE = "icax_security_window_frames_" + hashlib.sha256(FRAME_SCRIPT.read_bytes()).hexdigest()[:16]
+if FRAME_MODULE not in sys.modules:
+    _frame_spec = importlib.util.spec_from_file_location(FRAME_MODULE, FRAME_SCRIPT)
+    if _frame_spec is None or _frame_spec.loader is None:
+        raise RuntimeError("无法加载共用窗框加工规则")
+    _frame_module = importlib.util.module_from_spec(_frame_spec)
+    sys.modules[FRAME_MODULE] = _frame_module
+    _frame_spec.loader.exec_module(_frame_module)
+_frame_geometry = sys.modules[FRAME_MODULE]
+
 
 @dataclass(frozen=True)
 class Part:
@@ -1213,6 +1224,44 @@ def _generate_multi_face_geometry(
         )
     clearance = _number(parameters, "assemblyClearance")
     _validate_connections(parts, crossing_map, clearance)
+
+    processed_frames = []
+    frame_receivers = {}
+    if door_frames is not None:
+        def local_point(point):
+            delta = _subtract(point, door_surface.origin)
+            return (_dot(delta, door_surface.u_axis), _dot(delta, door_surface.normal), _dot(delta, door_surface.v_axis))
+        # Existing reference frames establish clear bounds and validate insertion.
+        # Only the selected processed frame items below are emitted to the model.
+        local_bars = [
+            _frame_geometry.Part(part.key, part.name, local_point(part.start), local_point(part.end),
+                                 part.profile, "access_door.leaf")
+            for part in parts if part.key.startswith(("access_door.leaf.horizontal.", "access_door.leaf.vertical."))
+        ]
+        placement = {"origin": list(door_surface.origin), "xAxis": list(door_surface.u_axis),
+                     "yAxis": list(door_surface.normal), "zAxis": list(door_surface.v_axis)}
+        processes = [
+            (_frame_geometry._process(construction, join_key, wrap_key), _profile(construction, profile_key))
+            for join_key, wrap_key, profile_key in (
+                ("doorFrameJoinType", "doorFrameButtWrapMode", "doorFrame"),
+                ("doorLeafFrameJoinType", "doorLeafFrameButtWrapMode", "doorLeafFrame"))
+        ]
+        _frame_geometry.validate_frame_processes(construction, processes)
+        for reference, (process, profile), prefix, label, group in zip(
+                door_frames, processes,
+                ("access_door.fixed_frame", "access_door.leaf.frame"),
+                ("固定窗框", "活动窗扇框"), ("access_door.fixed_frame", "access_door.leaf")):
+            left = local_point(reference["left"].start)[0] - profile.width / 2
+            right = local_point(reference["right"].start)[0] + profile.width / 2
+            bottom = local_point(reference["left"].start)[2]
+            top = local_point(reference["left"].end)[2]
+            records, sides = _frame_geometry.emit_surface_frame(
+                model, shared_geometry, construction, prefix=prefix, name=label, profile=profile, group=group,
+                bounds=(left, bottom, right, top), process=process, placement=placement,
+                inserted_parts=local_bars if group == "access_door.leaf" else [], purpose=purpose)
+            processed_frames.extend(records)
+            frame_receivers.update({reference[side].key: key for side, key in sides.items()})
+        parts = [part for part in parts if part.key not in frame_receivers]
     raw_geometry = {part.key: _emit_tube(model, part, shared_geometry) for part in parts}
     representations: dict[str, tuple[str, str]] = {}
     for part in parts:
@@ -1250,6 +1299,8 @@ def _generate_multi_face_geometry(
             "tubeDesigner.endProcess": _end_process(part),
             "tubeDesigner.connectionProcess": _connection_process(part, crossing_map, construction),
         }
+        connection = properties["tubeDesigner.connectionProcess"]
+        connection["passesInto"] = list(dict.fromkeys(frame_receivers.get(key, key) for key in connection["passesInto"]))
         if part.start_miter is not None or part.end_miter is not None:
             properties["tubeDesigner.displayApproximation"] = "uncut_miter_stock"
         item_key = model.item(
@@ -1269,6 +1320,20 @@ def _generate_multi_face_geometry(
                 "length": round(part.length, 3),
             },
         })
+
+    for record in processed_frames:
+        record["properties"]["tubeDesigner.connectionProcess"]["receives"] = list(dict.fromkeys(
+            part.key for reference_key, actual_key in frame_receivers.items() if actual_key == record["key"]
+            for part in crossing_map.get(reference_key, [])))
+        record["properties"]["tubeDesigner.connectionProcess"]["passesInto"] = []
+        number = f"{parameters['productCode']}-{len(item_keys) + 1:03d}"
+        record["properties"].update({"partNumber": number, "tubeDesigner.faceIndex": door_surface.face_index,
+                                     "tubeDesigner.faceName": door_surface.face_name})
+        key = model.item(record["key"], record["name"], representations=record["representations"], properties=record["properties"])
+        item_keys.append(key)
+        rows.append({"key": f"row.{key}", "parentKey": str(parameters["productCode"]), "itemKey": key,
+                     "values": {"partNumber": number, "name": record["name"], "quantity": 1,
+                                "length": record["properties"]["length"]}})
 
     for index in range(1, len(points) - 1):
         model.relationship(
@@ -1294,7 +1359,7 @@ def _generate_multi_face_geometry(
             hinge_v = door_v_min + (door_v_max - door_v_min) * (index + 1) / (hinge_count + 1)
             model.relationship(
                 f"access_door.hinge.{index + 1:04d}", "hinge",
-                [fixed[hinge_side].key, leaf[hinge_side].key],
+                [frame_receivers[fixed[hinge_side].key], frame_receivers[leaf[hinge_side].key]],
                 properties={
                     "participantRoles": ["fixed", "moving"],
                     "origin": list(_surface_point(door_surface, hinge_u, hinge_v)),

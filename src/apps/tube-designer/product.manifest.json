@@ -23,26 +23,26 @@
       "templates": [
         {
           "templateId": "single-face-security-window",
-          "version": "2.6.2",
-          "displayName": "防盗窗/单面防盗窗",
+          "version": "3.0.0",
+          "displayName": "防盗窗/常用款式/平面格栅防盗窗",
           "status": "available"
         },
         {
           "templateId": "two-face-security-window",
-          "version": "1.6.2",
-          "displayName": "防盗窗/两面防盗窗",
+          "version": "2.0.0",
+          "displayName": "防盗窗/局部围护（需现场封闭）/转角两面围护",
           "status": "available"
         },
         {
           "templateId": "three-face-security-window",
-          "version": "1.5.2",
-          "displayName": "防盗窗/三面防盗窗",
+          "version": "2.0.0",
+          "displayName": "防盗窗/局部围护（需现场封闭）/三面围护（无顶底）",
           "status": "available"
         },
         {
           "templateId": "five-face-security-window",
-          "version": "2.5.2",
-          "displayName": "防盗窗/五面防盗窗",
+          "version": "3.0.0",
+          "displayName": "防盗窗/常用款式/外飘防盗窗（五面）",
           "status": "available"
         },
         {

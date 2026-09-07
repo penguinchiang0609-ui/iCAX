@@ -26,6 +26,7 @@
     <ClCompile Include="PartListXlsxExporter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TubeDesigner.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="TubeDesignerSDO.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="TubeDesignerLicensingSDO.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>

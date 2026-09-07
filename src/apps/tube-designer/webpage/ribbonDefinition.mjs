@@ -30,11 +30,12 @@ export const ribbonDefinition = {
     },
     {
       id: "profiles",
-      title: "管型",
+      title: "管型库",
       groups: [
         {
           title: "新增管型",
           commands: [
+            command("profiles.new-sketch", "草图新建管型", "profile-sketch", { size: "large", iconTone: "green" }),
             command("profiles.import-package", "导入可编辑管型包", "new", { size: "large", iconTone: "green" }),
             command("profiles.import-dxf", "导入 DXF 管型", "hole", { size: "large", iconTone: "orange" }),
           ],
@@ -55,7 +56,11 @@ export const ribbonDefinition = {
         title: "三维配件",
         commands: [
           command("components.import", "导入三维模型", "new", { size: "large", iconTone: "green" }),
-          command("components.refresh", "刷新配件库", "apply", { size: "large", iconTone: "orange" }),
+        ],
+      }, {
+        title: "导出配件",
+        commands: [
+          command("components.export-step", "导出配件 STEP", "save", { size: "large", iconTone: "green" }),
         ],
       }],
     },
@@ -93,19 +98,30 @@ export const ribbonDefinition = {
           commands: [
             command("sketch.undo", "撤销", "undo"),
             command("sketch.redo", "重做", "redo"),
+            command("sketch.break", "打断", "cut", { iconTone: "orange" }),
+            command("sketch.insert-point", "插入点", "add-instance"),
+            command("sketch.join", "合并", "merge", { iconTone: "green" }),
             command("sketch.delete", "删除", "delete"),
           ],
         },
         {
           title: "完成",
-          commands: [command("sketch.commit", "保存 / 应用", "apply", { size: "large", iconTone: "green" })],
+          commands: [
+            command("sketch.commit", "确认", "apply", { size: "large", iconTone: "green" }),
+            command("sketch.cancel", "取消", "undo", { size: "large", iconTone: "orange" }),
+          ],
         },
       ],
     },
     {
       id: "about",
       title: "关于",
-      groups: [],
+      groups: [{ title: "授权", commands: [
+        command("licensing.status", "授权状态", "base", { size: "large" }),
+        command("licensing.request", "导出授权申请", "save", { size: "large" }),
+        command("licensing.request-trial", "导出试用申请", "save", { size: "large" }),
+        command("licensing.activate", "导入激活文件", "new", { size: "large", iconTone: "green" }),
+      ] }],
     },
   ],
 };

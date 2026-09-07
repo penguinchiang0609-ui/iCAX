@@ -2,26 +2,42 @@ import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/ut
 import { catalogText } from "./productCatalog.mjs";
 
 const PREFIX = "tube-designer-component-";
+const SCOPES = ["system", "template", "user"];
 const EDITABLE_FIELDS = ["name", "category", "sourcing", "material", "description"];
 const MODEL_ICON = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 28 10v13L16 30 4 23V10Z M4 10l12 7 12-7 M16 17v13" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
 
 export function componentLibraryState(view) {
-  return view.tubeDesignerComponentLibrary ??= {
-    models: [], selectedKey: "", scope: "all", search: "", collapsed: [], drafts: {},
+  const state = view.tubeDesignerComponentLibrary ??= {
+    models: [], selectedKey: "", scope: "system", search: "", collapsed: [], drafts: {},
     loadState: "idle", error: "", previewCache: new Map(), previewFailureKey: "",
   };
+  if (!SCOPES.includes(state.scope)) state.scope = "system";
+  state.selectedByScope ??= {};
+  return state;
 }
 
 export function componentModelKey(model) {
+  if (model?.scope === "template")
+    return `template:${encodeURIComponent(String(model.templateId ?? ""))}:${encodeURIComponent(String(model.id ?? ""))}`;
   return `${model?.scope === "system" ? "system" : "user"}:${String(model?.id ?? "")}`;
 }
 
 export function getComponentModels(view) {
   return [...(componentLibraryState(view).models ?? [])]
-    .filter((model) => model?.id && ["system", "user"].includes(model.scope))
-    .sort((a, b) => (a.scope === b.scope ? 0 : a.scope === "system" ? -1 : 1)
+    .filter((model) => model?.id && SCOPES.includes(model.scope) && (model.scope !== "template" || model.templateId))
+    .sort((a, b) => SCOPES.indexOf(a.scope) - SCOPES.indexOf(b.scope)
+      || (a.scope === "template" ? templateName(a).localeCompare(templateName(b), "zh-CN")
+        || String(a.templateId).localeCompare(String(b.templateId)) : 0)
       || String(a.category ?? "").localeCompare(String(b.category ?? ""), "zh-CN")
       || String(a.name ?? "").localeCompare(String(b.name ?? ""), "zh-CN"));
+}
+
+export function getVisibleComponentModels(view) {
+  const state = componentLibraryState(view);
+  const query = String(state.search ?? "").trim().toLocaleLowerCase();
+  return getComponentModels(view).filter((model) => model.scope === state.scope
+    && [model.name, model.category, model.material, model.sourceFileName, model.templateId, templateName(model)]
+      .some((value) => String(value ?? "").toLocaleLowerCase().includes(query)));
 }
 
 function modelByKey(view, key) {
@@ -30,15 +46,20 @@ function modelByKey(view, key) {
 
 function selectedModel(view) {
   const state = componentLibraryState(view);
-  const models = getComponentModels(view);
-  if (!models.some((model) => componentModelKey(model) === state.selectedKey))
-    state.selectedKey = models[0] ? componentModelKey(models[0]) : "";
-  return models.find((model) => componentModelKey(model) === state.selectedKey) ?? null;
+  const models = getVisibleComponentModels(view);
+  const model = models.find((item) => componentModelKey(item) === state.selectedKey)
+    ?? models.find((item) => componentModelKey(item) === state.selectedByScope[state.scope])
+    ?? models[0] ?? null;
+  state.selectedKey = model ? componentModelKey(model) : "";
+  if (model) state.selectedByScope[state.scope] = state.selectedKey;
+  return model;
 }
 
 function sourcingLabel(value) { return value === "made" ? "自制" : "外购"; }
 function categoryName(model) { return String(model?.category ?? "").trim() || "未分类"; }
 function modelName(model) { return String(model?.name ?? model?.sourceFileName ?? model?.id ?? "三维配件"); }
+function templateName(model) { return catalogText(model?.templateName, String(model?.templateId ?? "")); }
+function scopeLabel(scope) { return { system: "系统内置", template: "模板自带", user: "我的" }[scope] ?? ""; }
 function dimensionText(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? formatNumber(numeric) : "—";
@@ -51,39 +72,49 @@ export function renderComponentLibraryLeftPane(_context, view) {
   const state = componentLibraryState(view);
   const all = getComponentModels(view);
   selectedModel(view);
-  const query = String(state.search ?? "").toLocaleLowerCase();
-  const visible = all.filter((model) => (state.scope === "all" || model.scope === state.scope)
-    && [model.name, model.category, model.material, model.sourceFileName]
-      .some((value) => String(value ?? "").toLocaleLowerCase().includes(query)));
+  const visible = getVisibleComponentModels(view);
   const groups = new Map();
   for (const model of visible) {
-    const key = JSON.stringify([model.scope, categoryName(model)]);
-    if (!groups.has(key)) groups.set(key, { key, scope: model.scope, category: categoryName(model), models: [] });
+    const key = JSON.stringify([model.scope, model.templateId ?? "", categoryName(model)]);
+    if (!groups.has(key)) groups.set(key, { key, scope: model.scope, templateId: model.templateId, templateName: templateName(model), category: categoryName(model), models: [] });
     groups.get(key).models.push(model);
   }
+  const renderGroup = (group) => {
+    const expanded = !state.collapsed.includes(group.key);
+    return `<section class="tube-component-library-group">
+      <button type="button" class="tube-component-library-group-heading" data-cam-action="${PREFIX}toggle-category" data-component-category="${escapeAttr(group.key)}" aria-expanded="${expanded}"><span>${expanded ? "▾" : "▸"} ${escapeText(group.category)}</span><small>${scopeLabel(group.scope)} · ${group.models.length}</small></button>
+      <div ${expanded ? "" : "hidden"}>${group.models.map((model) => {
+        const key = componentModelKey(model);
+        return `<button type="button" class="tube-component-library-card ${key === state.selectedKey ? "selected" : ""}" data-cam-action="${PREFIX}select" data-component-key="${escapeAttr(key)}" aria-pressed="${key === state.selectedKey}">
+          <span class="tube-component-library-icon">${MODEL_ICON}</span><span><strong>${escapeText(modelName(model))}</strong><small>${sourcingLabel(model.sourcing)}${model.material ? ` · ${escapeText(model.material)}` : ""}</small><em>${escapeText(boundsText(model))}</em></span></button>`;
+      }).join("")}</div></section>`;
+  };
+  const templates = new Map();
+  for (const group of groups.values()) {
+    if (!templates.has(group.templateId)) templates.set(group.templateId, []);
+    templates.get(group.templateId).push(group);
+  }
+  const list = state.scope === "template" ? [...templates.entries()].map(([templateId, entries]) => {
+    const key = JSON.stringify(["template-owner", templateId]);
+    const expanded = !state.collapsed.includes(key);
+    return `<section class="tube-component-library-group tube-component-library-template" data-component-template-id="${escapeAttr(templateId)}">
+      <button type="button" class="tube-component-library-group-heading" data-cam-action="${PREFIX}toggle-category" data-component-category="${escapeAttr(key)}" aria-expanded="${expanded}"><span>${expanded ? "▾" : "▸"} ${escapeText(entries[0].templateName)}</span><small>仅所属模板可用</small></button>
+      <div ${expanded ? "" : "hidden"}><div class="tube-component-library-source"><small>${escapeText(templateId)}</small></div>${entries.map(renderGroup).join("")}</div></section>`;
+  }).join("") : [...groups.values()].map(renderGroup).join("");
   return `<div class="tube-designer-panel tube-component-library-panel">
-    <div class="tube-designer-heading"><div><strong>配件库</strong><span>${all.filter((m) => m.scope === "system").length} 个系统内置 · ${all.filter((m) => m.scope === "user").length} 个我的模型</span></div></div>
+    <div class="tube-designer-heading"><div><strong>配件库</strong><span>${SCOPES.map((scope) => `${scopeLabel(scope)} ${all.filter((m) => m.scope === scope).length}`).join(" · ")}</span></div></div>
     <div class="tube-component-library-filters">
-      <input type="search" aria-label="搜索配件" placeholder="搜索名称、分类、材料" value="${escapeAttr(state.search)}" data-cam-change-action="${PREFIX}search" />
-      <div>${[["all", "全部"], ["system", "系统内置"], ["user", "我的模型"]].map(([scope, label]) =>
+      <input type="search" aria-label="搜索配件" placeholder="搜索名称、分类、材料或所属模板" value="${escapeAttr(state.search)}" data-cam-change-action="${PREFIX}search" />
+      <div>${SCOPES.map((scope) => [scope, scopeLabel(scope)]).map(([scope, label]) =>
         `<button type="button" class="${scope === state.scope ? "selected" : ""}" data-cam-action="${PREFIX}scope" data-component-scope="${scope}" aria-pressed="${scope === state.scope}">${label}</button>`).join("")}</div>
     </div>
     <div class="tube-component-library-list">
       ${state.loadState === "loading" ? '<div class="tube-designer-empty">正在读取配件库…</div>' : ""}
       ${state.loadState === "error" ? `<div class="tube-component-library-error" role="alert">${escapeText(state.error)}<button class="tube-designer-secondary" data-cam-action="${PREFIX}refresh">重新读取</button></div>` : ""}
-      ${[...groups.values()].map((group) => {
-        const expanded = !state.collapsed.includes(group.key);
-        return `<section class="tube-component-library-group">
-          <button type="button" class="tube-component-library-group-heading" data-cam-action="${PREFIX}toggle-category" data-component-category="${escapeAttr(group.key)}" aria-expanded="${expanded}"><span>${expanded ? "▾" : "▸"} ${escapeText(group.category)}</span><small>${group.scope === "system" ? "系统" : "我的"} · ${group.models.length}</small></button>
-          <div ${expanded ? "" : "hidden"}>${group.models.map((model) => {
-            const key = componentModelKey(model);
-            return `<button type="button" class="tube-component-library-card ${key === state.selectedKey ? "selected" : ""}" data-cam-action="${PREFIX}select" data-component-key="${escapeAttr(key)}" aria-pressed="${key === state.selectedKey}">
-              <span class="tube-component-library-icon">${MODEL_ICON}</span><span><strong>${escapeText(modelName(model))}</strong><small>${sourcingLabel(model.sourcing)}${model.material ? ` · ${escapeText(model.material)}` : ""}</small><em>${escapeText(boundsText(model))}</em></span></button>`;
-          }).join("")}</div></section>`;
-      }).join("")}
-      ${!visible.length && state.loadState !== "loading" ? `<div class="tube-designer-empty">${all.length ? "没有匹配的配件，请调整搜索或来源。" : "还没有可用配件。导入 STEP / STP / BREP 建立我的模型。"}</div>` : ""}
+      ${list}
+      ${!visible.length && state.loadState !== "loading" ? `<div class="tube-designer-empty">${String(state.search ?? "").trim() ? "当前来源没有匹配的配件，请调整搜索。" : `“${scopeLabel(state.scope)}”暂无配件。${state.scope === "user" ? "导入 STEP / STP / BREP 建立我的模型。" : ""}`}</div>` : ""}
     </div>
-    <footer><button class="tube-designer-primary" data-cam-action="${PREFIX}import" ${view.pending ? "disabled" : ""}>导入三维模型</button><button class="tube-designer-secondary" data-cam-action="${PREFIX}refresh" ${view.pending || state.loadState === "loading" ? "disabled" : ""}>刷新</button></footer>
+    <footer><button class="tube-designer-primary" data-cam-action="${PREFIX}import" ${view.pending ? "disabled" : ""}>导入三维模型</button></footer>
   </div>`;
 }
 
@@ -104,27 +135,28 @@ export function renderComponentLibraryRightPane(_context, view) {
   const model = selectedModel(view);
   if (!model) return '<div class="tube-designer-panel"><div class="tube-designer-heading"><strong>配件属性</strong></div><div class="tube-designer-empty">从左侧选择配件，中央显示真实三维模型。</div></div>';
   const key = componentModelKey(model);
-  const system = model.scope === "system";
+  const readOnly = model.scope !== "user";
   const draft = state.drafts[key];
   const values = draft ?? model;
   return `<div class="tube-designer-panel tube-component-library-editor" data-component-editor data-component-key="${escapeAttr(key)}">
-    <div class="tube-designer-heading"><div><strong>${system ? "系统内置配件" : "我的模型"}</strong><span>${system ? "只读资源，不可修改或删除" : "编辑名称、分类与制造属性"}</span></div></div>
+    <div class="tube-designer-heading"><div><strong>${scopeLabel(model.scope)}配件</strong><span>${readOnly ? "只读资源，不可修改或删除" : "编辑名称、分类与制造属性"}</span></div></div>
     <div class="tube-component-library-editor-body">
-      ${metadataFields(values, system || view.pending, "draft")}
+      ${model.scope === "template" ? `<div class="tube-component-library-source"><span>所属模板 · 仅此模板可使用</span><strong>${escapeText(templateName(model))}</strong><small>${escapeText(model.templateId)}</small></div>` : ""}
+      ${metadataFields(values, readOnly || view.pending, "draft")}
       <div class="tube-component-library-bounds"><strong>模型外包尺寸（mm）</strong><dl>${[["width", "宽 X"], ["depth", "深 Y"], ["height", "高 Z"]].map(([field, label]) => `<div><dt>${label}</dt><dd>${escapeText(dimensionText(model.bounds?.[field]))}</dd></div>`).join("")}</dl><small>尺寸来自真实模型，不能在此修改或缩放。</small></div>
       <div class="tube-component-library-source"><span>来源文件</span><strong>${escapeText(model.sourceFileName || "系统内置模型")}</strong></div>
       <p class="tube-component-library-note">配件是非管材三维模型。“自制”仅记录供料方式，具体制造工艺仍需确认，不表示可直接使用管材加工。</p>
       ${state.error && state.loadState !== "error" ? `<div class="tube-component-library-error" role="alert">${escapeText(state.error)}</div>` : ""}
     </div>
-    ${!system ? `<footer><button class="tube-designer-danger" data-cam-action="${PREFIX}delete" data-component-key="${escapeAttr(key)}" ${view.pending ? "disabled" : ""}>删除</button><button class="tube-designer-primary" data-cam-action="${PREFIX}save" data-component-key="${escapeAttr(key)}" ${view.pending ? "disabled" : ""}>保存属性</button></footer>` : ""}
+    ${!readOnly ? `<footer><button class="tube-designer-danger" data-cam-action="${PREFIX}delete" data-component-key="${escapeAttr(key)}" ${view.pending ? "disabled" : ""}>删除</button><button class="tube-designer-primary" data-cam-action="${PREFIX}save" data-component-key="${escapeAttr(key)}" ${view.pending ? "disabled" : ""}>保存属性</button></footer>` : ""}
   </div>`;
 }
 
 export function renderComponentLibraryViewportOverlay(_context, view) {
   const state = componentLibraryState(view);
   const model = selectedModel(view);
-  const pending = Boolean(state.previewRequest);
-  return `<div class="tube-component-library-hud"><strong>${escapeText(model ? modelName(model) : "三维配件预览")}</strong><span>${model ? escapeText(boundsText(model)) : "选择已有配件或导入三维模型"}</span><small>${pending ? "正在装载真实三维几何…" : "拖动旋转 · 滚轮缩放 · 支持透视 / 正交"}</small>${state.previewError ? `<p role="alert">${escapeText(state.previewError)}</p><button class="tube-designer-secondary" data-cam-action="${PREFIX}retry-preview">重新预览</button>` : ""}</div>`;
+  const pending = model && state.previewRequest?.key === previewKey(model);
+  return `<div class="tube-component-library-hud"><strong>${escapeText(model ? modelName(model) : "当前来源没有可预览的配件")}</strong><span>${model ? escapeText(boundsText(model)) : "调整搜索，或切换来源"}</span>${model?.scope === "template" ? `<span>所属模板：${escapeText(templateName(model))}</span>` : ""}<small>${pending ? "正在装载真实三维几何…" : "拖动旋转 · 滚轮缩放 · 支持透视 / 正交"}</small>${model && state.previewError ? `<p role="alert">${escapeText(state.previewError)}</p><button class="tube-designer-secondary" data-cam-action="${PREFIX}retry-preview">重新预览</button>` : ""}</div>`;
 }
 
 export function renderComponentLibraryDialogs(view) {
@@ -144,11 +176,18 @@ export function getComponentModelOptions(template, view) {
     ? Object.entries(templateModels).map(([key, model]) => ({
       value: `template:${key}`, group: "模板自带", label: catalogText(model?.displayName, catalogText(model?.name, key)),
     })) : [];
-  for (const model of getComponentModels(view)) result.push({
+  for (const model of getComponentModels(view)) {
+    if (model.scope === "template") {
+      if (template?.id && model.templateId === template.id && !result.some((item) => item.value === `template:${model.id}`))
+        result.push({ value: `template:${model.id}`, group: "模板自带", label: modelName(model) });
+      continue;
+    }
+    result.push({
     value: `${model.scope === "system" ? "system" : "library"}:${model.id}`,
-    group: model.scope === "system" ? "系统内置" : "我的模型",
+    group: model.scope === "system" ? "系统内置" : "我的",
     label: `${modelName(model)} · ${categoryName(model)} · ${sourcingLabel(model.sourcing)}`,
-  });
+    });
+  }
   return result;
 }
 
@@ -161,7 +200,7 @@ export function renderComponentModelField(field, value, disabled, context = {}) 
   const options = getComponentModelOptions(template, view);
   const current = String(value ?? "");
   const name = String(field.key ?? field.name ?? "");
-  const groups = ["模板自带", "系统内置", "我的模型"];
+  const groups = SCOPES.map(scopeLabel);
   const missing = current && !options.some((option) => option.value === current);
   return `<div class="tube-designer-field wide tube-component-model-field"><label><span>${escapeText(catalogText(field.displayName, field.label ?? name))}</span><select data-tube-designer-parameter="${escapeAttr(name)}" data-cam-change-action="tube-designer-parameter-change" ${disabled || field.readOnly ? "disabled" : ""}>
     <option value="" ${current ? "" : "selected"}>未选择配件</option>
@@ -169,7 +208,7 @@ export function renderComponentModelField(field, value, disabled, context = {}) 
     ${groups.map((group) => {
       const items = options.filter((option) => option.group === group);
       return items.length ? `<optgroup label="${group}">${items.map((option) => `<option value="${escapeAttr(option.value)}" ${option.value === current ? "selected" : ""}>${escapeText(option.label)}</option>`).join("")}</optgroup>` : "";
-    }).join("")}</select></label><small>选择完整三维配件，不作为管材截面。模型不自动缩放，请核对用途、安装面与尺寸。</small><button type="button" class="tube-designer-secondary" data-cam-action="${PREFIX}refresh" ${view.pending || state.loadState === "loading" ? "disabled" : ""}>${state.loadState === "loading" ? "正在读取配件…" : "刷新可选配件"}</button>${state.loadState === "error" ? `<small role="alert">${escapeText(state.error)}</small>` : ""}</div>`;
+    }).join("")}</select></label><small>模板自带配件仅限所属模板。完整模型不作为管材截面，不自动缩放，请核对用途、安装面与尺寸。</small><button type="button" class="tube-designer-secondary" data-cam-action="${PREFIX}refresh" ${view.pending || state.loadState === "loading" ? "disabled" : ""}>${state.loadState === "loading" ? "正在读取配件…" : "刷新可选配件"}</button>${state.loadState === "error" ? `<small role="alert">${escapeText(state.error)}</small>` : ""}</div>`;
 }
 
 function productInvoke(context, method, payload = {}) {
@@ -189,6 +228,8 @@ export async function refreshComponentModels(context, view, ops = null) {
       if (!Array.isArray(response?.models)) throw new Error("配件库没有返回有效的模型列表。");
       if ((state.mutationVersion ?? 0) === mutationVersion) state.models = response.models;
       state.loadState = "loaded";
+      state.previewFailureKey = "";
+      state.previewError = "";
       selectedModel(view);
       return state.models;
     } catch (error) {
@@ -212,6 +253,7 @@ function updateModel(view, model) {
   state.models = [...state.models.filter((item) => componentModelKey(item) !== key), model];
   state.mutationVersion = (state.mutationVersion ?? 0) + 1;
   state.selectedKey = key;
+  state.selectedByScope[model.scope] = key;
   delete state.drafts[key];
   state.previewFailureKey = "";
 }
@@ -264,6 +306,42 @@ async function chooseComponentModel(context, view, ops) {
   return sourcePath;
 }
 
+async function exportComponentModel(context, view, ops) {
+  if (view.pending) return null;
+  const state = componentLibraryState(view);
+  // Do not auto-select a different model for an export command. The selected
+  // record must still be visible under the current source and search filter.
+  const model = getVisibleComponentModels(view).find((item) => componentModelKey(item) === state.selectedKey);
+  if (!model) {
+    state.error = view.error = "请先选择当前列表中的一个配件。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  const reference = {
+    scope: model.scope,
+    id: String(model.id),
+    ...(model.scope === "template" ? { templateId: String(model.templateId) } : {}),
+  };
+  return componentTask(context, view, ops, "正在导出配件 STEP", async () => {
+    const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge;
+    if (typeof bridge?.openDirectoryDialog !== "function") throw new Error("当前宿主没有提供目录选择能力。");
+    if (typeof context.sceneProxy?.invoke !== "function") throw new Error("当前场景没有提供配件导出能力。");
+    const targetDirectory = String(await bridge.openDirectoryDialog({
+      title: "选择配件 STEP 导出目录",
+      initialDirectory: view.tubeDesignerComponentExportDirectory ?? "",
+    }) ?? "").trim();
+    if (!targetDirectory) return null;
+    view.tubeDesignerComponentExportDirectory = targetDirectory;
+    const response = await context.sceneProxy.invoke("TubeDesigner.ExportComponentModel", {
+      ...reference, targetDirectory,
+    }, { timeoutMs: 120000 });
+    if (typeof response?.path !== "string" || !response.path.trim()) throw new Error("配件导出没有返回有效的文件路径。");
+    if (response.format !== "step") throw new Error("配件导出没有返回 STEP 格式文件。");
+    ops.showNotice?.(context, view, `配件 STEP 已导出：${response.path}`);
+    return response;
+  });
+}
+
 export async function handleComponentLibraryAction(context, view, action, target, ops) {
   if (!String(action).startsWith(PREFIX)) return { handled: false };
   const state = componentLibraryState(view);
@@ -273,11 +351,16 @@ export async function handleComponentLibraryAction(context, view, action, target
   if (suffix === "import") return { handled: true, result: await chooseComponentModel(context, view, ops) };
   if (suffix === "select") {
     const key = String(target?.dataset?.componentKey ?? "");
-    if (modelByKey(view, key)) { state.selectedKey = key; state.previewError = ""; }
+    if (getVisibleComponentModels(view).some((model) => componentModelKey(model) === key)) {
+      state.selectedKey = key; state.selectedByScope[state.scope] = key; state.previewError = ""; state.previewFailureKey = "";
+    }
   } else if (suffix === "scope") {
     const scope = target?.dataset?.componentScope;
-    if (["all", "system", "user"].includes(scope)) state.scope = scope;
-  } else if (suffix === "search") state.search = String(target?.value ?? "");
+    if (SCOPES.includes(scope) && scope !== state.scope) {
+      selectedModel(view);
+      state.scope = scope; state.selectedKey = ""; state.previewError = ""; state.previewFailureKey = "";
+    }
+  } else if (suffix === "search") { state.search = String(target?.value ?? ""); state.previewError = ""; state.previewFailureKey = ""; }
   else if (suffix === "toggle-category") {
     const key = String(target?.dataset?.componentCategory ?? "");
     state.collapsed = state.collapsed.includes(key) ? state.collapsed.filter((item) => item !== key) : [...state.collapsed, key];
@@ -303,7 +386,7 @@ export async function handleComponentLibraryAction(context, view, action, target
       const response = await productInvoke(context, "TubeDesigner.ImportComponentModel", { sourcePath, ...metadata });
       updateModel(view, response?.model);
       state.importDraft = null;
-      state.scope = "all";
+      state.scope = "user";
       state.search = "";
       ops.showNotice?.(context, view, `已导入“${modelName(response.model)}”。`);
       return response.model;
@@ -340,17 +423,18 @@ export async function handleComponentLibraryAction(context, view, action, target
     }) };
   } else if (suffix === "retry-preview") { state.previewFailureKey = ""; state.previewError = ""; }
   else return { handled: false };
+  selectedModel(view);
   ops.renderProject(context, view);
   return { handled: true };
 }
 
 export async function handleComponentLibraryRibbonCommand(context, view, commandId, ops) {
   if (commandId === "components.import") { await chooseComponentModel(context, view, ops); return true; }
-  if (commandId === "components.refresh") { await refreshComponentModels(context, view, ops); return true; }
+  if (commandId === "components.export-step") { await exportComponentModel(context, view, ops); return true; }
   return false;
 }
 
-function previewKey(model) { return model ? JSON.stringify([model.scope, model.id, model.revision]) : ""; }
+function previewKey(model) { return model ? JSON.stringify([model.scope, model.scope === "template" ? model.templateId : "", model.id, model.revision]) : ""; }
 
 export async function ensureComponentModelPreview(context, view, ops = null) {
   const state = componentLibraryState(view);
@@ -358,10 +442,25 @@ export async function ensureComponentModelPreview(context, view, ops = null) {
   const model = selectedModel(view);
   const key = previewKey(model);
   if (!model) {
-    if (view.viewport.getAppliedViewState?.().revision !== "components-empty")
+    state.previewRequest = null;
+    state.previewError = "";
+    state.previewFailureKey = "";
+    view.viewport.setVisibleEntityIds?.([]);
+    view.viewport.setSelectedObjectIds?.([], "");
+    view.viewport.setDimensionAnnotations?.([]);
+    if (state.emptyPreviewRequest) return state.emptyPreviewRequest.promise;
+    if (view.viewport.getAppliedViewState?.().revision === "components-empty") return;
+    const empty = { promise: null };
+    state.emptyPreviewRequest = empty;
+    state.applyTail = Promise.resolve(state.applyTail).catch(() => {}).then(async () => {
+      if (state.emptyPreviewRequest !== empty || view.activeAreaId !== "components" || selectedModel(view)) return;
       await view.viewport.applyViewSnapshot({ revision: "components-empty", rows: [] }, context.sceneProxy?.resources);
+    });
+    empty.promise = state.applyTail.finally(() => { if (state.emptyPreviewRequest === empty) state.emptyPreviewRequest = null; });
+    await empty.promise;
     return;
   }
+  state.emptyPreviewRequest = null;
   if (state.previewRequest?.key === key) return state.previewRequest.promise;
   if (state.previewFailureKey === key) return;
   const entityId = `component-model:${componentModelKey(model)}`;
@@ -382,7 +481,8 @@ export async function ensureComponentModelPreview(context, view, ops = null) {
   request.promise = (async () => {
     try {
       if (typeof context.sceneProxy?.invoke !== "function") throw new Error("当前场景未提供配件预览接口。");
-      const response = cached ?? await context.sceneProxy.invoke("TubeDesigner.GenerateComponentModelPreview", { scope: model.scope, id: model.id }, { timeoutMs: 120000 });
+      const payload = { scope: model.scope, id: model.id, ...(model.scope === "template" ? { templateId: model.templateId } : {}) };
+      const response = cached ?? await context.sceneProxy.invoke("TubeDesigner.GenerateComponentModelPreview", payload, { timeoutMs: 120000 });
       if (!current()) return;
       const geometryId = String(response?.geometryResourceId ?? "");
       const geometryVersion = Number(response?.geometryResourceVersion);

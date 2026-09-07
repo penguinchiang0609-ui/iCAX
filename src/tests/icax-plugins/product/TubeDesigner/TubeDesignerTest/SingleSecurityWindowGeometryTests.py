@@ -64,73 +64,16 @@ def graph(document):
 
 
 class SingleSecurityWindowGeometryTests(unittest.TestCase):
-    def test_catalog_plate_presets_build_with_public_default_opening(self):
+    def test_public_style_generates_only_tube_grid(self):
         descriptor = json.loads((PACKAGE / "template.json").read_text(encoding="utf-8"))
-        defaults = {parameter["key"]: parameter["defaultValue"] for parameter in descriptor["parameters"]}
-        for preset in descriptor["extensions"]["catalog"]["presets"]:
-            with self.subTest(preset=preset["id"]):
-                document = SUBJECT.generate({**defaults, **preset["parameters"]},
-                                             {"template": {}, "geometryPurpose": "manufacturing"})
-                plates = [item for item in document["items"]
-                          if item["properties"].get("manufacturing.partKind") == "plate"]
-                self.assertEqual(0 if preset["id"] == "tube-grid" else 1, len(plates))
-
-    def test_center_plate_is_a_separate_solid_with_real_thickness_and_no_tube_profile(self):
-        document = generate(mainInfillMode="center_plate")
-        plates = [item for item in document["items"]
-                  if item["properties"].get("manufacturing.partKind") == "plate"]
-        self.assertEqual(1, len(plates))
-        plate = plates[0]
-        self.assertNotIn("tubeDesigner.profile", plate["properties"])
-        self.assertEqual({"width": 300.0, "height": 600.0, "thickness": 2.0, "areaMm2": 180000.0},
-                         plate["properties"]["manufacturing.plate"])
-        nodes = graph(document)
-        solid = nodes[plate["representations"]["result"]]
-        self.assertEqual("extrude", solid["operator"])
-        self.assertEqual([0.0, -2.0, 0.0], solid["arguments"]["vector"])
-        outline = nodes[solid["inputs"][0]]["arguments"]["contours"]
-        self.assertEqual(1, len(outline), "A plate must have one solid outer contour, not a tube cavity")
-        self.assertEqual(4, len([item for item in document["items"] if item["key"].startswith("center_plate.frame.")]))
-        self.assertTrue(any(".panel_before" in item["key"] for item in document["items"]))
-        self.assertTrue(any(".panel_after" in item["key"] for item in document["items"]))
-
-    def test_center_plate_splits_grid_without_any_tube_through_the_plate(self):
-        captured = []
-        original = SUBJECT._emit_tube_geometry
-
-        def observe(model, part, shared):
-            captured.append(part)
-            return original(model, part, shared)
-
-        with patch.object(SUBJECT, "_emit_tube_geometry", observe):
-            generate(mainInfillMode="center_plate")
-        for part in captured:
-            if not part.key.startswith("main_grid."):
-                continue
-            if part.vertical and 450 <= part.start[0] <= 750:
-                self.assertTrue(part.end[2] <= 578 or part.start[2] >= 1222, part.key)
-            elif not part.vertical and 600 <= part.start[2] <= 1200:
-                self.assertTrue(part.end[0] <= 428 or part.start[0] >= 772, part.key)
-
-    def test_panel_is_inside_opening_leaf_and_invalid_panel_does_not_escape_boundary(self):
-        document = generate(mainInfillMode="center_plate", accessDoorEnabled=True,
-                            centerPlateWidth=100.0, centerPlateHeight=180.0)
-        plate = next(item for item in document["items"] if item["key"] == "center_plate.panel.0001")
-        self.assertEqual("access_door.leaf", plate["properties"]["group"])
-        with self.assertRaisesRegex(ValueError, "超出可用净空"):
-            generate(mainInfillMode="center_plate", centerPlateWidth=1200.0)
-        with self.assertRaisesRegex(ValueError, "板厚"):
-            generate(mainInfillMode="center_plate", centerPlateThickness=0.0)
-
-    def test_plate_helper_declares_actual_round_hole_cutters(self):
-        model = NeutralModel(template_id="plate-test", template_version="1.0.0",
-                             package_digest="test", parameters={})
-        geometry = SUBJECT.emit_rectangular_plate(model, "p", width=100, height=200, thickness=3,
-                                                  holes=[{"x": 20, "y": 30, "diameter": 8}])
-        self.assertEqual("p.finished", geometry)
-        with self.assertRaisesRegex(ValueError, "板孔"):
-            SUBJECT.emit_rectangular_plate(model, "invalid", width=100, height=200, thickness=3,
-                                           holes=[{"x": 49, "y": 0, "diameter": 8}])
+        self.assertNotIn("presets", descriptor["extensions"]["catalog"])
+        self.assertFalse(any(p["key"].startswith("centerPlate") or p["key"] == "mainInfillMode"
+                             for p in descriptor["parameters"]))
+        defaults = {p["key"]: p["defaultValue"] for p in descriptor["parameters"]}
+        for purpose in ("display", "manufacturing"):
+            document = SUBJECT.generate(defaults, {"template": {}, "geometryPurpose": purpose})
+            self.assertTrue(document["items"])
+            self.assertFalse(any("center_plate" in item["key"] for item in document["items"]))
 
     def test_default_spacing_and_existing_side_frame_piercings(self):
         document = generate()
@@ -383,19 +326,6 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
                                      [item["properties"] for item in welded["items"]])
                     self.assertEqual(display["relationships"], welded["relationships"])
                     self.assertFalse(any(".through." in node["key"] for node in display["geometry"]))
-
-    def test_center_plate_split_preserves_only_actual_outer_end_connections(self):
-        document = generate(frameDepth=28.0, mainHorizontalConnection="weld", mainInfillMode="center_plate")
-        parts = [item for item in document["items"] if item["key"].startswith("main_grid.horizontal.")]
-        split = [item for item in parts if ".panel_" in item["key"]]
-        self.assertTrue(split)
-        for item in split:
-            joints = item["properties"]["tubeDesigner.jointProcess"]
-            self.assertEqual("butt_weld", joints["start"])
-            self.assertEqual("butt_weld", joints["end"])
-            receivers = [joints[f"{end}Receiver"] for end in ("start", "end")]
-            self.assertEqual(1, sum(key.startswith("outer_frame.") for key in receivers))
-            self.assertEqual(1, sum(key.startswith("center_plate.frame.") for key in receivers))
 
     def test_too_small_leaf_fails_before_geometry_construction(self):
         with patch.object(NeutralModel, "geometry", side_effect=AssertionError("geometry emitted")):

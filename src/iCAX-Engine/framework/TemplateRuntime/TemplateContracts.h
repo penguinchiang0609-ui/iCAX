@@ -96,7 +96,7 @@ namespace iCAX::TemplateRuntime
         SParameterConstraints Constraints;
         std::vector<SParameterChoice> Choices;
         std::string GroupKey;
-        std::int32_t Order = 0;
+        std::optional<std::int32_t> Order;
         SParameterCondition VisibleWhen;
         SParameterCondition EnabledWhen;
         iCAX::Data::ObjectMap Presentation;
