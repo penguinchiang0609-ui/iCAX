@@ -25,6 +25,10 @@ namespace iCAX::OpenCascade
     // xAxis, yAxis and zAxis: finite three-number vectors with unit, orthogonal,
     // right-handed axes. They create located instances sharing the input TShape;
     // Boolean nodes use non-destructive input handling to keep instances independent.
+    // Resource nodes have no inputs and require resolved arguments.brep containing
+    // at most kMaximumResourceBRepBytes bytes of ASCII BRepTools text. Only valid,
+    // bounded, positive-volume solids (or compounds of solids) are accepted. This
+    // layer never opens arguments.reference, paths or URLs; hosts resolve them first.
     _OPEN_CASCADE_RESOURCE_IMPORT_EXP SNeutralModelEvaluation EvaluateNeutralModel(
         const iCAX::TemplateRuntime::SNeutralModel& Model_);
 

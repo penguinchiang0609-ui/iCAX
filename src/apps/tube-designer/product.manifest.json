@@ -7,7 +7,7 @@
   "capabilities": {
     "platform": {
       "domain": "tube-product-design",
-      "modules": ["template", "product", "assembly", "joint", "sketch", "disassembly", "step-export", "parts", "nesting"]
+      "modules": ["template", "product", "component-model", "assembly", "joint", "sketch", "disassembly", "step-export", "parts", "nesting"]
     },
     "tubeDesigner": {
       "templateProtocolVersion": 1,
@@ -54,7 +54,7 @@
         },
         {
           "templateId": "modular-guardrail",
-          "version": "1.0.0",
+          "version": "1.1.0",
           "displayName": "护栏/竖杆护栏/组合式竖杆护栏",
           "industry": "护栏",
           "status": "available"
@@ -88,6 +88,17 @@
   },
   "userData": {
     "features": [
+      {
+        "featureId": "component-model",
+        "recordTypes": [
+          {
+            "recordType": "solid-model",
+            "subjectTypes": ["product"],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          }
+        ]
+      },
       {
         "featureId": "customer",
         "recordTypes": [

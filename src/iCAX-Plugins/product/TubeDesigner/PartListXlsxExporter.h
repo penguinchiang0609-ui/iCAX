@@ -29,6 +29,8 @@ namespace iCAX::TubeDesigner
         double PlateHeight = 0.0;
         double PlateThickness = 0.0;
         std::string Material;
+        std::string Sourcing;
+        std::string Process;
     };
 
     _TUBE_DESIGNER_EXP void WritePartListWorkbook(

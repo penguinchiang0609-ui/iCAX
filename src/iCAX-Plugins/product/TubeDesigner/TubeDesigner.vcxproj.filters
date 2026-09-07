@@ -5,6 +5,7 @@
     <Filter Include="Header Files"><UniqueIdentifier>{0E45B798-8555-48B1-94A0-B0F5BCB1C96A}</UniqueIdentifier><Extensions>h;hh;hpp;hxx</Extensions></Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ComponentModelLibrary.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="FinalGeometryMeasurement.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingAdapter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingResultExporter.h"><Filter>Header Files</Filter></ClInclude>
@@ -16,6 +17,7 @@
     <ClInclude Include="TubeDesignerExport.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ComponentModelLibrary.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="FinalGeometryMeasurement.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="NestingAdapter.cpp"><Filter>Source Files</Filter></ClCompile>

@@ -4,6 +4,7 @@
 
 #include "Data/Variant.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -18,6 +19,7 @@ namespace iCAX::TemplateRuntime
     inline constexpr std::uint32_t kNeutralModelSchemaVersion = 1;
     inline constexpr const char* kTemplateProtocol = "icax.template-runtime";
     inline constexpr std::uint32_t kTemplateProtocolVersion = 1;
+    inline constexpr std::size_t kMaximumResourceBRepBytes = 32u * 1024u * 1024u;
 
     struct _TEMPLATE_RUNTIME_EXP SLocalizedText final
     {
@@ -131,7 +133,10 @@ namespace iCAX::TemplateRuntime
         Pattern,
         Fillet,
         Chamfer,
-        Compound
+        Compound,
+        // Resolved, in-memory ASCII BRepTools text in arguments.brep. References
+        // may be resolved by a host, but generic geometry evaluation never does IO.
+        Resource
     };
 
     struct _TEMPLATE_RUNTIME_EXP SGeometryNode final

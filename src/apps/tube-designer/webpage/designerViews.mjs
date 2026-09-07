@@ -3,9 +3,10 @@ import {
   scheduleDesignerPartThumbnailHydration,
 } from "./partThumbnail.mjs";
 import { scheduleDesignerPartInspectionHydration } from "./partInspection.mjs";
-import { isPlatePart, plateDimensions } from "./manufacturingParts.mjs";
+import { manufacturingPartKind, plateDimensions } from "./manufacturingParts.mjs";
 import { restoreScrollAnchor } from "./scrollAnchor.mjs";
 import { renderSecurityWindowReview, securityWindowOpeningDimensions } from "./securityWindowReview.mjs";
+import { renderComponentModelField } from "./componentLibrary.mjs";
 import {
   buildCatalogEntries,
   buildTemplateGroupTree,
@@ -155,6 +156,7 @@ export function renderDesignerRightPane(context, view) {
           expandedGroups,
           view,
           "right",
+          template,
         )).join("")}
       </div>
     </div>
@@ -313,7 +315,7 @@ export function renderDesignerAddParameterContent(designer, view) {
     ${renderSecurityWindowReview(template, values)}
     ${renderParameterPresetBar(template, values, view, "add")}
     ${template?.available
-      ? groupTree.map((group) => renderAddParameterGroup(group, values, pending, view, "add")).join("")
+      ? groupTree.map((group) => renderAddParameterGroup(group, values, pending, view, "add", template)).join("")
       : `<div class="tube-designer-empty">${escapeText(template?.status ?? "该模板尚不可用。")}</div>`}
   `;
 }
@@ -860,7 +862,7 @@ export function buildPartCategories(parts = [], productId = "") {
   }
   for (const category of categories.values()) {
     category.specifications = [...new Set(category.parts.map((part) => formatPartSpecification(part)))];
-    category.lengths = [...new Set(category.parts.filter((part) => !isPlatePart(part))
+    category.lengths = [...new Set(category.parts.filter((part) => !["plate", "glass", "accessory"].includes(manufacturingPartKind(part)))
       .map((part) => Number(part?.length ?? 0)))];
   }
   return [...categories.values()];
@@ -1356,6 +1358,7 @@ function renderProfileField(field, value, disabled, context) {
 }
 
 function renderField(field, value, disabled = false, context = null) {
+  if (field.presentation?.editor === "component-model") return renderComponentModelField(field, value, disabled, context);
   const name = escapeAttribute(field.key ?? field.name);
   const label = escapeText(field.displayName ?? field.label);
   if (field.type === "select" && String(field.key ?? field.name ?? "").endsWith("ProfileType")) {
@@ -1475,12 +1478,12 @@ function buildParameterGroupTree(template, fields) {
   return sortNodes(roots).map(pruneNode).filter(Boolean);
 }
 
-function renderAddParameterGroup(group, values, disabled, view, mode, depth = 0, siblingIndex = 0) {
+function renderAddParameterGroup(group, values, disabled, view, mode, template, depth = 0, siblingIndex = 0) {
   const fields = group.fields.map((field) => renderField(
     field,
     values[field.key ?? field.name],
     disabled,
-    { values, view, mode },
+    { values, view, mode, template },
   )).join("");
   const children = group.children.map((child, index) => renderAddParameterGroup(
     child,
@@ -1488,6 +1491,7 @@ function renderAddParameterGroup(group, values, disabled, view, mode, depth = 0,
     disabled,
     view,
     mode,
+    template,
     depth + 1,
     index,
   )).join("");
@@ -1507,12 +1511,12 @@ function renderAddParameterGroup(group, values, disabled, view, mode, depth = 0,
   </section>`;
 }
 
-function compactParameterGroup(group, values, disabled, expandedGroups, view, mode, depth = 0) {
+function compactParameterGroup(group, values, disabled, expandedGroups, view, mode, template, depth = 0) {
   const fields = group.fields.map((field) => renderField(
     field,
     values[field.key ?? field.name],
     disabled,
-    { values, view, mode },
+    { values, view, mode, template },
   )).join("");
   const children = group.children.map((child) => compactParameterGroup(
     child,
@@ -1521,6 +1525,7 @@ function compactParameterGroup(group, values, disabled, expandedGroups, view, mo
     expandedGroups,
     view,
     mode,
+    template,
     depth + 1,
   )).join("");
   const itemCount = countParameterGroupFields(group);
@@ -1594,9 +1599,21 @@ function partDisplayName(part) {
 }
 
 function formatPartSpecification(part) {
-  if (isPlatePart(part)) {
+  const kind = manufacturingPartKind(part);
+  if (kind === "plate" || kind === "glass") {
     const { width, height, thickness } = plateDimensions(part);
-    return `板件 ${formatNumber(width)} × ${formatNumber(height)} × ${formatNumber(thickness)} mm`;
+    return `${kind === "glass" ? "玻璃" : "板件"} ${formatNumber(width)} × ${formatNumber(height)} × ${formatNumber(thickness)} mm`;
+  }
+  if (kind === "accessory") {
+    const properties = part?.properties ?? {};
+    const name = String(properties["manufacturing.modelName"] ?? part.modelName ?? "三维配件");
+    const bounds = properties["manufacturing.modelBounds"] ?? part.modelBounds ?? {};
+    const dimensions = [bounds.width, bounds.depth, bounds.height].map((value) => Number(value));
+    const size = dimensions.every((value) => Number.isFinite(value) && value > 0)
+      ? ` ${dimensions.map(formatNumber).join(" × ")} mm` : "";
+    const sourcing = properties["manufacturing.sourcing"] ?? part.sourcing;
+    const sourceLabel = sourcing === "made" ? "自制" : sourcing === "purchased" ? "外购" : "供料方式未指定";
+    return `${name}${size} · ${sourceLabel}`;
   }
   const profile = part?.profile;
   if (!profile || typeof profile !== "object") return "—";
@@ -1607,7 +1624,7 @@ function formatPartSpecification(part) {
 
 function formatPartSpecificationWithLength(part) {
   const specification = formatPartSpecification(part);
-  if (isPlatePart(part)) return specification;
+  if (["plate", "glass", "accessory"].includes(manufacturingPartKind(part))) return specification;
   const length = Number(part?.length);
   return Number.isFinite(length) && length > 0
     ? `${specification}*len*${formatNumber(length)}`

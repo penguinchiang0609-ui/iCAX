@@ -45,6 +45,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="ComponentModelLibrary.h" />
     <ClInclude Include="FinalGeometryMeasurement.h" />
     <ClInclude Include="NestingAdapter.h" />
     <ClInclude Include="NestingResultExporter.h" />
@@ -56,6 +57,7 @@
     <ClInclude Include="TubeDesignerExport.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="ComponentModelLibrary.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FinalGeometryMeasurement.cpp" />
     <ClCompile Include="NestingAdapter.cpp" />

@@ -2,7 +2,7 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "modular-guardrail",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": {
     "zh-CN": "护栏/竖杆护栏/组合式竖杆护栏"
   },
@@ -303,6 +303,260 @@
             "cornerPostMode": "shared",
             "largePostMode": "none"
           }
+        },
+        {
+          "id": "cross-straight",
+          "displayName": {
+            "zh-CN": "X交叉直管花格直式"
+          },
+          "categoryPath": [
+            "护栏",
+            "花格护栏"
+          ],
+          "parameters": {
+            "layout": "straight",
+            "infillType": "cross",
+            "railCount": 2,
+            "guardrailUse": "platform",
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false,
+            "spearTipEnabled": false
+          }
+        },
+        {
+          "id": "cross-left-l",
+          "displayName": {
+            "zh-CN": "X交叉直管花格左转 L 型"
+          },
+          "categoryPath": [
+            "护栏",
+            "花格护栏"
+          ],
+          "parameters": {
+            "layout": "left_l",
+            "infillType": "cross",
+            "railCount": 2,
+            "guardrailUse": "platform",
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false,
+            "spearTipEnabled": false
+          }
+        },
+        {
+          "id": "diamond-straight",
+          "displayName": {
+            "zh-CN": "菱形直管花格直式"
+          },
+          "categoryPath": [
+            "护栏",
+            "花格护栏"
+          ],
+          "parameters": {
+            "layout": "straight",
+            "infillType": "diamond",
+            "railCount": 2,
+            "guardrailUse": "platform",
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false,
+            "spearTipEnabled": false
+          }
+        },
+        {
+          "id": "diamond-left-l",
+          "displayName": {
+            "zh-CN": "菱形直管花格左转 L 型"
+          },
+          "categoryPath": [
+            "护栏",
+            "花格护栏"
+          ],
+          "parameters": {
+            "layout": "left_l",
+            "infillType": "diamond",
+            "railCount": 2,
+            "guardrailUse": "platform",
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false,
+            "spearTipEnabled": false
+          }
+        },
+        {
+          "id": "wall-straight",
+          "displayName": {
+            "zh-CN": "围墙出头竖杆直式"
+          },
+          "categoryPath": [
+            "护栏",
+            "围墙栏杆"
+          ],
+          "parameters": {
+            "layout": "straight",
+            "infillType": "bars",
+            "railCount": 2,
+            "guardrailUse": "wall",
+            "wallPicketProjection": 120,
+            "spearTipEnabled": false,
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false
+          }
+        },
+        {
+          "id": "wall-spear-straight",
+          "displayName": {
+            "zh-CN": "围墙枪尖竖杆直式"
+          },
+          "categoryPath": [
+            "护栏",
+            "围墙栏杆"
+          ],
+          "parameters": {
+            "layout": "straight",
+            "infillType": "bars",
+            "railCount": 2,
+            "guardrailUse": "wall",
+            "wallPicketProjection": 120,
+            "spearTipEnabled": true,
+            "spearTipModelReference": "system:spear-tip",
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false
+          }
+        },
+        {
+          "id": "glass-straight",
+          "displayName": {
+            "zh-CN": "管框玻璃栏板直式"
+          },
+          "categoryPath": [
+            "护栏",
+            "玻璃栏板"
+          ],
+          "parameters": {
+            "layout": "straight",
+            "infillType": "glass",
+            "railCount": 2,
+            "guardrailUse": "platform",
+            "glassThickness": 8,
+            "panelEdgeClearance": 5,
+            "glassClipEnabled": true,
+            "glassClipModelReference": "system:glass-clamp",
+            "glassClipOffset": 15,
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false
+          }
+        },
+        {
+          "id": "wall-left-l",
+          "displayName": {
+            "zh-CN": "围墙出头竖杆左转 L 型"
+          },
+          "categoryPath": [
+            "护栏",
+            "围墙栏杆"
+          ],
+          "parameters": {
+            "layout": "left_l",
+            "infillType": "bars",
+            "railCount": 2,
+            "guardrailUse": "wall",
+            "wallPicketProjection": 120,
+            "spearTipEnabled": false,
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false
+          }
+        },
+        {
+          "id": "wall-spear-left-l",
+          "displayName": {
+            "zh-CN": "围墙枪尖竖杆左转 L 型"
+          },
+          "categoryPath": [
+            "护栏",
+            "围墙栏杆"
+          ],
+          "parameters": {
+            "layout": "left_l",
+            "infillType": "bars",
+            "railCount": 2,
+            "guardrailUse": "wall",
+            "wallPicketProjection": 120,
+            "spearTipEnabled": true,
+            "spearTipModelReference": "system:spear-tip",
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false
+          }
+        },
+        {
+          "id": "glass-left-l",
+          "displayName": {
+            "zh-CN": "管框玻璃栏板左转 L 型"
+          },
+          "categoryPath": [
+            "护栏",
+            "玻璃栏板"
+          ],
+          "parameters": {
+            "layout": "left_l",
+            "infillType": "glass",
+            "railCount": 2,
+            "guardrailUse": "platform",
+            "glassThickness": 8,
+            "panelEdgeClearance": 5,
+            "glassClipEnabled": true,
+            "glassClipModelReference": "system:glass-clamp",
+            "glassClipOffset": 15,
+            "cornerPostMode": "shared",
+            "largePostMode": "none",
+            "postCapEnabled": false
+          }
+        },
+        {
+          "id": "large-post-cap-straight",
+          "displayName": {
+            "zh-CN": "大立柱平盖三横档直式"
+          },
+          "categoryPath": [
+            "护栏",
+            "竖杆护栏"
+          ],
+          "parameters": {
+            "layout": "straight",
+            "infillType": "bars",
+            "railCount": 3,
+            "guardrailUse": "platform",
+            "largePostMode": "middle",
+            "largePostSize": 80,
+            "postCapEnabled": true,
+            "postCapModelReference": "system:post-cap"
+          }
+        },
+        {
+          "id": "template-cap-straight",
+          "displayName": {
+            "zh-CN": "模板柱帽三横档直式"
+          },
+          "categoryPath": [
+            "护栏",
+            "竖杆护栏"
+          ],
+          "parameters": {
+            "layout": "straight",
+            "infillType": "bars",
+            "railCount": 3,
+            "guardrailUse": "platform",
+            "largePostMode": "middle",
+            "largePostSize": 80,
+            "postCapEnabled": true,
+            "postCapModelReference": "template:post-cap"
+          }
         }
       ]
     },
@@ -313,6 +567,16 @@
       "widthParameter": "sideLength1",
       "heightParameter": "guardHeight",
       "depthParameter": "sideLength2"
+    },
+    "modelResources": {
+      "post-cap": {
+        "path": "resources/post-cap.icaxmodel.json",
+        "name": "模板示例：80方柱平盖",
+        "category": "护栏/柱帽",
+        "sourcing": "purchased",
+        "material": "Q235B",
+        "description": "模板内声明的真实固定尺寸柱帽模型；XY居中、底面Z=0，80方柱顶面焊接用。"
+      }
     }
   },
   "groups": [
@@ -350,6 +614,13 @@
         "zh-CN": "安装底板"
       },
       "order": 50
+    },
+    {
+      "key": "components",
+      "displayName": {
+        "zh-CN": "真实配件模型"
+      },
+      "order": 60
     }
   ],
   "parameters": [
@@ -493,7 +764,7 @@
     {
       "key": "guardHeight",
       "displayName": {
-        "zh-CN": "防护总高度"
+        "zh-CN": "主防护框架高度"
       },
       "valueType": "number",
       "defaultValue": 1200,
@@ -506,7 +777,7 @@
         "maximum": 2500,
         "step": 1
       },
-      "description": "安装面至护栏最高点的垂直高度；不是扶手中心线高度。须结合实际工程确认适用规范。"
+      "description": "安装面至主扶手顶面的垂直高度；出头竖杆、枪尖及柱帽另外向上增加高度。此值不是带装饰件产品的总包络高度。"
     },
     {
       "key": "railCount",
@@ -739,6 +1010,24 @@
           "displayName": {
             "zh-CN": "下封板＋上竖杆"
           }
+        },
+        {
+          "value": "cross",
+          "displayName": {
+            "zh-CN": "X 交叉直管花格"
+          }
+        },
+        {
+          "value": "diamond",
+          "displayName": {
+            "zh-CN": "菱形直管花格"
+          }
+        },
+        {
+          "value": "glass",
+          "displayName": {
+            "zh-CN": "玻璃栏板（外购）"
+          }
         }
       ]
     },
@@ -766,9 +1055,19 @@
         }
       ],
       "visibleWhen": {
-        "op": "ne",
-        "parameter": "infillType",
-        "value": "plate"
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "bars"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
       }
     },
     {
@@ -788,9 +1087,19 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "ne",
-        "parameter": "infillType",
-        "value": "plate"
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "bars"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
       },
       "description": "按每跨真实柱间净空计算，包含两端边距；默认 105 mm 留有施工余量，不代表结构或项目全面合规。"
     },
@@ -834,9 +1143,19 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "ne",
-        "parameter": "infillType",
-        "value": "bars"
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
       }
     },
     {
@@ -856,9 +1175,24 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "ne",
-        "parameter": "infillType",
-        "value": "bars"
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "glass"
+          }
+        ]
       }
     },
     {
@@ -871,9 +1205,19 @@
       "group": "infill",
       "order": 220,
       "visibleWhen": {
-        "op": "ne",
-        "parameter": "infillType",
-        "value": "bars"
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
       },
       "constraints": {
         "maximumLength": 80
@@ -1404,6 +1748,285 @@
         "maximum": 50,
         "step": 0.1
       }
+    },
+    {
+      "key": "guardrailUse",
+      "displayName": {
+        "zh-CN": "用途构造"
+      },
+      "valueType": "enum",
+      "defaultValue": "platform",
+      "group": "basic",
+      "order": 480,
+      "choices": [
+        {
+          "value": "platform",
+          "displayName": {
+            "zh-CN": "平台、阳台护栏"
+          }
+        },
+        {
+          "value": "wall",
+          "displayName": {
+            "zh-CN": "围墙出头竖杆"
+          }
+        }
+      ],
+      "description": "围墙款竖杆穿过上部横档并伸出，自动生成真实型孔；不是普通阳台防攀爬栏杆。"
+    },
+    {
+      "key": "wallPicketProjection",
+      "displayName": {
+        "zh-CN": "竖杆超出扶手顶高度"
+      },
+      "valueType": "number",
+      "defaultValue": 120,
+      "group": "layout",
+      "order": 490,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "guardrailUse",
+        "value": "wall"
+      }
+    },
+    {
+      "key": "picketHoleClearance",
+      "displayName": {
+        "zh-CN": "穿杆型孔单边间隙"
+      },
+      "valueType": "number",
+      "defaultValue": 0.3,
+      "group": "process",
+      "order": 500,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 3,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "guardrailUse",
+        "value": "wall"
+      },
+      "description": "制造结果按竖杆实际外轮廓在扶手及上横档开穿孔；预览省略内部型孔，不改变拆单加工几何。"
+    },
+    {
+      "key": "spearTipEnabled",
+      "displayName": {
+        "zh-CN": "安装竖杆枪尖"
+      },
+      "valueType": "boolean",
+      "defaultValue": false,
+      "group": "components",
+      "order": 510,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "guardrailUse",
+        "value": "wall"
+      }
+    },
+    {
+      "key": "spearTipModelReference",
+      "displayName": {
+        "zh-CN": "枪尖模型"
+      },
+      "valueType": "string",
+      "defaultValue": "system:spear-tip",
+      "group": "components",
+      "order": 520,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 200
+      },
+      "presentation": {
+        "editor": "component-model"
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "guardrailUse",
+            "value": "wall"
+          },
+          {
+            "op": "eq",
+            "parameter": "spearTipEnabled",
+            "value": true
+          }
+        ]
+      },
+      "description": "刚体模型平底面放到竖杆顶，不缩放；内置款底座20×20mm，高70mm，枪尖是独立外购件。"
+    },
+    {
+      "key": "postCapEnabled",
+      "displayName": {
+        "zh-CN": "安装大立柱柱帽"
+      },
+      "valueType": "boolean",
+      "defaultValue": false,
+      "group": "components",
+      "order": 530,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "largePostMode",
+        "value": "none"
+      }
+    },
+    {
+      "key": "postCapModelReference",
+      "displayName": {
+        "zh-CN": "大立柱柱帽模型"
+      },
+      "valueType": "string",
+      "defaultValue": "system:post-cap",
+      "group": "components",
+      "order": 540,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 200
+      },
+      "presentation": {
+        "editor": "component-model"
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "postCapEnabled",
+        "value": true
+      },
+      "description": "柱帽模型底面放到大立柱顶；内置款为80方柱平盖，外宽84mm、高6mm，不自动缩放；装饰件可高于主防护高度。"
+    },
+    {
+      "key": "glassThickness",
+      "displayName": {
+        "zh-CN": "玻璃成品总厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 8,
+      "group": "infill",
+      "order": 550,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 40,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillType",
+        "value": "glass"
+      },
+      "description": "这是采购尺寸，不代表玻璃安全认证；须另行确认夹层构造、边部加工、荷载和连接。"
+    },
+    {
+      "key": "glassMaterial",
+      "displayName": {
+        "zh-CN": "玻璃材质说明"
+      },
+      "valueType": "string",
+      "defaultValue": "夹层玻璃（构造待确认）",
+      "group": "infill",
+      "order": 560,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 120
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillType",
+        "value": "glass"
+      }
+    },
+    {
+      "key": "glassClipEnabled",
+      "displayName": {
+        "zh-CN": "安装玻璃固定夹"
+      },
+      "valueType": "boolean",
+      "defaultValue": false,
+      "group": "components",
+      "order": 570,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillType",
+        "value": "glass"
+      }
+    },
+    {
+      "key": "glassClipModelReference",
+      "displayName": {
+        "zh-CN": "玻璃夹模型"
+      },
+      "valueType": "string",
+      "defaultValue": "system:glass-clamp",
+      "group": "components",
+      "order": 580,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 200
+      },
+      "presentation": {
+        "editor": "component-model"
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "glass"
+          },
+          {
+            "op": "eq",
+            "parameter": "glassClipEnabled",
+            "value": true
+          }
+        ]
+      },
+      "description": "模型为固定尺寸刚体，开口朝局部+X，每跨四只镜像放置；内置玻璃槽8mm，需匹配玻璃成品厚度。"
+    },
+    {
+      "key": "glassClipOffset",
+      "displayName": {
+        "zh-CN": "夹具中心距立柱内侧"
+      },
+      "valueType": "number",
+      "defaultValue": 15,
+      "group": "components",
+      "order": 590,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "glass"
+          },
+          {
+            "op": "eq",
+            "parameter": "glassClipEnabled",
+            "value": true
+          }
+        ]
+      },
+      "description": "内置夹具固定为15mm，对应板边间隙至少5mm；外部模型需人工核对安装面。"
     }
   ]
 }

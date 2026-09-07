@@ -50,6 +50,8 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="TubeDesignerTests.cpp" />
+    <ClCompile Include="ComponentResourceTests.cpp" />
+    <ClCompile Include="ComponentModelLibraryTests.cpp" />
     <ClCompile Include="NestingAdapterTests.cpp">
       <PreprocessorDefinitions>_TUBE_DESIGNER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -86,6 +88,9 @@
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Database\Database.vcxproj">
       <Project>{c746f6a5-c34a-4649-a3f4-ad185002dedd}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj">
+      <Project>{890ea74b-81b1-44f8-a740-94da104478a1}</Project>
     </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
       <Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project>

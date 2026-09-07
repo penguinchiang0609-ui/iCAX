@@ -26,6 +26,13 @@ import {
   renderProfileLibraryViewportOverlay,
 } from "./profileLibrary.mjs";
 import {
+  attachComponentLibrary,
+  renderComponentLibraryDialogs,
+  renderComponentLibraryLeftPane,
+  renderComponentLibraryRightPane,
+  renderComponentLibraryViewportOverlay,
+} from "./componentLibrary.mjs";
+import {
   clearPartsViewportAnnotations,
   renderNestingLeftPane,
   renderNestingResultDock,
@@ -201,7 +208,7 @@ export function getWindowCloseGuard(context) {
 function withDesignerContext(context) {
   return {
     ...context,
-    areaTitleOverrides: { view: "产品", nesting: "下料", profiles: "管型", sketch: "草图", about: "关于" },
+    areaTitleOverrides: { view: "产品", nesting: "下料", profiles: "管型", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {
         left: renderDesignerLeftPane,
@@ -210,6 +217,10 @@ function withDesignerContext(context) {
       profiles: {
         left: renderProfileLibraryLeftPane,
         right: renderProfileLibraryRightPane,
+      },
+      components: {
+        left: renderComponentLibraryLeftPane,
+        right: renderComponentLibraryRightPane,
       },
       sketch: {
         left: renderSketchLeftPane,
@@ -226,7 +237,7 @@ function withDesignerContext(context) {
     },
     normalizeAreaId: (tabId) => tabId === "parts"
       ? "nesting"
-      : (["view", "nesting", "profiles", "sketch", "about"].includes(tabId) ? tabId : "view"),
+      : (["view", "nesting", "profiles", "components", "sketch", "about"].includes(tabId) ? tabId : "view"),
     resolveWorkbenchPresentation: (_context, _view, _scene, areaId) => ({
       className: `tube-designer-workspace ${areaId === "nesting" ? "tube-designer-production-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
       style: areaId === "nesting" ? renderNestingWorkspaceStyle() : "",
@@ -241,6 +252,7 @@ function withDesignerContext(context) {
     afterProjectRender(context, view, mount, ops) {
       restoreNestingPartListScroll(context, view, mount);
       attachSketchAreaInteractions(context, view, mount, ops);
+      attachComponentLibrary(context, view, mount, ops);
     },
   };
 }
@@ -259,14 +271,14 @@ function configureDesignerViewport(_context, view, areaId) {
   const viewport = view.viewport;
   if (!viewport) return;
   const normalizedAreaId = areaId === "parts" ? "nesting"
-    : (["view", "nesting", "profiles", "sketch", "about"].includes(areaId) ? areaId : "view");
+    : (["view", "nesting", "profiles", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
   view.tubeDesignerProjectionModes ??= {};
   const projectionMode = view.tubeDesignerProjectionModes[normalizedAreaId] ?? "perspective";
   viewport.setProjectionToggleVisible?.(!["sketch", "about"].includes(normalizedAreaId));
   viewport.setPickingEnabled?.(!["sketch", "about"].includes(normalizedAreaId));
   viewport.setContinuousRendering?.(normalizedAreaId !== "sketch");
   viewport.setProjectionChangeHandler?.((mode) => {
-    const currentAreaId = ["view", "profiles", "nesting"].includes(view.activeAreaId)
+    const currentAreaId = ["view", "profiles", "components", "nesting"].includes(view.activeAreaId)
       ? view.activeAreaId : "view";
     view.tubeDesignerProjectionModes ??= {};
     view.tubeDesignerProjectionModes[currentAreaId] = mode;
@@ -276,7 +288,7 @@ function configureDesignerViewport(_context, view, areaId) {
 }
 
 function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
-  if (["profiles", "sketch", "nesting", "about"].includes(areaId)) {
+  if (["profiles", "components", "sketch", "nesting", "about"].includes(areaId)) {
     // 管型、下料与辅助工作区自行装载当前选择，不对应产品装配 View。
     return false;
   }
@@ -301,6 +313,7 @@ function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
 function renderDesignerAreaViewportOverlay(context, view, scene) {
   if (view.activeAreaId !== "nesting") clearPartsViewportAnnotations(view);
   if (view.activeAreaId === "profiles") return renderProfileLibraryViewportOverlay(context, view, scene);
+  if (view.activeAreaId === "components") return renderComponentLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "sketch") return renderSketchViewportOverlay(context, view, scene);
   if (view.activeAreaId === "nesting") return renderNestingViewportOverlay(context, view, scene);
   if (view.activeAreaId === "about") return renderAboutViewportOverlay(context, view, scene);
@@ -317,7 +330,7 @@ function renderDesignerWorkbenchSuffix(context, view, scene) {
   const areaDialogs = view.activeAreaId === "view"
     ? ""
     : renderDesignerDialogs(view.scene?.tubeDesigner ?? {}, view);
-  return `${nestingResultDock}${areaDialogs}${nestingSettingsDialogs}${renderDesignerOperationOverlay(context, view, scene)}${
+  return `${nestingResultDock}${areaDialogs}${nestingSettingsDialogs}${renderComponentLibraryDialogs(view)}${renderDesignerOperationOverlay(context, view, scene)}${
     view.tubeDesignerLoadProgress ? renderProgress(view.tubeDesignerLoadProgress) : ""
   }`;
 }

@@ -253,6 +253,7 @@ namespace
         if (strValue_ == "fillet") return EGeometryOperator::Fillet;
         if (strValue_ == "chamfer") return EGeometryOperator::Chamfer;
         if (strValue_ == "compound") return EGeometryOperator::Compound;
+        if (strValue_ == "resource") return EGeometryOperator::Resource;
         throw std::invalid_argument("unsupported geometry operator: " + strValue_);
     }
 

@@ -1,0 +1,218 @@
+{
+  "schema": "icax.neutral-model",
+  "schemaVersion": 1,
+  "template": {
+    "id": "component-connector-block",
+    "version": "1.0.0",
+    "packageDigest": ""
+  },
+  "coordinateSystem": "right-handed-x-width-y-depth-z-height",
+  "lengthUnit": "mm",
+  "parameters": {},
+  "geometry": [
+    {
+      "key": "block.body.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -20,
+                -15
+              ],
+              [
+                20,
+                -15
+              ],
+              [
+                20,
+                15
+              ],
+              [
+                -20,
+                15
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "block.body.solid",
+      "operator": "extrude",
+      "inputs": [
+        "block.body.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          20
+        ]
+      }
+    },
+    {
+      "key": "block.hole.1.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            -10,
+            0,
+            -1
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "circle",
+            "radius": 4
+          }
+        ]
+      }
+    },
+    {
+      "key": "block.hole.1.solid",
+      "operator": "extrude",
+      "inputs": [
+        "block.hole.1.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          22
+        ]
+      }
+    },
+    {
+      "key": "block.hole.2.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            10,
+            0,
+            -1
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "circle",
+            "radius": 4
+          }
+        ]
+      }
+    },
+    {
+      "key": "block.hole.2.solid",
+      "operator": "extrude",
+      "inputs": [
+        "block.hole.2.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          22
+        ]
+      }
+    },
+    {
+      "key": "block.finished",
+      "operator": "boolean",
+      "inputs": [
+        "block.body.solid",
+        "block.hole.1.solid",
+        "block.hole.2.solid"
+      ],
+      "arguments": {
+        "operation": "subtract",
+        "target": "block.body.solid",
+        "tools": [
+          "block.hole.1.solid",
+          "block.hole.2.solid"
+        ]
+      }
+    }
+  ],
+  "items": [
+    {
+      "key": "component",
+      "displayName": "双孔连接块",
+      "representations": {
+        "display": "block.finished",
+        "export": "block.finished"
+      },
+      "children": [],
+      "properties": {
+        "manufacturing.partKind": "accessory",
+        "manufacturing.sourcing": "made",
+        "manufacturing.material": "Q235B",
+        "quantity": 1
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "key": "display.default",
+      "purpose": "display",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "export.manufacturing",
+      "purpose": "export",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    }
+  ],
+  "relationships": [],
+  "tables": [],
+  "diagnostics": []
+}

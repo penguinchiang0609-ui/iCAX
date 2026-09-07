@@ -4,6 +4,7 @@
 #define _TUBE_DESIGNER
 #include <TubeDesigner/PartListXlsxExporter.h>
 #undef _TUBE_DESIGNER
+#include <TubeDesigner/ComponentModelLibrary.h>
 #include <TubeDesigner/FinalGeometryMeasurement.h>
 #include <OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
@@ -1426,8 +1427,9 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
     for (const auto& _Definition : _Descriptor.Parameters)
         _Parameters[_Definition.Key] = _Definition.DefaultValue;
     EXPECT_TRUE(_Parameters.at("accessDoorEnabled").To<bool>());
-    // Keep the no-opening frame/through-hole fixture explicit. New product
-    // defaults are exercised with their opening in the purpose-protocol test.
+    // Fix the legacy two-side-frame/through-hole measurement fixture explicitly;
+    // its counts and opening stations must not follow commercial product defaults.
+    // Current defaults are exercised with their opening in the purpose-protocol test.
     _Parameters["accessDoorEnabled"] = false;
     _Parameters["frameLayout"] = std::string("left_right");
     _Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
@@ -1535,6 +1537,7 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
 
     _Parameters["width"] = 1400.0;
     _Parameters["frameLayout"] = std::string("four_sides");
+    // This stage verifies a single unfolded frame, regardless of the default joint.
     _Parameters["frameJoinType"] = std::string("v_groove_90:sharp_v");
     const auto _SecondResponse = _Host.Invoke(
         iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
@@ -2737,7 +2740,7 @@ TEST(TemplateRuntimeTest, EveryModularGuardrailPresetProducesValidNonOverlapping
     const auto _Base = TemplateProtocolFixture(_Root, "modular_guardrail");
     const auto _Catalog = _Base.Descriptor.Extensions.at("catalog").To<ObjectMap>();
     const auto _Presets = _Catalog.at("presets").To<iCAX::Data::VariantArray>();
-    ASSERT_GE(_Presets.size(), 20u);
+    ASSERT_GE(_Presets.size(), 32u);
     for (const auto& _PresetValue : _Presets)
     {
         const auto _Preset = _PresetValue.To<ObjectMap>();
@@ -2747,8 +2750,11 @@ TEST(TemplateRuntimeTest, EveryModularGuardrailPresetProducesValidNonOverlapping
             _Fixture.Parameters[_Key] = _Value;
         _Fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
             _Fixture.Descriptor, _Fixture.Parameters);
-        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
-            InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing"));
+        auto _Document = InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing");
+        ResolveTemplateComponentResources(_Document,
+            _Root / "src/apps/tube-designer/templates/modular_guardrail", _Base.Descriptor.Extensions,
+            _Root / "src/apps/tube-designer/models", nullptr);
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Document);
         ASSERT_EQ(1u, _Model.Outputs.size());
         ASSERT_EQ("result", _Model.Outputs.front().Purpose);
         ASSERT_GT(_Model.Items.size(), 2u);
@@ -2762,13 +2768,16 @@ TEST(TemplateRuntimeTest, EveryModularGuardrailPresetProducesValidNonOverlapping
             ASSERT_FALSE(_Shape.IsNull());
             EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
             EXPECT_GT(RootSelectionShapeVolume(_Shape), 0.01);
-            const auto _IsPlate = _Item.Properties.at("manufacturing.partKind").To<std::string>() == "plate";
-            EXPECT_EQ(!_IsPlate, _Item.Properties.contains("tubeDesigner.profile"));
+            const auto _Kind = _Item.Properties.at("manufacturing.partKind").To<std::string>();
+            const bool _IsTube = _Kind == "tube" || _Kind == "profile" || _Kind == "linear";
+            EXPECT_TRUE(_IsTube || _Kind == "plate" || _Kind == "glass" || _Kind == "accessory");
+            EXPECT_EQ(_IsTube, _Item.Properties.contains("tubeDesigner.profile"));
             _Shapes.push_back(_Shape);
             _Bounds.push_back(RootSelectionShapeBounds(_Shape));
         }
         // Skip face contact and separated pairs; only positive-volume bounds
-        // need an exact common operation. This catches real tube/plate overlaps.
+        // need an exact common operation. Glass clamps may touch faces, but no
+        // tube, plate, glass or accessory pair may overlap by positive volume.
         for (std::size_t _A = 0; _A < _Shapes.size(); ++_A)
         {
             for (std::size_t _B = _A + 1; _B < _Shapes.size(); ++_B)

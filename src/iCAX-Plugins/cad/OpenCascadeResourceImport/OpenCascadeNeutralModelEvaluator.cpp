@@ -3,11 +3,14 @@
 #include "OpenCascadeNeutralModelEvaluator.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <limits>
 #include <numeric>
+#include <sstream>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -16,17 +19,24 @@
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
+#include <BRepBndLib.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepGProp.hxx>
+#include <BRepTools.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <Bnd_Box.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <Geom_BezierCurve.hxx>
 #include <Geom_BSplineCurve.hxx>
 #include <Geom_Ellipse.hxx>
+#include <GProp_GProps.hxx>
 #include <ShapeFix_Face.hxx>
+#include <Standard_Failure.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
 #include <gp_Circ.hxx>
@@ -40,6 +50,7 @@
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Iterator.hxx>
 #include <TopoDS.hxx>
 
 namespace
@@ -691,6 +702,86 @@ namespace
         return _Prism.Shape();
     }
 
+    TopoDS_Shape MakeResource(const SGeometryNode& Node_)
+    {
+        const auto _Path = "geometry." + Node_.Key + ".arguments.brep";
+        if (!Node_.Inputs.empty())
+            throw std::invalid_argument("geometry." + Node_.Key + " resource must not have inputs");
+        const auto _Value = Find(Node_.Arguments, "brep");
+        if (!_Value || !_Value->Is<std::string>())
+            throw std::invalid_argument(_Path + " requires resolved BRepTools text; references, paths and URLs are not read by the geometry evaluator");
+        const auto& _Text = std::get<std::string>(_Value->m_Value);
+        if (_Text.empty() || _Text.size() > iCAX::TemplateRuntime::kMaximumResourceBRepBytes)
+            throw std::invalid_argument(_Path + " must contain 1 to 33554432 bytes (32 MiB)");
+        if (std::any_of(_Text.begin(), _Text.end(), [](unsigned char Character_) {
+            return Character_ > 126 || (Character_ < 32 && Character_ != '\n'
+                && Character_ != '\r' && Character_ != '\t' && Character_ != '\f' && Character_ != '\v');
+        }))
+            throw std::invalid_argument(_Path + " must be ASCII BRepTools text, not binary data");
+        std::string_view _Header(_Text);
+        const auto _Start = _Header.find_first_not_of(" \t\r\n\f\v");
+        if (_Start == std::string_view::npos)
+            throw std::invalid_argument(_Path + " must not be blank");
+        _Header.remove_prefix(_Start);
+        if (!_Header.starts_with("CASCADE Topology V1,")
+            && !_Header.starts_with("CASCADE Topology V2,")
+            && !_Header.starts_with("CASCADE Topology V3,"))
+            throw std::invalid_argument(_Path + " must use the ASCII BRepTools CASCADE Topology V1/V2/V3 format");
+
+        try
+        {
+            std::istringstream _Stream(_Text);
+            BRep_Builder _Builder;
+            TopoDS_Shape _Shape;
+            BRepTools::Read(_Shape, _Stream, _Builder);
+            if (_Stream.fail() || _Shape.IsNull())
+                throw std::invalid_argument(_Path + " could not be read as a non-empty BRep shape");
+            _Stream >> std::ws;
+            if (_Stream.peek() != std::char_traits<char>::eof())
+                throw std::invalid_argument(_Path + " contains trailing data after the BRep shape");
+            if (!BRepCheck_Analyzer(_Shape).IsValid())
+                throw std::invalid_argument(_Path + " contains invalid BRep topology");
+
+            std::size_t _SolidCount = 0;
+            const std::function<void(const TopoDS_Shape&, unsigned int)> _ValidateSolidTree =
+                [&](const TopoDS_Shape& Shape_, unsigned int Depth_) {
+                    if (Depth_ > 64)
+                        throw std::invalid_argument(_Path + " exceeds the maximum compound nesting depth");
+                    if (Shape_.ShapeType() == TopAbs_SOLID)
+                    {
+                        GProp_GProps _Mass;
+                        BRepGProp::VolumeProperties(Shape_, _Mass);
+                        if (!std::isfinite(_Mass.Mass()) || _Mass.Mass() <= 0.0)
+                            throw std::invalid_argument(_Path + " requires finite positive-volume solids");
+                        ++_SolidCount;
+                        return;
+                    }
+                    if (Shape_.ShapeType() != TopAbs_COMPOUND && Shape_.ShapeType() != TopAbs_COMPSOLID)
+                        throw std::invalid_argument(_Path + " only accepts solids or compounds of solids, not loose faces, edges or shells");
+                    const auto _PreviousCount = _SolidCount;
+                    for (TopoDS_Iterator _Child(Shape_); _Child.More(); _Child.Next())
+                        _ValidateSolidTree(_Child.Value(), Depth_ + 1);
+                    if (_SolidCount == _PreviousCount)
+                        throw std::invalid_argument(_Path + " contains an empty compound");
+                };
+            _ValidateSolidTree(_Shape, 0);
+            Bnd_Box _Bounds;
+            BRepBndLib::Add(_Shape, _Bounds, false);
+            if (_Bounds.IsVoid() || _Bounds.IsOpen())
+                throw std::invalid_argument(_Path + " requires finite non-empty bounds");
+            std::array<double, 6> _Extents;
+            _Bounds.Get(_Extents[0], _Extents[1], _Extents[2], _Extents[3], _Extents[4], _Extents[5]);
+            if (!std::all_of(_Extents.begin(), _Extents.end(), [](double Value_) { return std::isfinite(Value_); }))
+                throw std::invalid_argument(_Path + " requires finite non-empty bounds");
+            return _Shape;
+        }
+        catch (const Standard_Failure& Failure_)
+        {
+            const char* _Message = Failure_.what();
+            throw std::invalid_argument(_Path + " is not a usable solid BRep: " + (_Message ? _Message : "OpenCascade rejected the geometry"));
+        }
+    }
+
     TopoDS_Shape MakeTransform(const SGeometryNode& Node_, const TopoDS_Shape& Input_)
     {
         const auto _Path = std::string("geometry.") + Node_.Key + ".placement";
@@ -847,6 +938,9 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
         {
         case EGeometryOperator::Profile2D:
             _Shape = MakeProfile2D(_Node);
+            break;
+        case EGeometryOperator::Resource:
+            _Shape = MakeResource(_Node);
             break;
         case EGeometryOperator::Extrude:
             if (_Node.Inputs.size() != 1)

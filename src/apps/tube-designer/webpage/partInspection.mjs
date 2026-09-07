@@ -51,7 +51,14 @@ export function buildAutomaticDimensionReport(part) {
     && String(candidate?.source ?? "") === "final-brep"
     ? candidate
     : {};
-  if (measurement.partKind === "plate" && measurement.plate) {
+  if (measurement.partKind === "accessory") {
+    const bounds = Object.fromEntries(["width", "depth", "height"].map((key) => [key, finiteNumber(measurement.bounds?.[key]) ?? 0]));
+    return Object.freeze({ partKind: "accessory", length: 0, bounds,
+      profile: `配件 ${Object.values(bounds).map(formatMillimeters).join(" × ")} mm`,
+      holes: [], pitches: [], annotations: [], hasLinearReference: false,
+      source: "final-brep", axis: null, offsetDirection: null });
+  }
+  if (["plate", "glass"].includes(measurement.partKind) && measurement.plate) {
     const plate = measurement.plate;
     const center = finitePoint(plate.center);
     const axes = (plate.axes ?? []).map(finitePoint);
@@ -64,7 +71,7 @@ export function buildAutomaticDimensionReport(part) {
       for (let index = 0; index < 3; index += 1) {
         annotations.push({ start: origin, end: add(origin, scale(axes[index], dimensions[index])),
           offset: scale(axes[index === 0 ? 1 : 0], -Math.max(12, dimensions[1] * 0.13)),
-          label: `${["长边", "短边", "板厚"][index]} ${formatMillimeters(dimensions[index])} mm`, color: "#ffc43d" });
+          label: `${["长边", "短边", measurement.partKind === "glass" ? "玻璃厚度" : "板厚"][index]} ${formatMillimeters(dimensions[index])} mm`, color: "#ffc43d" });
       }
     }
     const referenceStart = finitePoint(measurement.linearReference?.start);
@@ -74,8 +81,8 @@ export function buildAutomaticDimensionReport(part) {
     const referenceAxis = referenceLength > 1e-7 ? scale(referenceVector, 1 / referenceLength) : null;
     const holes = (measurement.features ?? []).map((feature, index) =>
       normalizeHoleFeature(feature, index, referenceStart, referenceAxis, referenceLength)).filter(Boolean);
-    return Object.freeze({ length: dimensions[0] ?? 0,
-      profile: `板件 ${dimensions.map((size) => formatMillimeters(size ?? 0)).join(" × ")} mm`,
+    return Object.freeze({ partKind: measurement.partKind, length: dimensions[0] ?? 0,
+      profile: `${measurement.partKind === "glass" ? "玻璃" : "板件"} ${dimensions.map((size) => formatMillimeters(size ?? 0)).join(" × ")} mm`,
       plate, holes, pitches: [], annotations, hasLinearReference: Boolean(valid),
       source: "final-brep", axis: axes[0] ?? null, offsetDirection: axes[1] ?? null });
   }
@@ -255,7 +262,8 @@ async function hydrateInspection(context, part) {
     if (!await finishInspectionProgress(mount, controller, progressPaintedAt)) return;
     setInspectionStatus(
       controller,
-      `已显示 ${dimensionCount} 条自动标尺，识别到 ${controller.dimensionReport.holes.length} 个孔 / 开口。`,
+      controller.dimensionReport.partKind === "accessory" ? "已读取配件真实外包尺寸；配件不生成管材标尺。"
+        : `已显示 ${dimensionCount} 条自动标尺，识别到 ${controller.dimensionReport.holes.length} 个孔 / 开口。`,
       false,
     );
   } catch (error) {
@@ -302,9 +310,13 @@ function renderAutomaticDimensionState(controller) {
     result.innerHTML = `<div class="tube-designer-dimension-empty">正在从最终零件几何提取尺寸…</div>`;
     return;
   }
+  if (report.partKind === "accessory") {
+    result.innerHTML = `<div class="tube-designer-dimension-overview">${[["width", "宽 X"], ["depth", "深 Y"], ["height", "高 Z"]].map(([key, label]) => `<span><small>${label}</small><strong>${formatMillimeters(report.bounds[key])} mm</strong></span>`).join("")}<span><small>数据来源</small><strong>最终几何</strong></span></div><div class="tube-designer-dimension-empty">配件按完整模型复尺，不生成管材总长或孔距标尺。</div>`;
+    return;
+  }
   result.innerHTML = `
     <div class="tube-designer-dimension-overview">
-      <span><small>总长</small><strong>${formatMillimeters(report.length)} mm</strong></span>
+      <span><small>${report.plate ? "长边" : "总长"}</small><strong>${formatMillimeters(report.length)} mm</strong></span>
       <span><small>规格</small><strong>${escapeText(report.profile)}</strong></span>
       <span><small>孔 / 开口</small><strong>${report.holes.length} 个</strong></span>
       <span><small>数据来源</small><strong>最终几何</strong></span>
@@ -325,7 +337,7 @@ function renderAutomaticDimensionState(controller) {
             <span>中心距 ${formatMillimeters(pitch.centerDistance)} · 最近开口边净距 ${formatMillimeters(pitch.edgeClearance)}</span>
           </article>`).join("")}
       </div>`
-      : `<div class="tube-designer-dimension-empty">当前最终几何中未识别到孔或开口；总长与截面仍取自当前实体。</div>`}
+      : `<div class="tube-designer-dimension-empty">${report.plate ? "长边、短边与厚度取自当前实体，不作为管材处理。" : "当前最终几何中未识别到孔或开口；总长与截面仍取自当前实体。"}</div>`}
   `;
 }
 

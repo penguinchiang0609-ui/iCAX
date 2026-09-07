@@ -1129,6 +1129,9 @@ export const tubeDesignerCss = String.raw`
 .tube-designer-schematic .guardrail-infill { stroke: #83bbb6; stroke-width: 1.05; }
 .tube-designer-schematic .guardrail-base { stroke: #b5d4d0; stroke-width: 1.8; }
 .tube-designer-schematic .guardrail-panel { fill: rgba(113, 175, 181, .48); stroke: #9ac5c7; stroke-width: 1.2; }
+.tube-designer-schematic .guardrail-glass { fill: rgba(113, 194, 223, .22); stroke: #9fdbed; stroke-width: .8; }
+.tube-designer-schematic .guardrail-spear { fill: #a2c8c3; stroke: #a2c8c3; stroke-width: .6; }
+.tube-designer-schematic .guardrail-post-cap { fill: #c6dbd8; stroke: #91b6b2; stroke-width: .5; }
 .tube-designer-schematic .guardrail-round { stroke-linecap: round; }
 .tube-designer-schematic .security-window-plate { fill: #61969b; stroke: #cee2df; stroke-width: 2; }
 
@@ -1956,6 +1959,52 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 .tube-sketch-property-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .tube-sketch-property-panel > footer { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 11px 13px; border-top: 1px solid #cbd5da; background: #fff; }
 .tube-sketch-property-panel > footer button { min-width: 0; }
+
+.tube-component-library-panel { height: 100%; min-height: 0; overflow: hidden; box-sizing: border-box; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 0; }
+.tube-component-library-panel .tube-designer-heading > div, .tube-component-library-editor .tube-designer-heading > div { display: grid; gap: 4px; }
+.tube-component-library-filters { display: grid; gap: 8px; padding: 10px; border-bottom: 1px solid #d2dde0; }
+.tube-component-library-filters input { box-sizing: border-box; width: 100%; min-height: 33px; padding: 6px 8px; border: 1px solid #bdcdd2; border-radius: 5px; background: #fff; }
+.tube-component-library-filters > div { display: flex; gap: 5px; }
+.tube-component-library-filters button { flex: 1; min-width: 0; padding: 6px 3px; border: 1px solid #c5d4d8; border-radius: 4px; background: #fff; color: #59737b; font-size: 11px; }
+.tube-component-library-filters button.selected { border-color: #57aca3; background: #e1f2ef; color: #11796d; }
+.tube-component-library-list { min-height: 0; padding: 8px; overflow: auto; }
+.tube-component-library-group { margin-bottom: 9px; overflow: hidden; border: 1px solid #cbd8dc; border-radius: 6px; background: #fff; }
+.tube-component-library-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; padding: 8px; border: 0; background: #e9f0f2; color: #294e57; text-align: left; }
+.tube-component-library-group-heading small { flex-shrink: 0; color: #72868c; }
+.tube-component-library-group > div[hidden] { display: none; }
+.tube-component-library-card { display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 8px; border: 0; border-top: 1px solid #e0e7e9; background: #fff; color: #2b4c55; text-align: left; cursor: pointer; }
+.tube-component-library-card:hover { background: #f0f7f6; }
+.tube-component-library-card.selected { background: #e2f2ef; box-shadow: inset 3px 0 #178f82; }
+.tube-component-library-icon { width: 34px; height: 34px; flex: 0 0 34px; color: #438e89; }
+.tube-component-library-icon svg { width: 100%; height: 100%; }
+.tube-component-library-card > span:last-child { display: grid; min-width: 0; gap: 3px; }
+.tube-component-library-card strong, .tube-component-library-card small, .tube-component-library-card em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tube-component-library-card strong { font-size: 12px; }
+.tube-component-library-card small, .tube-component-library-card em { color: #74888f; font-size: 10px; font-style: normal; }
+.tube-component-library-panel > footer, .tube-component-library-editor > footer { display: flex; justify-content: space-between; gap: 8px; padding: 10px; border-top: 1px solid #cbd8dc; background: #fff; }
+.tube-component-library-editor { height: 100%; min-height: 0; overflow: hidden; box-sizing: border-box; grid-template-rows: auto minmax(0, 1fr) auto; gap: 0; }
+.tube-component-library-editor-body { display: grid; align-content: start; gap: 12px; min-height: 0; padding: 13px; overflow: auto; }
+.tube-component-library-editor textarea, .tube-component-library-dialog textarea { box-sizing: border-box; width: 100%; padding: 7px 8px; border: 1px solid #bdcdd2; border-radius: 4px; resize: vertical; font: inherit; }
+.tube-component-library-bounds { display: grid; gap: 7px; padding: 10px; border: 1px solid #cfdddf; border-radius: 5px; background: #fff; }
+.tube-component-library-bounds > strong { color: #41606a; font-size: 11px; }
+.tube-component-library-bounds dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0; }
+.tube-component-library-bounds dt { color: #799097; font-size: 10px; }
+.tube-component-library-bounds dd { margin: 4px 0 0; overflow-wrap: anywhere; color: #30525b; font-size: 12px; font-weight: 600; }
+.tube-component-library-bounds small, .tube-component-library-note, .tube-component-library-source { color: #778b92; font-size: 11px; line-height: 1.6; }
+.tube-component-library-source { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.tube-component-library-source strong { color: #45636c; font-weight: 500; }
+.tube-component-library-error { display: grid; gap: 8px; padding: 10px; border: 1px solid #e8b5a1; border-radius: 4px; background: #fff4ee; color: #994825; overflow-wrap: anywhere; font-size: 12px; }
+.tube-component-library-hud { position: absolute; top: 12px; left: 12px; right: 145px; z-index: 4; display: grid; gap: 4px; width: fit-content; max-width: calc(100% - 165px); padding: 11px 14px; border: 1px solid #36545d; border-radius: 6px; background: rgba(13, 34, 42, .92); color: #d6e8ea; pointer-events: none; }
+.tube-component-library-hud strong { font-size: 14px; overflow-wrap: anywhere; }
+.tube-component-library-hud span { color: #a8c0c6; font-size: 12px; }
+.tube-component-library-hud small { color: #7d9ca6; font-size: 11px; }
+.tube-component-library-hud p { color: #ffd0af; font-size: 12px; }
+.tube-component-library-hud button { pointer-events: auto; }
+.tube-component-library-dialog .tube-designer-preset-dialog-body { display: grid; gap: 12px; max-height: 65vh; overflow: auto; }
+.tube-component-model-field { display: grid; gap: 5px; }
+.tube-component-model-field > label { display: grid; gap: 5px; }
+.tube-component-model-field small { color: #6a818a; font-size: 10px; }
+.tube-component-model-field > button { justify-self: start; min-height: 25px; padding: 3px 7px; font-size: 10px; }
 
 @media (max-width: 1180px) {
   .tube-designer-parts-viewport-header { grid-template-columns: minmax(0, 1fr) auto; }

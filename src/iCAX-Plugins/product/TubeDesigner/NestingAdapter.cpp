@@ -148,6 +148,24 @@ namespace
 bool IsTubeManufacturingPart(const ObjectMap& Properties_)
 {
     if (Properties_.contains("manufacturing.plate")) return false;
+    for (const auto* _Name : { "manufacturing.sourcing", "manufacturing.process" })
+    {
+        const auto _It = Properties_.find(_Name);
+        if (_It == Properties_.end()) continue;
+        if (!_It->second.Is<std::string>()) return false;
+        auto _Value = _It->second.To<std::string>();
+        const auto _First = _Value.find_first_not_of(" \t\r\n");
+        if (_First == std::string::npos) continue;
+        _Value = _Value.substr(_First, _Value.find_last_not_of(" \t\r\n") - _First + 1);
+        std::transform(_Value.begin(), _Value.end(), _Value.begin(), [](unsigned char C_) {
+            return static_cast<char>(std::tolower(C_));
+        });
+        if (_Value == "purchased" || _Value == "bent" || _Value == "curved"
+            || _Value == "bending" || _Value == "tube-bending" || _Value == "bent-tube"
+            || _Value == "curved-tube") return false;
+    }
+    if (const auto _It = Properties_.find("manufacturing.requiresBending"); _It != Properties_.end())
+        if (!_It->second.Is<bool>() || _It->second.To<bool>()) return false;
     for (const auto* _Name : { "manufacturing.partKind", "manufacturing.materialCategory" })
     {
         const auto _Found = Properties_.find(_Name);

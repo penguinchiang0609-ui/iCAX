@@ -28,11 +28,14 @@ import { handleNestingRibbonCommand } from "./nestingWorkflow.mjs";
 import { handleNestingExportAction } from "./nestingExport.mjs";
 import { handleSketchAreaAction, handleSketchRibbonCommand } from "./sketchArea.mjs";
 import { getCatalogEntry } from "./productCatalog.mjs";
+import { handleComponentLibraryAction, handleComponentLibraryRibbonCommand } from "./componentLibrary.mjs";
 
 export const DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
 export const ADD_TEMPLATE_PROGRESS_MINIMUM_VISIBLE_MS = DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS;
 
 export async function handleDesignerAreaAction(context, view, action, target, ops) {
+  const componentResult = await handleComponentLibraryAction(context, view, action, target, ops);
+  if (componentResult.handled) return componentResult;
   const nestingExportResult = await handleNestingExportAction(context, view, action, target, ops);
   if (nestingExportResult.handled) return nestingExportResult;
   const nestingSettingsResult = await handleNestingSettingsAction(context, view, action, target, ops);
@@ -263,6 +266,7 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
   if (await handleNestingSettingsRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleSketchRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleProfileLibraryRibbonCommand(context, view, commandId, ops)) return true;
+  if (await handleComponentLibraryRibbonCommand(context, view, commandId, ops)) return true;
   if (commandId === "designer.add" || commandId === "designer.generate") {
     openAddDialog(context, view, ops);
     return true;

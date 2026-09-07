@@ -49,6 +49,17 @@ export const ribbonDefinition = {
       ],
     },
     {
+      id: "components",
+      title: "配件库",
+      groups: [{
+        title: "三维配件",
+        commands: [
+          command("components.import", "导入三维模型", "new", { size: "large", iconTone: "green" }),
+          command("components.refresh", "刷新配件库", "apply", { size: "large", iconTone: "orange" }),
+        ],
+      }],
+    },
+    {
       id: "sketch",
       title: "草图",
       groups: [

@@ -248,18 +248,24 @@ TEST(TubeDesignerNestingExport, WorkbookTreatsUserTextAsLiteralAndRefusesOverwri
     EXPECT_FALSE(std::filesystem::exists(_Root / "invalid.xlsx"));
 }
 
-TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppendsPlateFields)
+TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppendsManufacturingFields)
 {
     const auto _Path = TestRoot() / "original-part-list.xlsx";
     WritePartListWorkbook(_Path, {
         { 1, "产品", "PRODUCT-1", 1, "P-001", "横杆", "矩形管", "40 × 20 × R2 × 1.5",
             1200, 2, "P-001.step", "产品/P-001.step" },
         { 1, "产品", "PRODUCT-1", 2, "P-002", "中间封板", "板件", "300 × 600 × 2",
-            600, 1, "P-002.step", "产品/P-002.step", "plate", 300, 600, 2, "Q235B" },
+            600, 1, "P-002.step", "产品/P-002.step", "plate", 300, 600, 2, "Q235B", "made", "激光切割" },
+        { 1, "产品", "PRODUCT-1", 3, "P-003", "玻璃板", "玻璃", "500 × 800 × 8",
+            800, 1, "P-003.step", "产品/P-003.step", "glass", 500, 800, 8, "钢化玻璃", "purchased", "磨边钢化" },
+        { 1, "产品", "PRODUCT-1", 4, "P-004", "柱帽", "配件", "40 × 40 × 20",
+            40, 2, "P-004.step", "产品/P-004.step", "accessory", 40, 40, 20, "304", "purchased", "purchased" },
     });
     const auto _Content = ReadBytes(_Path);
     EXPECT_NE(_Content.find("TubeDesigner 零件清单"), std::string::npos);
-    EXPECT_NE(_Content.find("<dimension ref=\"A1:Q4\"/>"), std::string::npos);
+    EXPECT_NE(_Content.find("<dimension ref=\"A1:S6\"/>"), std::string::npos);
+    EXPECT_NE(_Content.find("<mergeCell ref=\"A1:S1\"/>"), std::string::npos);
+    EXPECT_NE(_Content.find("<autoFilter ref=\"D2:S6\"/>"), std::string::npos);
     const auto _Cell = [&](const std::string& Reference_) -> std::string {
         const auto _Start = _Content.find("<c r=\"" + Reference_ + "\"");
         EXPECT_NE(_Start, std::string::npos) << Reference_;
@@ -268,7 +274,7 @@ TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppends
         EXPECT_NE(_End, std::string::npos) << Reference_;
         return _End == std::string::npos ? std::string{} : _Content.substr(_Start, _End + 4 - _Start);
     };
-    // Existing A-L data must not shift when plate metadata is appended in M-Q.
+    // Existing A-L data and M-Q plate fields must not shift when R-S are appended.
     const std::array<std::string, 12> _LegacyValues{
         "1", "产品", "PRODUCT-1", "1", "P-001", "横杆", "矩形管",
         "40 × 20 × R2 × 1.5", "1200", "2", "P-001.step", "产品/P-001.step"
@@ -281,10 +287,10 @@ TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppends
             : "<t xml:space=\"preserve\">" + _LegacyValues[_Index] + "</t>";
         EXPECT_NE(_Cell(_Reference).find(_Value), std::string::npos) << _Reference;
     }
-    const std::array<std::string, 17> _Headers{
+    const std::array<std::string, 19> _Headers{
         "产品序号", "产品名称", "产品编码", "零件序号", "零件号", "零件名称",
         "管型 / 类别", "规格 / 板件宽×高×厚", "管材长度 (mm)", "数量", "文件名", "相对路径",
-        "零件类型", "板宽 (mm)", "板高 (mm)", "板厚 (mm)", "材料"
+        "零件类型", "板宽 (mm)", "板高 (mm)", "板厚 (mm)", "材料", "供料方式", "加工方式"
     };
     for (std::size_t _Index = 0; _Index < _Headers.size(); ++_Index)
     {
@@ -303,5 +309,25 @@ TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppends
     EXPECT_NE(_Cell("O4").find("<v>600</v>"), std::string::npos);
     EXPECT_NE(_Cell("P4").find("<v>2</v>"), std::string::npos);
     EXPECT_NE(_Cell("Q4").find("Q235B"), std::string::npos);
+    EXPECT_NE(_Cell("R3").find("<t xml:space=\"preserve\"></t>"), std::string::npos);
+    EXPECT_NE(_Cell("S3").find("<t xml:space=\"preserve\"></t>"), std::string::npos);
+    EXPECT_NE(_Cell("R4").find("自制"), std::string::npos);
+    EXPECT_NE(_Cell("S4").find("激光切割"), std::string::npos);
+    EXPECT_EQ(_Cell("I5").find("<v>"), std::string::npos);
+    EXPECT_NE(_Cell("M5").find("玻璃"), std::string::npos);
+    EXPECT_NE(_Cell("N5").find("<v>500</v>"), std::string::npos);
+    EXPECT_NE(_Cell("O5").find("<v>800</v>"), std::string::npos);
+    EXPECT_NE(_Cell("P5").find("<v>8</v>"), std::string::npos);
+    EXPECT_NE(_Cell("Q5").find("钢化玻璃"), std::string::npos);
+    EXPECT_NE(_Cell("R5").find("外购"), std::string::npos);
+    EXPECT_NE(_Cell("S5").find("磨边钢化"), std::string::npos);
+    EXPECT_EQ(_Cell("I6").find("<v>"), std::string::npos);
+    EXPECT_NE(_Cell("M6").find("配件"), std::string::npos);
+    EXPECT_EQ(_Cell("N6").find("<v>"), std::string::npos);
+    EXPECT_EQ(_Cell("O6").find("<v>"), std::string::npos);
+    EXPECT_EQ(_Cell("P6").find("<v>"), std::string::npos);
+    EXPECT_NE(_Cell("Q6").find("304"), std::string::npos);
+    EXPECT_NE(_Cell("R6").find("外购"), std::string::npos);
+    EXPECT_NE(_Cell("S6").find("外购成品"), std::string::npos);
     EXPECT_EQ(_Content.find("母材长度 (mm)"), std::string::npos);
 }

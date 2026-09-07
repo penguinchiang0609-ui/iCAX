@@ -56,13 +56,16 @@ export function buildCatalogEntries(templates = []) {
     return (presets.length ? presets : [null]).map((preset) => {
       const presetId = String(preset?.id ?? "").trim();
       const displayName = catalogText(preset?.displayName, path.at(-1));
+      const categories = Array.isArray(preset?.categoryPath)
+        ? preset.categoryPath.filter((part) => typeof part === "string").map((part) => part.trim()).filter(Boolean)
+        : [];
       return {
         ...template,
         templateId: template.id,
         presetId,
         catalogEntryId: getCatalogEntryId(template.id, presetId),
         displayName,
-        catalogPath: [...path.slice(0, -1), displayName],
+        catalogPath: [...(categories.length ? categories : path.slice(0, -1)), displayName],
         catalogParameters: getCatalogParameters(template, preset),
       };
     });
@@ -102,6 +105,8 @@ export function renderGuardrailSchematic(parameters = {}) {
   const large = String(parameters.largePostMode ?? "none");
   const infill = String(parameters.infillType ?? "bars");
   const round = parameters.handrailProfileType === "round";
+  const wall = parameters.guardrailUse === "wall";
+  const spear = wall && parameters.spearTipEnabled === true;
   const height = 43;
   const segments = layout === "u"
     ? [[[12, 62], [31, 88]], [[31, 88], [83, 74]], [[83, 74], [90, 46]]]
@@ -123,17 +128,36 @@ export function renderGuardrailSchematic(parameters = {}) {
     const end = double && segmentIndex < segments.length - 1 ? 1 - 2.5 / span : 1;
     const bottom = 5;
     const top = height - (railCount === 3 ? 8 : 0);
-    if (infill === "plate" || infill === "lower_plate") {
-      const panelTop = infill === "plate" ? top : 22;
+    if (["plate", "lower_plate", "glass"].includes(infill)) {
+      const panelTop = infill === "lower_plate" ? 22 : top;
       const corners = [[start, bottom], [end, bottom], [end, panelTop], [start, panelTop]]
         .map(([t, z]) => point(a, b, t, z).map((value) => value.toFixed(2)).join(",")).join(" ");
-      polygons.push(`<polygon class="guardrail-panel" points="${corners}" />`);
+      polygons.push(`<polygon class="guardrail-panel${infill === "glass" ? " guardrail-glass" : ""}" points="${corners}" />`);
     }
-    if (infill !== "plate") {
+    if (infill === "cross" || infill === "diamond") {
+      const count = Math.max(1, Math.round(span / 25));
+      for (let i = 0; i < count; i++) {
+        const left = start + (end - start) * i / count;
+        const right = start + (end - start) * (i + 1) / count;
+        if (infill === "cross") {
+          bars.push(line(point(a, b, left, bottom), point(a, b, right, top), "guardrail-infill guardrail-cross"));
+          bars.push(line(point(a, b, left, top), point(a, b, right, bottom), "guardrail-infill guardrail-cross"));
+        } else {
+          const middle = (left + right) / 2;
+          const vertices = [point(a, b, left, (bottom + top) / 2), point(a, b, middle, top), point(a, b, right, (bottom + top) / 2), point(a, b, middle, bottom)];
+          vertices.forEach((p, index) => bars.push(line(p, vertices[(index + 1) % 4], "guardrail-infill guardrail-diamond")));
+        }
+      }
+    } else if (!["plate", "glass"].includes(infill)) {
       const count = Math.max(3, Math.round(span / 5));
       for (let i = 1; i < count; i++) {
         const t = start + (end - start) * i / count;
-        bars.push(line(point(a, b, t, infill === "lower_plate" ? 22 : bottom), point(a, b, t, top), "guardrail-infill"));
+        const picketTop = wall ? height + 6 : top;
+        bars.push(line(point(a, b, t, infill === "lower_plate" ? 22 : bottom), point(a, b, t, picketTop), "guardrail-infill"));
+        if (spear) {
+          const p = point(a, b, t, picketTop);
+          bars.push(`<path class="guardrail-spear" d="M${p[0]},${p[1] - 4} l-1.5,4 1.5,2 1.5,-2Z" />`);
+        }
       }
     }
     for (const z of railCount === 3 ? [bottom, height - 8, height] : [bottom, height]) {
@@ -145,7 +169,9 @@ export function renderGuardrailSchematic(parameters = {}) {
   });
   for (const { p, big } of posts.values()) {
     bars.push(line(p, [p[0], p[1] - height], `guardrail-post${big ? " guardrail-large-post" : ""}`));
+    if (big && parameters.postCapEnabled === true)
+      bars.push(`<rect class="guardrail-post-cap" x="${p[0] - 3.5}" y="${p[1] - height - 2}" width="7" height="2.5" />`);
     bars.push(line([p[0] - 2, p[1]], [p[0] + 2, p[1]], "guardrail-base"));
   }
-  return `<g class="guardrail-schematic${round ? " guardrail-round" : ""}"${layout === "right_l" ? ' transform="translate(100 0) scale(-1 1)"' : ""}>${polygons.join("")}${bars.join("")}</g>`;
+  return `<g class="guardrail-schematic${round ? " guardrail-round" : ""}${wall ? " guardrail-wall" : ""}"${layout === "right_l" ? ' transform="translate(100 0) scale(-1 1)"' : ""}>${polygons.join("")}${bars.join("")}</g>`;
 }

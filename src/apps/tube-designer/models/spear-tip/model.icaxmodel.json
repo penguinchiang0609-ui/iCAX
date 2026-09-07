@@ -1,0 +1,201 @@
+{
+  "schema": "icax.neutral-model",
+  "schemaVersion": 1,
+  "template": {
+    "id": "component-spear-tip",
+    "version": "1.0.0",
+    "packageDigest": ""
+  },
+  "coordinateSystem": "right-handed-x-width-y-depth-z-height",
+  "lengthUnit": "mm",
+  "parameters": {},
+  "geometry": [
+    {
+      "key": "tip.base.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -10,
+                -10
+              ],
+              [
+                10,
+                -10
+              ],
+              [
+                10,
+                10
+              ],
+              [
+                -10,
+                10
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "tip.base.solid",
+      "operator": "extrude",
+      "inputs": [
+        "tip.base.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          4
+        ]
+      }
+    },
+    {
+      "key": "tip.blade.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            0,
+            4,
+            0
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            0,
+            1
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                0,
+                70
+              ],
+              [
+                -14,
+                42
+              ],
+              [
+                -5,
+                42
+              ],
+              [
+                -5,
+                4
+              ],
+              [
+                5,
+                4
+              ],
+              [
+                5,
+                42
+              ],
+              [
+                14,
+                42
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "tip.blade.solid",
+      "operator": "extrude",
+      "inputs": [
+        "tip.blade.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          -8,
+          0
+        ]
+      }
+    },
+    {
+      "key": "tip.finished",
+      "operator": "boolean",
+      "inputs": [
+        "tip.base.solid",
+        "tip.blade.solid"
+      ],
+      "arguments": {
+        "operation": "union",
+        "target": "tip.base.solid",
+        "tools": [
+          "tip.blade.solid"
+        ]
+      }
+    }
+  ],
+  "items": [
+    {
+      "key": "component",
+      "displayName": "20管平底枪尖",
+      "representations": {
+        "display": "tip.finished",
+        "export": "tip.finished"
+      },
+      "children": [],
+      "properties": {
+        "manufacturing.partKind": "accessory",
+        "manufacturing.sourcing": "purchased",
+        "manufacturing.material": "Q235B",
+        "quantity": 1
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "key": "display.default",
+      "purpose": "display",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "export.manufacturing",
+      "purpose": "export",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    }
+  ],
+  "relationships": [],
+  "tables": [],
+  "diagnostics": []
+}

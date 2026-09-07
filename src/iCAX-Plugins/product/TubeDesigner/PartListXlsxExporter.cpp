@@ -69,15 +69,15 @@ namespace
     std::string BuildWorksheet(const std::vector<SPartListRow>& Rows_)
     {
         const auto _LastRow = static_cast<std::uint64_t>(Rows_.size()) + 2;
-        std::vector<std::string> _MergeReferences{ "A1:Q1" };
+        std::vector<std::string> _MergeReferences{ "A1:S1" };
         std::ostringstream _Rows;
         _Rows << "<row r=\"1\" ht=\"28\" customHeight=\"1\">"
             << TextCell("A1", "TubeDesigner 零件清单", 1) << "</row>";
         _Rows << "<row r=\"2\" ht=\"23\" customHeight=\"1\">";
-        const std::array<std::string, 17> _Headers{
+        const std::array<std::string, 19> _Headers{
             "产品序号", "产品名称", "产品编码", "零件序号", "零件号", "零件名称",
             "管型 / 类别", "规格 / 板件宽×高×厚", "管材长度 (mm)", "数量", "文件名", "相对路径",
-            "零件类型", "板宽 (mm)", "板高 (mm)", "板厚 (mm)", "材料"
+            "零件类型", "板宽 (mm)", "板高 (mm)", "板厚 (mm)", "材料", "供料方式", "加工方式"
         };
         for (std::size_t _Index = 0; _Index < _Headers.size(); ++_Index)
         {
@@ -107,6 +107,15 @@ namespace
             for (auto _RowIndex = _Offset; _RowIndex < _End; ++_RowIndex)
             {
                 const auto& _Row = Rows_[_RowIndex];
+                const bool _IsTube = _Row.PartKind == "tube" || _Row.PartKind == "profile" || _Row.PartKind == "linear";
+                const bool _IsSheet = _Row.PartKind == "plate" || _Row.PartKind == "glass";
+                const auto _Kind = _IsTube ? "管材" : _Row.PartKind == "plate" ? "板件"
+                    : _Row.PartKind == "glass" ? "玻璃" : _Row.PartKind == "accessory" ? "配件" : "其他";
+                const auto _Sourcing = _Row.Sourcing == "made" ? "自制"
+                    : _Row.Sourcing == "purchased" ? "外购" : _Row.Sourcing;
+                const auto _Process = _Row.Process == "purchased" ? "外购成品"
+                    : _Row.Process == "machined" ? "机加工"
+                    : _Row.Process == "separate-fabrication" ? "独立加工" : _Row.Process;
                 const auto _SheetRow = _RowIndex + 3;
                 const auto _RowText = std::to_string(_SheetRow);
                 _Rows << "<row r=\"" << _SheetRow << "\" ht=\"20\" customHeight=\"1\">";
@@ -121,16 +130,18 @@ namespace
                     << TextCell("F" + _RowText, _Row.PartName, 3)
                     << TextCell("G" + _RowText, _Row.ProfileDisplayName, 3)
                     << TextCell("H" + _RowText, _Row.ProfileSpecification, 3)
-                    << (_Row.PartKind == "plate" ? TextCell("I" + _RowText, "", 4)
-                        : NumberCell("I" + _RowText, FormatNumber(_Row.Length), 4))
+                    << (_IsTube ? NumberCell("I" + _RowText, FormatNumber(_Row.Length), 4)
+                        : TextCell("I" + _RowText, "", 4))
                     << NumberCell("J" + _RowText, std::to_string(_Row.Quantity), 5)
                     << TextCell("K" + _RowText, _Row.FileName, 3)
                     << TextCell("L" + _RowText, _Row.RelativePath, 3)
-                    << TextCell("M" + _RowText, _Row.PartKind == "plate" ? "板件" : "管材", 3)
-                    << (_Row.PartKind == "plate" ? NumberCell("N" + _RowText, FormatNumber(_Row.PlateWidth), 4) : TextCell("N" + _RowText, "", 4))
-                    << (_Row.PartKind == "plate" ? NumberCell("O" + _RowText, FormatNumber(_Row.PlateHeight), 4) : TextCell("O" + _RowText, "", 4))
-                    << (_Row.PartKind == "plate" ? NumberCell("P" + _RowText, FormatNumber(_Row.PlateThickness), 4) : TextCell("P" + _RowText, "", 4))
+                    << TextCell("M" + _RowText, _Kind, 3)
+                    << (_IsSheet ? NumberCell("N" + _RowText, FormatNumber(_Row.PlateWidth), 4) : TextCell("N" + _RowText, "", 4))
+                    << (_IsSheet ? NumberCell("O" + _RowText, FormatNumber(_Row.PlateHeight), 4) : TextCell("O" + _RowText, "", 4))
+                    << (_IsSheet ? NumberCell("P" + _RowText, FormatNumber(_Row.PlateThickness), 4) : TextCell("P" + _RowText, "", 4))
                     << TextCell("Q" + _RowText, _Row.Material, 3)
+                    << TextCell("R" + _RowText, _Sourcing, 3)
+                    << TextCell("S" + _RowText, _Process, 3)
                     << "</row>";
             }
             _Offset = _End;
@@ -145,7 +156,7 @@ namespace
         std::ostringstream _Sheet;
         _Sheet << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
             << "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
-            << "<dimension ref=\"A1:Q" << _LastRow << "\"/>"
+            << "<dimension ref=\"A1:S" << _LastRow << "\"/>"
             << "<sheetViews><sheetView tabSelected=\"1\" workbookViewId=\"0\">"
             << "<pane ySplit=\"2\" topLeftCell=\"A3\" activePane=\"bottomLeft\" state=\"frozen\"/>"
             << "<selection pane=\"bottomLeft\" activeCell=\"A3\" sqref=\"A3\"/>"
@@ -161,8 +172,10 @@ namespace
             << "<col min=\"11\" max=\"11\" width=\"24\" customWidth=\"1\"/>"
             << "<col min=\"12\" max=\"12\" width=\"38\" customWidth=\"1\"/>"
             << "<col min=\"13\" max=\"17\" width=\"14\" customWidth=\"1\"/>"
+            << "<col min=\"18\" max=\"18\" width=\"14\" customWidth=\"1\"/>"
+            << "<col min=\"19\" max=\"19\" width=\"24\" customWidth=\"1\"/>"
             << "</cols><sheetData>" << _Rows.str() << "</sheetData>"
-            << "<autoFilter ref=\"D2:Q" << _LastRow << "\"/>" << _Merges.str()
+            << "<autoFilter ref=\"D2:S" << _LastRow << "\"/>" << _Merges.str()
             << "<pageMargins left=\"0.3\" right=\"0.3\" top=\"0.5\" bottom=\"0.5\" header=\"0.2\" footer=\"0.2\"/>"
             << "<pageSetup orientation=\"landscape\" fitToWidth=\"1\" fitToHeight=\"0\"/>"
             << "</worksheet>";

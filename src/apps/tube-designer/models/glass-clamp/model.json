@@ -1,0 +1,11 @@
+{
+  "schema": "icax.component-model",
+  "schemaVersion": 1,
+  "id": "glass-clamp",
+  "name": "8mm玻璃固定夹",
+  "category": "护栏/玻璃夹具",
+  "sourcing": "purchased",
+  "material": "304不锈钢",
+  "description": "原创固定尺寸C形玻璃夹实体；外包络30×20×30mm，XY中心、Z底面0。玻璃槽宽8mm，开口朝局部+X；仅建模示例，不代表承载或玻璃安全认证。",
+  "geometryFile": "model.icaxmodel.json"
+}

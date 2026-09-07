@@ -62,6 +62,14 @@ await test("presets become distinct cards without changing native template ident
   assert.notEqual(getCatalogEntryId("a:b", "c"), getCatalogEntryId("a", "b:c"));
 });
 
+await test("one generator can expose separate truthful categories without duplicating template identities", () => {
+  const descriptor = structuredClone(guardrail);
+  descriptor.extensions.catalog.presets.push({ id: "wall", displayName: "围墙直式", categoryPath: ["护栏", "围墙栏杆"], parameters: {} });
+  const tree = buildTemplateGroupTree([descriptor]);
+  assert.deepEqual(tree[0].children.map((group) => group.title), ["竖杆护栏", "围墙栏杆"]);
+  assert.equal(tree[0].children[1].templates[0].templateId, guardrail.id);
+});
+
 await test("preset overlays cannot replace identity or mutate template defaults", () => {
   const values = getCatalogParameters(guardrail, { parameters: { railCount: 2, templateId: "wrong", madeUp: 123 } });
   assert.equal(values.railCount, 2);
@@ -107,6 +115,12 @@ await test("schematics distinguish layout, rail count, double posts, large posts
   assert.match(renderGuardrailSchematic({ infillType: "plate" }), /guardrail-panel/);
   assert.doesNotMatch(renderGuardrailSchematic({ infillType: "plate" }), /guardrail-infill/);
   assert.match(renderGuardrailSchematic({ infillType: "lower_plate" }), /guardrail-infill/);
+  assert.match(renderGuardrailSchematic({ infillType: "glass" }), /guardrail-glass/);
+  assert.doesNotMatch(renderGuardrailSchematic({ infillType: "glass" }), /guardrail-infill/);
+  assert.match(renderGuardrailSchematic({ infillType: "cross" }), /guardrail-cross/);
+  assert.match(renderGuardrailSchematic({ infillType: "diamond" }), /guardrail-diamond/);
+  assert.doesNotMatch(renderGuardrailSchematic({ guardrailUse: "wall", spearTipModelReference: "system:spear-tip", spearTipEnabled: false }), /guardrail-spear/);
+  assert.match(renderGuardrailSchematic({ guardrailUse: "wall", spearTipEnabled: true }), /guardrail-spear/);
 });
 
 function harness() {
@@ -186,11 +200,11 @@ await test("shipped railing and staircase descriptors are in distinct primary ca
   assert.equal(tree[2].children[0].templates.length, 3);
 });
 
-await test("all 20 shipped modular guardrail styles use declared parameters and render individually", () => {
+await test("all 32 shipped modular guardrail styles use declared parameters and render individually", () => {
   const descriptor = presentationDescriptor(JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/modular_guardrail/template.json", import.meta.url))));
   const entries = buildCatalogEntries([descriptor]);
-  assert.equal(entries.length, 20);
-  assert.equal(new Set(entries.map((entry) => entry.catalogEntryId)).size, 20);
+  assert.equal(entries.length, 32);
+  assert.equal(new Set(entries.map((entry) => entry.catalogEntryId)).size, 32);
   const keys = new Set(descriptor.parameters.map((field) => field.key));
   for (const preset of descriptor.extensions.catalog.presets) {
     assert.ok(Object.keys(preset.parameters).every((key) => keys.has(key)), `${preset.id} has undeclared parameters`);
@@ -205,7 +219,8 @@ await test("all 20 shipped modular guardrail styles use declared parameters and 
     assert.match(html, /option value="3" data-tube-designer-value-type="number"/);
   }
   assert.equal(entries.filter((entry) => entry.catalogParameters.cornerPostMode === "double").length, 6);
-  assert.equal(entries.filter((entry) => entry.catalogParameters.infillType !== "bars").length, 2);
+  assert.equal(entries.filter((entry) => entry.catalogParameters.infillType !== "bars").length, 8);
+  assert.equal(entries.filter((entry) => entry.catalogPath.includes("围墙栏杆")).length, 4);
 });
 
 await test("shipped security window panel cards show original plate schematics with position differences", () => {

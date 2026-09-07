@@ -68,6 +68,45 @@ TEST(TubeDesignerNesting, ManufacturingKindGuardExcludesPlateAndUnknownItems)
         { "width", 300.0 }, { "height", 600.0 }, { "thickness", 2.0 } } } }));
 }
 
+TEST(TubeDesignerNesting, ManufacturingProcessGuardExcludesPurchasedAndBentPartsButKeepsMadeStraightTubes)
+{
+    const ObjectMap _Straight{
+        { "manufacturing.partKind", std::string("tube") },
+        { "manufacturing.materialCategory", std::string("linear") },
+        { "manufacturing.sourcing", std::string("made") },
+        { "manufacturing.process", std::string("straight-cut") },
+        { "manufacturing.requiresBending", false }
+    };
+    EXPECT_TRUE(IsTubeManufacturingPart(_Straight));
+    auto _Part = _Straight;
+    _Part["manufacturing.sourcing"] = std::string(" PURCHASED \t");
+    EXPECT_FALSE(IsTubeManufacturingPart(_Part));
+    for (const auto* _Process : { "purchased", "bent", "curved", "bending", "tube-bending", "bent-tube", " CURVED \t" })
+    {
+        SCOPED_TRACE(_Process);
+        _Part = _Straight;
+        _Part["manufacturing.process"] = std::string(_Process);
+        EXPECT_FALSE(IsTubeManufacturingPart(_Part));
+    }
+    _Part = _Straight;
+    _Part["manufacturing.requiresBending"] = true;
+    EXPECT_FALSE(IsTubeManufacturingPart(_Part));
+    _Part["manufacturing.requiresBending"] = std::string("false");
+    EXPECT_FALSE(IsTubeManufacturingPart(_Part));
+    _Part["manufacturing.requiresBending"] = 0;
+    EXPECT_FALSE(IsTubeManufacturingPart(_Part));
+    for (const auto* _Field : { "manufacturing.sourcing", "manufacturing.process" })
+    {
+        SCOPED_TRACE(_Field);
+        _Part = _Straight;
+        _Part[_Field] = 1;
+        EXPECT_FALSE(IsTubeManufacturingPart(_Part));
+    }
+    _Part = _Straight;
+    _Part.erase("manufacturing.requiresBending");
+    EXPECT_TRUE(IsTubeManufacturingPart(_Part));
+}
+
 TEST(TubeDesignerNesting, FirstPlacementNeverNestsWithPositiveGap)
 {
     for (const double _Gap : { 0.0, 1.0, 5.0 })

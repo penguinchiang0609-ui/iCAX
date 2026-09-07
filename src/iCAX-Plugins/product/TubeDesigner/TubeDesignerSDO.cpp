@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "PartListXlsxExporter.h"
+#include "ComponentModelLibrary.h"
 #include "FinalGeometryMeasurement.h"
 #include "NestingAdapter.h"
 #include "NestingResultExporter.h"
@@ -43,6 +44,8 @@
 #include <TopoDS_Shape.hxx>
 #include <Bnd_Box.hxx>
 #include <BRepBndLib.hxx>
+#include <TopLoc_Location.hxx>
+#include <gp_Trsf.hxx>
 
 namespace
 {
@@ -365,6 +368,14 @@ namespace
         }, "TubeDesigner system profile directory");
     }
 
+    std::filesystem::path ResolveComponentModelRoot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        return ResolveRuntimeDirectory(ApplicationContext_, {
+            "apps/tube-designer/models", "src/apps/tube-designer/models"
+        }, "TubeDesigner component model directory");
+    }
+
     std::vector<std::filesystem::path> DiscoverPythonTemplateDirectories(
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
@@ -511,7 +522,9 @@ namespace
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         const ObjectMap& Payload_,
         const std::string& GeometryPurpose_,
-        const std::string& ExpectedPackageDigest_ = {})
+        const std::string& ExpectedPackageDigest_ = {},
+        iCAX::Application::IProductUserDataStore* ComponentStore_ = nullptr,
+        const ObjectMap* FrozenComponents_ = nullptr)
     {
         const auto _RequestedTemplateID = GetString(Payload_, "templateId", "single-face-security-window");
         auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _RequestedTemplateID);
@@ -548,6 +561,15 @@ namespace
         _Context["geometryPurpose"] = GeometryPurpose_;
         _Request["context"] = std::move(_Context);
         auto _Document = InvokePythonTemplate(ApplicationContext_, _Request);
+        const auto _GeometryNodes = _Document.at("geometry").To<VariantArray>();
+        const bool _HasResource = _Package.Descriptor.Extensions.contains("modelResources")
+            || std::any_of(_GeometryNodes.begin(), _GeometryNodes.end(), [](const auto& Node_) {
+                return Node_.Is<ObjectMap>() && GetString(Node_.To<ObjectMap>(), "operator") == "resource";
+            });
+        if (_HasResource)
+            ResolveTemplateComponentResources(_Document, _Package.DescriptorPath.parent_path(),
+                _Package.Descriptor.Extensions, ResolveComponentModelRoot(ApplicationContext_),
+                ComponentStore_, FrozenComponents_);
         auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
         if (_Model.TemplateID != _Package.Descriptor.ID
             || _Model.TemplateVersion != _Package.Descriptor.Version
@@ -760,6 +782,39 @@ namespace
             GetString(Properties_, "manufacturing.materialCategory", "tube"));
     }
 
+    std::string ManufacturingKindName(const std::string& Kind_)
+    {
+        if (Kind_ == "plate") return "板件";
+        if (Kind_ == "glass") return "玻璃";
+        if (Kind_ == "accessory") return "配件";
+        return "管材";
+    }
+
+    ObjectMap ShapeBounds(const TopoDS_Shape& Shape_)
+    {
+        Bnd_Box _Box;
+        BRepBndLib::Add(Shape_, _Box, false);
+        _Box.SetGap(0);
+        if (_Box.IsVoid() || _Box.IsOpen()) throw std::invalid_argument("零件实体包络无效");
+        double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+        _Box.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+        return { { "width", _X1 - _X0 }, { "depth", _Y1 - _Y0 }, { "height", _Z1 - _Z0 },
+            { "min", VariantArray{ _X0, _Y0, _Z0 } }, { "max", VariantArray{ _X1, _Y1, _Z1 } } };
+    }
+
+    TopoDS_Shape NormalizeManufacturingShape(const TopoDS_Shape& Shape_, const ObjectMap& Properties_)
+    {
+        if (ManufacturingPartKind(Properties_) != "accessory")
+            return NormalizeLinearPartForManufacturing(Shape_);
+        const auto _Bounds = ShapeBounds(Shape_);
+        const auto _Min = _Bounds.at("min").To<VariantArray>();
+        const auto _Max = _Bounds.at("max").To<VariantArray>();
+        gp_Trsf _Placement;
+        _Placement.SetTranslation(gp_Vec(-(_Min[0].To<double>() + _Max[0].To<double>()) / 2,
+            -(_Min[1].To<double>() + _Max[1].To<double>()) / 2, -_Min[2].To<double>()));
+        return Shape_.Moved(TopLoc_Location(_Placement));
+    }
+
     ObjectMap ManufacturingPlate(const ObjectMap& Properties_)
     {
         const auto _Found = Properties_.find("manufacturing.plate");
@@ -772,6 +827,19 @@ namespace
         std::ostringstream _Text;
         _Text << GetDouble(Plate_, "width", 0) << " × " << GetDouble(Plate_, "height", 0)
             << " × " << GetDouble(Plate_, "thickness", 0) << " mm";
+        return _Text.str();
+    }
+
+    std::string ComponentSpecification(const ObjectMap& Properties_)
+    {
+        const auto _It = Properties_.find("manufacturing.modelBounds");
+        if (_It == Properties_.end() || !_It->second.Is<ObjectMap>())
+            return GetString(Properties_, "manufacturing.modelName");
+        const auto _Bounds = _It->second.To<ObjectMap>();
+        std::ostringstream _Text;
+        _Text << GetString(Properties_, "manufacturing.modelName") << " "
+            << GetDouble(_Bounds, "width", 0) << " × " << GetDouble(_Bounds, "depth", 0)
+            << " × " << GetDouble(_Bounds, "height", 0) << " mm";
         return _Text.str();
     }
 
@@ -1411,6 +1479,111 @@ namespace
         if (_Store->GetProductID() != ProductContext_->GetProductID())
             throw std::logic_error("Product user data store identity mismatch");
         return _Store;
+    }
+
+    std::uint64_t ComponentExpectedRevision(const ObjectMap& Request_)
+    {
+        const auto _Revision = GetDouble(Request_, "expectedRevision", -1);
+        if (!std::isfinite(_Revision) || _Revision < 1 || _Revision > 9007199254740991.0
+            || std::floor(_Revision) != _Revision)
+            throw std::invalid_argument("配件版本无效，请刷新配件库后重试");
+        return static_cast<std::uint64_t>(_Revision);
+    }
+
+    iCAX::Interaction::CInvocationResult HandleListComponentModels(
+        const iCAX::Interaction::CInvocation&,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        auto _Store = GetUserDataStore(ProductContext_);
+        return MakeResponse(ObjectMap{ { "models", ListComponentModelSummaries(
+            ResolveComponentModelRoot(ApplicationContext_), _Store.get()) } });
+    }
+
+    iCAX::Interaction::CInvocationResult HandleImportComponentModel(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _Path = Utf8Path(GetRequiredText(_Payload, "sourcePath", 32767));
+        auto _Store = GetUserDataStore(ProductContext_);
+        auto _Snapshot = ImportComponentModelFile(_Path, _Payload);
+        iCAX::Application::CProductUserDataRecord _Record;
+        _Record.FeatureID = kComponentModelFeature;
+        _Record.RecordType = kComponentModelRecordType;
+        _Record.SubjectType = "product";
+        _Record.SubjectID = ProductContext_->GetProductID();
+        _Record.RecordID = UuidToString(iCAX::Data::GenerateNewUUID());
+        _Record.Payload = _Snapshot;
+        const auto _Saved = _Store->Put(_Record, 0);
+        return MakeResponse(ObjectMap{ { "model", ComponentModelSummary(_Snapshot,
+            "user", _Saved.RecordID, _Saved.Revision) } });
+    }
+
+    iCAX::Interaction::CInvocationResult HandleUpdateComponentModel(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _ID = UuidToString(ParseRequiredUuid(GetRequiredText(_Payload, "id"), "id"));
+        auto _Store = GetUserDataStore(ProductContext_);
+        auto _Record = _Store->Get(kComponentModelFeature, kComponentModelRecordType, _ID);
+        if (!_Record || !_Record->Payload.Is<ObjectMap>()) throw std::invalid_argument("配件模型不存在");
+        auto _Snapshot = _Record->Payload.To<ObjectMap>();
+        UpdateComponentModelMetadata(_Snapshot, _Payload);
+        _Record->Payload = _Snapshot;
+        const auto _Saved = _Store->Put(*_Record, ComponentExpectedRevision(_Payload));
+        return MakeResponse(ObjectMap{ { "model", ComponentModelSummary(_Snapshot,
+            "user", _ID, _Saved.Revision) } });
+    }
+
+    iCAX::Interaction::CInvocationResult HandleDeleteComponentModel(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _ID = UuidToString(ParseRequiredUuid(GetRequiredText(_Payload, "id"), "id"));
+        const auto _Deleted = GetUserDataStore(ProductContext_)->Delete(kComponentModelFeature,
+            kComponentModelRecordType, _ID, ComponentExpectedRevision(_Payload));
+        return MakeResponse(ObjectMap{ { "deleted", _Deleted } });
+    }
+
+    iCAX::Interaction::CInvocationResult HandleGenerateComponentModelPreview(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_) throw std::invalid_argument("配件预览需要当前项目场景");
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _Scope = GetRequiredText(_Payload, "scope", 16);
+        const auto _ID = GetRequiredText(_Payload, "id", 120);
+        auto _Store = GetUserDataStore(ProductContext_);
+        const auto _Snapshot = ResolveComponentModelSnapshot(ResolveComponentModelRoot(ApplicationContext_),
+            _Store.get(), _Scope, _ID);
+        const auto _Name = GetString(_Snapshot, "name");
+        const auto _Resource = StoreBRep(*Scene_, "tube-designer/component-preview/" + _Scope + "/" + _ID,
+            _Name, ComponentModelShape(_Snapshot));
+        const auto _Geometry = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+            Scene_->Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+        const auto _Material = EnsureDesignerMaterial(*Scene_);
+        return MakeResponse(ObjectMap{
+            { "model", ComponentModelSummary(_Snapshot, _Scope, _ID,
+                static_cast<std::uint64_t>(GetDouble(_Snapshot, "revision", 0))) },
+            { "geometryResourceId", _Geometry.URL },
+            { "geometryResourceVersion", static_cast<unsigned long long>(_Geometry.nVersion) },
+            { "materialResourceId", _Material.URL },
+            { "materialResourceVersion", static_cast<unsigned long long>(_Material.nVersion) },
+            { "brepResourceId", _Resource.URL },
+            { "brepResourceVersion", static_cast<unsigned long long>(_Resource.nVersion) }
+        });
     }
 
     std::optional<iCAX::Application::CProductUserDataRecord> FindProfileRecord(
@@ -2369,9 +2542,12 @@ namespace
     iCAX::Interaction::CInvocationResult GenerateNeutralPreview(
         const ObjectMap& Payload_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::ISceneContext& Scene_)
     {
-        const auto _Evaluation = EvaluateNeutralTemplate(ApplicationContext_, Payload_, "display");
+        auto _ComponentStore = ProductContext_ ? GetUserDataStore(ProductContext_) : nullptr;
+        const auto _Evaluation = EvaluateNeutralTemplate(ApplicationContext_, Payload_, "display",
+            {}, _ComponentStore.get());
         const auto _DisplayOutput = FindOutputSet(_Evaluation.Model, "result");
         if (!_DisplayOutput || _DisplayOutput->ItemKeys.empty())
             throw std::runtime_error("Python template returned no display output items");
@@ -2538,7 +2714,7 @@ namespace
     iCAX::Interaction::CInvocationResult HandleGeneratePreview(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Product::IProductContext*,
+        iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext* Scene_)
     {
@@ -2547,7 +2723,7 @@ namespace
         const auto _TemplateID = GetString(_Payload, "templateId");
         if (!IsPythonTemplate(ApplicationContext_, _TemplateID))
             throw std::invalid_argument("unsupported TubeDesigner template: " + _TemplateID);
-        return GenerateNeutralPreview(_Payload, ApplicationContext_, *Scene_);
+        return GenerateNeutralPreview(_Payload, ApplicationContext_, ProductContext_, *Scene_);
     }
 
     struct SPreparedManufacturingPart final
@@ -2628,8 +2804,12 @@ namespace
                 auto _Payload = _PreviewModel.Parameters;
                 _Payload["templateId"] = _PreviewModel.TemplateID;
                 _Payload["templateVersion"] = _PreviewModel.TemplateVersion;
+                const auto _SnapshotsIt = _PreviewModel.Extensions.find(kResolvedComponentModels);
+                const auto _FrozenComponents = _SnapshotsIt != _PreviewModel.Extensions.end()
+                    && _SnapshotsIt->second.Is<ObjectMap>() ? _SnapshotsIt->second.To<ObjectMap>() : ObjectMap();
                 _Document = EvaluateNeutralTemplate(
-                    ApplicationContext_, _Payload, "manufacturing", _PreviewModel.PackageDigest).Document;
+                    ApplicationContext_, _Payload, "manufacturing", _PreviewModel.PackageDigest,
+                    nullptr, &_FrozenComponents).Document;
             }
             else
             {
@@ -2662,7 +2842,7 @@ namespace
             ++_Index;
             auto _ItemProperties = _Item.Properties;
             const auto _PartKind = ManufacturingPartKind(_ItemProperties);
-            if (_PartKind == "plate")
+            if (_PartKind == "plate" || _PartKind == "glass")
             {
                 const auto _Plate = ManufacturingPlate(_ItemProperties);
                 const auto _Width = GetDouble(_Plate, "width", 0);
@@ -2689,9 +2869,19 @@ namespace
             _ItemProperties["manufacturing.logicalPartKey"] = _Item.Key;
             _ItemProperties["manufacturing.segmentIndex"] = 1ull;
             _ItemProperties["manufacturing.segmentCount"] = 1ull;
-            _ItemProperties["manufacturing.coordinateSystem"] = std::string(_PartKind == "plate" ? "plate-local" : "part-local");
+            _ItemProperties["manufacturing.coordinateSystem"] = std::string(
+                _PartKind == "plate" || _PartKind == "glass" ? "plate-local" : "part-local");
             _ItemProperties["manufacturing.origin"] = VariantArray{ 0.0, 0.0, 0.0 };
-            _ItemProperties["manufacturing.lengthAxis"] = VariantArray{ 1.0, 0.0, 0.0 };
+            if (_PartKind != "accessory")
+                _ItemProperties["manufacturing.lengthAxis"] = VariantArray{ 1.0, 0.0, 0.0 };
+            else
+            {
+                _ItemProperties["length"] = 0.0;
+                _ItemProperties.erase("manufacturing.lengthAxis");
+            }
+            if (!_ItemProperties.contains("manufacturing.sourcing"))
+                _ItemProperties["manufacturing.sourcing"] = std::string(
+                    _PartKind == "accessory" || _PartKind == "glass" ? "purchased" : "made");
             const auto _MemberID = MakeStableEntityID(ProductID_, "member", _Item.Key);
             const auto _Sketches = Product_.GetSketches();
             if (const auto _SideSketches = _Sketches.find("side");
@@ -2706,8 +2896,9 @@ namespace
             }
             const auto _StablePrefix = "tube-designer/product/" + UuidToString(ProductID_)
                 + "/item/" + _Item.Key;
-            const auto _ManufacturingShape = NormalizeLinearPartForManufacturing(
-                _Geometry.At(_Representation->second));
+            const auto _ManufacturingShape = NormalizeManufacturingShape(
+                _Geometry.At(_Representation->second), _ItemProperties);
+            if (_PartKind == "accessory") _ItemProperties["manufacturing.modelBounds"] = ShapeBounds(_ManufacturingShape);
             const auto _Resource = StoreBRep(
                 Scene_, _StablePrefix + "/manufacturing",
                 _PartNumber + " manufacturing", _ManufacturingShape);
@@ -2786,8 +2977,7 @@ namespace
             throw std::runtime_error("manufacturing item has no result representation");
         const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(
             _Model, { _Representation->second });
-        return NormalizeLinearPartForManufacturing(
-            _Geometry.At(_Representation->second));
+        return NormalizeManufacturingShape(_Geometry.At(_Representation->second), _Item.Properties);
     }
 
     iCAX::Interaction::CInvocationResult HandleDisassemble(
@@ -3012,9 +3202,20 @@ namespace
         {
             throw std::runtime_error("无法读取最终零件几何: recovered shape is empty");
         }
-        auto _Measurement = ManufacturingPartKind(_Part->GetItemProperties()) == "plate"
-            ? MeasureFinalPlateGeometry(_FinalShape, _ResourceID, _ResourceVersion)
-            : MeasureFinalPartGeometry(_FinalShape, _ResourceID, _ResourceVersion);
+        const auto _Kind = ManufacturingPartKind(_Part->GetItemProperties());
+        ObjectMap _Measurement;
+        if (_Kind == "accessory")
+            _Measurement = { { "source", std::string("final-brep") }, { "available", true },
+                { "partKind", _Kind }, { "length", 0.0 }, { "bounds", ShapeBounds(_FinalShape) },
+                { "features", VariantArray{} }, { "resourceId", _ResourceID },
+                { "resourceVersion", static_cast<unsigned long long>(_ResourceVersion) } };
+        else
+        {
+            _Measurement = _Kind == "plate" || _Kind == "glass"
+                ? MeasureFinalPlateGeometry(_FinalShape, _ResourceID, _ResourceVersion)
+                : MeasureFinalPartGeometry(_FinalShape, _ResourceID, _ResourceVersion);
+            if (_Kind == "glass") _Measurement["partKind"] = _Kind;
+        }
         _Measurement["partEntityId"] = UuidToString(_PartID);
         _Measurement["recoveredFromGeneration"] = _RecoveredFromGeneration;
         {
@@ -3164,15 +3365,20 @@ namespace
                     _Part->GetPartIndex(),
                     _Part->GetPartNumber(),
                     _Presentation.Name,
-                    _Kind == "plate" ? "板件" : OptionalPropertyString(_Presentation.Profile, "displayName", "管材"),
-                    _Kind == "plate" ? PlateSpecification(_Plate) : OptionalPropertyString(_Presentation.Profile, "specification"),
+                    OptionalPropertyString(_Presentation.Profile, "displayName", ManufacturingKindName(_Kind)),
+                    _Kind == "plate" || _Kind == "glass" ? PlateSpecification(_Plate)
+                        : (_Kind == "accessory" ? ComponentSpecification(_Properties)
+                            : OptionalPropertyString(_Presentation.Profile, "specification")),
                     _Part->GetLength(),
                     _Part->GetQuantity(),
                     _Part->GetFileName(),
                     Utf8PathText(Utf8Path(_FolderName) / Utf8Path(_Part->GetFileName())),
                     _Kind,
                     GetDouble(_Plate, "width", 0), GetDouble(_Plate, "height", 0), GetDouble(_Plate, "thickness", 0),
-                    GetString(_Properties, "manufacturing.material")
+                    GetString(_Properties, "manufacturing.material"),
+                    GetString(_Properties, "manufacturing.sourcing",
+                        _Kind == "glass" || _Kind == "accessory" ? "purchased" : "made"),
+                    GetString(_Properties, "manufacturing.process")
                 });
             }
             ObjectMap _GroupResult;
@@ -3868,6 +4074,11 @@ namespace
         {
             ExposeMethod("List", &HandleList);
             ExposeMethod("ListUserData", &HandleListUserData);
+            ExposeMethod("ListComponentModels", &HandleListComponentModels);
+            ExposeMethod("ImportComponentModel", &HandleImportComponentModel);
+            ExposeMethod("UpdateComponentModel", &HandleUpdateComponentModel);
+            ExposeMethod("DeleteComponentModel", &HandleDeleteComponentModel);
+            ExposeMethod("GenerateComponentModelPreview", &HandleGenerateComponentModelPreview);
             ExposeMethod("SaveCustomer", &HandleSaveCustomer);
             ExposeMethod("DeleteCustomer", &HandleDeleteCustomer);
             ExposeMethod("SaveParameterPreset", &HandleSaveParameterPreset);

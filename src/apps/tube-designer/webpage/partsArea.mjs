@@ -3,7 +3,8 @@ import { scheduleDesignerPartThumbnailHydration } from "./partThumbnail.mjs";
 import { isNestingResultStale } from "./nestingWorkflow.mjs";
 import { selectedNestingPlanIds } from "./nestingExport.mjs";
 import { cancelNestingPlanHydration, getNestingPlacementColor, scheduleNestingPlanHydration } from "./nestingPreview.mjs";
-import { isPlatePart, isTubeNestingPart, plateDimensions } from "./manufacturingParts.mjs";
+import { isPlatePart, isSheetPart, isComponentPart, isTubeNestingPart, plateDimensions, componentBounds,
+  manufacturingPartKind, manufacturingPartKindLabel, partSourcingLabel, tubeNestingExclusionReason } from "./manufacturingParts.mjs";
 export { isTubeNestingPart } from "./manufacturingParts.mjs";
 
 const hydrationTokens = new WeakMap();
@@ -42,7 +43,7 @@ export function buildMaterialProfileGroups(parts = []) {
     const quantity = partQuantity(part);
     group.parts.push(part);
     group.quantity += quantity;
-    group.totalLength += Math.max(0, finiteNumber(part.length) ?? 0) * quantity;
+    if (isTubeNestingPart(part)) group.totalLength += Math.max(0, finiteNumber(part.length) ?? 0) * quantity;
   }
   return [...groups.values()].sort((left, right) =>
     left.material.localeCompare(right.material, "zh-CN")
@@ -55,7 +56,8 @@ export function buildProfileGroups(parts = [], { includeNonTube = false } = {}) 
     if (!includeNonTube && !isTubeNestingPart(part)) continue;
     const profile = part?.profile ?? part?.properties?.["tubeDesigner.profile"] ?? {};
     // Group by the section snapshot, never by material or a user-editable name.
-    const section = isPlatePart(part) ? { kind: "plate", ...plateDimensions(part) } : {};
+    const section = isSheetPart(part) ? { kind: manufacturingPartKind(part), ...plateDimensions(part) }
+      : isComponentPart(part) ? { kind: "accessory", modelReference: part.properties?.["manufacturing.modelReference"] ?? partProfile(part), ...componentBounds(part) } : {};
     for (const field of [
       "id", "kind", "packageVersion", "width", "depth", "diameter",
       "wallThickness", "cornerRadius", "hollow", "contentDigest",
@@ -65,7 +67,8 @@ export function buildProfileGroups(parts = [], { includeNonTube = false } = {}) 
     }
     if (!section.id && !section.kind) section.displayName = String(profile.displayName ?? "").trim();
     const hasSection = Object.values(section).some((value) => value !== "");
-    const key = hasSection ? stableSectionKey(section) : `unknown:${String(part.entityId)}`;
+    const eligibilityKey = isTubeNestingPart(part) ? "" : `excluded:${tubeNestingExclusionReason(part)}:`;
+    const key = eligibilityKey + (hasSection ? stableSectionKey(section) : `unknown:${String(part.entityId)}`);
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -81,7 +84,7 @@ export function buildProfileGroups(parts = [], { includeNonTube = false } = {}) 
     const quantity = partQuantity(part);
     group.parts.push(part);
     group.quantity += quantity;
-    group.totalLength += Math.max(0, finiteNumber(part.length) ?? 0) * quantity;
+    if (isTubeNestingPart(part)) group.totalLength += Math.max(0, finiteNumber(part.length) ?? 0) * quantity;
   }
   return [...groups.values()].sort((left, right) => left.profile.localeCompare(right.profile, "zh-CN"));
 }
@@ -105,8 +108,10 @@ export function filterManufacturingParts(parts = [], options = {}) {
     if (filter === "selected" && !selectedIds.has(partId)) return false;
     const processKind = partProcessKind(part);
     if (filter === "straight" && processKind !== "straight") return false;
-    if (filter === "special" && (processKind === "straight" || processKind === "plate")) return false;
+    if (filter === "special" && processKind !== "special") return false;
     if (filter === "plate" && processKind !== "plate") return false;
+    if (filter === "non-tube" && isTubeNestingPart(part)) return false;
+    if (["glass", "accessory"].includes(filter) && processKind !== filter) return false;
     if (!query) return true;
     const searchable = [
       partDisplayName(part),
@@ -117,6 +122,7 @@ export function filterManufacturingParts(parts = [], options = {}) {
       partProfile(part),
       partCategory(part),
       partProcessLabel(part),
+      partSourcingLabel(part),
     ].join(" ").toLocaleLowerCase("zh-CN");
     return searchable.includes(query);
   });
@@ -146,7 +152,8 @@ function renderManufacturingPartsLeftPane(context, view, options = {}) {
   );
   const straightCount = parts.filter((part) => partProcessKind(part) === "straight").length;
   const plateCount = parts.filter(isPlatePart).length;
-  const specialCount = parts.length - straightCount - plateCount;
+  const specialCount = parts.filter((part) => partProcessKind(part) === "special").length;
+  const otherCount = parts.filter((part) => !isTubeNestingPart(part) && !isPlatePart(part)).length;
   scheduleDesignerPartThumbnailHydration(context);
   schedulePartsAreaHydration(context, view);
   return `
@@ -175,6 +182,7 @@ function renderManufacturingPartsLeftPane(context, view, options = {}) {
             ${renderFilterButton("straight", "直切", straightCount, filter)}
             ${renderFilterButton("special", "斜切 / 异形", specialCount, filter)}
             ${plateCount ? renderFilterButton("plate", "板件", plateCount, filter) : ""}
+            ${otherCount ? renderFilterButton("non-tube", "非管排件", parts.filter((part) => !isTubeNestingPart(part)).length, filter) : ""}
           </div>
           <div class="tube-designer-parts-selection-bar">
             <span>当前显示 ${visibleParts.length} 种 · 已选 ${selectedParts.length} 种 / ${selectedQuantity} 件</span>
@@ -228,8 +236,8 @@ export function renderPartsViewportOverlay(_context, view) {
       </div>
       <div class="tube-designer-part-scene-facts">
         <span><small>材料</small><strong>${escapeText(partMaterial(part))}</strong></span>
-        <span><small>截面</small><strong>${escapeText(partProfile(part))}</strong></span>
-        <span><small>${isPlatePart(part) ? "板厚" : "成品长度"}</small><strong>${formatNumber(isPlatePart(part) ? plateDimensions(part).thickness : part.length)} mm</strong></span>
+        <span><small>规格</small><strong>${escapeText(partProfile(part))}</strong></span>
+        <span><small>${isComponentPart(part) ? "供料方式" : isSheetPart(part) ? "厚度" : "成品长度"}</small><strong>${isComponentPart(part) ? escapeText(partSourcingLabel(part)) : `${formatNumber(isSheetPart(part) ? plateDimensions(part).thickness : part.length)} mm`}</strong></span>
         <span><small>数量</small><strong>${partQuantity(part)} 件</strong></span>
       </div>
       <div class="tube-designer-parts-view-actions">
@@ -257,14 +265,15 @@ export function renderNestingLeftPane(context, view) {
   const selectedParts = parts.filter((part) => isTubeNestingPart(part) && selectedIds.has(String(part.entityId)));
   const selectedQuantity = selectedParts.reduce((total, part) => total + partQuantity(part), 0);
   const totalQuantity = parts.filter(isTubeNestingPart).reduce((total, part) => total + partQuantity(part), 0);
-  const plateQuantity = parts.filter(isPlatePart).reduce((total, part) => total + partQuantity(part), 0);
+  const excludedParts = parts.filter((part) => !isTubeNestingPart(part));
+  const excludedQuantity = excludedParts.reduce((total, part) => total + partQuantity(part), 0);
   const straightCount = parts.filter((part) => partProcessKind(part) === "straight").length;
   const specialCount = parts.filter((part) => isTubeNestingPart(part) && partProcessKind(part) !== "straight").length;
   captureNestingPartListScroll(context, view);
   return `
     <div class="tube-designer-cutting-parts">
       <header class="tube-designer-cutting-pane-header">
-        <div><strong>零件清单</strong><span>管材已选 ${selectedQuantity} / ${totalQuantity} 件${plateQuantity ? ` · 板件 ${plateQuantity} 件另行下料` : ""}</span></div>
+        <div><strong>零件清单</strong><span>管材已选 ${selectedQuantity} / ${totalQuantity} 件${excludedQuantity ? ` · 另行处理 ${excludedQuantity} 件` : ""}</span></div>
       </header>
       ${parts.length ? `
         <div class="tube-designer-cutting-tools">
@@ -277,7 +286,8 @@ export function renderNestingLeftPane(context, view) {
             ${renderFilterButton("selected", "已选", selectedParts.length, filter)}
             ${renderFilterButton("straight", "直切", straightCount, filter)}
             ${renderFilterButton("special", "斜切", specialCount, filter)}
-            ${plateQuantity ? renderFilterButton("plate", "板件", parts.filter(isPlatePart).length, filter) : ""}
+            ${parts.some(isPlatePart) ? renderFilterButton("plate", "板件", parts.filter(isPlatePart).length, filter) : ""}
+            ${excludedParts.some((part) => !isPlatePart(part)) ? renderFilterButton("non-tube", "另行处理", excludedParts.length, filter) : ""}
           </div>
           <div class="tube-designer-cutting-select-actions">
             <span>${groups.length} 种截面 · 显示 ${visibleParts.length} 种零件</span>
@@ -438,7 +448,7 @@ function renderNestingStockGroup(group, activePlan, selectedIds, view) {
         ${selectedCount > 0 && !checked ? "data-tube-designer-indeterminate=\"true\"" : ""}
         ${partIds.length ? "" : "disabled"} aria-label="选择该截面的全部管材零件" />
       <span><strong>${escapeText(group.profile)}</strong></span>
-      <b>${partIds.length ? `${selectedCount}/${group.parts.length}` : "板件"}</b>
+      <b>${partIds.length ? `${selectedCount}/${group.parts.length}` : escapeText(manufacturingPartKindLabel(group.parts[0]))}</b>
     </summary>
     <div>${group.parts.map((part) => {
       const locations = nestingPartLocations(activePlan, part.entityId);
@@ -448,14 +458,14 @@ function renderNestingStockGroup(group, activePlan, selectedIds, view) {
         data-tube-designer-nesting-part-row data-tube-designer-part-id="${escapeAttribute(part.entityId)}">
         <input type="checkbox" data-cam-action="tube-designer-parts-toggle-part"
           data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${isTubeNestingPart(part) && selectedIds.has(String(part.entityId)) ? "checked" : ""}
-          ${isTubeNestingPart(part) ? "" : 'disabled title="板件不参与管材排样，可在零件模块导出"'}
+          ${isTubeNestingPart(part) ? "" : `disabled title="${escapeAttribute(tubeNestingExclusionReason(part))}"`}
           aria-label="选择 ${escapeAttribute(partDisplayName(part))}" />
         <button data-cam-action="tube-designer-parts-select-part" data-tube-designer-part-id="${escapeAttribute(part.entityId)}">
           <span><strong>${escapeText(partDisplayName(part))}</strong><small>${escapeText(part.partNumber || part.productName || "未编号")}</small></span>
           <span class="tube-designer-nesting-part-locations" title="${locations.length ? "在当前排样结果中的切割序号" : "未排入当前结果"}">${locations.length
             ? locations.slice(0, 3).map(({ placement, index }) => `<i style="--location-color:${getNestingPlacementColor(index, isActiveNestingPlacement(view, placement, index))}">${index + 1}</i>`).join("") + (locations.length > 3 ? `<small>+${locations.length - 3}</small>` : "")
             : ""}</span>
-          <span><strong>${isPlatePart(part) ? "板件" : `${formatNumber(part.length)} mm`}</strong><small>${isPlatePart(part) ? "不参与管材排样 · " : ""}× ${partQuantity(part)} 件</small></span>
+          <span><strong>${isSheetPart(part) || isComponentPart(part) ? escapeText(manufacturingPartKindLabel(part)) : `${formatNumber(part.length)} mm`}</strong><small>${!isTubeNestingPart(part) ? "不参与管材排样 · " : ""}× ${partQuantity(part)} 件</small></span>
         </button>
       </div>`;
     }).join("")}</div>
@@ -475,7 +485,8 @@ function renderNestingPartInspector(part) {
         <dl>
           ${renderNestingProperty("零件编号", part.partNumber || "未编号")}
           ${renderNestingProperty("数量", `${partQuantity(part)} 件`)}
-          ${renderNestingProperty(isPlatePart(part) ? "板件尺寸" : "成品长度", isPlatePart(part) ? partProfile(part) : `${formatNumber(part.length)} mm`, true)}
+          ${renderNestingProperty(isSheetPart(part) || isComponentPart(part) ? `${manufacturingPartKindLabel(part)}尺寸` : "成品长度", isSheetPart(part) || isComponentPart(part) ? partProfile(part) : `${formatNumber(part.length)} mm`, true)}
+          ${isComponentPart(part) || partSourcingLabel(part) !== "供料方式未指定" ? renderNestingProperty("供料方式", partSourcingLabel(part)) : ""}
           ${renderNestingProperty("来源产品", part.productName || part.productCode || "未命名产品", true)}
         </dl>
       </section>
@@ -484,7 +495,7 @@ function renderNestingPartInspector(part) {
         <dl>
           ${renderNestingProperty("材料", partMaterial(part))}
           ${renderNestingProperty("截面", partProfile(part))}
-          ${isPlatePart(part) ? renderNestingProperty("下料方式", "板件独立导出 STEP，不参与管材排样", true)
+          ${!isTubeNestingPart(part) ? renderNestingProperty("下料方式", tubeNestingExclusionReason(part), true)
             : renderNestingProperty("起始端", cutName(endProcess.startCut)) + renderNestingProperty("结束端", cutName(endProcess.endCut))}
         </dl>
       </section>
@@ -878,7 +889,7 @@ function renderStockGroup(group, activePart, selectedIds, view) {
     <summary>
       <input type="checkbox" data-cam-action="tube-designer-parts-toggle-group" data-tube-designer-part-ids="${escapeAttribute(partIds.join(" "))}" ${checked ? "checked" : ""} ${selectedCount > 0 && !checked ? "data-tube-designer-indeterminate=\"true\"" : ""} aria-label="选择该材料截面组的全部零件" />
       <span><strong>${escapeText(group.material)}</strong><small>${escapeText(group.profile)}</small></span>
-      <span class="tube-designer-stock-group-totals"><strong>${selectedCount} / ${group.parts.length} 种</strong><small>${group.quantity} 件 · 净长 ${formatCompactLength(group.totalLength)}</small></span>
+      <span class="tube-designer-stock-group-totals"><strong>${selectedCount} / ${group.parts.length} 种</strong><small>${group.quantity} 件${group.parts.some(isTubeNestingPart) ? ` · 净长 ${formatCompactLength(group.totalLength)}` : " · 另行处理"}</small></span>
     </summary>
     <div class="tube-designer-stock-part-list">${group.parts.map((part) => `
       <div class="tube-designer-stock-part ${String(activePart?.entityId) === String(part.entityId) ? "selected" : ""}">
@@ -889,7 +900,7 @@ function renderStockGroup(group, activePart, selectedIds, view) {
             <span><strong>${escapeText(partDisplayName(part))}</strong><mark class="tube-designer-process-badge ${escapeAttribute(partProcessKind(part))}">${escapeText(partProcessLabel(part))}</mark></span>
             <small>${escapeText(part.partNumber || "未编号")} · ${escapeText(part.productName || part.productCode || "未命名产品")}</small>
           </span>
-          <span class="tube-designer-stock-part-measure"><strong>${formatNumber(part.length)} mm</strong><small>× ${partQuantity(part)} 件</small></span>
+          <span class="tube-designer-stock-part-measure"><strong>${isSheetPart(part) || isComponentPart(part) ? escapeText(manufacturingPartKindLabel(part)) : `${formatNumber(part.length)} mm`}</strong><small>× ${partQuantity(part)} 件</small></span>
         </button>
       </div>`).join("")}</div>
   </details>`;
@@ -1058,25 +1069,28 @@ function renderPartMeasurement(part, state, view) {
   const measurementBody = state?.status === "error"
     ? `<div class="tube-designer-dimension-empty">${escapeText(state.message)}</div>`
     : report
-      ? `<div class="tube-designer-dimension-overview tube-designer-part-dimension-overview">
-          <span><small>${isPlatePart(part) ? "实体长边" : "实体总长"}</small><strong>${formatNumber(report.length)} mm</strong></span>
-          <span><small>${isPlatePart(part) ? "实体板厚" : "孔 / 开口"}</small><strong>${isPlatePart(part) ? `${formatNumber(report.plate?.thickness)} mm` : `${holes.length} 个`}</strong></span>
+      ? isComponentPart(part)
+        ? `<div class="tube-designer-dimension-overview tube-designer-part-dimension-overview">${[ ["width", "实体宽 X"], ["depth", "实体深 Y"], ["height", "实体高 Z"] ].map(([key, label]) => `<span><small>${label}</small><strong>${formatNumber(report.bounds?.[key])} mm</strong></span>`).join("")}</div><div class="tube-designer-part-no-holes">配件按完整三维模型管理，不生成管材长度或孔距标尺。</div>`
+        : `<div class="tube-designer-dimension-overview tube-designer-part-dimension-overview">
+          <span><small>${isSheetPart(part) ? "实体长边" : "实体总长"}</small><strong>${formatNumber(report.length)} mm</strong></span>
+          <span><small>${isSheetPart(part) ? "实体厚度" : "孔 / 开口"}</small><strong>${isSheetPart(part) ? `${formatNumber(report.plate?.thickness)} mm` : `${holes.length} 个`}</strong></span>
         </div>
         ${holes.length ? `<div class="tube-designer-dimension-list">${holes.slice(0, 8).map((hole) => `
           <article><strong>孔 / 开口 ${hole.index}</strong><span>距起点 ${formatNumber(hole.station)} · ${escapeText(hole.shapeLabel ?? hole.kind ?? "")}</span></article>`).join("")}</div>`
-          : `<div class="tube-designer-part-no-holes">${isPlatePart(part) ? `实体短边 ${formatNumber(report.plate?.shortSide)} mm · 板材另行下料` : "当前实体未识别到孔或开口"}</div>`}`
+          : `<div class="tube-designer-part-no-holes">${isSheetPart(part) ? `实体短边 ${formatNumber(report.plate?.shortSide)} mm · ${manufacturingPartKindLabel(part)}另行处理` : "当前实体未识别到孔或开口"}</div>`}`
       : `<div class="tube-designer-part-measurement-loading"><i></i><span>正在分析最终零件几何…</span></div>`;
   return `
     <section class="tube-designer-part-manufacturing-card">
       <div class="tube-designer-parts-measurement-heading">
-        <div><strong>制造信息</strong><span>${isPlatePart(part) ? "板件 · 可导出 STEP · 不参与管材排样" : "拆单结果 · 可作为排样输入"}</span></div>
+        <div><strong>制造信息</strong><span>${isTubeNestingPart(part) ? "拆单结果 · 可作为排样输入" : escapeText(tubeNestingExclusionReason(part))}</span></div>
         <em class="tube-designer-part-ready-state">${escapeText(partReadyLabel(part))}</em>
       </div>
       <div class="tube-designer-part-property-grid">
         <span><small>零件编号</small><strong>${escapeText(part.partNumber || "未编号")}</strong></span>
         <span><small>数量</small><strong>${partQuantity(part)} 件</strong></span>
-        ${isPlatePart(part) ? `<span><small>板宽 × 板高</small><strong>${formatNumber(plateDimensions(part).width)} × ${formatNumber(plateDimensions(part).height)} mm</strong></span>
-          <span><small>板厚</small><strong>${formatNumber(plateDimensions(part).thickness)} mm</strong></span>`
+        ${isComponentPart(part) ? `<span class="wide"><small>模型宽 × 深 × 高</small><strong>${escapeText(componentDimensionsText(componentBounds(part)))}</strong></span><span><small>供料方式</small><strong>${escapeText(partSourcingLabel(part))}</strong></span>`
+          : isSheetPart(part) ? `<span><small>宽 × 高</small><strong>${formatNumber(plateDimensions(part).width)} × ${formatNumber(plateDimensions(part).height)} mm</strong></span>
+          <span><small>厚度</small><strong>${formatNumber(plateDimensions(part).thickness)} mm</strong></span>`
           : `<span><small>起始端</small><strong>${escapeText(cutName(endProcess.startCut))}</strong></span>
           <span><small>结束端</small><strong>${escapeText(cutName(endProcess.endCut))}</strong></span>`}
         <span class="wide"><small>材料 / 截面</small><strong>${escapeText(partMaterial(part))} · ${escapeText(report?.profile || partProfile(part))}</strong></span>
@@ -1115,14 +1129,21 @@ function partMaterial(part) {
 }
 
 function partProfile(part) {
-  if (isPlatePart(part)) {
+  if (isSheetPart(part)) {
     const plate = plateDimensions(part);
-    return `板件 ${formatNumber(plate.width)} × ${formatNumber(plate.height)} × ${formatNumber(plate.thickness)} mm`;
+    return `${manufacturingPartKindLabel(part)} ${formatNumber(plate.width)} × ${formatNumber(plate.height)} × ${formatNumber(plate.thickness)} mm`;
+  }
+  if (isComponentPart(part)) {
+    return `${part.properties?.["manufacturing.modelName"] ?? "三维配件"} ${componentDimensionsText(componentBounds(part))} · ${partSourcingLabel(part)}`;
   }
   const profile = part?.profile ?? {};
   const displayName = String(profile.displayName ?? "").trim();
   const specification = String(profile.specification ?? "").trim();
   return [displayName, specification].filter(Boolean).join(" ") || "截面未指定";
+}
+
+function componentDimensionsText(bounds) {
+  return ["width", "depth", "height"].map((key) => Number(bounds?.[key]) > 0 ? formatNumber(bounds[key]) : "—").join(" × ") + " mm";
 }
 
 function partDisplayName(part) {
@@ -1145,7 +1166,8 @@ function partEndProcess(part) {
 }
 
 function partProcessKind(part) {
-  if (isPlatePart(part)) return "plate";
+  if (isSheetPart(part) || isComponentPart(part)) return manufacturingPartKind(part);
+  if (!isTubeNestingPart(part)) return "other";
   const properties = part?.properties ?? {};
   if (properties["tubeDesigner.cornerProcess"]) return "special";
   const process = partEndProcess(part);
@@ -1159,7 +1181,9 @@ function partProcessKind(part) {
 }
 
 function partProcessLabel(part) {
-  if (isPlatePart(part)) return "板件";
+  if (isSheetPart(part) || isComponentPart(part)) return manufacturingPartKindLabel(part);
+  if (partSourcingLabel(part) === "外购") return "外购";
+  if (!isTubeNestingPart(part)) return "另行处理";
   const properties = part?.properties ?? {};
   if (properties["tubeDesigner.cornerProcess"]) return "折弯 / 异形";
   const process = partEndProcess(part);

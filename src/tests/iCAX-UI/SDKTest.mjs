@@ -281,7 +281,7 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
 function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => [tab.id, tab.title]),
-    [["view", "产品"], ["nesting", "下料"], ["profiles", "管型"], ["sketch", "草图"], ["about", "关于"]],
+    [["view", "产品"], ["nesting", "下料"], ["profiles", "管型"], ["components", "配件库"], ["sketch", "草图"], ["about", "关于"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
   assert.equal(hasProductionWorkflowAccess({}), false);
@@ -534,7 +534,7 @@ function testTubeDesignerSketchJoinsTheMainWorkflow() {
   assert.ok(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "sketch" && tab.title === "草图"));
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => tab.id),
-    ["view", "nesting", "profiles", "sketch", "about"],
+    ["view", "nesting", "profiles", "components", "sketch", "about"],
   );
   const commands = tubeDesignerRibbonDefinition.tabs
     .find((tab) => tab.id === "sketch")

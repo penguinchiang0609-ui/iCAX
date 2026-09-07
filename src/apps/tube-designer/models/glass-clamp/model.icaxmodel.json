@@ -1,0 +1,252 @@
+{
+  "schema": "icax.neutral-model",
+  "schemaVersion": 1,
+  "template": {
+    "id": "component-glass-clamp",
+    "version": "1.0.0",
+    "packageDigest": ""
+  },
+  "coordinateSystem": "right-handed-x-width-y-depth-z-height",
+  "lengthUnit": "mm",
+  "parameters": {},
+  "geometry": [
+    {
+      "key": "clip.back.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            -12.5,
+            0,
+            0
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -2.5,
+                -10
+              ],
+              [
+                2.5,
+                -10
+              ],
+              [
+                2.5,
+                10
+              ],
+              [
+                -2.5,
+                10
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "clip.back.solid",
+      "operator": "extrude",
+      "inputs": [
+        "clip.back.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          30
+        ]
+      }
+    },
+    {
+      "key": "clip.front.pad.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            2.5,
+            -7,
+            0
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -12.5,
+                -3
+              ],
+              [
+                12.5,
+                -3
+              ],
+              [
+                12.5,
+                3
+              ],
+              [
+                -12.5,
+                3
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "clip.front.pad.solid",
+      "operator": "extrude",
+      "inputs": [
+        "clip.front.pad.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          30
+        ]
+      }
+    },
+    {
+      "key": "clip.back.pad.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            2.5,
+            7,
+            0
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -12.5,
+                -3
+              ],
+              [
+                12.5,
+                -3
+              ],
+              [
+                12.5,
+                3
+              ],
+              [
+                -12.5,
+                3
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "clip.back.pad.solid",
+      "operator": "extrude",
+      "inputs": [
+        "clip.back.pad.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          30
+        ]
+      }
+    },
+    {
+      "key": "clip.body",
+      "operator": "boolean",
+      "inputs": [
+        "clip.back.solid",
+        "clip.front.pad.solid",
+        "clip.back.pad.solid"
+      ],
+      "arguments": {
+        "operation": "union",
+        "target": "clip.back.solid",
+        "tools": [
+          "clip.front.pad.solid",
+          "clip.back.pad.solid"
+        ]
+      }
+    }
+  ],
+  "items": [
+    {
+      "key": "component",
+      "displayName": "8mm玻璃固定夹",
+      "representations": {
+        "display": "clip.body",
+        "export": "clip.body"
+      },
+      "children": [],
+      "properties": {
+        "manufacturing.partKind": "accessory",
+        "manufacturing.sourcing": "purchased",
+        "manufacturing.material": "304不锈钢",
+        "quantity": 1
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "key": "display.default",
+      "purpose": "display",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "export.manufacturing",
+      "purpose": "export",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    }
+  ],
+  "relationships": [],
+  "tables": [],
+  "diagnostics": []
+}

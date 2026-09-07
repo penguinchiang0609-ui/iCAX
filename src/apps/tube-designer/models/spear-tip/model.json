@@ -1,0 +1,11 @@
+{
+  "schema": "icax.component-model",
+  "schemaVersion": 1,
+  "id": "spear-tip",
+  "name": "20管平底枪尖",
+  "category": "护栏/枪尖",
+  "sourcing": "purchased",
+  "material": "Q235B",
+  "description": "原创固定尺寸平底装饰枪尖；底座20×20×4mm，平底Z=0用于端面对接焊接，尖体为8mm厚板形成，总高70mm。不是管材，不推断为弯管。",
+  "geometryFile": "model.icaxmodel.json"
+}
