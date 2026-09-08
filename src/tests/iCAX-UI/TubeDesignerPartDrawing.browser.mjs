@@ -83,9 +83,8 @@ try {
  };
  const screenshot=async name=>{if(process.env.ICAX_ARTIFACT_DIR){mkdirSync(process.env.ICAX_ARTIFACT_DIR,{recursive:true});await page.screenshot({path:resolve(process.env.ICAX_ARTIFACT_DIR,name+".png")});}};
  const checkIdentity=async()=>assert.deepEqual(await page.evaluate(()=>({canvas:window.fixture.canvas===document.querySelector(".icax-three-viewport-canvas"),workbench:window.fixture.workbench===document.querySelector("#main-workbench"),baseGeometry:window.fixture.baseGeometry===window.fixture.viewport.geometryObjects.get(window.fixture.baseUrl),baseObject:window.fixture.baseObject===window.fixture.viewport.sceneObjects.get("drawing:base"),camera:JSON.stringify(window.fixture.camera)===JSON.stringify(window.fixture.viewport.getCameraState()),fullRenders:window.fixture.fullRenders})),{canvas:true,workbench:true,baseGeometry:true,baseObject:true,camera:true,fullRenders:1});
- await ready();assert.equal(await command("branch").isDisabled(),true);assert.equal(await act("preview-mode").count(),0);
+ await ready();assert.equal(await command("branch").isEnabled(),true);assert.equal(await act("commit-operation").count(),0);assert.equal(await act("cancel-operation").count(),0);
  await page.evaluate(()=>{const f=window.fixture;f.canvas=document.querySelector(".icax-three-viewport-canvas");f.workbench=document.querySelector("#main-workbench");f.baseUrl=f.state.preview.baseGeometry.url;f.baseGeometry=f.viewport.geometryObjects.get(f.baseUrl);f.baseObject=f.viewport.sceneObjects.get("drawing:base");f.camera=f.viewport.getCameraState();});
- await act("commit-operation").click();await ready();assert.equal(await command("branch").isEnabled(),true);
  for(const size of [{width:1600,height:1000},{width:1024,height:768},{width:780,height:820}]) {
   await page.setViewportSize(size);await command("branch").click();await ready();
   // A deliberate fit after resizing is allowed; subsequent field edits must not move the camera.
@@ -94,7 +93,7 @@ try {
   assert.equal(await page.locator('[data-cam-change-action=tube-designer-drawing-section-select][data-drawing-section=branch]').inputValue(),"system:round","A new branch has a usable default section");
   assert.ok(await page.evaluate(()=>window.fixture.state.draft.section?.profile?.contours?.length)>0);
   await control("station").fill("180");await control("station").press("Tab");await page.waitForFunction(()=>window.fixture.calls.at(-1)?.payload.features.at(-1)?.station===180);await ready();
-  assert.equal(await page.evaluate(()=>window.fixture.state.features.length),0,"Draft preview is not an automatically committed part");await checkIdentity();
+  assert.equal(await page.evaluate(()=>window.fixture.state.features.length),1,"Selecting a tool immediately updates the live feature tree");await checkIdentity();
   const dims=await page.evaluate(()=>{
    const rect=s=>{const r=document.querySelector(s).getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
    return {dialog:rect(".td-draw-workbench"),tree:rect(".td-draw-sidebar"),canvas:rect("[data-part-drawing-viewport]"),parameters:rect(".td-draw-parameters"),overflow:[...document.querySelectorAll(".td-draw-sidebar,.td-draw-body,.td-draw-parameters,.td-draw-inspector,.tube-designer-punch-field-grid")].filter(e=>e.scrollWidth>e.clientWidth+2).map(e=>e.className)};
@@ -119,9 +118,9 @@ try {
   assert.equal(await control("arrayDirection").inputValue(),"negative");assert.equal(await arrays.evaluate(e=>e.scrollWidth<=e.clientWidth+2),true);
   await checkIdentity();await screenshot("part-drawing-array-"+size.width);
   await control("reference").selectOption("start");await control("drawingArrayMode").selectOption("top");await control("rowCount").fill("1");await control("rowCount").press("Tab");await ready();
-  await act("commit-operation").click();await ready();assert.equal(await page.locator('[role=treeitem]').count(),2);
+  assert.equal(await page.locator('[role=treeitem]').count(),2);
   await page.locator('[role=treeitem]').nth(1).click();assert.equal(await control("station").inputValue(),"180");
-  await control("station").fill("210");await control("station").press("Tab");await act("cancel-operation").click();await ready();assert.equal(await page.evaluate(()=>window.fixture.state.features[0].station),180);
+  await control("station").fill("210");await control("station").press("Tab");await ready();assert.equal(await page.evaluate(()=>window.fixture.state.features[0].station),210);
   await page.evaluate(()=>{const f=window.fixture;f.keptToolUrl=f.state.preview.toolPreviews[0].geometry.url;f.keptTool=f.viewport.geometryObjects.get(f.keptToolUrl);});
   await command("v-notch").click();await ready();assert.equal(await page.locator('[data-drawing-section=branch]').count(),0);
   assert.equal(await parameter("style").locator("option").count(),7);assert.equal(await parameter("rootRadius").count(),1);assert.equal(await parameter("curveRadius").count(),0);
@@ -134,14 +133,14 @@ try {
   }
   await parameter("style").selectOption("rounded_v");await parameter("curveRadius").fill("6");await parameter("curveRadius").press("Tab");await ready();
   await parameter("style").selectOption("asymmetric_v");await ready();await page.locator(".td-draw-property-scroll").evaluate(e=>e.scrollTop=0);await screenshot("part-drawing-v-notch-"+size.width);
-  await act("cancel-operation").click();await ready();
+  await act("selected-remove").click();await ready();
   await page.locator('[role=treeitem]').nth(1).click();await act("selected-remove").click();await ready();assert.equal(await page.locator('[role=treeitem]').count(),1);
   await command("start").click();assert.equal(await page.locator('[data-tube-designer-punch-end=start]').count()>0,true);
-  await act("cancel-operation").click();await ready();assert.equal(await page.locator('[role=treeitem]').count(),1);
+  await act("selected-remove").click();await ready();assert.equal(await page.locator('[role=treeitem]').count(),1);
  }
  await checkIdentity();const calls=await page.evaluate(()=>window.fixture.calls);
  assert.ok(calls.some(c=>c.method==="TubeDesigner.GetPartDrawingTools"));assert.ok(calls.filter(c=>c.method==="TubeDesigner.PreviewPartDrawing").every(c=>c.payload.toolsOnly===true));
  assert.ok(calls.every(c=>!["TubeDesigner.GetPunchTools","TubeDesigner.PreviewPunchPart"].includes(c.method)));
  assert.deepEqual(await page.evaluate(()=>[...window.fixture.reads].filter(([url])=>url.startsWith("fixture://main/")).map(([,count])=>count)),[1],"Unchanged main geometry is fetched once through all parameter edits");
- assert.deepEqual(errors,[]);console.log("Dedicated drawing: 3 left-tree / canvas / right-inspector layouts, default branch, 7 V types, stable main resource + canvas + outer workbench, local edits and feature/end transactions passed.");
+ assert.deepEqual(errors,[]);console.log("Dedicated drawing: 3 left-tree / canvas / right-inspector layouts, default main tube, live feature/section edits, 7 V types, stable main resource + canvas + outer workbench passed.");
 } finally {await browser.close();}

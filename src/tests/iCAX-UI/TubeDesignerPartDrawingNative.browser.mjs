@@ -146,12 +146,12 @@ try {
   };
 
   await page.getByRole("button", { name: "新建三维零件", exact: true }).click(); await ready();
-  await action("commit-operation").click(); await ready();
   const initialFraming = await sideFraming();
   await page.evaluate(() => {
     const f = window.fixture; f.canvas = document.querySelector(".icax-three-viewport-canvas"); f.workbench = document.querySelector("#main-workbench");
     f.baseUrl = f.state.preview.baseGeometry.url; f.base = f.viewport.geometryObjects.get(f.baseUrl); f.baseObject = f.viewport.sceneObjects.get("drawing:base"); f.camera = f.viewport.getCameraState();
   });
+  const beforePartWrites = await page.evaluate(() => window.fixture.calls.filter(call => /\.(Add|Apply)PartDrawing$/.test(call.method)).length);
   await command("branch").click(); await ready();
   assert.equal(await page.locator('[data-drawing-section="branch"][data-cam-change-action$="section-select"]').inputValue(), "system:round");
   assert.equal(await page.locator('[data-drawing-section="branch"][data-drawing-parameter="width"]').inputValue(), "40");
@@ -160,20 +160,17 @@ try {
     const f = window.fixture; return { canvas: f.canvas === document.querySelector(".icax-three-viewport-canvas"),
       workbench: f.workbench === document.querySelector("#main-workbench"), base: f.base === f.viewport.geometryObjects.get(f.baseUrl),
       baseObject: f.baseObject === f.viewport.sceneObjects.get("drawing:base"), camera: JSON.stringify(f.camera) === JSON.stringify(f.viewport.getCameraState()),
-      noResult: f.state.preview.geometry === undefined, toolsOnly: f.state.preview.toolsOnly, committedFeatures: f.state.features.length };
-  }), { canvas: true, workbench: true, base: true, baseObject: true, camera: true, noResult: true, toolsOnly: true, committedFeatures: 0 });
+      noResult: f.state.preview.geometry === undefined, toolsOnly: f.state.preview.toolsOnly, liveFeatures: f.state.features.length };
+  }), { canvas: true, workbench: true, base: true, baseObject: true, camera: true, noResult: true, toolsOnly: true, liveFeatures: 1 });
   await screenshot("01-default-round-branch40-intermediate-not-cut");
-  const beforeCommit = await page.evaluate(() => window.fixture.calls.filter(call => /\.(Add|Apply)PartDrawing$/.test(call.method)).length);
-  await action("commit-operation").click(); await ready();
   assert.equal(await page.locator('[role="treeitem"]').count(), 2);
-  assert.equal(await page.evaluate(() => window.fixture.calls.filter(call => /\.(Add|Apply)PartDrawing$/.test(call.method)).length), beforeCommit);
   assert.equal(await page.evaluate(() => window.fixture.state.features[0].id === window.fixture.state.preview.toolPreviews[0].key), true);
 
   // The default diameter-40 cutter is allowed throughout editing. Use a smaller
   // through hole for the final connected-part persistence acceptance.
   await page.locator('[role="treeitem"]').nth(1).click();
   await input(page.locator('[data-drawing-section="branch"][data-drawing-parameter="width"]'), 20);
-  await action("commit-operation").click(); await ready(); await screenshot("02-branch20-ready-for-final-confirm");
+  await screenshot("02-branch20-ready-for-final-confirm");
 
   // Use actual native CSG, BRep persistence and GPU resources for every V type.
   // In particular, a release hole produces nested compounds in its cutter;
@@ -202,14 +199,12 @@ try {
     assert.equal(record.style, style); assert.ok(record.positionCount > 0 && record.indexCount > 0, JSON.stringify(record));
     for (const property of ["objectVisible", "baseGeometrySame", "baseObjectSame", "branchGeometrySame", "branchObjectSame", "canvasSame", "workbenchSame", "cameraSame", "toolsOnly"])
       assert.equal(record[property], true, `${style}: ${property}`);
-    assert.equal(record.hasBooleanResult, false); assert.equal(record.partWrites, beforeCommit);
+    assert.equal(record.hasBooleanResult, false); assert.equal(record.partWrites, beforePartWrites);
     vNativeCases.push(record);
   }
   await screenshot("04-real-native-relief-v-preview");
-  await action("commit-operation").click(); await ready();
   assert.equal(await page.locator('[role="treeitem"]').count(), 3);
   assert.equal(await page.evaluate(() => window.fixture.state.features[1].toolParameters.style), "relief_v");
-  assert.equal(await page.evaluate(() => window.fixture.calls.filter(call => /\.(Add|Apply)PartDrawing$/.test(call.method)).length), beforeCommit);
   await action("apply").click(); await idle();
   const created = await page.evaluate(() => window.fixture.calls.findLast(call => call.method === "TubeDesigner.AddPartDrawing"));
   assert.ok(created?.result?.partEntityId, JSON.stringify({ method: created?.method, error: created?.error, resultKeys: Object.keys(created?.result ?? {}) })); assert.equal(created.error, undefined);
@@ -237,7 +232,7 @@ try {
     return f.viewport.geometryObjects.get(tool.geometry.url).getAttribute("position").count;
   }) > 0, "The persisted release-hole V cutter remains visible after reopening the .ictd project");
   await page.locator('[role="treeitem"]').nth(1).click(); await input(field("station"), 220);
-  await action("commit-operation").click(); await ready(); await screenshot("03-ictd-reopened-editable-drawing");
+  await screenshot("03-ictd-reopened-editable-drawing");
   await action("apply").click(); await idle();
   const updated = await page.evaluate(() => window.fixture.calls.findLast(call => call.method === "TubeDesigner.ApplyPartDrawing"));
   assert.ok(updated?.result?.tubeDesigner, JSON.stringify({ method: updated?.method, error: updated?.error, resultKeys: Object.keys(updated?.result ?? {}) })); assert.equal(updated.error, undefined);
@@ -254,7 +249,7 @@ try {
   assert.ok(final.calls.filter(call => call.method === "TubeDesigner.PreviewPartDrawing").every(call => call.toolsOnly === true));
   assert.ok(final.calls.every(call => !/GetPunchTools|PreviewPunchWizard|ApplyPunchWizard|AddNestingPunchPart/.test(call.method)));
   writeFileSync(resolve(artifacts, "acceptance-results.json"), JSON.stringify({ ...final, vNativeCases, initialFraming, reopenedFraming, project: saved.file, partEntityId: created.result.partEntityId, requests }, null, 2));
-  console.log("Dedicated drawing native acceptance passed: default round branch, all 7 real V cutter GPU meshes, stable base/branch/canvas/camera, tree-only commits, final AddPartDrawing, .ictd reload and ApplyPartDrawing with branch + relief V.");
+  console.log("Dedicated drawing native acceptance passed: default round branch, live feature edits, all 7 real V cutter GPU meshes, stable base/branch/canvas/camera, final AddPartDrawing, .ictd reload and ApplyPartDrawing with branch + relief V.");
   console.log("Artifacts: " + artifacts);
 } catch (error) {
   if (page) await page.screenshot({ path: resolve(artifacts, "failure.png") }).catch(() => {});

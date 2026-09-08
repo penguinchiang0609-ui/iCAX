@@ -104,7 +104,7 @@ export function validateDrawingFeature(feature) {
 }
 export function validateDrawing(state) {
   if(!state)return "三维绘制未打开。";
-  if(state.editingId)return "请先应用当前特征的修改。";
+  if(state.editingId)return "当前特征尚未完成，请先修正参数。";
   if(!Number.isFinite(Number(state.baseLength))||Number(state.baseLength)<=0)return "主管长度必须是有效正数。";
   if(state.features.length>256)return "最多支持 256 个建模特征。";
   let total=0;

@@ -22,8 +22,6 @@ const paint=()=>typeof requestAnimationFrame==="function"?new Promise(resolve=>{
   let settled=false;const finish=()=>{if(!settled){settled=true;clearTimeout(timer);resolve();}};
   const timer=setTimeout(finish,100);requestAnimationFrame(()=>requestAnimationFrame(finish));
 }):Promise.resolve();
-const operationSnapshot=s=>clone({features:s.features,ends:s.ends,draft:s.draft,editingId:"",drawing:s.drawing,baseLength:s.baseLength});
-
 export function beginDrawingOperation(context,view,title) {
   const operation={kind:"part-drawing",title,message:title,phaseLabel:"准备中"};
   view.tubeDesignerOperation=operation;view.pending=true;
@@ -68,19 +66,6 @@ export function defaultDrawingProfile(view) {
   return profiles.find(profile=>profile.libraryScope==="system"&&(profile.id==="round"||profile.descriptor?.id==="round"))
     ?? profiles.find(profile=>profile.libraryScope==="system")??profiles[0];
 }
-function beginTransaction(s,m) {
-  m.transaction={snapshot:operationSnapshot(s),history:clone(s.history),future:clone(s.future)};
-}
-function finishTransaction(s,m,commit) {
-  const t=m.transaction;if(!t)return;
-  s.history=t.history;s.future=t.future;
-  if(commit) {
-    const model=value=>JSON.stringify([value.drawing,value.features,value.ends]);
-    if(model(s)!==model(t.snapshot)){s.history.push(t.snapshot);s.history=s.history.slice(-100);s.future=[];}
-  } else {Object.assign(s,t.snapshot);s.revision++;}
-  m.transaction=null;
-}
-const button=(suffix,label,extra="")=>`<button type="button" class="tube-designer-secondary" data-cam-action="${PREFIX}${suffix}" ${extra}>${escapeText(label)}</button>`;
 function sectionFromLibrary(p,view) {
   return {source:"library",key:profileSelectionKey(p),ref:profileRef(p),name:profileName(p),
     parameters:clone(snapshot(p)?.parameters??p.defaultParameters??{}),profile:clone(snapshot(p))};
@@ -98,8 +83,8 @@ function getSection(view,which) {
   if(which==="start"||which==="end")return s.ends?.[which]?.section;
   return s.draft.section;
 }
-function setSection(view,which,section) {
-  const s=drawingState(view);checkpointDrawing(s);
+function setSection(view,which,section,shouldCheckpoint=true) {
+  const s=drawingState(view);if(shouldCheckpoint)checkpointDrawing(s);
   if(which==="main")s.drawing.section=section;
   else if(which==="start"||which==="end")s.ends[which].section=section;
   else s.draft.section=section;
@@ -138,8 +123,7 @@ export function renderDrawingSection(view,which) {
     <option value="">请选择截面</option>${section.profile?`<option value="__snapshot__" ${key==="__snapshot__"?"selected":""}>已保存截面 · ${escapeText(section.name??"本地 DXF")}</option>`:""}
     ${[["system","系统内置"],["template","模板自带"],["user","我的"]].map(([scope,title])=>`<optgroup label="${title}">${profiles.filter(p=>p.libraryScope===scope).map(p=>`<option value="${esc(profileSelectionKey(p))}" ${key===profileSelectionKey(p)?"selected":""}>${escapeText(profileName(p))}${p.templateName?" · "+escapeText(p.templateName):""}</option>`).join("")}</optgroup>`).join("")}
     <option value="__dxf__">外部 DXF…</option></select></label>${params}</div>
-    ${params?button("section-resolve","应用截面参数",attrs):""}
-    ${section.pendingParameters?'<small class="tube-drawing-warning">参数已改变，请应用截面参数。</small>':""}
+    ${section.pendingParameters?'<small class="tube-drawing-warning">正在更新截面参数…</small>':""}
     ${section.profile?`${diagram?`<details class="td-draw-section-diagram"><summary>截面参数示意图</summary>${diagram}</details>`:""}<div class="tube-drawing-section-preview">${diagram ? "" : renderProfileSvg(section.profile)}<span>${escapeText(section.name)} · ${escapeText(section.profile.specification??"")}<small>截面快照随图纸保存，不修改管型库。</small></span></div>`:'<small>可直接从管型库选取，或导入当前零件使用的 DXF。</small>'}
     </section>`;
 }
@@ -150,23 +134,28 @@ export function openPartDrawing(view,part=null) {
   const recipe=part?.properties?.["tubeDesigner.partDrawing"]??part?.properties?.["tubeDesigner.punchWizard"];
   const saved=recipe?.drawing;
   if(part&&!saved)throw new Error("此零件没有三维绘制定义，请使用冲孔向导。");
-  view.tubeDesignerPartDrawing={part:part?clone(part):null,mainApplied:!!part,mode:part?"":"main",selected:"main",operationDirty:false};
-  const profiles=libraryProfiles(view),p=profiles.find(p=>profileSelectionKey(p)===view.tubeDesignerSelectedProfileId)??profiles[0];
+  // A drawing always starts with a real editable main tube. There is no
+  // separate "apply main" transaction anymore; the right panel edits the
+  // current model directly and the history is the only rollback mechanism.
+  view.tubeDesignerPartDrawing={part:part?clone(part):null,mainApplied:true,mode:"main",selected:"main"};
+  const profiles=libraryProfiles(view),p=profiles.find(p=>profileSelectionKey(p)===view.tubeDesignerSelectedProfileId)
+    ??defaultDrawingProfile(view)??profiles[0];
   view.tubeDesignerPartDrawing.state=createDrawingState(part??{entityId:NEW_DRAWING_PART_ID,length:500});
   const s=drawingState(view);
   s.previewMode="tools";
   s.drawing=saved?{...clone(saved),name:part.name}:{length:500,name:"三维绘制零件",quantity:1,material:"",section:p?sectionFromLibrary(p,view):{}};
+  if(!s.drawing.section?.profile?.contours?.length&&p)s.drawing.section=sectionFromLibrary(p,view);
   s.baseLength=Number(s.drawing.length);
-  view.tubeDesignerPartDrawing.backup=clone(s.drawing);
-  if(!part)beginTransaction(s,view.tubeDesignerPartDrawing);
 }
 function savedSection(section) {
   if(!section?.profile?.contours?.length)throw new Error("请先选择有效截面。");
-  if(section.pendingParameters)throw new Error("截面参数尚未应用，请先点击“应用截面参数”。");
+  if(section.pendingParameters)throw new Error("截面参数正在更新，请等待更新完成。");
   const {pendingParameters,...saved}=section;return clone(saved);
 }
 export function getPartDrawingPayload(view,{includeDraft=false}={}) {
-  if(includeDraft && view.tubeDesignerPartDrawing?.mode==="feature") {
+  const activeId=view.tubeDesignerPartDrawing?.selected;
+  const activeAlreadyPersisted=activeId&&drawingState(view)?.features?.some(feature=>feature.id===activeId);
+  if(includeDraft && view.tubeDesignerPartDrawing?.mode==="feature"&&!activeAlreadyPersisted) {
     const s=drawingState(view),f=normalizeDrawingFeature(s.draft);
     if(f.section)f.section=savedSection(f.section);
     const i=s.features.findIndex(item=>item.id===s.editingId);
@@ -189,7 +178,7 @@ export function getPartDrawingPayload(view,{includeDraft=false}={}) {
   }
   return payload;
 }
-async function resolveSection(context,view,which,key,ops) {
+async function resolveSection(context,view,which,key,ops,shouldCheckpoint=true) {
   if(sectionLocked(view,which))throw new Error("退化定式刀具仅可删除，不能修改其截面或主管。");
   const current=getSection(view,which)??{};
   if(key==="__snapshot__") {const restored=clone(current);delete restored.pendingParameters;delete restored.key;setSection(view,which,restored);return;}
@@ -211,11 +200,10 @@ async function resolveSection(context,view,which,key,ops) {
       const result=await context.productProxy.invoke("TubeDesigner.EvaluateProfilePackage",{profileRef:profileRef(p),parameters},options);
       section={...sectionFromLibrary(p,view),parameters:clone(parameters),profile:result.profile};
     }
-    savedSection(section);setSection(view,which,section);
+    savedSection(section);setSection(view,which,section,shouldCheckpoint);
   } finally {finishDrawingOperation(view);}
 }
 async function applyDrawing(context,view,ops) {
-  if(view.tubeDesignerPartDrawing.mode)throw new Error("请先应用或取消当前操作，再生成零件。");
   const payload=getPartDrawingPayload(view),meta=view.tubeDesignerPartDrawing;
   const options=beginDrawingOperation(context,view,meta.part?"正在更新三维零件":"正在生成三维零件");renderDrawing(context,view,ops);await paint();
   try {
@@ -264,11 +252,10 @@ function attachDrawingInspector(view,mount) {
   root.addEventListener("scroll",()=>{if(root.isConnected)panel.scroll=root.scrollTop;},{passive:true,signal:abort.signal});
 }
 function drawingPreviewPayload(view) {
-  const s=drawingState(view),m=view.tubeDesignerPartDrawing;
-  const payload=m.mode==="feature"&&isDrawingToolReadOnly(s,s.draft)
-    ? getPartDrawingPayload(withDrawingState(view,{...s,editingId:""}))
-    : getPartDrawingPayload(view,{includeDraft:true});
-  return {...payload,toolsOnly:true};
+  // Features are committed to the local drawing state as soon as they are
+  // created or edited. Preview therefore always consumes the same complete
+  // recipe that the final save will use; there is no draft-only preview path.
+  return {...getPartDrawingPayload(view),toolsOnly:true};
 }
 // One native evaluation at a time. Coalesce edits and never display a stale response.
 export function attachPartDrawingEditor(context,view,mount,ops) {
@@ -330,7 +317,7 @@ export function attachPartDrawingEditor(context,view,mount,ops) {
       const result=await context.sceneProxy.invoke("TubeDesigner.PreviewPartDrawing",body,options);
       if(!hasDrawingToolPreview(result))throw new Error(result?.resultError||"未返回可显示的主管与刀具预览。");
       if(drawingState(view)===s&&q.signature===current&&s.revision===revision) {
-        s.preview={...result,revision,includesDraft:m.mode==="feature"};m.validSignature=current;
+        s.preview={...result,revision,includesDraft:false};m.validSignature=current;
         s.previewRecipe=clone(body);
       }
     } catch(error) {
@@ -349,65 +336,58 @@ export function attachPartDrawingEditor(context,view,mount,ops) {
 }
 function cancelOperation(view) {
   const s=drawingState(view),m=view.tubeDesignerPartDrawing;
-  finishTransaction(s,m,false);
-  s.editingId="";m.mode="";m.operationDirty=false;m.backup=null;s.error="";s.previewMode="tools";
+  if(!s||!m)return;
+  // Kept as a compatibility action for stale DOM events. Live edits are not
+  // rolled back here; undo/redo is the only rollback mechanism.
+  s.editingId="";m.mode="";s.error="";s.previewMode="tools";
 }
 function beginOperation(view,command,node=null) {
   const s=drawingState(view),m=view.tubeDesignerPartDrawing;
-  if(m.operationDirty)throw new Error("当前操作尚未应用，请先点击“应用”或“取消本次”。");
-  if(command!=="main"&&!m.mainApplied)throw new Error("请先应用主管。");
-  cancelOperation(view);m.operationDirty=false;beginTransaction(s,m);
-  if(command==="main"){m.mode="main";m.selected="main";m.backup=clone(s.drawing);return;}
-  if(["start","end"].includes(command)) {
-    m.mode=command;m.selected=command;m.backup=clone(s.ends[command]);s.previewMode="tools";
-    if(!node&&s.ends[command]?.type==="keep") {
-      checkpointDrawing(s);selectDrawingTool(s,s.ends[command],"end-miter");
-      Object.assign(s.ends[command],{trim:0,rotation:0,datum:"long"});m.operationDirty=true;
-    }
-    return;
-  }
-  m.mode="feature";s.previewMode="tools";
+  if(!s||!m)throw new Error("三维绘制未打开。");
+  if(command!=="main"&&!m.mainApplied)throw new Error("请先建立主管。");
   if(node) {
-    const f=s.features.find(f=>f.id===node);if(!f)throw new Error("该特征已不存在。");
-    m.selected=node;s.draft=clone(f);s.editingId=f.id;
-  } else {
-    s.draft=normalizeDrawingFeature({station:s.baseLength/2});s.editingId="";m.selected="";
-    const id=command==="branch"?"branch-profile":command==="hole"?s.tools.find(t=>t.target==="side")?.id:command;
-    if(!s.tools.some(t=>t.id===id))throw new Error("该刀具尚未加载，请稍后重试。");
-    selectDrawingTool(s,s.draft,id);
-    if(command==="branch") {
-      const profile=defaultDrawingProfile(view);
-      if(profile)s.draft.section=sectionFromLibrary(profile,view);
+    if(command==="main") {m.mode="main";m.selected="main";s.editingId="";return;}
+    if(["start","end"].includes(command)) {
+      if(!s.ends[command])s.ends[command]={type:"keep"};
+      m.mode=command;m.selected=command;s.draft=s.ends[command];s.editingId="";s.previewMode="tools";return;
     }
-    m.operationDirty=true;
+    const feature=s.features.find(f=>f.id===node);if(!feature)throw new Error("该特征已不存在。");
+    m.mode="feature";m.selected=node;s.draft=feature;s.editingId="";s.previewMode="tools";return;
   }
+  if(command==="main"){m.mode="main";m.selected="main";s.editingId="";return;}
+  if(["start","end"].includes(command)) {
+    const end=s.ends[command]??{type:"keep"};
+    if(end.type==="keep") {
+      if(!s.tools.some(tool=>tool.id==="end-miter"))throw new Error("该刀具尚未加载，请稍后重试。");
+      checkpointDrawing(s);selectDrawingTool(s,end,"end-miter");
+      Object.assign(end,{trim:0,rotation:0,datum:"long"});s.ends[command]=end;
+    }
+    m.mode=command;m.selected=command;s.draft=end;s.editingId="";s.previewMode="tools";return;
+  }
+  const feature=normalizeDrawingFeature({station:s.baseLength/2});
+  const id=command==="branch"?"branch-profile":command==="hole"?s.tools.find(t=>t.target==="side")?.id:command;
+  if(!s.tools.some(tool=>tool.id===id))throw new Error("该刀具尚未加载，请稍后重试。");
+  selectDrawingTool(s,feature,id);
+  if(command==="branch") {
+    const profile=defaultDrawingProfile(view);
+    if(profile)feature.section=sectionFromLibrary(profile,view);
+  }
+  s.draft=feature;s.editingId="";
+  if(!addDrawingFeature(s,virtualPart(view))) {
+    if(feature.recordKind!=="branch"||!/支管截面/.test(s.error))throw new Error(s.error);
+    // Keep an incomplete branch editable when the profile catalogue is empty;
+    // selecting a section in the inspector will make the live recipe valid.
+    s.error="";checkpointDrawing(s);s.features=[...s.features,clone(feature)];
+  }
+  s.draft=s.features.at(-1);m.mode="feature";m.selected=s.draft.id;s.previewMode="tools";
 }
 async function commitOperation(context,view,ops) {
+  // The old right-panel commit button is no longer rendered. Keep this action
+  // harmless for a stale click from an already-mounted page.
   const s=drawingState(view),m=view.tubeDesignerPartDrawing;
-  if(!m.mode)return;
-  if(m.mode==="main"&&mainLocked(s)||m.mode==="feature"&&isDrawingToolReadOnly(s,s.draft)||["start","end"].includes(m.mode)&&isDrawingToolReadOnly(s,s.ends[m.mode]))throw new Error("退化定式刀具仅可删除。");
-  const signature=JSON.stringify(drawingPreviewPayload(view));
-  const currentPreview=s.preview?.revision===s.revision && m.validSignature===signature && hasDrawingToolPreview(s.preview)
-    ? s.preview : null;
-  // Apply records the editable feature only. Boolean cutting belongs exclusively
-  // to the final Generate/Save action, not to each intermediate operation.
-  if(m.mode==="feature") {
-    if(drawingToolDescriptor(s,s.draft)?.requiresSection)s.draft.section=savedSection(s.draft.section);
-    const edited=s.editingId;
-    if(!addDrawingFeature(s,virtualPart(view)))throw new Error(s.error);
-    m.selected=edited||s.features.at(-1)?.id||"main";
-  } else if(m.mode==="main")m.mainApplied=true;
-  finishTransaction(s,m,true);
-  m.mode="";m.operationDirty=false;m.backup=null;s.previewMode="tools";
-  if(currentPreview)s.preview={...currentPreview,revision:s.revision,includesDraft:false};
-  s.error="";
-  const q=previewQueues.get(view);
-  if(currentPreview) {
-    const payload=drawingPreviewPayload(view);
-    s.previewRecipe=clone(payload);s.pendingPreviewRecipe=clone(payload);
-    m.validSignature=JSON.stringify(payload);
-    if(q){clearTimeout(q.timer);q.payload=payload;q.signature=m.validSignature;}
-  }
+  if(!s||!m)return;
+  s.editingId="";s.error="";
+  if(m.mode==="feature")s.draft=s.features.find(feature=>feature.id===m.selected)??s.draft;
 }
 export async function handlePartDrawingAction(context,view,action,target,ops) {
   if(!action.startsWith(PREFIX))return {handled:false};
@@ -429,36 +409,40 @@ export async function handlePartDrawingAction(context,view,action,target,ops) {
       else if(suffix==="commit-operation")await commitOperation(context,view,ops);
       else if(suffix.startsWith("selected-")) {
         const index=s.features.findIndex(f=>f.id===m.selected),kind=suffix.slice(9);
-        if(m.operationDirty&&kind!=="remove")throw new Error("请先应用或取消当前操作。");
         if(index>=0) {
-          cancelOperation(view);
-          if(kind==="copy")beginTransaction(s,m);
-          if(editDrawingFeature(s,kind,index)) {
-            if(kind==="copy"){m.mode="feature";m.operationDirty=true;m.selected="";s.previewMode="tools";}
-            else {m.operationDirty=false;cancelOperation(view);if(kind==="remove")m.selected="main";}
+          const selected=s.features[index];
+          if(kind==="copy") {
+            if(isDrawingToolReadOnly(s,selected))throw new Error("退化定式刀具仅可删除。");
+            const copy=normalizeDrawingFeature({...clone(selected),id:undefined,station:selected.station+(selected.arrayPitch||50),enabled:true});
+            checkpointDrawing(s);s.features=[...s.features,copy];s.draft=s.features.at(-1);s.editingId="";
+            m.mode="feature";m.selected=s.draft.id;s.previewMode="tools";
+          } else if(editDrawingFeature(s,kind,index)) {
+            if(kind==="remove") {m.mode="main";m.selected="main";s.editingId="";}
+            else {m.mode="feature";m.selected=selected.id;s.draft=s.features.find(f=>f.id===selected.id)??s.draft;s.editingId="";}
+            s.previewMode="tools";
           }
         } else if(kind==="remove"&&["start","end"].includes(m.selected)) {
-          cancelOperation(view);
-          editDrawingFeature(s,"remove-end",m.selected);m.operationDirty=false;cancelOperation(view);m.selected="main";
+          editDrawingFeature(s,"remove-end",m.selected);m.mode="main";m.selected="main";s.editingId="";s.previewMode="tools";
         }
       }
       else if(suffix==="section-select"||suffix==="section-resolve") {
-        const before=getSection(view,which);await resolveSection(context,view,which,suffix==="section-select"?String(target.value):getSection(view,which)?.key,ops);
-        if(getSection(view,which)!==before)m.operationDirty=true;
+        await resolveSection(context,view,which,suffix==="section-select"?String(target.value):getSection(view,which)?.key,ops);
       }
       else if(suffix==="section-parameter") {
         if(sectionLocked(view,which))throw new Error("该截面只读。");
         const section=getSection(view,which),p=libraryProfiles(view).find(p=>profileSelectionKey(p)===section?.key);
         const key=target.dataset.drawingParameter,def=p?.descriptor?.parameters?.find(d=>d.key===key);
-        if(def){checkpointDrawing(s);section.pendingParameters??=clone(section.parameters);section.pendingParameters[key]=def.valueType==="string"?String(target.value):def.valueType==="boolean"?!!target.checked:target.value===""?NaN:Number(target.value);m.operationDirty=true;await resolveSection(context,view,which,section.key,ops);}
+        if(def){checkpointDrawing(s);section.pendingParameters??=clone(section.parameters);section.pendingParameters[key]=def.valueType==="string"?String(target.value):def.valueType==="boolean"?!!target.checked:target.value===""?NaN:Number(target.value);await resolveSection(context,view,which,section.key,ops,false);}
       } else if(suffix==="main-change") {
         const key=target?.dataset?.drawingField;
         if(["length","name","quantity","material"].includes(key)) {
           if(key==="length"&&mainLocked(s))throw new Error("存在退化定式刀具，不能修改主管长度。");
-          checkpointDrawing(s);s.drawing[key]=target.value;m.operationDirty=true;if(key==="length")s.baseLength=Number(target.value);
+          checkpointDrawing(s);s.drawing[key]=target.value;if(key==="length")s.baseLength=Number(target.value);
         }
       } else if(suffix==="field-change") {
         const field=target?.dataset?.tubeDesignerPunchField;
+        if(m.mode!=="feature"&&!['start','end'].includes(m.mode))throw new Error("请先选择要编辑的特征。");
+        if(["start","end"].includes(m.mode))s.draft=s.ends[m.mode];
         if(["drawingArrayMode","arrayDirection","rowDirection","arraySpacing","rowSpacing"].includes(field)) {
           if(isDrawingToolReadOnly(s,s.draft))throw new Error("退化定式刀具仅可删除，不能修改阵列。");
           if(field==="drawingArrayMode"&&(s.draft.toolTarget!=="part"||!["top","left","round"].includes(target.value)))throw new Error("请选择 Y、Z 或绕 X 轴圆周方向。");
@@ -472,13 +456,11 @@ export async function handlePartDrawingAction(context,view,action,target,ops) {
           else if(field==="rowDirection")f.rowPitch=(Math.abs(f.rowPitch)||20)*sign;
           else if(field==="arraySpacing")f.arrayPitch=spacing*(f.arrayPitch<0?-1:1);
           else if(field==="rowSpacing")f.rowPitch=spacing*(f.rowPitch<0?-1:1);
-          m.operationDirty=true;
         } else {
           const oldReference=s.draft.reference;
           if(updateDrawingField(s,target)) {
             // UI directions are absolute axes, independent of the position datum.
             if(field==="reference"&&(oldReference==="end")!==(s.draft.reference==="end"))s.draft.arrayPitch=-s.draft.arrayPitch;
-            m.operationDirty=true;
           }
         }
       }
@@ -487,11 +469,19 @@ export async function handlePartDrawingAction(context,view,action,target,ops) {
         if(mode==="tools")s.previewMode=mode;
       }
       else if(suffix==="add") {
-        if(drawingToolDescriptor(s,s.draft)?.requiresSection)s.draft.section=savedSection(s.draft.section);
-        addDrawingFeature(s,virtualPart(view));
+        // Legacy action: a feature is added when its command is selected.
+        if(s.draft&&!s.features.some(feature=>feature.id===s.draft.id))activateLiveFeature(view,s.draft);
       } else if(["edit","copy","toggle","remove","undo","redo","remove-end"].includes(suffix)) {
-        if(["undo","redo"].includes(suffix))cancelOperation(view);
-        if(editDrawingFeature(s,suffix,target?.dataset?.tubeDesignerPunchIndex)&&["undo","redo"].includes(suffix)) {m.operationDirty=false;m.mode="";m.selected="main";s.editingId="";s.previewMode="tools";}
+        if(["undo","redo"].includes(suffix)) {
+          cancelOperation(view);
+          if(editDrawingFeature(s,suffix,target?.dataset?.tubeDesignerPunchIndex)) {
+            m.mode="main";m.selected="main";s.editingId="";s.previewMode="tools";
+          }
+        } else if(editDrawingFeature(s,suffix,target?.dataset?.tubeDesignerPunchIndex)) {
+          if(suffix==="remove-end") {m.mode="main";m.selected="main";}
+          else {m.mode="feature";const feature=s.features.find(item=>item.id===m.selected);if(feature)s.draft=feature;}
+          s.editingId="";s.previewMode="tools";
+        }
       }
       else if(suffix==="preview") {
         // Refresh the drawing-only tool preview through its existing serial

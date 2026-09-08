@@ -22,7 +22,7 @@ function toolbar(view) {
     <div class="td-draw-ribbon-group">${btn("command","主管",`${busy} data-drawing-command="main" ${selected("main")}`,"base")}${tool("branch","支管相贯","branch")}${tool("v-notch","V 槽","bevel")}<small>建模</small></div>
     <div class="td-draw-ribbon-group">${tool("start","起点切断","cut")}${tool("end","终点切断","cut")}<small>端部</small></div>
     <div class="td-draw-ribbon-group td-draw-edit-tools">${btn("undo","撤销",`${busy} ${!s.history?.length?"disabled":""}`,"undo")}${btn("redo","重做",`${busy} ${!s.future?.length?"disabled":""}`,"redo")}${btn("selected-copy","复制",`${busy} ${!f||locked?"disabled":""}`,"merge")}${btn("selected-toggle",f?.enabled===false?"启用":"停用",`${busy} ${!f||locked?"disabled":""}`,"display")}${btn("selected-remove","删除",`${busy} ${!f&&!["start","end"].includes(m.selected)?"disabled":""}`,"delete")}<small>编辑特征</small></div>
-    <div class="td-draw-ribbon-group td-draw-complete">${btn("apply","确定",`${busy} ${m.mode||!m.mainApplied?"disabled":""} title="${m.part?"计算并保存零件":"计算并生成零件"}"`,"apply")}${btn("cancel","取消",busy,"close")}<small>完成</small></div>
+    <div class="td-draw-ribbon-group td-draw-complete">${btn("apply","确定",`${busy} title="${m.part?"计算并保存零件":"计算并生成零件"}"`,"apply")}${btn("cancel","取消",busy,"close")}<small>完成</small></div>
   </nav>`;
 }
 function tree(view) {
@@ -32,7 +32,7 @@ function tree(view) {
     ${row("main","主管 · 拉伸基体","base",`${s.drawing.section?.name??"请选择截面"} · ${s.drawing.length} mm`)}
     ${["start","end"].filter(e=>s.ends[e]?.type!=="keep").map(e=>row(e,(e==="start"?"起点":"终点")+" · "+label(drawingToolDescriptor(s,s.ends[e])??s.ends[e]),"cut")).join("")}
     ${s.features.map((f,i)=>row(f.id,`${i+1}. ${label(drawingToolDescriptor(s,f)??f)}`,f.toolTarget==="part"?(f.section?"branch":"bevel"):"hole",isDrawingToolReadOnly(s,f)?"定式 · 仅可删除":`${f.station} mm${f.arrayCount>1||f.rowCount>1?` · 阵列 ${f.arrayCount} × ${f.rowCount}`:""}`,f.enabled===false)).join("")}
-    ${!s.features.length?'<p>应用主管后，从上方添加支管、V 槽或端部切割。</p>':""}</div></section>`;
+    ${!s.features.length?'<p>从上方添加支管、V 槽或端部切割。</p>':""}</div></section>`;
 }
 function featureParameters(view,renderSection) {
   const m=view.tubeDesignerPartDrawing,s=m.state,f=s.draft,t=drawingToolDescriptor(s,f);
@@ -70,22 +70,21 @@ function featureParameters(view,renderSection) {
 }
 function inspector(view,renderSection) {
   const m=view.tubeDesignerPartDrawing,s=m.state;
-  let title="选择特征",body='<p class="td-draw-inspector-hint">从上方选择建模工具，或在特征树中选择已有操作。</p>',canApply=!!m.mode;
+  let title="选择特征",body='<p class="td-draw-inspector-hint">从上方选择建模工具，或在特征树中选择已有操作。</p>';
   if(m.mode==="main") {
     title=m.mainApplied?"编辑主管":"建立主管";
     const locked=[...s.features,...Object.values(s.ends)].some(f=>isDrawingToolReadOnly(s,f));
-    canApply=!locked;
     body=`<fieldset class="tube-designer-punch-controls" ${view.pending||locked?"disabled":""}>${group("主管截面",`<div class="wide">${renderSection(view,"main")}</div>`)}${group("拉伸长度",mainField("length","管长（mm）",s.drawing.length))}
       ${!m.part?group("零件信息",mainField("name","名称",s.drawing.name,"text")+mainField("quantity","数量",s.drawing.quantity)+mainField("material","材料",s.drawing.material,"text"),false):""}</fieldset>${locked?'<p class="td-draw-readonly">有退化定式刀具，主管截面和长度已锁定。</p>':""}`;
   } else if(m.mode==="feature") {
-    title=(s.editingId?"编辑 · ":"添加 · ")+label(drawingToolDescriptor(s,s.draft)??s.draft);
-    body=featureParameters(view,renderSection);canApply=!isDrawingToolReadOnly(s,s.draft);
+    title=(s.features.some(feature=>feature.id===m.selected)?"编辑 · ":"当前 · ")+label(drawingToolDescriptor(s,s.draft)??s.draft);
+    body=featureParameters(view,renderSection);
   } else if(["start","end"].includes(m.mode)) {
     const end=m.mode,e=s.ends[end],t=drawingToolDescriptor(s,e),locked=isDrawingToolReadOnly(s,e);
-    title=end==="start"?"起点端部":"终点端部";canApply=!locked;
+    title=end==="start"?"起点端部":"终点端部";
     body=locked?'<p class="td-draw-readonly">该端部刀具已退化为定式，仅可删除节点。</p>':`<fieldset class="tube-designer-punch-controls" ${view.pending?"disabled":""}>${group("切割方式",select("tool","端部刀具",e.toolRef?.id??"keep",[["keep","保留原端面"],...s.tools.filter(t=>t.target==="end").map(t=>[t.id,label(t)])],end))}${e.type!=="keep"?(t?.requiresSection?renderSection(view,end):"")+group("形状",parameterFields(action,t,e,end))+group("定位",input("trim","向内修剪",e.trim??0,"mm",end)+input("rotation","绕主管旋转",e.rotation??0,"°",end)+select("datum","尺寸基准",e.datum??"long",[["long","长点"],["center","中心"],["short","短点"]],end)):""}</fieldset>`;
   }
-  return `<section class="td-draw-inspector" aria-label="特征参数"><header><strong>${txt(title)}</strong>${m.mode?'<small>仅更新当前特征预览</small>':""}</header><div class="td-draw-property-scroll">${body}</div>${m.mode?`<footer>${canApply?btn("commit-operation",m.mode==="main"?"应用主管":"加入特征树",view.pending||s.previewPending?"disabled":"","apply"):""}${btn("cancel-operation","取消本次",view.pending?"disabled":"")}</footer>`:""}</section>`;
+  return `<section class="td-draw-inspector" aria-label="特征参数"><header><strong>${txt(title)}</strong>${m.mode?'<small>修改实时生效，可用撤销/重做回退</small>':""}</header><div class="td-draw-property-scroll">${body}</div></section>`;
 }
 export function renderPartDrawingWorkbench(view,renderSection) {
   const m=view.tubeDesignerPartDrawing,s=m?.state;
@@ -98,8 +97,8 @@ export function renderPartDrawingWorkbench(view,renderSection) {
       <main class="td-draw-canvas"><div class="td-draw-view-toolbar"><strong>主管与特征预览</strong><span>${s.drawing.length} mm · ${txt(s.drawing.section?.name??"主管")}</span></div>
         <div class="td-draw-preview-host" data-part-drawing-viewport></div>
         ${s.error?`<div class="td-draw-error" role="alert">${txt(s.error)}</div>`:""}
-        <div class="td-draw-canvas-status" data-punch-preview-status>${txt(current)} · 编辑过程中不切除主管</div>
+        <div class="td-draw-canvas-status" data-punch-preview-status>${txt(current)} · 参数修改实时更新主管与刀具预览</div>
       </main><aside class="td-draw-parameters" aria-label="右侧参数面板">${inspector(view,renderSection)}</aside></div>
-    <footer class="td-draw-status"><span>${m.mode?"设置参数 → 加入特征树 → 继续建模":"选择特征可继续编辑"} · 最后点击“确定”统一计算实体</span><span>拖动旋转 · 滚轮缩放 · 主管轴 X</span></footer>
+    <footer class="td-draw-status"><span>参数修改实时生效 · 可随时撤销/重做 · 点击“确定”生成零件</span><span>拖动旋转 · 滚轮缩放 · 主管轴 X</span></footer>
   </section></div>`;
 }
