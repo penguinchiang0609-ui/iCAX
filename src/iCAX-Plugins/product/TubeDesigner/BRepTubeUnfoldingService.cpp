@@ -13,9 +13,12 @@
 #include <BRepAdaptor_Curve.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
 #include <BRep_Tool.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <Bnd_Box.hxx>
@@ -56,6 +59,7 @@
 namespace iCAX::TubeDesigner
 {
     using iCAX::Data::ObjectMap;
+    using iCAX::Data::Variant;
     using iCAX::Data::VariantArray;
 
     namespace
@@ -1258,6 +1262,1188 @@ namespace iCAX::TubeDesigner
         catch (const std::exception& _Error)
         {
             STubeBRepUnfoldingResult _Result;
+            _Result.Diagnostic = std::string("BRepModel 重建失败: ") + _Error.what();
+            return _Result;
+        }
+    }
+
+    namespace
+    {
+        constexpr double kSideSketchPi = 3.1415926535897932384626433832795;
+
+        struct SSideSketchPoint final
+        {
+            double S = 0.0;
+            double U = 0.0;
+        };
+
+        struct SSideSketchTrajectory final
+        {
+            bool Closed = false;
+            std::vector<SSideSketchPoint> Points;
+        };
+
+        struct SSideSurfaceSample final
+        {
+            gp_Pnt Point;
+            gp_Dir Normal = gp::DY();
+        };
+
+        struct SNormalVolumeNode final
+        {
+            gp_Pnt Outer;
+            gp_Pnt Inner;
+        };
+
+        struct SNormalVolumeEdgeUse final
+        {
+            std::size_t Count = 0;
+            std::size_t First = 0;
+            std::size_t Second = 0;
+        };
+
+        bool TrySideSketchNumber(
+            const Variant& Value_, double& Result_)
+        {
+            try
+            {
+                if (Value_.Is<double>()) Result_ = Value_.To<double>();
+                else if (Value_.Is<float>()) Result_ = static_cast<double>(Value_.To<float>());
+                else if (Value_.Is<unsigned long long>())
+                    Result_ = static_cast<double>(Value_.To<unsigned long long>());
+                else if (Value_.Is<long long>()) Result_ = static_cast<double>(Value_.To<long long>());
+                else if (Value_.Is<unsigned int>())
+                    Result_ = static_cast<double>(Value_.To<unsigned int>());
+                else if (Value_.Is<int>()) Result_ = static_cast<double>(Value_.To<int>());
+                else if (Value_.Is<std::string>()) Result_ = std::stod(Value_.To<std::string>());
+                else return false;
+                return std::isfinite(Result_);
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+
+        std::optional<double> SideSketchNumber(
+            const ObjectMap& Map_, const std::string& Name_)
+        {
+            const auto _Iterator = Map_.find(Name_);
+            if (_Iterator == Map_.end()) return std::nullopt;
+            double _Value = 0.0;
+            return TrySideSketchNumber(_Iterator->second, _Value)
+                ? std::optional<double>(_Value) : std::nullopt;
+        }
+
+        std::optional<SSideSketchPoint> SideSketchPoint(
+            const Variant& Value_)
+        {
+            if (!Value_.Is<VariantArray>()) return std::nullopt;
+            const auto& _Values = Value_.To<VariantArray>();
+            if (_Values.size() < 2) return std::nullopt;
+            double _S = 0.0;
+            double _U = 0.0;
+            if (!TrySideSketchNumber(_Values[0], _S)
+                || !TrySideSketchNumber(_Values[1], _U))
+                return std::nullopt;
+            return SSideSketchPoint{ _S, _U };
+        }
+
+        std::optional<SSideSketchPoint> SideSketchMapPoint(
+            const ObjectMap& Map_, const std::string& Name_)
+        {
+            const auto _Iterator = Map_.find(Name_);
+            return _Iterator == Map_.end()
+                ? std::nullopt : SideSketchPoint(_Iterator->second);
+        }
+
+        void AppendSideSketchPoint(
+            std::vector<SSideSketchPoint>& Points_, const SSideSketchPoint& Point_)
+        {
+            if (!std::isfinite(Point_.S) || !std::isfinite(Point_.U)) return;
+            if (!Points_.empty()
+                && std::hypot(Points_.back().S - Point_.S,
+                    Points_.back().U - Point_.U) <= 1.0e-8)
+                return;
+            Points_.push_back(Point_);
+        }
+
+        void AppendSideSketchLinear(
+            std::vector<SSideSketchPoint>& Points_,
+            const SSideSketchPoint& Start_, const SSideSketchPoint& End_,
+            const std::size_t Count_ = 1)
+        {
+            for (std::size_t _Index = 0; _Index <= Count_; ++_Index)
+            {
+                const auto _Ratio = Count_ == 0
+                    ? 0.0 : static_cast<double>(_Index) / static_cast<double>(Count_);
+                AppendSideSketchPoint(Points_, {
+                    Start_.S + (End_.S - Start_.S) * _Ratio,
+                    Start_.U + (End_.U - Start_.U) * _Ratio });
+            }
+        }
+
+        void AppendSideSketchQuadratic(
+            std::vector<SSideSketchPoint>& Points_,
+            const SSideSketchPoint& Start_, const SSideSketchPoint& Control_,
+            const SSideSketchPoint& End_, const std::size_t Count_ = 24)
+        {
+            for (std::size_t _Index = 0; _Index <= Count_; ++_Index)
+            {
+                const auto _Ratio = Count_ == 0
+                    ? 0.0 : static_cast<double>(_Index) / static_cast<double>(Count_);
+                const auto _Inverse = 1.0 - _Ratio;
+                AppendSideSketchPoint(Points_, {
+                    _Inverse * _Inverse * Start_.S
+                        + 2.0 * _Inverse * _Ratio * Control_.S
+                        + _Ratio * _Ratio * End_.S,
+                    _Inverse * _Inverse * Start_.U
+                        + 2.0 * _Inverse * _Ratio * Control_.U
+                        + _Ratio * _Ratio * End_.U });
+            }
+        }
+
+        std::vector<SSideSketchPoint> SampleSideSketchSegment(
+            const ObjectMap& Segment_)
+        {
+            std::vector<SSideSketchPoint> _Result;
+            const auto _KindIterator = Segment_.find("kind");
+            if (_KindIterator == Segment_.end() || !_KindIterator->second.Is<std::string>())
+                return _Result;
+            const auto _Kind = _KindIterator->second.To<std::string>();
+            if (_Kind == "line")
+            {
+                auto _Start = SideSketchMapPoint(Segment_, "start");
+                auto _End = SideSketchMapPoint(Segment_, "end");
+                if (!_Start || !_End)
+                {
+                    const auto _X1 = SideSketchNumber(Segment_, "x1");
+                    const auto _Y1 = SideSketchNumber(Segment_, "y1");
+                    const auto _X2 = SideSketchNumber(Segment_, "x2");
+                    const auto _Y2 = SideSketchNumber(Segment_, "y2");
+                    if (_X1 && _Y1 && _X2 && _Y2)
+                    {
+                        _Start = SSideSketchPoint{ *_X1, *_Y1 };
+                        _End = SSideSketchPoint{ *_X2, *_Y2 };
+                    }
+                }
+                if (_Start && _End) AppendSideSketchLinear(_Result, *_Start, *_End);
+                return _Result;
+            }
+            if (_Kind == "bezier")
+            {
+                const auto _PointsIterator = Segment_.find("points");
+                if (_PointsIterator == Segment_.end()
+                    || !_PointsIterator->second.Is<VariantArray>()) return _Result;
+                std::vector<SSideSketchPoint> _Controls;
+                for (const auto& _Value : _PointsIterator->second.To<VariantArray>())
+                    if (const auto _Point = SideSketchPoint(_Value)) _Controls.push_back(*_Point);
+                if (_Controls.size() < 2) return _Result;
+                const auto _Count = std::max<std::size_t>(24,
+                    std::min<std::size_t>(128, _Controls.size() * 16));
+                for (std::size_t _Index = 0; _Index <= _Count; ++_Index)
+                {
+                    const auto _Ratio = static_cast<double>(_Index)
+                        / static_cast<double>(_Count);
+                    std::vector<SSideSketchPoint> _Level = _Controls;
+                    for (std::size_t _Order = _Level.size() - 1; _Order > 0; --_Order)
+                        for (std::size_t _Cursor = 0; _Cursor < _Order; ++_Cursor)
+                            _Level[_Cursor] = {
+                                _Level[_Cursor].S * (1.0 - _Ratio)
+                                    + _Level[_Cursor + 1].S * _Ratio,
+                                _Level[_Cursor].U * (1.0 - _Ratio)
+                                    + _Level[_Cursor + 1].U * _Ratio };
+                    AppendSideSketchPoint(_Result, _Level.front());
+                }
+                return _Result;
+            }
+            if (_Kind == "circleArc" || _Kind == "ellipseArc")
+            {
+                const auto _CX = SideSketchNumber(Segment_, "cx");
+                const auto _CY = SideSketchNumber(Segment_, "cy");
+                const auto _Start = SideSketchNumber(Segment_, "startAngle");
+                const auto _Sweep = SideSketchNumber(Segment_, "sweep");
+                if (!_CX || !_CY || !_Start || !_Sweep) return _Result;
+                const auto _RX = _Kind == "circleArc"
+                    ? SideSketchNumber(Segment_, "radius")
+                    : SideSketchNumber(Segment_, "radiusX");
+                const auto _RY = _Kind == "circleArc"
+                    ? _RX : SideSketchNumber(Segment_, "radiusY");
+                const auto _Rotation = SideSketchNumber(Segment_, "rotation").value_or(0.0);
+                if (!_RX || !_RY || *_RX <= 0.0 || *_RY <= 0.0) return _Result;
+                const auto _Count = std::max<std::size_t>(8, std::min<std::size_t>(256,
+                    static_cast<std::size_t>(std::ceil(std::abs(*_Sweep)
+                        / (2.0 * kSideSketchPi) * 96.0))));
+                const auto _Cosine = std::cos(_Rotation);
+                const auto _Sine = std::sin(_Rotation);
+                for (std::size_t _Index = 0; _Index <= _Count; ++_Index)
+                {
+                    const auto _Angle = *_Start + *_Sweep
+                        * static_cast<double>(_Index) / static_cast<double>(_Count);
+                    const auto _X = *_RX * std::cos(_Angle);
+                    const auto _Y = *_RY * std::sin(_Angle);
+                    AppendSideSketchPoint(_Result, {
+                        *_CX + _X * _Cosine - _Y * _Sine,
+                        *_CY + _X * _Sine + _Y * _Cosine });
+                }
+                return _Result;
+            }
+            return _Result;
+        }
+
+        std::vector<SSideSketchPoint> SampleSideSketchEntity(
+            const ObjectMap& Entity_)
+        {
+            std::vector<SSideSketchPoint> _Result;
+            const auto _KindIterator = Entity_.find("kind");
+            if (_KindIterator == Entity_.end() || !_KindIterator->second.Is<std::string>())
+                return _Result;
+            const auto _Kind = _KindIterator->second.To<std::string>();
+            if (_Kind == "text") return _Result;
+            if (_Kind == "line")
+            {
+                const auto _X1 = SideSketchNumber(Entity_, "x1");
+                const auto _Y1 = SideSketchNumber(Entity_, "y1");
+                const auto _X2 = SideSketchNumber(Entity_, "x2");
+                const auto _Y2 = SideSketchNumber(Entity_, "y2");
+                if (_X1 && _Y1 && _X2 && _Y2)
+                    AppendSideSketchLinear(_Result, { *_X1, *_Y1 }, { *_X2, *_Y2 });
+                return _Result;
+            }
+            if (_Kind == "rectangle")
+            {
+                const auto _X = SideSketchNumber(Entity_, "x");
+                const auto _Y = SideSketchNumber(Entity_, "y");
+                const auto _Width = SideSketchNumber(Entity_, "width");
+                const auto _Height = SideSketchNumber(Entity_, "height");
+                if (!_X || !_Y || !_Width || !_Height) return _Result;
+                const auto _Radius = std::max(0.0, std::min({
+                    SideSketchNumber(Entity_, "radius").value_or(0.0),
+                    *_Width * 0.5, *_Height * 0.5 }));
+                if (_Radius <= 1.0e-8)
+                {
+                    _Result = {
+                        { *_X, *_Y }, { *_X + *_Width, *_Y },
+                        { *_X + *_Width, *_Y + *_Height },
+                        { *_X, *_Y + *_Height } };
+                    return _Result;
+                }
+                const std::array<std::pair<SSideSketchPoint, double>, 4> _Corners{{
+                    { { *_X + *_Width - _Radius, *_Y + _Radius }, -kSideSketchPi * 0.5 },
+                    { { *_X + *_Width - _Radius, *_Y + *_Height - _Radius }, 0.0 },
+                    { { *_X + _Radius, *_Y + *_Height - _Radius }, kSideSketchPi * 0.5 },
+                    { { *_X + _Radius, *_Y + _Radius }, kSideSketchPi } }};
+                for (const auto& [_Center, _StartAngle] : _Corners)
+                    for (std::size_t _Index = 0; _Index <= 12; ++_Index)
+                    {
+                        const auto _Angle = _StartAngle + kSideSketchPi * 0.5
+                            * static_cast<double>(_Index) / 12.0;
+                        AppendSideSketchPoint(_Result, {
+                            _Center.S + _Radius * std::cos(_Angle),
+                            _Center.U + _Radius * std::sin(_Angle) });
+                    }
+                return _Result;
+            }
+            if (_Kind == "circle" || _Kind == "ellipse")
+            {
+                const auto _CX = SideSketchNumber(Entity_, "cx");
+                const auto _CY = SideSketchNumber(Entity_, "cy");
+                if (!_CX || !_CY) return _Result;
+                const auto _RX = _Kind == "circle"
+                    ? SideSketchNumber(Entity_, "radius")
+                    : SideSketchNumber(Entity_, "radiusX");
+                const auto _RY = _Kind == "circle"
+                    ? _RX : SideSketchNumber(Entity_, "radiusY");
+                if (!_RX || !_RY || *_RX <= 0.0 || *_RY <= 0.0) return _Result;
+                const auto _Rotation = SideSketchNumber(Entity_, "rotation").value_or(0.0);
+                const auto _Cosine = std::cos(_Rotation);
+                const auto _Sine = std::sin(_Rotation);
+                constexpr std::size_t _Count = 96;
+                for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+                {
+                    const auto _Angle = 2.0 * kSideSketchPi
+                        * static_cast<double>(_Index) / static_cast<double>(_Count);
+                    const auto _X = *_RX * std::cos(_Angle);
+                    const auto _Y = *_RY * std::sin(_Angle);
+                    AppendSideSketchPoint(_Result, {
+                        *_CX + _X * _Cosine - _Y * _Sine,
+                        *_CY + _X * _Sine + _Y * _Cosine });
+                }
+                return _Result;
+            }
+            if (_Kind == "circleArc" || _Kind == "ellipseArc")
+                return SampleSideSketchSegment(Entity_);
+            if (_Kind == "arc")
+            {
+                const auto _PointsIterator = Entity_.find("points");
+                if (_PointsIterator == Entity_.end()
+                    || !_PointsIterator->second.Is<VariantArray>()) return _Result;
+                std::vector<SSideSketchPoint> _Points;
+                for (const auto& _Value : _PointsIterator->second.To<VariantArray>())
+                    if (const auto _Point = SideSketchPoint(_Value)) _Points.push_back(*_Point);
+                if (_Points.size() < 3) return _Result;
+                AppendSideSketchQuadratic(_Result, _Points[0], _Points[1], _Points[2], 32);
+                return _Result;
+            }
+            if (_Kind == "spline")
+            {
+                const auto _PointsIterator = Entity_.find("points");
+                if (_PointsIterator == Entity_.end()
+                    || !_PointsIterator->second.Is<VariantArray>()) return _Result;
+                std::vector<SSideSketchPoint> _Points;
+                for (const auto& _Value : _PointsIterator->second.To<VariantArray>())
+                    if (const auto _Point = SideSketchPoint(_Value)) _Points.push_back(*_Point);
+                if (_Points.size() < 3) return _Result;
+                auto _Start = _Points.front();
+                for (std::size_t _Index = 1; _Index + 1 < _Points.size(); ++_Index)
+                {
+                    const auto _End = SSideSketchPoint{
+                        (_Points[_Index].S + _Points[_Index + 1].S) * 0.5,
+                        (_Points[_Index].U + _Points[_Index + 1].U) * 0.5 };
+                    AppendSideSketchQuadratic(_Result, _Start, _Points[_Index], _End, 24);
+                    _Start = _End;
+                }
+                const auto _PreviousControl = _Points[_Points.size() - 2];
+                const auto _Control = SSideSketchPoint{
+                    2.0 * _Start.S - _PreviousControl.S,
+                    2.0 * _Start.U - _PreviousControl.U };
+                AppendSideSketchQuadratic(_Result, _Start, _Control, _Points.back(), 24);
+                return _Result;
+            }
+            if (_Kind == "path")
+            {
+                const auto _SegmentsIterator = Entity_.find("segments");
+                if (_SegmentsIterator == Entity_.end()
+                    || !_SegmentsIterator->second.Is<VariantArray>()) return _Result;
+                for (const auto& _Value : _SegmentsIterator->second.To<VariantArray>())
+                {
+                    if (!_Value.Is<ObjectMap>()) continue;
+                    auto _Segment = SampleSideSketchSegment(_Value.To<ObjectMap>());
+                    for (const auto& _Point : _Segment)
+                        AppendSideSketchPoint(_Result, _Point);
+                }
+                return _Result;
+            }
+            const auto _PointsIterator = Entity_.find("points");
+            if (_PointsIterator != Entity_.end() && _PointsIterator->second.Is<VariantArray>())
+                for (const auto& _Value : _PointsIterator->second.To<VariantArray>())
+                    if (const auto _Point = SideSketchPoint(_Value))
+                        AppendSideSketchPoint(_Result, *_Point);
+            return _Result;
+        }
+
+        double SideSketchWrapU(const double Value_, const double Period_)
+        {
+            if (!std::isfinite(Value_) || !std::isfinite(Period_) || Period_ <= 0.0)
+                return 0.0;
+            auto _Wrapped = std::fmod(Value_, Period_);
+            if (_Wrapped < 0.0) _Wrapped += Period_;
+            return _Wrapped;
+        }
+
+        bool IsSideSketchSeamPoint(const double Value_, const double Period_)
+        {
+            if (!std::isfinite(Value_) || !std::isfinite(Period_) || Period_ <= 0.0)
+                return false;
+            const auto _Wrapped = SideSketchWrapU(Value_, Period_);
+            const auto _Distance = std::min(_Wrapped, Period_ - _Wrapped);
+            return _Distance <= std::max(1.0e-6, Period_ * 1.0e-5);
+        }
+
+        bool IsSideSketchFullLapEdge(
+            const SSideSketchPoint& Start_, const SSideSketchPoint& End_,
+            const double Period_)
+        {
+            return std::abs(std::abs(End_.U - Start_.U) - Period_)
+                    <= std::max(1.0e-6, Period_ * 1.0e-5)
+                && IsSideSketchSeamPoint(Start_.U, Period_)
+                && IsSideSketchSeamPoint(End_.U, Period_);
+        }
+
+        void UnwrapSideSketchTrajectory(
+            std::vector<SSideSketchPoint>& Points_, const double Period_)
+        {
+            if (Points_.empty() || Period_ <= Precision::Confusion()) return;
+            for (std::size_t _Index = 1; _Index < Points_.size(); ++_Index)
+            {
+                // The two horizontal edges of the side rectangle are the same
+                // physical seam.  Keep an explicit seam-to-seam segment as a
+                // full lap: a line from U=0 to U=period is the circumferential
+                // cut used for a tube end, not a zero-length segment.
+                const auto _IsExplicitFullLap = IsSideSketchFullLapEdge(
+                    Points_[_Index - 1], Points_[_Index], Period_);
+                if (_IsExplicitFullLap) continue;
+                while (Points_[_Index].U - Points_[_Index - 1].U > Period_ * 0.5)
+                    Points_[_Index].U -= Period_;
+                while (Points_[_Index - 1].U - Points_[_Index].U > Period_ * 0.5)
+                    Points_[_Index].U += Period_;
+            }
+        }
+
+        std::vector<SSideSketchPoint> DensifySideSketchPolygon(
+            const std::vector<SSideSketchPoint>& Polygon_,
+            const SNormalizedTube& Tube_, const SProfileLanes& Profiles_,
+            const STubeSideSketchOptions& Options_)
+        {
+            if (Polygon_.size() < 3) return {};
+            const auto _Period = Profiles_.Lanes.empty() || Profiles_.Lanes.front().empty()
+                ? 0.0 : Profiles_.Lanes.front().front().Period;
+            const auto _Length = std::max(0.0, Tube_.Last - Tube_.First);
+            if (_Period <= Precision::Confusion() || _Length <= Precision::Confusion())
+                return Polygon_;
+
+            // A polygon edge that goes from U=0 to U=period has coincident
+            // endpoints in 3D.  Insert intermediate stations before folding the
+            // polygon so that the edge remains a real circumferential curve and
+            // can form a closed cutting band.
+            const auto _MaximumStep = std::max(
+                Options_.DistanceTolerance * 20.0,
+                std::min(_Length, _Period) / 32.0);
+            constexpr std::size_t _MaximumEdgeSamples = 129;
+            std::vector<SSideSketchPoint> _Result;
+            _Result.reserve(Polygon_.size() * 4);
+            for (std::size_t _Index = 0; _Index < Polygon_.size(); ++_Index)
+            {
+                const auto& _Start = Polygon_[_Index];
+                const auto& _End = Polygon_[(_Index + 1) % Polygon_.size()];
+                AppendSideSketchPoint(_Result, _Start);
+                const auto _EdgeLength = std::hypot(
+                    _End.S - _Start.S, _End.U - _Start.U);
+                const auto _FullLapEdge = IsSideSketchFullLapEdge(
+                    _Start, _End, _Period);
+                const auto _Steps = _FullLapEdge
+                    ? std::clamp<std::size_t>(
+                        static_cast<std::size_t>(std::ceil(_EdgeLength / _MaximumStep)),
+                        1, _MaximumEdgeSamples)
+                    : std::size_t{ 1 };
+                for (std::size_t _Step = 1; _Step < _Steps; ++_Step)
+                {
+                    const auto _Ratio = static_cast<double>(_Step)
+                        / static_cast<double>(_Steps);
+                    AppendSideSketchPoint(_Result, {
+                        _Start.S + (_End.S - _Start.S) * _Ratio,
+                        _Start.U + (_End.U - _Start.U) * _Ratio });
+                }
+            }
+            return _Result;
+        }
+
+        std::vector<SSideSketchPoint> MakeOpenTrajectoryRibbon(
+            const std::vector<SSideSketchPoint>& Centerline_, const double Width_)
+        {
+            std::vector<SSideSketchPoint> _Result;
+            if (Centerline_.size() < 2 || Width_ <= 0.0) return _Result;
+            const auto _HalfWidth = Width_ * 0.5;
+            std::vector<SSideSketchPoint> _Left, _Right;
+            _Left.reserve(Centerline_.size());
+            _Right.reserve(Centerline_.size());
+            for (std::size_t _Index = 0; _Index < Centerline_.size(); ++_Index)
+            {
+                const auto& _Current = Centerline_[_Index];
+                const auto& _Previous = _Index == 0 ? _Current : Centerline_[_Index - 1];
+                const auto& _Next = _Index + 1 == Centerline_.size()
+                    ? _Current : Centerline_[_Index + 1];
+                auto _TangentS = _Next.S - _Previous.S;
+                auto _TangentU = _Next.U - _Previous.U;
+                const auto _Length = std::hypot(_TangentS, _TangentU);
+                if (_Length <= Precision::Confusion()) continue;
+                _TangentS /= _Length;
+                _TangentU /= _Length;
+                const SSideSketchPoint _Offset{ -_TangentU * _HalfWidth,
+                    _TangentS * _HalfWidth };
+                _Left.push_back({ _Current.S + _Offset.S, _Current.U + _Offset.U });
+                _Right.push_back({ _Current.S - _Offset.S, _Current.U - _Offset.U });
+            }
+            _Result.reserve(_Left.size() + _Right.size());
+            for (const auto& _Point : _Left) AppendSideSketchPoint(_Result, _Point);
+            for (auto _Iterator = _Right.rbegin(); _Iterator != _Right.rend(); ++_Iterator)
+                AppendSideSketchPoint(_Result, *_Iterator);
+            return _Result;
+        }
+
+        std::vector<SSideSketchTrajectory> ReadSideSketchTrajectories(
+            const ObjectMap& Sketch_, const double SketchLength_, const double SketchHeight_,
+            const double Length_, const double Period_)
+        {
+            std::vector<SSideSketchTrajectory> _Result;
+            const auto _Entities = Sketch_.find("entities");
+            if (_Entities == Sketch_.end() || !_Entities->second.Is<VariantArray>()) return _Result;
+            for (const auto& _Value : _Entities->second.To<VariantArray>())
+            {
+                if (!_Value.Is<ObjectMap>()) continue;
+                const auto _Entity = _Value.To<ObjectMap>();
+                const auto _Kind = _Entity.find("kind");
+                if (_Kind == _Entity.end() || !_Kind->second.Is<std::string>()
+                    || _Kind->second.To<std::string>() == "text") continue;
+                auto _Points = SampleSideSketchEntity(_Entity);
+                if (_Points.size() < 2) continue;
+                for (auto& _Point : _Points)
+                {
+                    _Point.S = _Point.S / SketchLength_ * Length_;
+                    _Point.U = _Point.U / SketchHeight_ * Period_;
+                }
+                UnwrapSideSketchTrajectory(_Points, Period_);
+                const auto _ClosedKind = _Kind->second.To<std::string>() == "rectangle"
+                    || _Kind->second.To<std::string>() == "circle"
+                    || _Kind->second.To<std::string>() == "ellipse";
+                const auto _ClosedFlag = _Entity.find("closed");
+                const auto _Closed = _ClosedKind
+                    || (_ClosedFlag != _Entity.end() && _ClosedFlag->second.Is<bool>()
+                        && _ClosedFlag->second.To<bool>())
+                    || ((_Kind->second.To<std::string>() == "circleArc"
+                        || _Kind->second.To<std::string>() == "ellipseArc")
+                        && std::abs(SideSketchNumber(_Entity, "sweep").value_or(0.0))
+                            >= 2.0 * kSideSketchPi - 1.0e-6);
+                if (_Closed && _Points.size() > 2
+                    && std::hypot(_Points.front().S - _Points.back().S,
+                        _Points.front().U - _Points.back().U) <= 1.0e-6)
+                    _Points.pop_back();
+                if (_Closed && _Points.size() >= 3)
+                    _Result.push_back({ true, std::move(_Points) });
+                else if (!_Closed && _Points.size() >= 2)
+                    _Result.push_back({ false, std::move(_Points) });
+            }
+            return _Result;
+        }
+
+        gp_Pnt SideProfilePointAtU(
+            const SProfile& Profile_, const double U_)
+        {
+            if (Profile_.Points.empty() || Profile_.U.size() != Profile_.Points.size())
+                return gp::Origin();
+            const auto _Target = SideSketchWrapU(U_, Profile_.Period);
+            const auto _Upper = std::upper_bound(
+                Profile_.U.begin(), Profile_.U.end(), _Target);
+            const auto _LeftIndex = _Upper == Profile_.U.begin()
+                ? std::size_t{ 0 }
+                : static_cast<std::size_t>(_Upper - Profile_.U.begin() - 1);
+            const auto _RightIndex = (_LeftIndex + 1) % Profile_.Points.size();
+            const auto _Start = Profile_.U[_LeftIndex];
+            const auto _Span = _RightIndex > _LeftIndex
+                ? Profile_.U[_RightIndex] - _Start
+                : Profile_.Period - _Start;
+            const auto _Ratio = _Span <= Precision::Confusion()
+                ? 0.0 : std::clamp((_Target - _Start) / _Span, 0.0, 1.0);
+            return Profile_.Points[_LeftIndex].Translated(gp_Vec(
+                Profile_.Points[_LeftIndex], Profile_.Points[_RightIndex]) * _Ratio);
+        }
+
+        bool SideProfilePointAtStation(
+            const SProfileLanes& Profiles_, const gp_Ax3& Frame_,
+            const double Station_, const double U_, gp_Pnt& Point_)
+        {
+            if (Profiles_.Lanes.empty() || Profiles_.Lanes.front().empty()) return false;
+            const auto& _Lane = Profiles_.Lanes.front();
+            const auto _Upper = std::upper_bound(_Lane.begin(), _Lane.end(), Station_,
+                [](const double Value_, const SProfile& Profile_) {
+                    return Value_ < Profile_.Station;
+                });
+            const auto* _Right = _Upper == _Lane.end() ? &_Lane.back() : &*_Upper;
+            const auto* _Left = _Upper == _Lane.begin() ? _Right : &*(_Upper - 1);
+            const auto _StationSpan = _Right->Station - _Left->Station;
+            const auto _StationRatio = _StationSpan <= Precision::Confusion()
+                ? 0.0 : std::clamp((Station_ - _Left->Station) / _StationSpan, 0.0, 1.0);
+            const auto _LeftU = _Left->Period * SideSketchWrapU(U_, _Left->Period)
+                / std::max(_Left->Period, Precision::Confusion());
+            const auto _RightU = _Right->Period * SideSketchWrapU(U_, _Right->Period)
+                / std::max(_Right->Period, Precision::Confusion());
+            const auto _PointLeft = SideProfilePointAtU(*_Left, _LeftU);
+            const auto _PointRight = SideProfilePointAtU(*_Right, _RightU);
+            Point_ = _PointLeft.Translated(gp_Vec(_PointLeft, _PointRight) * _StationRatio);
+            return IsFinitePoint(Point_);
+        }
+
+        gp_Pnt SideSectionCentreAtStation(
+            const SProfileLanes& Profiles_, const gp_Ax3& Frame_, const double Station_)
+        {
+            if (Profiles_.Lanes.empty() || Profiles_.Lanes.front().empty())
+                return Frame_.Location().Translated(gp_Vec(Frame_.Direction()) * Station_);
+            const auto& _Profile = Profiles_.Lanes.front().front();
+            const auto _Count = std::max<std::size_t>(8,
+                std::min<std::size_t>(32, _Profile.Points.size()));
+            gp_Vec _Sum(0.0, 0.0, 0.0);
+            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+            {
+                gp_Pnt _Point;
+                if (SideProfilePointAtStation(Profiles_, Frame_, Station_,
+                    _Profile.Period * static_cast<double>(_Index) / _Count, _Point))
+                    _Sum += gp_Vec(Frame_.Location(), _Point);
+            }
+            return Frame_.Location().Translated(_Sum / static_cast<double>(_Count));
+        }
+
+        std::optional<SSideSurfaceSample> EvaluateSideSurface(
+            const SNormalizedTube& Tube_, const SProfileLanes& Profiles_,
+            const double Station_, const double U_,
+            const STubeSideSketchOptions& Options_)
+        {
+            gp_Pnt _Point;
+            if (!SideProfilePointAtStation(Profiles_, Tube_.Frame, Station_, U_, _Point))
+                return std::nullopt;
+            const auto _Period = Profiles_.Lanes.front().front().Period;
+            const auto _UStep = std::max(Options_.DistanceTolerance * 4.0, _Period / 256.0);
+            const auto _StationStep = std::max(Options_.DistanceTolerance * 4.0,
+                (Tube_.Last - Tube_.First) / 128.0);
+            gp_Pnt _UMinus, _UPlus, _SMinus, _SPlus;
+            if (!SideProfilePointAtStation(Profiles_, Tube_.Frame, Station_, U_ - _UStep, _UMinus)
+                || !SideProfilePointAtStation(Profiles_, Tube_.Frame, Station_, U_ + _UStep, _UPlus)
+                || !SideProfilePointAtStation(Profiles_, Tube_.Frame,
+                    std::max(Tube_.First, Station_ - _StationStep), U_, _SMinus)
+                || !SideProfilePointAtStation(Profiles_, Tube_.Frame,
+                    std::min(Tube_.Last, Station_ + _StationStep), U_, _SPlus))
+                return std::nullopt;
+            gp_Vec _TangentU(_UMinus, _UPlus);
+            gp_Vec _TangentS(_SMinus, _SPlus);
+            auto _Normal = _TangentU.Crossed(_TangentS);
+            if (_Normal.SquareMagnitude() <= Precision::SquareConfusion())
+            {
+                _Normal = gp_Vec(SideSectionCentreAtStation(
+                    Profiles_, Tube_.Frame, Station_), _Point);
+            }
+            if (_Normal.SquareMagnitude() <= Precision::SquareConfusion()) return std::nullopt;
+            const gp_Vec _Radial(SideSectionCentreAtStation(
+                Profiles_, Tube_.Frame, Station_), _Point);
+            if (_Radial.SquareMagnitude() > Precision::SquareConfusion()
+                && _Normal.Dot(_Radial) < 0.0)
+                _Normal.Reverse();
+            try
+            {
+                return SSideSurfaceSample{ _Point, gp_Dir(_Normal) };
+            }
+            catch (const Standard_Failure&)
+            {
+                return std::nullopt;
+            }
+        }
+
+        std::optional<double> SideMaterialRayDepth(
+            const TopoDS_Shape& Shape_, const gp_Pnt& SurfacePoint_, const gp_Dir& Normal_,
+            const double OuterClearance_, const double Reach_, const double Tolerance_)
+        {
+            try
+            {
+                IntCurvesFace_ShapeIntersector _Ray;
+                _Ray.Load(Shape_, Tolerance_);
+                const auto _Origin = SurfacePoint_.Translated(
+                    gp_Vec(Normal_) * OuterClearance_);
+                _Ray.Perform(gp_Lin(_Origin, gp_Dir(-gp_Vec(Normal_))), 0.0, Reach_);
+                if (_Ray.NbPnt() < 2) return std::nullopt;
+                std::vector<double> _Parameters;
+                _Parameters.reserve(static_cast<std::size_t>(_Ray.NbPnt()));
+                for (int _Index = 1; _Index <= _Ray.NbPnt(); ++_Index)
+                {
+                    const auto _Value = _Ray.WParameter(_Index);
+                    if (std::isfinite(_Value) && _Value >= 0.0 && _Value <= Reach_)
+                        _Parameters.push_back(_Value);
+                }
+                std::sort(_Parameters.begin(), _Parameters.end());
+                _Parameters.erase(std::unique(_Parameters.begin(), _Parameters.end(),
+                    [&](const double Left_, const double Right_) {
+                        return std::abs(Left_ - Right_) <= Tolerance_ * 5.0;
+                    }), _Parameters.end());
+                for (std::size_t _Index = 1; _Index < _Parameters.size(); ++_Index)
+                {
+                    const auto _First = _Parameters[_Index - 1];
+                    const auto _Last = _Parameters[_Index];
+                    if (_Last - _First <= Tolerance_) continue;
+                    const auto _Middle = _Origin.Translated(
+                        -gp_Vec(Normal_) * ((_First + _Last) * 0.5));
+                    BRepClass3d_SolidClassifier _Classifier(Shape_, _Middle, Tolerance_ * 5.0);
+                    if (_Classifier.State() == TopAbs_IN) return _Last;
+                }
+            }
+            catch (const Standard_Failure&)
+            {
+            }
+            return std::nullopt;
+        }
+
+        TopoDS_Face MakeSideTriangleFace(
+            const gp_Pnt& A_, const gp_Pnt& B_, const gp_Pnt& C_)
+        {
+            BRepBuilderAPI_MakePolygon _Polygon;
+            _Polygon.Add(A_);
+            _Polygon.Add(B_);
+            _Polygon.Add(C_);
+            _Polygon.Close();
+            if (!_Polygon.IsDone()) throw std::runtime_error("二维包覆三角面无法闭合");
+            BRepBuilderAPI_MakeFace _Face(_Polygon.Wire());
+            if (!_Face.IsDone()) throw std::runtime_error("二维包覆三角面无法生成");
+            return _Face.Face();
+        }
+
+        double SidePolygonCross(
+            const SSideSketchPoint& A_, const SSideSketchPoint& B_,
+            const SSideSketchPoint& C_)
+        {
+            return (B_.S - A_.S) * (C_.U - A_.U)
+                - (B_.U - A_.U) * (C_.S - A_.S);
+        }
+
+        bool SidePointInTriangle(
+            const SSideSketchPoint& Point_, const SSideSketchPoint& A_,
+            const SSideSketchPoint& B_, const SSideSketchPoint& C_)
+        {
+            const auto _AB = SidePolygonCross(A_, B_, Point_);
+            const auto _BC = SidePolygonCross(B_, C_, Point_);
+            const auto _CA = SidePolygonCross(C_, A_, Point_);
+            constexpr double _Tolerance = 1.0e-9;
+            return (_AB >= -_Tolerance && _BC >= -_Tolerance && _CA >= -_Tolerance)
+                || (_AB <= _Tolerance && _BC <= _Tolerance && _CA <= _Tolerance);
+        }
+
+        std::optional<std::vector<std::array<std::size_t, 3>>> TriangulateSidePolygon(
+            const std::vector<SSideSketchPoint>& Polygon_)
+        {
+            if (Polygon_.size() < 3) return std::nullopt;
+            double _Area = 0.0;
+            for (std::size_t _Index = 0; _Index < Polygon_.size(); ++_Index)
+            {
+                const auto& _Left = Polygon_[_Index];
+                const auto& _Right = Polygon_[(_Index + 1) % Polygon_.size()];
+                _Area += _Left.S * _Right.U - _Right.S * _Left.U;
+            }
+            if (std::abs(_Area) <= 1.0e-9) return std::nullopt;
+            std::vector<std::size_t> _Remaining(Polygon_.size());
+            std::iota(_Remaining.begin(), _Remaining.end(), 0);
+            if (_Area < 0.0) std::reverse(_Remaining.begin(), _Remaining.end());
+            std::vector<std::array<std::size_t, 3>> _Result;
+            _Result.reserve(Polygon_.size() - 2);
+            std::size_t _Guard = 0;
+            while (_Remaining.size() > 3 && _Guard++ < Polygon_.size() * Polygon_.size())
+            {
+                bool _Clipped = false;
+                for (std::size_t _Index = 0; _Index < _Remaining.size(); ++_Index)
+                {
+                    const auto _Previous = _Remaining[(_Index + _Remaining.size() - 1)
+                        % _Remaining.size()];
+                    const auto _Current = _Remaining[_Index];
+                    const auto _Next = _Remaining[(_Index + 1) % _Remaining.size()];
+                    if (SidePolygonCross(Polygon_[_Previous], Polygon_[_Current],
+                        Polygon_[_Next]) <= 1.0e-9) continue;
+                    bool _ContainsPoint = false;
+                    for (const auto _Candidate : _Remaining)
+                    {
+                        if (_Candidate == _Previous || _Candidate == _Current || _Candidate == _Next)
+                            continue;
+                        if (SidePointInTriangle(Polygon_[_Candidate], Polygon_[_Previous],
+                            Polygon_[_Current], Polygon_[_Next]))
+                        {
+                            _ContainsPoint = true;
+                            break;
+                        }
+                    }
+                    if (_ContainsPoint) continue;
+                    _Result.push_back({ _Previous, _Current, _Next });
+                    _Remaining.erase(_Remaining.begin() + static_cast<std::ptrdiff_t>(_Index));
+                    _Clipped = true;
+                    break;
+                }
+                if (!_Clipped) return std::nullopt;
+            }
+            if (_Remaining.size() == 3)
+                _Result.push_back({ _Remaining[0], _Remaining[1], _Remaining[2] });
+            return _Result.empty() ? std::nullopt
+                : std::optional<std::vector<std::array<std::size_t, 3>>>(std::move(_Result));
+        }
+
+        std::optional<TopoDS_Shape> BuildCircumferentialBand(
+            const SNormalizedTube& Tube_, const SProfileLanes& Profiles_,
+            const std::vector<SSideSketchPoint>& Polygon_,
+            const STubeSideSketchOptions& Options_)
+        {
+            if (Profiles_.Lanes.empty() || Profiles_.Lanes.front().empty()
+                || Polygon_.size() < 3)
+                return std::nullopt;
+            const auto _Period = Profiles_.Lanes.front().front().Period;
+            if (_Period <= Precision::Confusion()) return std::nullopt;
+
+            bool _HasFullLap = false;
+            double _MinimumS = (std::numeric_limits<double>::max)();
+            double _MaximumS = (std::numeric_limits<double>::lowest)();
+            for (std::size_t _Index = 0; _Index < Polygon_.size(); ++_Index)
+            {
+                const auto& _Start = Polygon_[_Index];
+                const auto& _End = Polygon_[(_Index + 1) % Polygon_.size()];
+                _HasFullLap = _HasFullLap || IsSideSketchFullLapEdge(
+                    _Start, _End, _Period);
+                _MinimumS = std::min(_MinimumS, std::min(_Start.S, _End.S));
+                _MaximumS = std::max(_MaximumS, std::max(_Start.S, _End.S));
+            }
+            if (!_HasFullLap || !std::isfinite(_MinimumS)
+                || !std::isfinite(_MaximumS)
+                || _MaximumS - _MinimumS <= Options_.DistanceTolerance)
+                return std::nullopt;
+
+            try
+            {
+                STubeBRepUnfoldingOptions _SectionOptions;
+                _SectionOptions.DistanceTolerance = Options_.DistanceTolerance;
+                _SectionOptions.AngularToleranceRadians = Options_.AngularToleranceRadians;
+                _SectionOptions.SamplesPerCurve = Options_.SamplesPerCurve;
+                _SectionOptions.StationCount = Options_.StationCount;
+                _SectionOptions.MaximumOutputPoints = Options_.MaximumToolPatches;
+                const auto _Station = std::clamp(
+                    Tube_.First + (_MinimumS + _MaximumS) * 0.5,
+                    Tube_.First + Options_.DistanceTolerance * 2.0,
+                    Tube_.Last - Options_.DistanceTolerance * 2.0);
+                auto _Wires = SectionWiresAt(
+                    Tube_.Shape, Tube_.Frame, _Station, _SectionOptions, true);
+                if (_Wires.empty()) return std::nullopt;
+                std::sort(_Wires.begin(), _Wires.end(), [&](const auto& _Left, const auto& _Right) {
+                    return std::abs(SignedSectionArea(
+                        SampleWire(_Left, _SectionOptions), Tube_.Frame))
+                        > std::abs(SignedSectionArea(
+                            SampleWire(_Right, _SectionOptions), Tube_.Frame));
+                });
+
+                BRepBuilderAPI_MakeFace _FaceMaker(_Wires.front(), true);
+                if (!_FaceMaker.IsDone()) return std::nullopt;
+                for (std::size_t _Index = 1; _Index < _Wires.size(); ++_Index)
+                {
+                    auto _Hole = _Wires[_Index];
+                    // Section edge connection does not guarantee the inner
+                    // loop orientation required by MakeFace.  Make every
+                    // non-largest loop a hole explicitly.
+                    _Hole.Reverse();
+                    _FaceMaker.Add(_Hole);
+                }
+                if (!_FaceMaker.IsDone() || _FaceMaker.Face().IsNull())
+                    return std::nullopt;
+
+                const auto _HalfWidth = (_MaximumS - _MinimumS) * 0.5;
+                gp_Trsf _Shift;
+                _Shift.SetTranslation(gp_Vec(Tube_.Frame.Direction())
+                    * -(_HalfWidth + Options_.OuterClearance));
+                const auto _StartShape = BRepBuilderAPI_Transform(
+                    _FaceMaker.Face(), _Shift, true).Shape();
+                const auto _Span = _MaximumS - _MinimumS
+                    + Options_.OuterClearance * 2.0
+                    + Options_.InnerClearance * 2.0;
+                BRepPrimAPI_MakePrism _Prism(
+                    _StartShape, gp_Vec(Tube_.Frame.Direction()) * _Span, true, true);
+                _Prism.Build();
+                if (!_Prism.IsDone() || _Prism.Shape().IsNull()
+                    || !BRepCheck_Analyzer(_Prism.Shape()).IsValid())
+                    return std::nullopt;
+                return _Prism.Shape();
+            }
+            catch (const Standard_Failure&)
+            {
+                return std::nullopt;
+            }
+        }
+
+        std::optional<TopoDS_Shape> BuildNormalSideVolume(
+            const TopoDS_Shape& Shape_, const SNormalizedTube& Tube_,
+            const SProfileLanes& Profiles_, const std::vector<SSideSketchPoint>& Polygon_,
+            const STubeSideSketchOptions& Options_, const double Reach_,
+            std::size_t& PatchCount_)
+        {
+            if (const auto _CircumferentialTool = BuildCircumferentialBand(
+                    Tube_, Profiles_, Polygon_, Options_))
+            {
+                if (PatchCount_ >= Options_.MaximumToolPatches)
+                    throw std::runtime_error("二维包覆轨迹过于密集，超过切刀片数量上限");
+                ++PatchCount_;
+                return _CircumferentialTool;
+            }
+            const auto _DensifiedPolygon = DensifySideSketchPolygon(
+                Polygon_, Tube_, Profiles_, Options_);
+            const auto _Triangles = TriangulateSidePolygon(_DensifiedPolygon);
+            if (!_Triangles) return std::nullopt;
+            if (PatchCount_ + _Triangles->size() > Options_.MaximumToolPatches)
+                throw std::runtime_error("二维包覆轨迹过于密集，超过切刀片数量上限");
+
+            std::vector<SNormalVolumeNode> _Nodes;
+            _Nodes.reserve(_DensifiedPolygon.size());
+            for (const auto& _Point : _DensifiedPolygon)
+            {
+                const auto _Surface = EvaluateSideSurface(
+                    Tube_, Profiles_, Tube_.First + _Point.S, _Point.U, Options_);
+                if (!_Surface) return std::nullopt;
+                const auto _RayDepth = SideMaterialRayDepth(
+                    Shape_, _Surface->Point, _Surface->Normal,
+                    Options_.OuterClearance, Reach_, Options_.DistanceTolerance);
+                const auto _Depth = _RayDepth.value_or(Reach_ * 0.5)
+                    + Options_.InnerClearance;
+                if (!std::isfinite(_Depth) || _Depth <= Options_.DistanceTolerance)
+                    return std::nullopt;
+                _Nodes.push_back({
+                    _Surface->Point.Translated(gp_Vec(_Surface->Normal)
+                        * Options_.OuterClearance),
+                    _Surface->Point.Translated(-gp_Vec(_Surface->Normal) * _Depth) });
+            }
+
+            std::vector<TopoDS_Face> _Faces;
+            _Faces.reserve(_Triangles->size() * 2 + _DensifiedPolygon.size() * 2);
+            std::map<std::pair<std::size_t, std::size_t>, SNormalVolumeEdgeUse> _Edges;
+            const auto _RecordEdge = [&_Edges](
+                const std::size_t A_, const std::size_t B_) {
+                auto _Key = std::minmax(A_, B_);
+                auto& _Use = _Edges[_Key];
+                ++_Use.Count;
+                if (_Use.Count == 1)
+                {
+                    _Use.First = A_;
+                    _Use.Second = B_;
+                }
+            };
+            for (const auto& _Triangle : *_Triangles)
+            {
+                const auto _A = _Triangle[0];
+                const auto _B = _Triangle[1];
+                const auto _C = _Triangle[2];
+                _Faces.push_back(MakeSideTriangleFace(
+                    _Nodes[_A].Inner, _Nodes[_C].Inner, _Nodes[_B].Inner));
+                _Faces.push_back(MakeSideTriangleFace(
+                    _Nodes[_A].Outer, _Nodes[_B].Outer, _Nodes[_C].Outer));
+                _RecordEdge(_A, _B);
+                _RecordEdge(_B, _C);
+                _RecordEdge(_C, _A);
+            }
+            for (const auto& [_Key, _Use] : _Edges)
+            {
+                (void)_Key;
+                if (_Use.Count != 1) continue;
+                const auto _A = _Use.First;
+                const auto _B = _Use.Second;
+                _Faces.push_back(MakeSideTriangleFace(
+                    _Nodes[_A].Inner, _Nodes[_B].Inner, _Nodes[_B].Outer));
+                _Faces.push_back(MakeSideTriangleFace(
+                    _Nodes[_A].Inner, _Nodes[_B].Outer, _Nodes[_A].Outer));
+            }
+
+            BRepBuilderAPI_Sewing _Sewing(
+                std::max(Options_.DistanceTolerance * 10.0, 1.0e-5),
+                true, true, true, false);
+            for (const auto& _Face : _Faces) _Sewing.Add(_Face);
+            _Sewing.Perform();
+            const auto _Sewed = _Sewing.SewedShape();
+            if (_Sewed.IsNull()) return std::nullopt;
+            TopoDS_Shell _Shell;
+            if (_Sewed.ShapeType() == TopAbs_SHELL)
+            {
+                _Shell = TopoDS::Shell(_Sewed);
+            }
+            else
+            {
+                TopExp_Explorer _Shells(_Sewed, TopAbs_SHELL);
+                if (!_Shells.More()) return std::nullopt;
+                _Shell = TopoDS::Shell(_Shells.Current());
+                _Shells.Next();
+                if (_Shells.More()) return std::nullopt;
+            }
+            BRepBuilderAPI_MakeSolid _Solid(_Shell);
+            _Solid.Build();
+            if (!_Solid.IsDone() || _Solid.Shape().IsNull()
+                || !BRepCheck_Analyzer(_Solid.Shape()).IsValid()) return std::nullopt;
+            PatchCount_ += _Triangles->size();
+            return _Solid.Shape();
+        }
+
+        double SideShapeVolume(const TopoDS_Shape& Shape_)
+        {
+            if (Shape_.IsNull()) return 0.0;
+            GProp_GProps _Properties;
+            BRepGProp::VolumeProperties(Shape_, _Properties);
+            return std::abs(_Properties.Mass());
+        }
+    }
+
+    STubeSideSketchResult ApplyTubeSideSketch(
+        IN const TopoDS_Shape& Shape_, IN const ObjectMap& Sketch_,
+        IN const STubeSideSketchOptions& Options_)
+    {
+        STubeSideSketchResult _Result;
+        _Result.Method = "wrapped-normal-trajectory";
+        try
+        {
+            if (Shape_.IsNull())
+            {
+                _Result.Diagnostic = "输入 BRep 为空";
+                return _Result;
+            }
+            if (!std::isfinite(Options_.DistanceTolerance)
+                || Options_.DistanceTolerance <= 0.0
+                || !std::isfinite(Options_.AngularToleranceRadians)
+                || Options_.AngularToleranceRadians <= 0.0
+                || Options_.StationCount < 5 || Options_.StationCount > 65
+                || Options_.SamplesPerCurve < 9 || Options_.SamplesPerCurve > 513
+                || Options_.MaximumToolPatches < 1
+                || !std::isfinite(Options_.TrajectoryWidth)
+                || Options_.TrajectoryWidth <= 0.0
+                || !std::isfinite(Options_.OuterClearance)
+                || Options_.OuterClearance <= 0.0
+                || !std::isfinite(Options_.InnerClearance)
+                || Options_.InnerClearance <= 0.0)
+            {
+                throw std::invalid_argument("二维包覆参数无效");
+            }
+            const auto _Entities = Sketch_.find("entities");
+            if (_Entities == Sketch_.end() || !_Entities->second.Is<VariantArray>())
+                throw std::invalid_argument("二维包覆缺少轨迹实体");
+            const auto _Length = SideSketchNumber(Sketch_, "length");
+            const auto _Height = SideSketchNumber(Sketch_, "faceHeight");
+            if (!_Length || !_Height || *_Length <= Precision::Confusion()
+                || *_Height <= Precision::Confusion())
+                throw std::invalid_argument("二维包覆坐标范围无效");
+            if (_Entities->second.To<VariantArray>().empty())
+            {
+                _Result.bOK = true;
+                _Result.Shape = Shape_;
+                _Result.Changed = false;
+                _Result.Approximate = false;
+                _Result.Diagnostic = "空轨迹，不生成切除体";
+                return _Result;
+            }
+
+            STubeBRepUnfoldingOptions _UnfoldOptions;
+            _UnfoldOptions.DistanceTolerance = Options_.DistanceTolerance;
+            _UnfoldOptions.AngularToleranceRadians = Options_.AngularToleranceRadians;
+            _UnfoldOptions.StationCount = Options_.StationCount;
+            _UnfoldOptions.SamplesPerCurve = Options_.SamplesPerCurve;
+            _UnfoldOptions.MaximumOutputPoints = 500000;
+            _UnfoldOptions.IncludeInnerSurfaces = false;
+            _UnfoldOptions.IncludeBoundaryWires = false;
+            const auto _Tube = NormalizeTube(Shape_, _UnfoldOptions);
+            if (!_Tube)
+            {
+                _Result.Diagnostic = "无法确定管材轴向和闭合截面";
+                return _Result;
+            }
+            const auto _LengthValue = _Tube->Last - _Tube->First;
+            const auto _Profiles = BuildProfiles(
+                _Tube->Shape, _Tube->Frame, _Tube->First, _Tube->Last, _UnfoldOptions);
+            if (_Profiles.Lanes.empty() || _Profiles.Lanes.front().empty())
+            {
+                _Result.Diagnostic = "无法恢复管材侧壁截面";
+                return _Result;
+            }
+            const auto _Period = _Profiles.Lanes.front().front().Period;
+            if (_LengthValue <= Precision::Confusion() || _Period <= Precision::Confusion())
+            {
+                _Result.Diagnostic = "管材没有有效的轴向长度或周长";
+                return _Result;
+            }
+            auto _Trajectories = ReadSideSketchTrajectories(
+                Sketch_, *_Length, *_Height, _LengthValue, _Period);
+            if (_Trajectories.empty())
+            {
+                _Result.bOK = true;
+                _Result.Shape = Shape_;
+                _Result.Changed = false;
+                _Result.Approximate = false;
+                _Result.Diagnostic = "草图只包含说明文字，没有可切割轨迹";
+                return _Result;
+            }
+
+            Bnd_Box _Box;
+            BRepBndLib::AddOptimal(_Tube->Shape, _Box, false, false);
+            _Box.SetGap(0.0);
+            double _X0 = 0.0, _Y0 = 0.0, _Z0 = 0.0;
+            double _X1 = 0.0, _Y1 = 0.0, _Z1 = 0.0;
+            _Box.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+            const auto _Reach = std::max(100.0,
+                std::hypot(_X1 - _X0, std::hypot(_Y1 - _Y0, _Z1 - _Z0)) * 2.0);
+            std::vector<TopoDS_Shape> _Tools;
+            _Tools.reserve(_Trajectories.size());
+            for (auto& _Trajectory : _Trajectories)
+            {
+                _Result.TrajectoryPointCount += _Trajectory.Points.size();
+                if (_Trajectory.Closed) ++_Result.ClosedLoopCount;
+                else ++_Result.OpenTrajectoryCount;
+                const auto _Polygon = _Trajectory.Closed
+                    ? _Trajectory.Points
+                    : MakeOpenTrajectoryRibbon(_Trajectory.Points, Options_.TrajectoryWidth);
+                if (_Polygon.size() < 3) continue;
+                auto _Tool = BuildNormalSideVolume(
+                    _Tube->Shape, *_Tube, _Profiles, _Polygon, Options_, _Reach,
+                    _Result.ToolPatchCount);
+                if (_Tool) _Tools.push_back(std::move(*_Tool));
+            }
+            if (_Tools.empty())
+            {
+                _Result.Diagnostic = "轨迹没有形成有效的法向切刀";
+                return _Result;
+            }
+
+            BRep_Builder _Builder;
+            TopoDS_Compound _ToolCompound;
+            _Builder.MakeCompound(_ToolCompound);
+            for (const auto& _Tool : _Tools) _Builder.Add(_ToolCompound, _Tool);
+            BRepAlgoAPI_Cut _Cut(_Tube->Shape, _ToolCompound);
+            _Cut.SetNonDestructive(true);
+            _Cut.SetFuzzyValue(Options_.DistanceTolerance);
+            _Cut.Build();
+            if (!_Cut.IsDone() || _Cut.Shape().IsNull())
+            {
+                _Result.Diagnostic = "法向包覆切除失败";
+                return _Result;
+            }
+            auto _Shape = _Cut.Shape();
+            if (!BRepCheck_Analyzer(_Shape).IsValid())
+            {
+                _Result.Diagnostic = "法向包覆切除产生了无效 BRep";
+                return _Result;
+            }
+            const auto _BeforeVolume = SideShapeVolume(_Tube->Shape);
+            const auto _AfterVolume = SideShapeVolume(_Shape);
+            if (_BeforeVolume > Precision::Confusion()
+                && _AfterVolume >= _BeforeVolume - Options_.DistanceTolerance
+                    * Options_.DistanceTolerance * Options_.DistanceTolerance)
+            {
+                _Result.Diagnostic = "轨迹没有穿过当前管壁材料";
+                return _Result;
+            }
+            if (_Tube->HasNormalizedToSource)
+                _Shape = BRepBuilderAPI_Transform(
+                    _Shape, _Tube->NormalizedToSource, true).Shape();
+            _Result.bOK = true;
+            _Result.Changed = true;
+            _Result.Shape = std::move(_Shape);
+            _Result.Approximate = true;
+            _Result.Diagnostic = "已按侧面轨迹逐点取局部法向，并沿当前管壁厚度切除";
+            return _Result;
+        }
+        catch (const Standard_Failure& _Error)
+        {
+            _Result.bOK = false;
+            _Result.Diagnostic = std::string("二维包覆应用失败: ") + _Error.what();
+            return _Result;
+        }
+        catch (const std::exception& _Error)
+        {
+            _Result.bOK = false;
+            _Result.Diagnostic = std::string("二维包覆应用失败: ") + _Error.what();
+            return _Result;
+        }
+    }
+
+    STubeSideSketchResult ApplyTubeSideSketch(
+        IN const iCAX::GeometryData::BRepModel& BRep_, IN const ObjectMap& Sketch_,
+        IN const STubeSideSketchOptions& Options_)
+    {
+        try
+        {
+            const auto _Built = iCAX::OpenCascade::BuildOpenCascadeShape(BRep_);
+            if (!_Built.bOK || _Built.Shape.IsNull())
+            {
+                STubeSideSketchResult _Result;
+                _Result.Diagnostic = "无法从 BRepModel 重建 OCC Shape";
+                return _Result;
+            }
+            return ApplyTubeSideSketch(_Built.Shape, Sketch_, Options_);
+        }
+        catch (const Standard_Failure& _Error)
+        {
+            STubeSideSketchResult _Result;
+            _Result.Diagnostic = std::string("BRepModel 重建失败: ") + _Error.what();
+            return _Result;
+        }
+        catch (const std::exception& _Error)
+        {
+            STubeSideSketchResult _Result;
             _Result.Diagnostic = std::string("BRepModel 重建失败: ") + _Error.what();
             return _Result;
         }

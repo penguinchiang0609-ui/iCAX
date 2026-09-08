@@ -210,6 +210,27 @@ namespace
         return static_cast<std::uint64_t>(_Value);
     }
 
+    std::optional<ObjectMap> FindProductSideSketch(
+        const CProductInstanceComponent& Product_,
+        const iCAX::Data::uuid& MemberID_,
+        const std::string& StableKey_)
+    {
+        const auto _Sketches = Product_.GetSketches();
+        const auto _SideIt = _Sketches.find("side");
+        if (_SideIt == _Sketches.end() || !_SideIt->second.Is<ObjectMap>()) return std::nullopt;
+        const auto _Side = _SideIt->second.To<ObjectMap>();
+        auto _SketchIt = _Side.find(UuidToString(MemberID_));
+        if (_SketchIt == _Side.end() && !StableKey_.empty())
+        {
+            _SketchIt = std::find_if(_Side.begin(), _Side.end(), [&](const auto& Entry_) {
+                return Entry_.second.Is<ObjectMap>()
+                    && GetString(Entry_.second.To<ObjectMap>(), "targetMemberKey") == StableKey_;
+            });
+        }
+        if (_SketchIt == _Side.end() || !_SketchIt->second.Is<ObjectMap>()) return std::nullopt;
+        return _SketchIt->second.To<ObjectMap>();
+    }
+
     std::string TrimText(const std::string& Text_)
     {
         const auto _First = std::find_if_not(Text_.begin(), Text_.end(), [](const unsigned char Character_) {
@@ -726,6 +747,14 @@ namespace
         }
         return { ResourceID_, _StoredInfo.nVersion };
     }
+
+    // Defined with the punch-wizard helpers below.  The side-sketch save
+    // handler also uses the same task-backed conversion and versioned BRep
+    // storage path, so keep one implementation for both features.
+    iCAX::Resource::CResourceReference StorePunchBRep(
+        iCAX::Project::ISceneContext& Scene_, const std::string& Key_,
+        const std::string& Name_, const TopoDS_Shape& Shape_,
+        const iCAX::Interaction::CInvocation& Request_, bool ReuseIdentical_);
 
     iCAX::Resource::CResourceReference StoreBRep(
         iCAX::Project::ISceneContext& Scene_,
@@ -3724,8 +3753,9 @@ namespace
             const auto _Entity = _Value.To<ObjectMap>();
             const auto _Kind = GetRequiredText(_Entity, "kind", 32);
             if (_Kind != "line" && _Kind != "polyline" && _Kind != "rectangle"
-                && _Kind != "circle" && _Kind != "arc" && _Kind != "spline"
-                && _Kind != "freehand" && _Kind != "text")
+                && _Kind != "circle" && _Kind != "ellipse" && _Kind != "circleArc"
+                && _Kind != "ellipseArc" && _Kind != "path" && _Kind != "arc"
+                && _Kind != "spline" && _Kind != "freehand" && _Kind != "text")
             {
                 throw std::invalid_argument("TubeDesigner sketch entity kind is not supported");
             }
@@ -3770,6 +3800,106 @@ namespace
                 ValidateSketchCoordinate(_X + _Radius, _Length, "cx + radius");
                 ValidateSketchCoordinate(_Y - _Radius, _FaceHeight, "cy - radius");
                 ValidateSketchCoordinate(_Y + _Radius, _FaceHeight, "cy + radius");
+            }
+            else if (_Kind == "ellipse")
+            {
+                const auto _X = RequiredSketchNumber(_Entity, "cx");
+                const auto _Y = RequiredSketchNumber(_Entity, "cy");
+                const auto _RadiusX = RequiredSketchNumber(_Entity, "radiusX");
+                const auto _RadiusY = RequiredSketchNumber(_Entity, "radiusY");
+                const auto _Rotation = GetDouble(_Entity, "rotation", 0.0);
+                if (_RadiusX <= 1.0e-6 || _RadiusY <= 1.0e-6)
+                    throw std::invalid_argument("TubeDesigner sketch ellipse radii must be positive");
+                const auto _Cosine = std::cos(_Rotation);
+                const auto _Sine = std::sin(_Rotation);
+                const auto _ExtentX = std::hypot(_RadiusX * _Cosine, _RadiusY * _Sine);
+                const auto _ExtentY = std::hypot(_RadiusX * _Sine, _RadiusY * _Cosine);
+                ValidateSketchCoordinate(_X - _ExtentX, _Length, "cx - ellipse extent");
+                ValidateSketchCoordinate(_X + _ExtentX, _Length, "cx + ellipse extent");
+                ValidateSketchCoordinate(_Y - _ExtentY, _FaceHeight, "cy - ellipse extent");
+                ValidateSketchCoordinate(_Y + _ExtentY, _FaceHeight, "cy + ellipse extent");
+            }
+            else if (_Kind == "circleArc" || _Kind == "ellipseArc")
+            {
+                const auto _X = RequiredSketchNumber(_Entity, "cx");
+                const auto _Y = RequiredSketchNumber(_Entity, "cy");
+                const auto _RadiusX = _Kind == "circleArc"
+                    ? RequiredSketchNumber(_Entity, "radius")
+                    : RequiredSketchNumber(_Entity, "radiusX");
+                const auto _RadiusY = _Kind == "circleArc"
+                    ? _RadiusX : RequiredSketchNumber(_Entity, "radiusY");
+                const auto _Sweep = RequiredSketchNumber(_Entity, "sweep");
+                if (_RadiusX <= 1.0e-6 || _RadiusY <= 1.0e-6
+                    || std::abs(_Sweep) <= 1.0e-9)
+                    throw std::invalid_argument("TubeDesigner sketch arc parameters are invalid");
+                // The conservative bounding box is intentional: an arc may
+                // later be edited into a full loop, so validation must not
+                // accept a point which can never be mapped to the rectangle.
+                const auto _Extent = std::max(_RadiusX, _RadiusY);
+                ValidateSketchCoordinate(_X - _Extent, _Length, "cx - arc extent");
+                ValidateSketchCoordinate(_X + _Extent, _Length, "cx + arc extent");
+                ValidateSketchCoordinate(_Y - _Extent, _FaceHeight, "cy - arc extent");
+                ValidateSketchCoordinate(_Y + _Extent, _FaceHeight, "cy + arc extent");
+            }
+            else if (_Kind == "path")
+            {
+                const auto _Segments = _Entity.find("segments");
+                if (_Segments == _Entity.end() || !_Segments->second.Is<VariantArray>()
+                    || _Segments->second.To<VariantArray>().empty()
+                    || _Segments->second.To<VariantArray>().size() > 10000)
+                    throw std::invalid_argument("TubeDesigner sketch path requires segments");
+                for (const auto& _SegmentValue : _Segments->second.To<VariantArray>())
+                {
+                    if (!_SegmentValue.Is<ObjectMap>())
+                        throw std::invalid_argument("TubeDesigner sketch path segments must be objects");
+                    const auto _Segment = _SegmentValue.To<ObjectMap>();
+                    const auto _SegmentKind = GetRequiredText(_Segment, "kind", 32);
+                    if (_SegmentKind == "line")
+                    {
+                        const auto _X1 = RequiredSketchNumber(_Segment, "x1");
+                        const auto _Y1 = RequiredSketchNumber(_Segment, "y1");
+                        const auto _X2 = RequiredSketchNumber(_Segment, "x2");
+                        const auto _Y2 = RequiredSketchNumber(_Segment, "y2");
+                        ValidateSketchCoordinate(_X1, _Length, "path.x1");
+                        ValidateSketchCoordinate(_X2, _Length, "path.x2");
+                        ValidateSketchCoordinate(_Y1, _FaceHeight, "path.y1");
+                        ValidateSketchCoordinate(_Y2, _FaceHeight, "path.y2");
+                    }
+                    else if (_SegmentKind == "bezier")
+                    {
+                        const auto _Points = _Segment.find("points");
+                        if (_Points == _Segment.end() || !_Points->second.Is<VariantArray>()
+                            || _Points->second.To<VariantArray>().size() < 2)
+                            throw std::invalid_argument("TubeDesigner sketch bezier segment requires points");
+                        for (const auto& _Point : _Points->second.To<VariantArray>())
+                            (void)ValidateSketchPoint(_Point, _Length, _FaceHeight, "path.bezier");
+                    }
+                    else if (_SegmentKind == "circleArc" || _SegmentKind == "ellipseArc")
+                    {
+                        const auto _X = RequiredSketchNumber(_Segment, "cx");
+                        const auto _Y = RequiredSketchNumber(_Segment, "cy");
+                        const auto _RadiusX = _SegmentKind == "circleArc"
+                            ? RequiredSketchNumber(_Segment, "radius")
+                            : RequiredSketchNumber(_Segment, "radiusX");
+                        const auto _RadiusY = _SegmentKind == "circleArc"
+                            ? _RadiusX : RequiredSketchNumber(_Segment, "radiusY");
+                        const auto _Start = RequiredSketchNumber(_Segment, "startAngle");
+                        const auto _Sweep = RequiredSketchNumber(_Segment, "sweep");
+                        if (_RadiusX <= 1.0e-6 || _RadiusY <= 1.0e-6
+                            || std::abs(_Sweep) <= 1.0e-9)
+                            throw std::invalid_argument("TubeDesigner sketch path arc parameters are invalid");
+                        (void)_Start;
+                        const auto _Extent = std::max(_RadiusX, _RadiusY);
+                        ValidateSketchCoordinate(_X - _Extent, _Length, "path arc x");
+                        ValidateSketchCoordinate(_X + _Extent, _Length, "path arc x");
+                        ValidateSketchCoordinate(_Y - _Extent, _FaceHeight, "path arc y");
+                        ValidateSketchCoordinate(_Y + _Extent, _FaceHeight, "path arc y");
+                    }
+                    else
+                    {
+                        throw std::invalid_argument("TubeDesigner sketch path segment kind is not supported");
+                    }
+                }
             }
             else if (_Kind == "text")
             {
@@ -3834,9 +3964,12 @@ namespace
         if (!_Product) throw std::invalid_argument("TubeDesigner product instance does not exist");
         const auto _MemberID = ParseRequiredUuid(
             GetString(_Payload, "targetMemberId"), "targetMemberId");
-        const auto _Member = GetComponent<CAssemblyMemberComponent>(_Repository.GetEntity(_MemberID));
+        const auto _MemberEntity = _Repository.GetEntity(_MemberID);
+        const auto _Member = GetComponent<CAssemblyMemberComponent>(_MemberEntity);
         if (!_Member || _Member->GetProductID() != _ProductID)
             throw std::invalid_argument("TubeDesigner sketch target member does not belong to the product");
+        if (!IsTubeManufacturingPart(_Member->GetItemProperties()))
+            throw std::invalid_argument("二维包覆只支持管材零件");
 
         auto _Sketch = ValidateSideSketch(GetRequiredObject(_Payload, "sketch"), _Member->GetLength());
         _Sketch["targetMemberId"] = UuidToString(_MemberID);
@@ -3863,6 +3996,77 @@ namespace
         if (_Side.empty()) _Sketches.erase("side");
         else _Sketches["side"] = _Side;
 
+        // Update the visible product member in the same save operation.  The
+        // product sketch remains the source of truth, while this member keeps
+        // a frozen pre-sketch BRep so replacing/removing a trajectory never
+        // cuts the previous result a second time.
+        const auto _PreviewResourceID = _Member->GetPreviewGeometryResourceID();
+        const auto _PreviewResourceVersion = _Member->GetPreviewGeometryResourceVersion();
+        if (_PreviewResourceID.empty() || _PreviewResourceVersion == 0)
+            throw std::runtime_error("产品管件没有可用的预览几何");
+        const auto _CurrentPreview = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
+            _PreviewResourceID, _PreviewResourceVersion);
+        if (!_CurrentPreview)
+            throw std::runtime_error("产品管件预览几何不可用，请重新生成产品");
+
+        const auto _Removing = _Sketch.at("entities").To<VariantArray>().empty();
+        auto _MemberProperties = _Member->GetItemProperties();
+        auto _BaseResourceID = GetString(
+            _MemberProperties, "tubeDesigner.sideSketchBaseResourceId");
+        auto _BaseResourceVersion = GetUInt64(
+            _MemberProperties, "tubeDesigner.sideSketchBaseResourceVersion", 0);
+        if (_BaseResourceID.empty() || _BaseResourceVersion == 0)
+        {
+            _BaseResourceID = Scene_->Resources().MakeNamedResourceURL(
+                "tube-designer/product/" + UuidToString(_ProductID)
+                + "/item/" + _Member->GetStableKey() + "/side-sketch-base");
+            const auto _Base = StorePreparedBRep(
+                *Scene_, _BaseResourceID, "产品二维包覆基准",
+                iCAX::GeometryData::BRepModel(*_CurrentPreview));
+            _BaseResourceID = _Base.URL;
+            _BaseResourceVersion = _Base.nVersion;
+        }
+        const auto _BaseBRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
+            _BaseResourceID, _BaseResourceVersion);
+        if (!_BaseBRep)
+            throw std::runtime_error("产品二维包覆基准几何版本不可用，请重新生成产品");
+        const auto _BaseBuild = iCAX::OpenCascade::BuildOpenCascadeShape(*_BaseBRep);
+        if (!_BaseBuild.bOK || _BaseBuild.Shape.IsNull())
+            throw std::runtime_error("无法读取产品二维包覆基准几何");
+
+        TopoDS_Shape _PreviewShape = _BaseBuild.Shape;
+        STubeSideSketchResult _ApplyResult;
+        if (!_Removing)
+        {
+            _ApplyResult = ApplyTubeSideSketch(_BaseBuild.Shape, _Sketch);
+            if (!_ApplyResult.bOK || _ApplyResult.Shape.IsNull())
+                throw std::runtime_error(_ApplyResult.Diagnostic.empty()
+                    ? "产品侧面草图没有生成有效的切除结果" : _ApplyResult.Diagnostic);
+            _PreviewShape = _ApplyResult.Shape;
+        }
+        _MemberProperties["tubeDesigner.sideSketchBaseResourceId"] = _BaseResourceID;
+        _MemberProperties["tubeDesigner.sideSketchBaseResourceVersion"] = _BaseResourceVersion;
+        if (_Removing)
+        {
+            _MemberProperties.erase("tubeDesigner.sideSketchApplyMethod");
+            _MemberProperties.erase("tubeDesigner.sideSketchDiagnostic");
+            _MemberProperties.erase("tubeDesigner.sideSketchClosedLoopCount");
+            _MemberProperties.erase("tubeDesigner.sideSketchOpenTrajectoryCount");
+        }
+        else
+        {
+            _MemberProperties["tubeDesigner.sideSketchApplyMethod"] = _ApplyResult.Method;
+            _MemberProperties["tubeDesigner.sideSketchDiagnostic"] = _ApplyResult.Diagnostic;
+            _MemberProperties["tubeDesigner.sideSketchClosedLoopCount"] =
+                static_cast<unsigned long long>(_ApplyResult.ClosedLoopCount);
+            _MemberProperties["tubeDesigner.sideSketchOpenTrajectoryCount"] =
+                static_cast<unsigned long long>(_ApplyResult.OpenTrajectoryCount);
+        }
+        const auto _NewPreviewResource = StorePunchBRep(
+            *Scene_, _PreviewResourceID, _Member->GetName(), _PreviewShape, Request_, false);
+        const auto _NewPreviewMesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+            Scene_->Resources(), _NewPreviewResource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+
         auto _Undo = _Repository.BeginUndoCommand("Save TubeDesigner side sketch");
         auto& _Transaction = _Repository.BeginTransaction("Update TubeDesigner side sketch");
         bool _CommitStarted = false;
@@ -3871,6 +4075,24 @@ namespace
             _Transaction.ModifyComponent(
                 _ProductID, CProductInstanceComponent::S_ClassName, {
                     { CProductInstanceComponent::PropertyName_Sketches, PropertyValue(_Sketches) }
+                });
+            QueueUpsertComponent(
+                _Transaction, _MemberEntity, _MemberID,
+                CAssemblyMemberComponent::S_ClassName, {
+                    { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceID,
+                        PropertyValue(_NewPreviewResource.URL) },
+                    { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceVersion,
+                        PropertyValue(_NewPreviewResource.nVersion) },
+                    { CAssemblyMemberComponent::PropertyName_ItemProperties,
+                        PropertyValue(_MemberProperties) }
+                });
+            QueueUpsertComponent(
+                _Transaction, _MemberEntity, _MemberID,
+                iCAX::RenderInteraction::CRenderInstanceComponent::S_ClassName, {
+                    { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID,
+                        PropertyValue(_NewPreviewMesh.URL) },
+                    { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceVersion,
+                        PropertyValue(_NewPreviewMesh.nVersion) }
                 });
             std::string _Error;
             _CommitStarted = true;
@@ -3909,19 +4131,96 @@ namespace
             _Repository.GetEntity(_PartID));
         if (!_Part || !IsIndependentNestingPart(*_Part))
             throw std::invalid_argument("只能直接保存下料区中的独立零件草图");
+        if (!IsTubeManufacturingPart(_Part->GetItemProperties()))
+            throw std::invalid_argument("二维包覆只支持管材零件");
         const auto _ExpectedVersion = GetUInt64(
             _Payload, "resourceVersion", _Part->GetManufacturingGeometryResourceVersion());
         if (_ExpectedVersion != _Part->GetManufacturingGeometryResourceVersion())
             throw std::runtime_error("零件几何已经变化，请重新打开二维草图");
 
+        RestoreNestingResources(*Scene_);
         auto _Sketch = ValidateSideSketch(
             GetRequiredObject(_Payload, "sketch"), _Part->GetLength());
         _Sketch["targetPartId"] = UuidToString(_PartID);
         auto _ItemProperties = _Part->GetItemProperties();
-        if (_Sketch.at("entities").To<VariantArray>().empty())
+
+        const auto _ResourceID = _Part->GetManufacturingGeometryResourceID();
+        const auto _ResourceVersion = _Part->GetManufacturingGeometryResourceVersion();
+        if (_ResourceID.empty() || _ResourceVersion == 0)
+            throw std::runtime_error("零件没有可用的最终 BRep 几何");
+        const auto _CurrentBRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
+            _ResourceID, _ResourceVersion);
+        if (!_CurrentBRep)
+            throw std::runtime_error("零件最终 BRep 几何不可用，请重新加入下料");
+
+        // Always rebuild from the frozen pre-sketch shape.  A later edit is a
+        // replacement of the trajectory, not another cut on top of the last
+        // result; this is the same immutable-base rule used by the punch
+        // wizard.
+        auto _BaseResourceID = GetString(
+            _ItemProperties, "tubeDesigner.sideSketchBaseResourceId");
+        auto _BaseResourceVersion = GetUInt64(
+            _ItemProperties, "tubeDesigner.sideSketchBaseResourceVersion", 0);
+        if (_BaseResourceID.empty() || _BaseResourceVersion == 0)
+        {
+            _BaseResourceID = Scene_->Resources().MakeNamedResourceURL(
+                "tube-designer/nesting/side-sketch-base/" + UuidToString(_PartID));
+            const auto _Base = StorePreparedBRep(
+                *Scene_, _BaseResourceID, "二维包覆编辑基准",
+                iCAX::GeometryData::BRepModel(*_CurrentBRep));
+            _BaseResourceID = _Base.URL;
+            _BaseResourceVersion = _Base.nVersion;
+        }
+        const auto _BaseBRep = Scene_->Resources().Get<iCAX::GeometryData::BRepModel>(
+            _BaseResourceID, _BaseResourceVersion);
+        if (!_BaseBRep)
+            throw std::runtime_error("二维包覆基准几何版本不可用，请重新加入下料");
+        const auto _BaseBuild = iCAX::OpenCascade::BuildOpenCascadeShape(*_BaseBRep);
+        if (!_BaseBuild.bOK || _BaseBuild.Shape.IsNull())
+            throw std::runtime_error("无法读取二维包覆基准几何");
+
+        const auto _Removing = _Sketch.at("entities").To<VariantArray>().empty();
+        TopoDS_Shape _Shape = _BaseBuild.Shape;
+        STubeSideSketchResult _ApplyResult;
+        if (!_Removing)
+        {
+            _ApplyResult = ApplyTubeSideSketch(_BaseBuild.Shape, _Sketch);
+            if (!_ApplyResult.bOK || _ApplyResult.Shape.IsNull())
+                throw std::runtime_error(_ApplyResult.Diagnostic.empty()
+                    ? "二维包覆没有生成有效的切除结果" : _ApplyResult.Diagnostic);
+            _Shape = _ApplyResult.Shape;
+        }
+        if (_Removing)
             _ItemProperties.erase("tubeDesigner.sideSketch");
         else
             _ItemProperties["tubeDesigner.sideSketch"] = _Sketch;
+        _ItemProperties["tubeDesigner.sideSketchBaseResourceId"] = _BaseResourceID;
+        _ItemProperties["tubeDesigner.sideSketchBaseResourceVersion"] = _BaseResourceVersion;
+        if (!_Removing)
+        {
+            _ItemProperties["tubeDesigner.sideSketchApplyMethod"] = _ApplyResult.Method;
+            _ItemProperties["tubeDesigner.sideSketchDiagnostic"] = _ApplyResult.Diagnostic;
+            _ItemProperties["tubeDesigner.sideSketchClosedLoopCount"] =
+                static_cast<unsigned long long>(_ApplyResult.ClosedLoopCount);
+            _ItemProperties["tubeDesigner.sideSketchOpenTrajectoryCount"] =
+                static_cast<unsigned long long>(_ApplyResult.OpenTrajectoryCount);
+        }
+
+        const auto _PresentationName = _Part->GetName().empty()
+            ? _Part->GetPartNumber() : _Part->GetName();
+        const auto _NewResource = StorePunchBRep(
+            *Scene_, _ResourceID, _PresentationName, _Shape, Request_, false);
+        ReportExportProgress(Request_, "mesh", 0, 1, "正在生成显示网格");
+        const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+            Scene_->Resources(), _NewResource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+        const auto _Measurement = MeasureFinalPartGeometry(
+            _Shape, _NewResource.URL, _NewResource.nVersion);
+        const auto _EnvelopeLength = GetDouble(ShapeBounds(_Shape), "width", _Part->GetLength());
+        auto _UpdatedProperties = _ItemProperties;
+        auto _UpdatedMeasurement = _Measurement;
+        _UpdatedMeasurement["nestingEnvelopeLength"] = _EnvelopeLength;
+        _UpdatedMeasurement["normalizedAxis"] = std::string("+X");
+        _UpdatedProperties["manufacturing.geometryMeasurement"] = _UpdatedMeasurement;
 
         auto _Undo = _Repository.BeginUndoCommand("Save manufacturing part side sketch");
         auto& _Transaction = _Repository.BeginTransaction(
@@ -3931,8 +4230,20 @@ namespace
         {
             _Transaction.ModifyComponent(
                 _PartID, CManufacturingPartComponent::S_ClassName, {
+                    { CManufacturingPartComponent::PropertyName_Length,
+                        PropertyValue(_EnvelopeLength) },
+                    { CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceID,
+                        PropertyValue(_NewResource.URL) },
+                    { CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceVersion,
+                        PropertyValue(_NewResource.nVersion) },
+                    { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceID,
+                        PropertyValue(_Thumbnail.URL) },
+                    { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceVersion,
+                        PropertyValue(_Thumbnail.nVersion) },
                     { CManufacturingPartComponent::PropertyName_ItemProperties,
-                        PropertyValue(_ItemProperties) }
+                        PropertyValue(_UpdatedProperties) },
+                    { CManufacturingPartComponent::PropertyName_Status,
+                        PropertyValue(std::string("Ready")) }
                 });
             const auto _Meta = _Repository.GetMetaEntity();
             const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
@@ -4541,6 +4852,7 @@ namespace
         iCAX::Resource::CResourceReference PreviewResource;
         iCAX::Resource::CResourceReference FrontendGeometryResource;
         std::uint64_t Index = 0;
+        ObjectMap ItemProperties;
     };
 
     iCAX::Interaction::CInvocationResult GenerateNeutralPreview(
@@ -4609,9 +4921,38 @@ namespace
             const auto _StablePrefix = "tube-designer/product/" + UuidToString(_ProductID)
                 + "/item/" + _Item.Key;
             const auto _Name = _Item.DisplayName.Resolve("zh-CN");
-            _Conversions.push_back({ _Geometry.At(_Representation->second), _Name + " preview",
+            auto _PreviewShape = _Geometry.At(_Representation->second);
+            auto _MemberProperties = _Item.Properties;
+            if (_ExistingProduct && IsTubeManufacturingPart(_Item.Properties))
+            {
+                if (const auto _Sketch = FindProductSideSketch(
+                    *_ExistingProduct, _EntityID, _Item.Key))
+                {
+                    const auto _BaseResourceID = Scene_.Resources().MakeNamedResourceURL(
+                        _StablePrefix + "/side-sketch-base");
+                    const auto _Base = StorePreparedBRep(
+                        Scene_, _BaseResourceID, "产品二维包覆基准",
+                        iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
+                            _PreviewShape, "产品二维包覆基准", _BaseResourceID, 0.025));
+                    _MemberProperties["tubeDesigner.sideSketchBaseResourceId"] = _Base.URL;
+                    _MemberProperties["tubeDesigner.sideSketchBaseResourceVersion"] = _Base.nVersion;
+                    const auto _Applied = ApplyTubeSideSketch(_PreviewShape, *_Sketch);
+                    if (!_Applied.bOK || _Applied.Shape.IsNull())
+                        throw std::runtime_error(_Applied.Diagnostic.empty()
+                            ? "产品侧面草图没有生成有效的切除结果" : _Applied.Diagnostic);
+                    _PreviewShape = _Applied.Shape;
+                    _MemberProperties["tubeDesigner.sideSketchApplyMethod"] = _Applied.Method;
+                    _MemberProperties["tubeDesigner.sideSketchDiagnostic"] = _Applied.Diagnostic;
+                    _MemberProperties["tubeDesigner.sideSketchClosedLoopCount"] =
+                        static_cast<unsigned long long>(_Applied.ClosedLoopCount);
+                    _MemberProperties["tubeDesigner.sideSketchOpenTrajectoryCount"] =
+                        static_cast<unsigned long long>(_Applied.OpenTrajectoryCount);
+                }
+            }
+            _Conversions.push_back({ _PreviewShape, _Name + " preview",
                 Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/preview") });
-            _Members.push_back({ &_Item, _EntityID, {}, {}, ++_Index });
+            _Members.push_back({ &_Item, _EntityID, {}, {}, ++_Index,
+                std::move(_MemberProperties) });
         }
         auto _Converted = iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(_Conversions, 0.025);
         // Workers touch only private OCC shapes and in-memory BRep models. All
@@ -4688,7 +5029,7 @@ namespace
                         { CAssemblyMemberComponent::PropertyName_Y2, PropertyValue(0.0) },
                         { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceID, PropertyValue(_Prepared.PreviewResource.URL) },
                         { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceVersion, PropertyValue(_Prepared.PreviewResource.nVersion) },
-                        { CAssemblyMemberComponent::PropertyName_ItemProperties, PropertyValue(_Item.Properties) }
+                        { CAssemblyMemberComponent::PropertyName_ItemProperties, PropertyValue(_Prepared.ItemProperties) }
                     });
                 QueueUpsertComponent(
                     _Transaction, _ExistingMember, _Prepared.EntityID,
@@ -4747,6 +5088,7 @@ namespace
             throw std::invalid_argument("unsupported TubeDesigner template: " + _TemplateID);
         auto _Result = GenerateNeutralPreview(_Payload, ApplicationContext_, ProductContext_, *Scene_);
         ReleaseTransientParts(*Scene_, {});
+        SyncNestingPersistence(*Scene_);
         return _Result;
     }
 
@@ -4905,8 +5247,24 @@ namespace
             }
             const auto _StablePrefix = "tube-designer/product/" + UuidToString(ProductID_)
                 + "/item/" + _Item.Key;
-            const auto _ManufacturingShape = NormalizeManufacturingShape(
+            auto _ManufacturingShape = NormalizeManufacturingShape(
                 _Geometry.At(_Representation->second), _ItemProperties);
+            if (const auto _Sketch = _ItemProperties.find("tubeDesigner.sideSketch");
+                _Sketch != _ItemProperties.end() && _Sketch->second.Is<ObjectMap>())
+            {
+                const auto _Applied = ApplyTubeSideSketch(
+                    _ManufacturingShape, _Sketch->second.To<ObjectMap>());
+                if (!_Applied.bOK || _Applied.Shape.IsNull())
+                    throw std::runtime_error(_Applied.Diagnostic.empty()
+                        ? "产品侧面草图没有生成有效的切除结果" : _Applied.Diagnostic);
+                _ManufacturingShape = _Applied.Shape;
+                _ItemProperties["tubeDesigner.sideSketchApplyMethod"] = _Applied.Method;
+                _ItemProperties["tubeDesigner.sideSketchDiagnostic"] = _Applied.Diagnostic;
+                _ItemProperties["tubeDesigner.sideSketchClosedLoopCount"] =
+                    static_cast<unsigned long long>(_Applied.ClosedLoopCount);
+                _ItemProperties["tubeDesigner.sideSketchOpenTrajectoryCount"] =
+                    static_cast<unsigned long long>(_Applied.OpenTrajectoryCount);
+            }
             if (_PartKind == "accessory") _ItemProperties["manufacturing.modelBounds"] = ShapeBounds(_ManufacturingShape);
             _Conversions.push_back({ _ManufacturingShape, _PartNumber + " manufacturing",
                 Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/manufacturing") });
@@ -5036,6 +5394,12 @@ namespace
         for (const auto& [entity, part] : Collect<CManufacturingPartComponent>(db))
             if (IsIndependentNestingPart(*part)) {
                 embedded.insert(part->GetManufacturingGeometryResourceID());
+                // A side-sketch edit is always rebuilt from this immutable
+                // pre-sketch BRep.  Persist the base together with the final
+                // part, otherwise reopening the project would make the next
+                // edit either compound the cut or lose the edit base.
+                embedded.insert(GetString(
+                    part->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"));
                 const auto addConfigResources = [&embedded](const ObjectMap& value) {
                     embedded.insert(GetString(value, "baseResourceId"));
                     const auto addCut=[&](const ObjectMap& data) {
@@ -5050,6 +5414,9 @@ namespace
                 if (const auto _Punch = GetComponent<CPunchWizardComponent>(entity))
                     if (!_Punch->GetDefinition().empty()) addConfigResources(_Punch->GetDefinition());
             }
+        for (const auto& [entity, member] : Collect<CAssemblyMemberComponent>(db))
+            embedded.insert(GetString(
+                member->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"));
         for (auto info : scene.Resources().GetInfos()) {
             if (info.ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName
                 || info.Metadata["source"] != "tube-designer") continue;
@@ -5093,8 +5460,19 @@ namespace
                     const auto& item = FindModelItem(model, member->GetStableKey());
                     const auto representation = item.Representations.find("result");
                     if (representation == item.Representations.end()) throw std::runtime_error("Saved display recipe has no result");
+                    auto restoredShape = geometry.At(representation->second);
+                    if (IsTubeManufacturingPart(item.Properties))
+                        if (const auto sketch = FindProductSideSketch(
+                            *product, entity->GetID(), member->GetStableKey()))
+                        {
+                            const auto applied = ApplyTubeSideSketch(restoredShape, *sketch);
+                            if (!applied.bOK || applied.Shape.IsNull())
+                                throw std::runtime_error(applied.Diagnostic.empty()
+                                    ? "无法恢复产品侧面草图" : applied.Diagnostic);
+                            restoredShape = applied.Shape;
+                        }
                     RestoreExactBRep(scene, member->GetPreviewGeometryResourceID(), member->GetPreviewGeometryResourceVersion(),
-                        iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(geometry.At(representation->second), member->GetName(), member->GetPreviewGeometryResourceID(), 0.025));
+                        iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(restoredShape, member->GetName(), member->GetPreviewGeometryResourceID(), 0.025));
                 }
             }
             // Render buffers are derived, even when the source BRep was restored.

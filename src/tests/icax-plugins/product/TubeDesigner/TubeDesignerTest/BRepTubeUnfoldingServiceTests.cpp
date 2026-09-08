@@ -10,6 +10,9 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 #include <BRepPrimAPI_MakeHalfSpace.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <gp_Ax1.hxx>
@@ -166,4 +169,110 @@ TEST(BRepTubeUnfoldingService, RejectsEmptyInputWithoutThrowing)
     const auto _Result = iCAX::TubeDesigner::UnfoldTubeBRepSurface(TopoDS_Shape{});
     EXPECT_FALSE(_Result.bOK);
     EXPECT_FALSE(_Result.Diagnostic.empty());
+}
+
+TEST(BRepTubeUnfoldingService, AppliesWrappedNormalTrajectoryToTheActualBRep)
+{
+    const auto _Shape = HollowRectangularTube();
+    iCAX::Data::ObjectMap _Sketch{
+        { "schema", std::string("icax.tube-sketch") },
+        { "schemaVersion", 1ull },
+        { "kind", std::string("side") },
+        { "unit", std::string("mm") },
+        { "length", 200.0 },
+        { "faceHeight", 100.0 },
+        { "entities", iCAX::Data::VariantArray{
+            iCAX::Data::ObjectMap{
+                { "id", std::string("window") },
+                { "kind", std::string("rectangle") },
+                { "x", 60.0 }, { "y", 20.0 },
+                { "width", 30.0 }, { "height", 25.0 },
+                { "radius", 0.0 }, { "closed", true }
+            }
+        }}
+    };
+
+    GProp_GProps _BeforeProperties;
+    BRepGProp::VolumeProperties(_Shape, _BeforeProperties);
+    const auto _Result = iCAX::TubeDesigner::ApplyTubeSideSketch(_Shape, _Sketch);
+    ASSERT_TRUE(_Result.bOK) << _Result.Diagnostic;
+    ASSERT_TRUE(_Result.Changed);
+    EXPECT_EQ(_Result.Method, "wrapped-normal-trajectory");
+    EXPECT_EQ(_Result.ClosedLoopCount, 1u);
+    EXPECT_EQ(_Result.OpenTrajectoryCount, 0u);
+    ASSERT_FALSE(_Result.Shape.IsNull());
+    EXPECT_TRUE(BRepCheck_Analyzer(_Result.Shape).IsValid());
+
+    GProp_GProps _AfterProperties;
+    BRepGProp::VolumeProperties(_Result.Shape, _AfterProperties);
+    EXPECT_LT(_AfterProperties.Mass(), _BeforeProperties.Mass());
+}
+
+TEST(BRepTubeUnfoldingService, AppliesOpenWrappedTrajectoryWithAProcessWidth)
+{
+    const auto _Shape = HollowRectangularTube();
+    iCAX::Data::ObjectMap _Sketch{
+        { "schema", std::string("icax.tube-sketch") },
+        { "schemaVersion", 1ull },
+        { "kind", std::string("side") },
+        { "unit", std::string("mm") },
+        { "length", 200.0 },
+        { "faceHeight", 100.0 },
+        { "entities", iCAX::Data::VariantArray{
+            iCAX::Data::ObjectMap{
+                { "id", std::string("seam") },
+                { "kind", std::string("line") },
+                { "x1", 70.0 }, { "y1", 32.0 },
+                { "x2", 130.0 }, { "y2", 32.0 },
+                { "closed", false }
+            }
+        }}
+    };
+    iCAX::TubeDesigner::STubeSideSketchOptions _Options;
+    _Options.TrajectoryWidth = 1.0;
+    const auto _Result = iCAX::TubeDesigner::ApplyTubeSideSketch(
+        _Shape, _Sketch, _Options);
+    ASSERT_TRUE(_Result.bOK) << _Result.Diagnostic;
+    ASSERT_TRUE(_Result.Changed);
+    EXPECT_EQ(_Result.ClosedLoopCount, 0u);
+    EXPECT_EQ(_Result.OpenTrajectoryCount, 1u);
+    EXPECT_GT(_Result.TrajectoryPointCount, 1u);
+    EXPECT_TRUE(BRepCheck_Analyzer(_Result.Shape).IsValid());
+}
+
+TEST(BRepTubeUnfoldingService, KeepsASeamToSeamTrajectoryAsAFullCircumferenceCut)
+{
+    const auto _Shape = HollowRectangularTube();
+    iCAX::Data::ObjectMap _Sketch{
+        { "schema", std::string("icax.tube-sketch") },
+        { "schemaVersion", 1ull },
+        { "kind", std::string("side") },
+        { "unit", std::string("mm") },
+        { "length", 200.0 },
+        { "faceHeight", 100.0 },
+        { "entities", iCAX::Data::VariantArray{
+            iCAX::Data::ObjectMap{
+                { "id", std::string("cutoff") },
+                { "kind", std::string("line") },
+                { "x1", 100.0 }, { "y1", 0.0 },
+                { "x2", 100.0 }, { "y2", 100.0 },
+                { "closed", false }
+            }
+        }}
+    };
+    iCAX::TubeDesigner::STubeSideSketchOptions _Options;
+    _Options.TrajectoryWidth = 2.0;
+    GProp_GProps _BeforeProperties;
+    BRepGProp::VolumeProperties(_Shape, _BeforeProperties);
+    const auto _Result = iCAX::TubeDesigner::ApplyTubeSideSketch(
+        _Shape, _Sketch, _Options);
+    ASSERT_TRUE(_Result.bOK) << _Result.Diagnostic;
+    ASSERT_TRUE(_Result.Changed);
+    EXPECT_EQ(_Result.OpenTrajectoryCount, 1u);
+    EXPECT_GT(_Result.TrajectoryPointCount, 1u);
+    ASSERT_TRUE(BRepCheck_Analyzer(_Result.Shape).IsValid());
+
+    GProp_GProps _AfterProperties;
+    BRepGProp::VolumeProperties(_Result.Shape, _AfterProperties);
+    EXPECT_LT(_AfterProperties.Mass(), _BeforeProperties.Mass());
 }

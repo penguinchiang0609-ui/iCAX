@@ -3380,6 +3380,14 @@ async function saveSideSketch(context, view, ops) {
     }
     const response = await context.sceneProxy.invoke(method, payload, { timeoutMs: 30000 });
     if (response?.tubeDesigner) view.scene.tubeDesigner = response.tubeDesigner;
+    if (partTarget) {
+      // The saved snapshot carries a new BRep/mesh version.  Drop the old
+      // viewport ownership and measurement state so the parts area hydrates
+      // the just-applied geometry instead of keeping the previous mesh alive.
+      view.tubeDesignerPartViewportKey = "";
+      view.tubeDesignerPartMeasurementState = null;
+      view.tubeDesignerPartProgress = null;
+    }
     draft.dirty = false;
     draft.persisted = !removing;
     view.error = "";
@@ -3393,6 +3401,7 @@ async function saveSideSketch(context, view, ops) {
         view.tubeDesignerSketchDialogOpen = false;
         await selectSketchArea(context, view, state.sideReturnAreaId || "nesting");
       }
+      ops.renderProject(context, view);
       ops.showNotice(context, view, removing
         ? `已从“${member.name || "当前管件"}”移除侧面草图。`
         : `侧面草图已应用到“${member.name || "当前管件"}”。`);
