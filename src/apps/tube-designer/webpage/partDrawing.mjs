@@ -77,6 +77,26 @@ function virtualPart(view) {
 function mainLocked(s) {
   return [...s.features,...Object.values(s.ends)].some(f=>isDrawingToolReadOnly(s,f));
 }
+function drawingNodeIds(s) {
+  return ["main",...["start","end"].filter(end=>s.ends?.[end]?.type!=="keep"),...s.features.map(feature=>feature.id)];
+}
+function adjacentDrawingNode(s,node) {
+  const ids=drawingNodeIds(s),index=ids.indexOf(node);
+  return ids[index+1]??ids[index-1]??"main";
+}
+function selectDrawingNode(view,node="main") {
+  const s=drawingState(view),m=view.tubeDesignerPartDrawing;
+  if(node==="main") {
+    m.mode="main";m.selected="main";s.editingId="";return true;
+  }
+  if(["start","end"].includes(node)) {
+    if(s.ends[node]?.type==="keep")return false;
+    m.mode=node;m.selected=node;s.draft=s.ends[node];s.editingId="";s.previewMode="tools";return true;
+  }
+  const feature=s.features.find(item=>item.id===node);
+  if(!feature)return false;
+  m.mode="feature";m.selected=node;s.draft=feature;s.editingId="";s.previewMode="tools";return true;
+}
 function getSection(view,which) {
   const s=drawingState(view);
   if(which==="main")return s.drawing.section;
@@ -346,13 +366,8 @@ function beginOperation(view,command,node=null) {
   if(!s||!m)throw new Error("三维绘制未打开。");
   if(command!=="main"&&!m.mainApplied)throw new Error("请先建立主管。");
   if(node) {
-    if(command==="main") {m.mode="main";m.selected="main";s.editingId="";return;}
-    if(["start","end"].includes(command)) {
-      if(!s.ends[command])s.ends[command]={type:"keep"};
-      m.mode=command;m.selected=command;s.draft=s.ends[command];s.editingId="";s.previewMode="tools";return;
-    }
-    const feature=s.features.find(f=>f.id===node);if(!feature)throw new Error("该特征已不存在。");
-    m.mode="feature";m.selected=node;s.draft=feature;s.editingId="";s.previewMode="tools";return;
+    if(!selectDrawingNode(view,node))throw new Error("该特征已不存在。");
+    return;
   }
   if(command==="main"){m.mode="main";m.selected="main";s.editingId="";return;}
   if(["start","end"].includes(command)) {
@@ -408,21 +423,32 @@ export async function handlePartDrawingAction(context,view,action,target,ops) {
       } else if(suffix==="cancel-operation")cancelOperation(view);
       else if(suffix==="commit-operation")await commitOperation(context,view,ops);
       else if(suffix.startsWith("selected-")) {
-        const index=s.features.findIndex(f=>f.id===m.selected),kind=suffix.slice(9);
+        const kind=suffix.slice(9);
+        if(kind==="remove"&&m.selected==="main")throw new Error("主管不可删除。");
+        const index=s.features.findIndex(f=>f.id===m.selected);
         if(index>=0) {
           const selected=s.features[index];
+          const nextAfterRemove=kind==="remove"?adjacentDrawingNode(s,selected.id):null;
           if(kind==="copy") {
             if(isDrawingToolReadOnly(s,selected))throw new Error("退化定式刀具仅可删除。");
             const copy=normalizeDrawingFeature({...clone(selected),id:undefined,station:selected.station+(selected.arrayPitch||50),enabled:true});
             checkpointDrawing(s);s.features=[...s.features,copy];s.draft=s.features.at(-1);s.editingId="";
             m.mode="feature";m.selected=s.draft.id;s.previewMode="tools";
           } else if(editDrawingFeature(s,kind,index)) {
-            if(kind==="remove") {m.mode="main";m.selected="main";s.editingId="";}
+            if(kind==="remove") {
+              if(!selectDrawingNode(view,nextAfterRemove))selectDrawingNode(view,"main");
+              s.editingId="";
+            }
             else {m.mode="feature";m.selected=selected.id;s.draft=s.features.find(f=>f.id===selected.id)??s.draft;s.editingId="";}
             s.previewMode="tools";
           }
         } else if(kind==="remove"&&["start","end"].includes(m.selected)) {
-          editDrawingFeature(s,"remove-end",m.selected);m.mode="main";m.selected="main";s.editingId="";s.previewMode="tools";
+          const next=adjacentDrawingNode(s,m.selected);
+          editDrawingFeature(s,"remove-end",m.selected);
+          if(!selectDrawingNode(view,next))selectDrawingNode(view,"main");
+          s.editingId="";s.previewMode="tools";
+        } else if(kind==="remove") {
+          selectDrawingNode(view,"main");
         }
       }
       else if(suffix==="section-select"||suffix==="section-resolve") {

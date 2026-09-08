@@ -54,7 +54,7 @@
 
 ## 回归入口
 
-- `TubeDesignerPartDrawingTest.mjs`：默认主管、截面来源、取消导入、实时创建/编辑、版本检查、撤销/重做、缺失刀具锁定、异步预览旧结果抑制。
+- `TubeDesignerPartDrawingTest.mjs`：默认主管与默认选中、截面来源、取消导入、实时创建/编辑、相邻节点选中、主管不可删除、撤销/重做、缺失刀具锁定、异步预览旧结果抑制。
 - `TubeDesignerPartDrawing.browser.mjs`：1600、1024、780 宽度的独立浏览器布局；真实 Three 视口加载测试网格，验证稳定画布、相机、未修改主管/支管资源和七种 V 槽参数。界面夹具几何不冒充原生布尔结果。
 - `TubeDesignerPartDrawingModelTest.mjs`、`TubeDesignerPartDrawingPreviewTest.mjs`、`TubeDesignerPartDrawingParametersTest.mjs`：独立数据模型、资源复用与过期响应、局部错误重试、条件参数及数值约束。
 - `TubeDesignerPartDrawingNative.browser.mjs`：生产界面连真实原生接口及资源，验证默认支管、只改当前刀具、最终生成、`.ictd` 保存重开再编辑；GPU 投影坐标验证初始和重开均为正侧视、横向占宽 90%。

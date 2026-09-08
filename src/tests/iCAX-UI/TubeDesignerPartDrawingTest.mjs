@@ -77,13 +77,18 @@ assert.equal(s.features[0].station,220);assert.equal(getPartDrawingPayload(view,
 await act("cancel-operation");assert.equal(s.features[0].station,220,"The obsolete cancel action cannot roll back a live edit");
 await node(first);await act("field-change",{dataset:{tubeDesignerPunchField:"station"},value:"230"});
 assert.equal(s.features[0].station,230);assert.equal(view.tubeDesignerPartDrawing.selected,first);
+const second=s.features[1].id;await node(second);await act("selected-remove");
+assert.equal(s.features.length,1);assert.equal(view.tubeDesignerPartDrawing.selected,first,"Deleting a feature selects the adjacent remaining feature");
+await act("undo");assert.equal(s.features.length,2);assert.equal(view.tubeDesignerPartDrawing.selected,"main");
 await command("start");assert.notEqual(s.ends.start.type,"keep");await act("selected-remove");assert.equal(s.ends.start.type,"keep");
+assert.equal(view.tubeDesignerPartDrawing.selected,s.features[0].id,"Deleting an end selects the adjacent remaining feature");
 const beforeLiveLength=s.history.length;
 await command("main");await act("main-change",{dataset:{drawingField:"length"},value:"800"});assert.equal(s.drawing.length,"800");
 assert.ok(s.history.length>beforeLiveLength,"Live parameter changes are undoable immediately");
 await act("cancel-operation");assert.equal(s.drawing.length,"800");
 await command("main");await act("main-change",{dataset:{drawingField:"length"},value:"700"});await act("main-change",{dataset:{drawingField:"length"},value:"800"});assert.equal(s.baseLength,800);
 await act("undo");assert.equal(s.baseLength,700);await act("redo");assert.equal(s.baseLength,800);
+await act("selected-remove");assert.match(s.error,/主管不可删除/);assert.equal(view.tubeDesignerPartDrawing.selected,"main","The main tube stays selected and cannot be deleted");
 const payload=getPartDrawingPayload(view);assert.equal(JSON.stringify(payload).includes("C:\\fixture"),false);
 await act("apply");assert.equal(calls.at(-1).method,"TubeDesigner.AddPartDrawing");assert.equal(view.tubeDesignerPartDrawing,null);
 assert.equal(calls.at(-1).payload.toolsOnly,undefined,"The final Generate action, unlike editing previews, requests a real finished part");
