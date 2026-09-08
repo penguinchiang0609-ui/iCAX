@@ -72,7 +72,9 @@ await test("template metadata is read only but preview parameters remain editabl
   assert.match(html, /模板自带管型/); assert.match(html, /所属模板：护栏 rail-a/);
   assert.match(html, /data-tube-profile-editor-parameter="width"/);
   assert.match(html, /data-cam-action="tube-designer-profile-library-edit-sketch"/);
-  assert.match(html, /基于此管型编辑/);
+  assert.match(html, /定制到我的/);
+  assert.match(html, /value="500" data-tube-profile-preview-length/);
+  assert.doesNotMatch(html, /data-cam-action="tube-designer-profile-export-(dxf|step)"/);
   assert.doesNotMatch(html, /data-tube-profile-editor-name|data-cam-action="tube-designer-profile-library-(save|delete)"/);
   for (const suffix of ["save", "delete"]) await handleProfileLibraryAction(context, view, `tube-designer-profile-library-${suffix}`,
     { dataset: { tubeDesignerProfileId: "shared", tubeDesignerProfileKey: "template:rail-a:shared" } }, ops);
@@ -90,9 +92,8 @@ await test("profile library opens the selected contour as an update or a copy se
   view.tubeDesignerProfileLibrary = { scope: "user", search: "", selectedByScope: {} };
   view.tubeDesignerSelectedProfileId = "user:frozen";
   await handleDesignerAreaAction(context, view, "tube-designer-profile-library-edit-sketch", {}, ops);
-  assert.equal(selectedTab, "sketch");
-  assert.equal(view.activeAreaId, "sketch", "editing a profile immediately enters the sketch area");
-  assert.equal(context.activeRibbonTabId, "sketch");
+  assert.equal(selectedTab, "");
+  assert.equal(view.tubeDesignerSketchDialogOpen, true, "editing opens the section modal without switching tabs");
   assert.equal(view.tubeDesignerSketch.sectionSession.kind, "update");
   assert.equal(view.tubeDesignerSketch.sectionSession.sourceRevision, 4);
   assert.equal(view.tubeDesignerSketch.section.entities[0].kind, "rectangle");
@@ -112,11 +113,18 @@ await test("new profile sketch immediately enters a blank sketch area", async ()
   let selectedTab = "";
   context.actions.selectRibbonTab = async (id) => { selectedTab = id; };
   await handleDesignerAreaAction(context, view, "tube-designer-profile-library-new-sketch", {}, ops);
-  assert.equal(selectedTab, "sketch");
-  assert.equal(view.activeAreaId, "sketch");
-  assert.equal(context.activeRibbonTabId, "sketch");
+  assert.equal(selectedTab, "");
+  assert.equal(view.tubeDesignerSketchDialogOpen, true);
+  assert.notEqual(context.activeRibbonTabId, "sketch");
   assert.equal(view.tubeDesignerSketch.sectionSession.kind, "create");
   assert.equal(view.tubeDesignerSketch.section.entities.length, 0);
+});
+
+await test("drawing entry is not duplicated at the bottom of profiles", async () => {
+  const { view, act } = harness();
+  assert.doesNotMatch(renderProfileLibraryLeftPane({}, view), /tube-designer-profile-library-new-sketch/);
+  await act("scope", { dataset: { tubeProfileLibraryScope: "user" } });
+  assert.doesNotMatch(renderProfileLibraryLeftPane({}, view), /tube-designer-profile-library-new-sketch/);
 });
 
 await test("resolving a parameterized profile uses the current evaluated preview", async () => {

@@ -1,0 +1,13 @@
+{
+  "schema":"icax.punch-tool","schemaVersion":1,"id":"end-profile","version":"1.0.0",
+  "displayName":"支管 / DXF 截面端切刀具","kind":"programmatic","target":"end","requiresSection":true,"category":"端切",
+  "parameters":[
+    {"key":"cutMode","displayName":"成形方式","valueType":"string","defaultValue":"concave","options":[{"value":"concave","label":"凹口"},{"value":"convex","label":"凸口"}]},
+    {"key":"angle","displayName":"与端内轴夹角（°）","valueType":"number","defaultValue":90,"min":0,"max":180},
+    {"key":"azimuth","displayName":"刀具轴方位（°，0 朝局部+Z）","valueType":"number","defaultValue":0,"min":-3600,"max":3600},
+    {"key":"roll","displayName":"截面自转（°）","valueType":"number","defaultValue":0,"min":-3600,"max":3600},
+    {"key":"axialOffset","displayName":"从端定位面向内偏移（mm）","valueType":"number","defaultValue":0,"min":-100000,"max":100000},
+    {"key":"offsetY","displayName":"局部横向偏移 Y（mm）","valueType":"number","defaultValue":0,"min":-100000,"max":100000},
+    {"key":"offsetZ","displayName":"局部高度偏移 Z（mm）","valueType":"number","defaultValue":0,"min":-100000,"max":100000}
+  ]
+}

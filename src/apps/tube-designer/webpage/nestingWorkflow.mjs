@@ -1,13 +1,15 @@
-import { buildProfileGroups, isTubeNestingPart, listManufacturingParts } from "./partsArea.mjs";
+import { buildProfileGroups, isTubeNestingPart, listNestingParts, nestingSelectionKey } from "./partsArea.mjs";
 import { getNestingParameters, getNestingStockInputs } from "./nestingSettings.mjs";
 
-const MAX_PARTS = 2000;
+// Match the native solver's expanded-instance guard.  The request contains
+// compact demand rows, so large quantities do not inflate the browser payload.
+const MAX_PARTS = 1_000_000;
 const EPSILON = 0.011; // Native lengths are conservatively quantized to 0.01 mm.
 
 function selectedParts(view) {
-  const parts = listManufacturingParts(view.scene?.tubeDesigner ?? {});
-  const selected = Array.isArray(view.tubeDesignerSelectedPartIds)
-    ? new Set(view.tubeDesignerSelectedPartIds.map(String)) : null;
+  const parts = listNestingParts(view.scene?.tubeDesigner ?? {});
+  const ids = view[nestingSelectionKey(view)];
+  const selected = Array.isArray(ids) ? new Set(ids.map(String)) : null;
   return parts.filter((part) => isTubeNestingPart(part) && (!selected || selected.has(String(part.entityId))));
 }
 
@@ -27,6 +29,8 @@ function serializeLockedPlan(plan) {
     variantId: String(placement.variantId ?? "default"),
     reversed: Boolean(placement.reversed),
     rotationRadians: Number(placement.rotationRadians ?? 0),
+    ...(Array.isArray(placement.trsf) && placement.trsf.length === 16
+      ? { trsf: placement.trsf.map(Number) } : {}),
   })) : [];
   return {
     id: String(plan?.id ?? ""),
@@ -73,7 +77,9 @@ export function buildNestingRequest(view, context = null) {
         throw new Error(`“${partName(part)}”的零件数量无效。`);
       }
       count += quantity;
-      return { partEntityId: id, profileKey: group.key, quantity };
+      const instanceQuantity = Number(part.instanceQuantity ?? 1);
+      return { partEntityId: id, profileKey: group.key, quantity,
+        ...(instanceQuantity !== 1 ? { instanceQuantity } : {}) };
     });
   });
   if (count > MAX_PARTS) throw new Error(`单次最多支持 ${MAX_PARTS} 件零件，请分批选择排样。`);
@@ -120,6 +126,51 @@ export function isNestingResultStale(view, context = null) {
     || result.inputSignature !== getNestingInputSignature(view, context)));
 }
 
+export function restoreSavedNestingTask(view, context = null) {
+  const task = view.scene?.tubeDesigner?.nestingTask;
+  if (!task?.revision) {
+    if (view.tubeDesignerRestoredTaskRevision) {
+      view.tubeDesignerRestoredTaskRevision = "";
+      view.tubeDesignerNestingResult = null;
+      view.tubeDesignerLockedNestingPlanIds = [];
+      view.tubeDesignerSelectedNestingPlanIds = [];
+      view.tubeDesignerActiveNestingPlanId = "";
+    }
+    return;
+  }
+  if (task.revision === view.tubeDesignerRestoredTaskRevision) return;
+  view.tubeDesignerRestoredTaskRevision = task.revision;
+  const parts = new Map(listNestingParts(view.scene?.tubeDesigner ?? {}).map(part => [String(part.entityId), part]));
+  const references = Array.isArray(task.parts) ? task.parts : [];
+  const current = references.filter(ref => parts.get(String(ref.partEntityId))?.generationRunId === ref.generationRunId);
+  view[nestingSelectionKey(view)] = current.map(ref => String(ref.partEntityId));
+  view.tubeDesignerNestingResult = null;
+  view.tubeDesignerLockedNestingPlanIds = [];
+  if (current.length !== references.length) {
+    view.notice = "下料任务包含已修改的实例，请重新选择零件并排样。";
+    return;
+  }
+  if (!task.result?.plans || !task.request?.parts) return;
+  try {
+    validateResult(task.result, task.request, view);
+    const signature = getNestingInputSignature(view, context);
+    view.tubeDesignerNestingResult = decorateResult(task.result, view, signature, task.request);
+    view.tubeDesignerActiveNestingPlanId = task.result.plans[0]?.id ?? "";
+    view.tubeDesignerSelectedNestingPlanIds = task.result.plans.map(plan => String(plan.id));
+    view.tubeDesignerLockedNestingPlanIds = (task.request.lockedPlans ?? []).map(plan => String(plan.id));
+    const comparable = (request) => JSON.stringify({
+      parts: request.parts.map(p => [p.partEntityId, p.profileKey, p.quantity]).sort(),
+      stocks: request.stocks.map(s => [s.id, s.profileKey, s.length, s.quantity]).sort(),
+      partGap: request.parameters.partGap,
+    });
+    view.tubeDesignerNestingLastRunFailed = comparable(buildNestingRequest(view, context)) !== comparable(task.request);
+    if (view.tubeDesignerNestingLastRunFailed) view.notice = "母材或间距已变化，已保存结果仅供查看，请重新排样。";
+  } catch (error) {
+    view.tubeDesignerNestingLastRunFailed = true;
+    view.notice = `已保存的排样结果无法恢复，请重新排样：${error.message}`;
+  }
+}
+
 function validateResult(result, request, view) {
   if (!result || !Array.isArray(result.plans) || !Array.isArray(result.unplaced)) {
     throw new Error("算法没有返回有效的排样结果。");
@@ -144,10 +195,13 @@ function validateResult(result, request, view) {
       const part = demands.get(placement.partId);
       const gapBefore = Number(placement.gapBefore ?? (index ? request.parameters.partGap : 0));
       const rotationRadians = Number(placement.rotationRadians ?? 0);
+      const trsf = placement.trsf;
       const nestedWithPrevious = Boolean(placement.nestedWithPrevious);
       if (!part || part.profileKey !== plan.profileKey || !Number.isFinite(placement.start)
         || !Number.isFinite(placement.end) || placement.end <= placement.start
         || !Number.isFinite(gapBefore) || !Number.isFinite(rotationRadians)
+        || (trsf !== undefined && (!Array.isArray(trsf) || trsf.length !== 16
+          || trsf.some((value) => !Number.isFinite(Number(value)))))
         || typeof placement.variantId !== "string" || !placement.variantId
         || placement.end - placement.start < sourceLengths.get(placement.partId) - EPSILON
         || Math.abs(placement.start - (end + gapBefore)) > EPSILON
@@ -183,7 +237,7 @@ function validateResult(result, request, view) {
 }
 
 function decorateResult(result, view, inputSignature, solveRequest) {
-  const parts = new Map(listManufacturingParts(view.scene?.tubeDesigner ?? {}).map((part) => [String(part.entityId), part]));
+  const parts = new Map(listNestingParts(view.scene?.tubeDesigner ?? {}).map((part) => [String(part.entityId), part]));
   const profiles = new Map(buildProfileGroups([...parts.values()]).map((group) => [group.key, group]));
   const unplaced = result.unplaced.map((row) => ({ ...row, partName: partName(parts.get(row.partId)), reason: row.reason || "可用母材不足或母材长度不够" }));
   const profileOrdinals = new Map();

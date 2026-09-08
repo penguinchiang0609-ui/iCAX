@@ -1,10 +1,11 @@
 import { renderLicenseStatus } from "./licensing.mjs";
+import { tubeDesignerSvg } from "./branding.mjs";
 const ABOUT_VIEW_REVISION = "tube-designer-about:empty";
 
 export function renderAboutLeftPane() {
   return `
     <div class="tube-designer-panel tube-designer-about-panel">
-      <div class="tube-designer-about-mark" aria-hidden="true">TD</div>
+      <div class="tube-designer-about-mark">${tubeDesignerSvg()}</div>
       <div class="tube-designer-heading">
         <strong>TubeDesigner</strong>
         <span>管材产品设计与下料准备</span>
@@ -35,7 +36,7 @@ export function renderAboutRightPane(_context, view) {
 export function renderAboutViewportOverlay(_context, view) {
   scheduleAboutViewportReset(view);
   return `<div class="tube-designer-about-viewport">
-    <div class="tube-designer-about-symbol" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="tube-designer-about-symbol">${tubeDesignerSvg()}</div>
     <strong>TubeDesigner</strong>
     <span>产品设计 · 锯切下料 · 管型与草图</span>
   </div>`;

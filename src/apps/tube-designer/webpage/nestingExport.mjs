@@ -1,4 +1,5 @@
 import { buildNestingRequest, isNestingResultStale } from "./nestingWorkflow.mjs";
+import { groupNestingPlans } from "./nestingGroups.mjs";
 
 export function selectedNestingPlanIds(view, plans = view.tubeDesignerNestingResult?.plans ?? []) {
   const requested = Array.isArray(view.tubeDesignerSelectedNestingPlanIds)
@@ -8,12 +9,24 @@ export function selectedNestingPlanIds(view, plans = view.tubeDesignerNestingRes
 
 export async function handleNestingExportAction(context, view, action, target, ops) {
   const actions = ["tube-designer-nesting-toggle-plan", "tube-designer-nesting-toggle-all-plans",
-    "tube-designer-nesting-export-selected"];
+    "tube-designer-nesting-export-selected", "tube-designer-nesting-toggle-group", "tube-designer-nesting-export-group"];
   if (!actions.includes(action)) return { handled: false };
   if (view.pending || view.tubeDesignerExportOperation || view.tubeDesignerNestingSettingsSaving) return { handled: true };
   const result = view.tubeDesignerNestingResult;
   const plans = result?.plans ?? [];
   const selected = selectedNestingPlanIds(view, plans);
+  const group = groupNestingPlans(plans).find((item) => item.key === String(target?.dataset?.tubeDesignerNestingGroupKey ?? ""));
+  if (action === "tube-designer-nesting-toggle-group") {
+    if (group) {
+      for (const { plan } of group.entries) {
+        if (target?.checked) selected.add(String(plan.id));
+        else selected.delete(String(plan.id));
+      }
+      view.tubeDesignerSelectedNestingPlanIds = [...selected];
+      ops.renderProject(context, view);
+    }
+    return { handled: true };
+  }
   if (action === "tube-designer-nesting-toggle-plan") {
     const id = String(target?.dataset?.tubeDesignerNestingPlanId ?? "");
     if (plans.some((plan) => String(plan.id) === id)) {
@@ -33,7 +46,10 @@ export async function handleNestingExportAction(context, view, action, target, o
   try {
     if (!plans.length) throw new Error("请先生成排样结果。");
     if (isNestingResultStale(view, context)) throw new Error("排样输入已变化，请重新排样后再导出。");
-    const exporting = plans.filter((plan) => selected.has(String(plan.id)));
+    if (action === "tube-designer-nesting-export-group" && !group) throw new Error("该规格组已不存在，请重新选择。");
+    const exporting = action === "tube-designer-nesting-export-group"
+      ? group.entries.map(({ plan }) => plan)
+      : plans.filter((plan) => selected.has(String(plan.id)));
     if (!exporting.length) throw new Error("请勾选需要导出的母材。");
     if (!context.sceneProxy?.invoke) throw new Error("当前项目没有连接导出服务。");
     // Export must replay the exact request that produced this result. Building a

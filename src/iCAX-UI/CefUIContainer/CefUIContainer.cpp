@@ -408,10 +408,22 @@ namespace
 
     std::optional<std::string> _OpenFileDialog(
         IN CefRefPtr<CefBrowser> Browser_,
-        IN const json::object& Payload_)
+        IN const json::object& Payload_,
+        IN bool Save_ = false)
     {
         std::vector<wchar_t> _FileBuffer(32768, L'\0');
         const auto _Filter = _BuildDialogFilterSpec(Payload_);
+        const auto _DefaultPathIter = Payload_.find("defaultPath");
+        if (_DefaultPathIter != Payload_.end() && _DefaultPathIter->value().is_string())
+        {
+            const auto _DefaultPath = _UTF8ToWide(_AsString(_DefaultPathIter->value(), "defaultPath"));
+            if (_DefaultPath.size() >= _FileBuffer.size()) throw std::invalid_argument("File path is too long");
+            std::copy(_DefaultPath.begin(), _DefaultPath.end(), _FileBuffer.begin());
+        }
+        std::wstring _DefaultExtension;
+        const auto _ExtensionIter = Payload_.find("defaultExtension");
+        if (_ExtensionIter != Payload_.end() && _ExtensionIter->value().is_string())
+            _DefaultExtension = _UTF8ToWide(_AsString(_ExtensionIter->value(), "defaultExtension"));
 
         std::wstring _Title;
         const auto _TitleIter = Payload_.find("title");
@@ -434,9 +446,11 @@ namespace
         _OpenFileName.nMaxFile = static_cast<DWORD>(_FileBuffer.size());
         _OpenFileName.nFilterIndex = 1;
         _OpenFileName.lpstrTitle = _Title.empty() ? nullptr : _Title.c_str();
-        _OpenFileName.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        _OpenFileName.lpstrDefExt = _DefaultExtension.empty() ? nullptr : _DefaultExtension.c_str();
+        _OpenFileName.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR
+            | (Save_ ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
 
-        if (::GetOpenFileNameW(&_OpenFileName))
+        if (Save_ ? ::GetSaveFileNameW(&_OpenFileName) : ::GetOpenFileNameW(&_OpenFileName))
         {
             return _ToUtf8(std::wstring(_FileBuffer.data()));
         }
@@ -868,6 +882,9 @@ namespace
 
     openFileDialog(options) {
       return queryNative("openFileDialog", options || {});
+    },
+    saveFileDialog(options) {
+      return queryNative("saveFileDialog", options || {});
     },
 
     openDirectoryDialog(options) {
@@ -1577,9 +1594,9 @@ namespace
                     return true;
                 }
 
-                if (_Method == "openFileDialog")
+                if (_Method == "openFileDialog" || _Method == "saveFileDialog")
                 {
-                    const auto _Path = _OpenFileDialog(Browser_, _Payload);
+                    const auto _Path = _OpenFileDialog(Browser_, _Payload, _Method == "saveFileDialog");
                     if (_Path.has_value())
                     {
                         Callback_->Success(json::serialize(_ToJsonValue(*_Path)));
@@ -1701,11 +1718,19 @@ namespace
     public:
         explicit CInternalCefClient(
             IN iCAX::Frontend::IFrontendBridge* pBridge_,
-            IN std::function<void()> OnBrowserClosed_)
+            IN std::function<void()> OnBrowserClosed_,
+            IN std::wstring WindowIconPath_)
             : m_pBridge(pBridge_)
             , m_OnBrowserClosed(std::move(OnBrowserClosed_))
+            , m_WindowIconPath(std::move(WindowIconPath_))
         {
             m_pBridgeQueryHandler = std::make_unique<CInternalBridgeQueryHandler>(pBridge_);
+        }
+
+        ~CInternalCefClient() override
+        {
+            if (m_SmallIcon) DestroyIcon(m_SmallIcon);
+            if (m_LargeIcon) DestroyIcon(m_LargeIcon);
         }
 
         CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override
@@ -1733,6 +1758,21 @@ namespace
             CEF_REQUIRE_UI_THREAD();
             EnsureMessageRouterOnUI();
             m_pBrowser = Browser_;
+            // Startup chooses the single-product or platform icon from configuration.
+            if (const HWND _Window = Browser_->GetHost()->GetWindowHandle())
+            {
+                const auto _Module = GetModuleHandleW(nullptr);
+                const auto _Load = [&](int Width, int Height) {
+                    HICON _Icon = m_WindowIconPath.empty() ? nullptr : static_cast<HICON>(LoadImageW(nullptr,
+                        m_WindowIconPath.c_str(), IMAGE_ICON, Width, Height, LR_LOADFROMFILE));
+                    if (!_Icon) _Icon = static_cast<HICON>(LoadImageW(_Module, MAKEINTRESOURCEW(101), IMAGE_ICON, Width, Height, 0));
+                    return _Icon;
+                };
+                m_SmallIcon = _Load(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+                m_LargeIcon = _Load(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+                if (m_SmallIcon) SendMessageW(_Window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(m_SmallIcon));
+                if (m_LargeIcon) SendMessageW(_Window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(m_LargeIcon));
+            }
             _ShowInitialBrowserWindow(Browser_);
         }
 
@@ -1897,6 +1937,9 @@ namespace
         std::unique_ptr<CInternalBridgeQueryHandler> m_pBridgeQueryHandler;
         iCAX::Frontend::IFrontendBridge* m_pBridge = nullptr;
         std::function<void()> m_OnBrowserClosed;
+        std::wstring m_WindowIconPath;
+        HICON m_SmallIcon = nullptr;
+        HICON m_LargeIcon = nullptr;
 
         IMPLEMENT_REFCOUNTING(CInternalCefClient);
     };
@@ -2191,7 +2234,7 @@ void iCAX::Frontend::Cef::CCefUIContainer::Start()
     m_pImpl->ResetExitState();
     m_pImpl->Client = new CInternalCefClient(m_pImpl->pBridge, [this]() {
         m_pImpl->NotifyExit();
-    });
+    }, _GetWideProperty(m_pImpl->Config, "windowIconPath"));
 
     CefWindowInfo _WindowInfo;
     _WindowInfo.SetAsPopup(nullptr, L"工作台");

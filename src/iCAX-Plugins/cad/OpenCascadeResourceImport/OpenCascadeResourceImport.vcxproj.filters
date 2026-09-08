@@ -5,6 +5,7 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="OpenCascadeBRepReader.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="OpenCascadeTaskExecution.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OpenCascadeBRepBuilder.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="OpenCascadeResourceImportExport.h"><Filter>Header Files</Filter></ClInclude>
     <Filter Include="Header Files"><UniqueIdentifier>{b0f9a00a-4de0-40c2-b400-bb436008168f}</UniqueIdentifier></Filter>

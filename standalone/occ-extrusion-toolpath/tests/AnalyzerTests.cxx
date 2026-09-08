@@ -117,8 +117,8 @@ namespace
             "rectangular tube must recover outer and inner section loops");
         Require(std::abs(result.SectionFrame.Direction().Dot(gp::DY())) > 0.999,
             "rectangular tube extrusion axis must be Y");
-        Require(result.Features.empty(),
-            "uncut rectangular tube must contain no machining feature");
+        Require(result.Features.size() == 2,
+            "tube end caps are machining features; only longitudinal skins are removed");
     }
 
     void PipelineStagesAreComposableAndObservable()

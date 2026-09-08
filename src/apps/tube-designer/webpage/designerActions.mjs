@@ -25,10 +25,15 @@ import {
   resolveSelectedProfileSketchSource,
   templateProfilesForProduct,
 } from "./profileLibrary.mjs";
-import { handlePartsAreaAction } from "./partsArea.mjs";
+import { handlePartsAreaAction, listNestingParts } from "./partsArea.mjs";
 import { handleNestingSettingsAction, handleNestingSettingsRibbonCommand } from "./nestingSettings.mjs";
-import { handleNestingRibbonCommand } from "./nestingWorkflow.mjs";
+import { handleNestingPartImportAction, handleNestingPartImportRibbonCommand } from "./nestingPartImport.mjs";
+import { handleNestingStandardPartAction, handleNestingStandardPartRibbonCommand } from "./nestingStandardPart.mjs";
+import { handleNestingPunchPartAction, handleNestingPunchPartRibbonCommand } from "./nestingPunchPart.mjs";
+import { handlePartDrawingAction, handlePartDrawingRibbonCommand } from "./partDrawing.mjs";
+import { handleNestingRibbonCommand, restoreSavedNestingTask } from "./nestingWorkflow.mjs";
 import { handleNestingExportAction } from "./nestingExport.mjs";
+import { handleTubeMachiningAction, handleTubeMachiningRibbonCommand } from "./machiningArea.mjs";
 import {
   beginNewSectionSketch,
   beginProfileSectionSketch,
@@ -43,6 +48,10 @@ import { handleLicenseCommand } from "./licensing.mjs";
 export const ADD_TEMPLATE_PROGRESS_MINIMUM_VISIBLE_MS = DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS;
 
 export async function handleDesignerAreaAction(context, view, action, target, ops) {
+  const drawingResult=await handlePartDrawingAction(context,view,action,target,ops);
+  if(drawingResult.handled)return drawingResult;
+  const machiningResult = await handleTubeMachiningAction(context, view, action, target, ops);
+  if (machiningResult.handled) return machiningResult;
   if (action === "tube-designer-profile-library-new-sketch") {
     return { handled: true, result: await openProfileSectionSketch(context, view, ops, true) };
   }
@@ -51,6 +60,12 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   }
   const componentResult = await handleComponentLibraryAction(context, view, action, target, ops);
   if (componentResult.handled) return componentResult;
+  const nestingPunchPartResult = await handleNestingPunchPartAction(context, view, action, target, ops);
+  if (nestingPunchPartResult.handled) return nestingPunchPartResult;
+  const nestingStandardPartResult = await handleNestingStandardPartAction(context, view, action, target, ops);
+  if (nestingStandardPartResult.handled) return nestingStandardPartResult;
+  const nestingPartImportResult = await handleNestingPartImportAction(context, view, action, target, ops);
+  if (nestingPartImportResult.handled) return nestingPartImportResult;
   const nestingExportResult = await handleNestingExportAction(context, view, action, target, ops);
   if (nestingExportResult.handled) return nestingExportResult;
   const nestingSettingsResult = await handleNestingSettingsAction(context, view, action, target, ops);
@@ -63,6 +78,34 @@ export async function handleDesignerAreaAction(context, view, action, target, op
     context, view, action, target, ops,
   );
   if (profileLibraryResult.handled) return profileLibraryResult;
+  if (action === "tube-designer-template-manager-open") {
+    openProductTemplateManager(context, view, ops);
+    return { handled: true };
+  }
+  if (action === "tube-designer-template-manager-close") {
+    closeProductTemplateManager(context, view, ops);
+    return { handled: true };
+  }
+  if (action === "tube-designer-template-select") {
+    selectProductTemplate(view, target, ops, context);
+    return { handled: true };
+  }
+  if (action === "tube-designer-template-create-open") {
+    openProductTemplateCreate(context, view, ops);
+    return { handled: true };
+  }
+  if (action === "tube-designer-template-create-confirm") {
+    return { handled: true, result: await createProductTemplate(context, view, ops) };
+  }
+  if (action === "tube-designer-template-import") {
+    return { handled: true, result: await importProductTemplate(context, view, ops) };
+  }
+  if (action === "tube-designer-template-export") {
+    return { handled: true, result: await exportProductTemplate(context, view, ops) };
+  }
+  if (action === "tube-designer-template-delete") {
+    return { handled: true, result: await deleteProductTemplate(context, view, ops) };
+  }
   if (action === "tube-designer-open-add") {
     openAddDialog(context, view, ops);
     return { handled: true };
@@ -97,9 +140,11 @@ export async function handleDesignerAreaAction(context, view, action, target, op
     updateParameterDraft(context, view, target, ops);
     return { handled: true };
   }
+  if (action === "tube-designer-instance-quantity-change") {
+    return { handled: true, result: await changeInstanceQuantity(context, view, target, ops) };
+  }
   if (action === "tube-designer-profile-selection-change") {
-    changeProfileSelection(context, view, target, ops);
-    return { handled: true };
+    return { handled: true, result: await changeProfileSelection(context, view, target, ops) };
   }
   if (action === "tube-designer-profile-parameter-change") {
     return { handled: true, result: await updateParametricProfile(context, view, target, ops) };
@@ -186,7 +231,7 @@ export async function handleDesignerAreaAction(context, view, action, target, op
     return { handled: true };
   }
   if (action === "tube-designer-confirm-disassemble") {
-    return { handled: true, result: await disassembleSelected(context, view, ops) };
+    return { handled: true, result: await disassembleSelected(context, view, ops, { importToNesting: true }) };
   }
   if (action === "tube-designer-dismiss-disassembly-choice") {
     view.tubeDesignerPostDisassemblyChoice = null;
@@ -203,8 +248,7 @@ export async function handleDesignerAreaAction(context, view, action, target, op
     view.tubeDesignerBreakdownOpen = false;
     view.tubeDesignerPartDimensionsVisible = false;
     view.tubeDesignerNestingSelectionKind = "part";
-    await context.actions?.selectRibbonTab?.("nesting");
-    return { handled: true };
+    return handlePartsAreaAction(context, view, "tube-designer-parts-open-nesting", target, ops);
   }
   if (action === "tube-designer-open-breakdown") {
     openBreakdownResults(context, view, ops);
@@ -216,7 +260,23 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   }
   if (action === "tube-designer-close-breakdown") {
     if (!view.pending && !view.tubeDesignerExportOperation) {
+      if (view.tubeDesignerBreakdownMode === "export" && context.sceneProxy?.invoke) {
+        view.pending = true;
+        try {
+          const response = await invokeDesignerRequest(
+            context, "TubeDesigner.ReleaseTransientParts", {});
+          if (response?.tubeDesigner) view.scene.tubeDesigner = response.tubeDesigner;
+        } finally {
+          view.pending = false;
+        }
+      }
       view.tubeDesignerBreakdownOpen = false;
+      view.tubeDesignerBreakdownMode = "";
+      view.tubeDesignerBreakdownProductIds = [];
+      view.tubeDesignerSelectedPartIds = [];
+      view.tubeDesignerActivePartId = "";
+      view.tubeDesignerPartMeasurementState = null;
+      view.viewport?.setCustomVisibleEntityIds?.([]);
       ops.renderProject(context, view);
     }
     return { handled: true };
@@ -276,27 +336,75 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   if (action === "tube-designer-export-selected" || action === "tube-designer-export-all") {
     return { handled: true, result: await exportSelected(context, view, target, ops) };
   }
+  if (action === "tube-designer-nesting-export-parts") {
+    openNestingPartList(context, view, ops);
+    return { handled: true };
+  }
   return false;
 }
 
 export async function handleDesignerRibbonCommand(context, view, commandId, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return true;
+  if (await handleTubeMachiningRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleLicenseCommand(context, view, commandId, ops)) return true;
   if (commandId === "profiles.new-sketch") {
     await openProfileSectionSketch(context, view, ops, true);
     return true;
   }
+  if (await handleNestingPunchPartRibbonCommand(context, view, commandId, ops)) return true;
+  if (await handleNestingStandardPartRibbonCommand(context, view, commandId, ops)) return true;
+  if (await handlePartDrawingRibbonCommand(context, view, commandId, ops)) return true;
+  if (await handleNestingPartImportRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleNestingRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleNestingSettingsRibbonCommand(context, view, commandId, ops)) return true;
+  if (commandId === "nesting.export-parts") {
+    openNestingPartList(context, view, ops);
+    return true;
+  }
+  if (commandId === "nesting.export-result") {
+    await handleNestingExportAction(context, view, "tube-designer-nesting-export-selected", null, ops);
+    return true;
+  }
+  if (commandId === "nesting.results") {
+    context.mount?.querySelector?.(".tube-designer-nesting-bottom")?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "nearest",
+    });
+    return true;
+  }
   if (await handleSketchRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleProfileLibraryRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleComponentLibraryRibbonCommand(context, view, commandId, ops)) return true;
+  if (commandId === "designer.templates.manage") {
+    openProductTemplateManager(context, view, ops);
+    return true;
+  }
+  if (commandId === "designer.templates.new") {
+    openProductTemplateCreate(context, view, ops);
+    return true;
+  }
+  if (commandId === "designer.templates.import") {
+    await importProductTemplate(context, view, ops);
+    return true;
+  }
+  if (commandId === "designer.templates.export") {
+    await exportProductTemplate(context, view, ops);
+    return true;
+  }
+  if (commandId === "designer.templates.delete") {
+    await deleteProductTemplate(context, view, ops);
+    return true;
+  }
   if (commandId === "designer.add" || commandId === "designer.generate") {
     openAddDialog(context, view, ops);
     return true;
   }
   if (commandId === "designer.batch-add" || commandId === "designer.import-excel") {
     await chooseBatchAddWorkbook(context, view, ops);
+    return true;
+  }
+  if (commandId === "designer.export-parts") {
+    await openTransientPartList(context, view, ops);
     return true;
   }
   if (commandId === "designer.export-machining" || commandId === "designer.disassemble") {
@@ -313,9 +421,228 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
   }
   if (commandId === "parts.open-nesting") {
     await context.actions?.selectRibbonTab?.("nesting");
+    context.activeRibbonTabId = "nesting";
+    view.activeAreaId = "nesting";
+    ops.renderProject(context, view);
     return true;
   }
   return false;
+}
+
+function openProductTemplateManager(context, view, ops) {
+  const designer = view.scene?.tubeDesigner ?? {};
+  const first = (designer.templates ?? []).find((item) => item?.available)?.id
+    ?? view.tubeDesignerUserData?.productTemplates?.[0]?.id ?? "";
+  view.tubeDesignerTemplateManager = {
+    mode: "list",
+    selectedId: view.tubeDesignerTemplateManager?.selectedId ?? String(first),
+  };
+  view.error = "";
+  ops.renderProject(context, view);
+}
+
+function closeProductTemplateManager(context, view, ops) {
+  if (view.pending) return;
+  view.tubeDesignerTemplateManager = null;
+  view.tubeDesignerTemplateCreateDialog = null;
+  ops.renderProject(context, view);
+}
+
+function selectProductTemplate(view, target, ops, context) {
+  if (view.pending) return;
+  const id = String(target?.dataset?.tubeTemplateId ?? "").trim();
+  if (!id) return;
+  view.tubeDesignerTemplateManager = {
+    ...(view.tubeDesignerTemplateManager ?? { mode: "list" }),
+    mode: "list",
+    selectedId: id,
+  };
+  ops.renderProject(context, view);
+}
+
+function openProductTemplateCreate(context, view, ops) {
+  if (view.pending) return;
+  const designer = view.scene?.tubeDesigner ?? {};
+  const selectedId = String(view.tubeDesignerTemplateManager?.selectedId ?? "");
+  const selectedBuiltin = (designer.templates ?? []).find((item) => item?.available
+    && String(item?.id ?? "") === selectedId);
+  const baseTemplateId = String(
+    selectedBuiltin?.id
+      || (designer.templates ?? []).find((item) => item?.available)?.id
+      || "",
+  );
+  view.tubeDesignerTemplateManager = {
+    ...(view.tubeDesignerTemplateManager ?? {}),
+    mode: "create",
+    baseTemplateId,
+    name: "",
+    description: "",
+  };
+  view.error = "";
+  ops.renderProject(context, view);
+}
+
+function templateManagerItems(view) {
+  const designer = view.scene?.tubeDesigner ?? {};
+  const builtins = Array.isArray(designer.templates) ? designer.templates : [];
+  const custom = Array.isArray(view.tubeDesignerUserData?.productTemplates)
+    ? view.tubeDesignerUserData.productTemplates : [];
+  return { builtins, custom };
+}
+
+function templateManagerSelection(view) {
+  const { builtins, custom } = templateManagerItems(view);
+  const selectedId = String(view.tubeDesignerTemplateManager?.selectedId ?? "");
+  const customItem = custom.find((item) => String(item?.id ?? "") === selectedId);
+  if (customItem) return { item: customItem, scope: "personal", id: selectedId };
+  const builtIn = builtins.find((item) => String(item?.id ?? "") === selectedId);
+  return builtIn ? { item: builtIn, scope: "builtin", id: selectedId } : null;
+}
+
+async function importProductTemplate(context, view, ops) {
+  if (view.pending) return null;
+  const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge ?? null;
+  if (typeof bridge?.openFileDialog !== "function") {
+    view.error = "当前宿主没有提供文件选择能力。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  const sourcePath = String(await bridge.openFileDialog({
+    title: "导入产品模板（.iPT）",
+    filters: [{ name: "iCAX 产品模板包", extensions: ["ipt"] }],
+  }) ?? "").trim();
+  if (!sourcePath) return null;
+  openProductTemplateManager(context, view, ops);
+  return runDesignerOperation(context, view, ops, async () => {
+    const response = await invokeProductRequest(context, "TubeDesigner.ImportProductTemplatePackage", {
+      sourcePath,
+    }, { timeoutMs: 120000 });
+    const template = response?.template ?? response?.productTemplate;
+    if (!template?.id) throw new Error("导入 iPT 后没有返回模板记录。");
+    upsertUserDataItem(view, "productTemplates", template);
+    view.tubeDesignerTemplateManager = { mode: "list", selectedId: String(template.id) };
+    await refreshDesignerUserData(context, view);
+    ops.showNotice(context, view, `已导入产品模板“${template.name ?? template.displayName ?? template.id}”。`);
+    return template;
+  }, {
+    operation: {
+      kind: "product-template-import",
+      title: "正在导入产品模板",
+      phase: "importing-product-template",
+      phaseLabel: "校验 iPT 压缩包",
+      message: "正在读取模板描述、脚本和资源",
+    },
+  });
+}
+
+async function exportProductTemplate(context, view, ops) {
+  if (view.pending) return null;
+  const selection = templateManagerSelection(view);
+  if (!selection) {
+    view.error = "请先选择一个产品模板。";
+    openProductTemplateManager(context, view, ops);
+    return null;
+  }
+  const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge ?? null;
+  if (typeof bridge?.saveFileDialog !== "function") {
+    view.error = "当前宿主没有提供保存文件能力。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  const name = String(selection.item?.name ?? selection.item?.displayName ?? selection.id ?? "product-template")
+    .replace(/[\\/:*?"<>|]/g, "_").trim() || "product-template";
+  const targetPath = String(await bridge.saveFileDialog({
+    title: "导出产品模板（.iPT）",
+    defaultPath: `${name}.iPT`,
+    defaultExtension: "iPT",
+    filters: [{ name: "iCAX 产品模板包", extensions: ["ipt"] }],
+  }) ?? "").trim();
+  if (!targetPath) return null;
+  return runDesignerOperation(context, view, ops, async () => {
+    const response = await invokeProductRequest(context, "TubeDesigner.ExportProductTemplatePackage", {
+      scope: selection.scope,
+      id: selection.id,
+      targetPath,
+    }, { timeoutMs: 120000 });
+    if (!response?.path) throw new Error("导出 iPT 后没有返回文件路径。");
+    ops.showNotice(context, view, `产品模板已导出：${response.path}`);
+    return response;
+  }, {
+    operation: {
+      kind: "product-template-export",
+      title: "正在导出产品模板",
+      phase: "exporting-product-template",
+      phaseLabel: "生成 iPT 压缩包",
+      message: "正在整理模板描述、脚本和资源",
+    },
+  });
+}
+
+async function createProductTemplate(context, view, ops) {
+  if (view.pending) return null;
+  const state = view.tubeDesignerTemplateManager;
+  const form = context.mount?.querySelector?.(".tube-designer-template-manager-dialog");
+  const baseTemplateId = String(form?.querySelector?.("[data-tube-template-create-base]")?.value ?? state?.baseTemplateId ?? "").trim();
+  const name = String(form?.querySelector?.("[data-tube-template-create-name]")?.value ?? state?.name ?? "").trim();
+  const description = String(form?.querySelector?.("[data-tube-template-create-description]")?.value ?? state?.description ?? "").trim();
+  if (!baseTemplateId) throw new Error("请选择基础模板。");
+  if (!name) {
+    form?.querySelector?.("[data-tube-template-create-name]")?.focus?.();
+    throw new Error("请填写模板名称。");
+  }
+  return runDesignerOperation(context, view, ops, async () => {
+    const response = await invokeProductRequest(context, "TubeDesigner.CreateProductTemplate", {
+      baseTemplateId, name, description,
+    }, { timeoutMs: 120000 });
+    const template = response?.template ?? response?.productTemplate;
+    if (!template?.id) throw new Error("新建模板后没有返回模板记录。");
+    upsertUserDataItem(view, "productTemplates", template);
+    view.tubeDesignerTemplateManager = { mode: "list", selectedId: String(template.id) };
+    await refreshDesignerUserData(context, view);
+    ops.showNotice(context, view, `已新增产品模板“${template.name ?? template.id}”。`);
+    return template;
+  }, {
+    operation: {
+      kind: "product-template-create",
+      title: "正在新增产品模板",
+      phase: "creating-product-template",
+      phaseLabel: "保存模板包",
+      message: "正在生成可导出的 iPT 模板包",
+    },
+  });
+}
+
+async function deleteProductTemplate(context, view, ops) {
+  if (view.pending) return null;
+  const selection = templateManagerSelection(view);
+  if (!selection) return null;
+  if (selection.scope !== "personal") {
+    view.error = "内置产品模板只读，不能删除。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  if (typeof globalThis.confirm === "function"
+      && !globalThis.confirm(`确定删除产品模板“${selection.item?.name ?? selection.id}”吗？`)) return null;
+  return runDesignerOperation(context, view, ops, async () => {
+    const response = await invokeProductRequest(context, "TubeDesigner.DeleteProductTemplate", {
+      id: selection.id,
+      revision: Number(selection.item?.revision ?? 0),
+    }, { timeoutMs: 30000 });
+    if (!response?.deleted) throw new Error("产品模板未能删除。");
+    view.tubeDesignerUserData.productTemplates = (view.tubeDesignerUserData.productTemplates ?? [])
+      .filter((item) => String(item?.id ?? "") !== selection.id);
+    view.tubeDesignerTemplateManager = { mode: "list", selectedId: "" };
+    ops.showNotice(context, view, `已删除产品模板“${selection.item?.name ?? selection.id}”。`);
+    return response;
+  }, {
+    operation: {
+      kind: "product-template-delete",
+      title: "正在删除产品模板",
+      phase: "deleting-product-template",
+      phaseLabel: "删除模板记录",
+      message: `正在删除“${selection.item?.name ?? selection.id}”`,
+    },
+  });
 }
 
 async function openProfileSectionSketch(context, view, ops, createNew) {
@@ -325,7 +652,7 @@ async function openProfileSectionSketch(context, view, ops, createNew) {
       && !globalThis.confirm("当前截面还有未保存的修改，确定开始另一个截面吗？")) return null;
   if (createNew) {
     const state = beginNewSectionSketch(view);
-    await selectDesignerArea(context, view, "sketch");
+    view.tubeDesignerSketchDialogOpen = true;
     ops.renderProject(context, view);
     return state;
   }
@@ -344,7 +671,7 @@ async function openProfileSectionSketch(context, view, ops, createNew) {
     const state = beginProfileSectionSketch(view, source);
     view.pending = false;
     view.progress = null;
-    await selectDesignerArea(context, view, "sketch");
+    view.tubeDesignerSketchDialogOpen = true;
     ops.renderProject(context, view);
     return state;
   } catch (error) {
@@ -354,15 +681,6 @@ async function openProfileSectionSketch(context, view, ops, createNew) {
     ops.renderProject(context, view);
     return null;
   }
-}
-
-async function selectDesignerArea(context, view, areaId) {
-  await context.actions?.selectRibbonTab?.(areaId);
-  // The host may publish the selected tab on the next render tick. Keep this
-  // render on the requested area as well, otherwise it can immediately fall
-  // back to the source tab and appear as if navigation did nothing.
-  context.activeRibbonTabId = areaId;
-  view.activeAreaId = areaId;
 }
 
 async function chooseBatchAddWorkbook(context, view, ops, suppliedPath = "") {
@@ -396,7 +714,7 @@ async function chooseBatchAddWorkbook(context, view, ops, suppliedPath = "") {
 export async function refreshDesignerState(context, view, ops = null) {
   if (!context.sceneProxy) return false;
   try {
-    const response = await context.sceneProxy.invoke("TubeDesigner.List", {}, { timeoutMs: 30000 });
+    const response = await context.sceneProxy.invoke("TubeDesigner.List", {nestingOnly: view.activeAreaId === "nesting", includeManufacturingGeometry: view.activeAreaId === "parts" || Boolean(view.tubeDesignerBreakdownOpen)}, { timeoutMs: 180000 });
     const designer = response?.tubeDesigner ?? {};
     const previousProductId = String(view.scene?.tubeDesigner?.product?.entityId ?? "");
     view.scene ??= {};
@@ -406,6 +724,7 @@ export async function refreshDesignerState(context, view, ops = null) {
       view.tubeDesignerRightPresetSelection = "";
     }
     reconcileSelections(view, designer);
+    restoreSavedNestingTask(view, context);
     if (!(designer.manufacturingGroups?.length > 0)) view.tubeDesignerBreakdownOpen = false;
     ops?.renderProject?.(context, view);
     return true;
@@ -418,7 +737,7 @@ export async function refreshDesignerState(context, view, ops = null) {
 
 export async function refreshDesignerUserData(context, view, ops = null) {
   if (typeof context.productProxy?.invoke !== "function") {
-    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], profileId: "" };
+    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], productTemplates: [], profileId: "" };
     view.tubeDesignerSystemProfiles ??= [];
     view.tubeDesignerTemplateProfiles ??= [];
     return false;
@@ -431,6 +750,7 @@ export async function refreshDesignerUserData(context, view, ops = null) {
       customers: Array.isArray(response?.customers) ? response.customers : [],
       parameterPresets: Array.isArray(response?.parameterPresets) ? response.parameterPresets : [],
       profiles: Array.isArray(response?.profiles) ? response.profiles : [],
+      productTemplates: Array.isArray(response?.productTemplates) ? response.productTemplates : [],
       profileId: String(response?.profileId ?? ""),
     };
     view.tubeDesignerSystemProfiles = Array.isArray(response?.systemProfiles)
@@ -441,7 +761,7 @@ export async function refreshDesignerUserData(context, view, ops = null) {
     ops?.renderProject?.(context, view);
     return true;
   } catch (error) {
-    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], profileId: "" };
+    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], productTemplates: [], profileId: "" };
     view.tubeDesignerSystemProfiles ??= [];
     view.tubeDesignerTemplateProfiles ??= [];
     view.tubeDesignerUserDataError = error?.message ?? String(error);
@@ -461,6 +781,7 @@ export function getDesignerRenderSignature(designer = {}) {
 }
 
 function openAddDialog(context, view, ops) {
+  view.tubeDesignerAddInstanceQuantity = 1;
   const designer = view.scene?.tubeDesigner ?? {};
   const template = getDefaultTemplate(designer.templates ?? []);
   if (!template) {
@@ -671,6 +992,12 @@ function changeProfileSelection(context, view, target, ops) {
   const prefix = String(target.dataset?.tubeDesignerProfilePrefix ?? "").trim();
   const selection = String(target.value ?? "");
   if (!prefix || selection === "current") return;
+  if (selection === "external-dxf") {
+    // A file-picker action is not a profile value. Restore immediately so
+    // cancelling or failing an import leaves the original selection intact.
+    target.value = String(target.dataset?.tubeDesignerProfileCurrentSelection ?? "current");
+    return importProfileDxf(context, view, target, ops);
+  }
   if (mode === "add") captureAddDialogScrollAnchor(context, view, target);
   else captureParameterPanelState(context, view, target);
   if (selection.startsWith("builtin:")) {
@@ -769,7 +1096,7 @@ async function updateParametricProfile(context, view, target, ops) {
         parameters,
       }, { timeoutMs: 120000 });
       const profile = importedProfileSnapshot(response?.profile, current.savedProfileId);
-      if (!profile?.contours?.length) throw new Error("可编辑管型没有返回有效截面。" );
+      if (!profile?.contours?.length) throw new Error("程式管型没有返回有效截面。" );
       const nextValues = profileActionState(view, mode).values;
       nextValues.tubeDesignerProfileOverrides = {
         ...(nextValues.tubeDesignerProfileOverrides ?? {}),
@@ -829,7 +1156,7 @@ async function importProfileDxf(context, view, target, ops) {
       values.tubeDesignerProfileOverrides = overrides;
       if (mode === "add") view.tubeDesignerAddDraft = values;
       else view.tubeDesignerRightDraft = values;
-      ops.showNotice(context, view, `已为当前实例导入 ${profile.name ?? profile.sourceFileName ?? "DXF 管型"}。`);
+      ops.showNotice(context, view, `已为当前实例导入 ${profile.name ?? profile.sourceFileName ?? "定式管型"}。`);
       return profile;
     } finally {
       await waitForMinimumDuration(startedAt, ADD_TEMPLATE_PROGRESS_MINIMUM_VISIBLE_MS);
@@ -837,7 +1164,7 @@ async function importProfileDxf(context, view, target, ops) {
   }, {
     operation: {
       kind: "profile-import",
-      title: "正在导入 DXF 管型",
+      title: "正在导入 定式管型",
       phase: "parsing-profile",
       phaseLabel: "截面校验",
       message: "正在识别外轮廓、内孔、单位和精确曲线",
@@ -1308,7 +1635,7 @@ async function deleteParameterPreset(context, view, target, ops) {
 }
 
 function upsertUserDataItem(view, collection, item) {
-  view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], profileId: "" };
+  view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], productTemplates: [], profileId: "" };
   const items = Array.isArray(view.tubeDesignerUserData[collection])
     ? view.tubeDesignerUserData[collection] : [];
   const index = items.findIndex((candidate) => String(candidate?.id ?? "") === String(item?.id ?? ""));
@@ -1353,6 +1680,39 @@ function normalizeDependentParameters(parameters, template = null, changedKey = 
   return result;
 }
 
+function validateInstanceQuantity(value) {
+  const quantity = Number(value);
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 1000000)
+    throw new Error("生产数量必须是 1 到 1000000 之间的整数。");
+  return quantity;
+}
+
+async function changeInstanceQuantity(context, view, target, ops) {
+  if (view.pending) return null;
+  if (target?.dataset?.tubeDesignerInstanceQuantity === "add") {
+    // Preserve raw input across parameter re-renders; validate again on submit.
+    view.tubeDesignerAddInstanceQuantity = target.value;
+    validateInstanceQuantity(target.value);
+    return null;
+  }
+  const product = view.scene?.tubeDesigner?.product;
+  if (!product?.entityId) return null;
+  const quantity = validateInstanceQuantity(target?.value);
+  if (quantity === Number(product.quantity ?? 1)) return null;
+  captureParameterPanelState(context, view);
+  return runDesignerOperation(context, view, ops, async () => {
+    const response = await invokeDesignerRequest(context, "TubeDesigner.SetInstanceQuantity", {
+      productEntityId: product.entityId, quantity,
+    });
+    if (!response?.tubeDesigner) throw new Error("实例数量未能保存。");
+    view.scene.tubeDesigner = response.tubeDesigner;
+    restoreSavedNestingTask(view, context);
+    await acknowledgeOwnMutation(context, view);
+    view.notice = "生产数量已保存；直接关联的下料零件数量已同步。";
+    return response;
+  });
+}
+
 async function generatePreview(context, view, ops, mode) {
   const designer = view.scene?.tubeDesigner ?? {};
   const isAdd = mode === "add";
@@ -1379,6 +1739,8 @@ async function generatePreview(context, view, ops, mode) {
     templateVersion: template.version,
   });
   if (isAdd) {
+    const quantityInput = context.mount?.querySelector?.('[data-tube-designer-instance-quantity="add"]');
+    payload.instanceQuantity = validateInstanceQuantity(quantityInput?.value ?? view.tubeDesignerAddInstanceQuantity ?? 1);
     payload.instanceName = view.tubeDesignerAddInstanceName;
     payload.createdAt = view.tubeDesignerAddCreatedAt;
   } else {
@@ -1519,8 +1881,26 @@ function openDisassemblySelector(context, view, ops) {
   view.tubeDesignerDisassemblySelectorOpen = true;
   view.tubeDesignerPostDisassemblyChoice = null;
   view.tubeDesignerBreakdownOpen = false;
+  view.tubeDesignerBreakdownMode = "";
   view.error = "";
   ops.renderProject(context, view);
+}
+
+async function openTransientPartList(context, view, ops) {
+  if (view.pending || view.tubeDesignerExportOperation) return null;
+  const instances = view.scene?.tubeDesigner?.instances ?? [];
+  if (!instances.length) {
+    view.error = "请先添加产品实例。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  view.tubeDesignerSelectedInstanceIds = instances.map((item) => item.entityId);
+  view.tubeDesignerDisassemblySelectorOpen = false;
+  view.tubeDesignerPostDisassemblyChoice = null;
+  view.tubeDesignerBreakdownOpen = false;
+  view.tubeDesignerBreakdownMode = "export";
+  view.error = "";
+  return disassembleSelected(context, view, ops, { importToNesting: false });
 }
 
 function toggleInstance(context, view, target, ops) {
@@ -1539,10 +1919,12 @@ function toggleAllInstances(context, view, target, ops) {
   ops.renderProject(context, view);
 }
 
-async function disassembleSelected(context, view, ops) {
+async function disassembleSelected(context, view, ops, { importToNesting = false } = {}) {
   const productEntityIds = [...new Set(view.tubeDesignerSelectedInstanceIds ?? [])];
   if (!productEntityIds.length) {
-    view.error = "请至少选择一个要拆单的产品实例。";
+    view.error = importToNesting
+      ? "请至少选择一个要导入下料的产品实例。"
+      : "请至少选择一个要导出零件的产品实例。";
     ops.renderProject(context, view);
     return null;
   }
@@ -1552,13 +1934,17 @@ async function disassembleSelected(context, view, ops) {
     const groupIdSet = new Set(productEntityIds);
     const groups = (designer.manufacturingGroups ?? []).filter((group) => groupIdSet.has(group.productEntityId));
     if (groups.length !== productEntityIds.length || groups.some((group) => !(group.parts?.length > 0))) {
-      throw new Error("批量拆单没有返回完整的产品零件组。");
+      throw new Error(importToNesting
+        ? "批量导入下料没有返回完整的产品零件组。"
+        : "零件清单没有返回完整的产品零件组。");
     }
     const partCount = groups.reduce((count, group) => count + group.parts.length, 0);
     updateDesignerOperation(context, view, {
-      phase: "organizing-results",
-      phaseLabel: "结果整理",
-      message: `拆分完成，正在整理 ${groups.length} 个产品、${partCount} 个零件`,
+      phase: importToNesting ? "staging" : "organizing-results",
+      phaseLabel: importToNesting ? "写入下料清单" : "结果整理",
+      message: importToNesting
+        ? `正在把 ${groups.length} 个产品、${partCount} 种零件关联到下料清单`
+        : `拆分完成，正在整理 ${groups.length} 个产品、${partCount} 个零件`,
     });
     view.scene ??= {};
     view.scene.tubeDesigner = designer;
@@ -1566,26 +1952,60 @@ async function disassembleSelected(context, view, ops) {
     view.tubeDesignerBreakdownPageProductId = String(productEntityIds[0] ?? "");
     view.tubeDesignerSelectedPartIds = groups.flatMap((group) => group.parts.map((part) => part.entityId));
     view.tubeDesignerDisassemblySelectorOpen = false;
-    view.tubeDesignerBreakdownOpen = true;
     view.tubeDesignerActivePartId = String(groups[0]?.parts?.[0]?.entityId ?? "");
     view.tubeDesignerPartMeasurementState = null;
     view.tubeDesignerLastOperation = {
-      kind: "disassemble",
+      kind: importToNesting ? "import-to-nesting" : "temporary-part-list",
       productEntityIds,
       groupCount: groups.length,
       partCount: view.tubeDesignerSelectedPartIds.length,
     };
     view.tubeDesignerPostDisassemblyChoice = null;
+    if (importToNesting) {
+      view.tubeDesignerBreakdownMode = "";
+      const sourcePartIds = view.tubeDesignerSelectedPartIds.map(String);
+      const staged = await invokeDesignerRequest(context, "TubeDesigner.StageNestingParts", {
+        partEntityIds: sourcePartIds,
+      }, { timeoutMs: 180000 });
+      if (!staged?.tubeDesigner) throw new Error("下料零件未能关联。");
+      view.scene.tubeDesigner = staged.tubeDesigner;
+      const stagedPartIds = Array.isArray(staged.partEntityIds)
+        ? staged.partEntityIds.map(String).filter(Boolean)
+        : listNestingParts(staged.tubeDesigner).map((part) => String(part.entityId));
+      view.tubeDesignerNestingSelectedPartIds = stagedPartIds;
+      view.tubeDesignerSelectedPartIds = [];
+      view.tubeDesignerActivePartId = stagedPartIds[0] ?? "";
+      view.tubeDesignerActiveNestingPartId = stagedPartIds[0] ?? "";
+      view.tubeDesignerActiveNestingPlacementId = "";
+      view.tubeDesignerBreakdownOpen = false;
+      view.tubeDesignerNestingSelectionKind = "part";
+      view.tubeDesignerPartDimensionsVisible = false;
+      await acknowledgeOwnMutation(context, view);
+      await context.actions?.selectRibbonTab?.("nesting");
+      // selectRibbonTab() updates the app-shell state, but this action's
+      // context was created before the tab changed.
+      context.activeRibbonTabId = "nesting";
+      view.activeAreaId = "nesting";
+      ops.showNotice(context, view, `已导入下料：${groups.length} 个产品，共 ${stagedPartIds.length} 种零件。`);
+      return {
+        ...view.tubeDesignerLastOperation,
+        stagedPartCount: stagedPartIds.length,
+      };
+    }
     await acknowledgeOwnMutation(context, view);
-    ops.showNotice(context, view, `拆单完成：${groups.length} 个产品，共 ${view.tubeDesignerSelectedPartIds.length} 个零件。`);
+    view.tubeDesignerBreakdownMode = "export";
+    view.tubeDesignerBreakdownOpen = true;
+    ops.showNotice(context, view, `已生成临时零件清单：${groups.length} 个产品，共 ${view.tubeDesignerSelectedPartIds.length} 个零件。`);
     return view.tubeDesignerLastOperation;
   }, {
     operation: {
-      kind: "disassemble",
-      title: "正在生成加工拆单",
+      kind: importToNesting ? "import-to-nesting" : "temporary-part-list",
+      title: importToNesting ? "正在导入下料" : "正在生成零件清单",
       phase: "building-parts",
       phaseLabel: "零件生成",
-      message: `正在拆分所选的 ${productEntityIds.length} 个产品实例`,
+      message: importToNesting
+        ? `正在生成所选 ${productEntityIds.length} 个产品实例的下料零件`
+        : `正在生成 ${productEntityIds.length} 个产品实例的临时制造零件`,
     },
   });
   return result;
@@ -1602,7 +2022,34 @@ function openBreakdownResults(context, view, ops) {
   view.tubeDesignerBreakdownPageProductId = String(groups[0]?.productEntityId ?? "");
   view.tubeDesignerSelectedPartIds = groups.flatMap((group) => group.parts.map((part) => part.entityId));
   view.tubeDesignerBreakdownOpen = true;
+  view.tubeDesignerBreakdownMode = "default";
   view.tubeDesignerDisassemblySelectorOpen = false;
+  view.error = "";
+  ops.renderProject(context, view);
+}
+
+function openNestingPartList(context, view, ops) {
+  if (view.pending || view.tubeDesignerExportOperation) return;
+  const designer = view.scene?.tubeDesigner ?? {};
+  const groups = Array.isArray(designer.nestingGroups)
+    ? designer.nestingGroups
+    : (designer.manufacturingGroups ?? []);
+  const visibleGroups = groups.filter((group) => Array.isArray(group?.parts) && group.parts.length);
+  if (!visibleGroups.length) {
+    view.error = "当前下料没有可导出的零件。";
+    ops.renderProject(context, view);
+    return;
+  }
+  const partIds = visibleGroups.flatMap((group) => group.parts.map((part) => String(part.entityId)).filter(Boolean));
+  view.tubeDesignerBreakdownProductIds = visibleGroups.map((group) => group.productEntityId);
+  view.tubeDesignerBreakdownPageProductId = String(visibleGroups[0]?.productEntityId ?? "");
+  view.tubeDesignerSelectedPartIds = partIds;
+  view.tubeDesignerBreakdownOpen = true;
+  view.tubeDesignerBreakdownMode = "nesting-export";
+  view.tubeDesignerDisassemblySelectorOpen = false;
+  view.tubeDesignerPartInspectionOpen = false;
+  view.tubeDesignerPartMeasurementState = null;
+  view.tubeDesignerActivePartId = partIds[0] ?? "";
   view.error = "";
   ops.renderProject(context, view);
 }
@@ -1621,6 +2068,7 @@ function openInstanceBreakdown(context, view, target, ops) {
   view.tubeDesignerBreakdownPageProductId = productEntityId;
   view.tubeDesignerSelectedPartIds = group.parts.map((part) => String(part.entityId));
   view.tubeDesignerBreakdownOpen = true;
+  view.tubeDesignerBreakdownMode = "default";
   view.tubeDesignerDisassemblySelectorOpen = false;
   view.error = "";
   ops.renderProject(context, view);
@@ -1785,7 +2233,7 @@ function openPartInspection(context, view, target, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return;
   const partId = String(target?.dataset?.tubeDesignerPartId ?? "").trim();
   if (!partId) return;
-  const partExists = (view.scene?.tubeDesigner?.manufacturingGroups ?? [])
+  const partExists = getVisibleBreakdownGroups(view)
     .some((group) => (group.parts ?? []).some((part) => String(part.entityId) === partId));
   if (!partExists) return;
   view.viewport?.setContinuousRendering?.(false);
@@ -1803,7 +2251,10 @@ function parseSelectionIds(target) {
 
 async function exportSelected(context, view, target, ops) {
   if (!context.sceneProxy || view.pending || view.tubeDesignerExportOperation) return null;
-  const partEntityIds = [...new Set(view.tubeDesignerSelectedPartIds ?? [])];
+  const exportAllNesting = target?.dataset?.tubeDesignerExportScope === "nesting-all";
+  const partEntityIds = exportAllNesting
+    ? [...new Set(listNestingParts(view.scene?.tubeDesigner ?? {}).map((part) => String(part.entityId)).filter(Boolean))]
+    : [...new Set(view.tubeDesignerSelectedPartIds ?? [])];
   if (!partEntityIds.length) {
     view.error = "请至少选择一个零件。";
     ops.renderProject(context, view);
@@ -1826,7 +2277,9 @@ async function exportSelected(context, view, target, ops) {
         throw new Error("当前宿主没有提供目录选择能力。");
       }
       targetDirectory = String(await bridge.openDirectoryDialog({
-        title: `选择 ${getVisibleBreakdownGroups(view).length} 个产品的 STEP 导出总目录`,
+        title: exportAllNesting || view.tubeDesignerBreakdownMode === "nesting-export"
+          ? "选择零件清单导出总目录"
+          : `选择 ${getVisibleBreakdownGroups(view).length} 个产品的 STEP 导出总目录`,
         initialDirectory: view.tubeDesignerExportDirectory ?? "",
       }) ?? "").trim();
     }
@@ -1856,7 +2309,17 @@ async function exportSelected(context, view, target, ops) {
       exportedGroups: response?.exportedGroups ?? [],
       partListFile: response?.partListFile ?? "",
     };
+    if (response?.tubeDesigner) view.scene.tubeDesigner = response.tubeDesigner;
     ops.showNotice(context, view, `已导出 ${view.tubeDesignerLastOperation.exportedGroups.length} 个产品、${view.tubeDesignerLastOperation.exportedCount} 个零件及 Excel 清单。`);
+    if (!exportAllNesting && ["export", "nesting-export"].includes(view.tubeDesignerBreakdownMode)) {
+      view.tubeDesignerBreakdownOpen = false;
+      view.tubeDesignerBreakdownMode = "";
+      view.tubeDesignerBreakdownProductIds = [];
+      view.tubeDesignerSelectedPartIds = [];
+      view.tubeDesignerActivePartId = "";
+      view.tubeDesignerPartMeasurementState = null;
+      view.viewport?.setCustomVisibleEntityIds?.([]);
+    }
     return view.tubeDesignerLastOperation;
   }, {
     beforeFinish: () => {
@@ -1913,7 +2376,10 @@ function exportOperationTitle(phase, completed, total) {
 function reconcileSelections(view, designer) {
   const instanceIds = new Set((designer.instances ?? []).map((item) => item.entityId));
   view.tubeDesignerSelectedInstanceIds = (view.tubeDesignerSelectedInstanceIds ?? []).filter((id) => instanceIds.has(id));
-  const partIds = new Set((designer.manufacturingGroups ?? []).flatMap((group) => group.parts ?? []).map((part) => part.entityId));
+  const partIds = new Set([
+    ...(designer.manufacturingGroups ?? []).flatMap((group) => group.parts ?? []).map((part) => part.entityId),
+    ...(designer.nestingGroups ?? []).flatMap((group) => group.parts ?? []).map((part) => part.entityId),
+  ]);
   const currentPartIds = Array.isArray(view.tubeDesignerSelectedPartIds)
     ? view.tubeDesignerSelectedPartIds
     : [...partIds];
@@ -1921,7 +2387,11 @@ function reconcileSelections(view, designer) {
 }
 
 function getVisibleBreakdownGroups(view) {
-  const groups = view.scene?.tubeDesigner?.manufacturingGroups ?? [];
+  const designer = view.scene?.tubeDesigner ?? {};
+  const groups = view.tubeDesignerBreakdownMode === "nesting-export"
+    && Array.isArray(designer.nestingGroups)
+    ? designer.nestingGroups
+    : (designer.manufacturingGroups ?? []);
   const visibleIds = new Set(view.tubeDesignerBreakdownProductIds ?? groups.map((group) => group.productEntityId));
   return groups.filter((group) => visibleIds.has(group.productEntityId));
 }

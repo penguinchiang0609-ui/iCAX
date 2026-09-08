@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup><TubeAnalyzerRoot>$(MSBuildThisFileDirectory)..\..\..\..\standalone\occ-extrusion-toolpath</TubeAnalyzerRoot></PropertyGroup>
+  <ItemDefinitionGroup><ClCompile><AdditionalIncludeDirectories>$(TubeAnalyzerRoot)\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile></ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="$(MSBuildThisFileDirectory)..\..\cam\BRepToCamPath\BRepToCamPathService.cpp"><PrecompiledHeader>NotUsing</PrecompiledHeader><AdditionalIncludeDirectories>$(TubeAnalyzerRoot)\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
+    <ClCompile Include="$(TubeAnalyzerRoot)\src\Analyzer.cxx;$(TubeAnalyzerRoot)\src\GeometryUtils.cxx;$(TubeAnalyzerRoot)\src\RulingToolpath.cxx;$(TubeAnalyzerRoot)\src\SectionRegion.cxx;$(TubeAnalyzerRoot)\src\SweepCompiler.cxx;$(TubeAnalyzerRoot)\src\pipeline\FaceSplitClassifyWork.cxx;$(TubeAnalyzerRoot)\src\pipeline\FeatureGroupingWork.cxx;$(TubeAnalyzerRoot)\src\pipeline\NormalizeWork.cxx;$(TubeAnalyzerRoot)\src\pipeline\Pipeline.cxx;$(TubeAnalyzerRoot)\src\pipeline\PipelineGeometry.cxx;$(TubeAnalyzerRoot)\src\pipeline\PreprocessWork.cxx;$(TubeAnalyzerRoot)\src\pipeline\SectionProfileWork.cxx;$(TubeAnalyzerRoot)\src\pipeline\SweepFaceDecomposeWork.cxx;$(TubeAnalyzerRoot)\src\pipeline\ToolpathWork.cxx">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader><ObjectFileName>$(IntDir)etp_%(Filename).obj</ObjectFileName><DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+  </ItemGroup>
+</Project>

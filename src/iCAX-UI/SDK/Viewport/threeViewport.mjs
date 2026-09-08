@@ -239,6 +239,22 @@ export class ThreeRenderViewport {
     return this.projectionMode;
   }
 
+  pointOnWorkPlane(clientX, clientY, normal = [0, 1, 0], offset = 0) {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const n = toFiniteVector3(normal);
+    if (!n || n.lengthSq() < 1e-12 || !Number.isFinite(Number(offset)) || !rect.width || !rect.height) return null;
+    n.normalize();
+    const localPoint = n.clone().multiplyScalar(Number(offset));
+    this.content.updateMatrixWorld(true);
+    const worldPoint = localPoint.applyMatrix4(this.content.matrixWorld);
+    const worldNormal = n.transformDirection(this.content.matrixWorld);
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2((clientX - rect.left) / rect.width * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), this.camera);
+    const hit = raycaster.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(worldNormal, worldPoint), new THREE.Vector3());
+    if (!hit) return null;
+    return hit.applyMatrix4(new THREE.Matrix4().copy(this.content.matrixWorld).invert()).toArray();
+  }
+
   setProjectionMode(value, controlOptions = {}) {
     const mode = normalizeProjectionMode(value);
     if (mode === this.projectionMode) {
@@ -404,7 +420,9 @@ export class ThreeRenderViewport {
         continue;
       }
       if (resource.type === "geometry") {
-        const payload = { ...resource.data, geometryId: resource.url };
+        const existingPayload=this.geometryPayloads.get(resource.url);
+        if(existingPayload?.viewResourceVersion===resource.version&&this.geometryObjects.has(resource.url))continue;
+        const payload = { ...resource.data, geometryId: resource.url, viewResourceVersion: resource.version };
         const previous = this.geometryObjects.get(resource.url);
         previous?.dispose?.();
         this.geometryPayloads.set(resource.url, payload);
@@ -511,6 +529,32 @@ export class ThreeRenderViewport {
       renderSequence: this.renderSequence,
       entityIds: [...this.sceneObjects.keys()],
     };
+  }
+
+  // A transient editor may replace resource versions many times without closing.
+  // Retain its current recipe (including alternate display modes), not every
+  // historical mesh. Active instances stay protected even if omitted by a caller.
+  retainViewResources(references = []) {
+    const keys = new Set(references.filter(Boolean).map(reference =>
+      `${String(reference.url ?? "")}@${String(reference.version ?? 0)}`));
+    const urls = new Set(references.filter(Boolean).map(reference => String(reference.url ?? "")));
+    for (const instance of this.instancePayloads.values()) {
+      urls.add(instance.geometryId);
+      urls.add(instance.materialId);
+    }
+    for (const key of this.resourcePromises.keys()) {
+      if (!keys.has(key)) this.resourcePromises.delete(key);
+    }
+    for (const [url, geometry] of this.geometryObjects) {
+      if (!urls.has(url)) {
+        geometry.dispose?.();
+        this.geometryObjects.delete(url);
+        this.geometryPayloads.delete(url);
+      }
+    }
+    for (const url of this.materialPayloads.keys()) {
+      if (!urls.has(url)) this.materialPayloads.delete(url);
+    }
   }
 
   fitView(padding = 1.25) {
@@ -2160,7 +2204,7 @@ export class ThreeRenderViewport {
       [...this.sceneObjects.values()].filter((object) => object.visible),
       false,
     );
-    this.options.onPick(hits[0]?.object?.userData ?? null, hits[0] ?? null);
+    this.options.onPick(hits[0]?.object?.userData ?? null, hits[0] ?? null, event, hits);
   }
 
   #updateCamera() {
@@ -2172,6 +2216,17 @@ export class ThreeRenderViewport {
       state.target.y + state.radius * sinPhi * Math.sin(state.theta),
       state.target.z + state.radius * Math.cos(state.phi),
     );
+    // Free orbit follows the camera's meridian through the poles. A fixed Z-up
+    // vector becomes parallel to the viewing direction at top/bottom and flips.
+    if (this.options.constrainOrbit === false) {
+      this.camera.up.set(
+        -Math.cos(state.phi) * Math.cos(state.theta),
+        -Math.cos(state.phi) * Math.sin(state.theta),
+        sinPhi,
+      );
+    } else {
+      this.camera.up.set(0, 0, 1);
+    }
     this.camera.lookAt(state.target);
     this.camera.updateMatrixWorld(true);
     this.#updateProjectionMatrix();

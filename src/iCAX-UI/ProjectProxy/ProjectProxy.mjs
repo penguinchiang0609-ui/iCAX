@@ -1,6 +1,7 @@
 import { isUsableChannelId } from "../SDK/SDO/channelId.mjs";
 import { ResourceClient } from "../SDK/Resources/resourceClient.mjs";
 import { SceneProxy } from "../SceneProxy/SceneProxy.mjs";
+import { ProjectSDO } from "../SDK/SDO/sdoMethod.mjs";
 
 export class ProjectProxy {
   constructor(sdoClient, projectState, options = {}) {
@@ -87,6 +88,15 @@ export class ProjectProxy {
 
   getMainScene() {
     return this.mainSceneProxy;
+  }
+
+  async save(projectPath = this.state.projectPath, options = {}) {
+    const scene = this.getMainScene();
+    if (!scene) throw new Error("项目主场景尚未就绪，无法保存。");
+    const response = await scene.invoke(ProjectSDO.save, { projectPath }, options);
+    if (response?.saved !== true) throw new Error("项目保存未成功。");
+    if (response.project) this.updateState(response.project);
+    return response;
   }
 
   releaseScene(sceneId) {

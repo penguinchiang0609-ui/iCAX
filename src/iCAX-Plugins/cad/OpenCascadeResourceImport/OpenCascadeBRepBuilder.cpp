@@ -30,7 +30,9 @@
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
 
+#include <functional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace iCAX::OpenCascade
 {
@@ -57,9 +59,13 @@ namespace
 
     gp_Ax3 ToAx3(IN const Placement3& Placement_)
     {
-        return { ToPnt(Placement_.Location),
+        gp_Ax3 _Axis{ ToPnt(Placement_.Location),
             ToDir(Placement_.ZDirection),
             ToDir(Placement_.XDirection) };
+        // Unlike gp_Ax2, surface coordinates may be left-handed. Rebuilding
+        // only X/Z silently flips their UV parameterization and face normals.
+        if (_Axis.YDirection().Dot(ToDir(Placement_.YDirection)) < 0) _Axis.YReverse();
+        return _Axis;
     }
 
     TopAbs_Orientation ToOrientation(IN ETopologyOrientation Orientation_)
@@ -443,8 +449,13 @@ SOpenCascadeBRepBuildResult BuildOpenCascadeShape(
                 throw std::runtime_error("BRep face has no reconstructable surface: " + std::to_string(_Record.Id));
             TopoDS_Face _Face;
             _Builder.MakeFace(_Face, _Surface, _Record.Tolerance);
-            std::unordered_map<std::uint64_t, std::vector<std::pair<
-                Handle(Geom2d_Curve), ParameterRange>>> _PCurves;
+            struct SPCurve
+            {
+                Handle(Geom2d_Curve) Curve;
+                ParameterRange Range;
+                ETopologyOrientation Orientation;
+            };
+            std::unordered_map<std::uint64_t, std::vector<SPCurve>> _PCurves;
             for (const auto _WireID : _Record.WireIds)
             {
                 const auto* _pWireRecord = FindRecord(Geometry_.Wires, _WireID);
@@ -456,7 +467,7 @@ SOpenCascadeBRepBuildResult BuildOpenCascadeShape(
                     if (!_pCurveRecord) continue;
                     auto _Curve = MakeCurve2(_pCurveRecord->Geometry);
                     if (!_Curve.IsNull())
-                        _PCurves[_Coedge.EdgeId].push_back({ _Curve, _Coedge.Range });
+                        _PCurves[_Coedge.EdgeId].push_back({ _Curve, _Coedge.Range, _Coedge.Orientation });
                 }
             }
             for (const auto& [_EdgeID, _Curves] : _PCurves)
@@ -464,23 +475,28 @@ SOpenCascadeBRepBuildResult BuildOpenCascadeShape(
                 const auto _Edge = _Edges.find(_EdgeID);
                 if (_Edge == _Edges.end() || _Curves.empty()) continue;
                 if (_Curves.size() >= 2)
+                {
+                    // OCC selects the second seam pcurve for a reversed edge.
+                    // Wire traversal order need not put the forward occurrence first.
+                    const bool _ReverseOrder = _Curves[0].Orientation == ETopologyOrientation::Reversed;
                     _Builder.UpdateEdge(
                         _Edge->second,
-                        _Curves[0].first,
-                        _Curves[1].first,
+                        _Curves[_ReverseOrder ? 1 : 0].Curve,
+                        _Curves[_ReverseOrder ? 0 : 1].Curve,
                         _Face,
                         _Record.Tolerance);
+                }
                 else
                     _Builder.UpdateEdge(
                         _Edge->second,
-                        _Curves.front().first,
+                        _Curves.front().Curve,
                         _Face,
                         _Record.Tolerance);
                 _Builder.Range(
                     _Edge->second,
                     _Face,
-                    _Curves.front().second.First,
-                    _Curves.front().second.Last);
+                    _Curves.front().Range.First,
+                    _Curves.front().Range.Last);
             }
             for (std::size_t _Index = 0; _Index < _Record.WireIds.size(); ++_Index)
             {
@@ -547,6 +563,7 @@ SOpenCascadeBRepBuildResult BuildOpenCascadeShape(
             _CompSolids.emplace(_Record.Id, _CompSolid);
         }
 
+        std::function<TopoDS_Compound(std::uint64_t)> _BuildCompound;
         const auto _FindShape = [&](IN EBRepShapeKind Kind_, IN std::uint64_t nID_) -> TopoDS_Shape {
             switch (Kind_)
             {
@@ -557,13 +574,27 @@ SOpenCascadeBRepBuildResult BuildOpenCascadeShape(
             case EBRepShapeKind::Shell: if (auto i = _Shells.find(nID_); i != _Shells.end()) return i->second; break;
             case EBRepShapeKind::Solid: if (auto i = _Solids.find(nID_); i != _Solids.end()) return i->second; break;
             case EBRepShapeKind::CompSolid: if (auto i = _CompSolids.find(nID_); i != _CompSolids.end()) return i->second; break;
-            case EBRepShapeKind::Compound: if (auto i = _Compounds.find(nID_); i != _Compounds.end()) return i->second; break;
+            case EBRepShapeKind::Compound: return _BuildCompound(nID_);
             }
             return {};
         };
 
+        std::unordered_map<std::uint64_t, const BRepCompound*> _CompoundRecords;
         for (const auto& _Record : Geometry_.Compounds)
-        {
+            if (!_CompoundRecords.emplace(_Record.Id, &_Record).second)
+                throw std::runtime_error("BRep contains duplicate compound IDs");
+        std::unordered_set<std::uint64_t> _BuildingCompounds;
+        // Serialized containers need not be child-first. Build their dependency
+        // graph explicitly; reject malformed cycles instead of losing children.
+        _BuildCompound = [&](std::uint64_t nID_) -> TopoDS_Compound {
+            if (const auto _Ready = _Compounds.find(nID_); _Ready != _Compounds.end())
+                return _Ready->second;
+            const auto _Found = _CompoundRecords.find(nID_);
+            if (_Found == _CompoundRecords.end())
+                throw std::runtime_error("BRep compound references missing compound");
+            if (!_BuildingCompounds.insert(nID_).second)
+                throw std::runtime_error("BRep compound references form a cycle");
+            const auto& _Record = *_Found->second;
             TopoDS_Compound _Compound;
             _Builder.MakeCompound(_Compound);
             for (const auto& _Child : _Record.Children)
@@ -573,7 +604,10 @@ SOpenCascadeBRepBuildResult BuildOpenCascadeShape(
                 _Builder.Add(_Compound, Oriented(_Shape, _Child.Orientation));
             }
             _Compounds.emplace(_Record.Id, _Compound);
-        }
+            _BuildingCompounds.erase(nID_);
+            return _Compound;
+        };
+        for (const auto& _Record : Geometry_.Compounds) _BuildCompound(_Record.Id);
 
         std::vector<TopoDS_Shape> _Roots;
         for (const auto& _Root : Geometry_.RootShapes)

@@ -550,7 +550,10 @@ void iCAX::Project::CProjectScene::BindStartup()
 
     if (!m_StartupComponent.empty())
     {
-        m_pRepository->GetMetaEntity()->AddComponent(m_StartupComponent);
+        // A reopened document already contains its persistent startup component.
+        const auto _Meta = m_pRepository->GetMetaEntity();
+        if (!_Meta->HasComponent(m_StartupComponent))
+            _Meta->AddComponent(m_StartupComponent);
     }
     m_bStartupBound = true;
 }

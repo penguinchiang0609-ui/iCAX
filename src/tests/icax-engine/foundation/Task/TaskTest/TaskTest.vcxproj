@@ -148,6 +148,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="TaskSanitizerProbe.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\..\..\..\icax-engine\foundation\Task\Task.vcxproj">

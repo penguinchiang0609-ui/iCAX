@@ -6,6 +6,9 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <Task/Task.h>
+#include <chrono>
+#include <iostream>
 
 namespace
 {
@@ -31,6 +34,10 @@ namespace
                 EXPECT_NEAR(_Placement.at("start").To<double>(), _Index ? _End + Gap_ : 0.0, 1e-8);
                 EXPECT_NEAR(_Placement.at("gapBefore").To<double>(), _Index ? Gap_ : 0.0, 1e-8);
                 EXPECT_FALSE(_Placement.at("nestedWithPrevious").To<bool>());
+                const auto _Transform = _Placement.at("trsf").To<VariantArray>();
+                ASSERT_EQ(_Transform.size(), 16u);
+                for (const auto& _Value : _Transform)
+                    EXPECT_TRUE(std::isfinite(_Value.To<double>()));
                 _End = _Placement.at("end").To<double>();
             }
             EXPECT_NEAR(_End, _Plan.at("usedLength").To<double>(), 1e-8);
@@ -155,6 +162,46 @@ TEST(TubeDesignerNesting, PositiveGapRetainsLegalTrapezoidNestingAfterFirstPart)
     EXPECT_NEAR(_Second.at("end").To<double>(), 235.0, 1e-8);
 }
 
+TEST(TubeDesignerNesting, PlacementStoresAuthoritativeTransformIncludingAxialRotation)
+{
+    SNestingVariant _Variant;
+    _Variant.ID = "miter-rotated";
+    _Variant.EnvelopeLength = 120.0;
+    _Variant.MaterialLength = 110.0;
+    _Variant.Reversed = true;
+    _Variant.RotationRadians = 1.57079632679489661923;
+    const std::array<double, 3> _LocalCenter{ 10.0, 2.0, 3.0 };
+    const auto _Result = SolveManufacturingNesting(
+        { { "p", "section", 120.0, 1, { _Variant }, _LocalCenter } },
+        { { "s", "section", 200.0, 1 } }, 0.0);
+    const auto _Plan = _Result.at("plans").To<VariantArray>().front().To<ObjectMap>();
+    const auto _Placement = _Plan.at("placements").To<VariantArray>().front().To<ObjectMap>();
+    EXPECT_TRUE(_Placement.at("reversed").To<bool>());
+    EXPECT_NEAR(_Placement.at("rotationRadians").To<double>(), _Variant.RotationRadians, 1e-12);
+    const auto _Actual = _Placement.at("trsf").To<VariantArray>();
+    const auto _Expected = MakeNestingPlacementTransform(
+        _LocalCenter, _Placement.at("start").To<double>(), _Placement.at("end").To<double>(),
+        true, _Variant.RotationRadians);
+    ASSERT_EQ(_Actual.size(), _Expected.size());
+    for (std::size_t _Index = 0; _Index < _Actual.size(); ++_Index)
+        EXPECT_NEAR(_Actual[_Index].To<double>(), _Expected[_Index].To<double>(), 1e-12);
+}
+
+TEST(TubeDesignerNesting, PlacementCarriesCircumferentialPhaseWithoutDuplicatingGeometry)
+{
+    SNestingVariant _Variant;
+    _Variant.ID = "phase-variant";
+    _Variant.EnvelopeLength = 100.0;
+    _Variant.MaterialLength = 100.0;
+    _Variant.PhaseOffset = 37.25;
+    const auto _Result = SolveManufacturingNesting(
+        { { "p", "section", 100.0, 1, { _Variant } } },
+        { { "s", "section", 200.0, 1 } }, 0.0);
+    const auto _Placement = _Result.at("plans").To<VariantArray>().front()
+        .To<ObjectMap>().at("placements").To<VariantArray>().front().To<ObjectMap>();
+    EXPECT_NEAR(_Placement.at("phaseOffset").To<double>(), 37.25, 1e-8);
+}
+
 TEST(TubeDesignerNesting, ExactFitUsesOnlyInteriorGapAndFiniteStock)
 {
     const std::vector<SNestingPart> _Parts{ { "p", "section", 1000, 2 } };
@@ -202,7 +249,9 @@ TEST(TubeDesignerNesting, ZeroStockIsExcludedAndInvalidLengthsRejected)
     EXPECT_THROW(SolveManufacturingNesting(_Parts, { { "s", "section", 6000, -2 } }, 0), std::invalid_argument);
     EXPECT_THROW(SolveManufacturingNesting(_Parts, { { "s", "section", std::numeric_limits<double>::infinity(), 1 } }, 0), std::invalid_argument);
     EXPECT_THROW(SolveManufacturingNesting(_Parts, { { "s", "section", 6000, 1 } }, -1), std::invalid_argument);
-    EXPECT_THROW(SolveManufacturingNesting({ { "p", "section", 10, 2001 } }, {}, 0), std::invalid_argument);
+    const auto _LargeDemand = SolveManufacturingNesting({ { "p", "section", 10, 10000 } }, {}, 0);
+    EXPECT_EQ(_LargeDemand.at("status").To<std::string>(), "infeasible");
+    EXPECT_THROW(SolveManufacturingNesting({ { "p", "section", 10, 1'000'001 } }, {}, 0), std::invalid_argument);
 }
 
 TEST(TubeDesignerNesting, QuantizationNeverShortensPartOrExtendsStock)
@@ -299,6 +348,70 @@ TEST(TubeDesignerNesting, SettingsValidateAndRoundTripUnlimitedDefaults)
         ObjectMap{ { "id", std::string("invalid") }, { "length", 6000.0 }, { "quantity", -2 } }
     } } } };
     EXPECT_THROW(NormalizeNestingSettings(_Bad), std::invalid_argument);
+}
+
+TEST(TubeDesignerNesting, ParallelProfileGroupsMatchSerialIncludingPartialInventoryAndOrder)
+{
+    std::vector<SNestingPart> _Parts;
+    std::vector<SNestingStock> _Stocks;
+    for (int _Index = 0; _Index < 13; ++_Index)
+    {
+        const auto _Key = "profile-" + std::to_string(_Index);
+        _Parts.push_back({ _Key + "-short", _Key, 1000, 5 });
+        _Parts.push_back({ _Key + "-long", _Key, 7000, 1 });
+        if (_Index == 0) continue; // Missing stock must not affect other groups.
+        _Stocks.push_back({ _Key + "-finite", _Key, 2500, 1 });
+        if (_Index % 2) _Stocks.push_back({ _Key + "-unlimited", _Key, 6000, -1 });
+    }
+    const auto _Serial = SolveManufacturingNesting(_Parts, _Stocks, 5, 1);
+    for (const auto _Workers : { 0u, 2u, 8u, 100u })
+    {
+        const auto _Parallel = SolveManufacturingNesting(_Parts, _Stocks, 5, _Workers);
+        EXPECT_EQ(_Serial, _Parallel);
+        CheckAccounting(_Parallel, _Parts, _Stocks, 5);
+    }
+}
+
+TEST(TubeDesignerNesting, ParallelGroupsPreserveTrapezoidVariantsAndRecoverAfterInvalidInput)
+{
+    SNestingVariant _Variant;
+    _Variant.ID = "miter";
+    _Variant.EnvelopeLength = 120;
+    _Variant.MaterialLength = 110;
+    _Variant.LeftEnd = { 10, "50000:0", true };
+    _Variant.RightEnd = { 10, "50000:0", true };
+    const std::vector<SNestingPart> _Parts{ { "a", "a", 120, 2, { _Variant } }, { "b", "b", 120, 2, { _Variant } } };
+    const std::vector<SNestingStock> _Stocks{ { "a-stock", "a", 230, 1 }, { "b-stock", "b", 230, 1 } };
+    auto _Invalid = _Parts;
+    _Invalid.back().ID = "a";
+    EXPECT_THROW(SolveManufacturingNesting(_Invalid, _Stocks, 0), std::invalid_argument);
+    EXPECT_EQ(SolveManufacturingNesting(_Parts, _Stocks, 0, 1), SolveManufacturingNesting(_Parts, _Stocks, 0, 8));
+    auto _Pool = std::make_shared<iCAX::Tasks::ThreadPoolTaskScheduler>(1);
+    const auto _Task = iCAX::Tasks::Run([&] { return SolveManufacturingNesting(_Parts, _Stocks, 0); }, _Pool);
+    ASSERT_TRUE(_Task.WaitFor(std::chrono::seconds(5)));
+    EXPECT_EQ(SolveManufacturingNesting(_Parts, _Stocks, 0, 1), _Task.Result());
+}
+
+TEST(TubeDesignerNesting, DISABLED_ProfileGroupParallelBenchmark)
+{
+    std::vector<SNestingPart> _Parts;
+    std::vector<SNestingStock> _Stocks;
+    for (int _Group = 0; _Group < 8; ++_Group)
+    {
+        const auto _Key = "section-" + std::to_string(_Group);
+        for (int _Part = 0; _Part < 12; ++_Part)
+            _Parts.push_back({ _Key + "-" + std::to_string(_Part), _Key, 500.0 + (_Part * 173 % 1700), 3 });
+        _Stocks.push_back({ _Key + "-stock", _Key, 6000, -1 });
+    }
+    const auto _Timed = [&](std::size_t Workers_) {
+        const auto _Start = std::chrono::steady_clock::now();
+        auto _Result = SolveManufacturingNesting(_Parts, _Stocks, 3, Workers_);
+        std::cout << "Nesting 8 groups / 288 pieces, workers=" << Workers_ << ": "
+            << std::chrono::duration<double>(std::chrono::steady_clock::now() - _Start).count() << " s\n";
+        return _Result;
+    };
+    const auto _Serial = _Timed(1);
+    EXPECT_EQ(_Serial, _Timed(8));
 }
 
 TEST(TubeDesignerNesting, SettingsArePersistentTransactionalSceneFields)

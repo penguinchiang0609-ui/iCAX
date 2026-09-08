@@ -291,8 +291,9 @@ namespace etp::pipeline_detail
             return detail::DirectionAbsDot(surface.Cylinder().Axis().Direction(), axis)
                 >= parallelThreshold;
         case GeomAbs_Cone:
-            return detail::DirectionAbsDot(surface.Cone().Axis().Direction(), axis)
-                >= parallelThreshold;
+            // A cone changes cross-section along its axis; a countersink or
+            // bevel is not an invariant extrusion skin.
+            return false;
         case GeomAbs_SurfaceOfExtrusion:
             if (const auto direction = LinearExtrusionDirection(face))
                 return detail::DirectionAbsDot(*direction, axis) >= parallelThreshold;
@@ -367,7 +368,11 @@ namespace etp::pipeline_detail
                 }
                 if (IsCapFace(face, candidate.Direction, options.AngularToleranceRadians))
                 {
-                    candidate.Score += area * (WireCount(face) > 1 ? 6.0 : 0.15);
+                    // Inner wires can be drilled holes in a large SIDE face.
+                    // Giving such a face a 6x cap bonus chooses the drill axis
+                    // instead of the stock extrusion axis. Longitudinal skin
+                    // support remains the primary evidence for extrusion.
+                    candidate.Score += area * 0.15;
                 }
             }
         }

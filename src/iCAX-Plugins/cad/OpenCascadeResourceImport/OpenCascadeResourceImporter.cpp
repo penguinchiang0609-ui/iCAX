@@ -1,8 +1,12 @@
 #include "pch.h"
 #include "OpenCascadeBRepReader.h"
 #include "OpenCascadeTubeCSGConverter.h"
+#include "OpenCascadeTaskExecution.h"
+#include <BRepBuilderAPI_Copy.hxx>
 
 #include "GeometryData/GeometryData.h"
+#include "GeometryData/BRepPersistence.h"
+#include "Resources/ResourcePersistenceRegistrationCatalog.h"
 #include "GeometryData/TubeNeutralGeometry.h"
 #include "Resources/BinaryResource.h"
 #include "Resources/ResourceFlatBuffer.h"
@@ -24,6 +28,21 @@
 
 namespace
 {
+    iCAX::Resource::CResourceVersionCodec MakeBRepPersistenceCodec()
+    {
+        iCAX::Resource::CResourceVersionCodec codec;
+        codec.Serialize = [](const std::shared_ptr<void>& resource) -> std::optional<std::vector<uint8_t>> {
+            if (!resource) return std::nullopt;
+            return iCAX::GeometryData::Persistence::Serialize(*std::static_pointer_cast<iCAX::GeometryData::BRepModel>(resource));
+        };
+        codec.Deserialize = [](std::span<const uint8_t> bytes) -> std::shared_ptr<void> {
+            return std::make_shared<iCAX::GeometryData::BRepModel>(iCAX::GeometryData::Persistence::Deserialize(bytes));
+        };
+        return codec;
+    }
+
+    ICAX_REGISTER_RESOURCE_PERSISTENCE_CODEC("geometry.brep", iCAX::GeometryData::BRepModel, MakeBRepPersistenceCodec)
+
     constexpr const char* kImporterID = "opencascade";
     constexpr const char* kOccVersion = "8.0.0-p1";
     constexpr const char* kStepFormatID = "cad.step";
@@ -762,7 +781,14 @@ namespace
         TopExp::MapShapes(Shape_, TopAbs_SHELL, _Maps.Shells);
         TopExp::MapShapes(Shape_, TopAbs_SOLID, _Maps.Solids);
         TopExp::MapShapes(Shape_, TopAbs_COMPSOLID, _Maps.CompSolids);
-        TopExp::MapShapes(Shape_, TopAbs_COMPOUND, _Maps.Compounds);
+        // Type-filtered exploration stops at a matching compound and can omit
+        // nested compounds. Their solids are mapped independently, so omitting
+        // the intermediate container silently disconnects them from the root.
+        ShapeMap _AllShapes;
+        TopExp::MapShapes(Shape_, _AllShapes);
+        for (int _Index = 1; _Index <= _AllShapes.Extent(); ++_Index)
+            if (_AllShapes(_Index).ShapeType() == TopAbs_COMPOUND)
+                _Maps.Compounds.Add(_AllShapes(_Index));
         return _Maps;
     }
 
@@ -1122,7 +1148,7 @@ namespace
             BRepCompound _CompoundRecord;
             _CompoundRecord.Id = static_cast<std::uint64_t>(_Index);
             _CompoundRecord.Metadata = { "compound " + std::to_string(_Index), strSourceID_, {} };
-            for (TopoDS_Iterator _Iterator(_Compound); _Iterator.More(); _Iterator.Next())
+            for (TopoDS_Iterator _Iterator(_Compound, false, true); _Iterator.More(); _Iterator.Next())
             {
                 const auto _Child = _Iterator.Value();
                 const auto _Kind = ToShapeKind(_Child.ShapeType());
@@ -1622,4 +1648,35 @@ iCAX::GeometryData::BRepModel iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
         strDisplayName_,
         strSourceID_,
         dTolerance_);
+}
+
+std::vector<iCAX::GeometryData::BRepModel> iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(
+    const std::vector<SBRepConversionInput>& Inputs_, double dTolerance_, std::size_t MaximumConcurrency_)
+{
+    for (const auto& _Input : Inputs_)
+        if (_Input.Shape.IsNull()) throw std::invalid_argument("BRep conversion input is null: " + _Input.SourceID);
+    const auto _Concurrency = detail::GeometryConcurrency(MaximumConcurrency_);
+    std::vector<iCAX::GeometryData::BRepModel> _Results(Inputs_.size());
+    for (std::size_t _Begin = 0; _Begin < Inputs_.size(); _Begin += _Concurrency)
+    {
+        const auto _Count = std::min(_Concurrency, Inputs_.size() - _Begin);
+        std::vector<TopoDS_Shape> _PrivateShapes;
+        _PrivateShapes.reserve(_Count);
+        // OCCT meshing writes triangulations back onto TShapes. Copy geometry
+        // and topology on the caller thread; never mesh shared prototypes.
+        for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+            _PrivateShapes.push_back(BRepBuilderAPI_Copy(Inputs_[_Begin + _Index].Shape, true, false).Shape());
+        const auto _Convert = [&](std::size_t Index_) {
+            const auto& _Input = Inputs_[_Begin + Index_];
+            _Results[_Begin + Index_] = ConvertToBRepModel(
+                _PrivateShapes[Index_], _Input.DisplayName, _Input.SourceID, dTolerance_);
+        };
+        detail::SGeometryTaskBatch _Batch;
+        _Batch.Tasks.reserve(_Count - 1);
+        for (std::size_t _Index = 1; _Index < _Count; ++_Index)
+            _Batch.Tasks.push_back(iCAX::Tasks::Run([&, _Index] { _Convert(_Index); }, detail::GeometryTaskScheduler()));
+        _Convert(0);
+        _Batch.Complete();
+    }
+    return _Results;
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   analyzeSectionDraft,
+  beginPartSideSketch,
   beginNewSectionSketch,
   beginProfileSectionSketch,
   breakEntityAtPoint,
@@ -16,12 +17,14 @@ import {
   insertPointOnEntity,
   mergeSelectedEntities,
   renderSketchViewportOverlay,
+  renderSectionSketchDialog,
   selectControlPointsInWindow,
   renderSketchRightPane,
   selectEntitiesInWindow,
   updateEntityFromGrip,
   validateSideSketchDraft,
 } from "../../apps/tube-designer/webpage/sketchArea.mjs";
+import { buildAutomaticDimensionReport } from "../../apps/tube-designer/webpage/partInspection.mjs";
 
 const line = (id, start, end) => ({
   id,
@@ -432,6 +435,194 @@ const metrics = { sampleStep: 0.01, snapTolerance: 0.25 };
   assert.equal(request.payload.sketch.targetMemberKey, "frame.left");
   assert.equal(draft.persisted, false);
   assert.match(notice, /移除/);
+}
+
+{
+  const part = {
+    entityId: "nesting-part-2d",
+    name: "斜端冲孔管",
+    length: 120,
+    independentNesting: true,
+    manufacturingGeometryResourceVersion: 7,
+    profile: { width: 40, depth: 20 },
+    properties: { "manufacturing.partKind": "tube" },
+  };
+  const report = buildAutomaticDimensionReport({ geometryMeasurement: {
+    available: true,
+    source: "final-brep",
+    length: 120,
+    linearReference: {
+      start: [0, 0, 0], end: [120, 0, 0],
+      sectionAxes: [[0, 1, 0], [0, 0, 1]],
+      dimensionOffsetDirection: [0, 0, 1],
+    },
+    section: { shape: "rectangle", width: 40, height: 20 },
+    sideProjection: {
+      width: 120,
+      height: 20,
+      outline: [[0, 0], [112, 0], [120, 20], [8, 20]],
+      segments: [
+        { start: [0, 0], end: [112, 0] },
+        { start: [8, 20], end: [120, 20] },
+      ],
+      horizontalAxis: [1, 0, 0],
+      verticalAxis: [0, 0, 1],
+      viewDirection: [0, -1, 0],
+    },
+    features: [{
+      kind: "through-opening", station: 60, center: [60, 0, 0],
+      shape: "circle", diameter: 8,
+      openingSpanAlong: 8, openingSpanAcross: 8,
+      sideCenter: [60, 10], sideSpanAcross: 8, sideVisible: true,
+    }],
+  } });
+  const view = {
+    activeAreaId: "nesting",
+    scene: { tubeDesigner: { nestingGroups: [{ parts: [part] }] } },
+    tubeDesignerSketch: createInitialSketchState(),
+  };
+  const state = beginPartSideSketch(view, part, report);
+  view.tubeDesignerSketchDialogOpen = true;
+  assert.equal(state.mode, "side");
+  assert.equal(state.sideTargetKind, "part");
+  assert.equal(state.sideReturnAreaId, "nesting");
+  const dialog = renderSectionSketchDialog({}, view);
+  assert.match(dialog, /下料零件二维编辑/);
+  assert.equal((dialog.match(/data-tube-sketch-reference-segment/g) ?? []).length, 2);
+  assert.match(dialog, /data-tube-sketch-reference-hole/);
+  assert.match(dialog, /现有孔<\/dt><dd>1 个/);
+
+  const draft = state.sideByPart[part.entityId];
+  draft.entities = [{ id: "new-hole", kind: "circle", cx: 30, cy: 10, radius: 3 }];
+  draft.dirty = true;
+  let request = null;
+  let selectedArea = "";
+  const context = {
+    actions: { async selectRibbonTab(area) { selectedArea = area; } },
+    sceneProxy: { async invoke(method, payload) {
+      request = { method, payload };
+      return { tubeDesigner: view.scene.tubeDesigner };
+    } },
+  };
+  await handleSketchAreaAction(context, view, "tube-designer-sketch-commit", {}, {
+    renderProject() {}, showNotice() {},
+  });
+  assert.equal(request.method, "TubeDesigner.SavePartSketch");
+  assert.equal(request.payload.partEntityId, part.entityId);
+  assert.equal(request.payload.resourceVersion, 7);
+  assert.equal(request.payload.sketch.faceHeight, 20);
+  assert.equal(view.tubeDesignerSketchDialogOpen, false);
+  assert.equal(selectedArea, "nesting");
+}
+
+{
+  // The native nesting snapshot does not put independentNesting on each raw
+  // part.  The resolver must recover that fact from the nesting group before
+  // choosing SavePartSketch; otherwise the batch id is sent as a product id.
+  const part = {
+    entityId: "nesting-part-raw",
+    productEntityId: "nesting-batch-1",
+    independentNesting: true,
+    name: "独立下料管",
+    length: 100,
+    manufacturingGeometryResourceVersion: 3,
+    profile: { width: 40, depth: 20 },
+    properties: { "manufacturing.partKind": "tube" },
+  };
+  const rawPart = { ...part };
+  delete rawPart.productEntityId;
+  delete rawPart.independentNesting;
+  const view = {
+    activeAreaId: "nesting",
+    scene: { tubeDesigner: {
+      nestingGroups: [{
+        productEntityId: "nesting-batch-1",
+        generationRunId: "nesting-batch-1",
+        parts: [rawPart],
+      }],
+    } },
+    tubeDesignerSketch: createInitialSketchState(),
+  };
+  const state = beginPartSideSketch(view, part, {
+    sideProjection: { height: 20 },
+  });
+  state.sideByPart[part.entityId].entities = [{
+    id: "raw-part-hole", kind: "circle", cx: 30, cy: 10, radius: 3,
+  }];
+  state.sideByPart[part.entityId].dirty = true;
+  let request = null;
+  const context = {
+    actions: { async selectRibbonTab() {} },
+    sceneProxy: { async invoke(method, payload) {
+      request = { method, payload };
+      return { tubeDesigner: view.scene.tubeDesigner };
+    } },
+  };
+  await handleSketchAreaAction(context, view, "tube-designer-sketch-commit", {}, {
+    renderProject() {}, showNotice() {},
+  });
+  assert.equal(request.method, "TubeDesigner.SavePartSketch");
+  assert.equal(request.payload.partEntityId, part.entityId);
+  assert.equal(request.payload.resourceVersion, 3);
+}
+
+{
+  const part = {
+    entityId: "nesting-part-unfolding-rectangle",
+    name: "整圈侧壁编辑管",
+    length: 120,
+    independentNesting: true,
+    profile: { width: 40, depth: 20 },
+  };
+  const report = {
+    sideProjection: {
+      width: 120,
+      height: 20,
+      // This deliberately looks like a slanted projected outline. It must
+      // not become the editable region once the full lateral rectangle exists.
+      outline: [[0, 0], [112, 0], [120, 20], [8, 20]],
+    },
+    unfolding: {
+      available: true,
+      length: 120,
+      perimeter: 100,
+      method: "section-arc-length",
+      lateralRectangle: {
+        available: true, sStart: 0, sEnd: 120,
+        uStart: 0, uEnd: 100, width: 120, height: 100, periodic: true,
+      },
+      surfaces: [{
+        inner: false,
+        uPeriod: 100,
+        rectangle: { available: true, width: 120, height: 100 },
+        panels: [{ boundaries: [{
+          role: "panel-boundary",
+          points: [[0, 0], [120, 0]],
+        }] }],
+        wires: [{
+          role: "end-boundary",
+          closed: false,
+          points: [[0, 0], [60, 50], [120, 100]],
+        }],
+      }],
+    },
+  };
+  const view = {
+    activeAreaId: "nesting",
+    scene: { tubeDesigner: { nestingGroups: [{ parts: [part] }] } },
+    tubeDesignerSketch: createInitialSketchState(),
+    tubeDesignerSketchDialogOpen: true,
+  };
+  beginPartSideSketch(view, part, report);
+  const dialog = renderSectionSketchDialog({}, view);
+  assert.match(dialog, /整圈侧壁矩形展开/);
+  assert.match(dialog, /data-tube-sketch-unfolding-rectangle/);
+  assert.match(dialog, /data-tube-sketch-reference-wire/);
+  assert.match(dialog, /展开矩形<\/dt><dd>120 × 100 mm/);
+  assert.doesNotMatch(dialog, /data-tube-sketch-reference-panel/,
+    "source-face panels must not become the editable side region");
+  assert.doesNotMatch(dialog, /tube-sketch-side-region[^>]*d="/,
+    "a slanted projected outline must not replace the rectangle");
 }
 
 console.log("TubeDesigner sketch tests passed");

@@ -3,6 +3,7 @@
 #include "ComponentBase.h"
 #include "IMetaRegistry.h"
 #include "Data/VariantSerializer.h"
+#include <filesystem>
 
 
 namespace
@@ -655,11 +656,12 @@ void iCAX::Database::COperationBatchJournal::Open(
 {
     ValidateOperationLogIdentity(strMagic_, nVersion_);
     Close();
+    const std::filesystem::path _Path(std::u8string(strPath_.begin(), strPath_.end()));
 
     bool _bNeedWriteHeader = true;
     if (!bTruncate_)
     {
-        std::ifstream _Input(strPath_, std::ios::in | std::ios::binary);
+        std::ifstream _Input(_Path, std::ios::in | std::ios::binary);
         if (_Input.is_open())
         {
             std::string _HeaderLine;
@@ -673,7 +675,7 @@ void iCAX::Database::COperationBatchJournal::Open(
 
     auto _Mode = std::ios::out | std::ios::binary;
     _Mode |= bTruncate_ ? std::ios::trunc : std::ios::app;
-    m_Stream.open(strPath_, _Mode);
+    m_Stream.open(_Path, _Mode);
     if (!m_Stream.is_open())
     {
         throw std::runtime_error("Failed to open operation journal: " + strPath_);
@@ -733,7 +735,8 @@ std::vector<iCAX::Database::COperationBatch> iCAX::Database::COperationBatchJour
 {
     ValidateOperationLogIdentity(strMagic_, nVersion_);
 
-    std::ifstream _Input(strPath_, std::ios::in | std::ios::binary);
+    const std::filesystem::path _Path(std::u8string(strPath_.begin(), strPath_.end()));
+    std::ifstream _Input(_Path, std::ios::in | std::ios::binary);
     if (!_Input.is_open())
     {
         return {};

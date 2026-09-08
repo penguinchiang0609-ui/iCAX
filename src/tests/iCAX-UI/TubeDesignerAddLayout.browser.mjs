@@ -76,6 +76,12 @@ try {
       }
       await page.locator('.tube-designer-config-parameters details').evaluateAll((nodes) => nodes.forEach((node) => { node.open = true; }));
       await assertNoOverlap();
+      const profileRows = await page.locator('.tube-designer-field-grid:has(> .tube-designer-profile-field)').evaluateAll(grids => grids.map(grid => ({
+        width: grid.parentElement.clientWidth,
+        columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+      })));
+      assert.ok(profileRows.length > 0);
+      for (const row of profileRows) assert.equal(row.columns, row.width >= 420 ? 4 : 2);
       await roots.nth(0).locator(":scope > summary").click();
       await assertNoOverlap();
       await roots.nth(0).locator(":scope > summary").click();
@@ -98,6 +104,17 @@ try {
     const context = { mount };
     const ops = { renderProject() { mount.innerHTML = renderDesignerAddDialog(view.scene.tubeDesigner, view); } };
     ops.renderProject();
+    // The final dropdown entry invokes the picker; cancellation preserves both
+    // the visible selection and the draft instead of persisting an action value.
+    const profileSelect = mount.querySelector('[data-cam-change-action="tube-designer-profile-selection-change"]');
+    const originalProfile = profileSelect.value;
+    const originalDraft = JSON.stringify(view.tubeDesignerAddDraft);
+    let pickerCalls = 0;
+    context.appProxy = { bridge: { openFileDialog: async () => { pickerCalls++; return ""; } } };
+    if (profileSelect.options[profileSelect.options.length - 1].value !== "external-dxf") throw new Error("DXF must be the final dropdown entry");
+    profileSelect.value = "external-dxf";
+    await handleDesignerAreaAction(context, view, "tube-designer-profile-selection-change", profileSelect, ops);
+    if (pickerCalls !== 1 || profileSelect.value !== originalProfile || JSON.stringify(view.tubeDesignerAddDraft) !== originalDraft) throw new Error("Cancelled DXF picker changed the active profile");
     const field = (key) => mount.querySelector(`[data-tube-designer-parameter="${key}"]`);
     const group = (key) => mount.querySelector(`details[data-tube-designer-parameter-group="${key}"]`);
     for (const node of mount.querySelectorAll("details")) node.open = true;

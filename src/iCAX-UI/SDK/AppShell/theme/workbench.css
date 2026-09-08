@@ -138,6 +138,16 @@ button:disabled {
   color: #8f8f8f;
 }
 
+.quick-button .command-icon.vector {
+  display: inline-flex;
+  vertical-align: middle;
+  color: inherit;
+}
+
+.quick-button .command-icon.vector .accent {
+  stroke: currentColor;
+}
+
 .window-controls {
   height: 36px;
   display: flex;
@@ -215,6 +225,15 @@ button:disabled {
   border-color: #d8d8d8;
   background: #f4f5f5;
   color: #20272c;
+}
+
+/* A single open project should occupy the centre, not the first of three slots. */
+.project-switcher.single-project .project-tabs {
+  grid-template-columns: minmax(0, 220px);
+  justify-content: center;
+}
+.project-switcher.single-project .project-arrow {
+  visibility: hidden;
 }
 
 .project-tab.empty {
@@ -357,7 +376,7 @@ button:disabled {
   min-width: 154px;
   padding: 4px;
   border: 1px solid #aebbc1;
-  border-radius: 5px;
+  border-radius: 0;
   background: #fff;
   box-shadow: 0 9px 24px rgba(23, 39, 47, .24);
 }
@@ -371,7 +390,7 @@ button:disabled {
   gap: 8px;
   padding: 5px 8px;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 0;
   background: transparent;
   color: #263239;
   text-align: left;
@@ -985,7 +1004,7 @@ button:disabled {
 .project-table-head,
 .project-row {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) 132px 64px;
+  grid-template-columns: 180px minmax(0, 1fr) 132px 112px;
   gap: 12px;
   align-items: center;
 }
@@ -1056,6 +1075,25 @@ button:disabled {
   text-align: right;
 }
 
+.project-actions-cell {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 14px;
+}
+
+.project-actions-cell button {
+  border: 0;
+  padding: 6px 2px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+}
+
+.project-actions-cell button:hover { color: var(--accent-strong); }
+.project-actions-cell button:disabled { opacity: .5; cursor: default; }
+
 .new-project-dialog {
   width: min(480px, calc(100vw - 56px));
   display: grid;
@@ -1066,12 +1104,32 @@ button:disabled {
   box-shadow: 0 24px 64px rgba(28, 35, 40, 0.28);
 }
 
+.new-project-dialog,
+.new-project-dialog * {
+  border-radius: 0;
+}
+
 .new-project-dialog header {
   height: 46px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--line);
+}
+
+.new-project-dialog header[data-window-dialog-drag] {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.new-project-dialog header[data-window-dialog-drag][data-window-dragging="true"] {
+  cursor: grabbing;
+}
+
+.new-project-dialog header[data-window-dialog-drag] button {
+  cursor: pointer;
+  touch-action: auto;
 }
 
 .new-project-dialog header strong {
@@ -1254,7 +1312,7 @@ select:focus-visible {
 
   .project-table-head,
   .project-row {
-    grid-template-columns: 150px minmax(0, 1fr) 112px 52px;
+    grid-template-columns: 150px minmax(0, 1fr) 112px 100px;
     gap: 8px;
   }
 }

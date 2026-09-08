@@ -1,5 +1,7 @@
 #include "pch.h"
 #include "VariantSerializer.h"
+#include <limits>
+#include <locale>
 
 using namespace iCAX::Data;
 
@@ -763,6 +765,8 @@ static Variant _Parse(const std::string& str, size_t& pos)
 std::string VariantSerializer::Serialize(IN const Variant& var)
 {
     std::ostringstream oss;
+    oss.imbue(std::locale::classic());
+    oss.precision(std::numeric_limits<double>::max_digits10);
     _Dump(oss, var);
     return oss.str();
 }

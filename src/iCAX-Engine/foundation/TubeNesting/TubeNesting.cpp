@@ -21,8 +21,295 @@ namespace iCAX::TubeNesting
 {
     namespace
     {
+        constexpr std::size_t kMaximumCutLineSamples = 1024;
+        constexpr std::size_t kMinimumMatchBins = 32;
+        constexpr std::size_t kMaximumMatchBins = 256;
+        constexpr std::uint64_t kFNVOffset = 14695981039346656037ULL;
+        constexpr std::uint64_t kFNVPrime = 1099511628211ULL;
+
+        [[nodiscard]] std::uint64_t HashBytes(
+            std::uint64_t _Hash, const void* _Data, const std::size_t _Size)
+        {
+            const auto* _Bytes = static_cast<const std::uint8_t*>(_Data);
+            for (std::size_t _Index = 0; _Index < _Size; ++_Index)
+            {
+                _Hash ^= _Bytes[_Index];
+                _Hash *= kFNVPrime;
+            }
+            return _Hash;
+        }
+
+        template<class T>
+        [[nodiscard]] std::uint64_t HashValue(std::uint64_t _Hash, const T& _Value)
+        {
+            return HashBytes(_Hash, &_Value, sizeof(T));
+        }
+
+        [[nodiscard]] Length ClampLength(const long double _Value)
+        {
+            if (_Value >= static_cast<long double>((std::numeric_limits<Length>::max)()))
+                return (std::numeric_limits<Length>::max)();
+            if (_Value <= static_cast<long double>((std::numeric_limits<Length>::min)()))
+                return (std::numeric_limits<Length>::min)();
+            return static_cast<Length>(std::llround(_Value));
+        }
+
+        [[nodiscard]] Length NormalizePhase(const Length _Phase, const Length _Period)
+        {
+            if (_Period <= 0) return 0;
+            const Length _Remainder = _Phase % _Period;
+            return _Remainder < 0 ? _Remainder + _Period : _Remainder;
+        }
+
+        [[nodiscard]] long double SampleAt(
+            const CutLineFeatureCode& _Feature, const long double _U)
+        {
+            if (_Feature.Kind == CutLineFeatureKind::Constant)
+                return static_cast<long double>(_Feature.ConstantValue);
+            if (_Feature.Kind == CutLineFeatureKind::Linear)
+            {
+                if (_Feature.Period <= 0) return 0.0L;
+                long double _Wrapped = std::fmod(
+                    _U, static_cast<long double>(_Feature.Period));
+                if (_Wrapped < 0.0L) _Wrapped += static_cast<long double>(_Feature.Period);
+                const long double _T = _Wrapped / static_cast<long double>(_Feature.Period);
+                return static_cast<long double>(_Feature.LinearStart)
+                    + (static_cast<long double>(_Feature.LinearEnd)
+                       - static_cast<long double>(_Feature.LinearStart)) * _T;
+            }
+            if (_Feature.Kind != CutLineFeatureKind::Sampled || _Feature.Samples.empty())
+                return 0.0L;
+
+            const long double _Period = static_cast<long double>(_Feature.Period);
+            long double _Wrapped = std::fmod(_U, _Period);
+            if (_Wrapped < 0.0L) _Wrapped += _Period;
+            const long double _Position = _Wrapped * _Feature.Samples.size() / _Period;
+            const auto _Index = static_cast<std::size_t>(std::floor(_Position))
+                % _Feature.Samples.size();
+            const auto _Next = (_Index + 1) % _Feature.Samples.size();
+            const long double _Fraction = _Position - std::floor(_Position);
+            return static_cast<long double>(_Feature.Samples[_Index])
+                + (static_cast<long double>(_Feature.Samples[_Next])
+                   - static_cast<long double>(_Feature.Samples[_Index])) * _Fraction;
+        }
+
+        [[nodiscard]] std::size_t MatchBinCount(
+            const CutLineFeatureCode& _Tail, const CutLineFeatureCode& _Head)
+        {
+            const std::size_t _Largest = std::max(_Tail.Samples.size(), _Head.Samples.size());
+            return std::clamp(std::max(kMinimumMatchBins, _Largest),
+                              kMinimumMatchBins, kMaximumMatchBins);
+        }
+    }
+
+    CutLineFeatureCode EncodeCutLineFeature(
+        const Length _Period, const std::vector<Length>& _Samples, const Length _LinearTolerance)
+    {
+        CutLineFeatureCode _Result;
+        if (_Period <= 0 || _Samples.size() < 2 || _Samples.size() > kMaximumCutLineSamples
+            || _LinearTolerance < 0)
+            return _Result;
+
+        const auto [_MinimumIt, _MaximumIt] = std::minmax_element(_Samples.begin(), _Samples.end());
+        _Result.Period = _Period;
+        _Result.Minimum = *_MinimumIt;
+        _Result.Maximum = *_MaximumIt;
+        long double _Sum = 0.0L;
+        long double _Variation = 0.0L;
+        for (std::size_t _Index = 0; _Index < _Samples.size(); ++_Index)
+        {
+            _Sum += static_cast<long double>(_Samples[_Index]);
+            const auto _Next = (_Index + 1) % _Samples.size();
+            _Variation += std::abs(static_cast<long double>(_Samples[_Next])
+                - static_cast<long double>(_Samples[_Index]));
+        }
+        _Result.Mean = ClampLength(_Sum / static_cast<long double>(_Samples.size()));
+        _Result.TotalVariation = ClampLength(_Variation);
+
+        const Length _Tolerance = std::max<Length>(0, _LinearTolerance);
+        bool _IsConstant = true;
+        for (const Length _Value : _Samples)
+            if (_Value != _Samples.front())
+            {
+                _IsConstant = false;
+                break;
+            }
+
+        _Result.LinearStart = _Samples.front();
+        _Result.LinearEnd = _Samples.back();
+        bool _IsLinear = !_IsConstant;
+        if (_IsLinear)
+        {
+            const long double _LastIndex = static_cast<long double>(_Samples.size() - 1);
+            for (std::size_t _Index = 1; _Index + 1 < _Samples.size(); ++_Index)
+            {
+                const long double _T = static_cast<long double>(_Index) / _LastIndex;
+                const long double _Expected = static_cast<long double>(_Result.LinearStart)
+                    + (static_cast<long double>(_Result.LinearEnd)
+                       - static_cast<long double>(_Result.LinearStart)) * _T;
+                if (std::abs(static_cast<long double>(_Samples[_Index]) - _Expected)
+                    > static_cast<long double>(_Tolerance))
+                {
+                    _IsLinear = false;
+                    break;
+                }
+            }
+        }
+
+        if (_IsConstant)
+        {
+            _Result.Kind = CutLineFeatureKind::Constant;
+            _Result.ConstantValue = _Samples.front();
+            _Result.LinearStart = _Result.LinearEnd = _Result.ConstantValue;
+        }
+        else if (_IsLinear)
+        {
+            _Result.Kind = CutLineFeatureKind::Linear;
+        }
+        else
+        {
+            _Result.Kind = CutLineFeatureKind::Sampled;
+            _Result.Samples = _Samples;
+        }
+
+        std::ostringstream _Class;
+        _Class << static_cast<unsigned>(_Result.Kind) << ':' << _Result.Period << ':'
+               << _Result.Minimum << ':' << _Result.Maximum << ':' << _Result.Mean << ':'
+               << _Result.TotalVariation << ':' << _Result.Samples.size();
+        _Result.ClassKey = _Class.str();
+
+        std::uint64_t _Hash = kFNVOffset;
+        _Hash = HashBytes(_Hash, _Result.Schema.data(), _Result.Schema.size());
+        _Hash = HashValue(_Hash, _Result.Kind);
+        for (const Length _Value : { _Result.Period, _Result.Minimum, _Result.Maximum,
+                                     _Result.Mean, _Result.TotalVariation,
+                                     _Result.LinearStart, _Result.LinearEnd,
+                                     _Result.ConstantValue })
+            _Hash = HashValue(_Hash, _Value);
+        for (const Length _Value : _Result.Samples) _Hash = HashValue(_Hash, _Value);
+        _Result.Fingerprint = _Hash;
+        return _Result;
+    }
+
+    bool IsValidCutLineFeature(const CutLineFeatureCode& _Feature)
+    {
+        if (_Feature.Schema != "icax.tube-cutline.v1" || _Feature.Period <= 0
+            || _Feature.Kind == CutLineFeatureKind::Invalid)
+            return false;
+        if (_Feature.Kind == CutLineFeatureKind::Constant)
+            return _Feature.ConstantValue == _Feature.Minimum
+                && _Feature.ConstantValue == _Feature.Maximum;
+        if (_Feature.Kind == CutLineFeatureKind::Linear)
+        {
+            const auto _RangeMinimum = (std::min)(_Feature.LinearStart, _Feature.LinearEnd);
+            const auto _RangeMaximum = (std::max)(_Feature.LinearStart, _Feature.LinearEnd);
+            return _Feature.Minimum == _RangeMinimum && _Feature.Maximum == _RangeMaximum;
+        }
+        return _Feature.Kind == CutLineFeatureKind::Sampled
+            && _Feature.Samples.size() >= 2
+            && _Feature.Samples.size() <= kMaximumCutLineSamples;
+    }
+
+    CutLineMatchResult EvaluateCutLineMatch(
+        const CutLineFeatureCode& _Tail, const CutLineFeatureCode& _Head,
+        const Length _PhaseOffset)
+    {
+        CutLineMatchResult _Result;
+        if (!IsValidCutLineFeature(_Tail) || !IsValidCutLineFeature(_Head)
+            || _Tail.Period != _Head.Period)
+            return _Result;
+
+        const std::size_t _Bins = MatchBinCount(_Tail, _Head);
+        const Length _Phase = NormalizePhase(_PhaseOffset, _Tail.Period);
+        const long double _Period = static_cast<long double>(_Tail.Period);
+        std::vector<long double> _Positions;
+        _Positions.reserve(_Bins + (_Tail.Samples.size() + _Head.Samples.size()) * 3 + 8);
+        const auto _AddPosition = [&](const long double _Position)
+        {
+            long double _Wrapped = std::fmod(_Position, _Period);
+            if (_Wrapped < 0.0L) _Wrapped += _Period;
+            _Positions.push_back(_Wrapped);
+        };
+        for (std::size_t _Index = 0; _Index < _Bins; ++_Index)
+            _AddPosition(_Period * _Index / _Bins);
+
+        // Both representations are piecewise linear over U.  The maximum of
+        // their difference is therefore at a breakpoint, so include the
+        // encoded sample boundaries instead of relying solely on a coarse grid.
+        const auto _AddBreakpoints = [&](const CutLineFeatureCode& _Feature,
+                                         const long double _Shift)
+        {
+            if (_Feature.Kind == CutLineFeatureKind::Sampled && !_Feature.Samples.empty())
+            {
+                for (std::size_t _Index = 0; _Index < _Feature.Samples.size(); ++_Index)
+                    _AddPosition(_Shift + _Period * _Index / _Feature.Samples.size());
+            }
+            else if (_Feature.Kind == CutLineFeatureKind::Linear)
+            {
+                _AddPosition(_Shift);
+            }
+        };
+        _AddBreakpoints(_Tail, 0.0L);
+        _AddBreakpoints(_Head, -static_cast<long double>(_Phase));
+        // A periodic piecewise curve can jump at its seam.  Probe both sides
+        // of each seam so the conservative maximum includes that one-sided
+        // limit without requiring an unbounded sample grid.
+        const long double _Epsilon = (std::max)(1.0e-9L, _Period * 1.0e-12L);
+        const auto _InitialPositionCount = _Positions.size();
+        for (std::size_t _Index = 0; _Index < _InitialPositionCount; ++_Index)
+        {
+            if (_Positions[_Index] <= _Epsilon)
+                _Positions.push_back(_Period - _Epsilon);
+            else if (_Positions[_Index] >= _Period - _Epsilon)
+                _Positions.push_back(_Epsilon);
+        }
+        long double _Maximum = -std::numeric_limits<long double>::infinity();
+        for (const auto _U : _Positions)
+        {
+            const long double _Difference = SampleAt(_Tail, _U)
+                - SampleAt(_Head, _U + static_cast<long double>(_Phase));
+            _Maximum = std::max(_Maximum, _Difference);
+        }
+        if (!std::isfinite(_Maximum)) return _Result;
+        _Result.Valid = true;
+        _Result.RequiredSeparation = ClampLength(std::ceil(_Maximum - 1.0e-9L));
+        _Result.PhaseOffset = _Phase;
+        _Result.Evaluations = _Positions.size();
+        return _Result;
+    }
+
+    CutLineMatchResult FindBestCutLineMatch(
+        const CutLineFeatureCode& _Tail, const CutLineFeatureCode& _Head,
+        const std::size_t _PhaseSamples)
+    {
+        CutLineMatchResult _Best;
+        if (!IsValidCutLineFeature(_Tail) || !IsValidCutLineFeature(_Head)
+            || _Tail.Period != _Head.Period || _PhaseSamples == 0)
+            return _Best;
+        const std::size_t _Samples = std::clamp(_PhaseSamples, std::size_t{1}, std::size_t{4096});
+        std::size_t _Evaluations = 0;
+        for (std::size_t _Index = 0; _Index < _Samples; ++_Index)
+        {
+            const auto _Phase = ClampLength(
+                static_cast<long double>(_Tail.Period) * _Index / _Samples);
+            const auto _Candidate = EvaluateCutLineMatch(_Tail, _Head, _Phase);
+            if (!_Candidate.Valid) continue;
+            ++_Evaluations;
+            if (!_Best.Valid || _Candidate.RequiredSeparation < _Best.RequiredSeparation
+                || (_Candidate.RequiredSeparation == _Best.RequiredSeparation
+                    && _Candidate.PhaseOffset < _Best.PhaseOffset))
+                _Best = _Candidate;
+        }
+        if (_Best.Valid) _Best.Evaluations = _Evaluations;
+        return _Best;
+    }
+
+    namespace
+    {
         constexpr Length kLengthMax = (std::numeric_limits<Length>::max)();
         constexpr std::int64_t kMetricMax = (std::numeric_limits<std::int64_t>::max)();
+        constexpr std::size_t kMinimumScalableHeuristicInstanceCount = 32;
+        constexpr std::size_t kScalableHeuristicInstanceThreshold = 256;
 
         struct PartInstance
         {
@@ -164,6 +451,49 @@ namespace iCAX::TubeNesting
                     !TryAdd(_Gap, TwoKerfs, _Gap))
                 {
                     return false;
+                }
+            }
+
+            const auto& _TailFeature = _Previous.RightEnd.Feature;
+            const auto& _HeadFeature = _Next.LeftEnd.Feature;
+            const bool _HasMatchingFeature = IsValidCutLineFeature(_TailFeature)
+                && IsValidCutLineFeature(_HeadFeature)
+                && _TailFeature.Period == _HeadFeature.Period;
+            if (_HasMatchingFeature)
+            {
+                // PhaseOffset is an absolute circumferential position in the stock
+                // section. The relative phase is all that matters at an adjacency.
+                // Subtract in a wider type first.  Phase offsets originate in
+                // user/imported data, so an int64 subtraction must not wrap.
+                const Length _RelativePhase = ClampLength(
+                    static_cast<long double>(_Next.PhaseOffset)
+                    - static_cast<long double>(_Previous.PhaseOffset));
+                CutLineMatchResult _Match;
+                if (_TailFeature.Fingerprint != 0
+                    && _TailFeature.Fingerprint == _HeadFeature.Fingerprint
+                    && _TailFeature.ClassKey == _HeadFeature.ClassKey
+                    && NormalizePhase(_RelativePhase, _TailFeature.Period) == 0)
+                {
+                    // Identical periodic codes at the same phase are an exact
+                    // zero-cost transition; avoid resampling this very common
+                    // case for large batches.
+                    _Match.Valid = true;
+                    _Match.PhaseOffset = 0;
+                }
+                else
+                {
+                    _Match = EvaluateCutLineMatch(
+                        _TailFeature, _HeadFeature, _RelativePhase);
+                }
+                if (_Match.Valid)
+                {
+                    Length _FeatureAllowance = _Match.RequiredSeparation;
+                    const auto _LegacyAllowance = std::max(
+                        _Previous.RightEnd.SeparationAllowance,
+                        _Next.LeftEnd.SeparationAllowance);
+                    _FeatureAllowance = std::max(_FeatureAllowance, _LegacyAllowance);
+                    if (!TryAdd(_Gap, _FeatureAllowance, _Gap)) return false;
+                    return true;
                 }
             }
 
@@ -568,6 +898,199 @@ namespace iCAX::TubeNesting
                     return std::nullopt;
                 }
                 Result = std::move(*Next);
+            }
+            return Result;
+        }
+
+        // The full insertion heuristic evaluates every position in every open
+        // bar and copies the whole plan for each candidate. That is useful for
+        // small orders, but it becomes quadratic/cubic in practice once a
+        // production order contains thousands of repeated instances. For large
+        // orders, append-only best-fit placement keeps the same bar feasibility
+        // checks while making each choice local and bounded by the number of
+        // open bars and variants.
+        [[nodiscard]] std::optional<WorkingPlan> ConstructScalablePlan(
+            const std::vector<std::size_t>& _Order,
+            const std::vector<PartInstance>& _Instances,
+            const std::vector<PartDemand>& _Demands,
+            const std::vector<StockType>& _Stocks,
+            const SolverSettings& _Settings)
+        {
+            const auto AppendMeasure = [&](const WorkingBar& _Bar,
+                                           const BarMeasure& _Current,
+                                           const std::size_t _InstanceIndex,
+                                           const std::size_t _VariantIndex)
+                -> std::optional<BarMeasure>
+            {
+                if (!_Current.Feasible || _Bar.StockIndex >= _Stocks.size()
+                    || _Bar.Placements.empty() || _InstanceIndex >= _Instances.size())
+                {
+                    return std::nullopt;
+                }
+                const StockType& Stock = _Stocks[_Bar.StockIndex];
+                if (Stock.MaxParts > 0 && _Bar.Placements.size() >= Stock.MaxParts)
+                {
+                    return std::nullopt;
+                }
+                const PartInstance& Instance = _Instances[_InstanceIndex];
+                if (Instance.DemandIndex >= _Demands.size()) return std::nullopt;
+                const PartDemand& Demand = _Demands[Instance.DemandIndex];
+                if (_VariantIndex >= Demand.Variants.size()
+                    || Demand.CompatibilityKey != Stock.CompatibilityKey)
+                {
+                    return std::nullopt;
+                }
+
+                if (Stock.MaxDistinctOrders > 0 && !Demand.OrderKey.empty())
+                {
+                    std::set<std::string> Orders;
+                    for (const WorkingPlacement& Placement : _Bar.Placements)
+                    {
+                        const PartDemand& ExistingDemand =
+                            _Demands[_Instances[Placement.InstanceIndex].DemandIndex];
+                        if (!ExistingDemand.OrderKey.empty()) Orders.insert(ExistingDemand.OrderKey);
+                    }
+                    Orders.insert(Demand.OrderKey);
+                    if (Orders.size() > Stock.MaxDistinctOrders) return std::nullopt;
+                }
+
+                const WorkingPlacement& PreviousPlacement = _Bar.Placements.back();
+                const PartDemand& PreviousDemand =
+                    _Demands[_Instances[PreviousPlacement.InstanceIndex].DemandIndex];
+                const PartVariant& PreviousVariant =
+                    PreviousDemand.Variants[PreviousPlacement.VariantIndex];
+                const PartVariant& Variant = Demand.Variants[_VariantIndex];
+                Length Gap = 0;
+                bool bCommonCut = false;
+                if (!TryTransitionGap(PreviousVariant, Variant, _Settings, Gap, bCommonCut))
+                {
+                    return std::nullopt;
+                }
+
+                BarMeasure Result = _Current;
+                Length Cursor = _Current.ProcessedEnd;
+                if (!TryAdd(Cursor, -_Settings.Kerf, Cursor)
+                    || !TryAdd(Cursor, Gap, Cursor)
+                    || !TryAdd(Cursor, VariantLength(Demand, Variant), Cursor)
+                    || !TryAdd(Cursor, _Settings.Kerf, Cursor)
+                    || Cursor > Stock.TotalLength)
+                {
+                    return std::nullopt;
+                }
+                Result.ProcessedEnd = Cursor;
+                Result.RemainingLength = Stock.TotalLength - Cursor;
+                if (Result.RemainingLength < Stock.TailDeadZone) return std::nullopt;
+                SaturatingAdd(Result.PartLength, VariantMaterialLength(Demand, Variant));
+                Result.GapLength = Result.ProcessedEnd - Stock.FrontMargin - Result.PartLength;
+                if (Result.GapLength < 0) return std::nullopt;
+                const bool bReusable = Stock.MinReusableRemainder > 0
+                    && Result.RemainingLength >= Stock.MinReusableRemainder;
+                Result.ReusableRemainderLength = bReusable ? Result.RemainingLength : 0;
+                Result.UnrecoverableWaste = Stock.FrontMargin;
+                SaturatingAdd(Result.UnrecoverableWaste, Result.GapLength);
+                if (!bReusable) SaturatingAdd(Result.UnrecoverableWaste, Result.RemainingLength);
+
+                Result.CommonCutCount += bCommonCut ? 1U : 0U;
+                if (!PreviousDemand.OrderKey.empty() && !Demand.OrderKey.empty()
+                    && PreviousDemand.OrderKey != Demand.OrderKey)
+                {
+                    ++Result.OrderChangeCount;
+                }
+                Result.CutCount = _Bar.Placements.size() + 1U
+                    + ((_Bar.Placements.size() - 1U) - Result.CommonCutCount)
+                    + (Stock.FrontMargin > 0 ? 1U : 0U);
+                Result.Feasible = true;
+                return Result;
+            };
+
+            struct Choice
+            {
+                bool Existing = false;
+                std::size_t BarIndex = 0;
+                std::size_t StockIndex = 0;
+                std::size_t VariantIndex = 0;
+                BarMeasure Measure;
+            };
+
+            const auto BetterChoice = [&](const Choice& _Left, const Choice& _Right) {
+                // Reuse an already open bar whenever possible. This avoids
+                // needlessly consuming finite stock and is the dominant cost
+                // objective for the large-order fallback.
+                if (_Left.Existing != _Right.Existing) return _Left.Existing;
+                if (_Left.Measure.RemainingLength != _Right.Measure.RemainingLength)
+                    return _Left.Measure.RemainingLength < _Right.Measure.RemainingLength;
+                if (_Left.Measure.UnrecoverableWaste != _Right.Measure.UnrecoverableWaste)
+                    return _Left.Measure.UnrecoverableWaste < _Right.Measure.UnrecoverableWaste;
+                const auto& _LeftStock = _Stocks[_Left.StockIndex];
+                const auto& _RightStock = _Stocks[_Right.StockIndex];
+                if (EffectiveStockCost(_LeftStock) != EffectiveStockCost(_RightStock))
+                    return EffectiveStockCost(_LeftStock) < EffectiveStockCost(_RightStock);
+                if (_LeftStock.ID != _RightStock.ID)
+                    return _LeftStock.ID < _RightStock.ID;
+                return _Left.VariantIndex < _Right.VariantIndex;
+            };
+
+            WorkingPlan Result;
+            std::vector<BarMeasure> Measures;
+            Measures.reserve(_Order.size());
+            for (const std::size_t InstanceIndex : _Order)
+            {
+                const PartDemand& Demand = _Demands[_Instances[InstanceIndex].DemandIndex];
+                std::optional<Choice> Best;
+
+                for (std::size_t BarIndex = 0; BarIndex < Result.size(); ++BarIndex)
+                {
+                    const std::size_t StockIndex = Result[BarIndex].StockIndex;
+                    if (StockIndex >= _Stocks.size()
+                        || _Stocks[StockIndex].CompatibilityKey != Demand.CompatibilityKey)
+                        continue;
+                    for (std::size_t VariantIndex = 0;
+                         VariantIndex < Demand.Variants.size(); ++VariantIndex)
+                    {
+                        const std::optional<BarMeasure> Measure = AppendMeasure(
+                            Result[BarIndex], Measures[BarIndex], InstanceIndex, VariantIndex);
+                        if (!Measure) continue;
+                        Choice Candidate{ true, BarIndex, StockIndex, VariantIndex, std::move(*Measure) };
+                        if (!Best || BetterChoice(Candidate, *Best)) Best = std::move(Candidate);
+                    }
+                }
+
+                // Only open a new bar when no existing bar can accept the
+                // instance. Evaluate all eligible stock types once, without
+                // copying the complete working plan.
+                if (!Best)
+                {
+                    for (std::size_t StockIndex = 0; StockIndex < _Stocks.size(); ++StockIndex)
+                    {
+                        const StockType& Stock = _Stocks[StockIndex];
+                        if (Stock.CompatibilityKey != Demand.CompatibilityKey
+                            || !CanOpenStock(Result, Stock, StockIndex))
+                            continue;
+                        for (std::size_t VariantIndex = 0;
+                             VariantIndex < Demand.Variants.size(); ++VariantIndex)
+                        {
+                            WorkingBar CandidateBar{ StockIndex, {{ InstanceIndex, VariantIndex }} };
+                            BarMeasure Measure = MeasureBar(
+                                CandidateBar, _Instances, _Demands, _Stocks, _Settings);
+                            if (!Measure.Feasible) continue;
+                            Choice Candidate{ false, Result.size(), StockIndex, VariantIndex,
+                                std::move(Measure) };
+                            if (!Best || BetterChoice(Candidate, *Best)) Best = std::move(Candidate);
+                        }
+                    }
+                }
+
+                if (!Best) return std::nullopt;
+                if (Best->Existing)
+                {
+                    Result[Best->BarIndex].Placements.push_back({ InstanceIndex, Best->VariantIndex });
+                    Measures[Best->BarIndex] = std::move(Best->Measure);
+                }
+                else
+                {
+                    Result.push_back({ Best->StockIndex, {{ InstanceIndex, Best->VariantIndex }} });
+                    Measures.push_back(std::move(Best->Measure));
+                }
             }
             return Result;
         }
@@ -1545,7 +2068,8 @@ namespace iCAX::TubeNesting
             const std::vector<PartDemand>& _Demands,
             const std::vector<StockType>& _Stocks,
             const SolverSettings& _Settings,
-            std::mt19937& _Random)
+            std::mt19937& _Random,
+            const bool _UseScalableHeuristic)
         {
             GroupOutcome Result;
             std::vector<std::size_t> BaseOrder(_Instances.size());
@@ -1650,6 +2174,25 @@ namespace iCAX::TubeNesting
                         return Result;
                     }
                 }
+            }
+
+            if ((_UseScalableHeuristic &&
+                 _Instances.size() > kMinimumScalableHeuristicInstanceCount) ||
+                _Instances.size() > kScalableHeuristicInstanceThreshold)
+            {
+                if (!Result.Plan)
+                {
+                    Result.Plan = ConstructScalablePlan(
+                        BaseOrder, _Instances, _Demands, _Stocks, _Settings);
+                }
+                if (Result.Plan)
+                {
+                    Result.Metrics = MeasurePlan(
+                        *Result.Plan, _Instances, _Demands, _Stocks, _Settings);
+                    Result.Diagnostics.push_back(
+                        "large order used scalable best-fit construction; exact optimization was skipped");
+                }
+                return Result;
             }
 
             const std::size_t Runs = (std::max)(std::size_t{1}, _Settings.ConstructionRuns);
@@ -1832,6 +2375,19 @@ namespace iCAX::TubeNesting
                             Diagnostics.push_back(
                                 "part " + Demand.ID + " has an incomplete trapezoid end descriptor");
                         }
+                        if (End->Feature.Kind != CutLineFeatureKind::Invalid
+                            && !IsValidCutLineFeature(End->Feature))
+                        {
+                            Diagnostics.push_back(
+                                "part " + Demand.ID + " has an invalid cut-line feature code");
+                        }
+                    }
+                    if (IsValidCutLineFeature(Variant.LeftEnd.Feature)
+                        && IsValidCutLineFeature(Variant.RightEnd.Feature)
+                        && Variant.LeftEnd.Feature.Period != Variant.RightEnd.Feature.Period)
+                    {
+                        Diagnostics.push_back(
+                            "part " + Demand.ID + " has mismatched cut-line feature periods");
                     }
                     if (!std::isfinite(Variant.RotationRadians))
                     {
@@ -1931,6 +2487,7 @@ namespace iCAX::TubeNesting
                         Measure.GapsBefore[Index],
                         Variant.Reversed,
                         Variant.RotationRadians,
+                        Variant.PhaseOffset,
                         Measure.CommonCutWithPrevious[Index],
                     });
                 }
@@ -1976,6 +2533,12 @@ namespace iCAX::TubeNesting
         }
 
         std::mt19937 Random(_Settings.RandomSeed);
+        std::size_t TotalInstances = 0;
+        for (const auto& Group : Groups)
+        {
+            TotalInstances += Group.second.size();
+        }
+        const bool UseScalableHeuristic = TotalInstances > kScalableHeuristicInstanceThreshold;
         bool bAllExact = true;
         bool bAllFeasible = true;
         bool bAllQualityBoundsAvailable = true;
@@ -2030,7 +2593,8 @@ namespace iCAX::TubeNesting
                 continue;
             }
 
-            GroupOutcome Outcome = SolveGroup(Instances, Demands, _Stocks, _Settings, Random);
+            GroupOutcome Outcome = SolveGroup(
+                Instances, Demands, _Stocks, _Settings, Random, UseScalableHeuristic);
             Result.Metrics.SearchNodes += Outcome.SearchNodes;
             for (const std::string& Diagnostic : Outcome.Diagnostics)
             {

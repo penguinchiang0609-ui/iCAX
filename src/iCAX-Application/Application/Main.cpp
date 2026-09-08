@@ -174,6 +174,7 @@ namespace
         try
         {
             UIConfig_.pFrontendBridge = &_Application.Frontend();
+            UIConfig_.Properties.insert(UIConfig_.Properties.begin(), { "windowIconPath", _Application.GetWindowIconPath() });
             _UIContainer = iCAX::Frontend::CUIContainerFactory::Create(UIConfig_);
             _UIContainer->Start();
             _UIContainer->WaitForExit();

@@ -79,6 +79,13 @@ export class ProductProxy {
     return response;
   }
 
+  async removeRecentProject(projectPath) {
+    if (typeof projectPath !== "string" || !projectPath.trim()) throw new TypeError("projectPath is required");
+    const response = await this.sdoClient.invoke(this.productChannelId, ProductSDO.removeRecentProject, {projectPath});
+    if (response?.productChannelId) this.updateState({...this.state, ...response});
+    return response;
+  }
+
   fetchResource(url, init = {}) {
     return this.resources.fetch(url, init);
   }

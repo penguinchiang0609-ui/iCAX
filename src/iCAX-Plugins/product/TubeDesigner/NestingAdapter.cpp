@@ -1,19 +1,86 @@
 #include "pch.h"
 #include "NestingAdapter.h"
+#include "FinalGeometryMeasurement.h"
 
 #include "TemplateRuntime/StandardJsonCodec.h"
 #include "TubeNesting/TubeNesting.h"
+#include "Task/Task.h"
 #include <cctype>
+#include <thread>
+#include <iterator>
 
 namespace iCAX::TubeDesigner
 {
+std::vector<SNestingVariant> BuildKnifePlaneNestingVariants(
+    const SLinearNestingGeometry& Geometry_, const double EnvelopeLength_, const bool AllowHalfTurn_)
+{
+    constexpr double _Tolerance = 0.021;
+    if (!Geometry_.IsReliable || !std::isfinite(EnvelopeLength_)
+        || std::abs(Geometry_.EnvelopeLength - EnvelopeLength_) > _Tolerance
+        || (Geometry_.Left.Projection <= _Tolerance && Geometry_.Right.Projection <= _Tolerance))
+        return {};
+    std::vector<SNestingVariant> _Variants;
+    for (const bool _HalfTurn : { false, true })
+    {
+        if (_HalfTurn && !AllowHalfTurn_) continue;
+        const auto _End = [&](const SPlanarNestingEnd& Source_) {
+            const double _Sign = _HalfTurn ? -1.0 : 1.0;
+            const auto _A = Source_.GradientY * _Sign, _B = Source_.GradientZ * _Sign;
+            SNestingEnd _Result;
+            if (!Source_.IsPlanar || !std::isfinite(_A) || !std::isfinite(_B)
+                || !std::isfinite(Source_.Projection) || std::hypot(_A, _B) > 8.0) return _Result;
+            _Result.Projection = std::max(0.0, Source_.Projection - _Tolerance);
+            _Result.NestingPlane = std::to_string(std::llround(_A * 100000.0))
+                + ":" + std::to_string(std::llround(_B * 100000.0));
+            _Result.AllowTrapezoidNesting = _Result.Projection > 0.0;
+            return _Result;
+        };
+        SNestingVariant _Variant;
+        _Variant.ID = _HalfTurn ? "forward-180" : "forward-0";
+        _Variant.EnvelopeLength = EnvelopeLength_;
+        _Variant.MaterialLength = std::clamp(Geometry_.MaterialEquivalentLength, 0.01, EnvelopeLength_);
+        _Variant.LeftEnd = _End(Geometry_.Left); _Variant.RightEnd = _End(Geometry_.Right);
+        _Variant.RotationRadians = _HalfTurn ? 3.14159265358979323846 : 0.0;
+        _Variants.push_back(std::move(_Variant));
+    }
+    return _Variants;
+}
+
+iCAX::Data::VariantArray MakeNestingPlacementTransform(
+    const std::array<double, 3>& LocalCenter_, const double Start_, const double End_,
+    const bool Reversed_, const double RotationRadians_)
+{
+    if (!std::isfinite(Start_) || !std::isfinite(End_) || Start_ < 0.0 || End_ <= Start_
+        || !std::isfinite(RotationRadians_)
+        || !std::ranges::all_of(LocalCenter_, [](const double Value_) { return std::isfinite(Value_); }))
+        throw std::invalid_argument("排样零件变换参数无效");
+    const double _XDirection = Reversed_ ? -1.0 : 1.0;
+    const double _YDirection = Reversed_ ? -1.0 : 1.0;
+    const double _Cosine = std::cos(RotationRadians_);
+    const double _Sine = std::sin(RotationRadians_);
+    const double _M11 = _Cosine * _YDirection;
+    const double _M12 = -_Sine;
+    const double _M21 = _Sine * _YDirection;
+    const double _M22 = _Cosine;
+    return {
+        _XDirection, 0.0, 0.0, (Start_ + End_) * 0.5 - _XDirection * LocalCenter_[0],
+        0.0, _M11, _M12, -(_M11 * LocalCenter_[1] + _M12 * LocalCenter_[2]),
+        0.0, _M21, _M22, -(_M21 * LocalCenter_[1] + _M22 * LocalCenter_[2]),
+        0.0, 0.0, 0.0, 1.0
+    };
+}
+
 namespace
 {
     using namespace iCAX::TubeNesting;
     using iCAX::Data::ObjectMap;
     using iCAX::Data::Variant;
     using iCAX::Data::VariantArray;
-    constexpr std::size_t kMaximumParts = 2000;
+    // The foundation solver expands demand quantities into placement instances
+    // and already guards that expansion at one million.  Keep the adapter in
+    // sync so ordinary high-volume straight and miter cutting is not rejected
+    // by an unrelated 2000-piece UI-era limit.
+    constexpr std::size_t kMaximumPartInstances = 1'000'000;
     constexpr double kMaximumLength = 1000000.0;
     constexpr double kUnitsPerMm = 100.0;
 
@@ -288,19 +355,28 @@ ObjectMap NormalizeNestingSettings(const ObjectMap& Settings_)
 ObjectMap SolveManufacturingNesting(
     const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_, const double PartGap_)
 {
+    return SolveManufacturingNesting(Parts_, Stocks_, PartGap_, 0);
+}
+
+ObjectMap SolveManufacturingNesting(
+    const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
+    const double PartGap_, const std::size_t MaximumConcurrency_)
+{
     if (Parts_.empty()) throw std::invalid_argument("请先勾选需要排样的零件");
     if (Stocks_.size() > 1000) throw std::invalid_argument("母材规格行不能超过 1000 行");
     const auto _Gap = Quantize(PartGap_, true);
     std::size_t _TotalParts = 0;
     std::set<std::string> _IDs;
+    std::map<std::string, std::array<double, 3>> _LocalCenters;
     std::map<std::string, std::vector<PartDemand>> _Groups;
     for (const auto& _Part : Parts_)
     {
         if (_Part.ID.empty() || _Part.ProfileKey.empty() || !_IDs.insert(_Part.ID).second)
             throw std::invalid_argument("零件编号、截面分组为空或零件重复");
-        if (_Part.Quantity == 0 || _Part.Quantity > kMaximumParts - _TotalParts)
-            throw std::invalid_argument("单次排样需为 1 至 2000 件，请分批排样");
+        if (_Part.Quantity == 0 || _Part.Quantity > kMaximumPartInstances - _TotalParts)
+            throw std::invalid_argument("单次排样需为 1 至 1000000 件，请分批排样");
         _TotalParts += _Part.Quantity;
+        _LocalCenters.emplace(_Part.ID, _Part.LocalCenter);
         const auto _Length = Quantize(_Part.Length, true);
         if (_Length <= 0) throw std::invalid_argument("零件长度必须大于 0 mm");
         std::vector<PartVariant> _Variants;
@@ -321,8 +397,9 @@ ObjectMap SolveManufacturingNesting(
             for (const auto& _Source : _Part.Variants)
             {
                 if (_Source.ID.empty() || !_VariantIDs.insert(_Source.ID).second
-                    || !std::isfinite(_Source.RotationRadians))
-                    throw std::invalid_argument("零件排样姿态编号或旋转角无效");
+                    || !std::isfinite(_Source.RotationRadians)
+                    || !std::isfinite(_Source.PhaseOffset))
+                    throw std::invalid_argument("零件排样姿态编号、旋转角或相位偏移无效");
                 PartVariant _Variant;
                 _Variant.ID = _Source.ID;
                 _Variant.AxialLength = Quantize(_Source.EnvelopeLength, true);
@@ -338,6 +415,12 @@ ObjectMap SolveManufacturingNesting(
                     Target_.NestingPlane = Source_.NestingPlane;
                     Target_.AllowTrapezoidNesting = Source_.AllowTrapezoidNesting
                         && Target_.NestingProjection > 0 && !Target_.NestingPlane.empty();
+                    if (Source_.Feature.Kind != CutLineFeatureKind::Invalid)
+                    {
+                        if (!IsValidCutLineFeature(Source_.Feature))
+                            throw std::invalid_argument("端曲线特征编码无效");
+                        Target_.Feature = Source_.Feature;
+                    }
                     if (Target_.NestingPlane.size() > 160)
                         throw std::invalid_argument("斜切端面方向编号过长");
                 };
@@ -345,6 +428,10 @@ ObjectMap SolveManufacturingNesting(
                 _CopyEnd(_Source.RightEnd, _Variant.RightEnd);
                 _Variant.Reversed = _Source.Reversed;
                 _Variant.RotationRadians = _Source.RotationRadians;
+                if (!std::isfinite(_Source.PhaseOffset) || _Source.PhaseOffset < 0.0
+                    || _Source.PhaseOffset > kMaximumLength)
+                    throw std::invalid_argument("零件展开相位偏移无效");
+                _Variant.PhaseOffset = Quantize(_Source.PhaseOffset, false);
                 _Variants.push_back(std::move(_Variant));
             }
         }
@@ -370,16 +457,21 @@ ObjectMap SolveManufacturingNesting(
         _StocksByProfile[_Stock.ProfileKey].push_back(std::move(_Native));
     }
 
-    VariantArray _Plans, _Unplaced, _Diagnostics;
-    std::map<std::string, std::size_t> _PlacedQuantities;
-    std::map<std::string, std::string> _MissingReasons;
-    Length _TotalStock = 0, _PartLength = 0, _UsedLength = 0;
-    std::size_t _PlacedCount = 0;
-    bool _AllExact = true;
-    unsigned long long _SearchNodes = 0;
-    for (const auto& [_Profile, _Demands] : _Groups)
+    struct SGroupResult
     {
-        const auto& _Stocks = _StocksByProfile[_Profile];
+        VariantArray Plans;
+        std::map<std::string, std::size_t> PlacedQuantities;
+        std::map<std::string, std::string> MissingReasons;
+        Length TotalStock = 0, PartLength = 0, UsedLength = 0;
+        std::size_t PlacedCount = 0;
+        bool AllExact = true;
+        unsigned long long SearchNodes = 0;
+    };
+    const auto _SolveGroup = [_Gap, &_LocalCenters](const std::vector<PartDemand>& _Demands,
+        const std::vector<StockType>& _Stocks) {
+        SGroupResult _GroupResult;
+        auto& [_Plans, _PlacedQuantities, _MissingReasons, _TotalStock,
+            _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes] = _GroupResult;
         Length _MaximumStock = 0;
         for (const auto& _Stock : _Stocks) _MaximumStock = std::max(_MaximumStock, _Stock.TotalLength);
         std::vector<PartDemand> _FitDemands;
@@ -392,7 +484,7 @@ ObjectMap SolveManufacturingNesting(
             }
             else _FitDemands.push_back(_Demand);
         }
-        if (_FitDemands.empty()) continue;
+        if (_FitDemands.empty()) return _GroupResult;
         // Inventory has hard priority: solve finite stock first, then only send its
         // unfulfilled demands to unlimited stock. Cost/count tie-breakers cannot
         // bypass this ordering.
@@ -447,7 +539,11 @@ ObjectMap SolveManufacturingNesting(
                     { "nestedWithPrevious", !_Placements.empty() && _Placement.GapBefore < _Gap },
                     { "variantId", _Placement.VariantID },
                     { "reversed", _Placement.Reversed },
-                    { "rotationRadians", _Placement.RotationRadians }
+                    { "phaseOffset", Mm(_Placement.PhaseOffset) },
+                    { "rotationRadians", _Placement.RotationRadians },
+                    { "trsf", MakeNestingPlacementTransform(_LocalCenters.at(_Placement.DemandID),
+                        Mm(_Placement.Start), Mm(_Placement.End), _Placement.Reversed,
+                        _Placement.RotationRadians) }
                 });
             }
             _Plans.emplace_back(ObjectMap{
@@ -464,6 +560,70 @@ ObjectMap SolveManufacturingNesting(
         }
         }
         if (!_FiniteStocks.empty() && !_UnlimitedStocks.empty()) _AllExact = false;
+        return _GroupResult;
+    };
+
+    // Prepare read-only group inputs before launching workers. A group's finite
+    // inventory, fallback search and unlimited-stock phase stay on one task.
+    struct SGroupInput
+    {
+        const std::vector<PartDemand>* Demands;
+        const std::vector<StockType>* Stocks;
+    };
+    std::vector<SGroupInput> _Inputs;
+    for (const auto& [_Profile, _Demands] : _Groups)
+        _Inputs.push_back({ &_Demands, &_StocksByProfile[_Profile] });
+    std::vector<SGroupResult> _Results(_Inputs.size());
+    const auto _Hardware = std::thread::hardware_concurrency();
+    const std::size_t _Concurrency = MaximumConcurrency_ == 0
+        ? std::min(8u, std::max(1u, _Hardware > 1 ? _Hardware - 1 : 1u))
+        : std::clamp<std::size_t>(MaximumConcurrency_, 1, 8);
+    const auto _RunGroup = [&](std::size_t Index_) {
+        _Results[Index_] = _SolveGroup(*_Inputs[Index_].Demands, *_Inputs[Index_].Stocks);
+    };
+    for (std::size_t _Begin = 0; _Begin < _Inputs.size(); _Begin += _Concurrency)
+    {
+        const auto _Count = std::min(_Concurrency, _Inputs.size() - _Begin);
+        struct SBatch
+        {
+            std::vector<iCAX::Tasks::Task<void>> Tasks;
+            ~SBatch() { for (const auto& _Task : Tasks) _Task.Wait(); }
+        } _Batch;
+        _Batch.Tasks.reserve(_Count - 1);
+        if (_Count > 1)
+        {
+            // A separate reusable Task pool avoids waiting on the default pool
+            // when nesting itself was invoked by one of its workers.
+            static auto _Scheduler = std::make_shared<iCAX::Tasks::ThreadPoolTaskScheduler>(8);
+            for (std::size_t _Offset = 1; _Offset < _Count; ++_Offset)
+            {
+                const auto _Index = _Begin + _Offset;
+                _Batch.Tasks.push_back(iCAX::Tasks::Run([&, _Index] { _RunGroup(_Index); }, _Scheduler));
+            }
+        }
+        _RunGroup(_Begin);
+        for (const auto& _Task : _Batch.Tasks) _Task.Wait();
+        for (const auto& _Task : _Batch.Tasks) _Task.Result();
+    }
+
+    // Merge in the original profile order, never completion order. Workers do
+    // not touch aggregate counters, resource libraries, inventory or the scene.
+    SGroupResult _Aggregate;
+    auto& [_Plans, _PlacedQuantities, _MissingReasons, _TotalStock,
+        _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes] = _Aggregate;
+    VariantArray _Unplaced, _Diagnostics;
+    for (auto& _Result : _Results)
+    {
+        _Plans.insert(_Plans.end(), std::make_move_iterator(_Result.Plans.begin()),
+            std::make_move_iterator(_Result.Plans.end()));
+        _PlacedQuantities.merge(_Result.PlacedQuantities);
+        _MissingReasons.merge(_Result.MissingReasons);
+        _TotalStock += _Result.TotalStock;
+        _PartLength += _Result.PartLength;
+        _UsedLength += _Result.UsedLength;
+        _PlacedCount += _Result.PlacedCount;
+        _AllExact = _AllExact && _Result.AllExact;
+        _SearchNodes += _Result.SearchNodes;
     }
     for (const auto& _Part : Parts_)
     {
@@ -486,8 +646,8 @@ ObjectMap SolveManufacturingNesting(
         });
     });
     _Diagnostics.emplace_back(_UsesTrapezoidNesting
-        ? std::string("直切零件按数学规划求解；已可靠识别的平面斜切端参与梯形套切，其余端部继续按轴向包络保守排样。")
-        : std::string("按最终零件轴向包络保守排样；间距仅计在相邻零件之间。"));
+        ? std::string("按直切或保守斜切毛坯排样；斜切刀平面完整包住最终零件后参与梯形套切，不要求真实端口为平面。")
+        : std::string("按直切包络排样；未找到可靠斜切近似的端口使用直切包络，间距仅计在相邻零件之间。"));
     return {
         { "status", std::string(_Status) }, { "plans", std::move(_Plans) },
         { "unplaced", std::move(_Unplaced) }, { "diagnostics", std::move(_Diagnostics) },

@@ -144,19 +144,45 @@ namespace
 
 struct iCAX::Tasks::ThreadPoolTaskScheduler::Impl final
 {
+    // Workers own the queue state, not the scheduler object. The last scheduler
+    // reference can legitimately be released by a completed task on a worker.
+    struct State final
+    {
+        mutable std::mutex mutex;
+        std::condition_variable cv;
+        std::queue<std::function<void()>> actions;
+        bool stopping = false;
+    };
+
+    inline static thread_local const State* currentWorkerState = nullptr;
+
     explicit Impl(std::size_t workerCount_)
         : workerCount(NormalizeWorkerCount(workerCount_))
     {
         workers.reserve(workerCount);
-        for (std::size_t index = 0; index < workerCount; ++index)
+        try
         {
-            workers.emplace_back([this] { WorkerLoop(); });
+            for (std::size_t index = 0; index < workerCount; ++index)
+                workers.emplace_back([queue = state] { WorkerLoop(std::move(queue)); });
+        }
+        catch (...)
+        {
+            // A partially constructed vector of joinable threads would terminate
+            // the process if thread creation failed without first draining it.
+            Shutdown();
+            throw;
         }
     }
 
     ~Impl()
     {
         Shutdown();
+        if (currentWorkerState == state.get())
+        {
+            // Never join peers from a worker: they may be waiting for this task.
+            // Detached workers retain State and drain already accepted actions.
+            for (auto& worker : workers) if (worker.joinable()) worker.detach();
+        }
     }
 
     void Schedule(std::function<void()> action_)
@@ -167,73 +193,61 @@ struct iCAX::Tasks::ThreadPoolTaskScheduler::Impl final
         }
 
         {
-            std::lock_guard<std::mutex> lock(mutex);
-            if (stopping)
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->stopping)
             {
                 throw std::runtime_error("ThreadPoolTaskScheduler has been shut down.");
             }
 
-            actions.push(std::move(action_));
+            state->actions.push(std::move(action_));
         }
 
-        cv.notify_one();
+        state->cv.notify_one();
     }
 
     std::size_t PendingCount() const
     {
-        std::lock_guard<std::mutex> lock(mutex);
-        return actions.size();
+        std::lock_guard<std::mutex> lock(state->mutex);
+        return state->actions.size();
     }
 
     void Shutdown()
     {
         {
-            std::lock_guard<std::mutex> lock(mutex);
-            if (stopping)
-            {
-                return;
-            }
-
-            stopping = true;
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->stopping = true;
         }
 
-        cv.notify_all();
+        state->cv.notify_all();
 
-        const auto currentId = std::this_thread::get_id();
+        // Worker calls request shutdown without waiting. External callers all
+        // synchronize on joining, including concurrent/repeated Shutdown calls.
+        if (currentWorkerState == state.get()) return;
+        std::lock_guard<std::mutex> joinLock(joinMutex);
         for (auto& worker : workers)
         {
-            if (!worker.joinable())
-            {
-                continue;
-            }
-
-            if (worker.get_id() == currentId)
-            {
-                worker.detach();
-            }
-            else
-            {
-                worker.join();
-            }
+            if (worker.joinable()) worker.join();
         }
     }
 
-    void WorkerLoop()
+    static void WorkerLoop(std::shared_ptr<State> state_)
     {
+        currentWorkerState = state_.get();
         while (true)
         {
             std::function<void()> action;
             {
-                std::unique_lock<std::mutex> lock(mutex);
-                cv.wait(lock, [this] { return stopping || !actions.empty(); });
+                std::unique_lock<std::mutex> lock(state_->mutex);
+                state_->cv.wait(lock, [&] { return state_->stopping || !state_->actions.empty(); });
 
-                if (stopping && actions.empty())
+                if (state_->stopping && state_->actions.empty())
                 {
+                    currentWorkerState = nullptr;
                     return;
                 }
 
-                action = std::move(actions.front());
-                actions.pop();
+                action = std::move(state_->actions.front());
+                state_->actions.pop();
             }
 
             try
@@ -248,11 +262,9 @@ struct iCAX::Tasks::ThreadPoolTaskScheduler::Impl final
     }
 
     std::size_t workerCount;
-    mutable std::mutex mutex;
-    std::condition_variable cv;
-    std::queue<std::function<void()>> actions;
+    std::shared_ptr<State> state = std::make_shared<State>();
+    std::mutex joinMutex;
     std::vector<std::thread> workers;
-    bool stopping = false;
 };
 
 iCAX::Tasks::ThreadPoolTaskScheduler::ThreadPoolTaskScheduler(std::size_t workerCount_)

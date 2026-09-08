@@ -21,5 +21,16 @@
     { "key": "width", "displayName": { "zh-CN": "外宽" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
     { "key": "depth", "displayName": { "zh-CN": "外高" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
     { "key": "wallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "defaultValue": 2.0, "min": 0.1, "step": 0.1 }
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 1,
+    "annotations": [
+      { "parameter": "shapeMode", "kind": "leader", "side": "left", "point": ["contourX(0,0)", "contourY(0,0)"], "description": "切换正多边形或凹谷交替的星形；两者都保持指定的外宽和外高。" },
+      { "parameter": "sideCount", "kind": "leader", "side": "top", "point": ["contourX(0,2)", "contourY(0,2)"], "description": "正多边形时为边数，星形时为外侧星角数量；星形实际顶点数为此数的两倍。" },
+      { "parameter": "starInnerRatio", "kind": "leader", "side": "right", "point": ["contourX(0,1)", "contourY(0,1)"], "description": "星形缩放前星谷半径与星尖半径之比；值越小凹谷越深，最终轮廓仍按外宽和外高缩放。" },
+      { "parameter": "width", "kind": "linear", "axis": "x", "side": "bottom", "from": ["-width/2", 0], "to": ["width/2", 0], "description": "生成并居中的外轮廓在水平方向的最大总宽，不是外接圆直径或单边长度。" },
+      { "parameter": "depth", "kind": "linear", "axis": "y", "side": "left", "from": [0, "-depth/2"], "to": [0, "depth/2"], "description": "生成并居中的外轮廓在竖直方向的最大总高；宽高可独立设置。" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "right", "point": ["(contourX(0,0)+contourX(0,1)+contourX(1,0)+contourX(1,1))/4", "(contourY(0,0)+contourY(0,1)+contourY(1,0)+contourY(1,1))/4"], "description": "每条外轮廓边向内法向偏置的距离；过厚或星谷过深时可能无法形成有效内轮廓。" }
+    ]
+  }
 }

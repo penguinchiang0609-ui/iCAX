@@ -111,6 +111,56 @@ B 样条和 NURBS 使用相同的次数、控制点、节点及周期结构；NU
 
 孔槽等加工仍接在各实例自己的布尔节点上。Cut、Fuse、Common 均在 `Build()` 前启用非破坏模式，确保不会修改其他实例引用的基础体。该机制不等同于显示与生产共用最终模型，也不提供跨请求或跨生成批次缓存。
 
+## 受控并行求解
+
+生成与拆单共同使用上述求解器，默认按依赖层级分批并行执行独立的几何节点。
+执行器使用 foundation `Task::Run` 和共享的专用 `ThreadPoolTaskScheduler(8)`，不再逐批创建原生线程。
+专用池与默认任务池隔离，避免同步求解器从默认池内调用时因等待同池子任务而饥饿。
+单次调用最多使用 `min(8, max(1, hardware_concurrency - 1))` 个计算线程；
+`EvaluateNeutralModel(model, roots, options)` 可用 `MaximumConcurrency = 1` 回退到串行。
+显式线程数也限制在 1–8；0 表示自动选择。
+
+- 先检查所选子图的缺失依赖和循环，再启动计算。Boolean 的 `target/tools` 覆盖普通 `inputs` 时，以实际使用的依赖为准。
+- 共享依赖仍只求解一次。并行的拉伸和布尔任务使用在主调线程上预先深拷贝的几何，避免不同任务通过共同的 TShape 修改拓扑、容差或缓存。
+- Transform 和 Compound 的共享实例装配保持串行；结果字典只由主调线程写入，批内所有 Task 完成后才传播异常，不返回半成品。即使提交途中失败，也先等待已提交任务再释放其引用的数据。
+- 布尔算法明确关闭内部并行，避免外层零件并行与内层线程池叠加。没有改变同一个节点内刀具的应用顺序。
+- 减料前使用不依赖显示网格、包含形状容差的包围盒快筛。仅跳过明确分离的包围盒；接触或重叠仍交给精确布尔，合并和求交不使用此快捷路径。`UseBoundingBoxFilter = false` 可关闭以作对照。
+- 本层不访问项目、资源库或撤销栈；TubeDesigner 的资源提交和数据库事务仍在原调用线程上完成。
+
+`ComponentResource` 和 `TemplateRuntimeTest.NeutralModel*` 覆盖并行与串行的一致性、
+共享实例、依赖选择、异常恢复以及快筛边界。
+完整五面防盗窗的耗时／几何对照测试需显式运行：
+
+```text
+TubeDesignerTest.exe --gtest_filter=TemplateRuntimeTest.DISABLED_FiveFaceParallelGeometryBenchmark --gtest_also_run_disabled_tests
+```
+
+该测试对 88 个零件的显示和制造模型分别比较串行、串行快筛、8 线程快筛；
+每次重新求解，没有读取已拆单项目的缓存。检查最终实体有效性、体积、包围盒及实体／面／边数量。
+计时仅包含几何求解，不代表包括资源转换、入库及前端刷新在内的整次操作耗时。
+
+## OCC 到中性 BRep 的并行转换
+
+`ConvertOpenCascadeShapesToBRep(inputs, tolerance, maximumConcurrency)` 使用同一个专用 Task 池，
+按零件并行生成中性几何、拓扑及三角网格。0 自动选择并发数，1 可用于串行对照，最多 8 路。
+输入实体在主调线程分批深拷贝，避免 OCCT 网格化回写共享 TShape；原实例与原型保持不变。
+输出顺序与输入一致；返回或抛出异常前等待已提交任务结束，不返回部分转换结果。
+
+TubeDesigner 的生成预览、拆单均分为“准备输入 → 并行转换 → 串行发布”。
+资源 URL、零件元数据和坐标规范化仍在原后端调用线程准备；工作线程不访问 Scene、资源池或数据库。
+整批转换成功后才在原线程写入 BRep 资源、注册前端网格资源并继续数据库事务。
+这里保证转换失败不发布该批 BRep，不表示后续多个资源写入具备整体回滚事务。
+
+回归测试还覆盖共享原型不被网格化修改、圆柱接缝的正反向 pcurve 顺序和曲面坐标系的左右手性。
+完整 88 件转换对照可单独运行：
+
+```text
+TubeDesignerTest.exe --gtest_filter=TemplateRuntimeTest.DISABLED_FiveFaceBRepConversionBenchmark --gtest_also_run_disabled_tests
+```
+
+该计时包含保护性深拷贝、网格化和中性 BRep 转换，不含之前的布尔求解、后续资源发布及界面刷新。
+测试同时检查串并行拓扑／网格数量，以及还原实体的有效性、体积和包围盒。
+
 ## 目录结构
 
 - `OpenCascadeResourceImporter.cpp`：OCCT 资源导入器实现。

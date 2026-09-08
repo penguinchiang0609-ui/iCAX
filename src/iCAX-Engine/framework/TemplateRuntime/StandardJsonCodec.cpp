@@ -92,7 +92,11 @@ iCAX::Data::Variant iCAX::TemplateRuntime::CStandardJsonCodec::Parse(
     const std::string& strJson_)
 {
     boost::system::error_code _Error;
-    const auto _Value = json::parse(strJson_, _Error);
+    json::parse_options _Options;
+    // Frozen neutral geometry is hashed in Python. The fast default parser can
+    // change a rotation coefficient by one ULP and invalidate the saved cutter.
+    _Options.numbers = json::number_precision::precise;
+    const auto _Value = json::parse(strJson_, _Error, {}, _Options);
     if (_Error) throw std::invalid_argument("invalid standard JSON: " + _Error.message());
     return FromJson(_Value);
 }

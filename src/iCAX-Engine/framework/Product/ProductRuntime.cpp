@@ -1906,6 +1906,28 @@ void iCAX::Product::CProductRuntime::RegisterBuiltInProductSDO()
 {
     std::vector<CStaticProductSDO::MethodRecord> _Methods;
     _Methods.emplace_back(
+        "RemoveRecentProject",
+        [this](const iCAX::Interaction::CInvocation& Request_,
+            const iCAX::Application::IApplicationContext&,
+            iCAX::Product::IProductContext* Product_,
+            iCAX::Project::IProjectContext* Project_,
+            iCAX::Project::ISceneContext* Scene_) {
+            _RequireProductSDOContext(Product_, Project_, Scene_);
+            const auto _Path = _GetOptionalString(_DecodeObjectPayload(Request_), "projectPath");
+            if (_Path.empty()) throw std::invalid_argument("projectPath is required");
+            {
+                std::lock_guard<std::mutex> _Lock(m_ProductDataMutex);
+                auto _Updated = m_ProductData;
+                auto& _Recent = _Updated.RecentProjects;
+                _Recent.erase(std::remove_if(_Recent.begin(), _Recent.end(),
+                    [&_Path](const CRecentProjectItem& Item_) { return Item_.ProjectPath == _Path; }), _Recent.end());
+                // Only update history metadata. Never remove or close the project file.
+                SaveProductData(_Updated);
+                m_ProductData = std::move(_Updated);
+            }
+            return _MakeProductPayloadResponse(BuildProductStatePayload());
+        });
+    _Methods.emplace_back(
         kProductGetStateName,
         [this](
             IN const iCAX::Interaction::CInvocation& Request_,

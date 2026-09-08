@@ -1,11 +1,11 @@
-import { buildProfileGroups, listManufacturingParts } from "./partsArea.mjs";
+import { buildProfileGroups, listNestingParts } from "./partsArea.mjs";
 
 const VERSION = 2;
 const ACTION_PREFIX = "tube-designer-nesting-";
 let rowSequence = 0;
 
 function sectionGroups(view) {
-  return buildProfileGroups(listManufacturingParts(view.scene?.tubeDesigner ?? {}));
+  return buildProfileGroups(listNestingParts(view.scene?.tubeDesigner ?? {}));
 }
 
 function newRow() {
@@ -261,7 +261,7 @@ export function renderNestingSettingsDialogs(context, view) {
       <header class="tube-nesting-settings-header"><div><strong id="tube-nesting-settings-title">${title}</strong><span>${stock ? "按零件截面生成，默认 6000 mm；可添加不同长度。设置保存在当前项目中。" : "设置排样时相邻零件之间预留的距离，保存在当前项目中。"}</span></div>
         <button type="button" data-cam-action="${ACTION_PREFIX}settings-cancel" class="tube-nesting-settings-close" aria-label="关闭${title}" ${saving ? "disabled" : ""}>×</button></header>
       <div class="tube-nesting-settings-body">
-        ${stock ? (groups.length ? groups.map((group) => renderStockGroup(group, draft, saving)).join("") : '<div class="tube-nesting-settings-empty"><strong>还没有零件</strong><span>请先在产品页拆单，再进入下料。</span></div>') : `<label class="tube-nesting-parameter-field"><span>零件间距（mm）</span><input type="number" min="0" step="any" value="${escape(view.tubeDesignerNestingParameterDraft?.partGap ?? settings.parameters.partGap)}" data-tube-nesting-parameter="partGap" data-cam-change-action="${ACTION_PREFIX}parameters-change" data-field="partGap" ${saving ? "disabled" : ""} /><small>设为 0 表示不额外预留零件间距。</small></label>`}
+        ${stock ? (groups.length ? groups.map((group) => renderStockGroup(group, draft, saving)).join("") : '<div class="tube-nesting-settings-empty"><strong>还没有零件</strong><span>请先在产品页点击“导入下料”。</span></div>') : `<label class="tube-nesting-parameter-field"><span>零件间距（mm）</span><input type="number" min="0" step="any" value="${escape(view.tubeDesignerNestingParameterDraft?.partGap ?? settings.parameters.partGap)}" data-tube-nesting-parameter="partGap" data-cam-change-action="${ACTION_PREFIX}parameters-change" data-field="partGap" ${saving ? "disabled" : ""} /><small>设为 0 表示不额外预留零件间距。</small></label>`}
       </div>
       <footer class="tube-nesting-settings-footer">
         <div>${error ? `<p class="tube-nesting-settings-error" role="alert">${escape(error)}</p>` : `<span class="tube-nesting-settings-hint">${stock ? "数量 -1：不限；0：不用；正整数：有限库存，排样时优先使用。" : "单位：毫米（mm）"}</span>`}</div>

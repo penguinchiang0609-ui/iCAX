@@ -2,7 +2,7 @@ import { parseRenderGeometryResource } from "../../../iCAX-UI/SDK/Viewport/rende
 
 const controllers = new WeakMap();
 const sourceCaches = new WeakMap();
-const resourceNamespaces = new WeakMap();
+const planCaches = new WeakMap();
 // Selection yellow is reserved exclusively for the current part. Normal plan
 // colors deliberately omit yellow so the selection always reads immediately.
 const HIGHLIGHT_COLOR = "#ffd400";
@@ -17,25 +17,34 @@ export function getNestingPlacementColor(index, highlighted = false) {
 }
 
 /** Only owns cutting-plan content; product and single-part rendering remain unchanged. */
-export function scheduleNestingPlanHydration(context, view, plan, parts = []) {
+export function scheduleNestingPlanHydration(context, view, plan, parts = [], options = {}) {
   if (!view || !plan) return;
   const partMap = new Map(parts.map((part) => [String(part.entityId), part]));
-  const key = JSON.stringify([plan, view.tubeDesignerActiveNestingPlacementId ?? "",
-    view.tubeDesignerActiveNestingPartId ?? "", (plan.placements ?? []).map((placement) => {
+  const geometryKey = JSON.stringify([
+    plan.id, plan.stockLength, plan.usedLength, plan.remainingLength,
+    (plan.placements ?? []).map((placement) => [placement.partId, placement.instanceId,
+      placement.start, placement.end, placement.reversed, placement.rotationRadians,
+      placement.variantId, placement.trsf]),
+    (plan.placements ?? []).map((placement) => {
     const part = partMap.get(String(placement.partId));
     return [part?.thumbnailGeometryResourceId, part?.thumbnailGeometryResourceVersion];
   })]);
+  const areaId = options.areaId ?? "nesting";
+  const key = JSON.stringify([areaId, options.overlay?.revision ?? "", geometryKey, areaId === "nesting" ? view.tubeDesignerActiveNestingPlacementId ?? "" : "",
+    areaId === "nesting" ? view.tubeDesignerActiveNestingPartId ?? "" : ""]);
   const previous = controllers.get(view);
   if (previous?.key === key && previous.viewport === view.viewport) {
-    // The shared workbench clears the visible-id filter on every render for a
-    // custom view. Repeated clicks/renders must therefore restore the already
-    // hydrated plan even when no geometry reload is needed.
-    if (previous.entityIds?.length) view.viewport?.setVisibleEntityIds?.(previous.entityIds);
-    queueMicrotask(() => { if (isCurrent(view, previous)) publish(context, view, previous.state); });
+    // The workbench mounts AFTER rendering this overlay and clears custom-view
+    // visibility. Restore the cached plan after that mount, before painting.
+    queueMicrotask(() => {
+      if (!isCurrent(view, previous)) return;
+      if (previous.entityIds?.length) previous.viewport?.setVisibleEntityIds?.(previous.entityIds);
+      publish(context, view, previous.state);
+    });
     return;
   }
   cancelNestingPlanHydration(view);
-  const controller = { key, viewport: view.viewport, planId: String(plan.id), applying: false };
+  const controller = { key, geometryKey, areaId, overlay: options.overlay, viewport: view.viewport, planId: String(plan.id), applying: false };
   controllers.set(view, controller);
   controller.state = { status: "loading", planId: controller.planId, message: "正在载入排样三维结果…" };
   queueMicrotask(() => {
@@ -57,103 +66,39 @@ export function cancelNestingPlanHydration(view) {
 function isCurrent(view, controller) {
   return controllers.get(view) === controller
     && view.viewport === controller.viewport
-    && view.activeAreaId === "nesting"
-    && view.tubeDesignerNestingSelectionKind === "plan"
-    && (!view.tubeDesignerActiveNestingPlanId || String(view.tubeDesignerActiveNestingPlanId) === controller.planId);
+    && view.activeAreaId === controller.areaId
+    && (controller.areaId === "machining"
+      ? String(view.tubeDesignerMachiningPreviewPlanId) === controller.planId
+      : view.tubeDesignerNestingSelectionKind === "plan"
+        && (!view.tubeDesignerActiveNestingPlanId || String(view.tubeDesignerActiveNestingPlanId) === controller.planId));
 }
 
 async function hydrate(context, view, controller, plan, partMap) {
   try {
     if (!controller.viewport?.applyViewSnapshot) throw new Error("三维视口尚未准备好。");
-    const sourceClient = context.sceneProxy?.resources;
-    const synthetic = new Map();
-    let namespace = resourceNamespaces.get(plan);
-    if (!namespace || namespace.key !== controller.key) {
-      namespace = { key: controller.key, base: `icax-nesting-preview://${++sequence}` };
-      resourceNamespaces.set(plan, namespace);
+    let prepared = planCaches.get(plan);
+    if (!prepared || prepared.geometryKey !== controller.geometryKey) {
+      prepared = await preparePlan(context, view, controller, plan, partMap);
+      if (!prepared || !isCurrent(view, controller)) return;
+      planCaches.set(plan, prepared);
     }
-    const base = namespace.base;
-    const rows = [];
-    const hullPoints = [];
-    const envelopePartIds = new Set();
-    let approximateCount = 0;
-    const stockLength = Number(plan.stockLength);
-    if (!(stockLength > 0) || !Number.isFinite(stockLength)) throw new Error("母材长度无效。");
-    const placements = Array.isArray(plan.placements) ? plan.placements : [];
-    if (!placements.length) throw new Error("当前母材没有零件排入。");
-    const sourceByPart = new Map();
-    // Each actual part mesh is fetched once, even when its quantity places it repeatedly.
-    for (const placement of placements) {
-      const id = String(placement.partId);
-      if (sourceByPart.has(id)) continue;
-      if (!isCurrent(view, controller)) return;
-      const part = partMap.get(id);
-      try {
-        sourceByPart.set(id, await readPartSource(view, sourceClient, part));
-      } catch {
-        sourceByPart.set(id, null);
-      }
-    }
-    if (!isCurrent(view, controller)) return;
-    for (const [index, placement] of placements.entries()) {
-      const part = partMap.get(String(placement.partId));
-      const source = sourceByPart.get(String(placement.partId));
-      let geometry;
-      let matrix;
-      if (source) {
-        const bounds = meshBounds(source.mesh);
-        matrix = nestingPlacementMatrix(bounds, placement);
-        geometry = { url: source.url, version: source.version };
-        // A cross-section envelope is only used for stock/remnant indication, not parts.
-        if (!envelopePartIds.has(String(placement.partId))) {
-          envelopePartIds.add(String(placement.partId));
-          for (let offset = 0; offset < source.mesh.positions.length; offset += 3) {
-            hullPoints.push([source.mesh.positions[offset + 1] - bounds.center[1], source.mesh.positions[offset + 2] - bounds.center[2]]);
-          }
-        }
-      } else {
-        const length = Number(placement.end) - Number(placement.start);
-        const contour = fallbackContour(part?.profile ?? plan.profileData);
-        hullPoints.push(...contour);
-        geometry = addGeometry(synthetic, `${base}/fallback/${index}`, prism(contour, length));
-        matrix = translationMatrix(Number(placement.start));
-        approximateCount++;
-      }
-      const placementId = String(placement.instanceId ?? `${placement.partId}#${index + 1}`);
-      const activePlacementId = String(view.tubeDesignerActiveNestingPlacementId ?? "");
-      const activePartId = String(view.tubeDesignerActiveNestingPartId ?? "");
+    const { base, synthetic, cachedBuffers, sourceClient, placements, approximateCount } = prepared;
+    const activePlacementId = controller.areaId === "nesting" ? String(view.tubeDesignerActiveNestingPlacementId ?? "") : "";
+    const activePartId = controller.areaId === "nesting" ? String(view.tubeDesignerActiveNestingPartId ?? "") : "";
+    const rows = [...prepared.rows.map((row) => {
+      const meta = prepared.placementMeta.get(row.entityId);
+      if (!meta) return row;
       const highlighted = activePlacementId
-        ? placementId === activePlacementId
-        : Boolean(activePartId && String(placement.partId) === activePartId);
-      const color = getNestingPlacementColor(index, highlighted);
+        ? meta.placementId === activePlacementId
+        : Boolean(activePartId && meta.partId === activePartId);
+      const color = getNestingPlacementColor(meta.index, highlighted);
       const materialUrl = `${base}/color/${color.slice(1)}`;
-      synthetic.set(materialUrl, encodeMaterial(linearColorRGBA(color)));
-      rows.push({
-        entityId: `nesting:${plan.id}:${placementId}`,
-        data: { geometry, material: { url: materialUrl }, localToWorldMatrix: matrix,
-          geometryKind: 1, renderClass: 1, visible: true, selectable: false },
-      });
-    }
-    const contour = convexHull(hullPoints);
-    if (contour.length < 3) throw new Error("不能确定母材截面包络。");
-    const envelopeMaterial = `${base}/envelope-material`;
-    synthetic.set(envelopeMaterial, encodeMaterial(0x9badb780));
-    rows.push({ entityId: `nesting:${plan.id}:stock-envelope`, data: {
-      geometry: addGeometry(synthetic, `${base}/stock-envelope`, outline(contour, stockLength)),
-      material: { url: envelopeMaterial }, geometryKind: 2, visible: true, selectable: false,
-    } });
-    const usedLength = Math.max(...placements.map((placement) => Number(placement.end)));
-    if (stockLength - usedLength > 0.001) {
-      rows.push({ entityId: `nesting:${plan.id}:remnant`, data: {
-        geometry: addGeometry(synthetic, `${base}/remnant`, prism(contour, stockLength - usedLength)),
-        material: { url: envelopeMaterial }, geometryKind: 1,
-        localToWorldMatrix: translationMatrix(usedLength), visible: true, selectable: false,
-      } });
-    }
-    const cachedBuffers = new Map([...sourceByPart.values()].filter(Boolean).map((source) => [source.url, source.buffer]));
+      if (!synthetic.has(materialUrl)) synthetic.set(materialUrl, encodeMaterial(linearColorRGBA(color)));
+      return { ...row, data: { ...row.data, material: { url: materialUrl } } };
+    }), ...(controller.overlay?.rows ?? [])];
     const resources = {
       async get(url, options) {
-        const bytes = synthetic.get(String(url)) ?? cachedBuffers.get(String(url));
+        const bytes = controller.overlay?.resources?.get(String(url)) ?? synthetic.get(String(url)) ?? cachedBuffers.get(String(url));
         if (bytes) return new Response(bytes, { status: 200 });
         return sourceClient?.get(url, options) ?? new Response(null, { status: 404 });
       },
@@ -162,14 +107,17 @@ async function hydrate(context, view, controller, plan, partMap) {
     controller.viewport.setDimensionAnnotations?.([]);
     controller.viewport.setPresentationAxis?.([1, 0, 0], [1, 0, 0]);
     controller.applying = true;
-    const receipt = await controller.viewport.applyViewSnapshot({ revision: base, rows }, resources);
+    const receipt = await controller.viewport.applyViewSnapshot({ revision: `${base}/view/${++sequence}`, rows }, resources);
     controller.applying = false;
     if (!isCurrent(view, controller)) return;
     if (!receipt?.applied || receipt.entityIds?.length !== rows.length) throw new Error("排样几何没有完整进入三维视图。");
     controller.entityIds = [...receipt.entityIds];
     view.tubeDesignerPartViewportKey = null;
-    controller.viewport.setStandardView?.("top-front");
-    controller.viewport.fitViewToViewport?.(1.16);
+    if (controller.areaId !== "machining" || view.tubeDesignerMachiningFitPlanId !== controller.planId) {
+      controller.viewport.setStandardView?.("top-front");
+      controller.viewport.fitViewToViewport?.(1.16);
+      if (controller.areaId === "machining") view.tubeDesignerMachiningFitPlanId = controller.planId;
+    }
     controller.state = {
       status: "ready", planId: controller.planId, entityCount: rows.length,
       partCount: placements.length, approximate: approximateCount > 0, approximateCount,
@@ -185,6 +133,80 @@ async function hydrate(context, view, controller, plan, partMap) {
     controller.state = { status: "error", planId: controller.planId, message: error?.message ?? String(error) };
     publish(context, view, controller.state);
   }
+}
+
+async function preparePlan(context, view, controller, plan, partMap) {
+  const sourceClient = context.sceneProxy?.resources;
+  const synthetic = new Map();
+  const base = `icax-nesting-preview://${++sequence}`;
+  const rows = [];
+  const placementMeta = new Map();
+  const hullPoints = [];
+  const envelopePartIds = new Set();
+  let approximateCount = 0;
+  const stockLength = Number(plan.stockLength);
+  if (!(stockLength > 0) || !Number.isFinite(stockLength)) throw new Error("母材长度无效。");
+  const placements = Array.isArray(plan.placements) ? plan.placements : [];
+  if (!placements.length) throw new Error("当前母材没有零件排入。");
+  const sourceByPart = new Map();
+  for (const placement of placements) {
+    const id = String(placement.partId);
+    if (sourceByPart.has(id)) continue;
+    if (!isCurrent(view, controller)) return null;
+    try { sourceByPart.set(id, await readPartSource(view, sourceClient, partMap.get(id))); }
+    catch { sourceByPart.set(id, null); }
+  }
+  if (!isCurrent(view, controller)) return null;
+  for (const [index, placement] of placements.entries()) {
+    const partId = String(placement.partId);
+    const part = partMap.get(partId);
+    const source = sourceByPart.get(partId);
+    let geometry, matrix;
+    if (source) {
+      const bounds = meshBounds(source.mesh);
+      matrix = nestingPlacementMatrix(bounds, placement);
+      geometry = { url: source.url, version: source.version };
+      if (!envelopePartIds.has(partId)) {
+        envelopePartIds.add(partId);
+        for (let offset = 0; offset < source.mesh.positions.length; offset += 3) {
+          hullPoints.push([source.mesh.positions[offset + 1] - bounds.center[1], source.mesh.positions[offset + 2] - bounds.center[2]]);
+        }
+      }
+    } else {
+      const length = Number(placement.end) - Number(placement.start);
+      const contour = fallbackContour(part?.profile ?? plan.profileData);
+      hullPoints.push(...contour);
+      geometry = addGeometry(synthetic, `${base}/fallback/${index}`, prism(contour, length));
+      matrix = translationMatrix(Number(placement.start));
+      approximateCount++;
+    }
+    const placementId = String(placement.instanceId ?? `${placement.partId}#${index + 1}`);
+    const entityId = `nesting:${plan.id}:${placementId}`;
+    placementMeta.set(entityId, { index, partId, placementId });
+    rows.push({ entityId, data: { geometry, localToWorldMatrix: matrix,
+      geometryKind: 1, renderClass: 1, visible: true, selectable: false } });
+  }
+  const contour = convexHull(hullPoints);
+  if (contour.length < 3) throw new Error("不能确定母材截面包络。");
+  const envelopeMaterial = `${base}/envelope-material`;
+  synthetic.set(envelopeMaterial, encodeMaterial(0x9badb780));
+  rows.push({ entityId: `nesting:${plan.id}:stock-envelope`, data: {
+    geometry: addGeometry(synthetic, `${base}/stock-envelope`, outline(contour, stockLength)),
+    material: { url: envelopeMaterial }, geometryKind: 2, visible: true, selectable: false,
+  } });
+  const usedLength = Math.max(...placements.map((placement) => Number(placement.end)));
+  if (stockLength - usedLength > 0.001) {
+    rows.push({ entityId: `nesting:${plan.id}:remnant`, data: {
+      geometry: addGeometry(synthetic, `${base}/remnant`, prism(contour, stockLength - usedLength)),
+      material: { url: envelopeMaterial }, geometryKind: 1,
+      localToWorldMatrix: translationMatrix(usedLength), visible: true, selectable: false,
+    } });
+  }
+  return {
+    geometryKey: controller.geometryKey, base, rows, placementMeta, synthetic, sourceClient,
+    placements, approximateCount,
+    cachedBuffers: new Map([...sourceByPart.values()].filter(Boolean).map((source) => [source.url, source.buffer])),
+  };
 }
 
 function publish(context, view, state) {
@@ -210,6 +232,11 @@ async function readPartSource(view, resourceClient, part) {
   let cache = sourceCaches.get(view);
   if (!cache) sourceCaches.set(view, cache = new Map());
   const key = `${url}@${version}`;
+  // A changed source version invalidates the old mesh immediately. There is no
+  // clock-based expiry while the part itself remains unchanged.
+  for (const cachedKey of cache.keys()) {
+    if (cachedKey.startsWith(`${url}@`) && cachedKey !== key) cache.delete(cachedKey);
+  }
   if (!cache.has(key)) {
     cache.set(key, (async () => {
       const headers = new Headers({ Accept: "application/vnd.icax.flatbuffer" });
@@ -246,6 +273,13 @@ export function nestingPlacementMatrix(bounds, placement) {
   if (bounds.max[0] - bounds.min[0] > end - start + 0.1) throw new Error("实际零件长度超出排样占用长度，请重新排样。");
   const rotation = Number(placement.rotationRadians ?? 0);
   if (!Number.isFinite(rotation)) throw new Error("零件绕轴旋转角无效。");
+  if (placement.trsf !== undefined) {
+    if (!Array.isArray(placement.trsf) || placement.trsf.length !== 16
+      || placement.trsf.some((value) => !Number.isFinite(Number(value)))) {
+      throw new Error("零件排样变换无效。");
+    }
+    return placement.trsf.map(Number);
+  }
   const xDirection = placement.reversed ? -1 : 1;
   const yDirection = placement.reversed ? -1 : 1;
   const cosine = Math.cos(rotation), sine = Math.sin(rotation);
@@ -316,7 +350,8 @@ export function encodeNestingGeometry({ kind = 1, positions, indices = [], range
   return encodeResource("ICRG", 15, [[0, 1], [1, kind]], [[5, positions, true], [9, indices, false], [10, ranges, false]]);
 }
 
-function encodeMaterial(color) { return encodeResource("ICRM", 10, [[0, 1], [2, color]], []); }
+export function encodePreviewMaterial(color) { return encodeResource("ICRM", 10, [[0, 1], [2, color]], []); }
+const encodeMaterial = encodePreviewMaterial;
 
 function linearColorRGBA(cssColor) {
   // The viewport's MeshPhongMaterial consumes numeric channels as linear RGB.

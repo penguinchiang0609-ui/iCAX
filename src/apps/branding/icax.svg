@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="iCAX Studio">
+  <rect width="256" height="256" rx="52" fill="#06233d"/>
+  <!-- Four independent studio modules framing a shared workspace. -->
+  <path d="M54 108V65Q54 54 65 54H108" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="square"/>
+  <path d="M148 54H191Q202 54 202 65V108" fill="none" stroke="#10bdb5" stroke-width="20" stroke-linecap="square"/>
+  <path d="M202 148V191Q202 202 191 202H148" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="square"/>
+  <path d="M108 202H65Q54 202 54 191V148" fill="none" stroke="#10bdb5" stroke-width="20" stroke-linecap="square"/>
+  <path d="m128 91 37 37-37 37-37-37Z" fill="#10bdb5"/>
+  <path d="m128 91 37 37h-37Z" fill="#fff"/>
+</svg>

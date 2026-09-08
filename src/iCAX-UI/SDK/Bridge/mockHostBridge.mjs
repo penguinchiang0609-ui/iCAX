@@ -19,6 +19,7 @@ export class MockHostBridge {
     this.postedFrames = [];
     this.productStarted = false;
     this.projectOpened = false;
+    this.removedRecentPaths = new Set();
     this.projectPath = "D:/projects/mock.icax";
     this.directoryDialogPath = options.directoryDialogPath ?? "D:/projects";
     this.resourceRecords = new Map();
@@ -185,6 +186,10 @@ export class MockHostBridge {
     return "D:/projects/mock.icax";
   }
 
+  async saveFileDialog(options = {}) {
+    return options.defaultPath || "D:/projects/mock.icax";
+  }
+
   async openDirectoryDialog() {
     return this.directoryDialogPath;
   }
@@ -285,8 +290,18 @@ export class MockHostBridge {
       return { catalog: this.#catalogState(payload.projectPath), state: this.#runningProductState() };
     }
 
+    if (methodCode === makeSDOMethodCodeFromName(ProductSDO.removeRecentProject)) {
+      this.removedRecentPaths.add(payload.projectPath);
+      return {...this.#runningProductState(), recentProjects: this.#productState().recentProjects};
+    }
+
     if (methodCode === makeSDOMethodCodeFromName(ProjectSDO.getState)) {
       return this.#projectState();
+    }
+
+    if (methodCode === makeSDOMethodCodeFromName(ProjectSDO.save)) {
+      this.projectPath = payload.projectPath || this.projectPath;
+      return { saved: true, projectPath: this.projectPath, project: this.#projectState(this.projectPath) };
     }
 
     if (methodCode === makeSDOMethodCodeFromName(ProjectSDO.undo)
@@ -360,7 +375,7 @@ export class MockHostBridge {
       productChannelId: this.productStarted ? productChannelId : nilChannelId,
       recentProjects: [
         { path: "D:/projects/mock.icax", displayName: "mock.icax", lastOpenedTime: "2026-06-24T00:00:00Z" },
-      ],
+      ].filter(item => !this.removedRecentPaths.has(item.path)),
       session,
     };
   }

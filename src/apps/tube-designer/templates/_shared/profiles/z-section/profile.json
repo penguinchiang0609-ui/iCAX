@@ -6,8 +6,16 @@
   "displayName": { "zh-CN": "Z 型钢", "en-US": "Z section" },
   "description": "等厚错向翼缘和腹板组成的 Z 形标准拉伸型材。",
   "parameters": [
-    { "key": "width", "displayName": { "zh-CN": "翼缘宽" }, "valueType": "number", "defaultValue": 50.0, "min": 1.0, "step": 1.0 },
+    { "key": "width", "displayName": { "zh-CN": "截面总宽" }, "valueType": "number", "defaultValue": 50.0, "min": 1.0, "step": 1.0 },
     { "key": "depth", "displayName": { "zh-CN": "截面高" }, "valueType": "number", "defaultValue": 50.0, "min": 1.0, "step": 1.0 },
     { "key": "wallThickness", "displayName": { "zh-CN": "厚度" }, "valueType": "number", "defaultValue": 3.0, "min": 0.1, "step": 0.1 }
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 1,
+    "annotations": [
+      { "parameter": "width", "kind": "linear", "axis": "x", "side": "bottom", "from": ["-width/2", "-depth/2"], "to": ["width/2", "depth/2"], "description": "下翼缘左端到上翼缘右端的截面总宽；上下翼缘反向伸出，并非单块翼缘的宽度。" },
+      { "parameter": "depth", "kind": "linear", "axis": "y", "side": "left", "from": ["-width/2", "-depth/2"], "to": ["-wallThickness/2", "depth/2"], "description": "上翼缘顶面到下翼缘底面的总高，包含两块翼缘的厚度。" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "right", "point": [0, 0], "description": "中间腹板与上下错向翼缘的共同厚度；修改时三处厚度一起变化。" }
+    ]
+  }
 }

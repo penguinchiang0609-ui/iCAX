@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,6 +15,71 @@ namespace iCAX::TubeNesting
      *          “界面显示可放入、求解器却判断超长”的边界不一致。
      */
     using Length = std::int64_t;
+
+    /**
+     * @brief 管材展开端部曲线的压缩表示。
+     *
+     * Period 是截面展开周长，Samples 是沿周向均匀采样的轴向偏移。采样坐标
+     * 按 Period 周期循环，所以展开缝不会把同一条端曲线错误地切成两个形状。
+     * 该结构只存排样所需的特征，不替代上游的 BRep/DXF/CSG 原始几何。
+     */
+    enum class CutLineFeatureKind : std::uint8_t
+    {
+        Invalid = 0,
+        Constant = 1,
+        Linear = 2,
+        Sampled = 3,
+    };
+
+    struct CutLineFeatureCode final
+    {
+        std::string Schema = "icax.tube-cutline.v1";
+        CutLineFeatureKind Kind = CutLineFeatureKind::Invalid;
+        Length Period = 0;
+        Length Minimum = 0;
+        Length Maximum = 0;
+        Length Mean = 0;
+        Length TotalVariation = 0;
+        Length LinearStart = 0;
+        Length LinearEnd = 0;
+        Length ConstantValue = 0;
+        std::vector<Length> Samples;
+        std::string ClassKey;
+        std::uint64_t Fingerprint = 0;
+    };
+
+    /** 端曲线相位匹配的结果；RequiredSeparation 允许为负，表示安全套切重叠量。 */
+    struct CutLineMatchResult final
+    {
+        bool Valid = false;
+        Length RequiredSeparation = 0;
+        Length PhaseOffset = 0;
+        std::size_t Evaluations = 0;
+    };
+
+    /**
+     * @brief 将均匀周向采样压缩为可索引的特征码。
+     * @param Period_ 截面展开周长，必须与 Samples_ 使用同一长度单位。
+     * @param Samples_ 相对端面基准的轴向偏移，可为负值。
+     * @param LinearTolerance_ 识别常值/线性端曲线时允许的最大量化残差。
+     */
+    CutLineFeatureCode EncodeCutLineFeature(
+        Length Period_, const std::vector<Length>& Samples_, Length LinearTolerance_ = 1);
+
+    /** 判断编码是否可用于匹配；无效码会被求解器直接回退到旧的包络算法。 */
+    bool IsValidCutLineFeature(const CutLineFeatureCode& Feature_);
+
+    /** 在给定周向相位下计算一对端曲线的精确离散成本。 */
+    CutLineMatchResult EvaluateCutLineMatch(
+        const CutLineFeatureCode& Tail_, const CutLineFeatureCode& Head_, Length PhaseOffset_);
+
+    /**
+     * @brief 在一个有限相位网格上找最佳端曲线匹配。
+     * @details 不会创建两两全量矩阵；调用方可以只对索引筛出的少量候选调用本函数。
+     */
+    CutLineMatchResult FindBestCutLineMatch(
+        const CutLineFeatureCode& Tail_, const CutLineFeatureCode& Head_,
+        std::size_t PhaseSamples_ = 64);
 
     /**
      * @brief 一个端部在排样阶段需要的几何摘要。
@@ -30,6 +97,8 @@ namespace iCAX::TubeNesting
         /** 量化后的切割平面方向类别；相同类别的相邻斜端才允许互相嵌套。 */
         std::string NestingPlane;
         bool AllowTrapezoidNesting = false;
+        // 新的展开条带端曲线编码。为空时保持旧版共刀/梯形算法行为。
+        CutLineFeatureCode Feature;
     };
 
     /**
@@ -48,6 +117,8 @@ namespace iCAX::TubeNesting
         EndDescriptor RightEnd;
         bool Reversed = false;
         double RotationRadians = 0.0;
+        // 沿截面展开周向的相位偏移，使用与 Period 相同的离散长度单位。
+        Length PhaseOffset = 0;
     };
 
     /**
@@ -136,6 +207,7 @@ namespace iCAX::TubeNesting
         Length GapBefore = 0;
         bool Reversed = false;
         double RotationRadians = 0.0;
+        Length PhaseOffset = 0;
         bool CommonCutWithPrevious = false;
     };
 

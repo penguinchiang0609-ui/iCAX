@@ -53,6 +53,9 @@ namespace iCAX::Tasks
         ThreadPoolTaskScheduler& operator=(const ThreadPoolTaskScheduler&) = delete;
 
         void Schedule(std::function<void()> action_) override;
+        // Reject new work and drain accepted work. External callers (including
+        // concurrent callers) wait for all workers. A worker only requests stop,
+        // so tasks that depend on that worker cannot deadlock during shutdown.
         void Shutdown();
         std::size_t WorkerCount() const;
         std::size_t PendingCount() const;

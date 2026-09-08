@@ -40,7 +40,8 @@ namespace
             return {};
         }
 
-        std::ifstream _Input(strProjectPath_, std::ios::binary);
+        const std::filesystem::path _Path(std::u8string(strProjectPath_.begin(), strProjectPath_.end()));
+        std::ifstream _Input(_Path, std::ios::binary);
         if (!_Input)
         {
             throw std::runtime_error("Failed to open project file: " + strProjectPath_);
@@ -97,11 +98,12 @@ iCAX::Application::CProductFileResolveResult iCAX::Application::CProductFileReso
     {
         throw std::invalid_argument("Project path cannot be empty");
     }
-    if (!std::filesystem::exists(strProjectPath_))
+    const std::filesystem::path _Path(std::u8string(strProjectPath_.begin(), strProjectPath_.end()));
+    if (!std::filesystem::exists(_Path))
     {
         throw std::invalid_argument("Project file does not exist: " + strProjectPath_);
     }
-    if (!std::filesystem::is_regular_file(strProjectPath_))
+    if (!std::filesystem::is_regular_file(_Path))
     {
         throw std::invalid_argument("Project path is not a file: " + strProjectPath_);
     }

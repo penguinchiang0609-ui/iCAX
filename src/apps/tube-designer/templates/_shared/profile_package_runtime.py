@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import math
@@ -17,6 +18,172 @@ MAX_ARCHIVE_BYTES = 8 * 1024 * 1024
 MAX_MEMBER_BYTES = 4 * 1024 * 1024
 MAX_TOTAL_BYTES = 8 * 1024 * 1024
 REQUIRED_MEMBERS = ("profile.json", "profile.py")
+MAX_DIAGRAM_ANNOTATIONS = 128
+MAX_DIAGRAM_COORDINATE = 1.0e9
+
+
+def _diagram_expression(value: Any, numeric_keys: set[str], label: str) -> ast.AST:
+    """Accept a small arithmetic language, never Python evaluation or attributes.
+
+    Coordinates use XY section millimetres. Expressions may reference declared
+    number/integer parameters, unary +/- and binary + - * /, min/max (1..8
+    operands), abs/sqrt/sin/cos (one operand; angles in radians). contourX/Y(c,v)
+    read actual polygon vertices after evaluation; both indices must be
+    non-negative integers in bounds. No indexing, attributes, comprehensions,
+    exponentiation, variables from build(), or arbitrary function calls exist.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        _finite_number(value, label)
+        return ast.Constant(value=value)
+    if not isinstance(value, str) or not value.strip() or len(value) > 256:
+        raise ValueError(f"{label} 必须是数值或不超过 256 字符的坐标表达式")
+    try:
+        expression = ast.parse(value, mode="eval").body
+    except (SyntaxError, ValueError, RecursionError) as error:
+        raise ValueError(f"{label} 坐标表达式无效") from error
+    if sum(1 for _ in ast.walk(expression)) > 64:
+        raise ValueError(f"{label} 坐标表达式过于复杂")
+
+    def validate(node: ast.AST, depth: int = 0) -> None:
+        if depth > 16:
+            raise ValueError(f"{label} 坐标表达式嵌套过深")
+        if isinstance(node, ast.Constant):
+            _finite_number(node.value, label)
+        elif isinstance(node, ast.Name) and node.id in numeric_keys:
+            return
+        elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            validate(node.operand, depth + 1)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div)):
+            validate(node.left, depth + 1)
+            validate(node.right, depth + 1)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and not node.keywords:
+            name = node.func.id
+            valid_count = (
+                name in ("min", "max") and 1 <= len(node.args) <= 8
+                or name in ("abs", "sqrt", "sin", "cos") and len(node.args) == 1
+                or name in ("contourX", "contourY") and len(node.args) == 2
+            )
+            if not valid_count:
+                raise ValueError(f"{label} 包含不支持的函数或参数数量")
+            for argument in node.args:
+                validate(argument, depth + 1)
+        else:
+            raise ValueError(f"{label} 只能引用已声明的数值参数和安全算术函数")
+
+    validate(expression)
+    return expression
+
+
+def _validate_parameter_diagram(descriptor: dict[str, Any]) -> None:
+    diagram = descriptor.get("parameterDiagram")
+    if diagram is None:
+        return
+    if (not isinstance(diagram, dict) or type(diagram.get("schemaVersion")) is not int
+            or diagram["schemaVersion"] != 1):
+        raise ValueError("parameterDiagram.schemaVersion 必须为 1")
+    annotations = diagram.get("annotations")
+    if not isinstance(annotations, list) or not 1 <= len(annotations) <= MAX_DIAGRAM_ANNOTATIONS:
+        raise ValueError("parameterDiagram 必须包含 1 到 128 个 annotations")
+    keys = {definition["key"] for definition in descriptor["parameters"]}
+    numeric_keys = {definition["key"] for definition in descriptor["parameters"]
+                    if definition["valueType"] in ("number", "integer")}
+    for index, annotation in enumerate(annotations):
+        label = f"parameterDiagram.annotations[{index}]"
+        if (not isinstance(annotation, dict) or not isinstance(annotation.get("parameter"), str)
+                or annotation["parameter"] not in keys):
+            raise ValueError(f"{label}.parameter 必须引用已声明的管型参数")
+        kind = annotation.get("kind")
+        if kind not in ("linear", "leader"):
+            raise ValueError(f"{label}.kind 必须为 linear 或 leader")
+        if annotation.get("side") not in ("top", "bottom", "left", "right"):
+            raise ValueError(f"{label}.side 必须为 top、bottom、left 或 right")
+        if kind == "linear":
+            axis = annotation.get("axis")
+            if axis not in ("x", "y"):
+                raise ValueError(f"{label}.axis 必须为 x 或 y")
+            if (axis == "x") != (annotation["side"] in ("top", "bottom")):
+                raise ValueError(f"{label}.side 与尺寸轴向不一致")
+            if annotation["parameter"] not in numeric_keys:
+                raise ValueError(f"{label} 线性尺寸必须引用数值参数")
+        if "description" in annotation:
+            _localized_text(annotation["description"], f"{label}.description")
+        for field in (("from", "to") if kind == "linear" else ("point",)):
+            point = annotation.get(field)
+            if not isinstance(point, list) or len(point) != 2:
+                raise ValueError(f"{label}.{field} 必须为二维坐标")
+            for coordinate in point:
+                _diagram_expression(coordinate, numeric_keys, f"{label}.{field}")
+
+
+def _evaluate_parameter_diagram(
+    descriptor: dict[str, Any], parameters: dict[str, Any], contours: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    diagram = descriptor.get("parameterDiagram")
+    if diagram is None:
+        return None
+    numeric_keys = {definition["key"] for definition in descriptor["parameters"]
+                    if definition["valueType"] in ("number", "integer")}
+
+    def evaluate(node: ast.AST) -> float:
+        if isinstance(node, ast.Constant):
+            result = float(node.value)
+        elif isinstance(node, ast.Name):
+            result = float(parameters[node.id])
+        elif isinstance(node, ast.UnaryOp):
+            result = evaluate(node.operand) * (-1 if isinstance(node.op, ast.USub) else 1)
+        elif isinstance(node, ast.BinOp):
+            left, right = evaluate(node.left), evaluate(node.right)
+            if isinstance(node.op, ast.Add):
+                result = left + right
+            elif isinstance(node.op, ast.Sub):
+                result = left - right
+            elif isinstance(node.op, ast.Mult):
+                result = left * right
+            else:
+                result = left / right
+        else:
+            assert isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            name = node.func.id
+            arguments = [evaluate(argument) for argument in node.args]
+            if name in ("contourX", "contourY"):
+                contour_index, vertex_index = arguments
+                if (not contour_index.is_integer() or not vertex_index.is_integer()
+                        or not 0 <= contour_index < len(contours)):
+                    raise ValueError("轮廓或顶点索引无效")
+                contour = contours[int(contour_index)]
+                points = contour.get("points")
+                if (contour.get("kind") != "polygon" or not isinstance(points, list)
+                        or not 0 <= vertex_index < len(points)):
+                    raise ValueError("坐标锚点必须引用有效多边形轮廓顶点")
+                point = points[int(vertex_index)]
+                if not isinstance(point, (list, tuple)) or len(point) != 2:
+                    raise ValueError("轮廓顶点必须为二维坐标")
+                result = _finite_number(point[0 if name == "contourX" else 1], "轮廓顶点")
+            else:
+                functions = {"min": min, "max": max, "abs": abs, "sqrt": math.sqrt,
+                             "sin": math.sin, "cos": math.cos}
+                # min/max take an iterable so a single permitted argument is valid.
+                result = functions[name](arguments) if name in ("min", "max") else functions[name](*arguments)
+        if not math.isfinite(result) or abs(result) > MAX_DIAGRAM_COORDINATE:
+            raise ValueError("坐标必须为绝对值不超过 10 亿的有限数值")
+        return result
+
+    annotations = []
+    for index, source in enumerate(diagram["annotations"]):
+        annotation = {field: source[field] for field in ("parameter", "kind", "side")}
+        if source["kind"] == "linear":
+            annotation["axis"] = source["axis"]
+        if "description" in source:
+            annotation["description"] = source["description"]
+        for field in (("from", "to") if source["kind"] == "linear" else ("point",)):
+            label = f"parameterDiagram.annotations[{index}].{field}"
+            try:
+                annotation[field] = [evaluate(_diagram_expression(value, numeric_keys, label))
+                                     for value in source[field]]
+            except (ArithmeticError, ValueError, TypeError) as error:
+                raise ValueError(f"{label} 坐标求值失败：{error}") from error
+        annotations.append(annotation)
+    return {"schemaVersion": 1, "annotations": annotations}
 
 
 def _localized_text(value: Any, name: str) -> str:
@@ -36,7 +203,10 @@ def _localized_text(value: Any, name: str) -> str:
 def _finite_number(value: Any, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} 必须是数值")
-    result = float(value)
+    try:
+        result = float(value)
+    except OverflowError as error:
+        raise ValueError(f"{name} 必须是有限数值") from error
     if not math.isfinite(result):
         raise ValueError(f"{name} 必须是有限数值")
     return result
@@ -111,6 +281,7 @@ def _validate_descriptor(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         if "defaultValue" not in definition:
             raise ValueError(f"可编辑管型参数 {key} 必须声明 defaultValue")
         defaults[key] = _normalize_value(definition, definition["defaultValue"])
+    _validate_parameter_diagram(value)
     return dict(value), defaults
 
 
@@ -198,6 +369,9 @@ def _evaluate(
         "frozenGeometry": False,
         "contentDigest": package_digest,
     }
+    diagram = _evaluate_parameter_diagram(descriptor, parameters, contours)
+    if diagram is not None:
+        result["parameterDiagram"] = diagram
     json.dumps(result, ensure_ascii=False, allow_nan=False)
     return result
 

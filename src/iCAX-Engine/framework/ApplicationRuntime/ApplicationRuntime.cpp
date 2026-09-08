@@ -110,8 +110,9 @@ namespace
 
     std::string _GetDefaultProjectName(IN const std::string& strProjectPath_)
     {
-        auto _Name = std::filesystem::path(strProjectPath_).stem().string();
-        return _Name.empty() ? std::string("Project") : _Name;
+        const std::filesystem::path _Path(std::u8string(strProjectPath_.begin(), strProjectPath_.end()));
+        const auto _Name = _Path.stem().u8string();
+        return _Name.empty() ? std::string("Project") : std::string(_Name.begin(), _Name.end());
     }
 
     void _RequireExistingProjectFile(IN const std::string& strProjectPath_)
@@ -120,11 +121,12 @@ namespace
         {
             throw std::invalid_argument("Project path cannot be empty");
         }
-        if (!std::filesystem::exists(strProjectPath_))
+        const std::filesystem::path _Path(std::u8string(strProjectPath_.begin(), strProjectPath_.end()));
+        if (!std::filesystem::exists(_Path))
         {
             throw std::invalid_argument("Project file does not exist: " + strProjectPath_);
         }
-        if (!std::filesystem::is_regular_file(strProjectPath_))
+        if (!std::filesystem::is_regular_file(_Path))
         {
             throw std::invalid_argument("Project path is not a file: " + strProjectPath_);
         }

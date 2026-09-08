@@ -7,7 +7,7 @@
   "capabilities": {
     "platform": {
       "domain": "tube-product-design",
-      "modules": ["template", "product", "component-model", "assembly", "joint", "sketch", "disassembly", "step-export", "parts", "nesting"]
+      "modules": ["template", "product", "component-model", "assembly", "joint", "sketch", "disassembly", "step-export", "parts", "nesting", "machining"]
     },
     "tubeDesigner": {
       "templateProtocolVersion": 1,
@@ -130,6 +130,17 @@
         ]
       },
       {
+        "featureId": "product-template",
+        "recordTypes": [
+          {
+            "recordType": "product-template",
+            "subjectTypes": ["product-template-definition"],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          }
+        ]
+      },
+      {
         "featureId": "profile",
         "recordTypes": [
           {
@@ -154,7 +165,7 @@
     "formatRevision": 1,
     "quickSaveLogMagic": "ICAX_TUBE_DESIGNER_QSAVE",
     "quickSaveLogVersion": 1,
-    "fileExtensions": [".tubedesigner"],
+    "fileExtensions": [".ictd"],
     "magicOffset": 0,
     "probeBytes": 256
   },
@@ -185,7 +196,7 @@
         "../../${Platform}/${Configuration}/RenderInteraction.dll",
         "../../${Platform}/${Configuration}/SceneBootstrap.dll"
       ],
-      "services": [],
+      "services": ["../../${Platform}/${Configuration}/TubeDesigner.dll"],
       "sdo": [
         "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
         "../../${Platform}/${Configuration}/TubeDesigner.dll"

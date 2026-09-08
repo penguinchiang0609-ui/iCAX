@@ -3,7 +3,7 @@ export function renderLicenseStatus(view) {
   const status = view?.tubeDesignerLicense;
   return `<div class="tube-designer-panel"><div class="tube-designer-heading"><strong>软件授权</strong><span>${status?.developmentBypass ? "开发免授权" : status?.activated ? "已激活" : "尚未验证"}</span></div>
     <p>${escape(status?.activated ? `${status.kind} · ${status.licenseId}` : status?.message || "点击上方“授权状态”检查本机授权。")}</p>
-    ${status?.activated ? `<p>已授权：${[[1,"设计"],[2,"拆单"],[4,"STEP 导出"],[8,"下料排样"]].filter(([bit]) => status.features & bit).map(([,name]) => name).join("、")}</p>` : ""}
+    ${status?.activated ? `<p>已授权：${[[1,"设计"],[2,"导入下料"],[4,"STEP 导出"],[8,"下料排样"]].filter(([bit]) => status.features & bit).map(([,name]) => name).join("、")}</p>` : ""}
     <p>导出申请交给供应商，收到激活文件后导入。本机需以管理员身份运行。</p>
     <p>${escape(view?.tubeDesignerLicenseNotice)}</p></div>`;
 }

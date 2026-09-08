@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 import {
   componentLibraryState, componentModelKey, getComponentModels, getVisibleComponentModels, getComponentModelOptions, renderComponentModelField,
   renderComponentLibraryLeftPane, renderComponentLibraryRightPane, renderComponentLibraryDialogs,
+  renderComponentLibraryViewportOverlay,
   refreshComponentModels, handleComponentLibraryAction, handleComponentLibraryRibbonCommand,
-  ensureComponentModelPreview, attachComponentLibrary,
+  ensureComponentModelPreview, ensureComponentCSGPreview, attachComponentLibrary,
 } from "../../apps/tube-designer/webpage/componentLibrary.mjs";
 import { renderDesignerAddParameterContent, buildPartCategories } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { handleDesignerAreaAction } from "../../apps/tube-designer/webpage/designerActions.mjs";
@@ -12,6 +13,16 @@ import { ribbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinit
 
 const tests = [];
 async function test(name, run) { await run(); tests.push(name); }
+
+await test("bottom import button appears only in personal components", () => {
+  for (const scope of ["system", "template", "user"]) {
+    const view = {};
+    componentLibraryState(view).scope = scope;
+    const html = renderComponentLibraryLeftPane({}, view);
+    assert.equal(html.includes('data-cam-action="tube-designer-component-import"'), scope === "user");
+    assert.equal(html.includes('data-cam-action="tube-designer-component-draw"'), scope === "user");
+  }
+});
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const system = { id: "cap", scope: "system", name: "系统柱帽", category: "柱帽", sourcing: "purchased", material: "不锈钢", description: "内置", sourceFileName: "cap.brep", bounds: { width: 40, depth: 40, height: 12 }, revision: 1 };
 const user = { ...system, id: "custom", scope: "user", name: "我的柱帽", revision: 7 };
@@ -24,7 +35,8 @@ function harness(models = [system, user]) {
   const view = { activeAreaId: "components", viewport: {
     async applyViewSnapshot(snapshot) { snapshots.push(snapshot); applied = snapshot; return { applied: true }; },
     getAppliedViewState() { return applied; }, setVisibleEntityIds(ids) { visible.push(ids); },
-    fitViewForRevision(...args) { fits.push(args); }, setStandardView() {}, setSelectedObjectIds() {}, setDimensionAnnotations() {},
+    fitViewForRevision(...args) { fits.push(args); }, fitViewToViewport(...args) { fits.push(args); },
+    setStandardView() {}, setSelectedObjectIds() {}, setDimensionAnnotations() {},
   } };
   const state = componentLibraryState(view);
   state.models = structuredClone(models);
@@ -76,7 +88,7 @@ await test("library removes ordinary refresh but retains error recovery and para
   const h = harness();
   const html = renderComponentLibraryLeftPane({}, h.view);
   assert.doesNotMatch(html, /data-cam-action="tube-designer-component-refresh"/);
-  assert.match(html, /data-cam-action="tube-designer-component-import"/);
+  assert.doesNotMatch(html, /data-cam-action="tube-designer-component-import"/);
   assert.equal(await handleComponentLibraryRibbonCommand(h.context, h.view, "components.refresh", h.ops), false);
   assert.equal(h.calls.length, 0);
   h.state.loadState = "error"; h.state.error = "读取失败";
@@ -215,6 +227,189 @@ await test("unsupported import extensions and empty names never mutate the libra
   h.state.importDraft = { sourcePath: "D:\\a.step", name: " ", sourcing: "purchased" };
   await assert.rejects(h.act("confirm-import"), /模型名称/);
   assert.equal(h.calls.length, 0);
+});
+
+await test("CSG drawing builds an editable boolean tree, saves it to My Components, and reopens it", async () => {
+  const h = harness();
+  const originalModelCount = h.state.models.length;
+  assert.equal(await handleComponentLibraryRibbonCommand(h.context, h.view, "components.draw", h.ops), true);
+  assert.equal(renderComponentLibraryDialogs(h.view), "");
+  let html = renderComponentLibraryLeftPane({}, h.view)
+    + renderComponentLibraryRightPane({}, h.view)
+    + renderComponentLibraryViewportOverlay({}, h.view);
+  assert.match(html, /CSG 结构树/);
+  assert.match(html, /完成前不会写入“我的配件”/);
+  assert.match(html, /拉伸体/);
+  assert.match(html, /程式截面 · 参数可修改/);
+  assert.match(html, /定式截面 · DXF \/ 二维草图/);
+  assert.match(html, /导入 DXF/);
+  assert.match(html, /转到二维草图/);
+  assert.match(html, /长方体/);
+  assert.match(html, /圆柱体/);
+  assert.match(html, /球体/);
+  assert.match(html, /圆锥体/);
+  assert.match(html, /完成并保存零件/);
+  assert.match(html, /data-component-csg-workspace/);
+  assert.match(html, /data-csg-tool="move"/);
+  assert.match(html, /当前零件实时结果/);
+  assert.doesNotMatch(html, /tube-component-csg-dialog|data-component-csg-viewport/);
+  await h.act("csg-profile-parameter-change", { dataset: { csgProfileParameter: "width" }, value: "48" });
+  assert.equal(h.state.csgDraft.features[0].profile.parameters.width, 48);
+  assert.equal(h.state.csgDraft.features[0].profile.snapshot.width, 48);
+  assert.equal(h.calls.length, 0, "Built-in programmatic profiles recalculate locally without saving");
+  await h.act("csg-add", { dataset: { csgPrimitive: "cylinder" } });
+  const cylinderId = h.state.csgDraft.selectedId;
+  html = renderComponentLibraryLeftPane({}, h.view);
+  assert.match(html, /role="tree"/);
+  assert.match(html, /operation-node operation-union/);
+  assert.match(html, /布尔运算 · 生成实体/);
+  await h.act("csg-select", { dataset: { csgFeatureId: cylinderId, csgNodeKind: "operation" } });
+  html = renderComponentLibraryRightPane({}, h.view);
+  assert.match(html, /data-csg-operation="union"/);
+  assert.match(html, /data-csg-operation="difference"/);
+  assert.match(html, /data-csg-operation="intersection"/);
+  await h.act("csg-operation", { dataset: { csgOperation: "difference" } });
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.state.models.length, originalModelCount);
+  await h.act("csg-select", { dataset: { csgFeatureId: cylinderId, csgNodeKind: "primitive" } });
+  await h.act("csg-tool", { dataset: { csgTool: "move" } });
+  assert.equal(h.state.csgDraft.tool, "move");
+  await h.act("csg-feature-change", { dataset: { csgFeatureField: "parameters.radius" }, value: "8" });
+  await h.act("csg-feature-change", { dataset: { csgFeatureField: "position.x" }, value: "3" });
+  await h.act("csg-model-change", { dataset: { csgModelField: "name" }, value: "CSG 柱帽" });
+  h.context.productProxy.invoke = async (method, payload) => {
+    h.calls.push({ method, payload });
+    return { model: { ...user, id: "csg-1", revision: 1, name: payload.name, modelType: "csg", csgDefinition: payload.csgDefinition } };
+  };
+  await h.act("save-csg");
+  assert.equal(h.calls[0].method, "TubeDesigner.CreateComponentCSGModel");
+  assert.equal(h.calls[0].payload.csgDefinition.schema, "icax.component-csg");
+  assert.equal(h.calls[0].payload.csgDefinition.evaluation, "left-fold");
+  assert.equal(h.calls[0].payload.csgDefinition.features[0].primitive, "extrusion");
+  assert.equal(h.calls[0].payload.csgDefinition.features[0].profile.sourceType, "parametric");
+  assert.equal(h.calls[0].payload.csgDefinition.features[0].profile.parameters.width, 48);
+  assert.equal(h.calls[0].payload.csgDefinition.features[1].operation, "difference");
+  assert.equal(h.calls[0].payload.csgDefinition.features[1].parameters.radius, 8);
+  assert.equal(h.state.scope, "user");
+  assert.equal(h.state.selectedKey, "user:csg-1");
+  assert.match(renderComponentLibraryRightPane({}, h.view), /可编辑 CSG/);
+  assert.match(renderComponentLibraryRightPane({}, h.view), /继续绘制/);
+  await h.act("edit-csg", { dataset: { componentKey: "user:csg-1" } });
+  html = renderComponentLibraryLeftPane({}, h.view) + renderComponentLibraryRightPane({}, h.view);
+  assert.match(html, /编辑已有零件/);
+  assert.match(html, /CSG 柱帽/);
+  h.calls.length = 0;
+  await h.act("csg-model-change", { dataset: { csgModelField: "name" }, value: "CSG 柱帽二版" });
+  h.context.productProxy.invoke = async (method, payload) => {
+    h.calls.push({ method, payload });
+    return { model: { ...user, id: "csg-1", revision: 2, name: payload.name, modelType: "csg", csgDefinition: payload.csgDefinition } };
+  };
+  await h.act("save-csg");
+  assert.equal(h.calls[0].method, "TubeDesigner.UpdateComponentCSGModel");
+  assert.equal(h.calls[0].payload.id, "csg-1");
+  assert.equal(h.calls[0].payload.expectedRevision, 1);
+  assert.equal(h.state.models.find((model) => model.id === "csg-1").name, "CSG 柱帽二版");
+  await h.act("edit-csg", { dataset: { componentKey: "user:csg-1" } });
+  await h.act("cancel-csg");
+  assert.equal(h.state.csgDraft, null);
+});
+
+await test("CSG extrusion accepts library program profiles, embedded DXF, and a 2D sketch without intermediate component records", async () => {
+  const h = harness();
+  h.view.tubeDesignerSystemProfiles = [{
+    id: "rect", name: "矩形管", profileType: "parametric-package",
+    descriptor: { parameters: [
+      { key: "width", displayName: { "zh-CN": "外宽" }, valueType: "number", defaultValue: 40, min: 1, step: 1 },
+      { key: "depth", displayName: { "zh-CN": "外高" }, valueType: "number", defaultValue: 20, min: 1, step: 1 },
+    ] },
+    defaultParameters: { width: 40, depth: 20 },
+    previewProfile: { schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "parametric-package",
+      name: "矩形管", width: 40, depth: 20, contourCount: 1,
+      contours: [{ kind: "polygon", points: [[-20, -10], [20, -10], [20, 10], [-20, 10]] }] },
+  }];
+  await h.act("draw");
+  await h.act("csg-profile-select", { value: "system:rect" });
+  const feature = h.state.csgDraft.features[0];
+  assert.equal(feature.profile.key, "system:rect");
+  assert.equal(feature.profile.sourceType, "parametric");
+  assert.match(renderComponentLibraryRightPane({}, h.view), /系统内置 · 矩形管/);
+  h.context.productProxy.invoke = async (method, payload) => {
+    h.calls.push({ method, payload });
+    if (method === "TubeDesigner.EvaluateProfilePackage") return { profile: {
+      ...feature.profile.snapshot, width: payload.parameters.width, parameters: payload.parameters,
+      contours: [{ kind: "polygon", points: [[-27.5, -10], [27.5, -10], [27.5, 10], [-27.5, 10]] }],
+    } };
+    throw new Error(`unexpected ${method}`);
+  };
+  await h.act("csg-profile-parameter-change", { dataset: { csgProfileParameter: "width" }, value: "55" });
+  assert.equal(h.calls[0].method, "TubeDesigner.EvaluateProfilePackage");
+  assert.deepEqual(h.calls[0].payload.profileRef, { scope: "system", id: "rect" });
+  assert.equal(feature.profile.parameters.width, 55);
+  assert.equal(feature.profile.snapshot.width, 55);
+  assert.equal(h.calls.some((call) => /CreateComponentCSGModel|UpdateComponentCSGModel/.test(call.method)), false);
+
+  h.calls.length = 0;
+  h.context.appProxy = { bridge: { async openFileDialog(options) {
+    assert.deepEqual(options.filters[0].extensions, ["dxf"]);
+    return "D:\\Profiles\\bracket.dxf";
+  } } };
+  h.context.productProxy.invoke = async (method, payload) => {
+    h.calls.push({ method, payload });
+    return { profile: { schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "imported-dxf",
+      name: "支架轮廓", width: 30, depth: 12, contourCount: 1,
+      contours: [{ kind: "polygon", points: [[-15, -6], [15, -6], [15, 6], [-15, 6]] }] } };
+  };
+  await h.act("csg-import-profile-dxf");
+  assert.equal(h.calls[0].method, "TubeDesigner.ImportProfileDxf");
+  assert.equal(h.calls.some((call) => call.method === "TubeDesigner.SaveImportedProfile"), false);
+  assert.equal(feature.profile.sourceType, "fixed");
+  assert.equal(feature.profile.snapshot.name, "支架轮廓");
+  assert.match(renderComponentLibraryRightPane({}, h.view), /编辑二维轮廓/);
+
+  h.calls.length = 0;
+  h.context.actions = { async selectRibbonTab(id) { h.context.activeRibbonTabId = id; } };
+  await h.act("csg-new-profile-sketch");
+  assert.equal(h.view.tubeDesignerSketchDialogOpen, true);
+  assert.equal(h.view.tubeDesignerComponentCSGProfileReturn.featureId, feature.id);
+  assert.ok(h.view.tubeDesignerSketch.section.entities.length > 0, "The current fixed contour opens for secondary editing");
+  h.view.tubeDesignerSketch.sectionName = "手绘支架截面";
+  h.view.tubeDesignerSketch.section.entities = [
+    { id: "outline", kind: "rectangle", x: -10, y: -5, width: 20, height: 10, radius: 0, closed: true },
+  ];
+  h.view.tubeDesignerSketch.section.dirty = true;
+  await handleDesignerAreaAction(h.context, h.view, "tube-designer-sketch-commit", {}, h.ops);
+  assert.equal(h.calls.length, 0, "Sketch return embeds the section and does not save an intermediate library record");
+  assert.equal(h.view.tubeDesignerSketchDialogOpen, false);
+  assert.equal(h.view.activeAreaId, "components");
+  assert.equal(feature.profile.sourceType, "fixed");
+  assert.equal(feature.profile.name, "手绘支架截面");
+  assert.equal(feature.profile.snapshot.sourceFormat, "icax.tube-sketch");
+});
+
+await test("CSG editing uses the component page viewport and only creates runtime preview resources", async () => {
+  const h = harness();
+  await h.act("draw");
+  h.context.sceneProxy.invoke = async (method, payload) => {
+    h.calls.push({ method, payload });
+    return { ...geometry("csg-live"), valid: true, bounds: { width: 40, depth: 40, height: 20 },
+      operandGeometryResourceId: "resource://csg-operand", operandGeometryResourceVersion: 1 };
+  };
+  const listeners = new Map();
+  const surface = { addEventListener(name, listener) { listeners.set(name, listener); },
+    classList: { add() {}, remove() {} } };
+  const mount = { querySelector(selector) { return selector === "[data-component-csg-manipulation]" ? surface : null; } };
+  h.context.mount = mount;
+  const controller = ensureComponentCSGPreview(h.context, h.view, mount);
+  assert.equal(controller.viewport, h.view.viewport);
+  assert.equal(controller.ownsViewport, false);
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(h.calls[0].method, "TubeDesigner.GenerateComponentCSGPreview");
+  assert.equal(h.snapshots.at(-1).rows.length, 2);
+  assert.deepEqual(h.visible.at(-1), ["component-csg-live-result", "component-csg-live-operand"]);
+  assert.equal(h.calls.some((call) => /CreateComponentCSGModel|UpdateComponentCSGModel/.test(call.method)), false);
+  assert.equal(listeners.has("pointerdown"), true);
+  await h.act("cancel-csg");
+  assert.equal(ensureComponentCSGPreview(h.context, h.view, mount), null);
 });
 
 await test("metadata drafts preserve focus and their original expected revision across refresh", async () => {
@@ -514,6 +709,31 @@ await test("out of order preview responses cannot replace latest selection or an
   assert.equal(h.snapshots.length, 1);
 });
 
+await test("slow preview shows progress through model application and clears on success or failure", async () => {
+  for (const fail of [false, true]) {
+    const h = harness([system]);
+    const loading = deferred();
+    const applying = deferred();
+    h.context.sceneProxy.invoke = () => loading.promise;
+    h.view.viewport.applyViewSnapshot = () => applying.promise;
+    const preview = ensureComponentModelPreview(h.context, h.view, h.ops);
+    assert.doesNotMatch(renderComponentLibraryViewportOverlay({}, h.view), /role="progressbar"/);
+    await new Promise(resolve => setTimeout(resolve, 230));
+    assert.match(renderComponentLibraryViewportOverlay({}, h.view), /role="progressbar"/);
+    if (fail) loading.reject(new Error("加载失败"));
+    else {
+      loading.resolve(geometry(system.id));
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assert.match(renderComponentLibraryViewportOverlay({}, h.view), /装载并显示三维模型/);
+      applying.resolve({ applied: true });
+    }
+    await preview;
+    assert.equal(h.state.previewRequest, null);
+    assert.doesNotMatch(renderComponentLibraryViewportOverlay({}, h.view), /role="progressbar"/);
+    if (fail) assert.match(h.state.previewError, /加载失败/);
+  }
+});
+
 await test("invalid previews stop automatic retry loops and explicit retry can recover", async () => {
   const h = harness(); let calls = 0;
   h.context.sceneProxy.invoke = async () => { calls++; return {}; };
@@ -559,7 +779,7 @@ await test("empty library clears the previous scene and lazy loading does not ru
 await test("component tab and action routes are independent of tube profile and nesting workflows", async () => {
   const tab = ribbonDefinition.tabs.find((item) => item.id === "components");
   assert.equal(tab.title, "配件库");
-  assert.deepEqual(tab.groups.flatMap((group) => group.commands.map((item) => item.id)), ["components.import", "components.export-step"]);
+  assert.deepEqual(tab.groups.flatMap((group) => group.commands.map((item) => item.id)), ["components.draw", "components.import", "components.export-step"]);
   const h = harness();
   await h.act("scope", { dataset: { componentScope: "user" } });
   await handleDesignerAreaAction(h.context, h.view, "tube-designer-component-select", { dataset: { componentKey: "user:custom" } }, h.ops);

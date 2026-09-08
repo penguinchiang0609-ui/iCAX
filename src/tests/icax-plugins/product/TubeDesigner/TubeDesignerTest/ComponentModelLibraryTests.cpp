@@ -39,6 +39,7 @@ namespace
     using namespace iCAX::TubeDesigner;
     using namespace iCAX::Application;
     using iCAX::Data::ObjectMap;
+    using iCAX::Data::Variant;
     using iCAX::Data::VariantArray;
     using iCAX::TemplateRuntime::CStandardJsonCodec;
     using iCAX::TemplateRuntime::CTemplateCodec;
@@ -161,6 +162,63 @@ namespace
             { "description", std::string("真实钻孔配件") } };
     }
 
+    ObjectMap ComponentCSGFeature(const std::string& ID_, const std::string& Primitive_,
+        const std::string& Operation_, ObjectMap Parameters_, double X_ = 0,
+        double Y_ = 0, double Z_ = 0)
+    {
+        return {
+            { "id", ID_ }, { "name", Primitive_ + " feature" },
+            { "primitive", Primitive_ }, { "operation", Operation_ },
+            { "parameters", std::move(Parameters_) },
+            { "transform", ObjectMap{
+                { "position", ObjectMap{ { "x", X_ }, { "y", Y_ }, { "z", Z_ } } },
+                { "rotation", ObjectMap{ { "x", 0.0 }, { "y", 0.0 }, { "z", 0.0 } } }
+            } }
+        };
+    }
+
+    ObjectMap ComponentCSG(VariantArray Features_)
+    {
+        return {
+            { "schema", std::string("icax.component-csg") }, { "schemaVersion", 1 },
+            { "evaluation", std::string("left-fold") }, { "features", std::move(Features_) }
+        };
+    }
+
+    ObjectMap ComponentExtrusionFeature(const std::string& ID_, const std::string& Operation_,
+        const double Width_, const double Depth_, const double Height_)
+    {
+        auto _Feature = ComponentCSGFeature(ID_, "extrusion", Operation_, { { "height", Height_ } });
+        const VariantArray _Points{
+            VariantArray{ Variant(-Width_ / 2), Variant(-Depth_ / 2) },
+            VariantArray{ Variant(Width_ / 2), Variant(-Depth_ / 2) },
+            VariantArray{ Variant(Width_ / 2), Variant(Depth_ / 2) },
+            VariantArray{ Variant(-Width_ / 2), Variant(Depth_ / 2) }
+        };
+        const VariantArray _Definitions{
+            ObjectMap{ { "key", std::string("width") }, { "displayName", std::string("宽度") },
+                { "valueType", std::string("number") }, { "defaultValue", Width_ } },
+            ObjectMap{ { "key", std::string("depth") }, { "displayName", std::string("高度") },
+                { "valueType", std::string("number") }, { "defaultValue", Depth_ } }
+        };
+        _Feature["profile"] = ObjectMap{
+            { "sourceType", std::string("parametric") },
+            { "key", std::string("builtin:solid-rectangle") },
+            { "name", std::string("实心矩形") },
+            { "parameters", ObjectMap{ { "width", Width_ }, { "depth", Depth_ } } },
+            { "parameterDefinitions", _Definitions },
+            { "snapshot", ObjectMap{
+                { "schema", std::string("icax.imported-tube-profile") }, { "schemaVersion", 1 },
+                { "kind", std::string("parametric-package") }, { "name", std::string("实心矩形") },
+                { "width", Width_ }, { "depth", Depth_ },
+                { "contourCount", 1 }, { "contours", VariantArray{
+                    ObjectMap{ { "kind", std::string("polygon") }, { "points", _Points } }
+                } }, { "contentDigest", std::string("builtin:solid-rectangle:1") }
+            } }
+        };
+        return _Feature;
+    }
+
     ObjectMap ComponentDocument(const std::string& Reference_)
     {
         return {
@@ -271,6 +329,105 @@ namespace
         const std::string ProductID = "tube-designer";
         std::map<std::tuple<std::string, std::string, std::string>, CProductUserDataRecord> Records;
     };
+}
+
+TEST(ComponentModelLibrary, CreatesExactEditableCSGAndRejectsEmptyBooleanResults)
+{
+    const auto _Definition = ComponentCSG({
+        ComponentCSGFeature("body", "box", "base",
+            { { "width", 40.0 }, { "depth", 30.0 }, { "height", 20.0 } }),
+        ComponentCSGFeature("hole", "cylinder", "difference",
+            { { "radius", 5.0 }, { "height", 30.0 } })
+    });
+    auto _Metadata = ComponentMetadata("可编辑柱帽");
+    const auto _Snapshot = CreateComponentCSGModelSnapshot(_Definition, _Metadata);
+    EXPECT_EQ("csg", _Snapshot.at("modelType").To<std::string>());
+    EXPECT_EQ("made", _Snapshot.at("sourcing").To<std::string>());
+    EXPECT_TRUE(_Snapshot.contains("csgDefinition"));
+    EXPECT_TRUE(_Snapshot.contains("brep"));
+    const auto _Shape = ComponentModelShape(_Snapshot);
+    EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+    EXPECT_NEAR(40.0 * 30.0 * 20.0 - std::acos(-1.0) * 25.0 * 20.0,
+        ComponentVolume(_Shape), 1e-5);
+    const auto _Summary = ComponentModelSummary(_Snapshot, "user", "drawn", 3);
+    EXPECT_TRUE(_Summary.contains("csgDefinition"));
+    EXPECT_FALSE(_Summary.contains("brep"));
+
+    const auto _Empty = ComponentCSG({
+        ComponentCSGFeature("body", "box", "base",
+            { { "width", 10.0 }, { "depth", 10.0 }, { "height", 10.0 } }),
+        ComponentCSGFeature("remote", "sphere", "intersection", { { "radius", 2.0 } }, 100.0)
+    });
+    EXPECT_THROW(CreateComponentCSGModelSnapshot(_Empty, _Metadata), std::invalid_argument);
+    auto _Invalid = _Definition;
+    auto _Features = _Invalid.at("features").To<VariantArray>();
+    auto _Hole = _Features[1].To<ObjectMap>();
+    auto _Parameters = _Hole.at("parameters").To<ObjectMap>();
+    _Parameters["radius"] = -1.0;
+    _Hole["parameters"] = _Parameters;
+    _Features[1] = _Hole;
+    _Invalid["features"] = _Features;
+    EXPECT_THROW(CreateComponentCSGModelSnapshot(_Invalid, _Metadata), std::invalid_argument);
+}
+
+TEST(ComponentModelLibrary, ExtrudesEditableParametricOrFixedProfilesInsideTheCSGTree)
+{
+    auto _Parametric = ComponentExtrusionFeature("profile-body", "base", 42.0, 18.0, 25.0);
+    const auto _Snapshot = CreateComponentCSGModelSnapshot(
+        ComponentCSG({ _Parametric }), ComponentMetadata("程式截面拉伸体"));
+    EXPECT_NEAR(42.0 * 18.0 * 25.0, ComponentVolume(ComponentModelShape(_Snapshot)), 1e-5);
+
+    const auto _Definition = _Snapshot.at("csgDefinition").To<ObjectMap>();
+    const auto _Feature = _Definition.at("features").To<VariantArray>().front().To<ObjectMap>();
+    ASSERT_TRUE(_Feature.contains("profile"));
+    const auto _Profile = _Feature.at("profile").To<ObjectMap>();
+    EXPECT_EQ("parametric", _Profile.at("sourceType").To<std::string>());
+    EXPECT_EQ("builtin:solid-rectangle", _Profile.at("key").To<std::string>());
+    EXPECT_DOUBLE_EQ(42.0, _Profile.at("parameters").To<ObjectMap>().at("width").To<double>());
+    EXPECT_EQ(4u, _Profile.at("snapshot").To<ObjectMap>().at("contours").To<VariantArray>()
+        .front().To<ObjectMap>().at("points").To<VariantArray>().size());
+
+    auto _Fixed = ComponentExtrusionFeature("sketch-body", "base", 12.0, 8.0, 7.0);
+    auto _FixedProfile = _Fixed.at("profile").To<ObjectMap>();
+    _FixedProfile["sourceType"] = std::string("fixed");
+    _FixedProfile["key"] = std::string("embedded:sketch:sketch-body");
+    _FixedProfile["parameters"] = ObjectMap{};
+    _FixedProfile["parameterDefinitions"] = VariantArray{};
+    auto _FixedSnapshot = _FixedProfile.at("snapshot").To<ObjectMap>();
+    _FixedSnapshot["kind"] = std::string("imported-dxf");
+    _FixedProfile["snapshot"] = std::move(_FixedSnapshot);
+    _Fixed["profile"] = std::move(_FixedProfile);
+    EXPECT_NEAR(12.0 * 8.0 * 7.0, ComponentVolume(ComponentModelShape(CreateComponentCSGModelSnapshot(
+        ComponentCSG({ _Fixed }), ComponentMetadata("定式截面拉伸体")))), 1e-5);
+}
+
+TEST(ComponentModelLibrary, BuildsEverySupportedCSGPrimitive)
+{
+    const std::vector<std::pair<ObjectMap, double>> _Cases{
+        { ComponentCSGFeature("box", "box", "base", { { "width", 8.0 }, { "depth", 6.0 }, { "height", 5.0 } }), 240.0 },
+        { ComponentCSGFeature("cylinder", "cylinder", "base", { { "radius", 3.0 }, { "height", 7.0 } }), std::acos(-1.0) * 9.0 * 7.0 },
+        { ComponentCSGFeature("sphere", "sphere", "base", { { "radius", 4.0 } }), 4.0 / 3.0 * std::acos(-1.0) * 64.0 },
+        { ComponentCSGFeature("cone", "cone", "base", { { "bottomRadius", 5.0 }, { "topRadius", 2.0 }, { "height", 9.0 } }), std::acos(-1.0) * 9.0 / 3.0 * (25.0 + 10.0 + 4.0) }
+    };
+    for (const auto& [_Feature, _Volume] : _Cases)
+        EXPECT_NEAR(_Volume, ComponentVolume(ComponentModelShape(CreateComponentCSGModelSnapshot(
+            ComponentCSG({ _Feature }), ComponentMetadata()))), 1e-5);
+
+    auto _Transformed = _Cases.front().first;
+    auto _Transform = _Transformed.at("transform").To<ObjectMap>();
+    auto _Position = _Transform.at("position").To<ObjectMap>();
+    auto _Rotation = _Transform.at("rotation").To<ObjectMap>();
+    _Position["x"] = 10.0;
+    _Rotation["z"] = 90.0;
+    _Transform["position"] = _Position;
+    _Transform["rotation"] = _Rotation;
+    _Transformed["transform"] = _Transform;
+    const auto _Bounds = ComponentBounds(ComponentModelShape(CreateComponentCSGModelSnapshot(
+        ComponentCSG({ _Transformed }), ComponentMetadata())));
+    EXPECT_NEAR(7.0, _Bounds[0], 1e-6);
+    EXPECT_NEAR(-4.0, _Bounds[1], 1e-6);
+    EXPECT_NEAR(13.0, _Bounds[3], 1e-6);
+    EXPECT_NEAR(4.0, _Bounds[4], 1e-6);
 }
 
 TEST(ComponentModelLibrary, ImportsStepAndBRepWithoutLosingHolesAndNormalizesTheAnchor)

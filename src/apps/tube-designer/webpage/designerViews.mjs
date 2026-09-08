@@ -17,6 +17,7 @@ import {
   renderGuardrailSchematic,
   sortTemplatesByCatalog,
 } from "./productCatalog.mjs";
+import { renderProductTemplateManagerDialog } from "./templateLibrary.mjs";
 export { sortTemplatesByCatalog } from "./productCatalog.mjs";
 
 const FALLBACK_PARAMETERS = Object.freeze({
@@ -140,14 +141,15 @@ export function renderDesignerRightPane(context, view) {
             <strong>${escapeText(product.name)}</strong>
             <span>${escapeText(getTemplateDisplayName(template) || product.templateId)} · 当前场景实例</span>
           </div>
-          <button class="tube-designer-primary tube-designer-regenerate-button" data-cam-action="tube-designer-confirm-update" title="按当前参数重新生成；原拆单结果将失效" ${view.pending ? "disabled" : ""}>${view.pending ? "生成中…" : "重新生成"}</button>
+          <button class="tube-designer-primary tube-designer-regenerate-button" data-cam-action="tube-designer-confirm-update" title="按当前参数重新生成；如需下料请再次点击导入下料" ${view.pending ? "disabled" : ""}>${view.pending ? "生成中…" : "重新生成"}</button>
         </div>
         <div class="tube-designer-summary">
           ${metric(designer.members?.length ?? 0, "预览装配单元")}
           ${metric(designer.joints?.length ?? 0, "连接关系")}
-          ${metric(parts.length, "已拆零件")}
+          ${metric(parts.length, "已生成零件")}
         </div>
       </header>
+      ${renderInstanceQuantityField(product.quantity ?? 1, "right", view.pending)}
       ${renderSecurityWindowReview(template, values)}
       ${renderParameterPresetBar(template, values, view, "right")}
       <div class="tube-designer-parameter-sections">
@@ -192,7 +194,7 @@ export function renderDesignerOperationOverlay(_context, view) {
         <span class="tube-designer-export-spinner" aria-hidden="true"></span>
         <strong data-tube-designer-operation-title>${escapeText(operation.title ?? "正在处理")}</strong>
         <span data-tube-designer-operation-message>${escapeText(operation.message ?? "正在等待后台任务完成")}</span>
-        <div class="tube-designer-export-progress-track is-indeterminate">
+        <div class="tube-designer-export-progress-track is-indeterminate" role="progressbar" aria-label="${escapeAttribute(operation.title ?? "任务进度")}" aria-valuetext="${escapeAttribute(operation.phaseLabel ?? "处理中")}">
           <i style="width:36%"></i>
         </div>
         <small data-tube-designer-operation-phase>${escapeText(operation.phaseLabel ?? "处理中")}</small>
@@ -206,7 +208,7 @@ export function renderDesignerDialogs(designer, view) {
     return renderPartInspectionDialog(designer, view);
   }
   return [
-    view.tubeDesignerPostDisassemblyChoice ? renderPostDisassemblyChoice(view) : "",
+    view.tubeDesignerTemplateManager ? renderProductTemplateManagerDialog(view) : "",
     view.tubeDesignerAddDialogOpen ? renderDesignerAddDialog(designer, view) : "",
     view.tubeDesignerDisassemblySelectorOpen ? renderDisassemblySelector(designer, view) : "",
     view.tubeDesignerBreakdownOpen ? renderBreakdownDialog(designer, view) : "",
@@ -225,7 +227,7 @@ function renderPostDisassemblyChoice(view) {
       <section class="tube-designer-post-disassembly-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-post-disassembly-title">
         <button class="tube-designer-dialog-close" data-cam-action="tube-designer-dismiss-disassembly-choice" aria-label="稍后处理">×</button>
         <div class="tube-designer-post-disassembly-icon" aria-hidden="true">✓</div>
-        <div class="tube-designer-post-disassembly-copy">
+        <div class="tube-designer-post-disassembly-copy" data-tube-designer-window-drag>
           <strong id="tube-designer-post-disassembly-title">拆单完成</strong>
           <span>${groupCount} 个产品，共生成 ${partCount} 种制造零件。下一步可以直接导出，或进入下料工作区继续排样。</span>
         </div>
@@ -253,7 +255,7 @@ function renderInstanceCard(instance, templates, selected, pending) {
         <span class="tube-designer-instance-copy">
           <strong>${escapeText(instance.name)}</strong>
           <span>${escapeText(getTemplateDisplayName(template) || instance.templateId)}</span>
-          <small>${escapeText(formatProductDimensions(instance.templateId, parameters))} · ${instance.hasDisassembly ? `${instance.partCount} 个零件` : "未拆单"}</small>
+          <small>${escapeText(formatProductDimensions(instance.templateId, parameters))} · 数量 ${escapeText(instance.quantity ?? 1)} · ${instance.hasDisassembly ? `${instance.partCount} 种零件` : "未拆单"}</small>
         </span>
         <i aria-hidden="true"></i>
       </button>
@@ -308,6 +310,13 @@ export function renderDesignerAddDialog(designer, view) {
   `;
 }
 
+function renderInstanceQuantityField(quantity, mode, pending) {
+  return `<label class="tube-designer-field tube-designer-instance-quantity"><span>生产数量</span>
+    <input type="number" min="1" max="1000000" step="1" value="${escapeAttribute(quantity)}"
+      data-tube-designer-instance-quantity="${mode}" data-cam-change-action="tube-designer-instance-quantity-change" ${pending ? "disabled" : ""} />
+    <small>${mode === "add" ? "按此数量计算下料与导出清单。" : "修改后自动保存；不影响已加入下料的零件。"}</small></label>`;
+}
+
 export function renderDesignerAddParameterContent(designer, view) {
   const templates = Array.isArray(designer?.templates) ? designer.templates : [];
   const template = getTemplateById(templates, view?.tubeDesignerAddTemplateId) ?? getDefaultTemplate(templates);
@@ -320,8 +329,9 @@ export function renderDesignerAddParameterContent(designer, view) {
       <span class="tube-designer-config-preview">${renderSchematic(template?.id, values)}</span>
       <div><strong>${escapeText(view?.tubeDesignerAddInstanceName)}</strong><span>${escapeText(entry?.displayName ?? getTemplateDisplayName(template))} · ${escapeText(formatProductDimensions(template?.id, values))}</span></div>
     </div>
-    ${template?.extensions?.securityWindow ? `<p class="tube-designer-empty">${escapeText(template.description ?? "")} 修改参数生成产品，再拆单导出零件或进入排样。</p>` : ""}
+    ${template?.extensions?.securityWindow ? `<p class="tube-designer-empty">${escapeText(template.description ?? "")} 修改参数生成产品，再导入下料并导出零件或进入排样。</p>` : ""}
     ${template?.extensions?.securityWindow ? `<details class="tube-designer-review-disclosure" data-tube-designer-parameter-group="security:review" ${view.tubeDesignerAddDisclosureStates?.[template.id]?.["security:review"] ? "open" : ""}><summary>设计核对<span>安装、开启及加工注意事项</span></summary>${renderSecurityWindowReview(template, values)}</details>` : renderSecurityWindowReview(template, values)}
+    ${renderInstanceQuantityField(view.tubeDesignerAddInstanceQuantity ?? 1, "add", pending)}
     ${renderParameterPresetBar(template, values, view, "add")}
     ${template?.available
       ? groupTree.map((group) => renderAddParameterGroup(group, values, pending, view, "add", template)).join("")
@@ -547,12 +557,12 @@ function renderDisassemblySelector(designer, view) {
     <div class="tube-designer-modal-backdrop" role="presentation">
       <section class="tube-designer-selection-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-disassemble-title">
         <header class="tube-designer-dialog-header">
-          <div><strong id="tube-designer-disassemble-title">选择要拆单的产品实例</strong><span>可选择一个或多个产品实例批量拆单。</span></div>
-          <button class="tube-designer-dialog-close" data-cam-action="tube-designer-close-disassemble" aria-label="取消拆单" ${view.pending ? "disabled" : ""}>×</button>
+          <div><strong id="tube-designer-disassemble-title">选择要导入下料的产品实例</strong><span>生成制造零件后直接关联到下料清单，不复制几何。</span></div>
+          <button class="tube-designer-dialog-close" data-cam-action="tube-designer-close-disassemble" aria-label="取消导入下料" ${view.pending ? "disabled" : ""}>×</button>
         </header>
         <div class="tube-designer-selection-table-wrap">
           <table class="tube-designer-selection-table">
-            <thead><tr><th><input type="checkbox" data-cam-action="tube-designer-toggle-all-instances" ${allSelected ? "checked" : ""} /></th><th>缩略图</th><th>实例名称</th><th>模板</th><th>外尺寸</th></tr></thead>
+            <thead><tr><th><input type="checkbox" data-cam-action="tube-designer-toggle-all-instances" ${allSelected ? "checked" : ""} /></th><th>缩略图</th><th>实例名称</th><th>数量</th><th>模板</th><th>外尺寸</th></tr></thead>
             <tbody>${instances.map((instance) => {
               const template = getTemplateById(templates, instance.templateId);
               const parameters = instance.parameters ?? {};
@@ -560,6 +570,7 @@ function renderDisassemblySelector(designer, view) {
                 <td><input type="checkbox" data-cam-action="tube-designer-toggle-instance" data-tube-designer-instance-id="${escapeAttribute(instance.entityId)}" ${selected.has(instance.entityId) ? "checked" : ""} /></td>
                 <td><span class="tube-designer-table-thumbnail">${renderSchematic(instance.templateId, parameters)}</span></td>
                 <td><strong>${escapeText(instance.name)}</strong><small>${escapeText(instance.productCode)}</small></td>
+                <td>${escapeText(instance.quantity ?? 1)}</td>
                 <td>${escapeText(getTemplateDisplayName(template) || instance.templateId)}</td>
                 <td>${formatNumber(parameters.width)} × ${formatNumber(parameters.height)} mm</td>
               </tr>`;
@@ -569,7 +580,7 @@ function renderDisassemblySelector(designer, view) {
         <footer class="tube-designer-dialog-footer">
           <span>已选择 ${selected.size} / ${instances.length} 个实例</span>
           <button class="tube-designer-secondary" data-cam-action="tube-designer-close-disassemble" ${view.pending ? "disabled" : ""}>取消</button>
-          <button class="tube-designer-primary" data-cam-action="tube-designer-confirm-disassemble" ${view.pending || !selected.size ? "disabled" : ""}>${view.pending ? "正在拆单…" : "拆单"}</button>
+          <button class="tube-designer-primary" data-cam-action="tube-designer-confirm-disassemble" ${view.pending || !selected.size ? "disabled" : ""}>${view.pending ? "正在导入…" : "导入下料"}</button>
         </footer>
       </section>
     </div>
@@ -583,19 +594,30 @@ function renderBreakdownDialog(designer, view) {
   const selectedCount = allParts.filter((part) => selected.has(part.entityId)).length;
   const exportOperation = view.tubeDesignerExportOperation ?? null;
   const exportBusy = Boolean(exportOperation);
+  const transientExport = view.tubeDesignerBreakdownMode === "export";
+  const nestingExport = view.tubeDesignerBreakdownMode === "nesting-export";
+  const destinationTitle = transientExport
+    ? "临时零件清单 · STEP + Excel"
+    : nestingExport
+      ? "零件清单 · STEP + Excel"
+      : "STEP + Excel 分组导出";
   return `
     <div class="tube-designer-modal-backdrop" role="presentation">
       <section class="tube-designer-breakdown-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-breakdown-title" aria-busy="${exportBusy ? "true" : "false"}">
         <header class="tube-designer-dialog-header">
-          <div><strong id="tube-designer-breakdown-title">零件清单</strong><span data-tube-designer-breakdown-summary>${groups.length} 个产品 · ${allParts.length} 个零件 · 已选择 ${selectedCount} 个</span></div>
-          <button class="tube-designer-dialog-close" data-cam-action="tube-designer-close-breakdown" aria-label="关闭零件清单" ${exportBusy ? "disabled" : ""}>×</button>
+          <div><strong id="tube-designer-breakdown-title">零件清单</strong><span data-tube-designer-breakdown-summary>${groups.length} 个产品 · ${allParts.length} 个零件 · 已选择 ${selectedCount} 个${transientExport ? " · 临时数据，不进入下料" : ""}</span></div>
+          ${nestingExport ? "" : `<button class="tube-designer-dialog-close" data-cam-action="tube-designer-close-breakdown" aria-label="关闭零件清单" ${exportBusy ? "disabled" : ""}>×</button>`}
         </header>
         ${renderDesignerBreakdownBody(designer, view)}
-        <footer class="tube-designer-breakdown-footer">
-          <div class="tube-designer-export-destination"><strong>STEP + Excel 分组导出</strong><span>${view.tubeDesignerExportDirectory ? `上次总目录：${escapeText(view.tubeDesignerExportDirectory)}` : "总目录生成零件清单.xlsx，每个产品创建自己的 STEP 子目录"}</span></div>
+        <footer class="tube-designer-breakdown-footer${nestingExport ? " tube-designer-breakdown-footer--simple" : ""}">
+          <div class="tube-designer-export-destination"><strong>${destinationTitle}</strong><span>${view.tubeDesignerExportDirectory ? `上次总目录：${escapeText(view.tubeDesignerExportDirectory)}` : "总目录生成零件清单.xlsx，每个产品创建自己的 STEP 子目录"}</span></div>
           <span data-tube-designer-export-selection-summary>将导出 ${selectedCount} 个零件</span>
-          <button class="tube-designer-secondary" data-cam-action="tube-designer-enter-cutting" ${view.pending || exportBusy || !selectedCount ? "disabled" : ""}>进入下料</button>
-          <button class="tube-designer-primary" data-cam-action="tube-designer-export-selected" data-tube-designer-export-selected ${view.pending || exportBusy || !selectedCount ? "disabled" : ""}>${exportBusy ? "正在导出…" : "选择目录并导出"}</button>
+          ${nestingExport
+            ? `<button class="tube-designer-secondary" data-cam-action="tube-designer-close-breakdown" ${view.pending || exportBusy ? "disabled" : ""}>取消</button>`
+            : transientExport
+              ? ""
+              : `<button class="tube-designer-secondary" data-cam-action="tube-designer-enter-cutting" ${view.pending || exportBusy || !selectedCount ? "disabled" : ""}>进入下料</button>`}
+          <button class="tube-designer-primary" data-cam-action="tube-designer-export-selected" data-tube-designer-export-selected ${view.pending || exportBusy || !selectedCount ? "disabled" : ""}>${exportBusy ? "正在导出…" : nestingExport ? "导出" : "选择目录并导出"}</button>
         </footer>
         ${exportBusy ? renderExportWait(exportOperation) : ""}
       </section>
@@ -646,7 +668,11 @@ export function renderDesignerBreakdownRows(designer, view) {
 
 function getBreakdownGroups(designer, view) {
   const visibleIds = new Set(view?.tubeDesignerBreakdownProductIds ?? []);
-  return (designer?.manufacturingGroups ?? [])
+  const sourceGroups = view?.tubeDesignerBreakdownMode === "nesting-export"
+    && Array.isArray(designer?.nestingGroups)
+    ? designer.nestingGroups
+    : (designer?.manufacturingGroups ?? []);
+  return sourceGroups
     .filter((group) => !visibleIds.size || visibleIds.has(group.productEntityId));
 }
 
@@ -717,7 +743,11 @@ function renderExportWait(operation) {
 
 function renderPartInspectionDialog(designer, view) {
   const partId = String(view.tubeDesignerInspectedPartId ?? "");
-  const part = (designer.manufacturingGroups ?? [])
+  const sourceGroups = view?.tubeDesignerBreakdownMode === "nesting-export"
+    && Array.isArray(designer?.nestingGroups)
+    ? designer.nestingGroups
+    : (designer.manufacturingGroups ?? []);
+  const part = sourceGroups
     .flatMap((group) => group.parts ?? [])
     .find((item) => String(item.entityId) === partId);
   if (!part) return "";
@@ -1320,7 +1350,7 @@ function renderProfileField(field, value, disabled, context) {
   const mode = context?.mode === "add" ? "add" : "right";
   return `<div class="tube-designer-field tube-designer-profile-field wide">
     <span>${label}</span>
-    <select data-cam-change-action="tube-designer-profile-selection-change" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>
+    <select data-cam-change-action="tube-designer-profile-selection-change" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-current-selection="${escapeAttribute(selected)}" ${disabled ? "disabled" : ""}>
       <optgroup label="系统内置">${options.map((option) => {
         const optionValue = typeof option === "object" ? option?.value : option;
         const optionLabel = typeof option === "object" ? option?.label : option;
@@ -1333,17 +1363,14 @@ function renderProfileField(field, value, disabled, context) {
       }).join("")}</optgroup>` : ""}
       ${profiles.length ? `<optgroup label="我的管型">${profiles.map((profile) => {
         const sourceValue = `saved:${profile.id}`;
-        return `<option value="${escapeAttribute(sourceValue)}" ${sourceValue === selected ? "selected" : ""}>${escapeText(profile.name ?? profile.sourceFileName ?? "DXF 管型")}</option>`;
+        return `<option value="${escapeAttribute(sourceValue)}" ${sourceValue === selected ? "selected" : ""}>${escapeText(profile.name ?? profile.sourceFileName ?? "定式管型")}</option>`;
       }).join("")}</optgroup>` : ""}
       ${override && !saved && !templateProfile ? `<option value="current" selected>${escapeText(override.name ?? override.sourceFileName ?? "当前导入 DXF")}</option>` : ""}
+      <option value="external-dxf">外部 DXF…</option>
     </select>
-    <div class="tube-designer-profile-actions">
-      <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-import-profile-dxf" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>导入 DXF</button>
-      ${override && !saved && override.profileScope !== "template" ? `<button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-open-profile-dialog" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-id="" ${disabled ? "disabled" : ""}>保存为我的管型</button>` : ""}
-      <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-open-profile-library" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>我的管型管理${profiles.length ? ` (${profiles.length})` : ""}</button>
-      ${override ? `
-      <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-clear-imported-profile" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" ${disabled ? "disabled" : ""}>恢复模板管型</button>` : ""}
-    </div>
+    ${override && !saved && override.profileScope !== "template" ? `<div class="tube-designer-profile-actions">
+      <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-open-profile-dialog" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-id="" ${disabled ? "disabled" : ""}>保存为我的管型</button>
+    </div>` : ""}
     ${renderParametricProfileParameters(override, prefix, mode, disabled)}
     ${override ? `<small class="tube-designer-profile-readonly-note"><strong>${escapeText(override.name ?? "导入管型")}</strong> · ${escapeText(override.specification ?? "")} · ${override.kind === "parametric-package" ? "参数可编辑，产品保存当前截面快照" : "冻结截面，不支持尺寸参数修改"}</small>` : ""}
   </div>`;

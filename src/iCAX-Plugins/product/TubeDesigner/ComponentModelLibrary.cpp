@@ -1,18 +1,35 @@
 #include "pch.h"
 #include "ComponentModelLibrary.h"
+#include "FinalGeometryMeasurement.h"
 #include "OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h"
 #include "TemplateRuntime/StandardJsonCodec.h"
 #include "TemplateRuntime/TemplateCodec.h"
 #include <BRepTools.hxx>
+#include <BRepAlgoAPI_Common.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepAlgoAPI_Fuse.hxx>
 #include <BRep_Builder.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
 #include <Bnd_Box.hxx>
+#include <IGESControl_Reader.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
 #include <StepData_StepModel.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <TopLoc_Location.hxx>
 #include <TopoDS_Compound.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopAbs_ShapeEnum.hxx>
+#include <gp_Ax1.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pnt.hxx>
 #include <gp_Trsf.hxx>
 #include <algorithm>
 #include <cctype>
@@ -106,6 +123,303 @@ namespace iCAX::TubeDesigner
                 throw std::invalid_argument("配件实体超过 32 MiB 大小限制");
             return _Text;
         }
+        double CSGNumber(const Variant& Value_, const std::string& Path_)
+        {
+            double _Result = 0;
+            if (Value_.Is<double>()) _Result = Value_.To<double>();
+            else if (Value_.Is<float>()) _Result = static_cast<double>(Value_.To<float>());
+            else if (Value_.Is<int>()) _Result = static_cast<double>(Value_.To<int>());
+            else if (Value_.Is<unsigned int>()) _Result = static_cast<double>(Value_.To<unsigned int>());
+            else if (Value_.Is<long long>()) _Result = static_cast<double>(Value_.To<long long>());
+            else if (Value_.Is<unsigned long long>()) _Result = static_cast<double>(Value_.To<unsigned long long>());
+            else throw std::invalid_argument("CSG 数值字段无效：" + Path_);
+            if (!std::isfinite(_Result)) throw std::invalid_argument("CSG 数值必须是有限值：" + Path_);
+            return _Result;
+        }
+        double CSGNumber(const ObjectMap& Values_, const std::string& Key_, const std::string& Path_,
+            double Default_, bool Required_ = true)
+        {
+            const auto _It = Values_.find(Key_);
+            if (_It == Values_.end())
+            {
+                if (Required_) throw std::invalid_argument("CSG 缺少数值字段：" + Path_);
+                return Default_;
+            }
+            return CSGNumber(_It->second, Path_);
+        }
+        ObjectMap CSGObject(const ObjectMap& Values_, const std::string& Key_, const std::string& Path_)
+        {
+            const auto _It = Values_.find(Key_);
+            if (_It == Values_.end() || !_It->second.Is<ObjectMap>())
+                throw std::invalid_argument("CSG 缺少对象字段：" + Path_);
+            return _It->second.To<ObjectMap>();
+        }
+        std::string CSGText(const ObjectMap& Values_, const std::string& Key_, const std::string& Path_,
+            std::size_t Maximum_ = 120)
+        {
+            const auto _Value = Text(Values_, Key_);
+            if (_Value.empty() || _Value.size() > Maximum_ || _Value.find('\0') != std::string::npos)
+                throw std::invalid_argument("CSG 文本字段无效：" + Path_);
+            return _Value;
+        }
+        double BoundedCSGNumber(const ObjectMap& Values_, const std::string& Key_, const std::string& Path_,
+            double Minimum_, double Maximum_, double Default_ = 0, bool Required_ = true)
+        {
+            const auto _Value = CSGNumber(Values_, Key_, Path_, Default_, Required_);
+            if (_Value < Minimum_ || _Value > Maximum_)
+                throw std::invalid_argument("CSG 数值超出范围：" + Path_);
+            return _Value;
+        }
+        TopoDS_Shape BuildCSGProfileExtrusion(const ObjectMap& Profile_, const double Height_)
+        {
+            if (!std::isfinite(Height_) || Height_ <= 1.0e-6)
+                throw std::invalid_argument("CSG 拉伸高度无效");
+            const auto _Contours = Profile_.find("contours");
+            if (_Contours == Profile_.end() || !_Contours->second.Is<VariantArray>())
+                throw std::invalid_argument("CSG 拉伸截面缺少轮廓");
+            const auto _ContourValues = _Contours->second.To<VariantArray>();
+            if (_ContourValues.empty() || _ContourValues.size() > 1000)
+                throw std::invalid_argument("CSG 拉伸截面轮廓数量无效");
+            const VariantArray _Origin{ Variant(0.0), Variant(0.0), Variant(0.0) };
+            const VariantArray _XAxis{ Variant(1.0), Variant(0.0), Variant(0.0) };
+            const VariantArray _YAxis{ Variant(0.0), Variant(1.0), Variant(0.0) };
+            const VariantArray _Vector{ Variant(0.0), Variant(0.0), Variant(Height_) };
+            const ObjectMap _Document{
+                { "schema", std::string("icax.neutral-model") }, { "schemaVersion", 1ull },
+                { "template", ObjectMap{
+                    { "id", std::string("icax.component-csg-profile-extrusion") },
+                    { "version", std::string("1.0.0") },
+                    { "packageDigest", Text(Profile_, "contentDigest", Text(Profile_, "kind", "profile")) }
+                } },
+                { "geometry", VariantArray{
+                    ObjectMap{
+                        { "key", std::string("profile") }, { "operator", std::string("profile2d") },
+                        { "arguments", ObjectMap{
+                            { "placement", ObjectMap{
+                                { "origin", _Origin }, { "xAxis", _XAxis }, { "yAxis", _YAxis }
+                            } },
+                            { "contours", _ContourValues }
+                        } }
+                    },
+                    ObjectMap{
+                        { "key", std::string("solid") }, { "operator", std::string("extrude") },
+                        { "inputs", VariantArray{ Variant(std::string("profile")) } },
+                        { "arguments", ObjectMap{ { "vector", _Vector } } }
+                    }
+                } }
+            };
+            const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
+            return iCAX::OpenCascade::EvaluateNeutralModel(_Model, { "solid" }).At("solid");
+        }
+        ObjectMap NormalizeCSGProfile(const ObjectMap& Profile_)
+        {
+            const auto _SourceType = CSGText(Profile_, "sourceType", "profile.sourceType", 24);
+            if (_SourceType != "parametric" && _SourceType != "fixed")
+                throw std::invalid_argument("CSG 拉伸截面类型必须是程式或定式");
+            const auto _Name = CSGText(Profile_, "name", "profile.name", 240);
+            const auto _Key = CSGText(Profile_, "key", "profile.key", 240);
+            const auto _Snapshot = CSGObject(Profile_, "snapshot", "profile.snapshot");
+            if (Text(_Snapshot, "schema") != "icax.imported-tube-profile")
+                throw std::invalid_argument("CSG 拉伸截面格式不受支持");
+            const auto _Version = _Snapshot.find("schemaVersion");
+            if (_Version == _Snapshot.end() || CSGNumber(_Version->second, "profile.schemaVersion") != 1)
+                throw std::invalid_argument("CSG 拉伸截面版本不受支持");
+            const auto _Kind = CSGText(_Snapshot, "kind", "profile.kind", 40);
+            if (_Kind != "imported-dxf" && _Kind != "parametric-package")
+                throw std::invalid_argument("CSG 拉伸截面来源不受支持");
+            (void)BoundedCSGNumber(_Snapshot, "width", "profile.width", .001, 100000);
+            (void)BoundedCSGNumber(_Snapshot, "depth", "profile.depth", .001, 100000);
+            if (BuildCSGProfileExtrusion(_Snapshot, 1.0).IsNull())
+                throw std::invalid_argument("CSG 拉伸截面无法生成实体");
+
+            ObjectMap _Result{
+                { "sourceType", _SourceType }, { "key", _Key }, { "name", _Name },
+                { "snapshot", _Snapshot }
+            };
+            if (const auto _Parameters = Profile_.find("parameters"); _Parameters != Profile_.end())
+            {
+                if (!_Parameters->second.Is<ObjectMap>() || _Parameters->second.To<ObjectMap>().size() > 128)
+                    throw std::invalid_argument("CSG 程式截面参数无效");
+                _Result["parameters"] = _Parameters->second;
+            }
+            else _Result["parameters"] = ObjectMap{};
+            if (const auto _Definitions = Profile_.find("parameterDefinitions"); _Definitions != Profile_.end())
+            {
+                if (!_Definitions->second.Is<VariantArray>() || _Definitions->second.To<VariantArray>().size() > 128)
+                    throw std::invalid_argument("CSG 程式截面参数定义无效");
+                _Result["parameterDefinitions"] = _Definitions->second;
+            }
+            else _Result["parameterDefinitions"] = VariantArray{};
+            if (const auto _Reference = Profile_.find("profileRef"); _Reference != Profile_.end())
+            {
+                if (!_Reference->second.Is<ObjectMap>()) throw std::invalid_argument("CSG 程式截面引用无效");
+                _Result["profileRef"] = _Reference->second;
+            }
+            return _Result;
+        }
+        ObjectMap NormalizeComponentCSG(const ObjectMap& Definition_)
+        {
+            if (Text(Definition_, "schema") != "icax.component-csg"
+                || Text(Definition_, "evaluation") != "left-fold")
+                throw std::invalid_argument("配件 CSG 定义或求值方式不受支持");
+            const auto _Schema = Definition_.find("schemaVersion");
+            if (_Schema == Definition_.end() || CSGNumber(_Schema->second, "schemaVersion") != 1)
+                throw std::invalid_argument("配件 CSG 版本不受支持");
+            const auto _FeaturesIt = Definition_.find("features");
+            if (_FeaturesIt == Definition_.end() || !_FeaturesIt->second.Is<VariantArray>())
+                throw std::invalid_argument("配件 CSG 必须包含基础体数组");
+            const auto _Features = _FeaturesIt->second.To<VariantArray>();
+            if (_Features.empty() || _Features.size() > 64)
+                throw std::invalid_argument("配件 CSG 必须包含 1 至 64 个基础体");
+
+            VariantArray _CanonicalFeatures;
+            std::set<std::string> _IDs;
+            for (std::size_t _Index = 0; _Index < _Features.size(); ++_Index)
+            {
+                if (!_Features[_Index].Is<ObjectMap>()) throw std::invalid_argument("配件 CSG 基础体必须是对象");
+                const auto _Feature = _Features[_Index].To<ObjectMap>();
+                const auto _ID = CSGText(_Feature, "id", "features.id", 120);
+                ValidateID(_ID);
+                if (!_IDs.insert(_ID).second) throw std::invalid_argument("配件 CSG 节点标识不能重复");
+                const auto _Name = CSGText(_Feature, "name", "features.name", 240);
+                const auto _Primitive = CSGText(_Feature, "primitive", "features.primitive", 24);
+                const auto _Operation = CSGText(_Feature, "operation", "features.operation", 24);
+                if (_Primitive != "extrusion" && _Primitive != "box" && _Primitive != "cylinder" && _Primitive != "sphere" && _Primitive != "cone")
+                    throw std::invalid_argument("配件 CSG 包含不支持的基础体：" + _Primitive);
+                if ((_Index == 0 && _Operation != "base") || (_Index > 0 && _Operation != "union"
+                    && _Operation != "difference" && _Operation != "intersection"))
+                    throw std::invalid_argument("配件 CSG 布尔运算顺序无效");
+                const auto _SourceParameters = CSGObject(_Feature, "parameters", "features.parameters");
+                ObjectMap _Parameters;
+                ObjectMap _Profile;
+                if (_Primitive == "extrusion")
+                {
+                    _Parameters["height"] = BoundedCSGNumber(_SourceParameters, "height", "extrusion.height", .01, 100000);
+                    _Profile = NormalizeCSGProfile(CSGObject(_Feature, "profile", "features.profile"));
+                }
+                else if (_Primitive == "box")
+                {
+                    _Parameters["width"] = BoundedCSGNumber(_SourceParameters, "width", "box.width", .01, 100000);
+                    _Parameters["depth"] = BoundedCSGNumber(_SourceParameters, "depth", "box.depth", .01, 100000);
+                    _Parameters["height"] = BoundedCSGNumber(_SourceParameters, "height", "box.height", .01, 100000);
+                }
+                else if (_Primitive == "cylinder")
+                {
+                    _Parameters["radius"] = BoundedCSGNumber(_SourceParameters, "radius", "cylinder.radius", .01, 100000);
+                    _Parameters["height"] = BoundedCSGNumber(_SourceParameters, "height", "cylinder.height", .01, 100000);
+                }
+                else if (_Primitive == "sphere")
+                    _Parameters["radius"] = BoundedCSGNumber(_SourceParameters, "radius", "sphere.radius", .01, 100000);
+                else
+                {
+                    const auto _Bottom = BoundedCSGNumber(_SourceParameters, "bottomRadius", "cone.bottomRadius", 0, 100000);
+                    const auto _Top = BoundedCSGNumber(_SourceParameters, "topRadius", "cone.topRadius", 0, 100000);
+                    if (_Bottom <= 0 && _Top <= 0) throw std::invalid_argument("圆锥至少需要一个非零半径");
+                    if (std::abs(_Bottom - _Top) < 1e-9) throw std::invalid_argument("圆锥上下半径不能相同，请改用圆柱体");
+                    _Parameters["bottomRadius"] = _Bottom;
+                    _Parameters["topRadius"] = _Top;
+                    _Parameters["height"] = BoundedCSGNumber(_SourceParameters, "height", "cone.height", .01, 100000);
+                }
+                const auto _Transform = CSGObject(_Feature, "transform", "features.transform");
+                const auto _SourcePosition = CSGObject(_Transform, "position", "features.transform.position");
+                const auto _SourceRotation = CSGObject(_Transform, "rotation", "features.transform.rotation");
+                ObjectMap _Position, _Rotation;
+                for (const auto* _Axis : { "x", "y", "z" })
+                {
+                    _Position[_Axis] = BoundedCSGNumber(_SourcePosition, _Axis,
+                        std::string("position.") + _Axis, -1000000, 1000000, 0, false);
+                    _Rotation[_Axis] = BoundedCSGNumber(_SourceRotation, _Axis,
+                        std::string("rotation.") + _Axis, -36000, 36000, 0, false);
+                }
+                ObjectMap _CanonicalFeature{
+                    { "id", _ID }, { "name", _Name }, { "primitive", _Primitive }, { "operation", _Operation },
+                    { "parameters", std::move(_Parameters) }, { "transform", ObjectMap{
+                        { "position", std::move(_Position) }, { "rotation", std::move(_Rotation) } } }
+                };
+                if (_Primitive == "extrusion") _CanonicalFeature["profile"] = std::move(_Profile);
+                _CanonicalFeatures.emplace_back(std::move(_CanonicalFeature));
+            }
+            return ObjectMap{
+                { "schema", std::string("icax.component-csg") }, { "schemaVersion", 1 },
+                { "evaluation", std::string("left-fold") }, { "features", std::move(_CanonicalFeatures) }
+            };
+        }
+        TopoDS_Shape EvaluateComponentCSG(const ObjectMap& Definition_)
+        {
+            const auto _Features = Definition_.at("features").To<VariantArray>();
+            TopoDS_Shape _Result;
+            for (std::size_t _Index = 0; _Index < _Features.size(); ++_Index)
+            {
+                const auto _Feature = _Features[_Index].To<ObjectMap>();
+                const auto _Primitive = Text(_Feature, "primitive");
+                const auto _Parameters = Object(_Feature, "parameters");
+                TopoDS_Shape _Shape;
+                if (_Primitive == "extrusion")
+                    _Shape = BuildCSGProfileExtrusion(Object(_Feature, "profile").at("snapshot").To<ObjectMap>(),
+                        CSGNumber(_Parameters.at("height"), "height"));
+                else if (_Primitive == "box") _Shape = BRepPrimAPI_MakeBox(
+                    gp_Pnt(-CSGNumber(_Parameters.at("width"), "width") / 2,
+                        -CSGNumber(_Parameters.at("depth"), "depth") / 2, 0),
+                    CSGNumber(_Parameters.at("width"), "width"),
+                    CSGNumber(_Parameters.at("depth"), "depth"),
+                    CSGNumber(_Parameters.at("height"), "height")).Shape();
+                else if (_Primitive == "cylinder") _Shape = BRepPrimAPI_MakeCylinder(
+                    gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)),
+                    CSGNumber(_Parameters.at("radius"), "radius"),
+                    CSGNumber(_Parameters.at("height"), "height")).Shape();
+                else if (_Primitive == "sphere")
+                {
+                    const auto _Radius = CSGNumber(_Parameters.at("radius"), "radius");
+                    _Shape = BRepPrimAPI_MakeSphere(gp_Pnt(0, 0, _Radius), _Radius).Shape();
+                }
+                else _Shape = BRepPrimAPI_MakeCone(
+                    gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)),
+                    CSGNumber(_Parameters.at("bottomRadius"), "bottomRadius"),
+                    CSGNumber(_Parameters.at("topRadius"), "topRadius"),
+                    CSGNumber(_Parameters.at("height"), "height")).Shape();
+
+                const auto _Transform = Object(_Feature, "transform");
+                const auto _Rotation = Object(_Transform, "rotation");
+                for (const auto& [_Axis, _Direction] : std::array<std::pair<const char*, gp_Dir>, 3>{ {
+                    { "x", gp_Dir(1, 0, 0) }, { "y", gp_Dir(0, 1, 0) }, { "z", gp_Dir(0, 0, 1) } } })
+                {
+                    const auto _Degrees = CSGNumber(_Rotation.at(_Axis), std::string("rotation.") + _Axis);
+                    if (std::abs(_Degrees) < 1e-12) continue;
+                    gp_Trsf _Rotate;
+                    _Rotate.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), _Direction), _Degrees * std::acos(-1.0) / 180.0);
+                    _Shape = BRepBuilderAPI_Transform(_Shape, _Rotate, true).Shape();
+                }
+                const auto _Position = Object(_Transform, "position");
+                gp_Trsf _Move;
+                _Move.SetTranslation(gp_Vec(CSGNumber(_Position.at("x"), "position.x"),
+                    CSGNumber(_Position.at("y"), "position.y"), CSGNumber(_Position.at("z"), "position.z")));
+                _Shape = BRepBuilderAPI_Transform(_Shape, _Move, true).Shape();
+
+                if (_Index == 0) _Result = _Shape;
+                else if (Text(_Feature, "operation") == "union")
+                {
+                    BRepAlgoAPI_Fuse _Builder(_Result, _Shape); _Builder.Build();
+                    if (!_Builder.IsDone()) throw std::runtime_error("CSG 合并运算失败");
+                    _Result = _Builder.Shape();
+                }
+                else if (Text(_Feature, "operation") == "difference")
+                {
+                    BRepAlgoAPI_Cut _Builder(_Result, _Shape); _Builder.Build();
+                    if (!_Builder.IsDone()) throw std::runtime_error("CSG 减去运算失败");
+                    _Result = _Builder.Shape();
+                }
+                else
+                {
+                    BRepAlgoAPI_Common _Builder(_Result, _Shape); _Builder.Build();
+                    if (!_Builder.IsDone()) throw std::runtime_error("CSG 相交运算失败");
+                    _Result = _Builder.Shape();
+                }
+                if (_Result.IsNull() || !TopExp_Explorer(_Result, TopAbs_SOLID).More())
+                    throw std::invalid_argument("CSG 第 " + std::to_string(_Index + 1) + " 步产生了空实体");
+            }
+            if (!BRepCheck_Analyzer(_Result).IsValid()) throw std::invalid_argument("CSG 运算产生了无效实体");
+            return _Result;
+        }
         TopoDS_Shape ShapeFromFile(const std::filesystem::path& Source_)
         {
             if (!std::filesystem::is_regular_file(Source_) || std::filesystem::file_size(Source_) > kMaximumModelBytes)
@@ -120,6 +434,13 @@ namespace iCAX::TubeDesigner
                 STEPControl_Reader _Reader;
                 if (_Reader.ReadFile(PathText(Source_).c_str()) != IFSelect_RetDone || _Reader.TransferRoots() <= 0)
                     throw std::invalid_argument("无法读取 STEP 配件实体");
+                _Shape = _Reader.OneShape();
+            }
+            else if (_Extension == ".iges" || _Extension == ".igs")
+            {
+                IGESControl_Reader _Reader;
+                if (_Reader.ReadFile(PathText(Source_).c_str()) != IFSelect_RetDone || _Reader.TransferRoots() <= 0)
+                    throw std::invalid_argument("无法读取 IGES 三维实体");
                 _Shape = _Reader.OneShape();
             }
             else if (_Extension == ".brep")
@@ -160,6 +481,45 @@ namespace iCAX::TubeDesigner
             // Reuse the generic resource validator so imports and template
             // resources obey exactly the same shape validity contract.
             return ComponentModelShape({ { "brep", SerializeShape(_Shape) } });
+        }
+
+        ObjectMap ManufacturingPartSnapshotFromFile(const std::filesystem::path& Source_)
+        {
+            auto _Extension = Source_.extension().string();
+            std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](unsigned char C_) {
+                return static_cast<char>(std::tolower(C_));
+            });
+            if (_Extension != ".step" && _Extension != ".stp"
+                && _Extension != ".iges" && _Extension != ".igs")
+                throw std::invalid_argument("请导入 STEP / STP / IGES / IGS 三维实体文件");
+
+            // Linear-part normalization chooses the measured main body axis,
+            // then centers the section and puts the stock direction on +X.
+            // This is the same coordinate contract used by the nesting solver.
+            auto _Shape = NormalizeLinearPartForManufacturing(ShapeFromFile(Source_));
+            Bnd_Box _Box;
+            BRepBndLib::Add(_Shape, _Box, false);
+            _Box.SetGap(0);
+            if (_Box.IsVoid() || _Box.IsOpen())
+                throw std::invalid_argument("导入零件的几何包络无效");
+            double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+            _Box.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+            const auto _BRep = SerializeShape(_Shape);
+            return ObjectMap{
+                { "schema", std::string("icax.manufacturing-part-import") },
+                { "schemaVersion", 1 },
+                { "name", PathText(Source_.stem()) },
+                { "unit", std::string("mm") },
+                { "sourceFileName", PathText(Source_.filename()) },
+                { "sourceFormat", _Extension == ".iges" || _Extension == ".igs"
+                    ? std::string("iges") : std::string("step") },
+                { "brep", _BRep },
+                { "geometryDigest", Digest(_BRep) },
+                { "bounds", ObjectMap{
+                    { "width", _X1 - _X0 }, { "depth", _Y1 - _Y0 }, { "height", _Z1 - _Z0 },
+                    { "min", VariantArray{ _X0, _Y0, _Z0 } },
+                    { "max", VariantArray{ _X1, _Y1, _Z1 } } } }
+            };
         }
         ObjectMap SnapshotFromFile(const std::filesystem::path& Source_, const ObjectMap& Metadata_, bool Normalize_)
         {
@@ -289,6 +649,17 @@ namespace iCAX::TubeDesigner
         for (auto& [_Key, _Value] : _Updates) Snapshot_[_Key] = std::move(_Value);
     }
 
+    TopoDS_Shape ImportMachiningAssemblyFile(const std::filesystem::path& Source_)
+    {
+        auto _Extension = Source_.extension().string();
+        std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](unsigned char C_) {
+            return static_cast<char>(std::tolower(C_));
+        });
+        if (_Extension != ".step" && _Extension != ".stp" && _Extension != ".iges" && _Extension != ".igs")
+            throw std::invalid_argument("加工模型仅支持 STEP / STP / IGES / IGS 文件");
+        return ShapeFromFile(Source_);
+    }
+
     ObjectMap ImportComponentModelFile(const std::filesystem::path& Source_, const ObjectMap& Metadata_)
     {
         auto _Extension = Source_.extension().string();
@@ -298,6 +669,40 @@ namespace iCAX::TubeDesigner
         if (_Extension != ".step" && _Extension != ".stp" && _Extension != ".brep")
             throw std::invalid_argument("请导入 STEP / STP / BREP 三维实体文件");
         return SnapshotFromFile(Source_, Metadata_, true);
+    }
+
+    ObjectMap CreateComponentCSGModelSnapshot(const ObjectMap& Definition_, const ObjectMap& Metadata_)
+    {
+        const auto _Definition = NormalizeComponentCSG(Definition_);
+        const auto _Shape = EvaluateComponentCSG(_Definition);
+        Bnd_Box _Box;
+        BRepBndLib::Add(_Shape, _Box, false);
+        _Box.SetGap(0);
+        if (_Box.IsVoid() || _Box.IsOpen()) throw std::invalid_argument("CSG 配件的几何包络无效");
+        double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+        _Box.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+        const auto _BRep = SerializeShape(_Shape);
+        ObjectMap _Snapshot{
+            { "schema", std::string("icax.component-model") }, { "schemaVersion", 1 },
+            { "name", std::string("未命名配件") }, { "category", std::string("自制配件") },
+            { "sourcing", std::string("made") }, { "material", std::string() },
+            { "description", std::string() }, { "unit", std::string("mm") },
+            { "modelType", std::string("csg") }, { "sourceFormat", std::string("csg") },
+            { "sourceFileName", std::string("CSG 绘制模型") }, { "csgDefinition", _Definition },
+            { "brep", _BRep }, { "geometryDigest", Digest(_BRep) },
+            { "bounds", ObjectMap{ { "width", _X1 - _X0 }, { "depth", _Y1 - _Y0 },
+                { "height", _Z1 - _Z0 }, { "min", VariantArray{ _X0, _Y0, _Z0 } },
+                { "max", VariantArray{ _X1, _Y1, _Z1 } } } }
+        };
+        UpdateComponentModelMetadata(_Snapshot, Metadata_);
+        // CSG-created models are always self-manufactured library assets.
+        _Snapshot["sourcing"] = std::string("made");
+        return _Snapshot;
+    }
+
+    ObjectMap ImportManufacturingPartFile(const std::filesystem::path& Source_)
+    {
+        return ManufacturingPartSnapshotFromFile(Source_);
     }
 
     TopoDS_Shape ComponentModelShape(const ObjectMap& Snapshot_)
@@ -355,7 +760,8 @@ namespace iCAX::TubeDesigner
     {
         ObjectMap _Summary;
         for (const auto* _Key : { "name", "category", "sourcing", "material", "description", "unit",
-            "sourceFileName", "bounds", "geometryDigest", "importTranslation", "templateId", "templateName" })
+            "sourceFileName", "bounds", "geometryDigest", "importTranslation", "templateId", "templateName",
+            "modelType", "sourceFormat", "csgDefinition" })
             if (const auto _It = Snapshot_.find(_Key); _It != Snapshot_.end()) _Summary[_Key] = _It->second;
         _Summary["scope"] = Scope_;
         _Summary["id"] = ID_;

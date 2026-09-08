@@ -202,9 +202,10 @@ namespace etp
 
             for (const auto& fragment : fragments)
             {
-                const auto stockSurface = pipeline_detail::IsCapFace(
-                        fragment, *job.ExtrusionAxis, job.Options.AngularToleranceRadians)
-                    || pipeline_detail::IsAxisInvariantSurface(
+                // Only the extrusion's longitudinal skin is removed. End caps
+                // (including flat annular tube ends) are machining features;
+                // lying on the section boundary does not make them side faces.
+                const auto stockSurface = pipeline_detail::IsAxisInvariantSurface(
                         fragment, *job.ExtrusionAxis, job.Options.AngularToleranceRadians);
                 const auto contour = stockSurface
                     && pipeline_detail::EveryBoundaryPointOnSection(

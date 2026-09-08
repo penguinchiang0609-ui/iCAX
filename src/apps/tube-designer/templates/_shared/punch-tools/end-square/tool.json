@@ -1,0 +1,11 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "end-square",
+  "version": "1.0.0",
+  "displayName": "端面平切",
+  "kind": "programmatic",
+  "target": "end",
+  "processCode": "square",
+  "parameters": []
+}

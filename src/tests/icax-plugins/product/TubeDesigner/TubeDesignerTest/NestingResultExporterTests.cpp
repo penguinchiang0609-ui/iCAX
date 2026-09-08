@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <thread>
 
 namespace
 {
@@ -142,6 +143,62 @@ TEST(TubeDesignerNestingExport, ReversalIsRigidAndPreservesAsymmetricHole)
     EXPECT_NEAR(_Centers[1], 1503.0 - _Offset, 1e-6);
 }
 
+TEST(TubeDesignerNestingExport, UsesStoredTransformIncludingAxialRotation)
+{
+    const auto _Parts = Parts();
+    SNestingExportPlan _Plan;
+    _Plan.ID = "trsf-plan";
+    _Plan.Profile = "矩形管 20 × 10 × 2";
+    _Plan.StockLength = 1000.0;
+    _Plan.UsedLength = 1000.0;
+    _Plan.RemainingLength = 0.0;
+    SNestingExportPlacement _Placement;
+    _Placement.PartID = "actual-part";
+    _Placement.Start = 0.0;
+    _Placement.End = 1000.0;
+    _Placement.Transform = {
+        1, 0, 0, 500,
+        0, 0, -1, 20,
+        0, 1, 0, 30,
+        0, 0, 0, 1
+    };
+    _Placement.HasTransform = true;
+    _Plan.Placements.push_back(_Placement);
+    const auto _Bounds = Bounds(BuildNestingExportCompound(_Plan, _Parts, 0.0));
+    EXPECT_NEAR(_Bounds[0], 0.0, 1e-6);
+    EXPECT_NEAR(_Bounds[3], 1000.0, 1e-6);
+    EXPECT_NEAR(_Bounds[1], 15.0, 1e-6);
+    EXPECT_NEAR(_Bounds[4], 25.0, 1e-6);
+    EXPECT_NEAR(_Bounds[2], 20.0, 1e-6);
+    EXPECT_NEAR(_Bounds[5], 40.0, 1e-6);
+}
+
+TEST(TubeDesignerNestingExport, BackgroundTaskPublishesOnlyCompletedCurrentResultResources)
+{
+    const auto _Parts = Parts();
+    auto _Plan = Plan();
+    const auto _Scope = "test-scope-" + std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    EXPECT_FALSE(IsNestingResultResourceReady(_Scope, _Plan, _Parts, 3.0));
+    QueueNestingResultResources(_Scope, { _Plan }, _Parts, 3.0);
+    for (int _Attempt = 0; _Attempt < 200
+        && !IsNestingResultResourceReady(_Scope, _Plan, _Parts, 3.0); ++_Attempt)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    EXPECT_TRUE(IsNestingResultResourceReady(_Scope, _Plan, _Parts, 3.0));
+
+    auto _Edited = _Plan;
+    _Edited.ID = "edited-plan";
+    _Edited.StockLength = 6100.0;
+    _Edited.RemainingLength = 4097.0;
+    QueueNestingResultResources(_Scope, { _Edited }, _Parts, 3.0);
+    EXPECT_FALSE(IsNestingResultResourceReady(_Scope, _Plan, _Parts, 3.0))
+        << "publishing an edited result set invalidates the prior resource";
+    for (int _Attempt = 0; _Attempt < 200
+        && !IsNestingResultResourceReady(_Scope, _Edited, _Parts, 3.0); ++_Attempt)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    EXPECT_TRUE(IsNestingResultResourceReady(_Scope, _Edited, _Parts, 3.0));
+}
+
 TEST(TubeDesignerNestingExport, PlacesValidatedMiterEnvelopesWithNegativeGap)
 {
     const std::vector<SNestingExportPart> _Parts{
@@ -226,6 +283,41 @@ TEST(TubeDesignerNestingExport, ExportsRealStepAndFullWorkbookIntoUniqueChildDir
     const auto _Second = ExportNestingResults(_Root, { Plan() }, _Parts, 3);
     EXPECT_NE(_Result.at("outputDirectory").To<std::string>(), _Second.at("outputDirectory").To<std::string>());
     EXPECT_EQ(ReadBytes(_Step), _OriginalStepBytes);
+}
+
+TEST(TubeDesignerNestingExport, GroupsFilesByProfileIdentityAndSanitizesDirectoryLabels)
+{
+    const auto _Root = TestRoot();
+    const auto _Parts = Parts();
+    auto _First = Plan();
+    _First.ProfileKey = "section-a";
+    _First.Profile = "../CON/规格:*?";
+    auto _Second = _First;
+    _Second.ID = "plan-two";
+    _Second.ProfileKey = "section-b"; // Same label, different geometry identity.
+    auto _Third = _First;
+    _Third.ID = "plan-three";
+    const auto _Result = ExportNestingResults(_Root, { _First, _Second, _Third }, _Parts, 3);
+    const auto _Directory = Utf8Path(_Result.at("outputDirectory").To<std::string>());
+    const auto _Files = _Result.at("exportedFiles").To<iCAX::Data::VariantArray>();
+    ASSERT_EQ(3u, _Files.size());
+    const auto _A = Utf8Path(_Files[0].To<std::string>());
+    const auto _B = Utf8Path(_Files[1].To<std::string>());
+    const auto _C = Utf8Path(_Files[2].To<std::string>());
+    EXPECT_EQ(_A.parent_path(), _C.parent_path());
+    EXPECT_NE(_A.parent_path(), _B.parent_path());
+    for (const auto& _Path : { _A, _B, _C })
+    {
+        EXPECT_EQ(_Path.parent_path().parent_path(), _Directory);
+        EXPECT_TRUE(std::filesystem::is_regular_file(_Path));
+        EXPECT_TRUE(std::filesystem::is_regular_file(_Path.parent_path() / "nesting-list.xlsx"));
+    }
+    const auto _All = ReadBytes(Utf8Path(_Result.at("partListFile").To<std::string>()));
+    EXPECT_NE(_All.find(PathText(_A.lexically_relative(_Directory))), std::string::npos);
+    const auto _GroupA = ReadBytes(_A.parent_path() / "nesting-list.xlsx");
+    EXPECT_NE(_GroupA.find("stock-001.step"), std::string::npos);
+    EXPECT_NE(_GroupA.find("stock-003.step"), std::string::npos);
+    EXPECT_EQ(_GroupA.find("stock-002.step"), std::string::npos);
 }
 
 TEST(TubeDesignerNestingExport, WorkbookTreatsUserTextAsLiteralAndRefusesOverwrite)

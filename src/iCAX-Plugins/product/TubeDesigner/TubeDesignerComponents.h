@@ -34,6 +34,8 @@ namespace iCAX::TubeDesigner
         DECLARE_ICAX_COMPONENT_CREATOR(CTubeDesignerRootComponent)
         DECLARED_ICAX_FIELD(CTubeDesignerRootComponent, iCAX::Data::uuid, ActiveProductID, iCAX::Data::uuid(), UuidEqual, ToUuidVariant, FromUuidVariant)
         DECLARED_ICAX_FIELD(CTubeDesignerRootComponent, iCAX::Data::ObjectMap, NestingSettings, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_FIELD(CTubeDesignerRootComponent, iCAX::Data::ObjectMap, NestingTask, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_FIELD(CTubeDesignerRootComponent, iCAX::Data::ObjectMap, MachiningTask, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 
     class CProductInstanceComponent final : public iCAX::Database::CComponentBase
@@ -42,6 +44,7 @@ namespace iCAX::TubeDesigner
         DECLARE_ICAX_COMPONENT_CREATOR(CProductInstanceComponent)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, ProductCode, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, Name, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CProductInstanceComponent, unsigned long long, Quantity, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, CreatedAt, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, TemplateID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CProductInstanceComponent, std::string, TemplateVersion, std::string(), StringEqual, ToStringVariant, FromStringVariant)
@@ -73,6 +76,40 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CAssemblyMemberComponent, iCAX::Data::ObjectMap, ItemProperties, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 
+    // Domain slices for editable nesting parts.  The manufacturing component
+    // owns identity/quantity/final geometry; these components own their own
+    // editable recipe and can evolve independently of manufacturing data.
+    class CPartDrawingComponent final : public iCAX::Database::CComponentBase
+    {
+        DECLARE_ICAX_COMPONENT(CPartDrawingComponent, CComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CPartDrawingComponent)
+        DECLARED_ICAX_FIELD(CPartDrawingComponent, iCAX::Data::ObjectMap, Definition,
+            iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+    };
+
+    class CPunchWizardComponent final : public iCAX::Database::CComponentBase
+    {
+        DECLARE_ICAX_COMPONENT(CPunchWizardComponent, CComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CPunchWizardComponent)
+        DECLARED_ICAX_FIELD(CPunchWizardComponent, iCAX::Data::ObjectMap, Definition,
+            iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+    };
+
+    // Provenance is a small, optional slice on a nesting-owned copy.  It is
+    // deliberately separate from CManufacturingPartComponent so source audit
+    // data does not turn the manufacturing identity into a live product link.
+    class CNestingSourceComponent final : public iCAX::Database::CComponentBase
+    {
+        DECLARE_ICAX_COMPONENT(CNestingSourceComponent, CComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CNestingSourceComponent)
+        DECLARED_ICAX_FIELD(CNestingSourceComponent, iCAX::Data::uuid, SourceProductID, iCAX::Data::uuid(), UuidEqual, ToUuidVariant, FromUuidVariant)
+        DECLARED_ICAX_FIELD(CNestingSourceComponent, iCAX::Data::uuid, SourceGenerationRunID, iCAX::Data::uuid(), UuidEqual, ToUuidVariant, FromUuidVariant)
+        DECLARED_ICAX_FIELD(CNestingSourceComponent, iCAX::Data::uuid, SourcePartEntityID, iCAX::Data::uuid(), UuidEqual, ToUuidVariant, FromUuidVariant)
+        DECLARED_ICAX_FIELD(CNestingSourceComponent, std::string, SourceProductName, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CNestingSourceComponent, std::string, SourceProductCode, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CNestingSourceComponent, std::string, SourceStableKey, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+    };
+
     class CManufacturingPartComponent final : public iCAX::Database::CComponentBase
     {
         DECLARE_ICAX_COMPONENT(CManufacturingPartComponent, CComponentBase)
@@ -83,8 +120,13 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, PartIndex, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, StableKey, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, PartNumber, std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        // Generic manufacturing identity and frozen geometry reference.  The
+        // product-disassembly page and the independent nesting editors both
+        // use this component; domain recipes live in their own EC slices.
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, Name, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, Role, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, Quantity, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, QuantityOverride, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, double, Length, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, ManufacturingGeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, ManufacturingGeometryResourceVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
@@ -120,6 +162,6 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CGenerationRunComponent, unsigned long long, IssueCount, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CGenerationRunComponent, std::string, PackageDigest, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, NeutralModel, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
-        DECLARED_ICAX_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, ManufacturingModel, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_OBSERVABLE_FIELD(CGenerationRunComponent, iCAX::Data::ObjectMap, ManufacturingModel, iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 }

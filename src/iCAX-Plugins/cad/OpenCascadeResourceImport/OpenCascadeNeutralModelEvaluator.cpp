@@ -1,16 +1,19 @@
 #include "pch.h"
 
 #include "OpenCascadeNeutralModelEvaluator.h"
+#include "OpenCascadeTaskExecution.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <exception>
 #include <functional>
 #include <limits>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -24,6 +27,7 @@
 #include <BRepGProp.hxx>
 #include <BRepTools.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
@@ -63,6 +67,9 @@ namespace
     using iCAX::TemplateRuntime::SNeutralModel;
 
     constexpr double kTolerance = 1.0e-9;
+
+    using iCAX::OpenCascade::detail::GeometryTaskScheduler;
+    using iCAX::OpenCascade::detail::SGeometryTaskBatch;
 
     const Variant* Find(const ObjectMap& Object_, const std::string& strName_)
     {
@@ -816,12 +823,12 @@ namespace
         return Input_.Moved(TopLoc_Location(_Transform), true);
     }
 
-    TopoDS_Shape BooleanShape(
-        const SGeometryNode& Node_,
-        const std::function<const TopoDS_Shape&(const std::string&)>& Resolve_)
+    std::vector<std::string> BooleanInputs(const SGeometryNode& Node_)
     {
         const auto _Path = std::string("geometry.") + Node_.Key;
         const auto _Operation = RequireString(Node_.Arguments, "operation", _Path);
+        if (_Operation != "subtract" && _Operation != "union" && _Operation != "intersect")
+            throw std::invalid_argument(_Path + ".operation is unsupported: " + _Operation);
         std::string _TargetKey;
         if (const auto _Target = Find(Node_.Arguments, "target"))
         {
@@ -848,16 +855,45 @@ namespace
             _ToolKeys.assign(Node_.Inputs.begin() + 1, Node_.Inputs.end());
         }
         if (_ToolKeys.empty()) throw std::invalid_argument(_Path + " requires at least one tool");
+        _ToolKeys.insert(_ToolKeys.begin(), std::move(_TargetKey));
+        return _ToolKeys;
+    }
 
-        auto _Result = Resolve_(_TargetKey);
-        for (const auto& _ToolKey : _ToolKeys)
+    TopoDS_Shape BooleanShape(
+        const SGeometryNode& Node_,
+        const std::function<const TopoDS_Shape&(const std::string&)>& Resolve_,
+        bool UseBoundingBoxFilter_)
+    {
+        const auto _Path = std::string("geometry.") + Node_.Key;
+        const auto _Operation = RequireString(Node_.Arguments, "operation", _Path);
+        const auto _Inputs = BooleanInputs(Node_);
+
+        auto _Result = Resolve_(_Inputs.front());
+        Bnd_Box _TargetBox;
+        // Subtraction cannot enlarge its target. Reuse the initial conservative
+        // bound for the whole tool chain instead of bounding each increasingly
+        // complex cut result again (which can cost more than the quick rejection).
+        if (UseBoundingBoxFilter_ && _Operation == "subtract")
+            BRepBndLib::Add(_Result, _TargetBox, false);
+        for (std::size_t _Index = 1; _Index < _Inputs.size(); ++_Index)
         {
-            const auto& _Tool = Resolve_(_ToolKey);
+            const auto& _Tool = Resolve_(_Inputs[_Index]);
+            if (UseBoundingBoxFilter_ && _Operation == "subtract")
+            {
+                // Conservative, tolerance-expanded bounds, independent of any
+                // display triangulation. Touching/overlapping boxes still go to
+                // OCCT; never use this shortcut for fuse or common.
+                Bnd_Box _ToolBox;
+                BRepBndLib::Add(_Tool, _ToolBox, false);
+                if (!_TargetBox.IsVoid() && !_ToolBox.IsVoid()
+                    && _TargetBox.IsOut(_ToolBox)) continue;
+            }
             const auto _BuildWithoutChangingInputs = [&](auto& Builder_) {
                 // Constructors taking two shapes execute immediately. Set this
                 // mode before Build so shared, located instances are never cut
                 // or tolerance-modified in place through their common TShape.
                 Builder_.SetNonDestructive(true);
+                Builder_.SetRunParallel(false);
                 NCollection_List<TopoDS_Shape> _Arguments;
                 _Arguments.Append(_Result);
                 NCollection_List<TopoDS_Shape> _Tools;
@@ -916,16 +952,32 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
     const SNeutralModel& Model_,
     const std::vector<std::string>& GeometryKeys_)
 {
+    return EvaluateNeutralModel(Model_, GeometryKeys_, SNeutralModelEvaluationOptions{});
+}
+
+iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralModel(
+    const SNeutralModel& Model_,
+    const std::vector<std::string>& GeometryKeys_,
+    const SNeutralModelEvaluationOptions& Options_)
+{
     std::unordered_map<std::string, const SGeometryNode*> _Nodes;
     for (const auto& _Node : Model_.Geometry)
         if (!_Nodes.emplace(_Node.Key, &_Node).second)
             throw std::invalid_argument("duplicate neutral model geometry key: " + _Node.Key);
 
-    SNeutralModelEvaluation _Result;
+    // Plan the selected subgraph before launching work. In particular, Boolean
+    // arguments may override Inputs; unused declarations must not be evaluated.
+    struct SPlannedNode
+    {
+        const SGeometryNode* Node;
+        std::vector<std::string> Inputs;
+    };
+    std::vector<std::vector<SPlannedNode>> _Levels;
+    std::unordered_map<std::string, std::size_t> _Depths;
     std::unordered_set<std::string> _Visiting;
-    std::function<const TopoDS_Shape&(const std::string&)> _Evaluate;
-    _Evaluate = [&](const std::string& strKey_) -> const TopoDS_Shape& {
-        if (const auto _Existing = _Result.Geometry.find(strKey_); _Existing != _Result.Geometry.end())
+    std::function<std::size_t(const std::string&)> _Plan;
+    _Plan = [&](const std::string& strKey_) -> std::size_t {
+        if (const auto _Existing = _Depths.find(strKey_); _Existing != _Depths.end())
             return _Existing->second;
         const auto _NodeIterator = _Nodes.find(strKey_);
         if (_NodeIterator == _Nodes.end())
@@ -933,6 +985,23 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
         if (!_Visiting.emplace(strKey_).second)
             throw std::invalid_argument("neutral model geometry dependency cycle: " + strKey_);
         const auto& _Node = *_NodeIterator->second;
+        auto _Inputs = _Node.Operator == EGeometryOperator::Boolean ? BooleanInputs(_Node) : _Node.Inputs;
+        if (_Node.Operator == EGeometryOperator::Profile2D || _Node.Operator == EGeometryOperator::Resource)
+            _Inputs.clear(); // Their builders validate their own input contract.
+        std::size_t _Depth = 0;
+        for (const auto& _Input : _Inputs) _Depth = std::max(_Depth, _Plan(_Input) + 1);
+        if (_Levels.size() <= _Depth) _Levels.resize(_Depth + 1);
+        _Levels[_Depth].push_back({ &_Node, std::move(_Inputs) });
+        _Visiting.erase(strKey_);
+        _Depths.emplace(strKey_, _Depth);
+        return _Depth;
+    };
+    for (const auto& _GeometryKey : GeometryKeys_) (void)_Plan(_GeometryKey);
+
+    SNeutralModelEvaluation _Result;
+    const auto _Concurrency = detail::GeometryConcurrency(Options_.MaximumConcurrency);
+    const auto _Build = [&](const SGeometryNode& _Node,
+        const std::function<const TopoDS_Shape&(const std::string&)>& _Evaluate) {
         TopoDS_Shape _Shape;
         switch (_Node.Operator)
         {
@@ -948,7 +1017,7 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
             _Shape = MakeExtrude(_Node, _Evaluate(_Node.Inputs.front()));
             break;
         case EGeometryOperator::Boolean:
-            _Shape = BooleanShape(_Node, _Evaluate);
+            _Shape = BooleanShape(_Node, _Evaluate, Options_.UseBoundingBoxFilter);
             break;
         case EGeometryOperator::Transform:
             if (_Node.Inputs.size() != 1)
@@ -970,9 +1039,64 @@ iCAX::OpenCascade::SNeutralModelEvaluation iCAX::OpenCascade::EvaluateNeutralMod
             throw std::invalid_argument("geometry." + _Node.Key + " uses an operator not implemented by the OpenCascade adapter");
         }
         if (_Shape.IsNull()) throw std::runtime_error("geometry." + _Node.Key + " evaluated to a null shape");
-        _Visiting.erase(strKey_);
-        return _Result.Geometry.emplace(_Node.Key, std::move(_Shape)).first->second;
+        return _Shape;
     };
-    for (const auto& _GeometryKey : GeometryKeys_) (void)_Evaluate(_GeometryKey);
+    for (const auto& _Level : _Levels)
+    {
+        for (std::size_t _Begin = 0; _Begin < _Level.size(); _Begin += _Concurrency)
+        {
+            const auto _Count = std::min(_Concurrency, _Level.size() - _Begin);
+            std::vector<std::map<std::string, TopoDS_Shape>> _Inputs(_Count);
+            std::vector<TopoDS_Shape> _Shapes(_Count);
+            std::vector<std::exception_ptr> _Errors(_Count);
+            // Copy on the caller thread before workers start: OCCT caches and
+            // topology flags must not be lazily changed through a shared TShape.
+            // Transform/Compound remain cheap, shared instances as before.
+            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+            {
+                const auto& _Planned = _Level[_Begin + _Index];
+                for (const auto& _Key : _Planned.Inputs)
+                {
+                    if (_Inputs[_Index].contains(_Key)) continue;
+                    const auto& _Shape = _Result.At(_Key);
+                    const bool _Isolate = _Count > 1 &&
+                        (_Planned.Node->Operator == EGeometryOperator::Boolean
+                            || _Planned.Node->Operator == EGeometryOperator::Extrude);
+                    _Inputs[_Index].emplace(_Key, _Isolate
+                        ? BRepBuilderAPI_Copy(_Shape, true, false).Shape() : _Shape);
+                }
+            }
+            const auto _Run = [&](std::size_t Index_) {
+                try
+                {
+                    _Shapes[Index_] = _Build(*_Level[_Begin + Index_].Node,
+                        [&](const std::string& Key_) -> const TopoDS_Shape& {
+                            return _Inputs[Index_].at(Key_);
+                        });
+                }
+                catch (...) { _Errors[Index_] = std::current_exception(); }
+            };
+            const auto _IsSharedInstance = [&](std::size_t Index_) {
+                const auto _Operator = _Level[_Begin + Index_].Node->Operator;
+                return _Operator == EGeometryOperator::Transform || _Operator == EGeometryOperator::Compound;
+            };
+            // Compound assembly may update a child's topology flags. Keep these
+            // cheap shared-instance operations serial, outside the worker phase.
+            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+                if (_IsSharedInstance(_Index)) _Run(_Index);
+            {
+                SGeometryTaskBatch _Batch;
+                _Batch.Tasks.reserve(_Count - 1);
+                for (std::size_t _Index = 1; _Index < _Count; ++_Index)
+                    if (!_IsSharedInstance(_Index)) _Batch.Tasks.push_back(iCAX::Tasks::Run(
+                        [&, _Index] { _Run(_Index); }, GeometryTaskScheduler()));
+                if (!_IsSharedInstance(0)) _Run(0);
+                _Batch.Complete();
+            }
+            for (const auto& _Error : _Errors) if (_Error) std::rethrow_exception(_Error);
+            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+                _Result.Geometry.emplace(_Level[_Begin + _Index].Node->Key, std::move(_Shapes[_Index]));
+        }
+    }
     return _Result;
 }

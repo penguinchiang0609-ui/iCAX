@@ -9,5 +9,13 @@
     { "key": "width", "displayName": { "zh-CN": "外宽" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
     { "key": "depth", "displayName": { "zh-CN": "外高" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
     { "key": "wallThickness", "displayName": { "zh-CN": "厚度" }, "valueType": "number", "defaultValue": 3.0, "min": 0.1, "step": 0.1 }
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 1,
+    "annotations": [
+      { "parameter": "width", "kind": "linear", "axis": "x", "side": "bottom", "from": ["-width/2", "-depth/2"], "to": ["width/2", "-depth/2"], "description": "水平肢从左侧外边到右端的总宽。" },
+      { "parameter": "depth", "kind": "linear", "axis": "y", "side": "left", "from": ["-width/2", "-depth/2"], "to": ["-width/2", "depth/2"], "description": "竖直肢从底面到顶端的总高。" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "right", "point": ["-width/2+wallThickness/2", 0], "description": "两条肢的共同厚度；修改时水平肢和竖直肢一起变化。" }
+    ]
+  }
 }

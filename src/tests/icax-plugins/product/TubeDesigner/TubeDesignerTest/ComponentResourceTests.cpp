@@ -1,15 +1,21 @@
 #include "pch.h"
 
 #include <OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h>
+#include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
+#include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
 #include <TemplateRuntime/StandardJsonCodec.h>
 #include <TemplateRuntime/TemplateCodec.h>
+#include <Task/Task.h>
 
 #include <BRep_Builder.hxx>
+#include <BRep_Tool.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_Transform.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
@@ -17,6 +23,7 @@
 #include <TopLoc_Location.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Solid.hxx>
+#include <TopoDS.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
 
@@ -244,4 +251,177 @@ TEST(ComponentResource, OnlySelectedRootsResolveResourcePayloads)
     EXPECT_THROW(EvaluateNeutralModel(_Model, { "unused.unresolved" }), std::invalid_argument);
     EXPECT_THROW(EvaluateNeutralModel(_Model, { "unused.malformed" }), std::invalid_argument);
     EXPECT_THROW(EvaluateNeutralModel(_Model), std::invalid_argument);
+}
+
+TEST(ComponentResource, ParallelBooleansPreserveSharedInputsAndMatchSerial)
+{
+    auto _Model = ResourceModel(ResourceBRep(BRepPrimAPI_MakeBox(10, 20, 30).Shape()));
+    _Model.Geometry.push_back({ "tool", EGeometryOperator::Transform,
+        { "component.prototype" }, ResourcePlacement(5, 0, 0) });
+    std::vector<std::string> _Roots;
+    for (int _Index = 0; _Index < 17; ++_Index)
+    {
+        const auto _Key = "cut." + std::to_string(_Index);
+        const std::string _Operation = _Index % 3 == 0 ? "union" : _Index % 3 == 1 ? "intersect" : "subtract";
+        _Model.Geometry.push_back({ _Key, EGeometryOperator::Boolean, { "ignored.missing" },
+            { { "operation", _Operation },
+              { "target", std::string("component.prototype") },
+              { "tools", VariantArray{ std::string("tool") } } } });
+        _Roots.push_back(_Key);
+    }
+    const auto _Serial = EvaluateNeutralModel(_Model, _Roots, { 1, false });
+    for (int _Repeat = 0; _Repeat < 3; ++_Repeat)
+    {
+        const auto _Parallel = EvaluateNeutralModel(_Model, _Roots, { 4, true });
+        EXPECT_EQ(_Serial.Geometry.size(), _Parallel.Geometry.size());
+        EXPECT_TRUE(_Parallel.At("component.prototype").IsPartner(_Parallel.At("tool")));
+        EXPECT_NEAR(6000.0, ResourceVolume(_Parallel.At("component.prototype")), 1e-6);
+        for (std::size_t _Index = 0; _Index < _Roots.size(); ++_Index)
+        {
+            const auto& _Key = _Roots[_Index];
+            SCOPED_TRACE(_Key);
+            const auto& _Shape = _Parallel.At(_Key);
+            EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+            EXPECT_NEAR(_Index % 3 == 0 ? 9000.0 : 3000.0, ResourceVolume(_Shape), 1e-6);
+            EXPECT_NEAR(ResourceVolume(_Serial.At(_Key)), ResourceVolume(_Shape), 1e-6);
+            ExpectResourceBounds(_Shape, ResourceBounds(_Serial.At(_Key)));
+        }
+    }
+}
+
+TEST(ComponentResource, BoundingBoxFilterPreservesDisjointTouchingAndOverlappingOperations)
+{
+    for (const double _Offset : { 100.0, 10.0, 9.9999999, 5.0, 0.0 })
+    {
+        for (const std::string _Operation : { "subtract", "union", "intersect" })
+        {
+            SCOPED_TRACE(_Operation + ":" + std::to_string(_Offset));
+            auto _Model = ResourceModel(ResourceBRep(BRepPrimAPI_MakeBox(10, 20, 30).Shape()));
+            _Model.Geometry.push_back({ "tool", EGeometryOperator::Transform,
+                { "component.prototype" }, ResourcePlacement(_Offset, 0, 0) });
+            _Model.Geometry.push_back({ "result", EGeometryOperator::Boolean,
+                { "component.prototype", "tool" }, { { "operation", _Operation } } });
+            const auto _Baseline = EvaluateNeutralModel(_Model, { "result" }, { 1, false });
+            const auto _Filtered = EvaluateNeutralModel(_Model, { "result" }, { 4, true });
+            EXPECT_NEAR(ResourceVolume(_Baseline.At("result")),
+                ResourceVolume(_Filtered.At("result")), 1e-6);
+            if (ResourceVolume(_Baseline.At("result")) > 1e-6)
+                ExpectResourceBounds(_Filtered.At("result"), ResourceBounds(_Baseline.At("result")));
+            if (_Operation == "subtract" && _Offset == 100.0)
+                EXPECT_TRUE(_Filtered.At("result").IsSame(_Filtered.At("component.prototype")));
+        }
+    }
+}
+
+TEST(ComponentResource, ParallelWorkerFailureJoinsAndAllowsSubsequentEvaluation)
+{
+    auto _Model = ResourceModel(ResourceBRep(BRepPrimAPI_MakeBox(10, 20, 30).Shape()));
+    _Model.Geometry.push_back({ "bad", EGeometryOperator::Resource,
+        {}, { { "brep", std::string("invalid BRep") } } });
+    for (int _Repeat = 0; _Repeat < 3; ++_Repeat)
+    {
+        EXPECT_THROW(EvaluateNeutralModel(_Model, { "bad", "component.prototype" }, { 4, true }),
+            std::invalid_argument);
+        const auto _Valid = EvaluateNeutralModel(_Model, { "component.prototype" }, { 4, true });
+        EXPECT_NEAR(6000.0, ResourceVolume(_Valid.At("component.prototype")), 1e-6);
+    }
+}
+
+TEST(ComponentResource, ParallelEvaluationCanRunInsideSingleWorkerTaskScheduler)
+{
+    auto _Caller = std::make_shared<iCAX::Tasks::ThreadPoolTaskScheduler>(1);
+    const auto _Task = iCAX::Tasks::Run([] {
+        auto _Model = ResourceModel(ResourceBRep(BRepPrimAPI_MakeBox(10, 20, 30).Shape()));
+        _Model.Geometry.push_back({ "second", EGeometryOperator::Resource, {},
+            { { "brep", ResourceBRep(BRepPrimAPI_MakeBox(20, 20, 30).Shape()) } } });
+        return EvaluateNeutralModel(_Model, { "component.prototype", "second" }, { 4, true });
+    }, _Caller);
+    ASSERT_TRUE(_Task.WaitFor(std::chrono::seconds(5)));
+    const auto _Result = _Task.Result();
+    EXPECT_NEAR(6000.0, ResourceVolume(_Result.At("component.prototype")), 1e-6);
+    EXPECT_NEAR(12000.0, ResourceVolume(_Result.At("second")), 1e-6);
+}
+
+TEST(ComponentResource, NativeCylinderBRepRoundTripPreservesSeamAndVolume)
+{
+    const auto _Shape = BRepPrimAPI_MakeCylinder(7, 30).Shape();
+    const auto _Neutral = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(_Shape, "cylinder", "cylinder", 0.025);
+    const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(_Neutral);
+    ASSERT_TRUE(_Rebuilt.bOK);
+    EXPECT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
+    EXPECT_NEAR(ResourceVolume(_Shape), ResourceVolume(_Rebuilt.Shape), 1e-6);
+}
+
+TEST(ComponentResource, MirroredCylinderBRepRoundTripPreservesSurfaceHandedness)
+{
+    gp_Trsf _Mirror;
+    _Mirror.SetMirror(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0)));
+    const auto _Shape = BRepBuilderAPI_Transform(BRepPrimAPI_MakeCylinder(7, 30).Shape(), _Mirror, true).Shape();
+    ASSERT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+    const auto _Neutral = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(_Shape, "mirrored", "mirrored", 0.025);
+    const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(_Neutral);
+    ASSERT_TRUE(_Rebuilt.bOK);
+    EXPECT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
+    EXPECT_NEAR(ResourceVolume(_Shape), ResourceVolume(_Rebuilt.Shape), 1e-6);
+}
+
+TEST(ComponentResource, ParallelBRepTranslationPreservesOrderGeometryAndUnmeshedPrototypes)
+{
+    using namespace iCAX::OpenCascade;
+    const auto _Box = BRepPrimAPI_MakeBox(10, 20, 30).Shape();
+    const auto _Cylinder = BRepPrimAPI_MakeCylinder(7, 30).Shape();
+    std::vector<SBRepConversionInput> _Inputs;
+    for (int _Index = 0; _Index < 17; ++_Index)
+    {
+        gp_Trsf _Translation;
+        _Translation.SetTranslation(gp_Vec(_Index * 50, _Index * 7, 0));
+        _Inputs.push_back({ (_Index % 2 ? _Box : _Cylinder).Moved(TopLoc_Location(_Translation)),
+            "part " + std::to_string(_Index), "resource/" + std::to_string(_Index) });
+    }
+    const auto _Serial = ConvertOpenCascadeShapesToBRep(_Inputs, 0.025, 1);
+    const auto _Parallel = ConvertOpenCascadeShapesToBRep(_Inputs, 0.025, 4);
+    ASSERT_EQ(_Inputs.size(), _Parallel.size());
+    for (std::size_t _Index = 0; _Index < _Inputs.size(); ++_Index)
+    {
+        SCOPED_TRACE(_Index);
+        const auto& _Actual = _Parallel[_Index];
+        EXPECT_EQ(_Inputs[_Index].SourceID, _Actual.Metadata.SourceId);
+        EXPECT_EQ(_Inputs[_Index].DisplayName, _Actual.Metadata.Name);
+        EXPECT_EQ(_Serial[_Index].Vertices.size(), _Actual.Vertices.size());
+        EXPECT_EQ(_Serial[_Index].Edges.size(), _Actual.Edges.size());
+        EXPECT_EQ(_Serial[_Index].Faces.size(), _Actual.Faces.size());
+        ASSERT_EQ(_Serial[_Index].Triangulations3.size(), _Actual.Triangulations3.size());
+        for (std::size_t _Face = 0; _Face < _Actual.Triangulations3.size(); ++_Face)
+        {
+            const auto& _Mesh = _Actual.Triangulations3[_Face].Geometry;
+            EXPECT_FALSE(_Mesh.Triangles.empty());
+            EXPECT_EQ(_Serial[_Index].Triangulations3[_Face].Geometry.Triangles, _Mesh.Triangles);
+            EXPECT_EQ(_Serial[_Index].Triangulations3[_Face].Geometry.Vertices.size(), _Mesh.Vertices.size());
+        }
+        const auto _Rebuilt = BuildOpenCascadeShape(_Actual);
+        ASSERT_TRUE(_Rebuilt.bOK);
+        EXPECT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
+        EXPECT_NEAR(ResourceVolume(_Inputs[_Index].Shape), ResourceVolume(_Rebuilt.Shape), 1e-6);
+        ExpectResourceBounds(_Rebuilt.Shape, ResourceBounds(_Inputs[_Index].Shape));
+    }
+    for (const auto& _Prototype : { _Box, _Cylinder })
+        for (TopExp_Explorer _Face(_Prototype, TopAbs_FACE); _Face.More(); _Face.Next())
+        {
+            TopLoc_Location _Location;
+            EXPECT_TRUE(BRep_Tool::Triangulation(TopoDS::Face(_Face.Current()), _Location).IsNull());
+        }
+}
+
+TEST(ComponentResource, BRepTranslationRejectsInvalidBatchAndCanRunAgain)
+{
+    using namespace iCAX::OpenCascade;
+    EXPECT_TRUE(ConvertOpenCascadeShapesToBRep({}).empty());
+    const SBRepConversionInput _Valid{ BRepPrimAPI_MakeBox(10, 20, 30).Shape(), "box", "box" };
+    EXPECT_THROW(ConvertOpenCascadeShapesToBRep({ _Valid, { {}, "null", "bad" } }), std::invalid_argument);
+    auto _Pool = std::make_shared<iCAX::Tasks::ThreadPoolTaskScheduler>(1);
+    const auto _Task = iCAX::Tasks::Run([_Valid] {
+        return ConvertOpenCascadeShapesToBRep({ _Valid, _Valid }, 0.025, 4);
+    }, _Pool);
+    ASSERT_TRUE(_Task.WaitFor(std::chrono::seconds(5)));
+    EXPECT_EQ(2u, _Task.Result().size());
 }

@@ -34,4 +34,21 @@ namespace iCAX::OpenCascade
         IN const std::string& strDisplayName_,
         IN const std::string& strSourceID_,
         IN double dTolerance_ = 0.001);
+
+    struct SBRepConversionInput final
+    {
+        TopoDS_Shape Shape;
+        std::string DisplayName;
+        std::string SourceID;
+    };
+
+    // Pure in-memory conversion, including display triangulation. Inputs are
+    // deep-copied before meshing so shared instances stay unchanged. Results
+    // preserve input order; all tasks finish before returning/throwing. No
+    // resource library or scene access occurs on workers. 0 = auto, 1 = serial.
+    _OPEN_CASCADE_RESOURCE_IMPORT_EXP std::vector<iCAX::GeometryData::BRepModel>
+        ConvertOpenCascadeShapesToBRep(
+            const std::vector<SBRepConversionInput>& Inputs_,
+            double dTolerance_ = 0.001,
+            std::size_t MaximumConcurrency_ = 0);
 }

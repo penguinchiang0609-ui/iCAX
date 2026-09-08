@@ -1,0 +1,48 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "end-convex",
+  "version": "1.0.0",
+  "displayName": "圆柱凸头",
+  "kind": "programmatic",
+  "target": "end",
+  "processCode": "convex",
+  "parameters": [
+    {
+      "key": "diameter",
+      "displayName": "圆柱直径",
+      "valueType": "number",
+      "defaultValue": 40,
+      "min": 0.1,
+      "max": 100000,
+      "step": 0.1
+    },
+    {
+      "key": "angle",
+      "displayName": "圆柱轴夹角",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 5,
+      "max": 175,
+      "step": 0.1
+    },
+    {
+      "key": "offset",
+      "displayName": "横向偏移",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -100000,
+      "max": 100000,
+      "step": 0.1
+    },
+    {
+      "key": "clearance",
+      "displayName": "配合间隙",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 1000,
+      "step": 0.1
+    }
+  ]
+}

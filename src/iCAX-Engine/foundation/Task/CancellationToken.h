@@ -203,14 +203,19 @@ namespace iCAX::Tasks
                 callbacks.swap(m_state->callbacks);
             }
 
+            std::vector<std::exception_ptr> exceptions;
             for (auto& entry : callbacks)
             {
                 if (entry && entry->active.load() && entry->callback)
                 {
-                    entry->callback();
+                    try { entry->callback(); }
+                    catch (...) { exceptions.push_back(std::current_exception()); }
                 }
             }
 
+            // A failing observer must not prevent later waiters/linked tokens
+            // from seeing cancellation. Report errors after notifying everyone.
+            if (!exceptions.empty()) throw TaskAggregateException(std::move(exceptions));
             return true;
         }
 

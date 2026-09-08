@@ -1484,6 +1484,17 @@ void iCAX::ProjectFile::CProjectFileCodec::WriteAtomic(
     const auto _Decoded = Decode(_Bytes);
     if (_Decoded.Document != Document_)
     {
+        for (size_t index = 0; index < Document_.Components.size() && index < _Decoded.Document.Components.size(); ++index)
+        {
+            const auto& original = Document_.Components[index];
+            const auto& restored = _Decoded.Document.Components[index];
+            for (const auto& [name, value] : original.Properties)
+            {
+                const auto found = restored.Properties.find(name);
+                if (found == restored.Properties.end() || found->second != value)
+                    throw std::runtime_error("Project file self-verification failed: " + original.ComponentClass + "." + name);
+            }
+        }
         throw std::runtime_error(
             "Project file self-verification failed");
     }

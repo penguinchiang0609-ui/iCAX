@@ -45,6 +45,7 @@ function fixture() {
       }
       if (current !== generation) return { applied: false, superseded: true };
       this.latestSnapshot = snapshot;
+      this.setVisibleEntityIds(snapshot.rows.map((row) => row.entityId));
       return { applied: true, entityIds: snapshot.rows.map((row) => row.entityId) };
     },
   };
@@ -80,6 +81,10 @@ function testRigidTransform() {
   assert.ok(Math.abs(rotated[5] + 1) < 1e-12);
   assert.ok(Math.abs(rotated[10] + 1) < 1e-12);
   assert.ok(Math.abs(rotated[6]) < 1e-12 && Math.abs(rotated[9]) < 1e-12);
+  const authoritative = [0, -1, 0, 25, 1, 0, 0, 4, 0, 0, 1, -3, 0, 0, 0, 1];
+  assert.deepEqual(nestingPlacementMatrix(bounds, {
+    start: 105, end: 205, rotationRadians: Math.PI, trsf: authoritative,
+  }), authoritative, "preview consumes the solved TRSF instead of reconstructing rotation");
   assert.throws(() => nestingPlacementMatrix(bounds, { start: 0, end: 90 }), /实际零件长度/);
   assert.throws(() => meshBounds({ positions: [0, 0, 0, NaN, 0, 0, 0, 0, 0] }), /无效坐标/);
 }
@@ -142,6 +147,78 @@ async function testActualPartsAndRemnant() {
   assert.deepEqual(f.view.viewport.visibleEntityIds, rows.map((row) => row.entityId), "repeat plan selection restores visibility without reloading geometry");
 }
 
+// renderProject builds the overlay first, then mountRenderViewport clears the
+// visible-id filter for custom areas. Preserve that ordering in regressions.
+function renderPlan(f, plan) {
+  scheduleNestingPlanHydration(f.context, f.view, plan, [part]);
+  f.view.viewport.setVisibleEntityIds([]);
+}
+
+async function testRepeatClickBeforeLoadCompletes() {
+  const f = fixture(), plan = makePlan();
+  let release;
+  f.context.sceneProxy.resources.get = () => new Promise((resolve) => {
+    release = () => resolve(new Response(encodeNestingGeometry(box)));
+  });
+  renderPlan(f, plan);
+  await waitUntil(() => release);
+  renderPlan(f, plan);
+  release();
+  await waitUntil(() => f.view.tubeDesignerNestingPreviewState?.status === "ready");
+  assert.equal(f.records.length, 1, "repeat clicks share the in-flight load");
+  assert.equal(f.view.viewport.visibleEntityIds.length, 4);
+}
+
+async function testRepeatClickAfterLoadCompletes() {
+  const f = fixture(), plan = makePlan();
+  renderPlan(f, plan);
+  await waitUntil(() => f.view.tubeDesignerNestingPreviewState?.status === "ready");
+  const ids = f.view.viewport.latestSnapshot.rows.map((row) => row.entityId);
+  for (let index = 0; index < 20; index++) {
+    renderPlan(f, plan);
+    await new Promise((resolve) => queueMicrotask(resolve));
+    assert.deepEqual(f.view.viewport.visibleEntityIds, ids,
+      "cached plan must restore visibility AFTER the workbench mount clears it");
+  }
+  assert.equal(f.records.length, 1, "cached plan must not reload geometry");
+  assert.equal(f.sourceReads(), 1);
+  assert.equal(f.view.viewport.fitCount, 1, "repeat clicks preserve the camera");
+}
+
+async function testTransformEditInvalidatesPreparedPlan() {
+  const f = fixture(), plan = makePlan();
+  renderPlan(f, plan);
+  await waitUntil(() => f.records.length === 1 && f.view.tubeDesignerNestingPreviewState?.status === "ready");
+  const oldEnvelope = f.records[0].snapshot.rows.find((row) => row.entityId.endsWith(":stock-envelope")).data.geometry.url;
+  plan.placements[0].trsf = [1, 0, 0, 60, 0, 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1];
+  renderPlan(f, plan);
+  await waitUntil(() => f.records.length === 2 && f.view.tubeDesignerNestingPreviewState?.status === "ready");
+  const rows = f.records[1].snapshot.rows;
+  assert.equal(rows[0].data.localToWorldMatrix[3], 60);
+  assert.notEqual(rows.find((row) => row.entityId.endsWith(":stock-envelope")).data.geometry.url, oldEnvelope,
+    "editing a solved transform expires only that plan's prepared resources");
+}
+
+async function testQueuedRestoreDoesNotReviveStalePlan() {
+  for (const invalidate of [
+    (view) => { view.activeAreaId = "view"; },
+    (view) => { view.tubeDesignerNestingSelectionKind = "part"; },
+    (view) => { view.tubeDesignerActiveNestingPlanId = "stock-b"; },
+    (view) => { view.viewport = {}; },
+    (view) => cancelNestingPlanHydration(view),
+  ]) {
+    const f = fixture(), plan = makePlan();
+    renderPlan(f, plan);
+    await waitUntil(() => f.view.tubeDesignerNestingPreviewState?.status === "ready");
+    const viewport = f.view.viewport;
+    renderPlan(f, plan);
+    invalidate(f.view);
+    viewport.setVisibleEntityIds(["new-selection"]);
+    await new Promise((resolve) => queueMicrotask(resolve));
+    assert.deepEqual(viewport.visibleEntityIds, ["new-selection"], "stale restore must not overwrite the new view");
+  }
+}
+
 async function testMissingResourceIsExplicit() {
   const f = fixture();
   f.context.sceneProxy.resources.get = async () => new Response(null, { status: 404 });
@@ -191,6 +268,10 @@ async function testCancelInFlightApply() {
 
 testRigidTransform();
 await testActualPartsAndRemnant();
+await testRepeatClickBeforeLoadCompletes();
+await testRepeatClickAfterLoadCompletes();
+await testTransformEditInvalidatesPreparedPlan();
+await testQueuedRestoreDoesNotReviveStalePlan();
 await testMissingResourceIsExplicit();
 await testSwitchDuringSourceRead();
 await testCancelInFlightApply();

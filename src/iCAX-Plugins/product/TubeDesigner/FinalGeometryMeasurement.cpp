@@ -16,10 +16,14 @@
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Wire.hxx>
+#include <TopLoc_Location.hxx>
+#include <Standard_Failure.hxx>
 #include <gp_Quaternion.hxx>
 
 #include <array>
+#include <limits>
 #include <numbers>
+#include <set>
 
 namespace iCAX::TubeDesigner
 {
@@ -90,6 +94,17 @@ namespace
         return { Direction_.X(), Direction_.Y(), Direction_.Z() };
     }
 
+    struct SSidePoint final
+    {
+        double X = 0.0;
+        double Y = 0.0;
+    };
+
+    VariantArray SidePointArray(IN const SSidePoint& Point_)
+    {
+        return { Point_.X, Point_.Y };
+    }
+
     double Dot(IN const gp_Dir& Left_, IN const gp_Dir& Right_)
     {
         return Left_.X() * Right_.X()
@@ -135,6 +150,219 @@ namespace
     }
 
     std::vector<gp_Pnt> UniqueVertices(IN const TopoDS_Shape& Shape_);
+    std::pair<double, double> ProjectionBounds(
+        IN const std::vector<gp_Pnt>& Points_, IN const gp_Pnt& Origin_,
+        IN const gp_Dir& Direction_);
+
+    struct SFrameBounds final
+    {
+        std::array<double, 3> Minimum;
+        std::array<double, 3> Maximum;
+    };
+
+    std::optional<SFrameBounds> MeasureFrameBounds(
+        IN const TopoDS_Shape& Shape_, IN const gp_Pnt& Origin_,
+        IN const gp_Dir& Axis_, IN const gp_Dir& SectionX_,
+        IN const gp_Dir& SectionY_)
+    {
+        // Vertices only describe seams on circular edges, not curve extrema.
+        // Bound the exact BRep in an orthonormal measurement frame instead;
+        // neither display tessellation nor its deflection may affect dimensions.
+        const auto _OriginVector = gp_Vec(gp_Pnt(), Origin_);
+        gp_Trsf _ToFrame;
+        _ToFrame.SetValues(
+            Axis_.X(), Axis_.Y(), Axis_.Z(), -Dot(_OriginVector, Axis_),
+            SectionX_.X(), SectionX_.Y(), SectionX_.Z(), -Dot(_OriginVector, SectionX_),
+            SectionY_.X(), SectionY_.Y(), SectionY_.Z(), -Dot(_OriginVector, SectionY_));
+        const auto _LocalShape = BRepBuilderAPI_Transform(Shape_, _ToFrame, false).Shape();
+        Bnd_Box _Box;
+        BRepBndLib::AddOptimal(_LocalShape, _Box, false, false);
+        _Box.SetGap(0.0);
+        if (_Box.IsVoid() || _Box.IsWhole()) return std::nullopt;
+        SFrameBounds _Bounds;
+        _Box.Get(_Bounds.Minimum[0], _Bounds.Minimum[1], _Bounds.Minimum[2],
+            _Bounds.Maximum[0], _Bounds.Maximum[1], _Bounds.Maximum[2]);
+        for (std::size_t _Index = 0; _Index < 3; ++_Index)
+            if (!std::isfinite(_Bounds.Minimum[_Index])
+                || !std::isfinite(_Bounds.Maximum[_Index])) return std::nullopt;
+        return _Bounds;
+    }
+
+    std::vector<gp_Pnt> SideProjectionPoints(
+        IN const TopoDS_Shape& Shape_, IN const SBodyFrame& Frame_)
+    {
+        auto _Points = UniqueVertices(Shape_);
+        for (TopExp_Explorer _Explorer(Shape_, TopAbs_EDGE); _Explorer.More(); _Explorer.Next())
+        {
+            BRepAdaptor_Curve _Curve(TopoDS::Edge(_Explorer.Current()));
+            if (_Curve.GetType() == GeomAbs_Line) continue;
+            const auto _First = _Curve.FirstParameter();
+            const auto _Last = _Curve.LastParameter();
+            if (!std::isfinite(_First) || !std::isfinite(_Last)) continue;
+            for (int _Index = 0; _Index <= 64; ++_Index)
+                _Points.push_back(_Curve.Value(_First + (_Last - _First) * _Index / 64.0));
+            if (_Curve.GetType() != GeomAbs_Circle
+                && _Curve.GetType() != GeomAbs_Ellipse) continue;
+            const auto _Axes = _Curve.GetType() == GeomAbs_Circle
+                ? _Curve.Circle().Position() : _Curve.Ellipse().Position();
+            const auto _RadiusX = _Curve.GetType() == GeomAbs_Circle
+                ? _Curve.Circle().Radius() : _Curve.Ellipse().MajorRadius();
+            const auto _RadiusY = _Curve.GetType() == GeomAbs_Circle
+                ? _Curve.Circle().Radius() : _Curve.Ellipse().MinorRadius();
+            for (const auto& _Direction : { Frame_.Axis, Frame_.DimensionOffset })
+            {
+                const auto _Phase = std::atan2(
+                    _RadiusY * Dot(_Axes.YDirection(), _Direction),
+                    _RadiusX * Dot(_Axes.XDirection(), _Direction));
+                const auto _Start = static_cast<int>(std::ceil((_First - _Phase) / std::numbers::pi));
+                const auto _End = static_cast<int>(std::floor((_Last - _Phase) / std::numbers::pi));
+                for (auto _Index = _Start; _Index <= _End; ++_Index)
+                    _Points.push_back(_Curve.Value(_Phase + _Index * std::numbers::pi));
+            }
+        }
+        return _Points;
+    }
+
+    double SideCross(
+        IN const SSidePoint& Origin_, IN const SSidePoint& Left_,
+        IN const SSidePoint& Right_)
+    {
+        return (Left_.X - Origin_.X) * (Right_.Y - Origin_.Y)
+            - (Left_.Y - Origin_.Y) * (Right_.X - Origin_.X);
+    }
+
+    std::vector<SSidePoint> ConvexSideOutline(IN std::vector<SSidePoint> Points_)
+    {
+        std::sort(Points_.begin(), Points_.end(), [](const auto& Left_, const auto& Right_) {
+            // Sorting must be strictly lexicographic. An epsilon tie combined
+            // with a raw X comparison can make both a < b and b < a true.
+            // Geometric tolerance belongs in the duplicate/hull checks below.
+            return Left_.X < Right_.X
+                || (Left_.X == Right_.X
+                    && Left_.Y < Right_.Y);
+        });
+        Points_.erase(std::unique(Points_.begin(), Points_.end(), [](const auto& Left_, const auto& Right_) {
+            // Do not discard an exact curve extremum just because a sampled
+            // neighbour lies within the feature-recognition tolerance.
+            return std::hypot(Left_.X - Right_.X, Left_.Y - Right_.Y)
+                <= 1.0e-9;
+        }), Points_.end());
+        if (Points_.size() < 3) return {};
+
+        std::vector<SSidePoint> _Hull;
+        _Hull.reserve(Points_.size() * 2);
+        for (const auto& _Point : Points_)
+        {
+            while (_Hull.size() >= 2
+                && SideCross(_Hull[_Hull.size() - 2], _Hull.back(), _Point)
+                    <= kLinearTolerance * kLinearTolerance)
+                _Hull.pop_back();
+            _Hull.push_back(_Point);
+        }
+        const auto _LowerSize = _Hull.size();
+        for (auto _Iterator = Points_.rbegin() + 1; _Iterator != Points_.rend(); ++_Iterator)
+        {
+            while (_Hull.size() > _LowerSize
+                && SideCross(_Hull[_Hull.size() - 2], _Hull.back(), *_Iterator)
+                    <= kLinearTolerance * kLinearTolerance)
+                _Hull.pop_back();
+            _Hull.push_back(*_Iterator);
+        }
+        if (!_Hull.empty()) _Hull.pop_back();
+        return _Hull.size() >= 3 ? _Hull : std::vector<SSidePoint>{};
+    }
+
+    bool SameSideSegment(
+        IN const std::pair<SSidePoint, SSidePoint>& Left_,
+        IN const std::pair<SSidePoint, SSidePoint>& Right_)
+    {
+        const auto _Near = [](const auto& LeftPoint_, const auto& RightPoint_) {
+            return std::hypot(
+                LeftPoint_.X - RightPoint_.X,
+                LeftPoint_.Y - RightPoint_.Y) <= kLinearTolerance;
+        };
+        return (_Near(Left_.first, Right_.first) && _Near(Left_.second, Right_.second))
+            || (_Near(Left_.first, Right_.second) && _Near(Left_.second, Right_.first));
+    }
+
+    ObjectMap MeasureSideProjection(
+        IN const TopoDS_Shape& Shape_, IN const SBodyFrame& Frame_)
+    {
+        const auto _Vertices = SideProjectionPoints(Shape_, Frame_);
+        if (_Vertices.empty()) return {};
+        const auto& _Origin = Frame_.Center;
+        const auto _AxisMinimum = -Frame_.HalfLength;
+        const auto _VerticalMinimum = -HalfExtent(Frame_, Frame_.DimensionOffset);
+        const auto _Width = Frame_.HalfLength * 2.0;
+        const auto _Height = -_VerticalMinimum * 2.0;
+        if (_Width <= kLinearTolerance || _Height <= kLinearTolerance) return {};
+
+        const auto _Project = [&](IN const gp_Pnt& Point_) {
+            return SSidePoint{
+                Project(Point_, _Origin, Frame_.Axis) - _AxisMinimum,
+                Project(Point_, _Origin, Frame_.DimensionOffset) - _VerticalMinimum
+            };
+        };
+        std::vector<SSidePoint> _ProjectedVertices;
+        _ProjectedVertices.reserve(_Vertices.size());
+        for (const auto& _Vertex : _Vertices) _ProjectedVertices.push_back(_Project(_Vertex));
+        auto _Outline = ConvexSideOutline(std::move(_ProjectedVertices));
+        if (_Outline.empty())
+        {
+            _Outline = { { 0.0, 0.0 }, { _Width, 0.0 },
+                { _Width, _Height }, { 0.0, _Height } };
+        }
+
+        std::vector<std::pair<SSidePoint, SSidePoint>> _Segments;
+        for (TopExp_Explorer _Explorer(Shape_, TopAbs_EDGE); _Explorer.More(); _Explorer.Next())
+        {
+            const auto _Edge = TopoDS::Edge(_Explorer.Current());
+            BRepAdaptor_Curve _Curve(_Edge);
+            if (_Curve.GetType() != GeomAbs_Line) continue;
+            TopoDS_Vertex _FirstVertex;
+            TopoDS_Vertex _LastVertex;
+            TopExp::Vertices(_Edge, _FirstVertex, _LastVertex, true);
+            if (_FirstVertex.IsNull() || _LastVertex.IsNull()) continue;
+            const auto _Segment = std::pair{
+                _Project(BRep_Tool::Pnt(_FirstVertex)),
+                _Project(BRep_Tool::Pnt(_LastVertex))
+            };
+            if (std::hypot(
+                    _Segment.first.X - _Segment.second.X,
+                    _Segment.first.Y - _Segment.second.Y) <= kLinearTolerance)
+                continue;
+            if (std::none_of(
+                _Segments.begin(), _Segments.end(),
+                [&](const auto& Existing_) { return SameSideSegment(Existing_, _Segment); }))
+                _Segments.push_back(_Segment);
+        }
+
+        VariantArray _OutlineValues;
+        for (const auto& _Point : _Outline)
+            _OutlineValues.emplace_back(SidePointArray(_Point));
+        VariantArray _SegmentValues;
+        for (const auto& [_Start, _End] : _Segments)
+            _SegmentValues.emplace_back(ObjectMap{
+                { "start", SidePointArray(_Start) },
+                { "end", SidePointArray(_End) }
+            });
+
+        const auto _ViewVector = gp_Vec(Frame_.Axis).Crossed(
+            gp_Vec(Frame_.DimensionOffset));
+        if (_ViewVector.SquareMagnitude() <= 1.0e-12) return {};
+        return ObjectMap{
+            { "width", _Width },
+            { "height", _Height },
+            { "outline", std::move(_OutlineValues) },
+            { "segments", std::move(_SegmentValues) },
+            { "horizontalAxis", DirectionArray(Frame_.Axis) },
+            { "verticalAxis", DirectionArray(Frame_.DimensionOffset) },
+            { "viewDirection", DirectionArray(gp_Dir(_ViewVector)) },
+            { "origin", PointArray(_Origin
+                .Translated(gp_Vec(Frame_.Axis) * _AxisMinimum)
+                .Translated(gp_Vec(Frame_.DimensionOffset) * _VerticalMinimum)) }
+        };
+    }
 
     std::optional<gp_Dir> MeasureLinearBodyAxis(IN const TopoDS_Shape& Shape_)
     {
@@ -193,7 +421,7 @@ namespace
     std::optional<SBodyFrame> MeasureBodyFrame(IN const TopoDS_Shape& Shape_)
     {
         Bnd_OBB _Bounds;
-        BRepBndLib::AddOBB(Shape_, _Bounds, true, true, true);
+        BRepBndLib::AddOBB(Shape_, _Bounds, false, true, false);
         if (_Bounds.IsVoid()) return std::nullopt;
 
         SBodyFrame _Frame;
@@ -213,35 +441,34 @@ namespace
         const auto _SectionDirection = MeasureSectionDirection(Shape_, _Frame.Axis);
         if (_SectionDirection)
         {
-            _Frame.SectionX = *_SectionDirection;
+            _Frame.SectionX = gp_Dir(gp_Vec(*_SectionDirection)
+                - gp_Vec(_Frame.Axis) * Dot(*_SectionDirection, _Frame.Axis));
             const auto _Other = gp_Vec(_Frame.Axis).Crossed(gp_Vec(_Frame.SectionX));
             if (_Other.SquareMagnitude() <= 1.0e-12) return std::nullopt;
             _Frame.SectionY = CanonicalDirection(gp_Dir(_Other));
         }
         else
         {
-            std::array<SAxisExtent, 2> _SectionExtents{};
-            std::size_t _SectionCursor = 0;
+            gp_Vec _SectionVector;
             for (const auto& _Extent : _ObbExtents)
             {
-                if (std::abs(Dot(_Extent.Direction, _Frame.Axis)) > 1.0 - 1.0e-3) continue;
-                if (_SectionCursor < _SectionExtents.size())
-                    _SectionExtents[_SectionCursor++] = _Extent;
+                const auto _Perpendicular = gp_Vec(_Extent.Direction)
+                    - gp_Vec(_Frame.Axis) * Dot(_Extent.Direction, _Frame.Axis);
+                if (_Perpendicular.SquareMagnitude() > _SectionVector.SquareMagnitude())
+                    _SectionVector = _Perpendicular;
             }
-            if (_SectionCursor < 2) return std::nullopt;
-            _Frame.SectionX = CanonicalDirection(_SectionExtents[0].Direction);
-            _Frame.SectionY = CanonicalDirection(_SectionExtents[1].Direction);
+            if (_SectionVector.SquareMagnitude() <= 1.0e-12) return std::nullopt;
+            _Frame.SectionX = CanonicalDirection(gp_Dir(_SectionVector));
+            _Frame.SectionY = CanonicalDirection(gp_Dir(
+                gp_Vec(_Frame.Axis).Crossed(gp_Vec(_Frame.SectionX))));
         }
 
-        const auto _Points = UniqueVertices(Shape_);
-        if (_Points.empty()) return std::nullopt;
-        const auto& _Origin = _Points.front();
-        const auto [_AxisMinimum, _AxisMaximum] = ProjectionBounds(
-            _Points, _Origin, _Frame.Axis);
-        const auto [_SectionXMinimum, _SectionXMaximum] = ProjectionBounds(
-            _Points, _Origin, _Frame.SectionX);
-        const auto [_SectionYMinimum, _SectionYMaximum] = ProjectionBounds(
-            _Points, _Origin, _Frame.SectionY);
+        const gp_Pnt _Origin;
+        const auto _ExactBounds = MeasureFrameBounds(
+            Shape_, _Origin, _Frame.Axis, _Frame.SectionX, _Frame.SectionY);
+        if (!_ExactBounds) return std::nullopt;
+        const auto [_AxisMinimum, _SectionXMinimum, _SectionYMinimum] = _ExactBounds->Minimum;
+        const auto [_AxisMaximum, _SectionXMaximum, _SectionYMaximum] = _ExactBounds->Maximum;
         _Frame.HalfLength = (_AxisMaximum - _AxisMinimum) * 0.5;
         _Frame.SectionWidth = _SectionXMaximum - _SectionXMinimum;
         _Frame.SectionHeight = _SectionYMaximum - _SectionYMinimum;
@@ -581,8 +808,51 @@ namespace
         }
     }
 
+    std::optional<double> MeasureRectangularWallThickness(
+        IN const TopoDS_Shape& Shape_, IN const SBodyFrame& Frame_)
+    {
+        std::optional<double> _Best;
+        for (TopExp_Explorer _FaceExplorer(Shape_, TopAbs_FACE); _FaceExplorer.More(); _FaceExplorer.Next())
+        {
+            const auto _Face = TopoDS::Face(_FaceExplorer.Current());
+            BRepAdaptor_Surface _Surface(_Face, true);
+            if (_Surface.GetType() != GeomAbs_Plane
+                || std::abs(Dot(_Surface.Plane().Axis().Direction(), Frame_.Axis)) < 1.0 - 1.0e-3)
+                continue;
+
+            std::vector<std::pair<double, double>> _Loops;
+            for (TopExp_Explorer _WireExplorer(_Face, TopAbs_WIRE); _WireExplorer.More(); _WireExplorer.Next())
+            {
+                const auto _Points = UniqueVertices(_WireExplorer.Current());
+                if (_Points.empty()) continue;
+                const auto [_X0, _X1] = ProjectionBounds(_Points, _Points.front(), Frame_.SectionX);
+                const auto [_Y0, _Y1] = ProjectionBounds(_Points, _Points.front(), Frame_.SectionY);
+                const auto _Width = _X1 - _X0;
+                const auto _Height = _Y1 - _Y0;
+                if (std::isfinite(_Width) && std::isfinite(_Height)
+                    && _Width > kLinearTolerance && _Height > kLinearTolerance)
+                    _Loops.emplace_back(_Width, _Height);
+            }
+            if (_Loops.size() < 2) continue;
+            std::sort(_Loops.begin(), _Loops.end(), [](const auto& Left_, const auto& Right_) {
+                return Left_.first * Left_.second > Right_.first * Right_.second;
+            });
+            const auto [_OuterWidth, _OuterHeight] = _Loops.front();
+            for (std::size_t _Index = 1; _Index < _Loops.size(); ++_Index)
+            {
+                const auto [_InnerWidth, _InnerHeight] = _Loops[_Index];
+                const auto _Wall = std::min(
+                    (_OuterWidth - _InnerWidth) * 0.5,
+                    (_OuterHeight - _InnerHeight) * 0.5);
+                if (_Wall > kLinearTolerance && (!_Best || _Wall < *_Best)) _Best = _Wall;
+            }
+        }
+        return _Best;
+    }
+
     ObjectMap MeasureSection(
-        IN const SBodyFrame& Frame_, IN const std::vector<SCylinderEvidence>& Cylinders_)
+        IN const TopoDS_Shape& Shape_, IN const SBodyFrame& Frame_,
+        IN const std::vector<SCylinderEvidence>& Cylinders_)
     {
         ObjectMap _Section{
             { "shape", std::string("rectangle") },
@@ -615,39 +885,146 @@ namespace
             if (_CoaxialRadii.size() > 1)
                 _Section["wallThickness"] = std::max(0.0, _CoaxialRadii[0] - _CoaxialRadii[1]);
         }
+        else if (const auto _WallThickness = MeasureRectangularWallThickness(Shape_, Frame_))
+        {
+            _Section["wallThickness"] = *_WallThickness;
+            _Section["hollow"] = true;
+        }
         return _Section;
     }
 
-    struct SEndPlaneCandidate final
+    struct SKnifePlane final
     {
-        double MinimumX = 0.0;
-        double MaximumX = 0.0;
-        double CenterX = 0.0;
-        double SpanY = 0.0;
-        double SpanZ = 0.0;
         double GradientY = 0.0;
         double GradientZ = 0.0;
+        double Offset = 0.0;
+        double Radius = 0.0;
+        double Score = 0.0;
     };
 
-    std::optional<SEndPlaneCandidate> MakeEndPlaneCandidate(
-        IN const TopoDS_Face& Face_)
+    std::optional<std::array<double, 6>> KnifeBounds(const TopoDS_Shape& Shape_, bool UseTolerance_ = true)
     {
-        BRepAdaptor_Surface _Surface(Face_, true);
-        if (_Surface.GetType() != GeomAbs_Plane) return std::nullopt;
-        const auto _Normal = _Surface.Plane().Axis().Direction();
-        if (std::abs(_Normal.X()) <= 1.0e-5) return std::nullopt;
-
         Bnd_Box _Bounds;
-        BRepBndLib::AddOptimal(Face_, _Bounds, false, false);
+        // Analytic BRep bounds, including topology tolerances; never preview mesh
+        // or just vertices (curved faces can protrude between sampled points).
+        BRepBndLib::AddOptimal(Shape_, _Bounds, false, UseTolerance_);
         _Bounds.SetGap(0.0);
         if (_Bounds.IsVoid() || _Bounds.IsWhole()) return std::nullopt;
-        double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
-        _Bounds.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
-        if (!std::isfinite(_X0 + _Y0 + _Z0 + _X1 + _Y1 + _Z1)) return std::nullopt;
-        return SEndPlaneCandidate{
-            _X0, _X1, (_X0 + _X1) * 0.5, _Y1 - _Y0, _Z1 - _Z0,
-            -_Normal.Y() / _Normal.X(), -_Normal.Z() / _Normal.X()
+        std::array<double, 6> _Values;
+        _Bounds.Get(_Values[0], _Values[1], _Values[2], _Values[3], _Values[4], _Values[5]);
+        for (const auto _Value : _Values)
+            if (!std::isfinite(_Value)) return std::nullopt;
+        return _Values;
+    }
+
+    std::vector<gp_Pnt> KnifeSearchWitnesses(const TopoDS_Shape& Shape_)
+    {
+        std::vector<gp_Pnt> _Points;
+        for (TopExp_Explorer _It(Shape_, TopAbs_EDGE); _It.More() && _Points.size() < 8192; _It.Next())
+        {
+            try
+            {
+                BRepAdaptor_Curve _Curve(TopoDS::Edge(_It.Current()));
+                const auto _First = _Curve.FirstParameter(), _Last = _Curve.LastParameter();
+                if (!std::isfinite(_First) || !std::isfinite(_Last)) continue;
+                const int _Steps = _Curve.GetType() == GeomAbs_Line ? 1 : 16;
+                for (int _Index = 0; _Index <= _Steps; ++_Index)
+                    _Points.push_back(_Curve.Value(_First + (_Last - _First) * _Index / _Steps));
+            }
+            catch (const Standard_Failure&) { /* Optional search witnesses only. */ }
+        }
+        return _Points;
+    }
+
+    double KnifeScore(double Inset_, double Radius_)
+    {
+        // Reward less blank material, but charge for extending beyond the initial
+        // axial AABB. This keeps a marginally useful steep tangent from producing
+        // an unnecessarily long blank. The straight-cut baseline scores zero.
+        return Inset_ - std::max(0.0, Radius_ - Inset_);
+    }
+
+    std::pair<SKnifePlane, SKnifePlane> SearchKnifePlanes(
+        const TopoDS_Shape& CenteredShape_, const std::array<double, 6>& Bounds_)
+    {
+        const double _X0 = Bounds_[0], _X1 = Bounds_[3];
+        const double _HalfY = (Bounds_[4] - Bounds_[1]) * 0.5;
+        const double _HalfZ = (Bounds_[5] - Bounds_[2]) * 0.5;
+        SKnifePlane _Left{ 0, 0, _X0 }, _Right{ 0, 0, _X1 };
+        const auto _Witnesses = KnifeSearchWitnesses(CenteredShape_);
+        std::set<std::pair<long long, long long>> _Visited;
+        const auto _Try = [&](double A_, double B_) {
+            // Bounded deterministic search, not a machine's angular capability.
+            if (!std::isfinite(A_) || !std::isfinite(B_) || std::hypot(A_, B_) > 8.0) return;
+            const auto _Key = std::pair{ std::llround(A_ * 100000.0), std::llround(B_ * 100000.0) };
+            if (!_Visited.insert(_Key).second || (_Key.first == 0 && _Key.second == 0)) return;
+            // Quantize BEFORE verifying support, so equal plane signatures really
+            // mean the same tested direction, including on wide tube sections.
+            A_ = _Key.first / 100000.0;
+            B_ = _Key.second / 100000.0;
+            const auto _Radius = std::abs(A_) * _HalfY + std::abs(B_) * _HalfZ;
+            if (!_Witnesses.empty())
+            {
+                double _Min = std::numeric_limits<double>::infinity(), _Max = -_Min;
+                for (const auto& _Point : _Witnesses)
+                {
+                    const auto _Q = _Point.X() - A_ * _Point.Y() - B_ * _Point.Z();
+                    _Min = std::min(_Min, _Q); _Max = std::max(_Max, _Q);
+                }
+                // A subset of actual shape points gives an UPPER bound on the
+                // achievable improvement. It can prune but never certify a blade.
+                if (KnifeScore(_Min - _X0, _Radius) <= _Left.Score + kLinearTolerance
+                    && KnifeScore(_X1 - _Max, _Radius) <= _Right.Score + kLinearTolerance) return;
+            }
+            try
+            {
+                const gp_Vec _Normal(1.0, -A_, -B_);
+                gp_Trsf _Rotation;
+                _Rotation.SetRotation(gp_Quaternion(_Normal, gp_Vec(1.0, 0.0, 0.0)));
+                // Rotated X extrema solve the blade's translation directly:
+                // min/max(x-a*y-b*z), equivalent to moving a knife until contact.
+                // A Location shares topology; no copied result BRep is generated.
+                const auto _Projected = KnifeBounds(CenteredShape_.Moved(TopLoc_Location(_Rotation)));
+                if (!_Projected) return;
+                constexpr double _Safety = 1.0e-5;
+                const double _Min = (*_Projected)[0] * _Normal.Magnitude() - _Safety;
+                const double _Max = (*_Projected)[3] * _Normal.Magnitude() + _Safety;
+                const auto _LeftScore = KnifeScore(_Min - _X0, _Radius);
+                const auto _RightScore = KnifeScore(_X1 - _Max, _Radius);
+                if (_LeftScore > _Left.Score + kLinearTolerance)
+                    _Left = { A_, B_, _Min, _Radius, _LeftScore };
+                if (_RightScore > _Right.Score + kLinearTolerance)
+                    _Right = { A_, B_, _Max, _Radius, _RightScore };
+            }
+            catch (const Standard_Failure&) { /* Keep the already verified baseline. */ }
         };
+
+        // Existing planar faces are useful seeds, not an eligibility test. There
+        // need not be any planar end face, let alone one spanning the whole tube.
+        for (TopExp_Explorer _It(CenteredShape_, TopAbs_FACE); _It.More(); _It.Next())
+        {
+            try
+            {
+                BRepAdaptor_Surface _Surface(TopoDS::Face(_It.Current()), true);
+                if (_Surface.GetType() != GeomAbs_Plane) continue;
+                const auto _Normal = _Surface.Plane().Axis().Direction();
+                if (std::abs(_Normal.X()) > 1.0e-5)
+                    _Try(-_Normal.Y() / _Normal.X(), -_Normal.Z() / _Normal.X());
+            }
+            catch (const Standard_Failure&) {}
+        }
+        constexpr std::array _Slopes{ -4.0, -2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 4.0 };
+        for (const auto _A : _Slopes)
+            for (const auto _B : _Slopes) _Try(_A, _B);
+        for (double _Step = 0.25; _Step >= 0.0009; _Step *= 0.25)
+        {
+            const std::array _Seeds{ _Left, _Right };
+            for (const auto& _Seed : _Seeds)
+                for (int _Y = -1; _Y <= 1; ++_Y)
+                    for (int _Z = -1; _Z <= 1; ++_Z)
+                        _Try(_Seed.GradientY + _Y * _Step, _Seed.GradientZ + _Z * _Step);
+        }
+        return { _Left, _Right };
     }
 }
 
@@ -660,24 +1037,14 @@ TopoDS_Shape NormalizeLinearPartForManufacturing(IN const TopoDS_Shape& Shape_)
     gp_Trsf _Rotation;
     _Rotation.SetRotation(gp_Quaternion(gp_Vec(_Frame->Axis), gp_Vec(1.0, 0.0, 0.0)));
     auto _Normalized = BRepBuilderAPI_Transform(Shape_, _Rotation, true).Shape();
-    const auto _Points = UniqueVertices(_Normalized);
-    if (_Points.empty()) return _Normalized;
-
-    auto _MinimumX = (std::numeric_limits<double>::max)();
-    auto _MinimumY = (std::numeric_limits<double>::max)();
-    auto _MinimumZ = (std::numeric_limits<double>::max)();
-    auto _MaximumY = (std::numeric_limits<double>::lowest)();
-    auto _MaximumZ = (std::numeric_limits<double>::lowest)();
-    auto _MaximumX = (std::numeric_limits<double>::lowest)();
-    for (const auto& _Point : _Points)
-    {
-        _MinimumX = std::min(_MinimumX, _Point.X());
-        _MaximumX = std::max(_MaximumX, _Point.X());
-        _MinimumY = std::min(_MinimumY, _Point.Y());
-        _MinimumZ = std::min(_MinimumZ, _Point.Z());
-        _MaximumY = std::max(_MaximumY, _Point.Y());
-        _MaximumZ = std::max(_MaximumZ, _Point.Z());
-    }
+    // A closed circular edge has only one seam vertex; vertex extents are not
+    // section extents and would translate a round tube away from its centre.
+    Bnd_Box _Box;
+    BRepBndLib::AddOptimal(_Normalized, _Box, false, false);
+    _Box.SetGap(0);
+    if (_Box.IsVoid() || _Box.IsWhole()) return _Normalized;
+    double _MinimumX, _MinimumY, _MinimumZ, _MaximumX, _MaximumY, _MaximumZ;
+    _Box.Get(_MinimumX, _MinimumY, _MinimumZ, _MaximumX, _MaximumY, _MaximumZ);
     gp_Trsf _Translation;
     _Translation.SetTranslation(gp_Vec(
         -(_MinimumX + _MaximumX) * 0.5,
@@ -690,64 +1057,56 @@ SLinearNestingGeometry MeasureLinearNestingGeometry(IN const TopoDS_Shape& Shape
 {
     SLinearNestingGeometry _Result;
     if (Shape_.IsNull()) return _Result;
-
-    Bnd_Box _Bounds;
-    BRepBndLib::AddOptimal(Shape_, _Bounds, false, false);
-    _Bounds.SetGap(0.0);
-    if (_Bounds.IsVoid() || _Bounds.IsWhole()) return _Result;
-    double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
-    _Bounds.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
-    const auto _Envelope = _X1 - _X0;
-    const auto _SectionY = _Y1 - _Y0;
-    const auto _SectionZ = _Z1 - _Z0;
-    if (!std::isfinite(_Envelope + _SectionY + _SectionZ)
-        || _Envelope <= kLinearTolerance
-        || _SectionY <= kLinearTolerance
-        || _SectionZ <= kLinearTolerance)
-        return _Result;
-
-    std::optional<SEndPlaneCandidate> _Left;
-    std::optional<SEndPlaneCandidate> _Right;
-    for (TopExp_Explorer _Explorer(Shape_, TopAbs_FACE); _Explorer.More(); _Explorer.Next())
+    try
     {
-        const auto _Candidate = MakeEndPlaneCandidate(TopoDS::Face(_Explorer.Current()));
-        if (!_Candidate) continue;
-        // End faces span the section in both directions. This rejects planar
-        // walls and almost all hole/slot faces before looking at axial position.
-        if (_Candidate->SpanY < _SectionY * 0.75
-            || _Candidate->SpanZ < _SectionZ * 0.75)
-            continue;
-        if (_Candidate->MinimumX <= _X0 + kLinearTolerance * 4.0
-            && (!_Left || _Candidate->CenterX < _Left->CenterX))
-            _Left = _Candidate;
-        if (_Candidate->MaximumX >= _X1 - kLinearTolerance * 4.0
-            && (!_Right || _Candidate->CenterX > _Right->CenterX))
-            _Right = _Candidate;
+        // Preserve the original straight AABB contract: adding topology tolerance
+        // here could round an exact 400 mm straight part up to 400.01 mm.
+        const auto _Bounds = KnifeBounds(Shape_, false);
+        if (!_Bounds) return _Result;
+        const auto& _B = *_Bounds;
+        const double _Length = _B[3] - _B[0];
+        if (_Length <= kLinearTolerance || _B[4] - _B[1] <= kLinearTolerance
+            || _B[5] - _B[2] <= kLinearTolerance) return _Result;
+        const gp_Vec _Center((_B[0] + _B[3]) * 0.5,
+            (_B[1] + _B[4]) * 0.5, (_B[2] + _B[5]) * 0.5);
+        gp_Trsf _Translation;
+        _Translation.SetTranslation(-_Center);
+        auto _CenteredBounds = _B;
+        for (int _Axis = 0; _Axis < 3; ++_Axis)
+        {
+            _CenteredBounds[_Axis] -= _Center.Coord(_Axis + 1);
+            _CenteredBounds[_Axis + 3] -= _Center.Coord(_Axis + 1);
+        }
+        // Establish a valid straight-cut fallback before probing any tilted knife.
+        _Result.IsReliable = true;
+        _Result.EnvelopeLength = _Result.MaterialEquivalentLength = _Length;
+        _Result.AxialMinimum = _B[0]; _Result.AxialMaximum = _B[3];
+        _Result.Left = { true, 0, 0, 0, _B[0] };
+        _Result.Right = { true, 0, 0, 0, _B[3] };
+        const auto [_Left, _Right] = SearchKnifePlanes(
+            Shape_.Moved(TopLoc_Location(_Translation)), _CenteredBounds);
+        const auto _Minimum = std::min(_CenteredBounds[0], _Left.Offset - _Left.Radius);
+        const auto _Maximum = std::max(_CenteredBounds[3], _Right.Offset + _Right.Radius);
+        const auto _Envelope = _Maximum - _Minimum;
+        const auto _LeftProjection = _Left.Radius * 2.0;
+        const auto _RightProjection = _Right.Radius * 2.0;
+        // The two knife planes must leave a nonempty full-section central band.
+        // Unsupported very short/steep combinations stay on the straight strategy.
+        if (_Envelope - _LeftProjection - _RightProjection <= kLinearTolerance * 2.0)
+            return _Result;
+        const auto _End = [&](const SKnifePlane& Plane_) {
+            return SPlanarNestingEnd{ true, Plane_.Radius * 2.0,
+                Plane_.GradientY, Plane_.GradientZ,
+                Plane_.Offset + _Center.X()
+                    - Plane_.GradientY * _Center.Y() - Plane_.GradientZ * _Center.Z() };
+        };
+        _Result.EnvelopeLength = _Envelope;
+        _Result.MaterialEquivalentLength = _Envelope - (_LeftProjection + _RightProjection) * 0.5;
+        _Result.AxialMinimum = _Minimum + _Center.X();
+        _Result.AxialMaximum = _Maximum + _Center.X();
+        _Result.Left = _End(_Left); _Result.Right = _End(_Right);
     }
-    if (!_Left || !_Right || _Left->CenterX >= _Right->CenterX - kLinearTolerance)
-        return _Result;
-
-    const auto _LeftProjection = std::max(0.0, _Left->MaximumX - _Left->MinimumX);
-    const auto _RightProjection = std::max(0.0, _Right->MaximumX - _Right->MinimumX);
-    const auto _CentralLength = _Envelope - _LeftProjection - _RightProjection;
-    if (_CentralLength <= kLinearTolerance * 2.0) return _Result;
-
-    _Result.IsReliable = true;
-    _Result.EnvelopeLength = _Envelope;
-    _Result.MaterialEquivalentLength =
-        _CentralLength + (_LeftProjection + _RightProjection) * 0.5;
-    _Result.Left = {
-        true,
-        _LeftProjection <= kLinearTolerance ? 0.0 : _LeftProjection,
-        _Left->GradientY,
-        _Left->GradientZ
-    };
-    _Result.Right = {
-        true,
-        _RightProjection <= kLinearTolerance ? 0.0 : _RightProjection,
-        _Right->GradientY,
-        _Right->GradientZ
-    };
+    catch (const Standard_Failure&) { /* A failed probe never enables overlap. */ }
     return _Result;
 }
 
@@ -804,6 +1163,10 @@ ObjectMap MeasureFinalPartGeometry(
     const auto _Length = _Frame->HalfLength * 2.0;
     const auto _Start = AddScaled(_Frame->Center, _Frame->Axis, -_Frame->HalfLength);
     const auto _End = AddScaled(_Frame->Center, _Frame->Axis, _Frame->HalfLength);
+    const auto _SideVerticalMinimum = -HalfExtent(*_Frame, _Frame->DimensionOffset);
+    const auto _SideViewVector = gp_Vec(_Frame->Axis).Crossed(
+        gp_Vec(_Frame->DimensionOffset));
+    const auto _SideViewDirection = gp_Dir(_SideViewVector);
     ObjectMap _Reference{
         { "kind", std::string("linear") },
         { "start", PointArray(_Start) },
@@ -844,6 +1207,14 @@ ObjectMap MeasureFinalPartGeometry(
             { "confidence", _Opening.Confidence },
             { "evidenceCount", static_cast<unsigned long long>(_Opening.EvidenceCount) }
         };
+        _Feature["sideCenter"] = VariantArray{
+            _Opening.Station,
+            Project(_Opening.Center, _Frame->Center, _Frame->DimensionOffset)
+                - _SideVerticalMinimum
+        };
+        _Feature["sideSpanAcross"] = _Opening.SpanAcross
+            * std::abs(Dot(_Opening.FaceTangent, _Frame->DimensionOffset));
+        _Feature["sideVisible"] = std::abs(Dot(_Opening.Axis, _SideViewDirection)) >= 0.85;
         if (_Opening.Diameter > 0.0) _Feature["diameter"] = _Opening.Diameter;
         _Features.emplace_back(std::move(_Feature));
     }
@@ -854,7 +1225,8 @@ ObjectMap MeasureFinalPartGeometry(
     _Result["relativeGeometryError"] = 0.0;
     _Result["length"] = _Length;
     _Result["linearReference"] = std::move(_Reference);
-    _Result["section"] = MeasureSection(*_Frame, _Cylinders);
+    _Result["sideProjection"] = MeasureSideProjection(Shape_, *_Frame);
+    _Result["section"] = MeasureSection(Shape_, *_Frame, _Cylinders);
     _Result["features"] = std::move(_Features);
     _Result["openingCount"] = static_cast<unsigned long long>(_Openings.size());
     return _Result;

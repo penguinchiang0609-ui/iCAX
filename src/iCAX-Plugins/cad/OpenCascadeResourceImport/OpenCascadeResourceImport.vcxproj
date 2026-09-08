@@ -52,6 +52,7 @@
     <ClInclude Include="OpenCascadeBRepReader.h" />
     <ClInclude Include="OpenCascadeBRepBuilder.h" />
     <ClInclude Include="OpenCascadeNeutralModelEvaluator.h" />
+    <ClInclude Include="OpenCascadeTaskExecution.h" />
     <ClInclude Include="OpenCascadeResourceImportExport.h" />
     <ClInclude Include="OpenCascadeTubeCSGConverter.h" />
     <ClInclude Include="pch.h" />
@@ -73,6 +74,9 @@
     <None Include="Schema\TubePreviewMesh.fbs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\iCAX-Engine\foundation\Task\Task.vcxproj">
+      <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
       <Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project>
     </ProjectReference>

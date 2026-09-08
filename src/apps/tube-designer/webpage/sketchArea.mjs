@@ -1,4 +1,6 @@
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
+import { sketchRibbonGroups } from "./ribbonDefinition.mjs";
+import { renderRibbonCommandIcon } from "../../../iCAX-UI/SDK/AppShell/app/ribbonIcons.mjs";
 import { arcThroughPoints, curvePoint, editableSegments, editPathAtPoint, isArc, isConic, movePathNode, moveSegmentEnd, nearestPath, nearestSegment, pathNodes, pathSamples, pathSvg, reverseSegment, translateSegment } from "./sketchGeometry.mjs";
 
 const SECTION_MODE = "section";
@@ -31,7 +33,14 @@ export function createInitialSketchState() {
     sectionSession: createSectionSession(),
     section: createDraft(),
     sideByMember: {},
+    sideByPart: {},
+    sidePartVersions: {},
+    sideTargetKind: "member",
+    sideTargetSnapshot: null,
+    sideReference: null,
+    sideReturnAreaId: "view",
     targetMemberId: "",
+    targetPartId: "",
     loadedProductId: "",
   };
 }
@@ -51,6 +60,11 @@ export function ensureSketchState(view) {
   state.sectionName = String(state.sectionName || "我的草图管型");
   state.section.persisted ??= false;
   state.sideByMember ??= {};
+  state.sideByPart ??= {};
+  state.sidePartVersions ??= {};
+  state.sideTargetKind = state.sideTargetKind === "part" ? "part" : "member";
+  state.targetPartId = String(state.targetPartId ?? "");
+  state.sideReturnAreaId = String(state.sideReturnAreaId || "view");
 
   const designer = view.scene?.tubeDesigner ?? {};
   const productId = String(designer.product?.entityId ?? "");
@@ -67,14 +81,18 @@ export function ensureSketchState(view) {
         state.sideByMember[String(current?.entityId ?? memberId)] = draftFromStoredSketch(sketch);
       }
     }
-    state.targetMemberId = members.some((member) => member.entityId === state.targetMemberId)
-      ? state.targetMemberId : String(members[0]?.entityId ?? "");
+    if (state.sideTargetKind !== "part") {
+      state.targetMemberId = members.some((member) => member.entityId === state.targetMemberId)
+        ? state.targetMemberId : String(members[0]?.entityId ?? "");
+    }
   }
-  if (!members.some((member) => member.entityId === state.targetMemberId)) {
-    state.targetMemberId = String(members[0]?.entityId ?? "");
-  }
-  if (state.targetMemberId && !state.sideByMember[state.targetMemberId]) {
-    state.sideByMember[state.targetMemberId] = createDraft();
+  if (state.sideTargetKind !== "part") {
+    if (!members.some((member) => member.entityId === state.targetMemberId)) {
+      state.targetMemberId = String(members[0]?.entityId ?? "");
+    }
+    if (state.targetMemberId && !state.sideByMember[state.targetMemberId]) {
+      state.sideByMember[state.targetMemberId] = createDraft();
+    }
   }
   return state;
 }
@@ -124,6 +142,35 @@ export function beginProfileSectionSketch(view, source) {
   return state;
 }
 
+export function beginPartSideSketch(view, part, report) {
+  const partId = String(part?.entityId ?? "").trim();
+  if (!partId || !(Number(part?.length) > 0)) {
+    throw new Error("当前下料零件没有可编辑的侧面尺寸。");
+  }
+  const state = ensureSketchState(view);
+  const resourceVersion = Number(part?.manufacturingGeometryResourceVersion ?? 0);
+  const versionKey = `${partId}@${resourceVersion}`;
+  if (!state.sideByPart[partId] || state.sidePartVersions[partId] !== versionKey) {
+    const stored = part?.properties?.["tubeDesigner.sideSketch"];
+    state.sideByPart[partId] = stored && typeof stored === "object"
+      ? draftFromStoredSketch(stored)
+      : createDraft();
+    state.sidePartVersions[partId] = versionKey;
+  }
+  state.mode = SIDE_MODE;
+  state.tool = "select";
+  state.command = null;
+  state.saveChoiceDialogOpen = false;
+  state.sideTargetKind = "part";
+  state.targetPartId = partId;
+  state.sideTargetSnapshot = structuredCloneValue(part);
+  state.sideReference = report && typeof report === "object"
+    ? structuredCloneValue(report) : null;
+  state.sideReturnAreaId = String(view.activeAreaId || "nesting");
+  view.error = "";
+  return state;
+}
+
 export function isSectionPreviewReady(draft) {
   return analyzeSectionDraft(draft).ready;
 }
@@ -132,24 +179,26 @@ export function renderSketchLeftPane(_context, view) {
   const state = ensureSketchState(view);
   const draft = currentDraft(view, state);
   const designer = view.scene?.tubeDesigner ?? {};
-  const member = targetMember(designer, state.targetMemberId);
+  const member = targetSideEntity(designer, state);
   const members = sketchableMembers(designer);
+  const partTarget = state.mode === SIDE_MODE && state.sideTargetKind === "part";
+  const componentProfile = state.mode === SECTION_MODE && Boolean(view.tubeDesignerComponentCSGProfileReturn);
   const sectionAnalysis = analyzeSectionDraft(state.section);
 
   return `<div class="tube-sketch-preview-panel" data-tube-sketch-preview-panel>
     <header>
-      <strong>${state.mode === SECTION_MODE ? "管型预览" : "三维切割预览"}</strong>
+      <strong>${state.mode === SECTION_MODE ? (componentProfile ? "拉伸截面预览" : "管型预览") : (partTarget ? "零件侧面预览" : "三维切割预览")}</strong>
       <span>${state.mode === SECTION_MODE
-        ? "截面闭合后自动生成三维管型"
-        : (member ? "实时查看图形在管子侧面的效果" : "请先在产品页生成一根管件")}</span>
+        ? (componentProfile ? "截面闭合后可回填并生成三维拉伸体" : "截面闭合后自动生成三维管型")
+        : (member ? (partTarget ? "灰色底图来自最终零件，青色图形为当前草图" : "实时查看图形在管子侧面的效果") : "请先选择一根管件")}</span>
     </header>
     <div class="tube-sketch-preview-stage">
       ${state.mode === SECTION_MODE
         ? renderSectionPreview(sectionAnalysis)
-        : renderSidePreview(draft, member)}
+        : renderSidePreview(draft, member, state.sideReference)}
     </div>
     <footer>
-      ${state.mode === SIDE_MODE && members.length > 1 ? `<label>
+      ${state.mode === SIDE_MODE && !partTarget && members.length > 1 ? `<label>
         <span>当前管件</span>
         <select data-cam-change-action="tube-designer-sketch-target-member">
           ${members.map((item) => `<option value="${escapeAttr(item.entityId)}" ${item.entityId === state.targetMemberId ? "selected" : ""}>${escapeText(item.name || `管件 ${item.index ?? ""}`)}</option>`).join("")}
@@ -161,17 +210,32 @@ export function renderSketchLeftPane(_context, view) {
   </div>`;
 }
 
+export function renderSectionSketchDialog(context, view) {
+  if (!view.tubeDesignerSketchDialogOpen) return "";
+  const state = ensureSketchState(view);
+  const sidePart = state.mode === SIDE_MODE && state.sideTargetKind === "part";
+  const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
+  const title = sidePart ? "下料零件二维编辑" : (componentProfile ? "拉伸体二维截面" : "截面轮廓草图");
+  return `<dialog class="tube-section-sketch-dialog" aria-label="${title}">
+    <header class="tube-section-sketch-title">${title}</header>
+    <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
+    ${view.error ? `<div role="alert" class="tube-section-sketch-error">${escapeText(view.error)}</div>` : ""}
+    <div class="tube-section-sketch-body"><aside>${renderSketchLeftPane(context, view)}</aside><main>${renderSketchViewportOverlay(context, view)}</main><aside>${renderSketchRightPane(context, view)}</aside></div>
+  </dialog>`;
+}
+
 export function renderSketchViewportOverlay(_context, view) {
   const state = ensureSketchState(view);
   const draft = currentDraft(view, state);
   const designer = view.scene?.tubeDesigner ?? {};
-  const member = targetMember(designer, state.targetMemberId);
+  const member = targetSideEntity(designer, state);
   const metrics = canvasMetrics(state.mode, member, state);
   const selectedIds = draftSelectionIds(draft);
   const selectedPoints = draftSelectedPoints(draft);
   const selectedPointKeys = new Set(selectedPoints.map(pointSelectionKey));
   const selectedId = String(selectedIds[0] ?? "");
-  const modeTitle = state.mode === SECTION_MODE ? "管型截面图" : "管型侧面切割图";
+  const modeTitle = state.mode === SECTION_MODE ? (view.tubeDesignerComponentCSGProfileReturn ? "拉伸截面图" : "管型截面图")
+    : (state.sideTargetKind === "part" ? "零件侧视草图" : "管型侧面切割图");
   const subtitle = state.command
     ? commandPrompt(state.command)
     : state.mode === SECTION_MODE
@@ -181,10 +245,10 @@ export function renderSketchViewportOverlay(_context, view) {
   return `<div class="tube-sketch-canvas-shell" data-tube-sketch-canvas-shell data-tube-sketch-mode="${state.mode}" data-tube-sketch-tool="${state.tool}">
     <header class="tube-sketch-canvas-header">
       <div><strong>${modeTitle}</strong><span>${escapeText(subtitle)}</span></div>
-      <div class="tube-sketch-mode-switch" role="group" aria-label="草图类型">
+      ${view.tubeDesignerSketchDialogOpen ? "" : `<div class="tube-sketch-mode-switch" role="group" aria-label="草图类型">
         <button type="button" data-cam-action="tube-designer-sketch-switch-mode" data-tube-sketch-mode="section" aria-pressed="${state.mode === SECTION_MODE}">管型截面图</button>
         <button type="button" data-cam-action="tube-designer-sketch-switch-mode" data-tube-sketch-mode="side" aria-pressed="${state.mode === SIDE_MODE}">管型侧面切割图</button>
-      </div>
+      </div>`}
     </header>
     <div class="tube-sketch-canvas-stage">
       <svg class="tube-sketch-canvas" data-tube-sketch-canvas viewBox="0 0 ${CANVAS.width} ${state.mode===SECTION_MODE?(state.canvasHeight??CANVAS.height):CANVAS.height}" role="img" aria-label="${modeTitle}绘图区" tabindex="0">
@@ -193,7 +257,7 @@ export function renderSketchViewportOverlay(_context, view) {
           <pattern id="tube-sketch-grid-${state.mode}" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#tube-sketch-small-grid-${state.mode})"/><path d="M100 0H0V100" /></pattern>
         </defs>
         <rect class="tube-sketch-grid" width="100%" height="100%" ${state.mode === SIDE_MODE ? `fill="url(#tube-sketch-grid-${state.mode})"` : ""} />
-        <g data-tube-sketch-guide>${state.mode === SECTION_MODE ? renderSectionCanvasGuide(metrics) : renderSideCanvasGuide(metrics, member)}</g>
+        <g data-tube-sketch-guide>${state.mode === SECTION_MODE ? renderSectionCanvasGuide(metrics) : renderSideCanvasGuide(metrics, member, state.sideReference)}</g>
         <g class="tube-sketch-geometry">
           ${draft.entities.map((entity) => renderSketchEntity(entity, state.mode, metrics, selectedIds.includes(entity.id), selectedPointKeys)).join("")}
           ${renderUnselectedNodes(draft, state, metrics)}
@@ -228,10 +292,10 @@ export function renderSketchRightPane(_context, view) {
     ? draft.entities.find((entity) => entity.id === selectedIds[0]) ?? null
     : null;
   const designer = view.scene?.tubeDesigner ?? {};
-  const member = targetMember(designer, state.targetMemberId);
+  const member = targetSideEntity(designer, state);
   const validation = state.mode === SECTION_MODE
     ? analyzeSectionDraft(state.section)
-    : validateSideSketchDraft(draft, member);
+    : validateSideSketchDraft(draft, member, state.sideReference);
 
   return `<div class="tube-sketch-property-panel">
     <header>
@@ -239,7 +303,8 @@ export function renderSketchRightPane(_context, view) {
       <span>${selectedPoints.length ? "框选或按 Shift/Ctrl 多选节点；两个开放端点可合并" : selected ? "可拖动夹点；框选不同曲线的端点可合并" : selectedIds.length > 1 ? "端点相接的图形可从菜单执行合并" : "局部框选节点；框住完整图形选图形；Shift/Ctrl 多选"}</span>
     </header>
     <div class="tube-sketch-property-body">
-      ${state.mode === SECTION_MODE ? renderSectionSession(state, view?.pending) : ""}
+      ${state.mode === SECTION_MODE ? renderSectionSession(state, view?.pending, Boolean(view.tubeDesignerComponentCSGProfileReturn)) : ""}
+      ${state.mode === SIDE_MODE && state.sideTargetKind === "part" ? renderSideReferenceSummary(state.sideReference) : ""}
       ${renderSketchValidation(validation, state.mode, draft)}
       ${selected ? renderEntityProperties(selected) : `<div class="tube-sketch-property-empty">
         <span class="tube-sketch-property-empty-icon">⌁</span>
@@ -253,7 +318,12 @@ export function renderSketchRightPane(_context, view) {
 export async function handleSketchAreaAction(context, view, action, target, ops) {
   if (!String(action).startsWith("tube-designer-sketch-")) return { handled: false };
   const state = ensureSketchState(view);
+  if (action === "tube-designer-sketch-dialog-command") {
+    if (!view.pending) await handleSketchRibbonCommand(context, view, target?.dataset?.sketchCommand, ops);
+    return { handled: true };
+  }
   if (action === "tube-designer-sketch-switch-mode") {
+    if (view.tubeDesignerSketchDialogOpen) return { handled: true };
     state.mode = target?.dataset?.tubeSketchMode === SIDE_MODE ? SIDE_MODE : SECTION_MODE;
     state.tool = "select";
     state.command = null;
@@ -262,6 +332,10 @@ export async function handleSketchAreaAction(context, view, action, target, ops)
     return { handled: true };
   }
   if (action === "tube-designer-sketch-target-member") {
+    state.sideTargetKind = "member";
+    state.targetPartId = "";
+    state.sideTargetSnapshot = null;
+    state.sideReference = null;
     state.targetMemberId = String(target?.value ?? "");
     state.sideByMember[state.targetMemberId] ??= createDraft();
     state.tool = "select";
@@ -339,6 +413,7 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
   if (!String(commandId).startsWith("sketch.")) return false;
   const state = ensureSketchState(view);
   if (commandId === "sketch.mode-section" || commandId === "sketch.mode-side") {
+    if (view.tubeDesignerSketchDialogOpen) return true;
     state.mode = commandId.endsWith("side") ? SIDE_MODE : SECTION_MODE;
     state.tool = "select";
     state.command = null;
@@ -396,7 +471,15 @@ export async function handleSketchRibbonCommand(context, view, commandId, ops) {
 
 export function attachSketchAreaInteractions(context, view, mount, ops) {
   const state = ensureSketchState(view);
-  if (view.activeAreaId !== "sketch" || view.pending) return;
+  const dialog = mount?.querySelector?.(".tube-section-sketch-dialog");
+  if (dialog && !dialog.open) {
+    dialog.showModal?.();
+    dialog.addEventListener("cancel", event => {
+      event.preventDefault();
+      if (!view.pending) void cancelSketch(context, view, ops);
+    });
+  }
+  if ((!view.tubeDesignerSketchDialogOpen && view.activeAreaId !== "sketch") || view.pending) return;
   const saveChoice = mount?.querySelector?.(".tube-sketch-save-choice");
   if (saveChoice) {
     saveChoice.querySelector("[data-cam-action='tube-designer-sketch-save-overwrite']")?.focus?.();
@@ -406,7 +489,7 @@ export function attachSketchAreaInteractions(context, view, mount, ops) {
   if (!svg || svg.dataset.tubeSketchAttached === "true") return;
   svg.dataset.tubeSketchAttached = "true";
   const designer = view.scene?.tubeDesigner ?? {};
-  const member = targetMember(designer, state.targetMemberId);
+  const member = targetSideEntity(designer, state);
   if (state.mode === SIDE_MODE && !member) return;
   let metrics = canvasMetrics(state.mode, member, state);
   const draft = currentDraft(view, state);
@@ -1466,7 +1549,7 @@ export function analyzeSectionDraft(draft) {
   };
 }
 
-export function validateSideSketchDraft(draft, member) {
+export function validateSideSketchDraft(draft, member, reference = null) {
   if (!member) return { ready: false, kind: "empty", message: "请先在产品页生成并选择一根管件" };
   const entities = Array.isArray(draft?.entities) ? draft.entities : [];
   if (!entities.length) {
@@ -1479,8 +1562,13 @@ export function validateSideSketchDraft(draft, member) {
   if (entities.length > MAX_SKETCH_ENTITIES) {
     return { ready: false, kind: "invalid", message: `侧面草图不能超过 ${MAX_SKETCH_ENTITIES} 个图形` };
   }
-  const length = Number(member.length ?? 0);
-  const height = memberFaceHeight(member);
+  const length = sideUnfoldingLength(member, reference);
+  const height = Math.max(
+    1,
+    sideUnfoldingPerimeter(reference)
+      || Number(reference?.sideProjection?.height)
+      || memberFaceHeight(member),
+  );
   const ids = new Set();
   for (let index = 0; index < entities.length; index += 1) {
     const entity = entities[index];
@@ -1513,35 +1601,64 @@ function renderSketchValidation(validation, mode, draft) {
   </section>`;
 }
 
-function renderSectionSession(state, pending) {
+function renderSectionSession(state, pending, componentProfile = false) {
   const session = normalizeSectionSession(state.sectionSession);
-  const copy = {
+  const copy = componentProfile ? {
+    title: "当前拉伸体截面",
+    detail: "确认后回填到 CSG 节点；完成整个零件前不会写入“我的配件”",
+  } : ({
     [SECTION_SESSION_CREATE]: {
       title: "新增管型",
       detail: "从空白截面开始，确认后保存到“我的管型”",
     },
     [SECTION_SESSION_UPDATE]: {
-      title: "修改我的 DXF 管型",
+      title: "修改我的 定式管型",
       detail: `确认时可选择覆盖“${session.sourceName || state.sectionName}”或另存为新管型`,
     },
     [SECTION_SESSION_COPY]: {
       title: "基于现有管型编辑",
       detail: `原管型“${session.sourceName || ""}”保持不变，确认后新建到“我的管型”`,
     },
-  }[session.kind];
+  }[session.kind]);
   return `<section class="tube-sketch-section-session" data-tube-sketch-section-session="${escapeAttr(session.kind)}">
     <div><strong>${escapeText(copy.title)}</strong><small>${escapeText(copy.detail)}</small></div>
-    <label><span>保存名称</span><input type="text" maxlength="120" value="${escapeAttr(state.sectionName)}" data-cam-change-action="tube-designer-sketch-section-name" ${pending ? "disabled" : ""}/></label>
+    <label><span>${componentProfile ? "截面名称" : "保存名称"}</span><input type="text" maxlength="120" value="${escapeAttr(state.sectionName)}" data-cam-change-action="tube-designer-sketch-section-name" ${pending ? "disabled" : ""}/></label>
+  </section>`;
+}
+
+function renderSideReferenceSummary(reference) {
+  const projection = reference?.sideProjection ?? {};
+  const unfolding = sideUnfoldingSurface(reference);
+  const edgeCount = Array.isArray(projection.segments) ? projection.segments.length : 0;
+  const holeCount = Array.isArray(reference?.holes) ? reference.holes.length : 0;
+  const rectangle = sideUnfoldingRectangle(reference);
+  if (reference?.unfolding?.available === true && rectangle) {
+    const wireCount = Array.isArray(unfolding?.wires) ? unfolding.wires.length : 0;
+    return `<section class="tube-sketch-side-reference-summary">
+      <div><strong>整圈侧壁矩形展开</strong><small>不是单个面：横向 S 是管材轴向长度，纵向 U 是整圈截面弧长；U=0 与 U=周长是同一条接缝。底图只用于定位，不会作为新草图图形保存</small></div>
+      <dl>
+        <div><dt>展开矩形</dt><dd>${formatNumber(rectangle.width)} × ${formatNumber(rectangle.height)} mm</dd></div>
+        <div><dt>端部/特征边界</dt><dd>${wireCount} 条</dd></div>
+      </dl>
+    </section>`;
+  }
+  return `<section class="tube-sketch-side-reference-summary">
+    <div><strong>最终零件底图</strong><small>底图只用于定位，不会作为新草图图形保存</small></div>
+    <dl>
+      <div><dt>侧面区域</dt><dd>${formatNumber(projection.width)} × ${formatNumber(projection.height)} mm</dd></div>
+      <div><dt>直线棱</dt><dd>${edgeCount} 段</dd></div>
+      <div><dt>现有孔</dt><dd>${holeCount} 个</dd></div>
+    </dl>
   </section>`;
 }
 
 function renderSectionSaveChoiceDialog(state) {
   const session = normalizeSectionSession(state.sectionSession);
-  const name = String(session.sourceName || state.sectionName || "当前 DXF 管型");
+  const name = String(session.sourceName || state.sectionName || "当前 定式管型");
   return `<div class="tube-sketch-save-choice-backdrop" role="presentation">
     <section class="tube-sketch-save-choice" role="dialog" aria-modal="true" aria-labelledby="tube-sketch-save-choice-title">
-      <header><strong id="tube-sketch-save-choice-title">保存截面修改</strong><span>“${escapeText(name)}”是已有的 DXF 管型</span></header>
-      <p>请选择覆盖原管型，或者保留原管型并新增一份 DXF 管型。</p>
+      <header><strong id="tube-sketch-save-choice-title">保存截面修改</strong><span>“${escapeText(name)}”是已有的 定式管型</span></header>
+      <p>请选择覆盖原管型，或者保留原管型并新增一份 定式管型。</p>
       <div>
         <button type="button" class="tube-designer-primary" data-cam-action="tube-designer-sketch-save-overwrite">覆盖原管型</button>
         <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-sketch-save-copy">另存为新管型</button>
@@ -1882,6 +1999,11 @@ function normalizeSectionSession(session) {
 
 function currentDraft(view, state = ensureSketchState(view)) {
   if (state.mode === SECTION_MODE) return state.section;
+  if (state.sideTargetKind === "part") {
+    const key = state.targetPartId || "unassigned-part";
+    state.sideByPart[key] ??= createDraft();
+    return state.sideByPart[key];
+  }
   const key = state.targetMemberId || "unassigned";
   state.sideByMember[key] ??= createDraft();
   return state.sideByMember[key];
@@ -1910,9 +2032,102 @@ function targetMember(designer, memberId) {
   return sketchableMembers(designer).find((member) => member.entityId === String(memberId ?? "")) ?? null;
 }
 
+function normalizeSideProductId(value) {
+  const text = String(value ?? "").trim();
+  return text.startsWith("product:") ? text.slice("product:".length) : text;
+}
+
+function enrichSidePart(part, group, nestingSnapshot) {
+  const linkedNesting = part?.linkedNesting === true || group?.linkedNesting === true;
+  const groupProductId = String(group?.productEntityId ?? "").trim();
+  const partProductId = String(part?.productEntityId ?? "").trim();
+  const productEntityId = partProductId
+    || (linkedNesting ? normalizeSideProductId(groupProductId) : groupProductId);
+  const generationRunId = String(part?.generationRunId ?? group?.generationRunId ?? "").trim();
+  const independentNesting = !linkedNesting
+    && (part?.independentNesting === true || nestingSnapshot);
+  return {
+    ...part,
+    ...(productEntityId ? { productEntityId } : {}),
+    ...(generationRunId ? { generationRunId } : {}),
+    ...(linkedNesting ? { linkedNesting: true } : {}),
+    ...(independentNesting ? { independentNesting: true } : {}),
+  };
+}
+
+function targetSideEntity(designer, state) {
+  if (state?.sideTargetKind !== "part") {
+    return targetMember(designer, state?.targetMemberId);
+  }
+  const partId = String(state?.targetPartId ?? "");
+  const sources = [
+    { groups: designer?.nestingGroups, nestingSnapshot: true },
+    { groups: designer?.manufacturingGroups, nestingSnapshot: false },
+  ];
+  for (const source of sources) {
+    for (const group of Array.isArray(source.groups) ? source.groups : []) {
+      const part = (Array.isArray(group?.parts) ? group.parts : [])
+        .find((item) => String(item?.entityId ?? "") === partId);
+      if (part) return enrichSidePart(part, group, source.nestingSnapshot);
+    }
+  }
+  return String(state?.sideTargetSnapshot?.entityId ?? "") === partId
+    ? state.sideTargetSnapshot : null;
+}
+
 function memberFaceHeight(member) {
   const profile = member?.profile ?? member?.properties?.["tubeDesigner.profile"] ?? {};
   return Math.max(1, Number(profile.depth ?? profile.height ?? profile.width ?? 50));
+}
+
+function sideUnfoldingSurface(reference = null) {
+  const unfolding = reference?.unfolding;
+  if (unfolding?.available !== true || !Array.isArray(unfolding.surfaces)) return null;
+  const surfaces = unfolding.surfaces;
+  const hasRectangle = (surface) => surface?.rectangle?.available === true
+    || Number(surface?.rectangle?.width) > 0;
+  const hasPeriod = (surface) => Number(surface?.uPeriod) > 0;
+  return surfaces.find((surface) => surface?.inner !== true && hasRectangle(surface))
+    ?? surfaces.find((surface) => surface?.inner !== true && hasPeriod(surface))
+    ?? surfaces.find((surface) => hasRectangle(surface))
+    ?? surfaces.find((surface) => hasPeriod(surface))
+    // Responses written before the rectangle contract may still be opened.
+    ?? surfaces.find((surface) => Array.isArray(surface?.panels) && surface.panels.length)
+    ?? null;
+}
+
+function positiveSideDimension(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function sideUnfoldingRectangle(reference = null, member = null) {
+  const unfolding = reference?.unfolding;
+  if (unfolding?.available !== true) return null;
+  const surface = sideUnfoldingSurface(reference);
+  const candidates = [surface?.rectangle, unfolding?.lateralRectangle];
+  let width = 0;
+  let height = 0;
+  for (const rectangle of candidates) {
+    if (!rectangle || typeof rectangle !== "object") continue;
+    width = width || positiveSideDimension(rectangle.width)
+      || positiveSideDimension(Number(rectangle.sEnd) - Number(rectangle.sStart));
+    height = height || positiveSideDimension(rectangle.height)
+      || positiveSideDimension(Number(rectangle.uEnd) - Number(rectangle.uStart));
+  }
+  width ||= positiveSideDimension(unfolding.length) || positiveSideDimension(member?.length);
+  height ||= positiveSideDimension(surface?.uPeriod) || positiveSideDimension(unfolding.perimeter);
+  if (!(width > 0 && height > 0)) return null;
+  return { width, height, periodic: true };
+}
+
+function sideUnfoldingPerimeter(reference = null) {
+  return sideUnfoldingRectangle(reference)?.height ?? 0;
+}
+
+function sideUnfoldingLength(member, reference = null) {
+  const rectangle = sideUnfoldingRectangle(reference, member);
+  return rectangle?.width ?? (positiveSideDimension(member?.length) || 1);
 }
 
 function canvasMetrics(mode, member, state = null) {
@@ -1934,8 +2149,13 @@ function canvasMetrics(mode, member, state = null) {
       snapTolerance: Math.max(0.02, 2.5 / viewport.zoom),
     };
   }
-  const length = Math.max(1, Number(member?.length ?? 1000));
-  const height = memberFaceHeight(member);
+  const length = Math.max(1, sideUnfoldingLength(member, state?.sideReference));
+  const height = Math.max(
+    1,
+    sideUnfoldingPerimeter(state?.sideReference)
+      || Number(state?.sideReference?.sideProjection?.height)
+      || memberFaceHeight(member),
+  );
   const xPerPixel = length / (CANVAS.right - CANVAS.left);
   const yPerPixel = height / (CANVAS.bottom - CANVAS.top);
   return {
@@ -2019,14 +2239,135 @@ function niceGridStep(rawStep) {
   return nice * exponent;
 }
 
-function renderSideCanvasGuide(metrics, member) {
+function unfoldingPoint(value) {
+  if (Array.isArray(value) && value.length >= 2) {
+    const s = Number(value[0]);
+    const u = Number(value[1]);
+    return Number.isFinite(s) && Number.isFinite(u) ? [s, u] : null;
+  }
+  if (value && typeof value === "object") {
+    const s = Number(value.s ?? value.S);
+    const u = Number(value.u ?? value.U);
+    return Number.isFinite(s) && Number.isFinite(u) ? [s, u] : null;
+  }
+  return null;
+}
+
+function unfoldingWirePaths(wire, metrics, period) {
+  const source = Array.isArray(wire?.points) ? wire.points.map(unfoldingPoint).filter(Boolean) : [];
+  if (source.length < 2) return [];
+  const safePeriod = Math.max(1, Number(period) || metrics.yMax || 1);
+  const normalizeU = (value) => {
+    const epsilon = safePeriod * 1e-7;
+    if (Math.abs(value) <= epsilon) return 0;
+    if (Math.abs(value - safePeriod) <= epsilon) return safePeriod;
+    return ((value % safePeriod) + safePeriod) % safePeriod;
+  };
+  const chunks = [[]];
+  let previous = source[0];
+  chunks[0].push(modelToCanvas([previous[0], normalizeU(previous[1])], metrics));
+  for (let index = 1; index < source.length; index += 1) {
+    const current = source[index];
+    const startU = normalizeU(previous[1]);
+    const endU = normalizeU(current[1]);
+    const difference = endU - startU;
+    if (Math.abs(difference) > safePeriod * 0.5
+        && Math.abs(difference) < safePeriod * 0.999999) {
+      const endThroughSeam = difference > 0 ? endU - safePeriod : endU + safePeriod;
+      const seamU = difference > 0 ? 0 : safePeriod;
+      const ratio = Math.max(0, Math.min(1,
+        (seamU - startU) / (endThroughSeam - startU)));
+      const seamS = previous[0] + (current[0] - previous[0]) * ratio;
+      chunks.at(-1).push(modelToCanvas([seamS, seamU], metrics));
+      chunks.push([modelToCanvas([seamS, seamU === 0 ? safePeriod : 0], metrics)]);
+    }
+    chunks.at(-1).push(modelToCanvas([current[0], endU], metrics));
+    previous = current;
+  }
+  const usable = chunks.filter((points) => points.length >= 2);
+  return usable.map((points) =>
+    `M${points.map((point) => `${point[0]} ${point[1]}`).join(" L")}${wire?.closed && usable.length === 1 ? " Z" : ""}`);
+}
+
+function renderUnfoldingWire(wire, metrics, period, className, attribute = "") {
+  return unfoldingWirePaths(wire, metrics, period).map((path) =>
+    `<path class="${className}" ${attribute} data-tube-sketch-reference-unfolded-wire data-tube-sketch-wire-role="${escapeAttr(wire?.role ?? "")}" d="${path}"/>`,
+  ).join("");
+}
+
+function renderSideCanvasGuide(metrics, member, reference = null) {
   const length = formatNumber(metrics.xMax);
   const height = formatNumber(metrics.yMax);
+  const unfolding = sideUnfoldingSurface(reference);
+  if (reference?.unfolding?.available === true) {
+    const period = sideUnfoldingPerimeter(reference) || metrics.yMax;
+    const wires = (Array.isArray(unfolding?.wires) ? unfolding.wires : [])
+      .map((wire) => renderUnfoldingWire(
+        wire, metrics, period,
+        wire?.role === "end-boundary"
+          ? "tube-sketch-side-unfolding-end"
+          : "tube-sketch-side-unfolding-feature",
+        "data-tube-sketch-reference-wire"))
+      .join("");
+    const featureCount = Array.isArray(unfolding?.wires) ? unfolding.wires.length : 0;
+    return `<g class="tube-sketch-side-guide tube-sketch-side-unfolding" data-tube-sketch-coordinate-space="axial-arc-length">
+      <rect class="tube-sketch-side-region" data-tube-sketch-reference-region data-tube-sketch-unfolding-rectangle x="${metrics.canvasLeft}" y="${metrics.canvasTop}" width="${metrics.canvasRight - metrics.canvasLeft}" height="${metrics.canvasBottom - metrics.canvasTop}" rx="2"/>
+      <g class="tube-sketch-side-unfolding-wires">${wires}</g>
+      <line class="tube-sketch-side-unfolding-seam" x1="${metrics.canvasLeft}" y1="${metrics.canvasTop}" x2="${metrics.canvasLeft}" y2="${metrics.canvasBottom}"/>
+      <text x="88" y="116">${escapeText(member?.name ?? "管件")} · 整圈侧壁矩形展开（S / U）</text>
+      <text x="70" y="535">S 0</text><text x="902" y="535">S ${length} mm</text><text x="905" y="82">U ${height} mm</text>
+      <text x="88" y="132">${featureCount ? `已识别 ${featureCount} 条端部/特征边界` : "已生成整圈侧壁矩形编辑域"} · ${escapeText(reference?.unfolding?.method ?? "截面弧长")}</text>
+    </g>`;
+  }
+  const projection = reference?.sideProjection ?? {};
+  const region = `<rect class="tube-sketch-side-region" data-tube-sketch-reference-region data-tube-sketch-unfolding-rectangle x="${metrics.canvasLeft}" y="${metrics.canvasTop}" width="${metrics.canvasRight - metrics.canvasLeft}" height="${metrics.canvasBottom - metrics.canvasTop}" rx="2"/>`;
+  const segments = (Array.isArray(projection.segments) ? projection.segments : [])
+    .map((segment) => {
+      if (!Array.isArray(segment?.start) || !Array.isArray(segment?.end)) return "";
+      const start = modelToCanvas(segment.start, metrics);
+      const end = modelToCanvas(segment.end, metrics);
+      return `<line class="tube-sketch-side-edge" data-tube-sketch-reference-segment x1="${start[0]}" y1="${start[1]}" x2="${end[0]}" y2="${end[1]}"/>`;
+    }).join("");
+  const holes = (Array.isArray(reference?.holes) ? reference.holes : [])
+    .map((hole) => renderSideReferenceHole(hole, metrics)).join("");
   return `<g class="tube-sketch-side-guide">
-    <rect x="70" y="90" width="880" height="420" rx="2"/>
-    <text x="88" y="116">${escapeText(member?.name ?? "管件侧面")} · 可绘制区域</text>
+    ${region}
+    <g class="tube-sketch-side-reference-edges">${segments}</g>
+    <g class="tube-sketch-side-reference-holes">${holes}</g>
+    <text x="88" y="116">${escapeText(member?.name ?? "管件侧面")} · 整圈侧壁矩形编辑域</text>
     <text x="70" y="535">0</text><text x="902" y="535">${length} mm</text><text x="905" y="82">${height} mm</text>
   </g>`;
+}
+
+function renderSideReferenceHole(hole, metrics) {
+  const center = Array.isArray(hole?.sideCenter)
+    ? hole.sideCenter
+    : [
+        Number(hole?.station ?? 0),
+        Number(hole?.centerToFaceEdgeNegative ?? metrics.yMax / 2),
+      ];
+  if (center.length < 2 || !center.every((value) => Number.isFinite(Number(value)))) return "";
+  const normalizedCenter = [
+    Math.min(metrics.xMax, Math.max(metrics.xMin, Number(center[0]))),
+    Math.min(metrics.yMax, Math.max(metrics.yMin, Number(center[1]))),
+  ];
+  const canvasCenter = modelToCanvas(normalizedCenter, metrics);
+  const halfAlong = Math.max(0.1, Number(hole?.spanAlong ?? hole?.diameter ?? 0) / 2);
+  const projectedAcross = Math.max(0, Number(hole?.sideSpanAcross ?? hole?.spanAcross ?? hole?.diameter ?? 0));
+  const halfAcross = hole?.sideVisible === false
+    ? Math.max(metrics.yMax / 220, projectedAcross / 2)
+    : Math.max(0.1, projectedAcross / 2);
+  const right = modelToCanvas([normalizedCenter[0] + halfAlong, normalizedCenter[1]], metrics);
+  const top = modelToCanvas([normalizedCenter[0], normalizedCenter[1] + halfAcross], metrics);
+  const radiusX = Math.abs(right[0] - canvasCenter[0]);
+  const radiusY = Math.max(1.5, Math.abs(top[1] - canvasCenter[1]));
+  const classes = `tube-sketch-side-hole${hole?.sideVisible === false ? " hidden" : ""}`;
+  const attributes = `class="${classes}" data-tube-sketch-reference-hole data-tube-sketch-hole-index="${escapeAttr(hole?.index ?? "")}"`;
+  if (String(hole?.shape ?? "") === "circle") {
+    const displayRadiusY = hole?.sideVisible === false ? radiusY : radiusX;
+    return `<ellipse ${attributes} cx="${canvasCenter[0]}" cy="${canvasCenter[1]}" rx="${radiusX}" ry="${displayRadiusY}"/>`;
+  }
+  return `<rect ${attributes} x="${canvasCenter[0] - radiusX}" y="${canvasCenter[1] - radiusY}" width="${radiusX * 2}" height="${radiusY * 2}" rx="1"/>`;
 }
 
 function hasEditableVertices(entity) {
@@ -2243,16 +2584,36 @@ function renderSectionPreview(analysis) {
   </svg>`;
 }
 
-function renderSidePreview(draft, member) {
+function renderSidePreview(draft, member, reference = null) {
   if (!member) return `<div class="tube-sketch-preview-empty"><span class="tube-sketch-preview-empty-icon">◇</span><strong>还没有管件</strong><span>生成产品后即可绘制侧面切割图</span></div>`;
-  const metrics = canvasMetrics(SIDE_MODE, member);
+  const metrics = canvasMetrics(SIDE_MODE, member, { sideReference: reference });
+  const referenceHoles = (Array.isArray(reference?.holes) ? reference.holes : [])
+    .map((hole) => renderPreviewSideReferenceHole(hole, metrics)).join("");
   const paths = draft.entities.map((entity) => renderPreviewSideEntity(entity, metrics)).join("");
   return `<svg class="tube-sketch-preview-svg tube-sketch-side-preview" viewBox="0 0 300 300" role="img" aria-label="当前管件侧面切割三维预览">
     <polygon class="tube-sketch-metal-top" points="35,88 82,56 273,86 226,118"/>
     <polygon class="tube-sketch-metal-side" points="226,118 273,86 273,205 226,237"/>
     <rect class="tube-sketch-metal-front" x="35" y="88" width="191" height="149"/>
+    <g class="tube-sketch-preview-reference-holes">${referenceHoles}</g>
     <g class="tube-sketch-preview-cut">${paths}</g>
   </svg>`;
+}
+
+function renderPreviewSideReferenceHole(hole, metrics) {
+  const center = Array.isArray(hole?.sideCenter)
+    ? hole.sideCenter
+    : [Number(hole?.station ?? 0), Number(hole?.centerToFaceEdgeNegative ?? metrics.yMax / 2)];
+  if (center.length < 2 || !center.every((value) => Number.isFinite(Number(value)))) return "";
+  const x = 45 + ((Number(center[0]) - metrics.xMin) / (metrics.xMax - metrics.xMin)) * 170;
+  const y = 224 - ((Number(center[1]) - metrics.yMin) / (metrics.yMax - metrics.yMin)) * 122;
+  const radiusX = Math.max(1.5, Number(hole?.spanAlong ?? hole?.diameter ?? 0) / 2
+    / (metrics.xMax - metrics.xMin) * 170);
+  const radiusY = Math.max(1.5, Number(hole?.sideSpanAcross ?? hole?.spanAcross ?? hole?.diameter ?? 0) / 2
+    / (metrics.yMax - metrics.yMin) * 122);
+  const className = hole?.sideVisible === false ? "hidden" : "";
+  return String(hole?.shape ?? "") === "circle"
+    ? `<ellipse class="${className}" cx="${x}" cy="${y}" rx="${radiusX}" ry="${hole?.sideVisible === false ? radiusY : radiusX}"/>`
+    : `<rect class="${className}" x="${x - radiusX}" y="${y - radiusY}" width="${radiusX * 2}" height="${radiusY * 2}"/>`;
 }
 
 function renderPreviewSideEntity(entity, metrics) {
@@ -2825,6 +3186,32 @@ async function saveSectionProfile(context, view, ops, saveMode = "") {
   }
   state.sectionName = proposed;
   const profile = buildProfileFromSectionDraft(state.section, proposed);
+  const componentReturn = view.tubeDesignerComponentCSGProfileReturn;
+  if (componentReturn?.featureId) {
+    const csgDraft = view.tubeDesignerComponentLibrary?.csgDraft;
+    const feature = csgDraft?.features?.find((item) => item.id === componentReturn.featureId);
+    if (!feature || feature.primitive !== "extrusion") {
+      view.tubeDesignerComponentCSGProfileReturn = null;
+      throw new Error("原拉伸体已经不存在，请返回 CSG 树重新选择。");
+    }
+    feature.profile = {
+      sourceType: "fixed", key: `embedded:sketch:${feature.id}`,
+      name: proposed, parameters: {}, parameterDefinitions: [], snapshot: profile,
+    };
+    csgDraft.selectedId = feature.id;
+    csgDraft.selectedNodeKind = "primitive";
+    csgDraft.dirty = true;
+    csgDraft.previewStatus = "loading";
+    csgDraft.previewError = "";
+    state.section.dirty = false;
+    state.saveChoiceDialogOpen = false;
+    view.tubeDesignerSketchDialogOpen = false;
+    view.tubeDesignerComponentCSGProfileReturn = null;
+    view.error = "";
+    await selectSketchArea(context, view, "components");
+    ops.showNotice?.(context, view, `截面“${proposed}”已放入当前拉伸体；完成零件时统一保存。`);
+    return profile;
+  }
   const session = normalizeSectionSession(state.sectionSession);
   const editableDxf = session.kind === SECTION_SESSION_UPDATE && Boolean(session.sourceProfileId);
   if (editableDxf && !["overwrite", "copy"].includes(saveMode)) {
@@ -2838,7 +3225,7 @@ async function saveSectionProfile(context, view, ops, saveMode = "") {
   view.pending = true;
   view.progress = {
     title: updating ? "正在更新管型" : "正在保存管型",
-    detail: updating ? "正在更新我的 DXF 管型" : "正在校验截面并生成新的我的管型",
+    detail: updating ? "正在更新我的 定式管型" : "正在校验截面并生成新的我的管型",
     stage: "截面校验",
     mode: "Sketch",
   };
@@ -2876,6 +3263,7 @@ async function saveSectionProfile(context, view, ops, saveMode = "") {
     view.pending = false;
     view.progress = null;
     if (saved) {
+      view.tubeDesignerSketchDialogOpen = false;
       await selectSketchArea(context, view, "profiles");
       ops.showNotice(
         context,
@@ -2893,7 +3281,11 @@ async function cancelSketch(context, view, ops) {
       && !globalThis.confirm("当前草图还有未保存的修改，确定取消吗？")) return false;
   state.command = null;
   state.saveChoiceDialogOpen = false;
-  await selectSketchArea(context, view, state.mode === SECTION_MODE ? "profiles" : "view");
+  view.tubeDesignerSketchDialogOpen = false;
+  const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
+  view.tubeDesignerComponentCSGProfileReturn = null;
+  await selectSketchArea(context, view, componentProfile ? "components" : (state.mode === SECTION_MODE
+    ? "profiles" : state.sideReturnAreaId || "view"));
   ops.renderProject(context, view);
   return true;
 }
@@ -2919,32 +3311,74 @@ function selectSavedProfileInLibrary(view, profileId) {
 async function saveSideSketch(context, view, ops) {
   const state = ensureSketchState(view);
   const designer = view.scene?.tubeDesigner ?? {};
-  const productId = String(designer.product?.entityId ?? "");
-  const member = targetMember(designer, state.targetMemberId);
+  const partTarget = state.sideTargetKind === "part";
+  const member = targetSideEntity(designer, state);
+  const productId = normalizeSideProductId(partTarget
+    ? member?.productEntityId ?? state.sideTargetSnapshot?.productEntityId ?? ""
+    : designer.product?.entityId ?? "");
   const draft = currentDraft(view, state);
-  if (!productId || !member) throw new Error("请先在产品页生成产品并选择管件。");
+  if (!member) throw new Error(partTarget ? "当前下料零件已不存在，请重新选择。" : "请先在产品页生成产品并选择管件。");
+  if (!partTarget && !productId) throw new Error("请先在产品页生成产品并选择管件。");
   const removing = !draft.entities.length;
   if (removing && !(draft.persisted && draft.dirty)) throw new Error("请先绘制侧面切割图。");
-  const validation = validateSideSketchDraft(draft, member);
+  const validation = validateSideSketchDraft(draft, member, state.sideReference);
   if (!removing && !validation.ready) throw new Error(validation.message);
+  const unfoldingPerimeter = sideUnfoldingPerimeter(state.sideReference);
   const sketch = {
     schema: SKETCH_SCHEMA,
     schemaVersion: 1,
     kind: SIDE_MODE,
-    targetMemberId: member.entityId,
-    targetMemberKey: String(member.stableKey ?? ""),
+    ...(partTarget ? {
+      targetPartId: member.entityId,
+    } : {
+      targetMemberId: member.entityId,
+      targetMemberKey: String(member.stableKey ?? ""),
+    }),
     unit: "mm",
-    faceHeight: memberFaceHeight(member),
-    length: Number(member.length ?? 0),
+    faceHeight: Math.max(
+      1,
+      unfoldingPerimeter
+        || Number(state.sideReference?.sideProjection?.height)
+        || memberFaceHeight(member),
+    ),
+    length: sideUnfoldingLength(member, state.sideReference),
+    ...(unfoldingPerimeter ? {
+      coordinateSpace: "axial-arc-length",
+      perimeter: unfoldingPerimeter,
+      unfoldingMethod: String(state.sideReference?.unfolding?.method ?? "section-arc-length"),
+    } : {}),
     entities: draft.entities.map((entity) => ({ ...entity })),
     updatedAt: new Date().toISOString(),
   };
+  const wasDialogOpen = Boolean(view.tubeDesignerSketchDialogOpen);
   view.pending = true;
-  view.progress = { title: "正在应用侧面草图", detail: `正在保存到${member.name || "当前管件"}`, stage: "保存刀路", mode: "Sketch" };
+  view.progress = { title: "正在应用侧面草图", detail: `正在保存到${member.name || "当前管件"}`, stage: "保存二维图形", mode: "Sketch" };
   ops.renderProject(context, view);
   let saved = false;
   try {
-    const response = await context.sceneProxy.invoke("TubeDesigner.SaveSketch", { productEntityId: productId, targetMemberId: member.entityId, sketch }, { timeoutMs: 30000 });
+    let method;
+    let payload;
+    const independentPart = partTarget
+      && (member.independentNesting === true
+        || state.sideTargetSnapshot?.independentNesting === true);
+    if (independentPart) {
+      method = "TubeDesigner.SavePartSketch";
+      payload = {
+        partEntityId: member.entityId,
+        resourceVersion: Number(member.manufacturingGeometryResourceVersion ?? 0),
+        sketch,
+      };
+    } else {
+      const targetMemberId = String(member.sourceMemberId ?? member.entityId ?? "");
+      if (!productId || !targetMemberId) throw new Error("当前下料零件没有可保存草图的产品来源。");
+      method = "TubeDesigner.SaveSketch";
+      payload = { productEntityId: productId, targetMemberId, sketch: {
+        ...sketch,
+        targetMemberId,
+        targetMemberKey: String(member.stableKey ?? ""),
+      } };
+    }
+    const response = await context.sceneProxy.invoke(method, payload, { timeoutMs: 30000 });
     if (response?.tubeDesigner) view.scene.tubeDesigner = response.tubeDesigner;
     draft.dirty = false;
     draft.persisted = !removing;
@@ -2954,9 +3388,15 @@ async function saveSideSketch(context, view, ops) {
   } finally {
     view.pending = false;
     view.progress = null;
-    if (saved) ops.showNotice(context, view, removing
-      ? `已从“${member.name || "当前管件"}”移除侧面草图。`
-      : `侧面切割图已应用到“${member.name || "当前管件"}”。`);
+    if (saved) {
+      if (wasDialogOpen) {
+        view.tubeDesignerSketchDialogOpen = false;
+        await selectSketchArea(context, view, state.sideReturnAreaId || "nesting");
+      }
+      ops.showNotice(context, view, removing
+        ? `已从“${member.name || "当前管件"}”移除侧面草图。`
+        : `侧面草图已应用到“${member.name || "当前管件"}”。`);
+    }
     else ops.renderProject(context, view);
   }
 }

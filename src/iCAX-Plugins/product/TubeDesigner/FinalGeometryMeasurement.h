@@ -12,11 +12,13 @@ namespace iCAX::TubeDesigner
 {
     struct SPlanarNestingEnd final
     {
+        // Valid supporting KNIFE plane, not a claim that a planar BRep face exists.
         bool IsPlanar = false;
         double Projection = 0.0;
         /** 平面方程在规范化坐标中的轴向梯度：x = GradientY*y + GradientZ*z + c。 */
         double GradientY = 0.0;
         double GradientZ = 0.0;
+        double Offset = 0.0;
     };
 
     struct SLinearNestingGeometry final
@@ -26,6 +28,10 @@ namespace iCAX::TubeDesigner
         double MaterialEquivalentLength = 0.0;
         SPlanarNestingEnd Left;
         SPlanarNestingEnd Right;
+        // Bounds of the conservative knife-plane blank in source coordinates.
+        // Its centre can differ from the final solid's AABB centre.
+        double AxialMinimum = 0.0;
+        double AxialMaximum = 0.0;
     };
 
     /*
@@ -36,8 +42,8 @@ namespace iCAX::TubeDesigner
         IN const TopoDS_Shape& Shape_);
 
     /**
-     * 从已经规范化到 +X 的最终制造 BRep 提取左右切割平面和梯形投影。
-     * 只有 IsReliable=true 时，调用方才能允许斜端包围盒互相嵌套。
+     * 从沿 +X 的最终 BRep 搜索不削掉成品的左右刀平面；真实端口不必平面。
+     * 仅输出直切或保守斜切包络。IsReliable=true 才能使用刀平面投影套切。
      */
     _TUBE_DESIGNER_EXP SLinearNestingGeometry MeasureLinearNestingGeometry(
         IN const TopoDS_Shape& Shape_);

@@ -1,0 +1,10 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "diamond-12",
+  "version": "1.0.0",
+  "displayName": "菱形孔 12 × 8",
+  "kind": "fixed",
+  "target": "side",
+  "parameters": []
+}

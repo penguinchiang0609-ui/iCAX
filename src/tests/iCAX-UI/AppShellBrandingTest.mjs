@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { escapeAttr, escapeText } from "../../iCAX-UI/UI/html.mjs";
+import { renderRibbonCommandIcon } from "../../iCAX-UI/SDK/AppShell/app/ribbonIcons.mjs";
 import { AppProxy } from "../../iCAX-UI/AppProxy/AppProxy.mjs";
 import { loadProductModule } from "../../iCAX-UI/ProductProxy/productModuleLoader.mjs";
 import { createWorkbench } from "../../apps/_shared/workbench/createWorkbench.mjs";
@@ -10,7 +11,7 @@ const shellUrl = new URL("../../iCAX-UI/SDK/AppShell/app/bootstrap.mjs", import.
 const source = readFileSync(shellUrl, "utf8");
 // Exercise the real renderers without connecting to a native host or mounting a viewport.
 const script = source
-  .replace(/^import\s*\{[\s\S]*?\}\s*from\s*"[^"]+";\s*/, "")
+  .replace(/^import\s*\{[\s\S]*?\}\s*from\s*"[^"]+";\s*/gm, "")
   .replaceAll("import.meta.url", JSON.stringify(shellUrl.href))
   .replace(/actions\.bootstrap\(\)\.catch\([\s\S]*$/, "")
   + "\nglobalThis.shell = { state, actions, render, getApplicationTitle, makeSafeProjectFileName };";
@@ -25,14 +26,20 @@ const document = {
   getElementById() { return root; },
   querySelector() { return null; },
 };
+const windowListeners = new Map();
 const sandbox = {
   document,
-  window: { addEventListener() {}, clearTimeout() {} },
+  window: { addEventListener(type, listener) { windowListeners.set(type, listener); }, clearTimeout() {}, requestAnimationFrame(callback) { callback(); } },
+  performance,
   HTMLElement: class HTMLElement {},
   escapeAttr,
   escapeText,
+  renderRibbonCommandIcon,
 };
 runInNewContext(script, sandbox, { filename: shellUrl.pathname });
+let contextMenuPrevented = false;
+windowListeners.get("contextmenu")({ preventDefault() { contextMenuPrevented = true; }, stopPropagation() { throw new Error("Application right-click handlers must remain active"); } });
+assert.equal(contextMenuPrevented, true);
 const { state, actions, render, getApplicationTitle, makeSafeProjectFileName } = sandbox.shell;
 const visibleText = (html) => html.replace(/<[^>]*>/g, "");
 const assertNoBranding = (html) => assert.doesNotMatch(visibleText(html), /icax/i);
@@ -86,10 +93,55 @@ assert.match(root.innerHTML, /后台任务/);
 assertNoBranding(root.innerHTML);
 
 let dialogOptions;
+state.pendingCount = 0;
+state.pendingOperations = [];
+state.appState.products[0].projectFile = { fileExtensions: [".ictd"] };
 state.bridge = { async openFileDialog(options) { dialogOptions = options; return null; } };
 await actions.chooseProjectFile();
 assert.equal(dialogOptions.filters[0].name, "项目文件");
-assert.deepEqual(Array.from(dialogOptions.filters[0].extensions), ["icax", "i3cam"]);
+assert.deepEqual(Array.from(dialogOptions.filters[0].extensions), ["ictd"]);
+assert.equal(state.error, "");
+
+let saveDialogCount = 0;
+let saveCount = 0;
+let chosenPath = null;
+const project = {
+  projectId: "save-test",
+  state: { projectId: "save-test", projectName: "测试项目", projectPath: "测试项目.ictd" },
+  async save(path) { saveCount++; this.state = { ...this.state, projectPath: path }; },
+};
+state.activeProjectProxy = project;
+state.activeProjectState = project.state;
+state.activeProductProxy = { async getState() { return state.activeProductState; } };
+state.appProxy = { async getState() { return state.appState; } };
+state.bridge.saveFileDialog = async (options) => {
+  saveDialogCount++;
+  assert.equal(options.defaultExtension, "ictd");
+  return chosenPath;
+};
+await actions.saveProject();
+assert.equal(saveCount, 0, "cancel must not save");
+assert.equal(state.savedProjectIds.has(project.projectId), false);
+chosenPath = "D:/projects/测试项目.ictd";
+await actions.saveProject();
+assert.equal(saveCount, 1);
+assert.equal(project.state.projectPath, chosenPath);
+assert.equal(state.savedProjectIds.has(project.projectId), true);
+await actions.saveProject();
+assert.equal(saveCount, 2);
+assert.equal(saveDialogCount, 2, "subsequent save must not ask for location");
+chosenPath = null;
+await actions.saveProject(true);
+assert.equal(saveCount, 2);
+assert.equal(project.state.projectPath, "D:/projects/测试项目.ictd");
+chosenPath = "D:/projects/second.ictd";
+await actions.saveProject(true);
+assert.equal(project.state.projectPath, chosenPath);
+project.save = async () => { throw new Error("模拟写入失败"); };
+await assert.rejects(actions.saveProject(), /模拟写入失败/);
+assert.equal(state.error, "模拟写入失败");
+assert.equal(state.pendingCount, 0);
+assert.equal(project.state.projectPath, chosenPath);
 console.log("PASS startup, product switching, fallback names, progress and file dialog branding");
 
 const oldDocument = globalThis.document;

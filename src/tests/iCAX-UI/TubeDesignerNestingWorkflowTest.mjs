@@ -12,6 +12,7 @@ import {
   getNestingInputSignature,
   handleNestingRibbonCommand,
   isNestingResultStale,
+  restoreSavedNestingTask,
 } from "../../apps/tube-designer/webpage/nestingWorkflow.mjs";
 
 const rect = { id: "rect", kind: "rect", displayName: "矩形管", specification: "40 × 20 × R2 × 1.5", width: 40, depth: 20, wallThickness: 1.5, cornerRadius: 2 };
@@ -91,6 +92,18 @@ await test("Default selection includes all parts and only matching profile stock
   assert.ok(!Object.hasOwn(selected.parts[0], "material"));
 });
 
+await test("Instance production quantities are already expanded and are not multiplied twice", () => {
+  const h = harness({ parts: [{ ...defaultParts()[0], unitQuantity: 2, instanceQuantity: 3, quantity: 6 }] });
+  const request = buildNestingRequest(h.view);
+  assert.equal(request.parts[0].quantity, 6);
+  assert.equal(request.parts[0].instanceQuantity, 3);
+  assert.equal(buildNestingRequest(h.view).parts[0].quantity, 6);
+  const signature = getNestingInputSignature(h.view);
+  partsIn(h.view)[0].instanceQuantity = 2;
+  partsIn(h.view)[0].quantity = 4;
+  assert.notEqual(getNestingInputSignature(h.view), signature);
+});
+
 await test("Empty scene and explicitly empty selection are errors", () => {
   assert.throws(() => buildNestingRequest(harness({ parts: [] }).view), /零件/);
   const h = harness();
@@ -118,8 +131,10 @@ await test("Part quantities and gap are forwarded without multiplying inventory"
     partsIn(h.view)[0].quantity = quantity;
     assert.throws(() => buildNestingRequest(h.view), /数量/);
   }
-  partsIn(h.view)[0].quantity = 2001;
-  assert.throws(() => buildNestingRequest(h.view), /2000/);
+  partsIn(h.view)[0].quantity = 10_000;
+  assert.equal(buildNestingRequest(h.view).parts.find((part) => part.partEntityId === "rect-a").quantity, 10_000);
+  partsIn(h.view)[0].quantity = 1_000_001;
+  assert.throws(() => buildNestingRequest(h.view), /1000000/);
 });
 
 await test("Invalid IDs and lengths are rejected before calling native", async () => {
@@ -534,6 +549,36 @@ await test("Active nesting result restores or centers in one scroll assignment",
   assert.equal(offscreenNew.scrollTop, 416, "an out-of-band target is centered directly");
   assert.equal(offscreenWrites.count, 1, "centering never animates through an intermediate position");
 });
+
+for (const scenario of ["unchanged", "generation", "stocks", "invalid-stocks"]) {
+  await test(`Saved nesting task restores safely: ${scenario}`, () => {
+    const h = harness();
+    h.view.scene.tubeDesigner.manufacturingGroups[0].generationRunId = "run-1";
+    const request = buildNestingRequest(h.view);
+    h.view.scene.tubeDesigner.nestingTask = {
+      revision: "saved-1",
+      parts: request.parts.map(part => ({ partEntityId: part.partEntityId, generationRunId: "run-1" })),
+      request: clone(request),
+      result: completeResult(request, h.view),
+    };
+    if (scenario === "generation") h.view.scene.tubeDesigner.manufacturingGroups[0].generationRunId = "run-2";
+    if (scenario === "stocks") h.view.tubeDesignerNestingSettings.stocks[0].rows[0].length = 6500;
+    if (scenario === "invalid-stocks") for (const stock of h.view.tubeDesignerNestingSettings.stocks) stock.rows[0].quantity = 0;
+    restoreSavedNestingTask(h.view, h.context);
+    if (scenario === "generation") {
+      assert.equal(h.view.tubeDesignerNestingResult, null);
+      assert.deepEqual(h.view.tubeDesignerSelectedPartIds, []);
+    } else {
+      assert.ok(h.view.tubeDesignerNestingResult);
+      assert.equal(isNestingResultStale(h.view), scenario !== "unchanged");
+    }
+    assert.equal(h.calls.length, 0, "restoring a saved task must not invoke the solver");
+    delete h.view.scene.tubeDesigner.nestingTask;
+    restoreSavedNestingTask(h.view, h.context);
+    assert.equal(h.view.tubeDesignerNestingResult, null, "undoing the saved task clears its result");
+    assert.deepEqual(h.view.tubeDesignerLockedNestingPlanIds, []);
+  });
+}
 
 // Optional integration input is emitted by the native solver probe with VariantSerializer.
 // It contains [{ gap, partsLength, quantity, stockLength, stockQuantity, result }].

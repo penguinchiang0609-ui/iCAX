@@ -14,7 +14,7 @@ try {
     const pathname=decodeURIComponent(new URL(route.request().url()).pathname);
     if(pathname==="/")return route.fulfill({contentType:"text/html",body:"<!doctype html><html><head></head><body></body></html>"});
     const path=resolve(root,pathname.replace(/^\/src\//,""));
-    if(!pathname.startsWith("/src/")||!path.startsWith(root.replace(/[\\/]$/,"")+sep)||!path.endsWith(".mjs"))return route.abort();
+    if(!pathname.startsWith("/src/")||!path.startsWith(root.replace(/[\\/]$/,"")+sep)||! /\.(mjs|js)$/.test(path))return route.abort();
     await route.fulfill({contentType:"text/javascript",body:readFileSync(path,"utf8")});
   });
   await page.goto("http://sketch.test/");
@@ -160,16 +160,75 @@ try {
   assert.equal((await state()).section.entities[0].kind,"ellipse");
 
   // Zoom around the cursor and pan must update axes and geometry together.
-  const centerBefore=await page.locator('[data-tube-sketch-grip-role="move"]').boundingBox();
-  await page.mouse.move(centerBefore.x+4,centerBefore.y+4);await page.mouse.wheel(0,-120);
+  await reset({id:"ellipse",kind:"ellipse",cx:0,cy:0,radiusX:55,radiusY:25,rotation:0,closed:true});
+  const centerBefore=await point(0,0);
+  await page.mouse.move(...centerBefore);await page.mouse.wheel(0,-120);
   await page.waitForFunction(()=>window.check.view.tubeDesignerSketch.sectionViewport.zoom>1);
-  const centerAfter=await page.locator('[data-tube-sketch-grip-role="move"]').boundingBox();
-  assert.ok(Math.abs(centerBefore.x-centerAfter.x)<2&&Math.abs(centerBefore.y-centerAfter.y)<2);
+  const centerAfter=await point(0,0);
+  assert.ok(Math.abs(centerBefore[0]-centerAfter[0])<2&&Math.abs(centerBefore[1]-centerAfter[1])<2);
   const center=await point(0,0);
   await page.mouse.move(...center);await page.mouse.down({button:"middle"});
   await page.mouse.move(center[0]+80,center[1]+35,{steps:10});await page.mouse.up({button:"middle"});
   const shifted=await point(0,0);
   assert.ok(Math.abs(shifted[0]-center[0]-80)<1);assert.ok(Math.abs(shifted[1]-center[1]-35)<1);
+  // The real section modal keeps the library active, supports drawing, and closes on save.
+  await page.evaluate(() => {
+    const { view, sketch } = window.check;
+    view.activeAreaId = "profiles";
+    sketch.beginNewSectionSketch(view);
+    view.tubeDesignerSketchDialogOpen = true;
+    const context = {
+      actions: { async selectRibbonTab(id) { view.activeAreaId = id; } },
+      productProxy: { async invoke(method, payload) {
+        if (method !== "TubeDesigner.SaveImportedProfile") throw new Error(`Unexpected: ${method}`);
+        return { profile: { ...payload.profile, id: "modal-test", name: payload.name, revision: 1 } };
+      } },
+    };
+    const ops = { renderProject: render, showNotice: render };
+    function render() {
+      document.body.innerHTML = `<button id="background-library">管型库</button>${sketch.renderSectionSketchDialog(context, view)}`;
+      document.body.querySelectorAll("[data-cam-action]").forEach(button => {
+        button.onclick = () => sketch.handleSketchAreaAction(context, view, button.dataset.camAction, button, ops);
+      });
+      sketch.attachSketchAreaInteractions(context, view, document.body, ops);
+    }
+    window.check.render = render;
+    render();
+  });
+  await page.waitForSelector("dialog[open]");
+  assert.equal(await page.locator('.tube-section-sketch-toolbar button svg').count(), await page.locator('.tube-section-sketch-toolbar button').count());
+  assert.equal(await page.locator(".tube-sketch-mode-switch").count(), 0);
+  assert.equal(await page.locator("dialog").evaluate(element => element.matches(":modal")), true);
+  assert.equal(await page.evaluate(() => window.check.view.activeAreaId), "profiles");
+  await page.locator('[data-sketch-command="sketch.rectangle"]').click();
+  const box = await page.locator("[data-tube-sketch-canvas]").boundingBox();
+  await page.mouse.click(box.x + box.width * .4, box.y + box.height * .4);
+  await page.mouse.click(box.x + box.width * .6, box.y + box.height * .6);
+  await page.locator('[data-sketch-command="sketch.commit"]').click();
+  await page.waitForFunction(() => !window.check.view.tubeDesignerSketchDialogOpen);
+  assert.equal(await page.locator("dialog").count(), 0);
+  assert.equal(await page.evaluate(() => window.check.view.tubeDesignerUserData.profiles[0].id), "modal-test");
+  const cameraChecks = await page.evaluate(async () => {
+    const { createThreeViewport } = await import("/src/iCAX-UI/SDK/Viewport/threeViewport.mjs");
+    const viewport = createThreeViewport({ constrainOrbit: false });
+    const checks = [];
+    let previous;
+    for (const phi of [-.01, 0, .01, Math.PI, Math.PI + .01]) {
+      viewport.setCameraState({ target: { x: 0, y: 0, z: 0 }, radius: 100, theta: .5, phi });
+      const direction = viewport.camera.position.clone().normalize();
+      checks.push(Math.abs(viewport.camera.up.dot(direction)) < 1e-10);
+      checks.push(Math.abs(viewport.getCameraState().phi - phi) < 1e-10);
+      if (previous && phi <= .01) checks.push(previous.angleTo(viewport.camera.quaternion) < .02);
+      previous = viewport.camera.quaternion.clone();
+    }
+    viewport.setOrbitConstrained(true);
+    viewport.setCameraState({ ...viewport.getCameraState(), phi: -.2 });
+    checks.push(viewport.getCameraState().phi > 0);
+    checks.push(viewport.camera.up.z === 1);
+    viewport.dispose();
+    return checks;
+  });
+  assert.ok(cameraChecks.every(Boolean), "free cameras cross both poles smoothly; product constraint remains");
   assert.deepEqual(errors,[]);
   if(process.env.ICAX_SKETCH_SCREENSHOT) {
     mkdirSync(resolve(process.env.ICAX_SKETCH_SCREENSHOT,".."),{recursive:true});

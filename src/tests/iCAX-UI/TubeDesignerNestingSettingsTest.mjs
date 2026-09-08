@@ -294,7 +294,7 @@ await test("Canceling gap edits preserves saved parameters and stock settings", 
 });
 
 await test("Saved settings reload through the runtime project context and remain isolated by project", async () => {
-  const projectA = { projectId: "persisted-project-a", projectPath: "D:/fixtures/project-a.tubedesigner" };
+  const projectA = { projectId: "persisted-project-a", projectPath: "D:/fixtures/project-a.ictd" };
   const first = createHarness(projectA);
   await first.open();
   const section = rectangleDraft(first.view);
@@ -309,7 +309,7 @@ await test("Saved settings reload through the runtime project context and remain
   assert.deepEqual(getNestingStockInputs(reopened.view).filter((row) => row.quantity > 0).map(({ length, quantity }) => [length, quantity]), [[6000, 6]]);
   assert.equal(getNestingParameters(reopened.view).partGap, 4.5);
 
-  const other = createHarness({ projectId: "persisted-project-b", projectPath: "D:/fixtures/project-b.tubedesigner" });
+  const other = createHarness({ projectId: "persisted-project-b", projectPath: "D:/fixtures/project-b.ictd" });
   await other.open();
   assert.ok(getNestingStockInputs(other.view).every((row) => row.length === 6000 && row.quantity === -1));
   assert.equal(getNestingParameters(other.view).partGap, 0);

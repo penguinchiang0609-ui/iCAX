@@ -3,9 +3,11 @@
 // The workbook implementation is linked directly into this test executable.
 #define _TUBE_DESIGNER
 #include <TubeDesigner/PartListXlsxExporter.h>
+#include <TubeDesigner/NestingAdapter.h>
 #undef _TUBE_DESIGNER
 #include <TubeDesigner/ComponentModelLibrary.h>
 #include <TubeDesigner/FinalGeometryMeasurement.h>
+#include <TubeDesigner/ProductionQuantity.h>
 #include <OpenCascadeResourceImport/OpenCascadeNeutralModelEvaluator.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
@@ -27,15 +29,22 @@
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepGProp.hxx>
+#include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeHalfSpace.hxx>
+#include <GC_MakeArcOfCircle.hxx>
+#include <BRepTools.hxx>
 #include <GProp_GProps.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Pln.hxx>
 #include <gp_Trsf.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopExp.hxx>
@@ -445,6 +454,127 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, ReadsDimensionsFromFinalBRepOnly)
         0.01);
     EXPECT_NEAR(10.0, _First.at("diameter").To<double>(), 0.01);
     EXPECT_NEAR(10.0, _Second.at("diameter").To<double>(), 0.01);
+    ASSERT_TRUE(_First.contains("sideCenter"));
+    ASSERT_EQ(2u, _First.at("sideCenter").To<iCAX::Data::VariantArray>().size());
+
+    const auto _SideProjection = _Measurement.at("sideProjection")
+        .To<iCAX::Data::ObjectMap>();
+    EXPECT_NEAR(1000.0, _SideProjection.at("width").To<double>(), 0.01);
+    EXPECT_GT(_SideProjection.at("height").To<double>(), 0.01);
+    EXPECT_GE(_SideProjection.at("outline").To<iCAX::Data::VariantArray>().size(), 4u);
+    EXPECT_GE(_SideProjection.at("segments").To<iCAX::Data::VariantArray>().size(), 4u);
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, RoundSectionsUseExactCurvesInsteadOfSeamVertices)
+{
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::VariantArray;
+    for (const auto _Length : { 1000.0, 10.0 })
+    for (const auto _Hollow : { true, false })
+    for (const auto _Located : { false, true })
+    {
+        SCOPED_TRACE(std::string("length=") + std::to_string(_Length)
+            + ", hollow=" + std::to_string(_Hollow)
+            + ", located=" + std::to_string(_Located));
+        // The only circular-edge vertices lie on the +Y seam. In particular,
+        // vertex-only bounds report wall thickness as the section width.
+        const gp_Pnt _StartPoint(-_Length * 0.5, 0.0, 0.0);
+        const gp_Dir _Axis(1.0, 0.0, 0.0);
+        const gp_Dir _SectionDirection(0.0, 1.0, 0.0);
+        TopoDS_Shape _Shape = BRepPrimAPI_MakeCylinder(
+            gp_Ax2(_StartPoint, _Axis, _SectionDirection), 20.0, _Length).Shape();
+        if (_Hollow)
+        {
+            const auto _Inner = BRepPrimAPI_MakeCylinder(
+                gp_Ax2(gp_Pnt(-_Length * 0.5 - 1.0, 0.0, 0.0), _Axis, _SectionDirection),
+                18.0, _Length + 2.0).Shape();
+            _Shape = BRepAlgoAPI_Cut(_Shape, _Inner).Shape();
+        }
+        gp_Trsf _Placement;
+        if (_Located)
+        {
+            _Placement.SetRotation(gp_Ax1(gp_Pnt(), gp_Dir(0.7, 0.2, 0.6)), 1.137);
+            _Placement.SetTranslationPart(gp_Vec(125.0, -80.0, 310.0));
+            _Shape = _Shape.Moved(TopLoc_Location(_Placement));
+        }
+        const auto _ExpectedStart = _StartPoint.Transformed(_Placement);
+        const auto _ExpectedEnd = gp_Pnt(_Length * 0.5, 0.0, 0.0).Transformed(_Placement);
+        for (const auto _Deflection : { 0.0, 2.0, 0.05 })
+        {
+            SCOPED_TRACE(std::string("mesh deflection=") + std::to_string(_Deflection));
+            BRepTools::Clean(_Shape);
+            if (_Deflection > 0.0)
+                BRepMesh_IncrementalMesh(_Shape, _Deflection, false, 0.5, false);
+            const auto _Measurement = MeasureFinalPartGeometry(_Shape, "round-final-brep", 1);
+            ASSERT_TRUE(_Measurement.at("available").To<bool>());
+            EXPECT_NEAR(_Length, _Measurement.at("length").To<double>(), 1.0e-5);
+            const auto _Section = _Measurement.at("section").To<ObjectMap>();
+            ASSERT_EQ("circle", _Section.at("shape").To<std::string>());
+            EXPECT_NEAR(40.0, _Section.at("width").To<double>(), 1.0e-5);
+            EXPECT_NEAR(40.0, _Section.at("height").To<double>(), 1.0e-5);
+            EXPECT_NEAR(40.0, _Section.at("diameter").To<double>(), 1.0e-5);
+            EXPECT_NEAR(_Hollow ? 2.0 : 0.0, _Section.at("wallThickness").To<double>(), 1.0e-5);
+            EXPECT_TRUE(_Measurement.at("features").To<VariantArray>().empty());
+            const auto _Reference = _Measurement.at("linearReference").To<ObjectMap>();
+            const auto _Start = _Reference.at("start").To<VariantArray>();
+            const auto _End = _Reference.at("end").To<VariantArray>();
+            for (std::size_t _Index = 0; _Index < 3; ++_Index)
+            {
+                EXPECT_NEAR(_ExpectedStart.Coord(static_cast<int>(_Index + 1)),
+                    _Start[_Index].To<double>(), 1.0e-5);
+                EXPECT_NEAR(_ExpectedEnd.Coord(static_cast<int>(_Index + 1)),
+                    _End[_Index].To<double>(), 1.0e-5);
+            }
+            const auto _Side = _Measurement.at("sideProjection").To<ObjectMap>();
+            EXPECT_NEAR(_Length, _Side.at("width").To<double>(), 1.0e-5);
+            EXPECT_NEAR(40.0, _Side.at("height").To<double>(), 1.0e-5);
+            const auto _Outline = _Side.at("outline").To<VariantArray>();
+            ASSERT_GE(_Outline.size(), 4u);
+            std::array<double, 2> _Min{ _Length, 40.0 }, _Max{ 0.0, 0.0 };
+            for (const auto& _PointValue : _Outline)
+            {
+                const auto _Point = _PointValue.To<VariantArray>();
+                for (std::size_t _Index = 0; _Index < 2; ++_Index)
+                {
+                    _Min[_Index] = std::min(_Min[_Index], _Point[_Index].To<double>());
+                    _Max[_Index] = std::max(_Max[_Index], _Point[_Index].To<double>());
+                }
+            }
+            EXPECT_NEAR(0.0, _Min[0], 1.0e-5);
+            EXPECT_NEAR(0.0, _Min[1], 1.0e-5);
+            EXPECT_NEAR(_Length, _Max[0], 1.0e-5);
+            EXPECT_NEAR(40.0, _Max[1], 1.0e-5);
+        }
+    }
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, LocatedRectangularTubeKeepsSectionOrientation)
+{
+    const auto _Outer = BRepPrimAPI_MakeBox(
+        gp_Pnt(-500.0, -20.0, -10.0), 1000.0, 40.0, 20.0).Shape();
+    const auto _Inner = BRepPrimAPI_MakeBox(
+        gp_Pnt(-501.0, -18.0, -8.0), 1002.0, 36.0, 16.0).Shape();
+    gp_Trsf _Placement;
+    _Placement.SetRotation(gp_Ax1(gp_Pnt(), gp_Dir(0.7, 0.2, 0.6)), 1.137);
+    _Placement.SetTranslationPart(gp_Vec(125.0, -80.0, 310.0));
+    const auto _Shape = BRepAlgoAPI_Cut(_Outer, _Inner).Shape().Moved(TopLoc_Location(_Placement));
+    const auto _Measurement = MeasureFinalPartGeometry(_Shape, "located-rectangular", 1);
+    ASSERT_TRUE(_Measurement.at("available").To<bool>());
+    EXPECT_NEAR(1000.0, _Measurement.at("length").To<double>(), 1.0e-5);
+    const auto _Section = _Measurement.at("section").To<iCAX::Data::ObjectMap>();
+    EXPECT_EQ("rectangle", _Section.at("shape").To<std::string>());
+    EXPECT_NEAR(2.0, _Section.at("wallThickness").To<double>(), 1.0e-5);
+    const auto _Width = _Section.at("width").To<double>();
+    const auto _Height = _Section.at("height").To<double>();
+    EXPECT_NEAR(40.0, std::max(_Width, _Height), 1.0e-5);
+    EXPECT_NEAR(20.0, std::min(_Width, _Height), 1.0e-5);
+    const auto _Reference = _Measurement.at("linearReference").To<iCAX::Data::ObjectMap>();
+    const auto _Start = _Reference.at("start").To<iCAX::Data::VariantArray>();
+    const auto _End = _Reference.at("end").To<iCAX::Data::VariantArray>();
+    const auto _ExpectedCenter = gp_Pnt().Transformed(_Placement);
+    for (std::size_t _Index = 0; _Index < 3; ++_Index)
+        EXPECT_NEAR(_ExpectedCenter.Coord(static_cast<int>(_Index + 1)),
+            (_Start[_Index].To<double>() + _End[_Index].To<double>()) * 0.5, 1.0e-5);
 }
 
 TEST(TubeDesignerFinalGeometryMeasurementTest, ReadsRectangularOpeningFromFinalBRepTopology)
@@ -522,6 +652,233 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, ExtractsPlanarTrapezoidEndProject
     EXPECT_GT(std::hypot(_Measured.Right.GradientY, _Measured.Right.GradientZ), 0.1);
 }
 
+namespace
+{
+    TopoDS_Shape CurvedKnifeTestPart()
+    {
+        // Both end faces are cylindrical, not planar. The middle of each arc
+        // protrudes beyond the straight chord, so a fit through corners is unsafe.
+        const gp_Pnt _LB(0, -10, 0), _LT(20, 10, 0);
+        const gp_Pnt _RB(100, -10, 0), _RT(120, 10, 0);
+        BRepBuilderAPI_MakeWire _Wire;
+        _Wire.Add(BRepBuilderAPI_MakeEdge(_LB, _RB).Edge());
+        _Wire.Add(BRepBuilderAPI_MakeEdge(
+            GC_MakeArcOfCircle(_RB, gp_Pnt(111, 0, 0), _RT).Value()).Edge());
+        _Wire.Add(BRepBuilderAPI_MakeEdge(_RT, _LT).Edge());
+        _Wire.Add(BRepBuilderAPI_MakeEdge(
+            GC_MakeArcOfCircle(_LT, gp_Pnt(9, 0, 0), _LB).Value()).Edge());
+        return BRepPrimAPI_MakePrism(
+            BRepBuilderAPI_MakeFace(_Wire.Wire()).Face(), gp_Vec(0, 0, 10)).Shape();
+    }
+
+    void ExpectKnifeContainsWholeShape(
+        const TopoDS_Shape& Shape_, const SLinearNestingGeometry& Measurement_)
+    {
+        ASSERT_TRUE(Measurement_.IsReliable);
+        for (const bool _Left : { true, false })
+        {
+            const auto& _End = _Left ? Measurement_.Left : Measurement_.Right;
+            ASSERT_TRUE(_End.IsPlanar);
+            const gp_Pnt _Origin(_End.Offset, 0, 0);
+            const gp_Dir _Normal(1, -_End.GradientY, -_End.GradientZ);
+            const auto _Face = BRepBuilderAPI_MakeFace(gp_Pln(_Origin, _Normal)).Face();
+            const auto _Keep = BRepPrimAPI_MakeHalfSpace(_Face,
+                _Origin.Translated(gp_Vec(_Normal) * (_Left ? 10.0 : -10.0))).Solid();
+            BRepAlgoAPI_Cut _Outside(Shape_, _Keep);
+            ASSERT_TRUE(_Outside.IsDone());
+            GProp_GProps _Removed;
+            BRepGProp::VolumeProperties(_Outside.Shape(), _Removed);
+            EXPECT_NEAR(0.0, _Removed.Mass(), 1.0e-6) << "knife cuts finished material";
+        }
+        Bnd_Box _Box;
+        BRepBndLib::AddOptimal(Shape_, _Box, false, false);
+        double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+        _Box.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+        EXPECT_LE(Measurement_.AxialMinimum, _X0 + 1e-6);
+        EXPECT_GE(Measurement_.AxialMaximum, _X1 - 1e-6);
+        EXPECT_NEAR(Measurement_.AxialMaximum - Measurement_.AxialMinimum,
+            Measurement_.EnvelopeLength, 1e-8);
+    }
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, KnifeBaselineKeepsStraightEndsDespiteSideHoles)
+{
+    const auto _Box = BRepPrimAPI_MakeBox(gp_Pnt(-200, -20, -10), 400, 40, 20).Shape();
+    const auto _Hole = BRepPrimAPI_MakeCylinder(
+        gp_Ax2(gp_Pnt(0, 0, -11), gp_Dir(0, 0, 1)), 7, 22).Shape();
+    const auto _Shape = BRepAlgoAPI_Cut(_Box, _Hole).Shape();
+    const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+    ExpectKnifeContainsWholeShape(_Shape, _Measured);
+    EXPECT_DOUBLE_EQ(0, _Measured.Left.Projection);
+    EXPECT_DOUBLE_EQ(0, _Measured.Right.Projection);
+    EXPECT_NEAR(400, _Measured.EnvelopeLength, 0.001);
+    const auto _Variants = BuildKnifePlaneNestingVariants(_Measured, _Measured.EnvelopeLength, true);
+    EXPECT_TRUE(_Variants.empty());
+    const auto _Solved = SolveManufacturingNesting(
+        { { "straight", "rect", _Measured.EnvelopeLength, 1, _Variants } },
+        { { "exact-stock", "rect", 400, 1 } }, 0);
+    EXPECT_TRUE(_Solved.at("unplaced").To<iCAX::Data::VariantArray>().empty());
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, KnifeFindsObliqueBlankWithoutAnyPlanarEndFace)
+{
+    const auto _Shape = CurvedKnifeTestPart();
+    const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+    ExpectKnifeContainsWholeShape(_Shape, _Measured);
+    EXPECT_GT(_Measured.Left.Projection, 15.0);
+    EXPECT_GT(_Measured.Right.Projection, 15.0);
+    EXPECT_NEAR(1.0, _Measured.Left.GradientY, 0.15);
+    EXPECT_NEAR(1.0, _Measured.Right.GradientY, 0.15);
+    EXPECT_LT(_Measured.MaterialEquivalentLength, 110.0);
+    // The approximation must include the extra stock beyond the old AABB.
+    EXPECT_LT(_Measured.AxialMinimum, -0.1);
+    EXPECT_GT(_Measured.AxialMaximum, 120.1);
+    RecordProperty("left_slope_y", std::to_string(_Measured.Left.GradientY));
+    RecordProperty("left_offset", std::to_string(_Measured.Left.Offset));
+    RecordProperty("right_slope_y", std::to_string(_Measured.Right.GradientY));
+    RecordProperty("right_offset", std::to_string(_Measured.Right.Offset));
+    RecordProperty("blank_length", std::to_string(_Measured.EnvelopeLength));
+    RecordProperty("blank_equivalent_length", std::to_string(_Measured.MaterialEquivalentLength));
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, KnifeUsesBothTiltAxesAndPreservesLocatedGeometry)
+{
+    const auto _Original = CurvedKnifeTestPart();
+    gp_Trsf _Roll, _Move;
+    _Roll.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0)), 0.47);
+    _Move.SetTranslation(gp_Vec(1234, -321, 87));
+    const auto _Shape = _Original.Moved(TopLoc_Location(_Move * _Roll));
+    const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+    ExpectKnifeContainsWholeShape(_Shape, _Measured);
+    EXPECT_GT(std::abs(_Measured.Left.GradientY), 0.1);
+    EXPECT_GT(std::abs(_Measured.Left.GradientZ), 0.1);
+    EXPECT_GT(_Measured.Left.Projection, 10.0);
+    EXPECT_TRUE(_Shape.IsPartner(_Original)) << "measurement must not replace or modify source BRep";
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, KnifeHandlesFragmentedAndNotchedEnds)
+{
+    BRepBuilderAPI_MakePolygon _Polygon;
+    for (const auto& _P : std::array{
+        gp_Pnt(0,-10,0), gp_Pnt(100,-10,0), gp_Pnt(120,10,0),
+        gp_Pnt(20,10,0), gp_Pnt(16,5,0), gp_Pnt(8,0,0), gp_Pnt(6,-5,0) })
+        _Polygon.Add(_P);
+    _Polygon.Close();
+    const auto _Shape = BRepPrimAPI_MakePrism(
+        BRepBuilderAPI_MakeFace(_Polygon.Wire()).Face(), gp_Vec(0,0,10)).Shape();
+    const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+    ExpectKnifeContainsWholeShape(_Shape, _Measured);
+    EXPECT_GT(_Measured.Left.Projection, 10);
+    EXPECT_GT(_Measured.Right.Projection, 10);
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, SymmetricSaddleMouthUsesSafeStraightApproximation)
+{
+    const auto _Box = BRepPrimAPI_MakeBox(gp_Pnt(0,-10,0), 200,20,10).Shape();
+    const auto _Cutter = BRepPrimAPI_MakeCylinder(
+        gp_Ax2(gp_Pnt(-3,0,-1), gp_Dir(0,0,1)), 9,12).Shape();
+    const auto _Shape = BRepAlgoAPI_Cut(_Box, _Cutter).Shape();
+    const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+    ExpectKnifeContainsWholeShape(_Shape, _Measured);
+    EXPECT_DOUBLE_EQ(0, _Measured.Left.Projection);
+    EXPECT_DOUBLE_EQ(0, _Measured.Right.Projection);
+    EXPECT_NEAR(200, _Measured.EnvelopeLength, 0.001);
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, CurvedKnifeBlankNestsActualSolidsWithoutCollision)
+{
+    auto _Shape = CurvedKnifeTestPart();
+    // An asymmetric removal changes the source AABB centre, but the safe blank
+    // must retain its own centre when generating authoritative placement TRSFs.
+    const auto _Cutter = BRepPrimAPI_MakeBox(gp_Pnt(-10,-11,-1), 11,5,12).Shape();
+    _Shape = BRepAlgoAPI_Cut(_Shape, _Cutter).Shape();
+    const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+    ExpectKnifeContainsWholeShape(_Shape, _Measured);
+    const auto _Variants = BuildKnifePlaneNestingVariants(_Measured, _Measured.EnvelopeLength, true);
+    ASSERT_EQ(2u, _Variants.size());
+    EXPECT_EQ(1u, BuildKnifePlaneNestingVariants(_Measured, _Measured.EnvelopeLength, false).size());
+    EXPECT_TRUE(_Variants[0].LeftEnd.AllowTrapezoidNesting);
+    EXPECT_TRUE(_Variants[0].RightEnd.AllowTrapezoidNesting);
+    Bnd_Box _SourceBox;
+    BRepBndLib::AddOptimal(_Shape, _SourceBox, false, false);
+    double _X0, _Y0, _Z0, _X1, _Y1, _Z1;
+    _SourceBox.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+    const std::array _Center{ (_Measured.AxialMinimum + _Measured.AxialMaximum) * 0.5,
+        (_Y0 + _Y1) * 0.5, (_Z0 + _Z1) * 0.5 };
+    const auto _Result = SolveManufacturingNesting(
+        { { "curved", "rect", _Measured.EnvelopeLength, 2, _Variants, _Center } },
+        { { "stock", "rect", 240.0, 1 } }, 1.0);
+    using iCAX::Data::ObjectMap;
+    using iCAX::Data::VariantArray;
+    ASSERT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
+    const auto _Plans = _Result.at("plans").To<VariantArray>();
+    ASSERT_EQ(1u, _Plans.size());
+    const auto _Plan = _Plans[0].To<ObjectMap>();
+    const auto _Placements = _Plan.at("placements").To<VariantArray>();
+    ASSERT_EQ(2u, _Placements.size());
+    EXPECT_TRUE(_Placements[1].To<ObjectMap>().at("nestedWithPrevious").To<bool>());
+    std::vector<TopoDS_Shape> _Placed;
+    for (const auto& _Value : _Placements)
+    {
+        const auto _Placement = _Value.To<ObjectMap>();
+        const auto _M = _Placement.at("trsf").To<VariantArray>();
+        gp_Trsf _Transform;
+        _Transform.SetValues(_M[0].To<double>(), _M[1].To<double>(), _M[2].To<double>(), _M[3].To<double>(),
+            _M[4].To<double>(), _M[5].To<double>(), _M[6].To<double>(), _M[7].To<double>(),
+            _M[8].To<double>(), _M[9].To<double>(), _M[10].To<double>(), _M[11].To<double>());
+        _Placed.push_back(_Shape.Moved(TopLoc_Location(_Transform)));
+        Bnd_Box _Bounds;
+        BRepBndLib::AddOptimal(_Placed.back(), _Bounds, false, false);
+        _Bounds.Get(_X0, _Y0, _Z0, _X1, _Y1, _Z1);
+        EXPECT_GE(_X0, _Placement.at("start").To<double>() - 1e-6);
+        EXPECT_LE(_X1, _Placement.at("end").To<double>() + 1e-6);
+    }
+    BRepAlgoAPI_Common _Common(_Placed[0], _Placed[1]);
+    ASSERT_TRUE(_Common.IsDone());
+    GProp_GProps _Overlap;
+    BRepGProp::VolumeProperties(_Common.Shape(), _Overlap);
+    EXPECT_NEAR(0, _Overlap.Mass(), 1e-6);
+    RecordProperty("two_curved_parts_used_length", std::to_string(_Plan.at("usedLength").To<double>()));
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, KnifeContainsObliquelyCutRoundTube)
+{
+    const auto _Outer = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(-50,0,0), gp_Dir(1,0,0)), 10,200).Shape();
+    const auto _Inner = BRepPrimAPI_MakeCylinder(gp_Ax2(gp_Pnt(-51,0,0), gp_Dir(1,0,0)), 8,202).Shape();
+    auto _Shape = BRepAlgoAPI_Cut(_Outer, _Inner).Shape();
+    for (const bool _Left : { true, false })
+    {
+        const gp_Pnt _Origin(_Left ? 0.0 : 100.0, 0, 0);
+        const gp_Dir _Normal(1,-1,-0.3);
+        const auto _Plane = BRepBuilderAPI_MakeFace(gp_Pln(_Origin, _Normal)).Face();
+        const auto _Keep = BRepPrimAPI_MakeHalfSpace(_Plane,
+            _Origin.Translated(gp_Vec(_Normal) * (_Left ? 10.0 : -10.0))).Solid();
+        _Shape = BRepAlgoAPI_Common(_Shape, _Keep).Shape();
+    }
+    const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+    ExpectKnifeContainsWholeShape(_Shape, _Measured);
+    EXPECT_GT(_Measured.Left.Projection, 10.0);
+    EXPECT_GT(_Measured.Right.Projection, 10.0);
+    EXPECT_GT(std::abs(_Measured.Left.GradientZ), 0.1);
+}
+
+TEST(TubeDesignerFinalGeometryMeasurementTest, KnifeStraightBatchDoesNotRunPerQuantity)
+{
+    const auto _Started = std::chrono::steady_clock::now();
+    for (int _Type = 0; _Type < 88; ++_Type)
+    {
+        const auto _Shape = BRepPrimAPI_MakeBox(400.0 + _Type, 40, 20).Shape();
+        const auto _Measured = MeasureLinearNestingGeometry(_Shape);
+        ASSERT_TRUE(_Measured.IsReliable);
+        EXPECT_DOUBLE_EQ(0, _Measured.Left.Projection);
+        EXPECT_DOUBLE_EQ(0, _Measured.Right.Projection);
+    }
+    const auto _Elapsed = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - _Started).count();
+    RecordProperty("knife_88_type_seconds", std::to_string(_Elapsed));
+    EXPECT_LT(_Elapsed, 15.0); // Broad regression guard, not a customer SLA.
+}
+
 TEST(TubeDesignerFinalGeometryMeasurementTest, RoundTripsLocatedFinalPartBRep)
 {
     gp_Trsf _Placement;
@@ -555,6 +912,21 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, RoundTripsLocatedFinalPartBRep)
     EXPECT_NEAR(165.0, _XMax, 0.01);
     EXPECT_NEAR(-60.0, _YMax, 0.01);
     EXPECT_NEAR(1310.0, _ZMax, 0.01);
+}
+
+TEST(TubeDesignerProductionQuantity, MultipliesSingleInstancePartsAndUsesReservedDirectorySuffix)
+{
+    using namespace iCAX::TubeDesigner;
+    EXPECT_EQ(6u, ProductionQuantity(2, 3));
+    EXPECT_EQ(2u, ProductionQuantity(2, 1));
+    EXPECT_EQ(6u, ProductionQuantity(2, 3)); // Repeated calls do not accumulate.
+    EXPECT_EQ("--XX--3", InstanceQuantitySuffix(3));
+    EXPECT_EQ("--XX--1", InstanceQuantitySuffix(1));
+    EXPECT_THROW(ValidateInstanceQuantity(0), std::invalid_argument);
+    EXPECT_THROW(ValidateInstanceQuantity(1000001), std::invalid_argument);
+    EXPECT_THROW(ProductionQuantity(0, 3), std::invalid_argument);
+    EXPECT_THROW(ProductionQuantity(9007199254740991ull, 2), std::invalid_argument);
+    EXPECT_EQ(9007199254740991ull, ProductionQuantity(9007199254740991ull, 1));
 }
 
 TEST(TubeDesignerPartListXlsxExporterTest, WritesAnExcelWorkbookWithSelectedPartRows)
@@ -1530,6 +1902,7 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
         }
         EXPECT_EQ(1u, _SolidCount) << _Item.Key << " was severed by a through cutter";
     }
+    SCOPED_TRACE("real template: measuring the first outer frame");
     const auto _OuterFrameMeasurement = MeasureFinalPartGeometry(
         NormalizeLinearPartForManufacturing(_Evaluation.At(_OuterFrameGeometryKey)),
         "real-template-outer-frame", 1);
@@ -1557,6 +1930,7 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
     EXPECT_NEAR(0.0, _OuterFrameEnd[1].To<double>(), 0.01);
     EXPECT_NEAR(0.0, _OuterFrameEnd[2].To<double>(), 0.01);
 
+    SCOPED_TRACE("real template: evaluating the continuous frame");
     _Parameters["width"] = 1400.0;
     _Parameters["frameLayout"] = std::string("four_sides");
     // This stage verifies a single unfolded frame, regardless of the default joint.
@@ -1612,6 +1986,7 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
         _FrameExportBounds[3] - _FrameExportBounds[0], 0.001);
     EXPECT_LT(_FrameExportBounds[5] - _FrameExportBounds[2], 100.0);
 
+    SCOPED_TRACE("real template: evaluating the miter frame");
     _Parameters["frameJoinType"] = std::string("miter_45");
     const auto _MiterResponse = _Host.Invoke(
         iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
@@ -1632,6 +2007,7 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
     }
 
     _Parameters["frameLayout"] = std::string("left_right");
+    SCOPED_TRACE("real template: evaluating the access door");
     _Parameters["accessDoorEnabled"] = true;
     const auto _DoorResponse = _Host.Invoke(
         iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
@@ -1655,7 +2031,9 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
         EXPECT_TRUE(std::any_of(_Relationship.ItemKeys.begin(), _Relationship.ItemKeys.end(),
             [](const auto& Key_) { return Key_.starts_with("access_door.leaf.frame."); }));
     }
-    EXPECT_EQ(_Parameters.at("doorHingeCount").To<unsigned long long>(), _HingeCount);
+    // Integer parameters are normalized to signed 64-bit values by TemplateCodec.
+    ASSERT_TRUE(_Parameters.at("doorHingeCount").Is<long long>());
+    EXPECT_EQ(static_cast<std::size_t>(_Parameters.at("doorHingeCount").To<long long>()), _HingeCount);
     EXPECT_TRUE(_Host.IsRunning());
 }
 
@@ -2406,6 +2784,98 @@ TEST(TemplateRuntimeTest, TwoFaceDirectionRebuildsMirroredFinalShapes)
     EXPECT_GT(_Right.SideCenterX, 500.0);
     EXPECT_NEAR(-_Left.SideCenterX, _Right.SideCenterX, 1.0e-6);
     EXPECT_TRUE(_Host.IsRunning());
+}
+
+// Opt-in benchmark: compares fresh evaluations, never a cached project result.
+TEST(TemplateRuntimeTest, DISABLED_FiveFaceParallelGeometryBenchmark)
+{
+    const auto _Root = std::filesystem::current_path();
+    iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
+    const auto _Fixture = TemplateProtocolFixture(_Root, "five_face_security_window");
+    for (const auto* _Purpose : { "display", "manufacturing" })
+    {
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose));
+        std::vector<std::string> _Roots;
+        for (const auto& _Node : _Model.Geometry) _Roots.push_back(_Node.Key);
+        const auto _Timed = [&](std::size_t Workers_, bool Filter_) {
+            const auto _Start = std::chrono::steady_clock::now();
+            auto _Result = iCAX::OpenCascade::EvaluateNeutralModel(_Model, _Roots, { Workers_, Filter_ });
+            const auto _Seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - _Start).count();
+            std::cout << "[geometry benchmark] " << _Purpose << " items=" << _Model.Items.size()
+                << " workers=" << Workers_ << " bbox=" << Filter_ << " seconds=" << _Seconds << std::endl;
+            return _Result;
+        };
+        const auto _Serial = _Timed(1, false);
+        for (const std::size_t _Workers : { 1u, 8u })
+        {
+            const auto _Candidate = _Timed(_Workers, true);
+            ASSERT_EQ(_Serial.Geometry.size(), _Candidate.Geometry.size());
+            for (const auto& _Item : _Model.Items)
+            {
+                SCOPED_TRACE(std::string(_Purpose) + ":" + _Item.Key);
+                const auto& _Key = _Item.Representations.at("result");
+                const auto& _Shape = _Candidate.At(_Key);
+                EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+                ExpectRootSelectionGeometryMatches(_Shape, _Serial.At(_Key));
+                for (const auto _Kind : { TopAbs_SOLID, TopAbs_FACE, TopAbs_EDGE })
+                {
+                    int _Expected = 0, _Actual = 0;
+                    for (TopExp_Explorer _It(_Serial.At(_Key), _Kind); _It.More(); _It.Next()) ++_Expected;
+                    for (TopExp_Explorer _It(_Shape, _Kind); _It.More(); _It.Next()) ++_Actual;
+                    EXPECT_EQ(_Expected, _Actual);
+                }
+            }
+        }
+    }
+}
+
+TEST(TemplateRuntimeTest, DISABLED_FiveFaceBRepConversionBenchmark)
+{
+    using namespace iCAX::OpenCascade;
+    const auto _Root = std::filesystem::current_path();
+    iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
+    const auto _Fixture = TemplateProtocolFixture(_Root, "five_face_security_window");
+    for (const auto* _Purpose : { "display", "manufacturing" })
+    {
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+            InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose));
+        const auto _Geometry = EvaluateNeutralModel(_Model);
+        std::vector<SBRepConversionInput> _Inputs;
+        for (const auto& _Item : _Model.Items)
+        {
+            auto _Shape = _Geometry.At(_Item.Representations.at("result"));
+            if (std::string(_Purpose) == "manufacturing") _Shape = NormalizeLinearPartForManufacturing(_Shape);
+            _Inputs.push_back({ _Shape, _Item.Key, "benchmark/" + _Item.Key });
+        }
+        const auto _Timed = [&](std::size_t Workers_) {
+            const auto _Start = std::chrono::steady_clock::now();
+            auto _Result = ConvertOpenCascadeShapesToBRep(_Inputs, 0.025, Workers_);
+            std::cout << "[BRep translation benchmark] " << _Purpose << " items=" << _Inputs.size()
+                << " workers=" << Workers_ << " seconds="
+                << std::chrono::duration<double>(std::chrono::steady_clock::now() - _Start).count() << std::endl;
+            return _Result;
+        };
+        const auto _Serial = _Timed(1);
+        const auto _Parallel = _Timed(8);
+        ASSERT_EQ(_Inputs.size(), _Parallel.size());
+        for (std::size_t _Index = 0; _Index < _Inputs.size(); ++_Index)
+        {
+            SCOPED_TRACE(std::string(_Purpose) + ":" + _Inputs[_Index].SourceID);
+            const auto& _Actual = _Parallel[_Index];
+            EXPECT_EQ(_Inputs[_Index].SourceID, _Actual.Metadata.SourceId);
+            EXPECT_EQ(_Serial[_Index].Faces.size(), _Actual.Faces.size());
+            EXPECT_EQ(_Serial[_Index].Edges.size(), _Actual.Edges.size());
+            ASSERT_EQ(_Serial[_Index].Triangulations3.size(), _Actual.Triangulations3.size());
+            for (std::size_t _Face = 0; _Face < _Actual.Triangulations3.size(); ++_Face)
+                EXPECT_EQ(_Serial[_Index].Triangulations3[_Face].Geometry.Triangles.size(),
+                    _Actual.Triangulations3[_Face].Geometry.Triangles.size());
+            const auto _Rebuilt = BuildOpenCascadeShape(_Actual);
+            ASSERT_TRUE(_Rebuilt.bOK);
+            EXPECT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
+            ExpectRootSelectionGeometryMatches(_Rebuilt.Shape, _Inputs[_Index].Shape);
+        }
+    }
 }
 
 TEST(TemplateRuntimeTest, ExplicitPythonWindowPurposeReturnsPhysicallySeparateRawGraphs)

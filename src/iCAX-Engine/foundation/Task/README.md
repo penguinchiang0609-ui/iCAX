@@ -20,6 +20,18 @@ Coroutine 是 Task 之上的调度适配，不改变 Task 的一次性异步结�
 
 每个 Task 在创建时绑定一个 scheduler。未显式指定时使用 `DefaultScheduler()`，当前实现为共享线程池。无 scheduler 参数的 `ContinueWith()` 自动继承前序 Task 的 scheduler；显式传入 scheduler 的重载会覆盖该 continuation 的调度位置，并让返回的 Task 继续继承这个新 scheduler。
 
+## 线程池生命周期与等待边界
+
+- `ThreadPoolTaskScheduler::Shutdown()` 停止接受新任务，并排空已接受任务。
+  外部线程调用会等待线程池退出；多个外部线程并发调用也都会等待结束。
+- 工作线程调用 `Shutdown()` 只请求停止，不等待自身或其他工作线程，避免其他任务等待当前任务时相互卡住。
+  如果最后一个 scheduler 引用在工作线程释放，队列状态仍由工作线程持有，直到已接受任务执行完毕。
+- 卸载承载 Task 的模块前，应由外部 owner 调用 `Shutdown()` 并等待结束；不要依赖进程退出强行清理仍在执行的任务。
+- 有限线程池没有 work-stealing 或“等待时帮忙执行队列”的机制。不要让全部 worker 同步 `Wait/Result` 等待同一池里的子任务，
+  应使用 continuation/组合任务，或将同步调用的子任务放到独立线程池。
+- `Cancel()` 会通知所有仍有效的回调，之后将回调异常集中作为 `TaskAggregateException` 抛出；一个观察者出错不会阻断其他取消通知。
+  取消仍是协作式的，不会强制中断正在运行的任务。
+
 ## 调用示例
 
 ```cpp

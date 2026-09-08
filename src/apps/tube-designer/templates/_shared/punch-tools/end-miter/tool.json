@@ -1,0 +1,21 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "end-miter",
+  "version": "1.0.0",
+  "displayName": "端面斜切",
+  "kind": "programmatic",
+  "target": "end",
+  "processCode": "miter",
+  "parameters": [
+    {
+      "key": "angle",
+      "displayName": "斜切角度",
+      "valueType": "number",
+      "defaultValue": 45,
+      "min": -80,
+      "max": 80,
+      "step": 0.1
+    }
+  ]
+}

@@ -4,6 +4,7 @@
 
 #include "TemplateRuntime/TemplateContracts.h"
 
+#include <cstddef>
 #include <map>
 #include <string>
 #include <vector>
@@ -12,6 +13,14 @@
 
 namespace iCAX::OpenCascade
 {
+    struct SNeutralModelEvaluationOptions final
+    {
+        // 0 selects up to eight workers, leaving one logical CPU for the UI.
+        // 1 provides a serial fallback and reproducible performance baseline.
+        std::size_t MaximumConcurrency = 0;
+        bool UseBoundingBoxFilter = true;
+    };
+
     struct _OPEN_CASCADE_RESOURCE_IMPORT_EXP SNeutralModelEvaluation final
     {
         std::map<std::string, TopoDS_Shape> Geometry;
@@ -38,4 +47,14 @@ namespace iCAX::OpenCascade
     _OPEN_CASCADE_RESOURCE_IMPORT_EXP SNeutralModelEvaluation EvaluateNeutralModel(
         const iCAX::TemplateRuntime::SNeutralModel& Model_,
         const std::vector<std::string>& GeometryKeys_);
+
+    // Dependency-ready nodes run in bounded batches. Mutating OCCT builders
+    // receive private geometry; the result cache is committed only by the caller
+    // thread. Foundation Task runs work on a reusable dedicated pool; exceptions
+    // are rethrown after all batch tasks have completed. Inner OCCT
+    // parallelism is disabled to avoid nested thread-pool oversubscription.
+    _OPEN_CASCADE_RESOURCE_IMPORT_EXP SNeutralModelEvaluation EvaluateNeutralModel(
+        const iCAX::TemplateRuntime::SNeutralModel& Model_,
+        const std::vector<std::string>& GeometryKeys_,
+        const SNeutralModelEvaluationOptions& Options_);
 }

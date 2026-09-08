@@ -7,6 +7,9 @@
   <ItemGroup>
     <ClInclude Include="ComponentModelLibrary.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="FinalGeometryMeasurement.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="BRepTubeUnfoldingService.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="PunchGeometry.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="PartDrawingDefinition.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingAdapter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="NestingResultExporter.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="framework.h"><Filter>Header Files</Filter></ClInclude>
@@ -20,6 +23,8 @@
     <ClCompile Include="ComponentModelLibrary.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="FinalGeometryMeasurement.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="BRepTubeUnfoldingService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="PunchGeometry.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="NestingAdapter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="NestingResultExporter.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="OpenCascadeStepExporter.cpp"><Filter>Source Files</Filter></ClCompile>

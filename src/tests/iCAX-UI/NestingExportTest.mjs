@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { buildProfileGroups, renderNestingResultDock } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { buildNestingRequest, getNestingInputSignature, handleNestingRibbonCommand } from "../../apps/tube-designer/webpage/nestingWorkflow.mjs";
 import { handleNestingExportAction, selectedNestingPlanIds } from "../../apps/tube-designer/webpage/nestingExport.mjs";
+import { groupNestingPlans } from "../../apps/tube-designer/webpage/nestingGroups.mjs";
 
 function fixture() {
   const profile = { id: "rect", kind: "rect", width: 30, depth: 20, wallThickness: 2, specification: "30 × 20 × 2" };
@@ -93,6 +94,36 @@ function fixture() {
   assert.equal(f.view.pending, false);
   assert.equal(f.view.tubeDesignerOperation, null);
   assert.equal(f.view.tubeDesignerNestingResult.plans.length, 2);
+}
+
+{
+  const f = fixture(); await f.run();
+  const plans = f.view.tubeDesignerNestingResult.plans;
+  plans[0].profileKey = 'section-a'; plans[0].profile = '同名规格 <A>';
+  plans[1].profileKey = 'section-b'; plans[1].profile = '同名规格 <A>';
+  plans.push({ ...plans[0], id: 'plan-2' });
+  assert.deepEqual(groupNestingPlans(plans).map(g => g.entries.map(e => e.index)), [[0, 2], [1]],
+    'group by identity, keep original order, do not merge identical display names');
+  await f.act('toggle-all-plans', { checked: false });
+  await f.act('toggle-group', { checked: true, dataset: { tubeDesignerNestingGroupKey: 'section-a' } });
+  assert.deepEqual([...selectedNestingPlanIds(f.view)], ['plan-0', 'plan-2']);
+  await f.act('export-selected');
+  assert.deepEqual(f.calls.at(-1).payload.plans.map(p => p.id), ['plan-0', 'plan-2']);
+  await f.act('export-group', { dataset: { tubeDesignerNestingGroupKey: 'section-b' } });
+  assert.deepEqual(f.calls.at(-1).payload.plans.map(p => p.id), ['plan-1']);
+  assert.deepEqual([...selectedNestingPlanIds(f.view)], ['plan-0', 'plan-2'], 'group export preserves checked selection');
+  f.view.tubeDesignerClosedNestingResultGroups = ['section-a'];
+  const dock = renderNestingResultDock(f.context, f.view);
+  assert.equal((dock.match(/class="tube-designer-nesting-result-group"/g) ?? []).length, 2);
+  assert.match(dock, /同名规格 &lt;A&gt;/);
+  assert.match(dock, /导出本组/);
+  assert.match(dock, /data-tube-designer-nesting-group-key="section-a" >/);
+  await f.act('toggle-group', { checked: false, dataset: { tubeDesignerNestingGroupKey: 'section-a' } });
+  assert.equal(selectedNestingPlanIds(f.view).size, 0);
+  const before = f.calls.length;
+  await f.act('export-group', { dataset: { tubeDesignerNestingGroupKey: 'missing' } });
+  assert.equal(f.calls.length, before);
+  assert.match(f.view.error, /规格组已不存在/);
 }
 
 console.log("Nesting export selection and workflow tests passed.");

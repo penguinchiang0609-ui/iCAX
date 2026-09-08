@@ -7,6 +7,7 @@
 #include <SDO/SDO.h>
 #include <Data/Variant.h>
 #include <Database/ComponentBase.h>
+#include <Database/OperationLog.h>
 #include <SDO/SDOFrame.h>
 #include <SDO/SDOText.h>
 #include <Product/ProductSDO.h>
@@ -668,6 +669,102 @@ TEST(ApplicationRuntimeSDOTest, ApplicationRuntimeCanOpenProjectFileDirectly)
     EXPECT_EQ(_ProjectPath.string(), _pCatalog->GetMainProject()->GetProjectPath());
 
     _Runtime.Stop();
+    std::filesystem::remove_all(_Root);
+}
+
+TEST(ApplicationRuntimeSDOTest, UnicodeProjectMagicProbeUsesNativePathAndRejectsMissingFiles)
+{
+    const auto _Root = std::filesystem::current_path() / "Temp"
+        / ("UnicodeMagicProbe-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(_Root);
+    const auto _Path = _Root / std::filesystem::path(u8"TubeDesigner 项目.ictd");
+    { std::ofstream _Output(_Path, std::ios::binary); _Output << "ICAX_ROBOT"; }
+    const auto _Utf8 = _Path.u8string();
+    const std::string _PathText(_Utf8.begin(), _Utf8.end());
+    CApplicationRuntime _Runtime;
+    _Runtime.SetConfig(MakeTwoProductConfig());
+    const auto _Resolved = _Runtime.ResolveProjectFileProduct(_PathText);
+    EXPECT_EQ(EProductFileResolveStatus::Resolved, _Resolved.Status);
+    EXPECT_EQ("robot", _Resolved.ProductID);
+    EXPECT_EQ(_PathText, _Resolved.ProjectPath);
+    EXPECT_THROW(_Runtime.ResolveProjectFileProduct(_PathText + ".missing"), std::invalid_argument);
+    EXPECT_THROW(_Runtime.ResolveProjectFileProduct(_Root.string()), std::invalid_argument);
+    std::filesystem::remove_all(_Root);
+}
+
+TEST(ApplicationRuntimeSDOTest, UnicodeProjectPathsCanBeSavedResolvedAndOpenedThroughBothEntrypoints)
+{
+    const auto _Root = std::filesystem::current_path() / "Temp"
+        / ("UnicodeProjectPath-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto _Directory = _Root / std::filesystem::path(u8"中文目录 🐧");
+    std::filesystem::create_directories(_Directory);
+    const auto _Path = _Directory / std::filesystem::path(u8"TubeDesigner 项目.ictd");
+    const auto _Utf8 = _Path.u8string();
+    const std::string _PathText(_Utf8.begin(), _Utf8.end());
+    auto _Config = MakeTwoProductConfig();
+    _Config.Paths.UserConfigDirectory = (_Root / "Setting").string();
+    CApplicationRuntime _Runtime;
+    _Runtime.SetConfig(_Config);
+    _Runtime.Start();
+    auto _Product = _Runtime.StartProduct("robot");
+    auto _Seed = _Product->OpenProjectCatalog("Unicode", _PathText, "Unicode", _PathText);
+    _Product->SaveProjectFile(_Seed->GetMainProject()->GetProjectID(), _PathText);
+    ASSERT_TRUE(std::filesystem::exists(_Path));
+    EXPECT_TRUE(std::filesystem::exists(std::filesystem::path(_Path).concat(L".log")));
+    ASSERT_TRUE(_Product->CloseProjectCatalog(_Seed->GetCatalogID()));
+
+    const auto _Resolved = _Runtime.ResolveProjectFileProduct(_PathText);
+    EXPECT_EQ(EProductFileResolveStatus::Resolved, _Resolved.Status);
+    EXPECT_EQ("robot", _Resolved.ProductID);
+    auto _Opened = _Runtime.OpenProjectFile(_PathText);
+    ASSERT_NE(nullptr, _Opened);
+    EXPECT_EQ("TubeDesigner 项目", _Opened->GetCatalogName());
+    EXPECT_EQ(_PathText, _Opened->GetMainProject()->GetProjectPath());
+    ASSERT_TRUE(_Product->CloseProjectCatalog(_Opened->GetCatalogID()));
+
+    auto _Endpoint = _Runtime.GetApplicationFrontendSDOEndpoint();
+    iCAX::Data::ObjectMap _Payload{ { "projectPath", _PathText } };
+    SendFrame(_Endpoint, MakeApplicationRequestFrame(6010, kAppOpenProjectFileMethodCode,
+        iCAX::Data::Variant(_Payload)));
+    auto _Responses = WaitForFrames(_Endpoint);
+    ASSERT_EQ(1u, _Responses.size());
+    ASSERT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Responses[0].nStatus);
+    const auto _Response = DecodeApplicationObjectPayload(_Responses[0]);
+    const auto _Catalog = _Response.at("catalog").To<iCAX::Data::ObjectMap>();
+    EXPECT_EQ("TubeDesigner 项目", _Catalog.at("catalogName").To<std::string>());
+    EXPECT_EQ(_PathText, _Catalog.at("catalogPath").To<std::string>());
+    ClearFrames(_Responses);
+    _Runtime.Stop();
+    std::filesystem::remove_all(_Root);
+}
+
+TEST(ApplicationRuntimeSDOTest, UnicodeQuickSaveLogSupportsAppendAndReadBack)
+{
+    const auto _Root = std::filesystem::current_path() / "Temp"
+        / ("UnicodeJournal-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(_Root);
+    const auto _Path = _Root / std::filesystem::path(u8"项目 🐧.ictd.log");
+    const auto _Utf8 = _Path.u8string();
+    const std::string _PathText(_Utf8.begin(), _Utf8.end());
+    iCAX::Database::COperationBatch _Batch;
+    _Batch.Name = "Unicode journal";
+    iCAX::Database::CRepositoryOperation _Operation;
+    _Operation.Type = iCAX::Database::RepositoryEventArgs::kAddEntity;
+    _Operation.EntityID = iCAX::Data::GenerateNewUUID();
+    _Batch.Operations.push_back(_Operation);
+    iCAX::Database::COperationBatchJournal _Journal;
+    _Journal.Open(_PathText, true, "UNICODE_LOG", 1);
+    _Journal.Append(_Batch);
+    _Journal.Close();
+    EXPECT_TRUE(std::filesystem::exists(_Path));
+    EXPECT_THROW(_Journal.Open(_PathText, false, "WRONG_MAGIC", 1), std::runtime_error);
+    _Journal.Open(_PathText, false, "UNICODE_LOG", 1);
+    _Journal.Append(_Batch);
+    _Journal.Close();
+    const auto _Read = _Journal.ReadAll(_PathText, "UNICODE_LOG", 1);
+    ASSERT_EQ(2u, _Read.size());
+    ASSERT_EQ(1u, _Read[0].Operations.size());
+    EXPECT_EQ(_Operation.EntityID, _Read[0].Operations[0].EntityID);
     std::filesystem::remove_all(_Root);
 }
 

@@ -4,6 +4,7 @@
 #include "ApplicationRuntime/ApplicationRuntime.h"
 
 #include <mutex>
+#include <map>
 #include <string>
 
 namespace iCAX
@@ -18,6 +19,8 @@ namespace iCAX
         {
             iCAX::Application::ApplicationRuntimeConfig RuntimeConfig;
             std::string UIName; //!< 可选 UI 名称，例如 H5/WPF/QT，仅用于上层标识。
+            std::string PlatformIconPath;
+            std::map<std::string, std::string> ProductIconPaths;
         };
 
         /*
@@ -58,6 +61,7 @@ namespace iCAX
             * @brief 当前 Application 是否运行。
             */
             bool IsRunning() const;
+            std::string GetWindowIconPath() const;
 
             /*
             * @brief 获取 ApplicationRuntime。

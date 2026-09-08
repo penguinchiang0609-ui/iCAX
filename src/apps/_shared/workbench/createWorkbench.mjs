@@ -175,6 +175,9 @@ function renderProject(context, view) {
   }
   const tab = normalizeAreaId(context, context.activeRibbonTabId);
   activateProjectArea(view, tab);
+  // Product editors may update their own live surface without reconstructing
+  // the workbench, navigation and main viewport on each parameter response.
+  if(context.tryRenderProjectPatch?.(context,view,mount,getProjectOps())===true)return;
   const scene = view.scene ?? {};
   reconcileSelectedMachine(view, scene);
   const topology = scene.topology ?? {};
@@ -653,7 +656,7 @@ function mountRenderViewport(context, view) {
   if (!view.viewport) {
     view.viewport = createThreeViewport({
       backgroundColor: 0x182128,
-      onPick: (userData, hit) => handleViewportPick(context, view, userData, hit),
+      onPick: (userData, hit, event, hits) => handleViewportPick(context, view, userData, hit, event, hits),
       onDiagnostic: (entry) => appendProjectLog(context, entry.level ?? "info", entry.message ?? ""),
     });
   }
@@ -759,7 +762,8 @@ async function runAction(context, view, action, actionTarget = null) {
   return false;
 }
 
-function handleViewportPick(context, view, userData, hit) {
+function handleViewportPick(context, view, userData, hit, event, hits) {
+  if (context.handleAreaViewportPick?.(context, view, userData, hit, event, hits, getProjectOps())) return;
   if (!userData || !hit) {
     selectSceneObjectLocally(view, "");
     return;

@@ -172,6 +172,7 @@
   </ItemGroup>
   <ItemGroup>
     <Manifest Include="Application.manifest" />
+    <ResourceCompile Include="Application.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\iCAX-Engine\framework\ApplicationContext\ApplicationContext.vcxproj">

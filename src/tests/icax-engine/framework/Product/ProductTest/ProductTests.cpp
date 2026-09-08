@@ -541,6 +541,30 @@ TEST(ProductRuntimeTest, SettingsAreSavedInProductData)
             .To<std::string>());
 }
 
+TEST(ProductRuntimeSDOTest, RemoveRecentProjectOnlyUpdatesHistory)
+{
+    auto _pRuntime = MakeRuntime();
+    _pRuntime->Start();
+    auto _Endpoint = _pRuntime->GetProductFrontendSDOEndpoint();
+    iCAX::Data::ObjectMap _Payload;
+    _Payload["projectPath"] = std::string("D:/projects/recent-robot.robot");
+    const auto _Code = iCAX::Interaction::MakeSDOMethodCode("Product", "RemoveRecentProject");
+    _Endpoint.Send(MakeRequestFrame(2090, _Code, iCAX::Data::Variant(_Payload)));
+    auto _Responses = WaitForProductFrames(_pRuntime, _Endpoint);
+    ASSERT_EQ(1u, _Responses.size());
+    ASSERT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Responses[0].nStatus);
+    const auto _State = DecodeObjectPayload(_Responses[0]);
+    EXPECT_TRUE(_State.at("recentProjects").To<iCAX::Data::VariantArray>().empty());
+    EXPECT_TRUE(_pRuntime->GetProductData().RecentProjects.empty());
+    ClearFrames(_Responses);
+    // Removing an already absent record is harmless.
+    _Endpoint.Send(MakeRequestFrame(2091, _Code, iCAX::Data::Variant(_Payload)));
+    _Responses = WaitForProductFrames(_pRuntime, _Endpoint);
+    ASSERT_EQ(1u, _Responses.size());
+    EXPECT_EQ(iCAX::Interaction::EInvocationStatus::Ok, _Responses[0].nStatus);
+    ClearFrames(_Responses);
+}
+
 TEST(ProductRuntimeSDOTest, ProductSDOCanOpenAndListProjectCatalogs)
 {
     auto _pRuntime = MakeRuntime();

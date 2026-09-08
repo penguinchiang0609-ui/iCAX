@@ -8,7 +8,7 @@ export function scheduleDesignerPartInspectionHydration(context, designer, view)
   const inspectedPartId = view.tubeDesignerPartInspectionOpen
     ? String(view.tubeDesignerInspectedPartId ?? "")
     : "";
-  const part = inspectedPartId ? findPart(designer, inspectedPartId) : null;
+  const part = inspectedPartId ? findPart(designer, inspectedPartId, view) : null;
   view.viewport?.setContinuousRendering?.(!part && !view.tubeDesignerAddDialogOpen);
   queueMicrotask(() => {
     void hydrateInspection(context, part);
@@ -138,6 +138,8 @@ export function buildAutomaticDimensionReport(part) {
     holes,
     pitches,
     annotations,
+    sideProjection: normalizeSideProjection(measurement.sideProjection, length, section),
+    unfolding: measurement.unfolding ?? null,
     hasLinearReference: Boolean(measurement.available && start && end && axis),
     source: String(measurement.source ?? ""),
     axis,
@@ -287,8 +289,12 @@ function applyHorizontalPartPresentation(controller) {
   return Boolean(oriented);
 }
 
-function findPart(designer, partId) {
-  for (const group of designer?.manufacturingGroups ?? []) {
+function findPart(designer, partId, view = {}) {
+  const groups = view?.tubeDesignerBreakdownMode === "nesting-export"
+    && Array.isArray(designer?.nestingGroups)
+    ? designer.nestingGroups
+    : (designer?.manufacturingGroups ?? []);
+  for (const group of groups) {
     const part = (group.parts ?? []).find((item) => String(item.entityId) === partId);
     if (part) return part;
   }
@@ -466,8 +472,52 @@ function normalizeHoleFeature(feature, index, start, axis, referenceLength) {
     faceEdgeClearanceNegative,
     faceEdgeClearancePositive,
     faceTangent: finitePoint(feature.faceTangent),
+    sideCenter: finitePoint2(feature.sideCenter),
+    sideSpanAcross: Math.max(0, finiteNumber(feature.sideSpanAcross) ?? spanAcross),
+    sideVisible: feature.sideVisible !== false,
     sizeLabel,
   };
+}
+
+function normalizeSideProjection(value, fallbackLength, section) {
+  const source = value && typeof value === "object" ? value : {};
+  const width = Math.max(0, finiteNumber(source.width) ?? finiteNumber(fallbackLength) ?? 0);
+  const height = Math.max(
+    0,
+    finiteNumber(source.height)
+      ?? finiteNumber(section?.height)
+      ?? finiteNumber(section?.width)
+      ?? 0,
+  );
+  const point = (candidate) => {
+    const normalized = finitePoint2(candidate);
+    if (!normalized) return null;
+    return [
+      Math.min(width, Math.max(0, normalized[0])),
+      Math.min(height, Math.max(0, normalized[1])),
+    ];
+  };
+  let outline = (Array.isArray(source.outline) ? source.outline : [])
+    .map(point).filter(Boolean);
+  if (outline.length < 3 && width > 0 && height > 0) {
+    outline = [[0, 0], [width, 0], [width, height], [0, height]];
+  }
+  const segments = (Array.isArray(source.segments) ? source.segments : [])
+    .map((segment) => ({ start: point(segment?.start), end: point(segment?.end) }))
+    .filter((segment) => segment.start && segment.end
+      && Math.hypot(
+        segment.end[0] - segment.start[0],
+        segment.end[1] - segment.start[1],
+      ) > 1e-7);
+  return Object.freeze({
+    width,
+    height,
+    outline,
+    segments,
+    horizontalAxis: finitePoint(source.horizontalAxis),
+    verticalAxis: finitePoint(source.verticalAxis),
+    viewDirection: finitePoint(source.viewDirection),
+  });
 }
 
 function perpendicularDirection(candidate, axis) {
@@ -548,6 +598,12 @@ async function waitMinimum(startedAt, minimum) {
 function finitePoint(value) {
   const source = Array.isArray(value) ? value : [value?.x, value?.y, value?.z];
   if (source.length !== 3 || !source.every((entry) => Number.isFinite(Number(entry)))) return null;
+  return source.map(Number);
+}
+
+function finitePoint2(value) {
+  const source = Array.isArray(value) ? value : [value?.x, value?.y];
+  if (source.length !== 2 || !source.every((entry) => Number.isFinite(Number(entry)))) return null;
   return source.map(Number);
 }
 

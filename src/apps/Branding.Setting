@@ -1,0 +1,4 @@
+# UTF-8. Paths are relative to this file. Icons must be Windows .ico files.
+# Exactly one enabled product: use its icon; otherwise use platformIcon.
+platformIcon=branding/icax.ico
+product.icax.tube-designer=tube-designer/webpage/assets/tube-designer.ico

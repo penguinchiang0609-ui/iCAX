@@ -3,6 +3,8 @@
 
 #include <Task/Task.h>
 #include <Task/Coroutine.h>
+#include <future>
+#include <array>
 
 
 using namespace std::chrono_literals;
@@ -84,6 +86,161 @@ namespace
         auto value = co_await Await(std::move(task_));
         co_return value ? *value : 0;
     }
+}
+
+TEST(TaskStressTest, EveryShutdownCallerWaitsForAcceptedWork)
+{
+    auto pool = std::make_shared<ThreadPoolTaskScheduler>(1);
+    std::promise<void> release, entered;
+    auto gate = release.get_future().share();
+    pool->Schedule([&entered, gate] { entered.set_value(); gate.wait(); });
+    entered.get_future().wait();
+    auto first = std::async(std::launch::async, [pool] { pool->Shutdown(); });
+    bool stopped = false;
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (!stopped && std::chrono::steady_clock::now() < deadline)
+    {
+        try { pool->Schedule([] {}); }
+        catch (const std::runtime_error&) { stopped = true; }
+        std::this_thread::yield();
+    }
+    auto second = std::async(std::launch::async, [pool] { pool->Shutdown(); });
+    const auto early = second.wait_for(50ms);
+    release.set_value(); // Release before assertions, including on a failed test.
+    first.get();
+    second.get();
+    EXPECT_TRUE(stopped);
+    EXPECT_EQ(std::future_status::timeout, early);
+    EXPECT_EQ(0u, pool->PendingCount());
+    EXPECT_THROW(pool->Schedule([] {}), std::runtime_error);
+}
+
+TEST(TaskStressTest, WorkerShutdownDoesNotJoinDependentPeers)
+{
+    auto pool = std::make_shared<ThreadPoolTaskScheduler>(2);
+    std::promise<void> stopped, peerEntered;
+    auto stopSignal = stopped.get_future().share();
+    auto peerSignal = peerEntered.get_future().share();
+    pool->Schedule([&peerEntered, stopSignal] {
+        peerEntered.set_value();
+        stopSignal.wait_for(2s); // Bounded even in the old, deadlocking implementation.
+    });
+    pool->Schedule([pool, &stopped, peerSignal] {
+        peerSignal.wait();
+        pool->Shutdown();
+        stopped.set_value();
+    });
+    EXPECT_EQ(std::future_status::ready, stopSignal.wait_for(500ms));
+    stopSignal.wait();
+    pool->Shutdown();
+}
+
+TEST(TaskStressTest, LastPoolOwnerCanBeReleasedOnWorkerWhileQueueDrains)
+{
+    for (int iteration = 0; iteration < 100; ++iteration)
+    {
+        auto pool = std::make_shared<ThreadPoolTaskScheduler>(1);
+        std::promise<void> release;
+        auto drained = std::make_shared<std::promise<void>>();
+        auto gate = release.get_future().share();
+        auto done = drained->get_future();
+        pool->Schedule([owner = pool, gate]() mutable { gate.wait(); owner.reset(); });
+        pool->Schedule([drained] { drained->set_value(); });
+        pool.reset();
+        release.set_value();
+        ASSERT_EQ(std::future_status::ready, done.wait_for(2s));
+    }
+}
+
+TEST(TaskStressTest, ConcurrentProducersExecuteEveryTaskExactlyOnce)
+{
+    auto pool = std::make_shared<ThreadPoolTaskScheduler>(4);
+    std::array<std::atomic_int, 4000> visits{};
+    std::array<std::vector<Task<int>>, 4> submitted;
+    std::vector<std::jthread> producers;
+    for (int producer = 0; producer < 4; ++producer)
+        producers.emplace_back([&, producer] {
+            auto& tasks = submitted[producer];
+            for (int index = producer * 1000; index < (producer + 1) * 1000; ++index)
+                tasks.push_back(iCAX::Tasks::Run([&, index] { ++visits[index]; return index; }, pool));
+        });
+    producers.clear();
+    for (const auto& tasks : submitted)
+    {
+        auto all = WhenAll(tasks);
+        ASSERT_TRUE(all.WaitFor(5s));
+        const auto values = all.Result();
+        for (std::size_t index = 0; index < tasks.size(); ++index)
+            EXPECT_EQ(tasks[index].Result(), values[index]);
+    }
+    pool->Shutdown();
+    for (const auto& count : visits) EXPECT_EQ(1, count.load());
+}
+
+TEST(TaskStressTest, CompletionRaceHasOneWinnerAndOneContinuation)
+{
+    auto pool = std::make_shared<ThreadPoolTaskScheduler>(4);
+    for (int iteration = 0; iteration < 200; ++iteration)
+    {
+        TaskCompletionSource<int> source;
+        std::atomic_int winners = 0, callbacks = 0;
+        auto continuation = source.GetTask().ContinueWith(
+            [&](Task<int>) { ++callbacks; }, InlineScheduler());
+        auto a = iCAX::Tasks::Run([&] { if (source.TrySetResult(7)) ++winners; }, pool);
+        auto b = iCAX::Tasks::Run([&] { if (source.TrySetCanceled()) ++winners; }, pool);
+        auto c = iCAX::Tasks::Run([&] { if (source.TrySetException(std::make_exception_ptr(std::runtime_error("test")))) ++winners; }, pool);
+        WhenAll(std::vector<Task<void>>{ a, b, c }).Result();
+        continuation.Result();
+        EXPECT_EQ(1, winners.load());
+        EXPECT_EQ(1, callbacks.load());
+    }
+}
+
+TEST(TaskStressTest, WhenAllWaitsForOutstandingWorkBeforeReportingFaults)
+{
+    TaskCompletionSource<void> pending;
+    auto all = WhenAll(std::vector<Task<void>>{
+        Task<void>::FromException(std::make_exception_ptr(std::runtime_error("first"))),
+        Task<void>::FromCanceled(), pending.GetTask() });
+    EXPECT_FALSE(all.WaitFor(10ms));
+    pending.SetException(std::make_exception_ptr(std::logic_error("second")));
+    ASSERT_TRUE(all.WaitFor(2s));
+    try { all.Result(); FAIL(); }
+    catch (const TaskAggregateException& error) { EXPECT_EQ(2u, error.Exceptions().size()); }
+}
+
+TEST(TaskStressTest, ThrowingCancellationCallbackDoesNotStrandOtherWaiters)
+{
+    CancellationTokenSource source;
+    auto registration = source.Token().Register([] { throw std::runtime_error("callback"); });
+    TaskCompletionSource<int> pending;
+    auto waiting = WaitAsync(pending.GetTask(), source.Token());
+    EXPECT_THROW(source.Cancel(), TaskAggregateException);
+    EXPECT_TRUE(waiting.WaitFor(100ms));
+    EXPECT_TRUE(waiting.IsCanceled());
+    pending.TrySetResult(1);
+}
+
+TEST(TaskStressTest, QueuedCancellationAndRejectedSubmissionReachTerminalState)
+{
+    auto pool = std::make_shared<ThreadPoolTaskScheduler>(1);
+    std::promise<void> release, entered;
+    auto gate = release.get_future().share();
+    pool->Schedule([gate, &entered] { entered.set_value(); gate.wait(); });
+    entered.get_future().wait();
+    CancellationTokenSource cancellation;
+    std::atomic_bool ran = false;
+    auto queued = iCAX::Tasks::Run([&] { ran = true; }, pool, cancellation.Token());
+    cancellation.Cancel();
+    release.set_value();
+    EXPECT_TRUE(queued.WaitFor(2s));
+    EXPECT_TRUE(queued.IsCanceled());
+    EXPECT_FALSE(ran.load());
+    pool->Shutdown();
+    auto rejected = iCAX::Tasks::Run([] {}, pool);
+    ASSERT_TRUE(rejected.WaitFor(2s));
+    EXPECT_TRUE(rejected.IsFaulted());
+    EXPECT_THROW(rejected.Result(), std::runtime_error);
 }
 
 TEST(TaskTest, FromResultReturnsValue)

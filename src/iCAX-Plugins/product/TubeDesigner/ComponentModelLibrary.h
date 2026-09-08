@@ -16,6 +16,20 @@ namespace iCAX::TubeDesigner
     // snapshots contain validated, millimetre BRep geometry and immutable metadata.
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ImportComponentModelFile(
         const std::filesystem::path& Source_, const iCAX::Data::ObjectMap& Metadata_);
+    // Builds an exact OCCT solid while retaining the validated CSG definition
+    // as the editable source of truth. The BRep is a derived, frozen snapshot
+    // used by previews, products and STEP export.
+    _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap CreateComponentCSGModelSnapshot(
+        const iCAX::Data::ObjectMap& Definition_, const iCAX::Data::ObjectMap& Metadata_);
+    // Import a manufacturing-ready linear part. The returned snapshot contains
+    // a normalized millimetre BRep; callers still need to measure and classify
+    // the actual geometry before committing it to the nesting area.
+    _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ImportManufacturingPartFile(
+        const std::filesystem::path& Source_);
+    // A pre-nested assembly keeps its CAD coordinate system and every placement.
+    // Unlike a single nesting part, it must never be normalized independently.
+    _TUBE_DESIGNER_EXP TopoDS_Shape ImportMachiningAssemblyFile(
+        const std::filesystem::path& Source_);
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap LoadSystemComponentModel(
         const std::filesystem::path& Root_, const std::string& ID_);
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap LoadTemplateComponentModel(

@@ -61,6 +61,76 @@ TEST(TubeNesting, AccountsForOneSharedSawKerfBetweenSquareParts)
     EXPECT_EQ(Result.Stocks.front().RemainingLength, 0);
 }
 
+TEST(TubeNesting, EncodesPeriodicCutLineAndFindsCyclicPhase)
+{
+    const auto Tail = EncodeCutLineFeature(160, { 0, 10, 0, 10 });
+    const auto Head = EncodeCutLineFeature(160, { 10, 0, 10, 0 });
+
+    ASSERT_TRUE(IsValidCutLineFeature(Tail));
+    ASSERT_TRUE(IsValidCutLineFeature(Head));
+    EXPECT_EQ(Tail.Kind, CutLineFeatureKind::Sampled);
+    EXPECT_FALSE(Tail.ClassKey.empty());
+    EXPECT_NE(Tail.Fingerprint, 0U);
+
+    const auto Unshifted = EvaluateCutLineMatch(Tail, Head, 0);
+    const auto Shifted = EvaluateCutLineMatch(Tail, Head, 40);
+    ASSERT_TRUE(Unshifted.Valid);
+    ASSERT_TRUE(Shifted.Valid);
+    EXPECT_EQ(Unshifted.RequiredSeparation, 10);
+    EXPECT_EQ(Shifted.RequiredSeparation, 0);
+
+    const auto Best = FindBestCutLineMatch(Tail, Head, 16);
+    ASSERT_TRUE(Best.Valid);
+    EXPECT_EQ(Best.RequiredSeparation, 0);
+    EXPECT_EQ(Best.PhaseOffset, 40);
+}
+
+TEST(TubeNesting, TreatsCompressedLinearFeaturesAsPeriodicAtTheSeam)
+{
+    const auto Feature = EncodeCutLineFeature(100, { 0, 25, 50, 75, 100 });
+    ASSERT_EQ(Feature.Kind, CutLineFeatureKind::Linear);
+    const auto Match = EvaluateCutLineMatch(Feature, Feature, 20);
+    ASSERT_TRUE(Match.Valid);
+    // The 20-unit phase crosses the U seam.  The wrapped discontinuity needs
+    // the full 80-unit separation; clamping the linear code would incorrectly
+    // report zero here.
+    EXPECT_EQ(Match.RequiredSeparation, 80);
+}
+
+TEST(TubeNesting, UsesEncodedCutLineCostAsTransitionAllowance)
+{
+    const auto MakeConstant = [](const Length Value_) {
+        return EncodeCutLineFeature(160, { Value_, Value_, Value_, Value_ });
+    };
+    PartVariant A;
+    A.ID = "a";
+    A.RightEnd.Feature = MakeConstant(20);
+    A.LeftEnd.Feature = MakeConstant(0);
+    PartVariant B;
+    B.ID = "b";
+    B.LeftEnd.Feature = MakeConstant(5);
+    B.RightEnd.Feature = MakeConstant(100);
+    const std::vector<PartDemand> Demands{
+        PartDemand{"a", "steel|rect", "order-1", 100, 1, {A}},
+        PartDemand{"b", "steel|rect", "order-1", 100, 1, {B}},
+    };
+    const std::vector<StockType> Stocks{
+        StockType{"stock", "steel|rect", StockKind::Standard, 215},
+    };
+    SolverSettings Settings = ExactSettings();
+    Settings.Kerf = 0;
+    Settings.PartGap = 0;
+
+    const SolveResult Result = Solver{}.Solve(Demands, Stocks, Settings);
+
+    ASSERT_EQ(Result.Status, SolveStatus::Optimal);
+    ASSERT_EQ(Result.Stocks.size(), 1U);
+    ASSERT_EQ(Result.Stocks.front().Placements.size(), 2U);
+    EXPECT_EQ(Result.Stocks.front().Placements[0].DemandID, "a");
+    EXPECT_EQ(Result.Stocks.front().Placements[1].DemandID, "b");
+    EXPECT_EQ(Result.Stocks.front().Placements[1].GapBefore, 15);
+}
+
 TEST(TubeNesting, ChoosesOrientationThatAllowsMiterCommonCut)
 {
     const PartVariant A = SawVariant("fixed", "square", "miter-45");
@@ -340,6 +410,52 @@ TEST(TubeNesting, HandlesInteractiveScaleStraightOrderDeterministically)
         EXPECT_LE(First.Stocks[Index].ProcessedEnd, First.Stocks[Index].TotalLength);
     }
     EXPECT_EQ(PlacementCount, 82U);
+}
+
+TEST(TubeNesting, HandlesLargeProductionBatchWithoutTimingOut)
+{
+    std::vector<PartDemand> Demands;
+    Demands.reserve(88);
+    for (std::size_t Index = 0; Index < 88; ++Index)
+    {
+        PartVariant Variant;
+        Variant.AxialLength = 420 + static_cast<Length>((Index * 137) % 781);
+        Variant.LeftEnd.AllowCommonCut = false;
+        Variant.RightEnd.AllowCommonCut = false;
+        PartVariant Alternate = Variant;
+        Alternate.ID = "alternate";
+        Alternate.Reversed = true;
+        Demands.push_back(PartDemand{
+            "part-" + std::to_string(Index), "steel|rect", "order-1",
+            Variant.AxialLength, 50, {Variant, Alternate}});
+    }
+    const std::vector<StockType> Stocks{
+        StockType{"stock-6000", "steel|rect", StockKind::Standard, 6000},
+    };
+    SolverSettings Settings = ExactSettings();
+    Settings.Kerf = 0;
+    Settings.PartGap = 5;
+    Settings.ConstructionRuns = 1;
+    Settings.LocalSearchPasses = 0;
+    Settings.LargeNeighborhoodIterations = 0;
+    Settings.ExactPartLimit = 0;
+    Settings.ExactNodeLimit = 0;
+
+    const SolveResult Result = Solver{}.Solve(Demands, Stocks, Settings);
+
+    EXPECT_EQ(Result.Status, SolveStatus::Feasible);
+    EXPECT_FALSE(Result.ExactSearchCompleted);
+    EXPECT_TRUE(Result.UnplacedInstances.empty());
+    EXPECT_GE(Result.Metrics.GrossUtilization, 0.95);
+    EXPECT_TRUE(std::any_of(
+        Result.Diagnostics.begin(), Result.Diagnostics.end(),
+        [](const std::string& _Diagnostic)
+        {
+            return _Diagnostic.find("scalable best-fit") != std::string::npos;
+        }));
+    std::size_t PlacementCount = 0;
+    for (const StockPlan& Stock : Result.Stocks) PlacementCount += Stock.Placements.size();
+    EXPECT_EQ(PlacementCount, 88U * 50U);
 }
 
 TEST(TubeNesting, ReportsPartThatCannotFitAnyStock)

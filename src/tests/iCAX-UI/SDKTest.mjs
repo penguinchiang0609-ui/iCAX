@@ -42,6 +42,7 @@ import {
   fitDesignerDefaultView,
   getDesignerDefaultViewDirection,
   handleDesignerAreaAction,
+  handleDesignerRibbonCommand,
 } from "../../apps/tube-designer/webpage/designerActions.mjs";
 import {
   buildPartCategories,
@@ -61,7 +62,7 @@ import {
   renderProfileLibraryRightPane,
   renderProfileLibraryViewportOverlay,
 } from "../../apps/tube-designer/webpage/profileLibrary.mjs";
-import { ribbonDefinition as tubeDesignerRibbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
+import { ribbonDefinition as tubeDesignerRibbonDefinition, sketchRibbonGroups } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
 import {
   buildMaterialProfileGroups,
   buildProfileGroups,
@@ -274,16 +275,20 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
   }];
   view.tubeDesignerSelectedInstanceIds = ["product-1"];
   const selectionHtml = renderDesignerRightPane({}, view);
-  assert.match(selectionHtml, /选择要拆单的产品实例/);
+  assert.match(selectionHtml, /选择要导入下料的产品实例/);
+  assert.match(selectionHtml, /直接关联到下料清单，不复制几何/);
   assert.doesNotMatch(selectionHtml, /当前状态|等待拆单|将重新拆单/);
 }
 
 function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => [tab.id, tab.title]),
-    [["view", "产品"], ["nesting", "下料"], ["profiles", "管型库"], ["components", "配件库"], ["sketch", "草图"], ["about", "关于"]],
+    [["view", "产品"], ["nesting", "下料"], ["machining", "加工"], ["profiles", "管型库"], ["components", "配件库"], ["about", "关于"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
+  assert.ok(tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "view")
+    .groups.flatMap((group) => group.commands)
+    .some((command) => command.id === "designer.export-parts" && command.title === "导出零件"));
   assert.equal(hasProductionWorkflowAccess({}), false);
   assert.equal(hasProductionWorkflowAccess({
     entitlements: [PRODUCTION_WORKFLOW_ENTITLEMENT],
@@ -385,16 +390,33 @@ function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
   assert.match(cuttingLeft, /<strong>零件清单<\/strong>/);
   assert.match(cuttingLeft, /tube-designer-cutting-parts/);
   assert.match(cuttingLeft, /2 种截面/);
+  assert.match(cuttingLeft, /tube-designer-cutting-pane-menu-hint/);
+  assert.doesNotMatch(cuttingLeft, /tube-designer-cutting-pane-header-actions/);
   assert.doesNotMatch(cuttingLeft, /材料截面组|材料未指定|Q235B|304/);
   assert.doesNotMatch(cuttingLeft, /进入排样|进入下料/);
   const cuttingCenter = renderNestingViewportOverlay({}, cuttingView);
   assert.match(cuttingCenter, /待排零件/);
-  assert.doesNotMatch(cuttingCenter, /tube-designer-parts-toggle-dimensions/);
+  assert.match(cuttingCenter, /tube-designer-parts-toggle-dimensions/);
   const cuttingRight = renderNestingRightPane({
     entitlements: [PRODUCTION_WORKFLOW_ENTITLEMENT],
   }, cuttingView);
   assert.match(cuttingRight, /<strong>当前零件<\/strong>/);
   assert.match(cuttingRight, /下料信息/);
+  const linkedRight = renderNestingRightPane({
+    entitlements: [PRODUCTION_WORKFLOW_ENTITLEMENT],
+  }, {
+    ...cuttingView,
+    tubeDesignerActiveNestingPartId: "part-a",
+    scene: { tubeDesigner: { nestingGroups: [{
+      productEntityId: "product-1",
+      generationRunId: "run-1",
+      name: "产品一",
+      parts: [{ ...parts[0], linkedNesting: true }],
+    }] } },
+  });
+  assert.match(linkedRight, /直接关联产品拆单结果/);
+  assert.match(linkedRight, />移出下料<\/button>/);
+  assert.doesNotMatch(linkedRight, />保存修改<\/button>/);
   const emptyResultDock = renderNestingResultDock({}, cuttingView);
   assert.match(emptyResultDock, /aria-label="排样结果列表"/);
   assert.match(emptyResultDock, /尚未生成排样结果/);
@@ -421,9 +443,7 @@ function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
   const choiceHtml = renderDesignerDialogs({}, {
     tubeDesignerPostDisassemblyChoice: { groupCount: 2, partCount: 7 },
   });
-  assert.match(choiceHtml, /拆单完成/);
-  assert.match(choiceHtml, /data-cam-action="tube-designer-export-after-disassembly"/);
-  assert.match(choiceHtml, /data-cam-action="tube-designer-enter-cutting"/);
+  assert.equal(choiceHtml, "", "导入下料完成后直接切换页面，不再弹出后续选择框");
 
   const productHtml = renderDesignerLeftPane({}, {
     pending: false,
@@ -446,14 +466,190 @@ function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
   assert.match(productHtml, />零件清单<\/button>/);
 }
 
+async function testTubeDesignerNestingPartListUsesTheBreakdownPage() {
+  assert.ok(tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "nesting")
+    .groups.flatMap((group) => group.commands)
+    .some((command) => command.id === "nesting.export-parts" && command.title === "零件清单"));
+  let rendered = false;
+  const view = {
+    pending: false,
+    activeAreaId: "nesting",
+    scene: { tubeDesigner: {
+      nestingGroups: [{
+        productEntityId: "nesting-batch-1",
+        name: "下料批次一",
+        parts: [{
+          entityId: "nesting-part-1",
+          name: "主管",
+          partNumber: "N-001",
+          length: 1200,
+          quantity: 2,
+          profile: { displayName: "矩形管", specification: "40 × 20 × 1.5" },
+        }],
+      }],
+    } },
+  };
+  const handled = await handleDesignerRibbonCommand({}, view, "nesting.export-parts", {
+    renderProject() {
+      rendered = true;
+    },
+  });
+  assert.equal(handled, true);
+  assert.equal(rendered, true);
+  assert.equal(view.tubeDesignerBreakdownOpen, true);
+  assert.equal(view.tubeDesignerBreakdownMode, "nesting-export");
+  assert.deepEqual(view.tubeDesignerSelectedPartIds, ["nesting-part-1"]);
+
+  const html = renderDesignerDialogs(view.scene.tubeDesigner, view);
+  assert.match(html, /id="tube-designer-breakdown-title">零件清单<\//);
+  assert.match(html, /下料批次一/);
+  assert.match(html, /主管/);
+  assert.match(html, /data-cam-action="tube-designer-close-breakdown"[^>]*>取消<\/button>/);
+  assert.match(html, /data-cam-action="tube-designer-export-selected"[^>]*>导出<\/button>/);
+  assert.doesNotMatch(html, />进入下料<\/button>/);
+  const footer = html.match(/<footer class="tube-designer-breakdown-footer[\s\S]*?<\/footer>/)?.[0] ?? "";
+  assert.equal((footer.match(/<button\b/g) ?? []).length, 2);
+
+  const closeResult = await handleDesignerAreaAction({}, view, "tube-designer-close-breakdown", {}, {
+    renderProject() {},
+  });
+  assert.equal(closeResult.handled, true);
+  assert.equal(view.tubeDesignerBreakdownOpen, false);
+  assert.equal(view.tubeDesignerBreakdownMode, "");
+}
+
+async function testTubeDesignerOpensTransientPartListWithoutEnteringCutting() {
+  const calls = [];
+  let selectedAreaId = "view";
+  const view = {
+    pending: false,
+    activeAreaId: "view",
+    scene: { tubeDesigner: { instances: [{ entityId: "product-1" }] } },
+  };
+  const handled = await handleDesignerRibbonCommand({
+    sceneProxy: { async invoke(method, payload) {
+      calls.push({ method, payload });
+      assert.equal(method, "TubeDesigner.DisassembleSelected");
+      return { tubeDesigner: {
+        instances: [{ entityId: "product-1", name: "产品一", hasDisassembly: true, partCount: 1 }],
+        manufacturingGroups: [{
+          productEntityId: "product-1",
+          name: "产品一",
+          parts: [{ entityId: "temporary-part-1", name: "立柱", quantity: 1 }],
+        }],
+      } };
+    } },
+    actions: {
+      async selectRibbonTab(areaId) { selectedAreaId = areaId; },
+    },
+  }, view, "designer.export-parts", {
+    renderProject() {},
+    showNotice() {},
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(calls, [{
+    method: "TubeDesigner.DisassembleSelected",
+    payload: { productEntityIds: ["product-1"] },
+  }]);
+  assert.equal(selectedAreaId, "view");
+  assert.equal(view.activeAreaId, "view");
+  assert.equal(view.tubeDesignerBreakdownOpen, true);
+  assert.equal(view.tubeDesignerBreakdownMode, "export");
+  assert.equal(view.tubeDesignerLastOperation.kind, "temporary-part-list");
+  const html = renderDesignerDialogs(view.scene.tubeDesigner, view);
+  assert.match(html, /临时数据，不进入下料/);
+  assert.match(html, /临时零件清单 · STEP \+ Excel/);
+  assert.doesNotMatch(html, /data-cam-action="tube-designer-enter-cutting"/);
+}
+
+async function testTubeDesignerReleasesTransientPartsWhenClosingDirectExport() {
+  const calls = [];
+  const view = {
+    pending: false,
+    tubeDesignerBreakdownOpen: true,
+    tubeDesignerBreakdownMode: "export",
+    tubeDesignerBreakdownProductIds: ["product-1"],
+    tubeDesignerSelectedPartIds: ["temporary-part-1"],
+    tubeDesignerActivePartId: "temporary-part-1",
+    scene: { tubeDesigner: { manufacturingGroups: [{ parts: [{ entityId: "temporary-part-1" }] }] } },
+  };
+  const result = await handleDesignerAreaAction({
+    sceneProxy: { async invoke(method, payload) {
+      calls.push({ method, payload });
+      return { tubeDesigner: { manufacturingGroups: [], nestingGroups: [] } };
+    } },
+  }, view, "tube-designer-close-breakdown", {}, { renderProject() {} });
+  assert.equal(result.handled, true);
+  assert.deepEqual(calls, [{ method: "TubeDesigner.ReleaseTransientParts", payload: {} }]);
+  assert.equal(view.tubeDesignerBreakdownOpen, false);
+  assert.equal(view.tubeDesignerBreakdownMode, "");
+  assert.deepEqual(view.tubeDesignerSelectedPartIds, []);
+  assert.deepEqual(view.scene.tubeDesigner.manufacturingGroups, []);
+}
+
+async function testTubeDesignerImportsDisassemblyDirectlyIntoCutting() {
+  const calls = [];
+  let selectedAreaId = "view";
+  const view = {
+    pending: false,
+    tubeDesignerSelectedInstanceIds: ["product-1"],
+    scene: { tubeDesigner: { instances: [{ entityId: "product-1" }] } },
+  };
+  const result = await handleDesignerAreaAction({
+    sceneProxy: { async invoke(method, payload) {
+      calls.push({ method, payload });
+      if (method === "TubeDesigner.DisassembleSelected") {
+        return { tubeDesigner: { manufacturingGroups: [{
+          productEntityId: "product-1", parts: [
+            { entityId: "source-tube", partKind: "tube" },
+            { entityId: "source-plate", partKind: "plate" },
+          ],
+        }] } };
+      }
+      if (method === "TubeDesigner.StageNestingParts") {
+        return { tubeDesigner: { nestingGroups: [{ generationRunId: "run-1", parts: [
+          { entityId: "source-tube", partKind: "tube", linkedNesting: true },
+          { entityId: "source-plate", partKind: "plate", linkedNesting: true },
+        ] }] }, partEntityIds: ["source-tube", "source-plate"] };
+      }
+      throw new Error(method);
+    } },
+    actions: {
+      async selectRibbonTab(areaId) { selectedAreaId = areaId; },
+    },
+  }, view, "tube-designer-confirm-disassemble", {}, {
+    renderProject() {},
+    showNotice() {},
+  });
+  assert.equal(result.handled, true);
+  assert.deepEqual(calls.map(({ method }) => method), ["TubeDesigner.DisassembleSelected", "TubeDesigner.StageNestingParts"]);
+  assert.deepEqual(calls[1].payload.partEntityIds, ["source-tube", "source-plate"]);
+  assert.equal(selectedAreaId, "nesting");
+  assert.equal(view.activeAreaId, "nesting");
+  assert.equal(view.tubeDesignerBreakdownOpen, false);
+  assert.deepEqual(view.tubeDesignerNestingSelectedPartIds, ["source-tube", "source-plate"]);
+  assert.equal(view.tubeDesignerActiveNestingPartId, "source-tube");
+}
+
 async function testTubeDesignerEntersCuttingFromThePartList() {
   let selectedAreaId = "view";
   let rendered = false;
   const view = {
     tubeDesignerBreakdownOpen: true,
     tubeDesignerPostDisassemblyChoice: { groupCount: 1, partCount: 3 },
+    scene: { tubeDesigner: { manufacturingGroups: [{ parts: [{ entityId: "source-part", partKind: "tube" }] }] } },
   };
   const result = await handleDesignerAreaAction({
+    sceneProxy: { async invoke(method, payload) {
+      assert.equal(method, "TubeDesigner.StageNestingParts");
+      assert.deepEqual(payload.partEntityIds, ["source-part"]);
+      return { staged: true, tubeDesigner: { nestingGroups: [{ generationRunId: "run-1", parts: [
+        { entityId: "source-part", linkedNesting: true },
+      ] }], nestingTask: { revision: "1", parts: [
+        { partEntityId: "source-part", generationRunId: "run-1", productEntityId: "product-1", source: "product" },
+      ] } }, partEntityIds: ["source-part"] };
+    } },
     actions: {
       selectRibbonTab: async (areaId) => {
         selectedAreaId = areaId;
@@ -469,7 +665,8 @@ async function testTubeDesignerEntersCuttingFromThePartList() {
   assert.equal(selectedAreaId, "nesting");
   assert.equal(view.tubeDesignerBreakdownOpen, false);
   assert.equal(view.tubeDesignerPostDisassemblyChoice, null);
-  assert.equal(rendered, false);
+  assert.equal(rendered, true);
+  assert.deepEqual(view.tubeDesignerNestingSelectedPartIds, ["source-part"]);
 }
 
 function testTubeDesignerSketchJoinsTheMainWorkflow() {
@@ -531,17 +728,15 @@ function testTubeDesignerSketchJoinsTheMainWorkflow() {
   assert.match(renderSketchLeftPane({}, sideView), /三维切割预览/);
   assert.match(renderSketchViewportOverlay({}, sideView), /管型侧面切割图/);
 
-  assert.ok(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "sketch" && tab.title === "草图"));
+  assert.ok(!tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "sketch"));
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => tab.id),
-    ["view", "nesting", "profiles", "components", "sketch", "about"],
+    ["view", "nesting", "machining", "profiles", "components", "about"],
   );
-  const commands = tubeDesignerRibbonDefinition.tabs
-    .find((tab) => tab.id === "sketch")
-    .groups.flatMap((group) => group.commands)
+  const commands = sketchRibbonGroups.flatMap((group) => group.commands)
     .map((command) => command.id);
-  assert.ok(commands.includes("sketch.mode-section"));
-  assert.ok(commands.includes("sketch.mode-side"));
+  assert.ok(!commands.includes("sketch.mode-section"));
+  assert.ok(!commands.includes("sketch.mode-side"));
   assert.ok(commands.includes("sketch.freehand"));
   assert.ok(commands.includes("sketch.commit"));
 }
@@ -1000,9 +1195,10 @@ function testTubeDesignerRendersFrozenDxfProfilesWithoutEditableDimensions() {
   assert.match(html, /我的管型/);
   assert.match(html, /供应商梅花管/);
   assert.match(html, /冻结截面，不支持尺寸参数修改/);
-  assert.match(html, /data-cam-action="tube-designer-import-profile-dxf"/);
-  assert.match(html, /data-cam-action="tube-designer-open-profile-library"/);
-  assert.match(html, /我的管型管理 \(1\)/);
+  assert.match(html, /<option value="external-dxf">外部 DXF…<\/option>/);
+  assert.doesNotMatch(html, /data-cam-action="tube-designer-import-profile-dxf"/);
+  assert.doesNotMatch(html, /data-cam-action="tube-designer-open-profile-library"/);
+  assert.match(html, /<optgroup label="我的管型">/);
   assert.doesNotMatch(html, /data-tube-designer-parameter="frameWidth"/);
   assert.doesNotMatch(html, /data-tube-designer-parameter="frameDepth"/);
   assert.doesNotMatch(html, /data-tube-designer-parameter="frameWallThickness"/);
@@ -1079,8 +1275,8 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   const left = renderProfileLibraryLeftPane({}, view);
   const right = renderProfileLibraryRightPane({}, view);
   const previewHtml = renderProfileLibraryViewportOverlay({}, view);
-  assert.match(left, /可编辑管型包/);
-  assert.match(left, /DXF 冻结截面/);
+  assert.match(left, /程式管型包/);
+  assert.match(left, /定式管型/);
   assert.match(left, /data-tube-profile-library-scope="system"/);
   assert.match(left, /data-tube-profile-library-scope="template"/);
   assert.match(left, /data-tube-profile-library-scope="user"/);
@@ -1091,9 +1287,11 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   assert.match(right, /默认参数/);
   assert.match(right, /data-tube-profile-editor-parameter="width"/);
   assert.match(right, /保存名称和默认参数/);
-  assert.match(right, /tube-profile-library-miniature/);
-  assert.match(right, /data-cam-action="tube-designer-profile-export-dxf"/);
-  assert.match(right, /data-cam-action="tube-designer-profile-export-step"/);
+  assert.match(right, /data-profile-parameter-diagram/);
+  assert.match(right, /data-profile-parameter-key="width"/);
+  assert.match(right, /尚未提供参数位置标注/, "legacy packages retain their real contour without inferred dimensions");
+  assert.doesNotMatch(right, /data-cam-action="tube-designer-profile-export-dxf"/);
+  assert.doesNotMatch(right, /data-cam-action="tube-designer-profile-export-step"/);
   assert.match(previewHtml, /tube-profile-library-preview-hud/);
   assert.match(previewHtml, /data-tube-profile-preview-progress/);
   assert.match(previewHtml, /data-tube-profile-preview-wait/);
@@ -1329,7 +1527,7 @@ async function testTubeDesignerHydratesProfilePreviewIntoTheThreeDimensionalView
       invoke: async (method, payload) => {
         assert.equal(method, "TubeDesigner.GenerateProfilePreview");
         assert.deepEqual(payload.profileRef, { scope: "user", id: profile.id });
-        assert.equal(payload.length, 1000);
+        assert.equal(payload.length, 500);
         return {
           geometryResourceId: "resource://profile-preview.mesh",
           geometryResourceVersion: 7,
@@ -1802,6 +2000,21 @@ async function testSDOPromiseFlow() {
   const undoRedoState = await opened.sceneProxy.getUndoRedoState();
   assert.deepEqual(undoRedoState.undoSteps, []);
   assert.deepEqual(await opened.sceneProxy.invoke(ProjectSDO.undo), undoRedoState);
+
+  const saved = await opened.projectProxy.save("D:/projects/另存项目.icax");
+  assert.equal(saved.saved, true);
+  assert.equal(saved.projectPath, "D:/projects/另存项目.icax");
+  assert.equal(opened.projectProxy.state.projectPath, saved.projectPath);
+  assert.equal((await opened.projectProxy.save()).projectPath, saved.projectPath);
+  const originalInvoke = opened.sceneProxy.invoke;
+  opened.sceneProxy.invoke = async () => ({ saved: false });
+  await assert.rejects(opened.projectProxy.save("D:/projects/failed.icax"), /保存未成功/);
+  assert.equal(opened.projectProxy.state.projectPath, saved.projectPath);
+  opened.sceneProxy.invoke = originalInvoke;
+  const mainScene = opened.projectProxy.mainSceneProxy;
+  opened.projectProxy.mainSceneProxy = null;
+  await assert.rejects(opened.projectProxy.save(), /主场景尚未就绪/);
+  opened.projectProxy.mainSceneProxy = mainScene;
 }
 
 async function testSceneChannelRegistrationFromProjectState() {
@@ -2180,6 +2393,10 @@ function delay(milliseconds) {
 testSDOMethodCodes();
 testTubeDesignerBuildsTemplateDefinedPartCategories();
 testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows();
+await testTubeDesignerNestingPartListUsesTheBreakdownPage();
+await testTubeDesignerOpensTransientPartListWithoutEnteringCutting();
+await testTubeDesignerReleasesTransientPartsWhenClosingDirectExport();
+await testTubeDesignerImportsDisassemblyDirectlyIntoCutting();
 await testTubeDesignerEntersCuttingFromThePartList();
 testTubeDesignerSketchJoinsTheMainWorkflow();
 testTubeDesignerChoosesTheFirstAvailableCatalogTemplate();

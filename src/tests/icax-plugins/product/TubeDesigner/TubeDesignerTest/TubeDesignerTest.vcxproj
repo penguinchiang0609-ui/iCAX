@@ -37,7 +37,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PreprocessorDefinitions>_USE_MATH_DEFINES;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\product;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\cad;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Engine\foundation;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/bigobj /utf-8 /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -50,8 +50,16 @@
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="TubeDesignerTests.cpp" />
+    <ClCompile Include="NestingStandardPartSDOTests.cpp" />
+    <ClCompile Include="PunchGeometryTests.cpp" />
+    <ClCompile Include="BRepCompoundRoundTripTests.cpp" />
+    <ClCompile Include="PunchPersistenceSDOTests.cpp">
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClCompile Include="ComponentResourceTests.cpp" />
     <ClCompile Include="ComponentModelLibraryTests.cpp" />
+    <ClCompile Include="MachiningToolpathTests.cpp" />
+    <ClCompile Include="BRepTubeUnfoldingServiceTests.cpp" />
     <ClCompile Include="ProfileGenerationPerformanceTests.cpp">
       <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -83,6 +91,15 @@
     <None Include="..\Fixtures\editable_profile_package\profile.py" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\SDO\SDO.vcxproj">
+      <Project>{1f194886-5b7e-4fa9-816c-1b48865633e6}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ProjectContext\ProjectContext.vcxproj">
+      <Project>{d0ee53be-bfd8-4ea9-9eac-ee9e6d9a1714}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Task\Task.vcxproj">
+      <Project>{93b5c837-5cbf-46de-a2c0-c8ff66a8e3f1}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Engine\foundation\Data\Data.vcxproj">
       <Project>{b1c027d1-b2ef-4f4b-8147-9fce3ec31c52}</Project>
     </ProjectReference>
@@ -112,6 +129,10 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup><ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\Services\Services.vcxproj"><Project>{dfcc3994-1c4f-4423-8ca7-3c1e1cbdb847}</Project></ProjectReference></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\ProjectFile\ProjectFile.vcxproj"><Project>{069A3406-81B1-49F1-9C58-E814C96498E0}</Project></ProjectReference>
+  </ItemGroup>
   <ImportGroup Label="ExtensionTargets">
     <Import Project="..\..\..\..\..\iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets" Condition="Exists('..\..\..\..\..\iCAX-Engine\packages\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.1.8.1.8\build\native\Microsoft.googletest.v140.windesktop.msvcstl.static.rt-dyn.targets')" />
   </ImportGroup>

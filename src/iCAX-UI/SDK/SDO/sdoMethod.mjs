@@ -11,10 +11,12 @@ export const ProductSDO = Object.freeze({
   getState: "Product.GetState",
   listProjectCatalogs: "Product.ListProjectCatalogs",
   openProjectCatalog: "Product.OpenProjectCatalog",
+  removeRecentProject: "Product.RemoveRecentProject",
   closeProjectCatalog: "Product.CloseProjectCatalog",
 });
 
 export const ProjectSDO = Object.freeze({
+  save: "Project.Save",
   getState: "Project.GetState",
   undo: "Project.Undo",
   redo: "Project.Redo",

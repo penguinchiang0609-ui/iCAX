@@ -11,7 +11,7 @@ assert.deepEqual(profiles.groups.flatMap((group) => group.commands).map((command
 const components = ribbonDefinition.tabs.find((tab) => tab.id === "components");
 assert.equal(components.title, "配件库");
 assert.deepEqual(components.groups.flatMap((group) => group.commands).map((command) => command.id), [
-  "components.import", "components.export-step",
+  "components.draw", "components.import", "components.export-step",
 ]);
 const exportGroup = components.groups.find((group) => group.commands.some((command) => command.id === "components.export-step"));
 assert.equal(exportGroup.title, "导出配件");

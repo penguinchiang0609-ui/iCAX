@@ -56,6 +56,27 @@ namespace
             iCAX::Product::LoadProductManifest(
                 _PathToUTF8(_ProductRoot / "tube-designer" / "product.manifest.json")).Definition,
         };
+        std::ifstream _Branding(_ProductRoot / "Branding.Setting");
+        std::string _Line;
+        const auto _Trim = [](const std::string& Text) {
+            const auto _Begin = Text.find_first_not_of(" \t\r\n");
+            return _Begin == std::string::npos ? std::string{} : Text.substr(_Begin, Text.find_last_not_of(" \t\r\n") - _Begin + 1);
+        };
+        while (std::getline(_Branding, _Line))
+        {
+            _Line = _Trim(_Line);
+            if (_Line.empty() || _Line.front() == '#') continue;
+            const auto _Equal = _Line.find('=');
+            if (_Equal == std::string::npos) continue;
+            const auto _Key = _Trim(_Line.substr(0, _Equal));
+            const auto _Value = _Trim(_Line.substr(_Equal + 1));
+            if (_Value.empty()) continue;
+            auto _Path = std::filesystem::path(std::u8string(_Value.begin(), _Value.end()));
+            if (_Path.is_relative()) _Path = _ProductRoot / _Path;
+            const auto _Resolved = _PathToUTF8(_CanonicalDirectory(_Path));
+            if (_Key == "platformIcon") Config_.PlatformIconPath = _Resolved;
+            else if (_Key.starts_with("product.")) Config_.ProductIconPaths[_Key.substr(8)] = _Resolved;
+        }
     }
 
     iCAX::Application::CApplicationConfig _MakeDefaultApplicationConfig()
@@ -119,6 +140,22 @@ namespace
 iCAX::Application::CApplication::CApplication()
     : m_Config(_MakeDefaultApplicationConfig())
 {
+}
+
+std::string iCAX::Application::CApplication::GetWindowIconPath() const
+{
+    std::lock_guard<std::mutex> _Lock(m_Mutex);
+    if (m_Config.RuntimeConfig.Products.size() == 1)
+    {
+        const auto _It = m_Config.ProductIconPaths.find(m_Config.RuntimeConfig.Products.front().ProductID);
+        if (_It != m_Config.ProductIconPaths.end())
+        {
+            std::error_code _Error;
+            if (std::filesystem::is_regular_file(std::filesystem::path(std::u8string(_It->second.begin(), _It->second.end())), _Error))
+                return _It->second;
+        }
+    }
+    return m_Config.PlatformIconPath;
 }
 
 iCAX::Application::CApplication::~CApplication()
