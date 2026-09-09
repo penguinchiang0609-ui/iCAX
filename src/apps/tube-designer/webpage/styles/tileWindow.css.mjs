@@ -1,4 +1,5 @@
 const tileWindowShells = [
+  '.tube-designer-modal-backdrop [role="dialog"]',
   '.tube-designer-modal-backdrop > [role="dialog"]',
   '.tube-designer-punch-parameter-backdrop > [role="dialog"]',
   '.tube-nesting-settings-backdrop > [role="dialog"]',
@@ -7,12 +8,22 @@ const tileWindowShells = [
   '.tube-designer-confirm-dialog',
   '.tube-profile-library-preview-wait',
   '.tube-component-csg-dialog',
+  '.tube-designer-punch-dialog',
+  '.tube-designer-punch-parameter-dialog',
+  '.tube-designer-template-manager-dialog',
+  '.tube-designer-config-dialog',
+  '.tube-designer-selection-dialog',
+  '.tube-designer-breakdown-dialog',
+  '.tube-designer-part-inspection-dialog',
+  '.td-draw-workbench',
+  '.tube-designer-workspace',
   '.tube-designer-export-progress-card',
   '.tube-designer-nesting-context-menu',
   '.new-project-dialog',
 ].join(',\n');
 
 const tileWindowDescendants = [
+  '.tube-designer-modal-backdrop [role="dialog"] *',
   '.tube-designer-modal-backdrop > [role="dialog"] *',
   '.tube-designer-punch-parameter-backdrop > [role="dialog"] *',
   '.tube-nesting-settings-backdrop > [role="dialog"] *',
@@ -32,6 +43,39 @@ const tileWindowDescendants = [
   '.tube-component-csg-page-overlay *',
   '.tube-component-library-hud',
   '.tube-component-library-hud *',
+  '.tube-designer-punch-dialog *',
+  '.tube-designer-punch-parameter-dialog *',
+  '.tube-designer-template-manager-dialog *',
+  '.tube-designer-config-dialog *',
+  '.tube-designer-selection-dialog *',
+  '.tube-designer-breakdown-dialog *',
+  '.tube-designer-part-inspection-dialog *',
+  '.td-draw-workbench *',
+  '.tube-designer-workspace :where(div, article, section, aside, nav, details, summary, button, input, select, textarea, label, fieldset, form, header, footer, main, figure)',
+  '.tube-designer-workspace button',
+  '.tube-designer-workspace input',
+  '.tube-designer-workspace select',
+  '.tube-designer-workspace textarea',
+  '.tube-designer-workspace article',
+  '.tube-designer-workspace section',
+  '.tube-designer-workspace aside',
+  '.tube-designer-workspace nav',
+  '.tube-designer-workspace details',
+  '.tube-designer-workspace summary',
+  '.tube-designer-workspace [role="dialog"]',
+  '.tube-designer-workspace [role="button"]',
+].join(',\n');
+
+const tileWindowCards = [
+  '.tube-designer-workspace [class*="card"]',
+  '.tube-designer-workspace [class*="panel"]',
+  '.tube-designer-workspace [class*="pane"]',
+  '.tube-designer-workspace [class*="badge"]',
+  '.tube-designer-workspace [class*="status"]',
+  '.tube-designer-workspace [class*="summary"]',
+  '.tube-designer-workspace [class*="note"]',
+  '.tube-designer-workspace [class*="empty"]',
+  '.tube-designer-workspace [class*="progress"]',
 ].join(',\n');
 
 export const tileWindowCss = String.raw`
@@ -41,6 +85,9 @@ ${tileWindowShells} {
   box-shadow: 0 16px 42px rgba(3, 17, 23, .34) !important;
 }
 ${tileWindowDescendants} {
+  border-radius: 0 !important;
+}
+${tileWindowCards} {
   border-radius: 0 !important;
 }
 
