@@ -458,6 +458,105 @@ TEST(TubeNesting, HandlesLargeProductionBatchWithoutTimingOut)
     EXPECT_EQ(PlacementCount, 88U * 50U);
 }
 
+TEST(TubeNesting, HandlesFiveFaceProductionBatchWithEncodedCutLines)
+{
+    struct FixturePart
+    {
+        const char* Profile;
+        Length PartLength;
+    };
+    const std::array<FixturePart, 82> Fixture{
+        FixturePart{"38x25", 1800}, FixturePart{"38x25", 1800},
+        FixturePart{"38x25", 1800}, FixturePart{"38x25", 1800},
+        FixturePart{"38x25", 595}, FixturePart{"38x25", 595},
+        FixturePart{"22x22", 595}, FixturePart{"22x22", 595},
+        FixturePart{"22x22", 595}, FixturePart{"22x22", 595},
+        FixturePart{"round19", 1744}, FixturePart{"round19", 1744},
+        FixturePart{"round19", 1744}, FixturePart{"round19", 1744},
+        FixturePart{"38x25", 1189}, FixturePart{"38x25", 1189},
+        FixturePart{"22x22", 1189}, FixturePart{"22x22", 1189},
+        FixturePart{"22x22", 491}, FixturePart{"22x22", 98},
+        FixturePart{"22x22", 491}, FixturePart{"22x22", 98},
+        FixturePart{"round19", 1744}, FixturePart{"round19", 1744},
+        FixturePart{"round19", 1744}, FixturePart{"round19", 1744},
+        FixturePart{"round19", 52}, FixturePart{"round19", 892},
+        FixturePart{"round19", 52}, FixturePart{"round19", 892},
+        FixturePart{"round19", 52}, FixturePart{"round19", 892},
+        FixturePart{"round19", 52}, FixturePart{"round19", 892},
+        FixturePart{"round19", 52}, FixturePart{"round19", 892},
+        FixturePart{"38x25", 589}, FixturePart{"38x25", 589},
+        FixturePart{"22x22", 589}, FixturePart{"22x22", 589},
+        FixturePart{"22x22", 589}, FixturePart{"22x22", 589},
+        FixturePart{"round19", 1744}, FixturePart{"round19", 1744},
+        FixturePart{"round19", 1744}, FixturePart{"round19", 1744},
+        FixturePart{"38x25", 1195}, FixturePart{"22x22", 1195},
+        FixturePart{"22x22", 1195}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"38x25", 1195}, FixturePart{"22x22", 1195},
+        FixturePart{"22x22", 1195}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"round19", 589}, FixturePart{"round19", 589},
+        FixturePart{"25x25", 600}, FixturePart{"25x25", 600},
+        FixturePart{"25x25", 800}, FixturePart{"25x25", 800},
+        FixturePart{"20x20-r15", 549}, FixturePart{"20x20-r15", 549},
+        FixturePart{"20x20-r15", 749}, FixturePart{"20x20-r15", 749},
+        FixturePart{"20x20-r08", 529}, FixturePart{"20x20-r08", 529},
+        FixturePart{"16x16-r08", 729}, FixturePart{"16x16-r08", 729},
+    };
+
+    std::vector<PartDemand> Demands;
+    Demands.reserve(Fixture.size());
+    for (std::size_t Index = 0; Index < Fixture.size(); ++Index)
+    {
+        const Length Offset = static_cast<Length>(10 + Index % 7);
+        const auto Feature = EncodeCutLineFeature(1900, { 0, Offset, 0, Offset });
+        PartVariant Forward;
+        Forward.ID = "forward-0";
+        Forward.AxialLength = Fixture[Index].PartLength;
+        Forward.MaterialLength = Fixture[Index].PartLength;
+        Forward.LeftEnd.Feature = Feature;
+        Forward.RightEnd.Feature = Feature;
+        PartVariant Reverse = Forward;
+        Reverse.ID = "forward-180";
+        Reverse.Reversed = true;
+        Reverse.RotationRadians = 3.14159265358979323846;
+        Reverse.PhaseOffset = 950;
+        Demands.push_back(PartDemand{
+            "part-" + std::to_string(Index), Fixture[Index].Profile, "order-1",
+            Fixture[Index].PartLength, 50, { Forward, Reverse }});
+    }
+
+    std::vector<StockType> Stocks;
+    for (const auto* Profile : { "38x25", "22x22", "round19", "25x25",
+                                  "20x20-r15", "20x20-r08", "16x16-r08" })
+        Stocks.push_back(StockType{
+            std::string(Profile) + "-stock", Profile, StockKind::Standard, 6000 });
+
+    SolverSettings Settings = ExactSettings();
+    Settings.Kerf = 0;
+    Settings.PartGap = 5;
+    Settings.ConstructionRuns = 1;
+    Settings.LocalSearchPasses = 0;
+    Settings.LargeNeighborhoodIterations = 0;
+    Settings.ExactPartLimit = 0;
+    Settings.ExactNodeLimit = 0;
+
+    const SolveResult Result = Solver{}.Solve(Demands, Stocks, Settings);
+
+    EXPECT_EQ(Result.Status, SolveStatus::Feasible);
+    EXPECT_TRUE(Result.UnplacedInstances.empty());
+    EXPECT_FALSE(Result.ExactSearchCompleted);
+    EXPECT_GE(Result.Metrics.GrossUtilization, 0.90);
+    std::size_t PlacementCount = 0;
+    for (const StockPlan& Stock : Result.Stocks) PlacementCount += Stock.Placements.size();
+    EXPECT_EQ(PlacementCount, Fixture.size() * 50U);
+}
+
 TEST(TubeNesting, ReportsPartThatCannotFitAnyStock)
 {
     const std::vector<PartDemand> Demands{

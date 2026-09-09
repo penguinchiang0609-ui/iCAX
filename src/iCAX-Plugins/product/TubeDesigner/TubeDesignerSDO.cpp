@@ -35,6 +35,7 @@
 #include "SDO/SDO.h"
 #include "Services/ServiceProvider.h"
 #include "SDO/SDORegistrationCatalog.h"
+#include "Task/Task.h"
 #include "Transform/Transform.h"
 #include "TemplateRuntime/PythonTemplateHost.h"
 #include "TemplateRuntime/StandardJsonCodec.h"
@@ -47,9 +48,11 @@
 #undef M_PI_2
 #endif
 
+#include <atomic>
 #include <fstream>
 #include <mutex>
 #include <numeric>
+#include <set>
 #include <unordered_set>
 #include <TopoDS_Shape.hxx>
 #include <TopExp_Explorer.hxx>
@@ -7956,32 +7959,99 @@ namespace
         iCAX::TubeNesting::CutLineFeatureCode RightCutLineFeature;
     };
 
-    void PopulateNestingCutLineFeatures(
-        iCAX::Project::ISceneContext& Scene_, const TopoDS_Shape& Shape_,
-        SNestingGeometrySummary& Summary_)
+    bool HasNestingCutLineFeatures(const SNestingGeometrySummary& Summary_)
     {
+        return iCAX::TubeNesting::IsValidCutLineFeature(Summary_.LeftCutLineFeature)
+            && iCAX::TubeNesting::IsValidCutLineFeature(Summary_.RightCutLineFeature)
+            && Summary_.LeftCutLineFeature.Period == Summary_.RightCutLineFeature.Period;
+    }
+
+    struct SNestingGeometryCache final
+    {
+        std::mutex Mutex;
+        std::map<std::string, SNestingGeometrySummary> Measurements;
+        std::set<std::string> PendingFeatureJobs;
+        std::shared_ptr<iCAX::Tasks::ThreadPoolTaskScheduler> Scheduler =
+            std::make_shared<iCAX::Tasks::ThreadPoolTaskScheduler>(1);
+        std::atomic_bool Stopping = false;
+
+        ~SNestingGeometryCache()
+        {
+            Stopping.store(true, std::memory_order_release);
+            Scheduler->Shutdown();
+        }
+    };
+
+    SNestingGeometryCache& NestingGeometryCache()
+    {
+        static SNestingGeometryCache _Cache;
+        return _Cache;
+    }
+
+    void QueueNestingCutLineFeatureGeneration(std::string Key_, TopoDS_Shape Shape_)
+    {
+        auto& _Cache = NestingGeometryCache();
+        {
+            const std::lock_guard _Lock(_Cache.Mutex);
+            const auto _Found = _Cache.Measurements.find(Key_);
+            if (_Found == _Cache.Measurements.end()
+                || HasNestingCutLineFeatures(_Found->second)
+                || !_Cache.PendingFeatureJobs.insert(Key_).second)
+                return;
+        }
+
+        // Full side unfolding is useful for the precise cut-line matcher, but
+        // it is not a prerequisite for nesting.  It can take about 91 seconds
+        // for the 82 five-face parts, so keep it off the SDO request path and
+        // publish it into the same resource-version cache when it is ready.
+        const auto _PendingKey = Key_;
         try
         {
-            const auto _Service = Scene_.Services().Resolve<IBRepTubeUnfoldingService>();
-            if (!_Service) return;
-            STubeBRepUnfoldingOptions _Options;
-            _Options.StationCount = 5;
-            _Options.SamplesPerCurve = 33;
-            _Options.MaximumOutputPoints = 20000;
-            _Options.IncludeInnerSurfaces = false;
-            const auto _Unfolded = _Service->Unfold(Shape_, _Options);
-            if (!_Unfolded.bOK) return;
-            const auto _Features = EncodeTubeUnfoldedEndFeatures(_Unfolded, 64);
-            if (_Features.bOK)
-            {
-                Summary_.LeftCutLineFeature = _Features.Left;
-                Summary_.RightCutLineFeature = _Features.Right;
-            }
+            (void)iCAX::Tasks::Run([Key_ = std::move(Key_), Shape_ = std::move(Shape_)] {
+                STubeUnfoldedEndFeatureCodes _Features;
+                try
+                {
+                    auto& _Cache = NestingGeometryCache();
+                    if (!_Cache.Stopping.load(std::memory_order_acquire))
+                    {
+                        STubeBRepUnfoldingOptions _Options;
+                        _Options.StationCount = 5;
+                        _Options.SamplesPerCurve = 33;
+                        _Options.MaximumOutputPoints = 20000;
+                        _Options.IncludeInnerSurfaces = false;
+                        const auto _Unfolded = UnfoldTubeBRepSurface(Shape_, _Options);
+                        if (_Unfolded.bOK)
+                            _Features = EncodeTubeUnfoldedEndFeatures(_Unfolded, 64);
+                    }
+                }
+                catch (const std::exception&)
+                {
+                    // Knife-plane summaries remain the authoritative fast fallback
+                    // when an individual side cannot be unfolded.
+                }
+                catch (...)
+                {
+                    // Keep a failed background feature job from affecting nesting.
+                }
+
+                auto& _Cache = NestingGeometryCache();
+                const std::lock_guard _Lock(_Cache.Mutex);
+                if (_Features.bOK)
+                {
+                    const auto _Found = _Cache.Measurements.find(Key_);
+                    if (_Found != _Cache.Measurements.end())
+                    {
+                        _Found->second.LeftCutLineFeature = _Features.Left;
+                        _Found->second.RightCutLineFeature = _Features.Right;
+                    }
+                }
+                _Cache.PendingFeatureJobs.erase(Key_);
+            }, _Cache.Scheduler);
         }
-        catch (const std::exception&)
+        catch (...)
         {
-            // The legacy conservative knife-plane path remains valid when an
-            // unfolded feature cannot be produced for an individual part.
+            const std::lock_guard _Lock(_Cache.Mutex);
+            _Cache.PendingFeatureJobs.erase(_PendingKey);
         }
     }
 
@@ -7993,11 +8063,11 @@ namespace
         if (_ResourceID.empty() || _Version == 0)
             throw std::invalid_argument("零件缺少最终制造几何，请回到产品重新拆单");
         const auto _Key = _ResourceID + "@" + std::to_string(_Version);
-        static std::mutex _Mutex;
-        static std::map<std::string, SNestingGeometrySummary> _Measurements;
+        auto& _Cache = NestingGeometryCache();
         {
-            const std::lock_guard _Lock(_Mutex);
-            if (const auto _Found = _Measurements.find(_Key); _Found != _Measurements.end())
+            const std::lock_guard _Lock(_Cache.Mutex);
+            if (const auto _Found = _Cache.Measurements.find(_Key);
+                _Found != _Cache.Measurements.end())
             {
                 auto _Result = _Found->second;
                 _Result.EnvelopeLength = std::max(Part_.GetLength(), _Result.EnvelopeLength);
@@ -8026,12 +8096,12 @@ namespace
             _Result.LocalCenter[0] = (_Result.LinearGeometry.AxialMinimum
                 + _Result.LinearGeometry.AxialMaximum) * 0.5;
         }
-        PopulateNestingCutLineFeatures(Scene_, _Shape, _Result);
         {
-            const std::lock_guard _Lock(_Mutex);
-            if (_Measurements.size() > 10000) _Measurements.clear();
-            _Measurements[_Key] = _Result;
+            const std::lock_guard _Lock(_Cache.Mutex);
+            if (_Cache.Measurements.size() > 10000) _Cache.Measurements.clear();
+            _Cache.Measurements[_Key] = _Result;
         }
+        QueueNestingCutLineFeatureGeneration(_Key, _Shape);
         _Result.EnvelopeLength = std::max(Part_.GetLength(), _Result.EnvelopeLength);
         return _Result;
     }
@@ -8044,11 +8114,11 @@ namespace
         if (_ResourceID.empty() || _Version == 0)
             throw std::invalid_argument("零件缺少最终制造几何，请重新导入下料");
         const auto _Key = _ResourceID + "@" + std::to_string(_Version);
-        static std::mutex _Mutex;
-        static std::map<std::string, SNestingGeometrySummary> _Measurements;
+        auto& _Cache = NestingGeometryCache();
         {
-            const std::lock_guard _Lock(_Mutex);
-            if (const auto _Found = _Measurements.find(_Key); _Found != _Measurements.end())
+            const std::lock_guard _Lock(_Cache.Mutex);
+            if (const auto _Found = _Cache.Measurements.find(_Key);
+                _Found != _Cache.Measurements.end())
             {
                 auto _Result = _Found->second;
                 _Result.EnvelopeLength = std::max(Part_.Length, _Result.EnvelopeLength);
@@ -8076,12 +8146,12 @@ namespace
             _Result.LocalCenter[0] = (_Result.LinearGeometry.AxialMinimum
                 + _Result.LinearGeometry.AxialMaximum) * 0.5;
         }
-        PopulateNestingCutLineFeatures(Scene_, _Shape, _Result);
         {
-            const std::lock_guard _Lock(_Mutex);
-            if (_Measurements.size() > 10000) _Measurements.clear();
-            _Measurements[_Key] = _Result;
+            const std::lock_guard _Lock(_Cache.Mutex);
+            if (_Cache.Measurements.size() > 10000) _Cache.Measurements.clear();
+            _Cache.Measurements[_Key] = _Result;
         }
+        QueueNestingCutLineFeatureGeneration(_Key, _Shape);
         _Result.EnvelopeLength = std::max(Part_.Length, _Result.EnvelopeLength);
         return _Result;
     }
