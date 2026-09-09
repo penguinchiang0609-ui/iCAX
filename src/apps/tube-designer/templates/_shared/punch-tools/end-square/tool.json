@@ -6,6 +6,7 @@
   "displayName": "端面平切",
   "kind": "programmatic",
   "target": "end",
+  "category": "端面",
   "processCode": "square",
   "parameters": []
 }

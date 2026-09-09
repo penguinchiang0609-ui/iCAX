@@ -225,6 +225,26 @@ class PunchTools(unittest.TestCase):
             self.assertEqual("end", items[key]["target"])
         self.assertTrue(items["end-profile"]["requiresSection"])
 
+    def test_system_standard_moulds_are_categorized_and_generate_profiles(self):
+        items = {tool["id"]: tool for tool in runtime.catalogue()["tools"]}
+        expected_hole_types = ("circle", "square", "rectangle", "ellipse",
+                               "diamond-12", "hexagon", "triangle", "single-d", "double-d")
+        for tool_id in expected_hole_types:
+            with self.subTest(tool_id=tool_id):
+                self.assertEqual("孔型", items[tool_id]["category"])
+                prepared = self.prepare([{"toolTarget": "side", "station": 500,
+                                           "toolRef": {"id": tool_id}, "toolParameters": {}}])
+                geometry = prepared["features"][0]["toolSnapshot"]["geometry"]
+                self.assertEqual("profile", geometry["mode"])
+                self.assertTrue(geometry["contours"])
+        slot = self.prepare([{"toolTarget": "side", "station": 500,
+                              "toolRef": {"id": "slot"}, "toolParameters": {}}])
+        self.assertEqual("槽口", items["slot"]["category"])
+        self.assertTrue(slot["features"][0]["toolSnapshot"]["geometry"]["contours"])
+        self.assertEqual("槽口", items["v-notch"]["category"])
+        self.assertEqual("支管", items["branch-profile"]["category"])
+        self.assertEqual("端面", items["end-profile"]["category"])
+
     def test_explicit_joint_and_step_contracts(self):
         for key in ("end-key-joint", "end-step-z"):
             for end in ("start", "end"):

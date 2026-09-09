@@ -89,6 +89,35 @@ def _evaluate(request: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _fit(request: dict[str, Any]) -> dict[str, Any]:
+    fitter_path = request.get("fitterPath")
+    contours = request.get("contours")
+    context = request.get("context", {})
+    if not isinstance(fitter_path, str) or not fitter_path:
+        raise ValueError("fitterPath must be a non-empty string")
+    if not isinstance(contours, list):
+        raise ValueError("contours must be an array")
+    if not isinstance(context, dict):
+        raise ValueError("context must be an object")
+
+    module = _load_template(
+        fitter_path,
+        str(request.get("packageDigest", "")),
+    )
+    fitter = getattr(module, "fitter", None)
+    if not callable(fitter):
+        raise RuntimeError("section fitter module must define fitter(contours, context)")
+    result = fitter(list(contours), dict(context))
+    if isinstance(result, bool):
+        result = {"matched": result}
+    if not isinstance(result, dict):
+        raise TypeError("section fitter must return an object or boolean")
+    if "matched" not in result or not isinstance(result["matched"], bool):
+        raise ValueError("section fitter result must contain boolean matched")
+    json.dumps(result, ensure_ascii=False, allow_nan=False)
+    return result
+
+
 def _handle(request: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     request_id = request.get("requestId")
     if request.get("protocol") != PROTOCOL:
@@ -98,6 +127,8 @@ def _handle(request: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     operation = request.get("operation")
     if operation == "shutdown":
         return {"requestId": request_id, "ok": True, "result": {}}, True
+    if operation == "fit":
+        return {"requestId": request_id, "ok": True, "result": _fit(request)}, False
     if operation != "evaluate":
         raise ValueError(f"unsupported template runtime operation: {operation}")
     return {"requestId": request_id, "ok": True, "result": _evaluate(request)}, False

@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "ExtrudeRecognizesService.h"
 #include "ExtrusionRecognitionService.h"
 #include "SectionDefinitionCodec.h"
 #include "SectionGeometry.h"
@@ -22,6 +23,22 @@ void CExtrusionRecognitionService::OnUnload()
 {
     std::lock_guard<std::mutex> _Lock(m_Mutex);
     m_Operators.clear();
+}
+
+SExtrusionDirectionResult CExtrusionRecognitionService::RecognizeDirection(
+    IN const iCAX::GeometryData::BRepModel& Geometry_,
+    IN const SExtrusionDirectionOptions& Options_) const
+{
+    CExtrudeRecognizesService _DirectionService;
+    return _DirectionService.Recognize(Geometry_, Options_);
+}
+
+SSectionWiresResult CExtrusionRecognitionService::ExtractSectionWires(
+    IN const iCAX::GeometryData::BRepModel& Geometry_,
+    IN const SSectionWireOptions& Options_) const
+{
+    CExtrudeRecognizesService _DirectionService;
+    return _DirectionService.ExtractSectionWires(Geometry_, Options_);
 }
 
 SRecognitionResult CExtrusionRecognitionService::Recognize(
@@ -48,6 +65,7 @@ SRecognitionResult CExtrusionRecognitionService::Recognize(
     {
         return _Result;
     }
+    _Result.Direction = _Analysis.Axis;
 
     CSectionRuleEngine::COperatorMap _Operators;
     {

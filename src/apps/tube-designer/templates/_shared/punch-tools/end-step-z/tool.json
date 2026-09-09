@@ -1,6 +1,6 @@
 {
   "schema":"icax.punch-tool","schemaVersion":1,"id":"end-step-z","version":"1.0.0",
-  "displayName":"单台阶 Z 形搭接口","kind":"programmatic","target":"end","category":"端切",
+  "displayName":"单台阶 Z 形搭接口","kind":"programmatic","target":"end","category":"端面",
   "parameters":[
     {"key":"depth","displayName":"两级端线轴向阶差（mm）","valueType":"number","defaultValue":20,"min":0.01,"max":100000},
     {"key":"splitOffset","displayName":"横向阶梯分界偏移（mm）","valueType":"number","defaultValue":0,"min":-100000,"max":100000},

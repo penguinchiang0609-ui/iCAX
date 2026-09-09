@@ -37,7 +37,7 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\geometry;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC><AdditionalDependencies>bcrypt.lib;ncrypt.lib;tbs.lib;crypt32.lib;shell32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
@@ -87,6 +87,7 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\foundation\TubeNesting\TubeNesting.vcxproj"><Project>{70d638c0-7f90-46b8-88db-47b201ebe2a6}</Project></ProjectReference>
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj"><Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project></ProjectReference>
     <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj"><Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project></ProjectReference>
+    <ProjectReference Include="..\..\geometry\ExtrusionRecognition\ExtrusionRecognition.vcxproj"><Project>{e108b465-2d5a-4904-a2fb-25f7f184d384}</Project></ProjectReference>
     <ProjectReference Include="..\..\common\Transform\Transform.vcxproj"><Project>{14df2d69-19bd-4340-b859-7c4ca916b42b}</Project></ProjectReference>
     <ProjectReference Include="..\..\render\RenderData\RenderData.vcxproj"><Project>{3d99f471-ba76-4007-af70-e82022efd424}</Project></ProjectReference>
     <ProjectReference Include="..\..\render\RenderInteraction\RenderInteraction.vcxproj"><Project>{c1da507c-9e08-4013-8dae-9829c7f2c722}</Project></ProjectReference>

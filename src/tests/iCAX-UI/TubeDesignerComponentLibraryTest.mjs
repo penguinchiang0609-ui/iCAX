@@ -777,9 +777,9 @@ await test("empty library clears the previous scene and lazy loading does not ru
 });
 
 await test("component tab and action routes are independent of tube profile and nesting workflows", async () => {
-  const tab = ribbonDefinition.tabs.find((item) => item.id === "components");
-  assert.equal(tab.title, "配件库");
-  assert.deepEqual(tab.groups.flatMap((group) => group.commands.map((item) => item.id)), ["components.draw", "components.import", "components.export-step"]);
+  const tab = ribbonDefinition.tabs.find((item) => item.id === "resources");
+  assert.equal(tab.title, "资源库");
+  assert.deepEqual(tab.groups.find((group) => group.title === "配件操作").commands.map((item) => item.id), ["components.draw", "components.import", "components.export-step"]);
   const h = harness();
   await h.act("scope", { dataset: { componentScope: "user" } });
   await handleDesignerAreaAction(h.context, h.view, "tube-designer-component-select", { dataset: { componentKey: "user:custom" } }, h.ops);
@@ -787,7 +787,7 @@ await test("component tab and action routes are independent of tube profile and 
   assert.equal(await handleComponentLibraryRibbonCommand(h.context, h.view, "unrelated", h.ops), false);
   const entry = readFileSync(new URL("../../apps/tube-designer/webpage/entry.mjs", import.meta.url), "utf8");
   assert.match(entry, /components:\s*\{\s*left: renderComponentLibraryLeftPane/);
-  assert.match(entry, /\["profiles", "components", "sketch", "nesting", "about"\]/);
+  assert.match(entry, /\["profiles", "tools", "components", "sketch", "nesting", "machining", "about"\]/);
 });
 
 await test("add template renders component selectors and breakdown distinguishes glass and accessories", () => {

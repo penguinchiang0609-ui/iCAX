@@ -13,16 +13,32 @@
 
 namespace iCAX::ExtrusionRecognition
 {
+    _EXTRUSION_RECOGNITION_EXP std::vector<SPythonSectionFitter> DiscoverPythonSectionFitters(
+        IN const std::string& ProfileRoot_);
+
     class _EXTRUSION_RECOGNITION_EXP IExtrusionRecognitionService
         : public iCAX::Services::IService
     {
     public:
         ~IExtrusionRecognitionService() override = default;
 
+        virtual SExtrusionDirectionResult RecognizeDirection(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN const SExtrusionDirectionOptions& Options_ = {}) const = 0;
+
+        virtual SSectionWiresResult ExtractSectionWires(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN const SSectionWireOptions& Options_ = {}) const = 0;
+
         virtual SRecognitionResult Recognize(
             IN const iCAX::GeometryData::BRepModel& Geometry_,
             IN std::span<const SSectionTypeDefinition> OrderedDefinitions_,
             IN const SRecognitionOptions& Options_ = {}) = 0;
+
+        virtual SRecognitionResult RecognizePythonFitters(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN std::span<const SPythonSectionFitter> OrderedFitters_,
+            IN const SPythonSectionFitterOptions& FitterOptions_ = {}) = 0;
 
         virtual SSectionMatchResult TestSectionType(
             IN const SSectionSnapshot& Section_,
@@ -61,10 +77,23 @@ namespace iCAX::ExtrusionRecognition
         void OnLoad() override;
         void OnUnload() override;
 
+        SExtrusionDirectionResult RecognizeDirection(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN const SExtrusionDirectionOptions& Options_ = {}) const override;
+
+        SSectionWiresResult ExtractSectionWires(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN const SSectionWireOptions& Options_ = {}) const override;
+
         SRecognitionResult Recognize(
             IN const iCAX::GeometryData::BRepModel& Geometry_,
             IN std::span<const SSectionTypeDefinition> OrderedDefinitions_,
             IN const SRecognitionOptions& Options_ = {}) override;
+
+        SRecognitionResult RecognizePythonFitters(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN std::span<const SPythonSectionFitter> OrderedFitters_,
+            IN const SPythonSectionFitterOptions& FitterOptions_ = {}) override;
 
         SSectionMatchResult TestSectionType(
             IN const SSectionSnapshot& Section_,

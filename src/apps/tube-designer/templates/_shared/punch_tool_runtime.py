@@ -62,10 +62,11 @@ def _parameters(descriptor, supplied):
     return result
 
 
-def _package(directory):
+def _package(directory, package_root=None):
     # No symlink escapes, optional code paths, or code supplied by the project.
     directory = directory.resolve()
-    if directory.parent != ROOT.resolve():
+    package_root = Path(ROOT if package_root is None else package_root).resolve()
+    if directory.parent != package_root:
         raise ValueError("刀具目录越界")
     manifest = directory / "tool.json"
     try:
@@ -102,14 +103,38 @@ def _package(directory):
     return descriptor, defaults, content, digest
 
 
-def catalogue():
+def _catalogue_root(root, scope="system", template_id="", template_name=""):
     tools, errors = [], []
-    for manifest in sorted(ROOT.glob("*/tool.json")):
+    root = Path(root)
+    if not root.is_dir():
+        return tools, [f"{root.name}: 刀具目录不存在"]
+    for manifest in sorted(root.glob("*/tool.json")):
         try:
-            descriptor, defaults, _, digest = _package(manifest.parent)
-            tools.append({**descriptor, "digest": digest, "defaultParameters": defaults})
+            descriptor, defaults, _, digest = _package(manifest.parent, root)
+            item = {**descriptor, "digest": digest, "defaultParameters": defaults,
+                    "libraryScope": scope}
+            if not item.get("category"):
+                item["category"] = "端面" if item.get("target") == "end" else (
+                    "支管" if item.get("requiresSection") else "孔型")
+            if scope == "template":
+                item["templateId"] = str(template_id)
+                item["templateName"] = str(template_name or template_id)
+            tools.append(item)
         except (ValueError, OSError, KeyError, TypeError) as error:
             errors.append(f"{manifest.parent.name}: {error}")
+    return tools, errors
+
+
+def catalogue(sources=None):
+    tools, errors = _catalogue_root(ROOT)
+    for source in sources or []:
+        if not isinstance(source, dict) or source.get("scope") != "template":
+            errors.append("刀具目录来源无效")
+            continue
+        current, current_errors = _catalogue_root(
+            source.get("root", ""), "template", source.get("templateId", ""), source.get("templateName", ""))
+        tools.extend(current)
+        errors.extend(current_errors)
     return {"tools": tools, "errors": errors}
 
 
@@ -361,7 +386,7 @@ def recipe_item(item):
 def generate(parameters, context):
     action = parameters.get("action")
     if action == "catalogue":
-        return catalogue()
+        return catalogue(parameters.get("catalogueSources"))
     if action == "prepare":
         return prepare(parameters)
     raise ValueError("未知刀具运行时操作")

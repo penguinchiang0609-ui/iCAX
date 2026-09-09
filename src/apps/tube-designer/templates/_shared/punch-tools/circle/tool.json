@@ -6,6 +6,7 @@
   "displayName": "圆孔",
   "kind": "programmatic",
   "target": "side",
+  "category": "孔型",
   "parameters": [
     {
       "key": "diameter",

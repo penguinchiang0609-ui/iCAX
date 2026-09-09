@@ -55,3 +55,8 @@ def contours(
     if swap_axes:
         points = [[y, x] for x, y in points]
     return [{"kind": "polygon", "points": points}]
+
+
+def fitter(contours: list[dict[str, Any]], context: dict[str, Any] | None = None) -> dict[str, Any]:
+    from profile_fitting import fitter_for_profile
+    return fitter_for_profile(contours, "i-section", context)

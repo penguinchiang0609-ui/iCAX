@@ -34,21 +34,29 @@ function harness() {
 }
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-await test("three source tabs are isolated and template groups preserve owner names", async () => {
+await test("source and profile-type tabs isolate the compact two-column card list", async () => {
   const { view, act } = harness();
   let html = renderProfileLibraryLeftPane({}, view);
-  assert.equal((html.match(/role="tab"/g) ?? []).length, 3);
+  assert.equal((html.match(/role="tab"/g) ?? []).length, 6);
   assert.match(html, /系统内置/); assert.match(html, /模板自带/); assert.match(html, /我的/);
+  assert.match(html, /data-tube-profile-library-type="all"/);
+  assert.match(html, /data-tube-profile-library-type="parametric"/);
+  assert.match(html, /data-tube-profile-library-type="fixed"/);
+  assert.match(html, /tube-profile-library-list/);
+  assert.doesNotMatch(html, /系统内置 · 程式管型|程式管型包|定式管型/);
   assert.match(html, /data-tube-designer-profile-key="system:round"/);
   assert.doesNotMatch(html, /data-tube-designer-profile-key="(?:user|template):/);
   await act("scope", { dataset: { tubeProfileLibraryScope: "template" } });
   html = renderProfileLibraryLeftPane({}, view);
-  assert.match(html, /护栏 rail-a/); assert.match(html, /护栏 rail-b/);
+  assert.match(html, /专用 rail-a/); assert.match(html, /专用 rail-b/);
   assert.match(html, /template:rail-a:shared/); assert.match(html, /template:rail-b:shared/);
   assert.doesNotMatch(html, /data-tube-designer-profile-key="(?:user|system):/);
   assert.equal(profileSelectionKey(templates[0]), "template:rail-a:shared");
   assert.notEqual(profileSelectionKey(templates[0]), profileSelectionKey(templates[1]));
   assert.deepEqual(profileRef(templates[0]), { scope: "template", templateId: "rail-a", id: "shared" });
+  await act("type", { dataset: { tubeProfileLibraryType: "fixed" } });
+  assert.equal(visibleLibraryProfiles(view).length, 0);
+  assert.match(renderProfileLibraryLeftPane({}, view), /还没有定式管型/);
 });
 
 await test("search limits selection to visible results and empty tabs clear old geometry", async () => {

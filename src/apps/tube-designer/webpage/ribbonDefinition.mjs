@@ -82,41 +82,40 @@ const allRibbonDefinition = {
       ],
     },
     {
-      id: "profiles",
-      title: "管型库",
+      id: "resources",
+      title: "资源库",
       groups: [
         {
-          title: "新增管型",
+          title: "资源类型",
+          commands: [
+            command("resources.profiles", "管型", "profile-sketch", { size: "large", iconTone: "green" }),
+            command("resources.tools", "模具", "hole", { size: "large", iconTone: "orange" }),
+            command("resources.components", "配件", "machine", { size: "large", iconTone: "blue" }),
+          ],
+        },
+        {
+          title: "管型操作",
           commands: [
             command("profiles.new-sketch", "绘制", "profile-sketch", { size: "large", iconTone: "green" }),
             command("profiles.import-package", "导入程式", "new", { size: "large", iconTone: "green" }),
             command("profiles.import-dxf", "导入定式", "hole", { size: "large", iconTone: "orange" }),
-          ],
-        },
-        {
-          title: "导出管型",
-          commands: [
             command("profiles.export-dxf", "导出截面 DXF", "save", { size: "large", iconTone: "green" }),
             command("profiles.export-step", "导出管子 STEP", "machine", { size: "large", iconTone: "orange" }),
           ],
         },
+        {
+          title: "模具操作",
+          commands: [command("tools.refresh", "刷新模具", "view-fit", { size: "large", iconTone: "green" })],
+        },
+        {
+          title: "配件操作",
+          commands: [
+            command("components.draw", "绘制", "profile-sketch", { size: "large", iconTone: "green" }),
+            command("components.import", "导入三维模型", "new", { size: "large", iconTone: "green" }),
+            command("components.export-step", "导出配件 STEP", "save", { size: "large", iconTone: "green" }),
+          ],
+        },
       ],
-    },
-    {
-      id: "components",
-      title: "配件库",
-      groups: [{
-        title: "三维配件",
-        commands: [
-          command("components.draw", "绘制", "profile-sketch", { size: "large", iconTone: "green" }),
-          command("components.import", "导入三维模型", "new", { size: "large", iconTone: "green" }),
-        ],
-      }, {
-        title: "导出配件",
-        commands: [
-          command("components.export-step", "导出配件 STEP", "save", { size: "large", iconTone: "green" }),
-        ],
-      }],
     },
     {
       id: "sketch",

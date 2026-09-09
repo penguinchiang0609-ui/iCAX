@@ -6,6 +6,7 @@
   "displayName": "端面斜切",
   "kind": "programmatic",
   "target": "end",
+  "category": "端面",
   "processCode": "miter",
   "parameters": [
     {

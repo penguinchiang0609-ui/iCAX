@@ -6,6 +6,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ExtrusionRecognitionExport.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ExtrudeRecognizesService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ExtrusionRecognitionService.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ExtrusionRecognitionTypes.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="SectionGeometry.h"><Filter>Header Files</Filter></ClInclude>
@@ -16,10 +17,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="ExtrudeRecognizesService.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="SectionWireExtraction.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="ExtrusionRecognitionService.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SectionGeometry.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SectionDefinitionCodec.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="SectionRuleEngine.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="PythonSectionFitting.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="pch.cpp"><Filter>Source Files</Filter></ClCompile>
   </ItemGroup>
 </Project>

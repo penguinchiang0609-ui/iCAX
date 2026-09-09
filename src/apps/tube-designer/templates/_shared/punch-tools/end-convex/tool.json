@@ -6,6 +6,7 @@
   "displayName": "圆柱凸头",
   "kind": "programmatic",
   "target": "end",
+  "category": "端面",
   "processCode": "convex",
   "parameters": [
     {

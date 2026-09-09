@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "SectionGeometry.h"
+#include "ExtrudeRecognizesService.h"
 
 namespace iCAX::ExtrusionRecognition
 {
@@ -914,7 +915,8 @@ namespace
         Direction3 m_TargetZ;
     };
 
-    void TransformCurve3(IN OUT Curve3& Curve_, IN const CCoordinateNormalizer& Transform_)
+    template<typename TTransform>
+    void TransformCurve3(IN OUT Curve3& Curve_, IN const TTransform& Transform_)
     {
         std::visit([&Transform_](IN OUT auto& CurveValue_) {
             using T = std::decay_t<decltype(CurveValue_)>;
@@ -957,7 +959,8 @@ namespace
         }, Curve_);
     }
 
-    void TransformSurface3(IN OUT Surface3& Surface_, IN const CCoordinateNormalizer& Transform_)
+    template<typename TTransform>
+    void TransformSurface3(IN OUT Surface3& Surface_, IN const TTransform& Transform_)
     {
         std::visit([&Transform_](IN OUT auto& SurfaceValue_) {
             using T = std::decay_t<decltype(SurfaceValue_)>;
@@ -970,6 +973,89 @@ namespace
                 SurfaceValue_.Placement = Transform_.Placement(SurfaceValue_.Placement);
             }
         }, Surface_);
+    }
+
+    class CMatrixTransform final
+    {
+    public:
+        explicit CMatrixTransform(IN const Transform3& Transform_)
+            : m_Transform(Transform_)
+        {
+        }
+
+        Point3 Point(IN const Point3& Point_) const
+        {
+            return {
+                m_Transform.Matrix.Values[0][0] * Point_.X
+                    + m_Transform.Matrix.Values[0][1] * Point_.Y
+                    + m_Transform.Matrix.Values[0][2] * Point_.Z
+                    + m_Transform.Matrix.Values[0][3],
+                m_Transform.Matrix.Values[1][0] * Point_.X
+                    + m_Transform.Matrix.Values[1][1] * Point_.Y
+                    + m_Transform.Matrix.Values[1][2] * Point_.Z
+                    + m_Transform.Matrix.Values[1][3],
+                m_Transform.Matrix.Values[2][0] * Point_.X
+                    + m_Transform.Matrix.Values[2][1] * Point_.Y
+                    + m_Transform.Matrix.Values[2][2] * Point_.Z
+                    + m_Transform.Matrix.Values[2][3]
+            };
+        }
+
+        Direction3 Direction(IN const Direction3& Direction_) const
+        {
+            const auto _Vector = Vector(ToVector(Direction_));
+            Direction3 _Result;
+            return TryNormalize(_Vector, _Result) ? _Result : Direction_;
+        }
+
+        Vector3 Vector(IN const Vector3& Vector_) const
+        {
+            return {
+                m_Transform.Matrix.Values[0][0] * Vector_.X
+                    + m_Transform.Matrix.Values[0][1] * Vector_.Y
+                    + m_Transform.Matrix.Values[0][2] * Vector_.Z,
+                m_Transform.Matrix.Values[1][0] * Vector_.X
+                    + m_Transform.Matrix.Values[1][1] * Vector_.Y
+                    + m_Transform.Matrix.Values[1][2] * Vector_.Z,
+                m_Transform.Matrix.Values[2][0] * Vector_.X
+                    + m_Transform.Matrix.Values[2][1] * Vector_.Y
+                    + m_Transform.Matrix.Values[2][2] * Vector_.Z
+            };
+        }
+
+        Placement3 Placement(IN const Placement3& Placement_) const
+        {
+            return {
+                Point(Placement_.Location),
+                Direction(Placement_.XDirection),
+                Direction(Placement_.YDirection),
+                Direction(Placement_.ZDirection)
+            };
+        }
+
+    private:
+        const Transform3& m_Transform;
+    };
+
+    Transform3 Multiply(
+        IN const Transform3& Left_,
+        IN const Transform3& Right_)
+    {
+        Transform3 _Result;
+        for (std::size_t _Row = 0; _Row < 4; ++_Row)
+        {
+            for (std::size_t _Column = 0; _Column < 4; ++_Column)
+            {
+                _Result.Matrix.Values[_Row][_Column] = 0.0;
+                for (std::size_t _Index = 0; _Index < 4; ++_Index)
+                {
+                    _Result.Matrix.Values[_Row][_Column] +=
+                        Left_.Matrix.Values[_Row][_Index]
+                        * Right_.Matrix.Values[_Index][_Column];
+                }
+            }
+        }
+        return _Result;
     }
 }
 
@@ -1003,8 +1089,34 @@ bool TryAnalyzeExtrusion(
         Diagnostics_.push_back("BRep has no triangulation for section reconstruction");
         return false;
     }
-    bool _AxisRefined = false;
-    const auto _Axis = RecognizeAxis(Geometry_, _Triangles, _AxisRefined);
+    SExtrusionDirectionOptions _DirectionOptions;
+    _DirectionOptions.dAngularToleranceRadians = Options_.dAngularToleranceRadians;
+    _DirectionOptions.dMinimumEvidenceLength = Options_.dLinearTolerance;
+    CExtrudeRecognizesService _DirectionService;
+    const auto _DirectionResult = _DirectionService.Recognize(
+        Geometry_,
+        _DirectionOptions);
+    bool _AxisRefined = _DirectionResult.bSuccess;
+    std::optional<Direction3> _Axis;
+    if (_DirectionResult.bSuccess)
+    {
+        _Axis = _DirectionResult.Direction;
+        Diagnostics_.insert(
+            Diagnostics_.end(),
+            _DirectionResult.Diagnostics.begin(),
+            _DirectionResult.Diagnostics.end());
+    }
+    else
+    {
+        // 兼容历史上只含三角网格、没有 Edge/Surface 拓扑事实的测试资源。
+        // 正式 STEP BRep 会优先走上面的解析几何方向投票。
+        _Axis = RecognizeAxis(Geometry_, _Triangles, _AxisRefined);
+        if (_Axis)
+        {
+            Diagnostics_.push_back(
+                "Axis recognition fell back to mesh principal direction because exact BRep evidence was unavailable");
+        }
+    }
     if (!_Axis)
     {
         Status_ = ERecognitionStatus::AxisNotFound;
@@ -1186,6 +1298,60 @@ bool TryNormalizeExtrusion(
             }
         }
         Normalized_.Metadata.Tags.push_back("extrusion.normalized");
+        return true;
+    }
+    catch (const std::exception& Error_)
+    {
+        strError_ = Error_.what();
+        return false;
+    }
+}
+
+bool TryApplyBRepTransform(
+    IN const BRepModel& Geometry_,
+    IN const Transform3& Transform_,
+    OUT BRepModel& Transformed_,
+    OUT std::string& strError_)
+{
+    try
+    {
+        const CMatrixTransform _Transform(Transform_);
+        Transformed_ = Geometry_;
+        for (auto& _Vertex : Transformed_.Vertices)
+        {
+            _Vertex.Position = _Transform.Point(_Vertex.Position);
+        }
+        for (auto& _Curve : Transformed_.Curves3)
+        {
+            TransformCurve3(_Curve.Geometry, _Transform);
+        }
+        for (auto& _Surface : Transformed_.Surfaces3)
+        {
+            TransformSurface3(_Surface.Geometry, _Transform);
+        }
+        for (auto& _Triangulation : Transformed_.Triangulations3)
+        {
+            for (auto& _Point : _Triangulation.Geometry.Vertices)
+            {
+                _Point = _Transform.Point(_Point);
+            }
+            for (auto& _Normal : _Triangulation.Geometry.Normals)
+            {
+                _Normal = _Transform.Vector(_Normal);
+            }
+        }
+        for (auto& _Root : Transformed_.RootShapes)
+        {
+            _Root.Location = Multiply(Transform_, _Root.Location);
+        }
+        for (auto& _Compound : Transformed_.Compounds)
+        {
+            for (auto& _Child : _Compound.Children)
+            {
+                _Child.Location = Multiply(Transform_, _Child.Location);
+            }
+        }
+        Transformed_.Metadata.Tags.push_back("section-fitted");
         return true;
     }
     catch (const std::exception& Error_)

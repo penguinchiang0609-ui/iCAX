@@ -6,6 +6,7 @@
   "displayName": "圆柱凹口 / 相贯口",
   "kind": "programmatic",
   "target": "end",
+  "category": "端面",
   "processCode": "cope",
   "parameters": [
     {

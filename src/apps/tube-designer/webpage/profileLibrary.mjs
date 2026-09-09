@@ -20,39 +20,39 @@ export function renderProfileLibraryLeftPane(_context, view) {
     const scope = profileScope(profile);
     const selectionKey = profileSelectionKey(profile);
     const editable = isParametricProfile(profile);
-    return `<button type="button" class="tube-profile-library-card ${selectionKey === selectedId ? "selected" : ""}" data-cam-action="tube-designer-profile-library-select" data-tube-designer-profile-key="${escapeAttr(selectionKey)}" data-tube-designer-profile-scope="${escapeAttr(scope)}" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>
-      <span class="tube-profile-library-card-icon ${scope === "system" ? "is-system" : ""}">${scope === "template" ? "T" : scope === "system" ? "S" : (editable ? "P" : "D")}</span>
+    const specification = profileSpecification(profile);
+    const typeLabel = editable ? "程式管型" : "定式管型";
+    const sourceLabel = scope === "template" ? `模板自带 · ${profile.templateName || profile.templateId}` : scope === "system" ? "系统内置" : "我的管型";
+    return `<button type="button" class="tube-profile-library-card ${selectionKey === selectedId ? "selected" : ""}" title="${escapeAttr(`${profileName(profile)}${specification ? ` · ${specification}` : ""}`)}" aria-label="${escapeAttr(`${profileName(profile)}，${typeLabel}，${sourceLabel}${specification ? `，${specification}` : ""}`)}" data-cam-action="tube-designer-profile-library-select" data-tube-designer-profile-key="${escapeAttr(selectionKey)}" data-tube-designer-profile-scope="${escapeAttr(scope)}" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>
+      <span class="tube-profile-library-card-icon ${scope === "system" ? "is-system" : ""}" aria-hidden="true">${scope === "template" ? "T" : scope === "system" ? "S" : (editable ? "P" : "D")}</span>
       <span class="tube-profile-library-card-copy">
         <strong>${escapeText(profileName(profile))}</strong>
-        <small>${scope === "template" ? escapeText(profile.templateName || profile.templateId) : scope === "system" ? "系统内置 · 程式管型" : (editable ? "程式管型包" : "定式管型")}</small>
-        <em>${escapeText(profileSpecification(profile))}</em>
       </span>
-      <i aria-hidden="true"></i>
     </button>`;
   };
-  const renderGroup = (key, title, items) => `<details class="tube-profile-library-group" data-tube-profile-library-group="${escapeAttr(key)}" open>
-    <summary><strong>${escapeText(title)}</strong><span>${items.length} 个</span></summary>
-    <div class="tube-profile-library-group-content">
-      ${items.map(renderCard).join("")}
-    </div>
-  </details>`;
-  const groups = new Map();
-  for (const profile of profiles) {
-    const key = state.scope === "template" ? String(profile.templateId) : profileCategory(profile);
-    if (!groups.has(key)) groups.set(key, { title: state.scope === "template" ? profile.templateName || profile.templateId : key, items: [] });
-    groups.get(key).items.push(profile);
-  }
+  const sourceProfiles = all.filter((profile) => profileScope(profile) === state.scope);
+  const typeTabs = [["all", "全部"], ["parametric", "程式"], ["fixed", "定式"]];
+  const emptyTitle = state.search
+    ? "没有匹配的管型"
+    : state.type === "parametric" ? "还没有程式管型"
+      : state.type === "fixed" ? "还没有定式管型"
+        : { system: "没有可用的系统管型", template: "还没有模板自带管型", user: "还没有我的管型" }[state.scope];
+  const emptyNote = state.search
+    ? "请调整搜索内容。"
+    : state.scope === "template" ? "模板自带管型按所属模板管理，仅供该模板使用。"
+      : state.scope === "user" ? "可导入程式管型包，或导入定式管型。"
+        : "请检查内置管型资源是否完整。";
   return `<div class="tube-designer-panel tube-profile-library-panel">
     <div class="tube-designer-heading tube-profile-library-heading">
       <div><strong>管型库</strong><span>${all.length} 个管型 · 当前显示 ${profiles.length} 个</span></div>
     </div>
     <div class="tube-component-library-filters tube-profile-library-filters">
       <input type="search" aria-label="搜索管型" placeholder="搜索名称、规格、所属模板" value="${escapeAttr(state.search)}" data-cam-change-action="tube-designer-profile-library-search" />
-      <div role="tablist" aria-label="管型来源">${[["system", "系统内置"], ["template", "模板自带"], ["user", "我的"]].map(([scope, title]) => `<button type="button" role="tab" aria-selected="${scope === state.scope}" class="${scope === state.scope ? "selected" : ""}" data-cam-action="tube-designer-profile-library-scope" data-tube-profile-library-scope="${scope}" ${view?.pending ? "disabled" : ""}>${title}<small> ${all.filter((profile) => profileScope(profile) === scope).length}</small></button>`).join("")}</div>
+      <div class="tube-profile-library-tab-row" role="tablist" aria-label="管型来源">${[["system", "系统内置"], ["template", "模板自带"], ["user", "我的"]].map(([scope, title]) => `<button type="button" role="tab" aria-selected="${scope === state.scope}" class="${scope === state.scope ? "selected" : ""}" data-cam-action="tube-designer-profile-library-scope" data-tube-profile-library-scope="${scope}" ${view?.pending ? "disabled" : ""}>${title}<small>${all.filter((profile) => profileScope(profile) === scope).length}</small></button>`).join("")}</div>
+      <div class="tube-profile-library-tab-row" role="tablist" aria-label="管型类型">${typeTabs.map(([type, title]) => `<button type="button" role="tab" aria-selected="${type === state.type}" class="${type === state.type ? "selected" : ""}" data-cam-action="tube-designer-profile-library-type" data-tube-profile-library-type="${type}" ${view?.pending ? "disabled" : ""}>${title}<small>${type === "all" ? sourceProfiles.length : sourceProfiles.filter((profile) => profileLibraryType(profile) === type).length}</small></button>`).join("")}</div>
     </div>
     <div class="tube-profile-library-list" role="tabpanel">
-      ${[...groups].map(([key, group]) => renderGroup(key, group.title, group.items)).join("")}
-      ${profiles.length ? "" : `<div class="tube-profile-library-empty compact"><strong>${state.search ? "没有匹配的管型" : { system: "没有可用的系统管型", template: "还没有模板自带管型", user: "还没有我的管型" }[state.scope]}</strong><span>${state.search ? "请调整搜索内容。" : state.scope === "template" ? "模板自带管型按所属模板管理，仅供该模板使用。" : state.scope === "user" ? "可导入程式管型包，或导入 定式管型。" : "请检查内置管型资源是否完整。"}</span></div>`}
+      ${profiles.length ? profiles.map(renderCard).join("") : `<div class="tube-profile-library-empty compact"><strong>${emptyTitle}</strong><span>${emptyNote}</span></div>`}
     </div>
   </div>`;
 }
@@ -148,7 +148,7 @@ export function renderProfileLibraryViewportOverlay(context, view) {
 
 
 export async function handleProfileLibraryAction(context, view, action, target, ops) {
-  if (action === "tube-designer-profile-library-scope" || action === "tube-designer-profile-library-search") {
+  if (action === "tube-designer-profile-library-scope" || action === "tube-designer-profile-library-type" || action === "tube-designer-profile-library-search") {
     if (!view.pending) {
       const state = profileLibraryState(view);
       if (action.endsWith("scope")) {
@@ -157,6 +157,10 @@ export async function handleProfileLibraryAction(context, view, action, target, 
         state.selectedByScope[state.scope] = view.tubeDesignerSelectedProfileId;
         state.scope = scope;
         view.tubeDesignerSelectedProfileId = state.selectedByScope[scope] ?? "";
+      } else if (action.endsWith("type")) {
+        const type = String(target?.dataset?.tubeProfileLibraryType ?? "");
+        if (!["all", "parametric", "fixed"].includes(type)) return { handled: true };
+        state.type = type;
       } else state.search = String(target?.value ?? "");
       clearProfilePreviewRequest(view);
       ensureSelectedProfile(view, visibleLibraryProfiles(view));
@@ -237,8 +241,9 @@ export function profileLibraryState(view) {
   const current = String(view.tubeDesignerSelectedProfileId ?? "");
   const initialScope = current.startsWith("template:") ? "template" : current.startsWith("user:")
     || (view.tubeDesignerUserData?.profiles ?? []).some((profile) => String(profile?.id ?? "") === current) ? "user" : "system";
-  const state = view.tubeDesignerProfileLibrary ??= { scope: initialScope, search: "", selectedByScope: {} };
+  const state = view.tubeDesignerProfileLibrary ??= { scope: initialScope, type: "all", search: "", selectedByScope: {} };
   if (!["system", "template", "user"].includes(state.scope)) state.scope = "system";
+  if (!["all", "parametric", "fixed"].includes(state.type)) state.type = "all";
   state.selectedByScope ??= {};
   return state;
 }
@@ -269,8 +274,14 @@ export function visibleLibraryProfiles(view) {
   const state = profileLibraryState(view);
   const query = String(state.search ?? "").trim().toLocaleLowerCase();
   return libraryProfiles(view).filter((profile) => profileScope(profile) === state.scope
+    && (state.type === "all" || profileLibraryType(profile) === state.type)
     && [profileName(profile), profileSpecification(profile), profileCategory(profile), profile.templateName, profile.templateId]
       .some((value) => String(value ?? "").toLocaleLowerCase().includes(query)));
+}
+
+
+export function profileLibraryType(profile) {
+  return isParametricProfile(profile) ? "parametric" : "fixed";
 }
 
 
@@ -915,8 +926,10 @@ async function confirmProfilePackageImport(context, view, ops) {
     const profile = response?.profile;
     if (!profile?.id) throw new Error("导入管型包后没有返回记录标识。" );
     upsertProfile(view, profile);
-    profileLibraryState(view).scope = "user";
-    profileLibraryState(view).search = "";
+    const libraryState = profileLibraryState(view);
+    libraryState.scope = "user";
+    libraryState.type = profileLibraryType(profile);
+    libraryState.search = "";
     view.tubeDesignerSelectedProfileId = `user:${profile.id}`;
     view.tubeDesignerProfilePackageImportDialog = null;
     ops.showNotice(context, view, `已新增程式管型“${profile.name}”。`);
@@ -956,8 +969,10 @@ async function importDxfIntoLibrary(context, view, ops) {
     const saved = savedResponse?.profile;
     if (!saved?.id) throw new Error("保存 定式管型后没有返回记录标识。" );
     upsertProfile(view, saved);
-    profileLibraryState(view).scope = "user";
-    profileLibraryState(view).search = "";
+    const libraryState = profileLibraryState(view);
+    libraryState.scope = "user";
+    libraryState.type = profileLibraryType(saved);
+    libraryState.search = "";
     view.tubeDesignerSelectedProfileId = `user:${saved.id}`;
     ops.showNotice(context, view, `已新增 定式管型“${saved.name}”。`);
     return saved;

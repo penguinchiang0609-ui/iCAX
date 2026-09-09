@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <ExtrusionRecognition/ExtrudeRecognizesService.h>
 #include <ExtrusionRecognition/ExtrusionRecognitionService.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepBuilder.h>
 #include <OpenCascadeResourceImport/OpenCascadeBRepReader.h>
@@ -16,6 +17,7 @@
 #include <limits>
 #include <filesystem>
 #include <string>
+#include <tuple>
 #include <vector>
 
 namespace
@@ -100,6 +102,330 @@ namespace
         _Model.Triangulations3.push_back(std::move(_Record));
         _Model.Solids.push_back(BRepSolid{ 1 });
         _Model.RootSolidIds.push_back(1);
+        return _Model;
+    }
+
+    BRepModel MakeStraightEdgeEvidenceModel()
+    {
+        Curve3Record _Curve;
+        _Curve.Id = 1;
+        Line3 _Line;
+        _Line.Axis.Direction = { 3.0, 4.0, 0.0 };
+        _Curve.Geometry = _Line;
+
+        BRepModel _Model;
+        _Model.Curves3.push_back(std::move(_Curve));
+        for (std::uint64_t _Index = 1; _Index <= 3; ++_Index)
+        {
+            BRepEdge _Edge;
+            _Edge.Id = _Index;
+            _Edge.Curve3Id = 1;
+            _Edge.Range = { 0.0, 10.0 };
+            _Model.Edges.push_back(_Edge);
+        }
+        return _Model;
+    }
+
+    BRepModel MakeRectangularSideFaceBRep(bool bAddInteriorEndpointFace_ = false)
+    {
+        BRepModel _Model;
+        std::uint64_t _NextVertexID = 1;
+        std::uint64_t _NextCurveID = 1;
+        std::uint64_t _NextEdgeID = 1;
+        std::uint64_t _NextWireID = 1;
+        std::uint64_t _NextSurfaceID = 1;
+        std::uint64_t _NextFaceID = 1;
+
+        const auto _FindOrAddVertex = [&](const Point3& Point_)
+        {
+            const auto _Iter = std::find_if(
+                _Model.Vertices.begin(),
+                _Model.Vertices.end(),
+                [&Point_](const auto& Vertex_) {
+                    return std::abs(Vertex_.Position.X - Point_.X) <= 1.0e-12
+                        && std::abs(Vertex_.Position.Y - Point_.Y) <= 1.0e-12
+                        && std::abs(Vertex_.Position.Z - Point_.Z) <= 1.0e-12;
+                });
+            if (_Iter != _Model.Vertices.end())
+            {
+                return _Iter->Id;
+            }
+            BRepVertex _Vertex;
+            _Vertex.Id = _NextVertexID++;
+            _Vertex.Position = Point_;
+            _Model.Vertices.push_back(_Vertex);
+            return _Vertex.Id;
+        };
+
+        const auto _AddEdge = [&](const Point3& Start_, const Point3& End_)
+        {
+            const auto _StartID = _FindOrAddVertex(Start_);
+            const auto _EndID = _FindOrAddVertex(End_);
+            const auto _Delta = Vector3{
+                End_.X - Start_.X,
+                End_.Y - Start_.Y,
+                End_.Z - Start_.Z };
+            const auto _Length = std::sqrt(
+                _Delta.X * _Delta.X + _Delta.Y * _Delta.Y + _Delta.Z * _Delta.Z);
+            Line3 _Line;
+            _Line.Axis.Location = Start_;
+            _Line.Axis.Direction = {
+                _Delta.X / _Length,
+                _Delta.Y / _Length,
+                _Delta.Z / _Length };
+            Curve3Record _Curve;
+            _Curve.Id = _NextCurveID++;
+            _Curve.Geometry = _Line;
+            _Model.Curves3.push_back(_Curve);
+
+            BRepEdge _Edge;
+            _Edge.Id = _NextEdgeID++;
+            _Edge.Curve3Id = _Curve.Id;
+            _Edge.StartVertexId = _StartID;
+            _Edge.EndVertexId = _EndID;
+            _Edge.Range = { 0.0, _Length };
+            _Model.Edges.push_back(_Edge);
+            return std::tuple<std::uint64_t, std::uint64_t, std::uint64_t>{
+                _Edge.Id, _StartID, _EndID };
+        };
+
+        const auto _AddSideFace = [&](const std::array<Point3, 4>& Points_, const Direction3& Normal_)
+        {
+            BRepWire _Wire;
+            _Wire.Id = _NextWireID++;
+            for (std::size_t _Index = 0; _Index < Points_.size(); ++_Index)
+            {
+                const auto [_EdgeID, _StartID, _EndID] = _AddEdge(
+                    Points_[_Index],
+                    Points_[(_Index + 1) % Points_.size()]);
+                BRepCoedge _Coedge;
+                _Coedge.EdgeId = _EdgeID;
+                _Coedge.StartVertexId = _StartID;
+                _Coedge.EndVertexId = _EndID;
+                _Wire.Coedges.push_back(_Coedge);
+            }
+            _Model.Wires.push_back(_Wire);
+
+            PlaneSurface3 _Plane;
+            _Plane.Placement.Location = Points_.front();
+            _Plane.Placement.ZDirection = Normal_;
+            Surface3Record _Surface;
+            _Surface.Id = _NextSurfaceID++;
+            _Surface.Geometry = _Plane;
+            _Model.Surfaces3.push_back(_Surface);
+
+            BRepFace _Face;
+            _Face.Id = _NextFaceID++;
+            _Face.Surface3Id = _Surface.Id;
+            _Face.WireIds.push_back(_Wire.Id);
+            _Model.Faces.push_back(_Face);
+        };
+
+        constexpr double _Length = 100.0;
+        constexpr double _HalfWidth = 50.0;
+        constexpr double _HalfHeight = 25.0;
+        _AddSideFace({
+            Point3{ 0.0, -_HalfWidth, -_HalfHeight },
+            Point3{ _Length, -_HalfWidth, -_HalfHeight },
+            Point3{ _Length, -_HalfWidth, _HalfHeight },
+            Point3{ 0.0, -_HalfWidth, _HalfHeight } },
+            { 0.0, -1.0, 0.0 });
+        _AddSideFace({
+            Point3{ 0.0, _HalfWidth, -_HalfHeight },
+            Point3{ 0.0, _HalfWidth, _HalfHeight },
+            Point3{ _Length, _HalfWidth, _HalfHeight },
+            Point3{ _Length, _HalfWidth, -_HalfHeight } },
+            { 0.0, 1.0, 0.0 });
+        _AddSideFace({
+            Point3{ 0.0, -_HalfWidth, -_HalfHeight },
+            Point3{ 0.0, _HalfWidth, -_HalfHeight },
+            Point3{ _Length, _HalfWidth, -_HalfHeight },
+            Point3{ _Length, -_HalfWidth, -_HalfHeight } },
+            { 0.0, 0.0, -1.0 });
+        _AddSideFace({
+            Point3{ 0.0, -_HalfWidth, _HalfHeight },
+            Point3{ _Length, -_HalfWidth, _HalfHeight },
+            Point3{ _Length, _HalfWidth, _HalfHeight },
+            Point3{ 0.0, _HalfWidth, _HalfHeight } },
+            { 0.0, 0.0, 1.0 });
+        if (bAddInteriorEndpointFace_)
+        {
+            // The first point is in the interior of the long bottom edge of
+            // the outer rectangle. The other endpoint is a dirty degree-one
+            // branch, so this exercises both endpoint-on-edge splitting and
+            // iterative degree-one pruning.
+            _AddSideFace({
+                Point3{ 0.0, 0.0, -_HalfHeight },
+                Point3{ _Length, 0.0, -_HalfHeight },
+                Point3{ _Length, 0.0, -10.0 },
+                Point3{ 0.0, 0.0, -10.0 } },
+                { 0.0, -1.0, 0.0 });
+        }
+        return _Model;
+    }
+
+    BRepModel MakeTubeWithInternalConnectionsBRep(bool bConcaveOuter_ = false)
+    {
+        BRepModel _Model;
+        std::uint64_t _NextVertexID = 1;
+        std::uint64_t _NextCurveID = 1;
+        std::uint64_t _NextEdgeID = 1;
+        std::uint64_t _NextWireID = 1;
+        std::uint64_t _NextSurfaceID = 1;
+        std::uint64_t _NextFaceID = 1;
+
+        const auto _FindOrAddVertex = [&](const Point3& Point_)
+        {
+            const auto _Iter = std::find_if(
+                _Model.Vertices.begin(),
+                _Model.Vertices.end(),
+                [&Point_](const auto& Vertex_) {
+                    return std::abs(Vertex_.Position.X - Point_.X) <= 1.0e-12
+                        && std::abs(Vertex_.Position.Y - Point_.Y) <= 1.0e-12
+                        && std::abs(Vertex_.Position.Z - Point_.Z) <= 1.0e-12;
+                });
+            if (_Iter != _Model.Vertices.end())
+            {
+                return _Iter->Id;
+            }
+            BRepVertex _Vertex;
+            _Vertex.Id = _NextVertexID++;
+            _Vertex.Position = Point_;
+            _Model.Vertices.push_back(_Vertex);
+            return _Vertex.Id;
+        };
+
+        const auto _AddEdge = [&](const Point3& Start_, const Point3& End_)
+        {
+            const auto _StartID = _FindOrAddVertex(Start_);
+            const auto _EndID = _FindOrAddVertex(End_);
+            const auto _Delta = Vector3{
+                End_.X - Start_.X,
+                End_.Y - Start_.Y,
+                End_.Z - Start_.Z };
+            const auto _Length = std::sqrt(
+                _Delta.X * _Delta.X
+                + _Delta.Y * _Delta.Y
+                + _Delta.Z * _Delta.Z);
+            Line3 _Line;
+            _Line.Axis.Location = Start_;
+            _Line.Axis.Direction = {
+                _Delta.X / _Length,
+                _Delta.Y / _Length,
+                _Delta.Z / _Length };
+            Curve3Record _Curve;
+            _Curve.Id = _NextCurveID++;
+            _Curve.Geometry = _Line;
+            _Model.Curves3.push_back(_Curve);
+
+            BRepEdge _Edge;
+            _Edge.Id = _NextEdgeID++;
+            _Edge.Curve3Id = _Curve.Id;
+            _Edge.StartVertexId = _StartID;
+            _Edge.EndVertexId = _EndID;
+            _Edge.Range = { 0.0, _Length };
+            _Model.Edges.push_back(_Edge);
+            return std::tuple<std::uint64_t, std::uint64_t, std::uint64_t>{
+                _Edge.Id, _StartID, _EndID };
+        };
+
+        const auto _AddProfileEdgeFace = [&](const Point2& Start_, const Point2& End_)
+        {
+            constexpr double _Length = 100.0;
+            const Point3 _P0{ 0.0, Start_.X, Start_.Y };
+            const Point3 _P1{ _Length, Start_.X, Start_.Y };
+            const Point3 _P2{ _Length, End_.X, End_.Y };
+            const Point3 _P3{ 0.0, End_.X, End_.Y };
+            const std::array<Point3, 4> _Points{ _P0, _P1, _P2, _P3 };
+
+            BRepWire _Wire;
+            _Wire.Id = _NextWireID++;
+            for (std::size_t _Index = 0; _Index < _Points.size(); ++_Index)
+            {
+                const auto [_EdgeID, _StartID, _EndID] = _AddEdge(
+                    _Points[_Index],
+                    _Points[(_Index + 1) % _Points.size()]);
+                _Wire.Coedges.push_back({
+                    _EdgeID,
+                    0,
+                    _StartID,
+                    _EndID,
+                    {},
+                    ETopologyOrientation::Forward });
+            }
+            _Model.Wires.push_back(_Wire);
+
+            const auto _DeltaY = End_.X - Start_.X;
+            const auto _DeltaZ = End_.Y - Start_.Y;
+            const auto _NormalLength = std::hypot(_DeltaY, _DeltaZ);
+            PlaneSurface3 _Plane;
+            _Plane.Placement.Location = _P0;
+            _Plane.Placement.ZDirection = {
+                0.0,
+                -_DeltaZ / _NormalLength,
+                _DeltaY / _NormalLength };
+            Surface3Record _Surface;
+            _Surface.Id = _NextSurfaceID++;
+            _Surface.Geometry = _Plane;
+            _Model.Surfaces3.push_back(_Surface);
+
+            BRepFace _Face;
+            _Face.Id = _NextFaceID++;
+            _Face.Surface3Id = _Surface.Id;
+            _Face.WireIds.push_back(_Wire.Id);
+            _Model.Faces.push_back(_Face);
+        };
+
+        const std::vector<Point2> _Outer = bConcaveOuter_
+            ? std::vector<Point2>{
+                Point2{ -50.0, -25.0 },
+                Point2{  50.0, -25.0 },
+                Point2{  50.0,  25.0 },
+                Point2{  15.0,  25.0 },
+                Point2{  15.0,   5.0 },
+                Point2{ -50.0,   5.0 } }
+            : std::vector<Point2>{
+                Point2{ -50.0, -25.0 },
+                Point2{  50.0, -25.0 },
+                Point2{  50.0,  25.0 },
+                Point2{ -50.0,  25.0 } };
+        const std::vector<Point2> _Inner = bConcaveOuter_
+            ? std::vector<Point2>{
+                Point2{ -25.0, -10.0 },
+                Point2{  25.0, -10.0 },
+                Point2{  25.0,   0.0 },
+                Point2{ -25.0,   0.0 } }
+            : std::vector<Point2>{
+                Point2{ -30.0, -12.0 },
+                Point2{  30.0, -12.0 },
+                Point2{  30.0,  12.0 },
+                Point2{ -30.0,  12.0 } };
+
+        for (std::size_t _Index = 0; _Index < _Outer.size(); ++_Index)
+        {
+            _AddProfileEdgeFace(_Outer[_Index], _Outer[(_Index + 1) % _Outer.size()]);
+        }
+        for (std::size_t _Index = 0; _Index < _Inner.size(); ++_Index)
+        {
+            _AddProfileEdgeFace(_Inner[_Index], _Inner[(_Index + 1) % _Inner.size()]);
+        }
+
+        // These are section connections whose endpoints lie in the middle
+        // of existing outer/inner edges, not at their original vertices.
+        if (!bConcaveOuter_)
+        {
+            _AddProfileEdgeFace({ 0.0, -25.0 }, { 0.0, -12.0 });
+            _AddProfileEdgeFace({ 50.0, 0.0 }, { 30.0, 0.0 });
+            _AddProfileEdgeFace({ 0.0, 25.0 }, { 0.0, 12.0 });
+            _AddProfileEdgeFace({ -50.0, 0.0 }, { -30.0, 0.0 });
+        }
+        else
+        {
+            _AddProfileEdgeFace({ 0.0, -25.0 }, { 0.0, -10.0 });
+            _AddProfileEdgeFace({ 50.0, 0.0 }, { 25.0, -5.0 });
+            _AddProfileEdgeFace({ 30.0, 25.0 }, { 0.0, 0.0 });
+            _AddProfileEdgeFace({ -30.0, 5.0 }, { -25.0, -5.0 });
+        }
         return _Model;
     }
 
@@ -212,6 +538,179 @@ namespace
         }
       ]
     })json";
+}
+
+TEST(ExtrusionRecognitionTest, RecognizesDirectionFromStraightEdgeLengthVotes)
+{
+    CExtrudeRecognizesService _Service;
+    const auto _Result = _Service.Recognize(MakeStraightEdgeEvidenceModel());
+
+    ASSERT_TRUE(_Result.bSuccess);
+    EXPECT_NEAR(0.6, _Result.Direction.X, 1.0e-12);
+    EXPECT_NEAR(0.8, _Result.Direction.Y, 1.0e-12);
+    EXPECT_NEAR(0.0, _Result.Direction.Z, 1.0e-12);
+    EXPECT_GT(_Result.dConfidence, 0.99);
+    EXPECT_NEAR(0.6, _Result.TRSF.Matrix.Values[0][0], 1.0e-12);
+    EXPECT_NEAR(0.8, _Result.TRSF.Matrix.Values[0][1], 1.0e-12);
+    ASSERT_EQ(1u, _Result.AlignedGeometry.Curves3.size());
+    const auto& _AlignedLine = std::get<Line3>(
+        _Result.AlignedGeometry.Curves3.front().Geometry);
+    EXPECT_NEAR(1.0, _AlignedLine.Axis.Direction.X, 1.0e-12);
+    EXPECT_NEAR(0.0, _AlignedLine.Axis.Direction.Y, 1.0e-12);
+    EXPECT_NEAR(0.0, _AlignedLine.Axis.Direction.Z, 1.0e-12);
+    EXPECT_NEAR(-5.0, _AlignedLine.Axis.Location.X, 1.0e-12);
+    EXPECT_NEAR(0.0, _AlignedLine.Axis.Location.Y, 1.0e-12);
+    EXPECT_NEAR(0.0, _AlignedLine.Axis.Location.Z, 1.0e-12);
+}
+
+TEST(ExtrusionRecognitionTest, ExtractsOuterSectionWireFromProjectedSideFaces)
+{
+    CExtrudeRecognizesService _Service;
+    SSectionWireOptions _Options;
+    _Options.dConnectionTolerance = 1.0e-8;
+    const auto _Result = _Service.ExtractSectionWires(
+        MakeRectangularSideFaceBRep(),
+        _Options);
+
+    ASSERT_TRUE(_Result.bSuccess);
+    ASSERT_EQ(4u, _Result.SideFaceIds.size());
+    ASSERT_EQ(1u, _Result.Wires.size());
+    const auto& _Outer = _Result.Wires.front();
+    EXPECT_FALSE(_Outer.bInner);
+    EXPECT_TRUE(_Outer.bClosed);
+    EXPECT_NEAR(5000.0, _Outer.dSignedArea, 1.0e-6);
+    ASSERT_EQ(4u, _Outer.Edges.size());
+    for (const auto& _Edge : _Outer.Edges)
+    {
+        EXPECT_TRUE(std::holds_alternative<Line2>(_Edge.Curve));
+        EXPECT_GT(_Edge.Samples.size(), 1u);
+        EXPECT_NEAR(_Edge.Start.X, _Edge.Samples.front().X, 1.0e-8);
+        EXPECT_NEAR(_Edge.Start.Y, _Edge.Samples.front().Y, 1.0e-8);
+    }
+}
+
+TEST(ExtrusionRecognitionTest, SplitsHostEdgeWhenEndpointFallsInItsInterior)
+{
+    CExtrudeRecognizesService _Service;
+    SSectionWireOptions _Options;
+    _Options.dConnectionTolerance = 1.0e-8;
+    const auto _Result = _Service.ExtractSectionWires(
+        MakeRectangularSideFaceBRep(true),
+        _Options);
+
+    std::string _Diagnostics;
+    for (const auto& _Diagnostic : _Result.Diagnostics)
+    {
+        _Diagnostics += _Diagnostic + " | ";
+    }
+    ASSERT_TRUE(_Result.bSuccess) << _Diagnostics;
+    ASSERT_EQ(1u, _Result.Wires.size());
+    ASSERT_FALSE(_Result.Wires.front().bInner);
+    EXPECT_GE(_Result.Wires.front().Edges.size(), 5u);
+    EXPECT_NEAR(5000.0, _Result.Wires.front().dSignedArea, 1.0e-6);
+    EXPECT_TRUE(std::any_of(
+        _Result.Diagnostics.begin(),
+        _Result.Diagnostics.end(),
+        [](const auto& _Diagnostic) {
+            return _Diagnostic.find("endpoint-on-edge") != std::string::npos;
+        }));
+    EXPECT_TRUE(std::any_of(
+        _Result.Diagnostics.begin(),
+        _Result.Diagnostics.end(),
+        [](const auto& _Diagnostic) {
+            return _Diagnostic.find("degree-one") != std::string::npos;
+        }));
+}
+
+TEST(ExtrusionRecognitionTest, FindsOuterContourWithMultipleInternalConnections)
+{
+    CExtrudeRecognizesService _Service;
+    SSectionWireOptions _Options;
+    _Options.dConnectionTolerance = 1.0e-8;
+    const auto _Result = _Service.ExtractSectionWires(
+        MakeTubeWithInternalConnectionsBRep(),
+        _Options);
+
+    ASSERT_TRUE(_Result.bSuccess);
+    ASSERT_EQ(2u, _Result.Wires.size());
+    const auto& _Outer = _Result.Wires.front();
+    EXPECT_FALSE(_Outer.bInner);
+    EXPECT_NEAR(5000.0, std::abs(_Outer.dSignedArea), 1.0e-6);
+    EXPECT_EQ(8u, _Outer.Edges.size());
+    EXPECT_EQ(1u, std::count_if(
+        _Result.Wires.begin(),
+        _Result.Wires.end(),
+        [](const auto& _Wire) { return _Wire.bInner; }));
+    EXPECT_TRUE(std::any_of(
+        _Result.Diagnostics.begin(),
+        _Result.Diagnostics.end(),
+        [](const auto& _Diagnostic) {
+            return _Diagnostic.find("endpoint-on-edge") != std::string::npos;
+        }));
+}
+
+TEST(ExtrusionRecognitionTest, FindsConcaveOuterContourWithMultipleInternalConnections)
+{
+    CExtrudeRecognizesService _Service;
+    SSectionWireOptions _Options;
+    _Options.dConnectionTolerance = 1.0e-8;
+    const auto _Result = _Service.ExtractSectionWires(
+        MakeTubeWithInternalConnectionsBRep(true),
+        _Options);
+
+    std::string _Diagnostics;
+    for (const auto& _Diagnostic : _Result.Diagnostics)
+    {
+        _Diagnostics += _Diagnostic + " | ";
+    }
+    ASSERT_TRUE(_Result.bSuccess) << _Diagnostics;
+    ASSERT_EQ(2u, _Result.Wires.size());
+
+    const auto& _Outer = _Result.Wires.front();
+    EXPECT_FALSE(_Outer.bInner);
+    EXPECT_NEAR(3700.0, std::abs(_Outer.dSignedArea), 1.0e-6);
+    EXPECT_EQ(10u, _Outer.Edges.size());
+    EXPECT_EQ(1u, std::count_if(
+        _Result.Wires.begin(),
+        _Result.Wires.end(),
+        [](const auto& _Wire) { return _Wire.bInner; }));
+
+    const auto _Inner = std::find_if(
+        _Result.Wires.begin(),
+        _Result.Wires.end(),
+        [](const auto& _Wire) { return _Wire.bInner; });
+    ASSERT_NE(_Inner, _Result.Wires.end());
+    EXPECT_NEAR(500.0, std::abs(_Inner->dSignedArea), 1.0e-6);
+    EXPECT_TRUE(std::any_of(
+        _Result.Diagnostics.begin(),
+        _Result.Diagnostics.end(),
+        [](const auto& _Diagnostic) {
+            return _Diagnostic.find("endpoint-on-edge") != std::string::npos;
+        }));
+}
+
+TEST(ExtrusionRecognitionTest, ExtractsSectionWiresFromResetStepBRep)
+{
+    const auto _Path = RepositoryRoot()
+        / "samples" / "tube-one" / "01_round_tube_plain.step";
+    const auto _Read = iCAX::OpenCascade::ReadBRepFile(
+        _Path.string(),
+        0.001);
+    ASSERT_TRUE(_Read.bOK);
+
+    CExtrudeRecognizesService _Service;
+    const auto _Direction = _Service.Recognize(_Read.Geometry);
+    ASSERT_TRUE(_Direction.bSuccess);
+    const auto _Sections = _Service.ExtractSectionWires(
+        _Direction.AlignedGeometry);
+
+    ASSERT_TRUE(_Sections.bSuccess);
+    ASSERT_FALSE(_Sections.Wires.empty());
+    EXPECT_EQ(2u, _Sections.Wires.size());
+    EXPECT_FALSE(_Sections.Wires.front().bInner);
+    EXPECT_GT(_Sections.Wires.front().dSignedArea, 0.0);
+    EXPECT_TRUE(_Sections.Wires[1].bInner);
+    EXPECT_LT(_Sections.Wires[1].dSignedArea, 0.0);
 }
 
 TEST(ExtrusionRecognitionTest, RecognizesHollowSectionAndNormalizesToYAxis)

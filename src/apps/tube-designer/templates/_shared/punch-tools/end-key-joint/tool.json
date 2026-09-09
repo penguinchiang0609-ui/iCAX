@@ -1,6 +1,6 @@
 {
   "schema":"icax.punch-tool","schemaVersion":1,"id":"end-key-joint","version":"1.0.0",
-  "displayName":"矩形插舌 / 插槽配合口","kind":"programmatic","target":"end","category":"端切",
+  "displayName":"矩形插舌 / 插槽配合口","kind":"programmatic","target":"end","category":"端面",
   "parameters":[
     {"key":"gender","displayName":"配合形式","valueType":"string","defaultValue":"male","options":[{"value":"male","label":"公口：保留中央插舌"},{"value":"female","label":"母口：切除对应插槽"}]},
     {"key":"width","displayName":"名义插舌宽度（mm）","valueType":"number","defaultValue":10,"min":0.01,"max":100000},

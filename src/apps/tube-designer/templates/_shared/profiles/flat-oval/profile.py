@@ -56,3 +56,8 @@ def contours(
             "height": width if swap_axes else depth,
         })
     return result
+
+
+def fitter(contours: list[dict[str, Any]], context: dict[str, Any] | None = None) -> dict[str, Any]:
+    from profile_fitting import fitter_for_profile
+    return fitter_for_profile(contours, "flat-oval", context)

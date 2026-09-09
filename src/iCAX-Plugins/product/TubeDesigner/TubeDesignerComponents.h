@@ -95,6 +95,31 @@ namespace iCAX::TubeDesigner
             iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
     };
 
+    // The immutable tube identity of a manufacturing part.  The component is
+    // intentionally independent from the manufacturing component: list/group
+    // consumers can use the profile without parsing a recipe or geometry
+    // resource, while drawing and punch workflows can carry the exact same
+    // section and placement facts through a copied part.
+    class CTubeProfileComponent final : public iCAX::Database::CComponentBase
+    {
+        DECLARE_ICAX_COMPONENT(CTubeProfileComponent, CComponentBase)
+        DECLARE_ICAX_COMPONENT_CREATOR(CTubeProfileComponent)
+        DECLARED_ICAX_FIELD(CTubeProfileComponent, std::string, TypeID,
+            std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CTubeProfileComponent, std::string, DisplayName,
+            std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CTubeProfileComponent, std::string, Specification,
+            std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CTubeProfileComponent, std::string, Source,
+            std::string(), StringEqual, ToStringVariant, FromStringVariant)
+        DECLARED_ICAX_FIELD(CTubeProfileComponent, iCAX::Data::ObjectMap, Parameters,
+            iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_FIELD(CTubeProfileComponent, iCAX::Data::ObjectMap, Contours,
+            iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+        DECLARED_ICAX_FIELD(CTubeProfileComponent, iCAX::Data::ObjectMap, Transform,
+            iCAX::Data::ObjectMap(), ObjectMapEqual, ToObjectMapVariant, FromObjectMapVariant)
+    };
+
     // Provenance is a small, optional slice on a nesting-owned copy.  It is
     // deliberately separate from CManufacturingPartComponent so source audit
     // data does not turn the manufacturing identity into a live product link.

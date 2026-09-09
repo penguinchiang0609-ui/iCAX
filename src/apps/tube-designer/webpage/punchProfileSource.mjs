@@ -114,7 +114,7 @@ export function changePunchRecordKind(view, target) {
   const kind = String(target?.value ?? "tool");
   if (!state || !item || isPunchToolReadOnly(state,item) || !["branch", "tool", "dxf"].includes(kind)) return false;
   const end=target?.dataset?.tubeDesignerPunchEnd;
-  if(end&&!state.tools.some(tool=>tool.id===(kind==="tool"?"end-square":"end-profile")))throw new Error("当前刀具库缺少所选端部刀具。");
+  if(end&&!state.tools.some(tool=>tool.id===(kind==="tool"?"end-square":"end-profile")))throw new Error("当前模具库缺少所选端部模具。");
   checkpointPunchWizard(state);
   item.recordKind = kind;
   if (kind === "tool") {
@@ -148,7 +148,7 @@ export async function selectPunchProfileSource(context, view, target, ops) {
   const key = String(target?.value ?? "");
   if (!state || !item || isPunchToolReadOnly(state,item) || !key) return false;
   const end=target?.dataset?.tubeDesignerPunchEnd;
-  if(end&&!state.tools.some(tool=>tool.id==="end-profile"))throw new Error("当前刀具库缺少截面切端刀具。");
+  if(end&&!state.tools.some(tool=>tool.id==="end-profile"))throw new Error("当前模具库缺少截面切端模具。");
   const originalSection=item.section,request={};
   sourceRequests.set(item,request);
   const current=()=>view.tubeDesignerPunchWizard===state&&punchFeatureForTarget(view,target)===item

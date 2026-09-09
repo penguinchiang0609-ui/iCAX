@@ -6,6 +6,7 @@
   "displayName": "腰形孔",
   "kind": "programmatic",
   "target": "side",
+  "category": "槽口",
   "parameters": [
     {
       "key": "spanAlong",

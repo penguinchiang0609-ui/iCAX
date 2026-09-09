@@ -12,6 +12,7 @@
 #include "PunchGeometry.h"
 #include "PartDrawingDefinition.h"
 #include "BRepTubeUnfoldingService.h"
+#include "ExtrusionRecognition/ExtrusionRecognitionService.h"
 
 #include "ApplicationContext/IApplicationContext.h"
 #include "Data/VariantSerializer.h"
@@ -83,6 +84,8 @@ namespace
     using iCAX::Data::Variant;
     using iCAX::Data::VariantArray;
     using namespace iCAX::TubeDesigner;
+    using iCAX::ExtrusionRecognition::SRecognitionResult;
+    using iCAX::GeometryData::Transform3;
     constexpr double kPreviewRollRadians = 1.57079632679489661923;
     constexpr double kPunchPi = 3.14159265358979323846;
 
@@ -95,6 +98,7 @@ namespace
         std::uint64_t Quantity = 1;
         double Length = 0.0;
         ObjectMap ItemProperties;
+        ObjectMap TubeProfile;
         iCAX::Data::uuid MemberID;
         iCAX::Data::uuid PartID;
         iCAX::Resource::CResourceReference ManufacturingResource;
@@ -961,7 +965,268 @@ namespace
         return _Candidate;
     }
 
-    ObjectMap OptionalProfileProperties(const ObjectMap& Properties_);
+    std::string ProfileNumberText(const double Value_)
+    {
+        std::ostringstream _Text;
+        _Text << std::fixed << std::setprecision(3) << Value_;
+        auto _Result = _Text.str();
+        while (_Result.size() > 1 && _Result.back() == '0') _Result.pop_back();
+        if (!_Result.empty() && _Result.back() == '.') _Result.pop_back();
+        return _Result;
+    }
+
+    std::string TubeProfileDisplayName(const std::string& TypeID_)
+    {
+        if (TypeID_ == "round") return "圆管";
+        if (TypeID_ == "rect") return "矩形管";
+        if (TypeID_ == "ellipse") return "椭圆管";
+        if (TypeID_ == "flat-oval") return "腰圆管";
+        if (TypeID_ == "angle") return "角钢";
+        if (TypeID_ == "channel") return "槽钢";
+        if (TypeID_ == "i-section") return "工字钢";
+        if (TypeID_ == "t-section") return "T 型钢";
+        if (TypeID_ == "z-section") return "Z 型钢";
+        if (TypeID_ == "polygon") return "多边形管";
+        return TypeID_.empty() ? "异型管" : TypeID_;
+    }
+
+    std::string TubeProfileSpecification(
+        const std::string& TypeID_, const ObjectMap& Parameters_)
+    {
+        const auto _Width = GetDouble(Parameters_, "width", 0.0);
+        const auto _Depth = GetDouble(Parameters_, "depth", 0.0);
+        const auto _Wall = GetDouble(Parameters_, "wallThickness", 0.0);
+        const auto _Radius = GetDouble(Parameters_, "cornerRadius", 0.0);
+        if (TypeID_ == "round" && _Width > 0.0)
+            return "Ø" + ProfileNumberText(_Width) + (_Wall > 0.0
+                ? " × 壁厚 " + ProfileNumberText(_Wall) : "");
+        if (TypeID_ == "rect" && _Width > 0.0 && _Depth > 0.0)
+            return ProfileNumberText(_Width) + " × " + ProfileNumberText(_Depth)
+                + (_Radius > 0.0 ? " × R" + ProfileNumberText(_Radius) : "")
+                + (_Wall > 0.0 ? " × 壁厚 " + ProfileNumberText(_Wall) : "");
+        if (_Width > 0.0 && _Depth > 0.0)
+            return ProfileNumberText(_Width) + " × " + ProfileNumberText(_Depth)
+                + (_Wall > 0.0 ? " × 壁厚 " + ProfileNumberText(_Wall) : "");
+        return TubeProfileDisplayName(TypeID_);
+    }
+
+    ObjectMap TransformPayload(const Transform3& Transform_)
+    {
+        VariantArray _Rows;
+        for (const auto& _Row : Transform_.Matrix.Values)
+        {
+            VariantArray _Values;
+            for (const auto _Value : _Row) _Values.emplace_back(_Value);
+            _Rows.emplace_back(std::move(_Values));
+        }
+        return {
+            { "schema", std::string("icax.transform3") },
+            { "schemaVersion", 1ull },
+            { "matrix", std::move(_Rows) },
+            { "axis", std::string("+X") },
+            { "origin", VariantArray{ 0.0, 0.0, 0.0 } }
+        };
+    }
+
+    ObjectMap IdentityTransformPayload()
+    {
+        return TransformPayload(Transform3{});
+    }
+
+    ObjectMap SectionContoursPayload(
+        const iCAX::ExtrusionRecognition::SSectionSnapshot& Section_)
+    {
+        VariantArray _Loops;
+        _Loops.reserve(Section_.Loops.size());
+        for (std::size_t _Index = 0; _Index < Section_.Loops.size(); ++_Index)
+        {
+            const auto& _Loop = Section_.Loops[_Index];
+            VariantArray _Points;
+            _Points.reserve(_Loop.Points.size());
+            for (const auto& _Point : _Loop.Points)
+                _Points.emplace_back(VariantArray{ _Point.X, _Point.Y });
+            _Loops.emplace_back(ObjectMap{
+                { "id", _Loop.ID.empty()
+                    ? (_Index == 0 ? std::string("outer") : "inner-" + std::to_string(_Index))
+                    : _Loop.ID },
+                { "inner", _Loop.bInner },
+                { "points", std::move(_Points) }
+            });
+        }
+        return {
+            { "schema", std::string("icax.section-contours.v1") },
+            { "schemaVersion", 1ull },
+            { "coordinateSystem", std::string("YOZ") },
+            { "loops", std::move(_Loops) }
+        };
+    }
+
+    ObjectMap ProfileContoursPayload(const ObjectMap& Profile_)
+    {
+        const auto _Found = Profile_.find("contours");
+        if (_Found != Profile_.end() && _Found->second.Is<VariantArray>())
+        {
+            return {
+                { "schema", std::string("icax.section-contours.v1") },
+                { "schemaVersion", 1ull },
+                { "coordinateSystem", std::string("YOZ") },
+                { "loops", _Found->second }
+            };
+        }
+        return {
+            { "schema", std::string("icax.section-contours.v1") },
+            { "schemaVersion", 1ull },
+            { "coordinateSystem", std::string("YOZ") },
+            { "loops", VariantArray() }
+        };
+    }
+
+    ObjectMap TubeProfileParameterPayload(const ObjectMap& Profile_)
+    {
+        auto _Parameters = Profile_;
+        _Parameters.erase("schema");
+        _Parameters.erase("schemaVersion");
+        _Parameters.erase("id");
+        _Parameters.erase("packageVersion");
+        _Parameters.erase("kind");
+        _Parameters.erase("displayName");
+        _Parameters.erase("specification");
+        _Parameters.erase("contours");
+        return _Parameters;
+    }
+
+    iCAX::Data::PropertySet TubeProfileComponentProperties(
+        const ObjectMap& Profile_, const std::string& Source_)
+    {
+        const auto _TypeID = GetString(Profile_, "id", GetString(Profile_, "kind"));
+        return {
+            { CTubeProfileComponent::PropertyName_TypeID, PropertyValue(_TypeID) },
+            { CTubeProfileComponent::PropertyName_DisplayName, PropertyValue(
+                GetString(Profile_, "displayName", TubeProfileDisplayName(_TypeID))) },
+            { CTubeProfileComponent::PropertyName_Specification, PropertyValue(
+                GetString(Profile_, "specification", TubeProfileSpecification(_TypeID, Profile_))) },
+            { CTubeProfileComponent::PropertyName_Source, PropertyValue(Source_) },
+            { CTubeProfileComponent::PropertyName_Parameters, PropertyValue(
+                TubeProfileParameterPayload(Profile_)) },
+            { CTubeProfileComponent::PropertyName_Contours, PropertyValue(ProfileContoursPayload(Profile_)) },
+            { CTubeProfileComponent::PropertyName_Transform, PropertyValue(IdentityTransformPayload()) }
+        };
+    }
+
+    ObjectMap ProfileSnapshotFromProfile(
+        const ObjectMap& Profile_, const std::string& Source_)
+    {
+        const auto _TypeID = GetString(Profile_, "id", GetString(Profile_, "kind"));
+        auto _Result = TubeProfileParameterPayload(Profile_);
+        _Result["schema"] = std::string("icax.tube-profile");
+        _Result["schemaVersion"] = 1ull;
+        _Result["id"] = _TypeID;
+        _Result["kind"] = GetString(Profile_, "kind", _TypeID);
+        _Result["displayName"] = GetString(Profile_, "displayName", TubeProfileDisplayName(_TypeID));
+        _Result["specification"] = GetString(
+            Profile_, "specification", TubeProfileSpecification(_TypeID, Profile_));
+        _Result["source"] = Source_;
+        _Result["parameters"] = TubeProfileParameterPayload(Profile_);
+        _Result["contours"] = ProfileContoursPayload(Profile_).at("loops");
+        _Result["placement"] = IdentityTransformPayload();
+        return _Result;
+    }
+
+    iCAX::Data::PropertySet TubeProfileComponentProperties(
+        const SRecognitionResult& Recognition_, const std::string& Source_)
+    {
+        const auto _TypeID = Recognition_.SectionTypeID.empty()
+            ? std::string("irregular") : Recognition_.SectionTypeID;
+        const auto _DisplayName = TubeProfileDisplayName(_TypeID);
+        const auto _Specification = Recognition_.SectionTypeID.empty()
+            ? std::string("异型管")
+            : TubeProfileSpecification(_TypeID, Recognition_.SectionParameters);
+        return {
+            { CTubeProfileComponent::PropertyName_TypeID, PropertyValue(_TypeID) },
+            { CTubeProfileComponent::PropertyName_DisplayName, PropertyValue(_DisplayName) },
+            { CTubeProfileComponent::PropertyName_Specification, PropertyValue(_Specification) },
+            { CTubeProfileComponent::PropertyName_Source, PropertyValue(Source_) },
+            { CTubeProfileComponent::PropertyName_Parameters, PropertyValue(Recognition_.SectionParameters) },
+            { CTubeProfileComponent::PropertyName_Contours, PropertyValue(SectionContoursPayload(Recognition_.Section)) },
+            { CTubeProfileComponent::PropertyName_Transform, PropertyValue(TransformPayload(Recognition_.TRSF)) }
+        };
+    }
+
+    iCAX::Data::PropertySet TubeProfileComponentPropertiesFromSnapshot(
+        const ObjectMap& Profile_, const std::string& SourceOverride_ = {})
+    {
+        const auto _TypeID = GetString(Profile_, "id", GetString(Profile_, "kind", "irregular"));
+        const auto _Parameters = Profile_.contains("parameters")
+            && Profile_.at("parameters").Is<ObjectMap>()
+            ? Profile_.at("parameters").To<ObjectMap>()
+            : TubeProfileParameterPayload(Profile_);
+        const auto _Source = SourceOverride_.empty()
+            ? GetString(Profile_, "source") : SourceOverride_;
+        const auto _Contours = Profile_.contains("contours")
+            && Profile_.at("contours").Is<VariantArray>()
+            ? ObjectMap{
+                { "schema", std::string("icax.section-contours.v1") },
+                { "schemaVersion", 1ull },
+                { "coordinateSystem", std::string("YOZ") },
+                { "loops", Profile_.at("contours") } }
+            : ProfileContoursPayload(Profile_);
+        const auto _Transform = Profile_.contains("placement")
+            && Profile_.at("placement").Is<ObjectMap>()
+            ? Profile_.at("placement").To<ObjectMap>() : IdentityTransformPayload();
+        return {
+            { CTubeProfileComponent::PropertyName_TypeID, PropertyValue(_TypeID) },
+            { CTubeProfileComponent::PropertyName_DisplayName, PropertyValue(
+                GetString(Profile_, "displayName", TubeProfileDisplayName(_TypeID))) },
+            { CTubeProfileComponent::PropertyName_Specification, PropertyValue(
+                GetString(Profile_, "specification", TubeProfileSpecification(_TypeID, _Parameters))) },
+            { CTubeProfileComponent::PropertyName_Source, PropertyValue(_Source) },
+            { CTubeProfileComponent::PropertyName_Parameters, PropertyValue(_Parameters) },
+            { CTubeProfileComponent::PropertyName_Contours, PropertyValue(_Contours) },
+            { CTubeProfileComponent::PropertyName_Transform, PropertyValue(_Transform) }
+        };
+    }
+
+    ObjectMap ProfileSnapshot(const CTubeProfileComponent& Component_)
+    {
+        auto _Result = Component_.GetParameters();
+        _Result["schema"] = std::string("icax.tube-profile");
+        _Result["schemaVersion"] = 1ull;
+        _Result["id"] = Component_.GetTypeID();
+        _Result["kind"] = Component_.GetTypeID();
+        _Result["displayName"] = Component_.GetDisplayName();
+        _Result["specification"] = Component_.GetSpecification();
+        _Result["source"] = Component_.GetSource();
+        _Result["parameters"] = Component_.GetParameters();
+        _Result["contours"] = Component_.GetContours().contains("loops")
+            ? Component_.GetContours().at("loops") : VariantArray();
+        _Result["placement"] = Component_.GetTransform();
+        return _Result;
+    }
+
+    ObjectMap ProfileSnapshot(const SRecognitionResult& Recognition_, const std::string& Source_)
+    {
+        const auto _TypeID = Recognition_.SectionTypeID.empty()
+            ? std::string("irregular") : Recognition_.SectionTypeID;
+        auto _Result = Recognition_.SectionParameters;
+        _Result["schema"] = std::string("icax.tube-profile");
+        _Result["schemaVersion"] = 1ull;
+        _Result["id"] = _TypeID;
+        _Result["kind"] = _TypeID;
+        _Result["displayName"] = TubeProfileDisplayName(_TypeID);
+        _Result["specification"] = Recognition_.SectionTypeID.empty()
+            ? std::string("异型管")
+            : TubeProfileSpecification(_TypeID, Recognition_.SectionParameters);
+        _Result["source"] = Source_;
+        _Result["parameters"] = Recognition_.SectionParameters;
+        _Result["contours"] = SectionContoursPayload(Recognition_.Section).at("loops");
+        _Result["placement"] = TransformPayload(Recognition_.TRSF);
+        return _Result;
+    }
+
+    ObjectMap OptionalProfileProperties(const CTubeProfileComponent* Component_)
+    {
+        return Component_ ? ProfileSnapshot(*Component_) : ObjectMap{};
+    }
 
     std::string ManufacturingPartKind(const ObjectMap& Properties_)
     {
@@ -1040,18 +1305,20 @@ namespace
         iCAX::Database::IRepository& Repository_,
         const CManufacturingPartComponent& Part_)
     {
+        const auto _PartProfile = GetComponent<CTubeProfileComponent>(Part_.GetEntity());
         SResolvedPartPresentation _Result{
             TrimText(Part_.GetName()).empty()
                 ? MakePartNameFromFileName(Part_.GetFileName(), Part_.GetPartNumber())
                 : TrimText(Part_.GetName()),
-            OptionalProfileProperties(Part_.GetItemProperties())
+            OptionalProfileProperties(_PartProfile.get())
         };
 
         if (const auto _MemberEntity = Repository_.GetEntity(Part_.GetSourceMemberID());
             const auto _Member = GetComponent<CAssemblyMemberComponent>(_MemberEntity))
         {
             if (_Result.Profile.empty())
-                _Result.Profile = OptionalProfileProperties(_Member->GetItemProperties());
+                _Result.Profile = OptionalProfileProperties(
+                    GetComponent<CTubeProfileComponent>(_MemberEntity).get());
         }
         return _Result;
     }
@@ -1275,7 +1542,6 @@ namespace
     ObjectMap MakeTransientPartSnapshot(
         const SPreparedManufacturingPart& Part_, const CProductInstanceComponent& Product_)
     {
-        const auto _Profile = OptionalProfileProperties(Part_.ItemProperties);
         return ObjectMap{
             {"entityId", UuidToString(Part_.PartID)},
             {"sourceMemberId", UuidToString(Part_.MemberID)},
@@ -1283,7 +1549,7 @@ namespace
             {"name", MakePartNameFromFileName(Part_.FileName, Part_.PartNumber)},
             {"role", Part_.Role}, {"quantity", ProductionQuantity(Part_.Quantity, Product_.GetQuantity())},
             {"unitQuantity", Part_.Quantity}, {"instanceQuantity", Product_.GetQuantity()},
-            {"profile", _Profile}, {"partKind", ManufacturingPartKind(Part_.ItemProperties)},
+            {"profile", Part_.TubeProfile}, {"partKind", ManufacturingPartKind(Part_.ItemProperties)},
             {"plate", ManufacturingPlate(Part_.ItemProperties)}, {"length", Part_.Length},
             {"stableKey", Part_.StableKey}, {"fileName", Part_.FileName},
             {"status", std::string("Ready")}, {"transient", true},
@@ -1541,7 +1807,8 @@ namespace
             _Item["name"] = _Member->GetName();
             _Item["memberType"] = _Member->GetMemberType();
             _Item["childPartCount"] = _Member->GetChildPartCount();
-            _Item["profile"] = OptionalProfileProperties(_Member->GetItemProperties());
+            _Item["profile"] = OptionalProfileProperties(
+                GetComponent<CTubeProfileComponent>(_Entity).get());
             _Item["length"] = _Member->GetLength();
             _Item["stableKey"] = _Member->GetStableKey();
             _Item["previewGeometryResourceId"] = _Member->GetPreviewGeometryResourceID();
@@ -2781,6 +3048,11 @@ namespace
         _Response["parameterPresets"] = ListUserDataRecords(
             *_Store, kTemplateFeatureID, kParameterPresetRecordType, true);
         _Response["profiles"] = ListProfileUserDataRecords(*_Store);
+        // Tool definitions are kept as a separate library from tube profiles.
+        // The first backend slice exposes the user layer explicitly; fixed DXF
+        // and programmatic package import will populate this list without
+        // changing the punch/drawing component schemas.
+        _Response["punchTools"] = VariantArray{};
         _Response["productTemplates"] = ListProductTemplateRecords(*_Store);
         _Response["systemProfiles"] = ListSystemProfileRecords(ApplicationContext_);
         _Response["templateProfiles"] = ListTemplateProfileRecords(ApplicationContext_);
@@ -4353,14 +4625,6 @@ namespace
         catch (...) { return nDefault_; }
     }
 
-    ObjectMap OptionalProfileProperties(const ObjectMap& Properties_)
-    {
-        const auto _Iterator = Properties_.find("tubeDesigner.profile");
-        if (_Iterator == Properties_.end() || !_Iterator->second.Is<ObjectMap>()) return {};
-        return _Iterator->second.To<ObjectMap>();
-    }
-
-
     std::string PunchLowerAscii(std::string Value_)
     {
         std::ranges::transform(Value_, Value_.begin(), [](const unsigned char Value) {
@@ -4856,6 +5120,7 @@ namespace
         iCAX::Resource::CResourceReference FrontendGeometryResource;
         std::uint64_t Index = 0;
         ObjectMap ItemProperties;
+        ObjectMap TubeProfile;
     };
 
     iCAX::Interaction::CInvocationResult GenerateNeutralPreview(
@@ -4926,6 +5191,14 @@ namespace
             const auto _Name = _Item.DisplayName.Resolve("zh-CN");
             auto _PreviewShape = _Geometry.At(_Representation->second);
             auto _MemberProperties = _Item.Properties;
+            ObjectMap _TubeProfile;
+            if (const auto _Profile = _Item.Properties.find("tubeDesigner.profile");
+                _Profile != _Item.Properties.end() && _Profile->second.Is<ObjectMap>())
+            {
+                _TubeProfile = ProfileSnapshotFromProfile(
+                    _Profile->second.To<ObjectMap>(), "product-generation");
+                _MemberProperties.erase("tubeDesigner.profile");
+            }
             if (_ExistingProduct && IsTubeManufacturingPart(_Item.Properties))
             {
                 if (const auto _Sketch = FindProductSideSketch(
@@ -4955,7 +5228,7 @@ namespace
             _Conversions.push_back({ _PreviewShape, _Name + " preview",
                 Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/preview") });
             _Members.push_back({ &_Item, _EntityID, {}, {}, ++_Index,
-                std::move(_MemberProperties) });
+                std::move(_MemberProperties), std::move(_TubeProfile) });
         }
         auto _Converted = iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(_Conversions, 0.025);
         // Workers touch only private OCC shapes and in-memory BRep models. All
@@ -5030,10 +5303,15 @@ namespace
                         { CAssemblyMemberComponent::PropertyName_Y1, PropertyValue(0.0) },
                         { CAssemblyMemberComponent::PropertyName_X2, PropertyValue(0.0) },
                         { CAssemblyMemberComponent::PropertyName_Y2, PropertyValue(0.0) },
-                        { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceID, PropertyValue(_Prepared.PreviewResource.URL) },
-                        { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceVersion, PropertyValue(_Prepared.PreviewResource.nVersion) },
-                        { CAssemblyMemberComponent::PropertyName_ItemProperties, PropertyValue(_Prepared.ItemProperties) }
-                    });
+                         { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceID, PropertyValue(_Prepared.PreviewResource.URL) },
+                         { CAssemblyMemberComponent::PropertyName_PreviewGeometryResourceVersion, PropertyValue(_Prepared.PreviewResource.nVersion) },
+                         { CAssemblyMemberComponent::PropertyName_ItemProperties, PropertyValue(_Prepared.ItemProperties) }
+                     });
+                if (!_Prepared.TubeProfile.empty())
+                    QueueUpsertComponent(
+                        _Transaction, _ExistingMember, _Prepared.EntityID,
+                        CTubeProfileComponent::S_ClassName,
+                        TubeProfileComponentPropertiesFromSnapshot(_Prepared.TubeProfile));
                 QueueUpsertComponent(
                     _Transaction, _ExistingMember, _Prepared.EntityID,
                     iCAX::RenderInteraction::CRenderInstanceComponent::S_ClassName, {
@@ -5189,6 +5467,14 @@ namespace
             ++_Index;
             auto _ItemProperties = _Item.Properties;
             const auto _PartKind = ManufacturingPartKind(_ItemProperties);
+            ObjectMap _TubeProfile;
+            if (const auto _Profile = _ItemProperties.find("tubeDesigner.profile");
+                _Profile != _ItemProperties.end() && _Profile->second.Is<ObjectMap>())
+            {
+                _TubeProfile = ProfileSnapshotFromProfile(
+                    _Profile->second.To<ObjectMap>(), "product-generation");
+                _ItemProperties.erase("tubeDesigner.profile");
+            }
             if (_PartKind == "plate" || _PartKind == "glass")
             {
                 const auto _Plate = ManufacturingPlate(_ItemProperties);
@@ -5277,9 +5563,10 @@ namespace
                 _PartNumber,
                 OptionalPropertyString(_ItemProperties, "group"),
                 std::max<std::uint64_t>(1, OptionalPropertyUInt64(_ItemProperties, "quantity", 1)),
-                OptionalPropertyNumber(_ItemProperties, "length"),
-                _ItemProperties,
-                _MemberID,
+                 OptionalPropertyNumber(_ItemProperties, "length"),
+                 _ItemProperties,
+                 _TubeProfile,
+                 _MemberID,
                 MakeStableEntityID(ProductID_, "manufacturing-part", _Item.Key),
                 {},
                 {},
@@ -5611,7 +5898,7 @@ namespace
             std::uint64_t Quantity = 1;
             double Length = 0.0;
             ObjectMap ItemProperties;
-            ObjectMap Profile;
+            ObjectMap TubeProfile;
             ObjectMap PartDrawingDefinition;
             ObjectMap PunchWizardDefinition;
             std::string FileName;
@@ -5621,6 +5908,7 @@ namespace
         std::map<iCAX::Data::uuid, iCAX::Data::uuid> _Batches;
         std::vector<std::pair<iCAX::Data::uuid, PropertySet>> _Copies;
         std::map<iCAX::Data::uuid, std::pair<std::string, ObjectMap>> _CopyDomainComponents;
+        std::map<iCAX::Data::uuid, PropertySet> _CopyProfileComponents;
         std::map<iCAX::Data::uuid, PropertySet> _CopySourceComponents;
         VariantArray _References, _CreatedIDs;
         for (const auto& [_Entity, _Part] : Collect<CManufacturingPartComponent>(_DB))
@@ -5665,7 +5953,10 @@ namespace
                 _Source.Quantity = EffectiveManufacturingQuantity(*_Part, _Product->GetQuantity());
                 _Source.Length = _Part->GetLength();
                 _Source.ItemProperties = _Part->GetItemProperties();
-                _Source.Profile = ResolvePartPresentation(_DB, *_Part).Profile;
+                if (const auto _TubeProfile = GetComponent<CTubeProfileComponent>(_Part->GetEntity()))
+                    _Source.TubeProfile = ProfileSnapshot(*_TubeProfile);
+                else
+                    throw std::invalid_argument("制造零件缺少管型组件，请重新生成拆单结果");
                 if (const auto _Drawing = GetComponent<CPartDrawingComponent>(_Part->GetEntity());
                     _Drawing && !_Drawing->GetDefinition().empty())
                     _Source.PartDrawingDefinition = _Drawing->GetDefinition();
@@ -5703,7 +5994,7 @@ namespace
                 _Source.Quantity = ProductionQuantity(_TransientPart->Quantity, _RealProduct->GetQuantity());
                 _Source.Length = _TransientPart->Length;
                 _Source.ItemProperties = _TransientPart->ItemProperties;
-                _Source.Profile = OptionalProfileProperties(_TransientPart->ItemProperties);
+                _Source.TubeProfile = _TransientPart->TubeProfile;
                 _Source.FileName = _TransientPart->FileName;
                 _Source.ManufacturingResourceID = _TransientPart->ManufacturingResource.URL;
                 _Source.ManufacturingResourceVersion = _TransientPart->ManufacturingResource.nVersion;
@@ -5735,7 +6026,6 @@ namespace
                 {CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string("Ready"))}
             };
             auto _ItemProperties = _Source.ItemProperties;
-            _ItemProperties["tubeDesigner.profile"] = _Source.Profile;
             _ItemProperties.erase("nesting.source");
             _ItemProperties["nesting.snapshot"] = ObjectMap{{"name", _Source.ProductName},
                 {"productCode", _Source.ProductCode}, {"quantity", _Source.ProductQuantity},
@@ -5751,12 +6041,15 @@ namespace
             _Properties[CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceID] = _Thumbnail.URL;
             _Properties[CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceVersion] = _Thumbnail.nVersion;
             _Copies.emplace_back(_ID, std::move(_Properties));
+            if (!_Source.TubeProfile.empty())
+                _CopyProfileComponents.emplace(
+                    _ID, TubeProfileComponentPropertiesFromSnapshot(_Source.TubeProfile));
             if (!_Source.PartDrawingDefinition.empty())
-                _CopyDomainComponents.emplace(_ID, std::make_pair(
-                    CPartDrawingComponent::S_ClassName, _Source.PartDrawingDefinition));
+                _CopyDomainComponents[_ID] = std::make_pair(
+                    CPartDrawingComponent::S_ClassName, _Source.PartDrawingDefinition);
             else if (!_Source.PunchWizardDefinition.empty())
-                _CopyDomainComponents.emplace(_ID, std::make_pair(
-                    CPunchWizardComponent::S_ClassName, _Source.PunchWizardDefinition));
+                _CopyDomainComponents[_ID] = std::make_pair(
+                    CPunchWizardComponent::S_ClassName, _Source.PunchWizardDefinition);
             if (!_Source.ProductID.is_nil())
                 _CopySourceComponents.emplace(_ID, PropertySet{
                     {CNestingSourceComponent::PropertyName_SourceProductID, PropertyValue(_Source.ProductID)},
@@ -5780,6 +6073,10 @@ namespace
             {
                 _Transaction.CreateEntity(_ID);
                 _Transaction.AttachComponent(_ID, CManufacturingPartComponent::S_ClassName, _Properties);
+                if (const auto _Profile = _CopyProfileComponents.find(_ID);
+                    _Profile != _CopyProfileComponents.end())
+                    _Transaction.AttachComponent(
+                        _ID, CTubeProfileComponent::S_ClassName, _Profile->second);
                 if (const auto _Domain = _CopyDomainComponents.find(_ID);
                     _Domain != _CopyDomainComponents.end())
                     _Transaction.AttachComponent(_ID, _Domain->second.first,
@@ -5998,68 +6295,6 @@ namespace
         return _Result;
     }
 
-    ObjectMap MakeImportedNestingProfile(
-        const ObjectMap& Measurement_, const std::string& SourceFormat_)
-    {
-        const auto _Section = GetRequiredObject(Measurement_, "section");
-        const auto _Shape = GetString(_Section, "shape");
-        const auto _RawWidth = GetDouble(_Section, "width", 0.0);
-        const auto _RawHeight = GetDouble(_Section, "height",
-            GetDouble(_Section, "depth", 0.0));
-        const auto _Diameter = GetDouble(_Section, "diameter", 0.0);
-        const auto _WallThickness = std::max(0.0, GetDouble(_Section, "wallThickness", 0.0));
-        if (!std::isfinite(_RawWidth) || !std::isfinite(_RawHeight)
-            || _RawWidth <= 0.02 || _RawHeight <= 0.02)
-            throw std::invalid_argument("无法识别导入零件的有效截面尺寸");
-
-        ObjectMap _Profile;
-        if (_Shape == "circle" && std::isfinite(_Diameter) && _Diameter > 0.02)
-        {
-            const auto _DiameterText = ImportedDimensionText(_Diameter);
-            const auto _WallText = ImportedDimensionText(_WallThickness);
-            _Profile = {
-                { "id", "imported-round-" + _DiameterText + "-" + _WallText },
-                { "kind", std::string("round") },
-                { "displayName", _WallThickness > 0.02 ? std::string("圆管") : std::string("圆截面") },
-                { "diameter", _Diameter }, { "width", _Diameter }, { "depth", _Diameter },
-                { "wallThickness", _WallThickness }, { "hollow", _WallThickness > 0.02 },
-                { "specification", _WallThickness > 0.02
-                    ? "Ø" + _DiameterText + " × 壁厚 " + _WallText + " mm"
-                    : "Ø" + _DiameterText + " mm" },
-                { "sourceFormat", SourceFormat_ },
-                { "parameters", ObjectMap{
-                    { "source", std::string("geometry-import") } } }
-            };
-        }
-        else if (_Shape == "rectangle")
-        {
-            // A half-turn around the stock axis is safe for the rectangular
-            // section, so use a canonical long/short order for grouping files
-            // whose source CAD coordinate systems differ by 90 degrees.
-            const auto _Width = std::max(_RawWidth, _RawHeight);
-            const auto _Depth = std::min(_RawWidth, _RawHeight);
-            const auto _WidthText = ImportedDimensionText(_Width);
-            const auto _DepthText = ImportedDimensionText(_Depth);
-            const auto _WallText = ImportedDimensionText(_WallThickness);
-            _Profile = {
-                { "id", "imported-rect-" + _WidthText + "-" + _DepthText + "-" + _WallText },
-                { "kind", std::string("rect") },
-                { "displayName", std::abs(_Width - _Depth) <= 0.02
-                    ? std::string("方形截面") : std::string("矩形截面") },
-                { "width", _Width }, { "depth", _Depth },
-                { "wallThickness", _WallThickness }, { "hollow", _WallThickness > 0.02 },
-                { "specification", _WallThickness > 0.02
-                    ? _WidthText + " × " + _DepthText + " × 壁厚 " + _WallText + " mm"
-                    : _WidthText + " × " + _DepthText + " mm" },
-                { "sourceFormat", SourceFormat_ },
-                { "parameters", ObjectMap{
-                    { "source", std::string("geometry-import") } } }
-            };
-        }
-        else throw std::invalid_argument("导入零件的截面不是可用于管材排样的圆形或矩形");
-        return _Profile;
-    }
-
     iCAX::Interaction::CInvocationResult HandleImportNestingPart(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -6072,20 +6307,29 @@ namespace
         const auto _Payload = DecodeObjectPayload(Request_);
         const auto _SourcePath = Utf8Path(GetRequiredText(_Payload, "sourcePath", 32767));
         const auto _Snapshot = ImportManufacturingPartFile(_SourcePath);
-        const auto _Shape = ComponentModelShape(_Snapshot);
-        const auto _PreviewMeasurement = MeasureFinalPartGeometry(_Shape, {}, 0);
-        const auto _Available = _PreviewMeasurement.find("available");
-        if (_Available == _PreviewMeasurement.end() || !_Available->second.Is<bool>()
-            || !_Available->second.To<bool>())
-            throw std::invalid_argument("无法从导入实体确定零件主方向和规格，请确认文件是完整的线性管材零件");
-        if (!_PreviewMeasurement.contains("linearReference")
-            || !_PreviewMeasurement.at("linearReference").Is<ObjectMap>())
-            throw std::invalid_argument("导入实体没有可用于排样的线性主方向");
-        const auto _Length = GetDouble(_PreviewMeasurement, "length", 0.0);
-        const auto _Section = GetRequiredObject(_PreviewMeasurement, "section");
-        const auto _SectionWidth = GetDouble(_Section, "width", 0.0);
-        const auto _SectionHeight = GetDouble(_Section, "height",
-            GetDouble(_Section, "depth", 0.0));
+        auto _Shape = ComponentModelShape(_Snapshot);
+        const auto _ImportedBRep = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
+            _Shape, GetString(_Snapshot, "name", "导入管材"),
+            GetString(_Snapshot, "geometryDigest"), 0.001);
+        const auto _Fitters = iCAX::ExtrusionRecognition::DiscoverPythonSectionFitters(
+            PathToUTF8(ResolveSystemProfileRoot(ApplicationContext_)));
+        iCAX::ExtrusionRecognition::CExtrusionRecognitionService _RecognitionService;
+        const auto _Recognition = _RecognitionService.RecognizePythonFitters(
+            _ImportedBRep, _Fitters);
+        if (_Recognition.Status != iCAX::ExtrusionRecognition::ERecognitionStatus::Success
+            && _Recognition.Status != iCAX::ExtrusionRecognition::ERecognitionStatus::SectionTypeNotMatched)
+        {
+            throw std::invalid_argument(
+                "导入实体不是可识别的线性拉伸管材："
+                + (_Recognition.Diagnostics.empty()
+                    ? std::string("无法提取主方向或截面轮廓")
+                    : _Recognition.Diagnostics.back()));
+        }
+        const auto _Length = _Recognition.dLength;
+        const auto _SectionWidth = _Recognition.Section.Bounds.Max.X
+            - _Recognition.Section.Bounds.Min.X;
+        const auto _SectionHeight = _Recognition.Section.Bounds.Max.Y
+            - _Recognition.Section.Bounds.Min.Y;
         if (!std::isfinite(_Length) || _Length <= 0.02
             || !std::isfinite(_SectionWidth) || !std::isfinite(_SectionHeight)
             || _SectionWidth <= 0.02 || _SectionHeight <= 0.02
@@ -6093,7 +6337,12 @@ namespace
             throw std::invalid_argument("导入实体不是可用于直管排样的线性零件");
 
         const auto _SourceFormat = GetString(_Snapshot, "sourceFormat", "step");
-        const auto _Profile = MakeImportedNestingProfile(_PreviewMeasurement, _SourceFormat);
+        const auto _Profile = ProfileSnapshot(_Recognition, "geometry-import:" + _SourceFormat);
+        const auto _Normalized = iCAX::OpenCascade::BuildOpenCascadeShape(
+            _Recognition.NormalizedGeometry);
+        if (!_Normalized.bOK || _Normalized.Shape.IsNull())
+            throw std::runtime_error("无法生成管型识别后的标准化实体");
+        _Shape = _Normalized.Shape;
         auto _Name = TrimText(GetString(_Payload, "name"));
         if (_Name.empty())
             _Name = MakePartNameFromFileName(GetString(_Snapshot, "sourceFileName"), "导入零件");
@@ -6129,7 +6378,6 @@ namespace
         _Measurement["normalizedAxis"] = std::string("+X");
 
         ObjectMap _ItemProperties{
-            { "tubeDesigner.profile", _Profile },
             { "manufacturing.partKind", std::string("tube") },
             { "manufacturing.materialCategory", std::string("tube") },
             { "manufacturing.sourcing", std::string("made") },
@@ -6190,6 +6438,10 @@ namespace
         {
             _Transaction.CreateEntity(_PartID);
             _Transaction.AttachComponent(_PartID, CManufacturingPartComponent::S_ClassName, _Properties);
+            _Transaction.AttachComponent(
+                _PartID,
+                CTubeProfileComponent::S_ClassName,
+                TubeProfileComponentPropertiesFromSnapshot(_Profile));
             const auto _Meta = _DB.GetMetaEntity();
             if (!_Meta) throw std::runtime_error("Missing project root");
             QueueUpsertComponent(_Transaction, _Meta, _Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
@@ -6627,15 +6879,33 @@ namespace
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
-        return MakeResponse(InvokePunchToolRuntime(ApplicationContext_,{{"action",std::string("catalogue")}}));
+        ObjectMap _Parameters{{"action",std::string("catalogue")}};
+        VariantArray _TemplateSources;
+        for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
+        {
+            const auto _ToolRoot = _Directory / "punch-tools";
+            std::error_code _Error;
+            if (!std::filesystem::is_directory(_ToolRoot, _Error)) continue;
+            _TemplateSources.emplace_back(ObjectMap{
+                {"scope",std::string("template")},
+                {"root",PathToUTF8(_ToolRoot)},
+                {"templateId",_Directory.filename().string()},
+                {"templateName",_Directory.filename().string()}
+            });
+        }
+        if (!_TemplateSources.empty()) _Parameters["catalogueSources"] = std::move(_TemplateSources);
+        return MakeResponse(InvokePunchToolRuntime(ApplicationContext_,std::move(_Parameters)));
     }
 
     iCAX::Interaction::CInvocationResult HandleGetPartDrawingTools(
-        const iCAX::Interaction::CInvocation&,
+        const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
-        return MakeResponse(InvokePunchToolRuntime(ApplicationContext_,{{"action",std::string("catalogue")}}));
+        // Part drawing and the punch wizard consume the same mould catalogue,
+        // including template-provided resources. Keep one source of truth so
+        // a mould added for one entry point is immediately visible in the other.
+        return HandleGetPunchTools(Request_, ApplicationContext_, nullptr, nullptr, nullptr);
     }
 
     ObjectMap ReadEditableDrawingConfig(const CManufacturingPartComponent& Part_, bool PartDrawing_)
@@ -6902,7 +7172,6 @@ namespace
             { "source", std::string(_ProfileReference.empty() ? "local-dxf" : "profile-library") }
         };
         ObjectMap _ItemProperties{
-            { "tubeDesigner.profile", _Profile },
             { "tubeDesigner.standardPart", std::move(_StandardPart) },
             { "tubeDesigner.endProcess", ObjectMap{
                 { "startCut", std::string("square") }, { "endCut", std::string("square") } } },
@@ -6967,6 +7236,10 @@ namespace
         {
             _Transaction.CreateEntity(_PartID);
             _Transaction.AttachComponent(_PartID, CManufacturingPartComponent::S_ClassName, _Properties);
+            _Transaction.AttachComponent(
+                _PartID,
+                CTubeProfileComponent::S_ClassName,
+                TubeProfileComponentProperties(_Profile, "standard-part"));
             QueueUpsertComponent(_Transaction, _Meta, _Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
                 {{ CTubeDesignerRootComponent::PropertyName_NestingTask, PropertyValue(_Task) }});
             std::string _Error;
@@ -7078,7 +7351,6 @@ namespace
         };
         if(!_Drawing.empty())_PunchConfig["drawing"]=_Drawing;
         ObjectMap _ItemProperties{
-            { "tubeDesigner.profile", _Profile },
             { "manufacturing.partKind", std::string("tube") },
             { "manufacturing.materialCategory", std::string("tube") },
             { "manufacturing.sourcing", std::string("made") },
@@ -7136,6 +7408,10 @@ namespace
         {
             _Transaction.CreateEntity(_PartID);
             _Transaction.AttachComponent(_PartID, CManufacturingPartComponent::S_ClassName, _Properties);
+            _Transaction.AttachComponent(
+                _PartID,
+                CTubeProfileComponent::S_ClassName,
+                TubeProfileComponentProperties(_Profile, PartDrawing_ ? "part-drawing" : "punch-wizard"));
             _Transaction.AttachComponent(
                 _PartID,
                 PartDrawing_ ? CPartDrawingComponent::S_ClassName : CPunchWizardComponent::S_ClassName,
@@ -7269,9 +7545,12 @@ namespace
             { "features", std::move(_SavedFeatures) },
         };
         auto _UpdatedProperties = _Properties;
+        iCAX::Data::PropertySet _TubeProfileChanges;
         if(!_Drawing.empty()) {
             _PunchConfig["drawing"]=_Drawing;
-            _UpdatedProperties["tubeDesigner.profile"]=GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile");
+            _TubeProfileChanges = TubeProfileComponentProperties(
+                GetRequiredObject(GetRequiredObject(_Drawing, "section"), "profile"),
+                PartDrawing_ ? "part-drawing" : "punch-wizard");
         }
         // Recipe data belongs to the domain component, not the generic
         // manufacturing-part property bag.  Keep only manufacturing-wide
@@ -7305,6 +7584,9 @@ namespace
                     { CManufacturingPartComponent::PropertyName_Status,
                         PropertyValue(std::string("Ready")) },
                 });
+            if (!_TubeProfileChanges.empty())
+                _Transaction.ModifyComponent(
+                    _PartID, CTubeProfileComponent::S_ClassName, _TubeProfileChanges);
             const auto _ComponentClass = PartDrawing_
                 ? CPartDrawingComponent::S_ClassName : CPunchWizardComponent::S_ClassName;
             const auto _DefinitionProperty = PartDrawing_
@@ -7450,7 +7732,7 @@ namespace
                     "已导出 " + _Part.FileName);
 
                 const auto _Properties = _Part.ItemProperties;
-                const auto _Profile = OptionalProfileProperties(_Properties);
+                const auto _Profile = _Part.TubeProfile;
                 const auto _Kind = ManufacturingPartKind(_Properties);
                 const auto _Plate = ManufacturingPlate(_Properties);
                 _PartListRows.push_back({
@@ -8577,7 +8859,7 @@ namespace
                     throw std::invalid_argument("零件已过期，请回到产品重新导入下料");
                 if (!IsTubeManufacturingPart(_Transient->Part.ItemProperties))
                     throw std::invalid_argument("板件或配件不参与管材排样，请在零件模块单独导出");
-                _Profile = OptionalProfileProperties(_Transient->Part.ItemProperties);
+                _Profile = _Transient->Part.TubeProfile;
                 _Name = MakePartNameFromFileName(
                     _Transient->Part.FileName, _Transient->Part.PartNumber);
                 _PartNumber = _Transient->Part.PartNumber;
@@ -8833,7 +9115,7 @@ namespace
                 }
                 else if (_Transient && _LinkedPartIDs.contains(_PartID))
                 {
-                    _Profile = OptionalProfileProperties(_Transient->Part.ItemProperties);
+                    _Profile = _Transient->Part.TubeProfile;
                     if (_PartIDs.insert(_PartID).second)
                         _Parts.push_back({ _PartID,
                             MakePartNameFromFileName(

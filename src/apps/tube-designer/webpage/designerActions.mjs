@@ -42,6 +42,7 @@ import {
 } from "./sketchArea.mjs";
 import { getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs";
 import { handleComponentLibraryAction, handleComponentLibraryRibbonCommand } from "./componentLibrary.mjs";
+import { handleToolLibraryAction, handleToolLibraryRibbonCommand } from "./toolLibrary.mjs";
 
 export const DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
 import { handleLicenseCommand } from "./licensing.mjs";
@@ -60,6 +61,8 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   }
   const componentResult = await handleComponentLibraryAction(context, view, action, target, ops);
   if (componentResult.handled) return componentResult;
+  const toolLibraryResult = await handleToolLibraryAction(context, view, action, target, ops);
+  if (toolLibraryResult.handled) return toolLibraryResult;
   const nestingPunchPartResult = await handleNestingPunchPartAction(context, view, action, target, ops);
   if (nestingPunchPartResult.handled) return nestingPunchPartResult;
   const nestingStandardPartResult = await handleNestingStandardPartAction(context, view, action, target, ops);
@@ -345,6 +348,17 @@ export async function handleDesignerAreaAction(context, view, action, target, op
 
 export async function handleDesignerRibbonCommand(context, view, commandId, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return true;
+  const resourceAreas = {
+    "resources.profiles": "profiles",
+    "resources.tools": "tools",
+    "resources.components": "components",
+  };
+  if (resourceAreas[commandId]) {
+    view.tubeDesignerResourceLibraryArea = resourceAreas[commandId];
+    context.activeRibbonTabId = "resources";
+    ops.renderProject(context, view);
+    return true;
+  }
   if (await handleTubeMachiningRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleLicenseCommand(context, view, commandId, ops)) return true;
   if (commandId === "profiles.new-sketch") {
@@ -375,6 +389,7 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
   if (await handleSketchRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleProfileLibraryRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleComponentLibraryRibbonCommand(context, view, commandId, ops)) return true;
+  if (await handleToolLibraryRibbonCommand(context, view, commandId, ops)) return true;
   if (commandId === "designer.templates.manage") {
     openProductTemplateManager(context, view, ops);
     return true;
@@ -737,7 +752,7 @@ export async function refreshDesignerState(context, view, ops = null) {
 
 export async function refreshDesignerUserData(context, view, ops = null) {
   if (typeof context.productProxy?.invoke !== "function") {
-    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], productTemplates: [], profileId: "" };
+    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
     view.tubeDesignerSystemProfiles ??= [];
     view.tubeDesignerTemplateProfiles ??= [];
     return false;
@@ -750,6 +765,7 @@ export async function refreshDesignerUserData(context, view, ops = null) {
       customers: Array.isArray(response?.customers) ? response.customers : [],
       parameterPresets: Array.isArray(response?.parameterPresets) ? response.parameterPresets : [],
       profiles: Array.isArray(response?.profiles) ? response.profiles : [],
+      punchTools: Array.isArray(response?.punchTools) ? response.punchTools : [],
       productTemplates: Array.isArray(response?.productTemplates) ? response.productTemplates : [],
       profileId: String(response?.profileId ?? ""),
     };
@@ -761,7 +777,7 @@ export async function refreshDesignerUserData(context, view, ops = null) {
     ops?.renderProject?.(context, view);
     return true;
   } catch (error) {
-    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], productTemplates: [], profileId: "" };
+    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
     view.tubeDesignerSystemProfiles ??= [];
     view.tubeDesignerTemplateProfiles ??= [];
     view.tubeDesignerUserDataError = error?.message ?? String(error);
@@ -1635,7 +1651,7 @@ async function deleteParameterPreset(context, view, target, ops) {
 }
 
 function upsertUserDataItem(view, collection, item) {
-  view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], productTemplates: [], profileId: "" };
+  view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
   const items = Array.isArray(view.tubeDesignerUserData[collection])
     ? view.tubeDesignerUserData[collection] : [];
   const index = items.findIndex((candidate) => String(candidate?.id ?? "") === String(item?.id ?? ""));

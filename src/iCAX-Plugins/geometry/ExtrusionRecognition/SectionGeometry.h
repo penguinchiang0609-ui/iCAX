@@ -28,5 +28,10 @@ namespace iCAX::ExtrusionRecognition
         IN const iCAX::GeometryData::Direction3& TargetAxis_,
         OUT iCAX::GeometryData::BRepModel& Normalized_,
         OUT std::string& strError_);
-}
 
+    bool TryApplyBRepTransform(
+        IN const iCAX::GeometryData::BRepModel& Geometry_,
+        IN const iCAX::GeometryData::Transform3& Transform_,
+        OUT iCAX::GeometryData::BRepModel& Transformed_,
+        OUT std::string& strError_);
+}

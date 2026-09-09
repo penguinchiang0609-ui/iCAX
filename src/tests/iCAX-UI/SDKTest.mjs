@@ -283,7 +283,7 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
 function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => [tab.id, tab.title]),
-    [["view", "产品"], ["nesting", "下料"], ["machining", "加工"], ["profiles", "管型库"], ["components", "配件库"], ["about", "关于"]],
+    [["view", "产品"], ["nesting", "下料"], ["machining", "加工"], ["resources", "资源库"], ["about", "关于"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
   assert.ok(tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "view")
@@ -731,7 +731,7 @@ function testTubeDesignerSketchJoinsTheMainWorkflow() {
   assert.ok(!tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "sketch"));
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => tab.id),
-    ["view", "nesting", "machining", "profiles", "components", "about"],
+    ["view", "nesting", "machining", "resources", "about"],
   );
   const commands = sketchRibbonGroups.flatMap((group) => group.commands)
     .map((command) => command.id);
@@ -1275,8 +1275,10 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   const left = renderProfileLibraryLeftPane({}, view);
   const right = renderProfileLibraryRightPane({}, view);
   const previewHtml = renderProfileLibraryViewportOverlay({}, view);
-  assert.match(left, /程式管型包/);
-  assert.match(left, /定式管型/);
+  assert.equal((left.match(/role="tab"/g) ?? []).length, 6);
+  assert.match(left, /data-tube-profile-library-type="parametric"/);
+  assert.match(left, /data-tube-profile-library-type="fixed"/);
+  assert.doesNotMatch(left, /系统内置 · 程式管型|程式管型包/);
   assert.match(left, /data-tube-profile-library-scope="system"/);
   assert.match(left, /data-tube-profile-library-scope="template"/);
   assert.match(left, /data-tube-profile-library-scope="user"/);
@@ -1298,13 +1300,13 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   assert.match(previewHtml, /data-tube-profile-preview-wait-progress[^>]*role="progressbar"/);
   assert.match(previewHtml, /data-tube-profile-preview-wait[^>]*aria-hidden="true"[^>]*hidden/);
   assert.doesNotMatch(previewHtml, /tube-profile-library-svg/);
-  assert.ok(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "profiles" && tab.title === "管型库"));
+  assert.ok(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "resources" && tab.title === "资源库"));
   assert.ok(tubeDesignerRibbonDefinition.tabs
-    .find((tab) => tab.id === "profiles")
+    .find((tab) => tab.id === "resources")
     .groups.flatMap((group) => group.commands)
     .some((command) => command.id === "profiles.import-package"));
   assert.ok(tubeDesignerRibbonDefinition.tabs
-    .find((tab) => tab.id === "profiles")
+    .find((tab) => tab.id === "resources")
     .groups.flatMap((group) => group.commands)
     .some((command) => command.id === "profiles.export-step"));
 

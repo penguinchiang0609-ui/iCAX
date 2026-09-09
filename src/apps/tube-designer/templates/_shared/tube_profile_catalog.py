@@ -198,6 +198,10 @@ class Profile:
             "displayName": self.display_name,
             "specification": self.specification,
             "hollow": self.hollow,
+            # Manufacturing members persist the exact section definitions on
+            # their tube-profile component so list/grouping and downstream
+            # editors do not need to re-evaluate the profile package.
+            "contours": self.contours(),
         }
         # A parametric polygon's side/point count and star mode are part of its
         # manufacturing section identity. They are also needed to decide whether

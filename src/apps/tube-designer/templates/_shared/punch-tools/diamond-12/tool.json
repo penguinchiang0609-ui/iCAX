@@ -6,5 +6,6 @@
   "displayName": "菱形孔 12 × 8",
   "kind": "fixed",
   "target": "side",
+  "category": "孔型",
   "parameters": []
 }

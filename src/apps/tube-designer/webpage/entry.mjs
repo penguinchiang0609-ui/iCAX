@@ -40,6 +40,12 @@ import {
   renderProfileLibraryViewportOverlay,
 } from "./profileLibrary.mjs";
 import {
+  ensureToolLibraryCatalogue,
+  renderToolLibraryLeftPane,
+  renderToolLibraryRightPane,
+  renderToolLibraryViewportOverlay,
+} from "./toolLibrary.mjs";
+import {
   attachComponentLibrary,
   renderComponentLibraryDialogs,
   renderComponentLibraryLeftPane,
@@ -87,6 +93,7 @@ export async function mountProject(context) {
   const view = getProjectView(context.project?.projectId ?? "");
   // 下料已经是产品主流程的一部分，不再通过旧“零件与排样”商业权限分叉界面。
   view.tubeDesignerProductionAccess = true;
+  view.tubeDesignerResourceLibraryArea ??= "profiles";
   view.scene ??= {};
   const historyToken = getHistoryToken(context.scene);
   const historyChanged = view.tubeDesignerHistoryToken !== undefined
@@ -229,7 +236,7 @@ function withDesignerContext(context) {
   return {
     ...context,
     forceThreeViewport: true,
-    areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", profiles: "管型库", components: "配件库", sketch: "草图", about: "关于" },
+    areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", profiles: "管型库", tools: "模具库", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {
         left: renderDesignerLeftPane,
@@ -238,6 +245,10 @@ function withDesignerContext(context) {
       profiles: {
         left: renderProfileLibraryLeftPane,
         right: renderProfileLibraryRightPane,
+      },
+      tools: {
+        left: renderToolLibraryLeftPane,
+        right: renderToolLibraryRightPane,
       },
       components: {
         left: renderComponentLibraryLeftPane,
@@ -257,9 +268,15 @@ function withDesignerContext(context) {
         right: renderAboutRightPane,
       },
     },
-    normalizeAreaId: (tabId) => tabId === "parts"
-      ? "nesting"
-      : (["view", "nesting", "machining", "profiles", "components", "sketch", "about"].includes(tabId) ? tabId : "view"),
+    normalizeAreaId: (tabId) => {
+      if (tabId === "parts") return "nesting";
+      if (tabId === "resources") {
+        const resourceArea = getProjectView(context.project?.projectId ?? "").tubeDesignerResourceLibraryArea;
+        return ["profiles", "tools", "components"].includes(resourceArea) ? resourceArea : "profiles";
+      }
+      return ["view", "nesting", "machining", "profiles", "tools", "components", "sketch", "about"].includes(tabId)
+        ? tabId : "view";
+    },
     resolveWorkbenchPresentation: (_context, _view, _scene, areaId) => ({
       className: `tube-designer-workspace ${areaId === "nesting" ? "tube-designer-production-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
       style: areaId === "nesting" ? renderNestingWorkspaceStyle() : "",
@@ -291,6 +308,7 @@ function withDesignerContext(context) {
     },
     afterProjectRender(context, view, mount, ops) {
       bindProfileParameterDiagrams(mount);
+      if (view.activeAreaId === "tools") ensureToolLibraryCatalogue(context, view, ops);
       if (view.activeAreaId === "nesting" && view.tubeDesignerBreakdownOpen && !view.tubeDesignerPartInspectionOpen) {
         scheduleDesignerPartThumbnailHydration(context);
       }
@@ -341,14 +359,14 @@ function configureDesignerViewport(_context, view, areaId) {
   const viewport = view.viewport;
   if (!viewport) return;
   const normalizedAreaId = areaId === "parts" ? "nesting"
-    : (["view", "nesting", "machining", "profiles", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
+    : (["view", "nesting", "machining", "profiles", "tools", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
   view.tubeDesignerProjectionModes ??= {};
   const projectionMode = view.tubeDesignerProjectionModes[normalizedAreaId] ?? "perspective";
   viewport.setProjectionToggleVisible?.(!["sketch", "about"].includes(normalizedAreaId));
   viewport.setPickingEnabled?.(!["sketch", "about"].includes(normalizedAreaId));
   viewport.setContinuousRendering?.(normalizedAreaId !== "sketch");
   viewport.setProjectionChangeHandler?.((mode) => {
-    const currentAreaId = ["view", "profiles", "components", "nesting", "machining"].includes(view.activeAreaId)
+    const currentAreaId = ["view", "profiles", "tools", "components", "nesting", "machining"].includes(view.activeAreaId)
       ? view.activeAreaId : "view";
     view.tubeDesignerProjectionModes ??= {};
     view.tubeDesignerProjectionModes[currentAreaId] = mode;
@@ -358,7 +376,7 @@ function configureDesignerViewport(_context, view, areaId) {
 }
 
 function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
-  if (["profiles", "components", "sketch", "nesting", "machining", "about"].includes(areaId)) {
+  if (["profiles", "tools", "components", "sketch", "nesting", "machining", "about"].includes(areaId)) {
     // 管型、下料与辅助工作区自行装载当前选择，不对应产品装配 View。
     return false;
   }
@@ -383,6 +401,7 @@ function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
 function renderDesignerAreaViewportOverlay(context, view, scene) {
   if (view.activeAreaId !== "nesting") clearPartsViewportAnnotations(view);
   if (view.activeAreaId === "profiles") return renderProfileLibraryViewportOverlay(context, view, scene);
+  if (view.activeAreaId === "tools") return renderToolLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "components") return renderComponentLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "sketch") return renderSketchViewportOverlay(context, view, scene);
   if (view.activeAreaId === "nesting") return renderNestingViewportOverlay(context, view, scene);
