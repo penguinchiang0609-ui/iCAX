@@ -627,7 +627,13 @@ function clearProfilePreviewRequest(view) {
 async function applyProfilePreviewResource(context, view, profile, key, response) {
   const geometryId = String(response?.geometryResourceId ?? "");
   const geometryVersion = Number(response?.geometryResourceVersion ?? 0);
-  if (!geometryId || !geometryVersion || !isCurrentProfilePreview(view, profile, key) || !view.viewport) return;
+  if (!isCurrentProfilePreview(view, profile, key)) return;
+  if (!geometryId || !Number.isFinite(geometryVersion) || geometryVersion <= 0) {
+    throw new Error("没有返回有效的三维几何资源。");
+  }
+  if (!view.viewport?.applyViewSnapshot) {
+    throw new Error("三维视口尚未准备好。");
+  }
   const entityId = profileSelectionKey(profile);
   const revision = `profile-preview:${entityId}:${geometryVersion}`;
   if (isProfilePreviewResourceApplied(view, profile, response)) {
@@ -646,11 +652,20 @@ async function applyProfilePreviewResource(context, view, profile, key, response
   if (materialId && materialVersion) {
     data.material = { url: materialId, version: materialVersion };
   }
+  const resources = context.sceneProxy?.resources
+    ?? view.sceneProxy?.resources
+    ?? context.projectProxy?.resources;
+  if (typeof resources?.get !== "function") {
+    throw new Error("当前场景没有提供三维资源读取能力。");
+  }
   const receipt = await withTimeout(view.viewport.applyViewSnapshot({
     revision,
     rows: [{ entityId, data }],
-  }, context.sceneProxy?.resources), 30000, "三维资源进入视口超时");
-  if (!receipt?.applied) return;
+  }, resources), 30000, "三维资源进入视口超时");
+  if (!receipt?.applied || receipt.missingGeometryEntityIds?.length
+      || (Array.isArray(receipt.entityIds) && !receipt.entityIds.includes(entityId))) {
+    throw new Error("三维几何资源未完整进入管型预览视图。");
+  }
   if (!isCurrentProfilePreview(view, profile, key)) {
     // The same profile ID can represent different parameter values. Only hide
     // this stale snapshot; never change the visibility of a newer scene.

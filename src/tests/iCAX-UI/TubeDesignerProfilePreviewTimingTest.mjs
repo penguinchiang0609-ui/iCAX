@@ -121,7 +121,7 @@ function harness(clock) {
       setVisibleEntityIds(ids) { visible.push(ids); }, setSelectedObjectIds() {}, fitViewForRevision() {}, setStandardView() {},
     } };
   const context = { actions: { log(level, message) { logs.push({ level, message }); } },
-    sceneProxy: { async invoke(method, payload) { calls.push({ method, payload }); return backend(payload); } } };
+    sceneProxy: { resources: { get() {} }, async invoke(method, payload) { calls.push({ method, payload }); return backend(payload); } } };
   function render() { dom.remount(); renderProfileLibraryViewportOverlay(context, view); }
   const ops = { renderProject: render, showNotice() {} };
   return { view, context, dom, calls, hydration, visible, logs, render,

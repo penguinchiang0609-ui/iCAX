@@ -228,6 +228,7 @@ export function getWindowCloseGuard(context) {
 function withDesignerContext(context) {
   return {
     ...context,
+    forceThreeViewport: true,
     areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", profiles: "管型库", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {

@@ -27,7 +27,7 @@ function harness() {
       fitViewForRevision() {}, setStandardView() {} },
   };
   const context = { actions: { log() {} }, productProxy: { async invoke(method, payload) { calls.push({ method, payload }); return {}; } },
-    sceneProxy: { async invoke(method, payload) { calls.push({ method, payload }); return { geometryResourceId: "resource://profile", geometryResourceVersion: 1 }; } } };
+    sceneProxy: { resources: { get() {} }, async invoke(method, payload) { calls.push({ method, payload }); return { geometryResourceId: "resource://profile", geometryResourceVersion: 1 }; } } };
   const ops = { renderProject() {}, showNotice() {} };
   const act = (suffix, target = {}) => handleProfileLibraryAction(context, view, `tube-designer-profile-library-${suffix}`, target, ops);
   return { view, context, ops, calls, snapshots, visible, selected, act };

@@ -591,7 +591,11 @@ function renderImportNotice(topology) {
 function renderViewport(context, view, scene) {
   const model = scene.model ?? {};
   const sceneProxy = resolveSceneProxy(context, view);
-  if (sceneProxy?.pdo?.enabled) {
+  // Some product areas use the same central Three viewport for transient
+  // previews (for example a tube profile library) without requiring a PDO
+  // stream.  PDO is still the default capability gate for the generic
+  // workbench, while a product can explicitly opt into the renderer.
+  if (sceneProxy?.pdo?.enabled || context?.forceThreeViewport === true) {
     return `
       <div class="cam-render-viewport-shell">
         <div class="cam-render-viewport" data-cam-render-viewport></div>
