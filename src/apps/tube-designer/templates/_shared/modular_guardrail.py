@@ -171,8 +171,8 @@ def _lateral(direction: Point) -> Point:
 
 def _profile(p: dict[str, Any], prefix: str):
     profile = _catalog.load_profile(p, prefix)
-    if profile.kind not in {"rect", "round"}:
-        raise ValueError("组合式护栏当前支持矩形管和圆管；异型管需要独立的节点校核")
+    if profile.kind not in {"rect", "round", "ellipse", "flat-oval"}:
+        raise ValueError("组合式护栏当前支持矩形管、圆管、椭圆管和腰圆管；其他异型管需要独立的节点校核")
     return profile
 
 
@@ -722,7 +722,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                         start_cut = "cope"
                     else:
                         end_cut = "cope"
-        add_item(part.key, part.name, representation, {
+        tube_properties = {
             "group": part.group, "length": round(part.length, 3), "manufacturing.partKind": "tube",
             "manufacturing.sourcing": "made",
             "manufacturing.process": "tube-profile-hole-cut-weld" if part.hole_tools else "tube-cut-weld",
@@ -733,7 +733,11 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             "tubeDesigner.endProcess": {"startCut": start_cut, "endCut": end_cut,
                                         "connection": "weld", "lengthBasis": "blank_axial_extent" if part.clips or part.keep_volume else "finished",
                                         "cutSource": "finished_geometry", "profileHoleCount": len(part.hole_tools)},
-        })
+        }
+        material_grade = str(parameters.get("materialGrade", "")).strip()
+        if material_grade:
+            tube_properties["manufacturing.materialGrade"] = material_grade
+        add_item(part.key, part.name, representation, tube_properties)
         for index, receiver in enumerate(dict.fromkeys(part.clips), 1):
             model.relationship(f"joint.{part.key}.{index}", "weld", [part.key, receiver], properties={"geometry": "outer-envelope-cope"})
     for part in built.plates:
@@ -745,6 +749,9 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         properties.update({"manufacturing.partKind": part.part_kind, "manufacturing.materialCategory": part.part_kind,
                            "manufacturing.sourcing": "purchased" if part.part_kind == "glass" else "made",
                            "manufacturing.process": "purchased" if part.part_kind == "glass" else "plate-cut"})
+        material_grade = str(parameters.get("materialGrade", "")).strip()
+        if material_grade:
+            properties["manufacturing.materialGrade"] = material_grade
         properties["group"] = part.group
         add_item(part.key, part.name, representation, properties)
     component_geometry = _components.ComponentModelGeometry(model)

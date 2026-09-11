@@ -162,6 +162,13 @@
           "industry": "护栏"
         },
         {
+          "templateId": "stainless-steel-guardrail",
+          "version": "1.1.0",
+          "displayName": "护栏/不锈钢栏杆",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
           "templateId": "modular-guardrail-r2-u",
           "version": "1.1.0",
           "displayName": "护栏/竖杆护栏/二横档U 型转角",
