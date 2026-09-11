@@ -3,6 +3,7 @@ import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
 import { normalizePunchLayout, resolvePunchLayout, punchLayoutInstanceCount } from "./punchLayout.mjs";
 import { migrateLegacyPunchArrays, resolvePunchArrayGroups, punchArraySkipText, hasPunchArrayGroups, punchArrayGroupInstanceCount } from "./punchArrayGroups.mjs";
 import { renderPunchArrayGroupsControls, renderPunchArrayGroupsSummary } from "./punchArrayGroupsView.mjs";
+import { migratePunchRecord, migratePunchRecipe, BRANCH_PLACEMENT_DEFAULTS } from "./punchToolMigration.mjs";
 
 const PLANE_FACES = [
   { value: "top", label: "上方（+Z）" }, { value: "bottom", label: "下方（-Z）" },
@@ -23,6 +24,7 @@ const label = item => typeof item?.displayName === "string" ? item.displayName :
 const punchRecordKind = item => String(item?.recordKind ?? (item?.section ? (item.section.source === "dxf" ? "dxf" : "branch") : "tool"));
 
 export function normalizePunchFeature(feature = {}) {
+  feature = migratePunchRecord(feature);
   const recordKind = punchRecordKind(feature);
   const depthMode = String(feature.depthMode ?? (feature.through ? "through" : feature.opposite ? "both" : feature.reverse ? "reverse" : "single"));
   return { ...normalizePunchLayout(recipeItem(feature)), id: feature.id ?? uid(), type: String(feature.type ?? "circle"), recordKind, depthMode,
@@ -40,8 +42,8 @@ export function readPunchWizardFeatures(part = {}) {
   return (part?.properties?.["tubeDesigner.punchWizard"]?.features ?? []).map(normalizePunchFeature);
 }
 export function createPunchWizardState(part = {}) {
-  const config = part?.properties?.["tubeDesigner.punchWizard"] ?? {};
-  const features=readPunchWizardFeatures(part);
+  const config = migratePunchRecipe(part?.properties?.["tubeDesigner.punchWizard"] ?? {});
+  const features=(config.features ?? []).map(normalizePunchFeature);
   return { partId: String(part.entityId ?? ""), resourceId: part.manufacturingGeometryResourceId,
     resourceVersion: part.manufacturingGeometryResourceVersion, baseLength: Number(config.baseLength ?? part.length ?? 1000),
     features, originalFeatureRecipes:Object.fromEntries(features.map((feature,index)=>[feature.id,recipeItem(config.features[index])])),
@@ -212,6 +214,7 @@ export function selectPunchTool(s, item, id) {
   item.recordKind=tool.requiresSection?(item.section?.source==="dxf"?"dxf":"branch"):"tool";
   if(tool.target==="part") {
     item.toolTarget="part";item.face=["top","left","round"].includes(item.face)?item.face:"top";item.offset=0;item.rotation=0;item.opposite=false;item.through=false;item.reverse=false;item.depthMode="single";
+    if (tool.requiresSection) for (const [key, value] of Object.entries(BRANCH_PLACEMENT_DEFAULTS)) item[key] ??= value;
   } else delete item.toolTarget;
   if(!tool.requiresSection)delete item.section;
   if(tool.target==="end"&&longDatumEndTools.has(tool.id))item.datum="long";
@@ -243,7 +246,7 @@ export function updatePunchWizardField(view, target) {
     item.toolParameters ??= {};
     item.toolParameters[parameter] = def?.valueType === "boolean" ? !!target.checked : def?.valueType === "string" ? String(target.value) : num(target.value, NaN);
   } else {
-    item[field] = ["face", "reference", "endDatum", "datum", "recordKind", "distributionMode", "depthMode", "layoutDatum", "centerMode", "fillAlign", "spacingSequence", "positionList", "skipInstancesText", "rowDistributionMode"].includes(field) ? String(target.value)
+    item[field] = ["face", "reference", "endDatum", "datum", "recordKind", "distributionMode", "depthMode", "layoutDatum", "centerMode", "fillAlign", "spacingSequence", "positionList", "skipInstancesText", "rowDistributionMode", "direction"].includes(field) ? String(target.value)
       : ["enabled", "opposite", "through", "reverse", "allowOpen"].includes(field) ? !!target.checked : num(target.value, NaN);
     if(field==="centerFirstOffset"&&target.value==="")item[field]=null;
     if(field==="distributionMode")item.layoutDatum="base";
@@ -270,6 +273,8 @@ export function validatePunchFeature(part, feature) {
   if (f.toolRef) {
     if (!f.toolRef.id) return "请选择刀具模板。";
     if ((f.recordKind==="branch"||f.recordKind==="dxf") && !f.section?.profile?.contours?.length) return "请选择支管管型或导入有效的本地 DXF 截面。";
+    if (f.toolRef.id==="branch-profile" && (![f.angle,f.azimuth,f.roll,f.offsetY,f.offsetZ,f.length].every(Number.isFinite) || !(f.length>0)
+      || !["through","symmetric","positive","negative"].includes(f.direction??"through"))) return "支管定位与拉伸参数无效。";
     if (Object.values(f.toolParameters ?? {}).some(v => typeof v === "number" && !Number.isFinite(v))) return "刀具参数必须是有效数字。";
     return ""; // Actual footprint/curved walls are checked against the native BRep.
   }
@@ -316,6 +321,10 @@ function validatePunchEnd(item) {
   if(!datums.some(d=>d.value===(item.datum??"long")))return "请选择有效的端部定位基准。";
   if(longDatumEndTools.has(item.toolRef?.id??item.type)&&(item.datum??"long")!=="long")return "此端部刀具按长点 / 包络定位。";
   if((item.toolRef?.id??item.type)==="end-profile"&&!item.section?.profile?.contours?.length)return "请选择切端用支管管型或导入有效的本地 DXF 截面。";
+  const id=item.toolRef?.id??item.type;
+  const placementKeys=id==="end-profile"?["angle","azimuth","roll","axialOffset","offsetY","offsetZ"]
+    :id==="end-convex"||id==="end-cope"?["angle","offset"]:id==="end-key-joint"?["offset"]:[];
+  if(placementKeys.some(key=>item[key]!==undefined&& !Number.isFinite(Number(item[key]))))return "端部姿态参数无效。";
   if(Object.values(item.toolParameters??{}).some(v=>typeof v==="number"&&!Number.isFinite(v)))return "端部刀具参数无效。";
   return "";
 }
@@ -559,11 +568,7 @@ function previewModeButtons(s,btn) {
   return '<span class="tube-designer-punch-preview-modes" aria-label="三维显示内容"><span>主管 + 刀具体</span></span>';
 }
 function punchPoseDescriptor(descriptor, item, pose) {
-  // Parameter names alone are not enough: a V-groove angle is a shape angle,
-  // while a branch angle tilts the whole tool. Keep unknown templates intact.
-  const keys=item.toolRef?.id==="branch-profile" ? new Set(["angle","azimuth","roll","offsetY","offsetZ"])
-    :item.toolRef?.id==="v-notch" ? new Set(["rotation"]) : new Set();
-  return descriptor?{...descriptor,parameters:(descriptor.parameters??[]).filter(definition=>keys.has(definition.key)===pose)}:undefined;
+  return pose ? undefined : descriptor;
 }
 function punchArrayViewState(item,baseLength) {
   const feature=migrateLegacyPunchArrays(item,baseLength);
@@ -578,16 +583,23 @@ function renderPunchPoseFields(action,item,index,disabled,descriptor) {
     +wrap("孔形旋转",tableNumber(action,"rotation",item.rotation,index,"",disabled),"°")
     +wrap("切深",tableSelect(action,"depthMode",item.depthMode,[{value:"single",label:"当前面"},{value:"reverse",label:"反向面"},{value:"both",label:"当前面 + 对面"},{value:"through",label:"贯穿两侧"}],index,disabled))
     +(item.layoutDatum!=="base"?wrap("成品端面基准",tableSelect(action,"endDatum",item.endDatum??"long",datums,index,disabled)):"");
-  return '<div class="punch-pose-fields">'+location+side+'</div><div class="tube-designer-punch-sheet-parameters">'
-    +(descriptor?tableParameterFields(action,punchPoseDescriptor(descriptor,item,true),item,index,disabled):"")+'</div>';
+  const partPlacement = descriptor?.requiresSection
+    ? wrap("轴夹角",tableNumber(action,"angle",item.angle??90,index,"",disabled),"°")
+      +wrap("方位角",tableNumber(action,"azimuth",item.azimuth??0,index,"",disabled),"°")
+      +wrap("绕轴旋转",tableNumber(action,"roll",item.roll??0,index,"",disabled),"°")
+      +wrap("横向偏移",tableNumber(action,"offsetY",item.offsetY??0,index,"",disabled),"mm")
+      +wrap("高度偏移",tableNumber(action,"offsetZ",item.offsetZ??0,index,"",disabled),"mm")
+      +wrap("拉伸方向",tableSelect(action,"direction",item.direction??"through",[
+        {value:"through",label:"贯穿主管"},{value:"symmetric",label:"对称"},{value:"positive",label:"正向"},{value:"negative",label:"反向"}],index,disabled))
+      +wrap("拉伸长度",tableNumber(action,"length",item.length??120,index,"",disabled),"mm")
+    : descriptor?.target === "part" ? wrap("绕主管旋转",tableNumber(action,"rotation",item.rotation??0,index,"",disabled),"°") : "";
+  return '<div class="punch-pose-fields">'+location+partPlacement+side+'</div>';
 }
 function punchPoseSummary(item) {
   const position=(refs.find(ref=>ref.value===item.reference)?.label??"距起点")+" "+(item.station??0)+" mm";
   if(item.toolTarget!=="part")return position+" · "+(PLANE_FACES.find(face=>face.value===item.face)?.label??item.face)
     +" · "+(item.face==="round"?"周向 "+(item.offset??0)+"°":"偏移 "+(item.offset??0)+" mm")+" · 旋转 "+(item.rotation??0)+"°";
-  const p=item.toolParameters??{};
-  return position+(item.toolRef?.id==="branch-profile"?" · 轴夹角 "+(p.angle??90)+"° · 方位 "+(p.azimuth??0)+"°"
-    :item.toolRef?.id==="v-notch"?" · 旋转 "+(p.rotation??0)+"°":" · 刀具坐标定位");
+  return position+(item.toolRef?.id==="branch-profile"?" · 轴夹角 "+(item.angle??90)+"° · 方位 "+(item.azimuth??0)+"°":" · 刀具坐标定位");
 }
 function renderPunchParameterDialog(action,s,view,options,btn) {
   const editor=s.parameterEditor;if(!editor)return "";
@@ -608,10 +620,22 @@ function renderPunchParameterDialog(action,s,view,options,btn) {
       +(item.toolParameters?.cutMode==="convex"?"凸口按名义包络向内定位并反向切除，可调向内偏移。轴夹角为 0° 或 180° 时不能形成凸口，请调整角度；斜姿态仍受母材与修剪边界限制。":"凹口按截面向内切除。轴夹角相对朝管内的轴线；左、右端各自定位，查看三维确认切除侧。")
     :"端部刀具仅在场景中显示切除位置，最终确认时才执行切割。"):"";
   const endDatums=longDatumEndTools.has(item.toolRef?.id??item.type)?datums.slice(0,1):datums;
+  const endToolId=item.toolRef?.id??item.type;
+  const endShapePlacement=endToolId==="end-profile"
+    ?'<label><span>轴夹角（°）</span>'+tableNumber(action,"angle",item.angle??90,end,"",disabled,end)+'</label>'
+      +'<label><span>方位角（°）</span>'+tableNumber(action,"azimuth",item.azimuth??0,end,"",disabled,end)+'</label>'
+      +'<label><span>绕轴旋转（°）</span>'+tableNumber(action,"roll",item.roll??0,end,"",disabled,end)+'</label>'
+      +'<label><span>轴向偏移（mm）</span>'+tableNumber(action,"axialOffset",item.axialOffset??0,end,"",disabled,end)+'</label>'
+      +'<label><span>横向偏移（mm）</span>'+tableNumber(action,"offsetY",item.offsetY??0,end,"",disabled,end)+'</label>'
+      +'<label><span>高度偏移（mm）</span>'+tableNumber(action,"offsetZ",item.offsetZ??0,end,"",disabled,end)+'</label>'
+    :endToolId==="end-convex"||endToolId==="end-cope"
+      ?'<label><span>轴夹角（°）</span>'+tableNumber(action,"angle",item.angle??90,end,"",disabled,end)+'</label>'
+        +'<label><span>轴向偏移（mm）</span>'+tableNumber(action,"offset",item.offset??0,end,"",disabled,end)+'</label>'
+      :endToolId==="end-key-joint"?'<label><span>轴向偏移（mm）</span>'+tableNumber(action,"offset",item.offset??0,end,"",disabled,end)+'</label>':"";
   const endPlacement=end&&item.type!=="keep"?'<fieldset class="tube-designer-punch-end-placement"><legend>端部定位</legend><div>'
     +'<label><span>定位基准</span>'+tableSelect(action,"datum",item.datum??"long",endDatums,end,disabled,end)+'</label>'
     +'<label><span>端部修剪量（mm）</span>'+tableNumber(action,"trim",item.trim??0,end,"",disabled,end)+'</label>'
-    +'<label><span>绕主管轴旋转（°）</span>'+tableNumber(action,"rotation",item.rotation??0,end,"",disabled,end)+'</label>'
+     +'<label><span>绕主管轴旋转（°）</span>'+tableNumber(action,"rotation",item.rotation??0,end,"",disabled,end)+'</label>'+endShapePlacement
     +'</div></fieldset>':"";
   const arrayState=mode==="arrays"?punchArrayViewState(item,s.baseLength):null;
   const shapeContent=(mode==="shape"?'<label class="tube-designer-punch-parameter-source"><span>加工来源</span>'+tableActionSelect(action,"record-kind-change",kind,[{value:"branch",label:"支管相贯"},{value:"tool",label:"刀具冲孔"},{value:"dxf",label:"本地 DXF"}],index,disabled)+'</label>':"")
@@ -814,7 +838,8 @@ function toolSelect(action,s,item,target,end="") {
   const available=punchToolDescriptor(s,item);
   const unresolved=!!item.toolRef&&!available;
   const id=unresolved?"__unavailable__":item.toolRef?.id??(end?"keep":"");
-  const tools=s.tools.filter(t=>Array.isArray(target)?target.includes(t.target):t.target===target);
+  const tools=s.tools.filter(t=>(Array.isArray(target)?target.includes(t.target):t.target===target)
+    && t.hidden!==true);
   const opts=[{value: end?"keep":"",label:end?"保留原端面":"请选择刀具"},...(unresolved?[{value:"__unavailable__",label:"缺少："+(item.toolLabel??item.toolRef.id)+" @ "+(item.toolRef.version??"旧版")}]:[]),...tools.map(t=>({value:t.id,label:(t.kind==="fixed"?"定式 · ":"程式 · ")+label(t)}))];
   return fieldControl(action,"tool","刀具模板",id,{options:opts},end);
 }

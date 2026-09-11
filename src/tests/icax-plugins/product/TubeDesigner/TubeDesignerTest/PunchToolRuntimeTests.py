@@ -77,117 +77,57 @@ class PunchTools(unittest.TestCase):
                     runtime.prepare({"features":[saved],"rebased":True,"bounds":{"min":[0,-20,-10],"max":[500,20,10]}})
         finally:runtime.ROOT=previous
 
-    def test_v_root_is_exact_three_point_arc(self):
-        source={"toolTarget":"part","toolRef":{"id":"v-notch"},"toolParameters":{"rootRadius":2},"station":500}
-        geometry=self.prepare([source])["features"][0]["toolSnapshot"]["geometry"]
-        arc=geometry["model"]["geometry"][0]["arguments"]["contours"][0]["segments"][1]
-        self.assertEqual("arc",arc["kind"]);self.assertEqual([0,-9],arc["middle"])
-        self.assertEqual(4,len(geometry["model"]["geometry"][0]["arguments"]["contours"][0]["segments"]))
-        with self.assertRaisesRegex(ValueError,"底部保留"):
-            self.prepare([{**source,"toolParameters":{"bridge":20}}])
-
-    def v_geometry(self, **parameters):
-        return self.prepare([{"toolTarget":"part","toolRef":{"id":"v-notch"},
+    def v_geometry(self, tool_id="v-notch-sharp", **parameters):
+        return self.prepare([{"toolTarget":"part","toolRef":{"id":tool_id},
             "toolParameters":parameters,"station":500}])["features"][0]["toolSnapshot"]["geometry"]
 
-    def test_v_styles_have_distinct_actual_geometry_and_sensible_defaults(self):
-        descriptor=next(tool for tool in runtime.catalogue()["tools"] if tool["id"]=="v-notch")
-        styles=next(p for p in descriptor["parameters"] if p["key"]=="style")["options"]
-        self.assertEqual({"sharp_v","asymmetric_v","rounded_v","left_arc","right_arc","flat_v","relief_v"},
-                         {item["value"] for item in styles})
-        # Compare only the neutral geometry, not the style name or metadata.
-        shapes={item["value"]:self.v_geometry(style=item["value"])["model"]["geometry"] for item in styles}
-        self.assertEqual(7,len({json.dumps(shape,sort_keys=True) for shape in shapes.values()}))
-        for style in ("rounded_v","left_arc","right_arc"):
-            segments=shapes[style][0]["arguments"]["contours"][0]["segments"]
-            self.assertEqual(["line","arc","line","line"],[s["kind"] for s in segments])
-        flat=shapes["flat_v"][0]["arguments"]["contours"][0]["segments"]
-        self.assertEqual([-1,-9],flat[1]["start"])
-        self.assertEqual([1,-9],flat[1]["end"])
-        relief=next(n for n in shapes["relief_v"] if n["key"]=="relief-profile")
-        self.assertEqual({"kind":"path","segments":[
-            {"kind":"arc","start":[-2,0],"middle":[0,-2],"end":[2,0]},
-            {"kind":"arc","start":[2,0],"middle":[0,2],"end":[-2,0]}]},relief["arguments"]["contours"][0])
-        self.assertEqual([500,21,-7],relief["arguments"]["placement"]["origin"])
+    def test_v_tools_are_independent_packages_with_geometry_only_parameters(self):
+        tools={item["id"]:item for item in runtime.catalogue()["tools"]
+               if item["id"].startswith("v-notch-") or item["id"]=="edge-arc-groove"}
+        self.assertEqual({"v-notch-sharp","v-notch-asymmetric","edge-arc-groove","v-notch-relief"},set(tools))
+        self.assertTrue(all(not any(p.get("placement") for p in item["parameters"]) for item in tools.values()))
+        geometries={key:json.dumps(self.v_geometry(key),sort_keys=True) for key in tools}
+        self.assertEqual(len(geometries),len(set(geometries.values())))
 
-    def test_v_relief_uses_placement_for_the_circle_center_at_any_rotation(self):
-        for rotation in (0,37,90,180,270):
-            for parameters in ({"style":"relief_v","holeDiameter":4,"holeLift":2},
-                               {"style":"sharp_v","reliefDiameter":4,"reliefLift":2}):
-                with self.subTest(rotation=rotation,parameters=parameters):
-                    nodes={n["key"]:n for n in self.v_geometry(rotation=rotation,**parameters)["model"]["geometry"]}
-                    profile=nodes["relief-profile"]["arguments"]
-                    self.assertNotIn("center",profile["contours"][0],"Neutral circles use placement, not the imported-DXF center field")
-                    contour=profile["contours"][0]
-                    self.assertEqual("path",contour["kind"])
-                    self.assertEqual(2,len(contour["segments"]))
-                    for index,arc in enumerate(contour["segments"]):
-                        self.assertEqual("arc",arc["kind"])
-                        self.assertEqual(arc["end"],contour["segments"][(index+1)%2]["start"])
-                        for key in ("start","middle","end"):
-                            self.assertAlmostEqual(2,math.hypot(*arc[key]))
-                    origin=profile["placement"]["origin"]
-                    vector=nodes["relief"]["arguments"]["vector"]
-                    middle=[origin[i]+vector[i]/2 for i in range(3)]
-                    sr,cr=math.sin(math.radians(rotation)),math.cos(math.radians(rotation))
-                    circle_height=-(20*abs(sr)+10*abs(cr))+1+2
-                    for actual,expected in zip(middle,[500,sr*circle_height,cr*circle_height]):
-                        self.assertAlmostEqual(expected,actual)
+    def test_sharp_v_is_a_local_mould_and_ignores_station_placement(self):
+        base={"toolTarget":"part","toolRef":{"id":"v-notch-sharp"},
+              "toolParameters":{"angle":90,"bridge":1},"station":120,"reference":"start"}
+        first=self.prepare([base])["features"][0]["toolSnapshot"]["geometry"]
+        moved={**base,"station":780,"reference":"end","rotation":37,
+               "offsetY":12,"offsetZ":-4}
+        second=self.prepare([moved])["features"][0]["toolSnapshot"]["geometry"]
+        self.assertEqual("part-local",first["coordinateSpace"])
+        self.assertEqual(first,second)
 
-    def test_v_one_sided_arcs_are_exact_mirrors_and_radius_is_editable(self):
-        arcs={style:self.v_geometry(style=style,curveRadius=4)["model"]["geometry"][0]
-                    ["arguments"]["contours"][0]["segments"][1] for style in ("left_arc","right_arc")}
-        for point in (arcs["left_arc"][key] for key in ("start","middle","end")):
-            self.assertAlmostEqual(4,math.hypot(point[0],point[1]-(-9+4)))
-        for left_key,right_key in (("start","end"),("middle","middle"),("end","start")):
-            a,b=arcs["left_arc"][left_key],arcs["right_arc"][right_key]
-            self.assertAlmostEqual(a[0],-b[0]);self.assertAlmostEqual(a[1],b[1])
-        for style in arcs:
-            smaller=self.v_geometry(style=style,curveRadius=2)["model"]["geometry"][0]["arguments"]["contours"][0]["segments"][1]
-            self.assertNotEqual(smaller,arcs[style])
+    def test_edge_arc_groove_selects_one_analytic_arc_with_a_v_shaped_opposite_wall(self):
+        parameters={"angle":90,"bridge":1,"reliefDiameter":0,"reliefLift":0,
+                    "bottomCut":False,"bottomCutWidth":2,"leftArc":True}
+        left_geometry=self.v_geometry("edge-arc-groove",**parameters)
+        right_geometry=self.v_geometry("edge-arc-groove",**{**parameters,"leftArc":False})
+        geometries={"left":left_geometry,"right":right_geometry}
+        contours={key:next(node for node in geometry["model"]["geometry"]
+                           if node["key"]=="notch-profile")["arguments"]["contours"][0]["segments"]
+                  for key,geometry in geometries.items()}
+        for segments in contours.values():
+            self.assertEqual(1,sum(segment["kind"]=="arc" for segment in segments))
+        left_arc=contours["left"][3]
+        right_arc=contours["right"][2]
+        self.assertLess(left_arc["start"][0],left_arc["end"][0])
+        self.assertLess(right_arc["start"][0],right_arc["end"][0])
+        self.assertAlmostEqual(contours["left"][1]["start"][0],contours["left"][1]["end"][0])
+        self.assertAlmostEqual(contours["right"][4]["start"][0],contours["right"][4]["end"][0])
+        self.assertEqual("part-local",left_geometry["coordinateSpace"])
+        self.assertEqual("part-local",right_geometry["coordinateSpace"])
 
-    def test_v_asymmetric_angles_independently_control_the_two_walls(self):
-        def contour(left,right):
-            return self.v_geometry(style="asymmetric_v",leftAngle=left,rightAngle=right)["model"]["geometry"][0]["arguments"]["contours"][0]["segments"]
-        a,b,c=contour(30,60),contour(20,60),contour(30,50)
-        self.assertNotEqual(a[0]["start"],b[0]["start"])
-        self.assertEqual(a[1]["end"],b[1]["end"])
-        self.assertEqual(a[0]["start"],c[0]["start"])
-        self.assertNotEqual(a[1]["end"],c[1]["end"])
-
-    def test_v_bottom_cut_and_relief_can_intentionally_cross_the_retained_edge(self):
-        # Tool creation must not forbid a temporary or intentional split.
-        geometry=self.v_geometry(style="relief_v",holeDiameter=8,holeLift=0,bottomCut=True,bottomCutWidth=6)
-        nodes={node["key"]:node for node in geometry["model"]["geometry"]}
-        self.assertEqual(["notch","relief","bottom-cut"],nodes["tool"]["inputs"])
-        self.assertEqual("union",nodes["tool"]["arguments"]["operation"])
-        points=nodes["bottom-cut-profile"]["arguments"]["contours"][0]["segments"]
-        self.assertEqual([-3,-11],points[0]["start"])
-        self.assertEqual([3,-8],points[1]["end"])
-        # The old explicit release-hole fields remain supported too.
-        self.assertEqual("tool",self.v_geometry(reliefDiameter=8,reliefLift=0)["outputKey"])
-
-    def test_v_variant_parameter_bounds_and_recipe_roundtrip(self):
-        for params in ({"style":"unknown"},{"style":"rounded_v","curveRadius":0},
-                       {"style":"rounded_v","curveRadius":1000},
-                       {"style":"flat_v","flatWidth":0},{"style":"relief_v","holeDiameter":0},
-                       {"style":"asymmetric_v","leftAngle":0},{"style":"asymmetric_v","rightAngle":90},
-                       {"bottomCut":True,"bottomCutWidth":0},{"curveRadius":float("inf")}):
-            with self.subTest(params=params),self.assertRaises(ValueError):self.v_geometry(**params)
-        source={"id":"v-array","toolTarget":"part","station":500,"arrayCount":3,"arrayPitch":100,
-                "toolRef":{"id":"v-notch"},"toolParameters":{"style":"left_arc","curveRadius":4,"bottomCut":True}}
-        saved=json.loads(json.dumps(self.prepare([source])["recipe"]["features"][0]))
-        self.assertEqual("left_arc",saved["toolParameters"]["style"])
-        self.assertEqual(saved,self.prepare([saved])["recipe"]["features"][0])
-        changed=copy.deepcopy(saved);changed["toolParameters"]["curveRadius"]=6
-        edited=self.prepare([changed])["recipe"]["features"][0]
-        self.assertNotEqual(saved["frozenTool"]["geometryDigest"],edited["frozenTool"]["geometryDigest"])
-        previous=runtime.ROOT
-        try:
-            with tempfile.TemporaryDirectory() as folder:
-                runtime.ROOT=Path(folder)
-                self.assertEqual(saved,self.prepare([saved])["recipe"]["features"][0])
-        finally:runtime.ROOT=previous
+    def test_edge_arc_groove_ignores_external_feature_placement(self):
+        base={"toolTarget":"part","toolRef":{"id":"edge-arc-groove"},
+              "toolParameters":{"angle":90,"leftArc":True,"bridge":1},"station":120,
+              "reference":"start","rotation":0,"offsetY":0,"offsetZ":0}
+        first=self.prepare([base])["features"][0]["toolSnapshot"]["geometry"]
+        moved={**base,"station":880,"reference":"end","rotation":37,
+               "offsetY":12,"offsetZ":-4}
+        second=self.prepare([moved])["features"][0]["toolSnapshot"]["geometry"]
+        self.assertEqual(first,second)
 
     def test_signed_multirow_array_survives_save_and_frozen_fallback(self):
         source={"id":"branch-array","toolTarget":"part","station":200,"reference":"end",
@@ -241,7 +181,8 @@ class PunchTools(unittest.TestCase):
                               "toolRef": {"id": "slot"}, "toolParameters": {}}])
         self.assertEqual("槽口", items["slot"]["category"])
         self.assertTrue(slot["features"][0]["toolSnapshot"]["geometry"]["contours"])
-        self.assertEqual("槽口", items["v-notch"]["category"])
+        for key in ("v-notch-sharp", "v-notch-asymmetric", "edge-arc-groove", "v-notch-relief"):
+            self.assertEqual("槽口", items[key]["category"])
         self.assertEqual("支管", items["branch-profile"]["category"])
         self.assertEqual("端面", items["end-profile"]["category"])
 
