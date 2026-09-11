@@ -1,0 +1,189 @@
+{
+  "schema": "icax.neutral-model",
+  "schemaVersion": 1,
+  "template": {
+    "id": "component-post-cap",
+    "version": "1.0.0",
+    "packageDigest": ""
+  },
+  "coordinateSystem": "right-handed-x-width-y-depth-z-height",
+  "lengthUnit": "mm",
+  "parameters": {},
+  "geometry": [
+    {
+      "key": "cap.base.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            0,
+            0,
+            0
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -42,
+                -42
+              ],
+              [
+                42,
+                -42
+              ],
+              [
+                42,
+                42
+              ],
+              [
+                -42,
+                42
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "cap.base.solid",
+      "operator": "extrude",
+      "inputs": [
+        "cap.base.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          4
+        ]
+      }
+    },
+    {
+      "key": "cap.top.profile",
+      "operator": "profile2d",
+      "inputs": [],
+      "arguments": {
+        "placement": {
+          "origin": [
+            0,
+            0,
+            4
+          ],
+          "xAxis": [
+            1,
+            0,
+            0
+          ],
+          "yAxis": [
+            0,
+            1,
+            0
+          ]
+        },
+        "contours": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -38,
+                -38
+              ],
+              [
+                38,
+                -38
+              ],
+              [
+                38,
+                38
+              ],
+              [
+                -38,
+                38
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "cap.top.solid",
+      "operator": "extrude",
+      "inputs": [
+        "cap.top.profile"
+      ],
+      "arguments": {
+        "vector": [
+          0,
+          0,
+          2
+        ]
+      }
+    },
+    {
+      "key": "cap.finished",
+      "operator": "boolean",
+      "inputs": [
+        "cap.base.solid",
+        "cap.top.solid"
+      ],
+      "arguments": {
+        "operation": "union",
+        "target": "cap.base.solid",
+        "tools": [
+          "cap.top.solid"
+        ]
+      }
+    }
+  ],
+  "items": [
+    {
+      "key": "component",
+      "displayName": "80方柱平盖",
+      "representations": {
+        "display": "cap.finished",
+        "export": "cap.finished"
+      },
+      "children": [],
+      "properties": {
+        "manufacturing.partKind": "accessory",
+        "manufacturing.sourcing": "purchased",
+        "manufacturing.material": "Q235B",
+        "quantity": 1
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "key": "display.default",
+      "purpose": "display",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    },
+    {
+      "key": "export.manufacturing",
+      "purpose": "export",
+      "items": [
+        "component"
+      ],
+      "properties": {}
+    }
+  ],
+  "relationships": [],
+  "tables": [],
+  "diagnostics": []
+}

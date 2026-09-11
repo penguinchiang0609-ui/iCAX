@@ -7,7 +7,19 @@
   "capabilities": {
     "platform": {
       "domain": "tube-product-design",
-      "modules": ["template", "product", "component-model", "assembly", "joint", "sketch", "disassembly", "step-export", "parts", "nesting", "machining"]
+      "modules": [
+        "template",
+        "product",
+        "component-model",
+        "assembly",
+        "joint",
+        "sketch",
+        "disassembly",
+        "step-export",
+        "parts",
+        "nesting",
+        "machining"
+      ]
     },
     "tubeDesigner": {
       "templateProtocolVersion": 1,
@@ -16,15 +28,275 @@
           "featureId": "tube-designer.production-workflow",
           "displayName": "下料",
           "tier": "advanced",
-          "modules": ["parts", "nesting"],
+          "modules": [
+            "parts",
+            "nesting"
+          ],
           "defaultAccess": false
         }
       ],
       "templates": [
         {
+          "templateId": "five-face-security-window",
+          "version": "3.0.0",
+          "displayName": "防盗窗/常用款式/外飘防盗窗（五面）",
+          "status": "available"
+        },
+        {
+          "templateId": "l-turn-steel-staircase",
+          "version": "1.0.0",
+          "displayName": "楼梯/钢楼梯/L形双跑钢楼梯",
+          "status": "available",
+          "industry": "楼梯"
+        },
+        {
+          "templateId": "modular-guardrail",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-cross-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/X交叉直管花格左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-cross-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/X交叉直管花格直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-diamond-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/菱形直管花格左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-diamond-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/菱形直管花格直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-glass-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/管框玻璃栏板左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-glass-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/管框玻璃栏板直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-large-post-cap-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/大立柱平盖三横档直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-lower-plate-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/下封板上竖杆直式护栏",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-plate-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/管框整板直式护栏",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-large-middle",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档直式中间大立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-left-double",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档左转 L 型双立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-right-double",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档右转 L 型双立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-right-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档右转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-u",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档U 型转角",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r2-u-double",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/二横档U 型双立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r3-large-middle",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档直式中间大立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r3-left-double",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档左转 L 型双立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r3-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r3-right-double",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档右转 L 型双立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r3-right-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档右转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r3-u",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档U 型转角",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-r3-u-double",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/三横档U 型双立柱",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-round-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/圆管二横档左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-round-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/圆管二横档直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-template-cap-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/模板柱帽三横档直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-wall-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/围墙出头竖杆左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-wall-spear-left-l",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/围墙枪尖竖杆左转 L 型",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-wall-spear-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/围墙枪尖竖杆直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "modular-guardrail-wall-straight",
+          "version": "1.1.0",
+          "displayName": "护栏/竖杆护栏/围墙出头竖杆直式",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
           "templateId": "single-face-security-window",
           "version": "3.0.0",
           "displayName": "防盗窗/常用款式/平面格栅防盗窗",
+          "status": "available"
+        },
+        {
+          "templateId": "straight-stair-railing",
+          "version": "1.1.0",
+          "displayName": "护栏/楼梯护栏/直跑楼梯护栏",
+          "status": "available",
+          "industry": "护栏"
+        },
+        {
+          "templateId": "straight-steel-staircase",
+          "version": "1.0.0",
+          "displayName": "楼梯/钢楼梯/直跑钢楼梯",
+          "status": "available",
+          "industry": "楼梯"
+        },
+        {
+          "templateId": "three-face-security-window",
+          "version": "2.0.0",
+          "displayName": "防盗窗/局部围护（需现场封闭）/三面围护（无顶底）",
           "status": "available"
         },
         {
@@ -34,51 +306,11 @@
           "status": "available"
         },
         {
-          "templateId": "three-face-security-window",
-          "version": "2.0.0",
-          "displayName": "防盗窗/局部围护（需现场封闭）/三面围护（无顶底）",
-          "status": "available"
-        },
-        {
-          "templateId": "five-face-security-window",
-          "version": "3.0.0",
-          "displayName": "防盗窗/常用款式/外飘防盗窗（五面）",
-          "status": "available"
-        },
-        {
-          "templateId": "straight-stair-railing",
-          "version": "1.1.0",
-          "displayName": "护栏/楼梯护栏/直跑楼梯护栏",
-          "industry": "护栏",
-          "status": "available"
-        },
-        {
-          "templateId": "modular-guardrail",
-          "version": "1.1.0",
-          "displayName": "护栏/竖杆护栏/组合式竖杆护栏",
-          "industry": "护栏",
-          "status": "available"
-        },
-        {
-          "templateId": "straight-steel-staircase",
-          "version": "1.0.0",
-          "displayName": "楼梯/钢楼梯/直跑钢楼梯",
-          "industry": "楼梯",
-          "status": "available"
-        },
-        {
-          "templateId": "l-turn-steel-staircase",
-          "version": "1.0.0",
-          "displayName": "楼梯/钢楼梯/L形双跑钢楼梯",
-          "industry": "楼梯",
-          "status": "available"
-        },
-        {
           "templateId": "u-turn-steel-staircase",
           "version": "1.0.0",
           "displayName": "楼梯/钢楼梯/U形双跑钢楼梯",
-          "industry": "楼梯",
-          "status": "available"
+          "status": "available",
+          "industry": "楼梯"
         }
       ],
       "designGeometry": "assembly-member",
@@ -93,7 +325,9 @@
         "recordTypes": [
           {
             "recordType": "solid-model",
-            "subjectTypes": ["product"],
+            "subjectTypes": [
+              "product"
+            ],
             "schemaVersion": 1,
             "cardinality": "multiple"
           }
@@ -104,7 +338,9 @@
         "recordTypes": [
           {
             "recordType": "profile",
-            "subjectTypes": ["product"],
+            "subjectTypes": [
+              "product"
+            ],
             "schemaVersion": 1,
             "cardinality": "multiple"
           }
@@ -115,7 +351,9 @@
         "recordTypes": [
           {
             "recordType": "parameter-preset",
-            "subjectTypes": ["template-definition"],
+            "subjectTypes": [
+              "template-definition"
+            ],
             "schemaVersion": 1,
             "cardinality": "multiple",
             "relations": [
@@ -134,7 +372,9 @@
         "recordTypes": [
           {
             "recordType": "product-template",
-            "subjectTypes": ["product-template-definition"],
+            "subjectTypes": [
+              "product-template-definition"
+            ],
             "schemaVersion": 1,
             "cardinality": "multiple"
           }
@@ -145,13 +385,38 @@
         "recordTypes": [
           {
             "recordType": "imported-dxf",
-            "subjectTypes": ["product"],
+            "subjectTypes": [
+              "product"
+            ],
             "schemaVersion": 1,
             "cardinality": "multiple"
           },
           {
             "recordType": "parametric-package",
-            "subjectTypes": ["profile-definition"],
+            "subjectTypes": [
+              "profile-definition"
+            ],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          }
+        ]
+      },
+      {
+        "featureId": "punch-tool",
+        "recordTypes": [
+          {
+            "recordType": "fixed-geometry",
+            "subjectTypes": [
+              "punch-tool-definition"
+            ],
+            "schemaVersion": 1,
+            "cardinality": "multiple"
+          },
+          {
+            "recordType": "parametric-package",
+            "subjectTypes": [
+              "punch-tool-definition"
+            ],
             "schemaVersion": 1,
             "cardinality": "multiple"
           }
@@ -165,7 +430,9 @@
     "formatRevision": 1,
     "quickSaveLogMagic": "ICAX_TUBE_DESIGNER_QSAVE",
     "quickSaveLogVersion": 1,
-    "fileExtensions": [".ictd"],
+    "fileExtensions": [
+      ".ictd"
+    ],
     "magicOffset": 0,
     "probeBytes": 256
   },
@@ -196,7 +463,9 @@
         "../../${Platform}/${Configuration}/RenderInteraction.dll",
         "../../${Platform}/${Configuration}/SceneBootstrap.dll"
       ],
-      "services": ["../../${Platform}/${Configuration}/TubeDesigner.dll"],
+      "services": [
+        "../../${Platform}/${Configuration}/TubeDesigner.dll"
+      ],
       "sdo": [
         "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
         "../../${Platform}/${Configuration}/TubeDesigner.dll"
@@ -208,7 +477,10 @@
           "kind": "exporter",
           "resourceType": "geometry.brep",
           "formatId": "cad.step",
-          "extensions": [".step", ".stp"],
+          "extensions": [
+            ".step",
+            ".stp"
+          ],
           "module": "../../${Platform}/${Configuration}/TubeDesigner.dll",
           "provider": "icax.tube-designer.occ-step",
           "priority": 200

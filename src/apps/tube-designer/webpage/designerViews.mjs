@@ -14,7 +14,7 @@ import {
   getCatalogEntryGroupKeys,
   getCatalogEntry,
   getCatalogTemplatePath,
-  renderGuardrailSchematic,
+  getTemplateVisualAsset,
   sortTemplatesByCatalog,
 } from "./productCatalog.mjs";
 import { renderProductTemplateManagerDialog } from "./templateLibrary.mjs";
@@ -251,7 +251,7 @@ function renderInstanceCard(instance, templates, selected, pending) {
   return `
     <article class="tube-designer-instance-item ${selected ? "selected" : ""}">
       <button class="tube-designer-instance-card ${selected ? "selected" : ""}" data-cam-action="tube-designer-select-instance" data-tube-designer-instance-id="${escapeAttribute(instance.entityId)}" ${pending || selected ? "disabled" : ""}>
-        <span class="tube-designer-instance-thumbnail">${renderSchematic(instance.templateId, parameters)}</span>
+        <span class="tube-designer-instance-thumbnail">${renderSchematic(template, parameters)}</span>
         <span class="tube-designer-instance-copy">
           <strong>${escapeText(instance.name)}</strong>
           <span>${escapeText(getTemplateDisplayName(template) || instance.templateId)}</span>
@@ -326,7 +326,7 @@ export function renderDesignerAddParameterContent(designer, view) {
   const pending = Boolean(view?.pending);
   return `
     <div class="tube-designer-config-summary">
-      <span class="tube-designer-config-preview">${renderSchematic(template?.id, values)}</span>
+      <span class="tube-designer-config-preview">${renderSchematic(template, values)}</span>
       <div><strong>${escapeText(view?.tubeDesignerAddInstanceName)}</strong><span>${escapeText(entry?.displayName ?? getTemplateDisplayName(template))} · ${escapeText(formatProductDimensions(template?.id, values))}</span></div>
     </div>
     ${template?.extensions?.securityWindow ? `<p class="tube-designer-empty">${escapeText(template.description ?? "")} 修改参数生成产品，再导入下料并导出零件或进入排样。</p>` : ""}
@@ -541,7 +541,7 @@ function renderTemplateCard(template, selected, pending) {
   const disabled = !template?.available;
   return `
     <button class="tube-designer-template-card ${selected ? "selected" : ""} ${disabled ? "disabled" : ""}" data-cam-action="tube-designer-select-template" data-tube-designer-template-id="${escapeAttribute(template?.id)}" data-tube-designer-catalog-preset-id="${escapeAttribute(template?.presetId ?? "")}" data-tube-designer-catalog-entry-id="${escapeAttribute(template?.catalogEntryId)}" aria-pressed="${selected ? "true" : "false"}" ${pending || disabled ? "disabled" : ""}>
-      <span class="tube-designer-template-schematic">${renderSchematic(template?.id, template?.catalogParameters ?? {})}</span>
+      <span class="tube-designer-template-schematic">${renderSchematic(template, template?.catalogParameters ?? {})}</span>
       <span><strong>${escapeText(template?.displayName ?? getTemplateDisplayName(template))}</strong><small>${template?.extensions?.securityWindow ? (["two-face", "three-face"].includes(template.extensions.securityWindow.layout) ? "开边需现场围护补齐" : "尺寸、管材、开启口可调") : template?.presetId ? "参数化款式 · 可调整尺寸" : `版本 ${escapeText(template?.version)}`}</small></span>
       <i aria-hidden="true"></i>
     </button>
@@ -568,7 +568,7 @@ function renderDisassemblySelector(designer, view) {
               const parameters = instance.parameters ?? {};
               return `<tr data-tube-designer-disassembly-instance-row="${escapeAttribute(instance.entityId)}">
                 <td><input type="checkbox" data-cam-action="tube-designer-toggle-instance" data-tube-designer-instance-id="${escapeAttribute(instance.entityId)}" ${selected.has(instance.entityId) ? "checked" : ""} /></td>
-                <td><span class="tube-designer-table-thumbnail">${renderSchematic(instance.templateId, parameters)}</span></td>
+                <td><span class="tube-designer-table-thumbnail">${renderSchematic(template, parameters)}</span></td>
                 <td><strong>${escapeText(instance.name)}</strong><small>${escapeText(instance.productCode)}</small></td>
                 <td>${escapeText(instance.quantity ?? 1)}</td>
                 <td>${escapeText(getTemplateDisplayName(template) || instance.templateId)}</td>
@@ -663,7 +663,7 @@ export function renderDesignerBreakdownRows(designer, view) {
   const currentGroup = resolveBreakdownPage(groups, view).group;
   const allParts = currentGroup?.parts ?? [];
   const selected = new Set(view?.tubeDesignerSelectedPartIds ?? allParts.map((part) => part.entityId));
-  return currentGroup ? renderProductPartGroup(currentGroup, selected, view) : "";
+  return currentGroup ? renderProductPartGroup(currentGroup, selected, view, designer?.templates ?? []) : "";
 }
 
 function getBreakdownGroups(designer, view) {
@@ -798,8 +798,9 @@ function renderPartInspectionDialog(designer, view) {
     </div>`;
 }
 
-function renderProductPartGroup(group, selected, view) {
+function renderProductPartGroup(group, selected, view, templates = []) {
   const parameters = group.parameters ?? {};
+  const template = getTemplateById(templates, group.templateId);
   const parts = [...(group.parts ?? [])].sort((left, right) => Number(left.index) - Number(right.index));
   if (!parts.length) return "";
   const productId = String(group.productEntityId ?? "");
@@ -819,7 +820,7 @@ function renderProductPartGroup(group, selected, view) {
         </span>
       </td>
       <td>${escapeText(formatProductDimensions(group.templateId, parameters))}</td>
-      <td><span class="tube-designer-tree-product-thumbnail">${renderSchematic(group.templateId, parameters)}</span></td>
+      <td><span class="tube-designer-tree-product-thumbnail">${renderSchematic(template, parameters)}</span></td>
       <td>—</td>
     </tr>`;
   if (productCollapsed) return productRow;
@@ -933,105 +934,16 @@ function hashText(value) {
   return (hash >>> 0).toString(36);
 }
 
-function renderSchematic(templateId, parameters = {}, className = "") {
-  const width = Math.max(1, Number(parameters.width ?? 1200));
-  const height = Math.max(1, Number(parameters.height ?? 1800));
-  const aspect = Math.max(.45, Math.min(1.5, width / height));
-  const x = 50 - 31 * aspect;
-  const w = 62 * aspect;
-  const rail = (y) => `<line x1="${x + 3}" y1="${y}" x2="${x + w - 3}" y2="${y}" />`;
-  let content = "";
-  if (["straight-steel-staircase", "l-turn-steel-staircase", "u-turn-steel-staircase"].includes(templateId)) {
-    content = renderSteelStaircaseSchematic(templateId, parameters);
-  } else if (templateId === "straight-stair-railing") {
-    content = renderStraightStairRailingSchematic(parameters);
-  } else if (templateId === "modular-guardrail") {
-    content = renderGuardrailSchematic(parameters);
-  } else if (["two-face-security-window", "three-face-security-window", "five-face-security-window"].includes(templateId)) {
-    content = renderMultiFaceSchematic(templateId, parameters);
-  } else if (templateId === "single-face-security-window" && schematicDoorEnabled(parameters)) {
-    const outer = parameters.frameLayout === "top_bottom"
-      ? `<line x1="${x}" y1="8" x2="${x + w}" y2="8" /><line x1="${x}" y1="92" x2="${x + w}" y2="92" />`
-      : parameters.frameLayout === "four_sides"
-        ? `<rect x="${x}" y="8" width="${w}" height="84" rx="2" />`
-        : `<line x1="${x}" y1="8" x2="${x}" y2="92" /><line x1="${x + w}" y1="8" x2="${x + w}" y2="92" />`;
-    const door = renderProjectedDoor({
-      ...parameters,
-      doorUOffset: parameters.doorLeft ?? 160,
-      doorVOffset: parameters.doorBottom ?? 350,
-    }, [x, 92], [x + w, 92], [x, 8], width, height);
-    content = `${outer}${rail(27)}${rail(47)}${rail(68)}${rail(84)}<line x1="50" y1="10" x2="50" y2="90" />${door}`;
-  } else if (templateId === "single-face-security-window" && parameters.frameLayout === "four_sides") {
-    const groove = String(parameters.frameJoinType ?? "").startsWith("v_groove_90:")
-      ? `<path class="notch" d="M ${x + w - 8} 8 l 4 5 l 4 -5" />` : "";
-    content = `<rect x="${x}" y="8" width="${w}" height="84" rx="2" />${rail(28)}${rail(48)}${rail(68)}<line x1="50" y1="8" x2="50" y2="92" />${groove}`;
-  } else if (templateId === "single-face-security-window" && parameters.frameLayout === "top_bottom") {
-    content = `<line x1="${x}" y1="8" x2="${x + w}" y2="8" /><line x1="${x}" y1="92" x2="${x + w}" y2="92" /><line x1="50" y1="10" x2="50" y2="90" />${rail(24)}${rail(41)}${rail(59)}${rail(76)}`;
-  } else if (templateId === "empty") {
-    content = `<rect class="placeholder" x="24" y="14" width="52" height="72" rx="4" /><path class="plus" d="M50 38v24M38 50h24" />`;
-  } else {
-    content = `<line x1="${x}" y1="8" x2="${x}" y2="92" /><line x1="${x + w}" y1="8" x2="${x + w}" y2="92" /><line x1="50" y1="10" x2="50" y2="90" />${rail(24)}${rail(41)}${rail(59)}${rail(76)}`;
+function renderSchematic(template, parameters = {}, className = "") {
+  const asset = getTemplateVisualAsset(template, "schematic")
+    || getTemplateVisualAsset(template, "icon");
+  if (asset) {
+    return `<img class="tube-designer-schematic ${escapeAttribute(className)}" src="${escapeAttribute(asset)}" alt="产品示意图" />`;
   }
-  return `<svg class="tube-designer-schematic ${escapeAttribute(className)}" viewBox="0 0 100 100" role="img" aria-label="产品示意图">${content}</svg>`;
-}
-
-function renderSteelStaircaseSchematic(templateId, parameters = {}) {
-  const railingVisible = String(parameters.railingSide ?? "both") !== "none";
-  if (templateId === "l-turn-steel-staircase") {
-    const right = String(parameters.turnDirection ?? "left") === "right";
-    const transform = right ? ' transform="translate(100 0) scale(-1 1)"' : "";
-    return `<g${transform}>
-      <path class="stair-reference" d="M8 82 h34 v-10 h10 V37 h10 V27 h29" />
-      <path class="stair-infill" d="M8 78 h8 v-6 h8 v-6 h8 v-6 h10 M52 68 v-8 h8 v-8 h8 v-8 h8 v-8 h15" />
-      <path class="stair-post" d="M42 82 V52 M52 72 V42 M91 27 V7" />
-      ${railingVisible ? '<path class="stair-handrail" d="M8 58 L42 42 L52 32 L91 7" />' : ""}
-      <rect class="stair-reference" x="42" y="68" width="10" height="14" rx="1" />
-    </g>`;
-  }
-  if (templateId === "u-turn-steel-staircase") {
-    return `<path class="stair-reference" d="M10 84 h34 V26 h46 M10 70 h27 V33 h53" />
-      <path class="stair-infill" d="M14 78 h7 v-7 h7 v-7 h7 v-7 h9 M90 39 h-8 v7 h-8 v7 h-8 v7 h-8 v7 h-8" />
-      <rect class="stair-reference" x="37" y="21" width="20" height="18" rx="1" />
-      <path class="stair-post" d="M10 84 V59 M44 57 V32 M50 67 V42 M90 39 V14" />
-      ${railingVisible ? '<path class="stair-handrail" d="M10 59 L44 32 M50 42 L90 14" />' : ""}`;
-  }
-  let content = '<path class="stair-reference" d="M7 84 h10 v-7 h10 v-7 h10 v-7 h10 v-7 h10 v-7 h10 v-7 h10 v-7 h16" />';
-  content += '<line class="stair-infill" x1="8" y1="79" x2="92" y2="36" />';
-  if (railingVisible) {
-    content += '<line class="stair-handrail" x1="8" y1="55" x2="92" y2="12" />';
-    for (const [x, lower, upper] of [[8,79,55],[36,65,41],[64,51,27],[92,36,12]]) {
-      content += `<line class="stair-post" x1="${x}" y1="${lower}" x2="${x}" y2="${upper}" />`;
-    }
-  }
-  return content;
-}
-
-function renderStraightStairRailingSchematic(parameters = {}) {
-  const start = [9, 80];
-  const end = [91, 34];
-  const railingHeight = 30;
-  const point = (ratio, offset = 0) => [
-    start[0] + (end[0] - start[0]) * ratio,
-    start[1] + (end[1] - start[1]) * ratio - offset,
-  ];
-  const line = (from, to, className) => `<line class="${className}" x1="${from[0]}" y1="${from[1]}" x2="${to[0]}" y2="${to[1]}" />`;
-  let content = `<path class="stair-reference" d="M7 84 h12 v-7 h12 v-7 h12 v-7 h12 v-7 h12 v-7 h12 v-7 h14" />`;
-  content += line(point(0, railingHeight), point(1, railingHeight), "stair-handrail");
-  for (const ratio of [0, 0.34, 0.67, 1]) {
-    content += line(point(ratio, 0), point(ratio, railingHeight), "stair-post");
-  }
-  const infillType = String(parameters.infillType ?? "vertical");
-  if (infillType === "horizontal") {
-    for (const offset of [9, 16, 23]) {
-      content += line(point(0, offset), point(1, offset), "stair-infill");
-    }
-  } else if (infillType === "vertical") {
-    content += line(point(0, 7), point(1, 7), "stair-infill");
-    for (const ratio of [0.1, 0.2, 0.3, 0.43, 0.54, 0.64, 0.77, 0.88]) {
-      content += line(point(ratio, 7), point(ratio, railingHeight), "stair-infill");
-    }
-  }
-  return content;
+  // The fallback is intentionally template-agnostic. A template owns its
+  // real artwork in resource/schematic.svg; missing artwork must not make the
+  // product editor depend on a central ID/name switch.
+  return `<svg class="tube-designer-schematic ${escapeAttribute(className)}" viewBox="0 0 100 100" role="img" aria-label="产品示意图"><rect class="placeholder" x="24" y="14" width="52" height="72" rx="4" /><path class="plus" d="M50 38v24M38 50h24" /></svg>`;
 }
 
 function renderMultiFaceSchematic(templateId, parameters = {}) {

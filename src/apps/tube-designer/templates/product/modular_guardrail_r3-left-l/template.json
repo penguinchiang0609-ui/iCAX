@@ -1,0 +1,1489 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "modular-guardrail-r3-left-l",
+  "version": "1.1.0",
+  "displayName": {
+    "zh-CN": "三横档左转 L 型"
+  },
+  "description": "三横档左转 L 型。由独立产品模板定义，参数和真实加工零件共用同一套生成规则。",
+  "extensions": {
+    "catalog": {
+      "groupOrder": 20,
+      "templateOrder": 5,
+      "categoryPath": [
+        "护栏",
+        "竖杆护栏"
+      ]
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "primaryDimensions": {
+      "widthParameter": "sideLength1",
+      "heightParameter": "guardHeight",
+      "depthParameter": "sideLength2"
+    },
+    "modelResources": {
+      "post-cap": {
+        "path": "resource/post-cap.icaxmodel.json",
+        "name": "模板示例：80方柱平盖",
+        "category": "护栏/柱帽",
+        "sourcing": "purchased",
+        "material": "Q235B",
+        "description": "模板内声明的真实固定尺寸柱帽模型；XY居中、底面Z=0，80方柱顶面焊接用。"
+      }
+    }
+  },
+  "groups": [
+    {
+      "key": "basic",
+      "displayName": {
+        "zh-CN": "形状与尺寸"
+      },
+      "order": 10
+    },
+    {
+      "key": "layout",
+      "displayName": {
+        "zh-CN": "横档与立柱"
+      },
+      "order": 20
+    },
+    {
+      "key": "infill",
+      "displayName": {
+        "zh-CN": "竖杆与封板"
+      },
+      "order": 30
+    },
+    {
+      "key": "profiles",
+      "displayName": {
+        "zh-CN": "管材规格"
+      },
+      "order": 40
+    },
+    {
+      "key": "process",
+      "displayName": {
+        "zh-CN": "安装底板"
+      },
+      "order": 50
+    },
+    {
+      "key": "components",
+      "displayName": {
+        "zh-CN": "真实配件模型"
+      },
+      "order": 60
+    }
+  ],
+  "parameters": [
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "产品编号"
+      },
+      "valueType": "string",
+      "defaultValue": "HL-001",
+      "group": "basic",
+      "order": 0,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 80
+      }
+    },
+    {
+      "key": "layout",
+      "displayName": {
+        "zh-CN": "平面形状"
+      },
+      "valueType": "enum",
+      "defaultValue": "left_l",
+      "group": "basic",
+      "order": 10,
+      "choices": [
+        {
+          "value": "straight",
+          "displayName": {
+            "zh-CN": "直式"
+          }
+        },
+        {
+          "value": "left_l",
+          "displayName": {
+            "zh-CN": "左转 L 型"
+          }
+        },
+        {
+          "value": "right_l",
+          "displayName": {
+            "zh-CN": "右转 L 型"
+          }
+        },
+        {
+          "value": "u",
+          "displayName": {
+            "zh-CN": "U 型"
+          }
+        }
+      ],
+      "description": "沿第 1 边正向行进判断左、右；U 型依次左转两次。"
+    },
+    {
+      "key": "dimensionMode",
+      "displayName": {
+        "zh-CN": "边长测量方式"
+      },
+      "valueType": "enum",
+      "defaultValue": "outside_to_outside",
+      "group": "basic",
+      "order": 20,
+      "choices": [
+        {
+          "value": "outside_to_outside",
+          "displayName": {
+            "zh-CN": "立柱外侧到外侧"
+          }
+        },
+        {
+          "value": "center_to_center",
+          "displayName": {
+            "zh-CN": "立柱中心到中心"
+          }
+        }
+      ],
+      "description": "每边长度在该边方向上量取；扶手端延伸另计，不包含在立柱外侧尺寸中。"
+    },
+    {
+      "key": "sideLength1",
+      "displayName": {
+        "zh-CN": "第 1 边长度"
+      },
+      "valueType": "number",
+      "defaultValue": 3000,
+      "group": "basic",
+      "order": 30,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 30000,
+        "step": 1
+      }
+    },
+    {
+      "key": "sideLength2",
+      "displayName": {
+        "zh-CN": "第 2 边长度"
+      },
+      "valueType": "number",
+      "defaultValue": 1500,
+      "group": "basic",
+      "order": 40,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 30000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "layout",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "sideLength3",
+      "displayName": {
+        "zh-CN": "第 3 边长度"
+      },
+      "valueType": "number",
+      "defaultValue": 1500,
+      "group": "basic",
+      "order": 50,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 30000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "layout",
+        "value": "u"
+      }
+    },
+    {
+      "key": "guardHeight",
+      "displayName": {
+        "zh-CN": "主防护框架高度"
+      },
+      "valueType": "number",
+      "defaultValue": 1200,
+      "group": "basic",
+      "order": 60,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 300,
+        "maximum": 2500,
+        "step": 1
+      },
+      "description": "安装面至主扶手顶面的垂直高度；出头竖杆、枪尖及柱帽另外向上增加高度。此值不是带装饰件产品的总包络高度。"
+    },
+    {
+      "key": "railCount",
+      "displayName": {
+        "zh-CN": "横档结构"
+      },
+      "valueType": "enum",
+      "defaultValue": 3,
+      "group": "layout",
+      "order": 70,
+      "choices": [
+        {
+          "value": 2,
+          "displayName": {
+            "zh-CN": "二横档（扶手＋下横档）"
+          }
+        },
+        {
+          "value": 3,
+          "displayName": {
+            "zh-CN": "三横档（扶手＋上、下横档）"
+          }
+        }
+      ],
+      "description": "两种横档结构都包含竖杆，横档结构与填充形式分别配置。"
+    },
+    {
+      "key": "cornerPostMode",
+      "displayName": {
+        "zh-CN": "转角立柱"
+      },
+      "valueType": "enum",
+      "defaultValue": "shared",
+      "group": "layout",
+      "order": 80,
+      "choices": [
+        {
+          "value": "shared",
+          "displayName": {
+            "zh-CN": "共用转角柱"
+          }
+        },
+        {
+          "value": "double",
+          "displayName": {
+            "zh-CN": "转角双立柱"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "layout",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "doublePostClearGap",
+      "displayName": {
+        "zh-CN": "双柱截面间最小净距"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "layout",
+      "order": 90,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 300,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "cornerPostMode",
+        "value": "double"
+      },
+      "description": "矩形管按截面外包络计算最小距离；圆管按两圆外缘间距计算。"
+    },
+    {
+      "key": "largePostMode",
+      "displayName": {
+        "zh-CN": "大立柱位置"
+      },
+      "valueType": "enum",
+      "defaultValue": "none",
+      "group": "layout",
+      "order": 100,
+      "choices": [
+        {
+          "value": "none",
+          "displayName": {
+            "zh-CN": "不设大立柱"
+          }
+        },
+        {
+          "value": "middle",
+          "displayName": {
+            "zh-CN": "每边中间大立柱"
+          }
+        },
+        {
+          "value": "ends",
+          "displayName": {
+            "zh-CN": "两端大立柱"
+          }
+        }
+      ]
+    },
+    {
+      "key": "largePostSize",
+      "displayName": {
+        "zh-CN": "大立柱外尺寸"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "layout",
+      "order": 110,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 300,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "largePostMode",
+        "value": "none"
+      },
+      "description": "方管为等宽等深，圆管为外径。应不小于普通立柱规格；管壁厚度沿用立柱配置。"
+    },
+    {
+      "key": "maximumPostSpacing",
+      "displayName": {
+        "zh-CN": "立柱最大中心距"
+      },
+      "valueType": "number",
+      "defaultValue": 1200,
+      "group": "layout",
+      "order": 120,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 6000,
+        "step": 1
+      }
+    },
+    {
+      "key": "bottomClearance",
+      "displayName": {
+        "zh-CN": "下横档底部净空"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "layout",
+      "order": 130,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500,
+        "step": 1
+      }
+    },
+    {
+      "key": "upperRailDrop",
+      "displayName": {
+        "zh-CN": "上横档中心距护栏顶"
+      },
+      "valueType": "number",
+      "defaultValue": 180,
+      "group": "layout",
+      "order": 140,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 1000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "railCount",
+        "value": 3
+      }
+    },
+    {
+      "key": "endExtension",
+      "displayName": {
+        "zh-CN": "扶手两端轴向延伸"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "layout",
+      "order": 150,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500,
+        "step": 1
+      },
+      "description": "从终端立柱中心向外延伸；设置大端柱时扶手顶接大柱侧面，端延伸不作用于大端柱。"
+    },
+    {
+      "key": "infillType",
+      "displayName": {
+        "zh-CN": "柱间填充"
+      },
+      "valueType": "enum",
+      "defaultValue": "bars",
+      "group": "infill",
+      "order": 160,
+      "choices": [
+        {
+          "value": "bars",
+          "displayName": {
+            "zh-CN": "竖杆"
+          }
+        },
+        {
+          "value": "plate",
+          "displayName": {
+            "zh-CN": "整跨封板"
+          }
+        },
+        {
+          "value": "lower_plate",
+          "displayName": {
+            "zh-CN": "下封板＋上竖杆"
+          }
+        },
+        {
+          "value": "cross",
+          "displayName": {
+            "zh-CN": "X 交叉直管花格"
+          }
+        },
+        {
+          "value": "diamond",
+          "displayName": {
+            "zh-CN": "菱形直管花格"
+          }
+        },
+        {
+          "value": "glass",
+          "displayName": {
+            "zh-CN": "玻璃栏板（外购）"
+          }
+        }
+      ]
+    },
+    {
+      "key": "barDistribution",
+      "displayName": {
+        "zh-CN": "竖杆排列"
+      },
+      "valueType": "enum",
+      "defaultValue": "equal",
+      "group": "infill",
+      "order": 170,
+      "choices": [
+        {
+          "value": "equal",
+          "displayName": {
+            "zh-CN": "每跨全部均分"
+          }
+        },
+        {
+          "value": "fixed_center",
+          "displayName": {
+            "zh-CN": "中间固定净距、两边均分"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "bars"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
+      }
+    },
+    {
+      "key": "maximumVerticalClearGap",
+      "displayName": {
+        "zh-CN": "竖杆最大净间距"
+      },
+      "valueType": "number",
+      "defaultValue": 105,
+      "group": "infill",
+      "order": 180,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 500,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "bars"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
+      },
+      "description": "按每跨真实柱间净空计算，包含两端边距；默认 105 mm 留有施工余量，不代表结构或项目全面合规。"
+    },
+    {
+      "key": "lowerPanelHeight",
+      "displayName": {
+        "zh-CN": "下封板区高度"
+      },
+      "valueType": "number",
+      "defaultValue": 400,
+      "group": "infill",
+      "order": 190,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 1500,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillType",
+        "value": "lower_plate"
+      },
+      "description": "从下横档顶面量至封板上横档底面，板件上下装配缝另扣。"
+    },
+    {
+      "key": "panelThickness",
+      "displayName": {
+        "zh-CN": "封板厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "infill",
+      "order": 200,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 30,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
+      }
+    },
+    {
+      "key": "panelEdgeClearance",
+      "displayName": {
+        "zh-CN": "封板四周装配间隙"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "infill",
+      "order": 210,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 20,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "glass"
+          }
+        ]
+      }
+    },
+    {
+      "key": "plateMaterial",
+      "displayName": {
+        "zh-CN": "板材牌号"
+      },
+      "valueType": "string",
+      "defaultValue": "Q235B",
+      "group": "infill",
+      "order": 220,
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "lower_plate"
+          }
+        ]
+      },
+      "constraints": {
+        "maximumLength": 80
+      }
+    },
+    {
+      "key": "installation",
+      "displayName": {
+        "zh-CN": "立柱底部安装"
+      },
+      "valueType": "enum",
+      "defaultValue": "embedded",
+      "group": "process",
+      "order": 230,
+      "choices": [
+        {
+          "value": "embedded",
+          "displayName": {
+            "zh-CN": "直接落地（底部节点另行设计）"
+          }
+        },
+        {
+          "value": "base_plate",
+          "displayName": {
+            "zh-CN": "焊接带孔底板"
+          }
+        }
+      ],
+      "description": "底板是独立实心板件；双立柱转角使用同一块共用底板，避免两块底板互相穿透。"
+    },
+    {
+      "key": "basePlateSize",
+      "displayName": {
+        "zh-CN": "底板最小边长"
+      },
+      "valueType": "number",
+      "defaultValue": 100,
+      "group": "process",
+      "order": 240,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 600,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installation",
+        "value": "base_plate"
+      },
+      "description": "按柱截面和孔边距自动放大；双柱共用底板按两根柱的范围扩展。"
+    },
+    {
+      "key": "basePlateThickness",
+      "displayName": {
+        "zh-CN": "底板厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 6,
+      "group": "process",
+      "order": 250,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 50,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installation",
+        "value": "base_plate"
+      }
+    },
+    {
+      "key": "baseBoltDiameter",
+      "displayName": {
+        "zh-CN": "底板螺栓孔直径"
+      },
+      "valueType": "number",
+      "defaultValue": 12,
+      "group": "process",
+      "order": 260,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 50,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installation",
+        "value": "base_plate"
+      }
+    },
+    {
+      "key": "baseBoltEdgeDistance",
+      "displayName": {
+        "zh-CN": "螺栓孔中心距板边"
+      },
+      "valueType": "number",
+      "defaultValue": 18,
+      "group": "process",
+      "order": 270,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installation",
+        "value": "base_plate"
+      }
+    },
+    {
+      "key": "handrailProfileType",
+      "displayName": {
+        "zh-CN": "扶手管/截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "profiles",
+      "order": 280,
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆管"
+          }
+        }
+      ]
+    },
+    {
+      "key": "handrailWidth",
+      "displayName": {
+        "zh-CN": "扶手管/外径或截面宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "profiles",
+      "order": 290,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "description": "矩形管宽度沿护栏侧向，深度沿竖直方向。"
+    },
+    {
+      "key": "handrailDepth",
+      "displayName": {
+        "zh-CN": "扶手管/截面深度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "profiles",
+      "order": 300,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "handrailProfileType",
+        "value": "round"
+      }
+    },
+    {
+      "key": "handrailCornerRadius",
+      "displayName": {
+        "zh-CN": "扶手管/外圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "profiles",
+      "order": 310,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "handrailProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "handrailWallThickness",
+      "displayName": {
+        "zh-CN": "扶手管/壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "group": "profiles",
+      "order": 320,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 50,
+        "step": 0.1
+      }
+    },
+    {
+      "key": "postProfileType",
+      "displayName": {
+        "zh-CN": "立柱管/截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "profiles",
+      "order": 330,
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆管"
+          }
+        }
+      ]
+    },
+    {
+      "key": "postWidth",
+      "displayName": {
+        "zh-CN": "立柱管/外径或截面宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "profiles",
+      "order": 340,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "description": "立柱矩形管宽度沿全局 X，深度沿全局 Y；共柱转角保持同一截面朝向。"
+    },
+    {
+      "key": "postDepth",
+      "displayName": {
+        "zh-CN": "立柱管/截面深度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "profiles",
+      "order": 350,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "postProfileType",
+        "value": "round"
+      }
+    },
+    {
+      "key": "postCornerRadius",
+      "displayName": {
+        "zh-CN": "立柱管/外圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "profiles",
+      "order": 360,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "postProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "postWallThickness",
+      "displayName": {
+        "zh-CN": "立柱管/壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "group": "profiles",
+      "order": 370,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 50,
+        "step": 0.1
+      }
+    },
+    {
+      "key": "railProfileType",
+      "displayName": {
+        "zh-CN": "横档管/截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "profiles",
+      "order": 380,
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆管"
+          }
+        }
+      ]
+    },
+    {
+      "key": "railWidth",
+      "displayName": {
+        "zh-CN": "横档管/外径或截面宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "profiles",
+      "order": 390,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "description": "矩形管宽度沿护栏侧向，深度沿竖直方向。"
+    },
+    {
+      "key": "railDepth",
+      "displayName": {
+        "zh-CN": "横档管/截面深度"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "profiles",
+      "order": 400,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railProfileType",
+        "value": "round"
+      }
+    },
+    {
+      "key": "railCornerRadius",
+      "displayName": {
+        "zh-CN": "横档管/外圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "group": "profiles",
+      "order": 410,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "railProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "railWallThickness",
+      "displayName": {
+        "zh-CN": "横档管/壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 1.2,
+      "group": "profiles",
+      "order": 420,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 50,
+        "step": 0.1
+      }
+    },
+    {
+      "key": "infillProfileType",
+      "displayName": {
+        "zh-CN": "竖杆管/截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "profiles",
+      "order": 430,
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆管"
+          }
+        }
+      ]
+    },
+    {
+      "key": "infillWidth",
+      "displayName": {
+        "zh-CN": "竖杆管/外径或截面宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "profiles",
+      "order": 440,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "description": "矩形管宽度沿护栏每边方向，深度沿侧向。"
+    },
+    {
+      "key": "infillDepth",
+      "displayName": {
+        "zh-CN": "竖杆管/截面深度"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "profiles",
+      "order": 450,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 300,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "infillProfileType",
+        "value": "round"
+      }
+    },
+    {
+      "key": "infillCornerRadius",
+      "displayName": {
+        "zh-CN": "竖杆管/外圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "profiles",
+      "order": 460,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillProfileType",
+        "value": "rect"
+      }
+    },
+    {
+      "key": "infillWallThickness",
+      "displayName": {
+        "zh-CN": "竖杆管/壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 1.2,
+      "group": "profiles",
+      "order": 470,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 50,
+        "step": 0.1
+      }
+    },
+    {
+      "key": "guardrailUse",
+      "displayName": {
+        "zh-CN": "用途构造"
+      },
+      "valueType": "enum",
+      "defaultValue": "platform",
+      "group": "basic",
+      "order": 480,
+      "choices": [
+        {
+          "value": "platform",
+          "displayName": {
+            "zh-CN": "平台、阳台护栏"
+          }
+        },
+        {
+          "value": "wall",
+          "displayName": {
+            "zh-CN": "围墙出头竖杆"
+          }
+        }
+      ],
+      "description": "围墙款竖杆穿过上部横档并伸出，自动生成真实型孔；不是普通阳台防攀爬栏杆。"
+    },
+    {
+      "key": "wallPicketProjection",
+      "displayName": {
+        "zh-CN": "竖杆超出扶手顶高度"
+      },
+      "valueType": "number",
+      "defaultValue": 120,
+      "group": "layout",
+      "order": 490,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "guardrailUse",
+        "value": "wall"
+      }
+    },
+    {
+      "key": "picketHoleClearance",
+      "displayName": {
+        "zh-CN": "穿杆型孔单边间隙"
+      },
+      "valueType": "number",
+      "defaultValue": 0.3,
+      "group": "process",
+      "order": 500,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 3,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "guardrailUse",
+        "value": "wall"
+      },
+      "description": "制造结果按竖杆实际外轮廓在扶手及上横档开穿孔；预览省略内部型孔，不改变拆单加工几何。"
+    },
+    {
+      "key": "spearTipEnabled",
+      "displayName": {
+        "zh-CN": "安装竖杆枪尖"
+      },
+      "valueType": "boolean",
+      "defaultValue": false,
+      "group": "components",
+      "order": 510,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "guardrailUse",
+        "value": "wall"
+      }
+    },
+    {
+      "key": "spearTipModelReference",
+      "displayName": {
+        "zh-CN": "枪尖模型"
+      },
+      "valueType": "string",
+      "defaultValue": "system:spear-tip",
+      "group": "components",
+      "order": 520,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 200
+      },
+      "presentation": {
+        "editor": "component-model"
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "guardrailUse",
+            "value": "wall"
+          },
+          {
+            "op": "eq",
+            "parameter": "spearTipEnabled",
+            "value": true
+          }
+        ]
+      },
+      "description": "刚体模型平底面放到竖杆顶，不缩放；内置款底座20×20mm，高70mm，枪尖是独立外购件。"
+    },
+    {
+      "key": "postCapEnabled",
+      "displayName": {
+        "zh-CN": "安装大立柱柱帽"
+      },
+      "valueType": "boolean",
+      "defaultValue": false,
+      "group": "components",
+      "order": 530,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "largePostMode",
+        "value": "none"
+      }
+    },
+    {
+      "key": "postCapModelReference",
+      "displayName": {
+        "zh-CN": "大立柱柱帽模型"
+      },
+      "valueType": "string",
+      "defaultValue": "system:post-cap",
+      "group": "components",
+      "order": 540,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 200
+      },
+      "presentation": {
+        "editor": "component-model"
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "postCapEnabled",
+        "value": true
+      },
+      "description": "柱帽模型底面放到大立柱顶；内置款为80方柱平盖，外宽84mm、高6mm，不自动缩放；装饰件可高于主防护高度。"
+    },
+    {
+      "key": "glassThickness",
+      "displayName": {
+        "zh-CN": "玻璃成品总厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 8,
+      "group": "infill",
+      "order": 550,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 40,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillType",
+        "value": "glass"
+      },
+      "description": "这是采购尺寸，不代表玻璃安全认证；须另行确认夹层构造、边部加工、荷载和连接。"
+    },
+    {
+      "key": "glassMaterial",
+      "displayName": {
+        "zh-CN": "玻璃材质说明"
+      },
+      "valueType": "string",
+      "defaultValue": "夹层玻璃（构造待确认）",
+      "group": "infill",
+      "order": 560,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 120
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillType",
+        "value": "glass"
+      }
+    },
+    {
+      "key": "glassClipEnabled",
+      "displayName": {
+        "zh-CN": "安装玻璃固定夹"
+      },
+      "valueType": "boolean",
+      "defaultValue": false,
+      "group": "components",
+      "order": 570,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "infillType",
+        "value": "glass"
+      }
+    },
+    {
+      "key": "glassClipModelReference",
+      "displayName": {
+        "zh-CN": "玻璃夹模型"
+      },
+      "valueType": "string",
+      "defaultValue": "system:glass-clamp",
+      "group": "components",
+      "order": 580,
+      "constraints": {
+        "minimumLength": 1,
+        "maximumLength": 200
+      },
+      "presentation": {
+        "editor": "component-model"
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "glass"
+          },
+          {
+            "op": "eq",
+            "parameter": "glassClipEnabled",
+            "value": true
+          }
+        ]
+      },
+      "description": "模型为固定尺寸刚体，开口朝局部+X，每跨四只镜像放置；内置玻璃槽8mm，需匹配玻璃成品厚度。"
+    },
+    {
+      "key": "glassClipOffset",
+      "displayName": {
+        "zh-CN": "夹具中心距立柱内侧"
+      },
+      "valueType": "number",
+      "defaultValue": 15,
+      "group": "components",
+      "order": 590,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "infillType",
+            "value": "glass"
+          },
+          {
+            "op": "eq",
+            "parameter": "glassClipEnabled",
+            "value": true
+          }
+        ]
+      },
+      "description": "内置夹具固定为15mm，对应板边间隙至少5mm；外部模型需人工核对安装面。"
+    }
+  ],
+  "name": "护栏/竖杆护栏/三横档左转 L 型"
+}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import base64
 import hashlib
 import json
 import math
@@ -18,6 +19,7 @@ MAX_ARCHIVE_BYTES = 8 * 1024 * 1024
 MAX_MEMBER_BYTES = 4 * 1024 * 1024
 MAX_TOTAL_BYTES = 8 * 1024 * 1024
 REQUIRED_MEMBERS = ("profile.json", "profile.py")
+PASSWORD = "ICAX_TUBE_DESIGNER"
 MAX_DIAGRAM_ANNOTATIONS = 128
 MAX_DIAGRAM_COORDINATE = 1.0e9
 
@@ -379,12 +381,12 @@ def _evaluate(
 def _member_name(info: zipfile.ZipInfo) -> str:
     normalized = info.filename.replace("\\", "/")
     path = PurePosixPath(normalized)
-    if path.is_absolute() or ".." in path.parts:
+    if path.is_absolute() or ":" in normalized or ".." in path.parts:
         raise ValueError("管型包包含不安全的文件路径")
     return "/".join(part for part in path.parts if part not in ("", "."))
 
 
-def _read_archive(path: Path, password: str) -> tuple[bytes, bytes, bool]:
+def _read_archive(path: Path, password: str = "") -> tuple[bytes, bytes, bool, dict[str, str]]:
     if path.stat().st_size > MAX_ARCHIVE_BYTES:
         raise ValueError("管型包超过 8 MB")
     try:
@@ -409,24 +411,25 @@ def _read_archive(path: Path, password: str) -> tuple[bytes, bytes, bool]:
         missing = [name for name in REQUIRED_MEMBERS if name not in members]
         if missing:
             raise ValueError(f"管型包缺少：{', '.join(missing)}")
-        unexpected = [name for name in members if name not in REQUIRED_MEMBERS]
-        if unexpected:
-            raise ValueError("管型包根目录只允许 profile.json 和 profile.py")
-        encrypted = any(members[name].flag_bits & 0x1 for name in REQUIRED_MEMBERS)
-        if encrypted and not password:
-            raise ValueError("管型包需要密码")
-        password_bytes = password.encode("utf-8") if password else None
+        encrypted = all(info.flag_bits & 0x1 for info in members.values())
+        if not encrypted:
+            raise ValueError("ittt 必须使用产品固定密码保护")
+        password_bytes = (password or PASSWORD).encode("utf-8")
         try:
             descriptor_bytes = archive.read(members["profile.json"], pwd=password_bytes)
             script_bytes = archive.read(members["profile.py"], pwd=password_bytes)
+            resources = {
+                name: base64.b64encode(archive.read(info, pwd=password_bytes)).decode("ascii")
+                for name, info in members.items() if name not in REQUIRED_MEMBERS
+            }
         except (RuntimeError, zipfile.BadZipFile) as error:
             raise ValueError("管型包密码错误或加密格式不受支持") from error
-    return descriptor_bytes, script_bytes, encrypted
+    return descriptor_bytes, script_bytes, encrypted, resources
 
 
 def _package_from_sources(
     descriptor_bytes: bytes, script_bytes: bytes, source_file_name: str,
-    encrypted: bool = False,
+    encrypted: bool = False, resources: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     try:
         descriptor = json.loads(descriptor_bytes.decode("utf-8-sig"))
@@ -452,14 +455,15 @@ def _package_from_sources(
         "packageDigest": digest,
         "descriptor": descriptor,
         "scriptSource": script_source,
+        "resources": dict(resources or {}),
         "defaultParameters": defaults,
         "previewProfile": preview,
     }
 
 
 def _inspect(path: Path, password: str) -> dict[str, Any]:
-    descriptor_bytes, script_bytes, encrypted = _read_archive(path, password)
-    return _package_from_sources(descriptor_bytes, script_bytes, path.name, encrypted)
+    descriptor_bytes, script_bytes, encrypted, resources = _read_archive(path, password)
+    return _package_from_sources(descriptor_bytes, script_bytes, path.name, encrypted, resources)
 
 
 def _template_identifier(value: Any, label: str, *, template: bool = False) -> str:
@@ -565,12 +569,12 @@ def _template_package(parameters: dict[str, Any], profile_id: Any) -> dict[str, 
             raise ValueError("模板管型包超过 8 MB")
         source_name = (source.relative_to(root) / "profile.py").as_posix()
         package = _package_from_sources(descriptor_bytes, script_bytes, source_name)
-    elif source.is_file() and source.suffix.lower() in (".icaxprofile", ".zip"):
+    elif source.is_file() and source.suffix.lower() == ".ittt":
         package = _inspect(source, "")
         package["sourceFileName"] = source.relative_to(root).as_posix()
         package["previewProfile"]["sourceFileName"] = package["sourceFileName"]
     else:
-        raise ValueError("模板管型资源必须是含 profile.json/profile.py 的目录或 .icaxprofile/.zip 包")
+        raise ValueError("模板管型资源必须是含 profile.json/profile.py 的目录或 .ittt 包")
     package.update(identity)
     package["id"] = key
     for field in ("name", "category"):
@@ -607,7 +611,7 @@ def _list_template_packages(templates: Any) -> list[dict[str, Any]]:
 
 def _system_profile_root(value: Any) -> Path:
     if value is None:
-        root = (Path(__file__).resolve().parent / "profiles").resolve()
+        root = (Path(__file__).resolve().parent.parent / "profile").resolve()
     elif isinstance(value, str) and value.strip():
         root = Path(value).expanduser().resolve()
     else:
@@ -617,7 +621,9 @@ def _system_profile_root(value: Any) -> Path:
     return root
 
 
-def _system_package(directory: Path) -> dict[str, Any]:
+def _system_package(directory: Path, profile_scope: str = "system") -> dict[str, Any]:
+    if profile_scope not in ("system", "user"):
+        raise ValueError("管型包来源无效")
     descriptor_path = directory / "profile.json"
     script_path = directory / "profile.py"
     if not descriptor_path.is_file() or not script_path.is_file():
@@ -646,10 +652,11 @@ def _system_package(directory: Path) -> dict[str, Any]:
     preview = _evaluate(
         descriptor, script_source, defaults, digest, source_file_name,
     )
+    source_format = "icax.system-profile" if profile_scope == "system" else "icax.user-profile"
     preview.update({
-        "profileScope": "system",
+        "profileScope": profile_scope,
         "profileDefinitionId": descriptor["id"],
-        "sourceFormat": "icax.system-profile",
+        "sourceFormat": source_format,
     })
     return {
         "schema": PACKAGE_SCHEMA,
@@ -657,7 +664,7 @@ def _system_package(directory: Path) -> dict[str, Any]:
         "kind": "parametric-package",
         "name": _localized_text(descriptor.get("displayName"), "displayName"),
         "sourceFileName": source_file_name,
-        "sourceFormat": "icax.system-profile",
+        "sourceFormat": source_format,
         "passwordProtected": False,
         "packageDigest": digest,
         "descriptor": descriptor,
@@ -667,7 +674,7 @@ def _system_package(directory: Path) -> dict[str, Any]:
     }
 
 
-def _find_system_package(root: Path, profile_id: Any) -> dict[str, Any]:
+def _find_system_package(root: Path, profile_id: Any, profile_scope: str = "system") -> dict[str, Any]:
     if not isinstance(profile_id, str) or re.fullmatch(
         r"[a-z][a-z0-9_-]{0,79}", profile_id,
     ) is None:
@@ -675,10 +682,10 @@ def _find_system_package(root: Path, profile_id: Any) -> dict[str, Any]:
     directory = root / profile_id
     if not directory.is_dir():
         raise ValueError(f"系统管型不存在：{profile_id}")
-    return _system_package(directory)
+    return _system_package(directory, profile_scope)
 
 
-def _list_system_packages(root: Path) -> list[dict[str, Any]]:
+def _list_system_packages(root: Path, profile_scope: str = "system") -> list[dict[str, Any]]:
     packages: list[dict[str, Any]] = []
     for directory in sorted(root.iterdir(), key=lambda item: item.name):
         if (not directory.is_dir()
@@ -686,7 +693,7 @@ def _list_system_packages(root: Path) -> list[dict[str, Any]]:
                 or not (directory / "profile.json").is_file()
                 or not (directory / "profile.py").is_file()):
             continue
-        packages.append(_system_package(directory))
+        packages.append(_system_package(directory, profile_scope))
     return packages
 
 
@@ -698,19 +705,16 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         if not isinstance(source_path, str) or not source_path.strip():
             raise ValueError("缺少管型包路径")
         path = Path(source_path).expanduser().resolve()
-        if path.suffix.lower() not in (".icaxprofile", ".zip"):
-            raise ValueError("请选择 .icaxprofile 管型包")
+        if path.suffix.lower() != ".ittt":
+            raise ValueError("请选择 .ittt 管型包")
         if not path.is_file():
             raise FileNotFoundError(f"管型包不存在：{path}")
-        password = parameters.get("password", "")
-        if not isinstance(password, str) or len(password) > 256:
-            raise ValueError("管型包密码无效")
-        return {"package": _inspect(path, password)}
+        return {"package": _inspect(path, PASSWORD)}
     if action == "evaluate":
         descriptor = parameters.get("descriptor")
         script_source = parameters.get("scriptSource")
         package_digest = str(parameters.get("packageDigest", ""))
-        source_file_name = str(parameters.get("sourceFileName", "管型包.icaxprofile"))
+        source_file_name = str(parameters.get("sourceFileName", "管型包.ittt"))
         profile = _evaluate(
             descriptor,
             script_source,
@@ -753,6 +757,25 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             "profileScope": "system",
             "profileDefinitionId": descriptor["id"],
             "sourceFormat": "icax.system-profile",
+        })
+        return {"profile": profile}
+    if action == "list-user":
+        root = _system_profile_root(parameters.get("profileRoot"))
+        return {"userProfiles": _list_system_packages(root, "user")}
+    if action == "evaluate-user":
+        root = _system_profile_root(parameters.get("profileRoot"))
+        package = _find_system_package(root, parameters.get("userProfileId"), "user")
+        profile = _evaluate(
+            package["descriptor"],
+            package["scriptSource"],
+            parameters.get("values", {}),
+            package["packageDigest"],
+            package["sourceFileName"],
+        )
+        profile.update({
+            "profileScope": "user",
+            "profileDefinitionId": package["descriptor"]["id"],
+            "sourceFormat": "icax.user-profile",
         })
         return {"profile": profile}
     raise ValueError(f"不支持的管型包操作：{action}")

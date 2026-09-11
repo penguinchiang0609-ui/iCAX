@@ -78,6 +78,12 @@
 
 namespace
 {
+    // The installed package tree is immutable application content.  Personal
+    // packages live next to the product's existing Product.Data under the
+    // platform user-data root, so reinstalling the application cannot remove
+    // them.  Both roots use the same package categories below.
+    constexpr const char* kTubeDesignerProductID = "icax.tube-designer";
+
     constexpr std::size_t kMaximumNestingPartInstances = 1'000'000;
     using iCAX::Data::ObjectMap;
     using iCAX::Data::PropertyValue;
@@ -361,6 +367,130 @@ namespace
         return { std::istreambuf_iterator<char>(_Stream), std::istreambuf_iterator<char>() };
     }
 
+    std::string EncodeTemplateAssetBase64(const std::string& Bytes_)
+    {
+        static constexpr char _Alphabet[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string _Result;
+        _Result.reserve(((Bytes_.size() + 2) / 3) * 4);
+        for (std::size_t _Index = 0; _Index < Bytes_.size(); _Index += 3)
+        {
+            const auto _A = static_cast<unsigned char>(Bytes_[_Index]);
+            const auto _B = _Index + 1 < Bytes_.size()
+                ? static_cast<unsigned char>(Bytes_[_Index + 1]) : 0;
+            const auto _C = _Index + 2 < Bytes_.size()
+                ? static_cast<unsigned char>(Bytes_[_Index + 2]) : 0;
+            const auto _Value = (static_cast<unsigned int>(_A) << 16)
+                | (static_cast<unsigned int>(_B) << 8)
+                | static_cast<unsigned int>(_C);
+            _Result.push_back(_Alphabet[(_Value >> 18) & 0x3f]);
+            _Result.push_back(_Alphabet[(_Value >> 12) & 0x3f]);
+            _Result.push_back(_Index + 1 < Bytes_.size()
+                ? _Alphabet[(_Value >> 6) & 0x3f] : '=');
+            _Result.push_back(_Index + 2 < Bytes_.size()
+                ? _Alphabet[_Value & 0x3f] : '=');
+        }
+        return _Result;
+    }
+
+    std::string DecodeTemplateAssetBase64(const std::string& Text_)
+    {
+        if (Text_.size() % 4 != 0) throw std::invalid_argument("模板资源不是有效 Base64");
+        const auto _Value = [](const char Character_) -> int {
+            if (Character_ >= 'A' && Character_ <= 'Z') return Character_ - 'A';
+            if (Character_ >= 'a' && Character_ <= 'z') return Character_ - 'a' + 26;
+            if (Character_ >= '0' && Character_ <= '9') return Character_ - '0' + 52;
+            if (Character_ == '+') return 62;
+            if (Character_ == '/') return 63;
+            return -1;
+        };
+        std::string _Result;
+        _Result.reserve((Text_.size() / 4) * 3);
+        for (std::size_t _Index = 0; _Index < Text_.size(); _Index += 4)
+        {
+            const auto _A = _Value(Text_[_Index]);
+            const auto _B = _Value(Text_[_Index + 1]);
+            const auto _C = Text_[_Index + 2] == '=' ? 0 : _Value(Text_[_Index + 2]);
+            const auto _D = Text_[_Index + 3] == '=' ? 0 : _Value(Text_[_Index + 3]);
+            if (_A < 0 || _B < 0 || _C < 0 || _D < 0
+                || (Text_[_Index + 2] == '=' && Text_[_Index + 3] != '='))
+                throw std::invalid_argument("模板资源不是有效 Base64");
+            const auto _Bits = (static_cast<unsigned int>(_A) << 18)
+                | (static_cast<unsigned int>(_B) << 12)
+                | (static_cast<unsigned int>(_C) << 6)
+                | static_cast<unsigned int>(_D);
+            _Result.push_back(static_cast<char>((_Bits >> 16) & 0xff));
+            if (Text_[_Index + 2] != '=') _Result.push_back(static_cast<char>((_Bits >> 8) & 0xff));
+            if (Text_[_Index + 3] != '=') _Result.push_back(static_cast<char>(_Bits & 0xff));
+        }
+        return _Result;
+    }
+
+    void WriteTemplateFile(const std::filesystem::path& Path_, const std::string& Bytes_)
+    {
+        std::ofstream _Stream(Path_, std::ios::binary | std::ios::trunc);
+        if (!_Stream) throw std::runtime_error("无法写入模板文件：" + Path_.string());
+        _Stream.write(Bytes_.data(), static_cast<std::streamsize>(Bytes_.size()));
+        if (!_Stream) throw std::runtime_error("无法完成模板文件写入：" + Path_.string());
+    }
+
+    std::filesystem::path ResolveTemplateAssetPath(
+        const std::filesystem::path& PackageRoot_, const std::string& RelativePath_)
+    {
+        if (RelativePath_.empty()) return {};
+        const auto _Relative = std::filesystem::path(
+            std::u8string(RelativePath_.begin(), RelativePath_.end()));
+        if (_Relative.is_absolute() || _Relative.has_root_name() || _Relative.has_root_directory())
+            throw std::invalid_argument("模板资源路径必须是相对路径");
+        for (const auto& _Part : _Relative)
+            if (_Part == "..")
+                throw std::invalid_argument("模板资源路径不得越过模板目录");
+        std::error_code _Error;
+        const auto _Root = std::filesystem::weakly_canonical(PackageRoot_, _Error);
+        if (_Error) throw std::runtime_error("模板资源目录无效：" + _Error.message());
+        const auto _Path = std::filesystem::weakly_canonical(_Root / _Relative, _Error);
+        if (_Error) throw std::runtime_error("模板资源路径无效：" + _Error.message());
+        const auto _RelativeToRoot = std::filesystem::relative(_Path, _Root, _Error);
+        if (_Error || _RelativeToRoot.empty() || _RelativeToRoot == ".."
+            || _RelativeToRoot.string().starts_with(".." + std::string(1, std::filesystem::path::preferred_separator)))
+            throw std::invalid_argument("模板资源路径不得越过模板目录");
+        return _Path;
+    }
+
+    void AttachTemplateCatalogAssets(
+        ObjectMap& Presentation_, const std::filesystem::path& PackageRoot_)
+    {
+        auto _ExtensionsIt = Presentation_.find("extensions");
+        if (_ExtensionsIt == Presentation_.end() || !_ExtensionsIt->second.Is<ObjectMap>()) return;
+        auto _Extensions = _ExtensionsIt->second.To<ObjectMap>();
+        auto _CatalogIt = _Extensions.find("catalog");
+        if (_CatalogIt == _Extensions.end() || !_CatalogIt->second.Is<ObjectMap>()) return;
+        auto _Catalog = _CatalogIt->second.To<ObjectMap>();
+        ObjectMap _AssetData;
+        for (const auto* _Kind : { "icon", "schematic" })
+        {
+            const auto _DeclaredPath = GetString(_Catalog, _Kind,
+                std::string("resource/") + _Kind + ".svg");
+            const auto _AssetPath = ResolveTemplateAssetPath(PackageRoot_, _DeclaredPath);
+            std::error_code _Error;
+            if (!std::filesystem::is_regular_file(_AssetPath, _Error))
+            {
+                if (!GetString(_Catalog, _Kind).empty())
+                    throw std::runtime_error("模板声明的资源不存在：" + _DeclaredPath);
+                continue;
+            }
+            const auto _Bytes = ReadTextFile(_AssetPath);
+            _AssetData[_Kind] = std::string("data:image/svg+xml;base64,")
+                + EncodeTemplateAssetBase64(_Bytes);
+        }
+        if (!_AssetData.empty())
+        {
+            _Catalog["assetData"] = std::move(_AssetData);
+            _Extensions["catalog"] = std::move(_Catalog);
+            Presentation_["extensions"] = std::move(_Extensions);
+        }
+    }
+
     std::string ContentDigest(const std::string& Descriptor_, const std::string& Script_)
     {
         std::uint64_t _Hash = 14695981039346656037ull;
@@ -453,30 +583,152 @@ namespace
         }, "TubeDesigner template directory");
     }
 
+    std::filesystem::path ResolveUserTemplateRoot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        const auto& _UserData = ApplicationContext_.GetPaths().UserDataDirectory;
+        if (_UserData.empty()) return {};
+        const std::u8string _UserDataUTF8(
+            reinterpret_cast<const char8_t*>(_UserData.data()), _UserData.size());
+        return std::filesystem::path(_UserDataUTF8)
+            / kTubeDesignerProductID / "template";
+    }
+
+    std::filesystem::path ResolveTemplateAssetPath(
+        const std::filesystem::path& PackageRoot_, const std::string& RelativePath_);
+
+    std::filesystem::path MaterializeUserProductTemplate(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const ObjectMap& Package_)
+    {
+        const auto _Descriptor = GetRequiredObject(Package_, "descriptor");
+        const auto _TemplateID = GetRequiredText(_Descriptor, "id", 240);
+        const auto _IDPath = std::filesystem::path(
+            std::u8string(_TemplateID.begin(), _TemplateID.end()));
+        if (_IDPath.has_root_name() || _IDPath.has_root_directory()
+            || _IDPath.filename() != _IDPath || _TemplateID == "." || _TemplateID == "..")
+            throw std::invalid_argument("产品模板 ID 不能作为用户模板目录名");
+        const auto _Root = ResolveUserTemplateRoot(ApplicationContext_);
+        if (_Root.empty()) throw std::runtime_error("用户模板目录不可用");
+        const auto _ProductRoot = _Root / "product";
+        std::error_code _Error;
+        std::filesystem::create_directories(_ProductRoot, _Error);
+        if (_Error) throw std::runtime_error("无法创建用户产品模板目录：" + _Error.message());
+        const auto _Target = _ProductRoot / _IDPath;
+        if (std::filesystem::exists(_Target, _Error))
+            throw std::invalid_argument("用户产品模板已存在：" + _TemplateID);
+        const auto _Staging = _ProductRoot / ("." + _TemplateID + ".importing");
+        std::filesystem::remove_all(_Staging, _Error);
+        _Error.clear();
+        std::filesystem::create_directories(_Staging, _Error);
+        if (_Error) throw std::runtime_error("无法创建用户产品模板暂存目录：" + _Error.message());
+        try
+        {
+            WriteTemplateFile(_Staging / "template.json",
+                iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Descriptor)));
+            const auto _ScriptSource = GetString(Package_, "scriptSource");
+            if (_ScriptSource.empty()) throw std::invalid_argument("产品模板脚本不能为空");
+            WriteTemplateFile(_Staging / "template.py", _ScriptSource);
+            if (const auto _ResourcesIt = Package_.find("resources");
+                _ResourcesIt != Package_.end())
+            {
+                if (!_ResourcesIt->second.Is<ObjectMap>())
+                    throw std::invalid_argument("产品模板资源不是对象");
+                for (const auto& [_Name, _Encoded] : _ResourcesIt->second.To<ObjectMap>())
+                {
+                    if (!_Encoded.Is<std::string>())
+                        throw std::invalid_argument("产品模板资源不是 Base64 文本：" + _Name);
+                    const auto _Path = ResolveTemplateAssetPath(_Staging, _Name);
+                    std::filesystem::create_directories(_Path.parent_path(), _Error);
+                    if (_Error) throw std::runtime_error("无法创建产品模板资源目录：" + _Error.message());
+                    WriteTemplateFile(_Path, DecodeTemplateAssetBase64(_Encoded.To<std::string>()));
+                }
+            }
+            std::filesystem::rename(_Staging, _Target, _Error);
+            if (_Error) throw std::runtime_error("无法提交用户产品模板：" + _Error.message());
+        }
+        catch (...)
+        {
+            std::error_code _CleanupError;
+            std::filesystem::remove_all(_Staging, _CleanupError);
+            throw;
+        }
+        return _Target;
+    }
+
     std::filesystem::path ResolveSystemProfileRoot(
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
         return ResolveRuntimeDirectory(ApplicationContext_, {
-            "apps/tube-designer/templates/_shared/profiles",
-            "src/apps/tube-designer/templates/_shared/profiles"
+            "apps/tube-designer/templates/profile",
+            "src/apps/tube-designer/templates/profile"
         }, "TubeDesigner system profile directory");
+    }
+
+    std::filesystem::path ResolveUserProfileRoot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        const auto _Root = ResolveUserTemplateRoot(ApplicationContext_);
+        return _Root.empty() ? std::filesystem::path{} : _Root / "profile";
+    }
+
+    std::filesystem::path ResolveUserMoldRoot(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        const auto _Root = ResolveUserTemplateRoot(ApplicationContext_);
+        return _Root.empty() ? std::filesystem::path{} : _Root / "mold";
     }
 
     std::filesystem::path ResolveComponentModelRoot(
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
         return ResolveRuntimeDirectory(ApplicationContext_, {
-            "apps/tube-designer/models", "src/apps/tube-designer/models"
+            "apps/tube-designer/templates/accessory",
+            "src/apps/tube-designer/templates/accessory"
         }, "TubeDesigner component model directory");
     }
 
-    std::vector<std::filesystem::path> DiscoverPythonTemplateDirectories(
+    std::filesystem::path ResolveUserComponentModelRoot(
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
-        const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
+        const auto _Root = ResolveUserTemplateRoot(ApplicationContext_);
+        return _Root.empty() ? std::filesystem::path{} : _Root / "accessory";
+    }
+
+    void EnsureUserTemplateSharedRuntime(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const std::filesystem::path& UserRoot_)
+    {
+        if (UserRoot_.empty() || !std::filesystem::is_directory(UserRoot_)) return;
+        const auto _SystemShared = ResolveTemplateRoot(ApplicationContext_) / "_shared";
+        const auto _UserShared = UserRoot_ / "_shared";
+        if (!std::filesystem::is_directory(_SystemShared)) return;
+        std::error_code _Error;
+        std::filesystem::create_directories(_UserShared, _Error);
+        _Error.clear();
+        std::filesystem::copy(_SystemShared, _UserShared,
+            std::filesystem::copy_options::recursive
+                | std::filesystem::copy_options::overwrite_existing, _Error);
+        if (_Error)
+            throw std::runtime_error("TubeDesigner failed to refresh user template runtime: " + _Error.message());
+    }
+
+    std::vector<std::filesystem::path> DiscoverPythonTemplateDirectoriesAt(
+        const std::filesystem::path& TemplateRoot_, bool Required_)
+    {
+        const auto _ProductRoot = TemplateRoot_ / "product";
         std::vector<std::filesystem::path> _Directories;
         std::error_code _Error;
-        for (std::filesystem::directory_iterator _Iterator(_TemplateRoot, _Error), _End;
+        if (!std::filesystem::is_directory(_ProductRoot, _Error))
+        {
+            // The user template root is optional.  A fresh installation has no
+            // %LOCALAPPDATA%/iCAX/icax.tube-designer/template/product directory
+            // yet, which must mean "no user packages", not an enumeration error.
+            if (Required_)
+                throw std::runtime_error("TubeDesigner failed to enumerate template packages");
+            return _Directories;
+        }
+        for (std::filesystem::directory_iterator _Iterator(_ProductRoot, _Error), _End;
             !_Error && _Iterator != _End; _Iterator.increment(_Error))
         {
             if (!_Iterator->is_directory(_Error))
@@ -500,11 +752,39 @@ namespace
         return _Directories;
     }
 
-    std::string SharedTemplatePackageText(const std::filesystem::path& TemplateRoot_)
+    std::vector<std::filesystem::path> DiscoverPythonTemplateDirectories(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        return DiscoverPythonTemplateDirectoriesAt(ResolveTemplateRoot(ApplicationContext_), true);
+    }
+
+    std::vector<std::filesystem::path> DiscoverUserPythonTemplateDirectories(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        const auto _Root = ResolveUserTemplateRoot(ApplicationContext_);
+        EnsureUserTemplateSharedRuntime(ApplicationContext_, _Root);
+        return _Root.empty() ? std::vector<std::filesystem::path>{}
+            : DiscoverPythonTemplateDirectoriesAt(_Root, false);
+    }
+
+    const std::string& SharedTemplatePackageText(const std::filesystem::path& TemplateRoot_)
     {
         const auto _SharedRoot = TemplateRoot_ / "_shared";
+        const auto _CacheKey = PathToUTF8(std::filesystem::weakly_canonical(TemplateRoot_));
+        static std::mutex _CacheMutex;
+        static std::map<std::string, std::string> _Cache;
+        {
+            const std::lock_guard _Lock(_CacheMutex);
+            if (const auto _It = _Cache.find(_CacheKey); _It != _Cache.end())
+                return _It->second;
+        }
+
         std::error_code _Error;
-        if (!std::filesystem::is_directory(_SharedRoot, _Error)) return {};
+        if (!std::filesystem::is_directory(_SharedRoot, _Error))
+        {
+            const std::lock_guard _Lock(_CacheMutex);
+            return _Cache.emplace(_CacheKey, std::string{}).first->second;
+        }
         std::vector<std::filesystem::path> _Files;
         for (std::filesystem::recursive_directory_iterator _Iterator(_SharedRoot, _Error), _End;
             !_Error && _Iterator != _End; _Iterator.increment(_Error))
@@ -527,12 +807,45 @@ namespace
             _Content += "\n";
             _Content += ReadTextFile(_File);
         }
+        const std::lock_guard _Lock(_CacheMutex);
+        return _Cache.emplace(_CacheKey, std::move(_Content)).first->second;
+    }
+
+    std::string LocalTemplatePackageText(
+        const std::filesystem::path& Directory_, const std::filesystem::path& TemplateRoot_)
+    {
+        std::error_code _Error;
+        std::vector<std::filesystem::path> _Files;
+        for (std::filesystem::recursive_directory_iterator _Iterator(Directory_, _Error), _End;
+            !_Error && _Iterator != _End; _Iterator.increment(_Error))
+        {
+            const auto _Relative = _Iterator->path().lexically_relative(Directory_);
+            const bool _InCache = std::find(_Relative.begin(), _Relative.end(),
+                std::filesystem::path("__pycache__")) != _Relative.end();
+            if (_Iterator->is_regular_file(_Error)
+                && _Iterator->path().filename() != "template.json"
+                && _Iterator->path().filename() != "template.py"
+                && !_InCache)
+                _Files.push_back(_Iterator->path());
+            _Error.clear();
+        }
+        if (_Error) throw std::runtime_error("TubeDesigner failed to enumerate local template resources");
+        std::sort(_Files.begin(), _Files.end());
+        std::string _Content;
+        for (const auto& _File : _Files)
+        {
+            _Content += "\n\xfflocal-file\xff";
+            _Content += PathToUTF8(std::filesystem::relative(_File, TemplateRoot_));
+            _Content += "\n";
+            _Content += ReadTextFile(_File);
+        }
         return _Content;
     }
 
     SPythonTemplatePackage LoadPythonTemplatePackageFromDirectory(
         const std::filesystem::path& Directory_,
-        const std::filesystem::path& TemplateRoot_)
+        const std::filesystem::path& TemplateRoot_,
+        const std::filesystem::path& LocalPackageRoot_ = {})
     {
         const auto _DescriptorPath = Directory_ / "template.json";
         const auto _ScriptPath = Directory_ / "template.py";
@@ -540,8 +853,10 @@ namespace
         const auto _ScriptText = ReadTextFile(_ScriptPath);
         auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
             iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
+        const auto _LocalRoot = LocalPackageRoot_.empty() ? TemplateRoot_ : LocalPackageRoot_;
         _Descriptor.PackageDigest = ContentDigest(
-            _DescriptorText, _ScriptText + SharedTemplatePackageText(TemplateRoot_));
+            _DescriptorText, _ScriptText + SharedTemplatePackageText(TemplateRoot_)
+                + LocalTemplatePackageText(Directory_, _LocalRoot));
         return { std::move(_Descriptor), _DescriptorPath, _ScriptPath };
     }
 
@@ -552,8 +867,22 @@ namespace
         const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
         for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
         {
-            auto _Package = LoadPythonTemplatePackageFromDirectory(_Directory, _TemplateRoot);
-            if (_Package.Descriptor.ID == TemplateID_) return _Package;
+            // Identify the package from its descriptor before reading and
+            // hashing the scripts/resources of unrelated packages.
+            const auto _DescriptorText = ReadTextFile(_Directory / "template.json");
+            const auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
+                iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
+            if (_Descriptor.ID == TemplateID_)
+                return LoadPythonTemplatePackageFromDirectory(_Directory, _TemplateRoot);
+        }
+        const auto _UserRoot = ResolveUserTemplateRoot(ApplicationContext_);
+        for (const auto& _Directory : DiscoverUserPythonTemplateDirectories(ApplicationContext_))
+        {
+            const auto _DescriptorText = ReadTextFile(_Directory / "template.json");
+            const auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
+                iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
+            if (_Descriptor.ID == TemplateID_)
+                return LoadPythonTemplatePackageFromDirectory(_Directory, _TemplateRoot, _UserRoot);
         }
         throw std::invalid_argument("unsupported Python template: " + TemplateID_);
     }
@@ -675,6 +1004,7 @@ namespace
         if (_HasResource)
             ResolveTemplateComponentResources(_Document, _Package.DescriptorPath.parent_path(),
                 _Package.Descriptor.Extensions, ResolveComponentModelRoot(ApplicationContext_),
+                ResolveUserComponentModelRoot(ApplicationContext_),
                 ComponentStore_, FrozenComponents_);
         auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
         if (_Model.TemplateID != _Package.Descriptor.ID
@@ -703,15 +1033,34 @@ namespace
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
         VariantArray _Templates;
-        const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
-        for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
+        const auto _Append = [&](const std::vector<std::filesystem::path>& _Directories,
+            const std::string& _LibraryScope) {
+        for (const auto& _Directory : _Directories)
         {
             try
             {
-                const auto _Package = LoadPythonTemplatePackageFromDirectory(
-                    _Directory, _TemplateRoot);
-                _Templates.emplace_back(iCAX::TemplateRuntime::CTemplateCodec::MakePresentationDescriptor(
-                    _Package.Descriptor, "zh-CN"));
+                // The startup snapshot only needs the catalog card. Do not
+                // load scripts, shared files, or full parameter presentation
+                // until a template is actually selected.
+                const auto _DescriptorText = ReadTextFile(_Directory / "template.json");
+                const auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
+                    iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
+                // The list is loaded during startup and is used for choosing a
+                // template. Keep it small; the full descriptor is hydrated by
+                // the web UI only after the response arrives.
+                ObjectMap _Presentation;
+                _Presentation["id"] = _Descriptor.ID;
+                _Presentation["version"] = _Descriptor.Version;
+                _Presentation["name"] = _Descriptor.DisplayName.Resolve("zh-CN");
+                _Presentation["description"] = _Descriptor.Description;
+                _Presentation["available"] = true;
+                _Presentation["libraryScope"] = _LibraryScope;
+                _Presentation["ownerScope"] = _LibraryScope;
+                if (const auto _Catalog = _Descriptor.Extensions.find("catalog");
+                    _Catalog != _Descriptor.Extensions.end())
+                    _Presentation["extensions"] = ObjectMap{{ "catalog", _Catalog->second }};
+                AttachTemplateCatalogAssets(_Presentation, _Directory);
+                _Templates.emplace_back(std::move(_Presentation));
             }
             catch (const std::exception& Error_)
             {
@@ -725,6 +1074,9 @@ namespace
                 _Templates.emplace_back(_Unavailable);
             }
         }
+        };
+        _Append(DiscoverPythonTemplateDirectories(ApplicationContext_), "system");
+        _Append(DiscoverUserPythonTemplateDirectories(ApplicationContext_), "user");
 
         return _Templates;
     }
@@ -1061,22 +1413,49 @@ namespace
         };
     }
 
+    bool IsPointContourArray(const VariantArray& Contours_)
+    {
+        if (Contours_.empty()) return true;
+        for (const auto& _Contour : Contours_)
+        {
+            if (!_Contour.Is<ObjectMap>()) return false;
+            const auto& _Object = _Contour.To<ObjectMap>();
+            const auto _Points = _Object.find("points");
+            if (_Points == _Object.end() || !_Points->second.Is<VariantArray>())
+                return false;
+        }
+        return true;
+    }
+
     ObjectMap ProfileContoursPayload(const ObjectMap& Profile_)
     {
         const auto _Found = Profile_.find("contours");
         if (_Found != Profile_.end() && _Found->second.Is<VariantArray>())
         {
+            const auto& _Contours = _Found->second.To<VariantArray>();
+            if (!IsPointContourArray(_Contours))
+            {
+                return {
+                    { "schema", std::string("icax.tube-profile-contours.v1") },
+                    { "schemaVersion", 1ull },
+                    { "coordinateSystem", std::string("YOZ") },
+                    { "representation", std::string("parametric") },
+                    { "definitions", _Contours }
+                };
+            }
             return {
                 { "schema", std::string("icax.section-contours.v1") },
                 { "schemaVersion", 1ull },
                 { "coordinateSystem", std::string("YOZ") },
-                { "loops", _Found->second }
+                { "representation", std::string("points") },
+                { "loops", _Contours }
             };
         }
         return {
             { "schema", std::string("icax.section-contours.v1") },
             { "schemaVersion", 1ull },
             { "coordinateSystem", std::string("YOZ") },
+            { "representation", std::string("points") },
             { "loops", VariantArray() }
         };
     }
@@ -1127,7 +1506,11 @@ namespace
             Profile_, "specification", TubeProfileSpecification(_TypeID, Profile_));
         _Result["source"] = Source_;
         _Result["parameters"] = TubeProfileParameterPayload(Profile_);
-        _Result["contours"] = ProfileContoursPayload(Profile_).at("loops");
+        const auto _ContourPayload = ProfileContoursPayload(Profile_);
+        _Result["contours"] = _ContourPayload.contains("loops")
+            ? _ContourPayload.at("loops")
+            : (_ContourPayload.contains("definitions")
+                ? _ContourPayload.at("definitions") : VariantArray());
         _Result["placement"] = IdentityTransformPayload();
         return _Result;
     }
@@ -1162,14 +1545,14 @@ namespace
             : TubeProfileParameterPayload(Profile_);
         const auto _Source = SourceOverride_.empty()
             ? GetString(Profile_, "source") : SourceOverride_;
-        const auto _Contours = Profile_.contains("contours")
-            && Profile_.at("contours").Is<VariantArray>()
-            ? ObjectMap{
-                { "schema", std::string("icax.section-contours.v1") },
-                { "schemaVersion", 1ull },
-                { "coordinateSystem", std::string("YOZ") },
-                { "loops", Profile_.at("contours") } }
-            : ProfileContoursPayload(Profile_);
+        ObjectMap _ContourInput;
+        if (const auto _ContourValue = Profile_.find("contours");
+            _ContourValue != Profile_.end())
+        {
+            _ContourInput["contours"] = _ContourValue->second;
+        }
+        const auto _Contours = _ContourInput.empty()
+            ? ProfileContoursPayload(Profile_) : ProfileContoursPayload(_ContourInput);
         const auto _Transform = Profile_.contains("placement")
             && Profile_.at("placement").Is<ObjectMap>()
             ? Profile_.at("placement").To<ObjectMap>() : IdentityTransformPayload();
@@ -1198,7 +1581,9 @@ namespace
         _Result["source"] = Component_.GetSource();
         _Result["parameters"] = Component_.GetParameters();
         _Result["contours"] = Component_.GetContours().contains("loops")
-            ? Component_.GetContours().at("loops") : VariantArray();
+            ? Component_.GetContours().at("loops")
+            : (Component_.GetContours().contains("definitions")
+                ? Component_.GetContours().at("definitions") : VariantArray());
         _Result["placement"] = Component_.GetTransform();
         return _Result;
     }
@@ -2069,7 +2454,6 @@ namespace
             _Designer["generationRun"] = _Item;
             break;
         }
-
         ObjectMap _Response;
         _Response["tubeDesigner"] = _Designer;
         return _Response;
@@ -2091,6 +2475,25 @@ namespace
         return MakeResponse(Variant(BuildSnapshot(*Scene_, ApplicationContext_)));
     }
 
+    iCAX::Interaction::CInvocationResult HandleGetTemplateDescriptor(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _TemplateID = GetRequiredText(_Payload, "templateId", 240);
+        const auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _TemplateID);
+        auto _Presentation = iCAX::TemplateRuntime::CTemplateCodec::MakePresentationDescriptor(
+            _Package.Descriptor, "zh-CN");
+        _Presentation["packageDigest"] = _Package.Descriptor.PackageDigest;
+        _Presentation["available"] = true;
+        _Presentation["descriptorLoaded"] = true;
+        AttachTemplateCatalogAssets(_Presentation, _Package.DescriptorPath.parent_path());
+        return MakeResponse(ObjectMap{{ "template", std::move(_Presentation) }});
+    }
+
     constexpr const char* kCustomerFeatureID = "customer";
     constexpr const char* kCustomerRecordType = "profile";
     constexpr const char* kTemplateFeatureID = "template";
@@ -2100,6 +2503,9 @@ namespace
     constexpr const char* kProfileFeatureID = "profile";
     constexpr const char* kImportedProfileRecordType = "imported-dxf";
     constexpr const char* kParametricProfileRecordType = "parametric-package";
+    constexpr const char* kPunchToolFeatureID = "punch-tool";
+    constexpr const char* kFixedPunchToolRecordType = "fixed-geometry";
+    constexpr const char* kParametricPunchToolRecordType = "parametric-package";
     constexpr const char* kProductSubjectType = "product";
     constexpr const char* kProfileDefinitionSubjectType = "profile-definition";
     constexpr const char* kTemplateSubjectType = "template-definition";
@@ -2322,6 +2728,29 @@ namespace
         return InvokePythonTemplate(ApplicationContext_, _Request);
     }
 
+    ObjectMap InvokePunchToolPackageRuntime(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const ObjectMap& Parameters_)
+    {
+        const auto _ScriptPath = ResolveRuntimeFile(ApplicationContext_, {
+            "apps/tube-designer/templates/_shared/punch_tool_package_runtime.py",
+            "src/apps/tube-designer/templates/_shared/punch_tool_package_runtime.py"
+        }, "TubeDesigner punch tool package runtime");
+        const auto _ScriptText = ReadTextFile(_ScriptPath);
+        return InvokePythonTemplate(ApplicationContext_, ObjectMap{
+            { "protocol", std::string("icax.template-runtime") },
+            { "protocolVersion", 1ull }, { "operation", std::string("evaluate") },
+            { "templatePath", PathToUTF8(_ScriptPath) },
+            { "template", ObjectMap{
+                { "id", std::string("icax.punch-tool-package-runtime") },
+                { "version", std::string("1.0.0") },
+                { "packageDigest", ContentDigest("punch-tool-package-runtime", _ScriptText) }
+            } },
+            { "parameters", Parameters_ },
+            { "context", ObjectMap{{ "lengthUnit", std::string("mm") }} }
+        });
+    }
+
     ObjectMap ExportProfileDxf(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         const ObjectMap& Profile_,
@@ -2433,6 +2862,30 @@ namespace
         return _ResultPackages;
     }
 
+    std::vector<ObjectMap> LoadUserProfilePackages(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        const auto _Root = ResolveUserProfileRoot(ApplicationContext_);
+        if (_Root.empty() || !std::filesystem::is_directory(_Root)) return {};
+        const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, ObjectMap{
+            { "action", std::string("list-user") },
+            { "profileRoot", PathToUTF8(_Root) }
+        });
+        const auto _Packages = _Result.find("userProfiles");
+        if (_Packages == _Result.end() || !_Packages->second.Is<VariantArray>())
+            throw std::runtime_error("TubeDesigner user profile catalog returned no packages");
+        std::vector<ObjectMap> _ResultPackages;
+        for (const auto& _Value : _Packages->second.To<VariantArray>())
+        {
+            if (!_Value.Is<ObjectMap>())
+                throw std::runtime_error("TubeDesigner user profile catalog contains an invalid package");
+            auto _Package = _Value.To<ObjectMap>();
+            ValidateProfilePackageRecord(_Package);
+            _ResultPackages.emplace_back(std::move(_Package));
+        }
+        return _ResultPackages;
+    }
+
     ObjectMap EvaluateSystemProfile(
         const iCAX::Application::IApplicationContext& ApplicationContext_,
         const std::string& ProfileID_,
@@ -2445,6 +2898,24 @@ namespace
         _Parameters["systemProfileId"] = ProfileID_;
         _Parameters["values"] = Values_;
         const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
+        auto _Profile = GetRequiredObject(_Result, "profile");
+        ValidateImportedProfileDefinition(_Profile);
+        return _Profile;
+    }
+
+    ObjectMap EvaluateUserProfile(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const std::string& ProfileID_, const ObjectMap& Values_)
+    {
+        const auto _Root = ResolveUserProfileRoot(ApplicationContext_);
+        if (_Root.empty() || !std::filesystem::is_directory(_Root))
+            throw std::invalid_argument("用户管型不存在：" + ProfileID_);
+        const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, ObjectMap{
+            { "action", std::string("evaluate-user") },
+            { "profileRoot", PathToUTF8(_Root) },
+            { "userProfileId", ProfileID_ },
+            { "values", Values_ }
+        });
         auto _Profile = GetRequiredObject(_Result, "profile");
         ValidateImportedProfileDefinition(_Profile);
         return _Profile;
@@ -2478,7 +2949,8 @@ namespace
         iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
         auto _Store = GetUserDataStore(ProductContext_);
-        auto _Models = ListComponentModelSummaries(ResolveComponentModelRoot(ApplicationContext_), _Store.get());
+        auto _Models = ListComponentModelSummaries(ResolveComponentModelRoot(ApplicationContext_), _Store.get(),
+            ResolveUserComponentModelRoot(ApplicationContext_));
         const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
         for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
         {
@@ -2605,7 +3077,7 @@ namespace
                 _Package.Descriptor.Extensions, _TemplateID, _Package.Descriptor.DisplayName.Resolve(), _ID);
         }
         return ResolveComponentModelSnapshot(ResolveComponentModelRoot(ApplicationContext_),
-            &Store_, _Scope, _ID);
+            &Store_, _Scope, _ID, ResolveUserComponentModelRoot(ApplicationContext_));
     }
 
     iCAX::Interaction::CInvocationResult HandleExportComponentModel(
@@ -2826,8 +3298,15 @@ namespace
             _Profile.erase("savedProfileId");
             return _Profile;
         }
-        auto _Profile = ResolveStoredProfileSnapshot(
-            ApplicationContext_, Store_, Reference_.ID, Parameters_);
+        ObjectMap _Profile;
+        const auto _UserProfileRoot = ResolveUserProfileRoot(ApplicationContext_);
+        const bool _HasFilesystemProfile = !_UserProfileRoot.empty()
+            && std::filesystem::is_directory(_UserProfileRoot / Reference_.ID);
+        if (_HasFilesystemProfile)
+            _Profile = EvaluateUserProfile(ApplicationContext_, Reference_.ID, Parameters_);
+        else
+            _Profile = ResolveStoredProfileSnapshot(
+                ApplicationContext_, Store_, Reference_.ID, Parameters_);
         _Profile["profileScope"] = std::string("user");
         return _Profile;
     }
@@ -2883,6 +3362,28 @@ namespace
         return _Payload;
     }
 
+    ObjectMap MakeUserProfilePackagePayload(const ObjectMap& Package_)
+    {
+        auto _Payload = Package_;
+        _Payload.erase("scriptSource");
+        const auto _Descriptor = GetRequiredObject(Package_, "descriptor");
+        const auto _ProfileID = GetRequiredText(_Descriptor, "id", 80);
+        _Payload["id"] = _ProfileID;
+        _Payload["profileType"] = std::string(kParametricProfileRecordType);
+        _Payload["profileScope"] = std::string("user");
+        _Payload["libraryScope"] = std::string("user");
+        _Payload["profileRef"] = ObjectMap{
+            { "scope", std::string("user") }, { "id", _ProfileID }
+        };
+        _Payload["ownerScope"] = std::string("user");
+        _Payload["revision"] = 0ull;
+        _Payload["capabilities"] = ObjectMap{
+            { "editParameters", true }, { "preview", true }, { "export", true },
+            { "rename", false }, { "delete", false }
+        };
+        return _Payload;
+    }
+
     ObjectMap MakeParameterPresetPayload(
         const iCAX::Application::CProductUserDataRecord& Record_)
     {
@@ -2910,7 +3411,7 @@ namespace
         auto _Payload = MakeUserDataPayload(Record_);
         _Payload["templateType"] = std::string(kProductTemplateRecordType);
         _Payload["templateScope"] = std::string("personal");
-        _Payload["sourceFormat"] = std::string("iPT");
+        _Payload["sourceFormat"] = std::string("itpt");
         _Payload["capabilities"] = ObjectMap{
             { "export", true }, { "rename", false }, { "delete", true }
         };
@@ -2927,7 +3428,195 @@ namespace
                     ? _Value.at("displayName") : Variant(std::string("产品模板")));
         }
         _Payload.erase("scriptSource");
+        _Payload.erase("resources");
         return _Payload;
+    }
+
+    std::string ProductTemplateLocalizedText(
+        const Variant& Value_, const std::string& Default_)
+    {
+        if (Value_.Is<std::string>()) return Value_.To<std::string>();
+        if (Value_.Is<ObjectMap>())
+        {
+            const auto& _Localized = Value_.To<ObjectMap>();
+            return GetString(_Localized, "zh-CN",
+                GetString(_Localized, "zh", GetString(_Localized, "en-US", Default_)));
+        }
+        return Default_;
+    }
+
+    ObjectMap LegacyProductTemplatePresetDescriptor(
+        const ObjectMap& Descriptor_, const ObjectMap& Preset_, const std::string& TemplateID_)
+    {
+        const auto _PresetID = GetString(Preset_, "id");
+        if (_PresetID.empty()) throw std::invalid_argument("旧产品模板款式缺少 ID");
+        auto _Result = Descriptor_;
+        auto _NewID = TemplateID_ + "-" + _PresetID;
+        if (_NewID.size() > 240) _NewID.resize(240);
+        _Result["id"] = _NewID;
+        if (const auto _Name = Preset_.find("displayName"); _Name != Preset_.end())
+            _Result["displayName"] = _Name->second;
+
+        ObjectMap _Extensions;
+        if (const auto _It = _Result.find("extensions");
+            _It != _Result.end() && _It->second.Is<ObjectMap>())
+            _Extensions = _It->second.To<ObjectMap>();
+        ObjectMap _Catalog;
+        if (const auto _It = _Extensions.find("catalog");
+            _It != _Extensions.end() && _It->second.Is<ObjectMap>())
+            _Catalog = _It->second.To<ObjectMap>();
+        _Catalog.erase("presets");
+        if (!_Catalog.contains("categoryPath"))
+        {
+            VariantArray _CategoryPath;
+            const auto _OriginalName = ProductTemplateLocalizedText(
+                Descriptor_.contains("displayName") ? Descriptor_.at("displayName") : Variant(), "");
+            std::size_t _Start = 0;
+            while (_Start < _OriginalName.size())
+            {
+                const auto _End = _OriginalName.find('/', _Start);
+                const auto _Part = _OriginalName.substr(
+                    _Start, _End == std::string::npos ? std::string::npos : _End - _Start);
+                if (!_Part.empty()) _CategoryPath.emplace_back(_Part);
+                if (_End == std::string::npos || _CategoryPath.size() >= 2) break;
+                _Start = _End + 1;
+            }
+            if (_CategoryPath.empty())
+                _CategoryPath.emplace_back(std::string("其他产品"));
+            _Catalog["categoryPath"] = std::move(_CategoryPath);
+        }
+        _Extensions["catalog"] = std::move(_Catalog);
+        _Result["extensions"] = std::move(_Extensions);
+
+        const auto _PresetParameters = Preset_.find("parameters");
+        if (_PresetParameters != Preset_.end() && _PresetParameters->second.Is<ObjectMap>())
+        {
+            if (const auto _Definitions = _Result.find("parameters");
+                _Definitions != _Result.end() && _Definitions->second.Is<VariantArray>())
+            {
+                VariantArray _Updated;
+                for (const auto& _Value : _Definitions->second.To<VariantArray>())
+                {
+                    if (!_Value.Is<ObjectMap>())
+                    {
+                        _Updated.emplace_back(_Value);
+                        continue;
+                    }
+                    auto _Definition = _Value.To<ObjectMap>();
+                    const auto _Key = GetString(_Definition, "key");
+                    const auto _Override = _PresetParameters->second.To<ObjectMap>().find(_Key);
+                    if (_Override != _PresetParameters->second.To<ObjectMap>().end())
+                        _Definition["defaultValue"] = _Override->second;
+                    _Updated.emplace_back(std::move(_Definition));
+                }
+                _Result["parameters"] = std::move(_Updated);
+            }
+        }
+        return _Result;
+    }
+
+    std::size_t MigrateLegacyProductTemplateRecords(
+        iCAX::Application::IProductUserDataStore& Store_)
+    {
+        iCAX::Application::CProductUserDataQuery _Query;
+        _Query.FeatureID = kProductTemplateFeatureID;
+        _Query.RecordType = kProductTemplateRecordType;
+        _Query.OwnerScope = "personal";
+        std::size_t _Migrated = 0;
+        const auto _Records = Store_.List(_Query);
+        std::set<std::string> _ExistingMigrationKeys;
+        for (const auto& _Record : _Records)
+        {
+            if (!_Record.Payload.Is<ObjectMap>()) continue;
+            const auto& _Payload = _Record.Payload.To<ObjectMap>();
+            const auto _Migration = _Payload.find("legacyMigration");
+            if (_Migration == _Payload.end() || !_Migration->second.Is<ObjectMap>()) continue;
+            const auto& _Info = _Migration->second.To<ObjectMap>();
+            const auto _Source = GetString(_Info, "sourceRecordId");
+            const auto _Preset = GetString(_Info, "sourcePresetId");
+            if (!_Source.empty() && !_Preset.empty())
+                _ExistingMigrationKeys.insert(_Source + "\n" + _Preset);
+        }
+        for (const auto& _Record : _Records)
+        {
+            if (!_Record.Payload.Is<ObjectMap>()) continue;
+            const auto& _Payload = _Record.Payload.To<ObjectMap>();
+            const auto _DescriptorIt = _Payload.find("descriptor");
+            if (_DescriptorIt == _Payload.end() || !_DescriptorIt->second.Is<ObjectMap>()) continue;
+            const auto& _Descriptor = _DescriptorIt->second.To<ObjectMap>();
+            const auto _ExtensionsIt = _Descriptor.find("extensions");
+            if (_ExtensionsIt == _Descriptor.end() || !_ExtensionsIt->second.Is<ObjectMap>()) continue;
+            const auto& _Extensions = _ExtensionsIt->second.To<ObjectMap>();
+            const auto _CatalogIt = _Extensions.find("catalog");
+            if (_CatalogIt == _Extensions.end() || !_CatalogIt->second.Is<ObjectMap>()) continue;
+            const auto& _Catalog = _CatalogIt->second.To<ObjectMap>();
+            const auto _PresetsIt = _Catalog.find("presets");
+            if (_PresetsIt == _Catalog.end() || !_PresetsIt->second.Is<VariantArray>()) continue;
+
+            const auto& _Presets = _PresetsIt->second.To<VariantArray>();
+            std::vector<std::pair<ObjectMap, ObjectMap>> _Converted;
+            _Converted.reserve(_Presets.size());
+            for (const auto& _Preset : _Presets)
+            {
+                if (!_Preset.Is<ObjectMap>()) continue;
+                const auto& _PresetObject = _Preset.To<ObjectMap>();
+                if (GetString(_PresetObject, "id").empty()) continue;
+                _Converted.emplace_back(
+                    LegacyProductTemplatePresetDescriptor(_Descriptor, _PresetObject,
+                        GetString(_Descriptor, "id")), _PresetObject);
+            }
+            if (_Converted.empty()) continue;
+
+            try
+            {
+                for (std::size_t _Index = 1; _Index < _Converted.size(); ++_Index)
+                {
+                    auto _Child = _Record;
+                    const auto _PresetID = GetString(_Converted[_Index].second, "id");
+                    const auto _MigrationKey = _Record.RecordID + "\n" + _PresetID;
+                    if (_ExistingMigrationKeys.contains(_MigrationKey)) continue;
+                    _Child.RecordID = UuidToString(iCAX::Data::GenerateNewUUID());
+                    _Child.SubjectID = GetString(_Converted[_Index].first, "id");
+                    auto _ChildPayload = _Payload;
+                    _ChildPayload["descriptor"] = _Converted[_Index].first;
+                    _ChildPayload["name"] = ProductTemplateLocalizedText(
+                        _Converted[_Index].first.at("displayName"), _Child.SubjectID);
+                    _ChildPayload["legacyMigration"] = ObjectMap{
+                        { "sourceRecordId", _Record.RecordID },
+                        { "sourcePresetId", _PresetID },
+                        { "version", 1ull }
+                    };
+                    _Child.Payload = Variant(std::move(_ChildPayload));
+                    _Child.Revision = 0;
+                    _Child.CreatedAt.clear();
+                    _Child.UpdatedAt.clear();
+                    Store_.Put(_Child, 0);
+                    _ExistingMigrationKeys.insert(_MigrationKey);
+                }
+
+                auto _Updated = _Record;
+                _Updated.SubjectID = GetString(_Converted.front().first, "id");
+                auto _UpdatedPayload = _Payload;
+                _UpdatedPayload["descriptor"] = _Converted.front().first;
+                _UpdatedPayload["name"] = ProductTemplateLocalizedText(
+                    _Converted.front().first.at("displayName"), _Updated.SubjectID);
+                _UpdatedPayload["legacyMigration"] = ObjectMap{
+                    { "sourceRecordId", _Record.RecordID },
+                    { "sourcePresetId", GetString(_Converted.front().second, "id") },
+                    { "version", 1ull }
+                };
+                _Updated.Payload = Variant(std::move(_UpdatedPayload));
+                Store_.Put(_Updated, _Record.Revision);
+                ++_Migrated;
+            }
+            catch (const std::exception&)
+            {
+                // Migration is best-effort. A stale revision or malformed old
+                // record must not prevent the application from starting; the
+                // untouched legacy record remains available for retry/export.
+            }
+        }
+        return _Migrated;
     }
 
     VariantArray ListUserDataRecords(
@@ -2965,6 +3654,58 @@ namespace
         return _Items;
     }
 
+    ObjectMap MakePunchToolUserDataPayload(
+        const iCAX::Application::CProductUserDataRecord& Record_)
+    {
+        auto _Payload = Record_.Payload.Is<ObjectMap>()
+            ? Record_.Payload.To<ObjectMap>() : ObjectMap();
+        const auto _Descriptor = _Payload.find("descriptor");
+        if (_Descriptor == _Payload.end() || !_Descriptor->second.Is<ObjectMap>())
+            throw std::runtime_error("TubeDesigner punch tool payload is invalid");
+        const auto& _Definition = _Descriptor->second.To<ObjectMap>();
+        _Payload["id"] = GetRequiredText(_Definition, "id", 80);
+        _Payload["displayName"] = GetString(_Definition, "displayName", "未命名模具");
+        _Payload["name"] = GetString(_Definition, "displayName", "未命名模具");
+        _Payload["kind"] = GetString(_Definition, "kind", "programmatic");
+        _Payload["target"] = GetString(_Definition, "target", "side");
+        _Payload["category"] = GetString(_Definition, "category",
+            GetString(_Definition, "target") == "end" ? "端面" : "孔型");
+        _Payload["version"] = GetString(_Definition, "version", "1.0.0");
+        _Payload["parameters"] = _Definition.contains("parameters")
+            ? _Definition.at("parameters") : VariantArray{};
+        if (!_Payload.contains("defaultParameters"))
+            _Payload["defaultParameters"] = ObjectMap();
+        if (_Payload.contains("packageDigest") && !_Payload.contains("digest"))
+            _Payload["digest"] = _Payload.at("packageDigest");
+        _Payload["libraryScope"] = std::string("user");
+        _Payload["toolScope"] = std::string("user");
+        _Payload["toolRecordType"] = Record_.RecordType;
+        _Payload["recordId"] = Record_.RecordID;
+        _Payload["ownerScope"] = Record_.OwnerScope;
+        _Payload["revision"] = static_cast<unsigned long long>(Record_.Revision);
+        _Payload["createdAt"] = Record_.CreatedAt;
+        _Payload["updatedAt"] = Record_.UpdatedAt;
+        _Payload["capabilities"] = ObjectMap{
+            { "rename", true }, { "delete", true }, { "editParameters", false }, { "preview", true }
+        };
+        return _Payload;
+    }
+
+    VariantArray ListPunchToolUserDataRecords(
+        iCAX::Application::IProductUserDataStore& Store_)
+    {
+        VariantArray _Items;
+        for (const auto* _RecordType : { kFixedPunchToolRecordType, kParametricPunchToolRecordType })
+        {
+            iCAX::Application::CProductUserDataQuery _Query;
+            _Query.FeatureID = kPunchToolFeatureID;
+            _Query.RecordType = _RecordType;
+            for (const auto& _Record : Store_.List(_Query))
+                _Items.emplace_back(MakePunchToolUserDataPayload(_Record));
+        }
+        return _Items;
+    }
+
     VariantArray ListProductTemplateRecords(
         iCAX::Application::IProductUserDataStore& Store_)
     {
@@ -2983,6 +3724,15 @@ namespace
         VariantArray _Items;
         for (const auto& _Package : LoadSystemProfilePackages(ApplicationContext_))
             _Items.emplace_back(MakeSystemProfilePayload(_Package));
+        return _Items;
+    }
+
+    VariantArray ListUserProfilePackageRecords(
+        const iCAX::Application::IApplicationContext& ApplicationContext_)
+    {
+        VariantArray _Items;
+        for (const auto& _Package : LoadUserProfilePackages(ApplicationContext_))
+            _Items.emplace_back(MakeUserProfilePackagePayload(_Package));
         return _Items;
     }
 
@@ -3042,17 +3792,27 @@ namespace
         iCAX::Project::ISceneContext*)
     {
         auto _Store = GetUserDataStore(ProductContext_);
+        // Upgrade legacy personal product-template records before exposing the
+        // catalogue. Old records may contain many catalog presets; each preset
+        // becomes its own record while preserving the original record ID for
+        // the first converted template.
+        (void)MigrateLegacyProductTemplateRecords(*_Store);
         ObjectMap _Response;
         _Response["customers"] = ListUserDataRecords(
             *_Store, kCustomerFeatureID, kCustomerRecordType);
         _Response["parameterPresets"] = ListUserDataRecords(
             *_Store, kTemplateFeatureID, kParameterPresetRecordType, true);
         _Response["profiles"] = ListProfileUserDataRecords(*_Store);
+        {
+            auto _UserProfiles = _Response["profiles"].To<VariantArray>();
+            const auto _FilesystemProfiles = ListUserProfilePackageRecords(ApplicationContext_);
+            _UserProfiles.insert(_UserProfiles.end(), _FilesystemProfiles.begin(), _FilesystemProfiles.end());
+            _Response["profiles"] = std::move(_UserProfiles);
+        }
         // Tool definitions are kept as a separate library from tube profiles.
-        // The first backend slice exposes the user layer explicitly; fixed DXF
-        // and programmatic package import will populate this list without
-        // changing the punch/drawing component schemas.
-        _Response["punchTools"] = VariantArray{};
+        // Punching, drawing and product disassembly only persist references to
+        // these definitions; the definition itself belongs to this library.
+        _Response["punchTools"] = ListPunchToolUserDataRecords(*_Store);
         _Response["productTemplates"] = ListProductTemplateRecords(*_Store);
         _Response["systemProfiles"] = ListSystemProfileRecords(ApplicationContext_);
         _Response["templateProfiles"] = ListTemplateProfileRecords(ApplicationContext_);
@@ -3073,18 +3833,38 @@ namespace
         std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](unsigned char Value_) {
             return static_cast<char>(std::tolower(Value_));
         });
-        if (_Extension != ".ipt")
-            throw std::invalid_argument("产品模板必须使用 .iPT 压缩包");
+        if (_Extension != ".itpt")
+            throw std::invalid_argument("产品模板必须使用 .itpt 压缩包");
         auto _Runtime = InvokeProductTemplatePackageRuntime(ApplicationContext_, ObjectMap{
             { "action", std::string("inspect") }, { "sourcePath", _SourcePath }
         });
         auto _Package = GetRequiredObject(_Runtime, "package");
         const auto _Descriptor = GetRequiredObject(_Package, "descriptor");
         const auto _TemplateID = GetRequiredText(_Descriptor, "id", 240);
-        const auto _Name = _Descriptor.contains("displayName") && _Descriptor.at("displayName").Is<std::string>()
-            ? _Descriptor.at("displayName").To<std::string>() : _TemplateID;
+        const auto _Name = [&]() {
+            if (const auto _DisplayName = _Descriptor.find("displayName");
+                _DisplayName != _Descriptor.end())
+            {
+                if (_DisplayName->second.Is<std::string>())
+                    return _DisplayName->second.To<std::string>();
+                if (_DisplayName->second.Is<ObjectMap>())
+                {
+                    const auto& _Localized = _DisplayName->second.To<ObjectMap>();
+                    return GetString(_Localized, "zh-CN",
+                        GetString(_Localized, "zh", GetString(_Localized, "en-US", _TemplateID)));
+                }
+            }
+            return _TemplateID;
+        }();
         _Package["name"] = _Name;
-        _Package["sourceFormat"] = std::string("iPT");
+        _Package["sourceFormat"] = std::string("itpt");
+        MaterializeUserProductTemplate(ApplicationContext_, _Package);
+        // The executable template is now a normal directory package under the
+        // user data root. Keep the user-data record lightweight; startup and
+        // evaluation read template.json/template.py/resource directly.
+        _Package.erase("scriptSource");
+        _Package.erase("resources");
+        _Package["storage"] = std::string("filesystem");
         iCAX::Application::CProductUserDataRecord _Record;
         _Record.FeatureID = kProductTemplateFeatureID;
         _Record.RecordType = kProductTemplateRecordType;
@@ -3109,16 +3889,21 @@ namespace
         const auto _Name = GetRequiredText(_Request, "name", 120);
         auto _Package = [&]() {
             auto _Loaded = LoadPythonTemplatePackage(ApplicationContext_, _BaseID);
-            ObjectMap _Result;
-            _Result["descriptor"] = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(
-                ReadTextFile(_Loaded.DescriptorPath));
-            _Result["scriptSource"] = ReadTextFile(_Loaded.ScriptPath);
-            _Result["sourceFormat"] = std::string("iPT");
+            auto _Runtime = InvokeProductTemplatePackageRuntime(ApplicationContext_, ObjectMap{
+                { "action", std::string("inspect-directory") },
+                { "sourceDirectory", PathToUTF8(_Loaded.DescriptorPath.parent_path()) }
+            });
+            ObjectMap _Result = GetRequiredObject(_Runtime, "package");
+            _Result["sourceFormat"] = std::string("itpt");
             _Result["baseTemplateId"] = _BaseID;
             _Result["name"] = _Name;
             _Result["description"] = TrimText(GetString(_Request, "description"));
             return _Result;
         }();
+        MaterializeUserProductTemplate(ApplicationContext_, _Package);
+        _Package.erase("scriptSource");
+        _Package.erase("resources");
+        _Package["storage"] = std::string("filesystem");
         // Keep the executable descriptor unchanged; the personal display name
         // is metadata only, so exporting the package remains a valid template.
         iCAX::Application::CProductUserDataRecord _Record;
@@ -3145,6 +3930,7 @@ namespace
         const auto _ID = GetRequiredText(_Request, "id", 240);
         const auto _TargetPath = GetRequiredText(_Request, "targetPath", 32767);
         ObjectMap _Package;
+        std::string _SourceDirectory;
         if (_Scope == "personal")
         {
             const auto _RecordID = UuidToString(ParseRequiredUuid(_ID, "id"));
@@ -3152,7 +3938,16 @@ namespace
                 kProductTemplateFeatureID, kProductTemplateRecordType, _RecordID);
             if (!_Record || !_Record->Payload.Is<ObjectMap>())
                 throw std::invalid_argument("产品模板记录不存在");
-            _Package = _Record->Payload.To<ObjectMap>();
+            const auto _Stored = _Record->Payload.To<ObjectMap>();
+            const auto _StoredDescriptor = GetRequiredObject(_Stored, "descriptor");
+            const auto _TemplateID = GetRequiredText(_StoredDescriptor, "id", 240);
+            const auto _Loaded = LoadPythonTemplatePackage(ApplicationContext_, _TemplateID);
+            const auto _Runtime = InvokeProductTemplatePackageRuntime(ApplicationContext_, ObjectMap{
+                { "action", std::string("inspect-directory") },
+                { "sourceDirectory", PathToUTF8(_Loaded.DescriptorPath.parent_path()) }
+            });
+            _Package = GetRequiredObject(_Runtime, "package");
+            _SourceDirectory = PathToUTF8(_Loaded.DescriptorPath.parent_path());
         }
         else if (_Scope == "builtin")
         {
@@ -3160,31 +3955,58 @@ namespace
             _Package["descriptor"] = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(
                 ReadTextFile(_Loaded.DescriptorPath));
             _Package["scriptSource"] = ReadTextFile(_Loaded.ScriptPath);
+            _SourceDirectory = PathToUTF8(_Loaded.DescriptorPath.parent_path());
         }
         else throw std::invalid_argument("产品模板来源无效");
-        const auto _Result = InvokeProductTemplatePackageRuntime(ApplicationContext_, ObjectMap{
+        ObjectMap _ExportRequest{
             { "action", std::string("export") },
             { "descriptor", GetRequiredObject(_Package, "descriptor") },
             { "scriptSource", GetString(_Package, "scriptSource") },
             { "targetPath", _TargetPath }
-        });
+        };
+        if (const auto _Resources = _Package.find("resources");
+            _Resources != _Package.end())
+            _ExportRequest["resources"] = _Resources->second;
+        if (!_SourceDirectory.empty()) _ExportRequest["sourceDirectory"] = _SourceDirectory;
+        const auto _Result = InvokeProductTemplatePackageRuntime(ApplicationContext_, _ExportRequest);
         ObjectMap _Response = _Result;
-        _Response["format"] = std::string("iPT");
+        _Response["format"] = std::string("itpt");
         return MakeResponse(Variant(_Response));
     }
 
     iCAX::Interaction::CInvocationResult HandleDeleteProductTemplate(
         const iCAX::Interaction::CInvocation& Request_,
-        const iCAX::Application::IApplicationContext&,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
         iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext*)
     {
         const auto _Request = DecodeObjectPayload(Request_);
         const auto _ID = UuidToString(ParseRequiredUuid(GetRequiredText(_Request, "id"), "id"));
-        const auto _Deleted = GetUserDataStore(ProductContext_)->Delete(
+        auto _Store = GetUserDataStore(ProductContext_);
+        std::string _TemplateID;
+        if (const auto _Record = _Store->Get(kProductTemplateFeatureID, kProductTemplateRecordType, _ID);
+            _Record && _Record->Payload.Is<ObjectMap>())
+        {
+            if (const auto _Descriptor = _Record->Payload.To<ObjectMap>().find("descriptor");
+                _Descriptor != _Record->Payload.To<ObjectMap>().end() && _Descriptor->second.Is<ObjectMap>())
+                _TemplateID = GetString(_Descriptor->second.To<ObjectMap>(), "id");
+        }
+        const auto _Deleted = _Store->Delete(
             kProductTemplateFeatureID, kProductTemplateRecordType, _ID,
             GetUInt64(_Request, "revision", 0));
+        if (_Deleted && !_TemplateID.empty())
+        {
+            const auto _Root = ResolveUserTemplateRoot(ApplicationContext_);
+            if (!_Root.empty())
+            {
+                std::error_code _Error;
+                std::filesystem::remove_all(
+                    _Root / "product" / std::filesystem::path(
+                        std::u8string(_TemplateID.begin(), _TemplateID.end())), _Error);
+                if (_Error) throw std::runtime_error("无法删除用户产品模板文件：" + _Error.message());
+            }
+        }
         return MakeResponse(ObjectMap{{ "deleted", _Deleted }});
     }
 
@@ -3228,12 +4050,9 @@ namespace
             });
             return _Value;
         }();
-        if (_Extension != ".icaxprofile" && _Extension != ".zip")
-            throw std::invalid_argument("TubeDesigner requires an .icaxprofile package");
-        const auto _Password = GetString(_Request, "password");
-        if (_Password.size() > 256)
-            throw std::invalid_argument("TubeDesigner profile package password is too long");
-        auto _Package = ImportProfilePackage(ApplicationContext_, _SourcePath, _Password);
+        if (_Extension != ".ittt")
+            throw std::invalid_argument("TubeDesigner requires an .ittt package");
+        auto _Package = ImportProfilePackage(ApplicationContext_, _SourcePath, "");
         const auto _Descriptor = GetRequiredObject(_Package, "descriptor");
 
         iCAX::Application::CProductUserDataRecord _Record;
@@ -4971,15 +5790,20 @@ namespace
         const iCAX::Application::IApplicationContext& ApplicationContext_, iCAX::Project::ISceneContext& Scene_,
         const ObjectMap& Original_ = {}, bool Rebased_ = false,
         std::vector<SPunchCut>* PreviewCuts_ = nullptr, SPunchGeometryStatistics* Statistics_ = nullptr,
-        SPunchPreviewDiagnostics* PreviewDiagnostics_ = nullptr, bool ToolsOnly_ = false, double NominalWallThickness_ = 0)
+        SPunchPreviewDiagnostics* PreviewDiagnostics_ = nullptr, bool ToolsOnly_ = false, double NominalWallThickness_ = 0,
+        const VariantArray& UserTools_ = {})
     {
         ReportExportProgress(Request_, "punch", 0, 1, "正在运行刀具模板");
         VariantArray _Features;
         for (const auto& _Feature : Features_) _Features.emplace_back(PunchFeatureSnapshot(_Feature));
-        const auto _Prepared = InvokePunchToolRuntime(ApplicationContext_, {
+        ObjectMap _PunchParameters{
             {"action",std::string("prepare")},{"features",_Features},{"ends",PunchEndsSnapshot(Ends_)},{"bounds",ShapeBounds(Base_)},
-            {"original",Original_},{"rebased",Rebased_}
-        });
+            {"original",Original_},{"rebased",Rebased_},{"userTools",UserTools_}
+        };
+        const auto _UserMoldRoot = ResolveUserMoldRoot(ApplicationContext_);
+        if (!_UserMoldRoot.empty() && std::filesystem::is_directory(_UserMoldRoot))
+            _PunchParameters["userToolRoot"] = PathToUTF8(_UserMoldRoot);
+        const auto _Prepared = InvokePunchToolRuntime(ApplicationContext_, _PunchParameters);
         Features_ = ReadPunchFeatures(_Prepared,"features");
         Ends_ = ReadPunchEnds(_Prepared);
         std::map<std::string,std::shared_ptr<const iCAX::GeometryData::BRepModel>> _Frozen;
@@ -5022,7 +5846,9 @@ namespace
                 if (_Feature.SkippedInstances.size() == _Feature.ArrayCount * _Feature.RowCount) continue;
                 _Feature.ToolShape = PunchSnapshotShape(GetRequiredObject(_Feature.TemplateData,"toolSnapshot"),_Feature.ToolIsProfile);
                 _Feature.Type = GetString(GetRequiredObject(_Feature.TemplateData,"toolRef"),"id");
-                _Feature.ToolInPartCoordinates = GetString(GetRequiredObject(GetRequiredObject(_Feature.TemplateData,"toolSnapshot"),"geometry"),"coordinateSpace")=="part";
+                const auto _CoordinateSpace = GetString(GetRequiredObject(GetRequiredObject(_Feature.TemplateData,"toolSnapshot"),"geometry"),"coordinateSpace");
+                _Feature.ToolInPartCoordinates = _CoordinateSpace=="part" || _CoordinateSpace=="part-local";
+                _Feature.ToolInPartLocalCoordinates = _CoordinateSpace=="part-local";
                 if(!_Feature.ToolInPartCoordinates) PreparePunchToolFootprint(_Feature);
             }
             for (auto* _End : {&Ends_.Start, &Ends_.End}) if (_End->TemplateData.contains("toolSnapshot")) {
@@ -5371,6 +6197,78 @@ namespace
         ReleaseTransientParts(*Scene_, {});
         SyncNestingPersistence(*Scene_);
         return _Result;
+    }
+
+    iCAX::Interaction::CInvocationResult HandleGenerateProductTemplatePreview(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext* Scene_)
+    {
+        if (!Scene_)
+            throw std::invalid_argument("TubeDesigner.GenerateProductTemplatePreview requires a scene");
+        tube::license::Enforce<101, tube::license::Feature::Design>();
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _TemplateID = GetRequiredText(_Payload, "templateId", 256);
+        if (_TemplateID.empty())
+            throw std::invalid_argument("产品模板预览缺少模板 ID");
+        if (const auto _It = _Payload.find("parameters");
+            _It != _Payload.end() && !_It->second.Is<ObjectMap>())
+            throw std::invalid_argument("产品模板预览参数必须是对象");
+
+        ObjectMap _EvaluationPayload{{"templateId", _TemplateID}};
+        if (const auto _It = _Payload.find("templateVersion"); _It != _Payload.end())
+            _EvaluationPayload["templateVersion"] = _It->second;
+        if (const auto _It = _Payload.find("parameters"); _It != _Payload.end()
+            && _It->second.Is<ObjectMap>())
+        {
+            for (const auto& [_Key, _Value] : _It->second.To<ObjectMap>())
+                _EvaluationPayload[_Key] = _Value;
+        }
+        auto _ComponentStore = ProductContext_ ? GetUserDataStore(ProductContext_) : nullptr;
+        const auto _Evaluation = EvaluateNeutralTemplate(
+            ApplicationContext_, _EvaluationPayload, "display", {},
+            _ComponentStore.get());
+        const auto _Output = FindOutputSet(_Evaluation.Model, "result");
+        if (!_Output || _Output->ItemKeys.empty())
+            throw std::runtime_error("产品模板没有可预览的几何结果");
+        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Evaluation.Model);
+        const auto _Material = EnsureDesignerMaterial(*Scene_);
+        VariantArray _Items;
+        _Items.reserve(_Output->ItemKeys.size());
+        std::uint64_t _Index = 0;
+        for (const auto& _ItemKey : _Output->ItemKeys)
+        {
+            const auto& _Item = FindModelItem(_Evaluation.Model, _ItemKey);
+            const auto _Representation = _Item.Representations.find("result");
+            if (_Representation == _Item.Representations.end())
+                throw std::runtime_error("产品模板预览项没有 result 几何: " + _Item.Key);
+            const auto _Shape = _Geometry.At(_Representation->second);
+            if (_Shape.IsNull()) continue;
+            const auto _Name = _Item.DisplayName.Resolve("zh-CN");
+            const auto _BRep = StoreBRep(
+                *Scene_, "tube-designer/template-preview/" + _Evaluation.Descriptor.ID + "/" + _Item.Key,
+                _Name + " preview", _Shape);
+            const auto _Mesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+                Scene_->Resources(), _BRep.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+            _Items.emplace_back(ObjectMap{
+                {"entityId", std::string("template-preview-") + _Evaluation.Descriptor.ID + "-" + std::to_string(++_Index)},
+                {"key", _Item.Key},
+                {"name", _Name},
+                {"geometry", ObjectMap{{"url", _Mesh.URL}, {"version", _Mesh.nVersion}}},
+                {"bounds", ShapeBounds(_Shape)},
+            });
+        }
+        if (_Items.empty())
+            throw std::runtime_error("产品模板没有有效的预览实体");
+        return MakeResponse(Variant(ObjectMap{
+            {"templateId", _Evaluation.Descriptor.ID},
+            {"templateVersion", _Evaluation.Descriptor.Version},
+            {"parameters", _Evaluation.Parameters},
+            {"items", std::move(_Items)},
+            {"material", ObjectMap{{"url", _Material.URL}, {"version", _Material.nVersion}}},
+        }));
     }
 
     const iCAX::TemplateRuntime::SOutputSet& ManufacturingOutput(
@@ -6877,7 +7775,7 @@ namespace
     iCAX::Interaction::CInvocationResult HandleGetPunchTools(
         const iCAX::Interaction::CInvocation&,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+        iCAX::Product::IProductContext* ProductContext_, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
         ObjectMap _Parameters{{"action",std::string("catalogue")}};
         VariantArray _TemplateSources;
@@ -6893,19 +7791,148 @@ namespace
                 {"templateName",_Directory.filename().string()}
             });
         }
+        const auto _UserMoldRoot = ResolveUserMoldRoot(ApplicationContext_);
+        if (!_UserMoldRoot.empty() && std::filesystem::is_directory(_UserMoldRoot))
+            _TemplateSources.emplace_back(ObjectMap{
+                { "scope", std::string("user") },
+                { "root", PathToUTF8(_UserMoldRoot) }
+            });
         if (!_TemplateSources.empty()) _Parameters["catalogueSources"] = std::move(_TemplateSources);
-        return MakeResponse(InvokePunchToolRuntime(ApplicationContext_,std::move(_Parameters)));
+        auto _Response = InvokePunchToolRuntime(ApplicationContext_,std::move(_Parameters));
+        if (ProductContext_)
+            _Response["tools"] = [&] {
+                auto _Tools = _Response.at("tools").To<VariantArray>();
+                for (const auto& _Value : ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)))
+                    _Tools.emplace_back(_Value);
+                return _Tools;
+            }();
+        return MakeResponse(std::move(_Response));
+    }
+
+    std::string NewPunchToolDefinitionID()
+    {
+        auto _ID = UuidToString(iCAX::Data::GenerateNewUUID());
+        std::erase_if(_ID, [](const unsigned char _Character) {
+            return !((_Character >= 'a' && _Character <= 'z')
+                || (_Character >= 'A' && _Character <= 'Z')
+                || (_Character >= '0' && _Character <= '9'));
+        });
+        return "user-" + _ID;
+    }
+
+    iCAX::Application::CProductUserDataRecord SavePunchToolUserRecord(
+        iCAX::Product::IProductContext* ProductContext_, const ObjectMap& Request_,
+        ObjectMap Descriptor_, ObjectMap Geometry_ = {}, std::string ScriptSource_ = {},
+        std::string PackageDigest_ = {}, ObjectMap Resources_ = {})
+    {
+        if (!ProductContext_) throw std::runtime_error("模具保存需要产品上下文");
+        auto _Store = GetUserDataStore(ProductContext_);
+        const auto _ID = GetString(Descriptor_, "id").empty()
+            ? NewPunchToolDefinitionID() : GetRequiredText(Descriptor_, "id", 80);
+        Descriptor_["id"] = _ID;
+        Descriptor_["schema"] = std::string("icax.punch-tool");
+        Descriptor_["schemaVersion"] = 1ull;
+        Descriptor_["displayName"] = GetRequiredText(Request_, "name", 120);
+        Descriptor_["version"] = GetString(Descriptor_, "version", "1.0.0");
+        Descriptor_["kind"] = GetString(Descriptor_, "kind", "fixed");
+        Descriptor_["target"] = GetString(Descriptor_, "target", "side");
+        Descriptor_["category"] = GetString(Request_, "category",
+            GetString(Descriptor_, "category", GetString(Descriptor_, "target") == "end" ? "端面" : "孔型"));
+        if (GetString(Descriptor_, "kind") != "fixed" && GetString(Descriptor_, "kind") != "programmatic")
+            throw std::invalid_argument("模具类型只能是程式或定式");
+        if (GetString(Descriptor_, "target") != "side" && GetString(Descriptor_, "target") != "end"
+            && GetString(Descriptor_, "target") != "part")
+            throw std::invalid_argument("模具适用位置无效");
+        if (GetString(Descriptor_, "kind") == "fixed") {
+            Descriptor_["parameters"] = VariantArray{};
+            if (Geometry_.empty()) throw std::invalid_argument("定式模具必须包含闭合截面");
+        } else if (ScriptSource_.empty()) {
+            throw std::invalid_argument("程式模具必须包含 tool.py");
+        }
+        iCAX::Application::CProductUserDataRecord _Record;
+        _Record.FeatureID = kPunchToolFeatureID;
+        _Record.RecordType = GetString(Descriptor_, "kind") == "fixed"
+            ? kFixedPunchToolRecordType : kParametricPunchToolRecordType;
+        _Record.SubjectType = "punch-tool-definition";
+        _Record.SubjectID = _ID;
+        _Record.RecordID = GetString(Request_, "recordId");
+        if (_Record.RecordID.empty()) _Record.RecordID = UuidToString(iCAX::Data::GenerateNewUUID());
+        _Record.OwnerScope = "personal";
+        ObjectMap _Payload{{"descriptor", Descriptor_}};
+        if (!Geometry_.empty()) _Payload["geometry"] = Geometry_;
+        if (!ScriptSource_.empty()) _Payload["scriptSource"] = ScriptSource_;
+        if (!PackageDigest_.empty()) _Payload["packageDigest"] = PackageDigest_;
+        if (!Resources_.empty()) _Payload["resources"] = std::move(Resources_);
+        _Record.Payload = Variant(std::move(_Payload));
+        return _Store->Put(_Record, GetUInt64(Request_, "revision", 0));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleSavePunchTool(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext&,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        tube::license::Enforce<119, tube::license::Feature::Design>();
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _Kind = GetString(_Request, "kind", "fixed");
+        ObjectMap _Descriptor = _Request.contains("descriptor")
+            ? GetRequiredObject(_Request, "descriptor") : ObjectMap();
+        _Descriptor["kind"] = _Kind;
+        _Descriptor["target"] = GetString(_Request, "target", "side");
+        ObjectMap _Geometry;
+        if (_Request.contains("geometry")) _Geometry = GetRequiredObject(_Request, "geometry");
+        ObjectMap _Resources;
+        if (_Request.contains("resources")) _Resources = GetRequiredObject(_Request, "resources");
+        const auto _Record = SavePunchToolUserRecord(ProductContext_, _Request, std::move(_Descriptor),
+            std::move(_Geometry), GetString(_Request, "scriptSource"), GetString(_Request, "packageDigest"),
+            std::move(_Resources));
+        return MakeResponse(ObjectMap{{ "tool", MakePunchToolUserDataPayload(_Record) }});
+    }
+
+    iCAX::Interaction::CInvocationResult HandleImportPunchToolPackage(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        tube::license::Enforce<120, tube::license::Feature::Design>();
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _SourcePath = GetRequiredText(_Request, "sourcePath", 32767);
+        auto _Extension = Utf8Path(_SourcePath).extension().string();
+        std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](const unsigned char _Value) {
+            return static_cast<char>(std::tolower(_Value));
+        });
+        if (_Extension != ".itmt") throw std::invalid_argument("程式模具必须使用 .itmt 压缩包");
+        auto _Runtime = InvokePunchToolPackageRuntime(ApplicationContext_, ObjectMap{
+            { "action", std::string("inspect") }, { "sourcePath", _SourcePath }
+        });
+        const auto _Package = GetRequiredObject(_Runtime, "package");
+        const auto _Descriptor = GetRequiredObject(_Package, "descriptor");
+        ObjectMap _RequestWithName = _Request;
+        _RequestWithName["name"] = GetString(_Descriptor, "displayName", "程式模具");
+        _RequestWithName["kind"] = std::string("programmatic");
+        _RequestWithName["target"] = GetString(_Descriptor, "target", "side");
+        auto _UserDescriptor = _Descriptor;
+        _UserDescriptor["sourceId"] = GetString(_Descriptor, "id");
+        _UserDescriptor.erase("id");
+        ObjectMap _Resources;
+        if (_Package.contains("resources")) _Resources = GetRequiredObject(_Package, "resources");
+        auto _Record = SavePunchToolUserRecord(ProductContext_, _RequestWithName, _UserDescriptor,
+            {}, GetString(_Package, "scriptSource"), GetString(_Package, "packageDigest"),
+            std::move(_Resources));
+        return MakeResponse(ObjectMap{{ "tool", MakePunchToolUserDataPayload(_Record) }});
     }
 
     iCAX::Interaction::CInvocationResult HandleGetPartDrawingTools(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+        iCAX::Product::IProductContext* ProductContext_, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
     {
         // Part drawing and the punch wizard consume the same mould catalogue,
         // including template-provided resources. Keep one source of truth so
         // a mould added for one entry point is immediately visible in the other.
-        return HandleGetPunchTools(Request_, ApplicationContext_, nullptr, nullptr, nullptr);
+        return HandleGetPunchTools(Request_, ApplicationContext_, ProductContext_, nullptr, nullptr);
     }
 
     ObjectMap ReadEditableDrawingConfig(const CManufacturingPartComponent& Part_, bool PartDrawing_)
@@ -7011,11 +8038,12 @@ namespace
         SPunchPreviewDiagnostics _Diagnostics;
         _Diagnostics.AllowDisconnectedResults=!_ToolsOnly;
         const double _NominalWall=_Drawing.empty()?0:GetDouble(GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile"),"wallThickness",0);
+        const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         TopoDS_Shape _Shape;
         std::string _ResultError;
         try {
             _Shape = EvaluatePunch(_Base, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
-                _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall);
+                _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools);
         } catch(const std::exception& _Error) {
             // A failed boolean result is not a successful part. Preview alone
             // publishes its current blank/tools so the user can see what failed;
@@ -7292,8 +8320,9 @@ namespace
         const auto _BaseShape = BuildPunchBlank(_Profile, _Length);
         if (_BaseShape.IsNull() || !BRepCheck_Analyzer(_BaseShape).IsValid())
             throw std::runtime_error("无法从所选管型生成有效的直管实体");
+        const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         SPunchPreviewDiagnostics _ResultState;_ResultState.AllowDisconnectedResults=PartDrawing_;
-        const auto _Shape = EvaluatePunch(_BaseShape, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_,{},false,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr);
+        const auto _Shape = EvaluatePunch(_BaseShape, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_,{},false,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
         if(PartDrawing_&&_ResultState.SolidCount==0)throw std::invalid_argument("三维零件没有剩余实体，无法创建；请调整刀具");
 
         auto _Name = TrimText(GetString(_Payload, "name"));
@@ -7445,7 +8474,7 @@ namespace
     iCAX::Interaction::CInvocationResult ApplyEditableDrawingPart(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
-        iCAX::Product::IProductContext*,
+        iCAX::Product::IProductContext* ProductContext_,
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext* Scene_,bool PartDrawing_)
     {
@@ -7501,8 +8530,9 @@ namespace
         if (!_Rebuilt.bOK || _Rebuilt.Shape.IsNull())
             throw std::runtime_error("无法读取冲孔基准几何");
         const auto _BaseShape=_Rebased?BuildPunchBlank(GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile"),GetDouble(_Drawing,"length",0)):_Rebuilt.Shape;
+        const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         SPunchPreviewDiagnostics _ResultState;_ResultState.AllowDisconnectedResults=PartDrawing_;
-        const auto _Shape = EvaluatePunch(_BaseShape, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_, _ExistingConfig,_Rebased,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr);
+        const auto _Shape = EvaluatePunch(_BaseShape, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_, _ExistingConfig,_Rebased,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
         if(PartDrawing_&&_ResultState.SolidCount==0)throw std::invalid_argument("三维零件没有剩余实体，无法保存；请调整刀具");
         if(_Rebased) {
             const auto _Base=StorePunchBRep(*Scene_,"tube-designer/nesting/drawing-base/"+UuidToString(iCAX::Data::GenerateNewUUID()),"三维绘制主管",_BaseShape,Request_);
@@ -9403,6 +10433,7 @@ namespace
         CTubeDesignerSDO() : CSDO("TubeDesigner")
         {
             ExposeMethod("List", &HandleList);
+            ExposeMethod("GetTemplateDescriptor", &HandleGetTemplateDescriptor);
             ExposeMethod("MachiningData", &HandleMachiningData);
             ExposeMethod("ListUserData", &HandleListUserData);
             ExposeMethod("ImportProductTemplatePackage", &HandleImportProductTemplatePackage);
@@ -9440,6 +10471,7 @@ namespace
             ExposeMethod("SaveSketch", &HandleSaveSketch);
             ExposeMethod("SavePartSketch", &HandleSavePartSketch);
             ExposeMethod("GeneratePreview", &HandleGeneratePreview);
+            ExposeMethod("GenerateProductTemplatePreview", &HandleGenerateProductTemplatePreview);
             ExposeMethod("Generate", &HandleGeneratePreview);
             ExposeMethod("Disassemble", &HandleDisassemble);
             ExposeMethod("DisassembleSelected", &HandleDisassemble);
@@ -9451,6 +10483,8 @@ namespace
             ExposeMethod("ApplyPunchWizard", &HandleApplyPunchWizard);
             ExposeMethod("PreviewPunchWizard", &HandlePreviewPunchWizard);
             ExposeMethod("GetPunchTools", &HandleGetPunchTools);
+            ExposeMethod("SavePunchTool", &HandleSavePunchTool);
+            ExposeMethod("ImportPunchToolPackage", &HandleImportPunchToolPackage);
             ExposeMethod("GetPartDrawingTools", &HandleGetPartDrawingTools);
             ExposeMethod("PreviewPartDrawing", &HandlePreviewPartDrawing);
             ExposeMethod("AddPartDrawing", &HandleAddPartDrawing);

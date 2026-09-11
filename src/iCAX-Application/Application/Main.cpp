@@ -149,7 +149,10 @@ namespace
         const auto _UserDataPath = std::filesystem::path(std::u8string(
             _UserDataText.begin(), _UserDataText.end()));
         const auto _BrowserDataPath = _UserDataPath / "Browser";
-        const auto _CachePath = _UserDataPath / "Cache" / "Browser";
+        // CEF requires cache_path to be a child of root_cache_path.  Keeping
+        // the cache under Browser avoids CefInitialize rejecting the config
+        // before the product/user data is even loaded.
+        const auto _CachePath = _BrowserDataPath / "Cache";
         const auto _LogPath = _UserDataPath / "Logs";
         std::filesystem::create_directories(_BrowserDataPath);
         std::filesystem::create_directories(_CachePath);

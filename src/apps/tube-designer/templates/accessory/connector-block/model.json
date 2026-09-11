@@ -1,0 +1,11 @@
+{
+  "schema": "icax.component-model",
+  "schemaVersion": 1,
+  "id": "connector-block",
+  "name": "双孔连接块",
+  "category": "连接件/连接块",
+  "sourcing": "made",
+  "material": "Q235B",
+  "description": "原创固定尺寸40×30×20mm连接块，两个直径8mm通孔，孔中心距20mm；XY居中，Z底0。自制机加工件，不进入管材排样。",
+  "geometryFile": "resource/model.icaxmodel.json"
+}

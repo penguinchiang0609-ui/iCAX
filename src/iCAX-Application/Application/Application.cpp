@@ -35,7 +35,12 @@ namespace
 
         for (const auto& _Candidate : _Candidates)
         {
-            if (std::filesystem::exists(_Candidate) && std::filesystem::is_directory(_Candidate))
+            // A runtime data copy may create apps/ before the product manifest
+            // is present.  Do not select such a partial root: continue to the
+            // source checkout (or another complete installation root).
+            const auto _Manifest = _Candidate / "tube-designer" / "product.manifest.json";
+            if (std::filesystem::exists(_Candidate) && std::filesystem::is_directory(_Candidate)
+                && std::filesystem::is_regular_file(_Manifest))
             {
                 return _CanonicalDirectory(_Candidate);
             }

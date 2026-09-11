@@ -1,0 +1,18 @@
+{
+  "schema":"icax.punch-tool","schemaVersion":1,"id":"v-notch-asymmetric","version":"1.0.0",
+  "displayName":"非对称 V 槽","kind":"programmatic","target":"part","category":"槽口",
+  "description":"左右两侧夹角独立设置的非对称 V 槽。",
+  "illustration":{"viewBox":"0 0 48 48","paths":["M6 9 H42","M6 9 L22 38 L42 17","M18 38 H26"]},
+  "parameterDiagram":{"viewBox":"0 0 240 160","paths":["M24 28 H216","M24 28 L112 124 L216 56","M100 124 H124"],"lines":[{"x1":24,"y1":16,"x2":216,"y2":16},{"x1":92,"y1":92,"x2":116,"y2":103},{"x1":126,"y1":101,"x2":159,"y2":72},{"x1":100,"y1":124,"x2":132,"y2":124}],"labels":[{"x":102,"y":91,"text":"左角","parameter":"leftAngle","unit":"°"},{"x":158,"y":69,"text":"右角","parameter":"rightAngle","unit":"°"},{"x":116,"y":144,"text":"留底","parameter":"bridge","unit":" mm"}]},
+  "parameters":[
+    {"key":"leftAngle","displayName":"左半角（相对槽深方向，°）","valueType":"number","defaultValue":30,"min":0.5,"max":85},
+    {"key":"rightAngle","displayName":"右半角（相对槽深方向，°）","valueType":"number","defaultValue":60,"min":0.5,"max":85},
+    {"key":"bridge","displayName":"底部保留厚度（mm）","valueType":"number","defaultValue":1,"min":0.01,"max":10000},
+    {"key":"rootRadius","displayName":"槽底圆角 R（0 不添加，mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"rootWidth","displayName":"槽底平口（0 不添加，mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"reliefDiameter","displayName":"附加释放孔直径（0 不添加，mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"reliefLift","displayName":"附加释放孔中心上移（mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"bottomCut","displayName":"底部切除","valueType":"boolean","defaultValue":false},
+    {"key":"bottomCutWidth","displayName":"底部切除宽度（mm）","valueType":"number","defaultValue":2,"min":0.01,"max":10000}
+  ]
+}

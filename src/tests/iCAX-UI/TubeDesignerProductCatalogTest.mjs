@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   buildCatalogEntries, buildTemplateGroupTree, catalogText, getCatalogEntry, getCatalogEntryGroupKeys, getCatalogEntryId,
-  getCatalogParameters, renderGuardrailSchematic,
+  getCatalogParameters, getTemplateVisualAsset, renderGuardrailSchematic,
 } from "../../apps/tube-designer/webpage/productCatalog.mjs";
 import { renderDesignerAddDialog, renderDesignerAddParameterContent, renderDesignerRightPane } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { handleDesignerAreaAction } from "../../apps/tube-designer/webpage/designerActions.mjs";
@@ -48,6 +48,17 @@ await test("catalog groups security windows, guardrails and stairs independently
   assert.equal(tree[1].children[0].title, "竖杆护栏");
   assert.equal(tree[1].children[0].templates.length, 3);
   assert.equal(tree[0].templates[0].templateId, "window");
+});
+
+await test("template-owned catalog artwork resolves from host data or package resources", () => {
+  const hostAsset = getTemplateVisualAsset({
+    extensions: { catalog: { assetData: { schematic: "data:image/svg+xml;base64,HOST" } } },
+  });
+  assert.equal(hostAsset, "data:image/svg+xml;base64,HOST");
+  const packageAsset = getTemplateVisualAsset({
+    resources: { "resource/schematic.svg": "PHN2Zy8+" },
+  });
+  assert.equal(packageAsset, "data:image/svg+xml;base64,PHN2Zy8+");
 });
 
 await test("the default add style expands every category enclosing its selected card", async () => {
@@ -212,7 +223,7 @@ await test("editing existing instances never reapplies a catalog preset", async 
 });
 
 await test("shipped railing and staircase descriptors are in distinct primary categories", () => {
-  const readTemplate = (directory) => ({ ...JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/${directory}/template.json`, import.meta.url))), available: true });
+  const readTemplate = (directory) => ({ ...JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${directory}/template.json`, import.meta.url))), available: true });
   const shipped = ["single_face_security_window", "straight_stair_railing", "straight_steel_staircase", "l_turn_steel_staircase", "u_turn_steel_staircase"].map(readTemplate);
   const tree = buildTemplateGroupTree(shipped);
   assert.deepEqual(tree.map((group) => group.title), ["防盗窗", "护栏", "楼梯"]);
@@ -220,32 +231,37 @@ await test("shipped railing and staircase descriptors are in distinct primary ca
   assert.equal(tree[2].children[0].templates.length, 3);
 });
 
-await test("all 32 shipped modular guardrail styles use declared parameters and render individually", () => {
-  const descriptor = presentationDescriptor(JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/modular_guardrail/template.json", import.meta.url))));
-  const entries = buildCatalogEntries([descriptor]);
+await test("all 32 shipped modular guardrail styles are independent descriptors", () => {
+  const modularDirectories = ["modular_guardrail", ...[
+    "r3-left-l", "r3-right-l", "r3-u", "r3-left-double", "r3-right-double", "r3-u-double", "r3-large-middle",
+    "r2-straight", "r2-left-l", "r2-right-l", "r2-u", "r2-left-double", "r2-right-double", "r2-u-double", "r2-large-middle",
+    "round-straight", "round-left-l", "plate-straight", "lower-plate-straight", "cross-straight", "cross-left-l",
+    "diamond-straight", "diamond-left-l", "wall-straight", "wall-spear-straight", "glass-straight", "wall-left-l",
+    "wall-spear-left-l", "glass-left-l", "large-post-cap-straight", "template-cap-straight",
+  ].map((suffix) => `modular_guardrail_${suffix}`)];
+  const descriptors = modularDirectories.map((directory) => presentationDescriptor(JSON.parse(
+    readFileSync(new URL(`../../apps/tube-designer/templates/product/${directory}/template.json`, import.meta.url)),
+  )));
+  const entries = buildCatalogEntries(descriptors);
   assert.equal(entries.length, 32);
-  assert.equal(new Set(entries.map((entry) => entry.catalogEntryId)).size, 32);
-  const keys = new Set(descriptor.parameters.map((field) => field.key));
-  for (const preset of descriptor.extensions.catalog.presets) {
-    assert.ok(Object.keys(preset.parameters).every((key) => keys.has(key)), `${preset.id} has undeclared parameters`);
-    const entry = getCatalogEntry([descriptor], descriptor.id, preset.id);
-    for (const [key, value] of Object.entries(preset.parameters)) assert.deepEqual(entry.catalogParameters[key], value);
-    const html = renderDesignerAddDialog({ templates: [descriptor] }, {
-      tubeDesignerAddTemplateId: descriptor.id, tubeDesignerAddCatalogPresetId: preset.id,
-      tubeDesignerAddDraft: entry.catalogParameters,
-    });
-    assert.equal((html.match(/tube-designer-template-card selected/g) ?? []).length, 1);
-    assert.equal(/\[object Object\]|NaN/.test(html), false, `${preset.id}: invalid text or SVG`);
-    assert.match(html, /option value="3" data-tube-designer-value-type="number"/);
-  }
+  assert.equal(new Set(entries.map((entry) => entry.templateId)).size, 32);
+  assert.ok(descriptors.every((descriptor) => !descriptor.extensions?.catalog?.presets));
   assert.equal(entries.filter((entry) => entry.catalogParameters.cornerPostMode === "double").length, 6);
   assert.equal(entries.filter((entry) => entry.catalogParameters.infillType !== "bars").length, 8);
   assert.equal(entries.filter((entry) => entry.catalogPath.includes("围墙栏杆")).length, 4);
+  for (const entry of entries) {
+    const html = renderDesignerAddDialog({ templates: descriptors }, {
+      tubeDesignerAddTemplateId: entry.templateId,
+      tubeDesignerAddDraft: entry.catalogParameters,
+    });
+    assert.equal((html.match(/tube-designer-template-card selected/g) ?? []).length, 1);
+    assert.equal(/\[object Object\]|NaN/.test(html), false, `${entry.templateId}: invalid text or SVG`);
+  }
 });
 
 await test("security catalog separates common whole products from site-dependent enclosures", () => {
   const descriptors = ["single", "two", "three", "five"].map((kind) => presentationDescriptor(
-    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/${kind}_face_security_window/template.json`, import.meta.url)))));
+    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${kind}_face_security_window/template.json`, import.meta.url)))));
   const entries = buildCatalogEntries(descriptors);
   assert.equal(entries.length, 4);
   const manifest = JSON.parse(readFileSync(new URL("../../apps/tube-designer/product.manifest.json", import.meta.url)));
@@ -255,7 +271,7 @@ await test("security catalog separates common whole products from site-dependent
     assert.equal(registration.version, descriptor.version);
     assert.equal(registration.displayName, descriptor.name);
     const folder = descriptor.id.replaceAll("-", "_");
-    const generator = readFileSync(new URL(`../../apps/tube-designer/templates/${folder}/template.py`, import.meta.url), "utf8");
+    const generator = readFileSync(new URL(`../../apps/tube-designer/templates/product/${folder}/template.py`, import.meta.url), "utf8");
     assert.ok(generator.includes(`TEMPLATE_VERSION = "${descriptor.version}"`));
     const groups = new Set(descriptor.groups.map((group) => group.key));
     assert.ok(descriptor.parameters.every((field) => groups.has(field.groupKey)));
@@ -279,7 +295,7 @@ await test("security catalog separates common whole products from site-dependent
 
 await test("opening processes share choices and hide all inactive fabrication fields", () => {
   const descriptors = ["single", "two", "three", "five"].map((kind) => presentationDescriptor(
-    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/${kind}_face_security_window/template.json`, import.meta.url)))));
+    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${kind}_face_security_window/template.json`, import.meta.url)))));
   const reference = descriptors[0];
   for (const descriptor of descriptors) {
     for (const key of ["doorFrameJoinType", "doorLeafFrameJoinType", "doorGap", "doorHingeCount", "doorClearWidth", "doorClearHeight"]) {

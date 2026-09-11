@@ -654,7 +654,14 @@ def build_layout(p: dict[str, Any]) -> Layout:
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     purpose = _geometry.request_geometry_purpose(context)
     built = build_layout(parameters)
-    model = NeutralModel(template_id="modular-guardrail", template_version="1.1.0",
+    # This builder is shared by the base guardrail and every catalog variant
+    # (glass, plate, cross, round, left/right L, etc.).  The neutral model
+    # identity must belong to the package that invoked the builder; keeping the
+    # old base id here makes variant packages fail native identity validation
+    # even though their geometry is valid.
+    template = context.get("template", {})
+    model = NeutralModel(template_id=str(template.get("id", "modular-guardrail")),
+                         template_version=str(template.get("version", "1.1.0")),
                          package_digest=str(context.get("template", {}).get("packageDigest", "")), parameters=parameters)
     shared = _geometry.SharedTubeGeometry(model)
     originals: dict[str, str] = {}

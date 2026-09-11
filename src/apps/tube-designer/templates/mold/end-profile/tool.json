@@ -1,0 +1,7 @@
+{
+  "schema":"icax.punch-tool","schemaVersion":1,"id":"end-profile","version":"1.0.0",
+  "displayName":"支管 / DXF 截面端切刀具","kind":"programmatic","target":"end","requiresSection":true,"category":"端面",
+  "parameters":[
+    {"key":"cutMode","displayName":"成形方式","valueType":"string","defaultValue":"concave","options":[{"value":"concave","label":"凹口"},{"value":"convex","label":"凸口"}]}
+  ]
+}

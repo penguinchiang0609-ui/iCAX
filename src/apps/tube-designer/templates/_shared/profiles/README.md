@@ -30,14 +30,14 @@ profiles/<管型ID>/
 
 ## 可编辑管型包
 
-第三方可编辑管型使用扩展名 `.icaxprofile`。它本质上是一个 ZIP 压缩包，根目录只允许：
+第三方可编辑管型使用扩展名 `.ittt`。它本质上是使用产品固定 magic number 加密的 ZIP 压缩包，根目录只允许：
 
 ```text
 profile.json
 profile.py
 ```
 
-压缩包可以不加密，也可以使用 ZIP 传统密码保护；导入密码仅用于当次解包，不会保存。AES ZIP 不属于 Python 标准库支持范围，导入时会明确提示加密格式不受支持。
+压缩包统一使用 ZIP 传统密码保护，密码由产品固定 magic number 自动处理，用户不需要输入或保存密码。AES ZIP 不属于 Python 标准库支持范围，导入时会明确提示加密格式不受支持。
 
 可编辑包沿用版本 2 的 `icax.tube-profile-descriptor`。与内置管型不同，第三方包的每个参数都必须声明 `defaultValue`，并可选声明 `min`、`max`、`step` 和 `options`。脚本入口仍是 `build(parameters)` 与 `contours(profile, clearance, swap_axes)`。
 

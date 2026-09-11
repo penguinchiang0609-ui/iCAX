@@ -1,0 +1,11 @@
+{
+  "schema": "icax.component-model",
+  "schemaVersion": 1,
+  "id": "post-cap-40",
+  "name": "40方柱平盖",
+  "category": "护栏/柱帽",
+  "sourcing": "purchased",
+  "material": "Q235B",
+  "description": "原创固定尺寸实体柱帽；底面Z=0，XY居中，适配40mm方柱的顶面焊接。外宽44mm，高6mm，不自动缩放；需核对实际连接尺寸。",
+  "geometryFile": "resource/model.icaxmodel.json"
+}

@@ -1,0 +1,16 @@
+{
+  "schema":"icax.punch-tool","schemaVersion":1,"id":"edge-arc-groove","version":"1.2.0",
+  "displayName":"边弧槽","kind":"programmatic","target":"part","category":"槽口",
+  "description":"以 V 槽为基线，把一侧直边替换为连续圆弧；支持左圆弧和槽底附加工艺，定位和阵列由外部调用者处理。",
+  "illustration":{"viewBox":"0 0 48 48","paths":["M6 9 H42","M6 9 C9 18 13 31 24 38 L42 9","M20 38 H28"]},
+  "parameterDiagram":{"viewBox":"0 0 240 160","mirrorParameter":"leftArc","paths":["M24 28 H216","M24 28 C31 42 49 101 120 124 L216 28","M108 124 H132","M70 72 Q91 91 111 106"],"lines":[{"x1":24,"y1":16,"x2":216,"y2":16},{"x1":102,"y1":124,"x2":138,"y2":124},{"x1":120,"y1":124,"x2":120,"y2":145}],"labels":[{"x":120,"y":11,"text":"边弧槽"},{"x":120,"y":94,"text":"夹角","parameter":"angle","unit":"°"},{"x":73,"y":69,"text":"圆弧 R"},{"x":120,"y":156,"text":"留底","parameter":"bridge","unit":" mm"},{"x":120,"y":143,"text":"圆弧侧","parameter":"leftArc"}]},
+  "parameters":[
+    {"key":"angle","displayName":"V 槽夹角（°）","valueType":"number","defaultValue":90,"min":1,"max":170},
+    {"key":"leftArc","displayName":"左圆弧","valueType":"boolean","defaultValue":true},
+    {"key":"bridge","displayName":"底部保留厚度（mm）","valueType":"number","defaultValue":1,"min":0.01,"max":10000},
+    {"key":"reliefDiameter","displayName":"附加释放孔直径（0 不添加，mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"reliefLift","displayName":"附加释放孔中心上移（mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"bottomCut","displayName":"底部切除","valueType":"boolean","defaultValue":false},
+    {"key":"bottomCutWidth","displayName":"底部切除宽度（mm）","valueType":"number","defaultValue":2,"min":0.01,"max":10000}
+  ]
+}

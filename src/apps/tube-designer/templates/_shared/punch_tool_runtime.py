@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 import re
 
-ROOT = Path(__file__).resolve().parent / "punch-tools"
+ROOT = Path(__file__).resolve().parent.parent / "mold"
 SCHEMA = "icax.punch-tool"
 MAX_BYTES = 4 * 1024 * 1024
 
@@ -130,11 +130,12 @@ def _catalogue_root(root, scope="system", template_id="", template_name=""):
 def catalogue(sources=None):
     tools, errors = _catalogue_root(ROOT)
     for source in sources or []:
-        if not isinstance(source, dict) or source.get("scope") != "template":
+        if not isinstance(source, dict) or source.get("scope") not in ("template", "user"):
             errors.append("刀具目录来源无效")
             continue
+        scope = str(source.get("scope"))
         current, current_errors = _catalogue_root(
-            source.get("root", ""), "template", source.get("templateId", ""), source.get("templateName", ""))
+            source.get("root", ""), scope, source.get("templateId", ""), source.get("templateName", ""))
         tools.extend(current)
         errors.extend(current_errors)
     return {"tools": tools, "errors": errors}
@@ -208,7 +209,15 @@ def _user_entry(ref, user_tools):
     return None
 
 
-def _evaluate(ref, supplied, context, frozen=None, user_tools=None):
+def _package_root(ref, user_root=None):
+    if isinstance(ref, dict) and str(ref.get("libraryScope", ref.get("scope", ""))) == "user":
+        if not isinstance(user_root, str) or not user_root.strip():
+            return None
+        return Path(user_root).expanduser().resolve()
+    return ROOT
+
+
+def _evaluate(ref, supplied, context, frozen=None, user_tools=None, user_root=None):
     if not isinstance(ref, dict) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", str(ref.get("id", ""))):
         raise ValueError("请选择刀具模板")
     _user = _user_entry(ref, user_tools)
@@ -231,7 +240,10 @@ def _evaluate(ref, supplied, context, frozen=None, user_tools=None):
             raise ValueError("刀具不适用于当前加工位置")
     else:
         try:
-            descriptor, defaults, content, digest = _package(ROOT / ref["id"])
+            package_root = _package_root(ref, user_root)
+            if package_root is None:
+                raise ValueError("用户刀具目录不可用")
+            descriptor, defaults, content, digest = _package(package_root / ref["id"], package_root)
         except (ValueError, OSError, KeyError, TypeError):
             return _restore_frozen(frozen, ref, supplied, context)
         if (ref.get("version") and ref["version"] != descriptor["version"]) or (ref.get("digest") and ref["digest"] != digest):
@@ -264,7 +276,8 @@ def _evaluate(ref, supplied, context, frozen=None, user_tools=None):
                 raise ValueError("定式端部刀具须使用 end-local 坐标")
             geometry["coordinateSpace"] = "end-local"
     else:
-        namespace = {"__name__": f"icax_punch_tool_{digest}", "__file__": str(ROOT / ref["id"] / "tool.py")}
+        package_root = _package_root(ref, user_root) or ROOT
+        namespace = {"__name__": f"icax_punch_tool_{digest}", "__file__": str(package_root / ref["id"] / "tool.py")}
         exec(compile(content, namespace["__file__"], "exec"), namespace)
         if not callable(namespace.get("generate")):
             raise ValueError("程式刀具须提供 generate(parameters, context)")
@@ -425,7 +438,7 @@ def _legacy_parameters(item, descriptor):
     return {p["key"]: item.get(p["key"], p["defaultValue"]) for p in descriptor.get("parameters", [])}
 
 
-def _installed(ref, user_tools=None):
+def _installed(ref, user_tools=None, user_root=None):
     if not isinstance(ref, dict):
         return True  # Legacy migration is validated by the normal evaluator.
     _user = _user_entry(ref, user_tools)
@@ -435,7 +448,10 @@ def _installed(ref, user_tools=None):
         return (not ref.get("version") or ref["version"] == descriptor.get("version")) and (
             not ref.get("digest") or not digest or ref["digest"] == digest)
     try:
-        descriptor, _, _, digest = _package(ROOT / str(ref.get("id", "")))
+        package_root = _package_root(ref, user_root)
+        if package_root is None:
+            return False
+        descriptor, _, _, digest = _package(package_root / str(ref.get("id", "")), package_root)
         return (not ref.get("version") or ref["version"] == descriptor["version"]) and (
             not ref.get("digest") or ref["digest"] == digest)
     except (ValueError, OSError, KeyError, TypeError):
@@ -446,8 +462,8 @@ def _instance(item):
     return {key: copy.deepcopy(value) for key, value in item.items() if key not in ("toolSnapshot", "frozenTool", "frozenCut")}
 
 
-def _check_locked(item, user_tools=None):
-    if _installed(item.get("toolRef"), user_tools):
+def _check_locked(item, user_tools=None, user_root=None):
+    if _installed(item.get("toolRef"), user_tools, user_root):
         return
     frozen = item.get("frozenTool", {})
     if frozen.get("instance") != _instance(item):
@@ -460,25 +476,25 @@ def _freeze_item(item, snapshot):
     item["frozenTool"] = value
 
 
-def _check_original(parameters, user_tools=None):
+def _check_original(parameters, user_tools=None, user_root=None):
     # Supplied only by the backend from the persisted component, never forwarded
     # from the request. Prevent replacing/relabeling a locked node in a raw API call.
     original = parameters.get("original", {})
     current = parameters.get("features", [])
     old_ids = [item.get("id") for item in original.get("features", [])]
     current_ids = [item.get("id") for item in current]
-    if any(not _installed(item.get("toolRef"), user_tools) for item in original.get("features", [])):
+    if any(not _installed(item.get("toolRef"), user_tools, user_root) for item in original.get("features", [])):
         if [key for key in old_ids if key in current_ids] != [key for key in current_ids if key in old_ids]:
             raise ValueError("退化定式刀具节点只读，仅可删除，不能改变原节点顺序")
     for old in original.get("features", []):
-        if _installed(old.get("toolRef"), user_tools):
+        if _installed(old.get("toolRef"), user_tools, user_root):
             continue
         matches = [item for item in current if item.get("id") == old.get("id")]
         if matches and (len(matches) != 1 or recipe_item(matches[0]) != recipe_item(old)):
             raise ValueError("退化定式刀具节点只读，仅可删除")
     for key, old in original.get("ends", {}).items():
         new = parameters.get("ends", {}).get(key, {"type": "keep"})
-        if not _installed(old.get("toolRef"), user_tools) and new.get("type") != "keep" and recipe_item(new) != recipe_item(old):
+        if not _installed(old.get("toolRef"), user_tools, user_root) and new.get("type") != "keep" and recipe_item(new) != recipe_item(old):
             raise ValueError("退化定式端部刀具只读，仅可删除")
 
 
@@ -487,8 +503,9 @@ def prepare(parameters):
     # product no longer ships the old combined V-notch package.
     parameters = _migrate_payload(parameters)
     user_tools = parameters.get("userTools", [])
-    _check_original(parameters, user_tools)
-    if parameters.get("rebased") and any(not _installed(item.get("toolRef"), user_tools)
+    user_root = parameters.get("userToolRoot")
+    _check_original(parameters, user_tools, user_root)
+    if parameters.get("rebased") and any(not _installed(item.get("toolRef"), user_tools, user_root)
             for item in [*parameters.get("features", []), *parameters.get("ends", {}).values()]):
         raise ValueError("存在只读退化刀具，不能更换主管截面或长度；请先删除这些节点或恢复原版刀具")
     ids = [item["id"] for item in parameters.get("features", []) if "id" in item]
@@ -498,9 +515,9 @@ def prepare(parameters):
     for source in parameters.get("features", []):
         item = copy.deepcopy(source)
         item.pop("toolSnapshot", None)
-        _check_locked(item, user_tools)
+        _check_locked(item, user_tools, user_root)
         if item.get("enabled") is False:
-            if item.get("frozenTool") and _installed(item.get("toolRef"), user_tools):
+            if item.get("frozenTool") and _installed(item.get("toolRef"), user_tools, user_root):
                 item["frozenTool"]["instance"] = _instance(item)
             result["features"].append(item)
             continue
@@ -511,7 +528,10 @@ def prepare(parameters):
             if _user:
                 _descriptor = _user[1]
             else:
-                _descriptor = _package(ROOT / ref["id"])[0]
+                package_root = _package_root(ref, user_root)
+                if package_root is None:
+                    raise ValueError("用户刀具目录不可用")
+                _descriptor = _package(package_root / ref["id"], package_root)[0]
             supplied = _legacy_parameters(item, _descriptor)
         # Part tools consume a saved section and an explicit blank-coordinate
         # placement. Their Python is still product-level, never drawing code.
@@ -524,7 +544,7 @@ def prepare(parameters):
                 "rotation", *BRANCH_PLACEMENT_KEYS) if key in item}
         elif target != "side":
             raise ValueError("特征刀具目标无效")
-        snapshot = _evaluate(ref, supplied, context, item.get("frozenTool"), user_tools)
+        snapshot = _evaluate(ref, supplied, context, item.get("frozenTool"), user_tools, user_root)
         descriptor = snapshot["descriptor"]
         item.update(type=snapshot["ref"]["id"], toolRef=copy.deepcopy(snapshot["ref"]), toolParameters=copy.deepcopy(snapshot["parameters"]),
                     toolLabel=descriptor["displayName"], toolKind=descriptor["kind"], toolSnapshot=snapshot)
@@ -533,7 +553,7 @@ def prepare(parameters):
     for key in ("start", "end"):
         item = copy.deepcopy(parameters.get("ends", {}).get(key, {"type": "keep"}))
         item.pop("toolSnapshot", None)
-        _check_locked(item, user_tools)
+        _check_locked(item, user_tools, user_root)
         if item.get("type", "keep") == "keep" and not item.get("toolRef"):
             result["ends"][key] = item
             continue
@@ -544,7 +564,10 @@ def prepare(parameters):
             if _user:
                 _descriptor = _user[1]
             else:
-                _descriptor = _package(ROOT / ref["id"])[0]
+                package_root = _package_root(ref, user_root)
+                if package_root is None:
+                    raise ValueError("用户刀具目录不可用")
+                _descriptor = _package(package_root / ref["id"], package_root)[0]
             supplied = _legacy_parameters(item, _descriptor)
         placement = {name: item.get(name, default) for name, default in (("trim", 0), ("rotation", 0), ("datum", "long"))}
         placement.update({key: copy.deepcopy(item[key]) for key in (
@@ -554,7 +577,7 @@ def prepare(parameters):
             if not isinstance(item["section"], dict):
                 raise ValueError("端部刀具截面须为对象")
             context["section"] = copy.deepcopy(item["section"])
-        snapshot = _evaluate(ref, supplied, context, item.get("frozenTool"), user_tools)
+        snapshot = _evaluate(ref, supplied, context, item.get("frozenTool"), user_tools, user_root)
         descriptor = snapshot["descriptor"]
         item.update(type="template", toolRef=copy.deepcopy(snapshot["ref"]), toolParameters=copy.deepcopy(snapshot["parameters"]),
                     toolLabel=descriptor["displayName"], toolKind=descriptor["kind"], toolSnapshot=snapshot)

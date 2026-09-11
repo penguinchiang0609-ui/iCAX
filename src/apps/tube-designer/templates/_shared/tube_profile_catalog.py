@@ -16,7 +16,7 @@ PROFILE_SCHEMA = "icax.tube-profile"
 PROFILE_SCHEMA_VERSION = 2
 DESCRIPTOR_SCHEMA = "icax.tube-profile-descriptor"
 DESCRIPTOR_SCHEMA_VERSION = 2
-PROFILE_ROOT = Path(__file__).resolve().parent / "profiles"
+PROFILE_ROOT = Path(__file__).resolve().parent.parent / "profile"
 
 
 def _swap_contour_axes(contour: dict[str, Any]) -> dict[str, Any]:

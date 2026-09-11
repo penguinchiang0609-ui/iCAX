@@ -1,0 +1,5 @@
+{
+  "schema":"icax.punch-tool","schemaVersion":1,"id":"branch-profile","version":"1.0.0",
+  "displayName":"支管相贯","kind":"programmatic","target":"part","requiresSection":true,"category":"支管",
+  "parameters":[]
+}
