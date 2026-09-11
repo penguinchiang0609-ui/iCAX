@@ -8,6 +8,13 @@
   },
   "description": "三横档右转 L 型双立柱。由独立产品模板定义，参数和真实加工零件共用同一套生成规则。",
   "extensions": {
+    "parameterRules": [
+      {
+        "when": { "guardrailUse": "wall" },
+        "set": { "infillType": "bars" },
+        "description": "围墙出头竖杆仅支持竖杆填充。"
+      }
+    ],
     "catalog": {
       "groupOrder": 20,
       "templateOrder": 5,

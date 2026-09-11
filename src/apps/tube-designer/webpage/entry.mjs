@@ -9,11 +9,13 @@ import { attachPartDrawingPreview, disposePartDrawingPreview } from "./partDrawi
 import { patchPartDrawingDom, rememberPartDrawingDom } from "./partDrawingDom.mjs";
 import {
   fitDesignerDefaultView,
+  captureDesignerScrollState,
   getDesignerRenderSignature,
   handleDesignerAreaAction,
   handleDesignerRibbonCommand,
   refreshDesignerState,
   refreshDesignerUserData,
+  restoreDesignerScrollState,
 } from "./designerActions.mjs";
 import {
   renderDesignerLeftPane,
@@ -75,10 +77,12 @@ import {
   renderAboutViewportOverlay,
 } from "./aboutArea.mjs";
 import {
+  captureProductTemplateLibraryScrollState,
   ensureProductTemplateLibraryDescriptor,
   renderProductTemplateLibraryLeftPane,
   renderProductTemplateLibraryRightPane,
   renderProductTemplateLibraryViewportOverlay,
+  restoreProductTemplateLibraryScrollState,
 } from "./templateLibrary.mjs";
 
 export const TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS = 500;
@@ -363,7 +367,17 @@ function withDesignerContext(context) {
       attachPunchEditor(context,view,mount,ops);
       return true;
     },
+    beforeProjectRender(context, view) {
+      captureDesignerScrollState(context, view);
+      captureProductTemplateLibraryScrollState(context, view);
+    },
+    afterProjectPatch(context, view) {
+      restoreDesignerScrollState(context, view);
+      restoreProductTemplateLibraryScrollState(context, view);
+    },
     afterProjectRender(context, view, mount, ops) {
+      restoreDesignerScrollState(context, view);
+      restoreProductTemplateLibraryScrollState(context, view);
       bindProfileParameterDiagrams(mount);
       if ((view.activeAreaId === "profiles" || view.activeAreaId === "tools")
           && typeof context.productProxy?.invoke === "function"

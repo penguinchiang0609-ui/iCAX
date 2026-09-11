@@ -173,11 +173,15 @@ function renderProject(context, view) {
   if (!mount) {
     return;
   }
+  context.beforeProjectRender?.(context, view, mount);
   const tab = normalizeAreaId(context, context.activeRibbonTabId);
   activateProjectArea(view, tab);
   // Product editors may update their own live surface without reconstructing
   // the workbench, navigation and main viewport on each parameter response.
-  if(context.tryRenderProjectPatch?.(context,view,mount,getProjectOps())===true)return;
+  if(context.tryRenderProjectPatch?.(context,view,mount,getProjectOps())===true) {
+    context.afterProjectPatch?.(context, view, mount, getProjectOps());
+    return;
+  }
   const scene = view.scene ?? {};
   reconcileSelectedMachine(view, scene);
   const topology = scene.topology ?? {};

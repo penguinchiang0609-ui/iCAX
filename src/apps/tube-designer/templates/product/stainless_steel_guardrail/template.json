@@ -8,6 +8,13 @@
   },
   "description": "不锈钢栏杆。复用护栏的直式/转角布局和加工规则，默认使用椭圆扶手、圆管立柱及圆管横档；管型、尺寸和材质仍可由调用方调整。",
   "extensions": {
+    "parameterRules": [
+      {
+        "when": { "guardrailUse": "wall" },
+        "set": { "infillType": "bars" },
+        "description": "围墙出头竖杆仅支持竖杆填充。"
+      }
+    ],
     "catalog": {
       "groupOrder": 20,
       "templateOrder": 5,

@@ -995,6 +995,7 @@ async function openAddDialog(context, view, ops) {
   );
   view.tubeDesignerAddCatalogTabId = view.tubeDesignerExpandedTemplateGroupIds[0] ?? "";
   view.tubeDesignerAddScrollAnchor = null;
+  view.tubeDesignerAddScrollAnchors = null;
   view.tubeDesignerTemplateSwitchPending = false;
   view.tubeDesignerDisassemblySelectorOpen = false;
   view.tubeDesignerBreakdownOpen = false;
@@ -1017,6 +1018,7 @@ function closeAddDialog(context, view, ops) {
   view.tubeDesignerExpandedTemplateGroupIds = [];
   view.tubeDesignerAddCatalogTabId = "";
   view.tubeDesignerAddScrollAnchor = null;
+  view.tubeDesignerAddScrollAnchors = null;
   view.tubeDesignerTemplateSwitchPending = false;
   view.error = "";
   const dialog = resolveDesignerMount(context)?.querySelector?.("[data-tube-designer-add-dialog]");
@@ -2689,6 +2691,7 @@ async function acknowledgeOwnMutation(context, view) {
 }
 
 function captureParameterPanelState(context, view, editedTarget = null) {
+  captureInstanceListState(context, view);
   const panel = context.mount?.querySelector?.("[data-tube-designer-parameter-form]");
   if (!panel) return;
   const sections = panel.querySelector(".tube-designer-parameter-sections");
@@ -2715,10 +2718,16 @@ function captureParameterPanelState(context, view, editedTarget = null) {
 function restoreParameterPanelState(context, view) {
   if (String(view.tubeDesignerParameterPanelProductId ?? "") !== String(
     view.scene?.tubeDesigner?.product?.entityId ?? "",
-  )) return;
+  )) {
+    restoreInstanceListState(context, view);
+    return;
+  }
   const panel = context.mount?.querySelector?.("[data-tube-designer-parameter-form]");
   const sections = panel?.querySelector?.(".tube-designer-parameter-sections");
-  if (!sections) return;
+  if (!sections) {
+    restoreInstanceListState(context, view);
+    return;
+  }
   const shouldRestoreFocus = !view.pending && Boolean(view.tubeDesignerRestoreParameterFocus);
   const restoredAnchor = restoreScrollAnchor(
     sections,
@@ -2728,12 +2737,67 @@ function restoreParameterPanelState(context, view) {
   if (!view.tubeDesignerParameterPanelScrollAnchor) {
     sections.scrollTop = Number(view.tubeDesignerParameterPanelScrollTop ?? 0);
   }
-  if (!shouldRestoreFocus) return;
+  if (!shouldRestoreFocus) {
+    restoreInstanceListState(context, view);
+    return;
+  }
   const parameterKey = String(view.tubeDesignerLastEditedParameterKey ?? "");
   const field = Array.from(panel.querySelectorAll("[data-tube-designer-parameter]"))
     .find((item) => String(item.dataset.tubeDesignerParameter ?? "") === parameterKey);
   if (!restoredAnchor) field?.focus?.({ preventScroll: true });
   view.tubeDesignerRestoreParameterFocus = false;
+  restoreInstanceListState(context, view);
+}
+
+export function captureDesignerScrollState(context, view) {
+  captureParameterPanelState(context, view);
+}
+
+export function restoreDesignerScrollState(context, view) {
+  restoreParameterPanelState(context, view);
+  const restorationToken = Number(view.tubeDesignerScrollRestorationToken ?? 0) + 1;
+  view.tubeDesignerScrollRestorationToken = restorationToken;
+  const restore = () => {
+    if (view.tubeDesignerScrollRestorationToken !== restorationToken) return;
+    restoreParameterPanelState(context, view);
+  };
+  queueMicrotask(() => {
+    restore();
+    const requestFrame = globalThis.requestAnimationFrame;
+    if (typeof requestFrame !== "function") return;
+    requestFrame(() => {
+      restore();
+      requestFrame(restore);
+    });
+  });
+}
+
+function captureInstanceListState(context, view) {
+  const scroller = context.mount?.querySelector?.(".tube-designer-instance-list");
+  if (!scroller) return;
+  const activeId = String(view.scene?.tubeDesigner?.product?.entityId
+    ?? view.scene?.tubeDesigner?.activeProductId ?? "").trim();
+  const activeCard = activeId
+    ? Array.from(scroller.querySelectorAll?.("[data-tube-designer-instance-id]") ?? [])
+      .find((item) => String(item.dataset?.tubeDesignerInstanceId ?? "") === activeId)
+    : null;
+  view.tubeDesignerInstanceListScrollAnchor = captureScrollAnchor(scroller, activeCard);
+}
+
+function restoreInstanceListState(context, view) {
+  const snapshot = view.tubeDesignerInstanceListScrollAnchor;
+  if (!snapshot) return;
+  const restore = () => {
+    const scroller = context.mount?.querySelector?.(".tube-designer-instance-list");
+    if (scroller) restoreScrollAnchor(scroller, snapshot);
+  };
+  restore();
+  const restorationToken = Number(view.tubeDesignerInstanceListScrollRestorationToken ?? 0) + 1;
+  view.tubeDesignerInstanceListScrollRestorationToken = restorationToken;
+  queueMicrotask(() => {
+    if (view.tubeDesignerInstanceListScrollRestorationToken !== restorationToken) return;
+    restore();
+  });
 }
 
 function captureAddDialogScrollAnchor(context, view, target) {
@@ -2747,22 +2811,38 @@ function captureAddDialogScrollAnchor(context, view, target) {
     }
     view.tubeDesignerAddDisclosureStates[templateId] = saved;
   }
-  const scroller = target?.closest?.(".tube-designer-template-list, .tube-designer-config-parameters");
-  if (!scroller) return;
-  view.tubeDesignerAddScrollAnchor = {
-    scrollerSelector: scroller.classList?.contains?.("tube-designer-template-list")
-      ? ".tube-designer-template-list"
-      : ".tube-designer-config-parameters",
-    anchor: captureScrollAnchor(scroller, target),
-  };
+  const mount = resolveDesignerMount(context);
+  const snapshots = [".tube-designer-template-list", ".tube-designer-config-parameters"]
+    .map((scrollerSelector) => {
+      const scroller = mount?.querySelector?.(scrollerSelector);
+      if (!scroller) return null;
+      const anchorTarget = scroller.contains?.(target) ? target : null;
+      return { scrollerSelector, anchor: captureScrollAnchor(scroller, anchorTarget) };
+    })
+    .filter(Boolean);
+  if (!snapshots.length) return;
+  view.tubeDesignerAddScrollAnchors = snapshots;
+  // Keep the old singular snapshot as a fallback for state left by an older
+  // mounted view; new renders restore every independent scroll container.
+  view.tubeDesignerAddScrollAnchor = snapshots.find((item) => item.anchor?.restoreFocus)
+    ?? snapshots.find((item) => item.scrollerSelector === ".tube-designer-config-parameters")
+    ?? snapshots[0];
 }
 
 function restoreAddDialogScrollAnchor(context, view) {
-  const snapshot = view.tubeDesignerAddScrollAnchor;
-  if (!snapshot?.scrollerSelector || !snapshot.anchor) return;
+  const snapshots = Array.isArray(view.tubeDesignerAddScrollAnchors)
+    ? view.tubeDesignerAddScrollAnchors
+    : (view.tubeDesignerAddScrollAnchor ? [view.tubeDesignerAddScrollAnchor] : []);
+  if (!snapshots.length) return;
   const restore = () => {
-    const scroller = resolveDesignerMount(context)?.querySelector?.(snapshot.scrollerSelector);
-    restoreScrollAnchor(scroller, snapshot.anchor, { restoreFocus: !view.pending && snapshot.anchor.restoreFocus });
+    const mount = resolveDesignerMount(context);
+    for (const snapshot of snapshots) {
+      const scroller = mount?.querySelector?.(snapshot.scrollerSelector);
+      if (!scroller || !snapshot.anchor) continue;
+      restoreScrollAnchor(scroller, snapshot.anchor, {
+        restoreFocus: !view.pending && snapshot.anchor.restoreFocus,
+      });
+    }
   };
   restore();
   const restorationToken = Number(view.tubeDesignerAddScrollRestorationToken ?? 0) + 1;
@@ -2867,6 +2947,7 @@ function updateDesignerOperation(context, view, update = {}) {
 
 async function runDesignerOperation(context, view, ops, work, options = {}) {
   if (view.pending) return null;
+  captureInstanceListState(context, view);
   let operationId = null;
   if (options.operation) {
     operationId = Number(view.tubeDesignerOperationSequence ?? 0) + 1;

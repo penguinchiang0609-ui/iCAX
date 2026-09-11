@@ -337,7 +337,12 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     item_keys: list[str] = []
     rows: list[dict[str, Any]] = []
     for index, part in enumerate(parts, start=1):
-        representation = _emit_tube(model, part)
+        # There is no production-only operation in this product yet.  The
+        # two named representations are nevertheless kept separate at the
+        # template boundary so production geometry can diverge later without
+        # adding product-specific rules to the runtime.
+        display_representation = _emit_tube(model, part)
+        manufacturing_representation = display_representation
         part_number = f"{parameters['productCode']}-{index:03d}"
         properties = {
             "partNumber": part_number,
@@ -356,7 +361,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         item_key = model.item(
             part.key,
             part.name,
-            representations={"display": representation, "export": representation},
+            representations={"display": display_representation, "export": manufacturing_representation},
             properties=properties,
         )
         item_keys.append(item_key)

@@ -445,7 +445,11 @@ def generate_steel_staircase(
     item_keys: list[str] = []
     rows: list[dict[str, Any]] = []
     for index, part in enumerate(parts, start=1):
-        representation = _emit_tube(model, part)
+        # This template currently has no production-only cutter or boolean.
+        # Keep the two roles explicit so a future manufacturing operation can
+        # be added without changing the runtime or the output contract.
+        display_representation = _emit_tube(model, part)
+        manufacturing_representation = display_representation
         part_number = f"{parameters['productCode']}-{index:03d}"
         properties = {
             "partNumber": part_number,
@@ -463,7 +467,7 @@ def generate_steel_staircase(
         }
         item_key = model.item(
             part.key, part.name,
-            representations={"display": representation, "export": representation},
+            representations={"display": display_representation, "export": manufacturing_representation},
             properties=properties,
         )
         item_keys.append(item_key)

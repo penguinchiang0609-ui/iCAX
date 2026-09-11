@@ -3,6 +3,7 @@ import {
   buildCatalogEntries,
   getTemplateVisualAsset,
 } from "./productCatalog.mjs";
+import { captureScrollAnchor, restoreScrollAnchor } from "./scrollAnchor.mjs";
 
 // Product templates are managed as portable .itpt archives.  The dialog keeps
 // built-in packages read-only and exposes imported personal packages separately
@@ -117,6 +118,51 @@ export function productTemplateLibraryState(view) {
   return state;
 }
 
+const PRODUCT_TEMPLATE_LIBRARY_SCROLLERS = Object.freeze([
+  ".tube-product-template-library-list",
+  ".tube-product-template-library-editor-body",
+]);
+
+export function captureProductTemplateLibraryScrollState(context, view) {
+  const mount = context?.mount;
+  const target = mount?.ownerDocument?.activeElement ?? null;
+  const snapshots = PRODUCT_TEMPLATE_LIBRARY_SCROLLERS.map((selector) => {
+    const scroller = mount?.querySelector?.(selector);
+    if (!scroller) return null;
+    const anchorTarget = scroller.contains?.(target) ? target : null;
+    return { selector, anchor: captureScrollAnchor(scroller, anchorTarget) };
+  }).filter(Boolean);
+  if (snapshots.length) view.tubeDesignerProductTemplateLibraryScrollAnchors = snapshots;
+}
+
+export function restoreProductTemplateLibraryScrollState(context, view) {
+  const snapshots = view?.tubeDesignerProductTemplateLibraryScrollAnchors;
+  if (!Array.isArray(snapshots) || !snapshots.length) return;
+  const token = Number(view.tubeDesignerProductTemplateLibraryScrollRestorationToken ?? 0) + 1;
+  view.tubeDesignerProductTemplateLibraryScrollRestorationToken = token;
+  const restore = () => {
+    if (view.tubeDesignerProductTemplateLibraryScrollRestorationToken !== token) return;
+    const mount = context?.mount;
+    for (const snapshot of snapshots) {
+      const scroller = mount?.querySelector?.(snapshot.selector);
+      if (!scroller || !snapshot.anchor) continue;
+      restoreScrollAnchor(scroller, snapshot.anchor, {
+        restoreFocus: !view.pending && snapshot.anchor.restoreFocus,
+      });
+    }
+  };
+  restore();
+  queueMicrotask(() => {
+    restore();
+    const requestFrame = globalThis.requestAnimationFrame;
+    if (typeof requestFrame !== "function") return;
+    requestFrame(() => {
+      restore();
+      requestFrame(restore);
+    });
+  });
+}
+
 // The library list is made of catalog styles, while management actions still
 // operate on the owning .itpt package. Expose that identity for the manager
 // button instead of leaking a catalogEntryId into package-level actions.
@@ -188,6 +234,50 @@ function templateParameterGroupLabel(item, key) {
   return localizedTemplateText(group?.displayName, key || "参数");
 }
 
+function coerceTemplateParameterValue(definition, value) {
+  if (!definition) return value;
+  const type = String(definition.valueType ?? "string");
+  if (type === "boolean") {
+    if (typeof value === "boolean") return value;
+    return value === true || value === "true" || value === "1" || value === 1 || value === "是";
+  }
+  if (type === "number" || type === "integer") {
+    if (value === "" || value === null || value === undefined) return value;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : value;
+  }
+  if (type === "enum" || Array.isArray(definition.choices)) {
+    const choice = (definition.choices ?? []).find((entry) => String(entry?.value) === String(value));
+    return choice ? choice.value : value;
+  }
+  return value;
+}
+
+function templateParameterRules(item) {
+  return Array.isArray(item?.extensions?.parameterRules)
+    ? item.extensions.parameterRules.filter((rule) => rule && typeof rule === "object")
+    : [];
+}
+
+function templateParameterRuleMatches(values, when) {
+  if (!when || typeof when !== "object" || Array.isArray(when)) return true;
+  return Object.entries(when).every(([key, expected]) => values[key] === expected);
+}
+
+function normalizeTemplateParameterValues(item, values) {
+  const result = { ...(values ?? {}) };
+  for (const rule of templateParameterRules(item)) {
+    if (!templateParameterRuleMatches(result, rule.when)) continue;
+    const assignments = rule.set;
+    if (!assignments || typeof assignments !== "object" || Array.isArray(assignments)) continue;
+    for (const [key, value] of Object.entries(assignments)) {
+      const definition = templateParameterDefinitions(item).find((entry) => String(entry.key) === key);
+      result[key] = coerceTemplateParameterValue(definition, value);
+    }
+  }
+  return result;
+}
+
 function templateParameterValues(view, item) {
   const state = productTemplateLibraryState(view);
   const key = String(item?.id ?? "");
@@ -198,7 +288,11 @@ function templateParameterValues(view, item) {
     ...(item?.catalogParameters && typeof item.catalogParameters === "object" && !Array.isArray(item.catalogParameters)
       ? item.catalogParameters : {}),
   };
-  return { ...defaults, ...(state.parameterDrafts?.[key] ?? {}) };
+  const raw = { ...defaults, ...(state.parameterDrafts?.[key] ?? {}) };
+  const values = Object.fromEntries(templateParameterDefinitions(item).map((definition) => [
+    String(definition.key), coerceTemplateParameterValue(definition, raw[definition.key]),
+  ]));
+  return normalizeTemplateParameterValues(item, { ...raw, ...values });
 }
 
 function templateParameterVisible(definition, values) {
@@ -419,9 +513,12 @@ export async function handleProductTemplateLibraryAction(context, view, action, 
     const definition = templateParameterDefinitions(item).find((entry) => String(entry.key) === parameter);
     if (item && definition) {
       const value = definition.valueType === "boolean" ? !!target.checked
-        : definition.valueType === "number" || definition.valueType === "integer" ? Number(target.value)
-          : String(target.value ?? "");
-      state.parameterDrafts[id] = { ...(state.parameterDrafts[id] ?? {}), [parameter]: value };
+        : coerceTemplateParameterValue(definition, target.value ?? "");
+      const nextValues = normalizeTemplateParameterValues(item, {
+        ...templateParameterValues(view, item),
+        [parameter]: value,
+      });
+      state.parameterDrafts[id] = { ...(state.parameterDrafts[id] ?? {}), ...nextValues };
       const hadPreview = !!state.preview;
       state.preview = null; state.previewError = ""; state.previewFailureKey = "";
       state.previewApplied = hadPreview; view.preserveCustomViewportEntities = hadPreview;

@@ -666,7 +666,11 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     shared = _geometry.SharedTubeGeometry(model)
     originals: dict[str, str] = {}
     envelopes: dict[str, str] = {}
-    needed_tools = {key for part in built.tubes for key in part.clips + (part.hole_tools if purpose != "display" else [])}
+    # The template owns the display/manufacturing policy.  Joint clips are
+    # needed by the display shape as well, otherwise intersecting rails look
+    # wrong in the preview; profile-hole cutters are manufacturing-only.
+    manufacturing_requested = purpose != "display"
+    needed_tools = {key for part in built.tubes for key in part.clips + (part.hole_tools if manufacturing_requested else [])}
     for part in built.tubes:
         arguments = {"placement": {"origin": list(part.start), "xAxis": list(part.x_axis), "yAxis": list(part.y_axis)},
                      "contours": part.profile.contours()}
@@ -692,26 +696,51 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     item_keys: list[str] = []
     rows: list[dict[str, Any]] = []
 
-    def add_item(key: str, name: str, representation: str, properties: dict[str, Any]):
+    def add_item(key: str, name: str, display_representation: str,
+                 manufacturing_representation: str, properties: dict[str, Any]):
         number = f"{parameters['productCode']}-{len(item_keys) + 1:03d}"
         properties.update(partNumber=number, quantity=1)
-        item_keys.append(model.item(key, name, representations={"display": representation, "export": representation}, properties=properties))
+        item_keys.append(model.item(
+            key, name,
+            representations={"display": display_representation, "export": manufacturing_representation},
+            properties=properties,
+        ))
         rows.append({"key": "row." + key, "parentKey": str(parameters["productCode"]), "itemKey": key,
                      "values": {"partNumber": number, "name": name, "quantity": 1, "length": properties.get("length"),
                                 "materialType": {"plate": "板件", "glass": "玻璃", "accessory": "配件"}.get(properties.get("manufacturing.partKind"), "管材")}})
 
     for part in built.tubes:
-        representation = originals[part.key]
+        display_representation = originals[part.key]
+        manufacturing_representation = display_representation
         start_cut, end_cut = ("miter", "miter") if part.diagonal else ("square", "square")
         if part.keep_volume:
             keep = keep_volumes[part.keep_volume]
-            representation = model.geometry(part.key + ".bounded", "boolean", inputs=[representation, keep],
-                                            arguments={"operation": "intersect", "target": representation, "tools": [keep]})
-        all_tools = part.clips + (part.hole_tools if purpose != "display" else [])
+            bounded = model.geometry(
+                part.key + ".bounded", "boolean", inputs=[originals[part.key], keep],
+                arguments={"operation": "intersect", "target": originals[part.key], "tools": [keep]},
+            )
+            if manufacturing_requested:
+                manufacturing_representation = bounded
+            else:
+                display_representation = bounded
+        all_tools = part.clips + (part.hole_tools if manufacturing_requested else [])
         if all_tools:
             tools = [envelopes[key] for key in dict.fromkeys(all_tools)]
-            representation = model.geometry(part.key + ".finished", "boolean", inputs=[representation, *tools],
-                arguments={"operation": "subtract", "target": representation, "tools": tools})
+            if manufacturing_requested:
+                manufacturing_representation = model.geometry(
+                    part.key + ".finished", "boolean",
+                    inputs=[manufacturing_representation, *tools],
+                    arguments={"operation": "subtract", "target": manufacturing_representation, "tools": tools},
+                )
+            else:
+                display_representation = model.geometry(
+                    part.key + ".finished", "boolean",
+                    inputs=[display_representation, *tools],
+                    arguments={"operation": "subtract", "target": display_representation, "tools": tools},
+                )
+        if not manufacturing_requested:
+            manufacturing_representation = display_representation
+        if part.clips:
             direction = tuple((part.end[i] - part.start[i]) / part.length for i in range(3))
             receivers = {receiver.key: receiver for receiver in built.tubes}
             for key in part.clips:
@@ -737,12 +766,13 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         material_grade = str(parameters.get("materialGrade", "")).strip()
         if material_grade:
             tube_properties["manufacturing.materialGrade"] = material_grade
-        add_item(part.key, part.name, representation, tube_properties)
+        add_item(part.key, part.name, display_representation, manufacturing_representation, tube_properties)
         for index, receiver in enumerate(dict.fromkeys(part.clips), 1):
             model.relationship(f"joint.{part.key}.{index}", "weld", [part.key, receiver], properties={"geometry": "outer-envelope-cope"})
     for part in built.plates:
-        representation = _plates.emit_rectangular_plate(model, part.key, width=part.width, height=part.height,
+        display_representation = _plates.emit_rectangular_plate(model, part.key, width=part.width, height=part.height,
             thickness=part.thickness, center=part.center, x_axis=part.x_axis, y_axis=part.y_axis, holes=part.holes)
+        manufacturing_representation = display_representation
         properties = _plates.plate_properties(part.width, part.height, part.thickness,
             material_grade=str(parameters.get("glassMaterial", "夹层玻璃") if part.part_kind == "glass" else parameters.get("plateMaterial", "")),
             category_key=part.category, category_name="玻璃栏板" if part.part_kind == "glass" else "底板" if part.category == "plate.base" else "封板")
@@ -753,14 +783,15 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         if material_grade:
             properties["manufacturing.materialGrade"] = material_grade
         properties["group"] = part.group
-        add_item(part.key, part.name, representation, properties)
+        add_item(part.key, part.name, display_representation, manufacturing_representation, properties)
     component_geometry = _components.ComponentModelGeometry(model)
     for part in built.components:
-        representation = component_geometry.emit(part.key, part.reference, origin=part.origin,
-                                                 x_axis=part.x_axis, y_axis=part.y_axis)
+        display_representation = component_geometry.emit(part.key, part.reference, origin=part.origin,
+                                                          x_axis=part.x_axis, y_axis=part.y_axis)
+        manufacturing_representation = display_representation
         properties = _components.component_properties(part.reference, category_key=part.category, category_name=part.name)
         properties["group"] = part.group
-        add_item(part.key, part.name, representation, properties)
+        add_item(part.key, part.name, display_representation, manufacturing_representation, properties)
     model.output("display.default", "display", item_keys)
     model.output("export.manufacturing", "export", item_keys)
     model.table("parts", "护栏零件清单", columns=[

@@ -63,7 +63,12 @@ assert.equal(createView.tubeDesignerTemplateManager.baseTemplateId, "builtin",
 
 const libraryView = {
   activeAreaId: "templates",
-  scene: { tubeDesigner: { templates: [{ id: "builtin", name: "内置/示例", version: "1.0.0", available: true, parameters: [{ key: "length", displayName: "长度", valueType: "number", defaultValue: 100, constraints: { minimum: 1, step: 1 } }], extensions: { catalog: { presets: [{ id: "style-a", displayName: "示例款式", parameters: { length: 140 } }] } } }] } },
+  scene: { tubeDesigner: { templates: [{ id: "builtin", name: "内置/示例", version: "1.0.0", available: true, parameters: [
+    { key: "length", displayName: "长度", valueType: "number", defaultValue: 100, constraints: { minimum: 1, step: 1 } },
+    { key: "railCount", valueType: "enum", defaultValue: 2, choices: [{ value: 2 }, { value: 3 }] },
+    { key: "infillType", valueType: "enum", defaultValue: "glass", choices: [{ value: "bars" }, { value: "glass" }, { value: "diamond" }] },
+    { key: "guardrailUse", valueType: "enum", defaultValue: "platform", choices: [{ value: "platform" }, { value: "wall" }] },
+  ], extensions: { parameterRules: [{ when: { guardrailUse: "wall" }, set: { infillType: "bars" } }], catalog: { presets: [{ id: "style-a", displayName: "示例款式", parameters: { length: 140 } }] } } }] } },
   tubeDesignerUserData: { productTemplates: [{ id: "personal-1", name: "我的模板", version: "1.0.0" }] },
   viewport: { applyViewSnapshot: async ({ rows }) => ({ applied: true, entityIds: rows.map((row) => row.entityId) }), setStandardView() {}, fitViewToViewport() {} },
   sceneProxy: { resources: {}, async invoke(method) { assert.equal(method, "TubeDesigner.GenerateProductTemplatePreview"); return { items: [{ entityId: "item-1", geometry: { url: "geometry", version: 1 }, bounds: { min: [0, 0, 0], max: [10, 10, 10] } }], material: { url: "material", version: 1 } }; } },
@@ -84,6 +89,21 @@ await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designe
 }, { renderProject() { parameterRenders += 1; } });
 assert.equal(parameterRenders, 1);
 assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].length, 220);
+await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
+  dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "railCount" }, value: "3",
+}, { renderProject() {} });
+assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].railCount, 3,
+  "数字枚举必须以模板声明的数字类型提交，而不是以下拉框字符串提交");
+await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
+  dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "guardrailUse" }, value: "wall",
+}, { renderProject() {} });
+assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].infillType, "bars",
+  "模板声明的参数约束应在修改参数时自动归一化");
+await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
+  dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "infillType" }, value: "diamond",
+}, { renderProject() {} });
+assert.equal(libraryView.tubeDesignerProductTemplateLibrary.parameterDrafts["builtin::style-a"].infillType, "bars",
+  "违反模板约束的参数选择不能再次把预览置于不可生成状态");
 
 // Artwork belongs to each template package. The library only consumes the
 // descriptor's asset data and must not grow an ID/name switch for new cards.
