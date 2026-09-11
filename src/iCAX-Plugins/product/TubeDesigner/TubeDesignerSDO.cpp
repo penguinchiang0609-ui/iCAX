@@ -1039,26 +1039,23 @@ namespace
         {
             try
             {
-                // The startup snapshot only needs the catalog card. Do not
-                // load scripts, shared files, or full parameter presentation
-                // until a template is actually selected.
+                // Keep the startup snapshot small.  The web UI requests the
+                // complete package-owned parameter descriptor only when a
+                // template is selected or opened for editing.
                 const auto _DescriptorText = ReadTextFile(_Directory / "template.json");
                 const auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
                     iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
-                // The list is loaded during startup and is used for choosing a
-                // template. Keep it small; the full descriptor is hydrated by
-                // the web UI only after the response arrives.
                 ObjectMap _Presentation;
                 _Presentation["id"] = _Descriptor.ID;
                 _Presentation["version"] = _Descriptor.Version;
                 _Presentation["name"] = _Descriptor.DisplayName.Resolve("zh-CN");
                 _Presentation["description"] = _Descriptor.Description;
                 _Presentation["available"] = true;
-                _Presentation["libraryScope"] = _LibraryScope;
-                _Presentation["ownerScope"] = _LibraryScope;
                 if (const auto _Catalog = _Descriptor.Extensions.find("catalog");
                     _Catalog != _Descriptor.Extensions.end())
                     _Presentation["extensions"] = ObjectMap{{ "catalog", _Catalog->second }};
+                _Presentation["libraryScope"] = _LibraryScope;
+                _Presentation["ownerScope"] = _LibraryScope;
                 AttachTemplateCatalogAssets(_Presentation, _Directory);
                 _Templates.emplace_back(std::move(_Presentation));
             }
@@ -1152,6 +1149,37 @@ namespace
             {
                 throw std::runtime_error("TubeDesigner material resource identity changed concurrently");
             }
+        }
+        return iCAX::RenderInteraction::EnsureFrontendMaterialResource(_Resources, _ResourceID);
+    }
+
+    iCAX::Resource::CResourceReference EnsureDesignerGlassMaterial(
+        iCAX::Project::ISceneContext& Scene_)
+    {
+        auto& _Resources = Scene_.Resources();
+        const auto _ResourceID = _Resources.MakeNamedResourceURL("tube-designer/material/glass");
+        if (_Resources.GetVersion(_ResourceID) == 0)
+        {
+            auto _Material = std::make_shared<iCAX::Render::SRenderMaterialData>();
+            _Material->nDataVersion = 1;
+            // Glass is a purchased transparent panel.  Keep the blue tint and
+            // carry the translucency in the low RGBA byte; frame/tube items
+            // continue using the normal opaque product material.
+            _Material->nColorRGBA = 0x8FD8E580u;
+            _Material->nAmbientRGBA = 0x8FD8E580u;
+            _Material->nSpecularRGBA = 0xEAFBFFFFu;
+            _Material->nEmissiveRGBA = 0x10202A20u;
+            _Material->nLineWidth = 1.0f;
+            iCAX::Resource::CResourceInfo _Info;
+            _Info.Name = "TubeDesigner glass material";
+            _Info.ResourceTypeID = iCAX::Render::SRenderMaterialData::kResourceTypeName;
+            _Info.Persistence = iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
+            iCAX::Resource::CResourceInfo _StoredInfo;
+            const auto _Mutation = _Resources.PutVersioned<iCAX::Render::SRenderMaterialData>(
+                _ResourceID, std::move(_Material), _Info,
+                iCAX::Resource::EResourceVersionCondition::MustNotExist, 0, &_StoredInfo);
+            if (_Mutation == iCAX::Resource::EResourceMutationResult::PreconditionFailed)
+                throw std::runtime_error("TubeDesigner glass material resource identity changed concurrently");
         }
         return iCAX::RenderInteraction::EnsureFrontendMaterialResource(_Resources, _ResourceID);
     }
@@ -5944,6 +5972,7 @@ namespace
         iCAX::Data::uuid EntityID;
         iCAX::Resource::CResourceReference PreviewResource;
         iCAX::Resource::CResourceReference FrontendGeometryResource;
+        iCAX::Resource::CResourceReference MaterialResource;
         std::uint64_t Index = 0;
         ObjectMap ItemProperties;
         ObjectMap TubeProfile;
@@ -6053,7 +6082,9 @@ namespace
             }
             _Conversions.push_back({ _PreviewShape, _Name + " preview",
                 Scene_.Resources().MakeNamedResourceURL(_StablePrefix + "/preview") });
-            _Members.push_back({ &_Item, _EntityID, {}, {}, ++_Index,
+            const auto _ItemMaterial = ManufacturingPartKind(_Item.Properties) == "glass"
+                ? EnsureDesignerGlassMaterial(Scene_) : _MaterialResource;
+            _Members.push_back({ &_Item, _EntityID, {}, {}, _ItemMaterial, ++_Index,
                 std::move(_MemberProperties), std::move(_TubeProfile) });
         }
         auto _Converted = iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(_Conversions, 0.025);
@@ -6143,8 +6174,8 @@ namespace
                     iCAX::RenderInteraction::CRenderInstanceComponent::S_ClassName, {
                         { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceID, PropertyValue(_Prepared.FrontendGeometryResource.URL) },
                         { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_GeometryResourceVersion, PropertyValue(_Prepared.FrontendGeometryResource.nVersion) },
-                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceID, PropertyValue(_MaterialResource.URL) },
-                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceVersion, PropertyValue(_MaterialResource.nVersion) }
+                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceID, PropertyValue(_Prepared.MaterialResource.URL) },
+                        { iCAX::RenderInteraction::CRenderInstanceComponent::PropertyName_MaterialResourceVersion, PropertyValue(_Prepared.MaterialResource.nVersion) }
                     });
                 QueueUpsertComponent(
                     _Transaction, _ExistingMember, _Prepared.EntityID,
@@ -6252,11 +6283,14 @@ namespace
                 _Name + " preview", _Shape);
             const auto _Mesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
                 Scene_->Resources(), _BRep.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+            const auto _ItemMaterial = ManufacturingPartKind(_Item.Properties) == "glass"
+                ? EnsureDesignerGlassMaterial(*Scene_) : _Material;
             _Items.emplace_back(ObjectMap{
                 {"entityId", std::string("template-preview-") + _Evaluation.Descriptor.ID + "-" + std::to_string(++_Index)},
                 {"key", _Item.Key},
                 {"name", _Name},
                 {"geometry", ObjectMap{{"url", _Mesh.URL}, {"version", _Mesh.nVersion}}},
+                {"material", ObjectMap{{"url", _ItemMaterial.URL}, {"version", _ItemMaterial.nVersion}}},
                 {"bounds", ShapeBounds(_Shape)},
             });
         }

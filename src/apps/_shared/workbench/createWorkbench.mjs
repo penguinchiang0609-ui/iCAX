@@ -660,6 +660,7 @@ function mountRenderViewport(context, view) {
   if (!view.viewport) {
     view.viewport = createThreeViewport({
       backgroundColor: 0x182128,
+      showGrid: context.showViewportGrid !== false,
       onPick: (userData, hit, event, hits) => handleViewportPick(context, view, userData, hit, event, hits),
       onDiagnostic: (entry) => appendProjectLog(context, entry.level ?? "info", entry.message ?? ""),
     });

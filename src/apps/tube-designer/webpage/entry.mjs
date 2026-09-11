@@ -75,6 +75,7 @@ import {
   renderAboutViewportOverlay,
 } from "./aboutArea.mjs";
 import {
+  ensureProductTemplateLibraryDescriptor,
   renderProductTemplateLibraryLeftPane,
   renderProductTemplateLibraryRightPane,
   renderProductTemplateLibraryViewportOverlay,
@@ -286,6 +287,7 @@ function withDesignerContext(context) {
   return {
     ...context,
     forceThreeViewport: true,
+    showViewportGrid: false,
     areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", templates: "产品模板", profiles: "管型库", tools: "模具库", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {
@@ -389,6 +391,11 @@ function withDesignerContext(context) {
       }
       if (view.activeAreaId === "templates") {
         view.tubeDesignerProductTemplateLibraryRenderProject = () => ops.renderProject(context, view);
+        void ensureProductTemplateLibraryDescriptor(context, view).then((loaded) => {
+          if (loaded && view.activeAreaId === "templates") ops.renderProject(context, view);
+        }).catch((error) => {
+          view.tubeDesignerTemplateLoadError = error?.message ?? String(error);
+        });
       }
       if (view.activeAreaId === "nesting" && view.tubeDesignerBreakdownOpen && !view.tubeDesignerPartInspectionOpen) {
         scheduleDesignerPartThumbnailHydration(context);

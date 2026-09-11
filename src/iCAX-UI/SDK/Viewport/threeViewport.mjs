@@ -1581,6 +1581,7 @@ export class ThreeRenderViewport {
         color: new THREE.Color(color.r / 255, color.g / 255, color.b / 255),
         transparent: color.a < 1,
         opacity: Math.max(0.08, color.a),
+        depthWrite: color.a >= 1,
         side: THREE.DoubleSide,
         vertexColors: Boolean(hasVertexColors),
       };
@@ -1927,9 +1928,11 @@ export class ThreeRenderViewport {
   }
 
   #installSceneBasics() {
-    const grid = new THREE.GridHelper(800, 20, 0x38505d, 0x2a3a43);
-    grid.rotation.x = Math.PI / 2;
-    this.scene.add(grid);
+    if (this.options.showGrid !== false) {
+      const grid = new THREE.GridHelper(800, 20, 0x38505d, 0x2a3a43);
+      grid.rotation.x = Math.PI / 2;
+      this.scene.add(grid);
+    }
 
     const axis = new THREE.AxesHelper(120);
     this.scene.add(axis);
