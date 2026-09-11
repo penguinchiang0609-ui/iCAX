@@ -11,7 +11,7 @@ ROOT = next(parent for parent in Path(__file__).resolve().parents
 sys.path.insert(0, str(ROOT / "src/iCAX-Engine/framework/TemplateRuntime/python"))
 from icax_template_worker import _load_template
 
-DIRECTORY = ROOT / "src/apps/tube-designer/templates/straight_stair_railing"
+DIRECTORY = ROOT / "src/apps/tube-designer/templates/product/straight_stair_railing"
 DESCRIPTOR = json.loads((DIRECTORY / "template.json").read_text(encoding="utf-8"))
 DEFAULTS = {definition["key"]: definition["defaultValue"] for definition in DESCRIPTOR["parameters"]}
 MODULE = _load_template(str(DIRECTORY / "template.py"), "stair-railing-gap-regressions")

@@ -27,6 +27,12 @@ namespace iCAX::ExtrusionRecognition
             // Geometry_ is expected to have its extrusion axis aligned to X.
             IN const iCAX::GeometryData::BRepModel& Geometry_,
             IN const SSectionWireOptions& Options_ = {}) const = 0;
+
+        virtual SFeatureToolpathResult AnalyzeFeatureToolpaths(
+            // Geometry_ is expected to be the reset X-axial BRep.
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN const SSectionWiresResult& Section_,
+            IN const SFeatureToolpathOptions& Options_ = {}) const = 0;
     };
 
     class _EXTRUSION_RECOGNITION_EXP CExtrudeRecognizesService final
@@ -50,5 +56,10 @@ namespace iCAX::ExtrusionRecognition
         SSectionWiresResult ExtractSectionWires(
             IN const iCAX::GeometryData::BRepModel& Geometry_,
             IN const SSectionWireOptions& Options_ = {}) const override;
+
+        SFeatureToolpathResult AnalyzeFeatureToolpaths(
+            IN const iCAX::GeometryData::BRepModel& Geometry_,
+            IN const SSectionWiresResult& Section_,
+            IN const SFeatureToolpathOptions& Options_ = {}) const override;
     };
 }

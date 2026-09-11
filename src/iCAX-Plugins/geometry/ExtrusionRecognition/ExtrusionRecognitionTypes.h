@@ -127,6 +127,9 @@ namespace iCAX::ExtrusionRecognition
         // Endpoints within this distance are represented by one graph node.
         double dConnectionTolerance = 0.001;
         std::size_t nCurveSampleCount = 33;
+        // A turn within 180 degrees +/- this tolerance is treated as a
+        // U-turn and is not a valid continuation of a contour.
+        double dUTurnAngleToleranceRadians = 0.2617993877991494; // 15 degrees
     };
 
     struct _EXTRUSION_RECOGNITION_EXP SSectionWireEdge final
@@ -158,6 +161,83 @@ namespace iCAX::ExtrusionRecognition
         bool bSuccess = false;
         std::vector<SSectionWire> Wires;
         std::vector<std::uint64_t> SideFaceIds;
+        std::vector<std::string> Diagnostics;
+    };
+
+    enum class EFeatureCutMode : std::uint8_t
+    {
+        Mark = 0,
+        Partial,
+        Through
+    };
+
+    enum class EFeatureEdgeRole : std::uint8_t
+    {
+        Unknown = 0,
+        Skin,
+        Side,
+        Inner,
+        Free,
+        Seam
+    };
+
+    struct _EXTRUSION_RECOGNITION_EXP SFeatureToolpathPose final
+    {
+        iCAX::GeometryData::Point3 Position;
+        // 激光/水刀姿态：从当前加工点指向材料出口方向。
+        iCAX::GeometryData::Direction3 IJK;
+        iCAX::GeometryData::Direction3 FeedDirection;
+        iCAX::GeometryData::Direction3 SurfaceNormal;
+        double dPathParameter = 0.0;
+        double dMaterialDepth = 0.0;
+    };
+
+    struct _EXTRUSION_RECOGNITION_EXP SFeatureEdgeInfo final
+    {
+        std::uint64_t EdgeId = 0;
+        EFeatureEdgeRole Role = EFeatureEdgeRole::Unknown;
+        bool bOnSkin = false;
+        bool bCanIn = false;
+        bool bStartOnSkin = false;
+        bool bEndOnSkin = false;
+        bool bGeometricallyStraight = false;
+        bool bFree = false;
+        bool bConvexToAdjacent = false;
+        bool bConcaveToAdjacent = false;
+        std::vector<iCAX::GeometryData::Point3> Samples;
+    };
+
+    struct _EXTRUSION_RECOGNITION_EXP SFeatureToolpath final
+    {
+        std::uint64_t FaceId = 0;
+        std::uint64_t EntryEdgeId = 0;
+        std::uint64_t ExitEdgeId = 0;
+        EFeatureCutMode CutMode = EFeatureCutMode::Mark;
+        bool bFromInternalFace = false;
+        bool bClosed = false;
+        std::vector<SFeatureToolpathPose> Poses;
+        std::vector<SFeatureEdgeInfo> BoundaryEdges;
+    };
+
+    struct _EXTRUSION_RECOGNITION_EXP SFeatureToolpathOptions final
+    {
+        double dLinearTolerance = 0.001;
+        double dAngularToleranceRadians = 0.001;
+        std::size_t nTrajectorySampleCount = 33;
+        std::size_t nCurveClassificationSampleCount = 17;
+        // 曲线侧边只要偏离端点弦线超过该距离，就退化为打标。
+        double dSideStraightDistanceTolerance = 0.001;
+        // 允许同一截面边界采样点与轮廓边的最大距离。
+        double dSkinDistanceTolerance = 0.002;
+        bool bProcessInternalFaces = true;
+        bool bEmitMarkPaths = true;
+    };
+
+    struct _EXTRUSION_RECOGNITION_EXP SFeatureToolpathResult final
+    {
+        bool bSuccess = false;
+        std::vector<SFeatureToolpath> Toolpaths;
+        std::vector<SFeatureEdgeInfo> EdgeInfos;
         std::vector<std::string> Diagnostics;
     };
 

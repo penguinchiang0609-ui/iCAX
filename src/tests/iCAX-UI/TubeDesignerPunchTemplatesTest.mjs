@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import {readFileSync,readdirSync} from "node:fs";
+import {readFileSync,readdirSync,existsSync} from "node:fs";
 import {createPunchWizardState,installPunchCatalogue,updatePunchWizardField,addPunchWizardFeature,
   editPunchWizardFeature,getPunchWizardPayload,renderPunchWizardDialog,validatePunchWizard,missingPunchTools,isPunchToolReadOnly} from "../../apps/tube-designer/webpage/punchWizard.mjs";
 import {previewPunch,beginPunchOperation,finishPunchOperation} from "../../apps/tube-designer/webpage/punchEditor.mjs";
 import {handlePartsAreaAction} from "../../apps/tube-designer/webpage/partsArea.mjs";
-const toolsRoot=new URL("../../apps/tube-designer/templates/_shared/punch-tools/",import.meta.url);
-const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(item=>item.isDirectory()).map(item=>JSON.parse(readFileSync(new URL(item.name+"/tool.json",toolsRoot))))
+const toolsRoot=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
+const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(item=>item.isDirectory()&&existsSync(new URL(item.name+"/tool.json",toolsRoot))).map(item=>JSON.parse(readFileSync(new URL(item.name+"/tool.json",toolsRoot))))
   .map(t=>({...t,digest:"test",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
 const part={entityId:"part",length:500,manufacturingGeometryResourceId:"old-id",manufacturingGeometryResourceVersion:1,
   independentNesting:true,profile:{kind:"rect",width:40,depth:20},properties:{"manufacturing.partKind":"tube"}};
@@ -15,9 +15,9 @@ const change=(field,value,more={})=>updatePunchWizardField(view,{value,dataset:{
 assert.equal(change("tool","circle"),true);
 assert.equal(change("depthMode","reverse"),true);
 assert.equal(state.draft.reverse,true);assert.equal(state.draft.through,false);assert.equal(state.draft.opposite,false);
-assert.equal(change("tool","v-notch"),true);
+assert.equal(change("tool","v-notch-sharp"),true);
 const sheet=renderPunchWizardDialog(part,view,{tableMode:true,showEnds:true,branchProfiles:[]});
-assert.match(sheet,/V 槽/);assert.match(sheet,/左端面/);assert.match(sheet,/右端面/);
+assert.equal(state.draft.toolRef.id,"v-notch-sharp");assert.match(sheet,/左端面/);assert.match(sheet,/右端面/);
 assert.equal(change("tool","diamond-12"),true);
 assert.deepEqual(state.draft.toolParameters,{});
 assert.match(renderPunchWizardDialog(part,view),/定式刀具：形状尺寸固定/);

@@ -16,7 +16,7 @@ ROOT = next(parent for parent in Path(__file__).resolve().parents
 sys.path.insert(0, str(ROOT / "src/iCAX-Engine/framework/TemplateRuntime/python"))
 from icax_template_sdk import NeutralModel
 
-PACKAGE = ROOT / "src/apps/tube-designer/templates/single_face_security_window"
+PACKAGE = ROOT / "src/apps/tube-designer/templates/product/single_face_security_window"
 SPEC = importlib.util.spec_from_file_location("single_window_geometry_subject", PACKAGE / "template.py")
 assert SPEC is not None and SPEC.loader is not None
 SUBJECT = importlib.util.module_from_spec(SPEC)

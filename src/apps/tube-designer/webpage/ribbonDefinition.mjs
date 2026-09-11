@@ -13,16 +13,6 @@ const allRibbonDefinition = {
             command("designer.disassemble", "导入下料", "machine", { size: "large", iconTone: "orange" }),
           ],
         },
-        {
-          title: "产品模板",
-          commands: [
-            command("designer.templates.manage", "模板管理", "report", { size: "large", iconTone: "blue" }),
-            command("designer.templates.new", "新增模板", "add-instance", { size: "large", iconTone: "green" }),
-            command("designer.templates.import", "导入 iPT", "new", { size: "large", iconTone: "green" }),
-            command("designer.templates.export", "导出 iPT", "save", { size: "large", iconTone: "green" }),
-            command("designer.templates.delete", "删除模板", "delete", { size: "large", iconTone: "orange" }),
-          ],
-        },
       ],
     },
     {
@@ -88,9 +78,20 @@ const allRibbonDefinition = {
         {
           title: "资源类型",
           commands: [
+            command("resources.products", "产品", "report", { size: "large", iconTone: "blue" }),
             command("resources.profiles", "管型", "profile-sketch", { size: "large", iconTone: "green" }),
             command("resources.tools", "模具", "hole", { size: "large", iconTone: "orange" }),
             command("resources.components", "配件", "machine", { size: "large", iconTone: "blue" }),
+          ],
+        },
+        {
+          title: "产品模板",
+          commands: [
+            command("designer.templates.manage", "管理", "report", { size: "large", iconTone: "blue" }),
+            command("designer.templates.new", "新增", "add-instance", { size: "large", iconTone: "green" }),
+            command("designer.templates.import", "导入 itpt", "new", { size: "large", iconTone: "green" }),
+            command("designer.templates.export", "导出 itpt", "save", { size: "large", iconTone: "green" }),
+            command("designer.templates.delete", "删除", "delete", { size: "large", iconTone: "orange" }),
           ],
         },
         {
@@ -105,7 +106,12 @@ const allRibbonDefinition = {
         },
         {
           title: "模具操作",
-          commands: [command("tools.refresh", "刷新模具", "view-fit", { size: "large", iconTone: "green" })],
+          commands: [
+            command("tools.new-sketch", "绘制", "profile-sketch", { size: "large", iconTone: "green" }),
+            command("tools.import-package", "导入程式", "new", { size: "large", iconTone: "green" }),
+            command("tools.import-dxf", "导入定式", "hole", { size: "large", iconTone: "orange" }),
+            command("tools.refresh", "刷新模具", "view-fit", { size: "large", iconTone: "green" }),
+          ],
         },
         {
           title: "配件操作",
@@ -174,8 +180,35 @@ const allRibbonDefinition = {
 export const sketchRibbonGroups = allRibbonDefinition.tabs.find(tab => tab.id === "sketch").groups;
 export const ribbonDefinition = { ...allRibbonDefinition, tabs: allRibbonDefinition.tabs.filter(tab => tab.id !== "sketch") };
 
-export function getRibbonDefinition() {
-  return ribbonDefinition;
+export function getRibbonDefinition(options = {}) {
+  const resourceArea = ["products", "profiles", "tools", "components"].includes(options?.resourceArea)
+    ? options.resourceArea : "profiles";
+  const resourceCommandAreas = {
+    "resources.products": "products",
+    "resources.profiles": "profiles",
+    "resources.tools": "tools",
+    "resources.components": "components",
+  };
+  const resourceGroupAreas = {
+    "产品模板": "products",
+    "管型操作": "profiles",
+    "模具操作": "tools",
+    "配件操作": "components",
+  };
+  return {
+    ...ribbonDefinition,
+    tabs: ribbonDefinition.tabs.map((tab) => tab.id !== "resources" ? tab : ({
+      ...tab,
+      groups: tab.groups
+        .filter((group) => !resourceGroupAreas[group.title] || resourceGroupAreas[group.title] === resourceArea)
+        .map((group) => ({
+          ...group,
+          commands: group.commands.map((item) => resourceCommandAreas[item.id]
+            ? { ...item, active: resourceCommandAreas[item.id] === resourceArea }
+            : item),
+        })),
+    })),
+  };
 }
 
 function command(id, title, iconName, options = {}) {

@@ -74,11 +74,20 @@ import {
   renderAboutRightPane,
   renderAboutViewportOverlay,
 } from "./aboutArea.mjs";
+import {
+  renderProductTemplateLibraryLeftPane,
+  renderProductTemplateLibraryRightPane,
+  renderProductTemplateLibraryViewportOverlay,
+} from "./templateLibrary.mjs";
 
 export const TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS = 500;
 
-export function getRibbonDefinition() {
-  return getDesignerRibbonDefinition();
+export function getRibbonDefinition(context = {}) {
+  const projectId = context.project?.projectId ?? "";
+  const view = getProjectView(projectId);
+  return getDesignerRibbonDefinition({
+    resourceArea: view.tubeDesignerResourceLibraryArea ?? "profiles",
+  });
 }
 
 export function mountProduct(context) {
@@ -118,10 +127,58 @@ export async function mountProject(context) {
     view,
     historyChanged,
     shouldRefresh,
-    shouldRefreshUserData,
+    // User data is hydrated in the background.  It must not keep the
+    // product scene behind a blocking first-screen progress mask.
+    false,
   );
   const initialMount = workbench.mountProject(designerContext);
   if (!shouldRefresh && !shouldRefreshUserData) {
+    return initialMount;
+  }
+
+  // Scene restoration and product user-data hydration share the embedded
+  // Python template host.  Keep an explicit gate so startup never runs both
+  // SDO calls concurrently and leaves the library request timing out.
+  let resolveSceneRefreshReady;
+  const sceneRefreshReady = new Promise((resolve) => { resolveSceneRefreshReady = resolve; });
+  if (!shouldRefresh) resolveSceneRefreshReady();
+
+  if (shouldRefreshUserData) {
+    const userDataSynchronization = (async () => {
+      try {
+        await sceneRefreshReady;
+        await refreshDesignerUserData(designerContext, view);
+      } finally {
+        view.tubeDesignerUserDataLoading = false;
+        // A first mount can happen before the product SDO is connected. Do
+        // not mark that empty placeholder as successfully hydrated; opening
+        // 管型库 later must be allowed to retry once the channel is ready.
+        view.tubeDesignerUserDataLoaded = typeof designerContext.productProxy?.invoke === "function"
+          && !view.tubeDesignerUserDataError
+          && Array.isArray(view.tubeDesignerSystemProfiles)
+          && view.tubeDesignerSystemProfiles.length > 0;
+        workbench.mountProject(designerContext);
+      }
+    })();
+    view.tubeDesignerUserDataSynchronizationPromise = userDataSynchronization;
+    void userDataSynchronization.then(
+      () => {
+        if (view.tubeDesignerUserDataSynchronizationPromise === userDataSynchronization) {
+          view.tubeDesignerUserDataSynchronizationPromise = null;
+        }
+      },
+      (error) => {
+        view.tubeDesignerUserDataError = error?.message ?? String(error);
+        if (view.tubeDesignerUserDataSynchronizationPromise === userDataSynchronization) {
+          view.tubeDesignerUserDataSynchronizationPromise = null;
+        }
+      },
+    );
+  }
+
+  // A user-data-only refresh is deliberately fire-and-forget.  The workbench
+  // is already mounted and remains interactive while the libraries hydrate.
+  if (!shouldRefresh) {
     return initialMount;
   }
 
@@ -141,11 +198,7 @@ export async function mountProject(context) {
         await waitForPaint();
         loadProgress.visibleAt = nowMilliseconds();
       }
-      await Promise.all([
-        shouldRefresh ? refreshDesignerState(designerContext, view) : true,
-        shouldRefreshUserData ? refreshDesignerUserData(designerContext, view) : true,
-      ]);
-      if (!shouldRefresh) return;
+      await refreshDesignerState(designerContext, view);
       const designer = view.scene?.tubeDesigner ?? {};
       const generationRunId = String(designer.generationRun?.entityId ?? "").trim();
       const memberIds = (designer.members ?? [])
@@ -196,10 +249,7 @@ export async function mountProject(context) {
         view.tubeDesignerLoading = false;
         view.tubeDesignerLoaded = true;
       }
-      if (shouldRefreshUserData) {
-        view.tubeDesignerUserDataLoading = false;
-        view.tubeDesignerUserDataLoaded = true;
-      }
+      resolveSceneRefreshReady();
       workbench.mountProject(designerContext);
     }
   })();
@@ -236,7 +286,7 @@ function withDesignerContext(context) {
   return {
     ...context,
     forceThreeViewport: true,
-    areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", profiles: "管型库", tools: "模具库", components: "配件库", sketch: "草图", about: "关于" },
+    areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", templates: "产品模板", profiles: "管型库", tools: "模具库", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {
         left: renderDesignerLeftPane,
@@ -253,6 +303,10 @@ function withDesignerContext(context) {
       components: {
         left: renderComponentLibraryLeftPane,
         right: renderComponentLibraryRightPane,
+      },
+      templates: {
+        left: renderProductTemplateLibraryLeftPane,
+        right: renderProductTemplateLibraryRightPane,
       },
       sketch: {
         left: renderSketchLeftPane,
@@ -272,9 +326,10 @@ function withDesignerContext(context) {
       if (tabId === "parts") return "nesting";
       if (tabId === "resources") {
         const resourceArea = getProjectView(context.project?.projectId ?? "").tubeDesignerResourceLibraryArea;
-        return ["profiles", "tools", "components"].includes(resourceArea) ? resourceArea : "profiles";
+        return ["products", "profiles", "tools", "components"].includes(resourceArea)
+          ? (resourceArea === "products" ? "templates" : resourceArea) : "profiles";
       }
-      return ["view", "nesting", "machining", "profiles", "tools", "components", "sketch", "about"].includes(tabId)
+      return ["view", "nesting", "machining", "templates", "profiles", "tools", "components", "sketch", "about"].includes(tabId)
         ? tabId : "view";
     },
     resolveWorkbenchPresentation: (_context, _view, _scene, areaId) => ({
@@ -308,7 +363,33 @@ function withDesignerContext(context) {
     },
     afterProjectRender(context, view, mount, ops) {
       bindProfileParameterDiagrams(mount);
-      if (view.activeAreaId === "tools") ensureToolLibraryCatalogue(context, view, ops);
+      if ((view.activeAreaId === "profiles" || view.activeAreaId === "tools")
+          && typeof context.productProxy?.invoke === "function"
+          && !(view.tubeDesignerSystemProfiles?.length > 0)
+          && !view.tubeDesignerProfileLibraryHydrationAttempted
+          && !view.tubeDesignerUserDataLoading) {
+        // The first mount intentionally does not block on product user data.
+        // If the product channel became available after that mount, hydrate
+        // the default 管型库 once in the background and repaint on completion.
+        view.tubeDesignerProfileLibraryHydrationAttempted = true;
+        void refreshDesignerUserData(context, view).then((loaded) => {
+          if (loaded && (view.activeAreaId === "profiles" || view.activeAreaId === "tools")) {
+            ops.renderProject(context, view);
+          }
+        });
+      }
+      if (view.activeAreaId === "tools") {
+        view.tubeDesignerToolLibraryRenderProject = () => ops.renderProject(context, view);
+        // Do not immediately retry from the repaint triggered by a failed
+        // request; that would create an endless timeout loop.  A fresh entry
+        // through the ribbon (or 重新读取) calls ensureToolLibraryCatalogue
+        // explicitly and is allowed to retry the error state.
+        const catalogueStatus = view.tubeDesignerToolLibrary?.catalogueStatus ?? "idle";
+        if (catalogueStatus === "idle") ensureToolLibraryCatalogue(context, view, ops);
+      }
+      if (view.activeAreaId === "templates") {
+        view.tubeDesignerProductTemplateLibraryRenderProject = () => ops.renderProject(context, view);
+      }
       if (view.activeAreaId === "nesting" && view.tubeDesignerBreakdownOpen && !view.tubeDesignerPartInspectionOpen) {
         scheduleDesignerPartThumbnailHydration(context);
       }
@@ -359,14 +440,14 @@ function configureDesignerViewport(_context, view, areaId) {
   const viewport = view.viewport;
   if (!viewport) return;
   const normalizedAreaId = areaId === "parts" ? "nesting"
-    : (["view", "nesting", "machining", "profiles", "tools", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
+    : (["view", "nesting", "machining", "templates", "profiles", "tools", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
   view.tubeDesignerProjectionModes ??= {};
   const projectionMode = view.tubeDesignerProjectionModes[normalizedAreaId] ?? "perspective";
   viewport.setProjectionToggleVisible?.(!["sketch", "about"].includes(normalizedAreaId));
   viewport.setPickingEnabled?.(!["sketch", "about"].includes(normalizedAreaId));
   viewport.setContinuousRendering?.(normalizedAreaId !== "sketch");
   viewport.setProjectionChangeHandler?.((mode) => {
-    const currentAreaId = ["view", "profiles", "tools", "components", "nesting", "machining"].includes(view.activeAreaId)
+    const currentAreaId = ["view", "templates", "profiles", "tools", "components", "nesting", "machining"].includes(view.activeAreaId)
       ? view.activeAreaId : "view";
     view.tubeDesignerProjectionModes ??= {};
     view.tubeDesignerProjectionModes[currentAreaId] = mode;
@@ -376,7 +457,7 @@ function configureDesignerViewport(_context, view, areaId) {
 }
 
 function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
-  if (["profiles", "tools", "components", "sketch", "nesting", "machining", "about"].includes(areaId)) {
+  if (["templates", "profiles", "tools", "components", "sketch", "nesting", "machining", "about"].includes(areaId)) {
     // 管型、下料与辅助工作区自行装载当前选择，不对应产品装配 View。
     return false;
   }
@@ -401,6 +482,7 @@ function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
 function renderDesignerAreaViewportOverlay(context, view, scene) {
   if (view.activeAreaId !== "nesting") clearPartsViewportAnnotations(view);
   if (view.activeAreaId === "profiles") return renderProfileLibraryViewportOverlay(context, view, scene);
+  if (view.activeAreaId === "templates") return renderProductTemplateLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "tools") return renderToolLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "components") return renderComponentLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "sketch") return renderSketchViewportOverlay(context, view, scene);

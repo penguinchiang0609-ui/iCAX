@@ -178,7 +178,7 @@ TEST(ProfileGenerationPerformanceTest, SystemProfilesColdAndWarmPipeline)
         _Requests[_Index] = RuntimeRequest(_Root, {
             { "action", std::string("evaluate-system") },
             { "systemProfileId", _IDs[_Index] },
-            { "profileRoot", (_Root / "src/apps/tube-designer/templates/_shared/profiles").string() },
+            { "profileRoot", (_Root / "src/apps/tube-designer/templates/profile").string() },
             { "values", ObjectMap{} }
         });
         const auto _Sample = SampleProfile(_Host, _Resources, _Requests[_Index], _IDs[_Index]);
@@ -208,7 +208,7 @@ TEST(ProfileGenerationPerformanceTest, SystemProfilesColdAndWarmPipeline)
     const auto _ListStarted = Clock::now();
     const auto _Catalog = _Host.Invoke(RuntimeRequest(_Root, {
         { "action", std::string("list-system") },
-        { "profileRoot", (_Root / "src/apps/tube-designer/templates/_shared/profiles").string() }
+        { "profileRoot", (_Root / "src/apps/tube-designer/templates/profile").string() }
     }));
     const auto _ListEnded = Clock::now();
     ASSERT_EQ(_IDs.size(), _Catalog.at("systemProfiles").To<VariantArray>().size());

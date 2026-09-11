@@ -31,7 +31,7 @@
 
 ## 几何与数据约定
 
-- 模板位于产品安装级 `templates/_shared/punch-tools/`，新增刀具通过目录和描述文件接入。
+- 模板位于产品安装级 `templates/mold/`，新增刀具通过目录和描述文件接入。
 - C++ 共用实体构造与布尔能力；三维绘制独立使用 `GetPartDrawingTools`、`PreviewPartDrawing`、`AddPartDrawing`、`ApplyPartDrawing`，不转发到冲孔业务消息。前端模型、参数、控制、预览与局部更新各有专用模块。
 - 新记录保存在 `tubeDesigner.partDrawing`；读取兼容旧 `tubeDesigner.punchWizard.drawing`，显式保存后迁移，不自动改写用户工程。
 - 三维刀具声明 `target: part`，由 Python 输出 `coordinateSpace: part` 的自包含中性实体。几何任务使用现有 Task 调度；资源提交仍在宿主线程。

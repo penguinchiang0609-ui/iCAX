@@ -786,10 +786,18 @@ namespace iCAX::TubeDesigner
     }
 
     ObjectMap ResolveComponentModelSnapshot(const std::filesystem::path& SystemRoot_,
-        iCAX::Application::IProductUserDataStore* Store_, const std::string& Scope_, const std::string& ID_)
+        iCAX::Application::IProductUserDataStore* Store_, const std::string& Scope_, const std::string& ID_,
+        const std::filesystem::path& UserRoot_)
     {
         if (Scope_ == "system") return LoadSystemComponentModel(SystemRoot_, ID_);
-        if (Scope_ != "user" || !Store_) throw std::invalid_argument("配件模型来源无效或配件库不可用");
+        if (Scope_ != "user") throw std::invalid_argument("配件模型来源无效");
+        if (!UserRoot_.empty() && std::filesystem::is_regular_file(UserRoot_ / ID_ / "model.json"))
+        {
+            auto _Snapshot = LoadSystemComponentModel(UserRoot_, ID_);
+            _Snapshot["sourceReference"] = "user:" + ID_;
+            return _Snapshot;
+        }
+        if (!Store_) throw std::invalid_argument("配件模型库不可用");
         const auto _Record = Store_->Get(kComponentModelFeature, kComponentModelRecordType, ID_);
         if (!_Record || !_Record->Payload.Is<ObjectMap>()) throw std::invalid_argument("配件模型已删除或不存在");
         auto _Snapshot = _Record->Payload.To<ObjectMap>();
@@ -829,7 +837,7 @@ namespace iCAX::TubeDesigner
     }
 
     VariantArray ListComponentModelSummaries(const std::filesystem::path& Root_,
-        iCAX::Application::IProductUserDataStore* Store_)
+        iCAX::Application::IProductUserDataStore* Store_, const std::filesystem::path& UserRoot_)
     {
         VariantArray _Models;
         std::vector<std::string> _IDs;
@@ -840,6 +848,18 @@ namespace iCAX::TubeDesigner
         std::sort(_IDs.begin(), _IDs.end());
         for (const auto& _ID : _IDs)
             _Models.emplace_back(ComponentModelSummary(LoadSystemComponentModel(Root_, _ID), "system", _ID));
+        _IDs.clear();
+        if (!UserRoot_.empty() && std::filesystem::is_directory(UserRoot_))
+            for (const auto& _Entry : std::filesystem::directory_iterator(UserRoot_))
+                if (_Entry.is_directory() && std::filesystem::is_regular_file(_Entry.path() / "model.json"))
+                    _IDs.push_back(PathText(_Entry.path().filename()));
+        std::sort(_IDs.begin(), _IDs.end());
+        for (const auto& _ID : _IDs)
+        {
+            auto _Snapshot = LoadSystemComponentModel(UserRoot_, _ID);
+            _Snapshot["sourceReference"] = "user:" + _ID;
+            _Models.emplace_back(ComponentModelSummary(_Snapshot, "user", _ID));
+        }
         if (Store_)
         {
             iCAX::Application::CProductUserDataQuery _Query;
@@ -855,6 +875,15 @@ namespace iCAX::TubeDesigner
 
     void ResolveTemplateComponentResources(ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
         const ObjectMap& DescriptorExtensions_, const std::filesystem::path& SystemRoot_,
+        iCAX::Application::IProductUserDataStore* Store_, const ObjectMap* Frozen_)
+    {
+        ResolveTemplateComponentResources(Document_, TemplateDirectory_, DescriptorExtensions_, SystemRoot_,
+            {}, Store_, Frozen_);
+    }
+
+    void ResolveTemplateComponentResources(ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+        const ObjectMap& DescriptorExtensions_, const std::filesystem::path& SystemRoot_,
+        const std::filesystem::path& UserRoot_,
         iCAX::Application::IProductUserDataStore* Store_, const ObjectMap* Frozen_)
     {
         const auto _Resources = Object(DescriptorExtensions_, "modelResources");
@@ -894,9 +923,11 @@ namespace iCAX::TubeDesigner
                     Text(_Template, "id"), Text(_Template, "id"), _Key);
             }
             else if (_Reference.starts_with("system:"))
-                _Snapshot = ResolveComponentModelSnapshot(SystemRoot_, Store_, "system", _Reference.substr(7));
+                _Snapshot = ResolveComponentModelSnapshot(SystemRoot_, Store_, "system", _Reference.substr(7), UserRoot_);
+            else if (_Reference.starts_with("user:"))
+                _Snapshot = ResolveComponentModelSnapshot(SystemRoot_, Store_, "user", _Reference.substr(5), UserRoot_);
             else if (_Reference.starts_with("library:"))
-                _Snapshot = ResolveComponentModelSnapshot(SystemRoot_, Store_, "user", _Reference.substr(8));
+                _Snapshot = ResolveComponentModelSnapshot(SystemRoot_, Store_, "user", _Reference.substr(8), UserRoot_);
             else throw std::invalid_argument("配件引用必须来自系统库、我的配件库或模板资源");
             const auto _BRep = Text(_Snapshot, "brep");
             _TotalBytes += _BRep.size();

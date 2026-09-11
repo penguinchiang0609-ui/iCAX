@@ -333,6 +333,13 @@ button:disabled {
   background: #eaf1ef;
 }
 
+.ribbon-command.active {
+  border-color: #57aca3;
+  background: #e1f2ef;
+  color: #11796d;
+  font-weight: 650;
+}
+
 .ribbon-command:disabled {
   color: #9aa4aa;
 }

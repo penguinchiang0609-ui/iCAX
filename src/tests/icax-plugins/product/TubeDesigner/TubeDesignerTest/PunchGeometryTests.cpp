@@ -128,7 +128,9 @@ SPunchFeature partTool(const std::string& id,ObjectMap parameters={},double stat
             {"toolRef",ObjectMap{{"id",id}}},{"toolParameters",parameters}}}}});
     const auto item=prepared.at("features").To<VariantArray>()[0].To<ObjectMap>();
     SPunchFeature f;f.ID="part-tool";f.Station=station;f.Type=id;f.ToolInPartCoordinates=true;
-    f.ToolShape=templateShape(item.at("toolSnapshot").To<ObjectMap>());f.TemplateData=item;
+    const auto snapshot=item.at("toolSnapshot").To<ObjectMap>();
+    f.ToolInPartLocalCoordinates=snapshot.at("geometry").To<ObjectMap>().at("coordinateSpace").To<std::string>()=="part-local";
+    f.ToolShape=templateShape(snapshot);f.TemplateData=item;
     return f;
 }
 }
@@ -171,7 +173,7 @@ TEST(PartDrawing, BranchExtrusionDirectionAndMaterialRegion) {
 TEST(PartDrawing, SharpRoundedAndFlatRootVGroovesPreserveBottomBridge) {
     for(auto parameters:{ObjectMap(),ObjectMap{{"rootRadius",2.}},ObjectMap{{"rootWidth",2.}},
         ObjectMap{{"bridge",3.},{"reliefDiameter",2.},{"reliefLift",1.}}}) {
-        const auto result=BuildPunchGeometry(rectTube(),{partTool("v-notch",parameters)});
+        const auto result=BuildPunchGeometry(rectTube(),{partTool("v-notch-sharp",parameters)});
         EXPECT_FALSE(inside(result,500,0,9));EXPECT_TRUE(inside(result,500,0,-9.5));
         EXPECT_TRUE(inside(result,550,0,9));
     }

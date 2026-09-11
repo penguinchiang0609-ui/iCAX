@@ -78,7 +78,7 @@ const browser = await chromium.launch({
 try {
   await rpc({ action: "reset" });
   const descriptor = JSON.parse(readFileSync(
-    resolve(sourceRoot, "apps/tube-designer/templates/_shared/profiles/round/profile.json"),
+    resolve(sourceRoot, "apps/tube-designer/templates/profile/round/profile.json"),
     "utf8",
   ));
   const defaultParameters = Object.fromEntries(

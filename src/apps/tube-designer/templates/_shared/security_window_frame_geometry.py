@@ -127,7 +127,7 @@ def validate_frame_processes(parameters: dict[str, Any], processes: list[tuple[C
         return
     if any(process.groove_style != "sharp_v" for process, _ in grooves):
         if any(bool(parameters[key]) for key in ("vGrooveBottomCut", "vGrooveReliefHole", "vGrooveWallOvercut")):
-            raise ValueError("底部切除、释放孔和壁厚过切仅适用于尖角 V 槽")
+            raise ValueError("底部切除、释放孔和壁厚过切仅适用于 V 槽")
     if not 0 <= _number(parameters, "vGrooveKFactor") <= 1:
         raise ValueError("展开 K 因子必须在 0 到 1 之间")
     distance = _number(parameters, "vGrooveBottomDistance")

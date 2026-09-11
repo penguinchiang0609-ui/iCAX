@@ -41,12 +41,43 @@ import {
   handleSketchRibbonCommand,
 } from "./sketchArea.mjs";
 import { getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs";
-import { handleComponentLibraryAction, handleComponentLibraryRibbonCommand } from "./componentLibrary.mjs";
-import { handleToolLibraryAction, handleToolLibraryRibbonCommand } from "./toolLibrary.mjs";
+import { componentLibraryState, handleComponentLibraryAction, handleComponentLibraryRibbonCommand, refreshComponentModels } from "./componentLibrary.mjs";
+import { ensureToolLibraryCatalogue, handleToolLibraryAction, handleToolLibraryRibbonCommand } from "./toolLibrary.mjs";
+import { handleProductTemplateLibraryAction, productTemplateLibrarySelectedTemplateId } from "./templateLibrary.mjs";
 
 export const DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
+export const RESOURCE_LIBRARY_SWITCH_PROGRESS_MINIMUM_VISIBLE_MS = 500;
 import { handleLicenseCommand } from "./licensing.mjs";
 export const ADD_TEMPLATE_PROGRESS_MINIMUM_VISIBLE_MS = DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS;
+
+// The scene list carries only template-card metadata. Fetch the full
+// parameter schema for the one template that is about to be edited, and keep
+// it on the scene so repeated opens do not re-request it.
+async function ensureTemplateDescriptor(context, view, templateId) {
+  const id = String(templateId ?? "").trim();
+  const designer = view.scene?.tubeDesigner;
+  const current = (designer?.templates ?? []).find((item) => String(item?.id ?? "") === id);
+  if (!current || current.available === false) return current ?? null;
+  if (current.descriptorLoaded || Array.isArray(current.parameters)) return current;
+  const requests = view.tubeDesignerTemplateDescriptorRequests ??= {};
+  if (!requests[id]) {
+    requests[id] = invokeDesignerRequest(context, "TubeDesigner.GetTemplateDescriptor", {
+      templateId: id,
+    }).then((response) => response?.template ?? null);
+  }
+  try {
+    const detail = await requests[id];
+    if (!detail || !Array.isArray(detail.parameters)) {
+      throw new Error(`模板“${current.name ?? id}”的参数描述未能加载。`);
+    }
+    const merged = { ...current, ...detail, descriptorLoaded: true };
+    designer.templates = (designer.templates ?? []).map((item) =>
+      String(item?.id ?? "") === id ? merged : item);
+    return merged;
+  } finally {
+    delete requests[id];
+  }
+}
 
 export async function handleDesignerAreaAction(context, view, action, target, ops) {
   const drawingResult=await handlePartDrawingAction(context,view,action,target,ops);
@@ -63,6 +94,8 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   if (componentResult.handled) return componentResult;
   const toolLibraryResult = await handleToolLibraryAction(context, view, action, target, ops);
   if (toolLibraryResult.handled) return toolLibraryResult;
+  const productTemplateLibraryResult = await handleProductTemplateLibraryAction(context, view, action, target, ops);
+  if (productTemplateLibraryResult.handled) return productTemplateLibraryResult;
   const nestingPunchPartResult = await handleNestingPunchPartAction(context, view, action, target, ops);
   if (nestingPunchPartResult.handled) return nestingPunchPartResult;
   const nestingStandardPartResult = await handleNestingStandardPartAction(context, view, action, target, ops);
@@ -110,7 +143,7 @@ export async function handleDesignerAreaAction(context, view, action, target, op
     return { handled: true, result: await deleteProductTemplate(context, view, ops) };
   }
   if (action === "tube-designer-open-add") {
-    openAddDialog(context, view, ops);
+    await openAddDialog(context, view, ops);
     return { handled: true };
   }
   if (action === "tube-designer-batch-add") {
@@ -349,20 +382,74 @@ export async function handleDesignerAreaAction(context, view, action, target, op
 export async function handleDesignerRibbonCommand(context, view, commandId, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return true;
   const resourceAreas = {
+    "resources.products": "products",
     "resources.profiles": "profiles",
     "resources.tools": "tools",
     "resources.components": "components",
   };
   if (resourceAreas[commandId]) {
-    view.tubeDesignerResourceLibraryArea = resourceAreas[commandId];
-    context.activeRibbonTabId = "resources";
-    ops.renderProject(context, view);
+    const resourceArea = resourceAreas[commandId];
+    view.tubeDesignerResourceLibraryArea = resourceArea;
+    const progress = {
+      title: "正在切换资源库",
+      detail: resourceArea === "profiles"
+        ? "正在装载管型资源与三维预览"
+        : resourceArea === "tools"
+          ? "正在读取模具目录与类别"
+          : resourceArea === "components"
+            ? "正在读取配件目录与三维预览"
+            : "正在读取产品模板目录",
+      stage: "切换资源类型",
+      mode: "Resources",
+      minimumVisibleMs: RESOURCE_LIBRARY_SWITCH_PROGRESS_MINIMUM_VISIBLE_MS,
+      steps: [
+        ["切换资源类型", "正在更新当前资源库"],
+        ["读取资源目录", "正在准备可用的资源记录"],
+        ["准备预览", "正在把资源交给中央场景"],
+      ],
+    };
+    const switchResource = async () => {
+      // Resource commands are rendered by the app-shell ribbon. Updating only
+      // the workbench view leaves the ribbon's active command stuck on the
+      // default profile entry. Use the shell action so its state and the
+      // workspace are refreshed together.
+      await context.actions?.selectRibbonTab?.("resources");
+      // selectRibbonTab() updates the app-shell state, but this command's
+      // context was created before the tab changed.
+      context.activeRibbonTabId = "resources";
+      ops.renderProject(context, view);
+      // The initial user-data hydration is intentionally non-blocking. If it
+      // failed during the first scene load (or is still in flight), opening
+      // the library must wait for it and retry instead of rendering an empty
+      // 管型库 forever.
+      await waitForDesignerUserData(context, view);
+      if (resourceArea === "tools") await ensureToolLibraryCatalogue(context, view, ops);
+      if (resourceArea === "components") {
+        const componentState = componentLibraryState(view);
+        if (componentState.loadPromise) await componentState.loadPromise;
+        else if (componentState.loadState === "idle") await refreshComponentModels(context, view, ops);
+      }
+    };
+    if (typeof context.actions?.withProjectProgress === "function"
+        && String(context.project?.projectId ?? "").trim()) {
+      await context.actions.withProjectProgress(
+        context.project.projectId,
+        progress,
+        switchResource,
+      );
+    } else {
+      await switchResource();
+    }
     return true;
   }
   if (await handleTubeMachiningRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleLicenseCommand(context, view, commandId, ops)) return true;
   if (commandId === "profiles.new-sketch") {
     await openProfileSectionSketch(context, view, ops, true);
+    return true;
+  }
+  if (commandId === "tools.new-sketch") {
+    await openToolSectionSketch(context, view, ops);
     return true;
   }
   if (await handleNestingPunchPartRibbonCommand(context, view, commandId, ops)) return true;
@@ -411,7 +498,7 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
     return true;
   }
   if (commandId === "designer.add" || commandId === "designer.generate") {
-    openAddDialog(context, view, ops);
+    await openAddDialog(context, view, ops);
     return true;
   }
   if (commandId === "designer.batch-add" || commandId === "designer.import-excel") {
@@ -448,9 +535,11 @@ function openProductTemplateManager(context, view, ops) {
   const designer = view.scene?.tubeDesigner ?? {};
   const first = (designer.templates ?? []).find((item) => item?.available)?.id
     ?? view.tubeDesignerUserData?.productTemplates?.[0]?.id ?? "";
+  const selectedPackageId = productTemplateLibrarySelectedTemplateId(view);
   view.tubeDesignerTemplateManager = {
     mode: "list",
-    selectedId: view.tubeDesignerTemplateManager?.selectedId ?? String(first),
+    selectedId: selectedPackageId
+      || view.tubeDesignerTemplateManager?.selectedId || String(first),
   };
   view.error = "";
   ops.renderProject(context, view);
@@ -523,8 +612,8 @@ async function importProductTemplate(context, view, ops) {
     return null;
   }
   const sourcePath = String(await bridge.openFileDialog({
-    title: "导入产品模板（.iPT）",
-    filters: [{ name: "iCAX 产品模板包", extensions: ["ipt"] }],
+    title: "导入产品模板（.itpt）",
+    filters: [{ name: "iCAX 产品模板包", extensions: ["itpt"] }],
   }) ?? "").trim();
   if (!sourcePath) return null;
   openProductTemplateManager(context, view, ops);
@@ -533,7 +622,7 @@ async function importProductTemplate(context, view, ops) {
       sourcePath,
     }, { timeoutMs: 120000 });
     const template = response?.template ?? response?.productTemplate;
-    if (!template?.id) throw new Error("导入 iPT 后没有返回模板记录。");
+    if (!template?.id) throw new Error("导入 .itpt 后没有返回模板记录。");
     upsertUserDataItem(view, "productTemplates", template);
     view.tubeDesignerTemplateManager = { mode: "list", selectedId: String(template.id) };
     await refreshDesignerUserData(context, view);
@@ -544,7 +633,7 @@ async function importProductTemplate(context, view, ops) {
       kind: "product-template-import",
       title: "正在导入产品模板",
       phase: "importing-product-template",
-      phaseLabel: "校验 iPT 压缩包",
+      phaseLabel: "校验 .itpt 压缩包",
       message: "正在读取模板描述、脚本和资源",
     },
   });
@@ -567,10 +656,10 @@ async function exportProductTemplate(context, view, ops) {
   const name = String(selection.item?.name ?? selection.item?.displayName ?? selection.id ?? "product-template")
     .replace(/[\\/:*?"<>|]/g, "_").trim() || "product-template";
   const targetPath = String(await bridge.saveFileDialog({
-    title: "导出产品模板（.iPT）",
-    defaultPath: `${name}.iPT`,
-    defaultExtension: "iPT",
-    filters: [{ name: "iCAX 产品模板包", extensions: ["ipt"] }],
+    title: "导出产品模板（.itpt）",
+    defaultPath: `${name}.itpt`,
+    defaultExtension: "itpt",
+    filters: [{ name: "iCAX 产品模板包", extensions: ["itpt"] }],
   }) ?? "").trim();
   if (!targetPath) return null;
   return runDesignerOperation(context, view, ops, async () => {
@@ -579,7 +668,7 @@ async function exportProductTemplate(context, view, ops) {
       id: selection.id,
       targetPath,
     }, { timeoutMs: 120000 });
-    if (!response?.path) throw new Error("导出 iPT 后没有返回文件路径。");
+    if (!response?.path) throw new Error("导出 .itpt 后没有返回文件路径。");
     ops.showNotice(context, view, `产品模板已导出：${response.path}`);
     return response;
   }, {
@@ -587,7 +676,7 @@ async function exportProductTemplate(context, view, ops) {
       kind: "product-template-export",
       title: "正在导出产品模板",
       phase: "exporting-product-template",
-      phaseLabel: "生成 iPT 压缩包",
+      phaseLabel: "生成 .itpt 压缩包",
       message: "正在整理模板描述、脚本和资源",
     },
   });
@@ -622,7 +711,7 @@ async function createProductTemplate(context, view, ops) {
       title: "正在新增产品模板",
       phase: "creating-product-template",
       phaseLabel: "保存模板包",
-      message: "正在生成可导出的 iPT 模板包",
+      message: "正在生成可导出的 .itpt 模板包",
     },
   });
 }
@@ -698,6 +787,20 @@ async function openProfileSectionSketch(context, view, ops, createNew) {
   }
 }
 
+async function openToolSectionSketch(context, view, ops) {
+  if (view.pending) return null;
+  const current = view.tubeDesignerSketch?.section;
+  if (current?.dirty && typeof globalThis.confirm === "function"
+      && !globalThis.confirm("当前草图还有未保存的修改，确定开始绘制新模具吗？")) return null;
+  const state = beginNewSectionSketch(view);
+  state.sectionName = "我的草图模具";
+  view.tubeDesignerToolSketchContext = { kind: "fixed", target: "side", category: "孔型" };
+  view.tubeDesignerSketchDialogOpen = true;
+  view.error = "";
+  ops.renderProject(context, view);
+  return state;
+}
+
 async function chooseBatchAddWorkbook(context, view, ops, suppliedPath = "") {
   if (view.pending) return null;
   let sourcePath = suppliedPath;
@@ -729,11 +832,31 @@ async function chooseBatchAddWorkbook(context, view, ops, suppliedPath = "") {
 export async function refreshDesignerState(context, view, ops = null) {
   if (!context.sceneProxy) return false;
   try {
-    const response = await context.sceneProxy.invoke("TubeDesigner.List", {nestingOnly: view.activeAreaId === "nesting", includeManufacturingGeometry: view.activeAreaId === "parts" || Boolean(view.tubeDesignerBreakdownOpen)}, { timeoutMs: 180000 });
+    const nestingOnly = view.activeAreaId === "nesting";
+    const includeManufacturingGeometry = view.activeAreaId === "parts"
+      || Boolean(view.tubeDesignerBreakdownOpen);
+    const response = await context.sceneProxy.invoke(
+      "TubeDesigner.List",
+      { nestingOnly, includeManufacturingGeometry },
+      // The normal product mount only reads the snapshot.  Keep the long
+      // timeout for deliberate manufacturing-geometry restoration, but do
+      // not leave the first screen waiting for three minutes.
+      { timeoutMs: includeManufacturingGeometry ? 180000 : 30000 },
+    );
     const designer = response?.tubeDesigner ?? {};
     const previousProductId = String(view.scene?.tubeDesigner?.product?.entityId ?? "");
     view.scene ??= {};
     view.scene.tubeDesigner = designer;
+    const activeTemplateId = String(designer.product?.templateId ?? "").trim();
+    if (activeTemplateId) {
+      try {
+        await ensureTemplateDescriptor(context, view, activeTemplateId);
+      } catch (error) {
+        // A catalog refresh should still be usable when a single detail
+        // request is temporarily unavailable; editing will retry on demand.
+        view.tubeDesignerTemplateLoadError = error?.message ?? String(error);
+      }
+    }
     view.tubeDesignerRightDraft = { ...(designer.product?.parameters ?? {}) };
     if (previousProductId !== String(designer.product?.entityId ?? "")) {
       view.tubeDesignerRightPresetSelection = "";
@@ -751,6 +874,13 @@ export async function refreshDesignerState(context, view, ops = null) {
 }
 
 export async function refreshDesignerUserData(context, view, ops = null) {
+  // User-data hydration can be requested by the initial workbench mount and
+  // again when a resource-library tab is opened. Share one in-flight request
+  // so the two callers never race the same product SDO.
+  if (view.tubeDesignerUserDataRefreshPromise) {
+    return view.tubeDesignerUserDataRefreshPromise;
+  }
+  const refresh = (async () => {
   if (typeof context.productProxy?.invoke !== "function") {
     view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
     view.tubeDesignerSystemProfiles ??= [];
@@ -784,6 +914,41 @@ export async function refreshDesignerUserData(context, view, ops = null) {
     ops?.renderProject?.(context, view);
     return false;
   }
+  })();
+  view.tubeDesignerUserDataRefreshPromise = refresh;
+  try {
+    return await refresh;
+  } finally {
+    if (view.tubeDesignerUserDataRefreshPromise === refresh) {
+      view.tubeDesignerUserDataRefreshPromise = null;
+    }
+  }
+}
+
+async function waitForDesignerUserData(context, view) {
+  const synchronization = view.tubeDesignerUserDataSynchronizationPromise;
+  if (synchronization) {
+    try { await synchronization; } catch (_) { /* retry below when needed */ }
+  }
+  if (view.tubeDesignerUserDataRefreshPromise) {
+    try { await view.tubeDesignerUserDataRefreshPromise; } catch (_) { /* retry below */ }
+  }
+  const hasSystemProfiles = Array.isArray(view.tubeDesignerSystemProfiles)
+    && view.tubeDesignerSystemProfiles.length > 0;
+  if (!hasSystemProfiles || view.tubeDesignerUserDataError) {
+    view.tubeDesignerUserDataLoading = true;
+    let loaded = false;
+    try {
+      loaded = await refreshDesignerUserData(context, view);
+      return loaded;
+    } finally {
+      view.tubeDesignerUserDataLoading = false;
+      view.tubeDesignerUserDataLoaded = Boolean(loaded)
+        && Array.isArray(view.tubeDesignerSystemProfiles)
+        && view.tubeDesignerSystemProfiles.length > 0;
+    }
+  }
+  return true;
 }
 
 export function getDesignerRenderSignature(designer = {}) {
@@ -796,12 +961,22 @@ export function getDesignerRenderSignature(designer = {}) {
     .sort((left, right) => left.entityId.localeCompare(right.entityId)));
 }
 
-function openAddDialog(context, view, ops) {
+async function openAddDialog(context, view, ops) {
   view.tubeDesignerAddInstanceQuantity = 1;
   const designer = view.scene?.tubeDesigner ?? {};
-  const template = getDefaultTemplate(designer.templates ?? []);
+  let template = getDefaultTemplate(designer.templates ?? []);
   if (!template) {
     view.error = "当前没有可用的产品模板。";
+    ops.renderProject(context, view);
+    return;
+  }
+  try {
+    view.tubeDesignerTemplateSwitchPending = true;
+    await ensureTemplateDescriptor(context, view, template.id);
+    template = getTemplateById(designer.templates, template.id) ?? template;
+  } catch (error) {
+    view.tubeDesignerTemplateSwitchPending = false;
+    view.error = error?.message ?? String(error);
     ops.renderProject(context, view);
     return;
   }
@@ -824,6 +999,7 @@ function openAddDialog(context, view, ops) {
   view.tubeDesignerDisassemblySelectorOpen = false;
   view.tubeDesignerBreakdownOpen = false;
   view.error = "";
+  view.tubeDesignerTemplateSwitchPending = false;
   view.viewport?.setContinuousRendering?.(false);
   if (!mountAddDialog(context, designer, view)) ops.renderProject(context, view);
 }
@@ -855,10 +1031,10 @@ async function selectTemplate(context, view, target, ops) {
   captureAddDialogScrollAnchor(context, view, target);
   const designer = view.scene?.tubeDesigner ?? {};
   const templateId = String(target?.dataset?.tubeDesignerTemplateId ?? target?.value ?? "").trim();
-  const template = getTemplateById(designer.templates, templateId);
+  let template = getTemplateById(designer.templates, templateId);
   if (!template?.available) return;
   const presetId = String(target?.dataset?.tubeDesignerCatalogPresetId ?? "").trim();
-  const entry = getCatalogEntry(designer.templates, template.id, presetId);
+  let entry = getCatalogEntry(designer.templates, template.id, presetId);
   if (!entry) return;
   // Clicking the active style must not wipe dimensions already entered.
   if (view.tubeDesignerAddCatalogEntryId === entry.catalogEntryId) return template.id;
@@ -867,6 +1043,13 @@ async function selectTemplate(context, view, target, ops) {
   await waitForPaint();
   const progressShownAt = progress ? nowMilliseconds() : null;
   try {
+    await ensureTemplateDescriptor(context, view, template.id);
+    const loadedTemplate = getTemplateById(designer.templates, template.id);
+    if (!loadedTemplate?.available) throw new Error("模板详情不可用，无法编辑该模板。");
+    const loadedEntry = getCatalogEntry(designer.templates, loadedTemplate.id, presetId);
+    if (!loadedEntry) throw new Error("模板目录项已变化，请重新选择。");
+    template = loadedTemplate;
+    entry = loadedEntry;
     view.tubeDesignerAddTemplateId = template.id;
     view.tubeDesignerAddCatalogPresetId = entry.presetId;
     view.tubeDesignerAddCatalogEntryId = entry.catalogEntryId;
@@ -1722,6 +1905,7 @@ async function changeInstanceQuantity(context, view, target, ops) {
     });
     if (!response?.tubeDesigner) throw new Error("实例数量未能保存。");
     view.scene.tubeDesigner = response.tubeDesigner;
+    await ensureTemplateDescriptor(context, view, response.tubeDesigner.product?.templateId);
     restoreSavedNestingTask(view, context);
     await acknowledgeOwnMutation(context, view);
     view.notice = "生产数量已保存；直接关联的下料零件数量已同步。";
@@ -1781,6 +1965,7 @@ async function generatePreview(context, view, ops, mode) {
     });
     view.scene ??= {};
     view.scene.tubeDesigner = nextDesigner;
+    await ensureTemplateDescriptor(context, view, nextDesigner.product?.templateId);
     view.tubeDesignerRightDraft = { ...(nextDesigner.product?.parameters ?? {}) };
     view.tubeDesignerBreakdownOpen = false;
     view.tubeDesignerDisassemblySelectorOpen = false;
@@ -1847,6 +2032,7 @@ async function activateInstance(context, view, target, ops) {
     });
     view.scene ??= {};
     view.scene.tubeDesigner = nextDesigner;
+    await ensureTemplateDescriptor(context, view, nextDesigner.product?.templateId);
     view.tubeDesignerRightDraft = { ...(nextDesigner.product.parameters ?? {}) };
     view.tubeDesignerBreakdownOpen = false;
     const viewContent = await ops.refreshActiveAreaView(context, view, {

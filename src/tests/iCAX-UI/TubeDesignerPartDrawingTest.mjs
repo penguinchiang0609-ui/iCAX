@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import {readFileSync,readdirSync} from "node:fs";
+import {readFileSync,readdirSync,existsSync} from "node:fs";
 import {handlePartDrawingAction,openPartDrawing,getPartDrawingPayload,renderPartDrawingDialog,attachPartDrawingEditor,defaultDrawingProfile,beginDrawingOperation,finishDrawingOperation} from "../../apps/tube-designer/webpage/partDrawing.mjs";
 import {installDrawingCatalogue} from "../../apps/tube-designer/webpage/partDrawingModel.mjs";
 import {buildPartDrawingPreviewRows} from "../../apps/tube-designer/webpage/partDrawingPreview.mjs";
 import {renderNestingRightPane,renderNestingViewportOverlay} from "../../apps/tube-designer/webpage/partsArea.mjs";
-const root=new URL("../../apps/tube-designer/templates/_shared/punch-tools/",import.meta.url);
-const tools=readdirSync(root,{withFileTypes:true}).filter(d=>d.isDirectory()).map(d=>JSON.parse(readFileSync(new URL(d.name+"/tool.json",root)))).map(t=>({...t,digest:"fixture",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
+const root=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
+const tools=readdirSync(root,{withFileTypes:true}).filter(d=>d.isDirectory()&&existsSync(new URL(d.name+"/tool.json",root))).map(d=>JSON.parse(readFileSync(new URL(d.name+"/tool.json",root)))).map(t=>({...t,digest:"fixture",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
 const profile={schema:"icax.imported-tube-profile",schemaVersion:1,kind:"imported-dxf",name:"圆管",width:40,depth:40,contours:[{kind:"circle",radius:20,center:[0,0]},{kind:"circle",radius:18,center:[0,0]}]};
 const library={id:"round",name:"圆管",previewProfile:profile,defaultParameters:{diameter:40},descriptor:{parameters:[{key:"diameter",displayName:"直径",valueType:"number",defaultValue:40}]}};
 const view={tubeDesignerSystemProfiles:[library],tubeDesignerTemplateProfiles:[{...library,id:"template",templateId:"test"}],tubeDesignerUserData:{profiles:[{...library,id:"my"}]}};

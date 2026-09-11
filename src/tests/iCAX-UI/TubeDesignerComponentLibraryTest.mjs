@@ -50,6 +50,28 @@ function harness(models = [system, user]) {
   return { context, view, state, ops, act, calls, snapshots, fits, visible, notices, renders: () => renderCount };
 }
 
+{
+  const html = renderComponentLibraryLeftPane({}, { tubeDesignerComponentLibrary: { models: [system], scope: "system", selectedKey: "" } });
+  assert.match(html, /tube-component-library-icon/);
+  assert.match(html, /<rect[^>]+x="7"/);
+  assert.doesNotMatch(html, /M16 3 28 10v13/);
+}
+
+{
+  const html = renderComponentLibraryLeftPane({}, { tubeDesignerComponentLibrary: {
+    models: [
+      { ...system, id: "glass-clamp", name: "8mm玻璃固定夹", category: "护栏/玻璃夹具" },
+      { ...system, id: "spear-tip", name: "20管平底枪尖", category: "护栏/枪尖" },
+      { ...system, id: "post-cap", name: "80方柱平盖", category: "护栏/柱帽" },
+      { ...system, id: "connector-block", name: "双孔连接块", category: "连接件/连接块" },
+    ], scope: "system", selectedKey: "",
+  } });
+  assert.match(html, /M35 9H18/); // C-shaped glass clamp
+  assert.match(html, /M24 5 34 29/); // spear tip
+  assert.match(html, /<rect x="7" y="12" width="34" height="24"/); // cap
+  assert.match(html, /<circle cx="17" cy="24" r="4"/); // connector holes
+}
+
 await test("template, system, and personal model references stay strings and missing choices stay selected", () => {
   const { view } = harness();
   const template = { extensions: { modelResources: { clip: { displayName: { "zh-CN": "玻璃夹" } } } } };
@@ -787,7 +809,7 @@ await test("component tab and action routes are independent of tube profile and 
   assert.equal(await handleComponentLibraryRibbonCommand(h.context, h.view, "unrelated", h.ops), false);
   const entry = readFileSync(new URL("../../apps/tube-designer/webpage/entry.mjs", import.meta.url), "utf8");
   assert.match(entry, /components:\s*\{\s*left: renderComponentLibraryLeftPane/);
-  assert.match(entry, /\["profiles", "tools", "components", "sketch", "nesting", "machining", "about"\]/);
+  assert.match(entry, /\["view", "nesting", "machining", "templates", "profiles", "tools", "components", "sketch", "about"\]/);
 });
 
 await test("add template renders component selectors and breakdown distinguishes glass and accessories", () => {

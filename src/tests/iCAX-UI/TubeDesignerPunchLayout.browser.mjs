@@ -9,7 +9,7 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const sourceRoot = fileURLToPath(new URL("../../", import.meta.url));
 const artifactDir = resolve(process.env.ICAX_ARTIFACT_DIR || fileURLToPath(new URL("../../../tmp/punch-layout-browser/", import.meta.url)));
-const toolsRoot = new URL("../../apps/tube-designer/templates/_shared/punch-tools/", import.meta.url);
+const toolsRoot = new URL("../../apps/tube-designer/templates/mold/", import.meta.url);
 const tools = readdirSync(toolsRoot, { withFileTypes: true }).filter(item => item.isDirectory())
   .map(item => JSON.parse(readFileSync(new URL(item.name + "/tool.json", toolsRoot))))
   .map(tool => ({ ...tool, digest: "isolated-layout-browser", defaultParameters: Object.fromEntries((tool.parameters ?? []).map(p => [p.key, p.defaultValue])) }));
@@ -489,8 +489,8 @@ try {
     ["sharp_v",["angle","rootRadius"],["leftAngle","curveRadius","flatWidth","holeDiameter"]],
     ["asymmetric_v",["leftAngle","rightAngle"],["angle","curveRadius","flatWidth","holeDiameter"]],
     ["rounded_v",["angle","curveRadius"],["leftAngle","flatWidth","holeDiameter"]],
-    ["left_arc",["angle","curveRadius"],["leftAngle","flatWidth","holeDiameter"]],
-    ["right_arc",["angle","curveRadius"],["leftAngle","flatWidth","holeDiameter"]],
+    ["left_arc",["angle"],["leftAngle","curveRadius","flatWidth","holeDiameter"]],
+    ["right_arc",["angle"],["leftAngle","curveRadius","flatWidth","holeDiameter"]],
     ["flat_v",["angle","flatWidth"],["leftAngle","curveRadius","holeDiameter"]],
     ["relief_v",["angle","holeDiameter","holeLift"],["leftAngle","curveRadius","flatWidth","reliefDiameter"]],
   ]) {

@@ -312,27 +312,31 @@ def _validate_geometry(value, target):
 
 
 V_NOTCH_STYLE_TO_ID = {
-    "sharp_v": "v-notch-sharp", "asymmetric_v": "v-notch-asymmetric",
+    "sharp_v": "v-notch-sharp", "asymmetric_v": "v-notch-sharp",
     "left_arc": "edge-arc-groove",
-    "right_arc": "edge-arc-groove", "relief_v": "v-notch-relief",
+    "right_arc": "edge-arc-groove", "relief_v": "v-notch-sharp",
     # The former unverified flat-v shape is represented by a sharp V with a
     # preserved flat root, so old recipes remain editable without that package.
     "flat_v": "v-notch-sharp",
 }
 V_NOTCH_SHAPE_KEYS = {
     "v-notch-sharp": {"angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize"},
-    "v-notch-asymmetric": {"leftAngle", "rightAngle", "bridge", "rootRadius", "rootWidth", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth"},
     "edge-arc-groove": {"angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth"},
-    "v-notch-relief": {"angle", "bridge", "holeDiameter", "holeLift", "bottomCut", "bottomCutWidth"},
 }
 
 
 def _migrate_sharp_parameters(params, old_style=""):
     """Translate former combined-V fields to the independent sharp V."""
+    if old_style == "asymmetric_v":
+        params.setdefault("asymmetric", True)
+        if "angle" not in params and all(key in params for key in ("leftAngle", "rightAngle")):
+            params["angle"] = float(params["leftAngle"]) + float(params["rightAngle"])
     if "bridge" in params and "leaveBottom" not in params:
         params["leaveBottom"] = params["bridge"]
     if "rootWidth" in params and "flatWidth" not in params:
         params["flatWidth"] = params["rootWidth"]
+    if "rootRadius" in params and "roundRadius" not in params:
+        params["roundRadius"] = params["rootRadius"]
     if "reliefWidth" in params and "reliefHeight" not in params:
         params["reliefHeight"] = params["reliefWidth"]
     if params.get("flatWidth", 0) and "bottomStrategy" not in params:
@@ -342,9 +346,16 @@ def _migrate_sharp_parameters(params, old_style=""):
         params["reliefHeight"] = params.get("reliefDiameter")
         params["reliefRadius"] = 0
         params.setdefault("bottomStrategy", "relief")
+    if old_style == "relief_v":
+        diameter = params.get("holeDiameter", params.get("reliefDiameter"))
+        if diameter is not None:
+            params.setdefault("reliefLength", diameter)
+            params.setdefault("reliefHeight", diameter)
+            params.setdefault("reliefRadius", 0)
+        params.setdefault("bottomStrategy", "relief")
     if old_style == "flat_v" and params.get("flatWidth", 0):
         params["bottomStrategy"] = "flat"
-    for key in ("bridge", "rootWidth", "reliefWidth", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "rootRadius", "radius", "curveRadius"):
+    for key in ("bridge", "rootWidth", "reliefWidth", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "rootRadius", "holeDiameter", "holeLift", "radius", "curveRadius"):
         params.pop(key, None)
 
 

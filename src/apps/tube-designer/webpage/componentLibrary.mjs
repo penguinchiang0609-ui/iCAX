@@ -3,11 +3,52 @@ import { catalogText } from "./productCatalog.mjs";
 import { libraryProfiles, profileRef, profileScope, profileSelectionKey } from "./profileLibrary.mjs";
 import { beginNewSectionSketch, beginProfileSectionSketch } from "./sketchArea.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
+import { renderProfileSvg } from "./profileSvg.mjs";
 
 const PREFIX = "tube-designer-component-";
 const SCOPES = ["system", "template", "user"];
 const EDITABLE_FIELDS = ["name", "category", "sourcing", "material", "description"];
-const MODEL_ICON = '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3 28 10v13L16 30 4 23V10Z M4 10l12 7 12-7 M16 17v13" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+
+// Cards must communicate what the component actually is.  The old universal
+// cube suggested that every record was an opaque box, which was especially
+// misleading for clamps, caps, spear tips and CSG models.  These small SVGs
+// intentionally use the same metadata/CSG profile as the real preview; they
+// are a lightweight catalogue thumbnail, not a second geometry implementation.
+function componentIllustration(model) {
+  const id = String(model?.id ?? "").toLocaleLowerCase();
+  const category = String(model?.category ?? "").toLocaleLowerCase();
+  const name = String(model?.name ?? "").toLocaleLowerCase();
+  const csg = model?.modelType === "csg" ? model?.csgDefinition?.features?.[0] : null;
+  const profile = csg?.primitive === "extrusion" ? csg?.profile?.snapshot : null;
+  if (profile?.contours?.length) {
+    return renderProfileSvg(profile);
+  }
+  if (id.includes("glass-clamp") || category.includes("玻璃") || name.includes("玻璃")) {
+    return '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M35 9H18a9 9 0 0 0-9 9v12a9 9 0 0 0 9 9h17" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/><path d="M18 17h17M18 31h17" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+  }
+  if (id.includes("spear") || category.includes("枪尖") || name.includes("枪尖")) {
+    return '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 5 34 29H14Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><path d="M14 29h20v10H14z" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M18 39h12" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>';
+  }
+  if (id.includes("post-cap") || category.includes("柱帽") || name.includes("平盖")) {
+    return '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="12" width="34" height="24" rx="2" fill="none" stroke="currentColor" stroke-width="2.6"/><rect x="12" y="17" width="24" height="14" rx="1" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 12 12 7h29l-5 5M41 12l-5 5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+  }
+  if (id.includes("connector") || category.includes("连接") || name.includes("连接")) {
+    return '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="7" y="12" width="34" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="17" cy="24" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="31" cy="24" r="4" fill="none" stroke="currentColor" stroke-width="2"/></svg>';
+  }
+  if (csg?.primitive === "sphere") return '<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="15" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M9 24h30M24 9c5 5 7 10 7 15s-2 10-7 15M24 9c-5 5-7 10-7 15s2 10 7 15" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+  if (csg?.primitive === "cylinder") return '<svg viewBox="0 0 48 48" aria-hidden="true"><ellipse cx="24" cy="12" rx="13" ry="5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M11 12v24c0 3 6 5 13 5s13-2 13-5V12" fill="none" stroke="currentColor" stroke-width="2.2"/><ellipse cx="24" cy="36" rx="13" ry="5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
+  if (csg?.primitive === "cone") return '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 8 10 37h28Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><ellipse cx="24" cy="37" rx="14" ry="4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+  if (csg?.primitive === "box" || csg?.primitive === "extrusion") return '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 16 24 8l14 8v18l-14 7-14-7Z M10 16l14 8 14-8M24 24v17" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linejoin="round"/></svg>';
+  // Imported components do not necessarily carry a renderable thumbnail in
+  // their summary. Show their measured rectangular envelope instead of an
+  // unrelated cube, preserving the aspect ratio when bounds are available.
+  const width = Number(model?.bounds?.width) || 1;
+  const height = Number(model?.bounds?.height) || 1;
+  const ratio = Math.max(.35, Math.min(2.8, width / height));
+  const w = ratio >= 1 ? 28 : 18 * ratio;
+  const h = ratio >= 1 ? 18 / ratio : 28;
+  return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="${(24 - w / 2).toFixed(1)}" y="${(24 - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M${(24 - w / 2 + 4).toFixed(1)} 24h${Math.max(2, w - 8).toFixed(1)}" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
+}
 const CSG_PRIMITIVES = {
   extrusion: { label: "拉伸体", glyph: "▱", parameters: { height: 30 } },
   box: { label: "长方体", glyph: "▰", parameters: { width: 40, depth: 40, height: 20 } },
@@ -196,6 +237,9 @@ export function componentLibraryState(view) {
   };
   if (!SCOPES.includes(state.scope)) state.scope = "system";
   state.selectedByScope ??= {};
+  state.collapsed ??= [];
+  state.drafts ??= {};
+  state.previewCache ??= new Map();
   return state;
 }
 
@@ -267,10 +311,10 @@ export function renderComponentLibraryLeftPane(_context, view) {
     const expanded = !state.collapsed.includes(group.key);
     return `<section class="tube-component-library-group">
       <button type="button" class="tube-component-library-group-heading" data-cam-action="${PREFIX}toggle-category" data-component-category="${escapeAttr(group.key)}" aria-expanded="${expanded}"><span>${expanded ? "▾" : "▸"} ${escapeText(group.category)}</span><small>${scopeLabel(group.scope)} · ${group.models.length}</small></button>
-      <div ${expanded ? "" : "hidden"}>${group.models.map((model) => {
+      <div class="tube-component-library-group-items" ${expanded ? "" : "hidden"}>${group.models.map((model) => {
         const key = componentModelKey(model);
-        return `<button type="button" class="tube-component-library-card ${key === state.selectedKey ? "selected" : ""}" data-cam-action="${PREFIX}select" data-component-key="${escapeAttr(key)}" aria-pressed="${key === state.selectedKey}">
-          <span class="tube-component-library-icon">${MODEL_ICON}</span><span><strong>${escapeText(modelName(model))}</strong><small>${sourcingLabel(model.sourcing)}${model.material ? ` · ${escapeText(model.material)}` : ""}</small><em>${escapeText(boundsText(model))}</em></span></button>`;
+        return `<button type="button" class="tube-component-library-card ${key === state.selectedKey ? "selected" : ""}" data-cam-action="${PREFIX}select" data-component-key="${escapeAttr(key)}" aria-pressed="${key === state.selectedKey}" aria-label="${escapeAttr(`${modelName(model)}，${categoryName(model)}`)}">
+          <span class="tube-component-library-icon">${componentIllustration(model)}</span><span><strong>${escapeText(modelName(model))}</strong><small>${sourcingLabel(model.sourcing)}${model.material ? ` · ${escapeText(model.material)}` : ""}</small><em>${escapeText(boundsText(model))}</em></span></button>`;
       }).join("")}</div></section>`;
   };
   const templates = new Map();
@@ -283,7 +327,7 @@ export function renderComponentLibraryLeftPane(_context, view) {
     const expanded = !state.collapsed.includes(key);
     return `<section class="tube-component-library-group tube-component-library-template" data-component-template-id="${escapeAttr(templateId)}">
       <button type="button" class="tube-component-library-group-heading" data-cam-action="${PREFIX}toggle-category" data-component-category="${escapeAttr(key)}" aria-expanded="${expanded}"><span>${expanded ? "▾" : "▸"} ${escapeText(entries[0].templateName)}</span><small>仅所属模板可用</small></button>
-      <div ${expanded ? "" : "hidden"}><div class="tube-component-library-source"><small>${escapeText(templateId)}</small></div>${entries.map(renderGroup).join("")}</div></section>`;
+      <div class="tube-component-library-template-body" ${expanded ? "" : "hidden"}><div class="tube-component-library-source"><small>${escapeText(templateId)}</small></div>${entries.map(renderGroup).join("")}</div></section>`;
   }).join("") : [...groups.values()].map(renderGroup).join("");
   return `<div class="tube-designer-panel tube-component-library-panel">
     <div class="tube-designer-heading"><div><strong>配件库</strong><span>${SCOPES.map((scope) => `${scopeLabel(scope)} ${all.filter((m) => m.scope === scope).length}`).join(" · ")}</span></div></div>

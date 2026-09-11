@@ -7,17 +7,19 @@ const action = name => `tube-designer-drawing-${name}`;
 const keys = markup => [...markup.matchAll(/data-tube-designer-punch-parameter="([^"]+)"/g)].map(match => match[1]);
 
 test("each V groove is an independent descriptor with only its own fields", () => {
-  const ids = ["v-notch-sharp", "v-notch-asymmetric", "edge-arc-groove", "v-notch-relief"];
+  const ids = ["v-notch-sharp", "edge-arc-groove"];
   for (const id of ids) {
-    const descriptor = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/_shared/punch-tools/${id}/tool.json`, import.meta.url), "utf8"));
+    const descriptor = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/mold/${id}/tool.json`, import.meta.url), "utf8"));
     const before = { toolParameters: {} };
     const markup = parameterFields(action, descriptor, before);
-    assert.deepEqual(keys(markup).sort(), descriptor.parameters.map((item) => item.key).sort(), id);
+    const defaults = Object.fromEntries(descriptor.parameters.map((item) => [item.key, item.defaultValue]));
+    const visibleKeys = descriptor.parameters.filter((item) => isDrawingParameterVisible(item.visibleWhen, defaults)).map((item) => item.key);
+    assert.deepEqual(keys(markup).sort(), visibleKeys.sort(), id);
     assert.deepEqual(before, { toolParameters: {} }, "Rendering does not install defaults into the model");
     assert.equal(descriptor.parameters.some((item) => item.key === "style"), false, `${id} has no style switch`);
   }
-  const sharp = JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/_shared/punch-tools/v-notch-sharp/tool.json", import.meta.url), "utf8"));
-  assert.ok(keys(parameterFields(action, sharp, { toolParameters: { bottomCut: true } })).includes("bottomCutWidth"));
+  const sharp = JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/v-notch-sharp/tool.json", import.meta.url), "utf8"));
+  assert.ok(keys(parameterFields(action, sharp, { toolParameters: { bottomStrategy: "flat" } })).includes("flatWidth"));
 });
 
 test("nested eq/ne/all/any conditions honor stored false and zero values and schema defaults", () => {

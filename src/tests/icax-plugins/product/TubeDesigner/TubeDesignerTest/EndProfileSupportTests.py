@@ -13,7 +13,7 @@ import unittest
 ROOT = next(p for p in Path(__file__).resolve().parents
             if (p / "src/apps/tube-designer/templates").is_dir())
 SPEC = importlib.util.spec_from_file_location("end_profile_support_subject",
-    ROOT / "src/apps/tube-designer/templates/_shared/punch-tools/end-profile/tool.py")
+    ROOT / "src/apps/tube-designer/templates/mold/end-profile/tool.py")
 tool = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(tool)
 SAMPLES = 16384

@@ -4,7 +4,7 @@ import {
   templateProfilesForProduct, renderProfileLibraryLeftPane, renderProfileLibraryRightPane,
   renderProfileLibraryViewportOverlay, handleProfileLibraryAction, resolveSelectedProfileSketchSource,
 } from "../../apps/tube-designer/webpage/profileLibrary.mjs";
-import { refreshDesignerUserData, handleDesignerAreaAction } from "../../apps/tube-designer/webpage/designerActions.mjs";
+import { refreshDesignerUserData, handleDesignerAreaAction, handleDesignerRibbonCommand } from "../../apps/tube-designer/webpage/designerActions.mjs";
 import { renderDesignerAddParameterContent } from "../../apps/tube-designer/webpage/designerViews.mjs";
 
 const completed = [];
@@ -37,13 +37,18 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 await test("source and profile-type tabs isolate the compact two-column card list", async () => {
   const { view, act } = harness();
   let html = renderProfileLibraryLeftPane({}, view);
-  assert.equal((html.match(/role="tab"/g) ?? []).length, 6);
+  assert.equal((html.match(/role="tab"/g) ?? []).length, 3);
   assert.match(html, /系统内置/); assert.match(html, /模板自带/); assert.match(html, /我的/);
-  assert.match(html, /data-tube-profile-library-type="all"/);
-  assert.match(html, /data-tube-profile-library-type="parametric"/);
-  assert.match(html, /data-tube-profile-library-type="fixed"/);
   assert.match(html, /tube-profile-library-list/);
-  assert.doesNotMatch(html, /系统内置 · 程式管型|程式管型包|定式管型/);
+  assert.match(html, /tube-profile-library-group/);
+  assert.match(html, /圆管 \/ 椭圆管/);
+  assert.match(html, /tube-profile-library-card-preview/);
+  assert.match(html, /tube-profile-library-card-copy[\s\S]*程式/);
+  assert.doesNotMatch(html, /tube-profile-library-card-type-badge/);
+  assert.match(html, /class="outer"/);
+  assert.match(html, /class="hole"/);
+  assert.doesNotMatch(html, /tube-profile-library-card-icon/);
+  assert.doesNotMatch(html, /系统内置 · 程式|程式管型包|定式管型/);
   assert.match(html, /data-tube-designer-profile-key="system:round"/);
   assert.doesNotMatch(html, /data-tube-designer-profile-key="(?:user|template):/);
   await act("scope", { dataset: { tubeProfileLibraryScope: "template" } });
@@ -55,8 +60,8 @@ await test("source and profile-type tabs isolate the compact two-column card lis
   assert.notEqual(profileSelectionKey(templates[0]), profileSelectionKey(templates[1]));
   assert.deepEqual(profileRef(templates[0]), { scope: "template", templateId: "rail-a", id: "shared" });
   await act("type", { dataset: { tubeProfileLibraryType: "fixed" } });
-  assert.equal(visibleLibraryProfiles(view).length, 0);
-  assert.match(renderProfileLibraryLeftPane({}, view), /还没有定式管型/);
+  assert.equal(visibleLibraryProfiles(view).length, 2);
+  assert.doesNotMatch(renderProfileLibraryLeftPane({}, view), /role="tablist" aria-label="管型类型"/);
 });
 
 await test("search limits selection to visible results and empty tabs clear old geometry", async () => {
@@ -168,6 +173,23 @@ await test("list refresh carries template packages separately from system and us
   assert.equal(libraryProfiles(view).length, 3);
   assert.deepEqual(templateProfilesForProduct(view, "rail-a").map((profile) => profile.id), ["shared"]);
   assert.equal(templateProfilesForProduct(view, "other").length, 0);
+});
+
+await test("opening the profile resource retries a failed initial user-data load", async () => {
+  const { view, context, ops } = harness();
+  view.tubeDesignerSystemProfiles = [];
+  view.tubeDesignerUserDataError = "第一次加载超时";
+  let calls = 0;
+  context.productProxy.invoke = async (method) => {
+    assert.equal(method, "TubeDesigner.ListUserData");
+    calls += 1;
+    return { profiles: [], systemProfiles: [packaged], templateProfiles: [] };
+  };
+  context.actions.selectRibbonTab = async () => {};
+  await handleDesignerRibbonCommand(context, view, "resources.profiles", ops);
+  assert.equal(calls, 1);
+  assert.equal(view.tubeDesignerSystemProfiles.length, 1);
+  assert.equal(view.tubeDesignerUserDataError, "");
 });
 
 await test("switching during viewport resource hydration cannot reveal the old profile", async () => {

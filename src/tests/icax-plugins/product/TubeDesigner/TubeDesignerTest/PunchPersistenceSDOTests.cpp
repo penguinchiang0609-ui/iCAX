@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <chrono>
 
 namespace punch_persistence_acceptance {
 bool logInvocations=true;
@@ -122,7 +123,7 @@ ObjectMap runtime(const std::string& file,const ObjectMap& input) {
 }
 ObjectMap systemProfile(const std::string& id,ObjectMap values={}) {
     return runtime("profile_package_runtime.py",{{"action",std::string("evaluate-system")},{"systemProfileId",id},{"values",values},
-        {"profileRoot",(std::filesystem::current_path()/"src/apps/tube-designer/templates/_shared/profiles").string()}}).at("profile").To<ObjectMap>();
+        {"profileRoot",(std::filesystem::current_path()/"src/apps/tube-designer/templates/profile").string()}}).at("profile").To<ObjectMap>();
 }
 ObjectMap dxfProfile() {
     return runtime("dxf_profile_importer.py",{{"sourcePath",(std::filesystem::current_path()/
@@ -530,5 +531,59 @@ TEST(PartDrawingIndependentSDO, VNotchSevenStylesHaveRealCurvesAndPreserveTheSpe
     std::size_t solids=0;for(TopExp_Explorer e(shape(scene,part(scene,id)),TopAbs_SOLID);e.More();e.Next())++solids;EXPECT_EQ(solids,2u);
     EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
     std::ofstream report(std::filesystem::current_path()/"tmp/native-layout-tests/v-notch-seven-native-evidence.json");report<<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(evidence);
+}
+
+TEST(ProductTemplatePreviewSDO, ReturnsRuntimeGeometryWithoutCreatingProductRecords) {
+    Scene scene;
+    const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+        {"templateId", std::string("straight-steel-staircase")},
+    });
+    const auto items = response.at("items").To<VariantArray>();
+    ASSERT_FALSE(items.empty());
+    EXPECT_EQ(response.at("templateId").To<std::string>(), "straight-steel-staircase");
+    EXPECT_TRUE(response.at("material").To<ObjectMap>().contains("url"));
+    EXPECT_FALSE(response.contains("productEntityId"));
+    EXPECT_FALSE(response.contains("generationRunId"));
+}
+
+TEST(TubeDesignerLibrarySDO, MainSceneListAndPunchCatalogueLoad) {
+    Scene scene;
+    const auto start = std::chrono::steady_clock::now();
+    const auto tools = invoke(scene, "GetPunchTools", {});
+    const auto afterTools = std::chrono::steady_clock::now();
+    const auto snapshot = invoke(scene, "List", {});
+    const auto end = std::chrono::steady_clock::now();
+    ASSERT_TRUE(tools.contains("tools"));
+    ASSERT_TRUE(snapshot.contains("tubeDesigner"));
+    const auto toolCount = tools.at("tools").To<VariantArray>().size();
+    const auto templates = snapshot.at("tubeDesigner").To<ObjectMap>().at("templates").To<VariantArray>();
+    ASSERT_GE(toolCount, 10u);
+    ASSERT_GE(templates.size(), 30u);
+    const auto toolsMs = std::chrono::duration_cast<std::chrono::milliseconds>(afterTools - start).count();
+    const auto listMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - afterTools).count();
+    std::cout << "[library-sdo-timing] GetPunchTools=" << toolsMs << "ms List=" << listMs << "ms\n";
+    EXPECT_LT(toolsMs, 30000);
+    EXPECT_LT(listMs, 30000);
+}
+
+TEST(TubeDesignerLibrarySDO, TemplateListDefersFullDescriptorUntilSelection) {
+    Scene scene;
+    const auto snapshot = invoke(scene, "List", {});
+    const auto templates = snapshot.at("tubeDesigner").To<ObjectMap>()
+        .at("templates").To<VariantArray>();
+    const auto listed = std::find_if(templates.begin(), templates.end(), [](const auto& value) {
+        return value.Is<ObjectMap>() && value.To<ObjectMap>().at("id").To<std::string>() == "modular-guardrail";
+    });
+    ASSERT_NE(listed, templates.end());
+    EXPECT_FALSE(listed->To<ObjectMap>().contains("parameters"));
+    EXPECT_FALSE(listed->To<ObjectMap>().contains("descriptorJson"));
+
+    const auto detail = invoke(scene, "GetTemplateDescriptor", ObjectMap{
+        { "templateId", std::string("modular-guardrail") },
+    });
+    ASSERT_TRUE(detail.contains("template"));
+    const auto descriptor = detail.at("template").To<ObjectMap>();
+    EXPECT_TRUE(descriptor.at("descriptorLoaded").To<bool>());
+    EXPECT_FALSE(descriptor.at("parameters").To<VariantArray>().empty());
 }
 }

@@ -947,11 +947,11 @@ function testSecurityWindowHorizontalProfilesAreSmallerThanFrames() {
   ];
   for (const folder of templateFolders) {
     const descriptor = JSON.parse(readFileSync(
-      new URL(`../../apps/tube-designer/templates/${folder}/template.json`, import.meta.url),
+      new URL(`../../apps/tube-designer/templates/product/${folder}/template.json`, import.meta.url),
       "utf8",
     ));
     const templateSource = readFileSync(
-      new URL(`../../apps/tube-designer/templates/${folder}/template.py`, import.meta.url),
+      new URL(`../../apps/tube-designer/templates/product/${folder}/template.py`, import.meta.url),
       "utf8",
     );
     const pythonVersion = templateSource.match(/^TEMPLATE_VERSION\s*=\s*"([^"]+)"/m)?.[1];
@@ -1275,10 +1275,11 @@ function testTubeDesignerHasIndependentEditableProfileLibrary() {
   const left = renderProfileLibraryLeftPane({}, view);
   const right = renderProfileLibraryRightPane({}, view);
   const previewHtml = renderProfileLibraryViewportOverlay({}, view);
-  assert.equal((left.match(/role="tab"/g) ?? []).length, 6);
-  assert.match(left, /data-tube-profile-library-type="parametric"/);
-  assert.match(left, /data-tube-profile-library-type="fixed"/);
-  assert.doesNotMatch(left, /系统内置 · 程式管型|程式管型包/);
+  assert.equal((left.match(/role="tab"/g) ?? []).length, 3);
+  assert.match(left, /tube-profile-library-card-copy[\s\S]*程式/);
+  assert.doesNotMatch(left, /tube-profile-library-card-type-badge/);
+  assert.doesNotMatch(left, /role="tablist" aria-label="管型类型"/);
+  assert.doesNotMatch(left, /系统内置 · 程式|程式管型包/);
   assert.match(left, /data-tube-profile-library-scope="system"/);
   assert.match(left, /data-tube-profile-library-scope="template"/);
   assert.match(left, /data-tube-profile-library-scope="user"/);

@@ -380,7 +380,7 @@ function beginOperation(view,command,node=null) {
     m.mode=command;m.selected=command;s.draft=end;s.editingId="";s.previewMode="tools";return;
   }
   const feature=normalizeDrawingFeature({station:s.baseLength/2});
-  const id=command==="branch"?"branch-profile":command==="hole"?s.tools.find(t=>t.target==="side")?.id:command;
+  const id=command==="branch"?"branch-profile":command==="hole"?s.tools.find(t=>t.target==="side")?.id:command==="part"?s.tools.find(t=>t.target==="part"&&!t.requiresSection)?.id:command;
   if(!s.tools.some(tool=>tool.id===id))throw new Error("该刀具尚未加载，请稍后重试。");
   selectDrawingTool(s,feature,id);
   if(command==="branch") {

@@ -84,8 +84,9 @@ class PunchTools(unittest.TestCase):
     def test_v_tools_are_independent_packages_with_geometry_only_parameters(self):
         tools={item["id"]:item for item in runtime.catalogue()["tools"]
                if item["id"].startswith("v-notch-") or item["id"]=="edge-arc-groove"}
-        self.assertEqual({"v-notch-sharp","v-notch-asymmetric","edge-arc-groove","v-notch-relief"},set(tools))
+        self.assertEqual({"v-notch-sharp","edge-arc-groove"},set(tools))
         self.assertTrue(all(not any(p.get("placement") for p in item["parameters"]) for item in tools.values()))
+        self.assertNotIn("maleFemale", {p["key"] for p in tools["edge-arc-groove"]["parameters"]})
         geometries={key:json.dumps(self.v_geometry(key),sort_keys=True) for key in tools}
         self.assertEqual(len(geometries),len(set(geometries.values())))
 
@@ -99,23 +100,24 @@ class PunchTools(unittest.TestCase):
         self.assertEqual("part-local",first["coordinateSpace"])
         self.assertEqual(first,second)
 
-    def test_edge_arc_groove_selects_one_analytic_arc_with_a_v_shaped_opposite_wall(self):
+    def test_edge_arc_groove_is_a_box_minus_a_cylinder_with_one_arc_side(self):
         parameters={"angle":90,"bridge":1,"reliefDiameter":0,"reliefLift":0,
                     "bottomCut":False,"bottomCutWidth":2,"leftArc":True}
         left_geometry=self.v_geometry("edge-arc-groove",**parameters)
         right_geometry=self.v_geometry("edge-arc-groove",**{**parameters,"leftArc":False})
         geometries={"left":left_geometry,"right":right_geometry}
-        contours={key:next(node for node in geometry["model"]["geometry"]
-                           if node["key"]=="notch-profile")["arguments"]["contours"][0]["segments"]
-                  for key,geometry in geometries.items()}
-        for segments in contours.values():
-            self.assertEqual(1,sum(segment["kind"]=="arc" for segment in segments))
-        left_arc=contours["left"][3]
-        right_arc=contours["right"][2]
-        self.assertLess(left_arc["start"][0],left_arc["end"][0])
-        self.assertLess(right_arc["start"][0],right_arc["end"][0])
-        self.assertAlmostEqual(contours["left"][1]["start"][0],contours["left"][1]["end"][0])
-        self.assertAlmostEqual(contours["right"][4]["start"][0],contours["right"][4]["end"][0])
+        for geometry in geometries.values():
+            nodes={node["key"]:node for node in geometry["model"]["geometry"]}
+            self.assertEqual("subtract",nodes["notch"]["arguments"]["operation"])
+            self.assertEqual(["notch-base","arc-cylinder"],nodes["notch"]["inputs"])
+            base=next(node for node in geometry["model"]["geometry"]
+                      if node["key"]=="notch-base-profile")["arguments"]["contours"][0]["segments"]
+            cylinder=next(node for node in geometry["model"]["geometry"]
+                          if node["key"]=="arc-cylinder-profile")["arguments"]["contours"][0]["segments"]
+            self.assertEqual(4,len(base))
+            self.assertTrue(all(segment["kind"]=="line" for segment in base))
+            self.assertEqual(2,len(cylinder))
+            self.assertTrue(all(segment["kind"]=="arc" for segment in cylinder))
         self.assertEqual("part-local",left_geometry["coordinateSpace"])
         self.assertEqual("part-local",right_geometry["coordinateSpace"])
 
@@ -181,7 +183,7 @@ class PunchTools(unittest.TestCase):
                               "toolRef": {"id": "slot"}, "toolParameters": {}}])
         self.assertEqual("槽口", items["slot"]["category"])
         self.assertTrue(slot["features"][0]["toolSnapshot"]["geometry"]["contours"])
-        for key in ("v-notch-sharp", "v-notch-asymmetric", "edge-arc-groove", "v-notch-relief"):
+        for key in ("v-notch-sharp", "edge-arc-groove"):
             self.assertEqual("槽口", items[key]["category"])
         self.assertEqual("支管", items["branch-profile"]["category"])
         self.assertEqual("端面", items["end-profile"]["category"])

@@ -11,7 +11,7 @@ import {
 // Exercise shipped descriptors in the host's presentation shape, never a copy of
 // their defaults that could keep passing after the actual templates change.
 const templates = ["single", "two", "three", "five"].map((prefix) => {
-  const raw = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/${prefix}_face_security_window/template.json`, import.meta.url)));
+  const raw = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${prefix}_face_security_window/template.json`, import.meta.url)));
   const groups = raw.groups.map((group) => ({ ...group, displayName: catalogText(group.displayName) }));
   return {
     ...raw, available: true, name: catalogText(raw.displayName), groups,

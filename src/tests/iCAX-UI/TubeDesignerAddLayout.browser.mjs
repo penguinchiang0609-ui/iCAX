@@ -10,7 +10,7 @@ import { catalogText } from "../../apps/tube-designer/webpage/productCatalog.mjs
 
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const templates = ["single", "two", "three", "five"].map((kind) => {
-  const raw = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/${kind}_face_security_window/template.json`, import.meta.url)));
+  const raw = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${kind}_face_security_window/template.json`, import.meta.url)));
   const groups = raw.groups.map((g) => ({ ...g, displayName: catalogText(g.displayName) }));
   return { ...raw, available: true, name: catalogText(raw.displayName), groups,
     parameters: raw.parameters.map((p) => ({ ...p, displayName: catalogText(p.displayName),

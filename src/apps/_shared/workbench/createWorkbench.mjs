@@ -677,6 +677,7 @@ function mountRenderViewport(context, view) {
   }
   const activeAreaId = normalizeAreaId(context, context.activeRibbonTabId);
   const area = getProjectArea(view, activeAreaId);
+  if (!["tools", "templates"].includes(activeAreaId)) view.preserveCustomViewportEntities = false;
   if (typeof context.configureViewport === "function") {
     context.configureViewport(context, view, activeAreaId);
   }
@@ -685,7 +686,12 @@ function mountRenderViewport(context, view) {
     : 0x182128;
   view.viewport.setBackgroundColor?.(backgroundColor);
   view.viewport.setRenderSceneId(null);
-  if (!area.viewContent?.snapshot) {
+  // Resource/editor pages can own a transient preview that is not backed by
+  // a persisted View snapshot (for example the mould library's主管 + 拉伸体).
+  // Do not clear those entities just because the surrounding workbench was
+  // repainted for a parameter/HUD update; the owning page explicitly drops
+  // this flag when its preview is invalidated or the selection changes.
+  if (!area.viewContent?.snapshot && !view.preserveCustomViewportEntities) {
     view.viewport.setVisibleEntityIds([]);
   }
   view.viewport.mount(host);

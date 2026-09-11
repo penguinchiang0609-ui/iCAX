@@ -1770,44 +1770,35 @@ TEST(TemplateRuntimeTest, ParameterPresentationPreservesExplicitAndMissingOrder)
     EXPECT_EQ(20, _Fields.at(2).To<ObjectMap>().at("order").To<long long>());
 }
 
-TEST(TemplateRuntimeTest, EveryGuardrailCatalogPresetAcceptsBrowserRailCountTypes)
+TEST(TemplateRuntimeTest, EveryGuardrailStyleIsAnIndependentTemplateDescriptor)
 {
     using namespace iCAX::TemplateRuntime;
     using iCAX::Data::ObjectMap;
-    using iCAX::Data::VariantArray;
-    const auto _Path = std::filesystem::current_path()
-        / "src/apps/tube-designer/templates/modular_guardrail/template.json";
-    std::ifstream _Stream(_Path, std::ios::binary);
-    ASSERT_TRUE(static_cast<bool>(_Stream));
-    const std::string _Text{ std::istreambuf_iterator<char>(_Stream), std::istreambuf_iterator<char>() };
-    const auto _Descriptor = CTemplateCodec::ParseDescriptor(CStandardJsonCodec::Parse(_Text));
-    const auto _Catalog = _Descriptor.Extensions.at("catalog").To<ObjectMap>();
-    const auto _Presets = _Catalog.at("presets").To<VariantArray>();
-    ASSERT_EQ(20u, _Presets.size());
-    for (const auto& _RawPreset : _Presets)
+    const auto _Root = std::filesystem::current_path()
+        / "src/apps/tube-designer/templates";
+    std::set<std::string> _IDs;
+    std::size_t _StyleCount = 0;
+    for (const auto& _Entry : std::filesystem::directory_iterator(_Root))
     {
-        const auto _Preset = _RawPreset.To<ObjectMap>();
-        SCOPED_TRACE(_Preset.at("id").To<std::string>());
-        ObjectMap _Parameters;
-        for (const auto& _Definition : _Descriptor.Parameters)
-            _Parameters[_Definition.Key] = _Definition.DefaultValue;
-        for (const auto& [_Key, _Value] : _Preset.at("parameters").To<ObjectMap>())
-            _Parameters[_Key] = _Value;
-        const auto _Rails = _Parameters.at("railCount").To<long long>();
-        _Parameters["railCount"] = static_cast<int>(_Rails);
-        auto _Normalized = CTemplateCodec::ValidateAndNormalizeParameters(_Descriptor, _Parameters);
-        ASSERT_TRUE(_Normalized.at("railCount").Is<long long>());
-        EXPECT_EQ(_Rails, _Normalized.at("railCount").To<long long>());
-        _Parameters["railCount"] = static_cast<double>(_Rails);
-        _Normalized = CTemplateCodec::ValidateAndNormalizeParameters(_Descriptor, _Parameters);
-        EXPECT_EQ(_Rails, _Normalized.at("railCount").To<long long>());
+        if (!_Entry.is_directory() || _Entry.path().filename().string().rfind("modular_guardrail", 0) != 0)
+            continue;
+        const auto _Path = _Entry.path() / "template.json";
+        std::ifstream _Stream(_Path, std::ios::binary);
+        ASSERT_TRUE(static_cast<bool>(_Stream));
+        const std::string _Text{ std::istreambuf_iterator<char>(_Stream), std::istreambuf_iterator<char>() };
+        const auto _Descriptor = CTemplateCodec::ParseDescriptor(CStandardJsonCodec::Parse(_Text));
+        EXPECT_TRUE(_IDs.insert(_Descriptor.ID).second);
+        EXPECT_FALSE(_Descriptor.Extensions.at("catalog").To<ObjectMap>().contains("presets"));
+        ++_StyleCount;
     }
+    EXPECT_EQ(32u, _StyleCount);
+    EXPECT_EQ(_StyleCount, _IDs.size());
 }
 
 TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutExternalInterpreter)
 {
     const auto _Root = std::filesystem::current_path();
-    const auto _DescriptorPath = _Root / "src/apps/tube-designer/templates/single_face_security_window/template.json";
+    const auto _DescriptorPath = _Root / "src/apps/tube-designer/templates/product/single_face_security_window/template.json";
     const auto _TemplatePath = _DescriptorPath.parent_path() / "template.py";
     std::ifstream _DescriptorStream(_DescriptorPath, std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(_DescriptorStream));
@@ -2155,7 +2146,7 @@ TEST(TemplateRuntimeTest, StraightStairRailingGeneratesManufacturableTubeParts)
 {
     const auto _Root = std::filesystem::current_path();
     const auto _TemplateRoot = _Root
-        / "src/apps/tube-designer/templates/straight_stair_railing";
+        / "src/apps/tube-designer/templates/product/straight_stair_railing";
     const auto _DescriptorPath = _TemplateRoot / "template.json";
     std::ifstream _DescriptorStream(_DescriptorPath, std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(_DescriptorStream));
@@ -2709,7 +2700,7 @@ TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufa
 TEST(TemplateRuntimeTest, TwoFaceDirectionRebuildsMirroredFinalShapes)
 {
     const auto _Root = std::filesystem::current_path();
-    const auto _TemplateRoot = _Root / "src/apps/tube-designer/templates/two_face_security_window";
+    const auto _TemplateRoot = _Root / "src/apps/tube-designer/templates/product/two_face_security_window";
     const auto _DescriptorPath = _TemplateRoot / "template.json";
     std::ifstream _DescriptorStream(_DescriptorPath, std::ios::binary);
     ASSERT_TRUE(static_cast<bool>(_DescriptorStream)) << _DescriptorPath.string();
@@ -3212,28 +3203,31 @@ TEST(TemplateRuntimeTest, SecurityWindowPublicStyleContainsOnlyTubeParts)
     }
 }
 
-TEST(TemplateRuntimeTest, EveryModularGuardrailPresetProducesValidNonOverlappingSolids)
+TEST(TemplateRuntimeTest, EveryModularGuardrailTemplateProducesValidNonOverlappingSolids)
 {
     using iCAX::Data::ObjectMap;
     const auto _Root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    const auto _Base = TemplateProtocolFixture(_Root, "modular_guardrail");
-    const auto _Catalog = _Base.Descriptor.Extensions.at("catalog").To<ObjectMap>();
-    const auto _Presets = _Catalog.at("presets").To<iCAX::Data::VariantArray>();
-    ASSERT_GE(_Presets.size(), 32u);
-    for (const auto& _PresetValue : _Presets)
+    std::vector<std::string> _TemplateDirectories;
+    const auto _TemplateRoot = _Root / "src/apps/tube-designer/templates";
+    for (const auto& _Entry : std::filesystem::directory_iterator(_TemplateRoot))
     {
-        const auto _Preset = _PresetValue.To<ObjectMap>();
-        SCOPED_TRACE(_Preset.at("id").To<std::string>());
-        auto _Fixture = _Base;
-        for (const auto& [_Key, _Value] : _Preset.at("parameters").To<ObjectMap>())
-            _Fixture.Parameters[_Key] = _Value;
+        if (_Entry.is_directory()
+            && _Entry.path().filename().string().starts_with("modular_guardrail"))
+            _TemplateDirectories.push_back(_Entry.path().filename().string());
+    }
+    std::sort(_TemplateDirectories.begin(), _TemplateDirectories.end());
+    ASSERT_GE(_TemplateDirectories.size(), 32u);
+    for (const auto& _Directory : _TemplateDirectories)
+    {
+        SCOPED_TRACE(_Directory);
+        auto _Fixture = TemplateProtocolFixture(_Root, _Directory);
         _Fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
             _Fixture.Descriptor, _Fixture.Parameters);
         auto _Document = InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing");
         ResolveTemplateComponentResources(_Document,
-            _Root / "src/apps/tube-designer/templates/modular_guardrail", _Base.Descriptor.Extensions,
-            _Root / "src/apps/tube-designer/models", nullptr);
+            _TemplateRoot / _Directory, _Fixture.Descriptor.Extensions,
+            _Root / "src/apps/tube-designer/templates/accessory", nullptr);
         const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Document);
         ASSERT_EQ(1u, _Model.Outputs.size());
         ASSERT_EQ("result", _Model.Outputs.front().Purpose);

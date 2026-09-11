@@ -8,7 +8,7 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 
 const sourceRoot = fileURLToPath(new URL("../../", import.meta.url)).replace(/[\\/]$/, "");
 const artifacts = resolve(sourceRoot, "../tmp/punch-parameter-window-browser");
-const descriptor = JSON.parse(readFileSync(resolve(sourceRoot, "apps/tube-designer/templates/_shared/punch-tools/circle/tool.json"), "utf8"));
+const descriptor = JSON.parse(readFileSync(resolve(sourceRoot, "apps/tube-designer/templates/mold/circle/tool.json"), "utf8"));
 const tool = { ...descriptor, digest: "parameter-window-fixture", defaultParameters: Object.fromEntries(descriptor.parameters.map(p => [p.key, p.defaultValue])) };
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 mkdirSync(artifacts, { recursive: true });

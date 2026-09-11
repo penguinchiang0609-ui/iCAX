@@ -1038,12 +1038,14 @@ function renderProductRibbon() {
 }
 
 function renderRibbonCommand(command) {
+  const activeAttribute = command.active === undefined ? "" : ` aria-pressed="${command.active ? "true" : "false"}"`;
   const button = `
-    <button class="ribbon-command ${command.size === "large" ? "large" : ""} ${command.menuItems.length ? "split-main" : ""}"
+    <button class="ribbon-command ${command.size === "large" ? "large" : ""} ${command.menuItems.length ? "split-main" : ""} ${command.active ? "active" : ""}"
             type="button"
             data-action="ribbon-command"
             data-command-id="${escapeAttr(command.id)}"
             data-icon-tone="${escapeAttr(command.iconTone ?? "teal")}"
+            ${activeAttribute}
             ${command.disabled ? "disabled" : ""}>
       ${renderRibbonCommandIcon(command.iconName, command.icon)}
       <span>${escapeText(command.title)}</span>
@@ -1469,6 +1471,7 @@ function normalizeRibbonDefinition(ribbon) {
           iconName: command.iconName,
           iconTone: command.iconTone,
           size: command.size,
+          active: command.active === undefined ? undefined : Boolean(command.active),
           disabled: Boolean(command.disabled),
           menuItems: (Array.isArray(command.menuItems) ? command.menuItems : []).map((item) => ({
             id: String(item.id ?? ""),

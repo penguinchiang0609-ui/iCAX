@@ -6,10 +6,10 @@ const clone = value => structuredClone(value);
 
 export const V_NOTCH_STYLE_TO_TOOL = Object.freeze({
   sharp_v: "v-notch-sharp",
-  asymmetric_v: "v-notch-asymmetric",
+  asymmetric_v: "v-notch-sharp",
   left_arc: "edge-arc-groove",
   right_arc: "edge-arc-groove",
-  relief_v: "v-notch-relief",
+  relief_v: "v-notch-sharp",
   // The former flat-v variant had no verified product definition. Preserve
   // its old root width as the optional flat root of a normal sharp V.
   flat_v: "v-notch-sharp",
@@ -28,15 +28,20 @@ export const END_PROFILE_PLACEMENT_KEYS = Object.freeze([
 ]);
 
 const V_SHAPE_KEYS = Object.freeze({
-  "v-notch-sharp": ["angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize"],
-  "v-notch-asymmetric": ["leftAngle", "rightAngle", "bridge", "rootRadius", "rootWidth", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth"],
+  "v-notch-sharp": ["angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize"],
   "edge-arc-groove": ["angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth"],
-  "v-notch-relief": ["angle", "bridge", "holeDiameter", "holeLift", "bottomCut", "bottomCutWidth"],
 });
 
 function migrateSharpParameters(params, oldStyle = "") {
+  if (oldStyle === "asymmetric_v") {
+    params.asymmetric ??= true;
+    if (params.angle === undefined && Number.isFinite(Number(params.leftAngle)) && Number.isFinite(Number(params.rightAngle))) {
+      params.angle = Number(params.leftAngle) + Number(params.rightAngle);
+    }
+  }
   if (params.bridge !== undefined && params.leaveBottom === undefined) params.leaveBottom = params.bridge;
   if (params.rootWidth !== undefined && params.flatWidth === undefined) params.flatWidth = params.rootWidth;
+  if (params.rootRadius !== undefined && params.roundRadius === undefined) params.roundRadius = params.rootRadius;
   if (params.reliefWidth !== undefined && params.reliefHeight === undefined) params.reliefHeight = params.reliefWidth;
   if (params.flatWidth > 0 && params.bottomStrategy === undefined) params.bottomStrategy = "flat";
   if (params.reliefDiameter > 0 && params.reliefWidth === undefined) {
@@ -45,8 +50,17 @@ function migrateSharpParameters(params, oldStyle = "") {
     params.reliefRadius = 0;
     params.bottomStrategy ??= "relief";
   }
+  if (oldStyle === "relief_v") {
+    const diameter = params.holeDiameter ?? params.reliefDiameter;
+    if (diameter !== undefined) {
+      params.reliefLength ??= diameter;
+      params.reliefHeight ??= diameter;
+      params.reliefRadius ??= 0;
+    }
+    params.bottomStrategy ??= "relief";
+  }
   if (oldStyle === "flat_v" && params.flatWidth > 0) params.bottomStrategy = "flat";
-  for (const key of ["bridge", "rootWidth", "reliefWidth", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "rootRadius"]) delete params[key];
+  for (const key of ["bridge", "rootWidth", "reliefWidth", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "rootRadius", "holeDiameter", "holeLift"]) delete params[key];
 }
 
 const END_PLACEMENT_BY_TOOL = Object.freeze({

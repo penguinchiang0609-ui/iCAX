@@ -1,3 +1,5 @@
+import { migratePunchRecord, migratePunchRecipe, BRANCH_PLACEMENT_DEFAULTS } from "./punchToolMigration.mjs";
+
 // Editable three-dimensional part recipes. This module deliberately has no
 // machining-wizard state, message routing, UI lifecycle or preview dependency.
 const clone=value=>structuredClone(value);
@@ -9,7 +11,7 @@ const snapshot=s=>clone({features:s.features,ends:s.ends,draft:s.draft,editingId
 const changed=s=>{s.revision=(s.revision??0)+1;s.error="";};
 
 export function normalizeDrawingFeature(value={}) {
-  const feature=clone(value);
+  const feature=migratePunchRecord(value);
   delete feature.toolSnapshot;
   const defaults={station:0,offset:0,rotation:0,arrayCount:1,arrayPitch:50,rowCount:1,rowPitch:20,
     diameter:10,spanAlong:30,spanAcross:10,cornerRadius:0};
@@ -24,7 +26,7 @@ export function normalizeDrawingFeature(value={}) {
 }
 
 export function createDrawingState(part={}) {
-  const recipe=part.properties?.["tubeDesigner.partDrawing"]??part.properties?.["tubeDesigner.punchWizard"]??{};
+  const recipe=migratePunchRecipe(part.properties?.["tubeDesigner.partDrawing"]??part.properties?.["tubeDesigner.punchWizard"]??{});
   const originals=recipe.features??[],features=originals.map(normalizeDrawingFeature);
   const length=Number(recipe.drawing?.length??recipe.baseLength??part.length??500);
   return {partId:String(part.entityId??""),resourceId:part.manufacturingGeometryResourceId,
@@ -60,8 +62,11 @@ export function selectDrawingTool(state,item,id) {
   item.toolLabel=label(tool);item.toolKind=tool.kind;
   item.toolParameters=clone(tool.defaultParameters??Object.fromEntries((tool.parameters??[]).map(p=>[p.key,p.defaultValue])));
   item.recordKind=tool.requiresSection?(item.section?.source==="dxf"?"dxf":"branch"):"tool";
-  if(tool.target==="part")Object.assign(item,{toolTarget:"part",face:["top","left","round"].includes(item.face)?item.face:"top",
-    offset:0,rotation:0,opposite:false,through:false,reverse:false,depthMode:"single"});
+  if(tool.target==="part") {
+    Object.assign(item,{toolTarget:"part",face:["top","left","round"].includes(item.face)?item.face:"top",
+      offset:0,rotation:0,opposite:false,through:false,reverse:false,depthMode:"single"});
+    if(tool.requiresSection) for(const [key,value] of Object.entries(BRANCH_PLACEMENT_DEFAULTS)) item[key] ??= value;
+  }
   else delete item.toolTarget;
   if(!tool.requiresSection)delete item.section;
   if(tool.target==="end"&&endLongDatum.has(tool.id))item.datum="long";
@@ -98,6 +103,8 @@ export function validateDrawingFeature(feature) {
   if(featureCount(feature)>1000)return "单个零件最多支持 1000 个展开刀具。";
   if(!["start","end","center"].includes(feature.reference)||!["top","bottom","left","right","round"].includes(feature.face))return "请选择有效的定位基准与方向。";
   if((feature.recordKind==="branch"||feature.recordKind==="dxf")&&!feature.section?.profile?.contours?.length)return "请选择有效的支管截面。";
+  if(feature.toolRef?.id==="branch-profile" && (![feature.angle,feature.azimuth,feature.roll,feature.offsetY,feature.offsetZ,feature.length].every(Number.isFinite)
+    || !(feature.length>0) || !["through","symmetric","positive","negative"].includes(feature.direction??"through")))return "支管定位与拉伸参数无效。";
   if(!finiteParameters(feature))return "刀具参数必须是有效数字。";
   if(feature.arrayOffsets?.some(value=>!Number.isFinite(value))||feature.rowOffsets?.some(value=>!Number.isFinite(value)))return "阵列偏移必须是有效数字。";
   return "";
@@ -179,7 +186,7 @@ export function updateDrawingField(state,target) {
     item.toolParameters??={};item.toolParameters[parameter]=definition?.valueType==="boolean"?!!target.checked
       :definition?.valueType==="string"?String(target.value):number(target.value,NaN);
   } else {
-    item[field]=["face","reference","endDatum","datum","distributionMode","depthMode","layoutDatum","rowDistributionMode"].includes(field)?String(target.value)
+    item[field]=["face","reference","endDatum","datum","distributionMode","depthMode","layoutDatum","rowDistributionMode","direction"].includes(field)?String(target.value)
       :["enabled","opposite","through","reverse","allowOpen"].includes(field)?!!target.checked:number(target.value,NaN);
   }
   return true;

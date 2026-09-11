@@ -15,12 +15,26 @@ ROOT = next(parent for parent in Path(__file__).resolve().parents
 sys.path.insert(0, str(ROOT / "src/iCAX-Engine/framework/TemplateRuntime/python"))
 from icax_template_worker import _load_template
 
-DIRECTORY = ROOT / "src/apps/tube-designer/templates/modular_guardrail"
+DIRECTORY = ROOT / "src/apps/tube-designer/templates/product/modular_guardrail"
 DESCRIPTOR = json.loads((DIRECTORY / "template.json").read_text(encoding="utf-8"))
 DEFAULTS = {parameter["key"]: parameter["defaultValue"] for parameter in DESCRIPTOR["parameters"]}
 MODULE = _load_template(str(DIRECTORY / "template.py"), "modular-guardrail-tests")
 SUBJECT = sys.modules[MODULE.generate.__module__]
-PRESETS = DESCRIPTOR["extensions"]["catalog"]["presets"]
+STYLE_DIRECTORIES = sorted(ROOT.joinpath("src/apps/tube-designer/templates").glob("modular_guardrail*/template.json"))
+STYLE_DESCRIPTORS = [json.loads(path.read_text(encoding="utf-8")) for path in STYLE_DIRECTORIES]
+PRESETS = [
+    {
+        "id": "r3-straight" if descriptor["id"] == "modular-guardrail"
+        else descriptor["id"].removeprefix("modular-guardrail-"),
+        "displayName": descriptor["displayName"],
+        "parameters": {
+            field["key"]: field["defaultValue"]
+            for field in descriptor["parameters"]
+            if field["defaultValue"] != DEFAULTS.get(field["key"])
+        },
+    }
+    for descriptor in STYLE_DESCRIPTORS
+]
 LEGACY_PRESETS = PRESETS[:20]
 
 
@@ -42,13 +56,16 @@ def overlap(a, b):
 
 
 class ModularGuardrailTests(unittest.TestCase):
-    def test_all_presets_are_one_real_template_and_only_declared_parameters(self):
+    def test_all_styles_are_one_real_template_and_only_declared_parameters(self):
         self.assertEqual(DESCRIPTOR["id"], "modular-guardrail")
+        self.assertEqual(len(STYLE_DESCRIPTORS), 32)
         self.assertEqual(len(PRESETS), 32)
         self.assertEqual(len({preset["id"] for preset in PRESETS}), 32)
         for preset in PRESETS:
             self.assertTrue(set(preset["parameters"]).issubset(DEFAULTS), preset["id"])
-            self.assertTrue(preset["displayName"]["zh-CN"])
+            self.assertTrue(preset["displayName"])
+        self.assertTrue(all("presets" not in descriptor.get("extensions", {}).get("catalog", {})
+                            for descriptor in STYLE_DESCRIPTORS))
 
     def test_every_preset_builds_complete_display_and_export_graph(self):
         for preset in PRESETS:
@@ -343,7 +360,7 @@ class ModularGuardrailTests(unittest.TestCase):
                             for node in document["geometry"]))
 
     def test_component_models_are_real_closed_documents_and_template_resource_exists(self):
-        models = ROOT / "src/apps/tube-designer/models"
+    models = ROOT / "src/apps/tube-designer/templates/accessory"
         for model_id in ("post-cap", "post-cap-40", "spear-tip", "glass-clamp", "connector-block"):
             descriptor = json.loads((models / model_id / "model.json").read_text(encoding="utf-8"))
             self.assertEqual(descriptor["schema"], "icax.component-model")

@@ -26,6 +26,7 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
+  <Import Project="..\..\..\third_party\opencascade\OpenCascade.DataExchange.props" />
   <PropertyGroup Label="UserMacros" />
   <ItemDefinitionGroup>
     <ClCompile>
@@ -36,8 +37,8 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\boost.1.87.0\lib\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\boost.1.87.0\lib\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>/utf-8 /FS /wd4251 /wd4996 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC></Link>
   </ItemDefinitionGroup>
@@ -84,7 +85,11 @@
     <ProjectReference Include="..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
       <Project>{60bc73ca-d444-48e9-984f-b3960d374795}</Project>
     </ProjectReference>
+    <ProjectReference Include="..\..\cad\OpenCascadeResourceImport\OpenCascadeResourceImport.vcxproj">
+      <Project>{30dbd734-7124-4d09-b022-cc2e586cc4ee}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="..\..\..\third_party\opencascade\OpenCascade.Runtime.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

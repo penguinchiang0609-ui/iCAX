@@ -185,11 +185,12 @@ export function renderSketchLeftPane(_context, view) {
   const componentProfile = state.mode === SECTION_MODE && Boolean(view.tubeDesignerComponentCSGProfileReturn);
   const sectionAnalysis = analyzeSectionDraft(state.section);
 
+  const toolSketch = Boolean(view.tubeDesignerToolSketchContext);
   return `<div class="tube-sketch-preview-panel" data-tube-sketch-preview-panel>
     <header>
-      <strong>${state.mode === SECTION_MODE ? (componentProfile ? "拉伸截面预览" : "管型预览") : (partTarget ? "零件侧面预览" : "三维切割预览")}</strong>
+      <strong>${state.mode === SECTION_MODE ? (componentProfile ? "拉伸截面预览" : (toolSketch ? "模具截面预览" : "管型预览")) : (partTarget ? "零件侧面预览" : "三维切割预览")}</strong>
       <span>${state.mode === SECTION_MODE
-        ? (componentProfile ? "截面闭合后可回填并生成三维拉伸体" : "截面闭合后自动生成三维管型")
+        ? (componentProfile ? "截面闭合后可回填并生成三维拉伸体" : (toolSketch ? "截面闭合后保存为定式模具，统一生成标准拉伸体" : "截面闭合后自动生成三维管型"))
         : (member ? (partTarget ? "灰色底图来自最终零件，青色图形为当前草图" : "实时查看图形在管子侧面的效果") : "请先选择一根管件")}</span>
     </header>
     <div class="tube-sketch-preview-stage">
@@ -215,7 +216,7 @@ export function renderSectionSketchDialog(context, view) {
   const state = ensureSketchState(view);
   const sidePart = state.mode === SIDE_MODE && state.sideTargetKind === "part";
   const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
-  const title = sidePart ? "下料零件二维编辑" : (componentProfile ? "拉伸体二维截面" : "截面轮廓草图");
+  const title = sidePart ? "下料零件二维编辑" : (componentProfile ? "拉伸体二维截面" : (view.tubeDesignerToolSketchContext ? "模具截面草图" : "截面轮廓草图"));
   return `<dialog class="tube-section-sketch-dialog" aria-label="${title}">
     <header class="tube-section-sketch-title">${title}</header>
     <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
@@ -303,7 +304,7 @@ export function renderSketchRightPane(_context, view) {
       <span>${selectedPoints.length ? "框选或按 Shift/Ctrl 多选节点；两个开放端点可合并" : selected ? "可拖动夹点；框选不同曲线的端点可合并" : selectedIds.length > 1 ? "端点相接的图形可从菜单执行合并" : "局部框选节点；框住完整图形选图形；Shift/Ctrl 多选"}</span>
     </header>
     <div class="tube-sketch-property-body">
-      ${state.mode === SECTION_MODE ? renderSectionSession(state, view?.pending, Boolean(view.tubeDesignerComponentCSGProfileReturn)) : ""}
+      ${state.mode === SECTION_MODE ? renderSectionSession(state, view?.pending, Boolean(view.tubeDesignerComponentCSGProfileReturn), Boolean(view.tubeDesignerToolSketchContext)) : ""}
       ${state.mode === SIDE_MODE && state.sideTargetKind === "part" ? renderSideReferenceSummary(state.sideReference) : ""}
       ${renderSketchValidation(validation, state.mode, draft)}
       ${selected ? renderEntityProperties(selected) : `<div class="tube-sketch-property-empty">
@@ -1601,8 +1602,14 @@ function renderSketchValidation(validation, mode, draft) {
   </section>`;
 }
 
-function renderSectionSession(state, pending, componentProfile = false) {
+function renderSectionSession(state, pending, componentProfile = false, toolSketch = false) {
   const session = normalizeSectionSession(state.sectionSession);
+  if (toolSketch) {
+    return `<section class="tube-sketch-section-session" data-tube-sketch-section-session="tool-create">
+      <div><strong>新增定式模具</strong><small>从空白截面开始，确认后保存到“我的模具”</small></div>
+      <label><span>保存名称</span><input type="text" maxlength="120" value="${escapeAttr(state.sectionName)}" data-cam-change-action="tube-designer-sketch-section-name" ${pending ? "disabled" : ""}/></label>
+    </section>`;
+  }
   const copy = componentProfile ? {
     title: "当前拉伸体截面",
     detail: "确认后回填到 CSG 节点；完成整个零件前不会写入“我的配件”",
@@ -3179,6 +3186,7 @@ async function importSketchDxf(context, view, ops) {
 async function saveSectionProfile(context, view, ops, saveMode = "") {
   const state = ensureSketchState(view);
   const proposed = String(state.sectionName ?? "").trim();
+  if (view.tubeDesignerToolSketchContext) return saveToolSection(context, view, ops);
   if (!proposed) {
     view.error = "请输入管型名称。";
     ops.renderProject(context, view);
@@ -3274,6 +3282,49 @@ async function saveSectionProfile(context, view, ops, saveMode = "") {
   }
 }
 
+async function saveToolSection(context, view, ops) {
+  const state = ensureSketchState(view);
+  const proposed = String(state.sectionName ?? "").trim();
+  if (!proposed) {
+    view.error = "请输入模具名称。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  const profile = buildProfileFromSectionDraft(state.section, proposed);
+  view.pending = true;
+  view.progress = { title: "正在保存定式模具", detail: "正在校验闭合截面并生成标准拉伸体定义", stage: "保存模具", mode: "Resources" };
+  ops.renderProject(context, view);
+  let saved = null;
+  try {
+    const response = await context.productProxy.invoke("TubeDesigner.SavePunchTool", {
+      name: proposed,
+      kind: "fixed",
+      target: "side",
+      category: "孔型",
+      geometry: { mode: "profile", coordinateSpace: "section", contours: profile.contours },
+    }, { timeoutMs: 30000 });
+    saved = response?.tool;
+    if (!saved?.id) throw new Error("保存定式模具后没有返回记录标识。");
+    view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
+    const tools = view.tubeDesignerUserData.punchTools ??= [];
+    const index = tools.findIndex((item) => String(item?.id ?? "") === String(saved.id));
+    if (index >= 0) tools[index] = { ...saved, libraryScope: "user" };
+    else tools.push({ ...saved, libraryScope: "user" });
+    state.section.dirty = false;
+    view.tubeDesignerToolLibrary = { ...(view.tubeDesignerToolLibrary ?? {}), scope: "user", type: "fixed", category: "all", search: "", selectedKey: `user::${saved.id}` };
+    view.tubeDesignerToolSketchContext = null;
+    view.tubeDesignerSketchDialogOpen = false;
+    view.error = "";
+    await selectSketchArea(context, view, "tools");
+    ops.showNotice?.(context, view, `定式模具“${saved.displayName ?? saved.name ?? saved.id}”已保存到“我的模具”。`);
+    return saved;
+  } finally {
+    view.pending = false;
+    view.progress = null;
+    if (!saved) ops.renderProject(context, view);
+  }
+}
+
 async function cancelSketch(context, view, ops) {
   const state = ensureSketchState(view);
   const draft = currentDraft(view, state);
@@ -3284,8 +3335,10 @@ async function cancelSketch(context, view, ops) {
   view.tubeDesignerSketchDialogOpen = false;
   const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
   view.tubeDesignerComponentCSGProfileReturn = null;
+  const toolSketch = Boolean(view.tubeDesignerToolSketchContext);
+  view.tubeDesignerToolSketchContext = null;
   await selectSketchArea(context, view, componentProfile ? "components" : (state.mode === SECTION_MODE
-    ? "profiles" : state.sideReturnAreaId || "view"));
+    ? (toolSketch ? "tools" : "profiles") : state.sideReturnAreaId || "view"));
   ops.renderProject(context, view);
   return true;
 }

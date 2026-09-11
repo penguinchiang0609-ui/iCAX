@@ -86,18 +86,18 @@ def generate(p, context):
     # This package only sizes a cutter around the current tube section.
     bounds = context.get("bounds")
     if not isinstance(bounds, dict):
-        raise ValueError("尖角 V 槽缺少主管截面范围")
+        raise ValueError("V 槽缺少主管截面范围")
     lo, hi = bounds.get("min"), bounds.get("max")
     if (not isinstance(lo, (list, tuple)) or not isinstance(hi, (list, tuple))
             or len(lo) != 3 or len(hi) != 3):
-        raise ValueError("尖角 V 槽主管截面范围无效")
+        raise ValueError("V 槽主管截面范围无效")
     if any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
            for value in [*lo, *hi]):
-        raise ValueError("尖角 V 槽主管截面范围无效")
+        raise ValueError("V 槽主管截面范围无效")
     section_width = hi[1] - lo[1]
     section_height = hi[2] - lo[2]
     if section_width <= 0 or section_height <= 0:
-        raise ValueError("尖角 V 槽主管截面范围无效")
+        raise ValueError("V 槽主管截面范围无效")
 
     angle = _number(p["angle"], "V 槽夹角")
     asymmetric = p["asymmetric"]

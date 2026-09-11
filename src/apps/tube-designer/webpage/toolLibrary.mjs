@@ -297,15 +297,53 @@ function renderToolIllustration(tool) {
   return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 24 H38 M24 10 V38" /></svg>`;
 }
 
+function diagramValue(value, parameter) {
+  if (parameter === "leftArc") return value ? "左" : "右";
+  if (typeof value === "boolean") return value ? "是" : "否";
+  if (value === undefined || value === null || value === "") return "—";
+  return String(value);
+}
+
+function renderToolParameterDiagramSvg(tool, values) {
+  const diagram = tool?.parameterDiagram;
+  if (!diagram || typeof diagram !== "object") return renderToolIllustration(tool);
+  const viewBox = String(diagram.viewBox ?? "0 0 240 160");
+  const viewBoxParts = viewBox.split(/\s+/).map(Number);
+  const width = Number.isFinite(viewBoxParts[2]) ? viewBoxParts[2] : 240;
+  const mirror = diagram.mirrorParameter && values?.[diagram.mirrorParameter] === false;
+  const shapeTransform = mirror ? ` transform="translate(${escapeAttr(width)} 0) scale(-1 1)"` : "";
+  const paths = (diagram.paths ?? []).map((path) => {
+    const d = typeof path === "string" ? path : path?.d;
+    return d ? `<path class="tool-diagram-profile" d="${escapeAttr(d)}" />` : "";
+  }).join("");
+  const lines = (diagram.lines ?? []).map((line) => `<line class="tool-diagram-dimension" x1="${escapeAttr(line.x1)}" y1="${escapeAttr(line.y1)}" x2="${escapeAttr(line.x2)}" y2="${escapeAttr(line.y2)}" />`).join("");
+  const circles = (diagram.circles ?? []).map((circle) => `<circle class="tool-diagram-detail" cx="${escapeAttr(circle.cx)}" cy="${escapeAttr(circle.cy)}" r="${escapeAttr(circle.r)}" />`).join("");
+  const labels = (diagram.labels ?? []).map((label) => {
+    const base = String(label.text ?? "");
+    const value = label.parameter ? diagramValue(values?.[label.parameter], label.parameter) : "";
+    const unit = label.unit ? String(label.unit) : "";
+    const content = value ? `${base} ${value}${unit}` : base;
+    if (!content) return "";
+    return `<text class="tool-diagram-label" x="${escapeAttr(label.x)}" y="${escapeAttr(label.y)}" text-anchor="${escapeAttr(label.anchor ?? "middle")}">${escapeText(content)}</text>`;
+  }).join("");
+  return `<svg class="tool-parameter-svg" viewBox="${escapeAttr(viewBox)}" role="img" aria-label="${escapeAttr(`${toolName(tool)}参数示意图`)}"><g${shapeTransform}>${paths}${lines}${circles}</g>${labels}</svg>`;
+}
+
 function renderToolParameterDiagram(view, tool, values, definitions) {
+  const diagramValues = { ...values };
+  for (const definition of definitions) {
+    if (diagramValues[definition.key] === undefined && definition.defaultValue !== undefined) {
+      diagramValues[definition.key] = definition.defaultValue;
+    }
+  }
   const rows = definitions.map((definition, index) => {
-    const value = values[definition.key] ?? definition.defaultValue ?? "—";
+    const value = diagramValues[definition.key] ?? "—";
     const unit = definition.unit ? ` ${definition.unit}` : "";
     return `<div class="tube-tool-library-diagram-row"><b>${index + 1}</b><span><strong>${escapeText(localizedText(definition.displayName ?? definition.name, definition.key))}</strong><small>${escapeText(localizedText(definition.description, "对应当前模具截面参数"))}</small></span><em>${escapeText(localizedText(value, "—"))}${escapeText(localizedText(unit))}</em></div>`;
   }).join("");
   const state = toolLibraryState(view);
   const expanded = !!state.showToolDiagram;
-  return `<section class="tube-tool-library-parameter-diagram"><header><div><strong>参数示意图</strong><span>当前模具截面 · 参数与预览同步</span></div><button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="tool" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button></header>${expanded ? `<div class="tube-tool-library-diagram-content"><div class="tube-tool-library-diagram-art">${renderToolIllustration(tool)}</div>${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">定式模具使用导入的固定截面，不需要额外参数。</p>`}</div>` : ""}</section>`;
+  return `<section class="tube-tool-library-parameter-diagram"><header><div><strong>参数示意图</strong><span>当前模具截面 · 参数与预览同步</span></div><button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="tool" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button></header>${expanded ? `<div class="tube-tool-library-diagram-content"><div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, diagramValues)}</div>${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">定式模具使用导入的固定截面，不需要额外参数。</p>`}</div>` : ""}</section>`;
 }
 
 function renderToolTubeSection(view, role = "main") {
@@ -450,6 +488,7 @@ export function buildToolLibraryPreviewPayload(view, tool, options = {}) {
     : profileSnapshotValue;
   const toolRef = { id: String(tool.id), version: String(tool.version ?? "") };
   if (tool.digest) toolRef.digest = String(tool.digest);
+  if (scopeOf(tool) !== "system") toolRef.libraryScope = scopeOf(tool);
   const base = { profileRef: profileRef(profile), parameters: profileValues, length: toolLibraryState(view).previewLength, features: [], ends: { start: { type: "keep" }, end: { type: "keep" } }, toolsOnly: true };
   if (tool.target === "end") {
     base.ends.start = { type: String(tool.id), toolRef, toolParameters: values, trim: 0, datum: "long", rotation: 0 };

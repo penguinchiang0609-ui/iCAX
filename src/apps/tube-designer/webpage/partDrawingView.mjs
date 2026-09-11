@@ -15,11 +15,11 @@ function toolbar(view) {
   const m=view.tubeDesignerPartDrawing,s=m.state;
   const busy=view.pending?"disabled":"",ready=(!m.mainApplied||s.catalogueStatus!=="ready"||view.pending)?"disabled":"";
   const f=s.features.find(f=>f.id===m.selected),locked=f&&isDrawingToolReadOnly(s,f);
-  const active=m.mode!=="feature"?m.mode:drawingToolDescriptor(s,s.draft)?.requiresSection?"branch":s.draft.toolTarget==="part"?"v-notch":"hole";
+  const active=m.mode!=="feature"?m.mode:drawingToolDescriptor(s,s.draft)?.requiresSection?"branch":s.draft.toolTarget==="part"?"part":"hole";
   const selected=(mode)=>`aria-pressed="${active===mode}"`;
   const tool=(kind,title,symbol,extra="")=>btn("command",title,`${ready} data-drawing-command="${kind}" ${selected(kind)} ${extra}`,symbol);
   return `<nav class="td-draw-ribbon" aria-label="三维建模工具">
-    <div class="td-draw-ribbon-group">${btn("command","主管",`${busy} data-drawing-command="main" ${selected("main")}`,"base")}${tool("branch","支管相贯","branch")}${tool("v-notch","V 槽","bevel")}<small>建模</small></div>
+    <div class="td-draw-ribbon-group">${btn("command","主管",`${busy} data-drawing-command="main" ${selected("main")}`,"base")}${tool("branch","支管相贯","branch")}${tool("part","槽口","bevel")}<small>建模</small></div>
     <div class="td-draw-ribbon-group">${tool("start","起点切断","cut")}${tool("end","终点切断","cut")}<small>端部</small></div>
     <div class="td-draw-ribbon-group td-draw-edit-tools">${btn("undo","撤销",`${busy} ${!s.history?.length?"disabled":""}`,"undo")}${btn("redo","重做",`${busy} ${!s.future?.length?"disabled":""}`,"redo")}${btn("selected-copy","复制",`${busy} ${!f||locked?"disabled":""}`,"merge")}${btn("selected-toggle",f?.enabled===false?"启用":"停用",`${busy} ${!f||locked?"disabled":""}`,"display")}${btn("selected-remove","删除",`${busy} ${!f&&!["start","end"].includes(m.selected)?"disabled":""}`,"delete")}<small>编辑特征</small></div>
     <div class="td-draw-ribbon-group td-draw-complete">${btn("apply","确定",`${busy} title="${m.part?"计算并保存零件":"计算并生成零件"}"`,"apply")}${btn("cancel","取消",busy,"close")}<small>完成</small></div>
@@ -32,7 +32,7 @@ function tree(view) {
     ${row("main","主管 · 拉伸基体","base",`${s.drawing.section?.name??"请选择截面"} · ${s.drawing.length} mm`)}
     ${["start","end"].filter(e=>s.ends[e]?.type!=="keep").map(e=>row(e,(e==="start"?"起点":"终点")+" · "+label(drawingToolDescriptor(s,s.ends[e])??s.ends[e]),"cut")).join("")}
     ${s.features.map((f,i)=>row(f.id,`${i+1}. ${label(drawingToolDescriptor(s,f)??f)}`,f.toolTarget==="part"?(f.section?"branch":"bevel"):"hole",isDrawingToolReadOnly(s,f)?"定式 · 仅可删除":`${f.station} mm${f.arrayCount>1||f.rowCount>1?` · 阵列 ${f.arrayCount} × ${f.rowCount}`:""}`,f.enabled===false)).join("")}
-    ${!s.features.length?'<p>从上方添加支管、V 槽或端部切割。</p>':""}</div></section>`;
+    ${!s.features.length?'<p>从上方添加支管、槽口或端部切割。</p>':""}</div></section>`;
 }
 function featureParameters(view,renderSection) {
   const m=view.tubeDesignerPartDrawing,s=m.state,f=s.draft,t=drawingToolDescriptor(s,f);
@@ -40,13 +40,12 @@ function featureParameters(view,renderSection) {
   const type=t?.requiresSection?renderSection(view,"branch"):
     select("tool",isPart?"槽口类型":"孔形",f.toolRef?.id??f.type,s.tools.filter(t=>t.target===(isPart?"part":"side")&&!t.requiresSection).map(t=>[t.id,label(t)]));
   if(locked)return `<div class="td-draw-readonly"><strong>${hasFrozenDrawingTool(f)?"已退化为定式刀具":"缺少原版刀具"}</strong><p>保留已保存的几何，仅可删除此节点。</p><small>${txt(f.toolRef?.id)} @ ${txt(f.toolRef?.version)}</small></div>`;
-  const params=(keys)=>parameterFields(action,{...t,parameters:t?.parameters?.filter(p=>keys.includes(p.key))},f);
-  const extraGrooveKeys=["rootRadius","rootWidth","reliefDiameter","reliefLift"];
-  const geometryFields=t?.id==="v-notch"
-    ? parameterFields(action,{...t,parameters:t.parameters.filter(p=>!extraGrooveKeys.includes(p.key))},f)
-    : parameterFields(action,t,f);
-  const extraGrooveFields=t?.id==="v-notch"?params(extraGrooveKeys):"";
+  const geometryFields=parameterFields(action,t,f);
   const position=input("station","沿主管位置",f.station,"mm")+select("reference","定位基准",f.reference,[["start","距起点"],["end","距终点"],["center","距中心"]]);
+  const branchPlacement=position+input("angle","轴夹角",f.angle??90,"°")+input("azimuth","方位角",f.azimuth??0,"°")
+    +input("roll","绕轴旋转",f.roll??0,"°")+input("offsetY","横向偏移",f.offsetY??0,"mm")+input("offsetZ","高度偏移",f.offsetZ??0,"mm")
+    +select("direction","拉伸方向",f.direction??"through",[["through","贯穿主管"],["symmetric","对称"],["positive","正向"],["negative","反向"]])
+    +input("length","拉伸长度",f.length??120,"mm");
   // Reuse the persisted placement fields: columns are X, rows are Y/Z or rotation about X.
   const arrayModes=[["top","沿 Y 轴多排"],["left","沿 Z 轴多排"],["round","绕 X 轴圆周多排"]];
   const axialSign=(f.reference==="end"?-1:1)*f.arrayPitch<0?"negative":"positive";
@@ -62,8 +61,8 @@ function featureParameters(view,renderSection) {
     +`<small class="wide">数量包含原刀具，共 ${f.arrayCount} × ${f.rowCount} = ${f.arrayCount*f.rowCount} 个位置。${f.face==="round"?"从 X 正端看向原点：正转为逆时针。":""}</small>`;
   return `<fieldset ${view.pending?"disabled":""} class="tube-designer-punch-controls">
     ${group(t?.requiresSection?"截面形状":isPart?"槽口类型":"开孔形状",`<div class="wide">${type}</div>`)}
-    ${t?.requiresSection?group("定位",position+params(["offsetY","offsetZ"]))+group("旋转",params(["angle","azimuth","roll"]))+group("拉伸切除",params(["direction","length"])):
-      group("几何参数",geometryFields)+(extraGrooveFields?group("附加槽底处理",extraGrooveFields,extraGrooveKeys.some(key=>Number(f.toolParameters?.[key])>0)):"")+group("定位",position+(isPart?"":select("face","加工方向",f.face,[["top","上方 +Z"],["bottom","下方 −Z"],["left","左方 −Y"],["right","右方 +Y"],["round","周向"]])+input("offset",f.face==="round"?"周向角度":"横向偏移",f.offset,f.face==="round"?"°":"mm")+input("rotation","面内旋转",f.rotation,"°")+select("endDatum","端面基准",f.endDatum,[["long","长点"],["center","中心"],["short","短点"]])))}
+     ${t?.requiresSection?group("位置 / 姿态",branchPlacement):
+      group("几何参数",geometryFields)+group("定位",position+(isPart?"":select("face","加工方向",f.face,[["top","上方 +Z"],["bottom","下方 −Z"],["left","左方 −Y"],["right","右方 +Y"],["round","周向"]])+input("offset",f.face==="round"?"周向角度":"横向偏移",f.offset,f.face==="round"?"°":"mm")+input("rotation","面内旋转",f.rotation,"°")+select("endDatum","端面基准",f.endDatum,[["long","长点"],["center","中心"],["short","短点"]])))}
     ${group("阵列",array,f.arrayCount>1||f.rowCount>1)}
     ${!isPart?group("切除选项",[ ["through","贯穿管材"],["opposite","对侧同孔"] ].map(([key,title])=>fieldControl(action,key,title,f[key],{valueType:"boolean"})).join(""),false):""}
   </fieldset>`;
@@ -82,7 +81,11 @@ function inspector(view,renderSection) {
   } else if(["start","end"].includes(m.mode)) {
     const end=m.mode,e=s.ends[end],t=drawingToolDescriptor(s,e),locked=isDrawingToolReadOnly(s,e);
     title=end==="start"?"起点端部":"终点端部";
-    body=locked?'<p class="td-draw-readonly">该端部刀具已退化为定式，仅可删除节点。</p>':`<fieldset class="tube-designer-punch-controls" ${view.pending?"disabled":""}>${group("切割方式",select("tool","端部刀具",e.toolRef?.id??"keep",[["keep","保留原端面"],...s.tools.filter(t=>t.target==="end").map(t=>[t.id,label(t)])],end))}${e.type!=="keep"?(t?.requiresSection?renderSection(view,end):"")+group("形状",parameterFields(action,t,e,end))+group("定位",input("trim","向内修剪",e.trim??0,"mm",end)+input("rotation","绕主管旋转",e.rotation??0,"°",end)+select("datum","尺寸基准",e.datum??"long",[["long","长点"],["center","中心"],["short","短点"]],end)):""}</fieldset>`;
+    const endId=e.toolRef?.id??e.type;
+    const endPlacement=endId==="end-profile"?input("angle","轴夹角",e.angle??90,"°",end)+input("azimuth","方位角",e.azimuth??0,"°",end)+input("roll","绕轴旋转",e.roll??0,"°",end)+input("axialOffset","轴向偏移",e.axialOffset??0,"mm",end)+input("offsetY","横向偏移",e.offsetY??0,"mm",end)+input("offsetZ","高度偏移",e.offsetZ??0,"mm",end)
+      :endId==="end-convex"||endId==="end-cope"?input("angle","轴夹角",e.angle??90,"°",end)+input("offset","轴向偏移",e.offset??0,"mm",end)
+      :endId==="end-key-joint"?input("offset","轴向偏移",e.offset??0,"mm",end):"";
+    body=locked?'<p class="td-draw-readonly">该端部刀具已退化为定式，仅可删除节点。</p>':`<fieldset class="tube-designer-punch-controls" ${view.pending?"disabled":""}>${group("切割方式",select("tool","端部刀具",e.toolRef?.id??"keep",[["keep","保留原端面"],...s.tools.filter(t=>t.target==="end").map(t=>[t.id,label(t)])],end))}${e.type!=="keep"?(t?.requiresSection?renderSection(view,end):"")+group("形状",parameterFields(action,t,e,end))+group("定位",input("trim","向内修剪",e.trim??0,"mm",end)+input("rotation","绕主管旋转",e.rotation??0,"°",end)+select("datum","尺寸基准",e.datum??"long",[["long","长点"],["center","中心"],["short","短点"]],end)+endPlacement):""}</fieldset>`;
   }
   return `<section class="td-draw-inspector" aria-label="特征参数"><header><strong>${txt(title)}</strong>${m.mode?'<small>修改实时生效，可用撤销/重做回退</small>':""}</header><div class="td-draw-property-scroll">${body}</div></section>`;
 }

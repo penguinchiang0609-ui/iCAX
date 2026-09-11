@@ -39,10 +39,11 @@ namespace iCAX::TubeDesigner
         const std::filesystem::path& TemplateDirectory_, const iCAX::Data::ObjectMap& DescriptorExtensions_,
         const std::string& TemplateID_, const std::string& TemplateName_);
     _TUBE_DESIGNER_EXP iCAX::Data::VariantArray ListComponentModelSummaries(
-        const std::filesystem::path& Root_, iCAX::Application::IProductUserDataStore* Store_);
+        const std::filesystem::path& Root_, iCAX::Application::IProductUserDataStore* Store_,
+        const std::filesystem::path& UserRoot_ = {});
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ResolveComponentModelSnapshot(
         const std::filesystem::path& SystemRoot_, iCAX::Application::IProductUserDataStore* Store_,
-        const std::string& Scope_, const std::string& ID_);
+        const std::string& Scope_, const std::string& ID_, const std::filesystem::path& UserRoot_ = {});
     _TUBE_DESIGNER_EXP iCAX::Data::ObjectMap ComponentModelSummary(
         const iCAX::Data::ObjectMap& Snapshot_, const std::string& Scope_, const std::string& ID_,
         std::uint64_t Revision_ = 0);
@@ -63,4 +64,9 @@ namespace iCAX::TubeDesigner
         iCAX::Data::ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
         const iCAX::Data::ObjectMap& DescriptorExtensions_, const std::filesystem::path& SystemRoot_,
         iCAX::Application::IProductUserDataStore* Store_, const iCAX::Data::ObjectMap* Frozen_ = nullptr);
+    _TUBE_DESIGNER_EXP void ResolveTemplateComponentResources(
+        iCAX::Data::ObjectMap& Document_, const std::filesystem::path& TemplateDirectory_,
+        const iCAX::Data::ObjectMap& DescriptorExtensions_, const std::filesystem::path& SystemRoot_,
+        const std::filesystem::path& UserRoot_,
+        iCAX::Application::IProductUserDataStore* Store_, const iCAX::Data::ObjectMap* Frozen_);
 }

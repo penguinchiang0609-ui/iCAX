@@ -65,6 +65,21 @@ namespace
         box.Get(result.x0, result.y0, result.z0, result.x1, result.y1, result.z1);
         return result;
     }
+    // Part-local moulds are authored around the tube-section origin.  The
+    // common placement layer owns station, section-centre translation and the
+    // optional axial rotation; template Python only describes the mould.
+    TopoDS_Shape placePartLocal(const SPunchFeature& feature, double x, const Bounds& box)
+    {
+        TopoDS_Shape result = feature.ToolShape;
+        if (std::abs(feature.Rotation) > Tol) {
+            gp_Trsf rotation;
+            rotation.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0)), feature.Rotation * Pi / 180);
+            result = BRepBuilderAPI_Transform(result, rotation, true).Shape();
+        }
+        gp_Trsf translation;
+        translation.SetTranslation(gp_Vec(x, box.yc(), box.zc()));
+        return BRepBuilderAPI_Transform(result, translation, true).Shape();
+    }
     double volume(const TopoDS_Shape& shape)
     {
         GProp_GProps props;
@@ -276,7 +291,9 @@ namespace
         if(f.ToolInPartCoordinates) {
             if(f.ToolShape.IsNull() || !BRepCheck_Analyzer(f.ToolShape).IsValid() || volume(f.ToolShape)<=Tol)
                 throw std::invalid_argument("三维刀具体无效");
-            if(f.Opposite || f.Through || f.Reverse || f.Offset!=0 || f.Rotation!=0 || (f.Face!="top"&&f.Face!="left"&&f.Face!="round"))
+            if(f.Opposite || f.Through || f.Reverse || f.Offset!=0
+                || (!f.ToolInPartLocalCoordinates && f.Rotation!=0)
+                || (f.Face!="top"&&f.Face!="left"&&f.Face!="round"))
                 throw std::invalid_argument("三维刀具须通过模板参数设置姿态，不使用壁面刀具定位");
             return;
         }
@@ -514,7 +531,12 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
         const auto add=[&](const TopoDS_Shape& shape){builder.Add(group,shape);++inserted;};
         const auto seedTools=[&](SPunchFeature f,double x) {
             std::vector<TopoDS_Shape> seeds;
-            if(f.ToolInPartCoordinates){seeds.push_back(f.ToolShape);return seeds;}
+            if(f.ToolInPartCoordinates){
+                if(f.ToolInPartLocalCoordinates) {
+                    seeds.push_back(placePartLocal(f, x, box));
+                } else seeds.push_back(f.ToolShape);
+                return seeds;
+            }
             if(f.Reverse){if(f.Face=="round")f.Offset+=180;else if(f.Face=="top")f.Face="bottom";else if(f.Face=="bottom")f.Face="top";else if(f.Face=="left")f.Face="right";else f.Face="left";}
             for(unsigned side=0;side<sides;++side) {
                 auto s=surface(f,x,box);
@@ -539,10 +561,14 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
                 const double axial=source.ArrayOffsets.empty()?(source.Reference=="end"?-1.:1.)*col*source.ArrayPitch:source.ArrayOffsets[col];
                 const double across=source.RowOffsets.empty()?row*source.RowPitch:source.RowOffsets[row];
                 if(source.ToolInPartCoordinates) {
+                    TopoDS_Shape sourceTool=source.ToolShape;
+                    if(source.ToolInPartLocalCoordinates) {
+                        sourceTool=placePartLocal(source, x, box);
+                    }
                     gp_Trsf pose,along;
                     if(source.Face=="round")pose.SetRotation(gp_Ax1(gp_Pnt(0,box.yc(),box.zc()),gp_Dir(1,0,0)),across*Pi/180);
                     else pose.SetTranslation(source.Face=="left"?gp_Vec(0,0,across):gp_Vec(0,across,0));
-                    along.SetTranslation(gp_Vec(axial,0,0));add(BRepBuilderAPI_Transform(source.ToolShape,along*pose,true).Shape());
+                    along.SetTranslation(gp_Vec(axial,0,0));add(BRepBuilderAPI_Transform(sourceTool,along*pose,true).Shape());
                 } else {auto f=source;f.Offset+=across;for(const auto& seed:seedTools(f,x+axial))add(seed);}
             }
         }
@@ -657,8 +683,12 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
         std::size_t inserted=0;
         if(source.HasArrayGroups) {
             std::vector<TopoDS_Shape> seeds;
-            if(source.ToolInPartCoordinates)seeds.push_back(source.ToolShape);
-            else {
+            if(source.ToolInPartCoordinates) {
+                if(source.ToolInPartLocalCoordinates) {
+                    const double x=datum(source,ends,box,finished)+(source.Reference=="end"?-source.Station:source.Station);
+                    seeds.push_back(placePartLocal(source, x, box));
+                } else seeds.push_back(source.ToolShape);
+            } else {
                 auto f=source;
                 if(f.Reverse){if(f.Face=="round")f.Offset+=180;else if(f.Face=="top")f.Face="bottom";else if(f.Face=="bottom")f.Face="top";else if(f.Face=="left")f.Face="right";else f.Face="left";}
                 const double x=datum(f,ends,box,finished)+(f.Reference=="end"?-f.Station:f.Station);
@@ -708,6 +738,11 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
         };
         if(source.ToolInPartCoordinates) {
             Bnd_Box partBox;BRepBndLib::AddOptimal(shape,partBox,false,false);
+            TopoDS_Shape sourceTool=source.ToolShape;
+            if(source.ToolInPartLocalCoordinates) {
+                const double x=datum(source,ends,box,finished)+(source.Reference=="end"?-source.Station:source.Station);
+                sourceTool=placePartLocal(source, x, box);
+            }
             for(std::uint64_t row=0;row<source.RowCount;++row) for(std::uint64_t col=0;col<source.ArrayCount;++col) {
                 if(skip(row,col)) continue;
                 gp_Trsf placement;
@@ -715,7 +750,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                 else if(source.Face=="left") placement.SetTranslation(gp_Vec(0,0,rowOffset(row)));
                 else placement.SetTranslation(gp_Vec(0,rowOffset(row),0));
                 gp_Trsf along;along.SetTranslation(gp_Vec(axialOffset(col),0,0));
-                const auto tool=BRepBuilderAPI_Transform(source.ToolShape,along*placement,true).Shape();
+                const auto tool=BRepBuilderAPI_Transform(sourceTool,along*placement,true).Shape();
                 Bnd_Box toolBox;BRepBndLib::AddOptimal(tool,toolBox,false,false);
                 if(partBox.IsOut(toolBox)) {
                     if(statistics)++statistics->OutsideCount;

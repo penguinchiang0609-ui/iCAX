@@ -21,22 +21,35 @@ export function renderProfileLibraryLeftPane(_context, view) {
     const selectionKey = profileSelectionKey(profile);
     const editable = isParametricProfile(profile);
     const specification = profileSpecification(profile);
-    const typeLabel = editable ? "程式管型" : "定式管型";
+    // The card already sits inside 管型库; keep the type marker short so the
+    // distinction is visible at a glance without repeating the resource name.
+    const typeLabel = editable ? "程式" : "定式";
     const sourceLabel = scope === "template" ? `模板自带 · ${profile.templateName || profile.templateId}` : scope === "system" ? "系统内置" : "我的管型";
     return `<button type="button" class="tube-profile-library-card ${selectionKey === selectedId ? "selected" : ""}" title="${escapeAttr(`${profileName(profile)}${specification ? ` · ${specification}` : ""}`)}" aria-label="${escapeAttr(`${profileName(profile)}，${typeLabel}，${sourceLabel}${specification ? `，${specification}` : ""}`)}" data-cam-action="tube-designer-profile-library-select" data-tube-designer-profile-key="${escapeAttr(selectionKey)}" data-tube-designer-profile-scope="${escapeAttr(scope)}" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>
-      <span class="tube-profile-library-card-icon ${scope === "system" ? "is-system" : ""}" aria-hidden="true">${scope === "template" ? "T" : scope === "system" ? "S" : (editable ? "P" : "D")}</span>
+      <span class="tube-profile-library-card-preview" aria-hidden="true">${renderProfileCardPreview(profile)}</span>
       <span class="tube-profile-library-card-copy">
         <strong>${escapeText(profileName(profile))}</strong>
+        <small>${escapeText(typeLabel)}</small>
       </span>
     </button>`;
   };
-  const sourceProfiles = all.filter((profile) => profileScope(profile) === state.scope);
-  const typeTabs = [["all", "全部"], ["parametric", "程式"], ["fixed", "定式"]];
+  const groupedProfiles = new Map();
+  for (const profile of profiles) {
+    const group = profileGroupLabel(profile);
+    if (!groupedProfiles.has(group)) groupedProfiles.set(group, []);
+    groupedProfiles.get(group).push(profile);
+  }
+  const renderGroup = ([group, entries]) => {
+    const groupKey = `${state.scope}:${group}`;
+    const expanded = !state.collapsed.includes(groupKey);
+    return `<section class="tube-profile-library-group">
+      <button type="button" class="tube-profile-library-group-heading" data-cam-action="tube-designer-profile-library-toggle-category" data-tube-profile-library-group="${escapeAttr(groupKey)}" aria-expanded="${expanded}"><span>${expanded ? "▾" : "▸"} ${escapeText(group)}</span><small>${escapeText(scopeLabel(state.scope))} · ${entries.length}</small></button>
+      <div class="tube-profile-library-group-content" ${expanded ? "" : "hidden"}>${entries.map(renderCard).join("")}</div>
+    </section>`;
+  };
   const emptyTitle = state.search
     ? "没有匹配的管型"
-    : state.type === "parametric" ? "还没有程式管型"
-      : state.type === "fixed" ? "还没有定式管型"
-        : { system: "没有可用的系统管型", template: "还没有模板自带管型", user: "还没有我的管型" }[state.scope];
+    : { system: "没有可用的系统管型", template: "还没有模板自带管型", user: "还没有我的管型" }[state.scope];
   const emptyNote = state.search
     ? "请调整搜索内容。"
     : state.scope === "template" ? "模板自带管型按所属模板管理，仅供该模板使用。"
@@ -49,10 +62,9 @@ export function renderProfileLibraryLeftPane(_context, view) {
     <div class="tube-component-library-filters tube-profile-library-filters">
       <input type="search" aria-label="搜索管型" placeholder="搜索名称、规格、所属模板" value="${escapeAttr(state.search)}" data-cam-change-action="tube-designer-profile-library-search" />
       <div class="tube-profile-library-tab-row" role="tablist" aria-label="管型来源">${[["system", "系统内置"], ["template", "模板自带"], ["user", "我的"]].map(([scope, title]) => `<button type="button" role="tab" aria-selected="${scope === state.scope}" class="${scope === state.scope ? "selected" : ""}" data-cam-action="tube-designer-profile-library-scope" data-tube-profile-library-scope="${scope}" ${view?.pending ? "disabled" : ""}>${title}<small>${all.filter((profile) => profileScope(profile) === scope).length}</small></button>`).join("")}</div>
-      <div class="tube-profile-library-tab-row" role="tablist" aria-label="管型类型">${typeTabs.map(([type, title]) => `<button type="button" role="tab" aria-selected="${type === state.type}" class="${type === state.type ? "selected" : ""}" data-cam-action="tube-designer-profile-library-type" data-tube-profile-library-type="${type}" ${view?.pending ? "disabled" : ""}>${title}<small>${type === "all" ? sourceProfiles.length : sourceProfiles.filter((profile) => profileLibraryType(profile) === type).length}</small></button>`).join("")}</div>
     </div>
     <div class="tube-profile-library-list" role="tabpanel">
-      ${profiles.length ? profiles.map(renderCard).join("") : `<div class="tube-profile-library-empty compact"><strong>${emptyTitle}</strong><span>${emptyNote}</span></div>`}
+      ${profiles.length ? [...groupedProfiles.entries()].map(renderGroup).join("") : `<div class="tube-profile-library-empty compact"><strong>${emptyTitle}</strong><span>${emptyNote}</span></div>`}
     </div>
   </div>`;
 }
@@ -148,6 +160,19 @@ export function renderProfileLibraryViewportOverlay(context, view) {
 
 
 export async function handleProfileLibraryAction(context, view, action, target, ops) {
+  if (action === "tube-designer-profile-library-toggle-category") {
+    if (!view.pending) {
+      const state = profileLibraryState(view);
+      const group = String(target?.dataset?.tubeProfileLibraryGroup ?? "");
+      if (group) {
+        state.collapsed = state.collapsed.includes(group)
+          ? state.collapsed.filter((value) => value !== group)
+          : [...state.collapsed, group];
+        ops.renderProject(context, view);
+      }
+    }
+    return { handled: true };
+  }
   if (action === "tube-designer-profile-library-scope" || action === "tube-designer-profile-library-type" || action === "tube-designer-profile-library-search") {
     if (!view.pending) {
       const state = profileLibraryState(view);
@@ -241,10 +266,11 @@ export function profileLibraryState(view) {
   const current = String(view.tubeDesignerSelectedProfileId ?? "");
   const initialScope = current.startsWith("template:") ? "template" : current.startsWith("user:")
     || (view.tubeDesignerUserData?.profiles ?? []).some((profile) => String(profile?.id ?? "") === current) ? "user" : "system";
-  const state = view.tubeDesignerProfileLibrary ??= { scope: initialScope, type: "all", search: "", selectedByScope: {} };
+  const state = view.tubeDesignerProfileLibrary ??= { scope: initialScope, type: "all", search: "", selectedByScope: {}, collapsed: [] };
   if (!["system", "template", "user"].includes(state.scope)) state.scope = "system";
   if (!["all", "parametric", "fixed"].includes(state.type)) state.type = "all";
   state.selectedByScope ??= {};
+  state.collapsed ??= [];
   return state;
 }
 
@@ -274,7 +300,6 @@ export function visibleLibraryProfiles(view) {
   const state = profileLibraryState(view);
   const query = String(state.search ?? "").trim().toLocaleLowerCase();
   return libraryProfiles(view).filter((profile) => profileScope(profile) === state.scope
-    && (state.type === "all" || profileLibraryType(profile) === state.type)
     && [profileName(profile), profileSpecification(profile), profileCategory(profile), profile.templateName, profile.templateId]
       .some((value) => String(value ?? "").toLocaleLowerCase().includes(query)));
 }
@@ -343,7 +368,7 @@ export function profileRef(profile) {
 }
 
 
-function profileName(profile) {
+export function profileName(profile) {
   return String(
     profile?.name
     ?? profile?.previewProfile?.name
@@ -352,7 +377,7 @@ function profileName(profile) {
 }
 
 
-function isParametricProfile(profile) {
+export function isParametricProfile(profile) {
   return profileScope(profile) !== "user" || profileType(profile) === "parametric-package";
 }
 
@@ -361,11 +386,34 @@ function profileType(profile) {
   return String(profile?.profileType ?? profile?.kind ?? "imported-dxf");
 }
 
+function profileGroupLabel(profile) {
+  const id = String(profile?.id ?? "").toLocaleLowerCase();
+  const name = profileName(profile).toLocaleLowerCase();
+  if (["angle", "channel", "i-section", "t-section", "z-section"].some((part) => id.includes(part))
+      || /角钢|槽钢|工字钢|h型钢|t型钢|z型钢/.test(name)) return "型钢";
+  if (["round", "ellipse", "flat-oval", "oval"].some((part) => id.includes(part))
+      || /圆管|椭圆管|腰圆管/.test(name)) return "圆管 / 椭圆管";
+  if (["rect", "polygon", "square"].some((part) => id.includes(part))
+      || /矩形管|方管|多边形管/.test(name)) return "矩形 / 多边形管";
+  return isParametricProfile(profile) ? "程式" : "定式";
+}
 
-function profileSnapshot(profile) {
+function scopeLabel(scope) {
+  return ({ system: "系统内置", template: "模板自带", user: "我的" })[scope] ?? "";
+}
+
+
+export function profileSnapshot(profile) {
   return isParametricProfile(profile)
     ? profile?.previewProfile ?? profile?.profile ?? (profile?.contours ? profile : null)
     : profile ?? null;
+}
+
+
+function renderProfileCardPreview(profile) {
+  const snapshot = profileSnapshot(profile);
+  if (snapshot?.contours?.length) return renderProfileSvg(snapshot);
+  return `<svg class="tube-profile-library-svg tube-profile-library-svg-fallback" viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="14" width="32" height="20" rx="2" /></svg>`;
 }
 
 export async function resolveSelectedProfileSketchSource(context, view) {
@@ -407,7 +455,7 @@ export async function resolveSelectedProfileSketchSource(context, view) {
 }
 
 
-function profileSpecification(profile) {
+export function profileSpecification(profile) {
   return String(profileSnapshot(profile)?.specification ?? profile?.specification ?? "");
 }
 
@@ -422,7 +470,7 @@ function normalizedPreviewLength(view) {
 }
 
 
-function profilePreviewParameters(view, profile) {
+export function profilePreviewParameters(view, profile) {
   return view?.tubeDesignerProfileDrafts?.[profileSelectionKey(profile)]?.parameters
     ?? profile?.defaultParameters
     ?? {};
@@ -865,12 +913,11 @@ function renderProfilePackageImportDialog(view) {
   return `<div class="tube-designer-modal-backdrop tube-designer-preset-dialog-backdrop" role="presentation">
     <section class="tube-designer-preset-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-profile-package-import-title">
       <header class="tube-designer-dialog-header">
-        <div><strong id="tube-profile-package-import-title">导入程式管型包</strong><span>包内必须包含 profile.json 和 profile.py</span></div>
+        <div><strong id="tube-profile-package-import-title">导入程式管型包</strong><span>一个 .ittt 对应一个管型，至少包含 profile.json 和 profile.py</span></div>
         <button class="tube-designer-dialog-close" data-cam-action="tube-designer-profile-package-import-cancel" aria-label="关闭" ${view?.pending ? "disabled" : ""}>×</button>
       </header>
       <div class="tube-designer-preset-dialog-body">
-        <div class="tube-designer-imported-profile-summary"><strong>${escapeText(fileName)}</strong><span>管型压缩包</span><small>密码仅用于本次解包，不会保存</small></div>
-        <label class="tube-designer-field wide"><span>包密码</span><input type="password" data-tube-profile-package-password maxlength="256" autocomplete="off" placeholder="未加密的包可留空" ${view?.pending ? "disabled" : ""} /></label>
+        <div class="tube-designer-imported-profile-summary"><strong>${escapeText(fileName)}</strong><span>.ittt 程式管型包</span><small>使用产品固定 magic number 自动校验密码</small></div>
         <p>管型包包含可执行脚本，请只导入可信来源。</p>
       </div>
       <footer class="tube-designer-preset-dialog-footer">
@@ -900,13 +947,12 @@ async function chooseProfilePackage(context, view, ops) {
   }
   const sourcePath = String(await bridge.openFileDialog({
     title: "选择程式管型包",
-    filters: [{ name: "管型包", extensions: ["icaxprofile", "zip"] }],
+    filters: [{ name: "管型包", extensions: ["ittt"] }],
   }) ?? "").trim();
   if (!sourcePath) return null;
   view.tubeDesignerProfilePackageImportDialog = { sourcePath };
   view.error = "";
   ops.renderProject(context, view);
-  queueMicrotask(() => document.querySelector("[data-tube-profile-package-password]")?.focus?.());
   return sourcePath;
 }
 
@@ -914,14 +960,12 @@ async function chooseProfilePackage(context, view, ops) {
 async function confirmProfilePackageImport(context, view, ops) {
   const state = view.tubeDesignerProfilePackageImportDialog;
   if (view.pending || !state?.sourcePath) return null;
-  const password = String(document.querySelector("[data-tube-profile-package-password]")?.value ?? "");
   return runProfileTask(context, view, ops, {
     title: "正在导入程式管型包",
     message: "正在解包、校验参数和生成默认截面",
   }, async () => {
     const response = await invokeProduct(context, "TubeDesigner.ImportProfilePackage", {
       sourcePath: state.sourcePath,
-      password,
     }, { timeoutMs: 120000 });
     const profile = response?.profile;
     if (!profile?.id) throw new Error("导入管型包后没有返回记录标识。" );

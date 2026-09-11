@@ -5,7 +5,7 @@ import {createDrawingState,normalizeDrawingFeature,installDrawingCatalogue,selec
   isDrawingToolReadOnly,hasFrozenDrawingTool} from "../../apps/tube-designer/webpage/partDrawingModel.mjs";
 
 const tool={id:"branch-profile",version:"1",digest:"exact",target:"part",requiresSection:true,
-  defaultParameters:{angle:90},parameters:[{key:"angle",valueType:"number",defaultValue:90}]};
+  defaultParameters:{},parameters:[]};
 const section={source:"library",profile:{contours:[{kind:"circle",radius:20}]},parameters:{diameter:40}};
 const state=createDrawingState({entityId:"drawing",length:500});installDrawingCatalogue(state,{tools:[tool]});
 state.draft=normalizeDrawingFeature({station:200,section,customRecipeField:{preserve:true}});selectDrawingTool(state,state.draft,tool.id);
@@ -16,18 +16,18 @@ assert.deepEqual(payload.features[0].arrayOffsets,[0,-60,-120]);assert.deepEqual
 assert.deepEqual(payload.features[0].customRecipeField,{preserve:true});
 state.features[0].reference="end";payload=getDrawingPayload(state);assert.deepEqual(payload.features[0].arrayOffsets,[0,60,120]);
 const id=state.features[0].id;editDrawingFeature(state,"edit",0);
-updateDrawingField(state,{value:"75",dataset:{tubeDesignerPunchField:"toolParameter",tubeDesignerPunchParameter:"angle"}});
-assert.equal(state.draft.toolParameters.angle,75);assert.equal(state.features[0].toolParameters.angle,90);
+updateDrawingField(state,{value:"75",dataset:{tubeDesignerPunchField:"angle"}});
+assert.equal(state.draft.angle,75);assert.equal(state.features[0].angle,90);
 assert.equal(addDrawingFeature(state),true);assert.equal(state.features[0].id,id);
-assert.equal(state.features[0].toolParameters.angle,75);
-editDrawingFeature(state,"undo");assert.equal(state.features[0].toolParameters.angle,90);
-editDrawingFeature(state,"redo");assert.equal(state.features[0].toolParameters.angle,75);
+assert.equal(state.features[0].angle,75);
+editDrawingFeature(state,"undo");assert.equal(state.features[0].angle,90);
+editDrawingFeature(state,"redo");assert.equal(state.features[0].angle,75);
 state.editingId="";
 assert.equal(validateDrawing(state),"");
 state.previewRenderError="上一次网格加载失败";
 assert.equal(validateDrawing(state),"","Rendering failures cannot invalidate an editable geometric recipe");
 editDrawingFeature(state,"edit",0);
-updateDrawingField(state,{value:"76",dataset:{tubeDesignerPunchField:"toolParameter",tubeDesignerPunchParameter:"angle"}});
+updateDrawingField(state,{value:"76",dataset:{tubeDesignerPunchField:"angle"}});
 assert.equal(addDrawingFeature(state),true);
 assert.equal(validateDrawing(state),"","Parameter edits recover by requesting fresh resources, without a stale display-error gate");
 state.features[0].arrayCount=Infinity;assert.match(validateDrawing(state),/整数/);

@@ -6,7 +6,7 @@ import {fileURLToPath} from "node:url";
 import {tubeDesignerCss} from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE||"playwright");
 const root=fileURLToPath(new URL("../../",import.meta.url));
-const toolsRoot=new URL("../../apps/tube-designer/templates/_shared/punch-tools/",import.meta.url);
+const toolsRoot=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
 const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(item=>item.isDirectory()).map(item=>JSON.parse(readFileSync(new URL(item.name+"/tool.json",toolsRoot))))
   .map(t=>({...t,digest:"browser-test",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
 const browser=await chromium.launch({headless:true,...(process.env.ICAX_BROWSER_CHANNEL?{channel:process.env.ICAX_BROWSER_CHANNEL}:{})});

@@ -63,4 +63,24 @@
     </ItemGroup>
     <ICAXCheckWritableBuildOutputs OutputPaths="@(_ICAXWritableLinkOutput)" />
   </Target>
+
+  <!-- TubeDesigner template packages are runtime data, not compiled sources.
+       Keep a complete copy beside the Debug/Release binaries so the native
+       runtime can resolve apps/tube-designer/templates without depending on
+       the checkout layout.  Only the Application project owns this copy to
+       avoid every project racing to write the same output tree. -->
+  <Target Name="ICAXCopyTubeDesignerTemplates"
+          AfterTargets="Build"
+          Condition="'$(MSBuildProjectName)' == 'Application' and '$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <_ICAXTubeDesignerTemplateFiles Include="$(ICAXSourceRoot)apps\tube-designer\templates\**\*.*" />
+    </ItemGroup>
+    <!-- These packages were intentionally removed from the built-in catalogue.
+         Copy is incremental and does not delete files removed from the source,
+         so clear the two obsolete output directories before copying templates. -->
+    <RemoveDir Directories="$(OutDir)apps\tube-designer\templates\mold\v-notch-asymmetric;$(OutDir)apps\tube-designer\templates\mold\v-notch-relief" />
+    <Copy SourceFiles="@(_ICAXTubeDesignerTemplateFiles)"
+          DestinationFiles="@(_ICAXTubeDesignerTemplateFiles-&gt;'$(OutDir)apps\tube-designer\templates\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

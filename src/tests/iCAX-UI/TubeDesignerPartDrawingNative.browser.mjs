@@ -37,7 +37,7 @@ const invoke = (method, payload = {}) => rpc({ action: "invoke", method, payload
 
 try {
   await rpc({ action: "reset" });
-  const descriptor = JSON.parse(readFileSync(resolve(sourceRoot, "apps/tube-designer/templates/_shared/profiles/round/profile.json"), "utf8"));
+  const descriptor = JSON.parse(readFileSync(resolve(sourceRoot, "apps/tube-designer/templates/profile/round/profile.json"), "utf8"));
   const defaultParameters = Object.fromEntries(descriptor.parameters.map(parameter => [parameter.key, parameter.defaultValue]));
   const evaluated = await invoke("EvaluateProfilePackage", { profileRef: { scope: "system", id: "round" }, parameters: defaultParameters });
   const profile = { id: "round", name: "圆管", descriptor, defaultParameters, previewProfile: evaluated.profile };

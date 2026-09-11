@@ -8,7 +8,7 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 const { chromium }=await import(process.env.ICAX_PLAYWRIGHT_MODULE||"playwright");
 const sourceRoot=fileURLToPath(new URL("../../",import.meta.url)).replace(/[\\/]$/,"");
 const artifacts=resolve(process.env.ICAX_ARTIFACT_DIR||"tmp/punch-draft-apply-browser");
-const catalogue=["circle","end-convex"].map(id=>JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/_shared/punch-tools/"+id+"/tool.json",import.meta.url))))
+const catalogue=["circle","end-convex"].map(id=>JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/"+id+"/tool.json",import.meta.url))))
   .map(tool=>({...tool,digest:"draft-apply-fixture",defaultParameters:Object.fromEntries(tool.parameters.map(p=>[p.key,p.defaultValue]))}));
 mkdirSync(artifacts,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.ICAX_BROWSER_CHANNEL?{channel:process.env.ICAX_BROWSER_CHANNEL}:{})});

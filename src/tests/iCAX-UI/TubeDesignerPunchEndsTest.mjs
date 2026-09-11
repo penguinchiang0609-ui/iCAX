@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import {readFileSync,readdirSync} from "node:fs";
+import {readFileSync,readdirSync,existsSync} from "node:fs";
 import {createPunchWizardState,installPunchCatalogue,getPunchWizardPayload,renderPunchWizardDialog,
   openPunchParameters,closePunchParameters,updatePunchWizardField,validatePunchWizard} from "../../apps/tube-designer/webpage/punchWizard.mjs";
 import {changePunchRecordKind,selectPunchProfileSource,updatePunchProfileParameter,punchProfileChoices} from "../../apps/tube-designer/webpage/punchProfileSource.mjs";
 import {handleNestingPunchPartAction} from "../../apps/tube-designer/webpage/nestingPunchPart.mjs";
 import {buildPunchReviewSummary} from "../../apps/tube-designer/webpage/punchReview.mjs";
 
-const root=new URL("../../apps/tube-designer/templates/_shared/punch-tools/",import.meta.url);
-const tools=readdirSync(root,{withFileTypes:true}).filter(entry=>entry.isDirectory()).map(entry=>JSON.parse(readFileSync(new URL(entry.name+"/tool.json",root))))
+const root=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
+const tools=readdirSync(root,{withFileTypes:true}).filter(entry=>entry.isDirectory()&&existsSync(new URL(entry.name+"/tool.json",root))).map(entry=>JSON.parse(readFileSync(new URL(entry.name+"/tool.json",root))))
   .map(tool=>({...tool,digest:"fixture",defaultParameters:Object.fromEntries(tool.parameters.map(p=>[p.key,p.defaultValue]))}));
 const profile={id:"rect",name:"矩形支管",profileType:"parametric-package",defaultParameters:{width:20},
   descriptor:{parameters:[{key:"width",displayName:"宽度",valueType:"number",defaultValue:20,unit:"mm"}]},

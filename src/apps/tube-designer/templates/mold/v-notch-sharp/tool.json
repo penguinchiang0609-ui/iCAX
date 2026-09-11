@@ -1,9 +1,9 @@
 {
   "schema":"icax.punch-tool","schemaVersion":1,"id":"v-notch-sharp","version":"1.0.0",
-  "displayName":"尖角 V 槽","kind":"programmatic","target":"part","category":"槽口",
-  "description":"尖角 V 槽；可选非对称角度、平底、圆角、释放孔和公母配合。",
-  "illustration":{"viewBox":"0 0 48 48","paths":["M6 9 H42","M6 9 L24 38 L42 9","M20 38 H28"]},
-  "parameterDiagram":{"viewBox":"0 0 240 160","paths":["M24 28 H216","M24 28 L120 124 L216 28","M108 124 H132","M94 101 Q120 119 146 101"],"lines":[{"x1":24,"y1":16,"x2":216,"y2":16},{"x1":102,"y1":124,"x2":138,"y2":124},{"x1":120,"y1":124,"x2":120,"y2":145}],"labels":[{"x":120,"y":11,"text":"V 槽口"},{"x":120,"y":94,"text":"夹角","parameter":"angle","unit":"°"},{"x":120,"y":156,"text":"留底","parameter":"leaveBottom","unit":" mm"},{"x":120,"y":137,"text":"底部"}]},
+  "displayName":"V槽","kind":"programmatic","target":"part","category":"槽口",
+  "description":"V槽；可选非对称角度、平底、圆角、释放孔和公母配合。",
+  "illustration":{"viewBox":"0 0 48 48","paths":["M6 9 H42","M6 9 L24 38 L42 9"]},
+  "parameterDiagram":{"viewBox":"0 0 240 180","paths":["M24 28 H216","M24 28 L120 124 L216 28","M24 148 H216"],"lines":[{"x1":24,"y1":16,"x2":216,"y2":16},{"x1":120,"y1":124,"x2":120,"y2":148},{"x1":112,"y1":124,"x2":128,"y2":124},{"x1":112,"y1":148,"x2":128,"y2":148},{"x1":105,"y1":111,"x2":135,"y2":111}],"labels":[{"x":120,"y":11,"text":"V槽"},{"x":120,"y":97,"text":"V槽夹角","parameter":"angle","unit":"°"},{"x":158,"y":141,"text":"槽底留量","parameter":"leaveBottom","unit":" mm"},{"x":120,"y":170,"text":"实际底面"}]},
   "parameters":[
     {"key":"angle","displayName":"V 槽夹角（°）","valueType":"number","defaultValue":90,"min":1,"max":170,"visibleWhen":{"op":"eq","parameter":"asymmetric","value":false}},
     {"key":"asymmetric","displayName":"非对称","valueType":"boolean","defaultValue":false},

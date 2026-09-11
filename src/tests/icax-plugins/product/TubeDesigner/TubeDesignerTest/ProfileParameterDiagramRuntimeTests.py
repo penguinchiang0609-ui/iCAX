@@ -77,6 +77,10 @@ class ProfileParameterDiagramRuntimeTests(unittest.TestCase):
                             "shapeMode": mode, "sideCount": count, "starInnerRatio": ratio,
                             "width": 97, "depth": 63, "wallThickness": 0.5,
                         })
+                        self.assertTrue(result["specification"].startswith(
+                            "正多边形管" if mode == "regular" else "星形管"
+                        ))
+                        self.assertNotIn("正8边形管", result["specification"])
                         points = result["contours"][0]["points"]
                         self.assertEqual(points[0], self.annotation(result, "shapeMode")["point"])
                         self.assertEqual(points[2], self.annotation(result, "sideCount")["point"])

@@ -6,7 +6,7 @@ import {fileURLToPath} from "node:url";
 import {tubeDesignerCss} from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE||"playwright");
 const root=fileURLToPath(new URL("../../",import.meta.url));
-const toolsRoot=new URL("../../apps/tube-designer/templates/_shared/punch-tools/",import.meta.url);
+const toolsRoot=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
 const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(d=>d.isDirectory()).map(d=>JSON.parse(readFileSync(new URL(d.name+"/tool.json",toolsRoot)))).map(t=>({...t,digest:"fixture",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
 const browser=await chromium.launch({headless:true,channel:process.env.ICAX_BROWSER_CHANNEL||"msedge"});
 try {
@@ -127,7 +127,7 @@ try {
   for(const style of ["asymmetric_v","rounded_v","left_arc","right_arc","flat_v","relief_v","sharp_v"]) {
    await parameter("style").selectOption(style);await ready();
    assert.equal(await parameter("leftAngle").count(),style==="asymmetric_v"?1:0);assert.equal(await parameter("rightAngle").count(),style==="asymmetric_v"?1:0);
-   assert.equal(await parameter("curveRadius").count(),["rounded_v","left_arc","right_arc"].includes(style)?1:0);assert.equal(await parameter("flatWidth").count(),style==="flat_v"?1:0);assert.equal(await parameter("holeDiameter").count(),style==="relief_v"?1:0);
+   assert.equal(await parameter("curveRadius").count(),style==="rounded_v"?1:0);assert.equal(await parameter("flatWidth").count(),style==="flat_v"?1:0);assert.equal(await parameter("holeDiameter").count(),style==="relief_v"?1:0);
    if(style==="asymmetric_v")assert.equal(await parameter("angle").count(),0);await checkIdentity();
    assert.equal(await page.evaluate(()=>window.fixture.keptTool===window.fixture.viewport.geometryObjects.get(window.fixture.keptToolUrl)),true,"Updating a V slot keeps the existing branch GPU geometry");
   }

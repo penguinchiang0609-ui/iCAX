@@ -56,6 +56,10 @@ namespace iCAX::TubeDesigner
         iCAX::Data::ObjectMap TemplateData;
         TopoDS_Shape ToolShape;
         bool ToolInPartCoordinates = false;
+        // Part-local solids describe one mould centred on the tube section.
+        // The common placement layer translates them to station/array
+        // positions; the mould script must not bake those coordinates in.
+        bool ToolInPartLocalCoordinates = false;
         // Already placed cutters in immutable blank coordinates. Used only when
         // the original product-level tool is unavailable; never re-positioned.
         TopoDS_Shape FrozenCut;
