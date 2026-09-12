@@ -8,6 +8,21 @@
 
 namespace
 {
+    std::filesystem::path _ExecutableDirectory()
+    {
+        std::vector<wchar_t> _Buffer(32768);
+        while (true)
+        {
+            const auto _Length = GetModuleFileNameW(
+                nullptr, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
+            if (_Length == 0) return {};
+            if (_Length < _Buffer.size() - 1)
+                return std::filesystem::path(
+                    std::wstring(_Buffer.data(), _Length)).parent_path();
+            _Buffer.resize(_Buffer.size() * 2);
+        }
+    }
+
     class CStaticApplicationSDO final : public iCAX::Interaction::CSDO
     {
     public:
@@ -304,7 +319,9 @@ iCAX::Application::CApplicationRuntime::CApplicationRuntime()
     m_Config.strApplicationSettingsPath = (_ProfileRoot / "Application.Setting").string();
     m_Config.Descriptor.AppID = "icax";
     m_Config.Descriptor.AppName = "iCAX";
-    m_Config.Paths.InstallDirectory = std::filesystem::current_path().string();
+    const auto _Executable = _ExecutableDirectory();
+    m_Config.Paths.InstallDirectory = (_Executable.empty()
+        ? std::filesystem::current_path() : _Executable).string();
     m_Config.Paths.UserConfigDirectory = _ProfileRoot.string();
     m_Config.Paths.UserDataDirectory = _UserDataRoot.string();
     m_Config.Paths.BrowserDataDirectory = (_UserDataRoot / "Browser").string();

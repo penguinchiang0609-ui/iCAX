@@ -20,7 +20,7 @@ DESCRIPTOR = json.loads((DIRECTORY / "template.json").read_text(encoding="utf-8"
 DEFAULTS = {parameter["key"]: parameter["defaultValue"] for parameter in DESCRIPTOR["parameters"]}
 MODULE = _load_template(str(DIRECTORY / "template.py"), "modular-guardrail-tests")
 SUBJECT = sys.modules[MODULE.generate.__module__]
-STYLE_DIRECTORIES = sorted(ROOT.joinpath("src/apps/tube-designer/templates").glob("modular_guardrail*/template.json"))
+STYLE_DIRECTORIES = sorted(ROOT.joinpath("src/apps/tube-designer/templates/product").glob("modular_guardrail*/template.json"))
 STYLE_DESCRIPTORS = [json.loads(path.read_text(encoding="utf-8")) for path in STYLE_DIRECTORIES]
 PRESETS = [
     {
@@ -360,7 +360,7 @@ class ModularGuardrailTests(unittest.TestCase):
                             for node in document["geometry"]))
 
     def test_component_models_are_real_closed_documents_and_template_resource_exists(self):
-    models = ROOT / "src/apps/tube-designer/templates/accessory"
+        models = ROOT / "src/apps/tube-designer/templates/accessory"
         for model_id in ("post-cap", "post-cap-40", "spear-tip", "glass-clamp", "connector-block"):
             descriptor = json.loads((models / model_id / "model.json").read_text(encoding="utf-8"))
             self.assertEqual(descriptor["schema"], "icax.component-model")

@@ -6,6 +6,21 @@
 
 namespace
 {
+    std::filesystem::path _ExecutableDirectory()
+    {
+        std::vector<wchar_t> _Buffer(32768);
+        while (true)
+        {
+            const auto _Length = GetModuleFileNameW(
+                nullptr, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
+            if (_Length == 0) return {};
+            if (_Length < _Buffer.size() - 1)
+                return std::filesystem::path(
+                    std::wstring(_Buffer.data(), _Length)).parent_path();
+            _Buffer.resize(_Buffer.size() * 2);
+        }
+    }
+
     std::filesystem::path _CanonicalDirectory(IN const std::filesystem::path& Path_)
     {
         std::error_code _Error;
@@ -22,10 +37,12 @@ namespace
     std::filesystem::path _FindDefaultProductRoot()
     {
         const auto _Current = std::filesystem::current_path();
+        const auto _Executable = _ExecutableDirectory();
         const auto _SourceFile = _CanonicalDirectory(std::filesystem::path(__FILE__));
         const auto _SourceRoot = _SourceFile.parent_path().parent_path().parent_path();
 
-        const std::vector<std::filesystem::path> _Candidates{
+        std::vector<std::filesystem::path> _Candidates{
+            _Executable / "apps",
             _Current / "src" / "apps",
             _Current / "apps",
             _Current.parent_path() / "apps",
@@ -88,6 +105,8 @@ namespace
     {
         iCAX::Application::CApplicationConfig _Config;
         const auto _Current = std::filesystem::current_path();
+        const auto _Executable = _ExecutableDirectory();
+        const auto _InstallRoot = _Executable.empty() ? _Current : _Executable;
         const auto _UserDataPath = iCAX::Application::ResolveDefaultUserDataDirectory();
         const auto _UserDataRoot = std::filesystem::path(std::u8string(
             _UserDataPath.begin(), _UserDataPath.end()));
@@ -127,7 +146,7 @@ namespace
         _Config.RuntimeConfig.strApplicationSettingsPath = _PathToUTF8(_ApplicationSettingsPath);
         _Config.RuntimeConfig.Descriptor.AppID = "icax";
         _Config.RuntimeConfig.Descriptor.AppName = "工作台";
-        _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(_Current);
+        _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(_InstallRoot);
         _Config.RuntimeConfig.Paths.UserConfigDirectory = _PathToUTF8(_ProfileRoot);
         _Config.RuntimeConfig.Paths.UserDataDirectory = _PathToUTF8(_UserDataRoot);
         _Config.RuntimeConfig.Paths.BrowserDataDirectory = _PathToUTF8(_UserDataRoot / "Browser");

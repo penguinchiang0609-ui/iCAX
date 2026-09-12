@@ -12,7 +12,7 @@ import unittest
 sys.dont_write_bytecode = True
 ROOT = next(parent for parent in Path(__file__).resolve().parents
             if (parent / "src/apps/tube-designer/templates").is_dir())
-TEMPLATES = ROOT / "src/apps/tube-designer/templates"
+TEMPLATES = ROOT / "src/apps/tube-designer/templates/product"
 sys.path.insert(0, str(ROOT / "src/iCAX-Engine/framework/TemplateRuntime/python"))
 from icax_template_worker import _load_template
 

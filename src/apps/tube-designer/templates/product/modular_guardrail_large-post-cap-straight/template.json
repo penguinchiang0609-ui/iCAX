@@ -330,12 +330,6 @@
       "order": 100,
       "choices": [
         {
-          "value": "none",
-          "displayName": {
-            "zh-CN": "不设大立柱"
-          }
-        },
-        {
           "value": "middle",
           "displayName": {
             "zh-CN": "每边中间大立柱"
@@ -364,11 +358,6 @@
         "minimum": 20,
         "maximum": 300,
         "step": 1
-      },
-      "visibleWhen": {
-        "op": "ne",
-        "parameter": "largePostMode",
-        "value": "none"
       },
       "description": "方管为等宽等深，圆管为外径。应不小于普通立柱规格；管壁厚度沿用立柱配置。"
     },
@@ -1338,12 +1327,7 @@
       "valueType": "boolean",
       "defaultValue": true,
       "group": "components",
-      "order": 530,
-      "visibleWhen": {
-        "op": "ne",
-        "parameter": "largePostMode",
-        "value": "none"
-      }
+      "order": 530
     },
     {
       "key": "postCapModelReference",
