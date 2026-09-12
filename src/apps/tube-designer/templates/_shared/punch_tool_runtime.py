@@ -12,6 +12,59 @@ SCHEMA = "icax.punch-tool"
 MAX_BYTES = 4 * 1024 * 1024
 
 
+def _validate_section_analysis(descriptor):
+    if "applicability" in descriptor:
+        raise ValueError("旧管型标签约束不再支持，请将模具升级为截面 analyze 协议")
+    if "sectionAnalysis" not in descriptor:
+        return
+    if descriptor["sectionAnalysis"] != {"schemaVersion": 1} or descriptor.get("kind") != "programmatic":
+        raise ValueError("模具截面分析协议无效")
+
+
+def _section_queries():
+    import importlib.util
+    path = Path(__file__).with_name("section_geometry.py")
+    spec = importlib.util.spec_from_file_location("mold_section_geometry", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _analyze_mould(namespace, descriptor, parameters, context):
+    analyzer = namespace.get("analyze")
+    if analyzer is None and "sectionAnalysis" not in descriptor:
+        return parameters, None
+    if not callable(analyzer):
+        raise ValueError("此模具必须提供 analyze(parameters, section, context)")
+    section = context.get("targetSection")
+    result = analyzer(copy.deepcopy(parameters), copy.deepcopy(section), copy.deepcopy(context))
+    if (not isinstance(result, dict) or type(result.get("applicable")) is not bool
+            or not isinstance(result.get("reason", ""), str) or len(_json_bytes(result)) > MAX_BYTES):
+        raise ValueError("模具截面分析结果无效")
+    if not result["applicable"]:
+        raise ValueError("模具截面分析不通过：" + (result.get("reason") or "目标截面不满足要求"))
+    if not isinstance(result.get("data"), dict):
+        raise ValueError("模具截面分析必须返回 data")
+    derived = result.get("derivedParameters", {})
+    allowed = {p["key"] for p in descriptor.get("parameters", []) if p.get("derived") is True}
+    if not isinstance(derived, dict) or set(derived) - allowed:
+        raise ValueError("模具截面分析只能填写已声明的派生参数")
+    parameters = _parameters(descriptor, {**parameters, **derived})
+    return parameters, result
+
+
+def _target_snapshot(value):
+    # Recognition tolerances are 0.001 mm; don't invalidate frozen tools for
+    # sub-micrometre BRep serialization noise. Never change cutter geometry.
+    if isinstance(value, dict):
+        return {key: _target_snapshot(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_target_snapshot(child) for child in value]
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    return value
+
+
 def _json_bytes(value):
     # JSON/JS/C++ round-trips may encode 10.0 as 10; geometry identity must not
     # depend on that spelling (including negative zero).
@@ -94,6 +147,7 @@ def _package(directory, package_root=None):
         raise ValueError("刀具定义不能声明位置或姿态参数；请由使用记录保存")
     if descriptor["kind"] == "fixed" and definitions:
         raise ValueError("定式刀具不能声明可变形状参数")
+    _validate_section_analysis(descriptor)
     defaults = _parameters(descriptor, {})
     member = directory / ("tool.py" if descriptor["kind"] == "programmatic" else "geometry.json")
     if member.resolve().parent != directory:
@@ -101,7 +155,8 @@ def _package(directory, package_root=None):
     content = member.read_bytes()
     if len(raw) + len(content) > MAX_BYTES:
         raise ValueError("刀具包超过 4 MB")
-    digest = hashlib.sha256(raw + b"\0" + content).hexdigest()
+    queries = Path(__file__).with_name("section_geometry.py").read_bytes()
+    digest = hashlib.sha256(raw + b"\0" + content + queries).hexdigest()
     return descriptor, defaults, content, digest
 
 
@@ -177,6 +232,11 @@ def _restore_frozen(value, ref, supplied, context):
                       and old.get("feature") == context.get("feature"))
     else:
         compatible = old == context
+    if "targetProfile" in old and "targetProfile" in context:
+        compatible = compatible and old["targetProfile"] == context.get("targetProfile")
+    if "targetSection" in old:
+        compatible = compatible and old["targetSection"] == context.get("targetSection")
+        compatible = compatible and old.get("placement") == context.get("placement")
     if not compatible:
         raise ValueError("固化端部刀具依赖原毛坯和定位，缺少程式时请保持原端部设置或明确替换刀具")
     descriptor = {"id": ref["id"], "version": ref.get("version", ""), "kind": value.get("sourceKind", "fixed"),
@@ -261,10 +321,11 @@ def _evaluate(ref, supplied, context, frozen=None, user_tools=None, user_root=No
         if supplied["cutRegion"] not in ("outer", "material"):
             raise ValueError("旧端部切除截面区域无效")
         supplied = {key: value for key, value in supplied.items() if key != "cutRegion"}
+    _validate_section_analysis(descriptor)
     parameters = _parameters(descriptor, supplied)
     # An unchanged recipe reuses the exact saved cutter even on the original
     # computer. Regenerate only after an intentional parameter/context change.
-    if frozen and frozen.get("ref") == ref and frozen.get("parameters") == parameters and frozen.get("context") == context:
+    if "sectionAnalysis" not in descriptor and frozen and frozen.get("ref") == ref and frozen.get("parameters") == parameters and frozen.get("context") == context:
         result = _restore_frozen(frozen, ref, parameters, context)
         result.update(descriptor=descriptor, resolution="installed")
         return result
@@ -278,9 +339,14 @@ def _evaluate(ref, supplied, context, frozen=None, user_tools=None, user_root=No
     else:
         package_root = _package_root(ref, user_root) or ROOT
         namespace = {"__name__": f"icax_punch_tool_{digest}", "__file__": str(package_root / ref["id"] / "tool.py")}
+        namespace["section_geometry"] = _section_queries()
         exec(compile(content, namespace["__file__"], "exec"), namespace)
         if not callable(namespace.get("generate")):
             raise ValueError("程式刀具须提供 generate(parameters, context)")
+        parameters, analysis = _analyze_mould(namespace, descriptor, parameters, context)
+        if analysis is not None:
+            context = copy.deepcopy(context)
+            context["analysis"] = analysis["data"]
         geometry = namespace["generate"](copy.deepcopy(parameters), copy.deepcopy(context))
     _validate_geometry(geometry, context["target"])
     pinned = {"id": descriptor["id"], "version": descriptor["version"], "digest": digest}
@@ -323,6 +389,10 @@ V_NOTCH_SHAPE_KEYS = {
     "v-notch-sharp": {"angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize"},
     "edge-arc-groove": {"angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth"},
 }
+for _keys in V_NOTCH_SHAPE_KEYS.values():
+    _keys.update(("bottomReference", "wallThickness", "reliefDepth", "reliefSide",
+                  "bendCompensation", "useDefaultKFactor", "kFactor"))
+V_NOTCH_SHAPE_KEYS["v-notch-sharp"].add("flatReference")
 
 
 def _migrate_sharp_parameters(params, old_style=""):
@@ -337,6 +407,8 @@ def _migrate_sharp_parameters(params, old_style=""):
         params["flatWidth"] = params["rootWidth"]
     if "rootRadius" in params and "roundRadius" not in params:
         params["roundRadius"] = params["rootRadius"]
+        if params["rootRadius"]:
+            params.setdefault("bottomStrategy", "rounded")
     if "reliefWidth" in params and "reliefHeight" not in params:
         params["reliefHeight"] = params["reliefWidth"]
     if params.get("flatWidth", 0) and "bottomStrategy" not in params:
@@ -548,6 +620,8 @@ def prepare(parameters):
         # placement. Their Python is still product-level, never drawing code.
         target = item.get("toolTarget", "side")
         context = {"target": target, "lengthUnit": "mm"}
+        if "targetSection" in parameters:
+            context["targetSection"] = _target_snapshot(parameters["targetSection"])
         if target == "part":
             context.update(bounds=parameters["bounds"], feature={key: copy.deepcopy(item[key])
                 for key in ("station", "reference", "section") if key in item})
@@ -584,6 +658,8 @@ def prepare(parameters):
         placement.update({key: copy.deepcopy(item[key]) for key in (
             "angle", "azimuth", "roll", "axialOffset", "offsetY", "offsetZ", "offset") if key in item})
         context = {"target": "end", "end": key, "bounds": parameters["bounds"], "placement": placement, "lengthUnit": "mm"}
+        if "targetSection" in parameters:
+            context["targetSection"] = _target_snapshot(parameters["targetSection"])
         if "section" in item:
             if not isinstance(item["section"], dict):
                 raise ValueError("端部刀具截面须为对象")

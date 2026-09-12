@@ -64,6 +64,16 @@ SPunchFeature hole() { SPunchFeature f; f.Station=500; f.Diameter=10; return f; 
 using iCAX::Data::ObjectMap;
 using iCAX::Data::VariantArray;
 ObjectMap templateRequest(ObjectMap input, bool missingTools=false,const std::string& runtimeFile="") {
+    const auto contour=[](double x,double y,bool inner) {
+        std::vector<VariantArray> points{{-x,-y},{x,-y},{x,y},{-x,y}};
+        VariantArray edges;
+        for(size_t i=0;i<points.size();++i)edges.emplace_back(ObjectMap{
+            {"kind",std::string("line")},{"start",points[i]},{"end",points[(i+1)%4]}});
+        return ObjectMap{{"inner",inner},{"closed",true},{"edges",edges}};
+    };
+    input["targetSection"]=ObjectMap{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
+        {"status",std::string("available")},{"tolerance",0.001},
+        {"contours",VariantArray{contour(20,10,false),contour(18,8,true)}}};
     const auto root=std::filesystem::current_path();
     const auto worker=root/"src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_worker.py";
     iCAX::TemplateRuntime::CPythonTemplateHost host({root/"src/x64/Debug/runtime/python/python312.dll",worker,worker.parent_path()});
@@ -187,6 +197,23 @@ TEST(PartDrawing, NativeArraysAndEmptyIntersectionRejection) {
     EXPECT_THROW(BuildPunchGeometry(rectTube(),{partTool("branch-profile",{{"direction",std::string("symmetric")},{"length",2.}})}),std::invalid_argument);
     EXPECT_THROW(BuildPunchGeometry(rectTube(),{partTool("branch-profile",{},500,50)}),std::invalid_argument);
 }
+TEST(PartDrawing, EdgeArcGroovesKeepBridgeAndMirrorWithKCompensation) {
+    for(double k:{0.,0.62,1.}) {
+        SCOPED_TRACE(k);
+        const ObjectMap parameters{{"angle",90.},{"bendCompensation",true},
+            {"useDefaultKFactor",false},{"kFactor",k},{"leftArc",true}};
+        auto mirrored=parameters;mirrored["leftArc"]=false;
+        const auto left=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",parameters)});
+        const auto right=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",mirrored)});
+        EXPECT_NEAR(mass(left),mass(right),1e-5);
+        EXPECT_FALSE(inside(left,505,0,9));
+        EXPECT_FALSE(inside(right,495,0,9));
+        EXPECT_TRUE(inside(left,500,0,-9.5));
+        EXPECT_TRUE(inside(right,500,0,-9.5));
+        EXPECT_TRUE(inside(left,530,0,9));
+        EXPECT_TRUE(inside(right,470,0,9));
+    }
+}
 TEST(PartDrawing, AxialArraySupportsBothSignsAndEndReference) {
     for(const std::string reference:{"start","end"}) for(double sign:{-1.,1.}) {
         SCOPED_TRACE(reference+" / "+std::to_string(sign));
@@ -293,7 +320,7 @@ TEST(PunchGeometry, RoundRotationAndTranslatedSection) {
 }
 
 TEST(PunchTemplates, AllInstalledSideTemplatesBuildNativeSolids) {
-    for(const auto* id:{"circle","rectangle","slot","ellipse","diamond-12"}) {
+    for(const auto* id:{"circle","rectangle","slot","ellipse","diamond-12","single-d","double-d","keyhole"}) {
         SCOPED_TRACE(id);
         const auto f=templateHole(id);
         const auto result=BuildPunchGeometry(rectTube(),{f});

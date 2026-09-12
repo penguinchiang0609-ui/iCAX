@@ -219,7 +219,7 @@ class EndProfileSupport(unittest.TestCase):
                 tool._spline_support({**segment, **change}, (1, 0))
 
     def test_unsupported_spline_and_degenerate_arc_fail_explicitly(self):
-        with self.assertRaisesRegex(ValueError, "暂不支持"):
+        with self.assertRaisesRegex(ValueError, "无效"):
             tool._support({"kind": "path", "segments": [{"kind": "bspline"}]}, (1, 0))
         with self.assertRaisesRegex(ValueError, "退化圆弧"):
             tool._support({"kind": "path", "segments": [{"kind": "arc", "start": [0, 0], "middle": [1, 1], "end": [2, 2]}]}, (1, 0))
@@ -234,6 +234,9 @@ class EndProfileConvexPlacement(unittest.TestCase):
         context = {"end": end, "bounds": {"min": [100, -40, -25], "max": [1100, 40, 25]},
                    "placement": {"datum": "long", "trim": trim, "rotation": 37},
                    "section": {"profile": {"contours": [contour or {"kind": "circle", "radius": 20}, {"kind": "circle", "radius": 18}]}}}
+        # The normalized host protocol owns pose in placement, not tool parameters.
+        context["placement"].update({key:p[key] for key in
+            ("angle","azimuth","roll","axialOffset","offsetY","offsetZ")})
         before = copy.deepcopy(context)
         value = tool.generate(p, context)
         self.assertEqual(context, before, "Generating the filled contour must not mutate its saved source section")

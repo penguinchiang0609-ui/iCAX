@@ -1,21 +1,289 @@
 {
   "schema": "icax.tube-profile-descriptor",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "profileForm": "parametric",
   "id": "i-section",
-  "version": "2.1.0",
-  "displayName": { "zh-CN": "工字钢 / H 型钢", "en-US": "I/H section" },
-  "description": "等厚上下翼缘和腹板组成的工字形标准拉伸型材。",
+  "version": "2026.9.13.6",
+  "displayName": "工字钢",
+  "description": "P20 热轧工字钢。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。 热轧/精密路线仅保留明确标记的理想化回退；真实轮廓可由完整材料边界输入，不由名义尺寸冒充。",
+  "category": "常用型材",
+  "provenance": {
+    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
+    "surveyIds": [
+      76,
+      77
+    ],
+    "dimensionSource": "editable-example",
+    "standardConformance": "not-certified",
+    "familyCode": "P20"
+  },
+  "manufacturing": {
+    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "topology": "open-profile",
+    "validationLevel": "parametric-geometry"
+  },
   "parameters": [
-    { "key": "width", "displayName": { "zh-CN": "翼缘宽" }, "valueType": "number", "defaultValue": 100.0, "min": 1.0, "step": 1.0 },
-    { "key": "depth", "displayName": { "zh-CN": "截面高" }, "valueType": "number", "defaultValue": 100.0, "min": 1.0, "step": 1.0 },
-    { "key": "wallThickness", "displayName": { "zh-CN": "厚度" }, "valueType": "number", "defaultValue": 6.0, "min": 0.1, "step": 0.1 }
+    {
+      "key": "sectionModel",
+      "displayName": "轮廓子模型",
+      "valueType": "string",
+      "defaultValue": "i-hot-parallel",
+      "options": [
+        {
+          "value": "i-hot-parallel",
+          "displayName": "平行翼缘 I 型钢"
+        },
+        {
+          "value": "i-hot-tapered",
+          "displayName": "热轧斜翼缘工字钢"
+        }
+      ]
+    },
+    {
+      "key": "width",
+      "displayName": "翼缘总宽 / mm",
+      "valueType": "number",
+      "defaultValue": 80,
+      "min": 1,
+      "step": 1
+    },
+    {
+      "key": "depth",
+      "displayName": "总高 / mm",
+      "valueType": "number",
+      "defaultValue": 120,
+      "min": 1,
+      "step": 1
+    },
+    {
+      "key": "wallThickness",
+      "displayName": "腹板厚 / mm",
+      "valueType": "number",
+      "defaultValue": 6,
+      "min": 0.1,
+      "step": 1
+    },
+    {
+      "key": "model0FlangeThickness",
+      "displayName": "翼缘端部厚 / mm",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 0.1,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "i-hot-parallel"
+      }
+    },
+    {
+      "key": "model0RootRadius",
+      "displayName": "根部圆角 / mm",
+      "valueType": "number",
+      "defaultValue": 4,
+      "min": 0,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "i-hot-parallel"
+      }
+    },
+    {
+      "key": "model0ToeRadius",
+      "displayName": "翼缘端圆角 / mm",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "i-hot-parallel"
+      }
+    },
+    {
+      "key": "model1FlangeThickness",
+      "displayName": "翼缘端部厚 / mm",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 0.1,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "i-hot-tapered"
+      }
+    },
+    {
+      "key": "model1RootRadius",
+      "displayName": "根部圆角 / mm",
+      "valueType": "number",
+      "defaultValue": 4,
+      "min": 0,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "i-hot-tapered"
+      }
+    },
+    {
+      "key": "model1ToeRadius",
+      "displayName": "翼缘端圆角 / mm",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "i-hot-tapered"
+      }
+    },
+    {
+      "key": "model1FlangeSlope",
+      "displayName": "内翼缘斜度 / °",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 0,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "i-hot-tapered"
+      }
+    },
+    {
+      "key": "materialBoundary",
+      "displayName": "实际材料边界（轮廓数组 JSON，留空使用理想模型）",
+      "valueType": "string",
+      "defaultValue": ""
+    },
+    {
+      "key": "sourceRevision",
+      "displayName": "轮廓来源及版本",
+      "valueType": "string",
+      "defaultValue": ""
+    },
+    {
+      "key": "geometrySource",
+      "displayName": "轮廓来源",
+      "valueType": "string",
+      "defaultValue": "idealizedFallback",
+      "options": [
+        {
+          "value": "idealizedFallback",
+          "displayName": "理想化回退（非实际来料）"
+        },
+        {
+          "value": "scan",
+          "displayName": "实测扫描"
+        },
+        {
+          "value": "manufacturerCAD",
+          "displayName": "厂家 CAD"
+        },
+        {
+          "value": "standardNominal",
+          "displayName": "标准名义轮廓"
+        }
+      ]
+    }
   ],
+  "catalog": {
+    "groupOrder": 2,
+    "order": 3
+  },
   "parameterDiagram": {
     "schemaVersion": 1,
     "annotations": [
-      { "parameter": "width", "kind": "linear", "axis": "x", "side": "bottom", "from": ["-width/2", "-depth/2"], "to": ["width/2", "-depth/2"], "description": "上下两块翼缘的总宽，两侧关于腹板中心对称。" },
-      { "parameter": "depth", "kind": "linear", "axis": "y", "side": "left", "from": ["-width/2", "-depth/2"], "to": ["-width/2", "depth/2"], "description": "上翼缘顶面到底翼缘底面的总高，包含两块翼缘的厚度。" },
-      { "parameter": "wallThickness", "kind": "leader", "side": "right", "point": [0, 0], "description": "中间腹板和上下翼缘的共同厚度；修改此值会同时改变三处厚度。" }
-    ]
+      {
+        "parameter": "width",
+        "kind": "linear",
+        "from": [
+          "-width/2",
+          "depth/2"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "axis": "x",
+        "side": "top",
+        "description": "宽度基准"
+      },
+      {
+        "parameter": "depth",
+        "kind": "linear",
+        "from": [
+          "-width/2",
+          "-depth/2"
+        ],
+        "to": [
+          "-width/2",
+          "depth/2"
+        ],
+        "axis": "y",
+        "side": "left",
+        "description": "高度基准"
+      },
+      {
+        "parameter": "wallThickness",
+        "kind": "linear",
+        "from": [
+          "-wallThickness/2",
+          0
+        ],
+        "to": [
+          "wallThickness/2",
+          0
+        ],
+        "axis": "x",
+        "side": "bottom",
+        "description": "腹板厚"
+      },
+      {
+        "parameter": "model0FlangeThickness",
+        "kind": "linear",
+        "from": [
+          "width/2",
+          "depth/2-model0FlangeThickness"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "axis": "y",
+        "side": "right",
+        "description": "翼缘端部厚度",
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "sectionModel",
+          "value": "i-hot-parallel"
+        }
+      },
+      {
+        "parameter": "model1FlangeThickness",
+        "kind": "linear",
+        "from": [
+          "width/2",
+          "depth/2-model1FlangeThickness"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "axis": "y",
+        "side": "right",
+        "description": "翼缘端部厚度",
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "sectionModel",
+          "value": "i-hot-tapered"
+        }
+      }
+    ],
+    "disabledWhenNonempty": "materialBoundary"
   }
 }

@@ -1,4 +1,6 @@
 import { createThreeViewport } from "../../../iCAX-UI/SDK/index.mjs";
+import { capturePaneInteraction } from "./utils/paneInteractionState.mjs";
+const renderedPaneAreas = new WeakMap();
 import { renderProgress } from "./layout/commonViews.mjs";
 import { activateProjectArea, getProjectArea, getProjectView, setProjectAreaViewContent } from "./state/projectViewStore.mjs";
 import { getMachineId, getMachineSubtreeEntityIds, getMachines, getSelectedMachine, reconcileSelectedMachine } from "./state/sceneSelectors.mjs";
@@ -173,13 +175,16 @@ function renderProject(context, view) {
   if (!mount) {
     return;
   }
-  context.beforeProjectRender?.(context, view, mount);
   const tab = normalizeAreaId(context, context.activeRibbonTabId);
+  const restorePanes = renderedPaneAreas.get(mount) === tab ? capturePaneInteraction(mount) : () => {};
+  context.beforeProjectRender?.(context, view, mount);
   activateProjectArea(view, tab);
   // Product editors may update their own live surface without reconstructing
   // the workbench, navigation and main viewport on each parameter response.
   if(context.tryRenderProjectPatch?.(context,view,mount,getProjectOps())===true) {
     context.afterProjectPatch?.(context, view, mount, getProjectOps());
+    restorePanes();
+    renderedPaneAreas.set(mount, tab);
     return;
   }
   const scene = view.scene ?? {};
@@ -366,6 +371,8 @@ function renderProject(context, view) {
   }
   void ensureAreaViewContent(context, view, tab);
   scrollSelectedMachineTreeNodeIntoView(mount, view);
+  restorePanes();
+  renderedPaneAreas.set(mount, tab);
 }
 
 function renderLeftPane(tab, context, view) {

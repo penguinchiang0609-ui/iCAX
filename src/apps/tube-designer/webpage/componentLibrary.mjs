@@ -146,7 +146,7 @@ function positiveCSGProfileNumber(value, label) {
 }
 function csgProfileSnapshot(name, width, depth, contours, parameters, parameterDefinitions, annotations) {
   return {
-    schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "parametric-package",
+    schema: "icax.imported-tube-profile", schemaVersion: 1, kind: "profile-package", profileForm: "parametric",
     name, sourceFileName: "内置程式截面", sourceFormat: "icax.component-csg-profile",
     width, depth, wallThickness: 0, cornerRadius: 0,
     specification: `${formatNumber(width)} × ${formatNumber(depth)} mm`,
@@ -442,8 +442,7 @@ function csgLocalizedText(value, fallback = "参数") {
 }
 
 function isParametricCSGLibraryProfile(profile) {
-  return profileScope(profile) !== "user"
-    || String(profile?.profileType ?? profile?.kind ?? "imported-dxf") === "parametric-package";
+  return (profile?.profileForm ?? profile?.descriptor?.profileForm ?? profile?.previewProfile?.profileForm) === "parametric";
 }
 
 function csgLibraryProfileName(profile) {

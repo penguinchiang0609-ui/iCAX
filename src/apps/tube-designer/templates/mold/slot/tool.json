@@ -6,11 +6,12 @@
   "displayName": "腰形孔",
   "kind": "programmatic",
   "target": "side",
-  "category": "槽口",
+  "category": "孔型",
+  "description": "总长 L 包含两端半圆，宽度 W 为端圆直径，直线段长为 L−W。属于封闭孔型，不是折弯槽口。",
   "parameters": [
     {
       "key": "spanAlong",
-      "displayName": "沿长度尺寸",
+      "displayName": "总长 L（含端圆，mm）",
       "valueType": "number",
       "defaultValue": 30,
       "min": 0.1,
@@ -19,7 +20,7 @@
     },
     {
       "key": "spanAcross",
-      "displayName": "横向尺寸",
+      "displayName": "宽度 W（端圆直径，mm）",
       "valueType": "number",
       "defaultValue": 10,
       "min": 0.1,

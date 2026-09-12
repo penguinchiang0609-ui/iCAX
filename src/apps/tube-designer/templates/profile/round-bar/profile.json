@@ -1,0 +1,58 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 3,
+  "profileForm": "parametric",
+  "id": "round-bar",
+  "version": "2026.9.13.6",
+  "displayName": "圆棒",
+  "description": "P29 圆棒。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
+  "category": "其他",
+  "provenance": {
+    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
+    "surveyIds": [
+      92
+    ],
+    "dimensionSource": "editable-example",
+    "standardConformance": "not-certified",
+    "familyCode": "P29"
+  },
+  "manufacturing": {
+    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "topology": "solid",
+    "validationLevel": "parametric-geometry"
+  },
+  "parameters": [
+    {
+      "key": "width",
+      "displayName": "直径 / mm",
+      "valueType": "number",
+      "defaultValue": 30,
+      "min": 1,
+      "step": 1
+    }
+  ],
+  "catalog": {
+    "groupOrder": 3,
+    "order": 108
+  },
+  "parameterDiagram": {
+    "schemaVersion": 1,
+    "annotations": [
+      {
+        "parameter": "width",
+        "kind": "linear",
+        "from": [
+          "-width/2",
+          0
+        ],
+        "to": [
+          "width/2",
+          0
+        ],
+        "axis": "x",
+        "side": "top",
+        "description": "外圆直径"
+      }
+    ]
+  }
+}

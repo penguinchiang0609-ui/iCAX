@@ -9,10 +9,10 @@ import { renderDesignerAddParameterContent } from "../../apps/tube-designer/webp
 
 const completed = [];
 async function test(name, run) { await run(); completed.push(name); }
-const circle = { kind: "parametric-package", name: "截面", specification: "Φ40 × 2", width: 40, depth: 40,
+const circle = { kind: "profile-package", profileForm:"parametric", name: "截面", specification: "Φ40 × 2", width: 40, depth: 40,
   contours: [{ kind: "circle", radius: 20 }, { kind: "circle", radius: 18 }], parameters: { width: 40 },
   parameterDefinitions: [{ key: "width", valueType: "number", displayName: "外径", defaultValue: 40 }] };
-const packaged = { id: "round", profileType: "parametric-package", name: "系统圆管", descriptor: {
+const packaged = { id: "round", profileType: "profile-package", profileForm:"parametric", name: "系统圆管", descriptor: {
   id: "round", version: "1.0.0", parameters: circle.parameterDefinitions,
 }, defaultParameters: { width: 40 }, previewProfile: circle };
 const templates = ["rail-a", "rail-b"].map((templateId) => ({ ...packaged, id: "shared", templateId,
@@ -34,64 +34,35 @@ function harness() {
 }
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-await test("source and profile-type tabs isolate the compact two-column card list", async () => {
-  const { view, act } = harness();
-  let html = renderProfileLibraryLeftPane({}, view);
-  assert.equal((html.match(/role="tab"/g) ?? []).length, 3);
-  assert.match(html, /系统内置/); assert.match(html, /模板自带/); assert.match(html, /我的/);
-  assert.match(html, /tube-profile-library-list/);
-  assert.match(html, /tube-profile-library-group/);
-  assert.match(html, /圆管 \/ 椭圆管/);
-  assert.match(html, /tube-profile-library-card-preview/);
-  assert.match(html, /tube-profile-library-card-copy[\s\S]*程式/);
-  assert.doesNotMatch(html, /tube-profile-library-card-type-badge/);
-  assert.match(html, /class="outer"/);
-  assert.match(html, /class="hole"/);
-  assert.doesNotMatch(html, /tube-profile-library-card-icon/);
-  assert.doesNotMatch(html, /系统内置 · 程式|程式管型包|定式管型/);
-  assert.match(html, /data-tube-designer-profile-key="system:round"/);
-  assert.doesNotMatch(html, /data-tube-designer-profile-key="(?:user|template):/);
-  await act("scope", { dataset: { tubeProfileLibraryScope: "template" } });
-  html = renderProfileLibraryLeftPane({}, view);
-  assert.match(html, /专用 rail-a/); assert.match(html, /专用 rail-b/);
-  assert.match(html, /template:rail-a:shared/); assert.match(html, /template:rail-b:shared/);
-  assert.doesNotMatch(html, /data-tube-designer-profile-key="(?:user|system):/);
-  assert.equal(profileSelectionKey(templates[0]), "template:rail-a:shared");
-  assert.notEqual(profileSelectionKey(templates[0]), profileSelectionKey(templates[1]));
-  assert.deepEqual(profileRef(templates[0]), { scope: "template", templateId: "rail-a", id: "shared" });
-  await act("type", { dataset: { tubeProfileLibraryType: "fixed" } });
-  assert.equal(visibleLibraryProfiles(view).length, 2);
-  assert.doesNotMatch(renderProfileLibraryLeftPane({}, view), /role="tablist" aria-label="管型类型"/);
+await test("management has two sources and form is independent of ownership", async () => {
+  const {view,act}=harness();
+  const html=renderProfileLibraryLeftPane({},view);
+  assert.equal((html.match(/role="tab"/g)??[]).length,2);
+  assert.doesNotMatch(html,/模板自带|template:rail/);
+  assert.equal(libraryProfiles(view).length,2);
+  await act("scope",{dataset:{tubeProfileLibraryScope:"template"}});
+  assert.equal(profileLibraryState(view).scope,"system");
+  for(const scope of ["system","user"]) {
+    const fixed={...packaged,id:"fixed",profileForm:"fixed"};
+    const parametric={...packaged,id:"program",profileForm:"parametric"};
+    if(scope==="system")view.tubeDesignerSystemProfiles=[fixed,parametric];
+    else view.tubeDesignerUserData.profiles=[fixed,parametric];
+    await act("scope",{dataset:{tubeProfileLibraryScope:scope}});
+    const cards=renderProfileLibraryLeftPane({},view);
+    assert.match(cards,/定式/);assert.match(cards,/程式/);
+    view.tubeDesignerSelectedProfileId=scope+":fixed";
+    assert.doesNotMatch(renderProfileLibraryRightPane({},view),/data-tube-profile-editor-parameter=/);
+  }
 });
 
-await test("search limits selection to visible results and empty tabs clear old geometry", async () => {
-  const { view, act, visible, selected } = harness();
-  await act("scope", { dataset: { tubeProfileLibraryScope: "template" } });
-  await act("search", { value: "rail-b" });
-  renderProfileLibraryLeftPane({}, view);
-  assert.equal(view.tubeDesignerSelectedProfileId, "template:rail-b:shared");
-  assert.equal(visibleLibraryProfiles(view).length, 1);
-  await act("search", { value: "not available" });
-  assert.equal(view.tubeDesignerSelectedProfileId, "");
-  assert.deepEqual(visible.at(-1), []); assert.deepEqual(selected.at(-1), []);
-  assert.match(renderProfileLibraryRightPane({}, view), /尚未选择管型/);
-  assert.match(renderProfileLibraryLeftPane({}, view), /没有匹配的管型/);
-});
-
-await test("template metadata is read only but preview parameters remain editable", async () => {
-  const { view, act, calls, context, ops } = harness();
-  await act("scope", { dataset: { tubeProfileLibraryScope: "template" } });
-  const html = renderProfileLibraryRightPane({}, view);
-  assert.match(html, /模板自带管型/); assert.match(html, /所属模板：护栏 rail-a/);
-  assert.match(html, /data-tube-profile-editor-parameter="width"/);
-  assert.match(html, /data-cam-action="tube-designer-profile-library-edit-sketch"/);
-  assert.match(html, /定制到我的/);
-  assert.match(html, /value="500" data-tube-profile-preview-length/);
-  assert.doesNotMatch(html, /data-cam-action="tube-designer-profile-export-(dxf|step)"/);
-  assert.doesNotMatch(html, /data-tube-profile-editor-name|data-cam-action="tube-designer-profile-library-(save|delete)"/);
-  for (const suffix of ["save", "delete"]) await handleProfileLibraryAction(context, view, `tube-designer-profile-library-${suffix}`,
-    { dataset: { tubeDesignerProfileId: "shared", tubeDesignerProfileKey: "template:rail-a:shared" } }, ops);
-  assert.equal(calls.length, 0);
+await test("empty searches clear selection and stale template scope is normalized", async () => {
+  const {view,act,visible,selected}=harness();
+  view.tubeDesignerProfileLibrary={scope:"template"};
+  assert.equal(profileLibraryState(view).scope,"system");
+  await act("search",{value:"not available"});
+  renderProfileLibraryLeftPane({},view);
+  assert.equal(view.tubeDesignerSelectedProfileId,"");
+  assert.deepEqual(visible.at(-1),[]);assert.deepEqual(selected.at(-1),[]);
 });
 
 await test("profile library opens the selected contour as an update or a copy session", async () => {
@@ -99,7 +70,7 @@ await test("profile library opens the selected contour as an update or a copy se
   let selectedTab = "";
   context.actions.selectRibbonTab = async (id) => { selectedTab = id; };
   view.tubeDesignerUserData.profiles.push({
-    id: "frozen", revision: 4, name: "我的 DXF 方管", kind: "imported-dxf",
+    id: "frozen", revision: 4, name: "我的 DXF 方管", kind: "fixed-section", profileForm:"fixed",
     contours: [{ kind: "roundedRectangle", width: 40, height: 20, radius: 0 }],
   });
   view.tubeDesignerProfileLibrary = { scope: "user", search: "", selectedByScope: {} };
@@ -155,10 +126,10 @@ await test("template preview uses owner-qualified reference and late responses c
   const { view, context, act, calls, snapshots } = harness();
   let resolve;
   context.sceneProxy.invoke = async (method, payload) => { calls.push({ method, payload }); return new Promise((done) => { resolve = done; }); };
-  await act("scope", { dataset: { tubeProfileLibraryScope: "template" } });
+  await act("scope", { dataset: { tubeProfileLibraryScope: "system" } });
   renderProfileLibraryViewportOverlay(context, view);
   await tick();
-  assert.deepEqual(calls[0].payload.profileRef, { scope: "template", templateId: "rail-a", id: "shared" });
+  assert.deepEqual(calls[0].payload.profileRef, { scope: "system", id: "round" });
   await act("search", { value: "no matches" });
   renderProfileLibraryViewportOverlay(context, view);
   resolve({ geometryResourceId: "resource://old", geometryResourceVersion: 1 });
@@ -170,9 +141,28 @@ await test("list refresh carries template packages separately from system and us
   const { view, context } = harness();
   context.productProxy.invoke = async () => ({ profiles: [], systemProfiles: [packaged], templateProfiles: templates });
   assert.equal(await refreshDesignerUserData(context, view), true);
-  assert.equal(libraryProfiles(view).length, 3);
+  assert.equal(libraryProfiles(view).length, 1);
   assert.deepEqual(templateProfilesForProduct(view, "rail-a").map((profile) => profile.id), ["shared"]);
   assert.equal(templateProfilesForProduct(view, "other").length, 0);
+});
+
+await test("system catalog survives unrelated user-data failures and exposes catalog errors", async () => {
+  const { view, context } = harness();
+  view.tubeDesignerSystemProfiles = [];
+  context.productProxy.invoke = async (method) => {
+    if (method === "TubeDesigner.ListUserData") throw new Error("用户库不可用");
+    assert.equal(method, "TubeDesigner.ListSystemProfiles");
+    return { systemProfiles: [packaged] };
+  };
+  await refreshDesignerUserData(context, view);
+  assert.equal(view.tubeDesignerSystemProfiles.length, 1);
+  assert.equal(view.tubeDesignerSystemProfilesError, "");
+  view.tubeDesignerSystemProfiles = [];
+  context.productProxy.invoke = async () => { throw new Error("目录加载失败 <detail>"); };
+  await refreshDesignerUserData(context, view);
+  const html = renderProfileLibraryLeftPane(context, view);
+  assert.match(html, /管型加载失败/);
+  assert.match(html, /目录加载失败 &lt;detail&gt;/);
 });
 
 await test("opening the profile resource retries a failed initial user-data load", async () => {
@@ -196,7 +186,7 @@ await test("switching during viewport resource hydration cannot reveal the old p
   const { view, context, act, visible } = harness();
   let finishHydration;
   view.viewport.applyViewSnapshot = async () => new Promise((resolve) => { finishHydration = resolve; });
-  await act("scope", { dataset: { tubeProfileLibraryScope: "template" } });
+  await act("scope", { dataset: { tubeProfileLibraryScope: "system" } });
   renderProfileLibraryViewportOverlay(context, view);
   await tick();
   assert.equal(typeof finishHydration, "function");
@@ -251,6 +241,48 @@ await test("template parameter reevaluation retains scoped frozen provenance", a
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.profileScope, "template");
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.parameters.width, 48);
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.savedProfileId, undefined);
+});
+
+await test("regeneration updates only the model and retains camera and pane positions", async () => {
+  const {view,context,ops}=harness();
+  view.tubeDesignerSelectedProfileId='system:round';
+  let fits=0, standards=0, renders=0, applied={revision:'profile-preview:system:round:1',entityIds:['system:round']};
+  view.viewport.getAppliedViewState=()=>applied;
+  view.viewport.fitViewForRevision=()=>fits++;
+  view.viewport.setStandardView=()=>standards++;
+  view.viewport.applyViewSnapshot=async snapshot=>{applied={...snapshot,entityIds:['system:round']};return {applied:true,entityIds:['system:round']};};
+  context.sceneProxy.invoke=async()=>({geometryResourceId:'resource://profile',geometryResourceVersion:2});
+  ops.renderProject=()=>renders++;
+  const parent={scrollTop:270,scrollLeft:0,parentElement:null};
+  const input={value:'48',dataset:{tubeProfileEditorParameter:'width',tubeProfileValueType:'number',profileParameterKey:'width'}};
+  const list={querySelectorAll:()=>[input],set innerHTML(_) {throw Error('unchanged controls must survive');}};
+  const editor={dataset:{tubeDesignerProfileId:'round',tubeDesignerProfileKey:'system:round',tubeDesignerProfileScope:'system'},
+    scrollTop:180,scrollLeft:0,parentElement:parent,
+    querySelectorAll:()=>[input],querySelector:s=>s==='.tube-profile-library-parameter-list'?list:null};
+  await handleProfileLibraryAction(context,view,'tube-designer-profile-preview-change',{closest:()=>editor},ops);
+  await tick();await tick();
+  assert.equal(view.tubeDesignerProfileDrafts['system:round'].parameters.width,48);
+  assert.equal(applied.revision,'profile-preview:system:round:2');
+  assert.equal(renders,0);assert.equal(fits,0);assert.equal(standards,0);
+  assert.equal(editor.scrollTop,180);assert.equal(parent.scrollTop,270);
+});
+
+await test("parameter diagram starts collapsed and toggles locally with retained state", async () => {
+  const {view,context,ops}=harness();
+  view.tubeDesignerSelectedProfileId='system:round';
+  assert.match(renderProfileLibraryRightPane(context,view),/data-profile-library-diagram hidden/);
+  const diagram={hidden:true};
+  const button={setAttribute(k,v){this[k]=v;}};
+  const editor={dataset:{tubeDesignerProfileKey:'system:round'},scrollTop:80,scrollLeft:0,
+    querySelector:s=>s==='[data-profile-library-diagram]'?diagram:button};
+  ops.renderProject=()=>{throw Error('toggle must not rerender the scene');};
+  const toggle=()=>handleProfileLibraryAction(context,view,'tube-designer-profile-diagram-toggle',{closest:()=>editor},ops);
+  await toggle();
+  assert.equal(diagram.hidden,false);assert.equal(button['aria-expanded'],'true');
+  assert.doesNotMatch(renderProfileLibraryRightPane(context,view),/data-profile-library-diagram hidden/);
+  await toggle();
+  assert.equal(diagram.hidden,true);assert.equal(button.textContent,'展开参数示意图');
+  assert.equal(editor.scrollTop,80);
 });
 
 console.log(`${completed.length} profile library tab tests passed.`);

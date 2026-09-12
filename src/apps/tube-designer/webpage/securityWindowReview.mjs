@@ -27,7 +27,7 @@ function profileDimension(values, prefix, axis, fallback) {
   const override = values.tubeDesignerProfileOverrides?.[prefix];
   if (override != null) {
     if (override.schema !== "icax.imported-tube-profile" || override.schemaVersion !== 1
-      || !["imported-dxf", "parametric-package"].includes(override.kind)) return null;
+      || !["fixed-section", "profile-package"].includes(override.kind)) return null;
     const value = dimension(override[axis]);
     return value != null && value > 0 ? value : null;
   }

@@ -1,0 +1,89 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 3,
+  "profileForm": "parametric",
+  "id": "open-tube",
+  "version": "2026.9.13.6",
+  "displayName": "开缝 / 开槽管",
+  "description": "P12 开缝 / 开槽管。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
+  "category": "其他",
+  "provenance": {
+    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
+    "surveyIds": [
+      47
+    ],
+    "dimensionSource": "editable-example",
+    "standardConformance": "not-certified",
+    "familyCode": "P12"
+  },
+  "manufacturing": {
+    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "topology": "open-profile",
+    "validationLevel": "parametric-geometry"
+  },
+  "parameters": [
+    {
+      "key": "width",
+      "displayName": "外径 / mm",
+      "valueType": "number",
+      "defaultValue": 40,
+      "min": 1,
+      "step": 1
+    },
+    {
+      "key": "wallThickness",
+      "displayName": "板厚 / mm",
+      "valueType": "number",
+      "defaultValue": 2,
+      "min": 0.1,
+      "step": 1
+    },
+    {
+      "key": "openingAngle",
+      "displayName": "开口圆心角 / °",
+      "valueType": "number",
+      "defaultValue": 30,
+      "min": 1,
+      "step": 1
+    }
+  ],
+  "catalog": {
+    "groupOrder": 3,
+    "order": 104
+  },
+  "parameterDiagram": {
+    "schemaVersion": 1,
+    "annotations": [
+      {
+        "parameter": "width",
+        "kind": "linear",
+        "from": [
+          0,
+          "-width/2"
+        ],
+        "to": [
+          0,
+          "width/2"
+        ],
+        "axis": "y",
+        "side": "left",
+        "description": "母圆外径"
+      },
+      {
+        "parameter": "wallThickness",
+        "kind": "linear",
+        "from": [
+          "-width/2",
+          0
+        ],
+        "to": [
+          "-width/2+wallThickness",
+          0
+        ],
+        "axis": "x",
+        "side": "bottom",
+        "description": "左侧径向壁厚"
+      }
+    ]
+  }
+}

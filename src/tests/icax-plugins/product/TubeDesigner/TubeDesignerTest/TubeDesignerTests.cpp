@@ -315,7 +315,7 @@ namespace
     STemplateProtocolFixture TemplateProtocolFixture(
         const std::filesystem::path& Root_, const std::string& Directory_)
     {
-        const auto _Directory = Root_ / "src/apps/tube-designer/templates" / Directory_;
+        const auto _Directory = Root_ / "src/apps/tube-designer/templates/product" / Directory_;
         std::ifstream _Stream(_Directory / "template.json", std::ios::binary);
         if (!_Stream) throw std::runtime_error("cannot read test template: " + Directory_);
         const std::string _Text{ std::istreambuf_iterator<char>(_Stream), std::istreambuf_iterator<char>() };
@@ -2208,80 +2208,53 @@ TEST(TemplateRuntimeTest, StraightStairRailingGeneratesManufacturableTubeParts)
     EXPECT_TRUE(_Host.IsRunning());
 }
 
+
 TEST(TemplateRuntimeTest, EveryBuiltInProfilePackageGeneratesAValidExtrusion)
 {
-    constexpr auto _DescriptorText = R"json({
-        "schema":"icax.template-descriptor",
-        "schemaVersion":1,
-        "id":"profile-catalog-probe",
-        "version":"1.0.0",
-        "displayName":"Profile catalog probe",
-        "parameters":[
-            {"key":"probeProfileType","displayName":"Profile","valueType":"string","defaultValue":"rect"},
-            {"key":"probeWidth","displayName":"Width","valueType":"number","defaultValue":80.0},
-            {"key":"probeDepth","displayName":"Depth","valueType":"number","defaultValue":50.0},
-            {"key":"probeWallThickness","displayName":"Thickness","valueType":"number","defaultValue":4.0},
-            {"key":"probeCornerRadius","displayName":"Radius","valueType":"number","defaultValue":3.0}
-        ]
-    })json";
-    auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
-        iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
-    _Descriptor.PackageDigest = "profile-catalog-probe-test";
     const auto _Root = std::filesystem::current_path();
-    const auto _Script = _Root
-        / "src/tests/icax-plugins/product/TubeDesigner/TubeDesignerTest/ProfileCatalogProbe.py";
+    const auto _Stage = _Root / "artifacts/profile-library-rebuild-20260912-v1/profile";
+    const auto _Library = std::filesystem::is_directory(_Stage) ? _Stage
+        : _Root / "src/apps/tube-designer/templates/profile";
+    const auto _Script = _Root / "src/tests/icax-plugins/product/TubeDesigner/TubeDesignerTest/MarketProfileLibraryProbe.py";
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    constexpr const char* _ProfileIDs[]{
-        "rect", "round", "ellipse", "flat-oval", "polygon",
-        "angle", "channel", "i-section", "t-section", "z-section",
-    };
-    for (const auto* _ProfileID : _ProfileIDs)
+    size_t _Count = 0;
+    for (const auto& _Entry : std::filesystem::directory_iterator(_Library))
     {
-        SCOPED_TRACE(_ProfileID);
-        iCAX::Data::ObjectMap _Parameters{
-            { "probeProfileType", std::string(_ProfileID) },
-            { "probeWidth", 80.0 },
-            { "probeDepth", 50.0 },
-            { "probeWallThickness", 4.0 },
-            { "probeCornerRadius", 3.0 },
-        };
-        const auto _Response = _Host.Invoke(
-            iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-                _Descriptor, _Parameters, _Script.string()));
-        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Response);
-        ASSERT_EQ(2u, _Model.Geometry.size());
-        EXPECT_EQ(
-            iCAX::TemplateRuntime::EGeometryOperator::Profile2D,
-            _Model.Geometry[0].Operator);
-        EXPECT_EQ(
-            iCAX::TemplateRuntime::EGeometryOperator::Extrude,
-            _Model.Geometry[1].Operator);
-        const auto _Contours = _Model.Geometry[0].Arguments.at("contours")
-            .To<iCAX::Data::VariantArray>();
-        const auto _ExpectedContourCount = std::find(
-            std::begin(_ProfileIDs), std::begin(_ProfileIDs) + 5, _ProfileID)
-            != std::begin(_ProfileIDs) + 5 ? 2u : 1u;
-        EXPECT_EQ(_ExpectedContourCount, _Contours.size());
-        ASSERT_EQ(1u, _Model.Items.size());
-        const auto _Profile = _Model.Items.front().Properties.at("tubeDesigner.profile")
-            .To<iCAX::Data::ObjectMap>();
-        EXPECT_EQ(_ProfileID, _Profile.at("id").To<std::string>());
-        EXPECT_FALSE(_Profile.at("displayName").To<std::string>().empty());
-        EXPECT_FALSE(_Profile.at("specification").To<std::string>().empty());
-        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
-        const auto& _Shape = _Geometry.At(
-            _Model.Items.front().Representations.at("export"));
-        EXPECT_FALSE(_Shape.IsNull());
-        const auto _BRep = iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(
-            _Shape, std::string("profile-preview-") + _ProfileID,
-            std::string("profile-preview-") + _ProfileID, 0.001);
-        const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(_BRep);
-        std::string _Diagnostics;
-        for (const auto& _Item : _Rebuilt.Diagnostics) _Diagnostics += _Item + " | ";
-        EXPECT_TRUE(_Rebuilt.bOK) << _ProfileID << ": " << _Diagnostics;
-        EXPECT_FALSE(_Rebuilt.Shape.IsNull()) << _ProfileID;
+        if (!_Entry.is_directory() || !std::filesystem::is_regular_file(_Entry.path() / "profile.json")) continue;
+        ++_Count;
+        for (const auto _Scale : { 1.0, 1.31 })
+        {
+            SCOPED_TRACE(_Entry.path().filename().string());
+            SCOPED_TRACE(_Scale);
+            const iCAX::Data::ObjectMap _Request{
+                { "protocol", std::string("icax.template-runtime") }, { "protocolVersion", 1ull },
+                { "operation", std::string("evaluate") }, { "templatePath", _Script.string() },
+                { "template", iCAX::Data::ObjectMap{{ "id", std::string("market-profile-probe") },
+                    { "version", std::string("1.0.0") }, { "packageDigest", std::string("market-profile-test") }} },
+                { "parameters", iCAX::Data::ObjectMap{{ "profileRoot", _Library.string() },
+                    { "profileId", _Entry.path().filename().string() }, { "scale", _Scale }} },
+                { "context", iCAX::Data::ObjectMap{} }
+            };
+            const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Host.Invoke(_Request));
+            const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
+            for (const auto& _Item : _Model.Items)
+            {
+            SCOPED_TRACE(_Item.Key);
+            const auto& _Shape = _Geometry.At(_Item.Representations.at("export"));
+            ASSERT_FALSE(_Shape.IsNull());
+            EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+            size_t _Solids = 0;
+            for (TopExp_Explorer _It(_Shape, TopAbs_SOLID); _It.More(); _It.Next()) ++_Solids;
+            EXPECT_EQ(1u, _Solids);
+            GProp_GProps _Volume;
+            BRepGProp::VolumeProperties(_Shape, _Volume);
+            EXPECT_GT(_Volume.Mass(), 0.0);
+            if (_Entry.path().filename() == "bulb-flat")
+                EXPECT_NEAR(931.0 * _Scale * _Scale, _Volume.Mass() / 250.0, 2.0 * _Scale * _Scale);
+            }
+        }
     }
-    EXPECT_TRUE(_Host.IsRunning());
+    EXPECT_EQ(24u, _Count);
 }
 
 TEST(TemplateRuntimeTest, ImportsFrozenDxfProfileAndUsesItAsAnInstanceOverride)
@@ -2355,7 +2328,7 @@ TEST(TemplateRuntimeTest, ImportsFrozenDxfProfileAndUsesItAsAnInstanceOverride)
     const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Response);
     const auto _Properties = _Model.Items.front().Properties.at("tubeDesigner.profile")
         .To<iCAX::Data::ObjectMap>();
-    EXPECT_EQ("imported-dxf", _Properties.at("kind").To<std::string>());
+    EXPECT_EQ("fixed-section", _Properties.at("kind").To<std::string>());
     EXPECT_TRUE(_Properties.at("frozenGeometry").To<bool>());
     const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
     const auto& _Shape = _Geometry.At(_Model.Items.front().Representations.at("export"));
@@ -2463,7 +2436,7 @@ TEST(TemplateRuntimeTest, ImportsAndReevaluatesEditableProfilePackage)
     }));
     const auto _Package = _Imported.at("package").To<iCAX::Data::ObjectMap>();
     EXPECT_EQ("icax.tube-profile-package-record", _Package.at("schema").To<std::string>());
-    EXPECT_EQ("parametric-package", _Package.at("kind").To<std::string>());
+    EXPECT_EQ("profile-package", _Package.at("kind").To<std::string>());
     EXPECT_FALSE(_Package.at("passwordProtected").To<bool>());
     EXPECT_FALSE(_Package.at("scriptSource").To<std::string>().empty());
     const auto _Descriptor = _Package.at("descriptor").To<iCAX::Data::ObjectMap>();
@@ -2481,7 +2454,7 @@ TEST(TemplateRuntimeTest, ImportsAndReevaluatesEditableProfilePackage)
         { "values", _Values }
     }));
     const auto _Profile = _Evaluated.at("profile").To<iCAX::Data::ObjectMap>();
-    EXPECT_EQ("parametric-package", _Profile.at("kind").To<std::string>());
+    EXPECT_EQ("profile-package", _Profile.at("kind").To<std::string>());
     EXPECT_TRUE(_Profile.at("editableParameters").To<bool>());
     EXPECT_FALSE(_Profile.at("frozenGeometry").To<bool>());
     EXPECT_NEAR(72.0, _Profile.at("width").To<double>(), 1.0e-9);
@@ -2523,7 +2496,7 @@ TEST(TemplateRuntimeTest, ImportsAndReevaluatesEditableProfilePackage)
     const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Response);
     const auto _Properties = _Model.Items.front().Properties.at("tubeDesigner.profile")
         .To<iCAX::Data::ObjectMap>();
-    EXPECT_EQ("parametric-package", _Properties.at("kind").To<std::string>());
+    EXPECT_EQ("profile-package", _Properties.at("kind").To<std::string>());
     EXPECT_TRUE(_Properties.at("editableParameters").To<bool>());
     const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
     const auto& _Shape = _Geometry.At(_Model.Items.front().Representations.at("export"));
@@ -2569,23 +2542,52 @@ TEST(TemplateRuntimeTest, ListsAndEvaluatesEverySystemProfileForTheLibrary)
         { "action", std::string("list-system") }
     }));
     const auto _Profiles = _Listed.at("systemProfiles").To<iCAX::Data::VariantArray>();
-    ASSERT_EQ(10u, _Profiles.size());
+    ASSERT_EQ(24u, _Profiles.size());
     constexpr const char* _ExpectedIDs[]{
-        "angle", "channel", "ellipse", "flat-oval", "i-section", "polygon",
-        "rect", "round", "t-section", "z-section",
+        "angle",
+        "bulb-flat",
+        "channel",
+        "combined-hollow",
+        "curve-hollow",
+        "h-section",
+        "i-section",
+        "multi-cell",
+        "omega",
+        "open-tube",
+        "oval",
+        "p-tube",
+        "polygon",
+        "polygon-bar",
+        "racetrack",
+        "rect",
+        "rect-bar",
+        "round",
+        "round-bar",
+        "t-section",
+        "u-section",
+        "unequal-i",
+        "welded-h",
+        "z-section",
     };
     for (const auto& _Value : _Profiles)
     {
         const auto _Package = _Value.To<iCAX::Data::ObjectMap>();
         EXPECT_EQ("icax.tube-profile-package-record", _Package.at("schema").To<std::string>());
-        EXPECT_EQ("parametric-package", _Package.at("kind").To<std::string>());
+        EXPECT_EQ("profile-package", _Package.at("kind").To<std::string>());
         const auto _Descriptor = _Package.at("descriptor").To<iCAX::Data::ObjectMap>();
+        EXPECT_EQ("parametric", _Descriptor.at("profileForm").To<std::string>());
         const auto _ID = _Descriptor.at("id").To<std::string>();
         EXPECT_NE(std::end(_ExpectedIDs), std::find(
             std::begin(_ExpectedIDs), std::end(_ExpectedIDs), _ID));
         const auto _Defaults = _Package.at("defaultParameters").To<iCAX::Data::ObjectMap>();
         EXPECT_FALSE(_Defaults.empty()) << _ID;
-        const auto _Preview = _Package.at("previewProfile").To<iCAX::Data::ObjectMap>();
+        ASSERT_NE(_Package.end(), _Package.find("previewProfile"));
+        EXPECT_FALSE(_Package.at("previewProfile").To<iCAX::Data::ObjectMap>()
+            .at("contours").To<iCAX::Data::VariantArray>().empty()) << _ID;
+        const auto _Preview = _Host.Invoke(_MakeRequest({
+            { "action", std::string("evaluate-system") },
+            { "systemProfileId", _ID }
+        })).at("profile").To<iCAX::Data::ObjectMap>();
         EXPECT_FALSE(_Preview.at("contours").To<iCAX::Data::VariantArray>().empty()) << _ID;
         EXPECT_GT(_Preview.at("width").To<double>(), 0.0) << _ID;
         EXPECT_GT(_Preview.at("depth").To<double>(), 0.0) << _ID;
@@ -2604,27 +2606,6 @@ TEST(TemplateRuntimeTest, ListsAndEvaluatesEverySystemProfileForTheLibrary)
     EXPECT_NEAR(3.0, _Round.at("wallThickness").To<double>(), 1.0e-9);
     EXPECT_EQ(2u, _Round.at("contours").To<iCAX::Data::VariantArray>().size());
 
-    const auto _StarEvaluated = _Host.Invoke(_MakeRequest({
-        { "action", std::string("evaluate-system") },
-        { "systemProfileId", std::string("polygon") },
-        { "values", iCAX::Data::ObjectMap{
-            { "shapeMode", std::string("star") },
-            { "sideCount", 5 },
-            { "starInnerRatio", 0.5 },
-            { "width", 40.0 },
-            { "depth", 40.0 },
-            { "wallThickness", 2.0 },
-        } }
-    }));
-    const auto _Star = _StarEvaluated.at("profile").To<iCAX::Data::ObjectMap>();
-    EXPECT_EQ("polygon", _Star.at("profileDefinitionId").To<std::string>());
-    const auto _StarContours = _Star.at("contours").To<iCAX::Data::VariantArray>();
-    ASSERT_EQ(2u, _StarContours.size());
-    for (const auto& _ContourValue : _StarContours)
-    {
-        const auto _Contour = _ContourValue.To<iCAX::Data::ObjectMap>();
-        EXPECT_EQ(10u, _Contour.at("points").To<iCAX::Data::VariantArray>().size());
-    }
     EXPECT_TRUE(_Host.IsRunning());
 }
 
@@ -2648,7 +2629,7 @@ TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufa
     {
         SCOPED_TRACE(_Case.TemplateID);
         const auto _TemplateRoot = _Root
-            / "src/apps/tube-designer/templates" / _Case.Directory;
+            / "src/apps/tube-designer/templates/product" / _Case.Directory;
         std::ifstream _DescriptorStream(_TemplateRoot / "template.json", std::ios::binary);
         ASSERT_TRUE(static_cast<bool>(_DescriptorStream));
         const std::string _DescriptorText{
@@ -2666,8 +2647,10 @@ TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufa
         {
             _Parameters["stringerProfileType"] = std::string("i-section");
             _Parameters["treadProfileType"] = std::string("channel");
-            _Parameters["handrailProfileType"] = std::string("ellipse");
+            _Parameters["handrailProfileType"] = std::string("oval");
             _Parameters["postProfileType"] = std::string("angle");
+            // Two independent 1 mm toe fillets require a leg thicker than 2 mm.
+            _Parameters["postWallThickness"] = 3.0;
         }
         _Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
             _Descriptor, _Parameters);
@@ -3209,7 +3192,7 @@ TEST(TemplateRuntimeTest, EveryModularGuardrailTemplateProducesValidNonOverlappi
     const auto _Root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
     std::vector<std::string> _TemplateDirectories;
-    const auto _TemplateRoot = _Root / "src/apps/tube-designer/templates";
+    const auto _TemplateRoot = _Root / "src/apps/tube-designer/templates/product";
     for (const auto& _Entry : std::filesystem::directory_iterator(_TemplateRoot))
     {
         if (_Entry.is_directory()

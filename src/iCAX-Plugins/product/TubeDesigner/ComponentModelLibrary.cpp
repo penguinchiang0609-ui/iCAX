@@ -225,8 +225,11 @@ namespace iCAX::TubeDesigner
             if (_Version == _Snapshot.end() || CSGNumber(_Version->second, "profile.schemaVersion") != 1)
                 throw std::invalid_argument("CSG 拉伸截面版本不受支持");
             const auto _Kind = CSGText(_Snapshot, "kind", "profile.kind", 40);
-            if (_Kind != "imported-dxf" && _Kind != "parametric-package")
+            if (_Kind != "fixed-section" && _Kind != "profile-package")
                 throw std::invalid_argument("CSG 拉伸截面来源不受支持");
+            const auto _Form=CSGText(_Snapshot,"profileForm","profile.profileForm",40);
+            if(_Form!="parametric"&&_Form!="fixed")
+                throw std::invalid_argument("CSG 截面形式无效，请先迁移");
             (void)BoundedCSGNumber(_Snapshot, "width", "profile.width", .001, 100000);
             (void)BoundedCSGNumber(_Snapshot, "depth", "profile.depth", .001, 100000);
             if (BuildCSGProfileExtrusion(_Snapshot, 1.0).IsNull())

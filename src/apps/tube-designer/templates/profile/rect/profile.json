@@ -1,23 +1,221 @@
 {
   "schema": "icax.tube-profile-descriptor",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "profileForm": "parametric",
   "id": "rect",
-  "version": "2.1.0",
-  "displayName": { "zh-CN": "矩形管", "en-US": "Rectangular hollow section" },
-  "description": "圆角矩形外轮廓和内轮廓组成的标准拉伸管型。",
+  "version": "2026.9.13.6",
+  "displayName": "方管",
+  "description": "P02 方矩管。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
+  "category": "常用管材",
+  "provenance": {
+    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
+    "surveyIds": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "dimensionSource": "editable-example",
+    "standardConformance": "not-certified",
+    "familyCode": "P02"
+  },
+  "manufacturing": {
+    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "topology": "closed-hollow",
+    "validationLevel": "parametric-geometry"
+  },
   "parameters": [
-    { "key": "width", "displayName": { "zh-CN": "外宽" }, "valueType": "number", "defaultValue": 40.0, "min": 1.0, "step": 1.0 },
-    { "key": "depth", "displayName": { "zh-CN": "外高" }, "valueType": "number", "defaultValue": 20.0, "min": 1.0, "step": 1.0 },
-    { "key": "wallThickness", "displayName": { "zh-CN": "壁厚" }, "valueType": "number", "defaultValue": 2.0, "min": 0.1, "step": 0.1 },
-    { "key": "cornerRadius", "displayName": { "zh-CN": "外圆角" }, "valueType": "number", "defaultValue": 2.0, "min": 0.0, "step": 0.5 }
+    {
+      "key": "width",
+      "displayName": "外宽 / mm",
+      "valueType": "number",
+      "defaultValue": 60,
+      "min": 1,
+      "step": 1
+    },
+    {
+      "key": "depth",
+      "displayName": "外高 / mm",
+      "valueType": "number",
+      "defaultValue": 40,
+      "min": 1,
+      "step": 1
+    },
+    {
+      "key": "wallThickness",
+      "displayName": "名义壁厚 / mm",
+      "valueType": "number",
+      "defaultValue": 2,
+      "min": 0.1,
+      "step": 1
+    },
+    {
+      "key": "innerWidth",
+      "displayName": "内宽（0=按名义壁厚）/ mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "step": 1
+    },
+    {
+      "key": "innerDepth",
+      "displayName": "内高（0=按名义壁厚）/ mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "step": 1
+    },
+    {
+      "key": "innerOffsetX",
+      "displayName": "内孔水平偏心 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1
+    },
+    {
+      "key": "innerOffsetY",
+      "displayName": "内孔竖直偏心 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1
+    },
+    {
+      "key": "cornerRadius",
+      "displayName": "外圆角基准半径 / mm",
+      "valueType": "number",
+      "defaultValue": 3,
+      "min": 0,
+      "step": 1
+    },
+    {
+      "key": "outerRadii",
+      "displayName": "外四角半径：左下、右下、右上、左上；空=基准半径",
+      "valueType": "string",
+      "defaultValue": ""
+    },
+    {
+      "key": "innerRadii",
+      "displayName": "内四角半径：同顺序；空=名义偏置半径",
+      "valueType": "string",
+      "defaultValue": ""
+    },
+    {
+      "key": "outerCorners",
+      "displayName": "外四角定义 JSON（左下起逆时针；留空沿用圆角参数）",
+      "valueType": "string",
+      "defaultValue": ""
+    },
+    {
+      "key": "innerCorners",
+      "displayName": "内四角定义 JSON（左下起逆时针；留空沿用圆角参数）",
+      "valueType": "string",
+      "defaultValue": ""
+    }
   ],
+  "catalog": {
+    "groupOrder": 1,
+    "order": 1
+  },
   "parameterDiagram": {
     "schemaVersion": 1,
     "annotations": [
-      { "parameter": "width", "kind": "linear", "axis": "x", "side": "bottom", "from": ["-width/2", 0], "to": ["width/2", 0], "description": "矩形管左右外侧之间的总宽，包含两侧壁厚。" },
-      { "parameter": "depth", "kind": "linear", "axis": "y", "side": "left", "from": [0, "-depth/2"], "to": [0, "depth/2"], "description": "矩形管上下外侧之间的总高，包含上下壁厚。" },
-      { "parameter": "wallThickness", "kind": "leader", "side": "right", "point": [0, "-depth/2+wallThickness/2"], "description": "四条直边的共同壁厚；内轮廓宽高各减去两倍壁厚。" },
-      { "parameter": "cornerRadius", "kind": "leader", "side": "top", "point": ["width/2-cornerRadius+cornerRadius/sqrt(2)", "depth/2-cornerRadius+cornerRadius/sqrt(2)"], "description": "四个外侧圆角的半径 R；内圆角半径为外圆角减去壁厚，最小为 0。" }
+      {
+        "parameter": "width",
+        "kind": "linear",
+        "from": [
+          "-width/2",
+          "depth/2"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "axis": "x",
+        "side": "top",
+        "description": "宽度基准"
+      },
+      {
+        "parameter": "depth",
+        "kind": "linear",
+        "from": [
+          "-width/2",
+          "-depth/2"
+        ],
+        "to": [
+          "-width/2",
+          "depth/2"
+        ],
+        "axis": "y",
+        "side": "left",
+        "description": "高度基准"
+      },
+      {
+        "parameter": "wallThickness",
+        "kind": "linear",
+        "from": [
+          "width/2-wallThickness",
+          0
+        ],
+        "to": [
+          "width/2",
+          0
+        ],
+        "axis": "x",
+        "side": "bottom",
+        "description": "自动内孔、居中时的右侧壁厚",
+        "visibleWhen": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "innerWidth",
+              "value": 0
+            },
+            {
+              "op": "eq",
+              "parameter": "innerDepth",
+              "value": 0
+            },
+            {
+              "op": "eq",
+              "parameter": "innerOffsetX",
+              "value": 0
+            },
+            {
+              "op": "eq",
+              "parameter": "innerOffsetY",
+              "value": 0
+            }
+          ]
+        }
+      },
+      {
+        "parameter": "cornerRadius",
+        "kind": "leader",
+        "point": [
+          "width/2-cornerRadius*(1-0.7071067811865476)",
+          "depth/2-cornerRadius*(1-0.7071067811865476)"
+        ],
+        "side": "right",
+        "description": "默认外角半径；逐角设置优先",
+        "visibleWhen": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "parameter": "outerRadii",
+              "value": ""
+            },
+            {
+              "op": "eq",
+              "parameter": "outerCorners",
+              "value": ""
+            }
+          ]
+        }
+      }
     ]
   }
 }

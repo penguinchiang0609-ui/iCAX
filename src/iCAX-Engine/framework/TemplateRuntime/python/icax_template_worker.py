@@ -90,6 +90,21 @@ def _evaluate(request: dict[str, Any]) -> dict[str, Any]:
 
 
 def _fit(request: dict[str, Any]) -> dict[str, Any]:
+    paths = request.get("moduleSearchPaths", [])
+    if not isinstance(paths, list) or len(paths) > 16 or any(
+            not isinstance(p, str) or not Path(p).is_absolute() or not Path(p).is_dir() for p in paths):
+        raise ValueError("fitter module search paths must be existing absolute directories")
+    previous = list(sys.path)
+    try:
+        fitter_path = request.get("fitterPath")
+        local = [str(Path(fitter_path).resolve().parent)] if isinstance(fitter_path, str) and fitter_path else []
+        sys.path[:0] = local + paths
+        return _fit_with_dependencies(request)
+    finally:
+        sys.path[:] = previous
+
+
+def _fit_with_dependencies(request: dict[str, Any]) -> dict[str, Any]:
     fitter_path = request.get("fitterPath")
     contours = request.get("contours")
     context = request.get("context", {})

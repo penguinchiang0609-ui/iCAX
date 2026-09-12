@@ -171,7 +171,7 @@ def _lateral(direction: Point) -> Point:
 
 def _profile(p: dict[str, Any], prefix: str):
     profile = _catalog.load_profile(p, prefix)
-    if profile.kind not in {"rect", "round", "ellipse", "flat-oval"}:
+    if profile.kind not in {"rect", "round", "oval"}:
         raise ValueError("组合式护栏当前支持矩形管、圆管、椭圆管和腰圆管；其他异型管需要独立的节点校核")
     return profile
 

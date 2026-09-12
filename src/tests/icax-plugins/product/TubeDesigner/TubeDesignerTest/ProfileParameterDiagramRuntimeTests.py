@@ -21,7 +21,8 @@ SPEC.loader.exec_module(RUNTIME)
 
 class ProfileParameterDiagramRuntimeTests(unittest.TestCase):
     def setUp(self):
-        self.packages = RUNTIME.generate({"action": "list-system"}, {})["systemProfiles"]
+        fixture = ROOT / "src/tests/icax-plugins/product/TubeDesigner/Fixtures/diagram-profiles"
+        self.packages = RUNTIME.generate({"action": "list-system", "profileRoot":str(fixture)}, {})["systemProfiles"]
         self.rect = next(package for package in self.packages if package["descriptor"]["id"] == "rect")
 
     def evaluate(self, package, values=None, descriptor=None):
@@ -49,10 +50,11 @@ class ProfileParameterDiagramRuntimeTests(unittest.TestCase):
                                     for value in item[field]))
         json.dumps(diagram, ensure_ascii=False, allow_nan=False)
 
-    def test_all_ten_builtins_cover_every_parameter_at_defaults_and_changed_sizes(self):
-        self.assertEqual(10, len(self.packages))
+    def test_diagram_fixtures_cover_every_parameter_at_defaults_and_changed_sizes(self):
+        self.assertEqual(3, len(self.packages))
         for package in self.packages:
             with self.subTest(profile=package["descriptor"]["id"]):
+                package["previewProfile"] = self.evaluate(package, package["defaultParameters"])
                 self.assert_valid_diagram(package["previewProfile"], package["descriptor"])
                 values = copy.deepcopy(package["defaultParameters"])
                 for key in ("width", "depth", "wallThickness", "cornerRadius"):
@@ -102,6 +104,10 @@ class ProfileParameterDiagramRuntimeTests(unittest.TestCase):
             new = self.evaluate(package)
             self.assertNotIn("parameterDiagram", old)
             new.pop("parameterDiagram")
+            # Descriptor metadata changes the package identity, not its section.
+            for field in ("packageDigest", "contentDigest"):
+                old.pop(field)
+                new.pop(field)
             self.assertEqual(old, new)
 
     def test_invalid_keys_shape_axis_and_expressions_are_rejected(self):

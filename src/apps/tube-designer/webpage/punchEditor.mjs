@@ -86,10 +86,10 @@ export function buildPunchPreviewRows(preview = {}, mode = "tools") {
       geometryKind: 1, renderClass: 1, visible: true, selectable: false, localToWorldMatrix,
     } }, ...(Array.isArray(preview.toolPreviews)?preview.toolPreviews.filter(item=>item.geometry?.url).map(item=>({
       entityId:"punch-preview-tool:"+item.target+":"+item.key,data:{geometry:item.geometry,material:preview.toolMaterial,
-        geometryKind:1,renderClass:5,visible:true,selectable:false,localToWorldMatrix},
+        geometryKind:1,renderClass:5,renderOrder:10,visible:true,selectable:false,localToWorldMatrix},
     })):(preview.toolGeometry?.url ? [{ entityId: "punch-preview-tools", data: {
       geometry: preview.toolGeometry, material: preview.toolMaterial,
-      geometryKind: 1, renderClass: 5, visible: true, selectable: false, localToWorldMatrix,
+      geometryKind: 1, renderClass: 5, renderOrder: 10, visible: true, selectable: false, localToWorldMatrix,
     } }] : []))];
   }
   return preview.geometry?.url ? [{ entityId: "punch-preview", data: {

@@ -10,6 +10,9 @@
 #include <iomanip>
 #include <iostream>
 #include <numeric>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepGProp.hxx>
+#include <GProp_GProps.hxx>
 
 namespace
 {
@@ -155,6 +158,72 @@ namespace
 // embedded-Python initialization. Later profiles are first-use, NOT cold-process.
 // No timing assertions: scheduling and hardware vary. This measures native CPU
 // generation + resource encoding, not WebView dispatch, GPU upload or presentation.
+TEST(ProfileTopologyTest, RolesFollowContainmentNotOrderOrWinding)
+{
+    const auto _Box = [](double x, double y, double w, double h, bool reverse) {
+        VariantArray _Points{ Numbers({x,y}), Numbers({x+w,y}), Numbers({x+w,y+h}), Numbers({x,y+h}) };
+        if (reverse) std::reverse(_Points.begin(), _Points.end());
+        return ObjectMap{{"kind",std::string("polygon")},{"points",_Points}};
+    };
+    for (bool _Reverse : {false,true})
+    {
+        VariantArray _Loops{_Box(-20,-15,40,30,_Reverse),_Box(-15,-10,10,20,!_Reverse),_Box(5,-10,10,20,_Reverse)};
+        for (int _Order=0; _Order<3; ++_Order)
+        {
+            const auto _Shape=ExtrudeProfile({{"contentDigest",std::string("topology")},{"contours",_Loops}},10);
+            EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+            GProp_GProps _Volume;
+            BRepGProp::VolumeProperties(_Shape,_Volume);
+            EXPECT_NEAR(8000.0,_Volume.Mass(),1e-6);
+            std::rotate(_Loops.begin(),_Loops.begin()+1,_Loops.end());
+        }
+    }
+}
+
+TEST(ProfileTopologyTest, InvalidBoundariesAreRejectedByTheCommonEntry)
+{
+    const auto _Box=[](double x,double y,double w,double h) {
+        return ObjectMap{{"kind",std::string("polygon")},{"points",VariantArray{
+            Numbers({x,y}),Numbers({x+w,y}),Numbers({x+w,y+h}),Numbers({x,y+h})}}};
+    };
+    const auto _Outer=_Box(0,0,40,30);
+    const VariantArray _Invalid[]{
+        {_Outer,_Box(35,5,10,10)}, // crossing exterior
+        {_Outer,_Box(30,5,10,10)}, // touching exterior
+        {_Outer,_Outer}, // duplicate
+        {_Outer,_Box(5,5,15,15),_Box(10,10,15,15)}, // crossing holes
+        {_Outer,_Box(50,0,10,10)}, // disconnected material
+        {_Outer,_Box(5,5,20,20),_Box(10,10,5,5)}, // material island
+        {ObjectMap{{"kind",std::string("polygon")},{"points",VariantArray{
+            Numbers({0,0}),Numbers({20,20}),Numbers({0,20}),Numbers({20,0})}}}}, // self crossing
+    };
+    for (const auto& _Loops:_Invalid)
+        EXPECT_THROW(ExtrudeProfile({{"contentDigest",std::string("invalid-topology")},{"contours",_Loops}},10),std::exception);
+}
+
+TEST(ProfileTopologyTest, RationalBezierWeightsArePreservedAndValidated)
+{
+    const ObjectMap _Arc{{"kind",std::string("bezier")},
+        {"controlPoints",VariantArray{Numbers({10,0}),Numbers({10,10}),Numbers({0,10})}},
+        {"weights",Numbers({1,std::sqrt(0.5),1})}};
+    const ObjectMap _Line{{"kind",std::string("line")},{"start",Numbers({0,10})},{"end",Numbers({10,0})}};
+    const auto _Build=[&](const ObjectMap& _Curve) {
+        return ExtrudeProfile({{"contentDigest",std::string("weighted-bezier")},
+            {"contours",VariantArray{ObjectMap{{"kind",std::string("path")},{"segments",VariantArray{_Curve,_Line}}}}}},10);
+    };
+    const auto _Shape=_Build(_Arc);
+    EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+    GProp_GProps _Volume;
+    BRepGProp::VolumeProperties(_Shape,_Volume);
+    EXPECT_NEAR((25*std::acos(-1.0)-50)*10,_Volume.Mass(),1e-5);
+    for (const auto& _Weights : {Numbers({1,0,1}),Numbers({1,-1,1}),Numbers({1,1})})
+    {
+        auto _Invalid=_Arc;
+        _Invalid["weights"]=_Weights;
+        EXPECT_THROW(_Build(_Invalid),std::exception);
+    }
+}
+
 TEST(ProfileGenerationPerformanceTest, SystemProfilesColdAndWarmPipeline)
 {
     const auto _Root = std::filesystem::current_path();

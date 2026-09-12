@@ -20,6 +20,9 @@ function compatible(oldNode,nextNode) {
   return oldNode.nodeType===nextNode.nodeType && (oldNode.nodeType!==1
     || oldNode.tagName===nextNode.tagName && key(oldNode)===key(nextNode));
 }
+export function patchDomNode(oldNode,nextNode) {
+  patch(oldNode,nextNode);
+}
 function patch(oldNode,nextNode) {
   if(oldNode.nodeType!==1) {
     if(oldNode.nodeValue!==nextNode.nodeValue)oldNode.nodeValue=nextNode.nodeValue;

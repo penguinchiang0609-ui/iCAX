@@ -11,8 +11,7 @@ const localized = (value, fallback = "") => typeof value === "object" && value
   ? String(value["zh-CN"] ?? value["en-US"] ?? Object.values(value)[0] ?? fallback) : String(value ?? fallback);
 const snapshot = (profile) => profile?.previewProfile ?? profile?.profile ?? (profile?.contours ? profile : null);
 const nameOf = (profile) => localized(profile?.name ?? profile?.descriptor?.displayName ?? snapshot(profile)?.name, "未命名管型");
-const parametric = (profile) => !!profile && (profileScope(profile) === "system"
-  || (profile.profileType ?? profile.kind) === "parametric-package");
+const parametric = (profile) => !!profile && (profile.profileForm ?? profile.descriptor?.profileForm ?? snapshot(profile)?.profileForm) === "parametric";
 const definitionsOf = (profile) => parametric(profile)
   ? profile?.descriptor?.parameters ?? snapshot(profile)?.parameterDefinitions ?? [] : [];
 

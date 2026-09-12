@@ -1,0 +1,170 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 3,
+  "profileForm": "parametric",
+  "id": "bulb-flat",
+  "version": "2026.9.13.6",
+  "displayName": "球扁钢",
+  "description": "依据Corus厂家手册第8页的单球头名义轮廓：30度斜边、球头与根部独立相切圆弧、端角r1，不是扁钢加半圆。默认120×6，c=17、r=5；r1为可编辑制造参数。实际轮廓可完整覆盖。",
+  "category": "其他",
+  "catalog": {
+    "groupOrder": 3,
+    "order": 3
+  },
+  "provenance": {
+    "document": "doc/Apps/管型补全与代码审查_2026-09-13.md",
+    "surveyIds": [
+      83
+    ],
+    "referenceUrl": "https://moodle2.units.it/pluginfile.php/550170/mod_resource/content/0/Bulbflat.pdf",
+    "standardConformance": "not-certified",
+    "dimensionSource": "referenced-parametric-model"
+  },
+  "parameters": [
+    {
+      "key": "width",
+      "displayName": "总高 b / mm",
+      "valueType": "number",
+      "defaultValue": 120,
+      "min": 1,
+      "step": 0.1
+    },
+    {
+      "key": "wallThickness",
+      "displayName": "腹板厚 t / mm",
+      "valueType": "number",
+      "defaultValue": 6,
+      "min": 0.1,
+      "step": 0.1
+    },
+    {
+      "key": "bulbProjection",
+      "displayName": "球头伸出 c / mm",
+      "valueType": "number",
+      "defaultValue": 17,
+      "min": 0.1,
+      "step": 0.1
+    },
+    {
+      "key": "bulbRadius",
+      "displayName": "球头及根部 r / mm",
+      "valueType": "number",
+      "defaultValue": 5,
+      "min": 0.1,
+      "step": 0.1
+    },
+    {
+      "key": "edgeRadius",
+      "displayName": "端角 r1 / mm",
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "min": 0,
+      "step": 0.1
+    },
+    {
+      "key": "geometrySource",
+      "displayName": "轮廓来源",
+      "valueType": "string",
+      "defaultValue": "idealizedFallback",
+      "options": [
+        {
+          "value": "idealizedFallback",
+          "displayName": "参数化名义轮廓（非实测）"
+        },
+        {
+          "value": "scan",
+          "displayName": "实测完整轮廓"
+        },
+        {
+          "value": "manufacturerCAD",
+          "displayName": "厂家完整轮廓"
+        }
+      ]
+    },
+    {
+      "key": "materialBoundary",
+      "displayName": "完整材料边界 JSON（实际轮廓模式）",
+      "valueType": "string",
+      "defaultValue": ""
+    },
+    {
+      "key": "sourceRevision",
+      "displayName": "来源及图纸版本",
+      "valueType": "string",
+      "defaultValue": ""
+    },
+    {
+      "key": "mirrorX",
+      "displayName": "左右镜像",
+      "valueType": "boolean",
+      "defaultValue": false
+    }
+  ],
+  "manufacturing": {
+    "formingProcess": "HotRolled",
+    "topology": "solid",
+    "validationLevel": "parametric-geometry"
+  },
+  "parameterDiagram": {
+    "schemaVersion": 1,
+    "annotations": [
+      {
+        "parameter": "width",
+        "kind": "linear",
+        "from": [
+          0,
+          0
+        ],
+        "to": [
+          0,
+          "width"
+        ],
+        "axis": "y",
+        "side": "left",
+        "description": "总高 b"
+      },
+      {
+        "parameter": "wallThickness",
+        "kind": "linear",
+        "from": [
+          0,
+          "width/3"
+        ],
+        "to": [
+          "wallThickness",
+          "width/3"
+        ],
+        "axis": "x",
+        "side": "bottom",
+        "description": "腹板厚 t"
+      },
+      {
+        "parameter": "bulbProjection",
+        "kind": "linear",
+        "from": [
+          "wallThickness",
+          "width"
+        ],
+        "to": [
+          "wallThickness+bulbProjection",
+          "width"
+        ],
+        "axis": "x",
+        "side": "top",
+        "description": "球头相对腹板右面的伸出 c"
+      },
+      {
+        "parameter": "edgeRadius",
+        "kind": "leader",
+        "point": [
+          "edgeRadius*(1-0.7071067811865476)",
+          "edgeRadius*(1-0.7071067811865476)"
+        ],
+        "side": "right",
+        "description": "左下端角 r1"
+      }
+    ],
+    "disabledWhenNonempty": "materialBoundary",
+    "mirrorParameter": "mirrorX"
+  }
+}

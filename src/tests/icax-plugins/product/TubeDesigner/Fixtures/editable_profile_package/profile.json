@@ -1,6 +1,7 @@
 {
   "schema": "icax.tube-profile-descriptor",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "profileForm": "parametric",
   "id": "test-editable-rect",
   "version": "1.0.0",
   "displayName": { "zh-CN": "测试可编辑矩形管" },

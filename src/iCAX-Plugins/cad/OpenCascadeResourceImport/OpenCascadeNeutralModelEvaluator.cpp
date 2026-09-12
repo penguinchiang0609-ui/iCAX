@@ -24,6 +24,9 @@
 #include <BRep_Tool.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepClass_FaceClassifier.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <TopExp_Explorer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepTools.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -456,7 +459,23 @@ namespace
                 const auto& [_X, _Y] = _Points[static_cast<std::size_t>(_Index - 1)];
                 _Poles.SetValue(_Index, LocalPoint(Placement_, _X, _Y));
             }
-            Handle(Geom_BezierCurve) _Curve = new Geom_BezierCurve(_Poles);
+            Handle(Geom_BezierCurve) _Curve;
+            if (const auto _Values = Find(Segment_, "weights"))
+            {
+                const auto _Weights = NumberList(*_Values, strPath_ + ".weights", 2);
+                if (_Weights.size() != _Points.size())
+                    throw std::invalid_argument(strPath_ + ".weights must match controlPoints");
+                NCollection_Array1<double> _WeightArray(1, static_cast<int>(_Weights.size()));
+                for (int _Index = 1; _Index <= _WeightArray.Length(); ++_Index)
+                {
+                    const auto _Weight = _Weights[static_cast<std::size_t>(_Index - 1)];
+                    if (_Weight <= 0.0)
+                        throw std::invalid_argument(strPath_ + ".weights must be positive");
+                    _WeightArray.SetValue(_Index, _Weight);
+                }
+                _Curve = new Geom_BezierCurve(_Poles, _WeightArray);
+            }
+            else _Curve = new Geom_BezierCurve(_Poles);
             BRepBuilderAPI_MakeEdge _Builder(_Curve);
             if (!_Builder.IsDone())
                 throw std::runtime_error(strPath_ + " failed to build a Bezier edge");
@@ -667,11 +686,51 @@ namespace
                 _Placement, RequireObject(_ContourValues[_Index], _ContourPath), _ContourPath));
         }
 
-        BRepBuilderAPI_MakeFace _Face(_Wires.front(), true);
+        // A profile is one connected material region with any number of voids.
+        // Roles come from exact containment, never array order or profile IDs.
+        std::vector<TopoDS_Face> _LoopFaces;
+        for (std::size_t _Index = 0; _Index < _Wires.size(); ++_Index)
+        {
+            BRepBuilderAPI_MakeFace _Loop(_Wires[_Index], true);
+            if (!_Loop.IsDone() || !BRepCheck_Analyzer(_Loop.Face()).IsValid())
+                throw std::invalid_argument(_Path + ".contours[" + std::to_string(_Index)
+                    + "] is not a valid simple closed boundary");
+            ShapeFix_Face _Orientation(_Loop.Face());
+            _Orientation.FixOrientation();
+            _LoopFaces.push_back(_Orientation.Face());
+        }
+        std::vector<std::size_t> _Depth(_Wires.size(), 0);
+        for (std::size_t _I = 0; _I < _Wires.size(); ++_I)
+        {
+            for (std::size_t _J = _I + 1; _J < _Wires.size(); ++_J)
+            {
+                BRepExtrema_DistShapeShape _Distance(_Wires[_I], _Wires[_J]);
+                if (!_Distance.IsDone() || _Distance.Value() <= kTolerance)
+                    throw std::invalid_argument(_Path + ".contours[" + std::to_string(_I)
+                        + "] and contours[" + std::to_string(_J) + "] intersect or touch");
+            }
+            TopExp_Explorer _Vertices(_Wires[_I], TopAbs_VERTEX);
+            if (!_Vertices.More()) throw std::invalid_argument(_Path + " boundary has no vertex");
+            const auto _Point = BRep_Tool::Pnt(TopoDS::Vertex(_Vertices.Current()));
+            for (std::size_t _J = 0; _J < _Wires.size(); ++_J)
+            {
+                if (_I == _J) continue;
+                BRepClass_FaceClassifier _Classifier(_LoopFaces[_J], _Point, kTolerance);
+                if (_Classifier.State() == TopAbs_IN) ++_Depth[_I];
+                else if (_Classifier.State() != TopAbs_OUT)
+                    throw std::invalid_argument(_Path + " ambiguous contour containment");
+            }
+        }
+        if (std::count(_Depth.begin(), _Depth.end(), 0) != 1
+            || std::any_of(_Depth.begin(), _Depth.end(), [](auto _Value) { return _Value > 1; }))
+            throw std::invalid_argument(_Path + " requires one connected material region; separate regions or nested islands must be separate profiles");
+        const auto _Outer = static_cast<std::size_t>(std::find(_Depth.begin(), _Depth.end(), 0) - _Depth.begin());
+        BRepBuilderAPI_MakeFace _Face(_Wires[_Outer], true);
         if (!_Face.IsDone())
             throw std::runtime_error(_Path + " failed to build the outer profile face");
-        for (std::size_t _Index = 1; _Index < _Wires.size(); ++_Index)
+        for (std::size_t _Index = 0; _Index < _Wires.size(); ++_Index)
         {
+            if (_Index == _Outer) continue;
             _Face.Add(_Wires[_Index]);
             if (!_Face.IsDone())
                 throw std::runtime_error(
@@ -680,7 +739,8 @@ namespace
         ShapeFix_Face _Fixer(_Face.Face());
         _Fixer.FixOrientation();
         const auto _Result = _Fixer.Face();
-        if (_Result.IsNull()) throw std::runtime_error(_Path + " failed to build a profile face");
+        if (_Result.IsNull() || !BRepCheck_Analyzer(_Result).IsValid())
+            throw std::runtime_error(_Path + " failed to build a valid profile material region");
         return _Result;
     }
 

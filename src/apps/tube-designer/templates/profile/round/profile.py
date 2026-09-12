@@ -1,52 +1,28 @@
-from __future__ import annotations
+"""P01 圆管：族内模型独立实现。"""
+import importlib
+import json
+from .geometry import envelope, swap
+MODELS = {"round":"model_0"}
+PARAMETERS = {"round":{"width":"width","wallThickness":"wallThickness"}}
 
-import math
-from typing import Any
+def selected(p):
+    name=p.get("sectionModel","round")
+    if name not in MODELS: raise ValueError("不支持的轮廓子模型")
+    module=importlib.import_module("." + MODELS[name], __package__)
+    values={key:p[value] for key,value in PARAMETERS[name].items()}
+    return name,module,values
 
-
-def _number(parameters: dict[str, Any], key: str) -> float:
-    value = parameters[key]
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{key} 必须是数值")
-    result = float(value)
-    if not math.isfinite(result):
-        raise ValueError(f"{key} 必须是有限数值")
+def build(p):
+    name,module,values=selected(p)
+    actual=p.get("materialBoundary","").strip()
+    if actual:
+        if not p.get("sourceRevision","").strip(): raise ValueError("实际轮廓必须填写来源及版本")
+        curves=json.loads(actual)
+        if not isinstance(curves,list) or not curves: raise ValueError("材料边界必须为非空轮廓数组")
+        w,h=envelope(curves)
+        result={"width":w,"depth":h,"wallThickness":0,"cornerRadius":0,"contours":curves}
+    else:
+        result=module.build(values)
+    result["manufacturingRoute"] = {"round":"Unspecified"}[name]
+    result.update({"kind":"round","_familyParameters":dict(p),"specification":"圆管"+" "+str(result["width"])+" × "+str(result["depth"])+" mm","geometrySource":"providedBoundary" if actual else "idealizedFallback","sourceRevision":p.get("sourceRevision",""),"sectionModel":name})
     return result
-
-
-def _text(value: float) -> str:
-    return f"{value:.6f}".rstrip("0").rstrip(".")
-
-
-def build(parameters: dict[str, Any]) -> dict[str, Any]:
-    diameter = _number(parameters, "width")
-    wall = _number(parameters, "wallThickness")
-    if diameter <= 0 or wall <= 0 or wall * 2 >= diameter:
-        raise ValueError("圆管外径或壁厚无效")
-    return {
-        "kind": "round",
-        "width": diameter,
-        "depth": diameter,
-        "wallThickness": wall,
-        "cornerRadius": 0.0,
-        "specification": f"Φ{_text(diameter)} × {_text(wall)}",
-    }
-
-
-def contours(
-    profile: dict[str, Any], *, clearance: float = 0.0, swap_axes: bool = False,
-) -> list[dict[str, Any]]:
-    del swap_axes
-    outer_radius = float(profile["width"]) / 2 + float(clearance)
-    inner_radius = float(profile["width"]) / 2 - float(profile["wallThickness"])
-    if outer_radius <= 0 or inner_radius <= 0 or inner_radius >= outer_radius:
-        raise ValueError("圆管偏置后的二维轮廓无效")
-    return [
-        {"kind": "circle", "radius": outer_radius},
-        {"kind": "circle", "radius": inner_radius},
-    ]
-
-
-def fitter(contours: list[dict[str, Any]], context: dict[str, Any] | None = None) -> dict[str, Any]:
-    from profile_fitting import fitter_for_profile
-    return fitter_for_profile(contours, "round", context)

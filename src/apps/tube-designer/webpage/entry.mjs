@@ -7,6 +7,7 @@ import { scheduleDesignerPartInspectionHydration } from "./partInspection.mjs";
 import { attachPartDrawingEditor, renderPartDrawingDialog } from "./partDrawing.mjs";
 import { attachPartDrawingPreview, disposePartDrawingPreview } from "./partDrawingPreview.mjs";
 import { patchPartDrawingDom, rememberPartDrawingDom } from "./partDrawingDom.mjs";
+import { patchLibraryDom, rememberLibraryDom } from "./libraryDomPatch.mjs";
 import {
   fitDesignerDefaultView,
   captureDesignerScrollState,
@@ -351,6 +352,17 @@ function withDesignerContext(context) {
     handleAreaViewportPick: handleTubeMachiningViewportPick,
     handleAreaRibbonCommand: handleDesignerRibbonCommand,
     tryRenderProjectPatch(context,view,mount,ops) {
+      if(["tools","profiles"].includes(view.activeAreaId)) {
+        const tools=view.activeAreaId==="tools";
+        const patched=patchLibraryDom(view,mount,{
+          left:(tools?renderToolLibraryLeftPane:renderProfileLibraryLeftPane)(context,view),
+          right:(tools?renderToolLibraryRightPane:renderProfileLibraryRightPane)(context,view),
+          overlay:(tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
+          suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
+        });
+        if(patched){bindProfileParameterDiagrams(mount);return true;}
+        return false;
+      }
       if(view.tubeDesignerPartDrawing&&view.activeAreaId==="nesting") {
         const html=renderPartDrawingDialog(view)+renderDesignerOperationOverlay(context,view);
         if(!patchPartDrawingDom(view,mount,html))return false;
@@ -376,6 +388,7 @@ function withDesignerContext(context) {
       restoreProductTemplateLibraryScrollState(context, view);
     },
     afterProjectRender(context, view, mount, ops) {
+      rememberLibraryDom(view,mount,renderDesignerWorkbenchSuffix(context,view,view.scene??{}));
       restoreDesignerScrollState(context, view);
       restoreProductTemplateLibraryScrollState(context, view);
       bindProfileParameterDiagrams(mount);

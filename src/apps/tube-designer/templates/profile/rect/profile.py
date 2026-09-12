@@ -1,74 +1,28 @@
-from __future__ import annotations
+"""P02 方矩管：族内模型独立实现。"""
+import importlib
+import json
+from .geometry import envelope, swap
+MODELS = {"rect":"model_0"}
+PARAMETERS = {"rect":{"width":"width","depth":"depth","wallThickness":"wallThickness","innerWidth":"innerWidth","innerDepth":"innerDepth","innerOffsetX":"innerOffsetX","innerOffsetY":"innerOffsetY","cornerRadius":"cornerRadius","outerRadii":"outerRadii","innerRadii":"innerRadii","outerCorners":"outerCorners","innerCorners":"innerCorners"}}
 
-import math
-from typing import Any
+def selected(p):
+    name=p.get("sectionModel","rect")
+    if name not in MODELS: raise ValueError("不支持的轮廓子模型")
+    module=importlib.import_module("." + MODELS[name], __package__)
+    values={key:p[value] for key,value in PARAMETERS[name].items()}
+    return name,module,values
 
-
-def _number(parameters: dict[str, Any], key: str) -> float:
-    value = parameters[key]
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{key} 必须是数值")
-    result = float(value)
-    if not math.isfinite(result):
-        raise ValueError(f"{key} 必须是有限数值")
+def build(p):
+    name,module,values=selected(p)
+    actual=p.get("materialBoundary","").strip()
+    if actual:
+        if not p.get("sourceRevision","").strip(): raise ValueError("实际轮廓必须填写来源及版本")
+        curves=json.loads(actual)
+        if not isinstance(curves,list) or not curves: raise ValueError("材料边界必须为非空轮廓数组")
+        w,h=envelope(curves)
+        result={"width":w,"depth":h,"wallThickness":0,"cornerRadius":0,"contours":curves}
+    else:
+        result=module.build(values)
+    result["manufacturingRoute"] = {"rect":"Unspecified"}[name]
+    result.update({"kind":"rect","_familyParameters":dict(p),"specification":"方矩管"+" "+str(result["width"])+" × "+str(result["depth"])+" mm","geometrySource":"providedBoundary" if actual else "idealizedFallback","sourceRevision":p.get("sourceRevision",""),"sectionModel":name})
     return result
-
-
-def _text(value: float) -> str:
-    return f"{value:.6f}".rstrip("0").rstrip(".")
-
-
-def build(parameters: dict[str, Any]) -> dict[str, Any]:
-    width = _number(parameters, "width")
-    depth = _number(parameters, "depth")
-    wall = _number(parameters, "wallThickness")
-    radius = _number(parameters, "cornerRadius")
-    if width <= 0 or depth <= 0 or wall <= 0 or wall * 2 >= min(width, depth):
-        raise ValueError("矩形管截面尺寸或壁厚无效")
-    if radius < 0 or radius >= min(width, depth) / 2:
-        raise ValueError("矩形管外圆角无效")
-    return {
-        "kind": "rect",
-        "width": width,
-        "depth": depth,
-        "wallThickness": wall,
-        "cornerRadius": radius,
-        "specification": (
-            f"{_text(width)} × {_text(depth)} × R{_text(radius)} × {_text(wall)}"
-        ),
-    }
-
-
-def contours(
-    profile: dict[str, Any], *, clearance: float = 0.0, swap_axes: bool = False,
-) -> list[dict[str, Any]]:
-    wall = float(profile["wallThickness"])
-    definitions = [
-        (
-            float(profile["width"]) + float(clearance) * 2,
-            float(profile["depth"]) + float(clearance) * 2,
-            float(profile["cornerRadius"]) + float(clearance),
-        ),
-        (
-            float(profile["width"]) - wall * 2,
-            float(profile["depth"]) - wall * 2,
-            float(profile["cornerRadius"]) - wall,
-        ),
-    ]
-    result: list[dict[str, Any]] = []
-    for width, depth, radius in definitions:
-        radius = max(0.0, radius)
-        if width <= 0 or depth <= 0 or radius >= min(width, depth) / 2:
-            raise ValueError("矩形管偏置后的二维轮廓无效")
-        result.append({
-            "kind": "roundedRectangle",
-            "width": depth if swap_axes else width,
-            "height": width if swap_axes else depth,
-            "radius": radius,
-        })
-    return result
-
-
-def fitter(contours: list[dict[str, Any]], context: dict[str, Any] | None = None) -> dict[str, Any]:
-    from profile_fitting import fitter_for_profile
-    return fitter_for_profile(contours, "rect", context)

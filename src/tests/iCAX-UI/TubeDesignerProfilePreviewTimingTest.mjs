@@ -98,7 +98,7 @@ function progressDom(clock) {
   };
 }
 
-const profile = (id) => ({ id, name: `测试管型 ${id}`, profileType: "parametric-package",
+const profile = (id) => ({ id, name: `测试管型 ${id}`, profileType: "profile-package", profileForm:"parametric",
   descriptor: { id, version: "1", parameters: [] }, defaultParameters: {},
   previewProfile: { name: `测试管型 ${id}`, width: 40, depth: 40, specification: "Φ40", contours: [{ kind: "circle", radius: 20 }] },
 });
@@ -277,7 +277,7 @@ for (const action of ["empty search", "empty source", "leave area"]) {
     h.backend(() => request.promise);
     h.render(); await flushMicrotasks(); await clock.advance(100);
     if (action === "empty search") await h.action("search", { value: "missing profile" });
-    if (action === "empty source") await h.action("scope", { dataset: { tubeProfileLibraryScope: "template" } });
+    if (action === "empty source") await h.action("scope", { dataset: { tubeProfileLibraryScope: "user" } });
     if (action === "leave area") { h.view.activeAreaId = "view"; h.dom.unmount(); }
     await clock.advance(150);
     assert.equal(h.dom.shownEvents().length, 0);
@@ -369,7 +369,7 @@ await test("switching to an empty source clears visible progress without allowin
   h.backend(() => request.promise);
   h.render(); await flushMicrotasks();
   await clock.advance(200); assert.equal(h.dom.shown(), true);
-  await h.action("scope", { dataset: { tubeProfileLibraryScope: "template" } });
+  await h.action("scope", { dataset: { tubeProfileLibraryScope: "user" } });
   const previousShowCount = h.dom.shownEvents().length;
   assert.equal(h.dom.shown(), false);
   request.reject(new Error("old request failed")); await flushMicrotasks();

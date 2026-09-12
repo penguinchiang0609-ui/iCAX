@@ -543,7 +543,10 @@ def _parse(path: Path) -> dict[str, Any]:
     result = {
         "schema": "icax.imported-tube-profile",
         "schemaVersion": 1,
-        "kind": "imported-dxf",
+        "kind": "fixed-section",
+        "profileForm": "fixed",
+        "editableParameters": False,
+        "frozenGeometry": True,
         "name": path.stem,
         "sourceFileName": path.name,
         "sourceFormat": "cad.dxf",

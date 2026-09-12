@@ -112,6 +112,20 @@ ObjectMap invoke(Scene& scene,const std::string& method,const ObjectMap& payload
     if(!result.IsOK())throw std::runtime_error(method+": "+result.strError);
     return iCAX::Data::VariantSerializer::Deserialize(std::string(result.Payload.begin(),result.Payload.end())).To<ObjectMap>();
 }
+TEST(ProfileLibrarySDOTest, SystemCatalogDoesNotRequirePersonalData)
+{
+    Scene scene;
+    const auto result=invoke(scene,"ListSystemProfiles",{});
+    const auto profiles=result.at("systemProfiles").To<VariantArray>();
+    ASSERT_EQ(24u,profiles.size());
+    for(const auto& value:profiles) {
+        const auto profile=value.To<ObjectMap>();
+        EXPECT_FALSE(profile.contains("error"));
+        EXPECT_FALSE(profile.contains("resources"));
+        EXPECT_TRUE(profile.at("capabilities").To<ObjectMap>().at("preview").To<bool>());
+    }
+}
+
 ObjectMap runtime(const std::string& file,const ObjectMap& input) {
     const auto root=std::filesystem::current_path();
     const auto worker=root/"src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_worker.py";
@@ -280,6 +294,37 @@ TEST(PunchPersistenceSDO, RoundedRectBranchAndDxfHolesReopenAndMove) {
         [](Scene& scene,const std::string& id){const auto s=shape(scene,part(scene,id));
             for(double x:{250.,750.})for(double z:{-9.,9.})EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(x,0,z),1e-6).State(),TopAbs_OUT);
             for(double x:{200.,700.})for(double z:{-9.,9.})EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(x,0,z),1e-6).State(),TopAbs_IN);});
+}
+
+TEST(MoldApplicabilitySDO, ActualTargetOverridesSpoofedRequestAndBlocksRoundTube) {
+    for(const auto& toolId:std::vector<std::string>{"v-notch-sharp","edge-arc-groove"})
+    for(const auto& profileId:std::vector<std::string>{"rect","round"}) {
+        SCOPED_TRACE(profileId);
+        SCOPED_TRACE(toolId);Scene scene;
+        ObjectMap feature{{"toolTarget",std::string("part")},{"station",500.},
+            {"toolRef",ObjectMap{{"id",toolId}}},{"toolParameters",ObjectMap{}}};
+        auto payload=request("适用性机制测试",profileId,{},VariantArray{feature});
+        payload["targetProfile"]=ObjectMap{{"status",std::string("verified")},{"typeId",std::string("rect")},
+            {"capabilities",ObjectMap{{"opposedFlatFaces",true}}}};
+        const auto preview=invoke(scene,"PreviewPunchWizard",payload);
+        ASSERT_TRUE(preview.contains("targetSection"));
+        const auto target=preview.at("targetSection").To<ObjectMap>();
+        ASSERT_EQ(target.at("status").To<std::string>(),"available") << iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(target);
+        EXPECT_FALSE(target.contains("typeId"));
+        EXPECT_TRUE(target.contains("contours"));
+        if(profileId=="round") {
+            ASSERT_TRUE(preview.contains("resultError"));
+            EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
+        } else {
+            EXPECT_FALSE(preview.contains("resultError"));
+            ASSERT_TRUE(preview.contains("sectionAnalyses"));
+            ASSERT_EQ(preview.at("sectionAnalyses").To<VariantArray>().size(),1u);
+            EXPECT_NO_THROW(invoke(scene,"AddNestingPunchPart",payload));
+            feature["rotation"]=37.;
+            payload["features"]=VariantArray{feature};
+            EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
+        }
+    }
 }
 
 TEST(PunchPreviewDiagnosticsSDO, FullWidthPolygonBranchesDisplayCurrentToolsButCannotBeCreatedOrApplied) {

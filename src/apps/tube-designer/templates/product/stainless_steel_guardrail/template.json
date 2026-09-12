@@ -10,8 +10,12 @@
   "extensions": {
     "parameterRules": [
       {
-        "when": { "guardrailUse": "wall" },
-        "set": { "infillType": "bars" },
+        "when": {
+          "guardrailUse": "wall"
+        },
+        "set": {
+          "infillType": "bars"
+        },
         "description": "围墙出头竖杆仅支持竖杆填充。"
       }
     ],
@@ -820,14 +824,14 @@
         "zh-CN": "扶手管/截面类型"
       },
       "valueType": "enum",
-      "defaultValue": "flat-oval",
+      "defaultValue": "oval",
       "group": "profiles",
       "order": 280,
       "choices": [
         {
           "value": "rect",
           "displayName": {
-            "zh-CN": "矩形管"
+            "zh-CN": "方矩管"
           }
         },
         {
@@ -837,15 +841,9 @@
           }
         },
         {
-          "value": "ellipse",
+          "value": "oval",
           "displayName": {
-            "zh-CN": "椭圆管"
-          }
-        },
-        {
-          "value": "flat-oval",
-          "displayName": {
-            "zh-CN": "腰圆管"
+            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -942,7 +940,7 @@
         {
           "value": "rect",
           "displayName": {
-            "zh-CN": "矩形管"
+            "zh-CN": "方矩管"
           }
         },
         {
@@ -952,15 +950,9 @@
           }
         },
         {
-          "value": "ellipse",
+          "value": "oval",
           "displayName": {
-            "zh-CN": "椭圆管"
-          }
-        },
-        {
-          "value": "flat-oval",
-          "displayName": {
-            "zh-CN": "腰圆管"
+            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -1057,7 +1049,7 @@
         {
           "value": "rect",
           "displayName": {
-            "zh-CN": "矩形管"
+            "zh-CN": "方矩管"
           }
         },
         {
@@ -1067,15 +1059,9 @@
           }
         },
         {
-          "value": "ellipse",
+          "value": "oval",
           "displayName": {
-            "zh-CN": "椭圆管"
-          }
-        },
-        {
-          "value": "flat-oval",
-          "displayName": {
-            "zh-CN": "腰圆管"
+            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -1172,7 +1158,7 @@
         {
           "value": "rect",
           "displayName": {
-            "zh-CN": "矩形管"
+            "zh-CN": "方矩管"
           }
         },
         {
@@ -1182,15 +1168,9 @@
           }
         },
         {
-          "value": "ellipse",
+          "value": "oval",
           "displayName": {
-            "zh-CN": "椭圆管"
-          }
-        },
-        {
-          "value": "flat-oval",
-          "displayName": {
-            "zh-CN": "腰圆管"
+            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]

@@ -1,24 +1,141 @@
 from __future__ import annotations
 
 import ast
+import copy
 import base64
 import hashlib
+import importlib.util
 import json
 import math
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 from typing import Any
 import zipfile
+import sys
+import tempfile
+import types
+import _imp
+from contextlib import contextmanager
+
+
+def _resource_bytes(resources):
+    if resources is not None and not isinstance(resources, dict):
+        raise ValueError("管型资源必须是对象")
+    result = {}
+    seen = {"profile.json", "profile.py"}
+    total = 0
+    for name, encoded in (resources or {}).items():
+        if not isinstance(name, str):
+            raise ValueError("管型资源路径必须是字符串")
+        path = PurePosixPath(name)
+        if (path.is_absolute() or "\\" in name or "\0" in name
+                or any(part in ("", ".", "..") or ":" in part for part in name.split("/"))
+                or name.casefold() in seen):
+            raise ValueError(f"管型资源路径无效：{name}")
+        seen.add(name.casefold())
+        data = base64.b64decode(encoded, validate=True)
+        total += len(data)
+        if len(data) > MAX_MEMBER_BYTES or total > MAX_TOTAL_BYTES:
+            raise ValueError("管型资源超过大小限制")
+        result[name] = data
+    return result
+
+
+def _directory_resources(directory):
+    resources = {}
+    total = 0
+    for path in sorted(directory.rglob("*")):
+        relative = path.relative_to(directory)
+        if "__pycache__" in relative.parts or path.suffix == ".pyc":
+            continue
+        if path.is_symlink() or not path.resolve().is_relative_to(directory.resolve()):
+            raise ValueError(f"管型资源不能链接到包外：{relative}")
+        if path.is_file() and relative.as_posix() not in ("profile.json", "profile.py"):
+            size = path.stat().st_size
+            total += size
+            if size > MAX_MEMBER_BYTES or total > MAX_TOTAL_BYTES:
+                raise ValueError("管型资源超过大小限制")
+            resources[relative.as_posix()] = base64.b64encode(path.read_bytes()).decode("ascii")
+    _resource_bytes(resources)
+    return resources
+
+
+def _package_digest(descriptor, script_source, resources):
+    digest = hashlib.sha256()
+    members = {"profile.json": json.dumps(descriptor, ensure_ascii=False, sort_keys=True,
+               separators=(",", ":")).encode("utf-8"), "profile.py": script_source.encode("utf-8")}
+    members.update(_resource_bytes(resources))
+    if sum(map(len, members.values())) > MAX_TOTAL_BYTES:
+        raise ValueError("管型包超过 8 MB")
+    for name, data in sorted(members.items()):
+        digest.update(name.encode("utf-8") + b"\0" + str(len(data)).encode("ascii") + b"\0" + data)
+    return "sha256:" + digest.hexdigest()
+
+
+@contextmanager
+def _script_context(script_source, digest, resources=None, descriptor=None, *, entry="profile"):
+    """Execute a complete package; imports and files live for the whole evaluation.
+
+    This is dependency isolation, not a security sandbox for Python code.
+    """
+    members = _resource_bytes(resources)
+    _imp.acquire_lock()
+    try:
+        with tempfile.TemporaryDirectory(prefix="icax-profile-") as directory:
+            root = Path(directory)
+            if descriptor is not None:
+                (root / "profile.json").write_text(json.dumps(descriptor, ensure_ascii=False), encoding="utf-8")
+            for name, data in {**members, "profile.py": script_source.encode("utf-8")}.items():
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+            prefix = "_icax_package_" + hashlib.sha256(digest.encode()).hexdigest()
+            local_names = {PurePosixPath(name).parts[0].split(".")[0] for name in members}
+            local_names.add(prefix)
+            local_names.add("profile")
+            saved = {name: module for name, module in list(sys.modules.items())
+                     if name.split(".")[0] in local_names}
+            old_path = sys.path[:]
+            old_bytecode = sys.dont_write_bytecode
+            try:
+                for name in saved:
+                    del sys.modules[name]
+                package = types.ModuleType(prefix)
+                package.__path__ = [directory]
+                package.__package__ = prefix
+                package.__file__ = str(root / "__init__.py")
+                package.__spec__ = importlib.util.spec_from_file_location(
+                    prefix, package.__file__, submodule_search_locations=[directory])
+                package.__loader__ = package.__spec__.loader
+                sys.modules[prefix] = package
+                sys.path.insert(0, directory)
+                sys.dont_write_bytecode = True
+                if "__init__.py" in members:
+                    package.__file__ = str(root / "__init__.py")
+                    exec(compile(members["__init__.py"], package.__file__, "exec"), package.__dict__)
+                if entry not in ("profile", "recognize"):
+                    raise ValueError("管型执行入口无效")
+                source = script_source if entry == "profile" else members.get("recognize.py", b"").decode("utf-8-sig")
+                yield _load_script(source, digest, root / (entry + ".py"), prefix, entry=entry)
+            finally:
+                sys.path[:] = old_path
+                sys.dont_write_bytecode = old_bytecode
+                for name in list(sys.modules):
+                    if name.split(".")[0] in local_names:
+                        del sys.modules[name]
+                sys.modules.update(saved)
+    finally:
+        _imp.release_lock()
 
 
 PACKAGE_SCHEMA = "icax.tube-profile-package-record"
 PACKAGE_SCHEMA_VERSION = 1
 DESCRIPTOR_SCHEMA = "icax.tube-profile-descriptor"
-DESCRIPTOR_SCHEMA_VERSION = 2
+DESCRIPTOR_SCHEMA_VERSION = 3
 MAX_ARCHIVE_BYTES = 8 * 1024 * 1024
 MAX_MEMBER_BYTES = 4 * 1024 * 1024
 MAX_TOTAL_BYTES = 8 * 1024 * 1024
-REQUIRED_MEMBERS = ("profile.json", "profile.py")
+REQUIRED_MEMBERS = ("profile.json",)
 PASSWORD = "ICAX_TUBE_DESIGNER"
 MAX_DIAGRAM_ANNOTATIONS = 128
 MAX_DIAGRAM_COORDINATE = 1.0e9
@@ -123,6 +240,8 @@ def _evaluate_parameter_diagram(
     diagram = descriptor.get("parameterDiagram")
     if diagram is None:
         return None
+    if diagram.get("disabledWhenNonempty") and parameters.get(diagram["disabledWhenNonempty"]):
+        return None
     numeric_keys = {definition["key"] for definition in descriptor["parameters"]
                     if definition["valueType"] in ("number", "integer")}
 
@@ -172,6 +291,15 @@ def _evaluate_parameter_diagram(
 
     annotations = []
     for index, source in enumerate(diagram["annotations"]):
+        condition = source.get("visibleWhen")
+        if condition:
+            conditions = condition.get("conditions", [condition])
+            matches = [parameters.get(c.get("parameter", c.get("key"))) == c.get("value")
+                       if c.get("op", "eq") == "eq" else
+                       parameters.get(c.get("parameter", c.get("key"))) != c.get("value")
+                       for c in conditions]
+            if not (any(matches) if condition.get("op") == "any" else all(matches)):
+                continue
         annotation = {field: source[field] for field in ("parameter", "kind", "side")}
         if source["kind"] == "linear":
             annotation["axis"] = source["axis"]
@@ -184,6 +312,10 @@ def _evaluate_parameter_diagram(
                                      for value in source[field]]
             except (ArithmeticError, ValueError, TypeError) as error:
                 raise ValueError(f"{label} 坐标求值失败：{error}") from error
+        if diagram.get("mirrorParameter") and parameters.get(diagram["mirrorParameter"]):
+            for field in (("from", "to") if source["kind"] == "linear" else ("point",)):
+                annotation[field][0] *= -1
+            annotation["side"] = {"left": "right", "right": "left"}.get(annotation["side"], annotation["side"])
         annotations.append(annotation)
     return {"schemaVersion": 1, "annotations": annotations}
 
@@ -251,6 +383,8 @@ def _normalize_value(definition: dict[str, Any], value: Any) -> Any:
 def _validate_descriptor(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(value, dict):
         raise ValueError("profile.json 必须是 JSON 对象")
+    if "recognition" in value and value["recognition"] != {"schemaVersion":1,"entryPoint":"recognize.py"}:
+        raise ValueError("管型逆向协议必须声明 schemaVersion=1 和 entryPoint=recognize.py")
     if value.get("schema") != DESCRIPTOR_SCHEMA:
         raise ValueError("profile.json schema 不受支持")
     if value.get("schemaVersion") != DESCRIPTOR_SCHEMA_VERSION:
@@ -262,10 +396,16 @@ def _validate_descriptor(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(version, str) or not version.strip() or len(version) > 64:
         raise ValueError("profile.json version 无效")
     _localized_text(value.get("displayName"), "profile.json displayName")
-    definitions = value.get("parameters")
-    if not isinstance(definitions, list) or not 1 <= len(definitions) <= 64:
+    form = value.get("profileForm")
+    if form not in ("parametric", "fixed"):
+        raise ValueError("profileForm 必须为 parametric 或 fixed")
+    definitions = value.get("parameters", [] if form == "fixed" else None)
+    if not isinstance(definitions, list) or not (0 if form == "fixed" else 1) <= len(definitions) <= 64:
         raise ValueError("profile.json 必须声明 1 到 64 个 parameters")
 
+    if form == "fixed" and (definitions or not isinstance(value.get("section"), dict)):
+        raise ValueError("定式管型必须提供 section 且不能声明形状参数")
+    value = {**value, "parameters": definitions}
     keys: set[str] = set()
     defaults: dict[str, Any] = {}
     for index, definition in enumerate(definitions):
@@ -303,37 +443,56 @@ def _normalize_parameters(
     return result
 
 
-def _load_script(script_source: str, digest: str) -> dict[str, Any]:
+def _load_script(script_source: str, digest: str, source_path=None, package=None, *, entry="profile") -> dict[str, Any]:
     if not isinstance(script_source, str) or not script_source.strip():
         raise ValueError("profile.py 不能为空")
     if len(script_source.encode("utf-8")) > MAX_MEMBER_BYTES:
         raise ValueError("profile.py 超过大小限制")
-    namespace: dict[str, Any] = {
-        "__name__": f"icax_user_profile_{digest[:20]}",
-        "__file__": "<icaxprofile>/profile.py",
-        "__package__": None,
-    }
+    module_name = f"{package}.{entry}" if package else f"icax_user_profile_{digest[:20]}"
+    module = types.ModuleType(module_name)
+    namespace = module.__dict__
+    namespace.update({
+        "__name__": module_name,
+        "__file__": str(source_path or "<icaxprofile>/profile.py"),
+        "__package__": package,
+    })
+    if package:
+        sys.modules[module_name] = module
     exec(compile(script_source, namespace["__file__"], "exec"), namespace)
+    if entry == "recognize":
+        if not callable(namespace.get("recognize")):
+            raise ValueError("recognize.py 缺少 recognize(section, context)")
+        return namespace
     if not callable(namespace.get("build")):
         raise ValueError("profile.py 缺少 build(parameters)")
-    if not callable(namespace.get("contours")):
-        raise ValueError("profile.py 缺少 contours(profile, clearance, swap_axes)")
     return namespace
+
+
+def evaluate_section(descriptor, script_source, parameters, digest, resources=None):
+    """One section acquisition entry for both forms; ownership is irrelevant."""
+    if descriptor["profileForm"] == "fixed":
+        if parameters:
+            raise ValueError("定式管型不能修改形状参数")
+        built = copy.deepcopy(descriptor["section"])
+        return built, copy.deepcopy(built.get("contours"))
+    with _script_context(script_source, digest, resources, descriptor) as namespace:
+        built = namespace["build"](dict(parameters))
+        if not isinstance(built, dict):
+            raise ValueError("profile.py 的 build 必须返回对象")
+        contours = built.get("contours")
+        if not isinstance(contours, list) or not contours:
+            raise ValueError("profile.py 的 build(parameters) 必须直接返回非空 contours")
+        return built, copy.deepcopy(contours)
 
 
 def _evaluate(
     descriptor: dict[str, Any], script_source: str, values: Any,
-    package_digest: str, source_file_name: str,
+    package_digest: str, source_file_name: str, resources=None,
 ) -> dict[str, Any]:
     descriptor, _ = _validate_descriptor(descriptor)
     parameters = _normalize_parameters(descriptor, values)
-    namespace = _load_script(script_source, package_digest)
-    built = namespace["build"](dict(parameters))
-    if not isinstance(built, dict):
-        raise ValueError("profile.py 的 build 必须返回对象")
-    contours = namespace["contours"](
-        dict(built), clearance=0.0, swap_axes=False,
-    )
+    package_digest = _package_digest(descriptor, script_source, resources)
+    built, contours = evaluate_section(descriptor, script_source, parameters, package_digest, resources)
     if not isinstance(contours, list) or not contours or len(contours) > 1000:
         raise ValueError("profile.py 必须返回非空轮廓数组")
     for index, contour in enumerate(contours):
@@ -350,7 +509,8 @@ def _evaluate(
     result = {
         "schema": "icax.imported-tube-profile",
         "schemaVersion": 1,
-        "kind": "parametric-package",
+        "kind": "profile-package",
+        "profileForm": descriptor["profileForm"],
         "name": name,
         "sourceFileName": source_file_name,
         "sourceFormat": "icax.profile-package",
@@ -367,10 +527,16 @@ def _evaluate(
         "contours": contours,
         "parameters": parameters,
         "parameterDefinitions": descriptor["parameters"],
-        "editableParameters": True,
-        "frozenGeometry": False,
+        "editableParameters": descriptor["profileForm"] == "parametric",
+        "frozenGeometry": descriptor["profileForm"] == "fixed",
         "contentDigest": package_digest,
     }
+    for field in ("provenance", "manufacturing"):
+        if field in descriptor:
+            result[field] = copy.deepcopy(descriptor[field])
+    for field in ("geometrySource", "sourceRevision", "manufacturingRoute", "sectionModel"):
+        if field in built:
+            result[field] = copy.deepcopy(built[field])
     diagram = _evaluate_parameter_diagram(descriptor, parameters, contours)
     if diagram is not None:
         result["parameterDiagram"] = diagram
@@ -417,10 +583,10 @@ def _read_archive(path: Path, password: str = "") -> tuple[bytes, bytes, bool, d
         password_bytes = (password or PASSWORD).encode("utf-8")
         try:
             descriptor_bytes = archive.read(members["profile.json"], pwd=password_bytes)
-            script_bytes = archive.read(members["profile.py"], pwd=password_bytes)
+            script_bytes = archive.read(members["profile.py"], pwd=password_bytes) if "profile.py" in members else b""
             resources = {
                 name: base64.b64encode(archive.read(info, pwd=password_bytes)).decode("ascii")
-                for name, info in members.items() if name not in REQUIRED_MEMBERS
+                for name, info in members.items() if name not in ("profile.json", "profile.py")
             }
         except (RuntimeError, zipfile.BadZipFile) as error:
             raise ValueError("管型包密码错误或加密格式不受支持") from error
@@ -437,17 +603,12 @@ def _package_from_sources(
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("profile.json 或 profile.py 不是有效 UTF-8 内容") from error
     descriptor, defaults = _validate_descriptor(descriptor)
-    canonical_descriptor = json.dumps(
-        descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-    ).encode("utf-8")
-    digest = "sha256:" + hashlib.sha256(
-        canonical_descriptor + b"\0" + script_source.encode("utf-8"),
-    ).hexdigest()
-    preview = _evaluate(descriptor, script_source, defaults, digest, source_file_name)
+    digest = _package_digest(descriptor, script_source, resources)
+    preview = _evaluate(descriptor, script_source, defaults, digest, source_file_name, resources)
     return {
         "schema": PACKAGE_SCHEMA,
         "schemaVersion": PACKAGE_SCHEMA_VERSION,
-        "kind": "parametric-package",
+        "kind": "profile-package",
         "name": _localized_text(descriptor.get("displayName"), "displayName"),
         "sourceFileName": source_file_name,
         "sourceFormat": "icax.profile-package",
@@ -564,11 +725,13 @@ def _template_package(parameters: dict[str, Any], profile_id: Any) -> dict[str, 
     source = _confined_profile_path(root, declaration.get("path"))
     if source.is_dir():
         descriptor_bytes = _read_template_member(root, source, "profile.json")
-        script_bytes = _read_template_member(root, source, "profile.py")
+        script_bytes = (_read_template_member(root, source, "profile.py")
+                        if (source / "profile.py").is_file() else b"")
         if len(descriptor_bytes) + len(script_bytes) > MAX_TOTAL_BYTES:
             raise ValueError("模板管型包超过 8 MB")
         source_name = (source.relative_to(root) / "profile.py").as_posix()
-        package = _package_from_sources(descriptor_bytes, script_bytes, source_name)
+        package = _package_from_sources(descriptor_bytes, script_bytes, source_name,
+                                        resources=_directory_resources(source))
     elif source.is_file() and source.suffix.lower() == ".ittt":
         package = _inspect(source, "")
         package["sourceFileName"] = source.relative_to(root).as_posix()
@@ -621,15 +784,15 @@ def _system_profile_root(value: Any) -> Path:
     return root
 
 
-def _system_package(directory: Path, profile_scope: str = "system") -> dict[str, Any]:
+def _system_package(directory: Path, profile_scope: str = "system", *, preview=True) -> dict[str, Any]:
     if profile_scope not in ("system", "user"):
         raise ValueError("管型包来源无效")
     descriptor_path = directory / "profile.json"
     script_path = directory / "profile.py"
-    if not descriptor_path.is_file() or not script_path.is_file():
+    if not descriptor_path.is_file():
         raise ValueError(f"系统管型包不完整：{directory.name}")
     descriptor_bytes = descriptor_path.read_bytes()
-    script_bytes = script_path.read_bytes()
+    script_bytes = script_path.read_bytes() if script_path.is_file() else b""
     if len(descriptor_bytes) > MAX_MEMBER_BYTES or len(script_bytes) > MAX_MEMBER_BYTES:
         raise ValueError(f"系统管型包文件超过 4 MB：{directory.name}")
     try:
@@ -640,28 +803,26 @@ def _system_package(directory: Path, profile_scope: str = "system") -> dict[str,
             f"系统管型 {directory.name} 的 profile.json 或 profile.py 不是有效 UTF-8 内容"
         ) from error
     descriptor, defaults = _validate_descriptor(descriptor_source)
+    if descriptor["profileForm"] == "parametric" and not script_source.strip():
+        raise ValueError("程式管型缺少 profile.py")
     if descriptor["id"] != directory.name:
         raise ValueError(f"系统管型包目录与 id 不一致：{directory.name}")
-    canonical_descriptor = json.dumps(
-        descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-    ).encode("utf-8")
-    digest = "sha256:" + hashlib.sha256(
-        canonical_descriptor + b"\0" + script_source.encode("utf-8"),
-    ).hexdigest()
+    resources = _directory_resources(directory)
+    digest = _package_digest(descriptor, script_source, resources)
     source_file_name = f"{directory.name}/profile.py"
-    preview = _evaluate(
-        descriptor, script_source, defaults, digest, source_file_name,
-    )
+    evaluated = (_evaluate(descriptor, script_source, defaults, digest, source_file_name, resources)
+                 if preview else None)
     source_format = "icax.system-profile" if profile_scope == "system" else "icax.user-profile"
-    preview.update({
+    if evaluated is not None:
+        evaluated.update({
         "profileScope": profile_scope,
         "profileDefinitionId": descriptor["id"],
         "sourceFormat": source_format,
-    })
+        })
     return {
         "schema": PACKAGE_SCHEMA,
         "schemaVersion": PACKAGE_SCHEMA_VERSION,
-        "kind": "parametric-package",
+        "kind": "profile-package",
         "name": _localized_text(descriptor.get("displayName"), "displayName"),
         "sourceFileName": source_file_name,
         "sourceFormat": source_format,
@@ -669,8 +830,9 @@ def _system_package(directory: Path, profile_scope: str = "system") -> dict[str,
         "packageDigest": digest,
         "descriptor": descriptor,
         "scriptSource": script_source,
+        "resources": resources,
         "defaultParameters": defaults,
-        "previewProfile": preview,
+        **({"previewProfile": evaluated} if evaluated is not None else {}),
     }
 
 
@@ -682,7 +844,7 @@ def _find_system_package(root: Path, profile_id: Any, profile_scope: str = "syst
     directory = root / profile_id
     if not directory.is_dir():
         raise ValueError(f"系统管型不存在：{profile_id}")
-    return _system_package(directory, profile_scope)
+    return _system_package(directory, profile_scope, preview=False)
 
 
 def _list_system_packages(root: Path, profile_scope: str = "system") -> list[dict[str, Any]]:
@@ -690,16 +852,57 @@ def _list_system_packages(root: Path, profile_scope: str = "system") -> list[dic
     for directory in sorted(root.iterdir(), key=lambda item: item.name):
         if (not directory.is_dir()
                 or re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", directory.name) is None
-                or not (directory / "profile.json").is_file()
-                or not (directory / "profile.py").is_file()):
+                or not (directory / "profile.json").is_file()):
             continue
-        packages.append(_system_package(directory, profile_scope))
+        try:
+            packages.append(_system_package(directory, profile_scope, preview=True))
+        except Exception as error:
+            packages.append({"id": directory.name, "name": directory.name,
+                             "descriptor": {"id": directory.name},
+                             "profileScope": profile_scope, "available": False,
+                             "error": str(error)})
     return packages
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     del context
     action = str(parameters.get("action", "inspect"))
+    if action in ("recognize", "recognize-system", "recognize-user"):
+        spec = importlib.util.spec_from_file_location("icax_profile_recognition_runtime",
+                                                     Path(__file__).with_name("profile_recognition_runtime.py"))
+        recognition = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(recognition)
+        section = parameters.get("section")
+        tolerance = parameters.get("tolerance", 0.001)
+        if isinstance(tolerance,bool) or not isinstance(tolerance,(int,float)) or not math.isfinite(tolerance) or not 0<tolerance<=1:
+            raise ValueError("识别容差须为 (0, 1] mm 的有限数值")
+        # Validate the input once, rather than reporting it as a failure of every template.
+        recognition.geometry.normalize(section, tolerance)
+        if action == "recognize":
+            packages = [parameters["package"]]
+        else:
+            scope = action.removeprefix("recognize-")
+            root = _system_profile_root(parameters.get("profileRoot"))
+            identifier = parameters.get("profileId")
+            packages = ([_find_system_package(root, identifier, scope)] if identifier is not None
+                        else _list_system_packages(root, scope))
+        results = []
+        runtime = types.SimpleNamespace(_normalize_parameters=_normalize_parameters, evaluate_section=evaluate_section,
+                                        _script_context=_script_context, _evaluate=_evaluate)
+        for package in packages:
+            try:
+                if package.get("available") is False:
+                    raise ValueError(package.get("error", "管型包不可用"))
+                results.append(recognition.recognize(runtime, package, section, tolerance))
+            except recognition.geometry.UnsupportedGeometry as error:
+                results.append({"profileId":package.get("descriptor",{}).get("id"),
+                                "status":"unsupported-geometry","reason":str(error),"candidates":[]})
+            except Exception as error:
+                results.append({"profileId":package.get("descriptor",{}).get("id"),
+                                "status":"error","reason":str(error),"candidates":[]})
+        matches = [r for r in results if r["status"] == "matched"]
+        return {"schema":"icax.profile-recognition","schemaVersion":1,"tolerance":tolerance,
+                "results":results,"matched":bool(matches),"ambiguous":sum(len(r["candidates"]) for r in matches)>1}
     if action == "inspect":
         source_path = parameters.get("sourcePath")
         if not isinstance(source_path, str) or not source_path.strip():
@@ -721,6 +924,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             parameters.get("values", {}),
             package_digest,
             source_file_name,
+            parameters.get("resources"),
         )
         reference = parameters.get("profileRef")
         if (parameters.get("profileScope") == "template" or parameters.get("libraryScope") == "template"
@@ -735,7 +939,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         package = _template_package(parameters, parameters.get("profileId"))
         profile = _evaluate(
             package["descriptor"], package["scriptSource"], parameters.get("values", {}),
-            package["packageDigest"], package["sourceFileName"],
+            package["packageDigest"], package["sourceFileName"], package.get("resources"),
         )
         _stamp_template_profile(profile, _template_identity(package), package)
         return {"profile": profile}
@@ -752,6 +956,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             parameters.get("values", {}),
             package["packageDigest"],
             package["sourceFileName"],
+            package.get("resources"),
         )
         profile.update({
             "profileScope": "system",
@@ -771,6 +976,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             parameters.get("values", {}),
             package["packageDigest"],
             package["sourceFileName"],
+            package.get("resources"),
         )
         profile.update({
             "profileScope": "user",

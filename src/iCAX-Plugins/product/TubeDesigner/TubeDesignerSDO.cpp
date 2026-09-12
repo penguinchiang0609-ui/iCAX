@@ -2545,8 +2545,8 @@ namespace
     constexpr const char* kProductTemplateFeatureID = "product-template";
     constexpr const char* kProductTemplateRecordType = "product-template";
     constexpr const char* kProfileFeatureID = "profile";
-    constexpr const char* kImportedProfileRecordType = "imported-dxf";
-    constexpr const char* kParametricProfileRecordType = "parametric-package";
+    constexpr const char* kImportedProfileRecordType = "fixed-section";
+    constexpr const char* kParametricProfileRecordType = "profile-package";
     constexpr const char* kPunchToolFeatureID = "punch-tool";
     constexpr const char* kFixedPunchToolRecordType = "fixed-geometry";
     constexpr const char* kParametricPunchToolRecordType = "parametric-package";
@@ -2668,8 +2668,11 @@ namespace
             throw std::invalid_argument("unsupported imported tube profile schema");
         }
         const auto _Kind = GetString(Profile_, "kind");
-        if (_Kind != "imported-dxf" && _Kind != "parametric-package")
+        if (_Kind != "fixed-section" && _Kind != "profile-package")
             throw std::invalid_argument("imported tube profile kind is not supported");
+        const auto _Form=GetString(Profile_,"profileForm");
+        if(_Form!="parametric"&&_Form!="fixed")
+            throw std::invalid_argument("profile requires migration: missing profileForm");
         const auto _Width = GetDouble(Profile_, "width", 0.0);
         const auto _Depth = GetDouble(Profile_, "depth", 0.0);
         if (!std::isfinite(_Width) || !std::isfinite(_Depth)
@@ -2825,27 +2828,30 @@ namespace
         return InvokePythonTemplate(ApplicationContext_, _Request);
     }
 
-    void ValidateProfilePackageRecord(const ObjectMap& Package_)
+    void ValidateProfilePackageRecord(const ObjectMap& Package_, bool RequirePreview_ = true)
     {
         if (GetString(Package_, "schema") != "icax.tube-profile-package-record"
             || GetUInt64(Package_, "schemaVersion", 0) != 1
-            || GetString(Package_, "kind") != "parametric-package")
+            || GetString(Package_, "kind") != "profile-package")
         {
             throw std::invalid_argument("unsupported tube profile package schema");
         }
         const auto _Descriptor = GetRequiredObject(Package_, "descriptor");
         if (GetString(_Descriptor, "schema") != "icax.tube-profile-descriptor"
-            || GetUInt64(_Descriptor, "schemaVersion", 0) != 2
+            || GetUInt64(_Descriptor, "schemaVersion", 0) != 3
             || GetString(_Descriptor, "id").empty()
             || GetString(_Descriptor, "version").empty())
         {
             throw std::invalid_argument("tube profile package descriptor is invalid");
         }
-        if (GetString(Package_, "scriptSource").empty())
+        const auto _Form=GetString(_Descriptor,"profileForm");
+        if(_Form!="parametric"&&_Form!="fixed")
+            throw std::invalid_argument("invalid profile form");
+        if (_Form=="parametric" && GetString(Package_, "scriptSource").empty())
             throw std::invalid_argument("tube profile package script is empty");
         (void)GetRequiredObject(Package_, "defaultParameters");
-        const auto _Preview = GetRequiredObject(Package_, "previewProfile");
-        ValidateImportedProfileDefinition(_Preview);
+        if (RequirePreview_)
+            ValidateImportedProfileDefinition(GetRequiredObject(Package_, "previewProfile"));
     }
 
     ObjectMap ImportProfilePackage(
@@ -2868,7 +2874,7 @@ namespace
         const ObjectMap& Package_,
         const ObjectMap& Values_)
     {
-        ValidateProfilePackageRecord(Package_);
+        ValidateProfilePackageRecord(Package_, false);
         ObjectMap _Parameters;
         _Parameters["action"] = std::string("evaluate");
         _Parameters["descriptor"] = GetRequiredObject(Package_, "descriptor");
@@ -2876,6 +2882,8 @@ namespace
         _Parameters["packageDigest"] = GetString(Package_, "packageDigest");
         _Parameters["sourceFileName"] = GetString(Package_, "sourceFileName");
         _Parameters["values"] = Values_;
+        const auto _Resources = Package_.find("resources");
+        if (_Resources != Package_.end()) _Parameters["resources"] = _Resources->second;
         const auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
         auto _Profile = GetRequiredObject(_Result, "profile");
         ValidateImportedProfileDefinition(_Profile);
@@ -2900,7 +2908,8 @@ namespace
             if (!_Value.Is<ObjectMap>())
                 throw std::runtime_error("TubeDesigner system profile catalog contains an invalid package");
             auto _Package = _Value.To<ObjectMap>();
-            ValidateProfilePackageRecord(_Package);
+            if (GetString(_Package, "error").empty())
+                ValidateProfilePackageRecord(_Package, false);
             _ResultPackages.emplace_back(std::move(_Package));
         }
         return _ResultPackages;
@@ -2924,7 +2933,8 @@ namespace
             if (!_Value.Is<ObjectMap>())
                 throw std::runtime_error("TubeDesigner user profile catalog contains an invalid package");
             auto _Package = _Value.To<ObjectMap>();
-            ValidateProfilePackageRecord(_Package);
+            if (GetString(_Package, "error").empty())
+                ValidateProfilePackageRecord(_Package, false);
             _ResultPackages.emplace_back(std::move(_Package));
         }
         return _ResultPackages;
@@ -3386,6 +3396,8 @@ namespace
     {
         auto _Payload = Package_;
         _Payload.erase("scriptSource");
+        _Payload.erase("resources");
+        const bool _Available = GetString(Package_, "error").empty();
         const auto _Descriptor = GetRequiredObject(Package_, "descriptor");
         const auto _ProfileID = GetRequiredText(_Descriptor, "id", 80);
         _Payload["id"] = _ProfileID;
@@ -3397,9 +3409,9 @@ namespace
         _Payload["ownerScope"] = std::string("system");
         _Payload["revision"] = 0ull;
         _Payload["capabilities"] = ObjectMap{
-            { "editParameters", true },
-            { "preview", true },
-            { "export", true },
+            { "editParameters", _Available && GetString(_Descriptor, "profileForm") == "parametric" },
+            { "preview", _Available },
+            { "export", _Available },
             { "rename", false },
             { "delete", false }
         };
@@ -3410,6 +3422,8 @@ namespace
     {
         auto _Payload = Package_;
         _Payload.erase("scriptSource");
+        _Payload.erase("resources");
+        const bool _Available = GetString(Package_, "error").empty();
         const auto _Descriptor = GetRequiredObject(Package_, "descriptor");
         const auto _ProfileID = GetRequiredText(_Descriptor, "id", 80);
         _Payload["id"] = _ProfileID;
@@ -3422,7 +3436,8 @@ namespace
         _Payload["ownerScope"] = std::string("user");
         _Payload["revision"] = 0ull;
         _Payload["capabilities"] = ObjectMap{
-            { "editParameters", true }, { "preview", true }, { "export", true },
+            { "editParameters", _Available && GetString(_Descriptor, "profileForm") == "parametric" },
+            { "preview", _Available }, { "export", _Available },
             { "rename", false }, { "delete", false }
         };
         return _Payload;
@@ -3828,6 +3843,18 @@ namespace
         return _Items;
     }
 
+    iCAX::Interaction::CInvocationResult HandleListSystemProfiles(
+        const iCAX::Interaction::CInvocation&,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        return MakeResponse(Variant(ObjectMap{
+            { "systemProfiles", ListSystemProfileRecords(ApplicationContext_) }
+        }));
+    }
+
     iCAX::Interaction::CInvocationResult HandleListUserData(
         const iCAX::Interaction::CInvocation&,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -4148,6 +4175,57 @@ namespace
         return MakeResponse(Variant(_Response));
     }
 
+    iCAX::Interaction::CInvocationResult HandleRecognizeProfileSection(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        tube::license::Enforce<115, tube::license::Feature::Design>();
+        const auto _Request = DecodeObjectPayload(Request_);
+        const auto _Section = GetRequiredObject(_Request, "section");
+        // Validate the complete material section with the same kernel entry
+        // used by forward generation. No family/ID inference belongs in C++.
+        (void)BuildProfileExtrusion(_Section, 1.0);
+        ObjectMap _Parameters{
+            { "section", _Section },
+            { "tolerance", GetDouble(_Request, "tolerance", 0.001) }
+        };
+        if (_Request.contains("id"))
+        {
+            const auto _RecordID = UuidToString(ParseRequiredUuid(GetRequiredText(_Request, "id"), "id"));
+            const auto _Record = GetUserDataStore(ProductContext_)->Get(
+                kProfileFeatureID, kParametricProfileRecordType, _RecordID);
+            if (!_Record || !_Record->Payload.Is<ObjectMap>())
+                throw std::invalid_argument("管型包记录不存在");
+            _Parameters["action"] = std::string("recognize");
+            _Parameters["package"] = _Record->Payload.To<ObjectMap>();
+        }
+        else
+        {
+            const auto _Scope = GetString(_Request, "scope", "system");
+            if (_Scope != "system" && _Scope != "user")
+                throw std::invalid_argument("管型识别来源必须是 system 或 user");
+            _Parameters["action"] = std::string("recognize-") + _Scope;
+            _Parameters["profileRoot"] = PathToUTF8(_Scope == "system"
+                ? ResolveSystemProfileRoot(ApplicationContext_) : ResolveUserProfileRoot(ApplicationContext_));
+            if (_Request.contains("profileId"))
+                _Parameters["profileId"] = GetRequiredText(_Request, "profileId", 80);
+        }
+        auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
+        // Inverse scripts propose parameters; reconstructed candidate geometry
+        // must also pass native topology validation before leaving the host.
+        auto _Results = _Result.at("results").To<VariantArray>();
+        for (const auto& _Value : _Results)
+        {
+            const auto _Item = _Value.To<ObjectMap>();
+            for (const auto& _Candidate : _Item.at("candidates").To<VariantArray>())
+                ValidateImportedProfileDefinition(GetRequiredObject(_Candidate.To<ObjectMap>(), "profile"));
+        }
+        return MakeResponse(Variant(_Result));
+    }
+
     iCAX::Interaction::CInvocationResult HandleGenerateProfilePreview(
         const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_,
@@ -4321,7 +4399,7 @@ namespace
             ? UuidToString(iCAX::Data::GenerateNewUUID())
             : UuidToString(ParseRequiredUuid(_RequestedID, "id"));
         auto _Payload = GetRequiredObject(_Request, "profile");
-        if (GetString(_Payload, "kind") != "imported-dxf")
+        if (GetString(_Payload, "kind") != "fixed-section")
             throw std::invalid_argument(
                 "SaveImportedProfile only accepts a frozen DXF profile");
         _Payload["name"] = GetRequiredText(_Request, "name", 120);
@@ -5829,13 +5907,89 @@ namespace
         return BRepBuilderAPI_Transform(_Shape,_Center,true).Shape();
     }
 
+    // Extract exact section wires only. No fitter, type ID or profile template
+    // participates in the mould's geometric analysis.
+    ObjectMap PunchTargetSection(const TopoDS_Shape& Base_)
+    {
+        using namespace iCAX::GeometryData;
+        ObjectMap result{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
+            {"status",std::string("unavailable")},{"tolerance",0.001}};
+        try {
+            const auto box=ShapeBounds(Base_);
+            const auto lo=box.at("min").To<VariantArray>(),hi=box.at("max").To<VariantArray>();
+            const double cy=(ToDouble(lo[1],"y")+ToDouble(hi[1],"y"))/2;
+            const double cz=(ToDouble(lo[2],"z")+ToDouble(hi[2],"z"))/2;
+            const auto point=[&](const auto& p){return VariantArray{p.X-cy,p.Y-cz};};
+            const auto direction=[](const auto& p){return VariantArray{p.X,p.Y};};
+            const auto geometry=iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(Base_,"mold-section","",0.001);
+            iCAX::ExtrusionRecognition::CExtrusionRecognitionService service;
+            const auto section=service.ExtractSectionWires(geometry);
+            if(!section.bSuccess)throw std::runtime_error(section.Diagnostics.empty()?"无法提取主管截面":section.Diagnostics.back());
+            VariantArray contours;
+            for(const auto& wire:section.Wires) {
+                VariantArray edges;
+                for(const auto& edge:wire.Edges) {
+                    ObjectMap item{{"start",point(edge.Start)},{"end",point(edge.End)},
+                        {"first",edge.Range.First},{"last",edge.Range.Last},{"reversed",edge.bReversed}};
+                    std::visit([&](const auto& curve) {
+                        using T=std::decay_t<decltype(curve)>;
+                        if constexpr(std::is_same_v<T,Line2>||std::is_same_v<T,Ray2>||std::is_same_v<T,Segment2>) {
+                            item["kind"]=std::string("line");
+                        } else if constexpr(std::is_same_v<T,Circle2>||std::is_same_v<T,Arc2>
+                            ||std::is_same_v<T,Ellipse2>||std::is_same_v<T,EllipseArc2>) {
+                            const auto& basis=[&]() -> const auto& {
+                                if constexpr(std::is_same_v<T,Arc2>||std::is_same_v<T,EllipseArc2>)return curve.Basis;
+                                else return curve;
+                            }();
+                            item["center"]=point(basis.Placement.Location);
+                            item["xAxis"]=direction(basis.Placement.XDirection);
+                            item["yAxis"]=direction(basis.Placement.YDirection);
+                            if constexpr(std::is_same_v<T,Circle2>||std::is_same_v<T,Arc2>) {
+                                item["kind"]=std::string("circleArc");item["radius"]=basis.Radius;
+                            } else {
+                                item["kind"]=std::string("ellipseArc");
+                                item["majorRadius"]=basis.MajorRadius;item["minorRadius"]=basis.MinorRadius;
+                            }
+                            if constexpr(std::is_same_v<T,Arc2>||std::is_same_v<T,EllipseArc2>) {
+                                item["first"]=curve.StartAngle;item["last"]=curve.EndAngle;
+                                item["counterClockwise"]=curve.CounterClockwise;
+                            }
+                        } else if constexpr(std::is_same_v<T,Bezier2>||std::is_same_v<T,BSpline2>||std::is_same_v<T,NURBS2>) {
+                            VariantArray poles;for(const auto& p:curve.Poles)poles.emplace_back(point(p));
+                            item["poles"]=poles;
+                            if constexpr(std::is_same_v<T,Bezier2>)item["kind"]=std::string("bezier");
+                            else {
+                                item["kind"]=std::string(std::is_same_v<T,NURBS2>?"nurbs":"bspline");
+                                item["degree"]=curve.Degree;item["periodic"]=curve.Periodic;
+                                VariantArray knots,mults;for(auto v:curve.Knots)knots.emplace_back(v);
+                                for(auto v:curve.Multiplicities)mults.emplace_back(v);
+                                item["knots"]=knots;item["multiplicities"]=mults;
+                                if constexpr(std::is_same_v<T,NURBS2>){VariantArray weights;for(auto v:curve.Weights)weights.emplace_back(v);item["weights"]=weights;}
+                            }
+                        } else if constexpr(std::is_same_v<T,Polyline2>) {
+                            item["kind"]=std::string("polyline");VariantArray points;
+                            for(const auto& p:curve.Points)points.emplace_back(point(p));item["points"]=points;item["closed"]=curve.Closed;
+                        } else {
+                            throw std::runtime_error("截面含当前传输协议尚未支持的精确曲线，不能用采样折线替代");
+                        }
+                    },edge.Curve);
+                    edges.emplace_back(item);
+                }
+                contours.emplace_back(ObjectMap{{"inner",wire.bInner},{"closed",wire.bClosed},{"edges",edges}});
+            }
+            result["contours"]=contours;result["status"]=std::string("available");
+            result["coordinateSpace"]=std::string("section-centered-yz");
+        } catch(const std::exception& error) {result["reason"]=std::string(error.what());}
+        return result;
+    }
+
     TopoDS_Shape EvaluatePunch(const TopoDS_Shape& Base_, std::vector<SPunchFeature>& Features_,
         SPunchEnds& Ends_, const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_, iCAX::Project::ISceneContext& Scene_,
         const ObjectMap& Original_ = {}, bool Rebased_ = false,
         std::vector<SPunchCut>* PreviewCuts_ = nullptr, SPunchGeometryStatistics* Statistics_ = nullptr,
         SPunchPreviewDiagnostics* PreviewDiagnostics_ = nullptr, bool ToolsOnly_ = false, double NominalWallThickness_ = 0,
-        const VariantArray& UserTools_ = {})
+        const VariantArray& UserTools_ = {}, ObjectMap* TargetProfile_ = nullptr)
     {
         ReportExportProgress(Request_, "punch", 0, 1, "正在运行刀具模板");
         VariantArray _Features;
@@ -5844,6 +5998,9 @@ namespace
             {"action",std::string("prepare")},{"features",_Features},{"ends",PunchEndsSnapshot(Ends_)},{"bounds",ShapeBounds(Base_)},
             {"original",Original_},{"rebased",Rebased_},{"userTools",UserTools_}
         };
+        const auto _TargetProfile=PunchTargetSection(Base_);
+        _PunchParameters["targetSection"]=_TargetProfile;
+        if(TargetProfile_)*TargetProfile_=_TargetProfile;
         const auto _UserMoldRoot = ResolveUserMoldRoot(ApplicationContext_);
         if (!_UserMoldRoot.empty() && std::filesystem::is_directory(_UserMoldRoot))
             _PunchParameters["userToolRoot"] = PathToUTF8(_UserMoldRoot);
@@ -8091,9 +8248,10 @@ namespace
         const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         TopoDS_Shape _Shape;
         std::string _ResultError;
+        ObjectMap _TargetProfile;
         try {
             _Shape = EvaluatePunch(_Base, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
-                _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools);
+                _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools, &_TargetProfile);
         } catch(const std::exception& _Error) {
             // A failed boolean result is not a successful part. Preview alone
             // publishes its current blank/tools so the user can see what failed;
@@ -8114,6 +8272,19 @@ namespace
             {"baseMaterial", ObjectMap{{"url",_BaseMaterial.URL},{"version",_BaseMaterial.nVersion}}},
             {"bounds",ShapeBounds(_HasResultGeometry?_Shape:_Base)},{"baseBounds",ShapeBounds(_Base)},
             {"length",GetDouble(ShapeBounds(_HasResultGeometry?_Shape:_Base),"width",0)}};
+        _Response["targetSection"]=_TargetProfile;
+        VariantArray _SectionAnalyses;
+        for(size_t _Index=0;_Index<_Features.size();++_Index) {
+            const auto& _Data=_Features[_Index].TemplateData;
+            if(!_Data.contains("toolSnapshot"))continue;
+            const auto _Snapshot=GetRequiredObject(_Data,"toolSnapshot");
+            const auto _Context=GetRequiredObject(_Snapshot,"context");
+            if(!_Context.contains("analysis"))continue;
+            _SectionAnalyses.emplace_back(ObjectMap{{"index",static_cast<unsigned long long>(_Index)},
+                {"applicable",true},{"data",_Context.at("analysis")},
+                {"parameters",_Snapshot.at("parameters")}});
+        }
+        _Response["sectionAnalyses"]=_SectionAnalyses;
         if(!_ToolsOnly){_Response["resultValid"]=_ResultValid;_Response["previewComputed"]=_PreviewComputed;}
         if(_HasResultGeometry) {
             const auto _Resource=StorePunchBRep(*Scene_,_PreviewPrefix,"加工预览（未保存）",_Shape,Request_,true);
@@ -10486,6 +10657,7 @@ namespace
             ExposeMethod("GetTemplateDescriptor", &HandleGetTemplateDescriptor);
             ExposeMethod("MachiningData", &HandleMachiningData);
             ExposeMethod("ListUserData", &HandleListUserData);
+            ExposeMethod("ListSystemProfiles", &HandleListSystemProfiles);
             ExposeMethod("ImportProductTemplatePackage", &HandleImportProductTemplatePackage);
             ExposeMethod("CreateProductTemplate", &HandleCreateProductTemplate);
             ExposeMethod("ExportProductTemplatePackage", &HandleExportProductTemplatePackage);
@@ -10506,6 +10678,7 @@ namespace
             ExposeMethod("ImportProfileDxf", &HandleImportProfileDxf);
             ExposeMethod("ImportProfilePackage", &HandleImportProfilePackage);
             ExposeMethod("EvaluateProfilePackage", &HandleEvaluateProfilePackage);
+            ExposeMethod("RecognizeProfileSection", &HandleRecognizeProfileSection);
             ExposeMethod("GenerateProfilePreview", &HandleGenerateProfilePreview);
             ExposeMethod("ExportProfile", &HandleExportProfile);
             ExposeMethod("UpdateProfilePackage", &HandleUpdateProfilePackage);

@@ -1,0 +1,946 @@
+{
+  "schema": "icax.profile-library-coverage",
+  "schemaVersion": 1,
+  "sourceDocument": "管材型材市场管型调研_2026-09-12.md",
+  "templateCount": 49,
+  "dimensionPolicy": "默认值仅为演示输入；不冒充国标规格",
+  "recognitionPolicy": "逆向识别暂停，未将未验收的旧 recognize.py 带入新库",
+  "entries": [
+    {
+      "surveyId": 1,
+      "name": "圆管",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "round"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 2,
+      "name": "圆角方管",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "square-rounded"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 3,
+      "name": "尖角/无倒角方管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "square-sharp"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 4,
+      "name": "圆角矩形管",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "rect"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 5,
+      "name": "尖角/无倒角矩形管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "rect-sharp"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 6,
+      "name": "真椭圆管",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "ellipse"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 7,
+      "name": "平椭圆管",
+      "priority": "P0",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 8,
+      "name": "跑道圆/长圆管",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "racetrack"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 9,
+      "name": "腰型管",
+      "priority": "P0",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 10,
+      "name": "D型管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "d-semicircular"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 11,
+      "name": "半圆管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "d-semicircular"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 12,
+      "name": "扇形/四分之一圆管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 13,
+      "name": "等边三角管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "triangle-equilateral"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 14,
+      "name": "任意三角管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "triangle-scalene"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 15,
+      "name": "直角梯形管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "trapezoid-right"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 16,
+      "name": "普通/等腰梯形管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "trapezoid-isosceles"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 17,
+      "name": "菱形/平行四边形管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "parallelogram-tube"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 18,
+      "name": "五边形管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "pentagonal-tube"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 19,
+      "name": "六边形管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "hexagonal-tube"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 20,
+      "name": "八边形管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "octagonal-tube"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 21,
+      "name": "内外六角管",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "hexagonal-tube"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 22,
+      "name": "外圆内六角管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "round-hex-bore"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 23,
+      "name": "外六角内圆管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "hex-round-bore"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 24,
+      "name": "水滴/泪滴管",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 25,
+      "name": "马蹄圆/拱形管",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 26,
+      "name": "P型管：台阶闭口",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 27,
+      "name": "P型管：空心主体带单翼",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 28,
+      "name": "8字型/B型管",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 29,
+      "name": "三叶/梅花管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 30,
+      "name": "星形管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 31,
+      "name": "柠檬形管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 32,
+      "name": "蘑菇形管",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 33,
+      "name": "面包形管",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 34,
+      "name": "元宝形管",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 35,
+      "name": "沙漏/驾驶室型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 36,
+      "name": "凹槽/内凹异型管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 37,
+      "name": "凸台/台阶异型管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 38,
+      "name": "带翼/带安装边闭口型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 39,
+      "name": "双腔管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "rect-double-cell"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 40,
+      "name": "多腔/蜂窝型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 41,
+      "name": "工业铝/T槽型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 42,
+      "name": "门窗型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 43,
+      "name": "光伏边框/导轨型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 44,
+      "name": "电池托盘/车体多腔型材",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 45,
+      "name": "任意单腔异型管",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 46,
+      "name": "任意多腔/混合型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 47,
+      "name": "纵向开缝圆管",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "round-open-seam"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 48,
+      "name": "咬口方管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 49,
+      "name": "纵向开槽管",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 50,
+      "name": "热轧等边角钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "angle-hot-equal"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 51,
+      "name": "热轧不等边角钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "angle-hot-unequal"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 52,
+      "name": "不等边不等厚角钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "angle-hot-unequal-thickness"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 53,
+      "name": "冷弯等边角钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "angle-cold-equal"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 54,
+      "name": "冷弯不等边角钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "angle-cold-unequal"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 55,
+      "name": "卷边角钢",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 56,
+      "name": "冷拔/精密冷轧尖角角钢",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "angle-precision"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 57,
+      "name": "板焊/激光焊角钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "angle-welded"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 58,
+      "name": "热轧斜腿槽钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-hot-tapered"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 59,
+      "name": "热轧平行翼缘槽钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-hot-parallel"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 60,
+      "name": "冷弯等边U型钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-cold-u"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 61,
+      "name": "冷弯不等边U型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-cold-unequal"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 62,
+      "name": "C型钢：无卷边",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-cold-c"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 63,
+      "name": "内卷边C型钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-lipped-inward"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 64,
+      "name": "外卷边C型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-lipped-outward"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 65,
+      "name": "多卷边C/货架立柱",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 66,
+      "name": "板焊槽钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "channel-welded"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 67,
+      "name": "Z型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "z-cold"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 68,
+      "name": "卷边Z型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "z-cold-lipped"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 69,
+      "name": "Sigma型钢",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 70,
+      "name": "冷弯帽型/Ω型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "omega-cold"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 71,
+      "name": "热轧帽型钢",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 72,
+      "name": "光伏支架开口型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 73,
+      "name": "电缆桥架/线槽型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 74,
+      "name": "门窗开口型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 75,
+      "name": "任意开口异型材",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 76,
+      "name": "热轧斜翼缘工字钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "i-hot-tapered"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 77,
+      "name": "平行翼缘I型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "i-hot-parallel"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 78,
+      "name": "热轧H型钢",
+      "priority": "P0",
+      "status": "parametric-variant",
+      "templateIds": [
+        "h-hot"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 79,
+      "name": "焊接H型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "h-welded"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 80,
+      "name": "剖分T型钢",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "t-split"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 81,
+      "name": "船用热轧T型钢",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 82,
+      "name": "焊接T型钢",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "t-welded"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 83,
+      "name": "热轧球扁钢",
+      "priority": "P1",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 84,
+      "name": "双球头球扁钢",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 85,
+      "name": "扁钢/扁条",
+      "priority": "P1",
+      "status": "parametric-variant",
+      "templateIds": [
+        "flat-bar"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 86,
+      "name": "U肋/闭口梯形肋",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 87,
+      "name": "板焊箱形型材/箱柱",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 88,
+      "name": "钢轨/铁路轨型材",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 89,
+      "name": "起重机轨",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 90,
+      "name": "电梯导轨/T形导轨",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 91,
+      "name": "船用槽/特殊加强型材",
+      "priority": "P2",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 92,
+      "name": "圆棒/圆钢",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "round-bar"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 93,
+      "name": "方棒/方钢",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "square-bar"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 94,
+      "name": "矩形棒/实心扁条",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "flat-bar"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 95,
+      "name": "六角棒",
+      "priority": "P2",
+      "status": "parametric-variant",
+      "templateIds": [
+        "hexagonal-bar"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 96,
+      "name": "八角棒",
+      "priority": "P3",
+      "status": "parametric-variant",
+      "templateIds": [
+        "octagonal-bar"
+      ],
+      "note": "参数化构造变体已实现；不是全标准规格覆盖。"
+    },
+    {
+      "surveyId": 97,
+      "name": "半圆棒/键钢/异型实心条",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 98,
+      "name": "任意实心异型材",
+      "priority": "P3",
+      "status": "awaiting-section-definition",
+      "templateIds": [],
+      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+    },
+    {
+      "surveyId": 99,
+      "name": "预弯管/弯管",
+      "priority": "P3",
+      "status": "requires-3d-model",
+      "templateIds": [],
+      "note": "不能用固定二维截面沿直线拉伸替代。"
+    },
+    {
+      "surveyId": 100,
+      "name": "锥管/变径管",
+      "priority": "P3",
+      "status": "requires-3d-model",
+      "templateIds": [],
+      "note": "不能用固定二维截面沿直线拉伸替代。"
+    },
+    {
+      "surveyId": 101,
+      "name": "任意变截面型材",
+      "priority": "P3",
+      "status": "requires-3d-model",
+      "templateIds": [],
+      "note": "不能用固定二维截面沿直线拉伸替代。"
+    },
+    {
+      "surveyId": 102,
+      "name": "扭转型材",
+      "priority": "P3",
+      "status": "requires-3d-model",
+      "templateIds": [],
+      "note": "不能用固定二维截面沿直线拉伸替代。"
+    },
+    {
+      "surveyId": 103,
+      "name": "胀形/缩口/压扁管件",
+      "priority": "P3",
+      "status": "requires-3d-model",
+      "templateIds": [],
+      "note": "不能用固定二维截面沿直线拉伸替代。"
+    },
+    {
+      "surveyId": 104,
+      "name": "焊接组合型材/预制构件",
+      "priority": "P3",
+      "status": "requires-3d-model",
+      "templateIds": [],
+      "note": "不能用固定二维截面沿直线拉伸替代。"
+    }
+  ]
+}

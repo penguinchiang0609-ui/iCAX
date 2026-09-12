@@ -142,11 +142,20 @@ def _ellipse_arc(writer: _Writer, segment: dict[str, Any]) -> None:
 
 
 def _spline(writer: _Writer, segment: dict[str, Any], bezier: bool = False) -> None:
+    if not bezier and (segment.get("periodic") or "startParameter" in segment or "endParameter" in segment):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("icax_export_section_geometry",
+                                                     Path(__file__).with_name("section_geometry.py"))
+        geometry = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(geometry)
+        for span in geometry.spline_bezier_spans(segment):
+            _spline(writer, span, True)
+        return
     points = [_point(value, "spline.controlPoints") for value in segment.get("controlPoints", [])]
     if bezier:
         degree = len(points) - 1
         knots = [0.0] * (degree + 1) + [1.0] * (degree + 1)
-        weights: list[float] = []
+        weights = [_number(value, "spline.weights") for value in segment.get("weights", [])]
         periodic = False
     else:
         degree = int(segment.get("degree", 0))
@@ -158,6 +167,8 @@ def _spline(writer: _Writer, segment: dict[str, Any], bezier: bool = False) -> N
         periodic = bool(segment.get("periodic", False))
     if degree < 1 or len(points) < degree + 1 or len(knots) < 2:
         raise ValueError("样条曲线数据不完整")
+    if weights and (len(weights) != len(points) or any(value <= 0 for value in weights)):
+        raise ValueError("样条权重必须与控制点数量一致且全部为正数")
     flags = 8 | (3 if periodic else 0) | (4 if weights else 0)
     pairs: list[tuple[int, Any]] = [
         (70, flags), (71, degree), (72, len(knots)), (73, len(points)), (74, 0),

@@ -25,9 +25,8 @@ const TYPES = [
 ];
 const CATEGORIES = [
   ["all", "全部类别"],
-  ["hole", "孔型"],
+  ["hole", "冲孔"],
   ["slot", "槽口"],
-  ["branch", "支管"],
   ["end", "端面"],
 ];
 
@@ -78,7 +77,7 @@ function categoryOf(tool) {
   // 腰形孔是贯穿孔型，即使历史目录把它标成“槽口”，在资源库中也
   // 应与圆孔、方孔等孔型归在一起；真正的槽口是 V 槽、缺口类切削。
   if (tool?.id === "slot" || raw.includes("腰形孔") || raw.includes("腰圆孔")) return "hole";
-  if (raw.includes("支管") || raw.includes("branch") || tool?.id === "branch-profile") return "branch";
+  if (raw.includes("支管") || raw.includes("branch")) return "hole";
   if (raw.includes("端") || raw.includes("end") || tool?.target === "end") return "end";
   if (raw.includes("槽") || raw.includes("slot") || raw.includes("notch")) return "slot";
   return "hole";
@@ -165,6 +164,28 @@ function targetLabel(tool) {
   return "管壁";
 }
 
+// Geometry definitions belong to the library; placement, wall selection and
+// machine-specific cutting settings belong to operations, not mould parameters.
+function renderMachiningNotes(tool) {
+  const category = categoryOf(tool);
+  const notes = category === "slot" ? [
+    "缺口切除与折弯成形是两件事。留底、刀口圆角不等于折弯内半径；K 因子补偿也不代表已验证成形或闭合干涉。",
+    "槽口是否适用应由实际截面分析决定，不能按管型名称判断；薄壁、开口和多腔截面不能仅凭外包尺寸套用。",
+  ] : category === "end" ? [
+    "端面截交用于切除材料，不包含扩口、缩口、压扁或翻边等塑性成形。",
+    "使用时需明确起止端、保留侧及最长点／最短点／中心尺寸基准；斜切角与焊接坡口角不能混用。",
+  ] : [
+    "孔型尺寸描述冲头截面，不是凹模开口，也不是曲面展开后的孔宽；固定方向扫掠与展开面轮廓不能互换。",
+    "近壁、远壁、贯穿及阵列由使用记录定义。同轴对穿应共用一条轴线，偏心斜孔不能用两个相差 180° 的独立孔替代。",
+  ];
+  if (tool?.requiresSection) notes.push("相贯轮廓由配合截面及相对姿态确定；装配间隙、焊接坡口与激光割缝是不同参数。");
+  return `<section class="tube-tool-library-note" data-tool-machining-notes><strong>几何与加工边界</strong>
+    ${tool.description ? `<p>${escapeText(localizedText(tool.description))}</p>` : ""}
+    ${notes.map((note) => `<p>${escapeText(note)}</p>`).join("")}
+    <p>当前为几何预览，不是激光工艺合格结论。冲压间隙不能作为激光割缝补偿；最小孔、背壁挂渣和热变形需按设备、材料与壁厚试切验证。</p>
+  </section>`;
+}
+
 function toolParameterValues(view, tool) {
   const state = toolLibraryState(view);
   const key = String(tool?.libraryKey ?? keyOf(tool));
@@ -184,7 +205,7 @@ function toolParameterVisible(definition, values) {
 
 const FALLBACK_TUBE_PROFILE = {
   id: "round", name: "圆管", libraryScope: "system", profileScope: "system",
-  profileType: "parametric-package", specification: "圆管 · 40 × 2",
+  profileType: "profile-package", profileForm: "parametric", specification: "圆管 · 40 × 2",
   defaultParameters: { width: 40, wallThickness: 2 },
   descriptor: { parameters: [
     { key: "width", displayName: "外径", valueType: "number", defaultValue: 40, min: 1, step: 1, unit: "mm" },
@@ -292,7 +313,7 @@ function renderToolIllustration(tool) {
   if (id === "end-key-joint") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v28H8V27h16v-6H8Z" /></svg>`;
   if (id === "end-miter") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v28H8Z M8 38 40 10" /></svg>`;
   if (id === "end-square") return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="9" width="30" height="30" rx="1" /></svg>`;
-  if (category === "branch") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 38 V14 M24 14 C24 8 39 8 39 14 V38" /></svg>`;
+  if (tool?.requiresSection && tool?.target === "part") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 38 V14 M24 14 C24 8 39 8 39 14 V38" /></svg>`;
   if (category === "end") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 10 H38 V38 H10 Z M10 24 H38" /></svg>`;
   return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 24 H38 M24 10 V38" /></svg>`;
 }
@@ -443,7 +464,8 @@ export function renderToolLibraryRightPane(_context, view) {
         ${branchTool ? renderToolTubeSection(view, "branch") : programmatic && parameters.length ? `<div class="tube-tool-library-mold-parameters"><header><strong>模具参数</strong><span>修改后自动更新场景</span></header><div class="tube-tool-library-parameter-grid">${parameters.map((definition) => renderToolParameterInput(view, tool, definition)).join("")}</div></div>` : `<div class="tube-tool-library-fixed-card"><strong>固定截面</strong><span>定式模具只保存一个闭合截面，可由 DXF 导入；当前参数由模具定义固定。</span></div>`}
         ${toolDiagram}
       </section>
-      <section class="tube-tool-library-note"><strong>${programmatic ? "程式模具" : "定式模具"}</strong><span>${programmatic ? "由模具自带参数程式生成截面，再统一拉伸成实体。" : "由固定闭合截面统一拉伸成实体。"} 位置、姿态和阵列由使用它的业务单独设置。</span></section>
+      ${renderMachiningNotes(tool)}
+      <section class="tube-tool-library-note"><strong>${programmatic ? "程式模具" : "定式模具"}</strong><span>${programmatic ? "由模具程式生成刀具截面或实体，按实际目标几何使用。" : "由固定闭合截面统一拉伸成实体。"} 位置、姿态和阵列由使用它的业务单独设置。</span></section>
       <p class="tube-tool-library-provenance">模具库只管理模具定义；冲孔、三维绘制和产品拆单各自保存自己的模具引用、定位、姿态和阵列记录。</p>
     </div>
   </div>`;

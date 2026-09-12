@@ -455,6 +455,7 @@ export class ThreeRenderViewport {
         materialId: String(data.material?.url ?? "").trim(),
         geometryKind: Number(data.geometryKind ?? 1),
         renderClass: Number(data.renderClass ?? 1),
+        renderOrder: Number.isFinite(Number(data.renderOrder)) ? Number(data.renderOrder) : 0,
         flags,
         layerMask: Number(data.layerMask ?? RenderLayers.default) >>> 0,
       };
@@ -1439,6 +1440,9 @@ export class ThreeRenderViewport {
 
     this.#applyObjectVisibility(object, instance);
     object.userData.instance = instance;
+    // Explicit ordering is useful for overlapping transparent preview layers.
+    // Reset on every upsert as an entity can return to ordinary scene rendering.
+    object.renderOrder = Number.isFinite(instance.renderOrder) ? instance.renderOrder : 0;
     object.matrixAutoUpdate = false;
     this.#refreshObjectMaterial(object, instance);
     const transform = this.transformPayloads.get(instance.transformId);

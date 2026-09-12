@@ -24,113 +24,17 @@ def _arc_support(center, a, b, start, end, direction):
 
 
 def _spline_support(segment, direction):
-    """Extrema of a single clamped, degree 1..3 rational Bezier span.
-
-    Imported DXF ellipses use four clamped rational quadratic spans. Preserve
-    those exact curves and solve their projected derivative, not a polyline.
-    Multi-span/periodic and higher-degree splines need a separate exact solver.
-    """
-    unsupported = "此样条暂不支持凸口自动定位；支持单段夹持的一至三次 B 样条 / NURBS（含 DXF 椭圆）"
-    degree, points = segment.get("degree"), segment.get("controlPoints")
-    if degree not in (1, 2, 3) or not isinstance(points, list) or len(points) != degree+1 or segment.get("periodic", False):
-        raise ValueError(unsupported)
-    if any(not isinstance(p, (list, tuple)) or len(p) != 2 or
-           any(not isinstance(x, (int, float)) or not math.isfinite(x) for x in p) for p in points):
-        raise ValueError("凸口样条控制点必须是有效二维坐标")
-    knots = segment.get("knots", [])
-    if not isinstance(knots, list) or not knots or any(not isinstance(x, (int, float)) or not math.isfinite(x) for x in knots):
-        raise ValueError(unsupported)
-    if "multiplicities" in segment:
-        valid_knots = len(knots) == 2 and segment["multiplicities"] == [degree+1, degree+1]
-    else:
-        valid_knots = len(knots) == 2*(degree+1) and all(x == knots[0] for x in knots[:degree+1]) and all(x == knots[-1] for x in knots[degree+1:])
-    if not valid_knots or knots[-1] <= knots[0]:
-        raise ValueError(unsupported)
-    if ("startParameter" in segment) != ("endParameter" in segment):
-        raise ValueError("凸口样条须同时提供起止参数")
-    start, end = segment.get("startParameter", knots[0]), segment.get("endParameter", knots[-1])
-    if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in (start, end)) or not knots[0] <= start < end <= knots[-1]:
-        raise ValueError("凸口样条参数范围必须在当前夹持段内递增")
-    start, end = (start-knots[0])/(knots[-1]-knots[0]), (end-knots[0])/(knots[-1]-knots[0])
-    weights = segment.get("weights") if segment["kind"] == "nurbs" else [1.0]*(degree+1)
-    if not isinstance(weights, list) or len(weights) != len(points) or any(not isinstance(w, (int, float)) or not math.isfinite(w) or w <= 0 for w in weights):
-        raise ValueError("凸口有理样条需要与控制点数量一致的正有限权重")
-    if segment["kind"] == "bspline" and "weights" in segment:
-        raise ValueError("带权样条须使用 NURBS 类型")
-    weights = [w/max(weights) for w in weights]
-    # Translation has no effect on derivative roots. Subtract in coordinates
-    # first, avoiding cancellation between large absolute N'W and NW' terms.
-    origin = sum(points[0][i]*direction[i] for i in range(2))
-    values = [sum((p[i]-points[0][i])*direction[i] for i in range(2)) for p in points]
-
-    def power(bernstein):
-        result = [0.0]*(degree+1)
-        for i, value in enumerate(bernstein):
-            for k in range(i, degree+1):
-                result[k] += value*math.comb(degree, i)*math.comb(degree-i, k-i)*(-1)**(k-i)
-        return result
-
-    def derivative(p):
-        return [i*p[i] for i in range(1, len(p))]
-
-    def multiply(a, b):
-        result = [0.0]*(len(a)+len(b)-1)
-        for i, x in enumerate(a):
-            for j, y in enumerate(b):
-                result[i+j] += x*y
-        return result
-
-    def evaluate(p, t):
-        value = 0.0
-        for coefficient in reversed(p):
-            value = value*t+coefficient
-        return value
-
-    def roots(p, lo, hi):
-        scale = max((abs(x) for x in p), default=0)
-        if scale == 0:
-            return []
-        p = [x/scale for x in p]
-        while len(p) > 1 and abs(p[-1]) < 2e-14:
-            p.pop()
-        if len(p) <= 1:
-            return []
-        if len(p) == 2:
-            root = -p[0]/p[1]
-            return [root] if lo <= root <= hi else []
-        # Derivative roots partition the polynomial into monotone intervals;
-        # bisection isolates every sign-changing root without fixed sampling.
-        partitions = [lo]+roots(derivative(p), lo, hi)+[hi]
-        result = [t for t in partitions if abs(evaluate(p, t)) <= 2e-12]
-        for left, right in zip(partitions, partitions[1:]):
-            left_value, right_value = evaluate(p, left), evaluate(p, right)
-            if left_value*right_value >= 0:
-                continue
-            for _ in range(64):
-                middle = (left+right)/2
-                value = evaluate(p, middle)
-                if left_value*value <= 0:
-                    right = middle
-                else:
-                    left, left_value = middle, value
-            result.append((left+right)/2)
-        return sorted(set(result))
-
-    numerator = power([v*w for v, w in zip(values, weights)])
-    denominator = power(weights)
-    a, b = multiply(derivative(numerator), denominator), multiply(numerator, derivative(denominator))
-    stationary = roots([x-y for x, y in zip(a, b)], start, end)
-
-    def projected(t):
-        # Positive-weight homogeneous de Casteljau avoids denominator
-        # cancellation near a clamped endpoint during final evaluation.
-        pairs = [[v*w, w] for v, w in zip(values, weights)]
-        while len(pairs) > 1:
-            pairs = [[(1-t)*a[k]+t*b[k] for k in range(2)] for a, b in zip(pairs, pairs[1:])]
-        return origin+pairs[0][0]/pairs[0][1]
-
-    extrema = [projected(t) for t in [start, end]+stationary]
-    return min(extrema), max(extrema)
+    # The host injects the same geometry queries for every mould. Standalone
+    # execution uses that implementation too, rather than a second solver.
+    queries = globals().get("section_geometry")
+    if queries is None:
+        import importlib.util
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "_shared" / "section_geometry.py"
+        spec = importlib.util.spec_from_file_location("icax_section_queries", path)
+        queries = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(queries)
+    return queries.spline_support(segment, direction)
 
 
 def _support(contour, direction):
@@ -162,7 +66,7 @@ def _support(contour, direction):
                     [segment["majorRadius"]*cr,segment["majorRadius"]*sr],
                     [-segment["minorRadius"]*sr,segment["minorRadius"]*cr],
                     segment["startAngle"],segment["endAngle"],direction))
-            elif sk in ("bspline", "nurbs"):
+            elif sk in ("bezier", "bspline", "nurbs"):
                 ranges.append(_spline_support(segment, direction))
             elif sk == "arc":
                 p0, pm, p1 = (segment[key] for key in ("start","middle","end"))

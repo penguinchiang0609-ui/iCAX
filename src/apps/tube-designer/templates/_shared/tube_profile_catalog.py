@@ -15,15 +15,92 @@ from typing import Any
 PROFILE_SCHEMA = "icax.tube-profile"
 PROFILE_SCHEMA_VERSION = 2
 DESCRIPTOR_SCHEMA = "icax.tube-profile-descriptor"
-DESCRIPTOR_SCHEMA_VERSION = 2
+DESCRIPTOR_SCHEMA_VERSION = 3
 PROFILE_ROOT = Path(__file__).resolve().parent.parent / "profile"
+
+
+def _offset_outer_contour(contour, distance):
+    """Public-layer machining envelope; no template callback or parameter mutation.
+
+    Analytic offsets for convex line/circle-arc boundaries. Other boundaries
+    must use a geometry-kernel offset rather than a silently approximated shape.
+    Inner contours are deliberately unchanged by this clearance operation.
+    """
+    c = copy.deepcopy(contour)
+    kind = c["kind"]
+    if kind == "circle":
+        c["radius"] += distance
+        if c["radius"] <= 0: raise ValueError("间隙偏置使圆半径失效")
+        return c
+    if kind in ("roundedRectangle", "capsule"):
+        c["width"] += 2*distance; c["height"] += 2*distance
+        if min(c["width"],c["height"]) <= 0: raise ValueError("间隙偏置使截面失效")
+        if kind == "roundedRectangle":
+            # A sharp corner uses a miter; rounded corners remain concentric.
+            c["radius"] = c.get("radius",0)+distance if c.get("radius",0)>0 else 0
+            if c["radius"]<0: raise ValueError("间隙偏置超过圆角半径")
+        return c
+    if kind == "polygon":
+        points=c["points"]
+        edges=[{"kind":"line","start":a,"end":b} for a,b in zip(points,points[1:]+points[:1])]
+    elif kind == "path": edges=c["segments"]
+    else: raise ValueError("该轮廓的加工间隙需要几何内核偏置，不由模板重新计算")
+    points=[]
+    for e in edges:
+        if e["kind"] not in ("line","arc"): raise ValueError("此曲线的间隙需要几何内核偏置")
+        points.append(e["start"])
+        if e["kind"]=="arc": points.append(e["middle"])
+    area=sum(a[0]*b[1]-a[1]*b[0] for a,b in zip(points,points[1:]+points[:1]))
+    if abs(area)<1e-12: raise ValueError("间隙轮廓退化")
+    sign=1 if area>0 else -1
+    for i,b in enumerate(points):
+        a=points[i-1];d=points[(i+1)%len(points)]
+        if sign*((b[0]-a[0])*(d[1]-b[1])-(b[1]-a[1])*(d[0]-b[0])) < -1e-8:
+            raise ValueError("非凸轮廓的间隙需要几何内核偏置")
+    shifted=[]
+    for e in edges:
+        n=copy.deepcopy(e);a=e["start"];b=e["end"]
+        if e["kind"]=="line":
+            dx=b[0]-a[0];dy=b[1]-a[1];length=math.hypot(dx,dy)
+            if length<=1e-12: raise ValueError("间隙轮廓含退化边")
+            delta=[sign*distance*dy/length,-sign*distance*dx/length]
+            for key in ("start","end"): n[key]=[e[key][i]+delta[i] for i in (0,1)]
+        else:
+            m=e["middle"];x,y=m[0]-a[0],m[1]-a[1];u,v=b[0]-a[0],b[1]-a[1]
+            den=2*(x*v-y*u)
+            if abs(den)<1e-12: raise ValueError("间隙轮廓含退化圆弧")
+            center=[a[0]+(v*(x*x+y*y)-y*(u*u+v*v))/den,a[1]+(x*(u*u+v*v)-u*(x*x+y*y))/den]
+            radius=math.dist(a,center);new_radius=radius+distance
+            if new_radius<=0: raise ValueError("间隙偏置超过圆弧半径")
+            for key in ("start","middle","end"):
+                n[key]=[center[i]+(e[key][i]-center[i])*new_radius/radius for i in (0,1)]
+        shifted.append(n)
+    for i,right in enumerate(shifted):
+        left=shifted[i-1]
+        if left["kind"]==right["kind"]=="line":
+            a=left["start"];b=right["start"]
+            u=[left["end"][j]-a[j] for j in (0,1)];v=[right["end"][j]-b[j] for j in (0,1)]
+            den=u[0]*v[1]-u[1]*v[0]
+            if abs(den)>1e-12:
+                t=((b[0]-a[0])*v[1]-(b[1]-a[1])*v[0])/den
+                left["end"]=right["start"]=[a[j]+t*u[j] for j in (0,1)]
+        if math.dist(left["end"],right["start"])>1e-7:
+            raise ValueError("非相切曲线接头的间隙需要几何内核偏置")
+    return {"kind":"path","closed":True,"segments":shifted}
 
 
 def _swap_contour_axes(contour: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(contour)
     kind = result.get("kind")
+    if "center" in result:
+        result["center"] = list(reversed(result["center"]))
     if kind in ("roundedRectangle", "ellipse", "capsule"):
-        result["width"], result["height"] = result["height"], result["width"]
+        if "width" in result and "height" in result:
+            result["width"], result["height"] = result["height"], result["width"]
+        if kind == "ellipse":
+            if "radiusX" in result and "radiusY" in result:
+                result["radiusX"],result["radiusY"] = result["radiusY"],result["radiusX"]
+            result["rotation"] = -result.get("rotation",0)
         return result
     if kind == "polygon":
         result["points"] = [[point[1], point[0]] for point in result.get("points", [])]
@@ -31,13 +108,18 @@ def _swap_contour_axes(contour: dict[str, Any]) -> dict[str, Any]:
     if kind != "path":
         return result
     for segment in result.get("segments", []):
+        if segment.get("kind") == "ellipseArc":
+            # Reflection exchanges axes and reverses the angular parameter.
+            segment["rotation"] = math.pi / 2 - segment.get("rotation", 0.0)
+            segment["startAngle"], segment["endAngle"] = -segment["startAngle"], -segment["endAngle"]
         for key in ("start", "middle", "end", "center"):
             point = segment.get(key)
             if isinstance(point, list) and len(point) == 2:
                 segment[key] = [point[1], point[0]]
-        points = segment.get("controlPoints")
-        if isinstance(points, list):
-            segment["controlPoints"] = [[point[1], point[0]] for point in points]
+        for key in ("controlPoints", "poles"):
+            points = segment.get(key)
+            if isinstance(points, list):
+                segment[key] = [[point[1], point[0]] for point in points]
     return result
 
 
@@ -70,7 +152,7 @@ def _parameter_values(
     source_overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     definitions = descriptor.get("parameters")
-    if not isinstance(definitions, list) or not definitions:
+    if not isinstance(definitions, list) or (not definitions and descriptor.get("profileForm") != "fixed"):
         raise ValueError(f"管型包 {descriptor['id']} 必须声明 parameters")
     result: dict[str, Any] = {}
     for index, definition in enumerate(definitions):
@@ -106,38 +188,37 @@ def _parameter_values(
     return result
 
 
+def _definition_runtime():
+    path = Path(__file__).with_name("profile_package_runtime.py")
+    spec = importlib.util.spec_from_file_location("icax_profile_definition_runtime", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _load_package(profile_id: str) -> tuple[dict[str, Any], Any]:
+    from types import SimpleNamespace
     if re.fullmatch(r"[a-z][a-z0-9_-]*", profile_id) is None:
         raise ValueError(f"管型 ID 无效：{profile_id}")
     package_root = PROFILE_ROOT / profile_id
-    descriptor_path = package_root / "profile.json"
-    script_path = package_root / "profile.py"
-    if not descriptor_path.is_file() or not script_path.is_file():
-        raise ValueError(f"管型包不存在或不完整：{profile_id}")
-    descriptor_bytes = descriptor_path.read_bytes()
-    script_bytes = script_path.read_bytes()
-    descriptor = json.loads(descriptor_bytes.decode("utf-8"))
-    if descriptor.get("schema") != DESCRIPTOR_SCHEMA:
-        raise ValueError(f"管型包 {profile_id} 的 schema 不受支持")
-    if descriptor.get("schemaVersion") != DESCRIPTOR_SCHEMA_VERSION:
-        raise ValueError(f"管型包 {profile_id} 的 schemaVersion 不受支持")
-    if descriptor.get("id") != profile_id:
-        raise ValueError(f"管型包目录与 id 不一致：{profile_id}")
-    digest = hashlib.sha256(descriptor_bytes + b"\0" + script_bytes).hexdigest()[:16]
-    module_name = f"icax_tube_profile_{profile_id}_{digest}"
-    module = sys.modules.get(module_name)
-    if module is None:
-        spec = importlib.util.spec_from_file_location(module_name, script_path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"无法加载管型脚本：{script_path}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-    if not callable(getattr(module, "build", None)):
-        raise ValueError(f"管型包 {profile_id} 缺少 build(parameters)")
-    if not callable(getattr(module, "contours", None)):
-        raise ValueError(f"管型包 {profile_id} 缺少 contours(profile, ...)")
-    return descriptor, module
+    runtime = _definition_runtime()
+    package = runtime._system_package(package_root, preview=False)
+    descriptor = package["descriptor"]
+    script = package["scriptSource"]
+    digest = package["packageDigest"]
+    def build(values):
+        parameters = runtime._normalize_parameters(descriptor, values)
+        built, contours = runtime.evaluate_section(descriptor, script, parameters, digest, package.get("resources"))
+        return {**built, "_resolvedContours": contours,
+                **{key:copy.deepcopy(descriptor[key]) for key in ("provenance","manufacturing") if key in descriptor}}
+    def contours(profile, *, clearance=0.0, swap_axes=False):
+        if not clearance:
+            result = copy.deepcopy(profile["_resolvedContours"])
+            return [_swap_contour_axes(c) for c in result] if swap_axes else result
+        result = copy.deepcopy(profile["_resolvedContours"])
+        result[0] = _offset_outer_contour(result[0], clearance)
+        return [_swap_contour_axes(c) for c in result] if swap_axes else result
+    return descriptor, SimpleNamespace(build=build, contours=contours)
 
 
 @dataclass(frozen=True)
@@ -165,6 +246,8 @@ class Profile:
         _number(clearance, "clearance")
         if self._fixed_contours is not None:
             result = copy.deepcopy(self._fixed_contours)
+            if clearance:
+                result[0] = _offset_outer_contour(result[0], clearance)
             if swap_axes:
                 result = [_swap_contour_axes(contour) for contour in result]
         else:
@@ -191,6 +274,7 @@ class Profile:
             "id": self.profile_id,
             "packageVersion": self.package_version,
             "kind": self.kind,
+            "profileForm": self._profile_data["profileForm"],
             "width": self.width,
             "depth": self.depth,
             "wallThickness": self.wall,
@@ -203,6 +287,9 @@ class Profile:
             # editors do not need to re-evaluate the profile package.
             "contours": self.contours(),
         }
+        for key in ("provenance", "manufacturing", "geometrySource", "sourceRevision", "manufacturingRoute", "sectionModel"):
+            if key in self._profile_data:
+                result[key] = copy.deepcopy(self._profile_data[key])
         # A parametric polygon's side/point count and star mode are part of its
         # manufacturing section identity. They are also needed to decide whether
         # a 180-degree nesting orientation maps the stock section onto itself.
@@ -212,14 +299,14 @@ class Profile:
                 for key in ("shapeMode", "sideCount", "starInnerRatio")
                 if key in self._profile_data
             }
-        if self.kind in ("imported-dxf", "parametric-package"):
+        if self.kind in ("fixed-section", "profile-package"):
             result["sourceFormat"] = (
-                "cad.dxf" if self.kind == "imported-dxf" else "icax.profile-package"
+                "cad.dxf" if self.kind == "fixed-section" else "icax.profile-package"
             )
             result["sourceFileName"] = self._source_file_name
             result["contentDigest"] = self._content_digest
-            result["frozenGeometry"] = self.kind == "imported-dxf"
-            result["editableParameters"] = self.kind == "parametric-package"
+            result["frozenGeometry"] = result["profileForm"] == "fixed"
+            result["editableParameters"] = result["profileForm"] == "parametric"
         return result
 
 
@@ -237,8 +324,10 @@ def _imported_profile(parameters: dict[str, Any], prefix: str) -> Profile | None
     kind = definition.get("kind")
     if (definition.get("schema") != "icax.imported-tube-profile"
             or definition.get("schemaVersion") != 1
-            or kind not in ("imported-dxf", "parametric-package")):
+            or kind not in ("fixed-section", "profile-package")):
         raise ValueError(f"导入管型 {prefix} 的协议不受支持")
+    if definition.get("profileForm") not in ("parametric", "fixed"):
+        raise ValueError("管型缺少明确的 profileForm，请先迁移数据")
     contours = definition.get("contours")
     if not isinstance(contours, list) or not contours:
         raise ValueError(f"导入管型 {prefix} 缺少二维轮廓")
@@ -247,7 +336,7 @@ def _imported_profile(parameters: dict[str, Any], prefix: str) -> Profile | None
             raise ValueError(f"导入管型 {prefix} 的轮廓 {index} 无效")
     digest = str(definition.get("contentDigest", ""))
     display_name = str(definition.get("name", "")).strip() or (
-        "导入 DXF 管型" if kind == "imported-dxf" else "可编辑管型包"
+        "导入 DXF 管型" if kind == "fixed-section" else "可编辑管型包"
     )
     return Profile(
         profile_id=digest or f"{kind}:{prefix}",
@@ -294,8 +383,8 @@ def load_profile(
         specification=str(built.get("specification", "")),
         width=_number(built.get("width"), f"{selected_id}.width"),
         depth=_number(built.get("depth"), f"{selected_id}.depth"),
-        wall=_number(built.get("wallThickness"), f"{selected_id}.wallThickness"),
+        wall=_number(built.get("wallThickness", 0.0), f"{selected_id}.wallThickness"),
         radius=_number(built.get("cornerRadius", 0.0), f"{selected_id}.cornerRadius"),
-        _profile_data=dict(built),
+        _profile_data={**built, "profileForm": descriptor["profileForm"]},
         _module=module,
     )

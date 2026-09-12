@@ -1,5 +1,6 @@
 import { renderViewCube } from "../../_shared/workbench/viewport/viewCube.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
+import { moldApplicability, previewSectionAnalysis } from "./moldApplicability.mjs";
 import { normalizePunchLayout, resolvePunchLayout, punchLayoutInstanceCount } from "./punchLayout.mjs";
 import { migrateLegacyPunchArrays, resolvePunchArrayGroups, punchArraySkipText, hasPunchArrayGroups, punchArrayGroupInstanceCount } from "./punchArrayGroups.mjs";
 import { renderPunchArrayGroupsControls, renderPunchArrayGroupsSummary } from "./punchArrayGroupsView.mjs";
@@ -488,7 +489,7 @@ function tableEndToolSelect(action,s,item,end,disabled) {
   return tableSelect(action,"tool",id,choices,end,disabled,end);
 }
 
-function tableParameterFields(action, descriptor, item, index, disabled, end = "") {
+function tableParameterFields(action, descriptor, item, index, disabled, end = "", target) {
   if(!descriptor) {
     if(item.toolRef)return '<span class="tube-designer-punch-sheet-readonly">固化刀具</span>';
     const dimensions=item.type==="circle"
@@ -499,6 +500,11 @@ function tableParameterFields(action, descriptor, item, index, disabled, end = "
   }
   if(descriptor.kind==="fixed")return '<span class="tube-designer-punch-sheet-readonly">定式尺寸</span>';
   return (descriptor.parameters??[]).filter(definition=>matchesVisibility(definition.visibleWhen,item.toolParameters??{})).map(definition=>{
+    const binding=definition.derived;
+    if(binding) {
+      const bound=target?.applicable===true?target.parameters?.[definition.key]:undefined;
+      return '<label><small>'+escapeText(label(definition))+'</small><span>'+escapeText(bound??"待分析")+'（由模具测量）</span></label>';
+    }
     const value=item.toolParameters?.[definition.key]??definition.defaultValue;
     const attrs=tableFieldAttrs(action,"parameter",index,definition.key,end);
     let input;
@@ -611,8 +617,11 @@ function renderPunchParameterDialog(action,s,view,options,btn) {
   const selector=kind==="tool"?(end?tableEndToolSelect(action,s,item,end,disabled):tableToolSelect(action,s,item,index,disabled))
     :tableProfileSelect(action,item,index,options.branchProfiles??[],disabled,end);
   const shapeDescriptor=end?descriptor:punchPoseDescriptor(descriptor,item,false);
-  const fields=end&&item.type==="keep"?"":kind==="tool"?tableParameterFields(action,shapeDescriptor,item,index,disabled,end)
-    :tableProfileParameters(action,item,index,options.branchProfiles??[],disabled,end)+tableParameterFields(action,shapeDescriptor,item,index,disabled,end);
+  const target=previewSectionAnalysis(s,item,end);
+  const applicability=moldApplicability(descriptor,item.toolParameters,target);
+  const applicabilityNote=applicability.length?'<div class="tube-designer-punch-error">'+escapeText(applicability.map(f=>f.message).join("；"))+'</div>':"";
+  const fields=applicabilityNote+(end&&item.type==="keep"?"":kind==="tool"?tableParameterFields(action,shapeDescriptor,item,index,disabled,end,target)
+    :tableProfileParameters(action,item,index,options.branchProfiles??[],disabled,end)+tableParameterFields(action,shapeDescriptor,item,index,disabled,end,target));
   const title=end?(end==="start"?"左端面参数":"右端面参数"):({shape:"刀具形状",pose:"位置 / 姿态",arrays:"阵列"}[mode]??"刀具参数")+" · "+punchSourceName(item,descriptor);
   const endHint=end?(item.toolRef?.id==="end-key-joint"?"矩形插舌 / 插槽：两件使用相同名义宽度、深度，配合间隙在母口设置。"
     :item.toolRef?.id==="end-step-z"?"单台阶 Z 搭接口：一侧保留端部，另一侧后退，方向可翻转。"
@@ -840,8 +849,14 @@ function toolSelect(action,s,item,target,end="") {
   const id=unresolved?"__unavailable__":item.toolRef?.id??(end?"keep":"");
   const tools=s.tools.filter(t=>(Array.isArray(target)?target.includes(t.target):t.target===target)
     && t.hidden!==true);
-  const opts=[{value: end?"keep":"",label:end?"保留原端面":"请选择刀具"},...(unresolved?[{value:"__unavailable__",label:"缺少："+(item.toolLabel??item.toolRef.id)+" @ "+(item.toolRef.version??"旧版")}]:[]),...tools.map(t=>({value:t.id,label:(t.kind==="fixed"?"定式 · ":"程式 · ")+label(t)}))];
-  return fieldControl(action,"tool","刀具模板",id,{options:opts},end);
+  const sectionAnalysis=previewSectionAnalysis(s,item,end);
+  const failures=moldApplicability(available,item.toolParameters,sectionAnalysis);
+  const opts=[{value: end?"keep":"",label:end?"保留原端面":"请选择刀具"},...(unresolved?[{value:"__unavailable__",label:"缺少："+(item.toolLabel??item.toolRef.id)+" @ "+(item.toolRef.version??"旧版")}]:[]),...tools.map(t=>{
+    const errors=moldApplicability(t,t.defaultParameters,undefined);
+    return {value:t.id,label:(t.kind==="fixed"?"定式 · ":"程式 · ")+label(t)+(errors.length?" · "+errors[0].message:"")};
+  })];
+  return fieldControl(action,"tool","刀具模板",id,{options:opts},end)
+    +(failures.length?'<div class="tube-designer-punch-error">'+escapeText(failures.map(f=>f.message).join("；"))+'</div>':"");
 }
 export function parameterFields(action,descriptor,item,end="") {
   if(!descriptor)return item.toolRef?'<div class="tube-designer-punch-fixed-note">'+(hasFrozenPunchTool(item)?"退化定式刀具":"缺失刀具")+'：节点只读，仅可删除。'+frozenProvenance(item)+'</div>':"";
@@ -858,7 +873,8 @@ export function fieldControl(action,field,title,value,definition={},end="",param
   const attrs=' data-cam-change-action="'+action("field-change")+'" data-tube-designer-punch-field="'+field+'"'
     +(end?' data-tube-designer-punch-end="'+end+'"':"")+(parameter?' data-tube-designer-punch-parameter="'+escapeText(parameter)+'"':"");
   let control;
-  if(definition.options) control='<select'+attrs+'>'+definition.options.map(o=>'<option value="'+escapeText(o.value)+'" '+(String(o.value)===String(value)?"selected":"")+'>'+escapeText(o.label??o.displayName??o.value)+'</option>').join("")+'</select>';
+  if(definition.derived)control='<span>由模具分析截面确定</span>';
+  else if(definition.options) control='<select'+attrs+'>'+definition.options.map(o=>'<option value="'+escapeText(o.value)+'" '+(String(o.value)===String(value)?"selected":"")+'>'+escapeText(o.label??o.displayName??o.value)+'</option>').join("")+'</select>';
   else if(definition.valueType==="boolean")control='<input type="checkbox"'+attrs+' '+(value?"checked":"")+'/>';
   else control='<input type="'+(definition.valueType==="string"?"text":"number")+'" step="'+(definition.valueType==="integer"?1:definition.step??"any")+'" value="'+escapeText(typeof value==="number"&&!Number.isFinite(value)?"":value??"")+'"'+attrs+'/>';
   return '<label><span>'+escapeText(title+(definition.unit?'（'+definition.unit+'）':""))+'</span>'+control+'</label>';

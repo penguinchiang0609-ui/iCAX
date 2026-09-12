@@ -57,7 +57,7 @@ function diagramSvg(snapshot, annotations, definitions, values) {
   // Labels use separate outside lanes; geometry and annotation anchors share one transform.
   const sides = Object.fromEntries(["left", "right", "top", "bottom"].map((side) => [side, annotations.filter((item) => item.side === side)]));
   const linearCount = (side) => sides[side].filter((item) => item.kind === "linear").length;
-  const left = 42 + 24 * linearCount("left"), right = 42 + 24 * linearCount("right");
+  const left = 78 + 24 * linearCount("left"), right = 78 + 24 * linearCount("right");
   const top = 32 + 25 * linearCount("top"), bottom = 32 + 25 * linearCount("bottom");
   const width = left + 228 + right, height = top + 180 + bottom;
   const bounds = { ...geometry.bounds };
@@ -89,8 +89,9 @@ function diagramSvg(snapshot, annotations, definitions, values) {
       const angle = Math.atan2(end[1] - start[1], end[0] - start[0]);
       const middle = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
       const shortValue = typeof values[item.parameter] === "number" ? displayNumber(values[item.parameter]) : value;
-      const labelText = `${index} · ${shortValue}`;
-      const labelWidth = Math.max(42, labelText.length * 6.7 + 10);
+      const shortName = label.replace(/\s*\/\s*mm.*$/, "").replace(/（.*$/, "");
+      const labelText = `${shortName} ${shortValue}`;
+      const labelWidth = Math.max(42, [...labelText].reduce((n,c) => n + (c.charCodeAt(0)>255 ? 11 : 6.7), 10));
       body = line(from, start, "td-profile-extension") + line(to, end, "td-profile-extension") + line(start, end)
         + arrow(start, angle + Math.PI) + arrow(end, angle)
         + `<g transform="translate(${number(middle[0])} ${number(middle[1])})${horizontal ? "" : " rotate(-90)"}"><rect class="td-profile-dimension-label" x="${-labelWidth / 2}" y="-9" width="${labelWidth}" height="18" rx="4"/><text text-anchor="middle" dominant-baseline="central">${text(labelText)}</text></g>`;
@@ -105,7 +106,8 @@ function diagramSvg(snapshot, annotations, definitions, values) {
           : item.side === "top" ? [anchor[0], geometryTop - 10] : [anchor[0], geometryBottom + 10];
       body = `<polyline points="${[point, elbow, anchor].map((p) => p.map(number).join(",")).join(" ")}"/>`
         + `<circle class="td-profile-anchor" cx="${number(point[0])}" cy="${number(point[1])}" r="3"/>`
-        + `<circle class="td-profile-parameter-badge" cx="${number(anchor[0])}" cy="${number(anchor[1])}" r="11"/><text x="${number(anchor[0])}" y="${number(anchor[1])}" text-anchor="middle" dominant-baseline="central">${index}</text>`;
+        + `<circle class="td-profile-parameter-badge" cx="${number(anchor[0])}" cy="${number(anchor[1])}" r="11"/><text x="${number(anchor[0])}" y="${number(anchor[1])}" text-anchor="middle" dominant-baseline="central">${index}</text>`
+        + `<text x="${number(anchor[0])}" y="${number(anchor[1]+24)}" text-anchor="${item.side === 'left' ? 'start' : item.side === 'right' ? 'end' : 'middle'}">${text(label.replace(/\s*\/\s*mm.*$/, ""))} ${text(value)}</text>`;
     }
     return `<g class="td-profile-annotation" data-profile-annotation-key="${attr(item.parameter)}" role="button" tabindex="0" aria-label="${attr(title)}"><title>${text(title)}</title>${body}</g>`;
   }).join("");

@@ -1,0 +1,114 @@
+{
+  "schema": "icax.tube-profile-descriptor",
+  "schemaVersion": 3,
+  "profileForm": "parametric",
+  "id": "combined-hollow",
+  "version": "2026.9.13.6",
+  "displayName": "内外异形组合管",
+  "description": "P05 内外异形组合管。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
+  "category": "其他",
+  "provenance": {
+    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
+    "surveyIds": [
+      22,
+      23
+    ],
+    "dimensionSource": "editable-example",
+    "standardConformance": "not-certified",
+    "familyCode": "P05"
+  },
+  "manufacturing": {
+    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "topology": "closed-hollow",
+    "validationLevel": "parametric-geometry"
+  },
+  "parameters": [
+    {
+      "key": "sectionModel",
+      "displayName": "轮廓子模型",
+      "valueType": "string",
+      "defaultValue": "round-hex-bore",
+      "options": [
+        {
+          "value": "round-hex-bore",
+          "displayName": "外圆内六角管"
+        },
+        {
+          "value": "hex-round-bore",
+          "displayName": "外六角内圆管"
+        }
+      ]
+    },
+    {
+      "key": "width",
+      "displayName": "外径 / mm",
+      "valueType": "number",
+      "defaultValue": 60,
+      "min": 1,
+      "step": 1
+    },
+    {
+      "key": "model0InnerSize",
+      "displayName": "内六角对边 / mm",
+      "valueType": "number",
+      "defaultValue": 40,
+      "min": 1,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "round-hex-bore"
+      }
+    },
+    {
+      "key": "model0InnerPhase",
+      "displayName": "内孔相位 / °",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -180,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "round-hex-bore"
+      }
+    },
+    {
+      "key": "model1InnerDiameter",
+      "displayName": "内径 / mm",
+      "valueType": "number",
+      "defaultValue": 40,
+      "min": 1,
+      "step": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "sectionModel",
+        "value": "hex-round-bore"
+      }
+    }
+  ],
+  "catalog": {
+    "groupOrder": 3,
+    "order": 102
+  },
+  "parameterDiagram": {
+    "schemaVersion": 1,
+    "annotations": [
+      {
+        "parameter": "width",
+        "kind": "linear",
+        "from": [
+          "-width/2",
+          0
+        ],
+        "to": [
+          "width/2",
+          0
+        ],
+        "axis": "x",
+        "side": "top",
+        "description": "外圆直径"
+      }
+    ]
+  }
+}

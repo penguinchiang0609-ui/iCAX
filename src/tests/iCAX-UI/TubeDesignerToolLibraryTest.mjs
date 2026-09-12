@@ -105,7 +105,7 @@ assert.equal(previewView.preserveCustomViewportEntities, true);
 // together with the mould recipe so changing either side invalidates the
 // previous scene instead of silently reusing the old blank.
 const profileForTool = {
-  id: "round", name: "圆管", libraryScope: "system", profileType: "parametric-package",
+  id: "round", name: "圆管", libraryScope: "system", profileForm: "parametric", profileType: "parametric-package",
   specification: "圆管 · 40 × 2", defaultParameters: { width: 40, wallThickness: 2 },
   descriptor: { parameters: [
     { key: "width", displayName: { "zh-CN": "外径", "en-US": "Outside diameter" }, valueType: "number", defaultValue: 40, min: 1 },
@@ -134,7 +134,7 @@ assert.doesNotMatch(profilePane, /data-profile-library-diagram/);
 // as angle/azimuth are intentionally absent here; they belong to the punch
 // operation, while this page controls the branch tube cross-section.
 const branchProfile = {
-  id: "rect", name: "矩形管", libraryScope: "system", profileType: "parametric-package",
+  id: "rect", name: "矩形管", libraryScope: "system", profileForm: "parametric", profileType: "parametric-package",
   specification: "矩形管 · 40 × 20 × 2", defaultParameters: { width: 40, depth: 20, wallThickness: 2 },
   descriptor: { parameters: [
     { key: "width", displayName: "宽度", valueType: "number", defaultValue: 40, min: 1 },
@@ -267,4 +267,27 @@ await ensureToolLibraryCatalogue(retryContext, retryView, {});
 assert.equal(toolLibraryState(retryView).catalogueStatus, "ready");
 assert.equal(retryCalls, 3);
 
+// Grouping follows operation semantics and notes never claim process approval.
+const semanticsView = { tubeDesignerSystemPunchTools: [
+  { id: "arbitrary-hole", displayName: "测试孔", target: "side", kind: "programmatic", category: "孔型",
+    description: "<script>unsafe</script>" },
+  { id: "arbitrary-joint", target: "part", requiresSection: true, category: "支管" },
+  { id: "arbitrary-end", target: "end", category: "端面" },
+  { id: "arbitrary-notch", target: "part", category: "槽口" },
+] };
+const groupsHtml = renderToolLibraryLeftPane({}, semanticsView);
+assert.equal((groupsHtml.match(/data-tube-tool-library-group=/g) ?? []).length, 3);
+assert.match(groupsHtml, /冲孔/);
+assert.doesNotMatch(groupsHtml, /data-tube-tool-library-group="branch"/);
+for (const [id, expected] of [
+  ["arbitrary-hole", /固定方向扫掠/],
+  ["arbitrary-end", /最长点／最短点／中心/],
+  ["arbitrary-notch", /K 因子/],
+]) {
+  toolLibraryState(semanticsView).selectedKey = `system::${id}`;
+  const html = renderToolLibraryRightPane({}, semanticsView);
+  assert.match(html, expected);
+  assert.match(html, /不是激光工艺合格结论/);
+  assert.doesNotMatch(html, /<script>unsafe/);
+}
 console.log("TubeDesigner tool library tests passed");

@@ -1391,7 +1391,7 @@ export function buildProfileFromSectionDraft(draft, name = "我的草图管型")
   return {
     schema: "icax.imported-tube-profile",
     schemaVersion: 1,
-    kind: "imported-dxf",
+    kind: "fixed-section", profileForm: "fixed",
     name,
     sourceFileName: `${name}.sketch`,
     sourceFormat: SKETCH_SCHEMA,

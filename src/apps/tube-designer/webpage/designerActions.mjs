@@ -891,6 +891,9 @@ export async function refreshDesignerUserData(context, view, ops = null) {
     const response = await context.productProxy.invoke(
       "TubeDesigner.ListUserData", {}, { timeoutMs: 30000 },
     );
+    if (!Array.isArray(response?.systemProfiles)) {
+      throw new Error("管型列表响应缺少系统目录");
+    }
     view.tubeDesignerUserData = {
       customers: Array.isArray(response?.customers) ? response.customers : [],
       parameterPresets: Array.isArray(response?.parameterPresets) ? response.parameterPresets : [],
@@ -904,6 +907,7 @@ export async function refreshDesignerUserData(context, view, ops = null) {
     view.tubeDesignerTemplateProfiles = Array.isArray(response?.templateProfiles)
       ? response.templateProfiles : [];
     view.tubeDesignerUserDataError = "";
+    view.tubeDesignerSystemProfilesError = "";
     ops?.renderProject?.(context, view);
     return true;
   } catch (error) {
@@ -911,6 +915,17 @@ export async function refreshDesignerUserData(context, view, ops = null) {
     view.tubeDesignerSystemProfiles ??= [];
     view.tubeDesignerTemplateProfiles ??= [];
     view.tubeDesignerUserDataError = error?.message ?? String(error);
+    // System resources must not depend on personal data or product templates.
+    try {
+      const catalog = await context.productProxy.invoke(
+        "TubeDesigner.ListSystemProfiles", {}, { timeoutMs: 30000 },
+      );
+      if (!Array.isArray(catalog?.systemProfiles)) throw new Error("系统管型目录返回的数据无效");
+      view.tubeDesignerSystemProfiles = catalog.systemProfiles;
+      view.tubeDesignerSystemProfilesError = "";
+    } catch (catalogError) {
+      view.tubeDesignerSystemProfilesError = catalogError?.message ?? String(catalogError);
+    }
     ops?.renderProject?.(context, view);
     return false;
   }
@@ -1236,9 +1251,7 @@ function changeProfileSelection(context, view, target, ops) {
       ops.renderProject(context, view);
       return;
     }
-    const source = saved.profileType === "parametric-package"
-      ? { ...(saved.previewProfile ?? {}), name: saved.name ?? saved.previewProfile?.name }
-      : saved;
+    const source = { ...(saved.previewProfile ?? saved), name: saved.name ?? saved.previewProfile?.name };
     const snapshot = importedProfileSnapshot(source, id);
     if (!snapshot?.contours?.length) {
       view.error = "所选管型缺少可用截面。";
@@ -1271,7 +1284,7 @@ async function updateParametricProfile(context, view, target, ops) {
   const { values, templateId } = profileActionState(view, mode);
   const current = values.tubeDesignerProfileOverrides?.[prefix];
   const bundled = current?.profileScope === "template";
-  if (!prefix || !parameterKey || current?.kind !== "parametric-package"
+  if (!prefix || !parameterKey || current?.profileForm !== "parametric"
       || (bundled ? !current.profileDefinitionId || String(current.templateId) !== templateId : !current?.savedProfileId)) {
     return null;
   }

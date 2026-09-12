@@ -7,6 +7,7 @@
 #include "TemplateRuntime/StandardJsonCodec.h"
 
 #include <filesystem>
+#include <fstream>
 
 namespace iCAX::ExtrusionRecognition
 {
@@ -477,6 +478,7 @@ std::vector<SPythonSectionFitter> DiscoverPythonSectionFitters(
     IN const std::string& ProfileRoot_)
 {
     std::vector<SPythonSectionFitter> _Result;
+    std::unordered_map<std::string,double> _Priorities;
     std::error_code _Error;
     const std::filesystem::path _Root(ProfileRoot_);
     if (!std::filesystem::is_directory(_Root, _Error)) return _Result;
@@ -499,9 +501,27 @@ std::vector<SPythonSectionFitter> DiscoverPythonSectionFitters(
             _Iterator->path().filename().string(),
             std::filesystem::weakly_canonical(_Script, _Error).string(),
             {} });
+        const auto _Manifest=_Iterator->path()/"profile.json";
+        if(std::filesystem::is_regular_file(_Manifest)) {
+            std::ifstream _Stream(_Manifest);
+            const std::string _Text((std::istreambuf_iterator<char>(_Stream)),std::istreambuf_iterator<char>());
+            const auto _Descriptor=iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_Text).To<ObjectMap>();
+            if(const auto _It=_Descriptor.find("fitterPriority");_It!=_Descriptor.end()) {
+                const auto _Priority=Number(_It->second);
+                if(!_Priority||_It->second.Is<bool>())throw std::invalid_argument("fitterPriority must be finite numeric data");
+                _Priorities[_Result.back().TypeID]=*_Priority;
+            }
+            std::ifstream _ScriptStream(_Script);
+            const std::string _Code((std::istreambuf_iterator<char>(_ScriptStream)),std::istreambuf_iterator<char>());
+            std::uint64_t _Hash=14695981039346656037ull;
+            for(const unsigned char _Byte:_Text+"\n"+_Code){_Hash^=_Byte;_Hash*=1099511628211ull;}
+            _Result.back().PackageDigest=std::to_string(_Hash);
+        }
         _Error.clear();
     }
-    std::sort(_Result.begin(), _Result.end(), [](const auto& Left_, const auto& Right_) {
+    std::sort(_Result.begin(), _Result.end(), [&](const auto& Left_, const auto& Right_) {
+        const auto _Left=_Priorities[Left_.TypeID],_Right=_Priorities[Right_.TypeID];
+        if(_Left!=_Right)return _Left>_Right;
         return Left_.TypeID < Right_.TypeID;
     });
     return _Result;
@@ -578,6 +598,39 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
                 { "contours", _Contours },
                 { "context", _Context }
             };
+            // Dependency paths are package declarations, not tube-type code.
+            // Keep them within the installed template collection.
+            const auto _Script=std::filesystem::path(_Fitter.ScriptPath);
+            const auto _Manifest=_Script.parent_path()/"profile.json";
+            if(std::filesystem::is_regular_file(_Manifest)) {
+                std::ifstream _Stream(_Manifest);
+                const std::string _Text((std::istreambuf_iterator<char>(_Stream)),std::istreambuf_iterator<char>());
+                const auto _Descriptor=iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_Text).To<ObjectMap>();
+                if(const auto _It=_Descriptor.find("fitterRequirements");_It!=_Descriptor.end()) {
+                    const auto _Requirements=_It->second.To<ObjectMap>();
+                    if(const auto _Count=_Requirements.find("cavityCount");_Count!=_Requirements.end()) {
+                        const auto _Expected=Number(_Count->second);
+                        if(!_Expected||*_Expected<0||std::floor(*_Expected)!=*_Expected)
+                            throw std::invalid_argument("fitter cavityCount must be a nonnegative integer");
+                        if(*_Expected!=static_cast<double>(_Result.Section.nCavityCount)) {
+                            _Result.Diagnostics.push_back(_Fitter.TypeID+": section topology does not meet declared fitter requirements");
+                            continue;
+                        }
+                    }
+                }
+                if(const auto _It=_Descriptor.find("pythonModulePaths");_It!=_Descriptor.end()) {
+                    const auto _Root=std::filesystem::weakly_canonical(_Script.parent_path().parent_path().parent_path());
+                    VariantArray _Paths;
+                    for(const auto& _Value:_It->second.To<VariantArray>()) {
+                        const auto _Path=std::filesystem::weakly_canonical(_Script.parent_path()/_Value.To<std::string>());
+                        const auto _Relative=_Path.lexically_relative(_Root);
+                        if(_Relative.empty()||*_Relative.begin()==".."||!std::filesystem::is_directory(_Path))
+                            throw std::invalid_argument("Python fitter dependency directory is outside the template collection or missing");
+                        _Paths.emplace_back(_Path.string());
+                    }
+                    _Request["moduleSearchPaths"]=_Paths;
+                }
+            }
             const auto _Response = PythonHost(FitterOptions_).Invoke(_Request);
             SSectionMatchResult _Match;
             std::string _Error;

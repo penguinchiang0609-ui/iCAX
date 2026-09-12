@@ -1,0 +1,231 @@
+{
+  "version": "2026.9.13.1",
+  "oldToFamily": {
+    "round": "round",
+    "rect": "rect",
+    "ellipse": "oval",
+    "racetrack": "oval",
+    "hexagonal-tube": "polygon",
+    "triangle-equilateral": "polygon",
+    "triangle-scalene": "polygon",
+    "trapezoid-right": "polygon",
+    "trapezoid-isosceles": "polygon",
+    "parallelogram-tube": "polygon",
+    "pentagonal-tube": "polygon",
+    "octagonal-tube": "polygon",
+    "round-hex-bore": "combined-hollow",
+    "hex-round-bore": "combined-hollow",
+    "d-semicircular": "curve-hollow",
+    "rect-double-cell": "multi-cell",
+    "round-open-seam": "open-tube",
+    "angle-cold-unequal": "angle",
+    "angle-hot-unequal-thickness": "angle",
+    "angle-precision": "angle",
+    "angle-welded": "angle",
+    "channel-cold-u": "channel",
+    "channel-cold-c": "channel",
+    "channel-cold-unequal": "channel",
+    "channel-lipped-inward": "channel",
+    "channel-lipped-outward": "channel",
+    "channel-hot-tapered": "channel",
+    "channel-hot-parallel": "channel",
+    "channel-welded": "channel",
+    "z-cold": "z-section",
+    "z-cold-lipped": "z-section",
+    "omega-cold": "omega",
+    "i-hot-parallel": "i-section",
+    "i-hot-tapered": "i-section",
+    "h-hot": "h-section",
+    "h-welded": "welded-h",
+    "t-split": "t-section",
+    "t-welded": "t-section",
+    "flat-bar": "rect-bar",
+    "round-bar": "round-bar",
+    "hexagonal-bar": "polygon-bar",
+    "octagonal-bar": "polygon-bar",
+    "rect-sharp": "rect",
+    "square-rounded": "rect",
+    "square-sharp": "rect",
+    "square-bar": "rect-bar",
+    "angle-hot-equal": "angle",
+    "angle-hot-unequal": "angle",
+    "angle-cold-equal": "angle"
+  },
+  "families": [
+    {
+      "id": "round",
+      "code": "P01",
+      "name": "圆管",
+      "models": [
+        "round"
+      ]
+    },
+    {
+      "id": "rect",
+      "code": "P02",
+      "name": "方矩管",
+      "models": [
+        "rect"
+      ]
+    },
+    {
+      "id": "oval",
+      "code": "P03",
+      "name": "椭圆 / 长圆管",
+      "models": [
+        "ellipse",
+        "racetrack"
+      ]
+    },
+    {
+      "id": "polygon",
+      "code": "P04",
+      "name": "多边形管",
+      "models": [
+        "hexagonal-tube",
+        "triangle-equilateral",
+        "triangle-scalene",
+        "trapezoid-right",
+        "trapezoid-isosceles",
+        "parallelogram-tube",
+        "pentagonal-tube",
+        "octagonal-tube"
+      ]
+    },
+    {
+      "id": "combined-hollow",
+      "code": "P05",
+      "name": "内外异形组合管",
+      "models": [
+        "round-hex-bore",
+        "hex-round-bore"
+      ]
+    },
+    {
+      "id": "curve-hollow",
+      "code": "P06",
+      "name": "曲线异型管",
+      "models": [
+        "d-semicircular"
+      ]
+    },
+    {
+      "id": "multi-cell",
+      "code": "P11",
+      "name": "多腔型材",
+      "models": [
+        "rect-double-cell"
+      ]
+    },
+    {
+      "id": "open-tube",
+      "code": "P12",
+      "name": "开缝 / 开槽管",
+      "models": [
+        "round-open-seam"
+      ]
+    },
+    {
+      "id": "angle",
+      "code": "P14",
+      "name": "角钢",
+      "models": [
+        "angle-cold-unequal",
+        "angle-hot-unequal-thickness",
+        "angle-precision",
+        "angle-welded"
+      ]
+    },
+    {
+      "id": "channel",
+      "code": "P15",
+      "name": "槽钢 / U-C 型钢",
+      "models": [
+        "channel-cold-u",
+        "channel-cold-c",
+        "channel-cold-unequal",
+        "channel-lipped-inward",
+        "channel-lipped-outward",
+        "channel-hot-tapered",
+        "channel-hot-parallel",
+        "channel-welded"
+      ]
+    },
+    {
+      "id": "z-section",
+      "code": "P16",
+      "name": "Z 型钢",
+      "models": [
+        "z-cold",
+        "z-cold-lipped"
+      ]
+    },
+    {
+      "id": "omega",
+      "code": "P17",
+      "name": "帽型 / Omega 型钢",
+      "models": [
+        "omega-cold"
+      ]
+    },
+    {
+      "id": "i-section",
+      "code": "P20",
+      "name": "热轧工字钢",
+      "models": [
+        "i-hot-parallel",
+        "i-hot-tapered"
+      ]
+    },
+    {
+      "id": "h-section",
+      "code": "P21",
+      "name": "热轧 H 型钢",
+      "models": [
+        "h-hot"
+      ]
+    },
+    {
+      "id": "welded-h",
+      "code": "P22",
+      "name": "焊接 I/H 型钢",
+      "models": [
+        "h-welded"
+      ]
+    },
+    {
+      "id": "t-section",
+      "code": "P23",
+      "name": "T 型钢",
+      "models": [
+        "t-split",
+        "t-welded"
+      ]
+    },
+    {
+      "id": "rect-bar",
+      "code": "P25",
+      "name": "方矩棒 / 扁钢",
+      "models": [
+        "flat-bar"
+      ]
+    },
+    {
+      "id": "round-bar",
+      "code": "P29",
+      "name": "圆棒",
+      "models": [
+        "round-bar"
+      ]
+    },
+    {
+      "id": "polygon-bar",
+      "code": "P30",
+      "name": "多边形棒",
+      "models": [
+        "hexagonal-bar",
+        "octagonal-bar"
+      ]
+    }
+  ]
+}

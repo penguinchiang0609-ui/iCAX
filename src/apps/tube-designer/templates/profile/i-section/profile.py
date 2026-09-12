@@ -1,62 +1,30 @@
-from __future__ import annotations
+"""P20 热轧工字钢：族内模型独立实现。"""
+import importlib
+import json
+from .geometry import envelope, swap
+MODELS = {"i-hot-parallel":"model_0","i-hot-tapered":"model_1"}
+PARAMETERS = {"i-hot-parallel":{"width":"width","depth":"depth","wallThickness":"wallThickness","flangeThickness":"model0FlangeThickness","rootRadius":"model0RootRadius","toeRadius":"model0ToeRadius"},"i-hot-tapered":{"width":"width","depth":"depth","wallThickness":"wallThickness","flangeThickness":"model1FlangeThickness","rootRadius":"model1RootRadius","toeRadius":"model1ToeRadius","flangeSlope":"model1FlangeSlope"}}
 
-import math
-from typing import Any
+def selected(p):
+    name=p.get("sectionModel","i-hot-parallel")
+    if name not in MODELS: raise ValueError("不支持的轮廓子模型")
+    module=importlib.import_module("." + MODELS[name], __package__)
+    values={key:p[value] for key,value in PARAMETERS[name].items()}
+    return name,module,values
 
-
-def _number(parameters: dict[str, Any], key: str) -> float:
-    value = parameters[key]
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{key} 必须是数值")
-    result = float(value)
-    if not math.isfinite(result):
-        raise ValueError(f"{key} 必须是有限数值")
+def build(p):
+    name,module,values=selected(p)
+    actual=p.get("materialBoundary","").strip()
+    if p["geometrySource"] != "idealizedFallback" and not actual: raise ValueError("所选来源必须提供完整材料边界")
+    if actual and p["geometrySource"] == "idealizedFallback": raise ValueError("请为实际轮廓指定来源")
+    if actual:
+        if not p.get("sourceRevision","").strip(): raise ValueError("实际轮廓必须填写来源及版本")
+        curves=json.loads(actual)
+        if not isinstance(curves,list) or not curves: raise ValueError("材料边界必须为非空轮廓数组")
+        w,h=envelope(curves)
+        result={"width":w,"depth":h,"wallThickness":0,"cornerRadius":0,"contours":curves}
+    else:
+        result=module.build(values)
+    result["manufacturingRoute"] = {"i-hot-parallel":"HotRolled","i-hot-tapered":"HotRolled"}[name]
+    result.update({"kind":"i-section","_familyParameters":dict(p),"specification":"热轧工字钢"+" "+str(result["width"])+" × "+str(result["depth"])+" mm","geometrySource":p.get("geometrySource","idealizedFallback"),"sourceRevision":p.get("sourceRevision",""),"sectionModel":name})
     return result
-
-
-def _text(value: float) -> str:
-    return f"{value:.6f}".rstrip("0").rstrip(".")
-
-
-def build(parameters: dict[str, Any]) -> dict[str, Any]:
-    width = _number(parameters, "width")
-    depth = _number(parameters, "depth")
-    thickness = _number(parameters, "wallThickness")
-    if width <= 0 or depth <= 0 or thickness <= 0 or thickness * 2 >= min(width, depth):
-        raise ValueError("工字钢截面尺寸或厚度无效")
-    return {
-        "kind": "i-section",
-        "width": width,
-        "depth": depth,
-        "wallThickness": thickness,
-        "cornerRadius": 0.0,
-        "specification": f"I{_text(width)} × {_text(depth)} × {_text(thickness)}",
-    }
-
-
-def contours(
-    profile: dict[str, Any], *, clearance: float = 0.0, swap_axes: bool = False,
-) -> list[dict[str, Any]]:
-    clearance = float(clearance)
-    width = float(profile["width"]) + clearance * 2
-    depth = float(profile["depth"]) + clearance * 2
-    thickness = float(profile["wallThickness"]) + clearance
-    if width <= 0 or depth <= 0 or thickness <= 0 or thickness * 2 >= min(width, depth):
-        raise ValueError("工字钢偏置后的二维轮廓无效")
-    half_width, half_depth, half_web = width / 2, depth / 2, thickness / 2
-    points = [
-        [-half_width, -half_depth], [half_width, -half_depth],
-        [half_width, -half_depth + thickness], [half_web, -half_depth + thickness],
-        [half_web, half_depth - thickness], [half_width, half_depth - thickness],
-        [half_width, half_depth], [-half_width, half_depth],
-        [-half_width, half_depth - thickness], [-half_web, half_depth - thickness],
-        [-half_web, -half_depth + thickness], [-half_width, -half_depth + thickness],
-    ]
-    if swap_axes:
-        points = [[y, x] for x, y in points]
-    return [{"kind": "polygon", "points": points}]
-
-
-def fitter(contours: list[dict[str, Any]], context: dict[str, Any] | None = None) -> dict[str, Any]:
-    from profile_fitting import fitter_for_profile
-    return fitter_for_profile(contours, "i-section", context)

@@ -199,6 +199,14 @@ function renderSvgEllipseArc(segment) {
 
 
 function renderSvgBezier(segment) {
+  if (segment?.weights != null) {
+    const count = Array.isArray(segment.controlPoints) ? segment.controlPoints.length : 0;
+    if (count < 2 || count > 26) return null;
+    // Rational Bezier is a single clamped NURBS span. Preserve weights.
+    return renderSvgSpline({ ...segment, kind: "nurbs", degree: count - 1,
+      knots: [0, 1], multiplicities: [count, count], periodic: false,
+      startParameter: 0, endParameter: 1 });
+  }
   const controls = (Array.isArray(segment?.controlPoints) ? segment.controlPoints : []).map(point).filter(Boolean);
   if (controls.length < 2) return null;
   const start = controls[0];
@@ -273,25 +281,19 @@ function sampleSpline(segment) {
         || knots.length - endpointMultiplicity !== controls.length) return sampleClosedControls(controls);
     const leftCount = degree + 1 - endpointMultiplicity;
     if (leftCount < 0) return sampleClosedControls(controls);
-    const positiveSteps = knots.slice(1).map((value, index) => value - knots[index]).filter((value) => value > 1.0e-12);
-    const fallbackStep = positiveSteps[0] ?? 1;
-    const left = [];
-    let cursor = knots[0];
-    for (let index = 0; index < leftCount; ++index) {
-      const step = positiveSteps.at(-1 - (index % positiveSteps.length)) ?? fallbackStep;
-      cursor -= step;
-      left.unshift(cursor);
-    }
-    const right = [];
-    cursor = knots.at(-1);
-    for (let index = 0; index < degree; ++index) {
-      const step = positiveSteps[index % positiveSteps.length] ?? fallbackStep;
-      cursor += step;
-      right.push(cursor);
-    }
     domainStart = knots[0];
     domainEnd = knots.at(-1);
-    knots = [...left, ...knots, ...right];
+    const period = domainEnd - domainStart;
+    if (!(period > 0)) return [];
+    const count = controls.length;
+    const base = knots.slice(0, count);
+    // Extend the knot sequence itself, including repeated knots. Extending
+    // only positive knot gaps changes periodic curves with multiplicity > 1.
+    knots = Array.from({ length: leftCount + count + endpointMultiplicity + degree }, (_, offset) => {
+      const index = offset - leftCount;
+      const cycle = Math.floor(index / count);
+      return base[index - cycle * count] + cycle * period;
+    });
     splineControls = [...controls, ...controls.slice(0, degree)];
     splineWeights = [...weights, ...weights.slice(0, degree)];
   } else {
@@ -315,9 +317,7 @@ function sampleSpline(segment) {
       if (value) values.push(value);
     }
   }
-  const finalValue = periodic
-    ? values[0]
-    : evaluateSpline(splineControls, splineWeights, knots, degree, domainEnd);
+  const finalValue = evaluateSpline(splineControls, splineWeights, knots, degree, domainEnd);
   if (finalValue) values.push([...finalValue]);
   return values;
 }

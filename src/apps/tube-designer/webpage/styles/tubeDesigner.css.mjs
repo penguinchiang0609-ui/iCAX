@@ -1019,7 +1019,9 @@ const baseTubeDesignerCss = String.raw`
 .tube-profile-library-panel:has(.tube-profile-library-draw) { grid-template-rows: auto auto minmax(0, 1fr) auto; }
 .tube-profile-library-heading > div { display: grid; gap: 2px; }
 .tube-profile-library-heading > button { flex: 0 0 auto; min-width: 78px; }
-.tube-profile-library-list { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 8px; min-height: 0; padding: 8px; overflow-x: hidden; overflow-y: auto; }
+/* Groups must retain their content height; auto tracks otherwise shrink the
+   overflow-hidden groups and clip cards instead of overflowing this scroller. */
+.tube-profile-library-list { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; align-content: start; gap: 8px; min-height: 0; padding: 8px; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
 .tube-profile-library-tab-row { display: flex; gap: 5px; min-width: 0; }
 .tube-profile-library-tab-row + .tube-profile-library-tab-row { padding-top: 2px; border-top: 1px solid #d2dde0; }
 .tube-profile-library-tab-row button { display: inline-flex; flex: 1; min-width: 0; align-items: center; justify-content: center; gap: 4px; padding: 6px 4px; border: 1px solid #c5d4d8; border-radius: 4px; background: #fff; color: #59737b; font-size: 11px; }

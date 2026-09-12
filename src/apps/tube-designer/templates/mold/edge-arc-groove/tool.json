@@ -1,16 +1,24 @@
 {
-  "schema":"icax.punch-tool","schemaVersion":1,"id":"edge-arc-groove","version":"1.2.0",
+  "schema":"icax.punch-tool","schemaVersion":1,"id":"edge-arc-groove","version":"2.1.0",
+  "sectionAnalysis":{"schemaVersion":1},
   "displayName":"边弧槽","kind":"programmatic","target":"part","category":"槽口",
-  "description":"以 V 槽为基线，把一侧直边替换为连续圆弧；支持左圆弧和槽底附加工艺，定位和阵列由外部调用者处理。",
+  "description":"以切除高度 H 和圆弧转角 θ 确定 R=H/(1−cosθ)，用基体减圆柱生成单侧圆弧。90°为常用形式；其他角度须通过直边与圆弧不交叉校验。K 补偿增加 KTθ（弧度）的槽宽，不代表完整折弯展开或成形验证。",
   "illustration":{"viewBox":"0 0 48 48","paths":["M6 9 C9 19 13 31 24 38 H42 V9 Z"]},
   "parameterDiagram":{"viewBox":"0 0 240 180","mirrorParameter":"leftArc","paths":["M24 28 H216","M24 28 C31 47 47 104 112 124 H216 V28 Z","M24 148 H216"],"lines":[{"x1":24,"y1":16,"x2":216,"y2":16},{"x1":120,"y1":124,"x2":120,"y2":148},{"x1":112,"y1":124,"x2":128,"y2":124},{"x1":112,"y1":148,"x2":128,"y2":148}],"labels":[{"x":120,"y":11,"text":"边弧槽"},{"x":120,"y":94,"text":"V 槽夹角","parameter":"angle","unit":"°"},{"x":158,"y":141,"text":"底部保留","parameter":"bridge","unit":" mm"},{"x":120,"y":170,"text":"圆弧侧","parameter":"leftArc"}]},
   "parameters":[
+    {"key":"bendCompensation","displayName":"启用 K 因子展开补偿","valueType":"boolean","defaultValue":false},
+    {"key":"useDefaultKFactor","displayName":"使用默认 K 因子 0.62","valueType":"boolean","defaultValue":true,"visibleWhen":{"op":"eq","parameter":"bendCompensation","value":true}},
+    {"key":"kFactor","displayName":"自定义 K 因子（建议 0.6～1）","valueType":"number","defaultValue":0.62,"min":0,"max":1,"visibleWhen":{"op":"eq","parameter":"useDefaultKFactor","value":false}},
     {"key":"angle","displayName":"V 槽夹角（°）","valueType":"number","defaultValue":90,"min":1,"max":170},
     {"key":"leftArc","displayName":"左圆弧","valueType":"boolean","defaultValue":true},
     {"key":"bridge","displayName":"底部保留厚度（mm）","valueType":"number","defaultValue":1,"min":0.01,"max":10000},
+    {"key":"bottomReference","displayName":"留底基准","valueType":"string","defaultValue":"outer","options":[{"value":"outer","label":"外底面"},{"value":"inner","label":"内底面（加壁厚）"}]},
+    {"key":"wallThickness","derived":true,"displayName":"截面实测壁厚（mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"reliefDepth","displayName":"释放孔切深（mm，0 贯穿）","valueType":"number","defaultValue":0,"min":0,"max":10000},
+    {"key":"reliefSide","displayName":"释放孔进刀侧（主管局部 Y）","valueType":"string","defaultValue":"positive","options":[{"value":"positive","label":"+Y 侧"},{"value":"negative","label":"−Y 侧"}]},
     {"key":"reliefDiameter","displayName":"附加释放孔直径（0 不添加，mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
     {"key":"reliefLift","displayName":"附加释放孔中心上移（mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
-    {"key":"bottomCut","displayName":"底部切除","valueType":"boolean","defaultValue":false},
-    {"key":"bottomCutWidth","displayName":"底部切除宽度（mm）","valueType":"number","defaultValue":2,"min":0.01,"max":10000}
+    {"key":"bottomCut","displayName":"切断底部桥接（不再留底）","valueType":"boolean","defaultValue":false},
+    {"key":"bottomCutWidth","displayName":"底部切除宽度（mm）","valueType":"number","defaultValue":2,"min":0.01,"max":10000,"visibleWhen":{"op":"eq","parameter":"bottomCut","value":true}}
   ]
 }

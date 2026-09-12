@@ -27,9 +27,10 @@ export const END_PROFILE_PLACEMENT_KEYS = Object.freeze([
   "angle", "azimuth", "roll", "axialOffset", "offsetY", "offsetZ",
 ]);
 
+const BEND_COMPENSATION_KEYS = ["bendCompensation", "useDefaultKFactor", "kFactor"];
 const V_SHAPE_KEYS = Object.freeze({
-  "v-notch-sharp": ["angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize"],
-  "edge-arc-groove": ["angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth"],
+  "v-notch-sharp": ["angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize", "bottomReference", "wallThickness", "flatReference", "reliefDepth", "reliefSide"],
+  "edge-arc-groove": ["angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "bottomReference", "wallThickness", "reliefDepth", "reliefSide"],
 });
 
 function migrateSharpParameters(params, oldStyle = "") {
@@ -41,7 +42,10 @@ function migrateSharpParameters(params, oldStyle = "") {
   }
   if (params.bridge !== undefined && params.leaveBottom === undefined) params.leaveBottom = params.bridge;
   if (params.rootWidth !== undefined && params.flatWidth === undefined) params.flatWidth = params.rootWidth;
-  if (params.rootRadius !== undefined && params.roundRadius === undefined) params.roundRadius = params.rootRadius;
+  if (params.rootRadius !== undefined && params.roundRadius === undefined) {
+    params.roundRadius = params.rootRadius;
+    if (params.rootRadius > 0) params.bottomStrategy ??= "rounded";
+  }
   if (params.reliefWidth !== undefined && params.reliefHeight === undefined) params.reliefHeight = params.reliefWidth;
   if (params.flatWidth > 0 && params.bottomStrategy === undefined) params.bottomStrategy = "flat";
   if (params.reliefDiameter > 0 && params.reliefWidth === undefined) {
@@ -93,7 +97,7 @@ function migrateVNotch(item, params) {
   }
   if (migratedId === "edge-arc-groove") params.leftArc = oldStyle === "left_arc";
   if (migratedId === "v-notch-sharp") migrateSharpParameters(params, oldStyle);
-  const allowed = new Set(V_SHAPE_KEYS[migratedId] ?? []);
+  const allowed = new Set([...(V_SHAPE_KEYS[migratedId] ?? []), ...BEND_COMPENSATION_KEYS]);
   for (const key of Object.keys(params)) if (!allowed.has(key)) delete params[key];
   return true;
 }
@@ -111,7 +115,7 @@ export function migratePunchRecord(value = {}) {
     // is installed again.
     const before = JSON.stringify(params);
     if (id === "v-notch-sharp") migrateSharpParameters(params);
-    const allowed = new Set(V_SHAPE_KEYS[id] ?? []);
+    const allowed = new Set([...(V_SHAPE_KEYS[id] ?? []), ...BEND_COMPENSATION_KEYS]);
     for (const key of Object.keys(params)) if (!allowed.has(key)) delete params[key];
     changed = changed || before !== JSON.stringify(params);
     if (params.rotation !== undefined) {

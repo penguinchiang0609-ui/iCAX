@@ -7,7 +7,7 @@ def build(parameters):
     wall = float(parameters["wallThickness"])
     if wall <= 0 or wall * 2 >= min(width, depth):
         raise ValueError("壁厚无效")
-    return {
+    result = {
         "kind": "editable-rect",
         "width": width,
         "depth": depth,
@@ -15,9 +15,11 @@ def build(parameters):
         "cornerRadius": 0.0,
         "specification": f"{width:g} × {depth:g} × {wall:g}",
     }
+    result["contours"] = _section_contours(result)
+    return result
 
 
-def contours(profile, *, clearance=0.0, swap_axes=False):
+def _section_contours(profile, *, clearance=0.0, swap_axes=False):
     width = float(profile["width"])
     depth = float(profile["depth"])
     wall = float(profile["wallThickness"])

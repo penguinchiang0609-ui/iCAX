@@ -500,7 +500,7 @@ function renderImportedProfileLibraryDialog(view) {
               <div class="tube-designer-profile-library-copy">
                 <input type="text" data-tube-designer-library-profile-name value="${escapeAttribute(profile.name ?? "")}" maxlength="120" aria-label="管型名称" ${view?.pending ? "disabled" : ""} />
                 <span>${escapeText(profile.previewProfile?.specification ?? profile.specification ?? "管型截面")}</span>
-                <small>${escapeText(profile.sourceFileName ?? "管型资源")} · ${profile.profileType === "parametric-package" ? "参数可编辑" : `${Number(profile.contourCount ?? profile.contours?.length ?? 0)} 条轮廓`}</small>
+                <small>${escapeText(profile.sourceFileName ?? "管型资源")} · ${profile.descriptor?.profileForm === "parametric" ? "参数可编辑" : `${Number(profile.contourCount ?? profile.contours?.length ?? 0)} 条轮廓`}</small>
               </div>
               <div class="tube-designer-profile-library-actions">
                 <button class="tube-designer-secondary" data-cam-action="tube-designer-rename-library-profile" data-tube-designer-profile-id="${escapeAttribute(profile.id)}" ${view?.pending ? "disabled" : ""}>保存名称</button>
@@ -1212,7 +1212,7 @@ function localizedProfileText(value, fallback = "参数") {
 }
 
 function renderParametricProfileParameters(profile, prefix, mode, disabled) {
-  if (profile?.kind !== "parametric-package") return "";
+  if (profile?.profileForm !== "parametric") return "";
   const values = profile.parameters ?? {};
   const definitions = Array.isArray(profile.parameterDefinitions) ? profile.parameterDefinitions : [];
   return `<div class="tube-designer-parametric-profile-parameters">
@@ -1284,7 +1284,7 @@ function renderProfileField(field, value, disabled, context) {
       <button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-open-profile-dialog" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-id="" ${disabled ? "disabled" : ""}>保存为我的管型</button>
     </div>` : ""}
     ${renderParametricProfileParameters(override, prefix, mode, disabled)}
-    ${override ? `<small class="tube-designer-profile-readonly-note"><strong>${escapeText(override.name ?? "导入管型")}</strong> · ${escapeText(override.specification ?? "")} · ${override.kind === "parametric-package" ? "参数可编辑，产品保存当前截面快照" : "冻结截面，不支持尺寸参数修改"}</small>` : ""}
+    ${override ? `<small class="tube-designer-profile-readonly-note"><strong>${escapeText(override.name ?? "导入管型")}</strong> · ${escapeText(override.specification ?? "")} · ${override.profileForm === "parametric" ? "参数可编辑，产品保存当前截面快照" : "冻结截面，不支持尺寸参数修改"}</small>` : ""}
   </div>`;
 }
 

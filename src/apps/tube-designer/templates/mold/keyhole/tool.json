@@ -1,0 +1,82 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "keyhole",
+  "version": "1.0.0",
+  "displayName": "钥匙孔",
+  "kind": "programmatic",
+  "target": "side",
+  "category": "孔型",
+  "description": "圆头连接圆端颈部，颈端半径为 W/2；C 从大圆圆心量至颈端圆心。当前为圆端颈，不包含平端或双圆相交变体。",
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M26.39 18 H36 A6 6 0 0 1 36 30 H26.39 A12 12 0 1 1 26.39 18 Z"
+    ]
+  },
+  "parameters": [
+    {
+      "key": "headDiameter",
+      "displayName": "大圆直径 D（mm）",
+      "valueType": "number",
+      "defaultValue": 20,
+      "min": 0.1,
+      "max": 100000,
+      "step": 0.1
+    },
+    {
+      "key": "neckWidth",
+      "displayName": "颈部宽度 W（mm）",
+      "valueType": "number",
+      "defaultValue": 8,
+      "min": 0.1,
+      "max": 100000,
+      "step": 0.1
+    },
+    {
+      "key": "centerDistance",
+      "displayName": "圆心至颈端圆心距 C（mm）",
+      "valueType": "number",
+      "defaultValue": 18,
+      "min": 0.1,
+      "max": 100000,
+      "step": 0.1
+    }
+  ],
+  "parameterDiagram": {
+    "viewBox": "0 0 240 180",
+    "paths": [
+      "M122.913 40 H145 A10 10 0 0 1 145 60 H122.913 A25 25 0 1 1 122.913 40 Z",
+      "M100 46 V54 M96 50 H104 M145 46 V54 M141 50 H149",
+      "M100 83 H145 M100 54 V87 M145 54 V87 M104 79 L100 83 L104 87 M141 79 L145 83 L141 87",
+      "M62 25 V75 M62 25 H100 M62 75 H100",
+      "M168 40 V60 M145 40 H172 M145 60 H172"
+    ],
+    "labels": [
+      {"x": 52, "y": 54, "text": "D"},
+      {"x": 181, "y": 54, "text": "W"},
+      {"x": 123, "y": 80, "text": "C"},
+      {
+        "x": 120,
+        "y": 110,
+        "text": "大圆直径 D",
+        "parameter": "headDiameter",
+        "unit": " mm"
+      },
+      {
+        "x": 120,
+        "y": 135,
+        "text": "颈部宽度 W",
+        "parameter": "neckWidth",
+        "unit": " mm"
+      },
+      {
+        "x": 120,
+        "y": 160,
+        "text": "圆心至颈端圆心距 C",
+        "parameter": "centerDistance",
+        "unit": " mm"
+      }
+    ]
+  }
+}
