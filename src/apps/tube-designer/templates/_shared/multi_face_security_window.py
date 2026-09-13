@@ -396,6 +396,8 @@ def _vertical_count(
     parameters: dict[str, Any], minimum: float, maximum: float,
     bar_width: float, manual_key: str, maximum_gap_key: str = "maximumVerticalClearGap",
 ) -> int:
+    if parameters.get("infillPattern") == "horizontal" and manual_key != "topBottomRodCount":
+        return 0
     mode = str(parameters.get("verticalLayoutMode", "manual_count"))
     if mode == "maximum_clear_gap":
         return _count_for_maximum_clear_gap(

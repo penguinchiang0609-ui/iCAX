@@ -20,6 +20,18 @@ def number(values: dict[str, Any], key: str, default: float) -> float:
 def prepare(parameters: dict[str, Any], *, layout: str, fixed_width: float,
             leaf_width: float, leaf_depth: float, vertical_width: float) -> dict[str, Any]:
     effective = deepcopy(parameters)
+    pattern = str(parameters.get("infillPattern", "grid"))
+    if pattern not in {"vertical", "horizontal", "grid"}:
+        raise ValueError("填充结构不支持")
+    if pattern == "vertical":
+        for key in ("horizontalCount", "sideHorizontalCount", "doorHorizontalCount"):
+            if key in effective:
+                effective[key] = 0
+    elif pattern == "horizontal":
+        for key in ("middleVerticalCount", "verticalCountPerFace", "sideVerticalCount", "doorVerticalCount"):
+            if key in effective:
+                effective[key] = 0
+    # Infill changes only the vertical faces; roof/base closure stays intact.
     if not parameters.get("accessDoorEnabled", False):
         return effective
     use = str(parameters.get("doorUse", "escape"))
@@ -31,8 +43,12 @@ def prepare(parameters: dict[str, Any], *, layout: str, fixed_width: float,
     if clear_width <= 0 or clear_height <= 0 or hardware < 0:
         raise ValueError("净开口尺寸必须大于0，五金预留量不能为负数")
     if parameters.get("accessDoorEnabled", False) and use == "escape":
-        if clear_width < 800 or clear_height < 1000:
-            raise ValueError("本模板应急开启口设计目标至少为净宽800、净高1000 mm；小型开口请明确选择检修用途，不能作为逃生口")
+        minimum_width = number(parameters, "projectEscapeMinWidth", 800)
+        minimum_height = number(parameters, "projectEscapeMinHeight", 1000)
+        if minimum_width <= 0 or minimum_height <= 0:
+            raise ValueError("项目开启口净尺寸下限必须大于0")
+        if clear_width < minimum_width or clear_height < minimum_height:
+            raise ValueError(f"开启口小于项目设计下限：净宽{minimum_width:g}、净高{minimum_height:g} mm；项目规则须按现场要求确认")
         if str(parameters.get("accessDoorFace", "front")) in {"top", "bottom"}:
             raise ValueError("应急开启口请选择立面并核对室外通路；顶底开口仅作为检修口设计")
     # At the design opening position, reserve the leaf thickness plus hardware.
@@ -41,7 +57,7 @@ def prepare(parameters: dict[str, Any], *, layout: str, fixed_width: float,
     frame_allowance = fixed_width * (2 if layout == "single-face" else 1)
     effective["doorWidth"] = fixed_clear_width + frame_allowance
     effective["doorHeight"] = clear_height + frame_allowance
-    if str(parameters.get("verticalLayoutMode", "maximum_clear_gap")) == "maximum_clear_gap":
+    if pattern != "horizontal" and str(effective.get("verticalLayoutMode", "maximum_clear_gap")) == "maximum_clear_gap":
         span = fixed_clear_width - 2 * number(parameters, "doorGap", 3) - 2 * leaf_width
         maximum_gap = number(parameters, "maximumVerticalClearGap", 110)
         if span <= 0 or maximum_gap <= 0:
@@ -91,6 +107,15 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         "boundary": ("four_sided_frame" if single and outer_join != "open_frame" else
                      "site_closure_required" if single or layout in {"two-face", "three-face"} else
                      "wall_backed_five_face"),
+        "productFamily": "BAR_GRILLE",
+        "envelope": {"single-face":"FLAT", "two-face":"L_CORNER", "three-face":"U_BOX", "five-face":"FULL_BOX"}[layout],
+        "infillPattern": str(original.get("infillPattern", "grid")),
+        "openingSystem": "LOCAL_HINGED_HATCH" if enabled else "FIXED",
+        "installationMode": str(original.get("installationMode", "site_confirm")),
+        "projectRuleReference": str(original.get("projectRuleReference", "待项目确认")),
+        "projectEscapeMinWidth": number(original, "projectEscapeMinWidth", 800),
+        "projectEscapeMinHeight": number(original, "projectEscapeMinHeight", 1000),
+        "performance": {key: "not_verified" for key in ("fallProtection", "intrusionResistance", "escape", "anchorage")},
     }
     document.setdefault("extensions", {})["tubeDesigner.securityWindowReview"] = review
     diagnostics = document.setdefault("diagnostics", [])
@@ -110,8 +135,12 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         warning("SW_NO_OPENING", "未设置应急开启口；住宅和出租房应核对所在房间的逃生及救援条件。", "accessDoorEnabled")
     elif original.get("doorUse", "escape") == "maintenance":
         warning("SW_MAINTENANCE_ONLY", "当前开启口用于检修，不能视为已满足人员逃生条件。", "doorUse")
-    if enabled and (review["designClearWidth"] < 800 or review["designClearHeight"] < 1000):
-        warning("SW_SMALL_OPENING", "按窗扇厚度与五金预留扣除后的开口小于800×1000 mm设计目标，不能作为已验证的逃生口。")
+    if enabled and (review["designClearWidth"] < review["projectEscapeMinWidth"] or review["designClearHeight"] < review["projectEscapeMinHeight"]):
+        warning("SW_SMALL_OPENING", "开启口小于本项目配置的净尺寸下限，不能作为已验证的逃生口。")
+    if enabled and original.get("doorUse", "escape") == "escape":
+        warning("SW_PROJECT_ESCAPE_RULE", "开启口下限来自项目配置，不是全国统一合规值；须核对规则依据、室内无钥匙快开、断电开启和实际通行路径。", "projectRuleReference", "projectEscapeMinWidth", "projectEscapeMinHeight")
+    if review["infillPattern"] == "horizontal":
+        warning("SW_HORIZONTAL_CLIMB", "横杆填充具有攀爬风险，须按防坠用途及项目要求复核间距和安装高度。", "infillPattern")
     if layout == "three-face" and abs(number(original, "leftWidth", 0) - number(original, "rightWidth", 0)) > 1e-6:
         warning("SW_UNEVEN_WALL", "左右侧深不同，后端不在同一安装平面，请核对实际墙体。", "leftWidth", "rightWidth")
     if (str(original.get("verticalLayoutMode", "")) == "manual_count"
@@ -132,6 +161,7 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
             properties["manufacturing.material"] = grade
         properties["manufacturing.surfaceTreatment"] = treatment
         properties["manufacturing.installationVerification"] = "required"
+        properties["manufacturing.installationMode"] = review["installationMode"]
     process_rows = [{"key": "process.connection", "values": {"status": "工艺说明", "detail": construction}},
                     {"key": "process.assembly", "values": {"status": "工艺说明", "detail": "按零件表下料与开孔，先试装定位并复核外包和对角线，再焊接、清理及防腐；开启口框扇和五金另行试装、实测通行净空。"}}]
     if miter_active:
@@ -143,6 +173,12 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         "rows": process_rows + [{"key": "review." + row["code"], "values": {"status": "待核验", "detail": row["message"]}}
                  for row in diagnostics if row.get("severity") == "warning" and row.get("code", "").startswith("SW_")],
     })
+    document["tables"].append({"key":"security_window_classification", "displayName":"防护窗结构与项目配置",
+        "columns":[{"key":"name","displayName":"维度","valueType":"string"},{"key":"value","displayName":"配置","valueType":"string"}],
+        "rows":[{"key":key,"values":{"name":label,"value":str(review[key])}} for key,label in (
+            ("productFamily","产品族"),("envelope","外包络"),("infillPattern","立面填充"),
+            ("openingSystem","开启结构"),("installationMode","安装场景（节点待核验）"),
+            ("projectRuleReference","项目规则依据"))]})
     return document
 
 

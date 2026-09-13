@@ -116,6 +116,10 @@ export function renderSecurityWindowReview(template, values = {}) {
   const maintenance = values.doorUse === "maintenance";
   const rows = [row("整窗尺寸口径", "成品外包尺寸")];
   const warnings = [];
+  const infill = values.infillPattern ?? "grid";
+  rows.push(row("立面格栅", {vertical:"纯竖杆",horizontal:"纯横杆",grid:"横竖方格／加强横杆"}[infill] ?? "待确认"));
+  rows.push(row("安装场景", {site_confirm:"待现场确认",recessed:"窗洞内嵌",indoor:"室内侧",wall_face:"室外贴墙",projecting:"室外悬挑"}[values.installationMode ?? "site_confirm"] ?? "待确认"));
+  if (infill === "horizontal") warnings.push("横杆具有攀爬风险，须复核间距、安装高度及防坠用途。");
 
   connectionReview(layout, values, enabled, rows, warnings);
 
@@ -129,6 +133,16 @@ export function renderSecurityWindowReview(template, values = {}) {
     rows.push(row("开启宽度预留", leafDepth == null || hardware == null
       ? "待填写有效尺寸" : `窗扇厚度 ${leafDepth} mm + 五金侵入 ${hardware} mm`));
     warnings.push("目标尺寸为设计值，不代表现场可通行或合规结论。");
+    if (!maintenance) {
+      const minWidth = dimension(values.projectEscapeMinWidth, 800);
+      const minHeight = dimension(values.projectEscapeMinHeight, 1000);
+      rows.push(row("项目净尺寸下限", size(minWidth,minHeight)));
+      rows.push(row("规则依据", values.projectRuleReference || "待项目确认"));
+      warnings.push("下限为项目配置，不是全国统一法规；室内快开、断电开启与实际通路仍须核验。");
+      if (width == null || height == null || minWidth == null || minHeight == null || minWidth <= 0 || minHeight <= 0 || width < minWidth || height < minHeight) {
+        warnings.push("开启口尺寸无效或小于项目配置下限。");
+      }
+    }
     if (maintenance) warnings.push("当前为检修口，不作为逃生窗；应另行确认逃生与救援通道。");
   }
 

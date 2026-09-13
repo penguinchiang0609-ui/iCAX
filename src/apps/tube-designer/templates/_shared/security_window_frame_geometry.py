@@ -257,6 +257,8 @@ def _validate_bar_positions(
 def _vertical_count(
     parameters: dict[str, Any], minimum: float, maximum: float, bar_width: float,
 ) -> int:
+    if parameters.get("infillPattern") == "horizontal":
+        return 0
     mode = str(parameters.get("verticalLayoutMode", "manual_count"))
     if mode == "manual_count":
         return _integer(parameters, "middleVerticalCount")
