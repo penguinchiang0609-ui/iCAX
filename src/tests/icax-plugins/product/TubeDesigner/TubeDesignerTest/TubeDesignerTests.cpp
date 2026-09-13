@@ -3186,6 +3186,97 @@ TEST(TemplateRuntimeTest, SecurityWindowPublicStyleContainsOnlyTubeParts)
     }
 }
 
+TEST(TemplateRuntimeTest, GuardrailMarketElevationAndSideMountProduceValidSeparatedSolids)
+{
+    const auto root = std::filesystem::current_path();
+    iCAX::TemplateRuntime::CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
+    for (const std::string mode : {"continuous", "stepped", "horizontal", "side_plate",
+        "corner_l", "corner_u", "round", "round_l", "round_u", "treads", "treads_step", "large_cap", "horizontal_slope"})
+    {
+        char* caseFilter = nullptr;
+        std::size_t filterSize = 0;
+        _dupenv_s(&caseFilter, &filterSize, "ICAX_GUARDRAIL_TEST_CASE");
+        const bool skipCase = caseFilter && mode != caseFilter;
+        std::free(caseFilter);
+        if (skipCase) continue;
+        for (const double angle : {-30.0, 30.0})
+        {
+            SCOPED_TRACE(mode + " / " + std::to_string(angle));
+            std::cout << "Guardrail case: " << mode << " / " << angle << std::endl;
+            auto fixture = TemplateProtocolFixture(root, "modular_guardrail");
+            fixture.Parameters["sideLength1"] = 1600.0;
+            fixture.Parameters["maximumPostSpacing"] = 850.0;
+            fixture.Parameters["maximumVerticalClearGap"] = 300.0;
+            fixture.Parameters["maximumHorizontalClearGap"] = 300.0;
+            fixture.Parameters["guardHeight"] = 700.0;
+            fixture.Parameters["slopeAngle"] = angle;
+            if (mode == "horizontal") fixture.Parameters["infillType"] = std::string("horizontal");
+            else if (mode == "side_plate") fixture.Parameters["installation"] = std::string("side_plate");
+            else fixture.Parameters["pathMode"] = std::string(mode == "stepped" || mode == "treads_step" ? "stepped" : "continuous");
+            fixture.Parameters["sideLength2"] = 1000.0;
+            fixture.Parameters["sideLength3"] = 1200.0;
+            fixture.Parameters["slopeAngle2"] = 0.0;
+            fixture.Parameters["slopeAngle3"] = angle;
+            if (mode == "corner_l" || mode == "round_l") fixture.Parameters["layout"] = std::string("left_l");
+            if (mode == "corner_u" || mode == "round_u") fixture.Parameters["layout"] = std::string("u");
+            if (mode.starts_with("round"))
+                for (const std::string key : {"handrailProfileType", "postProfileType", "railProfileType"})
+                    fixture.Parameters[key] = std::string("round");
+            if (mode.starts_with("treads"))
+            {
+                fixture.Parameters["installation"] = std::string("base_plate");
+                fixture.Parameters["layout"] = std::string("u");
+                fixture.Parameters["elevationSource"] = std::string("treads");
+                fixture.Parameters["treadGoing"] = 280.0;
+                fixture.Parameters["treadRise"] = angle < 0 ? -175.0 : 175.0;
+                fixture.Parameters["treadCount1"] = 4;
+                fixture.Parameters["treadCount2"] = 0;
+                fixture.Parameters["treadCount3"] = 4;
+            }
+            if (mode == "large_cap")
+            {
+                fixture.Parameters["largePostMode"] = std::string("middle");
+                fixture.Parameters["postCapEnabled"] = true;
+            }
+            if (mode == "horizontal_slope")
+            {
+                fixture.Parameters["layout"] = std::string("left_l");
+                fixture.Parameters["infillType"] = std::string("horizontal");
+            }
+            fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(fixture.Descriptor, fixture.Parameters);
+            auto document = InvokeExplicitTemplatePurpose(host, fixture, "manufacturing");
+            ResolveTemplateComponentResources(document, root / "src/apps/tube-designer/templates/product/modular_guardrail",
+                fixture.Descriptor.Extensions, root / "src/apps/tube-designer/templates/accessory", nullptr);
+            const auto model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(document);
+            const auto geometry = iCAX::OpenCascade::EvaluateNeutralModel(model);
+            std::vector<TopoDS_Shape> shapes;
+            std::vector<std::array<double, 6>> bounds;
+            for (const auto& item : model.Items)
+            {
+                SCOPED_TRACE(item.Key);
+                const auto& shape = geometry.At(item.Representations.at("result"));
+                ASSERT_FALSE(shape.IsNull());
+                EXPECT_TRUE(BRepCheck_Analyzer(shape).IsValid());
+                EXPECT_GT(RootSelectionShapeVolume(shape), 0.01);
+                shapes.push_back(shape);
+                bounds.push_back(RootSelectionShapeBounds(shape));
+            }
+            for (std::size_t a = 0; a < shapes.size(); ++a)
+                for (std::size_t b = a + 1; b < shapes.size(); ++b)
+                {
+                    bool candidate = true;
+                    for (std::size_t axis = 0; axis < 3; ++axis)
+                        candidate &= std::min(bounds[a][axis + 3], bounds[b][axis + 3]) - std::max(bounds[a][axis], bounds[b][axis]) > 1e-4;
+                    if (!candidate) continue;
+                    SCOPED_TRACE(model.Items[a].Key + " / " + model.Items[b].Key);
+                    BRepAlgoAPI_Common common(shapes[a], shapes[b]);
+                    ASSERT_TRUE(common.IsDone());
+                    EXPECT_LT(std::abs(RootSelectionShapeVolume(common.Shape())), 0.01);
+                }
+        }
+    }
+}
+
 TEST(TemplateRuntimeTest, EveryModularGuardrailTemplateProducesValidNonOverlappingSolids)
 {
     using iCAX::Data::ObjectMap;

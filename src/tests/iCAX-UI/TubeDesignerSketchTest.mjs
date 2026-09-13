@@ -36,6 +36,27 @@ const line = (id, start, end) => ({
 });
 const metrics = { sampleStep: 0.01, snapTolerance: 0.25 };
 
+// Closing a resource sketch must select the parent tab, not its child page.
+for (const area of ["profiles", "tools", "components"]) {
+  const view = {
+    tubeDesignerSketch: createInitialSketchState(),
+    tubeDesignerSketchDialogOpen: true,
+    tubeDesignerToolSketchContext: area === "tools" ? {} : null,
+    tubeDesignerComponentCSGProfileReturn: area === "components" ? {} : null,
+  };
+  const tabs = [];
+  const context = { actions: { async selectRibbonTab(id) {
+    assert.equal(id, "resources");
+    assert.equal(view.tubeDesignerResourceLibraryArea, area);
+    tabs.push(id);
+  } } };
+  await handleSketchAreaAction(context, view, "tube-designer-sketch-cancel-section", {}, { renderProject() {} });
+  assert.deepEqual(tabs, ["resources"]);
+  assert.equal(view.activeAreaId, area);
+  assert.equal(context.activeRibbonTabId, "resources");
+  assert.equal(view.tubeDesignerSketchDialogOpen, false);
+}
+
 {
   const state = { tool: "line", command: null };
   const draft = { entities: [], selectedId: "", selectedIds: [], history: [], future: [], dirty: false };
@@ -316,7 +337,10 @@ const metrics = { sampleStep: 0.01, snapTolerance: 0.25 };
   let request = null;
   let selectedTab = "";
   const context = {
-    actions: { async selectRibbonTab(id) { selectedTab = id; } },
+    actions: { async selectRibbonTab(id) {
+      assert.ok(["view", "nesting", "machining", "resources", "about"].includes(id), `Unknown ribbon tab: ${id}`);
+      selectedTab = id;
+    } },
     productProxy: { async invoke(method, payload) {
       request = { method, payload };
       return { profile: { ...original, ...payload.profile, id: original.id, revision: 8, name: payload.name } };
@@ -337,7 +361,9 @@ const metrics = { sampleStep: 0.01, snapTolerance: 0.25 };
   assert.equal(view.tubeDesignerUserData.profiles.length, 1);
   assert.equal(view.tubeDesignerSelectedProfileId, "user:dxf-1");
   assert.equal(view.tubeDesignerProfileLibrary.scope, "user");
-  assert.equal(selectedTab, "profiles");
+  assert.equal(selectedTab, "resources");
+  assert.equal(context.activeRibbonTabId, "resources");
+  assert.equal(view.tubeDesignerResourceLibraryArea, "profiles");
   assert.equal(view.activeAreaId, "profiles");
 }
 

@@ -3344,8 +3344,11 @@ async function cancelSketch(context, view, ops) {
 }
 
 async function selectSketchArea(context, view, areaId) {
-  await context.actions?.selectRibbonTab?.(areaId);
-  context.activeRibbonTabId = areaId;
+  const resourceArea = ["profiles", "tools", "components"].includes(areaId);
+  const tabId = resourceArea ? "resources" : areaId;
+  if (resourceArea) view.tubeDesignerResourceLibraryArea = areaId;
+  await context.actions?.selectRibbonTab?.(tabId);
+  context.activeRibbonTabId = tabId;
   view.activeAreaId = areaId;
 }
 

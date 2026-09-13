@@ -27,6 +27,7 @@ PRESETS = [
         "id": "r3-straight" if descriptor["id"] == "modular-guardrail"
         else descriptor["id"].removeprefix("modular-guardrail-"),
         "displayName": descriptor["displayName"],
+        "categoryPath": descriptor.get("extensions", {}).get("catalog", {}).get("categoryPath", []),
         "parameters": {
             field["key"]: field["defaultValue"]
             for field in descriptor["parameters"]
@@ -35,7 +36,7 @@ PRESETS = [
     }
     for descriptor in STYLE_DESCRIPTORS
 ]
-LEGACY_PRESETS = PRESETS[:20]
+LEGACY_PRESETS = [preset for preset in PRESETS if preset["id"].startswith(("r2-", "r3-"))]
 
 
 def values(**changes):
@@ -111,7 +112,7 @@ class ModularGuardrailTests(unittest.TestCase):
                     self.assertFalse(overlap(a, b), (a.key, b.key))
 
     def test_each_bay_has_equal_clear_gaps_and_no_post_bar_collision(self):
-        for preset in PRESETS[:18]:
+        for preset in LEGACY_PRESETS:
             built = MODULE.build_layout(values(**preset["parameters"]))
             for bay in built.bays:
                 with self.subTest(preset=preset["id"], bay=bay.key):
@@ -309,7 +310,7 @@ class ModularGuardrailTests(unittest.TestCase):
         first_tool = manufacturing_nodes[bars[0].key + ".envelope.solid"]
         extrusion = manufacturing_nodes[first_tool["inputs"][0]]
         profile = manufacturing_nodes[extrusion["inputs"][0]]
-        self.assertAlmostEqual(profile["arguments"]["contours"][0]["width"], bars[0].profile.width + 0.6)
+        self.assertEqual(profile["arguments"]["contours"], bars[0].profile.contours(clearance=0.3)[:1])
 
     def test_wall_spear_is_a_resource_accessory_per_picket(self):
         parameters = values(guardrailUse="wall", spearTipEnabled=True, railCount=2)

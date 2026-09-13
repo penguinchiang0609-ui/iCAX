@@ -56,6 +56,10 @@ class Tube:
     diagonal: bool = False
     hole_tools: list[str] = field(default_factory=list)
     envelope_clearance: float = 0.0
+    start_cut_override: str = ""
+    end_cut_override: str = ""
+    extra_keep_volumes: list[str] = field(default_factory=list)
+    component_clips: list[str] = field(default_factory=list)
 
     @property
     def length(self) -> float:
@@ -131,6 +135,9 @@ class Layout:
     posts: list[Post]
     volumes: list[KeepVolume] = field(default_factory=list)
     components: list[Component] = field(default_factory=list)
+    path_vertices: list[Point] = field(default_factory=list)
+    profiles: dict[str, Any] = field(default_factory=dict)
+    elevation_segments: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _number(p: dict[str, Any], key: str, minimum: float = 0.0) -> float:
@@ -176,18 +183,30 @@ def _profile(p: dict[str, Any], prefix: str):
     return profile
 
 
-def distribute_bars(clear: float, width: float, maximum_gap: float, mode: str) -> tuple[list[float], list[float]]:
+def distribute_bars(clear: float, width: float, maximum_gap: float, mode: str, fixed_count: int = 0) -> tuple[list[float], list[float]]:
     """Return centers from the left clear face and all edge/internal gaps."""
+    if mode not in {"equal", "fixed_center", "manual_count", "half_edge"}:
+        raise ValueError("填充排列模式不受支持")
     if min(clear, width, maximum_gap) <= 0 or not all(math.isfinite(v) for v in (clear, width, maximum_gap)):
         raise ValueError("柱间净空、竖杆宽度和净间距必须大于0")
-    count = max(0, math.ceil((clear - maximum_gap) / (width + maximum_gap) - EPS))
+    if mode == "manual_count":
+        if isinstance(fixed_count, bool) or not isinstance(fixed_count, int) or not 0 <= fixed_count <= 500:
+            raise ValueError("固定杆数必须为0至500的整数")
+        count = fixed_count
+    elif mode == "half_edge":
+        count = max(1, math.ceil(clear / (width + maximum_gap) - EPS))
+    else:
+        count = max(0, math.ceil((clear - maximum_gap) / (width + maximum_gap) - EPS))
     if count > 500 or count * width >= clear - EPS:
         raise ValueError("竖杆规格或间距无法装入柱间净空")
     if count == 0:
         return [], [clear]
-    if mode == "equal":
+    if mode in {"equal", "manual_count"}:
         gap = (clear - count * width) / (count + 1)
         return [gap + width / 2 + i * (width + gap) for i in range(count)], [gap] * (count + 1)
+    if mode == "half_edge":
+        gap = (clear - count * width) / count
+        return [gap / 2 + width / 2 + i * (width + gap) for i in range(count)], [gap / 2] + [gap] * (count - 1) + [gap / 2]
     if mode != "fixed_center":
         raise ValueError("竖杆排列模式不受支持")
     # If very thick bars make the requested inner pitch impossible, equalize
@@ -199,13 +218,23 @@ def distribute_bars(clear: float, width: float, maximum_gap: float, mode: str) -
 
 
 def build_layout(p: dict[str, Any]) -> Layout:
+    mode = p.get("pathMode", "level")
+    if mode not in {"level", "continuous", "stepped"}:
+        raise ValueError("护栏路径模式不受支持")
+    built = _build_level_layout(p)
+    if mode != "level":
+        _shared("guardrail_elevation.py").apply_elevation(built, p, Tube, KeepVolume, distribute_bars)
+    return built
+
+
+def _build_level_layout(p: dict[str, Any]) -> Layout:
     layout = _choice(p, "layout", {"straight", "left_l", "right_l", "u"})
     rails = _choice(p, "railCount", {2, 3})
     corner_mode = _choice(p, "cornerPostMode", {"shared", "double"})
     large_mode = _choice(p, "largePostMode", {"none", "middle", "ends"})
     dimensions = _choice(p, "dimensionMode", {"outside_to_outside", "center_to_center"})
-    distribution = _choice(p, "barDistribution", {"equal", "fixed_center"})
-    infill_type = _choice(p, "infillType", {"bars", "plate", "lower_plate", "cross", "diamond", "glass"})
+    distribution = _choice(p, "barDistribution", {"equal", "fixed_center", "manual_count", "half_edge"})
+    infill_type = _choice(p, "infillType", {"bars", "horizontal", "plate", "lower_plate", "cross", "diamond", "glass"})
     use = str(p.get("guardrailUse", "platform"))
     if use not in {"platform", "wall"}:
         raise ValueError("护栏用途不受支持")
@@ -216,7 +245,7 @@ def build_layout(p: dict[str, Any]) -> Layout:
     glass_clips = _boolean(p, "glassClipEnabled") and infill_type == "glass"
     if cap_enabled and large_mode == "none":
         raise ValueError("柱帽安装在独立大立柱顶，请先选择中间或两端大立柱")
-    installation = _choice(p, "installation", {"embedded", "base_plate"})
+    installation = _choice(p, "installation", {"embedded", "base_plate", "side_plate"})
     height = _number(p, "guardHeight", 300)
     bottom = _number(p, "bottomClearance")
     drop = _number(p, "upperRailDrop", 1)
@@ -264,7 +293,10 @@ def build_layout(p: dict[str, Any]) -> Layout:
     vertices: list[Point] = [(0.0, 0.0, 0.0)]
     for index, direction in enumerate(directions):
         length = _number(p, f"sideLength{index + 1}", 100)
-        if dimensions == "outside_to_outside":
+        tread_count = _shared("guardrail_elevation.py").tread_count(p, index)
+        if tread_count:
+            length = tread_count * _number(p, "treadGoing", 1)
+        elif dimensions == "outside_to_outside":
             left_profile = large_post if large_mode == "ends" and index == 0 else post
             right_profile = large_post if large_mode == "ends" and index == len(directions) - 1 else post
             length -= (abs(direction[0]) * (left_profile.width + right_profile.width)
@@ -353,9 +385,12 @@ def build_layout(p: dict[str, Any]) -> Layout:
         for left, right in zip(anchor_positions, anchor_positions[1:]):
             count = max(1, math.ceil((right - left) / max_post))
             positions.extend(left + (right - left) * n / count for n in range(1, count + 1))
+        if _shared("guardrail_elevation.py").tread_count(p, index):
+            positions = _shared("guardrail_elevation.py").tread_post_positions(p, a, b, max_post, large_mode)
         current: list[Post] = []
         for distance in positions:
-            large = ((large_mode == "middle" and abs(distance - (a + b) / 2) < EPS)
+            middle_position = min(positions, key=lambda value: abs(value - (a + b) / 2))
+            large = ((large_mode == "middle" and abs(distance - middle_position) < EPS)
                      or (large_mode == "ends" and ((index == 0 and abs(distance - a) < EPS)
                          or (index == len(directions) - 1 and abs(distance - b) < EPS))))
             current.append(register_post(_add(vertices[index], direction, distance), large))
@@ -441,7 +476,7 @@ def build_layout(p: dict[str, Any]) -> Layout:
             start_face = _add(left.point, direction, left.half_extent(direction))
             end_face = _add(right.point, direction, -right.half_extent(direction))
             clear = _dot(tuple(end_face[j] - start_face[j] for j in range(3)), direction)
-            if clear <= infill.width:
+            if clear <= (1 if infill_type == "horizontal" else infill.width):
                 raise ValueError("立柱尺寸或布置导致柱间没有有效净空")
             if infill_type in {"cross", "diamond"}:
                 # The diagonal construction uses the frame centerlines. Large
@@ -460,7 +495,7 @@ def build_layout(p: dict[str, Any]) -> Layout:
                         f"按当前斜杆及框架规格需至少{minimum_width:g}×{minimum_height:g} mm；"
                         "请增大柱间距或横档间净空、减小花格管规格，避免斜杆被裁空或节点相碰。"
                     )
-            centers, gaps = (distribute_bars(clear, infill.width, maximum_gap, distribution)
+            centers, gaps = (distribute_bars(clear, infill.width, maximum_gap, distribution, p.get("fixedBarCount", 8))
                              if infill_type in {"bars", "lower_plate"} else ([], [clear]))
             if use == "wall" and centers:
                 hole_clearance = _number(p, "picketHoleClearance")
@@ -588,6 +623,18 @@ def build_layout(p: dict[str, Any]) -> Layout:
                         keep = volume(suffix, vc, vz, span / 2, frame_height / 2)
                         decorative(suffix, f"菱形花格斜杆 {n}", point_at(a, za), point_at(b, zb), keep)
 
+            if infill_type == "horizontal":
+                horizontal_gap = _number(p, "maximumHorizontalClearGap", 1)
+                levels, _ = distribute_bars(bar_upper - bar_lower, infill.width, horizontal_gap,
+                    distribution, p.get("fixedBarCount", 8))
+                for n, level in enumerate(levels, 1):
+                    a = left.point if left.profile.kind == "round" else start_face
+                    b = right.point if right.profile.kind == "round" else end_face
+                    clips = [column.key for column in (left, right) if column.profile.kind == "round"]
+                    add_tube(key + f".horizontal.{n:03d}", f"第{index}边第{bay_index}跨横向填充 {n}",
+                        (a[0], a[1], bar_lower + level), (b[0], b[1], bar_lower + level),
+                        infill, Z, tuple(-v for v in side), "guardrail.horizontal_bar", key, clips)
+
             if infill_type in {"bars", "lower_plate"}:
                 for bar_index, distance in enumerate(centers, 1):
                     point = _add(start_face, direction, distance)
@@ -621,6 +668,32 @@ def build_layout(p: dict[str, Any]) -> Layout:
                             add_component(bar.key + ".tip", "竖杆枪尖", str(p["spearTipModelReference"]),
                                           (point[0], point[1], z1), direction, side, "accessory.spear_tip", key)
 
+    if installation == "side_plate":
+        if layout != "straight" or p.get("pathMode", "level") != "level":
+            raise ValueError("侧装板当前支持水平直线护栏；转角和高程支座需另行设计")
+        if any(column.profile.kind != "rect" for column in posts):
+            raise ValueError("侧装焊接板要求立柱具有矩形平接面，圆管抱箍节点需另行设计")
+        plate_height = _number(p, "sidePlateHeight", 20)
+        plate_drop = _number(p, "sidePlateDrop", 1)
+        thickness = _number(p, "basePlateThickness", 1)
+        edge = _number(p, "baseBoltEdgeDistance", 1)
+        diameter = _number(p, "baseBoltDiameter", 1)
+        if plate_drop < plate_height / 2 or edge <= diameter / 2 or plate_height <= 2 * edge + diameter:
+            raise ValueError("侧装板需位于基准面以下，孔边距与板高须容纳螺栓孔")
+        for column in posts:
+            width = max(_number(p, "basePlateSize", 20), column.profile.width + 2 * edge + 2 * diameter)
+            tube = next(t for t in tubes if t.key == column.key)
+            tube.start = (*tube.start[:2], -plate_drop - plate_height / 2)
+            holes = tuple({"x": x * (width / 2 - edge), "y": y * (plate_height / 2 - edge), "diameter": diameter}
+                for x in (-1, 1) for y in (-1, 1))
+            add_plate(Plate("side." + column.key, "立柱侧装锚固板", width, plate_height, thickness,
+                (column.point[0], column.point[1] - column.profile.depth / 2 - thickness / 2, -plate_drop),
+                (1., 0., 0.), Z, "plate.side_mount", "bases", holes))
+        for a, b in zip(posts, posts[1:]):
+            pa, pb = (next(plate for plate in plates if plate.key == "side." + post.key) for post in (a, b))
+            if b.point[0] - a.point[0] <= (pa.width + pb.width) / 2:
+                raise ValueError("相邻侧装板重叠，请增大柱间距或减小板宽")
+
     if installation == "base_plate":
         plate_size = _number(p, "basePlateSize", 20)
         bolt_diameter = _number(p, "baseBoltDiameter", 1)
@@ -648,7 +721,8 @@ def build_layout(p: dict[str, Any]) -> Layout:
                 if (abs(first.center[0] - second.center[0]) < (first.width + second.width) / 2 - EPS
                         and abs(first.center[1] - second.center[1]) < (first.height + second.height) / 2 - EPS):
                     raise ValueError("相邻立柱底板互相重叠，请增大立柱间距、减小底板尺寸或另行设计共用底板")
-    return Layout(tubes, plates, bays, posts, volumes, components)
+    return Layout(tubes, plates, bays, posts, volumes, components, vertices,
+                  {"handrail": handrail, "rail": rail, "post": post, "infill": infill})
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -661,7 +735,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     # even though their geometry is valid.
     template = context.get("template", {})
     model = NeutralModel(template_id=str(template.get("id", "modular-guardrail")),
-                         template_version=str(template.get("version", "1.1.0")),
+                         template_version=str(template.get("version", "1.3.0")),
                          package_digest=str(context.get("template", {}).get("packageDigest", "")), parameters=parameters)
     shared = _geometry.SharedTubeGeometry(model)
     originals: dict[str, str] = {}
@@ -695,6 +769,12 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                                                 arguments={"vector": [v * volume.thickness for v in normal]})
     item_keys: list[str] = []
     rows: list[dict[str, Any]] = []
+    component_geometry = _components.ComponentModelGeometry(model)
+    component_shapes = {part.key: component_geometry.emit(part.key, part.reference, origin=part.origin,
+                        x_axis=part.x_axis, y_axis=part.y_axis) for part in built.components}
+
+    def cutting_shape(key):
+        return envelopes[key] if key in envelopes else component_shapes[key]
 
     def add_item(key: str, name: str, display_representation: str,
                  manufacturing_representation: str, properties: dict[str, Any]):
@@ -715,17 +795,19 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         start_cut, end_cut = ("miter", "miter") if part.diagonal else ("square", "square")
         if part.keep_volume:
             keep = keep_volumes[part.keep_volume]
+            keeps = [keep, *(keep_volumes[key] for key in part.extra_keep_volumes)]
             bounded = model.geometry(
-                part.key + ".bounded", "boolean", inputs=[originals[part.key], keep],
-                arguments={"operation": "intersect", "target": originals[part.key], "tools": [keep]},
+                part.key + ".bounded", "boolean", inputs=[originals[part.key], *keeps],
+                arguments={"operation": "intersect", "target": originals[part.key], "tools": keeps},
             )
+            display_representation = bounded
             if manufacturing_requested:
                 manufacturing_representation = bounded
             else:
                 display_representation = bounded
-        all_tools = part.clips + (part.hole_tools if manufacturing_requested else [])
+        all_tools = part.clips + part.component_clips + (part.hole_tools if manufacturing_requested else [])
         if all_tools:
-            tools = [envelopes[key] for key in dict.fromkeys(all_tools)]
+            tools = [cutting_shape(key) for key in dict.fromkeys(all_tools)]
             if manufacturing_requested:
                 manufacturing_representation = model.geometry(
                     part.key + ".finished", "boolean",
@@ -738,6 +820,11 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                     inputs=[display_representation, *tools],
                     arguments={"operation": "subtract", "target": display_representation, "tools": tools},
                 )
+            if manufacturing_requested and (part.clips or part.component_clips):
+                display_tools = [cutting_shape(key) for key in dict.fromkeys(part.clips + part.component_clips)]
+                display_representation = model.geometry(
+                    part.key + ".display.finished", "boolean", inputs=[display_representation, *display_tools],
+                    arguments={"operation": "subtract", "target": display_representation, "tools": display_tools})
         if not manufacturing_requested:
             manufacturing_representation = display_representation
         if part.clips:
@@ -757,12 +844,22 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             "manufacturing.process": "tube-profile-hole-cut-weld" if part.hole_tools else "tube-cut-weld",
             "manufacturing.categoryKey": part.category, "manufacturing.categoryName": {
                 "guardrail.handrail": "扶手管", "guardrail.post": "立柱", "guardrail.cross_rail": "横档",
-                "guardrail.vertical_bar": "竖杆", "guardrail.decorative_bar": "直管花格"}[part.category],
+                "guardrail.vertical_bar": "竖杆", "guardrail.horizontal_bar": "横向填充", "guardrail.decorative_bar": "直管花格"}[part.category],
             "tubeDesigner.profile": part.profile.properties(),
-            "tubeDesigner.endProcess": {"startCut": start_cut, "endCut": end_cut,
+            "tubeDesigner.endProcess": {"startCut": part.start_cut_override or start_cut, "endCut": part.end_cut_override or end_cut,
                                         "connection": "weld", "lengthBasis": "blank_axial_extent" if part.clips or part.keep_volume else "finished",
                                         "cutSource": "finished_geometry", "profileHoleCount": len(part.hole_tools)},
         }
+        if parameters.get("pathMode", "level") != "level":
+            tube_properties["manufacturing.elevation"] = {
+                "mode": parameters["pathMode"], "source": parameters.get("elevationSource", "angle"),
+                "pathSegmentSlopesDeg": [math.degrees(math.atan(segment["slope"])) for segment in built.elevation_segments],
+                "start": list(part.start), "end": list(part.end),
+                "blankLengthMm": part.length,
+                "inclinationDeg": math.degrees(math.atan2(part.end[2] - part.start[2], math.hypot(part.end[0] - part.start[0], part.end[1] - part.start[1]))),
+                "endCutSource": "finished_geometry"}
+        if part.component_clips:
+            tube_properties["manufacturing.clearanceComponents"] = list(part.component_clips)
         material_grade = str(parameters.get("materialGrade", "")).strip()
         if material_grade:
             tube_properties["manufacturing.materialGrade"] = material_grade
@@ -775,7 +872,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         manufacturing_representation = display_representation
         properties = _plates.plate_properties(part.width, part.height, part.thickness,
             material_grade=str(parameters.get("glassMaterial", "夹层玻璃") if part.part_kind == "glass" else parameters.get("plateMaterial", "")),
-            category_key=part.category, category_name="玻璃栏板" if part.part_kind == "glass" else "底板" if part.category == "plate.base" else "封板")
+            category_key=part.category, category_name="玻璃栏板" if part.part_kind == "glass" else "侧装锚固板" if part.category == "plate.side_mount" else "底板" if part.category == "plate.base" else "封板")
         properties.update({"manufacturing.partKind": part.part_kind, "manufacturing.materialCategory": part.part_kind,
                            "manufacturing.sourcing": "purchased" if part.part_kind == "glass" else "made",
                            "manufacturing.process": "purchased" if part.part_kind == "glass" else "plate-cut"})
@@ -784,10 +881,8 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             properties["manufacturing.materialGrade"] = material_grade
         properties["group"] = part.group
         add_item(part.key, part.name, display_representation, manufacturing_representation, properties)
-    component_geometry = _components.ComponentModelGeometry(model)
     for part in built.components:
-        display_representation = component_geometry.emit(part.key, part.reference, origin=part.origin,
-                                                          x_axis=part.x_axis, y_axis=part.y_axis)
+        display_representation = component_shapes[part.key]
         manufacturing_representation = display_representation
         properties = _components.component_properties(part.reference, category_key=part.category, category_name=part.name)
         properties["group"] = part.group
@@ -801,6 +896,20 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         {"key": "quantity", "displayName": "数量", "valueType": "integer"},
         {"key": "length", "displayName": "长度", "valueType": "number", "unit": "mm"}], rows=rows)
     model.diagnostic("info", "guardrail.design-review", "模板提供尺寸及加工几何，不代替项目规范、结构承载与锚固设计校核。")
+    if parameters.get("pathMode", "level") != "level":
+        model.diagnostic("warning", "guardrail.elevation-installation", "高程模式扶手分跨接入立柱，不是连续弯管。底板采用水平支座，不贴合斜面；请核对安装标高、连接强度及首尾收口。")
+        if parameters.get("pathMode") == "stepped":
+            model.diagnostic("warning", "guardrail.stepped-clearance", "阶梯单元按跨内较高端标高布置，低侧离地净空会增大，须按实际踏步与防护要求复核。")
+        model.table("guardrail_installation", "立柱安装定位", columns=[
+            {"key": key, "displayName": label, "valueType": "number", "unit": "mm"}
+            for key, label in (("x", "X坐标"), ("y", "Y坐标"), ("seatZ", "支承面标高"), ("topZ", "立柱顶标高"))],
+            rows=[{"key": "installation." + post.key, "itemKey": post.key,
+                   "values": {"x": post.point[0], "y": post.point[1], "seatZ": post.point[2],
+                              "topZ": next(t.end[2] for t in built.tubes if t.key == post.key)}} for post in built.posts])
+    if parameters.get("infillType") == "horizontal":
+        model.diagnostic("warning", "guardrail.horizontal-climbing", "横向填充存在攀爬风险；排布参数不代表防坠或防攀爬认证。")
+    if parameters.get("barDistribution") == "manual_count":
+        model.diagnostic("warning", "guardrail.manual-spacing", "固定杆数按净空反算间距，不自动保证最大净距，请按项目要求复核。")
     if parameters.get("infillType") in {"cross", "diamond"}:
         model.diagnostic("warning", "guardrail.decorative-openings", "X形、菱形花格属于装饰构造，不自动满足防攀爬或净开口限制；请按安装场景校核。")
     if any(part.part_kind == "glass" for part in built.plates):
