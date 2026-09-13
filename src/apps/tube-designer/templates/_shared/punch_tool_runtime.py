@@ -393,6 +393,10 @@ for _keys in V_NOTCH_SHAPE_KEYS.values():
     _keys.update(("bottomReference", "wallThickness", "reliefDepth", "reliefSide",
                   "bendCompensation", "useDefaultKFactor", "kFactor"))
 V_NOTCH_SHAPE_KEYS["v-notch-sharp"].add("flatReference")
+V_NOTCH_SHAPE_KEYS["v-notch-sharp"].update(("rootSlotPattern","centerSlotLength","sideSlotLength",
+    "centerSlotWidth","sideSlotWidth","rootKerf","minimumBridge","segmentedBend","segmentCount","centerlineRadius"))
+V_NOTCH_SHAPE_KEYS["edge-arc-groove"].add("arcDefinition")
+V_NOTCH_SHAPE_KEYS["v-notch-sharp"].update(("maximumChordError","reliefShape"))
 
 
 def _migrate_sharp_parameters(params, old_style=""):

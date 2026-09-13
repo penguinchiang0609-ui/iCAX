@@ -29,8 +29,8 @@ export const END_PROFILE_PLACEMENT_KEYS = Object.freeze([
 
 const BEND_COMPENSATION_KEYS = ["bendCompensation", "useDefaultKFactor", "kFactor"];
 const V_SHAPE_KEYS = Object.freeze({
-  "v-notch-sharp": ["angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize", "bottomReference", "wallThickness", "flatReference", "reliefDepth", "reliefSide"],
-  "edge-arc-groove": ["angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "bottomReference", "wallThickness", "reliefDepth", "reliefSide"],
+  "v-notch-sharp": ["angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize", "bottomReference", "wallThickness", "flatReference", "reliefDepth", "reliefSide", "rootSlotPattern", "centerSlotLength", "sideSlotLength", "centerSlotWidth", "sideSlotWidth", "rootKerf", "minimumBridge", "segmentedBend", "segmentCount", "centerlineRadius", "maximumChordError", "reliefShape"],
+  "edge-arc-groove": ["angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "bottomReference", "wallThickness", "reliefDepth", "reliefSide", "arcDefinition"],
 });
 
 function migrateSharpParameters(params, oldStyle = "") {

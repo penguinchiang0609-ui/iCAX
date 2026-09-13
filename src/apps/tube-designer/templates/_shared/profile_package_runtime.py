@@ -113,9 +113,9 @@ def _script_context(script_source, digest, resources=None, descriptor=None, *, e
                 if "__init__.py" in members:
                     package.__file__ = str(root / "__init__.py")
                     exec(compile(members["__init__.py"], package.__file__, "exec"), package.__dict__)
-                if entry not in ("profile", "recognize"):
+                if entry not in ("profile", "recognize", "fitting"):
                     raise ValueError("管型执行入口无效")
-                source = script_source if entry == "profile" else members.get("recognize.py", b"").decode("utf-8-sig")
+                source = script_source if entry == "profile" else members.get(entry + ".py", b"").decode("utf-8-sig")
                 yield _load_script(source, digest, root / (entry + ".py"), prefix, entry=entry)
             finally:
                 sys.path[:] = old_path
@@ -383,8 +383,10 @@ def _normalize_value(definition: dict[str, Any], value: Any) -> Any:
 def _validate_descriptor(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(value, dict):
         raise ValueError("profile.json 必须是 JSON 对象")
-    if "recognition" in value and value["recognition"] != {"schemaVersion":1,"entryPoint":"recognize.py"}:
-        raise ValueError("管型逆向协议必须声明 schemaVersion=1 和 entryPoint=recognize.py")
+    if "recognition" in value and value["recognition"] not in (
+            {"schemaVersion":1,"entryPoint":"recognize.py"},
+            {"schemaVersion":1,"entryPoint":"fitting.py"}):
+        raise ValueError("管型逆向协议必须声明 schemaVersion=1 和有效的逆向入口")
     if value.get("schema") != DESCRIPTOR_SCHEMA:
         raise ValueError("profile.json schema 不受支持")
     if value.get("schemaVersion") != DESCRIPTOR_SCHEMA_VERSION:
@@ -459,9 +461,9 @@ def _load_script(script_source: str, digest: str, source_path=None, package=None
     if package:
         sys.modules[module_name] = module
     exec(compile(script_source, namespace["__file__"], "exec"), namespace)
-    if entry == "recognize":
-        if not callable(namespace.get("recognize")):
-            raise ValueError("recognize.py 缺少 recognize(section, context)")
+    if entry in ("recognize", "fitting"):
+        if not callable(namespace.get(entry)):
+            raise ValueError(entry + ".py 缺少 " + entry + "(section, context)")
         return namespace
     if not callable(namespace.get("build")):
         raise ValueError("profile.py 缺少 build(parameters)")
@@ -847,7 +849,7 @@ def _find_system_package(root: Path, profile_id: Any, profile_scope: str = "syst
     return _system_package(directory, profile_scope, preview=False)
 
 
-def _list_system_packages(root: Path, profile_scope: str = "system") -> list[dict[str, Any]]:
+def _list_system_packages(root: Path, profile_scope: str = "system", *, preview=True) -> list[dict[str, Any]]:
     packages: list[dict[str, Any]] = []
     for directory in sorted(root.iterdir(), key=lambda item: item.name):
         if (not directory.is_dir()
@@ -855,7 +857,7 @@ def _list_system_packages(root: Path, profile_scope: str = "system") -> list[dic
                 or not (directory / "profile.json").is_file()):
             continue
         try:
-            packages.append(_system_package(directory, profile_scope, preview=True))
+            packages.append(_system_package(directory, profile_scope, preview=preview))
         except Exception as error:
             packages.append({"id": directory.name, "name": directory.name,
                              "descriptor": {"id": directory.name},
@@ -885,7 +887,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             root = _system_profile_root(parameters.get("profileRoot"))
             identifier = parameters.get("profileId")
             packages = ([_find_system_package(root, identifier, scope)] if identifier is not None
-                        else _list_system_packages(root, scope))
+                        else _list_system_packages(root, scope, preview=False))
         results = []
         runtime = types.SimpleNamespace(_normalize_parameters=_normalize_parameters, evaluate_section=evaluate_section,
                                         _script_context=_script_context, _evaluate=_evaluate)

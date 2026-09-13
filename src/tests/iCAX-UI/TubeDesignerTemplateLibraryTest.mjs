@@ -12,11 +12,8 @@ import { handleDesignerRibbonCommand } from "../../apps/tube-designer/webpage/de
 
 const productGroup = ribbonDefinition.tabs.find((tab) => tab.id === "resources")?.groups
   .find((group) => group.title === "产品模板");
-const manager = productGroup?.commands?.find((command) => command.id === "designer.templates.manage");
-assert.ok(manager, "资源库应提供产品模板管理入口");
 assert.deepEqual(productGroup.commands.map((item) => item.id), [
-  "designer.templates.manage", "designer.templates.new", "designer.templates.import",
-  "designer.templates.export", "designer.templates.delete",
+  "designer.templates.import", "designer.templates.delete",
 ]);
 
 const view = {
@@ -78,6 +75,10 @@ assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /产品模�
 assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /tube-product-template-library-group/);
 assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /示例款式/);
 assert.match(renderProductTemplateLibraryRightPane({}, libraryView), /预览参数/);
+assert.doesNotMatch(renderProductTemplateLibraryRightPane({}, libraryView), /tube-designer-template-manager-open|打开管理/);
+const emptyPersonalView = { tubeDesignerUserData: { productTemplates: [] }, tubeDesignerProductTemplateLibrary: { scope: "user" } };
+assert.match(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /导入 itpt/);
+assert.doesNotMatch(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /新增/);
 renderProductTemplateLibraryViewportOverlay(libraryView, libraryView);
 await new Promise((resolve) => setTimeout(resolve, 0));
 assert.equal(libraryView.tubeDesignerProductTemplateLibrary.preview?.response?.items?.length, 1);

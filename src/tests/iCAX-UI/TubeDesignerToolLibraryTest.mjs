@@ -58,6 +58,15 @@ const diagramView = {
 const diagramHtml = renderToolLibraryRightPane({}, diagramView);
 assert.match(diagramHtml, /tool-parameter-svg/);
 assert.match(diagramHtml, /夹角 90°/);
+assert.ok(diagramHtml.indexOf('tube-tool-library-mold-parameters') < diagramHtml.indexOf('tube-tool-library-parameter-diagram'));
+diagramView.tubeDesignerSystemPunchTools[0].parameterDiagram.variants = [
+  { visibleWhen: { op: "eq", parameter: "angle", value: 45 }, labels: [{ x: 20, y: 20, text: "wrong-variant" }] },
+  { visibleWhen: { op: "eq", parameter: "angle", value: 90 }, paths: ["M10 10 A20 20 0 0 0 30 30"], labels: [{ x: 20, y: 20, text: "declared-tangent-variant" }] },
+];
+const variantHtml = renderToolLibraryRightPane({}, diagramView);
+assert.match(variantHtml, /declared-tangent-variant/);
+assert.doesNotMatch(variantHtml, /wrong-variant/);
+assert.match(variantHtml, /M10 10 A20 20 0 0 0 30 30/);
 view.tubeDesignerToolLibrary = { scope: "system", type: "all", category: "slot", search: "", selectedKey: "" };
 assert.deepEqual(visibleLibraryTools(view).map((tool) => tool.id), ["v-notch-sharp", "diamond-12"]);
 assert.match(renderToolLibraryLeftPane({}, view), /tube-tool-library-group/);
@@ -169,6 +178,10 @@ await handleToolLibraryAction({}, branchView, "tube-designer-tool-library-toggle
 }, { renderProject() { branchRenders += 1; } });
 assert.equal(branchRenders, 1);
 assert.equal(branchView.tubeDesignerToolLibrary.showBranchProfileDiagram, true);
+const expandedBranchPane = renderToolLibraryRightPane({}, branchView);
+const branchEditor = expandedBranchPane.slice(expandedBranchPane.indexOf('tube-tool-library-branch-section'));
+assert.ok(branchEditor.indexOf('tube-tool-library-tube-parameter-grid') < branchEditor.indexOf('data-tube-tool-library-diagram="branch-profile"'));
+assert.ok(branchEditor.indexOf('data-tube-tool-library-diagram="branch-profile"') < branchEditor.indexOf('data-profile-library-diagram'));
 await handleToolLibraryAction({}, branchView, "tube-designer-tool-library-profile-parameter-change", {
   value: "72", dataset: { tubeToolLibraryProfileKey: "system:rect", tubeToolLibraryProfileParameter: "width", tubeToolLibraryProfileRole: "branch" },
 }, { renderProject() {} });
@@ -181,9 +194,26 @@ await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-librar
 assert.equal(diagramRenders, 1);
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.showProfileDiagram, true);
 assert.match(renderToolLibraryRightPane({}, profilePreviewView), /data-profile-library-diagram/);
+const expandedMainPane = renderToolLibraryRightPane({}, profilePreviewView);
+assert.ok(expandedMainPane.indexOf('tube-tool-library-tube-parameter-grid') < expandedMainPane.indexOf('data-tube-tool-library-diagram="profile"'));
+assert.ok(expandedMainPane.indexOf('tube-designer-tool-library-preview-length-change') < expandedMainPane.indexOf('data-tube-tool-library-diagram="profile"'));
+assert.ok(expandedMainPane.indexOf('data-tube-tool-library-diagram="profile"') < expandedMainPane.indexOf('data-profile-library-diagram'));
+const beforeCollapseKey = toolPreviewKey(profilePreviewView, partTool);
+const beforeCollapseDrafts = structuredClone(profilePreviewView.tubeDesignerToolLibrary.profileDrafts);
+await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
+assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, true);
+assert.match(renderToolLibraryRightPane({}, profilePreviewView), /id="tube-tool-library-main-tube-content" hidden/);
+assert.match(renderToolLibraryRightPane({}, profilePreviewView), /展开主管信息/);
+assert.equal(toolPreviewKey(profilePreviewView, partTool), beforeCollapseKey);
+assert.deepEqual(profilePreviewView.tubeDesignerToolLibrary.profileDrafts, beforeCollapseDrafts);
 await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-select", {
   dataset: { tubeToolLibraryKey: "system::branch-profile" },
 }, { renderProject() {} });
+assert.equal(profilePreviewView.tubeDesignerToolLibrary.showProfileDiagram, true);
+assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, true);
+await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
+assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, false);
+assert.doesNotMatch(renderToolLibraryRightPane({}, profilePreviewView), /id="tube-tool-library-main-tube-content" hidden/);
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.showProfileDiagram, true);
 
 // Selecting another mould keeps the already-applied tube/scene alive while

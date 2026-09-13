@@ -20,6 +20,59 @@ SPEC.loader.exec_module(runtime)
 
 
 class PunchTools(unittest.TestCase):
+    def test_removed_developed_strategy_is_not_offered_or_silently_remapped(self):
+        descriptor=next(t for t in runtime.catalogue()["tools"] if t["id"]=="v-notch-sharp")
+        parameters={p["key"]:p for p in descriptor["parameters"]}
+        self.assertNotIn("rightRoundRadius",parameters)
+        self.assertNotIn("developed",[o["value"] for o in parameters["bottomStrategy"]["options"]])
+        self.assertNotIn("developed",json.dumps(descriptor.get("parameterDiagram",{})))
+        with self.assertRaises(ValueError):
+            self.v_geometry(bottomStrategy="developed")
+
+    def test_side90_root_and_top_width_increase_and_mirror(self):
+        geometries=[self.v_geometry('edge-arc-groove',arcDefinition='side90',leftArc=left,
+            bendCompensation=True) for left in (True,False)]
+        edges=[g['model']['geometry'][0]['arguments']['contours'][0]['segments'] for g in geometries]
+        for a,b in zip(*edges):
+            for key in ('start','middle','end'):
+                if key in a:self.assertEqual([-a[key][0],a[key][1]],b[key])
+        root=edges[0][2];radius=19;length=math.pi/2*(radius+0.62)
+        self.assertAlmostEqual(length,math.dist(root['start'],root['end']))
+        self.assertAlmostEqual(length+radius,edges[0][0]['end'][0]-edges[0][0]['start'][0])
+        with self.assertRaisesRegex(ValueError,'固定'):
+            self.v_geometry('edge-arc-groove',arcDefinition='side90',angle=60)
+
+    def test_root_pattern_has_three_transverse_slots_and_checks_bridges(self):
+        geometry=self.v_geometry(rootSlotPattern=True)
+        nodes={n['key']:n for n in geometry['model']['geometry']}
+        self.assertEqual(['notch','root-center','root-left','root-right'],nodes['tool']['inputs'])
+        self.assertEqual(-6,nodes['root-center']['arguments']['vector'][1])
+        self.assertEqual(-3,nodes['root-left']['arguments']['vector'][1])
+        with self.assertRaisesRegex(ValueError,'桥宽'):
+            self.v_geometry(rootSlotPattern=True,centerSlotLength=32,sideSlotLength=3)
+
+    def test_relief_shapes_are_closed_without_zero_length_edges(self):
+        for kind in ('circle','capsule','roundedRectangle'):
+            geometry=self.v_geometry(bottomStrategy='relief',reliefShape=kind,reliefLength=3,reliefHeight=1)
+            node=next(n for n in geometry['model']['geometry'] if n['key']=='relief-profile')
+            edges=node['arguments']['contours'][0]['segments']
+            for i,edge in enumerate(edges):
+                self.assertGreater(math.dist(edge['start'],edge['end']),1e-9)
+                self.assertEqual(edge['end'],edges[(i+1)%len(edges)]['start'])
+
+    def test_segmented_bend_chord_spacing_and_overlap(self):
+        geometry=self.v_geometry(segmentedBend=True,segmentCount=6,centerlineRadius=50,angle=90)
+        metrics=geometry['calculation']
+        self.assertAlmostEqual(13.052619222,metrics['chordPitch'],places=8)
+        self.assertAlmostEqual(0.427756931,metrics['chordError'],places=8)
+        self.assertEqual(15,metrics['singleNotchAngle'])
+        self.assertEqual(90,metrics['finalIncludedAngle'])
+        automatic=self.v_geometry(segmentedBend=True,centerlineRadius=50,maximumChordError=0.1)['calculation']
+        self.assertLessEqual(automatic['chordError'],0.1)
+        self.assertGreater(automatic['segmentCount'],6)
+        with self.assertRaisesRegex(ValueError,'重叠'):
+            self.v_geometry(segmentedBend=True,centerlineRadius=5)
+
     def test_fitter_dependency_paths_are_scoped_and_validated(self):
         spec=importlib.util.spec_from_file_location("fitter_worker_test",ROOT/"src/iCAX-Engine/framework/TemplateRuntime/python/icax_template_worker.py")
         worker=importlib.util.module_from_spec(spec);spec.loader.exec_module(worker)
@@ -101,7 +154,12 @@ class PunchTools(unittest.TestCase):
         self.assertEqual({"min":[-10,-10],"max":[10,10]},queries.bounds(outer))
         inner=copy.deepcopy(outer);inner["inner"]=True
         inner["edges"][0].update(radius=8,start=[8,0],end=[8,0])
-        for tool in ("v-notch-sharp","edge-arc-groove"):
+        result=runtime.prepare({"features":[{"toolTarget":"part","toolRef":{"id":"v-notch-sharp"},
+            "toolParameters":{"segmentedBend":True,"centerlineRadius":50}}],
+            "bounds":{"min":[0,-10,-10],"max":[1000,10,10]},
+            "targetSection":{**TARGET,"contours":[outer,inner]}})
+        self.assertEqual(2,result['features'][0]['toolSnapshot']['parameters']['wallThickness'])
+        for tool in ("edge-arc-groove",):
             with self.assertRaisesRegex(ValueError,"平直"):
                 runtime.prepare({"features":[{"toolTarget":"part","toolRef":{"id":tool}}],
                     "bounds":{"min":[0,-10,-10],"max":[1000,10,10]},

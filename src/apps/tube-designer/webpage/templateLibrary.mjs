@@ -366,7 +366,7 @@ export function renderProductTemplateLibraryLeftPane(_context, view) {
       </div>
     </div>
     <div class="tube-tool-library-list tube-product-template-library-list" role="listbox" aria-label="产品模板列表">
-      ${items.length ? [...groupedItems.entries()].map(renderGroup).join("") : `<div class="tube-designer-empty-state"><strong>还没有产品模板</strong><span>${state.scope === "system" ? "请检查内置产品模板资源是否完整。" : "可通过上方“新增”或“导入 itpt”创建。"}</span></div>`}
+      ${items.length ? [...groupedItems.entries()].map(renderGroup).join("") : `<div class="tube-designer-empty-state"><strong>还没有产品模板</strong><span>${state.scope === "system" ? "请检查内置产品模板资源是否完整。" : "可通过上方“导入 itpt”添加产品模板。"}</span></div>`}
     </div>
   </div>`;
 }
@@ -374,7 +374,7 @@ export function renderProductTemplateLibraryLeftPane(_context, view) {
 export function renderProductTemplateLibraryRightPane(_context, view) {
   const state = productTemplateLibraryState(view);
   const item = templateLibraryItems(view).find((entry) => entry.scope === state.scope && entry.id === state.selectedId);
-  if (!item) return `<div class="tube-designer-panel"><div class="tube-designer-heading"><strong>产品模板</strong><span>尚未选择模板</span></div><div class="tube-designer-empty">从左侧选择一个产品模板，查看摘要或使用上方管理操作。</div></div>`;
+  if (!item) return `<div class="tube-designer-panel"><div class="tube-designer-heading"><strong>产品模板</strong><span>尚未选择模板</span></div><div class="tube-designer-empty">从左侧选择一个产品模板，查看摘要和预览参数。</div></div>`;
   const definitions = templateParameterDefinitions(item);
   const descriptorRequest = view?.tubeDesignerTemplateDescriptorRequests?.[String(item.templateId ?? item.id ?? "")];
   const values = templateParameterValues(view, item);
@@ -388,7 +388,7 @@ export function renderProductTemplateLibraryRightPane(_context, view) {
   const emptyContent = descriptorRequest
     ? `<div class="tube-designer-empty">正在读取模板参数…</div>`
     : `<div class="tube-designer-empty">此模板没有可编辑参数。</div>`;
-  return `<div class="tube-designer-panel tube-product-template-library-editor"><div class="tube-designer-heading"><div><strong>${escapeText(productTemplateName(item))}</strong><span>${item.scope === "system" ? "系统内置模板" : "我的模板"} · 参数预览</span></div></div><div class="tube-product-template-library-editor-body"><dl class="tube-product-template-library-meta"><dt>模板 ID</dt><dd>${escapeText(item.id)}</dd><dt>版本</dt><dd>${escapeText(item.version ?? item.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt</dd></dl><p>${escapeText(item.description ?? "暂无模板说明")}</p>${definitions.length ? `<section class="tube-product-template-library-parameters"><header><strong>预览参数</strong><span>修改后只更新中央场景，不改模板包</span></header>${[...groups.entries()].map(([group, entries]) => `<fieldset><legend>${escapeText(templateParameterGroupLabel(item, group))}</legend><div>${entries.map((definition) => templateParameterInput(view, item, definition)).join("")}</div></fieldset>`).join("")}</section>` : emptyContent}<button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-template-manager-open">打开管理</button></div></div>`;
+  return `<div class="tube-designer-panel tube-product-template-library-editor"><div class="tube-designer-heading"><div><strong>${escapeText(productTemplateName(item))}</strong><span>${item.scope === "system" ? "系统内置模板" : "我的模板"} · 参数预览</span></div></div><div class="tube-product-template-library-editor-body"><dl class="tube-product-template-library-meta"><dt>模板 ID</dt><dd>${escapeText(item.id)}</dd><dt>版本</dt><dd>${escapeText(item.version ?? item.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt</dd></dl><p>${escapeText(item.description ?? "暂无模板说明")}</p>${definitions.length ? `<section class="tube-product-template-library-parameters"><header><strong>预览参数</strong><span>修改后只更新中央场景，不改模板包</span></header>${[...groups.entries()].map(([group, entries]) => `<fieldset><legend>${escapeText(templateParameterGroupLabel(item, group))}</legend><div>${entries.map((definition) => templateParameterInput(view, item, definition)).join("")}</div></fieldset>`).join("")}</section>` : emptyContent}</div></div>`;
 }
 
 export function renderProductTemplateLibraryViewportOverlay(context, view) {

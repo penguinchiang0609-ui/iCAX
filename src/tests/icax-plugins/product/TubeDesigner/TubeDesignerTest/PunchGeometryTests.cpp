@@ -71,7 +71,7 @@ ObjectMap templateRequest(ObjectMap input, bool missingTools=false,const std::st
             {"kind",std::string("line")},{"start",points[i]},{"end",points[(i+1)%4]}});
         return ObjectMap{{"inner",inner},{"closed",true},{"edges",edges}};
     };
-    input["targetSection"]=ObjectMap{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
+    if(!input.contains("targetSection")) input["targetSection"]=ObjectMap{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
         {"status",std::string("available")},{"tolerance",0.001},
         {"contours",VariantArray{contour(20,10,false),contour(18,8,true)}}};
     const auto root=std::filesystem::current_path();
@@ -212,6 +212,41 @@ TEST(PartDrawing, EdgeArcGroovesKeepBridgeAndMirrorWithKCompensation) {
         EXPECT_TRUE(inside(right,500,0,-9.5));
         EXPECT_TRUE(inside(left,530,0,9));
         EXPECT_TRUE(inside(right,470,0,9));
+    }
+}
+TEST(PartDrawing, Side90NotchesUseRealSolidCuts) {
+    const ObjectMap params{{"arcDefinition",std::string("side90")},{"bendCompensation",true}};
+    auto mirrored=params;mirrored["leftArc"]=false;
+    const auto left=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",params)});
+    const auto right=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",mirrored)});
+    EXPECT_NEAR(mass(left),mass(right),1e-5);
+    EXPECT_FALSE(inside(left,500,0,9));EXPECT_TRUE(inside(left,500,0,-9.5));
+    EXPECT_FALSE(inside(left,475,0,9));EXPECT_FALSE(inside(right,525,0,9));
+}
+TEST(PartDrawing, RootSlotsPreserveTwoBridgesAndSegmentedBendCutsRoundTube) {
+    const auto relieved=BuildPunchGeometry(rectTube(),{partTool("v-notch-sharp",{{"rootSlotPattern",true}})});
+    EXPECT_FALSE(inside(relieved,500,0,-9.5));
+    EXPECT_TRUE(inside(relieved,500,10,-9.5));EXPECT_TRUE(inside(relieved,500,-10,-9.5));
+    const auto circle=[](double radius,bool inner) {return ObjectMap{{"inner",inner},{"closed",true},
+        {"edges",VariantArray{ObjectMap{{"kind",std::string("circleArc")},{"center",VariantArray{0.,0.}},
+            {"xAxis",VariantArray{1.,0.}},{"yAxis",VariantArray{0.,1.}},{"radius",radius},
+            {"first",0.},{"last",2*3.141592653589793},{"start",VariantArray{radius,0.}},{"end",VariantArray{radius,0.}}}}}};};
+    const ObjectMap target{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
+        {"status",std::string("available")},{"tolerance",0.001},{"contours",VariantArray{circle(20,false),circle(18,true)}}};
+    const auto prepared=templateRequest({{"action",std::string("prepare")},{"targetSection",target},
+        {"bounds",ObjectMap{{"min",VariantArray{0.,-20.,-20.}},{"max",VariantArray{1000.,20.,20.}}}},
+        {"features",VariantArray{ObjectMap{{"toolTarget",std::string("part")},{"station",500.},
+            {"toolRef",ObjectMap{{"id",std::string("v-notch-sharp")}}},
+            {"toolParameters",ObjectMap{{"segmentedBend",true},{"segmentCount",6.},{"centerlineRadius",80.}}}}}}});
+    const auto saved=prepared.at("features").To<VariantArray>()[0].To<ObjectMap>();
+    SPunchFeature feature;feature.ID="segments";feature.Type="v-notch-sharp";feature.Station=500;
+    feature.ToolInPartCoordinates=true;feature.ToolInPartLocalCoordinates=true;
+    feature.ToolShape=templateShape(saved.at("toolSnapshot").To<ObjectMap>());feature.TemplateData=saved;
+    const auto result=BuildPunchGeometry(roundTube(),{feature});
+    const double pitch=160*std::sin(7.5*3.141592653589793/180);
+    for(int i=0;i<6;++i) {
+        EXPECT_FALSE(inside(result,500+(i-2.5)*pitch,0,19));
+        EXPECT_TRUE(inside(result,500+(i-2.5)*pitch,0,-19.5));
     }
 }
 TEST(PartDrawing, AxialArraySupportsBothSignsAndEndReference) {

@@ -2,6 +2,7 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
+  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
   "id": "rect",
   "version": "2026.9.13.6",
   "displayName": "方管",

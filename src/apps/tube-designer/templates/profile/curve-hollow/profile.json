@@ -2,6 +2,7 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
+  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
   "id": "curve-hollow",
   "version": "2026.9.13.6",
   "displayName": "D型管",

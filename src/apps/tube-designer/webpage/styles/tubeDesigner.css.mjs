@@ -1260,6 +1260,8 @@ const baseTubeDesignerCss = String.raw`
 .tube-tool-library-editor-badge { flex-shrink: 0; padding: 4px 7px; border: 1px solid #bcd8d5; border-radius: 4px; background: #e1f2ef; color: #177b71; font-size: 10px; }
 .tube-tool-library-editor-body { display: grid; align-content: start; gap: 12px; min-height: 0; padding: 13px; overflow: auto; }
 .tube-tool-library-tube-section { display: grid; gap: 9px; padding: 10px; border: 1px solid #c9d8dc; border-radius: 6px; background: #edf6f5; }
+.tube-tool-library-tube-content:not([hidden]) { display: grid; gap: 9px; }
+.tube-tool-library-tube-section [hidden] { display: none !important; }
 .tube-tool-library-tube-section > header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .tube-tool-library-tube-section > header > div { display: grid; gap: 3px; }
 .tube-tool-library-tube-section > header strong { color: #2b5f66; font-size: 13px; }

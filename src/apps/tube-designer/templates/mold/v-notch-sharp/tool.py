@@ -1,4 +1,5 @@
 import math
+import copy
 
 def analyze(parameters, section, context):
     try:
@@ -12,6 +13,24 @@ def analyze(parameters, section, context):
         tolerance = section_geometry.number(local.get("tolerance", 0.001))
         if tolerance <= 0:
             raise section_geometry.SectionError("截面容差无效")
+        # A circular shell has no flat support. Determine concentric walls from
+        # analytic arcs, never from a profile ID or a nominal tube type label.
+        circles=[]
+        for loop in (outer[0],inner[0]):
+            edges=loop['edges']
+            if not all(e['kind']=='circleArc' for e in edges):break
+            center=edges[0]['center'];radius=edges[0]['radius']
+            if any(math.dist(e['center'],center)>tolerance or abs(e['radius']-radius)>tolerance for e in edges):break
+            if abs(sum(abs(e['last']-e['first']) for e in edges)-math.tau)*radius>tolerance:break
+            circles.append((center,radius))
+        if len(circles)==2:
+            wall=circles[0][1]-circles[1][1]
+            if wall<=tolerance or math.dist(circles[0][0],circles[1][0])>tolerance:
+                raise section_geometry.SectionError("圆弧截面必须为同心、正壁厚闭口轮廓")
+            data={"wallThickness":wall,"circularShell":True,"bounds":{
+                "min":[context['bounds']['min'][0],*outside['min']],
+                "max":[context['bounds']['max'][0],*outside['max']]}}
+            return {"applicable":True,"reason":"","data":data,"derivedParameters":{"wallThickness":wall}}
         bottom = section_geometry.horizontal_support(outer[0], outside["min"][1], tolerance)
         inner_bottom = section_geometry.horizontal_support(inner[0], inside["min"][1], tolerance)
         top = section_geometry.horizontal_support(outer[0], outside["max"][1], tolerance)
@@ -87,7 +106,7 @@ def _rounded_bottom_rectangle(length, height, radius, bottom):
 
 
 def _rounded_v_points(left_angle, right_angle, radius, bottom, top):
-    """Return the two R transitions and the short flat root between them."""
+    """Preserve the original root-relief arcs and the short root between them."""
     radius = _number(radius, "圆角半径 R")
     if radius < 0:
         raise ValueError("圆角半径不能小于 0")
@@ -99,8 +118,8 @@ def _rounded_v_points(left_angle, right_angle, radius, bottom, top):
     if radius <= 1e-9:
         return None
 
-    # Each side has its own tangent circle.  Their bottom points are joined
-    # by the short flat root shown in the reference rounded-V profile.
+    # Root clearance, not a tangent-development or formed-bend construction.
+    # Keep the original side arcs and their short connecting root unchanged.
     left_center_x = -radius * tan_left
     right_center_x = radius * tan_right
     left_slope = [left_center_x + radius * sin_left, bottom + radius * (1 - cos_left)]
@@ -138,6 +157,29 @@ def generate(p, context):
         raise ValueError("V 槽主管截面范围无效")
 
     angle = _number(p["angle"], "V 槽夹角")
+    total_angle=angle
+    segmented=p.get('segmentedBend',False)
+    if not isinstance(segmented,bool):raise ValueError("分段折弯必须是开关")
+    count=1;pitch=0;chord_error=0
+    if segmented:
+        count=p.get('segmentCount',6)
+        radius=_number(p.get('centerlineRadius',50),'目标中心线半径')
+        error_limit=_number(p.get('maximumChordError',0),'允许弓高误差')
+        if error_limit<0:raise ValueError("允许弓高误差不能为负")
+        if error_limit>0:
+            if radius<=0:raise ValueError("中心线半径须大于 0")
+            step=2*math.acos(max(-1,min(1,1-error_limit/radius)))
+            if step<=1e-12:raise ValueError("弓高误差过小，无法在64槽内达到")
+            count=max(2,math.ceil(math.radians(angle)/step))
+        if isinstance(count,bool) or not isinstance(count,(int,float)) or int(count)!=count or not 2<=count<=64:
+            raise ValueError("分段槽数须为 2 至 64 的整数")
+        count=int(count)
+        if radius<=0 or not 0<angle<180:raise ValueError("中心线半径须大于 0，总折弯角须介于 0 与 180°")
+        if p['asymmetric'] or p['bottomStrategy']!='sharp' or p['maleFemale'] or p.get('rootSlotPattern',False):
+            raise ValueError("分段折弯使用对称尖角槽，不与公母或根部三槽叠加")
+        angle/=count
+        pitch=2*radius*math.sin(math.radians(angle)/2)
+        chord_error=radius*(1-math.cos(math.radians(angle)/2))
     asymmetric = p["asymmetric"]
     if not isinstance(asymmetric, bool):
         raise ValueError("非对称必须是开关")
@@ -293,7 +335,7 @@ def generate(p, context):
         if not 0 <= k <= 1:
             raise ValueError("K 因子须介于 0 和 1 之间")
         # Delta L = K*T*theta (theta in radians). Split around the station:
-        # translate whole tangent arcs, never scale their radius or bend angle.
+        # Translate the existing root-relief arcs; do not redefine their shape.
         half_allowance = k * wall * math.radians(left_angle + right_angle) / 2
         for segment in contour["segments"]:
             for key in ("start", "middle", "end"):
@@ -305,7 +347,7 @@ def generate(p, context):
     origin = [0, hi[1] + 1, 0]
     nodes = []
 
-    def prism(key, shape, cut_depth=0, side="positive"):
+    def prism(key, shape, cut_depth=0, side="positive", transverse=None):
         if cut_depth < 0 or cut_depth > section_width:
             raise ValueError("释放孔切深须介于 0 和主管宽度之间（0 贯穿）")
         if side not in ("positive", "negative"):
@@ -316,6 +358,9 @@ def generate(p, context):
             direction = 1 if side == "positive" else -1
             local_origin[1] = (hi[1] + 1 if direction > 0 else lo[1] - 1)
             vector = [0, -direction * (cut_depth + 1), 0]
+        if transverse is not None:
+            local_origin[1] = transverse[1]
+            vector = [0, transverse[0]-transverse[1], 0]
         nodes.append({"key": key + "-profile", "operator": "profile2d", "arguments": {"placement": {
             "origin": local_origin, "xAxis": [1, 0, 0], "yAxis": [0, 0, 1]}, "contours": [shape]}})
         nodes.append({"key": key, "operator": "extrude", "inputs": [key + "-profile"], "arguments": {
@@ -323,11 +368,38 @@ def generate(p, context):
 
     prism("notch", contour)
     cutters = ["notch"]
+    root_pattern = p.get("rootSlotPattern", False)
+    if not isinstance(root_pattern,bool):raise ValueError("根部三槽必须是开关")
+    if root_pattern:
+        interval=context.get("analysis",{}).get("bottomWallSpan")
+        if not isinstance(interval,(list,tuple)) or len(interval)!=2:
+            raise ValueError("根部三槽需要从截面测得的平直铰链区间")
+        a,b=interval;available=b-a
+        lc,ls,wc,ws,kerf,minimum=[_number(p.get(key,default),key) for key,default in
+            (("centerSlotLength",6),("sideSlotLength",3),("centerSlotWidth",1),("sideSlotWidth",1),("rootKerf",0),("minimumBridge",1))]
+        if min(lc,ls,wc,ws,minimum)<=0 or kerf<0:
+            raise ValueError("释放槽尺寸和最小桥宽须大于 0，割缝不能为负")
+        if min(wc,ws)<=kerf:raise ValueError("释放槽宽必须大于割缝")
+        if (available-lc-2*ls)/2-kerf < minimum:
+            raise ValueError("根部三槽扣除割缝后的剩余桥宽不足")
+        mid=(a+b)/2
+        for key,width,limits in (("root-center",wc,(mid-lc/2,mid+lc/2)),
+                ("root-left",ws,(a,a+ls)),("root-right",ws,(b-ls,b))):
+            shape=_rounded_bottom_rectangle(width,bottom-lo[2]+2,0,lo[2]-1)
+            prism(key,shape,transverse=limits)
+            cutters.append(key)
     if strategy == "relief":
-        if sharp_bottom + _number(p["reliefHeight"], "释放孔高度") >= half_height:
+        relief_kind=p.get('reliefShape','roundedRectangle')
+        length=_number(p['reliefLength'],'释放孔长度')
+        height=_number(p['reliefHeight'],'释放孔高度')
+        relief_radius=_number(p['reliefRadius'],'释放孔圆角')
+        if relief_kind=='circle':height=length;relief_radius=length/2
+        elif relief_kind=='capsule':relief_radius=min(length,height)/2
+        elif relief_kind!='roundedRectangle':raise ValueError("释放孔形状无效")
+        if sharp_bottom + height >= half_height:
             raise ValueError("释放孔高度须小于可切除高度")
         relief = _rounded_bottom_rectangle(
-            p["reliefLength"], p["reliefHeight"], p["reliefRadius"], sharp_bottom)
+            length, height, relief_radius, sharp_bottom)
         prism("relief", relief, _number(p.get("reliefDepth", 0), "释放孔切深"), p.get("reliefSide", "positive"))
         cutters.append("relief")
 
@@ -335,7 +407,26 @@ def generate(p, context):
     if len(cutters) > 1:
         nodes.append({"key": "tool", "operator": "boolean", "inputs": cutters, "arguments": {"operation": "union"}})
         output = "tool"
-    return {"mode": "solid", "coordinateSpace": "part-local", "outputKey": output, "model": {
+    if segmented:
+        opening=2*(half_height-bottom)*math.tan(math.radians(angle)/2)
+        if pitch<=opening+1e-6:raise ValueError("槽距不大于单槽开口，分段槽会重叠；请增大目标半径")
+        originals=nodes;nodes=[];outputs=[]
+        for i in range(count):
+            offset=(i-(count-1)/2)*pitch;prefix=f'segment-{i}-'
+            for original in originals:
+                node=copy.deepcopy(original);node['key']=prefix+node['key']
+                if 'inputs' in node:node['inputs']=[prefix+k for k in node['inputs']]
+                if node['operator']=='profile2d':node['arguments']['placement']['origin'][0]+=offset
+                nodes.append(node)
+            outputs.append(prefix+output)
+        nodes.append({'key':'segmented-tool','operator':'compound','inputs':outputs,'arguments':{}})
+        output='segmented-tool'
+    return {"mode": "solid", "coordinateSpace": "part-local", "outputKey": output,
+        "calculation":{"bendAngle":total_angle if segmented else left_angle+right_angle,
+            "finalIncludedAngle":180-(total_angle if segmented else left_angle+right_angle),
+            "singleNotchAngle":left_angle+right_angle,"segmentCount":count,"chordPitch":pitch,
+            "chordError":chord_error,"rootReference":reference,"hingeThickness":min(wall,leave_bottom),
+            "cutSurfaceMode":"FixedPlane","formingValidation":"not-performed"},"model": {
         "schema": "icax.neutral-model", "schemaVersion": 1,
-        "template": {"id": "v-notch-sharp", "version": "2.1.0", "packageDigest": "self-contained"},
+        "template": {"id": "v-notch-sharp", "version": "3.0.1", "packageDigest": "self-contained"},
         "geometry": nodes}}

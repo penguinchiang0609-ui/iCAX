@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { renderToolLibraryRightPane, handleToolLibraryAction } from "../../apps/tube-designer/webpage/toolLibrary.mjs";
+const collapseView = {
+  tubeDesignerSystemPunchTools: [{ id: "test-mold", displayName: "测试模具", kind: "programmatic", target: "part", category: "槽口", parameters: [] }],
+  tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::test-mold", previewLength: 500 },
+};
+const expandedPane = renderToolLibraryRightPane({}, collapseView);
+await handleToolLibraryAction({}, collapseView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
+const collapsedPane = renderToolLibraryRightPane({}, collapseView);
 const read=path=>readFileSync(new URL(path,import.meta.url),"utf8");
 const data=source=>"data:text/javascript;charset=utf-8,"+encodeURIComponent(source);
 const patchUrl=data(read("../../apps/tube-designer/webpage/punchDomPatch.mjs"));
@@ -9,7 +17,7 @@ const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright"
 const browser=await chromium.launch({headless:true,channel:"msedge"});
 try {
   const page=await browser.newPage();
-  const result=await page.evaluate(async ({libraryUrl,stateUrl})=>{
+  const result=await page.evaluate(async ({libraryUrl,stateUrl,expandedPane,collapsedPane})=>{
     const {patchLibraryDom,rememberLibraryDom}=await import(libraryUrl);
     const {capturePaneInteraction}=await import(stateUrl);
     const results=[];
@@ -44,8 +52,30 @@ try {
       results.push(!patchLibraryDom({...view,activeAreaId:"components"},mount,{suffix:""}));
       results.push(!patchLibraryDom(view,mount,{suffix:"new dialog"}));
     }
+    document.body.innerHTML='<main><div class="cam-workbench"><aside class="cam-context-pane" style="height:200px;overflow:auto"><div style="height:1600px">left</div></aside><div class="cam-viewport"><canvas></canvas></div><aside class="cam-info-pane" style="height:200px;overflow:auto">'+expandedPane+'<div style="height:1600px"></div></aside></div></main>';
+    const mount=document.querySelector('main'),view={activeAreaId:'tools'};
+    const selector=mount.querySelector('[data-cam-change-action="tube-designer-tool-library-profile-change"]');
+    const toggle=mount.querySelector('[data-cam-action="tube-designer-tool-library-toggle-main-tube"]');
+    const content=mount.querySelector('#tube-tool-library-main-tube-content');
+    const canvas=mount.querySelector('canvas');
+    const left=mount.querySelector('.cam-context-pane'),right=mount.querySelector('.cam-info-pane');
+    let clicks=0;toggle.addEventListener('click',()=>clicks++);
+    rememberLibraryDom(view,mount,'');
+    toggle.focus({preventScroll:true});left.scrollTop=300;right.scrollTop=350;
+    for(const [html,hidden] of [[collapsedPane,true],[collapsedPane,true],[expandedPane,false]]) {
+      await new Promise(resolve=>setTimeout(resolve,5));
+      left.scrollTop=340;right.scrollTop=400;
+      const restore=capturePaneInteraction(mount);
+      const patched=patchLibraryDom(view,mount,{left:'<div style="height:1600px">left</div>',right:html+'<div style="height:1600px"></div>',overlay:'',suffix:''});
+      restore();toggle.click();
+      results.push(patched && content.hidden===hidden && selector.isConnected &&
+        selector===mount.querySelector('[data-cam-change-action="tube-designer-tool-library-profile-change"]') &&
+        toggle===document.activeElement && toggle.getAttribute('aria-expanded')===String(!hidden) &&
+        canvas===mount.querySelector('canvas') && left.scrollTop===340 && right.scrollTop===400);
+    }
+    results.push(clicks===3);
     return results;
-  },{libraryUrl,stateUrl});
+  },{libraryUrl,stateUrl,expandedPane,collapsedPane});
   assert.ok(result.every(Boolean),JSON.stringify(result));
   console.log("Tools/profiles local patch keeps canvas, cube, controls/listeners, focus and scrolling; status updates without remount.");
 } finally {await browser.close();}

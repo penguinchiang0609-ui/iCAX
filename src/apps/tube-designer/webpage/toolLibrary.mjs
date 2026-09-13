@@ -45,7 +45,7 @@ export function toolLibraryState(view) {
     scope: "system", type: "all", category: "all", search: "", selectedKey: "",
     collapsed: [], catalogueStatus: "idle", error: "", parameterDrafts: {},
     profileKey: "", profileDrafts: {}, branchProfileKey: "", branchProfileDrafts: {}, previewLength: 500,
-    showProfileDiagram: false, showBranchProfileDiagram: false, showToolDiagram: false,
+    showProfileDiagram: false, showBranchProfileDiagram: false, showToolDiagram: false, mainTubeCollapsed: false,
   };
   if (!SCOPES.some(([scope]) => scope === state.scope)) state.scope = "system";
   if (!TYPES.some(([type]) => type === state.type)) state.type = "all";
@@ -326,8 +326,10 @@ function diagramValue(value, parameter) {
 }
 
 function renderToolParameterDiagramSvg(tool, values) {
-  const diagram = tool?.parameterDiagram;
-  if (!diagram || typeof diagram !== "object") return renderToolIllustration(tool);
+  const baseDiagram = tool?.parameterDiagram;
+  if (!baseDiagram || typeof baseDiagram !== "object") return renderToolIllustration(tool);
+  const variant = (baseDiagram.variants ?? []).find(item => toolParameterVisible(item, values));
+  const diagram = variant ? { ...baseDiagram, ...variant } : baseDiagram;
   const viewBox = String(diagram.viewBox ?? "0 0 240 160");
   const viewBoxParts = viewBox.split(/\s+/).map(Number);
   const width = Number.isFinite(viewBoxParts[2]) ? viewBoxParts[2] : 240;
@@ -384,15 +386,19 @@ function renderToolTubeSection(view, role = "main") {
   const options = profiles.map((item) => `<option value="${escapeAttr(profileSelectionKey(item))}" ${profileSelectionKey(item) === selectedKey ? "selected" : ""}>${escapeText(profileName(item))}${profileScopeOf(item) === "template" ? " · 模板" : profileScopeOf(item) === "user" ? " · 我的" : " · 系统"}</option>`).join("");
   const state = toolLibraryState(view);
   const showDiagram = !!(isBranch ? state.showBranchProfileDiagram : state.showProfileDiagram);
+  const expanded = isBranch || !state.mainTubeCollapsed;
   const title = isBranch ? "支管 / 管型参数" : "主管 / 管型参数";
   const description = isBranch ? "选择支管截面，参数只影响当前支管模具预览" : "先选主管管型，再调整当前模具预览使用的尺寸";
   const fieldLabel = isBranch ? "支管管型" : "主管管型";
   const diagramTitle = isBranch ? "支管管型参数示意图" : "管型参数示意图";
   return `<section class="tube-tool-library-tube-section${isBranch ? " tube-tool-library-branch-section" : ""}" data-profile-parameter-scope data-tube-tool-library-tube-editor data-tube-tool-library-profile-role="${escapeAttr(role)}">
-    <header><div><strong>${title}</strong><span>${description}</span></div><div class="tube-tool-library-tube-header-actions"><span class="tube-tool-library-section-badge">${escapeText(profileSpecification(profile) || "当前管型")}</span>${definitions.length ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="${escapeAttr(isBranch ? "branch-profile" : "profile")}" aria-expanded="${showDiagram}">${showDiagram ? "隐藏管型参数示意图" : "显示管型参数示意图"}</button>` : ""}</div></header>
+    <header><div><strong>${title}</strong><span>${description}</span></div><div class="tube-tool-library-tube-header-actions"><span class="tube-tool-library-section-badge">${escapeText(profileSpecification(profile) || "当前管型")}</span>${!isBranch ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-main-tube" aria-expanded="${expanded}" aria-controls="tube-tool-library-main-tube-content">${expanded ? "收起主管信息" : "展开主管信息"}</button>` : ""}</div></header>
+    <div class="tube-tool-library-tube-content" ${isBranch ? "" : 'id="tube-tool-library-main-tube-content"'} ${expanded ? "" : "hidden"}>
     <label class="tube-designer-field wide"><span>${fieldLabel}</span><select data-cam-change-action="tube-designer-tool-library-profile-change" data-tube-tool-library-profile-role="${escapeAttr(role)}" ${view?.pending ? "disabled" : ""}>${options || `<option>暂无可用管型</option>`}</select></label>
-    ${definitions.length ? `${showDiagram ? `<div data-profile-library-diagram>${renderProfileParameterDiagram(snapshot, { definitions: profile?.descriptor?.parameters ?? definitions, parameters: values, compact: true, title: diagramTitle })}</div>` : ""}<div class="tube-tool-library-tube-parameter-grid">${definitions.map((definition) => renderToolTubeParameterInput(view, profile, definition, role)).join("")}</div>` : `<p class="tube-tool-library-diagram-message">当前管型为固定截面；模具预览会直接使用它的实际轮廓。</p>`}
+    ${definitions.length ? `<div class="tube-tool-library-tube-parameter-grid">${definitions.map((definition) => renderToolTubeParameterInput(view, profile, definition, role)).join("")}</div>` : `<p class="tube-tool-library-diagram-message">当前管型为固定截面；模具预览会直接使用它的实际轮廓。</p>`}
     ${!isBranch ? `<label class="tube-designer-field wide"><span>主管预览长度（mm）</span><input type="number" min="1" max="100000" step="1" value="${escapeAttr(state.previewLength)}" data-cam-change-action="tube-designer-tool-library-preview-length-change" ${view?.pending ? "disabled" : ""} /></label>` : ""}
+    ${definitions.length ? `<div class="tube-tool-library-profile-diagram"><button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="${escapeAttr(isBranch ? "branch-profile" : "profile")}" aria-expanded="${showDiagram}">${showDiagram ? "隐藏管型参数示意图" : "显示管型参数示意图"}</button>${showDiagram ? `<div data-profile-library-diagram>${renderProfileParameterDiagram(snapshot, { definitions: profile?.descriptor?.parameters ?? definitions, parameters: values, compact: true, title: diagramTitle })}</div>` : ""}</div>` : ""}
+    </div>
   </section>`;
 }
 
@@ -759,6 +765,11 @@ export async function handleToolLibraryAction(context, view, action, target, ops
         ops.renderProject(context, view);
       }
     }
+    return { handled: true };
+  }
+  if (action === "tube-designer-tool-library-toggle-main-tube") {
+    state.mainTubeCollapsed = !state.mainTubeCollapsed;
+    ops.renderProject(context, view);
     return { handled: true };
   }
   if (action === "tube-designer-tool-library-toggle-diagram") {

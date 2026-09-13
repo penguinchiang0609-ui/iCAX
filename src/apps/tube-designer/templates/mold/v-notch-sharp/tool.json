@@ -1,31 +1,533 @@
 {
-  "schema":"icax.punch-tool","schemaVersion":1,"id":"v-notch-sharp","version":"2.1.0",
-  "sectionAnalysis":{"schemaVersion":1},
-  "displayName":"V槽","kind":"programmatic","target":"part","category":"槽口",
-  "description":"V槽夹角为两切边夹角；支持内外底面基准、平底、刀口圆角、公母和单侧限深释放孔。刀口圆角不代表折弯成形半径。",
-  "illustration":{"viewBox":"0 0 48 48","paths":["M6 9 H42","M6 9 L24 38 L42 9"]},
-  "parameterDiagram":{"viewBox":"0 0 240 180","paths":["M24 28 H216","M24 28 L120 124 L216 28","M24 148 H216"],"lines":[{"x1":24,"y1":16,"x2":216,"y2":16},{"x1":120,"y1":124,"x2":120,"y2":148},{"x1":112,"y1":124,"x2":128,"y2":124},{"x1":112,"y1":148,"x2":128,"y2":148},{"x1":105,"y1":111,"x2":135,"y2":111}],"labels":[{"x":120,"y":11,"text":"V槽"},{"x":120,"y":97,"text":"V槽夹角","parameter":"angle","unit":"°"},{"x":158,"y":141,"text":"槽底留量","parameter":"leaveBottom","unit":" mm"},{"x":120,"y":170,"text":"实际底面"}]},
-  "parameters":[
-    {"key":"bendCompensation","displayName":"启用 K 因子展开补偿（圆角策略）","valueType":"boolean","defaultValue":false},
-    {"key":"useDefaultKFactor","displayName":"使用默认 K 因子 0.62","valueType":"boolean","defaultValue":true,"visibleWhen":{"op":"eq","parameter":"bendCompensation","value":true}},
-    {"key":"kFactor","displayName":"自定义 K 因子（建议 0.6～1）","valueType":"number","defaultValue":0.62,"min":0,"max":1,"visibleWhen":{"op":"eq","parameter":"useDefaultKFactor","value":false}},
-    {"key":"angle","displayName":"V 槽夹角（°）","valueType":"number","defaultValue":90,"min":1,"max":170,"visibleWhen":{"op":"eq","parameter":"asymmetric","value":false}},
-    {"key":"asymmetric","displayName":"非对称","valueType":"boolean","defaultValue":false},
-    {"key":"leftAngle","displayName":"左侧角度（°）","valueType":"number","defaultValue":45,"min":0.1,"max":89.9,"visibleWhen":{"op":"eq","parameter":"asymmetric","value":true}},
-    {"key":"rightAngle","displayName":"右侧角度（°）","valueType":"number","defaultValue":45,"min":0.1,"max":89.9,"visibleWhen":{"op":"eq","parameter":"asymmetric","value":true}},
-    {"key":"leaveBottom","displayName":"留底高度（mm）","valueType":"number","defaultValue":1,"min":0,"max":10000},
-    {"key":"bottomReference","displayName":"留底基准","valueType":"string","defaultValue":"outer","options":[{"value":"outer","label":"外底面"},{"value":"inner","label":"内底面（加壁厚）"}]},
-    {"key":"wallThickness","derived":true,"displayName":"截面实测壁厚（mm）","valueType":"number","defaultValue":0,"min":0,"max":10000},
-    {"key":"flatReference","displayName":"平底留量解释","valueType":"string","defaultValue":"apex","options":[{"value":"apex","label":"虚拟尖底（兼容旧版）"},{"value":"actual","label":"实际平底"}],"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"flat"}},
-    {"key":"bottomStrategy","displayName":"底部策略","valueType":"string","defaultValue":"sharp","options":[{"value":"sharp","label":"尖底"},{"value":"flat","label":"平底"},{"value":"rounded","label":"圆角"},{"value":"relief","label":"释放孔"}]},
-    {"key":"flatWidth","displayName":"平底宽度（mm）","valueType":"number","defaultValue":0,"min":0,"max":10000,"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"flat"}},
-    {"key":"roundRadius","displayName":"刀口圆角 R（非成形半径，mm）","valueType":"number","defaultValue":2,"min":0,"max":10000,"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"rounded"}},
-    {"key":"reliefDepth","displayName":"释放孔切深（mm，0 贯穿）","valueType":"number","defaultValue":0,"min":0,"max":10000,"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"relief"}},
-    {"key":"reliefSide","displayName":"释放孔进刀侧（主管局部 Y）","valueType":"string","defaultValue":"positive","options":[{"value":"positive","label":"+Y 侧"},{"value":"negative","label":"−Y 侧"}],"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"relief"}},
-    {"key":"reliefLength","displayName":"释放孔长度（mm）","valueType":"number","defaultValue":1.5,"min":0,"max":10000,"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"relief"}},
-    {"key":"reliefHeight","displayName":"释放孔高度（mm）","valueType":"number","defaultValue":0.5,"min":0,"max":10000,"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"relief"}},
-    {"key":"reliefRadius","displayName":"释放孔圆角 R（mm）","valueType":"number","defaultValue":0.1,"min":0,"max":10000,"visibleWhen":{"op":"eq","parameter":"bottomStrategy","value":"relief"}},
-    {"key":"maleFemale","displayName":"斜切公母","valueType":"boolean","defaultValue":false},
-    {"key":"maleFemaleSize","displayName":"公母尺寸（mm，0 按壁厚）","valueType":"number","defaultValue":0,"min":0,"max":10000,"visibleWhen":{"op":"eq","parameter":"maleFemale","value":true}}
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "v-notch-sharp",
+  "version": "3.0.1",
+  "sectionAnalysis": {
+    "schemaVersion": 1
+  },
+  "displayName": "V槽",
+  "kind": "programmatic",
+  "target": "part",
+  "category": "槽口",
+  "description": "折弯开口角 β，最终夹角为180°−β。圆角与释放孔均用于槽根局部避空，减少折弯时材料挤压；圆角保留原几何，不作为相切展开或成形半径。支持根部三槽连接桥、圆管和弦长分段布槽。名义实体切面，不代表成形验证或已补偿激光轨迹。",
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M6 9 H42",
+      "M6 9 L24 38 L42 9"
+    ]
+  },
+  "parameterDiagram": {
+    "viewBox": "0 0 240 180",
+    "paths": [
+      "M24 28 H216",
+      "M24 28 L120 124 L216 28",
+      "M24 148 H216"
+    ],
+    "lines": [
+      {
+        "x1": 24,
+        "y1": 16,
+        "x2": 216,
+        "y2": 16
+      },
+      {
+        "x1": 120,
+        "y1": 124,
+        "x2": 120,
+        "y2": 148
+      },
+      {
+        "x1": 112,
+        "y1": 124,
+        "x2": 128,
+        "y2": 124
+      },
+      {
+        "x1": 112,
+        "y1": 148,
+        "x2": 128,
+        "y2": 148
+      },
+      {
+        "x1": 105,
+        "y1": 111,
+        "x2": 135,
+        "y2": 111
+      }
+    ],
+    "labels": [
+      {
+        "x": 120,
+        "y": 11,
+        "text": "V槽"
+      },
+      {
+        "x": 120,
+        "y": 97,
+        "text": "V槽夹角",
+        "parameter": "angle",
+        "unit": "°"
+      },
+      {
+        "x": 158,
+        "y": 141,
+        "text": "槽底留量",
+        "parameter": "leaveBottom",
+        "unit": " mm"
+      },
+      {
+        "x": 120,
+        "y": 170,
+        "text": "实际底面"
+      }
+    ],
+    "variants": [
+      {
+        "visibleWhen": {
+          "op": "eq",
+          "parameter": "segmentedBend",
+          "value": true
+        },
+        "paths": [
+          "M15 30 H225 M15 130 H225",
+          "M25 30 L45 110 L65 30 M80 30 L100 110 L120 30 M135 30 L155 110 L175 30"
+        ],
+        "lines": [],
+        "labels": [
+          {
+            "x": 120,
+            "y": 155,
+            "text": "弦长布槽；示意非比例"
+          },
+          {
+            "x": 120,
+            "y": 15,
+            "text": "槽数",
+            "parameter": "segmentCount"
+          }
+        ]
+      }
+    ]
+  },
+  "parameters": [
+    {
+      "key": "segmentedBend",
+      "displayName": "多槽分段折弯（对称尖角槽）",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "segmentCount",
+      "displayName": "折弯槽数",
+      "valueType": "number",
+      "defaultValue": 6,
+      "min": 2,
+      "max": 64,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "segmentedBend",
+        "value": true
+      }
+    },
+    {
+      "key": "centerlineRadius",
+      "displayName": "目标中心线半径（非内半径，mm）",
+      "valueType": "number",
+      "defaultValue": 50,
+      "min": 0.01,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "segmentedBend",
+        "value": true
+      }
+    },
+    {
+      "key": "bendCompensation",
+      "displayName": "启用 K 因子展开补偿（圆角策略）",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "useDefaultKFactor",
+      "displayName": "使用默认 K 因子 0.62",
+      "valueType": "boolean",
+      "defaultValue": true,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bendCompensation",
+        "value": true
+      }
+    },
+    {
+      "key": "kFactor",
+      "displayName": "自定义 K 因子（建议 0.6～1）",
+      "valueType": "number",
+      "defaultValue": 0.62,
+      "min": 0,
+      "max": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "useDefaultKFactor",
+        "value": false
+      }
+    },
+    {
+      "key": "angle",
+      "displayName": "折弯开口角 β（多槽时为总角度，°）",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 1,
+      "max": 170,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "asymmetric",
+        "value": false
+      }
+    },
+    {
+      "key": "asymmetric",
+      "displayName": "非对称",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "leftAngle",
+      "displayName": "左侧角度（°）",
+      "valueType": "number",
+      "defaultValue": 45,
+      "min": 0.1,
+      "max": 89.9,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "asymmetric",
+        "value": true
+      }
+    },
+    {
+      "key": "rightAngle",
+      "displayName": "右侧角度（°）",
+      "valueType": "number",
+      "defaultValue": 45,
+      "min": 0.1,
+      "max": 89.9,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "asymmetric",
+        "value": true
+      }
+    },
+    {
+      "key": "leaveBottom",
+      "displayName": "留底高度（mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0,
+      "max": 10000
+    },
+    {
+      "key": "bottomReference",
+      "displayName": "留底基准",
+      "valueType": "string",
+      "defaultValue": "outer",
+      "options": [
+        {
+          "value": "outer",
+          "label": "外底面"
+        },
+        {
+          "value": "inner",
+          "label": "内底面（加壁厚）"
+        }
+      ]
+    },
+    {
+      "key": "wallThickness",
+      "derived": true,
+      "displayName": "截面实测壁厚（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000
+    },
+    {
+      "key": "flatReference",
+      "displayName": "平底留量解释",
+      "valueType": "string",
+      "defaultValue": "apex",
+      "options": [
+        {
+          "value": "apex",
+          "label": "虚拟尖底（兼容旧版）"
+        },
+        {
+          "value": "actual",
+          "label": "实际平底"
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "flat"
+      }
+    },
+    {
+      "key": "bottomStrategy",
+      "displayName": "底部策略",
+      "valueType": "string",
+      "defaultValue": "sharp",
+      "options": [
+        {
+          "value": "sharp",
+          "label": "尖底"
+        },
+        {
+          "value": "flat",
+          "label": "平底"
+        },
+        {
+          "value": "rounded",
+          "label": "圆角避空"
+        },
+        {
+          "value": "relief",
+          "label": "释放孔"
+        }
+      ]
+    },
+    {
+      "key": "rootSlotPattern",
+      "displayName": "根部三段释放槽（保留两座连接桥）",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "centerSlotLength",
+      "displayName": "中槽横向长度（mm）",
+      "valueType": "number",
+      "defaultValue": 6,
+      "min": 0.01,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "rootSlotPattern",
+        "value": true
+      }
+    },
+    {
+      "key": "sideSlotLength",
+      "displayName": "每侧槽横向长度（mm）",
+      "valueType": "number",
+      "defaultValue": 3,
+      "min": 0.01,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "rootSlotPattern",
+        "value": true
+      }
+    },
+    {
+      "key": "centerSlotWidth",
+      "displayName": "中槽轴向宽度（mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0.01,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "rootSlotPattern",
+        "value": true
+      }
+    },
+    {
+      "key": "sideSlotWidth",
+      "displayName": "侧槽轴向宽度（mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0.01,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "rootSlotPattern",
+        "value": true
+      }
+    },
+    {
+      "key": "rootKerf",
+      "displayName": "桥宽核算割缝（不是刀路补偿，mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "rootSlotPattern",
+        "value": true
+      }
+    },
+    {
+      "key": "minimumBridge",
+      "displayName": "每座桥最小有效宽度（需试样标定，mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0.01,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "rootSlotPattern",
+        "value": true
+      }
+    },
+    {
+      "key": "flatWidth",
+      "displayName": "平底宽度（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "flat"
+      }
+    },
+    {
+      "key": "roundRadius",
+      "displayName": "槽根避空圆角 R（mm）",
+      "valueType": "number",
+      "defaultValue": 2,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "rounded"
+      }
+    },
+    {
+      "key": "reliefDepth",
+      "displayName": "释放孔切深（mm，0 贯穿）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "relief"
+      }
+    },
+    {
+      "key": "reliefSide",
+      "displayName": "释放孔进刀侧（主管局部 Y）",
+      "valueType": "string",
+      "defaultValue": "positive",
+      "options": [
+        {
+          "value": "positive",
+          "label": "+Y 侧"
+        },
+        {
+          "value": "negative",
+          "label": "−Y 侧"
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "relief"
+      }
+    },
+    {
+      "key": "reliefLength",
+      "displayName": "释放孔长度（mm）",
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "relief"
+      }
+    },
+    {
+      "key": "reliefHeight",
+      "displayName": "释放孔高度（mm）",
+      "valueType": "number",
+      "defaultValue": 0.5,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "relief"
+      }
+    },
+    {
+      "key": "reliefRadius",
+      "displayName": "释放孔圆角 R（mm）",
+      "valueType": "number",
+      "defaultValue": 0.1,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "relief"
+      }
+    },
+    {
+      "key": "maleFemale",
+      "displayName": "斜切公母",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "maleFemaleSize",
+      "displayName": "公母尺寸（mm，0 按壁厚）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "maleFemale",
+        "value": true
+      }
+    },
+    {
+      "key": "maximumChordError",
+      "displayName": "允许弓高误差（0 按槽数，正值自动算槽数，mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "segmentedBend",
+        "value": true
+      }
+    },
+    {
+      "key": "reliefShape",
+      "displayName": "释放孔形状",
+      "valueType": "string",
+      "defaultValue": "roundedRectangle",
+      "options": [
+        {
+          "value": "roundedRectangle",
+          "label": "圆角矩形"
+        },
+        {
+          "value": "capsule",
+          "label": "腰形孔"
+        },
+        {
+          "value": "circle",
+          "label": "圆孔（长度作直径）"
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "relief"
+      }
+    }
   ]
 }

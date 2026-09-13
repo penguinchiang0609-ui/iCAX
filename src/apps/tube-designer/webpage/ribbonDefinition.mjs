@@ -87,10 +87,7 @@ const allRibbonDefinition = {
         {
           title: "产品模板",
           commands: [
-            command("designer.templates.manage", "管理", "report", { size: "large", iconTone: "blue" }),
-            command("designer.templates.new", "新增", "add-instance", { size: "large", iconTone: "green" }),
             command("designer.templates.import", "导入 itpt", "new", { size: "large", iconTone: "green" }),
-            command("designer.templates.export", "导出 itpt", "save", { size: "large", iconTone: "green" }),
             command("designer.templates.delete", "删除", "delete", { size: "large", iconTone: "orange" }),
           ],
         },
