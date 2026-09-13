@@ -1,0 +1,143 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "version": "1.1.0",
+  "sectionAnalysis": {
+    "schemaVersion": 1
+  },
+  "kind": "programmatic",
+  "target": "part",
+  "category": "槽口",
+  "id": "embedded-arc-notch",
+  "displayName": "嵌入圆弧 V 槽",
+  "description": "一侧直斜边，另一侧保留嵌入圆弧。圆心位于槽根高度并与槽根相切，圆弧与该侧V边相交；支持左右镜像。R为保留圆弧半径，不是释放孔或槽根圆角。名义切除几何，不代表已完成塑性折弯及干涉验证。",
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M5 8 L24 39 A19 19 0 0 1 40 20 L45 8 Z"
+    ]
+  },
+  "parameterDiagram": {
+    "viewBox": "0 0 280 200",
+    "mirrorParameter": "rightArc",
+    "variants": [
+      {
+        "visibleWhen": {"op": "eq", "parameter": "maleFemale", "value": true},
+        "paths": [
+          "M38 50 V30 H230 V50 H210 L200 60 A80 80 0 0 0 120 140 Z",
+          "M20 155 H250", "M200 140 L144 84"
+        ],
+        "lines": [
+          {"x1": 238, "y1": 30, "x2": 238, "y2": 50},
+          {"x1": 233, "y1": 30, "x2": 243, "y2": 30},
+          {"x1": 233, "y1": 50, "x2": 243, "y2": 50}
+        ],
+        "labels": [
+          {"x": 120, "y": 18, "text": "开口角 β", "parameter": "angle", "unit": "°"},
+          {"x": 238, "y": 70, "text": "公母台阶"},
+          {"x": 200, "y": 110, "text": "保留圆弧 R", "parameter": "bendRadius", "unit": " mm"},
+          {"x": 140, "y": 178, "text": "公母尺寸", "parameter": "maleFemaleSize", "unit": " mm（0取壁厚）"}
+        ]
+      }
+    ],
+    "paths": [
+      "M20 30 L120 140 A80 80 0 0 1 200 60 L230 30 Z",
+      "M20 155 H250",
+      "M200 140 L144 84",
+      "M110 140 H130 M110 155 H130"
+    ],
+    "lines": [
+      {
+        "x1": 120,
+        "y1": 140,
+        "x2": 230,
+        "y2": 30
+      },
+      {
+        "x1": 120,
+        "y1": 140,
+        "x2": 120,
+        "y2": 155
+      }
+    ],
+    "labels": [
+      {
+        "x": 120,
+        "y": 18,
+        "text": "开口角 β",
+        "parameter": "angle",
+        "unit": "°"
+      },
+      {
+        "x": 200,
+        "y": 110,
+        "text": "保留圆弧 R",
+        "parameter": "bendRadius",
+        "unit": " mm"
+      },
+      {
+        "x": 155,
+        "y": 179,
+        "text": "内底面距离",
+        "parameter": "rootClearance",
+        "unit": " mm"
+      }
+    ]
+  },
+  "parameters": [
+    {
+      "key": "maleFemale",
+      "displayName": "启用斜切公母",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "maleFemaleSize",
+      "displayName": "公母尺寸（mm，0 自动取壁厚）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {"op": "eq", "parameter": "maleFemale", "value": true}
+    },
+    {
+      "key": "angle",
+      "displayName": "折弯开口角 β（°）",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 1,
+      "max": 170
+    },
+    {
+      "key": "bendRadius",
+      "displayName": "嵌入圆弧半径 R（mm）",
+      "valueType": "number",
+      "defaultValue": 10,
+      "min": 0.01,
+      "max": 10000
+    },
+    {
+      "key": "rightArc",
+      "displayName": "右侧保留圆弧（关闭为左侧）",
+      "valueType": "boolean",
+      "defaultValue": true
+    },
+    {
+      "key": "rootClearance",
+      "displayName": "槽根到内底面距离（mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0,
+      "max": 10000
+    },
+    {
+      "key": "wallThickness",
+      "displayName": "截面实测壁厚（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "derived": true
+    }
+  ]
+}

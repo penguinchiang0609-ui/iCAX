@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   libraryTools,
   renderToolLibraryLeftPane,
@@ -24,6 +25,34 @@ const view = {
     punchTools: [{ id: "user-v", name: "我的 V 槽", kind: "fixed", libraryScope: "user" }],
   },
 };
+
+// New catalogue packages use the same generic UI and preview payload path.
+for (const id of ["embedded-arc-notch", "segmented-bend"]) {
+  const tool = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/mold/${id}/tool.json`, import.meta.url), "utf8"));
+  tool.defaultParameters = Object.fromEntries(tool.parameters.map(p => [p.key, p.defaultValue]));
+  const packageView = { tubeDesignerSystemPunchTools: [tool],
+    tubeDesignerToolLibrary: { scope: "system", selectedKey: `system::${id}`, showToolDiagram: true } };
+  assert.match(renderToolLibraryLeftPane({}, packageView), new RegExp(tool.displayName));
+  const html = renderToolLibraryRightPane({}, packageView);
+  assert.match(html, /tool-parameter-svg/);
+  assert.ok(html.indexOf("tube-tool-library-mold-parameters") < html.indexOf("tube-tool-library-parameter-diagram"));
+  const feature = buildToolLibraryPreviewPayload(packageView, libraryTools(packageView)[0]).features[0];
+  assert.equal(feature.toolRef.id, id);
+  assert.equal(feature.toolParameters.angle, 90);
+  assert.equal(feature.toolParameters.bendRadius, id === "embedded-arc-notch" ? 10 : 40);
+  assert.equal(feature.toolParameters.rootClearance, 1);
+  if (id === "embedded-arc-notch") {
+    assert.equal(feature.toolParameters.maleFemale, false);
+    assert.doesNotMatch(html, /公母尺寸（mm，0 自动取壁厚）/);
+    tool.defaultParameters.maleFemale = true;
+    const jointView = { tubeDesignerSystemPunchTools: [tool],
+      tubeDesignerToolLibrary: { scope: "system", selectedKey: `system::${id}`, showToolDiagram: true } };
+    const jointHtml = renderToolLibraryRightPane({}, jointView);
+    assert.match(jointHtml, /公母尺寸（mm，0 自动取壁厚）/);
+    assert.match(jointHtml, /公母台阶/);
+    assert.equal(buildToolLibraryPreviewPayload(jointView, libraryTools(jointView)[0]).features[0].toolParameters.maleFemale, true);
+  }
+}
 
 assert.equal(libraryTools(view).length, 4);
 assert.equal(toolLibraryState(view).scope, "system");

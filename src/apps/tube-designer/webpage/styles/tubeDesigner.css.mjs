@@ -1235,15 +1235,19 @@ const baseTubeDesignerCss = String.raw`
 .tube-product-template-library-editor { box-sizing: border-box; height: 100%; min-height: 0; overflow: hidden; }
 .tube-product-template-library-editor-body { display: grid; align-content: start; gap: 10px; min-height: 0; padding: 13px; overflow: auto; }
 .tube-product-template-library-editor-body > p { margin: 0; }
-.tube-product-template-library-parameters { display: grid; gap: 8px; padding-top: 9px; border-top: 1px solid #d4dfe2; }
+.tube-product-template-library-parameters { container: template-parameters / inline-size; display: grid; min-width: 0; gap: 8px; padding-top: 9px; border-top: 1px solid #d4dfe2; }
 .tube-product-template-library-parameters > header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .tube-product-template-library-parameters > header strong { font-size: 12px; }
 .tube-product-template-library-parameters > header span { color: var(--designer-muted); font-size: 9px; }
-.tube-product-template-library-parameters fieldset { display: grid; gap: 7px; margin: 0; padding: 8px; border: 1px solid #d0dfe2; border-radius: 5px; }
+.tube-product-template-library-parameters fieldset { display: grid; min-width: 0; gap: 7px; margin: 0; padding: 8px; border: 1px solid #d0dfe2; border-radius: 5px; }
 .tube-product-template-library-parameters legend { padding: 0 4px; color: #45666f; font-size: 10px; }
-.tube-product-template-library-parameters fieldset > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); gap: 7px; }
+.tube-product-template-library-parameters fieldset > div { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 9px 10px; }
+@container template-parameters (min-width: 230px) {
+  .tube-product-template-library-parameters fieldset > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.tube-product-template-library-field.is-wide { grid-column: 1 / -1; }
 .tube-product-template-library-parameters label { display: grid; gap: 3px; min-width: 0; }
-.tube-product-template-library-parameters label > span { overflow: hidden; color: #55737b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.tube-product-template-library-parameters label > span { color: #55737b; font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; white-space: normal; }
 .tube-product-template-library-parameters :is(input, select) { box-sizing: border-box; width: 100%; min-width: 0; min-height: 28px; padding: 4px 6px; border: 1px solid #bdcdd2; border-radius: 4px; background: #fff; color: #2b4c55; font: inherit; font-size: 11px; }
 .tube-product-template-library-check { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 6px !important; min-height: 28px; }
 .tube-product-template-library-check input { width: auto !important; min-height: auto !important; }

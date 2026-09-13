@@ -272,3 +272,45 @@ def parallel_gap(first, second):
     if low>=high:
         raise SectionError("内外壁没有共同的平直区域")
     return {"distance":abs(second["height"]-first["height"]),"range":[low,high]}
+
+
+def closed_shell_metrics(section, rotation=0):
+    """Measure one closed shell; callers decide which supports they require."""
+    local = local_section(section, rotation)
+    loops = local["contours"]
+    outer = [c for c in loops if not c["inner"]]
+    inner = [c for c in loops if c["inner"]]
+    if len(outer) != 1 or len(inner) != 1 or not all(c["closed"] for c in loops):
+        raise SectionError("需要一个闭合外轮廓和一个闭合内轮廓")
+    tol = number(local.get("tolerance", 0.001))
+    if tol <= 0:
+        raise SectionError("截面容差必须为正数")
+    outside, inside = bounds(outer[0]), bounds(inner[0])
+    if any(not outside["min"][i] < inside["min"][i] < inside["max"][i] < outside["max"][i] for i in (0, 1)):
+        raise SectionError("内轮廓必须严格位于外轮廓内部")
+    data = {"outside": outside, "inside": inside, "contours": loops, "tolerance": tol}
+    circles = []
+    for loop in (outer[0], inner[0]):
+        edges = loop["edges"]
+        if not edges or any(e["kind"] != "circleArc" for e in edges):
+            break
+        center, radius = edges[0]["center"], edges[0]["radius"]
+        if any(math.dist(e["center"], center) > tol or abs(e["radius"]-radius) > tol for e in edges):
+            break
+        if abs(sum(abs(e["last"]-e["first"]) for e in edges)-math.tau)*radius > tol:
+            break
+        circles.append((center, radius))
+    if len(circles) == 2:
+        wall = circles[0][1]-circles[1][1]
+        if wall <= tol or math.dist(circles[0][0], circles[1][0]) > tol:
+            raise SectionError("圆形内外壁必须同心且壁厚为正")
+        return {**data, "circularShell": True, "wallThickness": wall}
+    across = (inside["min"][0]+inside["max"][0])/2
+    gaps = []
+    for side in ("min", "max"):
+        a = horizontal_support(outer[0], outside[side][1], tol, across)
+        b = horizontal_support(inner[0], inside[side][1], tol, across)
+        gaps.append(parallel_gap(a, b)["distance"])
+    if min(gaps) <= tol or abs(gaps[0]-gaps[1]) > tol:
+        raise SectionError("上下基准壁须为等厚的平直壁面")
+    return {**data, "circularShell": False, "wallThickness": gaps[0]}

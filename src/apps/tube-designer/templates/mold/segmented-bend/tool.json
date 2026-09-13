@@ -1,0 +1,194 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "version": "1.0.0",
+  "sectionAnalysis": {
+    "schemaVersion": 1
+  },
+  "kind": "programmatic",
+  "target": "part",
+  "category": "槽口",
+  "id": "segmented-bend",
+  "displayName": "多槽分段折弯",
+  "description": "多个小角度V槽沿管长排列，逐段折弯逼近目标圆弧。支持内侧/中心线半径、手动槽数或弓高误差自动分段、K补偿及最小槽间隔检查。需单闭口截面及可测壁厚；圆管按同心圆弧识别。槽数不等于阵列数量。尚未模拟塑性成形。",
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M3 12 H8 L12 34 L16 12 H20 L24 34 L28 12 H32 L36 34 L40 12 H45 V39 H3 Z"
+    ]
+  },
+  "parameterDiagram": {
+    "viewBox": "0 0 300 230",
+    "paths": [
+      "M15 40 H35 L50 110 L65 40 H105 L120 110 L135 40 H175 L190 110 L205 40 H280",
+      "M15 125 H280",
+      "M50 132 V144 M120 132 V144 M50 138 H120",
+      "M32 185 A85 85 0 0 1 117 100",
+      "M32 185 H117 V100"
+    ],
+    "variants": [
+      {
+        "visibleWhen": {"op": "eq", "parameter": "countMode", "value": "tolerance"},
+        "labels": [
+          {"x": 150, "y": 18, "text": "总折弯角 β", "parameter": "angle", "unit": "°"},
+          {"x": 210, "y": 90, "text": "槽数按误差自动计算"},
+          {"x": 85, "y": 158, "text": "槽距 p（自动计算）"},
+          {"x": 183, "y": 190, "text": "目标半径", "parameter": "bendRadius", "unit": " mm"},
+          {"x": 180, "y": 213, "text": "最大弓高误差", "parameter": "maximumChordError", "unit": " mm"}
+        ]
+      }
+    ],
+    "labels": [
+      {
+        "x": 150,
+        "y": 18,
+        "text": "总折弯角 β",
+        "parameter": "angle",
+        "unit": "°"
+      },
+      {
+        "x": 225,
+        "y": 90,
+        "text": "槽数 n",
+        "parameter": "segmentCount"
+      },
+      {
+        "x": 85,
+        "y": 158,
+        "text": "槽距 p（自动计算）"
+      },
+      {
+        "x": 183,
+        "y": 190,
+        "text": "目标半径",
+        "parameter": "bendRadius",
+        "unit": " mm"
+      },
+      {
+        "x": 180,
+        "y": 213,
+        "text": "δ=β/n · p=2Rc·sin(δ/2)"
+      }
+    ]
+  },
+  "parameters": [
+    {
+      "key": "angle",
+      "displayName": "总折弯角 β（°）",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 1,
+      "max": 170
+    },
+    {
+      "key": "radiusDatum",
+      "displayName": "半径基准",
+      "valueType": "string",
+      "defaultValue": "inner",
+      "options": [
+        {
+          "value": "inner",
+          "label": "内侧半径 Ri"
+        },
+        {
+          "value": "centerline",
+          "label": "截面中心线半径 Rc"
+        }
+      ]
+    },
+    {
+      "key": "bendRadius",
+      "displayName": "目标弯曲半径（mm，按所选基准）",
+      "valueType": "number",
+      "defaultValue": 40,
+      "min": 0.01,
+      "max": 100000
+    },
+    {
+      "key": "countMode",
+      "displayName": "槽数确定方式",
+      "valueType": "string",
+      "defaultValue": "count",
+      "options": [
+        {
+          "value": "count",
+          "label": "指定槽数"
+        },
+        {
+          "value": "tolerance",
+          "label": "按最大弓高误差"
+        }
+      ]
+    },
+    {
+      "key": "segmentCount",
+      "displayName": "分段槽数 n",
+      "valueType": "integer",
+      "defaultValue": 6,
+      "min": 2,
+      "max": 64,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "countMode",
+        "value": "count"
+      }
+    },
+    {
+      "key": "maximumChordError",
+      "displayName": "最大弓高误差（mm）",
+      "valueType": "number",
+      "defaultValue": 0.5,
+      "min": 0.000001,
+      "max": 1000,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "countMode",
+        "value": "tolerance"
+      }
+    },
+    {
+      "key": "rootClearance",
+      "displayName": "槽根到内底面距离（mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0,
+      "max": 10000
+    },
+    {
+      "key": "minimumLand",
+      "displayName": "相邻槽最小剩余间隔（mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0.01,
+      "max": 10000
+    },
+    {
+      "key": "bendCompensation",
+      "displayName": "启用每槽 K 因子补偿",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "kFactor",
+      "displayName": "K 因子（需按材料和工艺标定）",
+      "valueType": "number",
+      "defaultValue": 0.62,
+      "min": 0,
+      "max": 1,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bendCompensation",
+        "value": true
+      }
+    },
+    {
+      "key": "wallThickness",
+      "displayName": "截面实测壁厚（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "derived": true
+    }
+  ]
+}

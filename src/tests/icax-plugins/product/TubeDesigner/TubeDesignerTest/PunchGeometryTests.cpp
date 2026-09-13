@@ -223,6 +223,43 @@ TEST(PartDrawing, Side90NotchesUseRealSolidCuts) {
     EXPECT_FALSE(inside(left,500,0,9));EXPECT_TRUE(inside(left,500,0,-9.5));
     EXPECT_FALSE(inside(left,475,0,9));EXPECT_FALSE(inside(right,525,0,9));
 }
+TEST(PartDrawing, EmbeddedArcNotchesRetainTongueAndMirror) {
+    const ObjectMap params{{"angle",90.},{"bendRadius",10.},{"rightArc",true}};
+    auto mirrored=params;mirrored["rightArc"]=false;
+    const auto right=BuildPunchGeometry(rectTube(),{partTool("embedded-arc-notch",params)});
+    const auto left=BuildPunchGeometry(rectTube(),{partTool("embedded-arc-notch",mirrored)});
+    EXPECT_NEAR(mass(left),mass(right),1e-5);
+    // Side wall samples: the circular tongue survives inside the original V.
+    EXPECT_TRUE(inside(right,504,19,-2));
+    EXPECT_FALSE(inside(right,500,19,-2));
+    EXPECT_TRUE(inside(left,496,19,-2));
+    EXPECT_FALSE(inside(left,500,19,-2));
+    EXPECT_TRUE(inside(right,500,0,-9.5));
+    EXPECT_FALSE(inside(right,500,0,9));
+}
+TEST(PartDrawing, StandaloneSegmentedBendCutsEachSlotAndKeepsLand) {
+    const auto result=BuildPunchGeometry(rectTube(),{partTool("segmented-bend",{})});
+    const double pitch=100*std::sin(7.5*3.141592653589793/180);
+    for(int i=0;i<6;++i) {
+        const double x=500+(i-2.5)*pitch;
+        EXPECT_FALSE(inside(result,x,0,9));
+        EXPECT_TRUE(inside(result,x,0,-9.5));
+        if(i<5)EXPECT_TRUE(inside(result,x+pitch/2,0,9));
+    }
+}
+TEST(PartDrawing, EmbeddedArcMaleFemaleKeepsCircleAndCutsTopStep) {
+    const auto plain=BuildPunchGeometry(rectTube(),{partTool("embedded-arc-notch",{})});
+    const auto joint=BuildPunchGeometry(rectTube(),{partTool("embedded-arc-notch",{{"maleFemale",true}})});
+    const auto mirrored=BuildPunchGeometry(rectTube(),{partTool("embedded-arc-notch",{{"maleFemale",true},{"rightArc",false}})});
+    EXPECT_NEAR(mass(joint),mass(mirrored),1e-5);
+    EXPECT_FALSE(inside(plain,484.5,0,9));
+    EXPECT_TRUE(inside(joint,484.5,0,9));
+    EXPECT_TRUE(inside(plain,516.5,0,9));
+    EXPECT_FALSE(inside(joint,516.5,0,9));
+    EXPECT_TRUE(inside(joint,504,19,-2));
+    EXPECT_FALSE(inside(joint,500,19,-2));
+    EXPECT_TRUE(inside(joint,500,0,-9.5));
+}
 TEST(PartDrawing, RootSlotsPreserveTwoBridgesAndSegmentedBendCutsRoundTube) {
     const auto relieved=BuildPunchGeometry(rectTube(),{partTool("v-notch-sharp",{{"rootSlotPattern",true}})});
     EXPECT_FALSE(inside(relieved,500,0,-9.5));

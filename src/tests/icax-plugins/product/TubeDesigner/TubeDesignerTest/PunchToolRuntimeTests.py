@@ -20,6 +20,115 @@ SPEC.loader.exec_module(runtime)
 
 
 class PunchTools(unittest.TestCase):
+    def test_embedded_arc_male_female_keeps_circle_and_mirrors_step(self):
+        plain=self.v_geometry("embedded-arc-notch")
+        joint=self.v_geometry("embedded-arc-notch",maleFemale=True)
+        explicit=self.v_geometry("embedded-arc-notch",maleFemale=True,maleFemaleSize=2)
+        self.assertEqual(joint,explicit)
+        self.assertEqual(plain['model']['geometry'][2:4],joint['model']['geometry'][2:4])
+        edges=joint['model']['geometry'][0]['arguments']['contours'][0]['segments']
+        self.assertEqual(6,len(edges))
+        self.assertAlmostEqual(8,edges[0]['start'][1])
+        mirrored=self.v_geometry("embedded-arc-notch",maleFemale=True,rightArc=False)
+        other=mirrored['model']['geometry'][0]['arguments']['contours'][0]['segments']
+        for a,b in zip(edges,other):
+            for key in ('start','end'):self.assertEqual([-a[key][0],a[key][1]],b[key])
+        with self.assertRaisesRegex(ValueError,'壁厚'):
+            self.v_geometry("embedded-arc-notch",maleFemale=True,maleFemaleSize=1)
+        with self.assertRaisesRegex(ValueError,'重叠'):
+            self.v_geometry("embedded-arc-notch",maleFemale=True,maleFemaleSize=8)
+        disabled=self.v_geometry("embedded-arc-notch",maleFemale=False,maleFemaleSize=100)
+        self.assertEqual(plain,disabled)
+
+    def test_new_notches_are_discoverable_independent_packages(self):
+        tools = {t["id"]: t for t in runtime.catalogue()["tools"]}
+        for key in ("embedded-arc-notch", "segmented-bend"):
+            with self.subTest(key=key):
+                self.assertEqual("槽口", tools[key]["category"])
+                self.assertTrue(tools[key]["illustration"]["paths"])
+                self.assertTrue(tools[key]["parameterDiagram"]["labels"])
+                g = self.v_geometry(key)
+                self.assertEqual(key, g["model"]["template"]["id"])
+                self.assertEqual("not-performed", g["calculation"]["formingValidation"])
+                for node in g["model"]["geometry"]:
+                    if node["operator"] != "profile2d": continue
+                    edges = node["arguments"]["contours"][0]["segments"]
+                    for i,e in enumerate(edges):
+                        self.assertEqual(e["end"], edges[(i+1)%len(edges)]["start"])
+                        self.assertGreater(math.dist(e["start"],e["end"]), 1e-9)
+
+    def test_embedded_circle_intersection_mirror_and_retained_material(self):
+        for angle in (30, 60, 90, 120, 150):
+            a = self.v_geometry("embedded-arc-notch", angle=angle, bendRadius=10)
+            b = self.v_geometry("embedded-arc-notch", angle=angle, bendRadius=10, rightArc=False)
+            calc = a["calculation"]
+            center, intersection = calc["circleCenter"], calc["flankIntersection"]
+            self.assertAlmostEqual(10, math.dist(center, intersection))
+            self.assertAlmostEqual(intersection[0], (intersection[1]-center[1])*math.tan(math.radians(angle/2)))
+            self.assertEqual([-center[0],center[1]], b["calculation"]["circleCenter"])
+            nodes = a["model"]["geometry"]
+            self.assertEqual("subtract", nodes[-1]["arguments"]["operation"])
+            self.assertEqual(["v-base","retained-circle"], nodes[-1]["inputs"])
+            # At 90 degrees the circle retains the would-be V waste at (4,5),
+            # while (0,5) is still cut: this is not a release-hole union.
+            if angle == 90:
+                self.assertLess((4-10)**2+5**2, 10**2)
+                self.assertGreater((0-10)**2+5**2, 10**2)
+            for n,m in zip(nodes,b["model"]["geometry"]):
+                if n["operator"] != "profile2d": continue
+                for e,f in zip(n["arguments"]["contours"][0]["segments"],m["arguments"]["contours"][0]["segments"]):
+                    for name in ("start","middle","end"):
+                        if name in e:self.assertEqual([-e[name][0],e[name][1]], f[name])
+        with self.assertRaisesRegex(ValueError, "超出"):
+            self.v_geometry("embedded-arc-notch", bendRadius=20)
+        with self.assertRaises(ValueError):
+            self.v_geometry("embedded-arc-notch", rootClearance=30)
+
+    def test_standalone_segments_radius_datums_and_auto_count(self):
+        a = self.v_geometry("segmented-bend", bendRadius=40)
+        b = self.v_geometry("segmented-bend", bendRadius=50, radiusDatum="centerline")
+        self.assertEqual(a["model"], b["model"])
+        c = a["calculation"]
+        self.assertEqual(6, c["segmentCount"])
+        self.assertAlmostEqual(13.052619222, c["chordPitch"], places=8)
+        self.assertAlmostEqual(90, c["singleNotchAngle"]*6)
+        positions = [n["arguments"]["placement"]["origin"][0] for n in a["model"]["geometry"] if n["operator"]=="profile2d"]
+        self.assertAlmostEqual(0, sum(positions)/len(positions))
+        for x,y in zip(positions,positions[1:]): self.assertAlmostEqual(c["chordPitch"],y-x)
+        auto = self.v_geometry("segmented-bend",countMode="tolerance",maximumChordError=0.1)["calculation"]
+        self.assertLessEqual(auto["chordError"],0.1)
+        self.assertGreater(auto["segmentCount"],6)
+        self.assertGreater(50*(1-math.cos(math.radians(90/(auto["segmentCount"]-1))/2)),0.1)
+        with self.assertRaisesRegex(ValueError,"64"):
+            self.v_geometry("segmented-bend",countMode="tolerance",maximumChordError=0.000001)
+        with self.assertRaises(ValueError):self.v_geometry("segmented-bend",segmentCount=2.5)
+
+    def test_segments_compensation_is_checked_for_actual_opening(self):
+        a=self.v_geometry("segmented-bend",bendCompensation=False)["calculation"]
+        b=self.v_geometry("segmented-bend",bendCompensation=True,kFactor=0.62)["calculation"]
+        self.assertAlmostEqual(0.62*2*math.radians(15),b["singleNotchAllowance"])
+        self.assertAlmostEqual(a["singleNotchOpening"]+b["singleNotchAllowance"],b["singleNotchOpening"])
+        with self.assertRaisesRegex(ValueError,"间隔"):
+            self.v_geometry("segmented-bend",minimumLand=(a["remainingLand"]+b["remainingLand"])/2,bendCompensation=True)
+
+    def test_new_notches_round_shell_applicability_and_snapshot_roundtrip(self):
+        def circle(r,inner):
+            return {"inner":inner,"closed":True,"edges":[{"kind":"circleArc","center":[0,0],
+                "xAxis":[1,0],"yAxis":[0,1],"radius":r,"first":0,"last":math.tau,
+                "start":[r,0],"end":[r,0]}]}
+        section={**TARGET,"contours":[circle(10,False),circle(8,True)]}
+        for key in ("embedded-arc-notch","segmented-bend"):
+            params={"bounds":{"min":[0,-10,-10],"max":[1000,10,10]},"targetSection":section,
+                "features":[{"toolTarget":"part","toolRef":{"id":key},"station":500}]}
+            if key=="embedded-arc-notch":
+                with self.assertRaisesRegex(ValueError,"正交"):runtime.prepare(params)
+            else:
+                result=runtime.prepare(params)
+                params["features"]=json.loads(json.dumps(result["recipe"]["features"]))
+                again=runtime.prepare(params)
+                self.assertEqual(result["features"][0]["toolSnapshot"]["geometry"],again["features"][0]["toolSnapshot"]["geometry"])
+                self.assertEqual(2,again["features"][0]["toolSnapshot"]["parameters"]["wallThickness"])
+
     def test_removed_developed_strategy_is_not_offered_or_silently_remapped(self):
         descriptor=next(t for t in runtime.catalogue()["tools"] if t["id"]=="v-notch-sharp")
         parameters={p["key"]:p for p in descriptor["parameters"]}

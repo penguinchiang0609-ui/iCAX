@@ -313,13 +313,21 @@ function templateParameterInput(view, item, definition) {
   const constraints = definition.constraints ?? {};
   const common = `data-cam-change-action="tube-designer-product-template-library-parameter-change" data-tube-template-library-id="${escapeAttr(item.id)}" data-tube-template-library-parameter="${escapeAttr(key)}" ${view?.pending ? "disabled" : ""}`;
   const label = localizedTemplateText(definition.displayName, key);
-  if (type === "boolean") return `<label class="tube-product-template-library-check"><input type="checkbox" ${value ? "checked" : ""} ${common} /><span>${escapeText(label)}</span></label>`;
+  // Classify by declared content, not the edited value: typing must not move
+  // controls between columns. Long options and free text retain a whole row.
+  const textWidth = (text) => [...String(text)].reduce((n, ch) => n + (ch.codePointAt(0) > 255 ? 2 : 1), 0);
+  const hasChoices = type === "enum" || Array.isArray(definition.choices);
+  const wide = textWidth(label) > 24 ||
+    (hasChoices && (definition.choices ?? []).some(choice => textWidth(localizedTemplateText(choice.displayName, choice.value)) > 18)) ||
+    (!hasChoices && !["number", "integer", "boolean"].includes(type));
+  const fieldClass = `tube-product-template-library-field${wide ? " is-wide" : ""}`;
+  if (type === "boolean") return `<label class="${fieldClass} tube-product-template-library-check"><input type="checkbox" ${value ? "checked" : ""} ${common} /><span>${escapeText(label)}</span></label>`;
   if (type === "enum" || Array.isArray(definition.choices)) {
     const choices = Array.isArray(definition.choices) ? definition.choices : [];
-    return `<label><span>${escapeText(label)}</span><select ${common}>${choices.map((choice) => `<option value="${escapeAttr(choice.value)}" ${String(choice.value) === String(value) ? "selected" : ""}>${escapeText(localizedTemplateText(choice.displayName, choice.value))}</option>`).join("")}</select></label>`;
+    return `<label class="${fieldClass}"><span>${escapeText(label)}</span><select ${common}>${choices.map((choice) => `<option value="${escapeAttr(choice.value)}" ${String(choice.value) === String(value) ? "selected" : ""}>${escapeText(localizedTemplateText(choice.displayName, choice.value))}</option>`).join("")}</select></label>`;
   }
   const inputType = type === "number" || type === "integer" ? "number" : "text";
-  return `<label><span>${escapeText(label)}</span><input type="${inputType}" value="${escapeAttr(value)}" ${constraints.minimum !== undefined ? `min="${escapeAttr(constraints.minimum)}"` : ""} ${constraints.maximum !== undefined ? `max="${escapeAttr(constraints.maximum)}"` : ""} ${constraints.step !== undefined ? `step="${escapeAttr(constraints.step)}"` : ""} ${common} /></label>`;
+  return `<label class="${fieldClass}"><span>${escapeText(label)}</span><input type="${inputType}" value="${escapeAttr(value)}" ${constraints.minimum !== undefined ? `min="${escapeAttr(constraints.minimum)}"` : ""} ${constraints.maximum !== undefined ? `max="${escapeAttr(constraints.maximum)}"` : ""} ${constraints.step !== undefined ? `step="${escapeAttr(constraints.step)}"` : ""} ${common} /></label>`;
 }
 
 function templateIllustration(item) {
