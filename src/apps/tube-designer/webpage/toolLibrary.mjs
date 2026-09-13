@@ -1,3 +1,4 @@
+import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
 
 import { buildPunchPreviewRows } from "./punchEditor.mjs";
@@ -194,13 +195,7 @@ function toolParameterValues(view, tool) {
 }
 
 function toolParameterVisible(definition, values) {
-  const condition = definition?.visibleWhen;
-  if (!condition) return true;
-  if (condition.op === "eq") return values[condition.parameter] === condition.value;
-  if (condition.op === "ne") return values[condition.parameter] !== condition.value;
-  if (condition.op === "all") return (condition.conditions ?? []).every((item) => toolParameterVisible({ visibleWhen: item }, values));
-  if (condition.op === "any") return (condition.conditions ?? []).some((item) => toolParameterVisible({ visibleWhen: item }, values));
-  return true;
+  return matchesParameterCondition(definition?.visibleWhen, values);
 }
 
 const FALLBACK_TUBE_PROFILE = {
@@ -242,42 +237,38 @@ function toolTubeProfileValues(view, profile, role = "main") {
 }
 
 function profileParameterVisible(definition, values) {
-  const condition = definition?.visibleWhen;
-  if (!condition) return true;
-  if (condition.op === "eq") return values[condition.parameter ?? condition.key] === condition.value;
-  if (condition.op === "ne") return values[condition.parameter ?? condition.key] !== condition.value;
-  if (condition.op === "all") return (condition.conditions ?? condition.all ?? []).every((item) => profileParameterVisible({ visibleWhen: item }, values));
-  if (condition.op === "any") return (condition.conditions ?? condition.any ?? []).some((item) => profileParameterVisible({ visibleWhen: item }, values));
-  return true;
+  return matchesParameterCondition(definition?.visibleWhen, values);
 }
 
 function renderToolTubeParameterInput(view, profile, definition, role = "main") {
   const values = toolTubeProfileValues(view, profile, role);
+  const fieldDisabled = view?.pending || !parameterEnabled(definition, values);
   const key = String(definition?.key ?? "");
   if (!key) return "";
   const value = values[key] ?? definition?.defaultValue ?? "";
   const type = definition?.valueType ?? "number";
   const common = `data-profile-parameter-key="${escapeAttr(key)}" data-cam-change-action="tube-designer-tool-library-profile-parameter-change" data-tube-tool-library-profile-key="${escapeAttr(profileSelectionKey(profile))}" data-tube-tool-library-profile-role="${escapeAttr(role)}" data-tube-tool-library-profile-parameter="${escapeAttr(key)}" data-tube-profile-value-type="${escapeAttr(type)}"`;
   const label = escapeText(localizedText(definition?.displayName ?? definition?.name, key));
-  if (type === "boolean") return `<label class="tube-designer-field tube-designer-boolean-field"><span>${label}</span><input type="checkbox" ${value ? "checked" : ""} ${common} ${view?.pending ? "disabled" : ""} /></label>`;
+  if (type === "boolean") return `<label class="tube-designer-field tube-designer-boolean-field"><span>${label}</span><input type="checkbox" ${value ? "checked" : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
   const options = Array.isArray(definition?.options) ? definition.options : [];
-  if (options.length) return `<label class="tube-designer-field"><span>${label}</span><select ${common} ${view?.pending ? "disabled" : ""}>${options.map((option) => { const optionValue = typeof option === "object" ? option.value : option; const optionLabel = typeof option === "object" ? (option.displayName ?? option.label ?? optionValue) : option; return `<option value="${escapeAttr(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(localizedText(optionLabel, optionValue))}</option>`; }).join("")}</select></label>`;
+  if (options.length) return `<label class="tube-designer-field"><span>${label}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${options.map((option) => { const optionValue = typeof option === "object" ? option.value : option; const optionLabel = typeof option === "object" ? (option.displayName ?? option.label ?? optionValue) : option; return `<option value="${escapeAttr(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(localizedText(optionLabel, optionValue))}</option>`; }).join("")}</select></label>`;
   const inputType = type === "string" ? "text" : "number";
-  return `<label class="tube-designer-field"><span>${label}</span><input type="${inputType}" value="${escapeAttr(value)}" ${definition.min != null ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max != null ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step != null ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${view?.pending ? "disabled" : ""} /></label>`;
+  return `<label class="tube-designer-field"><span>${label}</span><input type="${inputType}" value="${escapeAttr(value)}" ${definition.min != null ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max != null ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step != null ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
 }
 
 function renderToolParameterInput(view, tool, definition) {
   const values = toolParameterValues(view, tool);
+  const fieldDisabled = view?.pending || !parameterEnabled(definition, values);
   const key = String(definition?.key ?? "");
   if (!key) return "";
   const value = values[key] ?? definition?.defaultValue ?? "";
   const type = definition?.valueType ?? "number";
   const common = `data-cam-change-action="tube-designer-tool-library-parameter-change" data-tube-tool-library-key="${escapeAttr(tool.libraryKey)}" data-tube-tool-library-parameter="${escapeAttr(key)}"`;
-  if (type === "boolean") return `<label class="tube-tool-library-parameter-check"><input type="checkbox" ${value ? "checked" : ""} ${common} ${view?.pending ? "disabled" : ""} /><span>${escapeText(localizedText(definition.displayName, key))}</span></label>`;
+  if (type === "boolean") return `<label class="tube-tool-library-parameter-check"><input type="checkbox" ${value ? "checked" : ""} ${common} ${fieldDisabled ? "disabled" : ""} /><span>${escapeText(localizedText(definition.displayName, key))}</span></label>`;
   if (type === "string" && Array.isArray(definition?.options)) {
-    return `<label><span>${escapeText(localizedText(definition.displayName, key))}</span><select ${common} ${view?.pending ? "disabled" : ""}>${definition.options.map((option) => `<option value="${escapeAttr(option.value)}" ${String(option.value) === String(value) ? "selected" : ""}>${escapeText(localizedText(option.label ?? option.displayName, option.value))}</option>`).join("")}</select></label>`;
+    return `<label><span>${escapeText(localizedText(definition.displayName, key))}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${definition.options.map((option) => `<option value="${escapeAttr(option.value)}" ${String(option.value) === String(value) ? "selected" : ""}>${escapeText(localizedText(option.label ?? option.displayName, option.value))}</option>`).join("")}</select></label>`;
   }
-  return `<label><span>${escapeText(localizedText(definition.displayName, key))}</span><input type="${type === "string" ? "text" : "number"}" value="${escapeAttr(value)}" ${definition.min !== undefined ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max !== undefined ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step !== undefined ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${view?.pending ? "disabled" : ""} /></label>`;
+  return `<label><span>${escapeText(localizedText(definition.displayName, key))}</span><input type="${type === "string" ? "text" : "number"}" value="${escapeAttr(value)}" ${definition.min !== undefined ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max !== undefined ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step !== undefined ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
 }
 
 function renderToolIllustration(tool) {

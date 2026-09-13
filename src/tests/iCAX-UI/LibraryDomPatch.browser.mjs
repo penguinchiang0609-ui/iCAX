@@ -24,7 +24,9 @@ try {
     for(const area of ["tools","profiles"]) {
       const hud=area==="tools"?"tube-tool-library-hud":"tube-profile-library-preview-hud";
       const left='<div class="list" style="height:1200px"><button data-cam-action="select">item</button></div>';
-      const right=value=>'<div style="height:500px"></div><label><input data-parameter="width" value="'+value+'"></label><div style="height:500px"></div>';
+      const right=value=>'<div style="height:500px"></div><label><input data-parameter="width" value="'+value+'"></label>'+
+        (value==='10'?'<label data-condition-field="extra"><input data-parameter="inactive" value="9"></label>':'')+
+        '<div class="nested-scroll" style="height:100px;overflow:auto"><div style="height:700px"></div></div><div style="height:500px"></div>';
       document.body.innerHTML='<main><div class="cam-workbench"><aside class="cam-context-pane" style="height:200px;overflow:auto">'+left+
         '</aside><div class="cam-viewport"><canvas></canvas><div class="cube"></div><div class="'+hud+'">old</div></div>'+
         '<aside class="cam-info-pane" style="height:200px;overflow:auto">'+right("10")+'</aside></div></main>';
@@ -34,6 +36,7 @@ try {
       rememberLibraryDom(view,mount,"");
       input.focus({preventScroll:true});input.value="123";input.setSelectionRange(1,2);
       leftPane.scrollTop=280;rightPane.scrollTop=450;
+      mount.querySelector('.nested-scroll').scrollTop=180;
       let clicks=0;input.addEventListener("click",()=>clicks++);
       // A delayed response must retain the latest edit and scroll.
       await new Promise(resolve=>setTimeout(resolve,5));
@@ -48,6 +51,7 @@ try {
         input===mount.querySelector("input") && clicks===1 && document.activeElement===input &&
         input.value==="123" && input.selectionStart===1 && input.selectionEnd===2 &&
         leftPane.scrollTop===340 && rightPane.scrollTop===450 &&
+        mount.querySelector('.nested-scroll').scrollTop===180 && !mount.querySelector('[data-condition-field="extra"]') &&
         mount.querySelector("."+hud).textContent==="new status" && mount.querySelector(".cam-status.error").textContent==="preview error");
       results.push(!patchLibraryDom({...view,activeAreaId:"components"},mount,{suffix:""}));
       results.push(!patchLibraryDom(view,mount,{suffix:"new dialog"}));

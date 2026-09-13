@@ -593,8 +593,9 @@ class PunchTools(unittest.TestCase):
             saved = self.prepare([{"toolTarget":"part", "toolRef":{"id":tool}, "toolParameters":parameters}])["recipe"]["features"][0]
             self.assertEqual(0.8, saved["toolParameters"]["kFactor"])
             self.assertEqual(saved["frozenTool"],self.prepare([saved])["recipe"]["features"][0]["frozenTool"])
-        with self.assertRaisesRegex(ValueError, "圆角策略"):
-            self.slot_nodes(wallThickness=2, bendCompensation=True)
+        self.assertEqual(self.slot_nodes(wallThickness=2),
+                         self.slot_nodes(wallThickness=2, bendCompensation=True),
+                         "Switching away from rounded ignores the retained compensation switch")
 
     def test_signed_multirow_array_survives_save_and_frozen_fallback(self):
         source={"id":"branch-array","toolTarget":"part","station":200,"reference":"end",

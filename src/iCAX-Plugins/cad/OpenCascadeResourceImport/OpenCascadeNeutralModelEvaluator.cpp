@@ -25,6 +25,7 @@
 #include <BRepBndLib.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepClass_FaceClassifier.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <BRepGProp.hxx>
@@ -954,6 +955,10 @@ namespace
                 // or tolerance-modified in place through their common TShape.
                 Builder_.SetNonDestructive(true);
                 Builder_.SetRunParallel(false);
+                // Millimetre geometry: use the same 1 nm coincidence tolerance
+                // for cut/fuse/common. Default per-shape tolerances can leave
+                // sliver solids at successive miter/elliptic intersections.
+                Builder_.SetFuzzyValue(1.e-6);
                 NCollection_List<TopoDS_Shape> _Arguments;
                 _Arguments.Append(_Result);
                 NCollection_List<TopoDS_Shape> _Tools;
@@ -985,6 +990,23 @@ namespace
             }
             else throw std::invalid_argument(_Path + ".operation is unsupported: " + _Operation);
             if (_Result.IsNull()) throw std::runtime_error(_Path + " produced an empty shape");
+        }
+        if (const auto _Seed = Find(Node_.Arguments, "keepConnectedTo"))
+        {
+            // Explicit material witness, not a largest-fragment heuristic. The
+            // node author identifies the retained manufactured piece; detached
+            // machining scrap is discarded only when the witness is unique.
+            const auto _Point = Point3(*_Seed, _Path + ".keepConnectedTo");
+            TopoDS_Shape _Retained;
+            for (TopExp_Explorer _It(_Result, TopAbs_SOLID); _It.More(); _It.Next())
+            {
+                BRepClass3d_SolidClassifier _Classifier(_It.Current(), _Point, kTolerance);
+                if (_Classifier.State() != TopAbs_IN && _Classifier.State() != TopAbs_ON) continue;
+                if (!_Retained.IsNull()) throw std::runtime_error(_Path + " keepConnectedTo is ambiguous");
+                _Retained = _It.Current();
+            }
+            if (_Retained.IsNull()) throw std::runtime_error(_Path + " keepConnectedTo is not on retained material");
+            _Result = _Retained;
         }
         return _Result;
     }

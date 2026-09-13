@@ -4,6 +4,19 @@ from SecurityWindowRulesTests import build, template_input, NAMES, REVIEW
 
 
 class SecurityWindowOpeningProcessTests(unittest.TestCase):
+    def test_mixed_grooves_apply_relief_only_to_sharp_frames(self):
+        for name in NAMES:
+            for purpose in ("display", "manufacturing"):
+                document = build(name, purpose, doorFrameJoinType="v_groove_90:sharp_v",
+                                 doorLeafFrameJoinType="v_groove_90:rounded_v",
+                                 vGrooveBottomCut=True, vGrooveReliefHole=True)
+                relief = [n["key"] for n in document["geometry"] if ".bottom_cut" in n["key"] or ".relief." in n["key"]]
+                if purpose == "manufacturing":
+                    self.assertTrue(relief)
+                    self.assertTrue(all("fixed_frame" in key for key in relief), relief)
+                build(name, purpose, doorFrameJoinType="miter_45", doorLeafFrameJoinType="miter_45",
+                      vGrooveBottomCut=True, vGrooveReliefHole=True)
+
     def test_all_public_frame_processes_generate_for_each_layout(self):
         _, defaults, _ = template_input(NAMES[0])
         processes = ("butt_90", "miter_45", "v_groove_90:sharp_v", "v_groove_90:rounded_v",

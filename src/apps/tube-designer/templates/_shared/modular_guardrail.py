@@ -102,6 +102,9 @@ class Plate:
     group: str
     holes: tuple[dict[str, float], ...] = ()
     part_kind: str = "plate"
+    outline: tuple[tuple[float, float], ...] = ()
+    support_post: str = ""
+    support_clips: tuple[str, ...] = ()
 
 
 @dataclass
@@ -222,8 +225,25 @@ def build_layout(p: dict[str, Any]) -> Layout:
     if mode not in {"level", "continuous", "stepped"}:
         raise ValueError("护栏路径模式不受支持")
     built = _build_level_layout(p)
-    if mode != "level":
-        _shared("guardrail_elevation.py").apply_elevation(built, p, Tube, KeepVolume, distribute_bars)
+    if mode != "level" or p.get("handrailMode") == "continuous":
+        effective = ({**p,"handrailMode":"per_bay"} if mode == "stepped" else p) if mode != "level" else {**p,"pathMode":"continuous","elevationSource":"angle",
+                                              "slopeAngle":0,"slopeAngle2":0,"slopeAngle3":0}
+        _shared("guardrail_elevation.py").apply_elevation(built, effective, Tube, KeepVolume, distribute_bars)
+    side_plates = [plate for plate in built.plates if plate.category == "plate.side_mount"]
+    # Separating-axis test in plan plus the vertical interval. Validate after
+    # elevation, so plates on different levels are not falsely rejected.
+    for i, a in enumerate(side_plates):
+        for b in side_plates[i + 1:]:
+            if abs(a.center[2]-b.center[2]) >= (a.height+b.height)/2 - EPS:
+                continue
+            ua, ub = a.x_axis, b.x_axis
+            va, vb = _lateral(ua), _lateral(ub)
+            delta = tuple(b.center[j]-a.center[j] for j in range(3))
+            if all(abs(_dot(delta, axis)) <
+                   (a.width*abs(_dot(ua,axis)) + a.thickness*abs(_dot(va,axis)) +
+                    b.width*abs(_dot(ub,axis)) + b.thickness*abs(_dot(vb,axis)))/2 - EPS
+                   for axis in (ua,va,ub,vb)):
+                raise ValueError("侧装锚固板实体重叠，请增大柱间距、减小板宽或调整安装标高")
     return built
 
 
@@ -240,11 +260,9 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
         raise ValueError("护栏用途不受支持")
     if use == "wall" and infill_type != "bars":
         raise ValueError("围墙出头竖杆当前仅支持竖杆填充，请选择竖杆款式")
-    cap_enabled = _boolean(p, "postCapEnabled")
+    cap_enabled = large_mode != "none" and _boolean(p, "postCapEnabled")
     tip_enabled = _boolean(p, "spearTipEnabled") and use == "wall"
     glass_clips = _boolean(p, "glassClipEnabled") and infill_type == "glass"
-    if cap_enabled and large_mode == "none":
-        raise ValueError("柱帽安装在独立大立柱顶，请先选择中间或两端大立柱")
     installation = _choice(p, "installation", {"embedded", "base_plate", "side_plate"})
     height = _number(p, "guardHeight", 300)
     bottom = _number(p, "bottomClearance")
@@ -385,11 +403,40 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
         for left, right in zip(anchor_positions, anchor_positions[1:]):
             count = max(1, math.ceil((right - left) / max_post))
             positions.extend(left + (right - left) * n / count for n in range(1, count + 1))
-        if _shared("guardrail_elevation.py").tread_count(p, index):
+        count_key = f"sideBayCount{index + 1}"
+        if count_key in p:
+            count = _number(p, count_key, 1)
+            if count != int(count) or count > 100:
+                raise ValueError(f"第{index + 1}边截数必须是1到100的整数")
+            count = int(count)
+            if large_mode == "middle" and count < 2:
+                raise ValueError(f"第{index + 1}边设置中间大立柱至少需要2截")
+            left_count = count // 2
+            if large_mode == "middle":
+                middle = (a + b) / 2
+                positions = [a + (middle-a)*n/left_count for n in range(left_count+1)]
+                positions.extend(middle + (b-middle)*n/(count-left_count) for n in range(1,count-left_count+1))
+            else:
+                positions = [a + (b - a) * n / count for n in range(count + 1)]
+            if _shared("guardrail_elevation.py").tread_count(p, index):
+                going = _number(p, "treadGoing", 1)
+                first, last = math.ceil(a / going - EPS), math.floor(b / going + EPS)
+                if last - first < count:
+                    raise ValueError(f"第{index + 1}边踏步中心数量不足以布置{count}截，请减少截数或增加踏步数")
+                if large_mode == "middle":
+                    # Choose the closest feasible tread centre to the midpoint,
+                    # while reserving enough intervals for each half's bays.
+                    middle = max(first+left_count, min(last-(count-left_count), (first+last)//2))
+                    positions = [(first + math.floor((middle-first)*n/left_count + .5))*going for n in range(left_count+1)]
+                    positions.extend((middle + math.floor((last-middle)*n/(count-left_count) + .5))*going
+                                     for n in range(1,count-left_count+1))
+                else:
+                    positions = [(first + math.floor((last-first)*n/count + .5)) * going for n in range(count+1)]
+        elif _shared("guardrail_elevation.py").tread_count(p, index):
             positions = _shared("guardrail_elevation.py").tread_post_positions(p, a, b, max_post, large_mode)
         current: list[Post] = []
         for distance in positions:
-            middle_position = min(positions, key=lambda value: abs(value - (a + b) / 2))
+            middle_position = positions[left_count] if count_key in p and large_mode == "middle" else min(positions, key=lambda value: abs(value - (a + b) / 2))
             large = ((large_mode == "middle" and abs(distance - middle_position) < EPS)
                      or (large_mode == "ends" and ((index == 0 and abs(distance - a) < EPS)
                          or (index == len(directions) - 1 and abs(distance - b) < EPS))))
@@ -418,8 +465,8 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
         origin, finish = vertices[index], vertices[index + 1]
         side = _lateral(direction)
         current = segment_posts[index]
-        cap_start = _add(origin, direction, -extension if index == 0 else handrail.width / 2)
-        cap_end = _add(finish, direction, extension if index == len(directions) - 1 else handrail.width / 2)
+        cap_start = _add(origin, direction, -_number(p, "startExtension") if index == 0 and "startExtension" in p else -extension if index == 0 else handrail.width / 2)
+        cap_end = _add(finish, direction, _number(p, "finishExtension") if index == len(directions)-1 and "finishExtension" in p else extension if index == len(directions) - 1 else handrail.width / 2)
         if handrail.kind == "round" and index > 0:
             cap_start = origin
         cuts: list[tuple[Point, Post | None]] = [(cap_start, None)]
@@ -538,7 +585,7 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
                 if panel_width <= thickness or panel_height <= thickness:
                     raise ValueError("板边间隙过大或板厚不合适，板件无法装入框架")
                 center = _add(start_face, direction, clear / 2)
-                panel_name = "玻璃栏板" if infill_type == "glass" else "封板"
+                panel_name = ("挡板" if p.get("_infillPanelKind") == "board" else "玻璃栏板") if infill_type == "glass" else "封板"
                 add_plate(Plate(key + ".panel", f"第{index}边第{bay_index}跨{panel_name}", panel_width,
                                     panel_height, thickness, (center[0], center[1], (lower_top_z + panel_top) / 2),
                                     direction, Z, "glass.infill" if infill_type == "glass" else "plate.infill", key,
@@ -669,10 +716,8 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
                                           (point[0], point[1], z1), direction, side, "accessory.spear_tip", key)
 
     if installation == "side_plate":
-        if layout != "straight" or p.get("pathMode", "level") != "level":
-            raise ValueError("侧装板当前支持水平直线护栏；转角和高程支座需另行设计")
-        if any(column.profile.kind != "rect" for column in posts):
-            raise ValueError("侧装焊接板要求立柱具有矩形平接面，圆管抱箍节点需另行设计")
+        if any(column.profile.kind not in {"rect", "round"} for column in posts):
+            raise ValueError("侧装板当前支持矩形或圆形立柱，其他截面需提供明确安装面")
         plate_height = _number(p, "sidePlateHeight", 20)
         plate_drop = _number(p, "sidePlateDrop", 1)
         thickness = _number(p, "basePlateThickness", 1)
@@ -681,18 +726,22 @@ def _build_level_layout(p: dict[str, Any]) -> Layout:
         if plate_drop < plate_height / 2 or edge <= diameter / 2 or plate_height <= 2 * edge + diameter:
             raise ValueError("侧装板需位于基准面以下，孔边距与板高须容纳螺栓孔")
         for column in posts:
-            width = max(_number(p, "basePlateSize", 20), column.profile.width + 2 * edge + 2 * diameter)
+            # A shared corner uses the incoming side's mounting face. Other
+            # posts follow their own side; plates remain vertical, not tilted.
+            direction = next(d for d, group in zip(directions, segment_posts) if column in group)
+            side = _lateral(direction)
+            along_size = 2 * column.half_extent(direction)
+            across_size = 2 * column.half_extent(side)
+            seat = min(thickness / 2, across_size / 8) if column.profile.kind == "round" else 0.
+            width = max(_number(p, "basePlateSize", 20), along_size + 2 * edge + 2 * diameter)
             tube = next(t for t in tubes if t.key == column.key)
             tube.start = (*tube.start[:2], -plate_drop - plate_height / 2)
             holes = tuple({"x": x * (width / 2 - edge), "y": y * (plate_height / 2 - edge), "diameter": diameter}
                 for x in (-1, 1) for y in (-1, 1))
             add_plate(Plate("side." + column.key, "立柱侧装锚固板", width, plate_height, thickness,
-                (column.point[0], column.point[1] - column.profile.depth / 2 - thickness / 2, -plate_drop),
-                (1., 0., 0.), Z, "plate.side_mount", "bases", holes))
-        for a, b in zip(posts, posts[1:]):
-            pa, pb = (next(plate for plate in plates if plate.key == "side." + post.key) for post in (a, b))
-            if b.point[0] - a.point[0] <= (pa.width + pb.width) / 2:
-                raise ValueError("相邻侧装板重叠，请增大柱间距或减小板宽")
+                _add((column.point[0], column.point[1], -plate_drop), side, -(across_size + thickness) / 2 + seat),
+                direction, Z, "plate.side_mount", "bases", holes, support_post=column.key,
+                support_clips=(column.key,) if seat else ()))
 
     if installation == "base_plate":
         plate_size = _number(p, "basePlateSize", 20)
@@ -745,6 +794,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
     # wrong in the preview; profile-hole cutters are manufacturing-only.
     manufacturing_requested = purpose != "display"
     needed_tools = {key for part in built.tubes for key in part.clips + (part.hole_tools if manufacturing_requested else [])}
+    needed_tools.update(key for plate in built.plates for key in plate.support_clips)
     for part in built.tubes:
         arguments = {"placement": {"origin": list(part.start), "xAxis": list(part.x_axis), "yAxis": list(part.y_axis)},
                      "contours": part.profile.contours()}
@@ -867,8 +917,23 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         for index, receiver in enumerate(dict.fromkeys(part.clips), 1):
             model.relationship(f"joint.{part.key}.{index}", "weld", [part.key, receiver], properties={"geometry": "outer-envelope-cope"})
     for part in built.plates:
-        display_representation = _plates.emit_rectangular_plate(model, part.key, width=part.width, height=part.height,
-            thickness=part.thickness, center=part.center, x_axis=part.x_axis, y_axis=part.y_axis, holes=part.holes)
+        if part.outline:
+            x, y = part.x_axis, part.y_axis
+            normal = (x[1]*y[2]-x[2]*y[1], x[2]*y[0]-x[0]*y[2], x[0]*y[1]-x[1]*y[0])
+            origin = _add(part.center, normal, -part.thickness / 2)
+            contour = model.geometry(part.key + ".outline", "profile2d", arguments={
+                "placement": {"origin": list(origin), "xAxis": list(part.x_axis), "yAxis": list(part.y_axis)},
+                "contours": [{"kind": "polygon", "points": [list(point) for point in part.outline]}]})
+            display_representation = model.geometry(part.key + ".solid", "extrude", inputs=[contour],
+                arguments={"vector": [value * part.thickness for value in normal]})
+        else:
+            display_representation = _plates.emit_rectangular_plate(model, part.key, width=part.width, height=part.height,
+                thickness=part.thickness, center=part.center, x_axis=part.x_axis, y_axis=part.y_axis, holes=part.holes)
+        if part.support_clips:
+            cutters = [cutting_shape(key) for key in part.support_clips]
+            display_representation = model.geometry(part.key + ".saddle", "boolean",
+                inputs=[display_representation, *cutters],
+                arguments={"operation": "subtract", "target": display_representation, "tools": cutters})
         manufacturing_representation = display_representation
         properties = _plates.plate_properties(part.width, part.height, part.thickness,
             material_grade=str(parameters.get("glassMaterial", "夹层玻璃") if part.part_kind == "glass" else parameters.get("plateMaterial", "")),
@@ -876,8 +941,14 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         properties.update({"manufacturing.partKind": part.part_kind, "manufacturing.materialCategory": part.part_kind,
                            "manufacturing.sourcing": "purchased" if part.part_kind == "glass" else "made",
                            "manufacturing.process": "purchased" if part.part_kind == "glass" else "plate-cut"})
+        if part.outline:
+            properties["manufacturing.plate"]["outline"] = [list(point) for point in part.outline]
+            properties["manufacturing.plate"]["areaMm2"] = abs(sum(
+                a[0] * b[1] - b[0] * a[1] for a, b in zip(part.outline, part.outline[1:] + part.outline[:1]))) / 2
+        if part.part_kind == "glass" and parameters.get("_infillPanelKind") == "board":
+            properties.update({"manufacturing.partKind": "plate", "manufacturing.materialCategory": "plate", "manufacturing.categoryName": "挡板"})
         material_grade = str(parameters.get("materialGrade", "")).strip()
-        if material_grade:
+        if material_grade and part.part_kind != "glass":
             properties["manufacturing.materialGrade"] = material_grade
         properties["group"] = part.group
         add_item(part.key, part.name, display_representation, manufacturing_representation, properties)
@@ -908,12 +979,12 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
                               "topZ": next(t.end[2] for t in built.tubes if t.key == post.key)}} for post in built.posts])
     if parameters.get("infillType") == "horizontal":
         model.diagnostic("warning", "guardrail.horizontal-climbing", "横向填充存在攀爬风险；排布参数不代表防坠或防攀爬认证。")
-    if parameters.get("barDistribution") == "manual_count":
+    if parameters.get("infillType") in {"bars", "lower_plate", "horizontal"} and parameters.get("barDistribution") == "manual_count":
         model.diagnostic("warning", "guardrail.manual-spacing", "固定杆数按净空反算间距，不自动保证最大净距，请按项目要求复核。")
     if parameters.get("infillType") in {"cross", "diamond"}:
         model.diagnostic("warning", "guardrail.decorative-openings", "X形、菱形花格属于装饰构造，不自动满足防攀爬或净开口限制；请按安装场景校核。")
     if any(part.part_kind == "glass" for part in built.plates):
-        model.diagnostic("warning", "guardrail.glass-specification", "玻璃为独立外购栏板；材质名称和总厚度不是安全认证，需确认夹层构造、边部加工、承载及夹具适配。")
+        model.diagnostic("warning", "guardrail.glass-specification", "挡板为独立外购板件；可选玻璃、亚克力等材料，材质名称和厚度不是安全认证，需核对材料构造、边部加工、承载及夹具适配。")
     if built.components:
         model.diagnostic("info", "guardrail.component-interface", "配件使用真实固定尺寸模型并作刚体放置，不自动缩放；请核对连接面、玻璃夹槽及安装尺寸。柱帽和枪尖可高于主防护高度。")
     return _geometry.finish_geometry_request(model, context)

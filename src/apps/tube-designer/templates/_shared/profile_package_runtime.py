@@ -289,17 +289,30 @@ def _evaluate_parameter_diagram(
             raise ValueError("坐标必须为绝对值不超过 10 亿的有限数值")
         return result
 
+    def condition_matches(condition):
+        if not condition:
+            return True
+        operation = condition.get("op")
+        for name in ("all", "any"):
+            children = condition.get("conditions", condition.get(name)) if operation == name else condition.get(name)
+            if isinstance(children, list):
+                return (all if name == "all" else any)(condition_matches(child) for child in children)
+        negated = condition.get("condition", condition.get("not")) if operation == "not" else condition.get("not")
+        if negated is not None:
+            return not condition_matches(negated)
+        key = condition.get("parameter", condition.get("key", condition.get("name")))
+        if key not in parameters:
+            return False
+        actual, expected = parameters[key], condition.get("value")
+        equal = actual == expected and isinstance(actual, bool) == isinstance(expected, bool)
+        return equal if operation == "eq" else not equal if operation == "ne" else False
+
+    definitions_by_key = {item["key"]: item for item in descriptor["parameters"]}
     annotations = []
     for index, source in enumerate(diagram["annotations"]):
-        condition = source.get("visibleWhen")
-        if condition:
-            conditions = condition.get("conditions", [condition])
-            matches = [parameters.get(c.get("parameter", c.get("key"))) == c.get("value")
-                       if c.get("op", "eq") == "eq" else
-                       parameters.get(c.get("parameter", c.get("key"))) != c.get("value")
-                       for c in conditions]
-            if not (any(matches) if condition.get("op") == "any" else all(matches)):
-                continue
+        if (not condition_matches(source.get("visibleWhen"))
+                or not condition_matches(definitions_by_key[source["parameter"]].get("visibleWhen"))):
+            continue
         annotation = {field: source[field] for field in ("parameter", "kind", "side")}
         if source["kind"] == "linear":
             annotation["axis"] = source["axis"]

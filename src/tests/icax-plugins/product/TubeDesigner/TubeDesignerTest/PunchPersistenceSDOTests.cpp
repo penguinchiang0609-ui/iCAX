@@ -9,6 +9,7 @@
 #include <ProjectFile/ProjectFile.h>
 #include <Resources/ResourceLibrary.h>
 #include <Resources/FlatBufferResource.h>
+#include <RenderData/RenderData.h>
 #include <SDO/SDORegistrationCatalog.h>
 #include <TemplateRuntime/PythonTemplateHost.h>
 #include <TemplateRuntime/StandardJsonCodec.h>
@@ -609,6 +610,218 @@ TEST(TubeDesignerLibrarySDO, MainSceneListAndPunchCatalogueLoad) {
     std::cout << "[library-sdo-timing] GetPunchTools=" << toolsMs << "ms List=" << listMs << "ms\n";
     EXPECT_LT(toolsMs, 30000);
     EXPECT_LT(listMs, 30000);
+}
+
+TEST(ProductTemplatePreviewSDO, MergedGuardrailsAndWindowKeepNormalizedParameters) {
+    Scene scene;
+    for (const auto* id : {"modular-guardrail-glass-straight", "modular-guardrail-cross-straight",
+                           "modular-guardrail-diamond-straight", "modular-guardrail"}) {
+        SCOPED_TRACE(id);
+        const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+            {"templateId", std::string(id)},
+        });
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+    for (const auto* face : {"single", "two", "three", "five"}) {
+        SCOPED_TRACE(face);
+        const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+            {"templateId", std::string("single-face-security-window")},
+            {"parameters", ObjectMap{{"faceType", std::string(face)}}},
+        });
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, AllGuardrailFamiliesGenerateSlopedCorners) {
+    Scene scene;
+    for (const auto* id : {"modular-guardrail-glass-straight", "modular-guardrail-cross-straight",
+                           "modular-guardrail-diamond-straight", "modular-guardrail"}) {
+        for (const auto* mode : {"continuous", "stepped"}) {
+            SCOPED_TRACE(id);
+            SCOPED_TRACE(mode);
+            const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+                {"templateId", std::string(id)},
+                {"parameters", ObjectMap{{"pathMode", std::string(mode)}, {"layout", std::string("u")},
+                    {"slopeAngle", 30.0}, {"slopeAngle2", -20.0}, {"slopeAngle3", 15.0},
+                    {"sideBayCount1", 2}, {"sideBayCount2", 2}, {"sideBayCount3", 2}}},
+            });
+            EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+        }
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, SideMountsGenerateOnSlopedCorners) {
+    Scene scene;
+    for (const auto* id : {"modular-guardrail-glass-straight", "modular-guardrail-cross-straight",
+                           "modular-guardrail-diamond-straight", "modular-guardrail"}) {
+        SCOPED_TRACE(id);
+        const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+            {"templateId", std::string(id)},
+            {"parameters", ObjectMap{{"installation", std::string("side_plate")},
+                {"pathMode", std::string("continuous")}, {"layout", std::string("u")},
+                {"slopeAngle", 30.0}, {"slopeAngle2", -20.0}, {"slopeAngle3", 15.0}}},
+        });
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, DiamondOddBaysWithMiddlePosts) {
+    Scene scene;
+    const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+        {"templateId", std::string("modular-guardrail-diamond-straight")},
+        {"parameters", ObjectMap{{"layout", std::string("u")}, {"largePostMode", std::string("middle")},
+            {"sideBayCount1",3}, {"sideBayCount2",2}, {"sideBayCount3",2}}},
+    });
+    EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+}
+
+TEST(ProductTemplatePreviewSDO, UnifiedContinuousHandrailAndHorizontalInfill) {
+    Scene scene;
+    for (const auto* id : {"modular-guardrail", "modular-guardrail-diamond-straight"}) {
+        ObjectMap parameters{{"layout", std::string("u")}, {"pathMode",std::string("continuous")},
+            {"handrailMode",std::string("continuous")}, {"startExtension",100.0}, {"finishExtension",200.0}};
+        if (std::string(id) == "modular-guardrail") {
+            parameters["barOrientation"] = std::string("horizontal");
+            parameters["horizontalRailCount"] = 4;
+        }
+        const auto response = invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string(id)}, {"parameters",parameters}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, DecorativeDoorSixPatterns) {
+    Scene scene;
+    for (const auto* pattern : {"lines","diamond","octagon","round_scene","panels","glass_lattice"}) {
+        const auto response = invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string("decorative-door")},
+            {"parameters",ObjectMap{{"pattern",std::string(pattern)},{"columns",1},{"rows",2},{"lineCount",3}}}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, UnifiedStairRoutesAndCatalogue) {
+    Scene scene;
+    for(const auto* route:{"straight","straight_landing","l_turn","u_turn"}){
+        SCOPED_TRACE(route);
+        const auto response=invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string("straight-steel-staircase")},
+            {"parameters",ObjectMap{{"stairRoute",std::string(route)},{"floorHeight",1080.0},
+                {"totalRiserCount",6},{"firstFlightRiserCount",3}}}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+        EXPECT_EQ(response.at("parameters").To<ObjectMap>().at("stairRoute").To<std::string>(),route);
+    }
+    auto templates=invoke(scene,"List",{}).at("tubeDesigner").To<ObjectMap>().at("templates").To<VariantArray>();
+    int count=0;
+    for(const auto& t:templates){
+        const auto id=t.To<ObjectMap>().at("id").To<std::string>();
+        if(id=="straight-steel-staircase")++count;
+        EXPECT_NE(id,"l-turn-steel-staircase");EXPECT_NE(id,"u-turn-steel-staircase");
+    }
+    EXPECT_EQ(count,1);
+}
+
+TEST(ProductTemplatePreviewSDO, StairManufacturingOptions) {
+    Scene scene;
+    for(const auto* mode:{"plate","channel","zigzag","round","oval"}){
+        SCOPED_TRACE(mode);
+        ObjectMap p{{"stairRoute",std::string("l_turn")},{"floorHeight",1080.0},
+            {"totalRiserCount",6},{"firstFlightRiserCount",3},{"handrailConnection",std::string("continuous")}};
+        const std::string m(mode);
+        if(m=="plate")p["bracketType"]=std::string("plate");
+        if(m=="channel")p["stringerProfileType"]=std::string("channel");
+        if(m=="zigzag")p["stringerConstruction"]=std::string("zigzag");
+        if(m=="round" || m=="oval"){
+            p["handrailProfileType"]=m;p["postProfileType"]=m;p["infillProfileType"]=m;
+        }
+        const auto response=invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string("straight-steel-staircase")},{"parameters",p}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+        const auto values=response.at("parameters").To<ObjectMap>();
+        for(const auto& [key,value]:p){
+            SCOPED_TRACE(key);
+            if(value.Is<std::string>())EXPECT_EQ(values.at(key).To<std::string>(),value.To<std::string>());
+            else {
+                auto number=[](const auto& v)->double{
+                    if(v.template Is<double>())return v.template To<double>();
+                    if(v.template Is<std::int64_t>())return static_cast<double>(v.template To<std::int64_t>());
+                    return static_cast<double>(v.template To<int>());
+                };
+                EXPECT_DOUBLE_EQ(number(values.at(key)),number(value));
+            }
+        }
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, StainlessProfilesInHandrailFamilies) {
+    Scene scene;
+    for(const auto* id:{"modular-guardrail","modular-guardrail-glass-straight",
+                       "modular-guardrail-cross-straight","modular-guardrail-diamond-straight"}){
+        const auto response=invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string(id)},{"parameters",ObjectMap{
+                {"materialGrade",std::string("304 stainless steel")},
+                {"handrailProfileType",std::string("oval")},{"handrailWidth",60.0},{"handrailDepth",30.0},
+                {"postProfileType",std::string("round")},{"postWidth",38.0},
+                {"railProfileType",std::string("round")},{"railWidth",25.0},
+                {"infillProfileType",std::string("round")},{"infillWidth",19.0}}}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+    const auto snapshot=invoke(scene,"List",{});
+    for(const auto& item:snapshot.at("tubeDesigner").To<ObjectMap>().at("templates").To<VariantArray>())
+        EXPECT_NE(item.To<ObjectMap>().at("id").To<std::string>(),"stainless-steel-guardrail");
+}
+
+TEST(ProductTemplatePreviewSDO, DoorAndWindowGlassUseTranslucentMaterial) {
+    for(const auto* id:{"decorative-door","aluminium-window"}){
+        Scene scene;
+        SCOPED_TRACE(id);
+        const auto response=invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string(id)},
+            {"parameters",std::string(id)=="decorative-door"
+                ? ObjectMap{{"pattern",std::string("glass_lattice")},{"columns",1},{"rows",2}}
+                : ObjectMap{}}});
+        const auto glass=scene.Resources().Get<iCAX::Render::SRenderMaterialData>(
+            scene.Resources().MakeNamedResourceURL("tube-designer/material/glass"));
+        ASSERT_TRUE(glass);
+        EXPECT_EQ(glass->nColorRGBA & 0xFFu,0x80u);
+        const auto opaque=response.at("material").To<ObjectMap>().at("url").To<std::string>();
+        int glassCount=0,opaqueCount=0;
+        for(const auto& value:response.at("items").To<VariantArray>()){
+            const auto item=value.To<ObjectMap>();
+            const auto key=item.at("key").To<std::string>();
+            const auto material=item.at("material").To<ObjectMap>().at("url").To<std::string>();
+            if(key.ends_with(".glass")){EXPECT_NE(material,opaque);++glassCount;}
+            else{EXPECT_EQ(material,opaque);++opaqueCount;}
+        }
+        EXPECT_GT(glassCount,0);EXPECT_GT(opaqueCount,0);
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, AluminiumWindowPanelsAndMovableScreen) {
+    Scene scene;
+    for (const auto* type : {"fixed", "sliding", "hinged", "mixed"}) {
+        const auto response = invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string("aluminium-window")},
+            {"parameters",ObjectMap{{"windowType",std::string(type)}, {"width",1800.0},
+                {"height",1800.0},{"columns",2},{"rows",2}, {"hingedCount",2},{"mergeTopLight",true},
+                {"cell11",std::string("sliding")},{"cell12",std::string("hinged")}}}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+}
+
+TEST(ProductTemplatePreviewSDO, LouverTubeAnglesSlotsAndSupports) {
+    Scene scene;
+    for (const auto* connection : {"face_weld", "slot_insert", "through_insert"}) {
+        const auto response = invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string("louver-window")},
+            {"parameters",ObjectMap{{"width",600.0},{"height",600.0},
+                {"bladeDirectionAngle",30.0},{"bladeRollAngle",45.0},
+                {"arrayMode",std::string("count")},{"bladeCount",4},
+                {"frameJoint",std::string("miter")},
+                {"middlePostCount",1},{"supportMode",std::string("through")},
+                {"bladeConnection",std::string(connection)}}}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
 }
 
 TEST(TubeDesignerLibrarySDO, TemplateListDefersFullDescriptorUntilSelection) {

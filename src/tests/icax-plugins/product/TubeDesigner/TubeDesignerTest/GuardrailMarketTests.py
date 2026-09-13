@@ -4,6 +4,11 @@ from ModularGuardrailTests import MODULE, SUBJECT, values, overlap
 
 
 class MarketTests(unittest.TestCase):
+    def test_disabling_large_posts_ignores_retained_cap_selection(self):
+        built = MODULE.build_layout(values(largePostMode="none", postCapEnabled=True,
+                                           postCapModelReference="missing-inactive-cap"))
+        self.assertFalse(built.components)
+
     def test_horizontal_infill_geometry(self):
         for layout in ("straight", "left_l", "right_l", "u"):
             built = MODULE.build_layout(values(layout=layout,infillType="horizontal"))
@@ -42,7 +47,8 @@ class MarketTests(unittest.TestCase):
         for post in (t for t in built.tubes if t.category=="guardrail.post"):
             self.assertAlmostEqual(post.start[2],-220)
         json.dumps(MODULE.generate(p,{}),allow_nan=False)
-        for change in ({"sidePlateDrop":50},{"sidePlateHeight":20},{"layout":"left_l"}):
+        self.assertTrue(MODULE.build_layout({**p,"layout":"left_l"}).plates)
+        for change in ({"sidePlateDrop":50},{"sidePlateHeight":20}):
             with self.assertRaises(ValueError):
                 MODULE.build_layout({**p,**change})
 

@@ -1,0 +1,1373 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "decorative-door",
+  "version": "1.0.0",
+  "displayName": {
+    "zh-CN": "雕花装饰门"
+  },
+  "description": "参数化门扇与门面装饰：铣线格栅、几何圆景、菱形／八角花格、直壁池板扣线及玻璃门花。包含加工几何与板件拆单，不包含艺术浮雕、门框五金选型或雕刻机NC刀路。",
+  "extensions": {
+    "catalog": {
+      "categoryPath": [
+        "门"
+      ],
+      "groupOrder": 20,
+      "templateOrder": 10
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "primaryDimensions": {
+      "widthParameter": "width",
+      "heightParameter": "height"
+    }
+  },
+  "groups": [
+    {
+      "key": "door",
+      "displayName": {
+        "zh-CN": "门体"
+      }
+    },
+    {
+      "key": "design",
+      "displayName": {
+        "zh-CN": "花型与版式"
+      }
+    },
+    {
+      "key": "array",
+      "displayName": {
+        "zh-CN": "阵列"
+      }
+    },
+    {
+      "key": "process",
+      "displayName": {
+        "zh-CN": "加工几何"
+      }
+    },
+    {
+      "key": "safe",
+      "displayName": {
+        "zh-CN": "边界与五金避让"
+      }
+    },
+    {
+      "key": "material",
+      "displayName": {
+        "zh-CN": "材料与表面备注"
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "产品编号"
+      },
+      "valueType": "string",
+      "defaultValue": "MH-001",
+      "group": "door"
+    },
+    {
+      "key": "doorType",
+      "displayName": {
+        "zh-CN": "门体结构"
+      },
+      "valueType": "enum",
+      "defaultValue": "double",
+      "group": "door",
+      "choices": [
+        {
+          "value": "single",
+          "displayName": {
+            "zh-CN": "单开"
+          }
+        },
+        {
+          "value": "double",
+          "displayName": {
+            "zh-CN": "双开"
+          }
+        },
+        {
+          "value": "mother",
+          "displayName": {
+            "zh-CN": "子母"
+          }
+        },
+        {
+          "value": "multi",
+          "displayName": {
+            "zh-CN": "多扇"
+          }
+        }
+      ]
+    },
+    {
+      "key": "width",
+      "displayName": {
+        "zh-CN": "门扇组合总宽"
+      },
+      "valueType": "number",
+      "defaultValue": 1800,
+      "group": "door",
+      "constraints": {
+        "minimum": 300,
+        "maximum": 10000
+      },
+      "quantity": "length",
+      "unit": "mm"
+    },
+    {
+      "key": "height",
+      "displayName": {
+        "zh-CN": "门扇高度"
+      },
+      "valueType": "number",
+      "defaultValue": 2200,
+      "group": "door",
+      "constraints": {
+        "minimum": 300,
+        "maximum": 4000
+      },
+      "quantity": "length",
+      "unit": "mm"
+    },
+    {
+      "key": "thickness",
+      "displayName": {
+        "zh-CN": "门板厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "door",
+      "constraints": {
+        "minimum": 2,
+        "maximum": 100
+      },
+      "quantity": "length",
+      "unit": "mm"
+    },
+    {
+      "key": "leafGap",
+      "displayName": {
+        "zh-CN": "扇间门缝"
+      },
+      "valueType": "number",
+      "defaultValue": 4,
+      "group": "door",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 30
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "doorType",
+        "value": "single"
+      }
+    },
+    {
+      "key": "leafCount",
+      "displayName": {
+        "zh-CN": "门扇数"
+      },
+      "valueType": "integer",
+      "defaultValue": 4,
+      "group": "door",
+      "constraints": {
+        "minimum": 2,
+        "maximum": 6
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "doorType",
+        "value": "multi"
+      }
+    },
+    {
+      "key": "motherRatio",
+      "displayName": {
+        "zh-CN": "主扇宽度比例"
+      },
+      "valueType": "number",
+      "defaultValue": 0.65,
+      "group": "door",
+      "constraints": {
+        "minimum": 0.51,
+        "maximum": 0.85
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "doorType",
+        "value": "mother"
+      }
+    },
+    {
+      "key": "motherSide",
+      "displayName": {
+        "zh-CN": "主扇位置"
+      },
+      "valueType": "enum",
+      "defaultValue": "left",
+      "group": "door",
+      "choices": [
+        {
+          "value": "left",
+          "displayName": {
+            "zh-CN": "左"
+          }
+        },
+        {
+          "value": "right",
+          "displayName": {
+            "zh-CN": "右"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "doorType",
+        "value": "mother"
+      }
+    },
+    {
+      "key": "firstHingeSide",
+      "displayName": {
+        "zh-CN": "首扇铰链侧"
+      },
+      "valueType": "enum",
+      "defaultValue": "left",
+      "group": "door",
+      "choices": [
+        {
+          "value": "left",
+          "displayName": {
+            "zh-CN": "左"
+          }
+        },
+        {
+          "value": "right",
+          "displayName": {
+            "zh-CN": "右"
+          }
+        }
+      ]
+    },
+    {
+      "key": "pattern",
+      "displayName": {
+        "zh-CN": "装饰模块"
+      },
+      "valueType": "enum",
+      "defaultValue": "lines",
+      "group": "design",
+      "choices": [
+        {
+          "value": "lines",
+          "displayName": {
+            "zh-CN": "铣线／格栅"
+          }
+        },
+        {
+          "value": "diamond",
+          "displayName": {
+            "zh-CN": "菱形花格"
+          }
+        },
+        {
+          "value": "octagon",
+          "displayName": {
+            "zh-CN": "八角花格"
+          }
+        },
+        {
+          "value": "round_scene",
+          "displayName": {
+            "zh-CN": "几何圆景"
+          }
+        },
+        {
+          "value": "panels",
+          "displayName": {
+            "zh-CN": "直壁池板／扣线"
+          }
+        },
+        {
+          "value": "glass_lattice",
+          "displayName": {
+            "zh-CN": "玻璃门花"
+          }
+        }
+      ]
+    },
+    {
+      "key": "composition",
+      "displayName": {
+        "zh-CN": "多扇构图"
+      },
+      "valueType": "enum",
+      "defaultValue": "mirror",
+      "group": "design",
+      "choices": [
+        {
+          "value": "repeat",
+          "displayName": {
+            "zh-CN": "各扇独立重复"
+          }
+        },
+        {
+          "value": "mirror",
+          "displayName": {
+            "zh-CN": "左右交替镜像"
+          }
+        },
+        {
+          "value": "continuous",
+          "displayName": {
+            "zh-CN": "整幅连续构图"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "doorType",
+        "value": "single"
+      }
+    },
+    {
+      "key": "layout",
+      "displayName": {
+        "zh-CN": "门面版式"
+      },
+      "valueType": "enum",
+      "defaultValue": "full",
+      "group": "design",
+      "choices": [
+        {
+          "value": "full",
+          "displayName": {
+            "zh-CN": "满堂"
+          }
+        },
+        {
+          "value": "center_band",
+          "displayName": {
+            "zh-CN": "中轴竖带"
+          }
+        },
+        {
+          "value": "offset_band",
+          "displayName": {
+            "zh-CN": "偏轴竖带"
+          }
+        },
+        {
+          "value": "upper",
+          "displayName": {
+            "zh-CN": "上花下板"
+          }
+        },
+        {
+          "value": "lower",
+          "displayName": {
+            "zh-CN": "上板下花"
+          }
+        },
+        {
+          "value": "two_blocks",
+          "displayName": {
+            "zh-CN": "上下双区"
+          }
+        }
+      ]
+    },
+    {
+      "key": "bandRatio",
+      "displayName": {
+        "zh-CN": "竖带宽度比例"
+      },
+      "valueType": "number",
+      "defaultValue": 0.4,
+      "group": "design",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 0.9
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "center_band"
+          },
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "offset_band"
+          }
+        ]
+      }
+    },
+    {
+      "key": "bandOffset",
+      "displayName": {
+        "zh-CN": "竖带位置比例"
+      },
+      "valueType": "number",
+      "defaultValue": 0.25,
+      "group": "design",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "layout",
+        "value": "offset_band"
+      }
+    },
+    {
+      "key": "arrayMode",
+      "displayName": {
+        "zh-CN": "线条排列"
+      },
+      "valueType": "enum",
+      "defaultValue": "count",
+      "group": "array",
+      "choices": [
+        {
+          "value": "count",
+          "displayName": {
+            "zh-CN": "指定数量"
+          }
+        },
+        {
+          "value": "pitch",
+          "displayName": {
+            "zh-CN": "指定中心距"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "lines"
+          }
+        ]
+      }
+    },
+    {
+      "key": "lineCount",
+      "displayName": {
+        "zh-CN": "线条数"
+      },
+      "valueType": "integer",
+      "defaultValue": 8,
+      "group": "array",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "lines"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "arrayMode",
+            "value": "count"
+          }
+        ]
+      }
+    },
+    {
+      "key": "linePitch",
+      "displayName": {
+        "zh-CN": "线条中心距"
+      },
+      "valueType": "number",
+      "defaultValue": 70,
+      "group": "array",
+      "constraints": {
+        "minimum": 5,
+        "maximum": 1000
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "lines"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "arrayMode",
+            "value": "pitch"
+          }
+        ]
+      }
+    },
+    {
+      "key": "lineAngle",
+      "displayName": {
+        "zh-CN": "线条方向角"
+      },
+      "valueType": "number",
+      "defaultValue": 90,
+      "group": "array",
+      "constraints": {
+        "minimum": -90,
+        "maximum": 90
+      },
+      "quantity": "angle",
+      "unit": "deg",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "lines"
+          }
+        ]
+      }
+    },
+    {
+      "key": "columns",
+      "displayName": {
+        "zh-CN": "花格／池板列数"
+      },
+      "valueType": "integer",
+      "defaultValue": 2,
+      "group": "array",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 12
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "diamond"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "octagon"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "panels"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "glass_lattice"
+          }
+        ]
+      }
+    },
+    {
+      "key": "rows",
+      "displayName": {
+        "zh-CN": "花格／池板行数"
+      },
+      "valueType": "integer",
+      "defaultValue": 3,
+      "group": "array",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 16
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "diamond"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "octagon"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "panels"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "glass_lattice"
+          }
+        ]
+      }
+    },
+    {
+      "key": "webWidth",
+      "displayName": {
+        "zh-CN": "单元间保留宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "array",
+      "constraints": {
+        "minimum": 5,
+        "maximum": 200
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "diamond"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "octagon"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "panels"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "glass_lattice"
+          }
+        ]
+      }
+    },
+    {
+      "key": "lineTool",
+      "displayName": {
+        "zh-CN": "铣线截面"
+      },
+      "valueType": "enum",
+      "defaultValue": "flat",
+      "group": "process",
+      "choices": [
+        {
+          "value": "flat",
+          "displayName": {
+            "zh-CN": "平底槽"
+          }
+        },
+        {
+          "value": "v",
+          "displayName": {
+            "zh-CN": "V形槽"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "lines"
+          }
+        ]
+      }
+    },
+    {
+      "key": "regionProcess",
+      "displayName": {
+        "zh-CN": "花格处理"
+      },
+      "valueType": "enum",
+      "defaultValue": "through",
+      "group": "process",
+      "choices": [
+        {
+          "value": "through",
+          "displayName": {
+            "zh-CN": "镂空切穿"
+          }
+        },
+        {
+          "value": "recess",
+          "displayName": {
+            "zh-CN": "定深凹雕"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "diamond"
+          },
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "octagon"
+          }
+        ]
+      }
+    },
+    {
+      "key": "machiningSide",
+      "displayName": {
+        "zh-CN": "加工面"
+      },
+      "valueType": "enum",
+      "defaultValue": "front",
+      "group": "process",
+      "choices": [
+        {
+          "value": "front",
+          "displayName": {
+            "zh-CN": "正面"
+          }
+        },
+        {
+          "value": "back",
+          "displayName": {
+            "zh-CN": "背面"
+          }
+        },
+        {
+          "value": "both",
+          "displayName": {
+            "zh-CN": "双面"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "lines"
+              },
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "round_scene"
+              },
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "panels"
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "pattern",
+                    "value": "diamond"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "pattern",
+                    "value": "octagon"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "regionProcess",
+                "value": "recess"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "cutDepth",
+      "displayName": {
+        "zh-CN": "单面加工深度"
+      },
+      "valueType": "number",
+      "defaultValue": 6,
+      "group": "process",
+      "constraints": {
+        "minimum": 0.2,
+        "maximum": 50
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "lines"
+              },
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "round_scene"
+              },
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "panels"
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "pattern",
+                    "value": "diamond"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "pattern",
+                    "value": "octagon"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "regionProcess",
+                "value": "recess"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "grooveWidth",
+      "displayName": {
+        "zh-CN": "平底槽宽"
+      },
+      "valueType": "number",
+      "defaultValue": 8,
+      "group": "process",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "round_scene"
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "pattern",
+                    "value": "lines"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "lineTool",
+                "value": "flat"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "vAngle",
+      "displayName": {
+        "zh-CN": "V刀夹角"
+      },
+      "valueType": "number",
+      "defaultValue": 90,
+      "group": "process",
+      "constraints": {
+        "minimum": 30,
+        "maximum": 120
+      },
+      "quantity": "angle",
+      "unit": "deg",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "lines"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "lineTool",
+            "value": "v"
+          }
+        ]
+      }
+    },
+    {
+      "key": "minSkin",
+      "displayName": {
+        "zh-CN": "最小剩余板厚"
+      },
+      "valueType": "number",
+      "defaultValue": 8,
+      "group": "safe",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 80
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "lines"
+              },
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "round_scene"
+              },
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "panels"
+              }
+            ]
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "eq",
+                    "parameter": "pattern",
+                    "value": "diamond"
+                  },
+                  {
+                    "op": "eq",
+                    "parameter": "pattern",
+                    "value": "octagon"
+                  }
+                ]
+              },
+              {
+                "op": "eq",
+                "parameter": "regionProcess",
+                "value": "recess"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "trimEnabled",
+      "displayName": {
+        "zh-CN": "池板独立扣线"
+      },
+      "valueType": "boolean",
+      "defaultValue": true,
+      "group": "process",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "panels"
+          }
+        ]
+      }
+    },
+    {
+      "key": "trimWidth",
+      "displayName": {
+        "zh-CN": "扣线宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 10,
+      "group": "process",
+      "constraints": {
+        "minimum": 2,
+        "maximum": 50
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "panels"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "trimEnabled",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "key": "trimHeight",
+      "displayName": {
+        "zh-CN": "扣线凸出高度"
+      },
+      "valueType": "number",
+      "defaultValue": 5,
+      "group": "process",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 30
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pattern",
+                "value": "panels"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "trimEnabled",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "key": "glassThickness",
+      "displayName": {
+        "zh-CN": "背衬玻璃厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 5,
+      "group": "process",
+      "constraints": {
+        "minimum": 2,
+        "maximum": 20
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "glass_lattice"
+          }
+        ]
+      }
+    },
+    {
+      "key": "glassGap",
+      "displayName": {
+        "zh-CN": "玻璃与门板间距"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "process",
+      "constraints": {
+        "minimum": 0.5,
+        "maximum": 20
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "glass_lattice"
+          }
+        ]
+      }
+    },
+    {
+      "key": "border",
+      "displayName": {
+        "zh-CN": "四周保留宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 100,
+      "group": "safe",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 400
+      },
+      "quantity": "length",
+      "unit": "mm"
+    },
+    {
+      "key": "meetingBorder",
+      "displayName": {
+        "zh-CN": "连续构图拼缝侧保留"
+      },
+      "valueType": "number",
+      "defaultValue": 35,
+      "group": "safe",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 200
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "doorType",
+            "value": "single"
+          },
+          {
+            "op": "eq",
+            "parameter": "composition",
+            "value": "continuous"
+          }
+        ]
+      }
+    },
+    {
+      "key": "protectHardware",
+      "displayName": {
+        "zh-CN": "保留锁／把手和铰链区"
+      },
+      "valueType": "boolean",
+      "defaultValue": true,
+      "group": "safe"
+    },
+    {
+      "key": "lockHeight",
+      "displayName": {
+        "zh-CN": "锁区中心高度"
+      },
+      "valueType": "number",
+      "defaultValue": 1000,
+      "group": "safe",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 3500
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "protectHardware",
+        "value": true
+      }
+    },
+    {
+      "key": "lockWidth",
+      "displayName": {
+        "zh-CN": "锁／把手保留区宽"
+      },
+      "valueType": "number",
+      "defaultValue": 100,
+      "group": "safe",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 300
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "protectHardware",
+        "value": true
+      }
+    },
+    {
+      "key": "lockLength",
+      "displayName": {
+        "zh-CN": "锁／把手保留区高"
+      },
+      "valueType": "number",
+      "defaultValue": 300,
+      "group": "safe",
+      "constraints": {
+        "minimum": 50,
+        "maximum": 700
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "protectHardware",
+        "value": true
+      }
+    },
+    {
+      "key": "hingeWidth",
+      "displayName": {
+        "zh-CN": "铰链保留区宽"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "safe",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 300
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "protectHardware",
+        "value": true
+      }
+    },
+    {
+      "key": "hingeLength",
+      "displayName": {
+        "zh-CN": "单个铰链保留区高"
+      },
+      "valueType": "number",
+      "defaultValue": 140,
+      "group": "safe",
+      "constraints": {
+        "minimum": 40,
+        "maximum": 300
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "protectHardware",
+        "value": true
+      }
+    },
+    {
+      "key": "material",
+      "displayName": {
+        "zh-CN": "门板材料"
+      },
+      "valueType": "string",
+      "defaultValue": "铝板／复合门板（按工程选型）",
+      "group": "material"
+    },
+    {
+      "key": "finish",
+      "displayName": {
+        "zh-CN": "表面处理备注"
+      },
+      "valueType": "string",
+      "defaultValue": "按工程指定",
+      "group": "material"
+    },
+    {
+      "key": "glassType",
+      "displayName": {
+        "zh-CN": "背衬玻璃类型"
+      },
+      "valueType": "string",
+      "defaultValue": "按工程选型",
+      "group": "material",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pattern",
+            "value": "glass_lattice"
+          }
+        ]
+      }
+    }
+  ]
+}

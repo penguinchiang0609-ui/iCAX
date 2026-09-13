@@ -125,19 +125,20 @@ def validate_frame_processes(parameters: dict[str, Any], processes: list[tuple[C
     grooves = [(process, profile) for process, profile in processes if process.join_type == "v_groove_90"]
     if not grooves:
         return
-    if any(process.groove_style != "sharp_v" for process, _ in grooves):
-        if any(bool(parameters[key]) for key in ("vGrooveBottomCut", "vGrooveReliefHole", "vGrooveWallOvercut")):
-            raise ValueError("底部切除、释放孔和壁厚过切仅适用于 V 槽")
+    # Relief switches belong to sharp grooves only. Keep inactive draft values
+    # when switching styles; the emitters apply them per frame, never globally.
+    sharp = any(process.groove_style == "sharp_v" for process, _ in grooves)
     if not 0 <= _number(parameters, "vGrooveKFactor") <= 1:
         raise ValueError("展开 K 因子必须在 0 到 1 之间")
     distance = _number(parameters, "vGrooveBottomDistance")
     if distance < 0 or any(distance >= profile.width - profile.wall for _, profile in grooves):
         raise ValueError("V 槽底距离必须非负且小于各加工框的截面宽度减壁厚")
     if (any(process.groove_style == "rounded_v" for process, _ in grooves)
-            or parameters["vGrooveBottomCut"] or parameters["vGrooveReliefHole"]):
+            or (sharp and (parameters["vGrooveBottomCut"]
+                or (parameters["vGrooveReliefHole"] and _number(parameters, "vGrooveReliefDiameter") == 0)))):
         if _number(parameters, "vGrooveRadius") < 0:
             raise ValueError("V 槽半径不能为负数")
-    if parameters["vGrooveReliefHole"] and _number(parameters, "vGrooveReliefDiameter") < 0:
+    if sharp and parameters["vGrooveReliefHole"] and _number(parameters, "vGrooveReliefDiameter") < 0:
         raise ValueError("V 槽释放孔直径不能为负数")
 
 

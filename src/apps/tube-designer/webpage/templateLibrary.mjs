@@ -1,3 +1,4 @@
+import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
 import {
   buildCatalogEntries,
@@ -296,13 +297,7 @@ function templateParameterValues(view, item) {
 }
 
 function templateParameterVisible(definition, values) {
-  const condition = definition?.visibleWhen;
-  if (!condition) return true;
-  if (condition.op === "eq") return values[condition.parameter] === condition.value;
-  if (condition.op === "ne") return values[condition.parameter] !== condition.value;
-  if (condition.op === "all") return (condition.conditions ?? []).every((item) => templateParameterVisible({ visibleWhen: item }, values));
-  if (condition.op === "any") return (condition.conditions ?? []).some((item) => templateParameterVisible({ visibleWhen: item }, values));
-  return true;
+  return matchesParameterCondition(definition?.visibleWhen, values);
 }
 
 function templateParameterInput(view, item, definition) {
@@ -311,7 +306,8 @@ function templateParameterInput(view, item, definition) {
   const value = values[key] ?? "";
   const type = String(definition.valueType ?? "string");
   const constraints = definition.constraints ?? {};
-  const common = `data-cam-change-action="tube-designer-product-template-library-parameter-change" data-tube-template-library-id="${escapeAttr(item.id)}" data-tube-template-library-parameter="${escapeAttr(key)}" ${view?.pending ? "disabled" : ""}`;
+  const fieldDisabled = view?.pending || !parameterEnabled(definition, values);
+  const common = `data-cam-change-action="tube-designer-product-template-library-parameter-change" data-tube-template-library-id="${escapeAttr(item.id)}" data-tube-template-library-parameter="${escapeAttr(key)}" ${fieldDisabled ? "disabled" : ""}`;
   const label = localizedTemplateText(definition.displayName, key);
   // Classify by declared content, not the edited value: typing must not move
   // controls between columns. Long options and free text retain a whole row.

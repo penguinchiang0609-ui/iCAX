@@ -1,0 +1,693 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "louver-window",
+  "version": "2.0.0",
+  "displayName": {
+    "zh-CN": "百叶窗"
+  },
+  "description": "矩形管框固定百叶：横向、竖向、任意斜向及独立截面滚转；中心距、净缝、搭接、数量阵列；顶接、插槽、穿透及中间分格，输出实际加工管件。",
+  "extensions": {
+    "catalog": {
+      "categoryPath": [
+        "窗"
+      ],
+      "groupOrder": 10,
+      "templateOrder": 20
+    },
+    "productIdentity": {
+      "codeParameter": "productCode"
+    },
+    "primaryDimensions": {
+      "widthParameter": "width",
+      "heightParameter": "height"
+    }
+  },
+  "groups": [
+    {
+      "key": "overall",
+      "displayName": {
+        "zh-CN": "总体尺寸"
+      }
+    },
+    {
+      "key": "frame",
+      "displayName": {
+        "zh-CN": "边框与支撑"
+      }
+    },
+    {
+      "key": "blades",
+      "displayName": {
+        "zh-CN": "叶片管材与姿态"
+      }
+    },
+    {
+      "key": "array",
+      "displayName": {
+        "zh-CN": "阵列布置（每格）"
+      }
+    },
+    {
+      "key": "connection",
+      "displayName": {
+        "zh-CN": "叶片连接"
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "key": "productCode",
+      "displayName": {
+        "zh-CN": "产品编号"
+      },
+      "valueType": "string",
+      "defaultValue": "BY-001",
+      "group": "overall"
+    },
+    {
+      "key": "width",
+      "displayName": {
+        "zh-CN": "外宽 W"
+      },
+      "valueType": "number",
+      "defaultValue": 1200,
+      "group": "overall",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "height",
+      "displayName": {
+        "zh-CN": "外高 H"
+      },
+      "valueType": "number",
+      "defaultValue": 1500,
+      "group": "overall",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 10000
+      }
+    },
+    {
+      "key": "frameJoint",
+      "displayName": {
+        "zh-CN": "边框拼接"
+      },
+      "valueType": "enum",
+      "defaultValue": "side_wrap",
+      "group": "frame",
+      "choices": [
+        {
+          "value": "side_wrap",
+          "displayName": {
+            "zh-CN": "左右框包上下框"
+          }
+        },
+        {
+          "value": "horizontal_wrap",
+          "displayName": {
+            "zh-CN": "上下框包左右框"
+          }
+        },
+        {
+          "value": "miter",
+          "displayName": {
+            "zh-CN": "45°拼角"
+          }
+        }
+      ]
+    },
+    {
+      "key": "frameProfileType",
+      "displayName": {
+        "zh-CN": "截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "frame",
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管（含方管、扁管）"
+          }
+        }
+      ],
+      "readOnly": true
+    },
+    {
+      "key": "frameWidth",
+      "displayName": {
+        "zh-CN": "边框面宽"
+      },
+      "valueType": "number",
+      "defaultValue": 40,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 5,
+        "maximum": 500
+      }
+    },
+    {
+      "key": "frameDepth",
+      "displayName": {
+        "zh-CN": "边框深度"
+      },
+      "valueType": "number",
+      "defaultValue": 100,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 5,
+        "maximum": 500
+      }
+    },
+    {
+      "key": "frameCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      }
+    },
+    {
+      "key": "frameWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "group": "frame",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "frameMaterial",
+      "displayName": {
+        "zh-CN": "材质"
+      },
+      "valueType": "string",
+      "defaultValue": "铝合金",
+      "group": "frame"
+    },
+    {
+      "key": "bladeProfileType",
+      "displayName": {
+        "zh-CN": "截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "blades",
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "矩形管（含方管、扁管）"
+          }
+        }
+      ],
+      "readOnly": true
+    },
+    {
+      "key": "bladeWidth",
+      "displayName": {
+        "zh-CN": "截面宽 B"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "blades",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 5,
+        "maximum": 500
+      }
+    },
+    {
+      "key": "bladeDepth",
+      "displayName": {
+        "zh-CN": "截面深 T"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "blades",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 5,
+        "maximum": 500
+      }
+    },
+    {
+      "key": "bladeCornerRadius",
+      "displayName": {
+        "zh-CN": "外圆角 R"
+      },
+      "valueType": "number",
+      "defaultValue": 2,
+      "group": "blades",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100
+      }
+    },
+    {
+      "key": "bladeWallThickness",
+      "displayName": {
+        "zh-CN": "壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "group": "blades",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 20
+      }
+    },
+    {
+      "key": "bladeMaterial",
+      "displayName": {
+        "zh-CN": "材质"
+      },
+      "valueType": "string",
+      "defaultValue": "铝合金",
+      "group": "blades"
+    },
+    {
+      "key": "middlePostCount",
+      "displayName": {
+        "zh-CN": "中间立柱数"
+      },
+      "valueType": "integer",
+      "defaultValue": 0,
+      "group": "frame",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10
+      }
+    },
+    {
+      "key": "middleBeamCount",
+      "displayName": {
+        "zh-CN": "中间横梁排数"
+      },
+      "valueType": "integer",
+      "defaultValue": 0,
+      "group": "frame",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10
+      }
+    },
+    {
+      "key": "supportMode",
+      "displayName": {
+        "zh-CN": "中间支撑连接"
+      },
+      "valueType": "enum",
+      "defaultValue": "split",
+      "group": "frame",
+      "choices": [
+        {
+          "value": "split",
+          "displayName": {
+            "zh-CN": "按格分段"
+          }
+        },
+        {
+          "value": "through",
+          "displayName": {
+            "zh-CN": "整根穿过支撑"
+          }
+        }
+      ],
+        "description": "中间横梁在立柱处分段；穿过支撑时自动切出真实截面槽。",
+        "visibleWhen": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "ne",
+              "parameter": "bladeConnection",
+              "value": "through_insert"
+            },
+            {
+              "op": "any",
+              "conditions": [
+                {"op": "ne", "parameter": "middlePostCount", "value": 0},
+                {"op": "ne", "parameter": "middleBeamCount", "value": 0}
+              ]
+            }
+        ]
+      }
+    },
+    {
+      "key": "bladeDirectionAngle",
+      "displayName": {
+        "zh-CN": "排列方向角 φ"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "blades",
+      "unit": "deg",
+      "quantity": "angle",
+      "constraints": {
+        "minimum": -180,
+        "maximum": 180
+      },
+      "description": "正视图内叶片轴线：0°横向、90°竖向，其他为斜向。"
+    },
+    {
+      "key": "bladeRollAngle",
+      "displayName": {
+        "zh-CN": "截面滚转角 θ"
+      },
+      "valueType": "number",
+      "defaultValue": 45,
+      "group": "blades",
+      "unit": "deg",
+      "quantity": "angle",
+      "constraints": {
+        "minimum": -90,
+        "maximum": 90
+      },
+      "description": "0°时截面宽 B 沿窗深方向；90°时 B 平行窗面。与排列方向角独立。"
+    },
+    {
+      "key": "arrayMode",
+      "displayName": {
+        "zh-CN": "排列方式"
+      },
+      "valueType": "enum",
+      "defaultValue": "pitch",
+      "group": "array",
+      "choices": [
+        {
+          "value": "pitch",
+          "displayName": {
+            "zh-CN": "指定中心距"
+          }
+        },
+        {
+          "value": "gap",
+          "displayName": {
+            "zh-CN": "指定投影净缝"
+          }
+        },
+        {
+          "value": "overlap",
+          "displayName": {
+            "zh-CN": "指定投影搭接"
+          }
+        },
+        {
+          "value": "count",
+          "displayName": {
+            "zh-CN": "指定叶片数量"
+          }
+        }
+      ]
+    },
+    {
+      "key": "bladePitch",
+      "displayName": {
+        "zh-CN": "中心距 P"
+      },
+      "valueType": "number",
+      "defaultValue": 85,
+      "group": "array",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.01,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "arrayMode",
+        "value": "pitch"
+      }
+    },
+    {
+      "key": "bladeGap",
+      "displayName": {
+        "zh-CN": "投影净缝 G"
+      },
+      "valueType": "number",
+      "defaultValue": 15,
+      "group": "array",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "arrayMode",
+        "value": "gap"
+      }
+    },
+    {
+      "key": "bladeOverlap",
+      "displayName": {
+        "zh-CN": "投影搭接 O"
+      },
+      "valueType": "number",
+      "defaultValue": 5,
+      "group": "array",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "arrayMode",
+        "value": "overlap"
+      }
+    },
+    {
+      "key": "bladeCount",
+      "displayName": {
+        "zh-CN": "每格叶片数"
+      },
+      "valueType": "integer",
+      "defaultValue": 10,
+      "group": "array",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "arrayMode",
+        "value": "count"
+      }
+    },
+    {
+      "key": "startOffset",
+      "displayName": {
+        "zh-CN": "阵列起端最小边距"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "array",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "endOffset",
+      "displayName": {
+        "zh-CN": "阵列末端最小边距"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "array",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 2000
+      }
+    },
+    {
+      "key": "equalEdgeMargin",
+      "displayName": {
+        "zh-CN": "余量两端均分"
+      },
+      "valueType": "boolean",
+      "defaultValue": true,
+      "group": "array",
+      "description": "在起末最小边距之外均分余量；关闭时从起端排列。单根居中。"
+    },
+    {
+      "key": "bladeConnection",
+      "displayName": {
+        "zh-CN": "叶片端部连接"
+      },
+      "valueType": "enum",
+      "defaultValue": "face_weld",
+      "group": "connection",
+      "choices": [
+        {
+          "value": "face_weld",
+          "displayName": {
+            "zh-CN": "顶接焊接"
+          }
+        },
+        {
+          "value": "slot_insert",
+          "displayName": {
+            "zh-CN": "插槽定位"
+          }
+        },
+        {
+          "value": "through_insert",
+          "displayName": {
+            "zh-CN": "穿透边框"
+          }
+        }
+      ]
+    },
+    {
+      "key": "endClearance",
+      "displayName": {
+        "zh-CN": "顶接端面间隙"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "connection",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 10
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bladeConnection",
+        "value": "face_weld"
+      }
+    },
+    {
+      "key": "insertDepth",
+      "displayName": {
+        "zh-CN": "插入深度（垂直框壁）"
+      },
+      "valueType": "number",
+      "defaultValue": 10,
+      "group": "connection",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bladeConnection",
+        "value": "slot_insert"
+      }
+    },
+    {
+      "key": "throughExtension",
+      "displayName": {
+        "zh-CN": "外露长度（垂直框壁）"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "connection",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 200
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bladeConnection",
+        "value": "through_insert"
+      }
+    },
+    {
+      "key": "slotClearance",
+      "displayName": {
+        "zh-CN": "开槽单边安装间隙"
+      },
+      "valueType": "number",
+      "defaultValue": 0.3,
+      "group": "connection",
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 5
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "bladeConnection",
+            "value": "face_weld"
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "supportMode",
+                "value": "through"
+              },
+              {
+                "op": "any",
+                "conditions": [
+                  {
+                    "op": "ne",
+                    "parameter": "middlePostCount",
+                    "value": 0
+                  },
+                  {
+                    "op": "ne",
+                    "parameter": "middleBeamCount",
+                    "value": 0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

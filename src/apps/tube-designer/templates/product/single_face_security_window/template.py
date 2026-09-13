@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 import hashlib
 import importlib.util
 import math
@@ -473,5 +474,23 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    face_type = parameters.get("faceType", "single")
+    if face_type not in {"single", "two", "three", "five"}:
+        raise ValueError("防盗窗面型不受支持")
+    if face_type != "single":
+        script = PROFILE_CATALOG_SCRIPT.parent / "multi_face_security_window.py"
+        name = "icax_security_window_multi_" + hashlib.sha256(script.read_bytes()).hexdigest()[:16]
+        if name not in sys.modules:
+            spec = importlib.util.spec_from_file_location(name, script)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        effective = dict(parameters)
+        effective["frontWidth"] = parameters["width"]
+        effective["accessDoorFace"] = parameters.get("accessDoorFace" + {"two": "2", "three": "3", "five": "5"}[face_type], "front")
+        document = sys.modules[name].generate_multi_face(effective, context, template_id=TEMPLATE_ID,
+                                                        template_version=TEMPLATE_VERSION, layout=face_type + "-face")
+        document["parameters"] = deepcopy(parameters)
+        return document
     return generate_reviewed(parameters, context, layout="single-face",
                              load_profile=_profile, kernel=_generate_geometry)

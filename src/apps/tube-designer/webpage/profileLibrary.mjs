@@ -1,3 +1,4 @@
+import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
 import { confirmWithoutTitle } from "./confirmDialog.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
@@ -921,6 +922,7 @@ function localizedText(value, fallback = "参数") {
 
 
 function renderPackageParameter(definition, values, pending) {
+  pending = pending || !parameterEnabled(definition, values);
   const key = String(definition?.key ?? "");
   const label = localizedText(definition?.displayName, key);
   const value = values[key] ?? definition?.defaultValue ?? "";
@@ -947,15 +949,7 @@ function renderPackageParameter(definition, values, pending) {
 
 
 function matchesParameterVisibility(condition, values) {
-  if (!condition) return true;
-  const all = condition.conditions && condition.op === "all" ? condition.conditions : condition.all;
-  const any = condition.conditions && condition.op === "any" ? condition.conditions : condition.any;
-  if (Array.isArray(all)) return all.every((item) => matchesParameterVisibility(item, values));
-  if (Array.isArray(any)) return any.some((item) => matchesParameterVisibility(item, values));
-  const actual = values?.[condition.parameter ?? condition.key];
-  if (condition.op === "eq") return actual === condition.value;
-  if (condition.op === "ne") return actual !== condition.value;
-  return true;
+  return matchesParameterCondition(condition, values);
 }
 
 

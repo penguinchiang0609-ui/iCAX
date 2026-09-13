@@ -61,9 +61,10 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
     mode = p["pathMode"]
     if p["layout"] != "straight" and p["cornerPostMode"] == "double":
         raise ValueError("高程转角当前采用共用立柱；双立柱之间的跨角连接节点尚未实现")
-    if p["infillType"] not in {"bars", "horizontal"} or p.get("guardrailUse", "platform") != "platform":
-        raise ValueError("高程排布目前支持竖杆或横向管材填充；板件、花格和围墙出头结构需要独立的高程节点")
-    if any(c.category != "accessory.post_cap" for c in built.components):
+    if p["infillType"] not in {"bars", "horizontal", "glass", "plate", "cross", "diamond"}:
+        raise ValueError("此填充构造尚未支持高程排布")
+    wall = p.get("guardrailUse", "platform") == "wall"
+    if any(c.category not in {"accessory.post_cap", "accessory.glass_clip", "accessory.spear_tip"} for c in built.components):
         raise ValueError("高程模式仅支持立柱柱帽，其他配件尚未提供高程安装接口")
     going = number(p, "treadGoing", 280, 1, 2000) if p.get("elevationSource") == "treads" else None
     rise = number(p, "treadRise", 175, -500, 500) if going else None
@@ -101,15 +102,14 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
 
     height = float(p["guardHeight"])
     cap_profile, rail_profile, infill = (built.profiles[k] for k in ("handrail", "rail", "infill"))
-    # At a corner two rails meet separate faces of the same post. Limiting
-    # lateral width keeps them inside the post envelope, including round posts.
-    for post in built.posts:
-        if cap_profile.width > min(post.profile.width, post.profile.depth) + 1e-7:
-            raise ValueError("分跨扶手侧向宽度不能超过立柱截面；请选匹配立柱，避免转角接头悬空或相碰")
+    # Wide caps terminate at the inner receiving plane instead of leaving
+    # unsupported wings beyond the post and colliding around a corner.
     extent = 10000 + 8 * (sum(s["length"] for s in segments) + abs(elevation) + height)
     posts_by_key = {post.key: post for post in built.posts}
     old_posts = {t.key: t for t in built.tubes if t.category == "guardrail.post"}
     new_tubes = []
+    placed_panels = set()
+    placed_clips = set()
     built.volumes.clear()
     contacts = {key: [] for key in old_posts}
     incident_directions = {key: set() for key in old_posts}
@@ -173,6 +173,11 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
         def beam(suffix, name, profile, intercept, category, vertical_width=False):
             start = bay.left.point
             end = bay.right.point
+            lateral_width = profile.depth if vertical_width else profile.width
+            if lateral_width > min(bay.left.profile.width, bay.left.profile.depth) + 1e-7:
+                start = add(start, direction, bay.left.half_extent(direction))
+            if lateral_width > min(bay.right.profile.width, bay.right.profile.depth) + 1e-7:
+                end = add(end, direction, -bay.right.half_extent(direction))
             # Raw rails reach the post centreplanes and are coped by both post
             # envelopes. This also resolves rounded rectangular corner regions.
             depth = profile.width if vertical_width else profile.depth
@@ -208,27 +213,147 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
             for i, distance in enumerate(centers, 1):
                 beam(f".horizontal.{i:03d}", f"横向填充 {i}", infill,
                      low_surface + distance, "guardrail.horizontal_bar", True)
+        elif p["infillType"] in {"glass", "plate"}:
+            panel = next(plate for plate in built.plates if plate.key == bay.key + ".panel")
+            gap = float(p["panelEdgeClearance"])
+            panel_height = high_surface - low_surface - 2 * gap / cosine
+            if panel_height <= panel.thickness:
+                raise ValueError("顺坡挡板上下净空不足，请调整横档或板边间隙")
+            panel.center = (*panel.center[:2], z_at(panel.center, (low_surface + high_surface) / 2))
+            w = panel.width
+            panel.outline = ((-w/2, -panel_height/2 - slope*w/2),
+                             (w/2, -panel_height/2 + slope*w/2),
+                             (w/2, panel_height/2 + slope*w/2),
+                             (-w/2, panel_height/2 - slope*w/2))
+            panel.height = panel_height + abs(slope) * w
+            placed_panels.add(panel.key)
+            for component in built.components:
+                if component.group != bay.key or component.category != "accessory.glass_clip":
+                    continue
+                fraction = .25 if component.key.endswith(".1") else .75
+                # Clamp stays rigid against the vertical post; only its elevation changes.
+                z = z_at(component.origin, low_surface + gap/cosine + panel_height*fraction) - 15
+                component.origin = (*component.origin[:2], z)
+                placed_clips.add(component.key)
+        elif p["infillType"] in {"cross", "diamond"}:
+            span = math.dist(bay.left.point, bay.right.point)
+            frame_height = upper_center - lower_center
+            def point(u, v):
+                q = add(bay.left.point, direction, u)
+                return (*q[:2], z_at(q, lower_center + v))
+            def pattern(suffix, a, b, limits, extra=()):
+                start, end = point(*a), point(*b)
+                length = math.dist(start, end)
+                dz = (end[2] - start[2]) / length
+                planar = math.hypot(end[0]-start[0], end[1]-start[1]) / length
+                tube = Tube(bay.key + ".pattern." + suffix, "顺坡花格斜杆", start, end,
+                            infill, (-direction[0]*dz, -direction[1]*dz, planar), side,
+                            "guardrail.decorative_bar", bay.key,
+                            [bay.left.key, bay.right.key, bottom.key, upper.key, *extra])
+                # Intersect independent station and inclined-height slabs; do not
+                # shear the tube section or use a rectangular box for a skew bay.
+                u0, u1, v0, v1 = limits
+                key = tube.key + ".station"
+                built.volumes.append(KeepVolume(key, point((u0+u1)/2, (v0+v1)/2),
+                                                u1-u0, extent, extent, direction, (0.,0.,1.)))
+                tube.keep_volume = key
+                key = tube.key + ".height"
+                built.volumes.append(KeepVolume(key, point((u0+u1)/2, (v0+v1)/2),
+                                                extent, (v1-v0)*cosine, extent, along, normal))
+                tube.extra_keep_volumes = [key]
+                tube.diagonal = True
+                new_tubes.append(tube)
+                return tube
+            if p["infillType"] == "cross":
+                limits = (0, span, 0, frame_height)
+                main = pattern("cross.1", (0,0), (span,frame_height), limits)
+                pattern("cross.2", (0,frame_height), (span/2,frame_height/2), limits, [main.key])
+                pattern("cross.3", (span/2,frame_height/2), (span,0), limits, [main.key])
+            else:
+                h, w = frame_height/2, span/2
+                pattern("diamond.1", (0,h), (w,2*h), (0,w,h,2*h))
+                pattern("diamond.2", (w,2*h), (2*w,h), (w,2*w,h,2*h))
+                pattern("diamond.3", (w,0), (2*w,h), (w,2*w,0,h))
+                pattern("diamond.4", (0,h), (w,0), (0,w,0,h))
         else:
             for i, distance in enumerate(bay.bar_centers, 1):
                 point = add(start_face, direction, distance)
                 half_width = infill.width / 2
                 lo, hi = z_at(point, lower_center), z_at(point, upper_center)
+                if wall:
+                    hi = z_at(point, height + float(p["wallPicketProjection"]))
                 tube = Tube(bay.key + f".bar.{i:03d}", f"竖杆 {i}",
                             (point[0], point[1], lo - half_width * abs(slope)),
-                            (point[0], point[1], hi + half_width * abs(slope)),
+                            (point[0], point[1], hi if wall else hi + half_width * abs(slope)),
                             infill, direction, side, "guardrail.vertical_bar", bay.key,
-                            [bottom.key, upper.key])
+                            [bottom.key] if wall else [bottom.key, upper.key])
                 # Keep only the region between the receiver centreplanes, then
                 # subtract their outer bodies. No disconnected far-side remnant.
-                middle = base + (lower_center + upper_center) / 2
+                keep_top = height + float(p["wallPicketProjection"]) + half_width * abs(slope) + 1 if wall else upper_center
+                middle = base + (lower_center + keep_top) / 2
                 center = (s["origin"][0], s["origin"][1], middle)
                 key = tube.key + ".elevation.keep"
                 built.volumes.append(KeepVolume(key, center, extent,
-                    (upper_center - lower_center) * cosine, extent, along, normal))
+                    (keep_top - lower_center) * cosine, extent, along, normal))
                 tube.keep_volume, tube.diagonal = key, abs(slope) > 1e-9
+                if wall:
+                    tube.envelope_clearance = float(p["picketHoleClearance"])
+                    cap.hole_tools.append(tube.key)
+                    if upper is not cap:
+                        upper.hole_tools.append(tube.key)
+                    for component in built.components:
+                        if component.key == tube.key + ".tip":
+                            component.origin = (*component.origin[:2], hi)
+                            placed_clips.add(component.key)
                 new_tubes.append(tube)
 
     ground_by_key, top_by_key = {}, {}
+    # Merge collinear cap pieces into physical stock before resolving receivers.
+    # Corners and changes of grade remain actual cut joints, not a bent tube.
+    if p.get("handrailMode", "per_bay") == "continuous":
+        if mode != "continuous":
+            raise ValueError("跨柱连续扶手适用于连续顺坡；阶梯分跨请使用分跨扶手")
+        replacements = {}
+        caps = [tube for tube in new_tubes if tube.category == "guardrail.handrail"]
+        for index, s in enumerate(segments):
+            group = [tube for tube in caps if tube.group.startswith(f"segment.{index+1}.")]
+            if not group:
+                continue
+            first, last = group[0], group[-1]
+            d, cosine = s["direction"], s["cos"]
+            start = number(p,"startExtension",0,0,2000) if index == 0 else 0
+            finish = number(p,"finishExtension",0,0,2000) if index == len(segments)-1 else 0
+            intercept = height-cap_profile.depth/(2*cosine)
+            a, b = add(s["origin"],d,-start*cosine), add(s["origin"],d,s["length"]+finish*cosine)
+            z = lambda q: s["base"]+intercept+station(q,s)*s["slope"]
+            merged = Tube(f"segment.{index+1}.continuous.cap","跨柱连续扶手",
+                          (*a[:2],z(a)),(*b[:2],z(b)),cap_profile,first.x_axis,first.y_axis,
+                          "guardrail.handrail",f"segment.{index+1}")
+            merged.hole_tools = list(dict.fromkeys(key for tube in group for key in tube.hole_tools))
+            merged.extra_keep_volumes = list(dict.fromkeys(first.extra_keep_volumes+last.extra_keep_volumes))
+            if merged.extra_keep_volumes:
+                merged.keep_volume = merged.extra_keep_volumes.pop(0)
+            merged.diagonal = abs(s["slope"]) > 1e-9
+            for tube in group:
+                replacements[tube.key] = merged.key
+                new_tubes.remove(tube)
+            new_tubes.append(merged)
+        for tube in new_tubes:
+            tube.clips = list(dict.fromkeys(replacements.get(key,key) for key in tube.clips))
+        for post_key, entries in contacts.items():
+            tube = old_posts[post_key]
+            highest = max(entries,key=lambda entry:entry[1])
+            s = highest[2]
+            cosine = s["cos"]
+            d = s["direction"]
+            normal = (-d[0]*s["slope"]*cosine,-d[1]*s["slope"]*cosine,cosine)
+            along = (d[0]*cosine,d[1]*cosine,s["slope"]*cosine)
+            origin = (*s["origin"][:2],s["base"]+height-cap_profile.depth/(2*cosine))
+            key = post_key+".continuous.top"
+            built.volumes.append(KeepVolume(key,add(origin,normal,-extent/2),extent,extent,extent,along,normal))
+            tube.extra_keep_volumes = [key]
+            tube.clips = list(dict.fromkeys(replacements[bay_key+".elevation.cap"] for _,_,_,bay_key in entries))
+            tube.keep_volume = key
     for key, tube in old_posts.items():
         neighbours = contacts[key]
         ground_values = [entry[0] for entry in neighbours]
@@ -236,8 +361,12 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
         top = max(entry[1] for entry in neighbours)
         tube.start = (*tube.start[:2], tube.start[2] + ground)
         tube.end = (*tube.end[:2], top)
-        tube.clips.clear()
-        tube.keep_volume = ""
+        if p.get("handrailMode", "per_bay") != "continuous":
+            tube.clips.clear()
+        if p.get("handrailMode", "per_bay") != "continuous":
+            tube.keep_volume = ""
+        else:
+            tube.extra_keep_volumes = []
         tube.start_cut_override = tube.end_cut_override = "square"
         if tube.length < 1 or tube.end[2] <= tube.start[2]:
             raise ValueError("踏步与横梁标高导致立柱有效长度不足")
@@ -248,6 +377,13 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
     built.tubes = new_tubes
 
     for plate in built.plates:
+        if plate.key in placed_panels:
+            continue
+        if plate.category == "plate.side_mount":
+            if plate.support_post not in ground_by_key:
+                raise ValueError("侧装板缺少对应立柱")
+            plate.center = (*plate.center[:2], plate.center[2] + ground_by_key[plate.support_post])
+            continue
         if plate.category != "plate.base":
             raise ValueError("当前高程板件仅支持水平立柱底板")
         members = [post for post in built.posts if
@@ -270,6 +406,8 @@ def apply_elevation(built, p, Tube, KeepVolume, distribute):
                         raise ValueError("底板跨越踏步边缘，请减小底板或增大踏步进深")
         plate.center = (*plate.center[:2], plate.center[2] + ground)
     for component in built.components:
+        if component.key in placed_clips:
+            continue
         key = component.key.removesuffix(".cap")
         if key not in top_by_key:
             raise ValueError("柱帽没有可用的立柱安装基准")

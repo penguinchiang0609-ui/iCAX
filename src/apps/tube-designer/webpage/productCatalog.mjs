@@ -85,7 +85,8 @@ export function buildCatalogEntries(templates = []) {
   // `presets` is retained only as a defensive reader for old in-memory
   // descriptors.  Shipped and imported .itpt descriptors must not contain it;
   // each former style is now its own descriptor/package and gets its own ID.
-  return sortTemplatesByCatalog(templates).filter((template) => template?.available).flatMap((template) => {
+  return sortTemplatesByCatalog(templates).filter((template) => template?.available
+    && template?.extensions?.catalog?.listed !== false).flatMap((template) => {
     const path = getCatalogTemplatePath(template);
     const rawPresets = template?.extensions?.catalog?.presets;
     const seen = new Set();

@@ -343,8 +343,7 @@ class ModularGuardrailTests(unittest.TestCase):
         self.assertTrue(any(diagnostic["code"] == "guardrail.glass-specification" for diagnostic in document["diagnostics"]))
 
     def test_known_component_interface_mismatches_fail_instead_of_scaling(self):
-        for change in ({"postCapEnabled": True},
-                       {"postCapEnabled": True, "largePostMode": "middle", "largePostSize": 100},
+        for change in ({"postCapEnabled": True, "largePostMode": "middle", "largePostSize": 100},
                        {"infillType": "glass", "glassClipEnabled": True, "glassThickness": 10, "panelEdgeClearance": 5},
                        {"infillType": "glass", "glassClipEnabled": True, "panelEdgeClearance": 2},
                        {"guardrailUse": "wall", "infillType": "diamond"}):

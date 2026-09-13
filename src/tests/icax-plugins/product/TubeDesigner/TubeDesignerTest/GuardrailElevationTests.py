@@ -1,7 +1,17 @@
 import json
 import math
 import unittest
-from ModularGuardrailTests import MODULE, values
+import sys
+from ModularGuardrailTests import MODULE as PACKAGE, values as package_values
+
+# This suite exercises the shared legacy spacing kernel, not the new fixed
+# family wrapper and explicit per-side bay-count contract.
+MODULE = sys.modules[PACKAGE._name]
+def values(**changes):
+    p = package_values(**changes)
+    for key in ("sideBayCount1", "sideBayCount2", "sideBayCount3"):
+        p.pop(key, None)
+    return p
 
 
 class ElevationTests(unittest.TestCase):
@@ -53,7 +63,7 @@ class ElevationTests(unittest.TestCase):
                 self.assertTrue(tube.clips)
 
     def test_invalid_combinations_fail_explicitly(self):
-        for change in ({"slopeAngle":float("nan")},{"slopeAngle":61},{"infillType":"glass"},{"layout":"left_l","cornerPostMode":"double"}):
+        for change in ({"slopeAngle":float("nan")},{"slopeAngle":61},{"infillType":"lower_plate"},{"layout":"left_l","cornerPostMode":"double"}):
             with self.assertRaises(ValueError):
                 MODULE.build_layout(values(pathMode="continuous",**change))
 

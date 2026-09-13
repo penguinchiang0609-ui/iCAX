@@ -23,22 +23,8 @@
     "dimensionSource": "referenced-parametric-model"
   },
   "parameters": [
-    {
-      "key": "width",
-      "displayName": "管体外宽 / mm",
-      "valueType": "number",
-      "defaultValue": 40,
-      "min": 1,
-      "step": 0.1
-    },
-    {
-      "key": "depth",
-      "displayName": "管体外高 / mm",
-      "valueType": "number",
-      "defaultValue": 40,
-      "min": 1,
-      "step": 0.1
-    },
+    {"key":"width","displayName":"管体外宽 / mm","valueType":"number","defaultValue":40,"min":1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"depth","displayName":"管体外高 / mm","valueType":"number","defaultValue":40,"min":1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "wallThickness",
       "displayName": "管体壁厚 / mm",
@@ -47,38 +33,10 @@
       "min": 0.1,
       "step": 0.1
     },
-    {
-      "key": "flangeLength",
-      "displayName": "安装翼伸出 / mm",
-      "valueType": "number",
-      "defaultValue": 30,
-      "min": 0.1,
-      "step": 0.1
-    },
-    {
-      "key": "flangeThickness",
-      "displayName": "安装翼厚 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0.1,
-      "step": 0.1
-    },
-    {
-      "key": "cornerRadius",
-      "displayName": "管体外圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 0.1
-    },
-    {
-      "key": "innerRadius",
-      "displayName": "内孔圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 0,
-      "min": 0,
-      "step": 0.1
-    },
+    {"key":"flangeLength","displayName":"安装翼伸出 / mm","valueType":"number","defaultValue":30,"min":0.1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"flangeThickness","displayName":"安装翼厚 / mm","valueType":"number","defaultValue":3,"min":0.1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"cornerRadius","displayName":"管体外圆角 / mm","valueType":"number","defaultValue":3,"min":0,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"innerRadius","displayName":"内孔圆角 / mm","valueType":"number","defaultValue":0,"min":0,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "geometrySource",
       "displayName": "轮廓来源",
@@ -99,18 +57,8 @@
         }
       ]
     },
-    {
-      "key": "materialBoundary",
-      "displayName": "完整材料边界 JSON（实际轮廓模式）",
-      "valueType": "string",
-      "defaultValue": ""
-    },
-    {
-      "key": "sourceRevision",
-      "displayName": "来源及图纸版本",
-      "valueType": "string",
-      "defaultValue": ""
-    },
+    {"key":"materialBoundary","displayName":"完整材料边界 JSON（实际轮廓模式）","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"sourceRevision","displayName":"来源及图纸版本","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "mirrorX",
       "displayName": "左右镜像",

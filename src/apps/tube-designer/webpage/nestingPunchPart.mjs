@@ -1,3 +1,4 @@
+import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
 import { editPunchWizardFeature, getPunchWizardPayload, validatePunchWizard, openPunchParameters, closePunchParameters, checkpointPunchWizard, setPunchFeatureSelected, removeSelectedPunchWizardFeatures } from "./punchWizard.mjs";
 import { beginPunchOperation, finishPunchOperation, previewPunch } from "./punchEditor.mjs";
@@ -158,15 +159,8 @@ function parameterName(definition) {
   return typeof value==="object"?String(value["zh-CN"]??value["en-US"]??Object.values(value)[0]??definition?.key):String(value??"");
 }
 
-function visibleParameter(definition,values) {
-  const condition=definition?.visibleWhen;
-  const test=item=>!item?true
-    : Array.isArray(item.conditions)?(item.op==="any"?item.conditions.some(test):item.conditions.every(test))
-    : Array.isArray(item.all)?item.all.every(test)
-    : Array.isArray(item.any)?item.any.some(test)
-    : item.op==="ne"?values?.[item.key??item.parameter]!==item.value
-    : item.op==="eq"?values?.[item.key??item.parameter]===item.value:true;
-  return test(condition);
+function visibleParameter(definition, values = {}) {
+  return matchesParameterCondition(definition?.visibleWhen, values);
 }
 
 function renderMainProfileParameter(definition,values,disabled) {

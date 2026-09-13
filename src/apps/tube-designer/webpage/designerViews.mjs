@@ -1,3 +1,4 @@
+import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import {
   cancelDesignerPartThumbnailHydration,
   scheduleDesignerPartThumbnailHydration,
@@ -1217,17 +1218,18 @@ function renderParametricProfileParameters(profile, prefix, mode, disabled) {
   const definitions = Array.isArray(profile.parameterDefinitions) ? profile.parameterDefinitions : [];
   return `<div class="tube-designer-parametric-profile-parameters">
     <strong>管型参数</strong>
-    <div class="tube-designer-field-grid">${definitions.map((definition) => {
+    <div class="tube-designer-field-grid">${definitions.filter(definition => matchesParameterCondition(definition.visibleWhen, values)).map((definition) => {
+      const fieldDisabled = disabled || !parameterEnabled(definition, values);
       const key = String(definition?.key ?? "");
       const label = localizedProfileText(definition?.displayName, key);
       const value = values[key] ?? definition?.defaultValue ?? "";
       const common = `data-cam-change-action="tube-designer-profile-parameter-change" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-parameter="${escapeAttribute(key)}"`;
       if (definition?.valueType === "boolean") {
-        return `<label class="tube-designer-field tube-designer-boolean-field"><span>${escapeText(label)}</span><input type="checkbox" ${common} ${value ? "checked" : ""} ${disabled ? "disabled" : ""} /></label>`;
+        return `<label class="tube-designer-field tube-designer-boolean-field"><span>${escapeText(label)}</span><input type="checkbox" ${common} ${value ? "checked" : ""} ${fieldDisabled ? "disabled" : ""} /></label>`;
       }
       const options = Array.isArray(definition?.options) ? definition.options : [];
       if (options.length) {
-        return `<label class="tube-designer-field"><span>${escapeText(label)}</span><select ${common} ${disabled ? "disabled" : ""}>${options.map((option) => {
+        return `<label class="tube-designer-field"><span>${escapeText(label)}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${options.map((option) => {
           const optionValue = typeof option === "object" ? option?.value : option;
           const optionLabel = typeof option === "object" ? localizedProfileText(option?.displayName ?? option?.label, optionValue) : option;
           return `<option value="${escapeAttribute(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(optionLabel)}</option>`;
@@ -1238,7 +1240,7 @@ function renderParametricProfileParameters(profile, prefix, mode, disabled) {
       if (definition?.min != null || definition?.minimum != null) attributes.push(`min="${escapeAttribute(definition.min ?? definition.minimum)}"`);
       if (definition?.max != null || definition?.maximum != null) attributes.push(`max="${escapeAttribute(definition.max ?? definition.maximum)}"`);
       if (type === "number") attributes.push(`step="${escapeAttribute(definition?.step ?? (definition?.valueType === "integer" ? 1 : "any"))}"`);
-      if (disabled) attributes.push("disabled");
+      if (fieldDisabled) attributes.push("disabled");
       return `<label class="tube-designer-field"><span>${escapeText(label)}</span><input ${attributes.join(" ")} /></label>`;
     }).join("")}</div>
   </div>`;
@@ -1289,6 +1291,7 @@ function renderProfileField(field, value, disabled, context) {
 }
 
 function renderField(field, value, disabled = false, context = null) {
+  disabled = disabled || !parameterEnabled(field, context?.values ?? {});
   if (field.presentation?.editor === "component-model") return renderComponentModelField(field, value, disabled, context);
   const name = escapeAttribute(field.key ?? field.name);
   const label = escapeText(field.displayName ?? field.label);
@@ -1323,22 +1326,7 @@ function visibleFields(fields, values) {
 }
 
 function matchesVisibility(condition, values) {
-  if (!condition) return true;
-  const all = condition.conditions && condition.op === "all" ? condition.conditions : condition.all;
-  const any = condition.conditions && condition.op === "any" ? condition.conditions : condition.any;
-  if (Array.isArray(all)) {
-    return all.every((item) => matchesVisibility(item, values));
-  }
-  if (Array.isArray(any)) {
-    return any.some((item) => matchesVisibility(item, values));
-  }
-  const negated = condition.condition && condition.op === "not" ? condition.condition : condition.not;
-  if (negated) return !matchesVisibility(negated, values);
-  const name = condition.parameter ?? condition.name;
-  if (!name) return true;
-  const equal = Object.is(values?.[name], condition.value)
-    || String(values?.[name] ?? "") === String(condition.value ?? "");
-  return condition.op === "ne" ? !equal : equal;
+  return matchesParameterCondition(condition, values);
 }
 
 function buildParameterGroupTree(template, fields) {

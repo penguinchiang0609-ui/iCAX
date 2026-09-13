@@ -2,16 +2,18 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "straight-steel-staircase",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "displayName": {
-    "zh-CN": "楼梯/钢楼梯/直跑钢楼梯",
-    "en-US": "Stair/Steel Staircase/Straight Steel Staircase"
+    "zh-CN": "钢楼梯"
   },
-  "description": "完整的直跑多踏步钢楼梯，包含双侧梯段边梁、逐级踏步横梁及可选双侧护栏。",
+  "description": "直跑、同向平台、L型、U型；管梁、槽钢、锯齿板梁，钢板/管材支架，真实轮廓相贯节点与连续扶手斜切转接。制造几何不替代结构与建筑节点设计。",
   "extensions": {
     "catalog": {
+      "categoryPath": [
+        "楼梯"
+      ],
       "groupOrder": 30,
-      "templateOrder": 20
+      "templateOrder": 10
     },
     "productIdentity": {
       "codeParameter": "productCode"
@@ -19,82 +21,15 @@
     "primaryDimensions": {
       "widthParameter": "stairWidth",
       "heightParameter": "floorHeight"
-    },
-    "stairLayout": {
-      "kind": "straight",
-      "flightCount": 1
-    },
-    "parameterPresets": {
-      "selectorParameter": "tubeSpecificationPreset",
-      "customValue": "custom",
-      "presets": [
-        {
-          "value": "residential_standard",
-          "values": {
-            "stringerWidth": 100,
-            "stringerDepth": 50,
-            "stringerCornerRadius": 3,
-            "stringerWallThickness": 3,
-            "treadWidth": 40,
-            "treadDepthProfile": 40,
-            "treadCornerRadius": 2,
-            "treadWallThickness": 2,
-            "handrailWidth": 40,
-            "handrailDepth": 40,
-            "handrailCornerRadius": 2,
-            "handrailWallThickness": 1.5,
-            "postWidth": 40,
-            "postDepth": 40,
-            "postCornerRadius": 2,
-            "postWallThickness": 1.5
-          }
-        },
-        {
-          "value": "compact_indoor",
-          "values": {
-            "stringerWidth": 80,
-            "stringerDepth": 40,
-            "stringerCornerRadius": 3,
-            "stringerWallThickness": 3,
-            "treadWidth": 40,
-            "treadDepthProfile": 30,
-            "treadCornerRadius": 2,
-            "treadWallThickness": 2,
-            "handrailWidth": 40,
-            "handrailDepth": 30,
-            "handrailCornerRadius": 2,
-            "handrailWallThickness": 1.5,
-            "postWidth": 40,
-            "postDepth": 30,
-            "postCornerRadius": 2,
-            "postWallThickness": 1.5
-          }
-        },
-        {
-          "value": "reinforced_outdoor",
-          "values": {
-            "stringerWidth": 120,
-            "stringerDepth": 60,
-            "stringerCornerRadius": 4,
-            "stringerWallThickness": 4,
-            "treadWidth": 50,
-            "treadDepthProfile": 50,
-            "treadCornerRadius": 3,
-            "treadWallThickness": 3,
-            "handrailWidth": 50,
-            "handrailDepth": 40,
-            "handrailCornerRadius": 2,
-            "handrailWallThickness": 2,
-            "postWidth": 50,
-            "postDepth": 40,
-            "postCornerRadius": 2,
-            "postWallThickness": 2
-          }
-        }
-      ]
     }
   },
   "groups": [
+    {
+      "key": "basic",
+      "displayName": {
+        "zh-CN": "路线与分跑"
+      }
+    },
     {
       "key": "overall",
       "displayName": {
@@ -136,9 +71,88 @@
         "zh-CN": "装配与加工"
       },
       "order": 60
+    },
+    {
+      "key": "structure",
+      "displayName": {
+        "zh-CN": "承重结构"
+      }
+    },
+    {
+      "key": "treads",
+      "displayName": {
+        "zh-CN": "踏板与支撑"
+      }
+    },
+    {
+      "key": "landing",
+      "displayName": {
+        "zh-CN": "平台与立柱"
+      }
+    },
+    {
+      "key": "guard",
+      "displayName": {
+        "zh-CN": "栏杆填充"
+      }
+    },
+    {
+      "key": "joints",
+      "displayName": {
+        "zh-CN": "连接板"
+      }
     }
   ],
   "parameters": [
+    {
+      "key": "postEveryRisers",
+      "displayName": {
+        "zh-CN": "梯跑立柱间隔级数"
+      },
+      "valueType": "integer",
+      "defaultValue": 2,
+      "group": "guard",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 10
+      },
+      "description": "立柱落在对应踏步的钢支撑上，首末级均设柱；不是按斜线任意插柱。",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
+    },
+    {
+      "key": "maximumPostSpacing",
+      "displayName": {
+        "zh-CN": "平台立柱最大间距"
+      },
+      "valueType": "number",
+      "defaultValue": 900,
+      "quantity": "length",
+      "unit": "mm",
+      "group": "guard",
+      "constraints": {
+        "minimum": 200,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "ne",
+            "parameter": "stairRoute",
+            "value": "straight"
+          }
+        ]
+      }
+    },
     {
       "key": "productCode",
       "displayName": {
@@ -280,64 +294,6 @@
       }
     },
     {
-      "key": "maximumPostSpacing",
-      "displayName": {
-        "zh-CN": "立柱最大中心距"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 900,
-      "constraints": {
-        "minimum": 200,
-        "maximum": 2000,
-        "step": 1
-      },
-      "group": "railing",
-      "order": 30,
-      "visibleWhen": {
-        "op": "ne",
-        "parameter": "railingSide",
-        "value": "none"
-      }
-    },
-    {
-      "key": "tubeSpecificationPreset",
-      "displayName": {
-        "zh-CN": "规格组合"
-      },
-      "valueType": "enum",
-      "defaultValue": "residential_standard",
-      "choices": [
-        {
-          "value": "residential_standard",
-          "displayName": {
-            "zh-CN": "住宅常规·100×50 / 40×40（推荐）"
-          }
-        },
-        {
-          "value": "compact_indoor",
-          "displayName": {
-            "zh-CN": "室内紧凑·80×40 / 40×30"
-          }
-        },
-        {
-          "value": "reinforced_outdoor",
-          "displayName": {
-            "zh-CN": "室外加强·120×60 / 50×50"
-          }
-        },
-        {
-          "value": "custom",
-          "displayName": {
-            "zh-CN": "自定义"
-          }
-        }
-      ],
-      "group": "preset",
-      "order": 10
-    },
-    {
       "key": "stringerProfileType",
       "displayName": {
         "zh-CN": "梯段边梁/截面类型"
@@ -352,6 +308,12 @@
           }
         },
         {
+          "value": "channel",
+          "displayName": {
+            "zh-CN": "槽钢"
+          }
+        },
+        {
           "value": "round",
           "displayName": {
             "zh-CN": "圆管"
@@ -360,74 +322,69 @@
         {
           "value": "oval",
           "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
-          }
-        },
-        {
-          "value": "angle",
-          "displayName": {
-            "zh-CN": "角钢"
-          }
-        },
-        {
-          "value": "channel",
-          "displayName": {
-            "zh-CN": "槽钢 / U-C 型钢"
-          }
-        },
-        {
-          "value": "i-section",
-          "displayName": {
-            "zh-CN": "热轧工字钢"
-          }
-        },
-        {
-          "value": "t-section",
-          "displayName": {
-            "zh-CN": "T 型钢"
-          }
-        },
-        {
-          "value": "z-section",
-          "displayName": {
-            "zh-CN": "Z 型钢"
+            "zh-CN": "椭圆管"
           }
         }
       ],
       "group": "profiles",
-      "order": 5
+      "order": 5,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stringerConstruction",
+        "value": "profile"
+      }
     },
     {
       "key": "stringerWidth",
       "displayName": {
-        "zh-CN": "梯段边梁/截面高度"
+        "zh-CN": "梯梁截面横向宽度"
       },
       "valueType": "number",
       "quantity": "length",
       "unit": "mm",
-      "defaultValue": 100,
+      "defaultValue": 120,
       "constraints": {
         "minimum": 20,
         "step": 0.1
       },
       "group": "profiles",
-      "order": 10
+      "order": 10,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stringerConstruction",
+        "value": "profile"
+      }
     },
     {
       "key": "stringerDepth",
       "displayName": {
-        "zh-CN": "梯段边梁/截面宽度"
+        "zh-CN": "梯梁截面法向高度"
       },
       "valueType": "number",
       "quantity": "length",
       "unit": "mm",
-      "defaultValue": 50,
+      "defaultValue": 180,
       "constraints": {
         "minimum": 20,
         "step": 0.1
       },
       "group": "profiles",
-      "order": 20
+      "order": 20,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "ne",
+            "parameter": "stringerProfileType",
+            "value": "round"
+          }
+        ]
+      }
     },
     {
       "key": "stringerCornerRadius",
@@ -443,7 +400,22 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 30
+      "order": 30,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "rect"
+          }
+        ]
+      }
     },
     {
       "key": "stringerWallThickness",
@@ -459,7 +431,12 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 40
+      "order": 40,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stringerConstruction",
+        "value": "profile"
+      }
     },
     {
       "key": "treadProfileType",
@@ -474,48 +451,6 @@
           "displayName": {
             "zh-CN": "方矩管"
           }
-        },
-        {
-          "value": "round",
-          "displayName": {
-            "zh-CN": "圆管"
-          }
-        },
-        {
-          "value": "oval",
-          "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
-          }
-        },
-        {
-          "value": "angle",
-          "displayName": {
-            "zh-CN": "角钢"
-          }
-        },
-        {
-          "value": "channel",
-          "displayName": {
-            "zh-CN": "槽钢 / U-C 型钢"
-          }
-        },
-        {
-          "value": "i-section",
-          "displayName": {
-            "zh-CN": "热轧工字钢"
-          }
-        },
-        {
-          "value": "t-section",
-          "displayName": {
-            "zh-CN": "T 型钢"
-          }
-        },
-        {
-          "value": "z-section",
-          "displayName": {
-            "zh-CN": "Z 型钢"
-          }
         }
       ],
       "group": "profiles",
@@ -524,12 +459,12 @@
     {
       "key": "treadWidth",
       "displayName": {
-        "zh-CN": "踏步横梁/截面高度"
+        "zh-CN": "踏步横梁/截面宽度"
       },
       "valueType": "number",
       "quantity": "length",
       "unit": "mm",
-      "defaultValue": 40,
+      "defaultValue": 30,
       "constraints": {
         "minimum": 10,
         "step": 0.1
@@ -540,12 +475,12 @@
     {
       "key": "treadDepthProfile",
       "displayName": {
-        "zh-CN": "踏步横梁/截面宽度"
+        "zh-CN": "踏步横梁/截面高度"
       },
       "valueType": "number",
       "quantity": "length",
       "unit": "mm",
-      "defaultValue": 40,
+      "defaultValue": 30,
       "constraints": {
         "minimum": 10,
         "step": 0.1
@@ -608,45 +543,47 @@
         {
           "value": "oval",
           "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
+            "zh-CN": "椭圆管"
           }
         },
         {
-          "value": "angle",
+          "value": "racetrack",
           "displayName": {
-            "zh-CN": "角钢"
-          }
-        },
-        {
-          "value": "channel",
-          "displayName": {
-            "zh-CN": "槽钢 / U-C 型钢"
-          }
-        },
-        {
-          "value": "i-section",
-          "displayName": {
-            "zh-CN": "热轧工字钢"
-          }
-        },
-        {
-          "value": "t-section",
-          "displayName": {
-            "zh-CN": "T 型钢"
-          }
-        },
-        {
-          "value": "z-section",
-          "displayName": {
-            "zh-CN": "Z 型钢"
+            "zh-CN": "腰型管"
           }
         }
       ],
       "group": "profiles",
-      "order": 85
+      "order": 85,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
     },
     {
       "key": "handrailWidth",
+      "displayName": {
+        "zh-CN": "扶手管/宽度（圆管为外径）"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 40,
+      "constraints": {
+        "minimum": 10,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "order": 90,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
+    },
+    {
+      "key": "handrailDepth",
       "displayName": {
         "zh-CN": "扶手管/截面高度"
       },
@@ -659,23 +596,22 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 90
-    },
-    {
-      "key": "handrailDepth",
-      "displayName": {
-        "zh-CN": "扶手管/截面宽度"
-      },
-      "valueType": "number",
-      "quantity": "length",
-      "unit": "mm",
-      "defaultValue": 40,
-      "constraints": {
-        "minimum": 10,
-        "step": 0.1
-      },
-      "group": "profiles",
-      "order": 100
+      "order": 100,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "ne",
+            "parameter": "handrailProfileType",
+            "value": "round"
+          }
+        ]
+      }
     },
     {
       "key": "handrailCornerRadius",
@@ -691,7 +627,22 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 110
+      "order": 110,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "eq",
+            "parameter": "handrailProfileType",
+            "value": "rect"
+          }
+        ]
+      }
     },
     {
       "key": "handrailWallThickness",
@@ -707,7 +658,12 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 120
+      "order": 120,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
     },
     {
       "key": "postProfileType",
@@ -732,47 +688,28 @@
         {
           "value": "oval",
           "displayName": {
-            "zh-CN": "椭圆 / 长圆管"
+            "zh-CN": "椭圆管"
           }
         },
         {
-          "value": "angle",
+          "value": "racetrack",
           "displayName": {
-            "zh-CN": "角钢"
-          }
-        },
-        {
-          "value": "channel",
-          "displayName": {
-            "zh-CN": "槽钢 / U-C 型钢"
-          }
-        },
-        {
-          "value": "i-section",
-          "displayName": {
-            "zh-CN": "热轧工字钢"
-          }
-        },
-        {
-          "value": "t-section",
-          "displayName": {
-            "zh-CN": "T 型钢"
-          }
-        },
-        {
-          "value": "z-section",
-          "displayName": {
-            "zh-CN": "Z 型钢"
+            "zh-CN": "腰型管"
           }
         }
       ],
       "group": "profiles",
-      "order": 125
+      "order": 125,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
     },
     {
       "key": "postWidth",
       "displayName": {
-        "zh-CN": "护栏立柱/截面高度"
+        "zh-CN": "护栏立柱/宽度（圆管为外径）"
       },
       "valueType": "number",
       "quantity": "length",
@@ -783,12 +720,17 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 130
+      "order": 130,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
     },
     {
       "key": "postDepth",
       "displayName": {
-        "zh-CN": "护栏立柱/截面宽度"
+        "zh-CN": "护栏立柱/截面深度"
       },
       "valueType": "number",
       "quantity": "length",
@@ -799,7 +741,22 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 140
+      "order": 140,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "ne",
+            "parameter": "postProfileType",
+            "value": "round"
+          }
+        ]
+      }
     },
     {
       "key": "postCornerRadius",
@@ -815,7 +772,22 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 150
+      "order": 150,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "eq",
+            "parameter": "postProfileType",
+            "value": "rect"
+          }
+        ]
+      }
     },
     {
       "key": "postWallThickness",
@@ -831,37 +803,1434 @@
         "step": 0.1
       },
       "group": "profiles",
-      "order": 160
+      "order": 160,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
+    },
+    {
+      "key": "stairRoute",
+      "displayName": {
+        "zh-CN": "楼梯路线"
+      },
+      "valueType": "enum",
+      "defaultValue": "straight",
+      "group": "basic",
+      "choices": [
+        {
+          "value": "straight",
+          "displayName": {
+            "zh-CN": "直跑"
+          }
+        },
+        {
+          "value": "straight_landing",
+          "displayName": {
+            "zh-CN": "同向双跑＋平台"
+          }
+        },
+        {
+          "value": "l_turn",
+          "displayName": {
+            "zh-CN": "L型平台转角"
+          }
+        },
+        {
+          "value": "u_turn",
+          "displayName": {
+            "zh-CN": "U型平台折返"
+          }
+        }
+      ]
+    },
+    {
+      "key": "firstFlightRiserCount",
+      "displayName": {
+        "zh-CN": "第一跑级数"
+      },
+      "valueType": "integer",
+      "defaultValue": 9,
+      "group": "basic",
+      "constraints": {
+        "minimum": 2,
+        "maximum": 58
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "landingLength",
+      "displayName": {
+        "zh-CN": "平台长度"
+      },
+      "valueType": "number",
+      "defaultValue": 1300,
+      "group": "landing",
+      "constraints": {
+        "minimum": 400,
+        "maximum": 10000
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "wellGap",
+      "displayName": {
+        "zh-CN": "两跑间梯井净宽"
+      },
+      "valueType": "number",
+      "defaultValue": 150,
+      "group": "landing",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 5000
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stairRoute",
+        "value": "u_turn"
+      }
+    },
+    {
+      "key": "turnDirection",
+      "displayName": {
+        "zh-CN": "转向"
+      },
+      "valueType": "enum",
+      "defaultValue": "left",
+      "group": "basic",
+      "choices": [
+        {
+          "value": "left",
+          "displayName": {
+            "zh-CN": "左转"
+          }
+        },
+        {
+          "value": "right",
+          "displayName": {
+            "zh-CN": "右转"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stairRoute",
+            "value": "l_turn"
+          },
+          {
+            "op": "eq",
+            "parameter": "stairRoute",
+            "value": "u_turn"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerSystem",
+      "displayName": {
+        "zh-CN": "梯梁布置"
+      },
+      "valueType": "enum",
+      "defaultValue": "side",
+      "group": "structure",
+      "choices": [
+        {
+          "value": "mono",
+          "displayName": {
+            "zh-CN": "单中梁"
+          }
+        },
+        {
+          "value": "twin",
+          "displayName": {
+            "zh-CN": "双中梁"
+          }
+        },
+        {
+          "value": "side",
+          "displayName": {
+            "zh-CN": "两侧管梁"
+          }
+        }
+      ]
+    },
+    {
+      "key": "stringerSpacing",
+      "displayName": {
+        "zh-CN": "双梁中心距"
+      },
+      "valueType": "number",
+      "defaultValue": 600,
+      "group": "structure",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 2500
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stringerSystem",
+        "value": "twin"
+      }
+    },
+    {
+      "key": "treadSupport",
+      "displayName": {
+        "zh-CN": "踏步支撑"
+      },
+      "valueType": "enum",
+      "defaultValue": "cross_tube",
+      "group": "treads",
+      "choices": [
+        {
+          "value": "cross_tube",
+          "displayName": {
+            "zh-CN": "立支架＋横管"
+          }
+        },
+        {
+          "value": "tube_frame",
+          "displayName": {
+            "zh-CN": "立支架＋管框"
+          }
+        }
+      ]
+    },
+    {
+      "key": "treadType",
+      "displayName": {
+        "zh-CN": "踏板类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "steel",
+      "group": "treads",
+      "choices": [
+        {
+          "value": "steel",
+          "displayName": {
+            "zh-CN": "钢板"
+          }
+        },
+        {
+          "value": "wood",
+          "displayName": {
+            "zh-CN": "木踏板（外购）"
+          }
+        },
+        {
+          "value": "glass",
+          "displayName": {
+            "zh-CN": "玻璃踏板（外购）"
+          }
+        },
+        {
+          "value": "stone",
+          "displayName": {
+            "zh-CN": "石材踏板（外购）"
+          }
+        },
+        {
+          "value": "none",
+          "displayName": {
+            "zh-CN": "仅支撑结构"
+          }
+        }
+      ]
+    },
+    {
+      "key": "treadThickness",
+      "displayName": {
+        "zh-CN": "踏板厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "treads",
+      "constraints": {
+        "minimum": 2,
+        "maximum": 100
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "treadType",
+        "value": "none"
+      }
+    },
+    {
+      "key": "treadGap",
+      "displayName": {
+        "zh-CN": "踏板前后总留缝"
+      },
+      "valueType": "number",
+      "defaultValue": 4,
+      "group": "treads",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 30
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "treadType",
+        "value": "none"
+      }
+    },
+    {
+      "key": "treadMaterial",
+      "displayName": {
+        "zh-CN": "外购踏板材质"
+      },
+      "valueType": "string",
+      "defaultValue": "按工程选型",
+      "group": "treads",
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "treadType",
+            "value": "wood"
+          },
+          {
+            "op": "eq",
+            "parameter": "treadType",
+            "value": "glass"
+          },
+          {
+            "op": "eq",
+            "parameter": "treadType",
+            "value": "stone"
+          }
+        ]
+      }
+    },
+    {
+      "key": "materialGrade",
+      "displayName": {
+        "zh-CN": "钢结构材质牌号"
+      },
+      "valueType": "string",
+      "defaultValue": "Q235B",
+      "group": "structure"
+    },
+    {
+      "key": "landingProfileType",
+      "displayName": {
+        "zh-CN": "平台管材／截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "landing",
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "landingWidth",
+      "displayName": {
+        "zh-CN": "平台管材／横向宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 80,
+      "group": "landing",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 500
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "landingDepth",
+      "displayName": {
+        "zh-CN": "平台管材／截面高度"
+      },
+      "valueType": "number",
+      "defaultValue": 100,
+      "group": "landing",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 500
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "landingCornerRadius",
+      "displayName": {
+        "zh-CN": "平台管材／外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 3,
+      "group": "landing",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "landingWallThickness",
+      "displayName": {
+        "zh-CN": "平台管材／壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 4,
+      "group": "landing",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 500
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "landingSupportSpacing",
+      "displayName": {
+        "zh-CN": "平台横撑最大间距"
+      },
+      "valueType": "number",
+      "defaultValue": 500,
+      "group": "landing",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 2000
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "landingColumns",
+      "displayName": {
+        "zh-CN": "设置平台支撑立柱"
+      },
+      "valueType": "boolean",
+      "defaultValue": true,
+      "group": "landing",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "stairRoute",
+        "value": "straight"
+      }
     },
     {
       "key": "connectionType",
       "displayName": {
-        "zh-CN": "连接方式"
+        "zh-CN": "楼面／梯段端部连接"
       },
       "valueType": "enum",
-      "defaultValue": "weld",
+      "defaultValue": "end_plate",
+      "group": "joints",
       "choices": [
         {
           "value": "weld",
           "displayName": {
-            "zh-CN": "焊接"
+            "zh-CN": "焊接端切（建筑节点另行设计）"
           }
         },
         {
-          "value": "bolt",
+          "value": "end_plate",
           "displayName": {
-            "zh-CN": "螺栓连接"
+            "zh-CN": "带孔底板／端板"
+          }
+        }
+      ]
+    },
+    {
+      "key": "connectionPlateThickness",
+      "displayName": {
+        "zh-CN": "连接板厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 8,
+      "group": "joints",
+      "constraints": {
+        "minimum": 3,
+        "maximum": 30
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "connectionType",
+        "value": "end_plate"
+      }
+    },
+    {
+      "key": "boltHoleDiameter",
+      "displayName": {
+        "zh-CN": "螺栓孔径"
+      },
+      "valueType": "number",
+      "defaultValue": 14,
+      "group": "joints",
+      "constraints": {
+        "minimum": 3,
+        "maximum": 40
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "connectionType",
+        "value": "end_plate"
+      }
+    },
+    {
+      "key": "boltEdgeDistance",
+      "displayName": {
+        "zh-CN": "孔中心距板边"
+      },
+      "valueType": "number",
+      "defaultValue": 25,
+      "group": "joints",
+      "constraints": {
+        "minimum": 10,
+        "maximum": 100
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "connectionType",
+        "value": "end_plate"
+      }
+    },
+    {
+      "key": "railingInfill",
+      "displayName": {
+        "zh-CN": "栏杆填充"
+      },
+      "valueType": "enum",
+      "defaultValue": "horizontal",
+      "group": "guard",
+      "choices": [
+        {
+          "value": "none",
+          "displayName": {
+            "zh-CN": "仅扶手与立柱"
           }
         },
         {
-          "value": "site_fit",
+          "value": "horizontal",
           "displayName": {
-            "zh-CN": "现场配切连接"
+            "zh-CN": "横杆"
+          }
+        },
+        {
+          "value": "vertical",
+          "displayName": {
+            "zh-CN": "竖杆"
           }
         }
       ],
-      "group": "process",
-      "order": 10
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
+    },
+    {
+      "key": "horizontalRailCount",
+      "displayName": {
+        "zh-CN": "横向填充根数"
+      },
+      "valueType": "integer",
+      "defaultValue": 2,
+      "group": "guard",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 8
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "eq",
+            "parameter": "railingInfill",
+            "value": "horizontal"
+          }
+        ]
+      }
+    },
+    {
+      "key": "maximumInfillGap",
+      "displayName": {
+        "zh-CN": "竖杆最大净距"
+      },
+      "valueType": "number",
+      "defaultValue": 100,
+      "group": "guard",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 300
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "eq",
+            "parameter": "railingInfill",
+            "value": "vertical"
+          }
+        ]
+      }
+    },
+    {
+      "key": "infillProfileType",
+      "displayName": {
+        "zh-CN": "填充管／截面类型"
+      },
+      "valueType": "enum",
+      "defaultValue": "rect",
+      "group": "guard",
+      "choices": [
+        {
+          "value": "rect",
+          "displayName": {
+            "zh-CN": "方矩管"
+          }
+        },
+        {
+          "value": "round",
+          "displayName": {
+            "zh-CN": "圆管"
+          }
+        },
+        {
+          "value": "oval",
+          "displayName": {
+            "zh-CN": "椭圆管"
+          }
+        },
+        {
+          "value": "racetrack",
+          "displayName": {
+            "zh-CN": "腰型管"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "ne",
+            "parameter": "railingInfill",
+            "value": "none"
+          }
+        ]
+      }
+    },
+    {
+      "key": "infillWidth",
+      "displayName": {
+        "zh-CN": "填充管／宽度"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "guard",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 200
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "ne",
+            "parameter": "railingInfill",
+            "value": "none"
+          }
+        ]
+      }
+    },
+    {
+      "key": "infillDepth",
+      "displayName": {
+        "zh-CN": "填充管／深度"
+      },
+      "valueType": "number",
+      "defaultValue": 20,
+      "group": "guard",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 200
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "railingSide",
+                "value": "none"
+              },
+              {
+                "op": "ne",
+                "parameter": "railingInfill",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "op": "ne",
+            "parameter": "infillProfileType",
+            "value": "round"
+          }
+        ]
+      }
+    },
+    {
+      "key": "infillCornerRadius",
+      "displayName": {
+        "zh-CN": "填充管／外圆角"
+      },
+      "valueType": "number",
+      "defaultValue": 1,
+      "group": "guard",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 200
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "railingSide",
+                "value": "none"
+              },
+              {
+                "op": "ne",
+                "parameter": "railingInfill",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "infillProfileType",
+            "value": "rect"
+          }
+        ]
+      }
+    },
+    {
+      "key": "infillWallThickness",
+      "displayName": {
+        "zh-CN": "填充管／壁厚"
+      },
+      "valueType": "number",
+      "defaultValue": 1.5,
+      "group": "guard",
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 200
+      },
+      "quantity": "length",
+      "unit": "mm",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "railingSide",
+            "value": "none"
+          },
+          {
+            "op": "ne",
+            "parameter": "railingInfill",
+            "value": "none"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerConstruction",
+      "displayName": {
+        "zh-CN": "梯梁制造方式"
+      },
+      "valueType": "enum",
+      "choices": [
+        {
+          "value": "profile",
+          "displayName": {
+            "zh-CN": "型材梯梁"
+          }
+        },
+        {
+          "value": "zigzag",
+          "displayName": {
+            "zh-CN": "锯齿钢板梁"
+          }
+        }
+      ],
+      "defaultValue": "profile",
+      "group": "structure"
+    },
+    {
+      "key": "bracketType",
+      "displayName": {
+        "zh-CN": "踏步立支架"
+      },
+      "valueType": "enum",
+      "choices": [
+        {
+          "value": "tube",
+          "displayName": {
+            "zh-CN": "管材支架"
+          }
+        },
+        {
+          "value": "plate",
+          "displayName": {
+            "zh-CN": "钢板支架"
+          }
+        }
+      ],
+      "defaultValue": "tube",
+      "group": "treads",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stringerConstruction",
+        "value": "profile"
+      }
+    },
+    {
+      "key": "bracketThickness",
+      "displayName": {
+        "zh-CN": "支架板厚"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 8,
+      "constraints": {
+        "minimum": 3,
+        "maximum": 30,
+        "step": 1
+      },
+      "group": "treads",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "bracketType",
+            "value": "plate"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          }
+        ]
+      }
+    },
+    {
+      "key": "zigzagThickness",
+      "displayName": {
+        "zh-CN": "锯齿梁板厚"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 12,
+      "constraints": {
+        "minimum": 4,
+        "maximum": 40,
+        "step": 1
+      },
+      "group": "structure",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stringerConstruction",
+        "value": "zigzag"
+      }
+    },
+    {
+      "key": "zigzagDepth",
+      "displayName": {
+        "zh-CN": "锯齿梁竖向带宽"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 240,
+      "constraints": {
+        "minimum": 40,
+        "maximum": 500,
+        "step": 1
+      },
+      "group": "structure",
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "stringerConstruction",
+        "value": "zigzag"
+      }
+    },
+    {
+      "key": "handrailConnection",
+      "displayName": {
+        "zh-CN": "扶手分段连接"
+      },
+      "valueType": "enum",
+      "choices": [
+        {
+          "value": "separate",
+          "displayName": {
+            "zh-CN": "独立梯段"
+          }
+        },
+        {
+          "value": "continuous",
+          "displayName": {
+            "zh-CN": "连续斜切焊接转接"
+          }
+        }
+      ],
+      "defaultValue": "continuous",
+      "group": "guard",
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "railingSide",
+        "value": "none"
+      }
+    },
+    {
+      "key": "stringerChannelModel",
+      "displayName": {
+        "zh-CN": "槽钢截面构造"
+      },
+      "valueType": "enum",
+      "defaultValue": "channel-cold-u",
+      "choices": [
+        {
+          "value": "channel-cold-u",
+          "displayName": {
+            "zh-CN": "冷弯等边槽钢"
+          }
+        },
+        {
+          "value": "channel-hot-parallel",
+          "displayName": {
+            "zh-CN": "热轧平行翼缘槽钢（名义轮廓）"
+          }
+        },
+        {
+          "value": "channel-hot-tapered",
+          "displayName": {
+            "zh-CN": "热轧斜腿槽钢（名义轮廓）"
+          }
+        },
+        {
+          "value": "channel-welded",
+          "displayName": {
+            "zh-CN": "板焊槽钢"
+          }
+        }
+      ],
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel0BendRadius",
+      "displayName": {
+        "zh-CN": "内弯半径"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 3,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-cold-u"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel6FlangeThickness",
+      "displayName": {
+        "zh-CN": "翼缘端部厚度"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 8,
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-hot-parallel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel6RootRadius",
+      "displayName": {
+        "zh-CN": "根部圆角"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 4,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-hot-parallel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel6ToeRadius",
+      "displayName": {
+        "zh-CN": "翼缘端圆角"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 1,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-hot-parallel"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel5FlangeThickness",
+      "displayName": {
+        "zh-CN": "翼缘端部厚度"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 8,
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-hot-tapered"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel5RootRadius",
+      "displayName": {
+        "zh-CN": "根部圆角"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 4,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-hot-tapered"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel5ToeRadius",
+      "displayName": {
+        "zh-CN": "翼缘端圆角"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 1,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-hot-tapered"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel5FlangeSlope",
+      "displayName": {
+        "zh-CN": "内翼缘斜度"
+      },
+      "valueType": "number",
+      "quantity": "angle",
+      "unit": "deg",
+      "defaultValue": 8,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-hot-tapered"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel7FlangeThickness",
+      "displayName": {
+        "zh-CN": "上翼缘板厚"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 8,
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-welded"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel7LowerThickness",
+      "displayName": {
+        "zh-CN": "下翼缘板厚"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 10,
+      "constraints": {
+        "minimum": 0.1,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-welded"
+          }
+        ]
+      }
+    },
+    {
+      "key": "stringerModel7WeldLeg",
+      "displayName": {
+        "zh-CN": "名义根部焊脚"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 2,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "stringerConstruction",
+            "value": "profile"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerProfileType",
+            "value": "channel"
+          },
+          {
+            "op": "eq",
+            "parameter": "stringerChannelModel",
+            "value": "channel-welded"
+          }
+        ]
+      }
     }
-  ]
+  ],
+  "name": "楼梯/钢楼梯"
 }

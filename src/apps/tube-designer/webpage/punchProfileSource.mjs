@@ -1,3 +1,4 @@
+import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { libraryProfiles, profileRef, profileSelectionKey, profileScope } from "./profileLibrary.mjs";
 import { checkpointPunchWizard, selectPunchTool, isPunchToolReadOnly } from "./punchWizard.mjs";
 import { beginPunchOperation, finishPunchOperation } from "./punchEditor.mjs";
@@ -37,15 +38,8 @@ function profileSpecification(profile) {
   return String(value?.specification ?? profile?.specification ?? "");
 }
 
-function visibleParameter(definition, values) {
-  const test = condition => !condition ? true
-    : condition.conditions ? (condition.op === "any" ? condition.conditions.some(test) : condition.conditions.every(test))
-    : condition.all ? condition.all.every(test)
-    : condition.any ? condition.any.some(test)
-    : condition.op === "eq" ? values[condition.parameter ?? condition.key] === condition.value
-    : condition.op === "ne" ? values[condition.parameter ?? condition.key] !== condition.value
-    : true;
-  return test(definition?.visibleWhen);
+function visibleParameter(definition, values = {}) {
+  return matchesParameterCondition(definition?.visibleWhen, values);
 }
 
 function profileParameters(view, profile) {

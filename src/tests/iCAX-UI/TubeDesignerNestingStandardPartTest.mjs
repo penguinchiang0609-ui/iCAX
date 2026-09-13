@@ -22,7 +22,7 @@ function rectangleProfile(width = 40, depth = 20) {
 }
 
 const systemProfile = {
-  id: "rect", name: "程式矩形管", profileType: "parametric-package",
+  id: "rect", name: "程式矩形管", profileType: "profile-package", profileForm: "parametric",
   descriptor: { parameters: [
     { key: "width", displayName: { "zh-CN": "外宽" }, valueType: "number", defaultValue: 40, min: 1, max: 500, step: 1 },
     { key: "depth", displayName: { "zh-CN": "外高" }, valueType: "number", defaultValue: 20, min: 1, max: 500, step: 1 },

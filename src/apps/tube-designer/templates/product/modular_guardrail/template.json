@@ -4,24 +4,18 @@
   "id": "modular-guardrail",
   "version": "1.3.0",
   "displayName": {
-    "zh-CN": "三横档直式"
+    "zh-CN": "竖杆护栏"
   },
   "description": "三横档直式。由独立产品模板定义，参数和真实加工零件共用同一套生成规则。",
   "extensions": {
-    "parameterRules": [
-      {
-        "when": { "guardrailUse": "wall" },
-        "set": { "infillType": "bars" },
-        "description": "围墙出头竖杆仅支持竖杆填充。"
-      }
-    ],
     "catalog": {
       "groupOrder": 20,
-      "templateOrder": 5,
+      "templateOrder": 3,
       "categoryPath": [
         "护栏",
-        "竖杆护栏"
-      ]
+        "扶手护栏"
+      ],
+      "listed": true
     },
     "productIdentity": {
       "codeParameter": "productCode"
@@ -87,20 +81,595 @@
     }
   ],
   "parameters": [
-    {"key":"elevationSource","displayName":{"zh-CN":"高程依据"},"valueType":"enum","defaultValue":"angle","group":"basic","order":3,"choices":[{"value":"angle","displayName":{"zh-CN":"按各边坡度"}},{"value":"treads","displayName":{"zh-CN":"按实际踏步落柱"}}],"visibleWhen":{"op":"ne","parameter":"pathMode","value":"level"},"description":"踏步以第一个支承踏步中心为原点；立柱按踏步中心离散布置，不超过最大柱距。"},
-    {"key":"slopeAngle2","displayName":{"zh-CN":"第2边坡度角"},"valueType":"number","defaultValue":0,"group":"basic","order":4,"unit":"deg","constraints":{"minimum":-60,"maximum":60},"visibleWhen":{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"angle"},{"op":"ne","parameter":"layout","value":"straight"}]}},
-    {"key":"slopeAngle3","displayName":{"zh-CN":"第3边坡度角"},"valueType":"number","defaultValue":30,"group":"basic","order":5,"unit":"deg","constraints":{"minimum":-60,"maximum":60},"visibleWhen":{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"angle"},{"op":"eq","parameter":"layout","value":"u"}]}},
-    {"key":"treadGoing","displayName":{"zh-CN":"踏步进深（中心距）"},"valueType":"number","defaultValue":280,"group":"basic","order":6,"unit":"mm","constraints":{"minimum":1,"maximum":2000},"visibleWhen":{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"treads"}]}},
-    {"key":"treadRise","displayName":{"zh-CN":"每级踏步升高"},"valueType":"number","defaultValue":175,"group":"basic","order":7,"unit":"mm","constraints":{"minimum":-500,"maximum":500},"visibleWhen":{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"treads"}]},"description":"沿路径前进方向上升为正，下降为负。"},
-    {"key":"treadCount1","displayName":{"zh-CN":"第1边踏步中心间隔数"},"valueType":"integer","defaultValue":10,"group":"basic","order":8,"constraints":{"minimum":0,"maximum":500},"visibleWhen":{"op":"all","conditions":[{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"treads"}]}]},"description":"首末支承踏步中心之间的间隔数；10表示跨度为10个踏步进深。0表示水平平台，使用该边长度。非零时该边跨度由间隔数×进深确定。"},
-    {"key":"treadCount2","displayName":{"zh-CN":"第2边踏步中心间隔数"},"valueType":"integer","defaultValue":0,"group":"basic","order":9,"constraints":{"minimum":0,"maximum":500},"visibleWhen":{"op":"all","conditions":[{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"treads"}]},{"op":"ne","parameter":"layout","value":"straight"}]},"description":"首末支承踏步中心之间的间隔数；10表示跨度为10个踏步进深。0表示水平平台，使用该边长度。非零时该边跨度由间隔数×进深确定。"},
-    {"key":"treadCount3","displayName":{"zh-CN":"第3边踏步中心间隔数"},"valueType":"integer","defaultValue":10,"group":"basic","order":10,"constraints":{"minimum":0,"maximum":500},"visibleWhen":{"op":"all","conditions":[{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"treads"}]},{"op":"eq","parameter":"layout","value":"u"}]},"description":"首末支承踏步中心之间的间隔数；10表示跨度为10个踏步进深。0表示水平平台，使用该边长度。非零时该边跨度由间隔数×进深确定。"},
-    {"key":"fixedBarCount","displayName":{"zh-CN":"每跨固定填充杆数"},"valueType":"integer","defaultValue":8,"group":"infill","order":3,"constraints":{"minimum":0,"maximum":500,"step":1},"visibleWhen":{"op":"eq","parameter":"barDistribution","value":"manual_count"}},
-    {"key":"maximumHorizontalClearGap","displayName":{"zh-CN":"最大横向填充净距"},"valueType":"number","defaultValue":110,"group":"infill","order":4,"unit":"mm","constraints":{"minimum":1,"maximum":2000},"visibleWhen":{"op":"eq","parameter":"infillType","value":"horizontal"}},
-    {"key":"sidePlateHeight","displayName":{"zh-CN":"侧装板高度"},"valueType":"number","defaultValue":200,"group":"process","order":90,"unit":"mm","constraints":{"minimum":20},"visibleWhen":{"op":"eq","parameter":"installation","value":"side_plate"}},
-    {"key":"sidePlateDrop","displayName":{"zh-CN":"侧装板中心下挂"},"valueType":"number","defaultValue":120,"group":"process","order":91,"unit":"mm","constraints":{"minimum":1},"visibleWhen":{"op":"eq","parameter":"installation","value":"side_plate"}},
-    {"key":"pathMode","displayName":{"zh-CN":"高程排布"},"valueType":"enum","defaultValue":"level","group":"basic","order":1,"choices":[{"value":"level","displayName":{"zh-CN":"水平"}},{"value":"continuous","displayName":{"zh-CN":"连续顺坡（竖杆保持竖直）"}},{"value":"stepped","displayName":{"zh-CN":"阶梯分跨（横档保持水平）"}}],"description":"支持正交转角及每边独立高程。高程模式扶手分跨接入立柱，不是连续弯管；底板使用水平支座。阶梯单元按本跨较高端标高布置，低侧净空需按现场复核。"},
-    {"key":"slopeAngle","displayName":{"zh-CN":"第1边坡度角"},"valueType":"number","defaultValue":30,"group":"basic","order":2,"unit":"deg","constraints":{"minimum":-60,"maximum":60,"step":1},"visibleWhen":{"op":"all","conditions":[{"op":"ne","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"angle"}]},"description":"沿第1边方向上升为正、下降为负；不是旋转整段护栏。"},
+    {
+      "key": "handrailMode",
+      "displayName": {
+        "zh-CN": "扶手连续方式"
+      },
+      "valueType": "enum",
+      "defaultValue": "per_bay",
+      "group": "layout",
+      "order": 148,
+      "choices": [
+        {
+          "value": "per_bay",
+          "displayName": {
+            "zh-CN": "分跨接柱"
+          }
+        },
+        {
+          "value": "continuous",
+          "displayName": {
+            "zh-CN": "跨柱连续（每边整根）"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "pathMode",
+        "value": "stepped"
+      },
+      "description": "连续扶手跨过立柱，立柱顶端裁切贴合；转角和坡度变化处仍为独立拼接，不视为连续弯管。"
+    },
+    {
+      "key": "startExtension",
+      "displayName": {
+        "zh-CN": "扶手起点延伸"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "layout",
+      "order": 151,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pathMode",
+                "value": "continuous"
+              },
+              {
+                "op": "eq",
+                "parameter": "handrailMode",
+                "value": "continuous"
+              }
+            ]
+          }
+        ]
+      },
+      "description": "从终端立柱中心沿扶手轴向向外延伸。"
+    },
+    {
+      "key": "finishExtension",
+      "displayName": {
+        "zh-CN": "扶手终点延伸"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "layout",
+      "order": 152,
+      "unit": "mm",
+      "quantity": "length",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pathMode",
+                "value": "continuous"
+              },
+              {
+                "op": "eq",
+                "parameter": "handrailMode",
+                "value": "continuous"
+              }
+            ]
+          }
+        ]
+      },
+      "description": "从终端立柱中心沿扶手轴向向外延伸。"
+    },
+    {
+      "key": "barOrientation",
+      "displayName": {
+        "zh-CN": "填充杆方向"
+      },
+      "valueType": "enum",
+      "defaultValue": "vertical",
+      "group": "infill",
+      "order": 0,
+      "choices": [
+        {
+          "value": "vertical",
+          "displayName": {
+            "zh-CN": "竖杆"
+          }
+        },
+        {
+          "value": "horizontal",
+          "displayName": {
+            "zh-CN": "横杆"
+          }
+        }
+      ]
+    },
+    {
+      "key": "horizontalRailCount",
+      "displayName": {
+        "zh-CN": "每跨横向填充杆数"
+      },
+      "valueType": "integer",
+      "defaultValue": 3,
+      "group": "infill",
+      "order": 1,
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "barOrientation",
+        "value": "horizontal"
+      }
+    },
+    {
+      "key": "elevationSource",
+      "displayName": {
+        "zh-CN": "高程依据"
+      },
+      "valueType": "enum",
+      "defaultValue": "angle",
+      "group": "basic",
+      "order": 3,
+      "choices": [
+        {
+          "value": "angle",
+          "displayName": {
+            "zh-CN": "按各边坡度"
+          }
+        },
+        {
+          "value": "treads",
+          "displayName": {
+            "zh-CN": "按实际踏步落柱"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "pathMode",
+        "value": "level"
+      },
+      "description": "踏步以第一个支承踏步中心为原点；立柱按踏步中心离散布置，不超过最大柱距。"
+    },
+    {
+      "key": "slopeAngle2",
+      "displayName": {
+        "zh-CN": "第2边坡度角"
+      },
+      "valueType": "number",
+      "defaultValue": 0,
+      "group": "basic",
+      "order": 4,
+      "unit": "deg",
+      "constraints": {
+        "minimum": -60,
+        "maximum": 60
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "elevationSource",
+            "value": "angle"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
+      }
+    },
+    {
+      "key": "slopeAngle3",
+      "displayName": {
+        "zh-CN": "第3边坡度角"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "basic",
+      "order": 5,
+      "unit": "deg",
+      "constraints": {
+        "minimum": -60,
+        "maximum": 60
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "elevationSource",
+            "value": "angle"
+          },
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "u"
+          }
+        ]
+      }
+    },
+    {
+      "key": "treadGoing",
+      "displayName": {
+        "zh-CN": "踏步进深（中心距）"
+      },
+      "valueType": "number",
+      "defaultValue": 280,
+      "group": "basic",
+      "order": 6,
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "elevationSource",
+            "value": "treads"
+          }
+        ]
+      }
+    },
+    {
+      "key": "treadRise",
+      "displayName": {
+        "zh-CN": "每级踏步升高"
+      },
+      "valueType": "number",
+      "defaultValue": 175,
+      "group": "basic",
+      "order": 7,
+      "unit": "mm",
+      "constraints": {
+        "minimum": -500,
+        "maximum": 500
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "elevationSource",
+            "value": "treads"
+          }
+        ]
+      },
+      "description": "沿路径前进方向上升为正，下降为负。"
+    },
+    {
+      "key": "treadCount1",
+      "displayName": {
+        "zh-CN": "第1边踏步中心间隔数"
+      },
+      "valueType": "integer",
+      "defaultValue": 10,
+      "group": "basic",
+      "order": 8,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "elevationSource",
+            "value": "treads"
+          }
+        ]
+      },
+      "description": "首末支承踏步中心之间的间隔数；10表示跨度为10个踏步进深。0表示水平平台，使用该边长度。非零时该边跨度由间隔数×进深确定。"
+    },
+    {
+      "key": "treadCount2",
+      "displayName": {
+        "zh-CN": "第2边踏步中心间隔数"
+      },
+      "valueType": "integer",
+      "defaultValue": 0,
+      "group": "basic",
+      "order": 9,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "treads"
+              }
+            ]
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
+      },
+      "description": "首末支承踏步中心之间的间隔数；10表示跨度为10个踏步进深。0表示水平平台，使用该边长度。非零时该边跨度由间隔数×进深确定。"
+    },
+    {
+      "key": "treadCount3",
+      "displayName": {
+        "zh-CN": "第3边踏步中心间隔数"
+      },
+      "valueType": "integer",
+      "defaultValue": 10,
+      "group": "basic",
+      "order": 10,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "ne",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "treads"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "u"
+          }
+        ]
+      },
+      "description": "首末支承踏步中心之间的间隔数；10表示跨度为10个踏步进深。0表示水平平台，使用该边长度。非零时该边跨度由间隔数×进深确定。"
+    },
+    {
+      "key": "fixedBarCount",
+      "displayName": {
+        "zh-CN": "每跨固定填充杆数"
+      },
+      "valueType": "integer",
+      "defaultValue": 8,
+      "group": "infill",
+      "order": 3,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "barDistribution",
+            "value": "manual_count"
+          },
+          {
+            "op": "eq",
+            "parameter": "barOrientation",
+            "value": "vertical"
+          }
+        ]
+      }
+    },
+    {
+      "key": "maximumHorizontalClearGap",
+      "displayName": {
+        "zh-CN": "最大横向填充净距"
+      },
+      "valueType": "number",
+      "defaultValue": 110,
+      "group": "infill",
+      "order": 4,
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 2000
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
+      }
+    },
+    {
+      "key": "sidePlateHeight",
+      "displayName": {
+        "zh-CN": "侧装板高度"
+      },
+      "valueType": "number",
+      "defaultValue": 200,
+      "group": "process",
+      "order": 90,
+      "unit": "mm",
+      "constraints": {
+        "minimum": 20
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installation",
+        "value": "side_plate"
+      }
+    },
+    {
+      "key": "sidePlateDrop",
+      "displayName": {
+        "zh-CN": "侧装板中心下挂"
+      },
+      "valueType": "number",
+      "defaultValue": 120,
+      "group": "process",
+      "order": 91,
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "installation",
+        "value": "side_plate"
+      }
+    },
+    {
+      "key": "pathMode",
+      "displayName": {
+        "zh-CN": "高程排布"
+      },
+      "valueType": "enum",
+      "defaultValue": "level",
+      "group": "basic",
+      "order": 1,
+      "choices": [
+        {
+          "value": "level",
+          "displayName": {
+            "zh-CN": "水平"
+          }
+        },
+        {
+          "value": "continuous",
+          "displayName": {
+            "zh-CN": "连续顺坡（竖杆保持竖直）"
+          }
+        },
+        {
+          "value": "stepped",
+          "displayName": {
+            "zh-CN": "阶梯分跨（横档保持水平）"
+          }
+        }
+      ],
+      "description": "支持正交转角及每边独立高程。高程模式扶手分跨接入立柱，不是连续弯管；底板使用水平支座。阶梯单元按本跨较高端标高布置，低侧净空需按现场复核。"
+    },
+    {
+      "key": "slopeAngle",
+      "displayName": {
+        "zh-CN": "第1边坡度角"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "basic",
+      "order": 2,
+      "unit": "deg",
+      "constraints": {
+        "minimum": -60,
+        "maximum": 60,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "elevationSource",
+            "value": "angle"
+          }
+        ]
+      },
+      "description": "沿第1边方向上升为正、下降为负；不是旋转整段护栏。"
+    },
     {
       "key": "productCode",
       "displayName": {
@@ -177,9 +746,137 @@
       ],
       "description": "每边长度在该边方向上量取；扶手端延伸另计，不包含在立柱外侧尺寸中。"
     },
-    {"key":"sideLength1","displayName":{"zh-CN":"第 1 边长度"},"valueType":"number","defaultValue":3000,"group":"basic","order":30,"quantity":"length","unit":"mm","constraints":{"minimum":100,"maximum":30000,"step":1},"visibleWhen":{"op":"any","conditions":[{"op":"eq","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"angle"},{"op":"eq","parameter":"treadCount1","value":0}]}},
-    {"key":"sideLength2","displayName":{"zh-CN":"第 2 边长度"},"valueType":"number","defaultValue":1500,"group":"basic","order":40,"quantity":"length","unit":"mm","constraints":{"minimum":100,"maximum":30000,"step":1},"visibleWhen":{"op":"all","conditions":[{"op":"ne","parameter":"layout","value":"straight"},{"op":"any","conditions":[{"op":"eq","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"angle"},{"op":"eq","parameter":"treadCount2","value":0}]}]}},
-    {"key":"sideLength3","displayName":{"zh-CN":"第 3 边长度"},"valueType":"number","defaultValue":1500,"group":"basic","order":50,"quantity":"length","unit":"mm","constraints":{"minimum":100,"maximum":30000,"step":1},"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"layout","value":"u"},{"op":"any","conditions":[{"op":"eq","parameter":"pathMode","value":"level"},{"op":"eq","parameter":"elevationSource","value":"angle"},{"op":"eq","parameter":"treadCount3","value":0}]}]}},
+    {
+      "key": "sideLength1",
+      "displayName": {
+        "zh-CN": "第 1 边长度"
+      },
+      "valueType": "number",
+      "defaultValue": 3000,
+      "group": "basic",
+      "order": 30,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 30000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "elevationSource",
+            "value": "angle"
+          },
+          {
+            "op": "eq",
+            "parameter": "treadCount1",
+            "value": 0
+          }
+        ]
+      }
+    },
+    {
+      "key": "sideLength2",
+      "displayName": {
+        "zh-CN": "第 2 边长度"
+      },
+      "valueType": "number",
+      "defaultValue": 1500,
+      "group": "basic",
+      "order": 40,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 30000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "angle"
+              },
+              {
+                "op": "eq",
+                "parameter": "treadCount2",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "key": "sideLength3",
+      "displayName": {
+        "zh-CN": "第 3 边长度"
+      },
+      "valueType": "number",
+      "defaultValue": 1500,
+      "group": "basic",
+      "order": 50,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 100,
+        "maximum": 30000,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "u"
+          },
+          {
+            "op": "any",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "pathMode",
+                "value": "level"
+              },
+              {
+                "op": "eq",
+                "parameter": "elevationSource",
+                "value": "angle"
+              },
+              {
+                "op": "eq",
+                "parameter": "treadCount3",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
     {
       "key": "guardHeight",
       "displayName": {
@@ -269,9 +966,19 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "cornerPostMode",
-        "value": "double"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "eq",
+            "parameter": "cornerPostMode",
+            "value": "double"
+          }
+        ]
       },
       "description": "矩形管按截面外包络计算最小距离；圆管按两圆外缘间距计算。"
     },
@@ -343,6 +1050,21 @@
         "minimum": 100,
         "maximum": 6000,
         "step": 1
+      },
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
       }
     },
     {
@@ -384,9 +1106,160 @@
         "value": 3
       }
     },
-    {"key":"endExtension","displayName":{"zh-CN":"扶手两端轴向延伸"},"valueType":"number","defaultValue":30,"group":"layout","order":150,"quantity":"length","unit":"mm","constraints":{"minimum":0,"maximum":500,"step":1},"description":"从终端立柱中心向外延伸；设置大端柱时扶手顶接大柱侧面，端延伸不作用于大端柱。","visibleWhen":{"op":"eq","parameter":"pathMode","value":"level"}},
-    {"key":"infillType","displayName":{"zh-CN":"柱间填充"},"valueType":"enum","defaultValue":"bars","group":"infill","order":160,"choices":[{"value":"bars","displayName":{"zh-CN":"竖杆"}},{"value":"plate","displayName":{"zh-CN":"整跨封板"}},{"value":"lower_plate","displayName":{"zh-CN":"下封板＋上竖杆"}},{"value":"cross","displayName":{"zh-CN":"X 交叉直管花格"}},{"value":"diamond","displayName":{"zh-CN":"菱形直管花格"}},{"value":"glass","displayName":{"zh-CN":"玻璃栏板（外购）"}},{"value":"horizontal","displayName":{"zh-CN":"横向管材／板条填充"}}]},
-    {"key":"barDistribution","displayName":{"zh-CN":"填充排布方式"},"valueType":"enum","defaultValue":"equal","group":"infill","order":170,"choices":[{"value":"equal","displayName":{"zh-CN":"每跨全部均分"}},{"value":"fixed_center","displayName":{"zh-CN":"中间固定净距、两边均分"}},{"value":"manual_count","displayName":{"zh-CN":"固定杆数反算净距"}},{"value":"half_edge","displayName":{"zh-CN":"两侧半间距"}}]},
+    {
+      "key": "endExtension",
+      "displayName": {
+        "zh-CN": "扶手两端轴向延伸"
+      },
+      "valueType": "number",
+      "defaultValue": 30,
+      "group": "layout",
+      "order": 150,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 0,
+        "maximum": 500,
+        "step": 1
+      },
+      "description": "从终端立柱中心向外延伸；设置大端柱时扶手顶接大柱侧面，端延伸不作用于大端柱。",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "eq",
+            "parameter": "pathMode",
+            "value": "level"
+          },
+          {
+            "op": "ne",
+            "parameter": "pathMode",
+            "value": "level"
+          }
+        ]
+      }
+    },
+    {
+      "key": "infillType",
+      "displayName": {
+        "zh-CN": "柱间填充"
+      },
+      "valueType": "enum",
+      "defaultValue": "bars",
+      "group": "infill",
+      "order": 160,
+      "choices": [
+        {
+          "value": "bars",
+          "displayName": {
+            "zh-CN": "竖杆"
+          }
+        },
+        {
+          "value": "plate",
+          "displayName": {
+            "zh-CN": "整跨封板"
+          }
+        },
+        {
+          "value": "lower_plate",
+          "displayName": {
+            "zh-CN": "下封板＋上竖杆"
+          }
+        },
+        {
+          "value": "cross",
+          "displayName": {
+            "zh-CN": "X 交叉直管花格"
+          }
+        },
+        {
+          "value": "diamond",
+          "displayName": {
+            "zh-CN": "菱形直管花格"
+          }
+        },
+        {
+          "value": "glass",
+          "displayName": {
+            "zh-CN": "玻璃栏板（外购）"
+          }
+        },
+        {
+          "value": "horizontal",
+          "displayName": {
+            "zh-CN": "横向管材／板条填充"
+          }
+        }
+      ],
+      "readOnly": true,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
+      }
+    },
+    {
+      "key": "barDistribution",
+      "displayName": {
+        "zh-CN": "填充排布方式"
+      },
+      "valueType": "enum",
+      "defaultValue": "equal",
+      "group": "infill",
+      "order": 170,
+      "choices": [
+        {
+          "value": "equal",
+          "displayName": {
+            "zh-CN": "每跨全部均分"
+          }
+        },
+        {
+          "value": "fixed_center",
+          "displayName": {
+            "zh-CN": "中间固定净距、两边均分"
+          }
+        },
+        {
+          "value": "manual_count",
+          "displayName": {
+            "zh-CN": "固定杆数反算净距"
+          }
+        },
+        {
+          "value": "half_edge",
+          "displayName": {
+            "zh-CN": "两侧半间距"
+          }
+        }
+      ],
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "barOrientation",
+            "value": "vertical"
+          }
+        ]
+      }
+    },
     {
       "key": "maximumVerticalClearGap",
       "displayName": {
@@ -404,17 +1277,17 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "infillType",
-            "value": "bars"
+            "op": "ne",
+            "parameter": "barDistribution",
+            "value": "manual_count"
           },
           {
             "op": "eq",
-            "parameter": "infillType",
-            "value": "lower_plate"
+            "parameter": "barOrientation",
+            "value": "vertical"
           }
         ]
       },
@@ -437,9 +1310,19 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "infillType",
-        "value": "lower_plate"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
       },
       "description": "从下横档顶面量至封板上横档底面，板件上下装配缝另扣。"
     },
@@ -460,17 +1343,17 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
             "op": "eq",
-            "parameter": "infillType",
-            "value": "plate"
+            "parameter": "layout",
+            "value": "straight"
           },
           {
-            "op": "eq",
-            "parameter": "infillType",
-            "value": "lower_plate"
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
           }
         ]
       }
@@ -492,22 +1375,17 @@
         "step": 1
       },
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
             "op": "eq",
-            "parameter": "infillType",
-            "value": "plate"
+            "parameter": "layout",
+            "value": "straight"
           },
           {
-            "op": "eq",
-            "parameter": "infillType",
-            "value": "lower_plate"
-          },
-          {
-            "op": "eq",
-            "parameter": "infillType",
-            "value": "glass"
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
           }
         ]
       }
@@ -522,17 +1400,17 @@
       "group": "infill",
       "order": 220,
       "visibleWhen": {
-        "op": "any",
+        "op": "all",
         "conditions": [
           {
             "op": "eq",
-            "parameter": "infillType",
-            "value": "plate"
+            "parameter": "layout",
+            "value": "straight"
           },
           {
-            "op": "eq",
-            "parameter": "infillType",
-            "value": "lower_plate"
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
           }
         ]
       },
@@ -540,11 +1418,126 @@
         "maximumLength": 80
       }
     },
-    {"key":"installation","displayName":{"zh-CN":"立柱底部安装"},"valueType":"enum","defaultValue":"embedded","group":"process","order":230,"choices":[{"value":"embedded","displayName":{"zh-CN":"直接落地（底部节点另行设计）"}},{"value":"base_plate","displayName":{"zh-CN":"焊接带孔底板"}},{"value":"side_plate","displayName":{"zh-CN":"侧装锚固板（水平直线）"}}],"description":"底板是独立实心板件；双立柱转角使用同一块共用底板，避免两块底板互相穿透。"},
-    {"key":"basePlateSize","displayName":{"zh-CN":"底板最小边长"},"valueType":"number","defaultValue":100,"group":"process","order":240,"quantity":"length","unit":"mm","constraints":{"minimum":20,"maximum":600,"step":1},"visibleWhen":{"op":"ne","parameter":"installation","value":"embedded"},"description":"按柱截面和孔边距自动放大；双柱共用底板按两根柱的范围扩展。"},
-    {"key":"basePlateThickness","displayName":{"zh-CN":"底板厚度"},"valueType":"number","defaultValue":6,"group":"process","order":250,"quantity":"length","unit":"mm","constraints":{"minimum":1,"maximum":50,"step":1},"visibleWhen":{"op":"ne","parameter":"installation","value":"embedded"}},
-    {"key":"baseBoltDiameter","displayName":{"zh-CN":"底板螺栓孔直径"},"valueType":"number","defaultValue":12,"group":"process","order":260,"quantity":"length","unit":"mm","constraints":{"minimum":1,"maximum":50,"step":1},"visibleWhen":{"op":"ne","parameter":"installation","value":"embedded"}},
-    {"key":"baseBoltEdgeDistance","displayName":{"zh-CN":"螺栓孔中心距板边"},"valueType":"number","defaultValue":18,"group":"process","order":270,"quantity":"length","unit":"mm","constraints":{"minimum":1,"maximum":100,"step":1},"visibleWhen":{"op":"ne","parameter":"installation","value":"embedded"}},
+    {
+      "key": "installation",
+      "displayName": {
+        "zh-CN": "立柱底部安装"
+      },
+      "valueType": "enum",
+      "defaultValue": "embedded",
+      "group": "process",
+      "order": 230,
+      "choices": [
+        {
+          "value": "embedded",
+          "displayName": {
+            "zh-CN": "直接落地（底部节点另行设计）"
+          }
+        },
+        {
+          "value": "base_plate",
+          "displayName": {
+            "zh-CN": "焊接带孔底板"
+          }
+        },
+        {
+          "value": "side_plate",
+          "displayName": {
+            "zh-CN": "侧装锚固板"
+          }
+        }
+      ],
+      "description": "底板是独立实心板件；双立柱转角使用同一块共用底板，避免两块底板互相穿透。"
+    },
+    {
+      "key": "basePlateSize",
+      "displayName": {
+        "zh-CN": "底板最小边长"
+      },
+      "valueType": "number",
+      "defaultValue": 100,
+      "group": "process",
+      "order": 240,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 20,
+        "maximum": 600,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "installation",
+        "value": "embedded"
+      },
+      "description": "按柱截面和孔边距自动放大；双柱共用底板按两根柱的范围扩展。"
+    },
+    {
+      "key": "basePlateThickness",
+      "displayName": {
+        "zh-CN": "底板厚度"
+      },
+      "valueType": "number",
+      "defaultValue": 6,
+      "group": "process",
+      "order": 250,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 50,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "installation",
+        "value": "embedded"
+      }
+    },
+    {
+      "key": "baseBoltDiameter",
+      "displayName": {
+        "zh-CN": "底板螺栓孔直径"
+      },
+      "valueType": "number",
+      "defaultValue": 12,
+      "group": "process",
+      "order": 260,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 50,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "installation",
+        "value": "embedded"
+      }
+    },
+    {
+      "key": "baseBoltEdgeDistance",
+      "displayName": {
+        "zh-CN": "螺栓孔中心距板边"
+      },
+      "valueType": "number",
+      "defaultValue": 18,
+      "group": "process",
+      "order": 270,
+      "quantity": "length",
+      "unit": "mm",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "installation",
+        "value": "embedded"
+      }
+    },
     {
       "key": "handrailProfileType",
       "displayName": {
@@ -565,6 +1558,12 @@
           "value": "round",
           "displayName": {
             "zh-CN": "圆管"
+          }
+        },
+        {
+          "value": "oval",
+          "displayName": {
+            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -669,6 +1668,12 @@
           "displayName": {
             "zh-CN": "圆管"
           }
+        },
+        {
+          "value": "oval",
+          "displayName": {
+            "zh-CN": "椭圆 / 长圆管"
+          }
         }
       ]
     },
@@ -772,6 +1777,12 @@
           "displayName": {
             "zh-CN": "圆管"
           }
+        },
+        {
+          "value": "oval",
+          "displayName": {
+            "zh-CN": "椭圆 / 长圆管"
+          }
         }
       ]
     },
@@ -874,6 +1885,12 @@
           "value": "round",
           "displayName": {
             "zh-CN": "圆管"
+          }
+        },
+        {
+          "value": "oval",
+          "displayName": {
+            "zh-CN": "椭圆 / 长圆管"
           }
         }
       ]
@@ -980,7 +1997,17 @@
           }
         }
       ],
-      "description": "围墙款竖杆穿过上部横档并伸出，自动生成真实型孔；不是普通阳台防攀爬栏杆。"
+      "description": "围墙款竖杆穿过上部横档并伸出，自动生成真实型孔；不是普通阳台防攀爬栏杆。",
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "barOrientation",
+            "value": "vertical"
+          }
+        ]
+      }
     },
     {
       "key": "wallPicketProjection",
@@ -999,9 +2026,19 @@
         "step": 0.1
       },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "guardrailUse",
-        "value": "wall"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "guardrailUse",
+            "value": "wall"
+          },
+          {
+            "op": "eq",
+            "parameter": "barOrientation",
+            "value": "vertical"
+          }
+        ]
       }
     },
     {
@@ -1021,9 +2058,19 @@
         "step": 0.1
       },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "guardrailUse",
-        "value": "wall"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "guardrailUse",
+            "value": "wall"
+          },
+          {
+            "op": "eq",
+            "parameter": "barOrientation",
+            "value": "vertical"
+          }
+        ]
       },
       "description": "制造结果按竖杆实际外轮廓在扶手及上横档开穿孔；预览省略内部型孔，不改变拆单加工几何。"
     },
@@ -1037,9 +2084,19 @@
       "group": "components",
       "order": 510,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "guardrailUse",
-        "value": "wall"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "guardrailUse",
+            "value": "wall"
+          },
+          {
+            "op": "eq",
+            "parameter": "barOrientation",
+            "value": "vertical"
+          }
+        ]
       }
     },
     {
@@ -1062,14 +2119,24 @@
         "op": "all",
         "conditions": [
           {
-            "op": "eq",
-            "parameter": "guardrailUse",
-            "value": "wall"
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "guardrailUse",
+                "value": "wall"
+              },
+              {
+                "op": "eq",
+                "parameter": "spearTipEnabled",
+                "value": true
+              }
+            ]
           },
           {
             "op": "eq",
-            "parameter": "spearTipEnabled",
-            "value": true
+            "parameter": "barOrientation",
+            "value": "vertical"
           }
         ]
       },
@@ -1107,9 +2174,19 @@
         "editor": "component-model"
       },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "postCapEnabled",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "ne",
+            "parameter": "largePostMode",
+            "value": "none"
+          },
+          {
+            "op": "eq",
+            "parameter": "postCapEnabled",
+            "value": true
+          }
+        ]
       },
       "description": "柱帽模型底面放到大立柱顶；内置款为80方柱平盖，外宽84mm、高6mm，不自动缩放；装饰件可高于主防护高度。"
     },
@@ -1130,9 +2207,19 @@
         "step": 0.1
       },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "infillType",
-        "value": "glass"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
       },
       "description": "这是采购尺寸，不代表玻璃安全认证；须另行确认夹层构造、边部加工、荷载和连接。"
     },
@@ -1150,9 +2237,19 @@
         "maximumLength": 120
       },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "infillType",
-        "value": "glass"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
       }
     },
     {
@@ -1165,9 +2262,19 @@
       "group": "components",
       "order": 570,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "infillType",
-        "value": "glass"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "layout",
+            "value": "straight"
+          },
+          {
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
+          }
+        ]
       }
     },
     {
@@ -1191,13 +2298,13 @@
         "conditions": [
           {
             "op": "eq",
-            "parameter": "infillType",
-            "value": "glass"
+            "parameter": "layout",
+            "value": "straight"
           },
           {
-            "op": "eq",
-            "parameter": "glassClipEnabled",
-            "value": true
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
           }
         ]
       },
@@ -1224,18 +2331,90 @@
         "conditions": [
           {
             "op": "eq",
-            "parameter": "infillType",
-            "value": "glass"
+            "parameter": "layout",
+            "value": "straight"
           },
           {
-            "op": "eq",
-            "parameter": "glassClipEnabled",
-            "value": true
+            "op": "ne",
+            "parameter": "layout",
+            "value": "straight"
           }
         ]
       },
       "description": "内置夹具固定为15mm，对应板边间隙至少5mm；外部模型需人工核对安装面。"
+    },
+    {
+      "key": "sideBayCount1",
+      "displayName": {
+        "zh-CN": "第 1 边截数"
+      },
+      "valueType": "integer",
+      "defaultValue": 3,
+      "group": "basic",
+      "order": 31,
+      "description": "由立柱分隔的栏板单元数量，不自动增加截数。中间大立柱至少需2截；奇数截按中点两侧分别等分，后半边多1截。踏步模式取最近可行踏步中心。",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100,
+        "step": 1
+      }
+    },
+    {
+      "key": "sideBayCount2",
+      "displayName": {
+        "zh-CN": "第 2 边截数"
+      },
+      "valueType": "integer",
+      "defaultValue": 2,
+      "group": "basic",
+      "order": 41,
+      "description": "由立柱分隔的栏板单元数量，不自动增加截数。中间大立柱至少需2截；奇数截按中点两侧分别等分，后半边多1截。踏步模式取最近可行踏步中心。",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "layout",
+        "value": "straight"
+      }
+    },
+    {
+      "key": "sideBayCount3",
+      "displayName": {
+        "zh-CN": "第 3 边截数"
+      },
+      "valueType": "integer",
+      "defaultValue": 2,
+      "group": "basic",
+      "order": 51,
+      "description": "由立柱分隔的栏板单元数量，不自动增加截数。中间大立柱至少需2截；奇数截按中点两侧分别等分，后半边多1截。踏步模式取最近可行踏步中心。",
+      "constraints": {
+        "minimum": 1,
+        "maximum": 100,
+        "step": 1
+      },
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "layout",
+        "value": "u"
+      }
+    },
+    {
+      "key": "materialGrade",
+      "displayName": {
+        "zh-CN": "金属件材质牌号"
+      },
+      "valueType": "string",
+      "defaultValue": "",
+      "group": "profiles",
+      "order": 225,
+      "constraints": {
+        "maximumLength": 80
+      },
+      "description": "可填写304不锈钢、316L、Q235B等；写入管材和金属板件的材料牌号，不覆盖挡板材质或外购配件，也不替代材料与工艺核验。"
     }
   ],
-  "name": "护栏/竖杆护栏/三横档直式"
+  "name": "护栏/扶手护栏/竖杆护栏"
 }

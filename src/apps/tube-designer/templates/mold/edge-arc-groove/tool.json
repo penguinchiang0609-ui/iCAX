@@ -159,9 +159,19 @@
       "min": 0,
       "max": 1,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "useDefaultKFactor",
-        "value": false
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "bendCompensation",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "useDefaultKFactor",
+            "value": false
+          }
+        ]
       }
     },
     {

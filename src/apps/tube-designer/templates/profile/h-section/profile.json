@@ -23,22 +23,8 @@
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
-    {
-      "key": "width",
-      "displayName": "翼缘总宽 / mm",
-      "valueType": "number",
-      "defaultValue": 80,
-      "min": 1,
-      "step": 1
-    },
-    {
-      "key": "depth",
-      "displayName": "总高 / mm",
-      "valueType": "number",
-      "defaultValue": 120,
-      "min": 1,
-      "step": 1
-    },
+    {"key":"width","displayName":"翼缘总宽 / mm","valueType":"number","defaultValue":80,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"depth","displayName":"总高 / mm","valueType":"number","defaultValue":120,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "wallThickness",
       "displayName": "腹板厚 / mm",
@@ -47,42 +33,11 @@
       "min": 0.1,
       "step": 1
     },
-    {
-      "key": "flangeThickness",
-      "displayName": "翼缘端部厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1
-    },
-    {
-      "key": "rootRadius",
-      "displayName": "根部圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 4,
-      "min": 0,
-      "step": 1
-    },
-    {
-      "key": "toeRadius",
-      "displayName": "翼缘端圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 1
-    },
-    {
-      "key": "materialBoundary",
-      "displayName": "实际材料边界（轮廓数组 JSON，留空使用理想模型）",
-      "valueType": "string",
-      "defaultValue": ""
-    },
-    {
-      "key": "sourceRevision",
-      "displayName": "轮廓来源及版本",
-      "valueType": "string",
-      "defaultValue": ""
-    },
+    {"key":"flangeThickness","displayName":"翼缘端部厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"rootRadius","displayName":"根部圆角 / mm","valueType":"number","defaultValue":4,"min":0,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"toeRadius","displayName":"翼缘端圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"materialBoundary","displayName":"实际材料边界（轮廓数组 JSON，留空使用理想模型）","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"sourceRevision","displayName":"轮廓来源及版本","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "geometrySource",
       "displayName": "轮廓来源",

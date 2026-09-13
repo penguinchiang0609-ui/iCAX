@@ -24,38 +24,9 @@
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
-    {
-      "key": "sectionModel",
-      "displayName": "轮廓子模型",
-      "valueType": "string",
-      "defaultValue": "i-hot-parallel",
-      "options": [
-        {
-          "value": "i-hot-parallel",
-          "displayName": "平行翼缘 I 型钢"
-        },
-        {
-          "value": "i-hot-tapered",
-          "displayName": "热轧斜翼缘工字钢"
-        }
-      ]
-    },
-    {
-      "key": "width",
-      "displayName": "翼缘总宽 / mm",
-      "valueType": "number",
-      "defaultValue": 80,
-      "min": 1,
-      "step": 1
-    },
-    {
-      "key": "depth",
-      "displayName": "总高 / mm",
-      "valueType": "number",
-      "defaultValue": 120,
-      "min": 1,
-      "step": 1
-    },
+    {"key":"sectionModel","displayName":"轮廓子模型","valueType":"string","defaultValue":"i-hot-parallel","options":[{"value":"i-hot-parallel","displayName":"平行翼缘 I 型钢"},{"value":"i-hot-tapered","displayName":"热轧斜翼缘工字钢"}],"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"width","displayName":"翼缘总宽 / mm","valueType":"number","defaultValue":80,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"depth","displayName":"总高 / mm","valueType":"number","defaultValue":120,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "wallThickness",
       "displayName": "腹板厚 / mm",
@@ -64,109 +35,15 @@
       "min": 0.1,
       "step": 1
     },
-    {
-      "key": "model0FlangeThickness",
-      "displayName": "翼缘端部厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "i-hot-parallel"
-      }
-    },
-    {
-      "key": "model0RootRadius",
-      "displayName": "根部圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 4,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "i-hot-parallel"
-      }
-    },
-    {
-      "key": "model0ToeRadius",
-      "displayName": "翼缘端圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "i-hot-parallel"
-      }
-    },
-    {
-      "key": "model1FlangeThickness",
-      "displayName": "翼缘端部厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "i-hot-tapered"
-      }
-    },
-    {
-      "key": "model1RootRadius",
-      "displayName": "根部圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 4,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "i-hot-tapered"
-      }
-    },
-    {
-      "key": "model1ToeRadius",
-      "displayName": "翼缘端圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "i-hot-tapered"
-      }
-    },
-    {
-      "key": "model1FlangeSlope",
-      "displayName": "内翼缘斜度 / °",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "i-hot-tapered"
-      }
-    },
-    {
-      "key": "materialBoundary",
-      "displayName": "实际材料边界（轮廓数组 JSON，留空使用理想模型）",
-      "valueType": "string",
-      "defaultValue": ""
-    },
-    {
-      "key": "sourceRevision",
-      "displayName": "轮廓来源及版本",
-      "valueType": "string",
-      "defaultValue": ""
-    },
+    {"key":"model0FlangeThickness","displayName":"翼缘端部厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"i-hot-parallel"}]}},
+    {"key":"model0RootRadius","displayName":"根部圆角 / mm","valueType":"number","defaultValue":4,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"i-hot-parallel"}]}},
+    {"key":"model0ToeRadius","displayName":"翼缘端圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"i-hot-parallel"}]}},
+    {"key":"model1FlangeThickness","displayName":"翼缘端部厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"i-hot-tapered"}]}},
+    {"key":"model1RootRadius","displayName":"根部圆角 / mm","valueType":"number","defaultValue":4,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"i-hot-tapered"}]}},
+    {"key":"model1ToeRadius","displayName":"翼缘端圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"i-hot-tapered"}]}},
+    {"key":"model1FlangeSlope","displayName":"内翼缘斜度 / °","valueType":"number","defaultValue":8,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"i-hot-tapered"}]}},
+    {"key":"materialBoundary","displayName":"实际材料边界（轮廓数组 JSON，留空使用理想模型）","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"sourceRevision","displayName":"轮廓来源及版本","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "geometrySource",
       "displayName": "轮廓来源",

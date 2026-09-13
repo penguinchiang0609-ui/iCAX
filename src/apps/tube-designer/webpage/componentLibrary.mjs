@@ -1,3 +1,4 @@
+import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
 import { catalogText } from "./productCatalog.mjs";
 import { libraryProfiles, profileRef, profileScope, profileSelectionKey } from "./profileLibrary.mjs";
@@ -472,16 +473,8 @@ function csgProfileChoices(view) {
     .filter((item) => item.value);
 }
 
-function matchesCSGParameterVisibility(condition, values) {
-  if (!condition) return true;
-  const all = condition.conditions && condition.op === "all" ? condition.conditions : condition.all;
-  const any = condition.conditions && condition.op === "any" ? condition.conditions : condition.any;
-  if (Array.isArray(all)) return all.every((item) => matchesCSGParameterVisibility(item, values));
-  if (Array.isArray(any)) return any.some((item) => matchesCSGParameterVisibility(item, values));
-  const actual = values?.[condition.parameter ?? condition.key];
-  if (condition.op === "eq") return actual === condition.value;
-  if (condition.op === "ne") return actual !== condition.value;
-  return true;
+function matchesCSGParameterVisibility(condition, values = {}) {
+  return matchesParameterCondition(condition, values);
 }
 
 function renderCSGProfileParameter(definition, values, disabled) {

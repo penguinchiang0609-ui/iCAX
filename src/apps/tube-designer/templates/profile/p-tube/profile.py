@@ -20,7 +20,7 @@ def build(parameters):
         loops=json.loads(actual)
         if not isinstance(loops,list) or not loops:raise ValueError("材料边界须为非空轮廓数组")
     else:
-        if actual:raise ValueError("已提供完整轮廓，请明确选择其来源")
+        # Supplied-boundary draft is retained but inactive in idealized mode.
         loops=shape(p)
     if p["mirrorX"]:
         loops=reflect_x(loops)

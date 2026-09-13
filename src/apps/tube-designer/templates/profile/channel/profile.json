@@ -30,62 +30,9 @@
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
-    {
-      "key": "sectionModel",
-      "displayName": "轮廓子模型",
-      "valueType": "string",
-      "defaultValue": "channel-cold-u",
-      "options": [
-        {
-          "value": "channel-cold-u",
-          "displayName": "冷弯等边 U 型钢"
-        },
-        {
-          "value": "channel-cold-c",
-          "displayName": "无卷边 C 型钢"
-        },
-        {
-          "value": "channel-cold-unequal",
-          "displayName": "冷弯不等边 U 型钢"
-        },
-        {
-          "value": "channel-lipped-inward",
-          "displayName": "内卷边 C 型钢"
-        },
-        {
-          "value": "channel-lipped-outward",
-          "displayName": "外卷边 C 型钢"
-        },
-        {
-          "value": "channel-hot-tapered",
-          "displayName": "热轧斜腿槽钢"
-        },
-        {
-          "value": "channel-hot-parallel",
-          "displayName": "热轧平行翼缘槽钢"
-        },
-        {
-          "value": "channel-welded",
-          "displayName": "板焊槽钢"
-        }
-      ]
-    },
-    {
-      "key": "width",
-      "displayName": "翼缘中心线展开方向尺寸 / mm",
-      "valueType": "number",
-      "defaultValue": 50,
-      "min": 1,
-      "step": 1
-    },
-    {
-      "key": "depth",
-      "displayName": "腹板中心线高度 / mm",
-      "valueType": "number",
-      "defaultValue": 80,
-      "min": 1,
-      "step": 1
-    },
+    {"key":"sectionModel","displayName":"轮廓子模型","valueType":"string","defaultValue":"channel-cold-u","options":[{"value":"channel-cold-u","displayName":"冷弯等边 U 型钢"},{"value":"channel-cold-c","displayName":"无卷边 C 型钢"},{"value":"channel-cold-unequal","displayName":"冷弯不等边 U 型钢"},{"value":"channel-lipped-inward","displayName":"内卷边 C 型钢"},{"value":"channel-lipped-outward","displayName":"外卷边 C 型钢"},{"value":"channel-hot-tapered","displayName":"热轧斜腿槽钢"},{"value":"channel-hot-parallel","displayName":"热轧平行翼缘槽钢"},{"value":"channel-welded","displayName":"板焊槽钢"}],"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"width","displayName":"翼缘中心线展开方向尺寸 / mm","valueType":"number","defaultValue":50,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"depth","displayName":"腹板中心线高度 / mm","valueType":"number","defaultValue":80,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "wallThickness",
       "displayName": "板厚 / mm",
@@ -94,252 +41,26 @@
       "min": 0.1,
       "step": 1
     },
-    {
-      "key": "model0BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-cold-u"
-      }
-    },
-    {
-      "key": "model1BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-cold-c"
-      }
-    },
-    {
-      "key": "model2BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-cold-unequal"
-      }
-    },
-    {
-      "key": "model2UpperWidth",
-      "displayName": "上翼缘中心线长度 / mm",
-      "valueType": "number",
-      "defaultValue": 35,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-cold-unequal"
-      }
-    },
-    {
-      "key": "model3BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-lipped-inward"
-      }
-    },
-    {
-      "key": "model3LipLength",
-      "displayName": "卷边中心线长度 / mm",
-      "valueType": "number",
-      "defaultValue": 14,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-lipped-inward"
-      }
-    },
-    {
-      "key": "model4BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-lipped-outward"
-      }
-    },
-    {
-      "key": "model4LipLength",
-      "displayName": "卷边中心线长度 / mm",
-      "valueType": "number",
-      "defaultValue": 14,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-lipped-outward"
-      }
-    },
-    {
-      "key": "model5FlangeThickness",
-      "displayName": "翼缘端部厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-hot-tapered"
-      }
-    },
-    {
-      "key": "model5RootRadius",
-      "displayName": "根部圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 4,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-hot-tapered"
-      }
-    },
-    {
-      "key": "model5ToeRadius",
-      "displayName": "翼缘端圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-hot-tapered"
-      }
-    },
-    {
-      "key": "model5FlangeSlope",
-      "displayName": "内翼缘斜度 / °",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-hot-tapered"
-      }
-    },
-    {
-      "key": "model6FlangeThickness",
-      "displayName": "翼缘端部厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-hot-parallel"
-      }
-    },
-    {
-      "key": "model6RootRadius",
-      "displayName": "根部圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 4,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-hot-parallel"
-      }
-    },
-    {
-      "key": "model6ToeRadius",
-      "displayName": "翼缘端圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-hot-parallel"
-      }
-    },
-    {
-      "key": "model7FlangeThickness",
-      "displayName": "上翼缘板厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-welded"
-      }
-    },
-    {
-      "key": "model7LowerThickness",
-      "displayName": "下翼缘板厚 / mm",
-      "valueType": "number",
-      "defaultValue": 10,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-welded"
-      }
-    },
-    {
-      "key": "model7WeldLeg",
-      "displayName": "名义根部焊脚 / mm",
-      "valueType": "number",
-      "defaultValue": 2,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "channel-welded"
-      }
-    },
-    {
-      "key": "materialBoundary",
-      "displayName": "实际材料边界（轮廓数组 JSON，留空使用理想模型）",
-      "valueType": "string",
-      "defaultValue": ""
-    },
-    {
-      "key": "sourceRevision",
-      "displayName": "轮廓来源及版本",
-      "valueType": "string",
-      "defaultValue": ""
-    },
+    {"key":"model0BendRadius","displayName":"内弯半径 / mm","valueType":"number","defaultValue":3,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-cold-u"}]}},
+    {"key":"model1BendRadius","displayName":"内弯半径 / mm","valueType":"number","defaultValue":3,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-cold-c"}]}},
+    {"key":"model2BendRadius","displayName":"内弯半径 / mm","valueType":"number","defaultValue":3,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-cold-unequal"}]}},
+    {"key":"model2UpperWidth","displayName":"上翼缘中心线长度 / mm","valueType":"number","defaultValue":35,"min":1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-cold-unequal"}]}},
+    {"key":"model3BendRadius","displayName":"内弯半径 / mm","valueType":"number","defaultValue":3,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-lipped-inward"}]}},
+    {"key":"model3LipLength","displayName":"卷边中心线长度 / mm","valueType":"number","defaultValue":14,"min":1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-lipped-inward"}]}},
+    {"key":"model4BendRadius","displayName":"内弯半径 / mm","valueType":"number","defaultValue":3,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-lipped-outward"}]}},
+    {"key":"model4LipLength","displayName":"卷边中心线长度 / mm","valueType":"number","defaultValue":14,"min":1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-lipped-outward"}]}},
+    {"key":"model5FlangeThickness","displayName":"翼缘端部厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-hot-tapered"}]}},
+    {"key":"model5RootRadius","displayName":"根部圆角 / mm","valueType":"number","defaultValue":4,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-hot-tapered"}]}},
+    {"key":"model5ToeRadius","displayName":"翼缘端圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-hot-tapered"}]}},
+    {"key":"model5FlangeSlope","displayName":"内翼缘斜度 / °","valueType":"number","defaultValue":8,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-hot-tapered"}]}},
+    {"key":"model6FlangeThickness","displayName":"翼缘端部厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-hot-parallel"}]}},
+    {"key":"model6RootRadius","displayName":"根部圆角 / mm","valueType":"number","defaultValue":4,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-hot-parallel"}]}},
+    {"key":"model6ToeRadius","displayName":"翼缘端圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-hot-parallel"}]}},
+    {"key":"model7FlangeThickness","displayName":"上翼缘板厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-welded"}]}},
+    {"key":"model7LowerThickness","displayName":"下翼缘板厚 / mm","valueType":"number","defaultValue":10,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-welded"}]}},
+    {"key":"model7WeldLeg","displayName":"名义根部焊脚 / mm","valueType":"number","defaultValue":2,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"channel-welded"}]}},
+    {"key":"materialBoundary","displayName":"实际材料边界（轮廓数组 JSON，留空使用理想模型）","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"sourceRevision","displayName":"轮廓来源及版本","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "geometrySource",
       "displayName": "轮廓来源",

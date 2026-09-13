@@ -1,0 +1,199 @@
+{
+  "schema": "icax.door-decoration-patterns",
+  "schemaVersion": 1,
+  "patterns": [
+    {
+      "id": "lines",
+      "name": "铣线／格栅",
+      "generator": "parallel_paths",
+      "process": "line",
+      "adaptation": "repeat",
+      "tags": [
+        "现代",
+        "几何线条"
+      ],
+      "minimumFeature": 2
+    },
+    {
+      "id": "diamond",
+      "name": "菱形花格",
+      "generator": "cell_regions",
+      "polygon": [
+        [
+          0,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          -1,
+          0
+        ]
+      ],
+      "process": "region",
+      "adaptation": "repeat",
+      "tags": [
+        "几何花格"
+      ],
+      "minimumFeature": 5
+    },
+    {
+      "id": "octagon",
+      "name": "八角花格",
+      "generator": "cell_regions",
+      "polygon": [
+        [
+          -0.414,
+          -1
+        ],
+        [
+          0.414,
+          -1
+        ],
+        [
+          1,
+          -0.414
+        ],
+        [
+          1,
+          0.414
+        ],
+        [
+          0.414,
+          1
+        ],
+        [
+          -0.414,
+          1
+        ],
+        [
+          -1,
+          0.414
+        ],
+        [
+          -1,
+          -0.414
+        ]
+      ],
+      "process": "region",
+      "adaptation": "repeat",
+      "tags": [
+        "新中式",
+        "几何花格"
+      ],
+      "minimumFeature": 5
+    },
+    {
+      "id": "round_scene",
+      "name": "几何圆景",
+      "generator": "round_scene",
+      "paths": [
+        [
+          [
+            -0.72,
+            -0.28
+          ],
+          [
+            -0.2,
+            0.4
+          ],
+          [
+            0.08,
+            0.04
+          ],
+          [
+            0.38,
+            0.5
+          ],
+          [
+            0.72,
+            -0.1
+          ]
+        ],
+        [
+          [
+            -0.72,
+            -0.5
+          ],
+          [
+            0.72,
+            -0.5
+          ]
+        ]
+      ],
+      "process": "pocket",
+      "adaptation": "uniform",
+      "tags": [
+        "新中式",
+        "圆景"
+      ],
+      "minimumFeature": 2
+    },
+    {
+      "id": "panels",
+      "name": "直壁池板／扣线",
+      "generator": "cell_regions",
+      "polygon": [
+        [
+          -1,
+          -1
+        ],
+        [
+          1,
+          -1
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          -1,
+          1
+        ]
+      ],
+      "process": "panel",
+      "adaptation": "repeat",
+      "tags": [
+        "池板",
+        "装饰框"
+      ],
+      "minimumFeature": 10
+    },
+    {
+      "id": "glass_lattice",
+      "name": "玻璃门花",
+      "generator": "cell_regions",
+      "polygon": [
+        [
+          0,
+          -1
+        ],
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ],
+        [
+          -1,
+          0
+        ]
+      ],
+      "process": "glass",
+      "adaptation": "repeat",
+      "tags": [
+        "镂空",
+        "玻璃组合"
+      ],
+      "minimumFeature": 5
+    }
+  ]
+}

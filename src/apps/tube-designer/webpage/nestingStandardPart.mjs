@@ -1,3 +1,4 @@
+import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
 import { libraryProfiles, profileRef, profileScope, profileSelectionKey, renderProfileSvg } from "./profileLibrary.mjs";
 import { restoreSavedNestingTask } from "./nestingWorkflow.mjs";
@@ -47,14 +48,8 @@ function openDialog(view) {
   view.error = "";
 }
 
-function visible(condition, values) {
-  if (!condition) return true;
-  const all = condition.op === "all" ? condition.conditions : condition.all;
-  const any = condition.op === "any" ? condition.conditions : condition.any;
-  if (Array.isArray(all)) return all.every((item) => visible(item, values));
-  if (Array.isArray(any)) return any.some((item) => visible(item, values));
-  const value = values[condition.parameter ?? condition.key];
-  return condition.op === "eq" ? value === condition.value : condition.op === "ne" ? value !== condition.value : true;
+function visible(condition, values = {}) {
+  return matchesParameterCondition(condition, values);
 }
 
 function renderParameter(definition, values, disabled) {

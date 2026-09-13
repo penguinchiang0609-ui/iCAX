@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 import importlib.util
 from pathlib import Path
 import sys
@@ -16,5 +17,19 @@ if _name not in sys.modules:
     sys.modules[_name] = _module
     _spec.loader.exec_module(_module)
 
-generate = sys.modules[_name].generate
-build_layout = sys.modules[_name].build_layout
+def _parameters(parameters):
+    if parameters.get("infillType", "glass") != "glass":
+        raise ValueError("此款式的填充构造不可更换，请选择对应护栏款式")
+    if parameters.get("guardrailUse", "platform") != "platform":
+        raise ValueError("此款式不支持围墙出头竖杆构造")
+    return {**parameters, "infillType": "glass", "guardrailUse": "platform", "spearTipEnabled": False, "_infillPanelKind": "board"}
+
+def generate(parameters, context):
+    original = deepcopy(parameters)
+    document = sys.modules[_name].generate(_parameters(parameters), context)
+    # Internal construction inputs are not public normalized parameters.
+    document["parameters"] = original
+    return document
+
+def build_layout(parameters):
+    return sys.modules[_name].build_layout(_parameters(parameters))

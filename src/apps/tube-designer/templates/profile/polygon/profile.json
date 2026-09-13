@@ -2,7 +2,10 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "polygon",
   "version": "2026.9.13.6",
   "displayName": "多边形管",
@@ -181,7 +184,32 @@
       "valueType": "number",
       "defaultValue": 45,
       "min": 1,
-      "step": 1
+      "step": 1,
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "triangle-scalene"
+          },
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "trapezoid-right"
+          },
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "trapezoid-isosceles"
+          },
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "parallelogram-tube"
+          }
+        ]
+      }
     },
     {
       "key": "model2ApexOffset",
@@ -202,7 +230,32 @@
       "valueType": "number",
       "defaultValue": 2,
       "min": 0.1,
-      "step": 1
+      "step": 1,
+      "visibleWhen": {
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "triangle-scalene"
+          },
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "trapezoid-right"
+          },
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "trapezoid-isosceles"
+          },
+          {
+            "op": "eq",
+            "parameter": "sectionModel",
+            "value": "parallelogram-tube"
+          }
+        ]
+      }
     },
     {
       "key": "model3TopWidth",

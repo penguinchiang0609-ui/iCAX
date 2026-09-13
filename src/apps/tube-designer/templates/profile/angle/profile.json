@@ -29,46 +29,9 @@
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
-    {
-      "key": "manufacturingRoute",
-      "displayName": "制造路线",
-      "valueType": "string",
-      "defaultValue": "ColdBent",
-      "options": [
-        {
-          "value": "ColdBent",
-          "displayName": "冷弯"
-        },
-        {
-          "value": "HotRolled",
-          "displayName": "热轧"
-        },
-        {
-          "value": "Precision",
-          "displayName": "冷拔 / 精密轧制"
-        },
-        {
-          "value": "Welded",
-          "displayName": "焊接"
-        }
-      ]
-    },
-    {
-      "key": "width",
-      "displayName": "翼缘中心线展开方向尺寸 / mm",
-      "valueType": "number",
-      "defaultValue": 50,
-      "min": 1,
-      "step": 1
-    },
-    {
-      "key": "depth",
-      "displayName": "腹板中心线高度 / mm",
-      "valueType": "number",
-      "defaultValue": 80,
-      "min": 1,
-      "step": 1
-    },
+    {"key":"manufacturingRoute","displayName":"制造路线","valueType":"string","defaultValue":"ColdBent","options":[{"value":"ColdBent","displayName":"冷弯"},{"value":"HotRolled","displayName":"热轧"},{"value":"Precision","displayName":"冷拔 / 精密轧制"},{"value":"Welded","displayName":"焊接"}],"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"width","displayName":"翼缘中心线展开方向尺寸 / mm","valueType":"number","defaultValue":50,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"depth","displayName":"腹板中心线高度 / mm","valueType":"number","defaultValue":80,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "wallThickness",
       "displayName": "板厚 / mm",
@@ -77,122 +40,16 @@
       "min": 0.1,
       "step": 1
     },
-    {
-      "key": "model0BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "ColdBent"
-      }
-    },
-    {
-      "key": "model1FlangeThickness",
-      "displayName": "横肢厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "HotRolled"
-      }
-    },
-    {
-      "key": "model1RootRadius",
-      "displayName": "内根圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 5,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "HotRolled"
-      }
-    },
-    {
-      "key": "model1HeelRadius",
-      "displayName": "外跟圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "HotRolled"
-      }
-    },
-    {
-      "key": "model1ToeRadius",
-      "displayName": "肢端圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "HotRolled"
-      }
-    },
-    {
-      "key": "model2FlangeThickness",
-      "displayName": "横肢厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "Precision"
-      }
-    },
-    {
-      "key": "model3FlangeThickness",
-      "displayName": "横肢厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "Welded"
-      }
-    },
-    {
-      "key": "model3WeldLeg",
-      "displayName": "名义根部焊脚 / mm",
-      "valueType": "number",
-      "defaultValue": 2,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "manufacturingRoute",
-        "value": "Welded"
-      }
-    },
-    {
-      "key": "materialBoundary",
-      "displayName": "实际材料边界（轮廓数组 JSON，留空使用理想模型）",
-      "valueType": "string",
-      "defaultValue": ""
-    },
-    {
-      "key": "sourceRevision",
-      "displayName": "轮廓来源及版本",
-      "valueType": "string",
-      "defaultValue": ""
-    },
+    {"key":"model0BendRadius","displayName":"内弯半径 / mm","valueType":"number","defaultValue":3,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"ColdBent"}]}},
+    {"key":"model1FlangeThickness","displayName":"横肢厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"HotRolled"}]}},
+    {"key":"model1RootRadius","displayName":"内根圆角 / mm","valueType":"number","defaultValue":5,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"HotRolled"}]}},
+    {"key":"model1HeelRadius","displayName":"外跟圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"HotRolled"}]}},
+    {"key":"model1ToeRadius","displayName":"肢端圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"HotRolled"}]}},
+    {"key":"model2FlangeThickness","displayName":"横肢厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"Precision"}]}},
+    {"key":"model3FlangeThickness","displayName":"横肢厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"Welded"}]}},
+    {"key":"model3WeldLeg","displayName":"名义根部焊脚 / mm","valueType":"number","defaultValue":2,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"manufacturingRoute","value":"Welded"}]}},
+    {"key":"materialBoundary","displayName":"实际材料边界（轮廓数组 JSON，留空使用理想模型）","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"sourceRevision","displayName":"轮廓来源及版本","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "geometrySource",
       "displayName": "轮廓来源",

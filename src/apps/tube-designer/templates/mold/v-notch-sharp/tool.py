@@ -326,7 +326,7 @@ def generate(p, context):
     default_k = p.get("useDefaultKFactor", True)
     if not isinstance(compensate, bool) or not isinstance(default_k, bool):
         raise ValueError("K 因子选项必须是开关")
-    if compensate:
+    if compensate and strategy == "rounded":
         if strategy != "rounded" or round_radius <= 0:
             raise ValueError("K 因子展开补偿需要圆角策略及大于 0 的刀口圆角")
         if wall <= 0:

@@ -1,3 +1,4 @@
+import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { escapeAttr as esc, escapeText } from "../../_shared/workbench/utils/format.mjs";
 import { libraryProfiles, profileRef, profileSelectionKey, renderProfileSvg } from "./profileLibrary.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
@@ -115,10 +116,8 @@ function sectionLocked(view,which) {
   if(which==="start"||which==="end")return isDrawingToolReadOnly(s,s.ends?.[which]);
   return isDrawingToolReadOnly(s,s.draft);
 }
-function visibleParameter(d,values) {
-  const test=c=>!c?true:c.conditions? (c.op==="any"?c.conditions.some(test):c.conditions.every(test))
-    :c.all?c.all.every(test):c.any?c.any.some(test):c.op==="eq"?values[c.parameter??c.key]===c.value:c.op==="ne"?values[c.parameter??c.key]!==c.value:true;
-  return test(d.visibleWhen);
+function visibleParameter(definition, values = {}) {
+  return matchesParameterCondition(definition?.visibleWhen, values);
 }
 export function renderDrawingSection(view,which) {
   const section=getSection(view,which)??{},profiles=libraryProfiles(view);

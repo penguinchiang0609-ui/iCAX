@@ -364,8 +364,7 @@ class RequestSpecificGeometryTests(unittest.TestCase):
         required = {
             "single_face_security_window", "two_face_security_window",
             "three_face_security_window", "five_face_security_window",
-            "straight_stair_railing", "straight_steel_staircase",
-            "l_turn_steel_staircase", "u_turn_steel_staircase",
+            "modular_guardrail", "straight_steel_staircase",
         }
         self.assertTrue(required.issubset(names), f"Missing built-in packages: {required - set(names)}")
         for name in names:

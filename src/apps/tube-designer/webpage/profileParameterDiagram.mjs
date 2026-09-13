@@ -1,3 +1,4 @@
+import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr as attr, escapeText as text } from "../../_shared/workbench/utils/format.mjs";
 import { profileSvgGeometry } from "./profileSvg.mjs";
 
@@ -10,13 +11,7 @@ const displayNumber = (value) => new Intl.NumberFormat("zh-CN", { maximumFractio
 const diagramBindings = new WeakMap();
 
 function visible(condition, values) {
-  if (!condition) return true;
-  const all = condition.op === "all" ? condition.conditions : condition.all;
-  const any = condition.op === "any" ? condition.conditions : condition.any;
-  if (Array.isArray(all)) return all.every((item) => visible(item, values));
-  if (Array.isArray(any)) return any.some((item) => visible(item, values));
-  const value = values[condition.parameter ?? condition.key];
-  return condition.op === "eq" ? value === condition.value : condition.op === "ne" ? value !== condition.value : true;
+  return matchesParameterCondition(condition, values);
 }
 
 function valueText(definition, values) {
@@ -33,7 +28,8 @@ function validAnnotations(snapshot, definitions, values) {
   if (diagram?.schemaVersion !== 1 || !Array.isArray(diagram.annotations)) return [];
   const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
   return diagram.annotations.slice(0, 128).filter((item) => {
-    if (!item || !byKey.has(item.parameter) || !visible(item.visibleWhen, values)) return false;
+    if (!item || !byKey.has(item.parameter) || !visible(item.visibleWhen, values)
+        || !visible(byKey.get(item.parameter).visibleWhen, values)) return false;
     if (!["top", "bottom", "left", "right"].includes(item.side)) return false;
     if (item.kind === "leader") return coordinate(item.point);
     return item.kind === "linear" && coordinate(item.from) && coordinate(item.to)

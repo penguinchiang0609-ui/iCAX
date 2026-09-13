@@ -147,7 +147,12 @@
       "key": "bendCompensation",
       "displayName": "启用 K 因子展开补偿（圆角策略）",
       "valueType": "boolean",
-      "defaultValue": false
+      "defaultValue": false,
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "bottomStrategy",
+        "value": "rounded"
+      }
     },
     {
       "key": "useDefaultKFactor",
@@ -155,9 +160,19 @@
       "valueType": "boolean",
       "defaultValue": true,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bendCompensation",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "bottomStrategy",
+            "value": "rounded"
+          },
+          {
+            "op": "eq",
+            "parameter": "bendCompensation",
+            "value": true
+          }
+        ]
       }
     },
     {
@@ -168,9 +183,29 @@
       "min": 0,
       "max": 1,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "useDefaultKFactor",
-        "value": false
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "bottomStrategy",
+                "value": "rounded"
+              },
+              {
+                "op": "eq",
+                "parameter": "bendCompensation",
+                "value": true
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "useDefaultKFactor",
+            "value": false
+          }
+        ]
       }
     },
     {

@@ -224,11 +224,11 @@ await test("editing existing instances never reapplies a catalog preset", async 
 
 await test("shipped railing and staircase descriptors are in distinct primary categories", () => {
   const readTemplate = (directory) => ({ ...JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${directory}/template.json`, import.meta.url))), available: true });
-  const shipped = ["single_face_security_window", "straight_stair_railing", "straight_steel_staircase", "l_turn_steel_staircase", "u_turn_steel_staircase"].map(readTemplate);
+  const shipped = ["single_face_security_window", "modular_guardrail", "straight_steel_staircase"].map(readTemplate);
   const tree = buildTemplateGroupTree(shipped);
-  assert.deepEqual(tree.map((group) => group.title), ["防盗窗", "护栏", "楼梯"]);
-  assert.equal(tree[1].children[0].templates[0].id, "straight-stair-railing");
-  assert.equal(tree[2].children[0].templates.length, 3);
+  assert.deepEqual(tree.map((group) => group.title), ["窗", "护栏", "楼梯"]);
+  assert.equal(tree[1].children[0].templates[0].id, "modular-guardrail");
+  assert.equal(tree[2].templates.length, 1);
 });
 
 await test("all 32 shipped modular guardrail styles are independent descriptors", () => {

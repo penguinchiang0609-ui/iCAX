@@ -1,3 +1,4 @@
+import { matchesParameterCondition } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
 
 const label = value => value != null && typeof value === "object"
@@ -6,18 +7,7 @@ const label = value => value != null && typeof value === "object"
 // Visibility is evaluated against the complete parameter value set, not only
 // the field currently being rendered. Missing stored values use schema defaults.
 export function isDrawingParameterVisible(condition, values = {}) {
-  if (condition == null) return true;
-  if (typeof condition === "boolean") return condition;
-  if (Array.isArray(condition)) return condition.every(item => isDrawingParameterVisible(item, values));
-  if (Array.isArray(condition.all)) return condition.all.every(item => isDrawingParameterVisible(item, values));
-  if (Array.isArray(condition.any)) return condition.any.some(item => isDrawingParameterVisible(item, values));
-  if (Array.isArray(condition.conditions)) return condition.op === "any"
-    ? condition.conditions.some(item => isDrawingParameterVisible(item, values))
-    : condition.conditions.every(item => isDrawingParameterVisible(item, values));
-  const value = values[condition.parameter ?? condition.key];
-  if (condition.op === "eq") return value === condition.value;
-  if (condition.op === "ne") return value !== condition.value;
-  return true;
+  return matchesParameterCondition(condition, values);
 }
 
 export function parameterFields(action, descriptor, feature = {}, end = "") {

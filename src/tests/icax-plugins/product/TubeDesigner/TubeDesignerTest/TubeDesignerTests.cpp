@@ -26,7 +26,13 @@
 #include <Bnd_Box.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Common.hxx>
+#include <BOPAlgo_GlueEnum.hxx>
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRep_Tool.hxx>
+#include <TopoDS.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -41,6 +47,7 @@
 #include <GC_MakeArcOfCircle.hxx>
 #include <BRepTools.hxx>
 #include <GProp_GProps.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
@@ -1118,6 +1125,27 @@ TEST(TemplateRuntimeTest, NeutralModelSelectedRootsReuseSharedShapeAndDuplicateR
     EXPECT_TRUE(_DisplayChild.Value().IsSame(_ExportChild.Value()));
 }
 
+TEST(TemplateRuntimeTest, BooleanRetainsExplicitConnectedMaterial)
+{
+    using namespace iCAX::TemplateRuntime;
+    const auto document=CStandardJsonCodec::Parse(R"json({
+      "schema":"icax.neutral-model","schemaVersion":1,
+      "template":{"id":"test.connected-material","version":"1","packageDigest":"test"},
+      "geometry":[
+        {"key":"stock.profile","operator":"profile2d","arguments":{"placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},"contours":[{"kind":"roundedRectangle","width":20,"height":20,"radius":0}]}},
+        {"key":"stock","operator":"extrude","inputs":["stock.profile"],"arguments":{"vector":[0,0,100]}},
+        {"key":"tool.profile","operator":"profile2d","arguments":{"placement":{"origin":[0,0,30],"xAxis":[1,0,0],"yAxis":[0,1,0]},"contours":[{"kind":"roundedRectangle","width":40,"height":40,"radius":0}]}},
+        {"key":"tool","operator":"extrude","inputs":["tool.profile"],"arguments":{"vector":[0,0,20]}},
+        {"key":"cut","operator":"boolean","inputs":["stock","tool"],"arguments":{"operation":"subtract","keepConnectedTo":[0,0,10]}}
+      ]})json");
+    auto model=CTemplateCodec::ParseNeutralModel(document);
+    const auto result=iCAX::OpenCascade::EvaluateNeutralModel(model);
+    EXPECT_NEAR(RootSelectionShapeVolume(result.At("cut")),12000,.001);
+    // The explicitly selected lower part is smaller than the discarded part.
+    model.Geometry.back().Arguments["keepConnectedTo"]=NumberArray({0,0,40});
+    EXPECT_THROW(iCAX::OpenCascade::EvaluateNeutralModel(model),std::runtime_error);
+}
+
 TEST(TemplateRuntimeTest, NeutralModelSelectedRootsResolveBooleanArgumentOnlyDependencies)
 {
     const auto _Document = iCAX::TemplateRuntime::CStandardJsonCodec::Parse(R"json({
@@ -2142,70 +2170,10 @@ TEST(TemplateRuntimeTest, MultiFaceInspectionDoorCanBePlacedOnEveryAvailableFace
     }
 }
 
-TEST(TemplateRuntimeTest, StraightStairRailingGeneratesManufacturableTubeParts)
+TEST(TemplateRuntimeTest, IndependentStairRailingTemplateIsRemoved)
 {
-    const auto _Root = std::filesystem::current_path();
-    const auto _TemplateRoot = _Root
-        / "src/apps/tube-designer/templates/product/straight_stair_railing";
-    const auto _DescriptorPath = _TemplateRoot / "template.json";
-    std::ifstream _DescriptorStream(_DescriptorPath, std::ios::binary);
-    ASSERT_TRUE(static_cast<bool>(_DescriptorStream));
-    const std::string _DescriptorText{
-        std::istreambuf_iterator<char>(_DescriptorStream), std::istreambuf_iterator<char>()
-    };
-    auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
-        iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
-    EXPECT_EQ("straight-stair-railing", _Descriptor.ID);
-    _Descriptor.PackageDigest = "straight-stair-railing-test";
-
-    iCAX::Data::ObjectMap _Parameters;
-    for (const auto& _Definition : _Descriptor.Parameters)
-        _Parameters[_Definition.Key] = _Definition.DefaultValue;
-    _Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
-        _Descriptor, _Parameters);
-
-    iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    const auto _Evaluate = [&](const iCAX::Data::ObjectMap& Parameters_)
-    {
-        const auto _Response = _Host.Invoke(
-            iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
-                _Descriptor, Parameters_, (_TemplateRoot / "template.py").string()));
-        auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Response);
-        auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
-        return std::pair{ std::move(_Model), std::move(_Geometry) };
-    };
-
-    auto [_VerticalModel, _VerticalGeometry] = _Evaluate(_Parameters);
-    ASSERT_EQ(27u, _VerticalModel.Items.size());
-    ASSERT_EQ(2u, _VerticalModel.Outputs.size());
-    EXPECT_EQ(27u, _VerticalModel.Outputs[0].ItemKeys.size());
-    EXPECT_EQ(27u, _VerticalModel.Outputs[1].ItemKeys.size());
-    EXPECT_EQ(4u, _VerticalModel.Relationships.size());
-    EXPECT_EQ(21, std::count_if(
-        _VerticalModel.Items.begin(), _VerticalModel.Items.end(),
-        [](const auto& Item_) { return Item_.Key.starts_with("infill.vertical."); }));
-    for (const auto& _Item : _VerticalModel.Items)
-    {
-        ASSERT_TRUE(_Item.Properties.contains("manufacturing.categoryKey"));
-        ASSERT_TRUE(_Item.Properties.contains("tubeDesigner.profile"));
-        EXPECT_FALSE(_VerticalGeometry.At(_Item.Representations.at("display")).IsNull());
-        EXPECT_FALSE(_VerticalGeometry.At(_Item.Representations.at("export")).IsNull());
-    }
-    const auto& _Handrail = _VerticalModel.Items.front();
-    EXPECT_EQ("handrail.0001", _Handrail.Key);
-    EXPECT_NEAR(
-        std::hypot(3300.0, 1980.0),
-        _Handrail.Properties.at("length").To<double>(), 0.01);
-
-    _Parameters["infillType"] = std::string("horizontal");
-    auto [_HorizontalModel, _HorizontalGeometry] = _Evaluate(_Parameters);
-    ASSERT_EQ(8u, _HorizontalModel.Items.size());
-    EXPECT_EQ(3, std::count_if(
-        _HorizontalModel.Items.begin(), _HorizontalModel.Items.end(),
-        [](const auto& Item_) { return Item_.Key.starts_with("infill.horizontal."); }));
-    for (const auto& _Item : _HorizontalModel.Items)
-        EXPECT_FALSE(_HorizontalGeometry.At(_Item.Representations.at("export")).IsNull());
-    EXPECT_TRUE(_Host.IsRunning());
+    EXPECT_FALSE(std::filesystem::exists(std::filesystem::current_path()
+        / "src/apps/tube-designer/templates/product/straight_stair_railing/template.json"));
 }
 
 
@@ -2616,11 +2584,12 @@ TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufa
         const char* Directory;
         const char* TemplateID;
         bool HasLanding;
+        const char* Route;
     };
     constexpr SCase _Cases[]{
-        { "straight_steel_staircase", "straight-steel-staircase", false },
-        { "l_turn_steel_staircase", "l-turn-steel-staircase", true },
-        { "u_turn_steel_staircase", "u-turn-steel-staircase", true },
+        { "straight_steel_staircase", "straight-steel-staircase", false, "straight" },
+        { "straight_steel_staircase", "straight-steel-staircase", true, "l_turn" },
+        { "straight_steel_staircase", "straight-steel-staircase", true, "u_turn" },
     };
 
     const auto _Root = std::filesystem::current_path();
@@ -2643,15 +2612,7 @@ TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufa
         iCAX::Data::ObjectMap _Parameters;
         for (const auto& _Definition : _Descriptor.Parameters)
             _Parameters[_Definition.Key] = _Definition.DefaultValue;
-        if (!_Case.HasLanding)
-        {
-            _Parameters["stringerProfileType"] = std::string("i-section");
-            _Parameters["treadProfileType"] = std::string("channel");
-            _Parameters["handrailProfileType"] = std::string("oval");
-            _Parameters["postProfileType"] = std::string("angle");
-            // Two independent 1 mm toe fillets require a leg thicker than 2 mm.
-            _Parameters["postWallThickness"] = 3.0;
-        }
+        _Parameters["stairRoute"] = std::string(_Case.Route);
         _Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
             _Descriptor, _Parameters);
         const auto _Response = _Host.Invoke(
@@ -2667,11 +2628,14 @@ TEST(TemplateRuntimeTest, MultiStepSteelStaircaseTemplatesGenerateCompleteManufa
             [](const auto& Item_) { return Item_.Key.starts_with("landing."); }));
         EXPECT_TRUE(std::any_of(
             _Model.Items.begin(), _Model.Items.end(),
-            [](const auto& Item_) { return Item_.Key.find(".tread.") != std::string::npos; }));
+            [](const auto& Item_) { return Item_.Key.find(".step.") != std::string::npos; }));
         for (const auto& _Item : _Model.Items)
         {
             ASSERT_TRUE(_Item.Properties.contains("manufacturing.categoryKey"));
-            ASSERT_TRUE(_Item.Properties.contains("tubeDesigner.profile"));
+            if (_Item.Properties.at("manufacturing.partKind").To<std::string>() == "tube")
+                ASSERT_TRUE(_Item.Properties.contains("tubeDesigner.profile"));
+            else
+                ASSERT_TRUE(_Item.Properties.contains("manufacturing.plate"));
         }
 
         const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
@@ -2968,12 +2932,380 @@ TEST(TemplateRuntimeTest, ExplicitPythonContinuousFrameReturnsAssemblyOrGroovedS
     }
 }
 
+TEST(TemplateRuntimeTest, UnifiedSteelStaircaseSolids)
+{
+    using namespace iCAX::TemplateRuntime;
+    const auto root=std::filesystem::current_path();
+    CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
+    for(const auto* route:{"straight","straight_landing","l_turn","u_turn","mono","twin","frame","vertical","wood","right",
+                          "plate","channel","channel_parallel","channel_tapered","channel_welded","zigzag","round","oval","racetrack","round_beam","oval_beam","u_narrow"}){
+        SCOPED_TRACE(route);
+        auto f=TemplateProtocolFixture(root,"straight_steel_staircase");
+        const std::string mode(route);
+        char selected[512]{};
+        if(GetEnvironmentVariableA("ICAX_STAIR_TEST_CASE",selected,sizeof(selected)) &&
+           (","+std::string(selected)+",").find(","+mode+",")==std::string::npos)continue;
+        std::cout << "Stair case: " << mode << std::endl;
+        f.Parameters["stairRoute"]=(mode=="mono" || mode=="twin" || mode=="frame")?std::string("straight"):
+            (mode=="vertical" || mode=="wood" || mode=="right")?std::string("l_turn"):mode;
+        if(mode=="mono" || mode=="twin")f.Parameters["stringerSystem"]=mode;
+        if(mode=="frame")f.Parameters["treadSupport"]=std::string("tube_frame");
+        if(mode=="vertical")f.Parameters["railingInfill"]=std::string("vertical");
+        if(mode=="wood")f.Parameters["treadType"]=std::string("wood");
+        if(mode=="right")f.Parameters["turnDirection"]=std::string("right");
+        if(mode=="u_narrow"){
+            f.Parameters["stairRoute"]=std::string("u_turn");f.Parameters["wellGap"]=100.0;
+            f.Parameters["postProfileType"]=std::string("oval");f.Parameters["postWidth"]=100.0;f.Parameters["postDepth"]=20.0;
+        }
+        if(mode=="plate" || mode.starts_with("channel") || mode=="zigzag" || mode=="round_beam" || mode=="oval_beam"){
+            f.Parameters["stairRoute"]=std::string("l_turn");
+            f.Parameters["bracketType"]=std::string("plate");
+            if(mode.starts_with("channel"))f.Parameters["stringerProfileType"]=std::string("channel");
+            if(mode=="channel_parallel")f.Parameters["stringerChannelModel"]=std::string("channel-hot-parallel");
+            if(mode=="channel_tapered")f.Parameters["stringerChannelModel"]=std::string("channel-hot-tapered");
+            if(mode=="channel_welded")f.Parameters["stringerChannelModel"]=std::string("channel-welded");
+            if(mode=="zigzag")f.Parameters["stringerConstruction"]=std::string("zigzag");
+            if(mode=="round_beam")f.Parameters["stringerProfileType"]=std::string("round");
+            if(mode=="oval_beam")f.Parameters["stringerProfileType"]=std::string("oval");
+        }
+        if(mode=="round" || mode=="oval" || mode=="racetrack"){
+            f.Parameters["stairRoute"]=std::string("u_turn");
+            for(const auto* prefix:{"handrail","post","infill"})f.Parameters[std::string(prefix)+"ProfileType"]=mode;
+            if(mode!="round"){
+                f.Parameters["handrailWidth"]=50.0;f.Parameters["handrailDepth"]=35.0;
+                f.Parameters["postWidth"]=40.0;f.Parameters["postDepth"]=30.0;
+                f.Parameters["infillDepth"]=14.0;
+            }
+            f.Parameters["railingInfill"]=std::string("vertical");
+            f.Parameters["maximumInfillGap"]=250.0;
+        }
+        f.Parameters["floorHeight"]=1080.0;f.Parameters["totalRiserCount"]=6;
+        f.Parameters["firstFlightRiserCount"]=3;
+        f.Parameters=CTemplateCodec::ValidateAndNormalizeParameters(f.Descriptor,f.Parameters);
+        const auto model=CTemplateCodec::ParseNeutralModel(InvokeExplicitTemplatePurpose(host,f,"manufacturing"));
+        const auto geometry=iCAX::OpenCascade::EvaluateNeutralModel(model);
+        std::cout << "Stair geometry ready: " << mode << std::endl;
+        for(const auto& joint:model.Relationships){
+            if(joint.Kind!="weld" || joint.ItemKeys.size()!=2)continue;
+            auto lookup=[&](const std::string& key)->const TopoDS_Shape&{
+                const auto it=std::find_if(model.Items.begin(),model.Items.end(),[&](const auto& item){return item.Key==key;});
+                if(it==model.Items.end())throw std::runtime_error("Missing joint member "+key);
+                return geometry.At(it->Representations.at("result"));
+            };
+            SCOPED_TRACE(joint.Key+" "+joint.ItemKeys[0]+" / "+joint.ItemKeys[1]);
+            // A material vertex on the partner is an actual contact witness.
+            // Full face/face extrema is pathological on coincident elliptic
+            // cylinders (infinitely many stationary pairs); do not use that
+            // algorithm to test a zero-distance welded boundary.
+            const auto& a=lookup(joint.ItemKeys[0]);const auto& b=lookup(joint.ItemKeys[1]);
+            double contact=std::numeric_limits<double>::infinity();
+            for(TopExp_Explorer va(a,TopAbs_VERTEX);va.More() && contact>.001;va.Next()){
+                BRepExtrema_DistShapeShape distance(va.Current(),b);
+                ASSERT_TRUE(distance.IsDone());contact=std::min(contact,distance.Value());
+            }
+            // A plate's corners may be outside a rounded receiver while the
+            // middle of its straight edge bears on the receiver's flat face.
+            for(TopExp_Explorer ea(a,TopAbs_EDGE);ea.More() && contact>.001;ea.Next()){
+                BRepAdaptor_Curve curve(TopoDS::Edge(ea.Current()));
+                const auto point=curve.Value((curve.FirstParameter()+curve.LastParameter())/2);
+                BRepExtrema_DistShapeShape distance(BRepBuilderAPI_MakeVertex(point).Vertex(),b);
+                ASSERT_TRUE(distance.IsDone());contact=std::min(contact,distance.Value());
+            }
+            // Long cross-members can bear between all sampled locations.
+            // Resolve an exact edge/solid distance before declaring a gap.
+            for(TopExp_Explorer ea(a,TopAbs_EDGE);ea.More() && contact>.001;ea.Next()){
+                BRepExtrema_DistShapeShape distance(ea.Current(),b);
+                ASSERT_TRUE(distance.IsDone());contact=std::min(contact,distance.Value());
+            }
+            EXPECT_LT(contact,.001);
+        }
+        std::cout << "Stair contacts checked: " << mode << std::endl;
+        std::vector<TopoDS_Shape> shapes;
+        std::vector<std::array<double,6>> bounds;
+        for(const auto& item:model.Items){
+            SCOPED_TRACE(item.Key);
+            auto shape=geometry.At(item.Representations.at("result"));
+            EXPECT_TRUE(BRepCheck_Analyzer(shape).IsValid());
+            EXPECT_GT(RootSelectionShapeVolume(shape),.01);
+            int solids=0;for(TopExp_Explorer e(shape,TopAbs_SOLID);e.More();e.Next())++solids;
+            EXPECT_EQ(solids,1);
+            shapes.push_back(shape);
+            Bnd_Box preciseBox;BRepBndLib::AddOptimal(shape,preciseBox,false,false);
+            std::array<double,6> precise{};
+            preciseBox.Get(precise[0],precise[1],precise[2],precise[3],precise[4],precise[5]);
+            bounds.push_back(precise);
+        }
+        for(size_t a=0;a<shapes.size();++a)for(size_t b=a+1;b<shapes.size();++b){
+            char pairFilter[256]{};
+            if(GetEnvironmentVariableA("ICAX_STAIR_PAIR",pairFilter,sizeof(pairFilter)) &&
+               model.Items[a].Key+" / "+model.Items[b].Key!=pairFilter)continue;
+            bool candidate=true;for(int i=0;i<3;++i)candidate &= std::min(bounds[a][i+3],bounds[b][i+3])-std::max(bounds[a][i],bounds[b][i])>1e-4;
+            if(!candidate)continue;
+            SCOPED_TRACE(model.Items[a].Key+" / "+model.Items[b].Key);
+            char trace[8]{};
+            if(GetEnvironmentVariableA("ICAX_STAIR_TRACE",trace,sizeof(trace)))
+                std::cout << "Pair: " << model.Items[a].Key << " / " << model.Items[b].Key << std::endl;
+            BRepAlgoAPI_Common common;
+            common.SetNonDestructive(true);
+            common.SetRunParallel(false);
+            common.SetFuzzyValue(1.e-6);
+            auto copedTo=[&](size_t source,size_t receiver){
+                const auto found=model.Items[source].Properties.find("manufacturing.operations");
+                if(found==model.Items[source].Properties.end())return false;
+                const auto expected=model.Items[receiver].Key+".envelope.solid";
+                for(const auto& operation:found->second.To<iCAX::Data::VariantArray>()){
+                    const auto data=operation.To<iCAX::Data::ObjectMap>();
+                    const auto receivers=data.find("receivers");if(receivers==data.end())continue;
+                    for(const auto& tool:receivers->second.To<iCAX::Data::VariantArray>()){
+                        if(tool.To<std::string>()!=expected)continue;
+                        // Verify an actual subtraction node, not only an item
+                        // label, before using the pre-split coincident-face path.
+                        std::vector<std::string> pending{model.Items[source].Representations.at("result")};
+                        while(!pending.empty()){
+                            const auto key=pending.back();pending.pop_back();
+                            const auto it=std::find_if(model.Geometry.begin(),model.Geometry.end(),[&](const auto& n){return n.Key==key;});
+                            if(it==model.Geometry.end())continue;
+                            if(it->Operator==EGeometryOperator::Boolean){
+                                const auto& args=it->Arguments;
+                                if(args.at("operation").To<std::string>()=="subtract")
+                                    for(const auto& value:args.at("tools").To<iCAX::Data::VariantArray>())
+                                        if(value.To<std::string>()==expected)return true;
+                                pending.push_back(args.at("target").To<std::string>());
+                            } else pending.insert(pending.end(),it->Inputs.begin(),it->Inputs.end());
+                        }
+                    }
+                }
+                return false;
+            };
+            // These interfaces have already been split against the receiver's
+            // exact outer surface. Gluing avoids re-solving infinitely many
+            // coincident elliptic-surface intersections; unrelated pairs retain
+            // the full intersection algorithm.
+            if(copedTo(a,b)||copedTo(b,a))common.SetGlue(BOPAlgo_GlueShift);
+            NCollection_List<TopoDS_Shape> arguments,tools;
+            arguments.Append(shapes[a]);tools.Append(shapes[b]);
+            common.SetArguments(arguments);common.SetTools(tools);common.Build();
+            ASSERT_TRUE(common.IsDone());
+            // A valid touching joint may return open faces/edges. Integrating
+            // those as a volume is origin-dependent and can invent interference.
+            // Only closed solid components represent overlapping material.
+            double overlap=0;
+            for(TopExp_Explorer solid(common.Shape(),TopAbs_SOLID);solid.More();solid.Next())
+            {
+                overlap+=std::abs(RootSelectionShapeVolume(solid.Current()));
+                if(pairFilter[0]){
+                    GProp_GProps properties;BRepGProp::VolumeProperties(solid.Current(),properties);
+                    const auto point=properties.CentreOfMass();
+                    BRepClass3d_SolidClassifier ca(shapes[a],point,1.e-6),cb(shapes[b],point,1.e-6);
+                    std::cout<<"Overlap "<<properties.Mass()<<" at "<<point.X()<<","<<point.Y()<<","<<point.Z()
+                             <<" states "<<ca.State()<<","<<cb.State()<<" valid "<<BRepCheck_Analyzer(solid.Current()).IsValid()<<std::endl;
+                }
+            }
+            EXPECT_LT(overlap,.01);
+        }
+    }
+}
+
+TEST(TemplateRuntimeTest, DecorativeDoorMachiningSolids)
+{
+    using namespace iCAX::TemplateRuntime;
+    const auto root=std::filesystem::current_path();
+    CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
+    for(const auto* mode : {"lines","v","diamond","octagon","round_scene","panels","glass_lattice","continuous","protected","recess"}) {
+        SCOPED_TRACE(mode);
+        auto fixture=TemplateProtocolFixture(root,"decorative_door");
+        const std::string m(mode);
+        fixture.Parameters["pattern"]=m=="v" || m=="continuous" || m=="protected" ? std::string("lines") : m=="recess" ? std::string("diamond") : m;
+        fixture.Parameters["lineTool"]=std::string(m=="v"?"v":"flat");
+        fixture.Parameters["columns"]=1;
+        fixture.Parameters["rows"]=2;
+        fixture.Parameters["lineCount"]=3;
+        if(m=="v" || m=="recess")fixture.Parameters["machiningSide"]=std::string("both");
+        if(m=="recess")fixture.Parameters["regionProcess"]=std::string("recess");
+        if(m=="continuous"){
+            fixture.Parameters["composition"]=std::string("continuous");
+            fixture.Parameters["lineAngle"]=30.0;
+            fixture.Parameters["doorType"]=std::string("mother");
+        }
+        if(m=="protected"){fixture.Parameters["border"]=20.0;fixture.Parameters["lineCount"]=8;}
+        fixture.Parameters=CTemplateCodec::ValidateAndNormalizeParameters(fixture.Descriptor,fixture.Parameters);
+        for(const auto* purpose:{"display","manufacturing"}){
+            SCOPED_TRACE(purpose);
+            const auto model=CTemplateCodec::ParseNeutralModel(InvokeExplicitTemplatePurpose(host,fixture,purpose));
+            const auto geometry=iCAX::OpenCascade::EvaluateNeutralModel(model);
+            std::vector<TopoDS_Shape> shapes;
+            for(const auto& item:model.Items){
+                SCOPED_TRACE(item.Key);
+                const auto& shape=geometry.At(item.Representations.at("result"));
+                ASSERT_FALSE(shape.IsNull());
+                EXPECT_TRUE(BRepCheck_Analyzer(shape).IsValid());
+                EXPECT_GT(RootSelectionShapeVolume(shape),0.01);
+                int solids=0;
+                for(TopExp_Explorer e(shape,TopAbs_SOLID);e.More();e.Next())++solids;
+                EXPECT_EQ(solids,1);
+                if(item.Key=="leaf.1" || item.Key=="leaf.2"){
+                    const auto rawVolume=RootSelectionShapeVolume(geometry.At(item.Key+".solid"));
+                    EXPECT_LT(RootSelectionShapeVolume(shape),rawVolume-1.0);
+                    const auto bb=RootSelectionShapeBounds(geometry.At(item.Key+".solid"));
+                    // The lock keep-out must remain full thickness, including
+                    // through fretwork and both-sided pockets.
+                    const double lockX=item.Key=="leaf.1"?bb[3]-100:bb[0];
+                    const auto keep=BRepPrimAPI_MakeBox(gp_Pnt(lockX,-20,850),100,40,300).Shape();
+                    BRepAlgoAPI_Common retained(shape,keep);
+                    ASSERT_TRUE(retained.IsDone());
+                    EXPECT_NEAR(RootSelectionShapeVolume(retained.Shape()),100*40*300,.01);
+                    if(m=="v" || m=="recess"){
+                        const auto skin=BRepPrimAPI_MakeBox(gp_Pnt(bb[0],-14,0),bb[3]-bb[0],28,2200).Shape();
+                        BRepAlgoAPI_Common remaining(shape,skin);
+                        ASSERT_TRUE(remaining.IsDone());
+                        EXPECT_NEAR(RootSelectionShapeVolume(remaining.Shape()),(bb[3]-bb[0])*28*2200,.1);
+                    }
+                }
+                shapes.push_back(shape);
+            }
+            for(std::size_t a=0;a<shapes.size();++a)for(std::size_t b=a+1;b<shapes.size();++b){
+                BRepAlgoAPI_Common common(shapes[a],shapes[b]);
+                ASSERT_TRUE(common.IsDone());
+                EXPECT_LT(std::abs(RootSelectionShapeVolume(common.Shape())),.01);
+            }
+        }
+    }
+}
+
+TEST(TemplateRuntimeTest, AluminiumWindowSeriesProductionAndNativeSolids)
+{
+    using namespace iCAX::TemplateRuntime;
+    const auto root=std::filesystem::current_path();
+    CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
+    auto fixture=TemplateProtocolFixture(root,"aluminium_window");
+    EXPECT_THROW(InvokeExplicitTemplatePurpose(host,fixture,"manufacturing"),std::exception);
+    // A synthetic rule dataset exercises the file-series path. Never deploy it
+    // as an actual manufacturer series; the production catalogue keeps its gate.
+    std::ifstream input(root/"src/apps/tube-designer/templates/product/aluminium_window/systems/demonstration.json");
+    std::string json{std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>()};
+    auto data=CStandardJsonCodec::Parse(json).To<iCAX::Data::ObjectMap>();
+    data["status"]=std::string("verified");
+    data["manufacturer"]=std::string("UNIT TEST ONLY");
+    data["source"]=std::string("Synthetic regression fixture, not a production series");
+    data["machiningRules"]=CStandardJsonCodec::Parse(R"json({"sliding.bottom":[
+        {"kind":"roundThroughDepth","station":"Length/3","across":"Face/2","diameter":5},
+        {"kind":"rectThroughDepth","station":"Length*2/3","across":"Face/2","width":6,"height":8}
+    ]})json").To<iCAX::Data::ObjectMap>();
+    const auto directory=std::filesystem::temp_directory_path()/
+        ("icax-aluminium-test-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(directory);
+    const auto path=directory/"series.json";
+    struct Cleanup {
+        std::filesystem::path file,directory;
+        ~Cleanup(){std::error_code error;std::filesystem::remove(file,error);std::filesystem::remove(directory,error);}
+    } cleanup{path,directory};
+    {std::ofstream output(path);output<<CStandardJsonCodec::Serialize(data);}
+    fixture.Parameters["systemSource"]=std::string("file");
+    fixture.Parameters["systemFile"]=path.string();
+    for(const auto* type:{"fixed","sliding","hinged","mixed"})
+    {
+        SCOPED_TRACE(type);
+        fixture.Parameters["windowType"]=std::string(type);
+        fixture.Parameters["hingedCount"]=2;
+        fixture.Parameters["columns"]=std::string(type)=="mixed"?2:1;
+        fixture.Parameters["rows"]=std::string(type)=="mixed"?2:1;
+        fixture.Parameters["mergeTopLight"]=true;
+        fixture.Parameters["cell11"]=std::string("hinged");
+        fixture.Parameters["cell12"]=std::string("sliding");
+        fixture.Parameters=CTemplateCodec::ValidateAndNormalizeParameters(fixture.Descriptor,fixture.Parameters);
+        for(const auto* purpose:{"display","manufacturing"})
+        {
+            SCOPED_TRACE(purpose);
+            const auto model=CTemplateCodec::ParseNeutralModel(InvokeExplicitTemplatePurpose(host,fixture,purpose));
+            EXPECT_EQ(model.Parameters,fixture.Parameters);
+            const auto geometry=iCAX::OpenCascade::EvaluateNeutralModel(model);
+            for(const auto& item:model.Items){
+                const auto& shape=geometry.At(item.Representations.at("result"));
+                EXPECT_TRUE(BRepCheck_Analyzer(shape).IsValid())<<item.Key;
+                EXPECT_GT(RootSelectionShapeVolume(shape),0.01)<<item.Key;
+                if(item.Key.find(".sliding.")!=std::string::npos && item.Key.ends_with(".bottom"))
+                    EXPECT_LT(RootSelectionShapeVolume(shape),RootSelectionShapeVolume(geometry.At(item.Key+".solid"))-0.01);
+                if(std::string(purpose)=="manufacturing")
+                    EXPECT_EQ(item.Properties.at("manufacturing.partKind").To<std::string>(),"tube");
+            }
+            for(std::size_t i=0;i<model.Items.size();++i)
+                for(std::size_t j=i+1;j<model.Items.size();++j){
+                    BRepAlgoAPI_Common common(geometry.At(model.Items[i].Representations.at("result")),geometry.At(model.Items[j].Representations.at("result")));
+                    ASSERT_TRUE(common.IsDone());
+                    EXPECT_LT(std::abs(RootSelectionShapeVolume(common.Shape())),0.01)<<model.Items[i].Key<<" / "<<model.Items[j].Key;
+                }
+        }
+    }
+}
+
+TEST(TemplateRuntimeTest, LouverFinishedPartsAreValidAndDisjoint)
+{
+    const auto root = std::filesystem::current_path();
+    iCAX::TemplateRuntime::CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
+    for (const auto* connection : {"face_weld", "slot_insert", "through_insert", "split", "horizontal", "vertical"})
+    {
+        SCOPED_TRACE(connection);
+        auto fixture = TemplateProtocolFixture(root, "louver_window");
+        fixture.Parameters["width"] = 600.0;
+        fixture.Parameters["height"] = 600.0;
+        fixture.Parameters["bladeDirectionAngle"] = 30.0;
+        fixture.Parameters["bladeRollAngle"] = 45.0;
+        fixture.Parameters["arrayMode"] = std::string("count");
+        fixture.Parameters["bladeCount"] = 3;
+        fixture.Parameters["bladeConnection"] = std::string(connection);
+        fixture.Parameters["frameJoint"] = std::string("miter");
+        fixture.Parameters["middlePostCount"] = 1;
+        fixture.Parameters["supportMode"] = std::string("through");
+        if (std::string(connection) == "split") {
+            fixture.Parameters["bladeConnection"] = std::string("slot_insert");
+            fixture.Parameters["supportMode"] = std::string("split");
+            fixture.Parameters["bladeDirectionAngle"] = -30.0;
+            fixture.Parameters["bladeCount"] = 1;
+            fixture.Parameters["middleBeamCount"] = 1;
+        }
+        if (std::string(connection) == "horizontal" || std::string(connection) == "vertical") {
+            fixture.Parameters["bladeConnection"] = std::string("slot_insert");
+            fixture.Parameters["middlePostCount"] = 0;
+            fixture.Parameters["bladeDirectionAngle"] = std::string(connection) == "horizontal" ? 0.0 : 90.0;
+            fixture.Parameters["frameJoint"] = std::string(connection) == "horizontal" ? std::string("horizontal_wrap") : std::string("side_wrap");
+        }
+        fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
+            fixture.Descriptor, fixture.Parameters);
+        for (const auto* purpose : {"display", "manufacturing"})
+        {
+            SCOPED_TRACE(purpose);
+            const auto model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
+                InvokeExplicitTemplatePurpose(host, fixture, purpose));
+            EXPECT_EQ(model.Parameters, fixture.Parameters);
+            const auto geometry = iCAX::OpenCascade::EvaluateNeutralModel(model);
+            for (const auto& item : model.Items)
+            {
+                const auto& shape = geometry.At(item.Representations.at("result"));
+                EXPECT_FALSE(shape.IsNull()) << item.Key;
+                EXPECT_TRUE(BRepCheck_Analyzer(shape).IsValid()) << item.Key;
+                GProp_GProps properties;
+                BRepGProp::VolumeProperties(shape, properties);
+                EXPECT_GT(properties.Mass(), 0.01) << item.Key;
+            }
+            for (std::size_t i=0;i<model.Items.size();++i)
+                for (std::size_t j=i+1;j<model.Items.size();++j)
+                {
+                    BRepAlgoAPI_Common common(geometry.At(model.Items[i].Representations.at("result")),
+                                             geometry.At(model.Items[j].Representations.at("result")));
+                    ASSERT_TRUE(common.IsDone());
+                    GProp_GProps properties;
+                    BRepGProp::VolumeProperties(common.Shape(), properties);
+                    EXPECT_LT(std::abs(properties.Mass()), 0.01) << model.Items[i].Key << " / " << model.Items[j].Key;
+                }
+        }
+    }
+}
+
 TEST(TemplateRuntimeTest, ExplicitPythonStairAndRailingPurposesUseTheSingleResultProtocol)
 {
     const auto _Root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    for (const auto* _Directory : { "straight_stair_railing", "straight_steel_staircase",
-        "l_turn_steel_staircase", "u_turn_steel_staircase" })
+    for (const auto* _Directory : { "modular_guardrail", "straight_steel_staircase" })
     {
         SCOPED_TRACE(_Directory);
         const auto _Fixture = TemplateProtocolFixture(_Root, _Directory);

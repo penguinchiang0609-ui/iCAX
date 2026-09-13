@@ -22,30 +22,9 @@
     "dimensionSource": "referenced-parametric-model"
   },
   "parameters": [
-    {
-      "key": "width",
-      "displayName": "上翼宽 / mm",
-      "valueType": "number",
-      "defaultValue": 80,
-      "min": 1,
-      "step": 0.1
-    },
-    {
-      "key": "lowerWidth",
-      "displayName": "下翼宽 / mm",
-      "valueType": "number",
-      "defaultValue": 120,
-      "min": 1,
-      "step": 0.1
-    },
-    {
-      "key": "depth",
-      "displayName": "总高 / mm",
-      "valueType": "number",
-      "defaultValue": 160,
-      "min": 1,
-      "step": 0.1
-    },
+    {"key":"width","displayName":"上翼宽 / mm","valueType":"number","defaultValue":80,"min":1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"lowerWidth","displayName":"下翼宽 / mm","valueType":"number","defaultValue":120,"min":1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"depth","displayName":"总高 / mm","valueType":"number","defaultValue":160,"min":1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "wallThickness",
       "displayName": "腹板厚 / mm",
@@ -54,46 +33,11 @@
       "min": 0.1,
       "step": 0.1
     },
-    {
-      "key": "flangeThickness",
-      "displayName": "上翼厚 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": 0.1,
-      "step": 0.1
-    },
-    {
-      "key": "lowerThickness",
-      "displayName": "下翼厚 / mm",
-      "valueType": "number",
-      "defaultValue": 10,
-      "min": 0.1,
-      "step": 0.1
-    },
-    {
-      "key": "webOffset",
-      "displayName": "腹板偏心 / mm",
-      "valueType": "number",
-      "defaultValue": 0,
-      "min": -10000,
-      "step": 0.1
-    },
-    {
-      "key": "rootRadius",
-      "displayName": "根部圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 4,
-      "min": 0,
-      "step": 0.1
-    },
-    {
-      "key": "toeRadius",
-      "displayName": "趾部圆角 / mm",
-      "valueType": "number",
-      "defaultValue": 1,
-      "min": 0,
-      "step": 0.1
-    },
+    {"key":"flangeThickness","displayName":"上翼厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"lowerThickness","displayName":"下翼厚 / mm","valueType":"number","defaultValue":10,"min":0.1,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"webOffset","displayName":"腹板偏心 / mm","valueType":"number","defaultValue":0,"min":-10000,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"rootRadius","displayName":"根部圆角 / mm","valueType":"number","defaultValue":4,"min":0,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"toeRadius","displayName":"趾部圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":0.1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "geometrySource",
       "displayName": "轮廓来源",
@@ -114,18 +58,8 @@
         }
       ]
     },
-    {
-      "key": "materialBoundary",
-      "displayName": "完整材料边界 JSON（实际轮廓模式）",
-      "valueType": "string",
-      "defaultValue": ""
-    },
-    {
-      "key": "sourceRevision",
-      "displayName": "来源及图纸版本",
-      "valueType": "string",
-      "defaultValue": ""
-    },
+    {"key":"materialBoundary","displayName":"完整材料边界 JSON（实际轮廓模式）","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
+    {"key":"sourceRevision","displayName":"来源及图纸版本","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
     {
       "key": "mirrorX",
       "displayName": "左右镜像",

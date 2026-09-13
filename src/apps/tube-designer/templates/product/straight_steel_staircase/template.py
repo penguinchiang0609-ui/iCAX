@@ -21,9 +21,4 @@ else:
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
-    return _shared_module.generate_steel_staircase(
-        parameters, context,
-        template_id="straight-steel-staircase",
-        template_version="1.0.0",
-        layout="straight",
-    )
+    return _shared_module.generate(parameters, context)

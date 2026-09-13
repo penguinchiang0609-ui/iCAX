@@ -55,6 +55,7 @@
     <ClCompile Include="BRepCompoundRoundTripTests.cpp" />
     <ClCompile Include="PunchPersistenceSDOTests.cpp">
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ClCompile Include="ComponentResourceTests.cpp" />
     <ClCompile Include="ComponentModelLibraryTests.cpp" />

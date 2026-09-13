@@ -1,0 +1,926 @@
+{
+  "schema": "icax.window-profile-system",
+  "schemaVersion": 1,
+  "id": "demonstration-not-for-production",
+  "manufacturer": "",
+  "series": "结构演示（非厂家系列，禁止生产）",
+  "revision": "1",
+  "status": "demonstration",
+  "source": "仅用于通用窗型机制测试，矩形空心截面不是实际窗料",
+  "profiles": {
+    "frame": {
+      "name": "frame（演示矩形空心料）",
+      "face": 50,
+      "depth": 120,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -60
+            ],
+            [
+              50,
+              -60
+            ],
+            [
+              50,
+              60
+            ],
+            [
+              0,
+              60
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -58.5
+            ],
+            [
+              1.5,
+              58.5
+            ],
+            [
+              48.5,
+              58.5
+            ],
+            [
+              48.5,
+              -58.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "mullion": {
+      "name": "mullion（演示矩形空心料）",
+      "face": 50,
+      "depth": 120,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -60
+            ],
+            [
+              50,
+              -60
+            ],
+            [
+              50,
+              60
+            ],
+            [
+              0,
+              60
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -58.5
+            ],
+            [
+              1.5,
+              58.5
+            ],
+            [
+              48.5,
+              58.5
+            ],
+            [
+              48.5,
+              -58.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "transom": {
+      "name": "transom（演示矩形空心料）",
+      "face": 50,
+      "depth": 120,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -60
+            ],
+            [
+              50,
+              -60
+            ],
+            [
+              50,
+              60
+            ],
+            [
+              0,
+              60
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -58.5
+            ],
+            [
+              1.5,
+              58.5
+            ],
+            [
+              48.5,
+              58.5
+            ],
+            [
+              48.5,
+              -58.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "slide-top": {
+      "name": "slide-top（演示矩形空心料）",
+      "face": 32,
+      "depth": 20,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -10
+            ],
+            [
+              32,
+              -10
+            ],
+            [
+              32,
+              10
+            ],
+            [
+              0,
+              10
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -8.5
+            ],
+            [
+              1.5,
+              8.5
+            ],
+            [
+              30.5,
+              8.5
+            ],
+            [
+              30.5,
+              -8.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "slide-bottom": {
+      "name": "slide-bottom（演示矩形空心料）",
+      "face": 38,
+      "depth": 20,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -10
+            ],
+            [
+              38,
+              -10
+            ],
+            [
+              38,
+              10
+            ],
+            [
+              0,
+              10
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -8.5
+            ],
+            [
+              1.5,
+              8.5
+            ],
+            [
+              36.5,
+              8.5
+            ],
+            [
+              36.5,
+              -8.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "jamb": {
+      "name": "jamb（演示矩形空心料）",
+      "face": 35,
+      "depth": 20,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -10
+            ],
+            [
+              35,
+              -10
+            ],
+            [
+              35,
+              10
+            ],
+            [
+              0,
+              10
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -8.5
+            ],
+            [
+              1.5,
+              8.5
+            ],
+            [
+              33.5,
+              8.5
+            ],
+            [
+              33.5,
+              -8.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "interlock": {
+      "name": "interlock（演示矩形空心料）",
+      "face": 42,
+      "depth": 20,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -10
+            ],
+            [
+              42,
+              -10
+            ],
+            [
+              42,
+              10
+            ],
+            [
+              0,
+              10
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -8.5
+            ],
+            [
+              1.5,
+              8.5
+            ],
+            [
+              40.5,
+              8.5
+            ],
+            [
+              40.5,
+              -8.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "hinged": {
+      "name": "hinged（演示矩形空心料）",
+      "face": 35,
+      "depth": 30,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -15
+            ],
+            [
+              35,
+              -15
+            ],
+            [
+              35,
+              15
+            ],
+            [
+              0,
+              15
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -13.5
+            ],
+            [
+              1.5,
+              13.5
+            ],
+            [
+              33.5,
+              13.5
+            ],
+            [
+              33.5,
+              -13.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "meeting": {
+      "name": "meeting（演示矩形空心料）",
+      "face": 35,
+      "depth": 30,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -15
+            ],
+            [
+              35,
+              -15
+            ],
+            [
+              35,
+              15
+            ],
+            [
+              0,
+              15
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -13.5
+            ],
+            [
+              1.5,
+              13.5
+            ],
+            [
+              33.5,
+              13.5
+            ],
+            [
+              33.5,
+              -13.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    },
+    "screen": {
+      "name": "screen（演示矩形空心料）",
+      "face": 24,
+      "depth": 12,
+      "wallThickness": 1.5,
+      "material": "铝合金（演示）",
+      "referenceOrigin": [
+        0,
+        0
+      ],
+      "referenceAngle": 0,
+      "contours": [
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              0,
+              -6
+            ],
+            [
+              24,
+              -6
+            ],
+            [
+              24,
+              6
+            ],
+            [
+              0,
+              6
+            ]
+          ]
+        },
+        {
+          "kind": "polygon",
+          "points": [
+            [
+              1.5,
+              -4.5
+            ],
+            [
+              1.5,
+              4.5
+            ],
+            [
+              22.5,
+              4.5
+            ],
+            [
+              22.5,
+              -4.5
+            ]
+          ],
+          "isHole": true
+        }
+      ],
+      "intrinsicFeatures": [],
+      "compatibleProfiles": [
+        "frame",
+        "mullion",
+        "transom",
+        "slide-top",
+        "slide-bottom",
+        "jamb",
+        "interlock",
+        "hinged",
+        "meeting",
+        "screen"
+      ]
+    }
+  },
+  "roles": {
+    "frame.top": "frame",
+    "frame.bottom": "frame",
+    "frame.left": "frame",
+    "frame.right": "frame",
+    "mullion": "mullion",
+    "transom": "transom",
+    "sliding.top": "slide-top",
+    "sliding.bottom": "slide-bottom",
+    "sliding.jamb": "jamb",
+    "sliding.interlock": "interlock",
+    "hinged.top": "hinged",
+    "screen.top": "screen",
+    "hinged.bottom": "hinged",
+    "screen.bottom": "screen",
+    "hinged.left": "hinged",
+    "screen.left": "screen",
+    "hinged.right": "hinged",
+    "screen.right": "screen",
+    "hinged.meeting": "meeting"
+  },
+  "constants": {
+    "SideGap": 4,
+    "HeightGap": 4,
+    "Overlap": 20,
+    "TrackSpacing": 32,
+    "GlassGap": 3,
+    "ScreenGap": 6,
+    "MeetingGap": 4
+  },
+  "dimensions": {
+    "slidingWidth": "(ApertureWidth-2*SideGap+(PanelCount-1)*Overlap)/PanelCount",
+    "slidingHeight": "ApertureHeight-2*HeightGap",
+    "slidingStart": "SideGap+PanelIndex*(PanelWidth-Overlap)",
+    "slidingBottom": "HeightGap",
+    "trackSpacing": "TrackSpacing",
+    "hingedWidth": "(ApertureWidth-2*SideGap-(PanelCount-1)*MeetingGap)/PanelCount",
+    "hingedHeight": "ApertureHeight-2*HeightGap",
+    "hingedStart": "SideGap+PanelIndex*(PanelWidth+MeetingGap)",
+    "hingedBottom": "HeightGap",
+    "screenWidth": "PanelWidth-2",
+    "screenHeight": "ApertureHeight-2*ScreenGap",
+    "screenBottom": "ScreenGap",
+    "fixedGlassWidth": "InnerWidth-2*GlassGap",
+    "fixedGlassHeight": "InnerHeight-2*GlassGap",
+    "sashGlassWidth": "InnerWidth-2*GlassGap",
+    "sashGlassHeight": "InnerHeight-2*GlassGap",
+    "meshWidth": "InnerWidth",
+    "meshHeight": "InnerHeight",
+    "glassMinThickness": 3,
+    "glassMaxThickness": 8
+  },
+  "joints": {
+    "frame": "miter",
+    "sliding": "side_wrap",
+    "hinged": "miter",
+    "screen": "miter"
+  },
+  "compatibility": {
+    "panels": [
+      "fixed",
+      "sliding",
+      "hinged",
+      "screen"
+    ],
+    "maxTracks": 4
+  },
+  "machiningRules": {},
+  "hardwareRules": {
+    "sliding": [
+      {
+        "name": "滑轮（待系列选型）",
+        "quantity": 2
+      },
+      {
+        "name": "锁具（待系列选型）",
+        "quantity": 1
+      }
+    ],
+    "hinged": [
+      {
+        "name": "合页（待系列选型）",
+        "quantity": 2
+      },
+      {
+        "name": "执手（待系列选型）",
+        "quantity": 1
+      }
+    ],
+    "screen": [
+      {
+        "name": "纱窗滑轮（待系列选型）",
+        "quantity": 2
+      },
+      {
+        "name": "纱窗拉手（待系列选型）",
+        "quantity": 1
+      }
+    ]
+  },
+  "trackLayouts": {
+    "2/2/glass": {
+      "glass": [
+        0,
+        1
+      ]
+    },
+    "2/3/glass": {
+      "glass": [
+        0,
+        1,
+        0
+      ]
+    },
+    "2/4/glass": {
+      "glass": [
+        0,
+        1,
+        0,
+        1
+      ]
+    },
+    "3/2/glass": {
+      "glass": [
+        0,
+        1
+      ]
+    },
+    "3/2/screen": {
+      "glass": [
+        0,
+        1
+      ],
+      "screen": 2
+    },
+    "3/3/glass": {
+      "glass": [
+        0,
+        1,
+        2
+      ]
+    },
+    "3/3/screen": {
+      "glass": [
+        0,
+        1,
+        0
+      ],
+      "screen": 2
+    },
+    "3/4/glass": {
+      "glass": [
+        0,
+        1,
+        2,
+        0
+      ]
+    },
+    "3/4/screen": {
+      "glass": [
+        0,
+        1,
+        0,
+        1
+      ],
+      "screen": 2
+    },
+    "4/2/glass": {
+      "glass": [
+        0,
+        1
+      ]
+    },
+    "4/2/screen": {
+      "glass": [
+        0,
+        1
+      ],
+      "screen": 3
+    },
+    "4/3/glass": {
+      "glass": [
+        0,
+        1,
+        2
+      ]
+    },
+    "4/3/screen": {
+      "glass": [
+        0,
+        1,
+        2
+      ],
+      "screen": 3
+    },
+    "4/4/glass": {
+      "glass": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "4/4/screen": {
+      "glass": [
+        0,
+        1,
+        2,
+        0
+      ],
+      "screen": 3
+    }
+  },
+  "units": "mm"
+}

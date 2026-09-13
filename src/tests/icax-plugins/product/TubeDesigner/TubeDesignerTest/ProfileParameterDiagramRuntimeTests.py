@@ -40,6 +40,8 @@ class ProfileParameterDiagramRuntimeTests(unittest.TestCase):
         diagram = profile["parameterDiagram"]
         self.assertEqual(1, diagram["schemaVersion"])
         declared = {definition["key"] for definition in descriptor["parameters"]}
+        if descriptor["id"] == "polygon" and profile["parameters"]["shapeMode"] != "star":
+            declared.remove("starInnerRatio")
         self.assertEqual(declared, {item["parameter"] for item in diagram["annotations"]})
         for item in diagram["annotations"]:
             self.assertTrue(item["description"])
@@ -86,7 +88,10 @@ class ProfileParameterDiagramRuntimeTests(unittest.TestCase):
                         points = result["contours"][0]["points"]
                         self.assertEqual(points[0], self.annotation(result, "shapeMode")["point"])
                         self.assertEqual(points[2], self.annotation(result, "sideCount")["point"])
-                        self.assertEqual(points[1], self.annotation(result, "starInnerRatio")["point"])
+                        if mode == "star":
+                            self.assertEqual(points[1], self.annotation(result, "starInnerRatio")["point"])
+                        else:
+                            self.assertFalse(any(a["parameter"] == "starInnerRatio" for a in result["parameterDiagram"]["annotations"]))
                         self.assert_valid_diagram(result, package["descriptor"])
 
     def test_rectangle_corner_leader_lands_on_the_arc_not_its_missing_square_corner(self):
