@@ -7,5 +7,20 @@
     {"key":"depth","displayName":"名义插入深度（mm）","valueType":"number","defaultValue":20,"min":0.01,"max":100000},
     {"key":"sideClearance","displayName":"母口每侧装配间隙（mm）","valueType":"number","defaultValue":0,"min":0,"max":1000,"visibleWhen":{"key":"gender","op":"eq","value":"female"}},
     {"key":"axialClearance","displayName":"母口根部装配间隙（mm）","valueType":"number","defaultValue":0,"min":0,"max":1000,"visibleWhen":{"key":"gender","op":"eq","value":"female"}}
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 200 130",
+    "paths": ["M18 25 H118 V43 H172 V87 H118 V105 H18 Z"],
+    "annotations": [
+      { "parameter": "gender", "kind": "leader", "side": "top", "point": [145, 65], "description": "公口保留插舌，母口切出对应插槽" },
+      { "parameter": "width", "kind": "linear", "axis": "y", "side": "right", "from": [145, 43], "to": [145, 87], "description": "插舌或插槽的名义宽度" },
+      { "parameter": "depth", "kind": "linear", "axis": "x", "side": "bottom", "from": [118, 65], "to": [172, 65], "description": "从端面起算的名义插入深度" },
+      { "parameter": "sideClearance", "kind": "leader", "side": "left", "point": [145, 43], "visibleWhen": { "op": "eq", "parameter": "gender", "value": "female" }, "description": "仅母口：插槽每侧增加的装配间隙" },
+      { "parameter": "axialClearance", "kind": "leader", "side": "left", "point": [118, 65], "visibleWhen": { "op": "eq", "parameter": "gender", "value": "female" }, "description": "仅母口：根部沿轴向增加的间隙" }
+    ],
+    "variants": [
+      { "visibleWhen": { "op": "eq", "parameter": "gender", "value": "female" }, "paths": ["M18 25 H172 V43 H118 V87 H172 V105 H18 Z"] }
+    ]
+  }
 }

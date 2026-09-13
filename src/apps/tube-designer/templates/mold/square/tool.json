@@ -17,5 +17,13 @@
       "max": 100000,
       "step": 0.1
     }
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 140 120",
+    "paths": ["M30 20 H110 V100 H30 Z"],
+    "annotations": [
+      { "parameter": "size", "kind": "linear", "axis": "x", "side": "bottom", "from": [30, 60], "to": [110, 60], "description": "方孔四边等长" }
+    ]
+  }
 }

@@ -44,6 +44,7 @@ import { getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs"
 import { componentLibraryState, handleComponentLibraryAction, handleComponentLibraryRibbonCommand, refreshComponentModels } from "./componentLibrary.mjs";
 import { ensureToolLibraryCatalogue, handleToolLibraryAction, handleToolLibraryRibbonCommand } from "./toolLibrary.mjs";
 import { handleProductTemplateLibraryAction, productTemplateLibrarySelectedTemplateId } from "./templateLibrary.mjs";
+import { escapeText } from "../../_shared/workbench/utils/format.mjs";
 
 export const DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
 export const RESOURCE_LIBRARY_SWITCH_PROGRESS_MINIMUM_VISIBLE_MS = 500;
@@ -380,6 +381,17 @@ export async function handleDesignerAreaAction(context, view, action, target, op
 }
 
 export async function handleDesignerRibbonCommand(context, view, commandId, ops) {
+  const opensAddDialog = commandId === "designer.add" || commandId === "designer.generate";
+  if (opensAddDialog) {
+    if (view.tubeDesignerExportOperation) return true;
+    const startupInFlight = Boolean(
+      view.tubeDesignerLoading || view.tubeDesignerSynchronizationPromise,
+    );
+    // A click made during the initial scene read is a user request, not noise.
+    // Queue it behind that read so one click eventually opens the catalogue.
+    if (!view.pending || startupInFlight) await openAddDialog(context, view, ops);
+    return true;
+  }
   if (view.pending || view.tubeDesignerExportOperation) return true;
   const resourceAreas = {
     "resources.products": "products",
@@ -495,10 +507,6 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
   }
   if (commandId === "designer.templates.delete") {
     await deleteProductTemplate(context, view, ops);
-    return true;
-  }
-  if (commandId === "designer.add" || commandId === "designer.generate") {
-    await openAddDialog(context, view, ops);
     return true;
   }
   if (commandId === "designer.batch-add" || commandId === "designer.import-excel") {
@@ -977,6 +985,31 @@ export function getDesignerRenderSignature(designer = {}) {
 }
 
 async function openAddDialog(context, view, ops) {
+  if (view.tubeDesignerAddOpeningPromise) return view.tubeDesignerAddOpeningPromise;
+  if (view.tubeDesignerAddDialogOpen) return true;
+  const startupInFlight = Boolean(
+    view.tubeDesignerLoading || view.tubeDesignerSynchronizationPromise,
+  );
+  if (view.pending && !startupInFlight) return false;
+  const opening = openAddDialogAfterStartup(context, view, ops);
+  view.tubeDesignerAddOpeningPromise = opening;
+  try {
+    return await opening;
+  } finally {
+    if (view.tubeDesignerAddOpeningPromise === opening) {
+      view.tubeDesignerAddOpeningPromise = null;
+    }
+  }
+}
+
+async function openAddDialogAfterStartup(context, view, ops) {
+  // The command can arrive immediately after the first workbench paint. Yield
+  // once so entry.mjs can publish its shared initialization promises.
+  await Promise.resolve();
+  const sceneSynchronization = view.tubeDesignerSynchronizationPromise;
+  if (sceneSynchronization) {
+    try { await sceneSynchronization; } catch (_) { /* expose the scene error below */ }
+  }
   view.tubeDesignerAddInstanceQuantity = 1;
   const designer = view.scene?.tubeDesigner ?? {};
   let template = getDefaultTemplate(designer.templates ?? []);
@@ -985,19 +1018,79 @@ async function openAddDialog(context, view, ops) {
     ops.renderProject(context, view);
     return;
   }
+  const createdAt = new Date().toISOString();
+  let entry = getCatalogEntry(designer.templates, template.id);
+  view.tubeDesignerAddDialogOpen = true;
+  view.tubeDesignerAddTemplateId = template.id;
+  view.tubeDesignerAddCatalogPresetId = entry?.presetId ?? "";
+  view.tubeDesignerAddCatalogEntryId = entry?.catalogEntryId ?? template.id;
+  view.tubeDesignerAddCreatedAt = createdAt;
+  view.tubeDesignerAddInstanceName = makeInstanceName(
+    { ...template, name: entry?.displayName ?? template.name },
+    createdAt,
+  );
+  view.tubeDesignerAddDraft = {
+    ...getDefaultParameters(designer.templates, template.id),
+    ...(entry?.catalogParameters ?? {}),
+  };
+  view.tubeDesignerAddPresetSelection = "";
+  view.tubeDesignerExpandedTemplateGroupIds = getCatalogEntryGroupKeys(
+    designer.templates, template.id, entry?.presetId ?? "",
+  );
+  view.tubeDesignerAddCatalogTabId = view.tubeDesignerExpandedTemplateGroupIds[0] ?? "";
+  view.tubeDesignerAddScrollAnchor = null;
+  view.tubeDesignerAddScrollAnchors = null;
+  view.tubeDesignerTemplateSwitchPending = true;
+  view.tubeDesignerDisassemblySelectorOpen = false;
+  view.tubeDesignerBreakdownOpen = false;
+  view.error = "";
+  view.viewport?.setContinuousRendering?.(false);
+  if (!mountAddDialog(context, designer, view)) ops.renderProject(context, view);
+  let progress = showAddTemplateSwitchProgress(context, {
+    title: "正在打开产品目录",
+    message: "正在读取模板参数与常用配置",
+    phase: "首次加载",
+  });
+  await waitForPaint();
+  let progressShownAt = progress ? nowMilliseconds() : null;
   try {
-    view.tubeDesignerTemplateSwitchPending = true;
+    // ListUserData and template descriptors share the embedded Python host.
+    // Reuse the startup requests instead of racing them on the first click.
+    const userDataSynchronization = view.tubeDesignerUserDataSynchronizationPromise;
+    if (userDataSynchronization) {
+      try { await userDataSynchronization; } catch (_) { /* template loading remains usable */ }
+    }
+    const userDataRefresh = view.tubeDesignerUserDataRefreshPromise;
+    if (userDataRefresh) {
+      try { await userDataRefresh; } catch (_) { /* template loading remains usable */ }
+    }
+    // Startup hydration may repaint the workbench while this modal is open.
+    // Restore the in-dialog feedback before starting the descriptor request.
+    if (!progress?.isConnected) {
+      progress = showAddTemplateSwitchProgress(context, {
+        title: "正在打开产品目录",
+        message: "正在读取模板参数与常用配置",
+        phase: "首次加载",
+      });
+      progressShownAt = progress ? nowMilliseconds() : progressShownAt;
+      await waitForPaint();
+    }
     await ensureTemplateDescriptor(context, view, template.id);
     template = getTemplateById(designer.templates, template.id) ?? template;
   } catch (error) {
     view.tubeDesignerTemplateSwitchPending = false;
-    view.error = error?.message ?? String(error);
+    const message = error?.message ?? String(error);
+    closeAddDialog(context, view, ops);
+    view.error = message;
     ops.renderProject(context, view);
-    return;
+    return false;
+  } finally {
+    if (progressShownAt != null) {
+      await waitForMinimumDuration(progressShownAt, ADD_TEMPLATE_PROGRESS_MINIMUM_VISIBLE_MS);
+    }
+    progress?.remove?.();
   }
-  const createdAt = new Date().toISOString();
-  const entry = getCatalogEntry(designer.templates, template.id);
-  view.tubeDesignerAddDialogOpen = true;
+  entry = getCatalogEntry(designer.templates, template.id);
   view.tubeDesignerAddTemplateId = template.id;
   view.tubeDesignerAddCatalogPresetId = entry?.presetId ?? "";
   view.tubeDesignerAddCatalogEntryId = entry?.catalogEntryId ?? template.id;
@@ -1015,9 +1108,10 @@ async function openAddDialog(context, view, ops) {
   view.tubeDesignerDisassemblySelectorOpen = false;
   view.tubeDesignerBreakdownOpen = false;
   view.error = "";
-  view.tubeDesignerTemplateSwitchPending = false;
-  view.viewport?.setContinuousRendering?.(false);
+  // Rebuild only the modal so the newly loaded descriptor enables its fields
+  // without refreshing the scene or either side pane.
   if (!mountAddDialog(context, designer, view)) ops.renderProject(context, view);
+  return true;
 }
 
 function closeAddDialog(context, view, ops) {
@@ -2707,7 +2801,9 @@ function captureParameterPanelState(context, view, editedTarget = null) {
   captureInstanceListState(context, view);
   const panel = context.mount?.querySelector?.("[data-tube-designer-parameter-form]");
   if (!panel) return;
-  const sections = panel.querySelector(".tube-designer-parameter-sections");
+  const scroller = panel.querySelector("[data-tube-designer-parameter-scroll]")
+    ?? panel.querySelector(".tube-designer-parameter-sections");
+  const detailScroller = panel.querySelector("[data-tube-designer-product-detail-scroll]");
   const currentProductId = String(view.scene?.tubeDesigner?.product?.entityId ?? "");
   const disclosure = view.tubeDesignerParameterPanelProductId === currentProductId
     ? { ...(view.tubeDesignerParameterDisclosureState ?? {}) } : {};
@@ -2719,9 +2815,13 @@ function captureParameterPanelState(context, view, editedTarget = null) {
     view.scene?.tubeDesigner?.product?.entityId ?? "",
   );
   view.tubeDesignerExpandedParameterGroups = Object.keys(disclosure).filter((key) => disclosure[key]);
-  view.tubeDesignerParameterPanelScrollTop = Number(sections?.scrollTop ?? 0);
-  view.tubeDesignerParameterPanelScrollAnchor = captureScrollAnchor(sections, editedTarget);
-  const parameterKey = String(editedTarget?.dataset?.tubeDesignerParameter ?? "").trim();
+  view.tubeDesignerParameterPanelScrollTop = Number(scroller?.scrollTop ?? 0);
+  view.tubeDesignerParameterPanelScrollAnchor = captureScrollAnchor(scroller, editedTarget);
+  view.tubeDesignerProductDetailScrollTop = Number(detailScroller?.scrollTop ?? 0);
+  const activeElement = scroller?.ownerDocument?.activeElement ?? null;
+  const parameterTarget = editedTarget
+    ?? (scroller?.contains?.(activeElement) ? activeElement : null);
+  const parameterKey = String(parameterTarget?.dataset?.tubeDesignerParameter ?? "").trim();
   if (parameterKey) {
     view.tubeDesignerLastEditedParameterKey = parameterKey;
     view.tubeDesignerRestoreParameterFocus = true;
@@ -2736,19 +2836,24 @@ function restoreParameterPanelState(context, view) {
     return;
   }
   const panel = context.mount?.querySelector?.("[data-tube-designer-parameter-form]");
-  const sections = panel?.querySelector?.(".tube-designer-parameter-sections");
-  if (!sections) {
+  const scroller = panel?.querySelector?.("[data-tube-designer-parameter-scroll]")
+    ?? panel?.querySelector?.(".tube-designer-parameter-sections");
+  if (!scroller) {
     restoreInstanceListState(context, view);
     return;
   }
+  const detailScroller = panel?.querySelector?.("[data-tube-designer-product-detail-scroll]");
+  if (detailScroller) {
+    detailScroller.scrollTop = Number(view.tubeDesignerProductDetailScrollTop ?? 0);
+  }
   const shouldRestoreFocus = !view.pending && Boolean(view.tubeDesignerRestoreParameterFocus);
   const restoredAnchor = restoreScrollAnchor(
-    sections,
+    scroller,
     view.tubeDesignerParameterPanelScrollAnchor,
     { restoreFocus: shouldRestoreFocus },
   );
   if (!view.tubeDesignerParameterPanelScrollAnchor) {
-    sections.scrollTop = Number(view.tubeDesignerParameterPanelScrollTop ?? 0);
+    scroller.scrollTop = Number(view.tubeDesignerParameterPanelScrollTop ?? 0);
   }
   if (!shouldRestoreFocus) {
     restoreInstanceListState(context, view);
@@ -2895,7 +3000,7 @@ function synchronizeSelectedTemplateCard(context, catalogEntryId) {
   }
 }
 
-function showAddTemplateSwitchProgress(context) {
+function showAddTemplateSwitchProgress(context, options = {}) {
   const dialog = resolveDesignerMount(context)?.querySelector?.("[data-tube-designer-add-dialog]");
   if (!dialog?.insertAdjacentHTML) return null;
   dialog.querySelector?.("[data-tube-designer-template-switch-progress]")?.remove?.();
@@ -2903,10 +3008,10 @@ function showAddTemplateSwitchProgress(context) {
     <div class="tube-designer-add-template-progress" data-tube-designer-template-switch-progress role="status" aria-live="polite">
       <div class="tube-designer-export-progress-card">
         <span class="tube-designer-export-spinner" aria-hidden="true"></span>
-        <strong>正在切换模板</strong>
-        <span>正在更新参数与示意图</span>
+        <strong>${escapeText(options.title ?? "正在切换模板")}</strong>
+        <span>${escapeText(options.message ?? "正在更新参数与示意图")}</span>
         <div class="tube-designer-export-progress-track is-indeterminate"><i style="width:36%"></i></div>
-        <small>正在更新</small>
+        <small>${escapeText(options.phase ?? "正在更新")}</small>
         <em>完成后将自动恢复当前焦点</em>
       </div>
     </div>`);

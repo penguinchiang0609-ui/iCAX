@@ -2932,6 +2932,38 @@ TEST(TemplateRuntimeTest, ExplicitPythonContinuousFrameReturnsAssemblyOrGroovedS
     }
 }
 
+TEST(TemplateRuntimeTest, ProductLocalWindowGrooveSolids)
+{
+    using namespace iCAX::TemplateRuntime;
+    const auto root=std::filesystem::current_path();
+    CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
+    for(const auto* mode:{"sharp_v","rounded_v","left_arc","right_arc","male","rounded_male","relief","blind"}){
+        SCOPED_TRACE(mode);
+        auto fixture=TemplateProtocolFixture(root,"single_face_security_window");
+        const std::string name=mode;
+        const auto style=name=="rounded_male"?"rounded_v":name=="male"||name=="relief"||name=="blind"?"sharp_v":mode;
+        fixture.Parameters["frameLayout"]=std::string("four_sides");
+        fixture.Parameters["frameJoinType"]=std::string("v_groove_90:")+style;
+        fixture.Parameters["accessDoorEnabled"]=false;
+        fixture.Parameters["vGrooveMaleFemale"]=name=="male"||name=="rounded_male";
+        fixture.Parameters["vGrooveReliefHole"]=name=="relief"||name=="blind";
+        fixture.Parameters["vGrooveReliefNoThrough"]=name=="blind";
+        fixture.Parameters=CTemplateCodec::ValidateAndNormalizeParameters(fixture.Descriptor,fixture.Parameters);
+        const auto model=CTemplateCodec::ParseNeutralModel(InvokeExplicitTemplatePurpose(host,fixture,"manufacturing"));
+        const auto frame=std::find_if(model.Items.begin(),model.Items.end(),[](const auto& item){return item.Key=="outer_frame.continuous.0001";});
+        ASSERT_NE(frame,model.Items.end());
+        const auto key=frame->Representations.at("result");
+        const auto evaluated=iCAX::OpenCascade::EvaluateNeutralModel(model,std::vector<std::string>{key});
+        const auto& shape=evaluated.At(key);
+        EXPECT_TRUE(BRepCheck_Analyzer(shape).IsValid());
+        int solids=0;for(TopExp_Explorer it(shape,TopAbs_SOLID);it.More();it.Next())++solids;
+        EXPECT_EQ(solids,1) << "The retained bottom bridge must keep the stock connected";
+        EXPECT_GT(RootSelectionShapeVolume(shape),0);
+        const auto bounds=RootSelectionShapeBounds(shape);
+        EXPECT_NEAR(bounds[3]-bounds[0],frame->Properties.at("length").To<double>(),.001);
+    }
+}
+
 TEST(TemplateRuntimeTest, UnifiedSteelStaircaseSolids)
 {
     using namespace iCAX::TemplateRuntime;

@@ -3,5 +3,16 @@
   "displayName":"支管 / DXF 截面端切刀具","kind":"programmatic","target":"end","requiresSection":true,"category":"端面",
   "parameters":[
     {"key":"cutMode","displayName":"成形方式","valueType":"string","defaultValue":"concave","options":[{"value":"concave","label":"凹口"},{"value":"convex","label":"凸口"}]}
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 190 130",
+    "paths": ["M18 25 H150 V105 H18 Z", "M150 25 C110 35 110 95 150 105"],
+    "annotations": [
+      { "parameter": "cutMode", "kind": "leader", "side": "right", "point": [128, 65], "description": "按支管或导入 DXF 截面生成凹口或凸口" }
+    ],
+    "variants": [
+      { "visibleWhen": { "op": "eq", "parameter": "cutMode", "value": "convex" }, "paths": ["M18 25 H112 C160 35 160 95 112 105 H18 Z"] }
+    ]
+  }
 }

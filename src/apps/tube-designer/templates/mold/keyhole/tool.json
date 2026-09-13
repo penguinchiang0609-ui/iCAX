@@ -44,13 +44,10 @@
     }
   ],
   "parameterDiagram": {
+    "schemaVersion": 2,
     "viewBox": "0 0 240 180",
     "paths": [
-      "M122.913 40 H145 A10 10 0 0 1 145 60 H122.913 A25 25 0 1 1 122.913 40 Z",
-      "M100 46 V54 M96 50 H104 M145 46 V54 M141 50 H149",
-      "M100 83 H145 M100 54 V87 M145 54 V87 M104 79 L100 83 L104 87 M141 79 L145 83 L141 87",
-      "M62 25 V75 M62 25 H100 M62 75 H100",
-      "M168 40 V60 M145 40 H172 M145 60 H172"
+      "M122.913 40 H145 A10 10 0 0 1 145 60 H122.913 A25 25 0 1 1 122.913 40 Z"
     ],
     "labels": [
       {"x": 52, "y": 54, "text": "D"},
@@ -77,6 +74,11 @@
         "parameter": "centerDistance",
         "unit": " mm"
       }
+    ],
+    "annotations": [
+      { "parameter": "headDiameter", "kind": "linear", "axis": "y", "side": "left", "from": [100, 25], "to": [100, 75], "description": "钥匙孔头部大圆直径" },
+      { "parameter": "neckWidth", "kind": "linear", "axis": "y", "side": "right", "from": [145, 40], "to": [145, 60], "description": "颈部两条平边之间的宽度" },
+      { "parameter": "centerDistance", "kind": "linear", "axis": "x", "side": "bottom", "from": [100, 50], "to": [145, 50], "description": "大圆圆心至颈端圆心的距离" }
     ]
   }
 }

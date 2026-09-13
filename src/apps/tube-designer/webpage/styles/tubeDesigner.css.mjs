@@ -690,7 +690,7 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-schematic .multi-face-door-leaf { fill: rgba(19, 37, 45, .38); stroke: #f1c66f; stroke-width: 1.4; }
 
 .tube-designer-parameter-panel {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   align-content: stretch;
   gap: 0;
   box-sizing: border-box;
@@ -699,6 +699,48 @@ const baseTubeDesignerCss = String.raw`
   padding: 0;
   overflow: hidden;
   background: #e8edef;
+}
+
+.tube-designer-parameter-scroll {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.tube-designer-product-detail-disclosure {
+  margin: 5px 5px 3px;
+}
+.tube-designer-product-detail-disclosure > summary > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tube-designer-product-detail-scroll {
+  min-width: 0;
+  min-height: 0;
+  max-height: clamp(140px, 32vh, 320px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.tube-designer-product-detail-scroll:empty { display: none; }
+.tube-designer-product-detail-scroll > [data-security-window-review] {
+  box-sizing: border-box;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+.tube-designer-product-detail-scroll > [data-security-window-review] > strong {
+  display: none;
 }
 
 .tube-designer-user-preset-bar {
@@ -805,11 +847,9 @@ const baseTubeDesignerCss = String.raw`
   grid-auto-rows: max-content;
   align-content: start;
   gap: 3px;
-  min-height: 0;
+  min-height: max-content;
   padding: 5px;
-  overflow: auto;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
+  overflow: visible;
 }
 
 .tube-designer-parameter-section {
@@ -1292,20 +1332,36 @@ const baseTubeDesignerCss = String.raw`
 .tube-tool-library-parameter-diagram > header > div { display: grid; min-width: 0; gap: 3px; }
 .tube-tool-library-parameter-diagram > header strong { color: #35545e; font-size: 12px; }
 .tube-tool-library-parameter-diagram > header span { color: var(--designer-muted); font-size: 9px; }
-.tube-tool-library-diagram-art { display: grid; min-height: 120px; place-items: center; padding: 10px; border: 1px solid #d9e6e8; background: #edf5f5; color: #16867b; }
-.tube-tool-library-diagram-art svg { width: min(100%, 150px); height: 120px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.tube-tool-library-diagram-art .tool-parameter-svg { width: 100%; max-width: 330px; height: 150px; color: #19867d; }
+.tube-tool-library-diagram-art { display: grid; min-height: 190px; place-items: center; padding: 10px; border: 1px solid #d9e6e8; border-radius: 5px; background: #edf5f5; color: #16867b; }
+.tube-tool-library-diagram-art svg { width: min(100%, 190px); height: 150px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.tube-tool-library-diagram-art .tool-parameter-svg { display: block; width: 100%; max-width: 450px; height: auto; min-height: 190px; max-height: 300px; overflow: visible; color: #19867d; }
+.tube-tool-library-diagram-art .tool-diagram-shape .tool-diagram-profile { fill: rgba(112, 190, 181, .16); stroke: #288a82; stroke-width: 2.2; vector-effect: non-scaling-stroke; }
+.tube-tool-library-diagram-art .tool-diagram-shape .tool-diagram-detail { fill: none; stroke: #d28a42; stroke-width: 1.35; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.tube-tool-library-diagram-art .tool-diagram-shape :is(.tool-diagram-reference, .tool-diagram-centerline) { fill: none; stroke: #78989e; stroke-width: 1.1; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
 .tube-tool-library-diagram-art .tool-parameter-svg .tool-diagram-dimension { stroke: #8ca9ad; stroke-width: 1.2; stroke-dasharray: 3 2; }
-.tube-tool-library-diagram-art .tool-parameter-svg .tool-diagram-detail { stroke: #db8b3b; stroke-width: 1.6; }
 .tube-tool-library-diagram-art .tool-parameter-svg .tool-diagram-label { fill: #42656d; stroke: none; font-size: 9px; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+.tool-diagram-annotation { color: #577580; cursor: pointer; outline: none; }
+.tool-diagram-annotation line, .tool-diagram-annotation polyline { fill: none; stroke: currentColor; stroke-width: 1.3; }
+.tool-diagram-annotation .tool-diagram-extension { stroke-dasharray: 3 2; opacity: .65; }
+.tool-diagram-annotation .tool-diagram-arrow, .tool-diagram-annotation .tool-diagram-anchor { fill: currentColor; stroke: none; }
+.tool-diagram-annotation .tool-diagram-dimension-label, .tool-diagram-annotation .tool-diagram-parameter-badge { fill: #edf5f5; stroke: currentColor; stroke-width: 1; }
+.tool-diagram-annotation text { fill: currentColor; stroke: none; font: 11px "Segoe UI", "Microsoft YaHei", sans-serif; }
+.tool-diagram-annotation .tool-diagram-badge-text { font-size: 8px; }
+.tool-diagram-annotation.is-active, .tool-diagram-annotation:hover, .tool-diagram-annotation:focus-visible { color: #cf6917; }
+.tool-diagram-annotation.is-active line, .tool-diagram-annotation.is-active polyline { stroke-width: 2.2; }
+.tool-diagram-annotation.is-active .tool-diagram-dimension-label, .tool-diagram-annotation.is-active .tool-diagram-parameter-badge { fill: #fff4dd; stroke-width: 2; }
 .tube-tool-library-diagram-art .tube-profile-library-svg { width: 100%; height: 150px; }
 .tube-tool-library-diagram-legend { display: grid; gap: 5px; }
-.tube-tool-library-diagram-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 5px 0; border-top: 1px solid #e0eaeb; }
+.tube-tool-library-diagram-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: start; gap: 7px; width: 100%; min-width: 0; padding: 7px 5px; border: 1px solid transparent; border-top-color: #e0eaeb; border-radius: 4px; background: transparent; color: #35545e; text-align: left; cursor: pointer; }
 .tube-tool-library-diagram-row b { display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid #72aaa6; border-radius: 50%; color: #267b75; font-size: 10px; }
 .tube-tool-library-diagram-row span { display: grid; min-width: 0; gap: 2px; }
-.tube-tool-library-diagram-row strong { overflow: hidden; color: #35545e; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.tube-tool-library-diagram-row small { overflow: hidden; color: var(--designer-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.tube-tool-library-diagram-row em { color: #177b71; font-size: 10px; font-style: normal; }
+.tube-tool-library-diagram-row strong { color: inherit; font-size: 10px; overflow-wrap: anywhere; }
+.tube-tool-library-diagram-row small { color: var(--designer-muted); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.tube-tool-library-diagram-row em { max-width: 100px; color: #177b71; font-size: 10px; font-style: normal; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tube-tool-library-diagram-row.is-active, .tube-tool-library-diagram-row:hover, .tube-tool-library-diagram-row:focus-visible { border-color: #dfa969; background: #fff4df; outline: none; }
+.tube-tool-library-diagram-row.is-active b { border-color: #cf6917; color: #b15a12; }
+[data-tool-parameter-scope] .is-tool-parameter-active > span { color: #b96519; }
+[data-tool-parameter-scope] [data-tool-parameter-key].is-active { outline: 2px solid #e5ab68; outline-offset: 1px; }
 .tube-tool-library-diagram-message { margin: 0; color: var(--designer-muted); font-size: 10px; line-height: 1.5; }
 .tube-tool-library-summary { display: grid; gap: 8px; padding: 10px; border: 1px solid #c9d8dc; border-radius: 6px; background: #f7fafb; }
 .tube-tool-library-summary header,

@@ -133,6 +133,7 @@ export function renderDesignerRightPane(context, view) {
     ? view.tubeDesignerExpandedParameterGroups
     : defaultExpandedGroups);
   const parts = designer.parts ?? [];
+  const productDetail = renderSecurityWindowReview(template, values);
   scheduleDesignerParameterPanelRestoration(context, view, product.entityId, hasSavedPanelState);
   return `
     <div class="tube-designer-panel tube-designer-parameter-panel" data-tube-designer-parameter-form>
@@ -150,19 +151,24 @@ export function renderDesignerRightPane(context, view) {
           ${metric(parts.length, "已生成零件")}
         </div>
       </header>
-      ${renderInstanceQuantityField(product.quantity ?? 1, "right", view.pending)}
-      ${renderSecurityWindowReview(template, values)}
-      ${renderParameterPresetBar(template, values, view, "right")}
-      <div class="tube-designer-parameter-sections">
-        ${groupTree.map((group) => compactParameterGroup(
-          group,
-          values,
-          view.pending,
-          expandedGroups,
-          view,
-          "right",
-          template,
-        )).join("")}
+      <div class="tube-designer-parameter-scroll" data-tube-designer-parameter-scroll>
+        ${renderInstanceQuantityField(product.quantity ?? 1, "right", view.pending)}
+        ${productDetail ? `<details class="tube-designer-parameter-section tube-designer-product-detail-disclosure" data-tube-designer-product-detail data-tube-designer-parameter-group="product:detail" ${expandedGroups.has("product:detail") ? "open" : ""}>
+          <summary><span>设计核对</span><small>安装、开启及加工注意事项</small></summary>
+          <div class="tube-designer-product-detail-scroll" data-tube-designer-product-detail-scroll aria-label="产品详情">${productDetail}</div>
+        </details>` : ""}
+        ${renderParameterPresetBar(template, values, view, "right")}
+        <div class="tube-designer-parameter-sections">
+          ${groupTree.map((group) => compactParameterGroup(
+            group,
+            values,
+            view.pending,
+            expandedGroups,
+            view,
+            "right",
+            template,
+          )).join("")}
+        </div>
       </div>
     </div>
     ${dialogs}
@@ -276,7 +282,7 @@ export function renderDesignerAddDialog(designer, view) {
     ?? templateGroups.find((group) => group.key === selectedGroupKeys[0])
     ?? templateGroups[0]
     ?? null;
-  const pending = Boolean(view.pending);
+  const pending = Boolean(view.pending || view.tubeDesignerTemplateSwitchPending);
   return `
     <div class="tube-designer-modal-backdrop" role="presentation">
       <section class="tube-designer-config-dialog" data-tube-designer-add-dialog role="dialog" aria-modal="true" aria-labelledby="tube-designer-add-title">
@@ -1508,16 +1514,21 @@ function scheduleDesignerParameterPanelRestoration(context, view, productId, has
     if (view.tubeDesignerParameterPanelRestorationToken !== restorationToken) return;
     if (String(view.scene?.tubeDesigner?.product?.entityId ?? "") !== String(productId ?? "")) return;
     const panel = context.mount?.querySelector?.("[data-tube-designer-parameter-form]");
-    const sections = panel?.querySelector?.(".tube-designer-parameter-sections");
-    if (!sections) return;
+    const scroller = panel?.querySelector?.("[data-tube-designer-parameter-scroll]")
+      ?? panel?.querySelector?.(".tube-designer-parameter-sections");
+    if (!scroller) return;
+    const detailScroller = panel?.querySelector?.("[data-tube-designer-product-detail-scroll]");
+    if (detailScroller) {
+      detailScroller.scrollTop = Number(view.tubeDesignerProductDetailScrollTop ?? 0);
+    }
     const shouldRestoreFocus = !view.pending && Boolean(view.tubeDesignerRestoreParameterFocus);
     const restoredAnchor = restoreScrollAnchor(
-      sections,
+      scroller,
       view.tubeDesignerParameterPanelScrollAnchor,
       { restoreFocus: shouldRestoreFocus },
     );
     if (!view.tubeDesignerParameterPanelScrollAnchor) {
-      sections.scrollTop = Number(view.tubeDesignerParameterPanelScrollTop ?? 0);
+      scroller.scrollTop = Number(view.tubeDesignerParameterPanelScrollTop ?? 0);
     }
     if (!shouldRestoreFocus) return;
     const parameterKey = String(view.tubeDesignerLastEditedParameterKey ?? "");

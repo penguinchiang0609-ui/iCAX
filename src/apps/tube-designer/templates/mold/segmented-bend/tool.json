@@ -18,13 +18,14 @@
     ]
   },
   "parameterDiagram": {
+    "schemaVersion": 2,
     "viewBox": "0 0 300 230",
     "paths": [
-      "M15 40 H35 L50 110 L65 40 H105 L120 110 L135 40 H175 L190 110 L205 40 H280",
-      "M15 125 H280",
-      "M50 132 V144 M120 132 V144 M50 138 H120",
-      "M32 185 A85 85 0 0 1 117 100",
-      "M32 185 H117 V100"
+      { "d": "M15 40 H35 L50 110 L65 40 H105 L120 110 L135 40 H175 L190 110 L205 40 H280", "className": "tool-diagram-profile" },
+      { "d": "M15 125 H280", "className": "tool-diagram-reference" },
+      { "d": "M50 132 V144 M120 132 V144 M50 138 H120", "className": "tool-diagram-detail" },
+      { "d": "M32 185 A85 85 0 0 1 117 100", "className": "tool-diagram-profile" },
+      { "d": "M32 185 H117 V100", "className": "tool-diagram-reference" }
     ],
     "variants": [
       {
@@ -69,6 +70,19 @@
         "y": 213,
         "text": "δ=β/n · p=2Rc·sin(δ/2)"
       }
+    ],
+    "annotations": [
+      { "parameter": "angle", "kind": "leader", "side": "top", "point": [117, 100], "description": "全部分段槽折弯后形成的总角度" },
+      { "parameter": "radiusDatum", "kind": "leader", "side": "right", "point": [76, 145], "description": "目标半径按内侧或截面中心线解释" },
+      { "parameter": "bendRadius", "kind": "leader", "side": "right", "point": [70, 142], "description": "分段折弯逼近的目标圆弧半径" },
+      { "parameter": "countMode", "kind": "leader", "side": "top", "point": [120, 76], "description": "按指定槽数或最大弓高误差确定分段数" },
+      { "parameter": "segmentCount", "kind": "leader", "side": "top", "point": [190, 82], "visibleWhen": { "op": "eq", "parameter": "countMode", "value": "count" }, "description": "沿展开长度布置的 V 槽数量" },
+      { "parameter": "maximumChordError", "kind": "leader", "side": "top", "point": [190, 82], "visibleWhen": { "op": "eq", "parameter": "countMode", "value": "tolerance" }, "description": "圆弧与分段弦之间允许的最大误差" },
+      { "parameter": "rootClearance", "kind": "linear", "axis": "y", "side": "left", "from": [50, 110], "to": [50, 125], "description": "每道槽根到目标管型内底面的距离" },
+      { "parameter": "minimumLand", "kind": "linear", "axis": "x", "side": "bottom", "from": [50, 138], "to": [120, 138], "description": "相邻两槽之间必须保留的最小材料" },
+      { "parameter": "bendCompensation", "kind": "leader", "side": "bottom", "point": [120, 110], "description": "决定每槽展开是否采用 K 因子补偿" },
+      { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [120, 110], "visibleWhen": { "op": "eq", "parameter": "bendCompensation", "value": true }, "description": "中性层位置系数" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [35, 40], "description": "由目标管型截面测得并用于分段计算" }
     ]
   },
   "parameters": [

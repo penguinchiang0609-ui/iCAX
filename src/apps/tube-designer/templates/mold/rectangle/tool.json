@@ -35,5 +35,15 @@
       "max": 100000,
       "step": 0.1
     }
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 180 120",
+    "paths": ["M25 25 H155 Q165 25 165 35 V85 Q165 95 155 95 H25 Q15 95 15 85 V35 Q15 25 25 25 Z"],
+    "annotations": [
+      { "parameter": "spanAlong", "kind": "linear", "axis": "x", "side": "bottom", "from": [15, 60], "to": [165, 60], "description": "沿主管轴线方向的孔长" },
+      { "parameter": "spanAcross", "kind": "linear", "axis": "y", "side": "left", "from": [90, 25], "to": [90, 95], "description": "环向展开方向的孔宽" },
+      { "parameter": "cornerRadius", "kind": "leader", "side": "right", "point": [158, 29], "description": "四角采用相同圆角半径" }
+    ]
+  }
 }

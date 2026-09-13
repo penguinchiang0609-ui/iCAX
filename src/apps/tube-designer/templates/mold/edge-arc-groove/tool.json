@@ -18,12 +18,12 @@
     ]
   },
   "parameterDiagram": {
+    "schemaVersion": 2,
     "viewBox": "0 0 240 180",
     "mirrorParameter": "leftArc",
     "paths": [
-      "M24 28 H216",
       "M24 28 C31 47 47 104 112 124 H216 V28 Z",
-      "M24 148 H216"
+      { "d": "M24 148 H216", "className": "tool-diagram-reference" }
     ],
     "lines": [
       {
@@ -87,7 +87,7 @@
         },
         "paths": [
           "M30 30 A95 95 0 0 0 125 125 H210 V30 Z",
-          "M30 145 H210"
+          { "d": "M30 145 H210", "className": "tool-diagram-reference" }
         ],
         "lines": [
           {
@@ -115,6 +115,23 @@
           }
         ]
       }
+    ],
+    "annotations": [
+      { "parameter": "arcDefinition", "kind": "leader", "side": "top", "point": [64, 76], "description": "切换任意角边弧或固定 90° 展开定义" },
+      { "parameter": "bendCompensation", "kind": "leader", "side": "bottom", "point": [82, 101], "description": "决定圆弧展开是否采用 K 因子补偿" },
+      { "parameter": "useDefaultKFactor", "kind": "leader", "side": "bottom", "point": [92, 108], "visibleWhen": { "op": "eq", "parameter": "bendCompensation", "value": true }, "description": "使用系统标定的默认 K 因子" },
+      { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [100, 115], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bendCompensation", "value": true }, { "op": "eq", "parameter": "useDefaultKFactor", "value": false }] }, "description": "中性层位置系数" },
+      { "parameter": "angle", "kind": "leader", "side": "right", "point": [112, 124], "description": "两侧切口形成的折弯开口角" },
+      { "parameter": "leftArc", "kind": "leader", "side": "top", "point": [48, 62], "description": "控制保留圆弧位于左侧或右侧" },
+      { "parameter": "bridge", "kind": "linear", "axis": "y", "side": "right", "from": [120, 124], "to": [120, 148], "description": "槽根至实际底面的剩余连接高度" },
+      { "parameter": "bottomReference", "kind": "leader", "side": "bottom", "point": [120, 148], "description": "留底高度从外底面或内底面起算" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [32, 28], "description": "由目标管型截面测得并用于补偿" },
+      { "parameter": "reliefDepth", "kind": "leader", "side": "left", "point": [112, 124], "description": "释放加工沿进刀方向的切入深度" },
+      { "parameter": "reliefSide", "kind": "leader", "side": "left", "point": [105, 119], "description": "选择释放孔从主管局部正 Y 或负 Y 侧进刀" },
+      { "parameter": "reliefDiameter", "kind": "leader", "side": "left", "point": [112, 124], "description": "槽根附加释放孔直径，0 表示不添加" },
+      { "parameter": "reliefLift", "kind": "leader", "side": "left", "point": [112, 116], "description": "附加释放孔圆心相对槽根的上移量" },
+      { "parameter": "bottomCut", "kind": "leader", "side": "bottom", "point": [120, 148], "description": "启用后切断底部桥接" },
+      { "parameter": "bottomCutWidth", "kind": "linear", "axis": "x", "side": "bottom", "from": [112, 148], "to": [128, 148], "visibleWhen": { "op": "eq", "parameter": "bottomCut", "value": true }, "description": "底部贯通切除宽度" }
     ]
   },
   "parameters": [

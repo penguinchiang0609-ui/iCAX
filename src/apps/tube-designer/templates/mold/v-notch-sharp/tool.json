@@ -19,11 +19,11 @@
     ]
   },
   "parameterDiagram": {
+    "schemaVersion": 2,
     "viewBox": "0 0 240 180",
     "paths": [
-      "M24 28 H216",
-      "M24 28 L120 124 L216 28",
-      "M24 148 H216"
+      "M24 28 L120 124 L216 28 Z",
+      { "d": "M24 148 H216", "className": "tool-diagram-reference" }
     ],
     "lines": [
       {
@@ -91,8 +91,8 @@
           "value": true
         },
         "paths": [
-          "M15 30 H225 M15 130 H225",
-          "M25 30 L45 110 L65 30 M80 30 L100 110 L120 30 M135 30 L155 110 L175 30"
+          { "d": "M15 30 H225 M15 130 H225", "className": "tool-diagram-reference" },
+          { "d": "M25 30 L45 110 L65 30 M80 30 L100 110 L120 30 M135 30 L155 110 L175 30", "className": "tool-diagram-profile" }
         ],
         "lines": [],
         "labels": [
@@ -109,6 +109,41 @@
           }
         ]
       }
+    ],
+    "annotations": [
+      { "parameter": "segmentedBend", "kind": "leader", "side": "top", "point": [120, 28], "description": "切换单道 V 槽与沿管长排列的多槽分段折弯" },
+      { "parameter": "segmentCount", "kind": "leader", "side": "top", "point": [100, 80], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "分段折弯使用的槽数" },
+      { "parameter": "centerlineRadius", "kind": "leader", "side": "right", "point": [155, 76], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "多槽折弯逼近的目标中心线半径" },
+      { "parameter": "bendCompensation", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, "description": "决定圆角避空是否采用 K 因子展开补偿" },
+      { "parameter": "useDefaultKFactor", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, { "op": "eq", "parameter": "bendCompensation", "value": true }] }, "description": "使用系统默认 K 因子" },
+      { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, { "op": "eq", "parameter": "bendCompensation", "value": true }, { "op": "eq", "parameter": "useDefaultKFactor", "value": false }] }, "description": "中性层位置系数" },
+      { "parameter": "angle", "kind": "leader", "side": "right", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": false }, "description": "对称 V 槽的总开口角；多槽时为总折弯角" },
+      { "parameter": "asymmetric", "kind": "leader", "side": "top", "point": [120, 124], "description": "启用后左右切边角度分别设置" },
+      { "parameter": "leftAngle", "kind": "leader", "side": "left", "point": [72, 76], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": true }, "description": "左侧切边相对槽中心线的角度" },
+      { "parameter": "rightAngle", "kind": "leader", "side": "right", "point": [168, 76], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": true }, "description": "右侧切边相对槽中心线的角度" },
+      { "parameter": "leaveBottom", "kind": "linear", "axis": "y", "side": "right", "from": [120, 124], "to": [120, 148], "description": "槽根至实际底面的剩余连接高度" },
+      { "parameter": "bottomReference", "kind": "leader", "side": "bottom", "point": [120, 148], "description": "留底高度从外底面或内底面起算" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [30, 28], "description": "由目标管型截面测得并参与留底校验" },
+      { "parameter": "flatReference", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "flat" }, "description": "平底宽度相对理论尖角的解释方式" },
+      { "parameter": "bottomStrategy", "kind": "leader", "side": "bottom", "point": [120, 124], "description": "选择尖底、平底、槽根避空圆角或释放孔" },
+      { "parameter": "rootSlotPattern", "kind": "leader", "side": "top", "point": [120, 111], "description": "在槽根形成三段释放槽并保留两座连接桥" },
+      { "parameter": "centerSlotLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [108, 111], "to": [132, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部中槽的横向长度" },
+      { "parameter": "sideSlotLength", "kind": "leader", "side": "left", "point": [102, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部每侧释放槽的横向长度" },
+      { "parameter": "centerSlotWidth", "kind": "leader", "side": "bottom", "point": [120, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部中槽沿主管轴向的宽度" },
+      { "parameter": "sideSlotWidth", "kind": "leader", "side": "left", "point": [102, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部侧槽沿主管轴向的宽度" },
+      { "parameter": "rootKerf", "kind": "leader", "side": "left", "point": [112, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "只用于桥宽核算的割缝宽度" },
+      { "parameter": "minimumBridge", "kind": "leader", "side": "right", "point": [128, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "两座连接桥必须保留的最小有效宽度" },
+      { "parameter": "flatWidth", "kind": "linear", "axis": "x", "side": "bottom", "from": [105, 124], "to": [135, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "flat" }, "description": "槽根平底的横向宽度" },
+      { "parameter": "roundRadius", "kind": "leader", "side": "right", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, "description": "槽根额外多切材料形成的避空圆角半径" },
+      { "parameter": "reliefDepth", "kind": "leader", "side": "left", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔沿进刀方向的切入深度" },
+      { "parameter": "reliefSide", "kind": "leader", "side": "left", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔从主管局部正 Y 或负 Y 侧进刀" },
+      { "parameter": "reliefLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [111, 124], "to": [129, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "槽根释放孔横向长度" },
+      { "parameter": "reliefHeight", "kind": "leader", "side": "right", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "槽根释放孔高度" },
+      { "parameter": "reliefRadius", "kind": "leader", "side": "right", "point": [126, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔轮廓圆角半径" },
+      { "parameter": "maleFemale", "kind": "leader", "side": "top", "point": [196, 28], "description": "在斜切边增加公母台阶" },
+      { "parameter": "maleFemaleSize", "kind": "leader", "side": "right", "point": [196, 38], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "公母台阶尺寸，0 时按壁厚取值" },
+      { "parameter": "maximumChordError", "kind": "leader", "side": "right", "point": [155, 76], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "正值时按允许弓高误差自动计算槽数" },
+      { "parameter": "reliefShape", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "选择释放孔轮廓形状" }
     ]
   },
   "parameters": [

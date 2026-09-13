@@ -31,6 +31,7 @@ import { renderNestingSettingsDialogs } from "./nestingSettings.mjs";
 import { renderNestingPartImportDialog } from "./nestingPartImport.mjs";
 import { renderNestingStandardPartDialog } from "./nestingStandardPart.mjs";
 import { bindProfileParameterDiagrams } from "./profileParameterDiagram.mjs";
+import { bindToolParameterDiagrams } from "./toolParameterDiagram.mjs";
 import { renderNestingPunchPartDialog } from "./nestingPunchPart.mjs";
 import { attachTubeMachining, handleTubeMachiningViewportPick, renderTubeMachiningLeftPane, renderTubeMachiningRightPane, renderTubeMachiningViewportOverlay, renderTubeMachiningDialogs } from "./machiningArea.mjs";
 import { hasUnsavedMachiningPaths } from "./machiningEditor.mjs";
@@ -360,7 +361,7 @@ function withDesignerContext(context) {
           overlay:(tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
           suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
         });
-        if(patched){bindProfileParameterDiagrams(mount);return true;}
+        if(patched){bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);return true;}
         return false;
       }
       if(view.tubeDesignerPartDrawing&&view.activeAreaId==="nesting") {
@@ -376,6 +377,7 @@ function withDesignerContext(context) {
         +renderDesignerOperationOverlay(context,view);
       if(!patchPunchDom(view,mount,html))return false;
       bindProfileParameterDiagrams(mount);
+      bindToolParameterDiagrams(mount);
       attachPunchEditor(context,view,mount,ops);
       return true;
     },
@@ -392,6 +394,7 @@ function withDesignerContext(context) {
       restoreDesignerScrollState(context, view);
       restoreProductTemplateLibraryScrollState(context, view);
       bindProfileParameterDiagrams(mount);
+      bindToolParameterDiagrams(mount);
       if ((view.activeAreaId === "profiles" || view.activeAreaId === "tools")
           && typeof context.productProxy?.invoke === "function"
           && !(view.tubeDesignerSystemProfiles?.length > 0)

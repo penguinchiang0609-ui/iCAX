@@ -632,6 +632,19 @@ TEST(ProductTemplatePreviewSDO, MergedGuardrailsAndWindowKeepNormalizedParameter
     }
 }
 
+TEST(ProductTemplatePreviewSDO, ProductLocalWindowGrooves) {
+    Scene scene;
+    for(const auto* style:{"sharp_v","rounded_v","left_arc","right_arc"}){
+        SCOPED_TRACE(style);
+        const auto response=invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+            {"templateId",std::string("single-face-security-window")},
+            {"parameters",ObjectMap{{"frameLayout",std::string("four_sides")},
+                {"frameJoinType",std::string("v_groove_90:")+style},{"accessDoorEnabled",false},
+                {"vGrooveMaleFemale",true}}}});
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+}
+
 TEST(ProductTemplatePreviewSDO, AllGuardrailFamiliesGenerateSlopedCorners) {
     Scene scene;
     for (const auto* id : {"modular-guardrail-glass-straight", "modular-guardrail-cross-straight",

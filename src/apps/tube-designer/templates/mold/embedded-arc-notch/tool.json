@@ -18,6 +18,7 @@
     ]
   },
   "parameterDiagram": {
+    "schemaVersion": 2,
     "viewBox": "0 0 280 200",
     "mirrorParameter": "rightArc",
     "variants": [
@@ -25,7 +26,8 @@
         "visibleWhen": {"op": "eq", "parameter": "maleFemale", "value": true},
         "paths": [
           "M38 50 V30 H230 V50 H210 L200 60 A80 80 0 0 0 120 140 Z",
-          "M20 155 H250", "M200 140 L144 84"
+          { "d": "M20 155 H250", "className": "tool-diagram-reference" },
+          { "d": "M200 140 L144 84", "className": "tool-diagram-detail" }
         ],
         "lines": [
           {"x1": 238, "y1": 30, "x2": 238, "y2": 50},
@@ -42,9 +44,9 @@
     ],
     "paths": [
       "M20 30 L120 140 A80 80 0 0 1 200 60 L230 30 Z",
-      "M20 155 H250",
-      "M200 140 L144 84",
-      "M110 140 H130 M110 155 H130"
+      { "d": "M20 155 H250", "className": "tool-diagram-reference" },
+      { "d": "M200 140 L144 84", "className": "tool-diagram-detail" },
+      { "d": "M110 140 H130 M110 155 H130", "className": "tool-diagram-detail" }
     ],
     "lines": [
       {
@@ -82,6 +84,15 @@
         "parameter": "rootClearance",
         "unit": " mm"
       }
+    ],
+    "annotations": [
+      { "parameter": "maleFemale", "kind": "leader", "side": "top", "point": [220, 38], "description": "启用后在斜切边形成公母台阶" },
+      { "parameter": "maleFemaleSize", "kind": "linear", "axis": "y", "side": "right", "from": [230, 30], "to": [230, 50], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "公母台阶尺寸，0 时按壁厚取值" },
+      { "parameter": "angle", "kind": "leader", "side": "top", "point": [120, 140], "description": "两侧切口形成的折弯开口角" },
+      { "parameter": "bendRadius", "kind": "leader", "side": "right", "point": [200, 92], "description": "保留并嵌入折弯区域的圆弧半径" },
+      { "parameter": "rightArc", "kind": "leader", "side": "top", "point": [200, 78], "description": "切换保留圆弧位于右侧或左侧" },
+      { "parameter": "rootClearance", "kind": "linear", "axis": "y", "side": "left", "from": [120, 140], "to": [120, 155], "description": "槽根到目标管型内底面的距离" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [30, 30], "description": "由目标管型截面测得并参与槽深校验" }
     ]
   },
   "parameters": [

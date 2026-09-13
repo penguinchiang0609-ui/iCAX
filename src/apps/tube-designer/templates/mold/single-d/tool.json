@@ -35,11 +35,10 @@
     }
   ],
   "parameterDiagram": {
+    "schemaVersion": 2,
     "viewBox": "0 0 240 180",
     "paths": [
-      "M141 22 A35 35 0 1 0 141 78 Z",
-      "M120 46 V54 M120 50 H141 M137 46 L141 50 L137 54",
-      "M75 15 V85 M71 19 L75 15 L79 19 M71 81 L75 85 L79 81 M75 15 H120 M75 85 H120"
+      "M141 22 A35 35 0 1 0 141 78 Z"
     ],
     "labels": [
       {"x": 65, "y": 54, "text": "D"},
@@ -58,6 +57,10 @@
         "parameter": "flatOffset",
         "unit": " mm"
       }
+    ],
+    "annotations": [
+      { "parameter": "diameter", "kind": "linear", "axis": "y", "side": "left", "from": [106, 15], "to": [106, 85], "description": "成形所依据的基准圆直径" },
+      { "parameter": "flatOffset", "kind": "linear", "axis": "x", "side": "bottom", "from": [106, 50], "to": [141, 50], "description": "基准圆心到 D 形平边的距离" }
     ]
   }
 }

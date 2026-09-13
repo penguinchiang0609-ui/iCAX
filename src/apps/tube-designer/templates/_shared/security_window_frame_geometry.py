@@ -103,7 +103,12 @@ class ContinuousFrame:
 
     @property
     def bend_allowance(self) -> float:
-        return math.pi * 0.5 * float(self.parameters["vGrooveKFactor"]) * self.profile.wall
+        return math.pi * 0.5 * float(self.parameters["vGrooveKFactor"]) * min(self.profile.wall, self.bottom_distance)
+
+    @property
+    def bottom_distance(self) -> float:
+        requested = _number(self.parameters, "vGrooveBottomDistance")
+        return requested if requested > 0 else self.profile.wall
 
     @property
     def horizontal_run(self) -> float:
@@ -140,6 +145,39 @@ def validate_frame_processes(parameters: dict[str, Any], processes: list[tuple[C
             raise ValueError("V 槽半径不能为负数")
     if sharp and parameters["vGrooveReliefHole"] and _number(parameters, "vGrooveReliefDiameter") < 0:
         raise ValueError("V 槽释放孔直径不能为负数")
+    for process, profile in grooves:
+        _validate_bending_section(profile)
+        probe = ContinuousFrame("validation", "框", 0, 0, 1000, 1000, profile, "", process, parameters)
+        _groove_contour(probe, 0)
+        _relief_radius(probe)
+
+
+def _validate_bending_section(profile: Profile) -> None:
+    # Inspect actual support edges, not a profile ID or its advertised kind.
+    loops = profile.contours(swap_axes=True)
+    if len(loops) != 2:
+        raise ValueError("折弯框需要一个外轮廓和一个内轮廓")
+    levels = []
+    for loop in loops:
+        if loop['kind'] == 'polygon':
+            points = loop['points']
+            edges = [{'kind':'line','start':a,'end':b} for a,b in zip(points,points[1:]+points[:1])]
+        elif loop['kind'] == 'path':
+            edges = loop['segments']
+        else:
+            raise ValueError("折弯框截面需要上下平直支承壁")
+        supports = [e['start'][1] for e in edges if e['kind']=='line'
+                    and abs(e['start'][1]-e['end'][1])<1e-6
+                    and min(e['start'][0],e['end'][0]) < -1e-6
+                    and max(e['start'][0],e['end'][0]) > 1e-6]
+        if len(supports)!=2:
+            raise ValueError("折弯框截面需要上下平直支承壁")
+        levels.append(sorted(supports))
+    outer, inner = levels
+    if (abs(outer[0]+profile.width/2)>1e-5 or abs(outer[1]-profile.width/2)>1e-5
+            or abs(inner[0]-outer[0]-profile.wall)>1e-5
+            or abs(outer[1]-inner[1]-profile.wall)>1e-5):
+        raise ValueError("折弯框的截面基准、上下实际壁厚必须与展开参数一致")
 
 
 def emit_surface_frame(model: NeutralModel, shared: SharedTubeGeometry, parameters: dict[str, Any],
@@ -393,46 +431,79 @@ def _quadratic_points(
     return result
 
 
-def _groove_polygon(frame: ContinuousFrame, center: float) -> list[list[float]]:
-    profile = frame.profile
-    wall = max(0.1, min(profile.wall, min(profile.width, profile.depth) / 2 - 0.1))
-    requested = _number(frame.parameters, "vGrooveBottomDistance")
-    distance = max(0.1, min(requested if requested > 0 else wall, profile.width - wall))
-    root = profile.width / 2 - distance
-    base = -profile.width / 2 - wall
-    depth = max(root - base, 0.1)
-    half_slot = max(depth, wall * 2)
-    top_y, root_y = -base, -root
-    style = frame.process.groove_style
+def _groove_contour(frame: ContinuousFrame, center: float) -> dict[str, Any]:
+    """Product-local cutter: exact root relief, independently of the mould library.
 
-    if bool(frame.parameters["vGrooveMaleFemale"]):
-        feature = min(max(wall, 0.1), half_slot * 0.95)
-        ledge = top_y - min(wall * 2, depth * 0.95)
-        return [
-            [center - half_slot + feature, top_y], [center + half_slot + feature, top_y],
-            [center + half_slot + feature, ledge], [center + half_slot - feature, ledge],
-            [center, root_y], [center - half_slot + feature, ledge],
-        ]
-    if style == "rounded_v":
-        radius = _number(frame.parameters, "vGrooveRadius")
-        radius = min(max(radius if radius > 0 else wall * 0.5, 0.1), depth * 0.45)
-        arc = []
-        arc_center_y = root_y + radius
-        for index in range(9):
-            angle = math.pi + math.pi * index / 8
-            arc.append([center + radius * math.cos(angle), arc_center_y + radius * math.sin(angle)])
-        return [[center - half_slot, top_y], *arc, [center + half_slot, top_y]]
-    if style == "left_arc":
-        curved = _quadratic_points(
-            (center - half_slot, top_y), (center - half_slot, root_y), (center, root_y),
-        )
-        return [*curved, [center + half_slot, top_y]]
-    if style == "right_arc":
-        curved = _quadratic_points(
-            (center, root_y), (center + half_slot, root_y), (center + half_slot, top_y),
-        )
-        return [[center - half_slot, top_y], *curved]
-    return [[center - half_slot, top_y], [center, root_y], [center + half_slot, top_y]]
+    K adds axial clearance; it never changes a relief radius. The two original
+    45-degree root arcs are preserved, including the short floor between them.
+    """
+    wall = frame.profile.wall
+    bottom = -frame.profile.width/2 + frame.bottom_distance
+    top = frame.profile.width/2
+    clearance = max(wall, 1.0)
+    allowance = frame.bend_allowance/2
+    style = frame.process.groove_style
+    radius = _number(frame.parameters, 'vGrooveRadius') if style=='rounded_v' else 0.0
+    male = wall if frame.parameters['vGrooveMaleFemale'] else 0.0
+    ledge = top-male if male else top+clearance
+    if ledge<=bottom:
+        raise ValueError('公母口尺寸必须小于槽口有效高度')
+    def line(a,b):return {'kind':'line','start':a,'end':b}
+    def arc(a,m,b):return {'kind':'arc','start':a,'middle':m,'end':b}
+    floor_left=[-allowance,bottom];floor_right=[allowance,bottom]
+    if radius>0:
+        slope_height=bottom+radius*(1-math.sqrt(.5))
+        if slope_height>=min(top,ledge):
+            raise ValueError('槽根圆角过大，圆角与公母口或管顶相交，请减小半径')
+        floor_left[0]-=radius;floor_right[0]+=radius
+        left=[floor_left[0]+radius*math.sqrt(.5),slope_height]
+        right=[floor_right[0]-radius*math.sqrt(.5),slope_height]
+        root=[arc(right,[floor_right[0]-radius*math.sin(math.pi/8),bottom+radius*(1-math.cos(math.pi/8))],floor_right),
+              line(floor_right,floor_left),
+              arc(floor_left,[floor_left[0]+radius*math.sin(math.pi/8),bottom+radius*(1-math.cos(math.pi/8))],left)]
+    else:
+        left,right=floor_left,floor_right
+        root=[line(right,left)] if allowance>1e-9 else []
+    left_top=[left[0]-(ledge-left[1]),ledge]
+    right_top=[right[0]+(ledge-right[1]),ledge]
+    sides_right=[line(right_top,right)];sides_left=[line(left,left_top)]
+    if style in ('left_arc','right_arc'):
+        # Exact quarter-circle side, replacing the old sampled quadratic.
+        height=top-bottom
+        arc_ledge=min(ledge,top)
+        angle=math.acos((top-arc_ledge)/height)
+        if style=='left_arc':
+            left_top=[left[0]-height*math.sin(angle),arc_ledge]
+            sides_left=[arc(left,[left[0]-height*math.sin(angle/2),top-height*math.cos(angle/2)],left_top)]
+        else:
+            right_top=[right[0]+height*math.sin(angle),arc_ledge]
+            sides_right=[arc(right_top,[right[0]+height*math.sin(angle/2),top-height*math.cos(angle/2)],right)]
+    if male:
+        upper_left=[left_top[0],top+clearance]
+        upper_right=[right_top[0]+male,top+clearance]
+        step=[right_top[0]+male,ledge]
+        edges=[line(left_top,upper_left),line(upper_left,upper_right),line(upper_right,step),line(step,right_top)]
+    else:
+        upper_left=[left_top[0],top+clearance];upper_right=[right_top[0],top+clearance]
+        edges=[]
+        if left_top!=upper_left:edges.append(line(left_top,upper_left))
+        edges.append(line(upper_left,upper_right))
+        if upper_right!=right_top:edges.append(line(upper_right,right_top))
+    edges+=sides_right+root+sides_left
+    for edge in edges:
+        for key in ('start','middle','end'):
+            if key in edge:edge[key]=[center+edge[key][0],edge[key][1]]
+    return {'kind':'path','closed':True,'segments':edges}
+
+
+def _relief_radius(frame: ContinuousFrame) -> float:
+    if frame.process.groove_style!='sharp_v' or not frame.parameters['vGrooveReliefHole']:
+        return 0.0
+    diameter=_number(frame.parameters,'vGrooveReliefDiameter')
+    radius=diameter/2 if diameter>0 else max(_number(frame.parameters,'vGrooveRadius'),frame.profile.wall*2)
+    if radius<=0 or radius*2>=frame.profile.width-frame.bottom_distance:
+        raise ValueError('释放孔直径必须小于槽口有效高度，不能切穿管顶')
+    return radius
 
 
 def _emit_polygon_cutter(
@@ -445,7 +516,7 @@ def _emit_polygon_cutter(
                 "origin": [0.0, -half_depth, 0.0],
                 "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0],
             },
-            "contours": [{"kind": "polygon", "points": points}],
+            "contours": [points if isinstance(points,dict) else {"kind": "polygon", "points": points}],
         },
     )
     return model.geometry(
@@ -564,6 +635,20 @@ def _emit_continuous_frame_geometry(
         centers.append(center)
         cursor += segment + frame.bend_allowance
 
+    contours = [_groove_contour(frame, center) for center in centers]
+    previous_end = 0.0
+    for center, contour in zip(centers,contours):
+        xs = [edge[k][0] for edge in contour['segments'] for k in ('start','middle','end') if k in edge]
+        if frame.process.groove_style=='sharp_v':
+            extra=_relief_radius(frame)
+            if frame.parameters['vGrooveBottomCut']:
+                extra=max(extra,max(frame.profile.wall*4,_number(frame.parameters,'vGrooveRadius')*1.5,1)/2)
+            if frame.parameters['vGrooveWallOvercut']:extra=max(extra,frame.profile.wall,.2)
+            xs.extend((center-extra,center+extra))
+        if min(xs)<=previous_end or max(xs)>=frame.length:
+            raise ValueError('相邻槽口或槽口与接缝相交，请增大框尺寸或减小槽口尺寸')
+        previous_end=max(xs)
+
     if purpose == "display":
         return display, display, centers
     base = Part(
@@ -576,45 +661,48 @@ def _emit_continuous_frame_geometry(
     cutters = _continuous_frame_cutters(
         model, frame, inserted_parts or [], _number(frame.parameters, "assemblyClearance"),
     )
-    for index, center in enumerate(centers, start=1):
+    for index, (center, contour) in enumerate(zip(centers,contours), start=1):
         prefix = f"{frame.key}.export.groove.{index:04d}"
         cutters.append(_emit_polygon_cutter(
-            model, prefix, _groove_polygon(frame, center), half_tool_depth,
+            model, prefix, contour, half_tool_depth,
         ))
         if frame.process.groove_style == "sharp_v" and bool(frame.parameters["vGrooveBottomCut"]):
-            root = -(frame.profile.width / 2 - max(0.1, _number(frame.parameters, "vGrooveBottomDistance")))
+            root = -frame.profile.width / 2 + frame.bottom_distance
             size = max(frame.profile.wall * 4, _number(frame.parameters, "vGrooveRadius") * 1.5, 1.0)
             cutters.append(_emit_polygon_cutter(model, f"{prefix}.bottom_cut", [
-                [center - size / 2, root - frame.profile.wall],
-                [center + size / 2, root - frame.profile.wall],
+                [center - size / 2, root],
+                [center + size / 2, root],
                 [center + size / 2, root + frame.profile.wall],
                 [center - size / 2, root + frame.profile.wall],
             ], half_tool_depth))
         if frame.process.groove_style == "sharp_v" and bool(frame.parameters["vGrooveReliefHole"]):
-            radius = _number(frame.parameters, "vGrooveReliefDiameter") / 2
-            if radius <= 0:
-                radius = max(_number(frame.parameters, "vGrooveRadius"), frame.profile.wall * 2)
-            root_y = -(frame.profile.width / 2 - max(0.1, _number(frame.parameters, "vGrooveBottomDistance")))
+            radius = _relief_radius(frame)
+            root_y = -frame.profile.width / 2 + frame.bottom_distance
+            # The circle's lowest point is the specified floor, not its centre.
+            # A blind relief pierces only the entry wall; cutter padding is not
+            # counted as material penetration.
+            blind=bool(frame.parameters['vGrooveReliefNoThrough'])
+            start_y=-frame.profile.depth/2-1 if blind else -half_tool_depth
             hole_profile = model.geometry(
                 f"{prefix}.relief.profile", "profile2d",
                 arguments={
                     "placement": {
-                        "origin": [center, -half_tool_depth, root_y],
+                        "origin": [center, start_y, root_y+radius],
                         "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0],
                     },
                     "contours": [{"kind": "circle", "radius": radius}],
                 },
             )
-            length = frame.profile.depth / 2 + radius * 2 if bool(frame.parameters["vGrooveReliefNoThrough"]) else half_tool_depth * 2
+            length = frame.profile.wall+1.00001 if blind else half_tool_depth*2
             cutters.append(model.geometry(
                 f"{prefix}.relief.solid", "extrude", inputs=[hole_profile],
                 arguments={"vector": [0.0, length, 0.0]},
             ))
         if frame.process.groove_style == "sharp_v" and bool(frame.parameters["vGrooveWallOvercut"]):
-            root_y = -(frame.profile.width / 2 - max(0.1, _number(frame.parameters, "vGrooveBottomDistance")))
+            root_y = -frame.profile.width / 2 + frame.bottom_distance
             width = max(frame.profile.wall, 0.2)
             cutters.append(_emit_polygon_cutter(model, f"{prefix}.wall_overcut", [
-                [center - width, root_y - width], [center + width, root_y - width],
+                [center - width, root_y], [center + width, root_y],
                 [center + width, root_y + frame.profile.wall],
                 [center - width, root_y + frame.profile.wall],
             ], half_tool_depth))

@@ -18,5 +18,14 @@
       "max": 80,
       "step": 0.1
     }
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 190 130",
+    "paths": ["M20 25 H160 L112 105 H20 Z"],
+    "lines": [{ "x1": 112, "y1": 105, "x2": 160, "y2": 105, "className": "tool-diagram-reference" }],
+    "annotations": [
+      { "parameter": "angle", "kind": "leader", "side": "right", "point": [136, 65], "description": "端切面相对垂直端面的倾斜角" }
+    ]
+  }
 }

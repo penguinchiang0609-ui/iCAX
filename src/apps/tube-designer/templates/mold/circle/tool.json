@@ -17,5 +17,13 @@
       "max": 100000,
       "step": 0.1
     }
-  ]
+  ],
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 160 120",
+    "circles": [{ "cx": 80, "cy": 60, "r": 38, "className": "tool-diagram-profile" }],
+    "annotations": [
+      { "parameter": "diameter", "kind": "linear", "axis": "x", "side": "bottom", "from": [42, 60], "to": [118, 60], "description": "成品圆孔直径" }
+    ]
+  }
 }

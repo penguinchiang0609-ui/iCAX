@@ -4,6 +4,7 @@ import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs
 import { buildPunchPreviewRows } from "./punchEditor.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
+import { renderToolParameterDiagram as renderToolParameterDiagramPanel } from "./toolParameterDiagram.mjs";
 import {
   isParametricProfile,
   libraryProfiles,
@@ -263,7 +264,7 @@ function renderToolParameterInput(view, tool, definition) {
   if (!key) return "";
   const value = values[key] ?? definition?.defaultValue ?? "";
   const type = definition?.valueType ?? "number";
-  const common = `data-cam-change-action="tube-designer-tool-library-parameter-change" data-tube-tool-library-key="${escapeAttr(tool.libraryKey)}" data-tube-tool-library-parameter="${escapeAttr(key)}"`;
+  const common = `data-tool-parameter-key="${escapeAttr(key)}" data-cam-change-action="tube-designer-tool-library-parameter-change" data-tube-tool-library-key="${escapeAttr(tool.libraryKey)}" data-tube-tool-library-parameter="${escapeAttr(key)}"`;
   if (type === "boolean") return `<label class="tube-tool-library-parameter-check"><input type="checkbox" ${value ? "checked" : ""} ${common} ${fieldDisabled ? "disabled" : ""} /><span>${escapeText(localizedText(definition.displayName, key))}</span></label>`;
   if (type === "string" && Array.isArray(definition?.options)) {
     return `<label><span>${escapeText(localizedText(definition.displayName, key))}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${definition.options.map((option) => `<option value="${escapeAttr(option.value)}" ${String(option.value) === String(value) ? "selected" : ""}>${escapeText(localizedText(option.label ?? option.displayName, option.value))}</option>`).join("")}</select></label>`;
@@ -309,40 +310,6 @@ function renderToolIllustration(tool) {
   return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 24 H38 M24 10 V38" /></svg>`;
 }
 
-function diagramValue(value, parameter) {
-  if (parameter === "leftArc") return value ? "左" : "右";
-  if (typeof value === "boolean") return value ? "是" : "否";
-  if (value === undefined || value === null || value === "") return "—";
-  return String(value);
-}
-
-function renderToolParameterDiagramSvg(tool, values) {
-  const baseDiagram = tool?.parameterDiagram;
-  if (!baseDiagram || typeof baseDiagram !== "object") return renderToolIllustration(tool);
-  const variant = (baseDiagram.variants ?? []).find(item => toolParameterVisible(item, values));
-  const diagram = variant ? { ...baseDiagram, ...variant } : baseDiagram;
-  const viewBox = String(diagram.viewBox ?? "0 0 240 160");
-  const viewBoxParts = viewBox.split(/\s+/).map(Number);
-  const width = Number.isFinite(viewBoxParts[2]) ? viewBoxParts[2] : 240;
-  const mirror = diagram.mirrorParameter && values?.[diagram.mirrorParameter] === false;
-  const shapeTransform = mirror ? ` transform="translate(${escapeAttr(width)} 0) scale(-1 1)"` : "";
-  const paths = (diagram.paths ?? []).map((path) => {
-    const d = typeof path === "string" ? path : path?.d;
-    return d ? `<path class="tool-diagram-profile" d="${escapeAttr(d)}" />` : "";
-  }).join("");
-  const lines = (diagram.lines ?? []).map((line) => `<line class="tool-diagram-dimension" x1="${escapeAttr(line.x1)}" y1="${escapeAttr(line.y1)}" x2="${escapeAttr(line.x2)}" y2="${escapeAttr(line.y2)}" />`).join("");
-  const circles = (diagram.circles ?? []).map((circle) => `<circle class="tool-diagram-detail" cx="${escapeAttr(circle.cx)}" cy="${escapeAttr(circle.cy)}" r="${escapeAttr(circle.r)}" />`).join("");
-  const labels = (diagram.labels ?? []).map((label) => {
-    const base = String(label.text ?? "");
-    const value = label.parameter ? diagramValue(values?.[label.parameter], label.parameter) : "";
-    const unit = label.unit ? String(label.unit) : "";
-    const content = value ? `${base} ${value}${unit}` : base;
-    if (!content) return "";
-    return `<text class="tool-diagram-label" x="${escapeAttr(label.x)}" y="${escapeAttr(label.y)}" text-anchor="${escapeAttr(label.anchor ?? "middle")}">${escapeText(content)}</text>`;
-  }).join("");
-  return `<svg class="tool-parameter-svg" viewBox="${escapeAttr(viewBox)}" role="img" aria-label="${escapeAttr(`${toolName(tool)}参数示意图`)}"><g${shapeTransform}>${paths}${lines}${circles}</g>${labels}</svg>`;
-}
-
 function renderToolParameterDiagram(view, tool, values, definitions) {
   const diagramValues = { ...values };
   for (const definition of definitions) {
@@ -350,14 +317,9 @@ function renderToolParameterDiagram(view, tool, values, definitions) {
       diagramValues[definition.key] = definition.defaultValue;
     }
   }
-  const rows = definitions.map((definition, index) => {
-    const value = diagramValues[definition.key] ?? "—";
-    const unit = definition.unit ? ` ${definition.unit}` : "";
-    return `<div class="tube-tool-library-diagram-row"><b>${index + 1}</b><span><strong>${escapeText(localizedText(definition.displayName ?? definition.name, definition.key))}</strong><small>${escapeText(localizedText(definition.description, "对应当前模具截面参数"))}</small></span><em>${escapeText(localizedText(value, "—"))}${escapeText(localizedText(unit))}</em></div>`;
-  }).join("");
   const state = toolLibraryState(view);
   const expanded = !!state.showToolDiagram;
-  return `<section class="tube-tool-library-parameter-diagram"><header><div><strong>参数示意图</strong><span>当前模具截面 · 参数与预览同步</span></div><button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="tool" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button></header>${expanded ? `<div class="tube-tool-library-diagram-content"><div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, diagramValues)}</div>${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">定式模具使用导入的固定截面，不需要额外参数。</p>`}</div>` : ""}</section>`;
+  return renderToolParameterDiagramPanel({ tool, values: diagramValues, definitions, expanded, fallbackSvg: renderToolIllustration(tool) });
 }
 
 function renderToolTubeSection(view, role = "main") {
@@ -455,7 +417,7 @@ export function renderToolLibraryRightPane(_context, view) {
   return `<div class="tube-designer-panel tube-tool-library-editor"><div class="tube-tool-library-editor-heading"><div class="tube-tool-library-editor-title"><span class="tube-tool-library-editor-art">${renderToolIllustration(tool)}</span><div><strong>${escapeText(toolName(tool))}</strong><span>${escapeText(typeShortLabel(tool))} · ${escapeText(sourceLabel(tool))}</span></div></div><span class="tube-tool-library-editor-badge">${escapeText(categoryLabel(tool))}</span></div>
     <div class="tube-tool-library-editor-body">
       ${renderToolTubeSection(view)}
-      <section class="tube-tool-library-mold-section">
+      <section class="tube-tool-library-mold-section" data-tool-parameter-scope>
         <header><div><strong>模具信息</strong><span>${escapeText(typeShortLabel(tool))} · ${escapeText(targetLabel(tool))} · 修改后自动更新场景</span></div><span class="tube-tool-library-section-badge">${escapeText(categoryLabel(tool))}</span></header>
         <dl class="tube-tool-library-meta"><dt>模具 ID</dt><dd>${escapeText(tool.id)}</dd><dt>版本</dt><dd>${escapeText(tool.version ?? "—")}</dd><dt>来源</dt><dd>${escapeText(sourceLabel(tool))}</dd></dl>
         ${branchTool ? renderToolTubeSection(view, "branch") : programmatic && parameters.length ? `<div class="tube-tool-library-mold-parameters"><header><strong>模具参数</strong><span>修改后自动更新场景</span></header><div class="tube-tool-library-parameter-grid">${parameters.map((definition) => renderToolParameterInput(view, tool, definition)).join("")}</div></div>` : `<div class="tube-tool-library-fixed-card"><strong>固定截面</strong><span>定式模具只保存一个闭合截面，可由 DXF 导入；当前参数由模具定义固定。</span></div>`}

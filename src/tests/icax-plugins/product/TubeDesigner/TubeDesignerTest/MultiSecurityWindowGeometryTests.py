@@ -355,7 +355,11 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
                     extrusion = nodes[target["inputs"][0]]
                     profile = nodes[extrusion["inputs"][0]]
                     self.assertEqual(2, len(profile["arguments"]["contours"]))
-                    self.assertEqual("roundedRectangle", profile["arguments"]["contours"][0]["kind"])
+                    # Current profile templates return exact line/arc paths,
+                    # not the retired roundedRectangle shorthand.
+                    outer = profile["arguments"]["contours"][0]
+                    self.assertEqual("path", outer["kind"])
+                    self.assertTrue(any(edge["kind"] == "arc" for edge in outer["segments"]))
             for item in document["items"]:
                 if item["key"].startswith(("outer_frame.top.", "outer_frame.bottom.", "outer_frame.back.")):
                     self.assertEqual("uncut_miter_stock", item["properties"]["tubeDesigner.displayApproximation"])

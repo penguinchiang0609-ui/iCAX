@@ -35,11 +35,10 @@
     }
   ],
   "parameterDiagram": {
+    "schemaVersion": 2,
     "viewBox": "0 0 240 180",
     "paths": [
-      "M92 29 H148 A35 35 0 0 1 148 71 H92 A35 35 0 0 1 92 29 Z",
-      "M85 90 H155 M85 50 V94 M155 50 V94 M89 86 L85 90 L89 94 M151 86 L155 90 L151 94",
-      "M170 29 V71 M148 29 H174 M148 71 H174 M166 33 L170 29 L174 33 M166 67 L170 71 L174 67"
+      "M92 29 H148 A35 35 0 0 1 148 71 H92 A35 35 0 0 1 92 29 Z"
     ],
     "labels": [
       {"x": 120, "y": 87, "text": "D"},
@@ -58,6 +57,10 @@
         "parameter": "flatSpacing",
         "unit": " mm"
       }
+    ],
+    "annotations": [
+      { "parameter": "diameter", "kind": "linear", "axis": "y", "side": "left", "from": [120, 15], "to": [120, 85], "description": "两端圆弧所依据的基准圆直径" },
+      { "parameter": "flatSpacing", "kind": "linear", "axis": "x", "side": "bottom", "from": [92, 50], "to": [148, 50], "description": "两条相对平边之间的净距" }
     ]
   }
 }
