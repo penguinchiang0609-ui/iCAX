@@ -100,16 +100,16 @@ const structuredView = {
   tubeDesignerProductTemplateLibrary: { scope: "system", selectedId: "structured" },
 };
 let structuredHtml = renderProductTemplateLibraryRightPane({}, structuredView);
-assert.match(structuredHtml, /data-tube-template-library-disclosure="section:product" open/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="section:dimensions" open/);
 assert.match(structuredHtml, /data-tube-template-library-disclosure="section:materials" >/);
 assert.match(structuredHtml, /data-tube-template-library-disclosure="section:process" >/);
-assert.match(structuredHtml, /data-tube-template-library-disclosure="group:dimensions" open/);
-assert.match(structuredHtml, /data-tube-template-library-disclosure="group:profiles" >/);
-assert.ok(structuredHtml.indexOf("产品规格") < structuredHtml.indexOf("管材与材料"));
+assert.match(structuredHtml, /data-tube-template-library-disclosure="group:product-kind:dimension:dimensions"[^>]* open/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="group:profiles"[^>]* >/);
+assert.ok(structuredHtml.indexOf("尺寸参数") < structuredHtml.indexOf("管材与材料"));
 assert.ok(structuredHtml.indexOf("管材与材料") < structuredHtml.indexOf("加工与装配工艺"));
 
 const disclosureNodes = [
-  { dataset: { tubeTemplateLibraryDisclosure: "section:product" }, open: false },
+  { dataset: { tubeTemplateLibraryDisclosure: "section:dimensions" }, open: false },
   { dataset: { tubeTemplateLibraryDisclosure: "section:materials" }, open: true },
   { dataset: { tubeTemplateLibraryDisclosure: "group:profiles" }, open: true },
 ];
@@ -126,9 +126,9 @@ captureProductTemplateLibraryScrollState({
   },
 }, structuredView);
 structuredHtml = renderProductTemplateLibraryRightPane({}, structuredView);
-assert.match(structuredHtml, /data-tube-template-library-disclosure="section:product" >/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="section:dimensions" >/);
 assert.match(structuredHtml, /data-tube-template-library-disclosure="section:materials" open/);
-assert.match(structuredHtml, /data-tube-template-library-disclosure="group:profiles" open/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="group:profiles"[^>]* open/);
 const emptyPersonalView = { tubeDesignerUserData: { productTemplates: [] }, tubeDesignerProductTemplateLibrary: { scope: "user" } };
 assert.match(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /导入 itpt/);
 assert.doesNotMatch(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /新增/);

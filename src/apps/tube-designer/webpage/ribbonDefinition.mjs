@@ -8,9 +8,21 @@ const allRibbonDefinition = {
           title: "产品",
           commands: [
             command("designer.add", "添加", "add-instance", { size: "large", iconTone: "green" }),
-            command("designer.batch-add", "批量添加", "excel", { size: "large", iconTone: "green" }),
-            command("designer.export-parts", "导出零件", "report", { size: "large", iconTone: "green" }),
+          ],
+        },
+        {
+          title: "零件",
+          commands: [
+            command("designer.inspect-active-part", "复尺", "measure", { size: "large", iconTone: "blue" }),
+            command("designer.export-active-product-parts", "导出清单", "report", { size: "large", iconTone: "green" }),
             command("designer.disassemble", "导入下料", "machine", { size: "large", iconTone: "orange" }),
+          ],
+        },
+        {
+          title: "Excel",
+          commands: [
+            command("designer.excel.export-template", "导出模板", "excel", { size: "large", iconTone: "green" }),
+            command("designer.import-excel", "导入产品", "excel", { size: "large", iconTone: "blue" }),
           ],
         },
       ],

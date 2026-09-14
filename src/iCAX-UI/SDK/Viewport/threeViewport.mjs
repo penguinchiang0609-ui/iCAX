@@ -1846,9 +1846,18 @@ export class ThreeRenderViewport {
       if (!object.userData.selectionMaterialState) {
         object.userData.selectionMaterialState = this.#captureSelectionMaterialState(material);
       }
+      // The old selection treatment only changed the emissive term.  Most
+      // TubeDesigner assembly members use a neutral, non-emissive mesh (or a
+      // LineBasicMaterial), so selecting a row in the parts dock could leave
+      // the actual member visually indistinguishable from its neighbours.
+      // Always tint the selected object as well: this is deliberately strong
+      // enough to remain visible in dense five-face security-window grids.
+      if (material.color) {
+        material.color.setHex(0xffad1f);
+      }
       if (material.emissive) {
-        material.emissive.setHex(0x5f4100);
-        material.emissiveIntensity = 0.18;
+        material.emissive.setHex(0xd47700);
+        material.emissiveIntensity = 0.68;
       }
       if ("linewidth" in material) {
         material.linewidth = Math.max(2, Number(material.linewidth ?? 1));

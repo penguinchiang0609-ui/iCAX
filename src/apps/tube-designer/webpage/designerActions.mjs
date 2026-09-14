@@ -10,6 +10,8 @@ import {
   getTemplateDisplayName,
   renderDesignerAddDialog,
   renderDesignerAddParameterContent,
+  renderBatchExcelTemplateDialog,
+  renderBatchExcelImportDialog,
   renderDesignerBreakdownBody,
   renderDesignerBreakdownRows,
 } from "./designerViews.mjs";
@@ -65,6 +67,7 @@ import {
   renderProductManufacturingPlan,
 } from "./productManufacturingPlan.mjs";
 import { handleProductTemplateLibraryAction, productTemplateLibrarySelectedTemplateId } from "./templateLibrary.mjs";
+import { bindProductParameterDiagrams } from "./productParameterDiagram.mjs";
 import { escapeText } from "../../_shared/workbench/utils/format.mjs";
 
 export const DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
@@ -78,9 +81,32 @@ export const ADD_TEMPLATE_PROGRESS_MINIMUM_VISIBLE_MS = DESIGNER_OPERATION_PROGR
 async function ensureTemplateDescriptor(context, view, templateId) {
   const id = String(templateId ?? "").trim();
   const designer = view.scene?.tubeDesigner;
-  const current = (designer?.templates ?? []).find((item) => String(item?.id ?? "") === id);
-  if (!current || current.available === false) return current ?? null;
-  if (current.descriptorLoaded || Array.isArray(current.parameters)) return current;
+  if (!id || !designer) return null;
+  const cachedDescriptors = view.tubeDesignerTemplateDescriptors ??= {};
+  const current = (designer.templates ?? []).find((item) => String(item?.id ?? "") === id);
+  if (current?.available === false) return current;
+
+  // A generation/list response intentionally contains the lightweight
+  // catalogue only.  Keep the full descriptor outside that response so the
+  // right-hand parameter editor never becomes empty after the next refresh.
+  // `descriptorLoaded` is not itself proof of a descriptor: native product
+  // responses reuse that flag for a template which is known to the catalog,
+  // while deliberately omitting its parameter schema.  Treating that summary
+  // as a loaded descriptor overwrote the cache after every disassembly.
+  const cached = cachedDescriptors[id];
+  if (Array.isArray(current?.parameters)) {
+    const merged = { ...cached, ...current, descriptorLoaded: true };
+    cachedDescriptors[id] = merged;
+    return merged;
+  }
+  if (Array.isArray(cached?.parameters)) {
+    const merged = { ...cached, ...current, parameters: cached.parameters, descriptorLoaded: true };
+    const templates = designer.templates ??= [];
+    const index = templates.findIndex((item) => String(item?.id ?? "") === id);
+    if (index >= 0) templates[index] = merged;
+    else templates.push(merged);
+    return merged;
+  }
   const requests = view.tubeDesignerTemplateDescriptorRequests ??= {};
   if (!requests[id]) {
     requests[id] = invokeDesignerRequest(context, "TubeDesigner.GetTemplateDescriptor", {
@@ -90,11 +116,15 @@ async function ensureTemplateDescriptor(context, view, templateId) {
   try {
     const detail = await requests[id];
     if (!detail || !Array.isArray(detail.parameters)) {
-      throw new Error(`模板“${current.name ?? id}”的参数描述未能加载。`);
+      throw new Error(`模板“${current?.name ?? id}”的参数描述未能加载。`);
     }
     const merged = { ...current, ...detail, descriptorLoaded: true };
-    designer.templates = (designer.templates ?? []).map((item) =>
-      String(item?.id ?? "") === id ? merged : item);
+    const templates = designer.templates ??= [];
+    const index = templates.findIndex((item) => String(item?.id ?? "") === id);
+    if (index >= 0) templates[index] = merged;
+    else templates.push(merged);
+    cachedDescriptors[id] = merged;
+    view.tubeDesignerTemplateLoadError = "";
     return merged;
   } finally {
     delete requests[id];
@@ -179,6 +209,26 @@ export async function handleDesignerAreaAction(context, view, action, target, op
       ),
     };
   }
+  if (action === "tube-designer-excel-template-open") {
+    return { handled: true, result: await openBatchExcelTemplateDialog(context, view, ops) };
+  }
+  if (action === "tube-designer-excel-template-close") {
+    closeBatchExcelTemplateDialog(context, view, ops);
+    return { handled: true };
+  }
+  if (action === "tube-designer-excel-template-export") {
+    return { handled: true, result: await exportBatchExcelTemplate(context, view, ops) };
+  }
+  if (action === "tube-designer-excel-import-close") {
+    if (!view.pending) {
+      view.tubeDesignerExcelImportDialog = null;
+      ops.renderProject(context, view);
+    }
+    return { handled: true };
+  }
+  if (action === "tube-designer-excel-import-confirm") {
+    return { handled: true, result: await importBatchExcelProducts(context, view, ops) };
+  }
   if (action === "tube-designer-cancel-add") {
     if (!view.pending) closeAddDialog(context, view, ops);
     return { handled: true };
@@ -209,6 +259,24 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   }
   if (action === "tube-designer-refresh-manufacturing-plan") {
     return { handled: true, result: await refreshProductManufacturingPlan(context, view, target) };
+  }
+  if (action === "tube-designer-toggle-product-parts-dock") {
+    view.tubeDesignerProductPartsDockCollapsed = !view.tubeDesignerProductPartsDockCollapsed;
+    ops.renderProject(context, view);
+    return { handled: true };
+  }
+  if (action === "tube-designer-export-active-product-parts") {
+    return { handled: true, result: await exportActiveProductParts(context, view, ops) };
+  }
+  if (action === "tube-designer-select-product-part") {
+    selectProductPartInScene(context, view, target);
+    return { handled: true };
+  }
+  if (action === "tube-designer-reload-product-parameters") {
+    return { handled: true, result: await reloadProductParameters(context, view, ops) };
+  }
+  if (action === "tube-designer-disassemble-active-product") {
+    return { handled: true, result: await disassembleActiveProduct(context, view, ops) };
   }
   if (action === "tube-designer-focus-product-parameter") {
     focusProductParameter(context, view, target);
@@ -546,8 +614,20 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
     await deleteProductTemplate(context, view, ops);
     return true;
   }
+  if (commandId === "designer.excel.export-template") {
+    await openBatchExcelTemplateDialog(context, view, ops);
+    return true;
+  }
   if (commandId === "designer.batch-add" || commandId === "designer.import-excel") {
     await chooseBatchAddWorkbook(context, view, ops);
+    return true;
+  }
+  if (commandId === "designer.inspect-active-part") {
+    openActiveProductPartInspection(context, view, ops);
+    return true;
+  }
+  if (commandId === "designer.export-active-product-parts") {
+    await exportActiveProductParts(context, view, ops);
     return true;
   }
   if (commandId === "designer.export-parts") {
@@ -2365,7 +2445,60 @@ function normalizeDependentParameters(parameters, template = null, changedKey = 
   if (result.vGrooveReliefHole !== true && result.vGrooveReliefHole !== "是") {
     result.vGrooveReliefNoThrough = typeof result.vGrooveReliefNoThrough === "boolean" ? false : "否";
   }
+  normalizeSecurityWindowOpeningSurface(result, template, changedKey);
   return result;
+}
+
+function finiteDimension(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function roundedUp(value, step = 50) {
+  return Math.ceil(value / step) * step;
+}
+
+/**
+ * The add dialog intentionally exposes only style-defining fields.  A side or
+ * bottom opening is therefore not allowed to leave the hidden depth at the
+ * flat-window default and fail only after the user presses Confirm.  Keep the
+ * opening's clearance and offsets, and raise just the selected face span to a
+ * feasible initial size.  The dimension remains an ordinary editable value in
+ * the scene's detailed editor.
+ */
+function normalizeSecurityWindowOpeningSurface(values, template, changedKey) {
+  if (template?.id !== "single-face-security-window") return;
+  if (!new Set(["faceType", "sidePosition", "accessDoorEnabled", "accessDoorFace2", "accessDoorFace3", "accessDoorFace5"]).has(changedKey)) return;
+  const faceType = String(values.faceType ?? "single");
+  const selectedFace = faceType === "two" ? String(values.accessDoorFace2 ?? "front")
+    : faceType === "three" ? String(values.accessDoorFace3 ?? "front")
+      : faceType === "five" ? String(values.accessDoorFace5 ?? "front") : "front";
+  const sideSelected = (faceType === "two" && selectedFace === "side")
+    || (faceType === "three" && (selectedFace === "left" || selectedFace === "right"))
+    || (faceType === "five" && (selectedFace === "left" || selectedFace === "right"));
+  const bottomSelected = faceType === "five" && selectedFace === "bottom";
+  if (!sideSelected && !bottomSelected) return;
+
+  const frameWidth = finiteDimension(values.frameWidth, 38);
+  const fixedFrameWidth = finiteDimension(values.doorFrameWidth, 25);
+  const leafDepth = finiteDimension(values.doorLeafFrameDepth, finiteDimension(values.doorLeafFrameWidth, 20));
+  const hardware = finiteDimension(values.doorHardwareClearance, 10);
+  const outerMargin = frameWidth * 5;
+  const requiredSide = roundedUp(Math.max(1200,
+    finiteDimension(values.doorUOffset, 150) + finiteDimension(values.doorClearWidth, 800)
+      + leafDepth + hardware + fixedFrameWidth + outerMargin));
+  const requiredBottomDepth = roundedUp(Math.max(1200,
+    finiteDimension(values.doorVOffset, 350) + finiteDimension(values.doorClearHeight, 1000)
+      + fixedFrameWidth + outerMargin));
+
+  if (bottomSelected) {
+    values.depth = Math.max(finiteDimension(values.depth, 0), requiredBottomDepth);
+    return;
+  }
+  if (faceType === "two") values.sideWidth = Math.max(finiteDimension(values.sideWidth, 0), requiredSide);
+  else if (faceType === "three" && selectedFace === "left") values.leftWidth = Math.max(finiteDimension(values.leftWidth, 0), requiredSide);
+  else if (faceType === "three" && selectedFace === "right") values.rightWidth = Math.max(finiteDimension(values.rightWidth, 0), requiredSide);
+  else if (faceType === "five") values.depth = Math.max(finiteDimension(values.depth, 0), requiredSide);
 }
 
 function validateInstanceQuantity(value) {
@@ -2613,7 +2746,7 @@ function toggleAllInstances(context, view, target, ops) {
   ops.renderProject(context, view);
 }
 
-async function disassembleSelected(context, view, ops, { importToNesting = false } = {}) {
+async function disassembleSelected(context, view, ops, { importToNesting = false, showBreakdown = true } = {}) {
   const productEntityIds = [...new Set(view.tubeDesignerSelectedInstanceIds ?? [])];
   if (!productEntityIds.length) {
     view.error = importToNesting
@@ -2687,9 +2820,17 @@ async function disassembleSelected(context, view, ops, { importToNesting = false
       };
     }
     await acknowledgeOwnMutation(context, view);
-    view.tubeDesignerBreakdownMode = "export";
-    view.tubeDesignerBreakdownOpen = true;
-    ops.showNotice(context, view, `已生成临时零件清单：${groups.length} 个产品，共 ${view.tubeDesignerSelectedPartIds.length} 个零件。`);
+    view.tubeDesignerBreakdownMode = showBreakdown ? "export" : "";
+    view.tubeDesignerBreakdownOpen = showBreakdown;
+    if (!showBreakdown) {
+      view.tubeDesignerBreakdownProductIds = [];
+      view.tubeDesignerSelectedPartIds = [];
+      view.tubeDesignerActivePartId = "";
+      ops.renderProject(context, view);
+    }
+    ops.showNotice(context, view, showBreakdown
+      ? `已生成临时零件清单：${groups.length} 个产品，共 ${view.tubeDesignerLastOperation.partCount} 个零件。`
+      : `已生成“${groups[0]?.name ?? "当前实例"}”的零件清单，可在场景下方逐件复尺。`);
     return view.tubeDesignerLastOperation;
   }, {
     operation: {
@@ -2703,6 +2844,42 @@ async function disassembleSelected(context, view, ops, { importToNesting = false
     },
   });
   return result;
+}
+
+async function disassembleActiveProduct(context, view, ops) {
+  if (view.pending || view.tubeDesignerExportOperation) return null;
+  const productId = String(view.scene?.tubeDesigner?.product?.entityId
+    ?? view.scene?.tubeDesigner?.activeProductId ?? "").trim();
+  if (!productId) {
+    view.error = "请先在左侧选择一个产品实例。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  view.tubeDesignerSelectedInstanceIds = [productId];
+  return disassembleSelected(context, view, ops, { importToNesting: false, showBreakdown: false });
+}
+
+async function exportActiveProductParts(context, view, ops) {
+  if (view.pending || view.tubeDesignerExportOperation) return null;
+  const designer = view.scene?.tubeDesigner ?? {};
+  const productId = String(designer.product?.entityId ?? designer.activeProductId ?? "").trim();
+  const group = (designer.manufacturingGroups ?? [])
+    .find((item) => String(item?.productEntityId ?? "") === productId);
+  const partIds = (group?.parts ?? []).map((part) => String(part?.entityId ?? "").trim()).filter(Boolean);
+  if (!productId || !partIds.length) {
+    view.error = "当前产品实例还没有有效零件清单，请先生成零件清单。";
+    ops.renderProject(context, view);
+    return null;
+  }
+
+  // The dock is scoped to exactly one scene instance.  Reuse the common
+  // export implementation, but seed it with this instance's realised parts
+  // instead of opening the multi-product selection dialog again.
+  view.tubeDesignerBreakdownProductIds = [productId];
+  view.tubeDesignerBreakdownPageProductId = productId;
+  view.tubeDesignerSelectedPartIds = partIds;
+  view.tubeDesignerBreakdownMode = "active-product-export";
+  return exportSelected(context, view, null, ops);
 }
 
 function openBreakdownResults(context, view, ops) {
@@ -2927,13 +3104,85 @@ function openPartInspection(context, view, target, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return;
   const partId = String(target?.dataset?.tubeDesignerPartId ?? "").trim();
   if (!partId) return;
-  const partExists = getVisibleBreakdownGroups(view)
-    .some((group) => (group.parts ?? []).some((part) => String(part.entityId) === partId));
-  if (!partExists) return;
+  const part = findInspectablePart(view, partId);
+  if (!part) return;
+  selectProductPartInScene(context, view, target, part);
   view.viewport?.setContinuousRendering?.(false);
   view.tubeDesignerInspectedPartId = partId;
   view.tubeDesignerPartInspectionOpen = true;
   ops.renderProject(context, view);
+}
+
+function openActiveProductPartInspection(context, view, ops) {
+  const part = findActiveProductPart(view, view.tubeDesignerActivePartId);
+  if (!part) {
+    ops.showNotice?.(context, view, "请先在底部零件清单中选择要复尺的零件。");
+    return;
+  }
+  openPartInspection(context, view, {
+    dataset: { tubeDesignerPartId: String(part.entityId) },
+  }, ops);
+}
+
+function findInspectablePart(view, partId) {
+  const designer = view.scene?.tubeDesigner ?? {};
+  const groups = view.tubeDesignerBreakdownMode === "nesting-export"
+    && Array.isArray(designer.nestingGroups)
+    ? designer.nestingGroups
+    : (designer.manufacturingGroups ?? []);
+  return groups.flatMap((group) => group?.parts ?? [])
+    .find((part) => String(part?.entityId ?? "") === String(partId ?? "")) ?? null;
+}
+
+function findActiveProductPart(view, partId) {
+  const designer = view.scene?.tubeDesigner ?? {};
+  const productId = String(designer.product?.entityId ?? designer.activeProductId ?? "");
+  const group = (designer.manufacturingGroups ?? [])
+    .find((item) => String(item?.productEntityId ?? "") === productId);
+  return (group?.parts ?? []).find((part) => String(part?.entityId ?? "") === String(partId ?? "")) ?? null;
+}
+
+function selectProductPartInScene(context, view, target, suppliedPart = null) {
+  if (view.pending || view.tubeDesignerExportOperation) return;
+  const partId = String(target?.dataset?.tubeDesignerPartId ?? suppliedPart?.entityId ?? "").trim();
+  const part = suppliedPart ?? findActiveProductPart(view, partId);
+  if (!part) return;
+  const sceneEntityId = String(part.sourceMemberId ?? part.entityId ?? "").trim();
+  if (!sceneEntityId) return;
+  view.tubeDesignerActivePartId = String(part.entityId);
+  view.selectedSceneObjectId = sceneEntityId;
+  if (typeof view.viewport?.setSelectedObjectIds === "function") {
+    view.viewport.setSelectedObjectIds([sceneEntityId], sceneEntityId);
+  } else {
+    view.viewport?.setSelectedObjectId?.(sceneEntityId);
+  }
+
+  // Selecting a list row must not rebuild the right editor: a rebuild loses
+  // the user's scroll position and in-progress parameter entry.  Update only
+  // this dock's visual selection while the viewport receives the linked member.
+  const rows = context.mount?.querySelectorAll?.("[data-tube-designer-product-part-row]") ?? [];
+  for (const row of rows) {
+    const active = String(row.dataset.tubeDesignerProductPartRow ?? "") === String(part.entityId);
+    row.classList.toggle("is-active", active);
+    row.setAttribute("aria-selected", String(active));
+  }
+}
+
+async function reloadProductParameters(context, view, ops) {
+  const templateId = String(view.scene?.tubeDesigner?.product?.templateId ?? "").trim();
+  if (!templateId || view.pending) return null;
+  delete (view.tubeDesignerTemplateDescriptors ?? {})[templateId];
+  view.tubeDesignerTemplateLoadError = "";
+  try {
+    const template = await ensureTemplateDescriptor(context, view, templateId);
+    if (!Array.isArray(template?.parameters)) throw new Error("产品参数定义不可用。");
+    ops.renderProject(context, view);
+    return template;
+  } catch (error) {
+    view.tubeDesignerTemplateLoadError = error?.message ?? String(error);
+    ops.renderProject(context, view);
+    throw error;
+  }
 }
 
 function parseSelectionIds(target) {
@@ -3371,6 +3620,7 @@ function refreshAddParameterContent(context, designer, view) {
   if (!form) return false;
   form.innerHTML = renderDesignerAddParameterContent(designer, view);
   if (form.dataset) form.dataset.tubeDesignerRenderedTemplateId = view.tubeDesignerAddTemplateId;
+  bindProductParameterDiagrams(resolveDesignerMount(context));
   return true;
 }
 

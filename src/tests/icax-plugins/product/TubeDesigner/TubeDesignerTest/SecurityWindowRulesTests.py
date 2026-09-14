@@ -67,6 +67,35 @@ def clear_frame_size(document, prefix, section_width):
 
 
 class SecurityWindowRulesTests(unittest.TestCase):
+    def test_combined_five_face_bottom_escape_frame_uses_right_handed_placement(self):
+        """The underside opening must never be authored as a mirrored frame.
+
+        A bottom cap faces down, while the user-facing V direction runs from
+        front to back.  Its processed frame still needs X × Y = Z for the
+        native geometry bridge; a left-handed placement is rejected only when
+        an instance is materialised, which is too late for the user.
+        """
+        package = TEMPLATES / "single_face_security_window"
+        descriptor = json.loads((package / "template.json").read_text(encoding="utf-8"))
+        parameters = {item["key"]: deepcopy(item["defaultValue"])
+                      for item in descriptor["parameters"]}
+        parameters.update(faceType="five", accessDoorEnabled=True,
+                          accessDoorFace5="bottom", depth=1600.0)
+        module = _load_template(str(package / "template.py"), "five-face-bottom-handedness")
+        document = module.generate(parameters, {
+            "template": {"id": descriptor["id"], "version": descriptor["version"],
+                         "packageDigest": "five-face-bottom-handedness"},
+            "geometryPurpose": "display",
+        })
+        placement = next(node["arguments"]["placement"] for node in document["geometry"]
+                         if node["key"].startswith("access_door.fixed_frame.left.")
+                         and node["key"].endswith(".surface.display"))
+        x_axis, y_axis, z_axis = (placement[axis] for axis in ("xAxis", "yAxis", "zAxis"))
+        cross = [x_axis[1] * y_axis[2] - x_axis[2] * y_axis[1],
+                 x_axis[2] * y_axis[0] - x_axis[0] * y_axis[2],
+                 x_axis[0] * y_axis[1] - x_axis[1] * y_axis[0]]
+        self.assertGreater(sum(a * b for a, b in zip(cross, z_axis)), 0.999999)
+
     def test_real_defaults_produce_design_and_actual_fixed_clear_dimensions(self):
         for name in NAMES:
             with self.subTest(template=name):
@@ -142,20 +171,17 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 codes = {row["code"] for row in document["diagnostics"]}
                 self.assertTrue({"SW_MAINTENANCE_ONLY", "SW_SMALL_OPENING"}.issubset(codes))
 
-    def test_five_face_caps_only_allow_explicit_maintenance_openings(self):
+    def test_five_face_bottom_supports_escape_opening_but_top_does_not(self):
         name = "five_face_security_window"
-        for face in ("top", "bottom"):
-            with self.subTest(face=face, use="escape"), self.assertRaisesRegex(ValueError, "立面|顶底"):
-                build(name, accessDoorFace=face)
-            with self.subTest(face=face, use="maintenance"):
-                document = build(name, accessDoorFace=face, doorUse="maintenance",
-                                 doorClearWidth=300, doorClearHeight=300, doorVOffset=100)
-                review = document["extensions"][REVIEW]
-                self.assertEqual((300, 300), (review["designClearWidth"], review["designClearHeight"]))
-                actual = clear_frame_size(document, "access_door.fixed_frame.", 25.0)
-                self.assertAlmostEqual(330.0, actual[0])
-                self.assertAlmostEqual(300.0, actual[1])
-                self.assertFalse(review["complianceCertified"])
+        with self.assertRaisesRegex(ValueError, "顶面"):
+            build(name, accessDoorFace="top")
+        document = build(name, accessDoorFace="bottom", depth=1600.0)
+        review = document["extensions"][REVIEW]
+        self.assertEqual((800, 1000), (review["designClearWidth"], review["designClearHeight"]))
+        actual = clear_frame_size(document, "access_door.fixed_frame.", 25.0)
+        self.assertAlmostEqual(830.0, actual[0])
+        self.assertAlmostEqual(1000.0, actual[1])
+        self.assertFalse(review["complianceCertified"])
 
     def test_auto_leaf_grid_actual_edge_and_internal_clearances_do_not_exceed_limit(self):
         for name in NAMES:
@@ -244,8 +270,25 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 self.assertEqual("304", defaults["materialGrade"])
                 self.assertEqual("passivated", defaults["surfaceTreatment"])
                 self.assertEqual("insert", defaults["mainHorizontalConnection"])
-                self.assertEqual({"op": "eq", "parameter": "mainHorizontalConnection", "value": "insert"},
-                                 definitions["horizontalBranchReserve"]["visibleWhen"])
+                reserve_condition = definitions["horizontalBranchReserve"]["visibleWhen"]
+                if name == "single_face_security_window":
+                    # The combined descriptor enumerates its supported face
+                    # layouts explicitly so unused branches cannot leak into
+                    # the editor.  Every branch still represents the same
+                    # semantic rule: reserve is meaningful only for insert.
+                    self.assertEqual("any", reserve_condition["op"])
+                    branches = reserve_condition["conditions"]
+                    self.assertEqual({"single", "two", "three", "five"}, {
+                        next(item["value"] for item in branch["conditions"]
+                             if item["parameter"] == "faceType")
+                        for branch in branches
+                    })
+                    self.assertTrue(all(any(item == {
+                        "op": "eq", "parameter": "mainHorizontalConnection", "value": "insert",
+                    } for item in branch["conditions"]) for branch in branches))
+                else:
+                    self.assertEqual({"op": "eq", "parameter": "mainHorizontalConnection", "value": "insert"},
+                                     reserve_condition)
                 if name.startswith("single"):
                     self.assertEqual("four_sides", defaults["frameLayout"])
                     self.assertTrue(all(defaults[key] == "miter_45" for key in

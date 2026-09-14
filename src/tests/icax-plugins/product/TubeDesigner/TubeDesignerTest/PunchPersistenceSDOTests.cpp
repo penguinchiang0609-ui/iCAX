@@ -29,6 +29,7 @@
 #include <fstream>
 #include <iostream>
 #include <chrono>
+#include <tuple>
 
 namespace punch_persistence_acceptance {
 bool logInvocations=true;
@@ -647,6 +648,29 @@ TEST(ProductTemplatePreviewSDO, MergedGuardrailsAndWindowKeepNormalizedParameter
             {"parameters", ObjectMap{{"faceType", std::string(face)}}},
         });
         EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+    }
+    for (const auto& [face, openingParameter, openingFace] : {
+             std::tuple{"two", "accessDoorFace2", "side"},
+             std::tuple{"three", "accessDoorFace3", "left"},
+             std::tuple{"five", "accessDoorFace5", "right"},
+             std::tuple{"five", "accessDoorFace5", "bottom"},
+         }) {
+        SCOPED_TRACE(face);
+        SCOPED_TRACE(openingFace);
+        ObjectMap parameters{{"faceType", std::string(face)}, {"accessDoorEnabled", true},
+            {openingParameter, std::string(openingFace)}};
+        // A side opening needs a side that is wider than the default 600 mm
+        // external projection; use real, feasible face dimensions here.
+        if (std::string(face) == "two") parameters["sideWidth"] = 1600.0;
+        if (std::string(face) == "three") parameters["leftWidth"] = 1600.0;
+        if (std::string(face) == "five") parameters["depth"] = 1600.0;
+        const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
+            {"templateId", std::string("single-face-security-window")},
+            {"parameters", parameters},
+        });
+        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+        const auto returned = response.at("parameters").To<ObjectMap>();
+        EXPECT_EQ(returned.at(openingParameter).To<std::string>(), openingFace);
     }
 }
 

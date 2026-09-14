@@ -713,6 +713,18 @@ const baseTubeDesignerCss = String.raw`
   scrollbar-gutter: stable;
   scrollbar-width: thin;
 }
+.tube-designer-parameter-load-state {
+  display:grid;
+  gap:8px;
+  margin:12px;
+  padding:14px;
+  border:1px solid #bfd3d5;
+  background:#f8fbfb;
+  color:#48616a;
+}
+.tube-designer-parameter-load-state strong { color:#245b62; font-size:13px; }
+.tube-designer-parameter-load-state span { line-height:1.55; font-size:11px; }
+.tube-designer-parameter-load-state button { justify-self:start; min-height:27px; padding:3px 11px; border:1px solid #1c9183; background:#fff; color:#176d68; font-weight:600; cursor:pointer; }
 
 .tube-designer-product-detail-disclosure {
   margin: 5px 5px 3px;
@@ -810,6 +822,17 @@ const baseTubeDesignerCss = String.raw`
 }
 .tube-designer-config-parameters > .tube-designer-product-editor-stage { padding-inline: 0; }
 
+/* The schematic remains the visual reference while the long parameter form scrolls. */
+.tube-designer-product-editor-stage[data-tube-designer-editor-stage="parameters"] > .tube-designer-product-diagram {
+  position: sticky;
+  top: 52px;
+  z-index: 4;
+  box-shadow: 0 5px 12px rgba(32, 62, 69, .16);
+}
+.tube-designer-config-parameters > .tube-designer-product-editor-stage[data-tube-designer-editor-stage="parameters"] > .tube-designer-product-diagram {
+  top: 43px;
+}
+
 .tube-designer-product-diagram {
   display: grid;
   gap: 8px;
@@ -824,8 +847,7 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-product-diagram > header span { color: #789096; font-size: 9px; }
 .tube-designer-product-diagram-canvas {
   display: grid;
-  grid-template-columns: minmax(110px, 1fr) minmax(92px, .75fr);
-  grid-template-rows: repeat(3, minmax(34px, auto));
+  grid-template-columns: minmax(160px, 1.45fr) minmax(92px, .72fr);
   gap: 5px 8px;
   min-width: 0;
   padding: 8px;
@@ -834,22 +856,60 @@ const baseTubeDesignerCss = String.raw`
 }
 .tube-designer-product-diagram-art {
   grid-column: 1;
-  grid-row: 1 / span 3;
   display: flex;
   align-items: center;
   justify-content: center;
   min-width: 0;
-  min-height: 112px;
+  min-height: 132px;
   overflow: hidden;
 }
 .tube-designer-product-diagram-art img,
 .tube-designer-product-diagram-art svg {
   display: block;
-  width: min(100%, 180px);
-  height: 112px;
+  width: min(100%, 320px);
+  height: 132px;
   object-fit: contain;
 }
 .tube-designer-product-diagram-art svg { fill: none; stroke: #6ad3c8; stroke-width: 2; }
+.tube-designer-product-dimensions { display: grid; align-content: center; gap: 5px; min-width: 0; }
+.tube-designer-product-structure-svg * { vector-effect: non-scaling-stroke; }
+.tube-designer-product-structure-svg .product-diagram-face { fill: rgba(80, 171, 163, .08); stroke: #68cfc5; stroke-width: 2.2; }
+.tube-designer-product-structure-svg .product-diagram-face-side { fill: rgba(80, 171, 163, .13); stroke: #8bd8d1; }
+.tube-designer-product-structure-svg .product-diagram-face-cap { fill: rgba(80, 171, 163, .18); stroke: #9de0da; }
+.tube-designer-product-structure-svg .product-diagram-grid { stroke: #70aaa7; stroke-width: 1; opacity: .88; }
+.tube-designer-product-structure-svg .product-diagram-frame { stroke: #b9ece6; stroke-width: 3.5; }
+.tube-designer-product-structure-svg .product-diagram-profile-frame .product-diagram-face { stroke-width: var(--product-profile-stroke, 2.2); }
+.tube-designer-product-structure-svg .product-diagram-profile-frame .product-diagram-frame { stroke-width: var(--product-profile-stroke, 3.5); }
+.tube-designer-product-structure-svg .product-diagram-profile-horizontal .product-diagram-grid,
+.tube-designer-product-structure-svg .product-diagram-profile-vertical .product-diagram-grid { stroke-width: var(--product-profile-stroke, 1); }
+.tube-designer-product-structure-svg [data-product-diagram-profile-shape="round"] :is(line, polygon) { stroke-linecap: round; stroke-linejoin: round; }
+.tube-designer-product-structure-svg [data-product-diagram-profile-rounded="true"] polygon { stroke-linejoin: round; }
+.tube-designer-product-structure-svg .product-diagram-slope-guide { stroke: #7fc6c0; stroke-width: 3.2; }
+.tube-designer-product-structure-svg .product-diagram-door { fill: rgba(227, 168, 63, .16); stroke: #e3a83f; stroke-width: 2.4; }
+.tube-designer-product-structure-svg .product-diagram-handrail { stroke: #9ce2dc; stroke-width: 3.2; }
+.tube-designer-product-structure-svg .product-diagram-rail { stroke: #66b8b1; stroke-width: 2; }
+.tube-designer-product-structure-svg .product-diagram-post { stroke: #7dcbc4; stroke-width: 2.4; }
+.tube-designer-product-structure-svg .product-diagram-infill { fill: none; stroke: #5aa39d; stroke-width: 1.15; }
+.tube-designer-product-structure-svg .product-diagram-glass { fill: rgba(105, 190, 217, .23); stroke: #68b9cf; stroke-width: 1.2; }
+.tube-designer-product-structure-svg .product-diagram-plate { fill: rgba(111, 171, 177, .32); stroke: #6bb2b1; stroke-width: 1.2; }
+.tube-designer-product-structure-svg .product-diagram-layout-label { fill: #b9d8d9; stroke: none; font-size: 11px; font-weight: 700; }
+.tube-designer-product-structure-svg .product-diagram-measure { cursor: pointer; }
+.tube-designer-product-structure-svg .product-diagram-measure text { fill: #d6e6e7; stroke: #152b34; stroke-width: 3px; paint-order: stroke; font-size: 9px; font-weight: 700; }
+.tube-designer-product-structure-svg .product-diagram-dimension-line { stroke: #e3a83f; stroke-width: 1.2; stroke-dasharray: 3 2; }
+.tube-designer-product-structure-svg .product-diagram-depth-line { stroke: #9dbfc2; stroke-width: 1.2; stroke-dasharray: 3 2; }
+.tube-designer-product-structure-svg .product-diagram-depth-measure.is-active .product-diagram-depth-line { stroke: #ffd166; stroke-width: 2; }
+.tube-designer-product-structure-svg .product-diagram-side-measure text { fill: #bcd6d8; }
+.tube-designer-product-structure-svg .product-diagram-structure { cursor: pointer; }
+.tube-designer-product-structure-svg .product-diagram-linked { cursor: pointer; }
+.tube-designer-product-structure-svg .is-active,
+.tube-designer-product-structure-svg .product-diagram-measure:hover { filter: drop-shadow(0 0 3px rgba(227, 168, 63, .9)); }
+.tube-designer-product-structure-svg .product-diagram-linked.is-active :is(line, path, polygon, rect) { stroke: #ffd166; }
+.tube-designer-product-structure-svg .product-diagram-linked.is-active.product-diagram-infill-pattern :is(line, path, polygon) { stroke: #ffd166; fill: rgba(255, 209, 102, .16); }
+.tube-designer-product-structure-svg .is-active text,
+.tube-designer-product-structure-svg .product-diagram-measure:hover text { fill: #ffd98b; }
+[data-tube-designer-product-parameter-scope] .is-product-parameter-active > span,
+[data-tube-designer-product-parameter-scope] .is-product-parameter-active { color: #b96519; }
+[data-tube-designer-product-parameter-scope] [data-product-parameter-key].is-active { outline: 2px solid #e5ab68; outline-offset: 1px; }
 .tube-designer-product-dimension {
   display: grid;
   align-content: center;
@@ -882,6 +942,10 @@ const baseTubeDesignerCss = String.raw`
   overflow-wrap: anywhere;
   color: inherit;
   font-size: 11px;
+}
+@media (max-width: 1160px) {
+  .tube-designer-product-diagram-canvas { grid-template-columns: minmax(0, 1fr); }
+  .tube-designer-product-dimensions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .tube-designer-plan-state,
@@ -1501,6 +1565,9 @@ const baseTubeDesignerCss = String.raw`
 .tube-product-template-library-parameter-group { border-color: #d4e0e2; background: #fff; }
 .tube-product-template-library-parameter-group > summary { padding: 7px 8px; font-size: 10px; }
 .tube-product-template-library-parameter-group[open] > summary { border-bottom: 1px solid #dbe5e7; background: #f4f8f8; }
+.tube-product-template-library-parameter-group-children { display: grid; min-width: 0; gap: 6px; padding: 7px; background: #f7faf9; }
+.tube-product-template-library-parameter-group[data-tube-template-library-group-depth="1"] { border-color: #dbe5e7; }
+.tube-product-template-library-parameter-group[data-tube-template-library-group-depth="1"] > summary { background: #fff; font-weight: 600; }
 .tube-product-template-library-parameter-grid { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 9px 10px; padding: 9px; }
 @container template-parameters (min-width: 230px) {
   .tube-product-template-library-parameter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2500,6 +2567,53 @@ const baseTubeDesignerCss = String.raw`
   background: #eef1f2;
   box-shadow: 0 -3px 10px rgba(0, 0, 0, .16);
 }
+.tube-designer-product-parts-dock {
+  z-index: 4;
+  grid-area: bottom;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 34px minmax(0, 1fr);
+  overflow: hidden;
+  border-top: 1px solid #7d898d;
+  color: #344a52;
+  background: #f3f6f7;
+  box-shadow: 0 -3px 10px rgba(0, 0, 0, .14);
+}
+.tube-designer-product-parts-dock.is-collapsed { grid-template-rows: 34px; }
+.tube-designer-product-parts-dock > header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 11px; border-bottom:1px solid #c5d0d3; background:linear-gradient(#f8fbfb,#e1eaeb); }
+.tube-designer-product-parts-dock > header > div:first-child { display:flex; align-items:baseline; gap:9px; min-width:0; }
+.tube-designer-product-parts-dock > header strong { color:#1c5f62; font-size:12px; }
+.tube-designer-product-parts-dock > header span { overflow:hidden; color:#6c7d83; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-designer-product-parts-dock-actions { display:flex; align-items:center; gap:7px; flex:0 0 auto; }
+.tube-designer-product-parts-dock-actions button,
+.tube-designer-product-parts-table button { min-height:25px; padding:3px 9px; border:1px solid #a8c2c6; border-radius:3px; background:#fff; color:#195966; font-size:10px; font-weight:600; cursor:pointer; }
+.tube-designer-product-parts-dock-actions .tube-designer-primary { border-color:#168d80; background:#198f82; color:#fff; }
+.tube-designer-product-parts-dock-actions button:hover,
+.tube-designer-product-parts-table button:hover { border-color:#168d80; background:#e6f5f2; }
+.tube-designer-product-parts-dock-actions button:disabled,
+.tube-designer-product-parts-table button:disabled { opacity:.5; cursor:default; }
+.tube-designer-product-parts-table { min-height:0; overflow:auto; background:#fff; }
+.tube-designer-product-parts-table table { width:100%; border-collapse:collapse; table-layout:fixed; font-size:11px; }
+.tube-designer-product-parts-table th { position:sticky; top:0; z-index:1; padding:7px 10px; border-bottom:1px solid #cad6d9; background:#edf4f4; color:#547078; text-align:left; font-size:10px; }
+.tube-designer-product-parts-table td { overflow:hidden; padding:7px 10px; border-bottom:1px solid #e0e8ea; color:#40555c; text-overflow:ellipsis; white-space:nowrap; }
+.tube-designer-product-parts-table tr:hover td { background:#f0faf8; }
+.tube-designer-product-parts-table tr[data-cam-action] { cursor:pointer; }
+.tube-designer-product-parts-table tr.is-active td { background:#dff3ef; color:#174f58; }
+.tube-designer-product-parts-table tr.is-active td:first-child { box-shadow:inset 3px 0 #159b8a; }
+.tube-designer-product-parts-table tr:focus-visible td { outline:2px solid #e59a2f; outline-offset:-2px; }
+.tube-designer-product-parts-table th:nth-child(1) { width:16%; }
+.tube-designer-product-parts-table th:nth-child(2) { width:22%; }
+.tube-designer-product-parts-table th:nth-child(3) { width:31%; }
+.tube-designer-product-parts-table th:nth-child(4), .tube-designer-product-parts-table th:nth-child(5) { width:9%; }
+.tube-designer-product-parts-table th:nth-child(6) { width:13%; }
+.tube-designer-product-parts-empty { display:grid; place-content:center; gap:4px; min-height:100%; padding:16px; color:#63777d; text-align:center; }
+.tube-designer-product-parts-empty strong { color:#315963; font-size:12px; }
+.tube-designer-product-parts-empty span { font-size:11px; }
+.tube-designer-add-structure-intro { display:grid; gap:3px; margin:10px 0; padding:10px 12px; border-left:3px solid #1d9b8d; background:#edf7f6; }
+.tube-designer-add-structure-intro strong { color:#176e68; font-size:12px; }
+.tube-designer-add-structure-intro span { color:#5d737a; font-size:11px; line-height:1.55; }
+.tube-designer-add-structure-fields { display:grid; gap:7px; }
 .tube-designer-nesting-bottom > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px; border-bottom: 1px solid #b9c2c5; background: linear-gradient(#f7f8f8, #dce2e4); }
 .tube-designer-nesting-bottom > header > div { display: flex; align-items: baseline; gap: 8px; }
 .tube-designer-nesting-bottom > header strong { color: #30474f; font-size: 12px; }

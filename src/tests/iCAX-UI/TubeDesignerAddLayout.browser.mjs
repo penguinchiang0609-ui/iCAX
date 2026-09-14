@@ -9,7 +9,7 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 import { catalogText } from "../../apps/tube-designer/webpage/productCatalog.mjs";
 
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
-const templates = ["single", "two", "three", "five"].map((kind) => {
+const templates = ["single"].map((kind) => {
   const raw = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${kind}_face_security_window/template.json`, import.meta.url)));
   const groups = raw.groups.map((g) => ({ ...g, displayName: catalogText(g.displayName) }));
   return { ...raw, available: true, name: catalogText(raw.displayName), groups,
@@ -38,7 +38,9 @@ try {
     const problems = await page.evaluate(() => {
       const issues = [];
       const visible = (el) => el.getClientRects().length && el.getBoundingClientRect().height > 0;
-      for (const parent of document.querySelectorAll(".tube-designer-config-parameters, .tube-designer-subsection-list, .tube-designer-config-subsection-content")) {
+      // The editor tabs are intentionally sticky over the scrolling form; test
+      // ordinary parameter containers rather than flagging that overlay.
+      for (const parent of document.querySelectorAll(".tube-designer-subsection-list, .tube-designer-config-subsection-content")) {
         if (!visible(parent)) continue;
         const children = [...parent.children].filter(visible);
         for (let i = 1; i < children.length; i++) {
@@ -67,21 +69,12 @@ try {
       });
       await page.setContent(`<style>*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif}${tubeDesignerCss}</style><div class="tube-designer-workspace">${html}</div>`);
       await assertNoOverlap();
-      assert.equal(await page.locator(".tube-designer-review-disclosure").evaluate((el) => el.open), false);
-      const roots = page.locator('.tube-designer-config-parameters > .tube-designer-config-subsection');
-      assert.equal(await roots.count(), 3);
-      for (let i = 1; i < 3; i++) {
-        await roots.nth(i).locator(":scope > summary").click();
-        await assertNoOverlap();
-      }
+      assert.equal(await page.locator(".tube-designer-review-disclosure").count(), 0);
+      const roots = page.locator('[data-tube-designer-add-form] .tube-designer-add-structure-fields > .tube-designer-config-subsection');
+      assert.equal(await roots.count(), 1);
       await page.locator('.tube-designer-config-parameters details').evaluateAll((nodes) => nodes.forEach((node) => { node.open = true; }));
       await assertNoOverlap();
-      const profileRows = await page.locator('.tube-designer-field-grid:has(> .tube-designer-profile-field)').evaluateAll(grids => grids.map(grid => ({
-        width: grid.parentElement.clientWidth,
-        columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
-      })));
-      assert.ok(profileRows.length > 0);
-      for (const row of profileRows) assert.equal(row.columns, row.width >= 420 ? 4 : 2);
+      assert.equal(await page.locator('.tube-designer-profile-field').count(), 0);
       await roots.nth(0).locator(":scope > summary").click();
       await assertNoOverlap();
       await roots.nth(0).locator(":scope > summary").click();
@@ -97,29 +90,95 @@ try {
   const interaction = await page.evaluate(async ({ templates, css }) => {
     const { handleDesignerAreaAction } = await import("/src/apps/tube-designer/webpage/designerActions.mjs");
     const { renderDesignerAddDialog, renderDesignerRightPane } = await import("/src/apps/tube-designer/webpage/designerViews.mjs");
-    const template = templates.find((t) => t.id === "five-face-security-window");
+    const { bindProductParameterDiagrams } = await import("/src/apps/tube-designer/webpage/productParameterDiagram.mjs");
+    const template = templates.find((t) => t.id === "single-face-security-window");
     const view = { scene: { tubeDesigner: { templates } }, tubeDesignerAddTemplateId: template.id, tubeDesignerAddDialogOpen: true };
     document.body.innerHTML = `<style>*{box-sizing:border-box}body{margin:0}${css}</style><div class="tube-designer-workspace"></div>`;
     const mount = document.querySelector(".tube-designer-workspace");
     const context = { mount };
-    const ops = { renderProject() { mount.innerHTML = renderDesignerAddDialog(view.scene.tubeDesigner, view); } };
+    const ops = { renderProject() { mount.innerHTML = renderDesignerAddDialog(view.scene.tubeDesigner, view); bindProductParameterDiagrams(mount); } };
     ops.renderProject();
-    // The final dropdown entry invokes the picker; cancellation preserves both
-    // the visible selection and the draft instead of persisting an action value.
-    const profileSelect = mount.querySelector('[data-cam-change-action="tube-designer-profile-selection-change"]');
-    const originalProfile = profileSelect.value;
-    const originalDraft = JSON.stringify(view.tubeDesignerAddDraft);
-    let pickerCalls = 0;
-    context.appProxy = { bridge: { openFileDialog: async () => { pickerCalls++; return ""; } } };
-    if (profileSelect.options[profileSelect.options.length - 1].value !== "external-dxf") throw new Error("DXF must be the final dropdown entry");
-    profileSelect.value = "external-dxf";
-    await handleDesignerAreaAction(context, view, "tube-designer-profile-selection-change", profileSelect, ops);
-    if (pickerCalls !== 1 || profileSelect.value !== originalProfile || JSON.stringify(view.tubeDesignerAddDraft) !== originalDraft) throw new Error("Cancelled DXF picker changed the active profile");
+    if (mount.querySelector('[data-cam-change-action="tube-designer-profile-selection-change"]')) throw new Error("Add dialog must not expose material/profile selection");
     const field = (key) => mount.querySelector(`[data-tube-designer-parameter="${key}"]`);
     const group = (key) => mount.querySelector(`details[data-tube-designer-parameter-group="${key}"]`);
     for (const node of mount.querySelectorAll("details")) node.open = true;
-    group("security:profiles").open = false;
-    group("security:review").open = false;
+    let parameterScroller = mount.querySelector(".tube-designer-config-parameters");
+    const initialDiagramLabel = mount.querySelector(".tube-designer-product-structure-svg")?.getAttribute("aria-label");
+    const faceType = field("faceType");
+    faceType.scrollIntoView({ block: "center" });
+    const faceTypeTop = faceType.getBoundingClientRect().top;
+    faceType.focus({ preventScroll: true });
+    faceType.value = "three";
+    await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", faceType, ops);
+    await new Promise(queueMicrotask);
+    const threeFaceDiagramLabel = mount.querySelector(".tube-designer-product-structure-svg")?.getAttribute("aria-label");
+    const faceTypeFocus = document.activeElement === field("faceType");
+    const beforeOpeningFace = mount.querySelector(".product-diagram-door")?.getAttribute("points");
+    const openingFace = field("accessDoorFace3");
+    openingFace.focus({ preventScroll: true });
+    openingFace.value = "left";
+    await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", openingFace, ops);
+    await new Promise(queueMicrotask);
+    const afterOpeningFace = field("accessDoorFace3");
+    const diagramInteraction = {
+      initialDiagramLabel,
+      threeFaceDiagramLabel,
+      focus: faceTypeFocus,
+      scrollAnchorStable: Math.abs(field("faceType").getBoundingClientRect().top - faceTypeTop) <= 1,
+      sideFaces: mount.querySelectorAll(".product-diagram-face-side").length,
+      leftDimension: !!mount.querySelector('[data-tube-designer-parameter-key="leftWidth"]'),
+      rightDimension: !!mount.querySelector('[data-tube-designer-parameter-key="rightWidth"]'),
+      openingFaceFocus: document.activeElement === afterOpeningFace,
+      openingFaceHighlighted: afterOpeningFace.classList.contains("is-active")
+        && !!mount.querySelector('[data-product-diagram-parameter~="accessDoorFace3"].is-active'),
+      openingFaceMoved: beforeOpeningFace !== mount.querySelector(".product-diagram-door")?.getAttribute("points"),
+      // Fine dimensions are intentionally not rendered in the style picker;
+      // selecting a side opening must still prepare a feasible value for the
+      // subsequent native preview/Confirm request.
+      openingSurfaceSized: Number(view.tubeDesignerAddDraft?.leftWidth) >= 1200,
+    };
+    // Fine-grained dimensions, profiles and process options belong to the
+    // instance editor, not the style-selection dialog.
+    view.tubeDesignerAddDialogOpen = false;
+    view.scene.tubeDesigner.product = { entityId: "layout-test-product", name: "测试实例", templateId: template.id, parameters: view.tubeDesignerAddDraft };
+    ops.renderProject = () => { mount.innerHTML = renderDesignerRightPane(view.scene.tubeDesigner, view, context); bindProductParameterDiagrams(mount); };
+    ops.renderProject();
+    parameterScroller = mount.querySelector("[data-tube-designer-parameter-scroll]");
+    for (const node of mount.querySelectorAll("details")) node.open = true;
+    const horizontal = field("horizontalCount");
+    parameterScroller.scrollTop = 0;
+    for (const node of mount.querySelectorAll("details")) node.open = true;
+    horizontal.scrollIntoView({ block: "center" });
+    parameterScroller.scrollTop += 80;
+    const stickyReferenceBottom = mount.querySelector(".tube-designer-parameter-header").getBoundingClientRect().bottom;
+    const stickyDiagram = mount.querySelector("[data-tube-designer-product-diagram]");
+    const stickyTop = stickyDiagram.getBoundingClientRect().top;
+    const lineCount = () => mount.querySelectorAll('[data-product-diagram-parameter~="horizontalCount"] .product-diagram-grid').length;
+    const beforeHorizontalLines = lineCount();
+    horizontal.focus({ preventScroll: true });
+    horizontal.value = "6";
+    await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", horizontal, ops);
+    await new Promise(queueMicrotask);
+    const afterHorizontal = field("horizontalCount");
+    diagramInteraction.sticky = stickyTop >= stickyReferenceBottom - 1
+      && mount.querySelector("[data-tube-designer-product-diagram]").getBoundingClientRect().top >= stickyReferenceBottom - 1;
+    diagramInteraction.horizontalLinesChange = [beforeHorizontalLines, lineCount()];
+    diagramInteraction.horizontalFocus = document.activeElement === afterHorizontal;
+    diagramInteraction.horizontalHighlighted = afterHorizontal.classList.contains("is-active")
+      && !!mount.querySelector('[data-product-diagram-parameter~="horizontalCount"].is-active');
+    const horizontalProfileWidth = field("horizontalWidth");
+    horizontalProfileWidth.focus({ preventScroll: true });
+    await new Promise(queueMicrotask);
+    diagramInteraction.horizontalProfileHighlighted = horizontalProfileWidth.classList.contains("is-active")
+      && !!mount.querySelector('[data-product-diagram-profile-role="horizontal"].is-active');
+    const verticalProfileType = mount.querySelector('[data-product-parameter-key="verticalProfileType"]');
+    verticalProfileType.focus({ preventScroll: true });
+    await new Promise(queueMicrotask);
+    diagramInteraction.verticalProfileHighlighted = verticalProfileType.classList.contains("is-active")
+      && !!mount.querySelector('[data-product-diagram-profile-role="vertical"].is-active');
+    diagramInteraction.installationHidden = !mount.querySelector('[data-tube-designer-parameter="installationMode"]');
+    group("section:materials").open = false;
+    mount.querySelector("[data-tube-designer-product-detail]").open = false;
     const target = field("doorFrameJoinType");
     target.scrollIntoView({ block: "center" });
     target.focus({ preventScroll: true });
@@ -129,8 +188,8 @@ try {
     await new Promise(queueMicrotask);
     const after = field("doorFrameJoinType");
     const result = { focus: document.activeElement === after, offset: Math.abs(after.getBoundingClientRect().top - before),
-      processOpen: group("security:process").open, profileClosed: !group("security:profiles").open,
-      reviewClosed: !group("security:review").open, groovePresent: !!field("vGrooveKFactor") };
+      processOpen: group("section:process").open, profileClosed: !group("section:materials").open,
+      reviewClosed: !mount.querySelector("[data-tube-designer-product-detail]").open, groovePresent: !!field("vGrooveKFactor") };
     group("group:groove_process").open = true;
     for (const value of ["miter_45", "v_groove_90:sharp_v"]) {
       const input = field("doorFrameJoinType"); input.focus(); input.value = value;
@@ -142,23 +201,39 @@ try {
     result.textSelection = [field("productCode").selectionStart, field("productCode").selectionEnd];
     result.textFocus = document.activeElement === field("productCode");
     // The existing-instance editor must retain the same interaction state.
-    view.tubeDesignerAddDialogOpen = false;
-    view.scene.tubeDesigner.product = { entityId: "layout-test-product", name: "测试实例", templateId: template.id, parameters: view.tubeDesignerAddDraft };
-    ops.renderProject = () => { mount.innerHTML = renderDesignerRightPane(view.scene.tubeDesigner, view, context); };
-    ops.renderProject();
-    for (const node of mount.querySelectorAll("details")) node.open = true;
-    group("security:profiles").open = false;
+    group("section:materials").open = false;
     const edit = field("productCode"); edit.focus(); edit.value = "EDIT-12345"; edit.setSelectionRange(1, 4);
     await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", edit, ops);
     await new Promise(queueMicrotask);
     result.editFocus = document.activeElement === field("productCode");
     result.editSelection = [field("productCode").selectionStart, field("productCode").selectionEnd];
-    result.editGroups = group("security:process").open && !group("security:profiles").open;
+    result.editGroups = group("section:process").open && !group("section:materials").open;
     // Restore the add dialog for the optional visual snapshot.
     mount.innerHTML = renderDesignerAddDialog(view.scene.tubeDesigner, view);
+    result.diagramInteraction = diagramInteraction;
     return result;
   }, { templates, css: tubeDesignerCss });
   assert.ok(interaction.focus && interaction.textFocus);
+  assert.deepEqual(interaction.diagramInteraction, {
+    initialDiagramLabel: "单面防盗窗结构与尺寸示意",
+    threeFaceDiagramLabel: "三面防盗窗结构与尺寸示意",
+    focus: true,
+    scrollAnchorStable: true,
+    sideFaces: 2,
+    leftDimension: true,
+    rightDimension: true,
+    openingFaceFocus: true,
+    openingFaceHighlighted: true,
+    openingFaceMoved: true,
+    openingSurfaceSized: true,
+    sticky: true,
+    horizontalLinesChange: [4, 6],
+    horizontalFocus: true,
+    horizontalHighlighted: true,
+    horizontalProfileHighlighted: true,
+    verticalProfileHighlighted: true,
+    installationHidden: true,
+  });
   assert.ok(interaction.offset <= 1, JSON.stringify(interaction));
   assert.ok(interaction.processOpen && interaction.profileClosed && interaction.reviewClosed);
   assert.ok(interaction.groovePresent && interaction.hiddenGroupRestored);
@@ -171,7 +246,7 @@ try {
     await page.locator('.tube-designer-config-parameters').evaluate((pane) => { pane.scrollTop = 0; });
     await page.screenshot({ path: process.env.ICAX_LAYOUT_SCREENSHOT });
   }
-  console.log("PASS add dialog: 4 templates × 2 sizes; layout, focus, text selection, scroll anchoring and hidden-group state");
+  console.log("PASS add dialog: merged security-window template × 2 sizes; four parameter classes, focus, text selection, scroll anchoring and hidden-group state");
 } finally {
   await browser.close();
 }

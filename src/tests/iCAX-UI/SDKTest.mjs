@@ -286,9 +286,12 @@ function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
     [["view", "产品"], ["nesting", "下料"], ["machining", "加工"], ["resources", "资源库"], ["about", "关于"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
-  assert.ok(tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "view")
-    .groups.flatMap((group) => group.commands)
-    .some((command) => command.id === "designer.export-parts" && command.title === "导出零件"));
+  const productRibbonGroups = tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "view").groups;
+  const productPartCommands = productRibbonGroups.find((group) => group.title === "零件").commands;
+  assert.deepEqual(
+    productPartCommands.map((command) => [command.id, command.title]),
+    [["designer.inspect-active-part", "复尺"], ["designer.export-active-product-parts", "导出清单"]],
+  );
   assert.equal(hasProductionWorkflowAccess({}), false);
   assert.equal(hasProductionWorkflowAccess({
     entitlements: [PRODUCTION_WORKFLOW_ENTITLEMENT],

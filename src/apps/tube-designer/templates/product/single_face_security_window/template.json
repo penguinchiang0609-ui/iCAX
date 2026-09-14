@@ -2,7 +2,7 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "single-face-security-window",
-  "version": "3.1.0",
+  "version": "3.2.8",
   "displayName": {
     "zh-CN": "防盗窗"
   },
@@ -27,6 +27,106 @@
       "widthParameter": "width",
       "heightParameter": "height"
     },
+    "addDialog": {
+      "structureParameters": ["faceType", "frameLayout", "infillPattern", "accessDoorEnabled", "sidePosition", "accessDoorFace2", "accessDoorFace3", "accessDoorFace5"]
+    },
+    "productDiagram": {
+      "schemaVersion": 1,
+      "kind": "security-window",
+      "layoutValues": { "single": "single", "two": "two", "three": "three", "five": "five" },
+        "bindings": {
+        "layout": "faceType",
+        "width": "width",
+        "height": "height",
+        "singleSideLength": "sideWidth",
+        "sidePosition": "sidePosition",
+        "leftSideLength": "leftWidth",
+        "rightSideLength": "rightWidth",
+        "depth": "depth",
+        "infillPattern": "infillPattern",
+        "frameLayout": "frameLayout",
+        "frontHorizontalCount": "horizontalCount",
+        "frontVerticalCount": "middleVerticalCount",
+        "multiVerticalCount": "verticalCountPerFace",
+        "verticalLayoutMode": "verticalLayoutMode",
+        "maximumVerticalClearGap": "maximumVerticalClearGap",
+        "sideMaximumVerticalClearGap": "sideMaximumVerticalClearGap",
+        "sideHorizontalCount": "sideHorizontalCount",
+        "sideVerticalCount": "sideVerticalCount",
+        "topBottomCrossbarCount": "topBottomCrossbarCount",
+        "topBottomRodCount": "topBottomRodCount",
+        "doorEnabled": "accessDoorEnabled",
+        "doorFaceTwo": "accessDoorFace2",
+        "doorFaceThree": "accessDoorFace3",
+        "doorFaceFive": "accessDoorFace5",
+        "doorWidth": "doorClearWidth",
+        "doorHeight": "doorClearHeight",
+        "doorLeft": "doorLeft",
+        "doorBottom": "doorBottom",
+        "doorOffsetU": "doorUOffset",
+        "doorOffsetV": "doorVOffset",
+        "doorHorizontalCount": "doorHorizontalCount",
+          "doorVerticalCount": "doorVerticalCount"
+        },
+        "sceneBindings": {
+          "faceType": "all",
+          "width": "all",
+          "height": "all",
+          "frameLayout": { "memberRoles": ["main"] },
+          "infillPattern": { "memberRolePrefixes": ["main_grid.", "access_door.leaf."] },
+          "horizontalCount": { "memberRolePrefixes": ["main_grid.horizontal"] },
+          "middleVerticalCount": { "memberRolePrefixes": ["main_grid.vertical"] },
+          "verticalCountPerFace": { "memberRolePrefixes": ["main_grid.vertical"] },
+          "maximumVerticalClearGap": { "memberRolePrefixes": ["main_grid.vertical"] },
+          "accessDoorEnabled": { "memberRolePrefixes": ["access_door."] },
+          "accessDoorFace2": { "memberRolePrefixes": ["access_door."] },
+          "accessDoorFace3": { "memberRolePrefixes": ["access_door."] },
+          "accessDoorFace5": { "memberRolePrefixes": ["access_door."] },
+          "doorClearWidth": { "memberRolePrefixes": ["access_door."] },
+          "doorClearHeight": { "memberRolePrefixes": ["access_door."] },
+          "doorLeft": { "memberRolePrefixes": ["access_door."] },
+          "doorBottom": { "memberRolePrefixes": ["access_door."] },
+          "doorHorizontalCount": { "memberRolePrefixes": ["access_door.leaf.horizontal"] },
+          "doorVerticalCount": { "memberRolePrefixes": ["access_door.leaf.vertical"] }
+        },
+        "profileRoles": {
+          "frame": {
+            "parameters": ["frameProfileType", "frameWidth", "frameDepth", "frameCornerRadius", "frameWallThickness"],
+            "memberRoles": ["main"],
+          "typeParameter": "frameProfileType",
+          "widthParameter": "frameWidth",
+          "depthParameter": "frameDepth",
+          "cornerRadiusParameter": "frameCornerRadius",
+          "wallThicknessParameter": "frameWallThickness"
+        },
+          "horizontal": {
+            "parameters": ["horizontalProfileType", "horizontalWidth", "horizontalDepth", "horizontalCornerRadius", "horizontalWallThickness"],
+            "memberRolePrefixes": ["main_grid.horizontal"],
+          "typeParameter": "horizontalProfileType",
+          "widthParameter": "horizontalWidth",
+          "depthParameter": "horizontalDepth",
+          "cornerRadiusParameter": "horizontalCornerRadius",
+          "wallThicknessParameter": "horizontalWallThickness"
+        },
+          "vertical": {
+            "parameters": ["verticalProfileType", "verticalWidth", "verticalDepth", "verticalCornerRadius", "verticalWallThickness"],
+            "memberRolePrefixes": ["main_grid.vertical"],
+          "typeParameter": "verticalProfileType",
+          "widthParameter": "verticalWidth",
+          "depthParameter": "verticalDepth",
+          "cornerRadiusParameter": "verticalCornerRadius",
+          "wallThicknessParameter": "verticalWallThickness"
+        }
+      },
+      "dimensions": [
+        { "kind": "width", "parameter": "width", "label": "正面宽度" },
+        { "kind": "height", "parameter": "height", "label": "产品高度" },
+        { "kind": "depth", "parameter": "sideWidth", "label": "侧面宽度", "visibleWhen": { "op": "eq", "parameter": "faceType", "value": "two" } },
+        { "kind": "depth", "parameter": "leftWidth", "label": "左侧外飘深度", "visibleWhen": { "op": "eq", "parameter": "faceType", "value": "three" } },
+        { "kind": "depth", "parameter": "rightWidth", "label": "右侧外飘深度", "visibleWhen": { "op": "eq", "parameter": "faceType", "value": "three" } },
+        { "kind": "depth", "parameter": "depth", "label": "外飘深度", "visibleWhen": { "op": "eq", "parameter": "faceType", "value": "five" } }
+      ]
+    },
     "resourceRoles": {
       "profiles": {
         "frame": { "parameter": "frameProfileType" },
@@ -40,9 +140,9 @@
     },
     "parameterLayout": {
       "sections": [
-        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["overall", "structure", "grid", "main_grid", "side_grid", "top_bottom_grid", "door_position", "door_grid", "project_rules"] },
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["identity", "structure", "overall", "grid", "main_grid", "side_grid", "top_bottom_grid", "door_position", "door_grid"] },
         { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["profile_preset", "material", "outer_profile", "horizontal_profile", "vertical_profile", "door_frame_profile", "door_leaf_profile", "door_horizontal_profile", "door_vertical_profile"] },
-        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["assembly", "door_assembly", "outer_process", "door_frame_process", "door_leaf_process", "groove_process", "installation"] }
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["assembly", "door_assembly", "outer_process", "door_frame_process", "door_leaf_process", "groove_process"] }
       ]
     },
     "parameterPresets": {
@@ -146,11 +246,19 @@
   },
   "groups": [
     {
+      "key": "identity",
+      "displayName": {
+        "zh-CN": "产品标识"
+      },
+      "order": 0
+    },
+    {
       "key": "project_rules",
       "displayName": {
         "zh-CN": "项目与设计规则"
       },
-      "order": 26
+      "order": 26,
+      "editorHidden": true
     },
     {
       "key": "material",
@@ -164,21 +272,22 @@
       "displayName": {
         "zh-CN": "现场安装"
       },
-      "order": 110
+      "order": 110,
+      "editorHidden": true
     },
     {
       "key": "structure",
       "displayName": {
-        "zh-CN": "外框布置"
+        "zh-CN": "结构参数"
       },
-      "order": 15
+      "order": 10
     },
     {
       "key": "overall",
       "displayName": {
-        "zh-CN": "基本尺寸"
+        "zh-CN": "尺寸参数"
       },
-      "order": 10
+      "order": 15
     },
     {
       "key": "main_grid",
@@ -329,7 +438,7 @@
       },
       "valueType": "enum",
       "defaultValue": "single",
-      "group": "overall",
+      "group": "structure",
       "order": 0,
       "choices": [
         {
@@ -1501,7 +1610,7 @@
       },
       "valueType": "string",
       "defaultValue": "TD-SF-001",
-      "group": "overall",
+      "group": "identity",
       "order": 10,
       "constraints": {
         "minimumLength": 1,
@@ -11074,7 +11183,7 @@
           }
         }
       ],
-      "group": "overall",
+      "group": "structure",
       "order": 50,
       "visibleWhen": {
         "op": "any",
@@ -11104,6 +11213,12 @@
           "value": "front",
           "displayName": {
             "zh-CN": "正面"
+          }
+        },
+        {
+          "value": "side",
+          "displayName": {
+            "zh-CN": "侧面（随组合方向）"
           }
         }
       ],
@@ -11437,6 +11552,18 @@
           "displayName": {
             "zh-CN": "正面"
           }
+        },
+        {
+          "value": "left",
+          "displayName": {
+            "zh-CN": "左侧面"
+          }
+        },
+        {
+          "value": "right",
+          "displayName": {
+            "zh-CN": "右侧面"
+          }
         }
       ],
       "group": "door_position",
@@ -11506,6 +11633,24 @@
           "value": "front",
           "displayName": {
             "zh-CN": "正面"
+          }
+        },
+        {
+          "value": "left",
+          "displayName": {
+            "zh-CN": "左侧面"
+          }
+        },
+        {
+          "value": "right",
+          "displayName": {
+            "zh-CN": "右侧面"
+          }
+        },
+        {
+          "value": "bottom",
+          "displayName": {
+            "zh-CN": "底面（逃生口）"
           }
         }
       ],

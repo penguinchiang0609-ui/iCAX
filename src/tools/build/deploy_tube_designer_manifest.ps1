@@ -23,10 +23,21 @@ $modulePaths = @($manifest.backend.modules.PSObject.Properties | ForEach-Object 
 $modulePaths += @($manifest.backend.resources.handlers | ForEach-Object { $_.module })
 $productRoot = Split-Path -Parent $targetManifest
 foreach ($modulePath in ($modulePaths | Sort-Object -Unique)) {
-    if (!$modulePath -or $modulePath.Contains('${')) {
+    if (!$modulePath) {
         throw "Unresolved module path: $modulePath"
     }
-    $resolvedModule = [IO.Path]::GetFullPath((Join-Path $productRoot $modulePath))
+    # Runtime manifests may deliberately anchor native modules at the binary
+    # directory.  Expand that known token only for deployment validation; keep
+    # the token in the emitted manifest so installation remains relocatable.
+    $validationPath = $modulePath.Replace('${ExecutableDirectory}', $outputRoot)
+    if ($validationPath.Contains('${')) {
+        throw "Unresolved module path: $modulePath"
+    }
+    $resolvedModule = if ([IO.Path]::IsPathRooted($validationPath)) {
+        [IO.Path]::GetFullPath($validationPath)
+    } else {
+        [IO.Path]::GetFullPath((Join-Path $productRoot $validationPath))
+    }
     if (!(Test-Path -LiteralPath $resolvedModule -PathType Leaf)) {
         throw "Deployment aborted: required module missing: $resolvedModule"
     }

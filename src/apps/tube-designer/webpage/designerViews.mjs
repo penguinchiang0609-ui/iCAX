@@ -43,11 +43,8 @@ import {
   sortTemplatesByCatalog,
 } from "./productCatalog.mjs";
 import { renderProductTemplateManagerDialog } from "./templateLibrary.mjs";
-import {
-  productManufacturingPlanFingerprint,
-  renderProductManufacturingPlan,
-} from "./productManufacturingPlan.mjs";
 import { renderProductParameterDiagram } from "./productParameterDiagram.mjs";
+import { productParameterKind } from "./productParameterClassification.mjs";
 export { sortTemplatesByCatalog } from "./productCatalog.mjs";
 
 const FALLBACK_PARAMETERS = Object.freeze({
@@ -200,6 +197,35 @@ export function renderDesignerRightPane(context, view) {
   }
 
   const template = getTemplateById(templates, product.templateId);
+  if (!Array.isArray(template?.parameters)) {
+    const detailError = String(view.tubeDesignerTemplateLoadError ?? "").trim();
+    return `
+      <div class="tube-designer-panel tube-designer-parameter-panel" data-tube-designer-parameter-form>
+        <header class="tube-designer-parameter-header">
+          <div class="tube-designer-parameter-toolbar">
+            <div class="tube-designer-heading">
+              <strong>${escapeText(product.name)}</strong>
+              <span>${escapeText(getTemplateDisplayName(template) || product.templateId)} · 当前场景实例</span>
+            </div>
+            <button class="tube-designer-primary tube-designer-regenerate-button" data-cam-action="tube-designer-confirm-update" title="按当前参数重新生成" ${view.pending ? "disabled" : ""}>${view.pending ? "生成中…" : "重新生成"}</button>
+          </div>
+          <div class="tube-designer-summary">
+            ${metric(designer.members?.length ?? 0, "预览装配单元")}
+            ${metric(designer.joints?.length ?? 0, "连接关系")}
+            ${metric(designer.parts?.length ?? 0, "已生成零件")}
+          </div>
+        </header>
+        <div class="tube-designer-parameter-scroll" data-tube-designer-parameter-scroll>
+          <div class="tube-designer-parameter-load-state" role="status">
+            <strong>${detailError ? "产品参数未能载入" : "正在载入产品参数"}</strong>
+            <span>${escapeText(detailError || "参数定义将在载入后显示；当前三维场景和已生成零件不受影响。")}</span>
+            <button type="button" data-cam-action="tube-designer-reload-product-parameters" ${view.pending ? "disabled" : ""}>重新载入参数</button>
+          </div>
+        </div>
+      </div>
+      ${dialogs}
+    `;
+  }
   const values = { ...getDefaultParameters(templates, product.templateId), ...(product.parameters ?? {}), ...(view.tubeDesignerRightDraft ?? {}) };
   const groupTree = buildParameterGroupTree(template, visibleParameterFields(template, values));
   const presetHostGroups = resolveParameterPresetHostGroups(template, groupTree);
@@ -210,9 +236,6 @@ export function renderDesignerRightPane(context, view) {
     : defaultExpandedGroups);
   const parts = designer.parts ?? [];
   const productDetail = renderSecurityWindowReview(template, values);
-  const editorStage = productEditorStage(view, "right");
-  const planFingerprint = productManufacturingPlanFingerprint(template, values, product.quantity ?? 1);
-  const planState = view.tubeDesignerManufacturingPlans?.right;
   scheduleDesignerParameterPanelRestoration(context, view, product.entityId, hasSavedPanelState);
   return `
     <div class="tube-designer-panel tube-designer-parameter-panel" data-tube-designer-parameter-form>
@@ -231,8 +254,7 @@ export function renderDesignerRightPane(context, view) {
         </div>
       </header>
       <div class="tube-designer-parameter-scroll" data-tube-designer-parameter-scroll>
-        ${renderProductEditorTabs("right", editorStage, planState, planFingerprint)}
-        <section class="tube-designer-product-editor-stage" data-tube-designer-editor-stage="parameters" ${editorStage === "parameters" ? "" : "hidden"}>
+        <section class="tube-designer-product-editor-stage" data-tube-designer-editor-stage="parameters" data-tube-designer-product-parameter-scope>
           ${renderProductParameterDiagram(template, values, { mode: "right", activeParameter: view.tubeDesignerLastEditedParameterKey })}
           ${renderInstanceQuantityField(product.quantity ?? 1, "right", view.pending)}
           ${productDetail ? `<details class="tube-designer-parameter-section tube-designer-product-detail-disclosure" data-tube-designer-product-detail data-tube-designer-parameter-group="product:detail" ${expandedGroups.has("product:detail") ? "open" : ""}>
@@ -252,9 +274,6 @@ export function renderDesignerRightPane(context, view) {
             )).join("")}
           </div>
         </section>
-        <section class="tube-designer-product-editor-stage" data-tube-designer-editor-stage="manufacturing" ${editorStage === "manufacturing" ? "" : "hidden"}>
-          ${renderProductManufacturingPlan(planState, { mode: "right", fingerprint: planFingerprint })}
-        </section>
       </div>
     </div>
     ${dialogs}
@@ -272,6 +291,43 @@ export function renderDesignerViewportOverlay(_context, view) {
       <span>${escapeText(formatProductDimensions(product.templateId, parameters))} · ${designer.members?.length ?? 0} 个装配构件</span>
     </div>
   `;
+}
+
+/**
+ * The product scene owns its realised parts.  This intentionally reads the
+ * disassembly result, not a template's provisional `tables`, so a measurement
+ * always opens the final three-dimensional part that will be exported.
+ */
+export function renderDesignerProductPartsDock(_context, view) {
+  const designer = view.scene?.tubeDesigner ?? {};
+  const product = designer.product;
+  const productId = String(product?.entityId ?? designer.activeProductId ?? "");
+  const group = (designer.manufacturingGroups ?? [])
+    .find((item) => String(item?.productEntityId ?? "") === productId);
+  const parts = [...(group?.parts ?? [])].sort((left, right) => Number(left?.index ?? 0) - Number(right?.index ?? 0));
+  const disabled = view.pending || view.tubeDesignerExportOperation;
+  const heading = product
+    ? `${product.name} · ${parts.length ? `${parts.length} 种零件` : "未拆单"}`
+    : "尚未选择产品实例";
+  return `<div class="tube-designer-bottom-splitter tube-designer-product-bottom-splitter" data-cam-resize-pane="bottom" data-no-window-drag
+      title="拖拽调整实例零件清单高度" aria-label="调整实例零件清单高度"></div>
+    <section class="tube-designer-product-parts-dock" aria-label="当前产品实例零件清单">
+      <header>
+        <div><strong>实例零件清单</strong><span>${escapeText(heading)}</span></div>
+        <div class="tube-designer-product-parts-dock-actions">
+          ${product && !parts.length ? `<button type="button" class="tube-designer-primary" data-cam-action="tube-designer-disassemble-active-product" ${disabled ? "disabled" : ""}>生成零件清单</button>` : ""}
+        </div>
+      </header>
+      <div class="tube-designer-product-parts-table">
+        ${product ? (parts.length ? `<table><thead><tr><th>零件编号</th><th>名称</th><th>规格</th><th>数量</th><th>长度</th></tr></thead>
+          <tbody>${parts.map((part) => {
+            const active = String(view.tubeDesignerActivePartId ?? "") === String(part.entityId);
+            return `<tr class="${active ? "is-active" : ""}" data-cam-action="tube-designer-select-product-part" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" data-tube-designer-product-part-row="${escapeAttribute(part.entityId)}" aria-selected="${active}" tabindex="0"><td>${escapeText(part.partNumber ?? "—")}</td><td>${escapeText(partDisplayName(part))}</td><td>${escapeText(formatPartSpecificationWithLength(part))}</td><td>${escapeText(part.quantity ?? 1)}</td><td>${escapeText(formatNumber(part.length))} mm</td></tr>`;
+          }).join("")}</tbody></table>`
+          : `<div class="tube-designer-product-parts-empty"><strong>尚未生成零件清单</strong><span>生成后将显示此实例的最终零件；可逐件进入复尺。</span></div>`)
+          : `<div class="tube-designer-product-parts-empty"><strong>请选择产品实例</strong><span>左侧选择实例后，在这里查看它自己的零件清单。</span></div>`}
+      </div>
+    </section>`;
 }
 
 export function renderDesignerOperationOverlay(_context, view) {
@@ -373,7 +429,7 @@ export function renderDesignerAddDialog(designer, view) {
     <div class="tube-designer-modal-backdrop" role="presentation">
       <section class="tube-designer-config-dialog" data-tube-designer-add-dialog role="dialog" aria-modal="true" aria-labelledby="tube-designer-add-title">
         <header class="tube-designer-dialog-header">
-          <div><strong id="tube-designer-add-title">添加产品实例</strong><span>选择模板并一次设置好初始参数；确定前不会修改项目数据。</span></div>
+          <div><strong id="tube-designer-add-title">添加产品实例</strong><span>先选择款式并确定结构；创建后可在场景右侧继续调整尺寸、材料和工艺。</span></div>
           <button class="tube-designer-dialog-close" data-cam-action="tube-designer-cancel-add" aria-label="取消添加" ${pending ? "disabled" : ""}>×</button>
         </header>
         <div class="tube-designer-config-body">
@@ -415,35 +471,48 @@ export function renderDesignerAddParameterContent(designer, view) {
   const template = getTemplateById(templates, view?.tubeDesignerAddTemplateId) ?? getDefaultTemplate(templates);
   const entry = getCatalogEntry(templates, template?.id, view?.tubeDesignerAddCatalogPresetId);
   const values = { ...getDefaultParameters(templates, template?.id), ...(view?.tubeDesignerAddDraft ?? {}) };
-  const groupTree = buildParameterGroupTree(template, visibleParameterFields(template, values));
-  const presetHostGroups = resolveParameterPresetHostGroups(template, groupTree);
+  const structureFields = addDialogStructureFields(template, values);
+  const groupTree = buildParameterGroupTree(template, structureFields);
   const pending = Boolean(view?.pending);
-  const editorStage = productEditorStage(view, "add");
-  const planFingerprint = productManufacturingPlanFingerprint(
-    template, values, view?.tubeDesignerAddInstanceQuantity ?? 1,
-  );
-  const planState = view?.tubeDesignerManufacturingPlans?.add;
   return `
     <div class="tube-designer-config-summary">
       <span class="tube-designer-config-preview">${renderSchematic(template, values)}</span>
       <div><strong>${escapeText(view?.tubeDesignerAddInstanceName)}</strong><span>${escapeText(entry?.displayName ?? getTemplateDisplayName(template))} · ${escapeText(formatProductDimensions(template?.id, values))}</span></div>
     </div>
-    ${renderProductEditorTabs("add", editorStage, planState, planFingerprint)}
-    <section class="tube-designer-product-editor-stage" data-tube-designer-editor-stage="parameters" ${editorStage === "parameters" ? "" : "hidden"}>
+    <section class="tube-designer-product-editor-stage" data-tube-designer-editor-stage="parameters" data-tube-designer-product-parameter-scope>
       ${renderProductParameterDiagram(template, values, { mode: "add", activeParameter: view?.tubeDesignerLastEditedParameterKey })}
-      ${template?.extensions?.securityWindow ? `<p class="tube-designer-empty">${escapeText(template.description ?? "")} 修改参数生成产品，再导入下料并导出零件或进入排样。</p>` : ""}
-      ${template?.extensions?.securityWindow ? `<details class="tube-designer-review-disclosure" data-tube-designer-parameter-group="security:review" ${view.tubeDesignerAddDisclosureStates?.[template.id]?.["security:review"] ? "open" : ""}><summary>设计核对<span>安装、开启及加工注意事项</span></summary>${renderSecurityWindowReview(template, values)}</details>` : renderSecurityWindowReview(template, values)}
-      ${renderInstanceQuantityField(view.tubeDesignerAddInstanceQuantity ?? 1, "add", pending)}
-      ${template?.available
-        ? groupTree.map((group) => renderAddParameterGroup(
-          group, values, pending, view, "add", template, presetHostGroups,
-        )).join("")
-        : `<div class="tube-designer-empty">${escapeText(template?.status ?? "该模板尚不可用。")}</div>`}
-    </section>
-    <section class="tube-designer-product-editor-stage" data-tube-designer-editor-stage="manufacturing" ${editorStage === "manufacturing" ? "" : "hidden"}>
-      ${renderProductManufacturingPlan(planState, { mode: "add", fingerprint: planFingerprint })}
+      <div class="tube-designer-add-structure-intro"><strong>先确定款式</strong><span>这里只保留会改变款式的结构选项；尺寸、管材、材料和工艺在创建后于右侧继续细调。</span></div>
+      ${template?.available && groupTree.length
+        ? `<div class="tube-designer-add-structure-fields">${groupTree.map((group) => renderAddParameterGroup(
+          group, values, pending, view, "add", template,
+        )).join("")}</div>`
+        : template?.available
+          ? `<div class="tube-designer-empty">该款式没有需要在创建前决定的结构选项；确认后可在场景右侧继续配置。</div>`
+          : `<div class="tube-designer-empty">${escapeText(template?.status ?? "该模板尚不可用。")}</div>`}
     </section>
   `;
+}
+
+function addDialogStructureFields(template, values) {
+  const declared = template?.extensions?.addDialog?.structureParameters;
+  const visible = visibleParameterFields(template, values);
+  if (Array.isArray(declared) && declared.length) {
+    const wanted = new Set(declared.map(String));
+    return visible.filter((field) => wanted.has(String(field?.key ?? field?.name ?? "")));
+  }
+  // A compact, safe default for older templates: only choice/toggle fields
+  // from the product specification. Material/profile and process choices stay
+  // in the scene editor where their full parameter groups remain available.
+  const sections = parameterLayoutSections(template);
+  const excludedGroups = new Set(sections
+    .filter((section) => ["materials", "process"].includes(section.key))
+    .flatMap((section) => section.groups));
+  return visible.filter((field) => {
+    const type = String(field?.valueType ?? field?.type ?? "").toLowerCase();
+    return productParameterKind(field, template) === "structure"
+      && ["enum", "select", "boolean", "bool"].includes(type)
+      && !excludedGroups.has(String(field?.groupKey ?? field?.group ?? ""));
+  }).slice(0, 8);
 }
 
 function productEditorStage(view, mode) {
@@ -466,10 +535,14 @@ function renderProductEditorTabs(mode, activeStage, planState, fingerprint) {
 function visibleParameterFields(template, values) {
   const selector = String(template?.extensions?.parameterPresets?.selectorParameter ?? "").trim();
   const importedPrefixes = new Set(Object.keys(getProfileOverrides(values)));
+  const hiddenGroups = new Set((template?.groups ?? [])
+    .filter((group) => group?.editorHidden === true)
+    .map((group) => String(group?.key ?? "").trim()).filter(Boolean));
   return visibleFields(template?.parameters ?? [], values)
     .filter((field) => {
       const key = String(field?.key ?? field?.name ?? "");
       if (key === selector) return false;
+      if (hiddenGroups.has(String(field?.groupKey ?? field?.group ?? "").trim())) return false;
       for (const prefix of importedPrefixes) {
         const profileKeys = new Set([
           `${prefix}Width`, `${prefix}WallThickness`, `${prefix}CornerRadius`,
@@ -1500,7 +1573,7 @@ function renderProfileField(field, value, disabled, context) {
   const mode = context?.mode === "add" ? "add" : "right";
   return `<div class="tube-designer-field tube-designer-profile-field wide">
     <span>${label}</span>
-    <select data-cam-change-action="tube-designer-profile-selection-change" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-parameter="${escapeAttribute(key)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-current-selection="${escapeAttribute(selected)}" ${disabled ? "disabled" : ""}>
+    <select data-cam-change-action="tube-designer-profile-selection-change" data-tube-designer-profile-prefix="${escapeAttribute(prefix)}" data-tube-designer-profile-parameter="${escapeAttribute(key)}" data-tube-designer-profile-mode="${mode}" data-tube-designer-profile-current-selection="${escapeAttribute(selected)}" data-product-parameter-key="${escapeAttribute(key)}" ${disabled ? "disabled" : ""}>
       <optgroup label="模板预设截面">${options.map((option) => {
         const optionValue = typeof option === "object" ? option?.value : option;
         const optionLabel = typeof option === "object" ? option?.label : option;
@@ -1624,21 +1697,21 @@ function renderField(field, value, disabled = false, context = null) {
     return renderProfileField(field, value, disabled, context);
   }
   if (field.type === "readonly") {
-    return `<label class="tube-designer-field">${label}<input type="text" data-tube-designer-parameter="${name}" value="${escapeAttribute(value)}" readonly /></label>`;
+    return `<label class="tube-designer-field">${label}<input type="text" data-tube-designer-parameter="${name}" data-product-parameter-key="${name}" value="${escapeAttribute(value)}" readonly /></label>`;
   }
   if (field.type === "boolean" || field.valueType === "boolean") {
-    return `<label class="tube-designer-field tube-designer-boolean-field"><span>${label}</span><input type="checkbox" data-tube-designer-parameter="${name}" data-cam-change-action="tube-designer-parameter-change" ${value === true || value === "true" || value === "是" ? "checked" : ""} ${disabled ? "disabled" : ""} /></label>`;
+    return `<label class="tube-designer-field tube-designer-boolean-field"><span>${label}</span><input type="checkbox" data-tube-designer-parameter="${name}" data-product-parameter-key="${name}" data-cam-change-action="tube-designer-parameter-change" ${value === true || value === "true" || value === "是" ? "checked" : ""} ${disabled ? "disabled" : ""} /></label>`;
   }
   if (field.type === "select") {
     const options = Array.isArray(field.options) ? field.options : [];
-    return `<label class="tube-designer-field">${label}<select data-tube-designer-parameter="${name}" data-cam-change-action="tube-designer-parameter-change" ${disabled || field.readOnly ? "disabled" : ""}>${options.map((option) => {
+    return `<label class="tube-designer-field">${label}<select data-tube-designer-parameter="${name}" data-product-parameter-key="${name}" data-cam-change-action="tube-designer-parameter-change" ${disabled || field.readOnly ? "disabled" : ""}>${options.map((option) => {
       const optionValue = typeof option === "object" ? option?.value : option;
       const optionLabel = typeof option === "object" ? option?.label : option;
       return `<option value="${escapeAttribute(optionValue)}" data-tube-designer-value-type="${typeof optionValue}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(optionLabel)}</option>`;
     }).join("")}</select></label>`;
   }
   const type = field.type === "text" ? "text" : "number";
-  const attributes = [`type="${type}"`, `data-tube-designer-parameter="${name}"`, `value="${escapeAttribute(value)}"`];
+  const attributes = [`type="${type}"`, `data-tube-designer-parameter="${name}"`, `data-product-parameter-key="${name}"`, `value="${escapeAttribute(value)}"`];
   if (type === "number") attributes.push(`step="${escapeAttribute(field.step ?? (field.type === "integer" ? 1 : "any"))}"`);
   if (field.min != null) attributes.push(`min="${escapeAttribute(field.min)}"`);
   if (field.max != null) attributes.push(`max="${escapeAttribute(field.max)}"`);
@@ -1677,10 +1750,28 @@ function buildParameterGroupTree(template, fields) {
         children: [],
       });
     } else {
-      nodes.get(key).order = Math.min(nodes.get(key).order, order);
+      const node = nodes.get(key);
+      node.order = Math.min(node.order, order);
+      if (title) node.title = title;
+      if (parentKey) node.parentKey = parentKey;
     }
     return nodes.get(key);
   };
+
+  // Group descriptors may form a hierarchy.  This keeps broad product
+  // semantics (structure / dimensions) separate while retaining useful
+  // business subgroups such as grids, posts and infill.
+  descriptors.forEach((descriptor, index) => {
+    const groupKey = String(descriptor?.key ?? "").trim();
+    if (!groupKey) return;
+    const parentGroupKey = String(descriptor?.parentKey ?? "").trim();
+    ensureNode(
+      `group:${groupKey}`,
+      localizedProfileText(descriptor?.displayName, groupKey),
+      parentGroupKey ? `group:${parentGroupKey}` : "",
+      groupOrders.get(groupKey) ?? index,
+    );
+  });
 
   (Array.isArray(fields) ? fields : []).forEach((field, fieldIndex) => {
     let displayPath = String(field?.displayName ?? field?.label ?? field?.key ?? "参数")
@@ -1691,7 +1782,8 @@ function buildParameterGroupTree(template, fields) {
     const descriptor = descriptorsByKey.get(groupKey);
     const title = localizedProfileText(descriptor?.displayName, String(field?.group ?? "参数"));
     const baseKey = `group:${groupKey || title}`;
-    const baseNode = ensureNode(baseKey, title, "", groupOrder);
+    const parentGroupKey = String(descriptor?.parentKey ?? "").trim();
+    const baseNode = ensureNode(baseKey, title, parentGroupKey ? `group:${parentGroupKey}` : "", groupOrder);
     if (displayPath.length > 1) {
       let parentKey = baseKey;
       displayPath.slice(0, -1).forEach((title, depth, groupPath) => {
@@ -1735,14 +1827,53 @@ function buildParameterGroupTree(template, fields) {
   const sorted = sortNodes(roots).map(pruneNode).filter(Boolean);
   const layoutSections = parameterLayoutSections(template);
   if (layoutSections.length) {
-    const assignedGroups = new Set(layoutSections.flatMap((section) => section.groups));
-    const result = layoutSections.map((section) => ({
-      key: `section:${section.key}`,
-      title: section.title,
-      fields: [],
-      children: sorted.filter((group) => section.groups.includes(group.key.replace(/^group:/, ""))),
-      defaultOpen: section.defaultOpen,
-    })).filter((section) => section.children.length);
+    const descendantGroupKeys = (group) => [
+      group.key.replace(/^group:/, ""),
+      ...group.children.flatMap(descendantGroupKeys),
+    ];
+    const selectedRoots = (section) => sorted.filter((group) =>
+      section.groups.includes(group.key.replace(/^group:/, "")));
+    const assignedGroups = new Set(layoutSections.flatMap((section) =>
+      selectedRoots(section).flatMap(descendantGroupKeys)));
+    const filterByProductKind = (node, kind) => {
+      const children = node.children.map((child) => filterByProductKind(child, kind)).filter(Boolean);
+      const matchingFields = node.fields.filter((field) => productParameterKind(field, template) === kind);
+      if (!matchingFields.length && !children.length) return null;
+      return {
+        ...node,
+        key: `product-kind:${kind}:${node.key}`,
+        fields: matchingFields,
+        children,
+      };
+    };
+    const result = layoutSections.flatMap((section) => {
+      const sectionRoots = selectedRoots(section);
+      if (section.key !== "product") {
+        return [{
+          key: `section:${section.key}`,
+          title: section.title,
+          fields: [],
+          children: sectionRoots,
+          defaultOpen: section.defaultOpen,
+        }];
+      }
+      return [
+        {
+          key: "section:structure",
+          title: "结构参数",
+          fields: [],
+          children: sectionRoots.map((group) => filterByProductKind(group, "structure")).filter(Boolean),
+          defaultOpen: section.defaultOpen,
+        },
+        {
+          key: "section:dimensions",
+          title: "尺寸参数",
+          fields: [],
+          children: sectionRoots.map((group) => filterByProductKind(group, "dimension")).filter(Boolean),
+          defaultOpen: false,
+        },
+      ];
+    }).filter((section) => section.children.length);
     const unassigned = sorted.filter((group) => !assignedGroups.has(group.key.replace(/^group:/, "")));
     if (unassigned.length) {
       if (result.length) result[0].children.push(...unassigned);

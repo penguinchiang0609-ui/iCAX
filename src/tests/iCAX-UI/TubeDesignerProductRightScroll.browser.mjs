@@ -83,6 +83,8 @@ try {
     const detailReachable = detail.lastElementChild.getBoundingClientRect().bottom <= detail.getBoundingClientRect().bottom + 1;
     const scrollable = scroller.scrollHeight > scroller.clientHeight;
     scroller.scrollTop = scroller.scrollHeight;
+    const stickyReferenceBottom = pane.querySelector(".tube-designer-parameter-header").getBoundingClientRect().bottom;
+    const stickyDiagramTop = pane.querySelector("[data-tube-designer-product-diagram]").getBoundingClientRect().top;
     const last = scroller.querySelector(".tube-designer-parameter-section:last-child");
     const reachable = last.getBoundingClientRect().bottom <= scroller.getBoundingClientRect().bottom + 1;
 
@@ -113,6 +115,7 @@ try {
       detailBounded: detail.clientHeight <= Math.min(innerHeight * 0.32, 320) + 1,
       detailStable: Math.abs(detail.scrollTop - oldDetailTop) < 1,
       scrollable,
+      stickyDiagram: stickyDiagramTop >= stickyReferenceBottom - 1,
       reachable,
       oneScrollbar: getComputedStyle(scroller.querySelector(".tube-designer-parameter-sections")).overflowY === "visible",
       stable: Math.abs(scroller.scrollTop - oldTop) < 1,
@@ -130,6 +133,7 @@ try {
   assert.equal(result.detailBounded, true);
   assert.equal(result.detailStable, true);
   assert.equal(result.scrollable, true);
+  assert.equal(result.stickyDiagram, true);
   assert.equal(result.reachable, true);
   assert.equal(result.oneScrollbar, true);
   assert.equal(result.stable, true);

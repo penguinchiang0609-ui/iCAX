@@ -13,7 +13,7 @@ from icax_template_sdk import NeutralModel
 
 
 TEMPLATE_ID = "single-face-security-window"
-TEMPLATE_VERSION = "3.1.0"
+TEMPLATE_VERSION = "3.2.8"
 
 PROFILE_CATALOG_SCRIPT = Path(__file__).resolve().parent.parent.parent / "_shared" / "tube_profile_catalog.py"
 PROFILE_CATALOG_MODULE = "icax_tube_profile_catalog_" + hashlib.sha256(

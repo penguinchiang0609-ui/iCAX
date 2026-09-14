@@ -27,7 +27,7 @@ assert.deepEqual(dimensions.map(({ kind, parameter, value }) => ({ kind, paramet
   { kind: "height", parameter: "height", value: "1,900 mm" },
 ]);
 const diagram = renderProductParameterDiagram(template, { width: 1350, height: 1900 }, { mode: "add", activeParameter: "width" });
-assert.match(diagram, /成品尺寸示意/);
+assert.match(diagram, /成品结构与尺寸示意/);
 assert.match(diagram, /data-tube-designer-parameter-key="width"/);
 assert.match(diagram, /is-width is-active/);
 

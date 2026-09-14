@@ -1240,8 +1240,19 @@ def _generate_multi_face_geometry(
                                  part.profile, "access_door.leaf")
             for part in parts if part.key.startswith(("access_door.leaf.horizontal.", "access_door.leaf.vertical."))
         ]
+        # ``emit_surface_frame`` transforms a locally made frame using the
+        # explicit x/y/z axes below.  For the underside cap, the physical
+        # surface normal points down while its local V axis points towards the
+        # back.  Keeping both of those directions would make X × Y point
+        # opposite Z: it is a mirror, which the native geometry bridge rightly
+        # rejects.  The frame is centred on the cap plane, so flipping only its
+        # through-section axis keeps the solid in place while restoring a
+        # right-handed local coordinate system.
+        frame_normal = door_surface.normal
+        if door_surface.face_index == 5:
+            frame_normal = _scale(frame_normal, -1.0)
         placement = {"origin": list(door_surface.origin), "xAxis": list(door_surface.u_axis),
-                     "yAxis": list(door_surface.normal), "zAxis": list(door_surface.v_axis)}
+                     "yAxis": list(frame_normal), "zAxis": list(door_surface.v_axis)}
         processes = [
             (_frame_geometry._process(construction, join_key, wrap_key), _profile(construction, profile_key))
             for join_key, wrap_key, profile_key in (

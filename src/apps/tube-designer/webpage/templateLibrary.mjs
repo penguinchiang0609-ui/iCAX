@@ -5,6 +5,7 @@ import {
   getTemplateVisualAsset,
 } from "./productCatalog.mjs";
 import { captureScrollAnchor, restoreScrollAnchor } from "./scrollAnchor.mjs";
+import { productParameterKind } from "./productParameterClassification.mjs";
 
 // Product templates are managed as portable .itpt archives.  The dialog keeps
 // built-in packages read-only and exposes imported personal packages separately
@@ -267,6 +268,9 @@ function templateParameterLayoutSections(item) {
 }
 
 function templateParameterLayout(item, definitions) {
+  const descriptors = new Map((Array.isArray(item?.groups) ? item.groups : [])
+    .map((entry, index) => [String(entry?.key ?? ""), { ...entry, index }])
+    .filter(([key]) => key));
   const groups = new Map();
   for (const definition of definitions) {
     const key = templateParameterGroupKey(definition);
@@ -274,21 +278,55 @@ function templateParameterLayout(item, definitions) {
       key,
       title: templateParameterGroupLabel(item, key),
       entries: [],
+      children: [],
+      parentKey: String(descriptors.get(key)?.parentKey ?? "").trim(),
+      order: Number(descriptors.get(key)?.order ?? descriptors.get(key)?.index ?? groups.size),
     });
     groups.get(key).entries.push(definition);
   }
+  for (const group of groups.values()) {
+    const parent = group.parentKey ? groups.get(group.parentKey) : null;
+    if (parent && parent !== group) parent.children.push(group);
+  }
+  const sortGroups = (entries) => entries.sort((left, right) => left.order - right.order)
+    .map((group) => ({ ...group, children: sortGroups(group.children) }));
+  const roots = sortGroups([...groups.values()].filter((group) =>
+    !group.parentKey || !groups.has(group.parentKey)));
   const configured = templateParameterLayoutSections(item);
   if (!configured.length) {
     return groups.size ? [{
-      key: "parameters", title: "参数配置", defaultOpen: true, groups: [...groups.values()],
+      key: "parameters", title: "参数配置", defaultOpen: true, groups: roots,
     }] : [];
   }
-  const assigned = new Set(configured.flatMap((section) => section.groups));
-  const result = configured.map((section) => ({
-    ...section,
-    groups: section.groups.map((key) => groups.get(key)).filter(Boolean),
-  })).filter((section) => section.groups.length);
-  const unassigned = [...groups.values()].filter((group) => !assigned.has(group.key));
+  const descendants = (group) => [group.key, ...group.children.flatMap(descendants)];
+  const selectedRoots = (section) => roots.filter((group) => section.groups.includes(group.key));
+  const assigned = new Set(configured.flatMap((section) => selectedRoots(section).flatMap(descendants)));
+  const filterByProductKind = (group, kind) => {
+    const children = group.children.map((child) => filterByProductKind(child, kind)).filter(Boolean);
+    const entries = group.entries.filter((field) => productParameterKind(field, item) === kind);
+    if (!entries.length && !children.length) return null;
+    return { ...group, key: `product-kind:${kind}:${group.key}`, entries, children };
+  };
+  const result = configured.flatMap((section) => {
+    const sectionRoots = selectedRoots(section);
+    if (section.key !== "product") return [{ ...section, groups: sectionRoots }];
+    return [
+      {
+        ...section,
+        key: "structure",
+        title: "结构参数",
+        groups: sectionRoots.map((group) => filterByProductKind(group, "structure")).filter(Boolean),
+      },
+      {
+        ...section,
+        key: "dimensions",
+        title: "尺寸参数",
+        defaultOpen: false,
+        groups: sectionRoots.map((group) => filterByProductKind(group, "dimension")).filter(Boolean),
+      },
+    ];
+  }).filter((section) => section.groups.length);
+  const unassigned = roots.filter((group) => !assigned.has(group.key));
   if (unassigned.length) {
     if (result.length) result[0].groups.push(...unassigned);
     else result.push({ key: "parameters", title: "参数配置", defaultOpen: true, groups: unassigned });
@@ -302,22 +340,29 @@ function templateParameterDisclosureOpen(view, item, key, fallback) {
 }
 
 function renderTemplateParameterLayout(view, item, sections) {
+  const groupFieldCount = (group) => group.entries.length
+    + group.children.reduce((total, child) => total + groupFieldCount(child), 0);
+  const renderGroup = (group, sectionOpen, sectionIndex, groupIndex, depth = 0) => {
+    const groupKey = `group:${group.key}`;
+    const groupOpen = templateParameterDisclosureOpen(
+      view, item, groupKey, sectionOpen && sectionIndex === 0 && groupIndex === 0,
+    );
+    const children = group.children.map((child, index) =>
+      renderGroup(child, groupOpen, sectionIndex, index, depth + 1)).join("");
+    return `<details class="tube-product-template-library-parameter-group" data-tube-template-library-disclosure="${escapeAttr(groupKey)}" data-tube-template-library-group-depth="${depth}" ${groupOpen ? "open" : ""}>
+      <summary><span>${escapeText(group.title)}</span><small>${groupFieldCount(group)} 项</small></summary>
+      ${group.entries.length ? `<div class="tube-product-template-library-parameter-grid">${group.entries.map((definition) => templateParameterInput(view, item, definition)).join("")}</div>` : ""}
+      ${children ? `<div class="tube-product-template-library-parameter-group-children">${children}</div>` : ""}
+    </details>`;
+  };
   return sections.map((section, sectionIndex) => {
     const sectionKey = `section:${section.key}`;
     const sectionOpen = templateParameterDisclosureOpen(
       view, item, sectionKey, section.defaultOpen || sectionIndex === 0,
     );
-    const fieldCount = section.groups.reduce((total, group) => total + group.entries.length, 0);
-    const groups = section.groups.map((group, groupIndex) => {
-      const groupKey = `group:${group.key}`;
-      const groupOpen = templateParameterDisclosureOpen(
-        view, item, groupKey, sectionOpen && sectionIndex === 0 && groupIndex === 0,
-      );
-      return `<details class="tube-product-template-library-parameter-group" data-tube-template-library-disclosure="${escapeAttr(groupKey)}" ${groupOpen ? "open" : ""}>
-        <summary><span>${escapeText(group.title)}</span><small>${group.entries.length} 项</small></summary>
-        <div class="tube-product-template-library-parameter-grid">${group.entries.map((definition) => templateParameterInput(view, item, definition)).join("")}</div>
-      </details>`;
-    }).join("");
+    const fieldCount = section.groups.reduce((total, group) => total + groupFieldCount(group), 0);
+    const groups = section.groups.map((group, groupIndex) =>
+      renderGroup(group, sectionOpen, sectionIndex, groupIndex)).join("");
     return `<details class="tube-product-template-library-parameter-section" data-tube-template-library-disclosure="${escapeAttr(sectionKey)}" ${sectionOpen ? "open" : ""}>
       <summary><span>${escapeText(section.title)}</span><small>${fieldCount} 项</small></summary>
       <div class="tube-product-template-library-parameter-section-content">${groups}</div>

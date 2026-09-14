@@ -38,35 +38,35 @@
       "templates": [
         {
           "templateId": "modular-guardrail",
-          "version": "1.3.0",
+          "version": "1.4.2",
           "displayName": "护栏/扶手护栏/竖杆护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "modular-guardrail-cross-straight",
-          "version": "1.3.0",
+          "version": "1.4.2",
           "displayName": "护栏/扶手护栏/X 形护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "modular-guardrail-diamond-straight",
-          "version": "1.3.0",
+          "version": "1.4.2",
           "displayName": "护栏/扶手护栏/菱形护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "modular-guardrail-glass-straight",
-          "version": "1.3.0",
+          "version": "1.4.2",
           "displayName": "护栏/扶手护栏/挡板护栏",
           "status": "available",
           "industry": "护栏"
         },
         {
           "templateId": "single-face-security-window",
-          "version": "3.1.0",
+          "version": "3.2.8",
           "displayName": "窗/防盗窗",
           "status": "available"
         },

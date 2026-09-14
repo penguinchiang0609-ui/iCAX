@@ -77,8 +77,8 @@ try {
   });
   assert.deepEqual(disclosureLayout, {
     sectionCount: 3,
-    openSections: ["section:product"],
-    openGroups: ["group:dimensions"],
+    openSections: ["section:dimensions"],
+    openGroups: ["group:product-kind:dimension:dimensions"],
     nested: true,
     noOverflow: true,
   });
@@ -114,7 +114,7 @@ try {
       bars: document.querySelectorAll(".tube-designer-user-preset-bar").length,
       materialScope: material?.querySelector(".tube-designer-user-preset-bar")?.dataset.tubeDesignerPresetScope,
       processScope: process?.querySelector(".tube-designer-user-preset-bar")?.dataset.tubeDesignerPresetScope,
-      productHasPreset: !!document.querySelector('[data-tube-designer-parameter-group="section:product"] .tube-designer-user-preset-bar'),
+      productHasPreset: !!document.querySelector('[data-tube-designer-parameter-group="section:structure"] .tube-designer-user-preset-bar, [data-tube-designer-parameter-group="section:dimensions"] .tube-designer-user-preset-bar'),
     };
   });
   assert.deepEqual(presetLayout, {

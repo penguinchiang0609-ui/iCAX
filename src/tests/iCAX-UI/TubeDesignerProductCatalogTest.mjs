@@ -313,13 +313,14 @@ await test("security windows use one visible family while legacy face packages r
       tubeDesignerAddTemplateId: entry.id, tubeDesignerAddDraft: entry.catalogParameters,
     });
     assert.doesNotMatch(html, /封板|mainInfillMode|centerPlate/);
-    for (const title of ["产品规格", "管材与材料", "加工与装配工艺"]) assert.ok(html.includes(title));
-    assert.match(html, /<details[^>]* open>\s*<summary><span>产品规格/);
-    assert.match(html, /<details[^>]*depth="0"\s*>\s*<summary><span>加工与装配工艺/);
+    assert.ok(html.includes("先确定款式"));
+    assert.ok(html.includes("结构参数"));
+    for (const title of ["尺寸参数", "管材与材料", "加工与装配工艺", "加工清单"]) assert.equal(html.includes(title), false);
+    assert.match(html, /<details[^>]* open>\s*<summary><span>结构参数/);
   }
 });
 
-await test("all registered products declare the same three semantic parameter sections", () => {
+await test("all registered products render the same four semantic parameter classes", () => {
   const manifest = JSON.parse(readFileSync(new URL("../../apps/tube-designer/product.manifest.json", import.meta.url)));
   const folders = new Map([
     ["modular-guardrail", "modular_guardrail"],
@@ -342,9 +343,16 @@ await test("all registered products declare the same three semantic parameter se
     assert.deepEqual(sections.map((section) => catalogText(section.displayName)), [
       "产品规格", "管材与材料", "加工与装配工艺",
     ], registration.templateId);
-    const assigned = sections.flatMap((section) => section.groups);
+    const childrenByParent = new Map();
+    for (const group of raw.groups) {
+      if (!group.parentKey) continue;
+      if (!childrenByParent.has(group.parentKey)) childrenByParent.set(group.parentKey, []);
+      childrenByParent.get(group.parentKey).push(group.key);
+    }
+    const withDescendants = (key) => [key, ...(childrenByParent.get(key) ?? []).flatMap(withDescendants)];
+    const assigned = sections.flatMap((section) => section.groups.flatMap(withDescendants));
     assert.equal(new Set(assigned).size, assigned.length, `${registration.templateId}: group assigned twice`);
-    assert.deepEqual(new Set(assigned), new Set(raw.groups.map((group) => group.key)),
+    assert.deepEqual(new Set(assigned), new Set(raw.groups.filter((group) => group.editorHidden !== true).map((group) => group.key)),
       `${registration.templateId}: every parameter group must belong to one section`);
     assert.deepEqual(sections.filter((section) => section.allowPresets).map((section) => section.key),
       ["materials", "process"], `${registration.templateId}: reusable presets belong to materials and process`);
@@ -359,24 +367,33 @@ await test("all registered products declare the same three semantic parameter se
       templates: [descriptor],
       product: { entityId: "product-1", templateId: descriptor.id, name: descriptor.name, quantity: 1, parameters: defaults },
     } } });
-    for (const [mode, html] of [["add", addHtml], ["right", rightHtml]]) {
-      const positions = ["product", "materials", "process"]
+    const addStructurePosition = addHtml.indexOf('data-tube-designer-parameter-group="section:structure"');
+    assert.ok(addStructurePosition >= 0, `${registration.templateId}: add missing structure selector`);
+    for (const key of ["dimensions", "materials", "process"]) {
+      assert.equal(addHtml.includes(`data-tube-designer-parameter-group="section:${key}"`), false,
+        `${registration.templateId}: add must not expose ${key}`);
+    }
+    {
+      const html = rightHtml;
+      const positions = ["structure", "dimensions", "materials", "process"]
         .map((key) => html.indexOf(`data-tube-designer-parameter-group="section:${key}"`));
-      assert.ok(positions.every((position) => position >= 0), `${registration.templateId}: ${mode} missing section`);
-      assert.ok(positions[0] < positions[1] && positions[1] < positions[2],
-        `${registration.templateId}: ${mode} section order`);
+      assert.ok(positions.every((position) => position >= 0), `${registration.templateId}: right missing section`);
+      assert.ok(positions[0] < positions[1] && positions[1] < positions[2] && positions[2] < positions[3],
+        `${registration.templateId}: right section order`);
     }
     const libraryHtml = renderProductTemplateLibraryRightPane({}, {
       scene: { tubeDesigner: { templates: [descriptor] } },
       tubeDesignerProductTemplateLibrary: { scope: "system", selectedId: descriptor.id },
     });
-    const libraryPositions = ["product", "materials", "process"]
+    const libraryPositions = ["structure", "dimensions", "materials", "process"]
       .map((key) => libraryHtml.indexOf(`data-tube-template-library-disclosure="section:${key}"`));
     assert.ok(libraryPositions.every((position) => position >= 0),
       `${registration.templateId}: product library missing semantic section`);
-    assert.ok(libraryPositions[0] < libraryPositions[1] && libraryPositions[1] < libraryPositions[2],
+    assert.ok(libraryPositions[0] < libraryPositions[1] && libraryPositions[1] < libraryPositions[2]
+      && libraryPositions[2] < libraryPositions[3],
       `${registration.templateId}: product library section order`);
-    assert.match(libraryHtml, /data-tube-template-library-disclosure="section:product" open/);
+    assert.match(libraryHtml, /data-tube-template-library-disclosure="section:structure" open/);
+    assert.match(libraryHtml, /data-tube-template-library-disclosure="section:dimensions" >/);
     assert.match(libraryHtml, /data-tube-template-library-disclosure="section:materials" >/);
     assert.match(libraryHtml, /data-tube-template-library-disclosure="section:process" >/);
   }
@@ -395,7 +412,9 @@ await test("material and process presets render inside their owning sections", (
     templates: [descriptor],
     product: { entityId: "product-1", templateId: descriptor.id, name: descriptor.name, quantity: 1, parameters: defaults },
   } } });
-  for (const html of [addHtml, rightHtml]) {
+  assert.doesNotMatch(addHtml, /data-tube-designer-preset-scope=/,
+    "style selection must not expose material or process preset controls");
+  for (const html of [rightHtml]) {
     const materialSection = html.indexOf('data-tube-designer-parameter-group="section:materials"');
     const materialPresetBar = html.indexOf('data-tube-designer-preset-scope="materials"');
     const firstMaterialGroup = html.indexOf('data-tube-designer-parameter-group="group:material"');
@@ -500,9 +519,10 @@ await test("opening processes share choices and hide all inactive fabrication fi
       assert.equal(field.max, common.max);
     }
     const defaults = getCatalogParameters(descriptor);
-    const render = (draft) => renderDesignerAddParameterContent({ templates: [descriptor] }, {
-      tubeDesignerAddTemplateId: descriptor.id, tubeDesignerAddDraft: { ...defaults, ...draft },
-    });
+    const render = (draft) => renderDesignerRightPane({}, { scene: { tubeDesigner: {
+      templates: [descriptor],
+      product: { entityId: "preview", templateId: descriptor.id, name: descriptor.name, parameters: { ...defaults, ...draft } },
+    } } });
     const closed = render({ accessDoorEnabled: false, frameJoinType: "miter_45" });
     for (const field of descriptor.parameters.filter((p) => p.key.startsWith("door") || p.key.startsWith("vGroove"))) {
       assert.ok(!closed.includes(`data-tube-designer-parameter="${field.key}"`), field.key);
@@ -530,9 +550,6 @@ await test("JSON order sorts only fields within groups in add and edit, with sta
   for (const show of [true, false, true]) {
     const designer = { templates: [descriptor], product: { entityId: "p", templateId: descriptor.id, parameters: { show } } };
     const expected = ["zero", "tie1", ...(show ? ["tie2"] : []), "late", "missing1", "missing2", "negative"];
-    assert.deepEqual(keys(renderDesignerAddParameterContent(designer, {
-      tubeDesignerAddTemplateId: descriptor.id, tubeDesignerAddDraft: { show },
-    })), expected);
     assert.deepEqual(keys(renderDesignerRightPane({}, { scene: { tubeDesigner: designer } })), expected);
   }
   assert.equal(JSON.stringify(descriptor), original);

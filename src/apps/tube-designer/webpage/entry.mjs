@@ -22,6 +22,7 @@ import {
   renderDesignerLeftPane,
   renderDesignerDialogs,
   renderDesignerOperationOverlay,
+  renderDesignerProductPartsDock,
   renderDesignerRightPane,
   renderDesignerViewportOverlay,
 } from "./designerViews.mjs";
@@ -32,6 +33,7 @@ import { renderNestingPartImportDialog } from "./nestingPartImport.mjs";
 import { renderNestingStandardPartDialog } from "./nestingStandardPart.mjs";
 import { bindProfileParameterDiagrams } from "./profileParameterDiagram.mjs";
 import { bindToolParameterDiagrams } from "./toolParameterDiagram.mjs";
+import { bindProductParameterDiagrams, productSceneMemberIds } from "./productParameterDiagram.mjs";
 import { renderNestingPunchPartDialog } from "./nestingPunchPart.mjs";
 import { attachTubeMachining, handleTubeMachiningViewportPick, renderTubeMachiningLeftPane, renderTubeMachiningRightPane, renderTubeMachiningViewportOverlay, renderTubeMachiningDialogs } from "./machiningArea.mjs";
 import { hasUnsavedMachiningPaths } from "./machiningEditor.mjs";
@@ -341,8 +343,8 @@ function withDesignerContext(context) {
         ? tabId : "view";
     },
     resolveWorkbenchPresentation: (_context, _view, _scene, areaId) => ({
-      className: `tube-designer-workspace ${areaId === "nesting" ? "tube-designer-production-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
-      style: areaId === "nesting" ? renderNestingWorkspaceStyle() : "",
+      className: `tube-designer-workspace ${areaId === "view" ? "tube-designer-product-workspace" : ""} ${areaId === "nesting" ? "tube-designer-production-workspace" : ""} ${areaId === "sketch" ? "tube-designer-sketch-workspace" : ""} ${areaId === "about" ? "tube-designer-about-workspace" : ""}`,
+      style: areaId === "nesting" ? renderNestingWorkspaceStyle() : areaId === "view" ? renderProductWorkspaceStyle() : "",
     }),
     resolveViewportBackgroundColor: () => 0x13252d,
     configureViewport: configureDesignerViewport,
@@ -361,7 +363,7 @@ function withDesignerContext(context) {
           overlay:(tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
           suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
         });
-        if(patched){bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);return true;}
+        if(patched){bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);bindProductSceneParameterHighlights(mount,view);bindProductParameterDiagrams(mount);return true;}
         return false;
       }
       if(view.tubeDesignerPartDrawing&&view.activeAreaId==="nesting") {
@@ -378,6 +380,8 @@ function withDesignerContext(context) {
       if(!patchPunchDom(view,mount,html))return false;
       bindProfileParameterDiagrams(mount);
       bindToolParameterDiagrams(mount);
+      bindProductSceneParameterHighlights(mount, view);
+      bindProductParameterDiagrams(mount);
       attachPunchEditor(context,view,mount,ops);
       return true;
     },
@@ -395,6 +399,8 @@ function withDesignerContext(context) {
       restoreProductTemplateLibraryScrollState(context, view);
       bindProfileParameterDiagrams(mount);
       bindToolParameterDiagrams(mount);
+      bindProductSceneParameterHighlights(mount, view);
+      bindProductParameterDiagrams(mount);
       if ((view.activeAreaId === "profiles" || view.activeAreaId === "tools")
           && typeof context.productProxy?.invoke === "function"
           && !(view.tubeDesignerSystemProfiles?.length > 0)
@@ -451,6 +457,16 @@ function withDesignerContext(context) {
 }
 
 function renderNestingWorkspaceStyle() {
+  return [
+    "width:100%",
+    "height:100%",
+    "grid-template-columns:var(--cam-left-width,300px) 5px minmax(0,1fr) 5px var(--cam-right-width,320px)",
+    "grid-template-rows:auto minmax(0,1fr) 5px var(--cam-bottom-height,156px)",
+    "grid-template-areas:'notice notice notice notice notice' 'left left-resize viewer right-resize right' 'bottom-resize bottom-resize bottom-resize bottom-resize bottom-resize' 'bottom bottom bottom bottom bottom'",
+  ].join(";");
+}
+
+function renderProductWorkspaceStyle() {
   return [
     "width:100%",
     "height:100%",
@@ -529,6 +545,40 @@ function renderDesignerAreaViewportOverlay(context, view, scene) {
   return renderDesignerViewportOverlay(context, view, scene);
 }
 
+const productSceneParameterHighlightListeners = new WeakSet();
+
+function restoreManualSceneSelection(view) {
+  const selectedId = String(view.selectedSceneObjectId ?? "");
+  if (typeof view.viewport?.setSelectedObjectIds === "function") {
+    view.viewport.setSelectedObjectIds(selectedId ? [selectedId] : [], selectedId);
+    return;
+  }
+  view.viewport?.setSelectedObjectId?.(selectedId);
+}
+
+function bindProductSceneParameterHighlights(mount, view) {
+  if (!mount || productSceneParameterHighlightListeners.has(mount)) return;
+  productSceneParameterHighlightListeners.add(mount);
+  mount.addEventListener("tube-designer-product-parameter-focus", (event) => {
+    const { key, mode } = event.detail ?? {};
+    if (mode !== "right" || view.activeAreaId !== "view") return;
+    const designer = view.scene?.tubeDesigner ?? {};
+    const product = designer.product;
+    const template = (designer.templates ?? []).find((item) => item?.id === product?.templateId);
+    const ids = productSceneMemberIds(template, designer.members ?? [], key);
+    view.tubeDesignerProductParameterHighlightIds = ids;
+    if (!ids.length) {
+      restoreManualSceneSelection(view);
+      return;
+    }
+    if (typeof view.viewport?.setSelectedObjectIds === "function") {
+      view.viewport.setSelectedObjectIds(ids, ids[0]);
+    } else {
+      view.viewport?.setSelectedObjectId?.(ids[0]);
+    }
+  });
+}
+
 function renderDesignerWorkbenchSuffix(context, view, scene) {
   const punchWizardDialog = view.activeAreaId === "nesting"
     ? renderPunchWizardDialog(context, view)
@@ -548,10 +598,13 @@ function renderDesignerWorkbenchSuffix(context, view, scene) {
   const nestingResultDock = view.activeAreaId === "nesting"
     ? renderNestingResultDock(context, view, scene)
     : "";
+  const productPartsDock = view.activeAreaId === "view"
+    ? renderDesignerProductPartsDock(context, view)
+    : "";
   const areaDialogs = view.activeAreaId === "view"
     ? ""
     : renderDesignerDialogs(view.scene?.tubeDesigner ?? {}, view);
-  return `${view.activeAreaId === "nesting" ? renderPartDrawingDialog(view) : ""}${view.activeAreaId === "machining" ? renderTubeMachiningDialogs(view) : ""}${renderSectionSketchDialog(context, view)}${nestingResultDock}${areaDialogs}${nestingPartImportDialog}${nestingStandardPartDialog}${nestingPunchPartDialog}${nestingSettingsDialogs}${punchWizardDialog}${renderComponentLibraryDialogs(view)}${renderDesignerOperationOverlay(context, view, scene)}${
+  return `${view.activeAreaId === "nesting" ? renderPartDrawingDialog(view) : ""}${view.activeAreaId === "machining" ? renderTubeMachiningDialogs(view) : ""}${renderSectionSketchDialog(context, view)}${nestingResultDock}${productPartsDock}${areaDialogs}${nestingPartImportDialog}${nestingStandardPartDialog}${nestingPunchPartDialog}${nestingSettingsDialogs}${punchWizardDialog}${renderComponentLibraryDialogs(view)}${renderDesignerOperationOverlay(context, view, scene)}${
     view.tubeDesignerLoadProgress ? renderProgress(view.tubeDesignerLoadProgress) : ""
   }`;
 }

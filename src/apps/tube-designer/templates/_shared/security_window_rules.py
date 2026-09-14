@@ -49,8 +49,8 @@ def prepare(parameters: dict[str, Any], *, layout: str, fixed_width: float,
             raise ValueError("项目开启口净尺寸下限必须大于0")
         if clear_width < minimum_width or clear_height < minimum_height:
             raise ValueError(f"开启口小于项目设计下限：净宽{minimum_width:g}、净高{minimum_height:g} mm；项目规则须按现场要求确认")
-        if str(parameters.get("accessDoorFace", "front")) in {"top", "bottom"}:
-            raise ValueError("应急开启口请选择立面并核对室外通路；顶底开口仅作为检修口设计")
+        if str(parameters.get("accessDoorFace", "front")) == "top":
+            raise ValueError("应急开启口不支持顶面；请改选立面或底面并核对通路")
     # At the design opening position, reserve the leaf thickness plus hardware.
     # The actual purchased hinge and its swept volume still require verification.
     fixed_clear_width = clear_width + leaf_depth + hardware

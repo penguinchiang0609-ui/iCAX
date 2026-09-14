@@ -2,7 +2,7 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "modular-guardrail-diamond-straight",
-  "version": "1.3.0",
+  "version": "1.4.2",
   "displayName": {
     "zh-CN": "菱形护栏"
   },
@@ -25,6 +25,38 @@
       "heightParameter": "guardHeight",
       "depthParameter": "sideLength2"
     },
+    "addDialog": {
+      "structureParameters": ["layout", "railCount", "cornerPostMode", "largePostMode", "pathMode"]
+    },
+    "productDiagram": {
+      "schemaVersion": 1,
+      "kind": "guardrail",
+      "layoutValues": { "straight": "straight", "left_l": "left_l", "right_l": "right_l", "u": "u" },
+      "bindings": {
+        "layout": "layout", "height": "guardHeight", "sideLengths": ["sideLength1", "sideLength2", "sideLength3"],
+        "sideBayCounts": ["sideBayCount1", "sideBayCount2", "sideBayCount3"], "infillType": "infillType",
+        "railCount": "railCount", "pathMode": "pathMode", "slopeAngles": ["slopeAngle", "slopeAngle2", "slopeAngle3"]
+      },
+      "sceneBindings": {
+        "layout": "all", "sideLength1": "all", "sideLength2": "all", "sideLength3": "all",
+        "sideBayCount1": "all", "sideBayCount2": "all", "sideBayCount3": "all", "guardHeight": "all",
+        "pathMode": "all", "slopeAngle": "all", "slopeAngle2": "all", "slopeAngle3": "all",
+        "railCount": { "memberRolePrefixes": ["guardrail.handrail", "guardrail.cross_rail"] },
+        "infillType": { "memberRolePrefixes": ["guardrail.decorative_bar", "guardrail.horizontal_bar", "guardrail.vertical_bar", "glass.infill", "plate.infill"] }
+      },
+      "profileRoles": {
+        "handrail": { "parameters": ["handrailProfileType", "handrailWidth", "handrailDepth", "handrailWallThickness"], "memberRolePrefixes": ["guardrail.handrail"] },
+        "post": { "parameters": ["postProfileType", "postWidth", "postDepth", "postWallThickness"], "memberRolePrefixes": ["guardrail.post"] },
+        "rail": { "parameters": ["railProfileType", "railWidth", "railDepth", "railWallThickness"], "memberRolePrefixes": ["guardrail.cross_rail"] },
+        "infill": { "parameters": ["infillProfileType", "infillWidth", "infillDepth", "infillCornerRadius", "infillWallThickness"], "memberRolePrefixes": ["guardrail.decorative_bar", "guardrail.horizontal_bar", "guardrail.vertical_bar"] }
+      },
+      "dimensions": [
+        { "kind": "width", "parameter": "sideLength1", "label": "第 1 边长度" },
+        { "kind": "depth", "parameter": "sideLength2", "label": "第 2 边长度", "visibleWhen": { "op": "ne", "parameter": "layout", "value": "straight" } },
+        { "kind": "depth", "parameter": "sideLength3", "label": "第 3 边长度", "visibleWhen": { "op": "eq", "parameter": "layout", "value": "u" } },
+        { "kind": "height", "parameter": "guardHeight", "label": "护栏高度" }
+      ]
+    },
     "resourceRoles": {
       "profiles": {
         "handrail": { "parameter": "handrailProfileType" },
@@ -35,7 +67,7 @@
     },
     "parameterLayout": {
       "sections": [
-        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["basic", "layout", "infill"] },
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["identity", "basic", "dimensions"] },
         { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["profiles", "infill_materials"] },
         { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["process", "components"] }
       ]
@@ -53,14 +85,25 @@
   },
   "groups": [
     {
+      "key": "identity",
+      "displayName": { "zh-CN": "产品标识" },
+      "order": 0
+    },
+    {
       "key": "basic",
       "displayName": {
-        "zh-CN": "形状与尺寸"
+        "zh-CN": "结构参数"
       },
       "order": 10
     },
     {
+      "key": "dimensions",
+      "displayName": { "zh-CN": "尺寸参数" },
+      "order": 15
+    },
+    {
       "key": "layout",
+      "parentKey": "basic",
       "displayName": {
         "zh-CN": "横档与立柱"
       },
@@ -68,6 +111,7 @@
     },
     {
       "key": "infill",
+      "parentKey": "basic",
       "displayName": {
         "zh-CN": "竖杆与封板"
       },
@@ -254,7 +298,7 @@
       },
       "valueType": "number",
       "defaultValue": 0,
-      "group": "basic",
+      "group": "dimensions",
       "order": 4,
       "unit": "deg",
       "constraints": {
@@ -289,7 +333,7 @@
       },
       "valueType": "number",
       "defaultValue": 30,
-      "group": "basic",
+      "group": "dimensions",
       "order": 5,
       "unit": "deg",
       "constraints": {
@@ -324,7 +368,7 @@
       },
       "valueType": "number",
       "defaultValue": 280,
-      "group": "basic",
+      "group": "dimensions",
       "order": 6,
       "unit": "mm",
       "constraints": {
@@ -354,7 +398,7 @@
       },
       "valueType": "number",
       "defaultValue": 175,
-      "group": "basic",
+      "group": "dimensions",
       "order": 7,
       "unit": "mm",
       "constraints": {
@@ -624,7 +668,7 @@
       },
       "valueType": "number",
       "defaultValue": 30,
-      "group": "basic",
+      "group": "dimensions",
       "order": 2,
       "unit": "deg",
       "constraints": {
@@ -656,7 +700,7 @@
       },
       "valueType": "string",
       "defaultValue": "HL-001",
-      "group": "basic",
+      "group": "identity",
       "order": 0,
       "constraints": {
         "minimumLength": 1,
@@ -732,7 +776,7 @@
       },
       "valueType": "number",
       "defaultValue": 3000,
-      "group": "basic",
+      "group": "dimensions",
       "order": 30,
       "quantity": "length",
       "unit": "mm",
@@ -769,7 +813,7 @@
       },
       "valueType": "number",
       "defaultValue": 1500,
-      "group": "basic",
+      "group": "dimensions",
       "order": 40,
       "quantity": "length",
       "unit": "mm",
@@ -816,7 +860,7 @@
       },
       "valueType": "number",
       "defaultValue": 1500,
-      "group": "basic",
+      "group": "dimensions",
       "order": 50,
       "quantity": "length",
       "unit": "mm",
@@ -863,7 +907,7 @@
       },
       "valueType": "number",
       "defaultValue": 1200,
-      "group": "basic",
+      "group": "dimensions",
       "order": 60,
       "quantity": "length",
       "unit": "mm",
