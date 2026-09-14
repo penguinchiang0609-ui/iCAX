@@ -21,13 +21,26 @@
     "primaryDimensions": {
       "widthParameter": "width",
       "heightParameter": "height"
+    },
+    "parameterLayout": {
+      "sections": [
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["basic", "grid", "cells"] },
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["system", "fillings"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["sliding", "hinged"] }
+      ]
     }
   },
   "groups": [
     {
       "key": "basic",
       "displayName": {
-        "zh-CN": "窗体与型材系列"
+        "zh-CN": "窗体规格"
+      }
+    },
+    {
+      "key": "system",
+      "displayName": {
+        "zh-CN": "型材系统"
       }
     },
     {
@@ -69,7 +82,7 @@
       },
       "valueType": "enum",
       "defaultValue": "demonstration",
-      "group": "basic",
+      "group": "system",
       "choices": [
         {
           "value": "demonstration",
@@ -92,7 +105,7 @@
       },
       "valueType": "string",
       "defaultValue": "",
-      "group": "basic",
+      "group": "system",
       "visibleWhen": {
         "op": "eq",
         "parameter": "systemSource",

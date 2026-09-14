@@ -66,9 +66,16 @@
         },
         {
           "templateId": "single-face-security-window",
-          "version": "3.0.0",
+          "version": "3.1.0",
           "displayName": "窗/防盗窗",
           "status": "available"
+        },
+        {
+          "templateId": "minimal-protective-grille",
+          "version": "1.0.0",
+          "displayName": "窗/极简防护网",
+          "status": "available",
+          "industry": "门窗防护"
         },
         {
           "templateId": "straight-steel-staircase",
@@ -231,30 +238,30 @@
     },
     "modules": {
       "dependencies": [
-        "../../${Platform}/${Configuration}/TemplateRuntime.dll",
-        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
-        "../../${Platform}/${Configuration}/RenderData.dll",
-        "../../${Platform}/${Configuration}/Transform.dll",
-        "../../${Platform}/${Configuration}/ColliderData.dll",
-        "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/OpenCascadeResourceImport.dll",
-        "../../${Platform}/${Configuration}/SceneBootstrap.dll"
+        "${ExecutableDirectory}/TemplateRuntime.dll",
+        "${ExecutableDirectory}/EntityViewRuntime.dll",
+        "${ExecutableDirectory}/RenderData.dll",
+        "${ExecutableDirectory}/Transform.dll",
+        "${ExecutableDirectory}/ColliderData.dll",
+        "${ExecutableDirectory}/RenderInteraction.dll",
+        "${ExecutableDirectory}/OpenCascadeResourceImport.dll",
+        "${ExecutableDirectory}/SceneBootstrap.dll"
       ],
       "components": [
-        "../../${Platform}/${Configuration}/Transform.dll",
-        "../../${Platform}/${Configuration}/SceneBootstrap.dll",
-        "../../${Platform}/${Configuration}/TubeDesigner.dll"
+        "${ExecutableDirectory}/Transform.dll",
+        "${ExecutableDirectory}/SceneBootstrap.dll",
+        "${ExecutableDirectory}/TubeDesigner.dll"
       ],
       "behaviours": [
-        "../../${Platform}/${Configuration}/RenderInteraction.dll",
-        "../../${Platform}/${Configuration}/SceneBootstrap.dll"
+        "${ExecutableDirectory}/RenderInteraction.dll",
+        "${ExecutableDirectory}/SceneBootstrap.dll"
       ],
       "services": [
-        "../../${Platform}/${Configuration}/TubeDesigner.dll"
+        "${ExecutableDirectory}/TubeDesigner.dll"
       ],
       "sdo": [
-        "../../${Platform}/${Configuration}/EntityViewRuntime.dll",
-        "../../${Platform}/${Configuration}/TubeDesigner.dll"
+        "${ExecutableDirectory}/EntityViewRuntime.dll",
+        "${ExecutableDirectory}/TubeDesigner.dll"
       ]
     },
     "resources": {
@@ -267,7 +274,7 @@
             ".step",
             ".stp"
           ],
-          "module": "../../${Platform}/${Configuration}/TubeDesigner.dll",
+          "module": "${ExecutableDirectory}/TubeDesigner.dll",
           "provider": "icax.tube-designer.occ-step",
           "priority": 200
         }

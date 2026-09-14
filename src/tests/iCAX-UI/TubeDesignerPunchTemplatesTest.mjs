@@ -7,6 +7,7 @@ import {handlePartsAreaAction} from "../../apps/tube-designer/webpage/partsArea.
 const toolsRoot=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
 const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(item=>item.isDirectory()&&existsSync(new URL(item.name+"/tool.json",toolsRoot))).map(item=>JSON.parse(readFileSync(new URL(item.name+"/tool.json",toolsRoot))))
   .map(t=>({...t,digest:"test",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
+tools.push({id:"fixed-fixture",displayName:"测试定式刀具",kind:"fixed",target:"side",category:"测试",version:"1.0.0",parameters:[],digest:"test",defaultParameters:{}});
 const part={entityId:"part",length:500,manufacturingGeometryResourceId:"old-id",manufacturingGeometryResourceVersion:1,
   independentNesting:true,profile:{kind:"rect",width:40,depth:20},properties:{"manufacturing.partKind":"tube"}};
 const state=createPunchWizardState(part),view={tubeDesignerPunchWizard:state,pending:false,scene:{tubeDesigner:{nestingGroups:[{parts:[part]}]}}};
@@ -18,11 +19,11 @@ assert.equal(state.draft.reverse,true);assert.equal(state.draft.through,false);a
 assert.equal(change("tool","v-notch-sharp"),true);
 const sheet=renderPunchWizardDialog(part,view,{tableMode:true,showEnds:true,branchProfiles:[]});
 assert.equal(state.draft.toolRef.id,"v-notch-sharp");assert.match(sheet,/左端面/);assert.match(sheet,/右端面/);
-assert.equal(change("tool","diamond-12"),true);
+assert.equal(change("tool","fixed-fixture"),true);
 assert.deepEqual(state.draft.toolParameters,{});
 assert.match(renderPunchWizardDialog(part,view),/定式刀具：形状尺寸固定/);
 assert.ok(addPunchWizardFeature(view,part));
-assert.equal(getPunchWizardPayload(view).features[0].toolRef.id,"diamond-12");
+assert.equal(getPunchWizardPayload(view).features[0].toolRef.id,"fixed-fixture");
 editPunchWizardFeature(view,"edit",0);
 change("station","120");
 assert.match(validatePunchWizard(view,part),/保存当前/);
@@ -71,8 +72,8 @@ state.features=[];state.editingId="";
 assert.equal(validatePunchWizard(view,part),"");
 const relocated={...part,thumbnailGeometryResourceId:"saved-mesh",thumbnailGeometryResourceVersion:1,properties:{
   ...part.properties,"tubeDesigner.punchWizard":{baseLength:500,features:[{
-    type:"diamond-12",enabled:true,station:200,arrayCount:1,rowCount:1,
-    toolRef:{id:"diamond-12",version:"1.0.0",digest:"original"},toolParameters:{},toolLabel:"菱形孔",toolKind:"fixed",
+    type:"fixed-fixture",enabled:true,station:200,arrayCount:1,rowCount:1,
+    toolRef:{id:"fixed-fixture",version:"1.0.0",digest:"original"},toolParameters:{},toolLabel:"测试定式刀具",toolKind:"fixed",
     toolSnapshot:{descriptor:{parameters:["must not travel"]},geometry:{mode:"profile"}}
   }],ends:{start:{type:"keep"},end:{type:"keep"}}}}};
 const relocatedView={tubeDesignerPunchWizard:createPunchWizardState(relocated),pending:false};
@@ -113,7 +114,7 @@ assert.equal(validatePunchWizard(relocatedView,relocated),"");
 editPunchWizardFeature(relocatedView,"undo");
 assert.equal(relocatedState.features.length,1);assert.ok(relocatedState.features[0].frozenCut);
 // Matching original installation restores normal editability.
-installPunchCatalogue(relocatedState,{tools:tools.map(t=>t.id==="diamond-12"?{...t,digest:"original"}:t)});
+installPunchCatalogue(relocatedState,{tools:tools.map(t=>t.id==="fixed-fixture"?{...t,digest:"original"}:t)});
 assert.equal(isPunchToolReadOnly(relocatedState,relocatedState.features[0]),false);
 assert.equal(editPunchWizardFeature(relocatedView,"edit",0),true);
 relocatedState.editingId="";

@@ -392,7 +392,7 @@ TEST(PunchGeometry, RoundRotationAndTranslatedSection) {
 }
 
 TEST(PunchTemplates, AllInstalledSideTemplatesBuildNativeSolids) {
-    for(const auto* id:{"circle","rectangle","slot","ellipse","diamond-12","single-d","double-d","keyhole"}) {
+    for(const auto* id:{"circle","rectangle","slot","ellipse","single-d","double-d","keyhole"}) {
         SCOPED_TRACE(id);
         const auto f=templateHole(id);
         const auto result=BuildPunchGeometry(rectTube(),{f});

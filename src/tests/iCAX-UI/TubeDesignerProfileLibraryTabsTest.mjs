@@ -5,7 +5,11 @@ import {
   renderProfileLibraryViewportOverlay, handleProfileLibraryAction, resolveSelectedProfileSketchSource,
 } from "../../apps/tube-designer/webpage/profileLibrary.mjs";
 import { refreshDesignerUserData, handleDesignerAreaAction, handleDesignerRibbonCommand } from "../../apps/tube-designer/webpage/designerActions.mjs";
-import { renderDesignerAddParameterContent } from "../../apps/tube-designer/webpage/designerViews.mjs";
+import {
+  applyReusablePresetValues,
+  getReusablePresetValues,
+  renderDesignerAddParameterContent,
+} from "../../apps/tube-designer/webpage/designerViews.mjs";
 
 const completed = [];
 async function test(name, run) { await run(); completed.push(name); }
@@ -227,6 +231,108 @@ await test("products only offer their own template packages and prevent copying 
   assert.deepEqual(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides, {});
 });
 
+await test("product profile roles expose and evaluate the complete system profile library", async () => {
+  const { view, context, calls, productAct } = productHarness();
+  view.scene.tubeDesigner.templates[0].parameters.push(
+    { key: "frameWidth", displayName: "模板截面宽度", type: "number", valueType: "number", defaultValue: 40 },
+    { key: "frameDepth", displayName: "模板截面深度", type: "number", valueType: "number", defaultValue: 40 },
+    { key: "frameWallThickness", displayName: "模板壁厚", type: "number", valueType: "number", defaultValue: 2 },
+  );
+  view.tubeDesignerSystemProfiles.push({
+    ...packaged,
+    id: "oval",
+    name: "系统椭圆管",
+    descriptor: { ...packaged.descriptor, id: "oval" },
+    previewProfile: { ...circle, name: "系统椭圆管", profileScope: "system", profileDefinitionId: "oval" },
+  });
+  let html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
+  assert.match(html, /<optgroup label="管型库 · 系统内置">/);
+  assert.match(html, /value="system:round"/);
+  assert.match(html, /value="system:oval"/);
+
+  await productAct("profile-selection-change", { value: "system:oval" });
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.profileScope, "system");
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.profileDefinitionId, "oval");
+  assert.equal(calls.length, 0, "catalogue preview snapshot should avoid an unnecessary reevaluation");
+  html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
+  assert.doesNotMatch(html, /data-tube-designer-parameter="frameWidth"|data-tube-designer-parameter="frameDepth"|data-tube-designer-parameter="frameWallThickness"/,
+    "the selected profile owns its dimensions; the product's legacy shape fields must not be duplicated");
+
+  context.productProxy.invoke = async (method, payload) => {
+    calls.push({ method, payload });
+    return { profile: { ...circle, parameters: payload.parameters, profileScope: "system", profileDefinitionId: "oval" } };
+  };
+  await handleDesignerAreaAction(context, view, "tube-designer-profile-parameter-change", {
+    dataset: { tubeDesignerProfileMode: "add", tubeDesignerProfilePrefix: "frame", tubeDesignerProfileParameter: "width" }, value: "52",
+  }, { renderProject() {}, showNotice() {} });
+  assert.deepEqual(calls[0].payload, { profileRef: { scope: "system", id: "oval" }, parameters: { width: 52 } });
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.parameters.width, 52);
+  html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
+  assert.match(html, /value="system:oval" selected/);
+});
+
+await test("product tool roles select constrained library tools and persist role bindings", async () => {
+  const { view, context, ops } = productHarness();
+  const field = {
+    key: "cornerGrooveTool", displayName: "转角开槽模具", type: "select",
+    valueType: "string", defaultValue: "",
+    presentation: {
+      editor: "tool-library", resourceRole: "cornerGroove",
+      targets: ["part"], categories: ["slot"],
+    },
+  };
+  view.scene.tubeDesigner.templates[0] = {
+    ...view.scene.tubeDesigner.templates[0],
+    parameters: [{
+      key: "frameProfileType", displayName: "外框管型", type: "select",
+      valueType: "string", defaultValue: "rect", options: [{ value: "rect", label: "矩形管" }],
+      presentation: { editor: "profile-library", resourceRole: "frame" },
+    }, field],
+    extensions: { resourceRoles: {
+      profiles: { frame: { parameter: "frameProfileType" } },
+      tools: { cornerGroove: { parameter: field.key, targetProfileRole: "frame" } },
+    } },
+  };
+  view.tubeDesignerSystemPunchTools = [
+    {
+      id: "v-notch-sharp", version: "3.0.1", digest: "slot-digest",
+      displayName: "V槽", kind: "programmatic", target: "part", category: "槽口",
+      parameters: [
+        { key: "angle", displayName: "折弯开口角", valueType: "number", defaultValue: 90, min: 1, max: 170 },
+        { key: "derivedWall", displayName: "实测壁厚", valueType: "number", defaultValue: 0, derived: true },
+      ],
+      defaultParameters: { angle: 90, derivedWall: 0 },
+    },
+    { id: "circle", version: "1", displayName: "圆孔", kind: "programmatic", target: "side", category: "孔型", parameters: [] },
+  ];
+  let html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
+  assert.match(html, /value="system:v-notch-sharp"/);
+  assert.doesNotMatch(html, /value="system:circle"/);
+
+  await handleDesignerAreaAction(context, view, "tube-designer-product-tool-selection-change", {
+    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove" },
+    value: "system:v-notch-sharp",
+  }, ops);
+  const binding = view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove;
+  assert.deepEqual(binding.ref, { scope: "system", id: "v-notch-sharp", version: "3.0.1", digest: "slot-digest" });
+  assert.equal(binding.parameters.angle, 90);
+  assert.equal(binding.snapshot.targetProfileRole, "frame");
+  assert.equal(view.tubeDesignerAddDraft.cornerGrooveTool, "system:v-notch-sharp");
+  html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
+  assert.match(html, /模具参数/);
+  assert.doesNotMatch(html, /实测壁厚/);
+
+  await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
+    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "angle" },
+    value: "72",
+  }, ops);
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove.parameters.angle, 72);
+  const preset = getReusablePresetValues(view.scene.tubeDesigner.templates[0], view.tubeDesignerAddDraft);
+  assert.equal(preset.tubeDesignerToolBindings.cornerGroove.parameters.angle, 72);
+  const restored = applyReusablePresetValues(view.scene.tubeDesigner.templates[0], {}, preset);
+  assert.equal(restored.tubeDesignerToolBindings.cornerGroove.ref.id, "v-notch-sharp");
+});
+
 await test("template parameter reevaluation retains scoped frozen provenance", async () => {
   const { view, context, calls, productAct } = productHarness();
   await productAct("profile-selection-change", { value: "template:rail-a:shared" });
@@ -270,7 +376,13 @@ await test("regeneration updates only the model and retains camera and pane posi
 await test("parameter diagram starts collapsed and toggles locally with retained state", async () => {
   const {view,context,ops}=harness();
   view.tubeDesignerSelectedProfileId='system:round';
-  assert.match(renderProfileLibraryRightPane(context,view),/data-profile-library-diagram hidden/);
+  const collapsedHtml=renderProfileLibraryRightPane(context,view);
+  assert.match(collapsedHtml,/class="tube-profile-library-diagram-toggle"/);
+  assert.match(collapsedHtml,/data-profile-library-diagram hidden/);
+  assert.ok(collapsedHtml.indexOf('class="tube-profile-library-parameter-list"')
+    < collapsedHtml.indexOf('data-profile-diagram-toggle'), 'diagram disclosure belongs below the parameter controls');
+  assert.ok(collapsedHtml.indexOf('data-profile-diagram-toggle')
+    < collapsedHtml.indexOf('data-profile-library-diagram'), 'expanded diagram belongs directly below its disclosure');
   const diagram={hidden:true};
   const button={setAttribute(k,v){this[k]=v;}};
   const editor={dataset:{tubeDesignerProfileKey:'system:round'},scrollTop:80,scrollLeft:0,

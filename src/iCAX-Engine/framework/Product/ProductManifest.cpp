@@ -11,6 +11,26 @@ namespace
 
     std::string _PathToUTF8(IN const std::filesystem::path& Path_);
 
+    std::filesystem::path _ExecutableDirectory()
+    {
+        std::vector<wchar_t> _Buffer(32768);
+        while (true)
+        {
+            const auto _Length = GetModuleFileNameW(
+                nullptr, _Buffer.data(), static_cast<DWORD>(_Buffer.size()));
+            if (_Length == 0)
+            {
+                return {};
+            }
+            if (_Length < _Buffer.size() - 1)
+            {
+                return std::filesystem::path(
+                    std::wstring(_Buffer.data(), _Length)).parent_path();
+            }
+            _Buffer.resize(_Buffer.size() * 2);
+        }
+    }
+
     std::filesystem::path _PathFromUTF8(IN const std::string& strPath_)
     {
         std::u8string _Text(strPath_.begin(), strPath_.end());
@@ -280,6 +300,7 @@ namespace
         auto _Path = strPath_;
         _ReplaceAll(_Path, "${Configuration}", _BuildConfigurationName());
         _ReplaceAll(_Path, "${Platform}", _BuildPlatformName());
+        _ReplaceAll(_Path, "${ExecutableDirectory}", _PathToUTF8(_ExecutableDirectory()));
         return _Path;
     }
 

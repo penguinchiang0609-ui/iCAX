@@ -180,10 +180,11 @@ def _lateral(direction: Point) -> Point:
 
 
 def _profile(p: dict[str, Any], prefix: str):
-    profile = _catalog.load_profile(p, prefix)
-    if profile.kind not in {"rect", "round", "oval"}:
-        raise ValueError("组合式护栏当前支持矩形管、圆管、椭圆管和腰圆管；其他异型管需要独立的节点校核")
-    return profile
+    # The member generator extrudes the exact supplied contours.  Do not gate
+    # the resource library by a short list of profile names here; individual
+    # node processes (for example a side-mount plate requiring a known contact
+    # face) perform their own geometry-dependent checks where they are needed.
+    return _catalog.load_profile(p, prefix)
 
 
 def distribute_bars(clear: float, width: float, maximum_gap: float, mode: str, fixed_count: int = 0) -> tuple[list[float], list[float]]:

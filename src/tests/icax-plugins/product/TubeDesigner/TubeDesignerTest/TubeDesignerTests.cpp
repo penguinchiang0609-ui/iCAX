@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <map>
 #include <Bnd_Box.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Common.hxx>
@@ -3358,6 +3359,113 @@ TEST(TemplateRuntimeTest, ExplicitPythonStairAndRailingPurposesUseTheSingleResul
             for (const auto& _Item : _Model.Items)
                 EXPECT_FALSE(_Geometry.At(_Item.Representations.at("result")).IsNull()) << _Item.Key;
         }
+    }
+}
+
+TEST(TemplateRuntimeTest, MinimalProtectiveGrilleProducesRealHalfHolesHeadsAndInstallationHoles)
+{
+    using namespace iCAX::TemplateRuntime;
+    const auto _Root = std::filesystem::current_path();
+    CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
+    const auto _Fixture = TemplateProtocolFixture(_Root, "minimal_protective_grille");
+    std::map<std::string, double> _DisplayVolumes;
+    for (const auto* _Purpose : { "display", "manufacturing" })
+    {
+        SCOPED_TRACE(_Purpose);
+        const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose);
+        ExpectSingleResultRawProtocol(_Raw, _Purpose, 12u);
+        const auto _Model = CTemplateCodec::ParseNeutralModel(_Raw);
+        ASSERT_EQ(12u, _Model.Items.size());
+        const auto _Evaluation = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
+        EXPECT_EQ(_Model.Geometry.size(), _Evaluation.Geometry.size());
+        for (const auto& _Item : _Model.Items)
+        {
+            SCOPED_TRACE(_Item.Key);
+            const auto& _Shape = _Evaluation.At(_Item.Representations.at("result"));
+            ASSERT_FALSE(_Shape.IsNull());
+            EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+            const auto _Volume = RootSelectionShapeVolume(_Shape);
+            EXPECT_GT(_Volume, 0.01);
+            if (std::string(_Purpose) == "display")
+                _DisplayVolumes[_Item.Key] = _Volume;
+            else
+            {
+                ASSERT_TRUE(_DisplayVolumes.contains(_Item.Key));
+                EXPECT_LT(_Volume, _DisplayVolumes.at(_Item.Key) - 0.01)
+                    << "every default member owns a real manufacturing feature";
+            }
+        }
+        const auto _FeatureNodes = std::count_if(
+            _Model.Geometry.begin(), _Model.Geometry.end(), [](const auto& _Node)
+            {
+                return _Node.Key.find(".half-hole.") != std::string::npos
+                    || _Node.Key.find(".male.") != std::string::npos
+                    || _Node.Key.find(".install.") != std::string::npos;
+            });
+        if (std::string(_Purpose) == "display")
+            EXPECT_EQ(0, _FeatureNodes);
+        else
+        {
+            EXPECT_GT(_FeatureNodes, 0);
+            const auto _Frame = std::find_if(
+                _Model.Items.begin(), _Model.Items.end(), [](const auto& _Item)
+                { return _Item.Key == "frame.left.0001"; });
+            ASSERT_NE(_Frame, _Model.Items.end());
+            const auto& _Shape = _Evaluation.At(_Frame->Representations.at("result"));
+            // At the first female aperture the inside wall is removed, while
+            // the opposite wall remains material. This distinguishes a true
+            // half hole from an accidental through hole.
+            const auto _NearProbe = BRepPrimAPI_MakeBox(
+                gp_Pnt(18.79, -4.0, 106.0), gp_Pnt(20.01, 4.0, 119.0)).Shape();
+            const auto _FarProbe = BRepPrimAPI_MakeBox(
+                gp_Pnt(-0.01, -4.0, 106.0), gp_Pnt(1.21, 4.0, 119.0)).Shape();
+            BRepAlgoAPI_Common _Near(_Shape, _NearProbe);
+            BRepAlgoAPI_Common _Far(_Shape, _FarProbe);
+            _Near.Build();
+            _Far.Build();
+            ASSERT_TRUE(_Near.IsDone());
+            ASSERT_TRUE(_Far.IsDone());
+            EXPECT_LT(std::abs(RootSelectionShapeVolume(_Near.Shape())), 0.01);
+            EXPECT_GT(RootSelectionShapeVolume(_Far.Shape()), 10.0);
+        }
+    }
+}
+
+TEST(TemplateRuntimeTest, MinimalProtectiveGrilleClosedFrameRecipesHaveValidNonOverlappingRails)
+{
+    using namespace iCAX::TemplateRuntime;
+    const auto _Root = std::filesystem::current_path();
+    CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
+    for (const auto* _Recipe : { "miter_45", "horizontal_wrap", "vertical_wrap" })
+    {
+        SCOPED_TRACE(_Recipe);
+        auto _Fixture = TemplateProtocolFixture(_Root, "minimal_protective_grille");
+        _Fixture.Parameters["frameType"] = std::string("closed_frame");
+        _Fixture.Parameters["frameCornerJoint"] = std::string(_Recipe);
+        if (std::string(_Recipe) == "horizontal_wrap")
+            _Fixture.Parameters["innerProfileOrientation"] = std::string("rotate_90");
+        _Fixture.Parameters = CTemplateCodec::ValidateAndNormalizeParameters(
+            _Fixture.Descriptor, _Fixture.Parameters);
+        const auto _Model = CTemplateCodec::ParseNeutralModel(
+            InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing"));
+        const auto _Evaluation = iCAX::OpenCascade::EvaluateNeutralModel(_Model);
+        std::vector<TopoDS_Shape> _FrameShapes;
+        for (const auto& _Item : _Model.Items)
+        {
+            const auto& _Shape = _Evaluation.At(_Item.Representations.at("result"));
+            EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid()) << _Item.Key;
+            EXPECT_GT(RootSelectionShapeVolume(_Shape), 0.01) << _Item.Key;
+            if (_Item.Key.starts_with("frame.")) _FrameShapes.push_back(_Shape);
+        }
+        ASSERT_EQ(4u, _FrameShapes.size());
+        for (std::size_t _Left = 0; _Left < _FrameShapes.size(); ++_Left)
+            for (std::size_t _Right = _Left + 1; _Right < _FrameShapes.size(); ++_Right)
+            {
+                BRepAlgoAPI_Common _Common(_FrameShapes[_Left], _FrameShapes[_Right]);
+                _Common.Build();
+                ASSERT_TRUE(_Common.IsDone());
+                EXPECT_LT(std::abs(RootSelectionShapeVolume(_Common.Shape())), 0.01);
+            }
     }
 }
 

@@ -544,6 +544,7 @@ def _parse(path: Path) -> dict[str, Any]:
         "schema": "icax.imported-tube-profile",
         "schemaVersion": 1,
         "kind": "fixed-section",
+        "sectionKind": "arbitrary",
         "profileForm": "fixed",
         "editableParameters": False,
         "frozenGeometry": True,

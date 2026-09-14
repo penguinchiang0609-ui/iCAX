@@ -8,7 +8,13 @@ import {
   renderPunchWizardDialog as renderPunchWizardView,
   validatePunchFeature,
 } from "../../apps/tube-designer/webpage/punchWizard.mjs";
-import { handlePartsAreaAction, renderNestingRightPane, renderPunchWizardDialog } from "../../apps/tube-designer/webpage/partsArea.mjs";
+import {
+  handlePartsAreaAction,
+  PART_2D_EDITING_ENABLED,
+  renderNestingRightPane,
+  renderNestingViewportOverlay,
+  renderPunchWizardDialog,
+} from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { buildPunchPreviewRows } from "../../apps/tube-designer/webpage/punchEditor.mjs";
 
 const part = {
@@ -137,25 +143,14 @@ assert.equal(calls[0].request.features.length, 1);
 assert.equal(view.tubeDesignerPunchWizard, null);
 assert.equal(view.pending, false);
 
-assert.match(renderNestingRightPane({}, view), /tube-designer-part-open-sketch/);
-view.tubeDesignerPartMeasurementState = {
-  key: `${part.entityId}@0`,
-  status: "ready",
-  report: {
-    length: 1200,
-    holes: [],
-    sideProjection: {
-      width: 1200, height: 20,
-      outline: [[0, 0], [1200, 0], [1200, 20], [0, 20]],
-      segments: [],
-    },
-  },
-};
-await handlePartsAreaAction({}, view, "tube-designer-part-open-sketch", {
+assert.equal(PART_2D_EDITING_ENABLED, false);
+assert.doesNotMatch(renderNestingRightPane({}, view), /tube-designer-part-open-sketch/);
+assert.doesNotMatch(renderNestingViewportOverlay({}, view), /tube-designer-part-open-sketch/);
+const hiddenSketchResult = await handlePartsAreaAction({}, view, "tube-designer-part-open-sketch", {
   dataset: { tubeDesignerPartId: part.entityId },
 }, operations);
-assert.equal(view.tubeDesignerSketchDialogOpen, true);
-assert.equal(view.tubeDesignerSketch.sideTargetKind, "part");
-assert.equal(view.tubeDesignerSketch.targetPartId, part.entityId);
+assert.deepEqual(hiddenSketchResult, { handled: true });
+assert.equal(view.tubeDesignerSketchDialogOpen, undefined);
+assert.equal(view.tubeDesignerSketch, undefined);
 
 console.log("Punch wizard state, validation, rendering, array editing and native apply dispatch checks passed.");

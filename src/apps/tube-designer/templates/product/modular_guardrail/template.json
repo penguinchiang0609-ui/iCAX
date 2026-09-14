@@ -25,6 +25,21 @@
       "heightParameter": "guardHeight",
       "depthParameter": "sideLength2"
     },
+    "resourceRoles": {
+      "profiles": {
+        "handrail": { "parameter": "handrailProfileType" },
+        "post": { "parameter": "postProfileType" },
+        "rail": { "parameter": "railProfileType" },
+        "infill": { "parameter": "infillProfileType" }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["basic", "layout", "infill"] },
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["profiles", "infill_materials"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["process", "components"] }
+      ]
+    },
     "modelResources": {
       "post-cap": {
         "path": "resource/post-cap.icaxmodel.json",
@@ -57,6 +72,13 @@
         "zh-CN": "竖杆与封板"
       },
       "order": 30
+    },
+    {
+      "key": "infill_materials",
+      "displayName": {
+        "zh-CN": "挡板与玻璃材料"
+      },
+      "order": 35
     },
     {
       "key": "profiles",
@@ -1333,7 +1355,7 @@
       },
       "valueType": "number",
       "defaultValue": 2,
-      "group": "infill",
+      "group": "infill_materials",
       "order": 200,
       "quantity": "length",
       "unit": "mm",
@@ -1365,7 +1387,7 @@
       },
       "valueType": "number",
       "defaultValue": 2,
-      "group": "infill",
+      "group": "process",
       "order": 210,
       "quantity": "length",
       "unit": "mm",
@@ -1397,7 +1419,7 @@
       },
       "valueType": "string",
       "defaultValue": "Q235B",
-      "group": "infill",
+      "group": "infill_materials",
       "order": 220,
       "visibleWhen": {
         "op": "all",
@@ -1547,6 +1569,7 @@
       "defaultValue": "rect",
       "group": "profiles",
       "order": 280,
+      "presentation": { "editor": "profile-library", "resourceRole": "handrail" },
       "choices": [
         {
           "value": "rect",
@@ -1656,6 +1679,7 @@
       "defaultValue": "rect",
       "group": "profiles",
       "order": 330,
+      "presentation": { "editor": "profile-library", "resourceRole": "post" },
       "choices": [
         {
           "value": "rect",
@@ -1765,6 +1789,7 @@
       "defaultValue": "rect",
       "group": "profiles",
       "order": 380,
+      "presentation": { "editor": "profile-library", "resourceRole": "rail" },
       "choices": [
         {
           "value": "rect",
@@ -1874,6 +1899,7 @@
       "defaultValue": "rect",
       "group": "profiles",
       "order": 430,
+      "presentation": { "editor": "profile-library", "resourceRole": "infill" },
       "choices": [
         {
           "value": "rect",
@@ -2197,7 +2223,7 @@
       },
       "valueType": "number",
       "defaultValue": 8,
-      "group": "infill",
+      "group": "infill_materials",
       "order": 550,
       "quantity": "length",
       "unit": "mm",
@@ -2230,7 +2256,7 @@
       },
       "valueType": "string",
       "defaultValue": "夹层玻璃（构造待确认）",
-      "group": "infill",
+      "group": "infill_materials",
       "order": 560,
       "constraints": {
         "minimumLength": 1,

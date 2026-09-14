@@ -97,6 +97,41 @@ function toolName(tool) {
   return String(tool?.displayName ?? tool?.name ?? tool?.toolLabel ?? tool?.id ?? "未命名模具").trim() || "未命名模具";
 }
 
+// Product templates and the standalone mould library share these canonical
+// identities.  Keep the library's historical libraryKey private: it contains
+// an empty template-id segment for system/user tools and is unsuitable for
+// data persisted by a product instance.
+export function toolScope(tool) {
+  return scopeOf(tool);
+}
+
+export function toolCategory(tool) {
+  return categoryOf(tool);
+}
+
+export function toolDisplayName(tool) {
+  return toolName(tool);
+}
+
+export function toolSelectionKey(tool) {
+  const scope = scopeOf(tool);
+  const id = encodeURIComponent(String(tool?.id ?? ""));
+  return scope === "template"
+    ? `template:${encodeURIComponent(templateIdOf(tool))}:${id}`
+    : `${scope}:${id}`;
+}
+
+export function toolReference(tool) {
+  const scope = scopeOf(tool);
+  return {
+    scope,
+    ...(scope === "template" ? { templateId: templateIdOf(tool) } : {}),
+    id: String(tool?.id ?? ""),
+    ...(tool?.version ? { version: String(tool.version) } : {}),
+    ...(tool?.digest ? { digest: String(tool.digest) } : {}),
+  };
+}
+
 function sources(view) {
   const wizardTools = view?.tubeDesignerPunchWizard?.tools;
   return [
@@ -299,7 +334,6 @@ function renderToolIllustration(tool) {
   if (id === "triangle") return `<svg viewBox="0 0 48 48" aria-hidden="true"><polygon points="24,7 41,38 7,38" /></svg>`;
   if (id === "single-d") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 34 H24 A10 10 0 0 0 24 14 H8 Z" /></svg>`;
   if (id === "double-d") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M14 14 H34 A10 10 0 0 1 34 34 H14 A10 10 0 0 1 14 14 Z" /></svg>`;
-  if (id === "diamond-12") return `<svg viewBox="0 0 48 48" aria-hidden="true"><polygon points="8,24 24,12 40,24 24,36" /></svg>`;
   if (id === "end-convex") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h22a14 14 0 0 1 0 28H8Z" /></svg>`;
   if (id === "end-cope") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v28H8M8 24h18a8 8 0 0 0 0-16" /></svg>`;
   if (id === "end-key-joint") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v28H8V27h16v-6H8Z" /></svg>`;

@@ -16,7 +16,7 @@ import {
 const view = {
   tubeDesignerSystemPunchTools: [
     { id: "v-notch-sharp", displayName: "V 槽", kind: "programmatic", category: "槽口", version: "1.0.0", parameters: [{ key: "angle", displayName: "V 槽夹角" }] },
-    { id: "diamond-12", displayName: "菱形孔", kind: "fixed", category: "孔", version: "1.0.0", parameters: [] },
+    { id: "fixed-fixture", displayName: "测试定式刀具", kind: "fixed", category: "测试", version: "1.0.0", parameters: [] },
   ],
   tubeDesignerTemplatePunchTools: [
     { id: "template-v", displayName: "模板 V 槽", kind: "programmatic", libraryScope: "template", templateId: "guardrail", templateName: "护栏模板" },
@@ -97,7 +97,7 @@ assert.match(variantHtml, /declared-tangent-variant/);
 assert.doesNotMatch(variantHtml, /wrong-variant/);
 assert.match(variantHtml, /M10 10 A20 20 0 0 0 30 30/);
 view.tubeDesignerToolLibrary = { scope: "system", type: "all", category: "slot", search: "", selectedKey: "" };
-assert.deepEqual(visibleLibraryTools(view).map((tool) => tool.id), ["v-notch-sharp", "diamond-12"]);
+assert.deepEqual(visibleLibraryTools(view).map((tool) => tool.id), ["v-notch-sharp", "fixed-fixture"]);
 assert.match(renderToolLibraryLeftPane({}, view), /tube-tool-library-group/);
 assert.match(renderToolLibraryLeftPane({}, view), /tube-tool-library-card-art/);
 assert.doesNotMatch(renderToolLibraryLeftPane({}, view), /tube-tool-library-card-icon/);

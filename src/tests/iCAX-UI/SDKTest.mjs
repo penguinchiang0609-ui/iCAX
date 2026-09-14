@@ -1091,23 +1091,30 @@ function testTubeDesignerUserPresetKeepsOnlyReusableTemplateParameters() {
     id: "security-window",
     version: "2.0.0",
     parameters: [
-      { key: "productCode" }, { key: "width" }, { key: "height" },
-      { key: "tubeSpecificationPreset" }, { key: "frameWidth" }, { key: "wallThickness" },
+      { key: "productCode", groupKey: "size" }, { key: "width", groupKey: "size" }, { key: "height", groupKey: "size" },
+      { key: "tubeSpecificationPreset", groupKey: "profile" }, { key: "frameWidth", groupKey: "profile" },
+      { key: "wallThickness", groupKey: "profile" }, { key: "joinType", groupKey: "assembly" },
     ],
     extensions: {
       productIdentity: { codeParameter: "productCode" },
       primaryDimensions: { widthParameter: "width", heightParameter: "height" },
       parameterPresets: { selectorParameter: "tubeSpecificationPreset" },
+      parameterLayout: { sections: [
+        { key: "product", groups: ["size"] },
+        { key: "materials", allowPresets: true, groups: ["profile"] },
+        { key: "process", allowPresets: true, groups: ["assembly"] },
+      ] },
     },
   };
   const values = {
     productCode: "A-001", width: 1200, height: 1800,
-    tubeSpecificationPreset: "custom", frameWidth: 38, wallThickness: 1.2,
+    tubeSpecificationPreset: "custom", frameWidth: 38, wallThickness: 1.2, joinType: "weld",
     retiredParameter: 99,
   };
   assert.deepEqual(getReusablePresetValues(template, values), {
     frameWidth: 38,
     wallThickness: 1.2,
+    joinType: "weld",
   });
   assert.deepEqual(applyReusablePresetValues(template, values, {
     frameWidth: 42,
@@ -1115,6 +1122,20 @@ function testTubeDesignerUserPresetKeepsOnlyReusableTemplateParameters() {
   }), {
     ...values,
     frameWidth: 42,
+  });
+  assert.deepEqual(getReusablePresetValues(template, values, "materials"), {
+    frameWidth: 38,
+    wallThickness: 1.2,
+  });
+  assert.deepEqual(getReusablePresetValues(template, values, "process"), {
+    joinType: "weld",
+  });
+  assert.deepEqual(applyReusablePresetValues(template, values, {
+    frameWidth: 99,
+    joinType: "insert",
+  }, "process"), {
+    ...values,
+    joinType: "insert",
   });
 }
 

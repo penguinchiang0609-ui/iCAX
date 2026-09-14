@@ -1,14 +1,15 @@
 // Isolated rendering test: no connection to the user's project or desktop.
 import assert from "node:assert/strict";
-import {readFileSync,readdirSync,mkdirSync} from "node:fs";
+import {existsSync,readFileSync,readdirSync,mkdirSync} from "node:fs";
 import {resolve,sep} from "node:path";
 import {fileURLToPath} from "node:url";
 import {tubeDesignerCss} from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE||"playwright");
 const root=fileURLToPath(new URL("../../",import.meta.url));
 const toolsRoot=new URL("../../apps/tube-designer/templates/mold/",import.meta.url);
-const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(item=>item.isDirectory()).map(item=>JSON.parse(readFileSync(new URL(item.name+"/tool.json",toolsRoot))))
+const tools=readdirSync(toolsRoot,{withFileTypes:true}).filter(item=>item.isDirectory()&&existsSync(new URL(item.name+"/tool.json",toolsRoot))).map(item=>JSON.parse(readFileSync(new URL(item.name+"/tool.json",toolsRoot))))
   .map(t=>({...t,digest:"browser-test",defaultParameters:Object.fromEntries(t.parameters.map(p=>[p.key,p.defaultValue]))}));
+tools.push({id:"fixed-fixture",displayName:"测试定式刀具",kind:"fixed",target:"side",category:"测试",version:"1.0.0",parameters:[],digest:"browser-test",defaultParameters:{}});
 const browser=await chromium.launch({headless:true,...(process.env.ICAX_BROWSER_CHANNEL?{channel:process.env.ICAX_BROWSER_CHANNEL}:{})});
 try {
   const page=await browser.newPage();
@@ -42,7 +43,7 @@ try {
   },tools);
   for(const size of [{width:1600,height:1000},{width:1024,height:768}]) {
     await page.setViewportSize(size);
-    await page.locator('[data-tube-designer-punch-field=tool]:not([data-tube-designer-punch-end])').selectOption("diamond-12");
+    await page.locator('[data-tube-designer-punch-field=tool]:not([data-tube-designer-punch-end])').selectOption("fixed-fixture");
     await page.locator('[data-cam-action=tube-designer-punch-add]').click();
     await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-field=tool]').selectOption("end-convex");
     await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-parameter=diameter]').fill("60");

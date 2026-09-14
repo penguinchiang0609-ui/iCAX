@@ -116,9 +116,9 @@ export function renderProfileLibraryRightPane(_context, view) {
       </div>
       ${editable ? `<section class="tube-profile-library-parameter-section">
         <header><strong>${readOnly ? "预览参数" : "默认参数"}</strong><span>${readOnly ? "仅影响当前预览与本次导出" : "产品选择此管型时仍可单独修改"}</span></header>
-        <button type="button" data-cam-action="tube-designer-profile-diagram-toggle" data-profile-diagram-toggle aria-expanded="${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true}">${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true ? "收起参数示意图" : "展开参数示意图"}</button>
-        <div data-profile-library-diagram ${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true ? "" : "hidden"}>${renderProfileParameterDiagram(snapshot, { definitions: allDefinitions, parameters: values, compact: true })}</div>
         <div class="tube-profile-library-parameter-list">${definitions.map((definition) => renderPackageParameter(definition, values, view?.pending)).join("")}</div>
+        <button class="tube-profile-library-diagram-toggle" type="button" data-cam-action="tube-designer-profile-diagram-toggle" data-profile-diagram-toggle aria-expanded="${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true}">${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true ? "收起参数示意图" : "展开参数示意图"}</button>
+        <div class="tube-profile-library-parameter-diagram" data-profile-library-diagram ${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true ? "" : "hidden"}>${renderProfileParameterDiagram(snapshot, { definitions: allDefinitions, parameters: values, compact: true })}</div>
       </section>` : `<p class="tube-profile-library-frozen-note">使用已保存的固定截面；不提供形状参数修改。</p>`}
       ${system ? `<p class="tube-profile-library-system-note">系统内置管型不可重命名或删除。修改参数只会生成当前预览和导出结果，不会覆盖系统定义。</p>` : ""}
       ${template ? `<p class="tube-profile-library-system-note">此管型随所属模板提供，不可重命名或删除。进入草图编辑时会创建独立副本，不会覆盖模板资源。</p>` : ""}

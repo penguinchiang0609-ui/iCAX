@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { renderProductTemplateLibraryRightPane } from "../../apps/tube-designer/webpage/templateLibrary.mjs";
+import { renderDesignerAddParameterContent } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
 
 const parameters = [
@@ -39,5 +40,88 @@ try {
     return { paired, wide, stable, narrow, noOverflow };
   });
   assert.deepEqual(result, { paired: true, wide: true, stable: true, narrow: true, noOverflow: true });
+
+  const structuredHtml = renderProductTemplateLibraryRightPane({}, {
+    scene: { tubeDesigner: { templates: [{
+      id: "structured", name: "结构化参数", available: true,
+      groups: [
+        { key: "dimensions", displayName: "基本尺寸" },
+        { key: "profiles", displayName: "管材规格" },
+        { key: "assembly", displayName: "装配方式" },
+      ],
+      parameters: [
+        { key: "w", groupKey: "dimensions", displayName: "宽度", valueType: "number", defaultValue: 1000 },
+        { key: "profile", groupKey: "profiles", displayName: "管材", valueType: "string", defaultValue: "38×38" },
+        { key: "joint", groupKey: "assembly", displayName: "连接", valueType: "string", defaultValue: "焊接" },
+      ],
+      extensions: { parameterLayout: { sections: [
+        { key: "product", displayName: "产品规格", defaultOpen: true, groups: ["dimensions"] },
+        { key: "materials", displayName: "管材与材料", groups: ["profiles"] },
+        { key: "process", displayName: "加工与装配工艺", groups: ["assembly"] },
+      ] } },
+    }] } },
+    tubeDesignerProductTemplateLibrary: { scope: "system", selectedId: "structured" },
+  });
+  await page.setContent(`<style>${tubeDesignerCss} #host{width:340px;height:520px} .tube-product-template-library-editor{display:flex;flex-direction:column}</style><div id="host">${structuredHtml}</div>`);
+  const disclosureLayout = await page.evaluate(() => {
+    const sections = [...document.querySelectorAll(".tube-product-template-library-parameter-section")];
+    const groups = [...document.querySelectorAll(".tube-product-template-library-parameter-group")];
+    const body = document.querySelector(".tube-product-template-library-editor-body");
+    return {
+      sectionCount: sections.length,
+      openSections: sections.filter((item) => item.open).map((item) => item.dataset.tubeTemplateLibraryDisclosure),
+      openGroups: groups.filter((item) => item.open).map((item) => item.dataset.tubeTemplateLibraryDisclosure),
+      nested: sections.every((section) => section.querySelector(":scope > .tube-product-template-library-parameter-section-content > .tube-product-template-library-parameter-group")),
+      noOverflow: body.scrollWidth <= body.clientWidth,
+    };
+  });
+  assert.deepEqual(disclosureLayout, {
+    sectionCount: 3,
+    openSections: ["section:product"],
+    openGroups: ["group:dimensions"],
+    nested: true,
+    noOverflow: true,
+  });
+
+  const scopedPresetTemplate = {
+    id: "scoped-presets", name: "分区常用方案", available: true,
+    groups: [
+      { key: "size", displayName: "基本尺寸" },
+      { key: "profile", displayName: "管材规格" },
+      { key: "assembly", displayName: "装配方式" },
+    ],
+    parameters: [
+      { key: "width", groupKey: "size", group: "基本尺寸", displayName: "宽度", type: "number", defaultValue: 1000 },
+      { key: "profileSize", groupKey: "profile", group: "管材规格", displayName: "规格", type: "number", defaultValue: 38 },
+      { key: "joinType", groupKey: "assembly", group: "装配方式", displayName: "连接", type: "text", defaultValue: "焊接" },
+    ],
+    extensions: { parameterLayout: { sections: [
+      { key: "product", displayName: "产品规格", defaultOpen: true, groups: ["size"] },
+      { key: "materials", displayName: "管材与材料", allowPresets: true, groups: ["profile"] },
+      { key: "process", displayName: "加工与装配工艺", allowPresets: true, groups: ["assembly"] },
+    ] } },
+  };
+  const addHtml = renderDesignerAddParameterContent({ templates: [scopedPresetTemplate] }, {
+    tubeDesignerAddTemplateId: scopedPresetTemplate.id,
+    tubeDesignerAddInstanceName: "测试产品",
+    tubeDesignerAddDraft: { width: 1000, profileSize: 38, joinType: "焊接" },
+  });
+  await page.setContent(`<style>${tubeDesignerCss}</style><div class="tube-designer-config-parameters">${addHtml}</div>`);
+  const presetLayout = await page.evaluate(() => {
+    const material = document.querySelector('[data-tube-designer-parameter-group="section:materials"]');
+    const process = document.querySelector('[data-tube-designer-parameter-group="section:process"]');
+    return {
+      bars: document.querySelectorAll(".tube-designer-user-preset-bar").length,
+      materialScope: material?.querySelector(".tube-designer-user-preset-bar")?.dataset.tubeDesignerPresetScope,
+      processScope: process?.querySelector(".tube-designer-user-preset-bar")?.dataset.tubeDesignerPresetScope,
+      productHasPreset: !!document.querySelector('[data-tube-designer-parameter-group="section:product"] .tube-designer-user-preset-bar'),
+    };
+  });
+  assert.deepEqual(presetLayout, {
+    bars: 2,
+    materialScope: "materials",
+    processScope: "process",
+    productHasPreset: false,
+  });
   console.log("Product parameters: two columns, full-row long fields, narrow fallback, focus/selection/scroll preserved.");
 } finally { await browser.close(); }

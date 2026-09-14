@@ -524,7 +524,11 @@ def _evaluate(
     result = {
         "schema": "icax.imported-tube-profile",
         "schemaVersion": 1,
+        # ``kind`` identifies the resource protocol.  Product generators need
+        # the actual section family for joint rules, so keep it separately
+        # instead of forcing them to guess from a package id or display name.
         "kind": "profile-package",
+        "sectionKind": str(built.get("kind", "arbitrary")),
         "profileForm": descriptor["profileForm"],
         "name": name,
         "sourceFileName": source_file_name,

@@ -27,6 +27,11 @@ import {
 } from "./punchProfileSource.mjs";
 export { isTubeNestingPart } from "./manufacturingParts.mjs";
 
+// Temporarily keep final-part 2D sketch editing out of the product workflow.
+// The implementation and saved data remain intact so the feature can be
+// restored from this single switch when it is ready to return.
+export const PART_2D_EDITING_ENABLED = false;
+
 const hydrationTokens = new WeakMap();
 const partViewportOwners = new WeakMap();
 const partViewportLoads = new WeakMap();
@@ -489,7 +494,7 @@ export function renderNestingViewportOverlay(context, view) {
         ${!showPlan ? `<button data-cam-action="tube-designer-parts-toggle-dimensions" aria-pressed="${view.tubeDesignerPartDimensionsVisible === false ? "false" : "true"}">${view.tubeDesignerPartDimensionsVisible === false ? "显示标注" : "隐藏标注"}</button>` : ""}
         <button data-cam-action="tube-designer-parts-default-view">等轴测</button>
         <button data-cam-action="tube-designer-parts-fit-view">适合窗口</button>
-        ${punchPart && isTubeNestingPart(punchPart) && !showPlan ? `<button class="tube-designer-secondary" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(punchPart.entityId)}" ${view.pending ? "disabled" : ""}>二维绘制</button>` : ""}
+        ${PART_2D_EDITING_ENABLED && punchPart && isTubeNestingPart(punchPart) && !showPlan ? `<button class="tube-designer-secondary" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(punchPart.entityId)}" ${view.pending ? "disabled" : ""}>二维绘制</button>` : ""}
         ${punchPart && isTubeNestingPart(punchPart) && punchPart.independentNesting ? `<button class="tube-designer-primary" data-cam-action="${hasPartDrawing(punchPart)?"tube-designer-drawing-open":"tube-designer-punch-open"}" data-tube-designer-part-id="${escapeAttribute(punchPart.entityId)}">${hasPartDrawing(punchPart)?"三维编辑":"冲孔向导"}</button>` : ""}
       </div>
     </div>
@@ -643,7 +648,7 @@ function renderNestingPartInspector(part, view = {}) {
   return `<div class="tube-designer-cutting-inspector">
     <header class="tube-designer-cutting-pane-header">
       <div><strong>当前零件</strong><span>${escapeText(partDisplayName(part))}</span></div>
-      ${isTubeNestingPart(part) ? `<div class="tube-designer-cutting-pane-header-actions">
+      ${PART_2D_EDITING_ENABLED && isTubeNestingPart(part) ? `<div class="tube-designer-cutting-pane-header-actions">
         <button type="button" data-cam-action="tube-designer-part-open-sketch" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>二维绘制</button>
       </div>` : ""}
       <em class="tube-designer-process-badge ${escapeAttribute(partProcessKind(part))}">${escapeText(partProcessLabel(part))}</em>
@@ -1113,6 +1118,9 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     return {handled:true};
   }
   if (view.tubeDesignerNestingContextMenu) view.tubeDesignerNestingContextMenu = null;
+  if (action === "tube-designer-part-open-sketch" && !PART_2D_EDITING_ENABLED) {
+    return { handled: true };
+  }
   if (action === "tube-designer-part-open-sketch") {
     if (view.pending) return { handled: true };
     const partId = String(target?.dataset?.tubeDesignerPartId

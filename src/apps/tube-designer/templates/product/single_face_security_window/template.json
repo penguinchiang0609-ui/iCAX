@@ -27,6 +27,24 @@
       "widthParameter": "width",
       "heightParameter": "height"
     },
+    "resourceRoles": {
+      "profiles": {
+        "frame": { "parameter": "frameProfileType" },
+        "horizontal": { "parameter": "horizontalProfileType" },
+        "vertical": { "parameter": "verticalProfileType" },
+        "doorFrame": { "parameter": "doorFrameProfileType" },
+        "doorLeafFrame": { "parameter": "doorLeafFrameProfileType" },
+        "doorHorizontal": { "parameter": "doorHorizontalProfileType" },
+        "doorVertical": { "parameter": "doorVerticalProfileType" }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["overall", "structure", "grid", "main_grid", "side_grid", "top_bottom_grid", "door_position", "door_grid", "project_rules"] },
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["profile_preset", "material", "outer_profile", "horizontal_profile", "vertical_profile", "door_frame_profile", "door_leaf_profile", "door_horizontal_profile", "door_vertical_profile"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["assembly", "door_assembly", "outer_process", "door_frame_process", "door_leaf_process", "groove_process", "installation"] }
+      ]
+    },
     "parameterPresets": {
       "selectorParameter": "tubeSpecificationPreset",
       "customValue": "custom",
@@ -128,11 +146,25 @@
   },
   "groups": [
     {
-      "key": "site_review",
+      "key": "project_rules",
       "displayName": {
-        "zh-CN": "材料、安装与项目规则"
+        "zh-CN": "项目与设计规则"
       },
-      "order": 190
+      "order": 26
+    },
+    {
+      "key": "material",
+      "displayName": {
+        "zh-CN": "材质与表面处理"
+      },
+      "order": 29
+    },
+    {
+      "key": "installation",
+      "displayName": {
+        "zh-CN": "现场安装"
+      },
+      "order": 110
     },
     {
       "key": "structure",
@@ -409,7 +441,7 @@
       },
       "valueType": "enum",
       "defaultValue": "site_confirm",
-      "group": "site_review",
+      "group": "installation",
       "order": 30,
       "choices": [
         {
@@ -497,7 +529,7 @@
       },
       "valueType": "string",
       "defaultValue": "待项目确认",
-      "group": "site_review",
+      "group": "project_rules",
       "order": 40,
       "visibleWhen": {
         "op": "any",
@@ -560,7 +592,7 @@
         "maximum": 20000,
         "step": 1
       },
-      "group": "site_review",
+      "group": "project_rules",
       "order": 41,
       "visibleWhen": {
         "op": "any",
@@ -683,7 +715,7 @@
         "maximum": 20000,
         "step": 1
       },
-      "group": "site_review",
+      "group": "project_rules",
       "order": 42,
       "visibleWhen": {
         "op": "any",
@@ -1232,7 +1264,7 @@
           }
         }
       ],
-      "group": "site_review",
+      "group": "material",
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -1313,7 +1345,7 @@
           }
         }
       ],
-      "group": "site_review",
+      "group": "material",
       "order": 20,
       "visibleWhen": {
         "op": "any",
@@ -7497,6 +7529,7 @@
         }
       ],
       "group": "outer_profile",
+      "presentation": { "editor": "profile-library", "resourceRole": "frame" },
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -7801,6 +7834,7 @@
         }
       ],
       "group": "horizontal_profile",
+      "presentation": { "editor": "profile-library", "resourceRole": "horizontal" },
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -8211,6 +8245,7 @@
         }
       ],
       "group": "vertical_profile",
+      "presentation": { "editor": "profile-library", "resourceRole": "vertical" },
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -8695,6 +8730,7 @@
         }
       ],
       "group": "door_frame_profile",
+      "presentation": { "editor": "profile-library", "resourceRole": "doorFrame" },
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -9099,6 +9135,7 @@
         }
       ],
       "group": "door_leaf_profile",
+      "presentation": { "editor": "profile-library", "resourceRole": "doorLeafFrame" },
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -9503,6 +9540,7 @@
         }
       ],
       "group": "door_horizontal_profile",
+      "presentation": { "editor": "profile-library", "resourceRole": "doorHorizontal" },
       "order": 10,
       "visibleWhen": {
         "op": "any",
@@ -10108,6 +10146,7 @@
         }
       ],
       "group": "door_vertical_profile",
+      "presentation": { "editor": "profile-library", "resourceRole": "doorVertical" },
       "order": 10,
       "visibleWhen": {
         "op": "any",

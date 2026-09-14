@@ -1,6 +1,6 @@
 // Verifies every parameterized built-in mould diagram and its scoped interaction in Edge.
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs";
@@ -17,6 +17,11 @@ const tools = readdirSync(mouldRoot, { withFileTypes: true }).filter((entry) => 
 });
 assert.equal(tools.length, 20);
 assert.ok(tools.every((tool) => tool.parameterDiagram?.schemaVersion === 2));
+for (const tool of tools) {
+  const parameters = new Set(tool.parameters.map((definition) => definition.key));
+  const annotations = new Set(tool.parameterDiagram.annotations.map((annotation) => annotation.parameter));
+  assert.deepEqual(annotations, parameters, `${tool.id} must locate every declared parameter in its own diagram metadata`);
+}
 
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const browser = await chromium.launch({ headless: true, channel: process.env.ICAX_BROWSER_CHANNEL || "msedge" });
@@ -100,6 +105,21 @@ try {
     assert.deepEqual(new Set(result.legendAnnotations), new Set(result.controls), JSON.stringify(result));
     assert.deepEqual(new Set(result.svgAnnotations), new Set(result.controls), JSON.stringify(result));
     assert.deepEqual(result.clipped, [], JSON.stringify(result));
+  }
+  await page.setViewportSize({ width: 420, height: 900 });
+  const narrow = await page.evaluate(() => {
+    const fixture = window.fixture;
+    document.querySelector("#app").style.width = "380px";
+    fixture.view.tubeDesignerToolLibrary.selectedKey = "system::v-notch-sharp";
+    fixture.view.tubeDesignerToolLibrary.parameterDrafts = {};
+    fixture.render();
+    const root = document.querySelector("[data-tool-parameter-scope]");
+    return { overflow: root.scrollWidth - root.clientWidth, width: root.getBoundingClientRect().width };
+  });
+  assert.ok(narrow.width <= 380 && narrow.overflow <= 2, JSON.stringify(narrow));
+  if (process.env.ICAX_ARTIFACT_DIR) {
+    mkdirSync(process.env.ICAX_ARTIFACT_DIR, { recursive: true });
+    await page.screenshot({ path: resolve(process.env.ICAX_ARTIFACT_DIR, "tool-parameter-diagram-v-notch.png"), fullPage: true });
   }
   assert.deepEqual(errors, []);
   console.log("Tool parameter diagrams: 20 built-ins, scoped focus/click, live values and conditional annotations passed in Edge.");

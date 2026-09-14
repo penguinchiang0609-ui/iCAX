@@ -21,6 +21,19 @@
     "primaryDimensions": {
       "widthParameter": "width",
       "heightParameter": "height"
+    },
+    "resourceRoles": {
+      "profiles": {
+        "frame": { "parameter": "frameProfileType" },
+        "blade": { "parameter": "bladeProfileType" }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["overall", "frame", "blades", "array"] },
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["frame_profile", "blade_profile"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["frame_process", "connection"] }
+      ]
     }
   },
   "groups": [
@@ -33,13 +46,31 @@
     {
       "key": "frame",
       "displayName": {
-        "zh-CN": "边框与支撑"
+        "zh-CN": "边框与支撑布置"
+      }
+    },
+    {
+      "key": "frame_profile",
+      "displayName": {
+        "zh-CN": "边框管材"
+      }
+    },
+    {
+      "key": "frame_process",
+      "displayName": {
+        "zh-CN": "边框装配"
       }
     },
     {
       "key": "blades",
       "displayName": {
-        "zh-CN": "叶片管材与姿态"
+        "zh-CN": "叶片姿态"
+      }
+    },
+    {
+      "key": "blade_profile",
+      "displayName": {
+        "zh-CN": "叶片管材"
       }
     },
     {
@@ -102,7 +133,7 @@
       },
       "valueType": "enum",
       "defaultValue": "side_wrap",
-      "group": "frame",
+      "group": "frame_process",
       "choices": [
         {
           "value": "side_wrap",
@@ -131,7 +162,8 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "group": "frame",
+      "presentation": { "editor": "profile-library", "resourceRole": "frame" },
+      "group": "frame_profile",
       "choices": [
         {
           "value": "rect",
@@ -149,7 +181,7 @@
       },
       "valueType": "number",
       "defaultValue": 40,
-      "group": "frame",
+      "group": "frame_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -164,7 +196,7 @@
       },
       "valueType": "number",
       "defaultValue": 100,
-      "group": "frame",
+      "group": "frame_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -179,7 +211,7 @@
       },
       "valueType": "number",
       "defaultValue": 2,
-      "group": "frame",
+      "group": "frame_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -194,7 +226,7 @@
       },
       "valueType": "number",
       "defaultValue": 1.5,
-      "group": "frame",
+      "group": "frame_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -209,7 +241,7 @@
       },
       "valueType": "string",
       "defaultValue": "铝合金",
-      "group": "frame"
+      "group": "frame_profile"
     },
     {
       "key": "bladeProfileType",
@@ -218,7 +250,8 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "group": "blades",
+      "presentation": { "editor": "profile-library", "resourceRole": "blade" },
+      "group": "blade_profile",
       "choices": [
         {
           "value": "rect",
@@ -236,7 +269,7 @@
       },
       "valueType": "number",
       "defaultValue": 80,
-      "group": "blades",
+      "group": "blade_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -251,7 +284,7 @@
       },
       "valueType": "number",
       "defaultValue": 20,
-      "group": "blades",
+      "group": "blade_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -266,7 +299,7 @@
       },
       "valueType": "number",
       "defaultValue": 2,
-      "group": "blades",
+      "group": "blade_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -281,7 +314,7 @@
       },
       "valueType": "number",
       "defaultValue": 1.5,
-      "group": "blades",
+      "group": "blade_profile",
       "unit": "mm",
       "quantity": "length",
       "constraints": {
@@ -296,7 +329,7 @@
       },
       "valueType": "string",
       "defaultValue": "铝合金",
-      "group": "blades"
+      "group": "blade_profile"
     },
     {
       "key": "middlePostCount",
@@ -331,7 +364,7 @@
       },
       "valueType": "enum",
       "defaultValue": "split",
-      "group": "frame",
+      "group": "frame_process",
       "choices": [
         {
           "value": "split",

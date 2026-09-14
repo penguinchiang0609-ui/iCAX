@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { ribbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
 import {
   productTemplateLibraryState,
+  captureProductTemplateLibraryScrollState,
   renderProductTemplateLibraryLeftPane,
   renderProductTemplateLibraryRightPane,
   renderProductTemplateLibraryViewportOverlay,
@@ -76,6 +77,58 @@ assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /tube-produc
 assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /示例款式/);
 assert.match(renderProductTemplateLibraryRightPane({}, libraryView), /预览参数/);
 assert.doesNotMatch(renderProductTemplateLibraryRightPane({}, libraryView), /tube-designer-template-manager-open|打开管理/);
+
+const structuredView = {
+  scene: { tubeDesigner: { templates: [{
+    id: "structured", name: "结构化模板", available: true,
+    groups: [
+      { key: "dimensions", displayName: "基本尺寸" },
+      { key: "profiles", displayName: "管材规格" },
+      { key: "assembly", displayName: "装配方式" },
+    ],
+    parameters: [
+      { key: "width", groupKey: "dimensions", displayName: "宽度", valueType: "number", defaultValue: 1000 },
+      { key: "profile", groupKey: "profiles", displayName: "管材", valueType: "string", defaultValue: "38×38" },
+      { key: "joint", groupKey: "assembly", displayName: "连接", valueType: "string", defaultValue: "焊接" },
+    ],
+    extensions: { parameterLayout: { sections: [
+      { key: "product", displayName: "产品规格", defaultOpen: true, groups: ["dimensions"] },
+      { key: "materials", displayName: "管材与材料", groups: ["profiles"] },
+      { key: "process", displayName: "加工与装配工艺", groups: ["assembly"] },
+    ] } },
+  }] } },
+  tubeDesignerProductTemplateLibrary: { scope: "system", selectedId: "structured" },
+};
+let structuredHtml = renderProductTemplateLibraryRightPane({}, structuredView);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="section:product" open/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="section:materials" >/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="section:process" >/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="group:dimensions" open/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="group:profiles" >/);
+assert.ok(structuredHtml.indexOf("产品规格") < structuredHtml.indexOf("管材与材料"));
+assert.ok(structuredHtml.indexOf("管材与材料") < structuredHtml.indexOf("加工与装配工艺"));
+
+const disclosureNodes = [
+  { dataset: { tubeTemplateLibraryDisclosure: "section:product" }, open: false },
+  { dataset: { tubeTemplateLibraryDisclosure: "section:materials" }, open: true },
+  { dataset: { tubeTemplateLibraryDisclosure: "group:profiles" }, open: true },
+];
+const renderedEditor = {
+  dataset: { tubeTemplateLibraryRenderedId: "structured" },
+  querySelectorAll() { return disclosureNodes; },
+};
+captureProductTemplateLibraryScrollState({
+  mount: {
+    ownerDocument: { activeElement: null },
+    querySelector(selector) {
+      return selector === ".tube-product-template-library-editor-body" ? renderedEditor : null;
+    },
+  },
+}, structuredView);
+structuredHtml = renderProductTemplateLibraryRightPane({}, structuredView);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="section:product" >/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="section:materials" open/);
+assert.match(structuredHtml, /data-tube-template-library-disclosure="group:profiles" open/);
 const emptyPersonalView = { tubeDesignerUserData: { productTemplates: [] }, tubeDesignerProductTemplateLibrary: { scope: "user" } };
 assert.match(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /导入 itpt/);
 assert.doesNotMatch(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /新增/);

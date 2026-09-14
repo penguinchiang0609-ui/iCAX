@@ -592,6 +592,24 @@ TEST(ProductTemplatePreviewSDO, ReturnsRuntimeGeometryWithoutCreatingProductReco
     EXPECT_FALSE(response.contains("generationRunId"));
 }
 
+TEST(ProductManufacturingPlanSDO, ReturnsManufacturingTablesWithoutCreatingGeometryResources) {
+    Scene scene;
+    const auto resourcesBefore = scene.Resources().GetManifest(true).size();
+    const auto response = invoke(scene, "GetProductManufacturingPlan", ObjectMap{
+        {"templateId", std::string("straight-steel-staircase")},
+        {"instanceQuantity", 3ull},
+    });
+    const auto tables = response.at("tables").To<VariantArray>();
+    ASSERT_FALSE(tables.empty());
+    EXPECT_EQ(response.at("templateId").To<std::string>(), "straight-steel-staircase");
+    EXPECT_EQ(response.at("instanceQuantity").To<unsigned long long>(), 3ull);
+    EXPECT_GT(response.at("partCount").To<unsigned long long>(), 0ull);
+    EXPECT_FALSE(response.contains("items"));
+    EXPECT_FALSE(response.contains("productEntityId"));
+    EXPECT_FALSE(response.contains("generationRunId"));
+    EXPECT_EQ(scene.Resources().GetManifest(true).size(), resourcesBefore);
+}
+
 TEST(TubeDesignerLibrarySDO, MainSceneListAndPunchCatalogueLoad) {
     Scene scene;
     const auto start = std::chrono::steady_clock::now();

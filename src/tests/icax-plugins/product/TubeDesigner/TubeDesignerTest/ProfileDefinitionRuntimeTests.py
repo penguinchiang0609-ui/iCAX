@@ -85,6 +85,17 @@ class Profiles(unittest.TestCase):
             profile=catalog.load_profile({},"stock",profile_id=descriptor["id"])
             self.assertEqual(profile.contours(),package["previewProfile"]["contours"])
             self.assertEqual(package["previewProfile"]["profileForm"],"parametric")
+            self.assertEqual(package["previewProfile"]["sectionKind"],profile.kind)
+
+    def test_product_snapshot_keeps_resource_kind_separate_from_section_kind(self):
+        snapshot=runtime.generate({"action":"evaluate-system",
+            "systemProfileId":"round"},{})["profile"]
+        self.assertEqual(snapshot["kind"],"profile-package")
+        self.assertEqual(snapshot["sectionKind"],"round")
+        profile=catalog.load_profile({"tubeDesignerProfileOverrides":{"stock":snapshot}},"stock")
+        self.assertEqual(profile.kind,"round")
+        self.assertEqual(profile.properties()["resourceKind"],"profile-package")
+        self.assertEqual(profile.properties()["sourceFormat"],"icax.profile-package")
 
     def test_fixed_result_is_detached_from_definition(self):
         descriptor=self.fixed()

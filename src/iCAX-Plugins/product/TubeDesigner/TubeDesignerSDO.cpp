@@ -992,10 +992,32 @@ namespace
             const auto _OverrideValues = _Overrides->second.To<ObjectMap>();
             if (_OverrideValues.size() > 64)
                 throw std::invalid_argument("tubeDesignerProfileOverrides has too many entries");
+            const auto _RolesIt = _Package.Descriptor.Extensions.find("resourceRoles");
+            if (_RolesIt == _Package.Descriptor.Extensions.end() || !_RolesIt->second.Is<ObjectMap>())
+                throw std::invalid_argument("产品模板没有声明资源角色");
+            const auto _Roles = _RolesIt->second.To<ObjectMap>();
+            const auto _ProfilesIt = _Roles.find("profiles");
+            if (_ProfilesIt == _Roles.end() || !_ProfilesIt->second.Is<ObjectMap>())
+                throw std::invalid_argument("产品模板没有声明管型资源角色");
+            const auto _DeclaredProfiles = _ProfilesIt->second.To<ObjectMap>();
             for (const auto& [_Prefix, _Value] : _OverrideValues)
             {
+                const auto _RoleIt = _DeclaredProfiles.find(_Prefix);
+                if (_Prefix.empty() || _Prefix.size() > 80 || _RoleIt == _DeclaredProfiles.end()
+                    || !_RoleIt->second.Is<ObjectMap>())
+                    throw std::invalid_argument("产品使用了未声明的管型资源角色");
+                const auto _Role = _RoleIt->second.To<ObjectMap>();
+                const auto _Parameter = GetRequiredText(_Role, "parameter", 80);
+                if (std::none_of(_Package.Descriptor.Parameters.begin(), _Package.Descriptor.Parameters.end(),
+                    [&_Parameter](const auto& _Definition) { return _Definition.Key == _Parameter; }))
+                    throw std::invalid_argument("管型资源角色引用了不存在的参数");
                 if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("管型快照必须是对象");
                 const auto _Profile = _Value.To<ObjectMap>();
+                if (GetString(_Profile, "schema") != "icax.imported-tube-profile"
+                    || GetUInt64(_Profile, "schemaVersion", 0) != 1
+                    || (GetString(_Profile, "kind") != "fixed-section"
+                        && GetString(_Profile, "kind") != "profile-package"))
+                    throw std::invalid_argument("产品管型快照协议无效");
                 if (GetString(_Profile, "profileScope") != "template") continue;
                 if (GetString(_Profile, "templateId") != _Package.Descriptor.ID)
                     throw std::invalid_argument("模板自带管型只能用于所属模板");
@@ -1005,6 +1027,66 @@ namespace
                     throw std::invalid_argument("当前模板没有声明此管型资源");
             }
             _Parameters["tubeDesignerProfileOverrides"] = _OverrideValues;
+        }
+        if (const auto _Bindings = Payload_.find("tubeDesignerToolBindings");
+            _Bindings != Payload_.end())
+        {
+            if (!_Bindings->second.Is<ObjectMap>())
+                throw std::invalid_argument("tubeDesignerToolBindings must be an object");
+            const auto _BindingValues = _Bindings->second.To<ObjectMap>();
+            if (_BindingValues.size() > 64)
+                throw std::invalid_argument("tubeDesignerToolBindings has too many entries");
+            const auto _RolesIt = _Package.Descriptor.Extensions.find("resourceRoles");
+            if (_RolesIt == _Package.Descriptor.Extensions.end() || !_RolesIt->second.Is<ObjectMap>())
+                throw std::invalid_argument("产品模板没有声明资源角色");
+            const auto _Roles = _RolesIt->second.To<ObjectMap>();
+            const auto _ToolsIt = _Roles.find("tools");
+            if (_ToolsIt == _Roles.end() || !_ToolsIt->second.Is<ObjectMap>())
+                throw std::invalid_argument("产品模板没有声明模具资源角色");
+            const auto _DeclaredTools = _ToolsIt->second.To<ObjectMap>();
+            for (const auto& [_Role, _Value] : _BindingValues)
+            {
+                const auto _RoleIt = _DeclaredTools.find(_Role);
+                if (_Role.empty() || _Role.size() > 80 || _RoleIt == _DeclaredTools.end()
+                    || !_RoleIt->second.Is<ObjectMap>())
+                    throw std::invalid_argument("产品使用了未声明的模具资源角色");
+                const auto _RoleDefinition = _RoleIt->second.To<ObjectMap>();
+                const auto _Parameter = GetRequiredText(_RoleDefinition, "parameter", 80);
+                if (std::none_of(_Package.Descriptor.Parameters.begin(), _Package.Descriptor.Parameters.end(),
+                    [&_Parameter](const auto& _Definition) { return _Definition.Key == _Parameter; }))
+                    throw std::invalid_argument("模具资源角色引用了不存在的参数");
+                const auto _TargetProfileRole = GetRequiredText(
+                    _RoleDefinition, "targetProfileRole", 80);
+                const auto _ProfilesIt = _Roles.find("profiles");
+                if (_ProfilesIt == _Roles.end() || !_ProfilesIt->second.Is<ObjectMap>()
+                    || !_ProfilesIt->second.To<ObjectMap>().contains(_TargetProfileRole))
+                    throw std::invalid_argument("模具资源角色没有有效的目标管型角色");
+                if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("产品模具绑定必须是对象");
+                const auto _Binding = _Value.To<ObjectMap>();
+                if (GetString(_Binding, "schema") != "icax.product-resource-binding"
+                    || GetUInt64(_Binding, "schemaVersion", 0) != 1
+                    || GetString(_Binding, "resourceKind") != "punch-tool"
+                    || GetString(_Binding, "role") != _Role)
+                    throw std::invalid_argument("产品模具绑定协议无效");
+                const auto _Reference = GetRequiredObject(_Binding, "ref");
+                const auto _Scope = GetRequiredText(_Reference, "scope", 16);
+                (void)GetRequiredText(_Reference, "id", 80);
+                if (_Scope != "system" && _Scope != "template" && _Scope != "user")
+                    throw std::invalid_argument("产品模具引用来源无效");
+                if (_Scope == "template"
+                    && GetRequiredText(_Reference, "templateId", 80) != _Package.Descriptor.ID)
+                    throw std::invalid_argument("模板自带模具只能用于所属模板");
+                const auto _Snapshot = GetRequiredObject(_Binding, "snapshot");
+                if (GetRequiredText(_Snapshot, "target", 16).empty()
+                    || GetRequiredText(_Snapshot, "category", 16).empty()
+                    || GetRequiredText(_Snapshot, "targetProfileRole", 80) != _TargetProfileRole)
+                    throw std::invalid_argument("产品模具绑定的目标角色无效");
+                const auto _ParametersIt = _Binding.find("parameters");
+                if (_ParametersIt == _Binding.end() || !_ParametersIt->second.Is<ObjectMap>()
+                    || _ParametersIt->second.To<ObjectMap>().size() > 64)
+                    throw std::invalid_argument("产品模具参数无效");
+            }
+            _Parameters["tubeDesignerToolBindings"] = _BindingValues;
         }
         auto _Request = iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
             _Package.Descriptor, _Parameters, PathToUTF8(_Package.ScriptPath));
@@ -4504,6 +4586,7 @@ namespace
         ObjectMap _Payload;
         _Payload["name"] = GetRequiredText(_Request, "name");
         _Payload["templateVersion"] = TrimText(GetString(_Request, "templateVersion"));
+        _Payload["scopeKey"] = TrimText(GetString(_Request, "scopeKey"));
         _Payload["values"] = GetRequiredObject(_Request, "values");
 
         iCAX::Application::CProductUserDataRecord _Record;
@@ -6475,6 +6558,92 @@ namespace
             {"parameters", _Evaluation.Parameters},
             {"items", std::move(_Items)},
             {"material", ObjectMap{{"url", _Material.URL}, {"version", _Material.nVersion}}},
+        }));
+    }
+
+    VariantArray PresentProductPlanTables(
+        const iCAX::TemplateRuntime::SNeutralModel& Model_)
+    {
+        VariantArray _Tables;
+        _Tables.reserve(Model_.Tables.size());
+        for (const auto& _Table : Model_.Tables)
+        {
+            VariantArray _Columns;
+            _Columns.reserve(_Table.Columns.size());
+            for (const auto& _Column : _Table.Columns)
+            {
+                _Columns.emplace_back(ObjectMap{
+                    {"key", _Column.Key},
+                    {"displayName", _Column.DisplayName.Resolve("zh-CN")},
+                    {"valueType", _Column.ValueType},
+                    {"unit", _Column.Unit},
+                });
+            }
+            VariantArray _Rows;
+            _Rows.reserve(_Table.Rows.size());
+            for (const auto& _Row : _Table.Rows)
+            {
+                _Rows.emplace_back(ObjectMap{
+                    {"key", _Row.Key},
+                    {"parentKey", _Row.ParentKey},
+                    {"itemKey", _Row.ItemKey},
+                    {"values", _Row.Values},
+                });
+            }
+            _Tables.emplace_back(ObjectMap{
+                {"key", _Table.Key},
+                {"displayName", _Table.DisplayName.Resolve("zh-CN")},
+                {"columns", std::move(_Columns)},
+                {"rows", std::move(_Rows)},
+            });
+        }
+        return _Tables;
+    }
+
+    iCAX::Interaction::CInvocationResult HandleGetProductManufacturingPlan(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext* ProductContext_,
+        iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        tube::license::Enforce<101, tube::license::Feature::Design>();
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _TemplateID = GetRequiredText(_Payload, "templateId", 256);
+        if (_TemplateID.empty())
+            throw std::invalid_argument("产品加工规划缺少模板 ID");
+        if (const auto _It = _Payload.find("parameters");
+            _It != _Payload.end() && !_It->second.Is<ObjectMap>())
+            throw std::invalid_argument("产品加工规划参数必须是对象");
+        const auto _InstanceQuantity = ValidateInstanceQuantity(
+            GetUInt64(_Payload, "instanceQuantity", 1));
+
+        ObjectMap _EvaluationPayload{{"templateId", _TemplateID}};
+        if (const auto _It = _Payload.find("templateVersion"); _It != _Payload.end())
+            _EvaluationPayload["templateVersion"] = _It->second;
+        if (const auto _It = _Payload.find("parameters");
+            _It != _Payload.end() && _It->second.Is<ObjectMap>())
+        {
+            for (const auto& [_Key, _Value] : _It->second.To<ObjectMap>())
+                _EvaluationPayload[_Key] = _Value;
+        }
+        auto _ComponentStore = ProductContext_ ? GetUserDataStore(ProductContext_) : nullptr;
+        // Manufacturing planning intentionally evaluates only the template's
+        // neutral manufacturing graph.  It does not execute OpenCascade or
+        // create scene resources, so display geometry remains an independent
+        // path and the list still comes from the authoritative manufacturing
+        // branch of the template.
+        const auto _Evaluation = EvaluateNeutralTemplate(
+            ApplicationContext_, _EvaluationPayload, "manufacturing", {},
+            _ComponentStore.get());
+        return MakeResponse(Variant(ObjectMap{
+            {"templateId", _Evaluation.Descriptor.ID},
+            {"templateVersion", _Evaluation.Descriptor.Version},
+            {"parameters", _Evaluation.Parameters},
+            {"instanceQuantity", _InstanceQuantity},
+            {"partCount", OptionalPropertyUInt64(
+                _Evaluation.Model.Extensions, "tubeDesigner.manufacturingPartCount")},
+            {"tables", PresentProductPlanTables(_Evaluation.Model)},
         }));
     }
 
@@ -10695,6 +10864,7 @@ namespace
             ExposeMethod("SavePartSketch", &HandleSavePartSketch);
             ExposeMethod("GeneratePreview", &HandleGeneratePreview);
             ExposeMethod("GenerateProductTemplatePreview", &HandleGenerateProductTemplatePreview);
+            ExposeMethod("GetProductManufacturingPlan", &HandleGetProductManufacturingPlan);
             ExposeMethod("Generate", &HandleGeneratePreview);
             ExposeMethod("Disassemble", &HandleDisassemble);
             ExposeMethod("DisassembleSelected", &HandleDisassemble);

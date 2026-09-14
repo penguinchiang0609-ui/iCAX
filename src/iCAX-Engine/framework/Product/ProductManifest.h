@@ -27,7 +27,8 @@ namespace iCAX
         * @param [in] strManifestPath_ product.manifest.json 路径。
         * @return 产品 manifest。
         * @throws std::runtime_error manifest 不合法时抛出。
-        * @details backend 模块路径支持 ${Platform} 和 ${Configuration} 占位符，便于开发期定位构建输出。
+        * @details backend 模块路径支持 ${Platform}、${Configuration} 和 ${ExecutableDirectory}
+        * 占位符，既可定位开发构建输出，也可稳定引用部署目录中的模块。
         */
         _PRODUCT_EXP CProductManifest LoadProductManifest(IN const std::string& strManifestPath_);
 

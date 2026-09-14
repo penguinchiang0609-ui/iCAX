@@ -1,0 +1,111 @@
+{
+  "schema": "icax.template-descriptor",
+  "schemaVersion": 1,
+  "id": "minimal-protective-grille",
+  "version": "1.0.0",
+  "displayName": { "zh-CN": "极简防护网" },
+  "description": "两竖管或四边封框防护网：自动见光排杆、把手禁区、公母管半孔与双端公头、圆形大小安装孔、冲突校验及相同零件归并拆单。",
+  "extensions": {
+    "catalog": { "categoryPath": ["窗"], "groupOrder": 10, "templateOrder": 15, "icon": "resource/icon.svg", "schematic": "resource/schematic.svg" },
+    "productIdentity": { "codeParameter": "productCode" },
+    "primaryDimensions": { "widthParameter": "width", "heightParameter": "height" },
+    "resourceRoles": {
+      "profiles": {
+        "frame": { "parameter": "frameProfileType" },
+        "inner": { "parameter": "innerProfileType" }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["overall", "layout", "handle"] },
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["frame_profile", "inner_profile"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["frame_process", "joint", "install"] }
+      ]
+    }
+  },
+  "groups": [
+    { "key": "overall", "displayName": { "zh-CN": "成品结构" } },
+    { "key": "layout", "displayName": { "zh-CN": "内杆自动排布" } },
+    { "key": "handle", "displayName": { "zh-CN": "把手与禁区" } },
+    { "key": "frame_profile", "displayName": { "zh-CN": "边框管材" } },
+    { "key": "inner_profile", "displayName": { "zh-CN": "内杆管材" } },
+    { "key": "frame_process", "displayName": { "zh-CN": "边框拼角" } },
+    { "key": "joint", "displayName": { "zh-CN": "内杆接头" } },
+    { "key": "install", "displayName": { "zh-CN": "安装孔" } }
+  ],
+  "parameters": [
+    { "key":"productCode", "displayName":{"zh-CN":"产品编号"}, "valueType":"string", "defaultValue":"FHW-001", "group":"overall" },
+    { "key":"width", "displayName":{"zh-CN":"成品宽 W"}, "valueType":"number", "defaultValue":1200, "group":"overall", "unit":"mm", "quantity":"length", "constraints":{"minimum":100,"maximum":10000} },
+    { "key":"height", "displayName":{"zh-CN":"成品高 H"}, "valueType":"number", "defaultValue":1500, "group":"overall", "unit":"mm", "quantity":"length", "constraints":{"minimum":100,"maximum":10000} },
+    { "key":"frameType", "displayName":{"zh-CN":"边框类型"}, "valueType":"enum", "defaultValue":"two_vertical", "group":"overall", "choices":[{"value":"two_vertical","displayName":{"zh-CN":"两竖管"}},{"value":"closed_frame","displayName":{"zh-CN":"四边封框"}}] },
+
+    { "key":"barLayoutMode", "displayName":{"zh-CN":"内杆排布方式"}, "valueType":"enum", "defaultValue":"maximum_gap", "group":"layout", "choices":[{"value":"maximum_gap","displayName":{"zh-CN":"最大见光自动均分"}},{"value":"fixed_count","displayName":{"zh-CN":"固定根数均分"}},{"value":"fixed_pitch","displayName":{"zh-CN":"固定中心距"}}] },
+    { "key":"barCount", "displayName":{"zh-CN":"内杆根数"}, "valueType":"integer", "defaultValue":10, "group":"layout", "constraints":{"minimum":0,"maximum":500}, "visibleWhen":{"op":"eq","parameter":"barLayoutMode","value":"fixed_count"} },
+    { "key":"maximumClearGap", "displayName":{"zh-CN":"最大允许见光"}, "valueType":"number", "defaultValue":110, "group":"layout", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":2000}, "visibleWhen":{"op":"eq","parameter":"barLayoutMode","value":"maximum_gap"} },
+    { "key":"barPitch", "displayName":{"zh-CN":"内杆中心距 P"}, "valueType":"number", "defaultValue":120, "group":"layout", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":2000}, "visibleWhen":{"op":"eq","parameter":"barLayoutMode","value":"fixed_pitch"} },
+    { "key":"pitchAlignment", "displayName":{"zh-CN":"固定中心距余量"}, "valueType":"enum", "defaultValue":"center", "group":"layout", "choices":[{"value":"center","displayName":{"zh-CN":"上下居中"}},{"value":"bottom","displayName":{"zh-CN":"从底部开始"}},{"value":"top","displayName":{"zh-CN":"从顶部开始"}}], "visibleWhen":{"op":"eq","parameter":"barLayoutMode","value":"fixed_pitch"} },
+
+    { "key":"handleEnabled", "displayName":{"zh-CN":"设置把手禁区"}, "valueType":"boolean", "defaultValue":true, "group":"handle" },
+    { "key":"handleSide", "displayName":{"zh-CN":"把手侧"}, "valueType":"enum", "defaultValue":"right", "group":"handle", "choices":[{"value":"left","displayName":{"zh-CN":"左侧"}},{"value":"right","displayName":{"zh-CN":"右侧"}}], "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+    { "key":"handleReference", "displayName":{"zh-CN":"把手高度基准"}, "valueType":"enum", "defaultValue":"center", "group":"handle", "choices":[{"value":"bottom","displayName":{"zh-CN":"把手下边"}},{"value":"center","displayName":{"zh-CN":"把手中心"}},{"value":"top","displayName":{"zh-CN":"把手上边"}}], "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+    { "key":"handleReferenceY", "displayName":{"zh-CN":"把手基准离底"}, "valueType":"number", "defaultValue":900, "group":"handle", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10000}, "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+    { "key":"handleWidth", "displayName":{"zh-CN":"把手区域宽度"}, "valueType":"number", "defaultValue":80, "group":"handle", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":1000}, "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+    { "key":"handleHeight", "displayName":{"zh-CN":"把手区域高度"}, "valueType":"number", "defaultValue":100, "group":"handle", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":2000}, "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+    { "key":"handleKeepoutTop", "displayName":{"zh-CN":"把手上方附加净空"}, "valueType":"number", "defaultValue":25, "group":"handle", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":1000}, "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+    { "key":"handleKeepoutBottom", "displayName":{"zh-CN":"把手下方附加净空"}, "valueType":"number", "defaultValue":25, "group":"handle", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":1000}, "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+    { "key":"handleDistribution", "displayName":{"zh-CN":"禁区两侧排布"}, "valueType":"enum", "defaultValue":"segment_equal", "group":"handle", "choices":[{"value":"segment_equal","displayName":{"zh-CN":"上下分段各自均分"}},{"value":"uniform_remove","displayName":{"zh-CN":"统一均分后移除冲突杆"}}], "visibleWhen":{"op":"eq","parameter":"handleEnabled","value":true} },
+
+    { "key":"frameProfileType", "displayName":{"zh-CN":"截面类型"}, "valueType":"enum", "defaultValue":"rect", "presentation":{"editor":"profile-library","resourceRole":"frame","profileConstraints":{"hollow":true,"minimumContourCount":2}}, "group":"frame_profile", "choices":[{"value":"rect","displayName":{"zh-CN":"方矩管"}}], "readOnly":true },
+    { "key":"frameProfileOrientation", "displayName":{"zh-CN":"截面方向"}, "valueType":"enum", "defaultValue":"as_defined", "group":"frame_profile", "choices":[{"value":"as_defined","displayName":{"zh-CN":"按管型定义"}},{"value":"rotate_90","displayName":{"zh-CN":"绕管轴旋转 90°"}}] },
+    { "key":"frameWidth", "displayName":{"zh-CN":"外宽"}, "valueType":"number", "defaultValue":20, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":500} },
+    { "key":"frameDepth", "displayName":{"zh-CN":"外深"}, "valueType":"number", "defaultValue":20, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":500} },
+    { "key":"frameWallThickness", "displayName":{"zh-CN":"名义壁厚"}, "valueType":"number", "defaultValue":1.2, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":50} },
+    { "key":"frameInnerWidth", "displayName":{"zh-CN":"内宽（0=按壁厚）"}, "valueType":"number", "defaultValue":0, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":500} },
+    { "key":"frameInnerDepth", "displayName":{"zh-CN":"内深（0=按壁厚）"}, "valueType":"number", "defaultValue":0, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":500} },
+    { "key":"frameInnerOffsetX", "displayName":{"zh-CN":"内孔水平偏心"}, "valueType":"number", "defaultValue":0, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":-500,"maximum":500} },
+    { "key":"frameInnerOffsetY", "displayName":{"zh-CN":"内孔竖直偏心"}, "valueType":"number", "defaultValue":0, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":-500,"maximum":500} },
+    { "key":"frameCornerRadius", "displayName":{"zh-CN":"外圆角 R"}, "valueType":"number", "defaultValue":1.5, "group":"frame_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":100} },
+    { "key":"frameOuterRadii", "displayName":{"zh-CN":"外四角半径"}, "valueType":"string", "defaultValue":"", "group":"frame_profile" },
+    { "key":"frameInnerRadii", "displayName":{"zh-CN":"内四角半径"}, "valueType":"string", "defaultValue":"", "group":"frame_profile" },
+    { "key":"frameOuterCorners", "displayName":{"zh-CN":"外四角定义 JSON"}, "valueType":"string", "defaultValue":"", "group":"frame_profile" },
+    { "key":"frameInnerCorners", "displayName":{"zh-CN":"内四角定义 JSON"}, "valueType":"string", "defaultValue":"", "group":"frame_profile" },
+    { "key":"frameMaterial", "displayName":{"zh-CN":"材质"}, "valueType":"string", "defaultValue":"304", "group":"frame_profile" },
+
+    { "key":"innerProfileType", "displayName":{"zh-CN":"截面类型"}, "valueType":"enum", "defaultValue":"rect", "presentation":{"editor":"profile-library","resourceRole":"inner","profileConstraints":{"hollow":true,"minimumContourCount":2}}, "group":"inner_profile", "choices":[{"value":"rect","displayName":{"zh-CN":"方矩管"}}], "readOnly":true },
+    { "key":"innerProfileOrientation", "displayName":{"zh-CN":"截面方向"}, "valueType":"enum", "defaultValue":"as_defined", "group":"inner_profile", "choices":[{"value":"as_defined","displayName":{"zh-CN":"按管型定义"}},{"value":"rotate_90","displayName":{"zh-CN":"绕管轴旋转 90°"}}] },
+    { "key":"innerWidth", "displayName":{"zh-CN":"外宽"}, "valueType":"number", "defaultValue":15, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":500} },
+    { "key":"innerDepth", "displayName":{"zh-CN":"外深"}, "valueType":"number", "defaultValue":10, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":1,"maximum":500} },
+    { "key":"innerWallThickness", "displayName":{"zh-CN":"名义壁厚"}, "valueType":"number", "defaultValue":0.8, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":50} },
+    { "key":"innerInnerWidth", "displayName":{"zh-CN":"内宽（0=按壁厚）"}, "valueType":"number", "defaultValue":0, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":500} },
+    { "key":"innerInnerDepth", "displayName":{"zh-CN":"内深（0=按壁厚）"}, "valueType":"number", "defaultValue":0, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":500} },
+    { "key":"innerInnerOffsetX", "displayName":{"zh-CN":"内孔水平偏心"}, "valueType":"number", "defaultValue":0, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":-500,"maximum":500} },
+    { "key":"innerInnerOffsetY", "displayName":{"zh-CN":"内孔竖直偏心"}, "valueType":"number", "defaultValue":0, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":-500,"maximum":500} },
+    { "key":"innerCornerRadius", "displayName":{"zh-CN":"外圆角 R"}, "valueType":"number", "defaultValue":1, "group":"inner_profile", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":100} },
+    { "key":"innerOuterRadii", "displayName":{"zh-CN":"外四角半径"}, "valueType":"string", "defaultValue":"", "group":"inner_profile" },
+    { "key":"innerInnerRadii", "displayName":{"zh-CN":"内四角半径"}, "valueType":"string", "defaultValue":"", "group":"inner_profile" },
+    { "key":"innerOuterCorners", "displayName":{"zh-CN":"外四角定义 JSON"}, "valueType":"string", "defaultValue":"", "group":"inner_profile" },
+    { "key":"innerInnerCorners", "displayName":{"zh-CN":"内四角定义 JSON"}, "valueType":"string", "defaultValue":"", "group":"inner_profile" },
+    { "key":"innerMaterial", "displayName":{"zh-CN":"材质"}, "valueType":"string", "defaultValue":"304", "group":"inner_profile" },
+
+    { "key":"frameCornerJoint", "displayName":{"zh-CN":"四边框拼角"}, "valueType":"enum", "defaultValue":"miter_45", "group":"frame_process", "choices":[{"value":"miter_45","displayName":{"zh-CN":"45°拼角"}},{"value":"horizontal_wrap","displayName":{"zh-CN":"直切：上下边补齐"}},{"value":"vertical_wrap","displayName":{"zh-CN":"直切：左右边补齐"}}], "visibleWhen":{"op":"eq","parameter":"frameType","value":"closed_frame"} },
+
+    { "key":"innerJoint", "displayName":{"zh-CN":"内杆与边框连接"}, "valueType":"enum", "defaultValue":"male_female_half_hole", "group":"joint", "choices":[{"value":"male_female_half_hole","displayName":{"zh-CN":"公母管半孔插接"}},{"value":"flat_weld","displayName":{"zh-CN":"平口贴合焊接"}}] },
+    { "key":"maleHeadLength", "displayName":{"zh-CN":"公头长度"}, "valueType":"number", "defaultValue":3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":200}, "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
+    { "key":"maleHeadWidth", "displayName":{"zh-CN":"公头保留宽度"}, "valueType":"number", "defaultValue":10, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":500}, "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
+    { "key":"maleCornerType", "displayName":{"zh-CN":"公头角部"}, "valueType":"enum", "defaultValue":"round", "group":"joint", "choices":[{"value":"round","displayName":{"zh-CN":"圆角"}},{"value":"chamfer","displayName":{"zh-CN":"直线倒角"}},{"value":"square","displayName":{"zh-CN":"直角"}}], "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
+    { "key":"maleCornerSize", "displayName":{"zh-CN":"公头圆角／倒角尺寸"}, "valueType":"number", "defaultValue":1, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":100}, "visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"},{"op":"ne","parameter":"maleCornerType","value":"square"}]} },
+    { "key":"holeTotalClearanceDepth", "displayName":{"zh-CN":"母孔深向总间隙"}, "valueType":"number", "defaultValue":0.3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10}, "description":"总增量 0.30 mm 等于理论单侧约 0.15 mm。", "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
+    { "key":"holeTotalClearanceHeight", "displayName":{"zh-CN":"母孔高向总间隙"}, "valueType":"number", "defaultValue":0.3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10}, "description":"总增量 0.30 mm 等于理论单侧约 0.15 mm。", "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
+    { "key":"minimumFeatureWeb", "displayName":{"zh-CN":"孔间最小保留料"}, "valueType":"number", "defaultValue":2, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":100} },
+
+    { "key":"installHoleEnabled", "displayName":{"zh-CN":"生成边框安装孔"}, "valueType":"boolean", "defaultValue":true, "group":"install" },
+    { "key":"installHoleOrientation", "displayName":{"zh-CN":"安装方向"}, "valueType":"enum", "defaultValue":"front", "group":"install", "choices":[{"value":"front","displayName":{"zh-CN":"正装：前大后小"}},{"value":"side","displayName":{"zh-CN":"侧装：外大内小"}}], "visibleWhen":{"op":"eq","parameter":"installHoleEnabled","value":true} },
+    { "key":"installHoleCountPerSide", "displayName":{"zh-CN":"单侧安装孔数量"}, "valueType":"integer", "defaultValue":3, "group":"install", "constraints":{"minimum":1,"maximum":50}, "visibleWhen":{"op":"eq","parameter":"installHoleEnabled","value":true} },
+    { "key":"installHoleBottomOffset", "displayName":{"zh-CN":"底部首孔中心距"}, "valueType":"number", "defaultValue":80, "group":"install", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10000}, "visibleWhen":{"op":"eq","parameter":"installHoleEnabled","value":true} },
+    { "key":"installHoleTopOffset", "displayName":{"zh-CN":"顶部尾孔中心距"}, "valueType":"number", "defaultValue":80, "group":"install", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10000}, "visibleWhen":{"op":"eq","parameter":"installHoleEnabled","value":true} },
+    { "key":"installHoleLargeDiameter", "displayName":{"zh-CN":"进入侧大孔直径 D2"}, "valueType":"number", "defaultValue":10, "group":"install", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":200}, "visibleWhen":{"op":"eq","parameter":"installHoleEnabled","value":true} },
+    { "key":"installHoleSmallDiameter", "displayName":{"zh-CN":"对侧小孔直径 D3"}, "valueType":"number", "defaultValue":5, "group":"install", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":200}, "visibleWhen":{"op":"eq","parameter":"installHoleEnabled","value":true} },
+    { "key":"installHoleAutoAvoid", "displayName":{"zh-CN":"安装孔自动避让母孔"}, "valueType":"boolean", "defaultValue":false, "group":"install", "visibleWhen":{"op":"eq","parameter":"installHoleEnabled","value":true} },
+    { "key":"installHoleMaximumShift", "displayName":{"zh-CN":"自动避让最大偏移"}, "valueType":"number", "defaultValue":20, "group":"install", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":1000}, "visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"installHoleEnabled","value":true},{"op":"eq","parameter":"installHoleAutoAvoid","value":true}]} }
+  ]
+}

@@ -129,7 +129,7 @@ assert.match(renderSecurityWindowReview(template, { ...defaults, doorClearWidth:
 assert.match(renderSecurityWindowReview(template, { ...defaults, materialGrade: "304", surfaceTreatment: "unspecified" }), /表面处理未指定/);
 assert.doesNotMatch(renderSecurityWindowReview(template, { ...defaults, materialGrade: "304", surfaceTreatment: "passivation" }), /材质未指定|表面处理未指定/);
 
-const importedProfile = (width, depth, kind = "imported-dxf") => ({
+const importedProfile = (width, depth, kind = "fixed-section") => ({
   schema: "icax.imported-tube-profile", schemaVersion: 1, kind, width, depth,
   contours: [{ kind: "rectangle", width, height: depth }],
 });
@@ -137,7 +137,7 @@ const imported = Object.freeze({
   ...defaults,
   tubeDesignerProfileOverrides: Object.freeze({
     doorLeafFrame: Object.freeze(importedProfile(33, 48)),
-    doorFrame: Object.freeze(importedProfile(36, 40, "parametric-package")),
+    doorFrame: Object.freeze(importedProfile(36, 40, "profile-package")),
   }),
 });
 assert.deepEqual(securityWindowOpeningDimensions(imported), {
@@ -164,8 +164,9 @@ assert.match(newProduct, /830 × 1000 mm/);
 const addMarkup = (draft) => renderDesignerAddParameterContent(designer, {
   tubeDesignerAddTemplateId: template.id, tubeDesignerAddDraft: draft,
 });
-assert.doesNotMatch(addMarkup({ accessDoorEnabled: false }), /class="notch"/);
-assert.match(addMarkup({ accessDoorEnabled: false, frameJoinType: "v_groove_90:sharp_v" }), /class="notch"/);
+assert.match(addMarkup({ accessDoorEnabled: false }), /data-tube-designer-product-diagram/);
+assert.doesNotMatch(addMarkup({ accessDoorEnabled: false, frameJoinType: "v_groove_90:sharp_v" }), /class="notch"/,
+  "the generic editor must not recreate template-specific V-groove artwork in central UI code");
 assert.match(addMarkup(imported), /858 × 1000 mm/);
 assert.doesNotMatch(addMarkup({ ...imported, tubeDesignerProfileOverrides: { doorFrame: importedProfile(0, 40) } }), /<polygon class="multi-face-door-frame"/);
 const context = { mount: { querySelector() { return null; } } };
@@ -184,55 +185,5 @@ assert.match(updated, /330 × 400 mm/);
 assert.match(updated, /检修口（非逃生窗）/);
 assert.deepEqual(parameters, { doorClearWidth: 900, doorClearHeight: 1100 });
 
-// Parse the real projected frame and verify geometric coordinates, not source text.
-function projectedFrame(id, draft) {
-  const source = templates.find((item) => item.id === id);
-  const html = renderDesignerAddParameterContent({ templates: [source] }, {
-    tubeDesignerAddTemplateId: id, tubeDesignerAddDraft: draft,
-  });
-  const match = html.match(/<polygon class="multi-face-door-frame" points="([^"]+)"/);
-  assert.ok(match, `${id} must draw a parameterized opening`);
-  return match[1].split(" ").map((point) => point.split(",").map(Number));
-}
-function assertPoint(actual, expected) {
-  assert.equal(actual.length, expected.length);
-  actual.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) < 1e-9,
-    `projected coordinate ${value} should equal ${expected[index]}`));
-}
-const projectedParameters = {
-  ...defaults, doorClearWidth: 600, doorClearHeight: 900, doorFrameWidth: 30,
-  doorLeafFrameDepth: 24, doorHardwareClearance: 12,
-  doorLeft: 100, doorBottom: 200, doorUOffset: 100, doorVOffset: 200,
-  frontWidth: 1200, accessDoorFace: "front", frameLayout: "four_sides",
-};
-const schematicWidth = 62 * (1200 / 1800);
-const schematicLeft = 50 - schematicWidth / 2;
-const surfaces = [
-  ["single-face-security-window", [schematicLeft, 92], [schematicLeft + schematicWidth, 92], [schematicLeft, 8]],
-  ["two-face-security-window", [11, 89], [69, 89], [11, 25]],
-  ["three-face-security-window", [28, 89], [72, 89], [28, 25]],
-  ["five-face-security-window", [25, 92], [92, 92], [25, 23]],
-];
-const outerWidth = 600 + 24 + 12 + 2 * 30;
-const outerHeight = 900 + 2 * 30;
-for (const [id, origin, uEnd, vEnd] of surfaces) {
-  const points = projectedFrame(id, projectedParameters);
-  const project = (u, v) => [
-    origin[0] + (uEnd[0] - origin[0]) * u / 1200 + (vEnd[0] - origin[0]) * v / 1800,
-    origin[1] + (uEnd[1] - origin[1]) * u / 1200 + (vEnd[1] - origin[1]) * v / 1800,
-  ];
-  const expected = [project(100, 200), project(100 + outerWidth, 200),
-    project(100 + outerWidth, 200 + outerHeight), project(100, 200 + outerHeight)];
-  points.forEach((point, index) => assertPoint(point, expected[index]));
-  const changed = projectedFrame(id, { ...projectedParameters, doorClearWidth: 700 });
-  assertPoint(changed[1], project(200 + outerWidth, 200));
-  assertPoint(changed[0], points[0]);
-  const importedPoints = projectedFrame(id, { ...projectedParameters, tubeDesignerProfileOverrides: imported.tubeDesignerProfileOverrides });
-  const importedWidth = 600 + 48 + 12 + 2 * 36;
-  const importedHeight = 900 + 2 * 36;
-  [project(100, 200), project(100 + importedWidth, 200),
-    project(100 + importedWidth, 200 + importedHeight), project(100, 200 + importedHeight)]
-    .forEach((point, index) => assertPoint(importedPoints[index], point));
-}
 await new Promise((resolve) => setTimeout(resolve, 0));
-console.log("PASS security-window review: four shipped descriptors, real add/edit rendering, connections, enclosure boundaries, active-only V groove review, imported profile dimensions and projected geometry");
+console.log("PASS security-window review: four runtime descriptors, real add/edit rendering, connections, enclosure boundaries, active-only V groove review and imported profile dimensions");

@@ -193,10 +193,19 @@ try {
     });
     throw new Error(error.message + "\n" + JSON.stringify(state));
   }
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(async () => {
     const fixture = window.profileNativeFixture;
     const applied = fixture.view.viewport.getAppliedViewState();
     const object = fixture.view.viewport.sceneObjects.get("system:round");
+    const parameterList = document.querySelector(".tube-profile-library-parameter-list");
+    const diagramToggle = document.querySelector("[data-profile-diagram-toggle]");
+    const parameterDiagram = document.querySelector("[data-profile-library-diagram]");
+    const parameterListBox = parameterList?.getBoundingClientRect();
+    const diagramToggleBox = diagramToggle?.getBoundingClientRect();
+    const diagramToggleStyle = diagramToggle ? getComputedStyle(diagramToggle) : null;
+    const diagramInitiallyHidden = parameterDiagram?.hidden === true;
+    diagramToggle?.click();
+    await new Promise(resolve => requestAnimationFrame(resolve));
     return {
       calls: fixture.calls.map(call => ({ method: call.method, geometry: call.result?.geometryResourceId })),
       resources: fixture.resources,
@@ -206,6 +215,17 @@ try {
       visible: object?.visible === true,
       positionCount: object?.geometry?.getAttribute("position")?.count ?? 0,
       status: document.querySelector("[data-tube-profile-preview-status]")?.innerText ?? "",
+      diagram: {
+        initiallyHidden: diagramInitiallyHidden,
+        belowParameters: Number(diagramToggleBox?.top) >= Number(parameterListBox?.bottom),
+        height: Number(diagramToggleBox?.height ?? 0),
+        borderWidth: diagramToggleStyle?.borderTopWidth ?? "",
+        borderColor: diagramToggleStyle?.borderTopColor ?? "",
+        borderRadius: diagramToggleStyle?.borderTopLeftRadius ?? "",
+        backgroundColor: diagramToggleStyle?.backgroundColor ?? "",
+        boxShadow: diagramToggleStyle?.boxShadow ?? "",
+        expanded: diagramToggle?.getAttribute("aria-expanded") === "true" && parameterDiagram?.hidden === false,
+      },
     };
   });
   assert.deepEqual(errors, [], JSON.stringify(errors));
@@ -217,6 +237,15 @@ try {
   assert.equal(result.visible, true, JSON.stringify(result));
   assert.ok(result.positionCount > 0, JSON.stringify(result));
   assert.match(result.status, /三维管型已生成|圆管/);
+  assert.equal(result.diagram.initiallyHidden, true, JSON.stringify(result.diagram));
+  assert.equal(result.diagram.belowParameters, true, JSON.stringify(result.diagram));
+  assert.ok(result.diagram.height > 0 && result.diagram.height <= 34, JSON.stringify(result.diagram));
+  assert.equal(result.diagram.borderWidth, "1px", JSON.stringify(result.diagram));
+  assert.equal(result.diagram.borderColor, "rgb(184, 206, 209)", JSON.stringify(result.diagram));
+  assert.equal(result.diagram.borderRadius, "0px", JSON.stringify(result.diagram));
+  assert.equal(result.diagram.backgroundColor, "rgb(246, 250, 249)", JSON.stringify(result.diagram));
+  assert.equal(result.diagram.boxShadow, "none", JSON.stringify(result.diagram));
+  assert.equal(result.diagram.expanded, true, JSON.stringify(result.diagram));
   console.log("TubeDesigner profile-library native browser regression passed.");
 } finally {
   await browser.close();

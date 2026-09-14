@@ -21,6 +21,13 @@
     "primaryDimensions": {
       "widthParameter": "width",
       "heightParameter": "height"
+    },
+    "parameterLayout": {
+      "sections": [
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["door", "design", "array"] },
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["material"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["process", "safe"] }
+      ]
     }
   },
   "groups": [
@@ -143,7 +150,7 @@
       },
       "valueType": "number",
       "defaultValue": 40,
-      "group": "door",
+      "group": "material",
       "constraints": {
         "minimum": 2,
         "maximum": 100
@@ -1135,7 +1142,7 @@
       },
       "valueType": "number",
       "defaultValue": 5,
-      "group": "process",
+      "group": "material",
       "constraints": {
         "minimum": 2,
         "maximum": 20

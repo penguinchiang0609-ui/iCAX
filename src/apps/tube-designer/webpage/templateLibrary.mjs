@@ -104,10 +104,11 @@ export function productTemplateLibraryState(view) {
   const state = view.tubeDesignerProductTemplateLibrary ??= {
     scope: "system", selectedId: "", search: "", parameterDrafts: {},
     preview: null, previewRequest: null, previewError: "", previewFailureKey: "", collapsed: [],
-    previewApplied: false,
+    previewApplied: false, parameterDisclosure: {},
   };
   if (!["system", "user"].includes(state.scope)) state.scope = "system";
   state.parameterDrafts ??= {};
+  state.parameterDisclosure ??= {};
   state.collapsed ??= [];
   const items = templateLibraryItems(view).filter((item) => item.scope === state.scope);
   const search = String(state.search ?? "").trim().toLocaleLowerCase("zh-CN");
@@ -127,6 +128,18 @@ const PRODUCT_TEMPLATE_LIBRARY_SCROLLERS = Object.freeze([
 export function captureProductTemplateLibraryScrollState(context, view) {
   const mount = context?.mount;
   const target = mount?.ownerDocument?.activeElement ?? null;
+  const editor = mount?.querySelector?.(".tube-product-template-library-editor-body");
+  const renderedTemplateId = String(editor?.dataset?.tubeTemplateLibraryRenderedId ?? "").trim();
+  const disclosures = editor?.querySelectorAll?.("details[data-tube-template-library-disclosure]") ?? [];
+  if (renderedTemplateId && disclosures.length) {
+    const state = productTemplateLibraryState(view);
+    const saved = { ...(state.parameterDisclosure[renderedTemplateId] ?? {}) };
+    for (const disclosure of disclosures) {
+      const key = String(disclosure?.dataset?.tubeTemplateLibraryDisclosure ?? "").trim();
+      if (key) saved[key] = !!disclosure.open;
+    }
+    state.parameterDisclosure[renderedTemplateId] = saved;
+  }
   const snapshots = PRODUCT_TEMPLATE_LIBRARY_SCROLLERS.map((selector) => {
     const scroller = mount?.querySelector?.(selector);
     if (!scroller) return null;
@@ -233,6 +246,83 @@ function templateParameterDefinitions(item) {
 function templateParameterGroupLabel(item, key) {
   const group = Array.isArray(item?.groups) ? item.groups.find((entry) => String(entry?.key) === String(key)) : null;
   return localizedTemplateText(group?.displayName, key || "参数");
+}
+
+function templateParameterGroupKey(definition) {
+  return String(definition?.groupKey ?? definition?.group ?? "parameters").trim() || "parameters";
+}
+
+function templateParameterLayoutSections(item) {
+  const sections = item?.extensions?.parameterLayout?.sections;
+  if (!Array.isArray(sections)) return [];
+  return sections.map((section, index) => ({
+    key: String(section?.key ?? "").trim(),
+    title: localizedTemplateText(section?.displayName, String(section?.key ?? "参数")),
+    order: Number.isFinite(Number(section?.order)) ? Number(section.order) : index,
+    defaultOpen: section?.defaultOpen === true,
+    groups: (Array.isArray(section?.groups) ? section.groups : [])
+      .map((key) => String(key ?? "").trim()).filter(Boolean),
+  })).filter((section) => section.key && section.groups.length)
+    .sort((left, right) => left.order - right.order);
+}
+
+function templateParameterLayout(item, definitions) {
+  const groups = new Map();
+  for (const definition of definitions) {
+    const key = templateParameterGroupKey(definition);
+    if (!groups.has(key)) groups.set(key, {
+      key,
+      title: templateParameterGroupLabel(item, key),
+      entries: [],
+    });
+    groups.get(key).entries.push(definition);
+  }
+  const configured = templateParameterLayoutSections(item);
+  if (!configured.length) {
+    return groups.size ? [{
+      key: "parameters", title: "参数配置", defaultOpen: true, groups: [...groups.values()],
+    }] : [];
+  }
+  const assigned = new Set(configured.flatMap((section) => section.groups));
+  const result = configured.map((section) => ({
+    ...section,
+    groups: section.groups.map((key) => groups.get(key)).filter(Boolean),
+  })).filter((section) => section.groups.length);
+  const unassigned = [...groups.values()].filter((group) => !assigned.has(group.key));
+  if (unassigned.length) {
+    if (result.length) result[0].groups.push(...unassigned);
+    else result.push({ key: "parameters", title: "参数配置", defaultOpen: true, groups: unassigned });
+  }
+  return result;
+}
+
+function templateParameterDisclosureOpen(view, item, key, fallback) {
+  const saved = productTemplateLibraryState(view).parameterDisclosure?.[String(item?.id ?? "")]?.[key];
+  return typeof saved === "boolean" ? saved : fallback;
+}
+
+function renderTemplateParameterLayout(view, item, sections) {
+  return sections.map((section, sectionIndex) => {
+    const sectionKey = `section:${section.key}`;
+    const sectionOpen = templateParameterDisclosureOpen(
+      view, item, sectionKey, section.defaultOpen || sectionIndex === 0,
+    );
+    const fieldCount = section.groups.reduce((total, group) => total + group.entries.length, 0);
+    const groups = section.groups.map((group, groupIndex) => {
+      const groupKey = `group:${group.key}`;
+      const groupOpen = templateParameterDisclosureOpen(
+        view, item, groupKey, sectionOpen && sectionIndex === 0 && groupIndex === 0,
+      );
+      return `<details class="tube-product-template-library-parameter-group" data-tube-template-library-disclosure="${escapeAttr(groupKey)}" ${groupOpen ? "open" : ""}>
+        <summary><span>${escapeText(group.title)}</span><small>${group.entries.length} 项</small></summary>
+        <div class="tube-product-template-library-parameter-grid">${group.entries.map((definition) => templateParameterInput(view, item, definition)).join("")}</div>
+      </details>`;
+    }).join("");
+    return `<details class="tube-product-template-library-parameter-section" data-tube-template-library-disclosure="${escapeAttr(sectionKey)}" ${sectionOpen ? "open" : ""}>
+      <summary><span>${escapeText(section.title)}</span><small>${fieldCount} 项</small></summary>
+      <div class="tube-product-template-library-parameter-section-content">${groups}</div>
+    </details>`;
+  }).join("");
 }
 
 function coerceTemplateParameterValue(definition, value) {
@@ -383,16 +473,11 @@ export function renderProductTemplateLibraryRightPane(_context, view) {
   const descriptorRequest = view?.tubeDesignerTemplateDescriptorRequests?.[String(item.templateId ?? item.id ?? "")];
   const values = templateParameterValues(view, item);
   const visible = definitions.filter((definition) => templateParameterVisible(definition, values));
-  const groups = new Map();
-  for (const definition of visible) {
-    const group = String(definition.group ?? "参数");
-    if (!groups.has(group)) groups.set(group, []);
-    groups.get(group).push(definition);
-  }
+  const parameterLayout = templateParameterLayout(item, visible);
   const emptyContent = descriptorRequest
     ? `<div class="tube-designer-empty">正在读取模板参数…</div>`
     : `<div class="tube-designer-empty">此模板没有可编辑参数。</div>`;
-  return `<div class="tube-designer-panel tube-product-template-library-editor"><div class="tube-designer-heading"><div><strong>${escapeText(productTemplateName(item))}</strong><span>${item.scope === "system" ? "系统内置模板" : "我的模板"} · 参数预览</span></div></div><div class="tube-product-template-library-editor-body"><dl class="tube-product-template-library-meta"><dt>模板 ID</dt><dd>${escapeText(item.id)}</dd><dt>版本</dt><dd>${escapeText(item.version ?? item.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt</dd></dl><p>${escapeText(item.description ?? "暂无模板说明")}</p>${definitions.length ? `<section class="tube-product-template-library-parameters"><header><strong>预览参数</strong><span>修改后只更新中央场景，不改模板包</span></header>${[...groups.entries()].map(([group, entries]) => `<fieldset><legend>${escapeText(templateParameterGroupLabel(item, group))}</legend><div>${entries.map((definition) => templateParameterInput(view, item, definition)).join("")}</div></fieldset>`).join("")}</section>` : emptyContent}</div></div>`;
+  return `<div class="tube-designer-panel tube-product-template-library-editor"><div class="tube-designer-heading"><div><strong>${escapeText(productTemplateName(item))}</strong><span>${item.scope === "system" ? "系统内置模板" : "我的模板"} · 参数预览</span></div></div><div class="tube-product-template-library-editor-body" data-tube-template-library-rendered-id="${escapeAttr(item.id)}"><dl class="tube-product-template-library-meta"><dt>模板 ID</dt><dd>${escapeText(item.id)}</dd><dt>版本</dt><dd>${escapeText(item.version ?? item.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt</dd></dl><p>${escapeText(item.description ?? "暂无模板说明")}</p>${parameterLayout.length ? `<section class="tube-product-template-library-parameters"><header><strong>预览参数</strong><span>修改后只更新中央场景，不改模板包</span></header>${renderTemplateParameterLayout(view, item, parameterLayout)}</section>` : emptyContent}</div></div>`;
 }
 
 export function renderProductTemplateLibraryViewportOverlay(context, view) {

@@ -21,6 +21,23 @@
     "primaryDimensions": {
       "widthParameter": "stairWidth",
       "heightParameter": "floorHeight"
+    },
+    "resourceRoles": {
+      "profiles": {
+        "stringer": { "parameter": "stringerProfileType" },
+        "tread": { "parameter": "treadProfileType" },
+        "handrail": { "parameter": "handrailProfileType" },
+        "post": { "parameter": "postProfileType" },
+        "landing": { "parameter": "landingProfileType" },
+        "infill": { "parameter": "infillProfileType" }
+      }
+    },
+    "parameterLayout": {
+      "sections": [
+        { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["overall", "basic", "flight", "structure", "treads", "landing", "railing", "guard"] },
+        { "key": "materials", "displayName": { "zh-CN": "管材与材料" }, "order": 20, "allowPresets": true, "groups": ["preset", "profiles", "material"] },
+        { "key": "process", "displayName": { "zh-CN": "加工与装配工艺" }, "order": 30, "allowPresets": true, "groups": ["process", "joints"] }
+      ]
     }
   },
   "groups": [
@@ -57,6 +74,13 @@
         "zh-CN": "常用型材配套"
       },
       "order": 40
+    },
+    {
+      "key": "material",
+      "displayName": {
+        "zh-CN": "板材与主体材料"
+      },
+      "order": 45
     },
     {
       "key": "profiles",
@@ -300,6 +324,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
+      "presentation": { "editor": "profile-library", "resourceRole": "stringer" },
       "choices": [
         {
           "value": "rect",
@@ -445,6 +470,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
+      "presentation": { "editor": "profile-library", "resourceRole": "tread" },
       "choices": [
         {
           "value": "rect",
@@ -527,6 +553,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
+      "presentation": { "editor": "profile-library", "resourceRole": "handrail" },
       "choices": [
         {
           "value": "rect",
@@ -672,6 +699,7 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
+      "presentation": { "editor": "profile-library", "resourceRole": "post" },
       "choices": [
         {
           "value": "rect",
@@ -1061,7 +1089,7 @@
       },
       "valueType": "number",
       "defaultValue": 20,
-      "group": "treads",
+      "group": "material",
       "constraints": {
         "minimum": 2,
         "maximum": 100
@@ -1101,7 +1129,7 @@
       },
       "valueType": "string",
       "defaultValue": "按工程选型",
-      "group": "treads",
+      "group": "material",
       "visibleWhen": {
         "op": "any",
         "conditions": [
@@ -1130,7 +1158,7 @@
       },
       "valueType": "string",
       "defaultValue": "Q235B",
-      "group": "structure"
+      "group": "material"
     },
     {
       "key": "landingProfileType",
@@ -1139,7 +1167,8 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "group": "landing",
+      "presentation": { "editor": "profile-library", "resourceRole": "landing" },
+      "group": "profiles",
       "choices": [
         {
           "value": "rect",
@@ -1161,7 +1190,7 @@
       },
       "valueType": "number",
       "defaultValue": 80,
-      "group": "landing",
+      "group": "profiles",
       "constraints": {
         "minimum": 0.1,
         "maximum": 500
@@ -1181,7 +1210,7 @@
       },
       "valueType": "number",
       "defaultValue": 100,
-      "group": "landing",
+      "group": "profiles",
       "constraints": {
         "minimum": 0.1,
         "maximum": 500
@@ -1201,7 +1230,7 @@
       },
       "valueType": "number",
       "defaultValue": 3,
-      "group": "landing",
+      "group": "profiles",
       "constraints": {
         "minimum": 0,
         "maximum": 500
@@ -1221,7 +1250,7 @@
       },
       "valueType": "number",
       "defaultValue": 4,
-      "group": "landing",
+      "group": "profiles",
       "constraints": {
         "minimum": 0.1,
         "maximum": 500
@@ -1450,7 +1479,8 @@
       },
       "valueType": "enum",
       "defaultValue": "rect",
-      "group": "guard",
+      "presentation": { "editor": "profile-library", "resourceRole": "infill" },
+      "group": "profiles",
       "choices": [
         {
           "value": "rect",
@@ -1500,7 +1530,7 @@
       },
       "valueType": "number",
       "defaultValue": 20,
-      "group": "guard",
+      "group": "profiles",
       "constraints": {
         "minimum": 0.1,
         "maximum": 200
@@ -1530,7 +1560,7 @@
       },
       "valueType": "number",
       "defaultValue": 20,
-      "group": "guard",
+      "group": "profiles",
       "constraints": {
         "minimum": 0.1,
         "maximum": 200
@@ -1570,7 +1600,7 @@
       },
       "valueType": "number",
       "defaultValue": 1,
-      "group": "guard",
+      "group": "profiles",
       "constraints": {
         "minimum": 0,
         "maximum": 200
@@ -1610,7 +1640,7 @@
       },
       "valueType": "number",
       "defaultValue": 1.5,
-      "group": "guard",
+      "group": "profiles",
       "constraints": {
         "minimum": 0.1,
         "maximum": 200
@@ -1654,7 +1684,7 @@
         }
       ],
       "defaultValue": "profile",
-      "group": "structure"
+      "group": "process"
     },
     {
       "key": "bracketType",
@@ -1698,7 +1728,7 @@
         "maximum": 30,
         "step": 1
       },
-      "group": "treads",
+      "group": "material",
       "visibleWhen": {
         "op": "all",
         "conditions": [
@@ -1729,7 +1759,7 @@
         "maximum": 40,
         "step": 1
       },
-      "group": "structure",
+      "group": "material",
       "visibleWhen": {
         "op": "eq",
         "parameter": "stringerConstruction",
@@ -1778,7 +1808,7 @@
         }
       ],
       "defaultValue": "continuous",
-      "group": "guard",
+      "group": "process",
       "visibleWhen": {
         "op": "ne",
         "parameter": "railingSide",

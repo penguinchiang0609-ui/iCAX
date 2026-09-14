@@ -622,11 +622,11 @@ class PunchTools(unittest.TestCase):
         return runtime.generate({"action": "prepare", "features": features or [], "ends": ends or {},
             "bounds": {"min": [0, -20, -10], "max": [1000, 20, 10]}, "targetSection":TARGET}, {})
 
-    def test_catalogue_has_programmatic_fixed_and_both_end_shapes(self):
+    def test_catalogue_has_programmatic_and_both_end_shapes(self):
         catalogue = runtime.catalogue()
         self.assertEqual([], catalogue["errors"])
         items = {t["id"]: t for t in catalogue["tools"]}
-        self.assertEqual("fixed", items["diamond-12"]["kind"])
+        self.assertNotIn("diamond-12", items)
         self.assertEqual("end", items["end-convex"]["target"])
         self.assertEqual("end", items["end-cope"]["target"])
         for key in ("end-key-joint", "end-step-z", "end-profile"):
@@ -636,7 +636,7 @@ class PunchTools(unittest.TestCase):
     def test_system_standard_moulds_are_categorized_and_generate_profiles(self):
         items = {tool["id"]: tool for tool in runtime.catalogue()["tools"]}
         expected_hole_types = ("circle", "square", "rectangle", "ellipse",
-                               "diamond-12", "hexagon", "triangle", "single-d", "double-d", "keyhole")
+                               "hexagon", "triangle", "single-d", "double-d", "keyhole")
         for tool_id in expected_hole_types:
             with self.subTest(tool_id=tool_id):
                 self.assertEqual("孔型", items[tool_id]["category"])
@@ -865,13 +865,12 @@ class PunchTools(unittest.TestCase):
                         (folder / "tool.py").write_text("def generate(parameters, context):\n    return " + repr(geometry), encoding="utf-8")
                     prepared = self.prepare([{"toolRef": {"id": folder.name}, "toolParameters": {}}])
                     self.assertEqual(geometry, prepared["features"][0]["toolSnapshot"]["geometry"])
+                    if kind == "fixed":
+                        with self.assertRaisesRegex(ValueError, "未声明"):
+                            self.prepare([{"toolRef": {"id": folder.name}, "toolParameters": {"diameter": 99}}])
                 self.assertEqual(2, len(runtime.catalogue()["tools"]))
         finally:
             runtime.ROOT = previous
-
-    def test_fixed_dimensions_reject_changes(self):
-        with self.assertRaisesRegex(ValueError, "未声明"):
-            self.prepare([{"toolRef": {"id": "diamond-12"}, "toolParameters": {"diameter": 99}}])
 
     def test_reject_nonfinite_unknown_parameters_and_version_drift(self):
         for params in ({"diameter": float("nan")}, {"diameter": -1}, {"evil": 10}):

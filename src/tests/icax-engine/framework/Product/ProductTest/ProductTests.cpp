@@ -302,7 +302,10 @@ TEST(ProductManifestTest, ParsesResourceAndUserDataBindings)
       "slotCapacity": 128
     },
     "modules": {
-      "dependencies": ["plugins/RuntimeDependency.dll"]
+      "dependencies": [
+        "plugins/RuntimeDependency.dll",
+        "${ExecutableDirectory}/TokenDependency.dll"
+      ]
     },
     "resources": {
       "handlers": [
@@ -326,8 +329,18 @@ TEST(ProductManifestTest, ParsesResourceAndUserDataBindings)
 
     auto _Manifest = LoadProductManifest(_ManifestPath.string());
 
-    ASSERT_EQ(1u, _Manifest.Definition.Modules.DependencyModules.size());
+    ASSERT_EQ(2u, _Manifest.Definition.Modules.DependencyModules.size());
     EXPECT_EQ(std::filesystem::weakly_canonical(_DependencyPath), std::filesystem::path(_Manifest.Definition.Modules.DependencyModules.front()));
+    std::vector<wchar_t> _ExecutablePath(32768);
+    const auto _ExecutablePathLength = GetModuleFileNameW(
+        nullptr, _ExecutablePath.data(), static_cast<DWORD>(_ExecutablePath.size()));
+    ASSERT_GT(_ExecutablePathLength, 0u);
+    const auto _TokenDependencyPath = std::filesystem::path(
+        std::wstring(_ExecutablePath.data(), _ExecutablePathLength)).parent_path()
+        / "TokenDependency.dll";
+    EXPECT_EQ(
+        std::filesystem::weakly_canonical(_TokenDependencyPath),
+        std::filesystem::path(_Manifest.Definition.Modules.DependencyModules[1]));
     EXPECT_TRUE(_Manifest.Definition.bEnablePDOHub);
     EXPECT_EQ(67108864ull, _Manifest.Definition.PDOHubCreateInfo.nArenaSize);
     EXPECT_EQ(128u, _Manifest.Definition.PDOHubCreateInfo.nSlotCapacity);

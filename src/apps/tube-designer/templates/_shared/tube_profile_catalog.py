@@ -268,12 +268,15 @@ class Profile:
         return len(self.contours()) > 1
 
     def properties(self) -> dict[str, Any]:
+        resource_kind = (str(self._profile_data.get("kind", "fixed-section"))
+                         if self._fixed_contours is not None else "built-in")
         result = {
             "schema": PROFILE_SCHEMA,
             "schemaVersion": PROFILE_SCHEMA_VERSION,
             "id": self.profile_id,
             "packageVersion": self.package_version,
             "kind": self.kind,
+            "resourceKind": resource_kind,
             "profileForm": self._profile_data["profileForm"],
             "width": self.width,
             "depth": self.depth,
@@ -299,9 +302,9 @@ class Profile:
                 for key in ("shapeMode", "sideCount", "starInnerRatio")
                 if key in self._profile_data
             }
-        if self.kind in ("fixed-section", "profile-package"):
+        if self._fixed_contours is not None:
             result["sourceFormat"] = (
-                "cad.dxf" if self.kind == "fixed-section" else "icax.profile-package"
+                "cad.dxf" if resource_kind == "fixed-section" else "icax.profile-package"
             )
             result["sourceFileName"] = self._source_file_name
             result["contentDigest"] = self._content_digest
@@ -321,10 +324,10 @@ def _imported_profile(parameters: dict[str, Any], prefix: str) -> Profile | None
         return None
     if not isinstance(definition, dict):
         raise ValueError(f"导入管型 {prefix} 必须是对象")
-    kind = definition.get("kind")
+    resource_kind = definition.get("kind")
     if (definition.get("schema") != "icax.imported-tube-profile"
             or definition.get("schemaVersion") != 1
-            or kind not in ("fixed-section", "profile-package")):
+            or resource_kind not in ("fixed-section", "profile-package")):
         raise ValueError(f"导入管型 {prefix} 的协议不受支持")
     if definition.get("profileForm") not in ("parametric", "fixed"):
         raise ValueError("管型缺少明确的 profileForm，请先迁移数据")
@@ -336,12 +339,14 @@ def _imported_profile(parameters: dict[str, Any], prefix: str) -> Profile | None
             raise ValueError(f"导入管型 {prefix} 的轮廓 {index} 无效")
     digest = str(definition.get("contentDigest", ""))
     display_name = str(definition.get("name", "")).strip() or (
-        "导入 DXF 管型" if kind == "fixed-section" else "可编辑管型包"
+        "导入 DXF 管型" if resource_kind == "fixed-section" else "可编辑管型包"
     )
     return Profile(
-        profile_id=digest or f"{kind}:{prefix}",
+        profile_id=digest or f"{resource_kind}:{prefix}",
         package_version=str(definition.get("packageVersion", "1")),
-        kind=str(kind),
+        # Resource kind (fixed/package) and geometric section kind are
+        # orthogonal.  Geometry and node rules must only inspect sectionKind.
+        kind=str(definition.get("sectionKind", "arbitrary")),
         display_name=display_name,
         specification=str(definition.get("specification", "DXF")),
         width=_number(definition.get("width"), f"{prefix}.width"),

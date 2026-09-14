@@ -9,6 +9,7 @@ for (const name of ["single","two","three","five"]) {
   assert.match(html,/纯横杆/);assert.match(html,/攀爬风险/);assert.match(html,/窗洞内嵌/);
   assert.match(html,/700 × 900/);assert.match(html,/不是全国统一法规/);
   assert.match(renderSecurityWindowReview(t,{...values,projectEscapeMinWidth:850}),/小于项目配置下限/);
+  if (t.extensions?.catalog?.listed === false) continue;
   const pane=renderProductTemplateLibraryRightPane({}, {scene:{tubeDesigner:{templates:[{...t,available:true}]}},tubeDesignerProductTemplateLibrary:{scope:"system",selectedId:t.id}});
   assert.match(pane,/立面格栅款式/);assert.match(pane,/项目开启口最小净宽/);
   assert.match(pane,/安装场景/);
