@@ -358,6 +358,8 @@ export function renderDesignerDialogs(designer, view) {
   }
   return [
     view.tubeDesignerTemplateManager ? renderProductTemplateManagerDialog(view) : "",
+    view.tubeDesignerExcelTemplateDialog ? renderBatchExcelTemplateDialog(designer, view) : "",
+    view.tubeDesignerExcelImportDialog ? renderBatchExcelImportDialog(view) : "",
     view.tubeDesignerAddDialogOpen ? renderDesignerAddDialog(designer, view) : "",
     view.tubeDesignerDisassemblySelectorOpen ? renderDisassemblySelector(designer, view) : "",
     view.tubeDesignerBreakdownOpen ? renderBreakdownDialog(designer, view) : "",
@@ -365,6 +367,116 @@ export function renderDesignerDialogs(designer, view) {
     view.tubeDesignerProfileDialog ? renderImportedProfileDialog(designer, view) : "",
     view.tubeDesignerProfileLibraryDialog ? renderImportedProfileLibraryDialog(view) : "",
   ].join("");
+}
+
+export function renderBatchExcelTemplateDialog(designer, view) {
+  const state = view?.tubeDesignerExcelTemplateDialog ?? {};
+  const templates = Array.isArray(designer?.templates) ? designer.templates : [];
+  const selectedId = String(state.templateId ?? "");
+  const selected = getTemplateById(templates, selectedId);
+  const pending = Boolean(view?.pending || state.loading);
+  // The product catalogue can carry a lightweight record and a hydrated
+  // descriptor for the same template during one session.  Excel export is
+  // template-oriented, not catalogue-card-oriented: one stable template ID
+  // must always produce exactly one option here.
+  const availableTemplates = [...new Map(sortTemplatesByCatalog(templates)
+    .filter((template) => template?.available && template?.extensions?.catalog?.listed !== false)
+    .map((template) => [String(template.id), template])).values()];
+  const columns = Array.isArray(state.columns) ? state.columns : [];
+  return `
+    <div class="tube-designer-modal-backdrop" role="presentation">
+      <section class="tube-designer-excel-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-excel-template-title">
+        <header class="tube-designer-dialog-header">
+          <div><strong id="tube-designer-excel-template-title">导出 Excel 批量导入工作簿</strong><span>导出后直接填写并导入。每一行会创建一个产品实例。</span></div>
+          <button class="tube-designer-dialog-close" data-cam-action="tube-designer-excel-template-close" aria-label="关闭" ${pending ? "disabled" : ""}>×</button>
+        </header>
+        <form class="tube-designer-excel-template-form" data-tube-designer-excel-template-form>
+          <label class="tube-designer-field"><span>产品模板</span>
+            <select data-cam-change-action="tube-designer-excel-template-select" aria-label="选择产品模板" ${pending ? "disabled" : ""}>
+              ${availableTemplates.map((template) => `<option value="${escapeAttribute(template.id)}" ${template.id === selectedId ? "selected" : ""}>${escapeText(getTemplateDisplayName(template) || template.id)}</option>`).join("")}
+            </select>
+          </label>
+          <div class="tube-designer-excel-template-help">勾选需要携带的字段，未勾选的产品参数会使用模板默认值。工作簿内置英文 Excel 列名和导入定义，中文名称用于说明。</div>
+          <div class="tube-designer-excel-column-table" role="table" aria-label="Excel 导入列配置">
+            <div class="tube-designer-excel-column-head" role="row"><span>携带</span><span>Excel 列名</span><span>产品参数说明</span><span>必填</span><span>为空时默认值</span></div>
+            ${columns.map((column) => `<div class="tube-designer-excel-column-row" role="row">
+              <label class="tube-designer-excel-include"><input type="checkbox" data-tube-designer-excel-include="${escapeAttribute(column.key)}" ${column.included !== false ? "checked" : ""} ${pending ? "disabled" : ""}/><span>携带</span></label>
+              <code class="tube-designer-excel-column-name">${escapeText(column.title ?? column.key)}</code>
+              <span class="tube-designer-excel-column-context"><b>${escapeText(column.displayName ?? column.key)}</b><em>${escapeText(column.groupTitle ?? "产品参数")}</em>${column.description ? `<small>${escapeText(column.description)}</small>` : ""}</span>
+              <label class="tube-designer-excel-required"><input type="checkbox" data-tube-designer-excel-required="${escapeAttribute(column.key)}" ${column.required ? "checked" : ""} ${pending ? "disabled" : ""}/><span>必填</span></label>
+              ${renderBatchExcelDefaultControl(column, pending)}
+            </div>`).join("")}
+          </div>
+        </form>
+        <footer class="tube-designer-dialog-footer">
+          <span>导出的 .xlsx 可直接填写并导入。</span>
+          <button class="tube-designer-secondary" data-cam-action="tube-designer-excel-template-close" ${pending ? "disabled" : ""}>取消</button>
+          <button class="tube-designer-primary" data-cam-action="tube-designer-excel-template-export" ${pending || !selected ? "disabled" : ""}>导出模板</button>
+        </footer>
+      </section>
+    </div>`;
+}
+
+function renderBatchExcelDefaultControl(column, pending) {
+  const key = escapeAttribute(column?.key ?? "");
+  const value = String(column?.defaultValue ?? "");
+  const disabled = pending ? "disabled" : "";
+  if (column?.inputKind === "select") {
+    const options = Array.isArray(column?.options) ? column.options : [];
+    const hasValue = options.some((option) => String(option?.value ?? "") === value);
+    return `<select data-tube-designer-excel-default="${key}" aria-label="${escapeAttribute(column?.title ?? column?.key ?? "默认值")}" ${disabled}>
+      <option value="" ${value === "" ? "selected" : ""}>留空则使用模板默认值</option>
+      ${!hasValue && value !== "" ? `<option value="${escapeAttribute(value)}" selected>${escapeText(value)}（当前值）</option>` : ""}
+      ${options.map((option) => `<option value="${escapeAttribute(option?.value ?? "")}" ${String(option?.value ?? "") === value ? "selected" : ""}>${escapeText(option?.label ?? option?.value ?? "")}</option>`).join("")}
+    </select>`;
+  }
+  if (column?.inputKind === "boolean") {
+    const checked = value === true || value === "true" || value === "1" || value === "是";
+    return `<select data-tube-designer-excel-default="${key}" aria-label="${escapeAttribute(column?.title ?? column?.key ?? "默认值")}" ${disabled}>
+      <option value="" ${value === "" ? "selected" : ""}>留空则使用模板默认值</option>
+      <option value="true" ${checked ? "selected" : ""}>是</option>
+      <option value="false" ${!checked && value !== "" ? "selected" : ""}>否</option>
+    </select>`;
+  }
+  const attributes = [
+    `data-tube-designer-excel-default="${key}"`,
+    `value="${escapeAttribute(value)}"`,
+    'placeholder="留空则使用模板默认值"',
+    disabled,
+  ];
+  if (column?.inputKind === "number") {
+    attributes.unshift('type="number"');
+    if (column.minimum != null) attributes.push(`min="${escapeAttribute(column.minimum)}"`);
+    if (column.maximum != null) attributes.push(`max="${escapeAttribute(column.maximum)}"`);
+    attributes.push(`step="${escapeAttribute(column.step ?? "any")}"`);
+  }
+  return `<input ${attributes.filter(Boolean).join(" ")} />`;
+}
+
+export function renderBatchExcelImportDialog(view) {
+  const state = view?.tubeDesignerExcelImportDialog ?? {};
+  const rows = Array.isArray(state.rows) ? state.rows : [];
+  const pending = Boolean(view?.pending);
+  const source = String(state.sourcePath ?? "").split(/[\\/]/).pop() || "Excel 文件";
+  return `
+    <div class="tube-designer-modal-backdrop" role="presentation">
+      <section class="tube-designer-excel-import-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-excel-import-title">
+        <header class="tube-designer-dialog-header">
+          <div><strong id="tube-designer-excel-import-title">确认批量创建产品</strong><span>${escapeText(state.templateName ?? state.templateId)} · ${escapeText(source)}</span></div>
+          <button class="tube-designer-dialog-close" data-cam-action="tube-designer-excel-import-close" aria-label="取消" ${pending ? "disabled" : ""}>×</button>
+        </header>
+        <div class="tube-designer-excel-import-summary"><strong>${rows.length}</strong><span>行将创建为 ${rows.length} 个独立产品实例</span></div>
+        <div class="tube-designer-excel-import-rows">
+          ${rows.slice(0, 12).map((row) => `<div><span>第 ${escapeText(row.sourceRow ?? "")} 行</span><strong>${escapeText(row.instanceName || "自动命名")}</strong><small>数量 ${escapeText(row.instanceQuantity ?? 1)}</small></div>`).join("")}
+          ${rows.length > 12 ? `<p>另有 ${rows.length - 12} 行将在确认后一起创建。</p>` : ""}
+        </div>
+        <footer class="tube-designer-dialog-footer">
+          <span>创建过程中若某一行不符合模板校验，已创建的前序实例将保留。</span>
+          <button class="tube-designer-secondary" data-cam-action="tube-designer-excel-import-close" ${pending ? "disabled" : ""}>取消</button>
+          <button class="tube-designer-primary" data-cam-action="tube-designer-excel-import-confirm" ${pending ? "disabled" : ""}>创建 ${rows.length} 个实例</button>
+        </footer>
+      </section>
+    </div>`;
 }
 
 function renderPostDisassemblyChoice(view) {
@@ -388,7 +500,6 @@ function renderPostDisassemblyChoice(view) {
         <footer>
           <button class="tube-designer-secondary" data-cam-action="tube-designer-dismiss-disassembly-choice">稍后处理</button>
           <button class="tube-designer-secondary" data-cam-action="tube-designer-export-after-disassembly">导出零件</button>
-          <button class="tube-designer-primary" data-cam-action="tube-designer-enter-cutting">进入下料</button>
         </footer>
       </section>
     </div>`;
@@ -914,7 +1025,7 @@ function renderBreakdownDialog(designer, view) {
             ? `<button class="tube-designer-secondary" data-cam-action="tube-designer-close-breakdown" ${view.pending || exportBusy ? "disabled" : ""}>取消</button>`
             : transientExport
               ? ""
-              : `<button class="tube-designer-secondary" data-cam-action="tube-designer-enter-cutting" ${view.pending || exportBusy || !selectedCount ? "disabled" : ""}>进入下料</button>`}
+              : ""}
           <button class="tube-designer-primary" data-cam-action="tube-designer-export-selected" data-tube-designer-export-selected ${view.pending || exportBusy || !selectedCount ? "disabled" : ""}>${exportBusy ? "正在导出…" : nestingExport ? "导出" : "选择目录并导出"}</button>
         </footer>
         ${exportBusy ? renderExportWait(exportOperation) : ""}
@@ -1244,12 +1355,12 @@ function renderSchematic(template, parameters = {}, className = "") {
   return `<svg class="tube-designer-schematic ${escapeAttribute(className)}" viewBox="0 0 100 100" role="img" aria-label="产品示意图"><rect class="placeholder" x="24" y="14" width="52" height="72" rx="4" /><path class="plus" d="M50 38v24M38 50h24" /></svg>`;
 }
 
-function renderMultiFaceSchematic(templateId, parameters = {}) {
-  if (templateId === "five-face-security-window") {
+function renderMultiFaceSchematic(faceType, parameters = {}) {
+  if (faceType === "five") {
     return renderFiveFaceSchematic(parameters);
   }
   let points;
-  if (templateId === "two-face-security-window") {
+  if (faceType === "two") {
     points = String(parameters.sidePosition ?? "right") === "left"
       ? [[9, 14], [31, 25], [89, 25]]
       : [[11, 25], [69, 25], [91, 14]];
@@ -1303,7 +1414,7 @@ function renderMultiFaceSchematic(templateId, parameters = {}) {
   if (schematicDoorEnabled(parameters)) {
     let faceIndex = 0;
     let widths = [];
-    if (templateId === "two-face-security-window") {
+    if (faceType === "two") {
       const sideIsLeft = String(parameters.sidePosition ?? "right") === "left";
       widths = sideIsLeft
         ? [Number(parameters.sideWidth ?? 600), Number(parameters.frontWidth ?? 1200)]
@@ -1478,15 +1589,15 @@ function formatProductDimensions(templateId, parameters = {}) {
     const layoutName = { straight: "直式", left_l: "左转 L 型", right_l: "右转 L 型", u: "U 型" }[layout] ?? "组合式";
     return `${layoutName} · 各段 ${lengths.map(formatNumber).join(" / ")} · 高 ${formatNumber(parameters.guardHeight)} mm`;
   }
-  if (templateId === "two-face-security-window") {
+  if (templateId === "single-face-security-window" && String(parameters.faceType ?? "single") === "two") {
     const direction = String(parameters.sidePosition ?? "right") === "left" ? "左前" : "右前";
-    return `${direction} · 正面 ${formatNumber(parameters.frontWidth)} × 侧面 ${formatNumber(parameters.sideWidth)} × 高 ${height} mm`;
+    return `${direction} · 正面 ${formatNumber(parameters.width)} × 侧面 ${formatNumber(parameters.sideWidth)} × 高 ${height} mm`;
   }
-  if (templateId === "three-face-security-window") {
-    return `左 ${formatNumber(parameters.leftWidth)} × 正 ${formatNumber(parameters.frontWidth)} × 右 ${formatNumber(parameters.rightWidth)} × 高 ${height} mm`;
+  if (templateId === "single-face-security-window" && String(parameters.faceType ?? "single") === "three") {
+    return `三面 · 左 ${formatNumber(parameters.leftWidth)} × 正 ${formatNumber(parameters.width)} × 右 ${formatNumber(parameters.rightWidth)} × 高 ${height} mm`;
   }
-  if (templateId === "five-face-security-window") {
-    return `正面 ${formatNumber(parameters.frontWidth)} × 出墙 ${formatNumber(parameters.depth)} × 高 ${height} mm`;
+  if (templateId === "single-face-security-window" && String(parameters.faceType ?? "single") === "five") {
+    return `五面 · 正面 ${formatNumber(parameters.width)} × 出墙 ${formatNumber(parameters.depth)} × 高 ${height} mm`;
   }
   return `${formatNumber(parameters.width)} × ${height} mm`;
 }

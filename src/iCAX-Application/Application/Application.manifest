@@ -4,7 +4,7 @@
     type="win32"
     name="iCAX.Application"
     version="1.0.0.0" />
-  <description>工作台</description>
+  <description>iTubeDesigner</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

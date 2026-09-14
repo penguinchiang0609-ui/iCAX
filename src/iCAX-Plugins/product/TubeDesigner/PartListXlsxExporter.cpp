@@ -66,6 +66,21 @@ namespace
             + "\"><v>" + Value_ + "</v></c>";
     }
 
+    // XLSX uses a base-26 alphabetic column name.  Do not use a single
+    // character here: product batch-import sheets routinely exceed Z.
+    std::string WorksheetColumnName(std::size_t ZeroBasedIndex_)
+    {
+        std::string _Result;
+        auto _Value = ZeroBasedIndex_ + 1;
+        while (_Value > 0)
+        {
+            const auto _Remainder = (_Value - 1) % 26;
+            _Result.insert(_Result.begin(), static_cast<char>('A' + _Remainder));
+            _Value = (_Value - 1) / 26;
+        }
+        return _Result;
+    }
+
     std::string BuildWorksheet(const std::vector<SPartListRow>& Rows_)
     {
         const auto _LastRow = static_cast<std::uint64_t>(Rows_.size()) + 2;
@@ -182,6 +197,15 @@ namespace
         return _Sheet.str();
     }
 
+    std::string BuildHiddenMetadataWorksheet(const std::string& Metadata_)
+    {
+        return std::string("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
+            + "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
+            + "<dimension ref=\"A1\"/><sheetData><row r=\"1\">"
+            + TextCell("A1", Metadata_, 0)
+            + "</row></sheetData></worksheet>";
+    }
+
     std::uint32_t Crc32(const std::string& Data_)
     {
         std::uint32_t _Crc = 0xFFFFFFFFu;
@@ -286,18 +310,22 @@ namespace
         if (!_Stream) throw std::runtime_error("Could not finish XLSX part list");
     }
 
-    std::vector<SZipEntry> BuildWorkbookEntries(const std::vector<SPartListRow>& Rows_)
+    std::vector<SZipEntry> BuildWorkbookEntries(const std::vector<SPartListRow>& Rows_, const bool IsTemplate_ = false)
     {
+        const auto _WorkbookContentType = IsTemplate_
+            ? "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml"
+            : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+        const std::string _ContentTypes =
+            std::string("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
+            + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+            + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+            + "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+            + "<Override PartName=\"/xl/workbook.xml\" ContentType=\"" + _WorkbookContentType + "\"/>"
+            + "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+            + "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
+            + "</Types>";
         return {
-            { "[Content_Types].xml",
-                "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
-                "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
-                "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
-                "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
-                "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
-                "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
-                "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>"
-                "</Types>" },
+            { "[Content_Types].xml", _ContentTypes },
             { "_rels/.rels",
                 "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
                 "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
@@ -377,10 +405,13 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
     const std::filesystem::path& TargetPath_,
     const std::string& Title_,
     const std::vector<std::string>& Headers_,
-    const std::vector<std::vector<STableWorkbookCell>>& Rows_)
+    const std::vector<std::vector<STableWorkbookCell>>& Rows_,
+    const std::string& HiddenMetadata_)
 {
-    if (TargetPath_.empty() || Headers_.empty() || Headers_.size() > 26 || Rows_.empty())
-        throw std::invalid_argument("XLSX table requires a target, 1-26 columns and data rows");
+    // XLSX supports columns A through XFD (16,384 columns).  The old 26-column
+    // limit came from single-letter cell references, not from Excel.
+    if (TargetPath_.empty() || Headers_.empty() || Headers_.size() > 16'384)
+        throw std::invalid_argument("XLSX table requires a target and 1-16384 columns");
     if (Rows_.size() > 1048574)
         throw std::invalid_argument("XLSX table exceeds worksheet row limit");
     if (std::filesystem::exists(TargetPath_))
@@ -388,13 +419,13 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
     if (!TargetPath_.parent_path().empty())
         std::filesystem::create_directories(TargetPath_.parent_path());
 
-    const std::string _LastColumn(1, static_cast<char>('A' + Headers_.size() - 1));
+    const auto _LastColumn = WorksheetColumnName(Headers_.size() - 1);
     const auto _LastRow = std::to_string(Rows_.size() + 2);
     std::ostringstream _Rows;
     _Rows << "<row r=\"1\" ht=\"28\" customHeight=\"1\">"
         << TextCell("A1", Title_, 1) << "</row><row r=\"2\" ht=\"30\" customHeight=\"1\">";
     for (std::size_t _Column = 0; _Column < Headers_.size(); ++_Column)
-        _Rows << TextCell(std::string(1, static_cast<char>('A' + _Column)) + "2", Headers_[_Column], 2);
+        _Rows << TextCell(WorksheetColumnName(_Column) + "2", Headers_[_Column], 2);
     _Rows << "</row>";
     for (std::size_t _Index = 0; _Index < Rows_.size(); ++_Index)
     {
@@ -404,7 +435,7 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
         _Rows << "<row r=\"" << _RowNumber << "\" ht=\"24\" customHeight=\"1\">";
         for (std::size_t _Column = 0; _Column < _Row.size(); ++_Column)
         {
-            const auto _Reference = std::string(1, static_cast<char>('A' + _Column)) + _RowNumber;
+            const auto _Reference = WorksheetColumnName(_Column) + _RowNumber;
             if (const auto _Number = std::get_if<double>(&_Row[_Column]))
             {
                 if (!std::isfinite(*_Number)) throw std::invalid_argument("XLSX table contains a nonfinite number");
@@ -425,16 +456,38 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
         << "<mergeCells count=\"1\"><mergeCell ref=\"A1:" << _LastColumn << "1\"/></mergeCells>"
         << "<pageMargins left=\"0.3\" right=\"0.3\" top=\"0.5\" bottom=\"0.5\" header=\"0.2\" footer=\"0.2\"/>"
         << "<pageSetup orientation=\"landscape\" fitToWidth=\"1\" fitToHeight=\"0\"/></worksheet>";
-    auto _Entries = BuildWorkbookEntries({});
+    auto _Entries = BuildWorkbookEntries({}, false);
     for (auto& _Entry : _Entries)
     {
         if (_Entry.Name == "xl/worksheets/sheet1.xml") _Entry.Data = _Sheet.str();
         if (_Entry.Name == "xl/workbook.xml")
         {
             const auto _Name = _Entry.Data.find("name=\"零件清单\"");
-            if (_Name != std::string::npos) _Entry.Data.replace(_Name, std::string("name=\"零件清单\"").size(), "name=\"下料清单\"");
+            if (_Name != std::string::npos) _Entry.Data.replace(_Name, std::string("name=\"零件清单\"").size(),
+                !HiddenMetadata_.empty() ? "name=\"批量导入\"" : "name=\"下料清单\"");
+            if (!HiddenMetadata_.empty())
+            {
+                const auto _Sheets = _Entry.Data.find("</sheets>");
+                if (_Sheets != std::string::npos)
+                    _Entry.Data.insert(_Sheets, "<sheet name=\"__iCAX_列定义\" sheetId=\"2\" state=\"hidden\" r:id=\"rId3\"/>");
+            }
+        }
+        if (_Entry.Name == "xl/_rels/workbook.xml.rels" && !HiddenMetadata_.empty())
+        {
+            const auto _Relationships = _Entry.Data.find("</Relationships>");
+            if (_Relationships != std::string::npos)
+                _Entry.Data.insert(_Relationships,
+                    "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet2.xml\"/>");
+        }
+        if (_Entry.Name == "[Content_Types].xml" && !HiddenMetadata_.empty())
+        {
+            const auto _Types = _Entry.Data.find("</Types>");
+            if (_Types != std::string::npos)
+                _Entry.Data.insert(_Types,
+                    "<Override PartName=\"/xl/worksheets/sheet2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
         }
     }
+    if (!HiddenMetadata_.empty()) _Entries.push_back({ "xl/worksheets/sheet2.xml", BuildHiddenMetadataWorksheet(HiddenMetadata_) });
     auto _TemporaryPath = TargetPath_;
     _TemporaryPath += ".tmp";
     if (std::filesystem::exists(_TemporaryPath))

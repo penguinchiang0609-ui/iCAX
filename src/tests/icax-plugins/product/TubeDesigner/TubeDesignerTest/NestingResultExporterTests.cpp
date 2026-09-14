@@ -1,6 +1,10 @@
 #include "pch.h"
+#include <TubeDesigner/BatchExcel.h>
 #include <TubeDesigner/NestingResultExporter.h>
 #include <TubeDesigner/PartListXlsxExporter.h>
+
+#include <TemplateRuntime/StandardJsonCodec.h>
+#include <TemplateRuntime/TemplateCodec.h>
 
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepBndLib.hxx>
@@ -338,6 +342,111 @@ TEST(TubeDesignerNestingExport, WorkbookTreatsUserTextAsLiteralAndRefusesOverwri
     EXPECT_THROW(WriteTableWorkbook(_Root / "invalid.xlsx", "invalid", { "number" }, {
         { std::numeric_limits<double>::quiet_NaN() } }), std::invalid_argument);
     EXPECT_FALSE(std::filesystem::exists(_Root / "invalid.xlsx"));
+}
+
+TEST(TubeDesignerNestingExport, WorkbookUsesMultiLetterReferencesForWideTables)
+{
+    const auto _Path = TestRoot() / "wide.xlsx";
+    std::vector<std::string> _Headers;
+    for (int _Index = 1; _Index <= 61; ++_Index) _Headers.push_back("列" + std::to_string(_Index));
+    WriteTableWorkbook(_Path, "宽表", _Headers, {});
+    const auto _Content = ReadBytes(_Path);
+    EXPECT_NE(_Content.find("<dimension ref=\"A1:BI2\"/>"), std::string::npos);
+    EXPECT_NE(_Content.find("<c r=\"AA2\""), std::string::npos);
+    EXPECT_NE(_Content.find("<c r=\"BI2\""), std::string::npos);
+    EXPECT_NE(_Content.find("<autoFilter ref=\"A2:BI2\"/>"), std::string::npos);
+    EXPECT_NE(_Content.find("<mergeCell ref=\"A1:BI1\"/>"), std::string::npos);
+}
+
+TEST(TubeDesignerNestingExport, ExcelImportWorkbookEmbedsColumnDefinition)
+{
+    const auto _Path = TestRoot() / "security-window-import.xlsx";
+    const auto _Definition = R"({"schema":"icax.tube-designer.batch-excel","templateId":"security-window","templateVersion":"1.0.0","templateName":"防盗窗","headerRow":2,"columns":[{"key":"faceType","title":"faceType","required":true,"defaultValue":"single"}]})";
+    WriteTableWorkbook(_Path, "防盗窗 批量导入", { "faceType" }, {}, _Definition);
+
+    const auto _Content = ReadBytes(_Path);
+    EXPECT_NE(_Content.find("spreadsheetml.sheet.main+xml"), std::string::npos);
+    EXPECT_EQ(_Content.find("spreadsheetml.template.main+xml"), std::string::npos);
+    EXPECT_NE(_Content.find("name=\"批量导入\""), std::string::npos);
+    EXPECT_NE(_Content.find("name=\"__iCAX_列定义\" sheetId=\"2\" state=\"hidden\""), std::string::npos);
+    EXPECT_NE(_Content.find("xl/worksheets/sheet2.xml"), std::string::npos);
+    EXPECT_NE(_Content.find("icax.tube-designer.batch-excel"), std::string::npos);
+    EXPECT_NE(_Content.find("faceType"), std::string::npos);
+
+    const auto _ReadDefinition = ReadBatchExcelDefinition(_Path);
+    EXPECT_EQ(_ReadDefinition.TemplateID, "security-window");
+    ASSERT_EQ(_ReadDefinition.Columns.size(), 1u);
+    EXPECT_EQ(_ReadDefinition.Columns.front().Key, "faceType");
+}
+
+TEST(TubeDesignerNestingExport, GenericProductExcelTemplateImportsTwoProductInstances)
+{
+    // This is intentionally a generic product descriptor, not a security-window
+    // fixture.  Batch Excel is a descriptor-driven mechanism shared by every
+    // product template that exposes editable parameters.
+    const auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
+        iCAX::TemplateRuntime::CStandardJsonCodec::Parse(R"json({
+            "schema":"icax.template-descriptor", "schemaVersion":1,
+            "id":"test.generic-batch-product", "version":"7.2.0",
+            "displayName":"通用批量测试产品",
+            "parameters":[
+                {"key":"width","displayName":"成品宽度","valueType":"number","defaultValue":1000},
+                {"key":"finish","displayName":"表面处理","valueType":"enum","defaultValue":"powder",
+                 "choices":[{"value":"powder","displayName":"粉末喷涂"},{"value":"anodized","displayName":"阳极氧化"}]}
+            ]
+        })json"));
+    const std::vector<SBatchExcelColumn> _Columns{
+        { "__instanceName", "instanceName", false, "" },
+        { "__instanceQuantity", "quantity", true, "1" },
+        { "width", "width", true, "1000" },
+    };
+    const auto _Root = TestRoot();
+    const auto _WorkbookPath = _Root / "generic-product.xlsx";
+
+    // 1. Export a normal, product-template-specific Excel workbook.
+    WriteBatchExcelTemplate(_WorkbookPath, _Descriptor, _Columns);
+    EXPECT_TRUE(std::filesystem::is_regular_file(_WorkbookPath));
+    const auto _TemplateBytes = ReadBytes(_WorkbookPath);
+    EXPECT_NE(_TemplateBytes.find("通用批量测试产品"), std::string::npos);
+    EXPECT_NE(_TemplateBytes.find("模板 ID：test.generic-batch-product"), std::string::npos);
+
+    // 2. Enter two rows against the contract embedded in the exported workbook.
+    // The mapping is carried by the workbook, not by a product-specific sidecar file.
+    const auto _Definition = ReadBatchExcelDefinition(_WorkbookPath);
+    ASSERT_EQ(_Definition.TemplateID, _Descriptor.ID);
+    ASSERT_EQ(_Definition.Columns.size(), _Columns.size());
+    iCAX::Data::VariantArray _DefinitionColumns;
+    for (const auto& _Column : _Definition.Columns)
+        _DefinitionColumns.emplace_back(iCAX::Data::ObjectMap{
+            { "key", _Column.Key }, { "title", _Column.Title },
+            { "required", _Column.Required }, { "defaultValue", _Column.DefaultValue }
+        });
+    const auto _Contract = iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(iCAX::Data::Variant(iCAX::Data::ObjectMap{
+        { "schema", std::string("icax.tube-designer.batch-excel") }, { "schemaVersion", 1ull },
+        { "templateId", _Definition.TemplateID }, { "templateVersion", _Definition.TemplateVersion },
+        { "templateName", _Definition.TemplateName }, { "headerRow", 2ull }, { "columns", std::move(_DefinitionColumns) }
+    }));
+    std::filesystem::remove(_WorkbookPath);
+    WriteTableWorkbook(_WorkbookPath, "已填写的通用产品", { "instanceName", "quantity", "width" }, {
+        { std::string("测试产品 A"), 1.0, 1200.0 },
+        { std::string("测试产品 B"), 3.0, 1650.0 },
+    }, _Contract);
+
+    // 3. Loading the saved workbook produces one product-instance request per row.
+    const auto _Imported = ReadBatchExcelImport(_WorkbookPath, _Descriptor);
+    ASSERT_EQ(_Imported.Rows.size(), 2u);
+    EXPECT_EQ(_Imported.TemplateID, "test.generic-batch-product");
+    EXPECT_EQ(_Imported.Rows[0].InstanceName, "测试产品 A");
+    EXPECT_EQ(_Imported.Rows[0].InstanceQuantity, 1u);
+    EXPECT_DOUBLE_EQ(_Imported.Rows[0].Parameters.at("width").To<double>(), 1200.0);
+    EXPECT_FALSE(_Imported.Rows[0].Parameters.contains("finish"));
+    const auto _NormalizedFirst = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
+        _Descriptor, _Imported.Rows[0].Parameters);
+    EXPECT_EQ(_NormalizedFirst.at("finish").To<std::string>(), "powder");
+    EXPECT_EQ(_Imported.Rows[1].InstanceName, "测试产品 B");
+    EXPECT_EQ(_Imported.Rows[1].InstanceQuantity, 3u);
+    EXPECT_DOUBLE_EQ(_Imported.Rows[1].Parameters.at("width").To<double>(), 1650.0);
+    EXPECT_FALSE(_Imported.Rows[1].Parameters.contains("finish"));
 }
 
 TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppendsManufacturingFields)

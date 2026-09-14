@@ -2,6 +2,7 @@
 #include "../../../licensing/include/LicenseRuntime.h"
 
 #include "PartListXlsxExporter.h"
+#include "BatchExcel.h"
 #include "ComponentModelLibrary.h"
 #include "FinalGeometryMeasurement.h"
 #include "NestingAdapter.h"
@@ -2618,6 +2619,92 @@ namespace
         _Presentation["descriptorLoaded"] = true;
         AttachTemplateCatalogAssets(_Presentation, _Package.DescriptorPath.parent_path());
         return MakeResponse(ObjectMap{{ "template", std::move(_Presentation) }});
+    }
+
+    std::vector<SBatchExcelColumn> BatchExcelColumns(const ObjectMap& Payload_)
+    {
+        const auto _It = Payload_.find("columns");
+        if (_It == Payload_.end() || !_It->second.Is<VariantArray>())
+            throw std::invalid_argument("Excel 模板导出缺少列配置");
+        const auto _Values = _It->second.To<VariantArray>();
+        if (_Values.empty() || _Values.size() > 16'384)
+            throw std::invalid_argument("Excel 模板列数必须在 1 到 16384 之间");
+        std::set<std::string> _Keys, _Titles;
+        std::vector<SBatchExcelColumn> _Columns;
+        _Columns.reserve(_Values.size());
+        for (const auto& _Value : _Values)
+        {
+            if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("Excel 模板列配置无效");
+            const auto _Column = _Value.To<ObjectMap>();
+            const auto _Key = GetRequiredText(_Column, "key", 240);
+            const auto _Title = GetRequiredText(_Column, "title", 240);
+            if (!_Keys.insert(_Key).second || !_Titles.insert(_Title).second)
+                throw std::invalid_argument("Excel 模板列名或参数键重复");
+            const auto _Required = _Column.contains("required") && _Column.at("required").Is<bool>()
+                ? _Column.at("required").To<bool>() : false;
+            _Columns.push_back({ _Key, _Title, _Required, GetString(_Column, "defaultValue") });
+        }
+        return _Columns;
+    }
+
+    void ValidateBatchExcelColumns(
+        const iCAX::TemplateRuntime::STemplateDescriptor& Descriptor_, const std::vector<SBatchExcelColumn>& Columns_)
+    {
+        std::set<std::string> _ParameterKeys;
+        for (const auto& _Definition : Descriptor_.Parameters)
+            if (! _Definition.ReadOnly) _ParameterKeys.insert(_Definition.Key);
+        for (const auto& _Column : Columns_)
+        {
+            if (_Column.Key == "__instanceName" || _Column.Key == "__instanceQuantity") continue;
+            if (!_ParameterKeys.contains(_Column.Key))
+                throw std::invalid_argument("Excel 模板包含不可编辑或不存在的参数：" + _Column.Key);
+        }
+    }
+
+    iCAX::Interaction::CInvocationResult HandleExportBatchExcelTemplate(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _TemplateID = GetRequiredText(_Payload, "templateId", 240);
+        const auto _TargetPath = GetRequiredText(_Payload, "targetPath", 2048);
+        const auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _TemplateID);
+        const auto _Columns = BatchExcelColumns(_Payload);
+        ValidateBatchExcelColumns(_Package.Descriptor, _Columns);
+        const auto _TemplatePath = WriteBatchExcelTemplate(Utf8Path(_TargetPath), _Package.Descriptor, _Columns);
+        return MakeResponse(ObjectMap{
+            { "templatePath", Utf8PathText(_TemplatePath) },
+            { "templateId", _Package.Descriptor.ID }, { "templateVersion", _Package.Descriptor.Version }
+        });
+    }
+
+    iCAX::Interaction::CInvocationResult HandleReadBatchExcelImport(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*, iCAX::Project::ISceneContext*)
+    {
+        const auto _Payload = DecodeObjectPayload(Request_);
+        const auto _SourcePath = GetRequiredText(_Payload, "sourcePath", 2048);
+        const auto _Definition = ReadBatchExcelDefinition(Utf8Path(_SourcePath));
+        const auto _TemplateID = _Definition.TemplateID;
+        const auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _TemplateID);
+        const auto _Import = ReadBatchExcelImport(Utf8Path(_SourcePath), _Package.Descriptor);
+        VariantArray _Rows;
+        _Rows.reserve(_Import.Rows.size());
+        for (const auto& _Row : _Import.Rows)
+        {
+            _Rows.emplace_back(ObjectMap{
+                { "sourceRow", static_cast<unsigned long long>(_Row.SourceRow) },
+                { "instanceName", _Row.InstanceName },
+                { "instanceQuantity", static_cast<unsigned long long>(_Row.InstanceQuantity) },
+                { "parameters", _Row.Parameters }
+            });
+        }
+        return MakeResponse(ObjectMap{
+            { "templateId", _Import.TemplateID }, { "templateVersion", _Import.TemplateVersion },
+            { "templateName", _Import.TemplateName }, { "rows", std::move(_Rows) }
+        });
     }
 
     constexpr const char* kCustomerFeatureID = "customer";
@@ -10824,6 +10911,8 @@ namespace
         {
             ExposeMethod("List", &HandleList);
             ExposeMethod("GetTemplateDescriptor", &HandleGetTemplateDescriptor);
+            ExposeMethod("ExportBatchExcelTemplate", &HandleExportBatchExcelTemplate);
+            ExposeMethod("ReadBatchExcelImport", &HandleReadBatchExcelImport);
             ExposeMethod("MachiningData", &HandleMachiningData);
             ExposeMethod("ListUserData", &HandleListUserData);
             ExposeMethod("ListSystemProfiles", &HandleListSystemProfiles);

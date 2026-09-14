@@ -45,5 +45,6 @@ namespace iCAX::TubeDesigner
         const std::filesystem::path& TargetPath_,
         const std::string& Title_,
         const std::vector<std::string>& Headers_,
-        const std::vector<std::vector<STableWorkbookCell>>& Rows_);
+        const std::vector<std::vector<STableWorkbookCell>>& Rows_,
+        const std::string& HiddenMetadata_ = {});
 }

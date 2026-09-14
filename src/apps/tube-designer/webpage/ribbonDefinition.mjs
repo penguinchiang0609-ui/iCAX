@@ -15,7 +15,6 @@ const allRibbonDefinition = {
           commands: [
             command("designer.inspect-active-part", "复尺", "measure", { size: "large", iconTone: "blue" }),
             command("designer.export-active-product-parts", "导出清单", "report", { size: "large", iconTone: "green" }),
-            command("designer.disassemble", "导入下料", "machine", { size: "large", iconTone: "orange" }),
           ],
         },
         {
@@ -187,7 +186,11 @@ const allRibbonDefinition = {
 };
 
 export const sketchRibbonGroups = allRibbonDefinition.tabs.find(tab => tab.id === "sketch").groups;
-export const ribbonDefinition = { ...allRibbonDefinition, tabs: allRibbonDefinition.tabs.filter(tab => tab.id !== "sketch") };
+// 下料、加工、草图和关于仍保留其内部实现与调用入口；当前对外工作区只公开产品和资源库。
+export const ribbonDefinition = {
+  ...allRibbonDefinition,
+  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "resources"].includes(tab.id)),
+};
 
 export function getRibbonDefinition(options = {}) {
   const resourceArea = ["products", "profiles", "tools", "components"].includes(options?.resourceArea)

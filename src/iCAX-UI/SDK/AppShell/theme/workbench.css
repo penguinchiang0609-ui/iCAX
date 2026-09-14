@@ -884,6 +884,10 @@ button:disabled {
   grid-template-columns: 260px minmax(0, 1fr);
 }
 
+.start-body--single-product {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .start-products {
   min-width: 0;
   min-height: 0;

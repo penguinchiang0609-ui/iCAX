@@ -2,15 +2,16 @@ import { escapeText } from "../../../iCAX-UI/UI/html.mjs";
 
 const WINDOW_LAYOUTS = new Map([
   ["single-face-security-window", "single-face"],
-  ["two-face-security-window", "two-face"],
-  ["three-face-security-window", "three-face"],
-  ["five-face-security-window", "five-face"],
 ]);
 
-function windowLayout(template) {
+function windowLayout(template, values = {}) {
   const definition = template?.extensions?.securityWindow;
   if (definition && typeof definition === "object") {
-    return definition.layout || WINDOW_LAYOUTS.get(template?.id) || "unspecified";
+    const layout = definition.layout
+      || values?.[definition.layoutParameter]
+      || WINDOW_LAYOUTS.get(template?.id)
+      || "unspecified";
+    return { single: "single-face", two: "two-face", three: "three-face", five: "five-face" }[layout] || layout;
   }
   return definition === true ? WINDOW_LAYOUTS.get(template?.id) || "unspecified"
     : WINDOW_LAYOUTS.get(template?.id) || "";
@@ -108,9 +109,9 @@ function row(label, value) {
 }
 
 export function renderSecurityWindowReview(template, values = {}) {
-  const layout = windowLayout(template);
-  if (!layout) return "";
   values = { ...Object.fromEntries((template?.parameters ?? []).map((field) => [field.key ?? field.name, field.defaultValue])), ...values };
+  const layout = windowLayout(template, values);
+  if (!layout) return "";
   const enabledValue = values.accessDoorEnabled ?? true;
   const enabled = enabledValue === true || enabledValue === "true" || enabledValue === "是";
   const maintenance = values.doorUse === "maintenance";

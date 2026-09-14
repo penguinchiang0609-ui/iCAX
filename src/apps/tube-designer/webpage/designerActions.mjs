@@ -48,7 +48,7 @@ import {
   handleSketchAreaAction,
   handleSketchRibbonCommand,
 } from "./sketchArea.mjs";
-import { getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs";
+import { catalogText, getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs";
 import { componentLibraryState, handleComponentLibraryAction, handleComponentLibraryRibbonCommand, refreshComponentModels } from "./componentLibrary.mjs";
 import { ensureToolLibraryCatalogue, handleToolLibraryAction, handleToolLibraryRibbonCommand } from "./toolLibrary.mjs";
 import {
@@ -211,6 +211,9 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   }
   if (action === "tube-designer-excel-template-open") {
     return { handled: true, result: await openBatchExcelTemplateDialog(context, view, ops) };
+  }
+  if (action === "tube-designer-excel-template-select") {
+    return { handled: true, result: await selectBatchExcelTemplate(context, view, target, ops) };
   }
   if (action === "tube-designer-excel-template-close") {
     closeBatchExcelTemplateDialog(context, view, ops);
@@ -940,18 +943,237 @@ async function chooseBatchAddWorkbook(context, view, ops, suppliedPath = "") {
       return null;
     }
     sourcePath = String(await bridge.openFileDialog({
-      title: "选择批量添加 Excel 文件",
-      filters: [{ name: "Excel 工作簿", extensions: ["xlsx", "xls"] }],
+      title: "选择 TubeDesigner 批量导入 Excel 文件",
+      filters: [{ name: "Excel 工作簿", extensions: ["xlsx"] }],
     }) ?? "").trim();
   }
   if (!sourcePath) return null;
 
-  view.tubeDesignerBatchImportPath = sourcePath;
+  return runDesignerOperation(context, view, ops, async () => {
+    const response = await invokeProductRequest(context, "TubeDesigner.ReadBatchExcelImport", {
+      sourcePath,
+    }, { timeoutMs: 120000 });
+    const rows = Array.isArray(response?.rows) ? response.rows : [];
+    if (!rows.length) throw new Error("Excel 中没有可导入的数据行。请从第 3 行开始填写产品数据。");
+    view.tubeDesignerBatchImportPath = sourcePath;
+    view.tubeDesignerExcelImportDialog = {
+      sourcePath,
+      templateId: String(response?.templateId ?? ""),
+      templateName: String(response?.templateName ?? response?.templateId ?? "产品模板"),
+      rows,
+    };
+    view.error = "";
+    const fileName = sourcePath.split(/[\\/]/).pop() || sourcePath;
+    ops.appendProjectLog(context, "info", `读取批量产品 Excel：${sourcePath}`);
+    ops.showNotice(context, view, `已读取 ${rows.length} 行产品数据：${fileName}`);
+    return response;
+  }, {
+    operation: {
+      kind: "batch-product-read",
+      title: "正在读取 Excel 产品数据",
+      phase: "reading-excel",
+      phaseLabel: "核对模板与列名",
+      message: "正在读取 Excel 模板内置的列定义",
+    },
+  });
+}
+
+async function openBatchExcelTemplateDialog(context, view, ops) {
+  if (view.pending) return null;
+  const designer = view.scene?.tubeDesigner ?? {};
+  const first = getDefaultTemplate(designer.templates ?? []);
+  if (!first?.id) throw new Error("当前没有可导出的产品模板。");
+  const template = await ensureTemplateDescriptor(context, view, first.id);
+  if (!Array.isArray(template?.parameters)) throw new Error("产品模板参数尚未加载完成。请稍后重试。");
+  view.tubeDesignerExcelTemplateDialog = buildBatchExcelTemplateDialogState(template);
   view.error = "";
-  const fileName = sourcePath.split(/[\\/]/).pop() || sourcePath;
-  ops.appendProjectLog(context, "info", `选择批量添加文件：${sourcePath}`);
-  ops.showNotice(context, view, `已选择 Excel 文件：${fileName}`);
-  return { sourcePath };
+  ops.renderProject(context, view);
+  return template;
+}
+
+function buildBatchExcelTemplateDialogState(template) {
+  return {
+    templateId: String(template.id),
+    columns: batchExcelColumnsFromTemplate(template),
+  };
+}
+
+function batchExcelColumnsFromTemplate(template) {
+  const columns = [
+    { key: "__instanceName", title: "instanceName", displayName: "实例名称", groupTitle: "实例信息", description: "留空时自动命名。", inputKind: "text", included: true, required: false, defaultValue: "" },
+    { key: "__instanceQuantity", title: "quantity", displayName: "生产数量", groupTitle: "实例信息", description: "每一行产品实例的生产数量。", inputKind: "number", minimum: 1, step: 1, included: true, required: true, defaultValue: "1" },
+  ];
+  const groupTitles = new Map((template?.groups ?? []).map((group) => [
+    String(group?.key ?? ""),
+    catalogText(group?.displayName ?? group?.name, String(group?.key ?? "")),
+  ]));
+  const titles = new Set(columns.map((column) => column.title));
+  for (const field of template?.parameters ?? []) {
+    if (field?.readOnly) continue;
+    const key = String(field?.key ?? field?.name ?? "").trim();
+    if (!key) continue;
+    // Project notes and installation verification are retained by the product
+    // template, but they are not per-row manufacturing inputs.  Keeping them
+    // out of the interchange contract avoids making third-party spreadsheets
+    // carry fields that do not define a product instance.
+    const group = String(field?.groupKey ?? field?.group ?? "").trim();
+    if (["installation", "project_rules"].includes(group)) continue;
+    const rawDefault = field?.defaultValue ?? field?.default ?? "";
+    const displayName = catalogText(field?.displayName ?? field?.label ?? field?.name, key);
+    // The worksheet and embedded template contract use stable English parameter keys.  The
+    // Chinese label remains in the dialog as a human-facing explanation.
+    const title = key;
+    if (titles.has(title)) continue;
+    titles.add(title);
+    const optionSource = Array.isArray(field?.options) ? field.options : (Array.isArray(field?.choices) ? field.choices : []);
+    const options = optionSource.map((option) => {
+      const value = typeof option === "object" ? option?.value : option;
+      const label = typeof option === "object"
+        ? catalogText(option?.label ?? option?.displayName, String(value ?? ""))
+        : String(option ?? "");
+      return { value: value == null ? "" : String(value), label };
+    }).filter((option) => option.value !== "");
+    const rawType = String(field?.type ?? field?.valueType ?? "").toLowerCase();
+    const inputKind = options.length ? "select"
+      : (rawType === "boolean" ? "boolean"
+        : (["number", "integer", "decimal", "float"].includes(rawType) ? "number" : "text"));
+    columns.push({
+      key,
+      title,
+      displayName,
+      groupTitle: (groupTitles.get(group) ?? group) || "其他参数",
+      description: catalogText(field?.description, ""),
+      inputKind,
+      options,
+      minimum: field?.min ?? field?.constraints?.minimum,
+      maximum: field?.max ?? field?.constraints?.maximum,
+      step: field?.step ?? field?.constraints?.step,
+      included: false,
+      required: field?.required !== false,
+      defaultValue: rawDefault == null ? "" : String(rawDefault),
+    });
+  }
+  return columns;
+}
+
+async function selectBatchExcelTemplate(context, view, target, ops) {
+  const state = view.tubeDesignerExcelTemplateDialog;
+  if (!state || view.pending || state.loading) return null;
+  const templateId = String(target?.value ?? target?.dataset?.tubeDesignerExcelTemplateId ?? "").trim();
+  if (!templateId || templateId === String(state.templateId ?? "")) return state.templateId;
+  const designer = view.scene?.tubeDesigner ?? {};
+  const candidate = getTemplateById(designer.templates, templateId);
+  if (!candidate?.available) throw new Error("所选产品模板当前不可用。");
+
+  // A template can be listed before its descriptor arrives.  Keep the dialog
+  // in place while loading it, then replace only its column-definition draft.
+  view.tubeDesignerExcelTemplateDialog = { ...state, loading: true };
+  ops.renderProject(context, view);
+  try {
+    const template = await ensureTemplateDescriptor(context, view, templateId);
+    if (!Array.isArray(template?.parameters)) throw new Error("产品模板参数尚未加载完成。请稍后重试。");
+    view.tubeDesignerExcelTemplateDialog = {
+      ...buildBatchExcelTemplateDialogState(template), loading: false,
+    };
+    view.error = "";
+    ops.renderProject(context, view);
+    return template.id;
+  } catch (error) {
+    view.tubeDesignerExcelTemplateDialog = { ...state, loading: false };
+    ops.renderProject(context, view);
+    throw error;
+  }
+}
+
+function closeBatchExcelTemplateDialog(context, view, ops) {
+  view.tubeDesignerExcelTemplateDialog = null;
+  view.error = "";
+  ops.renderProject(context, view);
+}
+
+async function exportBatchExcelTemplate(context, view, ops) {
+  if (view.pending) return null;
+  const state = view.tubeDesignerExcelTemplateDialog;
+  if (!state?.templateId) throw new Error("请先选择产品模板。");
+  const form = resolveDesignerMount(context)?.querySelector?.("[data-tube-designer-excel-template-form]");
+  const columns = (state.columns ?? []).filter((column) => {
+    const key = String(column.key ?? "");
+    const input = Array.from(form?.querySelectorAll?.("[data-tube-designer-excel-include]") ?? [])
+      .find((item) => String(item?.getAttribute?.("data-tube-designer-excel-include") ?? "") === key);
+    return input ? Boolean(input.checked) : column.included !== false;
+  }).map((column) => {
+    const key = String(column.key ?? "");
+    const inputByKey = (attribute) => Array.from(form?.querySelectorAll?.(`[${attribute}]`) ?? [])
+      .find((input) => String(input?.getAttribute?.(attribute) ?? "") === key);
+    const required = Boolean(inputByKey("data-tube-designer-excel-required")?.checked);
+    const defaultValue = String(inputByKey("data-tube-designer-excel-default")?.value ?? "");
+    return { key, title: column.title, required, defaultValue };
+  });
+  if (!columns.length) throw new Error("请至少勾选一个需要携带到 Excel 的字段。");
+  const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge ?? null;
+  if (typeof bridge?.saveFileDialog !== "function") throw new Error("当前宿主没有提供保存文件能力。");
+  const template = await ensureTemplateDescriptor(context, view, state.templateId);
+  const baseName = String(template?.name ?? template?.displayName ?? state.templateId)
+    .replace(/[\\/:*?\"<>|]/g, "_").trim() || "产品批量导入";
+  const targetPath = String(await bridge.saveFileDialog({
+    title: "导出 Excel 批量导入工作簿（.xlsx）",
+    defaultPath: `${baseName}_批量导入.xlsx`,
+    defaultExtension: "xlsx",
+    filters: [{ name: "Excel 工作簿", extensions: ["xlsx"] }],
+  }) ?? "").trim();
+  if (!targetPath) return null;
+  return runDesignerOperation(context, view, ops, async () => {
+    const response = await invokeProductRequest(context, "TubeDesigner.ExportBatchExcelTemplate", {
+      templateId: state.templateId,
+      columns,
+      targetPath,
+    }, { timeoutMs: 120000 });
+    if (!response?.templatePath) throw new Error("Excel 模板导出没有返回文件路径。");
+    closeBatchExcelTemplateDialog(context, view, ops);
+    ops.showNotice(context, view, `已导出 Excel 模板：${response.templatePath}`);
+    return response;
+  }, {
+    operation: {
+      kind: "batch-product-template-export",
+      title: "正在导出 Excel 产品模板",
+      phase: "writing-excel-template",
+      phaseLabel: "写入列定义与工作簿",
+        message: "将生成可直接填写并导入的 .xlsx 工作簿",
+    },
+  });
+}
+
+async function importBatchExcelProducts(context, view, ops) {
+  const state = view.tubeDesignerExcelImportDialog;
+  const rows = Array.isArray(state?.rows) ? state.rows : [];
+  if (!rows.length || view.pending) return null;
+  return runDesignerOperation(context, view, ops, async () => {
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index] ?? {};
+      updateDesignerOperation(context, view, {
+        phaseLabel: `正在创建第 ${index + 1} / ${rows.length} 个实例`,
+        message: `Excel 第 ${row.sourceRow ?? index + 3} 行`,
+      });
+      await invokeProductRequest(context, "TubeDesigner.GeneratePreview", {
+        templateId: state.templateId,
+        ...(row.parameters ?? {}),
+        instanceName: String(row.instanceName ?? ""),
+        instanceQuantity: Number(row.instanceQuantity ?? 1),
+      }, { timeoutMs: 180000 });
+    }
+    view.tubeDesignerExcelImportDialog = null;
+    await refreshDesignerState(context, view, ops);
+    ops.showNotice(context, view, `已按 Excel 创建 ${rows.length} 个产品实例。`);
+    return { count: rows.length };
+  }, {
+    operation: {
+      kind: "batch-product-import",
+      title: "正在创建 Excel 产品实例",
+      phase: "creating-products",
+      phaseLabel: `准备创建 ${rows.length} 个实例`,
+      message: "每一行将生成一个独立产品实例",
+    },
+  });
 }
 
 export async function refreshDesignerState(context, view, ops = null) {
@@ -3389,7 +3611,8 @@ function verifyViewportReceipt(viewContent, generationRunId, memberIds) {
 }
 
 export function getDesignerDefaultViewDirection(product = null) {
-  if (String(product?.templateId ?? "") === "two-face-security-window") {
+  if (String(product?.templateId ?? "") === "single-face-security-window"
+      && String(product?.parameters?.faceType ?? "single") === "two") {
     return String(product?.parameters?.sidePosition ?? "right") === "left"
       ? [-0.18, -1, 0.08]
       : [0.18, -1, 0.08];

@@ -10,52 +10,31 @@ import {
 
 // Exercise shipped descriptors in the host's presentation shape, never a copy of
 // their defaults that could keep passing after the actual templates change.
-const templates = ["single", "two", "three", "five"].map((prefix) => {
-  const raw = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${prefix}_face_security_window/template.json`, import.meta.url)));
-  const groups = raw.groups.map((group) => ({ ...group, displayName: catalogText(group.displayName) }));
-  return {
-    ...raw, available: true, name: catalogText(raw.displayName), groups,
-    parameters: raw.parameters.map((field) => ({
-      ...field, displayName: catalogText(field.displayName),
-      type: { enum: "select", string: "text" }[field.valueType] ?? field.valueType,
-      groupKey: field.group, group: groups.find((group) => group.key === field.group)?.displayName ?? field.group,
-      min: field.constraints?.minimum, max: field.constraints?.maximum, step: field.constraints?.step,
-      options: field.choices?.map((choice) => ({ ...choice, label: catalogText(choice.displayName), displayName: catalogText(choice.displayName) })),
-    })),
-  };
-});
-const template = templates[0];
+const raw = JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/product/single_face_security_window/template.json", import.meta.url)));
+const groups = raw.groups.map((group) => ({ ...group, displayName: catalogText(group.displayName) }));
+const template = {
+  ...raw, available: true, name: catalogText(raw.displayName), groups,
+  parameters: raw.parameters.map((field) => ({
+    ...field, displayName: catalogText(field.displayName),
+    type: { enum: "select", string: "text" }[field.valueType] ?? field.valueType,
+    groupKey: field.group, group: groups.find((group) => group.key === field.group)?.displayName ?? field.group,
+    min: field.constraints?.minimum, max: field.constraints?.maximum, step: field.constraints?.step,
+    options: field.choices?.map((choice) => ({ ...choice, label: catalogText(choice.displayName), displayName: catalogText(choice.displayName) })),
+  })),
+};
+const templates = [template];
 const defaults = getDefaultParameters(templates, template.id);
-for (const source of templates) {
-  const shipped = getDefaultParameters(templates, source.id);
-  assert.equal(source.extensions.securityWindow.reviewVersion, 2);
-  assert.equal(shipped.mainHorizontalConnection, "insert");
-  assert.equal(shipped.accessDoorEnabled, true);
-  const html = renderSecurityWindowReview(source, shipped);
-  assert.match(html, /横杆插入边框/);
-  assert.doesNotMatch(html, /V 槽折弯|须先打样/);
-  if (source === template) {
-    assert.equal(shipped.frameLayout, "four_sides");
-    for (const key of ["frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType"]) assert.equal(shipped[key], "miter_45");
-    assert.match(html, /45°拼焊/);
-    assert.match(html, /预览保留未切角管材/);
-    assert.doesNotMatch(html, /大框未四边闭合/);
-  } else {
-    assert.equal(shipped.frameCornerJoin, "post_butt");
-    assert.equal(shipped.sideHorizontalCount, 4);
-    assert.equal(shipped.sideVerticalCount, 4);
-    assert.equal(shipped.sideMaximumVerticalClearGap, 110);
-    assert.match(html, /立柱贯通、横梁直拼/);
-    assert.doesNotMatch(html, /预览保留未切角管材/);
-    const miter = renderSecurityWindowReview(source, { ...shipped, frameCornerJoin: "rail_miter" });
-    assert.match(miter, /横梁45°拼角/);
-    assert.match(miter, /预览保留未切角管材/);
-    assert.match(html, source.id === "five-face-security-window"
-      ? /背面朝墙，需确认外凸安装条件、原窗开启和清洁检修空间/
-      : /顶底未独立封闭，开边需由现场墙体、窗台等围护补齐/);
-  }
-  assert.match(renderSecurityWindowReview(source, { ...shipped, mainHorizontalConnection: "weld" }), /横杆平口焊接/);
-}
+assert.equal(template.extensions.securityWindow.reviewVersion, 2);
+assert.equal(defaults.mainHorizontalConnection, "insert");
+assert.equal(defaults.accessDoorEnabled, true);
+assert.equal(defaults.frameLayout, "four_sides");
+for (const key of ["frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType"]) assert.equal(defaults[key], "miter_45");
+const defaultReview = renderSecurityWindowReview(template, defaults);
+assert.match(defaultReview, /横杆插入边框/);
+assert.match(defaultReview, /45°拼焊/);
+assert.match(defaultReview, /预览保留未切角管材/);
+assert.doesNotMatch(defaultReview, /大框未四边闭合|V 槽折弯|须先打样/);
+assert.match(renderSecurityWindowReview(template, { ...defaults, mainHorizontalConnection: "weld" }), /横杆平口焊接/);
 const rendered = renderSecurityWindowReview(template, defaults);
 assert.match(rendered, /data-security-window-review/);
 assert.match(rendered, /800 × 1000 mm/);
@@ -96,8 +75,8 @@ assert.match(renderSecurityWindowReview(template, { ...defaults, accessDoorEnabl
 assert.match(renderSecurityWindowReview({ extensions: template.extensions }, defaults), /data-security-window-review/);
 assert.equal(renderSecurityWindowReview({ id: "straight-stair-railing" }, defaults), "");
 assert.equal(renderSecurityWindowReview(null, defaults), "");
-for (const id of ["single-face-security-window", "two-face-security-window", "three-face-security-window", "five-face-security-window"]) {
-  const html = renderSecurityWindowReview({ id }, defaults);
+for (const faceType of ["single", "two", "three", "five"]) {
+  const html = renderSecurityWindowReview(template, { ...defaults, faceType });
   assert.match(html, /data-security-window-review/);
   assert.match(html, /成品外包尺寸/);
   assert.match(html, /830 × 1000 mm/);
@@ -159,15 +138,14 @@ const designer = { templates: [template] };
 const newProduct = renderDesignerAddParameterContent(designer, {
   tubeDesignerAddTemplateId: template.id, tubeDesignerAddInstanceName: "新防盗窗",
 });
-assert.match(newProduct, /data-security-window-review/);
-assert.match(newProduct, /830 × 1000 mm/);
+assert.match(newProduct, /data-tube-designer-product-diagram/);
+assert.match(newProduct, /单面防盗窗结构与尺寸示意/);
 const addMarkup = (draft) => renderDesignerAddParameterContent(designer, {
   tubeDesignerAddTemplateId: template.id, tubeDesignerAddDraft: draft,
 });
 assert.match(addMarkup({ accessDoorEnabled: false }), /data-tube-designer-product-diagram/);
 assert.doesNotMatch(addMarkup({ accessDoorEnabled: false, frameJoinType: "v_groove_90:sharp_v" }), /class="notch"/,
   "the generic editor must not recreate template-specific V-groove artwork in central UI code");
-assert.match(addMarkup(imported), /858 × 1000 mm/);
 assert.doesNotMatch(addMarkup({ ...imported, tubeDesignerProfileOverrides: { doorFrame: importedProfile(0, 40) } }), /<polygon class="multi-face-door-frame"/);
 const context = { mount: { querySelector() { return null; } } };
 const parameters = Object.freeze({ doorClearWidth: 900, doorClearHeight: 1100 });
@@ -186,4 +164,4 @@ assert.match(updated, /检修口（非逃生窗）/);
 assert.deepEqual(parameters, { doorClearWidth: 900, doorClearHeight: 1100 });
 
 await new Promise((resolve) => setTimeout(resolve, 0));
-console.log("PASS security-window review: four runtime descriptors, real add/edit rendering, connections, enclosure boundaries, active-only V groove review and imported profile dimensions");
+console.log("PASS security-window review: one descriptor with faceType variants, real add/edit rendering, connections, enclosure boundaries, active-only V groove review and imported profile dimensions");

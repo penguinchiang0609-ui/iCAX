@@ -37,17 +37,20 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\geometry;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory);$(MSBuildProjectDirectory)\..\..\common;$(MSBuildProjectDirectory)\..\..\render;$(MSBuildProjectDirectory)\..\..\cad;$(MSBuildProjectDirectory)\..\..\geometry;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\foundation;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\framework;$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\libxml2.vcpkg.2.14.5\build\native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 /FS /wd4251 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><EnableUAC>false</EnableUAC><AdditionalDependencies>bcrypt.lib;ncrypt.lib;tbs.lib;crypt32.lib;shell32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'"><ClCompile><PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'"><ClCompile><PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile></ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"><Link><AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\libxml2.vcpkg.2.14.5\build\native\lib\x64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>zlibd.lib;%(AdditionalDependencies)</AdditionalDependencies></Link><PostBuildEvent><Command>copy /Y "$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\libxml2.vcpkg.2.14.5\build\native\bin\x64\Debug\zlibd1.dll" "$(OutDir)"</Command></PostBuildEvent></ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><Link><AdditionalLibraryDirectories>$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\libxml2.vcpkg.2.14.5\build\native\lib\x64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories><AdditionalDependencies>zlib.lib;%(AdditionalDependencies)</AdditionalDependencies></Link><PostBuildEvent><Command>copy /Y "$(MSBuildProjectDirectory)\..\..\..\iCAX-Engine\packages\libxml2.vcpkg.2.14.5\build\native\bin\x64\Release\zlib1.dll" "$(OutDir)"</Command></PostBuildEvent></ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="ComponentModelLibrary.h" />
     <ClInclude Include="FinalGeometryMeasurement.h" />
     <ClInclude Include="BRepTubeUnfoldingService.h" />
+    <ClInclude Include="BatchExcel.h" />
     <ClInclude Include="PunchGeometry.h" />
     <ClInclude Include="PartDrawingDefinition.h" />
     <ClInclude Include="NestingAdapter.h" />
@@ -66,6 +69,7 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="FinalGeometryMeasurement.cpp" />
     <ClCompile Include="BRepTubeUnfoldingService.cpp"><DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
+    <ClCompile Include="BatchExcel.cpp" />
     <ClCompile Include="MachiningToolpaths.cpp" />
     <ClCompile Include="PunchGeometry.cpp" />
     <ClCompile Include="NestingAdapter.cpp" />

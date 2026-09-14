@@ -145,7 +145,7 @@ namespace
 
         _Config.RuntimeConfig.strApplicationSettingsPath = _PathToUTF8(_ApplicationSettingsPath);
         _Config.RuntimeConfig.Descriptor.AppID = "icax";
-        _Config.RuntimeConfig.Descriptor.AppName = "工作台";
+        _Config.RuntimeConfig.Descriptor.AppName = "iTubeDesigner";
         _Config.RuntimeConfig.Paths.InstallDirectory = _PathToUTF8(_InstallRoot);
         _Config.RuntimeConfig.Paths.UserConfigDirectory = _PathToUTF8(_ProfileRoot);
         _Config.RuntimeConfig.Paths.UserDataDirectory = _PathToUTF8(_UserDataRoot);

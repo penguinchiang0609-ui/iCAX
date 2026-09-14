@@ -8,6 +8,8 @@ import {
 } from "../../index.mjs";
 
 const root = document.getElementById("app");
+const DIRECT_START_PRODUCT_ID = "icax.tube-designer";
+const DIRECT_START_PRODUCT_TITLE = "iTubeDesigner";
 const TOOLBAR_TOOLTIP_SELECTOR = [
   "[data-toolbar-tooltip]",
   ".ribbon-command",
@@ -71,6 +73,12 @@ const actions = {
     state.bridgeStatus = "Connected";
 
     await actions.refresh();
+    // This delivery exposes a single product.  Start it directly so the user
+    // lands in its project entry instead of the generic product console.
+    const directProduct = findProductState(DIRECT_START_PRODUCT_ID);
+    if (directProduct && !state.activeProductProxy) {
+      await actions.ensureProductStarted(DIRECT_START_PRODUCT_ID);
+    }
   },
 
   async refresh() {
@@ -862,19 +870,20 @@ function renderStartCenter({ overlay }) {
   const products = getProducts();
   const product = getSelectedProductState();
   const projects = filterRecentProjects(product?.recentProjects ?? []);
+  const isDirectTubeDesigner = product?.productId === DIRECT_START_PRODUCT_ID;
   return `
     <div class="${overlay ? "start-center-overlay" : "start-center-page"}">
       <section class="start-center">
         <header class="start-head">
           <div>
-            <strong>工作台</strong>
+            <strong>${isDirectTubeDesigner ? DIRECT_START_PRODUCT_TITLE : "工作台"}</strong>
             <span>${escapeText(state.bridgeStatus)}</span>
           </div>
           ${overlay ? `<button class="icon-button" type="button" data-action="close-start-center" title="关闭">×</button>` : ""}
         </header>
         <div class="start-error ${state.error ? "" : "empty"}">${state.error ? escapeText(state.error) : ""}</div>
-        <div class="start-body">
-          <aside class="start-products">
+        <div class="start-body ${isDirectTubeDesigner ? "start-body--single-product" : ""}">
+          ${isDirectTubeDesigner ? "" : `<aside class="start-products">
             <div class="start-section-title">产品</div>
             <div class="start-product-list">
               ${products.length === 0 ? `<div class="empty-row">没有可用产品。</div>` : products.map((item) => `
@@ -887,7 +896,7 @@ function renderStartCenter({ overlay }) {
                 </button>
               `).join("")}
             </div>
-          </aside>
+          </aside>`}
           <main class="start-projects">
             <div class="start-project-title">
               <div>
@@ -938,7 +947,11 @@ function renderStartCenter({ overlay }) {
 }
 
 function getApplicationTitle() {
-  if (!state.activeProjectState) return "工作台";
+  if (!state.activeProjectState) {
+    return getSelectedProductState()?.productId === DIRECT_START_PRODUCT_ID
+      ? DIRECT_START_PRODUCT_TITLE
+      : "工作台";
+  }
   return state.activeProductState?.productName
     || findProductState(state.activeProductState?.productId)?.productName
     || "工作台";
@@ -963,12 +976,13 @@ function renderTitleBar() {
 }
 
 function renderStartupTitleBar() {
+  const isDirectTubeDesigner = getSelectedProductState()?.productId === DIRECT_START_PRODUCT_ID;
   return `
     <header class="title-bar start-title-bar">
       <div class="app-corner">
-        <button class="app-button" type="button" disabled>工作台</button>
+        <button class="app-button" type="button" disabled>${isDirectTubeDesigner ? DIRECT_START_PRODUCT_TITLE : "工作台"}</button>
       </div>
-      <div class="startup-title">选择产品与项目</div>
+      <div class="startup-title">${isDirectTubeDesigner ? "项目" : "选择产品与项目"}</div>
       ${renderWindowControls()}
     </header>
   `;

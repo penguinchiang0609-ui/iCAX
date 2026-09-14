@@ -7,6 +7,7 @@ import {
 import { renderDesignerAddDialog, renderDesignerAddParameterContent, renderDesignerRightPane } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { handleDesignerAreaAction } from "../../apps/tube-designer/webpage/designerActions.mjs";
 import { renderProductTemplateLibraryRightPane } from "../../apps/tube-designer/webpage/templateLibrary.mjs";
+import { getRibbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
 
 const completed = [];
 async function test(name, run) { await run(); completed.push(name); }
@@ -42,6 +43,12 @@ const guardrail = {
 const windowTemplate = { id: "window", name: "防盗窗/平面防盗窗", available: true, extensions: { catalog: { groupOrder: 10 } }, parameters: [] };
 const stair = { id: "stair", name: "楼梯/钢楼梯/直跑钢楼梯", available: true, extensions: { catalog: { groupOrder: 30 } }, parameters: [] };
 const templates = [stair, guardrail, windowTemplate];
+
+await test("public ribbon only exposes product and resource pages", () => {
+  const ribbon = getRibbonDefinition();
+  assert.deepEqual(ribbon.tabs.map((tab) => tab.id), ["view", "resources"]);
+  assert.ok(!ribbon.tabs[0].groups.flatMap((group) => group.commands).some((item) => item.id === "designer.disassemble"));
+});
 
 await test("catalog groups security windows, guardrails and stairs independently", () => {
   const tree = buildTemplateGroupTree(templates);
@@ -282,27 +289,22 @@ await test("the guardrail catalogue exposes four product families and hides lega
   }
 });
 
-await test("security windows use one visible family while legacy face packages remain runtime aliases", () => {
-  const descriptors = ["single", "two", "three", "five"].map((kind) => presentationDescriptor(
-    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${kind}_face_security_window/template.json`, import.meta.url)))));
+await test("security windows use one template and face type is a parameter", () => {
+  const descriptor = presentationDescriptor(JSON.parse(readFileSync(
+    new URL("../../apps/tube-designer/templates/product/single_face_security_window/template.json", import.meta.url),
+  )));
+  const descriptors = [descriptor];
   const entries = buildCatalogEntries(descriptors);
   assert.equal(entries.length, 1);
   const manifest = JSON.parse(readFileSync(new URL("../../apps/tube-designer/product.manifest.json", import.meta.url)));
   const registrations = manifest.capabilities.tubeDesigner.templates;
-  for (const descriptor of descriptors) {
-    const registration = registrations.find((item) => item.templateId === descriptor.id);
-    if (descriptor.extensions?.catalog?.listed === false) {
-      assert.equal(registration, undefined, `${descriptor.id}: hidden compatibility package must not create a catalogue registration`);
-    } else {
-      assert.equal(registration.version, descriptor.version);
-      assert.ok(registration.displayName.endsWith(descriptor.name));
-    }
-    const folder = descriptor.id.replaceAll("-", "_");
-    const generator = readFileSync(new URL(`../../apps/tube-designer/templates/product/${folder}/template.py`, import.meta.url), "utf8");
-    assert.ok(generator.includes(`TEMPLATE_VERSION = "${descriptor.version}"`));
-    const groups = new Set(descriptor.groups.map((group) => group.key));
-    assert.ok(descriptor.parameters.every((field) => groups.has(field.groupKey)));
-  }
+  const registration = registrations.find((item) => item.templateId === descriptor.id);
+  assert.equal(registration.version, descriptor.version);
+  assert.ok(registration.displayName.endsWith(descriptor.name));
+  const generator = readFileSync(new URL("../../apps/tube-designer/templates/product/single_face_security_window/template.py", import.meta.url), "utf8");
+  assert.ok(generator.includes(`TEMPLATE_VERSION = "${descriptor.version}"`));
+  const groups = new Set(descriptor.groups.map((group) => group.key));
+  assert.ok(descriptor.parameters.every((field) => groups.has(field.groupKey)));
   assert.deepEqual(entries.map((e) => e.templateId), ["single-face-security-window"]);
   assert.ok(entries[0].catalogPath.includes("窗"));
   assert.equal(entries[0].catalogParameters.faceType, "single");
@@ -507,31 +509,22 @@ await test("saving a process preset persists only its scope and process values",
 });
 
 await test("opening processes share choices and hide all inactive fabrication fields", () => {
-  const descriptors = ["single", "two", "three", "five"].map((kind) => presentationDescriptor(
-    JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/product/${kind}_face_security_window/template.json`, import.meta.url)))));
-  const reference = descriptors[0];
-  for (const descriptor of descriptors) {
-    for (const key of ["doorFrameJoinType", "doorLeafFrameJoinType", "doorGap", "doorHingeCount", "doorClearWidth", "doorClearHeight"]) {
-      const field = descriptor.parameters.find((p) => p.key === key);
-      const common = reference.parameters.find((p) => p.key === key);
-      assert.deepEqual(field.options, common.options);
-      assert.equal(field.min, common.min);
-      assert.equal(field.max, common.max);
-    }
-    const defaults = getCatalogParameters(descriptor);
-    const render = (draft) => renderDesignerRightPane({}, { scene: { tubeDesigner: {
-      templates: [descriptor],
-      product: { entityId: "preview", templateId: descriptor.id, name: descriptor.name, parameters: { ...defaults, ...draft } },
-    } } });
-    const closed = render({ accessDoorEnabled: false, frameJoinType: "miter_45" });
-    for (const field of descriptor.parameters.filter((p) => p.key.startsWith("door") || p.key.startsWith("vGroove"))) {
-      assert.ok(!closed.includes(`data-tube-designer-parameter="${field.key}"`), field.key);
-    }
-    assert.doesNotMatch(render({ doorFrameJoinType: "miter_45", doorLeafFrameJoinType: "miter_45" }), /data-tube-designer-parameter="vGroove/);
-    const folded = render({ doorFrameJoinType: "v_groove_90:sharp_v" });
-    assert.match(folded, /data-tube-designer-parameter="vGrooveKFactor"/);
-    assert.doesNotMatch(folded, /data-tube-designer-parameter="doorFrameButtWrapMode"/);
+  const descriptor = presentationDescriptor(JSON.parse(readFileSync(
+    new URL("../../apps/tube-designer/templates/product/single_face_security_window/template.json", import.meta.url),
+  )));
+  const defaults = getCatalogParameters(descriptor);
+  const render = (draft) => renderDesignerRightPane({}, { scene: { tubeDesigner: {
+    templates: [descriptor],
+    product: { entityId: "preview", templateId: descriptor.id, name: descriptor.name, parameters: { ...defaults, ...draft } },
+  } } });
+  const closed = render({ accessDoorEnabled: false, frameJoinType: "miter_45" });
+  for (const field of descriptor.parameters.filter((p) => p.key.startsWith("door") || p.key.startsWith("vGroove"))) {
+    assert.ok(!closed.includes(`data-tube-designer-parameter="${field.key}"`), field.key);
   }
+  assert.doesNotMatch(render({ doorFrameJoinType: "miter_45", doorLeafFrameJoinType: "miter_45" }), /data-tube-designer-parameter="vGroove/);
+  const folded = render({ doorFrameJoinType: "v_groove_90:sharp_v" });
+  assert.match(folded, /data-tube-designer-parameter="vGrooveKFactor"/);
+  assert.doesNotMatch(folded, /data-tube-designer-parameter="doorFrameButtWrapMode"/);
 });
 
 await test("JSON order sorts only fields within groups in add and edit, with stable ties and visibility", () => {

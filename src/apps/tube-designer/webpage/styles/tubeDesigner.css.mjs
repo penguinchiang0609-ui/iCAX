@@ -3375,6 +3375,29 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
 .tube-designer-template-manager-note { margin: 0; padding: 8px 10px; border-left: 3px solid #38a89b; background: #eef8f6; color: #5a777d; font-size: 11px; line-height: 1.6; }
 .tube-designer-template-manager-note code { padding: 1px 4px; border-radius: 3px; background: #dbeeea; color: #176f67; }
 .tube-designer-template-manager-dialog textarea { width: 100%; resize: vertical; }
+.tube-designer-excel-dialog,.tube-designer-excel-import-dialog { width: min(940px, calc(100vw - 32px)); height: 760px; max-height: calc(100vh - 28px); box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0,1fr) auto; overflow: hidden; background: #fff; border: 1px solid #b9cdd2; border-radius: 8px; box-shadow: 0 18px 48px #18313d38; color: #24434c; }
+.tube-designer-excel-template-form { box-sizing: border-box; display: grid; grid-template-rows: auto auto minmax(0,1fr); align-content: stretch; gap: 14px; min-width: 0; min-height: 0; padding: 18px; overflow: hidden; background: #f8fbfa; }
+.tube-designer-excel-template-help { padding: 10px 12px; border-left: 3px solid #189787; background: #eaf6f3; color: #527077; font-size: 12px; line-height: 1.6; }
+.tube-designer-excel-column-table { min-width: 0; min-height: 0; height: 100%; box-sizing: border-box; overflow: auto; border: 1px solid #c6d8dc; background: #fff; scrollbar-gutter: stable; }
+.tube-designer-excel-column-head,.tube-designer-excel-column-row { display: grid; grid-template-columns: 62px minmax(150px,.9fr) minmax(210px,1.25fr) 82px minmax(230px,1.2fr); align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid #e0eaec; }
+.tube-designer-excel-column-head { position: sticky; top: 0; z-index: 1; background: #e7f1ef; color: #477077; font-size: 11px; font-weight: 700; }
+.tube-designer-excel-column-row:last-child { border-bottom: 0; }
+.tube-designer-excel-column-name { min-width: 0; overflow-wrap: anywhere; color: #206d78; font-family: ui-monospace, Consolas, monospace; font-size: 12px; font-weight: 700; }
+.tube-designer-excel-column-context { display: grid; gap: 2px; min-width: 0; color: #668089; font-size: 11px; }
+.tube-designer-excel-column-context b { color: #315660; font-size: 12px; font-weight: 700; }
+.tube-designer-excel-column-context em { color: #64818a; font-size: 10px; font-style: normal; }
+.tube-designer-excel-column-context small { overflow: hidden; color: #81979c; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.tube-designer-excel-column-row input,.tube-designer-excel-column-row select { min-width: 0; width: 100%; }
+.tube-designer-excel-required { display: inline-flex; align-items: center; gap: 5px; color: #496c73; font-size: 12px; white-space: nowrap; }
+.tube-designer-excel-include { display: inline-flex; align-items: center; gap: 5px; color: #26736d; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.tube-designer-excel-import-dialog { width: min(680px, calc(100vw - 32px)); }
+.tube-designer-excel-import-summary { display: flex; align-items: baseline; gap: 10px; margin: 18px 18px 0; padding: 14px; border-left: 4px solid #168f82; background: #edf7f5; color: #547078; }
+.tube-designer-excel-import-summary strong { color: #168f82; font-size: 28px; }
+.tube-designer-excel-import-rows { display: grid; gap: 1px; min-height: 0; margin: 14px 18px 18px; overflow: auto; border: 1px solid #d5e2e4; background: #dfe9eb; }
+.tube-designer-excel-import-rows > div { display: grid; grid-template-columns: 78px minmax(0,1fr) 86px; gap: 8px; padding: 10px 12px; background: #fff; font-size: 12px; }
+.tube-designer-excel-import-rows span,.tube-designer-excel-import-rows small { color: #718990; }
+.tube-designer-excel-import-rows strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tube-designer-excel-import-rows p { margin: 0; padding: 10px 12px; background: #fff; color: #617a80; font-size: 12px; }
 @media (max-width: 760px) { .tube-designer-template-manager-dialog { width: calc(100vw - 18px); max-height: calc(100vh - 16px); } .tube-designer-template-manager-body { grid-template-columns: minmax(0,1fr); } .tube-designer-template-manager-summary { display: none; } }
 @media(max-width:1100px) { .td-draw-body { grid-template-columns: 160px minmax(0,1fr) 320px; } .td-draw-ribbon-group > button { min-width: 55px; padding-inline: 5px; font-size: 11px; } .td-draw-ribbon { gap: 4px; } .td-draw-ribbon-group { padding-right: 5px; } }
 @media(max-width:850px) { .td-draw-body { grid-template-columns: 140px minmax(0,1fr) 300px; } .td-draw-edit-tools { display: grid; grid-template-rows: repeat(2,26px); grid-auto-flow: column; } .td-draw-edit-tools > button { flex-direction: row; gap: 3px; } .td-draw-edit-tools > button .command-icon { width: 16px; height: 16px; } .td-draw-view-toolbar > span,.td-draw-status > span:last-child { display:none; } }
