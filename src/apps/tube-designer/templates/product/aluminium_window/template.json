@@ -22,6 +22,25 @@
       "widthParameter": "width",
       "heightParameter": "height"
     },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        { "parameter": "width", "axis": "x", "offset": [0, 0, -140], "label": { "zh-CN": "总宽" }, "order": 10 },
+        { "parameter": "height", "axis": "z", "offset": [-140, 0, 0], "label": { "zh-CN": "总高" }, "order": 20 }
+      ]
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "basic": "all",
+        "system": "all",
+        "grid": "all",
+        "cells": { "memberStableKeyPrefixes": ["aperture."] },
+        "sliding": { "memberStableKeyPatterns": ["aperture.*.sliding.*", "aperture.*.screen.*"] },
+        "hinged": { "memberStableKeyPatterns": ["aperture.*.hinged.*"] },
+        "fillings": { "memberStableKeyPatterns": ["*.glass", "*.mesh"] }
+      }
+    },
     "parameterLayout": {
       "sections": [
         { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["basic", "grid", "cells"] },

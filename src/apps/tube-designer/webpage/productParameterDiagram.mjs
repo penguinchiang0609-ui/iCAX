@@ -28,6 +28,19 @@ function productDiagram(template) {
   return diagram?.schemaVersion === 1 && typeof diagram?.kind === "string" ? diagram : null;
 }
 
+function productSceneDefinition(template) {
+  const diagram = productDiagram(template);
+  const bindings = template?.extensions?.sceneParameterBindings;
+  if (!bindings || typeof bindings !== "object") return diagram;
+  return {
+    ...(diagram ?? {}),
+    ...bindings,
+    sceneBindings: { ...(diagram?.sceneBindings ?? {}), ...(bindings.sceneBindings ?? {}) },
+    groupSceneBindings: { ...(diagram?.groupSceneBindings ?? {}), ...(bindings.groupSceneBindings ?? {}) },
+    profileRoles: { ...(diagram?.profileRoles ?? {}), ...(bindings.profileRoles ?? {}) },
+  };
+}
+
 function declaredDimensions(template, values) {
   const diagram = productDiagram(template);
   if (!Array.isArray(diagram?.dimensions)) return [];
@@ -56,23 +69,198 @@ export function productPrimaryDimensions(template, values = {}) {
     });
 }
 
+function sceneAnnotationDeclarations(template) {
+  const display = template?.display;
+  if (display?.schema !== "icax.template-display" || Number(display?.schemaVersion) !== 1) return {};
+  const shared = display?.shared?.annotations ?? {};
+  const scene = display?.views?.scene?.annotations ?? {};
+  return { ...shared, ...scene };
+}
+
+function sameParameterValue(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+// Older generated security-window instances can still carry count anchors in
+// their frozen generation result. Counts are now derived from end offsets and
+// maximum centre spacing, so they must never reappear as editable scene
+// specifications even while an old instance is waiting to be regenerated.
+const SECURITY_WINDOW_DERIVED_COUNT_PARAMETERS = new Set([
+  "horizontalCount",
+  "middleVerticalCount",
+  "verticalCountPerFace",
+  "sideHorizontalCount",
+  "sideVerticalCount",
+  "topBottomCrossbarCount",
+  "topBottomRodCount",
+  "doorHorizontalCount",
+  "doorVerticalCount",
+  // Pre-centre-spacing instances may still contain these obsolete clear-gap
+  // anchors.  They are compatibility inputs only and must never return to the
+  // scene as editable specifications.
+  "maximumVerticalClearGap",
+  "sideMaximumVerticalClearGap",
+]);
+
+function annotationLabel(declaration, field, value) {
+  const name = catalogText(declaration?.label,
+    catalogText(field?.displayName, field?.label ?? field?.key ?? "规格"));
+  const formatted = dimensionValue(value, field);
+  const suffix = !String(field?.unit ?? "").trim() ? String(declaration?.suffix ?? "") : "";
+  return `${name} ${formatted}${suffix}`.trim();
+}
+
+function annotationEditor(field, value) {
+  const type = String(field?.type ?? field?.valueType ?? "number").toLowerCase();
+  if (["select", "enum"].includes(type)) {
+    return {
+      type: "select",
+      value,
+      options: (Array.isArray(field?.options) ? field.options : field?.choices ?? []).map((option) => ({
+        value: typeof option === "object" ? option?.value : option,
+        label: catalogText(typeof option === "object" ? option?.label ?? option?.displayName : option),
+      })),
+    };
+  }
+  const minimum = field?.min ?? field?.constraints?.minimum;
+  const maximum = field?.max ?? field?.constraints?.maximum;
+  const step = field?.step ?? field?.constraints?.step;
+  return {
+    type: ["integer", "number", "float", "double"].includes(type) ? "number" : "text",
+    value,
+    ...(minimum != null ? { min: minimum } : {}),
+    ...(maximum != null ? { max: maximum } : {}),
+    ...(step != null ? { step } : type === "integer" ? { step: 1 } : {}),
+  };
+}
+
+/**
+ * Merge the防盗窗's generated world-space anchors with its display rules and
+ * the active instance draft. Other templates deliberately have no declaration
+ * and therefore receive no scene specification annotations yet.
+ */
+export function resolveProductSpecificationAnnotations(designer = {}, view = {}) {
+  const product = designer?.product;
+  if (!product) return [];
+  const template = (designer?.templates ?? [])
+    .find((item) => String(item?.id ?? "") === String(product.templateId ?? ""));
+  if (!template) return [];
+  const declarations = sceneAnnotationDeclarations(template);
+  const fields = definitionMap(template);
+  const committed = { ...(product.parameters ?? {}) };
+  const values = { ...committed, ...(view?.tubeDesignerRightDraft ?? {}) };
+  const active = String(view?.tubeDesignerLastEditedParameterKey ?? "");
+  return (Array.isArray(designer?.specificationAnnotations)
+    ? designer.specificationAnnotations : [])
+    .flatMap((anchor, index) => {
+      const parameter = String(anchor?.parameter ?? "").trim();
+      // System and personal templates may declare simple envelope dimensions
+      // in their own descriptor.  Their generated anchor is deliberately the
+      // declaration fallback; complex products such as the security window
+      // can still refine the same parameter in display.json.
+      const declaration = { ...(anchor ?? {}), ...(declarations?.[parameter] ?? {}) };
+      const field = fields.get(parameter);
+      if (!parameter || SECURITY_WINDOW_DERIVED_COUNT_PARAMETERS.has(parameter)
+          || String(anchor?.kind ?? declaration?.kind ?? "").toLowerCase() === "count"
+          || !field
+          || !matchesParameterCondition(field.visibleWhen, values)
+          || !matchesParameterCondition(anchor?.visibleWhen, values)
+          || !matchesParameterCondition(declaration.visibleWhen, values)) return [];
+      // Product parameters are committed directly to the product EC so native
+      // project undo/redo can own every edit. The annotation anchor carries the
+      // value used by the last generated model; compare against that frozen
+      // baseline instead of treating the current EC value as generated.
+      // A fresh instance cannot have pending specification annotations.  This
+      // also prevents an overlay retained by the viewport during an add/switch
+      // refresh from borrowing the previous instance's generated value.
+      const generatedValue = product?.modelOutdated !== true
+        ? committed[parameter]
+        : Object.prototype.hasOwnProperty.call(anchor ?? {}, "generatedValue")
+          ? anchor.generatedValue
+          : committed[parameter];
+      const pending = !sameParameterValue(values[parameter], generatedValue);
+      const editable = declaration.editable !== false
+        && field?.readOnly !== true
+        && matchesParameterCondition(field?.enabledWhen, values);
+      const currentLabel = annotationLabel(declaration, field, values[parameter]);
+      const changedLabel = pending
+        ? `${annotationLabel(declaration, field, generatedValue)} → ${dimensionValue(values[parameter], field)}${!String(field?.unit ?? "").trim() ? String(declaration?.suffix ?? "") : ""}`
+        : currentLabel;
+      return [{
+        ...anchor,
+        id: `${String(product.entityId ?? "product")}:${String(anchor?.id ?? `security-window.${parameter}.${index}`)}`,
+        parameter,
+        kind: String(declaration?.kind ?? anchor?.kind ?? "linear"),
+        label: changedLabel,
+        oldValue: generatedValue,
+        newValue: values[parameter],
+        cleanLabel: currentLabel,
+        changedLabel,
+        order: Number(declaration?.order ?? index),
+        editable,
+        editing: editable && String(view?.tubeDesignerSceneSpecificationEditorParameter ?? "") === parameter,
+        editor: editable ? annotationEditor(field, values[parameter]) : null,
+        pending,
+        active: active === parameter,
+        color: pending ? 0xef5b55 : 0x27c27a,
+      }];
+    })
+    .sort((left, right) => left.order - right.order);
+}
+
+export function bindProductSpecificationAnnotations(_mount, view) {
+  const viewport = view?.viewport;
+  if (!viewport?.setSpecificationAnnotations || !viewport?.clearSpecificationAnnotations) return [];
+  if (view?.activeAreaId !== "view" || view?.tubeDesignerSpecificationAnnotationsVisible === false) {
+    viewport.clearSpecificationAnnotations();
+    return [];
+  }
+  const annotations = resolveProductSpecificationAnnotations(view?.scene?.tubeDesigner ?? {}, view);
+  if (annotations.length) viewport.setSpecificationAnnotations(annotations);
+  else viewport.clearSpecificationAnnotations();
+  return annotations;
+}
+
 function sceneSelectorList(value) {
   if (typeof value === "string") return [value];
   return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item) : [];
 }
 
 function sceneBindingSelectors(binding) {
-  if (binding === "all" || binding?.all === true) return { all: true, roles: [], rolePrefixes: [], stableKeyPrefixes: [] };
+  if (binding === "all" || binding?.all === true) return { all: true, roles: [], rolePrefixes: [], stableKeyPrefixes: [], stableKeyPatterns: [] };
   const entries = Array.isArray(binding) ? binding : [binding];
-  const result = { all: false, roles: [], rolePrefixes: [], stableKeyPrefixes: [] };
+  const result = { all: false, roles: [], rolePrefixes: [], stableKeyPrefixes: [], stableKeyPatterns: [] };
   for (const entry of entries) {
     if (entry === "all" || entry?.all === true) result.all = true;
     if (!entry || typeof entry !== "object") continue;
     result.roles.push(...sceneSelectorList(entry.memberRoles ?? entry.roles));
     result.rolePrefixes.push(...sceneSelectorList(entry.memberRolePrefixes ?? entry.rolePrefixes));
     result.stableKeyPrefixes.push(...sceneSelectorList(entry.memberStableKeyPrefixes ?? entry.stableKeyPrefixes));
+    result.stableKeyPatterns.push(...sceneSelectorList(entry.memberStableKeyPatterns ?? entry.stableKeyPatterns));
   }
   return result;
+}
+
+function stableKeyMatchesPattern(stableKey, pattern) {
+  const source = String(pattern ?? "").split("*")
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
+  return source ? new RegExp(`^${source}$`).test(stableKey) : false;
+}
+
+function sceneSelectorsMatchMember(selectors, member) {
+  if (selectors.all) return true;
+  const role = String(member?.role ?? "");
+  const stableKey = String(member?.stableKey ?? "");
+  return selectors.roles.includes(role)
+    || selectors.rolePrefixes.some((prefix) => role.startsWith(prefix))
+    || selectors.stableKeyPrefixes.some((prefix) => stableKey.startsWith(prefix))
+    || selectors.stableKeyPatterns.some((pattern) => stableKeyMatchesPattern(stableKey, pattern));
+}
+
+function parameterGroup(template, key) {
+  const field = (template?.parameters ?? []).find((item) => String(item?.key ?? item?.name ?? "") === key);
+  return String(field?.groupKey ?? field?.group ?? "");
 }
 
 /**
@@ -81,38 +269,79 @@ function sceneBindingSelectors(binding) {
  * prefixes, so captions and parameter names never become an unreliable mapping
  * layer between the editor and the rendered assembly.
  */
-export function productSceneMemberIds(template, members = [], parameter = "") {
-  const diagram = productDiagram(template);
+export function productSceneMemberIds(template, members = [], parameter = "", context = {}) {
+  const diagram = productSceneDefinition(template);
   const key = String(parameter ?? "");
-  if (!diagram || !key || !Array.isArray(members)) return [];
+  const profileRole = String(context?.profileRole ?? "").trim();
+  if (!diagram || (!key && !profileRole) || !Array.isArray(members)) return [];
   const bindings = [];
   const direct = diagram.sceneBindings?.[key];
   if (direct) bindings.push(direct);
+  const group = parameterGroup(template, key);
+  const grouped = group ? diagram.groupSceneBindings?.[group] : null;
+  if (grouped) bindings.push(grouped);
+  const focusedProfile = profileRole ? diagram.profileRoles?.[profileRole] : null;
+  if (focusedProfile) {
+    bindings.push({
+      memberRoles: focusedProfile.memberRoles,
+      memberRolePrefixes: focusedProfile.memberRolePrefixes,
+      memberStableKeyPrefixes: focusedProfile.memberStableKeyPrefixes,
+      memberStableKeyPatterns: focusedProfile.memberStableKeyPatterns,
+    });
+  }
   for (const profile of Object.values(diagram.profileRoles ?? {})) {
     if (parameterList(profile?.parameters).includes(key)) {
       bindings.push({
         memberRoles: profile.memberRoles,
         memberRolePrefixes: profile.memberRolePrefixes,
         memberStableKeyPrefixes: profile.memberStableKeyPrefixes,
+        memberStableKeyPatterns: profile.memberStableKeyPatterns,
       });
     }
   }
   if (!bindings.length) return [];
   const selectors = sceneBindingSelectors(bindings);
-  return members.filter((member) => {
-    if (!member?.entityId) return false;
-    if (selectors.all) return true;
-    const role = String(member.role ?? "");
-    const stableKey = String(member.stableKey ?? "");
-    return selectors.roles.includes(role)
-      || selectors.rolePrefixes.some((prefix) => role.startsWith(prefix))
-      || selectors.stableKeyPrefixes.some((prefix) => stableKey.startsWith(prefix));
-  }).map((member) => String(member.entityId));
+  return members.filter((member) => member?.entityId && sceneSelectorsMatchMember(selectors, member))
+    .map((member) => String(member.entityId));
+}
+
+/** Resolve the parameter controls that own a picked scene member. */
+export function productParameterTargetsForSceneMember(template, member) {
+  const diagram = productSceneDefinition(template);
+  if (!diagram || !member) return { parameters: [], profileRoles: [] };
+  const parameters = [];
+  const profileRoles = [];
+  for (const [key, binding] of Object.entries(diagram.sceneBindings ?? {})) {
+    if (sceneSelectorsMatchMember(sceneBindingSelectors(binding), member)) parameters.push(key);
+  }
+  for (const [group, binding] of Object.entries(diagram.groupSceneBindings ?? {})) {
+    if (!sceneSelectorsMatchMember(sceneBindingSelectors(binding), member)) continue;
+    parameters.push(...(template?.parameters ?? [])
+      .filter((field) => String(field?.groupKey ?? field?.group ?? "") === group)
+      .map((field) => String(field?.key ?? field?.name ?? "")));
+  }
+  for (const [role, binding] of Object.entries(diagram.profileRoles ?? {})) {
+    if (!sceneSelectorsMatchMember(sceneBindingSelectors(binding), member)) continue;
+    profileRoles.push(role);
+    parameters.push(...parameterList(binding?.parameters));
+  }
+  return {
+    parameters: [...new Set(parameters.filter(Boolean))],
+    profileRoles: [...new Set(profileRoles.filter(Boolean))],
+  };
 }
 
 function numberValue(values, parameter, fallback = 0) {
   const number = Number(values?.[parameter]);
   return Number.isFinite(number) ? number : fallback;
+}
+
+function centerSpacingCount(span, startOffset, endOffset, maximumSpacing) {
+  const available = Number(span) - Number(startOffset) - Number(endOffset);
+  if (!Number.isFinite(available) || !Number.isFinite(maximumSpacing)
+      || available < 0 || maximumSpacing <= 0) return 0;
+  if (available <= 1e-7) return 1;
+  return Math.ceil(available / maximumSpacing - 1e-9) + 1;
 }
 
 function clamp(value, minimum, maximum) {
@@ -220,11 +449,6 @@ function quadGrid(points, verticalCount, horizontalCount, options = {}) {
       options.horizontalAttributes);
 }
 
-function automaticVerticalCount(span, barWidth, maximumGap) {
-  if (!(span > 0) || !(maximumGap >= 0) || !(barWidth >= 0)) return 0;
-  return Math.max(0, Math.ceil(span / (maximumGap + barWidth / 2) - 1 - 1e-9));
-}
-
 function frameOutline(points, frameLayout, parameter, active, mode, attributes = "") {
   const [topLeft, topRight, bottomRight, bottomLeft] = points;
   const vertical = frameLayout !== "top_bottom"
@@ -243,6 +467,7 @@ function sideDimension(anchor, outer, parameter, values, fields, active, mode) {
 function securityWindowArtwork(template, diagram, values, options) {
   const mode = options.mode;
   const active = String(options.activeParameter ?? "");
+  const showDimensions = options.hideDimensionCards !== true;
   const frameProfile = profileRole(diagram, "frame", values);
   const horizontalProfile = profileRole(diagram, "horizontal", values);
   const verticalProfile = profileRole(diagram, "vertical", values);
@@ -283,36 +508,50 @@ function securityWindowArtwork(template, diagram, values, options) {
   const pattern = String(values?.[binding(diagram, "infillPattern")] ?? "grid");
   const allowVertical = pattern !== "horizontal";
   const allowHorizontal = pattern !== "vertical";
-  const verticalModeParameter = binding(diagram, "verticalLayoutMode");
-  const maximumVerticalGapParameter = binding(diagram, "maximumVerticalClearGap");
-  const sideMaximumVerticalGapParameter = binding(diagram, "sideMaximumVerticalClearGap");
-  const verticalProfileWidthParameter = binding(diagram, "verticalProfileWidth");
-  const verticalMode = String(values?.[verticalModeParameter] ?? "manual_count");
-  const frontVerticalParameter = semanticLayout === "single"
-    ? binding(diagram, "frontVerticalCount") : binding(diagram, "multiVerticalCount");
-  const maximumVerticalGap = Math.max(0, numberValue(values, maximumVerticalGapParameter, 110));
-  const verticalProfileWidth = Math.max(0, numberValue(values, verticalProfileWidthParameter, 19));
-  const verticalCount = (span, manualParameter, fallback, maximumGap = maximumVerticalGap) => allowVertical
-    ? (verticalMode === "maximum_clear_gap"
-      ? automaticVerticalCount(span, verticalProfileWidth, maximumGap)
-      : numberValue(values, manualParameter, fallback))
-    : 0;
-  const visibleVerticalParameter = verticalMode === "maximum_clear_gap"
-    ? maximumVerticalGapParameter : frontVerticalParameter;
-  const frontVerticalCount = verticalCount(width, frontVerticalParameter, 5);
-  const frontHorizontalCount = allowHorizontal ? numberValue(values, binding(diagram, "frontHorizontalCount"), 4) : 0;
-  const sideMaximumVerticalGap = Math.max(0, numberValue(values, sideMaximumVerticalGapParameter, maximumVerticalGap));
-  const sideVerticalCount = verticalCount(sharedDepth, binding(diagram, "sideVerticalCount"), 4, sideMaximumVerticalGap);
-  const sideHorizontalCount = allowHorizontal ? numberValue(values, binding(diagram, "sideHorizontalCount"), 4) : 0;
-  const frontHorizontalParameter = binding(diagram, "frontHorizontalCount");
-  const sideVerticalParameter = verticalMode === "maximum_clear_gap"
-    ? sideMaximumVerticalGapParameter : binding(diagram, "sideVerticalCount");
-  const sideHorizontalParameter = binding(diagram, "sideHorizontalCount");
-  const topBottomRodParameter = verticalMode === "maximum_clear_gap"
-    ? maximumVerticalGapParameter : binding(diagram, "topBottomRodCount");
-  const topBottomRodCount = verticalCount(width, binding(diagram, "topBottomRodCount"), 4);
-  const topBottomCrossbarParameter = binding(diagram, "topBottomCrossbarCount");
-  const topBottomCrossbarCount = numberValue(values, topBottomCrossbarParameter, 2);
+  const spacingParameters = (maximum, start, end) => [maximum, start, end].filter(Boolean);
+  const countFromSpacing = (span, parameters, defaults) => centerSpacingCount(
+    span,
+    numberValue(values, parameters[1], defaults[0]),
+    numberValue(values, parameters[2], defaults[1]),
+    numberValue(values, parameters[0], defaults[2]),
+  );
+  const frontVerticalParameters = spacingParameters(
+    binding(diagram, "verticalMaximumCenterSpacing"),
+    binding(diagram, "verticalLeftCenterOffset"),
+    binding(diagram, "verticalRightCenterOffset"),
+  );
+  const frontHorizontalParameters = spacingParameters(
+    binding(diagram, "horizontalMaximumCenterSpacing"),
+    binding(diagram, "horizontalTopCenterOffset"),
+    binding(diagram, "horizontalBottomCenterOffset"),
+  );
+  const sideVerticalParameters = spacingParameters(
+    binding(diagram, "sideVerticalMaximumCenterSpacing"),
+    binding(diagram, "sideVerticalStartCenterOffset"),
+    binding(diagram, "sideVerticalEndCenterOffset"),
+  );
+  const sideHorizontalParameters = spacingParameters(
+    binding(diagram, "sideHorizontalMaximumCenterSpacing"),
+    binding(diagram, "horizontalTopCenterOffset"),
+    binding(diagram, "horizontalBottomCenterOffset"),
+  );
+  const topBottomRodParameters = spacingParameters(
+    binding(diagram, "topBottomRodMaximumCenterSpacing"),
+    binding(diagram, "topBottomRodLeftCenterOffset"),
+    binding(diagram, "topBottomRodRightCenterOffset"),
+  );
+  const topBottomCrossbarParameters = spacingParameters(
+    binding(diagram, "topBottomCrossbarMaximumCenterSpacing"),
+    binding(diagram, "topBottomCrossbarFrontCenterOffset"),
+    binding(diagram, "topBottomCrossbarBackCenterOffset"),
+  );
+  const frontVerticalCount = allowVertical ? countFromSpacing(width, frontVerticalParameters, [110, 110, 120]) : 0;
+  const frontHorizontalCount = allowHorizontal ? countFromSpacing(height, frontHorizontalParameters, [200, 200, 500]) : 0;
+  const sideVerticalCount = allowVertical ? countFromSpacing(sharedDepth, sideVerticalParameters, [90, 90, 120]) : 0;
+  const sideHorizontalCount = allowHorizontal ? countFromSpacing(height, sideHorizontalParameters, [200, 200, 500]) : 0;
+  const topBottomRodCount = allowVertical ? countFromSpacing(width, topBottomRodParameters, [110, 110, 120]) : 0;
+  const topBottomCrossbarCount = allowHorizontal
+    ? countFromSpacing(sharedDepth, topBottomCrossbarParameters, [175, 175, 250]) : 0;
   const infillParameter = binding(diagram, "infillPattern");
   const grid = (points, vertical, horizontal, verticalParameter, horizontalParameter) => linkedGroup(
     quadGrid(points, vertical, horizontal, {
@@ -331,20 +570,20 @@ function securityWindowArtwork(template, diagram, values, options) {
   const faces = [];
   if (semanticLayout === "five") {
     faces.push(face(topFace, "product-diagram-face product-diagram-face-cap"));
-    faces.push(grid(topFace, topBottomRodCount, topBottomCrossbarCount, topBottomRodParameter, topBottomCrossbarParameter));
+    faces.push(grid(topFace, topBottomRodCount, topBottomCrossbarCount, topBottomRodParameters, topBottomCrossbarParameters));
     faces.push(face(bottomFace, "product-diagram-face product-diagram-face-cap"));
-    faces.push(grid(bottomFace, topBottomRodCount, topBottomCrossbarCount, topBottomRodParameter, topBottomCrossbarParameter));
+    faces.push(grid(bottomFace, topBottomRodCount, topBottomCrossbarCount, topBottomRodParameters, topBottomCrossbarParameters));
   }
   if (hasLeft) {
     faces.push(face(leftFace, "product-diagram-face product-diagram-face-side"));
-    faces.push(grid(leftFace, sideVerticalCount, sideHorizontalCount, sideVerticalParameter, sideHorizontalParameter));
+    faces.push(grid(leftFace, sideVerticalCount, sideHorizontalCount, sideVerticalParameters, sideHorizontalParameters));
   }
   if (hasRight) {
     faces.push(face(rightFace, "product-diagram-face product-diagram-face-side"));
-    faces.push(grid(rightFace, sideVerticalCount, sideHorizontalCount, sideVerticalParameter, sideHorizontalParameter));
+    faces.push(grid(rightFace, sideVerticalCount, sideHorizontalCount, sideVerticalParameters, sideHorizontalParameters));
   }
   faces.push(face(front, "product-diagram-face product-diagram-face-front"));
-  faces.push(grid(front, frontVerticalCount, frontHorizontalCount, visibleVerticalParameter, frontHorizontalParameter));
+  faces.push(grid(front, frontVerticalCount, frontHorizontalCount, frontVerticalParameters, frontHorizontalParameters));
 
   const frameLayoutParameter = binding(diagram, "frameLayout");
   const frameLayout = String(values?.[frameLayoutParameter] ?? "four_sides");
@@ -395,13 +634,31 @@ function securityWindowArtwork(template, diagram, values, options) {
     ];
     const doorWidthParameter = binding(diagram, "doorWidth");
     const doorHeightParameter = binding(diagram, "doorHeight");
-    const doorVerticalParameter = binding(diagram, "doorVerticalCount");
-    const doorHorizontalParameter = binding(diagram, "doorHorizontalCount");
-    const doorVerticalCount = allowVertical ? numberValue(values, doorVerticalParameter, 1) : 0;
-    const doorHorizontalCount = allowHorizontal ? numberValue(values, doorHorizontalParameter, 1) : 0;
+    const doorHorizontalParameters = [
+      binding(diagram, "doorHorizontalTopCenterOffset"),
+      binding(diagram, "doorHorizontalBottomCenterOffset"),
+      binding(diagram, "doorHorizontalMaximumCenterSpacing"),
+    ].filter(Boolean);
+    const doorVerticalParameters = [
+      binding(diagram, "doorVerticalLeftCenterOffset"),
+      binding(diagram, "doorVerticalRightCenterOffset"),
+      binding(diagram, "doorVerticalMaximumCenterSpacing"),
+    ].filter(Boolean);
+    const doorVerticalCount = allowVertical ? centerSpacingCount(
+      numberValue(values, doorWidthParameter, doorSurfaceLength * 0.55),
+      numberValue(values, doorVerticalParameters[0], 89),
+      numberValue(values, doorVerticalParameters[1], 89),
+      numberValue(values, doorVerticalParameters[2], 120),
+    ) : 0;
+    const doorHorizontalCount = allowHorizontal ? centerSpacingCount(
+      numberValue(values, doorHeightParameter, doorSurfaceHeight * 0.55),
+      numberValue(values, doorHorizontalParameters[0], 474),
+      numberValue(values, doorHorizontalParameters[1], 474),
+      numberValue(values, doorHorizontalParameters[2], 400),
+    ) : 0;
     const doorFrame = svgPolygon(doorOutline, "product-diagram-door");
     const doorGrid = linkedGroup(quadGrid(doorOutline, doorVerticalCount, doorHorizontalCount, {
-      verticalParameter: doorVerticalParameter, horizontalParameter: doorHorizontalParameter, active, mode,
+      verticalParameter: doorVerticalParameters, horizontalParameter: doorHorizontalParameters, active, mode,
     }), infillParameter, active, mode, "product-diagram-opening-grid");
     // The door frame itself is a shared visual target for size and position.
     door = linkedGroup(doorFrame + doorGrid, [
@@ -409,17 +666,20 @@ function securityWindowArtwork(template, diagram, values, options) {
     ], active, mode, "product-diagram-opening-group");
   }
 
-  const fields = definitionMap(template);
-  const sideMeasures = [
+  const fields = showDimensions ? definitionMap(template) : null;
+  const sideMeasures = showDimensions ? [
     hasLeft ? sideDimension(front[0], leftFace[0], leftParameter, values, fields, active, mode) : "",
     hasRight ? sideDimension(front[1], rightFace[1], rightParameter, values, fields, active, mode) : "",
-  ].join("");
+  ].join("") : "";
+  const primaryMeasures = showDimensions ? `
+    <g class="product-diagram-measure${activeClass(widthParameter, active)}"${actionAttributes(widthParameter, mode)}>${svgLine(point(front[3].x, 140), point(front[2].x, 140), "product-diagram-dimension-line")}<text x="${((front[3].x + front[2].x) / 2).toFixed(2)}" y="137" text-anchor="middle">${escapeText(dimensionValue(values?.[widthParameter], fields.get(widthParameter)))}</text></g>
+    <g class="product-diagram-measure${activeClass(heightParameter, active)}"${actionAttributes(heightParameter, mode)}>${svgLine(point(296, front[1].y), point(296, front[2].y), "product-diagram-dimension-line")}<text x="291" y="${((front[1].y + front[2].y) / 2).toFixed(2)}" text-anchor="end">${escapeText(dimensionValue(values?.[heightParameter], fields.get(heightParameter)))}</text></g>
+  ` : "";
   const layoutLabel = ({ single: "单面", two: "双面", three: "三面", five: "五面" })[semanticLayout] ?? layout;
   return `<svg class="tube-designer-product-structure-svg" viewBox="0 0 320 150" role="img" aria-label="${escapeText(layoutLabel)}防盗窗结构与尺寸示意">
     <g class="product-diagram-structure${activeClass(layoutParameter, active)}"${actionAttributes(layoutParameter, mode)}>${faces.join("")}${door}</g>
     <text class="product-diagram-layout-label" x="10" y="18">${escapeText(layoutLabel)}结构</text>
-    <g class="product-diagram-measure${activeClass(widthParameter, active)}"${actionAttributes(widthParameter, mode)}>${svgLine(point(front[3].x, 140), point(front[2].x, 140), "product-diagram-dimension-line")}<text x="${((front[3].x + front[2].x) / 2).toFixed(2)}" y="137" text-anchor="middle">${escapeText(dimensionValue(values?.[widthParameter], fields.get(widthParameter)))}</text></g>
-    <g class="product-diagram-measure${activeClass(heightParameter, active)}"${actionAttributes(heightParameter, mode)}>${svgLine(point(296, front[1].y), point(296, front[2].y), "product-diagram-dimension-line")}<text x="291" y="${((front[1].y + front[2].y) / 2).toFixed(2)}" text-anchor="end">${escapeText(dimensionValue(values?.[heightParameter], fields.get(heightParameter)))}</text></g>
+    ${primaryMeasures}
     ${sideMeasures}
   </svg>`;
 }
@@ -470,6 +730,7 @@ function guardrailInfill(type, bottomLeft, bottomRight, topLeft, topRight, bayIn
 function guardrailArtwork(template, diagram, values, options) {
   const mode = options.mode;
   const active = String(options.activeParameter ?? "");
+  const showDimensions = options.hideDimensionCards !== true;
   const layoutParameter = binding(diagram, "layout");
   const layoutValue = String(values?.[layoutParameter] ?? "straight");
   const semanticLayout = Object.entries(diagram.layoutValues ?? {}).find(([, value]) => value === layoutValue)?.[0] ?? layoutValue;
@@ -510,7 +771,7 @@ function guardrailArtwork(template, diagram, values, options) {
   const bayCounts = Array.from({ length: segmentCount }, (_, index) => clamp(
     Math.round(numberValue(values, bayParameters[index], index ? 2 : 3)), 1, 8,
   ));
-  const fields = definitionMap(template);
+  const fields = showDimensions ? definitionMap(template) : null;
   const geometry = [];
   for (let segment = 0; segment < segmentCount; segment += 1) {
     const bays = bayCounts[segment];
@@ -545,8 +806,10 @@ function guardrailArtwork(template, diagram, values, options) {
     geometry.push(linkedGroup(rails.join(""), railParameter, active, mode, "product-diagram-guardrail-rails"));
     geometry.push(linkedGroup(posts.join(""), bayParameter, active, mode, "product-diagram-guardrail-bays"));
     geometry.push(linkedGroup(svgLine(segmentTopA, segmentTopB, "product-diagram-slope-guide"), slopeParameter, active, mode, "product-diagram-guardrail-slope"));
-    const middle = interpolate(segmentTopA, segmentTopB, 0.5);
-    geometry.push(`<g class="product-diagram-measure product-diagram-side-measure${activeClass(lengthParameter, active)}"${actionAttributes(lengthParameter, mode)}><text x="${middle.x.toFixed(2)}" y="${(middle.y - 7).toFixed(2)}" text-anchor="middle">第${segment + 1}边 ${escapeText(dimensionValue(values?.[lengthParameter], fields.get(lengthParameter)))}</text></g>`);
+    if (showDimensions) {
+      const middle = interpolate(segmentTopA, segmentTopB, 0.5);
+      geometry.push(`<g class="product-diagram-measure product-diagram-side-measure${activeClass(lengthParameter, active)}"${actionAttributes(lengthParameter, mode)}><text x="${middle.x.toFixed(2)}" y="${(middle.y - 7).toFixed(2)}" text-anchor="middle">第${segment + 1}边 ${escapeText(dimensionValue(values?.[lengthParameter], fields.get(lengthParameter)))}</text></g>`);
+    }
   }
   const firstTop = top[0];
   const firstBottom = bottom[0];
@@ -554,7 +817,7 @@ function guardrailArtwork(template, diagram, values, options) {
   return `<svg class="tube-designer-product-structure-svg" viewBox="0 0 340 160" role="img" aria-label="${escapeText(layoutLabel)}护栏结构与尺寸示意">
     <g class="product-diagram-structure${activeClass(layoutParameter, active)}"${actionAttributes(layoutParameter, mode)}>${geometry.join("")}</g>
     <text class="product-diagram-layout-label" x="10" y="18">${escapeText(layoutLabel)} · ${escapeText(bayCounts.join("/"))} 截</text>
-    <g class="product-diagram-measure${activeClass(heightParameter, active)}"${actionAttributes(heightParameter, mode)}>${svgLine(point(firstTop.x - 14, firstTop.y), point(firstBottom.x - 14, firstBottom.y), "product-diagram-dimension-line")}<text x="${(firstTop.x - 18).toFixed(2)}" y="${((firstTop.y + firstBottom.y) / 2).toFixed(2)}" text-anchor="end">H ${escapeText(dimensionValue(values?.[heightParameter], fields.get(heightParameter)))}</text></g>
+    ${showDimensions ? `<g class="product-diagram-measure${activeClass(heightParameter, active)}"${actionAttributes(heightParameter, mode)}>${svgLine(point(firstTop.x - 14, firstTop.y), point(firstBottom.x - 14, firstBottom.y), "product-diagram-dimension-line")}<text x="${(firstTop.x - 18).toFixed(2)}" y="${((firstTop.y + firstBottom.y) / 2).toFixed(2)}" text-anchor="end">H ${escapeText(dimensionValue(values?.[heightParameter], fields.get(heightParameter)))}</text></g>` : ""}
   </svg>`;
 }
 
@@ -566,26 +829,44 @@ function declaredArtwork(template, values, options) {
   return "";
 }
 
+/** Render the committed instance shape itself, without editor captions or dimensions. */
+export function renderProductInstanceThumbnail(template, values = {}) {
+  const artwork = declaredArtwork(template, values, {
+    mode: "right",
+    compact: true,
+    hideDimensionCards: true,
+  });
+  if (artwork) return artwork;
+  const source = getTemplateVisualAsset(template, "schematic") || getTemplateVisualAsset(template, "icon");
+  return source
+    ? `<img class="tube-designer-instance-thumbnail-image" src="${escapeText(source)}" alt="${escapeText(catalogText(template?.name, "产品"))}示意图" />`
+    : "";
+}
+
 export function renderProductParameterDiagram(template, values = {}, options = {}) {
   const dimensions = productPrimaryDimensions(template, values);
-  if (!dimensions.length) return "";
+  const hideDimensionCards = options.hideDimensionCards === true;
+  // Creation only needs a structural reference.  Templates without declared
+  // dimensions still render their linked artwork or schematic in that mode.
+  if (!dimensions.length && !hideDimensionCards) return "";
   const active = String(options.activeParameter ?? "");
   const mode = options.mode === "add" ? "add" : "right";
+  const compact = options.compact === true;
   const dynamicArtwork = declaredArtwork(template, values, { ...options, mode });
   const source = getTemplateVisualAsset(template, "schematic") || getTemplateVisualAsset(template, "icon");
   const artwork = dynamicArtwork || (source
     ? `<img src="${escapeText(source)}" alt="${escapeText(catalogText(template?.name, "产品"))}示意图" />`
     : `<svg viewBox="0 0 160 110" role="img" aria-label="产品尺寸示意图"><rect x="26" y="18" width="108" height="74" rx="5"/><path d="M20 100h120M16 96l4 4-4 4M144 96l-4 4 4 4M148 14v82M144 10l4 4 4-4M144 100l4-4 4 4"/></svg>`);
-  return `<section class="tube-designer-product-diagram ${dynamicArtwork ? "is-parameter-driven" : ""}" data-tube-designer-product-diagram>
-    <header><div><strong>成品结构与尺寸示意</strong><span>结构、分截及尺寸随参数联动 · 点击图中标注定位参数</span></div></header>
+  return `<section class="tube-designer-product-diagram ${dynamicArtwork ? "is-parameter-driven" : ""} ${compact ? "is-compact" : ""} ${hideDimensionCards ? "is-no-dimension-cards" : ""}" data-tube-designer-product-diagram>
+    <header><div><strong>${compact ? "结构示意" : "成品结构与尺寸示意"}</strong><span>${compact ? "随结构选项联动" : "结构、分截及尺寸随参数联动 · 点击图中标注定位参数"}</span></div></header>
     <div class="tube-designer-product-diagram-canvas">
       <div class="tube-designer-product-diagram-art">${artwork}</div>
-      <div class="tube-designer-product-dimensions">
+      ${hideDimensionCards ? "" : `<div class="tube-designer-product-dimensions">
         ${dimensions.map((dimension) => `<button type="button" class="tube-designer-product-dimension is-${escapeText(dimension.kind)} ${dimension.parameter === active ? "is-active" : ""}"
           data-cam-action="tube-designer-focus-product-parameter" data-tube-designer-editor-mode="${mode}" data-tube-designer-parameter-key="${escapeText(dimension.parameter)}" data-product-diagram-parameter="${escapeText(dimension.parameter)}">
           <span>${escapeText(dimension.label)}</span><strong>${escapeText(dimension.value)}</strong>
         </button>`).join("")}
-      </div>
+      </div>`}
     </div>
   </section>`;
 }
@@ -596,14 +877,37 @@ const productDiagramBindings = new WeakMap();
 export function bindProductParameterDiagrams(mount) {
   for (const scope of mount?.querySelectorAll?.("[data-tube-designer-product-parameter-scope]") ?? []) {
     if (productDiagramBindings.has(scope)) { productDiagramBindings.get(scope)(); continue; }
+    const mode = scope.dataset.tubeDesignerEditorMode
+      ?? scope.querySelector("[data-tube-designer-editor-mode]")?.dataset?.tubeDesignerEditorMode ?? "";
     const owns = (element) => element?.closest?.("[data-tube-designer-product-parameter-scope]") === scope;
-    const keyFor = (target) => {
-      const node = target?.closest?.("[data-product-diagram-parameter], [data-product-parameter-key]");
-      return owns(node) ? String(node.dataset.tubeDesignerParameterKey ?? node.dataset.productParameterKey ?? node.dataset.productDiagramParameter ?? "") : "";
+    const interactionRoots = [scope];
+    const interactionNodes = () => [...new Set(interactionRoots.flatMap((root) => [
+      ...root.querySelectorAll("[data-product-diagram-parameter], [data-product-parameter-key]"),
+    ]))];
+    const categoryFor = (node) => {
+      for (let current = node; current && owns(current); current = current.parentElement) {
+        const groupKey = String(current.dataset?.tubeDesignerParameterGroup ?? "");
+        if (groupKey === "section:materials" || groupKey.startsWith("scene:materials:")) return "materials";
+        if (groupKey === "section:process" || groupKey.startsWith("scene:process:")) return "process";
+      }
+      return "";
     };
-    let lastSceneKey = null;
-    const highlight = (key) => {
-      for (const node of scope.querySelectorAll("[data-product-diagram-parameter], [data-product-parameter-key]")) {
+    const parameterFor = (target) => {
+      const node = target?.closest?.("[data-product-diagram-parameter], [data-product-parameter-key]");
+      return owns(node) ? {
+        key: String(node.dataset.tubeDesignerParameterKey ?? node.dataset.productParameterKey ?? node.dataset.productDiagramParameter ?? ""),
+        profileRole: String(node.dataset.productProfileRole ?? ""),
+        category: categoryFor(node),
+      } : { key: "", profileRole: "", category: "" };
+    };
+    const initialKey = String(scope.dataset.tubeDesignerActiveParameter ?? "");
+    let selected = {
+      key: initialKey,
+      profileRole: initialKey.startsWith("profile:") ? initialKey.split(":")[1] ?? "" : "",
+    };
+    let lastSceneSignature = null;
+    const highlight = ({ key = "", profileRole = "", category = "" } = {}) => {
+      for (const node of interactionNodes()) {
         if (!owns(node)) continue;
         const parameters = String(node.dataset.productDiagramParameter ?? node.dataset.productParameterKey ?? "").split(/\s+/);
         const active = !!key && parameters.includes(key);
@@ -612,21 +916,37 @@ export function bindProductParameterDiagrams(mount) {
           node.closest(".tube-designer-field")?.classList.toggle("is-product-parameter-active", active);
         }
       }
-      const mode = scope.querySelector("[data-tube-designer-editor-mode]")?.dataset?.tubeDesignerEditorMode ?? "";
-      if (mode === "right" && key !== lastSceneKey) {
-        lastSceneKey = key;
+      const signature = `${key}\u0000${profileRole}\u0000${category}`;
+      if (mode === "right" && signature !== lastSceneSignature) {
+        lastSceneSignature = signature;
         scope.dispatchEvent(new CustomEvent("tube-designer-product-parameter-focus", {
           bubbles: true,
-          detail: { key, mode },
+          detail: { key, mode, profileRole, category },
         }));
       }
     };
-    const restoreFocus = () => highlight(keyFor(scope.ownerDocument.activeElement));
+    const restoreFocus = () => {
+      const focused = parameterFor(scope.ownerDocument.activeElement);
+      if (focused.key) selected = focused;
+      highlight(focused.key ? focused : selected);
+    };
     productDiagramBindings.set(scope, restoreFocus);
-    scope.addEventListener("focusin", (event) => highlight(keyFor(event.target)));
-    scope.addEventListener("focusout", () => queueMicrotask(restoreFocus));
-    scope.addEventListener("pointerover", (event) => { const key = keyFor(event.target); if (key) highlight(key); });
-    scope.addEventListener("pointerout", (event) => { if (!keyFor(event.relatedTarget)) restoreFocus(); });
+    for (const root of interactionRoots) {
+      root.addEventListener("focusin", (event) => {
+        const focused = parameterFor(event.target);
+        if (!focused.key) return;
+        selected = focused;
+        highlight(focused);
+      });
+      root.addEventListener("focusout", () => queueMicrotask(restoreFocus));
+      root.addEventListener("pointerover", (event) => {
+        const hovered = parameterFor(event.target);
+        if (hovered.key) highlight(hovered);
+      });
+      root.addEventListener("pointerout", (event) => {
+        if (!parameterFor(event.relatedTarget).key) restoreFocus();
+      });
+    }
     restoreFocus();
   }
 }

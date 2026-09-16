@@ -57,10 +57,13 @@ public:
         : project(projectId),id(sceneId) {
         (void)iCAX::TubeDesigner::GetTubeDesignerContractVersion();
         auto registry=iCAX::Database::CreateMetaRegistry();
-        wchar_t exe[32768]{},dbModule[32768]{};
+        wchar_t exe[32768]{},dbModule[32768]{},renderModule[32768]{},transformModule[32768]{};
         GetModuleFileNameW(nullptr,exe,32768);GetModuleFileNameW(GetModuleHandleW(L"Database.dll"),dbModule,32768);
+        GetModuleFileNameW(GetModuleHandleW(L"RenderInteraction.dll"),renderModule,32768);
+        GetModuleFileNameW(GetModuleHandleW(L"Transform.dll"),transformModule,32768);
         iCAX::Database::CMetaRegistrationCatalog::ReplayByModulePaths(*registry,
-            {std::filesystem::path(dbModule).string(),std::filesystem::path(exe).string()});
+            {std::filesystem::path(dbModule).string(),std::filesystem::path(renderModule).string(),
+             std::filesystem::path(transformModule).string(),std::filesystem::path(exe).string()});
         repository=iCAX::Database::GenerateRepository(id,registry);
         resources.SetScope(iCAX::Resource::MakeSceneResourceScope("icax","icax.tube-designer",project,id));
         iCAX::Resource::CResourceVersionCodec codec;
@@ -593,6 +596,45 @@ TEST(ProductTemplatePreviewSDO, ReturnsRuntimeGeometryWithoutCreatingProductReco
     EXPECT_FALSE(response.contains("generationRunId"));
 }
 
+TEST(ProductInstanceSDO, DeleteRemovesOnlyTheActiveInstanceAndUndoRestoresIt) {
+    Scene scene;
+    const auto first = invoke(scene, "GeneratePreview", ObjectMap{
+        {"templateId", std::string("single-face-security-window")},
+        {"instanceName", std::string("第一樘防盗窗")},
+    }).at("tubeDesigner").To<ObjectMap>();
+    const auto firstId = first.at("product").To<ObjectMap>()
+        .at("entityId").To<std::string>();
+    const auto second = invoke(scene, "GeneratePreview", ObjectMap{
+        {"templateId", std::string("single-face-security-window")},
+        {"instanceName", std::string("第二樘防盗窗")},
+    }).at("tubeDesigner").To<ObjectMap>();
+    const auto secondId = second.at("product").To<ObjectMap>()
+        .at("entityId").To<std::string>();
+    ASSERT_NE(firstId, secondId);
+    ASSERT_EQ(2u, second.at("instances").To<VariantArray>().size());
+
+    const auto deleted = invoke(scene, "DeleteProduct", ObjectMap{
+        {"productEntityId", secondId},
+    });
+    EXPECT_TRUE(deleted.at("deleted").To<bool>());
+    EXPECT_EQ(secondId, deleted.at("deletedProductEntityId").To<std::string>());
+    const auto remaining = deleted.at("tubeDesigner").To<ObjectMap>();
+    ASSERT_EQ(1u, remaining.at("instances").To<VariantArray>().size());
+    EXPECT_EQ(firstId, remaining.at("activeProductId").To<std::string>());
+    EXPECT_EQ(firstId, remaining.at("product").To<ObjectMap>()
+        .at("entityId").To<std::string>());
+    const auto secondUuid = iCAX::Data::uuid::from_string(secondId);
+    ASSERT_TRUE(secondUuid.has_value());
+    EXPECT_FALSE(scene.Database().GetEntity(*secondUuid));
+
+    ASSERT_TRUE(scene.Database().CanUndo());
+    ASSERT_TRUE(scene.Database().Undo());
+    const auto restored = invoke(scene, "List", {}).at("tubeDesigner").To<ObjectMap>();
+    EXPECT_EQ(2u, restored.at("instances").To<VariantArray>().size());
+    EXPECT_EQ(secondId, restored.at("activeProductId").To<std::string>());
+    EXPECT_TRUE(scene.Database().GetEntity(*secondUuid));
+}
+
 TEST(ProductManufacturingPlanSDO, ReturnsManufacturingTablesWithoutCreatingGeometryResources) {
     Scene scene;
     const auto resourcesBefore = scene.Resources().GetManifest(true).size();
@@ -648,6 +690,13 @@ TEST(ProductTemplatePreviewSDO, MergedGuardrailsAndWindowKeepNormalizedParameter
             {"parameters", ObjectMap{{"faceType", std::string(face)}}},
         });
         EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
+        ASSERT_TRUE(response.contains("specificationAnnotations"));
+        const auto annotations = response.at("specificationAnnotations").To<VariantArray>();
+        EXPECT_FALSE(annotations.empty());
+        EXPECT_NE(std::find_if(annotations.begin(), annotations.end(), [](const auto& value) {
+            return value.Is<ObjectMap>()
+                && value.To<ObjectMap>().at("parameter").To<std::string>() == "width";
+        }), annotations.end());
     }
     for (const auto& [face, openingParameter, openingFace] : {
              std::tuple{"two", "accessDoorFace2", "side"},
@@ -674,17 +723,45 @@ TEST(ProductTemplatePreviewSDO, MergedGuardrailsAndWindowKeepNormalizedParameter
     }
 }
 
-TEST(ProductTemplatePreviewSDO, ProductLocalWindowGrooves) {
+TEST(ProductManufacturingPlanSDO, SecurityWindowContinuousFramesUseSelectedLibraryGroove) {
     Scene scene;
-    for(const auto* style:{"sharp_v","rounded_v","left_arc","right_arc"}){
-        SCOPED_TRACE(style);
-        const auto response=invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
-            {"templateId",std::string("single-face-security-window")},
-            {"parameters",ObjectMap{{"frameLayout",std::string("four_sides")},
-                {"frameJoinType",std::string("v_groove_90:")+style},{"accessDoorEnabled",false},
-                {"vGrooveMaleFemale",true}}}});
-        EXPECT_FALSE(response.at("items").To<VariantArray>().empty());
-    }
+    const ObjectMap grooveBinding{
+        {"schema",std::string("icax.product-resource-binding")},{"schemaVersion",1},
+        {"resourceKind",std::string("punch-tool")},{"role",std::string("outerFrameGroove")},
+        {"selectionKey",std::string("system:v-notch-sharp")},
+        {"ref",ObjectMap{{"scope",std::string("system")},{"id",std::string("v-notch-sharp")}}},
+        {"parameters",ObjectMap{}},
+        {"snapshot",ObjectMap{{"displayName",std::string("V槽")},{"kind",std::string("programmatic")},
+            {"target",std::string("part")},{"category",std::string("slot")},
+            {"targetProfileRole",std::string("frame")}}},
+    };
+    const auto response=invoke(scene,"GetProductManufacturingPlan",ObjectMap{
+        {"templateId",std::string("single-face-security-window")},
+        {"parameters",ObjectMap{{"frameLayout",std::string("four_sides")},
+            {"frameJoinType",std::string("v_groove_90:tool_library")},{"accessDoorEnabled",false},
+            {"tubeDesignerToolBindings",ObjectMap{{"outerFrameGroove",grooveBinding}}}}}});
+    EXPECT_FALSE(response.at("tables").To<VariantArray>().empty());
+    EXPECT_TRUE(response.at("parameters").To<ObjectMap>().contains("tubeDesignerToolBindings"));
+
+    // The selector binding must also survive the native preview interface.
+    // Display geometry intentionally remains a clean assembly preview while
+    // the manufacturing evaluation above applies the selected cutter.
+    const auto preview=invoke(scene,"GenerateProductTemplatePreview",ObjectMap{
+        {"templateId",std::string("single-face-security-window")},
+        {"parameters",ObjectMap{{"frameLayout",std::string("four_sides")},
+            {"frameJoinType",std::string("v_groove_90:tool_library")},{"accessDoorEnabled",false},
+            {"tubeDesignerToolBindings",ObjectMap{{"outerFrameGroove",grooveBinding}}}}}});
+    EXPECT_FALSE(preview.at("items").To<VariantArray>().empty());
+    EXPECT_TRUE(preview.at("parameters").To<ObjectMap>().contains("tubeDesignerToolBindings"));
+
+    // Historical left/right edge-arc choices have no resource binding in old
+    // projects. They must resolve to the mould-library edge-arc tool, never
+    // silently become the default sharp V cutter.
+    const auto rightArc=invoke(scene,"GetProductManufacturingPlan",ObjectMap{
+        {"templateId",std::string("single-face-security-window")},
+        {"parameters",ObjectMap{{"frameLayout",std::string("four_sides")},
+            {"frameJoinType",std::string("v_groove_90:right_arc")},{"accessDoorEnabled",false}}}});
+    EXPECT_FALSE(rightArc.at("tables").To<VariantArray>().empty());
 }
 
 TEST(ProductTemplatePreviewSDO, AllGuardrailFamiliesGenerateSlopedCorners) {
@@ -885,18 +962,49 @@ TEST(TubeDesignerLibrarySDO, TemplateListDefersFullDescriptorUntilSelection) {
     const auto templates = snapshot.at("tubeDesigner").To<ObjectMap>()
         .at("templates").To<VariantArray>();
     const auto listed = std::find_if(templates.begin(), templates.end(), [](const auto& value) {
-        return value.Is<ObjectMap>() && value.To<ObjectMap>().at("id").To<std::string>() == "modular-guardrail";
+        return value.Is<ObjectMap>() && value.To<ObjectMap>().at("id").To<std::string>() == "single-face-security-window";
     });
     ASSERT_NE(listed, templates.end());
     EXPECT_FALSE(listed->To<ObjectMap>().contains("parameters"));
     EXPECT_FALSE(listed->To<ObjectMap>().contains("descriptorJson"));
 
     const auto detail = invoke(scene, "GetTemplateDescriptor", ObjectMap{
-        { "templateId", std::string("modular-guardrail") },
+        { "templateId", std::string("single-face-security-window") },
     });
     ASSERT_TRUE(detail.contains("template"));
     const auto descriptor = detail.at("template").To<ObjectMap>();
     EXPECT_TRUE(descriptor.at("descriptorLoaded").To<bool>());
     EXPECT_FALSE(descriptor.at("parameters").To<VariantArray>().empty());
+    const auto extensions = descriptor.at("extensions").To<ObjectMap>();
+    ASSERT_TRUE(extensions.contains("productDiagram"));
+    const auto productDiagram = extensions.at("productDiagram").To<ObjectMap>();
+    ASSERT_TRUE(productDiagram.contains("sceneBindings"));
+    ASSERT_TRUE(productDiagram.contains("profileRoles"));
+    const auto sceneBindings = productDiagram.at("sceneBindings").To<ObjectMap>();
+    const auto profileRoles = productDiagram.at("profileRoles").To<ObjectMap>();
+    EXPECT_TRUE(sceneBindings.contains("verticalMaximumCenterSpacing"));
+    ASSERT_TRUE(profileRoles.contains("vertical"));
+    const auto vertical = profileRoles.at("vertical").To<ObjectMap>();
+    const auto verticalParameters = vertical.at("parameters").To<VariantArray>();
+    EXPECT_NE(std::find_if(verticalParameters.begin(), verticalParameters.end(), [](const auto& value) {
+        return value.Is<std::string>() && value.To<std::string>() == "verticalWidth";
+    }), verticalParameters.end());
+    ASSERT_TRUE(descriptor.contains("display"));
+    const auto display = descriptor.at("display").To<ObjectMap>();
+    EXPECT_EQ(display.at("schema").To<std::string>(), "icax.template-display");
+    const auto views = display.at("views").To<ObjectMap>();
+    const auto right = views.at("right").To<ObjectMap>();
+    const auto sceneView = views.at("scene").To<ObjectMap>();
+    const auto annotations = sceneView.at("annotations").To<ObjectMap>();
+    EXPECT_TRUE(annotations.contains("width"));
+    EXPECT_TRUE(annotations.contains("horizontalMaximumCenterSpacing"));
+    EXPECT_TRUE(annotations.contains("doorVerticalMaximumCenterSpacing"));
+    const auto fields = right.at("fields").To<ObjectMap>();
+    const auto productCode = fields.at("productCode").To<ObjectMap>();
+    EXPECT_EQ(productCode.at("line").To<std::string>(), "full");
+    const auto width = productCode.at("width").To<ObjectMap>();
+    EXPECT_TRUE(width.contains("min"));
+    EXPECT_TRUE(width.contains("preferred"));
+    EXPECT_TRUE(width.contains("max"));
 }
 }

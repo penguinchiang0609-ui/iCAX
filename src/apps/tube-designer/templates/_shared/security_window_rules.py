@@ -17,55 +17,55 @@ def number(values: dict[str, Any], key: str, default: float) -> float:
     return float(value)
 
 
+def center_spacing_positions(
+    parameters: dict[str, Any], minimum: float, maximum: float, *,
+    start_offset_key: str, end_offset_key: str, maximum_spacing_key: str,
+    label: str,
+) -> list[float]:
+    """Lay out bar centres from two fixed end offsets and a maximum centre spacing."""
+    start_offset = number(parameters, start_offset_key, 0)
+    end_offset = number(parameters, end_offset_key, 0)
+    maximum_spacing = number(parameters, maximum_spacing_key, 0)
+    if start_offset < 0 or end_offset < 0:
+        raise ValueError(f"{label}首末端中心留距不能为负数")
+    if maximum_spacing <= 0:
+        raise ValueError(f"{label}最大中心距必须大于0")
+    first = minimum + start_offset
+    last = maximum - end_offset
+    if first > last + 1.0e-7:
+        raise ValueError(f"{label}首末端中心留距之和超过可用范围")
+    span = max(0.0, last - first)
+    if span <= 1.0e-7:
+        return [(first + last) / 2]
+    interval_count = max(1, math.ceil(span / maximum_spacing - 1.0e-9))
+    if interval_count + 1 > 100:
+        raise ValueError(f"{label}布置超出支持范围（按最大中心距计算超过100根）")
+    actual_spacing = span / interval_count
+    return [first + actual_spacing * index for index in range(interval_count + 1)]
+
+
 def prepare(parameters: dict[str, Any], *, layout: str, fixed_width: float,
             leaf_width: float, leaf_depth: float, vertical_width: float) -> dict[str, Any]:
     effective = deepcopy(parameters)
     pattern = str(parameters.get("infillPattern", "grid"))
     if pattern not in {"vertical", "horizontal", "grid"}:
         raise ValueError("填充结构不支持")
-    if pattern == "vertical":
-        for key in ("horizontalCount", "sideHorizontalCount", "doorHorizontalCount"):
-            if key in effective:
-                effective[key] = 0
-    elif pattern == "horizontal":
-        for key in ("middleVerticalCount", "verticalCountPerFace", "sideVerticalCount", "doorVerticalCount"):
-            if key in effective:
-                effective[key] = 0
     # Infill changes only the vertical faces; roof/base closure stays intact.
     if not parameters.get("accessDoorEnabled", False):
         return effective
-    use = str(parameters.get("doorUse", "escape"))
-    if use not in {"escape", "maintenance"}:
-        raise ValueError("开启口用途不支持")
     clear_width = number(parameters, "doorClearWidth", 800)
     clear_height = number(parameters, "doorClearHeight", 1000)
     hardware = number(parameters, "doorHardwareClearance", 10)
     if clear_width <= 0 or clear_height <= 0 or hardware < 0:
         raise ValueError("净开口尺寸必须大于0，五金预留量不能为负数")
-    if parameters.get("accessDoorEnabled", False) and use == "escape":
-        minimum_width = number(parameters, "projectEscapeMinWidth", 800)
-        minimum_height = number(parameters, "projectEscapeMinHeight", 1000)
-        if minimum_width <= 0 or minimum_height <= 0:
-            raise ValueError("项目开启口净尺寸下限必须大于0")
-        if clear_width < minimum_width or clear_height < minimum_height:
-            raise ValueError(f"开启口小于项目设计下限：净宽{minimum_width:g}、净高{minimum_height:g} mm；项目规则须按现场要求确认")
-        if str(parameters.get("accessDoorFace", "front")) == "top":
-            raise ValueError("应急开启口不支持顶面；请改选立面或底面并核对通路")
+    if str(parameters.get("accessDoorFace", "front")) == "top":
+        raise ValueError("逃生窗不支持顶面；请改选立面或底面并核对通路")
     # At the design opening position, reserve the leaf thickness plus hardware.
     # The actual purchased hinge and its swept volume still require verification.
     fixed_clear_width = clear_width + leaf_depth + hardware
     frame_allowance = fixed_width * (2 if layout == "single-face" else 1)
     effective["doorWidth"] = fixed_clear_width + frame_allowance
     effective["doorHeight"] = clear_height + frame_allowance
-    if pattern != "horizontal" and str(effective.get("verticalLayoutMode", "maximum_clear_gap")) == "maximum_clear_gap":
-        span = fixed_clear_width - 2 * number(parameters, "doorGap", 3) - 2 * leaf_width
-        maximum_gap = number(parameters, "maximumVerticalClearGap", 110)
-        if span <= 0 or maximum_gap <= 0:
-            raise ValueError("窗扇格栅没有可用空间或净间距无效")
-        count = max(0, math.ceil(span / (maximum_gap + vertical_width / 2) - 1 - 1e-9))
-        if count > 100:
-            raise ValueError("按最大净间距计算的窗扇竖杆数量超过100")
-        effective["doorVerticalCount"] = count
     return effective
 
 
@@ -93,11 +93,15 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
                     "主横杆与外框平切贴合焊接；竖杆仍穿过横杆。")
     review = {
         "reviewVersion": 2, "layout": layout, "dimensions": "outside",
-        "openingEnabled": enabled, "openingUse": str(original.get("doorUse", "escape")),
+        "openingEnabled": enabled, "openingUse": "escape",
         "fixedClearWidth": fixed_clear_width, "fixedClearHeight": fixed_clear_height,
         "designClearWidth": max(0, fixed_clear_width - leaf_depth - hardware),
         "designClearHeight": max(0, fixed_clear_height),
-        "leafVerticalCount": effective.get("doorVerticalCount", 0) if enabled else 0,
+        "leafVerticalCount": sum(
+            1 for item in document.get("items", [])
+            if str(item.get("properties", {}).get("manufacturing.categoryKey", ""))
+            == "access_door.leaf.vertical"
+        ) if enabled else 0,
         "siteVerification": "required", "hardwareVerification": "required",
         "structuralVerification": "required", "complianceCertified": False,
         "outerFrameConnection": outer_join, "mainHorizontalConnection": connection,
@@ -111,10 +115,6 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         "envelope": {"single-face":"FLAT", "two-face":"L_CORNER", "three-face":"U_BOX", "five-face":"FULL_BOX"}[layout],
         "infillPattern": str(original.get("infillPattern", "grid")),
         "openingSystem": "LOCAL_HINGED_HATCH" if enabled else "FIXED",
-        "installationMode": str(original.get("installationMode", "site_confirm")),
-        "projectRuleReference": str(original.get("projectRuleReference", "待项目确认")),
-        "projectEscapeMinWidth": number(original, "projectEscapeMinWidth", 800),
-        "projectEscapeMinHeight": number(original, "projectEscapeMinHeight", 1000),
         "performance": {key: "not_verified" for key in ("fallProtection", "intrusionResistance", "escape", "anchorage")},
     }
     document.setdefault("extensions", {})["tubeDesigner.securityWindowReview"] = review
@@ -133,20 +133,17 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         warning("SW_V_GROOVE_TRIAL", "V槽连续折合须按实际材质、壁厚、槽向、折合顺序及设备打样，复核补偿、回弹和焊缝；理论展开不等于可直接批量生产。")
     if not enabled:
         warning("SW_NO_OPENING", "未设置应急开启口；住宅和出租房应核对所在房间的逃生及救援条件。", "accessDoorEnabled")
-    elif original.get("doorUse", "escape") == "maintenance":
-        warning("SW_MAINTENANCE_ONLY", "当前开启口用于检修，不能视为已满足人员逃生条件。", "doorUse")
-    if enabled and (review["designClearWidth"] < review["projectEscapeMinWidth"] or review["designClearHeight"] < review["projectEscapeMinHeight"]):
-        warning("SW_SMALL_OPENING", "开启口小于本项目配置的净尺寸下限，不能作为已验证的逃生口。")
-    if enabled and original.get("doorUse", "escape") == "escape":
-        warning("SW_PROJECT_ESCAPE_RULE", "开启口下限来自项目配置，不是全国统一合规值；须核对规则依据、室内无钥匙快开、断电开启和实际通行路径。", "projectRuleReference", "projectEscapeMinWidth", "projectEscapeMinHeight")
     if review["infillPattern"] == "horizontal":
         warning("SW_HORIZONTAL_CLIMB", "横杆填充具有攀爬风险，须按防坠用途及项目要求复核间距和安装高度。", "infillPattern")
     if layout == "three-face" and abs(number(original, "leftWidth", 0) - number(original, "rightWidth", 0)) > 1e-6:
         warning("SW_UNEVEN_WALL", "左右侧深不同，后端不在同一安装平面，请核对实际墙体。", "leftWidth", "rightWidth")
-    if (str(original.get("verticalLayoutMode", "")) == "manual_count"
-            or number(original, "maximumVerticalClearGap", 110) > 110
-            or (not single and number(original, "sideMaximumVerticalClearGap", 110) > 110)):
-        warning("SW_GRID_REVIEW", "当前为手动或较大净距布置，须复核全部边缘、窗扇及顶底网孔和儿童攀爬风险。")
+    spacing_keys = ["horizontalMaximumCenterSpacing", "verticalMaximumCenterSpacing"]
+    if not single:
+        spacing_keys += ["sideHorizontalMaximumCenterSpacing", "sideVerticalMaximumCenterSpacing"]
+        if layout == "five-face":
+            spacing_keys += ["topBottomCrossbarMaximumCenterSpacing", "topBottomRodMaximumCenterSpacing"]
+    if any(number(original, key, 110) > 110 for key in spacing_keys):
+        warning("SW_GRID_REVIEW", "当前杆件中心距较大，须复核全部边缘、窗扇及顶底网孔和儿童攀爬风险。", *spacing_keys)
     grade = str(original.get("materialGrade", "unspecified")).strip()
     treatment = str(original.get("surfaceTreatment", "unspecified")).strip()
     if grade in {"", "unspecified"}:
@@ -161,7 +158,6 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
             properties["manufacturing.material"] = grade
         properties["manufacturing.surfaceTreatment"] = treatment
         properties["manufacturing.installationVerification"] = "required"
-        properties["manufacturing.installationMode"] = review["installationMode"]
     process_rows = [{"key": "process.connection", "values": {"status": "工艺说明", "detail": construction}},
                     {"key": "process.assembly", "values": {"status": "工艺说明", "detail": "按零件表下料与开孔，先试装定位并复核外包和对角线，再焊接、清理及防腐；开启口框扇和五金另行试装、实测通行净空。"}}]
     if miter_active:
@@ -177,8 +173,7 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         "columns":[{"key":"name","displayName":"维度","valueType":"string"},{"key":"value","displayName":"配置","valueType":"string"}],
         "rows":[{"key":key,"values":{"name":label,"value":str(review[key])}} for key,label in (
             ("productFamily","产品族"),("envelope","外包络"),("infillPattern","立面填充"),
-            ("openingSystem","开启结构"),("installationMode","安装场景（节点待核验）"),
-            ("projectRuleReference","项目规则依据"))]})
+            ("openingSystem","开启结构"))]})
     return document
 
 

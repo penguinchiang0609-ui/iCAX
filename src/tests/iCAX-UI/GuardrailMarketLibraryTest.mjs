@@ -48,7 +48,7 @@ assert.equal(count,32);
 console.log(`Guardrail parameter presentation: ${count} templates passed.`);
 const families = buildCatalogEntries(readdirSync(root).filter(n => n.startsWith("modular_guardrail") && existsSync(new URL(`${n}/template.json`, root))).map(n => ({...JSON.parse(readFileSync(new URL(`${n}/template.json`, root), "utf8")), available: true})));
 assert.deepEqual(families.map(t => t.displayName), ["挡板护栏", "菱形护栏", "X 形护栏", "竖杆护栏"]);
-for (const t of families) assert.deepEqual(t.catalogPath.slice(0,-1), ["护栏", "扶手护栏"]);
+for (const t of families) assert.deepEqual(t.catalogPath.slice(0,-1), ["护栏"]);
 assert.equal(existsSync(new URL("straight_stair_railing/template.json", root)), false);
 for (const t of families) {
   assert.equal(t.parameters.some(p => p.key === "guardrailUse"), t.displayName === "竖杆护栏");

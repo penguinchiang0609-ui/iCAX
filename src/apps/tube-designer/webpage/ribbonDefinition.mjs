@@ -8,6 +8,7 @@ const allRibbonDefinition = {
           title: "产品",
           commands: [
             command("designer.add", "添加", "add-instance", { size: "large", iconTone: "green" }),
+            command("designer.delete-active-product", "删除", "delete", { size: "large", iconTone: "orange" }),
           ],
         },
         {
@@ -92,7 +93,6 @@ const allRibbonDefinition = {
             command("resources.products", "产品", "report", { size: "large", iconTone: "blue" }),
             command("resources.profiles", "管型", "profile-sketch", { size: "large", iconTone: "green" }),
             command("resources.tools", "模具", "hole", { size: "large", iconTone: "orange" }),
-            command("resources.components", "配件", "machine", { size: "large", iconTone: "blue" }),
           ],
         },
         {
@@ -119,14 +119,6 @@ const allRibbonDefinition = {
             command("tools.import-package", "导入程式", "new", { size: "large", iconTone: "green" }),
             command("tools.import-dxf", "导入定式", "hole", { size: "large", iconTone: "orange" }),
             command("tools.refresh", "刷新模具", "view-fit", { size: "large", iconTone: "green" }),
-          ],
-        },
-        {
-          title: "配件操作",
-          commands: [
-            command("components.draw", "绘制", "profile-sketch", { size: "large", iconTone: "green" }),
-            command("components.import", "导入三维模型", "new", { size: "large", iconTone: "green" }),
-            command("components.export-step", "导出配件 STEP", "save", { size: "large", iconTone: "green" }),
           ],
         },
       ],
@@ -193,19 +185,17 @@ export const ribbonDefinition = {
 };
 
 export function getRibbonDefinition(options = {}) {
-  const resourceArea = ["products", "profiles", "tools", "components"].includes(options?.resourceArea)
+  const resourceArea = ["products", "profiles", "tools"].includes(options?.resourceArea)
     ? options.resourceArea : "profiles";
   const resourceCommandAreas = {
     "resources.products": "products",
     "resources.profiles": "profiles",
     "resources.tools": "tools",
-    "resources.components": "components",
   };
   const resourceGroupAreas = {
     "产品模板": "products",
     "管型操作": "profiles",
     "模具操作": "tools",
-    "配件操作": "components",
   };
   return {
     ...ribbonDefinition,

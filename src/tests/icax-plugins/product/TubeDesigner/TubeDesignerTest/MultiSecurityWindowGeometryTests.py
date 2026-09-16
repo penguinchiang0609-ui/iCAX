@@ -32,15 +32,30 @@ def parameters(**updates):
                   frameCornerJoin="post_butt", mainHorizontalConnection="insert",
                   verticalLayoutMode="maximum_clear_gap", maximumVerticalClearGap=110.0,
                   verticalCountPerFace=4, firstHorizontalTopOffset=200.0,
-                  lastHorizontalBottomOffset=200.0, topBottomCrossbarCount=2,
-                  topBottomRodCount=4, horizontalBranchReserve=5.0,
+                  lastHorizontalBottomOffset=200.0, horizontalMaximumCenterSpacing=500.0,
+                  verticalLeftCenterOffset=110.0, verticalRightCenterOffset=110.0,
+                  verticalMaximumCenterSpacing=120.0,
+                  sideHorizontalMaximumCenterSpacing=500.0,
+                  sideVerticalStartCenterOffset=90.0, sideVerticalEndCenterOffset=90.0,
+                  sideVerticalMaximumCenterSpacing=120.0,
+                  topBottomCrossbarFrontCenterOffset=175.0,
+                  topBottomCrossbarBackCenterOffset=175.0,
+                  topBottomCrossbarMaximumCenterSpacing=250.0,
+                  topBottomRodLeftCenterOffset=110.0, topBottomRodRightCenterOffset=110.0,
+                  topBottomRodMaximumCenterSpacing=120.0,
+                  topBottomCrossbarCount=2, topBottomRodCount=4, horizontalBranchReserve=5.0,
                   verticalBranchReserve=10.0, assemblyClearance=0.1,
                   accessDoorEnabled=False, accessDoorFace="front", doorUOffset=80.0,
                   doorVOffset=500.0, doorWidth=400.0, doorHeight=600.0,
                   doorGap=3.0, doorHingeSide="left", doorHingeCount=2,
                   doorFrameJoinType="butt_90", doorLeafFrameJoinType="butt_90",
                   doorFrameButtWrapMode="side_wraps_horizontal", doorLeafFrameButtWrapMode="side_wraps_horizontal",
-                  doorHorizontalCount=2, doorVerticalCount=2)
+                  doorHorizontalTopCenterOffset=100.0,
+                  doorHorizontalBottomCenterOffset=100.0,
+                  doorHorizontalMaximumCenterSpacing=400.0,
+                  doorVerticalLeftCenterOffset=100.0,
+                  doorVerticalRightCenterOffset=100.0,
+                  doorVerticalMaximumCenterSpacing=200.0)
     for prefix, kind, width, depth, radius, wall in (
         ("frame", "rect", 38.0, 25.0, 2.0, 1.2),
         ("horizontal", "rect", 22.0, 22.0, 1.0, 1.0),
@@ -216,24 +231,24 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
     def test_frame_receiver_fit_is_checked_only_for_actual_connections(self):
         with self.assertRaisesRegex(ValueError, "内腔"):
             build(frameWallThickness=2.0)
-        build(frameWallThickness=2.0, horizontalCount=0, sideHorizontalCount=0)
+        build(frameWallThickness=2.0, infillPattern="vertical")
         build(frameWallThickness=2.0, horizontalBranchReserve=0.0)
 
     def test_no_insertion_produces_no_boundary_drill_holes(self):
         document, _ = build(horizontalBranchReserve=0.0, verticalBranchReserve=0.0,
-                            horizontalCount=0)
+                            infillPattern="vertical")
         for item in document["items"]:
             if item["key"].startswith("outer_frame."):
                 self.assertEqual([], item["properties"]["tubeDesigner.connectionProcess"]["receives"])
 
     def test_dense_and_out_of_bounds_grids_are_rejected(self):
-        cases = (dict(horizontalCount=100),
-                 dict(verticalLayoutMode="manual_count", verticalCountPerFace=100),
+        cases = (dict(horizontalMaximumCenterSpacing=1.0),
+                 dict(verticalMaximumCenterSpacing=1.0),
                  dict(firstHorizontalTopOffset=0.0), dict(lastHorizontalBottomOffset=0.0),
-                 dict(topBottomCrossbarCount=100),
-                 dict(verticalLayoutMode="manual_count", topBottomRodCount=100),
-                 dict(accessDoorEnabled=True, doorHorizontalCount=100),
-                 dict(accessDoorEnabled=True, doorVerticalCount=100))
+                 dict(topBottomCrossbarMaximumCenterSpacing=1.0),
+                 dict(topBottomRodMaximumCenterSpacing=1.0),
+                 dict(accessDoorEnabled=True, doorHorizontalMaximumCenterSpacing=1.0),
+                 dict(accessDoorEnabled=True, doorVerticalMaximumCenterSpacing=1.0))
         for updates in cases:
             with self.subTest(updates=updates), self.assertRaisesRegex(ValueError, "布置过密|超出"):
                 build("five-face", **updates)
@@ -258,7 +273,7 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
             else:
                 self.assertAlmostEqual(-80, max(bounds(part)[1][1] for part in fixed))
 
-    def test_cap_automatic_count_and_maximum_clear_gap_are_preserved(self):
+    def test_cap_center_spacing_is_preserved(self):
         _, parts = build("five-face")
         rods = [part for part in parts if part.key.startswith("cap_grid.vertical.") and part.face_index == 4]
         self.assertEqual(9, len(rods))
@@ -267,7 +282,7 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
                 600 - 19 - 25 / 2 - positions[-1] - 19 / 2]
         gaps.extend(right - left - 19 for left, right in zip(positions, positions[1:]))
         self.assertLessEqual(max(gaps), 110.0)
-        self.assertAlmostEqual(104.2, max(gaps))
+        self.assertAlmostEqual(100.5, max(gaps))
 
     def test_rectangular_vertical_section_keeps_width_along_spacing_axis(self):
         _, parts = build(verticalProfileType="rect", verticalWidth=19.0, verticalDepth=15.0,
@@ -465,21 +480,28 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
         self.assertEqual(original, values)
         self.assertEqual(original, document["parameters"])
 
-    def test_front_and_side_manual_grid_counts_are_independent(self):
+    def test_front_and_side_center_spacings_are_independent(self):
         for layout in ("two-face", "three-face", "five-face"):
             for side in ("left", "right"):
-                _, parts = build(layout, sidePosition=side, horizontalCount=1, sideHorizontalCount=3,
-                                 verticalLayoutMode="manual_count", verticalCountPerFace=2, sideVerticalCount=5)
+                _, parts = build(layout, sidePosition=side,
+                                 horizontalMaximumCenterSpacing=2000,
+                                 sideHorizontalMaximumCenterSpacing=500,
+                                 verticalMaximumCenterSpacing=2000,
+                                 sideVerticalMaximumCenterSpacing=120)
                 for name in {part.face_name for part in parts if part.key.startswith("main_grid.")}:
                     front = name == "正面"
-                    self.assertEqual(1 if front else 3, len([part for part in parts
+                    self.assertEqual(2 if front else 4, len([part for part in parts
                                      if part.face_name == name and part.key.startswith("main_grid.horizontal.")]))
-                    self.assertEqual(2 if front else 5, len([part for part in parts
-                                     if part.face_name == name and part.key.startswith("main_grid.vertical.")]))
+                    verticals = [part for part in parts
+                                 if part.face_name == name and part.key.startswith("main_grid.vertical.")]
+                    if front:
+                        self.assertEqual(2, len(verticals))
+                    else:
+                        self.assertGreater(len(verticals), 2)
 
-    def test_side_clear_gap_is_independent_of_front_and_cap_clear_gap(self):
+    def test_side_center_spacing_is_independent_of_front_and_cap_spacing(self):
         _, first = build("five-face")
-        _, second = build("five-face", sideMaximumVerticalClearGap=60.0)
+        _, second = build("five-face", sideVerticalMaximumCenterSpacing=60.0)
         for prefix, face in (("main_grid.vertical.", "正面"), ("cap_grid.vertical.", "上面")):
             self.assertEqual([replace(part, key="") for part in first if part.key.startswith(prefix) and part.face_name == face],
                              [replace(part, key="") for part in second if part.key.startswith(prefix) and part.face_name == face])
@@ -488,9 +510,9 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
             new = [part for part in second if part.key.startswith("main_grid.vertical.") and part.face_name == name]
             self.assertGreater(len(new), len(old))
             positions = sorted(part.start[1] for part in new)
-            self.assertLessEqual(max(right - left - 19.0 for left, right in zip(positions, positions[1:])), 60.0)
-        for updates in (dict(sideHorizontalCount=101), dict(sideVerticalCount=-1),
-                        dict(sideMaximumVerticalClearGap=0.0), dict(frameCornerJoin="unknown"),
+            self.assertLessEqual(max(right - left for left, right in zip(positions, positions[1:])), 60.0)
+        for updates in (dict(sideHorizontalMaximumCenterSpacing=0.0),
+                        dict(sideVerticalMaximumCenterSpacing=0.0), dict(frameCornerJoin="unknown"),
                         dict(mainHorizontalConnection="unknown")):
             with self.assertRaises(ValueError):
                 build(**updates)

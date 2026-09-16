@@ -69,24 +69,23 @@ await test("template-owned catalog artwork resolves from host data or package re
   assert.equal(packageAsset, "data:image/svg+xml;base64,PHN2Zy8+");
 });
 
-await test("the default add style expands every category enclosing its selected card", async () => {
+await test("the add catalogue uses expandable groups and opens the selected card path", async () => {
   const ids = getCatalogEntryGroupKeys(templates, windowTemplate.id);
   assert.deepEqual(ids, ["template-path:防盗窗"]);
   const html = renderDesignerAddDialog({ templates }, {
     tubeDesignerAddTemplateId: windowTemplate.id,
     tubeDesignerAddInstanceName: "新防盗窗",
   });
-  assert.match(html, /data-tube-designer-template-tab-id="template-path:防盗窗" aria-selected="true"/);
+  assert.match(html, /data-tube-designer-template-group-id="template-path:防盗窗" aria-expanded="true"/);
   assert.match(html, /data-tube-designer-template-id="window"[^>]*aria-pressed="true"/);
   const { view, act } = harness();
   await act("open-add");
   assert.deepEqual(view.tubeDesignerExpandedTemplateGroupIds, ids);
-  assert.equal(view.tubeDesignerAddCatalogTabId, "template-path:防盗窗");
-  const draftBeforeTab = view.tubeDesignerAddDraft;
-  await act("select-template-tab", { tubeDesignerTemplateTabId: "template-path:护栏" });
-  assert.equal(view.tubeDesignerAddCatalogTabId, "template-path:护栏");
+  const draftBeforeToggle = view.tubeDesignerAddDraft;
+  await act("toggle-template-group", { tubeDesignerTemplateGroupId: "template-path:护栏" });
+  assert.ok(view.tubeDesignerExpandedTemplateGroupIds.includes("template-path:护栏"));
   assert.equal(view.tubeDesignerAddTemplateId, windowTemplate.id);
-  assert.equal(view.tubeDesignerAddDraft, draftBeforeTab, "switching tabs only changes the catalogue browser");
+  assert.equal(view.tubeDesignerAddDraft, draftBeforeToggle, "expanding a group only changes the catalogue browser");
 });
 
 await test("presets become distinct cards without changing native template identities", () => {
@@ -138,8 +137,9 @@ await test("active card stays unique across rerenders and input edits", () => {
   assert.match(html, /5 款可用/);
   assert.doesNotMatch(html, /\[object Object\]/);
   const summary = renderDesignerAddParameterContent({ templates }, view);
-  assert.match(summary, /4200|4,200/);
-  assert.match(summary, /右转 L 型/);
+  assert.doesNotMatch(summary, /4200|4,200/);
+  assert.match(summary, /is-no-dimension-cards/);
+  assert.match(summary, /结构示意/);
   assert.equal(view.tubeDesignerAddDraft.layout, "right_l");
 });
 
@@ -251,18 +251,17 @@ await test("shipped railing and staircase descriptors are in distinct primary ca
   const shipped = ["single_face_security_window", "modular_guardrail", "straight_steel_staircase"].map(readTemplate);
   const tree = buildTemplateGroupTree(shipped);
   assert.deepEqual(tree.map((group) => group.title), ["窗", "护栏", "楼梯"]);
-  assert.equal(tree[1].children[0].templates[0].id, "modular-guardrail");
+  assert.equal(tree[1].templates[0].id, "modular-guardrail");
   assert.equal(tree[2].templates.length, 1);
 });
 
-await test("the guardrail catalogue exposes four product families and hides legacy style variants", () => {
-  const modularDirectories = ["modular_guardrail", ...[
-    "r3-left-l", "r3-right-l", "r3-u", "r3-left-double", "r3-right-double", "r3-u-double", "r3-large-middle",
-    "r2-straight", "r2-left-l", "r2-right-l", "r2-u", "r2-left-double", "r2-right-double", "r2-u-double", "r2-large-middle",
-    "round-straight", "round-left-l", "plate-straight", "lower-plate-straight", "cross-straight", "cross-left-l",
-    "diamond-straight", "diamond-left-l", "wall-straight", "wall-spear-straight", "glass-straight", "wall-left-l",
-    "wall-spear-left-l", "glass-left-l", "large-post-cap-straight", "template-cap-straight",
-  ].map((suffix) => `modular_guardrail_${suffix}`)];
+await test("the guardrail catalogue exposes four current product families", () => {
+  const modularDirectories = [
+    "modular_guardrail",
+    "modular_guardrail_glass-straight",
+    "modular_guardrail_cross-straight",
+    "modular_guardrail_diamond-straight",
+  ];
   const descriptors = modularDirectories.map((directory) => presentationDescriptor(JSON.parse(
     readFileSync(new URL(`../../apps/tube-designer/templates/product/${directory}/template.json`, import.meta.url)),
   )));
@@ -275,7 +274,7 @@ await test("the guardrail catalogue exposes four product families and hides lega
     "modular-guardrail-diamond-straight",
   ]));
   assert.ok(descriptors.every((descriptor) => !descriptor.extensions?.catalog?.presets));
-  assert.ok(entries.every((entry) => entry.catalogPath.includes("扶手护栏")));
+  assert.ok(entries.every((entry) => entry.catalogPath.includes("护栏")));
   assert.deepEqual(new Set(entries.map((entry) => entry.displayName)), new Set([
     "竖杆护栏", "挡板护栏", "X 形护栏", "菱形护栏",
   ]));
@@ -315,7 +314,7 @@ await test("security windows use one template and face type is a parameter", () 
       tubeDesignerAddTemplateId: entry.id, tubeDesignerAddDraft: entry.catalogParameters,
     });
     assert.doesNotMatch(html, /封板|mainInfillMode|centerPlate/);
-    assert.ok(html.includes("先确定款式"));
+    assert.ok(html.includes("确定结构"));
     assert.ok(html.includes("结构参数"));
     for (const title of ["尺寸参数", "管材与材料", "加工与装配工艺", "加工清单"]) assert.equal(html.includes(title), false);
     assert.match(html, /<details[^>]* open>\s*<summary><span>结构参数/);
@@ -369,8 +368,10 @@ await test("all registered products render the same four semantic parameter clas
       templates: [descriptor],
       product: { entityId: "product-1", templateId: descriptor.id, name: descriptor.name, quantity: 1, parameters: defaults },
     } } });
-    const addStructurePosition = addHtml.indexOf('data-tube-designer-parameter-group="section:structure"');
-    assert.ok(addStructurePosition >= 0, `${registration.templateId}: add missing structure selector`);
+    assert.ok(addHtml.includes("tube-designer-add-structure-fields"),
+      `${registration.templateId}: add missing structure selector`);
+    assert.equal(addHtml.includes('data-tube-designer-parameter-group="section:structure"'), false,
+      `${registration.templateId}: add must not restore the redundant structure wrapper`);
     for (const key of ["dimensions", "materials", "process"]) {
       assert.equal(addHtml.includes(`data-tube-designer-parameter-group="section:${key}"`), false,
         `${registration.templateId}: add must not expose ${key}`);

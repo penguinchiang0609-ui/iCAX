@@ -233,7 +233,7 @@ const baseTubeDesignerCss = String.raw`
 }
 
 .tube-designer-field.wide { grid-column: 1 / -1; }
-.tube-designer-instance-quantity { max-width: 320px; margin: 12px 0; }
+.tube-designer-instance-quantity { max-width: 320px; margin: 0; }
 .tube-designer-instance-quantity small { color: #6b818c; font-size: 12px; }
 
 .tube-designer-field input,
@@ -261,6 +261,14 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-parametric-profile-parameters { display: grid; grid-column: 1 / -1; gap: 7px; padding: 8px; border-radius: 6px; background: #e8f2f0; }
 .tube-designer-parametric-profile-parameters > strong { color: #315e5a; font-size: 10px; }
 .tube-designer-parametric-profile-parameters .tube-designer-field-grid { margin: 0; }
+.tube-designer-profile-diagram-disclosure { min-width:0; border:1px solid #bdced3; border-radius:5px; background:#f4f8f9; }
+.tube-designer-profile-diagram-disclosure > summary { display:flex; align-items:center; justify-content:space-between; min-height:29px; padding:5px 8px; color:#315e5a; cursor:pointer; font-size:10px; font-weight:700; list-style:none; }
+.tube-designer-profile-diagram-disclosure > summary::-webkit-details-marker { display:none; }
+.tube-designer-profile-diagram-disclosure > summary::before { content:""; width:7px; height:7px; margin-right:7px; border-right:2px solid #567078; border-bottom:2px solid #567078; transform:rotate(-45deg); transition:transform .15s ease; }
+.tube-designer-profile-diagram-disclosure[open] > summary::before { transform:rotate(45deg); }
+.tube-designer-profile-diagram-disclosure > summary > span { flex:1; }
+.tube-designer-profile-diagram-disclosure > summary > small { color:#71878c; font-size:9px; font-weight:500; }
+.tube-designer-profile-diagram-disclosure[open] > .td-profile-parameter-diagram { max-height:360px; overflow:auto; border-width:1px 0 0; border-radius:0 0 5px 5px; }
 
 .tube-designer-primary,
 .tube-designer-secondary {
@@ -305,24 +313,6 @@ const baseTubeDesignerCss = String.raw`
 }
 
 .tube-designer-export-row { display: grid; gap: 7px; }
-
-.tube-designer-overlay {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  display: grid;
-  gap: 3px;
-  padding: 9px 11px;
-  border: 1px solid rgba(255,255,255,.18);
-  border-radius: 7px;
-  background: rgba(17, 34, 42, .78);
-  color: #eff9fa;
-  pointer-events: none;
-  backdrop-filter: blur(8px);
-}
-
-.tube-designer-overlay strong { font-size: 12px; }
-.tube-designer-overlay span { color: #b7cbd2; font-size: 10px; }
 
 .tube-designer-breakdown-backdrop {
   position: fixed;
@@ -666,6 +656,10 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-instance-card > i { width: 7px; height: 7px; border-radius: 50%; background: #c7d1d5; }
 .tube-designer-instance-card.selected > i { background: var(--designer-accent); box-shadow: 0 0 0 3px rgba(23,143,130,.15); }
 .tube-designer-instance-thumbnail { display: grid; place-items: center; height: 82px; border-radius: 6px; background: #122830; }
+.tube-designer-instance-thumbnail .tube-designer-product-structure-svg,
+.tube-designer-table-thumbnail .tube-designer-product-structure-svg,
+.tube-designer-tree-product-thumbnail .tube-designer-product-structure-svg,
+.tube-designer-instance-thumbnail-image { width: 100%; height: 100%; object-fit: contain; }
 .tube-designer-instance-copy { display: grid; gap: 4px; min-width: 0; }
 .tube-designer-instance-copy strong { display: -webkit-box; overflow: hidden; font-size: 12px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .tube-designer-instance-copy span, .tube-designer-instance-copy small { overflow: hidden; color: var(--designer-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -690,6 +684,7 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-schematic .multi-face-door-leaf { fill: rgba(19, 37, 45, .38); stroke: #f1c66f; stroke-width: 1.4; }
 
 .tube-designer-parameter-panel {
+  position: relative;
   grid-template-rows: auto minmax(0, 1fr);
   align-content: stretch;
   gap: 0;
@@ -699,6 +694,63 @@ const baseTubeDesignerCss = String.raw`
   padding: 0;
   overflow: hidden;
   background: #e8edef;
+}
+
+.tube-designer-scene-runtime-status {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 7px 5px 11px;
+  border: 1px solid rgba(116, 148, 157, .55);
+  border-radius: 4px;
+  background: rgba(24, 44, 52, .9);
+  color: #d7e6e9;
+  box-shadow: 0 5px 14px rgba(8, 24, 30, .22);
+  transform: translateX(-50%);
+  font-size: 11px;
+  pointer-events: auto;
+}
+.tube-designer-scene-runtime-status.is-current { color: #b9d4d1; }
+.tube-designer-scene-runtime-status.is-outdated {
+  border-color: #ef6a62;
+  background: rgba(101, 30, 29, .94);
+  color: #fff;
+}
+.tube-designer-scene-runtime-status .tube-designer-primary {
+  min-height: 24px;
+  padding: 0 10px;
+  border-color: #fff;
+  background: #fff;
+  color: #8d2e2b;
+}
+
+.tube-designer-scene-specification-toggle {
+  position: absolute;
+  top: 56px;
+  right: 142px;
+  z-index: 11;
+  min-height: 27px;
+  padding: 3px 10px;
+  border: 1px solid rgba(92, 205, 146, .68);
+  border-radius: 4px;
+  background: rgba(15, 54, 40, .9);
+  color: #bfead2;
+  cursor: pointer;
+  font-size: 11px;
+  pointer-events: auto;
+}
+.tube-designer-scene-specification-toggle:hover,
+.tube-designer-scene-specification-toggle:focus-visible,
+.tube-designer-scene-specification-toggle.is-active {
+  border-color: #4de39a;
+  outline: none;
+  background: rgba(20, 102, 65, .94);
+  color: #fff;
 }
 
 .tube-designer-parameter-scroll {
@@ -810,9 +862,9 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-product-editor-stage {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
-  padding: 8px 6px 12px;
+  padding: 5px 6px 8px;
 }
 .tube-designer-product-editor-stage[hidden] { display: none !important; }
 .tube-designer-config-parameters > .tube-designer-product-editor-tabs {
@@ -909,6 +961,9 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-product-structure-svg .product-diagram-measure:hover text { fill: #ffd98b; }
 [data-tube-designer-product-parameter-scope] .is-product-parameter-active > span,
 [data-tube-designer-product-parameter-scope] .is-product-parameter-active { color: #b96519; }
+[data-tube-designer-product-parameter-scope] .tube-designer-field.is-product-parameter-active { border-color:#dfa969; background:#fff8ea; box-shadow:inset 3px 0 #dfa969; }
+[data-tube-designer-product-parameter-scope] .tube-designer-field.is-scene-member-related { border-color:#73b9b1; background:#eefaf8; box-shadow:inset 3px 0 #19998e; }
+[data-tube-designer-product-parameter-scope] .tube-designer-field.is-scene-member-related.is-product-parameter-active { border-color:#dfa969; background:#fff8ea; box-shadow:inset 3px 0 #dfa969; }
 [data-tube-designer-product-parameter-scope] [data-product-parameter-key].is-active { outline: 2px solid #e5ab68; outline-offset: 1px; }
 .tube-designer-product-dimension {
   display: grid;
@@ -1242,6 +1297,15 @@ const baseTubeDesignerCss = String.raw`
 }
 .tube-designer-parameter-panel .tube-designer-field:last-child { border-bottom: 0; }
 .tube-designer-parameter-panel .tube-designer-field:hover { background: #f3f8f7; }
+.tube-designer-parameter-panel .tube-designer-parameter-summary { cursor: default; }
+.tube-designer-parameter-panel .tube-designer-parameter-summary > strong {
+  min-width: 0;
+  color: #233a44;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
 .tube-designer-parameter-panel .tube-designer-field.wide { grid-column: auto; }
 .tube-designer-parameter-panel .tube-designer-field input,
 .tube-designer-parameter-panel .tube-designer-field select {
@@ -2585,6 +2649,10 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-product-parts-dock > header > div:first-child { display:flex; align-items:baseline; gap:9px; min-width:0; }
 .tube-designer-product-parts-dock > header strong { color:#1c5f62; font-size:12px; }
 .tube-designer-product-parts-dock > header span { overflow:hidden; color:#6c7d83; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-designer-product-parts-dock.is-outdated > header { border-color:#d75b54; background:#6d2724; }
+.tube-designer-product-parts-dock.is-outdated > header strong,
+.tube-designer-product-parts-dock.is-outdated > header span { color:#fff; }
+.tube-designer-product-parts-dock.is-outdated > header .tube-designer-primary { border-color:#fff; background:#fff; color:#8d302b; }
 .tube-designer-product-parts-dock-actions { display:flex; align-items:center; gap:7px; flex:0 0 auto; }
 .tube-designer-product-parts-dock-actions button,
 .tube-designer-product-parts-table button { min-height:25px; padding:3px 9px; border:1px solid #a8c2c6; border-radius:3px; background:#fff; color:#195966; font-size:10px; font-weight:600; cursor:pointer; }
@@ -2610,6 +2678,8 @@ const baseTubeDesignerCss = String.raw`
 .tube-designer-product-parts-empty { display:grid; place-content:center; gap:4px; min-height:100%; padding:16px; color:#63777d; text-align:center; }
 .tube-designer-product-parts-empty strong { color:#315963; font-size:12px; }
 .tube-designer-product-parts-empty span { font-size:11px; }
+.tube-designer-product-parts-empty.is-awaiting-disassembly { background:#e3ebed; }
+.tube-designer-product-parts-empty.is-awaiting-disassembly strong { color:#60757b; font-weight:600; }
 .tube-designer-add-structure-intro { display:grid; gap:3px; margin:10px 0; padding:10px 12px; border-left:3px solid #1d9b8d; background:#edf7f6; }
 .tube-designer-add-structure-intro strong { color:#176e68; font-size:12px; }
 .tube-designer-add-structure-intro span { color:#5d737a; font-size:11px; line-height:1.55; }
@@ -3438,6 +3508,89 @@ text.tube-sketch-entity { fill: #4fd0c2; stroke: none; font-size: 20px; pointer-
   .tube-designer-punch-body { grid-template-columns: minmax(0, 1fr); overflow: auto; }
   .tube-designer-punch-body--creation .tube-designer-punch-editor { border-right: 0; border-bottom: 1px solid #cbd5da; }
   .tube-designer-punch-preview-pane { border-right: 0; border-bottom: 1px solid #cbd5da; }
+}
+
+/* Adding a product now only chooses a style and its structural variant. Keep
+   that decision page compact; detailed dimension/material/process editing
+   belongs to the scene-side parameter panel after creation. */
+.tube-designer-config-dialog.tube-designer-add-dialog { width:min(640px, calc(100vw - 48px)); height:min(680px, calc(100vh - 32px)); }
+.tube-designer-add-dialog .tube-designer-config-body { grid-template-columns:260px minmax(0, 1fr); }
+.tube-designer-add-dialog .tube-designer-template-pane { padding:12px; }
+.tube-designer-add-dialog .tube-designer-template-list { gap:7px; }
+.tube-designer-add-dialog .tube-designer-template-card-grid { grid-template-columns:minmax(0, 1fr); gap:6px; }
+.tube-designer-add-dialog .tube-designer-template-card { grid-template-columns:44px minmax(0, 1fr) 9px; gap:6px; min-height:68px; padding:6px; border-radius:6px; }
+.tube-designer-add-dialog .tube-designer-template-schematic { height:54px; border-radius:4px; }
+.tube-designer-add-dialog .tube-designer-template-card > span:nth-child(2) { gap:3px; }
+.tube-designer-add-dialog .tube-designer-template-card strong { font-size:11px; }
+.tube-designer-add-dialog .tube-designer-template-card small { font-size:9px; line-height:1.3; }
+.tube-designer-add-dialog .tube-designer-field-grid { grid-template-columns:minmax(0, 1fr); }
+.tube-designer-parameter-panel { container:designer-parameter-panel / inline-size; }
+.tube-designer-parameter-panel .tube-designer-field-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:5px; padding:5px; }
+.tube-designer-parameter-panel .tube-designer-field { min-height:34px; padding:5px 7px; border:1px solid #d7e1e3; border-radius:3px; background:#fff; }
+.tube-designer-parameter-panel .tube-designer-field.wide { grid-column:auto; }
+.tube-designer-parameter-panel .tube-designer-field.is-line-full { grid-column:1 / -1; }
+.tube-designer-parameter-panel .tube-designer-field.is-number,
+.tube-designer-parameter-panel .tube-designer-field.is-string,
+.tube-designer-parameter-panel .tube-designer-field.is-choice {
+  grid-template-columns:minmax(88px, 116px) minmax(0, max-content);
+  column-gap:7px;
+  justify-content:start;
+  align-items:center;
+}
+.tube-designer-parameter-panel .tube-designer-field.is-number > input { justify-self:start; max-width:96px; }
+.tube-designer-parameter-panel .tube-designer-field.has-control-size > input:not([type="checkbox"]),
+.tube-designer-parameter-panel .tube-designer-field.has-control-size > select {
+  justify-self:start;
+  inline-size:clamp(
+    min(100%, var(--tube-designer-control-min-width)),
+    min(100%, var(--tube-designer-control-preferred-width)),
+    min(100%, var(--tube-designer-control-max-width))
+  );
+}
+.tube-designer-parameter-panel .tube-designer-profile-field { grid-column:1 / -1; }
+.tube-designer-parameter-panel .tube-designer-profile-field > select {
+  justify-self:start;
+  inline-size:clamp(
+    min(100%, var(--tube-designer-control-min-width, 120px)),
+    min(100%, var(--tube-designer-control-preferred-width, 150px)),
+    min(100%, var(--tube-designer-control-max-width, 190px))
+  );
+}
+.tube-designer-scene-product-identity { display:grid; gap:0; margin-bottom:2px; border:1px solid #bdced2; border-radius:3px; background:#edf4f3; overflow:hidden; }
+.tube-designer-scene-product-identity > header { display:flex; align-items:center; justify-content:space-between; min-height:29px; padding:4px 9px; border-bottom:1px solid #c8d5d8; color:#275f5a; }
+.tube-designer-scene-product-identity > header strong { font-size:11px; }
+.tube-designer-scene-product-identity > header small { color:#73878d; font-size:9px; }
+.tube-designer-structure-summary { display:grid; gap:4px; margin:0 5px 2px; padding:5px 8px; border:1px solid #bdced2; border-radius:3px; background:#edf4f3; color:#314d55; }
+.tube-designer-structure-summary > strong { color:#27645f; font-size:11px; }
+.tube-designer-structure-summary > div { display:flex; flex-wrap:wrap; gap:5px 12px; }
+.tube-designer-structure-summary span { display:flex; align-items:baseline; gap:5px; font-size:10px; font-weight:650; }
+.tube-designer-structure-summary small { color:#73878d; font-size:9px; font-weight:500; }
+@container designer-parameter-panel (max-width:420px) {
+  .tube-designer-parameter-panel .tube-designer-field-grid { grid-template-columns:minmax(0, 1fr); }
+  .tube-designer-parameter-panel .tube-designer-field.is-line-full { grid-column:auto; }
+}
+.tube-designer-add-editor-stage { padding:0; }
+.tube-designer-add-quick-layout { display:grid; gap:10px; align-items:start; }
+.tube-designer-add-quick-visual, .tube-designer-add-quick-options { min-width:0; }
+.tube-designer-add-quick-visual { position:sticky; top:-1px; z-index:5; padding-bottom:8px; background:#f7f9fa; }
+.tube-designer-add-quick-options { padding:0; }
+.tube-designer-add-quick-options .tube-designer-add-structure-intro { margin:0 0 7px; padding:8px 9px; }
+.tube-designer-product-diagram.is-compact { gap:5px; padding:8px; }
+.tube-designer-product-diagram.is-compact .tube-designer-product-diagram-canvas { grid-template-columns:minmax(130px, 1.2fr) minmax(100px, .8fr); padding:6px; }
+.tube-designer-product-diagram.is-compact .tube-designer-product-diagram-art,
+.tube-designer-product-diagram.is-compact .tube-designer-product-diagram-art img,
+.tube-designer-product-diagram.is-compact .tube-designer-product-diagram-art svg { min-height:96px; height:96px; }
+.tube-designer-product-diagram.is-compact.is-no-dimension-cards .tube-designer-product-diagram-canvas { grid-template-columns:minmax(0, 1fr); }
+.tube-designer-parameter-category-tabs { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:4px; padding:4px; border:1px solid #bfd0d4; border-radius:6px; background:#e8eff1; }
+.tube-designer-parameter-category-tabs button { display:flex; align-items:center; justify-content:center; gap:5px; min-width:0; min-height:30px; padding:5px 6px; border:1px solid transparent; border-radius:4px; background:transparent; color:#537079; cursor:pointer; font:inherit; font-size:11px; font-weight:700; }
+.tube-designer-parameter-category-tabs button:hover { color:#176e68; background:#f5fbfa; }
+.tube-designer-parameter-category-tabs button.selected { border-color:#76b9b1; background:#fff; color:#15776f; box-shadow:0 1px 3px rgba(32,62,69,.12); }
+.tube-designer-parameter-category-tabs small { padding:1px 4px; border-radius:8px; background:rgba(21,123,114,.11); color:inherit; font-size:9px; font-weight:600; }
+.tube-designer-parameter-category-content { display:grid; gap:7px; margin-top:7px; }
+@media (max-width: 820px) {
+  .tube-designer-config-dialog.tube-designer-add-dialog { width:calc(100vw - 28px); height:min(760px, calc(100vh - 28px)); }
+  .tube-designer-add-dialog .tube-designer-config-body,
+  .tube-designer-add-quick-layout { grid-template-columns:minmax(0, 1fr); }
 }
 `;
 export const tubeDesignerCss=baseTubeDesignerCss+punchLayoutStyles+punchReviewStyles+punchRecordAreasCss+tileWindowCss;

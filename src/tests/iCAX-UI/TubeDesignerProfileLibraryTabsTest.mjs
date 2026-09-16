@@ -15,7 +15,8 @@ const completed = [];
 async function test(name, run) { await run(); completed.push(name); }
 const circle = { kind: "profile-package", profileForm:"parametric", name: "截面", specification: "Φ40 × 2", width: 40, depth: 40,
   contours: [{ kind: "circle", radius: 20 }, { kind: "circle", radius: 18 }], parameters: { width: 40 },
-  parameterDefinitions: [{ key: "width", valueType: "number", displayName: "外径", defaultValue: 40 }] };
+  parameterDefinitions: [{ key: "width", valueType: "number", displayName: "外径", defaultValue: 40 }],
+  parameterDiagram: { schemaVersion: 1, annotations: [{ parameter: "width", kind: "linear", from: ["-width/2", 0], to: ["width/2", 0], axis: "x", side: "top" }] } };
 const packaged = { id: "round", profileType: "profile-package", profileForm:"parametric", name: "系统圆管", descriptor: {
   id: "round", version: "1.0.0", parameters: circle.parameterDefinitions,
 }, defaultParameters: { width: 40 }, previewProfile: circle };
@@ -269,6 +270,30 @@ await test("product profile roles expose and evaluate the complete system profil
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.parameters.width, 52);
   html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
   assert.match(html, /value="system:oval" selected/);
+  assert.match(html, /管型参数示意图/);
+});
+
+await test("template resource defaults initialise a referenced profile without duplicating its fields", async () => {
+  const { view, context, calls, productAct } = productHarness();
+  view.scene.tubeDesigner.templates[0].extensions = {
+    resourceRoles: {
+      profiles: {
+        frame: {
+          parameter: "frameProfileType",
+          defaultParametersByResource: { "system:round": { width: 52 } },
+        },
+      },
+    },
+  };
+  context.productProxy.invoke = async (method, payload) => {
+    calls.push({ method, payload });
+    return { profile: { ...circle, parameters: payload.parameters, profileScope: "system", profileDefinitionId: "round" } };
+  };
+  await productAct("profile-selection-change", { value: "system:round" });
+  assert.deepEqual(calls.at(-1).payload, {
+    profileRef: { scope: "system", id: "round" }, parameters: { width: 52 },
+  });
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.parameters.width, 52);
 });
 
 await test("product tool roles select constrained library tools and persist role bindings", async () => {
@@ -288,10 +313,16 @@ await test("product tool roles select constrained library tools and persist role
       valueType: "string", defaultValue: "rect", options: [{ value: "rect", label: "矩形管" }],
       presentation: { editor: "profile-library", resourceRole: "frame" },
     }, field],
-    extensions: { resourceRoles: {
-      profiles: { frame: { parameter: "frameProfileType" } },
-      tools: { cornerGroove: { parameter: field.key, targetProfileRole: "frame" } },
-    } },
+    extensions: {
+      addDialog: { structureParameters: [field.key] },
+      resourceRoles: {
+        profiles: { frame: { parameter: "frameProfileType" } },
+        tools: { cornerGroove: {
+          parameter: field.key, targetProfileRole: "frame",
+          defaultParametersByResource: { "system:v-notch-sharp": { angle: 88 } },
+        } },
+      },
+    },
   };
   view.tubeDesignerSystemPunchTools = [
     {
@@ -302,6 +333,7 @@ await test("product tool roles select constrained library tools and persist role
         { key: "derivedWall", displayName: "实测壁厚", valueType: "number", defaultValue: 0, derived: true },
       ],
       defaultParameters: { angle: 90, derivedWall: 0 },
+      parameterDiagram: { schemaVersion: 2, viewBox: "0 0 24 16", paths: ["M2 2 L22 14"], labels: [] },
     },
     { id: "circle", version: "1", displayName: "圆孔", kind: "programmatic", target: "side", category: "孔型", parameters: [] },
   ];
@@ -315,11 +347,12 @@ await test("product tool roles select constrained library tools and persist role
   }, ops);
   const binding = view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove;
   assert.deepEqual(binding.ref, { scope: "system", id: "v-notch-sharp", version: "3.0.1", digest: "slot-digest" });
-  assert.equal(binding.parameters.angle, 90);
+  assert.equal(binding.parameters.angle, 88, "template role defaults initialise the selected resource");
   assert.equal(binding.snapshot.targetProfileRole, "frame");
   assert.equal(view.tubeDesignerAddDraft.cornerGrooveTool, "system:v-notch-sharp");
   html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
   assert.match(html, /模具参数/);
+  assert.match(html, /槽口参数示意图/);
   assert.doesNotMatch(html, /实测壁厚/);
 
   await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 import copy
 import hashlib
 import importlib.util
@@ -196,11 +197,14 @@ def _definition_runtime():
     return module
 
 
-def _load_package(profile_id: str) -> tuple[dict[str, Any], Any]:
+@lru_cache(maxsize=64)
+def _load_package_from_root(
+    profile_id: str, profile_root: str,
+) -> tuple[dict[str, Any], Any]:
     from types import SimpleNamespace
     if re.fullmatch(r"[a-z][a-z0-9_-]*", profile_id) is None:
         raise ValueError(f"管型 ID 无效：{profile_id}")
-    package_root = PROFILE_ROOT / profile_id
+    package_root = Path(profile_root) / profile_id
     runtime = _definition_runtime()
     package = runtime._system_package(package_root, preview=False)
     descriptor = package["descriptor"]
@@ -219,6 +223,15 @@ def _load_package(profile_id: str) -> tuple[dict[str, Any], Any]:
         result[0] = _offset_outer_contour(result[0], clearance)
         return [_swap_contour_axes(c) for c in result] if swap_axes else result
     return descriptor, SimpleNamespace(build=build, contours=contours)
+
+
+def _load_package(profile_id: str) -> tuple[dict[str, Any], Any]:
+    # System profile packages are immutable for the lifetime of one template
+    # host.  Loading one used to re-read, compile and execute its package for
+    # every role reference in the same product (26 times for the default
+    # security window).  Include the root in the key so isolated test/user
+    # catalogues cannot share definitions accidentally.
+    return _load_package_from_root(profile_id, str(PROFILE_ROOT.resolve()))
 
 
 @dataclass(frozen=True)
@@ -361,6 +374,28 @@ def _imported_profile(parameters: dict[str, Any], prefix: str) -> Profile | None
     )
 
 
+@lru_cache(maxsize=512)
+def _built_system_profile(profile_id: str, encoded_parameters: str) -> Profile:
+    descriptor, module = _load_package(profile_id)
+    profile_parameters = json.loads(encoded_parameters)
+    built = module.build(profile_parameters)
+    if not isinstance(built, dict):
+        raise ValueError(f"管型 {profile_id} 的 build 返回值必须是对象")
+    return Profile(
+        profile_id=profile_id,
+        package_version=str(descriptor.get("version", "")),
+        kind=str(built.get("kind", profile_id)),
+        display_name=_localized_text(descriptor.get("displayName")),
+        specification=str(built.get("specification", "")),
+        width=_number(built.get("width"), f"{profile_id}.width"),
+        depth=_number(built.get("depth"), f"{profile_id}.depth"),
+        wall=_number(built.get("wallThickness", 0.0), f"{profile_id}.wallThickness"),
+        radius=_number(built.get("cornerRadius", 0.0), f"{profile_id}.cornerRadius"),
+        _profile_data={**built, "profileForm": descriptor["profileForm"]},
+        _module=module,
+    )
+
+
 def load_profile(
     parameters: dict[str, Any],
     prefix: str,
@@ -372,24 +407,15 @@ def load_profile(
     if imported is not None:
         return imported
     selected_id = profile_id or str(parameters[f"{prefix}ProfileType"])
-    descriptor, module = _load_package(selected_id)
+    descriptor, _ = _load_package(selected_id)
     profile_parameters = _parameter_values(
         descriptor, parameters, prefix,
         {"depth": depth_key} if depth_key else None,
     )
-    built = module.build(profile_parameters)
-    if not isinstance(built, dict):
-        raise ValueError(f"管型 {selected_id} 的 build 返回值必须是对象")
-    return Profile(
-        profile_id=selected_id,
-        package_version=str(descriptor.get("version", "")),
-        kind=str(built.get("kind", selected_id)),
-        display_name=_localized_text(descriptor.get("displayName")),
-        specification=str(built.get("specification", "")),
-        width=_number(built.get("width"), f"{selected_id}.width"),
-        depth=_number(built.get("depth"), f"{selected_id}.depth"),
-        wall=_number(built.get("wallThickness", 0.0), f"{selected_id}.wallThickness"),
-        radius=_number(built.get("cornerRadius", 0.0), f"{selected_id}.cornerRadius"),
-        _profile_data={**built, "profileForm": descriptor["profileForm"]},
-        _module=module,
+    return _built_system_profile(
+        selected_id,
+        json.dumps(
+            profile_parameters, ensure_ascii=False, allow_nan=False,
+            sort_keys=True, separators=(",", ":"),
+        ),
     )

@@ -7,6 +7,7 @@ const activePart = {
   sourceMemberId: "member-active", quantity: 1, length: 1800, profile: { specification: "矩形管 38 × 38 × 1.2" },
 };
 const otherPart = { ...activePart, entityId: "part-other", partNumber: "OTHER-001", name: "其他实例零件" };
+const otherProduct = { ...activeProduct, entityId: "product-other", name: "另一个防盗窗" };
 
 const view = {
   scene: { tubeDesigner: {
@@ -26,6 +27,13 @@ assert.doesNotMatch(dock, /OTHER-001/);
 assert.match(dock, /data-cam-action="tube-designer-select-product-part"[^>]*data-tube-designer-part-id="part-active"/);
 assert.doesNotMatch(dock, /tube-designer-toggle-product-parts-dock|收起|<th>操作<\/th>/);
 assert.doesNotMatch(dock, /预估加工规划|模板预估/);
+
+const switchedDock = renderDesignerProductPartsDock({}, {
+  ...view,
+  scene: { tubeDesigner: { ...view.scene.tubeDesigner, product: otherProduct, activeProductId: otherProduct.entityId } },
+});
+assert.match(switchedDock, /OTHER-001/);
+assert.doesNotMatch(switchedDock, /TD-001/);
 
 const empty = renderDesignerProductPartsDock({}, { scene: { tubeDesigner: { product: activeProduct, manufacturingGroups: [] } } });
 assert.match(empty, /生成零件清单/);

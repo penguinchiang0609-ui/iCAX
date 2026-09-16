@@ -29,9 +29,10 @@ def parameters(**overrides):
     result = {parameter["key"]: parameter["defaultValue"] for parameter in descriptor["parameters"]}
     # Explicit fixture dimensions, independent of commercial default presets.
     result.update(width=1200.0, height=1800.0, frameLayout="left_right",
-                  horizontalCount=4, verticalLayoutMode="maximum_clear_gap",
-                  maximumVerticalClearGap=110.0, middleVerticalCount=9,
                   firstHorizontalTopOffset=200.0, lastHorizontalBottomOffset=200.0,
+                  horizontalMaximumCenterSpacing=500.0,
+                  verticalLeftCenterOffset=110.0, verticalRightCenterOffset=110.0,
+                  verticalMaximumCenterSpacing=120.0,
                   frameWidth=38.0, frameDepth=25.0, frameWallThickness=1.2,
                   horizontalWidth=22.0, horizontalDepth=22.0, horizontalWallThickness=1.0,
                   verticalWidth=19.0, verticalDepth=19.0, verticalWallThickness=1.0,
@@ -45,7 +46,12 @@ def parameters(**overrides):
                   doorGap=6.0, doorFrameWidth=25.0, doorFrameDepth=25.0,
                   doorFrameWallThickness=1.0, doorLeafFrameWidth=20.0,
                   doorLeafFrameDepth=20.0, doorLeafFrameWallThickness=1.0,
-                  doorHorizontalCount=1, doorVerticalCount=1,
+                  doorHorizontalTopCenterOffset=118.0,
+                  doorHorizontalBottomCenterOffset=118.0,
+                  doorHorizontalMaximumCenterSpacing=400.0,
+                  doorVerticalLeftCenterOffset=99.0,
+                  doorVerticalRightCenterOffset=99.0,
+                  doorVerticalMaximumCenterSpacing=120.0,
                   doorHorizontalWidth=20.0, doorHorizontalDepth=20.0,
                   doorHorizontalWallThickness=0.8, doorVerticalWidth=16.0,
                   doorVerticalWallThickness=0.8,
@@ -82,18 +88,44 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
                     if node["key"].startswith("outer_frame.") and ".through." in node["key"]
                     and node["operator"] == "profile2d"]
         self.assertEqual(8, len(profiles))
-        step = (1200.0 - 2 * 38.0) / 10
-        self.assertAlmostEqual(102.9, step - 19.0 / 2)
-        self.assertAlmostEqual(93.4, step - 19.0)
+        step = (1200.0 - 2 * 38.0 - 110.0 - 110.0) / 8
+        self.assertAlmostEqual(103.5, step - 19.0 / 2)
+        self.assertAlmostEqual(94.0, step - 19.0)
 
     def test_gap_is_between_actual_frame_and_leaf_surfaces(self):
         for gap in (0.0, 2.0, 6.0):
             with self.subTest(gap=gap):
-                nodes = graph(generate("display", accessDoorEnabled=True, doorGap=gap))
+                inset = 25.0 + gap + 20.0
+                nodes = graph(generate(
+                    "display", accessDoorEnabled=True, doorGap=gap,
+                    doorHorizontalTopCenterOffset=(360.0 - 2 * inset) / 2,
+                    doorHorizontalBottomCenterOffset=(360.0 - 2 * inset) / 2,
+                    doorVerticalLeftCenterOffset=(300.0 - 2 * inset) / 2,
+                    doorVerticalRightCenterOffset=(300.0 - 2 * inset) / 2,
+                ))
                 fixed = nodes["access_door.fixed_frame.continuous.0001.display.left.solid"]["arguments"]["placement"]["origin"]
                 leaf = nodes["access_door.leaf.frame.continuous.0001.display.left.solid"]["arguments"]["placement"]["origin"]
                 self.assertAlmostEqual(gap, (leaf[0] - 10.0) - (fixed[0] + 12.5))
                 self.assertAlmostEqual(gap, leaf[2] - (fixed[2] + 25.0))
+
+    def test_escape_grid_uses_center_spacing_and_is_independent_of_tube_diameter(self):
+        options = dict(
+            accessDoorEnabled=True,
+            doorVerticalLeftCenterOffset=20.0,
+            doorVerticalRightCenterOffset=20.0,
+            doorVerticalMaximumCenterSpacing=60.0,
+        )
+        narrow = generate("display", **options, doorVerticalWidth=16.0, doorVerticalDepth=16.0)
+        wide = generate("display", **options, doorVerticalWidth=17.0, doorVerticalDepth=17.0)
+        keys = lambda document: [item["key"] for item in document["items"]
+                                 if item["key"].startswith("access_door.leaf.vertical.")]
+        self.assertEqual(4, len(keys(narrow)))
+        self.assertEqual(keys(narrow), keys(wide))
+        origins = lambda document: [node["arguments"]["placement"]["origin"]
+                                    for node in document["geometry"]
+                                    if node["key"].startswith("access_door.leaf.vertical.")
+                                    and node["key"].endswith(".solid")]
+        self.assertEqual(origins(narrow), origins(wide))
 
     def test_leaf_horizontal_is_butt_joint_and_vertical_is_inserted(self):
         for process in ("v_groove_90:sharp_v", "miter_45", "butt_90"):
@@ -156,8 +188,8 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
                 assembled = wall + u - (h / 2 + bend)
             else:
                 assembled = height - wall - (u - (1.5 * h + v + 3 * bend))
-            expected = (38 + 112.4 * index if side in {"top", "bottom"}
-                        else 1600 - (1400 / 3) * (index - 1))
+            expected = (148 + 113 * (index - 1) if side in {"top", "bottom"}
+                        else 200 + (1400 / 3) * (index - 1))
             self.assertAlmostEqual(expected, assembled, places=7, msg=node["key"])
 
     def test_center_aperture_is_preserved_on_both_ends_of_the_stock(self):
@@ -194,15 +226,17 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
 
     def test_overlapping_bars_and_outside_offsets_are_rejected(self):
         cases = (
-            {"horizontalCount": 100},
-            {"verticalLayoutMode": "manual_count", "middleVerticalCount": 100},
+            {"horizontalMaximumCenterSpacing": 1.0},
+            {"verticalMaximumCenterSpacing": 1.0},
             {"firstHorizontalTopOffset": 0.0},
             {"lastHorizontalBottomOffset": 0.0},
-            {"accessDoorEnabled": True, "doorHorizontalCount": 100},
-            {"accessDoorEnabled": True, "doorVerticalCount": 100},
+            {"accessDoorEnabled": True, "doorHorizontalTopCenterOffset": 10.0,
+             "doorHorizontalBottomCenterOffset": 10.0, "doorHorizontalMaximumCenterSpacing": 1.0},
+            {"accessDoorEnabled": True, "doorVerticalLeftCenterOffset": 10.0,
+             "doorVerticalRightCenterOffset": 10.0, "doorVerticalMaximumCenterSpacing": 1.0},
         )
         for case in cases:
-            with self.subTest(case=case), self.assertRaisesRegex(ValueError, "范围|重叠"):
+            with self.subTest(case=case), self.assertRaisesRegex(ValueError, "范围|重叠|100根"):
                 generate(**case)
 
     def test_insertion_requires_cavity_and_preserves_outside_wall(self):
@@ -340,7 +374,7 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
         document = SUBJECT._generate_geometry(params, {"template": {}, "geometryPurpose": "manufacturing"})
         self.assertEqual(15, len(document["items"]))
         document = generate(doorHingeCount=0, doorHingeSide="unused",
-                            doorHorizontalCount=-1, doorFrameJoinType="unused",
+                            doorHorizontalMaximumCenterSpacing=-1, doorFrameJoinType="unused",
                             doorLeft=float("nan"), doorGap=-1.0)
         self.assertEqual(15, len(document["items"]))
 
@@ -366,7 +400,7 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
     def test_single_horizontal_bar_does_not_mask_negative_offsets_by_averaging(self):
         for key in ("firstHorizontalTopOffset", "lastHorizontalBottomOffset"):
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, "不能为负数"):
-                generate(horizontalCount=1, **{key: -100.0})
+                generate(**{key: -100.0})
 
 
 if __name__ == "__main__":

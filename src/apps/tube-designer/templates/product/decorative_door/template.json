@@ -22,6 +22,24 @@
       "widthParameter": "width",
       "heightParameter": "height"
     },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        { "parameter": "width", "axis": "x", "offset": [0, 0, -160], "label": { "zh-CN": "门扇宽" }, "order": 10 },
+        { "parameter": "height", "axis": "z", "offset": [-160, 0, 0], "label": { "zh-CN": "门扇高" }, "order": 20 }
+      ]
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "door": "all",
+        "design": "all",
+        "array": "all",
+        "process": "all",
+        "safe": "all",
+        "material": "all"
+      }
+    },
     "parameterLayout": {
       "sections": [
         { "key": "product", "displayName": { "zh-CN": "产品规格" }, "order": 10, "defaultOpen": true, "groups": ["door", "design", "array"] },

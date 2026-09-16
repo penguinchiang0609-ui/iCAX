@@ -12,8 +12,7 @@
       "groupOrder": 20,
       "templateOrder": 0,
       "categoryPath": [
-        "护栏",
-        "扶手护栏"
+        "护栏"
       ],
       "listed": true
     },
@@ -24,6 +23,13 @@
       "widthParameter": "sideLength1",
       "heightParameter": "guardHeight",
       "depthParameter": "sideLength2"
+    },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        { "parameter": "sideLength1", "axis": "x", "offset": [0, -180, 0], "label": { "zh-CN": "第 1 边长度" }, "order": 10 },
+        { "parameter": "guardHeight", "axis": "z", "offset": [-180, 0, 0], "label": { "zh-CN": "护栏高度" }, "order": 20 }
+      ]
     },
     "addDialog": {
       "structureParameters": ["layout", "railCount", "cornerPostMode", "largePostMode", "pathMode"]
@@ -2265,5 +2271,5 @@
       "description": "可填写304不锈钢、316L、Q235B等；写入管材和金属板件的材料牌号，不覆盖挡板材质或外购配件，也不替代材料与工艺核验。"
     }
   ],
-  "name": "护栏/扶手护栏/挡板护栏"
+  "name": "护栏/挡板护栏"
 }

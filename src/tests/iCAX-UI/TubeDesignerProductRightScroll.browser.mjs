@@ -70,23 +70,18 @@ try {
     const pane = document.querySelector(".cam-info-pane");
     const context = { mount: pane };
     const state = renderView;
-    const productDetailDisclosure = pane.querySelector("[data-tube-designer-product-detail]");
-    const detailDefaultOpen = productDetailDisclosure.open;
     pane.querySelectorAll(".tube-designer-parameter-section,.tube-designer-parameter-subsection")
       .forEach((details) => { details.open = true; });
     let scroller = pane.querySelector("[data-tube-designer-parameter-scroll]");
-    let detail = pane.querySelector("[data-tube-designer-product-detail-scroll]");
     const overflow = getComputedStyle(scroller).overflowY;
-    const detailOverflow = getComputedStyle(detail).overflowY;
-    const detailScrollable = detail.scrollHeight > detail.clientHeight;
-    detail.scrollTop = detail.scrollHeight;
-    const detailReachable = detail.lastElementChild.getBoundingClientRect().bottom <= detail.getBoundingClientRect().bottom + 1;
     const scrollable = scroller.scrollHeight > scroller.clientHeight;
     scroller.scrollTop = scroller.scrollHeight;
-    const stickyReferenceBottom = pane.querySelector(".tube-designer-parameter-header").getBoundingClientRect().bottom;
-    const stickyDiagramTop = pane.querySelector("[data-tube-designer-product-diagram]").getBoundingClientRect().top;
     const last = scroller.querySelector(".tube-designer-parameter-section:last-child");
     const reachable = last.getBoundingClientRect().bottom <= scroller.getBoundingClientRect().bottom + 1;
+    const sectionTitles = [...scroller.querySelectorAll(".tube-designer-parameter-section")]
+      .map((node) => node.querySelector(":scope > summary > span")?.textContent?.trim())
+      .filter(Boolean);
+    const hasEmbeddedProductDiagram = Boolean(pane.querySelector("[data-tube-designer-product-diagram]"));
 
     scroller.scrollTop = Math.min(420, scroller.scrollHeight - scroller.clientHeight);
     const input = [...scroller.querySelectorAll('[data-tube-designer-parameter]')]
@@ -94,29 +89,20 @@ try {
     input.focus({ preventScroll: true });
     input.setSelectionRange(1, Math.min(4, input.value.length), "backward");
     const oldTop = scroller.scrollTop;
-    const oldDetailTop = detail.scrollTop;
     captureDesignerScrollState(context, state);
 
     pane.innerHTML = renderRightPane({}, state);
     scroller = pane.querySelector("[data-tube-designer-parameter-scroll]");
-    detail = pane.querySelector("[data-tube-designer-product-detail-scroll]");
-    const detailExpandedAfterRender = pane.querySelector("[data-tube-designer-product-detail]").open;
     restoreDesignerScrollState(context, state);
     await Promise.resolve();
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
     const restored = document.activeElement;
     return {
       overflow,
-      detailDefaultOpen,
-      detailExpandedAfterRender,
-      detailOverflow,
-      detailScrollable,
-      detailReachable,
-      detailBounded: detail.clientHeight <= Math.min(innerHeight * 0.32, 320) + 1,
-      detailStable: Math.abs(detail.scrollTop - oldDetailTop) < 1,
       scrollable,
-      stickyDiagram: stickyDiagramTop >= stickyReferenceBottom - 1,
       reachable,
+      sectionTitles,
+      hasEmbeddedProductDiagram,
       oneScrollbar: getComputedStyle(scroller.querySelector(".tube-designer-parameter-sections")).overflowY === "visible",
       stable: Math.abs(scroller.scrollTop - oldTop) < 1,
       focus: restored?.getAttribute("data-tube-designer-parameter") === input.getAttribute("data-tube-designer-parameter"),
@@ -125,16 +111,11 @@ try {
     };
   }, { renderView: view });
   assert.equal(result.overflow, "auto");
-  assert.equal(result.detailDefaultOpen, false);
-  assert.equal(result.detailExpandedAfterRender, true);
-  assert.equal(result.detailOverflow, "auto");
-  assert.equal(result.detailScrollable, true);
-  assert.equal(result.detailReachable, true);
-  assert.equal(result.detailBounded, true);
-  assert.equal(result.detailStable, true);
   assert.equal(result.scrollable, true);
-  assert.equal(result.stickyDiagram, true);
   assert.equal(result.reachable, true);
+  assert.deepEqual(result.sectionTitles, ["材料", "工艺"]);
+  assert.equal(result.hasEmbeddedProductDiagram, false,
+    "产品示意图已从实例编辑页移除，不应占用右侧参数滚动区");
   assert.equal(result.oneScrollbar, true);
   assert.equal(result.stable, true);
   assert.equal(result.focus, true);

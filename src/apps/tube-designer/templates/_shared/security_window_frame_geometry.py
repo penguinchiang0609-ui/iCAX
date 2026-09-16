@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import importlib.util
@@ -100,6 +101,8 @@ class ContinuousFrame:
     group: str
     process: CornerProcess
     parameters: dict[str, Any]
+    tool_role: str = ""
+    user_mould_root: str = ""
 
     @property
     def bend_allowance(self) -> float:
@@ -130,26 +133,10 @@ def validate_frame_processes(parameters: dict[str, Any], processes: list[tuple[C
     grooves = [(process, profile) for process, profile in processes if process.join_type == "v_groove_90"]
     if not grooves:
         return
-    # Relief switches belong to sharp grooves only. Keep inactive draft values
-    # when switching styles; the emitters apply them per frame, never globally.
-    sharp = any(process.groove_style == "sharp_v" for process, _ in grooves)
-    if not 0 <= _number(parameters, "vGrooveKFactor") <= 1:
-        raise ValueError("展开 K 因子必须在 0 到 1 之间")
-    distance = _number(parameters, "vGrooveBottomDistance")
-    if distance < 0 or any(distance >= profile.width - profile.wall for _, profile in grooves):
-        raise ValueError("V 槽底距离必须非负且小于各加工框的截面宽度减壁厚")
-    if (any(process.groove_style == "rounded_v" for process, _ in grooves)
-            or (sharp and (parameters["vGrooveBottomCut"]
-                or (parameters["vGrooveReliefHole"] and _number(parameters, "vGrooveReliefDiameter") == 0)))):
-        if _number(parameters, "vGrooveRadius") < 0:
-            raise ValueError("V 槽半径不能为负数")
-    if sharp and parameters["vGrooveReliefHole"] and _number(parameters, "vGrooveReliefDiameter") < 0:
-        raise ValueError("V 槽释放孔直径不能为负数")
-    for process, profile in grooves:
-        _validate_bending_section(profile)
-        probe = ContinuousFrame("validation", "框", 0, 0, 1000, 1000, profile, "", process, parameters)
-        _groove_contour(probe, 0)
-        _relief_radius(probe)
+    # Every continuous-frame variant now resolves to an actual mould package.
+    # Its own package performs the section applicability and cutter validation;
+    # do not keep a second, product-local V-slot interpretation here.
+    return
 
 
 def _validate_bending_section(profile: Profile) -> None:
@@ -183,7 +170,8 @@ def _validate_bending_section(profile: Profile) -> None:
 def emit_surface_frame(model: NeutralModel, shared: SharedTubeGeometry, parameters: dict[str, Any],
                        *, prefix: str, name: str, profile: Profile, group: str,
                        bounds: tuple[float, float, float, float], process: CornerProcess,
-                       placement: dict[str, Any], inserted_parts: list[Part], purpose: str) -> tuple[list[dict[str, Any]], dict[str, str]]:
+                       placement: dict[str, Any], inserted_parts: list[Part], purpose: str,
+                       tool_role: str = "", user_mould_root: str = "") -> tuple[list[dict[str, Any]], dict[str, str]]:
     """Use the same planar cuts/unfolding for a frame on any opening plane.
 
     Assembly coordinates are transformed onto the selected surface. A folded
@@ -192,7 +180,8 @@ def emit_surface_frame(model: NeutralModel, shared: SharedTubeGeometry, paramete
     one stock item instead of leaving references to four nonexistent sides.
     """
     items: list[ModelItem] = []
-    _add_processed_rectangle(items, {}, prefix, name, *bounds, profile, group, process, parameters)
+    _add_processed_rectangle(items, {}, prefix, name, *bounds, profile, group, process, parameters,
+                             tool_role, user_mould_root)
     straight = [item for item in items if isinstance(item, Part)]
     crossing_map = _crossings([*straight, *inserted_parts]) if purpose != "display" else {}
     records = []
@@ -262,7 +251,7 @@ def _process(parameters: dict[str, Any], join_key: str, butt_key: str) -> Corner
     encoded = str(parameters[join_key])
     if encoded.startswith("v_groove_90:"):
         join_type, style = encoded.split(":", 1)
-        if style not in {"sharp_v", "rounded_v", "left_arc", "right_arc"}:
+        if style not in {"sharp_v", "rounded_v", "left_arc", "right_arc", "tool_library"}:
             raise ValueError(f"{join_key} 的 V 槽样式不支持：{style}")
         return CornerProcess(join_type, style)
     if encoded not in {"miter_45", "butt_90"}:
@@ -352,7 +341,8 @@ def _add_part(
 def _add_processed_rectangle(
     items: list[ModelItem], counters: dict[str, int], prefix: str, name: str,
     left: float, bottom: float, right: float, top: float, profile: Profile,
-    group: str, process: CornerProcess, parameters: dict[str, Any],
+    group: str, process: CornerProcess, parameters: dict[str, Any], tool_role: str = "",
+    user_mould_root: str = "",
 ) -> None:
     if right - left <= profile.width * 2 or top - bottom <= profile.width * 2:
         raise ValueError(f"{name}尺寸不足以形成封闭框")
@@ -360,7 +350,7 @@ def _add_processed_rectangle(
         role = f"{prefix}.continuous"
         items.append(ContinuousFrame(
             _next_key(counters, role), name, left, bottom, right, top,
-            profile, group, process, parameters,
+            profile, group, process, parameters, tool_role, user_mould_root,
         ))
         return
 
@@ -525,6 +515,183 @@ def _emit_polygon_cutter(
     )
 
 
+def _circle_from_points(first: list[float], middle: list[float], last: list[float]) -> tuple[list[float], float]:
+    """Return the exact circle through a path arc's three protocol points."""
+    ax, ay = first
+    bx, by = middle
+    cx, cy = last
+    denominator = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by))
+    if abs(denominator) <= 1.0e-10:
+        raise ValueError("模具目标管型含退化圆弧")
+    a2, b2, c2 = ax * ax + ay * ay, bx * bx + by * by, cx * cx + cy * cy
+    center = [
+        (a2 * (by - cy) + b2 * (cy - ay) + c2 * (ay - by)) / denominator,
+        (a2 * (cx - bx) + b2 * (ax - cx) + c2 * (bx - ax)) / denominator,
+    ]
+    return center, math.dist(center, first)
+
+
+def _section_edges(contour: dict[str, Any]) -> list[dict[str, Any]]:
+    """Translate the profile protocol into the exact mould-section protocol.
+
+    This is deliberately an analytic translation: lines and arcs remain lines
+    and arcs.  It never samples a tube profile to make a mould appear usable.
+    """
+    kind = str(contour.get("kind", ""))
+    if kind == "circle":
+        radius = _number(contour, "radius")
+        if radius <= 0:
+            raise ValueError("模具目标管型圆截面半径必须大于 0")
+        return [{"kind": "circleArc", "start": [radius, 0.0], "end": [radius, 0.0],
+                 "center": [0.0, 0.0], "xAxis": [1.0, 0.0], "yAxis": [0.0, 1.0],
+                 "radius": radius, "first": 0.0, "last": math.tau}]
+    if kind == "polygon":
+        points = contour.get("points")
+        if not isinstance(points, list) or len(points) < 3:
+            raise ValueError("模具目标管型多边形轮廓无效")
+        return [{"kind": "line", "start": deepcopy(first), "end": deepcopy(last)}
+                for first, last in zip(points, points[1:] + points[:1])]
+    if kind != "path" or contour.get("closed") is not True:
+        raise ValueError("所选槽口模具需要闭合的直线或圆弧管型截面")
+    edges: list[dict[str, Any]] = []
+    for segment in contour.get("segments", []):
+        if segment.get("kind") == "line":
+            edges.append({"kind": "line", "start": deepcopy(segment["start"]), "end": deepcopy(segment["end"])})
+            continue
+        if segment.get("kind") != "arc":
+            raise ValueError("所选槽口模具不支持该管型的曲线类型")
+        first, middle, last = (deepcopy(segment[name]) for name in ("start", "middle", "end"))
+        center, radius = _circle_from_points(first, middle, last)
+        edges.append({"kind": "circleArc", "start": first, "end": last, "center": center,
+                      "xAxis": [1.0, 0.0], "yAxis": [0.0, 1.0], "radius": radius,
+                      "first": math.atan2(first[1] - center[1], first[0] - center[0]),
+                      "last": math.atan2(last[1] - center[1], last[0] - center[0])})
+    if not edges:
+        raise ValueError("模具目标管型轮廓无有效边")
+    return edges
+
+
+def _mould_target_section(profile: Profile, length: float) -> tuple[dict[str, Any], dict[str, list[float]]]:
+    contours = profile.contours(swap_axes=True)
+    loops = [{"inner": index > 0, "closed": True, "edges": _section_edges(contour)}
+             for index, contour in enumerate(contours)]
+    all_points = [point for loop in loops for edge in loop["edges"]
+                  for point in (edge["start"], edge["end"])]
+    if not all_points:
+        raise ValueError("模具目标管型截面为空")
+    bounds = {"min": [0.0, *(min(point[index] for point in all_points) for index in (0, 1))],
+              "max": [float(length), *(max(point[index] for point in all_points) for index in (0, 1))]}
+    return {"schema": "icax.mold-section", "schemaVersion": 1, "status": "available",
+            "tolerance": 0.001, "coordinateSpace": "section-centered-yz", "contours": loops}, bounds
+
+
+def _punch_runtime():
+    path = Path(__file__).with_name("punch_tool_runtime.py")
+    module_key = "icax_product_mould_runtime_" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    if module_key not in sys.modules:
+        spec = importlib.util.spec_from_file_location(module_key, path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("无法加载模具运行时")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_key] = module
+        spec.loader.exec_module(module)
+    return sys.modules[module_key]
+
+
+def _frame_mould_binding(frame: ContinuousFrame) -> tuple[dict[str, Any], dict[str, Any]]:
+    bindings = frame.parameters.get("tubeDesignerToolBindings", {})
+    binding = bindings.get(frame.tool_role) if isinstance(bindings, dict) and frame.tool_role else None
+    if isinstance(binding, dict):
+        reference = binding.get("ref")
+        values = binding.get("parameters", {})
+        if not isinstance(reference, dict) or not isinstance(values, dict):
+            raise ValueError("连续框槽口模具引用无效")
+        return deepcopy(reference), deepcopy(values)
+    # Older projects saved a named V-groove style instead of a resource
+    # binding. Migrate that semantic choice to the matching built-in mould;
+    # never replace a right/left edge arc with a sharp V merely because it
+    # predates the library selector.
+    legacy = frame.process.groove_style
+    if legacy in {"left_arc", "right_arc"}:
+        return {"scope": "system", "id": "edge-arc-groove"}, {
+            "arcDefinition": "legacy",
+            "bendCompensation": False,
+            "useDefaultKFactor": True,
+            "kFactor": 0.62,
+            "angle": 90.0,
+            # The library field is named leftArc; the product's old option is
+            # named right_arc/left_arc, so the polarity is intentionally
+            # inverted here.
+            "leftArc": legacy == "left_arc",
+            "bridge": _number(frame.parameters, "vGrooveBottomDistance"),
+            "bottomReference": "outer",
+            "wallThickness": frame.profile.wall,
+            "reliefDepth": 0.0,
+            "reliefSide": "positive",
+            "reliefDiameter": 0.0,
+            "reliefLift": 0.0,
+            "bottomCut": False,
+            "bottomCutWidth": 2.0,
+        }
+    # A default is intentionally an existing library tool, not a product-local
+    # fallback shape. Existing projects with a sharp V remain reproducible
+    # without requiring users to open and re-save every product instance.
+    selection = str(frame.parameters.get(frame.tool_role + "Tool", "system:v-notch-sharp"))
+    scope, separator, tool_id = selection.partition(":")
+    if separator != ":" or scope != "system" or not tool_id:
+        raise ValueError("连续框槽口模具尚未从模具库选择")
+    return {"scope": "system", "id": tool_id}, {}
+
+
+def _rewrite_tool_value(value: Any, mapping: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        return mapping.get(value, value)
+    if isinstance(value, list):
+        return [_rewrite_tool_value(item, mapping) for item in value]
+    if isinstance(value, dict):
+        return {key: _rewrite_tool_value(item, mapping) for key, item in value.items()}
+    return deepcopy(value)
+
+
+def _emit_library_groove_cutter(model: NeutralModel, frame: ContinuousFrame, center: float, index: int) -> tuple[str, tuple[float, float]]:
+    reference, values = _frame_mould_binding(frame)
+    section, bounds = _mould_target_section(frame.profile, frame.length)
+    snapshot = _punch_runtime()._evaluate(reference, values, {
+        "target": "part", "bounds": bounds, "targetSection": section,
+        "lengthUnit": "mm", "feature": f"product:{frame.tool_role or 'cornerGroove'}",
+    }, user_root=frame.user_mould_root or None)
+    geometry = snapshot["geometry"]
+    source_nodes = geometry.get("model", {}).get("geometry", [])
+    output = str(geometry.get("outputKey", ""))
+    if not source_nodes or not output:
+        raise ValueError("所选槽口模具没有可用实体刀具")
+    prefix = f"{frame.key}.export.groove.{index:04d}.mould"
+    mapping = {str(node["key"]): f"{prefix}.{node['key']}" for node in source_nodes}
+    if output not in mapping:
+        raise ValueError("所选槽口模具输出节点无效")
+    for node in source_nodes:
+        model.geometry(mapping[str(node["key"])], str(node["operator"]),
+                       inputs=[mapping.get(str(key), str(key)) for key in node.get("inputs", [])],
+                       arguments=_rewrite_tool_value(node.get("arguments", {}), mapping))
+    placed = model.geometry(f"{prefix}.placed", "transform", inputs=[mapping[output]], arguments={"placement": {
+        "origin": [center, 0.0, 0.0], "xAxis": [1.0, 0.0, 0.0],
+        "yAxis": [0.0, 1.0, 0.0], "zAxis": [0.0, 0.0, 1.0],
+    }})
+    x_values: list[float] = []
+    for node in source_nodes:
+        if node.get("operator") != "profile2d":
+            continue
+        placement = node.get("arguments", {}).get("placement", {})
+        origin = placement.get("origin", [0.0, 0.0, 0.0])
+        for contour in node.get("arguments", {}).get("contours", []):
+            for segment in contour.get("segments", []) if isinstance(contour, dict) else []:
+                for point in (segment.get("start"), segment.get("middle"), segment.get("end")):
+                    if isinstance(point, list) and len(point) == 2:
+                        x_values.append(float(origin[0]) + float(point[0]))
+    extent = (min(x_values), max(x_values)) if x_values else (-frame.profile.width, frame.profile.width)
+    return placed, extent
+
+
 def _unfold_frame_point(
     frame: ContinuousFrame, side: str, point: tuple[float, float, float],
     seam_shift: float = 0.0,
@@ -634,6 +801,27 @@ def _emit_continuous_frame_geometry(
         center = cursor + segment + frame.bend_allowance / 2
         centers.append(center)
         cursor += segment + frame.bend_allowance
+
+    if frame.process.join_type == "v_groove_90":
+        if purpose == "display":
+            return display, display, centers
+        base = Part(
+            f"{frame.key}.export.base", "", (0.0, 0.0, 0.0), (frame.length, 0.0, 0.0),
+            frame.profile, frame.group,
+        )
+        _, export_shape = _emit_tube_geometry(model, base, shared_geometry)
+        cutters = _continuous_frame_cutters(
+            model, frame, inserted_parts or [], _number(frame.parameters, "assemblyClearance"),
+        )
+        for index, center in enumerate(centers, start=1):
+            cutter, _ = _emit_library_groove_cutter(model, frame, center, index)
+            cutters.append(cutter)
+        if cutters:
+            export_shape = model.geometry(
+                f"{frame.key}.export.final", "boolean", inputs=[export_shape, *cutters],
+                arguments={"operation": "subtract", "target": export_shape, "tools": cutters},
+            )
+        return display or export_shape, export_shape, centers
 
     contours = [_groove_contour(frame, center) for center in centers]
     previous_end = 0.0

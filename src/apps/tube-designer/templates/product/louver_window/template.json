@@ -22,10 +22,40 @@
       "widthParameter": "width",
       "heightParameter": "height"
     },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        { "parameter": "width", "axis": "x", "offset": [0, 0, -150], "label": { "zh-CN": "窗宽" }, "order": 10 },
+        { "parameter": "height", "axis": "z", "offset": [-150, 0, 0], "label": { "zh-CN": "窗高" }, "order": 20 }
+      ]
+    },
     "resourceRoles": {
       "profiles": {
         "frame": { "parameter": "frameProfileType" },
         "blade": { "parameter": "bladeProfileType" }
+      }
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "overall": "all",
+        "frame": { "memberStableKeyPrefixes": ["frame.", "post.", "beam."] },
+        "frame_profile": { "memberStableKeyPrefixes": ["frame.", "post.", "beam."] },
+        "frame_process": { "memberStableKeyPrefixes": ["frame.", "post.", "beam."] },
+        "blades": { "memberStableKeyPrefixes": ["blade."] },
+        "blade_profile": { "memberStableKeyPrefixes": ["blade."] },
+        "array": { "memberStableKeyPrefixes": ["blade."] },
+        "connection": "all"
+      },
+      "profileRoles": {
+        "frame": {
+          "parameters": ["frameProfileType", "frameWidth", "frameDepth", "frameCornerRadius", "frameWallThickness", "frameMaterial"],
+          "memberStableKeyPrefixes": ["frame.", "post.", "beam."]
+        },
+        "blade": {
+          "parameters": ["bladeProfileType", "bladeWidth", "bladeDepth", "bladeCornerRadius", "bladeWallThickness", "bladeMaterial"],
+          "memberStableKeyPrefixes": ["blade."]
+        }
       }
     },
     "parameterLayout": {

@@ -8,6 +8,15 @@ const catalogueItem = {
 const descriptor = {
   ...catalogueItem,
   descriptorLoaded: true,
+  extensions: {
+    catalog: { categoryPath: ["窗"] },
+    productDiagram: {
+      schemaVersion: 1,
+      kind: "security-window",
+      bindings: { layout: "faceType" },
+      layoutValues: { single: "single", three: "three", five: "five" },
+    },
+  },
   groups: [{ key: "structure", displayName: "结构参数", order: 1 }],
   parameters: [{
     key: "faceType", displayName: "面型", type: "select", groupKey: "structure",
@@ -19,7 +28,11 @@ const snapshot = () => ({ tubeDesigner: {
   // The production disassembly response marks its template as catalog-loaded
   // but does not include the parameter schema.  It must not replace the full
   // descriptor saved from the first response.
-  templates: [{ ...catalogueItem, descriptorLoaded: true }],
+  templates: [{
+    ...catalogueItem,
+    descriptorLoaded: true,
+    extensions: { catalog: { categoryPath: ["窗"] } },
+  }],
   product: { entityId: "product-1", name: "当前防盗窗", templateId: "security-window", parameters: { faceType: "five" } },
   members: [], joints: [], parts: [], manufacturingGroups: [],
 } });
@@ -42,6 +55,7 @@ const ops = { renderProject() {} };
 await refreshDesignerState(context, view, ops);
 assert.equal(descriptorCalls, 1);
 assert.equal(view.scene.tubeDesigner.templates[0].descriptorLoaded, true);
+assert.equal(view.scene.tubeDesigner.templates[0].extensions.productDiagram.kind, "security-window");
 assert.match(renderDesignerRightPane({}, view), /结构参数/);
 assert.match(renderDesignerRightPane({}, view), /面型/);
 
@@ -49,6 +63,8 @@ assert.match(renderDesignerRightPane({}, view), /面型/);
 // The full descriptor must be restored before the parameter panel is rendered.
 await refreshDesignerState(context, view, ops);
 assert.equal(descriptorCalls, 1, "The detail descriptor should survive a normal scene refresh.");
+assert.equal(view.scene.tubeDesigner.templates[0].extensions.productDiagram.kind, "security-window",
+  "A compact catalogue extension must not replace the complete product diagram declaration.");
 assert.match(renderDesignerRightPane({}, view), /结构参数/);
 assert.doesNotMatch(renderDesignerRightPane({}, view), /正在载入产品参数/);
 

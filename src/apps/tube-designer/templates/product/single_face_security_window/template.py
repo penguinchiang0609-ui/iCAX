@@ -13,7 +13,9 @@ from icax_template_sdk import NeutralModel
 
 
 TEMPLATE_ID = "single-face-security-window"
-TEMPLATE_VERSION = "3.2.8"
+TEMPLATE_VERSION = "3.5.3"
+DOOR_HINGE_SIDE = "left"
+DOOR_HINGE_COUNT = 2
 
 PROFILE_CATALOG_SCRIPT = Path(__file__).resolve().parent.parent.parent / "_shared" / "tube_profile_catalog.py"
 PROFILE_CATALOG_MODULE = "icax_tube_profile_catalog_" + hashlib.sha256(
@@ -61,6 +63,7 @@ if REVIEW_RULES_MODULE not in sys.modules:
     sys.modules[REVIEW_RULES_MODULE] = _review_module
     _review_spec.loader.exec_module(_review_module)
 generate_reviewed = sys.modules[REVIEW_RULES_MODULE].generate_reviewed
+_center_spacing_positions = sys.modules[REVIEW_RULES_MODULE].center_spacing_positions
 
 FRAME_SCRIPT = PROFILE_CATALOG_SCRIPT.parent / "security_window_frame_geometry.py"
 FRAME_MODULE = "icax_security_window_frames_" + hashlib.sha256(FRAME_SCRIPT.read_bytes()).hexdigest()[:16]
@@ -81,8 +84,6 @@ _profile = _frame_geometry._profile
 _process = _frame_geometry._process
 _even_positions = _frame_geometry._even_positions
 _validate_bar_positions = _frame_geometry._validate_bar_positions
-_vertical_count = _frame_geometry._vertical_count
-_horizontal_positions = _frame_geometry._horizontal_positions
 _next_key = _frame_geometry._next_key
 _add_part = _frame_geometry._add_part
 _add_processed_rectangle = _frame_geometry._add_processed_rectangle
@@ -123,12 +124,7 @@ def _validate(parameters: dict[str, Any]) -> None:
     if clearance < 0:
         raise ValueError("装配间隙不能为负数")
     _validate_through_fit(horizontal, vertical, clearance, "主横杆与主竖杆")
-    if str(parameters.get("verticalLayoutMode", "manual_count")) not in {
-        "manual_count", "maximum_clear_gap",
-    }:
-        raise ValueError("verticalLayoutMode 不支持")
-    if _number(parameters, "maximumVerticalClearGap") <= 0:
-        raise ValueError("最大竖杆净间距必须大于0")
+    pattern = str(parameters.get("infillPattern", "grid"))
     connection = str(parameters.get("mainHorizontalConnection", "insert"))
     if connection not in {"insert", "weld"}:
         raise ValueError("mainHorizontalConnection 仅支持 insert 或 weld")
@@ -139,28 +135,28 @@ def _validate(parameters: dict[str, Any]) -> None:
         insertion = _number(parameters, key)
         if not 0 <= insertion <= 20:
             raise ValueError(f"{key} 必须在0到20 mm之间")
-    for key in ("horizontalCount", "middleVerticalCount"):
-        if not 0 <= _integer(parameters, key) <= 100:
-            raise ValueError(f"{key} 超出支持范围")
-    if _integer(parameters, "horizontalCount"):
-        for key in ("firstHorizontalTopOffset", "lastHorizontalBottomOffset"):
-            if _number(parameters, key) < 0:
-                raise ValueError(f"{key} 不能为负数")
     layout = str(parameters["frameLayout"])
     if layout not in {"left_right", "top_bottom", "four_sides"}:
         raise ValueError(f"不支持的外框布置：{layout}")
     horizontal_margin = frame.width if layout != "left_right" else 0.0
-    _validate_bar_positions(
-        _horizontal_positions(parameters, height), horizontal_margin,
-        height - horizontal_margin, horizontal.width, "主横杆",
+    horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
+        parameters, 0.0, height,
+        start_offset_key="lastHorizontalBottomOffset",
+        end_offset_key="firstHorizontalTopOffset",
+        maximum_spacing_key="horizontalMaximumCenterSpacing", label="主横杆",
     )
+    _validate_bar_positions(horizontal_positions, horizontal_margin,
+                            height - horizontal_margin, horizontal.width, "主横杆")
     vertical_margin = frame.width if layout != "top_bottom" else 0.0
-    vertical_count = _vertical_count(parameters, vertical_margin, width - vertical_margin, vertical.width)
-    _validate_bar_positions(
-        _even_positions(vertical_count, vertical_margin, width - vertical_margin),
-        vertical_margin, width - vertical_margin, vertical.width, "主竖杆",
+    vertical_positions = [] if pattern == "horizontal" else _center_spacing_positions(
+        parameters, vertical_margin, width - vertical_margin,
+        start_offset_key="verticalLeftCenterOffset",
+        end_offset_key="verticalRightCenterOffset",
+        maximum_spacing_key="verticalMaximumCenterSpacing", label="主竖杆",
     )
-    if layout != "top_bottom" and _integer(parameters, "horizontalCount"):
+    _validate_bar_positions(vertical_positions, vertical_margin, width - vertical_margin,
+                            vertical.width, "主竖杆")
+    if layout != "top_bottom" and horizontal_positions:
         if connection == "weld":
             _validate_flat_weld(frame, horizontal, "外框与主横杆")
         else:
@@ -168,20 +164,13 @@ def _validate(parameters: dict[str, Any]) -> None:
             if reserve == 0:
                 raise ValueError("主横杆插接入榫深度必须大于0；贴合焊接请选择焊接连接")
             _validate_insertion(frame, horizontal, reserve, clearance, "外框与主横杆")
-    if layout != "left_right" and vertical_count:
+    if layout != "left_right" and vertical_positions:
         reserve = _number(parameters, "verticalBranchReserve")
         _validate_insertion(frame, vertical, reserve, clearance, "外框与主竖杆")
     processes: list[tuple[CornerProcess, Profile]] = []
     if layout == "four_sides":
         processes.append((_process(parameters, "frameJoinType", "frameButtWrapMode"), frame))
     if parameters["accessDoorEnabled"]:
-        for key in ("doorHorizontalCount", "doorVerticalCount"):
-            if not 0 <= _integer(parameters, key) <= 100:
-                raise ValueError(f"{key} 超出支持范围")
-        if not 1 <= _integer(parameters, "doorHingeCount") <= 10:
-            raise ValueError("doorHingeCount 超出支持范围")
-        if parameters["doorHingeSide"] not in {"left", "right"}:
-            raise ValueError("doorHingeSide 不支持")
         processes.extend((
             (_process(parameters, "doorFrameJoinType", "doorFrameButtWrapMode"), _profile(parameters, "doorFrame")),
             (_process(parameters, "doorLeafFrameJoinType", "doorLeafFrameButtWrapMode"), _profile(parameters, "doorLeafFrame")),
@@ -204,22 +193,33 @@ def _validate(parameters: dict[str, Any]) -> None:
     required = 2 * (door_frame.width + leaf_frame.width + gap)
     if gap < 0 or door_width <= required or door_height <= required:
         raise ValueError("逃生窗尺寸不足以容纳窗框、窗扇框和间隙")
-    if _integer(parameters, "doorVerticalCount"):
-        _validate_insertion(leaf_frame, door_vertical, leaf_frame.width / 2, clearance, "窗扇框与窗内竖杆")
     inset = door_frame.width + gap + leaf_frame.width
-    for count_key, size, bar, label in (
-        ("doorHorizontalCount", door_height, door_horizontal, "窗内横杆"),
-        ("doorVerticalCount", door_width, door_vertical, "窗内竖杆"),
-    ):
-        _validate_bar_positions(
-            _even_positions(_integer(parameters, count_key), inset, size - inset),
-            inset, size - inset, bar.width, label,
-        )
+    pattern = str(parameters.get("infillPattern", "grid"))
+    horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
+        parameters, inset, door_height - inset,
+        start_offset_key="doorHorizontalBottomCenterOffset",
+        end_offset_key="doorHorizontalTopCenterOffset",
+        maximum_spacing_key="doorHorizontalMaximumCenterSpacing", label="窗内横杆",
+    )
+    vertical_positions = [] if pattern == "horizontal" else _center_spacing_positions(
+        parameters, inset, door_width - inset,
+        start_offset_key="doorVerticalLeftCenterOffset",
+        end_offset_key="doorVerticalRightCenterOffset",
+        maximum_spacing_key="doorVerticalMaximumCenterSpacing", label="窗内竖杆",
+    )
+    _validate_bar_positions(horizontal_positions, inset, door_height - inset,
+                            door_horizontal.width, "窗内横杆")
+    _validate_bar_positions(vertical_positions, inset, door_width - inset,
+                            door_vertical.width, "窗内竖杆")
+    if vertical_positions:
+        _validate_insertion(leaf_frame, door_vertical, leaf_frame.width / 2, clearance,
+                            "窗扇框与窗内竖杆")
 
 
 def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     purpose = request_geometry_purpose(context)
     _validate(parameters)
+    user_mould_root = str(context.get("userMouldRoot", "")).strip()
     template = context["template"]
     model = NeutralModel(
         template_id=TEMPLATE_ID, template_version=TEMPLATE_VERSION,
@@ -239,6 +239,7 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
         _add_processed_rectangle(
             items, counters, "outer_frame", "大外框", 0, 0, width, height,
             frame, "main", _process(parameters, "frameJoinType", "frameButtWrapMode"), parameters,
+            "outerFrameGroove", user_mould_root,
         )
     else:
         if layout == "left_right":
@@ -271,7 +272,14 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
         door_right = door_left + _number(parameters, "doorWidth")
         door_top = door_bottom + _number(parameters, "doorHeight")
 
-    for index, z in enumerate(_horizontal_positions(parameters, height), start=1):
+    pattern = str(parameters.get("infillPattern", "grid"))
+    main_horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
+        parameters, 0.0, height,
+        start_offset_key="lastHorizontalBottomOffset",
+        end_offset_key="firstHorizontalTopOffset",
+        maximum_spacing_key="horizontalMaximumCenterSpacing", label="主横杆",
+    )
+    for index, z in enumerate(main_horizontal_positions, start=1):
         if door_enabled and door_bottom < z < door_top:
             _add_part(items, counters, "main_grid.horizontal.left", f"主横杆 {index} 左段", (horizontal_start, 0, z), (door_left, 0, z), horizontal,
                       category_key="main_grid.horizontal", category_name="主横杆")
@@ -283,10 +291,13 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
 
     vertical_left = frame.width if has_side_frame else 0.0
     vertical_right = width - frame.width if has_side_frame else width
-    vertical_count = _vertical_count(
-        parameters, vertical_left, vertical_right, vertical.width,
+    main_vertical_positions = [] if pattern == "horizontal" else _center_spacing_positions(
+        parameters, vertical_left, vertical_right,
+        start_offset_key="verticalLeftCenterOffset",
+        end_offset_key="verticalRightCenterOffset",
+        maximum_spacing_key="verticalMaximumCenterSpacing", label="主竖杆",
     )
-    for index, x in enumerate(_even_positions(vertical_count, vertical_left, vertical_right), start=1):
+    for index, x in enumerate(main_vertical_positions, start=1):
         if door_enabled and door_left < x < door_right:
             _add_part(items, counters, "main_grid.vertical.bottom", f"主竖杆 {index} 下段", (x, 0, vertical_start), (x, 0, door_bottom), vertical,
                       category_key="main_grid.vertical", category_name="主竖杆")
@@ -304,6 +315,7 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
             door_left, door_bottom, door_right, door_top, door_frame,
             "access_door.fixed_frame",
             _process(parameters, "doorFrameJoinType", "doorFrameButtWrapMode"), parameters,
+            "doorFrameGroove", user_mould_root,
         )
         inset = door_frame.width + _number(parameters, "doorGap")
         leaf_left, leaf_right = door_left + inset, door_right - inset
@@ -313,17 +325,31 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
             leaf_left, leaf_bottom, leaf_right, leaf_top, leaf_frame,
             "access_door.leaf",
             _process(parameters, "doorLeafFrameJoinType", "doorLeafFrameButtWrapMode"), parameters,
+            "doorLeafFrameGroove", user_mould_root,
         )
         inner_left, inner_right = leaf_left + leaf_frame.width, leaf_right - leaf_frame.width
         inner_bottom, inner_top = leaf_bottom + leaf_frame.width, leaf_top - leaf_frame.width
         door_horizontal = _profile(parameters, "doorHorizontal")
         door_vertical = _profile(parameters, "doorVertical")
-        for index, z in enumerate(_even_positions(_integer(parameters, "doorHorizontalCount"), inner_bottom, inner_top), start=1):
+        pattern = str(parameters.get("infillPattern", "grid"))
+        door_horizontal_positions = [] if pattern == "vertical" else _center_spacing_positions(
+            parameters, inner_bottom, inner_top,
+            start_offset_key="doorHorizontalBottomCenterOffset",
+            end_offset_key="doorHorizontalTopCenterOffset",
+            maximum_spacing_key="doorHorizontalMaximumCenterSpacing", label="窗内横杆",
+        )
+        door_vertical_positions = [] if pattern == "horizontal" else _center_spacing_positions(
+            parameters, inner_left, inner_right,
+            start_offset_key="doorVerticalLeftCenterOffset",
+            end_offset_key="doorVerticalRightCenterOffset",
+            maximum_spacing_key="doorVerticalMaximumCenterSpacing", label="窗内竖杆",
+        )
+        for index, z in enumerate(door_horizontal_positions, start=1):
             # Equal-size horizontal stock meets the leaf frame at its inner
             # face as a butt joint; it cannot be pushed into a smaller cavity.
             _add_part(items, counters, "access_door.leaf.horizontal", f"窗内横杆 {index}", (inner_left, 0, z), (inner_right, 0, z), door_horizontal, "access_door.leaf",
                       category_name="窗内横杆")
-        for index, x in enumerate(_even_positions(_integer(parameters, "doorVerticalCount"), inner_left, inner_right), start=1):
+        for index, x in enumerate(door_vertical_positions, start=1):
             _add_part(items, counters, "access_door.leaf.vertical", f"窗内竖杆 {index}", (x, 0, inner_bottom - leaf_frame.width / 2), (x, 0, inner_top + leaf_frame.width / 2), door_vertical, "access_door.leaf",
                       category_name="窗内竖杆")
 
@@ -437,7 +463,7 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
             )
 
     if door_enabled:
-        hinge_side = str(parameters["doorHingeSide"])
+        hinge_side = DOOR_HINGE_SIDE
         fixed_item = _frame_relationship_item(
             items, "access_door.fixed_frame", "access_door.fixed_frame", hinge_side,
         )
@@ -445,8 +471,8 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
             items, "access_door.leaf", "access_door.leaf.frame", hinge_side,
         )
         hinge_x = door_left if hinge_side == "left" else door_right
-        for index in range(_integer(parameters, "doorHingeCount")):
-            hinge_z = door_bottom + (door_top - door_bottom) * (index + 1) / (_integer(parameters, "doorHingeCount") + 1)
+        for index in range(DOOR_HINGE_COUNT):
+            hinge_z = door_bottom + (door_top - door_bottom) * (index + 1) / (DOOR_HINGE_COUNT + 1)
             model.relationship(
                 f"access_door.hinge.{index + 1:04d}", "hinge",
                 [fixed_item, moving_item],
@@ -470,7 +496,125 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
         ],
         rows=rows,
     )
-    return finish_geometry_request(model, context)
+    document = finish_geometry_request(model, context)
+    annotations: list[dict[str, Any]] = []
+
+    def annotate(parameter: str, start: tuple[float, float, float],
+                 end: tuple[float, float, float], offset: tuple[float, float, float],
+                 *, kind: str = "linear", face: str = "front") -> None:
+        annotations.append({
+            "id": f"security-window.{face}.{parameter}",
+            "parameter": parameter,
+            "kind": kind,
+            "face": face,
+            "start": list(start),
+            "end": list(end),
+            "offset": list(offset),
+            "generatedValue": parameters.get(parameter),
+        })
+
+    # These anchors are emitted by the same geometry kernel as the members.
+    # The UI therefore receives model coordinates instead of reconstructing
+    # the security-window layout from parameter names.
+    # Keep semantically different dimensions on separate annotation lanes.
+    # Labels stay at each dimension line's midpoint; only the line offsets are
+    # deliberately staggered here so the viewport does not have to guess the
+    # security-window layout from parameter names.
+    outer_horizontal_lane = max(140.0, frame.width * 3.5)
+    outer_vertical_lane = max(340.0, frame.width * 9.0)
+    grid_side_lane = max(155.0, frame.width * 4.0)
+    grid_top_lane = max(105.0, frame.width * 2.8)
+    edge_detail_lane = max(88.0, frame.width * 2.3)
+    door_side_lane = max(62.0, door_frame.width * 2.0) if door_enabled else 62.0
+    door_top_lane = max(68.0, door_frame.width * 2.2) if door_enabled else 68.0
+    door_bottom_lane = max(92.0, door_frame.width * 2.8) if door_enabled else 92.0
+
+    annotate("width", (0.0, 0.0, 0.0), (width, 0.0, 0.0),
+             (0.0, 0.0, -outer_horizontal_lane))
+    annotate("height", (0.0, 0.0, 0.0), (0.0, 0.0, height),
+             (-outer_vertical_lane, 0.0, 0.0))
+    if main_horizontal_positions:
+        annotate("firstHorizontalTopOffset", (width - frame.width, 0.0, height),
+                 (width - frame.width, 0.0, main_horizontal_positions[-1]),
+                 (edge_detail_lane, 0.0, 0.0))
+        annotate("lastHorizontalBottomOffset", (width - frame.width, 0.0, 0.0),
+                 (width - frame.width, 0.0, main_horizontal_positions[0]),
+                 (edge_detail_lane * 1.8, 0.0, 0.0))
+        if len(main_horizontal_positions) > 1:
+            annotate("horizontalMaximumCenterSpacing",
+                     (width, 0.0, main_horizontal_positions[0]),
+                     (width, 0.0, main_horizontal_positions[1]),
+                     (grid_side_lane, 0.0, 0.0), kind="spacing")
+    if main_vertical_positions:
+        annotate("verticalLeftCenterOffset", (vertical_left, 0.0, height - frame.width),
+                 (main_vertical_positions[0], 0.0, height - frame.width),
+                 (0.0, 0.0, grid_top_lane))
+        annotate("verticalRightCenterOffset", (vertical_right, 0.0, height - frame.width),
+                 (main_vertical_positions[-1], 0.0, height - frame.width),
+                 (0.0, 0.0, grid_top_lane * 1.7))
+        if len(main_vertical_positions) > 1:
+            annotate("verticalMaximumCenterSpacing",
+                     (main_vertical_positions[0], 0.0, height - frame.width),
+                     (main_vertical_positions[1], 0.0, height - frame.width),
+                     (0.0, 0.0, grid_top_lane * 2.4), kind="spacing")
+
+    if door_enabled:
+        door_frame_width = _profile(parameters, "doorFrame").width
+        clear_left = door_left + door_frame_width
+        clear_right = door_right - door_frame_width
+        clear_bottom = door_bottom + door_frame_width
+        clear_top = door_top - door_frame_width
+        annotate("doorClearWidth", (clear_left, 0.0, clear_bottom),
+                 (clear_right, 0.0, clear_bottom), (0.0, 0.0, -door_bottom_lane),
+                 face="escape-window")
+        annotate("doorClearHeight", (clear_left, 0.0, clear_bottom),
+                 (clear_left, 0.0, clear_top), (-door_side_lane, 0.0, 0.0),
+                 face="escape-window")
+        leaf_left = clear_left + _number(parameters, "doorGap")
+        annotate("doorGap", (clear_left, 0.0, clear_bottom),
+                 (leaf_left, 0.0, clear_bottom), (0.0, 0.0, -door_bottom_lane * 3.0),
+                 face="escape-window")
+        annotate("doorLeft", (0.0, 0.0, door_bottom), (door_left, 0.0, door_bottom),
+                 (0.0, 0.0, -door_bottom_lane * 4.6), face="escape-window")
+        annotate("doorBottom", (door_left, 0.0, 0.0), (door_left, 0.0, door_bottom),
+                 (-door_side_lane * 4.4, 0.0, 0.0), face="escape-window")
+        horizontal_positions = [] if str(parameters.get("infillPattern", "grid")) == "vertical" else _center_spacing_positions(
+            parameters, inner_bottom, inner_top,
+            start_offset_key="doorHorizontalBottomCenterOffset",
+            end_offset_key="doorHorizontalTopCenterOffset",
+            maximum_spacing_key="doorHorizontalMaximumCenterSpacing", label="窗内横杆",
+        )
+        vertical_positions = [] if str(parameters.get("infillPattern", "grid")) == "horizontal" else _center_spacing_positions(
+            parameters, inner_left, inner_right,
+            start_offset_key="doorVerticalLeftCenterOffset",
+            end_offset_key="doorVerticalRightCenterOffset",
+            maximum_spacing_key="doorVerticalMaximumCenterSpacing", label="窗内竖杆",
+        )
+        if horizontal_positions:
+            annotate("doorHorizontalTopCenterOffset", (inner_right, 0.0, inner_top),
+                     (inner_right, 0.0, horizontal_positions[-1]), (door_side_lane, 0.0, 0.0),
+                     face="escape-window")
+            annotate("doorHorizontalBottomCenterOffset", (inner_right, 0.0, inner_bottom),
+                     (inner_right, 0.0, horizontal_positions[0]), (door_side_lane * 1.8, 0.0, 0.0),
+                     face="escape-window")
+            if len(horizontal_positions) > 1:
+                annotate("doorHorizontalMaximumCenterSpacing", (inner_right, 0.0, horizontal_positions[0]),
+                         (inner_right, 0.0, horizontal_positions[1]), (door_side_lane * 2.6, 0.0, 0.0),
+                         kind="spacing", face="escape-window")
+        if vertical_positions:
+            annotate("doorVerticalLeftCenterOffset", (inner_left, 0.0, inner_top),
+                     (vertical_positions[0], 0.0, inner_top), (0.0, 0.0, door_top_lane),
+                     face="escape-window")
+            annotate("doorVerticalRightCenterOffset", (inner_right, 0.0, inner_top),
+                     (vertical_positions[-1], 0.0, inner_top), (0.0, 0.0, door_top_lane * 1.8),
+                     face="escape-window")
+            if len(vertical_positions) > 1:
+                annotate("doorVerticalMaximumCenterSpacing", (vertical_positions[0], 0.0, inner_top),
+                         (vertical_positions[1], 0.0, inner_top), (0.0, 0.0, door_top_lane * 2.6),
+                         kind="spacing", face="escape-window")
+
+    document.setdefault("extensions", {})["tubeDesigner.specificationAnnotations"] = annotations
+    return document
 
 
 def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:

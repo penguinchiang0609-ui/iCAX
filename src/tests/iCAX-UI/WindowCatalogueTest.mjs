@@ -4,15 +4,15 @@ import {buildCatalogEntries} from "../../apps/tube-designer/webpage/productCatal
 import {matchesParameterCondition as matches} from "../../apps/tube-designer/webpage/parameterConditions.mjs";
 const read = n => ({...JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/product/" + n + "/template.json", import.meta.url), "utf8")), available: true});
 const security = read("single_face_security_window");
-const all = ["single", "two", "three", "five"].map(n => read(n + "_face_security_window")).concat(read("louver_window"));
+const all = [security, read("louver_window")];
 assert.deepEqual(buildCatalogEntries(all).map(t => t.catalogPath), [["窗", "防盗窗"], ["窗", "百叶窗"]]);
 const defaults = Object.fromEntries(security.parameters.map(p => [p.key, p.defaultValue]));
-function shown(key, faceType) {return matches(security.parameters.find(p => p.key === key).visibleWhen, {...defaults, faceType, accessDoorEnabled: true, verticalLayoutMode: "manual_count"});}
+function shown(key, faceType) {return matches(security.parameters.find(p => p.key === key).visibleWhen, {...defaults, faceType, accessDoorEnabled: true});}
 for (const face of ["single", "two", "three", "five"]) {
   assert.equal(shown("sideWidth", face), face === "two");
   assert.equal(shown("leftWidth", face), face === "three");
   assert.equal(shown("depth", face), face === "five");
-  assert.equal(shown("topBottomRodCount", face), face === "five");
+  assert.equal(shown("topBottomRodMaximumCenterSpacing", face), face === "five");
   for (const [type, key] of [["two", "accessDoorFace2"], ["three", "accessDoorFace3"], ["five", "accessDoorFace5"]]) assert.equal(shown(key, face), face === type);
 }
 console.log("Window catalogue and face-dependent fields passed.");

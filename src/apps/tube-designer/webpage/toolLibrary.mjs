@@ -608,7 +608,7 @@ function ensureToolLibraryPreview(context, view, tool) {
   state.previewRequest = request;
 }
 
-export function ensureToolLibraryCatalogue(context, view, ops) {
+export function ensureToolLibraryCatalogue(context, view, ops, options = {}) {
   const state = toolLibraryState(view);
   if (state.cataloguePromise) return state.cataloguePromise;
   // A failed first request must not permanently brick the library.  Startup
@@ -633,21 +633,25 @@ export function ensureToolLibraryCatalogue(context, view, ops) {
       // Wait for the scene request as well when one is already in flight. The
       // initial yield above ensures afterProjectRender has had a chance to
       // install this promise before we inspect it.
-      const sceneSynchronization = view.tubeDesignerSynchronizationPromise;
-      if (sceneSynchronization) {
-        try { await sceneSynchronization; } catch (_) { /* catalogue can retry */ }
+      if (!options.skipStartupGates) {
+        const sceneSynchronization = view.tubeDesignerSynchronizationPromise;
+        if (sceneSynchronization) {
+          try { await sceneSynchronization; } catch (_) { /* catalogue can retry */ }
+        }
       }
       // ListUserData is explicitly gated behind the initial scene refresh in
       // entry.mjs. Waiting for that shared promise also serializes this
       // catalogue call with the embedded Python host and prevents the
       // intermittent GetPunchTools timeout seen on startup.
-      const userDataSynchronization = view.tubeDesignerUserDataSynchronizationPromise;
-      if (userDataSynchronization) {
-        try { await userDataSynchronization; } catch (_) { /* retry below */ }
-      }
-      const userDataRefresh = view.tubeDesignerUserDataRefreshPromise;
-      if (userDataRefresh) {
-        try { await userDataRefresh; } catch (_) { /* catalogue is independent */ }
+      if (!options.skipStartupGates) {
+        const userDataSynchronization = view.tubeDesignerUserDataSynchronizationPromise;
+        if (userDataSynchronization) {
+          try { await userDataSynchronization; } catch (_) { /* retry below */ }
+        }
+        const userDataRefresh = view.tubeDesignerUserDataRefreshPromise;
+        if (userDataRefresh) {
+          try { await userDataRefresh; } catch (_) { /* catalogue is independent */ }
+        }
       }
       const response = await context.sceneProxy.invoke("TubeDesigner.GetPunchTools", {}, { timeoutMs: 30000 });
       const tools = Array.isArray(response?.tools) ? response.tools : [];

@@ -34,6 +34,33 @@ export function productProfileRole(field) {
     ?? (key.endsWith("ProfileType") ? key.slice(0, -"ProfileType".length) : key)).trim();
 }
 
+export function productProfileRoleDeclaration(template, field) {
+  const profiles = template?.extensions?.resourceRoles?.profiles;
+  const declaration = profiles && typeof profiles === "object" && !Array.isArray(profiles)
+    ? profiles[productProfileRole(field)] : null;
+  return declaration && typeof declaration === "object" && !Array.isArray(declaration)
+    ? declaration : {};
+}
+
+/**
+ * A product template may tune the initial values of a referenced resource,
+ * without copying its parameter schema or its diagram into the product.
+ * Resource-specific defaults win over role-wide defaults.
+ */
+export function productResourceParameterDefaults(declaration, selectionKey = "") {
+  const common = declaration?.defaultParameters;
+  const byResource = declaration?.defaultParametersByResource;
+  const key = String(selectionKey ?? "");
+  const aliases = [key, key.replace(/^saved:/, "user:"), key.replace(/^user:/, "saved:")];
+  const specific = byResource && typeof byResource === "object" && !Array.isArray(byResource)
+    ? aliases.map((alias) => byResource[alias]).find((value) => value && typeof value === "object" && !Array.isArray(value))
+    : null;
+  return {
+    ...(common && typeof common === "object" && !Array.isArray(common) ? common : {}),
+    ...(specific && typeof specific === "object" && !Array.isArray(specific) ? specific : {}),
+  };
+}
+
 export function profileAllowedForProductField(profile, field) {
   const presentation = field?.presentation ?? {};
   const scopes = Array.isArray(presentation.allowedScopes)
@@ -121,9 +148,13 @@ export function productToolBinding(values, field) {
 export function makeProductToolBinding(field, tool, parameters = null, template = null) {
   const definitions = Array.isArray(tool?.parameters) ? tool.parameters : [];
   const defaults = Object.fromEntries(definitions.map((item) => [item.key, item.defaultValue]));
-  const values = parameters && typeof parameters === "object" && !Array.isArray(parameters)
-    ? parameters : { ...defaults, ...(tool?.defaultParameters ?? {}) };
   const declaration = productToolRoleDeclaration(template, field);
+  const values = parameters && typeof parameters === "object" && !Array.isArray(parameters)
+    ? parameters : {
+      ...defaults,
+      ...(tool?.defaultParameters ?? {}),
+      ...productResourceParameterDefaults(declaration, toolSelectionKey(tool)),
+    };
   return {
     schema: PRODUCT_RESOURCE_BINDING_SCHEMA,
     schemaVersion: PRODUCT_RESOURCE_BINDING_VERSION,

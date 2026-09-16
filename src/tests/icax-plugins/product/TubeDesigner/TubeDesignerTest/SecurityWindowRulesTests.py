@@ -127,7 +127,8 @@ class SecurityWindowRulesTests(unittest.TestCase):
                     self.assertNotIn("doorWidth", document["parameters"])
                     self.assertNotIn("doorHeight", document["parameters"])
                     self.assertNotIn("doorSizeReference", document["parameters"])
-                    self.assertEqual(snapshot["doorVerticalCount"], document["parameters"]["doorVerticalCount"])
+                    self.assertEqual(snapshot["doorVerticalMaximumCenterSpacing"],
+                                     document["parameters"]["doorVerticalMaximumCenterSpacing"])
                     self.assertEqual(6, document["extensions"][REVIEW]["leafVerticalCount"])
 
     def test_display_and_manufacturing_preserve_review_parts_and_inputs(self):

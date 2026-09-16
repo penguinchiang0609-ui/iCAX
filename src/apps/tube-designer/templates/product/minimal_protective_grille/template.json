@@ -9,10 +9,40 @@
     "catalog": { "categoryPath": ["窗"], "groupOrder": 10, "templateOrder": 15, "icon": "resource/icon.svg", "schematic": "resource/schematic.svg" },
     "productIdentity": { "codeParameter": "productCode" },
     "primaryDimensions": { "widthParameter": "width", "heightParameter": "height" },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        { "parameter": "width", "axis": "x", "offset": [0, 0, -140], "label": { "zh-CN": "成品宽" }, "order": 10 },
+        { "parameter": "height", "axis": "z", "offset": [-140, 0, 0], "label": { "zh-CN": "成品高" }, "order": 20 }
+      ]
+    },
     "resourceRoles": {
       "profiles": {
         "frame": { "parameter": "frameProfileType" },
         "inner": { "parameter": "innerProfileType" }
+      }
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "overall": "all",
+        "layout": { "memberStableKeyPrefixes": ["inner.bar."] },
+        "handle": { "memberStableKeyPrefixes": ["inner.bar."] },
+        "frame_profile": { "memberStableKeyPrefixes": ["frame."] },
+        "inner_profile": { "memberStableKeyPrefixes": ["inner.bar."] },
+        "frame_process": { "memberStableKeyPrefixes": ["frame."] },
+        "joint": "all",
+        "install": { "memberStableKeyPrefixes": ["frame."] }
+      },
+      "profileRoles": {
+        "frame": {
+          "parameters": ["frameProfileType", "frameProfileOrientation", "frameWidth", "frameDepth", "frameWallThickness", "frameInnerWidth", "frameInnerDepth", "frameInnerOffsetX", "frameInnerOffsetY", "frameCornerRadius", "frameOuterRadii", "frameInnerRadii", "frameOuterCorners", "frameInnerCorners", "frameMaterial"],
+          "memberStableKeyPrefixes": ["frame."]
+        },
+        "inner": {
+          "parameters": ["innerProfileType", "innerProfileOrientation", "innerWidth", "innerDepth", "innerWallThickness", "innerInnerWidth", "innerInnerDepth", "innerInnerOffsetX", "innerInnerOffsetY", "innerCornerRadius", "innerOuterRadii", "innerInnerRadii", "innerOuterCorners", "innerInnerCorners", "innerMaterial"],
+          "memberStableKeyPrefixes": ["inner.bar."]
+        }
       }
     },
     "parameterLayout": {

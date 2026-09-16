@@ -137,18 +137,19 @@ async function handleRibbonCommand(context, commandId) {
   }
   const ops = getProjectOps();
 
-  if (typeof context.handleAreaRibbonCommand === "function"
-      && await context.handleAreaRibbonCommand(context, view, commandId, ops)) {
-    return;
+  if (typeof context.handleAreaRibbonCommand === "function") {
+    const handled = await context.handleAreaRibbonCommand(context, view, commandId, ops);
+    if (handled) return true;
+    if (context.onlyHandleAreaRibbonCommand === true) return false;
   }
   if (await handleMachineRibbonCommand(context, view, commandId, ops)) {
-    return;
+    return true;
   }
   if (await handleWorkpieceRibbonCommand(context, view, commandId, ops)) {
-    return;
+    return true;
   }
   if (handleMachiningRibbonCommand(context, view, commandId, ops)) {
-    return;
+    return true;
   }
 
   if (commandId === "view.fit") {
@@ -159,6 +160,7 @@ async function handleRibbonCommand(context, commandId) {
   } else {
     showNotice(context, view, `${findCommandTitle(commandId)} 功能入口已就位，等待后端能力接入。`);
   }
+  return true;
 }
 
 function normalizeAreaId(context, tabId) {
@@ -200,6 +202,8 @@ function renderProject(context, view) {
     renderWorkbenchLayoutStyle(layout),
     String(workbenchPresentation.style ?? "").trim(),
   ].filter(Boolean).join(";");
+  const viewportSpecificationEditor = view.viewport
+    ?.captureSpecificationAnnotationEditorState?.({ suspendCommit: true }) ?? null;
 
   mount.innerHTML = `
     <div class="cam-workbench ${escapeText(workbenchClass)}" ${workbenchAttributes} style="${escapeAttr(workbenchStyle)}">
@@ -369,6 +373,7 @@ function renderProject(context, view) {
   if (typeof context.afterProjectRender === "function") {
     context.afterProjectRender(context, view, mount, getProjectOps());
   }
+  view.viewport?.restoreSpecificationAnnotationEditorState?.(viewportSpecificationEditor);
   void ensureAreaViewContent(context, view, tab);
   scrollSelectedMachineTreeNodeIntoView(mount, view);
   restorePanes();

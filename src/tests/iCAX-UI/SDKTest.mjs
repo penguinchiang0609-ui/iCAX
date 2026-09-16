@@ -198,7 +198,7 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
   assert.match(collapsedHtml, /data-cam-action="tube-designer-expand-breakdown-all"/);
   assert.match(collapsedHtml, /data-cam-action="tube-designer-collapse-breakdown-all"/);
   assert.match(collapsedHtml, /id="tube-designer-breakdown-title">零件清单</);
-  assert.match(collapsedHtml, /data-cam-action="tube-designer-enter-cutting"/);
+  assert.doesNotMatch(collapsedHtml, /data-cam-action="tube-designer-enter-cutting"/);
   assert.doesNotMatch(collapsedHtml, /产品拆单结果/);
   assert.match(collapsedHtml, /data-cam-action="tube-designer-set-breakdown-page"/);
 
@@ -521,7 +521,7 @@ async function testTubeDesignerNestingPartListUsesTheBreakdownPage() {
   assert.equal(view.tubeDesignerBreakdownMode, "");
 }
 
-async function testTubeDesignerOpensTransientPartListWithoutEnteringCutting() {
+async function testTubeDesignerOpensPersistentPartListWithoutEnteringCutting() {
   const calls = [];
   let selectedAreaId = "view";
   const view = {
@@ -559,14 +559,14 @@ async function testTubeDesignerOpensTransientPartListWithoutEnteringCutting() {
   assert.equal(view.activeAreaId, "view");
   assert.equal(view.tubeDesignerBreakdownOpen, true);
   assert.equal(view.tubeDesignerBreakdownMode, "export");
-  assert.equal(view.tubeDesignerLastOperation.kind, "temporary-part-list");
+  assert.equal(view.tubeDesignerLastOperation.kind, "persistent-part-list");
   const html = renderDesignerDialogs(view.scene.tubeDesigner, view);
-  assert.match(html, /临时数据，不进入下料/);
-  assert.match(html, /临时零件清单 · STEP \+ Excel/);
+  assert.doesNotMatch(html, /临时数据/);
+  assert.match(html, /产品零件清单 · STEP \+ Excel/);
   assert.doesNotMatch(html, /data-cam-action="tube-designer-enter-cutting"/);
 }
 
-async function testTubeDesignerReleasesTransientPartsWhenClosingDirectExport() {
+async function testTubeDesignerKeepsPersistentPartsWhenClosingDirectExport() {
   const calls = [];
   const view = {
     pending: false,
@@ -584,11 +584,11 @@ async function testTubeDesignerReleasesTransientPartsWhenClosingDirectExport() {
     } },
   }, view, "tube-designer-close-breakdown", {}, { renderProject() {} });
   assert.equal(result.handled, true);
-  assert.deepEqual(calls, [{ method: "TubeDesigner.ReleaseTransientParts", payload: {} }]);
+  assert.deepEqual(calls, []);
   assert.equal(view.tubeDesignerBreakdownOpen, false);
   assert.equal(view.tubeDesignerBreakdownMode, "");
   assert.deepEqual(view.tubeDesignerSelectedPartIds, []);
-  assert.deepEqual(view.scene.tubeDesigner.manufacturingGroups, []);
+  assert.equal(view.scene.tubeDesigner.manufacturingGroups.length, 1);
 }
 
 async function testTubeDesignerImportsDisassemblyDirectlyIntoCutting() {
@@ -2421,8 +2421,8 @@ testSDOMethodCodes();
 testTubeDesignerBuildsTemplateDefinedPartCategories();
 testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows();
 await testTubeDesignerNestingPartListUsesTheBreakdownPage();
-await testTubeDesignerOpensTransientPartListWithoutEnteringCutting();
-await testTubeDesignerReleasesTransientPartsWhenClosingDirectExport();
+await testTubeDesignerOpensPersistentPartListWithoutEnteringCutting();
+await testTubeDesignerKeepsPersistentPartsWhenClosingDirectExport();
 await testTubeDesignerImportsDisassemblyDirectlyIntoCutting();
 await testTubeDesignerEntersCuttingFromThePartList();
 testTubeDesignerSketchJoinsTheMainWorkflow();

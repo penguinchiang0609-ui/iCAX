@@ -20,6 +20,85 @@ PROTOCOL_VERSION = 1
 _modules: dict[tuple[str, str], ModuleType] = {}
 
 
+def _localized_text(value: Any, fallback: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, dict):
+        for locale in ("zh-CN", "zh", "en-US", "en"):
+            candidate = value.get(locale)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+    return fallback
+
+
+def _scene_specification_annotations(
+        result: dict[str, Any], template: dict[str, Any], parameters: dict[str, Any]) -> None:
+    """Attach descriptor-owned, envelope-style scene dimensions.
+
+    Complex products can continue to return their own exact anchors from
+    ``template.py``.  Straightforward products declare their few principal
+    dimensions in the descriptor, keeping the scene overlay generic while the
+    package still owns which parameters are exposed and where they are drawn.
+    """
+    extensions = template.get("extensions")
+    specification = extensions.get("sceneSpecificationAnnotations") if isinstance(extensions, dict) else None
+    if not isinstance(specification, dict):
+        return
+    declarations = specification.get("annotations")
+    if not isinstance(declarations, list):
+        raise ValueError("sceneSpecificationAnnotations.annotations 必须是数组")
+    fields = {
+        str(field.get("key")): field for field in template.get("parameters", [])
+        if isinstance(field, dict) and isinstance(field.get("key"), str)
+    }
+    annotations: list[dict[str, Any]] = []
+    for index, declaration in enumerate(declarations):
+        if not isinstance(declaration, dict):
+            raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] 必须是对象")
+        parameter = declaration.get("parameter")
+        axis = declaration.get("axis")
+        if not isinstance(parameter, str) or parameter not in fields:
+            raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] 参数无效")
+        if axis not in ("x", "y", "z"):
+            raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] axis 必须为 x、y 或 z")
+        value = parameters.get(parameter)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        origin = declaration.get("origin", [0, 0, 0])
+        offset = declaration.get("offset", [0, 0, 0])
+        if (not isinstance(origin, list) or len(origin) != 3
+                or not isinstance(offset, list) or len(offset) != 3):
+            raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] 原点和偏移必须是三个数值")
+        try:
+            start = [float(component) for component in origin]
+            offset_vector = [float(component) for component in offset]
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"sceneSpecificationAnnotations.annotations[{index}] 原点和偏移必须是数值") from error
+        axis_index = {"x": 0, "y": 1, "z": 2}[axis]
+        extent = float(value)
+        if declaration.get("centered") is True:
+            start[axis_index] -= extent / 2
+        end = list(start)
+        end[axis_index] += extent
+        field = fields[parameter]
+        annotation = {
+            "id": f"descriptor.{parameter}",
+            "parameter": parameter,
+            "kind": str(declaration.get("kind", "linear")),
+            "start": start,
+            "end": end,
+            "offset": offset_vector,
+            "label": _localized_text(declaration.get("label"), _localized_text(field.get("displayName"), parameter)),
+            "editable": declaration.get("editable") is not False,
+            "generatedValue": value,
+        }
+        if isinstance(declaration.get("visibleWhen"), dict):
+            annotation["visibleWhen"] = declaration["visibleWhen"]
+        annotations.append(annotation)
+    if annotations:
+        result.setdefault("extensions", {}).setdefault("tubeDesigner.specificationAnnotations", []).extend(annotations)
+
+
 def _load_template(template_path: str, package_digest: str) -> ModuleType:
     path = Path(template_path).resolve()
     if not path.is_file():
@@ -75,6 +154,7 @@ def _evaluate(request: dict[str, Any]) -> dict[str, Any]:
         result = generator(dict(parameters), template_context)
     if not isinstance(result, dict):
         raise TypeError("template generate() must return an object")
+    _scene_specification_annotations(result, template, parameters)
 
     # Force full JSON validation before the protocol writer touches stdout.
     json.dumps(result, ensure_ascii=False, allow_nan=False)

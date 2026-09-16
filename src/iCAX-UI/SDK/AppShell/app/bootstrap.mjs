@@ -73,11 +73,12 @@ const actions = {
     state.bridgeStatus = "Connected";
 
     await actions.refresh();
-    // This delivery exposes a single product.  Start it directly so the user
-    // lands in its project entry instead of the generic product console.
+    // This delivery exposes a single product.  Start an unsaved project for it
+    // directly so the user lands in the design workspace instead of a console
+    // or product-selection page.
     const directProduct = findProductState(DIRECT_START_PRODUCT_ID);
-    if (directProduct && !state.activeProductProxy) {
-      await actions.ensureProductStarted(DIRECT_START_PRODUCT_ID);
+    if (directProduct && !state.activeProjectState) {
+      await actions.openDirectTubeDesignerProject();
     }
   },
 
@@ -115,6 +116,35 @@ const actions = {
     state.activeProductState = { ...productState, ...product.state };
     await actions.refresh();
     return state.appProxy.getProduct(product.productId) ?? product;
+  },
+
+  async openDirectTubeDesignerProject() {
+    if (state.activeProjectState || !findProductState(DIRECT_START_PRODUCT_ID)) {
+      return;
+    }
+
+    await track("iTubeDesigner.OpenUntitledProject", async () => {
+      const productProxy = await actions.ensureProductStarted(DIRECT_START_PRODUCT_ID);
+      // An empty project path is an in-memory, unsaved project.  It never
+      // overwrites a user's existing project and Ctrl+S will still ask for a
+      // normal save location.
+      const response = await productProxy.openProjectCatalog("", {
+        catalogName: DIRECT_START_PRODUCT_TITLE,
+        projectName: "未命名项目",
+      });
+      await enterProject({
+        productProxy,
+        product: productProxy.state,
+        projectProxy: response.projectProxy,
+        sceneProxy: response.sceneProxy,
+        catalog: response.catalog,
+        projectPath: "",
+      });
+    });
+
+    if (await state.productSurfaceMountPromise === false) {
+      throw new Error(state.error || "iTubeDesigner 主界面加载失败");
+    }
   },
 
   async openProjectFromPath(projectPath, productId = state.selectedProductId) {
@@ -263,6 +293,10 @@ const actions = {
     }
   },
 
+  refreshProjectHistoryControls() {
+    refreshProjectHistoryControls();
+  },
+
   async refreshActiveSceneState() {
     if (!state.activeSceneProxy) {
       return null;
@@ -379,11 +413,11 @@ const actions = {
       return;
     }
     if (commandId === "edit.undo") {
-      await actions.undoProject();
+      await executeProjectHistoryCommand("undo");
       return;
     }
     if (commandId === "edit.redo") {
-      await actions.redoProject();
+      await executeProjectHistoryCommand("redo");
       return;
     }
 
@@ -511,12 +545,12 @@ root.addEventListener("click", (event) => {
     if (isActiveProjectBusy()) {
       return;
     }
-    runAction(() => actions.undoProject());
+    runAction(() => executeProjectHistoryCommand("undo"));
   } else if (action === "redo-project") {
     if (isActiveProjectBusy()) {
       return;
     }
-    runAction(() => actions.redoProject());
+    runAction(() => executeProjectHistoryCommand("redo"));
   } else if (action === "project-window-prev") {
     state.projectWindowStart = Math.max(0, state.projectWindowStart - 1);
     render();
@@ -958,7 +992,7 @@ function getApplicationTitle() {
 }
 
 function renderTitleBar() {
-  const undoRedo = state.activeSceneState?.undoRedo ?? {};
+  const undoRedo = getCombinedProjectHistoryState();
   const projectBusy = isActiveProjectBusy();
   const applicationTitle = getApplicationTitle();
   return `
@@ -1448,6 +1482,49 @@ function getActiveProductModule() {
   return state.activeProductState?.productId
     ? state.productModules.get(state.activeProductState.productId)
     : null;
+}
+
+function getProductProjectHistoryState() {
+  const module = getActiveProductModule();
+  if (typeof module?.getProjectHistoryState !== "function") return {};
+  try {
+    return module.getProjectHistoryState(buildProductContext(null)) ?? {};
+  } catch (error) {
+    pushLog("error", `读取产品参数撤销状态失败：${error?.message ?? String(error)}`);
+    return {};
+  }
+}
+
+function getCombinedProjectHistoryState() {
+  const nativeHistory = state.activeSceneState?.undoRedo ?? {};
+  const productHistory = getProductProjectHistoryState();
+  return {
+    ...nativeHistory,
+    canUndo: Boolean(productHistory.canUndo || nativeHistory.canUndo),
+    canRedo: Boolean(productHistory.canRedo || nativeHistory.canRedo),
+  };
+}
+
+function refreshProjectHistoryControls() {
+  const history = getCombinedProjectHistoryState();
+  const busy = isActiveProjectBusy();
+  const undo = root.querySelector('[data-action="undo-project"]');
+  const redo = root.querySelector('[data-action="redo-project"]');
+  undo?.toggleAttribute("disabled", busy || !history.canUndo);
+  redo?.toggleAttribute("disabled", busy || !history.canRedo);
+}
+
+async function executeProjectHistoryCommand(direction) {
+  const module = getActiveProductModule();
+  if (typeof module?.handleProjectHistoryCommand === "function") {
+    const handled = await module.handleProjectHistoryCommand(buildProductContext(), direction);
+    if (handled) {
+      refreshProjectHistoryControls();
+      return;
+    }
+  }
+  if (direction === "redo") await actions.redoProject();
+  else await actions.undoProject();
 }
 
 function getActiveWindowCloseGuard() {

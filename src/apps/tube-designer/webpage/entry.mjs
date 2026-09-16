@@ -11,11 +11,15 @@ import { patchLibraryDom, rememberLibraryDom } from "./libraryDomPatch.mjs";
 import {
   fitDesignerDefaultView,
   captureDesignerScrollState,
+  clearDesignerRightParameterHistories,
+  getDesignerProjectHistoryState,
   getDesignerRenderSignature,
   handleDesignerAreaAction,
   handleDesignerRibbonCommand,
+  preloadTubeDesignerTemplates,
   refreshDesignerState,
   refreshDesignerUserData,
+  restoreLoadedProductTemplateDescriptors,
   restoreDesignerScrollState,
 } from "./designerActions.mjs";
 import {
@@ -33,7 +37,11 @@ import { renderNestingPartImportDialog } from "./nestingPartImport.mjs";
 import { renderNestingStandardPartDialog } from "./nestingStandardPart.mjs";
 import { bindProfileParameterDiagrams } from "./profileParameterDiagram.mjs";
 import { bindToolParameterDiagrams } from "./toolParameterDiagram.mjs";
-import { bindProductParameterDiagrams, productSceneMemberIds } from "./productParameterDiagram.mjs";
+import {
+  bindProductParameterDiagrams,
+  bindProductSpecificationAnnotations,
+  productSceneMemberIds,
+} from "./productParameterDiagram.mjs";
 import { renderNestingPunchPartDialog } from "./nestingPunchPart.mjs";
 import { attachTubeMachining, handleTubeMachiningViewportPick, renderTubeMachiningLeftPane, renderTubeMachiningRightPane, renderTubeMachiningViewportOverlay, renderTubeMachiningDialogs } from "./machiningArea.mjs";
 import { hasUnsavedMachiningPaths } from "./machiningEditor.mjs";
@@ -90,7 +98,6 @@ import {
 } from "./templateLibrary.mjs";
 
 export const TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS = 500;
-
 export function getRibbonDefinition(context = {}) {
   const projectId = context.project?.projectId ?? "";
   const view = getProjectView(projectId);
@@ -112,6 +119,9 @@ export async function mountProject(context) {
   // 下料已经是产品主流程的一部分，不再通过旧“零件与排样”商业权限分叉界面。
   view.tubeDesignerProductionAccess = true;
   view.tubeDesignerResourceLibraryArea ??= "profiles";
+  if (view.tubeDesignerResourceLibraryArea === "components") {
+    view.tubeDesignerResourceLibraryArea = "profiles";
+  }
   view.scene ??= {};
   const historyToken = getHistoryToken(context.scene);
   const historyChanged = view.tubeDesignerHistoryToken !== undefined
@@ -120,6 +130,9 @@ export async function mountProject(context) {
   const ownMutation = historyChanged && view.tubeDesignerOwnMutation;
   if (ownMutation) {
     view.tubeDesignerOwnMutation = false;
+  }
+  if (historyChanged && !ownMutation) {
+    clearDesignerRightParameterHistories(view, true);
   }
   const designerContext = withDesignerContext(context);
   const shouldRefresh = (!view.tubeDesignerLoaded || (historyChanged && !ownMutation))
@@ -208,6 +221,23 @@ export async function mountProject(context) {
         loadProgress.visibleAt = nowMilliseconds();
       }
       await refreshDesignerState(designerContext, view);
+      await preloadTubeDesignerTemplates(designerContext, view,
+        async (kind, completed, total, detail) => {
+          const labels = {
+            product: "产品模板",
+            profile: "管型模板",
+            tool: "模具模板",
+          };
+          const count = Number.isFinite(total)
+            ? `${Math.min(Number(completed) || 0, total)} / ${total}`
+            : "正在读取…";
+          const resourceLabel = labels[kind] ?? "模板";
+          if (updateDesignerLoadProgress(view, loadProgress,
+            `加载${resourceLabel} ${count}`, detail, `正在加载${resourceLabel}`)) {
+            workbench.mountProject(designerContext);
+            await waitForPaint();
+          }
+        });
       const designer = view.scene?.tubeDesigner ?? {};
       const generationRunId = String(designer.generationRun?.entityId ?? "").trim();
       const memberIds = (designer.members ?? [])
@@ -233,6 +263,7 @@ export async function mountProject(context) {
           loadProgress,
           "同步三维视图",
           historyChanged ? "正在恢复历史版本对应的产品视图" : "正在装载当前产品的三维显示资源",
+          "正在载入产品场景",
         )) {
           workbench.mountProject(designerContext);
           await waitForPaint();
@@ -274,6 +305,18 @@ export async function mountProject(context) {
 
 export function handleRibbonCommand(context, commandId) {
   return workbench.handleRibbonCommand(withDesignerContext(context), commandId);
+}
+
+export function getProjectHistoryState(context) {
+  return getDesignerProjectHistoryState(getProjectView(context.project?.projectId ?? ""));
+}
+
+export function handleProjectHistoryCommand(context, direction) {
+  const commandId = direction === "redo" ? "designer.history.redo" : "designer.history.undo";
+  return workbench.handleRibbonCommand({
+    ...withDesignerContext(context),
+    onlyHandleAreaRibbonCommand: true,
+  }, commandId);
 }
 
 export function getWindowCloseGuard(context) {
@@ -336,7 +379,7 @@ function withDesignerContext(context) {
       if (tabId === "parts") return "nesting";
       if (tabId === "resources") {
         const resourceArea = getProjectView(context.project?.projectId ?? "").tubeDesignerResourceLibraryArea;
-        return ["products", "profiles", "tools", "components"].includes(resourceArea)
+        return ["products", "profiles", "tools"].includes(resourceArea)
           ? (resourceArea === "products" ? "templates" : resourceArea) : "profiles";
       }
       return ["view", "nesting", "machining", "templates", "profiles", "tools", "components", "sketch", "about"].includes(tabId)
@@ -352,7 +395,7 @@ function withDesignerContext(context) {
     renderViewportOverlay: renderDesignerAreaViewportOverlay,
     renderWorkbenchSuffix: renderDesignerWorkbenchSuffix,
     handleAreaAction: handleDesignerAreaAction,
-    handleAreaViewportPick: handleTubeMachiningViewportPick,
+    handleAreaViewportPick: handleDesignerViewportPick,
     handleAreaRibbonCommand: handleDesignerRibbonCommand,
     tryRenderProjectPatch(context,view,mount,ops) {
       if(["tools","profiles"].includes(view.activeAreaId)) {
@@ -363,7 +406,7 @@ function withDesignerContext(context) {
           overlay:(tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
           suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
         });
-        if(patched){bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);bindProductSceneParameterHighlights(mount,view);bindProductParameterDiagrams(mount);return true;}
+        if(patched){bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);bindProductSceneParameterHighlights(mount,view,(level,message)=>ops.appendProjectLog(context,level,message));bindProductParameterDiagrams(mount);return true;}
         return false;
       }
       if(view.tubeDesignerPartDrawing&&view.activeAreaId==="nesting") {
@@ -380,7 +423,7 @@ function withDesignerContext(context) {
       if(!patchPunchDom(view,mount,html))return false;
       bindProfileParameterDiagrams(mount);
       bindToolParameterDiagrams(mount);
-      bindProductSceneParameterHighlights(mount, view);
+      bindProductSceneParameterHighlights(mount, view, (level, message) => ops.appendProjectLog(context, level, message));
       bindProductParameterDiagrams(mount);
       attachPunchEditor(context,view,mount,ops);
       return true;
@@ -399,7 +442,7 @@ function withDesignerContext(context) {
       restoreProductTemplateLibraryScrollState(context, view);
       bindProfileParameterDiagrams(mount);
       bindToolParameterDiagrams(mount);
-      bindProductSceneParameterHighlights(mount, view);
+      bindProductSceneParameterHighlights(mount, view, (level, message) => ops.appendProjectLog(context, level, message));
       bindProductParameterDiagrams(mount);
       if ((view.activeAreaId === "profiles" || view.activeAreaId === "tools")
           && typeof context.productProxy?.invoke === "function"
@@ -485,6 +528,7 @@ function configureDesignerViewport(_context, view, areaId) {
         .then(response => {
           if (view.tubeDesignerManufacturingHydrationKey !== key) return;
           view.scene.tubeDesigner = response.tubeDesigner;
+          restoreLoadedProductTemplateDescriptors(view, response.tubeDesigner);
           view.tubeDesignerPartViewportKey = "";
           return workbench.mountProject(_context);
         }).catch(error => { view.error = `零件几何重建失败：${error?.message ?? error}`; });
@@ -497,7 +541,10 @@ function configureDesignerViewport(_context, view, areaId) {
   view.tubeDesignerProjectionModes ??= {};
   const projectionMode = view.tubeDesignerProjectionModes[normalizedAreaId] ?? "perspective";
   viewport.setProjectionToggleVisible?.(!["sketch", "about"].includes(normalizedAreaId));
-  viewport.setPickingEnabled?.(!["sketch", "about"].includes(normalizedAreaId));
+  // The product scene is presentation-first: products and parts are selected
+  // from their lists, while left-clicks in the viewport remain available to
+  // specification annotations without selecting arbitrary members.
+  viewport.setPickingEnabled?.(!["view", "sketch", "about"].includes(normalizedAreaId));
   viewport.setContinuousRendering?.(normalizedAreaId !== "sketch");
   viewport.setProjectionChangeHandler?.((mode) => {
     const currentAreaId = ["view", "templates", "profiles", "tools", "components", "nesting", "machining"].includes(view.activeAreaId)
@@ -546,37 +593,44 @@ function renderDesignerAreaViewportOverlay(context, view, scene) {
 }
 
 const productSceneParameterHighlightListeners = new WeakSet();
+const PRODUCT_PARAMETER_EMPHASIS_VISUAL = Object.freeze({
+  color: 0xa855f7,
+  emissive: 0x6b21a8,
+  emissiveIntensity: 0.78,
+  linewidth: 2,
+});
 
-function restoreManualSceneSelection(view) {
-  const selectedId = String(view.selectedSceneObjectId ?? "");
-  if (typeof view.viewport?.setSelectedObjectIds === "function") {
-    view.viewport.setSelectedObjectIds(selectedId ? [selectedId] : [], selectedId);
-    return;
-  }
-  view.viewport?.setSelectedObjectId?.(selectedId);
-}
-
-function bindProductSceneParameterHighlights(mount, view) {
+export function bindProductSceneParameterHighlights(mount, view, _appendLog = null) {
+  bindProductSpecificationAnnotations(mount, view);
   if (!mount || productSceneParameterHighlightListeners.has(mount)) return;
   productSceneParameterHighlightListeners.add(mount);
+  const clear = () => {
+    view.tubeDesignerProductParameterHighlightIds = [];
+    view.viewport?.setEmphasizedObjectIds?.([], { visual: PRODUCT_PARAMETER_EMPHASIS_VISUAL });
+  };
   mount.addEventListener("tube-designer-product-parameter-focus", (event) => {
-    const { key, mode } = event.detail ?? {};
-    if (mode !== "right" || view.activeAreaId !== "view") return;
+    const { key, mode, profileRole, category } = event.detail ?? {};
+    if (mode !== "right" || view.activeAreaId !== "view") {
+      clear();
+      return;
+    }
+    // Only the retained material/process inspector participates. Specifications
+    // are edited through green/red scene annotations and never enter this path.
+    if (!key || !["materials", "process"].includes(String(category ?? ""))) {
+      clear();
+      return;
+    }
     const designer = view.scene?.tubeDesigner ?? {};
     const product = designer.product;
     const template = (designer.templates ?? []).find((item) => item?.id === product?.templateId);
-    const ids = productSceneMemberIds(template, designer.members ?? [], key);
+    const ids = productSceneMemberIds(template, designer.members ?? [], key, { profileRole });
     view.tubeDesignerProductParameterHighlightIds = ids;
-    if (!ids.length) {
-      restoreManualSceneSelection(view);
-      return;
-    }
-    if (typeof view.viewport?.setSelectedObjectIds === "function") {
-      view.viewport.setSelectedObjectIds(ids, ids[0]);
-    } else {
-      view.viewport?.setSelectedObjectId?.(ids[0]);
-    }
+    view.viewport?.setEmphasizedObjectIds?.(ids, { visual: PRODUCT_PARAMETER_EMPHASIS_VISUAL });
   });
+}
+
+export function handleDesignerViewportPick(context, view, userData, hit, event, hits, ops) {
+  return handleTubeMachiningViewportPick(context, view, userData, hit, event, hits, ops);
 }
 
 function renderDesignerWorkbenchSuffix(context, view, scene) {
@@ -626,15 +680,15 @@ function beginDesignerLoadProgress(view, historyChanged, shouldRefresh, shouldRe
   const token = {};
   const readsProductAndUserData = shouldRefresh && shouldRefreshUserData;
   view.tubeDesignerLoadProgress = {
-    title: historyChanged ? "正在恢复产品历史" : "正在加载产品设计",
+    title: historyChanged ? "正在恢复产品历史" : "正在准备资源模板",
     detail: readsProductAndUserData
-      ? "正在读取产品实例、模板与用户配置"
+      ? "正在准备产品、管型和模具模板"
       : shouldRefresh
-        ? "正在读取产品实例与模板"
+        ? "正在准备产品、管型和模具模板"
         : "正在读取用户配置",
     stage: readsProductAndUserData
-      ? "读取产品与用户数据"
-      : shouldRefresh ? "读取产品数据" : "读取用户数据",
+      ? "准备模板载入"
+      : shouldRefresh ? "准备模板载入" : "读取用户数据",
     mode: "Tube Designer",
     minimumVisibleMs: TUBE_DESIGNER_LOAD_PROGRESS_MINIMUM_VISIBLE_MS,
   };
@@ -642,7 +696,7 @@ function beginDesignerLoadProgress(view, historyChanged, shouldRefresh, shouldRe
   return { token, startedAt: nowMilliseconds() };
 }
 
-function updateDesignerLoadProgress(view, operation, stage, detail) {
+function updateDesignerLoadProgress(view, operation, stage, detail, title = null) {
   if (!operation
       || view.tubeDesignerLoadProgressToken !== operation.token
       || !view.tubeDesignerLoadProgress) {
@@ -650,6 +704,7 @@ function updateDesignerLoadProgress(view, operation, stage, detail) {
   }
   view.tubeDesignerLoadProgress = {
     ...view.tubeDesignerLoadProgress,
+    ...(title ? { title } : {}),
     stage,
     detail,
   };

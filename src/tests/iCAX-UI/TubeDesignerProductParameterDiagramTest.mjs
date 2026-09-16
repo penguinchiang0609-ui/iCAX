@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   productPrimaryDimensions,
+  productParameterTargetsForSceneMember,
   productSceneMemberIds,
+  renderProductInstanceThumbnail,
   renderProductParameterDiagram,
 } from "../../apps/tube-designer/webpage/productParameterDiagram.mjs";
 import { productParameterKind } from "../../apps/tube-designer/webpage/productParameterClassification.mjs";
@@ -55,6 +57,17 @@ assert.match(single, /单面防盗窗结构与尺寸示意/);
 assert.equal(occurrences(single, /product-diagram-face-side/g), 0);
 assert.equal(occurrences(single, /product-diagram-door/g), 1);
 assert.deepEqual(productPrimaryDimensions(securityWindow, singleValues).map((item) => item.parameter), ["width", "height"]);
+const singleThumbnail = renderProductInstanceThumbnail(securityWindow, singleValues);
+const threeThumbnail = renderProductInstanceThumbnail(securityWindow, defaults(securityWindow, {
+  faceType: "three", leftWidth: 450, rightWidth: 750, accessDoorEnabled: true,
+}));
+assert.match(singleThumbnail, /单面防盗窗结构与尺寸示意/);
+assert.match(threeThumbnail, /三面防盗窗结构与尺寸示意/);
+assert.equal(occurrences(singleThumbnail, /product-diagram-face-side/g), 0);
+assert.equal(occurrences(threeThumbnail, /product-diagram-face-side/g), 2,
+  "instance thumbnails must be drawn from each instance's committed structure parameters");
+assert.doesNotMatch(singleThumbnail, /product-diagram-measure/,
+  "compact instance thumbnails must not include dimension annotations");
 
 const double = renderProductParameterDiagram(securityWindow, defaults(securityWindow, {
   faceType: "two", sideWidth: 600,
@@ -65,7 +78,7 @@ assert.match(double, />600 mm<\/text>/);
 
 const threeValues = defaults(securityWindow, {
   faceType: "three", leftWidth: 450, rightWidth: 750,
-  accessDoorEnabled: false, verticalCountPerFace: 6, sideVerticalCount: 3,
+  accessDoorEnabled: false, verticalMaximumCenterSpacing: 180, sideVerticalMaximumCenterSpacing: 160,
 });
 const three = renderProductParameterDiagram(securityWindow, threeValues, { mode: "add", activeParameter: "leftWidth" });
 assert.match(three, /三面防盗窗结构与尺寸示意/);
@@ -121,18 +134,25 @@ const wider = renderProductParameterDiagram(securityWindow, { ...singleValues, w
 assert.notEqual(single.match(/product-diagram-face-front" points="([^"]+)/)?.[1], wider.match(/product-diagram-face-front" points="([^"]+)/)?.[1],
   "changing product dimensions must change the drawn proportions");
 
-const manualGrid = renderProductParameterDiagram(securityWindow, defaults(securityWindow, {
-  faceType: "five", verticalLayoutMode: "manual_count", middleVerticalCount: 2,
-  horizontalCount: 1, topBottomRodCount: 3, topBottomCrossbarCount: 2,
-  accessDoorEnabled: true, doorVerticalCount: 2, doorHorizontalCount: 3,
-}), { mode: "add", activeParameter: "topBottomRodCount" });
-assert.match(manualGrid, /data-product-diagram-parameter="[^"]*topBottomRodCount[^"]*"[^>]*is-active|is-active[^>]*data-product-diagram-parameter="[^"]*topBottomRodCount/);
-assert.match(manualGrid, /data-product-diagram-parameter="doorVerticalCount"/);
-assert.match(manualGrid, /data-product-diagram-parameter="doorHorizontalCount"/);
+const spacingGrid = renderProductParameterDiagram(securityWindow, defaults(securityWindow, {
+  faceType: "five",
+  horizontalMaximumCenterSpacing: 420,
+  verticalMaximumCenterSpacing: 150,
+  topBottomRodMaximumCenterSpacing: 180,
+  topBottomCrossbarMaximumCenterSpacing: 260,
+  accessDoorEnabled: true,
+  doorHorizontalTopCenterOffset: 120, doorHorizontalBottomCenterOffset: 120,
+  doorHorizontalMaximumCenterSpacing: 220,
+  doorVerticalLeftCenterOffset: 80, doorVerticalRightCenterOffset: 80,
+  doorVerticalMaximumCenterSpacing: 160,
+}), { mode: "add", activeParameter: "topBottomRodMaximumCenterSpacing" });
+assert.match(spacingGrid, /data-product-diagram-parameter="[^"]*topBottomRodMaximumCenterSpacing[^"]*"[^>]*is-active|is-active[^>]*data-product-diagram-parameter="[^"]*topBottomRodMaximumCenterSpacing/);
+assert.match(spacingGrid, /data-product-diagram-parameter="doorVerticalLeftCenterOffset doorVerticalRightCenterOffset doorVerticalMaximumCenterSpacing"/);
+assert.match(spacingGrid, /data-product-diagram-parameter="doorHorizontalTopCenterOffset doorHorizontalBottomCenterOffset doorHorizontalMaximumCenterSpacing"/);
 const automaticGrid = renderProductParameterDiagram(securityWindow, defaults(securityWindow, {
-  faceType: "single", verticalLayoutMode: "maximum_clear_gap", maximumVerticalClearGap: 80,
-}), { mode: "add", activeParameter: "maximumVerticalClearGap" });
-assert.match(automaticGrid, /data-product-diagram-parameter="[^"]*maximumVerticalClearGap[^"]*"[^>]*is-active|is-active[^>]*data-product-diagram-parameter="[^"]*maximumVerticalClearGap/);
+  faceType: "single", verticalMaximumCenterSpacing: 80,
+}), { mode: "add", activeParameter: "verticalMaximumCenterSpacing" });
+assert.match(automaticGrid, /data-product-diagram-parameter="[^"]*verticalMaximumCenterSpacing[^"]*"[^>]*is-active|is-active[^>]*data-product-diagram-parameter="[^"]*verticalMaximumCenterSpacing/);
 
 const profileLinked = renderProductParameterDiagram(securityWindow, defaults(securityWindow), {
   mode: "add", activeParameter: "horizontalWidth",
@@ -155,9 +175,19 @@ const securitySceneMembers = [
   { entityId: "door", role: "access_door.leaf.horizontal", stableKey: "access_door.leaf.horizontal.1" },
 ];
 assert.deepEqual(productSceneMemberIds(securityWindow, securitySceneMembers, "horizontalWidth"), ["horizontal"]);
+assert.deepEqual(productSceneMemberIds(
+  securityWindow,
+  securitySceneMembers,
+  "profile:horizontal:cornerRadius",
+  { profileRole: "horizontal" },
+), ["horizontal"], "an embedded profile parameter must use its declared product profile role to highlight scene members");
 assert.deepEqual(productSceneMemberIds(securityWindow, securitySceneMembers, "doorClearWidth"), ["door"]);
 assert.deepEqual(productSceneMemberIds(securityWindow, securitySceneMembers, "accessDoorFace3"), ["door"]);
 assert.deepEqual(productSceneMemberIds(securityWindow, securitySceneMembers, "faceType"), ["frame", "horizontal", "vertical", "door"]);
+const horizontalTargets = productParameterTargetsForSceneMember(securityWindow, securitySceneMembers[1]);
+assert.ok(horizontalTargets.profileRoles.includes("horizontal"));
+assert.ok(horizontalTargets.parameters.includes("horizontalWidth"));
+assert.ok(!horizontalTargets.parameters.includes("frameWidth"));
 
 for (const directory of [
   "modular_guardrail",
@@ -206,4 +236,65 @@ assert.deepEqual(productSceneMemberIds(guardrail, guardrailSceneMembers, "railWi
 assert.deepEqual(productSceneMemberIds(guardrail, guardrailSceneMembers, "infillType"), ["bar"]);
 assert.deepEqual(productSceneMemberIds(guardrail, guardrailSceneMembers, "sideLength1"), ["handrail", "post", "rail", "bar"]);
 
-console.log("Product structure and dimension diagrams follow security-window and guardrail parameters.");
+const sceneBindingCases = [
+  {
+    directory: "aluminium_window",
+    members: [
+      { entityId: "frame", stableKey: "frame.left" },
+      { entityId: "sash", stableKey: "aperture.1.1.sliding.1.left" },
+      { entityId: "glass", stableKey: "aperture.1.1.sliding.1.glass" },
+    ],
+    parameter: "cell11",
+    expected: ["sash", "glass"],
+  },
+  {
+    directory: "decorative_door",
+    members: [{ entityId: "leaf-1", stableKey: "leaf.1" }, { entityId: "leaf-2", stableKey: "leaf.2" }],
+    parameter: "pattern",
+    expected: ["leaf-1", "leaf-2"],
+  },
+  {
+    directory: "louver_window",
+    members: [
+      { entityId: "frame", stableKey: "frame.left" },
+      { entityId: "support", stableKey: "post.1" },
+      { entityId: "blade", stableKey: "blade.1" },
+    ],
+    parameter: "bladeWidth",
+    expected: ["blade"],
+  },
+  {
+    directory: "minimal_protective_grille",
+    members: [
+      { entityId: "frame", stableKey: "frame.left.0001" },
+      { entityId: "bar", stableKey: "inner.bar.0001" },
+    ],
+    parameter: "innerWidth",
+    expected: ["bar"],
+  },
+  {
+    directory: "straight_steel_staircase",
+    members: [
+      { entityId: "beam", stableKey: "flight.1.beam.1" },
+      { entityId: "tread", stableKey: "flight.1.tread.1.deck" },
+      { entityId: "post", stableKey: "flight.1.guard.left.post.1" },
+    ],
+    parameter: "stringerWidth",
+    expected: ["beam"],
+  },
+];
+for (const testCase of sceneBindingCases) {
+  const template = loadTemplate(testCase.directory);
+  assert.ok(template.extensions.sceneParameterBindings,
+    `${template.id}: every shipped product template must declare scene parameter bindings`);
+  assert.deepEqual(productSceneMemberIds(template, testCase.members, testCase.parameter), testCase.expected,
+    `${template.id}: ${testCase.parameter} must resolve through template-owned member declarations`);
+  for (const role of Object.values(template.extensions.sceneParameterBindings.profileRoles ?? {})) {
+    for (const parameter of role.parameters ?? []) {
+      assert.ok(template.parameters.some((field) => field.key === parameter),
+        `${template.id}: profile role references unknown parameter ${parameter}`);
+    }
+  }
+}
+
+console.log("Product diagrams and template-declared scene parameter bindings cover every shipped product template.");

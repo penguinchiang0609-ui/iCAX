@@ -11,9 +11,10 @@ import {
 // Exercise shipped descriptors in the host's presentation shape, never a copy of
 // their defaults that could keep passing after the actual templates change.
 const raw = JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/product/single_face_security_window/template.json", import.meta.url)));
+const display = JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/product/single_face_security_window/display.json", import.meta.url)));
 const groups = raw.groups.map((group) => ({ ...group, displayName: catalogText(group.displayName) }));
 const template = {
-  ...raw, available: true, name: catalogText(raw.displayName), groups,
+  ...raw, display, available: true, name: catalogText(raw.displayName), groups,
   parameters: raw.parameters.map((field) => ({
     ...field, displayName: catalogText(field.displayName),
     type: { enum: "select", string: "text" }[field.valueType] ?? field.valueType,
@@ -60,7 +61,11 @@ for (const key of grooveKeys) {
   }), /预览保留未切角管材/);
   const field = template.parameters.find((item) => item.key === key);
   const grooveChoices = field.choices.filter((choice) => choice.value.startsWith("v_groove_90:"));
-  assert.equal(grooveChoices.length, 4);
+  assert.equal(grooveChoices.length, 5);
+  assert.deepEqual(grooveChoices.filter((choice) => !choice.legacy).map((choice) => choice.value), [
+    "v_groove_90:tool_library",
+  ]);
+  assert.equal(grooveChoices.filter((choice) => choice.legacy).length, 4);
   for (const choice of grooveChoices) {
     const values = { ...defaults, [key]: choice.value };
     assert.match(renderSecurityWindowReview(template, values), /须先打样确认管材、设备及折弯补偿/);
@@ -82,13 +87,12 @@ for (const faceType of ["single", "two", "three", "five"]) {
   assert.match(html, /830 × 1000 mm/);
 }
 assert.match(renderSecurityWindowReview(template), /830 × 1000 mm/);
-const maintenance = renderSecurityWindowReview(template, { ...defaults, doorUse: "maintenance", doorClearWidth: 400, doorClearHeight: 400 });
-assert.match(maintenance, /检修口（非逃生窗）/);
-assert.match(maintenance, /目标开启净尺寸/);
+const maintenance = renderSecurityWindowReview(template, { ...defaults, doorClearWidth: 400, doorClearHeight: 400 });
+assert.match(maintenance, /逃生窗/);
+assert.match(maintenance, /目标通行净尺寸/);
 assert.match(maintenance, /400 × 400 mm/);
 assert.match(maintenance, /430 × 400 mm/);
-assert.match(maintenance, /当前为检修口，不作为逃生窗/);
-assert.doesNotMatch(maintenance, /目标通行净尺寸/);
+assert.doesNotMatch(maintenance, /检修口|目标开启净尺寸/);
 
 for (const disabled of [false, "false", "否"]) {
   const html = renderSecurityWindowReview(template, { ...defaults, accessDoorEnabled: disabled });
@@ -140,6 +144,8 @@ const newProduct = renderDesignerAddParameterContent(designer, {
 });
 assert.match(newProduct, /data-tube-designer-product-diagram/);
 assert.match(newProduct, /单面防盗窗结构与尺寸示意/);
+assert.match(newProduct, /data-tube-designer-parameter="faceType"/);
+assert.doesNotMatch(newProduct, /data-tube-designer-parameter-summary="faceType"/);
 const addMarkup = (draft) => renderDesignerAddParameterContent(designer, {
   tubeDesignerAddTemplateId: template.id, tubeDesignerAddDraft: draft,
 });
@@ -154,14 +160,34 @@ const view = { scene: { tubeDesigner: {
   product: { entityId: "test-window", templateId: template.id, name: "防盗窗", parameters },
 } } };
 const existingProduct = renderDesignerRightPane(context, view);
-assert.match(existingProduct, /data-security-window-review/);
-assert.match(existingProduct, /930 × 1100 mm/);
-assert.doesNotMatch(existingProduct, /830 × 1000 mm/);
-view.tubeDesignerRightDraft = { doorUse: "maintenance", doorClearWidth: 300, doorClearHeight: 400 };
+assert.doesNotMatch(existingProduct, /data-tube-designer-parameter="doorClearWidth"/);
+assert.match(existingProduct, /aria-label="结构摘要"/);
+assert.doesNotMatch(existingProduct, /data-tube-designer-parameter="faceType"/);
+view.tubeDesignerRightDraft = { doorClearWidth: 300, doorClearHeight: 400 };
 const updated = renderDesignerRightPane(context, view);
-assert.match(updated, /330 × 400 mm/);
-assert.match(updated, /检修口（非逃生窗）/);
+assert.doesNotMatch(updated, /data-tube-designer-parameter="doorClearWidth"/);
 assert.deepEqual(parameters, { doorClearWidth: 900, doorClearHeight: 1100 });
+
+for (const [faceType, extraStructureKeys] of [
+  ["single", []],
+  ["two", ["sidePosition", "accessDoorFace2"]],
+  ["three", ["accessDoorFace3"]],
+  ["five", ["accessDoorFace5"]],
+]) {
+  const html = renderDesignerRightPane(context, { scene: { tubeDesigner: {
+    ...designer,
+    product: { entityId: `window-${faceType}`, templateId: template.id, name: "防盗窗",
+      parameters: { ...defaults, faceType } },
+  } } });
+  for (const key of ["faceType", "accessDoorEnabled", ...extraStructureKeys]) {
+    assert.doesNotMatch(html, new RegExp(`data-tube-designer-parameter="${key}"`));
+  }
+  assert.match(html, /aria-label="结构摘要"/);
+  assert.doesNotMatch(html, /data-tube-designer-parameter-group="section:specifications"/);
+  assert.doesNotMatch(html, /data-tube-designer-parameter="width"/);
+  assert.match(html, /data-tube-designer-parameter-group="section:materials"/);
+  assert.match(html, /data-tube-designer-parameter-group="section:process"/);
+}
 
 await new Promise((resolve) => setTimeout(resolve, 0));
 console.log("PASS security-window review: one descriptor with faceType variants, real add/edit rendering, connections, enclosure boundaries, active-only V groove review and imported profile dimensions");

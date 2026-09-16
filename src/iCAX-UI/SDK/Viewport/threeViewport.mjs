@@ -29,6 +29,92 @@ const ENGINE_CAMERA_TO_THREE_CAMERA_MATRIX = new THREE.Matrix4().fromArray([
 ]);
 const SELECTION_AXIS_PIXEL_SIZE = 94;
 const SELECTION_AXIS_MIN_SCALE = 0.001;
+const DEFAULT_SELECTION_VISUAL = Object.freeze({
+  color: 0xffad1f,
+  emissive: 0xd47700,
+  emissiveIntensity: 0.68,
+  linewidth: 2,
+});
+const DEFAULT_EMPHASIS_VISUAL = Object.freeze({
+  color: 0xa855f7,
+  emissive: 0x6b21a8,
+  emissiveIntensity: 0.78,
+  linewidth: 2,
+});
+
+function normalizeSelectionVisual(value = null) {
+  const source = value && typeof value === "object" ? value : {};
+  const finite = (candidate, fallback) => Number.isFinite(Number(candidate))
+    ? Number(candidate) : fallback;
+  return {
+    color: finite(source.color, DEFAULT_SELECTION_VISUAL.color),
+    emissive: finite(source.emissive, DEFAULT_SELECTION_VISUAL.emissive),
+    emissiveIntensity: finite(source.emissiveIntensity, DEFAULT_SELECTION_VISUAL.emissiveIntensity),
+    linewidth: finite(source.linewidth, DEFAULT_SELECTION_VISUAL.linewidth),
+  };
+}
+
+function normalizeEmphasisVisual(value = null) {
+  const source = value && typeof value === "object" ? value : {};
+  const finite = (candidate, fallback) => Number.isFinite(Number(candidate))
+    ? Number(candidate) : fallback;
+  return {
+    color: finite(source.color, DEFAULT_EMPHASIS_VISUAL.color),
+    emissive: finite(source.emissive, DEFAULT_EMPHASIS_VISUAL.emissive),
+    emissiveIntensity: finite(source.emissiveIntensity, DEFAULT_EMPHASIS_VISUAL.emissiveIntensity),
+    linewidth: finite(source.linewidth, DEFAULT_EMPHASIS_VISUAL.linewidth),
+  };
+}
+
+function specificationAnnotationSignature(annotations) {
+  return JSON.stringify((Array.isArray(annotations) ? annotations : []).map((annotation) => {
+    const vector = (value) => {
+      const point = toFiniteVector3(value);
+      return point ? [point.x, point.y, point.z] : null;
+    };
+    const editor = annotation?.editor;
+    return {
+      id: String(annotation?.id ?? ""),
+      parameter: String(annotation?.parameter ?? ""),
+      kind: String(annotation?.kind ?? ""),
+      label: String(annotation?.label ?? ""),
+      oldValue: annotation?.oldValue,
+      newValue: annotation?.newValue,
+      cleanLabel: String(annotation?.cleanLabel ?? ""),
+      changedLabel: String(annotation?.changedLabel ?? ""),
+      start: vector(annotation?.start),
+      end: vector(annotation?.end),
+      offset: vector(annotation?.offset),
+      color: Number(annotation?.color ?? 0x27c27a),
+      pending: Boolean(annotation?.pending),
+      active: Boolean(annotation?.active),
+      editing: Boolean(annotation?.editing),
+      editable: annotation?.editable !== false,
+      editor: editor ? {
+        type: String(editor.type ?? "text"),
+        value: editor.value,
+        min: editor.min,
+        max: editor.max,
+        step: editor.step,
+        options: (Array.isArray(editor.options) ? editor.options : []).map((option) => ({
+          value: option?.value,
+          label: String(option?.label ?? option?.value ?? ""),
+        })),
+      } : null,
+    };
+  }));
+}
+
+function sameSpecificationValue(left, right) {
+  if (left == null || right == null) return left == null && right == null;
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (String(left).trim() !== "" && String(right).trim() !== ""
+      && Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return Math.abs(leftNumber - rightNumber) <= 1.0e-9;
+  }
+  return String(left) === String(right);
+}
 const STANDARD_VIEW_DIRECTIONS = Object.freeze({
   front: Object.freeze([0, -1, 0]),
   back: Object.freeze([0, 1, 0]),
@@ -105,6 +191,11 @@ export class ThreeRenderViewport {
       : new Set(normalizeEntityIds(options.visibleEntityIds));
     this.selectedObjectId = "";
     this.selectedObjectIds = new Set();
+    this.defaultSelectionVisual = normalizeSelectionVisual(options.selectionVisual);
+    this.selectionVisual = { ...this.defaultSelectionVisual };
+    this.emphasizedObjectIds = new Set();
+    this.defaultEmphasisVisual = normalizeEmphasisVisual(options.emphasisVisual);
+    this.emphasisVisual = { ...this.defaultEmphasisVisual };
     this.ghostPreview = null;
     this.diagnosticKeys = new Set();
     this.domListeners = [];
@@ -137,6 +228,18 @@ export class ThreeRenderViewport {
     this.dimensionContent = new THREE.Group();
     this.dimensionContent.name = "iCAX Dimension Overlay";
     this.scene.add(this.dimensionContent);
+    this.specificationContent = new THREE.Group();
+    this.specificationContent.name = "iCAX Interactive Specification Overlay";
+    this.scene.add(this.specificationContent);
+    this.specificationLabels = [];
+    this.specificationAnnotationsSignature = "";
+    // Editor state belongs to the viewport component.  The generated value is
+    // the old value; newValue is what the user is currently typing.  Scene
+    // refreshes may advance the old value after a commit, but must never
+    // overwrite a dirty draft.
+    this.specificationEditorValues = new Map();
+    this.activeSpecificationEditor = "";
+    this.pendingSpecificationAnnotations = null;
     this.colliderContent = new THREE.Group();
     this.colliderContent.name = "iCAX ColliderPDO Content";
     this.scene.add(this.colliderContent);
@@ -168,6 +271,10 @@ export class ThreeRenderViewport {
     this.renderer.domElement.className = "icax-three-viewport-canvas";
     this.renderer.domElement.tabIndex = 0;
     this.root.appendChild(this.renderer.domElement);
+    this.specificationLabelLayer = document.createElement("div");
+    this.specificationLabelLayer.className = "icax-three-specification-label-layer";
+    this.specificationLabelLayer.setAttribute("aria-label", "产品规格标注");
+    this.root.appendChild(this.specificationLabelLayer);
 
     this.#installProjectionToggle();
     this.#installOrientationGizmo();
@@ -376,6 +483,7 @@ export class ThreeRenderViewport {
     this.#clearRenderContent();
     this.clearMeasurementPoints(false);
     this.clearDimensionAnnotations(false);
+    this.clearSpecificationAnnotations(false);
     this.axisRenderer?.dispose?.();
     this.axisRenderer = null;
     this.renderer.dispose();
@@ -838,6 +946,311 @@ export class ThreeRenderViewport {
     return this;
   }
 
+  setSpecificationAnnotations(annotations = []) {
+    const annotationList = Array.isArray(annotations) ? annotations : [];
+    const signature = specificationAnnotationSignature(annotationList);
+    if (signature === this.specificationAnnotationsSignature) return this;
+    const focusedEditor = this.specificationLabelLayer?.contains?.(document.activeElement)
+      && document.activeElement?.matches?.("[data-tube-designer-scene-specification-input]")
+      ? document.activeElement : null;
+    if (focusedEditor && !focusedEditor.__icaxSpecificationCommitStarted) {
+      const parameter = String(focusedEditor.dataset?.tubeDesignerSceneSpecificationInput ?? "");
+      const componentKey = String(focusedEditor.dataset?.tubeDesignerSceneSpecificationComponent ?? parameter);
+      const state = this.specificationEditorValues.get(componentKey);
+      if (state) {
+        state.newValue = focusedEditor.value;
+        state.editing = true;
+      }
+      this.activeSpecificationEditor = parameter;
+      this.pendingSpecificationAnnotations = annotationList;
+      return this;
+    }
+    this.pendingSpecificationAnnotations = null;
+    const activeEditor = this.captureSpecificationAnnotationEditorState();
+    this.clearSpecificationAnnotations(false);
+    for (const annotation of annotationList) {
+      const start = toFiniteVector3(annotation?.start);
+      const end = toFiniteVector3(annotation?.end);
+      if (!start || !end || start.distanceToSquared(end) <= Number.EPSILON) continue;
+      const offset = toFiniteVector3(annotation?.offset) ?? new THREE.Vector3();
+      const displayStart = start.clone().add(offset);
+      const displayEnd = end.clone().add(offset);
+      const hasDualValues = Object.prototype.hasOwnProperty.call(annotation ?? {}, "oldValue")
+        && Object.prototype.hasOwnProperty.call(annotation ?? {}, "newValue");
+      const parameter = String(annotation?.parameter ?? "").trim();
+      const componentKey = String(annotation?.id ?? parameter).trim() || parameter;
+      const incomingOldValue = String(hasDualValues ? annotation.oldValue : annotation?.editor?.value ?? "");
+      const incomingNewValue = String(hasDualValues ? annotation.newValue : annotation?.editor?.value ?? "");
+      let valueState = this.specificationEditorValues.get(componentKey);
+      if (!valueState) {
+        valueState = {
+          oldValue: incomingOldValue,
+          newValue: incomingNewValue,
+          editing: false,
+          awaitingCommit: false,
+        };
+        this.specificationEditorValues.set(componentKey, valueState);
+      } else if (valueState.editing) {
+        // Generated/model refreshes may advance the baseline, but an active
+        // editor owns its new value until Enter, blur, or Escape commits it.
+        valueState.oldValue = incomingOldValue;
+      } else if (valueState.awaitingCommit && incomingNewValue !== valueState.newValue) {
+        // A render queued before the change event finished still carries the
+        // previous value.  Keep the component's submitted new value until the
+        // product EC echoes it back.
+        valueState.oldValue = incomingOldValue;
+      } else {
+        valueState.oldValue = incomingOldValue;
+        valueState.newValue = incomingNewValue;
+        valueState.awaitingCommit = false;
+      }
+      const componentPending = hasDualValues
+        ? !sameSpecificationValue(valueState.oldValue, valueState.newValue)
+        : Boolean(annotation?.pending);
+      const componentEditing = Boolean(annotation?.editing && annotation?.editor);
+      const componentChangedOrEditing = componentPending || componentEditing;
+      const color = new THREE.Color(hasDualValues
+        ? (componentChangedOrEditing ? 0xef5b55 : 0x27c27a)
+        : (annotation?.color ?? 0x27c27a));
+      const vertices = [];
+      if (offset.lengthSq() > Number.EPSILON) vertices.push(start, displayStart, end, displayEnd);
+      vertices.push(displayStart, displayEnd);
+
+      const direction = displayEnd.clone().sub(displayStart).normalize();
+      let tickDirection = offset.clone();
+      if (tickDirection.lengthSq() <= Number.EPSILON) {
+        tickDirection = new THREE.Vector3(0, 0, 1);
+        if (Math.abs(direction.dot(tickDirection)) > 0.92) tickDirection.set(1, 0, 0);
+      }
+      tickDirection.normalize();
+      const tickSize = Math.max(0.8, Math.min(9, start.distanceTo(end) * 0.035));
+      const tick = tickDirection.multiplyScalar(tickSize * 0.5);
+      vertices.push(
+        displayStart.clone().sub(tick), displayStart.clone().add(tick),
+        displayEnd.clone().sub(tick), displayEnd.clone().add(tick),
+      );
+
+      const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+      const material = new THREE.LineBasicMaterial({
+        color,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: componentChangedOrEditing ? 1 : 0.92,
+      });
+      const lines = new THREE.LineSegments(geometry, material);
+      lines.renderOrder = 124;
+      lines.userData.specificationAnnotation = true;
+      lines.userData.parameter = String(annotation?.parameter ?? "");
+      this.specificationContent.add(lines);
+
+      const label = String(componentPending
+        ? (annotation?.changedLabel ?? annotation?.label ?? "")
+        : (annotation?.cleanLabel ?? annotation?.label ?? "")).trim();
+      if (!label) continue;
+      const labelRoot = document.createElement("div");
+      labelRoot.className = "icax-three-specification-label";
+      if (componentPending) labelRoot.classList.add("is-pending");
+      if (annotation?.active) labelRoot.classList.add("is-active");
+      if (annotation?.editing && annotation?.editor) {
+        labelRoot.classList.add("is-editing");
+        const caption = document.createElement("span");
+        caption.className = "icax-three-specification-caption";
+        caption.textContent = label.split(" ")[0] || label;
+        labelRoot.appendChild(caption);
+        const editor = annotation.editor;
+        let input;
+        if (editor.type === "select") {
+          input = document.createElement("select");
+          for (const option of Array.isArray(editor.options) ? editor.options : []) {
+            const element = document.createElement("option");
+            element.value = String(option?.value ?? "");
+            element.textContent = String(option?.label ?? option?.value ?? "");
+            element.dataset.tubeDesignerValueType = typeof option?.value;
+            element.selected = String(option?.value) === String(editor.value);
+            input.appendChild(element);
+          }
+        } else {
+          input = document.createElement("input");
+          input.type = editor.type === "number" ? "number" : "text";
+          if (editor.min != null) input.min = String(editor.min);
+          if (editor.max != null) input.max = String(editor.max);
+          if (editor.step != null) input.step = String(editor.step);
+        }
+        input.value = valueState.newValue;
+        input.className = "icax-three-specification-input";
+        input.dataset.camChangeAction = "tube-designer-scene-specification-change";
+        input.dataset.tubeDesignerParameter = parameter;
+        input.dataset.tubeDesignerSceneSpecificationInput = parameter;
+        input.dataset.tubeDesignerSceneSpecificationComponent = componentKey;
+        input.setAttribute("aria-label", label);
+        let commitStarted = false;
+        const rememberDraft = () => {
+          valueState.newValue = input.value;
+        };
+        const flushPendingLayout = () => {
+          const pending = this.pendingSpecificationAnnotations;
+          this.pendingSpecificationAnnotations = null;
+          if (pending) this.setSpecificationAnnotations(pending);
+        };
+        const commit = () => {
+          if (commitStarted) return;
+          commitStarted = true;
+          rememberDraft();
+          valueState.editing = false;
+          valueState.awaitingCommit = true;
+          this.activeSpecificationEditor = "";
+          input.__icaxSpecificationCommitStarted = true;
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+        input.addEventListener("input", rememberDraft);
+        input.addEventListener("focus", () => {
+          valueState.editing = true;
+          this.activeSpecificationEditor = parameter;
+        });
+        input.addEventListener("change", (event) => {
+          if (input.__icaxSpecificationReparenting) {
+            event.stopImmediatePropagation();
+            return;
+          }
+          rememberDraft();
+          if (commitStarted && event.isTrusted) {
+            event.stopImmediatePropagation();
+            return;
+          }
+          commitStarted = true;
+          valueState.editing = false;
+          valueState.awaitingCommit = true;
+          this.activeSpecificationEditor = "";
+          input.__icaxSpecificationCommitStarted = true;
+        });
+        input.addEventListener("keydown", (event) => {
+          event.stopImmediatePropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+            input.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            input.value = valueState.oldValue;
+            rememberDraft();
+            commit();
+            input.blur();
+          }
+        }, { capture: true });
+        input.addEventListener("blur", () => {
+          if (input.__icaxSpecificationReparenting) return;
+          this.activeSpecificationEditor = "";
+          // Browsers only emit change on blur when the value differs. Commit an
+          // unchanged editor as well so clicking away always closes the popup.
+          queueMicrotask(() => {
+            if (input.isConnected && document.activeElement !== input) commit();
+            flushPendingLayout();
+          });
+        });
+        labelRoot.appendChild(input);
+      } else if (parameter && annotation?.editable !== false) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "icax-three-specification-trigger";
+        button.textContent = label;
+        button.title = `${label}；双击直接修改`;
+        button.dataset.camAction = "tube-designer-edit-scene-specification";
+        button.dataset.tubeDesignerParameterKey = parameter;
+        labelRoot.appendChild(button);
+      } else {
+        const text = document.createElement("span");
+        text.className = "icax-three-specification-caption";
+        text.textContent = label;
+        labelRoot.appendChild(text);
+      }
+      this.specificationLabelLayer.appendChild(labelRoot);
+      this.specificationLabels.push({
+        element: labelRoot,
+        worldPoint: displayStart.clone().lerp(displayEnd, 0.5),
+      });
+    }
+    this.specificationAnnotationsSignature = signature;
+    this.restoreSpecificationAnnotationEditorState(activeEditor);
+    this.#renderOnce();
+    return this;
+  }
+
+  focusSpecificationAnnotationEditor(parameter) {
+    const escaped = globalThis.CSS?.escape
+      ? globalThis.CSS.escape(String(parameter ?? ""))
+      : String(parameter ?? "").replace(/["\\]/g, "\\$&");
+    const input = this.specificationLabelLayer?.querySelector?.(
+      `[data-tube-designer-scene-specification-input="${escaped}"]`,
+    );
+    input?.focus?.({ preventScroll: true });
+    input?.select?.();
+    return Boolean(input);
+  }
+
+  captureSpecificationAnnotationEditorState({ suspendCommit = false } = {}) {
+    const input = this.specificationLabelLayer?.contains?.(document.activeElement)
+      && document.activeElement?.matches?.("[data-tube-designer-scene-specification-input]")
+      ? document.activeElement : null;
+    if (!input) return null;
+    const parameter = String(input.dataset?.tubeDesignerSceneSpecificationInput ?? "");
+    const componentKey = String(input.dataset?.tubeDesignerSceneSpecificationComponent ?? parameter);
+    const valueState = this.specificationEditorValues.get(componentKey);
+    if (valueState) {
+      valueState.newValue = input.value;
+      valueState.editing = true;
+    }
+    if (suspendCommit) input.__icaxSpecificationReparenting = true;
+    return {
+      parameter,
+      componentKey,
+      value: input.value,
+      selectionStart: input.selectionStart,
+      selectionEnd: input.selectionEnd,
+      selectionDirection: input.selectionDirection,
+    };
+  }
+
+  restoreSpecificationAnnotationEditorState(state) {
+    const parameter = String(state?.parameter ?? "").trim();
+    if (!parameter) return false;
+    const componentKey = String(state?.componentKey ?? parameter).trim();
+    const escaped = globalThis.CSS?.escape
+      ? globalThis.CSS.escape(componentKey)
+      : componentKey.replace(/["\\]/g, "\\$&");
+    const input = this.specificationLabelLayer?.querySelector?.(
+      `[data-tube-designer-scene-specification-component="${escaped}"]`,
+    );
+    if (!input?.isConnected) return false;
+    const valueState = this.specificationEditorValues.get(componentKey);
+    input.value = String(valueState?.newValue ?? state.value ?? "");
+    if (valueState) valueState.editing = true;
+    delete input.__icaxSpecificationReparenting;
+    input.focus({ preventScroll: true });
+    if (input.type !== "number" && state.selectionStart != null) {
+      input.setSelectionRange(
+        state.selectionStart,
+        state.selectionEnd,
+        state.selectionDirection ?? "none",
+      );
+    }
+    return document.activeElement === input;
+  }
+
+  clearSpecificationAnnotations(render = true) {
+    for (const object of [...this.specificationContent.children]) {
+      this.specificationContent.remove(object);
+      object.geometry?.dispose?.();
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) material?.dispose?.();
+    }
+    this.specificationLabels = [];
+    this.specificationAnnotationsSignature = "";
+    this.specificationLabelLayer?.replaceChildren?.();
+    if (render) this.#renderOnce();
+    return this;
+  }
+
   getViewCubeState() {
     const direction = new THREE.Vector3();
     this.camera.getWorldDirection(direction);
@@ -859,8 +1272,8 @@ export class ThreeRenderViewport {
     };
   }
 
-  setSelectedObjectId(objectId) {
-    return this.setSelectedObjectIds(objectId ? [objectId] : [], objectId);
+  setSelectedObjectId(objectId, options = {}) {
+    return this.setSelectedObjectIds(objectId ? [objectId] : [], objectId, options);
   }
 
   setGhostMesh(payload = {}) {
@@ -983,11 +1396,12 @@ export class ThreeRenderViewport {
     return this;
   }
 
-  setSelectedObjectIds(objectIds = [], primaryObjectId = "") {
+  setSelectedObjectIds(objectIds = [], primaryObjectId = "", options = {}) {
     const nextIds = new Set((Array.isArray(objectIds) ? objectIds : [objectIds])
       .map((id) => String(id ?? "").trim())
       .filter(Boolean));
     const nextPrimaryId = String(primaryObjectId ?? "").trim() || [...nextIds][0] || "";
+    this.selectionVisual = normalizeSelectionVisual(options?.selectionVisual ?? this.defaultSelectionVisual);
     if (nextPrimaryId === this.selectedObjectId && setsEqual(nextIds, this.selectedObjectIds)) {
       this.#updateSelectionVisuals();
       this.#renderOnce();
@@ -996,6 +1410,21 @@ export class ThreeRenderViewport {
 
     this.selectedObjectId = nextPrimaryId;
     this.selectedObjectIds = nextIds;
+    this.#updateSelectionVisuals();
+    this.#renderOnce();
+    return this;
+  }
+
+  /**
+   * Apply a transient, non-selecting tint to scene objects. This deliberately
+   * stays separate from selection so feature guidance can use its own colour
+   * without moving the selection axis or replacing parts-list selection.
+   */
+  setEmphasizedObjectIds(objectIds = [], options = {}) {
+    this.emphasisVisual = normalizeEmphasisVisual(options?.visual ?? this.defaultEmphasisVisual);
+    this.emphasizedObjectIds = new Set((Array.isArray(objectIds) ? objectIds : [objectIds])
+      .map((id) => String(id ?? "").trim())
+      .filter(Boolean));
     this.#updateSelectionVisuals();
     this.#renderOnce();
     return this;
@@ -1053,6 +1482,8 @@ export class ThreeRenderViewport {
       visibleEntityFilterCount: this.visibleEntityIds?.size ?? null,
       selectedObjectId: this.selectedObjectId,
       selectedObjectIds: [...this.selectedObjectIds],
+      emphasizedObjectIds: [...this.emphasizedObjectIds],
+      emphasisVisual: { ...this.emphasisVisual },
       ghostPreviewVisible: Boolean(this.ghostPreview?.visible),
       ghostPreviewNodeId: String(this.ghostPreview?.userData?.nodeId ?? ""),
       ghostPreviewVertexCount: Number(
@@ -1067,6 +1498,7 @@ export class ThreeRenderViewport {
       dimensionAnnotationCount: this.dimensionContent.children.filter(
         (object) => object.userData?.dimensionLabel,
       ).length,
+      specificationAnnotationCount: this.specificationLabels.length,
       cameraPosition: {
         x: this.camera.position.x,
         y: this.camera.position.y,
@@ -1617,15 +2049,15 @@ export class ThreeRenderViewport {
     if (object.userData.materialSignature === signature) {
       return;
     }
-    const wasSelected = this.#isObjectSelected(object.userData?.objectId);
-    this.#setObjectSelectedVisual(object, false);
+    const objectId = object.userData?.objectId;
+    const wasSelected = this.#isObjectSelected(objectId);
+    const wasEmphasized = this.#isObjectEmphasized(objectId);
+    this.#setObjectInteractionVisual(object, false, false);
     const previousMaterial = object.material;
     object.material = this.#makeMaterial(instance, Boolean(object.userData?.hasVertexColors));
     previousMaterial?.dispose?.();
     object.userData.materialSignature = signature;
-    if (wasSelected) {
-      this.#setObjectSelectedVisual(object, true);
-    }
+    this.#setObjectInteractionVisual(object, wasSelected, wasEmphasized);
   }
 
   #refreshSceneObjectMaterials() {
@@ -1745,11 +2177,12 @@ export class ThreeRenderViewport {
     if (!object) {
       return;
     }
-    this.#setObjectSelectedVisual(object, false);
+    this.#setObjectInteractionVisual(object, false, false);
     object.parent?.remove(object);
     object.material?.dispose?.();
     this.sceneObjects.delete(normalizedId);
     this.selectedObjectIds.delete(normalizedId);
+    this.emphasizedObjectIds.delete(normalizedId);
     if (this.selectedObjectId === normalizedId) {
       this.selectedObjectId = [...this.selectedObjectIds][0] || "";
     }
@@ -1758,7 +2191,7 @@ export class ThreeRenderViewport {
 
   #clearViewContent() {
     for (const object of this.sceneObjects.values()) {
-      this.#setObjectSelectedVisual(object, false);
+      this.#setObjectInteractionVisual(object, false, false);
       object.parent?.remove(object);
       object.material?.dispose?.();
     }
@@ -1790,6 +2223,7 @@ export class ThreeRenderViewport {
     this.colliderSlotDescriptors.clear();
     this.selectedObjectId = "";
     this.selectedObjectIds.clear();
+    this.emphasizedObjectIds.clear();
     this.selectionAxisHelper.visible = false;
     this.diagnosticKeys.clear();
   }
@@ -1836,38 +2270,52 @@ export class ThreeRenderViewport {
     return this.selectedObjectIds.has(String(objectId ?? "").trim());
   }
 
+  #isObjectEmphasized(objectId) {
+    return this.emphasizedObjectIds.has(String(objectId ?? "").trim());
+  }
+
   #setObjectSelectedVisual(object, isSelected) {
-    if (!object?.material) {
-      return;
-    }
+    this.#setObjectInteractionVisual(
+      object,
+      isSelected,
+      this.#isObjectEmphasized(object?.userData?.objectId),
+    );
+  }
 
-    const material = object.material;
-    if (isSelected) {
-      if (!object.userData.selectionMaterialState) {
-        object.userData.selectionMaterialState = this.#captureSelectionMaterialState(material);
+  #setObjectInteractionVisual(object, isSelected, isEmphasized) {
+    if (!object) return;
+    const apply = (node) => {
+      const materials = Array.isArray(node?.material)
+        ? node.material.filter(Boolean)
+        : (node?.material ? [node.material] : []);
+      if (!materials.length) return;
+      if (!node.userData.selectionMaterialState && (isSelected || isEmphasized)) {
+        node.userData.selectionMaterialState = materials.map((material) => this.#captureSelectionMaterialState(material));
       }
-      // The old selection treatment only changed the emissive term.  Most
-      // TubeDesigner assembly members use a neutral, non-emissive mesh (or a
-      // LineBasicMaterial), so selecting a row in the parts dock could leave
-      // the actual member visually indistinguishable from its neighbours.
-      // Always tint the selected object as well: this is deliberately strong
-      // enough to remain visible in dense five-face security-window grids.
-      if (material.color) {
-        material.color.setHex(0xffad1f);
+      const states = Array.isArray(node.userData.selectionMaterialState)
+        ? node.userData.selectionMaterialState : [];
+      materials.forEach((material, index) => this.#restoreSelectionMaterialState(material, states[index]));
+      if (!isSelected && !isEmphasized) {
+        node.userData.selectionMaterialState = null;
+        return;
       }
-      if (material.emissive) {
-        material.emissive.setHex(0xd47700);
-        material.emissiveIntensity = 0.68;
+      // Purple panel emphasis intentionally takes visual priority while active.
+      // Clearing it restores an existing orange parts-list selection exactly.
+      const visual = isEmphasized ? this.emphasisVisual : this.selectionVisual;
+      for (const material of materials) {
+        if (material.color) material.color.setHex(visual.color);
+        if (material.emissive) {
+          material.emissive.setHex(visual.emissive);
+          material.emissiveIntensity = visual.emissiveIntensity;
+        }
+        if ("linewidth" in material) {
+          material.linewidth = Math.max(visual.linewidth, Number(material.linewidth ?? 1));
+        }
+        material.needsUpdate = true;
       }
-      if ("linewidth" in material) {
-        material.linewidth = Math.max(2, Number(material.linewidth ?? 1));
-      }
-      material.needsUpdate = true;
-      return;
-    }
-
-    this.#restoreSelectionMaterialState(material, object.userData.selectionMaterialState);
-    object.userData.selectionMaterialState = null;
+    };
+    if (typeof object.traverse === "function") object.traverse(apply);
+    else apply(object);
   }
 
   #captureSelectionMaterialState(material) {
@@ -2139,6 +2587,24 @@ export class ThreeRenderViewport {
 
   #installPointerControls() {
     const canvas = this.renderer.domElement;
+    // Resting specification labels deliberately do not participate in pointer
+    // hit-testing, so orbit/pan/zoom continue to use the canvas even when the
+    // cursor is visually over a label.  A canvas double-click performs an
+    // explicit screen-rectangle lookup and opens only that annotation.
+    this.#listen(canvas, "dblclick", (event) => {
+      if (event.button !== 0) return;
+      const entry = [...this.specificationLabels].reverse().find(({ element }) => {
+        if (element.hidden || element.classList.contains("is-editing")) return false;
+        const rect = element.getBoundingClientRect();
+        return event.clientX >= rect.left && event.clientX <= rect.right
+          && event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+      const trigger = entry?.element?.querySelector?.(".icax-three-specification-trigger");
+      if (!trigger) return;
+      event.preventDefault();
+      event.stopPropagation();
+      trigger.click();
+    });
     this.#listen(canvas, "pointerdown", (event) => {
       canvas.focus?.();
       const mode = event.button === 2
@@ -2335,6 +2801,7 @@ export class ThreeRenderViewport {
   #renderOnce() {
     this.#updateSelectionHelper();
     this.#updateDimensionLabelScales();
+    this.#updateSpecificationLabelPositions();
     this.renderer.render(this.scene, this.camera);
     this.#renderOrientationGizmo();
     this.renderSequence += 1;
@@ -2349,6 +2816,87 @@ export class ThreeRenderViewport {
       if (!object.userData?.dimensionLabel) continue;
       const aspect = Math.max(1, Number(object.userData.dimensionLabelAspect ?? 1));
       object.scale.set(labelHeight * aspect, labelHeight, 1);
+    }
+  }
+
+  #updateSpecificationLabelPositions() {
+    if (!this.specificationLabels.length) return;
+    const canvas = this.renderer.domElement;
+    const width = Math.max(1, canvas.clientWidth);
+    const height = Math.max(1, canvas.clientHeight);
+    const inset = 8;
+    const occupied = [];
+    this.camera.updateMatrixWorld(true);
+    const projectedLabels = [];
+    for (const label of this.specificationLabels) {
+      const projected = label.worldPoint.clone().project(this.camera);
+      const visible = Number.isFinite(projected.x) && Number.isFinite(projected.y)
+        && Number.isFinite(projected.z) && projected.z >= -1 && projected.z <= 1
+        && projected.x >= -1.12 && projected.x <= 1.12
+        && projected.y >= -1.12 && projected.y <= 1.12;
+      label.element.hidden = !visible;
+      if (!visible) continue;
+      projectedLabels.push({
+        label,
+        x: (projected.x * 0.5 + 0.5) * width,
+        y: (-projected.y * 0.5 + 0.5) * height,
+      });
+    }
+
+    // Scene anchors can be separate in world space but collapse onto the
+    // same few screen pixels in an oblique or orthographic camera.  Lay the
+    // HTML labels out after projection so every template gets the same
+    // readable, collision-free annotation behaviour.
+    projectedLabels.sort((left, right) => left.y - right.y || left.x - right.x);
+    for (const item of projectedLabels) {
+      const { label } = item;
+      const element = label.element;
+      const labelWidth = Math.max(1, element.offsetWidth);
+      const labelHeight = Math.max(1, element.offsetHeight);
+      const halfWidth = labelWidth / 2;
+      const halfHeight = labelHeight / 2;
+      const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+      const candidateRect = (x, y) => ({
+        left: x - halfWidth,
+        right: x + halfWidth,
+        top: y - halfHeight,
+        bottom: y + halfHeight,
+      });
+      const collides = (rect) => occupied.some((other) => rect.left < other.right + 6
+        && rect.right > other.left - 6 && rect.top < other.bottom + 5 && rect.bottom > other.top - 5);
+      const place = (x, y) => {
+        const centerX = clamp(x, inset + halfWidth, width - inset - halfWidth);
+        const centerY = clamp(y, inset + halfHeight, height - inset - halfHeight);
+        const rect = candidateRect(centerX, centerY);
+        return { x: centerX, y: centerY, rect };
+      };
+
+      let placement = place(item.x, item.y);
+      if (collides(placement.rect)) {
+        const verticalStep = Math.max(34, labelHeight + 10);
+        const horizontalStep = Math.max(150, labelWidth + 26);
+        const candidates = [];
+        for (let ring = 1; ring <= 10; ring += 1) {
+          const vertical = verticalStep * ring;
+          const horizontal = horizontalStep * ring;
+          candidates.push(
+            [0, -vertical], [0, vertical],
+            [-horizontal, 0], [horizontal, 0],
+            [-horizontal, -vertical], [horizontal, -vertical],
+            [-horizontal, vertical], [horizontal, vertical],
+          );
+        }
+        for (const [offsetX, offsetY] of candidates) {
+          const candidate = place(item.x + offsetX, item.y + offsetY);
+          if (!collides(candidate.rect)) {
+            placement = candidate;
+            break;
+          }
+        }
+      }
+      occupied.push(placement.rect);
+      element.style.left = `${placement.x}px`;
+      element.style.top = `${placement.y}px`;
     }
   }
 
@@ -2575,6 +3123,92 @@ function ensureThreeViewportStyles() {
       color: #dce7ed;
       font-size: 12px;
       pointer-events: none;
+    }
+
+    .icax-three-specification-label-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .icax-three-specification-label {
+      position: absolute;
+      min-width: 0;
+      max-width: 210px;
+      min-height: 25px;
+      padding: 3px 8px;
+      border: 1px solid #35d88d;
+      border-radius: 5px;
+      background: rgba(9, 55, 39, 0.92);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+      color: #d9ffed;
+      font: 600 12px/17px system-ui, sans-serif;
+      white-space: nowrap;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+
+    .icax-three-specification-trigger {
+      display: block;
+      margin: -3px -8px;
+      padding: 3px 8px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      white-space: inherit;
+    }
+
+    .icax-three-specification-label.is-editing {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      max-width: none;
+      padding: 4px 5px 4px 8px;
+      border-style: solid;
+      border-color: #ff7770;
+      background: rgba(142, 39, 36, 0.96);
+      color: #ffffff;
+      pointer-events: auto;
+    }
+
+    .icax-three-specification-caption {
+      white-space: nowrap;
+    }
+
+    .icax-three-specification-input {
+      width: 92px;
+      height: 25px;
+      padding: 2px 6px;
+      border: 1px solid rgba(255, 255, 255, 0.65);
+      border-radius: 3px;
+      background: #ffffff;
+      color: #1f343d;
+      font: 600 12px/19px system-ui, sans-serif;
+      outline: none;
+    }
+
+    .icax-three-specification-input:focus {
+      border-color: #ffffff;
+      box-shadow: 0 0 0 2px rgba(255, 119, 112, 0.45);
+    }
+
+    .icax-three-specification-label:hover,
+    .icax-three-specification-label:focus-visible,
+    .icax-three-specification-label.is-active {
+      border-color: #8bffc2;
+      background: rgba(10, 91, 58, 0.97);
+      outline: none;
+    }
+
+    .icax-three-specification-label.is-pending {
+      border-style: dashed;
+      color: #ffffff;
+      border-color: #ff7770;
+      background: rgba(142, 39, 36, 0.96);
     }
 
     .icax-three-projection-toggle {

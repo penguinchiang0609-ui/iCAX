@@ -22,6 +22,13 @@
       "widthParameter": "stairWidth",
       "heightParameter": "floorHeight"
     },
+    "sceneSpecificationAnnotations": {
+      "schemaVersion": 1,
+      "annotations": [
+        { "parameter": "stairWidth", "axis": "y", "centered": true, "offset": [-160, 0, 0], "label": { "zh-CN": "梯段净宽" }, "order": 10 },
+        { "parameter": "floorHeight", "axis": "z", "offset": [-180, 0, 0], "label": { "zh-CN": "层高" }, "order": 20 }
+      ]
+    },
     "resourceRoles": {
       "profiles": {
         "stringer": { "parameter": "stringerProfileType" },
@@ -30,6 +37,48 @@
         "post": { "parameter": "postProfileType" },
         "landing": { "parameter": "landingProfileType" },
         "infill": { "parameter": "infillProfileType" }
+      }
+    },
+    "sceneParameterBindings": {
+      "schemaVersion": 1,
+      "groupSceneBindings": {
+        "overall": "all",
+        "basic": "all",
+        "flight": "all",
+        "structure": { "memberStableKeyPatterns": ["flight.*.beam.*", "landing.*"] },
+        "treads": { "memberStableKeyPatterns": ["flight.*.tread.*"] },
+        "landing": { "memberStableKeyPrefixes": ["landing."] },
+        "railing": { "memberStableKeyPatterns": ["flight.*.guard.*", "landing.*.guard.*"] },
+        "guard": { "memberStableKeyPatterns": ["flight.*.guard.*", "landing.*.guard.*"] },
+        "material": "all",
+        "process": "all",
+        "joints": "all"
+      },
+      "profileRoles": {
+        "stringer": {
+          "parameters": ["stringerProfileType", "stringerWidth", "stringerDepth", "stringerCornerRadius", "stringerWallThickness", "stringerChannelModel", "stringerModel0BendRadius", "stringerModel6FlangeThickness", "stringerModel6RootRadius", "stringerModel6ToeRadius", "stringerModel5FlangeThickness", "stringerModel5RootRadius", "stringerModel5ToeRadius", "stringerModel5FlangeSlope", "stringerModel7FlangeThickness", "stringerModel7LowerThickness", "stringerModel7WeldLeg"],
+          "memberStableKeyPatterns": ["flight.*.beam.*"]
+        },
+        "tread": {
+          "parameters": ["treadProfileType", "treadWidth", "treadDepthProfile", "treadCornerRadius", "treadWallThickness"],
+          "memberStableKeyPatterns": ["flight.*.tread.*"]
+        },
+        "handrail": {
+          "parameters": ["handrailProfileType", "handrailWidth", "handrailDepth", "handrailCornerRadius", "handrailWallThickness"],
+          "memberStableKeyPatterns": ["flight.*.guard.*.top", "landing.*.guard.*.rail"]
+        },
+        "post": {
+          "parameters": ["postProfileType", "postWidth", "postDepth", "postCornerRadius", "postWallThickness"],
+          "memberStableKeyPatterns": ["flight.*.guard.*.post.*", "landing.*.guard.*.post.*"]
+        },
+        "landing": {
+          "parameters": ["landingProfileType", "landingWidth", "landingDepth", "landingCornerRadius", "landingWallThickness"],
+          "memberStableKeyPatterns": ["landing.*.front", "landing.*.back", "landing.*.left", "landing.*.right", "landing.*.cross.*", "landing.*.column.*"]
+        },
+        "infill": {
+          "parameters": ["infillProfileType", "infillWidth", "infillDepth", "infillCornerRadius", "infillWallThickness"],
+          "memberStableKeyPatterns": ["flight.*.guard.*.infill.*", "flight.*.guard.*.lower.*", "landing.*.guard.*.infill.*", "landing.*.guard.*.picket.*"]
+        }
       }
     },
     "parameterLayout": {
