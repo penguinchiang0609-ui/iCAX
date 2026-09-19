@@ -63,6 +63,11 @@ import {
   renderToolLibraryViewportOverlay,
 } from "./toolLibrary.mjs";
 import {
+  renderConnectionLibraryLeftPane,
+  renderConnectionLibraryRightPane,
+  renderConnectionLibraryViewportOverlay,
+} from "./connectionLibrary.mjs";
+import {
   attachComponentLibrary,
   renderComponentLibraryDialogs,
   renderComponentLibraryLeftPane,
@@ -342,7 +347,7 @@ function withDesignerContext(context) {
     ...context,
     forceThreeViewport: true,
     showViewportGrid: false,
-    areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", templates: "产品模板", profiles: "管型库", tools: "模具库", components: "配件库", sketch: "草图", about: "关于" },
+    areaTitleOverrides: { view: "产品", nesting: "下料", machining: "加工", resources: "资源库", templates: "产品模板", profiles: "管型库", tools: "模具库", connections: "连接库", components: "配件库", sketch: "草图", about: "关于" },
     areaRenderers: {
       view: {
         left: renderDesignerLeftPane,
@@ -355,6 +360,10 @@ function withDesignerContext(context) {
       tools: {
         left: renderToolLibraryLeftPane,
         right: renderToolLibraryRightPane,
+      },
+      connections: {
+        left: renderConnectionLibraryLeftPane,
+        right: renderConnectionLibraryRightPane,
       },
       components: {
         left: renderComponentLibraryLeftPane,
@@ -382,10 +391,10 @@ function withDesignerContext(context) {
       if (tabId === "parts") return "nesting";
       if (tabId === "resources") {
         const resourceArea = getProjectView(context.project?.projectId ?? "").tubeDesignerResourceLibraryArea;
-        return ["products", "profiles", "tools"].includes(resourceArea)
+        return ["products", "profiles", "tools", "connections"].includes(resourceArea)
           ? (resourceArea === "products" ? "templates" : resourceArea) : "profiles";
       }
-      return ["view", "nesting", "machining", "templates", "profiles", "tools", "components", "sketch", "about"].includes(tabId)
+      return ["view", "nesting", "machining", "templates", "profiles", "tools", "connections", "components", "sketch", "about"].includes(tabId)
         ? tabId : "view";
     },
     resolveWorkbenchPresentation: (_context, _view, _scene, areaId) => ({
@@ -401,12 +410,13 @@ function withDesignerContext(context) {
     handleAreaViewportPick: handleDesignerViewportPick,
     handleAreaRibbonCommand: handleDesignerRibbonCommand,
     tryRenderProjectPatch(context,view,mount,ops) {
-      if(["tools","profiles"].includes(view.activeAreaId)) {
+      if(["tools","profiles","connections"].includes(view.activeAreaId)) {
         const tools=view.activeAreaId==="tools";
+        const connections=view.activeAreaId==="connections";
         const patched=patchLibraryDom(view,mount,{
-          left:(tools?renderToolLibraryLeftPane:renderProfileLibraryLeftPane)(context,view),
-          right:(tools?renderToolLibraryRightPane:renderProfileLibraryRightPane)(context,view),
-          overlay:(tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
+          left:(connections?renderConnectionLibraryLeftPane:tools?renderToolLibraryLeftPane:renderProfileLibraryLeftPane)(context,view),
+          right:(connections?renderConnectionLibraryRightPane:tools?renderToolLibraryRightPane:renderProfileLibraryRightPane)(context,view),
+          overlay:(connections?renderConnectionLibraryViewportOverlay:tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
           suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
         });
         if(patched){bindDiagramDragging(mount,view);bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);bindProductSceneParameterHighlights(mount,view,(level,message)=>ops.appendProjectLog(context,level,message));bindProductParameterDiagrams(mount);return true;}
@@ -543,17 +553,17 @@ function configureDesignerViewport(_context, view, areaId) {
   const viewport = view.viewport;
   if (!viewport) return;
   const normalizedAreaId = areaId === "parts" ? "nesting"
-    : (["view", "nesting", "machining", "templates", "profiles", "tools", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
+    : (["view", "nesting", "machining", "templates", "profiles", "tools", "connections", "components", "sketch", "about"].includes(areaId) ? areaId : "view");
   view.tubeDesignerProjectionModes ??= {};
   const projectionMode = view.tubeDesignerProjectionModes[normalizedAreaId] ?? "perspective";
-  viewport.setProjectionToggleVisible?.(!["sketch", "about"].includes(normalizedAreaId));
+  viewport.setProjectionToggleVisible?.(!["sketch", "about", "connections"].includes(normalizedAreaId));
   // The product scene is presentation-first: products and parts are selected
   // from their lists, while left-clicks in the viewport remain available to
   // specification annotations without selecting arbitrary members.
-  viewport.setPickingEnabled?.(!["view", "profiles", "sketch", "about"].includes(normalizedAreaId));
+  viewport.setPickingEnabled?.(!["view", "profiles", "connections", "sketch", "about"].includes(normalizedAreaId));
   viewport.setContinuousRendering?.(normalizedAreaId !== "sketch");
   viewport.setProjectionChangeHandler?.((mode) => {
-    const currentAreaId = ["view", "templates", "profiles", "tools", "components", "nesting", "machining"].includes(view.activeAreaId)
+    const currentAreaId = ["view", "templates", "profiles", "tools", "connections", "components", "nesting", "machining"].includes(view.activeAreaId)
       ? view.activeAreaId : "view";
     view.tubeDesignerProjectionModes ??= {};
     view.tubeDesignerProjectionModes[currentAreaId] = mode;
@@ -563,7 +573,7 @@ function configureDesignerViewport(_context, view, areaId) {
 }
 
 function resolveDesignerAreaViewDefinition(_context, view, areaId, fallback) {
-  if (["templates", "profiles", "tools", "components", "sketch", "nesting", "machining", "about"].includes(areaId)) {
+  if (["templates", "profiles", "tools", "connections", "components", "sketch", "nesting", "machining", "about"].includes(areaId)) {
     // 管型、下料与辅助工作区自行装载当前选择，不对应产品装配 View。
     return false;
   }
@@ -590,6 +600,7 @@ function renderDesignerAreaViewportOverlay(context, view, scene) {
   if (view.activeAreaId === "profiles") return renderProfileLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "templates") return renderProductTemplateLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "tools") return renderToolLibraryViewportOverlay(context, view, scene);
+  if (view.activeAreaId === "connections") return renderConnectionLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "components") return renderComponentLibraryViewportOverlay(context, view, scene);
   if (view.activeAreaId === "sketch") return renderSketchViewportOverlay(context, view, scene);
   if (view.activeAreaId === "nesting") return renderNestingViewportOverlay(context, view, scene);

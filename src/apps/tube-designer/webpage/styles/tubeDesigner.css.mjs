@@ -1903,6 +1903,104 @@ const baseTubeDesignerCss = String.raw`
 .tube-profile-library-svg .outer { fill: #78c5bd; stroke: #d0f0ed; stroke-width: .7; vector-effect: non-scaling-stroke; }
 .tube-profile-library-svg .hole { fill: #13252d; stroke: #d0f0ed; stroke-width: .7; vector-effect: non-scaling-stroke; }
 
+/* Multi-part connection library.  A connection composes existing single-part
+   mould operations, assembly motion and locking semantics. */
+.tube-connection-library-panel,
+.tube-connection-library-editor { box-sizing:border-box; height:100%; min-height:0; overflow:hidden; }
+.tube-connection-library-panel { display:grid; grid-template-rows:auto auto minmax(0,1fr); }
+.tube-connection-library-search { display:block; padding:9px; border-bottom:1px solid #d2dfe2; background:#f7fafb; }
+.tube-connection-library-search input { box-sizing:border-box; width:100%; min-height:32px; padding:5px 8px; border:1px solid #bdcdd2; border-radius:4px; color:#2b4c55; font:inherit; font-size:11px; }
+.tube-connection-library-list { display:grid; grid-auto-rows:max-content; align-content:start; gap:8px; min-height:0; padding:8px; overflow:auto; scrollbar-gutter:stable; }
+.tube-connection-library-group { overflow:hidden; border:1px solid #cbd8dc; border-radius:6px; background:#fff; }
+.tube-connection-library-group-heading { display:flex; width:100%; min-height:35px; align-items:center; justify-content:space-between; gap:8px; padding:8px 9px; border:0; background:#e9f0f2; color:#294e57; text-align:left; cursor:pointer; }
+.tube-connection-library-group-heading small { color:#72868c; font-size:9px; }
+.tube-connection-library-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.tube-connection-library-cards[hidden] { display:none; }
+.tube-connection-library-card { display:flex; min-width:0; min-height:72px; align-items:center; gap:8px; padding:8px; border:0; border-right:1px solid #d9e3e5; border-bottom:1px solid #d9e3e5; background:#fff; color:#294e57; text-align:left; cursor:pointer; }
+.tube-connection-library-card:nth-child(even) { border-right:0; }
+.tube-connection-library-card:hover { background:#eff7f5; }
+.tube-connection-library-card.selected { background:#e2f2ef; box-shadow:inset 3px 0 #1b9387; }
+.tube-connection-library-card > span:last-child { display:grid; min-width:0; gap:3px; }
+.tube-connection-library-card strong { overflow:hidden; font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-connection-library-card small { overflow:hidden; color:#73888e; font-size:8px; line-height:1.35; text-overflow:ellipsis; }
+.tube-connection-library-card-art { display:grid; width:38px; height:38px; flex:0 0 38px; place-items:center; border:1px solid #d4e2e4; border-radius:5px; background:#edf5f5; color:#16867b; }
+.tube-connection-library-card-art svg { width:31px; height:31px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+.tube-connection-library-editor { display:grid; grid-template-rows:auto minmax(0,1fr); }
+.tube-connection-library-editor-heading { display:flex; min-width:0; align-items:center; justify-content:space-between; gap:9px; padding:11px 13px; border-bottom:1px solid #bcd7d5; background:#e5f2f1; }
+.tube-connection-library-editor-heading > div { display:grid; min-width:0; gap:3px; }
+.tube-connection-library-editor-heading strong { overflow:hidden; color:#294e57; font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
+.tube-connection-library-editor-heading span { color:#6e858b; font-size:9px; }
+.tube-connection-library-editor-heading b { flex:0 0 auto; padding:4px 7px; border:1px solid #bcd8d5; border-radius:4px; background:#e1f2ef; color:#177b71; font-size:9px; }
+.tube-connection-library-editor-body { display:grid; grid-auto-rows:max-content; align-content:start; gap:10px; min-height:0; padding:11px; overflow:auto; scrollbar-gutter:stable; }
+.tube-connection-library-intro { margin:0; padding:8px 9px; border-left:3px solid #438f87; background:#e9f3f1; color:#476d6a; font-size:10px; line-height:1.55; }
+.tube-connection-library-parameter-section,
+.tube-connection-library-block { display:grid; gap:8px; padding:9px; border:1px solid #c9d8dc; border-radius:5px; background:#fff; }
+.tube-connection-library-parameter-section.basic > header,
+.tube-connection-library-block > header { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.tube-connection-library-parameter-section header strong,
+.tube-connection-library-block header strong { color:#35545e; font-size:12px; }
+.tube-connection-library-parameter-section header small,
+.tube-connection-library-block header span { color:#73888e; font-size:9px; }
+.tube-connection-library-parameter-section > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:-9px; padding:9px; color:#39716c; background:#eaf2f2; cursor:pointer; font-size:12px; font-weight:700; }
+.tube-connection-library-parameter-section[open] > summary { margin-bottom:0; }
+.tube-connection-library-parameter-section > summary small { font-size:9px; font-weight:400; }
+.tube-connection-library-parameter-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+.tube-connection-library-parameter-grid label { display:grid; min-width:0; gap:4px; }
+.tube-connection-library-parameter-grid label > span { overflow-wrap:anywhere; color:#55737b; font-size:9px; }
+.tube-connection-library-parameter-grid :is(input,select) { box-sizing:border-box; width:100%; min-width:0; min-height:29px; padding:4px 6px; border:1px solid #bdcdd2; border-radius:4px; background:#fff; color:#2b4c55; font:inherit; font-size:11px; }
+.tube-connection-library-parameter-grid .tube-connection-library-check { display:flex; grid-column:1/-1; align-items:center; gap:6px; min-height:30px; }
+.tube-connection-library-parameter-grid .tube-connection-library-check input { width:auto; min-height:auto; }
+.tube-connection-library-role-list,
+.tube-connection-library-operation-list,
+.tube-connection-library-steps { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
+.tube-connection-library-role-list article { display:flex; align-items:center; gap:8px; padding:7px; border:1px solid #d9e4e6; border-radius:4px; background:#f7fafb; }
+.tube-connection-library-role-list i { display:grid; width:22px; height:22px; flex:0 0 22px; place-items:center; border-radius:50%; background:#dcefeb; color:#197b72; font-size:10px; font-style:normal; font-weight:700; }
+.tube-connection-library-role-list article > div,
+.tube-connection-library-operation-list article > div { display:grid; min-width:0; gap:2px; }
+.tube-connection-library-role-list strong,
+.tube-connection-library-operation-list strong { color:#35545e; font-size:10px; }
+.tube-connection-library-role-list small,
+.tube-connection-library-operation-list small { color:#74888f; font-size:8px; line-height:1.4; }
+.tube-connection-library-operation-list article { display:grid; grid-template-columns:58px minmax(0,1fr); gap:7px; padding:7px; border:1px solid #d7e2e4; border-radius:4px; background:#f8fbfb; }
+.tube-connection-library-operation-list article > span { align-self:start; padding:3px 5px; border-radius:3px; background:#e1f2ef; color:#177b71; font-size:9px; text-align:center; }
+.tube-connection-library-operation-list dl { display:grid; grid-column:1/-1; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; margin:0; }
+.tube-connection-library-operation-list dl > div { display:flex; min-width:0; justify-content:space-between; gap:5px; padding:4px 5px; background:#fff; color:#6e858b; font-size:8px; }
+.tube-connection-library-operation-list dd { margin:0; color:#2f6863; overflow-wrap:anywhere; }
+.tube-connection-library-reuse-note { margin:0; color:#667e84; font-size:9px; line-height:1.5; }
+.tube-connection-library-steps { counter-reset:connection-step; }
+.tube-connection-library-steps li { display:flex; align-items:flex-start; gap:8px; }
+.tube-connection-library-steps li::before { counter-increment:connection-step; content:counter(connection-step); display:grid; width:19px; height:19px; flex:0 0 19px; place-items:center; border-radius:50%; background:#dcefeb; color:#197b72; font-size:9px; }
+.tube-connection-library-steps i { min-width:42px; padding:3px 5px; border-radius:3px; background:#f0f5f5; color:#55737b; font-size:8px; font-style:normal; text-align:center; }
+.tube-connection-library-steps span { display:grid; gap:2px; }
+.tube-connection-library-steps strong { color:#35545e; font-size:9px; }
+.tube-connection-library-steps small { color:#74888f; font-size:8px; }
+.tube-connection-library-block header button { border:1px solid #b8ced1; border-radius:3px; background:#f6faf9; color:#356b6a; font-size:8px; cursor:pointer; }
+.tube-connection-library-output-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px; }
+.tube-connection-library-output-grid span { display:grid; gap:2px; padding:6px; background:#f6f9fa; color:#667e84; font-size:8px; line-height:1.4; }
+.tube-connection-library-output-grid b { color:#35545e; font-size:9px; }
+.tube-connection-library-hud { position:absolute; top:12px; left:12px; z-index:4; display:grid; gap:3px; padding:10px 13px; border:1px solid #36545d; border-radius:6px; background:rgba(13,34,42,.92); color:#d6e8ea; pointer-events:none; }
+.tube-connection-library-hud strong { font-size:14px; }
+.tube-connection-library-hud span { color:#a8c0c6; font-size:10px; }
+.tube-connection-library-hud small { color:#7d9ca6; font-size:9px; }
+.tube-connection-library-stage { position:absolute; z-index:3; top:50%; left:50%; display:grid; width:min(620px,calc(100% - 70px)); max-height:calc(100% - 120px); grid-template-rows:auto minmax(0,1fr) auto; overflow:hidden; border:1px solid #6ea7a2; border-radius:7px; background:#f5f9f9; box-shadow:0 15px 38px rgba(0,0,0,.28); transform:translate(-50%,-50%); }
+.tube-connection-library-stage > header { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; border-bottom:1px solid #b9d5d3; background:#e5f2f1; color:#2c5c61; }
+.tube-connection-library-stage > header strong { font-size:13px; }
+.tube-connection-library-stage > header span { font-size:9px; }
+.tube-connection-library-stage > svg { display:block; box-sizing:border-box; width:100%; min-height:260px; max-height:430px; padding:18px; background:#edf5f5; }
+.tube-connection-library-stage svg g { fill:rgba(87,164,155,.25); stroke:#268c83; stroke-width:2.2; }
+.tube-connection-library-stage svg .part-b { fill:rgba(98,129,154,.18); stroke:#577b8b; }
+.tube-connection-library-stage svg .hole { fill:#edf5f5; stroke:#cc7a2d; }
+.tube-connection-library-stage svg .motion { fill:none; stroke:#d27625; stroke-width:2.5; stroke-dasharray:7 5; }
+.tube-connection-library-stage svg .weld { fill:none; stroke:#d3652b; stroke-width:6; stroke-dasharray:5 4; }
+.tube-connection-library-stage svg marker path { fill:#d27625; stroke:none; }
+.tube-connection-library-stage svg text { fill:#4b6971; stroke:none; font:12px "Segoe UI","Microsoft YaHei",sans-serif; }
+.tube-connection-library-stage > footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; padding:10px; border-top:1px solid #d0dfe1; background:#fff; color:#57737a; font-size:9px; }
+.tube-connection-library-stage footer span { display:flex; align-items:center; gap:5px; }
+.tube-connection-library-stage footer i { display:grid; width:18px; height:18px; place-items:center; border-radius:50%; background:#dcefeb; color:#197b72; font-style:normal; }
+.tube-connection-library-stage footer .result { padding:4px 7px; border-radius:3px; background:#e1f2ef; color:#177b71; font-weight:700; }
+.tube-connection-library-card:focus-visible,
+.tube-connection-library-group-heading:focus-visible { outline:2px solid #178f82; outline-offset:-2px; }
+
 .tube-designer-modal-backdrop {
   position: fixed;
   inset: 0;

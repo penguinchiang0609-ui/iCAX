@@ -11,7 +11,10 @@ const collapsedPane = renderToolLibraryRightPane({}, collapseView);
 const read=path=>readFileSync(new URL(path,import.meta.url),"utf8");
 const data=source=>"data:text/javascript;charset=utf-8,"+encodeURIComponent(source);
 const patchUrl=data(read("../../apps/tube-designer/webpage/punchDomPatch.mjs"));
-const libraryUrl=data(read("../../apps/tube-designer/webpage/libraryDomPatch.mjs").replace('"./punchDomPatch.mjs"',JSON.stringify(patchUrl)));
+const floatingUrl=data('export function floatingParameterDiagramHost(){return null} export function moveFloatingParameterDiagramsToWorkspace(){return null}');
+const libraryUrl=data(read("../../apps/tube-designer/webpage/libraryDomPatch.mjs")
+  .replace('"./punchDomPatch.mjs"',JSON.stringify(patchUrl))
+  .replace('"./floatingParameterDiagram.mjs"',JSON.stringify(floatingUrl)));
 const stateUrl=data(read("../../apps/_shared/workbench/utils/paneInteractionState.mjs"));
 const {chromium}=await import(process.env.ICAX_PLAYWRIGHT_MODULE || "playwright");
 const browser=await chromium.launch({headless:true,channel:"msedge"});
@@ -21,8 +24,8 @@ try {
     const {patchLibraryDom,rememberLibraryDom}=await import(libraryUrl);
     const {capturePaneInteraction}=await import(stateUrl);
     const results=[];
-    for(const area of ["tools","profiles"]) {
-      const hud=area==="tools"?"tube-tool-library-hud":"tube-profile-library-preview-hud";
+    for(const area of ["tools","profiles","connections"]) {
+      const hud=area==="tools"?"tube-tool-library-hud":area==="connections"?"tube-connection-library-hud":"tube-profile-library-preview-hud";
       const left='<div class="list" style="height:1200px"><button data-cam-action="select">item</button></div>';
       const right=value=>'<div style="height:500px"></div><label><input data-parameter="width" value="'+value+'"></label>'+
         (value==='10'?'<label data-condition-field="extra"><input data-parameter="inactive" value="9"></label>':'')+
@@ -81,5 +84,5 @@ try {
     return results;
   },{libraryUrl,stateUrl,expandedPane,collapsedPane});
   assert.ok(result.every(Boolean),JSON.stringify(result));
-  console.log("Tools/profiles local patch keeps canvas, cube, controls/listeners, focus and scrolling; status updates without remount.");
+  console.log("Tools/profiles/connections local patch keeps canvas, cube, controls/listeners, focus and scrolling; status updates without remount.");
 } finally {await browser.close();}

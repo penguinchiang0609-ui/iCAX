@@ -56,6 +56,7 @@ import {
 import { catalogText, getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs";
 import { componentLibraryState, handleComponentLibraryAction, handleComponentLibraryRibbonCommand, refreshComponentModels } from "./componentLibrary.mjs";
 import { ensureToolLibraryCatalogue, handleToolLibraryAction, handleToolLibraryRibbonCommand } from "./toolLibrary.mjs";
+import { handleConnectionLibraryAction } from "./connectionLibrary.mjs";
 import {
   findProductProfile,
   findProductTool,
@@ -274,6 +275,8 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   if (componentResult.handled) return componentResult;
   const toolLibraryResult = await handleToolLibraryAction(context, view, action, target, ops);
   if (toolLibraryResult.handled) return toolLibraryResult;
+  const connectionLibraryResult = await handleConnectionLibraryAction(context, view, action, target, ops);
+  if (connectionLibraryResult.handled) return connectionLibraryResult;
   const productTemplateLibraryResult = await handleProductTemplateLibraryAction(context, view, action, target, ops);
   if (productTemplateLibraryResult.handled) return productTemplateLibraryResult;
   const nestingPunchPartResult = await handleNestingPunchPartAction(context, view, action, target, ops);
@@ -715,6 +718,7 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
     "resources.products": "products",
     "resources.profiles": "profiles",
     "resources.tools": "tools",
+    "resources.connections": "connections",
   };
   if (resourceAreas[commandId]) {
     const resourceArea = resourceAreas[commandId];
@@ -725,6 +729,8 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
         ? "正在装载管型资源与三维预览"
         : resourceArea === "tools"
           ? "正在读取模具目录与类别"
+          : resourceArea === "connections"
+            ? "正在读取连接模板与模具复用关系"
           : "正在读取产品模板目录",
       stage: "切换资源类型",
       mode: "Resources",

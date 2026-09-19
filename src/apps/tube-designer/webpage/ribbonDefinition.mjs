@@ -93,6 +93,7 @@ const allRibbonDefinition = {
             command("resources.products", "产品", "report", { size: "large", iconTone: "blue" }),
             command("resources.profiles", "管型", "profile-sketch", { size: "large", iconTone: "green" }),
             command("resources.tools", "模具", "hole", { size: "large", iconTone: "orange" }),
+            command("resources.connections", "连接", "merge", { size: "large", iconTone: "green" }),
           ],
         },
         {
@@ -185,12 +186,13 @@ export const ribbonDefinition = {
 };
 
 export function getRibbonDefinition(options = {}) {
-  const resourceArea = ["products", "profiles", "tools"].includes(options?.resourceArea)
+  const resourceArea = ["products", "profiles", "tools", "connections"].includes(options?.resourceArea)
     ? options.resourceArea : "profiles";
   const resourceCommandAreas = {
     "resources.products": "products",
     "resources.profiles": "profiles",
     "resources.tools": "tools",
+    "resources.connections": "connections",
   };
   const resourceGroupAreas = {
     "产品模板": "products",
