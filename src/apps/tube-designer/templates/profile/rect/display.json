@@ -1,0 +1,72 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true }
+      },
+      "fields": {
+        "width": { "group": "dimensions", "order": 10, "title": { "zh-CN": "宽" }, "help": { "zh-CN": "宽 / mm" } },
+        "depth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "高" }, "help": { "zh-CN": "高 / mm" } },
+        "wallThickness": { "group": "dimensions", "order": 30, "title": { "zh-CN": "壁厚" }, "help": { "zh-CN": "壁厚 / mm" } },
+        "cornerRadius": { "group": "dimensions", "order": 35, "title": { "zh-CN": "R（外）" }, "help": { "zh-CN": "R（外）/ mm" } },
+        "innerRadius": { "group": "dimensions", "order": 40, "title": { "zh-CN": "R（内）" }, "help": { "zh-CN": "R（内）/ mm" } },
+        "useOuterRadii": { "group": "dimensions", "order": 50, "line": "full", "title": { "zh-CN": "启用独立外圆角" } },
+        "outerRadius1": { "group": "dimensions", "order": 60, "title": { "zh-CN": "左下外圆角 R1" }, "help": { "zh-CN": "左下外圆角 R1 / mm" } },
+        "outerRadius2": { "group": "dimensions", "order": 70, "title": { "zh-CN": "右下外圆角 R2" }, "help": { "zh-CN": "右下外圆角 R2 / mm" } },
+        "outerRadius3": { "group": "dimensions", "order": 80, "title": { "zh-CN": "右上外圆角 R3" }, "help": { "zh-CN": "右上外圆角 R3 / mm" } },
+        "outerRadius4": { "group": "dimensions", "order": 90, "title": { "zh-CN": "左上外圆角 R4" }, "help": { "zh-CN": "左上外圆角 R4 / mm" } },
+        "useInnerRadii": { "group": "dimensions", "order": 100, "line": "full", "title": { "zh-CN": "启用独立内圆角" } },
+        "innerRadius1": { "group": "dimensions", "order": 110, "title": { "zh-CN": "左下内圆角 r1" }, "help": { "zh-CN": "左下内圆角 r1 / mm" } },
+        "innerRadius2": { "group": "dimensions", "order": 120, "title": { "zh-CN": "右下内圆角 r2" }, "help": { "zh-CN": "右下内圆角 r2 / mm" } },
+        "innerRadius3": { "group": "dimensions", "order": 130, "title": { "zh-CN": "右上内圆角 r3" }, "help": { "zh-CN": "右上内圆角 r3 / mm" } },
+        "innerRadius4": { "group": "dimensions", "order": 140, "title": { "zh-CN": "左上内圆角 r4" }, "help": { "zh-CN": "左上内圆角 r4 / mm" } },
+        "innerOffsetX": { "group": "dimensions", "order": 150, "title": { "zh-CN": "内孔水平偏心" }, "help": { "zh-CN": "内孔水平偏心 / mm" } },
+        "innerOffsetY": { "group": "dimensions", "order": 160, "title": { "zh-CN": "内孔竖直偏心" }, "help": { "zh-CN": "内孔竖直偏心 / mm" } }
+      }
+    },
+    "scene": {
+      "annotationGroups": { "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true } },
+      "annotations": {
+        "width": { "label": { "zh-CN": "宽" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "depth": { "label": { "zh-CN": "高" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "wallThickness": { "label": { "zh-CN": "壁厚" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm" },
+        "cornerRadius": { "label": { "zh-CN": "R（外）" }, "group": "dimensions", "order": 35, "editable": true, "suffix": " mm" },
+        "innerRadius": { "label": { "zh-CN": "R（内）" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm" },
+        "outerRadius1": { "label": { "zh-CN": "外 R1" }, "group": "dimensions", "order": 50, "editable": true, "suffix": " mm" },
+        "outerRadius2": { "label": { "zh-CN": "外 R2" }, "group": "dimensions", "order": 60, "editable": true, "suffix": " mm" },
+        "outerRadius3": { "label": { "zh-CN": "外 R3" }, "group": "dimensions", "order": 70, "editable": true, "suffix": " mm" },
+        "outerRadius4": { "label": { "zh-CN": "外 R4" }, "group": "dimensions", "order": 80, "editable": true, "suffix": " mm" },
+        "innerRadius1": { "label": { "zh-CN": "内 r1" }, "group": "dimensions", "order": 90, "editable": true, "suffix": " mm" },
+        "innerRadius2": { "label": { "zh-CN": "内 r2" }, "group": "dimensions", "order": 100, "editable": true, "suffix": " mm" },
+        "innerRadius3": { "label": { "zh-CN": "内 r3" }, "group": "dimensions", "order": 110, "editable": true, "suffix": " mm" },
+        "innerRadius4": { "label": { "zh-CN": "内 r4" }, "group": "dimensions", "order": 120, "editable": true, "suffix": " mm" },
+        "innerOffsetX": { "label": { "zh-CN": "内孔水平偏心" }, "group": "dimensions", "order": 130, "editable": true, "suffix": " mm" },
+        "innerOffsetY": { "label": { "zh-CN": "内孔竖直偏心" }, "group": "dimensions", "order": 140, "editable": true, "suffix": " mm" }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "width", "kind": "linear", "from": ["-width/2", "depth/2"], "to": ["width/2", "depth/2"], "axis": "x", "side": "top", "description": "宽度基准" },
+          { "parameter": "depth", "kind": "linear", "from": ["-width/2", "-depth/2"], "to": ["-width/2", "depth/2"], "axis": "y", "side": "left", "description": "高度基准" },
+          { "parameter": "wallThickness", "kind": "linear", "from": ["width/2-wallThickness", 0], "to": ["width/2", 0], "axis": "x", "side": "bottom", "description": "直边壁厚" },
+          { "parameter": "cornerRadius", "kind": "leader", "point": ["width/2-cornerRadius*(1-0.7071067811865476)", "depth/2-cornerRadius*(1-0.7071067811865476)"], "side": "right", "description": "外角半径 R" },
+          { "parameter": "innerRadius", "kind": "leader", "point": ["innerOffsetX+(width-2*wallThickness)/2-innerRadius*(1-0.7071067811865476)", "innerOffsetY+(depth-2*wallThickness)/2-innerRadius*(1-0.7071067811865476)"], "side": "right", "description": "内角半径 R" },
+          { "parameter": "outerRadius1", "kind": "leader", "point": ["-width/2+outerRadius1*(1-0.7071067811865476)", "-depth/2+outerRadius1*(1-0.7071067811865476)"], "side": "left", "description": "左下外角 R1" },
+          { "parameter": "outerRadius2", "kind": "leader", "point": ["width/2-outerRadius2*(1-0.7071067811865476)", "-depth/2+outerRadius2*(1-0.7071067811865476)"], "side": "bottom", "description": "右下外角 R2" },
+          { "parameter": "outerRadius3", "kind": "leader", "point": ["width/2-outerRadius3*(1-0.7071067811865476)", "depth/2-outerRadius3*(1-0.7071067811865476)"], "side": "right", "description": "右上外角 R3" },
+          { "parameter": "outerRadius4", "kind": "leader", "point": ["-width/2+outerRadius4*(1-0.7071067811865476)", "depth/2-outerRadius4*(1-0.7071067811865476)"], "side": "top", "description": "左上外角 R4" },
+          { "parameter": "innerRadius1", "kind": "leader", "point": ["innerOffsetX-(width-2*wallThickness)/2+innerRadius1*(1-0.7071067811865476)", "innerOffsetY-(depth-2*wallThickness)/2+innerRadius1*(1-0.7071067811865476)"], "side": "left", "description": "左下内角 r1" },
+          { "parameter": "innerRadius2", "kind": "leader", "point": ["innerOffsetX+(width-2*wallThickness)/2-innerRadius2*(1-0.7071067811865476)", "innerOffsetY-(depth-2*wallThickness)/2+innerRadius2*(1-0.7071067811865476)"], "side": "bottom", "description": "右下内角 r2" },
+          { "parameter": "innerRadius3", "kind": "leader", "point": ["innerOffsetX+(width-2*wallThickness)/2-innerRadius3*(1-0.7071067811865476)", "innerOffsetY+(depth-2*wallThickness)/2-innerRadius3*(1-0.7071067811865476)"], "side": "right", "description": "右上内角 r3" },
+          { "parameter": "innerRadius4", "kind": "leader", "point": ["innerOffsetX-(width-2*wallThickness)/2+innerRadius4*(1-0.7071067811865476)", "innerOffsetY+(depth-2*wallThickness)/2-innerRadius4*(1-0.7071067811865476)"], "side": "top", "description": "左上内角 r4" },
+          { "parameter": "innerOffsetX", "kind": "linear", "from": [0, "-depth/2"], "to": ["innerOffsetX", "-depth/2"], "axis": "x", "side": "bottom", "description": "内孔水平偏心" },
+          { "parameter": "innerOffsetY", "kind": "linear", "from": ["-width/2", 0], "to": ["-width/2", "innerOffsetY"], "axis": "y", "side": "left", "description": "内孔竖直偏心" }
+        ]
+      }
+    }
+  }
+}

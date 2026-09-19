@@ -27,11 +27,9 @@ def parameters(**updates):
     # Fixed geometry inputs keep these regressions independent of UI presets.
     result = dict(productCode="TEST", frontWidth=1200.0, sideWidth=600.0,
                   leftWidth=600.0, rightWidth=600.0, depth=600.0, height=1800.0,
-                  sidePosition="right", horizontalCount=4,
-                  sideHorizontalCount=4, sideVerticalCount=4, sideMaximumVerticalClearGap=110.0,
-                  frameCornerJoin="post_butt", mainHorizontalConnection="insert",
-                  verticalLayoutMode="maximum_clear_gap", maximumVerticalClearGap=110.0,
-                  verticalCountPerFace=4, firstHorizontalTopOffset=200.0,
+                  sidePosition="right",
+                  frameCornerJoin="post_butt",
+                  firstHorizontalTopOffset=200.0,
                   lastHorizontalBottomOffset=200.0, horizontalMaximumCenterSpacing=500.0,
                   verticalLeftCenterOffset=110.0, verticalRightCenterOffset=110.0,
                   verticalMaximumCenterSpacing=120.0,
@@ -42,11 +40,12 @@ def parameters(**updates):
                   topBottomCrossbarBackCenterOffset=175.0,
                   topBottomCrossbarMaximumCenterSpacing=250.0,
                   topBottomRodLeftCenterOffset=110.0, topBottomRodRightCenterOffset=110.0,
-                  topBottomRodMaximumCenterSpacing=120.0,
-                  topBottomCrossbarCount=2, topBottomRodCount=4, horizontalBranchReserve=5.0,
+                  topBottomRodMaximumCenterSpacing=120.0, horizontalBranchReserve=5.0,
                   verticalBranchReserve=10.0, assemblyClearance=0.1,
                   accessDoorEnabled=False, accessDoorFace="front", doorUOffset=80.0,
                   doorVOffset=500.0, doorWidth=400.0, doorHeight=600.0,
+                  doorClearWidth=400.0, doorClearHeight=600.0,
+                  doorHardwareClearance=0.0,
                   doorGap=3.0, doorHingeSide="left", doorHingeCount=2,
                   doorFrameJoinType="butt_90", doorLeafFrameJoinType="butt_90",
                   doorFrameButtWrapMode="side_wraps_horizontal", doorLeafFrameButtWrapMode="side_wraps_horizontal",
@@ -385,10 +384,10 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
                 build(frameCornerJoin="rail_miter", **updates)
         # This row fits the uncut tube envelope, but its cutter crosses the
         # diagonal seam. The equivalent straight-butt cap has no diagonal seam.
-        probe = dict(frameDepth=38.0, topBottomCrossbarCount=12,
-                     horizontalCount=0, sideHorizontalCount=0,
-                     verticalLayoutMode="manual_count", verticalCountPerFace=0,
-                     sideVerticalCount=0, topBottomRodCount=0)
+        probe = dict(frameDepth=38.0,
+                     topBottomCrossbarFrontCenterOffset=19.0,
+                     topBottomCrossbarBackCenterOffset=19.0,
+                     topBottomCrossbarMaximumCenterSpacing=40.0)
         # A direct boundary probe avoids arbitrary extra clearance requirements:
         # a transverse hole exactly at the corner center necessarily opens the cut.
         document, parts = build("five-face", frameCornerJoin="rail_miter", **probe)
@@ -399,65 +398,16 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "进入45°斜切端面"):
             MODULE._validate_miter_hole_margin(receiver, shifted, 0.1)
 
-    def test_welded_horizontal_ends_touch_frame_and_do_not_drill_it(self):
-        for layout in ("two-face", "three-face", "five-face"):
-            for join in ("post_butt", "rail_miter"):
-                document, parts = build(layout, frameCornerJoin=join, frameDepth=38.0,
-                                        mainHorizontalConnection="weld", horizontalBranchReserve=-1)
-                frame = [part for part in parts if part.key.startswith("outer_frame.")]
-                horizontals = [part for part in parts if part.key.startswith(("main_grid.horizontal.", "cap_grid.horizontal."))]
-                horizontal_keys = {part.key for part in horizontals}
-                for item in document["items"]:
-                    process = item["properties"]["tubeDesigner.connectionProcess"]
-                    if item["key"].startswith("outer_frame."):
-                        self.assertFalse(horizontal_keys.intersection(process["receives"]))
-                    elif item["key"] in horizontal_keys:
-                        self.assertEqual("weld", process["outerFrameConnection"])
-                        self.assertEqual(0.0, process["outerFrameInsertionDepth"])
-                        self.assertTrue(process["receives"], item["key"])
-                for first in frame:
-                    for second in horizontals:
-                        self.assertFalse(has_volume_overlap(first, second), (first.key, second.key))
-
-    def test_unused_horizontal_reserve_does_not_change_welded_geometry(self):
-        baseline, baseline_parts = build("five-face", mainHorizontalConnection="weld", frameDepth=38.0)
-        for reserve in (-1, 0, 20, 1000, "unused"):
-            changed, changed_parts = build("five-face", mainHorizontalConnection="weld", frameDepth=38.0,
-                                          horizontalBranchReserve=reserve)
-            self.assertEqual(baseline_parts, changed_parts)
-            self.assertEqual(baseline["geometry"], changed["geometry"])
+    def test_insertion_depth_is_always_validated(self):
         for key in ("horizontalBranchReserve", "verticalBranchReserve"):
             with self.assertRaisesRegex(ValueError, "0到20"):
                 build(**{key: -1})
-        with self.assertRaisesRegex(ValueError, "0到20"):
-            build(mainHorizontalConnection="weld", frameDepth=38.0, verticalBranchReserve=-1)
 
-    def test_weld_rejects_curved_frames_and_insufficient_flat_receiving_faces(self):
-        for layout in ("two-face", "three-face", "five-face"):
-            with self.subTest(layout=layout):
-                with self.assertRaisesRegex(ValueError, "标准矩形管外框"):
-                    build(layout, mainHorizontalConnection="weld", frameProfileType="round",
-                          frameWidth=38.0, frameDepth=38.0)
-                with self.assertRaisesRegex(ValueError, "平直面宽度 20"):
-                    build(layout, mainHorizontalConnection="weld", frameDepth=38.0,
-                          frameCornerRadius=9.0)
-                # Width alone would pass (38 - 2*2), but the other side of
-                # the corner post only has 25 - 2*2 = 21 mm of flat surface.
-                with self.assertRaisesRegex(ValueError, "平直面宽度 21"):
-                    build(layout, mainHorizontalConnection="weld", frameDepth=25.0,
-                          frameCornerRadius=2.0)
-                # Both flat sides exactly accommodate the 22 mm-deep end.
-                build(layout, mainHorizontalConnection="weld", frameDepth=25.0,
-                      frameCornerRadius=1.5)
-                # Insertion is a different actual joint, not a flat butt seat.
-                build(layout, mainHorizontalConnection="insert", frameDepth=25.0,
-                      frameCornerRadius=2.0)
-
-    def test_miter_and_weld_keep_all_five_opening_surfaces_clear(self):
+    def test_miter_and_inserted_grid_keep_all_five_opening_surfaces_clear(self):
         for face in ("front", "left", "right", "top", "bottom"):
             document, parts = build("five-face", frameCornerJoin="rail_miter", frameDepth=38.0,
-                                    mainHorizontalConnection="weld", accessDoorEnabled=True,
-                                    accessDoorFace=face, doorVOffset=80.0, doorHeight=400.0)
+                                    accessDoorEnabled=True, accessDoorFace=face,
+                                    doorVOffset=80.0, doorHeight=400.0)
             fixed = [part for part in parts if part.key.startswith("access_door.fixed_frame.")]
             grid = [part for part in parts if part.key.startswith(("main_grid.", "cap_grid."))]
             for frame in fixed:
@@ -468,12 +418,9 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
                                             "cap_grid.horizontal.start.", "cap_grid.horizontal.end.")):
                     process = item["properties"]["tubeDesigner.connectionProcess"]
                     self.assertEqual("butt_to_fixed_frame_outer_face", process["openingEndJoin"])
-                    self.assertEqual([], process["passesInto"])
 
     def test_new_options_keep_exact_input_identity(self):
-        values = parameters(frameCornerJoin="rail_miter", frameDepth=38.0,
-                            mainHorizontalConnection="weld", horizontalBranchReserve=-1,
-                            sideHorizontalCount=2, sideMaximumVerticalClearGap=80.0)
+        values = parameters(frameCornerJoin="rail_miter", frameDepth=38.0)
         original = dict(values)
         document = MODULE._generate_multi_face_geometry(values, {"template": {}},
                                                         template_id="test", template_version="1", layout="three-face")
@@ -513,7 +460,7 @@ class MultiSecurityWindowGeometryTests(unittest.TestCase):
             self.assertLessEqual(max(right - left for left, right in zip(positions, positions[1:])), 60.0)
         for updates in (dict(sideHorizontalMaximumCenterSpacing=0.0),
                         dict(sideVerticalMaximumCenterSpacing=0.0), dict(frameCornerJoin="unknown"),
-                        dict(mainHorizontalConnection="unknown")):
+                        ):
             with self.assertRaises(ValueError):
                 build(**updates)
 

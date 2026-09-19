@@ -1,0 +1,14 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <TargetName>SecurityWindowFramesBridge</TargetName>
+    <OutDir>$(SolutionDir)..\tmp\security-window-frames-native\</OutDir>
+    <IntDir>$(SolutionDir)..\tmp\security-window-frames-native\obj\</IntDir>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'TubeDesignerTest'">
+    <ClCompile Remove="@(ClCompile)" />
+    <ClCompile Include="$(MSBuildProjectDirectory)\..\..\..\..\pch.cpp"><PrecompiledHeader>Create</PrecompiledHeader></ClCompile>
+    <ClCompile Include="$(MSBuildProjectDirectory)\SecurityWindowFramesBridge.cpp">
+      <AdditionalIncludeDirectories>$(MSBuildProjectDirectory)\..\..\..\..\..\iCAX-Plugins\render;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemGroup>
+</Project>

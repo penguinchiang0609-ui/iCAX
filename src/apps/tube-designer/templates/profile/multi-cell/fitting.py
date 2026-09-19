@@ -11,10 +11,14 @@ def fitting(section, context):
         outer=boxes[0];left,right=sorted(boxes[1:],key=lambda b:b["center"][0])
         w,h=outer["width"],outer["depth"];wall=(h-left["depth"])/2
         if wall<=t or abs(right["depth"]-left["depth"])>t:continue
+        if abs(left["width"]-left["depth"])>t or abs(right["width"]-right["depth"])>t:continue
+        if abs(left["width"]-right["width"])>t:continue
         if abs(left["center"][1])>t or abs(right["center"][1])>t:continue
         lx=left["center"][0]-left["width"]/2;rx=right["center"][0]+right["width"]/2
         if abs(lx-(-w/2+wall))>t or abs(rx-(w/2-wall))>t:continue
         a=left["center"][0]+left["width"]/2;b=right["center"][0]-right["width"]/2
         if b-a<=t:continue
-        return q.result({"width":w,"depth":h,"wallThickness":wall,"ribThickness":b-a,"ribOffset":(a+b)/2},pose)
+        cell=left["width"]
+        if abs(w-(2*cell+(b-a)+2*wall))>t or abs(h-(cell+2*wall))>t:continue
+        return q.result({"cellSize":cell,"wallThickness":wall,"ribThickness":b-a},pose)
     return False

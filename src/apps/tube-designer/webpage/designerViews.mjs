@@ -1,4 +1,7 @@
-import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
+import { renderParameterLevels } from './parameterPresentation.mjs';
+import { diagramPositionStyle, renderDiagramResizeHandles } from './floatingParameterDiagram.mjs';
+import { parameterVisible } from './parameterConditions.mjs';
+import { matchesParameterCondition, parameterEnabled, availableParameterChoices, effectiveParameterChoice } from "./parameterConditions.mjs";
 import {
   cancelDesignerPartThumbnailHydration,
   scheduleDesignerPartThumbnailHydration,
@@ -43,7 +46,11 @@ import {
   sortTemplatesByCatalog,
 } from "./productCatalog.mjs";
 import { renderProductTemplateManagerDialog } from "./templateLibrary.mjs";
-import { renderProductInstanceThumbnail, renderProductParameterDiagram } from "./productParameterDiagram.mjs";
+import {
+  renderProductInstanceThumbnail,
+  renderProductParameterDiagram,
+  resolveProductSpecificationAnnotationTree,
+} from "./productParameterDiagram.mjs";
 import { renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
 import { renderToolParameterDiagramSvg } from "./toolParameterDiagram.mjs";
 import { productParameterKind } from "./productParameterClassification.mjs";
@@ -147,7 +154,7 @@ export function getTemplateById(templates = [], templateId = "") {
   return templates.find((item) => item?.id === templateId) ?? null;
 }
 
-function templateDisplayView(template, mode) {
+export function templateDisplayView(template, mode) {
   const display = template?.display;
   if (display?.schema !== "icax.template-display" || Number(display?.schemaVersion) !== 1) {
     return { fields: {}, groups: {}, sectionGroups: {} };
@@ -161,7 +168,7 @@ function templateDisplayView(template, mode) {
   };
 }
 
-function applyTemplateFieldDisplay(template, fields, mode) {
+export function applyTemplateFieldDisplay(template, fields, mode) {
   const rules = templateDisplayView(template, mode).fields;
   return (fields ?? []).map((field) => {
     const key = String(field?.key ?? field?.name ?? "");
@@ -187,14 +194,14 @@ function applyTemplateFieldDisplay(template, fields, mode) {
   });
 }
 
-function fieldDisplayClass(field) {
+export function fieldDisplayClass(field) {
   const classes = [];
-  if (field?.uiDisplay?.line === "full") classes.push("is-line-full");
+  if (field?.uiDisplay?.line === "full" || field?.presentation?.line === "full") classes.push("is-line-full");
   if (Object.keys(field?.uiDisplay?.width ?? {}).length) classes.push("has-control-size");
   return classes.length ? ` ${classes.join(" ")}` : "";
 }
 
-function fieldDisplayStyle(field) {
+export function fieldDisplayStyle(field) {
   const width = field?.uiDisplay?.width ?? {};
   const properties = [
     ["min", "--tube-designer-control-min-width"],
@@ -358,12 +365,12 @@ export function renderDesignerRightParameterContent(designer, view) {
           ${renderInstanceQuantityField(product.quantity ?? 1, "right", view.pending)}
           ${identityFields.length ? `<section class="tube-designer-scene-product-identity">
             <header><strong>产品信息</strong><small>${identityFields.length} 项</small></header>
-            <div class="tube-designer-field-grid">${identityFields.map((field) => renderField(
+            <div class="tube-designer-field-grid">${renderEditorParameterLevels(identityFields, (field) => renderField(
               field,
               values[field.key ?? field.name],
               view.pending,
               { values, view, mode: "right", template },
-            )).join("")}</div>
+            ), { view, mode:'right', template }, 'identity')}</div>
           </section>` : ""}
           ${renderSecurityWindowStructureSummary(template, values)}
           <div class="tube-designer-parameter-sections">
@@ -420,17 +427,94 @@ export function renderDesignerViewportOverlay(_context, view) {
   const designer = view.scene?.tubeDesigner ?? {};
   const product = designer.product;
   if (!product) return "";
-  const specificationAnnotationsAvailable = Array.isArray(designer.specificationAnnotations)
-    && designer.specificationAnnotations.length > 0;
-  const specificationAnnotationsVisible = view.tubeDesignerSpecificationAnnotationsVisible !== false;
   return `
     ${renderDesignerRuntimeStatus(view)}
-    ${specificationAnnotationsAvailable ? `<button type="button"
-      class="tube-designer-scene-specification-toggle${specificationAnnotationsVisible ? " is-active" : ""}"
-      data-cam-action="tube-designer-toggle-specification-annotations"
-      aria-pressed="${specificationAnnotationsVisible}"
-      title="显示或隐藏可点击的产品规格标注">规格标注</button>` : ""}
+    ${renderDesignerSpecificationAnnotationTree(view)}
+    ${renderDesignerToolDiagramDock(view)}
   `;
+}
+
+export function renderDesignerToolDiagramDock(view) {
+  const state=view?.tubeDesignerFloatingToolDiagram;
+  const designer=view?.scene?.tubeDesigner ?? {}, product=designer.product;
+  if(!state?.open || state.productId!==String(product?.entityId ?? ''))return '';
+  const template=getTemplateById(designer.templates ?? [],product?.templateId);
+  const values={...getDefaultParameters(designer.templates,product?.templateId),...product?.parameters,...view.tubeDesignerRightDraft};
+  const field=visibleParameterFields(template,values).find(f=>f.key===state.fieldKey && isProductToolField(f));
+  if(!field)return '';
+  const binding=productToolBinding(values,field);
+  const tool=findProductTool(view,template,field,binding?.selectionKey ?? values[field.key]);
+  if(!tool)return '';
+  const definitions=productToolDefinitions(binding,tool).filter(d=>d.derived!==true);
+  const toolValues={...Object.fromEntries(definitions.map(d=>[d.key,d.defaultValue])),...binding?.parameters};
+  const visible=definitions.filter(d=>parameterVisible(d,toolValues));
+  const diagram=renderToolParameterDiagramSvg(tool,toolValues,visible);
+  if(!diagram)return '';
+  const owner=`product-tool:right:${productToolRole(field)}`;
+  return `<section class="tube-floating-parameter-diagram" data-floating-parameter-diagram data-parameter-diagram-for="${escapeAttribute(owner)}" role="dialog" aria-modal="false" aria-label="${escapeAttribute(toolDisplayName(tool))}参数示意图" style="${diagramPositionStyle(state,12,120)}">
+    ${renderDiagramResizeHandles()}
+    <header data-floating-diagram-drag><strong>${escapeText(toolDisplayName(tool))} · 参数示意图</strong><button type="button" data-floating-diagram-close aria-label="关闭示意图">×</button></header>
+    <div class="tube-floating-parameter-diagram-body" data-floating-diagram-scroll><small>拖动标题可移动 · 点击编号定位参数</small><div class="tube-tool-library-diagram-art">${diagram}</div></div>
+  </section>`;
+}
+
+function renderSpecificationTreeSwitch(node, depth, action) {
+  const state = String(node?.state ?? "none");
+  const groupKeys = (node?.groupKeys ?? []).join(" ");
+  return `<button type="button"
+    class="tube-designer-scene-specification-switch is-${state}${depth === 0 ? " tube-designer-scene-specification-toggle" : ""}"
+    style="--tube-designer-annotation-tree-depth:${depth}"
+    data-cam-action="${escapeAttribute(action)}"
+    data-tube-designer-annotation-groups="${escapeAttribute(groupKeys)}"
+    role="treeitem"
+    aria-checked="${state === "mixed" ? "mixed" : String(state === "all")}"
+    aria-pressed="${state === "all"}"
+    title="${escapeAttribute(state === "all" ? `隐藏${node.label}` : `显示${node.label}`)}">
+      <span class="tube-designer-scene-specification-check" aria-hidden="true"></span>
+      <span class="tube-designer-scene-specification-label">${escapeText(node?.label ?? "规格")}</span>
+      <small>${Number(node?.count ?? 0)}</small>
+  </button>`;
+}
+
+export function renderDesignerSpecificationAnnotationTree(view, designer = view?.scene?.tubeDesigner ?? {}) {
+  const tree = resolveProductSpecificationAnnotationTree(designer, view);
+  if (!tree) return "";
+  const collapsed = view?.tubeDesignerSpecificationTreeCollapsed === true;
+  const collapseButton = `<button type="button"
+    class="tube-designer-scene-specification-collapse${collapsed ? " is-collapsed" : ""}"
+    data-cam-action="tube-designer-toggle-specification-tree-collapse"
+    aria-label="${collapsed ? "展开规格标注分组" : "收起规格标注分组"}"
+    aria-expanded="${String(!collapsed)}"
+    title="${collapsed ? "展开规格标注" : "收起到左侧"}">
+      <span class="tube-designer-scene-specification-collapse-icon" aria-hidden="true">${collapsed ? "›" : "‹"}</span>
+      ${collapsed ? '<span class="tube-designer-scene-specification-collapse-label">标注</span>' : ""}
+  </button>`;
+  if (collapsed) {
+    return `<section class="tube-designer-scene-specification-tree is-collapsed"
+      data-tube-designer-specification-tree aria-label="规格标注显示设置">
+        ${collapseButton}
+    </section>`;
+  }
+  const children = tree.children.map((node) => {
+    if (!Array.isArray(node?.children) || !node.children.length) {
+      return renderSpecificationTreeSwitch(node, 1, "tube-designer-toggle-specification-annotation-group");
+    }
+    return `<div class="tube-designer-scene-specification-branch" role="group">
+      ${renderSpecificationTreeSwitch(node, 1, "tube-designer-toggle-specification-annotation-group")}
+      <div class="tube-designer-scene-specification-children" role="group">
+        ${node.children.map((child) => renderSpecificationTreeSwitch(
+          child, 2, "tube-designer-toggle-specification-annotation-group",
+        )).join("")}
+      </div>
+    </div>`;
+  }).join("");
+  return `<section class="tube-designer-scene-specification-tree"
+    data-tube-designer-specification-tree role="tree" aria-label="规格标注显示设置">
+      <header>${renderSpecificationTreeSwitch(
+        tree, 0, "tube-designer-toggle-specification-annotations",
+      )}${collapseButton}</header>
+      <div class="tube-designer-scene-specification-tree-body" role="group">${children}</div>
+  </section>`;
 }
 
 export function renderDesignerRuntimeStatus(view) {
@@ -543,6 +627,8 @@ export function renderBatchExcelTemplateDialog(designer, view) {
     .filter((template) => template?.available && template?.extensions?.catalog?.listed !== false)
     .map((template) => [String(template.id), template])).values()];
   const columns = Array.isArray(state.columns) ? state.columns : [];
+  const allIncluded = columns.length > 0 && columns.every((column) => column.included !== false);
+  const allRequired = columns.length > 0 && columns.every((column) => column.required === true);
   return `
     <div class="tube-designer-modal-backdrop" role="presentation">
       <section class="tube-designer-excel-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-excel-template-title">
@@ -556,14 +642,38 @@ export function renderBatchExcelTemplateDialog(designer, view) {
               ${availableTemplates.map((template) => `<option value="${escapeAttribute(template.id)}" ${template.id === selectedId ? "selected" : ""}>${escapeText(getTemplateDisplayName(template) || template.id)}</option>`).join("")}
             </select>
           </label>
-          <div class="tube-designer-excel-template-help">勾选需要携带的字段，未勾选的产品参数会使用模板默认值。工作簿内置英文 Excel 列名和导入定义，中文名称用于说明。</div>
+          <div class="tube-designer-excel-template-help">勾选需要填写的字段，未勾选的产品参数使用模板默认值。导出的工作表只显示中文列名和中文选项；内部字段及选项映射保存在隐藏页，导入时自动识别。</div>
           <div class="tube-designer-excel-column-table" role="table" aria-label="Excel 导入列配置">
-            <div class="tube-designer-excel-column-head" role="row"><span>携带</span><span>Excel 列名</span><span>产品参数说明</span><span>必填</span><span>为空时默认值</span></div>
+            <div class="tube-designer-excel-column-head" role="row">
+              <label class="tube-designer-excel-head-check"><input type="checkbox"
+                data-cam-change-action="tube-designer-excel-template-toggle-all"
+                data-tube-designer-excel-select-all="include"
+                aria-label="全选或取消全部携带字段" ${allIncluded ? "checked" : ""} ${pending ? "disabled" : ""}/><span>携带</span></label>
+              <span>导出列名</span><span>自定义列名（可选）</span><span>产品参数说明</span>
+              <label class="tube-designer-excel-head-check"><input type="checkbox"
+                data-cam-change-action="tube-designer-excel-template-toggle-all"
+                data-tube-designer-excel-select-all="required"
+                aria-label="全选或取消全部必填字段" ${allRequired ? "checked" : ""} ${pending ? "disabled" : ""}/><span>必填</span></label>
+              <span>为空时默认值</span>
+            </div>
             ${columns.map((column) => `<div class="tube-designer-excel-column-row" role="row">
-              <label class="tube-designer-excel-include"><input type="checkbox" data-tube-designer-excel-include="${escapeAttribute(column.key)}" ${column.included !== false ? "checked" : ""} ${pending ? "disabled" : ""}/><span>携带</span></label>
+              <label class="tube-designer-excel-include"><input type="checkbox"
+                data-cam-change-action="tube-designer-excel-template-selection-change"
+                data-tube-designer-excel-selection-kind="include"
+                data-tube-designer-excel-include="${escapeAttribute(column.key)}"
+                aria-label="携带${escapeAttribute(column.displayName ?? column.key)}" ${column.included !== false ? "checked" : ""} ${pending ? "disabled" : ""}/></label>
               <code class="tube-designer-excel-column-name">${escapeText(column.title ?? column.key)}</code>
+              <input class="tube-designer-excel-column-alias" type="text"
+                data-tube-designer-excel-alias="${escapeAttribute(column.key)}"
+                value="${escapeAttribute(column.alias ?? "")}"
+                placeholder="${escapeAttribute(column.title ?? column.key)}"
+                aria-label="${escapeAttribute(column.displayName ?? column.key)}的 Excel 列别名" ${pending ? "disabled" : ""}/>
               <span class="tube-designer-excel-column-context"><b>${escapeText(column.displayName ?? column.key)}</b><em>${escapeText(column.groupTitle ?? "产品参数")}</em>${column.description ? `<small>${escapeText(column.description)}</small>` : ""}</span>
-              <label class="tube-designer-excel-required"><input type="checkbox" data-tube-designer-excel-required="${escapeAttribute(column.key)}" ${column.required ? "checked" : ""} ${pending ? "disabled" : ""}/><span>必填</span></label>
+              <label class="tube-designer-excel-required"><input type="checkbox"
+                data-cam-change-action="tube-designer-excel-template-selection-change"
+                data-tube-designer-excel-selection-kind="required"
+                data-tube-designer-excel-required="${escapeAttribute(column.key)}"
+                aria-label="${escapeAttribute(column.displayName ?? column.key)}设为必填" ${column.required ? "checked" : ""} ${pending ? "disabled" : ""}/></label>
               ${renderBatchExcelDefaultControl(column, pending)}
             </div>`).join("")}
           </div>
@@ -1799,7 +1909,7 @@ function renderParametricProfileParameters(profile, prefix, mode, disabled, cont
   if (profile?.profileForm !== "parametric") return "";
   const values = profile.parameters ?? {};
   const definitions = Array.isArray(profile.parameterDefinitions) ? profile.parameterDefinitions : [];
-  const visibleDefinitions = definitions.filter((definition) => matchesParameterCondition(definition.visibleWhen, values));
+  const visibleDefinitions = definitions.filter((definition) => parameterVisible(definition, values));
   const diagram = renderProfileParameterDiagram(profile, {
     definitions: visibleDefinitions,
     parameters: values,
@@ -1818,7 +1928,7 @@ function renderParametricProfileParameters(profile, prefix, mode, disabled, cont
   return `<div class="tube-designer-parametric-profile-parameters" data-profile-parameter-scope>
     <strong>管型参数</strong>
     ${diagramContent}
-    <div class="tube-designer-field-grid">${visibleDefinitions.map((definition) => {
+    <div class="tube-designer-field-grid">${renderEditorParameterLevels(visibleDefinitions, (definition) => {
       const fieldDisabled = disabled || !parameterEnabled(definition, values);
       const key = String(definition?.key ?? "");
       const label = localizedProfileText(definition?.displayName, key);
@@ -1846,7 +1956,7 @@ function renderParametricProfileParameters(profile, prefix, mode, disabled, cont
       if (type === "number") attributes.push(`step="${escapeAttribute(definition?.step ?? (definition?.valueType === "integer" ? 1 : "any"))}"`);
       if (fieldDisabled) attributes.push("disabled");
       return `<label class="tube-designer-field ${type === "text" ? "wide is-string" : "is-number"}${displayClass}"${displayStyle}><span>${escapeText(label)}</span><input ${attributes.join(" ")} /></label>`;
-    }).join("")}</div>
+    }, context, `profile:${prefix}`)}</div>
   </div>`;
 }
 
@@ -1939,7 +2049,7 @@ function renderProductToolParameter(definition, binding, field, mode, disabled) 
   if (definition?.min != null) attributes.push(`min="${escapeAttribute(definition.min)}"`);
   if (definition?.max != null) attributes.push(`max="${escapeAttribute(definition.max)}"`);
   if (fieldDisabled) attributes.push("disabled");
-  return `<label class="tube-designer-field"><span>${label}</span><input ${attributes.join(" ")} /></label>`;
+  return `<label class="tube-designer-field ${type === 'number' ? 'is-number' : 'is-string'}"><span>${label}</span><input ${attributes.join(" ")} /></label>`;
 }
 
 function renderProductToolField(field, disabled, context) {
@@ -1955,12 +2065,12 @@ function renderProductToolField(field, disabled, context) {
     ...(binding?.parameters ?? {}),
   };
   const definitions = allDefinitions
-    .filter((definition) => matchesParameterCondition(definition?.visibleWhen, toolValues));
+    .filter((definition) => parameterVisible(definition, toolValues));
   const diagram = selectedTool && definitions.length
     ? renderToolParameterDiagramSvg(selectedTool, toolValues, definitions) : "";
   const scopes = [["system", "系统内置"], ["template", "模板自带"], ["user", "我的模具"]];
   const unavailable = selectedKey && !selectedTool;
-  return `<div class="tube-designer-field tube-designer-profile-field tube-designer-product-tool-field wide">
+  return `<div class="tube-designer-field tube-designer-profile-field tube-designer-product-tool-field wide is-line-full">
     <span>${escapeText(field?.displayName ?? field?.label ?? "模具")}</span>
     <select data-cam-change-action="tube-designer-product-tool-selection-change" data-tube-designer-tool-mode="${mode}" data-tube-designer-tool-field="${escapeAttribute(field?.key ?? field?.name ?? "")}" data-tube-designer-tool-role="${escapeAttribute(productToolRole(field))}" ${disabled ? "disabled" : ""}>
       <option value="">请选择模具</option>
@@ -1974,7 +2084,7 @@ function renderProductToolField(field, disabled, context) {
       }).join("")}
     </select>
     ${binding ? `<small class="tube-designer-profile-readonly-note"><strong>${escapeText(productToolLabel(binding, selectedTool))}</strong> · ${escapeText(binding?.snapshot?.category ?? "模具")} · ${selectedTool ? "资源已解析" : "保留原引用，重新生成前需恢复资源"}</small>` : ""}
-    ${definitions.length ? `<div class="tube-designer-parametric-profile-parameters" data-tool-parameter-scope><strong>模具参数</strong>${diagram ? `<section class="tube-tool-library-parameter-diagram"><header><div><strong>槽口参数示意图</strong><span>参数与所选模具同步</span></div></header><div class="tube-tool-library-diagram-content"><div class="tube-tool-library-diagram-art">${diagram}</div></div></section>` : ""}<div class="tube-designer-field-grid">${definitions.map((definition) => renderProductToolParameter(definition, binding, field, mode, disabled)).join("")}</div></div>` : ""}
+    ${definitions.length ? `<div class="tube-designer-parametric-profile-parameters" data-tool-parameter-scope data-parameter-diagram-owner="product-tool:${mode}:${escapeAttribute(productToolRole(field))}"><strong>模具参数</strong>${diagram ? (mode === 'right' ? `<button type="button" class="tube-designer-secondary tube-product-tool-diagram-open" data-product-tool-diagram-open="${escapeAttribute(field.key ?? field.name)}">显示浮动示意图</button>` : `<section class="tube-tool-library-parameter-diagram"><header><div><strong>槽口参数示意图</strong><span>参数与所选模具同步</span></div></header><div class="tube-tool-library-diagram-content"><div class="tube-tool-library-diagram-art">${diagram}</div></div></section>`) : ""}<div class="tube-designer-field-grid">${renderEditorParameterLevels(definitions, definition => renderProductToolParameter(definition, binding, field, mode, disabled), context, `tool:${productToolRole(field)}`)}</div></div>` : ""}
   </div>`;
 }
 
@@ -2034,7 +2144,8 @@ function renderField(field, value, disabled = false, context = null) {
     return `<label class="tube-designer-field tube-designer-boolean-field${displayClass}"${displayStyle}><span>${label}</span><input type="checkbox" data-tube-designer-parameter="${name}" data-product-parameter-key="${name}" data-cam-change-action="tube-designer-parameter-change" ${value === true || value === "true" || value === "是" ? "checked" : ""} ${disabled ? "disabled" : ""} /></label>`;
   }
   if (field.type === "select") {
-    const options = Array.isArray(field.options) ? field.options : [];
+    const options = availableParameterChoices(field, context?.values ?? {});
+    const selectedValue = effectiveParameterChoice(field, value, context?.values ?? {});
     const visibleOptions = options.filter((option) => {
       const optionValue = typeof option === "object" ? option?.value : option;
       return !option?.legacy || String(optionValue) === String(value);
@@ -2042,7 +2153,7 @@ function renderField(field, value, disabled = false, context = null) {
     return `<label class="tube-designer-field wide is-choice${displayClass}"${displayStyle}>${label}<select data-tube-designer-parameter="${name}" data-product-parameter-key="${name}" data-cam-change-action="tube-designer-parameter-change" ${disabled || field.readOnly ? "disabled" : ""}>${visibleOptions.map((option) => {
       const optionValue = typeof option === "object" ? option?.value : option;
       const optionLabel = typeof option === "object" ? option?.label : option;
-      return `<option value="${escapeAttribute(optionValue)}" data-tube-designer-value-type="${typeof optionValue}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(optionLabel)}</option>`;
+      return `<option value="${escapeAttribute(optionValue)}" data-tube-designer-value-type="${typeof optionValue}" ${String(optionValue) === String(selectedValue) ? "selected" : ""}>${escapeText(optionLabel)}</option>`;
     }).join("")}</select></label>`;
   }
   const type = field.type === "text" ? "text" : "number";
@@ -2061,7 +2172,7 @@ function renderField(field, value, disabled = false, context = null) {
 }
 
 function visibleFields(fields, values) {
-  return (Array.isArray(fields) ? fields : []).filter((field) => matchesVisibility(field?.visibleWhen, values));
+  return (Array.isArray(fields) ? fields : []).filter((field) => parameterVisible(field, values));
 }
 
 function matchesVisibility(condition, values) {
@@ -2269,13 +2380,20 @@ function buildParameterGroupTree(template, fields, mode = "right") {
   return sections.filter((section) => section.children.length);
 }
 
+function renderEditorParameterLevels(definitions, render, context, key) {
+  const saved = context?.mode === 'add'
+    ? context?.view?.tubeDesignerAddDisclosureStates?.[context?.template?.id]
+    : context?.view?.tubeDesignerParameterDisclosureState;
+  return renderParameterLevels(definitions, render, {key,gridClass:'tube-designer-field-grid',trackDisclosure:true,open:saved?.[`advanced:${key}`] === true});
+}
+
 function renderAddParameterGroup(group, values, disabled, view, mode, template, presetHostGroups = new Map(), depth = 0, siblingIndex = 0) {
-  const fields = group.fields.map((field) => renderField(
+  const fields = renderEditorParameterLevels(group.fields, (field) => renderField(
     field,
     values[field.key ?? field.name],
     disabled,
     { values, view, mode, template },
-  )).join("");
+  ), { view, mode, template }, group.key);
   const children = group.children.map((child, index) => renderAddParameterGroup(
     child,
     values,
@@ -2311,12 +2429,12 @@ function renderAddParameterGroup(group, values, disabled, view, mode, template, 
 
 function compactParameterGroup(group, values, disabled, expandedGroups, view, mode, template, presetHostGroups = new Map(), depth = 0, summaryOnly = false) {
   const groupSummaryOnly = summaryOnly || (mode === "right" && depth === 0 && group.key === "section:structure");
-  const fields = group.fields.map((field) => renderField(
+  const fields = renderEditorParameterLevels(group.fields, (field) => renderField(
     field,
     values[field.key ?? field.name],
     disabled,
     { values, view, mode, template, summaryOnly: groupSummaryOnly },
-  )).join("");
+  ), { view, mode, template }, group.key);
   const children = group.children.map((child) => compactParameterGroup(
     child,
     values,

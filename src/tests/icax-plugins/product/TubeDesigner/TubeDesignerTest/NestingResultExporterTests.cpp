@@ -391,14 +391,15 @@ TEST(TubeDesignerNestingExport, GenericProductExcelTemplateImportsTwoProductInst
             "displayName":"通用批量测试产品",
             "parameters":[
                 {"key":"width","displayName":"成品宽度","valueType":"number","defaultValue":1000},
-                {"key":"finish","displayName":"表面处理","valueType":"enum","defaultValue":"powder",
-                 "choices":[{"value":"powder","displayName":"粉末喷涂"},{"value":"anodized","displayName":"阳极氧化"}]}
+                {"key":"faceType","displayName":"面型","valueType":"enum","defaultValue":"single",
+                 "choices":[{"value":"single","displayName":"单面"},{"value":"two","displayName":"双面"}]}
             ]
         })json"));
     const std::vector<SBatchExcelColumn> _Columns{
-        { "__instanceName", "instanceName", false, "" },
-        { "__instanceQuantity", "quantity", true, "1" },
-        { "width", "width", true, "1000" },
+        { "__instanceName", "实例名称", false, "" },
+        { "__instanceQuantity", "生产数量", true, "1" },
+        { "width", "成品宽度", true, "1000" },
+        { "faceType", "面型", true, "single" },
     };
     const auto _Root = TestRoot();
     const auto _WorkbookPath = _Root / "generic-product.xlsx";
@@ -408,7 +409,9 @@ TEST(TubeDesignerNestingExport, GenericProductExcelTemplateImportsTwoProductInst
     EXPECT_TRUE(std::filesystem::is_regular_file(_WorkbookPath));
     const auto _TemplateBytes = ReadBytes(_WorkbookPath);
     EXPECT_NE(_TemplateBytes.find("通用批量测试产品"), std::string::npos);
-    EXPECT_NE(_TemplateBytes.find("模板 ID：test.generic-batch-product"), std::string::npos);
+    EXPECT_EQ(_TemplateBytes.find("模板 ID："), std::string::npos);
+    EXPECT_NE(_TemplateBytes.find("<dataValidations count=\"1\">"), std::string::npos);
+    EXPECT_NE(_TemplateBytes.find("单面"), std::string::npos);
 
     // 2. Enter two rows against the contract embedded in the exported workbook.
     // The mapping is carried by the workbook, not by a product-specific sidecar file.
@@ -417,19 +420,30 @@ TEST(TubeDesignerNestingExport, GenericProductExcelTemplateImportsTwoProductInst
     ASSERT_EQ(_Definition.Columns.size(), _Columns.size());
     iCAX::Data::VariantArray _DefinitionColumns;
     for (const auto& _Column : _Definition.Columns)
-        _DefinitionColumns.emplace_back(iCAX::Data::ObjectMap{
+    {
+        iCAX::Data::ObjectMap _ColumnObject{
             { "key", _Column.Key }, { "title", _Column.Title },
             { "required", _Column.Required }, { "defaultValue", _Column.DefaultValue }
-        });
+        };
+        if (!_Column.Choices.empty())
+        {
+            iCAX::Data::VariantArray _Choices;
+            for (const auto& _Choice : _Column.Choices)
+                _Choices.emplace_back(iCAX::Data::ObjectMap{{ "value", _Choice.Value }, { "label", _Choice.Label },
+                    { "valueType", _Choice.ValueType }});
+            _ColumnObject.emplace("choices", std::move(_Choices));
+        }
+        _DefinitionColumns.emplace_back(std::move(_ColumnObject));
+    }
     const auto _Contract = iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(iCAX::Data::Variant(iCAX::Data::ObjectMap{
         { "schema", std::string("icax.tube-designer.batch-excel") }, { "schemaVersion", 1ull },
         { "templateId", _Definition.TemplateID }, { "templateVersion", _Definition.TemplateVersion },
         { "templateName", _Definition.TemplateName }, { "headerRow", 2ull }, { "columns", std::move(_DefinitionColumns) }
     }));
     std::filesystem::remove(_WorkbookPath);
-    WriteTableWorkbook(_WorkbookPath, "已填写的通用产品", { "instanceName", "quantity", "width" }, {
-        { std::string("测试产品 A"), 1.0, 1200.0 },
-        { std::string("测试产品 B"), 3.0, 1650.0 },
+    WriteTableWorkbook(_WorkbookPath, "已填写的通用产品", { "实例名称", "生产数量", "成品宽度", "面型" }, {
+        { std::string("测试产品 A"), 1.0, 1200.0, std::string("单面") },
+        { std::string("测试产品 B"), 3.0, 1650.0, std::string("双面") },
     }, _Contract);
 
     // 3. Loading the saved workbook produces one product-instance request per row.
@@ -439,14 +453,14 @@ TEST(TubeDesignerNestingExport, GenericProductExcelTemplateImportsTwoProductInst
     EXPECT_EQ(_Imported.Rows[0].InstanceName, "测试产品 A");
     EXPECT_EQ(_Imported.Rows[0].InstanceQuantity, 1u);
     EXPECT_DOUBLE_EQ(_Imported.Rows[0].Parameters.at("width").To<double>(), 1200.0);
-    EXPECT_FALSE(_Imported.Rows[0].Parameters.contains("finish"));
+    EXPECT_EQ(_Imported.Rows[0].Parameters.at("faceType").To<std::string>(), "single");
     const auto _NormalizedFirst = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
         _Descriptor, _Imported.Rows[0].Parameters);
-    EXPECT_EQ(_NormalizedFirst.at("finish").To<std::string>(), "powder");
+    EXPECT_EQ(_NormalizedFirst.at("faceType").To<std::string>(), "single");
     EXPECT_EQ(_Imported.Rows[1].InstanceName, "测试产品 B");
     EXPECT_EQ(_Imported.Rows[1].InstanceQuantity, 3u);
     EXPECT_DOUBLE_EQ(_Imported.Rows[1].Parameters.at("width").To<double>(), 1650.0);
-    EXPECT_FALSE(_Imported.Rows[1].Parameters.contains("finish"));
+    EXPECT_EQ(_Imported.Rows[1].Parameters.at("faceType").To<std::string>(), "two");
 }
 
 TEST(TubeDesignerNestingExport, PartListWorkbookPreservesLegacyColumnsAndAppendsManufacturingFields)

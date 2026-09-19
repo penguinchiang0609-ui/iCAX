@@ -1,4 +1,4 @@
-"""Read the five tangent intersections of the bulb-flat boundary."""
+"""Directly recover the six nominal bulb-flat section parameters."""
 import math
 IMPLEMENTED=True
 def fitting(section,context):
@@ -17,11 +17,11 @@ def fitting(section,context):
                 dx=p[3][0]-p[2][0];dy=p[3][1]-p[2][1]
                 if min(width,wall,dx,dy,p[2][1]-p[1][1])<=t:continue
                 if abs(dy-dx*math.tan(math.pi/6))>t:continue
-                if abs(r[0]-r[1])>t or abs(r[0]-r[4])>t or abs(r[2]-r[3])>t:continue
+                if abs(r[0]-r[4])>t or abs(r[2]-r[3])>t:continue
                 projection=dx-r[3]*(1/math.tan(math.pi/12)-1)
-                if projection<=t or 2*r[0]>=wall-t:continue
+                if projection<=0 or 2*r[0]>=wall:continue
                 origin=[-p[0][0] if mirror else p[0][0],p[0][1]]
-                return q.result(dict(width=width,wallThickness=wall,bulbProjection=projection,
-                    bulbRadius=r[3],edgeRadius=r[0],mirrorX=mirror,geometrySource='idealizedFallback'),
+                return q.result(dict(width=wall+projection,depth=width,wallThickness=wall,
+                    bulbRadius1=r[3],bulbRadius2=r[1],endRadius=r[0],mirrorX=mirror),
                     q.shifted_pose(pose,origin),'unique')
     return False

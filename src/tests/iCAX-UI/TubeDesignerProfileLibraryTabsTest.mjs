@@ -382,7 +382,7 @@ await test("template parameter reevaluation retains scoped frozen provenance", a
   assert.equal(view.tubeDesignerAddDraft.tubeDesignerProfileOverrides.frame.savedProfileId, undefined);
 });
 
-await test("regeneration updates only the model and retains camera and pane positions", async () => {
+await test("parameter edits regenerate only the model and retain camera and pane positions", async () => {
   const {view,context,ops}=harness();
   view.tubeDesignerSelectedProfileId='system:round';
   let fits=0, standards=0, renders=0, applied={revision:'profile-preview:system:round:1',entityIds:['system:round']};
@@ -406,28 +406,25 @@ await test("regeneration updates only the model and retains camera and pane posi
   assert.equal(editor.scrollTop,180);assert.equal(parent.scrollTop,270);
 });
 
-await test("parameter diagram starts collapsed and toggles locally with retained state", async () => {
+await test("profile resource page uses a floating section diagram, not scene annotations", async () => {
   const {view,context,ops}=harness();
   view.tubeDesignerSelectedProfileId='system:round';
-  const collapsedHtml=renderProfileLibraryRightPane(context,view);
-  assert.match(collapsedHtml,/class="tube-profile-library-diagram-toggle"/);
-  assert.match(collapsedHtml,/data-profile-library-diagram hidden/);
-  assert.ok(collapsedHtml.indexOf('class="tube-profile-library-parameter-list"')
-    < collapsedHtml.indexOf('data-profile-diagram-toggle'), 'diagram disclosure belongs below the parameter controls');
-  assert.ok(collapsedHtml.indexOf('data-profile-diagram-toggle')
-    < collapsedHtml.indexOf('data-profile-library-diagram'), 'expanded diagram belongs directly below its disclosure');
-  const diagram={hidden:true};
-  const button={setAttribute(k,v){this[k]=v;}};
-  const editor={dataset:{tubeDesignerProfileKey:'system:round'},scrollTop:80,scrollLeft:0,
-    querySelector:s=>s==='[data-profile-library-diagram]'?diagram:button};
-  ops.renderProject=()=>{throw Error('toggle must not rerender the scene');};
-  const toggle=()=>handleProfileLibraryAction(context,view,'tube-designer-profile-diagram-toggle',{closest:()=>editor},ops);
-  await toggle();
-  assert.equal(diagram.hidden,false);assert.equal(button['aria-expanded'],'true');
-  assert.doesNotMatch(renderProfileLibraryRightPane(context,view),/data-profile-library-diagram hidden/);
-  await toggle();
-  assert.equal(diagram.hidden,true);assert.equal(button.textContent,'展开参数示意图');
-  assert.equal(editor.scrollTop,80);
+  assert.doesNotMatch(renderProfileLibraryRightPane(context,view),/data-profile-library-diagram/);
+  assert.match(renderProfileLibraryRightPane(context,view),/data-profile-diagram-toggle/);
+  const collapsedHtml=renderProfileLibraryViewportOverlay({},view);
+  assert.match(collapsedHtml,/data-tube-profile-diagram-dock/);
+  assert.match(collapsedHtml,/data-floating-diagram-drag/);
+  assert.doesNotMatch(collapsedHtml,/data-profile-diagram-toggle/);
+  assert.doesNotMatch(collapsedHtml,/data-tube-designer-specification-tree/);
+  assert.doesNotMatch(collapsedHtml,/data-tube-profile-scene-runtime/);
+});
+
+await test("fixed profiles do not expose editable diagram controls", async () => {
+  const {view,context}=harness();
+  view.tubeDesignerSystemProfiles=[{...packaged,id:"fixed",profileForm:"fixed",profileType:"fixed-section"}];
+  view.tubeDesignerSelectedProfileId='system:fixed';
+  const html=renderProfileLibraryRightPane(context,view);
+  assert.doesNotMatch(html,/data-profile-diagram-toggle/);
 });
 
 console.log(`${completed.length} profile library tab tests passed.`);

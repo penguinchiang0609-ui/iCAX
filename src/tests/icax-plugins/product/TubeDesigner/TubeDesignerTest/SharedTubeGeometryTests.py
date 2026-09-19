@@ -30,7 +30,7 @@ SharedTubeGeometry = _MODULE.SharedTubeGeometry
 
 FIVE_FACE_WITH_OPENING = {
     "height": 1800.0, "frontWidth": 1200.0, "depth": 600.0,
-    "horizontalCount": 4, "maximumVerticalClearGap": 110.0,
+    "horizontalMaximumCenterSpacing": 500.0, "verticalMaximumCenterSpacing": 120.0,
     "accessDoorEnabled": True, "doorUse": "escape",
     "doorClearWidth": 800.0, "doorClearHeight": 1000.0,
     "doorUOffset": 150.0, "doorVOffset": 350.0, "doorHingeCount": 2,
@@ -303,7 +303,7 @@ class SharedTubeGeometryTemplateTests(unittest.TestCase):
         self.assertEqual(17, len(model["items"]))
 
     def test_continuous_frame_and_miter_variants_preserve_display_and_export(self):
-        for join in ("v_groove_90:sharp_v", "miter_45"):
+        for join in ("v_groove_90:tool_library", "miter_45"):
             with self.subTest(join=join):
                 self.assert_legacy_equivalent("single_face_security_window", {
                     "width": 1400.0, "height": 1800.0, "frameLayout": "four_sides", "frameJoinType": join,
@@ -379,7 +379,7 @@ class RequestSpecificGeometryTests(unittest.TestCase):
     def test_display_never_constructs_holes_booleans_or_unfolded_v_grooves(self):
         cases = [
             ("single_face_security_window", {}),
-            ("single_face_security_window", {"width": 1400.0, "frameLayout": "four_sides", "frameJoinType": "v_groove_90:sharp_v"}),
+            ("single_face_security_window", {"width": 1400.0, "frameLayout": "four_sides", "frameJoinType": "v_groove_90:tool_library"}),
             ("single_face_security_window", {"frameLayout": "four_sides", "frameJoinType": "miter_45"}),
             ("two_face_security_window", {}),
             ("three_face_security_window", {}),
@@ -413,7 +413,7 @@ class RequestSpecificGeometryTests(unittest.TestCase):
     def test_manufacturing_continuous_frame_never_builds_display_assembly(self):
         module, parameters, context = self.template_input("single_face_security_window", {
             "width": 1400.0, "height": 1800.0, "frameLayout": "four_sides",
-            "frameJoinType": "v_groove_90:sharp_v",
+            "frameJoinType": "v_groove_90:tool_library",
         })
         legacy = module.generate(deepcopy(parameters), context)
         original_geometry = NeutralModel.geometry

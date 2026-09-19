@@ -1,81 +1,43 @@
-"""Analytical checks of the product-owned cutter, without loading any mould."""
-import math
+"""Product frames consume only current mould-library groove definitions."""
+import json
 import unittest
-from SingleSecurityWindowGeometryTests import generate, graph
+
+from SingleSecurityWindowGeometryTests import PACKAGE, generate, graph
 
 
-def contour(document):
-    return graph(document)['outer_frame.continuous.0001.export.groove.0001.profile']['arguments']['contours'][0]
-
-
-def arc_radius(edge):
-    a,b,c=(edge[k] for k in ('start','middle','end'))
-    twice_area=abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))
-    return math.dist(a,b)*math.dist(b,c)*math.dist(c,a)/(2*twice_area)
+REMOVED_FIELDS = {
+    "vGrooveBottomDistance", "vGrooveRadius", "vGrooveKFactor",
+    "vGrooveMaleFemale", "vGrooveBottomCut", "vGrooveReliefHole",
+    "vGrooveWallOvercut", "vGrooveReliefDiameter", "vGrooveReliefNoThrough",
+}
 
 
 class ProductWindowGrooveTests(unittest.TestCase):
-    def build(self,**p):
-        return generate(frameLayout='four_sides',**p)
+    def test_descriptor_exposes_only_library_backed_join(self):
+        descriptor = json.loads((PACKAGE / "template.json").read_text(encoding="utf-8"))
+        fields = {item["key"]: item for item in descriptor["parameters"]}
+        self.assertTrue(REMOVED_FIELDS.isdisjoint(fields))
+        for key in ("frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType"):
+            values = {choice["value"] for choice in fields[key]["choices"]}
+            self.assertEqual({"v_groove_90:tool_library", "miter_45", "butt_90"}, values)
 
-    def test_radius_is_exact_and_male_preserves_root(self):
-        for radius in (0,1,18,40):
-            for male in (False,True):
-                shape=contour(self.build(frameJoinType='v_groove_90:rounded_v',vGrooveRadius=radius,vGrooveMaleFemale=male))
-                arcs=[e for e in shape['segments'] if e['kind']=='arc']
-                self.assertEqual(len(arcs),2 if radius else 0)
-                for edge in arcs:self.assertAlmostEqual(arc_radius(edge),radius,places=7)
-        with self.assertRaisesRegex(ValueError,'圆角过大'):
-            self.build(frameJoinType='v_groove_90:rounded_v',vGrooveRadius=1000)
+    def test_manufacturing_grooves_are_emitted_by_selected_tool_package(self):
+        document = generate(frameLayout="four_sides", frameJoinType="v_groove_90:tool_library")
+        keys = set(graph(document))
+        self.assertTrue(any(".export.groove." in key and ".mould." in key for key in keys))
+        self.assertFalse(any(key.endswith(".export.groove.0001.profile") for key in keys))
 
-    def test_k_changes_stock_and_root_width_not_radius(self):
-        docs=[self.build(frameJoinType='v_groove_90:rounded_v',vGrooveKFactor=k) for k in (0,1)]
-        def stock(d):return next(i['properties']['length'] for i in d['items'] if i['key']=='outer_frame.continuous.0001')
-        self.assertAlmostEqual(stock(docs[1])-stock(docs[0]),4*math.pi/2*1.2,places=3)
-        roots=[]
-        for d in docs:
-            edges=contour(d)['segments']
-            root=min(e['start'][1] for e in edges)
-            floor=next(e for e in edges if e['kind']=='line' and abs(e['start'][1]-root)<1e-8 and abs(e['end'][1]-root)<1e-8)
-            roots.append(math.dist(floor['start'],floor['end']))
-            for edge in edges:
-                if edge['kind']=='arc':self.assertAlmostEqual(arc_radius(edge),18,places=7)
-        self.assertAlmostEqual(roots[1]-roots[0],math.pi/2*1.2)
+    def test_current_edge_arc_tool_can_be_selected_directly(self):
+        document = generate(frameLayout="four_sides", frameJoinType="v_groove_90:tool_library",
+                            outerFrameGrooveTool="system:edge-arc-groove")
+        keys = set(graph(document))
+        self.assertTrue(any(".export.groove." in key and ".mould." in key for key in keys))
 
-    def test_relief_keeps_floor_and_blind_cut_does_not_reach_far_wall(self):
-        for blind in (False,True):
-            doc=self.build(vGrooveReliefHole=True,vGrooveReliefNoThrough=blind)
-            nodes=graph(doc)
-            key='outer_frame.continuous.0001.export.groove.0001.relief'
-            profile=nodes[key+'.profile']['arguments']
-            origin=profile['placement']['origin'];r=profile['contours'][0]['radius']
-            self.assertAlmostEqual(origin[2]-r,-38/2+2)
-            end=origin[1]+nodes[key+'.solid']['arguments']['vector'][1]
-            if blind:
-                self.assertGreater(end,-25/2+1.2)
-                self.assertLess(end,25/2-1.2)
-            else:self.assertGreater(end,25/2)
-
-    def test_side_arcs_are_exact_mirrors_and_keep_arc_with_male(self):
-        shapes=[]
-        for style in ('left_arc','right_arc'):
-            for male in (False,True):
-                shape=contour(self.build(frameJoinType='v_groove_90:'+style,vGrooveMaleFemale=male))
-                arcs=[e for e in shape['segments'] if e['kind']=='arc']
-                self.assertEqual(len(arcs),1)
-                self.assertAlmostEqual(arc_radius(arcs[0]),36,places=7)
-                if not male:shapes.append(shape)
-        points=[[(round(e[k][0],6),round(e[k][1],6)) for e in s['segments'] for k in ('start','end')] for s in shapes]
-        centre=(min(x for x,y in points[0])+max(x for x,y in points[1]))/2
-        self.assertEqual({(round(2*centre-x,6),y) for x,y in points[0]},set(points[1]))
-
-    def test_hidden_values_and_unsupported_section(self):
-        self.build(vGrooveRadius=float('nan'),vGrooveReliefDiameter=float('nan'))
-        with self.assertRaisesRegex(ValueError,'支承壁'):
-            self.build(frameProfileType='round')
-        for purpose in ('display','manufacturing'):
-            with self.assertRaisesRegex(ValueError,'释放孔直径'):
-                generate(purpose,frameLayout='four_sides',vGrooveReliefHole=True,vGrooveReliefDiameter=100)
+    def test_removed_product_local_join_values_are_rejected(self):
+        for style in ("sharp_v", "rounded_v", "left_arc", "right_arc"):
+            with self.subTest(style=style), self.assertRaises(ValueError):
+                generate(frameLayout="four_sides", frameJoinType=f"v_groove_90:{style}")
 
 
-if __name__=='__main__':unittest.main()
+if __name__ == "__main__":
+    unittest.main()

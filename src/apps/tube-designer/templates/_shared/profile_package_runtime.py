@@ -194,7 +194,7 @@ def _diagram_expression(value: Any, numeric_keys: set[str], label: str) -> ast.A
 
 
 def _validate_parameter_diagram(descriptor: dict[str, Any]) -> None:
-    diagram = descriptor.get("parameterDiagram")
+    diagram = _parameter_diagram(descriptor)
     if diagram is None:
         return
     if (not isinstance(diagram, dict) or type(diagram.get("schemaVersion")) is not int
@@ -237,7 +237,7 @@ def _validate_parameter_diagram(descriptor: dict[str, Any]) -> None:
 def _evaluate_parameter_diagram(
     descriptor: dict[str, Any], parameters: dict[str, Any], contours: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    diagram = descriptor.get("parameterDiagram")
+    diagram = _parameter_diagram(descriptor)
     if diagram is None:
         return None
     if diagram.get("disabledWhenNonempty") and parameters.get(diagram["disabledWhenNonempty"]):
@@ -393,6 +393,22 @@ def _normalize_value(definition: dict[str, Any], value: Any) -> Any:
     return result
 
 
+def _with_display(descriptor, resources=None):
+    """Read package presentation separately from executable parameters."""
+    if resources and "display.json" in resources:
+        display = json.loads(base64.b64decode(resources["display.json"]).decode("utf-8-sig"))
+        if (not isinstance(display, dict) or display.get("schema") != "icax.template-display"
+                or display.get("schemaVersion") != 1):
+            raise ValueError("管型 display.json 协议无效")
+        descriptor = {**descriptor, "display": display}
+    return descriptor
+
+
+def _parameter_diagram(descriptor):
+    return descriptor.get("display", {}).get("views", {}).get("section", {}).get(
+        "parameterDiagram", descriptor.get("parameterDiagram"))
+
+
 def _validate_descriptor(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(value, dict):
         raise ValueError("profile.json 必须是 JSON 对象")
@@ -489,7 +505,9 @@ def evaluate_section(descriptor, script_source, parameters, digest, resources=No
         if parameters:
             raise ValueError("定式管型不能修改形状参数")
         built = copy.deepcopy(descriptor["section"])
-        return built, copy.deepcopy(built.get("contours"))
+        contours = copy.deepcopy(built.get("contours"))
+        _validate_path_contours(contours)
+        return built, contours
     with _script_context(script_source, digest, resources, descriptor) as namespace:
         built = namespace["build"](dict(parameters))
         if not isinstance(built, dict):
@@ -497,14 +515,35 @@ def evaluate_section(descriptor, script_source, parameters, digest, resources=No
         contours = built.get("contours")
         if not isinstance(contours, list) or not contours:
             raise ValueError("profile.py 的 build(parameters) 必须直接返回非空 contours")
-        return built, copy.deepcopy(contours)
+        contours = copy.deepcopy(contours)
+        _validate_path_contours(contours)
+        return built, contours
+
+
+def _validate_path_contours(contours):
+    """Keep the profile-package boundary at generic path/segment geometry.
+
+    Shape families own the construction of circles, ellipses, capsules and
+    polygons.  The profile2d consumer receives only the neutral curve form.
+    This is validation, not a conversion layer: an old high-level primitive
+    is rejected instead of being silently interpreted here.
+    """
+    for index, contour in enumerate(contours):
+        path = f"profile.py 返回的轮廓 {index}"
+        if not isinstance(contour, dict) or contour.get("kind") != "path":
+            raise ValueError(path + " 必须是 kind=path 的通用闭合曲线")
+        if contour.get("closed") is False:
+            raise ValueError(path + " 必须是闭合曲线")
+        segments = contour.get("segments")
+        if not isinstance(segments, list) or not segments:
+            raise ValueError(path + " 必须包含非空 segments")
 
 
 def _evaluate(
     descriptor: dict[str, Any], script_source: str, values: Any,
     package_digest: str, source_file_name: str, resources=None,
 ) -> dict[str, Any]:
-    descriptor, _ = _validate_descriptor(descriptor)
+    descriptor, _ = _validate_descriptor(_with_display(descriptor, resources))
     parameters = _normalize_parameters(descriptor, values)
     package_digest = _package_digest(descriptor, script_source, resources)
     built, contours = evaluate_section(descriptor, script_source, parameters, package_digest, resources)
@@ -513,6 +552,7 @@ def _evaluate(
     for index, contour in enumerate(contours):
         if not isinstance(contour, dict) or not isinstance(contour.get("kind"), str):
             raise ValueError(f"profile.py 返回的轮廓 {index} 无效")
+    _validate_path_contours(contours)
 
     width = _finite_number(built.get("width"), "build.width")
     depth = _finite_number(built.get("depth"), "build.depth")
@@ -621,7 +661,7 @@ def _package_from_sources(
         script_source = script_bytes.decode("utf-8-sig")
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ValueError("profile.json 或 profile.py 不是有效 UTF-8 内容") from error
-    descriptor, defaults = _validate_descriptor(descriptor)
+    descriptor, defaults = _validate_descriptor(_with_display(descriptor, resources))
     digest = _package_digest(descriptor, script_source, resources)
     preview = _evaluate(descriptor, script_source, defaults, digest, source_file_name, resources)
     return {
@@ -821,12 +861,12 @@ def _system_package(directory: Path, profile_scope: str = "system", *, preview=T
         raise ValueError(
             f"系统管型 {directory.name} 的 profile.json 或 profile.py 不是有效 UTF-8 内容"
         ) from error
-    descriptor, defaults = _validate_descriptor(descriptor_source)
+    resources = _directory_resources(directory)
+    descriptor, defaults = _validate_descriptor(_with_display(descriptor_source, resources))
     if descriptor["profileForm"] == "parametric" and not script_source.strip():
         raise ValueError("程式管型缺少 profile.py")
     if descriptor["id"] != directory.name:
         raise ValueError(f"系统管型包目录与 id 不一致：{directory.name}")
-    resources = _directory_resources(directory)
     digest = _package_digest(descriptor, script_source, resources)
     source_file_name = f"{directory.name}/profile.py"
     evaluated = (_evaluate(descriptor, script_source, defaults, digest, source_file_name, resources)

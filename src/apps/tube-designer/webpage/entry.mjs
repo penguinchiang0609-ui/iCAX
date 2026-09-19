@@ -29,6 +29,7 @@ import {
   renderDesignerProductPartsDock,
   renderDesignerRightPane,
   renderDesignerViewportOverlay,
+  renderDesignerToolDiagramDock,
 } from "./designerViews.mjs";
 import { getRibbonDefinition as getDesignerRibbonDefinition } from "./ribbonDefinition.mjs";
 import { ensureTubeDesignerStyles } from "./styles/ensureStyles.mjs";
@@ -37,6 +38,7 @@ import { renderNestingPartImportDialog } from "./nestingPartImport.mjs";
 import { renderNestingStandardPartDialog } from "./nestingStandardPart.mjs";
 import { bindProfileParameterDiagrams } from "./profileParameterDiagram.mjs";
 import { bindToolParameterDiagrams } from "./toolParameterDiagram.mjs";
+import { bindFloatingParameterDiagram, bindDiagramDragging } from "./floatingParameterDiagram.mjs";
 import {
   bindProductParameterDiagrams,
   bindProductSpecificationAnnotations,
@@ -52,6 +54,7 @@ import {
   renderProfileLibraryLeftPane,
   renderProfileLibraryRightPane,
   renderProfileLibraryViewportOverlay,
+  bindProfileSpecificationAnnotations,
 } from "./profileLibrary.mjs";
 import {
   ensureToolLibraryCatalogue,
@@ -406,7 +409,7 @@ function withDesignerContext(context) {
           overlay:(tools?renderToolLibraryViewportOverlay:renderProfileLibraryViewportOverlay)(context,view),
           suffix:renderDesignerWorkbenchSuffix(context,view,view.scene??{}),
         });
-        if(patched){bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);bindProductSceneParameterHighlights(mount,view,(level,message)=>ops.appendProjectLog(context,level,message));bindProductParameterDiagrams(mount);return true;}
+        if(patched){bindDiagramDragging(mount,view);bindProfileParameterDiagrams(mount);bindToolParameterDiagrams(mount);bindProductSceneParameterHighlights(mount,view,(level,message)=>ops.appendProjectLog(context,level,message));bindProductParameterDiagrams(mount);return true;}
         return false;
       }
       if(view.tubeDesignerPartDrawing&&view.activeAreaId==="nesting") {
@@ -435,6 +438,8 @@ function withDesignerContext(context) {
     afterProjectPatch(context, view) {
       restoreDesignerScrollState(context, view);
       restoreProductTemplateLibraryScrollState(context, view);
+      bindFloatingParameterDiagram(context.mount,view,renderDesignerToolDiagramDock);
+      bindToolParameterDiagrams(context.mount);
     },
     afterProjectRender(context, view, mount, ops) {
       rememberLibraryDom(view,mount,renderDesignerWorkbenchSuffix(context,view,view.scene??{}));
@@ -444,6 +449,7 @@ function withDesignerContext(context) {
       bindToolParameterDiagrams(mount);
       bindProductSceneParameterHighlights(mount, view, (level, message) => ops.appendProjectLog(context, level, message));
       bindProductParameterDiagrams(mount);
+      bindFloatingParameterDiagram(mount,view,renderDesignerToolDiagramDock);
       if ((view.activeAreaId === "profiles" || view.activeAreaId === "tools")
           && typeof context.productProxy?.invoke === "function"
           && !(view.tubeDesignerSystemProfiles?.length > 0)
@@ -544,7 +550,7 @@ function configureDesignerViewport(_context, view, areaId) {
   // The product scene is presentation-first: products and parts are selected
   // from their lists, while left-clicks in the viewport remain available to
   // specification annotations without selecting arbitrary members.
-  viewport.setPickingEnabled?.(!["view", "sketch", "about"].includes(normalizedAreaId));
+  viewport.setPickingEnabled?.(!["view", "profiles", "sketch", "about"].includes(normalizedAreaId));
   viewport.setContinuousRendering?.(normalizedAreaId !== "sketch");
   viewport.setProjectionChangeHandler?.((mode) => {
     const currentAreaId = ["view", "templates", "profiles", "tools", "components", "nesting", "machining"].includes(view.activeAreaId)
@@ -602,6 +608,7 @@ const PRODUCT_PARAMETER_EMPHASIS_VISUAL = Object.freeze({
 
 export function bindProductSceneParameterHighlights(mount, view, _appendLog = null) {
   bindProductSpecificationAnnotations(mount, view);
+  bindProfileSpecificationAnnotations(mount, view);
   if (!mount || productSceneParameterHighlightListeners.has(mount)) return;
   productSceneParameterHighlightListeners.add(mount);
   const clear = () => {

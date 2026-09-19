@@ -1,4 +1,5 @@
 import { escapeText } from "../../../iCAX-UI/UI/html.mjs";
+import { effectiveParameterChoice } from "./parameterConditions.mjs";
 
 const WINDOW_LAYOUTS = new Map([
   ["single-face-security-window", "single-face"],
@@ -63,12 +64,12 @@ function frameJoinName(value) {
 }
 
 function connectionReview(layout, values, enabled, rows, warnings) {
-  const horizontal = { insert: "横杆插入边框", weld: "横杆平口焊接" }[values.mainHorizontalConnection ?? "insert"] || "待确认";
   const miterPreview = "预览保留未切角管材，转角可能重叠；生产零件按45°切角。";
-  rows.push(row("横杆连接", horizontal));
+  rows.push(row("横杆连接", "横杆插入边框"));
   if (layout === "single-face") {
     const closed = (values.frameLayout ?? "four_sides") === "four_sides";
-    const outerJoin = values.frameJoinType ?? "miter_45";
+    const outerJoin = values.frameManufacturingMode && values.frameManufacturingMode !== "segment_weld"
+      ? "v_groove_90:tool_library" : values.frameJoinType ?? "miter_45";
     const fixedJoin = values.doorFrameJoinType ?? "miter_45";
     const leafJoin = values.doorLeafFrameJoinType ?? "miter_45";
     rows.push(row("大框连接", closed ? frameJoinName(outerJoin) : "开边框"));
@@ -88,8 +89,13 @@ function connectionReview(layout, values, enabled, rows, warnings) {
       if (isVGroove(fixedJoin) || isVGroove(leafJoin)) warnings.push("已选 V 槽折弯：须先打样确认管材、设备及折弯补偿，不能直接按示意图投产。");
       if (fixedJoin === "miter_45" || leafJoin === "miter_45") warnings.push(miterPreview);
     }
-    rows.push(row("外框转角", { post_butt: "立柱贯通、横梁直拼", rail_miter: "横梁45°拼角" }[values.frameCornerJoin ?? "post_butt"] || "待确认"));
-    if (values.frameCornerJoin === "rail_miter") warnings.push(miterPreview);
+    if (values.frameManufacturingMode && values.frameManufacturingMode !== "segment_weld") {
+      rows.push(row("外框制造", values.frameManufacturingMode === "spatial_v_notch" ? "空间连续V槽折弯" : "平面V槽折弯"));
+      warnings.push("连续外框须按输出的槽向、折合顺序和原管长度加工；空间自干涉检查不包含设备及工装。");
+    } else {
+      rows.push(row("外框转角", { post_butt: "立柱贯通、横梁直拼", rail_miter: "横梁45°拼角" }[values.frameCornerJoin ?? "post_butt"] || "待确认"));
+      if (values.frameCornerJoin === "rail_miter") warnings.push(miterPreview);
+    }
     if (layout === "five-face") {
       warnings.push("背面朝墙，需确认外凸安装条件、原窗开启和清洁检修空间。");
     } else {
@@ -110,6 +116,12 @@ function row(label, value) {
 
 export function renderSecurityWindowReview(template, values = {}) {
   values = { ...Object.fromEntries((template?.parameters ?? []).map((field) => [field.key ?? field.name, field.defaultValue])), ...values };
+  for (const field of template?.parameters ?? []) {
+    if (field.presentation?.choiceConditions) {
+      const key = field.key ?? field.name;
+      values[key] = effectiveParameterChoice(field, values[key], values);
+    }
+  }
   const layout = windowLayout(template, values);
   if (!layout) return "";
   const enabledValue = values.accessDoorEnabled ?? true;
@@ -132,15 +144,6 @@ export function renderSecurityWindowReview(template, values = {}) {
     rows.push(row("开启宽度预留", leafDepth == null || hardware == null
       ? "待填写有效尺寸" : `窗扇厚度 ${leafDepth} mm + 五金侵入 ${hardware} mm`));
     warnings.push("目标尺寸为设计值，不代表现场可通行或合规结论。");
-  }
-
-  if (!values.materialGrade || values.materialGrade === "unspecified") {
-    warnings.push("材质未指定：管材配套只代表截面规格，请补充材质与表面处理。");
-  } else {
-    rows.push(row("材质", values.materialGrade));
-    if (!values.surfaceTreatment || values.surfaceTreatment === "unspecified") {
-      warnings.push("表面处理未指定，请结合安装环境确认防腐做法。");
-    }
   }
 
   return `<aside data-security-window-review aria-label="防盗窗设计核对" style="margin:8px 0;padding:10px 12px;border:1px solid rgba(127,127,127,.25);border-radius:8px;font-size:12px;line-height:1.6;overflow-wrap:anywhere">

@@ -1,20 +1,29 @@
-"""Direct geometric inverse; no calls to the forward generator."""
+"""Direct geometric inverse for a regular solid polygon with equal corner radii."""
 IMPLEMENTED = True
 
 
 def fitting(section, context):
-    import math
-    q,t=context["geometry"],context["tolerance"]
-    if len(section)!=1 or section[0]["kind"]!="path":return False
-    edges=section[0]["edges"];n=len(edges)
-    if n not in (6,8) or any(e["kind"]!="line" for e in edges):return False
-    points=[e["start"] for e in edges]
-    center=[sum(p[i] for p in points)/n for i in (0,1)]
-    radius=math.dist(points[0],center)
-    if radius<=t:return False
-    angles=[math.atan2(p[1]-center[1],p[0]-center[0]) for p in points]
-    for i,p in enumerate(points):
-        if abs(math.dist(p,center)-radius)>t:return False
-        if abs((angles[(i+1)%n]-angles[i])%math.tau-math.tau/n)*radius>t:return False
-    return q.result({"sectionModel":"hexagonal-bar" if n==6 else "octagonal-bar",
-        "width":2*radius*math.cos(math.pi/n)},{"rotation":angles[0]%(math.tau/n),"translation":center})
+    q = context["geometry"]
+    tolerance = context["tolerance"]
+    if len(section) != 1:
+        return False
+    corners = q.polygon_corners(section[0], tolerance)
+    if not corners or not 3 <= len(corners) <= 32:
+        return False
+    regular = q.regular_vertices([corner[0] for corner in corners], tolerance)
+    if not regular:
+        return False
+    radii = [float(corner[1]) for corner in corners]
+    if any(radius < 0 for radius in radii):
+        return False
+    corner_radius = sum(radii) / len(radii)
+    if max(radii) - min(radii) > tolerance:
+        return False
+    return q.result({
+        "radius": regular["radius"],
+        "sideCount": len(corners),
+        "cornerRadius": corner_radius,
+    }, {
+        "rotation": regular["phase"],
+        "translation": regular["center"],
+    })

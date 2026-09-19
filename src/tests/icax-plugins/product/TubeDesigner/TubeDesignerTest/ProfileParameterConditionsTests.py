@@ -116,9 +116,9 @@ class ProfileParameterConditionsTests(unittest.TestCase):
             with self.subTest(profile=path.parent.name):
                 result = module.build(parameters)
                 self.assertTrue(result["contours"])
-                if path.parent.name in {"bulb-flat", "p-tube", "unequal-i"}:
+                if path.parent.name in {"p-tube"}:
                     retained = dict(parameters, materialBoundary="inactive draft", sourceRevision="retained")
                     self.assertEqual(module.build(retained)["contours"], result["contours"])
                     self.assertEqual(retained["materialBoundary"], "inactive draft")
             count += 1
-        self.assertEqual(count, 24)
+        self.assertEqual(count, 23)

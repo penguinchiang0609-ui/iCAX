@@ -2,173 +2,130 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": { "schemaVersion": 1, "entryPoint": "fitting.py" },
   "id": "z-section",
-  "version": "2026.9.13.6",
+  "version": "2026.9.19.1",
   "displayName": "Z 型钢",
-  "description": "P16 Z 型钢。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
+  "description": "等厚冷弯 Z 型钢；基础参数直接支持不等翼缘，高级设置以卷边开关覆盖普通、卷边和斜卷边 Z。",
+  "category": "型材",
   "provenance": {
-    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
-    "surveyIds": [
-      67,
-      68
-    ],
+    "document": "doc/Apps/Z型钢参数化几何定义与CAM建模建议.md",
+    "surveyIds": [67, 68],
     "dimensionSource": "editable-example",
     "standardConformance": "not-certified",
     "familyCode": "P16"
   },
   "manufacturing": {
-    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "formingProcess": "等厚钢带冷弯成形",
     "topology": "open-profile",
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
+    { "key": "depth", "displayName": "总高度 H / mm", "valueType": "number", "defaultValue": 80, "min": 1, "step": 1 },
+    { "key": "topFlangeWidth", "displayName": "上翼缘 B₁ / mm", "valueType": "number", "defaultValue": 50, "min": 1, "step": 1 },
+    { "key": "bottomFlangeWidth", "displayName": "下翼缘 B₂ / mm", "valueType": "number", "defaultValue": 50, "min": 1, "step": 1 },
+    { "key": "wallThickness", "displayName": "板厚 t / mm", "valueType": "number", "defaultValue": 2, "min": 0.1, "step": 1 },
+    { "key": "bendRadius", "displayName": "内弯 R / mm", "valueType": "number", "defaultValue": 3, "min": 0, "step": 1 },
     {
-      "key": "sectionModel",
-      "displayName": "轮廓子模型",
-      "valueType": "string",
-      "defaultValue": "z-cold",
-      "options": [
-        {
-          "value": "z-cold",
-          "displayName": "冷弯 Z 型钢"
-        },
-        {
-          "value": "z-cold-lipped",
-          "displayName": "卷边 Z 型钢"
-        }
-      ]
+      "key": "useLips",
+      "presentation": { "advanced": true, "line": "full" },
+      "displayName": "启用卷边",
+      "valueType": "boolean",
+      "defaultValue": false
     },
     {
-      "key": "width",
-      "displayName": "翼缘中心线展开方向尺寸 / mm",
-      "valueType": "number",
-      "defaultValue": 50,
-      "min": 1,
-      "step": 1
+      "key": "useIndependentLips",
+      "presentation": { "advanced": true, "line": "full" },
+      "displayName": "上下卷边独立设置",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "visibleWhen": { "op": "eq", "parameter": "useLips", "value": true }
     },
     {
-      "key": "depth",
-      "displayName": "腹板中心线高度 / mm",
-      "valueType": "number",
-      "defaultValue": 80,
-      "min": 1,
-      "step": 1
-    },
-    {
-      "key": "wallThickness",
-      "displayName": "板厚 / mm",
-      "valueType": "number",
-      "defaultValue": 2,
-      "min": 0.1,
-      "step": 1
-    },
-    {
-      "key": "model0BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "z-cold"
-      }
-    },
-    {
-      "key": "model0UpperWidth",
-      "displayName": "上翼缘中心线长度 / mm",
-      "valueType": "number",
-      "defaultValue": 40,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "z-cold"
-      }
-    },
-    {
-      "key": "model1BendRadius",
-      "displayName": "内弯半径 / mm",
-      "valueType": "number",
-      "defaultValue": 3,
-      "min": 0,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "z-cold-lipped"
-      }
-    },
-    {
-      "key": "model1LipLength",
-      "displayName": "卷边中心线长度 / mm",
+      "key": "lipLength",
+      "presentation": { "advanced": true },
+      "displayName": "卷边长度 C / mm",
       "valueType": "number",
       "defaultValue": 14,
-      "min": 1,
+      "min": 0.1,
       "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "z-cold-lipped"
-      }
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "useLips", "value": true },
+        { "op": "eq", "parameter": "useIndependentLips", "value": false }
+      ] }
+    },
+    {
+      "key": "lipAngle",
+      "presentation": { "advanced": true },
+      "displayName": "卷边角度 θ / °",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 1,
+      "max": 179,
+      "step": 1,
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "useLips", "value": true },
+        { "op": "eq", "parameter": "useIndependentLips", "value": false }
+      ] }
+    },
+    {
+      "key": "topLipLength",
+      "presentation": { "advanced": true },
+      "displayName": "上卷边 C₁ / mm",
+      "valueType": "number",
+      "defaultValue": 14,
+      "min": 0.1,
+      "step": 1,
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "useLips", "value": true },
+        { "op": "eq", "parameter": "useIndependentLips", "value": true }
+      ] }
+    },
+    {
+      "key": "bottomLipLength",
+      "presentation": { "advanced": true },
+      "displayName": "下卷边 C₂ / mm",
+      "valueType": "number",
+      "defaultValue": 14,
+      "min": 0.1,
+      "step": 1,
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "useLips", "value": true },
+        { "op": "eq", "parameter": "useIndependentLips", "value": true }
+      ] }
+    },
+    {
+      "key": "topLipAngle",
+      "presentation": { "advanced": true },
+      "displayName": "上卷边角 θ₁ / °",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 1,
+      "max": 179,
+      "step": 1,
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "useLips", "value": true },
+        { "op": "eq", "parameter": "useIndependentLips", "value": true }
+      ] }
+    },
+    {
+      "key": "bottomLipAngle",
+      "presentation": { "advanced": true },
+      "displayName": "下卷边角 θ₂ / °",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 1,
+      "max": 179,
+      "step": 1,
+      "visibleWhen": { "op": "all", "conditions": [
+        { "op": "eq", "parameter": "useLips", "value": true },
+        { "op": "eq", "parameter": "useIndependentLips", "value": true }
+      ] }
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 105
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width",
-          "-depth/2"
-        ],
-        "to": [
-          0,
-          "-depth/2"
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "下翼中心线长度"
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          0,
-          "-depth/2"
-        ],
-        "to": [
-          0,
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "腹板中心线高度"
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "-wallThickness/2",
-          0
-        ],
-        "to": [
-          "wallThickness/2",
-          0
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "腹板法向厚度"
-      }
-    ]
+    "categoryPath": ["型材"],
+    "groupOrder": 2,
+    "order": 108
   }
 }

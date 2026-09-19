@@ -18,13 +18,20 @@ from icax_template_worker import _load_template
 
 NAMES = ("single_face_security_window", "two_face_security_window",
          "three_face_security_window", "five_face_security_window")
+FACE_TYPES = {
+    "single_face_security_window": "single",
+    "two_face_security_window": "two",
+    "three_face_security_window": "three",
+    "five_face_security_window": "five",
+}
 REVIEW = "tubeDesigner.securityWindowReview"
 
 
 def template_input(name, **overrides):
-    package = TEMPLATES / name
+    package = TEMPLATES / "single_face_security_window"
     descriptor = json.loads((package / "template.json").read_text(encoding="utf-8"))
     parameters = {item["key"]: deepcopy(item["defaultValue"]) for item in descriptor["parameters"]}
+    parameters.update(faceType=FACE_TYPES[name])
     parameters.update(overrides)
     context = {"template": {"id": descriptor["id"], "version": descriptor["version"],
                              "packageDigest": "security-window-public-tests"}}
@@ -101,7 +108,6 @@ class SecurityWindowRulesTests(unittest.TestCase):
             with self.subTest(template=name):
                 _, parameters, _ = template_input(name)
                 self.assertTrue(parameters["accessDoorEnabled"])
-                self.assertEqual("escape", parameters["doorUse"])
                 self.assertEqual((800, 1000), (parameters["doorClearWidth"], parameters["doorClearHeight"]))
                 self.assertNotIn("doorWidth", parameters)
                 self.assertNotIn("doorHeight", parameters)
@@ -159,24 +165,11 @@ class SecurityWindowRulesTests(unittest.TestCase):
                     self.assertFalse(any(item["key"].startswith("access_door.") for item in document["items"]))
                     self.assertIn("SW_NO_OPENING", {row["code"] for row in document["diagnostics"]})
 
-    def test_small_escape_is_rejected_but_explicit_maintenance_is_allowed(self):
-        for name in NAMES:
-            for dimensions in ((799, 1000), (800, 999)):
-                with self.subTest(template=name, dimensions=dimensions), self.assertRaisesRegex(ValueError, "800.*1000"):
-                    build(name, doorClearWidth=dimensions[0], doorClearHeight=dimensions[1])
-            with self.subTest(template=name, use="maintenance"):
-                document = build(name, doorUse="maintenance", doorClearWidth=300, doorClearHeight=300)
-                review = document["extensions"][REVIEW]
-                self.assertEqual((300, 300), (review["designClearWidth"], review["designClearHeight"]))
-                self.assertFalse(review["complianceCertified"])
-                codes = {row["code"] for row in document["diagnostics"]}
-                self.assertTrue({"SW_MAINTENANCE_ONLY", "SW_SMALL_OPENING"}.issubset(codes))
-
     def test_five_face_bottom_supports_escape_opening_but_top_does_not(self):
         name = "five_face_security_window"
         with self.assertRaisesRegex(ValueError, "顶面"):
-            build(name, accessDoorFace="top")
-        document = build(name, accessDoorFace="bottom", depth=1600.0)
+            build(name, accessDoorFace5="top")
+        document = build(name, accessDoorFace5="bottom", depth=1600.0)
         review = document["extensions"][REVIEW]
         self.assertEqual((800, 1000), (review["designClearWidth"], review["designClearHeight"]))
         actual = clear_frame_size(document, "access_door.fixed_frame.", 25.0)
@@ -205,25 +198,17 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 gaps = [positions[0] - frame_half - bar_half, distance - frame_half - positions[-1] - bar_half]
                 gaps += [b - a - 2 * bar_half for a, b in zip(positions, positions[1:])]
                 self.assertTrue(all(gap >= 0 for gap in gaps))
-                self.assertLessEqual(max(gaps), parameters["maximumVerticalClearGap"] + 1e-7)
+                self.assertLessEqual(max(gaps), parameters["doorVerticalMaximumCenterSpacing"] + 1e-7)
 
-    def test_material_is_manufacturing_data_and_review_never_claims_certification(self):
+    def test_review_never_claims_certification(self):
         for name in NAMES:
             with self.subTest(template=name):
-                unspecified = build(name, materialGrade="unspecified", surfaceTreatment="unspecified")
-                codes = {row["code"] for row in unspecified["diagnostics"]}
-                self.assertTrue({"SW_SITE_REVIEW", "SW_MATERIAL_UNSPECIFIED", "SW_FINISH_UNSPECIFIED"}.issubset(codes))
-                self.assertTrue(all("manufacturing.material" not in item["properties"] for item in unspecified["items"]))
-                selected = build(name, "manufacturing", materialGrade="304", surfaceTreatment="passivated")
+                selected = build(name, "manufacturing")
                 self.assertFalse(selected["extensions"][REVIEW]["complianceCertified"])
                 for item in selected["items"]:
-                    self.assertEqual("304", item["properties"]["manufacturing.material"])
-                    self.assertEqual("passivated", item["properties"]["manufacturing.surfaceTreatment"])
                     self.assertEqual("required", item["properties"]["manufacturing.installationVerification"])
                 codes = {row["code"] for row in selected["diagnostics"]}
                 self.assertIn("SW_SITE_REVIEW", codes)
-                self.assertNotIn("SW_MATERIAL_UNSPECIFIED", codes)
-                self.assertNotIn("SW_FINISH_UNSPECIFIED", codes)
                 table = next(table for table in selected["tables"] if table["key"] == "security_window_review")
                 self.assertTrue(table["rows"])
                 warnings = [row for row in table["rows"] if row["key"].startswith("review.")]
@@ -249,7 +234,7 @@ class SecurityWindowRulesTests(unittest.TestCase):
 
     def test_descriptor_presets_are_explicit_and_selected_default_matches_real_values(self):
         for name in NAMES:
-            descriptor = json.loads((TEMPLATES / name / "template.json").read_text(encoding="utf-8"))
+            descriptor = json.loads((TEMPLATES / "single_face_security_window" / "template.json").read_text(encoding="utf-8"))
             module, defaults, _ = template_input(name)
             with self.subTest(template=name):
                 self.assertEqual(descriptor["version"], module.TEMPLATE_VERSION)
@@ -260,36 +245,16 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 self.assertTrue(all(p["group"] in groups for p in definitions.values()))
                 for preset in descriptor["extensions"]["parameterPresets"]["presets"]:
                     values = preset["values"]
-                    self.assertTrue({"frameProfileType", "horizontalProfileType", "verticalProfileType",
-                                     "materialGrade", "surfaceTreatment"}.issubset(values))
+                    self.assertTrue({"frameProfileType", "horizontalProfileType",
+                                     "verticalProfileType"}.issubset(values))
                     for key, value in values.items():
                         self.assertIn(key, definitions)
                         if "choices" in definitions[key]:
                             self.assertIn(value, [choice["value"] for choice in definitions[key]["choices"]])
                         if preset["value"] == defaults["tubeSpecificationPreset"]:
                             self.assertEqual(defaults[key], value, f"{name}: {key}")
-                self.assertEqual("304", defaults["materialGrade"])
-                self.assertEqual("passivated", defaults["surfaceTreatment"])
-                self.assertEqual("insert", defaults["mainHorizontalConnection"])
-                reserve_condition = definitions["horizontalBranchReserve"]["visibleWhen"]
-                if name == "single_face_security_window":
-                    # The combined descriptor enumerates its supported face
-                    # layouts explicitly so unused branches cannot leak into
-                    # the editor.  Every branch still represents the same
-                    # semantic rule: reserve is meaningful only for insert.
-                    self.assertEqual("any", reserve_condition["op"])
-                    branches = reserve_condition["conditions"]
-                    self.assertEqual({"single", "two", "three", "five"}, {
-                        next(item["value"] for item in branch["conditions"]
-                             if item["parameter"] == "faceType")
-                        for branch in branches
-                    })
-                    self.assertTrue(all(any(item == {
-                        "op": "eq", "parameter": "mainHorizontalConnection", "value": "insert",
-                    } for item in branch["conditions"]) for branch in branches))
-                else:
-                    self.assertEqual({"op": "eq", "parameter": "mainHorizontalConnection", "value": "insert"},
-                                     reserve_condition)
+                self.assertNotIn("mainHorizontalConnection", definitions)
+                self.assertNotIn("visibleWhen", definitions["horizontalBranchReserve"])
                 if name.startswith("single"):
                     self.assertEqual("four_sides", defaults["frameLayout"])
                     self.assertTrue(all(defaults[key] == "miter_45" for key in
@@ -297,7 +262,8 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 else:
                     self.assertEqual(defaults["frameWidth"], defaults["frameDepth"])
                     self.assertEqual("post_butt", defaults["frameCornerJoin"])
-                    self.assertTrue({"sideHorizontalCount", "sideVerticalCount", "sideMaximumVerticalClearGap"}.issubset(defaults))
+                    self.assertTrue({"sideHorizontalMaximumCenterSpacing",
+                                     "sideVerticalMaximumCenterSpacing"}.issubset(defaults))
 
     def test_review_distinguishes_open_boundaries_and_only_active_fabrication_processes(self):
         for name in NAMES:
@@ -306,49 +272,45 @@ class SecurityWindowRulesTests(unittest.TestCase):
                 review = document["extensions"][REVIEW]
                 self.assertEqual(2, review["reviewVersion"])
                 self.assertFalse(review["vGrooveTrialRequired"])
-                self.assertEqual("insert", review["mainHorizontalConnection"])
+                self.assertNotIn("mainHorizontalConnection", review)
                 codes = {d["code"] for d in document["diagnostics"]}
                 self.assertEqual(name.startswith(("two", "three")), "SW_OPEN_BOUNDARY" in codes)
                 self.assertEqual(not name.startswith("single"), "SW_PROJECTION_REVIEW" in codes)
                 self.assertNotIn("SW_V_GROOVE_TRIAL", codes)
-                self.assertNotIn("SW_MATERIAL_UNSPECIFIED", codes)
-                self.assertNotIn("SW_FINISH_UNSPECIFIED", codes)
                 if not name.startswith("single"):
                     miter = build(name, frameCornerJoin="rail_miter")
                     self.assertTrue(miter["extensions"][REVIEW]["displayHasUncutMiterStock"])
                     self.assertEqual("rail_miter", miter["extensions"][REVIEW]["outerFrameConnection"])
         single = NAMES[0]
         hidden = build(single, accessDoorEnabled=False, frameLayout="left_right",
-                       frameJoinType="v_groove_90:sharp_v", doorFrameJoinType="v_groove_90:sharp_v",
-                       doorLeafFrameJoinType="v_groove_90:sharp_v")
+                       frameJoinType="unused", doorFrameJoinType="unused",
+                       doorLeafFrameJoinType="unused")
         self.assertFalse(hidden["extensions"][REVIEW]["vGrooveTrialRequired"])
         self.assertFalse(hidden["extensions"][REVIEW]["displayHasUncutMiterStock"])
         self.assertIn("SW_OPEN_BOUNDARY", {d["code"] for d in hidden["diagnostics"]})
         for key in ("frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType"):
             with self.subTest(join=key):
-                active = build(single, **{key: "v_groove_90:sharp_v"})
+                active = build(single, **{key: "v_groove_90:tool_library"},
+                               **({'frameManufacturingMode':'plane_v_notch'} if key=='frameJoinType' else {}))
                 self.assertTrue(active["extensions"][REVIEW]["vGrooveTrialRequired"])
                 self.assertIn("SW_V_GROOVE_TRIAL", {d["code"] for d in active["diagnostics"]})
 
-    def test_every_material_preset_builds_both_connections_and_corner_options(self):
+    def test_every_tube_preset_builds_all_corner_options(self):
         for name in NAMES:
-            descriptor = json.loads((TEMPLATES / name / "template.json").read_text(encoding="utf-8"))
+            descriptor = json.loads((TEMPLATES / "single_face_security_window" / "template.json").read_text(encoding="utf-8"))
             for preset in descriptor["extensions"]["parameterPresets"]["presets"]:
                 corners = (None,) if name.startswith("single") else ("post_butt", "rail_miter")
                 for corner in corners:
-                    for connection in ("insert", "weld"):
-                        values = {**preset["values"], "tubeSpecificationPreset": preset["value"],
-                                  "mainHorizontalConnection": connection}
-                        if corner is not None:
-                            values["frameCornerJoin"] = corner
-                        for purpose in ("display", "manufacturing"):
-                            with self.subTest(template=name, preset=preset["value"], corner=corner,
-                                              connection=connection, purpose=purpose):
-                                document = build(name, purpose, **values)
-                                self.assertTrue(document["items"])
-                                self.assertEqual(values["materialGrade"], document["items"][0]["properties"]["manufacturing.material"])
-                                self.assertEqual(connection, document["extensions"][REVIEW]["mainHorizontalConnection"])
-                                self.assertFalse(document["extensions"][REVIEW]["complianceCertified"])
+                    values = {**preset["values"], "tubeSpecificationPreset": preset["value"]}
+                    if corner is not None:
+                        values["frameCornerJoin"] = corner
+                    for purpose in ("display", "manufacturing"):
+                        with self.subTest(template=name, preset=preset["value"],
+                                          corner=corner, purpose=purpose):
+                            document = build(name, purpose, **values)
+                            self.assertTrue(document["items"])
+                            self.assertNotIn("mainHorizontalConnection", document["parameters"])
+                            self.assertFalse(document["extensions"][REVIEW]["complianceCertified"])
 
 
 if __name__ == "__main__":

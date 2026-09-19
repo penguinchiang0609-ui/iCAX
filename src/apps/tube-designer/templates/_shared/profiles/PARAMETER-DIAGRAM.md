@@ -1,6 +1,8 @@
 # 程式管型参数示意图
 
-`profile.json` 可以声明可选的 `parameterDiagram`，用于把参数输入框与截面上受影响的位置对应起来。标注引用稳定的参数 `key`，不依赖显示名称。图中轮廓仍由 `profile.py` 生成，示意图不改变几何。
+管型包的 `display.json` 使用 `icax.template-display` / `schemaVersion: 1`，把显示声明与 `profile.json` 的几何参数分开。`views.right` 声明分组、字段顺序、短标题、说明、独占行和控件宽度；`views.scene.annotations` 按参数键声明可编辑场景标注；`views.section.parameterDiagram` 声明截面锚点。轮廓仍由 `profile.py` 生成，显示配置不改变几何。
+
+以下是 `views.section` 的内容：
 
 ```json
 {
@@ -55,4 +57,4 @@
 
 运行时每次生成截面后，用同一组规范化参数和真实轮廓求值 `parameterDiagram`。返回的截面快照保存 `schemaVersion: 1`、参数引用、说明和具体数值坐标，不再包含坐标表达式。参数实际值位于同一快照的 `parameters` 中，参数名称、类型、选项及可见性位于 `parameterDefinitions` 中；前端无需执行表达式。
 
-现有描述文件版本仍为 `icax.tube-profile-descriptor` / `schemaVersion: 2`。没有声明 `parameterDiagram` 的旧包继续正常导入和求值，其快照不包含这个字段；界面保留普通轮廓预览，不猜测复杂自定义参数的尺寸含义。为旧包补充元数据不会改变几何，但描述内容参与包摘要，因此摘要会更新。
+几何描述使用 `icax.tube-profile-descriptor` / `schemaVersion: 3`。系统、用户目录及 `.ittt` 包均从包内读取 `display.json`，该文件参与包摘要。管型资源页不显示截面示意图：场景标注双击编辑，提交后保留旧模型并提示重新生成，确认后才替换三维资源。产品内嵌编辑与模具主管设置仍使用已求值的截面示意图。

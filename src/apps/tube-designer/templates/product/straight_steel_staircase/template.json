@@ -56,7 +56,7 @@
       },
       "profileRoles": {
         "stringer": {
-          "parameters": ["stringerProfileType", "stringerWidth", "stringerDepth", "stringerCornerRadius", "stringerWallThickness", "stringerChannelModel", "stringerModel0BendRadius", "stringerModel6FlangeThickness", "stringerModel6RootRadius", "stringerModel6ToeRadius", "stringerModel5FlangeThickness", "stringerModel5RootRadius", "stringerModel5ToeRadius", "stringerModel5FlangeSlope", "stringerModel7FlangeThickness", "stringerModel7LowerThickness", "stringerModel7WeldLeg"],
+          "parameters": ["stringerProfileType", "stringerWidth", "stringerDepth", "stringerCornerRadius", "stringerInnerRadius", "stringerWallThickness"],
           "memberStableKeyPatterns": ["flight.*.beam.*"]
         },
         "tread": {
@@ -488,6 +488,30 @@
             "parameter": "stringerProfileType",
             "value": "rect"
           }
+        ]
+      }
+    },
+    {
+      "key": "stringerInnerRadius",
+      "displayName": {
+        "zh-CN": "梯段边梁/内角 R"
+      },
+      "valueType": "number",
+      "quantity": "length",
+      "unit": "mm",
+      "defaultValue": 3,
+      "constraints": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 0.1
+      },
+      "group": "profiles",
+      "order": 35,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "stringerConstruction", "value": "profile" },
+          { "op": "eq", "parameter": "stringerProfileType", "value": "channel" }
         ]
       }
     },
@@ -1866,56 +1890,16 @@
     },
     {
       "key": "stringerChannelModel",
-      "displayName": {
-        "zh-CN": "槽钢截面构造"
-      },
+      "presentation": { "visible": false },
+      "displayName": { "zh-CN": "槽钢截面构造（兼容字段）" },
       "valueType": "enum",
-      "defaultValue": "channel-cold-u",
-      "choices": [
-        {
-          "value": "channel-cold-u",
-          "displayName": {
-            "zh-CN": "冷弯等边槽钢"
-          }
-        },
-        {
-          "value": "channel-hot-parallel",
-          "displayName": {
-            "zh-CN": "热轧平行翼缘槽钢（名义轮廓）"
-          }
-        },
-        {
-          "value": "channel-hot-tapered",
-          "displayName": {
-            "zh-CN": "热轧斜腿槽钢（名义轮廓）"
-          }
-        },
-        {
-          "value": "channel-welded",
-          "displayName": {
-            "zh-CN": "板焊槽钢"
-          }
-        }
-      ],
-      "group": "profiles",
-      "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "stringerConstruction",
-            "value": "profile"
-          },
-          {
-            "op": "eq",
-            "parameter": "stringerProfileType",
-            "value": "channel"
-          }
-        ]
-      }
+      "defaultValue": "channel",
+      "choices": [ { "value": "channel", "displayName": { "zh-CN": "槽钢" } } ],
+      "group": "profiles"
     },
     {
       "key": "stringerModel0BendRadius",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "内弯半径"
       },
@@ -1945,13 +1929,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-cold-u"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel6FlangeThickness",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "翼缘端部厚度"
       },
@@ -1981,13 +1966,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-hot-parallel"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel6RootRadius",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "根部圆角"
       },
@@ -2017,13 +2003,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-hot-parallel"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel6ToeRadius",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "翼缘端圆角"
       },
@@ -2053,13 +2040,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-hot-parallel"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel5FlangeThickness",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "翼缘端部厚度"
       },
@@ -2089,13 +2077,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-hot-tapered"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel5RootRadius",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "根部圆角"
       },
@@ -2125,13 +2114,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-hot-tapered"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel5ToeRadius",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "翼缘端圆角"
       },
@@ -2161,13 +2151,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-hot-tapered"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel5FlangeSlope",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "内翼缘斜度"
       },
@@ -2197,13 +2188,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-hot-tapered"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel7FlangeThickness",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "上翼缘板厚"
       },
@@ -2233,13 +2225,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-welded"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel7LowerThickness",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "下翼缘板厚"
       },
@@ -2269,13 +2262,14 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-welded"
+            "value": "channel"
           }
         ]
       }
     },
     {
       "key": "stringerModel7WeldLeg",
+      "presentation": { "visible": false },
       "displayName": {
         "zh-CN": "名义根部焊脚"
       },
@@ -2305,11 +2299,11 @@
           {
             "op": "eq",
             "parameter": "stringerChannelModel",
-            "value": "channel-welded"
+            "value": "channel"
           }
         ]
       }
-    }
-  ],
+        }
+      ],
   "name": "楼梯/钢楼梯"
 }

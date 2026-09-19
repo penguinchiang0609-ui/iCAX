@@ -1,4 +1,4 @@
-// Real-browser regression for the Python-authored 防盗窗 annotation lanes.
+// Real-browser regression: retain template-authored anchors without screen avoidance.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -131,13 +131,20 @@ try {
         }
       }
     }
+    const positions = viewport.specificationLabels.filter(label=>!label.element.hidden).map(label=>{
+      const projected=label.worldPoint.clone().project(viewport.camera);
+      return {actual:[parseFloat(label.element.style.left),parseFloat(label.element.style.top)],
+        expected:[(projected.x*.5+.5)*viewport.renderer.domElement.clientWidth,
+          (-projected.y*.5+.5)*viewport.renderer.domElement.clientHeight]};
+    });
     const offsets = Object.fromEntries(model.annotations.map((item) => [item.parameter, item.offset]));
     viewport.dispose();
-    return { count: entries.length, overlaps, offsets };
+    return { count: entries.length, overlaps, offsets, positions };
   }, { template: descriptor, displayRules: display, model: generated });
 
   assert.ok(result.count >= 10, "应显示完整的主体和逃生窗规格标注");
-  assert.deepEqual(result.overlaps, [], `防盗窗标注发生覆盖：${JSON.stringify(result.overlaps)}`);
+  for(const position of result.positions) position.actual.forEach((value,index)=>
+    assert.ok(Math.abs(value-position.expected[index])<.01,'标注必须保持模板锚点的原始投影位置'));
   assert.ok(Math.abs(result.offsets.height[0]) > Math.abs(result.offsets.doorClearHeight[0]),
     "整体高度和逃生窗净高必须使用不同的左侧通道");
   assert.ok(Math.abs(result.offsets.horizontalMaximumCenterSpacing[0]) > Math.abs(result.offsets.doorHorizontalTopCenterOffset[0]),
@@ -168,8 +175,8 @@ try {
     return { count: entries.length, overlaps: overlaps.length };
   });
   assert.equal(crowded.count, 14, "拥挤的规格标注不能被丢弃");
-  assert.equal(crowded.overlaps, 0, "投影重叠的规格标注必须自动避让");
-  console.log("PASS 防盗窗 Python 标注通道在真实浏览器投影下无文字覆盖");
+  assert.equal(crowded.overlaps, 91, "同锚点的14个标注保持原位置，不进行自动避让");
+  console.log("PASS 三维标注保留模板原始锚点，取消屏幕避让");
 } finally {
   await browser.close();
 }

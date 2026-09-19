@@ -3,6 +3,23 @@
 from __future__ import annotations
 
 import math
+
+
+def _path(points):
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
+        for i in range(len(points))
+    ]}
+
+
+def _circle_path(radius):
+    k = radius / math.sqrt(2.0)
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "arc", "start": [radius, 0], "middle": [k, k], "end": [0, radius]},
+        {"kind": "arc", "start": [0, radius], "middle": [-k, k], "end": [-radius, 0]},
+        {"kind": "arc", "start": [-radius, 0], "middle": [-k, -k], "end": [0, -radius]},
+        {"kind": "arc", "start": [0, -radius], "middle": [k, -k], "end": [radius, 0]},
+    ]}
 from typing import Any
 
 
@@ -58,9 +75,9 @@ def emit_rectangular_plate(model: Any, key: str, *, width: float, height: float,
     origin = [center[i] - normal[i] * thickness / 2 for i in range(3)]
     contour = model.geometry(f"{key}.outline", "profile2d", arguments={
         "placement": {"origin": origin, "xAxis": list(x_axis), "yAxis": list(y_axis)},
-        "contours": [{"kind": "polygon", "points": [
+        "contours": [_path([
             [-width / 2, -height / 2], [width / 2, -height / 2],
-            [width / 2, height / 2], [-width / 2, height / 2]]}],
+            [width / 2, height / 2], [-width / 2, height / 2]])],
     })
     solid = model.geometry(f"{key}.solid", "extrude", inputs=[contour],
                            arguments={"vector": [v * thickness for v in normal]})
@@ -75,7 +92,7 @@ def emit_rectangular_plate(model: Any, key: str, *, width: float, height: float,
                        for i in range(3)]
         profile = model.geometry(f"{key}.hole.{index}.profile", "profile2d", arguments={
             "placement": {"origin": hole_origin, "xAxis": list(x_axis), "yAxis": list(y_axis)},
-            "contours": [{"kind": "circle", "radius": radius}],
+            "contours": [_circle_path(radius)],
         })
         cutters.append(model.geometry(f"{key}.hole.{index}.solid", "extrude", inputs=[profile],
                                       arguments={"vector": [v * (thickness + 2) for v in normal]}))

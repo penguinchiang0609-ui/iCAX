@@ -75,6 +75,35 @@ namespace
     iCAX::Data::ObjectMap RoundedProfile(
         double Width_, double Height_, double Radius_)
     {
+        (void)Radius_;
+        const auto _Path = [](double _Width, double _Height)
+        {
+            return iCAX::Data::ObjectMap{
+                { "kind", std::string("path") }, { "closed", true },
+                { "segments", iCAX::Data::VariantArray{
+                    iCAX::Data::ObjectMap{
+                        { "kind", std::string("line") },
+                        { "start", NumberArray({ -_Width / 2.0, -_Height / 2.0 }) },
+                        { "end", NumberArray({ _Width / 2.0, -_Height / 2.0 }) }
+                    },
+                    iCAX::Data::ObjectMap{
+                        { "kind", std::string("line") },
+                        { "start", NumberArray({ _Width / 2.0, -_Height / 2.0 }) },
+                        { "end", NumberArray({ _Width / 2.0, _Height / 2.0 }) }
+                    },
+                    iCAX::Data::ObjectMap{
+                        { "kind", std::string("line") },
+                        { "start", NumberArray({ _Width / 2.0, _Height / 2.0 }) },
+                        { "end", NumberArray({ -_Width / 2.0, _Height / 2.0 }) }
+                    },
+                    iCAX::Data::ObjectMap{
+                        { "kind", std::string("line") },
+                        { "start", NumberArray({ -_Width / 2.0, _Height / 2.0 }) },
+                        { "end", NumberArray({ -_Width / 2.0, -_Height / 2.0 }) }
+                    }
+                } }
+            };
+        };
         return {
             { "placement", iCAX::Data::ObjectMap{
                 { "origin", NumberArray({ 0.0, 0.0, 0.0 }) },
@@ -82,15 +111,7 @@ namespace
                 { "yAxis", NumberArray({ 0.0, 1.0, 0.0 }) }
             } },
             { "contours", iCAX::Data::VariantArray{
-                iCAX::Data::ObjectMap{
-                    { "kind", std::string("roundedRectangle") },
-                    { "width", Width_ }, { "height", Height_ }, { "radius", Radius_ }
-                },
-                iCAX::Data::ObjectMap{
-                    { "kind", std::string("roundedRectangle") },
-                    { "width", Width_ - 4.0 }, { "height", Height_ - 4.0 },
-                    { "radius", std::max(0.0, Radius_ - 2.0) }
-                }
+                _Path(Width_, Height_), _Path(Width_ - 4.0, Height_ - 4.0)
             } }
         };
     }
@@ -128,13 +149,21 @@ namespace
             "geometry":[
                 {"key":"shared.profile","operator":"profile2d","arguments":{
                     "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-                    "contours":[{"kind":"roundedRectangle","width":40,"height":20,"radius":0}]}},
+                    "contours":[{"kind":"path","closed":true,"segments":[
+                        {"kind":"line","start":[-20,-10],"end":[20,-10]},
+                        {"kind":"line","start":[20,-10],"end":[20,10]},
+                        {"kind":"line","start":[20,10],"end":[-20,10]},
+                        {"kind":"line","start":[-20,10],"end":[-20,-10]}]}]},
                 {"key":"shared.solid","operator":"extrude","inputs":["shared.profile"],
                     "arguments":{"vector":[0,0,100]}},
                 {"key":"display.final","operator":"compound","inputs":["shared.solid"]},
                 {"key":"export.profile","operator":"profile2d","arguments":{
                     "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-                    "contours":[{"kind":"roundedRectangle","width":60,"height":30,"radius":0}]}},
+                    "contours":[{"kind":"path","closed":true,"segments":[
+                        {"kind":"line","start":[-30,-15],"end":[30,-15]},
+                        {"kind":"line","start":[30,-15],"end":[30,15]},
+                        {"kind":"line","start":[30,15],"end":[-30,15]},
+                        {"kind":"line","start":[-30,15],"end":[-30,-15]}]}]},
                 {"key":"export.solid","operator":"extrude","inputs":["export.profile"],
                     "arguments":{"vector":[0,0,200]}},
                 {"key":"export.final","operator":"compound","inputs":["shared.solid","export.solid"]}
@@ -201,7 +230,11 @@ namespace
                 "geometry":[
                     {"key":"shared.profile","operator":"profile2d","arguments":{
                         "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-                        "contours":[{"kind":"roundedRectangle","width":40,"height":20,"radius":0}]}},
+                        "contours":[{"kind":"path","closed":true,"segments":[
+                            {"kind":"line","start":[-20,-10],"end":[20,-10]},
+                            {"kind":"line","start":[20,-10],"end":[20,10]},
+                            {"kind":"line","start":[20,10],"end":[-20,10]},
+                            {"kind":"line","start":[-20,10],"end":[-20,-10]}]}]},
                     {"key":"shared.solid","operator":"extrude","inputs":["shared.profile"],
                         "arguments":{"vector":[0,0,100]}},
                     {"key":"display.first","operator":"transform","inputs":["shared.solid"],
@@ -336,6 +369,17 @@ namespace
         _Fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
             _Fixture.Descriptor, _Fixture.Parameters);
         _Fixture.TemplatePath = _Directory / "template.py";
+        return _Fixture;
+    }
+
+    STemplateProtocolFixture SecurityWindowProtocolFixture(
+        const std::filesystem::path& Root_, const std::string& FaceType_)
+    {
+        auto _Fixture = TemplateProtocolFixture(Root_, "single_face_security_window");
+        _Fixture.Descriptor.PackageDigest += "-" + FaceType_;
+        _Fixture.Parameters["faceType"] = FaceType_;
+        _Fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
+            _Fixture.Descriptor, _Fixture.Parameters);
         return _Fixture;
     }
 
@@ -1132,10 +1176,10 @@ TEST(TemplateRuntimeTest, BooleanRetainsExplicitConnectedMaterial)
     const auto document=CStandardJsonCodec::Parse(R"json({
       "schema":"icax.neutral-model","schemaVersion":1,
       "template":{"id":"test.connected-material","version":"1","packageDigest":"test"},
-      "geometry":[
-        {"key":"stock.profile","operator":"profile2d","arguments":{"placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},"contours":[{"kind":"roundedRectangle","width":20,"height":20,"radius":0}]}},
+       "geometry":[
+         {"key":"stock.profile","operator":"profile2d","arguments":{"placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},"contours":[{"kind":"path","closed":true,"segments":[{"kind":"line","start":[-10,-10],"end":[10,-10]},{"kind":"line","start":[10,-10],"end":[10,10]},{"kind":"line","start":[10,10],"end":[-10,10]},{"kind":"line","start":[-10,10],"end":[-10,-10]}]}]}},
         {"key":"stock","operator":"extrude","inputs":["stock.profile"],"arguments":{"vector":[0,0,100]}},
-        {"key":"tool.profile","operator":"profile2d","arguments":{"placement":{"origin":[0,0,30],"xAxis":[1,0,0],"yAxis":[0,1,0]},"contours":[{"kind":"roundedRectangle","width":40,"height":40,"radius":0}]}},
+         {"key":"tool.profile","operator":"profile2d","arguments":{"placement":{"origin":[0,0,30],"xAxis":[1,0,0],"yAxis":[0,1,0]},"contours":[{"kind":"path","closed":true,"segments":[{"kind":"line","start":[-20,-20],"end":[20,-20]},{"kind":"line","start":[20,-20],"end":[20,20]},{"kind":"line","start":[20,20],"end":[-20,20]},{"kind":"line","start":[-20,20],"end":[-20,-20]}]}]}},
         {"key":"tool","operator":"extrude","inputs":["tool.profile"],"arguments":{"vector":[0,0,20]}},
         {"key":"cut","operator":"boolean","inputs":["stock","tool"],"arguments":{"operation":"subtract","keepConnectedTo":[0,0,10]}}
       ]})json");
@@ -1157,17 +1201,17 @@ TEST(TemplateRuntimeTest, NeutralModelSelectedRootsResolveBooleanArgumentOnlyDep
                 "arguments":{"operation":"subtract","target":"target.solid","tools":["tool.solid"]}},
             {"key":"target.profile","operator":"profile2d","arguments":{
                 "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-                "contours":[{"kind":"roundedRectangle","width":40,"height":20,"radius":0}]}},
+                "contours":[{"kind":"path","closed":true,"segments":[{"kind":"line","start":[-20,-10],"end":[20,-10]},{"kind":"line","start":[20,-10],"end":[20,10]},{"kind":"line","start":[20,10],"end":[-20,10]},{"kind":"line","start":[-20,10],"end":[-20,-10]}]}]}},
             {"key":"target.solid","operator":"extrude","inputs":["target.profile"],
                 "arguments":{"vector":[0,0,100]}},
             {"key":"tool.profile","operator":"profile2d","arguments":{
                 "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-                "contours":[{"kind":"roundedRectangle","width":80,"height":80,"radius":0}]}},
+                "contours":[{"kind":"path","closed":true,"segments":[{"kind":"line","start":[-40,-40],"end":[40,-40]},{"kind":"line","start":[40,-40],"end":[40,40]},{"kind":"line","start":[40,40],"end":[-40,40]},{"kind":"line","start":[-40,40],"end":[-40,-40]}]}]}},
             {"key":"tool.solid","operator":"extrude","inputs":["tool.profile"],
                 "arguments":{"vector":[0,0,40]}},
             {"key":"unrelated.profile","operator":"profile2d","arguments":{
                 "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-                "contours":[{"kind":"circle","radius":3}]}}
+                "contours":[{"kind":"path","closed":true,"segments":[{"kind":"arc","start":[3,0],"middle":[0,3],"end":[-3,0]},{"kind":"arc","start":[-3,0],"middle":[0,-3],"end":[3,0]}]}]}}
         ]
     })json");
     const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Document);
@@ -1282,8 +1326,13 @@ TEST(TemplateRuntimeTest, NeutralModelRigidInstanceBooleansDoNotAlterSharedProto
                 { "xAxis", NumberArray({ 1, 0, 0 }) }, { "yAxis", NumberArray({ 0, 1, 0 }) }
             } },
             { "contours", VariantArray{ ObjectMap{
-                { "kind", std::string("roundedRectangle") },
-                { "width", 8.0 }, { "height", 40.0 }, { "radius", 0.0 }
+                { "kind", std::string("path") }, { "closed", true },
+                { "segments", VariantArray{
+                    ObjectMap{{ "kind", std::string("line") }, { "start", NumberArray({ -4, -20 }) }, { "end", NumberArray({ 4, -20 }) }},
+                    ObjectMap{{ "kind", std::string("line") }, { "start", NumberArray({ 4, -20 }) }, { "end", NumberArray({ 4, 20 }) }},
+                    ObjectMap{{ "kind", std::string("line") }, { "start", NumberArray({ 4, 20 }) }, { "end", NumberArray({ -4, 20 }) }},
+                    ObjectMap{{ "kind", std::string("line") }, { "start", NumberArray({ -4, 20 }) }, { "end", NumberArray({ -4, -20 }) }}
+                } }
             } } }
         } });
         _Model.Geometry.push_back({ "tool.solid", EGeometryOperator::Extrude, { "tool.profile" },
@@ -1954,7 +2003,7 @@ TEST(TemplateRuntimeTest, EmbeddedPythonEvaluatesTheRealTemplatePackageWithoutEx
     _Parameters["width"] = 1400.0;
     _Parameters["frameLayout"] = std::string("four_sides");
     // This stage verifies a single unfolded frame, regardless of the default joint.
-    _Parameters["frameJoinType"] = std::string("v_groove_90:sharp_v");
+    _Parameters["frameJoinType"] = std::string("v_groove_90:tool_library");
     const auto _SecondResponse = _Host.Invoke(
         iCAX::TemplateRuntime::CTemplateCodec::MakeEvaluationRequest(
             _Descriptor, _Parameters, _TemplatePath.string()));
@@ -2223,7 +2272,7 @@ TEST(TemplateRuntimeTest, EveryBuiltInProfilePackageGeneratesAValidExtrusion)
             }
         }
     }
-    EXPECT_EQ(24u, _Count);
+    EXPECT_EQ(21u, _Count);
 }
 
 TEST(TemplateRuntimeTest, ImportsFrozenDxfProfileAndUsesItAsAnInstanceOverride)
@@ -2511,14 +2560,12 @@ TEST(TemplateRuntimeTest, ListsAndEvaluatesEverySystemProfileForTheLibrary)
         { "action", std::string("list-system") }
     }));
     const auto _Profiles = _Listed.at("systemProfiles").To<iCAX::Data::VariantArray>();
-    ASSERT_EQ(24u, _Profiles.size());
+    ASSERT_EQ(21u, _Profiles.size());
     constexpr const char* _ExpectedIDs[]{
         "angle",
         "bulb-flat",
         "channel",
-        "combined-hollow",
         "curve-hollow",
-        "h-section",
         "i-section",
         "multi-cell",
         "omega",
@@ -2532,10 +2579,9 @@ TEST(TemplateRuntimeTest, ListsAndEvaluatesEverySystemProfileForTheLibrary)
         "rect-bar",
         "round",
         "round-bar",
+        "sigma",
         "t-section",
         "u-section",
-        "unequal-i",
-        "welded-h",
         "z-section",
     };
     for (const auto& _Value : _Profiles)
@@ -2889,7 +2935,7 @@ TEST(TemplateRuntimeTest, ExplicitPythonContinuousFrameReturnsAssemblyOrGroovedS
     auto _Fixture = TemplateProtocolFixture(_Root, "single_face_security_window");
     _Fixture.Parameters["width"] = 1400.0;
     _Fixture.Parameters["frameLayout"] = std::string("four_sides");
-    _Fixture.Parameters["frameJoinType"] = std::string("v_groove_90:sharp_v");
+    _Fixture.Parameters["frameJoinType"] = std::string("v_groove_90:tool_library");
     // This fixture isolates the outer continuous frame, not the opening layout.
     _Fixture.Parameters["accessDoorEnabled"] = false;
     _Fixture.Parameters = iCAX::TemplateRuntime::CTemplateCodec::ValidateAndNormalizeParameters(
@@ -2933,22 +2979,18 @@ TEST(TemplateRuntimeTest, ExplicitPythonContinuousFrameReturnsAssemblyOrGroovedS
     }
 }
 
-TEST(TemplateRuntimeTest, ProductLocalWindowGrooveSolids)
+TEST(TemplateRuntimeTest, ProductWindowGroovesUseCurrentMouldLibraryTools)
 {
     using namespace iCAX::TemplateRuntime;
     const auto root=std::filesystem::current_path();
     CPythonTemplateHost host(EmbeddedPythonHostOptions(root));
-    for(const auto* mode:{"sharp_v","rounded_v","left_arc","right_arc","male","rounded_male","relief","blind"}){
-        SCOPED_TRACE(mode);
+    for(const auto* tool:{"v-notch-sharp","edge-arc-groove"}){
+        SCOPED_TRACE(tool);
         auto fixture=TemplateProtocolFixture(root,"single_face_security_window");
-        const std::string name=mode;
-        const auto style=name=="rounded_male"?"rounded_v":name=="male"||name=="relief"||name=="blind"?"sharp_v":mode;
         fixture.Parameters["frameLayout"]=std::string("four_sides");
-        fixture.Parameters["frameJoinType"]=std::string("v_groove_90:")+style;
+        fixture.Parameters["frameJoinType"]=std::string("v_groove_90:tool_library");
+        fixture.Parameters["outerFrameGrooveTool"]=std::string("system:")+tool;
         fixture.Parameters["accessDoorEnabled"]=false;
-        fixture.Parameters["vGrooveMaleFemale"]=name=="male"||name=="rounded_male";
-        fixture.Parameters["vGrooveReliefHole"]=name=="relief"||name=="blind";
-        fixture.Parameters["vGrooveReliefNoThrough"]=name=="blind";
         fixture.Parameters=CTemplateCodec::ValidateAndNormalizeParameters(fixture.Descriptor,fixture.Parameters);
         const auto model=CTemplateCodec::ParseNeutralModel(InvokeExplicitTemplatePurpose(host,fixture,"manufacturing"));
         const auto frame=std::find_if(model.Items.begin(),model.Items.end(),[](const auto& item){return item.Key=="outer_frame.continuous.0001";});
@@ -3474,13 +3516,12 @@ TEST(TemplateRuntimeTest, SecurityWindowSecondRoundDefaultsProduceValidNativeSol
     using namespace iCAX::TemplateRuntime;
     const auto _Root = std::filesystem::current_path();
     CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    for (const auto* _Directory : { "single_face_security_window", "two_face_security_window",
-        "three_face_security_window", "five_face_security_window" })
+    for (const auto* _FaceType : { "single", "two", "three", "five" })
     {
-        SCOPED_TRACE(_Directory);
-        const auto _Fixture = TemplateProtocolFixture(_Root, _Directory);
-        EXPECT_EQ("insert", _Fixture.Parameters.at("mainHorizontalConnection").To<std::string>());
-        if (std::string(_Directory) == "single_face_security_window")
+        SCOPED_TRACE(_FaceType);
+        const auto _Fixture = SecurityWindowProtocolFixture(_Root, _FaceType);
+        EXPECT_FALSE(_Fixture.Parameters.contains("mainHorizontalConnection"));
+        if (std::string(_FaceType) == "single")
         {
             EXPECT_EQ("four_sides", _Fixture.Parameters.at("frameLayout").To<std::string>());
             for (const auto* _Key : { "frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType" })
@@ -3508,61 +3549,46 @@ TEST(TemplateRuntimeTest, SecurityWindowSecondRoundDefaultsProduceValidNativeSol
     }
 }
 
-TEST(TemplateRuntimeTest, SecurityWindowSecondRoundWeldRemovesPostHolesButKeepsGridPiercings)
+TEST(TemplateRuntimeTest, SecurityWindowSecondRoundInsertionDrillsPostsAndGridPiercings)
 {
     using namespace iCAX::TemplateRuntime;
     const auto _Root = std::filesystem::current_path();
     CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    for (const auto* _Directory : { "single_face_security_window", "two_face_security_window",
-        "three_face_security_window", "five_face_security_window" })
+    for (const auto* _FaceType : { "single", "two", "three", "five" })
     {
-        SCOPED_TRACE(_Directory);
-        auto _Fixture = TemplateProtocolFixture(_Root, _Directory);
+        SCOPED_TRACE(_FaceType);
+        auto _Fixture = SecurityWindowProtocolFixture(_Root, _FaceType);
         _Fixture.Parameters["accessDoorEnabled"] = false;
-        std::array<double, 2> _PostVolume{}, _HorizontalVolume{};
-        std::array<std::size_t, 2> _PostHoles{}, _HorizontalHoles{};
-        for (std::size_t _Mode = 0; _Mode < 2; ++_Mode)
+        const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing");
+        const auto _Model = CTemplateCodec::ParseNeutralModel(_Raw);
+        std::vector<std::string> _Roots;
+        for (const auto& _Item : _Model.Items)
+            if (_Item.Key.starts_with("main_grid.horizontal.")
+                || (_Item.Key.starts_with("outer_frame.")
+                    && _Item.Properties.at("manufacturing.categoryKey").To<std::string>().find("vertical") != std::string::npos))
+                _Roots.push_back(_Item.Representations.at("result"));
+        ASSERT_FALSE(_Roots.empty());
+        const auto _Evaluation = iCAX::OpenCascade::EvaluateNeutralModel(_Model, _Roots);
+        for (const auto& _Item : _Model.Items)
         {
-            SCOPED_TRACE(_Mode == 0 ? "insert" : "weld");
-            _Fixture.Parameters["mainHorizontalConnection"] = std::string(_Mode == 0 ? "insert" : "weld");
-            const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing");
-            const auto _Model = CTemplateCodec::ParseNeutralModel(_Raw);
-            std::vector<std::string> _Roots;
-            for (const auto& _Item : _Model.Items)
-                if (_Item.Key.starts_with("main_grid.horizontal.")
-                    || (_Item.Key.starts_with("outer_frame.")
-                        && _Item.Properties.at("manufacturing.categoryKey").To<std::string>().find("vertical") != std::string::npos))
-                    _Roots.push_back(_Item.Representations.at("result"));
-            ASSERT_FALSE(_Roots.empty());
-            const auto _Evaluation = iCAX::OpenCascade::EvaluateNeutralModel(_Model, _Roots);
-            for (const auto& _Item : _Model.Items)
-            {
-                const auto& _Representation = _Item.Representations.at("result");
-                if (!_Evaluation.Geometry.contains(_Representation)) continue;
-                const auto& _Shape = _Evaluation.At(_Representation);
-                EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid()) << _Item.Key;
-                if (_Item.Key.starts_with("main_grid.horizontal."))
-                    _HorizontalVolume[_Mode] += RootSelectionShapeVolume(_Shape);
-                else if (_Item.Key.starts_with("outer_frame."))
-                    _PostVolume[_Mode] += RootSelectionShapeVolume(_Shape);
-            }
-            for (const auto& _Node : _Model.Geometry)
-            {
-                if (_Node.Operator != EGeometryOperator::Profile2D || _Node.Key.find(".through.") == std::string::npos)
-                    continue;
-                if (_Node.Key.starts_with("main_grid.horizontal.")) ++_HorizontalHoles[_Mode];
-                if (_Node.Key.starts_with("outer_frame.vertical.") || _Node.Key.starts_with("outer_frame.left.")
-                    || _Node.Key.starts_with("outer_frame.right.")) ++_PostHoles[_Mode];
-            }
-            const auto _Display = InvokeExplicitTemplatePurpose(_Host, _Fixture, "display");
-            ExpectWindowRawGraphIsPurposeSpecific(_Display, "display");
+            const auto& _Representation = _Item.Representations.at("result");
+            if (!_Evaluation.Geometry.contains(_Representation)) continue;
+            const auto& _Shape = _Evaluation.At(_Representation);
+            EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid()) << _Item.Key;
         }
-        EXPECT_GT(_PostHoles[0], 0u);
-        EXPECT_EQ(0u, _PostHoles[1]);
-        EXPECT_GT(_HorizontalHoles[0], 0u);
-        EXPECT_EQ(_HorizontalHoles[0], _HorizontalHoles[1]);
-        EXPECT_GT(_PostVolume[1], _PostVolume[0]); // The missing holes are missing from the real solids.
-        EXPECT_GT(_HorizontalVolume[0], _HorizontalVolume[1]); // Welded rails lose their insertion stubs.
+        std::size_t _PostHoles = 0, _HorizontalHoles = 0;
+        for (const auto& _Node : _Model.Geometry)
+        {
+            if (_Node.Operator != EGeometryOperator::Profile2D || _Node.Key.find(".through.") == std::string::npos)
+                continue;
+            if (_Node.Key.starts_with("main_grid.horizontal.")) ++_HorizontalHoles;
+            if (_Node.Key.starts_with("outer_frame.vertical.") || _Node.Key.starts_with("outer_frame.left.")
+                || _Node.Key.starts_with("outer_frame.right.")) ++_PostHoles;
+        }
+        EXPECT_GT(_PostHoles, 0u);
+        EXPECT_GT(_HorizontalHoles, 0u);
+        const auto _Display = InvokeExplicitTemplatePurpose(_Host, _Fixture, "display");
+        ExpectWindowRawGraphIsPurposeSpecific(_Display, "display");
     }
 }
 
@@ -3572,67 +3598,62 @@ TEST(TemplateRuntimeTest, SecurityWindowSecondRoundRailMitersHaveCorrectBoundsAn
     using iCAX::Data::ObjectMap;
     const auto _Root = std::filesystem::current_path();
     CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    for (const auto* _Directory : { "three_face_security_window", "five_face_security_window" })
+    for (const auto* _FaceType : { "three", "five" })
     {
-        SCOPED_TRACE(_Directory);
-        auto _Fixture = TemplateProtocolFixture(_Root, _Directory);
+        SCOPED_TRACE(_FaceType);
+        auto _Fixture = SecurityWindowProtocolFixture(_Root, _FaceType);
         _Fixture.Parameters["accessDoorEnabled"] = false;
         _Fixture.Parameters["frameCornerJoin"] = std::string("rail_miter");
-        for (const auto* _Connection : { "insert", "weld" })
+        const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing");
+        const auto _Model = CTemplateCodec::ParseNeutralModel(_Raw);
+        std::vector<std::string> _Roots;
+        for (const auto& _Item : _Model.Items)
+            if (_Item.Key.starts_with("outer_frame.")) _Roots.push_back(_Item.Representations.at("result"));
+        const auto _Evaluation = iCAX::OpenCascade::EvaluateNeutralModel(_Model, _Roots);
+        Bnd_Box _Envelope;
+        std::vector<TopoDS_Shape> _TopRails;
+        std::size_t _MiterCount = 0;
+        for (const auto& _Item : _Model.Items)
         {
-            SCOPED_TRACE(_Connection);
-            _Fixture.Parameters["mainHorizontalConnection"] = std::string(_Connection);
-            const auto _Raw = InvokeExplicitTemplatePurpose(_Host, _Fixture, "manufacturing");
-            const auto _Model = CTemplateCodec::ParseNeutralModel(_Raw);
-            std::vector<std::string> _Roots;
-            for (const auto& _Item : _Model.Items)
-                if (_Item.Key.starts_with("outer_frame.")) _Roots.push_back(_Item.Representations.at("result"));
-            const auto _Evaluation = iCAX::OpenCascade::EvaluateNeutralModel(_Model, _Roots);
-            Bnd_Box _Envelope;
-            std::vector<TopoDS_Shape> _TopRails;
-            std::size_t _MiterCount = 0;
-            for (const auto& _Item : _Model.Items)
+            if (!_Item.Key.starts_with("outer_frame.")) continue;
+            SCOPED_TRACE(_Item.Key);
+            const auto& _Shape = _Evaluation.At(_Item.Representations.at("result"));
+            EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+            EXPECT_GT(RootSelectionShapeVolume(_Shape), 0.01);
+            BRepBndLib::Add(_Shape, _Envelope);
+            const auto _EndProcess = _Item.Properties.at("tubeDesigner.endProcess").To<ObjectMap>();
+            const auto _Planes = _EndProcess.at("cutPlanes").To<iCAX::Data::VariantArray>();
+            if (!_Planes.empty())
             {
-                if (!_Item.Key.starts_with("outer_frame.")) continue;
-                SCOPED_TRACE(_Item.Key);
-                const auto& _Shape = _Evaluation.At(_Item.Representations.at("result"));
-                EXPECT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
-                EXPECT_GT(RootSelectionShapeVolume(_Shape), 0.01);
-                BRepBndLib::Add(_Shape, _Envelope);
-                const auto _EndProcess = _Item.Properties.at("tubeDesigner.endProcess").To<ObjectMap>();
-                const auto _Planes = _EndProcess.at("cutPlanes").To<iCAX::Data::VariantArray>();
-                if (!_Planes.empty())
-                {
-                    ++_MiterCount;
-                    EXPECT_TRUE(_Item.Properties.contains("tubeDesigner.displayApproximation"));
-                }
-                if (_Item.Key.starts_with("outer_frame.top.")) _TopRails.push_back(_Shape);
-                if (_Item.Key.starts_with("outer_frame.vertical."))
-                {
-                    const auto _Bounds = RootSelectionShapeBounds(_Shape);
-                    EXPECT_NEAR(_Fixture.Parameters.at("frameWidth").To<double>(), _Bounds[2], 0.001);
-                    EXPECT_NEAR(_Fixture.Parameters.at("height").To<double>()
-                        - _Fixture.Parameters.at("frameWidth").To<double>(), _Bounds[5], 0.001);
-                }
+                ++_MiterCount;
+                EXPECT_TRUE(_Item.Properties.contains("tubeDesigner.displayApproximation"));
             }
-            EXPECT_GT(_MiterCount, 0u);
-            std::array<double, 6> _Bounds{};
-            _Envelope.Get(_Bounds[0], _Bounds[1], _Bounds[2], _Bounds[3], _Bounds[4], _Bounds[5]);
-            EXPECT_NEAR(_Fixture.Parameters.at("frontWidth").To<double>(), _Bounds[3] - _Bounds[0], 0.001);
-            EXPECT_NEAR(_Fixture.Parameters.at("height").To<double>(), _Bounds[5] - _Bounds[2], 0.001);
-            const double _Depth = std::string(_Directory) == "five_face_security_window"
-                ? _Fixture.Parameters.at("depth").To<double>()
-                : std::max(_Fixture.Parameters.at("leftWidth").To<double>(), _Fixture.Parameters.at("rightWidth").To<double>());
-            EXPECT_NEAR(_Depth, _Bounds[4] - _Bounds[1], 0.001);
-            for (std::size_t _A = 0; _A < _TopRails.size(); ++_A)
-                for (std::size_t _B = _A + 1; _B < _TopRails.size(); ++_B)
-                {
-                    BRepAlgoAPI_Common _Common(_TopRails[_A], _TopRails[_B]);
-                    ASSERT_TRUE(_Common.IsDone());
-                    EXPECT_LT(std::abs(RootSelectionShapeVolume(_Common.Shape())), 0.01);
-                }
-            ExpectWindowRawGraphIsPurposeSpecific(InvokeExplicitTemplatePurpose(_Host, _Fixture, "display"), "display");
+            if (_Item.Key.starts_with("outer_frame.top.")) _TopRails.push_back(_Shape);
+            if (_Item.Key.starts_with("outer_frame.vertical."))
+            {
+                const auto _Bounds = RootSelectionShapeBounds(_Shape);
+                EXPECT_NEAR(_Fixture.Parameters.at("frameWidth").To<double>(), _Bounds[2], 0.001);
+                EXPECT_NEAR(_Fixture.Parameters.at("height").To<double>()
+                    - _Fixture.Parameters.at("frameWidth").To<double>(), _Bounds[5], 0.001);
+            }
         }
+        EXPECT_GT(_MiterCount, 0u);
+        std::array<double, 6> _Bounds{};
+        _Envelope.Get(_Bounds[0], _Bounds[1], _Bounds[2], _Bounds[3], _Bounds[4], _Bounds[5]);
+        EXPECT_NEAR(_Fixture.Parameters.at("width").To<double>(), _Bounds[3] - _Bounds[0], 0.001);
+        EXPECT_NEAR(_Fixture.Parameters.at("height").To<double>(), _Bounds[5] - _Bounds[2], 0.001);
+        const double _Depth = std::string(_FaceType) == "five"
+            ? _Fixture.Parameters.at("depth").To<double>()
+            : std::max(_Fixture.Parameters.at("leftWidth").To<double>(), _Fixture.Parameters.at("rightWidth").To<double>());
+        EXPECT_NEAR(_Depth, _Bounds[4] - _Bounds[1], 0.001);
+        for (std::size_t _A = 0; _A < _TopRails.size(); ++_A)
+            for (std::size_t _B = _A + 1; _B < _TopRails.size(); ++_B)
+            {
+                BRepAlgoAPI_Common _Common(_TopRails[_A], _TopRails[_B]);
+                ASSERT_TRUE(_Common.IsDone());
+                EXPECT_LT(std::abs(RootSelectionShapeVolume(_Common.Shape())), 0.01);
+            }
+        ExpectWindowRawGraphIsPurposeSpecific(InvokeExplicitTemplatePurpose(_Host, _Fixture, "display"), "display");
     }
 }
 

@@ -21,47 +21,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -60
-            ],
-            [
-              50,
-              -60
-            ],
-            [
-              50,
-              60
-            ],
-            [
-              0,
-              60
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -60
+              ],
+              "end": [
+                50,
+                -60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                50,
+                -60
+              ],
+              "end": [
+                50,
+                60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                50,
+                60
+              ],
+              "end": [
+                0,
+                60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                60
+              ],
+              "end": [
+                0,
+                -60
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -58.5
-            ],
-            [
-              1.5,
-              58.5
-            ],
-            [
-              48.5,
-              58.5
-            ],
-            [
-              48.5,
-              -58.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -58.5
+              ],
+              "end": [
+                1.5,
+                58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                58.5
+              ],
+              "end": [
+                48.5,
+                58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                48.5,
+                58.5
+              ],
+              "end": [
+                48.5,
+                -58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                48.5,
+                -58.5
+              ],
+              "end": [
+                1.5,
+                -58.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -91,47 +148,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -60
-            ],
-            [
-              50,
-              -60
-            ],
-            [
-              50,
-              60
-            ],
-            [
-              0,
-              60
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -60
+              ],
+              "end": [
+                50,
+                -60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                50,
+                -60
+              ],
+              "end": [
+                50,
+                60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                50,
+                60
+              ],
+              "end": [
+                0,
+                60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                60
+              ],
+              "end": [
+                0,
+                -60
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -58.5
-            ],
-            [
-              1.5,
-              58.5
-            ],
-            [
-              48.5,
-              58.5
-            ],
-            [
-              48.5,
-              -58.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -58.5
+              ],
+              "end": [
+                1.5,
+                58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                58.5
+              ],
+              "end": [
+                48.5,
+                58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                48.5,
+                58.5
+              ],
+              "end": [
+                48.5,
+                -58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                48.5,
+                -58.5
+              ],
+              "end": [
+                1.5,
+                -58.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -161,47 +275,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -60
-            ],
-            [
-              50,
-              -60
-            ],
-            [
-              50,
-              60
-            ],
-            [
-              0,
-              60
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -60
+              ],
+              "end": [
+                50,
+                -60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                50,
+                -60
+              ],
+              "end": [
+                50,
+                60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                50,
+                60
+              ],
+              "end": [
+                0,
+                60
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                60
+              ],
+              "end": [
+                0,
+                -60
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -58.5
-            ],
-            [
-              1.5,
-              58.5
-            ],
-            [
-              48.5,
-              58.5
-            ],
-            [
-              48.5,
-              -58.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -58.5
+              ],
+              "end": [
+                1.5,
+                58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                58.5
+              ],
+              "end": [
+                48.5,
+                58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                48.5,
+                58.5
+              ],
+              "end": [
+                48.5,
+                -58.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                48.5,
+                -58.5
+              ],
+              "end": [
+                1.5,
+                -58.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -231,47 +402,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -10
-            ],
-            [
-              32,
-              -10
-            ],
-            [
-              32,
-              10
-            ],
-            [
-              0,
-              10
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -10
+              ],
+              "end": [
+                32,
+                -10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                32,
+                -10
+              ],
+              "end": [
+                32,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                32,
+                10
+              ],
+              "end": [
+                0,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                10
+              ],
+              "end": [
+                0,
+                -10
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -8.5
-            ],
-            [
-              1.5,
-              8.5
-            ],
-            [
-              30.5,
-              8.5
-            ],
-            [
-              30.5,
-              -8.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                8.5
+              ],
+              "end": [
+                30.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                30.5,
+                8.5
+              ],
+              "end": [
+                30.5,
+                -8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                30.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                -8.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -301,47 +529,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -10
-            ],
-            [
-              38,
-              -10
-            ],
-            [
-              38,
-              10
-            ],
-            [
-              0,
-              10
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -10
+              ],
+              "end": [
+                38,
+                -10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                38,
+                -10
+              ],
+              "end": [
+                38,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                38,
+                10
+              ],
+              "end": [
+                0,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                10
+              ],
+              "end": [
+                0,
+                -10
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -8.5
-            ],
-            [
-              1.5,
-              8.5
-            ],
-            [
-              36.5,
-              8.5
-            ],
-            [
-              36.5,
-              -8.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                8.5
+              ],
+              "end": [
+                36.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                36.5,
+                8.5
+              ],
+              "end": [
+                36.5,
+                -8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                36.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                -8.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -371,47 +656,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -10
-            ],
-            [
-              35,
-              -10
-            ],
-            [
-              35,
-              10
-            ],
-            [
-              0,
-              10
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -10
+              ],
+              "end": [
+                35,
+                -10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                35,
+                -10
+              ],
+              "end": [
+                35,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                35,
+                10
+              ],
+              "end": [
+                0,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                10
+              ],
+              "end": [
+                0,
+                -10
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -8.5
-            ],
-            [
-              1.5,
-              8.5
-            ],
-            [
-              33.5,
-              8.5
-            ],
-            [
-              33.5,
-              -8.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                8.5
+              ],
+              "end": [
+                33.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                33.5,
+                8.5
+              ],
+              "end": [
+                33.5,
+                -8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                33.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                -8.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -441,47 +783,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -10
-            ],
-            [
-              42,
-              -10
-            ],
-            [
-              42,
-              10
-            ],
-            [
-              0,
-              10
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -10
+              ],
+              "end": [
+                42,
+                -10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                42,
+                -10
+              ],
+              "end": [
+                42,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                42,
+                10
+              ],
+              "end": [
+                0,
+                10
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                10
+              ],
+              "end": [
+                0,
+                -10
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -8.5
-            ],
-            [
-              1.5,
-              8.5
-            ],
-            [
-              40.5,
-              8.5
-            ],
-            [
-              40.5,
-              -8.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                8.5
+              ],
+              "end": [
+                40.5,
+                8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                40.5,
+                8.5
+              ],
+              "end": [
+                40.5,
+                -8.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                40.5,
+                -8.5
+              ],
+              "end": [
+                1.5,
+                -8.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -511,47 +910,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -15
-            ],
-            [
-              35,
-              -15
-            ],
-            [
-              35,
-              15
-            ],
-            [
-              0,
-              15
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -15
+              ],
+              "end": [
+                35,
+                -15
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                35,
+                -15
+              ],
+              "end": [
+                35,
+                15
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                35,
+                15
+              ],
+              "end": [
+                0,
+                15
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                15
+              ],
+              "end": [
+                0,
+                -15
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -13.5
-            ],
-            [
-              1.5,
-              13.5
-            ],
-            [
-              33.5,
-              13.5
-            ],
-            [
-              33.5,
-              -13.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -13.5
+              ],
+              "end": [
+                1.5,
+                13.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                13.5
+              ],
+              "end": [
+                33.5,
+                13.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                33.5,
+                13.5
+              ],
+              "end": [
+                33.5,
+                -13.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                33.5,
+                -13.5
+              ],
+              "end": [
+                1.5,
+                -13.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -581,47 +1037,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -15
-            ],
-            [
-              35,
-              -15
-            ],
-            [
-              35,
-              15
-            ],
-            [
-              0,
-              15
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -15
+              ],
+              "end": [
+                35,
+                -15
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                35,
+                -15
+              ],
+              "end": [
+                35,
+                15
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                35,
+                15
+              ],
+              "end": [
+                0,
+                15
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                15
+              ],
+              "end": [
+                0,
+                -15
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -13.5
-            ],
-            [
-              1.5,
-              13.5
-            ],
-            [
-              33.5,
-              13.5
-            ],
-            [
-              33.5,
-              -13.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -13.5
+              ],
+              "end": [
+                1.5,
+                13.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                13.5
+              ],
+              "end": [
+                33.5,
+                13.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                33.5,
+                13.5
+              ],
+              "end": [
+                33.5,
+                -13.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                33.5,
+                -13.5
+              ],
+              "end": [
+                1.5,
+                -13.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],
@@ -651,47 +1164,104 @@
       "referenceAngle": 0,
       "contours": [
         {
-          "kind": "polygon",
-          "points": [
-            [
-              0,
-              -6
-            ],
-            [
-              24,
-              -6
-            ],
-            [
-              24,
-              6
-            ],
-            [
-              0,
-              6
-            ]
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                0,
+                -6
+              ],
+              "end": [
+                24,
+                -6
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                24,
+                -6
+              ],
+              "end": [
+                24,
+                6
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                24,
+                6
+              ],
+              "end": [
+                0,
+                6
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                0,
+                6
+              ],
+              "end": [
+                0,
+                -6
+              ]
+            }
           ]
         },
         {
-          "kind": "polygon",
-          "points": [
-            [
-              1.5,
-              -4.5
-            ],
-            [
-              1.5,
-              4.5
-            ],
-            [
-              22.5,
-              4.5
-            ],
-            [
-              22.5,
-              -4.5
-            ]
-          ],
-          "isHole": true
+          "kind": "path",
+          "closed": true,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                -4.5
+              ],
+              "end": [
+                1.5,
+                4.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                1.5,
+                4.5
+              ],
+              "end": [
+                22.5,
+                4.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                22.5,
+                4.5
+              ],
+              "end": [
+                22.5,
+                -4.5
+              ]
+            },
+            {
+              "kind": "line",
+              "start": [
+                22.5,
+                -4.5
+              ],
+              "end": [
+                1.5,
+                -4.5
+              ]
+            }
+          ]
         }
       ],
       "intrinsicFeatures": [],

@@ -1,25 +1,60 @@
-"""Infer centreline dimensions from both measured strip boundaries."""
+"""Direct geometric inverse for cold-formed Z sections."""
+import math
+
 IMPLEMENTED=True
+
+
+def _angle(a,b):
+    la,lb=math.hypot(*a),math.hypot(*b)
+    if min(la,lb)<=1e-12:return None
+    cosine=max(-1.0,min(1.0,sum(a[i]*b[i] for i in (0,1))/(la*lb)))
+    return math.degrees(math.acos(cosine))
+
+
 def fitting(section,context):
-    q,g,t=context['geometry'],context['curves'],context['tolerance']
+    q,g,t=context["geometry"],context["curves"],context["tolerance"]
     if len(section)!=1:return False
     for loops,pose in g.frames(section):
-        for raw,wall,r in q.strip_axes(loops[0],t):
-            for p in (raw,list(reversed(raw))):
-                x=[a[0] for a in p];y=[a[1] for a in p]
-                if len(p)==4:
-                    if abs(y[0]-y[1])>t or abs(x[1]-x[2])>t or abs(y[2]-y[3])>t:continue
-                    w=x[1]-x[0];h=y[2]-y[1];upper=x[3]-x[2]
-                    if min(w,h,upper)<=t:continue
-                    params=dict(sectionModel='z-cold',width=w,depth=h,wallThickness=wall,model0BendRadius=r,model0UpperWidth=upper)
-                    origin=[x[1],(y[1]+y[2])/2]
-                elif len(p)==6:
-                    if any(abs(x[a]-x[b])>t for a,b in ((0,1),(2,3),(4,5))):continue
-                    if abs(y[1]-y[2])>t or abs(y[3]-y[4])>t:continue
-                    w=x[2]-x[1];h=y[3]-y[2];lip=y[0]-y[1]
-                    if min(w,h,lip)<=t or abs(x[4]-x[3]-w)>t or abs(y[4]-y[5]-lip)>t:continue
-                    params=dict(sectionModel='z-cold-lipped',width=w,depth=h,wallThickness=wall,model1BendRadius=r,model1LipLength=lip)
-                    origin=[x[2],(y[2]+y[3])/2]
-                else:continue
+        for raw,wall,radius in q.strip_axes(loops[0],t):
+            for points in (raw,list(reversed(raw))):
+                if len(points) not in (4,6):continue
+                if len(points)==4:
+                    lower,web_bottom,web_top,upper=points
+                    top_lip=bottom_lip=0.0
+                    top_angle=bottom_angle=90.0
+                else:
+                    bottom_free,lower,web_bottom,web_top,upper,top_free=points
+                    bottom_lip=math.dist(bottom_free,lower)
+                    top_lip=math.dist(upper,top_free)
+                    bottom_angle=_angle([web_bottom[i]-lower[i] for i in (0,1)],
+                                        [bottom_free[i]-lower[i] for i in (0,1)])
+                    top_angle=_angle([web_top[i]-upper[i] for i in (0,1)],
+                                     [top_free[i]-upper[i] for i in (0,1)])
+                    if None in (bottom_angle,top_angle):continue
+                if (abs(lower[1]-web_bottom[1])>t or abs(web_bottom[0]-web_top[0])>t
+                        or abs(web_top[1]-upper[1])>t):continue
+                bottom=web_bottom[0]-lower[0]
+                top=upper[0]-web_top[0]
+                height=web_top[1]-web_bottom[1]+wall
+                if min(top,bottom,height,wall)<=t:continue
+                has_lips=len(points)==6
+                independent=(has_lips and
+                    (abs(top_lip-bottom_lip)>t or abs(top_angle-bottom_angle)>1e-5))
+                params={
+                    "depth":height,
+                    "topFlangeWidth":top,
+                    "bottomFlangeWidth":bottom,
+                    "wallThickness":wall,
+                    "bendRadius":radius,
+                    "useLips":has_lips,
+                    "lipLength":(top_lip+bottom_lip)/2 if has_lips else 14.0,
+                    "lipAngle":(top_angle+bottom_angle)/2 if has_lips else 90.0,
+                    "useIndependentLips":independent,
+                    "topLipLength":top_lip if has_lips else 14.0,
+                    "bottomLipLength":bottom_lip if has_lips else 14.0,
+                    "topLipAngle":top_angle if has_lips else 90.0,
+                    "bottomLipAngle":bottom_angle if has_lips else 90.0,
+                }
+                origin=[web_bottom[0],(web_bottom[1]+web_top[1])/2]
                 return q.result(params,q.shifted_pose(pose,origin))
     return False

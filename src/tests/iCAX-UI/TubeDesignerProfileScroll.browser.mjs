@@ -1,17 +1,22 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { renderProfileLibraryLeftPane, libraryProfiles } from '../../apps/tube-designer/webpage/profileLibrary.mjs';
 import { tubeDesignerCss } from '../../apps/tube-designer/webpage/styles/tubeDesigner.css.mjs';
 
 const { chromium } = await import(process.env.ICAX_PLAYWRIGHT_MODULE || 'playwright');
 const root = new URL('../../apps/tube-designer/templates/profile/', import.meta.url);
-const profiles = readdirSync(root, { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('_')).map(e => {
+const profiles = readdirSync(root, { withFileTypes: true })
+  .filter(e => e.isDirectory() && !e.name.startsWith('_') && existsSync(new URL(`${e.name}/profile.json`, root)))
+  .map(e => {
   const descriptor = JSON.parse(readFileSync(new URL(`${e.name}/profile.json`, root), 'utf8'));
   return { id: descriptor.id, name: descriptor.displayName['zh-CN'], descriptor,
     profileForm: 'parametric', profileType: 'profile-package' };
-});
+  });
 const ordered=libraryProfiles({tubeDesignerSystemProfiles:profiles});
-assert.deepEqual([...new Set(ordered.map(p=>p.descriptor.category))], ['常用管材','常用型材','其他']);
+assert.deepEqual([...new Set(ordered.map(p=>p.descriptor.category))], ['管','型材','多腔体']);
+assert.deepEqual([...new Set(ordered.map(p=>p.descriptor.catalog.categoryPath.join(' / ')))], [
+  '管', '型材', '多腔体',
+]);
 assert.deepEqual(ordered.slice(0,4).map(p=>p.descriptor.displayName), ['方管','圆管','腰型管','椭圆管']);
 const browser = await chromium.launch({ headless: true, channel: process.env.ICAX_BROWSER_CHANNEL || 'msedge' });
 try {
@@ -21,6 +26,8 @@ try {
     await page.setContent(`<style>body{margin:0}#host{width:360px;height:${height}px}${tubeDesignerCss}</style><div id="host">${renderProfileLibraryLeftPane({}, {tubeDesignerSystemProfiles:profiles})}</div>`);
     const result = await page.evaluate(() => {
       const list = document.querySelector('.tube-profile-library-list');
+      const groups = [...list.querySelectorAll('.tube-profile-library-group-heading span')]
+        .map((heading) => heading.textContent.replace(/^[▾▸]\s*/, '').trim());
       const cards = [...list.querySelectorAll('.tube-profile-library-card')];
       const clipped = cards.filter(card => {
         const group = card.closest('.tube-profile-library-group').getBoundingClientRect();
@@ -30,10 +37,11 @@ try {
       list.scrollTop = list.scrollHeight;
       const last = cards.at(-1).getBoundingClientRect();
       const bounds = list.getBoundingClientRect();
-      return { clipped, count:cards.length, scrollable:list.scrollHeight > list.clientHeight,
+      return { groups, clipped, count:cards.length, scrollable:list.scrollHeight > list.clientHeight,
         reachable:last.bottom <= bounds.bottom + 1 && last.top >= bounds.top - 1,
         bounded:bounds.bottom <= window.innerHeight + 1 };
     });
+    assert.deepEqual(result.groups, ['管', '型材', '多腔体']);
     assert.equal(result.count, profiles.length);
     assert.equal(result.clipped, 0, `clipped groups at ${height}px`);
     assert.ok(result.scrollable && result.reachable && result.bounded, JSON.stringify(result));

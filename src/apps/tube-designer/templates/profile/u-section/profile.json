@@ -2,14 +2,17 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "u-section",
-  "version": "2026.9.13.6",
+  "version": "2026.9.19.1",
   "displayName": "U肋",
-  "description": "开口梯形等厚U肋：独立设置开口外宽、底部理论外宽、高度、板厚和内弯半径。底宽指底面与侧壁外侧直线延长交点间距，不是圆角间平直段长度。默认尺寸仅为可编辑示例。",
-  "category": "其他",
+  "description": "参数化开口梯形U肋：上口宽 B、总高 H、底部理论宽 B1、板厚 t 和底部内圆角 R。侧壁由三项尺寸自动确定，顶部端部保持平直。",
+  "category": "型材",
   "provenance": {
-    "document": "doc/Apps/管材型材市场管型调研_2026-09-12.md",
+    "document": "doc/Apps/U肋参数化几何定义与CAM建模建议.md",
     "surveyIds": [
       60
     ],
@@ -17,14 +20,14 @@
     "standardConformance": "not-certified"
   },
   "manufacturing": {
-    "formingProcess": "板带冷弯 / 辊弯",
+    "formingProcess": "冷弯 / 辊弯",
     "topology": "open-profile",
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
     {
       "key": "width",
-      "displayName": "开口外宽 / mm",
+      "displayName": "上口宽 B / mm",
       "valueType": "number",
       "defaultValue": 300,
       "min": 1,
@@ -32,7 +35,7 @@
     },
     {
       "key": "bottomWidth",
-      "displayName": "底部理论外宽 / mm",
+      "displayName": "底部理论宽 B1 / mm",
       "valueType": "number",
       "defaultValue": 170,
       "min": 1,
@@ -40,7 +43,7 @@
     },
     {
       "key": "depth",
-      "displayName": "截面外高 / mm",
+      "displayName": "总高 H / mm",
       "valueType": "number",
       "defaultValue": 280,
       "min": 1,
@@ -48,7 +51,7 @@
     },
     {
       "key": "wallThickness",
-      "displayName": "板厚 / mm",
+      "displayName": "板厚 t / mm",
       "valueType": "number",
       "defaultValue": 8,
       "min": 0.1,
@@ -56,7 +59,7 @@
     },
     {
       "key": "bendRadius",
-      "displayName": "内弯半径 / mm",
+      "displayName": "底部内圆角 R / mm",
       "valueType": "number",
       "defaultValue": 24,
       "min": 0,
@@ -64,82 +67,8 @@
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 5
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "depth"
-        ],
-        "to": [
-          "width/2",
-          "depth"
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "开口自由端外宽"
-      },
-      {
-        "parameter": "bottomWidth",
-        "kind": "linear",
-        "from": [
-          "-bottomWidth/2",
-          0
-        ],
-        "to": [
-          "bottomWidth/2",
-          0
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "外侧直线延长交点间距，不是底部直段长度"
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          0
-        ],
-        "to": [
-          "-width/2",
-          "depth"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "底面至开口平面的外高"
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          0,
-          0
-        ],
-        "to": [
-          0,
-          "wallThickness"
-        ],
-        "axis": "y",
-        "side": "right",
-        "description": "底板法向厚度，侧壁同厚"
-      },
-      {
-        "parameter": "bendRadius",
-        "kind": "leader",
-        "point": [
-          "bottomWidth/2-(wallThickness+bendRadius)*(sqrt(4*depth*depth+(width-bottomWidth)*(width-bottomWidth))-(width-bottomWidth))/(2*depth)",
-          "wallThickness"
-        ],
-        "side": "right",
-        "description": "底部内弯半径 R；外半径为 R+板厚"
-      }
-    ]
+    "categoryPath": ["型材"],
+    "groupOrder": 2,
+    "order": 105
   }
 }

@@ -37,10 +37,10 @@ def parameters(**overrides):
                   horizontalWidth=22.0, horizontalDepth=22.0, horizontalWallThickness=1.0,
                   verticalWidth=19.0, verticalDepth=19.0, verticalWallThickness=1.0,
                   horizontalBranchReserve=10.0, verticalBranchReserve=10.0,
-                  mainHorizontalConnection="insert", frameProfileType="rect",
+                  frameProfileType="rect",
                   horizontalProfileType="rect", verticalProfileType="round",
                   frameCornerRadius=2.0, horizontalCornerRadius=2.0,
-                  verticalCornerRadius=0.0, vGrooveKFactor=0.62,
+                  verticalCornerRadius=0.0,
                   assemblyClearance=0.1, accessDoorEnabled=False,
                   doorWidth=300.0, doorHeight=360.0, doorLeft=450.0, doorBottom=700.0,
                   doorGap=6.0, doorFrameWidth=25.0, doorFrameDepth=25.0,
@@ -55,8 +55,13 @@ def parameters(**overrides):
                   doorHorizontalWidth=20.0, doorHorizontalDepth=20.0,
                   doorHorizontalWallThickness=0.8, doorVerticalWidth=16.0,
                   doorVerticalWallThickness=0.8,
-                  frameJoinType="v_groove_90:sharp_v", doorFrameJoinType="v_groove_90:sharp_v",
-                  doorLeafFrameJoinType="v_groove_90:sharp_v")
+                  frameJoinType="v_groove_90:tool_library", doorFrameJoinType="v_groove_90:tool_library",
+                  doorLeafFrameJoinType="v_groove_90:tool_library")
+    # Manufacturing mode now owns the outer frame; these legacy geometry
+    # cases explicitly select the same process they were originally testing.
+    result['frameManufacturingMode'] = 'plane_v_notch'
+    if 'frameJoinType' in overrides and not overrides['frameJoinType'].startswith('v_groove_90:'):
+        result['frameManufacturingMode'] = 'segment_weld'
     result.update(overrides)
     return result
 
@@ -128,7 +133,7 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
         self.assertEqual(origins(narrow), origins(wide))
 
     def test_leaf_horizontal_is_butt_joint_and_vertical_is_inserted(self):
-        for process in ("v_groove_90:sharp_v", "miter_45", "butt_90"):
+        for process in ("v_groove_90:tool_library", "miter_45", "butt_90"):
             with self.subTest(process=process):
                 document = generate(accessDoorEnabled=True, doorLeafFrameJoinType=process)
                 items = {item["key"]: item for item in document["items"]}
@@ -171,7 +176,7 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
         nodes = graph(generate(frameLayout="four_sides"))
         width, height, wall = 1200.0, 1800.0, 1.2
         h, v = width - 2 * wall, height - 2 * wall
-        bend = math.pi / 2 * 0.62 * wall
+        bend = 0.0
         length = 2 * h + 2 * v + 4 * bend
         prefix = "outer_frame.continuous.0001.export.through."
         for node in nodes.values():
@@ -248,118 +253,41 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
         for case in cases:
             with self.subTest(case=case), self.assertRaisesRegex(ValueError, "内腔|入榫"):
                 generate(**case)
-        # Weld mode is explicit and does not require an insertion cavity.
-        generate(frameWallThickness=2.0, frameCornerRadius=1.0,
-                 mainHorizontalConnection="weld")
 
-    def test_main_weld_trims_only_outer_ends_and_keeps_vertical_through_holes(self):
-        captured = {}
-        original = SUBJECT._emit_tube_geometry
-
-        def observe(model, part, shared):
-            captured[part.key] = part
-            return original(model, part, shared)
-
-        with patch.object(SUBJECT, "_emit_tube_geometry", observe):
-            inserted = generate(frameDepth=28.0)
-        inserted_parts = dict(captured)
-        captured.clear()
-        with patch.object(SUBJECT, "_emit_tube_geometry", observe):
-            welded = generate(frameDepth=28.0, mainHorizontalConnection="weld")
-        for key, part in captured.items():
-            if key.startswith("main_grid.horizontal."):
-                self.assertEqual((38.0, 1162.0), (part.start[0], part.end[0]))
-                self.assertAlmostEqual(20.0, inserted_parts[key].length - part.length)
-                self.assertEqual(("square", "square"), (part.start_cut, part.end_cut))
-            else:
-                self.assertEqual(inserted_parts[key], part)
-        for document, expected in ((inserted, 8), (welded, 0)):
-            outer_holes = [node for node in document["geometry"] if node["key"].startswith("outer_frame.")
-                           and ".through." in node["key"] and node["operator"] == "profile2d"]
-            self.assertEqual(expected, len(outer_holes))
-        def grid_holes(document):
-            return [node for node in document["geometry"] if node["key"].startswith("main_grid.horizontal.")
-                    and ".through." in node["key"]]
-        self.assertEqual(72, len(grid_holes(welded)))  # 36 actual piercings, profile + extrusion.
-        self.assertEqual(grid_holes(inserted), grid_holes(welded))
-
-    def test_weld_does_not_read_hidden_insertion_depth(self):
-        for value in (None, float("nan"), -1.0, -100.0, "hidden"):
-            with self.subTest(value=value):
-                generate(frameDepth=28.0, mainHorizontalConnection="weld", horizontalBranchReserve=value)
-        params = parameters(frameDepth=28.0, mainHorizontalConnection="weld")
-        del params["horizontalBranchReserve"]
-        SUBJECT._generate_geometry(params, {"template": {}, "geometryPurpose": "manufacturing"})
-
-    def test_insert_has_no_implicit_negative_depth_or_zero_depth_weld(self):
+    def test_insert_requires_positive_depth(self):
         for key in ("horizontalBranchReserve", "verticalBranchReserve"):
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, "0到20"):
                 generate(**{key: -1.0})
-        with self.assertRaisesRegex(ValueError, "请选择焊接"):
+        with self.assertRaisesRegex(ValueError, "必须大于0"):
             generate(horizontalBranchReserve=0.0)
-        with self.assertRaisesRegex(ValueError, "mainHorizontalConnection"):
-            generate(mainHorizontalConnection="automatic")
-
-    def test_weld_rejects_curved_receiver_or_end_across_rounded_face(self):
-        with self.assertRaisesRegex(ValueError, "圆角处留缝"):
-            generate(mainHorizontalConnection="weld")  # 22 mm end on a 21 mm straight face.
-        with self.assertRaisesRegex(ValueError, "标准矩形外框"):
-            generate(mainHorizontalConnection="weld", frameProfileType="round")
-        # Exact tangency to the outer-face straight segment is supported.
-        generate(mainHorizontalConnection="weld", frameCornerRadius=1.5)
-        # A round branch has a planar cut end too; the receiver must remain flat.
-        generate(mainHorizontalConnection="weld", frameDepth=28.0, horizontalProfileType="round")
 
     def test_opening_ends_remain_butt_joints_and_metadata_matches_relationships_and_table(self):
-        for connection in ("insert", "weld"):
-            with self.subTest(connection=connection):
-                document = generate(frameDepth=28.0, accessDoorEnabled=True, doorBottom=600.0,
-                                    mainHorizontalConnection=connection)
-                items = {item["key"]: item for item in document["items"]}
-                joints = [relation for relation in document["relationships"]
-                          if relation["key"].startswith("main_grid.horizontal.")]
-                main = [item for item in items.values() if item["key"].startswith("main_grid.horizontal.")]
-                self.assertEqual(2 * len(main), len(joints))
-                fixed_connections = [relation for relation in joints
-                                     if any(key.startswith("access_door.fixed_frame.")
-                                            for key in relation["items"])]
-                self.assertEqual(2, len(fixed_connections))
-                for relation in fixed_connections:
-                    self.assertEqual("weld", relation["kind"])
-                    self.assertEqual(0.0, relation["properties"]["insertionDepth"])
-                rows = {row["itemKey"]: row["values"] for row in document["tables"][0]["rows"]}
-                for item in main:
-                    process = item["properties"]["tubeDesigner.jointProcess"]
-                    self.assertEqual(connection, process["mainHorizontalConnection"])
-                    self.assertEqual(item["properties"]["length"], rows[item["key"]]["length"])
-                    self.assertIn("贴合焊接" if connection == "weld" else "插接", rows[item["key"]]["connection"])
-                    for end in ("start", "end"):
-                        receiver = process[f"{end}Receiver"]
-                        self.assertIn(receiver, items)
-                        is_insert = connection == "insert" and receiver.startswith("outer_frame.")
-                        self.assertEqual("insert" if is_insert else "butt_weld", process[end])
-                        self.assertEqual(10.0 if is_insert else 0.0, process[f"{end}InsertionDepth"])
-
-    def test_connection_modes_cover_all_outer_corner_processes(self):
-        processes = ("miter_45", "butt_90", "v_groove_90:sharp_v", "v_groove_90:rounded_v",
-                     "v_groove_90:left_arc", "v_groove_90:right_arc")
-        for process in processes:
-            for wrap in ("side_wraps_horizontal", "horizontal_wraps_side"):
-                with self.subTest(process=process, wrap=wrap):
-                    options = dict(frameLayout="four_sides", frameDepth=28.0,
-                                   frameJoinType=process, frameButtWrapMode=wrap)
-                    inserted = generate(**options)
-                    welded = generate(**options, mainHorizontalConnection="weld")
-                    def count_holes(document):
-                        return sum(node["key"].startswith("outer_frame.") and ".through." in node["key"]
-                                   and node["operator"] == "profile2d" for node in document["geometry"])
-                    self.assertEqual(8, count_holes(inserted) - count_holes(welded))
-                    self.assertEqual(19 if process.startswith("v_groove") else 18, count_holes(welded))
-                    display = generate("display", **options, mainHorizontalConnection="weld")
-                    self.assertEqual([item["properties"] for item in display["items"]],
-                                     [item["properties"] for item in welded["items"]])
-                    self.assertEqual(display["relationships"], welded["relationships"])
-                    self.assertFalse(any(".through." in node["key"] for node in display["geometry"]))
+        document = generate(frameDepth=28.0, accessDoorEnabled=True, doorBottom=600.0)
+        items = {item["key"]: item for item in document["items"]}
+        joints = [relation for relation in document["relationships"]
+                  if relation["key"].startswith("main_grid.horizontal.")]
+        main = [item for item in items.values() if item["key"].startswith("main_grid.horizontal.")]
+        self.assertEqual(2 * len(main), len(joints))
+        fixed_connections = [relation for relation in joints
+                             if any(key.startswith("access_door.fixed_frame.")
+                                    for key in relation["items"])]
+        self.assertEqual(2, len(fixed_connections))
+        for relation in fixed_connections:
+            self.assertEqual("weld", relation["kind"])
+            self.assertEqual(0.0, relation["properties"]["insertionDepth"])
+        rows = {row["itemKey"]: row["values"] for row in document["tables"][0]["rows"]}
+        for item in main:
+            process = item["properties"]["tubeDesigner.jointProcess"]
+            self.assertNotIn("mainHorizontalConnection", process)
+            self.assertEqual(item["properties"]["length"], rows[item["key"]]["length"])
+            for end in ("start", "end"):
+                receiver = process[f"{end}Receiver"]
+                self.assertIn(receiver, items)
+                is_insert = receiver.startswith("outer_frame.")
+                self.assertEqual("insert" if is_insert else "butt_weld", process[end])
+                self.assertEqual(10.0 if is_insert else 0.0, process[f"{end}InsertionDepth"])
+            self.assertIn("插接" if "insert" in (process["start"], process["end"])
+                          else "贴合焊接", rows[item["key"]]["connection"])
 
     def test_too_small_leaf_fails_before_geometry_construction(self):
         with patch.object(NeutralModel, "geometry", side_effect=AssertionError("geometry emitted")):
@@ -379,23 +307,15 @@ class SingleSecurityWindowGeometryTests(unittest.TestCase):
         self.assertEqual(15, len(document["items"]))
 
     def test_unused_corner_process_does_not_block_two_side_frame(self):
-        document = generate(frameJoinType="unused", vGrooveKFactor=float("nan"),
-                            vGrooveBottomDistance=-1.0)
+        document = generate(frameJoinType="unused")
         self.assertEqual(15, len(document["items"]))
 
-    def test_active_groove_dimensions_reject_negative_and_nonfinite_values(self):
-        cases = (
-            {"vGrooveBottomDistance": -1.0},
-            {"vGrooveBottomDistance": float("nan")},
-            {"vGrooveKFactor": float("inf")},
-            {"frameJoinType": "v_groove_90:rounded_v", "vGrooveRadius": -1.0},
-            {"frameJoinType": "v_groove_90:rounded_v", "vGrooveRadius": float("nan")},
-            {"vGrooveReliefHole": True, "vGrooveReliefDiameter": -1.0},
-            {"vGrooveReliefHole": True, "vGrooveReliefDiameter": float("inf")},
-        )
-        for case in cases:
-            with self.subTest(case=case), self.assertRaises(ValueError):
-                generate(frameLayout="four_sides", **case)
+    def test_removed_product_local_groove_drafts_cannot_override_the_library_process(self):
+        expected=generate(frameLayout="four_sides")
+        for style in ("sharp_v", "rounded_v", "left_arc", "right_arc"):
+            with self.subTest(style=style):
+                actual=generate(frameLayout="four_sides", frameJoinType=f"v_groove_90:{style}")
+                self.assertEqual(expected['geometry'],actual['geometry'])
 
     def test_single_horizontal_bar_does_not_mask_negative_offsets_by_averaging(self):
         for key in ("firstHorizontalTopOffset", "lastHorizontalBottomOffset"):

@@ -70,9 +70,11 @@
       "surveyId": 7,
       "name": "平椭圆管",
       "priority": "P0",
-      "status": "awaiting-section-definition",
-      "templateIds": [],
-      "note": "需补充具体截面图、标准尺寸表或明确变体；未放置虚构的占位模板。"
+      "status": "parametric-variant",
+      "templateIds": [
+        "sigma"
+      ],
+      "note": "已按 Sigma 参数化几何定义落地对称快捷参数，并支持不对称上下参数、八处局部内圆角和双向镜像。"
     },
     {
       "surveyId": 8,

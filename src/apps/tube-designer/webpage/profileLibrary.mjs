@@ -1,15 +1,20 @@
+import { renderParameterLevels } from './parameterPresentation.mjs';
+import { parameterVisible } from './parameterConditions.mjs';
 import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
 import { confirmWithoutTitle } from "./confirmDialog.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
-import { renderProfileParameterDiagram, bindProfileParameterDiagrams } from "./profileParameterDiagram.mjs";
+import { bindProfileParameterDiagrams, renderProfileParameterDiagram } from "./profileParameterDiagram.mjs";
+import { applyTemplateFieldDisplay, templateDisplayView, fieldDisplayClass, fieldDisplayStyle,
+  } from "./designerViews.mjs";
+import { floatingParameterDiagramHost, libraryDiagramPositionStyle, renderDiagramResizeHandles } from './floatingParameterDiagram.mjs';
+import { patchDomNode } from "./punchDomPatch.mjs";
 export { renderProfileSvg } from "./profileSvg.mjs";
 
 
 export const PROFILE_PREVIEW_PROGRESS_MINIMUM_VISIBLE_MS = 500;
 export const PROFILE_PREVIEW_PROGRESS_DELAY_MS = 200;
 const MINIMUM_PROGRESS_MS = 500;
-const DEFAULT_PROFILE_PREVIEW_LENGTH = 500;
 
 
 export function renderProfileLibraryLeftPane(_context, view) {
@@ -27,7 +32,7 @@ export function renderProfileLibraryLeftPane(_context, view) {
     const typeLabel = editable ? "程式" : "定式";
     const sourceLabel = scope === "template" ? `模板自带 · ${profile.templateName || profile.templateId}` : scope === "system" ? "系统内置" : "我的管型";
     return `<button type="button" class="tube-profile-library-card ${selectionKey === selectedId ? "selected" : ""}" title="${escapeAttr(`${profileName(profile)}${specification ? ` · ${specification}` : ""}`)}" aria-label="${escapeAttr(`${profileName(profile)}，${typeLabel}，${sourceLabel}${specification ? `，${specification}` : ""}`)}" data-cam-action="tube-designer-profile-library-select" data-tube-designer-profile-key="${escapeAttr(selectionKey)}" data-tube-designer-profile-scope="${escapeAttr(scope)}" data-tube-designer-profile-id="${escapeAttr(profile.id)}" ${view?.pending ? "disabled" : ""}>
-      <span class="tube-profile-library-card-preview" aria-hidden="true">${renderProfileCardPreview(profile)}</span>
+      <span class="tube-profile-library-card-preview${profile?.descriptor?.manufacturing?.topology === "solid" ? " is-solid" : ""}" aria-hidden="true">${renderProfileCardPreview(profile)}</span>
       <span class="tube-profile-library-card-copy">
         <strong>${escapeText(profileName(profile))}</strong>
         <small>${escapeText(typeLabel)}</small>
@@ -58,6 +63,11 @@ export function renderProfileLibraryLeftPane(_context, view) {
     : state.scope === "template" ? "模板自带管型按所属模板管理，仅供该模板使用。"
       : state.scope === "user" ? "可导入程式管型包，或导入定式管型。"
         : "请检查内置管型资源是否完整。";
+  const orderedGroups = [...groupedProfiles.entries()].sort(([left], [right]) => {
+    const leftKey = profileGroupSortKey(left);
+    const rightKey = profileGroupSortKey(right);
+    return leftKey.localeCompare(rightKey, "zh-CN");
+  });
   return `<div class="tube-designer-panel tube-profile-library-panel">
     <div class="tube-designer-heading tube-profile-library-heading">
       <div><strong>管型库</strong><span>${all.length} 个管型 · 当前显示 ${profiles.length} 个</span></div>
@@ -67,7 +77,7 @@ export function renderProfileLibraryLeftPane(_context, view) {
       <div class="tube-profile-library-tab-row" role="tablist" aria-label="管型来源">${[["system", "系统内置"], ["user", "我的"]].map(([scope, title]) => `<button type="button" role="tab" aria-selected="${scope === state.scope}" class="${scope === state.scope ? "selected" : ""}" data-cam-action="tube-designer-profile-library-scope" data-tube-profile-library-scope="${scope}" ${view?.pending ? "disabled" : ""}>${title}<small>${all.filter((profile) => profileScope(profile) === scope).length}</small></button>`).join("")}</div>
     </div>
     <div class="tube-profile-library-list" role="tabpanel">
-      ${profiles.length ? [...groupedProfiles.entries()].map(renderGroup).join("") : `<div class="tube-profile-library-empty compact"><strong>${escapeText(emptyTitle)}</strong><span>${escapeText(emptyNote)}</span></div>`}
+      ${profiles.length ? orderedGroups.map(renderGroup).join("") : `<div class="tube-profile-library-empty compact"><strong>${escapeText(emptyTitle)}</strong><span>${escapeText(emptyNote)}</span></div>`}
     </div>
   </div>`;
 }
@@ -93,40 +103,17 @@ export function renderProfileLibraryRightPane(_context, view) {
   const profileKey = profileSelectionKey(profile);
   const draft = view?.tubeDesignerProfileDrafts?.[profileKey] ?? null;
   const values = draft?.parameters ?? profile.defaultParameters ?? {};
-  const definitions = allDefinitions.filter((definition) => matchesParameterVisibility(
-    definition?.visibleWhen, values,
-  ));
-  const snapshot = view?.tubeDesignerProfilePreview?.key === profilePreviewKey(view, profile)
-    ? view.tubeDesignerProfilePreview.response?.profile
-    : profileSnapshot(profile);
-  const previewLength = normalizedPreviewLength(view);
-  return `<div class="tube-designer-panel tube-profile-library-editor" data-profile-parameter-scope data-tube-profile-library-editor data-tube-designer-profile-key="${escapeAttr(profileKey)}" data-tube-designer-profile-scope="${escapeAttr(profileScope(profile))}" data-tube-designer-profile-id="${escapeAttr(profile.id)}">
-    <div class="tube-designer-heading">
-      <strong>${template ? "模板自带管型" : system ? "系统内置管型" : (editable ? "程式管型" : "定式管型")}</strong>
-      <span>${template ? `仅供 ${escapeText(profile.templateName || profile.templateId)} 使用` : system ? (editable ? "参数可编辑；系统原定义保持不变" : "固定截面；系统原定义保持不变") : (editable ? "参数变化会生成新的默认截面" : "截面几何已冻结")}</span>
-    </div>
+  const definitions = allDefinitions.filter((definition) => parameterVisible(definition, values));
+  return `<div class="tube-designer-panel tube-profile-library-editor" data-profile-parameter-scope data-parameter-diagram-owner="profile-library:${escapeAttr(profileKey)}" data-tube-profile-library-editor data-tube-designer-profile-key="${escapeAttr(profileKey)}" data-tube-designer-profile-scope="${escapeAttr(profileScope(profile))}" data-tube-designer-profile-id="${escapeAttr(profile.id)}">
     <div class="tube-profile-library-editor-body">
       ${readOnly
-        ? `<div class="tube-profile-library-system-name"><span>管型名称</span><strong>${escapeText(profileName(profile))}</strong><small>${template ? "模板自带" : "系统内置"}名称不可修改</small></div>`
+        ? ""
         : `<label class="tube-designer-field wide"><span>管型名称</span><input type="text" data-tube-profile-editor-name value="${escapeAttr(profileName(profile))}" maxlength="120" ${view?.pending ? "disabled" : ""} /></label>`}
-      <div class="tube-designer-imported-profile-summary">
-        <strong>${escapeText(template ? `所属模板：${profile.templateName || profile.templateId}` : system ? "系统内置资源" : (profile.sourceFileName ?? "管型资源"))}</strong>
-        <span>${escapeText(profileSpecification(profile))}</span>
-        <small>${editable ? `${escapeText(profile?.descriptor?.id ?? "")} · 版本 ${escapeText(profile?.descriptor?.version ?? "")}` : `${escapeText(profile.sourceUnit ?? "毫米")} · ${Number(profile.contourCount ?? profile.contours?.length ?? 0)} 条轮廓`}</small>
-      </div>
       ${editable ? `<section class="tube-profile-library-parameter-section">
-        <header><strong>${readOnly ? "预览参数" : "默认参数"}</strong><span>${readOnly ? "仅影响当前预览与本次导出" : "产品选择此管型时仍可单独修改"}</span></header>
-        <div class="tube-profile-library-parameter-list">${definitions.map((definition) => renderPackageParameter(definition, values, view?.pending)).join("")}</div>
-        <button class="tube-profile-library-diagram-toggle" type="button" data-cam-action="tube-designer-profile-diagram-toggle" data-profile-diagram-toggle aria-expanded="${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true}">${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true ? "收起参数示意图" : "展开参数示意图"}</button>
-        <div class="tube-profile-library-parameter-diagram" data-profile-library-diagram ${view.tubeDesignerProfileDiagramExpanded?.[profileKey] === true ? "" : "hidden"}>${renderProfileParameterDiagram(snapshot, { definitions: allDefinitions, parameters: values, compact: true })}</div>
+        <header><div><strong>${readOnly ? "预览参数" : "默认参数"}</strong>${readOnly ? "" : "<span>产品选择此管型时仍可单独修改</span>"}</div><button type="button" class="tube-profile-library-diagram-toggle" data-profile-diagram-toggle data-cam-action="tube-designer-profile-library-toggle-diagram" aria-expanded="${!!profileLibraryState(view).showDiagram}">显示管型示意图</button></header>
+        <div class="tube-profile-library-parameter-list">${renderProfileParameterGroups(profile, definitions, values, view?.pending)}</div>
       </section>` : `<p class="tube-profile-library-frozen-note">使用已保存的固定截面；不提供形状参数修改。</p>`}
-      ${system ? `<p class="tube-profile-library-system-note">系统内置管型不可重命名或删除。修改参数只会生成当前预览和导出结果，不会覆盖系统定义。</p>` : ""}
       ${template ? `<p class="tube-profile-library-system-note">此管型随所属模板提供，不可重命名或删除。进入草图编辑时会创建独立副本，不会覆盖模板资源。</p>` : ""}
-      <section class="tube-profile-library-preview-section">
-        <header><strong>截面与标准管预览</strong><span>中央显示可旋转、缩放的三维拉伸体</span></header>
-        ${!editable ? `<div class="tube-profile-library-miniature">${snapshot ? renderProfileSvg(snapshot) : ""}</div>` : ""}
-        <label class="tube-designer-field wide"><span>预览与 STEP 长度（mm）</span><input type="number" min="1" max="100000" step="1" value="${escapeAttr(previewLength)}" data-tube-profile-preview-length data-cam-change-action="tube-designer-profile-preview-change" ${view?.pending ? "disabled" : ""} /></label>
-      </section>
     </div>
     <footer class="tube-profile-library-editor-footer">
       <div>
@@ -144,10 +131,12 @@ export function renderProfileLibraryViewportOverlay(context, view) {
   const selectedId = ensureSelectedProfile(view, profiles);
   const profile = profiles.find((item) => profileSelectionKey(item) === selectedId);
   scheduleProfileLibraryPreview(context, view, profile);
-  return `<div class="tube-profile-library-preview-hud" data-tube-profile-preview-status>
-    <strong>${escapeText(profile ? profileName(profile) : "三维管型预览")}</strong>
-    <span>${profile ? `${escapeText(profileSpecification(profile))} · 长度 ${escapeText(normalizedPreviewLength(view))} mm` : "请从左侧选择或新增管型"}</span>
-    ${profile ? "<small>拖动旋转 · 滚轮缩放</small>" : ""}
+  const version = String(profile?.descriptor?.version ?? profile?.version ?? "").trim() || "—";
+  return `${renderProfileLibraryDiagramDock(view,profile)}
+  <div class="tube-profile-library-preview-hud" data-tube-profile-preview-status>
+    <strong>${profile ? escapeText(profileName(profile)) : "管型预览"}</strong>
+    <span data-tube-profile-preview-version>${profile ? `版本 ${escapeText(version)}` : ""}</span>
+    <small></small>
     <div class="tube-profile-library-preview-progress" data-tube-profile-preview-progress role="progressbar" aria-label="正在生成三维管型" aria-valuetext="处理中" aria-hidden="true" hidden><i></i></div>
   </div>
   <div class="tube-profile-library-preview-wait" data-tube-profile-preview-wait role="dialog" aria-modal="true" aria-live="polite" aria-labelledby="tube-profile-preview-wait-title" aria-hidden="true" hidden>
@@ -162,24 +151,33 @@ export function renderProfileLibraryViewportOverlay(context, view) {
   </div>`;
 }
 
+export function renderProfileLibraryDiagramDock(view,profile=findLibraryProfile(view,view.tubeDesignerSelectedProfileId)) {
+  if(!profile)return '';
+  const state=profileLibraryState(view), values=profilePreviewParameters(view,profile);
+  const definitions=(profile.descriptor?.parameters ?? []).filter(d=>parameterVisible(d,values));
+  const snapshot=generatedProfileSnapshot(view,profile) ?? profileSnapshot(profile);
+  const owner=`profile-library:${profileSelectionKey(profile)}`;
+  return `<aside class="tube-library-diagram-dock" data-tube-profile-diagram-dock data-library-floating-diagram="profiles" ${state.showDiagram?'':'hidden'} style="${libraryDiagramPositionStyle(view,'profiles')}">
+    ${renderDiagramResizeHandles()}
+    <header class="tube-library-diagram-drag" data-floating-diagram-drag><strong>管型参数示意图</strong><button type="button" data-library-diagram-close data-cam-action="tube-designer-profile-library-close-diagram" aria-label="关闭示意图">×</button></header>
+    <div class="tube-library-diagram-content" data-parameter-diagram-for="${escapeAttr(owner)}" ${state.showDiagram?'':'hidden'}>${definitions.length?renderProfileParameterDiagram(snapshot,{definitions,parameters:values,compact:true,title:'参数示意图'}):renderProfileSvg(snapshot)}</div>
+  </aside>`;
+}
+
 
 export async function handleProfileLibraryAction(context, view, action, target, ops) {
-  if (action === "tube-designer-profile-diagram-toggle") {
-    const editor = target?.closest?.("[data-tube-profile-library-editor]");
-    const key = editor?.dataset?.tubeDesignerProfileKey;
-    const diagram = editor?.querySelector?.("[data-profile-library-diagram]");
-    const button = editor?.querySelector?.("[data-profile-diagram-toggle]");
-    if (key && diagram && button) {
-      const restoreScroll = preserveProfileScroll(editor);
-      view.tubeDesignerProfileDiagramExpanded ??= {};
-      const expanded = view.tubeDesignerProfileDiagramExpanded[key] !== true;
-      view.tubeDesignerProfileDiagramExpanded[key] = expanded;
-      diagram.hidden = !expanded;
-      button.setAttribute("aria-expanded", String(expanded));
-      button.textContent = expanded ? "收起参数示意图" : "展开参数示意图";
-      restoreScroll();
+  if(action==='tube-designer-profile-library-toggle-diagram'||action==='tube-designer-profile-library-close-diagram'){
+    const state=profileLibraryState(view);state.showDiagram=action!=='tube-designer-profile-library-close-diagram';
+    const dock=context.mount?.querySelector('[data-tube-profile-diagram-dock]');
+    if(dock){dock.hidden=!state.showDiagram;dock.querySelector('.tube-library-diagram-content').hidden=!state.showDiagram;}
+    for(const button of context.mount?.querySelectorAll('[data-profile-diagram-toggle]') ?? []){
+      button.setAttribute('aria-expanded',String(state.showDiagram));
     }
-    return { handled: true };
+    return {handled:true};
+  }
+  if (view.activeAreaId === "profiles") {
+    const sceneResult = handleProfileSceneAction(context, view, action, target, ops);
+    if (sceneResult) return sceneResult;
   }
   if (action === "tube-designer-profile-library-toggle-category") {
     if (!view.pending) {
@@ -292,6 +290,7 @@ export function profileLibraryState(view) {
   if (!["all", "parametric", "fixed"].includes(state.type)) state.type = "all";
   state.selectedByScope ??= {};
   state.collapsed ??= [];
+  state.showDiagram ??= true;
   return state;
 }
 
@@ -411,18 +410,55 @@ function profileType(profile) {
   return String(profile?.profileType ?? profile?.kind ?? "fixed-section");
 }
 
+const PROFILE_GROUP_ALIASES = new Map([
+  ["管", "管"],
+  ["单腔体", "管"],
+  ["矩形 / 多边形管", "管"],
+  ["圆管 / 椭圆管", "管"],
+  ["型材", "型材"],
+  ["型材（0腔体）", "型材"],
+  ["型钢", "型材"],
+  ["多腔体", "多腔体"],
+]);
+
+function normalizedProfileGroup(value) {
+  const text = String(value ?? "").trim();
+  return PROFILE_GROUP_ALIASES.get(text) ?? "";
+}
+
 function profileGroupLabel(profile) {
+  const categoryPath = profile?.descriptor?.catalog?.categoryPath;
+  if (Array.isArray(categoryPath)) {
+    const path = categoryPath
+      .filter((part) => typeof part === "string" && part.trim())
+      .map((part) => part.trim());
+    const group = path.map(normalizedProfileGroup).find(Boolean);
+    if (group) return group;
+  }
   const declared=localizedText(profile?.category ?? profile?.descriptor?.category, "");
-  if(declared)return declared;
+  const declaredGroup = normalizedProfileGroup(declared);
+  if (declaredGroup) return declaredGroup;
   const id = String(profile?.id ?? "").toLocaleLowerCase();
   const name = profileName(profile).toLocaleLowerCase();
-  if (["angle", "channel", "i-section", "t-section", "z-section"].some((part) => id.includes(part))
-      || /角钢|槽钢|工字钢|h型钢|t型钢|z型钢/.test(name)) return "型钢";
-  if (["round", "ellipse", "flat-oval", "oval"].some((part) => id.includes(part))
-      || /圆管|椭圆管|腰圆管/.test(name)) return "圆管 / 椭圆管";
-  if (["rect", "polygon", "square"].some((part) => id.includes(part))
-      || /矩形管|方管|多边形管/.test(name)) return "矩形 / 多边形管";
-  return isParametricProfile(profile) ? "程式" : "定式";
+  if (id.includes("multi-cell") || /多腔|二腔|双腔/.test(name)) return "多腔体";
+  if (["angle", "channel", "i-section", "t-section", "z-section", "bulb-flat", "omega",
+       "open-tube", "polygon-bar", "rect-bar", "round-bar", "sigma", "u-section"]
+      .some((part) => id.includes(part))
+      || /角钢|槽钢|工字钢|h型钢|t型钢|z型钢|球扁钢|帽钢|开缝|开槽|棒|扁钢|sigma|u肋/.test(name)) {
+    return "型材";
+  }
+  const contourCount = profileSnapshot(profile)?.contours?.length;
+  if (Number.isInteger(contourCount)) {
+    if (contourCount > 2) return "多腔体";
+    if (contourCount < 2) return "型材";
+  }
+  return "管";
+}
+
+
+function profileGroupSortKey(label) {
+  const groupOrder = { "管": 1, "型材": 2, "多腔体": 3 }[String(label)] ?? 9;
+  return `${String(groupOrder).padStart(2, "0")}.${label}`;
 }
 
 function scopeLabel(scope) {
@@ -463,7 +499,6 @@ export async function resolveSelectedProfileSketchSource(context, view) {
       {
         profileRef: profileRef(profile),
         parameters: profilePreviewParameters(view, profile),
-        length: normalizedPreviewLength(view),
       },
       { timeoutMs: 30000 },
     );
@@ -487,20 +522,43 @@ export function profileSpecification(profile) {
 }
 
 
-function normalizedPreviewLength(view) {
-  const value = Number(view?.tubeDesignerProfilePreviewLength ?? DEFAULT_PROFILE_PREVIEW_LENGTH);
-  const normalized = Number.isFinite(value)
-    ? Math.min(100000, Math.max(1, value))
-    : DEFAULT_PROFILE_PREVIEW_LENGTH;
-  if (view) view.tubeDesignerProfilePreviewLength = normalized;
-  return normalized;
-}
-
-
 export function profilePreviewParameters(view, profile) {
   return view?.tubeDesignerProfileDrafts?.[profileSelectionKey(profile)]?.parameters
     ?? profile?.defaultParameters
     ?? {};
+}
+
+function generatedProfileSnapshot(view, profile) {
+  if (!profile) return null;
+  const preview = view.tubeDesignerProfileGeneratedPreviews?.[profileSelectionKey(profile)] ?? view.tubeDesignerProfilePreview;
+  let identity = [];
+  try { identity = JSON.parse(preview?.key ?? "[]"); } catch { /* no completed preview */ }
+  return identity[0] === profileScope(profile) && identity[1] === String(profile.templateId ?? "") && identity[2] === String(profile.id)
+    ? preview.response?.profile : profileSnapshot(profile);
+}
+
+function profileModelOutdated(view, profile) {
+  const snapshot = generatedProfileSnapshot(view, profile);
+  const old = snapshot?.parameters ?? profile?.defaultParameters ?? {};
+  const values = profilePreviewParameters(view, profile);
+  return !!snapshot && [...new Set([...Object.keys(old), ...Object.keys(values)])]
+    .some(key => JSON.stringify(old[key]) !== JSON.stringify(values[key]));
+}
+
+// Library previews are deliberately unannotated; use the floating section diagram.
+export function bindProfileSpecificationAnnotations(_mount, view) {
+  if(view.activeAreaId==='profiles' || view.activeAreaId==='tools')view.viewport?.clearSpecificationAnnotations?.();
+  return [];
+}
+
+function handleProfileSceneAction(context, view, action, target, ops) {
+  if(action!=='tube-designer-profile-regenerate')return null;
+  const profile=findLibraryProfile(view,view.tubeDesignerSelectedProfileId);
+  if(profile&&!view.pending){
+    view.tubeDesignerProfileGenerationKey=profilePreviewKey(view,profile);
+    scheduleProfileLibraryPreview(context,view,profile);
+  }
+  return {handled:true};
 }
 
 
@@ -514,7 +572,6 @@ function profilePreviewKey(view, profile) {
     String(profile.templateId ?? ""),
     String(profile.id),
     String(versionToken),
-    normalizedPreviewLength(view),
     profilePreviewParameters(view, profile),
   ]);
 }
@@ -529,6 +586,12 @@ function scheduleProfileLibraryPreview(context, view, profile) {
     return;
   }
   const key = profilePreviewKey(view, profile);
+  if (profileModelOutdated(view, profile) && view.tubeDesignerProfileGenerationKey !== key) {
+    const cached = view.tubeDesignerProfileGeneratedPreviews?.[profileSelectionKey(profile)];
+    if (cached && !isProfilePreviewResourceApplied(view, profile, cached.response)) scheduleCachedProfilePreview(context, view, profile, key, cached.response);
+    bindProfileSpecificationAnnotations(context.mount, view);
+    return;
+  }
   if (!key) {
     clearProfilePreviewRequest(view);
     view.viewport?.setVisibleEntityIds?.([]);
@@ -567,7 +630,6 @@ function scheduleProfileLibraryPreview(context, view, profile) {
       {
         profileRef: profileRef(profile),
         parameters: profilePreviewParameters(view, profile),
-        length: normalizedPreviewLength(view),
       },
       { timeoutMs: 30000 },
     ));
@@ -585,12 +647,17 @@ function scheduleProfileLibraryPreview(context, view, profile) {
       if (view.tubeDesignerProfilePreviewRequest !== request
           || !isCurrentProfilePreview(view, profile, key)) return;
       view.tubeDesignerProfilePreview = { key, response };
-      updateProfileParameterDiagram(context, view, profile, response?.profile);
       request.message = "正在装载三维管型…";
       request.phaseLabel = "装载三维资源";
       request.detail = "三维几何已生成，正在写入中央预览视图";
       restoreProfilePreviewRequestProgress(request);
       await applyProfilePreviewResource(context, view, profile, key, response);
+      if (!isCurrentProfilePreview(view, profile, key)) return;
+      view.tubeDesignerProfileGeneratedPreviews ??= {};
+      view.tubeDesignerProfileGeneratedPreviews[profileSelectionKey(profile)] = { key, response };
+      view.tubeDesignerProfileGenerationKey = "";
+      bindProfileSpecificationAnnotations(context.mount, view);
+      refreshProfileSceneRuntime(context, view, profile);
       await finishProfilePreviewProgress(delayedProgress);
       if (view.tubeDesignerProfilePreviewRequest !== request
           || !isCurrentProfilePreview(view, profile, key)) return;
@@ -617,19 +684,26 @@ function scheduleProfileLibraryPreview(context, view, profile) {
 }
 
 
-function updateProfileParameterDiagram(context, view, profile, snapshot) {
-  if (!snapshot) return;
-  const scope = [...context.mount?.querySelectorAll?.("[data-tube-profile-library-editor]") ?? []]
-    .find((element) => element.dataset?.tubeDesignerProfileKey === profileSelectionKey(profile));
-  const host = scope?.querySelector?.("[data-profile-library-diagram]");
-  if (!host) return;
-  const restoreScroll = preserveProfileScroll(scope);
-  host.innerHTML = renderProfileParameterDiagram(snapshot, {
-    definitions: profile?.descriptor?.parameters ?? snapshot.parameterDefinitions ?? [],
-    parameters: profilePreviewParameters(view, profile), compact: true,
-  });
-  bindProfileParameterDiagrams(context.mount);
-  restoreScroll();
+function refreshProfileSceneRuntime(context, view, profile) {
+  const document = context.mount?.ownerDocument;
+  const active = document?.activeElement;
+  const selection = active && typeof active.selectionStart === "number"
+    ? [active.selectionStart, active.selectionEnd] : null;
+  const host=floatingParameterDiagramHost(context.mount);
+  const dock=host?.querySelector('[data-tube-profile-diagram-dock]');
+  const fragment=document?.createElement('template');
+  if(fragment){
+    fragment.innerHTML=renderProfileLibraryDiagramDock(view,profile);
+    const next=fragment.content.firstElementChild;
+    if(dock&&next)patchDomNode(dock,next);
+    else if(dock)dock.remove();
+    else if(next)host?.append(next);
+    bindProfileParameterDiagrams(context.mount);
+    if (active?.isConnected && active !== document.body) {
+      active.focus?.({ preventScroll: true });
+      if (selection && typeof active.setSelectionRange === "function") active.setSelectionRange(...selection);
+    }
+  }
 }
 
 // Capture at the moment of a DOM update, not when an asynchronous request starts:
@@ -922,17 +996,21 @@ function localizedText(value, fallback = "参数") {
 
 
 function renderPackageParameter(definition, values, pending) {
+  return renderPackageParameterControl(definition, values, pending).replace('<label', `<label id="tube-profile-field-${escapeAttr(definition.key)}"`);
+}
+
+function renderPackageParameterControl(definition, values, pending) {
   pending = pending || !parameterEnabled(definition, values);
   const key = String(definition?.key ?? "");
-  const label = localizedText(definition?.displayName, key);
+  const label = localizedText(definition?.uiTitle ?? definition?.displayName, key);
   const value = values[key] ?? definition?.defaultValue ?? "";
   const common = `data-profile-parameter-key="${escapeAttr(key)}" data-tube-profile-editor-parameter="${escapeAttr(key)}" data-tube-profile-value-type="${escapeAttr(definition?.valueType ?? "number")}" data-cam-change-action="tube-designer-profile-preview-change"`;
   if (definition?.valueType === "boolean") {
-    return `<label class="tube-designer-field tube-designer-boolean-field"><span>${escapeText(label)}</span><input type="checkbox" ${common} ${value ? "checked" : ""} ${pending ? "disabled" : ""} /></label>`;
+    return `<label class="tube-designer-field tube-designer-boolean-field${fieldDisplayClass(definition)}"${fieldDisplayStyle(definition)}><span>${escapeText(label)}</span><input type="checkbox" ${common} ${value ? "checked" : ""} ${pending ? "disabled" : ""} /></label>`;
   }
   const options = Array.isArray(definition?.options) ? definition.options : [];
   if (options.length) {
-    return `<label class="tube-designer-field"><span>${escapeText(label)}</span><select ${common} ${pending ? "disabled" : ""}>${options.map((option) => {
+    return `<label class="tube-designer-field is-choice${fieldDisplayClass(definition)}"${fieldDisplayStyle(definition)}><span>${escapeText(label)}</span><select ${common} ${pending ? "disabled" : ""}>${options.map((option) => {
       const optionValue = typeof option === "object" ? option?.value : option;
       const optionLabel = typeof option === "object" ? localizedText(option?.displayName ?? option?.label, optionValue) : option;
       return `<option value="${escapeAttr(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(optionLabel)}</option>`;
@@ -944,7 +1022,27 @@ function renderPackageParameter(definition, values, pending) {
   if (definition?.max != null || definition?.maximum != null) attributes.push(`max="${escapeAttr(definition.max ?? definition.maximum)}"`);
   if (type === "number") attributes.push(`step="${escapeAttr(definition?.step ?? (definition?.valueType === "integer" ? 1 : "any"))}"`);
   if (pending) attributes.push("disabled");
-  return `<label class="tube-designer-field"><span>${escapeText(label)}</span><input ${attributes.join(" ")} /></label>`;
+  return `<label class="tube-designer-field ${type === 'text' ? 'is-string' : 'is-number'}${fieldDisplayClass(definition)}"${fieldDisplayStyle(definition)} title="${escapeAttr(localizedText(definition.uiHelp, label))}"><span>${escapeText(label)}</span><input ${attributes.join(" ")} /></label>`;
+}
+
+function renderProfileParameterGroups(profile, definitions, values, pending) {
+  const descriptor = profile.descriptor ?? {};
+  const display = templateDisplayView(descriptor, 'right');
+  const fields = applyTemplateFieldDisplay(descriptor, definitions, 'right').map(d => ({ ...d,
+    uiTitle: display.fields[d.key]?.title, uiHelp: display.fields[d.key]?.help,
+    group: display.fields[d.key]?.group ?? '' }));
+  const keys = [...new Set(fields.map(d => d.group))].sort((a,b) => (display.groups[a]?.order ?? 0) - (display.groups[b]?.order ?? 0));
+  return keys.map(key => {
+    const group = display.groups[key];
+    const groupFields = fields.filter(d => d.group === key).sort((a,b)=>(a.order??0)-(b.order??0));
+    const explicitAdvancedGroup = key === 'advanced' && !!group;
+    const groupKey = `advanced:profile:${profile.id}:${key}`;
+    const content = `<div class="tube-profile-library-field-grid">${renderParameterLevels(groupFields, d=>renderPackageParameter(d, values, pending), {key:`profile:${profile.id}:${key}`,gridClass:'tube-profile-library-field-grid',flattenAdvanced:explicitAdvancedGroup})}</div>`;
+    const advancedAttributes = explicitAdvancedGroup
+      ? ` data-parameter-advanced data-parameter-advanced-key="${escapeAttr(groupKey)}"`
+      : '';
+    return group ? `<details id="tube-profile-display-${escapeAttr(key)}" class="tube-profile-library-parameter-group" data-profile-display-group="${escapeAttr(key)}"${advancedAttributes} ${group.defaultOpen === false ? '' : 'open'}><summary>${escapeText(localizedText(group.title,key))}</summary>${content}</details>` : content;
+  }).join('');
 }
 
 
@@ -1111,15 +1209,6 @@ function updateProfilePreviewDraft(context, view, target, ops) {
   );
   if (!profile) return;
   try {
-    const lengthInput = editor?.querySelector("[data-tube-profile-preview-length]");
-    if (lengthInput) {
-      const length = Number(lengthInput.value);
-      if (!Number.isFinite(length) || length < 1 || length > 100000) {
-        lengthInput.focus?.();
-        throw new Error("预览长度必须在 1 到 100000 mm 之间。");
-      }
-      view.tubeDesignerProfilePreviewLength = length;
-    }
     view.tubeDesignerProfileDrafts ??= {};
     const profileKey = profileSelectionKey(profile);
     view.tubeDesignerProfileDrafts[profileKey] = {
@@ -1130,21 +1219,25 @@ function updateProfilePreviewDraft(context, view, target, ops) {
         ...readEditorParameters(editor),
       },
     };
-    view.tubeDesignerProfilePreview = null;
     view.error = "";
     // Keep the viewport and both pane DOM trees alive. Only dependent parameter
     // controls need replacing when switching a submodel/manufacturing route.
     const restoreScroll = preserveProfileScroll(editor);
     const values = view.tubeDesignerProfileDrafts[profileKey].parameters;
-    const definitions = (profile.descriptor?.parameters ?? []).filter(d => matchesParameterVisibility(d.visibleWhen, values));
+    const definitions = (profile.descriptor?.parameters ?? []).filter(d => parameterVisible(d, values));
     const list = editor?.querySelector?.(".tube-profile-library-parameter-list");
-    const existing = [...list?.querySelectorAll?.("[data-profile-parameter-key]") ?? []].map(n => n.dataset.profileParameterKey);
-    if (list && JSON.stringify(existing) !== JSON.stringify(definitions.map(d => d.key))) {
-      list.innerHTML = definitions.map(d => renderPackageParameter(d, values, false)).join("");
+    if (list?.cloneNode) {
+      const next = list.cloneNode(false);
+      next.innerHTML = renderProfileParameterGroups(profile, definitions, values, false);
+      patchDomNode(list, next);
     }
     const hud = context.mount?.querySelector?.("[data-tube-profile-preview-status] span");
-    if (hud) hud.textContent = `${profileSpecification(profile)} · 长度 ${normalizedPreviewLength(view)} mm`;
+    if (hud) hud.textContent = `版本 ${String(profile?.descriptor?.version ?? profile?.version ?? "").trim() || "—"}`;
     restoreScroll();
+    clearProfilePreviewRequest(view);
+    bindProfileSpecificationAnnotations(context.mount, view);
+    view.tubeDesignerProfileGenerationKey = profilePreviewKey(view, profile);
+    refreshProfileSceneRuntime(context, view, profile);
     scheduleProfileLibraryPreview(context, view, profile);
   } catch (error) {
     view.error = error?.message ?? String(error);
@@ -1235,18 +1328,11 @@ async function exportLibraryProfile(context, view, target, format, ops) {
     return null;
   }
   let parameters = {};
-  let length = normalizedPreviewLength(view);
   try {
     const profileKey = profileSelectionKey(profile);
     const editor = document.querySelector(`[data-tube-profile-library-editor][data-tube-designer-profile-key="${cssEscape(profileKey)}"]`);
     if (isParametricProfile(profile)) {
       parameters = editor ? readEditorParameters(editor) : profilePreviewParameters(view, profile);
-    }
-    const lengthInput = editor?.querySelector("[data-tube-profile-preview-length]");
-    if (lengthInput) length = Number(lengthInput.value);
-    if (!Number.isFinite(length) || length < 1 || length > 100000) {
-      lengthInput?.focus?.();
-      throw new Error("预览与导出长度必须在 1 到 100000 mm 之间。");
     }
   } catch (error) {
     view.error = error?.message ?? String(error);
@@ -1265,15 +1351,13 @@ async function exportLibraryProfile(context, view, target, format, ops) {
   }) ?? "").trim();
   if (!targetDirectory) return null;
   view.tubeDesignerProfileExportDirectory = targetDirectory;
-  view.tubeDesignerProfilePreviewLength = length;
   return runProfileTask(context, view, ops, {
     title: format === "dxf" ? "正在导出截面 DXF" : "正在导出管子 STEP",
-    message: format === "dxf" ? "正在写入精确二维轮廓" : `正在生成 ${length} mm 标准拉伸体`,
+    message: format === "dxf" ? "正在写入精确二维轮廓" : "正在生成标准拉伸体",
   }, async () => {
     const response = await invokeSceneProduct(context, "TubeDesigner.ExportProfile", {
       profileRef: profileRef(profile),
       parameters,
-      length,
       targetDirectory,
       format,
     }, { timeoutMs: 120000 });

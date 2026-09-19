@@ -77,6 +77,89 @@ const browser = await chromium.launch({
 
 try {
   await rpc({ action: "reset" });
+  const omegaDescriptor = JSON.parse(readFileSync(
+    resolve(sourceRoot, "apps/tube-designer/templates/profile/omega/profile.json"),
+    "utf8",
+  ));
+  const omegaHotParameters = Object.fromEntries(
+    omegaDescriptor.parameters.map(parameter => [parameter.key, parameter.defaultValue]),
+  );
+  omegaHotParameters.useHotRolled = true;
+  const omegaHotPreview = await rpc({
+    action: "invoke",
+    method: "GenerateProfilePreview",
+    payload: {
+      profileRef: { scope: "system", id: "omega" },
+      parameters: omegaHotParameters,
+      length: 100,
+    },
+  });
+  assert.ok(omegaHotPreview.geometryResourceId, JSON.stringify(omegaHotPreview));
+  assert.equal(omegaHotPreview.profile.parameters.useHotRolled, true);
+
+  const angleDescriptor = JSON.parse(readFileSync(
+    resolve(sourceRoot, "apps/tube-designer/templates/profile/angle/profile.json"),
+    "utf8",
+  ));
+  const angleMirrorParameters = Object.fromEntries(
+    angleDescriptor.parameters.map(parameter => [parameter.key, parameter.defaultValue]),
+  );
+  angleMirrorParameters.mirrorX = true;
+  const angleMirrorPreview = await rpc({
+    action: "invoke",
+    method: "GenerateProfilePreview",
+    payload: {
+      profileRef: { scope: "system", id: "angle" },
+      parameters: angleMirrorParameters,
+      length: 100,
+    },
+  });
+  assert.ok(angleMirrorPreview.geometryResourceId, JSON.stringify(angleMirrorPreview));
+  assert.equal(angleMirrorPreview.profile.parameters.mirrorX, true);
+
+  const angleIndependentRadiusParameters = { ...angleMirrorParameters,
+    mirrorX: false,
+    outerRadius: 0,
+    useInnerRadius: true,
+    innerRadius: 10,
+  };
+  const angleIndependentRadiusPreview = await rpc({
+    action: "invoke",
+    method: "GenerateProfilePreview",
+    payload: {
+      profileRef: { scope: "system", id: "angle" },
+      parameters: angleIndependentRadiusParameters,
+      length: 100,
+    },
+  });
+  assert.ok(angleIndependentRadiusPreview.geometryResourceId, JSON.stringify(angleIndependentRadiusPreview));
+  assert.equal(angleIndependentRadiusPreview.profile.parameters.outerRadius, 0);
+  assert.equal(angleIndependentRadiusPreview.profile.parameters.innerRadius, 10);
+
+  const polygonBarDescriptor = JSON.parse(readFileSync(
+    resolve(sourceRoot, "apps/tube-designer/templates/profile/polygon-bar/profile.json"),
+    "utf8",
+  ));
+  const polygonBarParameters = Object.fromEntries(
+    polygonBarDescriptor.parameters.map(parameter => [parameter.key, parameter.defaultValue]),
+  );
+  Object.assign(polygonBarParameters, { radius: 37, sideCount: 7, cornerRadius: 2.5 });
+  const polygonBarPreview = await rpc({
+    action: "invoke",
+    method: "GenerateProfilePreview",
+    payload: {
+      profileRef: { scope: "system", id: "polygon-bar" },
+      parameters: polygonBarParameters,
+      length: 100,
+    },
+  });
+  assert.ok(polygonBarPreview.geometryResourceId, JSON.stringify(polygonBarPreview));
+  assert.deepEqual(polygonBarPreview.profile.parameters, polygonBarParameters);
+  assert.equal(
+    polygonBarPreview.profile.contours[0].segments.filter(edge => edge.kind === "arc").length,
+    7,
+  );
+
   const descriptor = JSON.parse(readFileSync(
     resolve(sourceRoot, "apps/tube-designer/templates/profile/round/profile.json"),
     "utf8",
@@ -84,6 +167,7 @@ try {
   const defaultParameters = Object.fromEntries(
     descriptor.parameters.map(parameter => [parameter.key, parameter.defaultValue]),
   );
+  descriptor.display = JSON.parse(readFileSync(resolve(sourceRoot, 'apps/tube-designer/templates/profile/round/display.json'), 'utf8'));
   const evaluated = await rpc({
     action: "invoke",
     method: "EvaluateProfilePackage",
@@ -217,7 +301,7 @@ try {
       status: document.querySelector("[data-tube-profile-preview-status]")?.innerText ?? "",
       diagram: {
         initiallyHidden: diagramInitiallyHidden,
-        belowParameters: Number(diagramToggleBox?.top) >= Number(parameterListBox?.bottom),
+        inScene: !!diagramToggle?.closest('.cam-viewport'),
         height: Number(diagramToggleBox?.height ?? 0),
         borderWidth: diagramToggleStyle?.borderTopWidth ?? "",
         borderColor: diagramToggleStyle?.borderTopColor ?? "",
@@ -237,15 +321,29 @@ try {
   assert.equal(result.visible, true, JSON.stringify(result));
   assert.ok(result.positionCount > 0, JSON.stringify(result));
   assert.match(result.status, /三维管型已生成|圆管/);
-  assert.equal(result.diagram.initiallyHidden, true, JSON.stringify(result.diagram));
-  assert.equal(result.diagram.belowParameters, true, JSON.stringify(result.diagram));
-  assert.ok(result.diagram.height > 0 && result.diagram.height <= 34, JSON.stringify(result.diagram));
-  assert.equal(result.diagram.borderWidth, "1px", JSON.stringify(result.diagram));
-  assert.equal(result.diagram.borderColor, "rgb(184, 206, 209)", JSON.stringify(result.diagram));
-  assert.equal(result.diagram.borderRadius, "0px", JSON.stringify(result.diagram));
-  assert.equal(result.diagram.backgroundColor, "rgb(246, 250, 249)", JSON.stringify(result.diagram));
-  assert.equal(result.diagram.boxShadow, "none", JSON.stringify(result.diagram));
-  assert.equal(result.diagram.expanded, true, JSON.stringify(result.diagram));
+  assert.equal(result.diagram.inScene, false, 'Profile-library section diagram has been replaced by scene annotations');
+  await page.waitForFunction(() => document.querySelectorAll('.icax-three-specification-trigger').length >= 2);
+  const annotation = page.locator('[data-tube-designer-parameter-key="width"].icax-three-specification-trigger');
+  const {x,y} = await annotation.evaluate(node => {
+    const rect=node.closest('.icax-three-specification-label').getBoundingClientRect();
+    const others=[...document.querySelectorAll('.icax-three-specification-trigger')].filter(n=>n!==node).map(n=>n.closest('.icax-three-specification-label').getBoundingClientRect());
+    for(let x=rect.left+2;x<rect.right-1;x+=4) for(let y=rect.top+2;y<rect.bottom-1;y+=4) {
+      if(!others.some(r=>x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)) return {x,y};
+    }
+    throw Error('No unoccluded hit target for width annotation');
+  });
+  await page.mouse.move(x,y);
+  assert.equal(await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.tagName,{x,y}), 'CANVAS', 'Resting labels pass input to the camera');
+  await page.mouse.dblclick(x,y);
+  const sceneInput = page.locator('[data-tube-designer-scene-specification-input="width"]');
+  await sceneInput.fill('55', {timeout:6000});
+  await sceneInput.press('Enter');
+  await page.waitForFunction(() => {
+    const f=window.profileNativeFixture;
+    return f.calls.length === 2 && !f.view.tubeDesignerProfilePreviewRequest && f.view.tubeDesignerProfilePreview?.response?.profile?.parameters.width === 55;
+  });
+  assert.equal(await page.locator('[data-tube-profile-scene-runtime]').count(), 0);
+  assert.equal(await page.locator('.icax-three-specification-label.is-pending').count(), 0);
   console.log("TubeDesigner profile-library native browser regression passed.");
 } finally {
   await browser.close();

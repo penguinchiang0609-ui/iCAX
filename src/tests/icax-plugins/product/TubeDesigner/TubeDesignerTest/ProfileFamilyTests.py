@@ -26,7 +26,7 @@ def evaluate_model(model,**values):
 class ProfileFamilyTests(unittest.TestCase):
     def test_all_families_and_models_evaluate(self):
         packages=runtime._list_system_packages(CATALOG)
-        self.assertEqual(24,len(packages))
+        self.assertEqual(21,len(packages))
         for package in packages:
             self.assertNotIn('error',package)
             d=package['descriptor']

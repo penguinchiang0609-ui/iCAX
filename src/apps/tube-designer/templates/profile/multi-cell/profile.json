@@ -2,12 +2,15 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "multi-cell",
   "version": "2026.9.13.6",
-  "displayName": "多腔型材",
-  "description": "P11 多腔型材。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
+  "displayName": "二腔方管",
+  "description": "两个并列且等尺寸的方形内腔，由外壁和一根中间竖向隔筋组成。外宽、外高由腔体边长、外壁厚和隔筋厚派生。",
+  "category": "多腔体",
   "provenance": {
     "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
     "surveyIds": [
@@ -24,18 +27,10 @@
   },
   "parameters": [
     {
-      "key": "width",
-      "displayName": "外宽 / mm",
+      "key": "cellSize",
+      "displayName": "方腔边长 / mm",
       "valueType": "number",
-      "defaultValue": 80,
-      "min": 1,
-      "step": 1
-    },
-    {
-      "key": "depth",
-      "displayName": "外高 / mm",
-      "valueType": "number",
-      "defaultValue": 40,
+      "defaultValue": 30,
       "min": 1,
       "step": 1
     },
@@ -54,83 +49,11 @@
       "defaultValue": 3,
       "min": 0.1,
       "step": 1
-    },
-    {
-      "key": "ribOffset",
-      "displayName": "隔筋中心水平偏移 / mm",
-      "valueType": "number",
-      "defaultValue": 0,
-      "min": -1000,
-      "step": 1
     }
   ],
   "catalog": {
+    "categoryPath": ["多腔体"],
     "groupOrder": 3,
-    "order": 103
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "depth/2"
-        ],
-        "to": [
-          "width/2",
-          "depth/2"
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "宽度基准"
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "高度基准"
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "width/2-wallThickness",
-          0
-        ],
-        "to": [
-          "width/2",
-          0
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "右侧壁厚"
-      },
-      {
-        "parameter": "ribThickness",
-        "kind": "linear",
-        "from": [
-          "ribOffset-ribThickness/2",
-          0
-        ],
-        "to": [
-          "ribOffset+ribThickness/2",
-          0
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "隔板厚度"
-      }
-    ]
+    "order": 1
   }
 }

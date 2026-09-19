@@ -2,190 +2,77 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": { "schemaVersion": 1, "entryPoint": "fitting.py" },
   "id": "t-section",
-  "version": "2026.9.13.6",
+  "version": "2026.9.18.4",
   "displayName": "T型钢",
-  "description": "P23 T 型钢。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。 热轧/精密路线仅保留明确标记的理想化回退；真实轮廓可由完整材料边界输入，不由名义尺寸冒充。",
-  "category": "常用型材",
+  "description": "通用 T 型钢截面；启用热轧后按热轧剖分 T 型钢处理，采用平直剖分面。高级设置继续支持腹板中心偏距和两个根部 R 独立控制。",
+  "category": "型材",
   "provenance": {
-    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
-    "surveyIds": [
-      80
-    ],
+    "document": "doc/Apps/热轧T型钢与工字钢参数化截面定义.md",
+    "surveyIds": [80],
     "dimensionSource": "editable-example",
     "standardConformance": "not-certified",
     "familyCode": "P23"
   },
   "manufacturing": {
-    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "formingProcess": "参数化 T 型钢截面（可选热轧剖分 T 型钢模型）",
     "topology": "open-profile",
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
-    {"key":"sectionModel","displayName":"轮廓子模型","valueType":"string","defaultValue":"t-split","options":[{"value":"t-split","displayName":"剖分 T 型钢"},{"value":"t-welded","displayName":"焊接 T 型钢"}],"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
-    {"key":"width","displayName":"翼缘宽 / mm","valueType":"number","defaultValue":80,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
-    {"key":"depth","displayName":"总高 / mm","valueType":"number","defaultValue":120,"min":1,"step":1,"visibleWhen":{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"}},
+    { "key": "width", "displayName": "宽 / mm", "valueType": "number", "defaultValue": 80, "min": 1, "step": 1 },
+    { "key": "depth", "displayName": "高 / mm", "valueType": "number", "defaultValue": 120, "min": 1, "step": 1 },
+    { "key": "rootRadius", "displayName": "R / mm", "valueType": "number", "defaultValue": 4, "min": 0, "step": 1 },
+    { "key": "wallThickness", "displayName": "腹板厚度 / mm", "valueType": "number", "defaultValue": 6, "min": 0.1, "step": 1 },
+    { "key": "flangeThickness", "displayName": "翼板厚度 / mm", "valueType": "number", "defaultValue": 8, "min": 0.1, "step": 1 },
     {
-      "key": "wallThickness",
-      "displayName": "腹板厚 / mm",
-      "valueType": "number",
-      "defaultValue": 6,
-      "min": 0.1,
-      "step": 1
+      "key": "useHotRolled",
+      "displayName": "热轧",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "presentation": { "advanced": true, "line": "full" }
     },
-    {"key":"model0FlangeThickness","displayName":"上翼缘板厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"t-split"}]}},
-    {"key":"model0WebOffset","displayName":"腹板偏心 / mm","valueType":"number","defaultValue":0,"min":-10000,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"t-split"}]}},
-    {"key":"model0RootRadius","displayName":"保留的热轧根部半径 / mm","valueType":"number","defaultValue":4,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"t-split"}]}},
-    {"key":"model0ToeRadius","displayName":"翼缘端圆角 / mm","valueType":"number","defaultValue":1,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"t-split"}]}},
-    {"key":"model1FlangeThickness","displayName":"上翼缘板厚 / mm","valueType":"number","defaultValue":8,"min":0.1,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"t-welded"}]}},
-    {"key":"model1WebOffset","displayName":"腹板偏心 / mm","valueType":"number","defaultValue":0,"min":-10000,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"t-welded"}]}},
-    {"key":"model1WeldLeg","displayName":"名义根部焊脚 / mm","valueType":"number","defaultValue":2,"min":0,"step":1,"visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"geometrySource","value":"idealizedFallback"},{"op":"eq","parameter":"sectionModel","value":"t-welded"}]}},
-    {"key":"materialBoundary","displayName":"实际材料边界（轮廓数组 JSON，留空使用理想模型）","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
-    {"key":"sourceRevision","displayName":"轮廓来源及版本","valueType":"string","defaultValue":"","visibleWhen":{"op":"ne","parameter":"geometrySource","value":"idealizedFallback"}},
     {
-      "key": "geometrySource",
-      "displayName": "轮廓来源",
-      "valueType": "string",
-      "defaultValue": "idealizedFallback",
-      "options": [
-        {
-          "value": "idealizedFallback",
-          "displayName": "理想化回退（非实际来料）"
-        },
-        {
-          "value": "scan",
-          "displayName": "实测扫描"
-        },
-        {
-          "value": "manufacturerCAD",
-          "displayName": "厂家 CAD"
-        },
-        {
-          "value": "standardNominal",
-          "displayName": "标准名义轮廓"
-        }
-      ]
+      "key": "webOffset",
+      "displayName": "腹板中心偏距 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1,
+      "presentation": { "advanced": true }
+    },
+    {
+      "key": "useIndependentRadii",
+      "displayName": "启用两个独立 R",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "presentation": { "advanced": true, "line": "full", "diagramVisible": false }
+    },
+    {
+      "key": "rootRadius1",
+      "displayName": "左侧根部 R1 / mm",
+      "valueType": "number",
+      "defaultValue": 4,
+      "min": 0,
+      "step": 1,
+      "presentation": { "advanced": true },
+      "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true }
+    },
+    {
+      "key": "rootRadius2",
+      "displayName": "右侧根部 R2 / mm",
+      "valueType": "number",
+      "defaultValue": 4,
+      "min": 0,
+      "step": 1,
+      "presentation": { "advanced": true },
+      "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true }
     }
   ],
   "catalog": {
+    "categoryPath": ["型材"],
     "groupOrder": 2,
     "order": 5
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "depth/2"
-        ],
-        "to": [
-          "width/2",
-          "depth/2"
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "宽度基准"
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "高度基准"
-      },
-      {
-        "parameter": "model0FlangeThickness",
-        "kind": "linear",
-        "from": [
-          "width/2",
-          "depth/2-model0FlangeThickness"
-        ],
-        "to": [
-          "width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "right",
-        "description": "翼缘端部厚度",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "t-split"
-        }
-      },
-      {
-        "parameter": "model1FlangeThickness",
-        "kind": "linear",
-        "from": [
-          "width/2",
-          "depth/2-model1FlangeThickness"
-        ],
-        "to": [
-          "width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "right",
-        "description": "翼缘端部厚度",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "t-welded"
-        }
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "model0WebOffset-wallThickness/2",
-          "-depth/4"
-        ],
-        "to": [
-          "model0WebOffset+wallThickness/2",
-          "-depth/4"
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "腹板厚（随偏心位置移动）",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "t-split"
-        }
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "model1WebOffset-wallThickness/2",
-          "-depth/4"
-        ],
-        "to": [
-          "model1WebOffset+wallThickness/2",
-          "-depth/4"
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "腹板厚（随偏心位置移动）",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "t-welded"
-        }
-      }
-    ],
-    "disabledWhenNonempty": "materialBoundary"
   }
 }

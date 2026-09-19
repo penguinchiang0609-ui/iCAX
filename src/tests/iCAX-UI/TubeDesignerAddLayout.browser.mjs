@@ -145,7 +145,7 @@ try {
     ops.renderProject();
     parameterScroller = mount.querySelector("[data-tube-designer-parameter-scroll]");
     for (const node of mount.querySelectorAll("details")) node.open = true;
-    const horizontal = field("horizontalCount");
+    const horizontal = field("horizontalMaximumCenterSpacing");
     parameterScroller.scrollTop = 0;
     for (const node of mount.querySelectorAll("details")) node.open = true;
     horizontal.scrollIntoView({ block: "center" });
@@ -153,19 +153,19 @@ try {
     const stickyReferenceBottom = mount.querySelector(".tube-designer-parameter-header").getBoundingClientRect().bottom;
     const stickyDiagram = mount.querySelector("[data-tube-designer-product-diagram]");
     const stickyTop = stickyDiagram.getBoundingClientRect().top;
-    const lineCount = () => mount.querySelectorAll('[data-product-diagram-parameter~="horizontalCount"] .product-diagram-grid').length;
+    const lineCount = () => mount.querySelectorAll('[data-product-diagram-parameter~="horizontalMaximumCenterSpacing"] .product-diagram-grid').length;
     const beforeHorizontalLines = lineCount();
     horizontal.focus({ preventScroll: true });
-    horizontal.value = "6";
+    horizontal.value = "300";
     await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", horizontal, ops);
     await new Promise(queueMicrotask);
-    const afterHorizontal = field("horizontalCount");
+    const afterHorizontal = field("horizontalMaximumCenterSpacing");
     diagramInteraction.sticky = stickyTop >= stickyReferenceBottom - 1
       && mount.querySelector("[data-tube-designer-product-diagram]").getBoundingClientRect().top >= stickyReferenceBottom - 1;
     diagramInteraction.horizontalLinesChange = [beforeHorizontalLines, lineCount()];
     diagramInteraction.horizontalFocus = document.activeElement === afterHorizontal;
     diagramInteraction.horizontalHighlighted = afterHorizontal.classList.contains("is-active")
-      && !!mount.querySelector('[data-product-diagram-parameter~="horizontalCount"].is-active');
+      && !!mount.querySelector('[data-product-diagram-parameter~="horizontalMaximumCenterSpacing"].is-active');
     const horizontalProfileWidth = field("horizontalWidth");
     horizontalProfileWidth.focus({ preventScroll: true });
     await new Promise(queueMicrotask);
@@ -183,19 +183,20 @@ try {
     target.scrollIntoView({ block: "center" });
     target.focus({ preventScroll: true });
     const before = target.getBoundingClientRect().top;
-    target.value = "v_groove_90:sharp_v";
+    target.value = "v_groove_90:tool_library";
     await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", target, ops);
     await new Promise(queueMicrotask);
     const after = field("doorFrameJoinType");
     const result = { focus: document.activeElement === after, offset: Math.abs(after.getBoundingClientRect().top - before),
       processOpen: group("section:process").open, profileClosed: !group("section:materials").open,
-      reviewClosed: !mount.querySelector("[data-tube-designer-product-detail]").open, groovePresent: !!field("vGrooveKFactor") };
-    group("group:groove_process").open = true;
-    for (const value of ["miter_45", "v_groove_90:sharp_v"]) {
+      reviewClosed: !mount.querySelector("[data-tube-designer-product-detail]").open,
+      groovePresent: !!field("doorFrameGrooveTool") };
+    group("group:groove_library").open = true;
+    for (const value of ["miter_45", "v_groove_90:tool_library"]) {
       const input = field("doorFrameJoinType"); input.focus(); input.value = value;
       await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", input, ops);
     }
-    result.hiddenGroupRestored = group("group:groove_process").open;
+    result.hiddenGroupRestored = group("group:groove_library").open;
     const code = field("productCode"); code.focus(); code.value = "DEMO-12345"; code.setSelectionRange(2, 6);
     await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", code, ops);
     result.textSelection = [field("productCode").selectionStart, field("productCode").selectionEnd];

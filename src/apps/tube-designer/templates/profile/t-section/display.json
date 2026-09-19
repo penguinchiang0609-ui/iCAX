@@ -1,0 +1,53 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true }
+      },
+      "fields": {
+        "width": { "group": "dimensions", "order": 10, "title": { "zh-CN": "宽" }, "help": { "zh-CN": "翼板宽度 / mm" } },
+        "depth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "高" }, "help": { "zh-CN": "T 型钢总高 / mm" } },
+        "rootRadius": { "group": "dimensions", "order": 30, "title": { "zh-CN": "R" }, "help": { "zh-CN": "两个根部圆角的默认半径 / mm" } },
+        "wallThickness": { "group": "dimensions", "order": 40, "title": { "zh-CN": "腹板厚度" }, "help": { "zh-CN": "腹板厚度 / mm" } },
+        "flangeThickness": { "group": "dimensions", "order": 50, "title": { "zh-CN": "翼板厚度" }, "help": { "zh-CN": "翼板厚度 / mm" } },
+        "useHotRolled": { "group": "dimensions", "order": 60, "line": "full", "title": { "zh-CN": "热轧" } },
+        "webOffset": { "group": "dimensions", "order": 70, "title": { "zh-CN": "腹板中心偏距" }, "help": { "zh-CN": "腹板相对截面中心的水平偏距 / mm" } },
+        "useIndependentRadii": { "group": "dimensions", "order": 80, "line": "full", "title": { "zh-CN": "启用两个独立 R" } },
+        "rootRadius1": { "group": "dimensions", "order": 90, "title": { "zh-CN": "左侧根部 R1" }, "help": { "zh-CN": "左侧根部圆角 / mm" } },
+        "rootRadius2": { "group": "dimensions", "order": 100, "title": { "zh-CN": "右侧根部 R2" }, "help": { "zh-CN": "右侧根部圆角 / mm" } }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true }
+      },
+      "annotations": {
+        "width": { "label": { "zh-CN": "宽" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "depth": { "label": { "zh-CN": "高" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "rootRadius": { "label": { "zh-CN": "R" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm" },
+        "wallThickness": { "label": { "zh-CN": "腹板厚度" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm" },
+        "flangeThickness": { "label": { "zh-CN": "翼板厚度" }, "group": "dimensions", "order": 50, "editable": true, "suffix": " mm" },
+        "webOffset": { "label": { "zh-CN": "腹板中心偏距" }, "group": "dimensions", "order": 70, "editable": true, "suffix": " mm" },
+        "rootRadius1": { "label": { "zh-CN": "左侧根部 R1" }, "group": "dimensions", "order": 80, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "rootRadius2": { "label": { "zh-CN": "右侧根部 R2" }, "group": "dimensions", "order": 90, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "width", "kind": "linear", "from": [ "-width/2", "depth/2" ], "to": [ "width/2", "depth/2" ], "axis": "x", "side": "top", "description": "宽度基准" },
+          { "parameter": "depth", "kind": "linear", "from": [ "-width/2", "-depth/2" ], "to": [ "-width/2", "depth/2" ], "axis": "y", "side": "left", "description": "高度基准" },
+          { "parameter": "rootRadius", "kind": "leader", "point": [ "webOffset-wallThickness/2-rootRadius", "depth/2-flangeThickness-rootRadius" ], "side": "left", "description": "根部 R" },
+          { "parameter": "wallThickness", "kind": "linear", "from": [ "webOffset-wallThickness/2", "-depth/4" ], "to": [ "webOffset+wallThickness/2", "-depth/4" ], "axis": "x", "side": "bottom", "description": "腹板厚度" },
+          { "parameter": "flangeThickness", "kind": "linear", "from": [ "width/2", "depth/2-flangeThickness" ], "to": [ "width/2", "depth/2" ], "axis": "y", "side": "right", "description": "翼板厚度" },
+          { "parameter": "webOffset", "kind": "linear", "from": [ 0, "-depth/2" ], "to": [ "webOffset", "-depth/2" ], "axis": "x", "side": "bottom", "description": "腹板中心偏距" },
+          { "parameter": "rootRadius1", "kind": "leader", "point": [ "webOffset-wallThickness/2-rootRadius1", "depth/2-flangeThickness-rootRadius1" ], "side": "left", "description": "左侧根部 R1", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "rootRadius2", "kind": "leader", "point": [ "webOffset+wallThickness/2+rootRadius2", "depth/2-flangeThickness+rootRadius2" ], "side": "right", "description": "右侧根部 R2", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } }
+        ]
+      }
+    }
+  }
+}

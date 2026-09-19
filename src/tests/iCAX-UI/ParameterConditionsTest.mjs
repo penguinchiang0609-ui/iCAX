@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import { matchesParameterCondition as matches, parameterEnabled } from '../../apps/tube-designer/webpage/parameterConditions.mjs';
+import { matchesParameterCondition as matches, parameterVisible, parameterEnabled, availableParameterChoices, effectiveParameterChoice } from '../../apps/tube-designer/webpage/parameterConditions.mjs';
+import { isAdvancedParameter, renderParameterLevels } from '../../apps/tube-designer/webpage/parameterPresentation.mjs';
+import { renderProductParameterDiagram } from '../../apps/tube-designer/webpage/productParameterDiagram.mjs';
+const demo={parameters:[{key:'width',presentation:{advanced:true}},{key:'height',presentation:{visible:false}}],extensions:{primaryDimensions:{widthParameter:'width',heightParameter:'height'}}};
+const demoDiagram=renderProductParameterDiagram(demo,{width:120,height:200});
+assert.ok(demoDiagram.includes('data-product-diagram-parameter="width"'));
+assert.ok(demoDiagram.includes('data-parameter-level="advanced" style="display:none"'));
+assert.ok(!demoDiagram.includes('data-product-diagram-parameter="height"'));
+assert.equal(parameterVisible({}), true);
+assert.equal(parameterVisible({presentation:{visible:false}}), false);
+assert.equal(parameterVisible({presentation:{visible:true},visibleWhen:{op:'eq',parameter:'x',value:1}}, {x:2}), false);
+assert.equal(parameterVisible({presentation:{advanced:true}}, {}), true);
+assert.equal(isAdvancedParameter({valueType:'string',key:'anythingJSON'}), false);
+assert.equal(isAdvancedParameter({presentation:{advanced:true}}), true);
+const levelFields=[{key:'normal'},{key:'expert',presentation:{advanced:true}},{key:'hidden',presentation:{advanced:true,visible:false}}];
+const before=JSON.stringify(levelFields);
+const levels=renderParameterLevels(levelFields,d=>`<input name="${d.key}">`,{key:'test'});
+assert.ok(levels.includes('高级设置'));assert.ok(!levels.includes('name="hidden"'));
+assert.equal(JSON.stringify(levelFields),before);
+const flattened=renderParameterLevels(levelFields,d=>`<input name="${d.key}">`,{key:'test',flattenAdvanced:true});
+assert.ok(!flattened.includes('<summary>高级设置'));
+assert.ok(flattened.includes('data-parameter-advanced-item="expert"'));
+assert.ok(!flattened.includes('name="hidden"'));
 import { renderToolLibraryRightPane } from '../../apps/tube-designer/webpage/toolLibrary.mjs';
 const root = new URL('../../apps/tube-designer/templates/', import.meta.url);
 const read = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'));
@@ -77,7 +99,7 @@ for (const entry of readdirSync(new URL('product/', root), { withFileTypes: true
     }
   }
 }
-for (const name of ['bulb-flat', 'p-tube', 'unequal-i']) {
+for (const name of ['p-tube']) {
   const d = read(`profile/${name}/profile.json`), p = { ...defaults(d), materialBoundary: '[retained draft]', sourceRevision: 'supplier-v1' };
   assert.equal(shown(d, 'materialBoundary', p), false);
   assert.equal(shown(d, 'width', p), true);
@@ -90,12 +112,24 @@ for (const gender of ['male', 'female']) {
   const html = renderToolLibraryRightPane({}, view);
   for (const key of ['sideClearance', 'axialClearance']) assert.equal(html.includes(`data-tube-tool-library-parameter="${key}"`), gender === 'female');
 }
-for (const name of ['single', 'two', 'three', 'five']) {
-  const d = read(`product/${name}_face_security_window/template.json`), p = { ...defaults(d), frameJoinType: 'miter_45', doorFrameJoinType: 'miter_45', doorLeafFrameJoinType: 'miter_45' };
-  for (const field of d.parameters.filter(f => f.key.startsWith('vGroove'))) assert.equal(matches(field.visibleWhen, p), false, `${name}/${field.key}`);
-  Object.assign(p, { accessDoorEnabled: true, doorFrameJoinType: 'v_groove_90:sharp_v', vGrooveBottomCut: false, vGrooveReliefHole: false });
-  assert.equal(shown(d, 'vGrooveRadius', p), false);
-  p.vGrooveBottomCut = true;
-  assert.equal(shown(d, 'vGrooveRadius', p), true);
+{
+  const d = read('product/single_face_security_window/template.json');
+  const p = { ...defaults(d), frameJoinType: 'miter_45', doorFrameJoinType: 'miter_45' };
+  assert.equal(shown(d, 'outerFrameGrooveTool', p), false);
+  p.frameJoinType = 'v_groove_90:tool_library';
+  assert.equal(shown(d, 'outerFrameGrooveTool', p), false, 'retained join draft does not activate folding');
+  p.frameManufacturingMode = 'plane_v_notch';
+  assert.equal(shown(d, 'outerFrameGrooveTool', p), true);
+  p.accessDoorEnabled = true;
+  p.doorFrameJoinType = 'v_groove_90:tool_library';
+  assert.equal(shown(d, 'doorFrameGrooveTool', p), true);
+  const field=d.parameters.find(f=>f.key==='frameManufacturingMode');
+  for(const faceType of ['two','three','five']){
+    const values={...p,faceType,frameManufacturingMode:'spatial_v_notch'};
+    assert.equal(availableParameterChoices(field,values).some(c=>c.value==='spatial_v_notch'),faceType!=='five');
+    assert.equal(effectiveParameterChoice(field,'spatial_v_notch',values),faceType==='five'?'plane_v_notch':'spatial_v_notch');
+    assert.equal(d.parameters.some(p=>p.key==='spatialFrameMaximumStockLength'),false);
+    assert.equal(values.frameManufacturingMode,'spatial_v_notch','choice fallback preserves draft');
+  }
 }
 console.log(`Parameter condition contracts and switching regressions passed: ${packages} packages`);

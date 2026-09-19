@@ -1,6 +1,9 @@
+import { parameterVisible } from './parameterConditions.mjs';
+import { parameterDiagramLevelAttribute } from './parameterPresentation.mjs';
 import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
 import { escapeAttr as attr, escapeText as text } from "../../_shared/workbench/utils/format.mjs";
 import { profileSvgGeometry } from "./profileSvg.mjs";
+import { bindParameterDiagramScopes } from "./parameterDiagramBinding.mjs";
 
 const localized = (value, fallback = "") => value && typeof value === "object"
   ? String(value["zh-CN"] ?? value["en-US"] ?? Object.values(value)[0] ?? fallback) : String(value ?? fallback);
@@ -8,7 +11,6 @@ const number = (value) => Number(value.toFixed(5));
 const coordinate = (value) => Array.isArray(value) && value.length === 2
   && value.every((item) => typeof item === "number" && Number.isFinite(item) && Math.abs(item) <= 1e9);
 const displayNumber = (value) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 3, useGrouping: false }).format(value);
-const diagramBindings = new WeakMap();
 
 function visible(condition, values) {
   return matchesParameterCondition(condition, values);
@@ -105,7 +107,7 @@ function diagramSvg(snapshot, annotations, definitions, values) {
         + `<circle class="td-profile-parameter-badge" cx="${number(anchor[0])}" cy="${number(anchor[1])}" r="11"/><text x="${number(anchor[0])}" y="${number(anchor[1])}" text-anchor="middle" dominant-baseline="central">${index}</text>`
         + `<text x="${number(anchor[0])}" y="${number(anchor[1]+24)}" text-anchor="${item.side === 'left' ? 'start' : item.side === 'right' ? 'end' : 'middle'}">${text(label.replace(/\s*\/\s*mm.*$/, ""))} ${text(value)}</text>`;
     }
-    return `<g class="td-profile-annotation" data-profile-annotation-key="${attr(item.parameter)}" role="button" tabindex="0" aria-label="${attr(title)}"><title>${text(title)}</title>${body}</g>`;
+    return `<g class="td-profile-annotation" data-profile-annotation-key="${attr(item.parameter)}"${parameterDiagramLevelAttribute(item.definition)} role="button" tabindex="0" aria-label="${attr(title)}"><title>${text(title)}</title>${body}</g>`;
   }).join("");
   return `<svg class="td-profile-parameter-svg" viewBox="0 0 ${width} ${height}" role="group" aria-label="${attr(localized(snapshot.name, "程式管型"))}参数尺寸示意图">
     <g class="td-profile-diagram-shape" transform="translate(${number(tx)} ${number(ty)}) scale(${scale} ${-scale})">${geometry.markup}</g>${rendered}</svg>`;
@@ -113,69 +115,24 @@ function diagramSvg(snapshot, annotations, definitions, values) {
 
 /** Render only explicit metadata. Parameter names never imply an anchor on arbitrary geometry. */
 export function renderProfileParameterDiagram(snapshot, options = {}) {
-  const values = snapshot?.parameters ?? options.parameters ?? {};
+  // The editor draft is newer than the last asynchronous geometry snapshot.
+  // Prefer it for applicability so a newly enabled advanced mode does not keep
+  // showing the previous mode's annotations while regeneration is in flight.
+  const values = options.parameters ?? snapshot?.parameters ?? {};
   const declared = options.definitions ?? snapshot?.parameterDefinitions ?? [];
-  const definitions = (Array.isArray(declared) ? declared : []).filter((definition) => definition?.key && visible(definition.visibleWhen, values));
+  const definitions = (Array.isArray(declared) ? declared : []).filter((definition) => definition?.key
+    && parameterVisible(definition, values)
+    && definition?.presentation?.diagramVisible !== false);
   if (!definitions.length) return "";
   const annotations = validAnnotations(snapshot, definitions, values);
   const svg = diagramSvg(snapshot, annotations, definitions, values);
-  const hasAnchors = !!svg && annotations.length > 0;
-  const stale = !!snapshot?.parameters && !!options.parameters && definitions.some(({ key }) => options.parameters[key] != null && String(options.parameters[key]) !== String(snapshot.parameters[key]));
-  const rows = definitions.map((definition, index) => {
-    const annotation = annotations.find((item) => item.parameter === definition.key);
-    const name = localized(definition.displayName ?? definition.name, definition.key);
-    const description = localized(annotation?.description ?? definition.description ?? definition.help);
-    const unit = localized(definition.unit);
-    return `<button type="button" class="td-profile-parameter-legend-row" data-profile-annotation-key="${attr(definition.key)}" aria-label="定位参数：${attr(name)}"><b>${index + 1}</b><span><strong>${text(name)}</strong><small>${text(description || (annotation ? "点击查看对应位置并编辑参数" : "此参数尚未提供位置标注"))}</small></span><em>${text(valueText(definition, values))}${unit ? ` ${text(unit)}` : ""}</em></button>`;
-  }).join("");
   return `<section class="td-profile-parameter-diagram${options.compact ? " is-compact" : ""}" data-profile-parameter-diagram>
-    <header><strong>${text(options.title ?? "参数示意图")}</strong><small>截面尺寸：mm · 点击编号可定位参数</small></header>
+    <header><strong>${text(options.title ?? "参数示意图")}</strong></header>
     ${svg ? `<div class="td-profile-parameter-canvas">${svg}</div>` : ""}
-    ${!hasAnchors ? `<p class="td-profile-diagram-message">此程式管型尚未提供参数位置标注。请参考下方参数说明；管型包可声明专属示意图。</p>` : ""}
-    ${stale ? `<p class="td-profile-diagram-message" role="status">参数已更改，此图仍为上次成功生成的截面，请以更新后的结果为准。</p>` : ""}
-    <div class="td-profile-parameter-legend">${rows}</div>
   </section>`;
 }
 
 /** Bind locally: multiple main/branch/component sections must never highlight each other. */
 export function bindProfileParameterDiagrams(mount) {
-  for (const scope of mount?.querySelectorAll?.("[data-profile-parameter-scope]") ?? []) {
-    if (diagramBindings.has(scope)) { diagramBindings.get(scope)(); continue; }
-    scope.dataset.profileDiagramBound = "true";
-    const owningScope = (element) => element?.closest?.("[data-profile-parameter-scope]") === scope;
-    const controls = () => [...scope.querySelectorAll("[data-profile-parameter-key]")].filter(owningScope);
-    const highlight = (key) => {
-      for (const node of scope.querySelectorAll("[data-profile-annotation-key], [data-profile-parameter-key]")) {
-        if (!owningScope(node)) continue;
-        const active = !!key && (node.dataset.profileAnnotationKey ?? node.dataset.profileParameterKey) === key;
-        node.classList.toggle("is-active", active);
-        if (node.hasAttribute("data-profile-annotation-key")) node.setAttribute("aria-pressed", String(active));
-        if (node.hasAttribute("data-profile-parameter-key")) node.closest("label")?.classList.toggle("is-profile-parameter-active", active);
-      }
-    };
-    const keyFor = (target) => {
-      const node = target?.closest?.("[data-profile-annotation-key], [data-profile-parameter-key]");
-      return owningScope(node) ? node.dataset.profileAnnotationKey ?? node.dataset.profileParameterKey : "";
-    };
-    const restoreFocus = () => highlight(keyFor(scope.ownerDocument.activeElement));
-    diagramBindings.set(scope, restoreFocus);
-    scope.addEventListener("focusin", (event) => highlight(keyFor(event.target)));
-    scope.addEventListener("focusout", () => queueMicrotask(restoreFocus));
-    scope.addEventListener("pointerover", (event) => { const key = keyFor(event.target); if (key) highlight(key); });
-    scope.addEventListener("pointerout", (event) => { if (!keyFor(event.relatedTarget)) restoreFocus(); });
-    const activate = (event) => {
-      const annotation = event.target?.closest?.("[data-profile-annotation-key]");
-      if (!annotation || !owningScope(annotation)) return;
-      const key = annotation.dataset.profileAnnotationKey;
-      const input = controls().find((control) => control.dataset.profileParameterKey === key && !control.disabled);
-      if (input) { input.focus({ preventScroll: true }); input.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); }
-      highlight(key);
-    };
-    scope.addEventListener("click", activate);
-    scope.addEventListener("keydown", (event) => {
-      if (!["Enter", " "].includes(event.key) || event.target?.tagName?.toLowerCase() !== "g") return;
-      event.preventDefault(); activate(event);
-    });
-    restoreFocus();
-  }
+  bindParameterDiagramScopes(mount, "profile");
 }

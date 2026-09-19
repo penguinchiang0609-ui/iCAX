@@ -78,19 +78,23 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
     fixed_clear_height = number(effective, "doorHeight", 0) - allowance if enabled else 0
     hardware = number(original, "doorHardwareClearance", 10) if enabled else 0
     single = layout == "single-face"
+    frame_mode = str(original.get("frameManufacturingMode","segment_weld"))
+    if layout in {"single-face","five-face"} and frame_mode=="spatial_v_notch":
+        frame_mode="plane_v_notch"
     outer_join = (str(original.get("frameJoinType", "miter_45"))
                   if single and original.get("frameLayout", "four_sides") == "four_sides"
                   else "open_frame" if single else str(original.get("frameCornerJoin", "post_butt")))
+    if (not single or original.get("frameLayout","four_sides")=="four_sides") and frame_mode!="segment_weld":
+        outer_join="v_groove_90:tool_library"
+    elif single and outer_join.startswith("v_groove"):
+        outer_join="miter_45"
     active_joins = [outer_join]
     if enabled:
         active_joins += [str(original.get(key, "miter_45" if single else "butt_90"))
                          for key in ("doorFrameJoinType", "doorLeafFrameJoinType")]
     v_groove_active = any(join.startswith("v_groove") for join in active_joins)
     miter_active = any(join in {"miter_45", "rail_miter"} for join in active_joins)
-    connection = str(original.get("mainHorizontalConnection", "insert"))
-    construction = ("主横杆插入外框定位后焊接；插接不是免焊或承载认证。"
-                    if connection == "insert" else
-                    "主横杆与外框平切贴合焊接；竖杆仍穿过横杆。")
+    construction = "主横杆插入外框定位后焊接；插接不是免焊或承载认证。"
     review = {
         "reviewVersion": 2, "layout": layout, "dimensions": "outside",
         "openingEnabled": enabled, "openingUse": "escape",
@@ -104,7 +108,14 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
         ) if enabled else 0,
         "siteVerification": "required", "hardwareVerification": "required",
         "structuralVerification": "required", "complianceCertified": False,
-        "outerFrameConnection": outer_join, "mainHorizontalConnection": connection,
+        "outerFrameConnection": outer_join,
+        "outerFrameManufacturing": {
+            "mode":frame_mode,
+            "members":[{"key":item["key"],"name":item.get("name",""),
+                        "length":item.get("properties",{}).get("length"),
+                        "bendCount":len(item.get("properties",{}).get("tubeDesigner.cornerProcess",{}).get("bendLocations",[]))}
+                       for item in document.get("items",[]) if item["key"].startswith("outer_frame.")],
+        },
         "vGrooveTrialRequired": v_groove_active,
         "displayHasUncutMiterStock": miter_active,
         "construction": construction,
@@ -144,19 +155,8 @@ def finish(document: dict[str, Any], original: dict[str, Any], effective: dict[s
             spacing_keys += ["topBottomCrossbarMaximumCenterSpacing", "topBottomRodMaximumCenterSpacing"]
     if any(number(original, key, 110) > 110 for key in spacing_keys):
         warning("SW_GRID_REVIEW", "当前杆件中心距较大，须复核全部边缘、窗扇及顶底网孔和儿童攀爬风险。", *spacing_keys)
-    grade = str(original.get("materialGrade", "unspecified")).strip()
-    treatment = str(original.get("surfaceTreatment", "unspecified")).strip()
-    if grade in {"", "unspecified"}:
-        warning("SW_MATERIAL_UNSPECIFIED", "尚未指定材料牌号；管材尺寸配套不代表材质或承载认证。", "materialGrade")
-    if treatment in {"", "unspecified"}:
-        warning("SW_FINISH_UNSPECIFIED", "尚未指定表面及焊后防腐处理。", "surfaceTreatment")
-    if grade == "Q235B" and treatment == "passivated":
-        warning("SW_FINISH_MATERIAL_REVIEW", "Q235B钢不能直接沿用不锈钢的焊斑清理钝化方案，请确认完整防腐体系。", "materialGrade", "surfaceTreatment")
     for item in document.get("items", []):
         properties = item.setdefault("properties", {})
-        if grade not in {"", "unspecified"}:
-            properties["manufacturing.material"] = grade
-        properties["manufacturing.surfaceTreatment"] = treatment
         properties["manufacturing.installationVerification"] = "required"
     process_rows = [{"key": "process.connection", "values": {"status": "工艺说明", "detail": construction}},
                     {"key": "process.assembly", "values": {"status": "工艺说明", "detail": "按零件表下料与开孔，先试装定位并复核外包和对角线，再焊接、清理及防腐；开启口框扇和五金另行试装、实测通行净空。"}}]

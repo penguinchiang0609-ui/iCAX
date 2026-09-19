@@ -1,0 +1,75 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": true }
+      },
+      "fields": {
+        "width": { "group": "dimensions", "order": 10, "title": { "zh-CN": "帽顶宽 B" }, "help": { "zh-CN": "冷弯帽钢帽顶中心线宽 / mm" } },
+        "depth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "帽钢高 H" }, "help": { "zh-CN": "冷弯帽钢理论中心线高度 / mm" } },
+        "wallThickness": { "group": "dimensions", "order": 30, "title": { "zh-CN": "板厚 t" }, "help": { "zh-CN": "冷弯帽钢等厚板厚 / mm" } },
+        "bendRadius": { "group": "dimensions", "order": 40, "title": { "zh-CN": "内弯 R" }, "help": { "zh-CN": "冷弯帽钢内弯半径 / mm" } },
+        "flangeWidth": { "group": "dimensions", "order": 50, "title": { "zh-CN": "单侧平腿长 F" }, "help": { "zh-CN": "冷弯帽钢单侧平腿中心线长度 / mm" } },
+        "useHotRolled": { "group": "advanced", "order": 10, "line": "full", "title": { "zh-CN": "热轧" } },
+        "hotHeight": { "group": "advanced", "order": 20, "title": { "zh-CN": "热轧总高 h" }, "help": { "zh-CN": "热轧帽钢总高度 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "innerWidth": { "group": "advanced", "order": 30, "title": { "zh-CN": "直腿内宽 b₁" }, "help": { "zh-CN": "两直腿之间的内宽 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "hotFlangeWidth": { "group": "advanced", "order": 40, "title": { "zh-CN": "单侧平腿长 b₂" }, "help": { "zh-CN": "热轧帽钢单侧平腿长度 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "topThickness": { "group": "advanced", "order": 50, "title": { "zh-CN": "顶部腰部厚度 t₁" }, "help": { "zh-CN": "热轧顶部腰部厚度 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "legThickness": { "group": "advanced", "order": 60, "title": { "zh-CN": "直腿厚度 t₂" }, "help": { "zh-CN": "热轧左右直腿厚度 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "flangeThickness": { "group": "advanced", "order": 70, "title": { "zh-CN": "平腿厚度 t₃" }, "help": { "zh-CN": "热轧左右平腿厚度 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "rootRadius1": { "group": "advanced", "order": 80, "title": { "zh-CN": "腰部过渡 R₁" }, "help": { "zh-CN": "腰部与直腿之间的过渡圆角 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "rootRadius2": { "group": "advanced", "order": 90, "title": { "zh-CN": "直腿过渡 R₂" }, "help": { "zh-CN": "直腿与平腿之间的过渡圆角 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "freeEndRadiusUpper": { "group": "advanced", "order": 100, "title": { "zh-CN": "平腿自由端上侧 R₃" }, "help": { "zh-CN": "平腿自由端上侧圆角 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "freeEndRadiusLower": { "group": "advanced", "order": 110, "title": { "zh-CN": "平腿自由端下侧 R₄" }, "help": { "zh-CN": "平腿自由端下侧圆角 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": true }
+      },
+      "annotations": {
+        "width": { "label": { "zh-CN": "帽顶宽 B" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+        "depth": { "label": { "zh-CN": "帽钢高 H" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+        "wallThickness": { "label": { "zh-CN": "板厚 t" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+        "bendRadius": { "label": { "zh-CN": "内弯 R" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+        "flangeWidth": { "label": { "zh-CN": "单侧平腿长 F" }, "group": "dimensions", "order": 50, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+        "hotHeight": { "label": { "zh-CN": "热轧总高 h" }, "group": "advanced", "order": 20, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "innerWidth": { "label": { "zh-CN": "直腿内宽 b₁" }, "group": "advanced", "order": 30, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "hotFlangeWidth": { "label": { "zh-CN": "单侧平腿长 b₂" }, "group": "advanced", "order": 40, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "topThickness": { "label": { "zh-CN": "顶部腰部厚度 t₁" }, "group": "advanced", "order": 50, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "legThickness": { "label": { "zh-CN": "直腿厚度 t₂" }, "group": "advanced", "order": 60, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "flangeThickness": { "label": { "zh-CN": "平腿厚度 t₃" }, "group": "advanced", "order": 70, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "rootRadius1": { "label": { "zh-CN": "腰部过渡 R₁" }, "group": "advanced", "order": 80, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "rootRadius2": { "label": { "zh-CN": "直腿过渡 R₂" }, "group": "advanced", "order": 90, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "freeEndRadiusUpper": { "label": { "zh-CN": "自由端上侧 R₃" }, "group": "advanced", "order": 100, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "freeEndRadiusLower": { "label": { "zh-CN": "自由端下侧 R₄" }, "group": "advanced", "order": 110, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "width", "kind": "linear", "from": [ "-width/2", "depth/2" ], "to": [ "width/2", "depth/2" ], "axis": "x", "side": "top", "description": "帽顶中心线宽 B", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+          { "parameter": "depth", "kind": "linear", "from": [ "-width/2", "-depth/2" ], "to": [ "-width/2", "depth/2" ], "axis": "y", "side": "left", "description": "冷弯帽钢理论中心线高度 H", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+          { "parameter": "flangeWidth", "kind": "linear", "from": [ "width/2", "-depth/2" ], "to": [ "width/2+flangeWidth", "-depth/2" ], "axis": "x", "side": "bottom", "description": "单侧平腿中心线长度 F", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+          { "parameter": "wallThickness", "kind": "linear", "from": [ 0, "depth/2-wallThickness/2" ], "to": [ 0, "depth/2+wallThickness/2" ], "axis": "y", "side": "right", "description": "冷弯板厚 t", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+          { "parameter": "bendRadius", "kind": "leader", "point": [ "-width/2+bendRadius", "-depth/2+bendRadius" ], "side": "right", "description": "冷弯内弯 R", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": false } },
+          { "parameter": "hotHeight", "kind": "linear", "from": [ "-(innerWidth/2+legThickness)", "-hotHeight/2" ], "to": [ "-(innerWidth/2+legThickness)", "hotHeight/2" ], "axis": "y", "side": "left", "description": "热轧总高 h", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "innerWidth", "kind": "linear", "from": [ "-innerWidth/2", "hotHeight/2" ], "to": [ "innerWidth/2", "hotHeight/2" ], "axis": "x", "side": "top", "description": "直腿内宽 b₁", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "hotFlangeWidth", "kind": "linear", "from": [ "innerWidth/2+legThickness", "-hotHeight/2" ], "to": [ "innerWidth/2+legThickness+hotFlangeWidth", "-hotHeight/2" ], "axis": "x", "side": "bottom", "description": "单侧平腿长 b₂", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "topThickness", "kind": "linear", "from": [ 0, "hotHeight/2-topThickness" ], "to": [ 0, "hotHeight/2" ], "axis": "y", "side": "right", "description": "顶部腰部厚度 t₁", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "legThickness", "kind": "linear", "from": [ "innerWidth/2", 0 ], "to": [ "innerWidth/2+legThickness", 0 ], "axis": "x", "side": "bottom", "description": "直腿厚度 t₂", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "flangeThickness", "kind": "linear", "from": [ "innerWidth/2+legThickness+hotFlangeWidth/2", "-hotHeight/2" ], "to": [ "innerWidth/2+legThickness+hotFlangeWidth/2", "-hotHeight/2+flangeThickness" ], "axis": "y", "side": "right", "description": "平腿厚度 t₃", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "rootRadius1", "kind": "leader", "point": [ "innerWidth/2+legThickness-rootRadius1", "hotHeight/2-topThickness+rootRadius1" ], "side": "right", "description": "腰部过渡 R₁", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "rootRadius2", "kind": "leader", "point": [ "innerWidth/2+legThickness-rootRadius2", "-hotHeight/2+flangeThickness+rootRadius2" ], "side": "right", "description": "直腿过渡 R₂", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "freeEndRadiusUpper", "kind": "leader", "point": [ "innerWidth/2+legThickness+hotFlangeWidth-freeEndRadiusUpper", "-hotHeight/2+flangeThickness-freeEndRadiusUpper" ], "side": "right", "description": "自由端上侧 R₃", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "freeEndRadiusLower", "kind": "leader", "point": [ "innerWidth/2+legThickness+hotFlangeWidth-freeEndRadiusLower", "-hotHeight/2+freeEndRadiusLower" ], "side": "right", "description": "自由端下侧 R₄", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } }
+        ]
+      }
+    }
+  }
+}

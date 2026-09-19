@@ -117,6 +117,24 @@ def contour(value, tolerance):
         return _join([dict(kind="line",start=a,end=b) for a,b in zip(pts,pts[1:]+pts[:1])],tolerance)
     raw=value.get("segments",value.get("edges"))
     if not isinstance(raw,list) or not raw:raise UnsupportedGeometry("逆向查询不支持此轮廓表达")
+    if all(e.get("kind") == "ellipseArc" for e in raw):
+        first = raw[0]
+        center = point(first["center"])
+        major = float(first["majorRadius"])
+        minor = float(first["minorRadius"])
+        rotation = float(first.get("rotation", 0.0))
+        total = 0.0
+        for e in raw:
+            if (point(e["center"]) != center
+                    or abs(float(e["majorRadius"]) - major) > tolerance
+                    or abs(float(e["minorRadius"]) - minor) > tolerance
+                    or abs(float(e.get("rotation", 0.0)) - rotation) > tolerance):
+                raise UnsupportedGeometry("同一椭圆的 ellipseArc 参数必须一致")
+            total += float(e["endAngle"]) - float(e["startAngle"])
+        if abs(abs(total) - math.tau) <= tolerance:
+            return contour(dict(kind="ellipse", center=center,
+                                width=2 * major, height=2 * minor,
+                                rotation=rotation), tolerance)
     edges=[]
     for e in raw:
         k=e["kind"]

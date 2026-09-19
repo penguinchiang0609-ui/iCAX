@@ -17,6 +17,13 @@ from typing import Any
 from icax_template_sdk import NeutralModel
 
 
+def _path(points):
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
+        for i in range(len(points))
+    ]}
+
+
 def _shared(filename: str):
     path = Path(__file__).with_name(filename)
     name = "icax_guardrail_" + path.stem + "_" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
@@ -812,9 +819,9 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         profile_key = model.geometry(volume.key + ".profile", "profile2d", arguments={
             "placement": {"origin": [volume.center[i] - normal[i] * volume.thickness / 2 for i in range(3)],
                           "xAxis": list(x), "yAxis": list(y)},
-            "contours": [{"kind": "polygon", "points": [
+            "contours": [_path([
                 [-volume.width / 2, -volume.height / 2], [volume.width / 2, -volume.height / 2],
-                [volume.width / 2, volume.height / 2], [-volume.width / 2, volume.height / 2]]}],
+                [volume.width / 2, volume.height / 2], [-volume.width / 2, volume.height / 2]])],
         })
         keep_volumes[volume.key] = model.geometry(volume.key + ".solid", "extrude", inputs=[profile_key],
                                                 arguments={"vector": [v * volume.thickness for v in normal]})
@@ -924,7 +931,7 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
             origin = _add(part.center, normal, -part.thickness / 2)
             contour = model.geometry(part.key + ".outline", "profile2d", arguments={
                 "placement": {"origin": list(origin), "xAxis": list(part.x_axis), "yAxis": list(part.y_axis)},
-                "contours": [{"kind": "polygon", "points": [list(point) for point in part.outline]}]})
+                "contours": [_path([list(point) for point in part.outline])]})
             display_representation = model.geometry(part.key + ".solid", "extrude", inputs=[contour],
                 arguments={"vector": [value * part.thickness for value in normal]})
         else:

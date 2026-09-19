@@ -23,6 +23,23 @@ def rect(box):
     return [[l,b],[r,b],[r,t],[l,t]]
 
 
+def path(points):
+    return {"kind":"path", "closed":True, "segments":[
+        {"kind":"line", "start":list(points[i]), "end":list(points[(i+1)%len(points)])}
+        for i in range(len(points))
+    ]}
+
+
+def circle_path(radius):
+    k=radius/math.sqrt(2.0)
+    return {"kind":"path", "closed":True, "segments":[
+        {"kind":"arc","start":[radius,0],"middle":[k,k],"end":[0,radius]},
+        {"kind":"arc","start":[0,radius],"middle":[-k,k],"end":[-radius,0]},
+        {"kind":"arc","start":[-radius,0],"middle":[-k,-k],"end":[0,-radius]},
+        {"kind":"arc","start":[0,-radius],"middle":[k,-k],"end":[radius,0]},
+    ]}
+
+
 def clip_polygon(points,box):
     for normal,limit in [((1,0),box[1]),((-1,0),-box[0]),((0,1),box[3]),((0,-1),-box[2])]:
         result=[]
@@ -115,7 +132,7 @@ def generate(parameters,context):
             "contours":contours})
         return model.geometry(key+".solid","extrude",inputs=[outline],arguments={"vector":[0,d,0]})
     def polygon_solid(key,points,y,d):
-        return prism(key,[{"kind":"polygon","points":points}],y,d)
+        return prism(key,[path(points)],y,d)
     def item(key,name,solid,width,height,thickness,kind="plate",purchased=False):
         props=plate.plate_properties(width,height,thickness,p["material"],"door."+kind,name)
         props.update({"partNumber":p["productCode"]+"-"+key,"door.surfaceFinish":p["finish"],
@@ -171,7 +188,7 @@ def generate(parameters,context):
                     for col in range(ncols):
                         x,z=l+(col+.5)*cw,b+(row+.5)*ch
                         points=[[x+v[0]*(cw-web)/2,z+v[1]*(ch-web)/2] for v in pattern["polygon"]]
-                        result.append({"kind":"polygon","points":points,"region":region})
+                result.append({"kind":"polygon","points":points,"region":region})
             elif generator=="round_scene":
                 radius=min(w,h)/2-groove
                 if radius<=2*groove:raise ValueError("圆景尺寸不足")
@@ -246,7 +263,7 @@ def generate(parameters,context):
                     tool=polygon_solid(sk,points,y,sign*actualdepth)
                 elif motif["kind"]=="ring":
                     r=motif["radius"]
-                    tool=prism(sk,[{"kind":"circle","radius":r+groove/2},{"kind":"circle","radius":r-groove/2}],y,sign*actualdepth,motif["center"])
+                    tool=prism(sk,[circle_path(r+groove/2),circle_path(r-groove/2)],y,sign*actualdepth,motif["center"])
                 else:
                     a,b=motif["a"],motif["b"];length=math.dist(a,b)
                     if length<.01:continue
@@ -255,7 +272,7 @@ def generate(parameters,context):
                         half=(depth+.02)*math.tan(math.radians(angle/2))
                         path=model.geometry(sk+".section","profile2d",arguments={
                             "placement":{"origin":[a[0],surface,a[1]],"xAxis":[n[0],0,n[1]],"yAxis":[0,sign,0]},
-                            "contours":[{"kind":"polygon","points":[[-half,-.02],[half,-.02],[0,depth]]}]})
+                            "contours":[path([[-half,-.02],[half,-.02],[0,depth]])]})
                         tool=model.geometry(sk+".solid","extrude",inputs=[path],arguments={"vector":[b[0]-a[0],0,b[1]-a[1]]})
                     else:
                         points=[[q[0]+n[0]*offset,q[1]+n[1]*offset] for q,offset in [(a,-groove/2),(b,-groove/2),(b,groove/2),(a,groove/2)]]
@@ -271,7 +288,7 @@ def generate(parameters,context):
                 if trim:
                     outer=rect((mb[0]-trimw,mb[1]+trimw,mb[2]-trimw,mb[3]+trimw))
                     # A separate raised ring touches the uncut face, never a fused decoration.
-                    solid=prism(sk+".trim",[{"kind":"polygon","points":outer},{"kind":"polygon","points":rect(mb)}],surface,-sign*trimh)
+                    solid=prism(sk+".trim",[path(outer),path(rect(mb))],surface,-sign*trimh)
                     item(sk+".trim","池板扣线",solid,mb[1]-mb[0]+2*trimw,mb[3]-mb[2]+2*trimw,trimh,"trim")
         result=boolean(leafkey+".finished",raw,cutters,"subtract")
         item(leafkey,"装饰门扇",result,width,H,T,"leaf")

@@ -2,24 +2,21 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": { "schemaVersion": 1, "entryPoint": "fitting.py" },
   "id": "curve-hollow",
-  "version": "2026.9.13.6",
+  "version": "2026.9.18.5",
   "displayName": "D型管",
-  "description": "P06 曲线异型管。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
+  "description": "D 型管截面：基础参数为半圆半径（截面外宽）和名义壁厚；高级设置支持内轮廓在水平、竖直两个方向相对外轮廓偏心。",
+  "category": "管",
   "provenance": {
     "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
-    "surveyIds": [
-      10,
-      11
-    ],
+    "surveyIds": [10, 11],
     "dimensionSource": "editable-example",
     "standardConformance": "not-certified",
     "familyCode": "P06"
   },
   "manufacturing": {
-    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "formingProcess": "参数化 D 型管截面",
     "topology": "closed-hollow",
     "validationLevel": "parametric-geometry"
   },
@@ -39,45 +36,29 @@
       "defaultValue": 2,
       "min": 0.1,
       "step": 1
+    },
+    {
+      "key": "innerOffsetX",
+      "displayName": "内孔水平偏心距 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1,
+      "presentation": { "advanced": true }
+    },
+    {
+      "key": "innerOffsetY",
+      "displayName": "内孔竖直偏心距 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1,
+      "presentation": { "advanced": true }
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 1
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          0
-        ],
-        "to": [
-          "width/2",
-          0
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "半圆半径，也是D截面横向宽度"
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          0
-        ],
-        "to": [
-          "-width/2+wallThickness",
-          0
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "平直侧壁厚"
-      }
-    ]
+    "categoryPath": ["管"],
+    "groupOrder": 1,
+    "order": 101
   }
 }

@@ -1,0 +1,60 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true }
+      },
+      "fields": {
+        "width": { "group": "dimensions", "order": 10, "title": { "zh-CN": "长" }, "help": { "zh-CN": "水平边长 / mm" } },
+        "depth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "宽" }, "help": { "zh-CN": "竖直边长 / mm" } },
+        "wallThickness": { "group": "dimensions", "order": 30, "title": { "zh-CN": "壁厚" }, "help": { "zh-CN": "壁厚 / mm" } },
+        "outerRadius": { "group": "dimensions", "order": 40, "title": { "zh-CN": "外角 R" }, "help": { "zh-CN": "外角半径 / mm" } },
+        "mirrorX": { "group": "dimensions", "order": 45, "line": "full", "title": { "zh-CN": "左右镜像" }, "help": { "zh-CN": "沿截面竖直中心线镜像整个角钢截面" } },
+        "useHotRolled": { "group": "dimensions", "order": 50, "line": "full", "title": { "zh-CN": "热轧" } },
+        "useInnerRadius": { "group": "dimensions", "order": 60, "line": "full", "title": { "zh-CN": "启用独立内角 R" } },
+        "innerRadius": { "group": "dimensions", "order": 70, "title": { "zh-CN": "内角 R" }, "help": { "zh-CN": "内角半径 / mm" } },
+        "freeEndRadius": { "group": "dimensions", "order": 80, "title": { "zh-CN": "自由端 R" }, "help": { "zh-CN": "两个自由端共用的圆角半径 / mm" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": false }] } },
+        "useIndependentFreeEndRadii": { "group": "dimensions", "order": 90, "line": "full", "title": { "zh-CN": "启用自由端 R 独立设置" } },
+        "freeEndRadius1": { "group": "dimensions", "order": 100, "title": { "zh-CN": "水平边自由端 R" }, "help": { "zh-CN": "水平边自由端圆角半径 / mm" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "freeEndRadius2": { "group": "dimensions", "order": 110, "title": { "zh-CN": "竖直边自由端 R" }, "help": { "zh-CN": "竖直边自由端圆角半径 / mm" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "innerOffsetX": { "group": "dimensions", "order": 120, "title": { "zh-CN": "水平偏心" }, "help": { "zh-CN": "截面水平偏心 / mm" } },
+        "innerOffsetY": { "group": "dimensions", "order": 130, "title": { "zh-CN": "竖直偏心" }, "help": { "zh-CN": "截面竖直偏心 / mm" } }
+      }
+    },
+    "scene": {
+      "annotationGroups": { "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true } },
+      "annotations": {
+        "width": { "label": { "zh-CN": "长" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "depth": { "label": { "zh-CN": "宽" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "wallThickness": { "label": { "zh-CN": "壁厚" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm" },
+        "outerRadius": { "label": { "zh-CN": "外角 R" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm" },
+        "innerRadius": { "label": { "zh-CN": "内角 R" }, "group": "dimensions", "order": 60, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useInnerRadius", "value": true } },
+        "freeEndRadius": { "label": { "zh-CN": "自由端 R" }, "group": "dimensions", "order": 70, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": false }] } },
+        "freeEndRadius1": { "label": { "zh-CN": "水平边自由端 R" }, "group": "dimensions", "order": 80, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "freeEndRadius2": { "label": { "zh-CN": "竖直边自由端 R" }, "group": "dimensions", "order": 90, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "innerOffsetX": { "label": { "zh-CN": "水平偏心" }, "group": "dimensions", "order": 100, "editable": true, "suffix": " mm" },
+        "innerOffsetY": { "label": { "zh-CN": "竖直偏心" }, "group": "dimensions", "order": 110, "editable": true, "suffix": " mm" }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "width", "kind": "linear", "from": [ "innerOffsetX-width/2", "innerOffsetY-depth/2" ], "to": [ "innerOffsetX+width/2", "innerOffsetY-depth/2" ], "axis": "x", "side": "bottom", "description": "水平边长" },
+          { "parameter": "depth", "kind": "linear", "from": [ "innerOffsetX-width/2", "innerOffsetY-depth/2" ], "to": [ "innerOffsetX-width/2", "innerOffsetY+depth/2" ], "axis": "y", "side": "left", "description": "竖直边长" },
+          { "parameter": "wallThickness", "kind": "linear", "from": [ "innerOffsetX-width/2-wallThickness/2", "innerOffsetY" ], "to": [ "innerOffsetX-width/2+wallThickness/2", "innerOffsetY" ], "axis": "x", "side": "top", "description": "壁厚" },
+          { "parameter": "outerRadius", "kind": "leader", "point": [ "innerOffsetX-width/2-wallThickness/2+outerRadius", "innerOffsetY-depth/2-wallThickness/2" ], "side": "right", "description": "外角半径 R" },
+          { "parameter": "innerRadius", "kind": "leader", "point": [ "innerOffsetX-width/2+wallThickness/2+innerRadius", "innerOffsetY-depth/2+wallThickness/2" ], "side": "right", "description": "内角半径 R", "visibleWhen": { "op": "eq", "parameter": "useInnerRadius", "value": true } },
+          { "parameter": "freeEndRadius", "kind": "leader", "point": [ "innerOffsetX+width/2", "innerOffsetY-depth/2+wallThickness/2" ], "side": "right", "description": "自由端半径 R", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": false }] } },
+          { "parameter": "freeEndRadius1", "kind": "leader", "point": [ "innerOffsetX+width/2", "innerOffsetY-depth/2+wallThickness/2" ], "side": "right", "description": "水平边自由端半径 R", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+          { "parameter": "freeEndRadius2", "kind": "leader", "point": [ "innerOffsetX-width/2+wallThickness/2", "innerOffsetY+depth/2" ], "side": "right", "description": "竖直边自由端半径 R", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+          { "parameter": "innerOffsetX", "kind": "linear", "from": [ 0, "innerOffsetY-depth/2" ], "to": [ "innerOffsetX", "innerOffsetY-depth/2" ], "axis": "x", "side": "bottom", "description": "水平偏心" },
+          { "parameter": "innerOffsetY", "kind": "linear", "from": [ "innerOffsetX-width/2", 0 ], "to": [ "innerOffsetX-width/2", "innerOffsetY" ], "axis": "y", "side": "left", "description": "竖直偏心" }
+        ],
+        "mirrorParameter": "mirrorX"
+      }
+    }
+  }
+}

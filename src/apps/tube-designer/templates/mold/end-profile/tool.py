@@ -8,6 +8,13 @@ import copy
 import math
 
 
+def _rect_path(width, height):
+    points=[[-width/2,-height/2],[width/2,-height/2],[width/2,height/2],[-width/2,height/2]]
+    return {"kind":"path", "closed":True, "segments":[
+        {"kind":"line","start":points[i],"end":points[(i+1)%4]} for i in range(4)
+    ]}
+
+
 def _arc_support(center, a, b, start, end, direction):
     """Exact projection extrema of center + a*cos(t) + b*sin(t)."""
     c = sum(center[i]*direction[i] for i in range(2))
@@ -134,7 +141,7 @@ def generate(p, context):
         {"key":"section-tool","operator":"extrude","inputs":["section"],"arguments":{"vector":[n*2*reach for n in axis]}},
         {"key":"slab-section","operator":"profile2d","arguments":{"placement":{
             "origin":[-reach/2,0,-reach],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-            "contours":[{"kind":"roundedRectangle","width":reach,"height":2*reach,"radius":0}]}},
+            "contours":[_rect_path(reach,2*reach)]}},
         {"key":"slab","operator":"extrude","inputs":["slab-section"],"arguments":{"vector":[0,0,2*reach]}}
     ]
     if mode == "convex":
@@ -143,7 +150,7 @@ def generate(p, context):
         nodes.extend([
             {"key":"forming-section","operator":"profile2d","arguments":{"placement":{
                 "origin":[center[i]+normal[i]*middle for i in range(3)],"xAxis":axis,"yAxis":across},
-                "contours":[{"kind":"roundedRectangle","width":2*reach,"height":2*reach,"radius":0}]}},
+                "contours":[_rect_path(2*reach,2*reach)]}},
             {"key":"forming-region","operator":"extrude","inputs":["forming-section"],
                 "arguments":{"vector":[-2*reach*value for value in normal]}},
             {"key":"convex-cut","operator":"boolean","inputs":["forming-region","section-tool"],

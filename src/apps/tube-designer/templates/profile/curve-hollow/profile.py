@@ -1,28 +1,59 @@
-"""P06 曲线异型管：族内模型独立实现。"""
-import importlib
-import json
-from .geometry import envelope, swap
-MODELS = {"d-semicircular":"model_0"}
-PARAMETERS = {"d-semicircular":{"width":"width","wallThickness":"wallThickness"}}
+"""Generic D-tube profile: an outer D and a translated inner D path."""
+import math
 
-def selected(p):
-    name=p.get("sectionModel","d-semicircular")
-    if name not in MODELS: raise ValueError("不支持的轮廓子模型")
-    module=importlib.import_module("." + MODELS[name], __package__)
-    values={key:p[value] for key,value in PARAMETERS[name].items()}
-    return name,module,values
 
-def build(p):
-    name,module,values=selected(p)
-    actual=p.get("materialBoundary","").strip()
-    if actual:
-        if not p.get("sourceRevision","").strip(): raise ValueError("实际轮廓必须填写来源及版本")
-        curves=json.loads(actual)
-        if not isinstance(curves,list) or not curves: raise ValueError("材料边界必须为非空轮廓数组")
-        w,h=envelope(curves)
-        result={"width":w,"depth":h,"wallThickness":0,"cornerRadius":0,"contours":curves}
-    else:
-        result=module.build(values)
-    result["manufacturingRoute"] = {"d-semicircular":"Unspecified"}[name]
-    result.update({"kind":"curve-hollow","_familyParameters":dict(p),"specification":"曲线异型管"+" "+str(result["width"])+" × "+str(result["depth"])+" mm","geometrySource":"providedBoundary" if actual else "idealizedFallback","sourceRevision":p.get("sourceRevision",""),"sectionModel":name})
-    return result
+PARAMETERS = ("width", "wallThickness", "innerOffsetX", "innerOffsetY")
+
+
+def _shape(parameters):
+    radius = float(parameters["width"])
+    wall = float(parameters["wallThickness"])
+    offset_x = float(parameters.get("innerOffsetX", 0))
+    offset_y = float(parameters.get("innerOffsetY", 0))
+    if not all(math.isfinite(value) for value in (radius, wall, offset_x, offset_y)):
+        raise ValueError("尺寸必须为有限数值")
+    if radius <= 2 * wall or wall <= 0:
+        raise ValueError("D 型管外宽必须大于两倍壁厚")
+    if math.hypot(offset_x, offset_y) >= wall:
+        raise ValueError("内孔水平、竖直偏心合成距离必须小于壁厚")
+    outer_center = -radius / 2
+    inner_radius = radius - wall
+    inner_center = outer_center + offset_x
+    inner_center_y = offset_y
+    chord_height = math.sqrt(inner_radius * inner_radius - wall * wall)
+    outer = {
+        "kind": "path",
+        "closed": True,
+        "segments": [
+            {"kind": "line", "start": [outer_center, -radius], "end": [outer_center, radius]},
+            {"kind": "arc", "start": [outer_center, radius], "middle": [outer_center + radius, 0], "end": [outer_center, -radius]},
+        ],
+    }
+    inner_chord = inner_center + wall
+    inner = {
+        "kind": "path",
+        "closed": True,
+        "segments": [
+            {"kind": "line", "start": [inner_chord, inner_center_y - chord_height], "end": [inner_chord, inner_center_y + chord_height]},
+            {"kind": "arc", "start": [inner_chord, inner_center_y + chord_height], "middle": [inner_center + inner_radius, inner_center_y], "end": [inner_chord, inner_center_y - chord_height]},
+        ],
+    }
+    return [outer, inner]
+
+
+def build(parameters):
+    parameters = dict(parameters)
+    contours = _shape(parameters)
+    radius = float(parameters["width"])
+    return {
+        "contours": contours,
+        **parameters,
+        "_parameters": parameters,
+        "kind": "curve-hollow",
+        "width": radius,
+        "depth": 2 * radius,
+        "wallThickness": float(parameters["wallThickness"]),
+        "cornerRadius": 0,
+        "specification": f"D 型管 {radius:g} × {2 * radius:g} mm",
+        "manufacturingRoute": "Parametric",
+    }

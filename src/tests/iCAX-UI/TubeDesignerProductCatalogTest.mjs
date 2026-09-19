@@ -523,8 +523,8 @@ await test("opening processes share choices and hide all inactive fabrication fi
     assert.ok(!closed.includes(`data-tube-designer-parameter="${field.key}"`), field.key);
   }
   assert.doesNotMatch(render({ doorFrameJoinType: "miter_45", doorLeafFrameJoinType: "miter_45" }), /data-tube-designer-parameter="vGroove/);
-  const folded = render({ doorFrameJoinType: "v_groove_90:sharp_v" });
-  assert.match(folded, /data-tube-designer-parameter="vGrooveKFactor"/);
+  const folded = render({ doorFrameJoinType: "v_groove_90:tool_library" });
+  assert.match(folded, /data-tube-designer-parameter="doorFrameGrooveTool"/);
   assert.doesNotMatch(folded, /data-tube-designer-parameter="doorFrameButtWrapMode"/);
 });
 

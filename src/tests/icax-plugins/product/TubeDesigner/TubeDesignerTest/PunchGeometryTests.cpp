@@ -181,8 +181,11 @@ TEST(PartDrawing, BranchExtrusionDirectionAndMaterialRegion) {
     EXPECT_FALSE(inside(result,.25,0,9));EXPECT_TRUE(inside(result,1,0,9));
 }
 TEST(PartDrawing, SharpRoundedAndFlatRootVGroovesPreserveBottomBridge) {
-    for(auto parameters:{ObjectMap(),ObjectMap{{"rootRadius",2.}},ObjectMap{{"rootWidth",2.}},
-        ObjectMap{{"bridge",3.},{"reliefDiameter",2.},{"reliefLift",1.}}}) {
+    for(auto parameters:{ObjectMap(),
+        ObjectMap{{"bottomStrategy",std::string("rounded")},{"roundRadius",2.}},
+        ObjectMap{{"bottomStrategy",std::string("flat")},{"flatWidth",2.}},
+        ObjectMap{{"bottomStrategy",std::string("relief")},{"reliefDepth",2.},
+            {"reliefLength",2.},{"reliefHeight",1.},{"reliefRadius",.1}}}) {
         const auto result=BuildPunchGeometry(rectTube(),{partTool("v-notch-sharp",parameters)});
         EXPECT_FALSE(inside(result,500,0,9));EXPECT_TRUE(inside(result,500,0,-9.5));
         EXPECT_TRUE(inside(result,550,0,9));
@@ -213,15 +216,6 @@ TEST(PartDrawing, EdgeArcGroovesKeepBridgeAndMirrorWithKCompensation) {
         EXPECT_TRUE(inside(left,530,0,9));
         EXPECT_TRUE(inside(right,470,0,9));
     }
-}
-TEST(PartDrawing, Side90NotchesUseRealSolidCuts) {
-    const ObjectMap params{{"arcDefinition",std::string("side90")},{"bendCompensation",true}};
-    auto mirrored=params;mirrored["leftArc"]=false;
-    const auto left=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",params)});
-    const auto right=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",mirrored)});
-    EXPECT_NEAR(mass(left),mass(right),1e-5);
-    EXPECT_FALSE(inside(left,500,0,9));EXPECT_TRUE(inside(left,500,0,-9.5));
-    EXPECT_FALSE(inside(left,475,0,9));EXPECT_FALSE(inside(right,525,0,9));
 }
 TEST(PartDrawing, EmbeddedArcNotchesRetainTongueAndMirror) {
     const ObjectMap params{{"angle",90.},{"bendRadius",10.},{"rightArc",true}};

@@ -563,7 +563,7 @@ TEST(ComponentModelLibrary, SystemGeometryJsonRequiresMillimetresAndUsesItsDecla
         "geometry":[
             {"key":"profile","operator":"profile2d","arguments":{
                 "placement":{"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0]},"contours":[
-                {"kind":"roundedRectangle","width":10,"height":20,"radius":0}]}},
+                {"kind":"path","closed":true,"segments":[{"kind":"line","start":[-5,-10],"end":[5,-10]},{"kind":"line","start":[5,-10],"end":[5,10]},{"kind":"line","start":[5,10],"end":[-5,10]},{"kind":"line","start":[-5,10],"end":[-5,-10]}]}]}},
             {"key":"solid","operator":"extrude","inputs":["profile"],"arguments":{"vector":[0,0,30]}},
             {"key":"unused","operator":"resource","arguments":{"reference":"system:not-loaded"}}
         ],
@@ -620,7 +620,7 @@ TEST(ComponentModelLibrary, InfersAccessoryProvenanceThroughTransformsAndExplici
     const auto _CutterNodes = CStandardJsonCodec::Parse(R"json([
         {"key":"cut.profile","operator":"profile2d","arguments":{
             "placement":{"origin":[0,0,-5],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-            "contours":[{"kind":"roundedRectangle","width":5,"height":5,"radius":0}]}},
+            "contours":[{"kind":"path","closed":true,"segments":[{"kind":"line","start":[-2.5,-2.5],"end":[2.5,-2.5]},{"kind":"line","start":[2.5,-2.5],"end":[2.5,2.5]},{"kind":"line","start":[2.5,2.5],"end":[-2.5,2.5]},{"kind":"line","start":[-2.5,2.5],"end":[-2.5,-2.5]}]}]}},
         {"key":"cut.solid","operator":"extrude","inputs":["cut.profile"],"arguments":{"vector":[0,0,30]}}
     ])json").To<VariantArray>();
     _Nodes.insert(_Nodes.end(), _CutterNodes.begin(), _CutterNodes.end());

@@ -1,0 +1,39 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": true }
+      },
+      "fields": {
+        "width": { "group": "dimensions", "order": 10, "title": { "zh-CN": "宽度 B" }, "help": { "zh-CN": "扁钢名义宽度 / mm" } },
+        "depth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "厚度 T" }, "help": { "zh-CN": "扁钢名义厚度 / mm" } },
+        "useHotRolled": { "group": "advanced", "order": 10, "line": "full", "title": { "zh-CN": "热轧" } },
+        "cornerRadius": { "group": "advanced", "order": 20, "title": { "zh-CN": "热轧圆角 R" }, "help": { "zh-CN": "四个角共用的名义热轧圆角 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": true }
+      },
+      "annotations": {
+        "width": { "label": { "zh-CN": "宽度 B" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "depth": { "label": { "zh-CN": "厚度 T" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "cornerRadius": { "label": { "zh-CN": "热轧圆角 R" }, "group": "advanced", "order": 20, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "width", "kind": "linear", "from": ["-width/2", "depth/2"], "to": ["width/2", "depth/2"], "axis": "x", "side": "top", "description": "宽度 B" },
+          { "parameter": "depth", "kind": "linear", "from": ["-width/2", "-depth/2"], "to": ["-width/2", "depth/2"], "axis": "y", "side": "left", "description": "厚度 T" },
+          { "parameter": "cornerRadius", "kind": "leader", "point": ["width/2-cornerRadius*(1-0.7071067811865476)", "depth/2-cornerRadius*(1-0.7071067811865476)"], "side": "right", "description": "热轧圆角 R", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } }
+        ]
+      }
+    }
+  }
+}

@@ -45,10 +45,17 @@ def rectangle(bounds):
     return [[l,b], [r,b], [r,t], [l,t]]
 
 
+def path(points):
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
+        for i in range(len(points))
+    ]}
+
+
 def prism(model, key, polygon, depth):
     face = model.geometry(key+".profile", "profile2d", arguments={
         "placement": {"origin": [0,-depth/2,0], "xAxis": [1,0,0], "yAxis": [0,0,1]},
-        "contours": [{"kind": "polygon", "points": polygon}]})
+        "contours": [path(polygon)]})
     return model.geometry(key+".volume", "extrude", inputs=[face], arguments={"vector": [0,depth,0]})
 
 

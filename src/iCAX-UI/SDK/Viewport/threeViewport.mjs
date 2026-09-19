@@ -2606,7 +2606,7 @@ export class ThreeRenderViewport {
       trigger.click();
     });
     this.#listen(canvas, "pointerdown", (event) => {
-      canvas.focus?.();
+      canvas.focus?.({ preventScroll: true });
       const mode = event.button === 2
         ? "orbit"
         : (event.button === 1 ? "pan" : null);
@@ -2824,10 +2824,7 @@ export class ThreeRenderViewport {
     const canvas = this.renderer.domElement;
     const width = Math.max(1, canvas.clientWidth);
     const height = Math.max(1, canvas.clientHeight);
-    const inset = 8;
-    const occupied = [];
     this.camera.updateMatrixWorld(true);
-    const projectedLabels = [];
     for (const label of this.specificationLabels) {
       const projected = label.worldPoint.clone().project(this.camera);
       const visible = Number.isFinite(projected.x) && Number.isFinite(projected.y)
@@ -2836,67 +2833,9 @@ export class ThreeRenderViewport {
         && projected.y >= -1.12 && projected.y <= 1.12;
       label.element.hidden = !visible;
       if (!visible) continue;
-      projectedLabels.push({
-        label,
-        x: (projected.x * 0.5 + 0.5) * width,
-        y: (-projected.y * 0.5 + 0.5) * height,
-      });
-    }
-
-    // Scene anchors can be separate in world space but collapse onto the
-    // same few screen pixels in an oblique or orthographic camera.  Lay the
-    // HTML labels out after projection so every template gets the same
-    // readable, collision-free annotation behaviour.
-    projectedLabels.sort((left, right) => left.y - right.y || left.x - right.x);
-    for (const item of projectedLabels) {
-      const { label } = item;
-      const element = label.element;
-      const labelWidth = Math.max(1, element.offsetWidth);
-      const labelHeight = Math.max(1, element.offsetHeight);
-      const halfWidth = labelWidth / 2;
-      const halfHeight = labelHeight / 2;
-      const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
-      const candidateRect = (x, y) => ({
-        left: x - halfWidth,
-        right: x + halfWidth,
-        top: y - halfHeight,
-        bottom: y + halfHeight,
-      });
-      const collides = (rect) => occupied.some((other) => rect.left < other.right + 6
-        && rect.right > other.left - 6 && rect.top < other.bottom + 5 && rect.bottom > other.top - 5);
-      const place = (x, y) => {
-        const centerX = clamp(x, inset + halfWidth, width - inset - halfWidth);
-        const centerY = clamp(y, inset + halfHeight, height - inset - halfHeight);
-        const rect = candidateRect(centerX, centerY);
-        return { x: centerX, y: centerY, rect };
-      };
-
-      let placement = place(item.x, item.y);
-      if (collides(placement.rect)) {
-        const verticalStep = Math.max(34, labelHeight + 10);
-        const horizontalStep = Math.max(150, labelWidth + 26);
-        const candidates = [];
-        for (let ring = 1; ring <= 10; ring += 1) {
-          const vertical = verticalStep * ring;
-          const horizontal = horizontalStep * ring;
-          candidates.push(
-            [0, -vertical], [0, vertical],
-            [-horizontal, 0], [horizontal, 0],
-            [-horizontal, -vertical], [horizontal, -vertical],
-            [-horizontal, vertical], [horizontal, vertical],
-          );
-        }
-        for (const [offsetX, offsetY] of candidates) {
-          const candidate = place(item.x + offsetX, item.y + offsetY);
-          if (!collides(candidate.rect)) {
-            placement = candidate;
-            break;
-          }
-        }
-      }
-      occupied.push(placement.rect);
-      element.style.left = `${placement.x}px`;
-      element.style.top = `${placement.y}px`;
+      // Keep the template's original world-space anchor; do not displace labels.
+      label.element.style.left = `${(projected.x * 0.5 + 0.5) * width}px`;
+      label.element.style.top = `${(-projected.y * 0.5 + 0.5) * height}px`;
     }
   }
 

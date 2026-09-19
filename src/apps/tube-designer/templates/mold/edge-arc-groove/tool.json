@@ -2,7 +2,7 @@
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
   "id": "edge-arc-groove",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "sectionAnalysis": {
     "schemaVersion": 1
   },
@@ -10,7 +10,7 @@
   "kind": "programmatic",
   "target": "part",
   "category": "槽口",
-  "description": "两种定义显式区分：原任意角边弧刀口；侧90°展开槽（固定90°、四分之一圆、L=π(R+K·tₕ)/2）。后者为调研工程模型，尚未进行目标状态逆映射、碰撞优化或试样标定。",
+  "description": "槽根单侧保留原边弧刀口，可配置开口角、边弧方向、底部保留、K 因子补偿及释放加工。",
   "illustration": {
     "viewBox": "0 0 48 48",
     "paths": [
@@ -78,46 +78,7 @@
         "parameter": "leftArc"
       }
     ],
-    "variants": [
-      {
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "arcDefinition",
-          "value": "side90"
-        },
-        "paths": [
-          "M30 30 A95 95 0 0 0 125 125 H210 V30 Z",
-          { "d": "M30 145 H210", "className": "tool-diagram-reference" }
-        ],
-        "lines": [
-          {
-            "x1": 125,
-            "y1": 135,
-            "x2": 210,
-            "y2": 135
-          }
-        ],
-        "labels": [
-          {
-            "x": 120,
-            "y": 18,
-            "text": "固定折弯90°（工程模型）"
-          },
-          {
-            "x": 165,
-            "y": 158,
-            "text": "L=π(R+K·tₕ)/2"
-          },
-          {
-            "x": 65,
-            "y": 100,
-            "text": "R=有效槽深"
-          }
-        ]
-      }
-    ],
     "annotations": [
-      { "parameter": "arcDefinition", "kind": "leader", "side": "top", "point": [64, 76], "description": "切换任意角边弧或固定 90° 展开定义" },
       { "parameter": "bendCompensation", "kind": "leader", "side": "bottom", "point": [82, 101], "description": "决定圆弧展开是否采用 K 因子补偿" },
       { "parameter": "useDefaultKFactor", "kind": "leader", "side": "bottom", "point": [92, 108], "visibleWhen": { "op": "eq", "parameter": "bendCompensation", "value": true }, "description": "使用系统标定的默认 K 因子" },
       { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [100, 115], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bendCompensation", "value": true }, { "op": "eq", "parameter": "useDefaultKFactor", "value": false }] }, "description": "中性层位置系数" },
@@ -135,22 +96,6 @@
     ]
   },
   "parameters": [
-    {
-      "key": "arcDefinition",
-      "displayName": "圆弧几何定义",
-      "valueType": "string",
-      "defaultValue": "legacy",
-      "options": [
-        {
-          "value": "legacy",
-          "label": "原边弧刀口（任意角）"
-        },
-        {
-          "value": "side90",
-          "label": "侧90°展开槽（工程模型，需试样）"
-        }
-      ]
-    },
     {
       "key": "bendCompensation",
       "displayName": "启用 K 因子展开补偿",
@@ -193,7 +138,7 @@
     },
     {
       "key": "angle",
-      "displayName": "折弯开口角 β（侧90°模式必须为90°）",
+      "displayName": "折弯开口角 β",
       "valueType": "number",
       "defaultValue": 90,
       "min": 1,

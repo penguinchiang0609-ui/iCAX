@@ -1,4 +1,5 @@
-import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
+import { matchesParameterCondition, parameterVisible, parameterEnabled, availableParameterChoices, effectiveParameterChoice } from "./parameterConditions.mjs";
+import { renderParameterLevels } from './parameterPresentation.mjs';
 import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
 import {
   buildCatalogEntries,
@@ -351,7 +352,7 @@ function renderTemplateParameterLayout(view, item, sections) {
       renderGroup(child, groupOpen, sectionIndex, index, depth + 1)).join("");
     return `<details class="tube-product-template-library-parameter-group" data-tube-template-library-disclosure="${escapeAttr(groupKey)}" data-tube-template-library-group-depth="${depth}" ${groupOpen ? "open" : ""}>
       <summary><span>${escapeText(group.title)}</span><small>${groupFieldCount(group)} 项</small></summary>
-      ${group.entries.length ? `<div class="tube-product-template-library-parameter-grid">${group.entries.map((definition) => templateParameterInput(view, item, definition)).join("")}</div>` : ""}
+      ${group.entries.length ? `<div class="tube-product-template-library-parameter-grid">${renderParameterLevels(group.entries, definition => templateParameterInput(view, item, definition), {key:groupKey,gridClass:'tube-product-template-library-parameter-grid',disclosureAttribute:'data-tube-template-library-disclosure',open:templateParameterDisclosureOpen(view,item,`advanced:${groupKey}`,false)})}</div>` : ""}
       ${children ? `<div class="tube-product-template-library-parameter-group-children">${children}</div>` : ""}
     </details>`;
   };
@@ -432,7 +433,7 @@ function templateParameterValues(view, item) {
 }
 
 function templateParameterVisible(definition, values) {
-  return matchesParameterCondition(definition?.visibleWhen, values);
+  return parameterVisible(definition, values);
 }
 
 function templateParameterInput(view, item, definition) {
@@ -454,8 +455,9 @@ function templateParameterInput(view, item, definition) {
   const fieldClass = `tube-product-template-library-field${wide ? " is-wide" : ""}`;
   if (type === "boolean") return `<label class="${fieldClass} tube-product-template-library-check"><input type="checkbox" ${value ? "checked" : ""} ${common} /><span>${escapeText(label)}</span></label>`;
   if (type === "enum" || Array.isArray(definition.choices)) {
-    const choices = Array.isArray(definition.choices) ? definition.choices : [];
-    return `<label class="${fieldClass}"><span>${escapeText(label)}</span><select ${common}>${choices.map((choice) => `<option value="${escapeAttr(choice.value)}" ${String(choice.value) === String(value) ? "selected" : ""}>${escapeText(localizedTemplateText(choice.displayName, choice.value))}</option>`).join("")}</select></label>`;
+    const choices = availableParameterChoices(definition, values);
+    const selectedValue = effectiveParameterChoice(definition, value, values);
+    return `<label class="${fieldClass}"><span>${escapeText(label)}</span><select ${common}>${choices.map((choice) => `<option value="${escapeAttr(choice.value)}" ${String(choice.value) === String(selectedValue) ? "selected" : ""}>${escapeText(localizedTemplateText(choice.displayName, choice.value))}</option>`).join("")}</select></label>`;
   }
   const inputType = type === "number" || type === "integer" ? "number" : "text";
   return `<label class="${fieldClass}"><span>${escapeText(label)}</span><input type="${inputType}" value="${escapeAttr(value)}" ${constraints.minimum !== undefined ? `min="${escapeAttr(constraints.minimum)}"` : ""} ${constraints.maximum !== undefined ? `max="${escapeAttr(constraints.maximum)}"` : ""} ${constraints.step !== undefined ? `step="${escapeAttr(constraints.step)}"` : ""} ${common} /></label>`;

@@ -8,6 +8,12 @@ from pathlib import Path
 import sys
 from icax_template_sdk import NeutralModel
 
+def _path(points):
+    return {"kind":"path", "closed":True, "segments":[
+        {"kind":"line", "start":list(points[i]), "end":list(points[(i+1)%len(points)])}
+        for i in range(len(points))
+    ]}
+
 def shared(name):
     path=Path(__file__).with_name(name)
     key="stair_v2_"+path.stem+hashlib.sha256(path.read_bytes()).hexdigest()[:16]
@@ -73,8 +79,6 @@ def generate(parameters,context):
     catalog=shared("tube_profile_catalog.py");plate=shared("plate_geometry.py")
     def profile(prefix):
         values=p
-        if prefix=='stringer' and p['stringerProfileType']=='channel':
-            values={**p,'stringerSectionModel':p['stringerChannelModel']}
         obj=catalog.load_profile(values,prefix,depth_key="treadDepthProfile" if prefix=="tread" else prefix+"Depth")
         return obj
     frame=profile("tread")
@@ -152,7 +156,7 @@ def generate(parameters,context):
                               **({'keepConnectedTo':keep_point} if keep_point is not None else {})}) if tools else target
     def prism(key,points,origin,x,y,vector):
         outline=model.geometry(key+".outline","profile2d",arguments={"placement":{"origin":origin,"xAxis":x,"yAxis":y},
-                         "contours":[{"kind":"polygon","points":points}]})
+                         "contours":[_path(points)]})
         return model.geometry(key+".solid","extrude",inputs=[outline],arguments={"vector":vector})
     def box(key,x0,x1,y0,y1,z0,z1):
         return prism(key,[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],[0,0,z0],[1,0,0],[0,1,0],[0,0,z1-z0])

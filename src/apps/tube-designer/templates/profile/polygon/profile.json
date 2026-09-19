@@ -7,637 +7,156 @@
     "entryPoint": "fitting.py"
   },
   "id": "polygon",
-  "version": "2026.9.13.6",
+  "version": "2026.9.18.5",
   "displayName": "多边形管",
-  "description": "P04 多边形管。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
-  "provenance": {
-    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
-    "surveyIds": [
-      13,
-      14,
-      15,
-      16,
-      17,
-      18,
-      19,
-      20,
-      21
-    ],
-    "dimensionSource": "editable-example",
-    "standardConformance": "not-certified",
-    "familyCode": "P04"
-  },
+  "description": "通用多边形管：外轮廓和内轮廓均由二维 path 生成。",
+  "category": "管",
   "manufacturing": {
-    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "formingProcess": "参数化截面拉伸",
     "topology": "closed-hollow",
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
     {
-      "key": "sectionModel",
-      "displayName": "轮廓子模型",
-      "valueType": "string",
-      "defaultValue": "hexagonal-tube",
-      "options": [
-        {
-          "value": "hexagonal-tube",
-          "displayName": "正六边形管"
-        },
-        {
-          "value": "triangle-equilateral",
-          "displayName": "等边三角管"
-        },
-        {
-          "value": "triangle-scalene",
-          "displayName": "任意三角管"
-        },
-        {
-          "value": "trapezoid-right",
-          "displayName": "直角梯形管"
-        },
-        {
-          "value": "trapezoid-isosceles",
-          "displayName": "等腰梯形管"
-        },
-        {
-          "value": "parallelogram-tube",
-          "displayName": "平行四边形管"
-        },
-        {
-          "value": "pentagonal-tube",
-          "displayName": "正五边形管"
-        },
-        {
-          "value": "octagonal-tube",
-          "displayName": "正八边形管"
-        }
-      ]
+      "key": "sideCount",
+      "displayName": "边数",
+      "valueType": "integer",
+      "defaultValue": 6,
+      "min": 3,
+      "max": 32,
+      "step": 1
     },
     {
-      "key": "width",
-      "displayName": "外对边尺寸 / mm",
+      "key": "radius",
+      "displayName": "半径（外接圆） / mm",
       "valueType": "number",
-      "defaultValue": 60,
+      "defaultValue": 30,
       "min": 1,
       "step": 1
     },
     {
-      "key": "model0InnerSize",
-      "displayName": "内对边尺寸 / mm",
-      "valueType": "number",
-      "defaultValue": 52,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "hexagonal-tube"
-      }
-    },
-    {
-      "key": "model0InnerPhase",
-      "displayName": "内孔相位 / °",
-      "valueType": "number",
-      "defaultValue": 0,
-      "min": -180,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "hexagonal-tube"
-      }
-    },
-    {
-      "key": "model0OuterRadii",
-      "displayName": "各外角半径；空=尖角",
-      "valueType": "string",
-      "defaultValue": "",
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "hexagonal-tube"
-      }
-    },
-    {
-      "key": "model0InnerRadii",
-      "displayName": "各内角半径；空=尖角",
-      "valueType": "string",
-      "defaultValue": "",
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "hexagonal-tube"
-      }
-    },
-    {
-      "key": "model1InnerSize",
-      "displayName": "内轮廓内切圆直径 / mm",
-      "valueType": "number",
-      "defaultValue": 52,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "triangle-equilateral"
-      }
-    },
-    {
-      "key": "model1InnerPhase",
-      "displayName": "内孔相位 / °",
-      "valueType": "number",
-      "defaultValue": 0,
-      "min": -180,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "triangle-equilateral"
-      }
-    },
-    {
-      "key": "model1OuterRadii",
-      "displayName": "各外角半径；空=尖角",
-      "valueType": "string",
-      "defaultValue": "",
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "triangle-equilateral"
-      }
-    },
-    {
-      "key": "model1InnerRadii",
-      "displayName": "各内角半径；空=尖角",
-      "valueType": "string",
-      "defaultValue": "",
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "triangle-equilateral"
-      }
-    },
-    {
-      "key": "depth",
-      "displayName": "三角形高 / mm",
-      "valueType": "number",
-      "defaultValue": 45,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "triangle-scalene"
-          },
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "trapezoid-right"
-          },
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "trapezoid-isosceles"
-          },
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "parallelogram-tube"
-          }
-        ]
-      }
-    },
-    {
-      "key": "model2ApexOffset",
-      "displayName": "顶点相对底边中点水平偏移 / mm",
-      "valueType": "number",
-      "defaultValue": 8,
-      "min": -10000,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "triangle-scalene"
-      }
-    },
-    {
       "key": "wallThickness",
-      "displayName": "名义壁厚 / mm",
+      "displayName": "壁厚 / mm",
       "valueType": "number",
       "defaultValue": 2,
       "min": 0.1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "any",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "triangle-scalene"
-          },
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "trapezoid-right"
-          },
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "trapezoid-isosceles"
-          },
-          {
-            "op": "eq",
-            "parameter": "sectionModel",
-            "value": "parallelogram-tube"
-          }
-        ]
-      }
+      "step": 0.1
     },
     {
-      "key": "model3TopWidth",
-      "displayName": "上底 / mm",
+      "key": "outerRadius",
+      "displayName": "外 R / mm",
       "valueType": "number",
-      "defaultValue": 30,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "trapezoid-right"
-      }
+      "defaultValue": 3,
+      "min": 0,
+      "step": 0.1
     },
     {
-      "key": "model4TopWidth",
-      "displayName": "上底 / mm",
-      "valueType": "number",
-      "defaultValue": 30,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "trapezoid-isosceles"
-      }
-    },
-    {
-      "key": "model5Shear",
-      "displayName": "上边相对下边平移 / mm",
-      "valueType": "number",
-      "defaultValue": 15,
-      "min": -1000,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "parallelogram-tube"
-      }
-    },
-    {
-      "key": "model6InnerSize",
-      "displayName": "内轮廓内切圆直径 / mm",
-      "valueType": "number",
-      "defaultValue": 52,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "pentagonal-tube"
-      }
-    },
-    {
-      "key": "model6InnerPhase",
-      "displayName": "内孔相位 / °",
+      "key": "innerOffsetX",
+      "displayName": "偏心距 X / mm",
       "valueType": "number",
       "defaultValue": 0,
-      "min": -180,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "pentagonal-tube"
-      }
+      "step": 0.1,
+      "presentation": { "advanced": true }
     },
     {
-      "key": "model6OuterRadii",
-      "displayName": "各外角半径；空=尖角",
-      "valueType": "string",
-      "defaultValue": "",
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "pentagonal-tube"
-      }
-    },
-    {
-      "key": "model6InnerRadii",
-      "displayName": "各内角半径；空=尖角",
-      "valueType": "string",
-      "defaultValue": "",
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "pentagonal-tube"
-      }
-    },
-    {
-      "key": "model7InnerSize",
-      "displayName": "内对边尺寸 / mm",
-      "valueType": "number",
-      "defaultValue": 52,
-      "min": 1,
-      "step": 1,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "octagonal-tube"
-      }
-    },
-    {
-      "key": "model7InnerPhase",
-      "displayName": "内孔相位 / °",
+      "key": "innerOffsetY",
+      "displayName": "偏心距 Y / mm",
       "valueType": "number",
       "defaultValue": 0,
-      "min": -180,
-      "step": 1,
+      "step": 0.1,
+      "presentation": { "advanced": true }
+    },
+    {
+      "key": "useIndependentOuterRadii",
+      "displayName": "启用外 R 独立设置",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "presentation": { "advanced": true }
+    },
+    {
+      "key": "outerRadii",
+      "displayName": "各外 R / mm",
+      "valueType": "string",
+      "defaultValue": "",
+      "presentation": { "advanced": true },
       "visibleWhen": {
         "op": "eq",
-        "parameter": "sectionModel",
-        "value": "octagonal-tube"
+        "parameter": "useIndependentOuterRadii",
+        "value": true
       }
     },
     {
-      "key": "model7OuterRadii",
-      "displayName": "各外角半径；空=尖角",
-      "valueType": "string",
-      "defaultValue": "",
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "sectionModel",
-        "value": "octagonal-tube"
-      }
+      "key": "useIndependentInnerRadii",
+      "displayName": "启用内 R 独立设置",
+      "valueType": "boolean",
+      "defaultValue": false,
+      "presentation": { "advanced": true }
     },
     {
-      "key": "model7InnerRadii",
-      "displayName": "各内角半径；空=尖角",
+      "key": "innerRadii",
+      "displayName": "各内 R / mm",
       "valueType": "string",
       "defaultValue": "",
+      "presentation": { "advanced": true },
       "visibleWhen": {
         "op": "eq",
-        "parameter": "sectionModel",
-        "value": "octagonal-tube"
+        "parameter": "useIndependentInnerRadii",
+        "value": true
       }
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 101
+    "groupOrder": 1,
+    "order": 101,
+    "categoryPath": ["管"]
   },
   "parameterDiagram": {
     "schemaVersion": 1,
     "annotations": [
       {
-        "parameter": "width",
+        "parameter": "radius",
         "kind": "linear",
-        "from": [
-          0,
-          "-width/2"
-        ],
-        "to": [
-          0,
-          "width/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "正多边形内切圆直径（构造基准，非包络高度）",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "hexagonal-tube"
-        }
+        "from": [0, 0],
+        "to": ["radius", 0],
+        "axis": "x",
+        "side": "top",
+        "description": "外接圆半径"
       },
       {
-        "parameter": "width",
+        "parameter": "wallThickness",
         "kind": "linear",
-        "from": [
-          0,
-          "-width/2"
-        ],
-        "to": [
-          0,
-          "width/2"
-        ],
+        "from": [0, 0],
+        "to": [0, "wallThickness"],
         "axis": "y",
-        "side": "left",
-        "description": "正多边形内切圆直径（构造基准，非包络高度）",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "triangle-equilateral"
-        }
+        "side": "right",
+        "description": "名义壁厚"
       },
       {
-        "parameter": "width",
+        "parameter": "innerOffsetX",
         "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "width/2",
-          "-depth/2"
-        ],
+        "from": [0, 0],
+        "to": ["innerOffsetX", 0],
         "axis": "x",
         "side": "bottom",
-        "description": "底边宽度基准",
+        "description": "内轮廓偏心距 X",
         "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "triangle-scalene"
+          "op": "ne",
+          "parameter": "innerOffsetX",
+          "value": 0
         }
       },
       {
-        "parameter": "depth",
+        "parameter": "innerOffsetY",
         "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
+        "from": [0, 0],
+        "to": [0, "innerOffsetY"],
         "axis": "y",
         "side": "left",
-        "description": "截面高度",
+        "description": "内轮廓偏心距 Y",
         "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "triangle-scalene"
-        }
-      },
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "width/2",
-          "-depth/2"
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "底边宽度基准",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "trapezoid-right"
-        }
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "截面高度",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "trapezoid-right"
-        }
-      },
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "width/2",
-          "-depth/2"
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "底边宽度基准",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "trapezoid-isosceles"
-        }
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "截面高度",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "trapezoid-isosceles"
-        }
-      },
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "width/2",
-          "-depth/2"
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "底边宽度基准",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "parallelogram-tube"
-        }
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "截面高度",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "parallelogram-tube"
-        }
-      },
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          0,
-          "-width/2"
-        ],
-        "to": [
-          0,
-          "width/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "正多边形内切圆直径（构造基准，非包络高度）",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "pentagonal-tube"
-        }
-      },
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          0,
-          "-width/2"
-        ],
-        "to": [
-          0,
-          "width/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "正多边形内切圆直径（构造基准，非包络高度）",
-        "visibleWhen": {
-          "op": "eq",
-          "parameter": "sectionModel",
-          "value": "octagonal-tube"
+          "op": "ne",
+          "parameter": "innerOffsetY",
+          "value": 0
         }
       }
     ]

@@ -8,19 +8,37 @@ profiles/<管型ID>/
   profile.py
 ```
 
-`profile.json` 使用版本 2 的 `icax.tube-profile-descriptor`，声明稳定 ID、版本、名称和 `parameters` 参数数组。每个参数声明 `key`、`valueType`、显示名称、`defaultValue` 以及适用的 `min` / `max` / `step`；这些默认值既供管型库独立预览，也在产品模板没有传值时作为后备值。加载器按 `<模板前缀><参数名首字母大写>` 读取实际参数，因此新增管型自己的参数不需要修改共享加载代码。
+`profile.json` 使用版本 3 的 `icax.tube-profile-descriptor`，声明稳定 ID、版本、名称和 `parameters` 参数数组。每个参数声明 `key`、`valueType`、显示名称、`defaultValue` 以及适用的 `min` / `max` / `step`；这些默认值既供管型库独立预览，也在产品模板没有传值时作为后备值。加载器按 `<模板前缀><参数名首字母大写>` 读取实际参数，因此新增管型自己的参数不需要修改共享加载代码。
+
+内置管型的几何分类写在自身 `profile.json`，不在前端登记：
+
+```json
+{
+  "category": "管",
+  "catalog": {
+    "categoryPath": ["管"],
+    "groupOrder": 1,
+    "order": 1
+  }
+}
+```
+
+`category` 和 `catalog.categoryPath` 只使用三个一级分类：`管`、`型材`、`多腔体`。闭口且只有一个内腔的截面归入“管”，开口或实心截面归入“型材”，具有两个及以上内腔的截面归入“多腔体”。“基础参数/高级参数”只用于右侧参数面板，不参与资源库分组。热轧、焊接和导入完整轮廓也是同一管型的参数能力，不另造目录层级。
 
 `profile.py` 提供两个入口：
 
 - `build(parameters)`：校验 JSON 声明的参数，返回截面边界、壁厚、规格文本以及脚本需要保留的其他数据。
-- `contours(profile, clearance, swap_axes)`：一次返回中性模型 `profile2d` 使用的非空轮廓数组。第一个元素是外轮廓，后续元素都是内孔；实心或开口型材只返回一个元素。
+- `contours(profile, clearance, swap_axes)`：一次返回中性模型 `profile2d` 使用的非空通用闭合曲线数组。每个轮廓都是 `kind=path`，由 `line/arc/ellipseArc/bezier/bspline/nurbs` 等段组成；第一个元素是外轮廓，后续元素都是内孔；实心或开口型材只返回一个元素。
+
+管型的几何辅助函数直接合并在该管型自己的 `profile.py` 中，不再拆出 `geometry.py` 或 `section_geometry.py`。一个管型包含多个有意义的轮廓子模型时，可以在同一目录保留按名称命名的实现文件（例如 `hexagonal_tube.py`、`i_hot_parallel.py`），由 `profile.py` 选择调用；不得再使用 `model_0.py`、`model_1.py` 这类无语义文件名。
 
 产品模板的 `template.json` 把管型 ID 写入 `*ProfileType` 枚举，产品 `template.py` 通过共享目录加载管型包。新增标准等截面管型不需要修改或重新注册 C++ 类型。
 
 当前内置管型：
 
-- 空心管：`rect` 矩形管、`round` 圆管、`ellipse` 椭圆管、`flat-oval` 腰圆管、`polygon` 多边形管（正多边形 / 星形）。
-- 开口/实腹型材：`angle` L 型角钢、`channel` C/U 型槽钢、`i-section` 工字钢/H 型钢、`t-section` T 型钢、`z-section` Z 型钢。
+- 管：`rect` 方管、`round` 圆管、`oval` 椭圆管、`racetrack` 腰型管、`curve-hollow` D 型管、`p-tube` P 型管和 `polygon` 多边形管。
+- 型材：`angle` L、`channel` C/U、`t-section` T、`i-section` I、`u-section` U 肋、球扁钢、帽钢、圆棒、多边形棒、扁钢、Sigma 型钢、开缝管和 Z 型钢等开口或实心截面。
+- 多腔体：`multi-cell` 二腔方管；两个相同方腔由一根竖向隔筋分开，外宽和外高由方腔边长、外壁厚和隔筋厚派生。
 
 管型库直接扫描上述目录并把它们显示在“系统内置”分组中。系统定义不会复制到 `usr.db`，因此不能重命名或删除；参数可以在当前页面修改，用于截面、三维预览和导出。用户导入的可编辑包与 DXF 则单独显示在“我的管型”分组中。
 
@@ -39,7 +57,7 @@ profile.py
 
 压缩包统一使用 ZIP 传统密码保护，密码由产品固定 magic number 自动处理，用户不需要输入或保存密码。AES ZIP 不属于 Python 标准库支持范围，导入时会明确提示加密格式不受支持。
 
-可编辑包沿用版本 2 的 `icax.tube-profile-descriptor`。与内置管型不同，第三方包的每个参数都必须声明 `defaultValue`，并可选声明 `min`、`max`、`step` 和 `options`。脚本入口仍是 `build(parameters)` 与 `contours(profile, clearance, swap_axes)`。
+可编辑包沿用版本 3 的 `icax.tube-profile-descriptor`。与内置管型不同，第三方包的每个参数都必须声明 `defaultValue`，并可选声明 `min`、`max`、`step` 和 `options`。脚本入口仍是 `build(parameters)` 与 `contours(profile, clearance, swap_axes)`。
 
 导入时会限制压缩包与解压内容大小、拒绝目录穿越和额外文件，并用默认参数执行脚本、构建一个短拉伸体验证轮廓。可编辑包包含可执行 Python 脚本，因此只能导入可信来源。
 

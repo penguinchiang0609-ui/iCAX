@@ -2,7 +2,7 @@
   "schema": "icax.template-descriptor",
   "schemaVersion": 1,
   "id": "minimal-protective-grille",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": { "zh-CN": "极简防护网" },
   "description": "两竖管或四边封框防护网：自动见光排杆、把手禁区、公母管半孔与双端公头、圆形大小安装孔、冲突校验及相同零件归并拆单。",
   "extensions": {
@@ -119,13 +119,12 @@
 
     { "key":"frameCornerJoint", "displayName":{"zh-CN":"四边框拼角"}, "valueType":"enum", "defaultValue":"miter_45", "group":"frame_process", "choices":[{"value":"miter_45","displayName":{"zh-CN":"45°拼角"}},{"value":"horizontal_wrap","displayName":{"zh-CN":"直切：上下边补齐"}},{"value":"vertical_wrap","displayName":{"zh-CN":"直切：左右边补齐"}}], "visibleWhen":{"op":"eq","parameter":"frameType","value":"closed_frame"} },
 
-    { "key":"innerJoint", "displayName":{"zh-CN":"内杆与边框连接"}, "valueType":"enum", "defaultValue":"male_female_half_hole", "group":"joint", "choices":[{"value":"male_female_half_hole","displayName":{"zh-CN":"公母管半孔插接"}},{"value":"flat_weld","displayName":{"zh-CN":"平口贴合焊接"}}] },
-    { "key":"maleHeadLength", "displayName":{"zh-CN":"公头长度"}, "valueType":"number", "defaultValue":3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":200}, "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
-    { "key":"maleHeadWidth", "displayName":{"zh-CN":"公头保留宽度"}, "valueType":"number", "defaultValue":10, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":500}, "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
-    { "key":"maleCornerType", "displayName":{"zh-CN":"公头角部"}, "valueType":"enum", "defaultValue":"round", "group":"joint", "choices":[{"value":"round","displayName":{"zh-CN":"圆角"}},{"value":"chamfer","displayName":{"zh-CN":"直线倒角"}},{"value":"square","displayName":{"zh-CN":"直角"}}], "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
-    { "key":"maleCornerSize", "displayName":{"zh-CN":"公头圆角／倒角尺寸"}, "valueType":"number", "defaultValue":1, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":100}, "visibleWhen":{"op":"all","conditions":[{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"},{"op":"ne","parameter":"maleCornerType","value":"square"}]} },
-    { "key":"holeTotalClearanceDepth", "displayName":{"zh-CN":"母孔深向总间隙"}, "valueType":"number", "defaultValue":0.3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10}, "description":"总增量 0.30 mm 等于理论单侧约 0.15 mm。", "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
-    { "key":"holeTotalClearanceHeight", "displayName":{"zh-CN":"母孔高向总间隙"}, "valueType":"number", "defaultValue":0.3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10}, "description":"总增量 0.30 mm 等于理论单侧约 0.15 mm。", "visibleWhen":{"op":"eq","parameter":"innerJoint","value":"male_female_half_hole"} },
+    { "key":"maleHeadLength", "displayName":{"zh-CN":"公头长度"}, "valueType":"number", "defaultValue":3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":200} },
+    { "key":"maleHeadWidth", "displayName":{"zh-CN":"公头保留宽度"}, "valueType":"number", "defaultValue":10, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0.1,"maximum":500} },
+    { "key":"maleCornerType", "displayName":{"zh-CN":"公头角部"}, "valueType":"enum", "defaultValue":"round", "group":"joint", "choices":[{"value":"round","displayName":{"zh-CN":"圆角"}},{"value":"chamfer","displayName":{"zh-CN":"直线倒角"}},{"value":"square","displayName":{"zh-CN":"直角"}}] },
+    { "key":"maleCornerSize", "displayName":{"zh-CN":"公头圆角／倒角尺寸"}, "valueType":"number", "defaultValue":1, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":100}, "visibleWhen":{"op":"ne","parameter":"maleCornerType","value":"square"} },
+    { "key":"holeTotalClearanceDepth", "displayName":{"zh-CN":"母孔深向总间隙"}, "valueType":"number", "defaultValue":0.3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10}, "description":"总增量 0.30 mm 等于理论单侧约 0.15 mm。" },
+    { "key":"holeTotalClearanceHeight", "displayName":{"zh-CN":"母孔高向总间隙"}, "valueType":"number", "defaultValue":0.3, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":10}, "description":"总增量 0.30 mm 等于理论单侧约 0.15 mm。" },
     { "key":"minimumFeatureWeb", "displayName":{"zh-CN":"孔间最小保留料"}, "valueType":"number", "defaultValue":2, "group":"joint", "unit":"mm", "quantity":"length", "constraints":{"minimum":0,"maximum":100} },
 
     { "key":"installHoleEnabled", "displayName":{"zh-CN":"生成边框安装孔"}, "valueType":"boolean", "defaultValue":true, "group":"install" },

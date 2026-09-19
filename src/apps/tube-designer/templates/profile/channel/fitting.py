@@ -1,55 +1,184 @@
-"""Direct measurement of open-channel walls, lips, slope and roots."""
+"""Direct geometric inverse for the single U-shaped channel model."""
 import math
+
+
 IMPLEMENTED=True
+
+
+HOT_SLOPE = 0.1
+
+
+def _direction_matches(a, b, kind, sx, sy, tolerance):
+    dx=b[0]-a[0]
+    dy=b[1]-a[1]
+    length=math.hypot(dx,dy)
+    if length<=tolerance:return False
+    if kind == "h":
+        return abs(dy)<=tolerance and dx*sx>0
+    if kind == "v":
+        return abs(dx)<=tolerance and dy*sy>0
+    if kind == "s":
+        if dx*sx<=0 or dy*sy<=0 or abs(dx)<=tolerance:return False
+        return abs(abs(dy/dx)-HOT_SLOPE)<=max(1e-5,10*tolerance)
+    return False
+
+
+def _fit_hot_rolled(corners, tolerance):
+    if not corners or len(corners)!=8:return False
+    # Outer lower toe -> outer lower web root -> outer upper web root ->
+    # outer upper toe -> inner upper toe -> inner upper web root ->
+    # inner lower web root -> inner lower toe.
+    pattern=(("h",-1,0),("v",0,1),("h",1,0),("v",0,-1),
+             ("s",-1,-1),("v",0,-1),("s",1,-1),("v",0,-1))
+    for orientation in (corners, list(reversed(corners))):
+      for shift in range(8):
+        c=orientation[shift:]+orientation[:shift]
+        if any(not _direction_matches(c[i][0],c[(i+1)%8][0],*pattern[i],tolerance)
+               for i in range(8)):
+            continue
+        radii=[abs(float(entry[1])) for entry in c]
+        if any(not math.isfinite(radius) or radius< -tolerance for radius in radii):
+            continue
+        if any(radii[index]>tolerance for index in (0,3)):
+            continue
+        x=[entry[0][0] for entry in c]
+        y=[entry[0][1] for entry in c]
+        width=x[3]-x[1]
+        depth=y[2]-y[0]
+        wall_span=x[5]-x[1]
+        if min(width,depth,wall_span)<=tolerance:
+            continue
+        bottom_mid=(y[6]+y[7])/2
+        top_mid=(y[4]+y[5])/2
+        bottom_flange=bottom_mid-y[0]
+        top_flange=y[2]-top_mid
+        if min(bottom_flange,top_flange)<=tolerance or abs(bottom_flange-top_flange)>tolerance:
+            continue
+        offset_y_bottom=bottom_mid-y[0]-(bottom_flange+top_flange)/2
+        offset_y_top=top_mid-y[2]+(bottom_flange+top_flange)/2
+        if abs(offset_y_bottom-offset_y_top)>tolerance:
+            continue
+        outer_radii=[radii[1],radii[2]]
+        inner_radii=[radii[6],radii[5]]
+        free_radii=[radii[7],radii[4]]
+        use_outer=abs(outer_radii[0]-outer_radii[1])>tolerance
+        use_inner=any(abs(outer-inner-wall_span)>tolerance
+                      for outer,inner in zip(outer_radii,inner_radii))
+        independent_free=abs(free_radii[0]-free_radii[1])>tolerance
+        return {
+            "width":width,
+            "depth":depth,
+            "wallThickness":wall_span,
+            "outerRadius":outer_radii[0],
+            "useHotRolled":True,
+            "flangeThickness":(bottom_flange+top_flange)/2,
+            "useOuterRadii":use_outer,
+            "outerRadius1":outer_radii[0],
+            "outerRadius2":outer_radii[1],
+            "useInnerRadius":use_inner,
+            "innerRadius1":inner_radii[0],
+            "innerRadius2":inner_radii[1],
+            "freeEndRadius":free_radii[0] if not independent_free else 0,
+            "useIndependentFreeEndRadii":independent_free,
+            "freeEndRadius1":free_radii[0],
+            "freeEndRadius2":free_radii[1],
+            "innerOffsetX":0,
+            "innerOffsetY":(offset_y_bottom+offset_y_top)/2,
+        }, [0,0]
+    return False
+
+
+def _fit_channel(loop,tolerance):
+    if loop.get("kind") != "path": return False
+    edges=loop.get("edges",[])
+    lines=[e for e in edges if e.get("kind")=="line"]
+    arcs=[e for e in edges if e.get("kind")=="arc"]
+    if len(lines) != 8 or len(arcs)>6: return False
+
+    horizontal=[e for e in lines if abs(e["start"][1]-e["end"][1])<=tolerance]
+    vertical=[e for e in lines if abs(e["start"][0]-e["end"][0])<=tolerance]
+    if len(horizontal)!=4 or len(vertical)!=4: return False
+
+    length=lambda e:math.dist(e["start"],e["end"])
+    web=sorted(vertical,key=length,reverse=True)[:2]
+    ends=sorted(vertical,key=length)[:2]
+    if any(length(e)<=tolerance for e in web+ends): return False
+    if length(web[1])<=length(ends[0])+tolerance: return False
+    web_x=[e["start"][0] for e in web]
+    web_center=sum(web_x)/2
+    end_x=[e["start"][0] for e in ends]
+    free_x=sum(end_x)/2
+    wall=abs(web_x[0]-web_x[1])
+    if wall<=tolerance or abs(end_x[0]-end_x[1])>tolerance: return False
+    if free_x<=web_center+tolerance: return False
+
+    levels=sorted(e["start"][1] for e in horizontal)
+    if any(abs(a-b)<=tolerance for a,b in zip(levels,levels[1:])): return False
+    bottom=sum(levels[:2])/2
+    top=sum(levels[2:])/2
+    depth=top-bottom
+    width=free_x-web_center
+    if min(width,depth)<=tolerance: return False
+    if abs((levels[1]-levels[0])-wall)>tolerance: return False
+    if abs((levels[3]-levels[2])-wall)>tolerance: return False
+
+    def adjacent(arc,line):
+        return any(math.dist(arc[end],line[start])<=tolerance
+                   for end in ("start","end") for start in ("start","end"))
+    root_arcs=[arc for arc in arcs if any(adjacent(arc,line) for line in web)]
+    free_arcs=[arc for arc in arcs if arc not in root_arcs]
+    if len(root_arcs)!=4 or not 0<=len(free_arcs)<=2: return False
+    outer_radii=[0,0]
+    inner_radii=[0,0]
+    for edge in root_arcs:
+        radius=float(edge.get("radius",-1))
+        if radius<0 or not math.isfinite(radius): return False
+        matches=[i for i,level in enumerate(levels)
+                 if abs(edge["start"][1]-level)<=tolerance
+                 or abs(edge["end"][1]-level)<=tolerance]
+        if len(matches)!=1: return False
+        index=matches[0]
+        if index==0: slot=outer_radii; side=0
+        elif index==3: slot=outer_radii; side=1
+        elif index==1: slot=inner_radii; side=0
+        else: slot=inner_radii; side=1
+        if slot[side] and abs(slot[side]-radius)>tolerance: return False
+        slot[side]=radius
+    if any(outer<inner-tolerance for outer,inner in zip(outer_radii,inner_radii)): return False
+    free_radii=[0,0]
+    for edge in free_arcs:
+        radius=float(edge.get("radius",-1))
+        if radius<0 or not math.isfinite(radius): return False
+        matches=[i for i,level in enumerate(levels)
+                 if abs(edge["start"][1]-level)<=tolerance
+                 or abs(edge["end"][1]-level)<=tolerance]
+        if len(matches)!=1 or matches[0] not in (1,2): return False
+        free_radii[0 if matches[0]==1 else 1]=radius
+    independent_free=abs(free_radii[0]-free_radii[1])>tolerance
+    use_inner=any(abs(outer-inner-wall)>tolerance
+                  for outer,inner in zip(outer_radii,inner_radii))
+    use_outer=abs(outer_radii[0]-outer_radii[1])>tolerance
+    parameters=dict(width=width,depth=depth,wallThickness=wall,
+                    outerRadius=outer_radii[0],useOuterRadii=use_outer,
+                    outerRadius1=outer_radii[0],outerRadius2=outer_radii[1],
+                    useInnerRadius=use_inner,
+                    innerRadius1=inner_radii[0],innerRadius2=inner_radii[1],
+                    freeEndRadius=free_radii[0] if not independent_free else 0,
+                    useIndependentFreeEndRadii=independent_free,
+                    freeEndRadius1=free_radii[0],freeEndRadius2=free_radii[1],
+                    innerOffsetX=0,innerOffsetY=0,
+                    useHotRolled=False,flangeThickness=8.5)
+    origin=[(web_center+free_x)/2,(bottom+top)/2]
+    return parameters,origin
+
+
 def fitting(section,context):
     q,g,t=context['geometry'],context['curves'],context['tolerance']
     if len(section)!=1:return False
     for loops,pose in g.frames(section):
-        for raw,wall,r in q.strip_axes(loops[0],t):
-            for p in (raw,list(reversed(raw))):
-                x=[a[0] for a in p];y=[a[1] for a in p]
-                params=dict(wallThickness=wall,geometrySource='idealizedFallback')
-                if len(p)==4:
-                    if abs(y[0]-y[1])>t or abs(x[1]-x[2])>t or abs(y[2]-y[3])>t:continue
-                    w=x[0]-x[1];h=y[2]-y[1];upper=x[3]-x[2]
-                    if min(w,h,upper)<=t:continue
-                    if abs(w-upper)<=t:params.update(sectionModel='channel-cold-u',model0BendRadius=r)
-                    else:params.update(sectionModel='channel-cold-unequal',model2BendRadius=r,model2UpperWidth=upper)
-                    origin=[(x[0]+x[1])/2,(y[1]+y[2])/2]
-                elif len(p)==6:
-                    if any(abs(x[a]-x[b])>t for a,b in ((0,1),(2,3),(4,5),(1,4))):continue
-                    if abs(y[1]-y[2])>t or abs(y[3]-y[4])>t:continue
-                    w=x[1]-x[2];h=y[3]-y[2];lip=y[0]-y[1]
-                    if min(w,h,abs(lip))<=t or abs(y[4]-y[5]-lip)>t:continue
-                    index=3 if lip>0 else 4
-                    params.update(sectionModel='channel-lipped-inward' if index==3 else 'channel-lipped-outward')
-                    params.update({f'model{index}BendRadius':r,f'model{index}LipLength':abs(lip)})
-                    origin=[(x[1]+x[2])/2,(y[2]+y[3])/2]
-                else:continue
-                params.update(width=w,depth=h)
-                return q.result(params,q.shifted_pose(pose,origin))
-        # Sloping flange lines remain support lines; only welded mode collapses diagonals.
-        for weld in (False,True):
-            corners=q.polygon_corners(loops[0],t,chamfers=weld)
-            if not corners or len(corners)!=8:continue
-            for k in range(8):
-                cs=corners[k:]+corners[:k];x=[c[0][0] for c in cs];y=[c[0][1] for c in cs];rs=[c[1] for c in cs]
-                if any(abs(x[a]-x[b])>t for a,b in ((1,2),(3,4),(5,6),(7,0),(1,6))):continue
-                if abs(y[0]-y[1])>t or abs(y[6]-y[7])>t:continue
-                w=x[1]-x[0];h=y[6]-y[1];wall=x[3]-x[0];lower=y[2]-y[1];upper=y[6]-y[5]
-                if min(w-wall,wall,lower,upper,y[4]-y[3])<=t:continue
-                if any(abs(rs[i])>t for i in (0,1,6,7)) or abs(rs[3]-rs[4])>t or abs(rs[2]-rs[5])>t:continue
-                params=dict(width=w,depth=h,wallThickness=wall,geometrySource='idealizedFallback')
-                rise=y[3]-y[2]
-                if rs[3]<0:
-                    if abs(rise)>t or abs(y[5]-y[4])>t or abs(rs[2])>t:continue
-                    params.update(sectionModel='channel-welded',model7FlangeThickness=upper,
-                        model7LowerThickness=lower,model7WeldLeg=-rs[3])
-                else:
-                    if abs(upper-lower)>t or rise < -t or abs(y[5]-y[4]-rise)>t or rs[2]<0:continue
-                    index=6 if abs(rise)<=t else 5
-                    params.update(sectionModel='channel-hot-parallel' if index==6 else 'channel-hot-tapered')
-                    params.update({f'model{index}FlangeThickness':upper,f'model{index}RootRadius':rs[3],f'model{index}ToeRadius':rs[2]})
-                    if index==5:params['model5FlangeSlope']=math.degrees(math.atan2(rise,w-wall))
-                return q.result(params,q.shifted_pose(pose,[(x[0]+x[1])/2,(y[0]+y[6])/2]))
+        corners=q.polygon_corners(loops[0],t)
+        result=_fit_hot_rolled(corners,t) or _fit_channel(loops[0],t)
+        if result:
+            parameters,origin=result
+            return q.result(parameters,q.shifted_pose(pose,origin))
     return False

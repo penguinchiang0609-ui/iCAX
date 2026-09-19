@@ -2969,6 +2969,21 @@ namespace
         return Reference_.Scope + "/" + (Reference_.Scope == "template" ? Reference_.TemplateID + "/" : "") + Reference_.ID;
     }
 
+    double ProfilePreviewLength(const ObjectMap& Profile_)
+    {
+        // The section contract exposes its x/y AABB as width/depth. Preview
+        // and STEP length are derived from that box, never user-entered.
+        const auto _Width = GetDouble(Profile_, "width", 0.0);
+        const auto _Depth = GetDouble(Profile_, "depth", 0.0);
+        if (!std::isfinite(_Width) || !std::isfinite(_Depth)
+            || _Width <= 1.0e-6 || _Depth <= 1.0e-6)
+            throw std::invalid_argument("tube profile bounds are invalid");
+        const auto _Length = 2.0 * std::hypot(_Width, _Depth);
+        if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
+            throw std::invalid_argument("tube profile derived preview length is invalid");
+        return _Length;
+    }
+
     TopoDS_Shape BuildProfileExtrusion(
         const ObjectMap& Profile_,
         const double Length_)
@@ -3740,6 +3755,14 @@ namespace
         auto _Payload = MakeUserDataPayload(Record_);
         _Payload["profileType"] = Record_.RecordType;
         _Payload["profileScope"] = std::string("user");
+        // The library UI consumes a normalized package record.  Legacy
+        // personal records may only contain a frozen snapshot (or may keep
+        // the form inside descriptor), so expose the record kind as the
+        // authoritative top-level form instead of making every consumer
+        // rediscover it.
+        _Payload["profileForm"] = Record_.RecordType == kParametricProfileRecordType
+            ? Variant(std::string("parametric"))
+            : Variant(std::string("fixed"));
         _Payload["profileRef"] = ObjectMap{
             { "scope", std::string("user") }, { "id", Record_.RecordID }
         };
@@ -3758,6 +3781,7 @@ namespace
         const auto _ProfileID = GetRequiredText(_Descriptor, "id", 80);
         _Payload["id"] = _ProfileID;
         _Payload["profileType"] = std::string(kParametricProfileRecordType);
+        _Payload["profileForm"] = GetString(_Descriptor, "profileForm");
         _Payload["profileScope"] = std::string("system");
         _Payload["profileRef"] = ObjectMap{
             { "scope", std::string("system") }, { "id", _ProfileID }
@@ -3784,6 +3808,7 @@ namespace
         const auto _ProfileID = GetRequiredText(_Descriptor, "id", 80);
         _Payload["id"] = _ProfileID;
         _Payload["profileType"] = std::string(kParametricProfileRecordType);
+        _Payload["profileForm"] = GetString(_Descriptor, "profileForm");
         _Payload["profileScope"] = std::string("user");
         _Payload["libraryScope"] = std::string("user");
         _Payload["profileRef"] = ObjectMap{
@@ -4594,9 +4619,6 @@ namespace
             throw std::invalid_argument("TubeDesigner.GenerateProfilePreview requires a scene");
         const auto _Request = DecodeObjectPayload(Request_);
         const auto _ProfileReference = ParseProfileReference(_Request);
-        const auto _Length = GetDouble(_Request, "length", 1000.0);
-        if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
-            throw std::invalid_argument("profile preview length must be between 1 and 100000 mm");
         ObjectMap _Parameters;
         if (const auto _Iterator = _Request.find("parameters");
             _Iterator != _Request.end() && !_Iterator->second.Is<std::monostate>())
@@ -4608,6 +4630,7 @@ namespace
         auto _Profile = ResolveProfileSnapshot(
             ApplicationContext_, *GetUserDataStore(ProductContext_),
             _ProfileReference, _Parameters);
+        const auto _Length = ProfilePreviewLength(_Profile);
         const auto _Name = GetString(_Profile, "name", "管型");
         const auto _Shape = BuildProfileExtrusion(_Profile, _Length);
         if (_Shape.IsNull())
@@ -4648,9 +4671,6 @@ namespace
             throw std::invalid_argument("profile export format must be dxf or step");
         if (_Format == "step") tube::license::Enforce<303, tube::license::Feature::StepExport>();
         else tube::license::Enforce<103, tube::license::Feature::Design>();
-        const auto _Length = GetDouble(_Request, "length", 1000.0);
-        if (!std::isfinite(_Length) || _Length < 1.0 || _Length > 100000.0)
-            throw std::invalid_argument("profile export length must be between 1 and 100000 mm");
         ObjectMap _Parameters;
         if (const auto _Iterator = _Request.find("parameters");
             _Iterator != _Request.end() && !_Iterator->second.Is<std::monostate>())
@@ -4662,6 +4682,7 @@ namespace
         auto _Profile = ResolveProfileSnapshot(
             ApplicationContext_, *GetUserDataStore(ProductContext_),
             _ProfileReference, _Parameters);
+        const auto _Length = ProfilePreviewLength(_Profile);
         const auto _Name = GetString(_Profile, "name", "管型");
         const auto _TargetRoot = Utf8Path(GetRequiredText(_Request, "targetDirectory", 32767));
         std::filesystem::create_directories(_TargetRoot);

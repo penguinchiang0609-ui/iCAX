@@ -15,6 +15,26 @@ export function matchesParameterCondition(condition, values = {}) {
   return false;
 }
 
+export function parameterVisible(definition, values = {}) {
+  return definition?.presentation?.visible !== false
+    && matchesParameterCondition(definition?.visibleWhen, values);
+}
+
 export function parameterEnabled(definition, values) {
   return !definition?.readOnly && matchesParameterCondition(definition?.enabledWhen, values);
+}
+
+export function availableParameterChoices(definition, values = {}) {
+  const conditions = definition?.presentation?.choiceConditions ?? {};
+  return (definition?.options ?? definition?.choices ?? []).filter(choice =>
+    matchesParameterCondition(conditions[String(choice?.value ?? choice)], values));
+}
+
+export function effectiveParameterChoice(definition, value, values = {}) {
+  if (!definition?.presentation?.choiceConditions) return value;
+  const choices = availableParameterChoices(definition, values);
+  const has = v => choices.some(choice => String(choice?.value ?? choice) === String(v));
+  if (has(value)) return value;
+  const fallback = definition?.presentation?.unavailableChoiceFallback ?? definition?.defaultValue;
+  return has(fallback) ? fallback : choices[0]?.value ?? choices[0];
 }

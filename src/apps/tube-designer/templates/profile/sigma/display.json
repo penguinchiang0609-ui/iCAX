@@ -1,0 +1,114 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": false }
+      },
+      "fields": {
+        "depth": { "group": "dimensions", "order": 10, "title": { "zh-CN": "总高度 H" } },
+        "flangeWidth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "翼缘宽度 B" } },
+        "lipLength": { "group": "dimensions", "order": 30, "title": { "zh-CN": "卷边长度 C" } },
+        "wallThickness": { "group": "dimensions", "order": 40, "title": { "zh-CN": "板厚 t" } },
+        "bendRadius": { "group": "dimensions", "order": 50, "title": { "zh-CN": "折弯内 R" } },
+        "centerWebOffset": { "group": "dimensions", "order": 60, "title": { "zh-CN": "中央腹板偏移 e" } },
+        "outerWebHeight": { "group": "dimensions", "order": 70, "title": { "zh-CN": "外腹板直段 a" } },
+        "transitionRise": { "group": "dimensions", "order": 80, "title": { "zh-CN": "斜过渡竖高 q" } },
+        "lipAngle": { "group": "dimensions", "order": 90, "title": { "zh-CN": "卷边角度 θ" } },
+        "useIndependentSides": { "group": "advanced", "order": 10, "line": "full", "title": { "zh-CN": "上下参数独立设置" } },
+        "topFlangeWidth": { "group": "advanced", "order": 20, "title": { "zh-CN": "上翼缘 Bt" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomFlangeWidth": { "group": "advanced", "order": 30, "title": { "zh-CN": "下翼缘 Bb" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "topLipLength": { "group": "advanced", "order": 40, "title": { "zh-CN": "上卷边 Ct" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomLipLength": { "group": "advanced", "order": 50, "title": { "zh-CN": "下卷边 Cb" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "topOuterWebHeight": { "group": "advanced", "order": 60, "title": { "zh-CN": "上外腹板 at" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomOuterWebHeight": { "group": "advanced", "order": 70, "title": { "zh-CN": "下外腹板 ab" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "upperTransitionRise": { "group": "advanced", "order": 80, "title": { "zh-CN": "上过渡 qt" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "lowerTransitionRise": { "group": "advanced", "order": 90, "title": { "zh-CN": "下过渡 qb" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "topLipAngle": { "group": "advanced", "order": 100, "title": { "zh-CN": "上卷边角 θt" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomLipAngle": { "group": "advanced", "order": 110, "title": { "zh-CN": "下卷边角 θb" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "useIndependentRadii": { "group": "advanced", "order": 120, "line": "full", "title": { "zh-CN": "八个折弯 R 独立设置" } },
+        "bendRadius1": { "group": "advanced", "order": 130, "title": { "zh-CN": "R1 上卷边" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius2": { "group": "advanced", "order": 140, "title": { "zh-CN": "R2 上翼缘根部" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius3": { "group": "advanced", "order": 150, "title": { "zh-CN": "R3 上外腹板过渡" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius4": { "group": "advanced", "order": 160, "title": { "zh-CN": "R4 上过渡中央腹板" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius5": { "group": "advanced", "order": 170, "title": { "zh-CN": "R5 中央腹板下过渡" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius6": { "group": "advanced", "order": 180, "title": { "zh-CN": "R6 下过渡外腹板" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius7": { "group": "advanced", "order": 190, "title": { "zh-CN": "R7 下翼缘根部" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius8": { "group": "advanced", "order": 200, "title": { "zh-CN": "R8 下卷边" }, "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "mirrorX": { "group": "advanced", "order": 210, "title": { "zh-CN": "左右镜像" } },
+        "mirrorY": { "group": "advanced", "order": 220, "title": { "zh-CN": "上下镜像" } }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": false }
+      },
+      "annotations": {
+        "depth": { "label": { "zh-CN": "总高度 H" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "flangeWidth": { "label": { "zh-CN": "翼缘宽度 B" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "lipLength": { "label": { "zh-CN": "卷边长度 C" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm" },
+        "wallThickness": { "label": { "zh-CN": "板厚 t" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm" },
+        "bendRadius": { "label": { "zh-CN": "折弯内 R" }, "group": "dimensions", "order": 50, "editable": true, "suffix": " mm" },
+        "centerWebOffset": { "label": { "zh-CN": "中央腹板偏移 e" }, "group": "dimensions", "order": 60, "editable": true, "suffix": " mm" },
+        "outerWebHeight": { "label": { "zh-CN": "外腹板直段 a" }, "group": "dimensions", "order": 70, "editable": true, "suffix": " mm" },
+        "transitionRise": { "label": { "zh-CN": "斜过渡竖高 q" }, "group": "dimensions", "order": 80, "editable": true, "suffix": " mm" },
+        "lipAngle": { "label": { "zh-CN": "卷边角度 θ" }, "group": "dimensions", "order": 90, "editable": true, "suffix": "°" },
+        "topFlangeWidth": { "label": { "zh-CN": "上翼缘 Bt" }, "group": "advanced", "order": 20, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomFlangeWidth": { "label": { "zh-CN": "下翼缘 Bb" }, "group": "advanced", "order": 30, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "topLipLength": { "label": { "zh-CN": "上卷边 Ct" }, "group": "advanced", "order": 40, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomLipLength": { "label": { "zh-CN": "下卷边 Cb" }, "group": "advanced", "order": 50, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "topOuterWebHeight": { "label": { "zh-CN": "上外腹板 at" }, "group": "advanced", "order": 60, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomOuterWebHeight": { "label": { "zh-CN": "下外腹板 ab" }, "group": "advanced", "order": 70, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "upperTransitionRise": { "label": { "zh-CN": "上过渡 qt" }, "group": "advanced", "order": 80, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "lowerTransitionRise": { "label": { "zh-CN": "下过渡 qb" }, "group": "advanced", "order": 90, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "topLipAngle": { "label": { "zh-CN": "上卷边角 θt" }, "group": "advanced", "order": 100, "editable": true, "suffix": "°", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bottomLipAngle": { "label": { "zh-CN": "下卷边角 θb" }, "group": "advanced", "order": 110, "editable": true, "suffix": "°", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+        "bendRadius1": { "label": { "zh-CN": "R1" }, "group": "advanced", "order": 130, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius2": { "label": { "zh-CN": "R2" }, "group": "advanced", "order": 140, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius3": { "label": { "zh-CN": "R3" }, "group": "advanced", "order": 150, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius4": { "label": { "zh-CN": "R4" }, "group": "advanced", "order": 160, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius5": { "label": { "zh-CN": "R5" }, "group": "advanced", "order": 170, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius6": { "label": { "zh-CN": "R6" }, "group": "advanced", "order": 180, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius7": { "label": { "zh-CN": "R7" }, "group": "advanced", "order": 190, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+        "bendRadius8": { "label": { "zh-CN": "R8" }, "group": "advanced", "order": 200, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "depth", "kind": "linear", "from": [0, "-depth/2"], "to": [0, "depth/2"], "axis": "y", "side": "left", "description": "总高度 H" },
+          { "parameter": "flangeWidth", "kind": "linear", "from": [0, "(depth-wallThickness)/2"], "to": ["flangeWidth", "(depth-wallThickness)/2"], "axis": "x", "side": "top", "description": "翼缘宽度 B" },
+          { "parameter": "lipLength", "kind": "leader", "point": ["flangeWidth-lipLength*cos(lipAngle*0.0174532925199433)", "(depth-wallThickness)/2-lipLength*sin(lipAngle*0.0174532925199433)"], "side": "right", "description": "卷边长度 C" },
+          { "parameter": "wallThickness", "kind": "linear", "from": ["-wallThickness/2", 0], "to": ["wallThickness/2", 0], "axis": "x", "side": "bottom", "description": "板厚 t" },
+          { "parameter": "bendRadius", "kind": "leader", "point": ["wallThickness/2+bendRadius", "(depth-wallThickness)/2-wallThickness/2-bendRadius"], "side": "right", "description": "折弯内 R" },
+          { "parameter": "centerWebOffset", "kind": "linear", "from": [0, 0], "to": ["centerWebOffset", 0], "axis": "x", "side": "bottom", "description": "中央腹板偏移 e" },
+          { "parameter": "outerWebHeight", "kind": "linear", "from": [0, "(depth-wallThickness)/2-outerWebHeight"], "to": [0, "(depth-wallThickness)/2"], "axis": "y", "side": "left", "description": "外腹板直段 a" },
+          { "parameter": "transitionRise", "kind": "linear", "from": [0, "(depth-wallThickness)/2-outerWebHeight-transitionRise"], "to": [0, "(depth-wallThickness)/2-outerWebHeight"], "axis": "y", "side": "left", "description": "斜过渡竖高 q" },
+          { "parameter": "lipAngle", "kind": "leader", "point": ["flangeWidth", "(depth-wallThickness)/2"], "side": "right", "description": "卷边角度 θ" },
+          { "parameter": "topFlangeWidth", "kind": "linear", "from": [0, "(depth-wallThickness)/2"], "to": ["topFlangeWidth", "(depth-wallThickness)/2"], "axis": "x", "side": "top", "description": "上翼缘 Bt", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "bottomFlangeWidth", "kind": "linear", "from": [0, "-(depth-wallThickness)/2"], "to": ["bottomFlangeWidth", "-(depth-wallThickness)/2"], "axis": "x", "side": "bottom", "description": "下翼缘 Bb", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "topLipLength", "kind": "leader", "point": ["topFlangeWidth-topLipLength*cos(topLipAngle*0.0174532925199433)", "(depth-wallThickness)/2-topLipLength*sin(topLipAngle*0.0174532925199433)"], "side": "right", "description": "上卷边 Ct", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "bottomLipLength", "kind": "leader", "point": ["bottomFlangeWidth-bottomLipLength*cos(bottomLipAngle*0.0174532925199433)", "-(depth-wallThickness)/2+bottomLipLength*sin(bottomLipAngle*0.0174532925199433)"], "side": "right", "description": "下卷边 Cb", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "topOuterWebHeight", "kind": "linear", "from": [0, "(depth-wallThickness)/2-topOuterWebHeight"], "to": [0, "(depth-wallThickness)/2"], "axis": "y", "side": "left", "description": "上外腹板 at", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "bottomOuterWebHeight", "kind": "linear", "from": [0, "-(depth-wallThickness)/2"], "to": [0, "-(depth-wallThickness)/2+bottomOuterWebHeight"], "axis": "y", "side": "left", "description": "下外腹板 ab", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "upperTransitionRise", "kind": "linear", "from": [0, "(depth-wallThickness)/2-topOuterWebHeight-upperTransitionRise"], "to": [0, "(depth-wallThickness)/2-topOuterWebHeight"], "axis": "y", "side": "left", "description": "上过渡 qt", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "lowerTransitionRise", "kind": "linear", "from": [0, "-(depth-wallThickness)/2+bottomOuterWebHeight"], "to": [0, "-(depth-wallThickness)/2+bottomOuterWebHeight+lowerTransitionRise"], "axis": "y", "side": "left", "description": "下过渡 qb", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "topLipAngle", "kind": "leader", "point": ["topFlangeWidth", "(depth-wallThickness)/2"], "side": "right", "description": "上卷边角 θt", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "bottomLipAngle", "kind": "leader", "point": ["bottomFlangeWidth", "-(depth-wallThickness)/2"], "side": "right", "description": "下卷边角 θb", "visibleWhen": { "op": "eq", "parameter": "useIndependentSides", "value": true } },
+          { "parameter": "bendRadius1", "kind": "leader", "point": ["flangeWidth", "(depth-wallThickness)/2-lipLength"], "side": "right", "description": "R1", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "bendRadius2", "kind": "leader", "point": [0, "(depth-wallThickness)/2"], "side": "left", "description": "R2", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "bendRadius3", "kind": "leader", "point": [0, "(depth-wallThickness)/2-outerWebHeight"], "side": "left", "description": "R3", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "bendRadius4", "kind": "leader", "point": ["centerWebOffset", "(depth-wallThickness)/2-outerWebHeight-transitionRise"], "side": "right", "description": "R4", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "bendRadius5", "kind": "leader", "point": ["centerWebOffset", "-(depth-wallThickness)/2+outerWebHeight+transitionRise"], "side": "right", "description": "R5", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "bendRadius6", "kind": "leader", "point": [0, "-(depth-wallThickness)/2+outerWebHeight"], "side": "left", "description": "R6", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "bendRadius7", "kind": "leader", "point": [0, "-(depth-wallThickness)/2"], "side": "left", "description": "R7", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } },
+          { "parameter": "bendRadius8", "kind": "leader", "point": ["flangeWidth", "-(depth-wallThickness)/2+lipLength"], "side": "right", "description": "R8", "visibleWhen": { "op": "eq", "parameter": "useIndependentRadii", "value": true } }
+        ]
+      }
+    }
+  }
+}

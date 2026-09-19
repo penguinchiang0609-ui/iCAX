@@ -1,31 +1,50 @@
-"""Direct geometric inverse; no calls to the forward generator."""
+"""Direct inverse for the outer and translated-inner D paths."""
+import math
+
+
 IMPLEMENTED = True
 
 
 def fitting(section, context):
-    import math
-    q,g,t=context['geometry'],context['curves'],context['tolerance']
-    if len(section)!=2:return False
-    for loops,pose in g.frames(section):
-        measured=[]
+    q, geometry, tolerance = context["geometry"], context["curves"], context["tolerance"]
+    if len(section) != 2:
+        return False
+    for loops, pose in geometry.frames(section):
+        measured = []
         for loop in loops:
-            if loop['kind']!='path' or len(loop['edges'])!=2:break
-            lines=[e for e in loop['edges'] if e['kind']=='line']
-            arcs=[e for e in loop['edges'] if e['kind']=='arc']
-            if len(lines)!=1 or len(arcs)!=1:break
-            line,arc=lines[0],arcs[0]
-            a,b=line['start'],line['end'];cx,cy=arc['center'];r=arc['radius']
-            if abs(a[0]-b[0])>t or abs(a[1]+b[1]-2*cy)>t:break
-            if r<=t or arc['sweep']<=0:break
-            angle=math.atan2(arc['start'][1]-cy,arc['start'][0]-cx)+arc['sweep']/2
-            if abs(math.sin(angle))*r>t or math.cos(angle)<0:break
-            measured.append((arc,a[0]))
-        if len(measured)!=2:continue
-        (outer,x),(inner,ix)=measured
-        r=outer['radius'];wall=r-inner['radius']
-        if wall<=t or r-2*wall<=t:continue
-        if math.dist(outer['center'],inner['center'])>t:continue
-        if abs(x-outer['center'][0])>t or abs(ix-x-wall)>t:continue
-        if abs(outer['sweep']-math.pi)*r>t:continue
-        return q.result({'width':r,'wallThickness':wall},pose,'unique')
+            if loop["kind"] != "path" or len(loop["edges"]) != 2:
+                break
+            lines = [edge for edge in loop["edges"] if edge["kind"] == "line"]
+            arcs = [edge for edge in loop["edges"] if edge["kind"] == "arc"]
+            if len(lines) != 1 or len(arcs) != 1:
+                break
+            line, arc = lines[0], arcs[0]
+            start, end = line["start"], line["end"]
+            center = arc["center"]
+            radius = arc["radius"]
+            if abs(start[0] - end[0]) > tolerance or abs(start[1] + end[1] - 2 * center[1]) > tolerance:
+                break
+            if radius <= tolerance or arc["sweep"] <= 0:
+                break
+            midpoint_angle = math.atan2(arc["start"][1] - center[1], arc["start"][0] - center[0]) + arc["sweep"] / 2
+            if abs(math.sin(midpoint_angle) * radius) > tolerance or math.cos(midpoint_angle) < 0:
+                break
+            measured.append((arc, start[0]))
+        if len(measured) != 2:
+            continue
+        (outer, outer_line), (inner, inner_line) = sorted(measured, key=lambda item: item[0]["radius"], reverse=True)
+        outer_radius = outer["radius"]
+        inner_radius = inner["radius"]
+        wall = outer_radius - inner_radius
+        offset_x = inner["center"][0] - outer["center"][0]
+        offset_y = inner["center"][1] - outer["center"][1]
+        if wall <= tolerance or outer_radius - 2 * wall <= tolerance:
+            continue
+        if math.hypot(offset_x, offset_y) >= wall - tolerance:
+            continue
+        if abs(inner_line - outer_line - wall - offset_x) > tolerance:
+            continue
+        if abs(outer["sweep"] - math.pi) * outer_radius > tolerance:
+            continue
+        return q.result({"width": outer_radius, "wallThickness": wall, "innerOffsetX": offset_x, "innerOffsetY": offset_y}, pose, "unique")
     return False

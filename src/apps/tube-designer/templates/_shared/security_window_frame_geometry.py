@@ -12,6 +12,13 @@ from typing import Any
 from icax_template_sdk import NeutralModel
 
 
+def _path(points):
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
+        for i in range(len(points))
+    ]}
+
+
 
 PROFILE_CATALOG_SCRIPT = Path(__file__).resolve().parent / "tube_profile_catalog.py"
 PROFILE_CATALOG_MODULE = "icax_tube_profile_catalog_" + hashlib.sha256(
@@ -106,12 +113,23 @@ class ContinuousFrame:
 
     @property
     def bend_allowance(self) -> float:
-        return math.pi * 0.5 * float(self.parameters["vGrooveKFactor"]) * min(self.profile.wall, self.bottom_distance)
-
-    @property
-    def bottom_distance(self) -> float:
-        requested = _number(self.parameters, "vGrooveBottomDistance")
-        return requested if requested > 0 else self.profile.wall
+        bindings = self.parameters.get("tubeDesignerToolBindings", {})
+        binding = bindings.get(self.tool_role) if isinstance(bindings, dict) and self.tool_role else None
+        values = binding.get("parameters", {}) if isinstance(binding, dict) else {}
+        if not isinstance(values, dict) or not values.get("bendCompensation", False):
+            return 0.0
+        angle = values.get("angle", 90.0)
+        if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not math.isfinite(angle):
+            raise ValueError("槽口模具折弯角必须是有限数值")
+        if values.get("useDefaultKFactor", True):
+            factor = 0.62
+        else:
+            factor = values.get("kFactor", 0.62)
+            if isinstance(factor, bool) or not isinstance(factor, (int, float)) or not math.isfinite(factor):
+                raise ValueError("槽口模具 K 因子必须是有限数值")
+            if not 0 <= factor <= 1:
+                raise ValueError("槽口模具 K 因子须介于 0 和 1 之间")
+        return math.radians(float(angle)) * float(factor) * self.profile.wall
 
     @property
     def horizontal_run(self) -> float:
@@ -251,7 +269,7 @@ def _process(parameters: dict[str, Any], join_key: str, butt_key: str) -> Corner
     encoded = str(parameters[join_key])
     if encoded.startswith("v_groove_90:"):
         join_type, style = encoded.split(":", 1)
-        if style not in {"sharp_v", "rounded_v", "left_arc", "right_arc", "tool_library"}:
+        if style != "tool_library":
             raise ValueError(f"{join_key} 的 V 槽样式不支持：{style}")
         return CornerProcess(join_type, style)
     if encoded not in {"miter_45", "butt_90"}:
@@ -280,40 +298,6 @@ def _validate_bar_positions(
         raise ValueError(f"{label}实体超出可用范围，请调整数量或边距")
     if any(right - left <= width + 1.0e-7 for left, right in zip(ordered, ordered[1:])):
         raise ValueError(f"{label}间距不足，杆件会相碰或重叠")
-
-
-def _vertical_count(
-    parameters: dict[str, Any], minimum: float, maximum: float, bar_width: float,
-) -> int:
-    if parameters.get("infillPattern") == "horizontal":
-        return 0
-    mode = str(parameters.get("verticalLayoutMode", "manual_count"))
-    if mode == "manual_count":
-        return _integer(parameters, "middleVerticalCount")
-    if mode != "maximum_clear_gap":
-        raise ValueError(f"不支持的竖杆布置方式：{mode}")
-    maximum_gap = _number(parameters, "maximumVerticalClearGap")
-    span = maximum - minimum
-    if span <= 0:
-        raise ValueError("竿件布置没有可用空间")
-    count = max(0, math.ceil(span / (maximum_gap + bar_width / 2) - 1 - 1.0e-9))
-    if count > 100:
-        raise ValueError("按最大净间距计算的竖杆数量超过100")
-    return count
-
-
-def _horizontal_positions(parameters: dict[str, Any], height: float) -> list[float]:
-    count = _integer(parameters, "horizontalCount")
-    if count == 0:
-        return []
-    top = height - _number(parameters, "firstHorizontalTopOffset")
-    bottom = _number(parameters, "lastHorizontalBottomOffset")
-    if top < bottom:
-        raise ValueError("首末横杆偏移没有留下有效布置空间")
-    if count == 1:
-        return [(top + bottom) / 2]
-    step = (top - bottom) / (count - 1)
-    return [top - step * index for index in range(count)]
 
 
 def _next_key(counters: dict[str, int], role: str) -> str:
@@ -406,96 +390,6 @@ def _emit_tube_geometry(
     return solid, solid
 
 
-def _quadratic_points(
-    start: tuple[float, float], control: tuple[float, float],
-    end: tuple[float, float], segments: int = 8,
-) -> list[list[float]]:
-    result: list[list[float]] = []
-    for index in range(segments + 1):
-        t = index / segments
-        u = 1.0 - t
-        result.append([
-            u * u * start[0] + 2 * u * t * control[0] + t * t * end[0],
-            u * u * start[1] + 2 * u * t * control[1] + t * t * end[1],
-        ])
-    return result
-
-
-def _groove_contour(frame: ContinuousFrame, center: float) -> dict[str, Any]:
-    """Product-local cutter: exact root relief, independently of the mould library.
-
-    K adds axial clearance; it never changes a relief radius. The two original
-    45-degree root arcs are preserved, including the short floor between them.
-    """
-    wall = frame.profile.wall
-    bottom = -frame.profile.width/2 + frame.bottom_distance
-    top = frame.profile.width/2
-    clearance = max(wall, 1.0)
-    allowance = frame.bend_allowance/2
-    style = frame.process.groove_style
-    radius = _number(frame.parameters, 'vGrooveRadius') if style=='rounded_v' else 0.0
-    male = wall if frame.parameters['vGrooveMaleFemale'] else 0.0
-    ledge = top-male if male else top+clearance
-    if ledge<=bottom:
-        raise ValueError('公母口尺寸必须小于槽口有效高度')
-    def line(a,b):return {'kind':'line','start':a,'end':b}
-    def arc(a,m,b):return {'kind':'arc','start':a,'middle':m,'end':b}
-    floor_left=[-allowance,bottom];floor_right=[allowance,bottom]
-    if radius>0:
-        slope_height=bottom+radius*(1-math.sqrt(.5))
-        if slope_height>=min(top,ledge):
-            raise ValueError('槽根圆角过大，圆角与公母口或管顶相交，请减小半径')
-        floor_left[0]-=radius;floor_right[0]+=radius
-        left=[floor_left[0]+radius*math.sqrt(.5),slope_height]
-        right=[floor_right[0]-radius*math.sqrt(.5),slope_height]
-        root=[arc(right,[floor_right[0]-radius*math.sin(math.pi/8),bottom+radius*(1-math.cos(math.pi/8))],floor_right),
-              line(floor_right,floor_left),
-              arc(floor_left,[floor_left[0]+radius*math.sin(math.pi/8),bottom+radius*(1-math.cos(math.pi/8))],left)]
-    else:
-        left,right=floor_left,floor_right
-        root=[line(right,left)] if allowance>1e-9 else []
-    left_top=[left[0]-(ledge-left[1]),ledge]
-    right_top=[right[0]+(ledge-right[1]),ledge]
-    sides_right=[line(right_top,right)];sides_left=[line(left,left_top)]
-    if style in ('left_arc','right_arc'):
-        # Exact quarter-circle side, replacing the old sampled quadratic.
-        height=top-bottom
-        arc_ledge=min(ledge,top)
-        angle=math.acos((top-arc_ledge)/height)
-        if style=='left_arc':
-            left_top=[left[0]-height*math.sin(angle),arc_ledge]
-            sides_left=[arc(left,[left[0]-height*math.sin(angle/2),top-height*math.cos(angle/2)],left_top)]
-        else:
-            right_top=[right[0]+height*math.sin(angle),arc_ledge]
-            sides_right=[arc(right_top,[right[0]+height*math.sin(angle/2),top-height*math.cos(angle/2)],right)]
-    if male:
-        upper_left=[left_top[0],top+clearance]
-        upper_right=[right_top[0]+male,top+clearance]
-        step=[right_top[0]+male,ledge]
-        edges=[line(left_top,upper_left),line(upper_left,upper_right),line(upper_right,step),line(step,right_top)]
-    else:
-        upper_left=[left_top[0],top+clearance];upper_right=[right_top[0],top+clearance]
-        edges=[]
-        if left_top!=upper_left:edges.append(line(left_top,upper_left))
-        edges.append(line(upper_left,upper_right))
-        if upper_right!=right_top:edges.append(line(upper_right,right_top))
-    edges+=sides_right+root+sides_left
-    for edge in edges:
-        for key in ('start','middle','end'):
-            if key in edge:edge[key]=[center+edge[key][0],edge[key][1]]
-    return {'kind':'path','closed':True,'segments':edges}
-
-
-def _relief_radius(frame: ContinuousFrame) -> float:
-    if frame.process.groove_style!='sharp_v' or not frame.parameters['vGrooveReliefHole']:
-        return 0.0
-    diameter=_number(frame.parameters,'vGrooveReliefDiameter')
-    radius=diameter/2 if diameter>0 else max(_number(frame.parameters,'vGrooveRadius'),frame.profile.wall*2)
-    if radius<=0 or radius*2>=frame.profile.width-frame.bottom_distance:
-        raise ValueError('释放孔直径必须小于槽口有效高度，不能切穿管顶')
-    return radius
-
-
 def _emit_polygon_cutter(
     model: NeutralModel, key: str, points: list[list[float]], half_depth: float,
 ) -> str:
@@ -506,7 +400,7 @@ def _emit_polygon_cutter(
                 "origin": [0.0, -half_depth, 0.0],
                 "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0],
             },
-            "contours": [points if isinstance(points,dict) else {"kind": "polygon", "points": points}],
+            "contours": [points if isinstance(points,dict) else _path(points)],
         },
     )
     return model.geometry(
@@ -607,35 +501,6 @@ def _frame_mould_binding(frame: ContinuousFrame) -> tuple[dict[str, Any], dict[s
         if not isinstance(reference, dict) or not isinstance(values, dict):
             raise ValueError("连续框槽口模具引用无效")
         return deepcopy(reference), deepcopy(values)
-    # Older projects saved a named V-groove style instead of a resource
-    # binding. Migrate that semantic choice to the matching built-in mould;
-    # never replace a right/left edge arc with a sharp V merely because it
-    # predates the library selector.
-    legacy = frame.process.groove_style
-    if legacy in {"left_arc", "right_arc"}:
-        return {"scope": "system", "id": "edge-arc-groove"}, {
-            "arcDefinition": "legacy",
-            "bendCompensation": False,
-            "useDefaultKFactor": True,
-            "kFactor": 0.62,
-            "angle": 90.0,
-            # The library field is named leftArc; the product's old option is
-            # named right_arc/left_arc, so the polarity is intentionally
-            # inverted here.
-            "leftArc": legacy == "left_arc",
-            "bridge": _number(frame.parameters, "vGrooveBottomDistance"),
-            "bottomReference": "outer",
-            "wallThickness": frame.profile.wall,
-            "reliefDepth": 0.0,
-            "reliefSide": "positive",
-            "reliefDiameter": 0.0,
-            "reliefLift": 0.0,
-            "bottomCut": False,
-            "bottomCutWidth": 2.0,
-        }
-    # A default is intentionally an existing library tool, not a product-local
-    # fallback shape. Existing projects with a sharp V remain reproducible
-    # without requiring users to open and re-save every product instance.
     selection = str(frame.parameters.get(frame.tool_role + "Tool", "system:v-notch-sharp"))
     scope, separator, tool_id = selection.partition(":")
     if separator != ":" or scope != "system" or not tool_id:
@@ -802,41 +667,6 @@ def _emit_continuous_frame_geometry(
         centers.append(center)
         cursor += segment + frame.bend_allowance
 
-    if frame.process.join_type == "v_groove_90":
-        if purpose == "display":
-            return display, display, centers
-        base = Part(
-            f"{frame.key}.export.base", "", (0.0, 0.0, 0.0), (frame.length, 0.0, 0.0),
-            frame.profile, frame.group,
-        )
-        _, export_shape = _emit_tube_geometry(model, base, shared_geometry)
-        cutters = _continuous_frame_cutters(
-            model, frame, inserted_parts or [], _number(frame.parameters, "assemblyClearance"),
-        )
-        for index, center in enumerate(centers, start=1):
-            cutter, _ = _emit_library_groove_cutter(model, frame, center, index)
-            cutters.append(cutter)
-        if cutters:
-            export_shape = model.geometry(
-                f"{frame.key}.export.final", "boolean", inputs=[export_shape, *cutters],
-                arguments={"operation": "subtract", "target": export_shape, "tools": cutters},
-            )
-        return display or export_shape, export_shape, centers
-
-    contours = [_groove_contour(frame, center) for center in centers]
-    previous_end = 0.0
-    for center, contour in zip(centers,contours):
-        xs = [edge[k][0] for edge in contour['segments'] for k in ('start','middle','end') if k in edge]
-        if frame.process.groove_style=='sharp_v':
-            extra=_relief_radius(frame)
-            if frame.parameters['vGrooveBottomCut']:
-                extra=max(extra,max(frame.profile.wall*4,_number(frame.parameters,'vGrooveRadius')*1.5,1)/2)
-            if frame.parameters['vGrooveWallOvercut']:extra=max(extra,frame.profile.wall,.2)
-            xs.extend((center-extra,center+extra))
-        if min(xs)<=previous_end or max(xs)>=frame.length:
-            raise ValueError('相邻槽口或槽口与接缝相交，请增大框尺寸或减小槽口尺寸')
-        previous_end=max(xs)
-
     if purpose == "display":
         return display, display, centers
     base = Part(
@@ -845,55 +675,12 @@ def _emit_continuous_frame_geometry(
     )
     _, export_shape = _emit_tube_geometry(model, base, shared_geometry)
 
-    half_tool_depth = (frame.profile.depth + max(frame.profile.wall * 4, 10.0)) / 2
     cutters = _continuous_frame_cutters(
         model, frame, inserted_parts or [], _number(frame.parameters, "assemblyClearance"),
     )
-    for index, (center, contour) in enumerate(zip(centers,contours), start=1):
-        prefix = f"{frame.key}.export.groove.{index:04d}"
-        cutters.append(_emit_polygon_cutter(
-            model, prefix, contour, half_tool_depth,
-        ))
-        if frame.process.groove_style == "sharp_v" and bool(frame.parameters["vGrooveBottomCut"]):
-            root = -frame.profile.width / 2 + frame.bottom_distance
-            size = max(frame.profile.wall * 4, _number(frame.parameters, "vGrooveRadius") * 1.5, 1.0)
-            cutters.append(_emit_polygon_cutter(model, f"{prefix}.bottom_cut", [
-                [center - size / 2, root],
-                [center + size / 2, root],
-                [center + size / 2, root + frame.profile.wall],
-                [center - size / 2, root + frame.profile.wall],
-            ], half_tool_depth))
-        if frame.process.groove_style == "sharp_v" and bool(frame.parameters["vGrooveReliefHole"]):
-            radius = _relief_radius(frame)
-            root_y = -frame.profile.width / 2 + frame.bottom_distance
-            # The circle's lowest point is the specified floor, not its centre.
-            # A blind relief pierces only the entry wall; cutter padding is not
-            # counted as material penetration.
-            blind=bool(frame.parameters['vGrooveReliefNoThrough'])
-            start_y=-frame.profile.depth/2-1 if blind else -half_tool_depth
-            hole_profile = model.geometry(
-                f"{prefix}.relief.profile", "profile2d",
-                arguments={
-                    "placement": {
-                        "origin": [center, start_y, root_y+radius],
-                        "xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0],
-                    },
-                    "contours": [{"kind": "circle", "radius": radius}],
-                },
-            )
-            length = frame.profile.wall+1.00001 if blind else half_tool_depth*2
-            cutters.append(model.geometry(
-                f"{prefix}.relief.solid", "extrude", inputs=[hole_profile],
-                arguments={"vector": [0.0, length, 0.0]},
-            ))
-        if frame.process.groove_style == "sharp_v" and bool(frame.parameters["vGrooveWallOvercut"]):
-            root_y = -frame.profile.width / 2 + frame.bottom_distance
-            width = max(frame.profile.wall, 0.2)
-            cutters.append(_emit_polygon_cutter(model, f"{prefix}.wall_overcut", [
-                [center - width, root_y], [center + width, root_y],
-                [center + width, root_y + frame.profile.wall],
-                [center - width, root_y + frame.profile.wall],
-            ], half_tool_depth))
+    for index, center in enumerate(centers, start=1):
+        cutter, _ = _emit_library_groove_cutter(model, frame, center, index)
+        cutters.append(cutter)
     if cutters:
         export_shape = model.geometry(
             f"{frame.key}.export.final", "boolean", inputs=[export_shape, *cutters],
@@ -1032,32 +819,19 @@ def _validate_insertion(receiver: Profile, inserted: Profile, depth: float, clea
     _validate_through_fit(receiver, inserted, clearance, label)
 
 
-def _validate_flat_weld(receiver: Profile, branch: Profile, label: str) -> None:
-    # A square-cut branch can only meet the straight portion of a rectangular
-    # receiver face. Curved/imported sections need an actual coped end first.
-    if receiver.profile_id != "rect" or receiver.kind != "rect":
-        raise ValueError(f"{label}平切焊接仅支持标准矩形外框，其他截面需要端部仿形切割")
-    flat_depth = receiver.depth - 2 * receiver.radius
-    if branch.depth > flat_depth + 1.0e-7:
-        raise ValueError(
-            f"{label}平切焊接端面超出外框平直面 {flat_depth:g} mm，"
-            "会在圆角处留缝；请减小横杆深度、增大外框平直面或改用插接"
-        )
-
-
 def _main_horizontal_joints(
-    part: Part, items: list[ModelItem], *, connection: str, reserve: float,
+    part: Part, items: list[ModelItem], *, reserve: float,
     outer_start: float, outer_end: float, has_side_frame: bool,
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {"mainHorizontalConnection": connection}
+    result: dict[str, Any] = {}
     for end_name, point in (("start", part.start), ("end", part.end)):
         mode, receiver, depth = "free", "", 0.0
         if has_side_frame and (abs(point[0] - outer_start) < 1.0e-7
                                or abs(point[0] - outer_end) < 1.0e-7):
             side = "left" if abs(point[0] - outer_start) < 1.0e-7 else "right"
             receiver = _frame_relationship_item(items, "main", "outer_frame", side)
-            mode = "insert" if connection == "insert" else "butt_weld"
-            depth = reserve if connection == "insert" else 0.0
+            mode = "insert"
+            depth = reserve
         else:
             # Opening cuts remain butt joints, including split pieces.
             # Resolve their actual surviving endpoint, not their original key.

@@ -12,12 +12,20 @@ namespace iCAX::TemplateRuntime { struct STemplateDescriptor; }
 
 namespace iCAX::TubeDesigner
 {
+    struct SBatchExcelChoice final
+    {
+        iCAX::Data::Variant Value;
+        std::string Label;
+        std::string ValueType;
+    };
+
     struct SBatchExcelColumn final
     {
         std::string Key;
         std::string Title;
         bool Required = false;
         std::string DefaultValue;
+        std::vector<SBatchExcelChoice> Choices;
     };
 
     struct SBatchExcelImportRow final

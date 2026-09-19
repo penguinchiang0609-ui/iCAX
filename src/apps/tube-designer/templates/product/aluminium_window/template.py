@@ -28,6 +28,23 @@ def dot(a,b):
     return sum(x*y for x,y in zip(a,b))
 
 
+def path(points):
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
+        for i in range(len(points))
+    ]}
+
+
+def circle_path(radius):
+    k = radius / math.sqrt(2.0)
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "arc", "start": [radius, 0], "middle": [k, k], "end": [0, radius]},
+        {"kind": "arc", "start": [0, radius], "middle": [-k, k], "end": [-radius, 0]},
+        {"kind": "arc", "start": [-radius, 0], "middle": [-k, -k], "end": [0, -radius]},
+        {"kind": "arc", "start": [0, -radius], "middle": [k, -k], "end": [radius, 0]},
+    ]}
+
+
 def plus(a,b,factor=1):
     return tuple(a[i]+b[i]*factor for i in range(3))
 
@@ -68,7 +85,7 @@ def generate_system(parameters,context,system):
     def prism(key,polygon,y,depth):
         path=model.geometry(key+".profile","profile2d",arguments={
             "placement":{"origin":[0,y-depth/2,0],"xAxis":[1,0,0],"yAxis":[0,0,1]},
-            "contours":[{"kind":"polygon","points":polygon}]})
+            "contours":[path(polygon)]})
         return model.geometry(key+".solid","extrude",inputs=[path],arguments={"vector":[0,depth,0]})
     def member(key,role,start,end,u,polygon=None,panel_id=""):
         ident,pf=system.profile(role)
@@ -112,8 +129,8 @@ def generate_system(parameters,context,system):
             if min(w,h)<=0 or station-h/2<=0 or station+h/2>=length or pos-w/2<=0 or pos+w/2>=pf["face"]:
                 raise ValueError(role+" 加工孔槽超出料件边界")
             center=plus(plus(plus(start,u,pos),z,station),v,-pf["depth"]/2-1)
-            contour=({"kind":"circle","radius":w/2} if rule["kind"]=="roundThroughDepth" else
-                     {"kind":"polygon","points":[[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]]})
+            contour=(circle_path(w/2) if rule["kind"]=="roundThroughDepth" else
+                     path([[-w/2,-h/2],[w/2,-h/2],[w/2,h/2],[-w/2,h/2]]))
             ck=key+f".machining.{index}"
             path=model.geometry(ck+".profile","profile2d",arguments={
                 "placement":{"origin":list(center),"xAxis":list(u),"yAxis":list(z)},"contours":[contour]})

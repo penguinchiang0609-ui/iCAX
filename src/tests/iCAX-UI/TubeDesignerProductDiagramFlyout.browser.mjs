@@ -38,7 +38,10 @@ const view = {
   pending: false,
   scene: { tubeDesigner: {
     templates: [template], product, members: Array.from({ length: 53 }, () => ({})), joints: [], parts: [],
-    specificationAnnotations: [{ id: "width", parameter: "width" }],
+    specificationAnnotations: [
+      { id: "width", parameter: "width" },
+      { id: "horizontal-spacing", parameter: "horizontalMaximumCenterSpacing" },
+    ],
   } },
 };
 
@@ -75,6 +78,9 @@ try {
     const process = panel.querySelector('[data-tube-designer-parameter-group="section:process"]');
     const initial = {
       hasSpecificationButton: Boolean(button),
+      hasSpecificationTree: Boolean(viewport.querySelector("[data-tube-designer-specification-tree]")),
+      specificationGroups: [...viewport.querySelectorAll("[data-tube-designer-annotation-groups]")]
+        .map((node) => node.dataset.tubeDesignerAnnotationGroups),
       pressed: button?.getAttribute("aria-pressed"),
       noProductDiagramControl: !viewport.querySelector(".tube-designer-scene-product-diagram-control"),
       noProductDiagramFlyout: !viewport.querySelector(".tube-designer-scene-product-diagram-flyout"),
@@ -85,27 +91,74 @@ try {
       instanceOrder: [...workspace.querySelectorAll(".tube-designer-instance-card[data-tube-designer-instance-id]")]
         .map((node) => node.dataset.tubeDesignerInstanceId),
     };
-    await handleDesignerAreaAction({ mount: workspace }, state, "tube-designer-toggle-specification-annotations", button, {
+    const collapseButton = viewport.querySelector('[data-cam-action="tube-designer-toggle-specification-tree-collapse"]');
+    await handleDesignerAreaAction({ mount: workspace }, state,
+      "tube-designer-toggle-specification-tree-collapse", collapseButton, {
+        renderProject() { throw new Error("Collapsing the specification tree must not rebuild the workspace."); },
+      });
+    const collapsedTree = viewport.querySelector("[data-tube-designer-specification-tree]");
+    const collapsedRect = collapsedTree.getBoundingClientRect();
+    const collapsed = {
+      state: state.tubeDesignerSpecificationTreeCollapsed,
+      leftGap: Math.round(collapsedRect.left - viewport.getBoundingClientRect().left),
+      width: Math.round(collapsedRect.width),
+      hasBody: Boolean(collapsedTree.querySelector(".tube-designer-scene-specification-tree-body")),
+      expanded: collapsedTree.querySelector('[data-cam-action="tube-designer-toggle-specification-tree-collapse"]')
+        ?.getAttribute("aria-expanded"),
+    };
+    const expandButton = collapsedTree.querySelector('[data-cam-action="tube-designer-toggle-specification-tree-collapse"]');
+    await handleDesignerAreaAction({ mount: workspace }, state,
+      "tube-designer-toggle-specification-tree-collapse", expandButton, { renderProject() {} });
+    const expandedTree = viewport.querySelector("[data-tube-designer-specification-tree]");
+    const expanded = {
+      state: state.tubeDesignerSpecificationTreeCollapsed,
+      hasBody: Boolean(expandedTree.querySelector(".tube-designer-scene-specification-tree-body")),
+      expanded: expandedTree.querySelector('[data-cam-action="tube-designer-toggle-specification-tree-collapse"]')
+        ?.getAttribute("aria-expanded"),
+    };
+    const activeRootButton = viewport.querySelector(".tube-designer-scene-specification-toggle");
+    await handleDesignerAreaAction({ mount: workspace }, state, "tube-designer-toggle-specification-annotations", activeRootButton, {
       renderProject() { throw new Error("The specification toggle must not rebuild the workspace."); },
     });
+    const updatedButton = viewport.querySelector(".tube-designer-scene-specification-toggle");
+    const tree = viewport.querySelector("[data-tube-designer-specification-tree]");
     const viewportRect = viewport.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
+    const buttonRect = updatedButton.getBoundingClientRect();
+    const treeRect = tree.getBoundingClientRect();
     const statusRect = status.getBoundingClientRect();
     const viewCubeRect = viewport.querySelector(".cam-viewcube").getBoundingClientRect();
     const toggled = {
-      pressed: button.getAttribute("aria-pressed"),
-      rightGap: Math.round(viewportRect.right - buttonRect.right),
-      topGap: Math.round(buttonRect.top - viewportRect.top),
+      pressed: updatedButton.getAttribute("aria-pressed"),
+      leftGap: Math.round(treeRect.left - viewportRect.left),
+      topGap: Math.round(treeRect.top - viewportRect.top),
       separateFromStatus: buttonRect.left >= statusRect.right || buttonRect.right <= statusRect.left
         || buttonRect.top >= statusRect.bottom || buttonRect.bottom <= statusRect.top,
       separateFromViewCube: buttonRect.right <= viewCubeRect.left,
     };
-    await handleDesignerAreaAction({ mount: workspace }, state, "tube-designer-toggle-specification-annotations", button, { renderProject() {} });
-    return { initial, toggled, restored: { pressed: button.getAttribute("aria-pressed") } };
+    await handleDesignerAreaAction({ mount: workspace }, state, "tube-designer-toggle-specification-annotations", updatedButton, { renderProject() {} });
+    const restoredButton = viewport.querySelector(".tube-designer-scene-specification-toggle");
+    const mainGrid = [...viewport.querySelectorAll('[data-cam-action="tube-designer-toggle-specification-annotation-group"]')]
+      .find((node) => node.dataset.tubeDesignerAnnotationGroups === "main_grid");
+    await handleDesignerAreaAction({ mount: workspace }, state,
+      "tube-designer-toggle-specification-annotation-group", mainGrid, { renderProject() {} });
+    return {
+      initial,
+      collapsed,
+      expanded,
+      toggled,
+      restored: { pressed: restoredButton.getAttribute("aria-pressed") },
+      partial: {
+        rootState: viewport.querySelector(".tube-designer-scene-specification-toggle")?.getAttribute("aria-checked"),
+        mainGridState: [...viewport.querySelectorAll('[data-cam-action="tube-designer-toggle-specification-annotation-group"]')]
+          .find((node) => node.dataset.tubeDesignerAnnotationGroups === "main_grid")?.getAttribute("aria-checked"),
+      },
+    };
   }, { state: view });
 
   assert.deepEqual(result.initial, {
     hasSpecificationButton: true,
+    hasSpecificationTree: true,
+    specificationGroups: ["overall main_grid", "overall", "main_grid"],
     pressed: "true",
     noProductDiagramControl: true,
     noProductDiagramFlyout: true,
@@ -115,12 +168,17 @@ try {
     processOpen: true,
     instanceOrder: ["older", "newer"],
   });
+  assert.deepEqual(result.collapsed, {
+    state: true, leftGap: 0, width: 34, hasBody: false, expanded: "false",
+  });
+  assert.deepEqual(result.expanded, { state: false, hasBody: true, expanded: "true" });
   assert.deepEqual(result.toggled, {
-    pressed: "false", rightGap: 142, topGap: 56,
+    pressed: "false", leftGap: 14, topGap: 56,
     separateFromStatus: true, separateFromViewCube: true,
   });
   assert.deepEqual(result.restored, { pressed: "true" });
-  console.log("规格标注位于场景右上角，旧产品示意图和左上信息浮层已移除。 ");
+  assert.deepEqual(result.partial, { rootState: "mixed", mainGridState: "false" });
+  console.log("规格标注按参数组显示在场景左侧，支持根节点、分组节点和半选状态。 ");
 } finally {
   await browser.close();
 }

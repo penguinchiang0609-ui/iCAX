@@ -1,4 +1,5 @@
-import { matchesParameterCondition } from "./parameterConditions.mjs";
+import { matchesParameterCondition, parameterVisible } from "./parameterConditions.mjs";
+import { isAdvancedParameter, parameterDiagramLevelAttribute } from './parameterPresentation.mjs';
 import { catalogText, getTemplateVisualAsset } from "./productCatalog.mjs";
 
 function escapeText(value) {
@@ -48,6 +49,22 @@ function declaredDimensions(template, values) {
     && matchesParameterCondition(entry.visibleWhen, values));
 }
 
+// Linked geometry remains visible; only its parameter captions/interactions
+// are suppressed. Hiding a parameter must never hide the product itself.
+function presentParameterArtwork(artwork, template, values) {
+  const fields=definitionMap(template);
+  return artwork.replace(/<([\w:-]+)([^>]*\bdata-product-diagram-parameter="([^"]*)"[^>]*)>/g, (tag,name,attributes,keys) => {
+    const visible=keys.split(/\s+/).filter(key=>parameterVisible(fields.get(key),values));
+    const caption=/class="[^"]*\bproduct-diagram-measure\b/.test(attributes);
+    if(!visible.length){
+      if(caption)return `<${name}${attributes} style="display:none" aria-hidden="true">`;
+      return `<${name}${attributes.replace(/\s+(?:data-cam-action|data-tube-designer-parameter-key|data-product-diagram-parameter|tabindex|role)="[^"]*"/g,'')}>`;
+    }
+    return caption && visible.every(key=>isAdvancedParameter(fields.get(key)))
+      ? `<${name}${attributes} data-parameter-level="advanced" style="display:none">` : tag;
+  });
+}
+
 export function productPrimaryDimensions(template, values = {}) {
   const declared = declaredDimensions(template, values);
   const primary = template?.extensions?.primaryDimensions ?? {};
@@ -57,7 +74,8 @@ export function productPrimaryDimensions(template, values = {}) {
     { kind: "height", parameter: primary.heightParameter, label: "高度" },
     { kind: "depth", parameter: primary.depthParameter, label: "深度" },
   ];
-  return entries.filter((entry) => typeof entry?.parameter === "string" && entry.parameter.trim())
+  return entries.filter((entry) => typeof entry?.parameter === "string" && entry.parameter.trim()
+    && parameterVisible(fields.get(entry.parameter), values))
     .map((entry) => {
       const field = fields.get(entry.parameter);
       return {
@@ -77,30 +95,22 @@ function sceneAnnotationDeclarations(template) {
   return { ...shared, ...scene };
 }
 
+function activeProductTemplate(designer = {}) {
+  const product = designer?.product;
+  if (!product) return null;
+  return (designer?.templates ?? [])
+    .find((item) => String(item?.id ?? "") === String(product.templateId ?? "")) ?? null;
+}
+
+function annotationGroupVisibility(view, groupKey) {
+  if (view?.tubeDesignerSpecificationAnnotationsVisible === false) return false;
+  const visibility = view?.tubeDesignerSpecificationAnnotationGroupVisibility;
+  return visibility?.[String(groupKey ?? "")] !== false;
+}
+
 function sameParameterValue(left, right) {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
 }
-
-// Older generated security-window instances can still carry count anchors in
-// their frozen generation result. Counts are now derived from end offsets and
-// maximum centre spacing, so they must never reappear as editable scene
-// specifications even while an old instance is waiting to be regenerated.
-const SECURITY_WINDOW_DERIVED_COUNT_PARAMETERS = new Set([
-  "horizontalCount",
-  "middleVerticalCount",
-  "verticalCountPerFace",
-  "sideHorizontalCount",
-  "sideVerticalCount",
-  "topBottomCrossbarCount",
-  "topBottomRodCount",
-  "doorHorizontalCount",
-  "doorVerticalCount",
-  // Pre-centre-spacing instances may still contain these obsolete clear-gap
-  // anchors.  They are compatibility inputs only and must never return to the
-  // scene as editable specifications.
-  "maximumVerticalClearGap",
-  "sideMaximumVerticalClearGap",
-]);
 
 function annotationLabel(declaration, field, value) {
   const name = catalogText(declaration?.label,
@@ -142,8 +152,7 @@ function annotationEditor(field, value) {
 export function resolveProductSpecificationAnnotations(designer = {}, view = {}) {
   const product = designer?.product;
   if (!product) return [];
-  const template = (designer?.templates ?? [])
-    .find((item) => String(item?.id ?? "") === String(product.templateId ?? ""));
+  const template = activeProductTemplate(designer);
   if (!template) return [];
   const declarations = sceneAnnotationDeclarations(template);
   const fields = definitionMap(template);
@@ -160,10 +169,9 @@ export function resolveProductSpecificationAnnotations(designer = {}, view = {})
       // can still refine the same parameter in display.json.
       const declaration = { ...(anchor ?? {}), ...(declarations?.[parameter] ?? {}) };
       const field = fields.get(parameter);
-      if (!parameter || SECURITY_WINDOW_DERIVED_COUNT_PARAMETERS.has(parameter)
-          || String(anchor?.kind ?? declaration?.kind ?? "").toLowerCase() === "count"
+      if (!parameter || String(anchor?.kind ?? declaration?.kind ?? "").toLowerCase() === "count"
           || !field
-          || !matchesParameterCondition(field.visibleWhen, values)
+          || !parameterVisible(field, values)
           || !matchesParameterCondition(anchor?.visibleWhen, values)
           || !matchesParameterCondition(declaration.visibleWhen, values)) return [];
       // Product parameters are committed directly to the product EC so native
@@ -190,6 +198,10 @@ export function resolveProductSpecificationAnnotations(designer = {}, view = {})
         ...anchor,
         id: `${String(product.entityId ?? "product")}:${String(anchor?.id ?? `security-window.${parameter}.${index}`)}`,
         parameter,
+        groupKey: String(declaration?.group
+          ?? field?.groupKey
+          ?? field?.group
+          ?? "specifications"),
         kind: String(declaration?.kind ?? anchor?.kind ?? "linear"),
         label: changedLabel,
         oldValue: generatedValue,
@@ -208,6 +220,92 @@ export function resolveProductSpecificationAnnotations(designer = {}, view = {})
     .sort((left, right) => left.order - right.order);
 }
 
+function annotationTreeState(groupKeys, view) {
+  const visibleCount = groupKeys.filter((key) => annotationGroupVisibility(view, key)).length;
+  return visibleCount === 0 ? "none"
+    : visibleCount === groupKeys.length ? "all"
+      : "mixed";
+}
+
+/**
+ * Build the scene annotation switch tree from the template's existing
+ * parameter groups.  Section groups come from display.json, so the scene and
+ * the right parameter panel never acquire competing grouping rules.
+ */
+export function resolveProductSpecificationAnnotationTree(designer = {}, view = {}) {
+  const template = activeProductTemplate(designer);
+  if (!template) return null;
+  const annotations = resolveProductSpecificationAnnotations(designer, view);
+  if (!annotations.length) return null;
+
+  const display = template?.display?.views?.right ?? {};
+  const annotationGroupDefinitions = template?.display?.views?.scene?.annotationGroups ?? {};
+  const displayGroups = display?.groups ?? {};
+  const sectionDefinitions = display?.sectionGroups ?? {};
+  const groupDefinitions = new Map((template?.groups ?? []).map((group) => [
+    String(group?.key ?? ""), group,
+  ]));
+  const leaves = new Map();
+  for (const annotation of annotations) {
+    const key = String(annotation?.groupKey ?? "specifications");
+    if (!leaves.has(key)) {
+      const annotationDefinition = annotationGroupDefinitions?.[key] ?? {};
+      const definition = groupDefinitions.get(key);
+      leaves.set(key, {
+        key,
+        label: catalogText(annotationDefinition?.title ?? annotationDefinition?.displayName,
+          catalogText(definition?.displayName ?? definition?.label,
+            key === "specifications" ? "其他规格" : key)),
+        order: Number(annotationDefinition?.order ?? definition?.order ?? 9999),
+        sectionKey: String(annotationDefinition?.sectionGroup ?? displayGroups?.[key]?.sectionGroup ?? ""),
+        count: 0,
+        groupKeys: [key],
+      });
+    }
+    leaves.get(key).count += 1;
+  }
+
+  const direct = [];
+  const sections = new Map();
+  for (const leaf of leaves.values()) {
+    leaf.state = annotationTreeState(leaf.groupKeys, view);
+    if (!leaf.sectionKey) {
+      direct.push(leaf);
+      continue;
+    }
+    if (!sections.has(leaf.sectionKey)) {
+      const definition = sectionDefinitions?.[leaf.sectionKey] ?? {};
+      sections.set(leaf.sectionKey, {
+        key: `section:${leaf.sectionKey}`,
+        label: catalogText(definition?.title, definition?.displayName ?? leaf.sectionKey),
+        order: Number(definition?.order ?? 9999),
+        children: [],
+        groupKeys: [],
+        count: 0,
+      });
+    }
+    const section = sections.get(leaf.sectionKey);
+    section.children.push(leaf);
+    section.groupKeys.push(...leaf.groupKeys);
+    section.count += leaf.count;
+  }
+  for (const section of sections.values()) {
+    section.children.sort((left, right) => left.order - right.order || left.label.localeCompare(right.label, "zh-CN"));
+    section.state = annotationTreeState(section.groupKeys, view);
+  }
+  const children = [...direct, ...sections.values()]
+    .sort((left, right) => left.order - right.order || left.label.localeCompare(right.label, "zh-CN"));
+  const groupKeys = [...new Set(children.flatMap((item) => item.groupKeys))];
+  return {
+    key: "root",
+    label: "规格标注",
+    count: annotations.length,
+    groupKeys,
+    state: annotationTreeState(groupKeys, view),
+    children,
+  };
+}
+
 export function bindProductSpecificationAnnotations(_mount, view) {
   const viewport = view?.viewport;
   if (!viewport?.setSpecificationAnnotations || !viewport?.clearSpecificationAnnotations) return [];
@@ -215,7 +313,8 @@ export function bindProductSpecificationAnnotations(_mount, view) {
     viewport.clearSpecificationAnnotations();
     return [];
   }
-  const annotations = resolveProductSpecificationAnnotations(view?.scene?.tubeDesigner ?? {}, view);
+  const annotations = resolveProductSpecificationAnnotations(view?.scene?.tubeDesigner ?? {}, view)
+    .filter((annotation) => annotationGroupVisibility(view, annotation?.groupKey));
   if (annotations.length) viewport.setSpecificationAnnotations(annotations);
   else viewport.clearSpecificationAnnotations();
   return annotations;
@@ -860,10 +959,10 @@ export function renderProductParameterDiagram(template, values = {}, options = {
   return `<section class="tube-designer-product-diagram ${dynamicArtwork ? "is-parameter-driven" : ""} ${compact ? "is-compact" : ""} ${hideDimensionCards ? "is-no-dimension-cards" : ""}" data-tube-designer-product-diagram>
     <header><div><strong>${compact ? "结构示意" : "成品结构与尺寸示意"}</strong><span>${compact ? "随结构选项联动" : "结构、分截及尺寸随参数联动 · 点击图中标注定位参数"}</span></div></header>
     <div class="tube-designer-product-diagram-canvas">
-      <div class="tube-designer-product-diagram-art">${artwork}</div>
+      <div class="tube-designer-product-diagram-art">${presentParameterArtwork(artwork,template,values)}</div>
       ${hideDimensionCards ? "" : `<div class="tube-designer-product-dimensions">
         ${dimensions.map((dimension) => `<button type="button" class="tube-designer-product-dimension is-${escapeText(dimension.kind)} ${dimension.parameter === active ? "is-active" : ""}"
-          data-cam-action="tube-designer-focus-product-parameter" data-tube-designer-editor-mode="${mode}" data-tube-designer-parameter-key="${escapeText(dimension.parameter)}" data-product-diagram-parameter="${escapeText(dimension.parameter)}">
+          data-cam-action="tube-designer-focus-product-parameter" data-tube-designer-editor-mode="${mode}" data-tube-designer-parameter-key="${escapeText(dimension.parameter)}" data-product-diagram-parameter="${escapeText(dimension.parameter)}"${parameterDiagramLevelAttribute(definitionMap(template).get(dimension.parameter))}>
           <span>${escapeText(dimension.label)}</span><strong>${escapeText(dimension.value)}</strong>
         </button>`).join("")}
       </div>`}
@@ -884,6 +983,11 @@ export function bindProductParameterDiagrams(mount) {
     const interactionNodes = () => [...new Set(interactionRoots.flatMap((root) => [
       ...root.querySelectorAll("[data-product-diagram-parameter], [data-product-parameter-key]"),
     ]))];
+    const updateAdvanced = () => {
+      const open=[...scope.querySelectorAll('[data-parameter-advanced]')].some(d=>d.open && !d.closest('[data-profile-parameter-scope], [data-tool-parameter-scope]'));
+      for(const node of interactionNodes()) if(node.dataset.parameterLevel==='advanced')node.style.display=open?'':'none';
+    };
+    scope.addEventListener('toggle',updateAdvanced,true);
     const categoryFor = (node) => {
       for (let current = node; current && owns(current); current = current.parentElement) {
         const groupKey = String(current.dataset?.tubeDesignerParameterGroup ?? "");
@@ -926,15 +1030,21 @@ export function bindProductParameterDiagrams(mount) {
       }
     };
     const restoreFocus = () => {
+      updateAdvanced();
       const focused = parameterFor(scope.ownerDocument.activeElement);
       if (focused.key) selected = focused;
-      highlight(focused.key ? focused : selected);
+      // Scene emphasis belongs to the current inspector interaction, not the
+      // last edited field. Rebinding after an async refresh must not revive it.
+      highlight(mode === "right" ? focused : focused.key ? focused : selected);
     };
     productDiagramBindings.set(scope, restoreFocus);
     for (const root of interactionRoots) {
       root.addEventListener("focusin", (event) => {
         const focused = parameterFor(event.target);
-        if (!focused.key) return;
+        if (!focused.key) {
+          if (mode === "right") highlight();
+          return;
+        }
         selected = focused;
         highlight(focused);
       });

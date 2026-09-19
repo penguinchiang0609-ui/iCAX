@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <regex>
+#include <set>
 #include <unordered_map>
 
 #include <zlib.h>
@@ -22,6 +23,7 @@ namespace
     using iCAX::Data::VariantArray;
     using iCAX::TemplateRuntime::EParameterValueType;
     using iCAX::TemplateRuntime::STemplateDescriptor;
+    using iCAX::TubeDesigner::SBatchExcelChoice;
     using iCAX::TubeDesigner::SBatchExcelColumn;
 
     constexpr std::uint64_t kMaximumWorkbookBytes = 32ull * 1024ull * 1024ull;
@@ -238,6 +240,90 @@ namespace
         return _It != Value_.end() && _It->second.Is<bool>() ? _It->second.To<bool>() : Default_;
     }
 
+    std::string ChoiceValueType(const Variant& Value_)
+    {
+        if (Value_.Is<std::string>()) return "string";
+        if (Value_.Is<bool>()) return "boolean";
+        if (Value_.Is<double>()) return "double";
+        if (Value_.Is<unsigned long long>()) return "unsignedInteger";
+        if (Value_.Is<long long>()) return "signedInteger";
+        throw std::invalid_argument("Excel 枚举选项值必须是文本、数字或布尔值");
+    }
+
+    Variant RestoreChoiceValue(const Variant& Value_, const std::string& ValueType_)
+    {
+        if (ValueType_ == "string" && Value_.Is<std::string>()) return Value_;
+        if (ValueType_ == "boolean" && Value_.Is<bool>()) return Value_;
+        if (ValueType_ == "double")
+        {
+            if (Value_.Is<double>()) return Value_;
+            if (Value_.Is<unsigned long long>()) return Variant(static_cast<double>(Value_.To<unsigned long long>()));
+            if (Value_.Is<long long>()) return Variant(static_cast<double>(Value_.To<long long>()));
+        }
+        if (ValueType_ == "unsignedInteger")
+        {
+            if (Value_.Is<unsigned long long>()) return Value_;
+            if (Value_.Is<long long>() && Value_.To<long long>() >= 0)
+                return Variant(static_cast<unsigned long long>(Value_.To<long long>()));
+        }
+        if (ValueType_ == "signedInteger")
+        {
+            if (Value_.Is<long long>()) return Value_;
+            if (Value_.Is<unsigned long long>()
+                && Value_.To<unsigned long long>() <= static_cast<unsigned long long>(std::numeric_limits<long long>::max()))
+            {
+                return Variant(static_cast<long long>(Value_.To<unsigned long long>()));
+            }
+        }
+        throw std::invalid_argument("Excel 内置列选项值类型无效");
+    }
+
+    std::vector<SBatchExcelChoice> OptionalChoices(const ObjectMap& Value_)
+    {
+        const auto _It = Value_.find("choices");
+        if (_It == Value_.end()) return {};
+        if (!_It->second.Is<VariantArray>()) throw std::invalid_argument("Excel 内置列选项格式无效");
+        std::vector<SBatchExcelChoice> _Result;
+        for (const auto& _Value : _It->second.To<VariantArray>())
+        {
+            if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("Excel 内置列选项无效");
+            const auto _Choice = _Value.To<ObjectMap>();
+            const auto _ChoiceValue = _Choice.find("value");
+            if (_ChoiceValue == _Choice.end()) throw std::invalid_argument("Excel 内置列选项缺少 value");
+            const auto _ValueType = RequiredText(_Choice, "valueType");
+            _Result.push_back({ RestoreChoiceValue(_ChoiceValue->second, _ValueType),
+                RequiredText(_Choice, "label"), _ValueType });
+        }
+        return _Result;
+    }
+
+    std::string ParameterText(const Variant& Value_)
+    {
+        if (Value_.Is<std::string>()) return Value_.To<std::string>();
+        const auto _Text = iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Value_);
+        if (_Text.empty() || _Text == "null" || _Text.front() == '{' || _Text.front() == '[' || _Text.front() == '"')
+            throw std::invalid_argument("Excel 枚举选项值必须是文本、数字或布尔值");
+        return _Text;
+    }
+
+    Variant ResolveChoiceValue(
+        const SBatchExcelColumn& Column_, const std::string& Value_, const std::uint64_t Row_)
+    {
+        if (Column_.Choices.empty() || Value_.empty()) return Variant(Value_);
+        for (const auto& _Choice : Column_.Choices)
+            if (ParameterText(_Choice.Value) == Value_) return _Choice.Value;
+        for (const auto& _Choice : Column_.Choices)
+            if (_Choice.Label == Value_) return _Choice.Value;
+        std::string _Allowed;
+        for (const auto& _Choice : Column_.Choices)
+        {
+            if (!_Allowed.empty()) _Allowed += "、";
+            _Allowed += _Choice.Label;
+        }
+        throw std::invalid_argument("Excel 第 " + std::to_string(Row_) + " 行的“" + Column_.Title
+            + "”必须从中文选项中选择：" + _Allowed);
+    }
+
     std::uint64_t ParseQuantity(const std::string& Value_, const std::uint64_t Row_)
     {
         std::uint64_t _Value = 0;
@@ -293,11 +379,49 @@ std::filesystem::path iCAX::TubeDesigner::WriteBatchExcelTemplate(
     if (std::filesystem::exists(TemplatePath_)) throw std::invalid_argument("Excel 导入模板已存在，不能覆盖");
     VariantArray _Columns;
     std::vector<std::string> _Headers;
+    std::vector<STableWorkbookValidation> _Validations;
+    std::unordered_map<std::string, const iCAX::TemplateRuntime::SParameterDefinition*> _Parameters;
+    for (const auto& _Parameter : Descriptor_.Parameters) _Parameters.emplace(_Parameter.Key, &_Parameter);
     _Headers.reserve(Columns_.size());
-    for (const auto& _Column : Columns_)
+    for (std::size_t _Index = 0; _Index < Columns_.size(); ++_Index)
     {
+        auto _Column = Columns_[_Index];
         if (_Column.Key.empty() || _Column.Title.empty()) throw std::invalid_argument("Excel 导入列缺少参数键或列名");
-        _Columns.emplace_back(ObjectMap{{ "key", _Column.Key }, { "title", _Column.Title }, { "required", _Column.Required }, { "defaultValue", _Column.DefaultValue }});
+        if (const auto _Definition = _Parameters.find(_Column.Key); _Definition != _Parameters.end())
+        {
+            _Column.Choices.clear();
+            std::set<std::string> _Labels;
+            for (const auto& _Choice : _Definition->second->Choices)
+            {
+                const auto _Value = ParameterText(_Choice.Value);
+                auto _Label = _Choice.DisplayName.Resolve("zh-CN");
+                if (_Label.empty()) _Label = _Value;
+                if (!_Labels.insert(_Label).second)
+                    throw std::invalid_argument("Excel 中文枚举选项重复：" + _Column.Title + " / " + _Label);
+                _Column.Choices.push_back({ _Choice.Value, _Label, ChoiceValueType(_Choice.Value) });
+            }
+            if (!_Column.Choices.empty())
+            {
+                std::vector<std::string> _LabelsForExcel;
+                for (const auto& _Choice : _Column.Choices) _LabelsForExcel.push_back(_Choice.Label);
+                _Validations.push_back({ _Index, std::move(_LabelsForExcel) });
+            }
+            else if (_Definition->second->ValueType == EParameterValueType::Boolean)
+            {
+                _Validations.push_back({ _Index, { "是", "否" } });
+            }
+        }
+        ObjectMap _ColumnMetadata{{ "key", _Column.Key }, { "title", _Column.Title },
+            { "required", _Column.Required }, { "defaultValue", _Column.DefaultValue }};
+        if (!_Column.Choices.empty())
+        {
+            VariantArray _Choices;
+            for (const auto& _Choice : _Column.Choices)
+                _Choices.emplace_back(ObjectMap{{ "value", _Choice.Value }, { "label", _Choice.Label },
+                    { "valueType", _Choice.ValueType }});
+            _ColumnMetadata.emplace("choices", std::move(_Choices));
+        }
+        _Columns.emplace_back(std::move(_ColumnMetadata));
         _Headers.push_back(_Column.Title);
     }
     const ObjectMap _Definition{
@@ -313,10 +437,10 @@ std::filesystem::path iCAX::TubeDesigner::WriteBatchExcelTemplate(
         // is also stored in the hidden contract sheet for machine validation,
         // but a human opening a template must be able to identify its product.
         WriteTableWorkbook(TemplatePath_,
-            "TubeDesigner 批量导入工作簿：" + Descriptor_.DisplayName.Resolve("zh-CN")
-                + "（模板 ID：" + Descriptor_.ID + "，版本：" + Descriptor_.Version + "）",
+            "批量导入工作簿：" + Descriptor_.DisplayName.Resolve("zh-CN"),
             _Headers, {},
-            iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Definition)));
+            iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(Variant(_Definition)),
+            _Validations);
     }
     catch (...)
     {
@@ -343,7 +467,8 @@ iCAX::TubeDesigner::SBatchExcelDefinition iCAX::TubeDesigner::ReadBatchExcelDefi
     {
         if (!_ColumnValue.Is<ObjectMap>()) throw std::invalid_argument("Excel 内置列配置无效");
         const auto _Column = _ColumnValue.To<ObjectMap>();
-        _Columns.push_back({ RequiredText(_Column, "key"), RequiredText(_Column, "title"), OptionalBool(_Column, "required"), OptionalText(_Column, "defaultValue") });
+        _Columns.push_back({ RequiredText(_Column, "key"), RequiredText(_Column, "title"),
+            OptionalBool(_Column, "required"), OptionalText(_Column, "defaultValue"), OptionalChoices(_Column) });
     }
     return { RequiredText(_Object, "templateId"), OptionalText(_Object, "templateVersion"), OptionalText(_Object, "templateName"), std::move(_Columns) };
 }
@@ -383,7 +508,9 @@ iCAX::TubeDesigner::SBatchExcelImport iCAX::TubeDesigner::ReadBatchExcelImport(
                 const auto _Definition = _Parameters.find(_Column.Key);
                 if (_Definition == _Parameters.end())
                     throw std::invalid_argument("Excel 模板包含当前产品模板没有的参数：" + _Column.Key);
-                _Row.Parameters[_Column.Key] = ParseParameterValue(*_Definition->second, _Value, _RowNumber);
+                _Row.Parameters[_Column.Key] = _Column.Choices.empty()
+                    ? ParseParameterValue(*_Definition->second, _Value, _RowNumber)
+                    : ResolveChoiceValue(_Column, _Value, _RowNumber);
             }
         }
         _Result.Rows.push_back(std::move(_Row));

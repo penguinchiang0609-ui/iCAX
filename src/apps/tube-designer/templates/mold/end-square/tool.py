@@ -1,5 +1,9 @@
 import math
 
+def _rect_path(width, height):
+    p=[[-width/2,-height/2],[width/2,-height/2],[width/2,height/2],[-width/2,height/2]]
+    return {"kind":"path","closed":True,"segments":[{"kind":"line","start":p[i],"end":p[(i+1)%4]} for i in range(4)]}
+
 def generate(p, context):
     bounds = context["bounds"]
     lo, hi = bounds["min"], bounds["max"]
@@ -24,7 +28,7 @@ def generate(p, context):
     def slab(key, c, slope=0):
         norm = math.sqrt(1+slope*slope)
         prism(key, [c,yc,zc], [0,-sr,cr], [slope/norm,cr/norm,sr/norm],
-              {"kind": "roundedRectangle", "width": 2*reach, "height": 2*reach*norm, "radius": 0},
+              _rect_path(2*reach, 2*reach*norm),
               [-sign*reach,0,0])
     def boolean(key, operation, left, right):
         nodes.append({"key": key, "operator": "boolean", "inputs": [left,right], "arguments": {"operation": operation}})

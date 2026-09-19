@@ -125,3 +125,6 @@ foreach ($Project in $Projects) {
         Write-Output "OK $Name"
     }
 }
+
+$OutputDirectory = Join-Path $RepoRoot ("src\{0}\{1}" -f $Platform, $Configuration)
+& (Join-Path $PSScriptRoot "sync_tube_designer_templates.ps1") -OutputDirectory $OutputDirectory

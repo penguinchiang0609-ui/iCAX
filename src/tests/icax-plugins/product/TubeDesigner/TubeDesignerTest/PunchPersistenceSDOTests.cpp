@@ -122,7 +122,7 @@ TEST(ProfileLibrarySDOTest, SystemCatalogDoesNotRequirePersonalData)
     Scene scene;
     const auto result=invoke(scene,"ListSystemProfiles",{});
     const auto profiles=result.at("systemProfiles").To<VariantArray>();
-    ASSERT_EQ(24u,profiles.size());
+    ASSERT_EQ(21u,profiles.size());
     for(const auto& value:profiles) {
         const auto profile=value.To<ObjectMap>();
         EXPECT_FALSE(profile.contains("error"));
@@ -550,39 +550,6 @@ TEST(PartDrawingIndependentSDO, OwnRecipeAllowsMultipleSolidsAndReopensIndepende
     EXPECT_THROW(invoke(scene,"AddNestingPunchPart",request("冲孔仍须单段","round",{},VariantArray{f})),std::exception);
 }
 
-TEST(PartDrawingIndependentSDO, VNotchSevenStylesHaveRealCurvesAndPreserveTheSpecifiedBridge) {
-    VariantArray evidence;
-    for(const auto* style:{"sharp_v","asymmetric_v","rounded_v","left_arc","right_arc","flat_v","relief_v"}) {
-        SCOPED_TRACE(style);Scene scene;ObjectMap feature{{"id",std::string("v-")+style},{"toolTarget",std::string("part")},
-            {"toolRef",ObjectMap{{"id",std::string("v-notch")}}},{"toolParameters",ObjectMap{{"style",std::string(style)},{"bridge",1.}}},
-            {"station",500.},{"reference",std::string("start")}};
-        const auto payload=request(std::string("V槽真实几何-")+style,"rect",{},VariantArray{feature});
-        const auto preview=invoke(scene,"PreviewPartDrawing",payload);ASSERT_TRUE(preview.at("toolsOnly").To<bool>());
-        const auto toolModel=scene.Resources().Get<BRepModel>(scene.Resources().MakeNamedResourceURL(std::string("tube-designer/part-drawing-preview/tool/side/v-")+style));
-        ASSERT_TRUE(toolModel);const auto tool=iCAX::OpenCascade::BuildOpenCascadeShape(*toolModel);ASSERT_TRUE(tool.bOK);
-        std::size_t circleEdges=0;for(TopExp_Explorer e(tool.Shape,TopAbs_EDGE);e.More();e.Next())if(BRepAdaptor_Curve(TopoDS::Edge(e.Current())).GetType()==GeomAbs_Circle)++circleEdges;
-        const bool curved=std::string(style)=="rounded_v"||std::string(style)=="left_arc"||std::string(style)=="right_arc"||std::string(style)=="relief_v";
-        EXPECT_EQ(circleEdges>0,curved);
-        const auto id=invoke(scene,"AddPartDrawing",payload).at("partEntityId").To<std::string>();const auto result=shape(scene,part(scene,id));
-        ASSERT_TRUE(BRepCheck_Analyzer(result).IsValid());std::size_t solids=0;for(TopExp_Explorer e(result,TopAbs_SOLID);e.More();e.Next())++solids;EXPECT_EQ(solids,1u);
-        const auto material=[&](double x,double y,double z){return BRepClass3d_SolidClassifier(result,gp_Pnt(x,y,z),1e-6).State()==TopAbs_IN;};
-        EXPECT_TRUE(material(500,0,-9.5));EXPECT_FALSE(material(500,0,9));EXPECT_TRUE(material(450,0,9));
-        if(std::string(style)=="left_arc"){EXPECT_FALSE(material(499,19,-8.5));EXPECT_TRUE(material(501,19,-8.5));}
-        if(std::string(style)=="right_arc"){EXPECT_TRUE(material(499,19,-8.5));EXPECT_FALSE(material(501,19,-8.5));}
-        if(std::string(style)=="asymmetric_v"){EXPECT_TRUE(material(490,19,0));EXPECT_FALSE(material(510,19,0));}
-        if(std::string(style)=="flat_v")EXPECT_FALSE(material(500.5,19,-8.8));
-        if(std::string(style)=="relief_v")EXPECT_FALSE(material(501,19,-8.5));
-        evidence.emplace_back(ObjectMap{{"style",std::string(style)},{"resultValid",true},{"solidCount",static_cast<unsigned long long>(solids)},
-            {"analyticCircleEdgesInTool",static_cast<unsigned long long>(circleEdges)},{"volume",volume(result)},{"bottomBridgePointRetained",material(500,0,-9.5)}});
-    }
-    Scene scene;const ObjectMap feature{{"id",std::string("bottom-cut")},{"toolTarget",std::string("part")},{"station",500.},
-        {"toolRef",ObjectMap{{"id",std::string("v-notch")}}},{"toolParameters",ObjectMap{{"style",std::string("sharp_v")},{"bottomCut",true},{"bottomCutWidth",2.}}}};
-    const auto payload=request("V槽主动切断","rect",{},VariantArray{feature});const auto id=invoke(scene,"AddPartDrawing",payload).at("partEntityId").To<std::string>();
-    std::size_t solids=0;for(TopExp_Explorer e(shape(scene,part(scene,id)),TopAbs_SOLID);e.More();e.Next())++solids;EXPECT_EQ(solids,2u);
-    EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
-    std::ofstream report(std::filesystem::current_path()/"tmp/native-layout-tests/v-notch-seven-native-evidence.json");report<<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(evidence);
-}
-
 TEST(ProductTemplatePreviewSDO, ReturnsRuntimeGeometryWithoutCreatingProductRecords) {
     Scene scene;
     const auto response = invoke(scene, "GenerateProductTemplatePreview", ObjectMap{
@@ -754,14 +721,6 @@ TEST(ProductManufacturingPlanSDO, SecurityWindowContinuousFramesUseSelectedLibra
     EXPECT_FALSE(preview.at("items").To<VariantArray>().empty());
     EXPECT_TRUE(preview.at("parameters").To<ObjectMap>().contains("tubeDesignerToolBindings"));
 
-    // Historical left/right edge-arc choices have no resource binding in old
-    // projects. They must resolve to the mould-library edge-arc tool, never
-    // silently become the default sharp V cutter.
-    const auto rightArc=invoke(scene,"GetProductManufacturingPlan",ObjectMap{
-        {"templateId",std::string("single-face-security-window")},
-        {"parameters",ObjectMap{{"frameLayout",std::string("four_sides")},
-            {"frameJoinType",std::string("v_groove_90:right_arc")},{"accessDoorEnabled",false}}}});
-    EXPECT_FALSE(rightArc.at("tables").To<VariantArray>().empty());
 }
 
 TEST(ProductTemplatePreviewSDO, AllGuardrailFamiliesGenerateSlopedCorners) {

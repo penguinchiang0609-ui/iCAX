@@ -127,6 +127,19 @@ def concentric_circles(loops,tolerance,count):
     if count==2 and outer["radius"]-loops[1]["radius"]<=tolerance:return False
     return [c["radius"] for c in loops],{"rotation":0,"translation":outer["center"]}
 
+
+def eccentric_circles(loops,tolerance):
+    """Recognize a circular tube with an inner circle that may be offset."""
+    if len(loops)!=2 or any(c["kind"]!="circle" for c in loops):return False
+    outer,inner=loops
+    outer_radius,inner_radius=outer["radius"],inner["radius"]
+    if outer_radius<=tolerance or inner_radius<=tolerance:return False
+    if inner_radius>=outer_radius-tolerance:return False
+    offset=[inner["center"][i]-outer["center"][i] for i in (0,1)]
+    if math.dist(offset,[0,0])+inner_radius>=outer_radius-tolerance:return False
+    return (outer_radius,inner_radius,offset[0],offset[1]),{
+        "rotation":0,"translation":outer["center"]}
+
 def box(loop,g,t):
     """Recognize a complete axis-aligned rectangle with four equal corner arcs."""
     if loop["kind"]!="path":return False
@@ -195,3 +208,77 @@ def paired_sections(loops,g,t,measure):
     if tx<=t or abs(tx-ty)>t:return False
     if abs(inner["radius"]-max(outer["radius"]-tx,0))>t:return False
     return outer,tx
+
+
+def paired_sections_offset(loops,g,t,measure):
+    """Pair two same-family closed sections while retaining inner-center offset."""
+    if len(loops)!=2:return False
+    outer,inner=measure(loops[0],g,t),measure(loops[1],g,t)
+    if not outer or not inner:return False
+    tx=(outer["width"]-inner["width"])/2
+    ty=(outer["depth"]-inner["depth"])/2
+    if tx<=t or abs(tx-ty)>t:return False
+    if abs(inner["radius"]-max(outer["radius"]-tx,0))>t:return False
+    offset=[inner["center"][i]-outer["center"][i] for i in (0,1)]
+    if max(abs(offset[0]),abs(offset[1]))>=tx-t:return False
+    return outer,tx,offset
+
+
+def _rounded_rectangle(loop,g,t):
+    """Measure one analytic axis-aligned rounded rectangle, including mixed corners."""
+    if loop.get("kind") != "path": return False
+    edges = loop.get("edges", [])
+    if not edges: return False
+    x0,y0,x1,y1 = g.bounds(loop)
+    if min(x1-x0,y1-y0) <= t: return False
+    radii = [0.0,0.0,0.0,0.0]
+    arc_count = 0
+    line_count = 0
+    for edge in edges:
+        kind = edge.get("kind")
+        if kind == "line":
+            a,b=edge["start"],edge["end"]
+            dx,dy=b[0]-a[0],b[1]-a[1]
+            if math.hypot(dx,dy) <= t: return False
+            horizontal=abs(dy)<=t and (abs(a[1]-y0)<=t or abs(a[1]-y1)<=t)
+            vertical=abs(dx)<=t and (abs(a[0]-x0)<=t or abs(a[0]-x1)<=t)
+            if not (horizontal or vertical): return False
+            if horizontal and abs(b[1]-a[1])>t: return False
+            if vertical and abs(b[0]-a[0])>t: return False
+            line_count += 1
+        elif kind == "arc":
+            radius=edge.get("radius")
+            center=edge.get("center")
+            if not isinstance(radius,(int,float)) or radius<=t or not center:return False
+            if abs(abs(edge.get("sweep",0))-math.pi/2)*radius>t:return False
+            if abs(center[0]-x0)<=t or abs(center[0]-x1)<=t or abs(center[1]-y0)<=t or abs(center[1]-y1)<=t:return False
+            left=abs(center[0]-(x0+radius))<=t
+            right=abs(center[0]-(x1-radius))<=t
+            bottom=abs(center[1]-(y0+radius))<=t
+            top=abs(center[1]-(y1-radius))<=t
+            if left and bottom:index=0
+            elif right and bottom:index=1
+            elif right and top:index=2
+            elif left and top:index=3
+            else:return False
+            if radii[index] > 0 and abs(radii[index]-radius)>t:return False
+            for point in (edge["start"],edge["end"]):
+                if abs(math.dist(point,center)-radius)>t:return False
+            radii[index]=float(radius);arc_count += 1
+        else:return False
+    if line_count != 4 or arc_count > 4 or len(edges) != 4+arc_count:return False
+    # Every corner is represented by either one quarter arc or two adjacent sides.
+    if arc_count and any(r<=0 for r in radii if r): pass
+    center=[(x0+x1)/2,(y0+y1)/2]
+    return {"width":x1-x0,"depth":y1-y0,"center":center,"radii":radii}
+
+
+def paired_rectangles(loops,g,t):
+    if len(loops)!=2:return False
+    outer=_rounded_rectangle(loops[0],g,t); inner=_rounded_rectangle(loops[1],g,t)
+    if not outer or not inner:return False
+    wall_x=(outer["width"]-inner["width"])/2
+    wall_y=(outer["depth"]-inner["depth"])/2
+    if wall_x<=t or abs(wall_x-wall_y)>t:return False
+    if abs(outer["center"][0]-((g.bounds(loops[0])[0]+g.bounds(loops[0])[2])/2))>t:return False
+    return outer,inner,wall_x

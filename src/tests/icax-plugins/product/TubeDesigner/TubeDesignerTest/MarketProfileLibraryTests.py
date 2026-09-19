@@ -16,7 +16,7 @@ class MarketLibrary(unittest.TestCase):
 
     def test_every_active_template_has_a_survey_reference_and_complete_dependencies(self):
         packages=runtime.generate({"action":"list-system"},{})["systemProfiles"]
-        self.assertEqual(24,len(packages))
+        self.assertEqual(21,len(packages))
         for p in packages:
             with self.subTest(profile=p.get("name")):
                 self.assertNotIn("error",p)
@@ -24,7 +24,7 @@ class MarketLibrary(unittest.TestCase):
                 self.assertTrue(d["provenance"]["surveyIds"])
                 self.assertEqual("not-certified",d["provenance"]["standardConformance"])
                 self.assertNotIn("recognition",d)
-                self.assertIn("geometry.py",p["resources"])
+                self.assertIn("fitting.py",p["resources"])
                 actual=self.evaluate(d["id"])
                 self.assertEqual(d["provenance"],actual["provenance"])
                 self.assertEqual(d["manufacturing"],actual["manufacturing"])

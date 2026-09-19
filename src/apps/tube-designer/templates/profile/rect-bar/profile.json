@@ -2,31 +2,28 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": { "schemaVersion": 1, "entryPoint": "fitting.py" },
   "id": "rect-bar",
-  "version": "2026.9.13.6",
+  "version": "2026.9.19.1",
   "displayName": "扁钢",
-  "description": "P25 方矩棒 / 扁钢。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
+  "description": "参数化扁钢名义截面：基础模式为理想矩形，勾选热轧后以统一名义圆角 R 生成四角圆钝轮廓。",
+  "category": "型材",
   "provenance": {
-    "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
-    "surveyIds": [
-      85,
-      94
-    ],
+    "document": "doc/Apps/扁钢参数化几何定义与CAM建模建议.md",
+    "surveyIds": [85, 94],
     "dimensionSource": "editable-example",
     "standardConformance": "not-certified",
     "familyCode": "P25"
   },
   "manufacturing": {
-    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "formingProcess": "参数化扁钢截面（可选热轧名义圆角）",
     "topology": "solid",
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
     {
       "key": "width",
-      "displayName": "宽 / mm",
+      "displayName": "宽度 B / mm",
       "valueType": "number",
       "defaultValue": 40,
       "min": 1,
@@ -34,68 +31,33 @@
     },
     {
       "key": "depth",
-      "displayName": "厚 / mm",
+      "displayName": "厚度 T / mm",
       "valueType": "number",
       "defaultValue": 8,
-      "min": 1,
+      "min": 0.1,
       "step": 1
     },
     {
+      "key": "useHotRolled",
+      "presentation": { "advanced": true, "line": "full" },
+      "displayName": "热轧",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
       "key": "cornerRadius",
-      "displayName": "边角半径 / mm",
+      "presentation": { "advanced": true },
+      "displayName": "热轧圆角 R / mm",
       "valueType": "number",
-      "defaultValue": 0,
+      "defaultValue": 2,
       "min": 0,
-      "step": 1
+      "step": 1,
+      "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true }
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 4
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "depth/2"
-        ],
-        "to": [
-          "width/2",
-          "depth/2"
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "宽度基准"
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "高度基准"
-      },
-      {
-        "parameter": "cornerRadius",
-        "kind": "leader",
-        "point": [
-          "width/2-cornerRadius*(1-0.7071067811865476)",
-          "depth/2-cornerRadius*(1-0.7071067811865476)"
-        ],
-        "side": "right",
-        "description": "外角半径"
-      }
-    ]
+    "categoryPath": ["型材"],
+    "groupOrder": 2,
+    "order": 106
   }
 }

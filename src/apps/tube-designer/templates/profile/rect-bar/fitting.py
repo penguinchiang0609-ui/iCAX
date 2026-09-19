@@ -8,5 +8,9 @@ def fitting(section, context):
     for loops,pose in g.frames(section):
         measured=q.box(loops[0],g,t) or q.capsule(loops[0],g,t)
         if measured:
-            return q.result({"width":measured["width"],"depth":measured["depth"],"cornerRadius":measured["radius"]},pose)
+            radius=measured["radius"]
+            return q.result({"width":measured["width"],
+                             "depth":measured["depth"],
+                             "cornerRadius":radius,
+                             "useHotRolled":radius>t},pose)
     return False

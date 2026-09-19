@@ -1,0 +1,71 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true }
+      },
+      "fields": {
+        "width": { "group": "dimensions", "order": 10, "title": { "zh-CN": "宽" }, "help": { "zh-CN": "槽口宽度 / mm" } },
+        "depth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "高" }, "help": { "zh-CN": "槽钢高度 / mm" } },
+        "wallThickness": { "group": "dimensions", "order": 30, "title": { "zh-CN": "壁厚" }, "help": { "zh-CN": "壁厚 / mm" } },
+        "outerRadius": { "group": "dimensions", "order": 40, "title": { "zh-CN": "外角 R" }, "help": { "zh-CN": "外角半径 / mm" } },
+        "useHotRolled": { "group": "dimensions", "order": 50, "line": "full", "title": { "zh-CN": "热轧" } },
+        "flangeThickness": { "group": "dimensions", "order": 60, "title": { "zh-CN": "腿中间厚度" }, "help": { "zh-CN": "热轧槽钢腿中间厚度 / mm" }, "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "useOuterRadii": { "group": "dimensions", "order": 70, "line": "full", "title": { "zh-CN": "启用独立外角 R" } },
+        "outerRadius1": { "group": "dimensions", "order": 80, "title": { "zh-CN": "下外角 R1" }, "help": { "zh-CN": "下外角半径 / mm" } },
+        "outerRadius2": { "group": "dimensions", "order": 90, "title": { "zh-CN": "上外角 R2" }, "help": { "zh-CN": "上外角半径 / mm" } },
+        "useInnerRadius": { "group": "dimensions", "order": 100, "line": "full", "title": { "zh-CN": "启用独立内角 R" } },
+        "innerRadius1": { "group": "dimensions", "order": 110, "title": { "zh-CN": "下内角 R1" }, "help": { "zh-CN": "下内角半径 / mm" } },
+        "innerRadius2": { "group": "dimensions", "order": 120, "title": { "zh-CN": "上内角 R2" }, "help": { "zh-CN": "上内角半径 / mm" } },
+        "freeEndRadius": { "group": "dimensions", "order": 130, "title": { "zh-CN": "自由端 R" }, "help": { "zh-CN": "上、下自由端共用的圆角半径 / mm" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": false }] } },
+        "useIndependentFreeEndRadii": { "group": "dimensions", "order": 140, "line": "full", "title": { "zh-CN": "启用自由端 R 独立设置" } },
+        "freeEndRadius1": { "group": "dimensions", "order": 150, "title": { "zh-CN": "下自由端 R" }, "help": { "zh-CN": "下翼缘自由端圆角半径 / mm" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "freeEndRadius2": { "group": "dimensions", "order": 160, "title": { "zh-CN": "上自由端 R" }, "help": { "zh-CN": "上翼缘自由端圆角半径 / mm" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "innerOffsetX": { "group": "dimensions", "order": 170, "title": { "zh-CN": "水平偏心" }, "help": { "zh-CN": "截面水平偏心 / mm" } },
+        "innerOffsetY": { "group": "dimensions", "order": 180, "title": { "zh-CN": "竖直偏心" }, "help": { "zh-CN": "截面竖直偏心 / mm" } }
+      }
+    },
+    "scene": {
+      "annotationGroups": { "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true } },
+      "annotations": {
+        "width": { "label": { "zh-CN": "宽" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "depth": { "label": { "zh-CN": "高" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "wallThickness": { "label": { "zh-CN": "壁厚" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm" },
+        "outerRadius": { "label": { "zh-CN": "外角 R" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm" },
+        "flangeThickness": { "label": { "zh-CN": "腿中间厚度" }, "group": "dimensions", "order": 50, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+        "outerRadius1": { "label": { "zh-CN": "下外角 R1" }, "group": "dimensions", "order": 70, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useOuterRadii", "value": true } },
+        "outerRadius2": { "label": { "zh-CN": "上外角 R2" }, "group": "dimensions", "order": 80, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useOuterRadii", "value": true } },
+        "innerRadius1": { "label": { "zh-CN": "下内角 R1" }, "group": "dimensions", "order": 90, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useInnerRadius", "value": true } },
+        "innerRadius2": { "label": { "zh-CN": "上内角 R2" }, "group": "dimensions", "order": 100, "editable": true, "suffix": " mm", "visibleWhen": { "op": "eq", "parameter": "useInnerRadius", "value": true } },
+        "freeEndRadius": { "label": { "zh-CN": "自由端 R" }, "group": "dimensions", "order": 110, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": false }] } },
+        "freeEndRadius1": { "label": { "zh-CN": "下自由端 R" }, "group": "dimensions", "order": 120, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "freeEndRadius2": { "label": { "zh-CN": "上自由端 R" }, "group": "dimensions", "order": 130, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+        "innerOffsetX": { "label": { "zh-CN": "水平偏心" }, "group": "dimensions", "order": 140, "editable": true, "suffix": " mm" },
+        "innerOffsetY": { "label": { "zh-CN": "竖直偏心" }, "group": "dimensions", "order": 150, "editable": true, "suffix": " mm" }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "width", "kind": "linear", "from": [ "innerOffsetX-width/2", "innerOffsetY-depth/2" ], "to": [ "innerOffsetX+width/2", "innerOffsetY-depth/2" ], "axis": "x", "side": "bottom", "description": "槽口宽度" },
+          { "parameter": "depth", "kind": "linear", "from": [ "innerOffsetX-width/2", "innerOffsetY-depth/2" ], "to": [ "innerOffsetX-width/2", "innerOffsetY+depth/2" ], "axis": "y", "side": "left", "description": "槽钢高度" },
+          { "parameter": "wallThickness", "kind": "linear", "from": [ "innerOffsetX-width/2-wallThickness/2", "innerOffsetY" ], "to": [ "innerOffsetX-width/2+wallThickness/2", "innerOffsetY" ], "axis": "x", "side": "top", "description": "壁厚" },
+          { "parameter": "flangeThickness", "kind": "leader", "point": [ "innerOffsetX", "innerOffsetY-depth/2+flangeThickness" ], "side": "left", "description": "腿中间厚度", "visibleWhen": { "op": "eq", "parameter": "useHotRolled", "value": true } },
+          { "parameter": "outerRadius", "kind": "leader", "point": [ "innerOffsetX-width/2-wallThickness/2+outerRadius", "innerOffsetY-depth/2-wallThickness/2" ], "side": "right", "description": "外角半径 R", "visibleWhen": { "op": "eq", "parameter": "useOuterRadii", "value": false } },
+          { "parameter": "outerRadius1", "kind": "leader", "point": [ "innerOffsetX-width/2-wallThickness/2+outerRadius1", "innerOffsetY-depth/2-wallThickness/2" ], "side": "right", "description": "下外角半径 R1", "visibleWhen": { "op": "eq", "parameter": "useOuterRadii", "value": true } },
+          { "parameter": "outerRadius2", "kind": "leader", "point": [ "innerOffsetX-width/2-wallThickness/2+outerRadius2", "innerOffsetY+depth/2+wallThickness/2" ], "side": "right", "description": "上外角半径 R2", "visibleWhen": { "op": "eq", "parameter": "useOuterRadii", "value": true } },
+          { "parameter": "innerRadius1", "kind": "leader", "point": [ "innerOffsetX-width/2+wallThickness/2+innerRadius1", "innerOffsetY-depth/2+wallThickness/2" ], "side": "right", "description": "下内角半径 R1", "visibleWhen": { "op": "eq", "parameter": "useInnerRadius", "value": true } },
+          { "parameter": "innerRadius2", "kind": "leader", "point": [ "innerOffsetX-width/2+wallThickness/2+innerRadius2", "innerOffsetY+depth/2-wallThickness/2" ], "side": "right", "description": "上内角半径 R2", "visibleWhen": { "op": "eq", "parameter": "useInnerRadius", "value": true } },
+          { "parameter": "freeEndRadius", "kind": "leader", "point": [ "innerOffsetX+width/2", "innerOffsetY-depth/2+wallThickness/2" ], "side": "right", "description": "自由端半径 R", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": false }] } },
+          { "parameter": "freeEndRadius1", "kind": "leader", "point": [ "innerOffsetX+width/2", "innerOffsetY-depth/2+wallThickness/2" ], "side": "right", "description": "下自由端半径 R", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+          { "parameter": "freeEndRadius2", "kind": "leader", "point": [ "innerOffsetX+width/2", "innerOffsetY+depth/2-wallThickness/2" ], "side": "right", "description": "上自由端半径 R", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useHotRolled", "value": true }, { "op": "eq", "parameter": "useIndependentFreeEndRadii", "value": true }] } },
+          { "parameter": "innerOffsetX", "kind": "linear", "from": [ 0, "innerOffsetY-depth/2" ], "to": [ "innerOffsetX", "innerOffsetY-depth/2" ], "axis": "x", "side": "bottom", "description": "水平偏心" },
+          { "parameter": "innerOffsetY", "kind": "linear", "from": [ "innerOffsetX-width/2", 0 ], "to": [ "innerOffsetX-width/2", "innerOffsetY" ], "axis": "y", "side": "left", "description": "竖直偏心" }
+        ]
+      }
+    }
+  }
+}

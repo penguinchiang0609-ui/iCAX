@@ -2,12 +2,18 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {migratePunchRecord} from "../../apps/tube-designer/webpage/punchToolMigration.mjs";
 
+function conditionLeaves(condition) {
+  if (!condition || typeof condition !== "object") return [];
+  if (Array.isArray(condition.conditions)) return condition.conditions.flatMap(conditionLeaves);
+  return condition.parameter ? [condition] : [];
+}
+
 for (const id of ["v-notch-sharp", "edge-arc-groove"]) {
   const descriptor = JSON.parse(readFileSync(new URL(`../../apps/tube-designer/templates/mold/${id}/tool.json`, import.meta.url)));
   const parameters = Object.fromEntries(descriptor.parameters.map(p => [p.key, p.defaultValue]));
   Object.assign(parameters, {bottomReference:"inner", wallThickness:2, reliefDepth:2, reliefSide:"negative",
     bendCompensation:true, useDefaultKFactor:false, kFactor:0.8});
-  if (id === "v-notch-sharp") Object.assign(parameters, {flatReference:"actual", bottomStrategy:"rounded"});
+  if (id === "v-notch-sharp") Object.assign(parameters, {bottomStrategy:"rounded"});
   else parameters.reliefDiameter = 1;
   const source = {toolRef:{id, version:descriptor.version, digest:"test"}, toolParameters:parameters,
     station:500, rotation:30, frozenTool:{immutable:true}};
@@ -18,15 +24,14 @@ for (const id of ["v-notch-sharp", "edge-arc-groove"]) {
   assert.deepEqual(migratePunchRecord(migrated), migrated);
   for (const definition of descriptor.parameters) {
     if (definition.visibleWhen) {
-      const condition = definition.visibleWhen;
-      const dependency = descriptor.parameters.find(p => p.key === condition.parameter);
-      assert.ok(dependency);
-      if (dependency.options) assert.ok(dependency.options.some(o => o.value === condition.value));
+      for (const condition of conditionLeaves(definition.visibleWhen)) {
+        const dependency = descriptor.parameters.find(p => p.key === condition.parameter);
+        assert.ok(dependency, `${id}.${definition.key}: missing ${condition.parameter}`);
+        if (dependency.options && condition.op === "eq") {
+          assert.ok(dependency.options.some(o => o.value === condition.value));
+        }
+      }
     }
   }
 }
-const old = migratePunchRecord({toolRef:{id:"v-notch-sharp"}, toolParameters:{rootRadius:2, bridge:1}});
-assert.equal(old.toolParameters.bottomStrategy, "rounded");
-assert.equal(old.toolParameters.roundRadius, 2);
-assert.equal(old.toolParameters.leaveBottom, 1);
-console.log("Slot parameter migration and descriptor checks passed.");
+console.log("Current slot parameters and descriptor conditions passed.");

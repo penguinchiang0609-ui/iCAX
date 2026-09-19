@@ -80,7 +80,7 @@ try {
         <div data-tube-designer-product-parameter-scope data-tube-designer-editor-mode="right">
           <details data-tube-designer-parameter-group="section:materials" open>
             <details data-tube-designer-parameter-group="scene:materials:group:material" open>
-              <input id="all-material" data-product-parameter-key="materialGrade" />
+              <input id="all-material" data-product-parameter-key="tubeSpecificationPreset" />
             </details>
             <details data-tube-designer-parameter-group="scene:materials:group:frame_profile" open>
               <input id="frame-profile" data-product-parameter-key="profile:frame:width" data-product-profile-role="frame" />
@@ -91,6 +91,7 @@ try {
               <input id="frame-process" data-product-parameter-key="frameJoinType" />
             </details>
           </details>
+          <button id="non-parameter" type="button">折叠</button>
         </div>
       </aside>`;
     const viewport = createThreeViewport({ continuousRender: false, showGrid: false });
@@ -157,8 +158,35 @@ try {
     await tick();
     const frameProfile = viewport.getDebugState();
     const purpleDuringPanel = colorOf(selectedFrameId);
-    viewport.setEmphasizedObjectIds([]);
+    document.querySelector("#frame-profile").blur();
+    await tick();
+    const afterBlurIds = viewport.getDebugState().emphasizedObjectIds;
     const orangeAfterPanel = colorOf(selectedFrameId);
+    bindProductParameterDiagrams(mount);
+    await tick();
+    const afterRebindIds = viewport.getDebugState().emphasizedObjectIds;
+
+    document.querySelector("#frame-profile").dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
+    const hoverIds = viewport.getDebugState().emphasizedObjectIds;
+    document.querySelector("#frame-profile").dispatchEvent(new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.querySelector("#viewport") }));
+    await tick();
+    const afterHoverIds = viewport.getDebugState().emphasizedObjectIds;
+
+    document.querySelector("#frame-profile").focus();
+    document.querySelector("#non-parameter").focus();
+    await tick();
+    const afterNonParameterIds = viewport.getDebugState().emphasizedObjectIds;
+
+    document.querySelector("#frame-profile").focus();
+    document.querySelector("#viewport").tabIndex = 0;
+    document.querySelector("#viewport").focus();
+    await tick();
+    const afterOutsideFocusIds = viewport.getDebugState().emphasizedObjectIds;
+
+    // Reproduce a late render/rebind after the user has left the inspector.
+    await new Promise((done) => setTimeout(done, 20));
+    bindProductParameterDiagrams(mount);
+    const afterAsyncRebindIds = viewport.getDebugState().emphasizedObjectIds;
 
     document.querySelector("#frame-process").focus();
     await tick();
@@ -177,6 +205,13 @@ try {
       orangeBeforePanel,
       purpleDuringPanel,
       orangeAfterPanel,
+      afterBlurIds,
+      afterRebindIds,
+      hoverIds,
+      afterHoverIds,
+      afterNonParameterIds,
+      afterOutsideFocusIds,
+      afterAsyncRebindIds,
       focusBeforeScenePick,
       focusAfterScenePick,
       pickHandled: Boolean(pickHandled),
@@ -195,6 +230,10 @@ try {
   assert.equal(result.orangeBeforePanel, 0xffad1f, "零件选择仍使用橙色");
   assert.equal(result.purpleDuringPanel, 0xa855f7, "面板联动应覆盖显示为紫色");
   assert.equal(result.orangeAfterPanel, 0xffad1f, "清除面板强调后应恢复橙色零件选择");
+  assert.deepEqual(result.hoverIds.sort(), result.frameIds.sort());
+  for (const key of ["afterBlurIds", "afterRebindIds", "afterHoverIds", "afterNonParameterIds", "afterOutsideFocusIds", "afterAsyncRebindIds"]) {
+    assert.deepEqual(result[key], [], `${key}: 离开参数编辑后紫色联动高亮必须清除`);
+  }
   assert.equal(result.focusBeforeScenePick, "frame-process");
   assert.equal(result.focusAfterScenePick, "frame-process", "场景选择不得反向定位参数面板");
   assert.equal(result.pickHandled, false);

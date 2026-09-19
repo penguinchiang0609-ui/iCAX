@@ -71,6 +71,65 @@ namespace
             { "solid" }).At("solid");
     }
 
+    TEST(ProfileGeneration, GenericArcPathPreservesAnEccentricBore)
+    {
+        const double _Pi = std::acos(-1.0);
+        const auto _CirclePath = [](double CenterX_, double CenterY_, double Radius_)
+        {
+            VariantArray _Segments;
+            for (int _Index = 0; _Index < 4; ++_Index)
+            {
+                const auto _Point = [&](double Angle_)
+                {
+                    return Numbers({
+                        CenterX_ + Radius_ * std::cos(Angle_),
+                        CenterY_ + Radius_ * std::sin(Angle_) });
+                };
+                const double _Start = std::acos(-1.0) * _Index / 2.0;
+                const double _Middle = _Start + std::acos(-1.0) / 4.0;
+                const double _End = _Start + std::acos(-1.0) / 2.0;
+                _Segments.emplace_back(ObjectMap{
+                    { "kind", std::string("arc") },
+                    { "start", _Point(_Start) },
+                    { "middle", _Point(_Middle) },
+                    { "end", _Point(_End) }
+                });
+            }
+            return ObjectMap{
+                { "kind", std::string("path") },
+                { "closed", true },
+                { "segments", _Segments }
+            };
+        };
+        const ObjectMap _Profile{
+            { "contentDigest", std::string("arc-path-regression") },
+            { "contours", VariantArray{
+                _CirclePath(0.0, 0.0, 10.0),
+                _CirclePath(3.0, -2.0, 5.0)
+            } }
+        };
+        const auto _Shape = ExtrudeProfile(_Profile, 20.0);
+        ASSERT_FALSE(_Shape.IsNull());
+        ASSERT_TRUE(BRepCheck_Analyzer(_Shape).IsValid());
+
+        GProp_GProps _Properties;
+        BRepGProp::VolumeProperties(_Shape, _Properties);
+        EXPECT_NEAR(1500.0 * _Pi, _Properties.Mass(), 1.0e-6);
+        EXPECT_NEAR(-1.0, _Properties.CentreOfMass().X(), 1.0e-6);
+        EXPECT_NEAR(2.0 / 3.0, _Properties.CentreOfMass().Y(), 1.0e-6);
+    }
+
+    TEST(ProfileGeneration, Profile2DRejectsHighLevelContourKinds)
+    {
+        const ObjectMap _Profile{
+            { "contentDigest", std::string("path-only-profile") },
+            { "contours", VariantArray{ ObjectMap{
+                { "kind", std::string("circle") }, { "radius", 10.0 }
+            } } }
+        };
+        EXPECT_THROW(ExtrudeProfile(_Profile, 20.0), std::invalid_argument);
+    }
+
     ObjectMap RuntimeRequest(const std::filesystem::path& Root_, const ObjectMap& Parameters_)
     {
         return {

@@ -1,5 +1,7 @@
-import { matchesParameterCondition } from "./parameterConditions.mjs";
+import { matchesParameterCondition, parameterVisible } from "./parameterConditions.mjs";
+import { renderParameterLevels, parameterDiagramLevelAttribute } from './parameterPresentation.mjs';
 import { escapeAttr as attr, escapeText as text } from "../../_shared/workbench/utils/format.mjs";
+import { bindParameterDiagramScopes } from "./parameterDiagramBinding.mjs";
 
 const localized = (value, fallback = "") => value && typeof value === "object"
   ? String(value["zh-CN"] ?? value["en-US"] ?? Object.values(value)[0] ?? fallback) : String(value ?? fallback);
@@ -7,7 +9,6 @@ const finite = (value) => typeof value === "number" && Number.isFinite(value);
 const point = (value) => Array.isArray(value) && value.length === 2 && value.every(finite);
 const rounded = (value) => Number(Number(value).toFixed(5));
 const displayNumber = (value) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 3, useGrouping: false }).format(value);
-const diagramBindings = new WeakMap();
 
 function visible(condition, values) {
   return matchesParameterCondition(condition, values);
@@ -82,7 +83,7 @@ function validAnnotations(diagram, definitions, values) {
   const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
   return diagram.annotations.slice(0, 128).filter((annotation) => {
     const definition = byKey.get(annotation?.parameter);
-    if (!definition || !visible(annotation?.visibleWhen, values) || !visible(definition.visibleWhen, values)) return false;
+    if (!definition || !visible(annotation?.visibleWhen, values) || !parameterVisible(definition, values)) return false;
     if (!["top", "bottom", "left", "right"].includes(annotation.side)) return false;
     if (annotation.kind === "leader") return point(annotation.point);
     return annotation.kind === "linear" && point(annotation.from) && point(annotation.to)
@@ -146,7 +147,7 @@ function richDiagramSvg(tool, diagram, values, definitions) {
         + `<circle class="tool-diagram-anchor" cx="${rounded(location[0])}" cy="${rounded(location[1])}" r="3"/>`
         + `<circle class="tool-diagram-parameter-badge" cx="${rounded(badge[0])}" cy="${rounded(badge[1])}" r="11"/><text x="${rounded(badge[0])}" y="${rounded(badge[1])}" text-anchor="middle" dominant-baseline="central">${index}</text>`;
     }
-    return `<g class="tool-diagram-annotation" data-tool-annotation-key="${attr(item.parameter)}" role="button" tabindex="0" aria-label="${attr(title)}"><title>${text(title)}</title>${body}</g>`;
+    return `<g class="tool-diagram-annotation" data-tool-annotation-key="${attr(item.parameter)}"${parameterDiagramLevelAttribute(item.definition)} role="button" tabindex="0" aria-label="${attr(title)}"><title>${text(title)}</title>${body}</g>`;
   }).join("");
   const mirrorTransform = mirrored ? ` translate(${rounded(sourceX * 2 + sourceWidth)} 0) scale(-1 1)` : "";
   return `<svg class="tool-parameter-svg is-rich" viewBox="0 0 ${width} ${height}" role="group" aria-label="${attr(`${localized(tool?.displayName ?? tool?.name, "模具")}参数示意图`)}"><g class="tool-diagram-shape" transform="translate(${rounded(tx)} ${rounded(ty)}) scale(${rounded(scale)})${mirrorTransform}">${markup}</g>${rendered}</svg>`;
@@ -165,12 +166,13 @@ function legacyDiagramSvg(tool, diagram, values, definitions) {
     const content = found ? `${label.text || shortName(found.definition)} ${value}${label.unit ?? (unit ? ` ${unit}` : "")}` : String(label?.text ?? "");
     if (!content) return "";
     const body = `<text class="tool-diagram-label" x="${attr(label.x)}" y="${attr(label.y)}" text-anchor="${attr(label.anchor ?? "middle")}">${text(content)}</text>`;
-    return found ? `<g class="tool-diagram-annotation" data-tool-annotation-key="${attr(label.parameter)}" role="button" tabindex="0" aria-label="${attr(content)}"><circle class="tool-diagram-parameter-badge" cx="${attr(Number(label.x) - 12)}" cy="${attr(Number(label.y) - 3)}" r="8"/><text class="tool-diagram-badge-text" x="${attr(Number(label.x) - 12)}" y="${attr(Number(label.y) - 3)}" text-anchor="middle" dominant-baseline="central">${found.index}</text>${body}</g>` : body;
+    return found ? `<g class="tool-diagram-annotation" data-tool-annotation-key="${attr(label.parameter)}"${parameterDiagramLevelAttribute(found.definition)} role="button" tabindex="0" aria-label="${attr(content)}"><circle class="tool-diagram-parameter-badge" cx="${attr(Number(label.x) - 12)}" cy="${attr(Number(label.y) - 3)}" r="8"/><text class="tool-diagram-badge-text" x="${attr(Number(label.x) - 12)}" y="${attr(Number(label.y) - 3)}" text-anchor="middle" dominant-baseline="central">${found.index}</text>${body}</g>` : body;
   }).join("");
   return `<svg class="tool-parameter-svg" viewBox="${attr(diagram.viewBox ?? "0 0 240 160")}" role="group" aria-label="${attr(`${localized(tool?.displayName ?? tool?.name, "模具")}参数示意图`)}"><g${transform}>${shapeMarkup(diagram)}</g>${labels}</svg>`;
 }
 
 export function renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg = "") {
+  definitions = definitions.filter(d => parameterVisible(d, values));
   const diagram = resolvedDiagram(tool, values);
   if (!diagram) return fallbackSvg;
   return diagram.schemaVersion === 2
@@ -178,56 +180,22 @@ export function renderToolParameterDiagramSvg(tool, values, definitions, fallbac
     : legacyDiagramSvg(tool, diagram, values, definitions);
 }
 
-export function renderToolParameterDiagram({ tool, values, definitions, expanded, fallbackSvg = "", toggleAction = "tube-designer-tool-library-toggle-diagram" }) {
-  const rows = definitions.map((definition, index) => {
+export function renderToolParameterDiagram({ tool, values, definitions, expanded, fallbackSvg = "", toggleAction = "tube-designer-tool-library-toggle-diagram", showToggle = true }) {
+  definitions = definitions.filter(d => parameterVisible(d, values));
+  const rows = renderParameterLevels(definitions, (definition) => {
+    const index = definitions.indexOf(definition);
     const name = definitionName(definition);
     const description = localized(definition?.description ?? definition?.help, "点击定位并编辑此参数");
     const unit = definitionUnit(definition);
     return `<button type="button" class="tube-tool-library-diagram-row" data-tool-annotation-key="${attr(definition.key)}" aria-label="定位参数：${attr(name)}"><b>${index + 1}</b><span><strong>${text(name)}</strong><small>${text(description)}</small></span><em>${text(toolParameterValueText(definition, values))}${unit ? ` ${text(unit)}` : ""}</em></button>`;
-  }).join("");
+  }, {key:'tool-legend',gridClass:'tube-tool-library-diagram-legend'});
   const diagram = resolvedDiagram(tool, values);
   const annotations = validAnnotations(diagram, definitions, values);
   const hasDiagram = !!diagram || !!fallbackSvg;
-  return `<section class="tube-tool-library-parameter-diagram" data-tool-parameter-diagram><header><div><strong>参数示意图</strong><span>尺寸随参数实时更新 · 点击编号可定位参数</span></div><button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="${attr(toggleAction)}" data-tube-tool-library-diagram="tool" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button></header>${expanded ? `<div class="tube-tool-library-diagram-content">${hasDiagram ? `<div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg)}</div>` : ""}${diagram?.schemaVersion === 2 && definitions.length && !annotations.length ? `<p class="tube-tool-library-diagram-message">此模具尚未声明参数位置标注。</p>` : ""}${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">此模具没有可编辑的截面参数。</p>`}</div>` : ""}</section>`;
+  return `<section class="tube-tool-library-parameter-diagram" data-tool-parameter-diagram><header><div><strong>参数示意图</strong><span>尺寸随参数实时更新 · 点击编号可定位参数</span></div>${showToggle ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="${attr(toggleAction)}" data-tube-tool-library-diagram="tool" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button>` : ""}</header>${expanded ? `<div class="tube-tool-library-diagram-content">${hasDiagram ? `<div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg)}</div>` : ""}${diagram?.schemaVersion === 2 && definitions.length && !annotations.length ? `<p class="tube-tool-library-diagram-message">此模具尚未声明参数位置标注。</p>` : ""}${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">此模具没有可编辑的截面参数。</p>`}</div>` : ""}</section>`;
 }
 
 /** Keep each mould independent from the main/branch profile diagrams around it. */
 export function bindToolParameterDiagrams(mount) {
-  for (const scope of mount?.querySelectorAll?.("[data-tool-parameter-scope]") ?? []) {
-    if (diagramBindings.has(scope)) { diagramBindings.get(scope)(); continue; }
-    const owns = (element) => element?.closest?.("[data-tool-parameter-scope]") === scope;
-    const controls = () => [...scope.querySelectorAll("[data-tool-parameter-key]")].filter(owns);
-    const highlight = (key) => {
-      for (const node of scope.querySelectorAll("[data-tool-annotation-key], [data-tool-parameter-key]")) {
-        if (!owns(node)) continue;
-        const active = !!key && (node.dataset.toolAnnotationKey ?? node.dataset.toolParameterKey) === key;
-        node.classList.toggle("is-active", active);
-        if (node.hasAttribute("data-tool-annotation-key")) node.setAttribute("aria-pressed", String(active));
-        if (node.hasAttribute("data-tool-parameter-key")) node.closest("label")?.classList.toggle("is-tool-parameter-active", active);
-      }
-    };
-    const keyFor = (target) => {
-      const node = target?.closest?.("[data-tool-annotation-key], [data-tool-parameter-key]");
-      return owns(node) ? node.dataset.toolAnnotationKey ?? node.dataset.toolParameterKey : "";
-    };
-    const restoreFocus = () => highlight(keyFor(scope.ownerDocument.activeElement));
-    diagramBindings.set(scope, restoreFocus);
-    scope.addEventListener("focusin", (event) => highlight(keyFor(event.target)));
-    scope.addEventListener("focusout", () => queueMicrotask(restoreFocus));
-    scope.addEventListener("pointerover", (event) => { const key = keyFor(event.target); if (key) highlight(key); });
-    scope.addEventListener("pointerout", (event) => { if (!keyFor(event.relatedTarget)) restoreFocus(); });
-    const activate = (event) => {
-      const annotation = event.target?.closest?.("[data-tool-annotation-key]");
-      if (!annotation || !owns(annotation)) return;
-      const input = controls().find((control) => control.dataset.toolParameterKey === annotation.dataset.toolAnnotationKey && !control.disabled);
-      if (input) { input.focus({ preventScroll: true }); input.scrollIntoView?.({ block: "nearest", behavior: "smooth" }); }
-      highlight(annotation.dataset.toolAnnotationKey);
-    };
-    scope.addEventListener("click", activate);
-    scope.addEventListener("keydown", (event) => {
-      if (!["Enter", " "].includes(event.key) || event.target?.tagName?.toLowerCase() !== "g") return;
-      event.preventDefault(); activate(event);
-    });
-    restoreFocus();
-  }
+  bindParameterDiagramScopes(mount, "tool");
 }

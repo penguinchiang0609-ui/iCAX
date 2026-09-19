@@ -9,7 +9,7 @@ export function rememberPunchDom(view, mount) {
 }
 function key(node) {
   if(node.nodeType!==1)return null;
-  for(const name of ["data-array-group-id","data-tube-designer-punch-row","data-tube-designer-punch-end-row","data-punch-editor-mode"])
+  for(const name of ["data-parameter-advanced-key","data-parameter-advanced-item","data-array-group-id","data-tube-designer-punch-row","data-tube-designer-punch-end-row","data-punch-editor-mode"])
     if(node.hasAttribute(name))return node.tagName+":"+name+":"+node.getAttribute(name);
   if(node.id)return node.tagName+"#"+node.id;
   if(node.matches("input,select,textarea,button"))return node.tagName+":"+JSON.stringify(

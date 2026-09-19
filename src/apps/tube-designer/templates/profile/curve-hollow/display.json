@@ -1,0 +1,116 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true }
+      },
+      "fields": {
+        "width": {
+          "group": "dimensions",
+          "order": 10,
+          "title": { "zh-CN": "半圆半径 / 截面外宽" },
+          "help": { "zh-CN": "半圆半径 / 截面外宽 / mm" }
+        },
+        "wallThickness": {
+          "group": "dimensions",
+          "order": 20,
+          "title": { "zh-CN": "名义壁厚" },
+          "help": { "zh-CN": "名义壁厚 / mm" }
+        },
+        "innerOffsetX": {
+          "group": "dimensions",
+          "order": 10,
+          "title": { "zh-CN": "内孔水平偏心距" },
+          "help": { "zh-CN": "内轮廓相对外轮廓的水平偏心距 / mm" }
+        },
+        "innerOffsetY": {
+          "group": "dimensions",
+          "order": 20,
+          "title": { "zh-CN": "内孔竖直偏心距" },
+          "help": { "zh-CN": "内轮廓相对外轮廓的竖直偏心距 / mm" }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": true }
+      },
+      "annotations": {
+        "width": {
+          "label": { "zh-CN": "半圆半径 / 截面外宽" },
+          "group": "dimensions",
+          "order": 10,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "wallThickness": {
+          "label": { "zh-CN": "名义壁厚" },
+          "group": "dimensions",
+          "order": 20,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "innerOffsetX": {
+          "label": { "zh-CN": "内孔水平偏心距" },
+          "group": "advanced",
+          "order": 10,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "innerOffsetY": {
+          "label": { "zh-CN": "内孔竖直偏心距" },
+          "group": "advanced",
+          "order": 20,
+          "editable": true,
+          "suffix": " mm"
+        }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          {
+            "parameter": "width",
+            "kind": "linear",
+            "from": [ "-width/2", 0 ],
+            "to": [ "width/2", 0 ],
+            "axis": "x",
+            "side": "top",
+            "description": "半圆半径，也是 D 截面横向宽度"
+          },
+          {
+            "parameter": "wallThickness",
+            "kind": "linear",
+            "from": [ "-width/2", "-width/4" ],
+            "to": [ "-width/2+wallThickness", "-width/4" ],
+            "axis": "x",
+            "side": "bottom",
+            "description": "名义壁厚"
+          },
+          {
+            "parameter": "innerOffsetX",
+            "kind": "linear",
+            "from": [ "-width/2+wallThickness", 0 ],
+            "to": [ "-width/2+wallThickness+innerOffsetX", 0 ],
+            "axis": "x",
+            "side": "bottom",
+            "description": "内轮廓相对外轮廓的水平偏心距"
+          },
+          {
+            "parameter": "innerOffsetY",
+            "kind": "linear",
+            "from": [ "-width/2+wallThickness+innerOffsetX", 0 ],
+            "to": [ "-width/2+wallThickness+innerOffsetX", "innerOffsetY" ],
+            "axis": "y",
+            "side": "right",
+            "description": "内轮廓相对外轮廓的竖直偏心距"
+          }
+        ]
+      }
+    }
+  }
+}

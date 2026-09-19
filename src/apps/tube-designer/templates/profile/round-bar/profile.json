@@ -2,12 +2,15 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "round-bar",
   "version": "2026.9.13.6",
   "displayName": "圆棒",
   "description": "P29 圆棒。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
+  "category": "型材",
   "provenance": {
     "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
     "surveyIds": [
@@ -33,27 +36,8 @@
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 108
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          0
-        ],
-        "to": [
-          "width/2",
-          0
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "外圆直径"
-      }
-    ]
+    "categoryPath": ["型材"],
+    "groupOrder": 2,
+    "order": 104
   }
 }

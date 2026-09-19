@@ -4,6 +4,7 @@ import {
   libraryTools,
   renderToolLibraryLeftPane,
   renderToolLibraryRightPane,
+  renderToolLibraryViewportOverlay,
   toolLibraryState,
   visibleLibraryTools,
   buildToolLibraryPreviewPayload,
@@ -33,7 +34,7 @@ for (const id of ["embedded-arc-notch", "segmented-bend"]) {
   const packageView = { tubeDesignerSystemPunchTools: [tool],
     tubeDesignerToolLibrary: { scope: "system", selectedKey: `system::${id}`, showToolDiagram: true } };
   assert.match(renderToolLibraryLeftPane({}, packageView), new RegExp(tool.displayName));
-  const html = renderToolLibraryRightPane({}, packageView);
+  const html = renderToolLibraryRightPane({}, packageView) + renderToolLibraryViewportOverlay({}, packageView);
   assert.match(html, /tool-parameter-svg/);
   assert.ok(html.indexOf("tube-tool-library-mold-parameters") < html.indexOf("tube-tool-library-parameter-diagram"));
   const feature = buildToolLibraryPreviewPayload(packageView, libraryTools(packageView)[0]).features[0];
@@ -47,7 +48,7 @@ for (const id of ["embedded-arc-notch", "segmented-bend"]) {
     tool.defaultParameters.maleFemale = true;
     const jointView = { tubeDesignerSystemPunchTools: [tool],
       tubeDesignerToolLibrary: { scope: "system", selectedKey: `system::${id}`, showToolDiagram: true } };
-    const jointHtml = renderToolLibraryRightPane({}, jointView);
+    const jointHtml = renderToolLibraryRightPane({}, jointView) + renderToolLibraryViewportOverlay({}, jointView);
     assert.match(jointHtml, /公母尺寸（mm，0 自动取壁厚）/);
     assert.match(jointHtml, /公母台阶/);
     assert.equal(buildToolLibraryPreviewPayload(jointView, libraryTools(jointView)[0]).features[0].toolParameters.maleFemale, true);
@@ -84,15 +85,15 @@ const diagramView = {
     parameterDiagram: { viewBox: "0 0 240 160", paths: ["M24 28 H216", "M24 28 L120 124 L216 28"], labels: [{ x: 120, y: 94, text: "夹角", parameter: "angle", unit: "°" }] },
   }],
 };
-const diagramHtml = renderToolLibraryRightPane({}, diagramView);
+const diagramHtml = renderToolLibraryViewportOverlay({}, diagramView);
 assert.match(diagramHtml, /tool-parameter-svg/);
 assert.match(diagramHtml, /夹角 90°/);
-assert.ok(diagramHtml.indexOf('tube-tool-library-mold-parameters') < diagramHtml.indexOf('tube-tool-library-parameter-diagram'));
+assert.doesNotMatch(renderToolLibraryRightPane({}, diagramView), /data-tool-parameter-diagram/);
 diagramView.tubeDesignerSystemPunchTools[0].parameterDiagram.variants = [
   { visibleWhen: { op: "eq", parameter: "angle", value: 45 }, labels: [{ x: 20, y: 20, text: "wrong-variant" }] },
   { visibleWhen: { op: "eq", parameter: "angle", value: 90 }, paths: ["M10 10 A20 20 0 0 0 30 30"], labels: [{ x: 20, y: 20, text: "declared-tangent-variant" }] },
 ];
-const variantHtml = renderToolLibraryRightPane({}, diagramView);
+const variantHtml = renderToolLibraryViewportOverlay({}, diagramView);
 assert.match(variantHtml, /declared-tangent-variant/);
 assert.doesNotMatch(variantHtml, /wrong-variant/);
 assert.match(variantHtml, /M10 10 A20 20 0 0 0 30 30/);
@@ -160,9 +161,8 @@ const profilePreviewView = {
 const profilePane = renderToolLibraryRightPane({}, profilePreviewView);
 assert.match(profilePane, /主管 \/ 管型参数/);
 assert.match(profilePane, /tube-designer-tool-library-profile-parameter-change/);
-assert.match(profilePane, /管型参数示意图/);
-assert.match(profilePane, /参数示意图/);
-assert.match(profilePane, /显示管型参数示意图/);
+assert.doesNotMatch(profilePane, /data-profile-parameter-diagram|data-tool-parameter-diagram/);
+assert.match(renderToolLibraryViewportOverlay({}, profilePreviewView), /主管示意图/);
 assert.match(profilePane, /tube-tool-library-mold-section/);
 assert.match(profilePane, /模具信息/);
 assert.doesNotMatch(profilePane, /标准拉伸体/);
@@ -203,14 +203,14 @@ assert.deepEqual(branchPayload.features[0].section.parameters, { width: 60, dept
 assert.deepEqual(branchPayload.features[0].section.profile.contours, branchProfile.previewProfile.contours);
 let branchRenders = 0;
 await handleToolLibraryAction({}, branchView, "tube-designer-tool-library-toggle-diagram", {
-  dataset: { tubeToolLibraryDiagram: "branch-profile" },
+  dataset: { tubeToolLibraryDiagram: "profile" },
 }, { renderProject() { branchRenders += 1; } });
-assert.equal(branchRenders, 1);
-assert.equal(branchView.tubeDesignerToolLibrary.showBranchProfileDiagram, true);
+assert.equal(branchRenders, 0);
+assert.equal(branchView.tubeDesignerToolLibrary.showProfileDiagram, true);
 const expandedBranchPane = renderToolLibraryRightPane({}, branchView);
 const branchEditor = expandedBranchPane.slice(expandedBranchPane.indexOf('tube-tool-library-branch-section'));
-assert.ok(branchEditor.indexOf('tube-tool-library-tube-parameter-grid') < branchEditor.indexOf('data-tube-tool-library-diagram="branch-profile"'));
-assert.ok(branchEditor.indexOf('data-tube-tool-library-diagram="branch-profile"') < branchEditor.indexOf('data-profile-library-diagram'));
+assert.doesNotMatch(branchEditor, /data-profile-library-diagram|data-tube-tool-library-diagram/);
+assert.match(renderToolLibraryViewportOverlay({}, branchView), /data-parameter-diagram-for="tool-library-profile:branch"/);
 await handleToolLibraryAction({}, branchView, "tube-designer-tool-library-profile-parameter-change", {
   value: "72", dataset: { tubeToolLibraryProfileKey: "system:rect", tubeToolLibraryProfileParameter: "width", tubeToolLibraryProfileRole: "branch" },
 }, { renderProject() {} });
@@ -220,13 +220,11 @@ let diagramRenders = 0;
 await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-diagram", {
   dataset: { tubeToolLibraryDiagram: "profile" },
 }, { renderProject() { diagramRenders += 1; } });
-assert.equal(diagramRenders, 1);
+assert.equal(diagramRenders, 0);
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.showProfileDiagram, true);
-assert.match(renderToolLibraryRightPane({}, profilePreviewView), /data-profile-library-diagram/);
+assert.match(renderToolLibraryViewportOverlay({}, profilePreviewView), /data-parameter-diagram-for="tool-library-profile:main"/);
 const expandedMainPane = renderToolLibraryRightPane({}, profilePreviewView);
-assert.ok(expandedMainPane.indexOf('tube-tool-library-tube-parameter-grid') < expandedMainPane.indexOf('data-tube-tool-library-diagram="profile"'));
-assert.ok(expandedMainPane.indexOf('tube-designer-tool-library-preview-length-change') < expandedMainPane.indexOf('data-tube-tool-library-diagram="profile"'));
-assert.ok(expandedMainPane.indexOf('data-tube-tool-library-diagram="profile"') < expandedMainPane.indexOf('data-profile-library-diagram'));
+assert.doesNotMatch(expandedMainPane, /data-profile-library-diagram|data-tube-tool-library-diagram/);
 const beforeCollapseKey = toolPreviewKey(profilePreviewView, partTool);
 const beforeCollapseDrafts = structuredClone(profilePreviewView.tubeDesignerToolLibrary.profileDrafts);
 await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });

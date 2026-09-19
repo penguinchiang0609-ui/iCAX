@@ -40,7 +40,6 @@ const values = Object.fromEntries(raw.parameters.map((field) => [field.key, fiel
 values.tubeSpecificationPreset = "custom";
 values.accessDoorEnabled = true;
 values.infillPattern = "grid";
-values.verticalLayoutMode = "maximum_clear_gap";
 const profileOverride = (role, width, depth = width, extraDefinitions = []) => ({
     profileForm: "parametric",
     profileScope: "system",
@@ -153,6 +152,20 @@ try {
     ));
     pane.querySelectorAll(".tube-designer-parameter-section,.tube-designer-parameter-subsection")
       .forEach((details) => { details.open = true; });
+    const fixedFrameField = pane.querySelector('[data-tube-designer-parameter="doorFrameJoinType"]')
+      .closest(".tube-designer-field");
+    const leafFrameField = pane.querySelector('[data-tube-designer-parameter="doorLeafFrameJoinType"]')
+      .closest(".tube-designer-field");
+    const doorProcessGroup = fixedFrameField.closest("details");
+    const mergedDoorProcess = {
+      sameGroup: doorProcessGroup === leafFrameField.closest("details"),
+      title: doorProcessGroup.querySelector(":scope > summary")?.textContent.trim(),
+      directFields: !doorProcessGroup.querySelector(".tube-designer-parameter-subsection-list"),
+      separateRows: leafFrameField.getBoundingClientRect().top >= fixedFrameField.getBoundingClientRect().bottom,
+      fullRows: [fixedFrameField, leafFrameField].every((field) => field.classList.contains("is-line-full")),
+      oldGroupCount: [...pane.querySelectorAll("details > summary")]
+        .filter((node) => /^(固定窗框工艺|活动窗扇框工艺)/.test(node.textContent.trim())).length,
+    };
     const diagram = pane.querySelector(".tube-designer-profile-diagram-disclosure");
     const diagramDefaultClosed = diagram ? !diagram.open : true;
     if (diagram) diagram.open = true;
@@ -174,7 +187,7 @@ try {
     const materialGrid = materialSection?.querySelector(".tube-designer-field-grid");
     const structureSummary = pane.querySelector(".tube-designer-structure-summary");
     const forbiddenKeys = [
-      "faceType", "frameLayout", "width", "height", "horizontalCount", "middleVerticalCount",
+      "faceType", "frameLayout", "width", "height",
       "doorClearWidth", "doorClearHeight", "doorGap", "doorHingeSide", "doorHingeCount",
       "doorHorizontalTopCenterOffset", "doorHorizontalBottomCenterOffset",
       "doorHorizontalMaximumCenterSpacing", "doorVerticalLeftCenterOffset",
@@ -215,6 +228,7 @@ try {
       diagramDefaultClosed,
       diagramOpenAfterRefresh: restoredDiagram?.open,
       wideChoice,
+      mergedDoorProcess,
       displayLayout,
       generatedMemberCount: state.scene.tubeDesigner.members.length,
       generatedStableKeys: state.scene.tubeDesigner.members.map((member) => member.stableKey),
@@ -223,6 +237,57 @@ try {
     };
     return outcome;
   }, { state: view });
+  const compactProfiles = await page.evaluate(async () => {
+    const pane = document.querySelector(".cam-info-pane");
+    pane.style.width = "320px";
+    pane.querySelectorAll("details").forEach((details) => { details.open = true; });
+    await new Promise(requestAnimationFrame);
+    const roles = ["frame", "horizontal", "doorFrame", "doorLeafFrame", "doorHorizontal"];
+    const pairs = roles.map((role) => {
+      const control = (key) => pane.querySelector(`[data-tube-designer-profile-prefix="${role}"][data-tube-designer-profile-parameter="${key}"]`);
+      const width = control("width").closest("label");
+      const depth = control("depth").closest("label");
+      const radius = control("cornerRadius").closest("label");
+      const wall = control("wallThickness").closest("label");
+      return {
+        role,
+        paired: Math.abs(width.getBoundingClientRect().top - depth.getBoundingClientRect().top) < 1
+          && Math.abs(radius.getBoundingClientRect().top - wall.getBoundingClientRect().top) < 1,
+        noOverflow: [width, depth, radius, wall].every((field) => field.scrollWidth <= field.clientWidth),
+        labelGap: control("depth").getBoundingClientRect().left - depth.querySelector("span").getBoundingClientRect().right,
+      };
+    });
+    pane.style.width = "260px";
+    await new Promise(requestAnimationFrame);
+    const width = pane.querySelector('[data-tube-designer-profile-prefix="doorLeafFrame"][data-tube-designer-profile-parameter="width"]').closest("label");
+    const depth = pane.querySelector('[data-tube-designer-profile-prefix="doorLeafFrame"][data-tube-designer-profile-parameter="depth"]').closest("label");
+    return { pairs, narrowSingleColumn: depth.getBoundingClientRect().top > width.getBoundingClientRect().top };
+  });
+  for (const pair of compactProfiles.pairs) {
+    assert.equal(pair.paired, true, `${pair.role}: 默认窄侧栏的数值字段应两项一行`);
+    assert.equal(pair.noOverflow, true, `${pair.role}: 紧凑字段不得溢出`);
+    assert.ok(pair.labelGap >= 0 && pair.labelGap <= 6, `${pair.role}: 标签与输入框不应留大空隙`);
+  }
+  assert.equal(compactProfiles.narrowSingleColumn, true);
+  const cornerLayout = await page.evaluate(async ({ state }) => {
+    const { renderDesignerRightPane } = await import("/src/apps/tube-designer/webpage/designerViews.mjs");
+    const pane = document.querySelector(".cam-info-pane");
+    pane.style.width = "320px";
+    state.scene.tubeDesigner.product.parameters.faceType = "two";
+    pane.innerHTML = renderDesignerRightPane({}, state);
+    pane.querySelectorAll("details").forEach((details) => { details.open = true; });
+    const input = pane.querySelector('[data-tube-designer-parameter="frameCornerJoin"]');
+    const field = input.closest(".tube-designer-field");
+    return {
+      fullLine: field.classList.contains("is-line-full"),
+      width: field.getBoundingClientRect().width,
+      gridWidth: field.parentElement.getBoundingClientRect().width,
+      noOverflow: field.scrollWidth <= field.clientWidth,
+    };
+  }, { state: view });
+  assert.equal(cornerLayout.fullLine, true, "外框转角连接必须独占一行");
+  assert.ok(cornerLayout.width >= cornerLayout.gridWidth * 0.9);
+  assert.equal(cornerLayout.noOverflow, true);
   assert.deepEqual(result.sectionTitles, ["材料", "工艺"],
     "防盗窗实例右侧的可编辑参数区只应显示材料和工艺");
   assert.ok(result.topCardGaps.every((gap) => gap >= 0 && gap <= 8),
@@ -230,6 +295,12 @@ try {
   assert.equal(result.diagramDefaultClosed, true);
   assert.equal(result.diagramOpenAfterRefresh, true);
   assert.equal(result.wideChoice, true);
+  assert.equal(result.mergedDoorProcess.sameGroup, true);
+  assert.match(result.mergedDoorProcess.title, /^逃生窗\s*2 项$/);
+  assert.equal(result.mergedDoorProcess.directFields, true);
+  assert.equal(result.mergedDoorProcess.separateRows, true);
+  assert.equal(result.mergedDoorProcess.fullRows, true);
+  assert.equal(result.mergedDoorProcess.oldGroupCount, 0);
   assert.equal(result.displayLayout.defaultColumnCount, 2);
   assert.equal(result.displayLayout.productCodeFullLine, true);
   assert.equal(result.displayLayout.productCodeHasWidthRange, true);

@@ -108,17 +108,8 @@ class MinimalProtectiveGrilleTests(unittest.TestCase):
                             for relationship in result["relationships"]
                             if relationship["key"].startswith("joint.")))
 
-    def test_flat_weld_removes_all_half_hole_and_male_head_geometry(self):
-        result = self.build({"innerJoint": "flat_weld", "installHoleEnabled": False})
-        keys = [node["key"] for node in result["geometry"]]
-        self.assertFalse(any("half-hole" in key or ".male." in key for key in keys))
-        self.assertFalse(any(node["operator"] == "boolean" for node in result["geometry"]))
-        self.assertTrue(all(not relationship["properties"]["halfHole"]
-                            for relationship in result["relationships"]
-                            if relationship["key"].startswith("joint.")))
-
     def test_installation_holes_have_two_faces_and_explicit_conflict_policy(self):
-        result = self.build({"innerJoint": "flat_weld", "handleEnabled": False})
+        result = self.build({"handleEnabled": False})
         keys = [node["key"] for node in result["geometry"]]
         self.assertEqual(len([key for key in keys if ".install." in key and key.endswith(".solid")]), 12)
         self.assertEqual(len(result["tables"][0]["rows"]), 2,
@@ -134,7 +125,7 @@ class MinimalProtectiveGrilleTests(unittest.TestCase):
         self.assertTrue(installation["adjustmentsBySide"]["left"])
 
     def test_side_installation_keeps_mirrored_verticals_as_separate_bom_parts(self):
-        result = self.build({"innerJoint": "flat_weld", "handleEnabled": False,
+        result = self.build({"handleEnabled": False,
                              "installHoleOrientation": "side",
                              "installHoleAutoAvoid": True,
                              "installHoleMaximumShift": 30})

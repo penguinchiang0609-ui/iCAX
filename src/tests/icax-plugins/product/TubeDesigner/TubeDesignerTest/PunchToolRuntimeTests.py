@@ -138,18 +138,11 @@ class PunchTools(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.v_geometry(bottomStrategy="developed")
 
-    def test_side90_root_and_top_width_increase_and_mirror(self):
-        geometries=[self.v_geometry('edge-arc-groove',arcDefinition='side90',leftArc=left,
-            bendCompensation=True) for left in (True,False)]
-        edges=[g['model']['geometry'][0]['arguments']['contours'][0]['segments'] for g in geometries]
-        for a,b in zip(*edges):
-            for key in ('start','middle','end'):
-                if key in a:self.assertEqual([-a[key][0],a[key][1]],b[key])
-        root=edges[0][2];radius=19;length=math.pi/2*(radius+0.62)
-        self.assertAlmostEqual(length,math.dist(root['start'],root['end']))
-        self.assertAlmostEqual(length+radius,edges[0][0]['end'][0]-edges[0][0]['start'][0])
-        with self.assertRaisesRegex(ValueError,'固定'):
-            self.v_geometry('edge-arc-groove',arcDefinition='side90',angle=60)
+    def test_edge_arc_has_one_geometry_definition_and_rejects_removed_selector(self):
+        descriptor=next(t for t in runtime.catalogue()["tools"] if t["id"]=="edge-arc-groove")
+        self.assertNotIn("arcDefinition", {p["key"] for p in descriptor["parameters"]})
+        with self.assertRaises(ValueError):
+            self.v_geometry('edge-arc-groove',arcDefinition='side90')
 
     def test_root_pattern_has_three_transverse_slots_and_checks_bridges(self):
         geometry=self.v_geometry(rootSlotPattern=True)
@@ -275,9 +268,11 @@ class PunchTools(unittest.TestCase):
                     "targetSection":{**TARGET,"contours":[outer,inner]}})
 
     def branch_geometry(self, bounds, **parameters):
+        placement = {key: parameters.pop(key) for key in list(parameters)
+                     if key in runtime.BRANCH_PLACEMENT_KEYS}
         feature={"toolTarget":"part","station":(bounds["max"][0]-bounds["min"][0])/2,
-                 "reference":"start","section":{"source":"dxf","profile":{"contours":[{"kind":"circle","radius":3}]}},
-                 "toolRef":{"id":"branch-profile"},"toolParameters":parameters}
+                  "reference":"start","section":{"source":"dxf","profile":{"contours":[{"kind":"circle","radius":3}]}},
+                  "toolRef":{"id":"branch-profile"},"toolParameters":parameters, **placement}
         return runtime.prepare({"features":[feature],"bounds":bounds})["features"][0]["toolSnapshot"]["geometry"]
 
     def test_branch_auto_through_extends_half_stock_span_at_each_end(self):
@@ -352,7 +347,7 @@ class PunchTools(unittest.TestCase):
 
     def test_sharp_v_is_a_local_mould_and_ignores_station_placement(self):
         base={"toolTarget":"part","toolRef":{"id":"v-notch-sharp"},
-              "toolParameters":{"angle":90,"bridge":1},"station":120,"reference":"start"}
+              "toolParameters":{"angle":90,"leaveBottom":1},"station":120,"reference":"start"}
         first=self.prepare([base])["features"][0]["toolSnapshot"]["geometry"]
         moved={**base,"station":780,"reference":"end","rotation":0,
                "offsetY":12,"offsetZ":-4}
@@ -425,13 +420,14 @@ class PunchTools(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "切深"):
                 self.slot_nodes(tool, **settings, reliefDepth=41)
 
-    def test_slot_flat_reference_preserves_legacy_and_offers_actual_floor(self):
-        for mode, expected in (("apex", -8), ("actual", -9)):
-            nodes = self.slot_nodes(bottomStrategy="flat", flatWidth=2, flatReference=mode)
-            segments = nodes["notch-profile"]["arguments"]["contours"][0]["segments"]
-            self.assertAlmostEqual(expected, min(s["start"][1] for s in segments))
-        with self.assertRaisesRegex(ValueError, "平底宽度"):
-            self.slot_nodes(bottomStrategy="flat", flatWidth=38)
+    def test_slot_flat_width_uses_actual_floor(self):
+        nodes = self.slot_nodes(bottomStrategy="flat", flatWidth=2)
+        segments = nodes["notch-profile"]["arguments"]["contours"][0]["segments"]
+        self.assertAlmostEqual(-9, min(s["start"][1] for s in segments))
+        descriptor=next(t for t in runtime.catalogue()["tools"] if t["id"]=="v-notch-sharp")
+        self.assertNotIn("flatReference", {p["key"] for p in descriptor["parameters"]})
+        with self.assertRaisesRegex(ValueError, "超出允许范围"):
+            self.slot_nodes(bottomStrategy="flat", flatWidth=-1)
 
     def test_slot_male_female_uses_physical_top_and_keeps_round_arcs(self):
         for strategy in ("sharp", "flat", "rounded", "relief"):
@@ -462,8 +458,9 @@ class PunchTools(unittest.TestCase):
         self.slot_nodes("edge-arc-groove", reliefDiameter=4, reliefLift=2)
         self.slot_nodes("edge-arc-groove", reliefDiameter=4, bottomCut=True)
 
-    def test_slot_legacy_radius_really_activates_rounded_strategy(self):
-        self.assertEqual(self.v_geometry(rootRadius=2), self.v_geometry(bottomStrategy="rounded", roundRadius=2))
+    def test_removed_root_radius_alias_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.v_geometry(rootRadius=2)
 
     def test_slot_contours_remain_connected_across_angle_and_strategy_matrix(self):
         cases = [("edge-arc-groove", {"angle":angle, "leftArc":left})
@@ -485,7 +482,7 @@ class PunchTools(unittest.TestCase):
                         self.assertTrue(all(math.isfinite(v) for point in (segment["start"],segment["end"]) for v in point))
 
     def test_slot_new_parameters_survive_recipe_and_frozen_replay(self):
-        for tool, extra in (("v-notch-sharp", {"bottomStrategy":"relief", "flatReference":"actual"}),
+        for tool, extra in (("v-notch-sharp", {"bottomStrategy":"relief"}),
                             ("edge-arc-groove", {"reliefDiameter":1})):
             parameters = dict(bottomReference="inner", wallThickness=2, reliefDepth=2, reliefSide="negative", **extra)
             feature = {"toolTarget":"part", "toolRef":{"id":tool}, "toolParameters":parameters, "station":500}
@@ -534,17 +531,12 @@ class PunchTools(unittest.TestCase):
                     self.assertAlmostEqual(center[1]-2*math.cos(a),slope[1])
                     self.assertAlmostEqual(-9,root[1])
 
-    def test_asymmetric_flat_preserves_virtual_apex_rays(self):
-        left, right = math.tan(math.radians(25)), math.tan(math.radians(65))
-        nodes=self.slot_nodes(bottomStrategy="flat",flatWidth=4,flatReference="apex",
+    def test_asymmetric_flat_uses_centered_actual_floor(self):
+        nodes=self.slot_nodes(bottomStrategy="flat",flatWidth=4,
                               asymmetric=True,leftAngle=25,rightAngle=65)
         edges=nodes["notch-profile"]["arguments"]["contours"][0]["segments"]
-        floor=-9+4/(left+right)
-        self.assertAlmostEqual(floor,edges[0]["end"][1])
-        self.assertAlmostEqual(-(floor+9)*left,edges[0]["end"][0])
-        self.assertAlmostEqual((floor+9)*right,edges[1]["end"][0])
-        self.assertAlmostEqual(-20*left,edges[0]["start"][0])
-        self.assertAlmostEqual(20*right,edges[2]["end"][0])
+        self.assertEqual([-2, -9], edges[0]["end"])
+        self.assertEqual([2, -9], edges[1]["end"])
 
     def test_edge_arc_gap_formula_and_crossing_rejection(self):
         for angle in (1,45,90,120,130):
@@ -599,9 +591,9 @@ class PunchTools(unittest.TestCase):
 
     def test_signed_multirow_array_survives_save_and_frozen_fallback(self):
         source={"id":"branch-array","toolTarget":"part","station":200,"reference":"end",
-                "face":"left","arrayCount":3,"arrayPitch":-100,"rowCount":2,"rowPitch":-8,
-                "section":{"profile":{"contours":[{"kind":"circle","radius":3}]}},
-                "toolRef":{"id":"branch-profile"},"toolParameters":{"azimuth":90}}
+                 "face":"left","arrayCount":3,"arrayPitch":-100,"rowCount":2,"rowPitch":-8,
+                 "section":{"profile":{"contours":[{"kind":"circle","radius":3}]}},
+                 "toolRef":{"id":"branch-profile"},"toolParameters":{},"azimuth":90}
         saved=json.loads(json.dumps(self.prepare([source])["recipe"]["features"][0]))
         for key in ("face","reference","arrayCount","arrayPitch","rowCount","rowPitch"):
             self.assertEqual(source[key],saved[key])
@@ -789,7 +781,8 @@ class PunchTools(unittest.TestCase):
     def test_end_profile_convex_rejects_parallel_axis_without_restricting_concave(self):
         item={"type":"template","toolRef":{"id":"end-profile"},"section":{"profile":{"contours":[{"kind":"circle","radius":25}]}},"toolParameters":{}}
         for angle in (0,180):
-            item["toolParameters"]={"cutMode":"convex","angle":angle}
+            item["toolParameters"]={"cutMode":"convex"}
+            item["angle"]=angle
             with self.assertRaisesRegex(ValueError,"不能与主管轴平行"):
                 self.prepare(ends={"start":item})
             item["toolParameters"]["cutMode"]="concave"
@@ -815,14 +808,16 @@ class PunchTools(unittest.TestCase):
             self.assertEqual([outer],nodes["section"]["arguments"]["contours"],"Use the original exact imported outer curves, not a sampled polygon")
             self.assertAlmostEqual(12,nodes["forming-section"]["arguments"]["placement"]["origin"][0])
 
-    def test_legacy_dimensions_migrate_and_pin(self):
-        item = self.prepare([{"type": "circle", "diameter": 12}])["features"][0]
+    def test_current_tool_parameters_are_normalized_and_pinned(self):
+        item = self.prepare([{"toolRef": {"id": "circle"},
+                              "toolParameters": {"diameter": 12}}])["features"][0]
         self.assertEqual(12, item["toolParameters"]["diameter"])
         self.assertEqual(6, item["toolSnapshot"]["geometry"]["contours"][0]["radius"])
         self.assertEqual(64, len(item["toolRef"]["digest"]))
 
     def test_recipe_freezes_geometry_and_missing_tool_is_delete_only(self):
-        evaluated = self.prepare([{"type": "circle", "diameter": 12}])
+        evaluated = self.prepare([{"toolRef": {"id": "circle"},
+                                   "toolParameters": {"diameter": 12}}])
         saved = evaluated["recipe"]["features"][0]
         for forbidden in ("toolSnapshot", "descriptor", "scriptSource"):
             self.assertNotIn(forbidden, saved)
@@ -880,7 +875,7 @@ class PunchTools(unittest.TestCase):
             self.prepare([{"toolRef": {"id": "circle", "digest": "wrong"}, "toolParameters": {}}])
 
     def test_version_drift_preserves_frozen_geometry_and_matching_tool_can_edit(self):
-        saved=self.prepare([{"type":"circle","diameter":12}])["recipe"]["features"][0]
+        saved=self.prepare([{"toolRef":{"id":"circle"},"toolParameters":{"diameter":12}}])["recipe"]["features"][0]
         modified=copy.deepcopy(saved)
         modified["toolParameters"]["diameter"]=14
         self.assertEqual(7,self.prepare([modified])["features"][0]["frozenTool"]["geometry"]["contours"][0]["radius"])
@@ -909,7 +904,7 @@ class PunchTools(unittest.TestCase):
             runtime.ROOT=previous
 
     def test_persisted_baseline_rejects_replacement_and_forged_read_only_fields(self):
-        saved=self.prepare([{"id":"one","type":"circle"}])["recipe"]
+        saved=self.prepare([{"id":"one","toolRef":{"id":"circle"}}])["recipe"]
         saved["features"][0]["toolRef"]["digest"]="missing"
         replacement={"id":"one","toolRef":{"id":"rectangle"},"toolParameters":{}}
         with self.assertRaisesRegex(ValueError,"只读"):
@@ -920,7 +915,7 @@ class PunchTools(unittest.TestCase):
         for key in ("../circle", "/circle", "../../punch_tool_runtime.py"):
             with self.assertRaises(ValueError):
                 self.prepare([{"toolRef": {"id": key}, "toolParameters": {}}])
-        saved = self.prepare([{"type": "circle"}])["features"][0]
+        saved = self.prepare([{"toolRef": {"id": "circle"}}])["features"][0]
         saved["toolSnapshot"]["geometry"] = {"mode": "solid", "outputKey": "steal",
             "model": {"schema": "icax.neutral-model", "schemaVersion": 1,
                 "geometry": [{"key": "steal", "operator": "resource", "arguments": {"path": "secret.step"}}]}}

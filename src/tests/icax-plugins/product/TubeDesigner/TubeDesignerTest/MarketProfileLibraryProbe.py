@@ -1,5 +1,4 @@
 import importlib.util
-import json
 from pathlib import Path
 from icax_template_sdk import NeutralModel
 
@@ -26,9 +25,6 @@ def generate(parameters,context):
     if parameters["profileId"]=="u-section":
         cases += [dict(values,bottomWidth=values['width']),dict(values,bendRadius=0),
                   dict(values,width=400*scale,bottomWidth=120*scale,depth=220*scale)]
-    if parameters["profileId"]=="rect":
-        corners=json.dumps([{"mode":"sharp"},{"mode":"arc","radius":3*scale},{"mode":"chamfer","incoming":3*scale,"outgoing":3*scale},{"mode":"custom","incoming":3*scale,"outgoing":3*scale}])
-        cases.append(dict(values,outerCorners=corners))
     items=[]
     for index,case in enumerate(cases):
         profile=runtime._evaluate(package["descriptor"],package["scriptSource"],case,

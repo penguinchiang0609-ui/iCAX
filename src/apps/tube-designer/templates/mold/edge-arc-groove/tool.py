@@ -12,17 +12,6 @@ def analyze(parameters, section, context):
         tolerance = section_geometry.number(local.get("tolerance", 0.001))
         if tolerance <= 0:
             raise section_geometry.SectionError("截面容差无效")
-        if parameters.get("arcDefinition")=="side90":
-            for loop in loops:
-                lines=[e for e in loop['edges'] if e['kind']=='line']
-                horizontal=sum(abs(e['start'][1]-e['end'][1])<=tolerance for e in lines)
-                vertical=sum(abs(e['start'][0]-e['end'][0])<=tolerance for e in lines)
-                if horizontal!=2 or vertical!=2 or len(lines)!=4:
-                    raise section_geometry.SectionError("侧90°展开槽需要具有两对正交平直壁的矩形闭口截面")
-                for edge in loop['edges']:
-                    if edge['kind']=='line':continue
-                    if edge['kind']!='circleArc' or abs(abs(edge['last']-edge['first'])-math.pi/2)*edge['radius']>tolerance:
-                        raise section_geometry.SectionError("侧90°展开槽的截面角部须为四分之一圆弧")
         bottom = section_geometry.horizontal_support(outer[0], outside["min"][1], tolerance)
         inner_bottom = section_geometry.horizontal_support(inner[0], inside["min"][1], tolerance)
         top = section_geometry.horizontal_support(outer[0], outside["max"][1], tolerance)
@@ -189,38 +178,17 @@ def generate(p, context):
         nodes.append({"key": key, "operator": "extrude", "inputs": [key + "-profile"],
                       "arguments": {"vector": [0, vector_y, 0]}})
 
-    definition=p.get("arcDefinition","legacy")
-    if definition not in ("legacy","side90"):raise ValueError("边弧几何定义无效")
-    if definition=="side90":
-        if abs(angle-90)>1e-8:raise ValueError("侧 90°槽的折弯开口角固定为 90°")
-        radius=physical_top_y-bottom_y
-        # Engineering development model, not a claim of validated plastic forming.
-        allowance=shape_context.get("bend_allowance",0)*min(wall,bridge)/wall if wall>0 else 0
-        length=math.pi*radius/2+allowance
-        center=-length/2
-        base=[center,bottom_y];arc_top=[center-radius,physical_top_y]
-        mid=[center-radius/math.sqrt(2),bottom_y+radius*(1-1/math.sqrt(2))]
-        right=length/2
-        edges=[_line([center-radius,physical_top_y+1],[right,physical_top_y+1]),
-               _line([right,physical_top_y+1],[right,bottom_y]),_line([right,bottom_y],base),
-               _arc(base,mid,arc_top),_line(arc_top,[center-radius,physical_top_y+1])]
-        if not p["leftArc"]:
-            for edge in edges:
-                for key in ("start","middle","end"):
-                    if key in edge:edge[key][0]=-edge[key][0]
-        prism("notch",{"kind":"path","segments":edges})
-    else:
-        side_cutter = side_arc_v_groove_cutter(shape_context, p["leftArc"], angle)
-        prism("notch-base", side_cutter["base"])
-        cylinder = {"kind": "path", "segments": [
-            _arc([-side_cutter["cylinder"]["radius"], 0], [0, -side_cutter["cylinder"]["radius"]],
-                 [side_cutter["cylinder"]["radius"], 0]),
-            _arc([side_cutter["cylinder"]["radius"], 0], [0, side_cutter["cylinder"]["radius"]],
-                 [-side_cutter["cylinder"]["radius"], 0]),
-        ]}
-        prism("arc-cylinder", cylinder, side_cutter["cylinder"]["center"])
-        nodes.append({"key": "notch", "operator": "boolean", "inputs": ["notch-base", "arc-cylinder"],
-                      "arguments": {"operation": "subtract"}})
+    side_cutter = side_arc_v_groove_cutter(shape_context, p["leftArc"], angle)
+    prism("notch-base", side_cutter["base"])
+    cylinder = {"kind": "path", "segments": [
+        _arc([-side_cutter["cylinder"]["radius"], 0], [0, -side_cutter["cylinder"]["radius"]],
+             [side_cutter["cylinder"]["radius"], 0]),
+        _arc([side_cutter["cylinder"]["radius"], 0], [0, side_cutter["cylinder"]["radius"]],
+             [-side_cutter["cylinder"]["radius"], 0]),
+    ]}
+    prism("arc-cylinder", cylinder, side_cutter["cylinder"]["center"])
+    nodes.append({"key": "notch", "operator": "boolean", "inputs": ["notch-base", "arc-cylinder"],
+                  "arguments": {"operation": "subtract"}})
     cutters = ["notch"]
     relief_diameter = _number(p["reliefDiameter"], "附加释放孔直径")
     relief_lift = _number(p["reliefLift"], "附加释放孔中心上移")
@@ -257,10 +225,9 @@ def generate(p, context):
                       "arguments": {"operation": "union"}})
         output = "tool"
     return {"mode": "solid", "coordinateSpace": "part-local", "outputKey": output,
-            "calculation":{"bendAngle":angle,"finalIncludedAngle":180-angle,"arcDefinition":definition,
-                "rootReference":reference,"hingeThickness":min(wall,bridge),
-                "formingValidation":"not-performed","formulaSource":"engineering-derivation" if definition=='side90' else 'legacy-cutter'},
+            "calculation":{"bendAngle":angle,"finalIncludedAngle":180-angle,
+                "rootReference":reference,"hingeThickness":min(wall,bridge)},
             "model": {"schema": "icax.neutral-model", "schemaVersion": 1,
-                      "template": {"id": "edge-arc-groove", "version": "3.0.0",
+                      "template": {"id": "edge-arc-groove", "version": "3.1.0",
                                    "packageDigest": "self-contained"},
                       "geometry": nodes}}

@@ -25,8 +25,16 @@ const template = {
 };
 const templates = [template];
 const defaults = getDefaultParameters(templates, template.id);
+assert.ok(!template.parameters.some((field) => ["materialGrade", "surfaceTreatment"].includes(field.key)),
+  "防盗窗不再声明材料牌号和表面处理参数");
+assert.equal(display.views.right.fields.frameProfileType.line, "full");
+assert.deepEqual(display.views.right.fields.frameWidth.width, { min: 56, preferred: 72, max: 84 });
+for (const key of ["frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType"]) {
+  assert.equal(display.views.right.fields[key].line, "full");
+  assert.deepEqual(display.views.right.fields[key].width, { min: 160, preferred: 220, max: 300 });
+}
 assert.equal(template.extensions.securityWindow.reviewVersion, 2);
-assert.equal(defaults.mainHorizontalConnection, "insert");
+assert.ok(!template.parameters.some((field) => field.key === "mainHorizontalConnection"));
 assert.equal(defaults.accessDoorEnabled, true);
 assert.equal(defaults.frameLayout, "four_sides");
 for (const key of ["frameJoinType", "doorFrameJoinType", "doorLeafFrameJoinType"]) assert.equal(defaults[key], "miter_45");
@@ -35,14 +43,11 @@ assert.match(defaultReview, /横杆插入边框/);
 assert.match(defaultReview, /45°拼焊/);
 assert.match(defaultReview, /预览保留未切角管材/);
 assert.doesNotMatch(defaultReview, /大框未四边闭合|V 槽折弯|须先打样/);
-assert.match(renderSecurityWindowReview(template, { ...defaults, mainHorizontalConnection: "weld" }), /横杆平口焊接/);
 const rendered = renderSecurityWindowReview(template, defaults);
 assert.match(rendered, /data-security-window-review/);
 assert.match(rendered, /800 × 1000 mm/);
 assert.match(rendered, /830 × 1000 mm/);
 assert.match(rendered, /成品外包尺寸/);
-assert.doesNotMatch(rendered, /材质未指定|表面处理未指定/);
-assert.match(renderSecurityWindowReview(template, { ...defaults, materialGrade: "unspecified" }), /材质未指定/);
 assert.match(rendered, /目标尺寸为设计值，不代表现场可通行或合规结论/);
 assert.match(rendered, /仅完成几何与装配校验，五金开启、墙体锚固、承载和当地要求待现场核验/);
 assert.doesNotMatch(rendered, /认证通过|符合国标|合规通过/);
@@ -61,20 +66,17 @@ for (const key of grooveKeys) {
   }), /预览保留未切角管材/);
   const field = template.parameters.find((item) => item.key === key);
   const grooveChoices = field.choices.filter((choice) => choice.value.startsWith("v_groove_90:"));
-  assert.equal(grooveChoices.length, 5);
-  assert.deepEqual(grooveChoices.filter((choice) => !choice.legacy).map((choice) => choice.value), [
-    "v_groove_90:tool_library",
-  ]);
-  assert.equal(grooveChoices.filter((choice) => choice.legacy).length, 4);
+  assert.deepEqual(grooveChoices.map((choice) => choice.value), ["v_groove_90:tool_library"]);
   for (const choice of grooveChoices) {
-    const values = { ...defaults, [key]: choice.value };
+    const values = { ...defaults, [key]: choice.value,
+      ...(key === 'frameJoinType' ? {frameManufacturingMode:'plane_v_notch'} : {}) };
     assert.match(renderSecurityWindowReview(template, values), /须先打样确认管材、设备及折弯补偿/);
     const inactive = key === "frameJoinType" ? { frameLayout: "left_right" } : { accessDoorEnabled: false };
     assert.doesNotMatch(renderSecurityWindowReview(template, { ...values, ...inactive }), /V 槽折弯|须先打样/);
   }
 }
-assert.match(renderSecurityWindowReview(template, { ...defaults, frameLayout: "left_right", doorFrameJoinType: "v_groove_90:sharp_v" }), /须先打样/);
-assert.match(renderSecurityWindowReview(template, { ...defaults, accessDoorEnabled: false, frameJoinType: "v_groove_90:sharp_v" }), /须先打样/);
+assert.match(renderSecurityWindowReview(template, { ...defaults, frameLayout: "left_right", doorFrameJoinType: "v_groove_90:tool_library" }), /须先打样/);
+assert.match(renderSecurityWindowReview(template, { ...defaults, accessDoorEnabled: false, frameManufacturingMode:'plane_v_notch', frameJoinType: "v_groove_90:tool_library" }), /须先打样/);
 
 // Metadata supports additional security-window templates; unrelated templates stay untouched.
 assert.match(renderSecurityWindowReview({ extensions: template.extensions }, defaults), /data-security-window-review/);
@@ -103,14 +105,9 @@ for (const enabled of [true, "true", "是"]) {
   assert.match(renderSecurityWindowReview(template, { ...defaults, accessDoorEnabled: enabled }), /830 × 1000 mm/);
 }
 const malicious = '<img src=x onerror="boom"> &';
-const escaped = renderSecurityWindowReview(template, { ...defaults, materialGrade: malicious });
-assert.doesNotMatch(escaped, /<img/);
-assert.match(escaped, /&lt;img src=x onerror=&quot;boom&quot;&gt; &amp;/);
 assert.match(renderSecurityWindowReview(template, { ...defaults, doorClearWidth: malicious }), /待填写有效尺寸/);
 assert.doesNotMatch(renderSecurityWindowReview(template, { ...defaults, doorClearWidth: malicious }), /<img|NaN/);
 assert.match(renderSecurityWindowReview(template, { ...defaults, doorClearWidth: -1 }), /待填写有效尺寸/);
-assert.match(renderSecurityWindowReview(template, { ...defaults, materialGrade: "304", surfaceTreatment: "unspecified" }), /表面处理未指定/);
-assert.doesNotMatch(renderSecurityWindowReview(template, { ...defaults, materialGrade: "304", surfaceTreatment: "passivation" }), /材质未指定|表面处理未指定/);
 
 const importedProfile = (width, depth, kind = "fixed-section") => ({
   schema: "icax.imported-tube-profile", schemaVersion: 1, kind, width, depth,
@@ -150,7 +147,7 @@ const addMarkup = (draft) => renderDesignerAddParameterContent(designer, {
   tubeDesignerAddTemplateId: template.id, tubeDesignerAddDraft: draft,
 });
 assert.match(addMarkup({ accessDoorEnabled: false }), /data-tube-designer-product-diagram/);
-assert.doesNotMatch(addMarkup({ accessDoorEnabled: false, frameJoinType: "v_groove_90:sharp_v" }), /class="notch"/,
+assert.doesNotMatch(addMarkup({ accessDoorEnabled: false, frameJoinType: "v_groove_90:tool_library" }), /class="notch"/,
   "the generic editor must not recreate template-specific V-groove artwork in central UI code");
 assert.doesNotMatch(addMarkup({ ...imported, tubeDesignerProfileOverrides: { doorFrame: importedProfile(0, 40) } }), /<polygon class="multi-face-door-frame"/);
 const context = { mount: { querySelector() { return null; } } };

@@ -11,6 +11,7 @@ class Fitting(unittest.TestCase):
         spec=importlib.util.spec_from_file_location('all_models_geometry',ROOT/'src/apps/tube-designer/templates/_shared/profile_recognition_geometry.py')
         g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
         count=0
+        expected=0
         for directory in CATALOG.iterdir():
             if not (directory/'profile.json').exists():continue
             package=runtime._system_package(directory,preview=False)
@@ -18,9 +19,13 @@ class Fitting(unittest.TestCase):
             variants=[{selector['key']:o['value']} for o in selector['options']] if selector else [{}]
             for variant in variants:
                 for scale in (1,1.23):
+                    expected+=1
                     with self.subTest(template=directory.name,variant=variant,scale=scale):
                         parameters={**package['defaultParameters'],**variant}
-                        parameters={k:(v*scale if isinstance(v,(int,float)) and not isinstance(v,bool) and not any(s in k.lower() for s in ('angle','phase','slope')) else v) for k,v in parameters.items()}
+                        definitions={item['key']:item for item in package['descriptor']['parameters']}
+                        parameters={k:(v*scale if definitions[k]['valueType']=='number'
+                            and not any(s in k.lower() for s in ('angle','phase','slope')) else v)
+                            for k,v in parameters.items()}
                         raw=runtime._evaluate(package['descriptor'],package['scriptSource'],parameters,package['packageDigest'],package['sourceFileName'],package['resources'])
                         original=g.transform(g.normalize(raw,0.001),math.radians(37),[123,-45])
                         # Imported contours may start anywhere, run clockwise,
@@ -47,7 +52,7 @@ class Fitting(unittest.TestCase):
                         ok,error=g.verify(original,g.normalize(rebuilt,0.001),candidate['transform'],0.001)
                         self.assertTrue(ok,(candidate,error))
                         count+=1
-        self.assertGreaterEqual(count,90)
+        self.assertEqual(count,expected)
 
     def test_all_templates_reject_extra_unaccounted_boundary(self):
         import copy
@@ -70,19 +75,36 @@ class Fitting(unittest.TestCase):
         spec=importlib.util.spec_from_file_location('direct_test_geometry',ROOT/'src/apps/tube-designer/templates/_shared/profile_recognition_geometry.py')
         g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
         cases=[('u-section',dict(width=320,bottomWidth=180,depth=250,wallThickness=9,bendRadius=25)),
-            ('omega',dict(width=70,depth=90,crownWidth=50,flangeWidth=25,wallThickness=3,bendRadius=4)),
-            ('z-section',dict(sectionModel='z-cold',width=60,depth=90,wallThickness=3,model0UpperWidth=43,model0BendRadius=4)),
-            ('z-section',dict(sectionModel='z-cold-lipped',width=60,depth=90,wallThickness=3,model1LipLength=18,model1BendRadius=4)),
-            ('bulb-flat',dict(width=133,wallThickness=7,bulbProjection=21,bulbRadius=6,edgeRadius=2)),
-            ('bulb-flat',dict(width=133,wallThickness=7,bulbProjection=21,bulbRadius=6,edgeRadius=2,mirrorX=True)),
+            ('omega',dict(width=70,depth=90,flangeWidth=25,wallThickness=3,bendRadius=4)),
+            ('z-section',dict(depth=90,topFlangeWidth=43,bottomFlangeWidth=60,
+                              wallThickness=3,bendRadius=4,useLips=False)),
+            ('z-section',dict(depth=90,topFlangeWidth=43,bottomFlangeWidth=60,
+                              wallThickness=3,bendRadius=4,useLips=True,
+                              lipLength=18,lipAngle=90)),
+            ('sigma',dict(depth=230,flangeWidth=75,lipLength=18,wallThickness=3,
+                          bendRadius=4,centerWebOffset=24,outerWebHeight=38,
+                          transitionRise=22,lipAngle=85)),
+            ('bulb-flat',dict(width=23,depth=133,wallThickness=7,bulbRadius1=6,bulbRadius2=3,endRadius=2)),
+            ('bulb-flat',dict(width=23,depth=133,wallThickness=7,bulbRadius1=6,bulbRadius2=3,endRadius=2,mirrorX=True)),
             ('p-tube',dict(width=53,depth=47,wallThickness=4,flangeLength=23,flangeThickness=2,cornerRadius=5,innerRadius=1)),
             ('p-tube',dict(width=53,depth=47,wallThickness=4,flangeLength=23,flangeThickness=2,cornerRadius=5,innerRadius=1,mirrorX=True)),
+            ('angle',dict(width=50,depth=80,wallThickness=6,outerRadius=9,innerRadius=3,
+                          useInnerRadius=False,useIndependentFreeEndRadii=True,
+                          freeEndRadius=0,freeEndRadius1=1,freeEndRadius2=2)),
+            ('channel',dict(width=50,depth=80,wallThickness=2,outerRadius=5,
+                            useOuterRadii=False,outerRadius1=5,outerRadius2=5,
+                            useInnerRadius=False,innerRadius1=3,innerRadius2=3,
+                            useIndependentFreeEndRadii=True,freeEndRadius=0,
+                            freeEndRadius1=0.5,freeEndRadius2=0.75)),
             ('curve-hollow',dict(width=33,wallThickness=3)),
-            ('combined-hollow',dict(sectionModel='round-hex-bore',width=73,model0InnerSize=41)),
-            ('combined-hollow',dict(sectionModel='hex-round-bore',width=67,model1InnerDiameter=41)),
-            ('h-section',dict(width=93,depth=153,wallThickness=7,flangeThickness=11,rootRadius=5,toeRadius=2)),
-            ('i-section',dict(sectionModel='i-hot-tapered',width=93,depth=153,wallThickness=7,model1FlangeThickness=11,model1FlangeSlope=7)),
-            ('unequal-i',dict(width=93,lowerWidth=127,depth=153,wallThickness=7,webOffset=5,flangeThickness=11,lowerThickness=13))]
+            ('curve-hollow',dict(width=33,wallThickness=3,innerOffsetX=1.5,innerOffsetY=-1.0)),
+            ('t-section',dict(width=80,depth=120,wallThickness=6,flangeThickness=8,rootRadius=4,
+                              webOffset=5,useIndependentRadii=True,rootRadius1=3,rootRadius2=6)),
+            ('i-section',dict(width=93,depth=153,wallThickness=7,flangeThickness=11,rootRadius=5,
+                              useIndependentFlangeWidths=True,topFlangeWidth=101,bottomFlangeWidth=87,
+                              webOffset=5,useIndependentRadii=True,rootRadius1=3,rootRadius2=4,
+                              rootRadius3=5,rootRadius4=2)),
+            ]
         for name,values in cases:
             with self.subTest(name=name,values=values):
                 package=runtime._system_package(CATALOG/name,preview=False)
@@ -94,11 +116,68 @@ class Fitting(unittest.TestCase):
                     self.assertTrue(response['matched'],response)
                     candidate=response['results'][0]['candidates'][0]
                     for key,value in values.items():
+                        # These are retained UI draft values once their
+                        # independent advanced overrides are enabled; they
+                        # are not recoverable from the resulting contour.
+                        if (key == 'width' and values.get('useIndependentFlangeWidths')) or \
+                           (key == 'rootRadius' and values.get('useIndependentRadii')):
+                            continue
                         actual=candidate['parameters'][key]
                         if isinstance(value,str):self.assertEqual(value,actual)
                         else:self.assertAlmostEqual(value,actual,places=5)
                     self.assertAlmostEqual(123,candidate['translation'][0],places=5)
                     self.assertAlmostEqual(-45,candidate['translation'][1],places=5)
+
+    def test_angle_mirror_direct_inverse(self):
+        import importlib.util
+        import math
+        from unittest.mock import patch
+        spec=importlib.util.spec_from_file_location('angle_mirror_geometry',ROOT/'src/apps/tube-designer/templates/_shared/profile_recognition_geometry.py')
+        g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
+        package=runtime._system_package(CATALOG/'angle',preview=False)
+        values={**package['defaultParameters'],
+                'width':50,'depth':80,'wallThickness':6,'outerRadius':9,
+                'mirrorX':True}
+        raw=runtime._evaluate(package['descriptor'],package['scriptSource'],values,
+            package['packageDigest'],package['sourceFileName'],package['resources'])
+        section=g.to_section(g.transform(g.normalize(raw,0.001),math.radians(37),[123,-45]))
+        with patch.object(runtime,'_evaluate',side_effect=AssertionError('forward forbidden')), \
+             patch.object(runtime,'evaluate_section',side_effect=AssertionError('forward forbidden')):
+            response=runtime.generate(dict(action='recognize',package=package,section=section),{})
+        self.assertTrue(response['matched'],response)
+        candidate=response['results'][0]['candidates'][0]
+        self.assertTrue(candidate['parameters']['mirrorX'])
+        self.assertAlmostEqual(50,candidate['parameters']['width'],places=5)
+        self.assertAlmostEqual(80,candidate['parameters']['depth'],places=5)
+        self.assertAlmostEqual(123,candidate['translation'][0],places=5)
+        self.assertAlmostEqual(-45,candidate['translation'][1],places=5)
+
+    def test_hot_rolled_i_direct_inverse_recovers_slope_and_toe_radius(self):
+        import math
+        import importlib.util
+        from unittest.mock import patch
+        spec=importlib.util.spec_from_file_location('hot_i_geometry',ROOT/'src/apps/tube-designer/templates/_shared/profile_recognition_geometry.py')
+        g=importlib.util.module_from_spec(spec);spec.loader.exec_module(g)
+        package=runtime._system_package(CATALOG/'i-section',preview=False)
+        values=dict(width=93,depth=153,wallThickness=7,flangeThickness=11,rootRadius=5,
+                    useHotRolled=True,legEndRadius=2,useIndependentFlangeWidths=True,
+                    topFlangeWidth=101,bottomFlangeWidth=87,webOffset=5,
+                    useIndependentRadii=True,rootRadius1=3,rootRadius2=4,
+                    rootRadius3=5,rootRadius4=2)
+        parameters={**package['defaultParameters'],**values}
+        raw=runtime._evaluate(package['descriptor'],package['scriptSource'],parameters,
+            package['packageDigest'],package['sourceFileName'],package['resources'])
+        section=g.to_section(g.transform(g.normalize(raw,0.001),math.radians(37),[123,-45]))
+        with patch.object(runtime,'_evaluate',side_effect=AssertionError('forward forbidden')), \
+             patch.object(runtime,'evaluate_section',side_effect=AssertionError('forward forbidden')):
+            response=runtime.generate({'action':'recognize','package':package,'section':section},{})
+        self.assertTrue(response['matched'],response)
+        candidate=response['results'][0]['candidates'][0]['parameters']
+        for key in ('depth','wallThickness','flangeThickness','legEndRadius','webOffset',
+                    'topFlangeWidth','bottomFlangeWidth','rootRadius1','rootRadius2',
+                    'rootRadius3','rootRadius4'):
+            self.assertAlmostEqual(values[key],candidate[key],places=5)
+        self.assertTrue(candidate['useHotRolled'])
 
     def test_rotated_and_translated_section_reports_degrees(self):
         import math
@@ -136,14 +215,17 @@ class Fitting(unittest.TestCase):
 
     def test_nondefault_parameters_reconstruct_original_section(self):
         for name,values in (("round",{"width":57,"wallThickness":3}),
+                            ("round",{"width":57,"wallThickness":3,"innerOffsetX":2,"innerOffsetY":-1}),
                             ("round-bar",{"width":47}),
                             ("rect-bar",{"width":51,"depth":11,"cornerRadius":0}),
                             ("racetrack",{"width":73,"depth":37,"wallThickness":3}),
+                            ("racetrack",{"width":73,"depth":37,"wallThickness":3,"innerOffsetX":1,"innerOffsetY":-1}),
                             ("rect",{"width":55,"depth":33,"wallThickness":2,"cornerRadius":4}),
                             ("oval",{"width":61,"depth":33,"wallThickness":3}),
+                            ("oval",{"width":61,"depth":33,"wallThickness":3,"innerOffsetX":1,"innerOffsetY":-1}),
                             ("open-tube",{"width":53,"wallThickness":3,"openingAngle":77}),
-                            ("multi-cell",{"width":91,"depth":47,"wallThickness":3,"ribThickness":4,"ribOffset":7}),
-                            ("polygon-bar",{"width":55})):
+                            ("multi-cell",{"cellSize":30,"wallThickness":3,"ribThickness":4}),
+                            ("polygon-bar",{"radius":37,"sideCount":7,"cornerRadius":2.5})):
             with self.subTest(name=name):
                 package=runtime._system_package(CATALOG/name,preview=False)
                 parameters={**package["defaultParameters"],**values}

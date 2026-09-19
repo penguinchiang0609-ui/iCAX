@@ -1,0 +1,101 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": {
+          "title": { "zh-CN": "基本尺寸" },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "fields": {
+        "cellSize": {
+          "group": "dimensions",
+          "order": 10,
+          "title": { "zh-CN": "方腔边长" },
+          "help": { "zh-CN": "两个内腔均为相同的正方形 / mm" }
+        },
+        "wallThickness": {
+          "group": "dimensions",
+          "order": 20,
+          "title": { "zh-CN": "外壁厚" },
+          "help": { "zh-CN": "外壁厚 / mm" }
+        },
+        "ribThickness": {
+          "group": "dimensions",
+          "order": 30,
+          "title": { "zh-CN": "隔筋厚" },
+          "help": { "zh-CN": "中间竖向隔筋厚 / mm" }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": {
+          "title": { "zh-CN": "基本尺寸" },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "annotations": {
+        "cellSize": {
+          "label": { "zh-CN": "方腔边长" },
+          "group": "dimensions",
+          "order": 10,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "wallThickness": {
+          "label": { "zh-CN": "外壁厚" },
+          "group": "dimensions",
+          "order": 20,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "ribThickness": {
+          "label": { "zh-CN": "隔筋厚" },
+          "group": "dimensions",
+          "order": 30,
+          "editable": true,
+          "suffix": " mm"
+        }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          {
+            "parameter": "cellSize",
+            "kind": "linear",
+            "from": [ "-cellSize/2", "cellSize/2" ],
+            "to": [ "cellSize/2", "cellSize/2" ],
+            "axis": "x",
+            "side": "top",
+            "description": "单个方腔边长"
+          },
+          {
+            "parameter": "wallThickness",
+            "kind": "linear",
+            "from": [ "-(cellSize+ribThickness)/2-cellSize/2", "0" ],
+            "to": [ "-(cellSize+ribThickness)/2-cellSize/2-wallThickness", "0" ],
+            "axis": "x",
+            "side": "bottom",
+            "description": "外壁厚"
+          },
+          {
+            "parameter": "ribThickness",
+            "kind": "linear",
+            "from": [ "-ribThickness/2", "0" ],
+            "to": [ "ribThickness/2", "0" ],
+            "axis": "x",
+            "side": "bottom",
+            "description": "中间隔筋厚"
+          }
+        ]
+      }
+    }
+  }
+}

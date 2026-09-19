@@ -2,7 +2,7 @@
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
   "id": "v-notch-sharp",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "sectionAnalysis": {
     "schemaVersion": 1
   },
@@ -124,7 +124,6 @@
       { "parameter": "leaveBottom", "kind": "linear", "axis": "y", "side": "right", "from": [120, 124], "to": [120, 148], "description": "槽根至实际底面的剩余连接高度" },
       { "parameter": "bottomReference", "kind": "leader", "side": "bottom", "point": [120, 148], "description": "留底高度从外底面或内底面起算" },
       { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [30, 28], "description": "由目标管型截面测得并参与留底校验" },
-      { "parameter": "flatReference", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "flat" }, "description": "平底宽度相对理论尖角的解释方式" },
       { "parameter": "bottomStrategy", "kind": "leader", "side": "bottom", "point": [120, 124], "description": "选择尖底、平底、槽根避空圆角或释放孔" },
       { "parameter": "rootSlotPattern", "kind": "leader", "side": "top", "point": [120, 111], "description": "在槽根形成三段释放槽并保留两座连接桥" },
       { "parameter": "centerSlotLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [108, 111], "to": [132, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部中槽的横向长度" },
@@ -320,27 +319,6 @@
       "defaultValue": 0,
       "min": 0,
       "max": 10000
-    },
-    {
-      "key": "flatReference",
-      "displayName": "平底留量解释",
-      "valueType": "string",
-      "defaultValue": "apex",
-      "options": [
-        {
-          "value": "apex",
-          "label": "虚拟尖底（兼容旧版）"
-        },
-        {
-          "value": "actual",
-          "label": "实际平底"
-        }
-      ],
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "flat"
-      }
     },
     {
       "key": "bottomStrategy",

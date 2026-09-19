@@ -2,12 +2,15 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "polygon-bar",
-  "version": "2026.9.13.6",
+  "version": "2026.9.19.2",
   "displayName": "多边形棒",
-  "description": "P30 多边形棒。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
+  "description": "通用正多边形实心棒材，由外接圆半径、边数和相邻直边之间的圆角半径定义。",
+  "category": "型材",
   "provenance": {
     "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
     "surveyIds": [
@@ -18,58 +21,40 @@
     "familyCode": "P30"
   },
   "manufacturing": {
-    "formingProcess": "以所选族内模型及生成结果的 manufacturingRoute 为准",
+    "formingProcess": "参数化截面拉伸",
     "topology": "solid",
     "validationLevel": "parametric-geometry"
   },
   "parameters": [
     {
-      "key": "sectionModel",
-      "displayName": "轮廓子模型",
-      "valueType": "string",
-      "defaultValue": "hexagonal-bar",
-      "options": [
-        {
-          "value": "hexagonal-bar",
-          "displayName": "六角棒"
-        },
-        {
-          "value": "octagonal-bar",
-          "displayName": "八角棒"
-        }
-      ]
-    },
-    {
-      "key": "width",
-      "displayName": "对边尺寸 / mm",
+      "key": "radius",
+      "displayName": "外接圆半径 / mm",
       "valueType": "number",
       "defaultValue": 30,
       "min": 1,
       "step": 1
+    },
+    {
+      "key": "sideCount",
+      "displayName": "边数",
+      "valueType": "integer",
+      "defaultValue": 8,
+      "min": 3,
+      "max": 32,
+      "step": 1
+    },
+    {
+      "key": "cornerRadius",
+      "displayName": "圆角 R / mm",
+      "valueType": "number",
+      "defaultValue": 3,
+      "min": 0,
+      "step": 0.1
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 109
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          0,
-          "-width/2"
-        ],
-        "to": [
-          0,
-          "width/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "六角对边尺寸"
-      }
-    ]
+    "categoryPath": ["型材"],
+    "groupOrder": 2,
+    "order": 105
   }
 }

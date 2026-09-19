@@ -4,23 +4,20 @@ from SecurityWindowRulesTests import build, template_input, NAMES, REVIEW
 
 
 class SecurityWindowOpeningProcessTests(unittest.TestCase):
-    def test_mixed_grooves_apply_relief_only_to_sharp_frames(self):
+    def test_selected_library_tools_drive_each_continuous_opening_frame(self):
         for name in NAMES:
             for purpose in ("display", "manufacturing"):
-                document = build(name, purpose, doorFrameJoinType="v_groove_90:sharp_v",
-                                 doorLeafFrameJoinType="v_groove_90:rounded_v",
-                                 vGrooveBottomCut=True, vGrooveReliefHole=True)
-                relief = [n["key"] for n in document["geometry"] if ".bottom_cut" in n["key"] or ".relief." in n["key"]]
-                if purpose == "manufacturing":
-                    self.assertTrue(relief)
-                    self.assertTrue(all("fixed_frame" in key for key in relief), relief)
-                build(name, purpose, doorFrameJoinType="miter_45", doorLeafFrameJoinType="miter_45",
-                      vGrooveBottomCut=True, vGrooveReliefHole=True)
+                document = build(name, purpose,
+                                 doorFrameJoinType="v_groove_90:tool_library",
+                                 doorLeafFrameJoinType="v_groove_90:tool_library",
+                                 doorFrameGrooveTool="system:v-notch-sharp",
+                                 doorLeafFrameGrooveTool="system:edge-arc-groove")
+                mould = [n["key"] for n in document["geometry"] if ".mould." in n["key"]]
+                self.assertEqual(purpose == "manufacturing", bool(mould))
 
     def test_all_public_frame_processes_generate_for_each_layout(self):
         _, defaults, _ = template_input(NAMES[0])
-        processes = ("butt_90", "miter_45", "v_groove_90:sharp_v", "v_groove_90:rounded_v",
-                     "v_groove_90:left_arc", "v_groove_90:right_arc")
+        processes = ("butt_90", "miter_45", "v_groove_90:tool_library")
         for name in NAMES:
             for process in processes:
                 for purpose in ("display", "manufacturing"):
@@ -51,7 +48,8 @@ class SecurityWindowOpeningProcessTests(unittest.TestCase):
             with self.subTest(template=name, face=face):
                 document = build(name, "manufacturing", accessDoorFace=face, doorUse="maintenance",
                                  doorClearWidth=250, doorClearHeight=250, doorUOffset=100, doorVOffset=100,
-                                 doorFrameJoinType="miter_45", doorLeafFrameJoinType="v_groove_90:sharp_v")
+                                 doorFrameJoinType="miter_45",
+                                 doorLeafFrameJoinType="v_groove_90:tool_library")
                 frames = [item for item in document["items"] if item["key"].startswith("access_door.leaf.frame.")]
                 self.assertEqual(1, len(frames))
                 self.assertTrue(all(item["properties"]["tubeDesigner.faceName"] for item in frames))
@@ -70,10 +68,11 @@ class SecurityWindowOpeningProcessTests(unittest.TestCase):
 
     def test_disabled_and_non_bending_openings_ignore_hidden_process_values(self):
         for name in NAMES:
-            build(name, accessDoorEnabled=False, doorFrameJoinType="unused", doorLeafFrameJoinType="unused", vGrooveKFactor=float("nan"))
-            build(name, doorFrameJoinType="miter_45", doorLeafFrameJoinType="miter_45", vGrooveKFactor=float("nan"))
-            with self.assertRaisesRegex(ValueError, "K 因子"):
-                build(name, doorFrameJoinType="v_groove_90:sharp_v", vGrooveKFactor=2)
+            build(name, accessDoorEnabled=False, doorFrameJoinType="unused",
+                  doorLeafFrameJoinType="unused")
+            build(name, doorFrameJoinType="miter_45", doorLeafFrameJoinType="miter_45")
+            with self.assertRaises(ValueError):
+                build(name, doorFrameJoinType="v_groove_90:sharp_v")
 
 
 if __name__ == "__main__":

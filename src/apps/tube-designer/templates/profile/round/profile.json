@@ -2,12 +2,15 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "round",
-  "version": "2026.9.13.6",
+  "version": "2026.9.16.1",
   "displayName": "圆管",
   "description": "P01 圆管。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "常用管材",
+  "category": "管",
   "provenance": {
     "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
     "surveyIds": [
@@ -38,45 +41,29 @@
       "defaultValue": 2,
       "min": 0.1,
       "step": 1
+    },
+    {
+      "key": "innerOffsetX",
+      "presentation": { "advanced": true },
+      "displayName": "内孔水平偏心 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1
+    },
+    {
+      "key": "innerOffsetY",
+      "presentation": { "advanced": true },
+      "displayName": "内孔竖直偏心 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1
     }
   ],
   "catalog": {
+    "categoryPath": ["管"],
     "groupOrder": 1,
     "order": 2
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          0
-        ],
-        "to": [
-          "width/2",
-          0
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "外圆直径"
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "width/2-wallThickness",
-          0
-        ],
-        "to": [
-          "width/2",
-          0
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "右侧壁厚"
-      }
-    ]
   }
 }

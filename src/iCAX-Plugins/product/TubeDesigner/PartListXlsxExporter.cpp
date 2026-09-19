@@ -197,13 +197,32 @@ namespace
         return _Sheet.str();
     }
 
-    std::string BuildHiddenMetadataWorksheet(const std::string& Metadata_)
+    std::string BuildHiddenMetadataWorksheet(
+        const std::string& Metadata_,
+        const std::vector<iCAX::TubeDesigner::STableWorkbookValidation>& Validations_)
     {
+        std::size_t _MaximumRows = 1;
+        for (const auto& _Validation : Validations_)
+            _MaximumRows = std::max(_MaximumRows, _Validation.Values.size());
+        const auto _LastColumn = WorksheetColumnName(Validations_.size());
+        std::ostringstream _Rows;
+        for (std::size_t _Row = 0; _Row < _MaximumRows; ++_Row)
+        {
+            const auto _RowNumber = std::to_string(_Row + 1);
+            _Rows << "<row r=\"" << _RowNumber << "\">";
+            if (_Row == 0) _Rows << TextCell("A1", Metadata_, 0);
+            for (std::size_t _Index = 0; _Index < Validations_.size(); ++_Index)
+            {
+                const auto& _Values = Validations_[_Index].Values;
+                if (_Row < _Values.size())
+                    _Rows << TextCell(WorksheetColumnName(_Index + 1) + _RowNumber, _Values[_Row], 0);
+            }
+            _Rows << "</row>";
+        }
         return std::string("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
             + "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
-            + "<dimension ref=\"A1\"/><sheetData><row r=\"1\">"
-            + TextCell("A1", Metadata_, 0)
-            + "</row></sheetData></worksheet>";
+            + "<dimension ref=\"A1:" + _LastColumn + std::to_string(_MaximumRows) + "\"/><sheetData>"
+            + _Rows.str() + "</sheetData></worksheet>";
     }
 
     std::uint32_t Crc32(const std::string& Data_)
@@ -406,7 +425,8 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
     const std::string& Title_,
     const std::vector<std::string>& Headers_,
     const std::vector<std::vector<STableWorkbookCell>>& Rows_,
-    const std::string& HiddenMetadata_)
+    const std::string& HiddenMetadata_,
+    const std::vector<STableWorkbookValidation>& Validations_)
 {
     // XLSX supports columns A through XFD (16,384 columns).  The old 26-column
     // limit came from single-letter cell references, not from Excel.
@@ -416,6 +436,11 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
         throw std::invalid_argument("XLSX table exceeds worksheet row limit");
     if (std::filesystem::exists(TargetPath_))
         throw std::invalid_argument("XLSX target already exists; refusing to overwrite");
+    for (const auto& _Validation : Validations_)
+    {
+        if (HiddenMetadata_.empty() || _Validation.Column >= Headers_.size() || _Validation.Values.empty())
+            throw std::invalid_argument("XLSX dropdown validation is incomplete");
+    }
     if (!TargetPath_.parent_path().empty())
         std::filesystem::create_directories(TargetPath_.parent_path());
 
@@ -445,6 +470,23 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
         }
         _Rows << "</row>";
     }
+    std::ostringstream _Validations;
+    if (!Validations_.empty())
+    {
+        _Validations << "<dataValidations count=\"" << Validations_.size() << "\">";
+        for (std::size_t _Index = 0; _Index < Validations_.size(); ++_Index)
+        {
+            const auto& _Validation = Validations_[_Index];
+            const auto _Column = WorksheetColumnName(_Validation.Column);
+            const auto _SourceColumn = WorksheetColumnName(_Index + 1);
+            _Validations << "<dataValidation type=\"list\" allowBlank=\"1\" showErrorMessage=\"1\""
+                << " errorTitle=\"输入无效\" error=\"请从下拉列表中选择\" sqref=\""
+                << _Column << "3:" << _Column << "1048576\"><formula1>&apos;__iCAX_列定义&apos;!$"
+                << _SourceColumn << "$1:$" << _SourceColumn << "$" << _Validation.Values.size()
+                << "</formula1></dataValidation>";
+        }
+        _Validations << "</dataValidations>";
+    }
     std::ostringstream _Sheet;
     _Sheet << "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
         << "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
@@ -454,6 +496,7 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
         << "\" width=\"20\" customWidth=\"1\"/></cols><sheetData>" << _Rows.str() << "</sheetData>"
         << "<autoFilter ref=\"A2:" << _LastColumn << _LastRow << "\"/>"
         << "<mergeCells count=\"1\"><mergeCell ref=\"A1:" << _LastColumn << "1\"/></mergeCells>"
+        << _Validations.str()
         << "<pageMargins left=\"0.3\" right=\"0.3\" top=\"0.5\" bottom=\"0.5\" header=\"0.2\" footer=\"0.2\"/>"
         << "<pageSetup orientation=\"landscape\" fitToWidth=\"1\" fitToHeight=\"0\"/></worksheet>";
     auto _Entries = BuildWorkbookEntries({}, false);
@@ -487,7 +530,8 @@ void iCAX::TubeDesigner::WriteTableWorkbook(
                     "<Override PartName=\"/xl/worksheets/sheet2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
         }
     }
-    if (!HiddenMetadata_.empty()) _Entries.push_back({ "xl/worksheets/sheet2.xml", BuildHiddenMetadataWorksheet(HiddenMetadata_) });
+    if (!HiddenMetadata_.empty())
+        _Entries.push_back({ "xl/worksheets/sheet2.xml", BuildHiddenMetadataWorksheet(HiddenMetadata_, Validations_) });
     auto _TemporaryPath = TargetPath_;
     _TemporaryPath += ".tmp";
     if (std::filesystem::exists(_TemporaryPath))

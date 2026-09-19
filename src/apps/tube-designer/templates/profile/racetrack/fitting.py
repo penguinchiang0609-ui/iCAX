@@ -4,13 +4,16 @@ IMPLEMENTED = True
 
 def fitting(section, context):
     q,g,t=context["geometry"],context["curves"],context["tolerance"]
-    circles=q.concentric_circles(section,t,2)
+    circles=q.eccentric_circles(section,t)
     if circles:
-        radii,pose=circles
-        return q.result({"width":2*radii[0],"depth":2*radii[0],"wallThickness":radii[0]-radii[1]},pose)
+        (outer_radius,inner_radius,offset_x,offset_y),pose=circles
+        return q.result({"width":2*outer_radius,"depth":2*outer_radius,
+                         "wallThickness":outer_radius-inner_radius,
+                         "innerOffsetX":offset_x,"innerOffsetY":offset_y},pose)
     for loops,pose in g.frames(section):
-        measured=q.paired_sections(loops,g,t,q.capsule)
+        measured=q.paired_sections_offset(loops,g,t,q.capsule)
         if measured:
-            outer,wall=measured
-            return q.result({"width":outer["width"],"depth":outer["depth"],"wallThickness":wall},pose)
+            outer,wall,offset=measured
+            return q.result({"width":outer["width"],"depth":outer["depth"],
+                             "wallThickness":wall,"innerOffsetX":offset[0],"innerOffsetY":offset[1]},pose)
     return False

@@ -2,6 +2,7 @@
 
 #include "TubeDesignerExport.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -39,6 +40,12 @@ namespace iCAX::TubeDesigner
 
     using STableWorkbookCell = std::variant<std::string, double>;
 
+    struct STableWorkbookValidation final
+    {
+        std::size_t Column = 0;
+        std::vector<std::string> Values;
+    };
+
     // Uses the same ZIP package, cell escaping and styles as the existing part list.
     // Strings remain literal cells, never formulas. The destination must not exist.
     _TUBE_DESIGNER_EXP void WriteTableWorkbook(
@@ -46,5 +53,6 @@ namespace iCAX::TubeDesigner
         const std::string& Title_,
         const std::vector<std::string>& Headers_,
         const std::vector<std::vector<STableWorkbookCell>>& Rows_,
-        const std::string& HiddenMetadata_ = {});
+        const std::string& HiddenMetadata_ = {},
+        const std::vector<STableWorkbookValidation>& Validations_ = {});
 }

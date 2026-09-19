@@ -1,4 +1,5 @@
 import { patchDomNode } from "./punchDomPatch.mjs";
+import { floatingParameterDiagramHost, moveFloatingParameterDiagramsToWorkspace } from "./floatingParameterDiagram.mjs";
 const rendered=new WeakMap();
 export function rememberLibraryDom(view,mount,suffix) {
   rendered.set(mount,{area:view.activeAreaId,suffix});
@@ -13,6 +14,7 @@ export function patchLibraryDom(view,mount,{left,right,overlay,suffix}) {
   const rightPane=mount.querySelector(".cam-info-pane");
   const viewport=mount.querySelector(".cam-viewport");
   if(!leftPane||!rightPane||!viewport)return false;
+  const floatingHost=moveFloatingParameterDiagramsToWorkspace(mount,view) ?? floatingParameterDiagramHost(mount);
   const parse=html=>{
     const template=mount.ownerDocument.createElement("template");
     template.innerHTML=html;return template.content;
@@ -24,7 +26,7 @@ export function patchLibraryDom(view,mount,{left,right,overlay,suffix}) {
   }
   // Patch only HTML-owned HUD nodes. Never touch renderer/canvas/view cube.
   const selectors=view.activeAreaId==="tools"?[".tube-tool-library-hud"]:
-    [".tube-profile-library-preview-hud",".tube-profile-library-preview-wait"];
+    [".tube-profile-library-preview-hud",".tube-profile-library-preview-wait","[data-tube-designer-specification-tree]"];
   const fragment=parse(overlay);
   for(const selector of selectors) {
     const old=viewport.querySelector(selector),next=fragment.querySelector(selector);
@@ -32,6 +34,15 @@ export function patchLibraryDom(view,mount,{left,right,overlay,suffix}) {
     else if(old)old.remove();
     else if(next)viewport.append(next);
   }
+  // Diagram windows live above the entire workbench, not inside the WebGL
+  // viewport. Patch them in place so focus, selection and nested scroll survive.
+  const floatingSelector=view.activeAreaId==="tools"?"[data-tube-tool-diagram-dock]":"[data-tube-profile-diagram-dock]";
+  const oldFloating=floatingHost?.querySelector(floatingSelector);
+  const nextFloating=fragment.querySelector(floatingSelector);
+  if(oldFloating&&nextFloating)patchDomNode(oldFloating,nextFloating);
+  else if(oldFloating)oldFloating.remove();
+  else if(nextFloating)floatingHost?.append(nextFloating);
+  moveFloatingParameterDiagramsToWorkspace(mount,view);
   const workbench=mount.querySelector(".cam-workbench");
   for(const kind of ["notice","error"]) {
     let node=workbench?.querySelector(":scope > .cam-status."+kind);

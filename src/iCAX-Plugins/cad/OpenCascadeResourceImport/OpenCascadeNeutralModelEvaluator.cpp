@@ -33,7 +33,6 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
-#include <BRepBuilderAPI_MakePolygon.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
@@ -47,7 +46,6 @@
 #include <Standard_Failure.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Ax3.hxx>
-#include <gp_Circ.hxx>
 #include <gp_Elips.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
@@ -508,165 +506,13 @@ namespace
         return _Wire.Wire();
     }
 
-    TopoDS_Wire MakePolygonWire(
-        const SPlacement& Placement_, const std::vector<std::pair<double, double>>& Points_,
-        const std::string& strPath_)
-    {
-        BRepBuilderAPI_MakePolygon _Polygon;
-        for (const auto& [_X, _Y] : Points_) _Polygon.Add(LocalPoint(Placement_, _X, _Y));
-        _Polygon.Close();
-        if (!_Polygon.IsDone()) throw std::runtime_error(strPath_ + " failed to build a closed polygon");
-        return _Polygon.Wire();
-    }
-
     TopoDS_Wire MakeContourWire(
         const SPlacement& Placement_, const ObjectMap& Contour_, const std::string& strPath_)
     {
         const auto _Kind = RequireString(Contour_, "kind", strPath_);
-        if (_Kind == "path") return MakePathWire(Placement_, Contour_, strPath_);
-        if (_Kind == "circle")
-        {
-            const auto _Radius = Number(
-                Require(Contour_, "radius", strPath_), strPath_ + ".radius");
-            if (_Radius <= kTolerance)
-                throw std::invalid_argument(strPath_ + ".radius must be positive");
-            const gp_Dir _Normal(gp_Vec(Placement_.XAxis).Crossed(gp_Vec(Placement_.YAxis)));
-            BRepBuilderAPI_MakeEdge _Edge(gp_Circ(
-                gp_Ax2(Placement_.Origin, _Normal, Placement_.XAxis), _Radius));
-            if (!_Edge.IsDone()) throw std::runtime_error(strPath_ + " failed to build a circle");
-            BRepBuilderAPI_MakeWire _Wire(_Edge.Edge());
-            if (!_Wire.IsDone())
-                throw std::runtime_error(strPath_ + " failed to build a circular wire");
-            return _Wire.Wire();
-        }
-        if (_Kind == "ellipse")
-        {
-            const auto _Width = Number(
-                Require(Contour_, "width", strPath_), strPath_ + ".width");
-            const auto _Height = Number(
-                Require(Contour_, "height", strPath_), strPath_ + ".height");
-            if (_Width <= kTolerance || _Height <= kTolerance)
-                throw std::invalid_argument(strPath_ + " ellipse dimensions must be positive");
-            const gp_Dir _Normal(gp_Vec(Placement_.XAxis).Crossed(gp_Vec(Placement_.YAxis)));
-            const auto _WidthIsMajor = _Width >= _Height;
-            const auto _MajorRadius = std::max(_Width, _Height) / 2.0;
-            const auto _MinorRadius = std::min(_Width, _Height) / 2.0;
-            const auto& _MajorAxis = _WidthIsMajor ? Placement_.XAxis : Placement_.YAxis;
-            BRepBuilderAPI_MakeEdge _Edge(gp_Elips(
-                gp_Ax2(Placement_.Origin, _Normal, _MajorAxis), _MajorRadius, _MinorRadius));
-            if (!_Edge.IsDone()) throw std::runtime_error(strPath_ + " failed to build an ellipse");
-            BRepBuilderAPI_MakeWire _Wire(_Edge.Edge());
-            if (!_Wire.IsDone())
-                throw std::runtime_error(strPath_ + " failed to build an elliptical wire");
-            return _Wire.Wire();
-        }
-        if (_Kind == "capsule")
-        {
-            const auto _Width = Number(
-                Require(Contour_, "width", strPath_), strPath_ + ".width");
-            const auto _Height = Number(
-                Require(Contour_, "height", strPath_), strPath_ + ".height");
-            if (_Width <= kTolerance || _Height <= kTolerance)
-                throw std::invalid_argument(strPath_ + " capsule dimensions must be positive");
-            const auto _Point = [&](double X_, double Y_) { return LocalPoint(Placement_, X_, Y_); };
-            if (std::abs(_Width - _Height) <= kTolerance)
-            {
-                const gp_Dir _Normal(gp_Vec(Placement_.XAxis).Crossed(gp_Vec(Placement_.YAxis)));
-                BRepBuilderAPI_MakeEdge _Edge(gp_Circ(
-                    gp_Ax2(Placement_.Origin, _Normal, Placement_.XAxis), _Width / 2.0));
-                if (!_Edge.IsDone())
-                    throw std::runtime_error(strPath_ + " failed to build a circular capsule");
-                BRepBuilderAPI_MakeWire _Wire(_Edge.Edge());
-                if (!_Wire.IsDone())
-                    throw std::runtime_error(strPath_ + " failed to build a circular capsule");
-                return _Wire.Wire();
-            }
-            BRepBuilderAPI_MakeWire _Wire;
-            if (_Width > _Height)
-            {
-                const auto _Radius = _Height / 2.0;
-                const auto _Center = (_Width - _Height) / 2.0;
-                const auto _BottomLeft = _Point(-_Center, -_Radius);
-                const auto _BottomRight = _Point(_Center, -_Radius);
-                const auto _TopRight = _Point(_Center, _Radius);
-                const auto _TopLeft = _Point(-_Center, _Radius);
-                _Wire.Add(Line(_BottomLeft, _BottomRight, strPath_));
-                _Wire.Add(Arc(_BottomRight, _Point(_Center + _Radius, 0.0), _TopRight, strPath_));
-                _Wire.Add(Line(_TopRight, _TopLeft, strPath_));
-                _Wire.Add(Arc(_TopLeft, _Point(-_Center - _Radius, 0.0), _BottomLeft, strPath_));
-            }
-            else
-            {
-                const auto _Radius = _Width / 2.0;
-                const auto _Center = (_Height - _Width) / 2.0;
-                const auto _BottomRight = _Point(_Radius, -_Center);
-                const auto _TopRight = _Point(_Radius, _Center);
-                const auto _TopLeft = _Point(-_Radius, _Center);
-                const auto _BottomLeft = _Point(-_Radius, -_Center);
-                _Wire.Add(Line(_BottomRight, _TopRight, strPath_));
-                _Wire.Add(Arc(_TopRight, _Point(0.0, _Center + _Radius), _TopLeft, strPath_));
-                _Wire.Add(Line(_TopLeft, _BottomLeft, strPath_));
-                _Wire.Add(Arc(_BottomLeft, _Point(0.0, -_Center - _Radius), _BottomRight, strPath_));
-            }
-            if (!_Wire.IsDone()) throw std::runtime_error(strPath_ + " failed to build a capsule wire");
-            return _Wire.Wire();
-        }
-        if (_Kind == "polygon")
-        {
-            const auto& _PointValues = RequireArray(
-                Require(Contour_, "points", strPath_), strPath_ + ".points");
-            if (_PointValues.size() < 3)
-                throw std::invalid_argument(strPath_ + ".points requires at least three points");
-            std::vector<std::pair<double, double>> _Points;
-            _Points.reserve(_PointValues.size());
-            for (std::size_t _Index = 0; _Index < _PointValues.size(); ++_Index)
-                _Points.push_back(Point2(_PointValues[_Index],
-                    strPath_ + ".points[" + std::to_string(_Index) + "]"));
-            return MakePolygonWire(Placement_, _Points, strPath_);
-        }
-        if (_Kind != "roundedRectangle")
-            throw std::invalid_argument(strPath_ + ".kind is unsupported: " + _Kind);
-
-        const auto _Width = Number(Require(Contour_, "width", strPath_), strPath_ + ".width");
-        const auto _Height = Number(Require(Contour_, "height", strPath_), strPath_ + ".height");
-        const auto _Radius = OptionalNumber(Contour_, "radius", 0.0, strPath_);
-        if (_Width <= kTolerance || _Height <= kTolerance || _Radius < 0.0
-            || _Radius >= std::min(_Width, _Height) / 2.0)
-        {
-            throw std::invalid_argument(strPath_ + " rounded rectangle dimensions are invalid");
-        }
-        const auto _HalfWidth = _Width / 2.0;
-        const auto _HalfHeight = _Height / 2.0;
-        if (_Radius <= kTolerance)
-        {
-            return MakePolygonWire(Placement_, {
-                { -_HalfWidth, -_HalfHeight }, { _HalfWidth, -_HalfHeight },
-                { _HalfWidth, _HalfHeight }, { -_HalfWidth, _HalfHeight }
-            }, strPath_);
-        }
-
-        const auto _Diagonal = _Radius / std::sqrt(2.0);
-        const auto _Point = [&](double X_, double Y_) { return LocalPoint(Placement_, X_, Y_); };
-        const auto _BottomLeft = _Point(-_HalfWidth + _Radius, -_HalfHeight);
-        const auto _BottomRight = _Point(_HalfWidth - _Radius, -_HalfHeight);
-        const auto _RightBottom = _Point(_HalfWidth, -_HalfHeight + _Radius);
-        const auto _RightTop = _Point(_HalfWidth, _HalfHeight - _Radius);
-        const auto _TopRight = _Point(_HalfWidth - _Radius, _HalfHeight);
-        const auto _TopLeft = _Point(-_HalfWidth + _Radius, _HalfHeight);
-        const auto _LeftTop = _Point(-_HalfWidth, _HalfHeight - _Radius);
-        const auto _LeftBottom = _Point(-_HalfWidth, -_HalfHeight + _Radius);
-        BRepBuilderAPI_MakeWire _Wire;
-        _Wire.Add(Line(_BottomLeft, _BottomRight, strPath_));
-        _Wire.Add(Arc(_BottomRight, _Point(_HalfWidth - _Radius + _Diagonal, -_HalfHeight + _Radius - _Diagonal), _RightBottom, strPath_));
-        _Wire.Add(Line(_RightBottom, _RightTop, strPath_));
-        _Wire.Add(Arc(_RightTop, _Point(_HalfWidth - _Radius + _Diagonal, _HalfHeight - _Radius + _Diagonal), _TopRight, strPath_));
-        _Wire.Add(Line(_TopRight, _TopLeft, strPath_));
-        _Wire.Add(Arc(_TopLeft, _Point(-_HalfWidth + _Radius - _Diagonal, _HalfHeight - _Radius + _Diagonal), _LeftTop, strPath_));
-        _Wire.Add(Line(_LeftTop, _LeftBottom, strPath_));
-        _Wire.Add(Arc(_LeftBottom, _Point(-_HalfWidth + _Radius - _Diagonal, -_HalfHeight + _Radius - _Diagonal), _BottomLeft, strPath_));
-        if (!_Wire.IsDone())
-            throw std::runtime_error(strPath_ + " failed to build a rounded rectangle wire");
-        return _Wire.Wire();
+        if (_Kind != "path")
+            throw std::invalid_argument(strPath_ + ".kind must be path; profile2d accepts only generic curves");
+        return MakePathWire(Placement_, Contour_, strPath_);
     }
 
     TopoDS_Face MakeProfile2D(const SGeometryNode& Node_)

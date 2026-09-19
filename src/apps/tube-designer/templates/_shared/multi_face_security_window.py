@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import importlib.util
 import math
@@ -9,6 +9,13 @@ import sys
 from typing import Any, Iterable
 
 from icax_template_sdk import NeutralModel
+
+
+def _path(points):
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
+        for i in range(len(points))
+    ]}
 
 
 Point = tuple[float, float, float]
@@ -74,6 +81,15 @@ if FRAME_MODULE not in sys.modules:
     sys.modules[FRAME_MODULE] = _frame_module
     _frame_spec.loader.exec_module(_frame_module)
 _frame_geometry = sys.modules[FRAME_MODULE]
+
+PATH_SCRIPT = Path(__file__).with_name("security_window_frame_paths.py")
+PATH_MODULE = "icax_security_window_paths_" + hashlib.sha256(PATH_SCRIPT.read_bytes()).hexdigest()[:16]
+if PATH_MODULE not in sys.modules:
+    _path_spec = importlib.util.spec_from_file_location(PATH_MODULE, PATH_SCRIPT)
+    _path_module = importlib.util.module_from_spec(_path_spec)
+    sys.modules[PATH_MODULE] = _path_module
+    _path_spec.loader.exec_module(_path_module)
+_frame_paths = sys.modules[PATH_MODULE]
 
 
 @dataclass(frozen=True)
@@ -569,10 +585,10 @@ def _emit_miter_shape(model: NeutralModel, part: Part, raw: str) -> str:
             arguments={
                 "placement": {"origin": [part.start[0], part.start[1], part.start[2] - half - margin],
                               "xAxis": list(direction), "yAxis": list(transverse)},
-                "contours": [{"kind": "polygon", "points": [
+                "contours": [_path([
                     [outside, low], [center + slope * low, low],
                     [center + slope * high, high], [outside, high],
-                ]}],
+                ])],
             },
         )
         tools.append(model.geometry(
@@ -625,9 +641,6 @@ def _vertex_profile_axis(faces: list[Face], vertex_index: int) -> Vector:
 
 
 def _horizontal_insertion(parameters: dict[str, Any]) -> float:
-    # An unused insertion value is not a geometric input in welded mode.
-    if parameters.get("mainHorizontalConnection", "insert") == "weld":
-        return 0.0
     return _number(parameters, "horizontalBranchReserve")
 
 
@@ -971,28 +984,13 @@ def _validate(
     horizontal: Profile, vertical: Profile, door_surface: DoorSurface | None,
 ) -> None:
     height = _number(parameters, "height")
-    if parameters.get("frameCornerJoin", "post_butt") not in {"post_butt", "rail_miter"}:
+    manufacturing_mode = _frame_paths.mode(parameters)
+    if manufacturing_mode == "segment_weld" and parameters.get("frameCornerJoin", "post_butt") not in {"post_butt", "rail_miter"}:
         raise ValueError("frameCornerJoin 仅支持 post_butt 或 rail_miter")
-    if parameters.get("frameCornerJoin", "post_butt") == "rail_miter" and (
+    if manufacturing_mode == "segment_weld" and parameters.get("frameCornerJoin", "post_butt") == "rail_miter" and (
         frame.kind != "rect" or abs(frame.width - frame.depth) > 1.0e-7
     ):
         raise ValueError("上下框45°斜拼目前仅支持宽深相等的矩形方管外框")
-    if parameters.get("mainHorizontalConnection", "insert") not in {"insert", "weld"}:
-        raise ValueError("mainHorizontalConnection 仅支持 insert 或 weld")
-    if parameters.get("mainHorizontalConnection", "insert") == "weld":
-        if frame.kind != "rect":
-            raise ValueError("横杆贴合焊接目前仅支持有平直接触面的标准矩形管外框")
-        # A corner post can receive one face across its width and the adjacent
-        # face across its depth; cap crossbars also meet the horizontal rails.
-        # The unchanged square-cut end needs a full flat seat in every case.
-        # Conservatively require both receiving sides rather than silently
-        # claiming a corner-radius/curved-surface contact is a fitted weld.
-        flat_width = min(frame.width, frame.depth) - frame.radius * 2
-        if horizontal.depth > flat_width + 1.0e-7:
-            raise ValueError(
-                f"横杆贴合焊接端面厚度 {horizontal.depth:g} mm 超过外框扣除圆角后的"
-                f"最小平直面宽度 {flat_width:g} mm，请减小外框圆角或调整管材规格"
-            )
     if height <= frame.width * 2:
         raise ValueError("产品高度必须大于外框宽度的两倍")
     if not (
@@ -1004,8 +1002,6 @@ def _validate(
     if clearance < 0:
         raise ValueError("装配间隙不能为负数")
     for key in ("horizontalBranchReserve", "verticalBranchReserve"):
-        if key == "horizontalBranchReserve" and parameters.get("mainHorizontalConnection", "insert") == "weld":
-            continue
         insertion = _number(parameters, key)
         if not 0 <= insertion <= 20:
             raise ValueError(f"{key} 必须在0到20 mm之间")
@@ -1142,7 +1138,7 @@ def _connection_process(
     ):
         process["openingEndJoin"] = "butt_to_fixed_frame_outer_face"
     if part.key.startswith(("main_grid.horizontal.", "cap_grid.horizontal.")):
-        process["outerFrameConnection"] = parameters.get("mainHorizontalConnection", "insert")
+        process["outerFrameConnection"] = "insert"
         process["outerFrameInsertionDepth"] = _horizontal_insertion(parameters)
     return process
 
@@ -1159,6 +1155,9 @@ def _generate_multi_face_geometry(
     vertical = _profile(parameters, "vertical")
     door_surface = _resolve_door_surface(layout, parameters, points, face_names, frame)
     construction = _door_construction_parameters(parameters, door_surface, points, face_names, frame)
+    construction = dict(construction, faceType={"two-face":"two","three-face":"three","five-face":"five"}[layout])
+    if _frame_paths.mode(construction) != "segment_weld":
+        construction = dict(construction, frameCornerJoin="post_butt")
     _validate(layout, construction, points, frame, horizontal, vertical, door_surface)
 
     template = context["template"]
@@ -1240,9 +1239,28 @@ def _generate_multi_face_geometry(
             processed_frames.extend(records)
             frame_receivers.update({reference[side].key: key for side, key in sides.items()})
         parts = [part for part in parts if part.key not in frame_receivers]
-    raw_geometry = {part.key: _emit_tube(model, part, shared_geometry) for part in parts}
+    paths = _frame_paths.plan(parts, points, construction, layout)
+    for path in paths:
+        record, references = _frame_paths.emit(path, sys.modules[__name__], _frame_geometry, model,
+                                               shared_geometry, construction, crossing_map, purpose, user_mould_root)
+        processed_frames.append(record)
+        frame_receivers.update({key: record["key"] for key in references})
+    emitted_parts = [part for part in parts if part.key not in frame_receivers]
+    if paths:
+        # Closed rings and shared L/U corners receive posts between the two
+        # horizontal frame faces. Only open-plane terminal posts remain full
+        # height, because their rails still butt against the sides of those posts.
+        full_height_terminals = set()
+        if layout != "five-face" and _frame_paths.mode(construction) == "plane_v_notch":
+            full_height_terminals = {f"outer_frame.vertical.{i:04d}" for i in (1, len(points))}
+        emitted_parts = [replace(part,
+            start=(part.start[0], part.start[1], frame.width),
+            end=(part.end[0], part.end[1], float(parameters['height'])-frame.width))
+            if part.key.startswith('outer_frame.vertical.') and part.key not in full_height_terminals
+            else part for part in emitted_parts]
+    raw_geometry = {part.key: _emit_tube(model, part, shared_geometry) for part in emitted_parts}
     representations: dict[str, tuple[str, str]] = {}
-    for part in parts:
+    for part in emitted_parts:
         display = raw_geometry[part.key]
         export = display
         if purpose == "display":
@@ -1262,7 +1280,7 @@ def _generate_multi_face_geometry(
 
     item_keys: list[str] = []
     rows: list[dict[str, Any]] = []
-    for index, part in enumerate(parts, start=1):
+    for index, part in enumerate(emitted_parts, start=1):
         part_number = f"{parameters['productCode']}-{index:03d}"
         properties = {
             "partNumber": part_number,
@@ -1279,6 +1297,11 @@ def _generate_multi_face_geometry(
         }
         connection = properties["tubeDesigner.connectionProcess"]
         connection["passesInto"] = list(dict.fromkeys(frame_receivers.get(key, key) for key in connection["passesInto"]))
+        if part.key.startswith("outer_frame."):
+            properties["tubeDesigner.frameManufacturing"] = {"mode":_frame_paths.mode(construction), "straight":True}
+            if _frame_paths.mode(construction) == "spatial_v_notch":
+                properties["manufacturing.categoryKey"] = "outer_frame.shared"
+                properties["manufacturing.categoryName"] = "共享连接杆"
         if part.start_miter is not None or part.end_miter is not None:
             properties["tubeDesigner.displayApproximation"] = "uncut_miter_stock"
         item_key = model.item(
@@ -1305,8 +1328,10 @@ def _generate_multi_face_geometry(
             for part in crossing_map.get(reference_key, [])))
         record["properties"]["tubeDesigner.connectionProcess"]["passesInto"] = []
         number = f"{parameters['productCode']}-{len(item_keys) + 1:03d}"
-        record["properties"].update({"partNumber": number, "tubeDesigner.faceIndex": door_surface.face_index,
-                                     "tubeDesigner.faceName": door_surface.face_name})
+        record["properties"]["partNumber"] = number
+        is_opening = record["key"].startswith("access_door.")
+        record["properties"].update({"tubeDesigner.faceIndex": door_surface.face_index if is_opening else 0,
+                                     "tubeDesigner.faceName": door_surface.face_name if is_opening else "主框"})
         key = model.item(record["key"], record["name"], representations=record["representations"], properties=record["properties"])
         item_keys.append(key)
         rows.append({"key": f"row.{key}", "parentKey": str(parameters["productCode"]), "itemKey": key,
@@ -1314,13 +1339,14 @@ def _generate_multi_face_geometry(
                                 "length": record["properties"]["length"]}})
 
     for index in range(1, len(points) - 1):
+        corner_members = list(dict.fromkeys(frame_receivers.get(key, key) for key in (
+            f"outer_frame.vertical.{index + 1:04d}", f"outer_frame.top.{index:04d}",
+            f"outer_frame.top.{index + 1:04d}")))
+        if len(corner_members) < 2:
+            continue
         model.relationship(
             f"footprint.corner.{index:04d}", "corner",
-            [
-                f"outer_frame.vertical.{index + 1:04d}",
-                f"outer_frame.top.{index:04d}",
-                f"outer_frame.top.{index + 1:04d}",
-            ],
+            corner_members,
             properties={
                 "origin": list(points[index]),
                 "incomingFace": face_names[index - 1],
@@ -1545,15 +1571,8 @@ def _generate_multi_face_geometry(
     if door_surface is not None:
         u_min, v_min, u_max, v_max = _door_bounds(construction)
         fixed_width = _profile(parameters, "doorFrame").width
-        # Direct geometry-kernel tests and older callers may supply the
-        # already-derived fixed-frame outside size only.  Keep the annotation
-        # extension backward compatible without changing generated geometry.
-        clear_width = (float(parameters["doorClearWidth"])
-                       if "doorClearWidth" in parameters
-                       else max(0.0, _number(parameters, "doorWidth") - fixed_width))
-        clear_height = (float(parameters["doorClearHeight"])
-                        if "doorClearHeight" in parameters
-                        else max(0.0, _number(parameters, "doorHeight") - fixed_width))
+        clear_width = _number(parameters, "doorClearWidth")
+        clear_height = _number(parameters, "doorClearHeight")
         clear_u_center = (u_min + u_max) / 2
         clear_v_center = (v_min + v_max) / 2
         clear_u_min = clear_u_center - clear_width / 2

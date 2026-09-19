@@ -1,0 +1,229 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": {
+          "title": {
+            "zh-CN": "基本尺寸"
+          },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "fields": {
+        "width": {
+          "group": "dimensions",
+          "order": 10,
+          "title": {
+            "zh-CN": "上口宽 B"
+          },
+          "help": {
+            "zh-CN": "上口宽 B / mm"
+          },
+          "width": {
+            "min": 56,
+            "preferred": 72,
+            "max": 84
+          }
+        },
+        "bottomWidth": {
+          "group": "dimensions",
+          "order": 20,
+          "title": {
+            "zh-CN": "底部理论宽 B1"
+          },
+          "help": {
+            "zh-CN": "底部理论宽 B1 / mm"
+          },
+          "width": {
+            "min": 56,
+            "preferred": 72,
+            "max": 84
+          }
+        },
+        "depth": {
+          "group": "dimensions",
+          "order": 30,
+          "title": {
+            "zh-CN": "总高 H"
+          },
+          "help": {
+            "zh-CN": "总高 H / mm"
+          },
+          "width": {
+            "min": 56,
+            "preferred": 72,
+            "max": 84
+          }
+        },
+        "wallThickness": {
+          "group": "dimensions",
+          "order": 40,
+          "title": {
+            "zh-CN": "板厚 t"
+          },
+          "help": {
+            "zh-CN": "板厚 t / mm"
+          },
+          "width": {
+            "min": 56,
+            "preferred": 72,
+            "max": 84
+          }
+        },
+        "bendRadius": {
+          "group": "dimensions",
+          "order": 50,
+          "title": {
+            "zh-CN": "底部内圆角 R"
+          },
+          "help": {
+            "zh-CN": "底部内圆角 R / mm"
+          },
+          "width": {
+            "min": 56,
+            "preferred": 72,
+            "max": 84
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": {
+          "title": {
+            "zh-CN": "基本尺寸"
+          },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "annotations": {
+        "width": {
+          "label": {
+            "zh-CN": "上口宽 B"
+          },
+          "group": "dimensions",
+          "order": 10,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "bottomWidth": {
+          "label": {
+            "zh-CN": "底部理论宽 B1"
+          },
+          "group": "dimensions",
+          "order": 20,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "depth": {
+          "label": {
+            "zh-CN": "总高 H"
+          },
+          "group": "dimensions",
+          "order": 30,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "wallThickness": {
+          "label": {
+            "zh-CN": "板厚 t"
+          },
+          "group": "dimensions",
+          "order": 40,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "bendRadius": {
+          "label": {
+            "zh-CN": "底部内圆角 R"
+          },
+          "group": "dimensions",
+          "order": 50,
+          "editable": true,
+          "suffix": " mm"
+        }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          {
+            "parameter": "width",
+            "kind": "linear",
+            "from": [
+              "-width/2",
+              "depth"
+            ],
+            "to": [
+              "width/2",
+              "depth"
+            ],
+            "axis": "x",
+            "side": "top",
+            "description": "开口自由端外宽"
+          },
+          {
+            "parameter": "bottomWidth",
+            "kind": "linear",
+            "from": [
+              "-bottomWidth/2",
+              0
+            ],
+            "to": [
+              "bottomWidth/2",
+              0
+            ],
+            "axis": "x",
+            "side": "bottom",
+            "description": "外侧直线延长交点间距，不是底部直段长度"
+          },
+          {
+            "parameter": "depth",
+            "kind": "linear",
+            "from": [
+              "-width/2",
+              0
+            ],
+            "to": [
+              "-width/2",
+              "depth"
+            ],
+            "axis": "y",
+            "side": "left",
+            "description": "底面至开口平面的外高"
+          },
+          {
+            "parameter": "wallThickness",
+            "kind": "linear",
+            "from": [
+              0,
+              0
+            ],
+            "to": [
+              0,
+              "wallThickness"
+            ],
+            "axis": "y",
+            "side": "right",
+            "description": "底板法向厚度，侧壁同厚"
+          },
+          {
+            "parameter": "bendRadius",
+            "kind": "leader",
+            "point": [
+              "bottomWidth/2-(wallThickness+bendRadius)*(sqrt(4*depth*depth+(width-bottomWidth)*(width-bottomWidth))-(width-bottomWidth))/(2*depth)",
+              "wallThickness"
+            ],
+            "side": "right",
+            "description": "底部内弯半径 R；外半径为 R+板厚"
+          }
+        ]
+      }
+    }
+  }
+}

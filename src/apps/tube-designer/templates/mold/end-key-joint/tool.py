@@ -7,6 +7,10 @@ slot grows when assembly clearances are requested.
 """
 import math
 
+def _rect_path(width, height):
+    p=[[-width/2,-height/2],[width/2,-height/2],[width/2,height/2],[-width/2,height/2]]
+    return {"kind":"path","closed":True,"segments":[{"kind":"line","start":p[i],"end":p[(i+1)%4]} for i in range(4)]}
+
 
 def generate(p, context):
     lo, hi = context["bounds"]["min"], context["bounds"]["max"]
@@ -32,7 +36,7 @@ def generate(p, context):
     def box(key, x0, x1, y0, y1):
         nodes.append({"key":key+"-profile","operator":"profile2d","arguments":{
             "placement":{"origin":[(x0+x1)/2,(y0+y1)/2,-reach],"xAxis":[1,0,0],"yAxis":[0,1,0]},
-            "contours":[{"kind":"roundedRectangle","width":x1-x0,"height":y1-y0,"radius":0}]}})
+            "contours":[_rect_path(x1-x0,y1-y0)]}})
         nodes.append({"key":key,"operator":"extrude","inputs":[key+"-profile"],"arguments":{"vector":[0,0,2*reach]}})
 
     box("outer-slab", -reach, 0 if female else depth, -reach, reach)

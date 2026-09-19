@@ -24,6 +24,41 @@ TEMPLATE_VERSION = "1.0.0"
 EPS = 1.0e-7
 
 
+def _path(points):
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": list(points[i]), "end": list(points[(i + 1) % len(points)])}
+        for i in range(len(points))
+    ]}
+
+
+def _circle_path(radius):
+    k = radius / math.sqrt(2.0)
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "arc", "start": [radius, 0], "middle": [k, k], "end": [0, radius]},
+        {"kind": "arc", "start": [0, radius], "middle": [-k, k], "end": [-radius, 0]},
+        {"kind": "arc", "start": [-radius, 0], "middle": [-k, -k], "end": [0, -radius]},
+        {"kind": "arc", "start": [0, -radius], "middle": [k, -k], "end": [radius, 0]},
+    ]}
+
+
+def _rounded_rectangle_path(width, height, radius):
+    if radius <= EPS:
+        return _path([[-width/2, -height/2], [width/2, -height/2],
+                      [width/2, height/2], [-width/2, height/2]])
+    q = radius / math.sqrt(2.0)
+    x, y = width/2, height/2
+    return {"kind": "path", "closed": True, "segments": [
+        {"kind": "line", "start": [-x+radius, -y], "end": [x-radius, -y]},
+        {"kind": "arc", "start": [x-radius, -y], "middle": [x-radius+q, -y+radius-q], "end": [x, -y+radius]},
+        {"kind": "line", "start": [x, -y+radius], "end": [x, y-radius]},
+        {"kind": "arc", "start": [x, y-radius], "middle": [x-radius+q, y-radius+q], "end": [x-radius, y]},
+        {"kind": "line", "start": [x-radius, y], "end": [-x+radius, y]},
+        {"kind": "arc", "start": [-x+radius, y], "middle": [-x+radius-q, y-radius+q], "end": [-x, y-radius]},
+        {"kind": "line", "start": [-x, y-radius], "end": [-x, -y+radius]},
+        {"kind": "arc", "start": [-x, -y+radius], "middle": [-x+radius-q, -y+radius-q], "end": [-x+radius, -y]},
+    ]}
+
+
 def _load_shared(filename: str):
     path = Path(__file__).resolve().with_name(filename)
     name = "icax_minimal_grille_" + path.stem + "_" + hashlib.sha256(path.read_bytes()).hexdigest()[:16]
@@ -141,7 +176,7 @@ def _rectangular_tube(profile: Profile) -> bool:
     if profile.kind == "rect":
         return True
     # A frozen/imported section can still prove the capability directly.
-    return all(contour.get("kind") == "roundedRectangle" for contour in contours)
+    return all(contour.get("kind") == "path" for contour in contours)
 
 
 @dataclass(frozen=True)
@@ -310,8 +345,8 @@ def _head_contour(left: float, right: float, width: float, corner: str, size: fl
         radius = min(size, length / 2 - EPS, width / 2 - EPS)
         if radius <= 0:
             raise ValueError("公头圆角尺寸无效")
-        return {"kind": "roundedRectangle", "width": length, "height": width,
-                "radius": radius, "center": [(left+right)/2, center_z]}
+        return {**_rounded_rectangle_path(length, width, radius),
+                "center": [(left+right)/2, center_z]}
     half = width / 2
     if corner == "chamfer":
         leg = min(size, length-EPS, half-EPS)
@@ -325,10 +360,11 @@ def _head_contour(left: float, right: float, width: float, corner: str, size: fl
             points = [[left, center_z-half], [right-leg, center_z-half],
                       [right, center_z-half+leg], [right, center_z+half-leg],
                       [right-leg, center_z+half], [left, center_z+half]]
-        return {"kind": "polygon", "points": points}
-    return {"kind": "polygon", "points": [
-        [left,center_z-half],[right,center_z-half],
-        [right,center_z+half],[left,center_z+half]]}
+        cx = (left + right) / 2
+        return {**_path([[x-cx, z-center_z] for x, z in points]), "center": [cx, center_z]}
+    cx = (left + right) / 2
+    return {**_path([[left-cx,-half],[right-cx,-half],
+                     [right-cx,half],[left-cx,half]]), "center": [cx, center_z]}
 
 
 def _xz_prism(model: NeutralModel, key: str, contour: dict[str, Any], depth: float) -> str:
@@ -351,10 +387,10 @@ def emit_male_head(model: NeutralModel, raw: str, key: str, visible_left: float,
                    corner: str, size: float) -> str:
     """Keep the full middle stock and machine a centred head at both ends."""
     depth = profile.depth + max(4.0, profile.wall * 4)
-    body = _xz_prism(model, f"{key}.male.body", {"kind":"polygon", "points":[
+    body = _xz_prism(model, f"{key}.male.body", _path([
         [visible_left-EPS,center_z-profile.width], [visible_right+EPS,center_z-profile.width],
         [visible_right+EPS,center_z+profile.width], [visible_left-EPS,center_z+profile.width],
-    ]}, depth)
+    ]), depth)
     left = _xz_prism(model, f"{key}.male.left",
                      _head_contour(visible_left-length, visible_left+EPS, width,
                                    corner, size, "left", center_z), depth)
@@ -369,8 +405,8 @@ def emit_male_head(model: NeutralModel, raw: str, key: str, visible_left: float,
 
 def emit_half_hole(model: NeutralModel, key: str, *, x: float, z: float, wall: float,
                    hole_depth: float, hole_height: float, radius: float = 0.0) -> str:
-    contour = {"kind":"roundedRectangle", "width":hole_depth, "height":hole_height,
-               "radius":min(radius, hole_depth/2-EPS, hole_height/2-EPS)}
+    contour = _rounded_rectangle_path(
+        hole_depth, hole_height, min(radius, hole_depth/2-EPS, hole_height/2-EPS))
     profile = model.geometry(f"{key}.profile", "profile2d", arguments={
         "placement":{"origin":[x-EPS,0.0,z], "xAxis":[0.0,1.0,0.0], "yAxis":[0.0,0.0,1.0]},
         "contours":[contour],
@@ -384,7 +420,7 @@ def emit_round_wall_hole(model: NeutralModel, key: str, *, origin: tuple[float,f
                          vector: tuple[float,float,float], diameter: float) -> str:
     profile = model.geometry(f"{key}.profile", "profile2d", arguments={
         "placement":{"origin":list(origin), "xAxis":list(x_axis), "yAxis":list(y_axis)},
-        "contours":[{"kind":"circle", "radius":diameter/2}],
+        "contours":[_circle_path(diameter/2)],
     })
     return model.geometry(f"{key}.solid", "extrude", inputs=[profile], arguments={"vector":list(vector)})
 
@@ -450,40 +486,36 @@ def _layout(parameters: dict[str, Any]) -> dict[str, Any]:
     high = height-frame.width if frame_type == "closed_frame" else height
     handle = _handle_interval(parameters, low, high)
     linear = solve_linear_layout(low, high, inner.width, parameters, handle)
-    joint = _choice(parameters, "innerJoint", ("male_female_half_hole", "flat_weld"))
-    head_length = _number(parameters, "maleHeadLength", 0.1, 200.0) if joint == "male_female_half_hole" else 0.0
-    head_width = _number(parameters, "maleHeadWidth", 0.1, inner.width) if joint == "male_female_half_hole" else inner.width
-    corner_type = _choice(parameters, "maleCornerType", ("round", "chamfer", "square")) if joint == "male_female_half_hole" else "square"
-    corner_size = _number(parameters, "maleCornerSize", 0.0, min(head_length,head_width)/2) if joint == "male_female_half_hole" and corner_type != "square" else 0.0
-    clearance_depth = _number(parameters, "holeTotalClearanceDepth", 0.0, 10.0) if joint == "male_female_half_hole" else 0.0
-    clearance_height = _number(parameters, "holeTotalClearanceHeight", 0.0, 10.0) if joint == "male_female_half_hole" else 0.0
-    if joint == "male_female_half_hole":
-        if not _rectangular_tube(frame) or not _rectangular_tube(inner):
-            raise ValueError("公母管半孔当前要求接收管和插入管具有可判定的方矩管面")
-        if not frame.wall+EPS < head_length < frame.width-frame.wall-EPS:
-            raise ValueError("公头长度必须穿过进入侧壁并保留接收管对侧壁")
-        hole_depth = inner.depth+clearance_depth
-        hole_height = inner.width+clearance_height
-        flat_face = frame.depth-2*frame.radius
-        if hole_depth >= flat_face-EPS:
-            raise ValueError("母孔深向尺寸超过边框进入侧的平直管面")
-        if head_width <= inner.wall*2+EPS:
-            raise ValueError("公头宽度过小，剩余壁料不足")
-    else:
-        hole_depth, hole_height = 0.0, 0.0
-        _frames._validate_flat_weld(frame, inner, "内杆与边框")
+    joint = "male_female_half_hole"
+    head_length = _number(parameters, "maleHeadLength", 0.1, 200.0)
+    head_width = _number(parameters, "maleHeadWidth", 0.1, inner.width)
+    corner_type = _choice(parameters, "maleCornerType", ("round", "chamfer", "square"))
+    corner_size = (_number(parameters, "maleCornerSize", 0.0, min(head_length,head_width)/2)
+                   if corner_type != "square" else 0.0)
+    clearance_depth = _number(parameters, "holeTotalClearanceDepth", 0.0, 10.0)
+    clearance_height = _number(parameters, "holeTotalClearanceHeight", 0.0, 10.0)
+    if not _rectangular_tube(frame) or not _rectangular_tube(inner):
+        raise ValueError("公母管半孔当前要求接收管和插入管具有可判定的方矩管面")
+    if not frame.wall+EPS < head_length < frame.width-frame.wall-EPS:
+        raise ValueError("公头长度必须穿过进入侧壁并保留接收管对侧壁")
+    hole_depth = inner.depth+clearance_depth
+    hole_height = inner.width+clearance_height
+    flat_face = frame.depth-2*frame.radius
+    if hole_depth >= flat_face-EPS:
+        raise ValueError("母孔深向尺寸超过边框进入侧的平直管面")
+    if head_width <= inner.wall*2+EPS:
+        raise ValueError("公头宽度过小，剩余壁料不足")
 
     visible_left, visible_right = frame.width, width-frame.width
     parts = _frame_parts(width, height, frame, frame_type, corner)
     for item in parts:
         item.material = str(parameters["frameMaterial"])
     for index, z in enumerate(linear.centers, start=1):
-        start = visible_left-head_length if joint == "male_female_half_hole" else visible_left
-        end = visible_right+head_length if joint == "male_female_half_hole" else visible_right
+        start = visible_left-head_length
+        end = visible_right+head_length
         features = {"layoutIndex":index, "centerHeight":z, "joint":joint}
-        if joint == "male_female_half_hole":
-            features["maleHeads"] = {"length":head_length, "width":head_width,
-                "cornerType":corner_type, "cornerSize":corner_size}
+        features["maleHeads"] = {"length":head_length, "width":head_width,
+            "cornerType":corner_type, "cornerSize":corner_size}
         parts.append(ProductPart(Part(f"inner.bar.{index:04d}", f"内横杆 {index}",
             (start,0,z),(end,0,z),inner,"inner","inner.bar","内横杆"),
             "inner.bar",str(parameters["innerMaterial"]),features))

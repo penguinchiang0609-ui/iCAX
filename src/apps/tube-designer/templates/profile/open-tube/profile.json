@@ -2,12 +2,15 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "open-tube",
-  "version": "2026.9.13.6",
+  "version": "2026.9.19.1",
   "displayName": "开缝 / 开槽管",
   "description": "P12 开缝 / 开槽管。同族共用入口，轮廓子模型独立求解。默认值为示例，不代表标准规格或实际来料。",
-  "category": "其他",
+  "category": "型材",
   "provenance": {
     "document": "doc/Apps/管材型材市场管型及折弯槽口调研_轮廓模型修正版_2026-09-13.md",
     "surveyIds": [
@@ -41,6 +44,7 @@
     },
     {
       "key": "openingAngle",
+      "presentation": { "advanced": true },
       "displayName": "开口圆心角 / °",
       "valueType": "number",
       "defaultValue": 30,
@@ -49,42 +53,8 @@
     }
   ],
   "catalog": {
-    "groupOrder": 3,
-    "order": 104
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          0,
-          "-width/2"
-        ],
-        "to": [
-          0,
-          "width/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "母圆外径"
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          0
-        ],
-        "to": [
-          "-width/2+wallThickness",
-          0
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "左侧径向壁厚"
-      }
-    ]
+    "categoryPath": ["型材"],
+    "groupOrder": 2,
+    "order": 109
   }
 }

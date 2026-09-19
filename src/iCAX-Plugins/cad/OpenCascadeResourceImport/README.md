@@ -59,7 +59,14 @@
         }
       ]
     },
-    { "kind": "circle", "radius": 10 }
+    {
+      "kind": "path",
+      "closed": true,
+      "segments": [
+        { "kind": "arc", "start": [10, 0], "middle": [0, 10], "end": [-10, 0] },
+        { "kind": "arc", "start": [-10, 0], "middle": [0, -10], "end": [10, 0] }
+      ]
+    }
   ]
 }
 ```

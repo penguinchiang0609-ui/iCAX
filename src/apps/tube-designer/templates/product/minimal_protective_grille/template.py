@@ -8,7 +8,7 @@ import sys
 
 
 TEMPLATE_ID = "minimal-protective-grille"
-TEMPLATE_VERSION = "1.0.0"
+TEMPLATE_VERSION = "1.1.0"
 
 
 SHARED = Path(__file__).resolve().parents[2] / "_shared" / "minimal_protective_grille.py"

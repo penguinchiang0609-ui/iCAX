@@ -6,8 +6,8 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 const parameters = [
   { key: "width", displayName: "目标通行净宽", valueType: "number", defaultValue: 800 },
   { key: "height", displayName: "目标通行净高", valueType: "number", defaultValue: 1000 },
-  { key: "connection", displayName: "横杆与外框连接", valueType: "enum", defaultValue: "insert", choices: [
-    { value: "insert", displayName: "插入定位后焊接并预留安装间隙" }] },
+  { key: "connection", displayName: "大外框连接工艺", valueType: "enum", defaultValue: "v_groove_90", choices: [
+    { value: "v_groove_90", displayName: "连续折弯成框（V 槽留底后折合并焊接闭合）" }] },
   { key: "notes", displayName: "备注", valueType: "string", defaultValue: "长文本内容保留整行" },
   ...Array.from({ length: 20 }, (_, i) => ({ key: `p${i}`, displayName: `尺寸${i}`, valueType: "number", defaultValue: 10 })),
 ];

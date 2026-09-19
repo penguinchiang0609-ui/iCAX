@@ -218,16 +218,9 @@ def generate(p, context):
     flat_width = 0.0
     bottom = sharp_bottom
     if strategy == "flat":
-        flat_reference = p.get("flatReference", "apex")
-        if flat_reference not in ("apex", "actual"):
-            raise ValueError("平底留量解释无效")
         flat_width = _number(p["flatWidth"], "平底宽度")
         if flat_width < 0:
             raise ValueError("平底宽度不能小于 0")
-        if flat_width > 0 and flat_reference == "apex":
-            bottom += flat_width / (left_tan + right_tan)
-            if bottom >= half_height:
-                raise ValueError("平底宽度过大，已超过可切除高度")
 
     male_female = p["maleFemale"]
     if not isinstance(male_female, bool):
@@ -287,12 +280,6 @@ def generate(p, context):
         depth = top - bottom
         left_bottom = -flat_width / 2 if flat_width else 0.0
         right_bottom = flat_width / 2 if flat_width else 0.0
-        if strategy == "flat" and p.get("flatReference", "apex") == "apex":
-            # Truncate the ORIGINAL rays at the raised floor. Centering an
-            # asymmetric flat would shift both rays and lose the apex datum.
-            lift = bottom - sharp_bottom
-            left_bottom = -lift * left_tan
-            right_bottom = lift * right_tan
         left_top = left_bottom - depth * left_tan
         right_top = right_bottom + depth * right_tan
         if male_female and male_size >= half_height - bottom:
@@ -428,5 +415,5 @@ def generate(p, context):
             "chordError":chord_error,"rootReference":reference,"hingeThickness":min(wall,leave_bottom),
             "cutSurfaceMode":"FixedPlane","formingValidation":"not-performed"},"model": {
         "schema": "icax.neutral-model", "schemaVersion": 1,
-        "template": {"id": "v-notch-sharp", "version": "3.0.1", "packageDigest": "self-contained"},
+        "template": {"id": "v-notch-sharp", "version": "3.1.0", "packageDigest": "self-contained"},
         "geometry": nodes}}

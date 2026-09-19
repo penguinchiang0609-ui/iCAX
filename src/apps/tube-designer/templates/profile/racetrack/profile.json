@@ -2,12 +2,15 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
-  "recognition": {"schemaVersion": 1, "entryPoint": "fitting.py"},
+  "recognition": {
+    "schemaVersion": 1,
+    "entryPoint": "fitting.py"
+  },
   "id": "racetrack",
-  "version": "2026.9.13.6",
+  "version": "2026.9.16.1",
   "displayName": "腰型管",
   "description": "腰型管：采用两端半圆、两侧直线的跑道形轮廓；不是任意俗称腰型的替代。",
-  "category": "常用管材",
+  "category": "管",
   "provenance": {
     "document": "doc/Apps/管材型材市场管型调研_2026-09-12.md",
     "surveyIds": [
@@ -45,60 +48,29 @@
       "defaultValue": 2,
       "min": 0.1,
       "step": 1
+    },
+    {
+      "key": "innerOffsetX",
+      "presentation": { "advanced": true },
+      "displayName": "内孔水平偏心 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1
+    },
+    {
+      "key": "innerOffsetY",
+      "presentation": { "advanced": true },
+      "displayName": "内孔竖直偏心 / mm",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -10000,
+      "step": 1
     }
   ],
   "catalog": {
+    "categoryPath": ["管"],
     "groupOrder": 1,
     "order": 3
-  },
-  "parameterDiagram": {
-    "schemaVersion": 1,
-    "annotations": [
-      {
-        "parameter": "width",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "depth/2"
-        ],
-        "to": [
-          "width/2",
-          "depth/2"
-        ],
-        "axis": "x",
-        "side": "top",
-        "description": "宽度基准"
-      },
-      {
-        "parameter": "depth",
-        "kind": "linear",
-        "from": [
-          "-width/2",
-          "-depth/2"
-        ],
-        "to": [
-          "-width/2",
-          "depth/2"
-        ],
-        "axis": "y",
-        "side": "left",
-        "description": "高度基准"
-      },
-      {
-        "parameter": "wallThickness",
-        "kind": "linear",
-        "from": [
-          "width/2-wallThickness",
-          0
-        ],
-        "to": [
-          "width/2",
-          0
-        ],
-        "axis": "x",
-        "side": "bottom",
-        "description": "右侧壁厚"
-      }
-    ]
   }
 }

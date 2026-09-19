@@ -13,7 +13,7 @@ from icax_template_sdk import NeutralModel
 
 
 TEMPLATE_ID = "single-face-security-window"
-TEMPLATE_VERSION = "3.5.3"
+TEMPLATE_VERSION = "3.8.0"
 DOOR_HINGE_SIDE = "left"
 DOOR_HINGE_COUNT = 2
 
@@ -89,9 +89,6 @@ _add_part = _frame_geometry._add_part
 _add_processed_rectangle = _frame_geometry._add_processed_rectangle
 _profile_arguments = _frame_geometry._profile_arguments
 _emit_tube_geometry = _frame_geometry._emit_tube_geometry
-_quadratic_points = _frame_geometry._quadratic_points
-_groove_contour = _frame_geometry._groove_contour
-_emit_polygon_cutter = _frame_geometry._emit_polygon_cutter
 _unfold_frame_point = _frame_geometry._unfold_frame_point
 _continuous_frame_cutters = _frame_geometry._continuous_frame_cutters
 _emit_continuous_frame_geometry = _frame_geometry._emit_continuous_frame_geometry
@@ -103,9 +100,19 @@ _profile_properties = _frame_geometry._profile_properties
 _frame_relationship_item = _frame_geometry._frame_relationship_item
 _validate_through_fit = _frame_geometry._validate_through_fit
 _validate_insertion = _frame_geometry._validate_insertion
-_validate_flat_weld = _frame_geometry._validate_flat_weld
 _main_horizontal_joints = _frame_geometry._main_horizontal_joints
 ModelItem = Part | ContinuousFrame
+
+
+def _outer_process(parameters: dict[str, Any]) -> CornerProcess:
+    mode = parameters.get("frameManufacturingMode", "segment_weld")
+    if mode not in {"segment_weld", "plane_v_notch", "spatial_v_notch"}:
+        raise ValueError("外框制造方式不受支持")
+    if mode != "segment_weld":
+        return CornerProcess("v_groove_90", "tool_library")
+    process = _process(parameters, "frameJoinType", "frameButtWrapMode")
+    # A retained draft V selection cannot override the manufacturing mode.
+    return CornerProcess("miter_45") if process.join_type == "v_groove_90" else process
 
 
 def _validate(parameters: dict[str, Any]) -> None:
@@ -125,13 +132,7 @@ def _validate(parameters: dict[str, Any]) -> None:
         raise ValueError("装配间隙不能为负数")
     _validate_through_fit(horizontal, vertical, clearance, "主横杆与主竖杆")
     pattern = str(parameters.get("infillPattern", "grid"))
-    connection = str(parameters.get("mainHorizontalConnection", "insert"))
-    if connection not in {"insert", "weld"}:
-        raise ValueError("mainHorizontalConnection 仅支持 insert 或 weld")
-    reserve_keys = ["verticalBranchReserve"]
-    if connection == "insert":
-        reserve_keys.append("horizontalBranchReserve")
-    for key in reserve_keys:
+    for key in ("horizontalBranchReserve", "verticalBranchReserve"):
         insertion = _number(parameters, key)
         if not 0 <= insertion <= 20:
             raise ValueError(f"{key} 必须在0到20 mm之间")
@@ -157,19 +158,16 @@ def _validate(parameters: dict[str, Any]) -> None:
     _validate_bar_positions(vertical_positions, vertical_margin, width - vertical_margin,
                             vertical.width, "主竖杆")
     if layout != "top_bottom" and horizontal_positions:
-        if connection == "weld":
-            _validate_flat_weld(frame, horizontal, "外框与主横杆")
-        else:
-            reserve = _number(parameters, "horizontalBranchReserve")
-            if reserve == 0:
-                raise ValueError("主横杆插接入榫深度必须大于0；贴合焊接请选择焊接连接")
-            _validate_insertion(frame, horizontal, reserve, clearance, "外框与主横杆")
+        reserve = _number(parameters, "horizontalBranchReserve")
+        if reserve == 0:
+            raise ValueError("主横杆插接入榫深度必须大于0")
+        _validate_insertion(frame, horizontal, reserve, clearance, "外框与主横杆")
     if layout != "left_right" and vertical_positions:
         reserve = _number(parameters, "verticalBranchReserve")
         _validate_insertion(frame, vertical, reserve, clearance, "外框与主竖杆")
     processes: list[tuple[CornerProcess, Profile]] = []
     if layout == "four_sides":
-        processes.append((_process(parameters, "frameJoinType", "frameButtWrapMode"), frame))
+        processes.append((_outer_process(parameters), frame))
     if parameters["accessDoorEnabled"]:
         processes.extend((
             (_process(parameters, "doorFrameJoinType", "doorFrameButtWrapMode"), _profile(parameters, "doorFrame")),
@@ -238,7 +236,7 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
     if layout == "four_sides":
         _add_processed_rectangle(
             items, counters, "outer_frame", "大外框", 0, 0, width, height,
-            frame, "main", _process(parameters, "frameJoinType", "frameButtWrapMode"), parameters,
+            frame, "main", _outer_process(parameters), parameters,
             "outerFrameGroove", user_mould_root,
         )
     else:
@@ -255,9 +253,7 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
         else:
             raise ValueError(f"不支持的外框布置：{layout}")
 
-    horizontal_connection = str(parameters.get("mainHorizontalConnection", "insert"))
-    horizontal_reserve = (_number(parameters, "horizontalBranchReserve")
-                          if horizontal_connection == "insert" else 0.0)
+    horizontal_reserve = _number(parameters, "horizontalBranchReserve")
     vertical_reserve = _number(parameters, "verticalBranchReserve")
     has_side_frame = layout != "top_bottom"
     has_top_bottom_frame = layout != "left_right"
@@ -410,6 +406,14 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
                 "bendAllowance": item.bend_allowance,
                 "bendLocations": bend_locations[item.key],
             }
+            if item.key.startswith("outer_frame."):
+                properties["tubeDesigner.frameManufacturing"] = {
+                    "mode":"plane_v_notch",
+                    "closed":True, "closure":"straight_mid_edge",
+                    "foldOrder":"from_last_station_to_first",
+                    "bends":[{"sequence":i+1, "station":position, "angle":90.0, "rotation":0.0}
+                             for i,position in enumerate(bend_locations[item.key])],
+                }
         else:
             properties["manufacturing.categoryName"] = item.category_name or item.name
             properties["manufacturing.categoryKey"] = item.category_key or item.key.rsplit(".", 1)[0]
@@ -418,7 +422,7 @@ def _generate_geometry(parameters: dict[str, Any], context: dict[str, Any]) -> d
             }
             if item.key.startswith("main_grid.horizontal."):
                 main_joints[item.key] = _main_horizontal_joints(
-                    item, items, connection=horizontal_connection, reserve=horizontal_reserve,
+                    item, items, reserve=horizontal_reserve,
                     outer_start=horizontal_start, outer_end=horizontal_end,
                     has_side_frame=has_side_frame,
                 )

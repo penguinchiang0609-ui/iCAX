@@ -1,0 +1,64 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": true }
+      },
+      "fields": {
+        "depth": { "group": "dimensions", "order": 10, "title": { "zh-CN": "总高度 H" } },
+        "topFlangeWidth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "上翼缘 B₁" } },
+        "bottomFlangeWidth": { "group": "dimensions", "order": 30, "title": { "zh-CN": "下翼缘 B₂" } },
+        "wallThickness": { "group": "dimensions", "order": 40, "title": { "zh-CN": "板厚 t" } },
+        "bendRadius": { "group": "dimensions", "order": 50, "title": { "zh-CN": "内弯 R" } },
+        "useLips": { "group": "advanced", "order": 10, "line": "full", "title": { "zh-CN": "启用卷边" } },
+        "useIndependentLips": { "group": "advanced", "order": 20, "line": "full", "title": { "zh-CN": "上下卷边独立设置" }, "visibleWhen": { "op": "eq", "parameter": "useLips", "value": true } },
+        "lipLength": { "group": "advanced", "order": 30, "title": { "zh-CN": "卷边长度 C" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": false }] } },
+        "lipAngle": { "group": "advanced", "order": 40, "title": { "zh-CN": "卷边角度 θ" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": false }] } },
+        "topLipLength": { "group": "advanced", "order": 50, "title": { "zh-CN": "上卷边 C₁" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+        "bottomLipLength": { "group": "advanced", "order": 60, "title": { "zh-CN": "下卷边 C₂" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+        "topLipAngle": { "group": "advanced", "order": 70, "title": { "zh-CN": "上卷边角 θ₁" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+        "bottomLipAngle": { "group": "advanced", "order": 80, "title": { "zh-CN": "下卷边角 θ₂" }, "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": { "title": { "zh-CN": "基本尺寸" }, "order": 20, "defaultOpen": true },
+        "advanced": { "title": { "zh-CN": "高级设置" }, "order": 30, "defaultOpen": true }
+      },
+      "annotations": {
+        "depth": { "label": { "zh-CN": "总高度 H" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "topFlangeWidth": { "label": { "zh-CN": "上翼缘 B₁" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "bottomFlangeWidth": { "label": { "zh-CN": "下翼缘 B₂" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm" },
+        "wallThickness": { "label": { "zh-CN": "板厚 t" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm" },
+        "bendRadius": { "label": { "zh-CN": "内弯 R" }, "group": "dimensions", "order": 50, "editable": true, "suffix": " mm" },
+        "lipLength": { "label": { "zh-CN": "卷边 C" }, "group": "advanced", "order": 30, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": false }] } },
+        "lipAngle": { "label": { "zh-CN": "卷边角 θ" }, "group": "advanced", "order": 40, "editable": true, "suffix": "°", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": false }] } },
+        "topLipLength": { "label": { "zh-CN": "上卷边 C₁" }, "group": "advanced", "order": 50, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+        "bottomLipLength": { "label": { "zh-CN": "下卷边 C₂" }, "group": "advanced", "order": 60, "editable": true, "suffix": " mm", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+        "topLipAngle": { "label": { "zh-CN": "上卷边角 θ₁" }, "group": "advanced", "order": 70, "editable": true, "suffix": "°", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+        "bottomLipAngle": { "label": { "zh-CN": "下卷边角 θ₂" }, "group": "advanced", "order": 80, "editable": true, "suffix": "°", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "depth", "kind": "linear", "from": [0, "-depth/2"], "to": [0, "depth/2"], "axis": "y", "side": "left", "description": "总高度 H" },
+          { "parameter": "topFlangeWidth", "kind": "linear", "from": [0, "(depth-wallThickness)/2"], "to": ["topFlangeWidth", "(depth-wallThickness)/2"], "axis": "x", "side": "top", "description": "上翼缘 B₁" },
+          { "parameter": "bottomFlangeWidth", "kind": "linear", "from": ["-bottomFlangeWidth", "-(depth-wallThickness)/2"], "to": [0, "-(depth-wallThickness)/2"], "axis": "x", "side": "bottom", "description": "下翼缘 B₂" },
+          { "parameter": "wallThickness", "kind": "linear", "from": ["-wallThickness/2", 0], "to": ["wallThickness/2", 0], "axis": "x", "side": "top", "description": "板厚 t" },
+          { "parameter": "bendRadius", "kind": "leader", "point": ["wallThickness/2+bendRadius", "-depth/2+wallThickness+bendRadius"], "side": "right", "description": "内弯 R" },
+          { "parameter": "lipLength", "kind": "leader", "point": ["topFlangeWidth-lipLength*cos(lipAngle*0.0174532925199433)", "(depth-wallThickness)/2-lipLength*sin(lipAngle*0.0174532925199433)"], "side": "right", "description": "卷边长度 C", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": false }] } },
+          { "parameter": "lipAngle", "kind": "leader", "point": ["topFlangeWidth", "(depth-wallThickness)/2"], "side": "right", "description": "卷边角度 θ", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": false }] } },
+          { "parameter": "topLipLength", "kind": "leader", "point": ["topFlangeWidth-topLipLength*cos(topLipAngle*0.0174532925199433)", "(depth-wallThickness)/2-topLipLength*sin(topLipAngle*0.0174532925199433)"], "side": "right", "description": "上卷边 C₁", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+          { "parameter": "bottomLipLength", "kind": "leader", "point": ["-bottomFlangeWidth+bottomLipLength*cos(bottomLipAngle*0.0174532925199433)", "-(depth-wallThickness)/2+bottomLipLength*sin(bottomLipAngle*0.0174532925199433)"], "side": "left", "description": "下卷边 C₂", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+          { "parameter": "topLipAngle", "kind": "leader", "point": ["topFlangeWidth", "(depth-wallThickness)/2"], "side": "right", "description": "上卷边角 θ₁", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } },
+          { "parameter": "bottomLipAngle", "kind": "leader", "point": ["-bottomFlangeWidth", "-(depth-wallThickness)/2"], "side": "left", "description": "下卷边角 θ₂", "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "useLips", "value": true }, { "op": "eq", "parameter": "useIndependentLips", "value": true }] } }
+        ]
+      }
+    }
+  }
+}

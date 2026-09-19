@@ -1,0 +1,102 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": {
+          "title": { "zh-CN": "基本尺寸" },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "fields": {
+        "radius": {
+          "group": "dimensions",
+          "order": 10,
+          "title": { "zh-CN": "外接圆半径" },
+          "help": { "zh-CN": "正多边形尖角顶点所在外接圆的半径 / mm" }
+        },
+        "sideCount": {
+          "group": "dimensions",
+          "order": 20,
+          "title": { "zh-CN": "边数" },
+          "help": { "zh-CN": "正多边形的边数，范围 3–32" }
+        },
+        "cornerRadius": {
+          "group": "dimensions",
+          "order": 30,
+          "title": { "zh-CN": "圆角 R" },
+          "help": { "zh-CN": "相邻两条直线边之间的共同圆角半径 / mm" }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": {
+          "title": { "zh-CN": "基本尺寸" },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "annotations": {
+        "radius": {
+          "label": { "zh-CN": "外接圆半径" },
+          "group": "dimensions",
+          "order": 10,
+          "editable": true,
+          "suffix": " mm"
+        },
+        "sideCount": {
+          "label": { "zh-CN": "边数" },
+          "group": "dimensions",
+          "order": 20,
+          "editable": true
+        },
+        "cornerRadius": {
+          "label": { "zh-CN": "圆角 R" },
+          "group": "dimensions",
+          "order": 30,
+          "editable": true,
+          "suffix": " mm"
+        }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          {
+            "parameter": "radius",
+            "kind": "linear",
+            "from": [0, 0],
+            "to": ["radius", 0],
+            "axis": "x",
+            "side": "top",
+            "description": "外接圆半径"
+          },
+          {
+            "parameter": "sideCount",
+            "kind": "leader",
+            "point": [
+              "radius*cos(6.283185307179586/sideCount)",
+              "radius*sin(6.283185307179586/sideCount)"
+            ],
+            "side": "left",
+            "description": "边数"
+          },
+          {
+            "parameter": "cornerRadius",
+            "kind": "leader",
+            "point": [
+              "radius-cornerRadius*(1/cos(3.141592653589793/sideCount)-1)",
+              0
+            ],
+            "side": "right",
+            "description": "相邻直边之间的圆角 R"
+          }
+        ]
+      }
+    }
+  }
+}

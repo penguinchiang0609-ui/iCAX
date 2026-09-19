@@ -9,4 +9,10 @@ def generate(p, context):
         [radius, 0], [radius / 2, half_flat], [-radius / 2, half_flat],
         [-radius, 0], [-radius / 2, -half_flat], [radius / 2, -half_flat]
     ]
-    return {"mode": "profile", "contours": [{"kind": "polygon", "points": points}]}
+    return {"mode": "profile", "contours": [path(points)]}
+def path(points):
+    return {"kind":"path", "closed":True, "segments":[
+        {"kind":"line", "start":list(points[i]), "end":list(points[(i+1)%len(points)])}
+        for i in range(len(points))
+    ]}
+

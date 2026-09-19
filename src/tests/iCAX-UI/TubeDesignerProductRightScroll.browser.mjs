@@ -30,7 +30,7 @@ const template = {
   })),
 };
 const values = Object.fromEntries(raw.parameters.map((field) => [field.key, field.defaultValue]));
-Object.assign(values, { frameLayout: "four_sides", frameJoinType: "v_groove_90:sharp_v" });
+Object.assign(values, { frameLayout: "four_sides", frameJoinType: "v_groove_90:tool_library" });
 const product = { entityId: "window-1", templateId: raw.id, name: "已拆单防盗窗", quantity: 1, parameters: values };
 const view = {
   scene: { tubeDesigner: {

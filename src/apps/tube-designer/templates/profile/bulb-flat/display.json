@@ -1,0 +1,60 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": {
+          "title": { "zh-CN": "基本尺寸" },
+          "order": 20,
+          "defaultOpen": true
+        },
+        "advanced": {
+          "title": { "zh-CN": "高级设置" },
+          "order": 30,
+          "defaultOpen": false
+        }
+      },
+      "fields": {
+        "width": { "group": "dimensions", "order": 10, "title": { "zh-CN": "总宽 b" }, "help": { "zh-CN": "球扁钢截面总宽 b / mm" } },
+        "depth": { "group": "dimensions", "order": 20, "title": { "zh-CN": "总高 h" }, "help": { "zh-CN": "球扁钢截面总高 h / mm" } },
+        "wallThickness": { "group": "dimensions", "order": 30, "title": { "zh-CN": "腹板厚 t" }, "help": { "zh-CN": "长直腹板厚度 t / mm" } },
+        "bulbRadius1": { "group": "dimensions", "order": 40, "title": { "zh-CN": "球头过渡 R1" }, "help": { "zh-CN": "球头上部及球头向腹板过渡圆角 / mm" } },
+        "bulbRadius2": { "group": "dimensions", "order": 50, "title": { "zh-CN": "球头下侧 R2" }, "help": { "zh-CN": "球头下侧与底边连接圆角 / mm" } },
+        "endRadius": { "group": "dimensions", "order": 60, "title": { "zh-CN": "自由端 R" }, "help": { "zh-CN": "腹板自由端上下圆角 / mm" } },
+        "mirrorX": { "group": "advanced", "order": 70, "line": "full", "title": { "zh-CN": "左右镜像" }, "help": { "zh-CN": "沿截面竖直中心线镜像" } }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": {
+          "title": { "zh-CN": "基本尺寸" },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "annotations": {
+        "width": { "label": { "zh-CN": "总宽 b" }, "group": "dimensions", "order": 10, "editable": true, "suffix": " mm" },
+        "depth": { "label": { "zh-CN": "总高 h" }, "group": "dimensions", "order": 20, "editable": true, "suffix": " mm" },
+        "wallThickness": { "label": { "zh-CN": "腹板厚 t" }, "group": "dimensions", "order": 30, "editable": true, "suffix": " mm" },
+        "bulbRadius1": { "label": { "zh-CN": "球头过渡 R1" }, "group": "dimensions", "order": 40, "editable": true, "suffix": " mm" },
+        "bulbRadius2": { "label": { "zh-CN": "球头下侧 R2" }, "group": "dimensions", "order": 50, "editable": true, "suffix": " mm" },
+        "endRadius": { "label": { "zh-CN": "自由端 R" }, "group": "dimensions", "order": 60, "editable": true, "suffix": " mm" }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          { "parameter": "width", "kind": "linear", "from": [0, 0], "to": ["width", 0], "axis": "x", "side": "bottom", "description": "截面总宽 b" },
+          { "parameter": "depth", "kind": "linear", "from": [0, 0], "to": [0, "depth"], "axis": "y", "side": "left", "description": "截面总高 h" },
+          { "parameter": "wallThickness", "kind": "linear", "from": [0, "depth/3"], "to": ["wallThickness", "depth/3"], "axis": "x", "side": "bottom", "description": "腹板厚 t" },
+          { "parameter": "bulbRadius1", "kind": "leader", "point": ["wallThickness", "depth-wallThickness"], "side": "right", "description": "球头过渡 R1" },
+          { "parameter": "bulbRadius2", "kind": "leader", "point": ["wallThickness", 0], "side": "right", "description": "球头下侧 R2" },
+          { "parameter": "endRadius", "kind": "leader", "point": ["endRadius*(1-0.7071067811865476)", "endRadius*(1-0.7071067811865476)"], "side": "left", "description": "自由端 R" }
+        ],
+        "mirrorParameter": "mirrorX"
+      }
+    }
+  }
+}

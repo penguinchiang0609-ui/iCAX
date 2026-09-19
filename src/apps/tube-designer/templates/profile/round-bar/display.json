@@ -1,0 +1,78 @@
+{
+  "schema": "icax.template-display",
+  "schemaVersion": 1,
+  "views": {
+    "right": {
+      "groups": {
+        "dimensions": {
+          "title": {
+            "zh-CN": "基本尺寸"
+          },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "fields": {
+        "width": {
+          "group": "dimensions",
+          "order": 10,
+          "title": {
+            "zh-CN": "直径"
+          },
+          "help": {
+            "zh-CN": "直径 / mm"
+          },
+          "width": {
+            "min": 56,
+            "preferred": 72,
+            "max": 84
+          }
+        }
+      }
+    },
+    "scene": {
+      "annotationGroups": {
+        "dimensions": {
+          "title": {
+            "zh-CN": "基本尺寸"
+          },
+          "order": 20,
+          "defaultOpen": true
+        }
+      },
+      "annotations": {
+        "width": {
+          "label": {
+            "zh-CN": "直径"
+          },
+          "group": "dimensions",
+          "order": 10,
+          "editable": true,
+          "suffix": " mm"
+        }
+      }
+    },
+    "section": {
+      "parameterDiagram": {
+        "schemaVersion": 1,
+        "annotations": [
+          {
+            "parameter": "width",
+            "kind": "linear",
+            "from": [
+              "-width/2",
+              0
+            ],
+            "to": [
+              "width/2",
+              0
+            ],
+            "axis": "x",
+            "side": "top",
+            "description": "外圆直径"
+          }
+        ]
+      }
+    }
+  }
+}

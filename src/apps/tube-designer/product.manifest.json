@@ -66,13 +66,13 @@
         },
         {
           "templateId": "single-face-security-window",
-          "version": "3.5.3",
+          "version": "3.7.0",
           "displayName": "窗/防盗窗",
           "status": "available"
         },
         {
           "templateId": "minimal-protective-grille",
-          "version": "1.0.0",
+          "version": "1.1.0",
           "displayName": "窗/极简防护网",
           "status": "available",
           "industry": "门窗防护"

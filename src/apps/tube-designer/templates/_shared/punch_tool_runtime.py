@@ -377,157 +377,17 @@ def _validate_geometry(value, target):
         raise ValueError("刀具输出模式与加工位置不兼容")
 
 
-V_NOTCH_STYLE_TO_ID = {
-    "sharp_v": "v-notch-sharp", "asymmetric_v": "v-notch-sharp",
-    "left_arc": "edge-arc-groove",
-    "right_arc": "edge-arc-groove", "relief_v": "v-notch-sharp",
-    # The former unverified flat-v shape is represented by a sharp V with a
-    # preserved flat root, so old recipes remain editable without that package.
-    "flat_v": "v-notch-sharp",
-}
-V_NOTCH_SHAPE_KEYS = {
-    "v-notch-sharp": {"angle", "asymmetric", "leftAngle", "rightAngle", "leaveBottom", "bottomStrategy", "flatWidth", "roundRadius", "reliefLength", "reliefHeight", "reliefRadius", "maleFemale", "maleFemaleSize"},
-    "edge-arc-groove": {"angle", "leftArc", "bridge", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth"},
-}
-for _keys in V_NOTCH_SHAPE_KEYS.values():
-    _keys.update(("bottomReference", "wallThickness", "reliefDepth", "reliefSide",
-                  "bendCompensation", "useDefaultKFactor", "kFactor"))
-V_NOTCH_SHAPE_KEYS["v-notch-sharp"].add("flatReference")
-V_NOTCH_SHAPE_KEYS["v-notch-sharp"].update(("rootSlotPattern","centerSlotLength","sideSlotLength",
-    "centerSlotWidth","sideSlotWidth","rootKerf","minimumBridge","segmentedBend","segmentCount","centerlineRadius"))
-V_NOTCH_SHAPE_KEYS["edge-arc-groove"].add("arcDefinition")
-V_NOTCH_SHAPE_KEYS["v-notch-sharp"].update(("maximumChordError","reliefShape"))
-
-
-def _migrate_sharp_parameters(params, old_style=""):
-    """Translate former combined-V fields to the independent sharp V."""
-    if old_style == "asymmetric_v":
-        params.setdefault("asymmetric", True)
-        if "angle" not in params and all(key in params for key in ("leftAngle", "rightAngle")):
-            params["angle"] = float(params["leftAngle"]) + float(params["rightAngle"])
-    if "bridge" in params and "leaveBottom" not in params:
-        params["leaveBottom"] = params["bridge"]
-    if "rootWidth" in params and "flatWidth" not in params:
-        params["flatWidth"] = params["rootWidth"]
-    if "rootRadius" in params and "roundRadius" not in params:
-        params["roundRadius"] = params["rootRadius"]
-        if params["rootRadius"]:
-            params.setdefault("bottomStrategy", "rounded")
-    if "reliefWidth" in params and "reliefHeight" not in params:
-        params["reliefHeight"] = params["reliefWidth"]
-    if params.get("flatWidth", 0) and "bottomStrategy" not in params:
-        params["bottomStrategy"] = "flat"
-    if params.get("reliefDiameter", 0) and "reliefWidth" not in params:
-        params["reliefLength"] = params["reliefDiameter"]
-        params["reliefHeight"] = params.get("reliefDiameter")
-        params["reliefRadius"] = 0
-        params.setdefault("bottomStrategy", "relief")
-    if old_style == "relief_v":
-        diameter = params.get("holeDiameter", params.get("reliefDiameter"))
-        if diameter is not None:
-            params.setdefault("reliefLength", diameter)
-            params.setdefault("reliefHeight", diameter)
-            params.setdefault("reliefRadius", 0)
-        params.setdefault("bottomStrategy", "relief")
-    if old_style == "flat_v" and params.get("flatWidth", 0):
-        params["bottomStrategy"] = "flat"
-    for key in ("bridge", "rootWidth", "reliefWidth", "reliefDiameter", "reliefLift", "bottomCut", "bottomCutWidth", "rootRadius", "holeDiameter", "holeLift", "radius", "curveRadius"):
-        params.pop(key, None)
-
-
 BRANCH_PLACEMENT_KEYS = ("angle", "azimuth", "roll", "offsetY", "offsetZ", "direction", "length")
-END_PLACEMENT_KEYS = {
-    "end-convex": ("angle", "offset"), "end-cope": ("angle", "offset"),
-    "end-key-joint": ("offset",),
-    "end-profile": ("angle", "azimuth", "roll", "axialOffset", "offsetY", "offsetZ"),
-}
 
 
-def _migrate_record(item):
-    """Convert old flat recipes to geometry-only tool parameters."""
-    item = copy.deepcopy(item) if isinstance(item, dict) else {}
-    supplied = item.get("toolParameters")
-    had_parameters = isinstance(supplied, dict)
-    params = copy.deepcopy(supplied) if isinstance(supplied, dict) else {}
-    ref = item.get("toolRef") if isinstance(item.get("toolRef"), dict) else {}
-    tool_id = str(ref.get("id") or item.get("type") or "")
-    changed = False
-    if tool_id == "v-notch":
-        style = str(params.get("style", item.get("style", "sharp_v")))
-        tool_id = V_NOTCH_STYLE_TO_ID.get(style, "v-notch-sharp")
-        item["type"] = tool_id
-        item["toolRef"] = {"id": tool_id}
-        if "rotation" in params:
-            item.setdefault("rotation", params["rotation"])
-        params.pop("style", None); params.pop("rotation", None)
-        if style == "flat_v" and "rootWidth" not in params and "flatWidth" in params:
-            params["rootWidth"] = params["flatWidth"]
-        if tool_id == "edge-arc-groove":
-            params["leftArc"] = style == "left_arc"
-        if style == "rounded_v":
-            _migrate_rounded_parameters(params)
-            _migrate_sharp_parameters(params)
-        elif tool_id == "v-notch-sharp":
-            _migrate_sharp_parameters(params, style)
-        item.pop("style", None); item.pop("flatWidth", None)
-        allowed = V_NOTCH_SHAPE_KEYS[tool_id]
-        params = {key: value for key, value in params.items() if key in allowed}
-        changed = True
-    elif tool_id in V_NOTCH_SHAPE_KEYS:
-        before = copy.deepcopy(params)
-        if tool_id == "v-notch-sharp":
-            _migrate_sharp_parameters(params)
-        allowed = V_NOTCH_SHAPE_KEYS[tool_id]
-        params = {key: value for key, value in params.items() if key in allowed}
-        changed = changed or before != params
-        if "rotation" in params:
-            item.setdefault("rotation", params.pop("rotation"))
-            changed = True
-        if changed:
-            item["toolRef"] = {"id": tool_id}
-    if tool_id == "branch-profile":
-        for key in BRANCH_PLACEMENT_KEYS:
-            if key in params:
-                item.setdefault(key, params.pop(key)); changed = True
-    for key in END_PLACEMENT_KEYS.get(tool_id, ()):
-        if key in params:
-            item.setdefault(key, params.pop(key)); changed = True
-    if had_parameters or params:
-        item["toolParameters"] = params
-    else:
-        item.pop("toolParameters", None)
-    if changed:
-        item.pop("frozenTool", None); item.pop("frozenCut", None)
-        if tool_id:
-            item["toolRef"] = {"id": tool_id}
-    return item
-
-
-def _migrate_recipe(value):
-    recipe = copy.deepcopy(value) if isinstance(value, dict) else {}
-    if isinstance(recipe.get("features"), list):
-        recipe["features"] = [_migrate_record(item) for item in recipe["features"]]
-    if isinstance(recipe.get("ends"), dict):
-        recipe["ends"] = {key: _migrate_record(item) for key, item in recipe["ends"].items()}
-    return recipe
-
-
-def _migrate_payload(value):
-    parameters = copy.deepcopy(value) if isinstance(value, dict) else {}
-    migrated = _migrate_recipe(parameters)
-    if isinstance(migrated.get("original"), dict):
-        migrated["original"] = _migrate_recipe(migrated["original"])
-    return migrated
-
-
-def _legacy_parameters(item, descriptor):
-    # Migration only: old projects stored flat shape parameters.
-    return {p["key"]: item.get(p["key"], p["defaultValue"]) for p in descriptor.get("parameters", [])}
+def _default_parameters(descriptor):
+    return {p["key"]: copy.deepcopy(p["defaultValue"])
+            for p in descriptor.get("parameters", [])}
 
 
 def _installed(ref, user_tools=None, user_root=None):
     if not isinstance(ref, dict):
-        return True  # Legacy migration is validated by the normal evaluator.
+        return False
     _user = _user_entry(ref, user_tools)
     if _user:
         item, descriptor = _user
@@ -586,9 +446,7 @@ def _check_original(parameters, user_tools=None, user_root=None):
 
 
 def prepare(parameters):
-    # Migrate the persisted recipe before lock checks or tool resolution. The
-    # product no longer ships the old combined V-notch package.
-    parameters = _migrate_payload(parameters)
+    parameters = copy.deepcopy(parameters) if isinstance(parameters, dict) else {}
     user_tools = parameters.get("userTools", [])
     user_root = parameters.get("userToolRoot")
     _check_original(parameters, user_tools, user_root)
@@ -602,13 +460,15 @@ def prepare(parameters):
     for source in parameters.get("features", []):
         item = copy.deepcopy(source)
         item.pop("toolSnapshot", None)
+        if not isinstance(item.get("toolRef"), dict):
+            raise ValueError("刀具特征必须引用当前模具包")
         _check_locked(item, user_tools, user_root)
         if item.get("enabled") is False:
             if item.get("frozenTool") and _installed(item.get("toolRef"), user_tools, user_root):
                 item["frozenTool"]["instance"] = _instance(item)
             result["features"].append(item)
             continue
-        ref = item.get("toolRef") or {"id": item.get("type", "circle")}
+        ref = item["toolRef"]
         supplied = item.get("toolParameters")
         if supplied is None:
             _user = _user_entry(ref, user_tools)
@@ -619,7 +479,7 @@ def prepare(parameters):
                 if package_root is None:
                     raise ValueError("用户刀具目录不可用")
                 _descriptor = _package(package_root / ref["id"], package_root)[0]
-            supplied = _legacy_parameters(item, _descriptor)
+            supplied = _default_parameters(_descriptor)
         # Part tools consume a saved section and an explicit blank-coordinate
         # placement. Their Python is still product-level, never drawing code.
         target = item.get("toolTarget", "side")
@@ -642,11 +502,13 @@ def prepare(parameters):
     for key in ("start", "end"):
         item = copy.deepcopy(parameters.get("ends", {}).get(key, {"type": "keep"}))
         item.pop("toolSnapshot", None)
-        _check_locked(item, user_tools, user_root)
         if item.get("type", "keep") == "keep" and not item.get("toolRef"):
             result["ends"][key] = item
             continue
-        ref = item.get("toolRef") or {"id": "end-" + item["type"]}
+        _check_locked(item, user_tools, user_root)
+        if not isinstance(item.get("toolRef"), dict):
+            raise ValueError("端部加工必须引用当前模具包")
+        ref = item["toolRef"]
         supplied = item.get("toolParameters")
         if supplied is None:
             _user = _user_entry(ref, user_tools)
@@ -657,7 +519,7 @@ def prepare(parameters):
                 if package_root is None:
                     raise ValueError("用户刀具目录不可用")
                 _descriptor = _package(package_root / ref["id"], package_root)[0]
-            supplied = _legacy_parameters(item, _descriptor)
+            supplied = _default_parameters(_descriptor)
         placement = {name: item.get(name, default) for name, default in (("trim", 0), ("rotation", 0), ("datum", "long"))}
         placement.update({key: copy.deepcopy(item[key]) for key in (
             "angle", "azimuth", "roll", "axialOffset", "offsetY", "offsetZ", "offset") if key in item})

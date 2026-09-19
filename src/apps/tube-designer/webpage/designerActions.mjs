@@ -11,7 +11,9 @@ import {
   renderDesignerAddDialog,
   renderDesignerAddParameterContent,
   renderDesignerRightParameterContent,
+  renderDesignerToolDiagramDock,
   renderDesignerRuntimeStatus,
+  renderDesignerSpecificationAnnotationTree,
   renderDesignerProductPartsDock,
   renderBatchExcelTemplateDialog,
   renderBatchExcelImportDialog,
@@ -77,6 +79,7 @@ import {
   bindProductSpecificationAnnotations,
 } from "./productParameterDiagram.mjs";
 import { matchesParameterCondition } from "./parameterConditions.mjs";
+import { refreshFloatingParameterDiagram } from './floatingParameterDiagram.mjs';
 import { escapeText } from "../../_shared/workbench/utils/format.mjs";
 
 export const DESIGNER_OPERATION_PROGRESS_MINIMUM_VISIBLE_MS = 500;
@@ -340,6 +343,33 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   if (action === "tube-designer-excel-template-select") {
     return { handled: true, result: await selectBatchExcelTemplate(context, view, target, ops) };
   }
+  if (action === "tube-designer-excel-template-toggle-all") {
+    const kind = String(target?.dataset?.tubeDesignerExcelSelectAll ?? "");
+    const form = target?.closest?.("[data-tube-designer-excel-template-form]")
+      ?? resolveDesignerMount(context)?.querySelector?.("[data-tube-designer-excel-template-form]");
+    const attribute = kind === "required" ? "data-tube-designer-excel-required"
+      : kind === "include" ? "data-tube-designer-excel-include" : "";
+    if (attribute) {
+      for (const input of form?.querySelectorAll?.(`[${attribute}]`) ?? []) input.checked = Boolean(target?.checked);
+      target.indeterminate = false;
+    }
+    return { handled: true, result: Boolean(target?.checked) };
+  }
+  if (action === "tube-designer-excel-template-selection-change") {
+    const kind = String(target?.dataset?.tubeDesignerExcelSelectionKind ?? "");
+    const form = target?.closest?.("[data-tube-designer-excel-template-form]")
+      ?? resolveDesignerMount(context)?.querySelector?.("[data-tube-designer-excel-template-form]");
+    const attribute = kind === "required" ? "data-tube-designer-excel-required"
+      : kind === "include" ? "data-tube-designer-excel-include" : "";
+    const header = form?.querySelector?.(`[data-tube-designer-excel-select-all="${kind}"]`);
+    const inputs = attribute ? Array.from(form?.querySelectorAll?.(`[${attribute}]`) ?? []) : [];
+    if (header && inputs.length) {
+      const selected = inputs.filter((input) => input.checked).length;
+      header.checked = selected === inputs.length;
+      header.indeterminate = selected > 0 && selected < inputs.length;
+    }
+    return { handled: true, result: Boolean(target?.checked) };
+  }
   if (action === "tube-designer-excel-template-close") {
     closeBatchExcelTemplateDialog(context, view, ops);
     return { handled: true };
@@ -378,12 +408,54 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   if (action === "tube-designer-scene-specification-change") {
     return { handled: true, result: await updateSceneSpecificationDraft(context, view, target, ops) };
   }
+  if (action === "tube-designer-toggle-specification-tree-collapse") {
+    view.tubeDesignerSpecificationTreeCollapsed = view.tubeDesignerSpecificationTreeCollapsed !== true;
+    const tree = resolveDesignerMount(context)
+      ?.querySelector?.("[data-tube-designer-specification-tree]");
+    if (tree) tree.outerHTML = renderDesignerSpecificationAnnotationTree(view);
+    return { handled: true, result: view.tubeDesignerSpecificationTreeCollapsed };
+  }
   if (action === "tube-designer-toggle-specification-annotations") {
-    const visible = view.tubeDesignerSpecificationAnnotationsVisible === false;
-    view.tubeDesignerSpecificationAnnotationsVisible = visible;
+    const groupKeys = String(target?.dataset?.tubeDesignerAnnotationGroups ?? "")
+      .split(/\s+/).filter(Boolean);
+    const visibility = { ...(view.tubeDesignerSpecificationAnnotationGroupVisibility ?? {}) };
+    const currentlyAllVisible = view.tubeDesignerSpecificationAnnotationsVisible !== false
+      && (groupKeys.length ? groupKeys.every((key) => visibility[key] !== false) : true);
+    const visible = !currentlyAllVisible;
+    if (groupKeys.length) {
+      for (const key of groupKeys) visibility[key] = visible;
+      view.tubeDesignerSpecificationAnnotationGroupVisibility = visibility;
+      view.tubeDesignerSpecificationAnnotationsVisible = true;
+    } else {
+      view.tubeDesignerSpecificationAnnotationsVisible = visible;
+    }
+    if (!visible) view.tubeDesignerSceneSpecificationEditorParameter = "";
     target?.setAttribute?.("aria-pressed", String(visible));
-    target?.classList?.toggle?.("is-active", visible);
+    target?.setAttribute?.("aria-checked", String(visible));
     bindProductSpecificationAnnotations(context.mount, view);
+    const tree = resolveDesignerMount(context)
+      ?.querySelector?.("[data-tube-designer-specification-tree]");
+    if (tree) tree.outerHTML = renderDesignerSpecificationAnnotationTree(view);
+    return { handled: true, result: visible };
+  }
+  if (action === "tube-designer-toggle-specification-annotation-group") {
+    const groupKeys = String(target?.dataset?.tubeDesignerAnnotationGroups ?? "")
+      .split(/\s+/).filter(Boolean);
+    const visibility = { ...(view.tubeDesignerSpecificationAnnotationGroupVisibility ?? {}) };
+    const currentlyAllVisible = view.tubeDesignerSpecificationAnnotationsVisible !== false
+      && groupKeys.length > 0
+      && groupKeys.every((key) => visibility[key] !== false);
+    const visible = !currentlyAllVisible;
+    for (const key of groupKeys) visibility[key] = visible;
+    view.tubeDesignerSpecificationAnnotationGroupVisibility = visibility;
+    view.tubeDesignerSpecificationAnnotationsVisible = true;
+    if (!visible) view.tubeDesignerSceneSpecificationEditorParameter = "";
+    target?.setAttribute?.("aria-pressed", String(visible));
+    target?.setAttribute?.("aria-checked", String(visible));
+    bindProductSpecificationAnnotations(resolveDesignerMount(context), view);
+    const tree = resolveDesignerMount(context)
+      ?.querySelector?.("[data-tube-designer-specification-tree]");
+    if (tree) tree.outerHTML = renderDesignerSpecificationAnnotationTree(view);
     return { handled: true, result: visible };
   }
   if (action === "tube-designer-product-tool-selection-change") {
@@ -1128,16 +1200,15 @@ function buildBatchExcelTemplateDialogState(template) {
   };
 }
 
-function batchExcelColumnsFromTemplate(template) {
+export function batchExcelColumnsFromTemplate(template) {
   const columns = [
-    { key: "__instanceName", title: "instanceName", displayName: "实例名称", groupTitle: "实例信息", description: "留空时自动命名。", inputKind: "text", included: true, required: false, defaultValue: "" },
-    { key: "__instanceQuantity", title: "quantity", displayName: "生产数量", groupTitle: "实例信息", description: "每一行产品实例的生产数量。", inputKind: "number", minimum: 1, step: 1, included: true, required: true, defaultValue: "1" },
+    { key: "__instanceName", title: "实例名称", displayName: "实例名称", groupTitle: "实例信息", description: "留空时自动命名。", inputKind: "text", included: true, required: false, defaultValue: "" },
+    { key: "__instanceQuantity", title: "生产数量", displayName: "生产数量", groupTitle: "实例信息", description: "每一行产品实例的生产数量。", inputKind: "number", minimum: 1, step: 1, included: true, required: true, defaultValue: "1" },
   ];
   const groupTitles = new Map((template?.groups ?? []).map((group) => [
     String(group?.key ?? ""),
     catalogText(group?.displayName ?? group?.name, String(group?.key ?? "")),
   ]));
-  const titles = new Set(columns.map((column) => column.title));
   for (const field of template?.parameters ?? []) {
     if (field?.readOnly) continue;
     const key = String(field?.key ?? field?.name ?? "").trim();
@@ -1150,11 +1221,7 @@ function batchExcelColumnsFromTemplate(template) {
     if (["installation", "project_rules"].includes(group)) continue;
     const rawDefault = field?.defaultValue ?? field?.default ?? "";
     const displayName = catalogText(field?.displayName ?? field?.label ?? field?.name, key);
-    // The worksheet and embedded template contract use stable English parameter keys.  The
-    // Chinese label remains in the dialog as a human-facing explanation.
-    const title = key;
-    if (titles.has(title)) continue;
-    titles.add(title);
+    const title = displayName;
     const optionSource = Array.isArray(field?.options) ? field.options : (Array.isArray(field?.choices) ? field.choices : []);
     const options = optionSource.map((option) => {
       const value = typeof option === "object" ? option?.value : option;
@@ -1182,6 +1249,22 @@ function batchExcelColumnsFromTemplate(template) {
       required: field?.required !== false,
       defaultValue: rawDefault == null ? "" : String(rawDefault),
     });
+  }
+  const titleCounts = new Map();
+  for (const column of columns) {
+    const title = String(column.displayName ?? column.title ?? column.key);
+    titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
+  }
+  const usedTitles = new Set();
+  for (const column of columns) {
+    const displayName = String(column.displayName ?? column.key);
+    const grouped = (titleCounts.get(displayName) ?? 0) > 1
+      ? `${column.groupTitle || "产品参数"} · ${displayName}`
+      : displayName;
+    let title = grouped;
+    for (let suffix = 2; usedTitles.has(title); suffix += 1) title = `${grouped}（${suffix}）`;
+    column.title = title;
+    usedTitles.add(title);
   }
   return columns;
 }
@@ -1237,9 +1320,15 @@ async function exportBatchExcelTemplate(context, view, ops) {
       .find((input) => String(input?.getAttribute?.(attribute) ?? "") === key);
     const required = Boolean(inputByKey("data-tube-designer-excel-required")?.checked);
     const defaultValue = String(inputByKey("data-tube-designer-excel-default")?.value ?? "");
-    return { key, title: column.title, required, defaultValue };
+    const alias = String(inputByKey("data-tube-designer-excel-alias")?.value ?? "").trim();
+    return { key, title: alias || column.title, required, defaultValue };
   });
   if (!columns.length) throw new Error("请至少勾选一个需要携带到 Excel 的字段。");
+  const titles = new Set();
+  for (const column of columns) {
+    if (titles.has(column.title)) throw new Error(`Excel 列名或别名不能重复：${column.title}`);
+    titles.add(column.title);
+  }
   const bridge = context.appProxy?.bridge ?? context.productProxy?.bridge ?? context.sceneProxy?.bridge ?? null;
   if (typeof bridge?.saveFileDialog !== "function") throw new Error("当前宿主没有提供保存文件能力。");
   const template = await ensureTemplateDescriptor(context, view, state.templateId);
@@ -1837,6 +1926,7 @@ function refreshRightParameterContent(context, designer, view) {
   panel.dataset.tubeDesignerActiveParameter = String(view.tubeDesignerLastEditedParameterKey ?? "");
   bindProductParameterDiagrams(mount);
   bindProductSpecificationAnnotations(mount, view);
+  refreshFloatingParameterDiagram(mount,view,renderDesignerToolDiagramDock);
   return true;
 }
 
@@ -3243,14 +3333,6 @@ function normalizeDependentParameters(parameters, template = null, changedKey = 
     if (presetKeys.has(changedKey)) {
       result[selector] = String(presetDefinition?.customValue ?? "custom");
     }
-  }
-  if (result.vGrooveStyle && result.vGrooveStyle !== "sharp_v") {
-    result.vGrooveBottomCut = typeof result.vGrooveBottomCut === "boolean" ? false : "否";
-    result.vGrooveReliefHole = typeof result.vGrooveReliefHole === "boolean" ? false : "否";
-    result.vGrooveWallOvercut = typeof result.vGrooveWallOvercut === "boolean" ? false : "否";
-  }
-  if (result.vGrooveReliefHole !== true && result.vGrooveReliefHole !== "是") {
-    result.vGrooveReliefNoThrough = typeof result.vGrooveReliefNoThrough === "boolean" ? false : "否";
   }
   normalizeSecurityWindowOpeningSurface(result, template, changedKey);
   return result;

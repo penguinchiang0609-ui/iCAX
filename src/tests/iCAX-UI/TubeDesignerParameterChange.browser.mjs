@@ -275,16 +275,15 @@ try {
 
     const initialMember = view.scene.tubeDesigner.members[0].entityId;
     const initialAnnotation = annotationCalls.at(-1).find((item) => item.parameter === "horizontalMaximumCenterSpacing");
-    const materialInput = mount.querySelector('[data-tube-designer-parameter="materialGrade"]');
-    const originalMaterial = materialInput.value;
-    const changedMaterial = [...materialInput.options].map((option) => option.value)
-      .find((value) => value !== originalMaterial);
-    materialInput.value = changedMaterial;
-    await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", materialInput, ops);
-    const materialChanged = {
+    const metadataInput = mount.querySelector('[data-tube-designer-parameter="productCode"]');
+    const originalMetadata = metadataInput.value;
+    const changedMetadata = `${originalMetadata}-A`;
+    metadataInput.value = changedMetadata;
+    await handleDesignerAreaAction(context, view, "tube-designer-parameter-change", metadataInput, ops);
+    const metadataChanged = {
       call: calls.at(-1),
-      current: products[activeId].current.materialGrade,
-      generated: products[activeId].generated.materialGrade,
+      current: products[activeId].current.productCode,
+      generated: products[activeId].generated.productCode,
       member: view.scene.tubeDesigner.members[0].entityId,
       modelDirty: view.tubeDesignerRightDraftDirty,
       partsDirty: view.tubeDesignerPartsDraftDirty,
@@ -423,9 +422,9 @@ try {
       )].map((node) => node.textContent.trim()),
       initialMember,
       initialAnnotation,
-      originalMaterial,
-      changedMaterial,
-      materialChanged,
+      originalMetadata,
+      changedMetadata,
+      metadataChanged,
       editorOpened,
       annotationFocusCalls,
       callsAfterEditorOpen,
@@ -454,18 +453,18 @@ try {
     "opening an annotation editor must not add another EC update");
   assert.equal(result.initialAnnotation.pending, false);
   assert.equal(result.initialAnnotation.color, 0x27c27a);
-  assert.deepEqual(result.materialChanged.call, {
+  assert.deepEqual(result.metadataChanged.call, {
     method: "TubeDesigner.UpdateProductParameters", productEntityId: "security-window-1",
   });
-  assert.equal(result.materialChanged.current, result.changedMaterial);
-  assert.equal(result.materialChanged.generated, result.originalMaterial);
-  assert.equal(result.materialChanged.member, result.initialMember);
-  assert.equal(result.materialChanged.modelDirty, false,
-    "material/process EC edits must not expire the three-dimensional model");
-  assert.equal(result.materialChanged.partsDirty, true);
-  assert.equal(result.materialChanged.status, "实例模型已是最新");
-  assert.match(result.materialChanged.partsDock, /零件清单已过期，是否重新生成/);
-  assert.match(result.materialChanged.partsDock, /tube-designer-disassemble-active-product/);
+  assert.equal(result.metadataChanged.current, result.changedMetadata);
+  assert.equal(result.metadataChanged.generated, result.originalMetadata);
+  assert.equal(result.metadataChanged.member, result.initialMember);
+  assert.equal(result.metadataChanged.modelDirty, false,
+    "product metadata EC edits must not expire the three-dimensional model");
+  assert.equal(result.metadataChanged.partsDirty, true);
+  assert.equal(result.metadataChanged.status, "实例模型已是最新");
+  assert.match(result.metadataChanged.partsDock, /零件清单已过期，是否重新生成/);
+  assert.match(result.metadataChanged.partsDock, /tube-designer-disassemble-active-product/);
 
   assert.deepEqual(result.changed.calls.slice(-1), [{
     method: "TubeDesigner.UpdateProductParameters", productEntityId: "security-window-1",

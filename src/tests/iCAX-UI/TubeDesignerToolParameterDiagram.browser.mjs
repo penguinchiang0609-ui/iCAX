@@ -44,7 +44,7 @@ try {
     const mount = document.querySelector("#app");
     const view = { activeAreaId: "tools", pending: false, tubeDesignerSystemPunchTools: catalogue,
       tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::v-notch-sharp", showToolDiagram: true, parameterDrafts: {} } };
-    const render = () => { mount.innerHTML = library.renderToolLibraryRightPane({}, view); diagram.bindToolParameterDiagrams(mount); };
+    const render = () => { mount.innerHTML = library.renderToolLibraryRightPane({}, view) + library.renderToolLibraryViewportOverlay({}, view); diagram.bindToolParameterDiagrams(mount); };
     const ops = { renderProject: render };
     document.addEventListener("change", async (event) => {
       const action = event.target?.dataset?.camChangeAction ?? "";
@@ -54,7 +54,7 @@ try {
     window.fixture = { library, diagram, catalogue, view, render };
   }, tools);
 
-  const scope = page.locator("[data-tool-parameter-scope]");
+  const scope = page.locator("#app");
   await scope.locator('[data-tool-parameter-key="angle"]').focus();
   assert.equal(await scope.locator('svg [data-tool-annotation-key="angle"]').evaluate((node) => node.classList.contains("is-active")), true);
   assert.equal(await scope.locator('.tube-tool-library-diagram-row[data-tool-annotation-key="angle"]').evaluate((node) => node.classList.contains("is-active")), true);
@@ -88,7 +88,7 @@ try {
       fixture.view.tubeDesignerToolLibrary.parameterDrafts = {};
       fixture.view.tubeDesignerToolLibrary.showToolDiagram = true;
       fixture.render();
-      const root = document.querySelector("[data-tool-parameter-scope]");
+      const root = document.querySelector("#app");
       const controls = [...root.querySelectorAll("[data-tool-parameter-key]")].map((node) => node.dataset.toolParameterKey);
       const svgAnnotations = [...root.querySelectorAll("svg [data-tool-annotation-key]")].map((node) => node.dataset.toolAnnotationKey);
       const legendAnnotations = [...root.querySelectorAll(".tube-tool-library-diagram-row[data-tool-annotation-key]")].map((node) => node.dataset.toolAnnotationKey);

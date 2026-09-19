@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   bindProductSpecificationAnnotations,
+  resolveProductSpecificationAnnotationTree,
   resolveProductSpecificationAnnotations,
 } from "../../apps/tube-designer/webpage/productParameterDiagram.mjs";
 
@@ -21,6 +22,7 @@ const anchors = [
   { id: "vertical", parameter: "verticalMaximumCenterSpacing", start: [38, 0, 1762], end: [1162, 0, 1762], offset: [0, 0, 42] },
   { id: "door", parameter: "doorClearWidth", start: [300, 0, 400], end: [1100, 0, 400], offset: [0, 0, -38] },
   { id: "door-gap", parameter: "doorGap", start: [338, 0, 400], end: [344, 0, 400], offset: [0, 0, -68] },
+  { id: "door-left", parameter: "doorLeft", start: [38, 0, 400], end: [300, 0, 400], offset: [0, 0, -84] },
 ];
 
 assert.ok(!template.parameters.some((field) => ["doorHingeSide", "doorHingeCount"].includes(field.key)),
@@ -54,33 +56,23 @@ assert.ok(!single.some((item) => item.parameter === "sideWidth"),
   "single-face windows must not show a hidden side-depth annotation");
 assert.ok(single.every((item) => item.color === 0x27c27a),
   "specification annotations use green and stay separate from orange part selection");
+assert.equal(single.find((item) => item.parameter === "width")?.groupKey, "overall");
+assert.equal(single.find((item) => item.parameter === "horizontalMaximumCenterSpacing")?.groupKey, "main_grid");
+assert.equal(single.find((item) => item.parameter === "doorClearWidth")?.groupKey, "door_size");
+assert.equal(single.find((item) => item.parameter === "doorLeft")?.groupKey, "door_location");
 
-const legacyDisplay = structuredClone(display);
-legacyDisplay.views.scene.annotations.horizontalCount = {
-  kind: "linear", label: { "zh-CN": "主横杆" }, order: 999, editable: true,
-};
-legacyDisplay.views.scene.annotations.maximumVerticalClearGap = {
-  kind: "spacing", label: { "zh-CN": "最大竖杆净间距" }, order: 1000, editable: true,
-};
-const withoutLegacyCounts = resolveProductSpecificationAnnotations({
-  templates: [{ ...descriptor, display: legacyDisplay }],
-  product: {
-    entityId: "legacy-security-window",
-    templateId: descriptor.id,
-    parameters: { ...defaults, faceType: "single", horizontalCount: 4 },
-  },
-  specificationAnnotations: [
-    ...anchors,
-    { id: "legacy-horizontal-count", parameter: "horizontalCount", kind: "linear",
-      start: [0, 0, 0], end: [1200, 0, 0] },
-    { id: "legacy-vertical-clear-gap", parameter: "maximumVerticalClearGap", kind: "spacing",
-      start: [0, 0, 0], end: [110, 0, 0] },
-  ],
-}, {});
-assert.ok(!withoutLegacyCounts.some((item) => item.parameter === "horizontalCount"),
-  "legacy count anchors such as 主横杆 4根 must never reappear in the scene");
-assert.ok(!withoutLegacyCounts.some((item) => item.parameter === "maximumVerticalClearGap"),
-  "legacy clear-gap anchors must not compete with centre-spacing specifications");
+const tree = resolveProductSpecificationAnnotationTree(designer({
+  faceType: "single",
+  accessDoorEnabled: true,
+}), {});
+assert.equal(tree.label, "规格标注");
+assert.equal(tree.state, "all");
+assert.ok(tree.children.some((item) => item.key === "overall" && item.label === "尺寸参数"));
+assert.ok(tree.children.some((item) => item.key === "main_grid" && item.label === "主格栅"));
+const escapeWindow = tree.children.find((item) => item.key === "section:escape_window");
+assert.equal(escapeWindow?.label, "逃生窗");
+assert.deepEqual(escapeWindow?.children.map((item) => item.key), ["door_size", "door_location"]);
+assert.deepEqual(escapeWindow?.children.map((item) => item.label), ["开启口尺寸", "开启口位置"]);
 
 const withoutDoor = resolveProductSpecificationAnnotations(designer({
   faceType: "single",
@@ -129,6 +121,11 @@ const view = {
 };
 assert.ok(bindProductSpecificationAnnotations(null, view).length > 0);
 assert.equal(calls.at(-1)[0], "set");
+view.tubeDesignerSpecificationAnnotationGroupVisibility = { main_grid: false };
+const withoutMainGrid = bindProductSpecificationAnnotations(null, view);
+assert.ok(withoutMainGrid.some((item) => item.groupKey === "overall"));
+assert.ok(!withoutMainGrid.some((item) => item.groupKey === "main_grid"));
+assert.equal(resolveProductSpecificationAnnotationTree(view.scene.tubeDesigner, view).state, "mixed");
 view.tubeDesignerSpecificationAnnotationsVisible = false;
 assert.deepEqual(bindProductSpecificationAnnotations(null, view), []);
 assert.equal(calls.at(-1)[0], "clear");
