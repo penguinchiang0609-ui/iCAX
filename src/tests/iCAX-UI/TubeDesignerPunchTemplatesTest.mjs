@@ -14,14 +14,23 @@ const state=createPunchWizardState(part),view={tubeDesignerPunchWizard:state,pen
 installPunchCatalogue(state,{tools,errors:[]});
 const change=(field,value,more={})=>updatePunchWizardField(view,{value,dataset:{tubeDesignerPunchField:field,...more}});
 assert.equal(change("tool","circle"),true);
-assert.equal(change("depthMode","reverse"),true);
-assert.equal(state.draft.reverse,true);assert.equal(state.draft.through,false);assert.equal(state.draft.opposite,false);
+assert.equal(state.draft.blindHole,false);assert.equal(state.draft.cutDepth,5);assert.equal(state.draft.opposite,false);
+assert.equal(updatePunchWizardField(view,{checked:true,value:"on",dataset:{tubeDesignerPunchField:"blindHole"}}),true);
+assert.equal(change("cutDepth","8"),true);
+assert.equal(updatePunchWizardField(view,{checked:true,value:"on",dataset:{tubeDesignerPunchField:"opposite"}}),true);
+assert.equal(state.draft.blindHole,true);assert.equal(state.draft.cutDepth,8);assert.equal(state.draft.opposite,true);
+assert.equal("depthMode" in state.draft,false);assert.equal("through" in state.draft,false);assert.equal("reverse" in state.draft,false);
 assert.equal(change("tool","v-notch-sharp"),true);
 const sheet=renderPunchWizardDialog(part,view,{tableMode:true,showEnds:true,branchProfiles:[]});
 assert.equal(state.draft.toolRef.id,"v-notch-sharp");assert.match(sheet,/左端面/);assert.match(sheet,/右端面/);
+state.preview={revision:state.revision,includesDraft:true,sectionAnalyses:[{
+  index:state.features.length,applicable:true,parameters:{wallThickness:1.9999999999999998},
+}]};
+assert.equal(updatePunchWizardField(view,{checked:true,value:"on",dataset:{tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"maleFemale"}}),true);
+assert.equal(state.draft.toolParameters.maleFemaleSize,2,"the punch wizard must expose the measured wall thickness when公母 is enabled");
 assert.equal(change("tool","fixed-fixture"),true);
 assert.deepEqual(state.draft.toolParameters,{});
-assert.match(renderPunchWizardDialog(part,view),/定式刀具：形状尺寸固定/);
+assert.match(renderPunchWizardDialog(part,view),/定式工艺：形状尺寸固定/);
 assert.ok(addPunchWizardFeature(view,part));
 assert.equal(getPunchWizardPayload(view).features[0].toolRef.id,"fixed-fixture");
 editPunchWizardFeature(view,"edit",0);
@@ -35,10 +44,10 @@ editPunchWizardFeature(view,"redo");
 assert.equal(state.features[0].station,120);
 editPunchWizardFeature(view,"toggle",0);assert.equal(state.features[0].enabled,false);
 editPunchWizardFeature(view,"copy",0);assert.equal(state.features.length,1);assert.equal(state.editingId,"");
-change("tool","end-convex",{tubeDesignerPunchEnd:"end"});
-change("parameter",60,{tubeDesignerPunchEnd:"end",tubeDesignerPunchParameter:"diameter"});
-assert.equal(getPunchWizardPayload(view).ends.end.toolParameters.diameter,60);
-assert.match(renderPunchWizardDialog(part,view),/圆柱凸头/);
+change("tool","end-key-joint",{tubeDesignerPunchEnd:"end"});
+change("parameter",60,{tubeDesignerPunchEnd:"end",tubeDesignerPunchParameter:"width"});
+assert.equal(getPunchWizardPayload(view).ends.end.toolParameters.width,60);
+assert.match(renderPunchWizardDialog(part,view),/插舌／插槽/);
 state.draft.arrayCount=1.5;assert.equal(addPunchWizardFeature(view,part),false);
 assert.equal(state.draft.arrayCount,1.5); // Invalid values are not silently clamped.
 state.draft.arrayCount=1;

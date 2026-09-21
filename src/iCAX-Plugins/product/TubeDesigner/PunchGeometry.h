@@ -24,10 +24,14 @@ namespace iCAX::TubeDesigner
         // the immutable main blank, independently of subsequent end cutting.
         std::string LayoutDatum;
         bool Enabled = true;
+        bool BlindHole = false;
         bool Opposite = false;
-        bool Through = false;
-        bool Reverse = false;
         bool AllowOpen = false;
+        // Blind-hole penetration measured from the first material entry point.
+        // When BlindHole is false, geometry derives the current wall's through
+        // depth from the target section. Opposite adds the same operation from
+        // the opposing side; neither cutter crosses the hollow region.
+        double CutDepth = 0.0;
         double Station = 0.0;
         double Offset = 0.0;
         double Diameter = 10.0;

@@ -83,13 +83,19 @@ try {
     const outcomes = [];
     for (const area of areas) {
       const view = { activeAreaId: area, pending: false, tubeDesignerSystemProfiles: [profile], tubeDesignerSystemPunchTools: [tool], tubeDesignerUserData: { profiles: [] },
-        tubeDesignerSelectedProfileId: 'system:rect', tubeDesignerProfileLibrary: { scope: 'system' }, tubeDesignerToolLibrary: { scope: 'system', selectedKey: 'system::v-notch-sharp' } };
+        tubeDesignerSelectedProfileId: 'system:rect', tubeDesignerProfileLibrary: { scope: 'system' }, tubeDesignerToolLibrary: { scope: 'system', selectedKey: 'system::v-notch-sharp', mainTubeCollapsed: false } };
       const library = area === 'profiles' ? profiles : tools;
       const right = () => area === 'profiles' ? profiles.renderProfileLibraryRightPane({}, view) : tools.renderToolLibraryRightPane({}, view);
       const overlay = () => area === 'profiles' ? profiles.renderProfileLibraryViewportOverlay({}, view) : tools.renderToolLibraryViewportOverlay({}, view);
       const left = '<div class="left-list">资源列表</div>';
       document.body.innerHTML = `<main><div class="cam-workbench"><aside class="cam-context-pane">${left}</aside><div class="cam-viewport"><div class="cam-render-viewport-shell"><div data-cam-render-viewport><div class="icax-three-viewport" data-canonical-viewport><canvas class="icax-three-viewport-canvas"></canvas></div></div></div><div class="cube"></div>${overlay()}</div><aside class="cam-info-pane">${right()}</aside></div></main>`;
       const mount = document.querySelector('main'), context = { mount };
+      if(area==='tools'){
+        const diagramButton=mount.querySelector('.tube-tool-library-tube-section .tube-profile-library-diagram-toggle');
+        const style=getComputedStyle(diagramButton);
+        if(style.appearance!=='none'||style.borderTopWidth!=='1px'||style.fontSize==='13.3333px')throw Error('主管示意图按钮必须沿用管型参数面板的轻量样式');
+        if(mount.querySelector('.tube-tool-library-tube-summary > small'))throw Error('主管参数标题不应重复显示管型规格摘要');
+      }
       if(mount.querySelector('[data-profile-parameter-key="innerRadius4"], [data-profile-annotation-key="innerRadius4"], [data-tool-parameter-key="leaveBottom"], [data-tool-annotation-key="leaveBottom"]'))throw Error('hidden fields must not appear in editors or diagrams');
       bindDiagramDragging(mount,view);
       const floatingLayer=mount.querySelector(':scope .cam-workbench > [data-floating-parameter-diagram-layer]');

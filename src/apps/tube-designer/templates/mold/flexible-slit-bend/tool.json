@@ -1,0 +1,58 @@
+{
+  "schema": "icax.punch-tool",
+  "schemaVersion": 1,
+  "id": "flexible-slit-bend",
+  "version": "1.1.0",
+  "sectionAnalysis": { "schemaVersion": 1 },
+  "inputs": [
+    { "key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true }
+  ],
+  "preview": { "profileRef": { "scope": "system", "id": "rect" } },
+  "displayName": "柔性折弯缝",
+  "kind": "programmatic",
+  "target": "part",
+  "category": "槽口",
+  "description": "直缝、U 槽或圆头窄缝沿目标等曲率区间分布，形成局部柔性区。目标角度只用于曲率和槽距分配，实际自由折弯角须按材料、筋宽和载荷试样标定。",
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": ["M7 8 V36", "M15 8 V36", "M23 8 V36", "M31 8 V36", "M39 8 V36"]
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 280 190",
+    "paths": [
+      { "d": "M20 28 H260 V160 H20 Z", "className": "tool-diagram-reference" },
+      { "d": "M70 28 V132 M105 28 V132 M140 28 V132 M175 28 V132 M210 28 V132", "className": "tool-diagram-profile" }
+    ],
+    "labels": [
+      { "x": 140, "y": 18, "text": "柔性区 ℓ=Rβ" },
+      { "x": 140, "y": 178, "text": "槽距按目标曲率分配" }
+    ],
+    "annotations": [
+      { "parameter": "slitMode", "kind": "leader", "side": "top", "point": [140, 80], "description": "选择直缝、U 槽或圆头窄缝" },
+      { "parameter": "angle", "kind": "leader", "side": "top", "point": [140, 28], "description": "等曲率分布的目标总转角" },
+      { "parameter": "bendRadius", "kind": "leader", "side": "right", "point": [210, 132], "description": "柔性区目标中心线半径" },
+      { "parameter": "slitCount", "kind": "leader", "side": "top", "point": [140, 80], "description": "沿柔性区布置的槽数" },
+      { "parameter": "slitWidth", "kind": "linear", "axis": "x", "side": "bottom", "from": [136, 132], "to": [144, 132], "description": "单道割缝沿管轴方向的宽度" },
+      { "parameter": "rootClearance", "kind": "linear", "axis": "y", "side": "left", "from": [70, 132], "to": [70, 160], "description": "槽根相对目标管型内底面的距离" },
+      { "parameter": "minimumLand", "kind": "linear", "axis": "x", "side": "bottom", "from": [144, 146], "to": [175, 146], "description": "相邻槽之间保留的最小筋宽" },
+      { "parameter": "uSpan", "kind": "linear", "axis": "x", "side": "right", "from": [105, 132], "to": [175, 132], "visibleWhen": { "op": "eq", "parameter": "slitMode", "value": "u" }, "description": "U 槽两条纵向切缝的中心距" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [20, 28], "description": "由目标管型截面实测，用于工艺记录" }
+    ]
+  },
+  "parameters": [
+    { "key": "slitMode", "displayName": "柔性槽类型", "valueType": "string", "defaultValue": "narrow", "options": [
+      { "value": "straight", "label": "直缝" },
+      { "value": "u", "label": "U 槽" },
+      { "value": "narrow", "label": "圆头窄缝" }
+    ] },
+    { "key": "angle", "displayName": "目标折弯角 β（°）", "valueType": "number", "defaultValue": 90, "min": 1, "max": 170 },
+    { "key": "bendRadius", "displayName": "目标中心线半径（mm）", "valueType": "number", "defaultValue": 40, "min": 0.01, "max": 100000 },
+    { "key": "slitCount", "displayName": "柔性槽数量", "valueType": "integer", "defaultValue": 6, "min": 2, "max": 64 },
+    { "key": "slitWidth", "displayName": "割缝宽度（mm）", "valueType": "number", "defaultValue": 1, "min": 0.01, "max": 1000 },
+    { "key": "rootClearance", "displayName": "槽根到内底面距离（mm）", "valueType": "number", "defaultValue": 1, "min": 0, "max": 10000 },
+    { "key": "minimumLand", "displayName": "相邻槽最小筋宽（mm）", "valueType": "number", "defaultValue": 1, "min": 0.01, "max": 10000 },
+    { "key": "uSpan", "displayName": "U 槽开口宽度（mm）", "valueType": "number", "defaultValue": 8, "min": 0.01, "max": 10000, "visibleWhen": { "op": "eq", "parameter": "slitMode", "value": "u" } },
+    { "key": "wallThickness", "displayName": "截面实测壁厚（mm）", "valueType": "number", "defaultValue": 0, "min": 0, "max": 10000, "derived": true, "readOnly": true }
+  ]
+}

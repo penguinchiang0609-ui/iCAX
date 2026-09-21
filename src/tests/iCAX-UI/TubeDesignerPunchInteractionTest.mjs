@@ -35,7 +35,7 @@ assert.match(s.parameterEditor.error,/尺寸/);
 closePunchParameters(view,false,part);
 
 s.features=[normalizePunchFeature({type:"circle",diameter:10,distributionMode:"fill",headMargin:100,tailMargin:100,arrayPitch:180,arrayCount:1,skipInstancesText:"3",layoutDatum:"base"}),
-  normalizePunchFeature({type:"circle",diameter:10,station:500,depthMode:"through",through:true}),
+  normalizePunchFeature({type:"circle",diameter:10,station:500,opposite:true}),
   normalizePunchFeature({type:"circle",diameter:10,enabled:false,distributionMode:"sequence",spacingSequence:""})];
 const payload=getPunchWizardPayload(view);
 assert.equal(payload.features[0].arrayCount,5);
@@ -52,7 +52,7 @@ assert.equal(second.features[0].arrayCount,6);
 assert.equal(second.features[0].arrayPitch,180);
 assert.deepEqual(second.features[0].skippedInstances,["0:2"]);
 const summary=buildPunchReviewSummary(s,part);
-assert.equal(summary.positions,5);assert.equal(summary.cutters,5);assert.equal(summary.estimatedOpenings,6);
+assert.equal(summary.positions,5);assert.equal(summary.cutters,6);assert.equal(summary.estimatedOpenings,6);
 assert.equal(summary.groups.length,1,"same hole specifications aggregate across records");
 assert.equal(summary.skipped,1);assert.equal(summary.disabled,1);
 assert.equal(summary.finishedLength,null);

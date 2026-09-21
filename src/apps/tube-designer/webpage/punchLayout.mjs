@@ -243,7 +243,7 @@ export function resolvePunchLayout(feature = {}, baseLength = 0) {
     resolveRows(f);
     const candidateCount = f.arrayCount * f.rowCount;
     if (candidateCount > LIMIT) throw new Error(`单条记录最多支持 ${LIMIT} 个候选位置，当前为 ${candidateCount} 个。`);
-    const both = f.depthMode === "both" || (f.opposite && !f.through && f.depthMode !== "through");
+    const both = f.opposite === true;
     if (candidateCount * (both ? 2 : 1) > LIMIT) throw new Error(`单条记录最多支持 ${LIMIT} 个候选展开刀具，含双面后为 ${candidateCount * 2} 个；跳过孔仍计入阵列上限。`);
     resolveSkips(f);
     const actualCount = candidateCount - f.skippedInstances.length;

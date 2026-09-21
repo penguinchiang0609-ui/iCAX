@@ -153,7 +153,7 @@ export function resolvePunchArrayGroups(feature = {}, baseLength = 0) {
       if (!group.id || group.id.length > 160 || ids.has(group.id)) throw new Error("每个阵列组须有唯一且非空的标识。"); ids.add(group.id);
     }
     const seed = seedX(feature, length);
-    const both = feature.depthMode === "both" || (feature.opposite && !feature.through && feature.depthMode !== "through");
+    const both = feature.opposite === true;
     let candidateCount = 1;
     const groups=[];
     for(const group of result.arrayGroups) {

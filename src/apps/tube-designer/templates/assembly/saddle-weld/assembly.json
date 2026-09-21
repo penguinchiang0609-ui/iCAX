@@ -1,0 +1,75 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "saddle-weld",
+  "version": "1.0.0",
+  "displayName": "鞍口相贯焊接",
+  "category": "weld",
+  "categoryName": "焊接装配",
+  "summary": "主管与支管分别下料，支管加工鞍口后贴合主管定位并施焊。",
+  "topology": "端部—曲面",
+  "interfaceType": "相贯贴合",
+  "lockType": "焊缝",
+  "motionType": "法向贴合",
+  "participants": [
+    { "role": "branch", "label": "支管", "responsibility": "鞍口件", "count": 1 },
+    { "role": "main", "label": "主管", "responsibility": "承接件", "count": 1 }
+  ],
+  "parameters": [
+    { "key": "intersectionAngle", "displayName": "相交角度", "valueType": "number", "defaultValue": 90, "min": 10, "max": 170, "step": 1, "unit": "°", "level": "basic" },
+    { "key": "fitGap", "displayName": "装配间隙", "valueType": "number", "defaultValue": 0.5, "min": 0, "max": 5, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "weldLeg", "displayName": "焊脚尺寸", "valueType": "number", "defaultValue": 4, "min": 1, "max": 30, "step": 0.1, "unit": "mm", "level": "advanced" },
+    { "key": "weldScope", "displayName": "焊接范围", "valueType": "choice", "defaultValue": "full", "options": [{ "value": "full", "label": "连续满焊" }, { "value": "stitch", "label": "间断焊" }, { "value": "tack", "label": "定位点焊" }], "level": "advanced" }
+  ],
+  "partProcesses": [
+    { "id": "cope-branch", "participants": ["branch"], "label": "支管端部鞍口", "resource": { "kind": "part-process", "id": "end-profile", "displayName": "支管端切" }, "parameterBindings": { "cutMode": "concave", "angle": "$intersectionAngle" }, "previewPlacement": { "target": "end", "end": "start", "datum": "long", "sectionRole": "main" } }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      { "id": "branchBlank", "label": "支管下料件", "participants": ["branch"] },
+      { "id": "mainBlank", "label": "主管下料件", "participants": ["main"] }
+    ]
+  },
+  "assemblyPath": [
+    { "id": "orient", "label": "按相交角度建立支管姿态", "kind": "转动", "direction": "assembly.y", "distance": "$intersectionAngle" },
+    { "id": "fit", "label": "支管鞍口贴合主管", "kind": "直线", "direction": "assembly.z", "distance": "$fitGap" },
+    { "id": "weld", "label": "按焊接范围施焊", "kind": "$weldScope", "direction": "assembly.z", "distance": 0 }
+  ],
+  "previewScene": {
+    "designParts": [
+      {
+        "role": "branch",
+        "profileRef": { "scope": "system", "id": "round" },
+        "parameters": { "width": 40, "wallThickness": 2, "innerOffsetX": 0, "innerOffsetY": 0 },
+        "length": 220,
+        "pose": { "origin": [0, 0, "$fitGap + 30"], "direction": [0, 0, 1], "up": [0, 1, 0], "axisAngle": { "axis": [0, 1, 0], "degrees": "90 - $intersectionAngle" } }
+      },
+      {
+        "role": "main",
+        "profileRef": { "scope": "system", "id": "round" },
+        "parameters": { "width": 60, "wallThickness": 3, "innerOffsetX": 0, "innerOffsetY": 0 },
+        "length": 520,
+        "pose": { "origin": [-260, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      }
+    ],
+    "manufacturingParts": [
+      { "id": "branchBlank", "label": "支管鞍口下料件", "sourceRole": "branch", "processes": ["cope-branch"], "pose": { "origin": [-220, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "mainBlank", "label": "主管下料件", "sourceRole": "main", "processes": [], "pose": { "origin": [-260, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 150], "manufacturingOffset": [0, 0, -170] }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 240 170",
+    "paths": ["M25 120 H215", "M120 120 V25", { "d": "M92 120 A28 28 0 0 0 148 120", "className": "tool-diagram-reference" }],
+    "annotations": [
+      { "parameter": "intersectionAngle", "kind": "leader", "side": "top", "point": [120, 92], "description": "主管轴线与支管轴线的夹角" },
+      { "parameter": "fitGap", "kind": "linear", "axis": "y", "side": "right", "from": [120, 92], "to": [120, 120], "description": "支管鞍口与主管外轮廓之间的装配间隙" },
+      { "parameter": "weldLeg", "kind": "leader", "side": "bottom", "point": [144, 112], "description": "装配后的焊脚尺寸" },
+      { "parameter": "weldScope", "kind": "leader", "side": "left", "point": [120, 120], "description": "焊缝连续、间断或定位点焊" }
+    ]
+  },
+  "outputs": { "manufacturingPartCount": 2, "partGeometry": ["支管鞍口", "主管"], "secondaryProcess": ["相贯定位", "焊接"], "bom": ["焊材（按工艺定额）"], "assemblyInstruction": true }
+}

@@ -1,7 +1,8 @@
 import { renderParameterLevels } from './parameterPresentation.mjs';
 import { parameterVisible } from './parameterConditions.mjs';
 import { matchesParameterCondition, parameterEnabled } from "./parameterConditions.mjs";
-import { escapeAttr, escapeText } from "../../_shared/workbench/utils/format.mjs";
+import { parameterAutoFillPatch } from "./parameterAutoFill.mjs";
+import { escapeAttr, escapeText, formatNumber } from "../../_shared/workbench/utils/format.mjs";
 
 import { buildPunchPreviewRows } from "./punchEditor.mjs";
 import { renderProfileSvg } from "./profileSvg.mjs";
@@ -15,7 +16,6 @@ import {
   profileRef,
   profileSelectionKey,
   profileSnapshot,
-  profileSpecification,
 } from "./profileLibrary.mjs";
 
 const SCOPES = [
@@ -23,6 +23,7 @@ const SCOPES = [
   ["template", "模板自带"],
   ["user", "我的"],
 ];
+const LIBRARY_SCOPES = SCOPES.filter(([scope]) => scope !== "template");
 const TYPES = [
   ["all", "全部"],
   ["programmatic", "程式"],
@@ -32,8 +33,9 @@ const CATEGORIES = [
   ["all", "全部类别"],
   ["hole", "冲孔"],
   ["slot", "槽口"],
-  ["end", "端面"],
+  ["end", "断面修整"],
 ];
+const DEFAULT_TOOL_PREVIEW_LENGTH = 500;
 
 // Resource descriptors may carry localized text as an object.  Never pass
 // that object directly to a DOM string helper; doing so renders
@@ -48,19 +50,21 @@ function localizedText(value, fallback = "") {
 export function toolLibraryState(view) {
   const state = view.tubeDesignerToolLibrary ??= {
     scope: "system", type: "all", category: "all", search: "", selectedKey: "",
-    collapsed: [], catalogueStatus: "idle", error: "", parameterDrafts: {},
-    profileKey: "", profileDrafts: {}, branchProfileKey: "", branchProfileDrafts: {}, previewLength: 500,
-    showProfileDiagram: false, showToolDiagram: false, mainTubeCollapsed: false,
+    collapsed: [], catalogueStatus: "idle", error: "", parameterDrafts: {}, operationDrafts: {},
+    profileKey: "", profileDrafts: {}, branchProfileKey: "", branchProfileDrafts: {}, profileSnapshots: {},
+    showProfileDiagram: false, showToolDiagram: false, mainTubeCollapsed: true,
   };
-  if (!SCOPES.some(([scope]) => scope === state.scope)) state.scope = "system";
+  if (!LIBRARY_SCOPES.some(([scope]) => scope === state.scope)) state.scope = "system";
   if (!TYPES.some(([type]) => type === state.type)) state.type = "all";
   if (!CATEGORIES.some(([category]) => category === state.category)) state.category = "all";
   state.collapsed ??= [];
   state.parameterDrafts ??= {};
+  state.operationDrafts ??= {};
   state.profileDrafts ??= {};
   state.branchProfileDrafts ??= {};
-  if (!Number.isFinite(Number(state.previewLength))) state.previewLength = 500;
-  state.previewLength = Math.min(100000, Math.max(1, Number(state.previewLength)));
+  state.profileSnapshots ??= {};
+  state.profileKeysByTool ??= {};
+  state.mainTubeCollapsed ??= true;
   if (!["idle", "loading", "ready", "error"].includes(state.catalogueStatus)) state.catalogueStatus = "idle";
   // A view can survive a cancelled navigation without its in-flight promise;
   // do not leave that view permanently stuck in loading.
@@ -79,10 +83,7 @@ function typeOf(tool) {
 
 function categoryOf(tool) {
   const raw = String(tool?.category ?? "").toLocaleLowerCase("zh-CN");
-  // 腰形孔是贯穿孔型，即使历史目录把它标成“槽口”，在资源库中也
-  // 应与圆孔、方孔等孔型归在一起；真正的槽口是 V 槽、缺口类切削。
-  if (tool?.id === "slot" || raw.includes("腰形孔") || raw.includes("腰圆孔")) return "hole";
-  if (raw.includes("支管") || raw.includes("branch")) return "hole";
+  if (raw.includes("孔") || raw.includes("hole")) return "hole";
   if (raw.includes("端") || raw.includes("end") || tool?.target === "end") return "end";
   if (raw.includes("槽") || raw.includes("slot") || raw.includes("notch")) return "slot";
   return "hole";
@@ -97,7 +98,7 @@ function keyOf(tool, scope = scopeOf(tool)) {
 }
 
 function toolName(tool) {
-  return String(tool?.displayName ?? tool?.name ?? tool?.toolLabel ?? tool?.id ?? "未命名模具").trim() || "未命名模具";
+  return String(tool?.displayName ?? tool?.name ?? tool?.toolLabel ?? tool?.id ?? "未命名单件工艺").trim() || "未命名单件工艺";
 }
 
 // Product templates and the standalone mould library share these canonical
@@ -178,8 +179,8 @@ function ensureSelection(view, tools) {
 function sourceLabel(tool) {
   const scope = scopeOf(tool);
   if (scope === "template") return `模板自带 · ${tool.templateName ?? tool.templateId ?? "当前模板"}`;
-  if (scope === "user") return "我的模具";
-  return "系统内置模具";
+  if (scope === "user") return "我的单件工艺";
+  return "系统内置工艺";
 }
 
 function scopeLabel(scope) {
@@ -187,7 +188,7 @@ function scopeLabel(scope) {
 }
 
 function typeLabel(tool) {
-  return typeOf(tool) === "fixed" ? "定式模具" : "程式模具";
+  return typeOf(tool) === "fixed" ? "定式工艺" : "程式工艺";
 }
 
 function typeShortLabel(tool) {
@@ -198,40 +199,45 @@ function categoryLabel(tool) {
   return CATEGORIES.find(([category]) => category === categoryOf(tool))?.[1] ?? "孔型";
 }
 
-function targetLabel(tool) {
-  if (tool?.target === "part") return "支管 / 零件";
-  if (tool?.target === "end") return "端面";
-  return "管壁";
-}
-
-// Geometry definitions belong to the library; placement, wall selection and
-// machine-specific cutting settings belong to operations, not mould parameters.
-function renderMachiningNotes(tool) {
-  const category = categoryOf(tool);
-  const notes = category === "slot" ? [
-    "缺口切除与折弯成形是两件事。留底、刀口圆角不等于折弯内半径；K 因子补偿也不代表已验证成形或闭合干涉。",
-    "槽口是否适用应由实际截面分析决定，不能按管型名称判断；薄壁、开口和多腔截面不能仅凭外包尺寸套用。",
-  ] : category === "end" ? [
-    "端面截交用于切除材料，不包含扩口、缩口、压扁或翻边等塑性成形。",
-    "使用时需明确起止端、保留侧及最长点／最短点／中心尺寸基准；斜切角与焊接坡口角不能混用。",
-  ] : [
-    "孔型尺寸描述冲头截面，不是凹模开口，也不是曲面展开后的孔宽；固定方向扫掠与展开面轮廓不能互换。",
-    "近壁、远壁、贯穿及阵列由使用记录定义。同轴对穿应共用一条轴线，偏心斜孔不能用两个相差 180° 的独立孔替代。",
-  ];
-  if (tool?.requiresSection) notes.push("相贯轮廓由配合截面及相对姿态确定；装配间隙、焊接坡口与激光割缝是不同参数。");
-  return `<section class="tube-tool-library-note" data-tool-machining-notes><strong>几何与加工边界</strong>
-    ${tool.description ? `<p>${escapeText(localizedText(tool.description))}</p>` : ""}
-    ${notes.map((note) => `<p>${escapeText(note)}</p>`).join("")}
-    <p>当前为几何预览，不是激光工艺合格结论。冲压间隙不能作为激光割缝补偿；最小孔、背壁挂渣和热变形需按设备、材料与壁厚试切验证。</p>
-  </section>`;
-}
-
 function toolParameterValues(view, tool) {
   const state = toolLibraryState(view);
   const key = String(tool?.libraryKey ?? keyOf(tool));
   const draft = state.parameterDrafts?.[key];
   return { ...(tool?.defaultParameters ?? {}), ...(draft ?? {}) };
 }
+
+function displayedToolParameterValues(view, tool) {
+  const values = toolParameterValues(view, tool);
+  const preview = toolLibraryState(view).preview;
+  const measured = preview?.key === toolPreviewKey(view, tool)
+    ? preview.response?.sectionAnalyses?.find(item => item.applicable === true)?.parameters : null;
+  for (const field of tool?.parameters ?? []) {
+    if (field.derived) values[field.key] = measured?.[field.key] ?? "";
+  }
+  return values;
+}
+
+function toolOperationParameterValues(view, tool) {
+  const state = toolLibraryState(view);
+  const key = String(tool?.libraryKey ?? keyOf(tool));
+  const defaults = tool?.defaultOperationParameters
+    ?? Object.fromEntries((tool?.operationParameters ?? []).map((definition) => [definition.key, definition.defaultValue]));
+  return { ...defaults, ...(state.operationDrafts?.[key] ?? {}) };
+}
+
+function toolRequiresTargetSection(tool) {
+  return (tool?.inputs ?? []).some((input) => input?.key === "targetSection" && input?.valueType === "profile");
+}
+
+const SIDE_CUT_INPUTS = [
+  { key: "targetSection", displayName: "目标管型截面", valueType: "profile", required: true },
+];
+const SIDE_CUT_OPERATION_PARAMETERS = [
+  { key: "blindHole", displayName: "盲孔", valueType: "boolean", defaultValue: false },
+  { key: "cutDepth", displayName: "孔深", valueType: "number", defaultValue: 5, min: 0.1, max: 100000, step: 0.1, unit: "mm",
+    visibleWhen: { op: "eq", parameter: "blindHole", value: true } },
+  { key: "opposite", displayName: "对冲孔", valueType: "boolean", defaultValue: false },
+];
 
 function toolParameterVisible(definition, values) {
   return parameterVisible(definition, values);
@@ -254,10 +260,25 @@ function toolTubeProfiles(view) {
   return profiles.length ? profiles : [FALLBACK_TUBE_PROFILE];
 }
 
-function ensureToolTubeProfile(view, role = "main") {
+function ensureToolTubeProfile(view, role = "main", tool = null) {
   const state = toolLibraryState(view);
   const profiles = toolTubeProfiles(view);
   const stateKey = role === "branch" ? "branchProfileKey" : "profileKey";
+  // Do not commit the temporary round fallback as a tool's initial choice
+  // before the asynchronous profile catalogue can resolve its declared default.
+  if (role === "main" && libraryProfiles(view).length) {
+    tool ??= visibleLibraryTools(view).find(item => item.libraryKey === state.selectedKey);
+    const owner = tool ? (tool.libraryKey ?? keyOf(tool)) : "";
+    if (owner && owner !== state.profileOwnerKey) {
+      if (state.profileOwnerKey) state.profileKeysByTool[state.profileOwnerKey] = state.profileKey;
+      const declared = tool.preview?.profileRef;
+      const preferred = declared && profiles.find(item =>
+        profileScopeOf(item) === declared.scope && String(item.id) === declared.id);
+      state.profileKey = state.profileKeysByTool[owner]
+        ?? (preferred ? profileSelectionKey(preferred) : state.profileKey);
+      state.profileOwnerKey = owner;
+    }
+  }
   if (profiles.some((profile) => profileSelectionKey(profile) === state[stateKey])) return profiles.find((profile) => profileSelectionKey(profile) === state[stateKey]);
   const preferred = profiles.find((profile) => profileScopeOf(profile) === "system" && String(profile.id) === "round") ?? profiles[0];
   state[stateKey] = profileSelectionKey(preferred);
@@ -275,6 +296,20 @@ function toolTubeProfileValues(view, profile, role = "main") {
   return { ...(profile?.defaultParameters ?? {}), ...(drafts?.[key] ?? {}) };
 }
 
+export function toolTubeProfileEvaluationKey(view, profile, role = "main") {
+  return JSON.stringify([
+    role,
+    profileSelectionKey(profile),
+    profile?.packageDigest ?? profile?.descriptor?.version ?? profile?.version ?? "",
+    toolTubeProfileValues(view, profile, role),
+  ]);
+}
+
+function evaluatedToolTubeProfile(view, profile, role = "main") {
+  const cached = toolLibraryState(view).profileSnapshots?.[role];
+  return cached?.key === toolTubeProfileEvaluationKey(view, profile, role) ? cached.snapshot : null;
+}
+
 function profileParameterVisible(definition, values) {
   return parameterVisible(definition, values);
 }
@@ -290,24 +325,42 @@ function renderToolTubeParameterInput(view, profile, definition, role = "main") 
   const label = escapeText(localizedText(definition?.displayName ?? definition?.name, key));
   if (type === "boolean") return `<label class="tube-designer-field tube-designer-boolean-field"><span>${label}</span><input type="checkbox" ${value ? "checked" : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
   const options = Array.isArray(definition?.options) ? definition.options : [];
-  if (options.length) return `<label class="tube-designer-field"><span>${label}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${options.map((option) => { const optionValue = typeof option === "object" ? option.value : option; const optionLabel = typeof option === "object" ? (option.displayName ?? option.label ?? optionValue) : option; return `<option value="${escapeAttr(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(localizedText(optionLabel, optionValue))}</option>`; }).join("")}</select></label>`;
+  if (options.length) return `<label class="tube-designer-field is-choice"><span>${label}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${options.map((option) => { const optionValue = typeof option === "object" ? option.value : option; const optionLabel = typeof option === "object" ? (option.displayName ?? option.label ?? optionValue) : option; return `<option value="${escapeAttr(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${escapeText(localizedText(optionLabel, optionValue))}</option>`; }).join("")}</select></label>`;
   const inputType = type === "string" ? "text" : "number";
-  return `<label class="tube-designer-field"><span>${label}</span><input type="${inputType}" value="${escapeAttr(value)}" ${definition.min != null ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max != null ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step != null ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
+  return `<label class="tube-designer-field ${inputType === "text" ? "is-string" : "is-number"}"><span>${label}</span><input type="${inputType}" value="${escapeAttr(value)}" ${definition.min != null ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max != null ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step != null ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
 }
 
 function renderToolParameterInput(view, tool, definition) {
-  const values = toolParameterValues(view, tool);
-  const fieldDisabled = view?.pending || !parameterEnabled(definition, values);
+  const values = displayedToolParameterValues(view, tool);
+  const fieldDisabled = view?.pending || definition.derived || !parameterEnabled(definition, values);
+  const key = String(definition?.key ?? "");
+  if (!key) return "";
+  const value = definition.derived ? values[key] : (values[key] ?? definition?.defaultValue ?? "");
+  // Suppress measurement round-off in the control only. Keep exact preview
+  // measurements, conditions and editable drafts untouched.
+  const displayValue = definition.derived && typeof value === "number" && Number.isFinite(value)
+    ? formatNumber(value, 6) : value;
+  const type = definition?.valueType ?? "number";
+  const common = `data-tool-parameter-key="${escapeAttr(key)}" data-cam-change-action="tube-designer-tool-library-parameter-change" data-tube-tool-library-key="${escapeAttr(tool.libraryKey)}" data-tube-tool-library-parameter="${escapeAttr(key)}"`;
+  if (type === "boolean") return `<label class="tube-designer-field tube-designer-boolean-field"><span>${escapeText(localizedText(definition.displayName, key))}</span><input type="checkbox" ${value ? "checked" : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
+  if (type === "string" && Array.isArray(definition?.options)) {
+    return `<label class="tube-designer-field is-choice"><span>${escapeText(localizedText(definition.displayName, key))}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${definition.options.map((option) => `<option value="${escapeAttr(option.value)}" ${String(option.value) === String(value) ? "selected" : ""}>${escapeText(localizedText(option.label ?? option.displayName, option.value))}</option>`).join("")}</select></label>`;
+  }
+  return `<label class="tube-designer-field ${type === "string" ? "is-string" : "is-number"}"><span>${escapeText(localizedText(definition.displayName, key))}</span><input type="${type === "string" ? "text" : "number"}" value="${escapeAttr(displayValue)}" ${definition.min !== undefined ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max !== undefined ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step !== undefined ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
+}
+
+function renderToolOperationParameterInput(view, tool, definition) {
+  const values = toolOperationParameterValues(view, tool);
   const key = String(definition?.key ?? "");
   if (!key) return "";
   const value = values[key] ?? definition?.defaultValue ?? "";
   const type = definition?.valueType ?? "number";
-  const common = `data-tool-parameter-key="${escapeAttr(key)}" data-cam-change-action="tube-designer-tool-library-parameter-change" data-tube-tool-library-key="${escapeAttr(tool.libraryKey)}" data-tube-tool-library-parameter="${escapeAttr(key)}"`;
-  if (type === "boolean") return `<label class="tube-tool-library-parameter-check"><input type="checkbox" ${value ? "checked" : ""} ${common} ${fieldDisabled ? "disabled" : ""} /><span>${escapeText(localizedText(definition.displayName, key))}</span></label>`;
-  if (type === "string" && Array.isArray(definition?.options)) {
-    return `<label><span>${escapeText(localizedText(definition.displayName, key))}</span><select ${common} ${fieldDisabled ? "disabled" : ""}>${definition.options.map((option) => `<option value="${escapeAttr(option.value)}" ${String(option.value) === String(value) ? "selected" : ""}>${escapeText(localizedText(option.label ?? option.displayName, option.value))}</option>`).join("")}</select></label>`;
-  }
-  return `<label><span>${escapeText(localizedText(definition.displayName, key))}</span><input type="${type === "string" ? "text" : "number"}" value="${escapeAttr(value)}" ${definition.min !== undefined ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max !== undefined ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step !== undefined ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${fieldDisabled ? "disabled" : ""} /></label>`;
+  const disabled = view?.pending || !parameterEnabled(definition, values);
+  const common = `data-operation-parameter-key="${escapeAttr(key)}" data-cam-change-action="tube-designer-tool-library-operation-parameter-change" data-tube-tool-library-key="${escapeAttr(tool.libraryKey)}" data-tube-tool-library-operation-parameter="${escapeAttr(key)}"`;
+  const label = escapeText(localizedText(definition.displayName, key));
+  if (type === "boolean") return `<label class="tube-designer-field tube-designer-boolean-field"><span>${label}</span><input type="checkbox" ${value ? "checked" : ""} ${common} ${disabled ? "disabled" : ""} /></label>`;
+  if (type === "string" && Array.isArray(definition?.options)) return `<label class="tube-designer-field is-choice"><span>${label}</span><select ${common} ${disabled ? "disabled" : ""}>${definition.options.map((option) => `<option value="${escapeAttr(option.value)}" ${String(option.value) === String(value) ? "selected" : ""}>${escapeText(localizedText(option.label ?? option.displayName, option.value))}</option>`).join("")}</select></label>`;
+  return `<label class="tube-designer-field is-number"><span>${label}</span><input type="number" value="${escapeAttr(value)}" ${definition.min !== undefined ? `min="${escapeAttr(definition.min)}"` : ""} ${definition.max !== undefined ? `max="${escapeAttr(definition.max)}"` : ""} ${definition.step !== undefined ? `step="${escapeAttr(definition.step)}"` : ""} ${common} ${disabled ? "disabled" : ""} /></label>`;
 }
 
 function renderToolIllustration(tool) {
@@ -337,11 +390,6 @@ function renderToolIllustration(tool) {
   if (id === "triangle") return `<svg viewBox="0 0 48 48" aria-hidden="true"><polygon points="24,7 41,38 7,38" /></svg>`;
   if (id === "single-d") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 34 H24 A10 10 0 0 0 24 14 H8 Z" /></svg>`;
   if (id === "double-d") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M14 14 H34 A10 10 0 0 1 34 34 H14 A10 10 0 0 1 14 14 Z" /></svg>`;
-  if (id === "end-convex") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h22a14 14 0 0 1 0 28H8Z" /></svg>`;
-  if (id === "end-cope") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v28H8M8 24h18a8 8 0 0 0 0-16" /></svg>`;
-  if (id === "end-key-joint") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v28H8V27h16v-6H8Z" /></svg>`;
-  if (id === "end-miter") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 10h32v28H8Z M8 38 40 10" /></svg>`;
-  if (id === "end-square") return `<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="9" width="30" height="30" rx="1" /></svg>`;
   if (tool?.requiresSection && tool?.target === "part") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 38 V14 M24 14 C24 8 39 8 39 14 V38" /></svg>`;
   if (category === "end") return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 10 H38 V38 H10 Z M10 24 H38" /></svg>`;
   return `<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 24 H38 M24 10 V38" /></svg>`;
@@ -368,32 +416,32 @@ function renderToolTubeSection(view, role = "main") {
   const options = profiles.map((item) => `<option value="${escapeAttr(profileSelectionKey(item))}" ${profileSelectionKey(item) === selectedKey ? "selected" : ""}>${escapeText(profileName(item))}${profileScopeOf(item) === "template" ? " · 模板" : profileScopeOf(item) === "user" ? " · 我的" : " · 系统"}</option>`).join("");
   const state = toolLibraryState(view);
   const expanded = isBranch || !state.mainTubeCollapsed;
-  const title = isBranch ? "支管 / 管型参数" : "主管 / 管型参数";
-  const description = isBranch ? "选择支管截面，参数只影响当前支管模具预览" : "先选主管管型，再调整当前模具预览使用的尺寸";
-  const fieldLabel = isBranch ? "支管管型" : "主管管型";
-  return `<section class="tube-tool-library-tube-section${isBranch ? " tube-tool-library-branch-section" : ""}" data-profile-parameter-scope data-parameter-diagram-owner="tool-library-profile:${escapeAttr(role)}" data-tube-tool-library-tube-editor data-tube-tool-library-profile-role="${escapeAttr(role)}">
-    <header><div><strong>${title}</strong><span>${description}</span></div><div class="tube-tool-library-tube-header-actions"><span class="tube-tool-library-section-badge">${escapeText(profileSpecification(profile) || "当前管型")}</span>${!isBranch ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-main-tube" aria-expanded="${expanded}" aria-controls="tube-tool-library-main-tube-content">${expanded ? "收起主管信息" : "展开主管信息"}</button>` : ""}</div></header>
+  const title = isBranch ? "刀具截面" : "目标管型";
+  const fieldLabel = isBranch ? "截面管型" : "目标管型";
+  return `<section class="tube-profile-library-parameter-group tube-tool-library-tube-section${isBranch ? " tube-tool-library-branch-section" : ""}" data-profile-parameter-scope data-parameter-diagram-owner="tool-library-profile:${escapeAttr(role)}" data-tube-tool-library-tube-editor data-tube-tool-library-profile-role="${escapeAttr(role)}">
+    ${isBranch ? `<div class="tube-tool-library-tube-summary"><strong>${title}</strong></div>` : `<button type="button" class="tube-tool-library-tube-summary" data-cam-action="tube-designer-tool-library-toggle-main-tube" aria-expanded="${expanded}" aria-controls="tube-tool-library-main-tube-content"><strong>${expanded ? "▾" : "▸"} ${title}</strong></button>`}
     <div class="tube-tool-library-tube-content" ${isBranch ? "" : 'id="tube-tool-library-main-tube-content"'} ${expanded ? "" : "hidden"}>
-    <label class="tube-designer-field wide"><span>${fieldLabel}</span><select data-cam-change-action="tube-designer-tool-library-profile-change" data-tube-tool-library-profile-role="${escapeAttr(role)}" ${view?.pending ? "disabled" : ""}>${options || `<option>暂无可用管型</option>`}</select></label>
-    ${definitions.length ? `<div class="tube-tool-library-tube-parameter-grid">${renderParameterLevels(definitions, definition => renderToolTubeParameterInput(view, profile, definition, role), {key:`tool-profile:${role}:${profile.id}`,gridClass:"tube-tool-library-tube-parameter-grid"})}</div>` : `<p class="tube-tool-library-diagram-message">当前管型为固定截面；模具预览会直接使用它的实际轮廓。</p>`}
-    ${!isBranch ? `<label class="tube-designer-field wide"><span>主管预览长度（mm）</span><input type="number" min="1" max="100000" step="1" value="${escapeAttr(state.previewLength)}" data-cam-change-action="tube-designer-tool-library-preview-length-change" ${view?.pending ? "disabled" : ""} /></label>` : ""}
+    <div class="tube-tool-library-subsection-actions"><button type="button" class="tube-profile-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="profile" aria-expanded="${!!state.showProfileDiagram}" aria-controls="tube-tool-scene-profile">显示${isBranch ? "刀具截面" : "目标管型"}示意图</button></div>
+    <div class="tube-profile-library-field-grid">
+      <label class="tube-designer-field is-choice is-line-full"><span>${fieldLabel}</span><select data-cam-change-action="tube-designer-tool-library-profile-change" data-tube-tool-library-profile-role="${escapeAttr(role)}" ${view?.pending ? "disabled" : ""}>${options || `<option>暂无可用管型</option>`}</select></label>
+      ${definitions.length ? renderParameterLevels(definitions, definition => renderToolTubeParameterInput(view, profile, definition, role), {key:`tool-profile:${role}:${profile.id}`,gridClass:"tube-profile-library-field-grid"}) : `<p class="tube-tool-library-diagram-message is-line-full">当前管型为固定截面；工艺预览会直接使用它的实际轮廓。</p>`}
+    </div>
     </div>
   </section>`;
 }
 
 function emptyText(state) {
-  if (state.search) return ["没有匹配的模具", "请调整搜索内容。"];
-  if (state.catalogueStatus === "loading") return ["正在读取模具目录", "正在同步系统、模板和我的模具，请稍候。"];
+  if (state.search) return ["没有匹配的单件工艺", "请调整搜索内容。"];
+  if (state.catalogueStatus === "loading") return ["正在读取单件工艺目录", "正在同步系统内置和我的单件工艺，请稍候。"];
   return {
-    system: ["没有可用的系统模具", "请检查内置模具资源是否完整。"],
-    template: ["还没有模板自带模具", "模板可在自己的资源声明中提供专用模具。"],
-    user: ["还没有我的模具", "可从模具库导入或保存自定义模具。"],
+    system: ["没有可用的系统单件工艺", "请检查内置单件工艺资源是否完整。"],
+    user: ["还没有我的单件工艺", "可从单件工艺库导入或保存自定义工艺。"],
   }[state.scope];
 }
 
 export function renderToolLibraryLeftPane(_context, view) {
   const state = toolLibraryState(view);
-  const all = libraryTools(view);
+  const all = libraryTools(view).filter((tool) => LIBRARY_SCOPES.some(([scope]) => scope === scopeOf(tool)));
   const tools = visibleLibraryTools(view);
   const selected = ensureSelection(view, tools);
   const [emptyTitle, emptyNote] = emptyText(state);
@@ -412,13 +460,13 @@ export function renderToolLibraryLeftPane(_context, view) {
     </section>`;
   };
   return `<div class="tube-designer-panel tube-tool-library-panel">
-    <div class="tube-designer-heading tube-tool-library-heading"><div><strong>模具库</strong><span>${all.length} 个模具 · 当前显示 ${tools.length} 个</span></div></div>
+    <div class="tube-designer-heading tube-tool-library-heading"><div><strong>单件工艺库</strong><span>${all.length} 项工艺 · 当前显示 ${tools.length} 项</span></div></div>
     <div class="tube-component-library-filters tube-tool-library-filters">
-      <input type="search" aria-label="搜索模具" placeholder="搜索名称、类别、所属模板" value="${escapeAttr(state.search)}" data-cam-change-action="tube-designer-tool-library-search" />
-      <div class="tube-tool-library-tab-row" role="tablist" aria-label="模具来源">${SCOPES.map(([scope, label]) => `<button type="button" role="tab" aria-selected="${scope === state.scope}" class="${scope === state.scope ? "selected" : ""}" data-cam-action="tube-designer-tool-library-scope" data-tube-tool-library-scope="${scope}" ${view?.pending ? "disabled" : ""}>${label}<small>${all.filter((tool) => scopeOf(tool) === scope).length}</small></button>`).join("")}</div>
+      <input type="search" aria-label="搜索单件工艺" placeholder="搜索名称、类别" value="${escapeAttr(state.search)}" data-cam-change-action="tube-designer-tool-library-search" />
+      <div class="tube-tool-library-tab-row" role="tablist" aria-label="单件工艺来源">${LIBRARY_SCOPES.map(([scope, label]) => `<button type="button" role="tab" aria-selected="${scope === state.scope}" class="${scope === state.scope ? "selected" : ""}" data-cam-action="tube-designer-tool-library-scope" data-tube-tool-library-scope="${scope}" ${view?.pending ? "disabled" : ""}>${label}<small>${all.filter((tool) => scopeOf(tool) === scope).length}</small></button>`).join("")}</div>
     </div>
     <div class="tube-tool-library-list" role="tabpanel">
-      ${state.error ? `<div class="tube-tool-library-error" role="alert"><strong>模具目录读取失败</strong><span>${escapeText(state.error)}</span><button type="button" class="tube-designer-secondary" data-cam-action="tools.refresh" ${view?.pending ? "disabled" : ""}>重新读取</button></div>` : ""}
+      ${state.error ? `<div class="tube-tool-library-error" role="alert"><strong>单件工艺目录读取失败</strong><span>${escapeText(state.error)}</span><button type="button" class="tube-designer-secondary" data-cam-action="tools.refresh" ${view?.pending ? "disabled" : ""}>重新读取</button></div>` : ""}
       ${tools.length ? groups.map(renderGroup).join("") : `<div class="tube-tool-library-empty"><strong>${escapeText(emptyTitle)}</strong><span>${escapeText(emptyNote)}</span></div>`}
     </div>
   </div>`;
@@ -428,9 +476,11 @@ export function renderToolLibraryRightPane(_context, view) {
   const tools = visibleLibraryTools(view);
   const selectedKey = ensureSelection(view, tools);
   const tool = tools.find((item) => item.libraryKey === selectedKey);
-  if (!tool) return `<div class="tube-designer-panel tube-tool-library-editor-empty"><div class="tube-designer-heading"><strong>模具属性</strong><span>尚未选择模具</span></div><div class="tube-designer-empty">从左侧选择模具，查看其来源、类型和预览规则。</div></div>`;
+  if (!tool) return `<div class="tube-designer-panel tube-tool-library-editor-empty"><div class="tube-designer-heading"><strong>单件工艺属性</strong><span>尚未选择工艺</span></div><div class="tube-designer-empty">从左侧选择单件工艺，查看其来源、类型和预览规则。</div></div>`;
   const allParameters = Array.isArray(tool.parameters) ? tool.parameters : [];
-  const values = toolParameterValues(view, tool);
+  const values = displayedToolParameterValues(view, tool);
+  const operationValues = toolOperationParameterValues(view, tool);
+  const operationParameters = (tool?.operationParameters ?? []).filter((parameter) => toolParameterVisible(parameter, operationValues));
   // A branch mould's angle/azimuth/roll values describe how the punch is
   // placed in the manufacturing workflow.  They are intentionally not
   // edited in the resource library.  The library owns the branch section;
@@ -439,18 +489,16 @@ export function renderToolLibraryRightPane(_context, view) {
   const branchTool = tool?.target === "part" && tool?.requiresSection;
   const parameters = branchTool ? [] : allParameters.filter((parameter) => toolParameterVisible(parameter, values));
   const programmatic = typeOf(tool) === "programmatic";
-  return `<div class="tube-designer-panel tube-tool-library-editor"><div class="tube-tool-library-editor-heading"><div class="tube-tool-library-editor-title"><span class="tube-tool-library-editor-art">${renderToolIllustration(tool)}</span><div><strong>${escapeText(toolName(tool))}</strong><span>${escapeText(typeShortLabel(tool))} · ${escapeText(sourceLabel(tool))}</span></div></div><span class="tube-tool-library-editor-badge">${escapeText(categoryLabel(tool))}</span></div>
+  return `<div class="tube-designer-panel tube-tool-library-editor tube-profile-library-editor">
     <div class="tube-tool-library-editor-body">
-      <div class="tube-library-diagram-actions">${[["tool", "模具示意图", toolLibraryState(view).showToolDiagram], ["profile", "主管示意图", toolLibraryState(view).showProfileDiagram]].map(([kind,title,open])=>`<button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="${kind}" aria-expanded="${!!open}" aria-controls="tube-tool-scene-${kind}">显示${title}</button>`).join('')}</div>
-      ${renderToolTubeSection(view)}
-      <section class="tube-tool-library-mold-section" data-tool-parameter-scope data-parameter-diagram-owner="tool-library-mould">
-        <header><div><strong>模具信息</strong><span>${escapeText(typeShortLabel(tool))} · ${escapeText(targetLabel(tool))} · 修改后自动更新场景</span></div><span class="tube-tool-library-section-badge">${escapeText(categoryLabel(tool))}</span></header>
-        <dl class="tube-tool-library-meta"><dt>模具 ID</dt><dd>${escapeText(tool.id)}</dd><dt>版本</dt><dd>${escapeText(tool.version ?? "—")}</dd><dt>来源</dt><dd>${escapeText(sourceLabel(tool))}</dd></dl>
-        ${branchTool ? renderToolTubeSection(view, "branch") : programmatic && parameters.length ? `<div class="tube-tool-library-mold-parameters"><header><strong>模具参数</strong><span>修改后自动更新场景</span></header><div class="tube-tool-library-parameter-grid">${renderParameterLevels(parameters, definition => renderToolParameterInput(view, tool, definition), {key:`tool:${tool.id}`,gridClass:"tube-tool-library-parameter-grid"})}</div></div>` : `<div class="tube-tool-library-fixed-card"><strong>固定截面</strong><span>定式模具只保存一个闭合截面，可由 DXF 导入；当前参数由模具定义固定。</span></div>`}
+      <section class="tube-profile-library-parameter-section tube-tool-library-parameter-section" data-tool-parameter-scope data-parameter-diagram-owner="tool-library-mould">
+        <header><div><strong>工艺参数</strong><span>${escapeText(toolName(tool))} · 修改后自动更新场景</span></div><button type="button" class="tube-profile-library-diagram-toggle" data-cam-action="tube-designer-tool-library-toggle-diagram" data-tube-tool-library-diagram="tool" aria-expanded="${!!toolLibraryState(view).showToolDiagram}" aria-controls="tube-tool-scene-tool">显示工艺示意图</button></header>
+        <div class="tube-profile-library-parameter-list">
+          ${branchTool ? renderToolTubeSection(view, "branch") : parameters.length || operationParameters.length ? `<div class="tube-profile-library-field-grid">${programmatic ? renderParameterLevels(parameters, definition => renderToolParameterInput(view, tool, definition), {key:`tool:${tool.id}`,gridClass:"tube-profile-library-field-grid"}) : ""}${renderParameterLevels(operationParameters, definition => renderToolOperationParameterInput(view, tool, definition), {key:`tool-operation:${tool.id}`,gridClass:"tube-profile-library-field-grid"})}</div>` : `<p class="tube-profile-library-frozen-note">当前为定式工艺，参数由工艺定义固定。</p>`}
+        </div>
+        ${tool.requiresSection && !branchTool ? renderToolTubeSection(view, "branch") : ""}
       </section>
-      ${renderMachiningNotes(tool)}
-      <section class="tube-tool-library-note"><strong>${programmatic ? "程式模具" : "定式模具"}</strong><span>${programmatic ? "由模具程式生成刀具截面或实体，按实际目标几何使用。" : "由固定闭合截面统一拉伸成实体。"} 位置、姿态和阵列由使用它的业务单独设置。</span></section>
-      <p class="tube-tool-library-provenance">模具库只管理模具定义；冲孔、三维绘制和产品拆单各自保存自己的模具引用、定位、姿态和阵列记录。</p>
+      ${toolRequiresTargetSection(tool) || branchTool ? renderToolTubeSection(view) : ""}
     </div>
   </div>`;
 }
@@ -461,25 +509,30 @@ export function renderToolLibraryViewportOverlay(_context, view) {
   const tool = tools.find((item) => item.libraryKey === key);
   if (tool) ensureToolLibraryPreview(_context, view, tool);
   const state = toolLibraryState(view);
-  const branchTool = tool?.target === "part" && tool?.requiresSection;
-  const values = tool ? toolParameterValues(view, tool) : {};
-  const definitions = branchTool ? [] : (tool?.parameters ?? []).filter((field) => toolParameterVisible(field, values));
+  const branchTool = !!tool?.requiresSection;
+  const values = tool ? displayedToolParameterValues(view, tool) : {};
+  const definitions = (tool?.parameters ?? []).filter((field) => toolParameterVisible(field, values));
   const dock = tool ? `<aside class="tube-library-diagram-dock" data-tube-tool-diagram-dock data-library-floating-diagram="tools" ${state.showToolDiagram||state.showProfileDiagram?'':'hidden'} style="${libraryDiagramPositionStyle(view,'tools')}">
     ${renderDiagramResizeHandles()}
     <header class="tube-library-diagram-drag" data-floating-diagram-drag><strong>参数示意图</strong><button type="button" data-library-diagram-close data-cam-action="tube-designer-tool-library-close-diagram" aria-label="关闭示意图">×</button></header>
     <div id="tube-tool-scene-tool" class="tube-library-diagram-content" role="tabpanel" data-tool-scene-diagram="tool" data-parameter-diagram-for="tool-library-mould" ${state.showToolDiagram ? "" : "hidden"}>${renderToolParameterDiagram(view, tool, values, definitions)}</div>
     <div id="tube-tool-scene-profile" class="tube-library-diagram-content" role="tabpanel" data-tool-scene-diagram="profile" ${state.showProfileDiagram ? "" : "hidden"}>${renderToolTubeDiagram(view, "main")}${branchTool ? renderToolTubeDiagram(view, "branch") : ""}</div>
   </aside>` : "";
-  return `${dock}<div class="tube-tool-library-hud"><strong>${escapeText(tool ? toolName(tool) : "模具库")}</strong><span>${escapeText(tool ? `${typeShortLabel(tool)} · ${sourceLabel(tool)}` : "选择左侧模具查看定义")}</span><small>${tool ? (state.previewRequest ? "正在生成模具预览…" : "主管 + 模具拉伸体 · 拖动旋转 · 滚轮缩放") : "选择左侧模具查看定义"}</small>${tool && state.previewRequest ? '<div class="tube-tool-library-preview-progress" role="progressbar" aria-label="正在生成模具预览"><i></i></div>' : ""}${state.previewError ? `<p role="alert">${escapeText(state.previewError)}</p><button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-tool-library-retry-preview">重新预览</button>` : ""}</div>`;
+  return `${dock}<div class="tube-tool-library-hud"><strong>${escapeText(tool ? toolName(tool) : "单件工艺库")}</strong><span>${escapeText(tool ? `${typeShortLabel(tool)} · ${sourceLabel(tool)}` : "选择左侧工艺查看定义")}</span><small>${tool ? (state.previewRequest ? "正在生成工艺预览…" : "主管 + 工艺作用体 · 拖动旋转 · 滚轮缩放") : "选择左侧工艺查看定义"}</small>${tool && state.previewRequest ? '<div class="tube-tool-library-preview-progress" role="progressbar" aria-label="正在生成工艺预览"><i></i></div>' : ""}${state.previewError ? `<p role="alert">${escapeText(state.previewError)}</p><button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-tool-library-retry-preview">重新预览</button>` : ""}</div>`;
 }
 
 function renderToolTubeDiagram(view, role) {
   const profile = ensureToolTubeProfile(view, role);
   const base = profileSnapshot(profile);
-  const snapshot = base ? { ...base, parameterDiagram: base.parameterDiagram ?? profile?.descriptor?.parameterDiagram } : null;
+  const evaluated = evaluatedToolTubeProfile(view, profile, role);
+  const snapshot = base || evaluated ? {
+    ...(base ?? {}),
+    ...(evaluated ?? {}),
+    parameterDiagram: evaluated?.parameterDiagram ?? base?.parameterDiagram ?? profile?.descriptor?.parameterDiagram,
+  } : null;
   const definitions = profile?.descriptor?.parameters ?? [];
   return `<div data-parameter-diagram-for="tool-library-profile:${escapeAttr(role)}">${definitions.length
-    ? renderProfileParameterDiagram(snapshot, { definitions, parameters: toolTubeProfileValues(view, profile, role), compact: true, title: role === "branch" ? "支管示意图" : "主管示意图" })
+    ? renderProfileParameterDiagram(snapshot, { definitions, parameters: toolTubeProfileValues(view, profile, role), compact: true, title: role === "branch" ? "刀具截面示意图" : "目标管型示意图" })
     : `<section class="td-profile-parameter-diagram"><header><strong>${role === "branch" ? "支管" : "主管"}示意图</strong></header>${snapshot ? renderProfileSvg(snapshot) : ""}</section>`}</div>`;
 }
 
@@ -487,13 +540,13 @@ export function toolPreviewKey(view, tool) {
   // A catalogue refresh may keep the same library key while replacing the
   // executable package. Include its identity so an old extrusion can never
   // survive a version/digest change.
-  const profile = ensureToolTubeProfile(view);
-  const branchTool = tool?.target === "part" && tool?.requiresSection;
+  const profile = ensureToolTubeProfile(view, "main", tool);
+  const branchTool = !!tool?.requiresSection;
   const branchProfile = branchTool ? ensureToolTubeProfile(view, "branch") : null;
   return JSON.stringify([
-    tool?.libraryKey ?? "", tool?.version ?? "", tool?.digest ?? "", toolParameterValues(view, tool),
+    tool?.libraryKey ?? "", tool?.version ?? "", tool?.digest ?? "", toolParameterValues(view, tool), toolOperationParameterValues(view, tool),
     profileSelectionKey(profile), profile?.packageDigest ?? profile?.descriptor?.version ?? profile?.version ?? "",
-    toolTubeProfileValues(view, profile), toolLibraryState(view).previewLength,
+    toolTubeProfileValues(view, profile), DEFAULT_TOOL_PREVIEW_LENGTH,
     branchProfile ? profileSelectionKey(branchProfile) : "",
     branchProfile?.packageDigest ?? branchProfile?.descriptor?.version ?? branchProfile?.version ?? "",
     branchProfile ? toolTubeProfileValues(view, branchProfile, "branch") : {},
@@ -502,10 +555,12 @@ export function toolPreviewKey(view, tool) {
 
 export function buildToolLibraryPreviewPayload(view, tool, options = {}) {
   const values = toolParameterValues(view, tool);
-  const profile = ensureToolTubeProfile(view);
+  const operationValues = toolOperationParameterValues(view, tool);
+  const profile = ensureToolTubeProfile(view, "main", tool);
   const profileValues = toolTubeProfileValues(view, profile);
-  const profileSnapshotValue = profileSnapshot(profile) ?? FALLBACK_TUBE_PROFILE.previewProfile;
-  const branchTool = tool?.target === "part" && tool?.requiresSection;
+  const profileSnapshotValue = options.profileSnapshot ?? evaluatedToolTubeProfile(view, profile)
+    ?? profileSnapshot(profile) ?? FALLBACK_TUBE_PROFILE.previewProfile;
+  const branchTool = !!tool?.requiresSection;
   const branchProfile = branchTool ? ensureToolTubeProfile(view, "branch") : null;
   const branchProfileValues = branchProfile ? toolTubeProfileValues(view, branchProfile, "branch") : {};
   const branchProfileSnapshot = branchTool
@@ -514,11 +569,11 @@ export function buildToolLibraryPreviewPayload(view, tool, options = {}) {
   const toolRef = { id: String(tool.id), version: String(tool.version ?? "") };
   if (tool.digest) toolRef.digest = String(tool.digest);
   if (scopeOf(tool) !== "system") toolRef.libraryScope = scopeOf(tool);
-  const base = { profileRef: profileRef(profile), parameters: profileValues, length: toolLibraryState(view).previewLength, features: [], ends: { start: { type: "keep" }, end: { type: "keep" } }, toolsOnly: true };
+  const base = { profileRef: profileRef(profile), parameters: profileValues, length: DEFAULT_TOOL_PREVIEW_LENGTH, features: [], ends: { start: { type: "keep" }, end: { type: "keep" } }, toolsOnly: true };
   if (tool.target === "end") {
-    base.ends.start = { type: String(tool.id), toolRef, toolParameters: values, trim: 0, datum: "long", rotation: 0 };
+    base.ends.start = { type: String(tool.id), toolRef, toolParameters: values, trim: 0, datum: "long", rotation: 0, ...operationValues };
     if (tool.requiresSection) {
-      base.ends.start.section = { profile: profileSnapshotValue };
+      base.ends.start.section = { profile: branchProfileSnapshot, profileRef: profileRef(branchProfile), parameters: branchProfileValues };
     }
     return base;
   }
@@ -529,7 +584,7 @@ export function buildToolLibraryPreviewPayload(view, tool, options = {}) {
   const feature = { id: "library-preview", enabled: true, toolRef, toolParameters: values,
     toolTarget: tool.target === "part" ? "part" : undefined, face: "top", reference: "center",
     station: 0, layoutDatum: "base", offset: 0, rotation: 0, arrayCount: 1, arrayPitch: 50, rowCount: 1, rowPitch: 20,
-    through: false, opposite: false, reverse: false, depthMode: "single" };
+    blindHole: !!operationValues.blindHole, cutDepth: Number(operationValues.cutDepth ?? 0), opposite: !!operationValues.opposite };
   if (tool.target === "part") {
     feature.section = { profile: branchProfileSnapshot };
     if (branchProfile) {
@@ -567,11 +622,24 @@ export async function applyToolLibraryPreview(context, view, tool, response, key
   if (!view.viewport?.applyViewSnapshot) throw new Error("三维视口尚未准备好。");
   const rows = buildPunchPreviewRows(response, "tools");
   const toolRows = rows.filter((row) => String(row?.entityId ?? "").startsWith("punch-preview-tool:") || String(row?.entityId ?? "") === "punch-preview-tools");
-  if (!rows.length || !toolRows.length) throw new Error("模具预览没有返回主管和刀具拉伸体。");
+  const previewError = response.resultError || (response.previewToolsComplete === false ? "工艺作用体未完整生成。"
+    : !rows.length || !toolRows.length ? "单件工艺预览没有返回主管和工艺作用体。" : "");
+  if (previewError) {
+    // Replace the previous tool with the current blank, so a failed selection
+    // never leaves another tool's geometry looking like the current result.
+    const resources = context.sceneProxy?.resources ?? view.sceneProxy?.resources ?? context.projectProxy?.resources;
+    const blankRows = rows.filter(row => row.entityId === "punch-preview-blank");
+    const receipt = await view.viewport.applyViewSnapshot({ revision: `tool-library-error:${key}`, rows: blankRows }, resources);
+    if (view.activeAreaId !== "tools" || toolPreviewKey(view, tool) !== key || request !== toolLibraryState(view).previewRequest) return;
+    view.viewport.setVisibleEntityIds?.(receipt?.entityIds ?? blankRows.map(row => row.entityId));
+    toolLibraryState(view).preview = null;
+    view.preserveCustomViewportEntities = true;
+    throw new Error(previewError);
+  }
   const revision = `tool-library:${key}`;
   const resources = context.sceneProxy?.resources ?? view.sceneProxy?.resources ?? context.projectProxy?.resources;
   const receipt = await view.viewport.applyViewSnapshot({ revision, rows }, resources);
-  if (!receipt?.applied || receipt.missingGeometryEntityIds?.length) throw new Error("模具预览几何未完整进入视口。");
+  if (!receipt?.applied || receipt.missingGeometryEntityIds?.length) throw new Error("单件工艺预览几何未完整进入视口。");
   if (view.activeAreaId !== "tools" || toolPreviewKey(view, tool) !== key || request !== toolLibraryState(view).previewRequest) return;
   const state = toolLibraryState(view);
   if (!state.previewApplied) {
@@ -596,12 +664,26 @@ function ensureToolLibraryPreview(context, view, tool) {
   state.previewError = "";
   const request = { key, toolKey: tool.libraryKey, promise: null };
   request.promise = Promise.resolve().then(async () => {
-      const branchProfile = tool?.target === "part" && tool?.requiresSection
+      const profile = ensureToolTubeProfile(view, "main");
+      const branchProfile = tool?.requiresSection
         ? ensureToolTubeProfile(view, "branch") : null;
-      const branchProfileSnapshot = branchProfile
-        ? await resolveToolProfileSnapshot(context, view, branchProfile, "branch") : null;
+      const resolveProfile = async (candidate, role) => {
+        if (!candidate) return null;
+        const evaluationKey = toolTubeProfileEvaluationKey(view, candidate, role);
+        const cached = state.profileSnapshots?.[role];
+        const snapshot = cached?.key === evaluationKey
+          ? cached.snapshot : await resolveToolProfileSnapshot(context, view, candidate, role);
+        if (state.previewRequest === request && toolTubeProfileEvaluationKey(view, candidate, role) === evaluationKey) {
+          state.profileSnapshots[role] = { key: evaluationKey, snapshot };
+        }
+        return snapshot;
+      };
+      const [profileSnapshotValue, branchProfileSnapshot] = await Promise.all([
+        resolveProfile(profile, "main"),
+        resolveProfile(branchProfile, "branch"),
+      ]);
       return context.sceneProxy.invoke("TubeDesigner.PreviewPunchWizard",
-        buildToolLibraryPreviewPayload(view, tool, { branchProfileSnapshot }), { timeoutMs: 120000 });
+        buildToolLibraryPreviewPayload(view, tool, { profileSnapshot: profileSnapshotValue, branchProfileSnapshot }), { timeoutMs: 120000 });
     })
     .then((response) => applyToolLibraryPreview(context, view, tool, response, key, request))
     .then(() => {
@@ -612,7 +694,7 @@ function ensureToolLibraryPreview(context, view, tool) {
       if (state.previewRequest !== request) return;
       state.previewRequest = null;
       state.previewFailureKey = key;
-      state.previewError = `模具预览失败：${error?.message ?? error}`;
+      state.previewError = `单件工艺预览失败：${error?.message ?? error}`;
       if (view.activeAreaId === "tools") view.tubeDesignerToolLibraryRenderProject?.();
     });
   state.previewRequest = request;
@@ -667,7 +749,7 @@ export function ensureToolLibraryCatalogue(context, view, ops, options = {}) {
       const tools = Array.isArray(response?.tools) ? response.tools : [];
       if (!tools.length) {
         const diagnostics = Array.isArray(response?.errors) ? response.errors.filter(Boolean).join("；") : "";
-        throw new Error(diagnostics || "模具目录为空，请检查内置模具资源是否完整。");
+        throw new Error(diagnostics || "单件工艺目录为空，请检查内置工艺资源是否完整。");
       }
       return response;
     } catch (error) {
@@ -755,19 +837,6 @@ export async function handleToolLibraryAction(context, view, action, target, ops
     }
     return { handled: true };
   }
-  if (action === "tube-designer-tool-library-preview-length-change") {
-    if (!view.pending) {
-      const value = Number(target?.value);
-      if (Number.isFinite(value)) {
-        const hadPreview = !!state.preview;
-        state.previewLength = Math.min(100000, Math.max(1, value));
-        state.previewError = ""; state.previewFailureKey = ""; state.preview = null;
-        state.previewApplied = hadPreview; view.preserveCustomViewportEntities = hadPreview;
-        ops.renderProject(context, view);
-      }
-    }
-    return { handled: true };
-  }
   if (action === "tube-designer-tool-library-toggle-main-tube") {
     state.mainTubeCollapsed = !state.mainTubeCollapsed;
     ops.renderProject(context, view);
@@ -795,7 +864,7 @@ export async function handleToolLibraryAction(context, view, action, target, ops
   if (action === "tube-designer-tool-library-scope") {
     if (!view.pending) {
       const scope = String(target?.dataset?.tubeToolLibraryScope ?? "");
-      if (SCOPES.some(([value]) => value === scope)) { const hadPreview = !!state.preview; state.scope = scope; state.selectedKey = ""; state.showToolDiagram = false; state.preview = null; state.previewError = ""; state.previewFailureKey = ""; state.previewApplied = hadPreview; view.preserveCustomViewportEntities = hadPreview; ops.renderProject(context, view); }
+      if (LIBRARY_SCOPES.some(([value]) => value === scope)) { const hadPreview = !!state.preview; state.scope = scope; state.selectedKey = ""; state.showToolDiagram = false; state.preview = null; state.previewError = ""; state.previewFailureKey = ""; state.previewApplied = hadPreview; view.preserveCustomViewportEntities = hadPreview; ops.renderProject(context, view); }
     }
     return { handled: true };
   }
@@ -842,11 +911,38 @@ export async function handleToolLibraryAction(context, view, action, target, ops
       const parameter = String(target?.dataset?.tubeToolLibraryParameter ?? "");
       const tool = libraryTools(view).find((item) => item.libraryKey === key);
       const definition = tool?.parameters?.find((item) => item?.key === parameter);
+      if (tool && definition && !definition.derived && parameterEnabled(definition, toolParameterValues(view, tool))) {
+        const hadPreview = !!state.preview;
+        const value = definition.valueType === "boolean" ? !!target.checked
+          : definition.valueType === "string" ? String(target.value ?? "") : Number(target.value);
+        const displayed = displayedToolParameterValues(view, tool);
+        const profile = ensureToolTubeProfile(view, "main", tool);
+        const sources = { ...toolTubeProfileValues(view, profile, "main") };
+        for (const candidate of tool.parameters ?? []) {
+          if (candidate.derived && displayed[candidate.key] !== "" && displayed[candidate.key] != null) {
+            sources[candidate.key] = displayed[candidate.key];
+          }
+        }
+        const patch = parameterAutoFillPatch(tool.parameters, displayed, parameter, value, sources);
+        state.parameterDrafts[key] = { ...(state.parameterDrafts[key] ?? {}), ...patch };
+        state.previewError = ""; state.previewFailureKey = ""; state.preview = null; state.previewApplied = hadPreview; view.preserveCustomViewportEntities = hadPreview;
+        ops.renderProject(context, view);
+      }
+    }
+    return { handled: true };
+  }
+  if (action === "tube-designer-tool-library-operation-parameter-change") {
+    if (!view.pending) {
+      const key = String(target?.dataset?.tubeToolLibraryKey ?? "");
+      const parameter = String(target?.dataset?.tubeToolLibraryOperationParameter ?? "");
+      const tool = libraryTools(view).find((item) => item.libraryKey === key);
+      const definition = tool?.operationParameters?.find((item) => item?.key === parameter);
       if (tool && definition) {
         const hadPreview = !!state.preview;
         const value = definition.valueType === "boolean" ? !!target.checked
           : definition.valueType === "string" ? String(target.value ?? "") : Number(target.value);
-        state.parameterDrafts[key] = { ...(state.parameterDrafts[key] ?? {}), [parameter]: value };
+        if (typeof value === "number" && !Number.isFinite(value)) return { handled: true };
+        state.operationDrafts[key] = { ...(state.operationDrafts[key] ?? {}), [parameter]: value };
         state.previewError = ""; state.previewFailureKey = ""; state.preview = null; state.previewApplied = hadPreview; view.preserveCustomViewportEntities = hadPreview;
         ops.renderProject(context, view);
       }
@@ -883,7 +979,7 @@ function resolveToolBridge(context) {
 }
 
 function upsertUserTool(view, tool) {
-  if (!tool?.id) throw new Error("保存模具后没有返回记录标识。");
+  if (!tool?.id) throw new Error("保存单件工艺后没有返回记录标识。");
   view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
   const tools = view.tubeDesignerUserData.punchTools ??= [];
   const index = tools.findIndex((item) => String(item?.id ?? "") === String(tool.id));
@@ -927,28 +1023,29 @@ async function importToolDxf(context, view, ops) {
     return null;
   }
   const sourcePath = String(await bridge.openFileDialog({
-    title: "选择定式模具截面 DXF",
+    title: "选择定式工艺截面 DXF",
     filters: [{ name: "DXF 二维截面", extensions: ["dxf"] }],
   }) ?? "").trim();
   if (!sourcePath) return null;
   return runToolTask(context, view, ops, {
-    title: "正在导入定式模具",
-    detail: "正在识别闭合截面并保存到我的模具",
+    title: "正在导入定式工艺",
+    detail: "正在识别闭合截面并保存到我的单件工艺",
     stage: "DXF 截面校验",
   }, async () => {
     const imported = await context.productProxy?.invoke?.("TubeDesigner.ImportProfileDxf", { sourcePath }, { timeoutMs: 120000 });
     const profile = imported?.profile;
     if (!profile?.contours?.length) throw new Error("DXF 没有返回有效的闭合截面。");
     const saved = await context.productProxy.invoke("TubeDesigner.SavePunchTool", {
-      name: profile.name ?? profile.sourceFileName ?? "定式模具",
+      name: profile.name ?? profile.sourceFileName ?? "定式工艺",
       kind: "fixed",
       target: "side",
       category: "孔型",
+      descriptor: { inputs: SIDE_CUT_INPUTS, operationParameters: SIDE_CUT_OPERATION_PARAMETERS },
       geometry: { mode: "profile", coordinateSpace: "section", contours: profile.contours },
     }, { timeoutMs: 120000 });
     const tool = saved?.tool;
     upsertUserTool(view, tool);
-    ops.showNotice(context, view, `已新增定式模具“${tool.displayName ?? tool.name ?? tool.id}”。`);
+    ops.showNotice(context, view, `已新增定式工艺“${tool.displayName ?? tool.name ?? tool.id}”。`);
     return tool;
   });
 }
@@ -961,19 +1058,19 @@ async function importToolPackage(context, view, ops) {
     return null;
   }
   const sourcePath = String(await bridge.openFileDialog({
-    title: "选择程式模具包",
-    filters: [{ name: "程式模具包", extensions: ["itmt"] }],
+    title: "选择程式工艺包",
+    filters: [{ name: "程式工艺包", extensions: ["itmt"] }],
   }) ?? "").trim();
   if (!sourcePath) return null;
   return runToolTask(context, view, ops, {
-    title: "正在导入程式模具",
-    detail: "正在校验单个 JSON+Python 模具包并保存到我的模具",
+    title: "正在导入程式工艺",
+    detail: "正在校验单个 JSON+Python 工艺包并保存到我的单件工艺",
     stage: "程式包校验",
   }, async () => {
     const response = await context.productProxy?.invoke?.("TubeDesigner.ImportPunchToolPackage", { sourcePath }, { timeoutMs: 120000 });
     const tool = response?.tool;
     upsertUserTool(view, tool);
-    ops.showNotice(context, view, `已新增程式模具“${tool.displayName ?? tool.name ?? tool.id}”。`);
+    ops.showNotice(context, view, `已新增程式工艺“${tool.displayName ?? tool.name ?? tool.id}”。`);
     return tool;
   });
 }

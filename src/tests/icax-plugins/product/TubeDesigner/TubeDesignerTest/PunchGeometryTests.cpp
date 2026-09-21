@@ -71,7 +71,16 @@ ObjectMap templateRequest(ObjectMap input, bool missingTools=false,const std::st
             {"kind",std::string("line")},{"start",points[i]},{"end",points[(i+1)%4]}});
         return ObjectMap{{"inner",inner},{"closed",true},{"edges",edges}};
     };
-    if(!input.contains("targetSection")) input["targetSection"]=ObjectMap{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
+    const auto profileContour=[](double x,double y) {
+        std::vector<VariantArray> points{{-x,-y},{x,-y},{x,y},{-x,y}};
+        VariantArray segments;
+        for(size_t i=0;i<points.size();++i)segments.emplace_back(ObjectMap{
+            {"kind",std::string("line")},{"start",points[i]},{"end",points[(i+1)%4]}});
+        return ObjectMap{{"kind",std::string("path")},{"closed",true},{"segments",segments}};
+    };
+    if(!input.contains("targetSection")) input["targetSection"]=ObjectMap{{"schema",std::string("icax.tube-profile")},{"schemaVersion",1ull},
+        {"contours",VariantArray{profileContour(20,10),profileContour(18,8)}}};
+    if(!input.contains("targetSectionAnalysis")) input["targetSectionAnalysis"]=ObjectMap{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
         {"status",std::string("available")},{"tolerance",0.001},
         {"contours",VariantArray{contour(20,10,false),contour(18,8,true)}}};
     const auto root=std::filesystem::current_path();
@@ -107,9 +116,11 @@ SPunchFeature templateHole(const std::string& id, ObjectMap parameters={}) {
     PreparePunchToolFootprint(f);
     return f;
 }
-SPunchEnd templateEnd(const std::string& id,bool start,ObjectMap parameters={},double trim=0,ObjectMap section={},double rotation=0) {
+SPunchEnd templateEnd(const std::string& id,bool start,ObjectMap parameters={},double trim=0,ObjectMap section={},
+    double rotation=0,ObjectMap operation={}) {
     ObjectMap item{{"type",std::string("template")},{"trim",trim},{"rotation",rotation},
         {"toolRef",ObjectMap{{"id",id}}},{"toolParameters",parameters}};
+    for(const auto& [key,value]:operation)item[key]=value;
     if(!section.empty()) item["section"]=section;
     const auto prepared=templateRequest({{"action",std::string("prepare")},{"bounds",testBounds()},
         {"ends",ObjectMap{{start?"start":"end",item}}}});
@@ -128,14 +139,21 @@ SPunchEnd templateEnd(const std::string& id,bool start,ObjectMap parameters={},d
     }
     return e;
 }
-SPunchFeature partTool(const std::string& id,ObjectMap parameters={},double station=500,double radius=6,ObjectMap bounds={}) {
+SPunchFeature partTool(const std::string& id,ObjectMap parameters={},double station=500,double radius=6,ObjectMap bounds={},ObjectMap placement={}) {
+    const auto circle=[](double r) {
+        const VariantArray segments{
+        ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{r,0.}},{"middle",VariantArray{0.,r}},{"end",VariantArray{-r,0.}}},
+        ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{-r,0.}},{"middle",VariantArray{0.,-r}},{"end",VariantArray{r,0.}}}};
+        return ObjectMap{{"kind",std::string("path")},{"closed",true},{"segments",segments}};
+    };
     const ObjectMap section{{"profile",ObjectMap{{"contours",VariantArray{
-        ObjectMap{{"kind",std::string("circle")},{"center",VariantArray{0.,0.}},{"radius",radius}},
-        ObjectMap{{"kind",std::string("circle")},{"center",VariantArray{0.,0.}},{"radius",radius-1}}}}}}};
-    const auto prepared=templateRequest({{"action",std::string("prepare")},{"bounds",bounds.empty()?testBounds():bounds},
-        {"features",VariantArray{ObjectMap{{"id",std::string("part-tool")},{"toolTarget",std::string("part")},
+        circle(radius),circle(radius-1)}}}}};
+    ObjectMap feature{{"id",std::string("part-tool")},{"toolTarget",std::string("part")},
             {"station",station},{"reference",std::string("start")},{"section",section},
-            {"toolRef",ObjectMap{{"id",id}}},{"toolParameters",parameters}}}}});
+            {"toolRef",ObjectMap{{"id",id}}},{"toolParameters",parameters}};
+    for(const auto& [key,value]:placement)feature[key]=value;
+    const auto prepared=templateRequest({{"action",std::string("prepare")},{"bounds",bounds.empty()?testBounds():bounds},
+        {"features",VariantArray{feature}}});
     const auto item=prepared.at("features").To<VariantArray>()[0].To<ObjectMap>();
     SPunchFeature f;f.ID="part-tool";f.Station=station;f.Type=id;f.ToolInPartCoordinates=true;
     const auto snapshot=item.at("toolSnapshot").To<ObjectMap>();
@@ -169,14 +187,15 @@ TEST(PartDrawing, JsonTransportPreservesRotationCoefficientsExactly) {
         EXPECT_EQ(value,transported.To<double>());
     }
 }
-TEST(PartDrawing, BranchExtrusionDirectionAndMaterialRegion) {
-    auto f=partTool("branch-profile",{{"direction",std::string("positive")}});
+TEST(PartDrawing, BranchExtrusionDirectionAndFilledOuterContour) {
+    auto f=partTool("branch-profile",{},500,6,{},{{"direction",std::string("positive")}});
     auto result=BuildPunchGeometry(rectTube(),{f});
     EXPECT_FALSE(inside(result,500,0,9));EXPECT_TRUE(inside(result,500,0,-9));
-    // An annular through-cut can leave a loose plug and must be rejected.
-    EXPECT_THROW(BuildPunchGeometry(rectTube(),{partTool("branch-profile",{{"cutRegion",std::string("material")}})}),std::invalid_argument);
-    // Place the annular region across the end without leaving a detached island.
-    f=partTool("branch-profile",{{"cutRegion",std::string("material")}},-5.5);
+    // The cutter fills its outer contour, so a through bore leaves no loose plug.
+    result=BuildPunchGeometry(rectTube(),{partTool("branch-profile")});
+    EXPECT_FALSE(inside(result,500,0,9));EXPECT_FALSE(inside(result,500,0,-9));
+    // A partial bore may cross an end without leaving a detached island.
+    f=partTool("branch-profile",{},-5.5);
     result=BuildPunchGeometry(rectTube(),{f});
     EXPECT_FALSE(inside(result,.25,0,9));EXPECT_TRUE(inside(result,1,0,9));
 }
@@ -204,7 +223,7 @@ TEST(PartDrawing, EdgeArcGroovesKeepBridgeAndMirrorWithKCompensation) {
     for(double k:{0.,0.62,1.}) {
         SCOPED_TRACE(k);
         const ObjectMap parameters{{"angle",90.},{"bendCompensation",true},
-            {"useDefaultKFactor",false},{"kFactor",k},{"leftArc",true}};
+            {"kFactor",k},{"leftArc",true}};
         auto mirrored=parameters;mirrored["leftArc"]=false;
         const auto left=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",parameters)});
         const auto right=BuildPunchGeometry(rectTube(),{partTool("edge-arc-groove",mirrored)});
@@ -218,7 +237,7 @@ TEST(PartDrawing, EdgeArcGroovesKeepBridgeAndMirrorWithKCompensation) {
     }
 }
 TEST(PartDrawing, EmbeddedArcNotchesRetainTongueAndMirror) {
-    const ObjectMap params{{"angle",90.},{"bendRadius",10.},{"rightArc",true}};
+    const ObjectMap params{{"angle",90.},{"arcRadius",10.},{"rightArc",true}};
     auto mirrored=params;mirrored["rightArc"]=false;
     const auto right=BuildPunchGeometry(rectTube(),{partTool("embedded-arc-notch",params)});
     const auto left=BuildPunchGeometry(rectTube(),{partTool("embedded-arc-notch",mirrored)});
@@ -264,7 +283,7 @@ TEST(PartDrawing, RootSlotsPreserveTwoBridgesAndSegmentedBendCutsRoundTube) {
             {"first",0.},{"last",2*3.141592653589793},{"start",VariantArray{radius,0.}},{"end",VariantArray{radius,0.}}}}}};};
     const ObjectMap target{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
         {"status",std::string("available")},{"tolerance",0.001},{"contours",VariantArray{circle(20,false),circle(18,true)}}};
-    const auto prepared=templateRequest({{"action",std::string("prepare")},{"targetSection",target},
+    const auto prepared=templateRequest({{"action",std::string("prepare")},{"targetSectionAnalysis",target},
         {"bounds",ObjectMap{{"min",VariantArray{0.,-20.,-20.}},{"max",VariantArray{1000.,20.,20.}}}},
         {"features",VariantArray{ObjectMap{{"toolTarget",std::string("part")},{"station",500.},
             {"toolRef",ObjectMap{{"id",std::string("v-notch-sharp")}}},
@@ -325,7 +344,7 @@ TEST(PartDrawing, CircularMultiRowsRotateAboutXWithExplicitDirection) {
     }
 }
 TEST(PartDrawing, FrozenBranchKeepsPositionAfterRemovingEndCut) {
-    auto f=partTool("branch-profile",{},100);SPunchEnds ends;ends.Start=templateEnd("end-square",true,{},50);
+    auto f=partTool("branch-profile",{},100);SPunchEnds ends;ends.Start=templateEnd("end-miter",true,{{"angle",0.}},50);
     std::vector<SPunchCut> cuts;BuildPunchGeometry(rectTube(),{f},ends,{},&cuts);ASSERT_EQ(cuts.size(),2u);
     const auto brep=iCAX::OpenCascade::ConvertOpenCascadeShapeToBRep(cuts[1].Shape,"branch-fixed","branch-fixed",.025);
     const auto restored=iCAX::OpenCascade::BuildOpenCascadeShape(brep);ASSERT_TRUE(restored.bOK);
@@ -360,17 +379,18 @@ TEST(PartDrawing, EveryLibrarySectionAndImportedDxfBuildExactBranchTools) {
     const auto result=BuildPunchGeometry(rectTube(),{f});
     EXPECT_FALSE(inside(result,500,0,9));EXPECT_TRUE(inside(result,514,0,9));EXPECT_TRUE(inside(result,500,9,9));
 }
-TEST(PunchGeometry, SingleWallPreservesOppositeAndInput) {
+TEST(PunchGeometry, DefaultHoleTraversesOnlyTheCurrentWall) {
     const auto base=rectTube(); const double before=mass(base);
     const auto result=BuildPunchGeometry(base,{hole()});
     EXPECT_FALSE(inside(result,500,0,9)); EXPECT_TRUE(inside(result,500,0,-9));
     EXPECT_NEAR(mass(base),before,1e-6); EXPECT_LT(mass(result),before);
 }
-TEST(PunchGeometry, ReverseModeCutsOnlyTheOppositeEntryWall) {
-    auto f=hole();f.Reverse=true;
+TEST(PunchGeometry, ExplicitDepthCanCreateABlindHole) {
+    auto f=hole();f.BlindHole=true;f.CutDepth=1;
     const auto result=BuildPunchGeometry(rectTube(),{f});
-    EXPECT_TRUE(inside(result,500,0,9));
-    EXPECT_FALSE(inside(result,500,0,-9));
+    EXPECT_FALSE(inside(result,500,0,9.5));
+    EXPECT_TRUE(inside(result,500,0,8.5));
+    EXPECT_TRUE(inside(result,500,0,-9));
 }
 TEST(PunchGeometry, CurvedWallIsPiercedAtHoleEdges) {
     auto f=hole(); f.Face="round";
@@ -398,29 +418,18 @@ TEST(PunchTemplates, AnalyticRoundWallIsFullyPierced) {
     const auto result=BuildPunchGeometry(roundTube(),{f});
     EXPECT_FALSE(inside(result,500,17.6,4.9));EXPECT_TRUE(inside(result,500,-19,0));
 }
-TEST(PunchTemplates, ConvexAndConcaveKeepOppositeSilhouettesAtBothEnds) {
-    for(bool start:{true,false}) {
-        SPunchEnds concave,convex;
-        (start?concave.Start:concave.End)=templateEnd("end-cope",start,{{"diameter",20.}});
-        (start?convex.Start:convex.End)=templateEnd("end-convex",start,{{"diameter",20.}});
-        const auto a=BuildPunchGeometry(rectTube(),{},concave),b=BuildPunchGeometry(rectTube(),{},convex);
-        const double x=start?5:995;
-        EXPECT_FALSE(inside(a,x,19,0));EXPECT_TRUE(inside(a,x,0,9));
-        EXPECT_TRUE(inside(b,x,19,0));EXPECT_FALSE(inside(b,x,0,9));
-    }
-}
 TEST(PunchTemplates, PlanarEndToolsAndRelativePlacement) {
     SPunchEnds ends;ends.Start=templateEnd("end-miter",true,{{"angle",45.}},10);
     auto f=templateHole("circle");f.Station=100;
     const auto shape=BuildPunchGeometry(rectTube(),{f},ends);
     EXPECT_FALSE(inside(shape,20,19,0));EXPECT_TRUE(inside(shape,80,19,0));
     EXPECT_FALSE(inside(shape,110,0,9));
-    ends.Start=templateEnd("end-square",true,{},25);
+    ends.Start=templateEnd("end-miter",true,{{"angle",0.}},25);
     EXPECT_FALSE(inside(BuildPunchGeometry(rectTube(),{},ends),20,19,0));
 }
 
 TEST(PunchTemplates, FrozenCutterDoesNotMoveWhenPrecedingEndNodeIsDeleted) {
-    SPunchEnds ends;ends.Start=templateEnd("end-square",true,{},50);
+    SPunchEnds ends;ends.Start=templateEnd("end-miter",true,{{"angle",0.}},50);
     auto f=templateHole("circle");f.ID="round-node";f.Station=100;f.ArrayCount=2;f.ArrayPitch=100;
     std::vector<SPunchCut> cuts;
     const auto original=BuildPunchGeometry(rectTube(),{f},ends,{},&cuts);
@@ -559,12 +568,10 @@ TEST(PunchGeometry, RotatedEndClipsButUnintendedOtherWallPenetrationStillFails) 
     const auto result=BuildPunchGeometry(rectTube(),{f});
     EXPECT_FALSE(inside(result,1,0,9));EXPECT_TRUE(inside(result,30,0,9));
 }
-TEST(PunchGeometry, OppositeAndThroughModes) {
+TEST(PunchGeometry, OppositeUsesTheSameDeclaredDepthOnBothSides) {
     auto f=hole(); f.Opposite=true;
+    f.CutDepth=3;
     auto result=BuildPunchGeometry(rectTube(),{f});
-    EXPECT_FALSE(inside(result,500,0,9)); EXPECT_FALSE(inside(result,500,0,-9));
-    f.Opposite=false; f.Through=true;
-    result=BuildPunchGeometry(rectTube(),{f});
     EXPECT_FALSE(inside(result,500,0,9)); EXPECT_FALSE(inside(result,500,0,-9));
 }
 TEST(PunchGeometry, ArrayAndEndReference) {
@@ -682,17 +689,20 @@ TEST(PunchLayouts, PartCoordinateArraysAlsoIgnoreOutsideInstances) {
 }
 TEST(PunchEnds, RectangularMaleAndFemaleAreComplementaryMatingSolids) {
     const auto base=rectTube();SPunchEnds male,female;
-    male.Start=templateEnd("end-key-joint",true,{{"gender",std::string("male")},{"width",10.},{"depth",20.}});
-    female.End=templateEnd("end-key-joint",false,{{"gender",std::string("female")},{"width",10.},{"depth",20.}});
+    male.Start=templateEnd("end-key-joint",true,{{"gender",std::string("male")},{"width",10.},{"straightDepth",20.}});
+    female.End=templateEnd("end-key-joint",false,{{"gender",std::string("female")},{"width",10.},{"straightDepth",20.}});
     const auto a=BuildPunchGeometry(base,{},male);
     const auto b=BuildPunchGeometry(base,{},female);
-    gp_Trsf placement;placement.SetTranslation(gp_Vec(-980,0,0));
+    gp_Trsf placement;placement.SetTranslation(gp_Vec(-975,0,0));
     const auto assembled=BRepBuilderAPI_Transform(b,placement,true).Shape();
     EXPECT_NEAR(mass(BRepAlgoAPI_Common(a,assembled).Shape()),0,1e-5);
-    EXPECT_NEAR(mass(a)+mass(b),mass(base)*1.98,1e-4);
+    EXPECT_NEAR(mass(a)+mass(b),mass(base)*1.975,1e-4);
     EXPECT_TRUE(inside(a,10,0,9));EXPECT_FALSE(inside(assembled,10,0,9));
     EXPECT_FALSE(inside(a,10,15,9));EXPECT_TRUE(inside(assembled,10,15,9));
-    female.End=templateEnd("end-key-joint",false,{{"gender",std::string("female")},{"width",10.},{"depth",20.},
+    EXPECT_TRUE(inside(a,23,4.8,9));
+    EXPECT_TRUE(inside(a,1,0,9));
+    EXPECT_FALSE(inside(a,1,4.8,9));
+    female.End=templateEnd("end-key-joint",false,{{"gender",std::string("female")},{"width",10.},{"straightDepth",20.},
         {"sideClearance",.5},{"axialClearance",1.}});
     const auto clear=BRepBuilderAPI_Transform(BuildPunchGeometry(base,{},female),placement,true).Shape();
     EXPECT_NEAR(mass(BRepAlgoAPI_Common(a,clear).Shape()),0,1e-5);
@@ -713,7 +723,7 @@ TEST(PunchEnds, SingleStepZHasExplicitHandAndIndependentEnds) {
 TEST(PunchEnds, BothMatingFormsSupportEitherEndAndRotation) {
     for(bool start:{true,false}) for(const auto* gender:{"male","female"}) {
         SPunchEnds ends;(start?ends.Start:ends.End)=templateEnd("end-key-joint",start,
-            {{"gender",std::string(gender)},{"width",8.},{"depth",20.}},5,{},90);
+            {{"gender",std::string(gender)},{"width",8.},{"straightDepth",20.}},5,{},90);
         const auto result=BuildPunchGeometry(rectTube(),{},ends);
         const double x=start?15:985;
         EXPECT_EQ(inside(result,x,19,0),std::string(gender)=="male");
@@ -724,7 +734,13 @@ TEST(PunchEnds, LibraryAndLocalDxfSectionsCutEitherEndWithoutSideHoles) {
     const auto imported=templateRequest({{"sourcePath",(std::filesystem::current_path()/
         "src/tests/icax-plugins/product/TubeDesigner/TubeDesignerTest/PartDrawingSection.dxf").string()}},false,
         "src/apps/tube-designer/templates/_shared/dxf_profile_importer.py");
-    const ObjectMap circle{{"contours",VariantArray{ObjectMap{{"kind",std::string("circle")},{"radius",10.}}}}};
+    const ObjectMap circle{{"contours",VariantArray{ObjectMap{{"kind",std::string("path")},{"closed",true},
+        {"segments",VariantArray{
+            ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{10.,0.}},
+                {"middle",VariantArray{0.,10.}},{"end",VariantArray{-10.,0.}}},
+            ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{-10.,0.}},
+                {"middle",VariantArray{0.,-10.}},{"end",VariantArray{10.,0.}}}
+        }}}}}};
     for(const auto& profile:{circle,imported.at("profile").To<ObjectMap>()}) for(bool start:{true,false}) {
         SPunchEnds ends;(start?ends.Start:ends.End)=templateEnd("end-profile",start,{},10,
             {{"source",std::string("dxf")},{"profile",profile}});
@@ -737,10 +753,16 @@ TEST(PunchEnds, LibraryAndLocalDxfSectionsCutEitherEndWithoutSideHoles) {
 }
 TEST(PunchEnds, SectionEndCutterRejectsMissingDetachedAndNonContactGeometry) {
     EXPECT_ANY_THROW(templateEnd("end-profile",true));
-    const ObjectMap section{{"profile",ObjectMap{{"contours",VariantArray{
-        ObjectMap{{"kind",std::string("circle")},{"radius",10.}}}}}}};
-    for(const auto& parameters:std::vector<ObjectMap>{{{"axialOffset",100.}},{{"offsetY",100.}},{{"axialOffset",-100.}}}) {
-        SPunchEnds ends;ends.Start=templateEnd("end-profile",true,parameters,0,section);
+    const VariantArray circleSegments{
+        ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{10.,0.}},
+            {"middle",VariantArray{0.,10.}},{"end",VariantArray{-10.,0.}}},
+        ObjectMap{{"kind",std::string("arc")},{"start",VariantArray{-10.,0.}},
+            {"middle",VariantArray{0.,-10.}},{"end",VariantArray{10.,0.}}}
+    };
+    const ObjectMap circleProfile{{"kind",std::string("path")},{"closed",true},{"segments",circleSegments}};
+    const ObjectMap section{{"profile",ObjectMap{{"contours",VariantArray{circleProfile}}}}};
+    for(const auto& operation:std::vector<ObjectMap>{{{"axialOffset",100.}},{{"offsetY",100.}},{{"axialOffset",-100.}}}) {
+        SPunchEnds ends;ends.Start=templateEnd("end-profile",true,{},0,section,0,operation);
         EXPECT_THROW(BuildPunchGeometry(rectTube(),{},ends),std::invalid_argument);
     }
 }

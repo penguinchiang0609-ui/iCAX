@@ -158,6 +158,19 @@ TEST(BRepTubeUnfoldingService, EncodesPeriodicEndCurvesForNesting)
     EXPECT_TRUE(_Features.Left.Kind != iCAX::TubeNesting::CutLineFeatureKind::Invalid);
     EXPECT_TRUE(_Features.Right.Kind != iCAX::TubeNesting::CutLineFeatureKind::Invalid);
 
+    const auto _Profiles = iCAX::TubeDesigner::EncodeTubeNestingEndProfiles(
+        _Result, 64, 16);
+    ASSERT_TRUE(_Profiles.bOK) << _Profiles.Diagnostic;
+    EXPECT_GT(_Profiles.MaximumLength, 0);
+    EXPECT_TRUE(_Profiles.Geometry.Left.CompleteSingleValued);
+    EXPECT_TRUE(_Profiles.Geometry.Right.CompleteSingleValued);
+    ASSERT_FALSE(_Profiles.Geometry.Left.Levels.empty());
+    ASSERT_FALSE(_Profiles.Geometry.Right.Levels.empty());
+    EXPECT_EQ(_Profiles.Geometry.Left.SourceQuality,
+        iCAX::TubeNesting::ProfileSourceQuality::NumericOnly);
+    EXPECT_EQ(_Profiles.Geometry.Right.SourceQuality,
+        iCAX::TubeNesting::ProfileSourceQuality::NumericOnly);
+
     const auto _Snapshot = iCAX::TubeDesigner::SerializeTubeBRepUnfolding(_Result);
     ASSERT_TRUE(_Snapshot.at("nestingFeatures").Is<iCAX::Data::ObjectMap>());
     EXPECT_TRUE(_Snapshot.at("nestingFeatures").To<iCAX::Data::ObjectMap>()

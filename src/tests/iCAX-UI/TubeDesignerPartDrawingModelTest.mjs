@@ -8,6 +8,19 @@ const tool={id:"branch-profile",version:"1",digest:"exact",target:"part",require
   defaultParameters:{},parameters:[]};
 const section={source:"library",profile:{contours:[{kind:"circle",radius:20}]},parameters:{diameter:40}};
 const state=createDrawingState({entityId:"drawing",length:500});installDrawingCatalogue(state,{tools:[tool]});
+
+const vNotch=JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/v-notch-sharp/tool.json",import.meta.url),"utf8"));
+vNotch.digest="auto-fill";
+vNotch.defaultParameters=Object.fromEntries(vNotch.parameters.map(parameter=>[parameter.key,parameter.defaultValue]));
+const autoState=createDrawingState({entityId:"auto-fill",length:500});
+installDrawingCatalogue(autoState,{tools:[vNotch]});
+selectDrawingTool(autoState,autoState.draft,vNotch.id);
+autoState.preview={revision:autoState.revision,includesDraft:true,sectionAnalyses:[{
+  index:0,applicable:true,parameters:{wallThickness:2},
+}]};
+assert.equal(updateDrawingField(autoState,{checked:true,value:"on",dataset:{tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"maleFemale"}}),true);
+assert.equal(autoState.draft.toolParameters.maleFemaleSize,2,"3D part editing must share the公母 auto-fill rule");
+
 state.draft=normalizeDrawingFeature({station:200,section,customRecipeField:{preserve:true}});selectDrawingTool(state,state.draft,tool.id);
 assert.equal(addDrawingFeature(state),true);
 state.features[0].arrayCount=3;state.features[0].arrayPitch=-60;state.features[0].rowCount=2;state.features[0].rowPitch=-10;

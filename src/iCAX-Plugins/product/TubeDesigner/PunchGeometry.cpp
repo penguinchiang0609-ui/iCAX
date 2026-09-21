@@ -246,7 +246,7 @@ namespace
         IntCurvesFace_ShapeIntersector ray;
         ray.Load(shape,Tol);
         const auto [u,v]=axes(s,f.ToolShape.IsNull()&&f.Type=="circle"?0:f.Rotation);
-        double deepest=0,opposite=std::numeric_limits<double>::max(),entrance=std::numeric_limits<double>::max();
+        double firstWallExit=0,opposite=std::numeric_limits<double>::max(),entrance=std::numeric_limits<double>::max();
         std::size_t hits=0;
         for(const auto& p:footprint(f)) {
             const auto origin=s.origin.Translated(u*p[0]+v*p[1]);
@@ -266,32 +266,42 @@ namespace
             }
             ++hits;
             entrance=std::min(entrance,intervals.front().first);
-            deepest=std::max(deepest,intervals.front().second);
+            firstWallExit=std::max(firstWallExit,intervals.front().second);
             if(intervals.size()>1) opposite=std::min(opposite,intervals[1].first);
         }
         if(!hits) return -1; // Entirely outside: skip this candidate, not its group.
+        if(f.BlindHole) {
+            const double requested=entrance+f.CutDepth;
+            if(requested+0.02>=firstWallExit)
+                throw std::invalid_argument("盲孔深度会穿透当前管壁，请减小孔深或关闭盲孔改用贯穿加工");
+            return requested;
+        }
         if(!f.ToolShape.IsNull()&&!f.ToolIsProfile) {
-            if(!f.Through && entrance+bounds(f.ToolShape).z1>=opposite)
-                throw std::invalid_argument("定式实体刀具会切到对面管壁，请选择贯穿两侧或调整刀具");
+            if(entrance+bounds(f.ToolShape).z1>=opposite)
+                throw std::invalid_argument("定式实体刀具会切到对面管壁，请调整刀具深度");
             return entrance;
         }
-        if(f.Through) return s.reach;
-        if(deepest+0.02>=opposite) throw std::invalid_argument("该孔会同时切到其他管壁，请减小孔或选择贯穿两侧");
-        return deepest+0.02;
+        // 普通孔只穿透当前侧管壁；对冲孔由两侧各自穿透一层管壁。
+        // 两者都由目标截面的实际交点求深，不穿过中空区域误切对侧。
+        if(f.Opposite) {
+            if(firstWallExit+0.02>=opposite) throw std::invalid_argument("对冲刀具会进入对侧管壁，请检查目标截面");
+        }
+        return firstWallExit+0.02;
     }
     void validate(const SPunchFeature& f)
     {
         ValidatePunchFeatureLayout(f);
         if(f.ToolShape.IsNull()&&f.Type!="circle"&&f.Type!="rectangle"&&f.Type!="slot"&&f.Type!="ellipse"&&f.Type!="custom")
             throw std::invalid_argument("不支持的孔类型");
-        for(double n:{f.Station,f.Offset,f.Rotation,f.Diameter,f.SpanAlong,f.SpanAcross,f.CornerRadius,f.ArrayPitch,f.RowPitch})
+        for(double n:{f.Station,f.Offset,f.Rotation,f.Diameter,f.SpanAlong,f.SpanAcross,f.CornerRadius,f.CutDepth,f.ArrayPitch,f.RowPitch})
             if(!std::isfinite(n)) throw std::invalid_argument("孔参数必须为有效数字");
+        if(f.BlindHole&&f.CutDepth<=0) throw std::invalid_argument("盲孔深度必须大于零");
         if(f.Reference!="start"&&f.Reference!="end"&&f.Reference!="center") throw std::invalid_argument("孔定位基准无效");
         if(f.EndDatum!="long"&&f.EndDatum!="center"&&f.EndDatum!="short") throw std::invalid_argument("端面尺寸基准无效");
         if(f.ToolInPartCoordinates) {
             if(f.ToolShape.IsNull() || !BRepCheck_Analyzer(f.ToolShape).IsValid() || volume(f.ToolShape)<=Tol)
                 throw std::invalid_argument("三维刀具体无效");
-            if(f.Opposite || f.Through || f.Reverse || f.Offset!=0
+            if(f.Opposite || f.Offset!=0
                 || (!f.ToolInPartLocalCoordinates && f.Rotation!=0)
                 || (f.Face!="top"&&f.Face!="left"&&f.Face!="round"))
                 throw std::invalid_argument("三维刀具须通过模板参数设置姿态，不使用壁面刀具定位");
@@ -367,7 +377,7 @@ void ValidatePunchFeatureLayout(const SPunchFeature& f)
 {
     if(f.HasArrayGroups) {
         if((f.Enabled&&f.ArrayCandidateCount<1)||f.ArrayCandidateCount>MaxHoles||f.ArrayTransforms.size()>f.ArrayCandidateCount
-            ||f.ArrayCandidateCount*(f.Opposite&&!f.Through?2:1)>MaxHoles)
+            ||f.ArrayCandidateCount*(f.Opposite?2:1)>MaxHoles)
             throw std::invalid_argument("阵列组最多支持 1000 个候选刀具；跳过项仍计入上限");
         if(f.Enabled&&f.ArrayTransforms.empty())throw std::invalid_argument("启用的阵列组必须保留至少一个刀具位置");
         std::set<std::array<long long,16>> seen;
@@ -386,7 +396,7 @@ void ValidatePunchFeatureLayout(const SPunchFeature& f)
     }
     if(f.ArrayCount<1 || f.RowCount<1 || f.ArrayCount>MaxHoles || f.RowCount>MaxHoles)
         throw std::invalid_argument("阵列数量须为 1 至 1000");
-    if(f.ArrayCount*f.RowCount*(f.Opposite&&!f.Through?2:1)>MaxHoles)
+    if(f.ArrayCount*f.RowCount*(f.Opposite?2:1)>MaxHoles)
         throw std::invalid_argument("单个零件最多支持 1000 个候选孔；跳过孔仍计入阵列上限");
     if(!std::isfinite(f.ArrayPitch)||!std::isfinite(f.RowPitch))
         throw std::invalid_argument("阵列间距必须为有效数字");
@@ -522,7 +532,7 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
     std::size_t total=0;
     for(const auto& source:features)if(source.Enabled) {
         if(diagnostic){diagnostic->FailureStage="features";diagnostic->FailureTarget="feature";diagnostic->FailureKey=source.ID;diagnostic->FailureIndex=&source-features.data();}
-        ValidatePunchFeatureLayout(source);const auto sides=source.Opposite&&!source.Through?2u:1u;
+        ValidatePunchFeatureLayout(source);const auto sides=source.Opposite?2u:1u;
         total+=candidates(source)*sides;if(total>MaxHoles)throw std::invalid_argument("单个零件最多支持 1000 个候选刀具");
         if(statistics){statistics->CandidateCount=total;statistics->SkippedCount+=(candidates(source)-retained(source))*sides;}
         if(!retained(source))continue;
@@ -537,15 +547,11 @@ std::vector<SPunchCut> BuildPunchToolPlacements(const TopoDS_Shape& base,const s
                 } else seeds.push_back(f.ToolShape);
                 return seeds;
             }
-            if(f.Reverse){if(f.Face=="round")f.Offset+=180;else if(f.Face=="top")f.Face="bottom";else if(f.Face=="bottom")f.Face="top";else if(f.Face=="left")f.Face="right";else f.Face="left";}
             for(unsigned side=0;side<sides;++side) {
                 auto s=surface(f,x,box);
                 if(side){s.origin=gp_Pnt(x,2*box.yc()-s.origin.Y(),2*box.zc()-s.origin.Z());s.normal.Reverse();}
-                const double projection=gp_Vec(gp_Pnt(x,box.yc(),box.zc()),s.origin).Dot(s.normal);
-                const double support=std::abs(s.normal.Y())*(box.y1-box.y0)/2+std::abs(s.normal.Z())*(box.z1-box.z0)/2;
-                const double entrance=std::max(0.,projection-support);
-                const double nominalWall=wall>0?wall:std::max(1.,std::hypot(box.y1-box.y0,box.z1-box.z0)*0.05);
-                const double depth=!f.ToolShape.IsNull()&&!f.ToolIsProfile?entrance+0.02:f.Through?s.reach:entrance+nominalWall+0.02;
+                const double depth=wallDepth(base,f,s);
+                if(depth<0)continue;
                 seeds.push_back(makeTool(f,s,depth));
             }
             return seeds;
@@ -604,8 +610,8 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
         if(!allSkipped&&f.FrozenCut.IsNull()) validate(f);
         else if(!allSkipped&&!f.FrozenCut.IsNull()&&(!BRepCheck_Analyzer(f.FrozenCut).IsValid() || volume(f.FrozenCut)<=Tol))
             throw std::invalid_argument("固化刀具体无效");
-        total+=candidates(f)*(f.Opposite&&!f.Through?2:1);
-        if(statistics)statistics->SkippedCount+=(candidates(f)-retained(f))*(f.Opposite&&!f.Through?2:1);
+        total+=candidates(f)*(f.Opposite?2:1);
+        if(statistics)statistics->SkippedCount+=(candidates(f)-retained(f))*(f.Opposite?2:1);
         if(total>MaxHoles) throw std::invalid_argument("单个零件最多支持 1000 个展开孔；请减少阵列数量");
     }
     if(statistics)statistics->CandidateCount=total;
@@ -660,7 +666,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
     std::size_t completed=0;
     for(const auto& source:features) if(source.Enabled) {
         phase("features","feature",source.ID,&source-features.data());
-        const auto sides=source.Opposite&&!source.Through?2u:1u;
+        const auto sides=source.Opposite?2u:1u;
         if(retained(source)==0) {
             completed+=candidates(source)*sides;
             if(progress) progress(completed,total+3,"本组候选孔已全部跳过");
@@ -690,7 +696,6 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                 } else seeds.push_back(source.ToolShape);
             } else {
                 auto f=source;
-                if(f.Reverse){if(f.Face=="round")f.Offset+=180;else if(f.Face=="top")f.Face="bottom";else if(f.Face=="bottom")f.Face="top";else if(f.Face=="left")f.Face="right";else f.Face="left";}
                 const double x=datum(f,ends,box,finished)+(f.Reference=="end"?-f.Station:f.Station);
                 for(unsigned side=0;side<sides;++side) {
                     auto s=surface(f,x,box);
@@ -776,13 +781,8 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
             if(skip(row,col)) continue;
             auto f=source;
             f.Offset+=rowOffset(row);
-            if(f.Reverse) {
-                if(f.Face=="round") f.Offset+=180;
-                else if(f.Face=="top") f.Face="bottom"; else if(f.Face=="bottom") f.Face="top";
-                else if(f.Face=="left") f.Face="right"; else f.Face="left";
-            }
             const double x=datum(f,ends,box,finished)+(f.Reference=="end"?-f.Station:f.Station)+axialOffset(col);
-            for(int side=0;side<(f.Opposite&&!f.Through?2:1);++side) {
+            for(int side=0;side<(f.Opposite?2:1);++side) {
                 if(side) {
                     if(f.Face=="round") f.Offset+=180;
                     else if(f.Face=="top") f.Face="bottom"; else if(f.Face=="bottom") f.Face="top";
@@ -791,7 +791,7 @@ TopoDS_Shape BuildPunchGeometry(const TopoDS_Shape& base,const std::vector<SPunc
                 std::ostringstream key; key.precision(12);
                 key<<f.Type<<':'<<f.Face<<':'<<x<<':'<<(f.Face=="round"?std::remainder(f.Offset,360):f.Offset)<<':'<<f.Diameter<<':'<<f.SpanAlong<<':'<<f.SpanAcross<<':'<<f.Rotation<<':'<<f.CornerRadius;
                 for(auto p:f.ToolFootprint) key<<':'<<p[0]<<','<<p[1];
-                key<<':'<<f.Through;
+                key<<':'<<f.BlindHole<<':'<<f.CutDepth;
                 if(!f.ToolShape.IsNull()) key<<':'<<bounds(f.ToolShape).z1;
                 for(auto p:f.Contour) key<<':'<<p[0]<<','<<p[1];
                 try {

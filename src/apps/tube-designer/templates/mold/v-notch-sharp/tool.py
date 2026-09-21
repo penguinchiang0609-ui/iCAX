@@ -138,6 +138,96 @@ def _rounded_v_points(left_angle, right_angle, radius, bottom, top):
             left_top, right_top, left_middle, right_middle)
 
 
+def _line(start, end):
+    return {"kind": "line", "start": list(start), "end": list(end)}
+
+
+def _arc(start, middle, end):
+    return {"kind": "arc", "start": list(start), "middle": list(middle), "end": list(end)}
+
+
+def _root_height(p, lo, wall):
+    reference = p.get("bottomReference", "outer")
+    if reference not in ("outer", "inner"):
+        raise ValueError("留底基准无效")
+    if reference == "inner" and wall <= 0:
+        raise ValueError("内底面基准需要目标管型提供有效壁厚")
+    leave_bottom = _number(p["leaveBottom"], "留底高度")
+    if leave_bottom < 0:
+        raise ValueError("留底高度不能小于 0")
+    return lo[2] + leave_bottom + (wall if reference == "inner" else 0), reference
+
+
+def _circle_wrap_geometry(p, lo, hi, wall):
+    """V groove inverse-developed around a final circular object."""
+    diameter = _number(p["enclosedDiameter"], "包围对象直径")
+    clearance = _number(p["radialClearance"], "径向装配间隙")
+    beta = math.radians(_number(p["angle"], "折弯角"))
+    k = _number(p["kFactor"], "K 因子")
+    if diameter <= 0 or clearance < 0 or not 0 < beta < math.pi or not 0 <= k <= 1:
+        raise ValueError("包围直径、间隙、折弯角或 K 因子无效")
+    radius = diameter / 2.0 + clearance
+    alpha = beta / 2.0
+    gamma = math.pi - alpha
+    root, root_reference = _root_height(p, lo, wall)
+    physical_top = hi[2]
+    minimum_height = radius * (1.0 + math.cos(alpha))
+    if root + minimum_height >= physical_top - 1e-6:
+        raise ValueError("包围圆 V 所需高度超出当前截面，请减小包围直径、间隙或槽根留量")
+
+    layer_offset = k * wall
+    developed = (radius + layer_offset) * beta
+    # The cutter already overlaps the tube below the outer face.  Keeping its
+    # profile on the physical face avoids showing a false 1 mm protrusion in
+    # the resource preview while retaining a valid subtracting volume.
+    top = physical_top
+    left_bottom = [-developed / 2.0, root]
+    right_bottom = [developed / 2.0, root]
+
+    def left_point(u):
+        return [-developed / 2.0 - radius * math.sin(u),
+                root + radius * (1.0 - math.cos(u))]
+
+    def right_point(u):
+        return [developed / 2.0 + radius * math.sin(u),
+                root + radius * (1.0 - math.cos(u))]
+
+    left_tip, right_tip = left_point(gamma), right_point(gamma)
+    left_top = [-developed / 2.0 - (top - root - radius) * math.tan(alpha), top]
+    right_top = [developed / 2.0 + (top - root - radius) * math.tan(alpha), top]
+    contour = {"kind": "path", "segments": [
+        _line(left_top, left_tip),
+        _arc(left_tip, left_point(gamma / 2.0), left_bottom),
+        _line(left_bottom, right_bottom),
+        _arc(right_bottom, right_point(gamma / 2.0), right_tip),
+        _line(right_tip, right_top),
+        _line(right_top, left_top),
+    ]}
+    span = hi[1] - lo[1]
+    nodes = [
+        {"key": "circle-wrap-profile", "operator": "profile2d", "arguments": {
+            "placement": {"origin": [0, hi[1], 0], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1]},
+            "contours": [contour]}},
+        {"key": "circle-wrap", "operator": "extrude", "inputs": ["circle-wrap-profile"],
+         "arguments": {"vector": [0, -span, 0]}},
+    ]
+    return {"mode": "solid", "coordinateSpace": "part-local", "outputKey": "circle-wrap",
+            "calculation": {
+                "geometryMode": "CircleWrap", "bendAngle": math.degrees(beta),
+                "finalIncludedAngle": 180.0 - math.degrees(beta),
+                "enclosedDiameter": diameter, "radialClearance": clearance,
+                "targetRadius": radius, "retainedArcAngle": math.degrees(gamma),
+                "effectiveLayerOffset": layer_offset, "developedBandLength": developed,
+                "minimumRequiredHeight": minimum_height,
+                "rootReference": root_reference, "formingValidation": "reference-closure-only",
+                "calibrationRequired": True,
+            },
+            "model": {"schema": "icax.neutral-model", "schemaVersion": 1,
+                      "template": {"id": "v-notch-sharp", "version": "4.0.0",
+                                   "packageDigest": "self-contained"},
+                      "geometry": nodes}}
+
+
 def generate(p, context):
     # Placement (station, rotation and array) belongs to the common layer.
     # This package only sizes a cutter around the current tube section.
@@ -156,10 +246,21 @@ def generate(p, context):
     if section_width <= 0 or section_height <= 0:
         raise ValueError("V 槽主管截面范围无效")
 
+    segmented = p.get("segmentedBend", False)
+    if not isinstance(segmented, bool):
+        raise ValueError("分段折弯必须是开关")
+    strategy = "sharp" if segmented else p["bottomStrategy"]
+    if strategy not in ("sharp", "flat", "rounded", "relief"):
+        raise ValueError("V 槽形式无效")
+    wall = _number(p.get("wallThickness", 0), "主管实际壁厚")
+    if wall < 0 or wall >= min(section_width, section_height) / 2:
+        raise ValueError("主管实际壁厚须小于截面短边的一半")
+    relief_shape = p.get("reliefShape", "roundedRectangle")
+    if strategy == "relief" and relief_shape == "circleWrap":
+        return _circle_wrap_geometry(p, lo, hi, wall)
+
     angle = _number(p["angle"], "V 槽夹角")
     total_angle=angle
-    segmented=p.get('segmentedBend',False)
-    if not isinstance(segmented,bool):raise ValueError("分段折弯必须是开关")
     count=1;pitch=0;chord_error=0
     if segmented:
         count=p.get('segmentCount',6)
@@ -175,12 +276,10 @@ def generate(p, context):
             raise ValueError("分段槽数须为 2 至 64 的整数")
         count=int(count)
         if radius<=0 or not 0<angle<180:raise ValueError("中心线半径须大于 0，总折弯角须介于 0 与 180°")
-        if p['asymmetric'] or p['bottomStrategy']!='sharp' or p['maleFemale'] or p.get('rootSlotPattern',False):
-            raise ValueError("分段折弯使用对称尖角槽，不与公母或根部三槽叠加")
         angle/=count
         pitch=2*radius*math.sin(math.radians(angle)/2)
         chord_error=radius*(1-math.cos(math.radians(angle)/2))
-    asymmetric = p["asymmetric"]
+    asymmetric = p["asymmetric"] and not segmented
     if not isinstance(asymmetric, bool):
         raise ValueError("非对称必须是开关")
     if asymmetric:
@@ -196,9 +295,6 @@ def generate(p, context):
     right_tan = math.tan(math.radians(right_angle))
 
     half_height = hi[2]
-    wall = _number(p.get("wallThickness", 0), "主管实际壁厚")
-    if wall < 0 or wall >= min(section_width, section_height) / 2:
-        raise ValueError("主管实际壁厚须小于截面短边的一半")
     reference = p.get("bottomReference", "outer")
     if reference not in ("outer", "inner"):
         raise ValueError("留底基准无效")
@@ -210,10 +306,7 @@ def generate(p, context):
     if leave_bottom < 0 or leave_bottom >= section_height:
         raise ValueError("留底高度须大于等于 0 且小于主管截面高度")
     sharp_bottom = lo[2] + leave_bottom
-    top = half_height + 1
-    strategy = p["bottomStrategy"]
-    if strategy not in ("sharp", "flat", "rounded", "relief"):
-        raise ValueError("底部策略无效")
+    top = half_height
 
     flat_width = 0.0
     bottom = sharp_bottom
@@ -222,10 +315,10 @@ def generate(p, context):
         if flat_width < 0:
             raise ValueError("平底宽度不能小于 0")
 
-    male_female = p["maleFemale"]
+    male_female = p["maleFemale"] and not segmented
     if not isinstance(male_female, bool):
         raise ValueError("斜切公母必须是开关")
-    male_size = _number(p["maleFemaleSize"], "公母尺寸")
+    male_size = _number(p["maleFemaleSize"], "公母尺寸") if male_female else 0.0
     if male_size < 0:
         raise ValueError("公母尺寸不能小于 0")
     if male_female:
@@ -246,8 +339,6 @@ def generate(p, context):
         if rounded is not None:
             (left_slope, right_slope, left_bottom, right_bottom,
              left_top, right_top, left_middle, right_middle) = rounded
-            left_top = [left_top[0] - left_tan, top]
-            right_top = [right_top[0] + right_tan, top]
             min_side_depth = min(half_height - left_slope[1], half_height - right_slope[1])
             if male_female and male_size >= min_side_depth:
                 raise ValueError("公母尺寸须小于圆角 V 槽斜边高度")
@@ -310,15 +401,14 @@ def generate(p, context):
             ]}
 
     compensate = p.get("bendCompensation", False)
-    default_k = p.get("useDefaultKFactor", True)
-    if not isinstance(compensate, bool) or not isinstance(default_k, bool):
-        raise ValueError("K 因子选项必须是开关")
+    if not isinstance(compensate, bool):
+        raise ValueError("K 因子展开补偿必须是开关")
     if compensate and strategy == "rounded":
         if strategy != "rounded" or round_radius <= 0:
             raise ValueError("K 因子展开补偿需要圆角策略及大于 0 的刀口圆角")
         if wall <= 0:
             raise ValueError("K 因子展开补偿需要填写主管实际壁厚")
-        k = 0.62 if default_k else _number(p.get("kFactor", 0.62), "K 因子")
+        k = _number(p.get("kFactor", 0.62), "K 因子")
         if not 0 <= k <= 1:
             raise ValueError("K 因子须介于 0 和 1 之间")
         # Delta L = K*T*theta (theta in radians). Split around the station:
@@ -330,8 +420,11 @@ def generate(p, context):
                     x, z = segment[key]
                     segment[key] = [x + (half_allowance if x > 0 else -half_allowance), z]
 
-    span = section_width + 2
-    origin = [0, hi[1] + 1, 0]
+    # Tool solids are also shown directly in the resource preview.  Keep the
+    # transverse extent on the measured tube faces instead of using the old
+    # one-millimetre boolean overshoot on both sides.
+    span = section_width
+    origin = [0, hi[1], 0]
     nodes = []
 
     def prism(key, shape, cut_depth=0, side="positive", transverse=None):
@@ -343,8 +436,8 @@ def generate(p, context):
         vector = [0, -span, 0]
         if cut_depth > 0:
             direction = 1 if side == "positive" else -1
-            local_origin[1] = (hi[1] + 1 if direction > 0 else lo[1] - 1)
-            vector = [0, -direction * (cut_depth + 1), 0]
+            local_origin[1] = (hi[1] if direction > 0 else lo[1])
+            vector = [0, -direction * cut_depth, 0]
         if transverse is not None:
             local_origin[1] = transverse[1]
             vector = [0, transverse[0]-transverse[1], 0]
@@ -355,31 +448,58 @@ def generate(p, context):
 
     prism("notch", contour)
     cutters = ["notch"]
-    root_pattern = p.get("rootSlotPattern", False)
+    root_pattern = p.get("rootSlotPattern", False) and not segmented
     if not isinstance(root_pattern,bool):raise ValueError("根部三槽必须是开关")
     if root_pattern:
         interval=context.get("analysis",{}).get("bottomWallSpan")
         if not isinstance(interval,(list,tuple)) or len(interval)!=2:
-            raise ValueError("根部三槽需要从截面测得的平直铰链区间")
+            raise ValueError("根部释放槽需要从截面测得的平直铰链区间")
         a,b=interval;available=b-a
-        lc,ls,wc,ws,kerf,minimum=[_number(p.get(key,default),key) for key,default in
-            (("centerSlotLength",6),("sideSlotLength",3),("centerSlotWidth",1),("sideSlotWidth",1),("rootKerf",0),("minimumBridge",1))]
-        if min(lc,ls,wc,ws,minimum)<=0 or kerf<0:
-            raise ValueError("释放槽尺寸和最小桥宽须大于 0，割缝不能为负")
-        if min(wc,ws)<=kerf:raise ValueError("释放槽宽必须大于割缝")
-        if (available-lc-2*ls)/2-kerf < minimum:
-            raise ValueError("根部三槽扣除割缝后的剩余桥宽不足")
-        mid=(a+b)/2
-        for key,width,limits in (("root-center",wc,(mid-lc/2,mid+lc/2)),
-                ("root-left",ws,(a,a+ls)),("root-right",ws,(b-ls,b))):
-            shape=_rounded_bottom_rectangle(width,bottom-lo[2]+2,0,lo[2]-1)
+        mode=p.get("rootPatternMode","triple")
+        kerf=_number(p.get("rootKerf",0),"桥宽核算割缝")
+        minimum=_number(p.get("minimumBridge",1),"最小桥宽")
+        if kerf<0 or minimum<=0:
+            raise ValueError("最小桥宽须大于 0，割缝不能为负")
+        if mode=="triple":
+            lc,ls,wc,ws=[_number(p.get(key,default),key) for key,default in
+                (("centerSlotLength",6),("sideSlotLength",3),("centerSlotWidth",1),("sideSlotWidth",1))]
+            if min(lc,ls,wc,ws)<=0:
+                raise ValueError("释放槽尺寸必须大于 0")
+            if min(wc,ws)<=kerf:raise ValueError("释放槽宽必须大于割缝")
+            if (available-lc-2*ls)/2-kerf < minimum:
+                raise ValueError("根部三槽扣除割缝后的剩余桥宽不足")
+            mid=(a+b)/2
+            slots=(("root-center",wc,(mid-lc/2,mid+lc/2)),
+                   ("root-left",ws,(a,a+ls)),("root-right",ws,(b-ls,b)))
+        elif mode=="multi":
+            bridge_count=p.get("bridgeCount",2)
+            if isinstance(bridge_count,bool) or int(bridge_count)!=bridge_count or not 1<=bridge_count<=16:
+                raise ValueError("连接桥数量必须为 1 至 16 的整数")
+            bridge_count=int(bridge_count)
+            bridge_width=_number(p.get("bridgeWidth",2),"连接桥名义宽度")
+            axial_width=_number(p.get("multiSlotWidth",1),"多桥槽轴向宽度")
+            if min(bridge_width,axial_width)<=0 or bridge_width-kerf<minimum:
+                raise ValueError("多桥尺寸不足：连接桥扣除割缝后必须满足最小桥宽")
+            slot_span=(available-bridge_count*bridge_width)/(bridge_count+1)
+            if slot_span<=context.get("analysis",{}).get("tolerance",1e-6):
+                raise ValueError("连接桥总宽度超过可用铰链区间")
+            cursor=a;built=[]
+            for index in range(bridge_count+1):
+                limits=(cursor,cursor+slot_span)
+                built.append((f"root-multi-{index}",axial_width,limits))
+                cursor=limits[1]+(bridge_width if index<bridge_count else 0)
+            slots=tuple(built)
+        else:
+            raise ValueError("根部释放槽布置无效")
+        for key,width,limits in slots:
+            shape=_rounded_bottom_rectangle(width,bottom-lo[2],0,lo[2])
             prism(key,shape,transverse=limits)
             cutters.append(key)
     if strategy == "relief":
         relief_kind=p.get('reliefShape','roundedRectangle')
         length=_number(p['reliefLength'],'释放孔长度')
-        height=_number(p['reliefHeight'],'释放孔高度')
-        relief_radius=_number(p['reliefRadius'],'释放孔圆角')
+        height=_number(p['reliefHeight'],'释放孔高度') if relief_kind!='circle' else length
+        relief_radius=_number(p['reliefRadius'],'释放孔圆角') if relief_kind=='roundedRectangle' else 0
         if relief_kind=='circle':height=length;relief_radius=length/2
         elif relief_kind=='capsule':relief_radius=min(length,height)/2
         elif relief_kind!='roundedRectangle':raise ValueError("释放孔形状无效")
@@ -415,5 +535,5 @@ def generate(p, context):
             "chordError":chord_error,"rootReference":reference,"hingeThickness":min(wall,leave_bottom),
             "cutSurfaceMode":"FixedPlane","formingValidation":"not-performed"},"model": {
         "schema": "icax.neutral-model", "schemaVersion": 1,
-        "template": {"id": "v-notch-sharp", "version": "3.1.0", "packageDigest": "self-contained"},
+        "template": {"id": "v-notch-sharp", "version": "4.0.0", "packageDigest": "self-contained"},
         "geometry": nodes}}

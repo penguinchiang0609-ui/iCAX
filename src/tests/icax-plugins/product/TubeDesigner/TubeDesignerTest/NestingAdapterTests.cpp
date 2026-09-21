@@ -16,6 +16,27 @@ namespace
     using iCAX::Data::ObjectMap;
     using iCAX::Data::VariantArray;
 
+    iCAX::TubeNesting::PeriodicEndProfile ConstantProfile(const double PositionMm_)
+    {
+        iCAX::TubeNesting::FourierLevel _Level;
+        _Level.Constant = PositionMm_ * 100.0;
+        _Level.Certified = true;
+        iCAX::TubeNesting::PeriodicEndProfile _Profile;
+        _Profile.SourceQuality = iCAX::TubeNesting::ProfileSourceQuality::NativeCertified;
+        _Profile.CompleteSingleValued = true;
+        _Profile.Levels.push_back(std::move(_Level));
+        return _Profile;
+    }
+
+    iCAX::TubeNesting::PairTypeGeometry InsetRightProfile(
+        const double LengthMm_, const double InsetMm_)
+    {
+        iCAX::TubeNesting::PairTypeGeometry _Geometry;
+        _Geometry.Left = ConstantProfile(0.0);
+        _Geometry.Right = ConstantProfile(LengthMm_ - InsetMm_);
+        return _Geometry;
+    }
+
     void CheckAccounting(const ObjectMap& Result_, const std::vector<SNestingPart>& Parts_,
         const std::vector<SNestingStock>& Stocks_, const double Gap_)
     {
@@ -138,16 +159,17 @@ TEST(TubeDesignerNesting, EachNewStockStartsWithoutNestingWithPrevious)
     CheckAccounting(_Result, _Parts, _Stocks, 5.0);
 }
 
-TEST(TubeDesignerNesting, PositiveGapRetainsLegalTrapezoidNestingAfterFirstPart)
+TEST(TubeDesignerNesting, PositiveGapIsCombinedWithPeriodicEndProfileNesting)
 {
     SNestingVariant _Variant;
     _Variant.ID = "miter";
     _Variant.EnvelopeLength = 120.0;
     _Variant.MaterialLength = 110.0;
-    _Variant.LeftEnd = { 10.0, "50000:0", true };
-    _Variant.RightEnd = { 10.0, "50000:0", true };
+    SNestingPart _Part{ "p", "section", 120.0, 2, { _Variant } };
+    _Part.PairGeometry = InsetRightProfile(120.0, 10.0);
+    _Part.DirectionAllowed = { true, false };
     const auto _Result = SolveManufacturingNesting(
-        { { "p", "section", 120.0, 2, { _Variant } } }, { { "s", "section", 235.0, 1 } }, 5.0);
+        { _Part }, { { "s", "section", 235.0, 1 } }, 5.0);
     ASSERT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
     const auto _Plans = _Result.at("plans").To<VariantArray>();
     ASSERT_EQ(_Plans.size(), 1u);
@@ -162,7 +184,52 @@ TEST(TubeDesignerNesting, PositiveGapRetainsLegalTrapezoidNestingAfterFirstPart)
     EXPECT_NEAR(_Second.at("end").To<double>(), 235.0, 1e-8);
 }
 
-TEST(TubeDesignerNesting, PlacementStoresAuthoritativeTransformIncludingAxialRotation)
+TEST(TubeDesignerNesting, ContinuedIrregularStockAppendsAfterLockedPrefix)
+{
+    SNestingPart _Locked{ "locked", "section", 100.0, 0 };
+    _Locked.PairGeometry = InsetRightProfile(100.0, 20.0);
+    _Locked.DirectionAllowed = { true, false };
+    SNestingPart _Next{ "next", "section", 100.0, 1 };
+    _Next.PairGeometry = InsetRightProfile(100.0, 0.0);
+    _Next.DirectionAllowed = { true, false };
+
+    SNestingStock _Continued;
+    _Continued.ID = "continued-row";
+    _Continued.ProfileKey = "section";
+    _Continued.Length = 250.0;
+    _Continued.Quantity = 1;
+    _Continued.SourceStockTypeID = "stock-250";
+    _Continued.InstanceID = "locked-plan";
+    _Continued.InitialProcessedEnd = 150.0;
+    _Continued.InitialPredecessorPartID = "locked";
+    _Continued.InitialPredecessorRotationRadians = 0.4;
+
+    const auto _Result = SolveManufacturingNesting(
+        { _Locked, _Next },
+        { _Continued, { "new-stock", "section", 100.0, -1 } }, 5.0);
+
+    ASSERT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
+    const auto _Plans = _Result.at("plans").To<VariantArray>();
+    ASSERT_EQ(_Plans.size(), 1U);
+    const auto _Plan = _Plans.front().To<ObjectMap>();
+    EXPECT_TRUE(_Plan.at("continued").To<bool>());
+    EXPECT_EQ(_Plan.at("id").To<std::string>(), "locked-plan");
+    EXPECT_EQ(_Plan.at("stockTypeId").To<std::string>(), "stock-250");
+    EXPECT_NEAR(_Plan.at("initialProcessedEnd").To<double>(), 150.0, 1.0e-8);
+    EXPECT_NEAR(_Plan.at("usedLength").To<double>(), 235.0, 1.0e-8);
+    EXPECT_NEAR(_Plan.at("remainingLength").To<double>(), 15.0, 1.0e-8);
+    const auto _Placements = _Plan.at("placements").To<VariantArray>();
+    ASSERT_EQ(_Placements.size(), 1U);
+    const auto _Placement = _Placements.front().To<ObjectMap>();
+    EXPECT_EQ(_Placement.at("partId").To<std::string>(), "next");
+    EXPECT_NEAR(_Placement.at("start").To<double>(), 135.0, 1.0e-8);
+    EXPECT_NEAR(_Placement.at("end").To<double>(), 235.0, 1.0e-8);
+    EXPECT_NEAR(_Placement.at("gapBefore").To<double>(), -15.0, 1.0e-8);
+    EXPECT_TRUE(_Placement.at("nestedWithPrevious").To<bool>());
+    EXPECT_NEAR(_Placement.at("rotationRadians").To<double>(), 0.4, 1.0e-12);
+}
+
+TEST(TubeDesignerNesting, PlacementStoresAuthoritativeTransformForSolvedDirection)
 {
     SNestingVariant _Variant;
     _Variant.ID = "miter-rotated";
@@ -171,35 +238,47 @@ TEST(TubeDesignerNesting, PlacementStoresAuthoritativeTransformIncludingAxialRot
     _Variant.Reversed = true;
     _Variant.RotationRadians = 1.57079632679489661923;
     const std::array<double, 3> _LocalCenter{ 10.0, 2.0, 3.0 };
+    SNestingPart _Part{ "p", "section", 120.0, 1, { _Variant }, _LocalCenter };
+    _Part.DirectionAllowed = { false, true };
     const auto _Result = SolveManufacturingNesting(
-        { { "p", "section", 120.0, 1, { _Variant }, _LocalCenter } },
-        { { "s", "section", 200.0, 1 } }, 0.0);
+        { _Part }, { { "s", "section", 200.0, 1 } }, 0.0);
     const auto _Plan = _Result.at("plans").To<VariantArray>().front().To<ObjectMap>();
     const auto _Placement = _Plan.at("placements").To<VariantArray>().front().To<ObjectMap>();
     EXPECT_TRUE(_Placement.at("reversed").To<bool>());
-    EXPECT_NEAR(_Placement.at("rotationRadians").To<double>(), _Variant.RotationRadians, 1e-12);
+    EXPECT_NEAR(_Placement.at("rotationRadians").To<double>(), 0.0, 1e-12);
     const auto _Actual = _Placement.at("trsf").To<VariantArray>();
     const auto _Expected = MakeNestingPlacementTransform(
         _LocalCenter, _Placement.at("start").To<double>(), _Placement.at("end").To<double>(),
-        true, _Variant.RotationRadians);
+        true, 0.0);
     ASSERT_EQ(_Actual.size(), _Expected.size());
     for (std::size_t _Index = 0; _Index < _Actual.size(); ++_Index)
         EXPECT_NEAR(_Actual[_Index].To<double>(), _Expected[_Index].To<double>(), 1e-12);
+    // The reverse base pose is a proper 180-degree rotation about local Y.
+    // It maps the spectrum's circumferential coordinate theta to -theta,
+    // exactly matching PairPoseTable::MakeSeries.
+    EXPECT_NEAR(_Actual[0].To<double>(), -1.0, 1e-12);
+    EXPECT_NEAR(_Actual[5].To<double>(), 1.0, 1e-12);
+    EXPECT_NEAR(_Actual[10].To<double>(), -1.0, 1e-12);
 }
 
-TEST(TubeDesignerNesting, PlacementCarriesCircumferentialPhaseWithoutDuplicatingGeometry)
+TEST(TubeDesignerNesting, PlacementCarriesSolvedPairPoseMetadata)
 {
-    SNestingVariant _Variant;
-    _Variant.ID = "phase-variant";
-    _Variant.EnvelopeLength = 100.0;
-    _Variant.MaterialLength = 100.0;
-    _Variant.PhaseOffset = 37.25;
+    SNestingPart _A{ "a", "section", 100.0, 1 };
+    SNestingPart _B{ "b", "section", 100.0, 1 };
+    _A.PairGeometry = InsetRightProfile(100.0, 10.0);
+    _B.PairGeometry = InsetRightProfile(100.0, 0.0);
+    _B.PairGeometry->RelativeRotationDomain.DiscreteRadians = { 0.75 };
+    _A.DirectionAllowed = { true, false };
+    _B.DirectionAllowed = { true, false };
     const auto _Result = SolveManufacturingNesting(
-        { { "p", "section", 100.0, 1, { _Variant } } },
-        { { "s", "section", 200.0, 1 } }, 0.0);
-    const auto _Placement = _Result.at("plans").To<VariantArray>().front()
-        .To<ObjectMap>().at("placements").To<VariantArray>().front().To<ObjectMap>();
-    EXPECT_NEAR(_Placement.at("phaseOffset").To<double>(), 37.25, 1e-8);
+        { _A, _B }, { { "s", "section", 190.0, 1 } }, 0.0);
+    const auto _Placements = _Result.at("plans").To<VariantArray>().front()
+        .To<ObjectMap>().at("placements").To<VariantArray>();
+    ASSERT_EQ(_Placements.size(), 2u);
+    const auto _Placement = _Placements[1].To<ObjectMap>();
+    EXPECT_NEAR(_Placement.at("rotationRadians").To<double>(), 0.75, 1e-12);
+    EXPECT_GT(_Placement.at("pairPoseIndex").To<unsigned long long>(), 0u);
+    EXPECT_NEAR(_Placement.at("savingFromPrevious").To<double>(), 10.0, 1e-8);
 }
 
 TEST(TubeDesignerNesting, ExactFitUsesOnlyInteriorGapAndFiniteStock)
@@ -261,15 +340,16 @@ TEST(TubeDesignerNesting, QuantizationNeverShortensPartOrExtendsStock)
     ASSERT_EQ(_Result.at("unplaced").To<VariantArray>().size(), 1u);
 }
 
-TEST(TubeDesignerNesting, CompatiblePlanarEndsUseConservativeTrapezoidOverlap)
+TEST(TubeDesignerNesting, CompatiblePeriodicEndProfilesProduceCertifiedOverlap)
 {
     SNestingVariant _Variant;
     _Variant.ID = "miter";
     _Variant.EnvelopeLength = 120.0;
     _Variant.MaterialLength = 110.0;
-    _Variant.LeftEnd = { 10.0, "50000:0", true };
-    _Variant.RightEnd = { 10.0, "50000:0", true };
-    const std::vector<SNestingPart> _Parts{ { "miter-part", "section", 120.0, 2, { _Variant } } };
+    SNestingPart _Part{ "miter-part", "section", 120.0, 2, { _Variant } };
+    _Part.PairGeometry = InsetRightProfile(120.0, 10.0);
+    _Part.DirectionAllowed = { true, false };
+    const std::vector<SNestingPart> _Parts{ _Part };
     const auto _Result = SolveManufacturingNesting(
         _Parts, { { "stock", "section", 230.0, 1 } }, 0.0);
     ASSERT_EQ(_Result.at("status").To<std::string>(), "optimal");
@@ -282,9 +362,35 @@ TEST(TubeDesignerNesting, CompatiblePlanarEndsUseConservativeTrapezoidOverlap)
     EXPECT_NEAR(_Second.at("start").To<double>(), 110.0, 1e-8);
     EXPECT_NEAR(_Second.at("gapBefore").To<double>(), -10.0, 1e-8);
     EXPECT_TRUE(_Second.at("nestedWithPrevious").To<bool>());
-    EXPECT_EQ(_Second.at("variantId").To<std::string>(), "miter");
+    EXPECT_EQ(_Second.at("variantId").To<std::string>(), "forward");
     EXPECT_NEAR(_Plan.at("partLength").To<double>(), 220.0, 1e-8);
     EXPECT_NEAR(_Plan.at("usedLength").To<double>(), 230.0, 1e-8);
+    const auto _Proof = _Result.at("proof").To<ObjectMap>();
+    EXPECT_TRUE(_Proof.at("integerModelOptimalityProven").To<bool>());
+    EXPECT_TRUE(_Proof.at("nativePairBoundsCertified").To<bool>());
+}
+
+TEST(TubeDesignerNesting, NumericPairProfilesNeverClaimNativeGeometryCertification)
+{
+    SNestingPart _Part{ "numeric", "section", 120.0, 2 };
+    _Part.PairGeometry = InsetRightProfile(120.0, 10.0);
+    _Part.PairGeometry->Left.SourceQuality =
+        iCAX::TubeNesting::ProfileSourceQuality::NumericOnly;
+    _Part.PairGeometry->Right.SourceQuality =
+        iCAX::TubeNesting::ProfileSourceQuality::NumericOnly;
+    _Part.DirectionAllowed = { true, false };
+
+    const auto _Result = SolveManufacturingNesting(
+        { _Part }, { { "stock", "section", 230.0, 1 } }, 0.0);
+
+    EXPECT_EQ(_Result.at("status").To<std::string>(), "partial");
+    EXPECT_EQ(_Result.at("unplaced").To<VariantArray>().size(), 1U);
+    ASSERT_EQ(_Result.at("plans").To<VariantArray>().size(), 1U);
+    EXPECT_EQ(_Result.at("plans").To<VariantArray>().front().To<ObjectMap>()
+        .at("partCount").To<unsigned long long>(), 1U);
+    const auto _Proof = _Result.at("proof").To<ObjectMap>();
+    EXPECT_FALSE(_Proof.at("integerModelOptimalityProven").To<bool>());
+    EXPECT_FALSE(_Proof.at("nativePairBoundsCertified").To<bool>());
 }
 
 TEST(TubeDesignerNesting, ProfileKeyUsesSectionDataAndIgnoresMaterial)
@@ -327,6 +433,109 @@ TEST(TubeDesignerNesting, UnlimitedStockFillsRemainingAndOversizePartsRemainAcco
     EXPECT_EQ(_Result.at("status").To<std::string>(), "partial");
     EXPECT_EQ(_Result.at("metrics").To<ObjectMap>().at("placedPartCount").To<unsigned long long>(), 5u);
     CheckAccounting(_Result, _Parts, _Stocks, 5);
+}
+
+TEST(TubeDesignerNesting, StrictPriorityFreezesEachLevelAndContinuesOnTheSamePhysicalStock)
+{
+    SNestingPart _First{ "first", "section", 1000, 1 };
+    SNestingPart _Second{ "second", "section", 500, 1 };
+    _First.Priority = 2;
+    _Second.Priority = 7;
+    const std::vector<SNestingPart> _Parts{ _Second, _First };
+    const std::vector<SNestingStock> _Stocks{ { "stock", "section", 2000, 1 } };
+
+    const auto _Result = SolveManufacturingNesting(_Parts, _Stocks, 5);
+    ASSERT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
+    const auto _Plans = _Result.at("plans").To<VariantArray>();
+    ASSERT_EQ(_Plans.size(), 1u);
+    const auto _Placements = _Plans.front().To<ObjectMap>().at("placements").To<VariantArray>();
+    ASSERT_EQ(_Placements.size(), 2u);
+    EXPECT_EQ(_Placements[0].To<ObjectMap>().at("partId").To<std::string>(), "first");
+    EXPECT_EQ(_Placements[1].To<ObjectMap>().at("partId").To<std::string>(), "second");
+    EXPECT_EQ(_Placements[0].To<ObjectMap>().at("priority").To<unsigned long long>(), 2u);
+    EXPECT_EQ(_Placements[1].To<ObjectMap>().at("priority").To<unsigned long long>(), 7u);
+    EXPECT_NEAR(_Placements[1].To<ObjectMap>().at("start").To<double>(), 1005.0, 1e-8);
+    EXPECT_EQ(_Result.at("proof").To<ObjectMap>().at("scope").To<std::string>(),
+        "strict-priority-fixed-prefix-layers");
+    CheckAccounting(_Result, _Parts, _Stocks, 5);
+}
+
+TEST(TubeDesignerNesting, StrictPriorityLayersAppendToOneExistingIrregularStock)
+{
+    SNestingPart _Locked{ "locked", "section", 100, 0 };
+    SNestingPart _First{ "first", "section", 100, 1 };
+    SNestingPart _Second{ "second", "section", 50, 1 };
+    _Locked.PairGeometry = InsetRightProfile(100.0, 0.0);
+    _First.PairGeometry = InsetRightProfile(100.0, 0.0);
+    _Second.PairGeometry = InsetRightProfile(50.0, 0.0);
+    _Locked.DirectionAllowed = { true, false };
+    _First.DirectionAllowed = { true, false };
+    _Second.DirectionAllowed = { true, false };
+    _First.Priority = 2;
+    _Second.Priority = 7;
+
+    SNestingStock _Continued;
+    _Continued.ID = "continued-row";
+    _Continued.ProfileKey = "section";
+    _Continued.Length = 400.0;
+    _Continued.Quantity = 1;
+    _Continued.SourceStockTypeID = "stock-400";
+    _Continued.InstanceID = "existing-plan";
+    _Continued.InitialProcessedEnd = 150.0;
+    _Continued.InitialPredecessorPartID = "locked";
+
+    const std::vector<SNestingPart> _Parts{ _Second, _Locked, _First };
+    const std::vector<SNestingStock> _Stocks{
+        _Continued, { "new-stock", "section", 400.0, -1 }
+    };
+    const auto _Result = SolveManufacturingNesting(_Parts, _Stocks, 5.0);
+
+    ASSERT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
+    const auto _Plans = _Result.at("plans").To<VariantArray>();
+    ASSERT_EQ(_Plans.size(), 1U);
+    const auto _Plan = _Plans.front().To<ObjectMap>();
+    EXPECT_TRUE(_Plan.at("continued").To<bool>());
+    EXPECT_EQ(_Plan.at("id").To<std::string>(), "existing-plan");
+    EXPECT_EQ(_Plan.at("stockTypeId").To<std::string>(), "stock-400");
+    EXPECT_NEAR(_Plan.at("initialProcessedEnd").To<double>(), 150.0, 1.0e-8);
+    EXPECT_NEAR(_Plan.at("usedLength").To<double>(), 310.0, 1.0e-8);
+    EXPECT_NEAR(_Plan.at("remainingLength").To<double>(), 90.0, 1.0e-8);
+    const auto _Placements = _Plan.at("placements").To<VariantArray>();
+    ASSERT_EQ(_Placements.size(), 2U);
+    const auto _FirstPlacement = _Placements[0].To<ObjectMap>();
+    const auto _SecondPlacement = _Placements[1].To<ObjectMap>();
+    EXPECT_EQ(_FirstPlacement.at("partId").To<std::string>(), "first");
+    EXPECT_EQ(_SecondPlacement.at("partId").To<std::string>(), "second");
+    EXPECT_EQ(_FirstPlacement.at("priority").To<unsigned long long>(), 2U);
+    EXPECT_EQ(_SecondPlacement.at("priority").To<unsigned long long>(), 7U);
+    EXPECT_NEAR(_FirstPlacement.at("start").To<double>(), 155.0, 1.0e-8);
+    EXPECT_NEAR(_SecondPlacement.at("start").To<double>(), 260.0, 1.0e-8);
+    EXPECT_EQ(_Result.at("proof").To<ObjectMap>().at("scope").To<std::string>(),
+        "strict-priority-fixed-prefix-layers");
+}
+
+TEST(TubeDesignerNesting, StrictPriorityDoesNotStartLowerLevelWhenHigherLevelIsUnplaced)
+{
+    SNestingPart _Oversize{ "oversize", "section", 7000, 1 };
+    SNestingPart _Fits{ "fits", "section", 1000, 1 };
+    _Oversize.Priority = 0;
+    _Fits.Priority = 1;
+    const std::vector<SNestingPart> _Parts{ _Fits, _Oversize };
+    const std::vector<SNestingStock> _Stocks{ { "stock", "section", 6000, 1 } };
+
+    const auto _Result = SolveManufacturingNesting(_Parts, _Stocks, 0);
+    EXPECT_EQ(_Result.at("status").To<std::string>(), "infeasible");
+    EXPECT_TRUE(_Result.at("plans").To<VariantArray>().empty());
+    const auto _Unplaced = _Result.at("unplaced").To<VariantArray>();
+    ASSERT_EQ(_Unplaced.size(), 2u);
+    const auto _Lower = std::ranges::find_if(_Unplaced, [](const auto& Value_)
+    {
+        return Value_.To<ObjectMap>().at("partId").To<std::string>() == "fits";
+    });
+    ASSERT_NE(_Lower, _Unplaced.end());
+    EXPECT_NE(_Lower->To<ObjectMap>().at("reason").To<std::string>().find("未启动"),
+        std::string::npos);
+    CheckAccounting(_Result, _Parts, _Stocks, 0);
 }
 
 TEST(TubeDesignerNesting, SettingsValidateAndRoundTripUnlimitedDefaults)
@@ -372,15 +581,19 @@ TEST(TubeDesignerNesting, ParallelProfileGroupsMatchSerialIncludingPartialInvent
     }
 }
 
-TEST(TubeDesignerNesting, ParallelGroupsPreserveTrapezoidVariantsAndRecoverAfterInvalidInput)
+TEST(TubeDesignerNesting, ParallelGroupsPreservePairProfilesAndRecoverAfterInvalidInput)
 {
     SNestingVariant _Variant;
     _Variant.ID = "miter";
     _Variant.EnvelopeLength = 120;
     _Variant.MaterialLength = 110;
-    _Variant.LeftEnd = { 10, "50000:0", true };
-    _Variant.RightEnd = { 10, "50000:0", true };
-    const std::vector<SNestingPart> _Parts{ { "a", "a", 120, 2, { _Variant } }, { "b", "b", 120, 2, { _Variant } } };
+    SNestingPart _A{ "a", "a", 120, 2, { _Variant } };
+    SNestingPart _B{ "b", "b", 120, 2, { _Variant } };
+    _A.PairGeometry = InsetRightProfile(120.0, 10.0);
+    _B.PairGeometry = InsetRightProfile(120.0, 10.0);
+    _A.DirectionAllowed = { true, false };
+    _B.DirectionAllowed = { true, false };
+    const std::vector<SNestingPart> _Parts{ _A, _B };
     const std::vector<SNestingStock> _Stocks{ { "a-stock", "a", 230, 1 }, { "b-stock", "b", 230, 1 } };
     auto _Invalid = _Parts;
     _Invalid.back().ID = "a";
@@ -428,6 +641,8 @@ TEST(TubeDesignerNesting, SettingsArePersistentTransactionalSceneFields)
         { std::filesystem::path(_DatabasePath).string(), std::filesystem::path(_ExePath).string() });
     EXPECT_EQ(_Registry->GetPropertyPersistenceByName(CTubeDesignerRootComponent::S_ClassName,
         CTubeDesignerRootComponent::PropertyName_NestingSettings), EPropertyPersistence::Persistent);
+    EXPECT_EQ(_Registry->GetPropertyPersistenceByName(CManufacturingPartComponent::S_ClassName,
+        CManufacturingPartComponent::PropertyName_NestingPriority), EPropertyPersistence::Persistent);
     auto _Repository = GenerateRepository(iCAX::Data::GenerateNewUUID(), _Registry);
     _Repository->BeginLoadBaseline();
     const auto _Entity = _Repository->GetMetaEntity();

@@ -36,7 +36,16 @@ def _analyze_mould(namespace, descriptor, parameters, context):
         return parameters, None
     if not callable(analyzer):
         raise ValueError("此模具必须提供 analyze(parameters, section, context)")
-    section = context.get("targetSection")
+    # targetSection is always the original generic tube-profile expression.
+    # The BRep-derived analysis payload is private to section-topology queries
+    # used by section-aware notches and must never replace the operation input.
+    section = context.get("targetSectionAnalysis", context.get("targetSection"))
+    if (isinstance(section, dict) and section.get("schema") == "icax.mold-section"
+            and section.get("status") == "unavailable"):
+        # An extrusion projection can fail at circular seams even though the
+        # exact contours that built this blank are available. Read those curves;
+        # do not weaken the individual template's applicability checks.
+        section = namespace["section_geometry"].from_profile(context.get("targetSection"), section.get("tolerance", 0.001))
     result = analyzer(copy.deepcopy(parameters), copy.deepcopy(section), copy.deepcopy(context))
     if (not isinstance(result, dict) or type(result.get("applicable")) is not bool
             or not isinstance(result.get("reason", ""), str) or len(_json_bytes(result)) > MAX_BYTES):
@@ -108,11 +117,42 @@ def _parameters(descriptor, supplied):
         else:
             raise ValueError("不支持的刀具参数类型")
         if item.get("options") and value not in [o["value"] for o in item["options"]]:
-            raise ValueError(f"{key} 不是可用选项")
+            raise ValueError(f"{item.get('displayName', key)}不是可用选项")
         result[key] = value
     if set(supplied) - set(result):
         raise ValueError("刀具包含未声明的参数")
     return result
+
+
+def _operation_parameters(descriptor, supplied=None):
+    definitions = descriptor.get("operationParameters", [])
+    if not isinstance(definitions, list) or len(definitions) > 32:
+        raise ValueError("单件工艺操作参数最多 32 项")
+    keys = [item.get("key") for item in definitions if isinstance(item, dict)]
+    if len(keys) != len(definitions) or any(
+            not isinstance(key, str) or not re.fullmatch(r"[a-z][A-Za-z0-9]{0,79}", key)
+            for key in keys) or len(set(keys)) != len(keys):
+        raise ValueError("单件工艺操作参数键无效或重复")
+    return _parameters({"parameters": definitions}, supplied or {})
+
+
+def _validate_inputs(descriptor):
+    definitions = descriptor.get("inputs", [])
+    if not isinstance(definitions, list) or len(definitions) > 16:
+        raise ValueError("单件工艺输入最多 16 项")
+    keys = []
+    for item in definitions:
+        if not isinstance(item, dict):
+            raise ValueError("单件工艺输入声明无效")
+        key = item.get("key")
+        if not isinstance(key, str) or not re.fullmatch(r"[a-z][A-Za-z0-9]{0,79}", key):
+            raise ValueError("单件工艺输入键无效")
+        if item.get("valueType") != "profile":
+            raise ValueError("单件工艺输入类型无效")
+        keys.append(key)
+    if len(set(keys)) != len(keys):
+        raise ValueError("单件工艺输入键重复")
+    return definitions
 
 
 def _package(directory, package_root=None):
@@ -147,6 +187,8 @@ def _package(directory, package_root=None):
         raise ValueError("刀具定义不能声明位置或姿态参数；请由使用记录保存")
     if descriptor["kind"] == "fixed" and definitions:
         raise ValueError("定式刀具不能声明可变形状参数")
+    _validate_inputs(descriptor)
+    operation_defaults = _operation_parameters(descriptor)
     _validate_section_analysis(descriptor)
     defaults = _parameters(descriptor, {})
     member = directory / ("tool.py" if descriptor["kind"] == "programmatic" else "geometry.json")
@@ -157,7 +199,7 @@ def _package(directory, package_root=None):
         raise ValueError("刀具包超过 4 MB")
     queries = Path(__file__).with_name("section_geometry.py").read_bytes()
     digest = hashlib.sha256(raw + b"\0" + content + queries).hexdigest()
-    return descriptor, defaults, content, digest
+    return descriptor, defaults, operation_defaults, content, digest
 
 
 def _catalogue_root(root, scope="system", template_id="", template_name=""):
@@ -167,9 +209,9 @@ def _catalogue_root(root, scope="system", template_id="", template_name=""):
         return tools, [f"{root.name}: 刀具目录不存在"]
     for manifest in sorted(root.glob("*/tool.json")):
         try:
-            descriptor, defaults, _, digest = _package(manifest.parent, root)
+            descriptor, defaults, operation_defaults, _, digest = _package(manifest.parent, root)
             item = {**descriptor, "digest": digest, "defaultParameters": defaults,
-                    "libraryScope": scope}
+                    "defaultOperationParameters": operation_defaults, "libraryScope": scope}
             if not item.get("category"):
                 item["category"] = "端面" if item.get("target") == "end" else (
                     "支管" if item.get("requiresSection") else "孔型")
@@ -218,6 +260,8 @@ def _restore_frozen(value, ref, supplied, context):
     if value.get("geometryDigest") != hashlib.sha256(_json_bytes(geometry)).hexdigest():
         raise ValueError("固化刀具几何校验失败，请恢复图纸或安装原版刀具")
     old = value.get("context", {})
+    if "targetSectionAnalysis" not in old and "targetSectionAnalysis" in context:
+        context = {key: child for key, child in context.items() if key != "targetSectionAnalysis"}
     if context["target"] == "end":
         # Native replay uses the already placed frozenCut BRep and immutable
         # base resource. Tiny bounds changes after BRep codec round-trip must
@@ -303,7 +347,7 @@ def _evaluate(ref, supplied, context, frozen=None, user_tools=None, user_root=No
             package_root = _package_root(ref, user_root)
             if package_root is None:
                 raise ValueError("用户刀具目录不可用")
-            descriptor, defaults, content, digest = _package(package_root / ref["id"], package_root)
+            descriptor, defaults, _, content, digest = _package(package_root / ref["id"], package_root)
         except (ValueError, OSError, KeyError, TypeError):
             return _restore_frozen(frozen, ref, supplied, context)
         if (ref.get("version") and ref["version"] != descriptor["version"]) or (ref.get("digest") and ref["digest"] != digest):
@@ -312,16 +356,27 @@ def _evaluate(ref, supplied, context, frozen=None, user_tools=None, user_root=No
         return _restore_frozen(frozen, ref, supplied, context)
     if descriptor["target"] != context["target"]:
         raise ValueError("刀具不适用于当前加工位置")
-    # Branch intersections and end-profile cuts use a filled outer envelope.
-    # Older recipes may carry the removed cutRegion switch; ignore it when the
-    # current template is regenerated. Exact frozen snapshots are handled
-    # above and remain byte-for-byte immutable.
-    if descriptor["id"] in ("branch-profile", "end-profile") and isinstance(supplied, dict) and "cutRegion" in supplied and not any(
-            item["key"] == "cutRegion" for item in descriptor.get("parameters", [])):
-        if supplied["cutRegion"] not in ("outer", "material"):
-            raise ValueError("旧端部切除截面区域无效")
-        supplied = {key: value for key, value in supplied.items() if key != "cutRegion"}
+    if context["target"] == "end":
+        # Validate declarative pose controls before executing a tool, not after
+        # its geometry has already consumed a potentially invalid angle.
+        placement = context["placement"]
+        operations = _operation_parameters(descriptor, {
+            definition["key"]: placement[definition["key"]]
+            for definition in descriptor.get("operationParameters", [])
+            if definition["key"] in placement
+        })
+        context = {**context, "placement": {**placement, **operations}}
+    for input_definition in _validate_inputs(descriptor):
+        key = input_definition["key"]
+        if input_definition.get("required") is True and key not in context:
+            raise ValueError("单件工艺缺少必需输入：" + str(input_definition.get("displayName", input_definition["key"])))
+        if key in context:
+            profile = context[key]
+            if not isinstance(profile, dict) or not isinstance(profile.get("contours"), list) or not profile["contours"]:
+                raise ValueError("单件工艺输入不是有效截面：" + str(input_definition.get("displayName", key)))
     _validate_section_analysis(descriptor)
+    if "sectionAnalysis" not in descriptor and "targetSectionAnalysis" in context:
+        context = {key: value for key, value in context.items() if key != "targetSectionAnalysis"}
     parameters = _parameters(descriptor, supplied)
     # An unchanged recipe reuses the exact saved cutter even on the original
     # computer. Regenerate only after an intentional parameter/context change.
@@ -398,7 +453,7 @@ def _installed(ref, user_tools=None, user_root=None):
         package_root = _package_root(ref, user_root)
         if package_root is None:
             return False
-        descriptor, _, _, digest = _package(package_root / str(ref.get("id", "")), package_root)
+        descriptor, _, _, _, digest = _package(package_root / str(ref.get("id", "")), package_root)
         return (not ref.get("version") or ref["version"] == descriptor["version"]) and (
             not ref.get("digest") or ref["digest"] == digest)
     except (ValueError, OSError, KeyError, TypeError):
@@ -486,6 +541,8 @@ def prepare(parameters):
         context = {"target": target, "lengthUnit": "mm"}
         if "targetSection" in parameters:
             context["targetSection"] = _target_snapshot(parameters["targetSection"])
+        if "targetSectionAnalysis" in parameters:
+            context["targetSectionAnalysis"] = _target_snapshot(parameters["targetSectionAnalysis"])
         if target == "part":
             context.update(bounds=parameters["bounds"], feature={key: copy.deepcopy(item[key])
                 for key in ("station", "reference", "section") if key in item})
@@ -495,6 +552,11 @@ def prepare(parameters):
             raise ValueError("特征刀具目标无效")
         snapshot = _evaluate(ref, supplied, context, item.get("frozenTool"), user_tools, user_root)
         descriptor = snapshot["descriptor"]
+        operation_values = _operation_parameters(descriptor, {
+            definition["key"]: item.get(definition["key"], definition["defaultValue"])
+            for definition in descriptor.get("operationParameters", [])
+        })
+        item.update(operation_values)
         item.update(type=snapshot["ref"]["id"], toolRef=copy.deepcopy(snapshot["ref"]), toolParameters=copy.deepcopy(snapshot["parameters"]),
                     toolLabel=descriptor["displayName"], toolKind=descriptor["kind"], toolSnapshot=snapshot)
         _freeze_item(item, snapshot)
@@ -526,12 +588,19 @@ def prepare(parameters):
         context = {"target": "end", "end": key, "bounds": parameters["bounds"], "placement": placement, "lengthUnit": "mm"}
         if "targetSection" in parameters:
             context["targetSection"] = _target_snapshot(parameters["targetSection"])
+        if "targetSectionAnalysis" in parameters:
+            context["targetSectionAnalysis"] = _target_snapshot(parameters["targetSectionAnalysis"])
         if "section" in item:
             if not isinstance(item["section"], dict):
                 raise ValueError("端部刀具截面须为对象")
             context["section"] = copy.deepcopy(item["section"])
         snapshot = _evaluate(ref, supplied, context, item.get("frozenTool"), user_tools, user_root)
         descriptor = snapshot["descriptor"]
+        operation_values = _operation_parameters(descriptor, {
+            definition["key"]: item.get(definition["key"], definition["defaultValue"])
+            for definition in descriptor.get("operationParameters", [])
+        })
+        item.update(operation_values)
         item.update(type="template", toolRef=copy.deepcopy(snapshot["ref"]), toolParameters=copy.deepcopy(snapshot["parameters"]),
                     toolLabel=descriptor["displayName"], toolKind=descriptor["kind"], toolSnapshot=snapshot)
         _freeze_item(item, snapshot)

@@ -2068,12 +2068,12 @@ function renderProductToolField(field, disabled, context) {
     .filter((definition) => parameterVisible(definition, toolValues));
   const diagram = selectedTool && definitions.length
     ? renderToolParameterDiagramSvg(selectedTool, toolValues, definitions) : "";
-  const scopes = [["system", "系统内置"], ["template", "模板自带"], ["user", "我的模具"]];
+  const scopes = [["system", "系统内置"], ["template", "模板自带"], ["user", "我的单件工艺"]];
   const unavailable = selectedKey && !selectedTool;
   return `<div class="tube-designer-field tube-designer-profile-field tube-designer-product-tool-field wide is-line-full">
-    <span>${escapeText(field?.displayName ?? field?.label ?? "模具")}</span>
+    <span>${escapeText(field?.displayName ?? field?.label ?? "单件工艺")}</span>
     <select data-cam-change-action="tube-designer-product-tool-selection-change" data-tube-designer-tool-mode="${mode}" data-tube-designer-tool-field="${escapeAttribute(field?.key ?? field?.name ?? "")}" data-tube-designer-tool-role="${escapeAttribute(productToolRole(field))}" ${disabled ? "disabled" : ""}>
-      <option value="">请选择模具</option>
+      <option value="">请选择单件工艺</option>
       ${unavailable ? `<option value="${escapeAttribute(selectedKey)}" selected>${escapeText(productToolLabel(binding))}（当前资源不可用）</option>` : ""}
       ${scopes.map(([scope, label]) => {
         const tools = candidates.filter((tool) => toolScope(tool) === scope);
@@ -2083,8 +2083,8 @@ function renderProductToolField(field, disabled, context) {
         }).join("")}</optgroup>` : "";
       }).join("")}
     </select>
-    ${binding ? `<small class="tube-designer-profile-readonly-note"><strong>${escapeText(productToolLabel(binding, selectedTool))}</strong> · ${escapeText(binding?.snapshot?.category ?? "模具")} · ${selectedTool ? "资源已解析" : "保留原引用，重新生成前需恢复资源"}</small>` : ""}
-    ${definitions.length ? `<div class="tube-designer-parametric-profile-parameters" data-tool-parameter-scope data-parameter-diagram-owner="product-tool:${mode}:${escapeAttribute(productToolRole(field))}"><strong>模具参数</strong>${diagram ? (mode === 'right' ? `<button type="button" class="tube-designer-secondary tube-product-tool-diagram-open" data-product-tool-diagram-open="${escapeAttribute(field.key ?? field.name)}">显示浮动示意图</button>` : `<section class="tube-tool-library-parameter-diagram"><header><div><strong>槽口参数示意图</strong><span>参数与所选模具同步</span></div></header><div class="tube-tool-library-diagram-content"><div class="tube-tool-library-diagram-art">${diagram}</div></div></section>`) : ""}<div class="tube-designer-field-grid">${renderEditorParameterLevels(definitions, definition => renderProductToolParameter(definition, binding, field, mode, disabled), context, `tool:${productToolRole(field)}`)}</div></div>` : ""}
+    ${binding ? `<small class="tube-designer-profile-readonly-note"><strong>${escapeText(productToolLabel(binding, selectedTool))}</strong> · ${escapeText(binding?.snapshot?.category ?? "单件工艺")} · ${selectedTool ? "资源已解析" : "保留原引用，重新生成前需恢复资源"}</small>` : ""}
+    ${definitions.length ? `<div class="tube-designer-parametric-profile-parameters" data-tool-parameter-scope data-parameter-diagram-owner="product-tool:${mode}:${escapeAttribute(productToolRole(field))}"><strong>工艺参数</strong>${diagram ? (mode === 'right' ? `<button type="button" class="tube-designer-secondary tube-product-tool-diagram-open" data-product-tool-diagram-open="${escapeAttribute(field.key ?? field.name)}">显示浮动示意图</button>` : `<section class="tube-tool-library-parameter-diagram"><header><div><strong>槽口参数示意图</strong><span>参数与所选单件工艺同步</span></div></header><div class="tube-tool-library-diagram-content"><div class="tube-tool-library-diagram-art">${diagram}</div></div></section>`) : ""}<div class="tube-designer-field-grid">${renderEditorParameterLevels(definitions, definition => renderProductToolParameter(definition, binding, field, mode, disabled), context, `tool:${productToolRole(field)}`)}</div></div>` : ""}
   </div>`;
 }
 

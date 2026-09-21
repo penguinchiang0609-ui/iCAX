@@ -3,17 +3,78 @@
   "schemaVersion": 1,
   "id": "end-miter",
   "version": "1.0.0",
-  "displayName": "端面斜切",
+  "displayName": "端面切割",
+  "description": "按角度切割端面；0° 为平切，非零角度为斜切。",
   "kind": "programmatic",
   "target": "end",
   "category": "端面",
-  "processCode": "miter",
+  "processCode": "end-cut",
+  "inputs": [
+    {
+      "key": "targetSection",
+      "displayName": "目标管型截面",
+      "valueType": "profile",
+      "required": true
+    }
+  ],
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "rect"
+    }
+  },
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M8 10h32v28H8Z M8 38 40 10"
+    ]
+  },
+  "operationParameters": [
+    {
+      "key": "trim",
+      "displayName": "端部修剪量（mm）",
+      "valueType": "number",
+      "defaultValue": 10,
+      "min": 0,
+      "max": 100000,
+      "step": 0.1
+    },
+    {
+      "key": "rotation",
+      "displayName": "轴向旋转（°）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 0.1
+    },
+    {
+      "key": "datum",
+      "displayName": "尺寸基准",
+      "valueType": "string",
+      "defaultValue": "long",
+      "options": [
+        {
+          "value": "long",
+          "label": "长点"
+        },
+        {
+          "value": "center",
+          "label": "中心"
+        },
+        {
+          "value": "short",
+          "label": "短点"
+        }
+      ]
+    }
+  ],
   "parameters": [
     {
       "key": "angle",
-      "displayName": "斜切角度",
+      "displayName": "切割角度",
       "valueType": "number",
-      "defaultValue": 45,
+      "defaultValue": 0,
       "min": -80,
       "max": 80,
       "step": 0.1
@@ -25,7 +86,7 @@
     "paths": ["M20 25 H160 L112 105 H20 Z"],
     "lines": [{ "x1": 112, "y1": 105, "x2": 160, "y2": 105, "className": "tool-diagram-reference" }],
     "annotations": [
-      { "parameter": "angle", "kind": "leader", "side": "right", "point": [136, 65], "description": "端切面相对垂直端面的倾斜角" }
+      { "parameter": "angle", "kind": "leader", "side": "right", "point": [136, 65], "description": "端切面相对垂直端面的角度；0° 为平切" }
     ]
   }
 }

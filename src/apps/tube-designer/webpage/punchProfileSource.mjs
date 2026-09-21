@@ -108,12 +108,12 @@ export function changePunchRecordKind(view, target) {
   const kind = String(target?.value ?? "tool");
   if (!state || !item || isPunchToolReadOnly(state,item) || !["branch", "tool", "dxf"].includes(kind)) return false;
   const end=target?.dataset?.tubeDesignerPunchEnd;
-  if(end&&!state.tools.some(tool=>tool.id===(kind==="tool"?"end-square":"end-profile")))throw new Error("当前模具库缺少所选端部模具。");
+  if(end&&!state.tools.some(tool=>tool.id===(kind==="tool"?"end-miter":"end-profile")))throw new Error("当前单件工艺库缺少所选断面修整工艺。");
   checkpointPunchWizard(state);
   item.recordKind = kind;
   if (kind === "tool") {
     delete item.section;
-    const tool = end?chooseTool(state,item,candidate=>candidate.id==="end-square"):chooseTool(state, item, candidate => candidate.target === "side")
+    const tool = end?chooseTool(state,item,candidate=>candidate.id==="end-miter"):chooseTool(state, item, candidate => candidate.target === "side")
       ?? chooseTool(state, item, candidate => candidate.target === "part" && !candidate.requiresSection);
     if (!tool) {
       item.type = "circle";
@@ -142,7 +142,7 @@ export async function selectPunchProfileSource(context, view, target, ops) {
   const key = String(target?.value ?? "");
   if (!state || !item || isPunchToolReadOnly(state,item) || !key) return false;
   const end=target?.dataset?.tubeDesignerPunchEnd;
-  if(end&&!state.tools.some(tool=>tool.id==="end-profile"))throw new Error("当前模具库缺少截面切端模具。");
+  if(end&&!state.tools.some(tool=>tool.id==="end-profile"))throw new Error("当前单件工艺库缺少截面切端工艺。");
   const originalSection=item.section,request={};
   sourceRequests.set(item,request);
   const current=()=>view.tubeDesignerPunchWizard===state&&punchFeatureForTarget(view,target)===item

@@ -1,16 +1,20 @@
 {
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "sectionAnalysis": {
     "schemaVersion": 1
   },
+  "inputs": [
+    {"key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true}
+  ],
+  "preview": {"profileRef": {"scope": "system", "id": "rect"}},
   "kind": "programmatic",
   "target": "part",
   "category": "槽口",
   "id": "segmented-bend",
-  "displayName": "多槽分段折弯",
-  "description": "多个小角度V槽沿管长排列，逐段折弯逼近目标圆弧。支持内侧/中心线半径、手动槽数或弓高误差自动分段、K补偿及最小槽间隔检查。需单闭口截面及可测壁厚；圆管按同心圆弧识别。槽数不等于阵列数量。尚未模拟塑性成形。",
+  "displayName": "分段折弯槽口",
+  "description": "多个小角度 V 槽沿管长排列形成的槽口工艺。支持内接弦与外切折线两种明确区分的槽距模型、内侧/中心线半径、手动槽数或误差自动分段、K 补偿及最小槽间隔检查。它生成下料槽形，实际成形仍需装配层与试样验证。",
   "illustration": {
     "viewBox": "0 0 48 48",
     "paths": [
@@ -33,7 +37,7 @@
         "labels": [
           {"x": 150, "y": 18, "text": "总折弯角 β", "parameter": "angle", "unit": "°"},
           {"x": 210, "y": 90, "text": "槽数按误差自动计算"},
-          {"x": 85, "y": 158, "text": "槽距 p（自动计算）"},
+          {"x": 85, "y": 158, "text": "槽距 p（按离散模型）"},
           {"x": 183, "y": 190, "text": "目标半径", "parameter": "bendRadius", "unit": " mm"},
           {"x": 180, "y": 213, "text": "最大弓高误差", "parameter": "maximumChordError", "unit": " mm"}
         ]
@@ -53,11 +57,7 @@
         "text": "槽数 n",
         "parameter": "segmentCount"
       },
-      {
-        "x": 85,
-        "y": 158,
-        "text": "槽距 p（自动计算）"
-      },
+      { "x": 85, "y": 158, "text": "槽距 p（按离散模型）" },
       {
         "x": 183,
         "y": 190,
@@ -68,13 +68,14 @@
       {
         "x": 180,
         "y": 213,
-        "text": "δ=β/n · p=2Rc·sin(δ/2)"
+        "text": "内接弦 / 外切折线分开计算"
       }
     ],
     "annotations": [
       { "parameter": "angle", "kind": "leader", "side": "top", "point": [117, 100], "description": "全部分段槽折弯后形成的总角度" },
       { "parameter": "radiusDatum", "kind": "leader", "side": "right", "point": [76, 145], "description": "目标半径按内侧或截面中心线解释" },
       { "parameter": "bendRadius", "kind": "leader", "side": "right", "point": [70, 142], "description": "分段折弯逼近的目标圆弧半径" },
+      { "parameter": "spacingModel", "kind": "leader", "side": "bottom", "point": [85, 138], "description": "内接弦使用 2R·sin(δ/2)，外切折线使用 2R·tan(δ/2)" },
       { "parameter": "countMode", "kind": "leader", "side": "top", "point": [120, 76], "description": "按指定槽数或最大弓高误差确定分段数" },
       { "parameter": "segmentCount", "kind": "leader", "side": "top", "point": [190, 82], "visibleWhen": { "op": "eq", "parameter": "countMode", "value": "count" }, "description": "沿展开长度布置的 V 槽数量" },
       { "parameter": "maximumChordError", "kind": "leader", "side": "top", "point": [190, 82], "visibleWhen": { "op": "eq", "parameter": "countMode", "value": "tolerance" }, "description": "圆弧与分段弦之间允许的最大误差" },
@@ -96,6 +97,7 @@
     },
     {
       "key": "radiusDatum",
+      "level": "advanced",
       "displayName": "半径基准",
       "valueType": "string",
       "defaultValue": "inner",
@@ -117,6 +119,16 @@
       "defaultValue": 40,
       "min": 0.01,
       "max": 100000
+    },
+    {
+      "key": "spacingModel",
+      "displayName": "分段间距模型",
+      "valueType": "string",
+      "defaultValue": "chord",
+      "options": [
+        { "value": "chord", "label": "内接弦（圆弧内侧）" },
+        { "value": "tangent", "label": "外切折线（圆弧外侧）" }
+      ]
     },
     {
       "key": "countMode",
@@ -178,12 +190,14 @@
     },
     {
       "key": "bendCompensation",
+      "level": "advanced",
       "displayName": "启用每槽 K 因子补偿",
       "valueType": "boolean",
       "defaultValue": false
     },
     {
       "key": "kFactor",
+      "level": "advanced",
       "displayName": "K 因子（需按材料和工艺标定）",
       "valueType": "number",
       "defaultValue": 0.62,
@@ -202,7 +216,8 @@
       "defaultValue": 0,
       "min": 0,
       "max": 10000,
-      "derived": true
+      "derived": true,
+      "readOnly": true
     }
   ]
 }

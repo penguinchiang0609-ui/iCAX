@@ -28,7 +28,7 @@ def _member_name(info: zipfile.ZipInfo) -> str:
     return "/".join(part for part in path.parts if part not in ("", "."))
 
 
-def _validate_descriptor(value: object) -> tuple[dict, dict]:
+def _validate_descriptor(value: object) -> tuple[dict, dict, dict]:
     if not isinstance(value, dict) or value.get("schema") != "icax.punch-tool":
         raise ValueError("itmt 的 tool.json 不是模具描述")
     if value.get("schemaVersion") != 1:
@@ -42,7 +42,7 @@ def _validate_descriptor(value: object) -> tuple[dict, dict]:
     if not isinstance(value.get("displayName"), str) or not value["displayName"].strip():
         raise ValueError("itmt 模具名称不能为空")
     if value.get("kind") != "programmatic":
-        raise ValueError("itmt 只能导入程式模具")
+        raise ValueError("itmt 只能导入程式单件工艺")
     if value.get("target") not in ("side", "end", "part"):
         raise ValueError("itmt 模具适用位置无效")
     definitions = value.get("parameters", [])
@@ -62,13 +62,43 @@ def _validate_descriptor(value: object) -> tuple[dict, dict]:
         if "defaultValue" not in definition:
             raise ValueError(f"itmt 参数 {key} 缺少 defaultValue")
         defaults[key] = definition["defaultValue"]
-    return value, defaults
+    inputs = value.get("inputs", [])
+    if not isinstance(inputs, list) or len(inputs) > 16:
+        raise ValueError("itmt 输入最多 16 项")
+    input_keys: set[str] = set()
+    for index, definition in enumerate(inputs):
+        if not isinstance(definition, dict):
+            raise ValueError(f"itmt inputs[{index}] 无效")
+        key = definition.get("key")
+        if not isinstance(key, str) or re.fullmatch(r"[a-z][A-Za-z0-9]{0,79}", key) is None or key in input_keys:
+            raise ValueError(f"itmt inputs[{index}].key 无效或重复")
+        if definition.get("valueType") != "profile":
+            raise ValueError(f"itmt 输入 {key} 的 valueType 无效")
+        input_keys.add(key)
+    operation_definitions = value.get("operationParameters", [])
+    if not isinstance(operation_definitions, list) or len(operation_definitions) > 32:
+        raise ValueError("itmt 操作参数最多 32 项")
+    operation_defaults: dict = {}
+    operation_keys: set[str] = set()
+    for index, definition in enumerate(operation_definitions):
+        if not isinstance(definition, dict):
+            raise ValueError(f"itmt operationParameters[{index}] 无效")
+        key = definition.get("key")
+        if not isinstance(key, str) or re.fullmatch(r"[a-z][A-Za-z0-9]{0,79}", key) is None or key in operation_keys:
+            raise ValueError(f"itmt operationParameters[{index}].key 无效或重复")
+        if definition.get("valueType") not in ("number", "integer", "string", "boolean"):
+            raise ValueError(f"itmt 操作参数 {key} 的 valueType 无效")
+        if "defaultValue" not in definition:
+            raise ValueError(f"itmt 操作参数 {key} 缺少 defaultValue")
+        operation_defaults[key] = definition["defaultValue"]
+        operation_keys.add(key)
+    return value, defaults, operation_defaults
 
 
 def _read(source_path: str) -> dict:
     path = Path(source_path)
     if path.suffix.lower() != ".itmt":
-        raise ValueError("请选择 .itmt 程式模具包")
+        raise ValueError("请选择 .itmt 程式单件工艺包")
     if not path.is_file() or path.stat().st_size > MAX_ARCHIVE_BYTES:
         raise ValueError("itmt 文件不存在或超过 16 MB")
     try:
@@ -105,7 +135,7 @@ def _read(source_path: str) -> dict:
                 name: base64.b64encode(archive.read(info)).decode("ascii")
                 for name, info in members.items() if name not in REQUIRED
             }
-            descriptor, defaults = _validate_descriptor(json.loads(descriptor_bytes.decode("utf-8-sig")))
+            descriptor, defaults, operation_defaults = _validate_descriptor(json.loads(descriptor_bytes.decode("utf-8-sig")))
             script = script_bytes.decode("utf-8-sig")
         except RuntimeError as error:
             raise ValueError("itmt 密码校验失败或压缩包已损坏") from error
@@ -120,6 +150,7 @@ def _read(source_path: str) -> dict:
         "kind": "parametric-package",
         "descriptor": descriptor,
         "defaultParameters": defaults,
+        "defaultOperationParameters": operation_defaults,
         "scriptSource": script,
         "resources": resources,
         "packageDigest": digest,

@@ -8,7 +8,7 @@ import { tubeDesignerCss } from "../../apps/tube-designer/webpage/styles/tubeDes
 const { chromium }=await import(process.env.ICAX_PLAYWRIGHT_MODULE||"playwright");
 const sourceRoot=fileURLToPath(new URL("../../",import.meta.url)).replace(/[\\/]$/,"");
 const artifacts=resolve(process.env.ICAX_ARTIFACT_DIR||"tmp/punch-draft-apply-browser");
-const catalogue=["circle","end-convex"].map(id=>JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/"+id+"/tool.json",import.meta.url))))
+const catalogue=["circle","end-key-joint"].map(id=>JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/"+id+"/tool.json",import.meta.url))))
   .map(tool=>({...tool,digest:"draft-apply-fixture",defaultParameters:Object.fromEntries(tool.parameters.map(p=>[p.key,p.defaultValue]))}));
 mkdirSync(artifacts,{recursive:true});
 const browser=await chromium.launch({headless:true,...(process.env.ICAX_BROWSER_CHANNEL?{channel:process.env.ICAX_BROWSER_CHANNEL}:{})});
@@ -33,8 +33,8 @@ try{
     const {renderDesignerOperationOverlay}=await import("/src/apps/tube-designer/webpage/designerViews.mjs");
     const THREE=await import("/src/iCAX-UI/SDK/ThirdParty/three/three.module.js");
     const {encodeNestingGeometry,encodePreviewMaterial}=await import("/src/apps/tube-designer/webpage/nestingPreview.mjs");
-    const cut=tools.find(tool=>tool.id==="end-convex");
-    const end=()=>({type:cut.id,recordKind:"tool",toolRef:{id:cut.id,version:cut.version,digest:cut.digest},toolLabel:cut.displayName,toolParameters:structuredClone(cut.defaultParameters),datum:"long",trim:0,rotation:0});
+    const cut=tools.find(tool=>tool.id==="end-key-joint");
+    const end=()=>({type:cut.id,recordKind:"tool",toolRef:{id:cut.id,version:cut.version,digest:cut.digest},toolLabel:cut.displayName,toolParameters:structuredClone(cut.defaultParameters),trim:0,rotation:0});
     const original={entityId:"existing-punch-part",name:"已有零件 · 新增七孔直接应用",length:1000,quantity:1,independentNesting:true,profile:{kind:"rect",width:80,depth:80},
       manufacturingGeometryResourceId:"original-part",manufacturingGeometryResourceVersion:1,
       thumbnailGeometryResourceId:"thumbnail-original",thumbnailGeometryResourceVersion:1,

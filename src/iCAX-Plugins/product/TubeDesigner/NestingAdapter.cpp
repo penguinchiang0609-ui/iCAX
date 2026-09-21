@@ -5,9 +5,12 @@
 #include "TemplateRuntime/StandardJsonCodec.h"
 #include "TubeNesting/TubeNesting.h"
 #include "Task/Task.h"
+#include <bit>
 #include <cctype>
-#include <thread>
+#include <iomanip>
 #include <iterator>
+#include <string_view>
+#include <thread>
 
 namespace iCAX::TubeDesigner
 {
@@ -55,13 +58,17 @@ iCAX::Data::VariantArray MakeNestingPlacementTransform(
         || !std::ranges::all_of(LocalCenter_, [](const double Value_) { return std::isfinite(Value_); }))
         throw std::invalid_argument("排样零件变换参数无效");
     const double _XDirection = Reversed_ ? -1.0 : 1.0;
-    const double _YDirection = Reversed_ ? -1.0 : 1.0;
+    // Reverse about local Y before applying the solved roll about X.  This is
+    // the rigid transform corresponding to the pair-table convention
+    // x' = L - x and theta' = -theta.  Reversing about Z instead would add an
+    // unrecorded pi phase to every mixed forward/reverse adjacency.
+    const double _ZDirection = Reversed_ ? -1.0 : 1.0;
     const double _Cosine = std::cos(RotationRadians_);
     const double _Sine = std::sin(RotationRadians_);
-    const double _M11 = _Cosine * _YDirection;
-    const double _M12 = -_Sine;
-    const double _M21 = _Sine * _YDirection;
-    const double _M22 = _Cosine;
+    const double _M11 = _Cosine;
+    const double _M12 = -_Sine * _ZDirection;
+    const double _M21 = _Sine;
+    const double _M22 = _Cosine * _ZDirection;
     return {
         _XDirection, 0.0, 0.0, (Start_ + End_) * 0.5 - _XDirection * LocalCenter_[0],
         0.0, _M11, _M12, -(_M11 * LocalCenter_[1] + _M12 * LocalCenter_[2]),
@@ -83,6 +90,102 @@ namespace
     constexpr std::size_t kMaximumPartInstances = 1'000'000;
     constexpr double kMaximumLength = 1000000.0;
     constexpr double kUnitsPerMm = 100.0;
+
+    void HashWord(std::uint64_t& Hash_, std::uint64_t Value_)
+    {
+        constexpr std::uint64_t _Prime = 1099511628211ULL;
+        for (unsigned _Byte = 0; _Byte < 8; ++_Byte)
+        {
+            Hash_ ^= (Value_ >> (_Byte * 8)) & 0xffU;
+            Hash_ *= _Prime;
+        }
+    }
+
+    void HashText(std::uint64_t& Hash_, const std::string_view Value_)
+    {
+        constexpr std::uint64_t _Prime = 1099511628211ULL;
+        HashWord(Hash_, Value_.size());
+        for (const unsigned char _Character : Value_)
+        {
+            Hash_ ^= _Character;
+            Hash_ *= _Prime;
+        }
+    }
+
+    void HashProfile(std::uint64_t& Hash_, const PeriodicEndProfile& Profile_)
+    {
+        HashText(Hash_, Profile_.Schema);
+        HashText(Hash_, Profile_.SourceHash);
+        HashText(Hash_, Profile_.CoordinateConvention);
+        HashWord(Hash_, static_cast<std::uint64_t>(Profile_.SourceQuality));
+        HashWord(Hash_, Profile_.CompleteSingleValued ? 1U : 0U);
+        HashWord(Hash_, Profile_.Levels.size());
+        for (const auto& _Level : Profile_.Levels)
+        {
+            HashWord(Hash_, _Level.Order);
+            HashWord(Hash_, std::bit_cast<std::uint64_t>(_Level.Constant));
+            HashWord(Hash_, std::bit_cast<std::uint64_t>(_Level.ResidualUpper));
+            HashWord(Hash_, std::bit_cast<std::uint64_t>(_Level.FirstDerivativeUpper));
+            HashWord(Hash_, std::bit_cast<std::uint64_t>(_Level.SecondDerivativeUpper));
+            HashWord(Hash_, _Level.Certified ? 1U : 0U);
+            for (const auto _Value : _Level.Cosine)
+                HashWord(Hash_, std::bit_cast<std::uint64_t>(_Value));
+            for (const auto _Value : _Level.Sine)
+                HashWord(Hash_, std::bit_cast<std::uint64_t>(_Value));
+        }
+    }
+
+    std::string TypeDefinitionFingerprint(const PairTableBuildInput& Input_)
+    {
+        std::uint64_t _Hash = 1469598103934665603ULL;
+        HashWord(_Hash, Input_.Types.size());
+        for (std::size_t _Index = 0; _Index < Input_.Types.size(); ++_Index)
+        {
+            const auto& _Type = Input_.Types[_Index];
+            HashText(_Hash, _Type.ID);
+            HashText(_Hash, _Type.CompatibilityKey);
+            HashText(_Hash, _Type.OrderKey);
+            HashWord(_Hash, static_cast<std::uint64_t>(_Type.MaximumLength));
+            HashWord(_Hash, static_cast<std::uint64_t>(_Type.MaterialLength));
+            HashWord(_Hash, _Type.DirectionAllowed[0] ? 1U : 0U);
+            HashWord(_Hash, _Type.DirectionAllowed[1] ? 1U : 0U);
+            const auto& _Geometry = Input_.Geometry[_Index];
+            HashProfile(_Hash, _Geometry.Left);
+            HashProfile(_Hash, _Geometry.Right);
+            HashWord(_Hash, _Geometry.RelativeRotationDomain.Intervals.size());
+            for (const auto& _Interval : _Geometry.RelativeRotationDomain.Intervals)
+            {
+                HashWord(_Hash, std::bit_cast<std::uint64_t>(_Interval.MinimumRadians));
+                HashWord(_Hash, std::bit_cast<std::uint64_t>(_Interval.MaximumRadians));
+            }
+            HashWord(_Hash, _Geometry.RelativeRotationDomain.DiscreteRadians.size());
+            for (const auto _Angle : _Geometry.RelativeRotationDomain.DiscreteRadians)
+                HashWord(_Hash, std::bit_cast<std::uint64_t>(_Angle));
+        }
+        const auto _HashDomains = [&](const std::vector<AngleDomain>& Domains_)
+        {
+            HashWord(_Hash, Domains_.size());
+            for (const auto& _Domain : Domains_)
+            {
+                HashWord(_Hash, _Domain.Intervals.size());
+                for (const auto& _Interval : _Domain.Intervals)
+                {
+                    HashWord(_Hash,
+                        std::bit_cast<std::uint64_t>(_Interval.MinimumRadians));
+                    HashWord(_Hash,
+                        std::bit_cast<std::uint64_t>(_Interval.MaximumRadians));
+                }
+                HashWord(_Hash, _Domain.DiscreteRadians.size());
+                for (const auto _Angle : _Domain.DiscreteRadians)
+                    HashWord(_Hash, std::bit_cast<std::uint64_t>(_Angle));
+            }
+        };
+        _HashDomains(Input_.DirectedPairDomains);
+        _HashDomains(Input_.OrientedPairDomains);
+        std::ostringstream _Text;
+        _Text << "fnv1a64:" << std::hex << std::setw(16) << std::setfill('0') << _Hash;
+        return _Text.str();
+    }
 
     std::optional<double> Number(const Variant& Value_)
     {
@@ -146,15 +249,22 @@ namespace
     double Mm(const Length Value_) { return static_cast<double>(Value_) / kUnitsPerMm; }
     unsigned long long Count(const std::size_t Value_) { return static_cast<unsigned long long>(Value_); }
 
-    SolverSettings Settings(const std::size_t Count_)
+    PairTableSolverSettings Settings(const std::size_t Count_)
     {
-        SolverSettings _Settings;
-        _Settings.Kerf = 0;
+        PairTableSolverSettings _Settings;
+        _Settings.Constraint = ConstraintMode::HybridLargeNeighborhood;
         _Settings.ConstructionRuns = Count_ > 200 ? 2 : 6;
-        _Settings.LocalSearchPasses = Count_ > 200 ? 0 : 3;
-        _Settings.LargeNeighborhoodIterations = Count_ > 200 ? 0 : 32;
-        _Settings.ExactPartLimit = 10;
+        _Settings.LocalSearchPasses = Count_ > 200 ? 1 : 3;
+        _Settings.CandidateWidth = Count_ > 200 ? 16 : 32;
+        _Settings.LargeNeighborhoodIterations = Count_ > 200 ? 8 : 32;
+        _Settings.ExactPartLimit = 9;
         _Settings.ExactNodeLimit = 50000;
+        _Settings.FiniteInventoryLabelLimit = 200000;
+        _Settings.EvaluationLimit = Count_ > 200 ? 500000 : 2000000;
+        _Settings.ConstraintTimeBudgetMilliseconds = 2000;
+        _Settings.ConstraintNeighborhoodPartLimit = 9;
+        _Settings.ConstraintNeighborhoodTimeBudgetMilliseconds = Count_ > 200 ? 75 : 150;
+        _Settings.TimeBudgetMilliseconds = Count_ > 200 ? 15000 : 0;
         return _Settings;
     }
 
@@ -163,31 +273,70 @@ namespace
         return Result_.Status == SolveStatus::Optimal || Result_.Status == SolveStatus::Feasible;
     }
 
-    // Stock-shortage fallback: ask the SAME solver for bounded, progressively sized
-    // subsets. Shortest first favors fulfilled piece count. This is not a claim of
-    // optimal partial fulfillment; every omitted piece is reported explicitly.
+    PeriodicEndProfile FlatProfile(const double Position_)
+    {
+        FourierLevel _Level;
+        _Level.Constant = Position_;
+        _Level.Certified = true;
+        PeriodicEndProfile _Profile;
+        _Profile.SourceHash = "conservative-aabb-plane";
+        _Profile.SourceQuality = ProfileSourceQuality::ApproximateCertified;
+        _Profile.CompleteSingleValued = true;
+        _Profile.Levels.push_back(std::move(_Level));
+        return _Profile;
+    }
+
+    PairTypeGeometry FlatGeometry(const Length Length_)
+    {
+        PairTypeGeometry _Result;
+        _Result.Left = FlatProfile(0.0);
+        _Result.Right = FlatProfile(static_cast<double>(Length_));
+        return _Result;
+    }
+
+    bool CertifiedForProductionSavings(const PairTypeGeometry& Geometry_)
+    {
+        const auto _Certified = [](const PeriodicEndProfile& Profile_)
+        {
+            return Profile_.CompleteSingleValued && !Profile_.Levels.empty()
+                && Profile_.SourceQuality != ProfileSourceQuality::Missing
+                && Profile_.SourceQuality != ProfileSourceQuality::NumericOnly;
+        };
+        return _Certified(Geometry_.Left) && _Certified(Geometry_.Right);
+    }
+
+    bool HasLegacyFeatureGeometry(const SNestingPart& Part_)
+    {
+        for (const auto& _Variant : Part_.Variants)
+            if (IsValidCutLineFeature(_Variant.LeftEnd.Feature)
+                && IsValidCutLineFeature(_Variant.RightEnd.Feature))
+                return true;
+        return false;
+    }
+
+    // Stock-shortage fallback asks the same table-only solver for progressively
+    // larger shortest-first subsets.  Geometry is never re-evaluated here.
     SolveResult SolveAvailableSubset(
-        const std::vector<PartDemand>& Demands_, const std::vector<StockType>& Stocks_,
-        const SolverSettings& Settings_)
+        PairTableSnapshot& Table_, const std::vector<StockType>& Stocks_,
+        const PairTableSolverSettings& Settings_)
     {
         std::vector<std::size_t> _Instances;
-        for (std::size_t _Index = 0; _Index < Demands_.size(); ++_Index)
-            _Instances.insert(_Instances.end(), Demands_[_Index].Quantity, _Index);
-        std::stable_sort(_Instances.begin(), _Instances.end(), [&](const auto Left_, const auto Right_) {
-            return Demands_[Left_].NominalLength < Demands_[Right_].NominalLength;
+        for (std::size_t _Type = 0; _Type < Table_.Types.size(); ++_Type)
+            _Instances.insert(_Instances.end(), Table_.Types[_Type].Quantity, _Type);
+        std::stable_sort(_Instances.begin(), _Instances.end(), [&](const auto Left_, const auto Right_)
+        {
+            return Table_.Types[Left_].MaximumLength < Table_.Types[Right_].MaximumLength;
         });
         auto _Quick = Settings_;
+        _Quick.Constraint = ConstraintMode::Disabled;
         _Quick.ConstructionRuns = 1;
         _Quick.LocalSearchPasses = 0;
         _Quick.LargeNeighborhoodIterations = 0;
-        _Quick.ExactPartLimit = 0;
-        const auto _Subset = [&](const std::size_t Size_) {
-            auto _Parts = Demands_;
-            for (auto& _Part : _Parts) _Part.Quantity = 0;
+        const auto _Select = [&](const std::size_t Size_)
+        {
+            for (auto& _Type : Table_.Types) _Type.Quantity = 0;
             for (std::size_t _Index = 0; _Index < Size_; ++_Index)
-                ++_Parts[_Instances[_Index]].Quantity;
-            std::erase_if(_Parts, [](const auto& Part_) { return Part_.Quantity == 0; });
-            return _Parts;
+                ++Table_.Types[_Instances[_Index]].Quantity;
         };
         std::size_t _Low = 0;
         std::size_t _High = _Instances.size();
@@ -195,7 +344,8 @@ namespace
         while (_Low < _High)
         {
             const auto _Middle = _Low + (_High - _Low + 1) / 2;
-            auto _Candidate = Solver().Solve(_Subset(_Middle), Stocks_, _Quick);
+            _Select(_Middle);
+            auto _Candidate = PairTableSolver().Solve(Table_, Stocks_, _Quick);
             if (Complete(_Candidate))
             {
                 _Low = _Middle;
@@ -205,7 +355,8 @@ namespace
         }
         if (_Low != 0)
         {
-            auto _Optimized = Solver().Solve(_Subset(_Low), Stocks_, Settings_);
+            _Select(_Low);
+            auto _Optimized = PairTableSolver().Solve(Table_, Stocks_, Settings_);
             if (Complete(_Optimized)) _Best = std::move(_Optimized);
         }
         return _Best;
@@ -358,86 +509,142 @@ ObjectMap SolveManufacturingNesting(
     return SolveManufacturingNesting(Parts_, Stocks_, PartGap_, 0);
 }
 
-ObjectMap SolveManufacturingNesting(
+namespace
+{
+ObjectMap SolveManufacturingNestingSinglePriority(
     const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
     const double PartGap_, const std::size_t MaximumConcurrency_)
 {
     if (Parts_.empty()) throw std::invalid_argument("请先勾选需要排样的零件");
-    if (Stocks_.size() > 1000) throw std::invalid_argument("母材规格行不能超过 1000 行");
+    const auto _OrdinaryStockCount = std::ranges::count_if(
+        Stocks_, [](const auto& Stock_) { return Stock_.InstanceID.empty(); });
+    if (_OrdinaryStockCount > 1000 || Stocks_.size() > 3000)
+        throw std::invalid_argument("母材规格不能超过 1000 行，续排实例不能超过 2000 根");
     const auto _Gap = Quantize(PartGap_, true);
+    std::set<std::string> _ContinuationPredecessors;
+    for (const auto& _Stock : Stocks_)
+        if (!_Stock.InstanceID.empty())
+        {
+            if (_Stock.InitialPredecessorPartID.empty())
+                throw std::invalid_argument("异形续排母材缺少末件编号");
+            _ContinuationPredecessors.insert(_Stock.InitialPredecessorPartID);
+        }
     std::size_t _TotalParts = 0;
     std::set<std::string> _IDs;
     std::map<std::string, std::array<double, 3>> _LocalCenters;
-    std::map<std::string, std::vector<PartDemand>> _Groups;
+    std::map<std::string, std::string> _PartProfiles;
+    std::map<std::string, std::uint32_t> _PartPriorities;
+    std::map<std::string, PairTableBuildInput> _Groups;
+    std::size_t _RecognizedProfileCount = 0;
+    std::size_t _RecognizedNumericProfileCount = 0;
+    std::size_t _LegacyBridgeCount = 0;
+    std::size_t _ConservativeProfileCount = 0;
+    bool _AllProfilesNativeCertified = true;
     for (const auto& _Part : Parts_)
     {
         if (_Part.ID.empty() || _Part.ProfileKey.empty() || !_IDs.insert(_Part.ID).second)
             throw std::invalid_argument("零件编号、截面分组为空或零件重复");
-        if (_Part.Quantity == 0 || _Part.Quantity > kMaximumPartInstances - _TotalParts)
-            throw std::invalid_argument("单次排样需为 1 至 1000000 件，请分批排样");
+        if ((_Part.Quantity == 0 && !_ContinuationPredecessors.contains(_Part.ID))
+            || _Part.Quantity > kMaximumPartInstances - _TotalParts)
+            throw std::invalid_argument(
+                "单次排样零件数量无效；零数量类型只能作为异形续排的固定末件");
         _TotalParts += _Part.Quantity;
+        if (!std::ranges::all_of(_Part.LocalCenter,
+            [](const double Value_) { return std::isfinite(Value_); }))
+            throw std::invalid_argument("零件局部坐标中心无效");
         _LocalCenters.emplace(_Part.ID, _Part.LocalCenter);
+        _PartProfiles.emplace(_Part.ID, _Part.ProfileKey);
+        _PartPriorities.emplace(_Part.ID, _Part.Priority);
         const auto _Length = Quantize(_Part.Length, true);
         if (_Length <= 0) throw std::invalid_argument("零件长度必须大于 0 mm");
-        std::vector<PartVariant> _Variants;
-        if (_Part.Variants.empty())
-        {
-            PartVariant _Variant;
-            _Variant.AxialLength = _Length;
-            _Variant.MaterialLength = _Length;
-            _Variant.LeftEnd.AllowCommonCut = false;
-            _Variant.RightEnd.AllowCommonCut = false;
-            _Variants.push_back(std::move(_Variant));
-        }
-        else
+        if (!_Part.DirectionAllowed[0] && !_Part.DirectionAllowed[1])
+            throw std::invalid_argument("零件正向和掉头方向不能同时禁用");
+        Length _MaterialLength = _Length;
+        if (!_Part.Variants.empty())
         {
             if (_Part.Variants.size() > 16)
                 throw std::invalid_argument("单个零件的排样姿态不能超过 16 种");
             std::set<std::string> _VariantIDs;
+            bool _HasMaterialLength = false;
             for (const auto& _Source : _Part.Variants)
             {
                 if (_Source.ID.empty() || !_VariantIDs.insert(_Source.ID).second
                     || !std::isfinite(_Source.RotationRadians)
                     || !std::isfinite(_Source.PhaseOffset))
                     throw std::invalid_argument("零件排样姿态编号、旋转角或相位偏移无效");
-                PartVariant _Variant;
-                _Variant.ID = _Source.ID;
-                _Variant.AxialLength = Quantize(_Source.EnvelopeLength, true);
-                if (_Variant.AxialLength != _Length)
+                const auto _VariantLength = Quantize(_Source.EnvelopeLength, true);
+                if (_VariantLength != _Length)
                     throw std::invalid_argument("零件排样姿态的轴向包络与制造几何不一致");
-                _Variant.MaterialLength = std::min(
-                    _Variant.AxialLength, Quantize(_Source.MaterialLength, true));
-                if (_Variant.MaterialLength <= 0 || _Variant.MaterialLength > _Variant.AxialLength)
+                const auto _VariantMaterial = (std::min)(
+                    _VariantLength, Quantize(_Source.MaterialLength, true));
+                if (_VariantMaterial <= 0 || _VariantMaterial > _VariantLength)
                     throw std::invalid_argument("零件排样姿态的净材料长度无效");
-                const auto _CopyEnd = [](const SNestingEnd& Source_, EndDescriptor& Target_) {
-                    Target_.AllowCommonCut = false;
-                    Target_.NestingProjection = QuantizeProjection(Source_.Projection);
-                    Target_.NestingPlane = Source_.NestingPlane;
-                    Target_.AllowTrapezoidNesting = Source_.AllowTrapezoidNesting
-                        && Target_.NestingProjection > 0 && !Target_.NestingPlane.empty();
+                if (!_HasMaterialLength)
+                {
+                    _MaterialLength = _VariantMaterial;
+                    _HasMaterialLength = true;
+                }
+                else
+                    _MaterialLength = (std::max)(_MaterialLength, _VariantMaterial);
+                const auto _ValidateEnd = [](const SNestingEnd& Source_) {
+                    (void)QuantizeProjection(Source_.Projection);
                     if (Source_.Feature.Kind != CutLineFeatureKind::Invalid)
                     {
                         if (!IsValidCutLineFeature(Source_.Feature))
                             throw std::invalid_argument("端曲线特征编码无效");
-                        Target_.Feature = Source_.Feature;
                     }
-                    if (Target_.NestingPlane.size() > 160)
+                    if (Source_.NestingPlane.size() > 160)
                         throw std::invalid_argument("斜切端面方向编号过长");
                 };
-                _CopyEnd(_Source.LeftEnd, _Variant.LeftEnd);
-                _CopyEnd(_Source.RightEnd, _Variant.RightEnd);
-                _Variant.Reversed = _Source.Reversed;
-                _Variant.RotationRadians = _Source.RotationRadians;
+                _ValidateEnd(_Source.LeftEnd);
+                _ValidateEnd(_Source.RightEnd);
                 if (!std::isfinite(_Source.PhaseOffset) || _Source.PhaseOffset < 0.0
                     || _Source.PhaseOffset > kMaximumLength)
                     throw std::invalid_argument("零件展开相位偏移无效");
-                _Variant.PhaseOffset = Quantize(_Source.PhaseOffset, false);
-                _Variants.push_back(std::move(_Variant));
             }
         }
-        _Groups[_Part.ProfileKey].push_back({
-            _Part.ID, _Part.ProfileKey, {}, _Length, _Part.Quantity, std::move(_Variants) });
+        PairTypeGeometry _Geometry;
+        if (_Part.PairGeometry)
+        {
+            ++_RecognizedProfileCount;
+            if (!CertifiedForProductionSavings(*_Part.PairGeometry))
+            {
+                ++_RecognizedNumericProfileCount;
+                _AllProfilesNativeCertified = false;
+                _Geometry = FlatGeometry(_Length);
+            }
+            else
+            {
+                _Geometry = *_Part.PairGeometry;
+                if (_Geometry.Left.SourceQuality != ProfileSourceQuality::NativeCertified
+                    || _Geometry.Right.SourceQuality != ProfileSourceQuality::NativeCertified)
+                    _AllProfilesNativeCertified = false;
+            }
+        }
+        else if (HasLegacyFeatureGeometry(_Part))
+        {
+            _Geometry = FlatGeometry(_Length);
+            ++_LegacyBridgeCount;
+            _AllProfilesNativeCertified = false;
+        }
+        else
+        {
+            _Geometry = FlatGeometry(_Length);
+            ++_ConservativeProfileCount;
+            _AllProfilesNativeCertified = false;
+        }
+        auto& _Group = _Groups[_Part.ProfileKey];
+        _Group.Version = "tube-nesting-pair-table-v1";
+        _Group.Types.push_back(PairPartType{
+            _Part.ID, _Part.ProfileKey, {}, _Length, _MaterialLength,
+            _Part.Quantity, _Part.DirectionAllowed });
+        _Group.Geometry.push_back(std::move(_Geometry));
     }
+    if (_TotalParts == 0)
+        throw std::invalid_argument("请至少提供一个尚未排样的零件");
+    for (const auto& _Predecessor : _ContinuationPredecessors)
+        if (!_PartProfiles.contains(_Predecessor))
+            throw std::invalid_argument("异形续排母材的末件不在零件定义中");
     _IDs.clear();
     std::map<std::string, std::vector<StockType>> _StocksByProfile;
     for (const auto& _Stock : Stocks_)
@@ -446,14 +653,51 @@ ObjectMap SolveManufacturingNesting(
             throw std::invalid_argument("母材编号、截面分组为空或母材编号重复");
         if (_Stock.Quantity < -1 || _Stock.Quantity > 1000000)
             throw std::invalid_argument("母材数量必须为 -1（不限量）、0（停用）或正整数");
+        const bool _Continued = !_Stock.InstanceID.empty();
+        if (_Continued)
+        {
+            if (_Stock.Quantity != 1 || _Stock.SourceStockTypeID.empty()
+                || !_ContinuationPredecessors.contains(
+                    _Stock.InitialPredecessorPartID)
+                || _PartProfiles.at(_Stock.InitialPredecessorPartID)
+                    != _Stock.ProfileKey
+                || !std::isfinite(_Stock.InitialProcessedEnd)
+                || !std::isfinite(_Stock.InitialPredecessorRotationRadians))
+                throw std::invalid_argument("异形续排母材的实例、末件或姿态无效");
+        }
+        else if (!_Stock.SourceStockTypeID.empty()
+            || _Stock.InitialProcessedEnd != 0.0
+            || !_Stock.InitialPredecessorPartID.empty()
+            || _Stock.InitialPredecessorReversed
+            || _Stock.InitialPredecessorRotationRadians != 0.0)
+            throw std::invalid_argument("普通母材不能携带固定前缀信息");
         if (_Stock.Quantity == 0) continue;
         const auto _Length = Quantize(_Stock.Length, false);
         if (_Length <= 0) throw std::invalid_argument("母材长度必须至少为 0.01 mm");
         StockType _Native;
         _Native.ID = _Stock.ID;
+        _Native.SourceTypeID = _Stock.SourceStockTypeID;
+        _Native.FixedInstanceID = _Stock.InstanceID;
         _Native.CompatibilityKey = _Stock.ProfileKey;
         _Native.TotalLength = _Length;
         _Native.Quantity = _Stock.Quantity == -1 ? 0 : static_cast<std::size_t>(_Stock.Quantity);
+        if (_Continued)
+        {
+            _Native.Kind = StockKind::Remnant;
+            _Native.CostUnits = 0;
+            _Native.Quantity = 1;
+            _Native.InitialProcessedEnd = Quantize(
+                _Stock.InitialProcessedEnd, true);
+            if (_Native.InitialProcessedEnd < 0
+                || _Native.InitialProcessedEnd >= _Native.TotalLength)
+                throw std::invalid_argument("异形续排母材没有可用的剩余长度");
+            _Native.InitialPredecessorTypeID =
+                _Stock.InitialPredecessorPartID;
+            _Native.InitialPredecessorDirection = _Stock.InitialPredecessorReversed
+                ? Direction::Reverse : Direction::Forward;
+            _Native.InitialPredecessorRotationRadians =
+                _Stock.InitialPredecessorRotationRadians;
+        }
         _StocksByProfile[_Stock.ProfileKey].push_back(std::move(_Native));
     }
 
@@ -466,25 +710,69 @@ ObjectMap SolveManufacturingNesting(
         std::size_t PlacedCount = 0;
         bool AllExact = true;
         unsigned long long SearchNodes = 0;
+        std::vector<std::string> SolverDiagnostics;
     };
-    const auto _SolveGroup = [_Gap, &_LocalCenters](const std::vector<PartDemand>& _Demands,
+    const auto _Hardware = std::thread::hardware_concurrency();
+    const std::size_t _GroupConcurrency = MaximumConcurrency_ == 0
+        ? std::min(8u, std::max(1u, _Hardware > 1 ? _Hardware - 1 : 1u))
+        : std::clamp<std::size_t>(MaximumConcurrency_, 1, 8);
+    const bool _MultipleProfileGroups = _Groups.size() > 1;
+    const auto _SolveGroup = [_Gap, &_LocalCenters, &_PartPriorities, _MultipleProfileGroups](const PairTableBuildInput& _SourceInput,
         const std::vector<StockType>& _Stocks) {
         SGroupResult _GroupResult;
         auto& [_Plans, _PlacedQuantities, _MissingReasons, _TotalStock,
-            _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes] = _GroupResult;
+            _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes,
+            _SolverDiagnostics] = _GroupResult;
         Length _MaximumStock = 0;
         for (const auto& _Stock : _Stocks) _MaximumStock = std::max(_MaximumStock, _Stock.TotalLength);
-        std::vector<PartDemand> _FitDemands;
-        for (const auto& _Demand : _Demands)
+        PairTableBuildInput _Input;
+        _Input.Version = _SourceInput.Version;
+        _Input.TypeDefinitionHash = _SourceInput.TypeDefinitionHash;
+        _Input.ProcessConfigurationHash = _SourceInput.ProcessConfigurationHash;
+        for (std::size_t _Type = 0; _Type < _SourceInput.Types.size(); ++_Type)
         {
-            if (_MaximumStock < _Demand.NominalLength)
+            const auto& _Definition = _SourceInput.Types[_Type];
+            if (_MaximumStock < _Definition.MaximumLength)
             {
-                _MissingReasons[_Demand.ID] = _Stocks.empty() ? "该截面未设置可用母材" : "零件长于该截面的所有可用母材";
+                _MissingReasons[_Definition.ID] = _Stocks.empty()
+                    ? "该截面未设置可用母材" : "零件长于该截面的所有可用母材";
                 _AllExact = false;
             }
-            else _FitDemands.push_back(_Demand);
+            else
+            {
+                _Input.Types.push_back(_Definition);
+                _Input.Geometry.push_back(_SourceInput.Geometry[_Type]);
+            }
         }
-        if (_FitDemands.empty()) return _GroupResult;
+        if (_Input.Types.empty()) return _GroupResult;
+
+        const auto _StateCount = _Input.Types.size() * 2;
+        _Input.PairProcessLosses.assign(_StateCount * _StateCount, _Gap);
+        _Input.TypeDefinitionHash = TypeDefinitionFingerprint(_Input);
+        _Input.ProcessConfigurationHash = "pair-gap-v1:"
+            + std::to_string(_Gap);
+        PairTableBuildSettings _BuildSettings;
+        _BuildSettings.Pose.Tolerance = 1.0; // one 0.01 mm integer quantum
+        _BuildSettings.Pose.FixedPhaseTolerance = 0.25;
+        // Profile groups are already parallelized outside.  For one profile,
+        // use the pair-table's bounded internal worker pool.
+        _BuildSettings.MaximumConcurrency = _MultipleProfileGroups ? 1 : 0;
+        auto _Table = BuildPairTable(_Input, _BuildSettings);
+        std::vector<std::string> _TableDiagnostics;
+        if (!ValidatePairTable(_Table, &_TableDiagnostics))
+            throw std::runtime_error("端口姿态表无效，无法执行排样");
+        const bool _TableCertified = std::ranges::all_of(
+            _Table.Entries, [](const auto& Entry_)
+            {
+                return Entry_.Status == PairEntryStatus::Forbidden
+                    || Entry_.Status == PairEntryStatus::Certified;
+            });
+        _AllExact = _AllExact && _TableCertified;
+        std::vector<std::size_t> _RequestedQuantities;
+        _RequestedQuantities.reserve(_Table.Types.size());
+        for (const auto& _Type : _Table.Types)
+            _RequestedQuantities.push_back(_Type.Quantity);
+
         // Inventory has hard priority: solve finite stock first, then only send its
         // unfulfilled demands to unlimited stock. Cost/count tie-breakers cannot
         // bypass this ordering.
@@ -496,30 +784,37 @@ ObjectMap SolveManufacturingNesting(
         if (_PhaseStocks.empty()) continue;
         Length _PhaseMaximum = 0;
         for (const auto& _Stock : _PhaseStocks) _PhaseMaximum = std::max(_PhaseMaximum, _Stock.TotalLength);
-        std::vector<PartDemand> _PhaseDemands;
+        std::vector<std::size_t> _PhaseQuantities(_Table.Types.size(), 0);
         std::size_t _PhaseCount = 0;
-        for (auto _Demand : _FitDemands)
+        for (std::size_t _Type = 0; _Type < _Table.Types.size(); ++_Type)
         {
-            _Demand.Quantity -= _PlacedQuantities[_Demand.ID];
-            if (_Demand.Quantity && _Demand.NominalLength <= _PhaseMaximum)
+            const auto& _Definition = _Table.Types[_Type];
+            const auto _Placed = _PlacedQuantities[_Definition.ID];
+            const auto _Requested = _RequestedQuantities[_Type];
+            const auto _Remaining = _Requested - (std::min)(_Requested, _Placed);
+            if (_Remaining && _Definition.MaximumLength <= _PhaseMaximum)
             {
-                _PhaseCount += _Demand.Quantity;
-                _PhaseDemands.push_back(std::move(_Demand));
+                _PhaseQuantities[_Type] = _Remaining;
+                _PhaseCount += _Remaining;
             }
         }
-        if (_PhaseDemands.empty()) continue;
+        if (_PhaseCount == 0) continue;
+        for (std::size_t _Type = 0; _Type < _Table.Types.size(); ++_Type)
+            _Table.Types[_Type].Quantity = _PhaseQuantities[_Type];
         auto _Settings = Settings(_PhaseCount);
-        _Settings.PartGap = _Gap;
-        auto _Result = Solver().Solve(_PhaseDemands, _PhaseStocks, _Settings);
+        _Settings.ConstraintWorkers = _MultipleProfileGroups ? 1 : 0;
+        auto _Result = PairTableSolver().Solve(_Table, _PhaseStocks, _Settings);
         if (_Result.Status == SolveStatus::InvalidInput)
             throw std::runtime_error("原生排样求解器拒绝了输入数据");
         if (!Complete(_Result))
         {
-            _Result = SolveAvailableSubset(_PhaseDemands, _PhaseStocks, _Settings);
+            _Result = SolveAvailableSubset(_Table, _PhaseStocks, _Settings);
             _AllExact = false;
         }
         _AllExact = _AllExact && _Result.ExactSearchCompleted;
         _SearchNodes += _Result.Metrics.SearchNodes;
+        _SolverDiagnostics.insert(_SolverDiagnostics.end(),
+            _Result.Diagnostics.begin(), _Result.Diagnostics.end());
         for (const auto& _Stock : _Result.Stocks)
         {
             VariantArray _Placements;
@@ -532,15 +827,22 @@ ObjectMap SolveManufacturingNesting(
                     << _PlacedQuantities[_Placement.DemandID];
                 _Placements.emplace_back(ObjectMap{
                     { "partId", _Placement.DemandID }, { "instanceId", _InstanceID.str() },
+                    { "priority", static_cast<unsigned long long>(
+                        _PartPriorities.at(_Placement.DemandID)) },
                     { "start", Mm(_Placement.Start) }, { "end", Mm(_Placement.End) },
                     { "length", Mm(_Placement.End - _Placement.Start) },
                     { "gapBefore", Mm(_Placement.GapBefore) },
-                    // The first placement has no preceding part to nest with.
-                    { "nestedWithPrevious", !_Placements.empty() && _Placement.GapBefore < _Gap },
+                    // Continued stock has a fixed predecessor before the first
+                    // newly returned placement.
+                    { "nestedWithPrevious", (!_Placements.empty() || _Stock.Continued)
+                        && _Placement.GapBefore < _Gap },
                     { "variantId", _Placement.VariantID },
                     { "reversed", _Placement.Reversed },
-                    { "phaseOffset", Mm(_Placement.PhaseOffset) },
+                    { "phaseOffset", 0.0 },
                     { "rotationRadians", _Placement.RotationRadians },
+                    { "savingFromPrevious", Mm(_Placement.SavingFromPrevious) },
+                    { "pairPoseIndex", static_cast<unsigned long long>(
+                        _Placement.PairPoseMetadataIndex) },
                     { "trsf", MakeNestingPlacementTransform(_LocalCenters.at(_Placement.DemandID),
                         Mm(_Placement.Start), Mm(_Placement.End), _Placement.Reversed,
                         _Placement.RotationRadians) }
@@ -549,6 +851,8 @@ ObjectMap SolveManufacturingNesting(
             _Plans.emplace_back(ObjectMap{
                 { "id", _Stock.StockInstanceID }, { "stockTypeId", _Stock.StockTypeID },
                 { "profileKey", _Stock.CompatibilityKey }, { "stockLength", Mm(_Stock.TotalLength) },
+                { "continued", _Stock.Continued },
+                { "initialProcessedEnd", Mm(_Stock.InitialProcessedEnd) },
                 { "usedLength", Mm(_Stock.ProcessedEnd) }, { "remainingLength", Mm(_Stock.RemainingLength) },
                 { "partLength", Mm(_Stock.PartLength) }, { "partCount", Count(_Stock.Placements.size()) },
                 { "utilization", static_cast<double>(_Stock.PartLength) / _Stock.TotalLength },
@@ -567,23 +871,19 @@ ObjectMap SolveManufacturingNesting(
     // inventory, fallback search and unlimited-stock phase stay on one task.
     struct SGroupInput
     {
-        const std::vector<PartDemand>* Demands;
+        const PairTableBuildInput* Input;
         const std::vector<StockType>* Stocks;
     };
     std::vector<SGroupInput> _Inputs;
-    for (const auto& [_Profile, _Demands] : _Groups)
-        _Inputs.push_back({ &_Demands, &_StocksByProfile[_Profile] });
+    for (const auto& [_Profile, _Input] : _Groups)
+        _Inputs.push_back({ &_Input, &_StocksByProfile[_Profile] });
     std::vector<SGroupResult> _Results(_Inputs.size());
-    const auto _Hardware = std::thread::hardware_concurrency();
-    const std::size_t _Concurrency = MaximumConcurrency_ == 0
-        ? std::min(8u, std::max(1u, _Hardware > 1 ? _Hardware - 1 : 1u))
-        : std::clamp<std::size_t>(MaximumConcurrency_, 1, 8);
     const auto _RunGroup = [&](std::size_t Index_) {
-        _Results[Index_] = _SolveGroup(*_Inputs[Index_].Demands, *_Inputs[Index_].Stocks);
+        _Results[Index_] = _SolveGroup(*_Inputs[Index_].Input, *_Inputs[Index_].Stocks);
     };
-    for (std::size_t _Begin = 0; _Begin < _Inputs.size(); _Begin += _Concurrency)
+    for (std::size_t _Begin = 0; _Begin < _Inputs.size(); _Begin += _GroupConcurrency)
     {
-        const auto _Count = std::min(_Concurrency, _Inputs.size() - _Begin);
+        const auto _Count = std::min(_GroupConcurrency, _Inputs.size() - _Begin);
         struct SBatch
         {
             std::vector<iCAX::Tasks::Task<void>> Tasks;
@@ -610,7 +910,8 @@ ObjectMap SolveManufacturingNesting(
     // not touch aggregate counters, resource libraries, inventory or the scene.
     SGroupResult _Aggregate;
     auto& [_Plans, _PlacedQuantities, _MissingReasons, _TotalStock,
-        _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes] = _Aggregate;
+        _PartLength, _UsedLength, _PlacedCount, _AllExact, _SearchNodes,
+        _SolverDiagnostics] = _Aggregate;
     VariantArray _Unplaced, _Diagnostics;
     for (auto& _Result : _Results)
     {
@@ -624,6 +925,9 @@ ObjectMap SolveManufacturingNesting(
         _PlacedCount += _Result.PlacedCount;
         _AllExact = _AllExact && _Result.AllExact;
         _SearchNodes += _Result.SearchNodes;
+        _SolverDiagnostics.insert(_SolverDiagnostics.end(),
+            std::make_move_iterator(_Result.SolverDiagnostics.begin()),
+            std::make_move_iterator(_Result.SolverDiagnostics.end()));
     }
     for (const auto& _Part : Parts_)
     {
@@ -640,17 +944,34 @@ ObjectMap SolveManufacturingNesting(
     const auto _StockCount = Count(_Plans.size());
     if (!_Unplaced.empty() && !_Plans.empty())
         _Diagnostics.emplace_back(std::string("已保留可行的部分方案；未排零件需补充母材或调整间距后重算。部分方案不保证全局最优。"));
-    const auto _UsesTrapezoidNesting = std::ranges::any_of(Parts_, [](const auto& Part_) {
-        return std::ranges::any_of(Part_.Variants, [](const auto& Variant_) {
-            return Variant_.LeftEnd.AllowTrapezoidNesting || Variant_.RightEnd.AllowTrapezoidNesting;
-        });
-    });
-    _Diagnostics.emplace_back(_UsesTrapezoidNesting
-        ? std::string("按直切或保守斜切毛坯排样；斜切刀平面完整包住最终零件后参与梯形套切，不要求真实端口为平面。")
-        : std::string("按直切包络排样；未找到可靠斜切近似的端口使用直切包络，间距仅计在相邻零件之间。"));
+    std::sort(_SolverDiagnostics.begin(), _SolverDiagnostics.end());
+    _SolverDiagnostics.erase(std::unique(
+        _SolverDiagnostics.begin(), _SolverDiagnostics.end()), _SolverDiagnostics.end());
+    for (auto& _Diagnostic : _SolverDiagnostics)
+        _Diagnostics.emplace_back(std::move(_Diagnostic));
+    _Diagnostics.emplace_back(std::string(
+        "排样已使用四姿态邻接表；顺序求解阶段不再访问 BRep、梯形投影或在线端线匹配。"));
+    if (_RecognizedProfileCount)
+        _Diagnostics.emplace_back(std::string("已使用管型识别服务提供的周期端口谱：")
+            + std::to_string(_RecognizedProfileCount) + " 种零件。");
+    if (_RecognizedNumericProfileCount)
+        _Diagnostics.emplace_back(std::string("其中 ")
+            + std::to_string(_RecognizedNumericProfileCount)
+            + " 种只有数值采样谱；为避免未经证明的互穿，本次按轴向包络排样，未使用其重叠节约量。");
+    if (_LegacyBridgeCount)
+        _Diagnostics.emplace_back(std::string("有 ") + std::to_string(_LegacyBridgeCount)
+            + " 种零件只有旧端线采样；本次按轴向包络排样，旧在线相位匹配未进入顺序求解。");
+    if (_ConservativeProfileCount)
+        _Diagnostics.emplace_back(std::string("有 ") + std::to_string(_ConservativeProfileCount)
+            + " 种零件缺少端口谱，已使用不重叠的轴向包络平面，结果安全但可能少节料。");
     return {
         { "status", std::string(_Status) }, { "plans", std::move(_Plans) },
         { "unplaced", std::move(_Unplaced) }, { "diagnostics", std::move(_Diagnostics) },
+        { "proof", ObjectMap{
+            { "integerModelOptimalityProven", _AllExact },
+            { "nativePairBoundsCertified", _AllProfilesNativeCertified },
+            { "scope", std::string(_AllExact ? "full-integer-model" : "feasible-incumbent") }
+        } },
         { "metrics", ObjectMap{
             { "requestedPartCount", Count(_TotalParts) }, { "placedPartCount", Count(_PlacedCount) },
             { "unplacedPartCount", Count(_TotalParts - _PlacedCount) },
@@ -659,6 +980,335 @@ ObjectMap SolveManufacturingNesting(
             { "remainingLength", Mm(_TotalStock - _UsedLength) }, { "gapLength", Mm(_UsedLength - _PartLength) },
             { "utilization", _TotalStock > 0 ? static_cast<double>(_PartLength) / _TotalStock : 0.0 },
             { "searchNodes", _SearchNodes }, { "partGap", Mm(_Gap) }
+        } }
+    };
+}
+
+}
+
+ObjectMap SolveManufacturingNesting(
+    const std::vector<SNestingPart>& Parts_, const std::vector<SNestingStock>& Stocks_,
+    const double PartGap_, const std::size_t MaximumConcurrency_)
+{
+    std::set<std::uint32_t> _PriorityLevels;
+    for (const auto& _Part : Parts_)
+        if (_Part.Quantity) _PriorityLevels.insert(_Part.Priority);
+    if (_PriorityLevels.size() <= 1)
+        return SolveManufacturingNestingSinglePriority(
+            Parts_, Stocks_, PartGap_, MaximumConcurrency_);
+
+    std::set<std::string> _ContinuationPredecessors;
+    std::set<std::string> _ReservedPlanIDs;
+    for (const auto& _Stock : Stocks_)
+    {
+        if (_Stock.InstanceID.empty()) continue;
+        _ContinuationPredecessors.insert(_Stock.InitialPredecessorPartID);
+        if (!_ReservedPlanIDs.insert(_Stock.InstanceID).second)
+            throw std::invalid_argument("异形续排母材实例编号重复");
+    }
+    std::set<std::string> _PartIDs;
+    std::size_t _RequestedCount = 0;
+    for (const auto& _Part : Parts_)
+    {
+        if (_Part.ID.empty() || _Part.ProfileKey.empty()
+            || !_PartIDs.insert(_Part.ID).second)
+            throw std::invalid_argument("零件编号、截面分组为空或零件重复");
+        if ((_Part.Quantity == 0 && !_ContinuationPredecessors.contains(_Part.ID))
+            || _Part.Quantity > kMaximumPartInstances - _RequestedCount)
+            throw std::invalid_argument(
+                "单次排样零件数量无效；零数量类型只能作为异形续排的固定末件");
+        _RequestedCount += _Part.Quantity;
+    }
+
+    const auto _RequiredText = [](const ObjectMap& Object_, const char* Field_)
+    {
+        const auto _Found = Object_.find(Field_);
+        if (_Found == Object_.end() || !_Found->second.Is<std::string>())
+            throw std::logic_error(std::string("排样结果缺少文本字段: ") + Field_);
+        return _Found->second.To<std::string>();
+    };
+    const auto _RequiredNumber = [](const ObjectMap& Object_, const char* Field_)
+    {
+        const auto _Found = Object_.find(Field_);
+        if (_Found == Object_.end())
+            throw std::logic_error(std::string("排样结果缺少数值字段: ") + Field_);
+        const auto _Value = Number(_Found->second);
+        if (!_Value || !std::isfinite(*_Value))
+            throw std::logic_error(std::string("排样结果数值字段无效: ") + Field_);
+        return *_Value;
+    };
+    const auto _RequiredBool = [](const ObjectMap& Object_, const char* Field_)
+    {
+        const auto _Found = Object_.find(Field_);
+        if (_Found == Object_.end() || !_Found->second.Is<bool>())
+            throw std::logic_error(std::string("排样结果缺少布尔字段: ") + Field_);
+        return _Found->second.To<bool>();
+    };
+
+    std::vector<SNestingStock> _AvailableStocks = Stocks_;
+    VariantArray _Plans;
+    std::map<std::string, std::size_t> _PlanIndices;
+    std::set<std::string> _PlacementIDs;
+    std::map<std::string, std::size_t> _PlanOrdinals, _PartOrdinals;
+    std::size_t _ContinuationOrdinal = 0;
+    unsigned long long _SearchNodes = 0;
+    bool _AllExact = true;
+    bool _AllBoundsCertified = true;
+    std::vector<std::string> _LayerDiagnostics;
+    std::set<std::string> _SeenDiagnostics;
+    VariantArray _Unplaced;
+    std::optional<std::uint32_t> _StoppedAtPriority;
+
+    const auto _RememberDiagnostics = [&](const ObjectMap& Result_)
+    {
+        const auto _Found = Result_.find("diagnostics");
+        if (_Found == Result_.end() || !_Found->second.Is<VariantArray>()) return;
+        for (const auto& _Value : _Found->second.To<VariantArray>())
+            if (_Value.Is<std::string>())
+            {
+                auto _Text = _Value.To<std::string>();
+                if (_SeenDiagnostics.insert(_Text).second)
+                    _LayerDiagnostics.push_back(std::move(_Text));
+            }
+    };
+    const auto _AccumulateProof = [&](const ObjectMap& Result_)
+    {
+        const auto _ProofField = Result_.find("proof");
+        if (_ProofField == Result_.end() || !_ProofField->second.Is<ObjectMap>())
+        {
+            _AllExact = false;
+            _AllBoundsCertified = false;
+            return;
+        }
+        const auto _Proof = _ProofField->second.To<ObjectMap>();
+        const auto _Exact = _Proof.find("integerModelOptimalityProven");
+        const auto _Bounds = _Proof.find("nativePairBoundsCertified");
+        _AllExact = _AllExact && _Exact != _Proof.end()
+            && _Exact->second.Is<bool>() && _Exact->second.To<bool>();
+        _AllBoundsCertified = _AllBoundsCertified && _Bounds != _Proof.end()
+            && _Bounds->second.Is<bool>() && _Bounds->second.To<bool>();
+    };
+
+    for (const auto _Priority : _PriorityLevels)
+    {
+        std::set<std::string> _RequiredPredecessors;
+        for (const auto& _Stock : _AvailableStocks)
+            if (!_Stock.InstanceID.empty())
+                _RequiredPredecessors.insert(_Stock.InitialPredecessorPartID);
+        std::vector<SNestingPart> _LayerParts;
+        for (const auto& _Part : Parts_)
+        {
+            if (_Part.Priority != _Priority
+                && !_RequiredPredecessors.contains(_Part.ID)) continue;
+            auto _LayerPart = _Part;
+            if (_LayerPart.Priority != _Priority) _LayerPart.Quantity = 0;
+            _LayerParts.push_back(std::move(_LayerPart));
+        }
+
+        auto _LayerResult = SolveManufacturingNestingSinglePriority(
+            _LayerParts, _AvailableStocks, PartGap_, MaximumConcurrency_);
+        _RememberDiagnostics(_LayerResult);
+        _AccumulateProof(_LayerResult);
+        if (const auto _Metrics = _LayerResult.find("metrics");
+            _Metrics != _LayerResult.end() && _Metrics->second.Is<ObjectMap>())
+        {
+            const auto _Map = _Metrics->second.To<ObjectMap>();
+            if (const auto _Nodes = _Map.find("searchNodes"); _Nodes != _Map.end())
+                if (const auto _Value = Number(_Nodes->second); _Value && *_Value >= 0.0)
+                    _SearchNodes += static_cast<unsigned long long>(*_Value);
+        }
+
+        auto _FreshPlans = _LayerResult.at("plans").To<VariantArray>();
+        for (auto& _Value : _FreshPlans)
+        {
+            auto _Plan = _Value.To<ObjectMap>();
+            auto _PlanID = _RequiredText(_Plan, "id");
+            const auto _StockTypeID = _RequiredText(_Plan, "stockTypeId");
+            const auto _Continued = _RequiredBool(_Plan, "continued");
+
+            if (_Continued)
+            {
+                const auto _Consumed = std::ranges::find_if(
+                    _AvailableStocks, [&](const auto& Stock_)
+                    { return Stock_.InstanceID == _PlanID; });
+                if (_Consumed == _AvailableStocks.end())
+                    throw std::logic_error("分层排样返回了未知的续排母材实例");
+                _AvailableStocks.erase(_Consumed);
+            }
+            else
+            {
+                const auto _Consumed = std::ranges::find_if(
+                    _AvailableStocks, [&](const auto& Stock_)
+                    { return Stock_.InstanceID.empty() && Stock_.ID == _StockTypeID; });
+                if (_Consumed == _AvailableStocks.end())
+                    throw std::logic_error("分层排样返回了未知的普通母材规格");
+                if (_Consumed->Quantity > 0 && --_Consumed->Quantity == 0)
+                    _AvailableStocks.erase(_Consumed);
+            }
+
+            if (!_Continued && (_PlanIndices.contains(_PlanID)
+                || _ReservedPlanIDs.contains(_PlanID)))
+            {
+                do
+                {
+                    _PlanID = _StockTypeID + "#priority-"
+                        + std::to_string(++_PlanOrdinals[_StockTypeID]);
+                }
+                while (_PlanIndices.contains(_PlanID)
+                    || _ReservedPlanIDs.contains(_PlanID));
+                _Plan["id"] = _PlanID;
+            }
+
+            auto _Placements = _Plan.at("placements").To<VariantArray>();
+            for (auto& _PlacementValue : _Placements)
+            {
+                auto _Placement = _PlacementValue.To<ObjectMap>();
+                auto _InstanceID = _RequiredText(_Placement, "instanceId");
+                if (_PlacementIDs.contains(_InstanceID))
+                {
+                    const auto _PartID = _RequiredText(_Placement, "partId");
+                    do
+                    {
+                        _InstanceID = _PartID + "#priority-"
+                            + std::to_string(++_PartOrdinals[_PartID]);
+                    }
+                    while (_PlacementIDs.contains(_InstanceID));
+                    _Placement["instanceId"] = _InstanceID;
+                }
+                _PlacementIDs.insert(_InstanceID);
+                _PlacementValue = std::move(_Placement);
+            }
+            _Plan["placements"] = std::move(_Placements);
+
+            std::size_t _PlanIndex = 0;
+            const auto _Existing = _PlanIndices.find(_PlanID);
+            if (_Continued && _Existing != _PlanIndices.end())
+            {
+                _PlanIndex = _Existing->second;
+                auto _Merged = _Plans[_PlanIndex].To<ObjectMap>();
+                auto _MergedPlacements = _Merged.at("placements").To<VariantArray>();
+                auto _NewPlacements = _Plan.at("placements").To<VariantArray>();
+                _MergedPlacements.insert(_MergedPlacements.end(),
+                    std::make_move_iterator(_NewPlacements.begin()),
+                    std::make_move_iterator(_NewPlacements.end()));
+                _Merged["placements"] = std::move(_MergedPlacements);
+                _Merged["usedLength"] = _RequiredNumber(_Plan, "usedLength");
+                _Merged["remainingLength"] = _RequiredNumber(_Plan, "remainingLength");
+                _Merged["partLength"] = _RequiredNumber(_Merged, "partLength")
+                    + _RequiredNumber(_Plan, "partLength");
+                _Merged["partCount"] = Count(
+                    _Merged.at("placements").To<VariantArray>().size());
+                const auto _StockLength = _RequiredNumber(_Merged, "stockLength");
+                _Merged["utilization"] = _StockLength > 0.0
+                    ? _RequiredNumber(_Merged, "partLength") / _StockLength : 0.0;
+                _Plans[_PlanIndex] = std::move(_Merged);
+            }
+            else
+            {
+                if (_Continued && !_ReservedPlanIDs.contains(_PlanID))
+                    throw std::logic_error("分层排样续排实例没有来源");
+                _PlanIndex = _Plans.size();
+                _PlanIndices.emplace(_PlanID, _PlanIndex);
+                _Plans.emplace_back(std::move(_Plan));
+            }
+
+            const auto _Merged = _Plans[_PlanIndex].To<ObjectMap>();
+            const auto _Remaining = _RequiredNumber(_Merged, "remainingLength");
+            const auto _MergedPlacements = _Merged.at("placements").To<VariantArray>();
+            if (_Remaining >= 0.01 && !_MergedPlacements.empty())
+            {
+                std::string _ContinuationID;
+                do
+                {
+                    _ContinuationID = "__priority_continuation__:"
+                        + std::to_string(++_ContinuationOrdinal);
+                }
+                while (std::ranges::any_of(_AvailableStocks, [&](const auto& Stock_)
+                    { return Stock_.ID == _ContinuationID; }));
+                const auto _Last = _MergedPlacements.back().To<ObjectMap>();
+                SNestingStock _Continuation;
+                _Continuation.ID = std::move(_ContinuationID);
+                _Continuation.ProfileKey = _RequiredText(_Merged, "profileKey");
+                _Continuation.Length = _RequiredNumber(_Merged, "stockLength");
+                _Continuation.Quantity = 1;
+                _Continuation.SourceStockTypeID = _RequiredText(_Merged, "stockTypeId");
+                _Continuation.InstanceID = _PlanID;
+                _Continuation.InitialProcessedEnd = _RequiredNumber(_Merged, "usedLength");
+                _Continuation.InitialPredecessorPartID = _RequiredText(_Last, "partId");
+                _Continuation.InitialPredecessorReversed = _RequiredBool(_Last, "reversed");
+                _Continuation.InitialPredecessorRotationRadians =
+                    _RequiredNumber(_Last, "rotationRadians");
+                _AvailableStocks.push_back(std::move(_Continuation));
+            }
+        }
+
+        auto _LayerUnplaced = _LayerResult.at("unplaced").To<VariantArray>();
+        if (!_LayerUnplaced.empty())
+        {
+            _StoppedAtPriority = _Priority;
+            _AllExact = false;
+            _Unplaced = std::move(_LayerUnplaced);
+            for (const auto& _Part : Parts_)
+            {
+                if (_Part.Priority <= _Priority || !_Part.Quantity) continue;
+                _Unplaced.emplace_back(ObjectMap{
+                    { "partId", _Part.ID }, { "quantity", Count(_Part.Quantity) },
+                    { "reason", std::string("更高优先级零件尚未全部排入，严格优先级模式未启动本级排样") }
+                });
+            }
+            break;
+        }
+    }
+
+    std::size_t _PlacedCount = 0;
+    double _TotalStock = 0.0, _PartLength = 0.0, _UsedLength = 0.0;
+    for (const auto& _Value : _Plans)
+    {
+        const auto _Plan = _Value.To<ObjectMap>();
+        _PlacedCount += _Plan.at("placements").To<VariantArray>().size();
+        _TotalStock += _RequiredNumber(_Plan, "stockLength");
+        _PartLength += _RequiredNumber(_Plan, "partLength");
+        _UsedLength += _RequiredNumber(_Plan, "usedLength");
+    }
+    std::size_t _UnplacedCount = 0;
+    for (const auto& _Value : _Unplaced)
+        _UnplacedCount += static_cast<std::size_t>(
+            _RequiredNumber(_Value.To<ObjectMap>(), "quantity"));
+
+    VariantArray _Diagnostics;
+    _Diagnostics.emplace_back(std::string("已按数字从小到大执行 ")
+        + std::to_string(_PriorityLevels.size())
+        + " 个严格优先级；每一级完成后固定顺序和姿态，再从开放异形端续排下一级。");
+    if (_StoppedAtPriority)
+        _Diagnostics.emplace_back(std::string("优先级 ")
+            + std::to_string(*_StoppedAtPriority)
+            + " 未能全部排入，所有更低优先级均未启动。");
+    for (auto& _Diagnostic : _LayerDiagnostics)
+        _Diagnostics.emplace_back(std::move(_Diagnostic));
+
+    const auto _Status = !_Unplaced.empty()
+        ? (_Plans.empty() ? "infeasible" : "partial")
+        : (_AllExact ? "optimal" : "feasible");
+    return {
+        { "status", std::string(_Status) }, { "plans", std::move(_Plans) },
+        { "unplaced", std::move(_Unplaced) }, { "diagnostics", std::move(_Diagnostics) },
+        { "proof", ObjectMap{
+            { "integerModelOptimalityProven", _AllExact && !_StoppedAtPriority },
+            { "nativePairBoundsCertified", _AllBoundsCertified },
+            { "scope", std::string("strict-priority-fixed-prefix-layers") },
+            { "priorityLevelCount", Count(_PriorityLevels.size()) }
+        } },
+        { "metrics", ObjectMap{
+            { "requestedPartCount", Count(_RequestedCount) },
+            { "placedPartCount", Count(_PlacedCount) },
+            { "unplacedPartCount", Count(_UnplacedCount) },
+            { "stockCount", Count(_PlanIndices.size()) },
+            { "totalStockLength", _TotalStock }, { "partLength", _PartLength },
+            { "usedLength", _UsedLength }, { "remainingLength", _TotalStock - _UsedLength },
+            { "gapLength", _UsedLength - _PartLength },
+            { "utilization", _TotalStock > 0.0 ? _PartLength / _TotalStock : 0.0 },
+            { "searchNodes", _SearchNodes },
+            { "partGap", Mm(Quantize(PartGap_, true)) }
         } }
     };
 }

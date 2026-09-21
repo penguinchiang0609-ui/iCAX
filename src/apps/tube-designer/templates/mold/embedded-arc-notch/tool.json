@@ -1,16 +1,20 @@
 {
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
-  "version": "1.1.0",
+  "version": "2.2.0",
   "sectionAnalysis": {
     "schemaVersion": 1
   },
+  "inputs": [
+    {"key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true}
+  ],
+  "preview": {"profileRef": {"scope": "system", "id": "rect"}},
   "kind": "programmatic",
   "target": "part",
   "category": "槽口",
   "id": "embedded-arc-notch",
   "displayName": "嵌入圆弧 V 槽",
-  "description": "一侧直斜边，另一侧保留嵌入圆弧。圆心位于槽根高度并与槽根相切，圆弧与该侧V边相交；支持左右镜像。R为保留圆弧半径，不是释放孔或槽根圆角。名义切除几何，不代表已完成塑性折弯及干涉验证。",
+  "description": "一侧直斜边，另一侧保留嵌入圆弧。圆心位于槽根高度并与槽根相切，支持左右镜像；公母模式按单边间隙生成加宽母口，并保存插入深度与预压装配路径。R 不是释放孔或成品折弯半径，仍需成形及干涉验证。",
   "illustration": {
     "viewBox": "0 0 48 48",
     "paths": [
@@ -37,8 +41,8 @@
         "labels": [
           {"x": 120, "y": 18, "text": "开口角 β", "parameter": "angle", "unit": "°"},
           {"x": 238, "y": 70, "text": "公母台阶"},
-          {"x": 200, "y": 110, "text": "保留圆弧 R", "parameter": "bendRadius", "unit": " mm"},
-          {"x": 140, "y": 178, "text": "公母尺寸", "parameter": "maleFemaleSize", "unit": " mm（0取壁厚）"}
+          {"x": 200, "y": 110, "text": "保留圆弧 R", "parameter": "arcRadius", "unit": " mm"},
+          {"x": 140, "y": 178, "text": "公母尺寸", "parameter": "maleFemaleSize", "unit": " mm"}
         ]
       }
     ],
@@ -74,7 +78,7 @@
         "x": 200,
         "y": 110,
         "text": "保留圆弧 R",
-        "parameter": "bendRadius",
+        "parameter": "arcRadius",
         "unit": " mm"
       },
       {
@@ -87,9 +91,12 @@
     ],
     "annotations": [
       { "parameter": "maleFemale", "kind": "leader", "side": "top", "point": [220, 38], "description": "启用后在斜切边形成公母台阶" },
-      { "parameter": "maleFemaleSize", "kind": "linear", "axis": "y", "side": "right", "from": [230, 30], "to": [230, 50], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "公母台阶尺寸，0 时按壁厚取值" },
+      { "parameter": "maleFemaleSize", "kind": "linear", "axis": "y", "side": "right", "from": [230, 30], "to": [230, 50], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "公母台阶尺寸；首次启用时自动采用截面实测壁厚" },
+      { "parameter": "fitClearance", "kind": "leader", "side": "right", "point": [230, 50], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "单边装配间隙；母口总宽度增加两倍此值" },
+      { "parameter": "insertionDepth", "kind": "linear", "axis": "y", "side": "right", "from": [238, 30], "to": [238, 70], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "插入直段深度，0 时按公母尺寸" },
+      { "parameter": "preDeflection", "kind": "leader", "side": "bottom", "point": [200, 140], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "折弯前向管内预压量；作为装配路径约束，不改变名义切边" },
       { "parameter": "angle", "kind": "leader", "side": "top", "point": [120, 140], "description": "两侧切口形成的折弯开口角" },
-      { "parameter": "bendRadius", "kind": "leader", "side": "right", "point": [200, 92], "description": "保留并嵌入折弯区域的圆弧半径" },
+      { "parameter": "arcRadius", "kind": "leader", "side": "right", "point": [200, 92], "description": "槽口局部保留圆弧的半径；不是成品折弯半径" },
       { "parameter": "rightArc", "kind": "leader", "side": "top", "point": [200, 78], "description": "切换保留圆弧位于右侧或左侧" },
       { "parameter": "rootClearance", "kind": "linear", "axis": "y", "side": "left", "from": [120, 140], "to": [120, 155], "description": "槽根到目标管型内底面的距离" },
       { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [30, 30], "description": "由目标管型截面测得并参与槽深校验" }
@@ -98,13 +105,51 @@
   "parameters": [
     {
       "key": "maleFemale",
+      "level": "advanced",
       "displayName": "启用斜切公母",
       "valueType": "boolean",
       "defaultValue": false
     },
     {
       "key": "maleFemaleSize",
-      "displayName": "公母尺寸（mm，0 自动取壁厚）",
+      "level": "advanced",
+      "displayName": "公母尺寸（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "autoFill": {
+        "triggerParameter": "maleFemale",
+        "sourceParameter": "wallThickness",
+        "when": { "op": "eq", "parameter": "maleFemale", "value": true },
+        "replaceWhen": { "op": "eq", "parameter": "maleFemaleSize", "value": 0 }
+      },
+      "visibleWhen": {"op": "eq", "parameter": "maleFemale", "value": true}
+    },
+    {
+      "key": "fitClearance",
+      "level": "advanced",
+      "displayName": "单边配合间隙（mm）",
+      "valueType": "number",
+      "defaultValue": 0.2,
+      "min": 0,
+      "max": 1000,
+      "visibleWhen": {"op": "eq", "parameter": "maleFemale", "value": true}
+    },
+    {
+      "key": "insertionDepth",
+      "level": "advanced",
+      "displayName": "插入深度（mm，0 自动）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": {"op": "eq", "parameter": "maleFemale", "value": true}
+    },
+    {
+      "key": "preDeflection",
+      "level": "advanced",
+      "displayName": "折前向内预压量（mm）",
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
@@ -120,7 +165,7 @@
       "max": 170
     },
     {
-      "key": "bendRadius",
+      "key": "arcRadius",
       "displayName": "嵌入圆弧半径 R（mm）",
       "valueType": "number",
       "defaultValue": 10,
@@ -148,7 +193,8 @@
       "defaultValue": 0,
       "min": 0,
       "max": 10000,
-      "derived": true
+      "derived": true,
+      "readOnly": true
     }
   ]
 }

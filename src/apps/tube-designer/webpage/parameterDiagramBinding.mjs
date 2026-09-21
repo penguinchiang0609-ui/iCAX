@@ -7,7 +7,7 @@ export function bindParameterDiagramScopes(mount, kind) {
   if(mount?.addEventListener && !windowBindings.has(mount)){
     windowBindings.add(mount);
     mount.addEventListener('parameter-diagram-window-updated',()=>{
-      bindParameterDiagramScopes(mount,'tool');bindParameterDiagramScopes(mount,'profile');
+      bindParameterDiagramScopes(mount,'tool');bindParameterDiagramScopes(mount,'profile');bindParameterDiagramScopes(mount,'assembly');
     });
   }
   const scopeSelector = `[data-${kind}-parameter-scope]`;

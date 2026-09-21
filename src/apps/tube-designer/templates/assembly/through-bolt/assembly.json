@@ -1,0 +1,81 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "through-bolt",
+  "version": "1.0.0",
+  "displayName": "对穿螺栓装配",
+  "category": "fastener",
+  "categoryName": "紧固件装配",
+  "summary": "两个逻辑零件分别下料并加工同轴孔，以螺栓、螺母和垫片完成可拆装配。",
+  "topology": "面—面",
+  "interfaceType": "同轴孔",
+  "lockType": "螺栓副",
+  "motionType": "法向贴合",
+  "participants": [
+    { "role": "partA", "label": "零件 A", "responsibility": "基准件", "count": 1 },
+    { "role": "partB", "label": "零件 B", "responsibility": "装配件", "count": 1 }
+  ],
+  "parameters": [
+    { "key": "boltDiameter", "displayName": "螺栓公称直径", "valueType": "number", "defaultValue": 10, "min": 2, "max": 48, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "holeClearance", "displayName": "孔径间隙", "valueType": "number", "defaultValue": 1, "min": 0, "max": 6, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "boltCount", "displayName": "螺栓数量", "valueType": "integer", "defaultValue": 2, "min": 1, "max": 20, "step": 1, "unit": "个", "level": "basic" },
+    { "key": "pitch", "displayName": "孔距", "valueType": "number", "defaultValue": 50, "min": 5, "max": 1000, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "washer", "displayName": "垫片配置", "valueType": "choice", "defaultValue": "both", "options": [{ "value": "none", "label": "无" }, { "value": "nut", "label": "螺母侧" }, { "value": "both", "label": "两侧" }], "level": "advanced" }
+  ],
+  "partProcesses": [
+    { "id": "hole-a", "participants": ["partA"], "label": "A 件装配孔", "resource": { "kind": "part-process", "id": "circle", "displayName": "圆孔" }, "parameterBindings": { "diameter": "$boltDiameter + $holeClearance" }, "previewPlacement": { "target": "side", "face": "top", "reference": "center", "station": "-($boltCount - 1) * $pitch / 2", "arrayCount": "$boltCount", "arrayPitch": "$pitch", "opposite": true } },
+    { "id": "hole-b", "participants": ["partB"], "label": "B 件装配孔", "resource": { "kind": "part-process", "id": "circle", "displayName": "圆孔" }, "parameterBindings": { "diameter": "$boltDiameter + $holeClearance" }, "previewPlacement": { "target": "side", "face": "bottom", "reference": "center", "station": "-($boltCount - 1) * $pitch / 2", "arrayCount": "$boltCount", "arrayPitch": "$pitch", "opposite": true } }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      { "id": "blankA", "label": "A 下料件", "participants": ["partA"] },
+      { "id": "blankB", "label": "B 下料件", "participants": ["partB"] }
+    ]
+  },
+  "assemblyPath": [
+    { "id": "align", "label": "对正两组孔", "kind": "对正", "direction": "assembly.z", "distance": 0 },
+    { "id": "bolt", "label": "穿入螺栓并紧固", "kind": "紧固", "direction": "assembly.z", "distance": 0 }
+  ],
+  "previewScene": {
+    "designParts": [
+      {
+        "role": "partA",
+        "profileRef": { "scope": "system", "id": "rect" },
+        "parameters": { "width": 80, "depth": 20, "wallThickness": 2, "cornerRadius": 2, "innerRadius": 1 },
+        "length": 440,
+        "pose": { "origin": [-220, 0, -10], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      },
+      {
+        "role": "partB",
+        "profileRef": { "scope": "system", "id": "rect" },
+        "parameters": { "width": 80, "depth": 20, "wallThickness": 2, "cornerRadius": 2, "innerRadius": 1 },
+        "length": 440,
+        "pose": { "origin": [-220, 0, 10], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      }
+    ],
+    "manufacturingParts": [
+      { "id": "blankA", "label": "A 件孔组下料件", "sourceRole": "partA", "processes": ["hole-a"], "pose": { "origin": [-220, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "blankB", "label": "B 件孔组下料件", "sourceRole": "partB", "processes": ["hole-b"], "pose": { "origin": [-220, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 110], "manufacturingOffset": [0, 0, -110] }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 260 170",
+    "paths": ["M20 35 H240 V75 H20 Z", "M20 85 H240 V125 H20 Z"],
+    "circles": [
+      { "cx": 85, "cy": 75, "r": 8 }, { "cx": 175, "cy": 75, "r": 8 },
+      { "cx": 85, "cy": 85, "r": 8 }, { "cx": 175, "cy": 85, "r": 8 }
+    ],
+    "annotations": [
+      { "parameter": "boltDiameter", "kind": "leader", "side": "top", "point": [85, 80], "description": "螺栓公称直径" },
+      { "parameter": "holeClearance", "kind": "leader", "side": "right", "point": [175, 80], "description": "装配孔相对螺栓增加的直径间隙" },
+      { "parameter": "boltCount", "kind": "leader", "side": "left", "point": [130, 80], "description": "两件上同步生成的同轴孔数量" },
+      { "parameter": "pitch", "kind": "linear", "axis": "x", "side": "bottom", "from": [85, 80], "to": [175, 80], "description": "相邻螺栓孔中心距" },
+      { "parameter": "washer", "kind": "leader", "side": "right", "point": [205, 80], "description": "紧固后的垫片配置" }
+    ]
+  },
+  "outputs": { "manufacturingPartCount": 2, "partGeometry": ["A 件孔组", "B 件孔组"], "secondaryProcess": ["螺栓紧固"], "bom": ["螺栓", "螺母", "垫片"], "assemblyInstruction": true }
+}

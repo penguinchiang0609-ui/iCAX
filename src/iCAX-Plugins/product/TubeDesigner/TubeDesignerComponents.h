@@ -152,6 +152,7 @@ namespace iCAX::TubeDesigner
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, Role, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, Quantity, 1ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, QuantityOverride, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
+        DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, NestingPriority, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, double, Length, 0.0, DoubleEqual, ToDoubleVariant, FromDoubleVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, std::string, ManufacturingGeometryResourceID, std::string(), StringEqual, ToStringVariant, FromStringVariant)
         DECLARED_ICAX_FIELD(CManufacturingPartComponent, unsigned long long, ManufacturingGeometryResourceVersion, 0ull, UInt64Equal, ToUInt64Variant, FromUInt64Variant)

@@ -14,13 +14,11 @@ def generate(p, context):
     lo, hi = context["bounds"]["min"], context["bounds"]["max"]
     place = context["placement"]
     length = hi[0]-lo[0]
-    if place["datum"] != "long":
-        raise ValueError("单台阶 Z 搭接口使用原端长点定位，不支持中心或短点基准")
     if not math.isfinite(place["trim"]) or place["trim"] < 0 or place["trim"]+p["depth"] >= length-0.001:
         raise ValueError("阶差与修剪量之和须小于母材长度")
-    rotation = math.radians(place["rotation"])
-    half_width = (abs(math.cos(rotation))*(hi[1]-lo[1])+abs(math.sin(rotation))*(hi[2]-lo[2]))/2
-    if abs(p["splitOffset"]) >= half_width-0.001:
+    local = section_geometry.local_section(section_geometry.from_profile(context["targetSection"]), place["rotation"])
+    box_bounds = section_geometry.bounds(next(loop for loop in local["contours"] if not loop["inner"]))
+    if not box_bounds["min"][0]+0.001 < p["splitOffset"] < box_bounds["max"][0]-0.001:
         raise ValueError("阶梯分界须位于截面横向范围内部")
     reach = 4*(sum(hi[i]-lo[i] for i in range(3))+10)
     nodes = []

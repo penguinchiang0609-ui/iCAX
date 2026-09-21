@@ -2,15 +2,19 @@
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
   "id": "v-notch-sharp",
-  "version": "3.1.0",
+  "version": "4.0.0",
   "sectionAnalysis": {
     "schemaVersion": 1
   },
+  "inputs": [
+    {"key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true}
+  ],
+  "preview": {"profileRef": {"scope": "system", "id": "rect"}},
   "displayName": "V槽",
   "kind": "programmatic",
   "target": "part",
   "category": "槽口",
-  "description": "折弯开口角 β，最终夹角为180°−β。圆角与释放孔均用于槽根局部避空，减少折弯时材料挤压；圆角保留原几何，不作为相切展开或成形半径。支持根部三槽连接桥、圆管和弦长分段布槽。名义实体切面，不代表成形验证或已补偿激光轨迹。",
+  "description": "统一的 V 槽工艺入口。槽底可保留尖底、平底，或通过圆角避空和不同形状的释放孔额外挖料，为折弯时的材料挤压留出空间。包围圆属于释放孔形状；圆角避空保留原槽根局部多切几何。",
   "illustration": {
     "viewBox": "0 0 48 48",
     "paths": [
@@ -20,68 +24,20 @@
   },
   "parameterDiagram": {
     "schemaVersion": 2,
-    "viewBox": "0 0 240 180",
+    "viewBox": "0 0 280 190",
     "paths": [
-      "M24 28 L120 124 L216 28 Z",
-      { "d": "M24 148 H216", "className": "tool-diagram-reference" }
+      { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+      { "d": "M52 28 L140 122 L228 28 Z", "className": "tool-diagram-cut" },
+      { "d": "M24 154 H256", "className": "tool-diagram-reference" }
     ],
     "lines": [
-      {
-        "x1": 24,
-        "y1": 16,
-        "x2": 216,
-        "y2": 16
-      },
-      {
-        "x1": 120,
-        "y1": 124,
-        "x2": 120,
-        "y2": 148
-      },
-      {
-        "x1": 112,
-        "y1": 124,
-        "x2": 128,
-        "y2": 124
-      },
-      {
-        "x1": 112,
-        "y1": 148,
-        "x2": 128,
-        "y2": 148
-      },
-      {
-        "x1": 105,
-        "y1": 111,
-        "x2": 135,
-        "y2": 111
-      }
+      { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" },
+      { "x1": 132, "y1": 122, "x2": 148, "y2": 122, "className": "tool-diagram-detail" }
     ],
     "labels": [
-      {
-        "x": 120,
-        "y": 11,
-        "text": "V槽"
-      },
-      {
-        "x": 120,
-        "y": 97,
-        "text": "V槽夹角",
-        "parameter": "angle",
-        "unit": "°"
-      },
-      {
-        "x": 158,
-        "y": 141,
-        "text": "槽底留量",
-        "parameter": "leaveBottom",
-        "unit": " mm"
-      },
-      {
-        "x": 120,
-        "y": 170,
-        "text": "实际底面"
-      }
+      { "x": 32, "y": 18, "text": "尖底 V 槽", "anchor": "start", "className": "is-title" },
+      { "x": 38, "y": 174, "text": "保留材料", "anchor": "start", "className": "is-material" },
+      { "x": 242, "y": 174, "text": "切除区域", "anchor": "end", "className": "is-cut" }
     ],
     "variants": [
       {
@@ -91,69 +47,188 @@
           "value": true
         },
         "paths": [
-          { "d": "M15 30 H225 M15 130 H225", "className": "tool-diagram-reference" },
-          { "d": "M25 30 L45 110 L65 30 M80 30 L100 110 L120 30 M135 30 L155 110 L175 30", "className": "tool-diagram-profile" }
+          { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+          { "d": "M32 28 L58 122 L84 28 Z M90 28 L116 122 L142 28 Z M148 28 L174 122 L200 28 Z M206 28 L232 122 L258 28 Z", "className": "tool-diagram-cut" },
+          { "d": "M24 154 H256", "className": "tool-diagram-reference" }
         ],
-        "lines": [],
+        "lines": [
+          { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" }
+        ],
+        "circles": [],
         "labels": [
-          {
-            "x": 120,
-            "y": 155,
-            "text": "弦长布槽；示意非比例"
-          },
-          {
-            "x": 120,
-            "y": 15,
-            "text": "槽数",
-            "parameter": "segmentCount"
-          }
+          { "x": 32, "y": 18, "text": "多槽分段折弯", "anchor": "start", "className": "is-title" },
+          { "x": 38, "y": 174, "text": "保留材料", "anchor": "start", "className": "is-material" },
+          { "x": 242, "y": 174, "text": "多道切除槽", "anchor": "end", "className": "is-cut" }
+        ]
+      },
+      {
+        "visibleWhen": {
+          "op": "all",
+          "conditions": [
+            { "op": "eq", "parameter": "bottomStrategy", "value": "relief" },
+            { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }
+          ]
+        },
+        "paths": [
+          { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+          { "d": "M52 28 L140 116 L228 28 Z", "className": "tool-diagram-cut" },
+          { "d": "M24 154 H256", "className": "tool-diagram-reference" }
+        ],
+        "lines": [
+          { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" }
+        ],
+        "circles": [
+          { "cx": 140, "cy": 119, "r": 35, "className": "tool-diagram-cut" },
+          { "cx": 140, "cy": 119, "r": 23, "className": "tool-diagram-object" }
+        ],
+        "labels": [
+          { "x": 32, "y": 18, "text": "释放孔：包围圆", "anchor": "start", "className": "is-title" },
+          { "x": 140, "y": 122, "text": "对象" },
+          { "x": 38, "y": 174, "text": "虚线：对象", "anchor": "start" },
+          { "x": 242, "y": 174, "text": "切除并留间隙", "anchor": "end", "className": "is-cut" }
+        ]
+      },
+      {
+        "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "flat" },
+        "paths": [
+          { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+          { "d": "M52 28 L124 116 H156 L228 28 Z", "className": "tool-diagram-cut" },
+          { "d": "M24 154 H256", "className": "tool-diagram-reference" }
+        ],
+        "lines": [
+          { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" },
+          { "x1": 124, "y1": 116, "x2": 156, "y2": 116, "className": "tool-diagram-detail" }
+        ],
+        "circles": [],
+        "labels": [
+          { "x": 32, "y": 18, "text": "平底 V 槽", "anchor": "start", "className": "is-title" },
+          { "x": 140, "y": 110, "text": "平底" },
+          { "x": 38, "y": 174, "text": "保留材料", "anchor": "start", "className": "is-material" },
+          { "x": 242, "y": 174, "text": "切除区域", "anchor": "end", "className": "is-cut" }
+        ]
+      },
+      {
+        "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" },
+        "paths": [
+          { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+          { "d": "M52 28 L118 102 C118 130 162 130 162 102 L228 28 Z", "className": "tool-diagram-cut" },
+          { "d": "M24 154 H256", "className": "tool-diagram-reference" }
+        ],
+        "lines": [
+          { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" }
+        ],
+        "circles": [],
+        "labels": [
+          { "x": 32, "y": 18, "text": "槽根圆角避空", "anchor": "start", "className": "is-title" },
+          { "x": 38, "y": 174, "text": "保留材料", "anchor": "start", "className": "is-material" },
+          { "x": 242, "y": 174, "text": "圆角切除区", "anchor": "end", "className": "is-cut" }
+        ]
+      },
+      {
+        "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "roundedRectangle" }] },
+        "paths": [
+          { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+          { "d": "M52 28 L140 112 L228 28 Z M108 104 H172 Q180 104 180 112 V136 Q180 144 172 144 H108 Q100 144 100 136 V112 Q100 104 108 104 Z", "className": "tool-diagram-cut" },
+          { "d": "M24 154 H256", "className": "tool-diagram-reference" }
+        ],
+        "lines": [
+          { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" }
+        ],
+        "circles": [],
+        "labels": [
+          { "x": 32, "y": 18, "text": "释放孔：圆角矩形", "anchor": "start", "className": "is-title" },
+          { "x": 38, "y": 174, "text": "保留材料", "anchor": "start", "className": "is-material" },
+          { "x": 242, "y": 174, "text": "切除区域", "anchor": "end", "className": "is-cut" }
+        ]
+      },
+      {
+        "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "capsule" }] },
+        "paths": [
+          { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+          { "d": "M52 28 L140 112 L228 28 Z M112 106 H168 A18 18 0 0 1 168 142 H112 A18 18 0 0 1 112 106 Z", "className": "tool-diagram-cut" },
+          { "d": "M24 154 H256", "className": "tool-diagram-reference" }
+        ],
+        "lines": [
+          { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" }
+        ],
+        "circles": [],
+        "labels": [
+          { "x": 32, "y": 18, "text": "释放孔：腰形孔", "anchor": "start", "className": "is-title" },
+          { "x": 38, "y": 174, "text": "保留材料", "anchor": "start", "className": "is-material" },
+          { "x": 242, "y": 174, "text": "切除区域", "anchor": "end", "className": "is-cut" }
+        ]
+      },
+      {
+        "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circle" }] },
+        "paths": [
+          { "d": "M24 28 H256 V154 H24 Z", "className": "tool-diagram-material" },
+          { "d": "M52 28 L140 112 L228 28 Z", "className": "tool-diagram-cut" },
+          { "d": "M24 154 H256", "className": "tool-diagram-reference" }
+        ],
+        "lines": [
+          { "x1": 140, "y1": 20, "x2": 140, "y2": 154, "className": "tool-diagram-centerline" }
+        ],
+        "circles": [
+          { "cx": 140, "cy": 124, "r": 22, "className": "tool-diagram-cut" }
+        ],
+        "labels": [
+          { "x": 32, "y": 18, "text": "释放孔：圆孔", "anchor": "start", "className": "is-title" },
+          { "x": 38, "y": 174, "text": "保留材料", "anchor": "start", "className": "is-material" },
+          { "x": 242, "y": 174, "text": "切除区域", "anchor": "end", "className": "is-cut" }
         ]
       }
     ],
     "annotations": [
-      { "parameter": "segmentedBend", "kind": "leader", "side": "top", "point": [120, 28], "description": "切换单道 V 槽与沿管长排列的多槽分段折弯" },
-      { "parameter": "segmentCount", "kind": "leader", "side": "top", "point": [100, 80], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "分段折弯使用的槽数" },
-      { "parameter": "centerlineRadius", "kind": "leader", "side": "right", "point": [155, 76], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "多槽折弯逼近的目标中心线半径" },
-      { "parameter": "bendCompensation", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, "description": "决定圆角避空是否采用 K 因子展开补偿" },
-      { "parameter": "useDefaultKFactor", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, { "op": "eq", "parameter": "bendCompensation", "value": true }] }, "description": "使用系统默认 K 因子" },
-      { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, { "op": "eq", "parameter": "bendCompensation", "value": true }, { "op": "eq", "parameter": "useDefaultKFactor", "value": false }] }, "description": "中性层位置系数" },
-      { "parameter": "angle", "kind": "leader", "side": "right", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": false }, "description": "对称 V 槽的总开口角；多槽时为总折弯角" },
-      { "parameter": "asymmetric", "kind": "leader", "side": "top", "point": [120, 124], "description": "启用后左右切边角度分别设置" },
-      { "parameter": "leftAngle", "kind": "leader", "side": "left", "point": [72, 76], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": true }, "description": "左侧切边相对槽中心线的角度" },
-      { "parameter": "rightAngle", "kind": "leader", "side": "right", "point": [168, 76], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": true }, "description": "右侧切边相对槽中心线的角度" },
-      { "parameter": "leaveBottom", "kind": "linear", "axis": "y", "side": "right", "from": [120, 124], "to": [120, 148], "description": "槽根至实际底面的剩余连接高度" },
-      { "parameter": "bottomReference", "kind": "leader", "side": "bottom", "point": [120, 148], "description": "留底高度从外底面或内底面起算" },
-      { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [30, 28], "description": "由目标管型截面测得并参与留底校验" },
-      { "parameter": "bottomStrategy", "kind": "leader", "side": "bottom", "point": [120, 124], "description": "选择尖底、平底、槽根避空圆角或释放孔" },
-      { "parameter": "rootSlotPattern", "kind": "leader", "side": "top", "point": [120, 111], "description": "在槽根形成三段释放槽并保留两座连接桥" },
-      { "parameter": "centerSlotLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [108, 111], "to": [132, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部中槽的横向长度" },
-      { "parameter": "sideSlotLength", "kind": "leader", "side": "left", "point": [102, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部每侧释放槽的横向长度" },
-      { "parameter": "centerSlotWidth", "kind": "leader", "side": "bottom", "point": [120, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部中槽沿主管轴向的宽度" },
-      { "parameter": "sideSlotWidth", "kind": "leader", "side": "left", "point": [102, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "根部侧槽沿主管轴向的宽度" },
-      { "parameter": "rootKerf", "kind": "leader", "side": "left", "point": [112, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "只用于桥宽核算的割缝宽度" },
-      { "parameter": "minimumBridge", "kind": "leader", "side": "right", "point": [128, 111], "visibleWhen": { "op": "eq", "parameter": "rootSlotPattern", "value": true }, "description": "两座连接桥必须保留的最小有效宽度" },
-      { "parameter": "flatWidth", "kind": "linear", "axis": "x", "side": "bottom", "from": [105, 124], "to": [135, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "flat" }, "description": "槽根平底的横向宽度" },
-      { "parameter": "roundRadius", "kind": "leader", "side": "right", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, "description": "槽根额外多切材料形成的避空圆角半径" },
-      { "parameter": "reliefDepth", "kind": "leader", "side": "left", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔沿进刀方向的切入深度" },
-      { "parameter": "reliefSide", "kind": "leader", "side": "left", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔从主管局部正 Y 或负 Y 侧进刀" },
-      { "parameter": "reliefLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [111, 124], "to": [129, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "槽根释放孔横向长度" },
-      { "parameter": "reliefHeight", "kind": "leader", "side": "right", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "槽根释放孔高度" },
-      { "parameter": "reliefRadius", "kind": "leader", "side": "right", "point": [126, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔轮廓圆角半径" },
-      { "parameter": "maleFemale", "kind": "leader", "side": "top", "point": [196, 28], "description": "在斜切边增加公母台阶" },
-      { "parameter": "maleFemaleSize", "kind": "leader", "side": "right", "point": [196, 38], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "公母台阶尺寸，0 时按壁厚取值" },
-      { "parameter": "maximumChordError", "kind": "leader", "side": "right", "point": [155, 76], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "正值时按允许弓高误差自动计算槽数" },
-      { "parameter": "reliefShape", "kind": "leader", "side": "bottom", "point": [120, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "选择释放孔轮廓形状" }
+      { "parameter": "segmentedBend", "kind": "leader", "side": "top", "point": [140, 28], "description": "切换单道 V 槽与沿管长排列的多槽分段槽口" },
+      { "parameter": "segmentCount", "kind": "leader", "side": "top", "point": [116, 80], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "分段折弯使用的槽数" },
+      { "parameter": "centerlineRadius", "kind": "leader", "side": "right", "point": [174, 76], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "多槽折弯逼近的目标中心线半径" },
+      { "parameter": "bendCompensation", "kind": "leader", "side": "bottom", "point": [140, 122], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }] }, "description": "决定圆角避空是否采用 K 因子展开补偿" },
+      { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [140, 122], "description": "包围圆释放孔或槽根圆角补偿使用的中性层位置系数" },
+      { "parameter": "angle", "kind": "leader", "side": "right", "point": [140, 122], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": false }, "description": "对称 V 槽的总开口角；多槽时为总折弯角" },
+      { "parameter": "asymmetric", "kind": "leader", "side": "top", "point": [140, 122], "description": "启用后左右切边角度分别设置" },
+      { "parameter": "leftAngle", "kind": "leader", "side": "left", "point": [96, 76], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": true }, "description": "左侧切边相对槽中心线的角度" },
+      { "parameter": "rightAngle", "kind": "leader", "side": "right", "point": [184, 76], "visibleWhen": { "op": "eq", "parameter": "asymmetric", "value": true }, "description": "右侧切边相对槽中心线的角度" },
+      { "parameter": "leaveBottom", "kind": "linear", "axis": "y", "side": "right", "from": [140, 122], "to": [140, 154], "description": "槽根至实际底面的剩余连接高度" },
+      { "parameter": "bottomReference", "kind": "leader", "side": "bottom", "point": [140, 154], "description": "留底高度从外底面或内底面起算" },
+      { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [24, 82], "description": "由目标管型截面测得并参与留底校验" },
+      { "parameter": "bottomStrategy", "kind": "leader", "side": "bottom", "point": [140, 122], "description": "选择 V 槽底部的留底或避空处理" },
+      { "parameter": "enclosedDiameter", "kind": "leader", "side": "right", "point": [163, 119], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] }, "description": "折后需要包围的圆形对象直径" },
+      { "parameter": "radialClearance", "kind": "leader", "side": "right", "point": [175, 119], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] }, "description": "对象与包围圆之间的单边径向间隙" },
+      { "parameter": "rootSlotPattern", "kind": "leader", "side": "top", "point": [120, 111], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": false }, "description": "启用根部释放槽及连接桥" },
+      { "parameter": "rootPatternMode", "kind": "leader", "side": "top", "point": [120, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }] }, "description": "选择固定三槽双桥或按桥数均布" },
+      { "parameter": "centerSlotLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [108, 111], "to": [132, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }, { "op": "eq", "parameter": "rootPatternMode", "value": "triple" }] }, "description": "固定三槽模式的中槽横向长度" },
+      { "parameter": "sideSlotLength", "kind": "leader", "side": "left", "point": [102, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }, { "op": "eq", "parameter": "rootPatternMode", "value": "triple" }] }, "description": "固定三槽模式的每侧槽横向长度" },
+      { "parameter": "centerSlotWidth", "kind": "leader", "side": "bottom", "point": [120, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }, { "op": "eq", "parameter": "rootPatternMode", "value": "triple" }] }, "description": "固定三槽模式的中槽轴向宽度" },
+      { "parameter": "sideSlotWidth", "kind": "leader", "side": "left", "point": [102, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }, { "op": "eq", "parameter": "rootPatternMode", "value": "triple" }] }, "description": "固定三槽模式的侧槽轴向宽度" },
+      { "parameter": "bridgeCount", "kind": "leader", "side": "top", "point": [120, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }, { "op": "eq", "parameter": "rootPatternMode", "value": "multi" }] }, "description": "均布模式保留的连接桥数量" },
+      { "parameter": "bridgeWidth", "kind": "linear", "axis": "x", "side": "bottom", "from": [112, 111], "to": [128, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }, { "op": "eq", "parameter": "rootPatternMode", "value": "multi" }] }, "description": "均布模式的连接桥名义宽度" },
+      { "parameter": "multiSlotWidth", "kind": "leader", "side": "left", "point": [102, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }, { "op": "eq", "parameter": "rootPatternMode", "value": "multi" }] }, "description": "均布释放槽沿主管轴向的宽度" },
+      { "parameter": "rootKerf", "kind": "leader", "side": "left", "point": [112, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }] }, "description": "只用于桥宽核算的割缝宽度" },
+      { "parameter": "minimumBridge", "kind": "leader", "side": "right", "point": [128, 111], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "segmentedBend", "value": false }, { "op": "eq", "parameter": "rootSlotPattern", "value": true }] }, "description": "所有连接桥必须保留的最小有效宽度" },
+      { "parameter": "flatWidth", "kind": "linear", "axis": "x", "side": "bottom", "from": [124, 116], "to": [156, 116], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "flat" }, "description": "槽根平底的横向宽度" },
+      { "parameter": "roundRadius", "kind": "leader", "side": "right", "point": [140, 122], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" }, "description": "槽根额外多切材料形成的避空圆角半径" },
+      { "parameter": "reliefDepth", "kind": "leader", "side": "left", "point": [140, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔沿进刀方向的切入深度" },
+      { "parameter": "reliefSide", "kind": "leader", "side": "left", "point": [140, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔从主管局部正 Y 或负 Y 侧进刀" },
+      { "parameter": "reliefLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [112, 124], "to": [168, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "槽根释放孔横向长度" },
+      { "parameter": "reliefHeight", "kind": "leader", "side": "right", "point": [140, 142], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "槽根释放孔高度" },
+      { "parameter": "reliefRadius", "kind": "leader", "side": "right", "point": [172, 136], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "释放孔轮廓圆角半径" },
+      { "parameter": "maleFemale", "kind": "leader", "side": "top", "point": [228, 28], "description": "在斜切边增加公母台阶" },
+      { "parameter": "maleFemaleSize", "kind": "leader", "side": "right", "point": [218, 40], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "公母台阶尺寸；首次启用时自动采用截面实测壁厚" },
+      { "parameter": "maximumChordError", "kind": "leader", "side": "right", "point": [174, 76], "visibleWhen": { "op": "eq", "parameter": "segmentedBend", "value": true }, "description": "正值时按允许弓高误差自动计算槽数" },
+      { "parameter": "reliefShape", "kind": "leader", "side": "bottom", "point": [140, 124], "visibleWhen": { "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, "description": "选择释放孔轮廓形状" }
     ]
   },
   "parameters": [
     {
       "key": "segmentedBend",
-      "displayName": "多槽分段折弯（对称尖角槽）",
+      "level": "advanced",
+      "displayName": "多槽分段槽口（对称尖角槽）",
       "valueType": "boolean",
       "defaultValue": false
     },
     {
       "key": "segmentCount",
+      "level": "advanced",
       "displayName": "折弯槽数",
       "valueType": "number",
       "defaultValue": 6,
@@ -179,65 +254,51 @@
     },
     {
       "key": "bendCompensation",
+      "level": "advanced",
       "displayName": "启用 K 因子展开补偿（圆角策略）",
       "valueType": "boolean",
       "defaultValue": false,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "rounded"
-      }
-    },
-    {
-      "key": "useDefaultKFactor",
-      "displayName": "使用默认 K 因子 0.62",
-      "valueType": "boolean",
-      "defaultValue": true,
       "visibleWhen": {
         "op": "all",
         "conditions": [
           {
             "op": "eq",
-            "parameter": "bottomStrategy",
-            "value": "rounded"
+            "parameter": "segmentedBend",
+            "value": false
           },
           {
             "op": "eq",
-            "parameter": "bendCompensation",
-            "value": true
+            "parameter": "bottomStrategy",
+            "value": "rounded"
           }
         ]
       }
     },
     {
       "key": "kFactor",
-      "displayName": "自定义 K 因子（建议 0.6～1）",
+      "level": "advanced",
+      "displayName": "K 因子（建议 0.6～1）",
       "valueType": "number",
       "defaultValue": 0.62,
       "min": 0,
       "max": 1,
       "visibleWhen": {
-        "op": "all",
+        "op": "any",
         "conditions": [
           {
             "op": "all",
             "conditions": [
-              {
-                "op": "eq",
-                "parameter": "bottomStrategy",
-                "value": "rounded"
-              },
-              {
-                "op": "eq",
-                "parameter": "bendCompensation",
-                "value": true
-              }
+              { "op": "eq", "parameter": "segmentedBend", "value": false },
+              { "op": "eq", "parameter": "bottomStrategy", "value": "rounded" },
+              { "op": "eq", "parameter": "bendCompensation", "value": true }
             ]
           },
           {
-            "op": "eq",
-            "parameter": "useDefaultKFactor",
-            "value": false
+            "op": "all",
+            "conditions": [
+              { "op": "eq", "parameter": "bottomStrategy", "value": "relief" },
+              { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }
+            ]
           }
         ]
       }
@@ -250,16 +311,40 @@
       "min": 1,
       "max": 170,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "asymmetric",
-        "value": false
+        "op": "any",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": true
+          },
+          {
+            "op": "all",
+            "conditions": [
+              { "op": "eq", "parameter": "bottomStrategy", "value": "relief" },
+              { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "asymmetric",
+            "value": false
+          }
+        ]
       }
     },
     {
       "key": "asymmetric",
       "displayName": "非对称",
       "valueType": "boolean",
-      "defaultValue": false
+      "defaultValue": false,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "segmentedBend", "value": false },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } }
+        ]
+      }
     },
     {
       "key": "leftAngle",
@@ -269,9 +354,20 @@
       "min": 0.1,
       "max": 89.9,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "asymmetric",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "asymmetric",
+            "value": true
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } }
+        ]
       }
     },
     {
@@ -282,9 +378,20 @@
       "min": 0.1,
       "max": 89.9,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "asymmetric",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "asymmetric",
+            "value": true
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } }
+        ]
       }
     },
     {
@@ -318,7 +425,8 @@
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
-      "max": 10000
+      "max": 10000,
+      "readOnly": true
     },
     {
       "key": "bottomStrategy",
@@ -336,133 +444,361 @@
         },
         {
           "value": "rounded",
-          "label": "圆角避空"
+          "label": "槽根圆角避空"
         },
         {
           "value": "relief",
           "label": "释放孔"
         }
-      ]
+      ],
+      "visibleWhen": {
+        "op": "eq",
+        "parameter": "segmentedBend",
+        "value": false
+      }
+    },
+    {
+      "key": "enclosedDiameter",
+      "displayName": "包围对象直径 D（mm）",
+      "valueType": "number",
+      "defaultValue": 16,
+      "min": 0.01,
+      "max": 100000,
+      "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] }
+    },
+    {
+      "key": "radialClearance",
+      "displayName": "径向装配间隙（mm）",
+      "valueType": "number",
+      "defaultValue": 0.1,
+      "min": 0,
+      "max": 10000,
+      "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] }
     },
     {
       "key": "rootSlotPattern",
-      "displayName": "根部三段释放槽（保留两座连接桥）",
+      "level": "advanced",
+      "displayName": "根部释放槽 / 连接桥",
       "valueType": "boolean",
-      "defaultValue": false
+      "defaultValue": false,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "segmentedBend", "value": false },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } }
+        ]
+      }
+    },
+    {
+      "key": "rootPatternMode",
+      "level": "advanced",
+      "displayName": "根部槽布置",
+      "valueType": "string",
+      "defaultValue": "triple",
+      "options": [
+        { "value": "triple", "label": "固定三槽双桥" },
+        { "value": "multi", "label": "按桥数均布" }
+      ],
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "segmentedBend", "value": false },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          { "op": "eq", "parameter": "rootSlotPattern", "value": true }
+        ]
+      }
     },
     {
       "key": "centerSlotLength",
+      "level": "advanced",
       "displayName": "中槽横向长度（mm）",
       "valueType": "number",
       "defaultValue": 6,
       "min": 0.01,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "rootSlotPattern",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          {
+            "op": "eq",
+            "parameter": "rootSlotPattern",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "rootPatternMode",
+            "value": "triple"
+          }
+        ]
       }
     },
     {
       "key": "sideSlotLength",
+      "level": "advanced",
       "displayName": "每侧槽横向长度（mm）",
       "valueType": "number",
       "defaultValue": 3,
       "min": 0.01,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "rootSlotPattern",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          {
+            "op": "eq",
+            "parameter": "rootSlotPattern",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "rootPatternMode",
+            "value": "triple"
+          }
+        ]
       }
     },
     {
       "key": "centerSlotWidth",
+      "level": "advanced",
       "displayName": "中槽轴向宽度（mm）",
       "valueType": "number",
       "defaultValue": 1,
       "min": 0.01,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "rootSlotPattern",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          {
+            "op": "eq",
+            "parameter": "rootSlotPattern",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "rootPatternMode",
+            "value": "triple"
+          }
+        ]
       }
     },
     {
       "key": "sideSlotWidth",
+      "level": "advanced",
       "displayName": "侧槽轴向宽度（mm）",
       "valueType": "number",
       "defaultValue": 1,
       "min": 0.01,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "rootSlotPattern",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          {
+            "op": "eq",
+            "parameter": "rootSlotPattern",
+            "value": true
+          },
+          {
+            "op": "eq",
+            "parameter": "rootPatternMode",
+            "value": "triple"
+          }
+        ]
+      }
+    },
+    {
+      "key": "bridgeCount",
+      "level": "advanced",
+      "displayName": "连接桥数量",
+      "valueType": "integer",
+      "defaultValue": 2,
+      "min": 1,
+      "max": 16,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "segmentedBend", "value": false },
+          { "op": "eq", "parameter": "rootSlotPattern", "value": true },
+          { "op": "eq", "parameter": "rootPatternMode", "value": "multi" }
+        ]
+      }
+    },
+    {
+      "key": "bridgeWidth",
+      "level": "advanced",
+      "displayName": "连接桥名义宽度（mm）",
+      "valueType": "number",
+      "defaultValue": 2,
+      "min": 0.01,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "segmentedBend", "value": false },
+          { "op": "eq", "parameter": "rootSlotPattern", "value": true },
+          { "op": "eq", "parameter": "rootPatternMode", "value": "multi" }
+        ]
+      }
+    },
+    {
+      "key": "multiSlotWidth",
+      "level": "advanced",
+      "displayName": "均布槽轴向宽度（mm）",
+      "valueType": "number",
+      "defaultValue": 1,
+      "min": 0.01,
+      "max": 10000,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "segmentedBend", "value": false },
+          { "op": "eq", "parameter": "rootSlotPattern", "value": true },
+          { "op": "eq", "parameter": "rootPatternMode", "value": "multi" }
+        ]
       }
     },
     {
       "key": "rootKerf",
+      "level": "advanced",
       "displayName": "桥宽核算割缝（不是刀路补偿，mm）",
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "rootSlotPattern",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          {
+            "op": "eq",
+            "parameter": "rootSlotPattern",
+            "value": true
+          }
+        ]
       }
     },
     {
       "key": "minimumBridge",
+      "level": "advanced",
       "displayName": "每座桥最小有效宽度（需试样标定，mm）",
       "valueType": "number",
       "defaultValue": 1,
       "min": 0.01,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "rootSlotPattern",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          {
+            "op": "eq",
+            "parameter": "rootSlotPattern",
+            "value": true
+          }
+        ]
       }
     },
     {
       "key": "flatWidth",
+      "level": "advanced",
       "displayName": "平底宽度（mm）",
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
       "max": 10000,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "flat"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "bottomStrategy",
+            "value": "flat"
+          }
+        ]
       }
     },
     {
       "key": "roundRadius",
+      "level": "advanced",
       "displayName": "槽根避空圆角 R（mm）",
       "valueType": "number",
       "defaultValue": 2,
       "min": 0,
       "max": 10000,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "rounded"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "bottomStrategy",
+            "value": "rounded"
+          }
+        ]
       }
     },
     {
       "key": "reliefDepth",
+      "level": "advanced",
       "displayName": "释放孔切深（mm，0 贯穿）",
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
       "max": 10000,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "relief"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "bottomStrategy",
+            "value": "relief"
+          },
+          { "op": "ne", "parameter": "reliefShape", "value": "circleWrap" }
+        ]
       }
     },
     {
       "key": "reliefSide",
+      "level": "advanced",
       "displayName": "释放孔进刀侧（主管局部 Y）",
       "valueType": "string",
       "defaultValue": "positive",
@@ -477,71 +813,164 @@
         }
       ],
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "relief"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "bottomStrategy",
+            "value": "relief"
+          },
+          { "op": "ne", "parameter": "reliefShape", "value": "circleWrap" }
+        ]
       }
     },
     {
       "key": "reliefLength",
+      "level": "advanced",
       "displayName": "释放孔长度（mm）",
       "valueType": "number",
       "defaultValue": 1.5,
       "min": 0,
       "max": 10000,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "relief"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "bottomStrategy",
+            "value": "relief"
+          },
+          { "op": "ne", "parameter": "reliefShape", "value": "circleWrap" }
+        ]
       }
     },
     {
       "key": "reliefHeight",
+      "level": "advanced",
       "displayName": "释放孔高度（mm）",
       "valueType": "number",
       "defaultValue": 0.5,
       "min": 0,
       "max": 10000,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "relief"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "segmentedBend",
+                "value": false
+              },
+              {
+                "op": "eq",
+                "parameter": "bottomStrategy",
+                "value": "relief"
+              }
+            ]
+          },
+          {
+            "op": "ne",
+            "parameter": "reliefShape",
+            "value": "circle"
+          },
+          { "op": "ne", "parameter": "reliefShape", "value": "circleWrap" }
+        ]
       }
     },
     {
       "key": "reliefRadius",
+      "level": "advanced",
       "displayName": "释放孔圆角 R（mm）",
       "valueType": "number",
       "defaultValue": 0.1,
       "min": 0,
       "max": 10000,
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "relief"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "all",
+            "conditions": [
+              {
+                "op": "eq",
+                "parameter": "segmentedBend",
+                "value": false
+              },
+              {
+                "op": "eq",
+                "parameter": "bottomStrategy",
+                "value": "relief"
+              }
+            ]
+          },
+          {
+            "op": "eq",
+            "parameter": "reliefShape",
+            "value": "roundedRectangle"
+          }
+        ]
       }
     },
     {
       "key": "maleFemale",
+      "level": "advanced",
       "displayName": "斜切公母",
       "valueType": "boolean",
-      "defaultValue": false
+      "defaultValue": false,
+      "visibleWhen": {
+        "op": "all",
+        "conditions": [
+          { "op": "eq", "parameter": "segmentedBend", "value": false },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } }
+        ]
+      }
     },
     {
       "key": "maleFemaleSize",
-      "displayName": "公母尺寸（mm，0 按壁厚）",
+      "level": "advanced",
+      "displayName": "公母尺寸（mm）",
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
       "max": 10000,
+      "autoFill": {
+        "triggerParameter": "maleFemale",
+        "sourceParameter": "wallThickness",
+        "when": { "op": "eq", "parameter": "maleFemale", "value": true },
+        "replaceWhen": { "op": "eq", "parameter": "maleFemaleSize", "value": 0 }
+      },
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "maleFemale",
-        "value": true
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          { "op": "not", "condition": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bottomStrategy", "value": "relief" }, { "op": "eq", "parameter": "reliefShape", "value": "circleWrap" }] } },
+          {
+            "op": "eq",
+            "parameter": "maleFemale",
+            "value": true
+          }
+        ]
       }
     },
     {
       "key": "maximumChordError",
+      "level": "advanced",
       "displayName": "允许弓高误差（0 按槽数，正值自动算槽数，mm）",
       "valueType": "number",
       "defaultValue": 0,
@@ -554,6 +983,7 @@
     },
     {
       "key": "reliefShape",
+      "level": "advanced",
       "displayName": "释放孔形状",
       "valueType": "string",
       "defaultValue": "roundedRectangle",
@@ -569,12 +999,26 @@
         {
           "value": "circle",
           "label": "圆孔（长度作直径）"
+        },
+        {
+          "value": "circleWrap",
+          "label": "包围圆"
         }
       ],
       "visibleWhen": {
-        "op": "eq",
-        "parameter": "bottomStrategy",
-        "value": "relief"
+        "op": "all",
+        "conditions": [
+          {
+            "op": "eq",
+            "parameter": "segmentedBend",
+            "value": false
+          },
+          {
+            "op": "eq",
+            "parameter": "bottomStrategy",
+            "value": "relief"
+          }
+        ]
       }
     }
   ]

@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { renderToolLibraryRightPane, handleToolLibraryAction } from "../../apps/tube-designer/webpage/toolLibrary.mjs";
 const collapseView = {
-  tubeDesignerSystemPunchTools: [{ id: "test-mold", displayName: "测试模具", kind: "programmatic", target: "part", category: "槽口", parameters: [] }],
+  tubeDesignerSystemPunchTools: [{ id: "test-mold", displayName: "测试模具", kind: "programmatic", target: "part", category: "槽口", inputs: [{ key: "targetSection", valueType: "profile", required: true }], parameters: [] }],
   tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::test-mold", previewLength: 500 },
 };
-const expandedPane = renderToolLibraryRightPane({}, collapseView);
-await handleToolLibraryAction({}, collapseView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
 const collapsedPane = renderToolLibraryRightPane({}, collapseView);
+await handleToolLibraryAction({}, collapseView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
+const expandedPane = renderToolLibraryRightPane({}, collapseView);
 const read=path=>readFileSync(new URL(path,import.meta.url),"utf8");
 const data=source=>"data:text/javascript;charset=utf-8,"+encodeURIComponent(source);
 const patchUrl=data(read("../../apps/tube-designer/webpage/punchDomPatch.mjs"));
@@ -24,8 +24,8 @@ try {
     const {patchLibraryDom,rememberLibraryDom}=await import(libraryUrl);
     const {capturePaneInteraction}=await import(stateUrl);
     const results=[];
-    for(const area of ["tools","profiles","connections"]) {
-      const hud=area==="tools"?"tube-tool-library-hud":area==="connections"?"tube-connection-library-hud":"tube-profile-library-preview-hud";
+    for(const area of ["tools","profiles","assemblies"]) {
+      const hud=area==="tools"?"tube-tool-library-hud":area==="assemblies"?"tube-connection-library-hud":"tube-profile-library-preview-hud";
       const left='<div class="list" style="height:1200px"><button data-cam-action="select">item</button></div>';
       const right=value=>'<div style="height:500px"></div><label><input data-parameter="width" value="'+value+'"></label>'+
         (value==='10'?'<label data-condition-field="extra"><input data-parameter="inactive" value="9"></label>':'')+
@@ -84,5 +84,5 @@ try {
     return results;
   },{libraryUrl,stateUrl,expandedPane,collapsedPane});
   assert.ok(result.every(Boolean),JSON.stringify(result));
-  console.log("Tools/profiles/connections local patch keeps canvas, cube, controls/listeners, focus and scrolling; status updates without remount.");
+  console.log("Part-process/profile/assembly local patch keeps canvas, cube, controls/listeners, focus and scrolling; status updates without remount.");
 } finally {await browser.close();}

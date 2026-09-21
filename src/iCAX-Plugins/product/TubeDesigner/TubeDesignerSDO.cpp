@@ -52,8 +52,10 @@
 
 #include <atomic>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <numeric>
+#include <numbers>
 #include <set>
 #include <unordered_set>
 #include <TopoDS_Shape.hxx>
@@ -86,6 +88,7 @@ namespace
     constexpr const char* kTubeDesignerProductID = "icax.tube-designer";
 
     constexpr std::size_t kMaximumNestingPartInstances = 1'000'000;
+    constexpr std::uint64_t kMaximumNestingPriority = 1'000'000;
     using iCAX::Data::ObjectMap;
     using iCAX::Data::PropertyValue;
     using iCAX::Data::Variant;
@@ -1146,49 +1149,49 @@ namespace
             const auto _Roles = _RolesIt->second.To<ObjectMap>();
             const auto _ToolsIt = _Roles.find("tools");
             if (_ToolsIt == _Roles.end() || !_ToolsIt->second.Is<ObjectMap>())
-                throw std::invalid_argument("产品模板没有声明模具资源角色");
+                throw std::invalid_argument("产品模板没有声明单件工艺资源角色");
             const auto _DeclaredTools = _ToolsIt->second.To<ObjectMap>();
             for (const auto& [_Role, _Value] : _BindingValues)
             {
                 const auto _RoleIt = _DeclaredTools.find(_Role);
                 if (_Role.empty() || _Role.size() > 80 || _RoleIt == _DeclaredTools.end()
                     || !_RoleIt->second.Is<ObjectMap>())
-                    throw std::invalid_argument("产品使用了未声明的模具资源角色");
+                    throw std::invalid_argument("产品使用了未声明的单件工艺资源角色");
                 const auto _RoleDefinition = _RoleIt->second.To<ObjectMap>();
                 const auto _Parameter = GetRequiredText(_RoleDefinition, "parameter", 80);
                 if (std::none_of(_Package.Descriptor.Parameters.begin(), _Package.Descriptor.Parameters.end(),
                     [&_Parameter](const auto& _Definition) { return _Definition.Key == _Parameter; }))
-                    throw std::invalid_argument("模具资源角色引用了不存在的参数");
+                    throw std::invalid_argument("单件工艺资源角色引用了不存在的参数");
                 const auto _TargetProfileRole = GetRequiredText(
                     _RoleDefinition, "targetProfileRole", 80);
                 const auto _ProfilesIt = _Roles.find("profiles");
                 if (_ProfilesIt == _Roles.end() || !_ProfilesIt->second.Is<ObjectMap>()
                     || !_ProfilesIt->second.To<ObjectMap>().contains(_TargetProfileRole))
-                    throw std::invalid_argument("模具资源角色没有有效的目标管型角色");
-                if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("产品模具绑定必须是对象");
+                    throw std::invalid_argument("单件工艺资源角色没有有效的目标管型角色");
+                if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("产品单件工艺绑定必须是对象");
                 const auto _Binding = _Value.To<ObjectMap>();
                 if (GetString(_Binding, "schema") != "icax.product-resource-binding"
                     || GetUInt64(_Binding, "schemaVersion", 0) != 1
                     || GetString(_Binding, "resourceKind") != "punch-tool"
                     || GetString(_Binding, "role") != _Role)
-                    throw std::invalid_argument("产品模具绑定协议无效");
+                    throw std::invalid_argument("产品单件工艺绑定协议无效");
                 const auto _Reference = GetRequiredObject(_Binding, "ref");
                 const auto _Scope = GetRequiredText(_Reference, "scope", 16);
                 (void)GetRequiredText(_Reference, "id", 80);
                 if (_Scope != "system" && _Scope != "template" && _Scope != "user")
-                    throw std::invalid_argument("产品模具引用来源无效");
+                    throw std::invalid_argument("产品单件工艺引用来源无效");
                 if (_Scope == "template"
                     && GetRequiredText(_Reference, "templateId", 80) != _Package.Descriptor.ID)
-                    throw std::invalid_argument("模板自带模具只能用于所属模板");
+                    throw std::invalid_argument("模板自带单件工艺只能用于所属模板");
                 const auto _Snapshot = GetRequiredObject(_Binding, "snapshot");
                 if (GetRequiredText(_Snapshot, "target", 16).empty()
                     || GetRequiredText(_Snapshot, "category", 16).empty()
                     || GetRequiredText(_Snapshot, "targetProfileRole", 80) != _TargetProfileRole)
-                    throw std::invalid_argument("产品模具绑定的目标角色无效");
+                    throw std::invalid_argument("产品单件工艺绑定的目标角色无效");
                 const auto _ParametersIt = _Binding.find("parameters");
                 if (_ParametersIt == _Binding.end() || !_ParametersIt->second.Is<ObjectMap>()
                     || _ParametersIt->second.To<ObjectMap>().size() > 64)
-                    throw std::invalid_argument("产品模具参数无效");
+                    throw std::invalid_argument("产品单件工艺参数无效");
             }
             _Parameters["tubeDesignerToolBindings"] = _BindingValues;
         }
@@ -2184,6 +2187,7 @@ namespace
             {"index", Part_.Index}, {"partNumber", Part_.PartNumber},
             {"name", MakePartNameFromFileName(Part_.FileName, Part_.PartNumber)},
             {"role", Part_.Role}, {"quantity", ProductionQuantity(Part_.Quantity, Product_.GetQuantity())},
+            {"nestingPriority", 0ull},
             {"unitQuantity", Part_.Quantity}, {"instanceQuantity", Product_.GetQuantity()},
             {"profile", Part_.TubeProfile}, {"partKind", ManufacturingPartKind(Part_.ItemProperties)},
             {"plate", ManufacturingPlate(Part_.ItemProperties)}, {"length", Part_.Length},
@@ -2532,6 +2536,7 @@ namespace
             _Item["name"] = _Presentation.Name;
             _Item["role"] = _Part->GetRole();
             _Item["quantity"] = EffectiveManufacturingQuantity(*_Part, _ActiveProduct->GetQuantity());
+            _Item["nestingPriority"] = _Part->GetNestingPriority();
             _Item["unitQuantity"] = _Part->GetQuantity();
             _Item["instanceQuantity"] = _ActiveProduct->GetQuantity();
             _Item["profile"] = _Presentation.Profile;
@@ -2597,6 +2602,7 @@ namespace
                 _Item["name"] = _Presentation.Name;
                 _Item["role"] = _Part->GetRole();
                 _Item["quantity"] = EffectiveManufacturingQuantity(*_Part, _Product->GetQuantity());
+                _Item["nestingPriority"] = _Part->GetNestingPriority();
                 _Item["unitQuantity"] = _Part->GetQuantity();
                 _Item["instanceQuantity"] = _Product->GetQuantity();
                 _Item["profile"] = _Presentation.Profile;
@@ -2660,6 +2666,7 @@ namespace
                 {"entityId", UuidToString(_Entity->GetID())}, {"index", _Part->GetPartIndex()},
                 {"partNumber", _Part->GetPartNumber()}, {"name", _Presentation.Name},
                 {"quantity", _Part->GetQuantity()}, {"instanceQuantity", 1ull},
+                {"nestingPriority", _Part->GetNestingPriority()},
                 {"profile", _Presentation.Profile}, {"partKind", ManufacturingPartKind(_Part->GetItemProperties())},
                 {"length", _Part->GetLength()}, {"role", _Part->GetRole()}, {"fileName", _Part->GetFileName()},
                 {"properties", PartPropertiesSnapshot(*_Part)}, {"status", _Part->GetStatus()},
@@ -4104,8 +4111,8 @@ namespace
             throw std::runtime_error("TubeDesigner punch tool payload is invalid");
         const auto& _Definition = _Descriptor->second.To<ObjectMap>();
         _Payload["id"] = GetRequiredText(_Definition, "id", 80);
-        _Payload["displayName"] = GetString(_Definition, "displayName", "未命名模具");
-        _Payload["name"] = GetString(_Definition, "displayName", "未命名模具");
+        _Payload["displayName"] = GetString(_Definition, "displayName", "未命名单件工艺");
+        _Payload["name"] = GetString(_Definition, "displayName", "未命名单件工艺");
         _Payload["kind"] = GetString(_Definition, "kind", "programmatic");
         _Payload["target"] = GetString(_Definition, "target", "side");
         _Payload["category"] = GetString(_Definition, "category",
@@ -4113,8 +4120,30 @@ namespace
         _Payload["version"] = GetString(_Definition, "version", "1.0.0");
         _Payload["parameters"] = _Definition.contains("parameters")
             ? _Definition.at("parameters") : VariantArray{};
+        _Payload["inputs"] = _Definition.contains("inputs")
+            ? _Definition.at("inputs") : VariantArray{};
+        _Payload["operationParameters"] = _Definition.contains("operationParameters")
+            ? _Definition.at("operationParameters") : VariantArray{};
         if (!_Payload.contains("defaultParameters"))
             _Payload["defaultParameters"] = ObjectMap();
+        if (!_Payload.contains("defaultOperationParameters"))
+        {
+            ObjectMap _Defaults;
+            const auto _Definitions = _Definition.find("operationParameters");
+            if (_Definitions != _Definition.end() && _Definitions->second.Is<VariantArray>())
+            {
+                for (const auto& _Value : _Definitions->second.To<VariantArray>())
+                {
+                    if (!_Value.Is<ObjectMap>()) continue;
+                    const auto& _Parameter = _Value.To<ObjectMap>();
+                    const auto _Key = GetString(_Parameter, "key");
+                    const auto _Default = _Parameter.find("defaultValue");
+                    if (!_Key.empty() && _Default != _Parameter.end())
+                        _Defaults[_Key] = _Default->second;
+                }
+            }
+            _Payload["defaultOperationParameters"] = std::move(_Defaults);
+        }
         if (_Payload.contains("packageDigest") && !_Payload.contains("digest"))
             _Payload["digest"] = _Payload.at("packageDigest");
         _Payload["libraryScope"] = std::string("user");
@@ -5331,6 +5360,14 @@ namespace
             _Changes[CManufacturingPartComponent::PropertyName_QuantityOverride] =
                 PropertyValue(0ull);
         }
+        if (_Payload.contains("nestingPriority"))
+        {
+            const auto _Priority = GetUInt64(_Payload, "nestingPriority", 0);
+            if (_Priority > kMaximumNestingPriority)
+                throw std::invalid_argument("排样优先级必须为 0 至 1000000 的整数");
+            _Changes[CManufacturingPartComponent::PropertyName_NestingPriority] =
+                PropertyValue(static_cast<unsigned long long>(_Priority));
+        }
         if (_Changes.empty()) throw std::invalid_argument("没有可保存的零件修改");
 
         auto _Undo = _DB.BeginUndoCommand("Update manufacturing part");
@@ -5339,7 +5376,8 @@ namespace
         try
         {
             _Transaction.ModifyComponent(_PartID, CManufacturingPartComponent::S_ClassName, _Changes);
-            if (_Independent && _Payload.contains("quantity"))
+            if (_Independent && (_Payload.contains("quantity")
+                || _Payload.contains("nestingPriority")))
             {
                 const auto _Meta = _DB.GetMetaEntity();
                 const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
@@ -6125,9 +6163,8 @@ namespace
             { "enabled", Feature_.Enabled },
             { "reference", Feature_.Reference },
             { "endDatum", Feature_.EndDatum },
+            { "blindHole", Feature_.BlindHole },
             { "opposite", Feature_.Opposite },
-            { "through", Feature_.Through },
-            { "reverse", Feature_.Reverse },
             { "allowOpen", Feature_.AllowOpen },
             { "cornerRadius", Feature_.CornerRadius },
             { "rowCount", Feature_.RowCount },
@@ -6144,6 +6181,10 @@ namespace
             { "arrayCount", static_cast<unsigned long long>(Feature_.ArrayCount) },
             { "arrayPitch", Feature_.ArrayPitch },
         };
+        // A non-blind operation does not consume depth.  Let the selected tool
+        // descriptor supply its declared draft default when an old/API record
+        // has no positive draft, instead of validating the inactive zero value.
+        if (Feature_.BlindHole || Feature_.CutDepth > 0) _Result["cutDepth"] = Feature_.CutDepth;
         for (const auto& [_Key, _Value] : Feature_.TemplateData) if (_Key != "toolSnapshot") _Result[_Key] = _Value;
         if (!Feature_.LayoutDatum.empty()) _Result["layoutDatum"] = Feature_.LayoutDatum;
         if(Feature_.HasArrayGroups) {
@@ -6188,7 +6229,7 @@ namespace
                     _Feature.TemplateData[_Key] = _It->second;
                 }
             }
-            for (const auto& _Key : {"toolLabel","toolKind","toolTarget","recordKind","depthMode","distributionMode",
+            for (const auto& _Key : {"toolLabel","toolKind","toolTarget","recordKind","distributionMode",
                 "centerMode","fillAlign","spacingSequence","positionList","skipInstancesText","rowDistributionMode","layoutReference"})
                 if (const auto _It = _Object.find(_Key); _It != _Object.end() && _It->second.Is<std::string>())
                     _Feature.TemplateData[_Key] = _It->second;
@@ -6206,10 +6247,10 @@ namespace
             };
             _Feature.ID = GetString(_Object, "id", std::to_string(_Features.size() + 1));
             _Feature.Enabled = _Bool("enabled", true);
+            _Feature.BlindHole = _Bool("blindHole", false);
             _Feature.Opposite = _Bool("opposite", false);
-            _Feature.Through = _Bool("through", false);
-            _Feature.Reverse = _Bool("reverse", false);
             _Feature.AllowOpen = _Bool("allowOpen", false);
+            _Feature.CutDepth = GetDouble(_Object, "cutDepth", 0.0);
             _Feature.Reference = GetString(_Object, "reference", "start");
             _Feature.EndDatum = GetString(_Object, "endDatum", "long");
             _Feature.LayoutDatum = GetString(_Object, "layoutDatum", "");
@@ -6376,6 +6417,23 @@ namespace
         });
     }
 
+    ObjectMap InvokeAssemblyTemplateRuntime(
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        const ObjectMap& Parameters_)
+    {
+        const auto _Path = ResolveRuntimeFile(ApplicationContext_, {
+            "apps/tube-designer/templates/_shared/assembly_template_runtime.py",
+            "src/apps/tube-designer/templates/_shared/assembly_template_runtime.py"
+        }, "TubeDesigner assembly template runtime");
+        return InvokePythonTemplate(ApplicationContext_, {
+            {"protocol",std::string("icax.template-runtime")},{"protocolVersion",1ull},
+            {"operation",std::string("evaluate")},{"templatePath",PathToUTF8(_Path)},
+            {"template",ObjectMap{{"id",std::string("icax.assembly-template-runtime")},{"version",std::string("1.0.0")},
+                {"packageDigest",ContentDigest("assembly-template-runtime",ReadTextFile(_Path))}}},
+            {"parameters",Parameters_},{"context",ObjectMap{{"lengthUnit",std::string("mm")}}}
+        });
+    }
+
     iCAX::Resource::CResourceReference StorePunchBRep(
         iCAX::Project::ISceneContext& Scene_, const std::string& Key_, const std::string& Name_,
         const TopoDS_Shape& Shape_, const iCAX::Interaction::CInvocation& Request_, bool ReuseIdentical_ = false)
@@ -6449,9 +6507,10 @@ namespace
         return BRepBuilderAPI_Transform(_Shape,_Center,true).Shape();
     }
 
-    // Extract exact section wires only. No fitter, type ID or profile template
-    // participates in the mould's geometric analysis.
-    ObjectMap PunchTargetSection(const TopoDS_Shape& Base_)
+    // Some section-aware notch analyzers need BRep-derived wall roles.  This is
+    // deliberately separate from targetSection: punching consumes the original
+    // generic tube-profile contours that also built the blank.
+    ObjectMap PunchSectionAnalysis(const TopoDS_Shape& Base_)
     {
         using namespace iCAX::GeometryData;
         ObjectMap result{{"schema",std::string("icax.mold-section")},{"schemaVersion",1ull},
@@ -6525,14 +6584,19 @@ namespace
         return result;
     }
 
-    TopoDS_Shape EvaluatePunch(const TopoDS_Shape& Base_, std::vector<SPunchFeature>& Features_,
+    TopoDS_Shape EvaluatePunch(const TopoDS_Shape& Base_, const ObjectMap& TargetSection_,
+        std::vector<SPunchFeature>& Features_,
         SPunchEnds& Ends_, const iCAX::Interaction::CInvocation& Request_,
         const iCAX::Application::IApplicationContext& ApplicationContext_, iCAX::Project::ISceneContext& Scene_,
         const ObjectMap& Original_ = {}, bool Rebased_ = false,
         std::vector<SPunchCut>* PreviewCuts_ = nullptr, SPunchGeometryStatistics* Statistics_ = nullptr,
         SPunchPreviewDiagnostics* PreviewDiagnostics_ = nullptr, bool ToolsOnly_ = false, double NominalWallThickness_ = 0,
-        const VariantArray& UserTools_ = {}, ObjectMap* TargetProfile_ = nullptr)
+        const VariantArray& UserTools_ = {})
     {
+        const auto _Contours=TargetSection_.find("contours");
+        if(_Contours==TargetSection_.end()||!_Contours->second.Is<VariantArray>()
+            ||_Contours->second.To<VariantArray>().empty())
+            throw std::invalid_argument("冲孔目标缺少通用截面轮廓");
         ReportExportProgress(Request_, "punch", 0, 1, "正在运行刀具模板");
         VariantArray _Features;
         for (const auto& _Feature : Features_) _Features.emplace_back(PunchFeatureSnapshot(_Feature));
@@ -6540,9 +6604,8 @@ namespace
             {"action",std::string("prepare")},{"features",_Features},{"ends",PunchEndsSnapshot(Ends_)},{"bounds",ShapeBounds(Base_)},
             {"original",Original_},{"rebased",Rebased_},{"userTools",UserTools_}
         };
-        const auto _TargetProfile=PunchTargetSection(Base_);
-        _PunchParameters["targetSection"]=_TargetProfile;
-        if(TargetProfile_)*TargetProfile_=_TargetProfile;
+        _PunchParameters["targetSection"]=TargetSection_;
+        _PunchParameters["targetSectionAnalysis"]=PunchSectionAnalysis(Base_);
         const auto _UserMoldRoot = ResolveUserMoldRoot(ApplicationContext_);
         if (!_UserMoldRoot.empty() && std::filesystem::is_directory(_UserMoldRoot))
             _PunchParameters["userToolRoot"] = PathToUTF8(_UserMoldRoot);
@@ -7875,6 +7938,7 @@ namespace
             std::string PartNumber;
             std::string Role;
             std::uint64_t Quantity = 1;
+            std::uint64_t NestingPriority = 0;
             double Length = 0.0;
             ObjectMap ItemProperties;
             ObjectMap TubeProfile;
@@ -7930,6 +7994,7 @@ namespace
                 _Source.PartNumber = _Part->GetPartNumber();
                 _Source.Role = _Part->GetRole();
                 _Source.Quantity = EffectiveManufacturingQuantity(*_Part, _Product->GetQuantity());
+                _Source.NestingPriority = _Part->GetNestingPriority();
                 _Source.Length = _Part->GetLength();
                 _Source.ItemProperties = _Part->GetItemProperties();
                 if (const auto _TubeProfile = GetComponent<CTubeProfileComponent>(_Part->GetEntity()))
@@ -8014,6 +8079,8 @@ namespace
             _Properties[CManufacturingPartComponent::PropertyName_GenerationRunID] = _Batch;
             _Properties[CManufacturingPartComponent::PropertyName_Quantity] = _Source.Quantity;
             _Properties[CManufacturingPartComponent::PropertyName_QuantityOverride] = 0ull;
+            _Properties[CManufacturingPartComponent::PropertyName_NestingPriority] =
+                _Source.NestingPriority;
             _Properties[CManufacturingPartComponent::PropertyName_ItemProperties] = _ItemProperties;
             _Properties[CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceID] = _Resource.URL;
             _Properties[CManufacturingPartComponent::PropertyName_ManufacturingGeometryResourceVersion] = _Resource.nVersion;
@@ -8993,6 +9060,28 @@ namespace
         return MakeResponse(std::move(_Response));
     }
 
+    iCAX::Interaction::CInvocationResult HandleGetAssemblyTemplates(
+        const iCAX::Interaction::CInvocation&,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        return MakeResponse(InvokeAssemblyTemplateRuntime(ApplicationContext_, {
+            {"action",std::string("catalogue")}
+        }));
+    }
+
+    iCAX::Interaction::CInvocationResult HandleResolveAssemblyTemplatePreview(
+        const iCAX::Interaction::CInvocation& Request_,
+        const iCAX::Application::IApplicationContext& ApplicationContext_,
+        iCAX::Product::IProductContext*, iCAX::Project::IProjectContext*,
+        iCAX::Project::ISceneContext*)
+    {
+        auto _Parameters = DecodeObjectPayload(Request_);
+        _Parameters["action"] = std::string("preview-plan");
+        return MakeResponse(InvokeAssemblyTemplateRuntime(ApplicationContext_, _Parameters));
+    }
+
     std::string NewPunchToolDefinitionID()
     {
         auto _ID = UuidToString(iCAX::Data::GenerateNewUUID());
@@ -9009,7 +9098,7 @@ namespace
         ObjectMap Descriptor_, ObjectMap Geometry_ = {}, std::string ScriptSource_ = {},
         std::string PackageDigest_ = {}, ObjectMap Resources_ = {})
     {
-        if (!ProductContext_) throw std::runtime_error("模具保存需要产品上下文");
+        if (!ProductContext_) throw std::runtime_error("单件工艺保存需要产品上下文");
         auto _Store = GetUserDataStore(ProductContext_);
         const auto _ID = GetString(Descriptor_, "id").empty()
             ? NewPunchToolDefinitionID() : GetRequiredText(Descriptor_, "id", 80);
@@ -9023,15 +9112,15 @@ namespace
         Descriptor_["category"] = GetString(Request_, "category",
             GetString(Descriptor_, "category", GetString(Descriptor_, "target") == "end" ? "端面" : "孔型"));
         if (GetString(Descriptor_, "kind") != "fixed" && GetString(Descriptor_, "kind") != "programmatic")
-            throw std::invalid_argument("模具类型只能是程式或定式");
+            throw std::invalid_argument("单件工艺类型只能是程式或定式");
         if (GetString(Descriptor_, "target") != "side" && GetString(Descriptor_, "target") != "end"
             && GetString(Descriptor_, "target") != "part")
-            throw std::invalid_argument("模具适用位置无效");
+            throw std::invalid_argument("单件工艺适用位置无效");
         if (GetString(Descriptor_, "kind") == "fixed") {
             Descriptor_["parameters"] = VariantArray{};
-            if (Geometry_.empty()) throw std::invalid_argument("定式模具必须包含闭合截面");
+            if (Geometry_.empty()) throw std::invalid_argument("定式单件工艺必须包含闭合截面");
         } else if (ScriptSource_.empty()) {
-            throw std::invalid_argument("程式模具必须包含 tool.py");
+            throw std::invalid_argument("程式单件工艺必须包含 tool.py");
         }
         iCAX::Application::CProductUserDataRecord _Record;
         _Record.FeatureID = kPunchToolFeatureID;
@@ -9087,14 +9176,14 @@ namespace
         std::transform(_Extension.begin(), _Extension.end(), _Extension.begin(), [](const unsigned char _Value) {
             return static_cast<char>(std::tolower(_Value));
         });
-        if (_Extension != ".itmt") throw std::invalid_argument("程式模具必须使用 .itmt 压缩包");
+        if (_Extension != ".itmt") throw std::invalid_argument("程式单件工艺必须使用 .itmt 压缩包");
         auto _Runtime = InvokePunchToolPackageRuntime(ApplicationContext_, ObjectMap{
             { "action", std::string("inspect") }, { "sourcePath", _SourcePath }
         });
         const auto _Package = GetRequiredObject(_Runtime, "package");
         const auto _Descriptor = GetRequiredObject(_Package, "descriptor");
         ObjectMap _RequestWithName = _Request;
-        _RequestWithName["name"] = GetString(_Descriptor, "displayName", "程式模具");
+        _RequestWithName["name"] = GetString(_Descriptor, "displayName", "程式单件工艺");
         _RequestWithName["kind"] = std::string("programmatic");
         _RequestWithName["target"] = GetString(_Descriptor, "target", "side");
         auto _UserDescriptor = _Descriptor;
@@ -9181,6 +9270,7 @@ namespace
         const bool _ToolsOnly=PartDrawing_||_DiagnosticFlag==_Payload.end()||!_DiagnosticFlag->second.Is<bool>()||!_DiagnosticFlag->second.To<bool>();
         const std::string _PreviewPrefix=PartDrawing_?"tube-designer/part-drawing-preview":"tube-designer/punch-preview";
         TopoDS_Shape _Base;
+        ObjectMap _TargetSection;
         ObjectMap _Original;
         const auto _Drawing=_Payload.contains("drawing")?ReadPartDrawing(_Payload):ObjectMap();
         bool _Rebased=false;
@@ -9203,7 +9293,14 @@ namespace
             if (!_Rebuilt.bOK) throw std::runtime_error("无法恢复基准实体");
             _Base = _Rebuilt.Shape;
             _Rebased=PartDrawingRebased(_Original,_Drawing);
-            if(_Rebased)_Base=BuildPunchBlank(GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile"),GetDouble(_Drawing,"length",0));
+            if(!_Drawing.empty())
+                _TargetSection=GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile");
+            else {
+                const auto _Profile=GetComponent<CTubeProfileComponent>(_Part->GetEntity());
+                if(!_Profile)throw std::invalid_argument("下料零件缺少通用截面轮廓，无法冲孔");
+                _TargetSection=ProfileSnapshot(*_Profile);
+            }
+            if(_Rebased)_Base=BuildPunchBlank(_TargetSection,GetDouble(_Drawing,"length",0));
         } else {
             const double _Length = GetDouble(_Drawing.empty()?_Payload:_Drawing, "length", 0);
             if (!std::isfinite(_Length) || _Length < 1 || _Length > 100000) throw std::invalid_argument("长度须为 1 至 100000 mm");
@@ -9212,8 +9309,8 @@ namespace
                 if (!_It->second.Is<ObjectMap>()) throw std::invalid_argument("管型参数无效");
                 _Parameters = _It->second.To<ObjectMap>();
             }
-            const auto _Profile = ResolvePunchBlankProfile(_Payload,ApplicationContext_,ProductContext_);
-            _Base = BuildPunchBlank(_Profile, _Length);
+            _TargetSection = ResolvePunchBlankProfile(_Payload,ApplicationContext_,ProductContext_);
+            _Base = BuildPunchBlank(_TargetSection, _Length);
         }
         auto _Features = ReadPunchFeatures(_Payload, "features");
         auto _Ends = ReadPunchEnds(_Payload);
@@ -9225,10 +9322,9 @@ namespace
         const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         TopoDS_Shape _Shape;
         std::string _ResultError;
-        ObjectMap _TargetProfile;
         try {
-            _Shape = EvaluatePunch(_Base, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
-                _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools, &_TargetProfile);
+            _Shape = EvaluatePunch(_Base, _TargetSection, _Features, _Ends, Request_, ApplicationContext_, *Scene_,
+                _Original, _Rebased, &_PreviewCuts, &_Statistics, &_Diagnostics, _ToolsOnly, _NominalWall, _UserTools);
         } catch(const std::exception& _Error) {
             // A failed boolean result is not a successful part. Preview alone
             // publishes its current blank/tools so the user can see what failed;
@@ -9249,7 +9345,7 @@ namespace
             {"baseMaterial", ObjectMap{{"url",_BaseMaterial.URL},{"version",_BaseMaterial.nVersion}}},
             {"bounds",ShapeBounds(_HasResultGeometry?_Shape:_Base)},{"baseBounds",ShapeBounds(_Base)},
             {"length",GetDouble(ShapeBounds(_HasResultGeometry?_Shape:_Base),"width",0)}};
-        _Response["targetSection"]=_TargetProfile;
+        _Response["targetSection"]=_TargetSection;
         VariantArray _SectionAnalyses;
         for(size_t _Index=0;_Index<_Features.size();++_Index) {
             const auto& _Data=_Features[_Index].TemplateData;
@@ -9520,7 +9616,7 @@ namespace
             throw std::runtime_error("无法从所选管型生成有效的直管实体");
         const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         SPunchPreviewDiagnostics _ResultState;_ResultState.AllowDisconnectedResults=PartDrawing_;
-        const auto _Shape = EvaluatePunch(_BaseShape, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_,{},false,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
+        const auto _Shape = EvaluatePunch(_BaseShape, _Profile, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_,{},false,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
         if(PartDrawing_&&_ResultState.SolidCount==0)throw std::invalid_argument("三维零件没有剩余实体，无法创建；请调整刀具");
 
         auto _Name = TrimText(GetString(_Payload, "name"));
@@ -9727,10 +9823,18 @@ namespace
         const auto _Rebuilt = iCAX::OpenCascade::BuildOpenCascadeShape(*_BaseBRep);
         if (!_Rebuilt.bOK || _Rebuilt.Shape.IsNull())
             throw std::runtime_error("无法读取冲孔基准几何");
-        const auto _BaseShape=_Rebased?BuildPunchBlank(GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile"),GetDouble(_Drawing,"length",0)):_Rebuilt.Shape;
+        ObjectMap _TargetSection;
+        if(!_Drawing.empty())
+            _TargetSection=GetRequiredObject(GetRequiredObject(_Drawing,"section"),"profile");
+        else {
+            const auto _Profile=GetComponent<CTubeProfileComponent>(_Part->GetEntity());
+            if(!_Profile)throw std::invalid_argument("下料零件缺少通用截面轮廓，无法冲孔");
+            _TargetSection=ProfileSnapshot(*_Profile);
+        }
+        const auto _BaseShape=_Rebased?BuildPunchBlank(_TargetSection,GetDouble(_Drawing,"length",0)):_Rebuilt.Shape;
         const auto _UserTools = ProductContext_ ? ListPunchToolUserDataRecords(*GetUserDataStore(ProductContext_)) : VariantArray{};
         SPunchPreviewDiagnostics _ResultState;_ResultState.AllowDisconnectedResults=PartDrawing_;
-        const auto _Shape = EvaluatePunch(_BaseShape, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_, _ExistingConfig,_Rebased,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
+        const auto _Shape = EvaluatePunch(_BaseShape, _TargetSection, _IncomingFeatures, _Ends, Request_, ApplicationContext_, *Scene_, _ExistingConfig,_Rebased,nullptr,nullptr,PartDrawing_?&_ResultState:nullptr,false,0,_UserTools);
         if(PartDrawing_&&_ResultState.SolidCount==0)throw std::invalid_argument("三维零件没有剩余实体，无法保存；请调整刀具");
         if(_Rebased) {
             const auto _Base=StorePunchBRep(*Scene_,"tube-designer/nesting/drawing-base/"+UuidToString(iCAX::Data::GenerateNewUUID()),"三维绘制主管",_BaseShape,Request_);
@@ -10467,13 +10571,28 @@ namespace
         std::array<double, 3> LocalCenter{ 0.0, 0.0, 0.0 };
         iCAX::TubeNesting::CutLineFeatureCode LeftCutLineFeature;
         iCAX::TubeNesting::CutLineFeatureCode RightCutLineFeature;
+        std::optional<iCAX::TubeNesting::PairTypeGeometry> PairGeometry;
+        iCAX::TubeNesting::Length PairGeometryMaximumLength = 0;
     };
 
-    bool HasNestingCutLineFeatures(const SNestingGeometrySummary& Summary_)
+    bool HasNestingPairGeometry(const SNestingGeometrySummary& Summary_)
     {
-        return iCAX::TubeNesting::IsValidCutLineFeature(Summary_.LeftCutLineFeature)
-            && iCAX::TubeNesting::IsValidCutLineFeature(Summary_.RightCutLineFeature)
-            && Summary_.LeftCutLineFeature.Period == Summary_.RightCutLineFeature.Period;
+        return Summary_.PairGeometry.has_value()
+            && Summary_.PairGeometryMaximumLength > 0
+            && Summary_.PairGeometry->Left.CompleteSingleValued
+            && Summary_.PairGeometry->Right.CompleteSingleValued;
+    }
+
+    void AlignNestingPairGeometry(SNestingGeometrySummary& Summary_)
+    {
+        if (!HasNestingPairGeometry(Summary_)) return;
+        const auto _Target = static_cast<iCAX::TubeNesting::Length>(
+            std::ceil(Summary_.EnvelopeLength * 100.0 - 1.0e-6));
+        const auto _Delta = static_cast<double>(_Target - Summary_.PairGeometryMaximumLength);
+        if (_Delta != 0.0)
+            for (auto& _Level : Summary_.PairGeometry->Right.Levels)
+                _Level.Constant += _Delta;
+        Summary_.PairGeometryMaximumLength = _Target;
     }
 
     struct SNestingGeometryCache final
@@ -10505,20 +10624,19 @@ namespace
             const std::lock_guard _Lock(_Cache.Mutex);
             const auto _Found = _Cache.Measurements.find(Key_);
             if (_Found == _Cache.Measurements.end()
-                || HasNestingCutLineFeatures(_Found->second)
+                || HasNestingPairGeometry(_Found->second)
                 || !_Cache.PendingFeatureJobs.insert(Key_).second)
                 return;
         }
 
-        // Full side unfolding is useful for the precise cut-line matcher, but
-        // it is not a prerequisite for nesting.  It can take about 91 seconds
-        // for the 82 five-face parts, so keep it off the SDO request path and
-        // publish it into the same resource-version cache when it is ready.
+        // End-profile recognition is cached by immutable geometry resource
+        // version.  Keep the expensive unfolding off the interactive request
+        // thread; once available it feeds the next pair-table build directly.
         const auto _PendingKey = Key_;
         try
         {
             (void)iCAX::Tasks::Run([Key_ = std::move(Key_), Shape_ = std::move(Shape_)] {
-                STubeUnfoldedEndFeatureCodes _Features;
+                STubeNestingEndProfiles _Profiles;
                 try
                 {
                     auto& _Cache = NestingGeometryCache();
@@ -10531,7 +10649,7 @@ namespace
                         _Options.IncludeInnerSurfaces = false;
                         const auto _Unfolded = UnfoldTubeBRepSurface(Shape_, _Options);
                         if (_Unfolded.bOK)
-                            _Features = EncodeTubeUnfoldedEndFeatures(_Unfolded, 64);
+                            _Profiles = EncodeTubeNestingEndProfiles(_Unfolded, 128, 32);
                     }
                 }
                 catch (const std::exception&)
@@ -10546,13 +10664,13 @@ namespace
 
                 auto& _Cache = NestingGeometryCache();
                 const std::lock_guard _Lock(_Cache.Mutex);
-                if (_Features.bOK)
+                if (_Profiles.bOK)
                 {
                     const auto _Found = _Cache.Measurements.find(Key_);
                     if (_Found != _Cache.Measurements.end())
                     {
-                        _Found->second.LeftCutLineFeature = _Features.Left;
-                        _Found->second.RightCutLineFeature = _Features.Right;
+                        _Found->second.PairGeometry = std::move(_Profiles.Geometry);
+                        _Found->second.PairGeometryMaximumLength = _Profiles.MaximumLength;
                     }
                 }
                 _Cache.PendingFeatureJobs.erase(Key_);
@@ -10581,6 +10699,7 @@ namespace
             {
                 auto _Result = _Found->second;
                 _Result.EnvelopeLength = std::max(Part_.GetLength(), _Result.EnvelopeLength);
+                AlignNestingPairGeometry(_Result);
                 return _Result;
             }
         }
@@ -10613,6 +10732,7 @@ namespace
         }
         QueueNestingCutLineFeatureGeneration(_Key, _Shape);
         _Result.EnvelopeLength = std::max(Part_.GetLength(), _Result.EnvelopeLength);
+        AlignNestingPairGeometry(_Result);
         return _Result;
     }
 
@@ -10632,6 +10752,7 @@ namespace
             {
                 auto _Result = _Found->second;
                 _Result.EnvelopeLength = std::max(Part_.Length, _Result.EnvelopeLength);
+                AlignNestingPairGeometry(_Result);
                 return _Result;
             }
         }
@@ -10663,6 +10784,7 @@ namespace
         }
         QueueNestingCutLineFeatureGeneration(_Key, _Shape);
         _Result.EnvelopeLength = std::max(Part_.Length, _Result.EnvelopeLength);
+        AlignNestingPairGeometry(_Result);
         return _Result;
     }
 
@@ -10741,6 +10863,12 @@ namespace
         const SNestingPart& Part_, const std::string& ID_,
         const bool Reversed_, const double Rotation_, const double PhaseOffset_ = 0.0)
     {
+        if ((ID_ == "forward" || ID_ == "reverse")
+            && Reversed_ == (ID_ == "reverse")
+            && Part_.DirectionAllowed[Reversed_ ? 1 : 0]
+            && std::isfinite(Rotation_)
+            && std::abs(PhaseOffset_) <= 1.0e-9)
+            return std::optional<const SNestingVariant*>{ nullptr };
         if (Part_.Variants.empty())
             return ID_ == "default" && !Reversed_ && std::abs(Rotation_) <= 1.0e-9
                 && std::abs(PhaseOffset_) <= 1.0e-9
@@ -10766,6 +10894,54 @@ namespace
     {
         if (LockedValues_.empty()) return SolveManufacturingNesting(Parts_, Stocks_, Gap_);
         constexpr double _Tolerance = 0.011;
+        const auto _LengthUnits = [](const double Value_)
+        {
+            return static_cast<iCAX::TubeNesting::Length>(
+                std::ceil(Value_ * 100.0 - 1.0e-6));
+        };
+        const auto _ProductionGeometry = [&](const SNestingPart& Part_)
+        {
+            // Keep locked-plan validation on exactly the same geometry
+            // admission rule as a fresh production solve.  The sampled BRep
+            // bridge is NumericOnly: using it here after the background job
+            // completed could reject a plan that was originally produced
+            // with the safe envelope, or accept an unproved overlap.
+            if (Part_.PairGeometry)
+            {
+                const auto _Certified = [](const iCAX::TubeNesting::PeriodicEndProfile& Profile_)
+                {
+                    return Profile_.CompleteSingleValued && !Profile_.Levels.empty()
+                        && Profile_.SourceQuality
+                            != iCAX::TubeNesting::ProfileSourceQuality::Missing
+                        && Profile_.SourceQuality
+                            != iCAX::TubeNesting::ProfileSourceQuality::NumericOnly;
+                };
+                if (_Certified(Part_.PairGeometry->Left)
+                    && _Certified(Part_.PairGeometry->Right))
+                    return *Part_.PairGeometry;
+            }
+            const auto _Profile = [](const double Constant_)
+            {
+                iCAX::TubeNesting::FourierLevel _Level;
+                _Level.Constant = Constant_;
+                _Level.Certified = true;
+                iCAX::TubeNesting::PeriodicEndProfile _Result;
+                _Result.SourceQuality = iCAX::TubeNesting::ProfileSourceQuality::ApproximateCertified;
+                _Result.CompleteSingleValued = true;
+                _Result.Levels.push_back(std::move(_Level));
+                return _Result;
+            };
+            iCAX::TubeNesting::PairTypeGeometry _Result;
+            _Result.Left = _Profile(0.0);
+            _Result.Right = _Profile(static_cast<double>(_LengthUnits(Part_.Length)));
+            return _Result;
+        };
+        struct SLockedPose final
+        {
+            const SNestingPart* Part = nullptr;
+            iCAX::TubeNesting::Direction Direction = iCAX::TubeNesting::Direction::Forward;
+            double Rotation = 0.0;
+        };
         std::map<std::string, const SNestingPart*> _PartsByID;
         std::map<std::string, const SNestingStock*> _StocksByID;
         for (const auto& _Part : Parts_) _PartsByID.emplace(_Part.ID, &_Part);
@@ -10773,6 +10949,7 @@ namespace
         std::map<std::string, std::size_t> _LockedPartCounts, _LockedStockCounts;
         std::set<std::string> _PlanIDs, _InstanceIDs;
         VariantArray _LockedPlans;
+        std::vector<SNestingStock> _ContinuationStocks;
         for (const auto& _Value : LockedValues_)
         {
             if (!_Value.Is<ObjectMap>()) throw std::invalid_argument("锁定的排样结果必须是对象");
@@ -10794,7 +10971,7 @@ namespace
             auto _Placements = _PlacementField->second.To<VariantArray>();
             if (_Placements.empty()) throw std::invalid_argument("空排样结果不能锁定");
             double _PreviousEnd = 0.0, _PartLength = 0.0;
-            std::optional<const SNestingVariant*> _PreviousVariant;
+            std::optional<SLockedPose> _PreviousPose;
             for (std::size_t _Index = 0; _Index < _Placements.size(); ++_Index)
             {
                 if (!_Placements[_Index].Is<ObjectMap>())
@@ -10828,40 +11005,53 @@ namespace
                 const auto _BaseGap = _Index ? QuantizedNestingLength(Gap_, true) : 0.0;
                 auto _ExpectedGap = _BaseGap;
                 bool _DidNest = false;
-                if (_Index && _PreviousVariant && *_PreviousVariant && *_Variant)
+                if (_Index && _PreviousPose)
                 {
-                    const auto& _PreviousEndDescriptor = (*_PreviousVariant)->RightEnd;
-                    const auto& _NextEndDescriptor = (*_Variant)->LeftEnd;
-                    const auto& _TailFeature = _PreviousEndDescriptor.Feature;
-                    const auto& _HeadFeature = _NextEndDescriptor.Feature;
-                    if (iCAX::TubeNesting::IsValidCutLineFeature(_TailFeature)
-                        && iCAX::TubeNesting::IsValidCutLineFeature(_HeadFeature)
-                        && _TailFeature.Period == _HeadFeature.Period)
+                    const auto& _PreviousPart = *_PreviousPose->Part;
+                    const auto _PreviousLength = _LengthUnits(_PreviousPart.Length);
+                    const auto _CurrentLength = _LengthUnits(_PartFound->second->Length);
+                    const iCAX::TubeNesting::PairPartType _PreviousType{
+                        _PreviousPart.ID, _PreviousPart.ProfileKey, {},
+                        _PreviousLength, _PreviousLength, 1, _PreviousPart.DirectionAllowed };
+                    const iCAX::TubeNesting::PairPartType _CurrentType{
+                        _PartFound->second->ID, _PartFound->second->ProfileKey, {},
+                        _CurrentLength, _CurrentLength, 1, _PartFound->second->DirectionAllowed };
+                    const auto _PreviousGeometry = _ProductionGeometry(_PreviousPart);
+                    const auto _CurrentGeometry = _ProductionGeometry(*_PartFound->second);
+                    iCAX::TubeNesting::PairPoseSolverSettings _PoseSettings;
+                    _PoseSettings.Tolerance = 1.0;
+                    _PoseSettings.FixedPhaseTolerance = 0.25;
+                    const auto _Pose = iCAX::TubeNesting::SolveOrientedPairPose(
+                        _PreviousType, _PreviousGeometry,
+                        _PreviousPose->Direction,
+                        _CurrentType, _CurrentGeometry,
+                        _Reversed ? iCAX::TubeNesting::Direction::Reverse
+                                  : iCAX::TubeNesting::Direction::Forward,
+                        _CurrentGeometry.RelativeRotationDomain, _PoseSettings);
+                    if (_Pose.Status == iCAX::TubeNesting::PairPoseStatus::InvalidInput
+                        || _Pose.Status == iCAX::TubeNesting::PairPoseStatus::Forbidden
+                        || _Pose.Status == iCAX::TubeNesting::PairPoseStatus::Unsupported)
+                        throw std::invalid_argument("锁定结果中的相邻姿态已不再可行，请取消锁定后重新排样");
+                    constexpr double _TwoPi = 2.0 * std::numbers::pi_v<double>;
+                    const auto _NormalizeAngle = [_TwoPi](double Value_)
                     {
-                        const auto _RelativePhase = static_cast<iCAX::TubeNesting::Length>(
-                            std::llround(((*_Variant)->PhaseOffset
-                                - (*_PreviousVariant)->PhaseOffset) * 100.0));
-                        const auto _Match = iCAX::TubeNesting::EvaluateCutLineMatch(
-                            _TailFeature, _HeadFeature, _RelativePhase);
-                        if (_Match.Valid)
-                        {
-                            _ExpectedGap += static_cast<double>(_Match.RequiredSeparation) / 100.0;
-                            _DidNest = _ExpectedGap < _BaseGap - _Tolerance;
-                        }
-                    }
-                    else if (_PreviousEndDescriptor.AllowTrapezoidNesting
-                        && _NextEndDescriptor.AllowTrapezoidNesting
-                        && _PreviousEndDescriptor.NestingPlane == _NextEndDescriptor.NestingPlane)
-                    {
-                        const auto _Overlap = std::min(
-                            QuantizedNestingLength(_PreviousEndDescriptor.Projection, false),
-                            QuantizedNestingLength(_NextEndDescriptor.Projection, false));
-                        if (_Overlap > 0.0)
-                        {
-                            _ExpectedGap -= _Overlap;
-                            _DidNest = true;
-                        }
-                    }
+                        Value_ = std::fmod(Value_, _TwoPi);
+                        return Value_ < 0.0 ? Value_ + _TwoPi : Value_;
+                    };
+                    const auto _LockedRelative = _NormalizeAngle(
+                        _Rotation - _PreviousPose->Rotation);
+                    const auto _SolvedRelative = _NormalizeAngle(
+                        _Pose.RelativeRotationRadians);
+                    const auto _AngleDifference = std::abs(
+                        _LockedRelative - _SolvedRelative);
+                    if ((std::min)(_AngleDifference, _TwoPi - _AngleDifference) > 1.0e-8)
+                        throw std::invalid_argument(
+                            "锁定结果中的相邻绕轴姿态已不是当前四姿态表的最佳值，请取消锁定后重新排样");
+                    const auto _Separation = static_cast<iCAX::TubeNesting::Length>(std::ceil(
+                        (std::max)(0.0, _Pose.RequiredSeparationUpper)));
+                    _ExpectedGap = static_cast<double>(
+                        _Separation + _LengthUnits(Gap_) - _PreviousLength) / 100.0;
+                    _DidNest = _ExpectedGap < _BaseGap - _Tolerance;
                 }
                 const auto _GapBefore = GetDouble(_Placement, "gapBefore", std::numeric_limits<double>::quiet_NaN());
                 const auto _Nested = _NestedField->second.To<bool>();
@@ -10877,13 +11067,26 @@ namespace
                     || _End > _StockLength + _Tolerance)
                     throw std::invalid_argument("锁定结果中的零件位置、长度或间距无效");
                 ++_LockedPartCounts[_PartID];
-                _PartLength += *_Variant
-                    ? std::min(
-                        QuantizedNestingLength(_PartFound->second->Length, true),
-                        QuantizedNestingLength((*_Variant)->MaterialLength, true))
-                    : QuantizedNestingLength(_PartFound->second->Length, true);
+                double _PlacementMaterial = QuantizedNestingLength(
+                    _PartFound->second->Length, true);
+                if (*_Variant)
+                    _PlacementMaterial = std::min(_PlacementMaterial,
+                        QuantizedNestingLength((*_Variant)->MaterialLength, true));
+                else if (!_PartFound->second->Variants.empty())
+                {
+                    _PlacementMaterial = 0.0;
+                    for (const auto& _Source : _PartFound->second->Variants)
+                        _PlacementMaterial = std::max(_PlacementMaterial,
+                            std::min(QuantizedNestingLength(_PartFound->second->Length, true),
+                                QuantizedNestingLength(_Source.MaterialLength, true)));
+                }
+                _PartLength += _PlacementMaterial;
                 _PreviousEnd = _End;
-                _PreviousVariant = *_Variant;
+                _PreviousPose = SLockedPose{
+                    _PartFound->second,
+                    _Reversed ? iCAX::TubeNesting::Direction::Reverse
+                              : iCAX::TubeNesting::Direction::Forward,
+                    _Rotation };
                 _Placement["length"] = _End - _Start;
                 _Placement["gapBefore"] = _ExpectedGap;
                 _Placement["nestedWithPrevious"] = _DidNest;
@@ -10909,6 +11112,30 @@ namespace
             _Plan["partCount"] = static_cast<unsigned long long>(
                 _Plan.at("placements").To<VariantArray>().size());
             _Plan["utilization"] = _StockLength > 0.0 ? _PartLength / _StockLength : 0.0;
+            if (_RemainingLength >= 0.01 && _PreviousPose)
+            {
+                std::string _ContinuationID = "__continued__:" + _PlanID;
+                std::size_t _Suffix = 0;
+                while (_StocksByID.contains(_ContinuationID)
+                    || std::ranges::any_of(_ContinuationStocks, [&](const auto& Existing_)
+                        { return Existing_.ID == _ContinuationID; }))
+                    _ContinuationID = "__continued__:" + _PlanID + ":"
+                        + std::to_string(++_Suffix);
+                SNestingStock _Continuation;
+                _Continuation.ID = std::move(_ContinuationID);
+                _Continuation.ProfileKey = _ProfileKey;
+                _Continuation.Length = _StockLength;
+                _Continuation.Quantity = 1;
+                _Continuation.SourceStockTypeID = _StockID;
+                _Continuation.InstanceID = _PlanID;
+                _Continuation.InitialProcessedEnd = _UsedLength;
+                _Continuation.InitialPredecessorPartID = _PreviousPose->Part->ID;
+                _Continuation.InitialPredecessorReversed =
+                    _PreviousPose->Direction == iCAX::TubeNesting::Direction::Reverse;
+                _Continuation.InitialPredecessorRotationRadians =
+                    _PreviousPose->Rotation;
+                _ContinuationStocks.push_back(std::move(_Continuation));
+            }
             _LockedPlans.emplace_back(std::move(_Plan));
         }
         for (const auto& _Part : Parts_)
@@ -10920,12 +11147,23 @@ namespace
 
         auto _RemainingParts = Parts_;
         for (auto& _Part : _RemainingParts) _Part.Quantity -= _LockedPartCounts[_Part.ID];
-        std::erase_if(_RemainingParts, [](const auto& _Part) { return _Part.Quantity == 0; });
+        std::set<std::string> _ContinuationPredecessors;
+        for (const auto& _Stock : _ContinuationStocks)
+            _ContinuationPredecessors.insert(_Stock.InitialPredecessorPartID);
+        std::erase_if(_RemainingParts, [&](const auto& _Part)
+        {
+            return _Part.Quantity == 0
+                && !_ContinuationPredecessors.contains(_Part.ID);
+        });
         auto _RemainingStocks = Stocks_;
         for (auto& _Stock : _RemainingStocks)
             if (_Stock.Quantity >= 0) _Stock.Quantity -= static_cast<std::int64_t>(_LockedStockCounts[_Stock.ID]);
+        _RemainingStocks.insert(_RemainingStocks.end(),
+            _ContinuationStocks.begin(), _ContinuationStocks.end());
 
-        ObjectMap _Solved = _RemainingParts.empty()
+        const bool _HasRemainingDemand = std::ranges::any_of(
+            _RemainingParts, [](const auto& Part_) { return Part_.Quantity > 0; });
+        ObjectMap _Solved = !_HasRemainingDemand
             ? ObjectMap{
                 { "status", std::string("feasible") }, { "plans", VariantArray{} },
                 { "unplaced", VariantArray{} }, { "diagnostics", VariantArray{} },
@@ -10933,18 +11171,26 @@ namespace
             : SolveManufacturingNesting(_RemainingParts, _RemainingStocks, Gap_);
         auto _FreshPlans = _Solved.at("plans").To<VariantArray>();
         std::map<std::string, std::size_t> _FreshPlanOrdinals, _FreshPartOrdinals;
+        std::map<std::string, std::size_t> _LockedPlanIndices;
+        for (std::size_t _Index = 0; _Index < _LockedPlans.size(); ++_Index)
+            _LockedPlanIndices.emplace(GetRequiredText(
+                _LockedPlans[_Index].To<ObjectMap>(), "id", 320), _Index);
+        VariantArray _AdditionalPlans;
         for (auto& _Value : _FreshPlans)
         {
             auto _Plan = _Value.To<ObjectMap>();
             auto _PlanID = GetRequiredText(_Plan, "id", 320);
-            if (_PlanIDs.contains(_PlanID))
+            const auto _ContinuedField = _Plan.find("continued");
+            const bool _Continued = _ContinuedField != _Plan.end()
+                && _ContinuedField->second.Is<bool>()
+                && _ContinuedField->second.To<bool>();
+            if (!_Continued && _PlanIDs.contains(_PlanID))
             {
                 const auto _StockID = GetRequiredText(_Plan, "stockTypeId", 160);
                 do { _PlanID = _StockID + "#rerun-" + std::to_string(++_FreshPlanOrdinals[_StockID]); }
                 while (_PlanIDs.contains(_PlanID));
                 _Plan["id"] = _PlanID;
             }
-            _PlanIDs.insert(_PlanID);
             auto _Placements = _Plan.at("placements").To<VariantArray>();
             for (auto& _PlacementValue : _Placements)
             {
@@ -10961,13 +11207,52 @@ namespace
                 _PlacementValue = std::move(_Placement);
             }
             _Plan["placements"] = std::move(_Placements);
-            _Value = std::move(_Plan);
+            if (_Continued)
+            {
+                const auto _LockedFound = _LockedPlanIndices.find(_PlanID);
+                if (_LockedFound == _LockedPlanIndices.end())
+                    throw std::runtime_error(
+                        "续排求解器返回了未知的锁定母材实例");
+                auto _LockedPlan = _LockedPlans[_LockedFound->second].To<ObjectMap>();
+                const auto _OldUsed = GetDouble(_LockedPlan, "usedLength", -1.0);
+                if (std::abs(GetDouble(_Plan, "initialProcessedEnd", -1.0)
+                    - _OldUsed) > _Tolerance)
+                    throw std::runtime_error("续排母材的固定前缀终点发生变化");
+                auto _MergedPlacements = _LockedPlan.at("placements").To<VariantArray>();
+                auto _NewPlacements = _Plan.at("placements").To<VariantArray>();
+                _MergedPlacements.insert(_MergedPlacements.end(),
+                    std::make_move_iterator(_NewPlacements.begin()),
+                    std::make_move_iterator(_NewPlacements.end()));
+                _LockedPlan["placements"] = std::move(_MergedPlacements);
+                _LockedPlan["continued"] = true;
+                _LockedPlan["initialProcessedEnd"] = _OldUsed;
+                _LockedPlan["usedLength"] = GetDouble(_Plan, "usedLength", _OldUsed);
+                _LockedPlan["remainingLength"] = GetDouble(
+                    _Plan, "remainingLength", 0.0);
+                _LockedPlan["partLength"] = GetDouble(_LockedPlan, "partLength", 0.0)
+                    + GetDouble(_Plan, "partLength", 0.0);
+                _LockedPlan["partCount"] = static_cast<unsigned long long>(
+                    _LockedPlan.at("placements").To<VariantArray>().size());
+                const auto _MergedStockLength = GetDouble(
+                    _LockedPlan, "stockLength", 0.0);
+                _LockedPlan["utilization"] = _MergedStockLength > 0.0
+                    ? GetDouble(_LockedPlan, "partLength", 0.0) / _MergedStockLength
+                    : 0.0;
+                _LockedPlans[_LockedFound->second] = std::move(_LockedPlan);
+            }
+            else
+            {
+                _PlanIDs.insert(_PlanID);
+                _AdditionalPlans.emplace_back(std::move(_Plan));
+            }
         }
         VariantArray _Plans = std::move(_LockedPlans);
-        _Plans.insert(_Plans.end(), _FreshPlans.begin(), _FreshPlans.end());
+        _Plans.insert(_Plans.end(), std::make_move_iterator(_AdditionalPlans.begin()),
+            std::make_move_iterator(_AdditionalPlans.end()));
         auto _Unplaced = _Solved.at("unplaced").To<VariantArray>();
         auto _Diagnostics = _Solved.at("diagnostics").To<VariantArray>();
-        _Diagnostics.insert(_Diagnostics.begin(), std::string("已固定锁定的排样结果，仅对其余零件和母材重新求解。"));
+        _Diagnostics.insert(_Diagnostics.begin(), std::string(
+            "已保持锁定前缀不变，并优先从其异形开放端继续排样；无法续排的零件再使用其他母材。"));
         std::size_t _PlacedCount = 0;
         double _TotalStock = 0.0, _PartLength = 0.0, _UsedLength = 0.0;
         for (const auto& _Value : _Plans)
@@ -11060,6 +11345,7 @@ namespace
             std::uint64_t _ResourceVersion = 0;
             std::uint64_t _InstanceQuantity = 1;
             std::uint64_t _ProductionQuantity = 0;
+            std::uint64_t _NestingPriority = 0;
             double _NominalLength = 0.0;
             SNestingGeometrySummary _Geometry;
             if (_Part && IsIndependentNestingPart(*_Part))
@@ -11072,6 +11358,7 @@ namespace
                 _PartNumber = _Part->GetPartNumber();
                 _NominalLength = _Part->GetLength();
                 _ProductionQuantity = EffectiveManufacturingQuantity(*_Part, 1);
+                _NestingPriority = _Part->GetNestingPriority();
                 _ResourceID = _Part->GetManufacturingGeometryResourceID();
                 _ResourceVersion = _Part->GetManufacturingGeometryResourceVersion();
                 _Geometry = NestingGeometrySummary(*Scene_, *_Part);
@@ -11106,6 +11393,12 @@ namespace
                 || _Quantity > kMaximumNestingPartInstances - _TotalParts)
                 throw std::invalid_argument("排样数量超出零件清单数量或单次 1000000 件限制");
             _TotalParts += static_cast<std::size_t>(_Quantity);
+            const auto _RequestedPriority = GetUInt64(
+                _PartData, "priority", _NestingPriority);
+            if (_RequestedPriority > kMaximumNestingPriority)
+                throw std::invalid_argument("排样优先级必须为 0 至 1000000 的整数");
+            if (_RequestedPriority != _NestingPriority)
+                throw std::invalid_argument("零件排样优先级已变化，请刷新零件清单后重试");
             if (!std::isfinite(_NominalLength) || _NominalLength <= 0.0)
                 throw std::invalid_argument("零件清单中的长度无效，请重新拆单");
             const auto _ProfileKey = GetRequiredText(_PartData, "profileKey", 65536);
@@ -11119,8 +11412,10 @@ namespace
                 BuildNestingVariants(
                     _Profile, _Geometry.LinearGeometry, _Geometry.EnvelopeLength,
                     _Geometry.LeftCutLineFeature, _Geometry.RightCutLineFeature),
-                _Geometry.LocalCenter
+                _Geometry.LocalCenter,
+                _Geometry.PairGeometry
             });
+            _Parts.back().Priority = static_cast<std::uint32_t>(_NestingPriority);
             if (PersistTask_)
                 _BackgroundParts.push_back({
                     _ID, _Name, _PartNumber, {}, _ResourceID, _ResourceVersion,
@@ -11688,6 +11983,8 @@ namespace
             ExposeMethod("ApplyPunchWizard", &HandleApplyPunchWizard);
             ExposeMethod("PreviewPunchWizard", &HandlePreviewPunchWizard);
             ExposeMethod("GetPunchTools", &HandleGetPunchTools);
+            ExposeMethod("GetAssemblyTemplates", &HandleGetAssemblyTemplates);
+            ExposeMethod("ResolveAssemblyTemplatePreview", &HandleResolveAssemblyTemplatePreview);
             ExposeMethod("SavePunchTool", &HandleSavePunchTool);
             ExposeMethod("ImportPunchToolPackage", &HandleImportPunchToolPackage);
             ExposeMethod("GetPartDrawingTools", &HandleGetPartDrawingTools);

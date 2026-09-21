@@ -13,14 +13,20 @@ export function isDrawingParameterVisible(condition, values = {}) {
 export function parameterFields(action, descriptor, feature = {}, end = "") {
   if (!descriptor) return feature.toolRef
     ? '<div class="td-draw-fixed-note">当前刀具定义不可用；已保存节点只读，仅可删除。</div>' : "";
-  if (descriptor.kind === "fixed") return '<div class="td-draw-fixed-note">定式刀具：形状尺寸固定，只调整定位与阵列。</div>';
   const definitions = Array.isArray(descriptor.parameters) ? descriptor.parameters : [];
   const values = { ...Object.fromEntries(definitions.map(definition => [definition.key, definition.defaultValue])),
     ...descriptor.defaultParameters, ...feature.parameters, ...feature.toolParameters };
   for (const definition of definitions) if (values[definition.key] == null) values[definition.key] = definition.defaultValue;
-  return definitions.filter(definition => isDrawingParameterVisible(definition.visibleWhen, values))
+  const shapeFields = definitions.filter(definition => isDrawingParameterVisible(definition.visibleWhen, values))
     .map(definition => fieldControl(action, "parameter", label(definition.displayName ?? definition.label ?? definition.key),
       values[definition.key] ?? definition.defaultValue, definition, end, definition.key)).join("");
+  const operationDefinitions = Array.isArray(descriptor.operationParameters) ? descriptor.operationParameters : [];
+  const operationValues = { ...Object.fromEntries(operationDefinitions.map(definition => [definition.key, definition.defaultValue])), ...feature };
+  const operationFields = operationDefinitions.filter(definition => isDrawingParameterVisible(definition.visibleWhen, operationValues))
+    .map(definition => fieldControl(action, definition.key, label(definition.displayName ?? definition.label ?? definition.key),
+      operationValues[definition.key] ?? definition.defaultValue, definition, end)).join("");
+  return (descriptor.kind === "fixed"
+    ? '<div class="td-draw-fixed-note">定式工艺：形状尺寸固定。</div>' : shapeFields) + operationFields;
 }
 
 export function fieldControl(action, field, title, value, definition = {}, end = "", parameter = "") {

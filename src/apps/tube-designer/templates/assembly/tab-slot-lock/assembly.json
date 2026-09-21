@@ -1,0 +1,79 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "tab-slot-lock",
+  "version": "1.0.0",
+  "displayName": "插舌 / 插槽装配",
+  "category": "insert",
+  "categoryName": "插接与卡接",
+  "summary": "两个逻辑零件分别下料，加工插舌与插槽后沿装配轴插入并锁止。",
+  "topology": "端部—端部",
+  "interfaceType": "插舌 / 插槽",
+  "lockType": "结构锁止",
+  "motionType": "直线插入",
+  "participants": [
+    { "role": "tab", "label": "插舌件", "responsibility": "主动件", "count": 1 },
+    { "role": "slot", "label": "插槽件", "responsibility": "承接件", "count": 1 }
+  ],
+  "parameters": [
+    { "key": "nominalWidth", "displayName": "装配名义宽度", "valueType": "number", "defaultValue": 20, "min": 1, "max": 200, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "straightDepth", "displayName": "插入直线段深度", "valueType": "number", "defaultValue": 20, "min": 0, "max": 300, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "fitClearance", "displayName": "配合间隙", "valueType": "number", "defaultValue": 0.2, "min": 0, "max": 5, "step": 0.1, "unit": "mm", "level": "advanced" },
+    { "key": "lockMethod", "displayName": "锁止方式", "valueType": "choice", "defaultValue": "self", "options": [{ "value": "self", "label": "结构自锁" }, { "value": "weld", "label": "点焊锁止" }, { "value": "bolt", "label": "螺栓锁止" }], "level": "advanced" }
+  ],
+  "partProcesses": [
+    { "id": "tab-end", "participants": ["tab"], "label": "插舌端部成形", "resource": { "kind": "part-process", "id": "end-key-joint", "displayName": "插舌／插槽" }, "parameterBindings": { "gender": "male", "width": "$nominalWidth", "straightDepth": "$straightDepth" }, "previewPlacement": { "target": "end", "end": "end", "datum": "long" } },
+    { "id": "slot-end", "participants": ["slot"], "label": "插槽端部成形", "resource": { "kind": "part-process", "id": "end-key-joint", "displayName": "插舌／插槽" }, "parameterBindings": { "gender": "female", "width": "$nominalWidth", "straightDepth": "$straightDepth", "sideClearance": "$fitClearance", "axialClearance": "$fitClearance" }, "previewPlacement": { "target": "end", "end": "start", "datum": "long" } }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      { "id": "tabBlank", "label": "插舌下料件", "participants": ["tab"] },
+      { "id": "slotBlank", "label": "插槽下料件", "participants": ["slot"] }
+    ]
+  },
+  "assemblyPath": [
+    { "id": "align", "label": "对正插舌与插槽", "kind": "对正", "direction": "assembly.z", "distance": 0 },
+    { "id": "insert", "label": "沿装配轴插入", "kind": "直线", "direction": "assembly.z", "distance": "$straightDepth+$nominalWidth/2" },
+    { "id": "lock", "label": "执行锁止", "kind": "$lockMethod", "direction": "assembly.z", "distance": 0 }
+  ],
+  "previewScene": {
+    "designParts": [
+      {
+        "role": "tab",
+        "profileRef": { "scope": "system", "id": "rect" },
+        "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 },
+        "length": 280,
+        "pose": { "origin": [-280, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      },
+      {
+        "role": "slot",
+        "profileRef": { "scope": "system", "id": "rect" },
+        "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 },
+        "length": 280,
+        "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      }
+    ],
+    "manufacturingParts": [
+      { "id": "tabBlank", "label": "插舌下料件", "sourceRole": "tab", "processes": ["tab-end"], "pose": { "origin": [-280, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "slotBlank", "label": "插槽下料件", "sourceRole": "slot", "processes": ["slot-end"], "pose": { "origin": [-280, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 100], "manufacturingOffset": [0, 0, -100] }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 260 170",
+    "paths": [
+      "M20 35 H108 V55 H145 A20 20 0 0 1 145 95 H108 V115 H20 Z",
+      "M240 35 H168 V55 H145 A20 20 0 0 0 145 95 H168 V115 H240 Z"
+    ],
+    "annotations": [
+      { "parameter": "nominalWidth", "kind": "linear", "axis": "y", "side": "right", "from": [145, 55], "to": [145, 95], "description": "插舌半圆直径及插槽名义宽度" },
+      { "parameter": "straightDepth", "kind": "linear", "axis": "x", "side": "bottom", "from": [108, 75], "to": [145, 75], "description": "肩部到半圆起点的直线插入深度" },
+      { "parameter": "fitClearance", "kind": "leader", "side": "top", "point": [145, 55], "description": "仅扩大母口插槽的侧向和轴向间隙" },
+      { "parameter": "lockMethod", "kind": "leader", "side": "left", "point": [145, 75], "description": "插入后的结构自锁、点焊或螺栓锁止" }
+    ]
+  },
+  "outputs": { "manufacturingPartCount": 2, "partGeometry": ["插舌件端部", "插槽件端部"], "secondaryProcess": ["装配定位", "锁止"], "bom": ["锁止件（按锁止方式生成）"], "assemblyInstruction": true }
+}

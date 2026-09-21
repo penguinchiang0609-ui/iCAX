@@ -15,6 +15,13 @@ function matchingDescriptor(state,item) {
     &&(!item.toolRef.version||tool.version===item.toolRef.version)
     &&(!item.toolRef.digest||tool.digest===item.toolRef.digest));
 }
+function parameterChoiceLabel(state,item,key) {
+  const definition=matchingDescriptor(state,item)?.parameters?.find(parameter=>parameter.key===key);
+  if(!definition)return "";
+  const value=item?.toolParameters?.[key]??definition.defaultValue;
+  const option=(definition.options??definition.choices??[]).find(candidate=>String(candidate?.value??candidate)===String(value));
+  return label(option?.label??option?.displayName??option?.value??option??value);
+}
 function hasSavedFrozenCut(item) {
   const frozen=item.frozenTool;
   return frozen?.schema==="icax.frozen-punch-tool"&&frozen.schemaVersion===1&&!!frozen.geometry&&!!frozen.instance
@@ -86,7 +93,7 @@ export function buildPunchReviewSummary(state,part={}) {
     const halfWidth=knownAxialHalfWidth(item);
     const touchesEnd=halfWidth===null||sum.requiresIntersectionCheck||sum.firstCenter-halfWidth<=0||sum.lastCenter+halfWidth>=length;
     if(grouped||item.toolTarget==="part"||item.section||touchesEnd)unknownOpenings=true;
-    else estimatedOpenings+=sum.actualCount*((item.through||item.opposite||item.depthMode==="both"||item.depthMode==="through")?2:1);
+    else estimatedOpenings+=sum.actualCount*((item.blindHole&&!item.opposite)?1:2);
   }
   const previewCurrent=!!state?.preview&&state.preview.revision===state?.revision&&!state?.previewPending&&!state?.parameterEditor&&!state?.error;
   const previewLength=Number(state?.preview?.length??state?.preview?.bounds?.width);
@@ -100,9 +107,11 @@ export function buildPunchReviewSummary(state,part={}) {
     draftInPreview:previewCurrent&&state.preview?.includesDraft===true,groups:[...groups.values()].map(g=>({...g,faces:[...g.faces]})),
     positions,cutters,skipped,disabled,estimatedOpenings:unknownOpenings?null:estimatedOpenings,issues,
     unverifiedRecords,finishedDatumRecords,countsComplete:unverifiedRecords.length===0&&issues.length===0,
-    ends:["start","end"].map(key=>({key,name:key==="start"?"左端":"右端",type:state?.ends?.[key]?.type??"keep",
-      label:state?.ends?.[key]?.type==="keep"?"保留原端面":(state?.ends?.[key]?.toolLabel??state?.ends?.[key]?.type??"保留原端面")
-        +((state?.ends?.[key]?.toolRef?.id??state?.ends?.[key]?.type)==="end-profile"?" · "+(state?.ends?.[key]?.toolParameters?.cutMode==="convex"?"凸口":"凹口"):"")}))};
+    ends:["start","end"].map(key=>{
+      const item=state?.ends?.[key],mode=parameterChoiceLabel(state,item,"cutMode");
+      return {key,name:key==="start"?"左端":"右端",type:item?.type??"keep",
+        label:item?.type==="keep"?"保留原端面":(item?.toolLabel??item?.type??"保留原端面")+(mode?" · "+mode:"")};
+    })};
 }
 
 export function renderPunchReview(state,part,action) {

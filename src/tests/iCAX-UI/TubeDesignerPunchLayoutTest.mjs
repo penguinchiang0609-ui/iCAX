@@ -141,7 +141,6 @@ const twoRows = resolve({ ...skips, rowCount: 2, skipInstancesText: "3, 2:4" });
 assert.deepEqual(twoRows.skippedInstances, ["0:2", "1:3"]);
 assert.equal(punchLayoutInstanceCount(twoRows, 1000), 8);
 assert.equal(punchLayoutInstanceCount({ ...twoRows, opposite: true }, 1000), 16);
-assert.equal(punchLayoutInstanceCount({ ...twoRows, opposite: true, through: true }, 1000), 8);
 assert.equal(punchLayoutInstanceCount({ ...twoRows, enabled: false }, 1000), 0);
 invalid({ ...skips, skipInstancesText: "0" }, /超出/);
 invalid({ ...skips, skipInstancesText: "2:3" }, /超出/);

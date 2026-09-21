@@ -28,15 +28,18 @@ assert.equal(s.ends.start.section.key,"system:rect");
 assert.deepEqual(s.draft,originalDraft);assert.equal(s.ends.end.type,"keep");
 let html=renderPunchWizardDialog(part,view,{tableMode:true,showEnds:true,branchProfiles:punchProfileChoices(view)});
 assert.match(html,/左端面参数/);assert.match(html,/data-tube-designer-punch-end="start"/);
-assert.match(html,/截面拉伸为端部刀具/);assert.match(html,/支管参数示意图/);
+assert.match(html,/外轮廓填实并拉伸为端部刀具/);assert.match(html,/支管参数示意图/);
 assert.doesNotMatch(html,/data-tube-designer-punch-field="allowOpen"|允许端部开口|端部开口<\/th>/);
 const endTable=html.slice(html.indexOf('<section class="tube-designer-punch-ends"'),html.indexOf('</section>',html.indexOf('<section class="tube-designer-punch-ends"')));
 assert.match(endTable,/端面加工/);assert.match(endTable,/两端独立设置/);
 assert.doesNotMatch(endTable,/data-tube-designer-punch-field="(?:arrayCount|arrayPitch|station|datum|trim|rotation)"/);
 const holeTable=html.slice(html.indexOf('<section class="tube-designer-punch-sheet"'),html.indexOf('</section>',html.indexOf('<section class="tube-designer-punch-sheet"')));
 assert.doesNotMatch(holeTable,/data-tube-designer-punch-end-row/);
-assert.match(html,/class="tube-designer-punch-end-placement"/);
-for(const key of ['datum','trim','rotation'])assert.match(html,new RegExp('data-tube-designer-punch-field="'+key+'"[^>]*data-tube-designer-punch-end="start"'));
+assert.doesNotMatch(html,/class="tube-designer-punch-end-placement"/);
+for(const key of ['datum','trim','rotation']){
+  const matches=html.match(new RegExp('data-tube-designer-punch-field="'+key+'"[^>]*data-tube-designer-punch-end="start"','g'))??[];
+  assert.equal(matches.length,1,key+' must be rendered once from operationParameters');
+}
 const profileContext={sceneProxy:{async invoke(method,request){
   assert.equal(method,"TubeDesigner.GenerateProfilePreview");
   return {profile:{...structuredClone(profile.previewProfile),width:request.parameters.width}};
@@ -58,7 +61,7 @@ assert.equal(closePunchParameters(view,true,part),true);
 assert.equal(s.ends.end.toolParameters.hand,"negative");
 assert.equal(validatePunchWizard(view,part),"");
 openPunchParameters(view,"end","end");change(end,"trim","-1");
-assert.equal(closePunchParameters(view,true,part),false);assert.match(s.parameterEditor.error,/端部定位/);
+assert.equal(closePunchParameters(view,true,part),false);assert.match(s.parameterEditor.error,/端部修剪量/);
 closePunchParameters(view,false,part);assert.equal(s.ends.end.trim,0);
 
 const dxfContext={appProxy:{bridge:{async openFileDialog(){return "C:\\fixtures\\end-cut.dxf";}}},
@@ -87,7 +90,7 @@ for(const source of ["branch","dxf"])for(const key of ["start","end"]){
   assert.match(modeHtml(),/<option value="concave" selected>凹口<\/option>/);
   assert.doesNotMatch(modeHtml(),/data-tube-designer-punch-parameter="cutRegion"|保留内孔/);
   assert.equal(updatePunchWizardField(modeView,{value:"convex",dataset:{...target,tubeDesignerPunchField:"parameter",tubeDesignerPunchParameter:"cutMode"}}),true);
-  assert.match(modeHtml(),/0° 或 180°.*不能形成凸口/);
+  assert.match(modeHtml(),/外轮廓填实并拉伸为端部刀具/);
   assert.equal(closePunchParameters(modeView,true,part),true);
   const modePayload=getPunchWizardPayload(modeView);
   assert.equal(modePayload.ends[key].toolParameters.cutMode,"convex");
@@ -127,12 +130,6 @@ for(const source of ["branch","dxf"])for(const key of ["start","end"]){
   assert.equal(closePunchParameters(modeView,false,part),true);
   assert.equal(modeState.ends[key].toolParameters.cutMode,"convex","Cancelling restores the selected end's saved convex mode");
   assert.equal(modeState.ends[key==="start"?"end":"start"].type,"keep","Changing cut mode never rewrites the other end");
-  delete modeState.ends[key].toolParameters.cutMode;
-  openPunchParameters(modeView,key,key);
-  assert.match(modeHtml(),/<option value="concave" selected>凹口<\/option>/,"A saved legacy record with no mode still opens as concave");
-  assert.match(buildPunchReviewSummary(modeState,part).ends.find(item=>item.key===key).label,/凹口/);
-  closePunchParameters(modeView,false,part);
-  assert.equal(modeState.ends[key].toolParameters.cutMode,undefined,"Reading/cancelling a legacy record does not silently rewrite its recipe");
 }
 
 // Verify the production creation handler routes end sources and can create an
@@ -152,6 +149,8 @@ assert.equal(creation.tubeDesignerPunchWizard.parameterEditor,null,"Cancelling t
 assert.equal(creation.tubeDesignerPunchWizard.ends.start.type,"keep");
 dxfPath="C:\\fixtures\\end-cut.dxf";
 await act("record-kind-change",{value:"dxf",dataset:start});
+assert.equal(creation.tubeDesignerPunchWizard.parameterEditor,null,"Selecting an inline end source does not open a modal editor");
+await act("parameters-open",{dataset:start});
 assert.equal(creation.tubeDesignerPunchWizard.parameterEditor.end,"start");
 assert.equal(requests.at(-1).request.ends.start.section.source,"dxf");
 assert.deepEqual(requests.at(-1).request.features,[]);
@@ -162,6 +161,7 @@ assert.equal(requests.length,countBeforeModeChange,"A retired result-mode action
 assert.equal(creation.tubeDesignerPunchWizard.parameterEditor.end,"start","The tool-only display keeps the parameter transaction open");
 await act("parameters-apply");
 await act("field-change",{value:"end-step-z",dataset:{...end,tubeDesignerPunchField:"tool"}});
+await act("parameters-open",{dataset:end});
 assert.equal(creation.tubeDesignerPunchWizard.parameterEditor.end,"end");
 await act("parameters-apply");
 const beforeBlankSwitch=structuredClone(creation.tubeDesignerPunchWizard.ends);

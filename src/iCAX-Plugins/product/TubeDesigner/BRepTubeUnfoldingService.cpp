@@ -2674,6 +2674,78 @@ namespace iCAX::TubeDesigner
         return _Output;
     }
 
+    STubeNestingEndProfiles EncodeTubeNestingEndProfiles(
+        IN const STubeBRepUnfoldingResult& Result_, const std::size_t SampleCount_,
+        const std::size_t MaximumFourierOrder_)
+    {
+        STubeNestingEndProfiles _Output;
+        const auto _Count = std::clamp(SampleCount_, std::size_t{8}, std::size_t{256});
+        const auto _Features = EncodeTubeUnfoldedEndFeatures(Result_, _Count);
+        if (!_Features.bOK || !std::isfinite(Result_.Length) || Result_.Length <= 0.0)
+        {
+            _Output.Diagnostic = _Features.Diagnostic.empty()
+                ? "展开结果缺少有效轴向长度" : _Features.Diagnostic;
+            return _Output;
+        }
+        const auto _Materialize = [_Count](const iCAX::TubeNesting::CutLineFeatureCode& Feature_)
+        {
+            std::vector<iCAX::TubeNesting::Length> _Values(_Count);
+            if (Feature_.Kind == iCAX::TubeNesting::CutLineFeatureKind::Constant)
+            {
+                std::fill(_Values.begin(), _Values.end(), Feature_.ConstantValue);
+                return _Values;
+            }
+            for (std::size_t _Index = 0; _Index < _Count; ++_Index)
+            {
+                const long double _Position = static_cast<long double>(_Index) / _Count;
+                long double _Value = 0.0L;
+                if (Feature_.Kind == iCAX::TubeNesting::CutLineFeatureKind::Linear)
+                {
+                    _Value = static_cast<long double>(Feature_.LinearStart)
+                        + (static_cast<long double>(Feature_.LinearEnd)
+                            - static_cast<long double>(Feature_.LinearStart)) * _Position;
+                }
+                else if (!Feature_.Samples.empty())
+                {
+                    const long double _Sample = _Position * Feature_.Samples.size();
+                    const auto _Left = static_cast<std::size_t>(std::floor(_Sample))
+                        % Feature_.Samples.size();
+                    const auto _Right = (_Left + 1) % Feature_.Samples.size();
+                    const auto _Fraction = _Sample - std::floor(_Sample);
+                    _Value = static_cast<long double>(Feature_.Samples[_Left])
+                        + (static_cast<long double>(Feature_.Samples[_Right])
+                            - static_cast<long double>(Feature_.Samples[_Left])) * _Fraction;
+                }
+                _Values[_Index] = static_cast<iCAX::TubeNesting::Length>(std::llround(_Value));
+            }
+            return _Values;
+        };
+        const auto _Left = _Materialize(_Features.Left);
+        const auto _Right = _Materialize(_Features.Right);
+        _Output.MaximumLength = QuantizeNestingLength(Result_.Length);
+        _Output.Geometry.Left = iCAX::TubeNesting::BuildPeriodicProfileFromSamples(
+            _Left, 0.0, MaximumFourierOrder_, 1.0);
+        _Output.Geometry.Right = iCAX::TubeNesting::BuildPeriodicProfileFromSamples(
+            _Right, static_cast<double>(_Output.MaximumLength), MaximumFourierOrder_, 1.0);
+        // This bridge certifies the Fourier residual against the sampled,
+        // piecewise-linear signal.  The existing unfolding service does not
+        // yet provide a rigorous bound from the original BRep curve to that
+        // signal, so it must not be advertised as a continuous-geometry
+        // certificate.  A native recognizer can later return NativeCertified
+        // profiles through the same DTO without changing the nesting solver.
+        _Output.Geometry.Left.SourceQuality =
+            iCAX::TubeNesting::ProfileSourceQuality::NumericOnly;
+        _Output.Geometry.Right.SourceQuality =
+            iCAX::TubeNesting::ProfileSourceQuality::NumericOnly;
+        _Output.bOK = _Output.MaximumLength > 0
+            && _Output.Geometry.Left.CompleteSingleValued
+            && _Output.Geometry.Right.CompleteSingleValued;
+        _Output.Diagnostic = _Output.bOK
+            ? "已生成排样周期端口谱（采样桥接，不含原始 BRep 残差证书）"
+            : "排样周期端口谱生成失败";
+        return _Output;
+    }
+
     iCAX::Data::ObjectMap SerializeTubeBRepUnfolding(
         IN const STubeBRepUnfoldingResult& Result_)
     {

@@ -152,7 +152,7 @@ assert.match(sampledEndSkips, /启用末孔中心端距 10 mm/, "Distances are d
 const disabledSkippedEnds = renderPunchLayoutOverview({ ...base, enabled: false, skipInstancesText: "1,5" }, 1000);
 assert.match(disabledSkippedEnds, /未跳过首孔中心端距 200 mm/);
 assert.doesNotMatch(disabledSkippedEnds, /启用首孔中心端距/);
-const opposite = renderPunchLayoutOverview({ ...base, depthMode: "both" }, 1000);
+const opposite = renderPunchLayoutOverview({ ...base, opposite: true }, 1000);
 assert.match(opposite, /含对面 10 个刀具/);
 assert.match(renderPunchLayoutOverview({ ...base, enabled: false }, 1000), /此条已停用/);
 

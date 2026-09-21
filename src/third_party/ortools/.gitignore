@@ -1,0 +1,6 @@
+download/
+install/
+_extract_*/
+*.zip
+*.tar.gz
+*.7z

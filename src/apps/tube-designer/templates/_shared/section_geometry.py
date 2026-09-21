@@ -158,6 +158,61 @@ def spline_support(segment, direction, tolerance=1e-12):
     return origin+lower, origin+upper
 
 
+def from_profile(profile, tolerance=0.001):
+    """Read exact generic contours when BRep projection cannot extract a loop.
+
+    Reuse the geometry-only line/arc normalizer; no fitting, profile IDs,
+    nominal dimensions or forward generation participate in this conversion.
+    The blank builder supplies outer contour first, followed by inner contours.
+    Unsupported curves remain unsupported, never approximated with a polygon.
+    """
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        "section_boundary_geometry", Path(__file__).with_name("profile_recognition_geometry.py"))
+    geometry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(geometry)
+    tolerance = number(tolerance)
+    raw = profile.get("contours") if isinstance(profile, dict) else None
+    if tolerance <= 0 or not isinstance(raw, list) or not 1 <= len(raw) <= 1000:
+        raise SectionError("缺少有效通用截面轮廓")
+    if any(c.get("closed") is False for c in raw):
+        raise SectionError("槽口要求闭合截面轮廓")
+    try:
+        loops = [geometry.contour(c, tolerance) for c in raw]
+    except (ValueError, KeyError, TypeError) as error:
+        raise SectionError("无法解析通用截面精确边界：" + str(error)) from error
+    box = geometry.bounds(loops[0])
+    center = [(box[0]+box[2])/2, (box[1]+box[3])/2]
+    contours = []
+    def local(p):
+        return [v-c for v,c in zip(point(p), center)]
+    for index, loop in enumerate(loops):
+        if loop["kind"] in ("circle", "ellipse"):
+            angle = number(loop.get("angle", 0))
+            c, s = math.cos(angle), math.sin(angle)
+            edge = {"kind": "circleArc" if loop["kind"] == "circle" else "ellipseArc",
+                    "center": local(loop["center"]), "xAxis": [c,s], "yAxis": [-s,c],
+                    "first": 0.0, "last": math.tau}
+            if loop["kind"] == "circle": edge["radius"] = number(loop["radius"])
+            else: edge.update(majorRadius=number(loop["a"]), minorRadius=number(loop["b"]))
+            edge["start"] = edge["end"] = arc_point(edge, 0)
+            edges = [edge]
+        else:
+            edges = []
+            for original in loop["edges"]:
+                edge = {"kind": original["kind"], "start": local(original["start"]), "end": local(original["end"])}
+                if original["kind"] == "arc":
+                    first = math.atan2(original["start"][1]-original["center"][1], original["start"][0]-original["center"][0])
+                    edge.update(kind="circleArc", center=local(original["center"]), radius=number(original["radius"]),
+                                xAxis=[1,0], yAxis=[0,1], first=first, last=first+original["sweep"])
+                edges.append(edge)
+        contours.append({"inner": index > 0, "closed": True, "edges": edges})
+    # Validate connectivity/finite coordinates through the shared query entry.
+    return local_section({"schema": "icax.mold-section", "schemaVersion": 1,
+                          "status": "available", "tolerance": tolerance, "contours": contours})
+
+
 def local_section(section, rotation=0):
     """Express the unmodified section in the cutter frame (inverse X rotation)."""
     if not isinstance(section, dict) or section.get("schema") != "icax.mold-section" or section.get("schemaVersion") != 1:

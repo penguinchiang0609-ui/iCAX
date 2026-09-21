@@ -56,7 +56,7 @@ import {
 import { catalogText, getCatalogEntry, getCatalogEntryGroupKeys } from "./productCatalog.mjs";
 import { componentLibraryState, handleComponentLibraryAction, handleComponentLibraryRibbonCommand, refreshComponentModels } from "./componentLibrary.mjs";
 import { ensureToolLibraryCatalogue, handleToolLibraryAction, handleToolLibraryRibbonCommand } from "./toolLibrary.mjs";
-import { handleConnectionLibraryAction } from "./connectionLibrary.mjs";
+import { ensureAssemblyLibraryCatalogue, handleAssemblyLibraryAction } from "./assemblyLibrary.mjs";
 import {
   findProductProfile,
   findProductTool,
@@ -80,6 +80,7 @@ import {
   bindProductSpecificationAnnotations,
 } from "./productParameterDiagram.mjs";
 import { matchesParameterCondition } from "./parameterConditions.mjs";
+import { parameterAutoFillPatch } from "./parameterAutoFill.mjs";
 import { refreshFloatingParameterDiagram } from './floatingParameterDiagram.mjs';
 import { escapeText } from "../../_shared/workbench/utils/format.mjs";
 
@@ -234,7 +235,7 @@ export async function preloadTubeDesignerTemplates(context, view, onProgress = a
     }
   }
 
-  await onProgress("tool", 0, null, "正在读取系统、模板和我的模具");
+  await onProgress("tool", 0, null, "正在读取系统、模板和我的单件工艺");
   await ensureToolLibraryCatalogue(context, view, null, { skipStartupGates: true });
   const tools = uniqueResources([
     ...(view.tubeDesignerSystemPunchTools ?? []),
@@ -242,7 +243,7 @@ export async function preloadTubeDesignerTemplates(context, view, onProgress = a
     ...(view.tubeDesignerUserData?.punchTools ?? []),
   ]);
   if (!tools.length) {
-    await onProgress("tool", 0, 0, "当前没有可用模具模板");
+    await onProgress("tool", 0, 0, "当前没有可用单件工艺");
   } else {
     for (let index = 0; index < tools.length; index += 1) {
       await onProgress("tool", index + 1, tools.length,
@@ -275,8 +276,8 @@ export async function handleDesignerAreaAction(context, view, action, target, op
   if (componentResult.handled) return componentResult;
   const toolLibraryResult = await handleToolLibraryAction(context, view, action, target, ops);
   if (toolLibraryResult.handled) return toolLibraryResult;
-  const connectionLibraryResult = await handleConnectionLibraryAction(context, view, action, target, ops);
-  if (connectionLibraryResult.handled) return connectionLibraryResult;
+  const assemblyLibraryResult = await handleAssemblyLibraryAction(context, view, action, target, ops);
+  if (assemblyLibraryResult.handled) return assemblyLibraryResult;
   const productTemplateLibraryResult = await handleProductTemplateLibraryAction(context, view, action, target, ops);
   if (productTemplateLibraryResult.handled) return productTemplateLibraryResult;
   const nestingPunchPartResult = await handleNestingPunchPartAction(context, view, action, target, ops);
@@ -718,7 +719,7 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
     "resources.products": "products",
     "resources.profiles": "profiles",
     "resources.tools": "tools",
-    "resources.connections": "connections",
+    "resources.assemblies": "assemblies",
   };
   if (resourceAreas[commandId]) {
     const resourceArea = resourceAreas[commandId];
@@ -728,9 +729,9 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
       detail: resourceArea === "profiles"
         ? "正在装载管型资源与三维预览"
         : resourceArea === "tools"
-          ? "正在读取模具目录与类别"
-          : resourceArea === "connections"
-            ? "正在读取连接模板与模具复用关系"
+          ? "正在读取单件工艺目录与类别"
+          : resourceArea === "assemblies"
+            ? "正在读取装配模板与单件工艺复用关系"
           : "正在读取产品模板目录",
       stage: "切换资源类型",
       mode: "Resources",
@@ -757,6 +758,7 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
       // 管型库 forever.
       await waitForDesignerUserData(context, view);
       if (resourceArea === "tools") await ensureToolLibraryCatalogue(context, view, ops);
+      if (resourceArea === "assemblies") await ensureAssemblyLibraryCatalogue(context, view, ops);
     };
     if (typeof context.actions?.withProjectProgress === "function"
         && String(context.project?.projectId ?? "").trim()) {
@@ -1127,9 +1129,9 @@ async function openToolSectionSketch(context, view, ops) {
   if (view.pending) return null;
   const current = view.tubeDesignerSketch?.section;
   if (current?.dirty && typeof globalThis.confirm === "function"
-      && !globalThis.confirm("当前草图还有未保存的修改，确定开始绘制新模具吗？")) return null;
+      && !globalThis.confirm("当前草图还有未保存的修改，确定开始绘制新的单件工艺截面吗？")) return null;
   const state = beginNewSectionSketch(view);
-  state.sectionName = "我的草图模具";
+  state.sectionName = "我的单件工艺草图";
   view.tubeDesignerToolSketchContext = { kind: "fixed", target: "side", category: "孔型" };
   view.tubeDesignerSketchDialogOpen = true;
   view.error = "";
@@ -2420,7 +2422,7 @@ async function changeProductToolSelection(context, view, target, ops) {
   }
   const tool = findProductTool(view, template, field, selection);
   if (!tool) {
-    view.error = "所选模具不满足当前产品角色的来源、类别或加工位置约束。";
+    view.error = "所选单件工艺不满足当前产品角色的来源、类别或加工位置约束。";
     ops.renderProject(context, view);
     if (mode === "add") restoreAddDialogScrollAnchor(context, view);
     else restoreParameterPanelState(context, view);
@@ -2437,17 +2439,36 @@ function productToolParameterValue(target, definition) {
   if (valueType === "boolean") value = Boolean(target?.checked);
   else if (valueType === "number" || valueType === "integer") {
     value = Number(target?.value);
-    if (!Number.isFinite(value)) throw new Error("请输入有效的模具参数。");
-    if (valueType === "integer" && !Number.isInteger(value)) throw new Error("该模具参数必须是整数。");
-    if (definition?.min != null && value < Number(definition.min)) throw new Error("模具参数小于允许范围。");
-    if (definition?.max != null && value > Number(definition.max)) throw new Error("模具参数大于允许范围。");
+    if (!Number.isFinite(value)) throw new Error("请输入有效的工艺参数。");
+    if (valueType === "integer" && !Number.isInteger(value)) throw new Error("该工艺参数必须是整数。");
+    if (definition?.min != null && value < Number(definition.min)) throw new Error("工艺参数小于允许范围。");
+    if (definition?.max != null && value > Number(definition.max)) throw new Error("工艺参数大于允许范围。");
   } else value = String(target?.value ?? "");
   const options = Array.isArray(definition?.options)
     ? definition.options.map((option) => typeof option === "object" ? option.value : option) : [];
   if (options.length && !options.some((option) => String(option) === String(value))) {
-    throw new Error("该值不是模具允许的选项。");
+    throw new Error("该值不是单件工艺允许的选项。");
   }
   return value;
+}
+
+function productToolAutoFillSources(view, template, values, binding) {
+  const role = String(binding?.snapshot?.targetProfileRole ?? "").trim();
+  if (!role) return {};
+  const override = values?.tubeDesignerProfileOverrides?.[role];
+  const profileField = (template?.parameters ?? []).find((candidate) =>
+    productProfileRole(candidate) === role && candidate?.presentation?.editor === "profile-library");
+  if (!profileField) return { ...override, ...(override?.parameters ?? {}) };
+  const selection = values?.[profileField.key ?? profileField.name];
+  const profile = findProductProfile(view, template, profileField, selection);
+  const snapshot = profile?.previewProfile ?? profile?.profile ?? profile ?? {};
+  return {
+    ...snapshot,
+    ...(profile?.defaultParameters ?? {}),
+    ...(snapshot?.parameters ?? {}),
+    ...override,
+    ...(override?.parameters ?? {}),
+  };
 }
 
 async function changeProductToolParameter(context, view, target, ops) {
@@ -2480,7 +2501,16 @@ async function changeProductToolParameter(context, view, target, ops) {
   else captureParameterPanelState(context, view, target);
   const next = {
     ...binding,
-    parameters: { ...(binding.parameters ?? {}), [parameterKey]: value },
+    parameters: {
+      ...(binding.parameters ?? {}),
+      ...parameterAutoFillPatch(
+        productToolDefinitions(binding, tool),
+        binding.parameters ?? {},
+        parameterKey,
+        value,
+        productToolAutoFillSources(view, template, values, binding),
+      ),
+    },
   };
   await setProductToolDraft(context, view, ops, mode, field, next);
   markSelectedPresetModified(view, mode, template, fieldKey);

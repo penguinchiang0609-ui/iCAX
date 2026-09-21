@@ -65,7 +65,8 @@ def _resolve_side_arc_radius(context, bottom_y, bend_degrees):
     return physical_cut_height / (2.0 * math.sin(sweep / 2.0) ** 2)
 
 
-def side_arc_v_groove_cutter(context, keep_left_arc, bend_degrees=90):
+def side_arc_v_groove_cutter(context, keep_left_arc, bend_degrees=90,
+                             male_female=False, male_size=0.0):
     """Build a box cutter with one side removed by a cylindrical cutter.
 
     The normal edge-arc groove is not a closed, over-extended arc profile.
@@ -91,11 +92,27 @@ def side_arc_v_groove_cutter(context, keep_left_arc, bend_degrees=90):
     top_gap = arc_length + physical_run - arc_dx
     if top_gap <= 1e-6:
         raise ValueError("边弧槽直边与圆弧相交或相切，顶部槽宽不足；请减小角度或重新设置补偿")
+    cut_height = physical_top_y - bottom_y
+    if male_female and male_size >= cut_height:
+        raise ValueError("公母尺寸须小于边弧槽切除高度")
+    transition_y = physical_top_y - male_size
 
     if keep_left_arc:
         left_bottom = [center_x - arc_dx, bottom_y]
         non_arc_bottom = [left_bottom[0] + arc_length, bottom_y]
         right_cut_top = [non_arc_bottom[0] + physical_run, physical_top_y]
+        if male_female and male_size > 1e-9:
+            transition = [non_arc_bottom[0] + _calculate_side_arc_non_arc_run(
+                transition_y - bottom_y, bend_degrees), transition_y]
+            base = {"kind": "path", "segments": [
+                _line([left_bottom[0], physical_top_y], [transition[0] + male_size, physical_top_y]),
+                _line([transition[0] + male_size, physical_top_y], [transition[0] + male_size, transition_y]),
+                _line([transition[0] + male_size, transition_y], transition),
+                _line(transition, non_arc_bottom),
+                _line(non_arc_bottom, left_bottom),
+                _line(left_bottom, [left_bottom[0], physical_top_y]),
+            ]}
+            return {"base": base, "cylinder": {"center": [left_bottom[0], center_y], "radius": radius}}
         base = {"kind": "path", "segments": [
             _line([left_bottom[0], physical_top_y], right_cut_top),
             _line(right_cut_top, non_arc_bottom),
@@ -107,6 +124,18 @@ def side_arc_v_groove_cutter(context, keep_left_arc, bend_degrees=90):
     right_bottom = [center_x + arc_dx, bottom_y]
     non_arc_bottom = [right_bottom[0] - arc_length, bottom_y]
     left_cut_top = [non_arc_bottom[0] - physical_run, physical_top_y]
+    if male_female and male_size > 1e-9:
+        transition = [non_arc_bottom[0] - _calculate_side_arc_non_arc_run(
+            transition_y - bottom_y, bend_degrees), transition_y]
+        base = {"kind": "path", "segments": [
+            _line([transition[0] - male_size, physical_top_y], [right_bottom[0], physical_top_y]),
+            _line([right_bottom[0], physical_top_y], right_bottom),
+            _line(right_bottom, non_arc_bottom),
+            _line(non_arc_bottom, transition),
+            _line(transition, [transition[0] - male_size, transition_y]),
+            _line([transition[0] - male_size, transition_y], [transition[0] - male_size, physical_top_y]),
+        ]}
+        return {"base": base, "cylinder": {"center": [right_bottom[0], center_y], "radius": radius}}
     base = {"kind": "path", "segments": [
         _line(left_cut_top, [right_bottom[0], physical_top_y]),
         _line([right_bottom[0], physical_top_y], right_bottom),
@@ -146,21 +175,35 @@ def generate(p, context):
         raise ValueError("V 槽夹角必须大于 0 且小于 180°")
     if not isinstance(p["leftArc"], bool):
         raise ValueError("左圆弧必须是开关")
+    male_female = p.get("maleFemale", False)
+    if not isinstance(male_female, bool):
+        raise ValueError("斜切公母必须是开关")
+    male_size = _number(p.get("maleFemaleSize", 0), "公母尺寸") if male_female else 0.0
+    if male_size < 0:
+        raise ValueError("公母尺寸不能小于 0")
+    if male_female:
+        if male_size == 0:
+            if wall <= 0:
+                raise ValueError("自动公母尺寸需要填写主管实际壁厚")
+            male_size = wall
+        if wall > 0 and male_size < wall:
+            raise ValueError("公母尺寸不能小于主管实际壁厚")
     half_height = hi[2]
     bottom_y, physical_top_y = lo[2] + bridge, half_height
     shape_context = {"bottom_y": bottom_y, "physical_top_y": physical_top_y}
     compensate = p.get("bendCompensation", False)
-    default_k = p.get("useDefaultKFactor", True)
-    if not isinstance(compensate, bool) or not isinstance(default_k, bool):
-        raise ValueError("K 因子选项必须是开关")
+    if not isinstance(compensate, bool):
+        raise ValueError("K 因子展开补偿必须是开关")
     if compensate:
         if wall <= 0:
             raise ValueError("K 因子展开补偿需要填写主管实际壁厚")
-        k = 0.62 if default_k else _number(p.get("kFactor", 0.62), "K 因子")
+        k = _number(p.get("kFactor", 0.62), "K 因子")
         if not 0 <= k <= 1:
             raise ValueError("K 因子须介于 0 和 1 之间")
         shape_context["bend_allowance"] = k * wall * math.radians(angle)
-    span, origin, nodes = section_width + 2.0, [0.0, hi[1] + 1.0, 0.0], []
+    # The cutter itself is user-visible.  Bound it by the measured transverse
+    # faces; exact face contact is sufficient for the subtract operation.
+    span, origin, nodes = section_width, [0.0, hi[1], 0.0], []
 
     def prism(key, shape, center=(0.0, 0.0), cut_depth=0, side="positive"):
         if cut_depth < 0 or cut_depth > section_width:
@@ -170,15 +213,16 @@ def generate(p, context):
         start_y, vector_y = origin[1], -span
         if cut_depth > 0:
             direction = 1 if side == "positive" else -1
-            start_y = (hi[1] + 1 if direction > 0 else lo[1] - 1)
-            vector_y = -direction * (cut_depth + 1)
+            start_y = (hi[1] if direction > 0 else lo[1])
+            vector_y = -direction * cut_depth
         nodes.append({"key": key + "-profile", "operator": "profile2d", "arguments": {
             "placement": {"origin": [center[0], start_y, center[1]], "xAxis": [1, 0, 0], "yAxis": [0, 0, 1]},
             "contours": [shape]}})
         nodes.append({"key": key, "operator": "extrude", "inputs": [key + "-profile"],
                       "arguments": {"vector": [0, vector_y, 0]}})
 
-    side_cutter = side_arc_v_groove_cutter(shape_context, p["leftArc"], angle)
+    side_cutter = side_arc_v_groove_cutter(
+        shape_context, p["leftArc"], angle, male_female, male_size)
     prism("notch-base", side_cutter["base"])
     cylinder = {"kind": "path", "segments": [
         _arc([-side_cutter["cylinder"]["radius"], 0], [0, -side_cutter["cylinder"]["radius"]],
@@ -191,20 +235,23 @@ def generate(p, context):
                   "arguments": {"operation": "subtract"}})
     cutters = ["notch"]
     relief_diameter = _number(p["reliefDiameter"], "附加释放孔直径")
-    relief_lift = _number(p["reliefLift"], "附加释放孔中心上移")
+    relief_lift = _number(p["reliefLift"], "附加释放孔中心上移") if relief_diameter > 0 else 0.0
     if relief_diameter < 0 or relief_lift < 0:
         raise ValueError("附加释放孔参数不能小于 0")
     if relief_diameter > 0:
         radius = relief_diameter / 2.0
-        if bottom_y + relief_lift + radius >= physical_top_y:
+        relief_center_y = bottom_y + relief_lift
+        if relief_center_y + radius >= physical_top_y:
             raise ValueError("释放孔超出主管顶部，请减小直径或上移量")
-        if bottom_y + relief_lift - radius < lo[2] and not p["bottomCut"]:
-            raise ValueError("释放孔将切穿底面，请减小直径、上移孔中心或明确开启底部切除")
+        # 释放孔是槽根的局部避空，允许与外底面相交并局部穿出；这与
+        # bottomCut 切断整段底部桥接是两种独立工艺，不能互相作为前置条件。
+        if relief_center_y + radius <= lo[2]:
+            raise ValueError("释放孔未与主管截面相交，请增大直径或上移孔中心")
         circle = {"kind": "path", "segments": [
             _arc([-radius, 0], [0, -radius], [radius, 0]),
             _arc([radius, 0], [0, radius], [-radius, 0]),
         ]}
-        prism("relief", circle, (0.0, bottom_y + relief_lift),
+        prism("relief", circle, (0.0, relief_center_y),
               _number(p.get("reliefDepth", 0), "释放孔切深"), p.get("reliefSide", "positive"))
         cutters.append("relief")
     if not isinstance(p["bottomCut"], bool):
@@ -214,8 +261,8 @@ def generate(p, context):
         if width <= 0:
             raise ValueError("底部切除宽度必须大于 0")
         half = width / 2.0
-        points = [[-half, lo[2] - 1.0], [half, lo[2] - 1.0],
-                  [half, bottom_y + 1.0], [-half, bottom_y + 1.0]]
+        points = [[-half, lo[2]], [half, lo[2]],
+                  [half, bottom_y], [-half, bottom_y]]
         prism("bottom-cut", {"kind": "path", "segments": [_line(a, b) for a, b in zip(points, points[1:] + points[:1])]})
         cutters.append("bottom-cut")
 
@@ -228,6 +275,6 @@ def generate(p, context):
             "calculation":{"bendAngle":angle,"finalIncludedAngle":180-angle,
                 "rootReference":reference,"hingeThickness":min(wall,bridge)},
             "model": {"schema": "icax.neutral-model", "schemaVersion": 1,
-                      "template": {"id": "edge-arc-groove", "version": "3.1.0",
+                      "template": {"id": "edge-arc-groove", "version": "4.0.0",
                                    "packageDigest": "self-contained"},
                       "geometry": nodes}}

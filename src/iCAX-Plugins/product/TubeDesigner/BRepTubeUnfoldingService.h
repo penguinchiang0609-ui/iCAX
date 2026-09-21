@@ -160,6 +160,17 @@ namespace iCAX::TubeDesigner
         std::string Diagnostic;
     };
 
+    struct STubeNestingEndProfiles final
+    {
+        bool bOK = false;
+        iCAX::TubeNesting::PairTypeGeometry Geometry;
+        // Absolute right-profile coordinates are based on this quantized
+        // maximum length (0.01 mm units).  Callers that enlarge the safety
+        // envelope must shift every right-level constant by the same delta.
+        iCAX::TubeNesting::Length MaximumLength = 0;
+        std::string Diagnostic;
+    };
+
     class _TUBE_DESIGNER_EXP IBRepTubeUnfoldingService
         : public iCAX::Services::IService
     {
@@ -208,4 +219,15 @@ namespace iCAX::TubeDesigner
     _TUBE_DESIGNER_EXP STubeUnfoldedEndFeatureCodes EncodeTubeUnfoldedEndFeatures(
         IN const STubeBRepUnfoldingResult& Result_,
         std::size_t SampleCount_ = 64);
+
+    /**
+     * Migration implementation of the recognition-to-nesting contract.  It
+     * converts sampled unfolded end boundaries into a NumericOnly periodic
+     * spectrum; its Fourier residual is bounded against that sampled signal,
+     * not against the original BRep.  A future native recognizer may return
+     * NativeCertified data through the same DTO without this bridge.
+     */
+    _TUBE_DESIGNER_EXP STubeNestingEndProfiles EncodeTubeNestingEndProfiles(
+        IN const STubeBRepUnfoldingResult& Result_,
+        std::size_t SampleCount_ = 128, std::size_t MaximumFourierOrder_ = 32);
 }

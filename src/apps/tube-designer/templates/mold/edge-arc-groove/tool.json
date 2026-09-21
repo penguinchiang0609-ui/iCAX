@@ -2,15 +2,19 @@
   "schema": "icax.punch-tool",
   "schemaVersion": 1,
   "id": "edge-arc-groove",
-  "version": "3.1.0",
+  "version": "4.0.0",
   "sectionAnalysis": {
     "schemaVersion": 1
   },
+  "inputs": [
+    {"key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true}
+  ],
+  "preview": {"profileRef": {"scope": "system", "id": "rect"}},
   "displayName": "边弧槽",
   "kind": "programmatic",
   "target": "part",
   "category": "槽口",
-  "description": "槽根单侧保留原边弧刀口，可配置开口角、边弧方向、底部保留、K 因子补偿及释放加工。",
+  "description": "槽根单侧保留原边弧刀口，可配置开口角、边弧方向、斜切公母、底部保留、K 因子补偿及释放加工。",
   "illustration": {
     "viewBox": "0 0 48 48",
     "paths": [
@@ -80,10 +84,11 @@
     ],
     "annotations": [
       { "parameter": "bendCompensation", "kind": "leader", "side": "bottom", "point": [82, 101], "description": "决定圆弧展开是否采用 K 因子补偿" },
-      { "parameter": "useDefaultKFactor", "kind": "leader", "side": "bottom", "point": [92, 108], "visibleWhen": { "op": "eq", "parameter": "bendCompensation", "value": true }, "description": "使用系统标定的默认 K 因子" },
-      { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [100, 115], "visibleWhen": { "op": "all", "conditions": [{ "op": "eq", "parameter": "bendCompensation", "value": true }, { "op": "eq", "parameter": "useDefaultKFactor", "value": false }] }, "description": "中性层位置系数" },
+      { "parameter": "kFactor", "kind": "leader", "side": "bottom", "point": [100, 115], "visibleWhen": { "op": "eq", "parameter": "bendCompensation", "value": true }, "description": "中性层位置系数，默认 0.62" },
       { "parameter": "angle", "kind": "leader", "side": "right", "point": [112, 124], "description": "两侧切口形成的折弯开口角" },
       { "parameter": "leftArc", "kind": "leader", "side": "top", "point": [48, 62], "description": "控制保留圆弧位于左侧或右侧" },
+      { "parameter": "maleFemale", "kind": "leader", "side": "top", "point": [184, 48], "description": "在直斜边顶部形成公母台阶" },
+      { "parameter": "maleFemaleSize", "kind": "linear", "axis": "y", "side": "right", "from": [205, 28], "to": [205, 52], "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }, "description": "公母台阶尺寸；首次启用时自动采用截面实测壁厚" },
       { "parameter": "bridge", "kind": "linear", "axis": "y", "side": "right", "from": [120, 124], "to": [120, 148], "description": "槽根至实际底面的剩余连接高度" },
       { "parameter": "bottomReference", "kind": "leader", "side": "bottom", "point": [120, 148], "description": "留底高度从外底面或内底面起算" },
       { "parameter": "wallThickness", "kind": "leader", "side": "left", "point": [32, 28], "description": "由目标管型截面测得并用于补偿" },
@@ -97,43 +102,47 @@
   },
   "parameters": [
     {
+      "key": "maleFemale",
+      "level": "advanced",
+      "displayName": "斜切公母",
+      "valueType": "boolean",
+      "defaultValue": false
+    },
+    {
+      "key": "maleFemaleSize",
+      "level": "advanced",
+      "displayName": "公母尺寸（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 10000,
+      "autoFill": {
+        "triggerParameter": "maleFemale",
+        "sourceParameter": "wallThickness",
+        "when": { "op": "eq", "parameter": "maleFemale", "value": true },
+        "replaceWhen": { "op": "eq", "parameter": "maleFemaleSize", "value": 0 }
+      },
+      "visibleWhen": { "op": "eq", "parameter": "maleFemale", "value": true }
+    },
+    {
       "key": "bendCompensation",
+      "level": "advanced",
       "displayName": "启用 K 因子展开补偿",
       "valueType": "boolean",
       "defaultValue": false
     },
     {
-      "key": "useDefaultKFactor",
-      "displayName": "使用默认 K 因子 0.62",
-      "valueType": "boolean",
-      "defaultValue": true,
-      "visibleWhen": {
-        "op": "eq",
-        "parameter": "bendCompensation",
-        "value": true
-      }
-    },
-    {
       "key": "kFactor",
-      "displayName": "自定义 K 因子（建议 0.6～1）",
+      "level": "advanced",
+      "displayName": "K 因子（建议 0.6～1）",
       "valueType": "number",
       "defaultValue": 0.62,
       "min": 0,
       "max": 1,
       "visibleWhen": {
-        "op": "all",
-        "conditions": [
-          {
-            "op": "eq",
-            "parameter": "bendCompensation",
-            "value": true
-          },
-          {
-            "op": "eq",
-            "parameter": "useDefaultKFactor",
-            "value": false
-          }
-        ]
+        "op": "eq",
+        "parameter": "bendCompensation",
+        "value": true
       }
     },
     {
@@ -181,18 +190,26 @@
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
-      "max": 10000
+      "max": 10000,
+      "readOnly": true
     },
     {
       "key": "reliefDepth",
+      "level": "advanced",
       "displayName": "释放孔切深（mm，0 贯穿）",
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
-      "max": 10000
+      "max": 10000,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "reliefDiameter",
+        "value": 0
+      }
     },
     {
       "key": "reliefSide",
+      "level": "advanced",
       "displayName": "释放孔进刀侧（主管局部 Y）",
       "valueType": "string",
       "defaultValue": "positive",
@@ -205,10 +222,16 @@
           "value": "negative",
           "label": "−Y 侧"
         }
-      ]
+      ],
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "reliefDiameter",
+        "value": 0
+      }
     },
     {
       "key": "reliefDiameter",
+      "level": "advanced",
       "displayName": "附加释放孔直径（0 不添加，mm）",
       "valueType": "number",
       "defaultValue": 0,
@@ -217,20 +240,28 @@
     },
     {
       "key": "reliefLift",
+      "level": "advanced",
       "displayName": "附加释放孔中心上移（mm）",
       "valueType": "number",
       "defaultValue": 0,
       "min": 0,
-      "max": 10000
+      "max": 10000,
+      "visibleWhen": {
+        "op": "ne",
+        "parameter": "reliefDiameter",
+        "value": 0
+      }
     },
     {
       "key": "bottomCut",
+      "level": "advanced",
       "displayName": "切断底部桥接（不再留底）",
       "valueType": "boolean",
       "defaultValue": false
     },
     {
       "key": "bottomCutWidth",
+      "level": "advanced",
       "displayName": "底部切除宽度（mm）",
       "valueType": "number",
       "defaultValue": 2,

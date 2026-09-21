@@ -1,6 +1,6 @@
 // Presentation belongs to the parameter descriptor, not to its name or type.
 export function isAdvancedParameter(definition) {
-  return definition?.presentation?.advanced === true;
+  return definition?.presentation?.advanced === true || definition?.level === 'advanced';
 }
 
 export function parameterDiagramLevelAttribute(definition) {

@@ -323,7 +323,7 @@ try {
   assert.equal(await page.evaluate(()=>window.fixture.view.tubeDesignerPunchWizard.features[0].offset),0);
   assert.equal(await page.evaluate(()=>window.fixture.previewCalls.length),callsBeforePoseCancel,"Cancelling dirty pose text neither submits it nor schedules a discarded tool request");
   // Selecting an end cutter is an automatic parameter-editor entry point.
-  await page.locator('[data-tube-designer-punch-end="start"][data-tube-designer-punch-field="tool"]').selectOption("end-convex"); await idle();
+  await page.locator('[data-tube-designer-punch-end="start"][data-tube-designer-punch-field="tool"]').selectOption("end-key-joint"); await idle();
   assert.equal(await popup.count(), 1);
   assert.match(await popup.textContent(), /左端面参数/);
   await popup.getByRole("button", { name: "取消", exact: true }).click(); await idle();
@@ -572,12 +572,12 @@ try {
     await popup.getByRole("button",{name:"取消",exact:true}).click();await idle();
     assert.equal(await page.evaluate(()=>document.activeElement?.dataset?.tubeDesignerPunchEditorMode),"arrays","Closing an array transaction restores its own row button, not the shape editor");
     const unchangedStart = await endState("start");
-    await endRow("start").locator('[data-tube-designer-punch-field="tool"]').selectOption("end-convex");await idle();
+    await endRow("start").locator('[data-tube-designer-punch-field="tool"]').selectOption("end-key-joint");await idle();
     await assertParameterCentered(size, "end");
     assert.match(await popup.textContent(), /左端面参数/);
-    assert.match(await popup.locator('[data-tube-designer-punch-field="tool"] option:checked').textContent(), /圆柱凸头/);
-    assert.equal(await popup.locator('[data-tube-designer-punch-parameter="diameter"]').isVisible(), true);
-    await page.screenshot({path:resolve(artifactDir,"punch-left-end-convex-centered-"+size.width+".png")});
+    assert.match(await popup.locator('[data-tube-designer-punch-field="tool"] option:checked').textContent(), /插舌／插槽/);
+    assert.equal(await popup.locator('[data-tube-designer-punch-parameter="width"]').isVisible(), true);
+    await page.screenshot({path:resolve(artifactDir,"punch-left-end-key-joint-centered-"+size.width+".png")});
     await popup.getByRole("button",{name:"取消",exact:true}).click();await idle();
     assert.deepEqual(await endState("start"), unchangedStart, "The centered left-end dialog still cancels its source transaction without changing the end");
   }

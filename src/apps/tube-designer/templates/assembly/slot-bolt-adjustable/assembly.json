@@ -1,0 +1,78 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "slot-bolt-adjustable",
+  "version": "1.0.0",
+  "displayName": "长孔调节装配",
+  "category": "fastener",
+  "categoryName": "紧固件装配",
+  "summary": "两个逻辑零件分别下料，一件加工长孔、一件加工圆孔，保留装配调节量后锁紧。",
+  "topology": "面—面",
+  "interfaceType": "长孔 / 圆孔",
+  "lockType": "螺栓副",
+  "motionType": "单轴可调",
+  "participants": [
+    { "role": "adjuster", "label": "调节件", "responsibility": "长孔件", "count": 1 },
+    { "role": "datum", "label": "基准件", "responsibility": "圆孔件", "count": 1 }
+  ],
+  "parameters": [
+    { "key": "boltDiameter", "displayName": "螺栓公称直径", "valueType": "number", "defaultValue": 10, "min": 2, "max": 48, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "adjustment", "displayName": "单向调节量", "valueType": "number", "defaultValue": 12, "min": 1, "max": 200, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "holeClearance", "displayName": "孔径间隙", "valueType": "number", "defaultValue": 1, "min": 0, "max": 6, "step": 0.1, "unit": "mm", "level": "advanced" },
+    { "key": "adjustAxis", "displayName": "调节方向", "valueType": "choice", "defaultValue": "x", "options": [{ "value": "x", "label": "装配坐标 X" }, { "value": "y", "label": "装配坐标 Y" }], "level": "advanced" },
+    { "key": "retainPosition", "displayName": "锁紧后保留装配位置", "valueType": "boolean", "defaultValue": true, "level": "advanced" }
+  ],
+  "partProcesses": [
+    { "id": "slot-a", "participants": ["adjuster"], "label": "调节件长孔", "resource": { "kind": "part-process", "id": "slot", "displayName": "腰形孔" }, "parameterBindings": { "spanAcross": "$boltDiameter + $holeClearance", "spanAlong": "$boltDiameter + $holeClearance + $adjustment" }, "previewPlacement": { "target": "side", "face": "top", "reference": "center", "station": 0, "rotation": 0 } },
+    { "id": "hole-b", "participants": ["datum"], "label": "基准件圆孔", "resource": { "kind": "part-process", "id": "circle", "displayName": "圆孔" }, "parameterBindings": { "diameter": "$boltDiameter + $holeClearance" }, "previewPlacement": { "target": "side", "face": "bottom", "reference": "center", "station": 0 } }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      { "id": "adjusterBlank", "label": "调节下料件", "participants": ["adjuster"] },
+      { "id": "datumBlank", "label": "基准下料件", "participants": ["datum"] }
+    ]
+  },
+  "assemblyPath": [
+    { "id": "align", "label": "圆孔进入长孔调节范围", "kind": "对正", "direction": "assembly.z", "distance": 0 },
+    { "id": "adjust", "label": "沿调节轴定位", "kind": "滑动", "direction": "$adjustAxis", "distance": "$adjustment" },
+    { "id": "lock", "label": "穿入螺栓并锁紧", "kind": "紧固", "direction": "assembly.z", "distance": 0 }
+  ],
+  "previewScene": {
+    "designParts": [
+      {
+        "role": "adjuster",
+        "profileRef": { "scope": "system", "id": "rect" },
+        "parameters": { "width": 80, "depth": 20, "wallThickness": 2, "cornerRadius": 2, "innerRadius": 1 },
+        "length": 440,
+        "pose": { "origin": [-220, 0, -10], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      },
+      {
+        "role": "datum",
+        "profileRef": { "scope": "system", "id": "rect" },
+        "parameters": { "width": 80, "depth": 20, "wallThickness": 2, "cornerRadius": 2, "innerRadius": 1 },
+        "length": 440,
+        "pose": { "origin": ["-220 + $adjustment / 2", 0, 10], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      }
+    ],
+    "manufacturingParts": [
+      { "id": "adjusterBlank", "label": "调节件长孔下料件", "sourceRole": "adjuster", "processes": ["slot-a"], "pose": { "origin": [-220, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "datumBlank", "label": "基准件圆孔下料件", "sourceRole": "datum", "processes": ["hole-b"], "pose": { "origin": [-220, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 110], "manufacturingOffset": [0, 0, -110] }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 240 170",
+    "paths": ["M25 45 H215 V105 H25 Z", "M55 65 H155 A20 20 0 0 1 155 105 H55 A20 20 0 0 1 55 65 Z", { "d": "M125 85 A9 9 0 1 0 143 85 A9 9 0 1 0 125 85", "className": "tool-diagram-detail" }],
+    "annotations": [
+      { "parameter": "boltDiameter", "kind": "leader", "side": "top", "point": [134, 85], "description": "螺栓和基准圆孔的名义尺寸" },
+      { "parameter": "adjustment", "kind": "linear", "axis": "x", "side": "bottom", "from": [55, 85], "to": [155, 85], "description": "长孔提供的单向调节范围" },
+      { "parameter": "holeClearance", "kind": "leader", "side": "right", "point": [155, 65], "description": "圆孔和长孔相对螺栓增加的间隙" },
+      { "parameter": "adjustAxis", "kind": "leader", "side": "left", "point": [105, 85], "description": "调节移动采用的装配坐标轴" },
+      { "parameter": "retainPosition", "kind": "leader", "side": "right", "point": [134, 85], "description": "锁紧后是否记录最终调节位置" }
+    ]
+  },
+  "outputs": { "manufacturingPartCount": 2, "partGeometry": ["调节件长孔", "基准件圆孔"], "secondaryProcess": ["调节定位", "螺栓紧固"], "bom": ["螺栓", "螺母", "垫片"], "assemblyInstruction": true }
+}

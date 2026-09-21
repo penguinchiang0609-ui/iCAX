@@ -7,6 +7,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,19 @@ namespace iCAX::TubeDesigner
         // Placement TRSF values use it so downstream preview/export never has to
         // reconstruct a transform from geometry again.
         std::array<double, 3> LocalCenter{ 0.0, 0.0, 0.0 };
+        // Preferred production boundary from tube/profile recognition.  The
+        // coefficients use TubeNesting's integer length unit (0.01 mm in this
+        // adapter).  If absent, the adapter creates a conservative flat AABB
+        // profile. NumericOnly/missing spectra and legacy cut-line samples are
+        // diagnostic migration inputs only: production nesting falls back to
+        // the non-overlapping axial envelope, and sequence search never
+        // performs online curve matching.
+        std::optional<iCAX::TubeNesting::PairTypeGeometry> PairGeometry;
+        std::array<bool, 2> DirectionAllowed{ true, true };
+        // Strict nesting priority. Smaller values are solved first; all parts
+        // in one level are optimized together before the result is frozen and
+        // exposed as continuation stock to the next level.
+        std::uint32_t Priority = 0;
     };
 
     struct SNestingStock final
@@ -56,6 +70,16 @@ namespace iCAX::TubeDesigner
         std::string ProfileKey;
         double Length = 0.0;
         std::int64_t Quantity = 0; // -1: unlimited, 0: excluded, >0: finite inventory.
+        // Non-empty InstanceID turns this row into one already opened physical
+        // stock with an immutable prefix. SourceStockTypeID is emitted back to
+        // the UI; ID may be an internal unique row ID. The predecessor fields
+        // identify the last locked part whose exposed end starts continuation.
+        std::string SourceStockTypeID;
+        std::string InstanceID;
+        double InitialProcessedEnd = 0.0;
+        std::string InitialPredecessorPartID;
+        bool InitialPredecessorReversed = false;
+        double InitialPredecessorRotationRadians = 0.0;
     };
 
     // Shared geometry-to-solver boundary. Tilted knife planes do not imply that

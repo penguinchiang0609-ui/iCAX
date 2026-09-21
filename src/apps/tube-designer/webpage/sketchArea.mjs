@@ -188,9 +188,9 @@ export function renderSketchLeftPane(_context, view) {
   const toolSketch = Boolean(view.tubeDesignerToolSketchContext);
   return `<div class="tube-sketch-preview-panel" data-tube-sketch-preview-panel>
     <header>
-      <strong>${state.mode === SECTION_MODE ? (componentProfile ? "拉伸截面预览" : (toolSketch ? "模具截面预览" : "管型预览")) : (partTarget ? "零件侧面预览" : "三维切割预览")}</strong>
+      <strong>${state.mode === SECTION_MODE ? (componentProfile ? "拉伸截面预览" : (toolSketch ? "单件工艺截面预览" : "管型预览")) : (partTarget ? "零件侧面预览" : "三维切割预览")}</strong>
       <span>${state.mode === SECTION_MODE
-        ? (componentProfile ? "截面闭合后可回填并生成三维拉伸体" : (toolSketch ? "截面闭合后保存为定式模具，统一生成标准拉伸体" : "截面闭合后自动生成三维管型"))
+        ? (componentProfile ? "截面闭合后可回填并生成三维拉伸体" : (toolSketch ? "截面闭合后保存为定式单件工艺，统一生成标准作用体" : "截面闭合后自动生成三维管型"))
         : (member ? (partTarget ? "灰色底图来自最终零件，青色图形为当前草图" : "实时查看图形在管子侧面的效果") : "请先选择一根管件")}</span>
     </header>
     <div class="tube-sketch-preview-stage">
@@ -216,7 +216,7 @@ export function renderSectionSketchDialog(context, view) {
   const state = ensureSketchState(view);
   const sidePart = state.mode === SIDE_MODE && state.sideTargetKind === "part";
   const componentProfile = Boolean(view.tubeDesignerComponentCSGProfileReturn);
-  const title = sidePart ? "下料零件二维编辑" : (componentProfile ? "拉伸体二维截面" : (view.tubeDesignerToolSketchContext ? "模具截面草图" : "截面轮廓草图"));
+  const title = sidePart ? "下料零件二维编辑" : (componentProfile ? "拉伸体二维截面" : (view.tubeDesignerToolSketchContext ? "单件工艺截面草图" : "截面轮廓草图"));
   return `<dialog class="tube-section-sketch-dialog" aria-label="${title}">
     <header class="tube-section-sketch-title">${title}</header>
     <nav class="tube-section-sketch-toolbar" aria-label="${sidePart ? "零件侧面绘制工具" : "截面绘制工具"}">${sketchRibbonGroups.map(group => `<section><div>${group.commands.map(command => `<button type="button" data-cam-action="tube-designer-sketch-dialog-command" data-sketch-command="${escapeAttr(command.id)}" ${view.pending ? "disabled" : ""} ${command.id === `sketch.${state.tool}` ? 'class="selected"' : ""} data-icon-tone="${escapeAttr(command.iconTone ?? "green")}">${renderRibbonCommandIcon(command.iconName)}<span>${escapeText(command.title)}</span></button>`).join("")}</div><small>${escapeText(group.title)}</small></section>`).join("")}</nav>
@@ -1606,7 +1606,7 @@ function renderSectionSession(state, pending, componentProfile = false, toolSket
   const session = normalizeSectionSession(state.sectionSession);
   if (toolSketch) {
     return `<section class="tube-sketch-section-session" data-tube-sketch-section-session="tool-create">
-      <div><strong>新增定式模具</strong><small>从空白截面开始，确认后保存到“我的模具”</small></div>
+      <div><strong>新增定式单件工艺</strong><small>从空白截面开始，确认后保存到“我的单件工艺”</small></div>
       <label><span>保存名称</span><input type="text" maxlength="120" value="${escapeAttr(state.sectionName)}" data-cam-change-action="tube-designer-sketch-section-name" ${pending ? "disabled" : ""}/></label>
     </section>`;
   }
@@ -3286,13 +3286,13 @@ async function saveToolSection(context, view, ops) {
   const state = ensureSketchState(view);
   const proposed = String(state.sectionName ?? "").trim();
   if (!proposed) {
-    view.error = "请输入模具名称。";
+    view.error = "请输入单件工艺名称。";
     ops.renderProject(context, view);
     return null;
   }
   const profile = buildProfileFromSectionDraft(state.section, proposed);
   view.pending = true;
-  view.progress = { title: "正在保存定式模具", detail: "正在校验闭合截面并生成标准拉伸体定义", stage: "保存模具", mode: "Resources" };
+  view.progress = { title: "正在保存定式单件工艺", detail: "正在校验闭合截面并生成标准作用体定义", stage: "保存工艺", mode: "Resources" };
   ops.renderProject(context, view);
   let saved = null;
   try {
@@ -3304,7 +3304,7 @@ async function saveToolSection(context, view, ops) {
       geometry: { mode: "profile", coordinateSpace: "section", contours: profile.contours },
     }, { timeoutMs: 30000 });
     saved = response?.tool;
-    if (!saved?.id) throw new Error("保存定式模具后没有返回记录标识。");
+    if (!saved?.id) throw new Error("保存定式单件工艺后没有返回记录标识。");
     view.tubeDesignerUserData ??= { customers: [], parameterPresets: [], profiles: [], punchTools: [], productTemplates: [], profileId: "" };
     const tools = view.tubeDesignerUserData.punchTools ??= [];
     const index = tools.findIndex((item) => String(item?.id ?? "") === String(saved.id));
@@ -3316,7 +3316,7 @@ async function saveToolSection(context, view, ops) {
     view.tubeDesignerSketchDialogOpen = false;
     view.error = "";
     await selectSketchArea(context, view, "tools");
-    ops.showNotice?.(context, view, `定式模具“${saved.displayName ?? saved.name ?? saved.id}”已保存到“我的模具”。`);
+    ops.showNotice?.(context, view, `定式工艺“${saved.displayName ?? saved.name ?? saved.id}”已保存到“我的单件工艺”。`);
     return saved;
   } finally {
     view.pending = false;

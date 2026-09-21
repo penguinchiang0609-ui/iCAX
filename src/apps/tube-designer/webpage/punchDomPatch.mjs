@@ -12,6 +12,13 @@ function key(node) {
   for(const name of ["data-parameter-advanced-key","data-parameter-advanced-item","data-array-group-id","data-tube-designer-punch-row","data-tube-designer-punch-end-row","data-punch-editor-mode"])
     if(node.hasAttribute(name))return node.tagName+":"+name+":"+node.getAttribute(name);
   if(node.id)return node.tagName+"#"+node.id;
+  // Conditional fields insert/remove entire labels. Match their containers by
+  // the control's stable identity, not by position, so following inputs and
+  // listeners survive when a preceding field appears or disappears.
+  if(node.matches("label.tube-designer-field")) {
+    const control=node.querySelector("input,select,textarea");
+    if(control)return node.tagName+":"+key(control);
+  }
   if(node.matches("input,select,textarea,button"))return node.tagName+":"+JSON.stringify(
     [...node.attributes].filter(a=>a.name.startsWith("data-")).map(a=>[a.name,a.value]).sort());
   return null;

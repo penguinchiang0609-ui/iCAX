@@ -30,11 +30,17 @@ def generate(p, context):
         prism(key, [c,yc,zc], [0,-sr,cr], [slope/norm,cr/norm,sr/norm],
               _rect_path(2*reach, 2*reach*norm),
               [-sign*reach,0,0])
-    def boolean(key, operation, left, right):
-        nodes.append({"key": key, "operator": "boolean", "inputs": [left,right], "arguments": {"operation": operation}})
     slope = math.tan(math.radians(p["angle"]))
-    extent = abs(slope*cr)*(hi[1]-lo[1])/2 + abs(slope*sr)*(hi[2]-lo[2])/2
-    datum = anchor + sign * extent * (1 if place["datum"] == "long" else -1 if place["datum"] == "short" else 0)
+    local = section_geometry.local_section(section_geometry.from_profile(context["targetSection"]), place["rotation"])
+    box = section_geometry.bounds(next(loop for loop in local["contours"] if not loop["inner"]))
+    low, high = sorted((slope*box["min"][0], slope*box["max"][0]))
+    # Long/short points belong to the actual contour, not its rotated box.
+    datum = anchor
+    if place["datum"] == "long": datum -= low if start else high
+    elif place["datum"] == "short": datum -= high if start else low
+    far_point = datum + (high if start else low)
+    if sign * (far_point - (lo[0] if start else hi[0])) >= hi[0]-lo[0]:
+        raise ValueError("斜切角度与修剪量会切穿零件另一端，请减小角度或修剪量")
     slab("tool", datum, slope)
     return {"mode": "solid", "coordinateSpace": "part", "outputKey": "tool", "datumCenter": datum,
             "model": {"schema": "icax.neutral-model", "schemaVersion": 1,

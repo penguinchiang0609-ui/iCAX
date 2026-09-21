@@ -134,7 +134,7 @@ assert.equal(phase.offset,17);assert.deepEqual(phase.arrayGroupsSummary.groups[1
 
 assert.equal(resolve({arrayGroups:[group("x","X",1000,1)]}).arrayTransforms.length,1000);
 assert.equal(resolve({opposite:true,arrayGroups:[group("x","X",500,1)]}).arrayGroupsSummary.expandedCount,1000);
-assert.equal(resolve({opposite:true,through:true,arrayGroups:[group("x","X",1000,1)]}).arrayTransforms.length,1000);
+invalid({opposite:true,arrayGroups:[group("x","X",1000,1)]},/含双面/);
 invalid({arrayGroups:[group("x","X",1001,1)]},/1000/);
 invalid({arrayGroups:[group("x","X",100,1),group("y","Y",11,1)]},/笛卡尔组合/);
 invalid({arrayGroups:[group("x","X",2,50),group("x2","X",2,50)]},/完全重复/);

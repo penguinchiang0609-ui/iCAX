@@ -14,6 +14,7 @@ assert.equal(parameterVisible({presentation:{visible:true},visibleWhen:{op:'eq',
 assert.equal(parameterVisible({presentation:{advanced:true}}, {}), true);
 assert.equal(isAdvancedParameter({valueType:'string',key:'anythingJSON'}), false);
 assert.equal(isAdvancedParameter({presentation:{advanced:true}}), true);
+assert.equal(isAdvancedParameter({level:'advanced'}), true);
 const levelFields=[{key:'normal'},{key:'expert',presentation:{advanced:true}},{key:'hidden',presentation:{advanced:true,visible:false}}];
 const before=JSON.stringify(levelFields);
 const levels=renderParameterLevels(levelFields,d=>`<input name="${d.key}">`,{key:'test'});
@@ -68,7 +69,8 @@ for (const [kind, filename] of [['product', 'template.json'], ['profile', 'profi
   }
 }
 for (const id of ['v-notch-sharp', 'edge-arc-groove']) {
-  const d = read(`mold/${id}/tool.json`), values = { ...defaults(d), useDefaultKFactor: false, bendCompensation: false };
+  const d = read(`mold/${id}/tool.json`), values = { ...defaults(d), bendCompensation: false };
+  assert.equal(d.parameters.some((parameter) => parameter.key === 'useDefaultKFactor'), false);
   assert.equal(shown(d, 'kFactor', values), false);
   Object.assign(values, { bottomStrategy: 'rounded', bendCompensation: true });
   assert.equal(shown(d, 'kFactor', values), true);
@@ -77,14 +79,46 @@ for (const id of ['v-notch-sharp', 'edge-arc-groove']) {
     assert.equal(shown(d, 'bendCompensation', values), false);
     assert.equal(shown(d, 'kFactor', values), false);
     assert.equal(values.bendCompensation, true, 'hidden draft retained');
+    Object.assign(values, { bottomStrategy: 'rounded', segmentedBend: true });
+    assert.equal(shown(d, 'bendCompensation', values), false);
+    assert.equal(shown(d, 'kFactor', values), false);
   }
 }
+{
+  const d = read('mold/v-notch-sharp/tool.json');
+  const p = { ...defaults(d), rootSlotPattern: true, rootPatternMode: 'triple' };
+  assert.equal(shown(d, 'centerSlotLength', p), true);
+  assert.equal(shown(d, 'bridgeCount', p), false);
+  p.rootPatternMode = 'multi';
+  assert.equal(shown(d, 'centerSlotLength', p), false);
+  assert.equal(shown(d, 'bridgeCount', p), true);
+  p.rootSlotPattern = false;
+  assert.equal(shown(d, 'rootPatternMode', p), false);
+  assert.equal(shown(d, 'bridgeCount', p), false);
+  assert.equal(p.bridgeCount, 2, 'disabled root pattern retains its draft');
+  Object.assign(p, { bottomStrategy: 'relief', reliefShape: 'circleWrap', rootSlotPattern: true, maleFemale: true, asymmetric: true });
+  for (const key of ['enclosedDiameter', 'radialClearance', 'kFactor']) assert.equal(shown(d, key, p), true, key);
+  for (const key of ['rootSlotPattern', 'rootPatternMode', 'maleFemale', 'asymmetric', 'reliefLength', 'reliefDepth']) {
+    assert.equal(shown(d, key, p), false, key);
+  }
+  assert.equal(p.rootSlotPattern, true, 'hidden root pattern draft retained');
+}
+{
+  const d = read('mold/embedded-arc-notch/tool.json');
+  const p = { ...defaults(d), maleFemale: false, fitClearance: 0.4, insertionDepth: 8, preDeflection: 1 };
+  for (const key of ['fitClearance', 'insertionDepth', 'preDeflection']) assert.equal(shown(d, key, p), false);
+  p.maleFemale = true;
+  for (const key of ['fitClearance', 'insertionDepth', 'preDeflection']) assert.equal(shown(d, key, p), true);
+}
 const polygon = read('profile/polygon/profile.json');
-for (const model of polygon.parameters.find(p => p.key === 'sectionModel').options) {
-  const active = ['triangle-scalene', 'trapezoid-right', 'trapezoid-isosceles', 'parallelogram-tube'].includes(model.value);
-  for (const key of ['depth', 'wallThickness']) assert.equal(shown(polygon, key, { ...defaults(polygon), sectionModel: model.value }), active);
+for (const active of [false, true]) {
+  assert.equal(shown(polygon, 'outerRadii', { ...defaults(polygon), useIndependentOuterRadii: active }), active);
+  assert.equal(parameterVisible(polygon.parameters.find(p => p.key === 'wallThickness'), defaults(polygon)), true);
 }
 const joint = read('mold/end-key-joint/tool.json');
+assert.equal(joint.operationParameters.some((field) => field.key === 'datum'), false);
+assert.equal(joint.parameters.some((field) => field.key === 'straightDepth'), true);
+assert.equal(joint.parameters.some((field) => field.key === 'cornerRadius'), false);
 for (const entry of readdirSync(new URL('product/', root), { withFileTypes: true })) {
   if (!entry.name.startsWith('modular_guardrail')) continue;
   let d; try { d = read(`product/${entry.name}/template.json`); } catch (e) { if (e.code === 'ENOENT') continue; throw e; }
@@ -100,16 +134,19 @@ for (const entry of readdirSync(new URL('product/', root), { withFileTypes: true
   }
 }
 for (const name of ['p-tube']) {
-  const d = read(`profile/${name}/profile.json`), p = { ...defaults(d), materialBoundary: '[retained draft]', sourceRevision: 'supplier-v1' };
-  assert.equal(shown(d, 'materialBoundary', p), false);
+  const d = read(`profile/${name}/profile.json`), p = { ...defaults(d), outerRadius1: 5 };
+  assert.equal(shown(d, 'outerRadius1', p), false);
   assert.equal(shown(d, 'width', p), true);
-  p.geometrySource = 'providedBoundary';
-  assert.equal(shown(d, 'materialBoundary', p), true);
-  assert.equal(shown(d, 'width', p), false);
+  p.useIndependentOuterRadii = true;
+  assert.equal(shown(d, 'outerRadius1', p), true);
+  assert.equal(p.outerRadius1, 5, 'hidden radius draft retained');
 }
 for (const gender of ['male', 'female']) {
   const view = { tubeDesignerSystemPunchTools: [joint], tubeDesignerToolLibrary: { scope: 'system', selectedKey: `system::${joint.id}`, parameterDrafts: { [`system::${joint.id}`]: { ...defaults(joint), gender } } } };
   const html = renderToolLibraryRightPane({}, view);
+  assert.equal(html.includes('data-tube-tool-library-parameter="straightDepth"'), true);
+  assert.equal(html.includes('data-tube-tool-library-parameter="cornerRadius"'), false);
+  assert.equal(html.includes('data-tube-tool-library-operation="datum"'), false);
   for (const key of ['sideClearance', 'axialClearance']) assert.equal(html.includes(`data-tube-tool-library-parameter="${key}"`), gender === 'female');
 }
 {

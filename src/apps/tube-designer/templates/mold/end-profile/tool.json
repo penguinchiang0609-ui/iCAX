@@ -1,6 +1,109 @@
 {
   "schema":"icax.punch-tool","schemaVersion":1,"id":"end-profile","version":"1.0.0",
-  "displayName":"支管 / DXF 截面端切刀具","kind":"programmatic","target":"end","requiresSection":true,"category":"端面",
+  "displayName":"支管端切","description":"按所选主管管型或闭合 DXF 的外轮廓修剪当前支管端部，忽略截面内孔。","kind":"programmatic","target":"end","requiresSection":true,"category":"端面",
+  "inputs": [
+    {
+      "key": "targetSection",
+      "displayName": "目标管型截面",
+      "valueType": "profile",
+      "required": true
+    }
+  ],
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "round"
+    }
+  },
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M8 10H38V38H8Z M38 10C14 14 14 34 38 38"
+    ]
+  },
+  "operationParameters": [
+    {
+      "key": "trim",
+      "displayName": "端部修剪量（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 100000,
+      "step": 0.1
+    },
+    {
+      "key": "rotation",
+      "displayName": "轴向旋转（°）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 0.1
+    },
+    {
+      "key": "angle",
+      "displayName": "轴夹角（°）",
+      "valueType": "number",
+      "defaultValue": 90,
+      "min": 0,
+      "max": 180,
+      "step": 0.1
+    },
+    {
+      "key": "azimuth",
+      "displayName": "方位角（°）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 0.1
+    },
+    {
+      "key": "roll",
+      "displayName": "截面自转（°）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 0.1
+    },
+    {
+      "key": "axialOffset",
+      "displayName": "轴向偏移（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -100000,
+      "max": 100000,
+      "step": 0.1,
+      "presentation": {
+        "advanced": true
+      }
+    },
+    {
+      "key": "offsetY",
+      "displayName": "横向偏移（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -100000,
+      "max": 100000,
+      "step": 0.1,
+      "presentation": {
+        "advanced": true
+      }
+    },
+    {
+      "key": "offsetZ",
+      "displayName": "高度偏移（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -100000,
+      "max": 100000,
+      "step": 0.1,
+      "presentation": {
+        "advanced": true
+      }
+    }
+  ],
   "parameters":[
     {"key":"cutMode","displayName":"成形方式","valueType":"string","defaultValue":"concave","options":[{"value":"concave","label":"凹口"},{"value":"convex","label":"凸口"}]}
   ],

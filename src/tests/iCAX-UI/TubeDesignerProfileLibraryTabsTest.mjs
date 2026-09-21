@@ -330,9 +330,15 @@ await test("product tool roles select constrained library tools and persist role
       displayName: "V槽", kind: "programmatic", target: "part", category: "槽口",
       parameters: [
         { key: "angle", displayName: "折弯开口角", valueType: "number", defaultValue: 90, min: 1, max: 170 },
-        { key: "derivedWall", displayName: "实测壁厚", valueType: "number", defaultValue: 0, derived: true },
+        { key: "maleFemale", displayName: "斜切公母", valueType: "boolean", defaultValue: false },
+        { key: "maleFemaleSize", displayName: "公母尺寸（mm）", valueType: "number", defaultValue: 0,
+          visibleWhen: { op: "eq", parameter: "maleFemale", value: true },
+          autoFill: { triggerParameter: "maleFemale", sourceParameter: "wallThickness",
+            when: { op: "eq", parameter: "maleFemale", value: true },
+            replaceWhen: { op: "eq", parameter: "maleFemaleSize", value: 0 } } },
+        { key: "wallThickness", displayName: "实测壁厚", valueType: "number", defaultValue: 0, derived: true },
       ],
-      defaultParameters: { angle: 90, derivedWall: 0 },
+      defaultParameters: { angle: 90, maleFemale: false, maleFemaleSize: 0, wallThickness: 0 },
       parameterDiagram: { schemaVersion: 2, viewBox: "0 0 24 16", paths: ["M2 2 L22 14"], labels: [] },
     },
     { id: "circle", version: "1", displayName: "圆孔", kind: "programmatic", target: "side", category: "孔型", parameters: [] },
@@ -351,9 +357,27 @@ await test("product tool roles select constrained library tools and persist role
   assert.equal(binding.snapshot.targetProfileRole, "frame");
   assert.equal(view.tubeDesignerAddDraft.cornerGrooveTool, "system:v-notch-sharp");
   html = renderDesignerAddParameterContent(view.scene.tubeDesigner, view);
-  assert.match(html, /模具参数/);
+  assert.match(html, /工艺参数/);
   assert.match(html, /槽口参数示意图/);
   assert.doesNotMatch(html, /实测壁厚/);
+
+  view.tubeDesignerAddDraft.tubeDesignerProfileOverrides = { frame: { parameters: { wallThickness: 2 } } };
+  await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
+    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "maleFemale" },
+    checked: true,
+  }, ops);
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove.parameters.maleFemaleSize, 2,
+    "enabling公母 visibly adopts the selected管型 wall thickness");
+  await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
+    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "maleFemaleSize" },
+    value: "3",
+  }, ops);
+  for (const checked of [false, true]) await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
+    dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "maleFemale" },
+    checked,
+  }, ops);
+  assert.equal(view.tubeDesignerAddDraft.tubeDesignerToolBindings.cornerGroove.parameters.maleFemaleSize, 3,
+    "re-enabling公母 preserves a positive manual size");
 
   await handleDesignerAreaAction(context, view, "tube-designer-product-tool-parameter-change", {
     dataset: { tubeDesignerToolMode: "add", tubeDesignerToolField: field.key, tubeDesignerToolRole: "cornerGroove", tubeDesignerToolParameter: "angle" },

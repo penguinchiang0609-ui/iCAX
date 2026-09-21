@@ -14,7 +14,8 @@ const profile = {
 };
 const part = {
   entityId: "part-1", generationRunId: "batch-1", index: 1, partNumber: "横杆-1",
-  name: "横杆", role: "导入零件", quantity: 2, profile, partKind: "tube", length: 1200,
+  name: "横杆", role: "导入零件", quantity: 2,
+  profile, partKind: "tube", length: 1200,
   properties: {
     "tubeDesigner.profile": profile, "manufacturing.partKind": "tube",
     "manufacturing.materialCategory": "tube", "manufacturing.sourcing": "made",

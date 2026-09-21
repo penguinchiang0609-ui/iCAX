@@ -8,7 +8,7 @@ export function patchLibraryDom(view,mount,{left,right,overlay,suffix}) {
   const previous=rendered.get(mount);
   // First mount, navigation and opening/closing dialogs still use the full
   // lifecycle. Ordinary field edits and preview responses never remount it.
-  if(!["tools","profiles","connections"].includes(view.activeAreaId) ||
+  if(!["tools","profiles","assemblies"].includes(view.activeAreaId) ||
     previous?.area!==view.activeAreaId || previous.suffix!==suffix)return false;
   const leftPane=mount.querySelector(".cam-context-pane");
   const rightPane=mount.querySelector(".cam-info-pane");
@@ -26,7 +26,7 @@ export function patchLibraryDom(view,mount,{left,right,overlay,suffix}) {
   }
   // Patch only HTML-owned HUD nodes. Never touch renderer/canvas/view cube.
   const selectors=view.activeAreaId==="tools"?[".tube-tool-library-hud"]:
-    view.activeAreaId==="connections"?[".tube-connection-library-hud",".tube-connection-library-stage"]:
+    view.activeAreaId==="assemblies"?[".tube-connection-library-hud"]:
     [".tube-profile-library-preview-hud",".tube-profile-library-preview-wait","[data-tube-designer-specification-tree]"];
   const fragment=parse(overlay);
   for(const selector of selectors) {
@@ -37,7 +37,7 @@ export function patchLibraryDom(view,mount,{left,right,overlay,suffix}) {
   }
   // Diagram windows live above the entire workbench, not inside the WebGL
   // viewport. Patch them in place so focus, selection and nested scroll survive.
-  const floatingSelector=view.activeAreaId==="tools"?"[data-tube-tool-diagram-dock]":view.activeAreaId==="profiles"?"[data-tube-profile-diagram-dock]":"";
+  const floatingSelector=view.activeAreaId==="tools"?"[data-tube-tool-diagram-dock]":view.activeAreaId==="profiles"?"[data-tube-profile-diagram-dock]":view.activeAreaId==="assemblies"?"[data-tube-assembly-diagram-dock]":"";
   const oldFloating=floatingSelector?floatingHost?.querySelector(floatingSelector):null;
   const nextFloating=floatingSelector?fragment.querySelector(floatingSelector):null;
   if(oldFloating&&nextFloating)patchDomNode(oldFloating,nextFloating);

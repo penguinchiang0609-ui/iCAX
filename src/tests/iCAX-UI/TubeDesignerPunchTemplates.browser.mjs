@@ -45,10 +45,10 @@ try {
     await page.setViewportSize(size);
     await page.locator('[data-tube-designer-punch-field=tool]:not([data-tube-designer-punch-end])').selectOption("fixed-fixture");
     await page.locator('[data-cam-action=tube-designer-punch-add]').click();
-    await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-field=tool]').selectOption("end-convex");
-    await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-parameter=diameter]').fill("60");
-    await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-parameter=diameter]').press("Tab");
-    assert.equal(await page.evaluate(()=>window.test.view.tubeDesignerPunchWizard.ends.start.toolParameters.diameter),60);
+    await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-field=tool]').selectOption("end-key-joint");
+    await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-parameter=width]').fill("60");
+    await page.locator('[data-tube-designer-punch-end=start][data-tube-designer-punch-parameter=width]').press("Tab");
+    assert.equal(await page.evaluate(()=>window.test.view.tubeDesignerPunchWizard.ends.start.toolParameters.width),60);
     const dimensions=await page.evaluate(()=>{
       const dialog=document.querySelector(".tube-designer-punch-dialog").getBoundingClientRect();
       const footer=document.querySelector(".tube-designer-punch-footer").getBoundingClientRect();

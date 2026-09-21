@@ -837,7 +837,7 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, SymmetricSaddleMouthUsesSafeStrai
     EXPECT_NEAR(200, _Measured.EnvelopeLength, 0.001);
 }
 
-TEST(TubeDesignerFinalGeometryMeasurementTest, CurvedKnifeBlankNestsActualSolidsWithoutCollision)
+TEST(TubeDesignerFinalGeometryMeasurementTest, CurvedKnifeBlankUsesEnvelopeUntilPairProfileIsCertified)
 {
     auto _Shape = CurvedKnifeTestPart();
     // An asymmetric removal changes the source AABB centre, but the safe blank
@@ -859,7 +859,9 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, CurvedKnifeBlankNestsActualSolids
         (_Y0 + _Y1) * 0.5, (_Z0 + _Z1) * 0.5 };
     const auto _Result = SolveManufacturingNesting(
         { { "curved", "rect", _Measured.EnvelopeLength, 2, _Variants, _Center } },
-        { { "stock", "rect", 240.0, 1 } }, 1.0);
+        // Leave one extra millimetre beyond the requested gap so the test is
+        // insensitive to the adapter's conservative 0.01 mm up/down rounding.
+        { { "stock", "rect", _Measured.EnvelopeLength * 2.0 + 2.0, 1 } }, 1.0);
     using iCAX::Data::ObjectMap;
     using iCAX::Data::VariantArray;
     ASSERT_TRUE(_Result.at("unplaced").To<VariantArray>().empty());
@@ -868,7 +870,11 @@ TEST(TubeDesignerFinalGeometryMeasurementTest, CurvedKnifeBlankNestsActualSolids
     const auto _Plan = _Plans[0].To<ObjectMap>();
     const auto _Placements = _Plan.at("placements").To<VariantArray>();
     ASSERT_EQ(2u, _Placements.size());
-    EXPECT_TRUE(_Placements[1].To<ObjectMap>().at("nestedWithPrevious").To<bool>());
+    // Knife-plane variants are retained for legacy display/export, but the
+    // replacement ordering service only consumes an immutable certified pair
+    // table.  Without a certified PairGeometry this part must use its full
+    // axial envelope and must not claim an overlap.
+    EXPECT_FALSE(_Placements[1].To<ObjectMap>().at("nestedWithPrevious").To<bool>());
     std::vector<TopoDS_Shape> _Placed;
     for (const auto& _Value : _Placements)
     {

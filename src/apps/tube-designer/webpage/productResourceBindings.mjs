@@ -185,5 +185,5 @@ export function productToolDefinitions(binding, tool = null) {
 }
 
 export function productToolLabel(binding, tool = null) {
-  return tool ? toolDisplayName(tool) : String(binding?.snapshot?.displayName ?? binding?.ref?.id ?? "未选择模具");
+  return tool ? toolDisplayName(tool) : String(binding?.snapshot?.displayName ?? binding?.ref?.id ?? "未选择单件工艺");
 }

@@ -15,7 +15,7 @@ const tools = readdirSync(mouldRoot, { withFileTypes: true }).filter((entry) => 
   tool.defaultParameters = Object.fromEntries(tool.parameters.map((definition) => [definition.key, definition.defaultValue]));
   return [tool];
 });
-assert.equal(tools.length, 20);
+assert.equal(tools.length, 19);
 assert.ok(tools.every((tool) => tool.parameterDiagram?.schemaVersion === 2));
 for (const tool of tools) {
   const parameters = new Set(tool.parameters.map((definition) => definition.key));
@@ -55,6 +55,10 @@ try {
   }, tools);
 
   const scope = page.locator("#app");
+  const revealAdvanced = async (parameter) => scope.locator(`[data-tool-parameter-key="${parameter}"]`).evaluate((control) => { control.closest("details")?.setAttribute("open", ""); });
+  assert.equal(await scope.locator('.tool-diagram-material').count() > 0, true);
+  assert.equal(await scope.locator('.tool-diagram-cut').count() > 0, true);
+  assert.match(await scope.locator('.tool-parameter-svg').textContent(), /尖底 V 槽/);
   await scope.locator('[data-tool-parameter-key="angle"]').focus();
   assert.equal(await scope.locator('svg [data-tool-annotation-key="angle"]').evaluate((node) => node.classList.contains("is-active")), true);
   assert.equal(await scope.locator('.tube-tool-library-diagram-row[data-tool-annotation-key="angle"]').evaluate((node) => node.classList.contains("is-active")), true);
@@ -69,16 +73,34 @@ try {
   assert.equal(await scope.locator('[data-tool-annotation-key="roundRadius"]').count() >= 2, true);
   assert.equal(await scope.locator('[data-tool-parameter-key="reliefLength"]').count(), 0);
   assert.equal(await scope.locator('[data-tool-annotation-key="reliefLength"]').count(), 0);
+  assert.match(await scope.locator('.tool-parameter-svg').textContent(), /槽根圆角避空/);
+  await revealAdvanced("bendCompensation");
   await scope.locator('[data-tool-parameter-key="bendCompensation"]').check();
-  assert.equal(await scope.locator('[data-tool-parameter-key="useDefaultKFactor"]').count(), 1);
-  await scope.locator('[data-tool-parameter-key="useDefaultKFactor"]').uncheck();
+  assert.equal(await scope.locator('[data-tool-parameter-key="useDefaultKFactor"]').count(), 0);
   assert.equal(await scope.locator('[data-tool-parameter-key="kFactor"]').count(), 1);
   assert.equal(await scope.locator('[data-tool-annotation-key="kFactor"]').count() >= 2, true);
+  await scope.locator('[data-tool-parameter-key="bottomStrategy"]').selectOption("flat");
+  assert.match(await scope.locator('.tool-parameter-svg').textContent(), /平底 V 槽/);
   await scope.locator('[data-tool-parameter-key="bottomStrategy"]').selectOption("relief");
   assert.equal(await scope.locator('[data-tool-parameter-key="roundRadius"]').count(), 0);
   assert.equal(await scope.locator('[data-tool-annotation-key="roundRadius"]').count(), 0);
   assert.equal(await scope.locator('[data-tool-parameter-key="reliefLength"]').count(), 1);
   assert.equal(await scope.locator('[data-tool-annotation-key="reliefLength"]').count() >= 2, true);
+  assert.match(await scope.locator('.tool-parameter-svg').textContent(), /释放孔：圆角矩形/);
+  await revealAdvanced("reliefShape");
+  await scope.locator('[data-tool-parameter-key="reliefShape"]').selectOption("capsule");
+  assert.match(await scope.locator('.tool-parameter-svg').textContent(), /释放孔：腰形孔/);
+  await revealAdvanced("reliefShape");
+  await scope.locator('[data-tool-parameter-key="reliefShape"]').selectOption("circle");
+  assert.match(await scope.locator('.tool-parameter-svg').textContent(), /释放孔：圆孔/);
+  await revealAdvanced("reliefShape");
+  await scope.locator('[data-tool-parameter-key="reliefShape"]').selectOption("circleWrap");
+  assert.equal(await scope.locator('[data-tool-parameter-key="enclosedDiameter"]').count(), 1);
+  assert.equal(await scope.locator('[data-tool-parameter-key="radialClearance"]').count(), 1);
+  assert.equal(await scope.locator('[data-tool-parameter-key="reliefLength"]').count(), 0);
+  assert.equal(await scope.locator('[data-tool-parameter-key="rootSlotPattern"]').count(), 0);
+  assert.match(await scope.locator('.tool-parameter-svg').getAttribute('aria-label'), /V槽参数示意图/);
+  assert.match(await scope.locator('.tool-parameter-svg').textContent(), /释放孔：包围圆/);
 
   // Every parameterized built-in owns its drawing metadata; the renderer has no mould-id branches.
   const catalogueResults = await page.evaluate(() => {
@@ -120,9 +142,31 @@ try {
   if (process.env.ICAX_ARTIFACT_DIR) {
     mkdirSync(process.env.ICAX_ARTIFACT_DIR, { recursive: true });
     await page.screenshot({ path: resolve(process.env.ICAX_ARTIFACT_DIR, "tool-parameter-diagram-v-notch.png"), fullPage: true });
+    await page.setViewportSize({ width: 760, height: 720 });
+    await page.evaluate(() => { document.querySelector("#app").style.width = "520px"; });
+    const states = [
+      ["sharp", { bottomStrategy: "sharp" }],
+      ["flat", { bottomStrategy: "flat" }],
+      ["rounded", { bottomStrategy: "rounded" }],
+      ["relief-rounded-rectangle", { bottomStrategy: "relief", reliefShape: "roundedRectangle" }],
+      ["relief-capsule", { bottomStrategy: "relief", reliefShape: "capsule" }],
+      ["relief-circle", { bottomStrategy: "relief", reliefShape: "circle" }],
+      ["relief-circle-wrap", { bottomStrategy: "relief", reliefShape: "circleWrap" }]
+    ];
+    for (const [name, values] of states) {
+      await page.evaluate((nextValues) => {
+        const fixture = window.fixture;
+        const tool = fixture.catalogue.find((entry) => entry.id === "v-notch-sharp");
+        fixture.view.tubeDesignerToolLibrary.selectedKey = "system::v-notch-sharp";
+        fixture.view.tubeDesignerToolLibrary.parameterDrafts = { "system::v-notch-sharp": { ...tool.defaultParameters, ...nextValues } };
+        fixture.view.tubeDesignerToolLibrary.showToolDiagram = true;
+        fixture.render();
+      }, values);
+      await scope.locator('.tube-tool-library-diagram-art').screenshot({ path: resolve(process.env.ICAX_ARTIFACT_DIR, `v-notch-${name}.png`) });
+    }
   }
   assert.deepEqual(errors, []);
-  console.log("Tool parameter diagrams: 20 built-ins, scoped focus/click, live values and conditional annotations passed in Edge.");
+  console.log("Tool parameter diagrams: 19 built-ins, scoped focus/click, nested release-shape switching and conditional annotations passed in Edge.");
 } finally {
   await browser.close();
 }

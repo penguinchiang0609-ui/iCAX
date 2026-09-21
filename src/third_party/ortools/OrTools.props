@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ICAXOrToolsVersion>9.12.4544</ICAXOrToolsVersion>
+    <ICAXOrToolsInstallRoot>$(MSBuildThisFileDirectory)install\vs2022-x64\</ICAXOrToolsInstallRoot>
+    <ICAXOrToolsIncludeDir>$(ICAXOrToolsInstallRoot)include\</ICAXOrToolsIncludeDir>
+    <ICAXOrToolsLibDir>$(ICAXOrToolsInstallRoot)lib\</ICAXOrToolsLibDir>
+    <ICAXOrToolsBinDir>$(ICAXOrToolsInstallRoot)bin\</ICAXOrToolsBinDir>
+    <!-- The official Windows archive is a release-CRT binary.  Mixing its STL/
+         protobuf objects with /MDd is ABI-unsafe, so Debug deliberately keeps
+         the independent enumeration/search backend. -->
+    <ICAXOrToolsAvailable Condition="'$(Platform)' == 'x64' and '$(Configuration)' != 'Debug' and Exists('$(ICAXOrToolsIncludeDir)ortools\sat\cp_model.h') and Exists('$(ICAXOrToolsLibDir)ortools.lib')">true</ICAXOrToolsAvailable>
+    <ICAXOrToolsAvailable Condition="'$(ICAXOrToolsAvailable)' == ''">false</ICAXOrToolsAvailable>
+    <ExternalIncludePath Condition="'$(ICAXOrToolsAvailable)' == 'true'">$(ICAXOrToolsIncludeDir);$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PreprocessorDefinitions Condition="'$(ICAXOrToolsAvailable)' == 'true'">ICAX_TUBE_NESTING_WITH_ORTOOLS=1;OR_BUILD_DLL;OR_PROTO_DLL=__declspec(dllimport);ABSL_CONSUME_DLL;PROTOBUF_USE_DLLS;USE_LP_PARSER;USE_MATH_OPT;USE_BOP;USE_CBC;USE_CLP;USE_GLOP;USE_PDLP;USE_SCIP;__WIN32__;WIN32_LEAN_AND_MEAN=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(ICAXOrToolsAvailable)' != 'true'">ICAX_TUBE_NESTING_WITH_ORTOOLS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ExternalWarningLevel Condition="'$(ICAXOrToolsAvailable)' == 'true'">TurnOffAllWarnings</ExternalWarningLevel>
+    </ClCompile>
+    <Link Condition="'$(ICAXOrToolsAvailable)' == 'true'">
+      <AdditionalLibraryDirectories>$(ICAXOrToolsLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>ortools.lib;zlib.lib;abseil_dll.lib;libprotobuf.lib;re2.lib;CbcSolver.lib;Cbc.lib;Cgl.lib;ClpSolver.lib;Clp.lib;CoinUtils.lib;OsiCbc.lib;OsiClp.lib;Osi.lib;libscip.lib;utf8_validity.lib;utf8_range.lib;psapi.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

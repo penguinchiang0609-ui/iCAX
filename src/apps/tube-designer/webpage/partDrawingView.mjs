@@ -64,7 +64,6 @@ function featureParameters(view,renderSection) {
      ${t?.requiresSection?group("位置 / 姿态",branchPlacement):
       group("几何参数",geometryFields)+group("定位",position+(isPart?"":select("face","加工方向",f.face,[["top","上方 +Z"],["bottom","下方 −Z"],["left","左方 −Y"],["right","右方 +Y"],["round","周向"]])+input("offset",f.face==="round"?"周向角度":"横向偏移",f.offset,f.face==="round"?"°":"mm")+input("rotation","面内旋转",f.rotation,"°")+select("endDatum","端面基准",f.endDatum,[["long","长点"],["center","中心"],["short","短点"]])))}
     ${group("阵列",array,f.arrayCount>1||f.rowCount>1)}
-    ${!isPart?group("切除选项",[ ["through","贯穿管材"],["opposite","对侧同孔"] ].map(([key,title])=>fieldControl(action,key,title,f[key],{valueType:"boolean"})).join(""),false):""}
   </fieldset>`;
 }
 function inspector(view,renderSection) {
@@ -81,11 +80,7 @@ function inspector(view,renderSection) {
   } else if(["start","end"].includes(m.mode)) {
     const end=m.mode,e=s.ends[end],t=drawingToolDescriptor(s,e),locked=isDrawingToolReadOnly(s,e);
     title=end==="start"?"起点端部":"终点端部";
-    const endId=e.toolRef?.id??e.type;
-    const endPlacement=endId==="end-profile"?input("angle","轴夹角",e.angle??90,"°",end)+input("azimuth","方位角",e.azimuth??0,"°",end)+input("roll","绕轴旋转",e.roll??0,"°",end)+input("axialOffset","轴向偏移",e.axialOffset??0,"mm",end)+input("offsetY","横向偏移",e.offsetY??0,"mm",end)+input("offsetZ","高度偏移",e.offsetZ??0,"mm",end)
-      :endId==="end-convex"||endId==="end-cope"?input("angle","轴夹角",e.angle??90,"°",end)+input("offset","轴向偏移",e.offset??0,"mm",end)
-      :endId==="end-key-joint"?input("offset","轴向偏移",e.offset??0,"mm",end):"";
-    body=locked?'<p class="td-draw-readonly">该端部刀具已退化为定式，仅可删除节点。</p>':`<fieldset class="tube-designer-punch-controls" ${view.pending?"disabled":""}>${group("切割方式",select("tool","端部刀具",e.toolRef?.id??"keep",[["keep","保留原端面"],...s.tools.filter(t=>t.target==="end").map(t=>[t.id,label(t)])],end))}${e.type!=="keep"?(t?.requiresSection?renderSection(view,end):"")+group("形状",parameterFields(action,t,e,end))+group("定位",input("trim","向内修剪",e.trim??0,"mm",end)+input("rotation","绕主管旋转",e.rotation??0,"°",end)+select("datum","尺寸基准",e.datum??"long",[["long","长点"],["center","中心"],["short","短点"]],end)+endPlacement):""}</fieldset>`;
+    body=locked?'<p class="td-draw-readonly">该端部刀具已退化为定式，仅可删除节点。</p>':`<fieldset class="tube-designer-punch-controls" ${view.pending?"disabled":""}>${group("切割方式",select("tool","端部刀具",e.toolRef?.id??"keep",[["keep","保留原端面"],...s.tools.filter(t=>t.target==="end").map(t=>[t.id,label(t)])],end))}${e.type!=="keep"?(t?.requiresSection?renderSection(view,end):"")+group("端部参数",parameterFields(action,t,e,end)):""}</fieldset>`;
   }
   return `<section class="td-draw-inspector" aria-label="特征参数"><header><strong>${txt(title)}</strong>${m.mode?'<small>修改实时生效，可用撤销/重做回退</small>':""}</header><div class="td-draw-property-scroll">${body}</div></section>`;
 }

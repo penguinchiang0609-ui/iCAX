@@ -1,9 +1,9 @@
 // Display only: applicability belongs to the mould's backend analyze function.
 export function moldApplicability(descriptor, parameters, analysis) {
   if(!descriptor?.sectionAnalysis)return [];
-  if(!analysis)return [{id:"section-pending",status:"unknown",message:"需更新预览，由模具分析截面"}];
+  if(!analysis)return [{id:"section-pending",status:"unknown",message:"需更新预览，由单件工艺分析截面"}];
   if(analysis.applicable===true)return [];
-  return [{id:"section-rejected",status:"incompatible",message:analysis.reason??"截面不满足模具要求"}];
+  return [{id:"section-rejected",status:"incompatible",message:analysis.reason??"截面不满足单件工艺要求"}];
 }
 export function previewSectionAnalysis(state,item,end="") {
   if(end||state.preview?.revision!==state.revision)return undefined;

@@ -92,7 +92,7 @@ function validAnnotations(diagram, definitions, values) {
   }).map((annotation) => ({ ...annotation, definition: byKey.get(annotation.parameter) }));
 }
 
-function richDiagramSvg(tool, diagram, values, definitions) {
+function richDiagramSvg(tool, diagram, values, definitions, annotationKind = "tool") {
   const markup = shapeMarkup(diagram);
   if (!markup) return "";
   const annotations = validAnnotations(diagram, definitions, values);
@@ -109,6 +109,11 @@ function richDiagramSvg(tool, diagram, values, definitions) {
   const ty = top + (drawingHeight - shapeHeight) / 2 - sourceY * scale;
   const mirrored = !!diagram.mirrorParameter && values?.[diagram.mirrorParameter] === false;
   const map = ([x, y]) => [tx + (mirrored ? sourceX * 2 + sourceWidth - x : x) * scale, ty + y * scale];
+  const contextualLabels = (diagram?.labels ?? []).filter((label) => !label?.parameter && finite(Number(label?.x)) && finite(Number(label?.y))).map((label) => {
+    const [x, y] = map([Number(label.x), Number(label.y)]);
+    const className = ["tool-diagram-label", label?.className].filter(Boolean).join(" ");
+    return `<text class="${attr(className)}" x="${rounded(x)}" y="${rounded(y)}" text-anchor="${attr(label?.anchor ?? "middle")}">${text(label?.text ?? "")}</text>`;
+  }).join("");
   const drawingLeft = left, drawingRight = left + drawingWidth, drawingTop = top, drawingBottom = top + drawingHeight;
   const lanes = { top: 0, bottom: 0, left: 0, right: 0 };
   const order = new Map(definitions.map((definition, index) => [definition.key, index + 1]));
@@ -147,13 +152,13 @@ function richDiagramSvg(tool, diagram, values, definitions) {
         + `<circle class="tool-diagram-anchor" cx="${rounded(location[0])}" cy="${rounded(location[1])}" r="3"/>`
         + `<circle class="tool-diagram-parameter-badge" cx="${rounded(badge[0])}" cy="${rounded(badge[1])}" r="11"/><text x="${rounded(badge[0])}" y="${rounded(badge[1])}" text-anchor="middle" dominant-baseline="central">${index}</text>`;
     }
-    return `<g class="tool-diagram-annotation" data-tool-annotation-key="${attr(item.parameter)}"${parameterDiagramLevelAttribute(item.definition)} role="button" tabindex="0" aria-label="${attr(title)}"><title>${text(title)}</title>${body}</g>`;
+    return `<g class="tool-diagram-annotation" data-${attr(annotationKind)}-annotation-key="${attr(item.parameter)}"${parameterDiagramLevelAttribute(item.definition)} role="button" tabindex="0" aria-label="${attr(title)}"><title>${text(title)}</title>${body}</g>`;
   }).join("");
   const mirrorTransform = mirrored ? ` translate(${rounded(sourceX * 2 + sourceWidth)} 0) scale(-1 1)` : "";
-  return `<svg class="tool-parameter-svg is-rich" viewBox="0 0 ${width} ${height}" role="group" aria-label="${attr(`${localized(tool?.displayName ?? tool?.name, "模具")}参数示意图`)}"><g class="tool-diagram-shape" transform="translate(${rounded(tx)} ${rounded(ty)}) scale(${rounded(scale)})${mirrorTransform}">${markup}</g>${rendered}</svg>`;
+  return `<svg class="tool-parameter-svg is-rich" viewBox="0 0 ${width} ${height}" role="group" aria-label="${attr(`${localized(tool?.displayName ?? tool?.name, "模具")}参数示意图`)}"><g class="tool-diagram-shape" transform="translate(${rounded(tx)} ${rounded(ty)}) scale(${rounded(scale)})${mirrorTransform}">${markup}</g>${contextualLabels}${rendered}</svg>`;
 }
 
-function legacyDiagramSvg(tool, diagram, values, definitions) {
+function legacyDiagramSvg(tool, diagram, values, definitions, annotationKind = "tool") {
   const [sourceX, , sourceWidth] = viewBoxOf(diagram);
   const mirrored = !!diagram.mirrorParameter && values?.[diagram.mirrorParameter] === false;
   const transform = mirrored ? ` transform="translate(${attr(sourceX * 2 + sourceWidth)} 0) scale(-1 1)"` : "";
@@ -166,33 +171,34 @@ function legacyDiagramSvg(tool, diagram, values, definitions) {
     const content = found ? `${label.text || shortName(found.definition)} ${value}${label.unit ?? (unit ? ` ${unit}` : "")}` : String(label?.text ?? "");
     if (!content) return "";
     const body = `<text class="tool-diagram-label" x="${attr(label.x)}" y="${attr(label.y)}" text-anchor="${attr(label.anchor ?? "middle")}">${text(content)}</text>`;
-    return found ? `<g class="tool-diagram-annotation" data-tool-annotation-key="${attr(label.parameter)}"${parameterDiagramLevelAttribute(found.definition)} role="button" tabindex="0" aria-label="${attr(content)}"><circle class="tool-diagram-parameter-badge" cx="${attr(Number(label.x) - 12)}" cy="${attr(Number(label.y) - 3)}" r="8"/><text class="tool-diagram-badge-text" x="${attr(Number(label.x) - 12)}" y="${attr(Number(label.y) - 3)}" text-anchor="middle" dominant-baseline="central">${found.index}</text>${body}</g>` : body;
+    return found ? `<g class="tool-diagram-annotation" data-${attr(annotationKind)}-annotation-key="${attr(label.parameter)}"${parameterDiagramLevelAttribute(found.definition)} role="button" tabindex="0" aria-label="${attr(content)}"><circle class="tool-diagram-parameter-badge" cx="${attr(Number(label.x) - 12)}" cy="${attr(Number(label.y) - 3)}" r="8"/><text class="tool-diagram-badge-text" x="${attr(Number(label.x) - 12)}" y="${attr(Number(label.y) - 3)}" text-anchor="middle" dominant-baseline="central">${found.index}</text>${body}</g>` : body;
   }).join("");
   return `<svg class="tool-parameter-svg" viewBox="${attr(diagram.viewBox ?? "0 0 240 160")}" role="group" aria-label="${attr(`${localized(tool?.displayName ?? tool?.name, "模具")}参数示意图`)}"><g${transform}>${shapeMarkup(diagram)}</g>${labels}</svg>`;
 }
 
-export function renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg = "") {
+export function renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg = "", annotationKind = "tool") {
   definitions = definitions.filter(d => parameterVisible(d, values));
   const diagram = resolvedDiagram(tool, values);
   if (!diagram) return fallbackSvg;
   return diagram.schemaVersion === 2
-    ? richDiagramSvg(tool, diagram, values, definitions)
-    : legacyDiagramSvg(tool, diagram, values, definitions);
+    ? richDiagramSvg(tool, diagram, values, definitions, annotationKind)
+    : legacyDiagramSvg(tool, diagram, values, definitions, annotationKind);
 }
 
-export function renderToolParameterDiagram({ tool, values, definitions, expanded, fallbackSvg = "", toggleAction = "tube-designer-tool-library-toggle-diagram", showToggle = true }) {
+export function renderToolParameterDiagram({ tool, values, definitions, expanded, fallbackSvg = "", toggleAction = "tube-designer-tool-library-toggle-diagram", showToggle = true, annotationKind = "tool" }) {
   definitions = definitions.filter(d => parameterVisible(d, values));
   const rows = renderParameterLevels(definitions, (definition) => {
     const index = definitions.indexOf(definition);
     const name = definitionName(definition);
     const description = localized(definition?.description ?? definition?.help, "点击定位并编辑此参数");
     const unit = definitionUnit(definition);
-    return `<button type="button" class="tube-tool-library-diagram-row" data-tool-annotation-key="${attr(definition.key)}" aria-label="定位参数：${attr(name)}"><b>${index + 1}</b><span><strong>${text(name)}</strong><small>${text(description)}</small></span><em>${text(toolParameterValueText(definition, values))}${unit ? ` ${text(unit)}` : ""}</em></button>`;
+    return `<button type="button" class="tube-tool-library-diagram-row" data-${attr(annotationKind)}-annotation-key="${attr(definition.key)}" aria-label="定位参数：${attr(name)}"><b>${index + 1}</b><span><strong>${text(name)}</strong><small>${text(description)}</small></span><em>${text(toolParameterValueText(definition, values))}${unit ? ` ${text(unit)}` : ""}</em></button>`;
   }, {key:'tool-legend',gridClass:'tube-tool-library-diagram-legend'});
   const diagram = resolvedDiagram(tool, values);
   const annotations = validAnnotations(diagram, definitions, values);
   const hasDiagram = !!diagram || !!fallbackSvg;
-  return `<section class="tube-tool-library-parameter-diagram" data-tool-parameter-diagram><header><div><strong>参数示意图</strong><span>尺寸随参数实时更新 · 点击编号可定位参数</span></div>${showToggle ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="${attr(toggleAction)}" data-tube-tool-library-diagram="tool" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button>` : ""}</header>${expanded ? `<div class="tube-tool-library-diagram-content">${hasDiagram ? `<div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg)}</div>` : ""}${diagram?.schemaVersion === 2 && definitions.length && !annotations.length ? `<p class="tube-tool-library-diagram-message">此模具尚未声明参数位置标注。</p>` : ""}${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">此模具没有可编辑的截面参数。</p>`}</div>` : ""}</section>`;
+  const subject = annotationKind === "tool" ? "模具" : "模板";
+  return `<section class="tube-tool-library-parameter-diagram" data-${attr(annotationKind)}-parameter-diagram><header><div><strong>参数示意图</strong><span>尺寸随参数实时更新 · 点击编号可定位参数</span></div>${showToggle ? `<button type="button" class="tube-tool-library-diagram-toggle" data-cam-action="${attr(toggleAction)}" data-tube-tool-library-diagram="${attr(annotationKind)}" aria-expanded="${expanded}">${expanded ? "隐藏示意图" : "显示示意图"}</button>` : ""}</header>${expanded ? `<div class="tube-tool-library-diagram-content">${hasDiagram ? `<div class="tube-tool-library-diagram-art">${renderToolParameterDiagramSvg(tool, values, definitions, fallbackSvg, annotationKind)}</div>` : ""}${diagram?.schemaVersion === 2 && definitions.length && !annotations.length ? `<p class="tube-tool-library-diagram-message">此${subject}尚未声明参数位置标注。</p>` : ""}${rows ? `<div class="tube-tool-library-diagram-legend">${rows}</div>` : `<p class="tube-tool-library-diagram-message">此${subject}没有可编辑参数。</p>`}</div>` : ""}</section>`;
 }
 
 /** Keep each mould independent from the main/branch profile diagrams around it. */

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { deserializeVariantText } from "../../iCAX-UI/SDK/SDO/variantSerializer.mjs";
 import {
   buildProfileGroups,
+  handlePartsAreaAction,
   renderNestingLeftPane,
   renderNestingResultDock,
   renderNestingRightPane,
@@ -84,6 +85,7 @@ await test("Default selection includes all parts and only matching profile stock
   assert.deepEqual(new Set(request.parts.map((part) => part.partEntityId)), new Set(["rect-a", "rect-b", "round-a"]));
   assert.equal(request.stocks.length, 2);
   assert.deepEqual(request.parameters, { partGap: 2 });
+  assert.ok(request.parts.every((part) => part.priority === 0));
   h.view.tubeDesignerSelectedPartIds = ["rect-b", "missing-id"];
   const selected = buildNestingRequest(h.view);
   assert.deepEqual(selected.parts.map((part) => part.partEntityId), ["rect-b"]);
@@ -135,6 +137,60 @@ await test("Part quantities and gap are forwarded without multiplying inventory"
   assert.equal(buildNestingRequest(h.view).parts.find((part) => part.partEntityId === "rect-a").quantity, 10_000);
   partsIn(h.view)[0].quantity = 1_000_001;
   assert.throws(() => buildNestingRequest(h.view), /1000000/);
+});
+
+await test("Part priorities are validated, forwarded and included in staleness signatures", () => {
+  const parts = defaultParts();
+  parts[0].nestingPriority = 3;
+  parts[1].nestingPriority = 9;
+  const h = harness({ parts });
+  const request = buildNestingRequest(h.view);
+  assert.equal(request.parts.find((part) => part.partEntityId === "rect-a").priority, 3);
+  assert.equal(request.parts.find((part) => part.partEntityId === "rect-b").priority, 9);
+  const signature = getNestingInputSignature(h.view);
+  partsIn(h.view)[0].nestingPriority = 4;
+  assert.notEqual(getNestingInputSignature(h.view), signature);
+  for (const priority of [-1, 1.5, 1_000_001, NaN, Infinity]) {
+    partsIn(h.view)[0].nestingPriority = priority;
+    assert.throws(() => buildNestingRequest(h.view), /优先级/);
+  }
+});
+
+await test("Part inspector exposes the persisted strict nesting priority", () => {
+  const parts = defaultParts();
+  parts[0].nestingPriority = 4;
+  const h = harness({ parts });
+  h.view.tubeDesignerNestingSelectionKind = "part";
+  h.view.tubeDesignerActiveNestingPartId = "rect-a";
+  const inspector = renderNestingRightPane(h.context, h.view);
+  assert.match(inspector, /<input(?=[^>]*\bvalue="4")(?=[^>]*data-tube-designer-part-field="nestingPriority")[^>]*>/);
+  assert.match(inspector, /数字越小越优先/);
+});
+
+await test("Saving the part editor forwards the nesting priority", async () => {
+  let savedPayload;
+  const h = harness({ invoke: async (method, payload, view) => {
+    assert.equal(method, "TubeDesigner.UpdateManufacturingPart");
+    savedPayload = payload;
+    const tubeDesigner = clone(view.scene.tubeDesigner);
+    tubeDesigner.manufacturingGroups[0].parts[0].nestingPriority = payload.nestingPriority;
+    return { tubeDesigner };
+  } });
+  const fields = new Map([
+    ['[data-tube-designer-part-field="name"]', { value: "横杆 A" }],
+    ['[data-tube-designer-part-field="quantity"]', { value: "1" }],
+    ['[data-tube-designer-part-field="nestingPriority"]', { value: "6" }],
+  ]);
+  const editor = { querySelector: (selector) => fields.get(selector) ?? null };
+  const target = {
+    dataset: { tubeDesignerPartId: "rect-a" },
+    closest: () => editor,
+  };
+  await handlePartsAreaAction(
+    h.context, h.view, "tube-designer-part-edit-save", target, h.ops);
+  assert.equal(savedPayload.nestingPriority, 6);
+  assert.equal(partsIn(h.view)[0].nestingPriority, 6);
+  assert.equal(h.view.pending, false);
 });
 
 await test("Invalid IDs and lengths are rejected before calling native", async () => {
@@ -279,6 +335,7 @@ await test("Signatures ignore order and material, but detect geometry, settings 
     (view) => { view.tubeDesignerNestingSettings.stocks[0].rows[0].quantity++; },
     (view) => { partsIn(view)[0].length++; },
     (view) => { partsIn(view)[0].manufacturingGeometryResourceVersion = 2; },
+    (view) => { partsIn(view)[0].nestingPriority = 1; },
     (view) => { view.tubeDesignerSelectedPartIds = ["rect-a"]; },
   ]) {
     const changed = clone(snapshot);

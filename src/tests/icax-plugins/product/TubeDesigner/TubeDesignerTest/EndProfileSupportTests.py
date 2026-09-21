@@ -123,6 +123,13 @@ class EndProfileSupport(unittest.TestCase):
                        [[100000005, -99999995], [100000040, -99999990], [100000030, -99999960]]):
             self.assert_dense({"kind": "polygon", "points": points}, points, tolerance=4e-7)
 
+    def test_translated_primitive_support_keeps_its_actual_origin(self):
+        center = [27, -13]
+        self.assert_dense({'kind': 'circle', 'radius': 20, 'center': center},
+                          curve(center, [20, 0], [0, 20]))
+        self.assert_dense({'kind': 'ellipse', 'width': 70, 'height': 14, 'center': center},
+                          curve(center, [35, 0], [0, 7]))
+
     def test_circle_arcs_cross_zero_clockwise_counterclockwise_and_major_sweeps(self):
         for start, sweep in ((math.radians(350), math.radians(40)),
                              (math.radians(20), -math.radians(80)),
@@ -259,7 +266,8 @@ class EndProfileConvexPlacement(unittest.TestCase):
         self.assertEqual(nodes["convex-cut"]["inputs"], ["forming-region", "section-tool"])
         self.assertEqual(nodes["convex-cut"]["arguments"]["operation"], "subtract")
         slab = nodes["slab-section"]["arguments"]
-        self.assertEqual(slab["placement"]["origin"][0]+slab["contours"][0]["width"]/2, 0)
+        right = max(edge["start"][0] for edge in slab["contours"][0]["segments"])
+        self.assertEqual(slab["placement"]["origin"][0]+right, 0)
 
     def test_oblique_halfspace_tracks_section_middle_and_parallel_extrusion_axis(self):
         contour = {"kind": "polygon", "points": [[3, -7], [31, -7], [27, 12], [-9, 17]]}

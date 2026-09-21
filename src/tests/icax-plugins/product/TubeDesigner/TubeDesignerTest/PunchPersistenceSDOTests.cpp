@@ -42,6 +42,7 @@ using iCAX::GeometryData::BRepModel;
 
 class Application final : public iCAX::Application::IApplicationContext {
 public:
+    Application() { paths.InstallDirectory=std::filesystem::current_path().string(); }
     const iCAX::Application::CApplicationDescriptor& GetDescriptor() const override { return descriptor; }
     const iCAX::Application::CApplicationPaths& GetPaths() const override { return paths; }
     iCAX::Data::PropertyBag GetSettings() const override { return {}; }
@@ -158,6 +159,111 @@ ObjectMap request(const std::string& name,const std::string& profileId,ObjectMap
     return {{"name",name},{"quantity",2ull},{"material",std::string("acceptance-only")},
         {"drawing",ObjectMap{{"schemaVersion",1ull},{"length",1000.},{"section",section(systemProfile(profileId))}}},
         {"features",features},{"ends",ends}};
+}
+
+TEST(AssemblyTemplateSDOTest, ResolvesTwoLogicalPartsAndBuildsManufacturingGeometry)
+{
+    Scene scene;
+    const auto catalogue=invoke(scene,"GetAssemblyTemplates",{});
+    EXPECT_TRUE(catalogue.at("errors").To<VariantArray>().empty());
+    const auto assemblies=catalogue.at("assemblies").To<VariantArray>();
+    ASSERT_GE(assemblies.size(),5u);
+
+    const auto plan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("through-bolt")},
+        {"parameters",ObjectMap{{"boltDiameter",12.0},{"holeClearance",1.0},
+            {"boltCount",3},{"pitch",45.0},{"washer",std::string("both")}}},
+        {"processDrafts",ObjectMap{}},
+    });
+    EXPECT_EQ(plan.at("schema").To<std::string>(),"icax.assembly-preview-plan");
+    EXPECT_EQ(plan.at("templateId").To<std::string>(),"through-bolt");
+    const auto design=plan.at("designParts").To<VariantArray>();
+    const auto manufacturing=plan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(design.size(),2u);
+    ASSERT_EQ(manufacturing.size(),2u);
+    for(const auto& value:design)EXPECT_EQ(value.To<ObjectMap>().at("matrix").To<VariantArray>().size(),16u);
+
+    const auto generated=manufacturing.front().To<ObjectMap>().at("request").To<ObjectMap>();
+    ObjectMap manufacturingRequest{
+        {"name",std::string("装配下料预览")},{"quantity",1ull},{"material",std::string("acceptance-only")},
+        {"drawing",ObjectMap{{"schemaVersion",1ull},{"length",generated.at("length")},
+            {"section",section(systemProfile("rect",{{"width",80.0},{"depth",20.0},{"wallThickness",2.0},{"cornerRadius",2.0},{"innerRadius",1.0}}))}}},
+        {"features",generated.at("features")},{"ends",generated.at("ends")},{"diagnosticBooleanPreview",true},
+    };
+    const auto preview=invoke(scene,"PreviewPunchWizard",manufacturingRequest);
+    ASSERT_TRUE(preview.contains("previewComputed"));
+    EXPECT_TRUE(preview.at("previewComputed").To<bool>());
+    EXPECT_TRUE(preview.contains("baseGeometry"));
+    EXPECT_TRUE(preview.contains("geometry"));
+    if(preview.contains("resultValid"))EXPECT_TRUE(preview.at("resultValid").To<bool>());
+
+    // The assembly bend radius describes the finished product.  The embedded
+    // notch's retained local arc has its own parameter and must use the tool
+    // default (or its own draft), otherwise the default 40 mm assembly radius
+    // is invalid for the standard 40 mm-deep preview tube.
+    const auto embeddedPlan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("bend")},
+        {"parameters",ObjectMap{{"bendMethod",std::string("notched")},{"angle",90.0},
+            {"bendRadius",40.0},{"bendFactor",0.5},{"slotProcess",std::string("embedded-arc-notch")}}},
+        {"processDrafts",ObjectMap{}},
+    });
+    const auto embeddedParts=embeddedPlan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(embeddedParts.size(),1u);
+    const auto embeddedRequest=embeddedParts.front().To<ObjectMap>().at("request").To<ObjectMap>();
+    const auto embeddedFeatures=embeddedRequest.at("features").To<VariantArray>();
+    ASSERT_EQ(embeddedFeatures.size(),1u);
+    const auto embeddedParameters=embeddedFeatures.front().To<ObjectMap>().at("toolParameters").To<ObjectMap>();
+    const auto& arcRadius=embeddedParameters.at("arcRadius");
+    const auto arcRadiusValue=arcRadius.Is<double>() ? arcRadius.To<double>()
+        : arcRadius.Is<std::int64_t>() ? static_cast<double>(arcRadius.To<std::int64_t>())
+        : static_cast<double>(arcRadius.To<int>());
+    EXPECT_EQ(arcRadiusValue,10.0);
+    EXPECT_FALSE(embeddedParameters.contains("bendRadius"));
+    ObjectMap embeddedPreviewRequest{
+        {"name",std::string("装配嵌入圆弧槽预览")},{"quantity",1ull},{"material",std::string("acceptance-only")},
+        {"drawing",ObjectMap{{"schemaVersion",1ull},{"length",embeddedRequest.at("length")},
+            {"section",section(systemProfile("rect"))}}},
+        {"features",embeddedRequest.at("features")},{"ends",embeddedRequest.at("ends")},{"diagnosticBooleanPreview",true},
+    };
+    const auto embeddedPreview=invoke(scene,"PreviewPunchWizard",embeddedPreviewRequest);
+    EXPECT_FALSE(embeddedPreview.contains("resultError"))
+        <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(embeddedPreview);
+    EXPECT_TRUE(embeddedPreview.at("previewComputed").To<bool>());
+    EXPECT_TRUE(embeddedPreview.contains("geometry"));
+
+    // 边弧槽也是折弯可选的单件槽口工艺。装配只传折弯角度，
+    // 留底、圆弧侧及释放加工继续使用边弧槽自己的参数契约。
+    const auto edgeArcPlan=invoke(scene,"ResolveAssemblyTemplatePreview",ObjectMap{
+        {"templateId",std::string("bend")},
+        {"parameters",ObjectMap{{"bendMethod",std::string("notched")},{"angle",90.0},
+            {"bendRadius",40.0},{"bendFactor",0.5},{"slotProcess",std::string("edge-arc-groove")}}},
+        {"processDrafts",ObjectMap{{"bend-slot",ObjectMap{{"edge-arc-groove",ObjectMap{
+            {"bridge",2.0},{"reliefDiameter",10.0},{"reliefLift",0.0},{"reliefDepth",0.0},
+            {"reliefSide",std::string("negative")},{"bottomCut",false}}}}}}},
+    });
+    const auto edgeArcParts=edgeArcPlan.at("manufacturingParts").To<VariantArray>();
+    ASSERT_EQ(edgeArcParts.size(),1u);
+    const auto edgeArcRequest=edgeArcParts.front().To<ObjectMap>().at("request").To<ObjectMap>();
+    const auto edgeArcFeatures=edgeArcRequest.at("features").To<VariantArray>();
+    ASSERT_EQ(edgeArcFeatures.size(),1u);
+    const auto edgeArcParameters=edgeArcFeatures.front().To<ObjectMap>().at("toolParameters").To<ObjectMap>();
+    EXPECT_TRUE(edgeArcParameters.contains("bridge"));
+    EXPECT_TRUE(edgeArcParameters.contains("leftArc"));
+    EXPECT_EQ(edgeArcParameters.at("bridge").To<double>(),2.0);
+    EXPECT_EQ(edgeArcParameters.at("reliefDiameter").To<double>(),10.0);
+    EXPECT_FALSE(edgeArcParameters.at("bottomCut").To<bool>());
+    EXPECT_FALSE(edgeArcParameters.contains("bendRadius"));
+    ObjectMap edgeArcPreviewRequest{
+        {"name",std::string("装配边弧槽预览")},{"quantity",1ull},{"material",std::string("acceptance-only")},
+        {"drawing",ObjectMap{{"schemaVersion",1ull},{"length",edgeArcRequest.at("length")},
+            {"section",section(systemProfile("rect"))}}},
+        {"features",edgeArcRequest.at("features")},{"ends",edgeArcRequest.at("ends")},{"diagnosticBooleanPreview",true},
+    };
+    const auto edgeArcPreview=invoke(scene,"PreviewPunchWizard",edgeArcPreviewRequest);
+    EXPECT_FALSE(edgeArcPreview.contains("resultError"))
+        <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(edgeArcPreview);
+    EXPECT_TRUE(edgeArcPreview.at("previewComputed").To<bool>());
+    EXPECT_TRUE(edgeArcPreview.contains("geometry"));
 }
 std::shared_ptr<CManufacturingPartComponent> part(Scene& scene,const std::string& id) {
     const auto entity=scene.Database().GetEntity(iCAX::Data::uuid::from_string(id).value());
@@ -301,7 +407,7 @@ TEST(PunchPersistenceSDO, RoundedRectBranchAndDxfHolesReopenAndMove) {
             for(double x:{200.,700.})for(double z:{-9.,9.})EXPECT_EQ(BRepClass3d_SolidClassifier(s,gp_Pnt(x,0,z),1e-6).State(),TopAbs_IN);});
 }
 
-TEST(MoldApplicabilitySDO, ActualTargetOverridesSpoofedRequestAndBlocksRoundTube) {
+TEST(MoldApplicabilitySDO, ActualTargetOverridesSpoofedRequestAndEnforcesTemplateGeometry) {
     for(const auto& toolId:std::vector<std::string>{"v-notch-sharp","edge-arc-groove"})
     for(const auto& profileId:std::vector<std::string>{"rect","round"}) {
         SCOPED_TRACE(profileId);
@@ -311,13 +417,16 @@ TEST(MoldApplicabilitySDO, ActualTargetOverridesSpoofedRequestAndBlocksRoundTube
         auto payload=request("适用性机制测试",profileId,{},VariantArray{feature});
         payload["targetProfile"]=ObjectMap{{"status",std::string("verified")},{"typeId",std::string("rect")},
             {"capabilities",ObjectMap{{"opposedFlatFaces",true}}}};
+        const auto drawing=payload.at("drawing").To<ObjectMap>();
+        const auto expectedTarget=drawing.at("section").To<ObjectMap>().at("profile").To<ObjectMap>();
         const auto preview=invoke(scene,"PreviewPunchWizard",payload);
         ASSERT_TRUE(preview.contains("targetSection"));
         const auto target=preview.at("targetSection").To<ObjectMap>();
-        ASSERT_EQ(target.at("status").To<std::string>(),"available") << iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(target);
+        ASSERT_EQ(iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(target),
+            iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(expectedTarget));
         EXPECT_FALSE(target.contains("typeId"));
         EXPECT_TRUE(target.contains("contours"));
-        if(profileId=="round") {
+        if(profileId=="round" && toolId=="edge-arc-groove") {
             ASSERT_TRUE(preview.contains("resultError"));
             EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
         } else {
@@ -327,23 +436,170 @@ TEST(MoldApplicabilitySDO, ActualTargetOverridesSpoofedRequestAndBlocksRoundTube
             EXPECT_NO_THROW(invoke(scene,"AddNestingPunchPart",payload));
             feature["rotation"]=37.;
             payload["features"]=VariantArray{feature};
-            EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
+            if(profileId=="round") EXPECT_NO_THROW(invoke(scene,"AddNestingPunchPart",payload));
+            else EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
         }
     }
 }
 
+TEST(ToolLibraryPreviewSDO, NotchesUseLibraryPlacementAndResolvedSection) {
+    Scene scene;
+    for(const auto& id:std::vector<std::string>{
+        "edge-arc-groove","embedded-arc-notch","segmented-bend","v-notch-sharp",
+        "flexible-slit-bend"}) {
+        SCOPED_TRACE(id);
+        ObjectMap payload{{"profileRef",ObjectMap{{"scope",std::string("system")},{"id",std::string("rect")}}},
+            {"parameters",ObjectMap{}},{"length",500.},{"toolsOnly",true}};
+        // Resolve the real profile package without a personal-data store in this
+        // headless scene. Cutter generation/placement uses the actual SDO path.
+        payload["drawing"]=ObjectMap{{"length",500.},{"section",section(systemProfile("rect"))}};
+        ObjectMap tool{{"toolRef",ObjectMap{{"id",id}}},{"toolParameters",ObjectMap{}}};
+        if(id=="v-notch-sharp") tool["toolParameters"]=ObjectMap{
+            {"bottomStrategy",std::string("relief")},{"reliefShape",std::string("circleWrap")},
+            {"enclosedDiameter",16.},{"radialClearance",.1}};
+        tool["id"]=std::string("library-preview");tool["enabled"]=true;tool["toolTarget"]=std::string("part");
+        tool["face"]=std::string("top");tool["reference"]=std::string("center");tool["station"]=250.;
+        tool["layoutDatum"]=std::string("base");tool["offset"]=0.;tool["rotation"]=0.;
+        payload["features"]=VariantArray{tool};
+        const auto preview=invoke(scene,"PreviewPunchWizard",payload);
+        EXPECT_FALSE(preview.contains("resultError"))<<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+        EXPECT_TRUE(preview.at("previewToolsComplete").To<bool>());
+        EXPECT_TRUE(preview.contains("baseGeometry"));
+        EXPECT_FALSE(preview.at("toolPreviews").To<VariantArray>().empty());
+        const auto analyses=preview.at("sectionAnalyses").To<VariantArray>();
+        ASSERT_EQ(1u,analyses.size());
+        EXPECT_GT(analyses[0].To<ObjectMap>().at("parameters").To<ObjectMap>().at("wallThickness").To<double>(),0.);
+
+        // A drawable cutter is not sufficient acceptance for a groove.  Run the
+        // exact same default through the real subtraction path and require a
+        // valid manufacturing solid before moving on to another profile.
+        payload.erase("toolsOnly");
+        payload["diagnosticBooleanPreview"]=true;
+        const auto cutPreview=invoke(scene,"PreviewPunchWizard",payload);
+        EXPECT_FALSE(cutPreview.contains("resultError"))
+            <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(cutPreview);
+        ASSERT_TRUE(cutPreview.contains("previewComputed"));
+        EXPECT_TRUE(cutPreview.at("previewComputed").To<bool>());
+        ASSERT_TRUE(cutPreview.contains("resultValid"));
+        EXPECT_TRUE(cutPreview.at("resultValid").To<bool>());
+        EXPECT_TRUE(cutPreview.contains("geometry"));
+
+        payload["toolsOnly"]=true;
+        payload.erase("diagnosticBooleanPreview");
+        payload["drawing"]=ObjectMap{{"length",500.},{"section",section(systemProfile("round"))}};
+        const auto roundPreview=invoke(scene,"PreviewPunchWizard",payload);
+        if(id=="v-notch-sharp" || id=="segmented-bend" || id=="flexible-slit-bend") {
+            EXPECT_FALSE(roundPreview.contains("resultError")) << (roundPreview.contains("resultError")
+                ? roundPreview.at("resultError").To<std::string>() : std::string());
+            EXPECT_TRUE(roundPreview.at("previewToolsComplete").To<bool>());
+
+            payload.erase("toolsOnly");
+            payload["diagnosticBooleanPreview"]=true;
+            const auto roundCutPreview=invoke(scene,"PreviewPunchWizard",payload);
+            EXPECT_FALSE(roundCutPreview.contains("resultError"))
+                <<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(roundCutPreview);
+            ASSERT_TRUE(roundCutPreview.contains("resultValid"));
+            EXPECT_TRUE(roundCutPreview.at("resultValid").To<bool>());
+            EXPECT_TRUE(roundCutPreview.contains("geometry"));
+        } else {
+            EXPECT_TRUE(roundPreview.contains("resultError"));
+            EXPECT_TRUE(roundPreview.at("toolPreviews").To<VariantArray>().empty());
+            EXPECT_TRUE(roundPreview.contains("baseGeometry"));
+        }
+    }
+}
+
+TEST(ToolLibraryPreviewSDO, AllEndResourcesProduceRealStartAndEndCuts) {
+    const std::vector<std::string> ids{"end-miter","end-key-joint","end-step-z","end-profile"};
+    for(const auto& id:ids) for(const auto& profileId:std::vector<std::string>{"rect","round"})
+    for(const auto& endKey:std::vector<std::string>{"start","end"}) {
+        SCOPED_TRACE(id+"/"+profileId+"/"+endKey);Scene scene;
+        ObjectMap tool{{"type",id},{"toolRef",ObjectMap{{"id",id}}},{"toolParameters",ObjectMap{}},
+            {"trim",10.},{"rotation",0.}};
+        if(id=="end-miter")tool["datum"]=std::string("long");
+        if(id=="end-profile")tool["section"]=section(systemProfile("round"));
+        auto payload=request("断面修整回归",profileId,{{endKey,tool}});
+        payload["toolsOnly"]=true;
+        const auto preview=invoke(scene,"PreviewPunchWizard",payload);
+        ASSERT_FALSE(preview.contains("resultError"))<<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+        ASSERT_TRUE(preview.at("previewToolsComplete").To<bool>());
+        ASSERT_TRUE(preview.contains("baseGeometry"));
+        ASSERT_FALSE(preview.at("toolPreviews").To<VariantArray>().empty());
+        // Saving executes the real subtraction/contact/retained-material checks.
+        payload.erase("toolsOnly");
+        EXPECT_NO_THROW(invoke(scene,"AddNestingPunchPart",payload));
+    }
+}
+
+TEST(ToolLibraryPreviewSDO, EveryDeclaredEndDefaultPassesNativePreviewAndSave) {
+    std::vector<std::pair<std::string,ObjectMap>> descriptors;
+    const auto root=std::filesystem::current_path()/"src/apps/tube-designer/templates/mold";
+    for(const auto& entry:std::filesystem::directory_iterator(root)) {
+        const auto path=entry.path()/"tool.json";
+        if(!entry.is_directory() || !std::filesystem::exists(path))continue;
+        std::ifstream file(path);
+        const std::string json((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
+        const auto descriptor=iCAX::TemplateRuntime::CStandardJsonCodec::Parse(json).To<ObjectMap>();
+        if(descriptor.at("target").To<std::string>()=="end")
+            descriptors.emplace_back(descriptor.at("id").To<std::string>(),descriptor);
+    }
+    ASSERT_EQ(4u,descriptors.size());
+    for(const auto& [id,descriptor]:descriptors) {
+        SCOPED_TRACE(id);Scene scene;
+        ObjectMap tool{{"type",id},{"toolRef",ObjectMap{{"id",id}}},{"toolParameters",ObjectMap{}}};
+        for(const auto& value:descriptor.at("operationParameters").To<VariantArray>()) {
+            const auto definition=value.To<ObjectMap>();tool[definition.at("key").To<std::string>()]=definition.at("defaultValue");
+        }
+        if(descriptor.contains("requiresSection"))tool["section"]=section(systemProfile("round"));
+        const auto profileId=descriptor.at("preview").To<ObjectMap>().at("profileRef").To<ObjectMap>().at("id").To<std::string>();
+        auto payload=request("端切默认值回归",profileId,{{"start",tool}});
+        payload["toolsOnly"]=true;
+        const auto preview=invoke(scene,"PreviewPunchWizard",payload);
+        ASSERT_FALSE(preview.contains("resultError"))<<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+        ASSERT_TRUE(preview.at("previewToolsComplete").To<bool>());
+        ASSERT_FALSE(preview.at("toolPreviews").To<VariantArray>().empty());
+        payload.erase("toolsOnly");
+        EXPECT_NO_THROW(invoke(scene,"AddNestingPunchPart",payload));
+    }
+}
+
+TEST(PunchTargetSectionSDO, GenericProfileContoursDriveThroughOppositeAndBlindHoles) {
+    for(const auto& profileId:std::vector<std::string>{"round","racetrack","oval"})
+    for(const auto& mode:std::vector<std::string>{"through","opposite","blind"}) {
+        SCOPED_TRACE(profileId+" / "+mode);Scene scene;
+        ObjectMap feature{{"id",std::string("generic-hole")},{"toolTarget",std::string("side")},
+            {"toolRef",ObjectMap{{"id",std::string("circle")}}},{"toolParameters",ObjectMap{{"diameter",6.}}},
+            {"station",500.},{"face",std::string("round")},{"offset",0.}};
+        if(mode=="opposite")feature["opposite"]=true;
+        if(mode=="blind") {feature["blindHole"]=true;feature["cutDepth"]=1.;}
+        auto payload=request("通用轮廓冲孔",profileId,{},VariantArray{feature});
+        payload["diagnosticBooleanPreview"]=true;
+        const auto drawing=payload.at("drawing").To<ObjectMap>();
+        const auto expectedTarget=drawing.at("section").To<ObjectMap>().at("profile").To<ObjectMap>();
+        const auto preview=invoke(scene,"PreviewPunchWizard",payload);
+        EXPECT_FALSE(preview.contains("resultError")) << (preview.contains("resultError")
+            ? preview.at("resultError").To<std::string>() : std::string());
+        ASSERT_TRUE(preview.contains("targetSection"));
+        const auto target=preview.at("targetSection").To<ObjectMap>();
+        EXPECT_EQ(iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(target),
+            iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(expectedTarget));
+        EXPECT_FALSE(target.at("contours").To<VariantArray>().empty());
+        EXPECT_TRUE(preview.at("resultValid").To<bool>());
+    }
+}
+
 TEST(PunchPreviewDiagnosticsSDO, FullWidthPolygonBranchesDisplayCurrentToolsButCannotBeCreatedOrApplied) {
-    const auto polygon=[](double size){return systemProfile("polygon",{{"shapeMode",std::string("regular")},{"sideCount",8},
-        {"width",size},{"depth",size},{"wallThickness",2.}});};
+    const auto polygon=[](double size){return systemProfile("polygon",{{"sideCount",8},
+        {"radius",size/2},{"wallThickness",2.}});};
     for(const auto& mother:std::vector<std::string>{"round","rect","polygon"}) {
         SCOPED_TRACE(mother);Scene scene;
         auto profile=mother=="polygon"?polygon(40):systemProfile(mother,mother=="round"?ObjectMap{}:
             ObjectMap{{"width",40.},{"depth",40.},{"wallThickness",2.},{"cornerRadius",2.}});
         ObjectMap feature{{"id",std::string("current-polygon")},{"toolTarget",std::string("part")},{"recordKind",std::string("branch")},
-            {"toolRef",ObjectMap{{"id",std::string("branch-profile")}}},{"toolParameters",ObjectMap{{"angle",90.},{"azimuth",0.},
-                {"direction",std::string("through")},{"cutRegion",std::string("outer")}}},{"section",section(polygon(20))},
+            {"toolRef",ObjectMap{{"id",std::string("branch-profile")}}},{"toolParameters",ObjectMap{}},
+            {"angle",90.},{"azimuth",0.},{"direction",std::string("through")},{"section",section(polygon(20))},
             {"reference",std::string("center")},{"layoutReference",std::string("center")},{"station",100.},{"face",std::string("round")},
-            {"layoutDatum",std::string("base")},{"arrayCount",2ull},{"arrayPitch",50.},{"arrayOffsets",VariantArray{0.,50.}},
+            {"layoutDatum",std::string("base")},{"arrayCount",2ull},{"arrayPitch",100.},{"arrayOffsets",VariantArray{0.,100.}},
             {"rowCount",1ull},{"rowOffsets",VariantArray{0.}}};
         ObjectMap payload{{"name",std::string("诊断隔离测试")},{"quantity",1ull},{"drawing",ObjectMap{{"length",1000.},{"section",section(profile)}}},
             {"features",VariantArray{feature}},{"ends",ObjectMap{}},{"diagnosticBooleanPreview",true}};
@@ -351,7 +607,7 @@ TEST(PunchPreviewDiagnosticsSDO, FullWidthPolygonBranchesDisplayCurrentToolsButC
         auto blank=payload;blank["features"]=VariantArray{};
         const auto id=invoke(scene,"AddNestingPunchPart",blank).at("partEntityId").To<std::string>();
         const auto initialRecipe=recipe(part(scene,id));const auto initialBytes=persistedShapeBytes(scene,part(scene,id));
-        feature["section"]=section(polygon(40));payload["features"]=VariantArray{feature};
+        feature["section"]=section(polygon(60));payload["features"]=VariantArray{feature};
         const auto invalid=invoke(scene,"PreviewPunchWizard",payload);
         EXPECT_FALSE(invalid.at("resultValid").To<bool>());EXPECT_TRUE(invalid.contains("geometry"));
         EXPECT_TRUE(invalid.at("previewComputed").To<bool>());EXPECT_TRUE(invalid.at("previewToolsComplete").To<bool>());
@@ -396,21 +652,24 @@ TEST(PunchPreviewDiagnosticsSDO, EarlyEndFailureIsExplicitlyPartialAndIdentifies
     EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
 }
 
-TEST(PunchPreviewDiagnosticsSDO, DisconnectedEndCutStillReceivesSubsequentHole) {
+TEST(PunchPreviewDiagnosticsSDO, FilledOuterEndCutReceivesSubsequentHole) {
     Scene scene;const auto branch=systemProfile("round",{{"width",20.},{"wallThickness",2.}});
-    const ObjectMap feature{{"id",std::string("after-end")},{"type",std::string("circle")},{"diameter",10.},
+    const ObjectMap feature{{"id",std::string("after-end")},{"toolTarget",std::string("side")},
+        {"toolRef",ObjectMap{{"id",std::string("circle")}}},{"toolParameters",ObjectMap{{"diameter",10.}}},
         {"station",700.},{"face",std::string("top")},{"reference",std::string("start")},{"layoutDatum",std::string("base")}};
-    auto payload=request("多段端切后继续加工","round",{{"start",end("end-profile",{{"cutRegion",std::string("material")}},0,section(branch))}},VariantArray{feature});
+    auto cutter=end("end-profile",{},0,section(branch));cutter["angle"]=90.;
+    auto payload=request("端切后继续加工","round",{{"start",cutter}},VariantArray{feature});
     payload["diagnosticBooleanPreview"]=true;
     const auto preview=invoke(scene,"PreviewPunchWizard",payload);
-    ASSERT_TRUE(preview.at("previewComputed").To<bool>());EXPECT_FALSE(preview.at("resultValid").To<bool>());
-    EXPECT_GT(preview.at("solidCount").To<unsigned long long>(),1ull);EXPECT_TRUE(preview.at("previewToolsComplete").To<bool>());
+    ASSERT_TRUE(preview.at("previewComputed").To<bool>())<<iCAX::TemplateRuntime::CStandardJsonCodec::Serialize(preview);
+    EXPECT_TRUE(preview.at("resultValid").To<bool>());
+    EXPECT_EQ(preview.at("solidCount").To<unsigned long long>(),1ull);EXPECT_TRUE(preview.at("previewToolsComplete").To<bool>());
     EXPECT_EQ(preview.at("appliedPunchToolCount").To<unsigned long long>(),1ull);EXPECT_TRUE(preview.contains("geometry"));
     const auto model=scene.Resources().Get<BRepModel>(scene.Resources().MakeNamedResourceURL("tube-designer/punch-preview"));
     ASSERT_TRUE(model);const auto rebuilt=iCAX::OpenCascade::BuildOpenCascadeShape(*model);ASSERT_TRUE(rebuilt.bOK);
     EXPECT_EQ(BRepClass3d_SolidClassifier(rebuilt.Shape,gp_Pnt(700,0,19),1e-6).State(),TopAbs_OUT);
     EXPECT_EQ(BRepClass3d_SolidClassifier(rebuilt.Shape,gp_Pnt(680,0,19),1e-6).State(),TopAbs_IN);
-    EXPECT_THROW(invoke(scene,"AddNestingPunchPart",payload),std::exception);
+    EXPECT_NO_THROW(invoke(scene,"AddNestingPunchPart",payload));
 }
 
 TEST(PunchPreviewDiagnosticsSDO, CompleteRemovalIsEditableWithoutAFalseResultMesh) {

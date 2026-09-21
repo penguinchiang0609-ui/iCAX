@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="ICAXCopyOrToolsRuntime" AfterTargets="Build" Condition="'$(ICAXOrToolsAvailable)' == 'true' and Exists('$(ICAXOrToolsBinDir)')">
+    <ItemGroup>
+      <_ICAXOrToolsRuntimeDll Include="$(ICAXOrToolsBinDir)*.dll" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(_ICAXOrToolsRuntimeDll)"
+      DestinationFolder="$(OutDir)"
+      SkipUnchangedFiles="true"
+      Condition="'@(_ICAXOrToolsRuntimeDll)' != ''" />
+  </Target>
+</Project>

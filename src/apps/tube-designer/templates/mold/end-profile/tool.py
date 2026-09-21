@@ -97,7 +97,9 @@ def _support(contour, direction):
         return min(value[0] for value in ranges),max(value[1] for value in ranges)
     else:
         raise ValueError("此截面暂不支持凸口自动定位")
-    return -extent, extent
+    center = contour.get("center", [0, 0])
+    shift = center[0]*dx + center[1]*dy
+    return shift-extent, shift+extent
 
 
 def generate(p, context):
@@ -109,8 +111,6 @@ def generate(p, context):
     contours = copy.deepcopy(contours[:1])
     lo, hi = context["bounds"]["min"], context["bounds"]["max"]
     place = context["placement"]
-    if place["datum"] != "long":
-        raise ValueError("截面端切刀具使用原端长点定位，不支持猜测曲面中心或短点")
     if not math.isfinite(place["trim"]) or place["trim"] < 0 or place["trim"] >= hi[0]-lo[0]:
         raise ValueError("端部修剪量须小于母材长度")
     a,b,r = map(math.radians,(place.get("angle",90),place.get("azimuth",0),place.get("roll",0)))

@@ -92,8 +92,8 @@ const allRibbonDefinition = {
           commands: [
             command("resources.products", "产品", "report", { size: "large", iconTone: "blue" }),
             command("resources.profiles", "管型", "profile-sketch", { size: "large", iconTone: "green" }),
-            command("resources.tools", "模具", "hole", { size: "large", iconTone: "orange" }),
-            command("resources.connections", "连接", "merge", { size: "large", iconTone: "green" }),
+            command("resources.tools", "单件工艺", "hole", { size: "large", iconTone: "orange" }),
+            command("resources.assemblies", "装配", "merge", { size: "large", iconTone: "green" }),
           ],
         },
         {
@@ -114,12 +114,12 @@ const allRibbonDefinition = {
           ],
         },
         {
-          title: "模具操作",
+          title: "单件工艺操作",
           commands: [
             command("tools.new-sketch", "绘制", "profile-sketch", { size: "large", iconTone: "green" }),
             command("tools.import-package", "导入程式", "new", { size: "large", iconTone: "green" }),
             command("tools.import-dxf", "导入定式", "hole", { size: "large", iconTone: "orange" }),
-            command("tools.refresh", "刷新模具", "view-fit", { size: "large", iconTone: "green" }),
+            command("tools.refresh", "刷新工艺", "view-fit", { size: "large", iconTone: "green" }),
           ],
         },
       ],
@@ -186,18 +186,18 @@ export const ribbonDefinition = {
 };
 
 export function getRibbonDefinition(options = {}) {
-  const resourceArea = ["products", "profiles", "tools", "connections"].includes(options?.resourceArea)
+  const resourceArea = ["products", "profiles", "tools", "assemblies"].includes(options?.resourceArea)
     ? options.resourceArea : "profiles";
   const resourceCommandAreas = {
     "resources.products": "products",
     "resources.profiles": "profiles",
     "resources.tools": "tools",
-    "resources.connections": "connections",
+    "resources.assemblies": "assemblies",
   };
   const resourceGroupAreas = {
     "产品模板": "products",
     "管型操作": "profiles",
-    "模具操作": "tools",
+    "单件工艺操作": "tools",
   };
   return {
     ...ribbonDefinition,

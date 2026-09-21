@@ -121,14 +121,11 @@ class ContinuousFrame:
         angle = values.get("angle", 90.0)
         if isinstance(angle, bool) or not isinstance(angle, (int, float)) or not math.isfinite(angle):
             raise ValueError("槽口模具折弯角必须是有限数值")
-        if values.get("useDefaultKFactor", True):
-            factor = 0.62
-        else:
-            factor = values.get("kFactor", 0.62)
-            if isinstance(factor, bool) or not isinstance(factor, (int, float)) or not math.isfinite(factor):
-                raise ValueError("槽口模具 K 因子必须是有限数值")
-            if not 0 <= factor <= 1:
-                raise ValueError("槽口模具 K 因子须介于 0 和 1 之间")
+        factor = values.get("kFactor", 0.62)
+        if isinstance(factor, bool) or not isinstance(factor, (int, float)) or not math.isfinite(factor):
+            raise ValueError("槽口模具 K 因子必须是有限数值")
+        if not 0 <= factor <= 1:
+            raise ValueError("槽口模具 K 因子须介于 0 和 1 之间")
         return math.radians(float(angle)) * float(factor) * self.profile.wall
 
     @property

@@ -24,12 +24,19 @@ def generate(p, context):
     if not 0 < beta < math.pi:
         raise ValueError("总折弯角须介于 0 与 180°")
     count = p["segmentCount"]
+    spacing_model = p.get("spacingModel", "chord")
+    if spacing_model not in ("chord", "tangent"):
+        raise ValueError("分段间距模型无效")
     if p["countMode"] == "tolerance":
         error = p["maximumChordError"]
         if error <= 0:
             raise ValueError("自动分段的最大弓高误差必须大于 0")
-        # asin form avoids catastrophic cancellation at very small error/R.
-        step = 4*math.asin(math.sqrt(min(1, error/(2*radius))))
+        if spacing_model == "chord":
+            # asin form avoids catastrophic cancellation at very small error/R.
+            step = 4*math.asin(math.sqrt(min(1, error/(2*radius))))
+        else:
+            # Circumscribed tangent polygon: e = R*(sec(delta/2)-1).
+            step = 2*math.acos(1/(1+error/radius))
         if step <= 0:
             raise ValueError("弓高误差过小")
         count = max(2, math.ceil(beta/step))
@@ -37,8 +44,12 @@ def generate(p, context):
         raise ValueError("分段槽数必须为 2 至 64；当前误差要求可能过小")
     count = int(count)
     delta = beta/count
-    pitch = 2*radius*math.sin(delta/2)
-    chord_error = 2*radius*math.sin(delta/4)**2
+    if spacing_model == "chord":
+        pitch = 2*radius*math.sin(delta/2)
+        approximation_error = 2*radius*math.sin(delta/4)**2
+    else:
+        pitch = 2*radius*math.tan(delta/2)
+        approximation_error = radius*(1/math.cos(delta/2)-1)
     # K is an optional process allowance, not a formed-radius solution.
     allowance = p["kFactor"]*data["wallThickness"]*delta if p["bendCompensation"] else 0
     opening = 2*height*math.tan(delta/2)+allowance
@@ -47,7 +58,7 @@ def generate(p, context):
     nodes, keys = [], []
     for i in range(count):
         station = (i-(count-1)/2)*pitch
-        top = hi[1]+1
+        top = hi[1]
         half_width = (top-root)*math.tan(delta/2)+allowance/2
         points = [[-half_width,top], [half_width,top]]
         if allowance > 0:
@@ -58,20 +69,24 @@ def generate(p, context):
         keys.append(key)
         nodes.extend([
             {"key": key+"-profile", "operator": "profile2d", "arguments": {
-                "placement": {"origin": [station,hi[0]+1,0], "xAxis": [1,0,0], "yAxis": [0,0,1]},
+                "placement": {"origin": [station,hi[0],0], "xAxis": [1,0,0], "yAxis": [0,0,1]},
                 "contours": [{"kind": "path", "segments": [
                     {"kind": "line", "start": a, "end": b} for a,b in zip(points,points[1:]+points[:1])]}]}},
             {"key": key, "operator": "extrude", "inputs": [key+"-profile"],
-             "arguments": {"vector": [0,-(hi[0]-lo[0]+2),0]}}])
+             "arguments": {"vector": [0,-(hi[0]-lo[0]),0]}}])
     nodes.append({"key": "slots", "operator": "compound", "inputs": keys, "arguments": {}})
     return {"mode": "solid", "coordinateSpace": "part-local", "outputKey": "slots",
         "calculation": {"bendAngle": p["angle"], "finalIncludedAngle": 180-p["angle"],
             "radiusDatum": p["radiusDatum"], "centerlineRadius": radius,
             "segmentCount": count, "singleNotchAngle": math.degrees(delta),
-            "chordPitch": pitch, "chordError": chord_error, "singleNotchOpening": opening,
+            "spacingModel": spacing_model, "slotPitch": pitch,
+            "approximationError": approximation_error,
+            "chordPitch": pitch if spacing_model == "chord" else None,
+            "chordError": approximation_error if spacing_model == "chord" else None,
+            "singleNotchOpening": opening,
             "remainingLand": pitch-opening, "singleNotchAllowance": allowance,
             "patternLength": (count-1)*pitch+opening,
             "rootReference": "inner", "formingValidation": "not-performed"},
         "model": {"schema": "icax.neutral-model", "schemaVersion": 1,
-            "template": {"id": "segmented-bend", "version": "1.0.0", "packageDigest": "self-contained"},
+            "template": {"id": "segmented-bend", "version": "1.2.0", "packageDigest": "self-contained"},
             "geometry": nodes}}

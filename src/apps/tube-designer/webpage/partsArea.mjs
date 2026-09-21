@@ -630,7 +630,7 @@ function renderNestingStockGroup(group, activePlan, selectedIds, view) {
           <span class="tube-designer-nesting-part-locations" title="${locations.length ? "在当前排样结果中的切割序号" : "未排入当前结果"}">${locations.length
             ? locations.slice(0, 3).map(({ placement, index }) => `<i style="--location-color:${getNestingPlacementColor(index, isActiveNestingPlacement(view, placement, index))}">${index + 1}</i>`).join("") + (locations.length > 3 ? `<small>+${locations.length - 3}</small>` : "")
             : ""}</span>
-          <span><strong>${isSheetPart(part) || isComponentPart(part) ? escapeText(manufacturingPartKindLabel(part)) : `${formatNumber(part.length)} mm`}</strong><small>${!isTubeNestingPart(part) ? "不参与管材排样 · " : ""}× ${partQuantity(part)} 件</small></span>
+          <span><strong>${isSheetPart(part) || isComponentPart(part) ? escapeText(manufacturingPartKindLabel(part)) : `${formatNumber(part.length)} mm`}</strong><small>${!isTubeNestingPart(part) ? "不参与管材排样 · " : `优先级 ${partNestingPriority(part)} · `}× ${partQuantity(part)} 件</small></span>
         </button>
       </div>`;
     }).join("")}</div>
@@ -659,17 +659,19 @@ function renderNestingPartInspector(part, view = {}) {
         <label><span>名称</span><input type="text" maxlength="160" value="${escapeAttribute(part.name || part.partNumber || "")}" data-tube-designer-part-field="name" ${view.pending || linked ? "disabled" : ""} /></label>
         ${imported ? `<label><span>材料</span><input type="text" maxlength="240" value="${escapeAttribute(partMaterial(part) === "材料未指定" ? "" : partMaterial(part))}" placeholder="例如：Q235B、不锈钢 304" data-tube-designer-part-field="material" ${view.pending || linked ? "disabled" : ""} /></label>` : ""}
         <label><span>数量</span><input type="number" min="1" max="1000000" step="1" value="${escapeAttribute(partQuantity(part))}" data-tube-designer-part-field="quantity" ${view.pending || linked ? "disabled" : ""} /></label>
+        <label><span>排样优先级</span><input type="number" min="0" max="1000000" step="1" value="${escapeAttribute(partNestingPriority(part))}" data-tube-designer-part-field="nestingPriority" ${view.pending || linked ? "disabled" : ""} title="数字越小越优先；相同数字的零件一起优化" /></label>
         <div class="tube-designer-part-editor-actions">
           ${linked ? "" : `<button class="tube-designer-primary" data-cam-action="tube-designer-part-edit-save" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>保存修改</button>`}
           <button class="tube-designer-danger" data-cam-action="tube-designer-part-edit-delete" data-tube-designer-part-id="${escapeAttribute(part.entityId)}" ${view.pending ? "disabled" : ""}>${linked ? "移出下料" : "删除此零件"}</button>
         </div>
-        <small>${linked ? "该零件直接关联产品拆单结果；名称和数量随产品更新，删除仅取消下料关联。" : "修改后的数量会用于下料和导出；删除只移除当前零件记录。"}</small>
+        <small>${linked ? "该零件直接关联产品拆单结果；名称、数量和优先级随产品更新，删除仅取消下料关联。" : "数字越小越优先；同一优先级一起优化，完成并锁定后再排下一优先级。"}</small>
       </section>
       <section>
         <h3>基本信息</h3>
         <dl>
           ${renderNestingProperty("零件编号", part.partNumber || "未编号")}
           ${renderNestingProperty("数量", `${partQuantity(part)} 件`)}
+          ${renderNestingProperty("排样优先级", `${partNestingPriority(part)}（数字越小越优先）`, true)}
           ${renderNestingProperty(isSheetPart(part) || isComponentPart(part) ? `${manufacturingPartKindLabel(part)}尺寸` : "成品长度", isSheetPart(part) || isComponentPart(part) ? partProfile(part) : `${formatNumber(part.length)} mm`, true)}
           ${isComponentPart(part) || partSourcingLabel(part) !== "供料方式未指定" ? renderNestingProperty("供料方式", partSourcingLabel(part)) : ""}
           ${renderNestingProperty("来源产品", part.productName || part.productCode || "未命名产品", true)}
@@ -1373,6 +1375,7 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
     const name = editor?.querySelector?.('[data-tube-designer-part-field="name"]')?.value ?? "";
     const material = editor?.querySelector?.('[data-tube-designer-part-field="material"]')?.value;
     const quantity = editor?.querySelector?.('[data-tube-designer-part-field="quantity"]')?.value ?? "";
+    const nestingPriority = editor?.querySelector?.('[data-tube-designer-part-field="nestingPriority"]')?.value ?? "";
     if (!partId || !editor) return { handled: true };
     if (!context.sceneProxy?.invoke) throw new Error("当前项目未连接，无法修改零件。");
     view.pending = true;
@@ -1384,6 +1387,7 @@ export async function handlePartsAreaAction(context, view, action, target, ops) 
         name: String(name),
         ...(material !== undefined ? { material: String(material) } : {}),
         quantity: Number(quantity),
+        nestingPriority: Number(nestingPriority),
       }, { timeoutMs: 120000 });
       if (!response?.tubeDesigner) throw new Error("零件修改未能保存。");
       view.scene.tubeDesigner = response.tubeDesigner;
@@ -2052,6 +2056,11 @@ function partReadyLabel(part) {
 function partQuantity(part) {
   const value = finiteNumber(part?.quantity);
   return value && value > 0 ? value : 1;
+}
+
+function partNestingPriority(part) {
+  const value = Number(part?.nestingPriority ?? 0);
+  return Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000 ? value : 0;
 }
 
 function finiteNumber(value) {

@@ -1,6 +1,46 @@
 {
   "schema":"icax.punch-tool","schemaVersion":1,"id":"end-step-z","version":"1.0.0",
-  "displayName":"单台阶 Z 形搭接口","kind":"programmatic","target":"end","category":"端面",
+  "displayName":"台阶端切","description":"形成单台阶 Z 形搭接口；一侧保留端部，另一侧后退，方向可翻转。","kind":"programmatic","target":"end","category":"端面",
+  "inputs": [
+    {
+      "key": "targetSection",
+      "displayName": "目标管型截面",
+      "valueType": "profile",
+      "required": true
+    }
+  ],
+  "preview": {
+    "profileRef": {
+      "scope": "system",
+      "id": "rect"
+    }
+  },
+  "illustration": {
+    "viewBox": "0 0 48 48",
+    "paths": [
+      "M8 10H28V24H40V38H8Z"
+    ]
+  },
+  "operationParameters": [
+    {
+      "key": "trim",
+      "displayName": "端部修剪量（mm）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": 0,
+      "max": 100000,
+      "step": 0.1
+    },
+    {
+      "key": "rotation",
+      "displayName": "轴向旋转（°）",
+      "valueType": "number",
+      "defaultValue": 0,
+      "min": -360,
+      "max": 360,
+      "step": 0.1
+    }
+  ],
   "parameters":[
     {"key":"depth","displayName":"两级端线轴向阶差（mm）","valueType":"number","defaultValue":20,"min":0.01,"max":100000},
     {"key":"splitOffset","displayName":"横向阶梯分界偏移（mm）","valueType":"number","defaultValue":0,"min":-100000,"max":100000},

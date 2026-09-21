@@ -5,7 +5,7 @@ const part={length:1000};
 const original={type:"circle",diameter:10,station:100,arrayCount:5,arrayPitch:150,layoutDatum:"base"};
 const state={baseLength:1000,catalogueStatus:"ready",tools:[],features:[original],ends:{start:{type:"keep"},end:{type:"keep"}}};
 assert.equal(buildPunchReviewSummary(state,part).positions,5);
-assert.equal(buildPunchReviewSummary(state,part).estimatedOpenings,5);
+assert.equal(buildPunchReviewSummary(state,part).estimatedOpenings,10);
 assert.equal(buildPunchReviewSummary(state,part).countsComplete,true);
 const legacyState={...state,features:[{...original,layoutDatum:undefined}]};
 assert.equal(buildPunchReviewSummary(legacyState,part).finishedDatumRecords,1);
@@ -45,14 +45,15 @@ const reviewFeature=feature=>buildPunchReviewSummary({...state,features:[{...ori
 assert.equal(reviewFeature({station:1002}).positions,1);
 assert.equal(reviewFeature({station:1002}).estimatedOpenings,null);
 assert.equal(reviewFeature({station:998}).estimatedOpenings,null);
-assert.equal(reviewFeature({station:500,allowOpen:true}).estimatedOpenings,1,"an old switch must not make every interior circle uncountable");
+assert.equal(reviewFeature({station:500,allowOpen:true}).estimatedOpenings,2,"an old switch must not make every interior circle uncountable");
 assert.equal(reviewFeature({station:500,type:"custom"}).estimatedOpenings,null);
 assert.equal(reviewFeature({station:20,type:"rectangle",spanAlong:10,spanAcross:60,rotation:90}).estimatedOpenings,null);
-assert.equal(reviewFeature({station:20,type:"rectangle",spanAlong:10,spanAcross:60,rotation:0}).estimatedOpenings,1);
+assert.equal(reviewFeature({station:20,type:"rectangle",spanAlong:10,spanAcross:60,rotation:0}).estimatedOpenings,2);
 assert.equal(reviewFeature({station:20,type:"ellipse",spanAlong:10,spanAcross:60,rotation:90}).estimatedOpenings,null);
 assert.equal(reviewFeature({station:20,type:"slot",spanAlong:60,spanAcross:10,rotation:0}).estimatedOpenings,null);
 assert.equal(reviewFeature({station:500,toolTarget:"part"}).estimatedOpenings,null);
-assert.equal(reviewFeature({station:500,through:true}).estimatedOpenings,2);
+assert.equal(reviewFeature({station:500,blindHole:true,cutDepth:1}).estimatedOpenings,1);
+assert.equal(reviewFeature({station:500,opposite:true}).estimatedOpenings,2);
 const invalid=reviewFeature({arrayCount:2,arrayPitch:0});
 assert.equal(invalid.countsComplete,false);
 assert.equal(invalid.estimatedOpenings,null);
@@ -68,7 +69,7 @@ assert.equal(buildPunchReviewSummary({...previewState,preview:{...previewState.p
 assert.match(renderPunchReview({...previewState,preview:{...previewState.preview,includesDraft:true}},part,n=>"fixture-"+n),/本次三维预览（含新增行）/);
 
 // Explicit groups count actual Cartesian instances, not neutralized old counts.
-const arrays={...original,arrayCount:1,rowCount:1,depthMode:"both",opposite:true,
+const arrays={...original,arrayCount:1,rowCount:1,opposite:true,
   arrayGroups:[{id:"x",type:"linear",axis:"X",count:3,spacing:50},
     {id:"y",type:"linear",axis:"Y",count:4,spacing:20}],arraySkips:[{x:1,y:2}]};
 const groupState={...state,features:[arrays]};

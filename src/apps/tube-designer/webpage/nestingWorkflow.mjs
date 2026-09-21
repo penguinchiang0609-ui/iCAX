@@ -4,6 +4,7 @@ import { getNestingParameters, getNestingStockInputs } from "./nestingSettings.m
 // Match the native solver's expanded-instance guard.  The request contains
 // compact demand rows, so large quantities do not inflate the browser payload.
 const MAX_PARTS = 1_000_000;
+const MAX_PRIORITY = 1_000_000;
 const EPSILON = 0.011; // Native lengths are conservatively quantized to 0.01 mm.
 
 function selectedParts(view) {
@@ -68,6 +69,7 @@ export function buildNestingRequest(view, context = null) {
     return group.parts.map((part) => {
       const id = String(part.entityId ?? "");
       const quantity = Number(part.quantity ?? 1);
+      const priority = Number(part.nestingPriority ?? 0);
       if (!id || seen.has(id)) throw new Error("零件清单中存在无效或重复的零件标识，请重新拆单。");
       seen.add(id);
       if (!Number.isFinite(Number(part.length)) || Number(part.length) <= 0) {
@@ -76,9 +78,12 @@ export function buildNestingRequest(view, context = null) {
       if (!Number.isSafeInteger(quantity) || quantity <= 0) {
         throw new Error(`“${partName(part)}”的零件数量无效。`);
       }
+      if (!Number.isSafeInteger(priority) || priority < 0 || priority > MAX_PRIORITY) {
+        throw new Error(`“${partName(part)}”的排样优先级无效，必须是 0 至 ${MAX_PRIORITY} 的整数。`);
+      }
       count += quantity;
       const instanceQuantity = Number(part.instanceQuantity ?? 1);
-      return { partEntityId: id, profileKey: group.key, quantity,
+      return { partEntityId: id, profileKey: group.key, quantity, priority,
         ...(instanceQuantity !== 1 ? { instanceQuantity } : {}) };
     });
   });
@@ -107,6 +112,7 @@ export function getNestingInputSignature(view, context = null) {
     parts: groups.flatMap((group) => group.parts.map((part) => ({
       id: String(part.entityId), profileKey: group.key,
       length: Number(part.length), quantity: Number(part.quantity ?? 1),
+      priority: Number(part.nestingPriority ?? 0),
       resource: part.manufacturingGeometryResourceId ?? "",
       version: part.manufacturingGeometryResourceVersion ?? 0,
       thumbnail: part.thumbnailGeometryResourceId ?? "",
@@ -159,7 +165,7 @@ export function restoreSavedNestingTask(view, context = null) {
     view.tubeDesignerSelectedNestingPlanIds = task.result.plans.map(plan => String(plan.id));
     view.tubeDesignerLockedNestingPlanIds = (task.request.lockedPlans ?? []).map(plan => String(plan.id));
     const comparable = (request) => JSON.stringify({
-      parts: request.parts.map(p => [p.partEntityId, p.profileKey, p.quantity]).sort(),
+      parts: request.parts.map(p => [p.partEntityId, p.profileKey, p.quantity, p.priority ?? 0]).sort(),
       stocks: request.stocks.map(s => [s.id, s.profileKey, s.length, s.quantity]).sort(),
       partGap: request.parameters.partGap,
     });

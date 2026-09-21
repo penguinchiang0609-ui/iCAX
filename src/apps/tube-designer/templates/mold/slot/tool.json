@@ -8,6 +8,14 @@
   "target": "side",
   "category": "孔型",
   "description": "总长 L 包含两端半圆，宽度 W 为端圆直径，直线段长为 L−W。属于封闭孔型，不是折弯槽口。",
+  "inputs": [
+    { "key": "targetSection", "displayName": "目标管型截面", "valueType": "profile", "required": true }
+  ],
+  "operationParameters": [
+    { "key": "blindHole", "displayName": "盲孔", "valueType": "boolean", "defaultValue": false },
+    { "key": "cutDepth", "displayName": "孔深", "valueType": "number", "defaultValue": 5, "min": 0.1, "max": 100000, "step": 0.1, "unit": "mm", "visibleWhen": { "op": "eq", "parameter": "blindHole", "value": true } },
+    { "key": "opposite", "displayName": "对冲孔", "valueType": "boolean", "defaultValue": false }
+  ],
   "parameters": [
     {
       "key": "spanAlong",

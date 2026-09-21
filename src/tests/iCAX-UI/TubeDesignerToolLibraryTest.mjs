@@ -8,11 +8,13 @@ import {
   toolLibraryState,
   visibleLibraryTools,
   buildToolLibraryPreviewPayload,
+  toolTubeProfileEvaluationKey,
   toolPreviewKey,
   applyToolLibraryPreview,
   ensureToolLibraryCatalogue,
   handleToolLibraryAction,
 } from "../../apps/tube-designer/webpage/toolLibrary.mjs";
+import { buildPunchPreviewRows } from "../../apps/tube-designer/webpage/punchEditor.mjs";
 
 const view = {
   tubeDesignerSystemPunchTools: [
@@ -40,16 +42,23 @@ for (const id of ["embedded-arc-notch", "segmented-bend"]) {
   const feature = buildToolLibraryPreviewPayload(packageView, libraryTools(packageView)[0]).features[0];
   assert.equal(feature.toolRef.id, id);
   assert.equal(feature.toolParameters.angle, 90);
-  assert.equal(feature.toolParameters.bendRadius, id === "embedded-arc-notch" ? 10 : 40);
+  if (id === "embedded-arc-notch") {
+    assert.equal(feature.toolParameters.arcRadius, 10);
+    assert.equal(Object.hasOwn(feature.toolParameters, "bendRadius"), false);
+  } else {
+    assert.equal(feature.toolParameters.bendRadius, 40);
+  }
   assert.equal(feature.toolParameters.rootClearance, 1);
   if (id === "embedded-arc-notch") {
     assert.equal(feature.toolParameters.maleFemale, false);
-    assert.doesNotMatch(html, /公母尺寸（mm，0 自动取壁厚）/);
+    assert.doesNotMatch(html, /公母尺寸（mm）/);
+    assert.doesNotMatch(html, /0 (?:自动取|按)壁厚/);
     tool.defaultParameters.maleFemale = true;
     const jointView = { tubeDesignerSystemPunchTools: [tool],
       tubeDesignerToolLibrary: { scope: "system", selectedKey: `system::${id}`, showToolDiagram: true } };
     const jointHtml = renderToolLibraryRightPane({}, jointView) + renderToolLibraryViewportOverlay({}, jointView);
-    assert.match(jointHtml, /公母尺寸（mm，0 自动取壁厚）/);
+    assert.match(jointHtml, /公母尺寸（mm）/);
+    assert.doesNotMatch(jointHtml, /0 (?:自动取|按)壁厚/);
     assert.match(jointHtml, /公母台阶/);
     assert.equal(buildToolLibraryPreviewPayload(jointView, libraryTools(jointView)[0]).features[0].toolParameters.maleFemale, true);
   }
@@ -104,17 +113,18 @@ assert.match(renderToolLibraryLeftPane({}, view), /tube-tool-library-card-art/);
 assert.doesNotMatch(renderToolLibraryLeftPane({}, view), /tube-tool-library-card-icon/);
 
 view.tubeDesignerToolLibrary = { scope: "template", type: "all", search: "", selectedKey: "" };
-assert.equal(visibleLibraryTools(view).length, 1);
-assert.match(renderToolLibraryLeftPane({}, view), /模具库/);
-assert.match(renderToolLibraryLeftPane({}, view), /系统内置/);
-assert.match(renderToolLibraryLeftPane({}, view), /模板自带/);
-assert.match(renderToolLibraryLeftPane({}, view), /我的/);
-assert.match(renderToolLibraryLeftPane({}, view), /模板 V 槽/);
+const sourceTabsHtml = renderToolLibraryLeftPane({}, view);
+assert.equal(toolLibraryState(view).scope, "system");
+assert.equal(visibleLibraryTools(view).length, 2);
+assert.match(sourceTabsHtml, /单件工艺库/);
+assert.match(sourceTabsHtml, /系统内置/);
+assert.doesNotMatch(sourceTabsHtml, /模板自带|模板 V 槽/);
+assert.match(sourceTabsHtml, /我的/);
 assert.doesNotMatch(renderToolLibraryRightPane({}, view), /标准拉伸体/);
 
 // A mould preview is a placement-only blank plus a real extruded tool body.
 // It must not invoke the boolean/result path while the library page is open.
-const partTool = { id: "branch-profile", displayName: "支管相贯", kind: "programmatic", target: "part", requiresSection: true, category: "支管", version: "1.0.0", libraryScope: "system", defaultParameters: { angle: 90, azimuth: 0 } };
+const partTool = { id: "branch-profile", displayName: "支管相贯", kind: "programmatic", target: "part", requiresSection: true, category: "冲孔", version: "1.0.0", libraryScope: "system", defaultParameters: { angle: 90, azimuth: 0 } };
 const previewView = { activeAreaId: "tools", tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::branch-profile", previewRequest: null } };
 const previewPayload = buildToolLibraryPreviewPayload(previewView, { ...partTool, libraryKey: "system::branch-profile" });
 assert.equal(previewPayload.toolsOnly, true);
@@ -139,6 +149,12 @@ await applyToolLibraryPreview({}, previewView, { ...partTool, libraryKey: "syste
 assert.equal(appliedSnapshots[0].rows.length, 2);
 assert.equal(appliedSnapshots[0].rows[1].data.renderClass, 5);
 assert.equal(previewView.preserveCustomViewportEntities, true);
+assert.deepEqual(buildPunchPreviewRows({
+  baseGeometry: { url: "resource:blank", version: 1 },
+  toolPreviews: [],
+  toolGeometry: { url: "resource:combined-tool", version: 1 },
+}).map(row=>row.entityId), ["punch-preview-blank", "punch-preview-tools"],
+"An empty per-tool list must fall back to the valid combined tool geometry.");
 
 // The mould preview owns a selectable tube profile.  Its values are sent
 // together with the mould recipe so changing either side invalidates the
@@ -159,12 +175,16 @@ const profilePreviewView = {
   tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::branch-profile", previewLength: 600 },
 };
 const profilePane = renderToolLibraryRightPane({}, profilePreviewView);
-assert.match(profilePane, /主管 \/ 管型参数/);
+assert.match(profilePane, /工艺参数/);
+assert.match(profilePane, /目标管型/);
+assert.doesNotMatch(profilePane, /tube-tool-library-tube-summary[^>]*>[\s\S]*?<small>/);
 assert.match(profilePane, /tube-designer-tool-library-profile-parameter-change/);
 assert.doesNotMatch(profilePane, /data-profile-parameter-diagram|data-tool-parameter-diagram/);
-assert.match(renderToolLibraryViewportOverlay({}, profilePreviewView), /主管示意图/);
-assert.match(profilePane, /tube-tool-library-mold-section/);
-assert.match(profilePane, /模具信息/);
+assert.match(renderToolLibraryViewportOverlay({}, profilePreviewView), /目标管型示意图/);
+assert.match(profilePane, /tube-profile-library-parameter-section/);
+assert.doesNotMatch(profilePane, /单件工艺信息|工艺 ID|几何与加工边界/);
+assert.match(profilePane, /id="tube-tool-library-main-tube-content" hidden/);
+assert.doesNotMatch(profilePane, /主管预览长度/);
 assert.doesNotMatch(profilePane, /标准拉伸体/);
 assert.doesNotMatch(profilePane, /data-profile-library-diagram/);
 
@@ -191,8 +211,8 @@ const branchView = {
   },
 };
 const branchPane = renderToolLibraryRightPane({}, branchView);
-assert.match(branchPane, /支管 \/ 管型参数/);
-assert.match(branchPane, /支管管型/);
+assert.match(branchPane, /刀具截面/);
+assert.match(branchPane, /截面管型/);
 assert.match(branchPane, /data-tube-tool-library-profile-role="branch"/);
 assert.match(branchPane, /宽度/);
 assert.doesNotMatch(branchPane, /与主管轴夹角/);
@@ -209,7 +229,8 @@ assert.equal(branchRenders, 0);
 assert.equal(branchView.tubeDesignerToolLibrary.showProfileDiagram, true);
 const expandedBranchPane = renderToolLibraryRightPane({}, branchView);
 const branchEditor = expandedBranchPane.slice(expandedBranchPane.indexOf('tube-tool-library-branch-section'));
-assert.doesNotMatch(branchEditor, /data-profile-library-diagram|data-tube-tool-library-diagram/);
+assert.doesNotMatch(branchEditor, /data-profile-library-diagram/);
+assert.match(branchEditor, /data-tube-tool-library-diagram="profile"/);
 assert.match(renderToolLibraryViewportOverlay({}, branchView), /data-parameter-diagram-for="tool-library-profile:branch"/);
 await handleToolLibraryAction({}, branchView, "tube-designer-tool-library-profile-parameter-change", {
   value: "72", dataset: { tubeToolLibraryProfileKey: "system:rect", tubeToolLibraryProfileParameter: "width", tubeToolLibraryProfileRole: "branch" },
@@ -224,23 +245,24 @@ assert.equal(diagramRenders, 0);
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.showProfileDiagram, true);
 assert.match(renderToolLibraryViewportOverlay({}, profilePreviewView), /data-parameter-diagram-for="tool-library-profile:main"/);
 const expandedMainPane = renderToolLibraryRightPane({}, profilePreviewView);
-assert.doesNotMatch(expandedMainPane, /data-profile-library-diagram|data-tube-tool-library-diagram/);
+assert.doesNotMatch(expandedMainPane, /data-profile-library-diagram/);
 const beforeCollapseKey = toolPreviewKey(profilePreviewView, partTool);
 const beforeCollapseDrafts = structuredClone(profilePreviewView.tubeDesignerToolLibrary.profileDrafts);
-await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, true);
-assert.match(renderToolLibraryRightPane({}, profilePreviewView), /id="tube-tool-library-main-tube-content" hidden/);
-assert.match(renderToolLibraryRightPane({}, profilePreviewView), /展开主管信息/);
+assert.match(expandedMainPane, /id="tube-tool-library-main-tube-content" hidden/);
+await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
+assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, false);
+assert.doesNotMatch(renderToolLibraryRightPane({}, profilePreviewView), /id="tube-tool-library-main-tube-content" hidden/);
 assert.equal(toolPreviewKey(profilePreviewView, partTool), beforeCollapseKey);
 assert.deepEqual(profilePreviewView.tubeDesignerToolLibrary.profileDrafts, beforeCollapseDrafts);
 await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-select", {
   dataset: { tubeToolLibraryKey: "system::branch-profile" },
 }, { renderProject() {} });
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.showProfileDiagram, true);
-assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, true);
-await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, false);
-assert.doesNotMatch(renderToolLibraryRightPane({}, profilePreviewView), /id="tube-tool-library-main-tube-content" hidden/);
+await handleToolLibraryAction({}, profilePreviewView, "tube-designer-tool-library-toggle-main-tube", {}, { renderProject() {} });
+assert.equal(profilePreviewView.tubeDesignerToolLibrary.mainTubeCollapsed, true);
+assert.match(renderToolLibraryRightPane({}, profilePreviewView), /id="tube-tool-library-main-tube-content" hidden/);
 assert.equal(profilePreviewView.tubeDesignerToolLibrary.showProfileDiagram, true);
 
 // Selecting another mould keeps the already-applied tube/scene alive while
@@ -257,12 +279,105 @@ assert.equal(profilePreviewView.preserveCustomViewportEntities, true);
 const selectedProfilePayload = buildToolLibraryPreviewPayload(profilePreviewView, { ...partTool, libraryKey: "system::branch-profile" });
 assert.deepEqual(selectedProfilePayload.profileRef, { scope: "system", id: "round" });
 assert.deepEqual(selectedProfilePayload.parameters, { width: 40, wallThickness: 2 });
-assert.equal(selectedProfilePayload.length, 600);
+assert.equal(selectedProfilePayload.length, 500);
 assert.equal(selectedProfilePayload.features[0].reference, "center");
 assert.equal(selectedProfilePayload.features[0].station, 0);
 assert.equal(selectedProfilePayload.features[0].layoutDatum, "base");
 assert.deepEqual(selectedProfilePayload.features[0].section.profile.contours, profileForTool.previewProfile.contours);
 
+// The floating主管 diagram uses the current evaluated profile rather than
+// drawing the package's default preview with only updated number labels.
+profilePreviewView.tubeDesignerToolLibrary.profileSnapshots = {
+  main: {
+    key: toolTubeProfileEvaluationKey(profilePreviewView, profileForTool, "main"),
+    snapshot: {
+      ...profileForTool.previewProfile,
+      contours: [{ kind: "circle", center: [7, -3], radius: 20 }, { kind: "circle", center: [7, -3], radius: 18 }],
+      parameterDiagram: { schemaVersion: 1, annotations: [{ parameter: "width", kind: "linear", axis: "x", side: "top", from: [-13, 17], to: [27, 17] }] },
+    },
+  },
+};
+const evaluatedProfileDiagram = renderToolLibraryViewportOverlay({}, profilePreviewView);
+assert.match(evaluatedProfileDiagram, /cx="7" cy="-3"/);
+
+const liveTool = { id: "live-hole", displayName: "联动孔", kind: "programmatic", target: "side", category: "孔型", parameters: [] };
+const liveView = {
+  activeAreaId: "tools",
+  tubeDesignerSystemPunchTools: [liveTool],
+  tubeDesignerSystemProfiles: [profileForTool],
+  tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::live-hole", profileDrafts: { "system:round": { width: 44, wallThickness: 2 } }, showProfileDiagram: true },
+  viewport: {
+    async applyViewSnapshot(snapshot) { return { applied: true, entityIds: snapshot.rows.map(row => row.entityId), missingGeometryEntityIds: [] }; },
+    setStandardView() {}, fitViewToViewport() {}, setVisibleEntityIds() {},
+  },
+};
+const evaluatedRequests = [];
+const liveContext = { sceneProxy: {
+  resources: {},
+  async invoke(method, payload) {
+    if (method === "TubeDesigner.EvaluateProfilePackage") {
+      evaluatedRequests.push(payload);
+      return { profile: {
+        ...profileForTool.previewProfile,
+        contours: [{ kind: "circle", center: [9, -4], radius: 22 }, { kind: "circle", center: [9, -4], radius: 20 }],
+        parameterDiagram: { schemaVersion: 1, annotations: [{ parameter: "width", kind: "linear", axis: "x", side: "top", from: [-13, 18], to: [31, 18] }] },
+      } };
+    }
+    if (method === "TubeDesigner.PreviewPunchWizard") return {
+      baseGeometry: { url: "resource:live-blank", version: 1 },
+      baseMaterial: { url: "resource:live-blank-material", version: 1 },
+      toolMaterial: { url: "resource:live-tool-material", version: 1 },
+      toolPreviews: [{ target: "feature", key: "library-preview", geometry: { url: "resource:live-tool", version: 1 } }],
+    };
+    throw new Error(`unexpected method: ${method}`);
+  },
+} };
+renderToolLibraryViewportOverlay(liveContext, liveView);
+const liveRequest = liveView.tubeDesignerToolLibrary.previewRequest;
+assert.ok(liveRequest);
+await liveRequest.promise;
+assert.deepEqual(evaluatedRequests[0].parameters, { width: 44, wallThickness: 2 });
+assert.match(renderToolLibraryViewportOverlay({}, liveView), /cx="9" cy="-4"/);
+
+// Side-hole templates explicitly declare the target cross-section as an input.
+// Shape, blind-hole depth and opposite punching are resource parameters; placement is
+// still supplied only by the consuming workflow.
+const circleTool = JSON.parse(readFileSync(new URL("../../apps/tube-designer/templates/mold/circle/tool.json", import.meta.url), "utf8"));
+circleTool.defaultParameters = Object.fromEntries(circleTool.parameters.map(parameter => [parameter.key, parameter.defaultValue]));
+circleTool.defaultOperationParameters = Object.fromEntries(circleTool.operationParameters.map(parameter => [parameter.key, parameter.defaultValue]));
+const circleView = {
+  tubeDesignerSystemPunchTools: [circleTool],
+  tubeDesignerSystemProfiles: [profileForTool],
+  tubeDesignerToolLibrary: { scope: "system", selectedKey: "system::circle" },
+};
+const circleHtml = renderToolLibraryRightPane({}, circleView);
+assert.match(circleHtml, /盲孔/);
+assert.doesNotMatch(circleHtml, /孔深/);
+assert.match(circleHtml, /对冲孔/);
+assert.match(circleHtml, /目标管型/);
+let circlePayload = buildToolLibraryPreviewPayload(circleView, libraryTools(circleView)[0]);
+assert.equal(circlePayload.features[0].blindHole, false);
+assert.equal(circlePayload.features[0].cutDepth, 5);
+assert.equal(circlePayload.features[0].opposite, false);
+await handleToolLibraryAction({}, circleView, "tube-designer-tool-library-operation-parameter-change", {
+  value: "on", checked: true,
+  dataset: { tubeToolLibraryKey: "system::circle", tubeToolLibraryOperationParameter: "blindHole" },
+}, { renderProject() {} });
+assert.match(renderToolLibraryRightPane({}, circleView), /孔深/);
+await handleToolLibraryAction({}, circleView, "tube-designer-tool-library-operation-parameter-change", {
+  value: "8", checked: false,
+  dataset: { tubeToolLibraryKey: "system::circle", tubeToolLibraryOperationParameter: "cutDepth" },
+}, { renderProject() {} });
+await handleToolLibraryAction({}, circleView, "tube-designer-tool-library-operation-parameter-change", {
+  value: "on", checked: true,
+  dataset: { tubeToolLibraryKey: "system::circle", tubeToolLibraryOperationParameter: "opposite" },
+}, { renderProject() {} });
+circlePayload = buildToolLibraryPreviewPayload(circleView, libraryTools(circleView)[0]);
+assert.equal(circlePayload.features[0].blindHole, true);
+assert.equal(circlePayload.features[0].cutDepth, 8);
+assert.equal(circlePayload.features[0].opposite, true);
+
+view.tubeDesignerToolLibrary.scope = "user";
 view.tubeDesignerToolLibrary.type = "fixed";
 assert.equal(visibleLibraryTools(view).length, 1);
 const toolCards = renderToolLibraryLeftPane({}, view);
@@ -324,11 +439,12 @@ await ensureToolLibraryCatalogue(retryContext, retryView, {});
 assert.equal(toolLibraryState(retryView).catalogueStatus, "ready");
 assert.equal(retryCalls, 3);
 
-// Grouping follows operation semantics and notes never claim process approval.
+// Grouping follows operation semantics. The compact parameter panel does not
+// repeat long catalogue/process notes beside every editor.
 const semanticsView = { tubeDesignerSystemPunchTools: [
   { id: "arbitrary-hole", displayName: "测试孔", target: "side", kind: "programmatic", category: "孔型",
-    description: "<script>unsafe</script>" },
-  { id: "arbitrary-joint", target: "part", requiresSection: true, category: "支管" },
+    inputs: [{ key: "targetSection", valueType: "profile", required: true }], description: "<script>unsafe</script>" },
+  { id: "arbitrary-joint", target: "part", requiresSection: true, category: "冲孔" },
   { id: "arbitrary-end", target: "end", category: "端面" },
   { id: "arbitrary-notch", target: "part", category: "槽口" },
 ] };
@@ -336,15 +452,13 @@ const groupsHtml = renderToolLibraryLeftPane({}, semanticsView);
 assert.equal((groupsHtml.match(/data-tube-tool-library-group=/g) ?? []).length, 3);
 assert.match(groupsHtml, /冲孔/);
 assert.doesNotMatch(groupsHtml, /data-tube-tool-library-group="branch"/);
-for (const [id, expected] of [
-  ["arbitrary-hole", /固定方向扫掠/],
-  ["arbitrary-end", /最长点／最短点／中心/],
-  ["arbitrary-notch", /K 因子/],
-]) {
+for (const id of ["arbitrary-hole", "arbitrary-end", "arbitrary-notch"]) {
   toolLibraryState(semanticsView).selectedKey = `system::${id}`;
   const html = renderToolLibraryRightPane({}, semanticsView);
-  assert.match(html, expected);
-  assert.match(html, /不是激光工艺合格结论/);
+  assert.match(html, /工艺参数/);
+  if (id === "arbitrary-hole") assert.match(html, /目标管型/);
+  else assert.doesNotMatch(html, /目标管型/);
+  assert.doesNotMatch(html, /几何与加工边界|不是激光工艺合格结论/);
   assert.doesNotMatch(html, /<script>unsafe/);
 }
 console.log("TubeDesigner tool library tests passed");

@@ -7,8 +7,8 @@ const resources = ribbonDefinition.tabs.find((tab) => tab.id === "resources");
 assert.equal(resources.title, "资源库");
 const resourceCommands = resources.groups.flatMap((group) => group.commands);
 assert.deepEqual(resourceCommands.slice(0, 4).map((command) => [command.id, command.title]), [
-  ["resources.products", "产品"], ["resources.profiles", "管型"], ["resources.tools", "模具"], ["resources.connections", "连接"],
-], "产品、管型、模具和连接应保持扁平并置");
+  ["resources.products", "产品"], ["resources.profiles", "管型"], ["resources.tools", "单件工艺"], ["resources.assemblies", "装配"],
+], "产品、管型、单件工艺和装配应保持扁平并置");
 assert.ok(resourceCommands.some((command) => command.id === "profiles.import-package"));
 assert.ok(resourceCommands.some((command) => command.id === "tools.new-sketch"));
 assert.ok(resourceCommands.some((command) => command.id === "tools.import-package"));
@@ -22,14 +22,14 @@ const activeResourceCommands = activeResources.groups[0].commands;
 assert.equal(activeResourceCommands.find((command) => command.id === "resources.tools").active, true);
 assert.equal(activeResourceCommands.filter((command) => command.active).length, 1);
 assert.deepEqual(
-  getRibbonDefinition({ resourceArea: "connections" }).tabs.find((tab) => tab.id === "resources").groups.map((group) => group.title),
+  getRibbonDefinition({ resourceArea: "assemblies" }).tabs.find((tab) => tab.id === "resources").groups.map((group) => group.title),
   ["资源类型"],
-  "连接模板不重复提供模具绘制命令",
+  "装配模板不重复提供单件工艺绘制命令",
 );
 assert.deepEqual(
   getRibbonDefinition({ resourceArea: "tools" }).tabs.find((tab) => tab.id === "resources").groups.map((group) => group.title),
-  ["资源类型", "模具操作"],
-  "选中模具时只展示模具操作",
+  ["资源类型", "单件工艺操作"],
+  "选中单件工艺时只展示单件工艺操作",
 );
 assert.deepEqual(
   getRibbonDefinition({ resourceArea: "products" }).tabs.find((tab) => tab.id === "resources").groups.map((group) => group.title),
@@ -47,8 +47,8 @@ const entry = readFileSync(new URL("../../apps/tube-designer/webpage/entry.mjs",
 const areaNames = entry.match(/areaTitleOverrides:\s*\{([^}]+)\}/)?.[1] ?? "";
 assert.match(areaNames, /resources:\s*"资源库"/);
 assert.match(areaNames, /profiles:\s*"管型库"/);
-assert.match(areaNames, /tools:\s*"模具库"/);
-assert.match(areaNames, /connections:\s*"连接库"/);
+assert.match(areaNames, /tools:\s*"单件工艺库"/);
+assert.match(areaNames, /assemblies:\s*"装配库"/);
 
 const designerActions = readFileSync(new URL("../../apps/tube-designer/webpage/designerActions.mjs", import.meta.url), "utf8");
 assert.match(
@@ -106,13 +106,13 @@ assert.deepEqual(
   ["资源类型", "产品模板"],
 );
 
-const connectionView = { pending: false };
+const assemblyView = { pending: false };
 await handleDesignerRibbonCommand(
   { actions: { selectRibbonTab: async () => {} } },
-  connectionView,
-  "resources.connections",
+  assemblyView,
+  "resources.assemblies",
   { renderProject() {} },
 );
-assert.equal(connectionView.tubeDesignerResourceLibraryArea, "connections");
-assert.equal(getRibbonDefinition({ resourceArea: "connections" }).tabs.find((tab) => tab.id === "resources").groups[0].commands.find((command) => command.id === "resources.connections").active, true);
+assert.equal(assemblyView.tubeDesignerResourceLibraryArea, "assemblies");
+assert.equal(getRibbonDefinition({ resourceArea: "assemblies" }).tabs.find((tab) => tab.id === "resources").groups[0].commands.find((command) => command.id === "resources.assemblies").active, true);
 console.log("TubeDesignerLibraryNavigationTest: passed");
