@@ -80,6 +80,26 @@ namespace
             EXPECT_NEAR(Expected_[_Index], _Bounds[_Index], 1e-6) << _Index;
     }
 
+    std::array<double, 6> MeshBounds(const iCAX::GeometryData::CTriangleMeshResource& Mesh_)
+    {
+        const auto& _Vertices = Mesh_.Mesh.Vertices;
+        if (_Vertices.empty()) throw std::invalid_argument("triangle mesh has no vertices");
+        std::array<double, 6> _Bounds{
+            _Vertices.front().X, _Vertices.front().Y, _Vertices.front().Z,
+            _Vertices.front().X, _Vertices.front().Y, _Vertices.front().Z
+        };
+        for (const auto& _Vertex : _Vertices)
+        {
+            _Bounds[0] = std::min(_Bounds[0], _Vertex.X);
+            _Bounds[1] = std::min(_Bounds[1], _Vertex.Y);
+            _Bounds[2] = std::min(_Bounds[2], _Vertex.Z);
+            _Bounds[3] = std::max(_Bounds[3], _Vertex.X);
+            _Bounds[4] = std::max(_Bounds[4], _Vertex.Y);
+            _Bounds[5] = std::max(_Bounds[5], _Vertex.Z);
+        }
+        return _Bounds;
+    }
+
     ObjectMap ResourcePlacement(double X_, double Y_, double Z_, bool Rotate_ = false)
     {
         return {
@@ -424,4 +444,42 @@ TEST(ComponentResource, BRepTranslationRejectsInvalidBatchAndCanRunAgain)
     }, _Pool);
     ASSERT_TRUE(_Task.WaitFor(std::chrono::seconds(5)));
     EXPECT_EQ(2u, _Task.Result().size());
+}
+
+TEST(ComponentResource, ParallelDisplayMeshTranslationPreservesOrderAndGeometry)
+{
+    using namespace iCAX::OpenCascade;
+    const auto _Box = BRepPrimAPI_MakeBox(10, 20, 30).Shape();
+    const auto _Cylinder = BRepPrimAPI_MakeCylinder(7, 30).Shape();
+    std::vector<SBRepConversionInput> _Inputs;
+    for (int _Index = 0; _Index < 17; ++_Index)
+    {
+        gp_Trsf _Translation;
+        _Translation.SetTranslation(gp_Vec(_Index * 50, _Index * 7, 0));
+        _Inputs.push_back({ (_Index % 2 ? _Box : _Cylinder).Moved(TopLoc_Location(_Translation)),
+            "part " + std::to_string(_Index), "resource/" + std::to_string(_Index) });
+    }
+    const auto _Serial = ConvertOpenCascadeShapesToTriangleMeshes(_Inputs, 0.1, 1);
+    const auto _Parallel = ConvertOpenCascadeShapesToTriangleMeshes(_Inputs, 0.1, 4);
+    ASSERT_EQ(_Inputs.size(), _Parallel.size());
+    for (std::size_t _Index = 0; _Index < _Inputs.size(); ++_Index)
+    {
+        SCOPED_TRACE(_Index);
+        const auto& _Actual = _Parallel[_Index];
+        EXPECT_EQ(_Inputs[_Index].SourceID, _Actual.Metadata.SourceId);
+        EXPECT_EQ(_Inputs[_Index].DisplayName, _Actual.Metadata.Name);
+        EXPECT_FALSE(_Actual.Mesh.Vertices.empty());
+        EXPECT_FALSE(_Actual.Mesh.Triangles.empty());
+        EXPECT_EQ(_Serial[_Index].Mesh.Vertices.size(), _Actual.Mesh.Vertices.size());
+        EXPECT_EQ(_Serial[_Index].Mesh.Triangles, _Actual.Mesh.Triangles);
+        EXPECT_EQ(_Actual.Mesh.Triangles.size(), _Actual.Mesh.TriangleFaceIds.size());
+        const auto _ExpectedBounds = ResourceBounds(_Inputs[_Index].Shape);
+        const auto _MeshBounds = MeshBounds(_Actual);
+        const auto _Tolerance = _Index % 2 ? 1e-6 : 1.0;
+        for (std::size_t _Axis = 0; _Axis < _ExpectedBounds.size(); ++_Axis)
+            EXPECT_NEAR(_ExpectedBounds[_Axis], _MeshBounds[_Axis], _Tolerance) << _Axis;
+    }
+    EXPECT_TRUE(ConvertOpenCascadeShapesToTriangleMeshes({}).empty());
+    EXPECT_THROW(ConvertOpenCascadeShapesToTriangleMeshes(
+        { _Inputs.front(), { {}, "null", "bad" } }), std::invalid_argument);
 }

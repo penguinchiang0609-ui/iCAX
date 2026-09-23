@@ -12,8 +12,8 @@ namespace iCAX::Interaction
     struct _SDO_EXP CSDOQueueCreateInfo final
     {
         size_t nMaxFrameCount = 4096;
-        size_t nMaxQueuedPayloadBytes = 4ull * 1024ull * 1024ull;
-        size_t nMaxPayloadBytesPerFrame = 4ull * 1024ull * 1024ull;
+        size_t nMaxQueuedPayloadBytes = 16ull * 1024ull * 1024ull;
+        size_t nMaxPayloadBytesPerFrame = 16ull * 1024ull * 1024ull;
     };
 
     /*

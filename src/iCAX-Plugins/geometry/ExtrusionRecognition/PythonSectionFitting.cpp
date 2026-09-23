@@ -26,6 +26,7 @@ namespace
 
     std::optional<double> Number(IN const Variant& Value_)
     {
+        if (Value_.Is<bool>()) return std::nullopt;
         return std::visit([](IN const auto& Value_) -> std::optional<double> {
             using T = std::decay_t<decltype(Value_)>;
             if constexpr (std::is_arithmetic_v<T>)
@@ -46,43 +47,107 @@ namespace
 
     Variant EdgeValue(IN const SSectionWireEdge& Edge_)
     {
-        VariantArray _Samples;
-        _Samples.reserve(Edge_.Samples.size());
-        for (const auto& _Point : Edge_.Samples)
-        {
-            _Samples.push_back(PointValue(_Point));
-        }
-        return Variant(ObjectMap{
+        using namespace iCAX::GeometryData;
+        ObjectMap _Result{
             { "sourceEdgeId", static_cast<unsigned long long>(Edge_.SourceEdgeId) },
             { "start", PointValue(Edge_.Start) },
             { "end", PointValue(Edge_.End) },
             { "reversed", Edge_.bReversed },
-            { "samples", std::move(_Samples) }
-        });
-    }
-
-    VariantArray WirePoints(IN const SSectionWire& Wire_)
-    {
-        VariantArray _Points;
-        for (const auto& _Edge : Wire_.Edges)
-        {
-            if (_Edge.Samples.empty())
+            { "first", Edge_.Range.First },
+            { "last", Edge_.Range.Last } };
+        std::visit([&](const auto& Curve_) {
+            using T = std::decay_t<decltype(Curve_)>;
+            if constexpr (std::is_same_v<T, Line2> || std::is_same_v<T, Ray2>
+                || std::is_same_v<T, Segment2>)
             {
-                if (_Points.empty()) _Points.push_back(PointValue(_Edge.Start));
-                _Points.push_back(PointValue(_Edge.End));
-                continue;
+                _Result["kind"] = std::string("line");
             }
-            const auto _Begin = _Points.empty() ? 0u : 1u;
-            for (std::size_t _Index = _Begin; _Index < _Edge.Samples.size(); ++_Index)
+            else if constexpr (std::is_same_v<T, Circle2> || std::is_same_v<T, Arc2>
+                || std::is_same_v<T, Ellipse2> || std::is_same_v<T, EllipseArc2>)
             {
-                _Points.push_back(PointValue(_Edge.Samples[_Index]));
+                const auto& _Basis = [&]() -> const auto& {
+                    if constexpr (std::is_same_v<T, Arc2> || std::is_same_v<T, EllipseArc2>)
+                        return Curve_.Basis;
+                    else return Curve_;
+                }();
+                double _First = 0.0, _Sweep = 2.0 * kPi;
+                if constexpr (std::is_same_v<T, Arc2> || std::is_same_v<T, EllipseArc2>)
+                {
+                    _First = Curve_.StartAngle;
+                    _Sweep = Curve_.CounterClockwise
+                        ? Curve_.EndAngle - Curve_.StartAngle : Curve_.StartAngle - Curve_.EndAngle;
+                }
+                if (Edge_.bReversed) { _First += _Sweep; _Sweep = -_Sweep; }
+                const auto& _X = _Basis.Placement.XDirection;
+                const auto& _Y = _Basis.Placement.YDirection;
+                const auto _Handedness = _X.X * _Y.Y - _X.Y * _Y.X < 0.0 ? -1.0 : 1.0;
+                const auto _Rotation = std::atan2(_X.Y, _X.X);
+                _First *= _Handedness;
+                _Sweep *= _Handedness;
+                _Result["center"] = PointValue(_Basis.Placement.Location);
+                if constexpr (std::is_same_v<T, Circle2> || std::is_same_v<T, Arc2>)
+                {
+                    _Result["kind"] = std::string("circleArc");
+                    _Result["radius"] = _Basis.Radius;
+                    _Result["first"] = _Rotation + _First;
+                    _Result["last"] = _Rotation + _First + _Sweep;
+                }
+                else
+                {
+                    _Result["kind"] = std::string("ellipseArc");
+                    _Result["majorRadius"] = _Basis.MajorRadius;
+                    _Result["minorRadius"] = _Basis.MinorRadius;
+                    _Result["rotation"] = _Rotation;
+                    _Result["startAngle"] = _First;
+                    _Result["endAngle"] = _First + _Sweep;
+                }
             }
-        }
-        if (_Points.size() > 1 && _Points.front() == _Points.back())
-        {
-            _Points.pop_back();
-        }
-        return _Points;
+            else if constexpr (std::is_same_v<T, Polyline2>)
+            {
+                _Result["kind"] = std::string("polyline");
+                VariantArray _Points;
+                for (const auto& _Point : Curve_.Points) _Points.push_back(PointValue(_Point));
+                _Result["points"] = std::move(_Points);
+                _Result["closed"] = Curve_.Closed;
+            }
+            else if constexpr (std::is_same_v<T, Bezier2> || std::is_same_v<T, BSpline2>
+                || std::is_same_v<T, NURBS2>)
+            {
+                // Preserve exact data even for curve types whose inverse is
+                // unsupported. Never substitute sampled lines for a spline.
+                VariantArray _Poles;
+                for (const auto& _Point : Curve_.Poles) _Poles.push_back(PointValue(_Point));
+                _Result["poles"] = std::move(_Poles);
+                if constexpr (std::is_same_v<T, Bezier2>) _Result["kind"] = std::string("bezier");
+                else
+                {
+                    _Result["kind"] = std::string(std::is_same_v<T, NURBS2> ? "nurbs" : "bspline");
+                    _Result["degree"] = Curve_.Degree;
+                    _Result["periodic"] = Curve_.Periodic;
+                    VariantArray _Knots, _Multiplicities;
+                    for (auto _Value : Curve_.Knots) _Knots.emplace_back(_Value);
+                    for (auto _Value : Curve_.Multiplicities) _Multiplicities.emplace_back(_Value);
+                    _Result["knots"] = std::move(_Knots);
+                    _Result["multiplicities"] = std::move(_Multiplicities);
+                    if constexpr (std::is_same_v<T, NURBS2>)
+                    {
+                        VariantArray _Weights;
+                        for (auto _Value : Curve_.Weights) _Weights.emplace_back(_Value);
+                        _Result["weights"] = std::move(_Weights);
+                    }
+                }
+            }
+            else
+            {
+                _Result["kind"] = std::string("clothoid");
+                _Result["origin"] = PointValue(Curve_.Placement.Location);
+                _Result["rotation"] = std::atan2(Curve_.Placement.XDirection.Y, Curve_.Placement.XDirection.X);
+                _Result["startCurvature"] = Curve_.StartCurvature;
+                _Result["endCurvature"] = Curve_.EndCurvature;
+                _Result["length"] = Curve_.Length;
+            }
+        }, Edge_.Curve);
+        return _Result;
     }
 
     VariantArray MakeContourArray(IN const std::vector<SSectionWire>& Wires_)
@@ -103,8 +168,8 @@ namespace
                     : "inner-" + std::to_string(_Index) },
                 { "inner", _Wire.bInner },
                 { "closed", _Wire.bClosed },
+                { "kind", std::string("path") },
                 { "signedArea", _Wire.dSignedArea },
-                { "points", WirePoints(_Wire) },
                 { "edges", std::move(_Edges) }
             }));
         }
@@ -125,38 +190,24 @@ namespace
         return true;
     }
 
-    bool TryReadTransform(IN const Variant& Value_, OUT Transform3& Transform_)
+    bool TryReadFittingPose(IN const ObjectMap& Candidate_, OUT Transform3& Transform_)
     {
-        if (!Value_.Is<VariantArray>() || Value_.To<VariantArray>().size() != 4)
-        {
-            return false;
-        }
-        const auto& _Rows = Value_.To<VariantArray>();
-        Transform3 _Candidate;
-        for (std::size_t _Row = 0; _Row < 4; ++_Row)
-        {
-            if (!_Rows[_Row].Is<VariantArray>()
-                || _Rows[_Row].To<VariantArray>().size() != 4)
-            {
-                return false;
-            }
-            const auto& _Columns = _Rows[_Row].To<VariantArray>();
-            for (std::size_t _Column = 0; _Column < 4; ++_Column)
-            {
-                const auto _Value = Number(_Columns[_Column]);
-                if (!_Value) return false;
-                _Candidate.Matrix.Values[_Row][_Column] = *_Value;
-            }
-        }
-        const auto& _LastRow = _Candidate.Matrix.Values[3];
-        if (std::abs(_LastRow[0]) > 1.0e-8
-            || std::abs(_LastRow[1]) > 1.0e-8
-            || std::abs(_LastRow[2]) > 1.0e-8
-            || std::abs(_LastRow[3] - 1.0) > 1.0e-8)
-        {
-            return false;
-        }
-        Transform_ = _Candidate;
+        const auto _Angle = Candidate_.find("rotationDegrees");
+        const auto _Translation = Candidate_.find("translation");
+        Point2 _Origin;
+        if (_Angle == Candidate_.end() || _Translation == Candidate_.end()
+            || !TryReadPoint(_Translation->second, _Origin)) return false;
+        const auto _Degrees = Number(_Angle->second);
+        if (!_Degrees) return false;
+        const auto _Radians = *_Degrees * kPi / 180.0;
+        const auto _C = std::cos(_Radians), _S = std::sin(_Radians);
+        // fitting reports canonical -> input. Apply its inverse in the YZ
+        // section plane to normalize the X-aligned solid, preserving X.
+        Transform_.Matrix.Values = {{
+            { 1.0, 0.0, 0.0, 0.0 },
+            { 0.0, _C, _S, -_C * _Origin.X - _S * _Origin.Y },
+            { 0.0, -_S, _C, _S * _Origin.X - _C * _Origin.Y },
+            { 0.0, 0.0, 0.0, 1.0 } }};
         return true;
     }
 
@@ -345,6 +396,72 @@ namespace
         return _Result;
     }
 
+    iCAX::GeometryData::BoundingBox2 SectionBounds(
+        IN const std::vector<SSectionWire>& Wires_,
+        IN const Transform3& Transform_ = {})
+    {
+        using namespace iCAX::GeometryData;
+        BoundingBox2 _Bounds;
+        bool _FirstPoint = true;
+        const auto& _M = Transform_.Matrix.Values;
+        const auto _Move = [&](const Point2& P_) -> Point2 {
+            return { _M[1][1] * P_.X + _M[1][2] * P_.Y + _M[1][3],
+                _M[2][1] * P_.X + _M[2][2] * P_.Y + _M[2][3] };
+        };
+        const auto _Add = [&](const Point2& P_) {
+            if (_FirstPoint) { _Bounds.Min = _Bounds.Max = P_; _FirstPoint = false; }
+            else
+            {
+                _Bounds.Min.X = std::min(_Bounds.Min.X, P_.X); _Bounds.Min.Y = std::min(_Bounds.Min.Y, P_.Y);
+                _Bounds.Max.X = std::max(_Bounds.Max.X, P_.X); _Bounds.Max.Y = std::max(_Bounds.Max.Y, P_.Y);
+            }
+        };
+        for (const auto& _Wire : Wires_)
+            for (const auto& _Edge : _Wire.Edges)
+            {
+                _Add(_Move(_Edge.Start)); _Add(_Move(_Edge.End));
+                for (const auto& _P : _Edge.Samples) _Add(_Move(_P));
+                std::visit([&](const auto& Curve_) {
+                    using T = std::decay_t<decltype(Curve_)>;
+                    if constexpr (std::is_same_v<T, Circle2> || std::is_same_v<T, Arc2>
+                        || std::is_same_v<T, Ellipse2> || std::is_same_v<T, EllipseArc2>)
+                    {
+                        const auto& _Basis = [&]() -> const auto& {
+                            if constexpr (std::is_same_v<T, Arc2> || std::is_same_v<T, EllipseArc2>) return Curve_.Basis;
+                            else return Curve_;
+                        }();
+                        double _A, _B;
+                        if constexpr (std::is_same_v<T, Circle2> || std::is_same_v<T, Arc2>) _A = _B = _Basis.Radius;
+                        else { _A = _Basis.MajorRadius; _B = _Basis.MinorRadius; }
+                        double _Start = 0.0, _Sweep = 2.0 * kPi;
+                        if constexpr (std::is_same_v<T, Arc2> || std::is_same_v<T, EllipseArc2>)
+                        {
+                            _Start = Curve_.StartAngle;
+                            _Sweep = Curve_.CounterClockwise ? Curve_.EndAngle - Curve_.StartAngle
+                                : Curve_.StartAngle - Curve_.EndAngle;
+                        }
+                        const auto _Center = _Move(_Basis.Placement.Location);
+                        const auto& _X = _Basis.Placement.XDirection; const auto& _Y = _Basis.Placement.YDirection;
+                        const Point2 _Cos{ _A * (_M[1][1] * _X.X + _M[1][2] * _X.Y),
+                            _A * (_M[2][1] * _X.X + _M[2][2] * _X.Y) };
+                        const Point2 _Sin{ _B * (_M[1][1] * _Y.X + _M[1][2] * _Y.Y),
+                            _B * (_M[2][1] * _Y.X + _M[2][2] * _Y.Y) };
+                        const auto _Low = std::min(_Start, _Start + _Sweep), _High = std::max(_Start, _Start + _Sweep);
+                        for (const auto _Angle : { std::atan2(_Sin.X, _Cos.X), std::atan2(_Sin.Y, _Cos.Y) })
+                            for (const auto _Critical : { _Angle, _Angle + kPi })
+                            {
+                                const auto _InRange = _Critical + 2.0 * kPi * std::ceil((_Low - _Critical - 1e-12) / (2.0 * kPi));
+                                if (_InRange <= _High + 1e-12)
+                                    _Add({ _Center.X + _Cos.X * std::cos(_InRange) + _Sin.X * std::sin(_InRange),
+                                        _Center.Y + _Cos.Y * std::cos(_InRange) + _Sin.Y * std::sin(_InRange) });
+                            }
+                    }
+                }, _Edge.Curve);
+            }
+        _Bounds.Empty = _FirstPoint;
+        return _Bounds;
+    }
+
     SSectionSnapshot MakeSnapshot(IN const std::vector<SSectionWire>& Wires_)
     {
         SSectionSnapshot _Result;
@@ -391,9 +508,9 @@ namespace
         }
         if (_HasPoint)
         {
-            _Result.Bounds = { _Minimum, _Maximum, false };
-            const auto _DX = _Maximum.X - _Minimum.X;
-            const auto _DY = _Maximum.Y - _Minimum.Y;
+            _Result.Bounds = SectionBounds(Wires_);
+            const auto _DX = _Result.Bounds.Max.X - _Result.Bounds.Min.X;
+            const auto _DY = _Result.Bounds.Max.Y - _Result.Bounds.Min.Y;
             _Result.PrincipalLongAxis = _DX >= _DY
                 ? Direction2{ 1.0, 0.0 }
                 : Direction2{ 0.0, 1.0 };
@@ -406,6 +523,35 @@ namespace
             ? _Result.Loops.size() - 1
             : 0;
         return _Result;
+    }
+
+    void TransformSnapshot(IN OUT SSectionSnapshot& Section_, IN const Transform3& Transform_)
+    {
+        const auto& _M = Transform_.Matrix.Values;
+        const auto _Move = [&](const Point2& Point_) -> Point2 {
+            return { _M[1][1] * Point_.X + _M[1][2] * Point_.Y + _M[1][3],
+                _M[2][1] * Point_.X + _M[2][2] * Point_.Y + _M[2][3] };
+        };
+        bool _First = true;
+        for (auto& _Loop : Section_.Loops)
+        {
+            for (auto& _Point : _Loop.Points)
+            {
+                _Point = _Move(_Point);
+                if (_First) { Section_.Bounds.Min = Section_.Bounds.Max = _Point; _First = false; }
+                else
+                {
+                    Section_.Bounds.Min.X = std::min(Section_.Bounds.Min.X, _Point.X);
+                    Section_.Bounds.Min.Y = std::min(Section_.Bounds.Min.Y, _Point.Y);
+                    Section_.Bounds.Max.X = std::max(Section_.Bounds.Max.X, _Point.X);
+                    Section_.Bounds.Max.Y = std::max(Section_.Bounds.Max.Y, _Point.Y);
+                }
+            }
+        }
+        Section_.Centroid = _Move(Section_.Centroid);
+        for (auto* _Axis : { &Section_.PrincipalLongAxis, &Section_.PrincipalShortAxis })
+            *_Axis = { _M[1][1] * _Axis->X + _M[1][2] * _Axis->Y,
+                _M[2][1] * _Axis->X + _M[2][2] * _Axis->Y };
     }
 
     double AxialExtent(IN const BRepModel& Geometry_, IN const Direction3& Direction_)
@@ -438,31 +584,38 @@ namespace
             strError_ = "Python fitter result must contain boolean matched";
             return false;
         }
-        Match_.bMatched = _Matched->second.To<bool>();
-        if (!Match_.bMatched) return true;
-
-        if (const auto _Parameters = Response_.find("parameters");
-            _Parameters != Response_.end())
+        const auto _Results = Response_.find("results");
+        if (_Results == Response_.end() || !_Results->second.Is<VariantArray>()
+            || _Results->second.To<VariantArray>().size() != 1)
         {
-            if (!_Parameters->second.Is<ObjectMap>())
-            {
-                strError_ = "Python fitter parameters must be an object";
-                return false;
-            }
-            Match_.Parameters = _Parameters->second.To<ObjectMap>();
-        }
-        const auto _TRSF = Response_.find("trsf");
-        if (_TRSF == Response_.end()
-            || !TryReadTransform(_TRSF->second, Match_.TRSF))
-        {
-            strError_ = "Python fitter matched result must contain a valid 4x4 trsf";
+            strError_ = "Direct fitting must return exactly one template result";
             return false;
         }
+        const auto _Item = _Results->second.To<VariantArray>().front().To<ObjectMap>();
+        const auto _Status = _Item.at("status").To<std::string>();
+        const auto _Reason = _Item.contains("reason") ? ": " + _Item.at("reason").To<std::string>() : "";
+        if (_Status == "error") { strError_ = _Status + _Reason; return false; }
+        Match_.bMatched = _Matched->second.To<bool>();
+        if (!Match_.bMatched)
+        {
+            if (_Status != "no-match" && _Status != "unsupported" && _Status != "unsupported-geometry")
+            { strError_ = "Unexpected direct fitting status: " + _Status; return false; }
+            Match_.Diagnostics.push_back(_Status + _Reason);
+            return true;
+        }
+        const auto _Candidates = _Item.at("candidates").To<VariantArray>();
+        if (_Status != "matched" || _Candidates.size() != 1)
+        { strError_ = "Matched direct fitting must return one parameter/pose candidate"; return false; }
+        const auto _Candidate = _Candidates.front().To<ObjectMap>();
+        if (!_Candidate.contains("parameters") || !_Candidate.at("parameters").Is<ObjectMap>()
+            || !TryReadFittingPose(_Candidate, Match_.TRSF))
+        { strError_ = "Direct fitting must return parameters, rotationDegrees and translation"; return false; }
+        Match_.Parameters = _Candidate.at("parameters").To<ObjectMap>();
         Match_.Placement.Origin = {};
         Match_.Placement.XDirection = { 1.0, 0.0 };
         Match_.Placement.ZDirection = { 0.0, 1.0 };
-        if (const auto _Diagnostics = Response_.find("diagnostics");
-            _Diagnostics != Response_.end()
+        if (const auto _Diagnostics = _Candidate.find("diagnostics");
+            _Diagnostics != _Candidate.end()
             && _Diagnostics->second.Is<VariantArray>())
         {
             for (const auto& _Item : _Diagnostics->second.To<VariantArray>())
@@ -491,8 +644,9 @@ std::vector<SPythonSectionFitter> DiscoverPythonSectionFitters(
             _Error.clear();
             continue;
         }
-        const auto _Script = _Iterator->path() / "profile.py";
-        if (!std::filesystem::is_regular_file(_Script, _Error))
+        const auto _Script = _Iterator->path() / "fitting.py";
+        const auto _Manifest = _Iterator->path() / "profile.json";
+        if (!std::filesystem::is_regular_file(_Manifest, _Error))
         {
             _Error.clear();
             continue;
@@ -501,7 +655,6 @@ std::vector<SPythonSectionFitter> DiscoverPythonSectionFitters(
             _Iterator->path().filename().string(),
             std::filesystem::weakly_canonical(_Script, _Error).string(),
             {} });
-        const auto _Manifest=_Iterator->path()/"profile.json";
         if(std::filesystem::is_regular_file(_Manifest)) {
             std::ifstream _Stream(_Manifest);
             const std::string _Text((std::istreambuf_iterator<char>(_Stream)),std::istreambuf_iterator<char>());
@@ -533,7 +686,8 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
     IN const SPythonSectionFitterOptions& FitterOptions_)
 {
     SRecognitionResult _Result;
-    if (OrderedFitters_.empty() || FitterOptions_.dLinearTolerance <= 0.0)
+    if (OrderedFitters_.empty() || !std::isfinite(FitterOptions_.dLinearTolerance)
+        || FitterOptions_.dLinearTolerance <= 0.0 || FitterOptions_.dLinearTolerance > 1.0)
     {
         _Result.Status = ERecognitionStatus::InvalidRequest;
         _Result.Diagnostics.push_back("Python section fitter list or tolerance is invalid");
@@ -574,12 +728,8 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
     _Result.NormalizedGeometry = _Direction.AlignedGeometry;
     _Result.TRSF = _Direction.TRSF;
 
-    ObjectMap _Context{
-        { "linearTolerance", FitterOptions_.dLinearTolerance },
-        { "axis", std::string("X") },
-        { "sectionSchema", std::string("icax.section-contours.v1") }
-    };
     const auto _Contours = MakeContourArray(_Sections.Wires);
+    bool _AnyCompleted = false;
     for (const auto& _Fitter : OrderedFitters_)
     {
         if (_Fitter.TypeID.empty() || _Fitter.ScriptPath.empty())
@@ -589,48 +739,30 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
         }
         try
         {
+            const auto _Script = std::filesystem::path(_Fitter.ScriptPath);
+            const auto _ProfileRoot = _Script.parent_path().parent_path();
+            const auto _AdjacentRuntime = _ProfileRoot.parent_path() / "_shared" / "profile_package_runtime.py";
+            const auto _Runtime = ResolveRuntimeFile(
+                std::filesystem::is_regular_file(_AdjacentRuntime) ? _AdjacentRuntime.string() : "",
+                { "apps/tube-designer/templates/_shared/profile_package_runtime.py",
+                  "src/apps/tube-designer/templates/_shared/profile_package_runtime.py" },
+                "direct profile fitting runtime");
             ObjectMap _Request{
                 { "protocol", std::string("icax.template-runtime") },
                 { "protocolVersion", static_cast<unsigned int>(1) },
-                { "operation", std::string("fit") },
-                { "fitterPath", _Fitter.ScriptPath },
-                { "packageDigest", _Fitter.PackageDigest },
-                { "contours", _Contours },
-                { "context", _Context }
+                { "operation", std::string("evaluate") },
+                { "templatePath", _Runtime.string() },
+                { "template", ObjectMap{ { "packageDigest", _Fitter.PackageDigest } } },
+                { "parameters", ObjectMap{
+                    { "action", std::string("recognize-system") },
+                    { "profileRoot", _ProfileRoot.string() },
+                    { "profileId", _Fitter.TypeID },
+                    { "section", ObjectMap{ { "contours", _Contours } } },
+                    { "tolerance", FitterOptions_.dLinearTolerance } } },
+                { "context", ObjectMap{} }
             };
-            // Dependency paths are package declarations, not tube-type code.
-            // Keep them within the installed template collection.
-            const auto _Script=std::filesystem::path(_Fitter.ScriptPath);
-            const auto _Manifest=_Script.parent_path()/"profile.json";
-            if(std::filesystem::is_regular_file(_Manifest)) {
-                std::ifstream _Stream(_Manifest);
-                const std::string _Text((std::istreambuf_iterator<char>(_Stream)),std::istreambuf_iterator<char>());
-                const auto _Descriptor=iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_Text).To<ObjectMap>();
-                if(const auto _It=_Descriptor.find("fitterRequirements");_It!=_Descriptor.end()) {
-                    const auto _Requirements=_It->second.To<ObjectMap>();
-                    if(const auto _Count=_Requirements.find("cavityCount");_Count!=_Requirements.end()) {
-                        const auto _Expected=Number(_Count->second);
-                        if(!_Expected||*_Expected<0||std::floor(*_Expected)!=*_Expected)
-                            throw std::invalid_argument("fitter cavityCount must be a nonnegative integer");
-                        if(*_Expected!=static_cast<double>(_Result.Section.nCavityCount)) {
-                            _Result.Diagnostics.push_back(_Fitter.TypeID+": section topology does not meet declared fitter requirements");
-                            continue;
-                        }
-                    }
-                }
-                if(const auto _It=_Descriptor.find("pythonModulePaths");_It!=_Descriptor.end()) {
-                    const auto _Root=std::filesystem::weakly_canonical(_Script.parent_path().parent_path().parent_path());
-                    VariantArray _Paths;
-                    for(const auto& _Value:_It->second.To<VariantArray>()) {
-                        const auto _Path=std::filesystem::weakly_canonical(_Script.parent_path()/_Value.To<std::string>());
-                        const auto _Relative=_Path.lexically_relative(_Root);
-                        if(_Relative.empty()||*_Relative.begin()==".."||!std::filesystem::is_directory(_Path))
-                            throw std::invalid_argument("Python fitter dependency directory is outside the template collection or missing");
-                        _Paths.emplace_back(_Path.string());
-                    }
-                    _Request["moduleSearchPaths"]=_Paths;
-                }
-            }
+            // This runtime dispatches fitting.py with preview=False. No
+            // profile.py/build or generated candidate geometry is executed.
             const auto _Response = PythonHost(FitterOptions_).Invoke(_Request);
             SSectionMatchResult _Match;
             std::string _Error;
@@ -645,9 +777,11 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
                 _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Error);
                 continue;
             }
+            _AnyCompleted = true;
             if (!_Match.bMatched)
             {
-                _Result.Diagnostics.push_back(_Fitter.TypeID + ": no match");
+                for (const auto& _Diagnostic : _Match.Diagnostics)
+                    _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + _Diagnostic);
                 continue;
             }
 
@@ -668,6 +802,10 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
             _Result.SectionTypeID = _Fitter.TypeID;
             _Result.SectionParameters = std::move(_Match.Parameters);
             _Result.NormalizedGeometry = std::move(_FittedGeometry);
+            TransformSnapshot(_Result.Section, _Match.TRSF);
+            // Recompute analytic extrema in the fitted frame. Rotating a
+            // sampled circle/ellipse polygon underestimates its envelope.
+            _Result.Section.Bounds = SectionBounds(_Sections.Wires, _Match.TRSF);
             _Result.TRSF = Multiply(_Match.TRSF, _Direction.TRSF);
             _Result.Diagnostics.insert(
                 _Result.Diagnostics.end(),
@@ -688,7 +826,8 @@ SRecognitionResult CExtrusionRecognitionService::RecognizePythonFitters(
             _Result.Diagnostics.push_back(_Fitter.TypeID + ": " + Error_.what());
         }
     }
-    _Result.Status = ERecognitionStatus::SectionTypeNotMatched;
+    _Result.Status = _AnyCompleted ? ERecognitionStatus::SectionTypeNotMatched
+        : ERecognitionStatus::SectionTypeDefinitionInvalid;
     _Result.Diagnostics.push_back("No Python section fitter matched the extracted contours");
     return _Result;
 }

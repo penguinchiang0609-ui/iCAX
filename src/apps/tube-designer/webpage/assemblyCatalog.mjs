@@ -3,8 +3,10 @@ export function normalizeAssemblyCatalogue(items) {
   const seen = new Set();
   for (const value of Array.isArray(items) ? items : []) {
     if (!value || value.schema !== "icax.assembly-template" || Number(value.schemaVersion) !== 1) continue;
+    if (value.catalogueHidden === true) continue;
     const id = String(value.id ?? "").trim();
-    if (!id || seen.has(id) || !Array.isArray(value.participants) || value.participants.length !== 2) continue;
+    if (!id || seen.has(id) || !Array.isArray(value.participants)
+        || value.participants.length < 2 || value.participants.length > 4) continue;
     const blankParts = value.manufacturingPlan?.blankParts;
     if (!Array.isArray(blankParts) || !blankParts.length) continue;
     seen.add(id);
@@ -19,7 +21,14 @@ export function normalizeAssemblyCatalogue(items) {
 }
 
 export function assemblyCategoryOrder(templates) {
-  const preferred = ["integrated", "insert", "fastener", "weld"];
+  const preferred = [
+    "two-end-end",
+    "two-end-middle",
+    "two-middle-middle",
+    "three-end-end-end",
+    "three-end-end-middle",
+    "four-end-end-end-end",
+  ];
   const labels = new Map();
   for (const template of templates) {
     const key = String(template.category ?? "other");

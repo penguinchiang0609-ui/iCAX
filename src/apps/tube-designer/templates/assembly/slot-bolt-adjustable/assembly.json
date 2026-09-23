@@ -2,6 +2,7 @@
   "schema": "icax.assembly-template",
   "schemaVersion": 1,
   "id": "slot-bolt-adjustable",
+  "catalogueHidden": true,
   "version": "1.0.0",
   "displayName": "长孔调节装配",
   "category": "fastener",
@@ -57,8 +58,8 @@
       }
     ],
     "manufacturingParts": [
-      { "id": "adjusterBlank", "label": "调节件长孔下料件", "sourceRole": "adjuster", "processes": ["slot-a"], "pose": { "origin": [-220, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
-      { "id": "datumBlank", "label": "基准件圆孔下料件", "sourceRole": "datum", "processes": ["hole-b"], "pose": { "origin": [-220, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+      { "id": "adjusterBlank", "label": "调节件长孔下料件", "sourceRole": "adjuster", "processes": ["slot-a"], "explodedPose": { "origin": [-220, 0, -90], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "datumBlank", "label": "基准件圆孔下料件", "sourceRole": "datum", "processes": ["hole-b"], "explodedPose": { "origin": ["-220 + $adjustment / 2", 0, 90], "direction": [1, 0, 0], "up": [0, 1, 0] } }
     ],
     "compareLayout": { "designOffset": [0, 0, 110], "manufacturingOffset": [0, 0, -110] }
   },

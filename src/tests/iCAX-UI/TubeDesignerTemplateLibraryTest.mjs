@@ -59,6 +59,8 @@ await handleDesignerRibbonCommand(
 assert.equal(createView.tubeDesignerTemplateManager.baseTemplateId, "builtin",
   "新增模板不能把个人模板记录误当成基础模板");
 
+let appliedTemplateRows = [];
+let previewRequests = 0;
 const libraryView = {
   activeAreaId: "templates",
   scene: { tubeDesigner: { templates: [{ id: "builtin", name: "内置/示例", version: "1.0.0", available: true, parameters: [
@@ -68,8 +70,8 @@ const libraryView = {
     { key: "guardrailUse", valueType: "enum", defaultValue: "platform", choices: [{ value: "platform" }, { value: "wall" }] },
   ], extensions: { parameterRules: [{ when: { guardrailUse: "wall" }, set: { infillType: "bars" } }], catalog: { presets: [{ id: "style-a", displayName: "示例款式", parameters: { length: 140 } }] } } }] } },
   tubeDesignerUserData: { productTemplates: [{ id: "personal-1", name: "我的模板", version: "1.0.0" }] },
-  viewport: { applyViewSnapshot: async ({ rows }) => ({ applied: true, entityIds: rows.map((row) => row.entityId) }), setStandardView() {}, fitViewToViewport() {} },
-  sceneProxy: { resources: {}, async invoke(method) { assert.equal(method, "TubeDesigner.GenerateProductTemplatePreview"); return { items: [{ entityId: "item-1", geometry: { url: "geometry", version: 1 }, bounds: { min: [0, 0, 0], max: [10, 10, 10] } }], material: { url: "material", version: 1 } }; } },
+  viewport: { applyViewSnapshot: async ({ rows }) => { appliedTemplateRows = rows; return { applied: true, entityIds: rows.map((row) => row.entityId) }; }, setStandardView() {}, fitViewToViewport() {} },
+  sceneProxy: { resources: {}, async invoke(method) { assert.equal(method, "TubeDesigner.GenerateProductTemplatePreview"); previewRequests += 1; return { items: [{ entityId: "item-1", geometry: { url: "geometry", version: 1 }, transform: [1, 0, 0, 20, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], bounds: { min: [20, 0, 0], max: [30, 10, 10] } }], material: { url: "material", version: 1 } }; } },
 };
 assert.equal(productTemplateLibraryState(libraryView).selectedId, "builtin::style-a");
 assert.match(renderProductTemplateLibraryLeftPane({}, libraryView), /产品模板/);
@@ -133,10 +135,21 @@ const emptyPersonalView = { tubeDesignerUserData: { productTemplates: [] }, tube
 assert.match(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /导入 itpt/);
 assert.doesNotMatch(renderProductTemplateLibraryLeftPane({}, emptyPersonalView), /新增/);
 renderProductTemplateLibraryViewportOverlay(libraryView, libraryView);
+renderProductTemplateLibraryViewportOverlay(libraryView, libraryView);
 await new Promise((resolve) => setTimeout(resolve, 0));
+assert.equal(previewRequests, 1, "启动快照已含完整参数时，首次选择只生成一次预览");
 assert.equal(libraryView.tubeDesignerProductTemplateLibrary.preview?.response?.items?.length, 1);
+assert.deepEqual(appliedTemplateRows[0].data.localToWorldMatrix, [1, 0, 0, -5, 0, 1, 0, -5, 0, 0, 1, -5, 0, 0, 0, 1],
+  "共享原型网格必须通过每个模板零件自己的 trsf 摆放，再整体居中");
 assert.equal(libraryView.preserveCustomViewportEntities, true,
   "产品资源页预览成功后必须保留临时三维实体，避免工作台重绘时清空中央场景");
+const incompleteStartupView = {
+  activeAreaId: "templates",
+  scene: { tubeDesigner: { templates: [{ id: "incomplete", name: "未加载模板", available: true }] } },
+  sceneProxy: { invoke() { throw new Error("资源页不能选中后补读模板描述"); } },
+};
+assert.match(renderProductTemplateLibraryViewportOverlay(incompleteStartupView, incompleteStartupView), /模板参数未在启动时载入/);
+assert.match(renderProductTemplateLibraryRightPane({}, incompleteStartupView), /模板参数未在启动时载入/);
 let parameterRenders = 0;
 await handleProductTemplateLibraryAction(libraryView, libraryView, "tube-designer-product-template-library-parameter-change", {
   dataset: { tubeTemplateLibraryId: "builtin::style-a", tubeTemplateLibraryParameter: "length" }, value: "220",

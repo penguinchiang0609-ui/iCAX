@@ -2,7 +2,9 @@
 #include "OpenCascadeBRepReader.h"
 #include "OpenCascadeTubeCSGConverter.h"
 #include "OpenCascadeTaskExecution.h"
+#include <BRep_Builder.hxx>
 #include <BRepBuilderAPI_Copy.hxx>
+#include <TopoDS_Compound.hxx>
 
 #include "GeometryData/GeometryData.h"
 #include "GeometryData/BRepPersistence.h"
@@ -829,6 +831,50 @@ namespace
             _Result.TriangleFaceIds.push_back(nFaceID_);
         }
         return _Result;
+    }
+
+    iCAX::GeometryData::CTriangleMeshResource CollectTriangleMeshResource(
+        IN const TopoDS_Shape& Shape_,
+        IN const std::string& strDisplayName_,
+        IN const std::string& strSourceID_)
+    {
+        using namespace iCAX::GeometryData;
+        if (Shape_.IsNull())
+            throw std::runtime_error("OCCT returned an empty display shape");
+
+        CTriangleMeshResource _Resource;
+        _Resource.Metadata.Name = strDisplayName_;
+        _Resource.Metadata.SourceId = strSourceID_;
+        _Resource.Metadata.Tags = { kImporterID, "occt-" + std::string(kOccVersion), "display-mesh" };
+
+        std::uint64_t _FaceID = 0;
+        for (TopExp_Explorer _Explorer(Shape_, TopAbs_FACE); _Explorer.More(); _Explorer.Next())
+        {
+            auto _FaceMesh = MakeTriangulation(
+                TopoDS::Face(_Explorer.Current()), ++_FaceID);
+            if (_FaceMesh.Vertices.empty() || _FaceMesh.Triangles.empty()) continue;
+            if (_Resource.Mesh.Vertices.size() + _FaceMesh.Vertices.size()
+                > static_cast<std::size_t>((std::numeric_limits<std::uint32_t>::max)()))
+            {
+                throw std::runtime_error("OCCT display triangulation exceeds uint32 index range");
+            }
+            const auto _Base = static_cast<std::uint32_t>(_Resource.Mesh.Vertices.size());
+            _Resource.Mesh.Vertices.insert(
+                _Resource.Mesh.Vertices.end(),
+                std::make_move_iterator(_FaceMesh.Vertices.begin()),
+                std::make_move_iterator(_FaceMesh.Vertices.end()));
+            for (auto& _Triangle : _FaceMesh.Triangles)
+            {
+                for (auto& _Index : _Triangle) _Index += _Base;
+                _Resource.Mesh.Triangles.push_back(_Triangle);
+            }
+            _Resource.Mesh.TriangleFaceIds.insert(
+                _Resource.Mesh.TriangleFaceIds.end(),
+                _FaceMesh.TriangleFaceIds.begin(), _FaceMesh.TriangleFaceIds.end());
+        }
+        if (_Resource.Mesh.Vertices.empty() || _Resource.Mesh.Triangles.empty())
+            throw std::runtime_error("OCCT produced no usable display triangulation");
+        return _Resource;
     }
 
     void AddRootReferences(IN const TopoDS_Shape& Shape_, IN const SShapeMaps& Maps_, IN OUT iCAX::GeometryData::BRepModel& Model_)
@@ -1677,6 +1723,82 @@ std::vector<iCAX::GeometryData::BRepModel> iCAX::OpenCascade::ConvertOpenCascade
             _Batch.Tasks.push_back(iCAX::Tasks::Run([&, _Index] { _Convert(_Index); }, detail::GeometryTaskScheduler()));
         _Convert(0);
         _Batch.Complete();
+    }
+    return _Results;
+}
+
+std::vector<iCAX::GeometryData::CTriangleMeshResource>
+iCAX::OpenCascade::ConvertOpenCascadeShapesToTriangleMeshes(
+    const std::vector<SBRepConversionInput>& Inputs_, double dTolerance_, std::size_t MaximumConcurrency_)
+{
+    for (const auto& _Input : Inputs_)
+        if (_Input.Shape.IsNull()) throw std::invalid_argument("Display mesh conversion input is null: " + _Input.SourceID);
+    if (Inputs_.empty()) return {};
+    const auto _Concurrency = detail::GeometryConcurrency(MaximumConcurrency_);
+    std::vector<iCAX::GeometryData::CTriangleMeshResource> _Results(Inputs_.size());
+    struct SDisplayPrototype final
+    {
+        TopoDS_Shape Source;
+        TopoDS_Shape PrivateCanonical;
+        iCAX::GeometryData::CTriangleMeshResource Mesh;
+    };
+    std::vector<SDisplayPrototype> _Prototypes;
+    std::vector<std::size_t> _PrototypeByInput;
+    _PrototypeByInput.reserve(Inputs_.size());
+    TopoDS_Compound _Compound;
+    BRep_Builder _Builder;
+    _Builder.MakeCompound(_Compound);
+    for (const auto& _Input : Inputs_)
+    {
+        auto _Prototype = _Prototypes.size();
+        for (std::size_t _Index = 0; _Index < _Prototypes.size(); ++_Index)
+        {
+            if (_Input.Shape.IsPartner(_Prototypes[_Index].Source)
+                && _Input.Shape.Orientation() == _Prototypes[_Index].Source.Orientation())
+            {
+                _Prototype = _Index;
+                break;
+            }
+        }
+        if (_Prototype == _Prototypes.size())
+        {
+            // Transform nodes keep the same TShape and only change its outer
+            // location. Strip that location, triangulate one private canonical
+            // copy, and reuse the resulting mesh for every instance.
+            const auto _Canonical = _Input.Shape.Located(TopLoc_Location());
+            auto _PrivateCanonical = BRepBuilderAPI_Copy(_Canonical, true, false).Shape();
+            _Builder.Add(_Compound, _PrivateCanonical);
+            _Prototypes.push_back({ _Input.Shape, std::move(_PrivateCanonical), {} });
+        }
+        _PrototypeByInput.push_back(_Prototype);
+    }
+    // One mesher invocation avoids repeating OCCT's setup for every unique
+    // product resource. The compound contains private copies, so meshing cannot
+    // mutate evaluator prototypes shared by other preview items.
+    const double _MeshDeflection = std::max(0.01, dTolerance_ * 10.0);
+    BRepMesh_IncrementalMesh _Mesher(
+        _Compound, _MeshDeflection, false, 0.5, _Concurrency > 1);
+    (void)_Mesher;
+    for (auto& _Prototype : _Prototypes)
+        _Prototype.Mesh = CollectTriangleMeshResource(
+            _Prototype.PrivateCanonical, {}, {});
+    for (std::size_t _Index = 0; _Index < Inputs_.size(); ++_Index)
+    {
+        const auto& _Input = Inputs_[_Index];
+        auto& _Result = _Results[_Index];
+        _Result = _Prototypes[_PrototypeByInput[_Index]].Mesh;
+        _Result.Metadata.Name = _Input.DisplayName;
+        _Result.Metadata.SourceId = _Input.SourceID;
+        const auto _Transform = _Input.Shape.Location().Transformation();
+        if (_Transform.Form() != gp_Identity)
+        {
+            for (auto& _Vertex : _Result.Mesh.Vertices)
+            {
+                gp_Pnt _Point(_Vertex.X, _Vertex.Y, _Vertex.Z);
+                _Point.Transform(_Transform);
+                _Vertex = ToPoint3(_Point);
+            }
+        }
     }
     return _Results;
 }

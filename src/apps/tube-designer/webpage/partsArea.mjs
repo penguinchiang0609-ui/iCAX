@@ -408,7 +408,7 @@ export function renderNestingLeftPane(context, view) {
             ? groups.map((group) => renderNestingStockGroup(group, activePlan, selectedIds, view)).join("")
             : `<div class="tube-designer-cutting-empty"><strong>没有符合条件的零件</strong><span>更换关键词或筛选条件。</span></div>`}
         </div>`
-        : `<div class="tube-designer-cutting-empty"><strong>还没有零件</strong><span>可以回到产品页完成拆单，也可以从上方“零件”菜单添加标准零件、导入 STEP / IGES 或添加冲孔件。</span></div>`}
+        : `<div class="tube-designer-cutting-empty"><strong>还没有零件</strong><span>先在产品页完成拆单并生成零件清单，再从上方“零件”菜单批量从产品添加；也可以添加标准零件、导入 STEP / IGES 或添加冲孔件。</span></div>`}
       ${renderNestingPartContextMenu(view, plans)}
     </div>`;
 }

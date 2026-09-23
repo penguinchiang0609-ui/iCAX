@@ -32,6 +32,19 @@ TEST(SDOQueueTest, OwnsPayloadAndEnforcesBounds)
     EXPECT_EQ(0u, _Queue.GetPendingCount());
 }
 
+TEST(SDOQueueTest, DefaultChannelCarriesFiveMegabyteResponse)
+{
+    CSDOQueue _Queue;
+    CSDOFrame _Frame;
+    _Frame.nCallID = 88;
+    _Frame.nKind = ESDOFrameKind::Response;
+    _Frame.Payload.resize(5'173'320, 'x');
+    EXPECT_TRUE(_Queue.TryEnqueue(std::move(_Frame)));
+    const auto _Received = _Queue.Drain();
+    ASSERT_EQ(1u, _Received.size());
+    EXPECT_EQ(5'173'320u, _Received.front().Payload.size());
+}
+
 TEST(SDOChannelTest, IsBidirectionalAndResetInvalidatesOldEndpoints)
 {
     CSDOChannel _Channel;

@@ -56,12 +56,38 @@ try {
     delete rows[1].data.renderOrder;
     await viewport.applyViewSnapshot({ rows }, client);
     const resets = tool.renderOrder === 0;
+    const { ResourceClient } = await import("/iCAX-UI/SDK/Resources/resourceClient.mjs");
+    const decode = (encoded) => Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0)).buffer;
+    const geometryBytes = decode("JAAAAElDUkcAAAAAGAAwAAAABAAkAAgADAAQABQAGAAcACAAGAAAAAEAAAABAAAAAwAAAIQAAABYAAAAOAAAACQAAAAQAAAABwAAAAAAAAAAAAAAAwAAAAAAAAABAAAAAgAAAAMAAAD/ZjP//2Yz//9mM/8GAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/CQAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwAAAAAAAAAAAACAPwkAAAAAAAAAAAAAAAAAAAAAACBBAAAAAAAAAAAAAAAAAAAgQQAAAAA=");
+    const materialBytes = decode("IAAAAElDUk0YACgAAAAgAAQACAAMAAAAEAAUABgAHAAYAAAA/8xmM/8RERH/////AAAgQAMAAAAEAAAADAAAAAkAAAAAAAAAMQAAAGljYXgtcmVzb3VyY2U6Ly9hcHAvcHJvZHVjdC9wcm9qZWN0L3NjZW5lL3RleHR1cmUAAAA=");
+    const batches = [];
+    const batchedClient = new ResourceClient({ bridge: {
+      async requestResources(requests) {
+        batches.push(requests.map((request) => request.url));
+        return requests.map((request) => ({ status: 200,
+          body: (request.url === "batch-material" ? materialBytes : geometryBytes).slice(0) }));
+      },
+      requestResource() { throw Error("Repeated single-resource request"); },
+    } });
+    const batchRows = Array.from({ length: 88 }, (_, index) => ({
+      entityId: `batch-part-${index}`,
+      data: { geometry: { url: `batch-geometry-${index % 17}`, version: 7 },
+        material: { url: "batch-material", version: 9 },
+        geometryKind: 1, renderClass: 1, visible: true },
+    }));
+    const batchReceipt = await viewport.applyViewSnapshot({ revision: "batch-88", rows: batchRows }, batchedClient);
+    const batchOK = batchReceipt.applied && batchReceipt.entityIds.length === 88
+      && batchReceipt.missingGeometryEntityIds.length === 0
+      && batches.length === 5 && batches.every((batch) => batch.length <= 4)
+      && viewport.geometryObjects.get("batch-geometry-0") === viewport.sceneObjects.get("batch-part-0")?.geometry
+      && viewport.sceneObjects.get("batch-part-0")?.geometry === viewport.sceneObjects.get("batch-part-17")?.geometry;
     viewport.dispose();
-    return { checks, materialOK, resets };
+    return { checks, materialOK, resets, batchOK, batches: batches.length };
   });
   assert.ok(result.checks.every(Boolean), JSON.stringify(result));
   assert.ok(result.materialOK);
   assert.ok(result.resets);
+  assert.ok(result.batchOK, JSON.stringify(result));
   console.log("Transparent preview ordering passed at eight camera angles; default order restored.");
 } finally {
   await browser.close();

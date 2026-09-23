@@ -4,6 +4,18 @@ from ProfileFamilyTests import runtime, ROOT
 CATALOG=ROOT/"src/apps/tube-designer/templates/profile"
 
 class Fitting(unittest.TestCase):
+    def test_unsupported_exact_geometry_is_reported_without_forward_calls(self):
+        from unittest.mock import patch
+        section={"contours":[{"kind":"path","closed":True,"segments":[
+            {"kind":"bezier","start":[0,0],"end":[0,0],"poles":[[0,0],[1,2],[2,1],[0,0]]}]}]}
+        with patch.object(runtime,"_evaluate",side_effect=AssertionError("forward forbidden")), \
+             patch.object(runtime,"evaluate_section",side_effect=AssertionError("forward forbidden")):
+            result=runtime.generate({"action":"recognize-system","section":section,
+                "profileRoot":str(CATALOG)},{})
+        self.assertFalse(result["matched"])
+        self.assertEqual(21,len(result["results"]))
+        self.assertTrue(all(r["status"]=="unsupported-geometry" for r in result["results"]),result)
+
     def test_all_declared_models_and_scaled_sections(self):
         import importlib.util
         import math

@@ -936,7 +936,12 @@ def generate(parameters: dict[str, Any], context: dict[str, Any]) -> dict[str, A
         if isinstance(tolerance,bool) or not isinstance(tolerance,(int,float)) or not math.isfinite(tolerance) or not 0<tolerance<=1:
             raise ValueError("识别容差须为 (0, 1] mm 的有限数值")
         # Validate the input once, rather than reporting it as a failure of every template.
-        recognition.geometry.normalize(section, tolerance)
+        try:
+            recognition.geometry.normalize(section, tolerance)
+        except recognition.geometry.UnsupportedGeometry:
+            # Report unsupported-geometry per template below; do not disguise
+            # an unsupported exact curve as a protocol/runtime failure.
+            pass
         if action == "recognize":
             packages = [parameters["package"]]
         else:

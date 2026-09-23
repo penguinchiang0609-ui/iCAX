@@ -32,6 +32,7 @@
 #include "RenderData/RenderData.h"
 #include "RenderInteraction/RenderInteraction.h"
 #include "RenderInteraction/RenderInteractionComponents.h"
+#include "Resources/FlatBufferResource.h"
 #include "Resources/ResourceInfo.h"
 #include "Resources/ResourceLibrary.h"
 #include "SDO/SDO.h"
@@ -51,12 +52,17 @@
 #endif
 
 #include <atomic>
+#include <cctype>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <mutex>
 #include <numeric>
 #include <numbers>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 #include <TopoDS_Shape.hxx>
 #include <TopExp_Explorer.hxx>
@@ -890,16 +896,32 @@ namespace
         const std::filesystem::path& TemplateRoot_,
         const std::filesystem::path& LocalPackageRoot_ = {})
     {
+        const auto _ProfileStart = std::chrono::steady_clock::now();
+        char* _ProfileEnv = nullptr;
+        std::size_t _ProfileEnvLength = 0;
+        (void)_dupenv_s(&_ProfileEnv, &_ProfileEnvLength, "ICAX_PROFILE_TEMPLATE_PREVIEW");
+        const bool _ProfileEnabled = _ProfileEnv != nullptr;
+        std::free(_ProfileEnv);
+        const auto _ProfileMark = [&](const char* Phase_) {
+            if (!_ProfileEnabled) return;
+            std::fprintf(stderr, "TemplatePackage/%s %.3f ms\n", Phase_,
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - _ProfileStart).count());
+        };
         const auto _DescriptorPath = Directory_ / "template.json";
         const auto _ScriptPath = Directory_ / "template.py";
         const auto _DescriptorText = ReadTextFile(_DescriptorPath);
         const auto _ScriptText = ReadTextFile(_ScriptPath);
         auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
             iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
+        _ProfileMark("descriptor");
         const auto _LocalRoot = LocalPackageRoot_.empty() ? TemplateRoot_ : LocalPackageRoot_;
-        _Descriptor.PackageDigest = ContentDigest(
-            _DescriptorText, _ScriptText + SharedTemplatePackageText(TemplateRoot_)
-                + LocalTemplatePackageText(Directory_, _LocalRoot));
+        const auto& _SharedText = SharedTemplatePackageText(TemplateRoot_);
+        _ProfileMark("shared-files");
+        const auto _LocalText = LocalTemplatePackageText(Directory_, _LocalRoot);
+        _ProfileMark("local-files");
+        _Descriptor.PackageDigest = ContentDigest(_DescriptorText, _ScriptText + _SharedText + _LocalText);
+        _ProfileMark("digest");
         return { std::move(_Descriptor), _DescriptorPath, _ScriptPath };
     }
 
@@ -984,6 +1006,32 @@ namespace
         const auto _CacheKey = PathToUTF8(std::filesystem::weakly_canonical(_TemplateRoot))
             + '\n' + TemplateID_;
         if (const auto _Cached = CachedPythonTemplatePackage(_CacheKey)) return *_Cached;
+        // Built-in package directories normally follow their descriptor IDs.
+        // Resolve that exact safe candidate first so the first preview does not
+        // parse every unrelated product descriptor. Keep the discovery fallback
+        // for packages whose directory names do not follow this convention.
+        if (!TemplateID_.empty() && TemplateID_.size() <= 128
+            && std::all_of(TemplateID_.begin(), TemplateID_.end(), [](const unsigned char C_) {
+                return std::isalnum(C_) || C_ == '-' || C_ == '_';
+            }))
+        {
+            auto _DirectoryName = TemplateID_;
+            std::replace(_DirectoryName.begin(), _DirectoryName.end(), '-', '_');
+            const auto _Directory = _TemplateRoot / "product" / _DirectoryName;
+            std::error_code _Error;
+            if (std::filesystem::is_regular_file(_Directory / "template.json", _Error)
+                && std::filesystem::is_regular_file(_Directory / "template.py", _Error))
+            {
+                // Loading already parses the descriptor. Repeating that parse
+                // here used to add another full descriptor decode on first use.
+                const auto _Package = LoadPythonTemplatePackageFromDirectory(_Directory, _TemplateRoot);
+                if (_Package.Descriptor.ID == TemplateID_)
+                {
+                    CachePythonTemplatePackage(_CacheKey, _Directory, _Package);
+                    return _Package;
+                }
+            }
+        }
         for (const auto& _Directory : DiscoverPythonTemplateDirectories(ApplicationContext_))
         {
             // Identify the package from its descriptor before reading and
@@ -1072,8 +1120,21 @@ namespace
         iCAX::Application::IProductUserDataStore* ComponentStore_ = nullptr,
         const ObjectMap* FrozenComponents_ = nullptr)
     {
+        const auto _ProfileStart = std::chrono::steady_clock::now();
+        char* _ProfileEnv = nullptr;
+        std::size_t _ProfileEnvLength = 0;
+        (void)_dupenv_s(&_ProfileEnv, &_ProfileEnvLength, "ICAX_PROFILE_TEMPLATE_PREVIEW");
+        const bool _ProfileEnabled = _ProfileEnv != nullptr;
+        std::free(_ProfileEnv);
+        const auto _ProfileMark = [&](const char* Phase_) {
+            if (!_ProfileEnabled) return;
+            std::fprintf(stderr, "TemplateEvaluate/%s %.3f ms\n", Phase_,
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - _ProfileStart).count());
+        };
         const auto _RequestedTemplateID = GetString(Payload_, "templateId", "single-face-security-window");
         auto _Package = LoadPythonTemplatePackage(ApplicationContext_, _RequestedTemplateID);
+        _ProfileMark("package");
         const auto _TemplateID = GetString(Payload_, "templateId", _Package.Descriptor.ID);
         const auto _TemplateVersion = GetString(Payload_, "templateVersion", _Package.Descriptor.Version);
         if (!ExpectedPackageDigest_.empty()
@@ -1209,6 +1270,7 @@ namespace
             _Context["userMouldRoot"] = PathToUTF8(_UserMouldRoot);
         _Request["context"] = std::move(_Context);
         auto _Document = InvokePythonTemplate(ApplicationContext_, _Request);
+        _ProfileMark("python");
         const auto _GeometryNodes = _Document.at("geometry").To<VariantArray>();
         const bool _HasResource = _Package.Descriptor.Extensions.contains("modelResources")
             || std::any_of(_GeometryNodes.begin(), _GeometryNodes.end(), [](const auto& Node_) {
@@ -1220,6 +1282,7 @@ namespace
                 ResolveUserComponentModelRoot(ApplicationContext_),
                 ComponentStore_, FrozenComponents_);
         auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(Variant(_Document));
+        _ProfileMark("parse-neutral");
         if (_Model.TemplateID != _Package.Descriptor.ID
             || _Model.TemplateVersion != _Package.Descriptor.Version
             || _Model.PackageDigest != _Package.Descriptor.PackageDigest)
@@ -1258,32 +1321,48 @@ namespace
     VariantArray TemplateCatalog(
         const iCAX::Application::IApplicationContext& ApplicationContext_)
     {
+        struct SCachedCatalogEntry final
+        {
+            std::string Revision;
+            ObjectMap Presentation;
+        };
+        static std::mutex _CacheMutex;
+        static std::map<std::string, SCachedCatalogEntry> _Cache;
         VariantArray _Templates;
+        const auto _TemplateRoot = ResolveTemplateRoot(ApplicationContext_);
+        const auto _UserRoot = ResolveUserTemplateRoot(ApplicationContext_);
         const auto _Append = [&](const std::vector<std::filesystem::path>& _Directories,
             const std::string& _LibraryScope) {
         for (const auto& _Directory : _Directories)
         {
             try
             {
-                // Keep the startup snapshot small.  The web UI requests the
-                // complete package-owned parameter descriptor only when a
-                // template is selected or opened for editing.
-                const auto _DescriptorText = ReadTextFile(_Directory / "template.json");
-                const auto _Descriptor = iCAX::TemplateRuntime::CTemplateCodec::ParseDescriptor(
-                    iCAX::TemplateRuntime::CStandardJsonCodec::Parse(_DescriptorText));
-                ObjectMap _Presentation;
-                _Presentation["id"] = _Descriptor.ID;
-                _Presentation["version"] = _Descriptor.Version;
-                _Presentation["name"] = _Descriptor.DisplayName.Resolve("zh-CN");
-                _Presentation["description"] = _Descriptor.Description;
-                _Presentation["available"] = true;
-                if (const auto _Catalog = _Descriptor.Extensions.find("catalog");
-                    _Catalog != _Descriptor.Extensions.end())
-                    _Presentation["extensions"] = ObjectMap{{ "catalog", _Catalog->second }};
-                _Presentation["libraryScope"] = _LibraryScope;
-                _Presentation["ownerScope"] = _LibraryScope;
-                AttachTemplateCatalogAssets(_Presentation, _Directory);
-                _Templates.emplace_back(std::move(_Presentation));
+                const auto _Key = _LibraryScope + '\n'
+                    + PathToUTF8(std::filesystem::weakly_canonical(_Directory));
+                const auto _Revision = TemplatePackageRevision(_Directory);
+                std::lock_guard _Lock(_CacheMutex);
+                auto _Found = _Cache.find(_Key);
+                if (_Found == _Cache.end() || _Found->second.Revision != _Revision)
+                {
+                    // The first scene snapshot contains the complete parameter
+                    // descriptor. Selecting a card must not trigger a second
+                    // descriptor request before its first geometry preview.
+                    const auto _Package = LoadPythonTemplatePackageFromDirectory(
+                        _Directory, _TemplateRoot,
+                        _LibraryScope == "user" ? _UserRoot : std::filesystem::path{});
+                    auto _Presentation = iCAX::TemplateRuntime::CTemplateCodec::MakePresentationDescriptor(
+                        _Package.Descriptor, "zh-CN");
+                    _Presentation["packageDigest"] = _Package.Descriptor.PackageDigest;
+                    _Presentation["available"] = true;
+                    _Presentation["descriptorLoaded"] = true;
+                    _Presentation["libraryScope"] = _LibraryScope;
+                    _Presentation["ownerScope"] = _LibraryScope;
+                    AttachTemplateCatalogAssets(_Presentation, _Directory);
+                    AttachTemplateDisplayDescriptor(_Presentation, _Directory);
+                    _Found = _Cache.insert_or_assign(_Key,
+                        SCachedCatalogEntry{ _Revision, std::move(_Presentation) }).first;
+                }
+                _Templates.emplace_back(_Found->second.Presentation);
             }
             catch (const std::exception& Error_)
             {
@@ -1326,6 +1405,57 @@ namespace
             || _StoredInfo.nVersion == 0)
         {
             throw std::runtime_error("TubeDesigner failed to commit a BRep resource version");
+        }
+        return { ResourceID_, _StoredInfo.nVersion };
+    }
+
+    iCAX::Resource::CResourceReference StorePreparedTriangleMesh(
+        iCAX::Project::ISceneContext& Scene_,
+        const std::string& ResourceID_,
+        const std::string& DisplayName_,
+        iCAX::GeometryData::CTriangleMeshResource&& Mesh_)
+    {
+        auto& _Resources = Scene_.Resources();
+        auto _Mesh = std::make_shared<iCAX::GeometryData::CTriangleMeshResource>(std::move(Mesh_));
+        iCAX::Resource::CResourceInfo _Info;
+        _Info.Name = DisplayName_;
+        _Info.ResourceTypeID = iCAX::GeometryData::CTriangleMeshResource::kResourceTypeName;
+        _Info.Persistence = iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
+        _Info.nSchemaVersion = 1;
+        _Info.Metadata["source"] = "tube-designer";
+        iCAX::Resource::CResourceInfo _StoredInfo;
+        const auto _Mutation = _Resources.PutVersioned<iCAX::GeometryData::CTriangleMeshResource>(
+            ResourceID_, std::move(_Mesh), _Info,
+            iCAX::Resource::EResourceVersionCondition::None, 0, &_StoredInfo);
+        if (_Mutation == iCAX::Resource::EResourceMutationResult::PreconditionFailed
+            || _StoredInfo.nVersion == 0)
+        {
+            throw std::runtime_error("TubeDesigner failed to commit a triangle mesh resource version");
+        }
+        return { ResourceID_, _StoredInfo.nVersion };
+    }
+
+    iCAX::Resource::CResourceReference StoreSharedPreparedBRep(
+        iCAX::Project::ISceneContext& Scene_,
+        const std::string& ResourceID_,
+        const std::string& DisplayName_,
+        std::shared_ptr<iCAX::GeometryData::BRepModel> Model_)
+    {
+        if (!Model_) throw std::invalid_argument("Cannot share an empty BRep resource");
+        iCAX::Resource::CResourceInfo _Info;
+        _Info.Name = DisplayName_;
+        _Info.ResourceTypeID = iCAX::GeometryData::BRepModel::kResourceTypeName;
+        _Info.Persistence = iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
+        _Info.nSchemaVersion = 1;
+        _Info.Metadata["source"] = "tube-designer";
+        iCAX::Resource::CResourceInfo _StoredInfo;
+        const auto _Mutation = Scene_.Resources().PutVersioned<iCAX::GeometryData::BRepModel>(
+            ResourceID_, std::move(Model_), _Info,
+            iCAX::Resource::EResourceVersionCondition::None, 0, &_StoredInfo);
+        if (_Mutation == iCAX::Resource::EResourceMutationResult::PreconditionFailed
+            || _StoredInfo.nVersion == 0)
+        {
+            throw std::runtime_error("TubeDesigner failed to commit a shared BRep resource version");
         }
         return { ResourceID_, _StoredInfo.nVersion };
     }
@@ -1893,6 +2023,17 @@ namespace
             { "min", VariantArray{ _X0, _Y0, _Z0 } }, { "max", VariantArray{ _X1, _Y1, _Z1 } } };
     }
 
+    VariantArray ShapeLocationMatrix(const TopoDS_Shape& Shape_)
+    {
+        const auto& _Transform = Shape_.Location().Transformation();
+        return VariantArray{
+            _Transform.Value(1, 1), _Transform.Value(1, 2), _Transform.Value(1, 3), _Transform.Value(1, 4),
+            _Transform.Value(2, 1), _Transform.Value(2, 2), _Transform.Value(2, 3), _Transform.Value(2, 4),
+            _Transform.Value(3, 1), _Transform.Value(3, 2), _Transform.Value(3, 3), _Transform.Value(3, 4),
+            0.0, 0.0, 0.0, 1.0,
+        };
+    }
+
     TopoDS_Shape NormalizeManufacturingShape(const TopoDS_Shape& Shape_, const ObjectMap& Properties_)
     {
         if (ManufacturingPartKind(Properties_) != "accessory")
@@ -2270,6 +2411,20 @@ namespace
         return Part_.GetProductID().is_nil() && Part_.GetItemProperties().contains("nesting.snapshot");
     }
 
+    std::string EditableNestingGeometryResourceID(
+        iCAX::Project::ISceneContext& Scene_,
+        const iCAX::Data::uuid& PartID_,
+        const CManufacturingPartComponent& Part_)
+    {
+        // Product staging shares the immutable source BRep version.  The first
+        // geometry edit must publish under a nesting-owned identity instead of
+        // adding a version to the product's resource URL.
+        if (GetComponent<CNestingSourceComponent>(Part_.GetEntity()))
+            return Scene_.Resources().MakeNamedResourceURL(
+                "tube-designer/nesting/" + UuidToString(PartID_));
+        return Part_.GetManufacturingGeometryResourceID();
+    }
+
     void RemoveLegacyProductManufacturingParts(iCAX::Project::ISceneContext& Scene_)
     {
         auto& _DB = Scene_.Database();
@@ -2317,28 +2472,110 @@ namespace
         }
     }
 
-    void RestoreNestingResources(iCAX::Project::ISceneContext& Scene_)
+    void RestoreNestingResources(
+        iCAX::Project::ISceneContext& Scene_, const bool RestoreThumbnails_ = true)
     {
+        auto& _Resources = Scene_.Resources();
+        std::vector<std::pair<iCAX::Data::uuid, iCAX::Resource::CResourceReference>>
+            _ThumbnailUpdates;
         for (const auto& [_Entity, _Part] : Collect<CManufacturingPartComponent>(Scene_.Database()))
             if (IsIndependentNestingPart(*_Part))
             {
-                if (!Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(
-                    _Part->GetManufacturingGeometryResourceID(), _Part->GetManufacturingGeometryResourceVersion()))
+                const auto _BRepInfo = _Resources.GetInfo(
+                    _Part->GetManufacturingGeometryResourceID(),
+                    _Part->GetManufacturingGeometryResourceVersion());
+                if (!_BRepInfo || _BRepInfo->ResourceTypeID
+                    != iCAX::GeometryData::BRepModel::kResourceTypeName)
                     throw std::runtime_error("下料快照的独立几何资源缺失");
-                (void)iCAX::RenderInteraction::EnsureFrontendGeometryResource(Scene_.Resources(),
-                    _Part->GetManufacturingGeometryResourceID(), iCAX::Render::ERenderGeometryKind::Mesh);
+                if (!RestoreThumbnails_) continue;
+
+                const auto _Thumbnail = !_Part->GetThumbnailGeometryResourceID().empty()
+                    && _Part->GetThumbnailGeometryResourceVersion() != 0
+                    ? _Resources.Get<iCAX::Resource::CFlatBufferResource>(
+                        _Part->GetThumbnailGeometryResourceID(),
+                        _Part->GetThumbnailGeometryResourceVersion())
+                    : nullptr;
+                if (_Thumbnail)
+                    continue;
+
+                auto _RenderSourceID = _Part->GetManufacturingGeometryResourceID();
+                if (_Resources.GetVersion(_RenderSourceID)
+                    != _Part->GetManufacturingGeometryResourceVersion())
+                {
+                    const auto _BRep = _Resources.Get<iCAX::GeometryData::BRepModel>(
+                        _Part->GetManufacturingGeometryResourceID(),
+                        _Part->GetManufacturingGeometryResourceVersion());
+                    if (!_BRep)
+                        throw std::runtime_error("下料快照的独立几何资源缺失");
+                    // The render adapter consumes the current version of a URL.
+                    // Give a historical snapshot a runtime-only, zero-copy alias
+                    // so the thumbnail still represents the exact staged version.
+                    _RenderSourceID = StoreSharedPreparedBRep(
+                        Scene_, _Resources.MakeNamedResourceURL(
+                            "tube-designer/nesting-display/" +
+                            UuidToString(_Entity->GetID())),
+                        _Part->GetName(), _BRep).URL;
+                }
+                const auto _Restored = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+                    _Resources, _RenderSourceID,
+                    iCAX::Render::ERenderGeometryKind::Mesh);
+                _ThumbnailUpdates.emplace_back(_Entity->GetID(), _Restored);
             }
+        if (_ThumbnailUpdates.empty()) return;
+
+        auto& _DB = Scene_.Database();
+        auto& _Transaction = _DB.BeginTransaction("Restore nesting thumbnails");
+        bool _Committing = false;
+        try
+        {
+            for (const auto& [_ID, _Thumbnail] : _ThumbnailUpdates)
+                _Transaction.ModifyComponent(
+                    _ID, CManufacturingPartComponent::S_ClassName, {
+                        { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceID,
+                            PropertyValue(_Thumbnail.URL) },
+                        { CManufacturingPartComponent::PropertyName_ThumbnailGeometryResourceVersion,
+                            PropertyValue(_Thumbnail.nVersion) }
+                    });
+            std::string _Error;
+            _Committing = true;
+            if (!_DB.CommitTransaction(_Transaction, _Error))
+                throw std::runtime_error(_Error.empty()
+                    ? "恢复下料零件缩略图失败" : _Error);
+        }
+        catch (...)
+        {
+            if (!_Committing)
+            {
+                try { _DB.CancelTransaction(_Transaction); }
+                catch (...) {}
+            }
+            throw;
+        }
     }
 
     ObjectMap BuildSnapshot(
         iCAX::Project::ISceneContext& Scene_,
         const iCAX::Application::IApplicationContext& ApplicationContext_, bool RestoreSources_ = true)
     {
+        char* _SnapshotProfileEnv = nullptr;
+        std::size_t _SnapshotProfileEnvLength = 0;
+        (void)_dupenv_s(&_SnapshotProfileEnv, &_SnapshotProfileEnvLength, "ICAX_PROFILE_STAGE_NESTING");
+        const bool _SnapshotProfile = _SnapshotProfileEnv != nullptr;
+        std::free(_SnapshotProfileEnv);
+        const auto _SnapshotStart = std::chrono::steady_clock::now();
+        const auto _SnapshotMark = [&](const char* _Phase) {
+            if (!_SnapshotProfile) return;
+            std::fprintf(stderr, "NestingSnapshot/%s %.3f s\n", _Phase,
+                std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - _SnapshotStart).count());
+            std::fflush(stderr);
+        };
         if (RestoreSources_) RestoreDesignerResources(Scene_, ApplicationContext_);
         else RestoreNestingResources(Scene_);
         MigrateLegacyNestingTask(Scene_, ApplicationContext_);
         RestoreLinkedNestingParts(Scene_, ApplicationContext_);
         SyncNestingPersistence(Scene_);
+        _SnapshotMark("resource-and-legacy");
         auto& _Repository = Scene_.Database();
         const auto _TransientDisassembly = CopyTransientDisassembly(Scene_);
         const auto _FindTransientProduct = [&](const iCAX::Data::uuid& ProductID_,
@@ -2352,6 +2589,7 @@ namespace
         ObjectMap _Designer;
 
         _Designer["templates"] = TemplateCatalog(ApplicationContext_);
+        _SnapshotMark("template-catalog");
 
         const auto _Meta = _Repository.GetMetaEntity();
         const auto _Root = GetComponent<CTubeDesignerRootComponent>(_Meta);
@@ -2441,6 +2679,7 @@ namespace
             _Instances.emplace_back(_Instance);
         }
         _Designer["instances"] = _Instances;
+        _SnapshotMark("instances");
 
         std::shared_ptr<iCAX::Database::IEntity> _ActiveProductEntity;
         std::shared_ptr<CProductInstanceComponent> _ActiveProduct;
@@ -2559,6 +2798,7 @@ namespace
                 for (const auto& _Prepared : _Transient->Parts)
                     _Parts.emplace_back(MakeTransientPartSnapshot(_Prepared, *_ActiveProduct));
         _Designer["parts"] = _Parts;
+        _SnapshotMark("active-parts");
 
         VariantArray _ManufacturingGroups;
         for (const auto& [_ProductEntity, _Product] : _Products)
@@ -2644,6 +2884,7 @@ namespace
             }
         }
         _Designer["manufacturingGroups"] = _ManufacturingGroups;
+        _SnapshotMark("manufacturing-groups");
 
         // These entities own their geometry and production counts. Product IDs
         // and generation recipes are deliberately not required to display them.
@@ -2739,6 +2980,7 @@ namespace
             _IndependentGroups.emplace_back(std::move(_Group));
         }
         _Designer["nestingGroups"] = std::move(_IndependentGroups);
+        _SnapshotMark("nesting-groups");
 
         VariantArray _Joints;
         for (const auto& [_Entity, _Joint] : Collect<CJointIntentComponent>(_Repository))
@@ -2776,6 +3018,7 @@ namespace
         }
         ObjectMap _Response;
         _Response["tubeDesigner"] = _Designer;
+        _SnapshotMark("complete");
         return _Response;
     }
 
@@ -4595,9 +4838,8 @@ namespace
         tube::license::Enforce<115, tube::license::Feature::Design>();
         const auto _Request = DecodeObjectPayload(Request_);
         const auto _Section = GetRequiredObject(_Request, "section");
-        // Validate the complete material section with the same kernel entry
-        // used by forward generation. No family/ID inference belongs in C++.
-        (void)BuildProfileExtrusion(_Section, 1.0);
+        // The direct inverse runtime validates the complete input boundary.
+        // Recognition does not generate candidate profiles or solids.
         ObjectMap _Parameters{
             { "section", _Section },
             { "tolerance", GetDouble(_Request, "tolerance", 0.001) }
@@ -4624,15 +4866,6 @@ namespace
                 _Parameters["profileId"] = GetRequiredText(_Request, "profileId", 80);
         }
         auto _Result = InvokeProfilePackageRuntime(ApplicationContext_, _Parameters);
-        // Inverse scripts propose parameters; reconstructed candidate geometry
-        // must also pass native topology validation before leaving the host.
-        auto _Results = _Result.at("results").To<VariantArray>();
-        for (const auto& _Value : _Results)
-        {
-            const auto _Item = _Value.To<ObjectMap>();
-            for (const auto& _Candidate : _Item.at("candidates").To<VariantArray>())
-                ValidateImportedProfileDefinition(GetRequiredObject(_Candidate.To<ObjectMap>(), "profile"));
-        }
         return MakeResponse(Variant(_Result));
     }
 
@@ -6004,8 +6237,10 @@ namespace
 
         const auto _PresentationName = _Part->GetName().empty()
             ? _Part->GetPartNumber() : _Part->GetName();
+        const auto _TargetResourceID = EditableNestingGeometryResourceID(
+            *Scene_, _PartID, *_Part);
         const auto _NewResource = StorePunchBRep(
-            *Scene_, _ResourceID, _PresentationName, _Shape, Request_, false);
+            *Scene_, _TargetResourceID, _PresentationName, _Shape, Request_, false);
         ReportExportProgress(Request_, "mesh", 0, 1, "正在生成显示网格");
         const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
             Scene_->Resources(), _NewResource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
@@ -6775,9 +7010,11 @@ namespace
             _Evaluation.Model.Extensions, "tubeDesigner.manufacturingPartCount");
         if (_PartCount == 0)
             throw std::runtime_error("Python template returned no manufacturing item count");
-        // Execute the entire received document. Python, not the native evaluator,
-        // decides which operations belong in this request's neutral expression.
-        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Evaluation.Model);
+        // A template may retain construction or manufacturing-only geometry in
+        // the neutral model.  Preview only needs the result items and their
+        // transitive dependencies; evaluating the complete graph adds work to
+        // every request without changing the displayed product.
+        const auto _Geometry = EvaluateOutputGeometry(_Evaluation.Model, *_DisplayOutput);
 
         auto& _Repository = Scene_.Database();
         const auto _Meta = _Repository.GetMetaEntity();
@@ -7017,6 +7254,7 @@ namespace
         iCAX::Project::IProjectContext*,
         iCAX::Project::ISceneContext* Scene_)
     {
+        const auto _TimingStart = std::chrono::steady_clock::now();
         if (!Scene_)
             throw std::invalid_argument("TubeDesigner.GenerateProductTemplatePreview requires a scene");
         tube::license::Enforce<101, tube::license::Feature::Design>();
@@ -7041,23 +7279,49 @@ namespace
         const auto _Evaluation = EvaluateNeutralTemplate(
             ApplicationContext_, _EvaluationPayload, "display", {},
             _ComponentStore.get());
+        const auto _TimingTemplate = std::chrono::steady_clock::now();
         const auto _Output = FindOutputSet(_Evaluation.Model, "result");
         if (!_Output || _Output->ItemKeys.empty())
             throw std::runtime_error("产品模板没有可预览的几何结果");
-        const auto _Geometry = iCAX::OpenCascade::EvaluateNeutralModel(_Evaluation.Model);
+        const auto _Geometry = EvaluateOutputGeometry(_Evaluation.Model, *_Output);
+        const auto _TimingGeometry = std::chrono::steady_clock::now();
         const auto _Material = EnsureDesignerMaterial(*Scene_);
         struct STemplatePreviewItem final
         {
             const iCAX::TemplateRuntime::SModelItem* Item = nullptr;
             TopoDS_Shape Shape;
             std::string Name;
-            std::string ResourceID;
             iCAX::Resource::CResourceReference Material;
+            std::size_t Prototype = 0;
+        };
+        struct STemplatePreviewPrototype final
+        {
+            TopoDS_Shape Source;
+            TopoDS_Shape Canonical;
+            std::string Name;
+            std::string ResourceID;
+            std::optional<iCAX::Resource::CResourceReference> CachedMesh;
+        };
+        std::unordered_map<std::string, const iCAX::TemplateRuntime::SGeometryNode*> _GeometryNodes;
+        _GeometryNodes.reserve(_Evaluation.Model.Geometry.size());
+        for (const auto& _Node : _Evaluation.Model.Geometry)
+            _GeometryNodes.emplace(_Node.Key, &_Node);
+        const auto _SharedPrototypeKey = [&](std::string Key_) {
+            while (true)
+            {
+                const auto _Found = _GeometryNodes.find(Key_);
+                if (_Found == _GeometryNodes.end()) return std::string{};
+                const auto& _Node = *_Found->second;
+                if (_Node.Operator != iCAX::TemplateRuntime::EGeometryOperator::Transform)
+                    return _Node.Operator == iCAX::TemplateRuntime::EGeometryOperator::Extrude
+                        && Key_.starts_with("shared.tube.extrude.") ? Key_ : std::string{};
+                if (_Node.Inputs.size() != 1) return std::string{};
+                Key_ = _Node.Inputs.front();
+            }
         };
         std::vector<STemplatePreviewItem> _PreparedItems;
         _PreparedItems.reserve(_Output->ItemKeys.size());
-        std::vector<iCAX::OpenCascade::SBRepConversionInput> _Conversions;
-        _Conversions.reserve(_Output->ItemKeys.size());
+        std::vector<STemplatePreviewPrototype> _Prototypes;
         for (const auto& _ItemKey : _Output->ItemKeys)
         {
             const auto& _Item = FindModelItem(_Evaluation.Model, _ItemKey);
@@ -7067,21 +7331,73 @@ namespace
             const auto _Shape = _Geometry.At(_Representation->second);
             if (_Shape.IsNull()) continue;
             const auto _Name = _Item.DisplayName.Resolve("zh-CN");
-            const auto _ResourceID = Scene_->Resources().MakeNamedResourceURL(
-                "tube-designer/template-preview/" + _Evaluation.Descriptor.ID + "/" + _Item.Key);
-            _Conversions.push_back({ _Shape, _Name + " preview", _ResourceID });
+            auto _Prototype = _Prototypes.size();
+            for (std::size_t _Index = 0; _Index < _Prototypes.size(); ++_Index)
+            {
+                if (_Shape.IsPartner(_Prototypes[_Index].Source)
+                    && _Shape.Orientation() == _Prototypes[_Index].Source.Orientation())
+                {
+                    _Prototype = _Index;
+                    break;
+                }
+            }
+            if (_Prototype == _Prototypes.size())
+            {
+                const auto _SharedKey = _SharedPrototypeKey(_Representation->second);
+                const auto _ResourceName = _SharedKey.empty()
+                    ? "prototype/" + std::to_string(_Prototype + 1)
+                    : "shared/" + ContentDigest(_Evaluation.Descriptor.PackageDigest, _SharedKey).substr(8);
+                const auto _ResourceID = Scene_->Resources().MakeNamedResourceURL(
+                    "tube-designer/template-preview/" + _Evaluation.Descriptor.ID
+                    + "/" + _ResourceName);
+                std::optional<iCAX::Resource::CResourceReference> _CachedMesh;
+                if (!_SharedKey.empty()
+                    && Scene_->Resources().Get<iCAX::GeometryData::CTriangleMeshResource>(_ResourceID))
+                    _CachedMesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+                        Scene_->Resources(), _ResourceID, iCAX::Render::ERenderGeometryKind::Mesh);
+                _Prototypes.push_back({
+                    _Shape, _Shape.Located(TopLoc_Location()), _Name, _ResourceID, _CachedMesh,
+                });
+            }
             _PreparedItems.push_back({
-                &_Item, _Shape, _Name, _ResourceID,
+                &_Item, _Shape, _Name,
                 ManufacturingPartKind(_Item.Properties) == "glass"
                     ? EnsureDesignerGlassMaterial(*Scene_) : _Material,
+                _Prototype,
             });
         }
-        // The library preview used to triangulate every member serially.  Keep
-        // resource publication on the scene thread, but perform the independent
-        // OCC-to-BRep conversions through the same bounded parallel batch used
-        // by committed product generation.
-        auto _Converted = iCAX::OpenCascade::ConvertOpenCascadeShapesToBRep(
+        // Product-library preview is transient display data. Converting every
+        // shape to a complete neutral BRep first duplicates topology work and
+        // retains data that the viewport never consumes. Mesh the shapes in a
+        // bounded batch and publish only triangle meshes; committed product and
+        // manufacturing paths continue to use complete BRep resources.
+        std::vector<iCAX::OpenCascade::SBRepConversionInput> _Conversions;
+        _Conversions.reserve(_Prototypes.size());
+        for (const auto& _Prototype : _Prototypes)
+            if (!_Prototype.CachedMesh)
+                _Conversions.push_back({
+                    _Prototype.Canonical, _Prototype.Name + " preview", _Prototype.ResourceID,
+                });
+        auto _Converted = iCAX::OpenCascade::ConvertOpenCascadeShapesToTriangleMeshes(
             _Conversions, kProductDisplayDeflection);
+        const auto _TimingMesh = std::chrono::steady_clock::now();
+        std::vector<iCAX::Resource::CResourceReference> _Meshes(_Prototypes.size());
+        std::size_t _ConvertedIndex = 0;
+        for (std::size_t _PrototypeIndex = 0; _PrototypeIndex < _Prototypes.size(); ++_PrototypeIndex)
+        {
+            const auto& _Prototype = _Prototypes[_PrototypeIndex];
+            if (_Prototype.CachedMesh)
+            {
+                _Meshes[_PrototypeIndex] = *_Prototype.CachedMesh;
+                continue;
+            }
+            const auto _DisplayMesh = StorePreparedTriangleMesh(
+                *Scene_, _Prototype.ResourceID, _Prototype.Name + " preview",
+                std::move(_Converted[_ConvertedIndex++]));
+            _Meshes[_PrototypeIndex] = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+                Scene_->Resources(), _DisplayMesh.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+        }
+        const auto _TimingPublish = std::chrono::steady_clock::now();
         VariantArray _Items;
         _Items.reserve(_PreparedItems.size());
         std::uint64_t _Index = 0;
@@ -7089,17 +7405,14 @@ namespace
         {
             const auto& _Prepared = _PreparedItems[_ItemIndex];
             const auto& _Item = *_Prepared.Item;
-            const auto _BRep = StorePreparedBRep(
-                *Scene_, _Prepared.ResourceID, _Prepared.Name + " preview",
-                std::move(_Converted[_ItemIndex]));
-            const auto _Mesh = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
-                Scene_->Resources(), _BRep.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+            const auto& _Mesh = _Meshes.at(_Prepared.Prototype);
             _Items.emplace_back(ObjectMap{
                 {"entityId", std::string("template-preview-") + _Evaluation.Descriptor.ID + "-" + std::to_string(++_Index)},
                 {"key", _Item.Key},
                 {"name", _Prepared.Name},
                 {"geometry", ObjectMap{{"url", _Mesh.URL}, {"version", _Mesh.nVersion}}},
                 {"material", ObjectMap{{"url", _Prepared.Material.URL}, {"version", _Prepared.Material.nVersion}}},
+                {"transform", ShapeLocationMatrix(_Prepared.Shape)},
                 {"bounds", ShapeBounds(_Prepared.Shape)},
             });
         }
@@ -7112,6 +7425,25 @@ namespace
             {"items", std::move(_Items)},
             {"material", ObjectMap{{"url", _Material.URL}, {"version", _Material.nVersion}}},
         };
+        char* _ProfileEnv = nullptr;
+        std::size_t _ProfileEnvLength = 0;
+        const auto _ProfilingRequested = _dupenv_s(
+            &_ProfileEnv, &_ProfileEnvLength, "ICAX_PROFILE_TEMPLATE_PREVIEW") == 0
+            && _ProfileEnv != nullptr;
+        std::free(_ProfileEnv);
+        if (_ProfilingRequested)
+        {
+            const auto _Millis = [](auto From_, auto To_) {
+                return std::chrono::duration<double, std::milli>(To_ - From_).count();
+            };
+            _Response["profilingMs"] = ObjectMap{
+                {"template", _Millis(_TimingStart, _TimingTemplate)},
+                {"geometry", _Millis(_TimingTemplate, _TimingGeometry)},
+                {"meshing", _Millis(_TimingGeometry, _TimingMesh)},
+                {"publishing", _Millis(_TimingMesh, _TimingPublish)},
+                {"response", _Millis(_TimingPublish, std::chrono::steady_clock::now())},
+            };
+        }
         const auto _Annotations = _Evaluation.Model.Extensions.find(
             "tubeDesigner.specificationAnnotations");
         if (_Annotations != _Evaluation.Model.Extensions.end()
@@ -7694,26 +8026,46 @@ namespace
     void SyncNestingPersistence(iCAX::Project::ISceneContext& scene)
     {
         auto& db = scene.Database();
-        std::set<std::string> embedded;
+        auto& resources = scene.Resources();
+        std::set<iCAX::Resource::CResourceReference> referenced;
+        const auto addReference = [&referenced](
+            const std::string& url, const std::uint64_t version)
+        {
+            const iCAX::Resource::CResourceReference reference{url, version};
+            if (reference.IsValid()) referenced.insert(reference);
+        };
         const auto machiningRoot = GetComponent<CTubeDesignerRootComponent>(db.GetMetaEntity());
         const auto machining = machiningRoot ? machiningRoot->GetMachiningTask() : ObjectMap();
         if (machining.contains("jobs") && machining.at("jobs").Is<VariantArray>())
             for (const auto& value : machining.at("jobs").To<VariantArray>())
-                if (value.Is<ObjectMap>()) embedded.insert(GetString(value.To<ObjectMap>(), "resourceId"));
+                if (value.Is<ObjectMap>())
+                {
+                    const auto job = value.To<ObjectMap>();
+                    addReference(GetString(job, "resourceId"),
+                        GetUInt64(job, "resourceVersion", 0));
+                }
         for (const auto& [entity, part] : Collect<CManufacturingPartComponent>(db))
             if (IsIndependentNestingPart(*part)) {
-                embedded.insert(part->GetManufacturingGeometryResourceID());
+                addReference(part->GetManufacturingGeometryResourceID(),
+                    part->GetManufacturingGeometryResourceVersion());
                 // A side-sketch edit is always rebuilt from this immutable
                 // pre-sketch BRep.  Persist the base together with the final
                 // part, otherwise reopening the project would make the next
                 // edit either compound the cut or lose the edit base.
-                embedded.insert(GetString(
-                    part->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"));
-                const auto addConfigResources = [&embedded](const ObjectMap& value) {
-                    embedded.insert(GetString(value, "baseResourceId"));
+                addReference(GetString(
+                    part->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"),
+                    GetUInt64(part->GetItemProperties(),
+                        "tubeDesigner.sideSketchBaseResourceVersion", 0));
+                const auto addConfigResources = [&addReference](const ObjectMap& value) {
+                    addReference(GetString(value, "baseResourceId"),
+                        GetUInt64(value, "baseResourceVersion", 0));
                     const auto addCut=[&](const ObjectMap& data) {
                         const auto cut=data.find("frozenCut");
-                        if(cut!=data.end() && cut->second.Is<ObjectMap>())embedded.insert(GetString(cut->second.To<ObjectMap>(),"url"));
+                        if(cut!=data.end() && cut->second.Is<ObjectMap>()) {
+                            const auto frozen = cut->second.To<ObjectMap>();
+                            addReference(GetString(frozen, "url"),
+                                GetUInt64(frozen, "version", 0));
+                        }
                     };
                     for(const auto& feature:ReadPunchFeatures(value,"features"))addCut(feature.TemplateData);
                     const auto ends=ReadPunchEnds(value);addCut(ends.Start.TemplateData);addCut(ends.End.TemplateData);
@@ -7724,18 +8076,161 @@ namespace
                     if (!_Punch->GetDefinition().empty()) addConfigResources(_Punch->GetDefinition());
             }
         for (const auto& [entity, member] : Collect<CAssemblyMemberComponent>(db))
-            embedded.insert(GetString(
-                member->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"));
-        for (auto info : scene.Resources().GetInfos()) {
+            addReference(GetString(
+                member->GetItemProperties(), "tubeDesigner.sideSketchBaseResourceId"),
+                GetUInt64(member->GetItemProperties(),
+                    "tubeDesigner.sideSketchBaseResourceVersion", 0));
+
+        // Only the exact BRep versions referenced by manufacturing state are
+        // project roots. A product and a nesting part may share one immutable
+        // {URL, version}; no geometry copy is required for that ownership split.
+        for (auto info : resources.GetInfos()) {
+            const auto source = info.Metadata.find("source");
             if (info.ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName
-                || info.Metadata["source"] != "tube-designer") continue;
-            const auto mode = embedded.contains(info.Key.Source)
+                || source == info.Metadata.end() || source->second != "tube-designer") continue;
+            const auto mode = referenced.contains({info.Key.Source, info.nVersion})
                 ? iCAX::Resource::EResourcePersistenceMode::Embedded : iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
             if (info.Persistence != mode) {
                 info.Persistence = mode; info.nSchemaVersion = 1;
-                if (!scene.Resources().UpdateInfo(info.Key.Source, info)) throw std::runtime_error("Cannot update drawing resource policy");
+                if (!resources.UpdateInfo(info.Key.Source, info))
+                    throw std::runtime_error("Cannot update drawing resource policy");
             }
         }
+
+        // GetManifest exposes current versions. When a shared source URL later
+        // advances, keep the exact historical version reachable through one
+        // tiny persistent dependency anchor instead of cloning its BRep.
+        std::set<iCAX::Resource::CResourceReference> historical;
+        for (const auto& reference : referenced)
+        {
+            const auto info = resources.GetInfo(reference.URL, reference.nVersion);
+            if (!info || info->ResourceTypeID
+                != iCAX::GeometryData::BRepModel::kResourceTypeName)
+                throw std::runtime_error("Referenced nesting BRep version is unavailable");
+            if (resources.GetVersion(reference.URL) == reference.nVersion)
+                continue;
+            if (!info->IsPersistent())
+                throw std::runtime_error(
+                    "Historical nesting BRep version is not persistent");
+            historical.insert(reference);
+        }
+
+        const auto anchorURL = resources.MakeNamedResourceURL(
+            "tube-designer/nesting/resource-manifest");
+        const auto anchorInfo = resources.GetInfo(anchorURL);
+        if (historical.empty())
+        {
+            if (anchorInfo && anchorInfo->IsPersistent())
+            {
+                auto info = *anchorInfo;
+                info.Persistence = iCAX::Resource::EResourcePersistenceMode::RuntimeOnly;
+                if (!resources.UpdateInfo(anchorURL, info))
+                    throw std::runtime_error("Cannot retire nesting resource manifest");
+            }
+            return;
+        }
+
+        const std::vector<iCAX::Resource::CResourceReference> dependencies(
+            historical.begin(), historical.end());
+        if (anchorInfo && anchorInfo->Dependencies == dependencies)
+        {
+            if (anchorInfo->IsRuntimeOnly())
+            {
+                auto info = *anchorInfo;
+                info.Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
+                if (!resources.UpdateInfo(anchorURL, info))
+                    throw std::runtime_error("Cannot activate nesting resource manifest");
+            }
+            return;
+        }
+
+        std::vector<std::uint8_t> marker{'T', 'D', 'N', 'R', 1};
+        auto anchor = std::make_shared<iCAX::Resource::CFlatBufferResource>(
+            std::move(marker));
+        iCAX::Resource::CResourceInfo info;
+        info.Name = "TubeDesigner nesting resource manifest";
+        info.MediaType = "application/octet-stream";
+        info.ResourceTypeID = iCAX::Resource::CFlatBufferResource::kResourceTypeName;
+        info.Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
+        info.nSchemaVersion = 1;
+        info.nSize = anchor->Size();
+        info.Metadata["source"] = "tube-designer";
+        info.Metadata["kind"] = "nesting.resource-manifest";
+        info.Dependencies = dependencies;
+        iCAX::Resource::CResourceInfo storedInfo;
+        const auto mutation = resources.PutVersioned<iCAX::Resource::CFlatBufferResource>(
+            anchorURL, std::move(anchor), info,
+            iCAX::Resource::EResourceVersionCondition::None, 0, &storedInfo);
+        if (mutation == iCAX::Resource::EResourceMutationResult::PreconditionFailed
+            || storedInfo.nVersion == 0)
+            throw std::runtime_error("Cannot publish nesting resource manifest");
+    }
+
+    // Staging only adds references. Promote the exact versions used by the new
+    // rows instead of rescanning every resource and every part in the project.
+    void PromoteStagedNestingResources(iCAX::Project::ISceneContext& scene,
+        const VariantArray& stagedIDs)
+    {
+        auto& db = scene.Database();
+        auto& resources = scene.Resources();
+        std::set<iCAX::Resource::CResourceReference> references;
+        const auto add = [&references](const std::string& url, std::uint64_t version) {
+            const iCAX::Resource::CResourceReference reference{url, version};
+            if (reference.IsValid()) references.insert(reference);
+        };
+        const auto addConfig = [&add](const ObjectMap& value) {
+            add(GetString(value, "baseResourceId"), GetUInt64(value, "baseResourceVersion", 0));
+            const auto addCut = [&add](const ObjectMap& data) {
+                const auto cut = data.find("frozenCut");
+                if (cut == data.end() || !cut->second.Is<ObjectMap>()) return;
+                const auto frozen = cut->second.To<ObjectMap>();
+                add(GetString(frozen, "url"), GetUInt64(frozen, "version", 0));
+            };
+            for (const auto& feature : ReadPunchFeatures(value, "features")) addCut(feature.TemplateData);
+            const auto ends = ReadPunchEnds(value);
+            addCut(ends.Start.TemplateData);
+            addCut(ends.End.TemplateData);
+        };
+        for (const auto& value : stagedIDs)
+        {
+            const auto entity = db.GetEntity(ParseRequiredUuid(value.To<std::string>(), "partEntityId"));
+            const auto part = GetComponent<CManufacturingPartComponent>(entity);
+            if (!part || !IsIndependentNestingPart(*part))
+                throw std::runtime_error("Staged nesting part is missing");
+            add(part->GetManufacturingGeometryResourceID(),
+                part->GetManufacturingGeometryResourceVersion());
+            const auto properties = part->GetItemProperties();
+            add(GetString(properties, "tubeDesigner.sideSketchBaseResourceId"),
+                GetUInt64(properties, "tubeDesigner.sideSketchBaseResourceVersion", 0));
+            if (const auto drawing = GetComponent<CPartDrawingComponent>(entity))
+                if (!drawing->GetDefinition().empty()) addConfig(drawing->GetDefinition());
+            if (const auto punch = GetComponent<CPunchWizardComponent>(entity))
+                if (!punch->GetDefinition().empty()) addConfig(punch->GetDefinition());
+        }
+        bool hasHistoricalVersion = false;
+        for (const auto& reference : references)
+        {
+            auto info = resources.GetInfo(reference.URL, reference.nVersion);
+            if (!info || info->ResourceTypeID != iCAX::GeometryData::BRepModel::kResourceTypeName)
+                throw std::runtime_error("Referenced nesting BRep version is unavailable");
+            if (resources.GetVersion(reference.URL) != reference.nVersion)
+            {
+                if (!info->IsPersistent())
+                    throw std::runtime_error("Historical nesting BRep version is not persistent");
+                hasHistoricalVersion = true;
+                continue;
+            }
+            if (info->IsRuntimeOnly())
+            {
+                info->Persistence = iCAX::Resource::EResourcePersistenceMode::Embedded;
+                info->nSchemaVersion = 1;
+                if (!resources.UpdateInfo(reference.URL, *info))
+                    throw std::runtime_error("Cannot persist staged nesting resource");
+            }
+        }
+        // A historical version needs the dependency anchor maintained by the
+        // general synchronization path. This is exceptional, not the bulk path.
+        if (hasHistoricalVersion) SyncNestingPersistence(scene);
     }
 
     void RestoreDesignerResources(iCAX::Project::ISceneContext& scene,
@@ -7743,7 +8238,10 @@ namespace
     {
         auto& db = scene.Database();
         auto& resources = scene.Resources();
-        RestoreNestingResources(scene);
+        // Product imports initially reuse the already-generated product
+        // thumbnail. Verify the independent BRep first, then restore any
+        // missing thumbnail after product resources have been rebuilt below.
+        RestoreNestingResources(scene, false);
         const auto root = GetComponent<CTubeDesignerRootComponent>(db.GetMetaEntity());
         const auto task = root ? root->GetNestingTask() : ObjectMap();
         ObjectMap frozen;
@@ -7813,6 +8311,7 @@ namespace
                 if (part->GetProductID() == productEntity->GetID() && part->GetGenerationRunID() == product->GetActiveGenerationRunID())
                     (void)iCAX::RenderInteraction::EnsureFrontendGeometryResource(resources, part->GetManufacturingGeometryResourceID(), iCAX::Render::ERenderGeometryKind::Mesh);
         }
+        RestoreNestingResources(scene);
         SyncNestingPersistence(scene);
     }
 
@@ -7919,8 +8418,22 @@ namespace
         SyncNestingPersistence(scene);
     }
 
-    VariantArray StageIndependentNestingParts(iCAX::Project::ISceneContext& Scene_, const VariantArray& SourceIDs_)
+    VariantArray StageIndependentNestingParts(iCAX::Project::ISceneContext& Scene_,
+        const VariantArray& SourceIDs_, VariantArray* StagedParts_ = nullptr)
     {
+        char* _StageProfileEnv = nullptr;
+        std::size_t _StageProfileEnvLength = 0;
+        (void)_dupenv_s(&_StageProfileEnv, &_StageProfileEnvLength, "ICAX_PROFILE_STAGE_NESTING");
+        const bool _StageProfile = _StageProfileEnv != nullptr;
+        std::free(_StageProfileEnv);
+        const auto _StageStart = std::chrono::steady_clock::now();
+        const auto _StageMark = [&](const char* _Phase) {
+            if (!_StageProfile) return;
+            std::fprintf(stderr, "StageNestingParts/%s %.3f s\n", _Phase,
+                std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - _StageStart).count());
+            std::fflush(stderr);
+        };
         auto& _DB = Scene_.Database();
         const auto _Meta = _DB.GetMetaEntity();
         if (!_Meta) throw std::runtime_error("Missing project root");
@@ -7947,6 +8460,8 @@ namespace
             std::string FileName;
             std::string ManufacturingResourceID;
             std::uint64_t ManufacturingResourceVersion = 0;
+            std::string ThumbnailResourceID;
+            std::uint64_t ThumbnailResourceVersion = 0;
         };
         std::map<iCAX::Data::uuid, iCAX::Data::uuid> _Batches;
         std::vector<std::pair<iCAX::Data::uuid, PropertySet>> _Copies;
@@ -7999,8 +8514,6 @@ namespace
                 _Source.ItemProperties = _Part->GetItemProperties();
                 if (const auto _TubeProfile = GetComponent<CTubeProfileComponent>(_Part->GetEntity()))
                     _Source.TubeProfile = ProfileSnapshot(*_TubeProfile);
-                else
-                    throw std::invalid_argument("制造零件缺少管型组件，请重新生成拆单结果");
                 if (const auto _Drawing = GetComponent<CPartDrawingComponent>(_Part->GetEntity());
                     _Drawing && !_Drawing->GetDefinition().empty())
                     _Source.PartDrawingDefinition = _Drawing->GetDefinition();
@@ -8010,6 +8523,8 @@ namespace
                 _Source.FileName = _Part->GetFileName();
                 _Source.ManufacturingResourceID = _Part->GetManufacturingGeometryResourceID();
                 _Source.ManufacturingResourceVersion = _Part->GetManufacturingGeometryResourceVersion();
+                _Source.ThumbnailResourceID = _Part->GetThumbnailGeometryResourceID();
+                _Source.ThumbnailResourceVersion = _Part->GetThumbnailGeometryResourceVersion();
             }
             else if (const auto* _TransientPart = _FindTransient(_ID))
             {
@@ -8042,23 +8557,67 @@ namespace
                 _Source.FileName = _TransientPart->FileName;
                 _Source.ManufacturingResourceID = _TransientPart->ManufacturingResource.URL;
                 _Source.ManufacturingResourceVersion = _TransientPart->ManufacturingResource.nVersion;
+                _Source.ThumbnailResourceID = _TransientPart->ThumbnailResource.URL;
+                _Source.ThumbnailResourceVersion = _TransientPart->ThumbnailResource.nVersion;
             }
             else throw std::invalid_argument("请选择当前拆单结果中的制造零件");
+            if (IsTubeManufacturingPart(_Source.ItemProperties) && _Source.TubeProfile.empty())
+                throw std::invalid_argument("制造零件缺少管型组件，请重新生成拆单结果");
             _Sources.push_back(std::move(_Source));
         }
         if (SourceIDs_.empty()) throw std::invalid_argument("请选择要加入下料的零件");
+        _StageMark("validated-sources");
         for (const auto& _Source : _Sources)
         {
             auto& _Batch = _Batches[_Source.ProductID];
             if (_Batch.is_nil()) _Batch = iCAX::Data::GenerateNewUUID();
             const auto _ID = iCAX::Data::GenerateNewUUID();
-            const auto _Geometry = Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(
-                _Source.ManufacturingResourceID, _Source.ManufacturingResourceVersion);
-            if (!_Geometry) throw std::runtime_error("无法复制下料零件的几何资源");
-            const auto _URL = Scene_.Resources().MakeNamedResourceURL("tube-designer/nesting/" + UuidToString(_ID));
-            const auto _Resource = StorePreparedBRep(Scene_, _URL, _Source.Name, iCAX::GeometryData::BRepModel(*_Geometry));
-            const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
-                Scene_.Resources(), _Resource.URL, iCAX::Render::ERenderGeometryKind::Mesh);
+            auto _Resource = iCAX::Resource::CResourceReference{
+                _Source.ManufacturingResourceID,
+                _Source.ManufacturingResourceVersion };
+            const auto _SourceInfo = Scene_.Resources().GetInfo(
+                _Resource.URL, _Resource.nVersion);
+            if (!_SourceInfo || _SourceInfo->ResourceTypeID
+                != iCAX::GeometryData::BRepModel::kResourceTypeName)
+                throw std::runtime_error("已拆单零件的几何资源不存在，请先在产品页完成拆单");
+            if (Scene_.Resources().GetVersion(_Resource.URL) != _Resource.nVersion
+                && _SourceInfo->IsRuntimeOnly())
+            {
+                const auto _Geometry = Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(
+                    _Resource.URL, _Resource.nVersion);
+                if (!_Geometry) throw std::runtime_error("无法读取下料零件的几何资源");
+                // A runtime-only historical version cannot become a project
+                // dependency. Publish a nesting-owned alias that shares the
+                // same immutable model object; this is still a zero-copy path.
+                _Resource = StoreSharedPreparedBRep(
+                    Scene_, Scene_.Resources().MakeNamedResourceURL(
+                        "tube-designer/nesting/" + UuidToString(_ID)),
+                    _Source.Name, _Geometry);
+            }
+            auto _Thumbnail = iCAX::Resource::CResourceReference{
+                _Source.ThumbnailResourceID, _Source.ThumbnailResourceVersion };
+            const auto _ExistingThumbnail = _Thumbnail.IsValid()
+                ? Scene_.Resources().Get<iCAX::Resource::CFlatBufferResource>(
+                    _Thumbnail.URL, _Thumbnail.nVersion)
+                : nullptr;
+            if (!_ExistingThumbnail)
+            {
+                auto _RenderSourceID = _Resource.URL;
+                if (Scene_.Resources().GetVersion(_RenderSourceID)
+                    != _Resource.nVersion)
+                {
+                    const auto _Geometry = Scene_.Resources().Get<iCAX::GeometryData::BRepModel>(
+                        _Resource.URL, _Resource.nVersion);
+                    if (!_Geometry) throw std::runtime_error("无法读取下料零件的几何资源");
+                    _RenderSourceID = StoreSharedPreparedBRep(
+                        Scene_, Scene_.Resources().MakeNamedResourceURL(
+                            "tube-designer/nesting-display/" + UuidToString(_ID)),
+                        _Source.Name, _Geometry).URL;
+                }
+                _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
+                    Scene_.Resources(), _RenderSourceID,
+                    iCAX::Render::ERenderGeometryKind::Mesh);
+            }
             PropertySet _Properties{
                 {CManufacturingPartComponent::PropertyName_PartIndex, PropertyValue(_Source.Index)},
                 {CManufacturingPartComponent::PropertyName_StableKey, PropertyValue(_Source.StableKey)},
@@ -8106,11 +8665,24 @@ namespace
                     {CNestingSourceComponent::PropertyName_SourceStableKey, PropertyValue(_Source.StableKey)}
                 });
             _CreatedIDs.emplace_back(UuidToString(_ID));
+            if (StagedParts_)
+                StagedParts_->emplace_back(ObjectMap{
+                    {"sourcePartEntityId", UuidToString(_Source.ID)},
+                    {"partEntityId", UuidToString(_ID)},
+                    {"generationRunId", UuidToString(_Batch)},
+                    {"quantity", _Source.Quantity},
+                    {"manufacturingGeometryResourceId", _Resource.URL},
+                    {"manufacturingGeometryResourceVersion", _Resource.nVersion},
+                    {"thumbnailGeometryResourceId", _Thumbnail.URL},
+                    {"thumbnailGeometryResourceVersion", _Thumbnail.nVersion}
+                });
             _References.emplace_back(ObjectMap{{"partEntityId", UuidToString(_ID)}, {"generationRunId", UuidToString(_Batch)}});
         }
         const ObjectMap _Task{{"parts", _References}, {"request", ObjectMap()}, {"result", ObjectMap()},
             {"revision", UuidToString(iCAX::Data::GenerateNewUUID())}};
+        _StageMark("prepared-parts");
         auto _Undo = _DB.BeginUndoCommand("Add independent nesting parts");
+        _StageMark("undo-opened");
         auto& _Transaction = _DB.BeginTransaction("Add independent nesting parts");
         bool _Committing = false;
         try
@@ -8137,12 +8709,17 @@ namespace
             }
             QueueUpsertComponent(_Transaction, _Meta, _Meta->GetID(), CTubeDesignerRootComponent::S_ClassName,
                 {{CTubeDesignerRootComponent::PropertyName_NestingTask, PropertyValue(_Task)}});
+            _StageMark("transaction-queued");
             std::string _Error; _Committing = true;
             if (!_DB.CommitTransaction(_Transaction, _Error)) throw std::runtime_error(_Error);
+            _StageMark("db-committed");
         }
         catch (...) { if (!_Committing) { try { _DB.CancelTransaction(_Transaction); } catch (...) {} } throw; }
         _Undo->End();
-        SyncNestingPersistence(Scene_);
+        _StageMark("undo-ended");
+        _StageMark("committed-parts");
+        PromoteStagedNestingResources(Scene_, _CreatedIDs);
+        _StageMark("synced-resources");
         return _CreatedIDs;
     }
 
@@ -8318,17 +8895,30 @@ namespace
         const auto found = payload.find("partEntityIds");
         if (found == payload.end() || !found->second.Is<VariantArray>() || found->second.To<VariantArray>().size() > 2000)
             throw std::invalid_argument("请选择至多 2000 种下料零件");
-        RestoreLinkedNestingParts(*scene, application);
         // Entering the nesting area takes a snapshot of the selected source
         // parts.  From this point on nesting owns those copies; product
         // disassembly generations are only an input source and must not keep a
         // lifecycle link that can later make an otherwise valid nesting row
         // look stale during export.
-        const auto ids = StageIndependentNestingParts(*scene, found->second.To<VariantArray>());
-        auto response = BuildSnapshot(*scene, application, false);
-        response["staged"] = true;
-        response["partEntityIds"] = ids;
-        return MakeResponse(response);
+        VariantArray stagedParts;
+        const auto ids = StageIndependentNestingParts(
+            *scene, found->second.To<VariantArray>(), &stagedParts);
+        char* _StageProfileEnv = nullptr;
+        std::size_t _StageProfileEnvLength = 0;
+        (void)_dupenv_s(&_StageProfileEnv, &_StageProfileEnvLength, "ICAX_PROFILE_STAGE_NESTING");
+        const bool _StageProfile = _StageProfileEnv != nullptr;
+        std::free(_StageProfileEnv);
+        if (_StageProfile) std::fprintf(stderr, "StageNestingParts/stage-returned\n");
+        auto& db = scene->Database();
+        const auto root = GetComponent<CTubeDesignerRootComponent>(db.GetMetaEntity());
+        ObjectMap response{{"staged", true}, {"partEntityIds", ids},
+            {"stagedParts", std::move(stagedParts)},
+            {"nestingTask", root ? root->GetNestingTask() : ObjectMap()}};
+        if (_StageProfile) std::fprintf(stderr, "StageNestingParts/delta-returned\n");
+        auto result = MakeResponse(response);
+        if (_StageProfile) std::fprintf(stderr,
+            "StageNestingParts/response-encoded %zu bytes\n", result.Payload.size());
+        return result;
     }
 
     std::string ImportedDimensionText(const double Value_)
@@ -8768,6 +9358,11 @@ namespace
                             { CManufacturingPartComponent::PropertyName_Status, PropertyValue(std::string("Ready")) },
                             { CManufacturingPartComponent::PropertyName_ItemProperties, PropertyValue(_Prepared.ItemProperties) }
                         });
+                    if (!_Prepared.TubeProfile.empty())
+                        QueueUpsertComponent(
+                            _Transaction, _ExistingPart, _Prepared.PartID,
+                            CTubeProfileComponent::S_ClassName,
+                            TubeProfileComponentPropertiesFromSnapshot(_Prepared.TubeProfile));
                     const auto _Member = _Repository.GetEntity(_Prepared.MemberID);
                     if (_Member && _Member->HasComponent(CAssemblyMemberComponent::S_ClassName))
                     {
@@ -9855,8 +10450,10 @@ namespace
 
         const auto _PresentationName = _Part->GetName().empty()
             ? _Part->GetPartNumber() : _Part->GetName();
+        const auto _TargetResourceID = EditableNestingGeometryResourceID(
+            *Scene_, _PartID, *_Part);
         const auto _NewResource = StorePunchBRep(*Scene_,
-            _ResourceID, _PresentationName, _Shape, Request_);
+            _TargetResourceID, _PresentationName, _Shape, Request_);
         ReportExportProgress(Request_,"mesh",0,1,"正在生成显示网格");
         const auto _Thumbnail = iCAX::RenderInteraction::EnsureFrontendGeometryResource(
             Scene_->Resources(), _NewResource.URL, iCAX::Render::ERenderGeometryKind::Mesh);

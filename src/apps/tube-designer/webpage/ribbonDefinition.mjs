@@ -34,6 +34,7 @@ const allRibbonDefinition = {
         {
           title: "零件",
           commands: [
+            command("nesting.add-from-products", "从产品添加", "add-instance", { size: "large", iconTone: "blue" }),
             command("nesting.import-part", "导入零件", "new", { size: "large", iconTone: "green" }),
             command("nesting.add-standard-part", "添加标准零件", "base", { size: "large", iconTone: "green" }),
             command("nesting.add-punch-part", "添加冲孔件", "hole", { size: "large", iconTone: "orange" }),
@@ -179,10 +180,10 @@ const allRibbonDefinition = {
 };
 
 export const sketchRibbonGroups = allRibbonDefinition.tabs.find(tab => tab.id === "sketch").groups;
-// 下料、加工、草图和关于仍保留其内部实现与调用入口；当前对外工作区只公开产品和资源库。
+// 下料使用当前 TubeDesigner.Nest 生产入口；加工、草图和关于暂不公开为顶级工作区。
 export const ribbonDefinition = {
   ...allRibbonDefinition,
-  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "resources"].includes(tab.id)),
+  tabs: allRibbonDefinition.tabs.filter(tab => ["view", "nesting", "resources"].includes(tab.id)),
 };
 
 export function getRibbonDefinition(options = {}) {

@@ -880,6 +880,25 @@ namespace
       };
     },
 
+    async requestResources(requests) {
+      if (!Array.isArray(requests) || requests.length < 1 || requests.length > 4) {
+        throw new TypeError("resource batch must contain 1 to 4 requests");
+      }
+      const responses = await queryNative("requestResources", {
+        requests: await Promise.all(requests.map(async (request) => ({
+          method: String(request.method || "GET"),
+          url: String(request.url || ""),
+          headers: request.headers || {},
+          bodyBase64: await bodyToBase64(request.body)
+        })))
+      });
+      return responses.map((response) => ({
+        status: Number(response && response.status || 500),
+        headers: response && response.headers || {},
+        body: base64ToArrayBuffer(response && response.bodyBase64 || "")
+      }));
+    },
+
     openFileDialog(options) {
       return queryNative("openFileDialog", options || {});
     },
@@ -1629,6 +1648,20 @@ namespace
                     Callback_->Success(
                         json::serialize(
                             _ToJsonResourceResponse(_Response)));
+                    return true;
+                }
+
+                if (_Method == "requestResources")
+                {
+                    const auto& _Requests = _RequireField(_Payload, "requests");
+                    if (!_Requests.is_array() || _Requests.as_array().empty()
+                        || _Requests.as_array().size() > 4)
+                        throw std::invalid_argument("resource batch must contain 1 to 4 requests");
+                    json::array _Responses;
+                    for (const auto& _Request : _Requests.as_array())
+                        _Responses.push_back(_ToJsonResourceResponse(m_pBridge->RequestResource(
+                            _ParseResourceRequest(_AsObject(_Request, "resource request")))));
+                    Callback_->Success(json::serialize(_Responses));
                     return true;
                 }
 

@@ -145,7 +145,19 @@ size_t iCAX::Interaction::CSDOInvoker::DispatchAvailableFrames(
                 _Result.nStatus = EInvocationStatus::InvalidInvocation;
                 _Result.strError = "SDO method caught a non-standard exception";
             }
-            SendInvocationResult(Endpoint_, _Frame, _Result);
+            try
+            {
+                SendInvocationResult(Endpoint_, _Frame, _Result);
+            }
+            catch (const std::exception& Error_)
+            {
+                // A response larger than the bounded channel frame must not
+                // disappear as a client-side timeout after the method committed.
+                CInvocationResult _Failure;
+                _Failure.nStatus = EInvocationStatus::InvalidInvocation;
+                _Failure.strError = std::string("SDO response delivery failed: ") + Error_.what();
+                SendInvocationResult(Endpoint_, _Frame, _Failure);
+            }
             break;
         }
         case ESDOFrameKind::Report:

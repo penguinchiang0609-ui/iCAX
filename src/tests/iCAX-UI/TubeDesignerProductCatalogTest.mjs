@@ -44,9 +44,12 @@ const windowTemplate = { id: "window", name: "防盗窗/平面防盗窗", availa
 const stair = { id: "stair", name: "楼梯/钢楼梯/直跑钢楼梯", available: true, extensions: { catalog: { groupOrder: 30 } }, parameters: [] };
 const templates = [stair, guardrail, windowTemplate];
 
-await test("public ribbon only exposes product and resource pages", () => {
+await test("public ribbon exposes product, nesting and resource pages", () => {
   const ribbon = getRibbonDefinition();
-  assert.deepEqual(ribbon.tabs.map((tab) => tab.id), ["view", "resources"]);
+  assert.deepEqual(ribbon.tabs.map((tab) => tab.id), ["view", "nesting", "resources"]);
+  assert.ok(ribbon.tabs.find((tab) => tab.id === "nesting").groups
+    .flatMap((group) => group.commands)
+    .some((command) => command.id === "nesting.start"));
   assert.ok(!ribbon.tabs[0].groups.flatMap((group) => group.commands).some((item) => item.id === "designer.disassemble"));
 });
 

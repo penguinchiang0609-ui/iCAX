@@ -30,6 +30,7 @@ import { makeSDOMethodCode, makeSDOMethodCodeFromName, makePDOID } from "../../i
 import { deserializeVariantText, serializeVariantText } from "../../iCAX-UI/SDK/SDO/variantSerializer.mjs";
 import { PDOClient } from "../../iCAX-UI/SDK/PDO/pdoClient.mjs";
 import { resolveStandardViewDirection } from "../../iCAX-UI/SDK/Viewport/threeViewport.mjs";
+import { loadRenderResources } from "../../iCAX-UI/SDK/Viewport/renderResource.mjs";
 import { renderMachineRightPane } from "../../apps/_shared/workbench/machine/machineArea.mjs";
 import { activateProjectArea, getProjectArea, setProjectAreaViewContent } from "../../apps/_shared/workbench/state/projectViewStore.mjs";
 import { loadPreviewMeshResource } from "../../apps/tube-one/webpage/previewMeshResource.mjs";
@@ -275,17 +276,20 @@ function testTubeDesignerBuildsTemplateDefinedPartCategories() {
   }];
   view.tubeDesignerSelectedInstanceIds = ["product-1"];
   const selectionHtml = renderDesignerRightPane({}, view);
-  assert.match(selectionHtml, /选择要导入下料的产品实例/);
-  assert.match(selectionHtml, /直接关联到下料清单，不复制几何/);
+  assert.match(selectionHtml, /选择已拆单产品/);
+  assert.match(selectionHtml, /不会重新拆单，也不会复制源几何/);
   assert.doesNotMatch(selectionHtml, /当前状态|等待拆单|将重新拆单/);
 }
 
-function testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows() {
+function testTubeDesignerPublishesTheNestingWorkflow() {
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => [tab.id, tab.title]),
-    [["view", "产品"], ["nesting", "下料"], ["machining", "加工"], ["resources", "资源库"], ["about", "关于"]],
+    [["view", "产品"], ["nesting", "下料"], ["resources", "资源库"]],
   );
   assert.equal(tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "parts"), false);
+  assert.ok(tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "nesting").groups
+    .flatMap((group) => group.commands)
+    .some((command) => command.id === "nesting.start"));
   const productRibbonGroups = tubeDesignerRibbonDefinition.tabs.find((tab) => tab.id === "view").groups;
   const productPartCommands = productRibbonGroups.find((group) => group.title === "零件").commands;
   assert.deepEqual(
@@ -591,30 +595,35 @@ async function testTubeDesignerKeepsPersistentPartsWhenClosingDirectExport() {
   assert.equal(view.scene.tubeDesigner.manufacturingGroups.length, 1);
 }
 
-async function testTubeDesignerImportsDisassemblyDirectlyIntoCutting() {
+async function testTubeDesignerImportsExistingDisassemblyDirectlyIntoCutting() {
   const calls = [];
   let selectedAreaId = "view";
+  const manufacturingGroups = [{
+    productEntityId: "product-1", parts: [
+      { entityId: "source-tube", partKind: "tube" },
+      { entityId: "source-plate", partKind: "plate" },
+    ],
+  }];
   const view = {
     pending: false,
     tubeDesignerSelectedInstanceIds: ["product-1"],
-    scene: { tubeDesigner: { instances: [{ entityId: "product-1" }] } },
+    scene: { tubeDesigner: {
+      instances: [{ entityId: "product-1", hasDisassembly: true, partCount: 2 }],
+      manufacturingGroups,
+    } },
   };
   const result = await handleDesignerAreaAction({
     sceneProxy: { async invoke(method, payload) {
       calls.push({ method, payload });
-      if (method === "TubeDesigner.DisassembleSelected") {
-        return { tubeDesigner: { manufacturingGroups: [{
-          productEntityId: "product-1", parts: [
-            { entityId: "source-tube", partKind: "tube" },
-            { entityId: "source-plate", partKind: "plate" },
-          ],
-        }] } };
-      }
       if (method === "TubeDesigner.StageNestingParts") {
-        return { tubeDesigner: { nestingGroups: [{ generationRunId: "run-1", parts: [
-          { entityId: "source-tube", partKind: "tube", linkedNesting: true },
-          { entityId: "source-plate", partKind: "plate", linkedNesting: true },
-        ] }] }, partEntityIds: ["source-tube", "source-plate"] };
+        return { tubeDesigner: {
+          instances: view.scene.tubeDesigner.instances,
+          manufacturingGroups,
+          nestingGroups: [{ generationRunId: "run-1", parts: [
+            { entityId: "source-tube", partKind: "tube", linkedNesting: true },
+            { entityId: "source-plate", partKind: "plate", linkedNesting: true },
+          ] }],
+        }, partEntityIds: ["source-tube", "source-plate"] };
       }
       throw new Error(method);
     } },
@@ -626,8 +635,8 @@ async function testTubeDesignerImportsDisassemblyDirectlyIntoCutting() {
     showNotice() {},
   });
   assert.equal(result.handled, true);
-  assert.deepEqual(calls.map(({ method }) => method), ["TubeDesigner.DisassembleSelected", "TubeDesigner.StageNestingParts"]);
-  assert.deepEqual(calls[1].payload.partEntityIds, ["source-tube", "source-plate"]);
+  assert.deepEqual(calls.map(({ method }) => method), ["TubeDesigner.StageNestingParts"]);
+  assert.deepEqual(calls[0].payload.partEntityIds, ["source-tube", "source-plate"]);
   assert.equal(selectedAreaId, "nesting");
   assert.equal(view.activeAreaId, "nesting");
   assert.equal(view.tubeDesignerBreakdownOpen, false);
@@ -734,7 +743,7 @@ function testTubeDesignerSketchJoinsTheMainWorkflow() {
   assert.ok(!tubeDesignerRibbonDefinition.tabs.some((tab) => tab.id === "sketch"));
   assert.deepEqual(
     tubeDesignerRibbonDefinition.tabs.map((tab) => tab.id),
-    ["view", "nesting", "machining", "resources", "about"],
+    ["view", "nesting", "resources"],
   );
   const commands = sketchRibbonGroups.flatMap((group) => group.commands)
     .map((command) => command.id);
@@ -1807,6 +1816,27 @@ async function testRenderResourceLoaderUsesViewReferenceVersion() {
   assert.equal(loaded.data.dataVersion, "7");
 }
 
+async function testRenderResourceBatchUsesOneBridgeRequest() {
+  const requests = [];
+  const geometry = makeRenderGeometryResourceFixture();
+  const client = new ResourceClient({ bridge: {
+    async requestResources(batch) {
+      requests.push(batch);
+      return batch.map(() => ({ status: 200, body: geometry.slice(0) }));
+    },
+  } });
+  const references = Array.from({ length: 4 }, (_, index) => ({
+    url: `icax-resource://app/product/project/scene/mesh-${index}`,
+    version: 7,
+  }));
+  const loaded = await loadRenderResources(client, references);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].length, 4);
+  assert.equal(requests[0][0].headers["icax-resource-version"], "7");
+  assert.deepEqual(loaded.map((resource) => resource.url), references.map((reference) => reference.url));
+  assert.ok(loaded.every((resource) => resource.type === "geometry" && resource.data.positions.length === 9));
+}
+
 async function testTubePreviewLoadsStandardRenderGeometry() {
   let requestedVersion = "";
   const preview = await loadPreviewMeshResource({
@@ -2419,11 +2449,11 @@ function delay(milliseconds) {
 
 testSDOMethodCodes();
 testTubeDesignerBuildsTemplateDefinedPartCategories();
-testTubeDesignerSeparatesBasicAndAdvancedProductionWorkflows();
+testTubeDesignerPublishesTheNestingWorkflow();
 await testTubeDesignerNestingPartListUsesTheBreakdownPage();
 await testTubeDesignerOpensPersistentPartListWithoutEnteringCutting();
 await testTubeDesignerKeepsPersistentPartsWhenClosingDirectExport();
-await testTubeDesignerImportsDisassemblyDirectlyIntoCutting();
+await testTubeDesignerImportsExistingDisassemblyDirectlyIntoCutting();
 await testTubeDesignerEntersCuttingFromThePartList();
 testTubeDesignerSketchJoinsTheMainWorkflow();
 testTubeDesignerChoosesTheFirstAvailableCatalogTemplate();
@@ -2456,6 +2486,7 @@ testRenderResourceParsing();
 testProjectAreaMembershipIsolation();
 await testViewReadersUseSceneChannelAndResourceSnapshots();
 await testRenderResourceLoaderUsesViewReferenceVersion();
+await testRenderResourceBatchUsesOneBridgeRequest();
 await testTubePreviewLoadsStandardRenderGeometry();
 await testBridgeValidation();
 testChannelIdValidation();

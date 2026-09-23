@@ -102,7 +102,6 @@ import {
 } from "./aboutArea.mjs";
 import {
   captureProductTemplateLibraryScrollState,
-  ensureProductTemplateLibraryDescriptor,
   renderProductTemplateLibraryLeftPane,
   renderProductTemplateLibraryRightPane,
   renderProductTemplateLibraryViewportOverlay,
@@ -500,11 +499,6 @@ function withDesignerContext(context) {
       }
       if (view.activeAreaId === "templates") {
         view.tubeDesignerProductTemplateLibraryRenderProject = () => ops.renderProject(context, view);
-        void ensureProductTemplateLibraryDescriptor(context, view).then((loaded) => {
-          if (loaded && view.activeAreaId === "templates") ops.renderProject(context, view);
-        }).catch((error) => {
-          view.tubeDesignerTemplateLoadError = error?.message ?? String(error);
-        });
       }
       if (view.activeAreaId === "nesting" && view.tubeDesignerBreakdownOpen && !view.tubeDesignerPartInspectionOpen) {
         scheduleDesignerPartThumbnailHydration(context);

@@ -1,0 +1,46 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "two-end-middle",
+  "version": "1.0.0",
+  "displayName": "插入 / 贯穿 / 相贯",
+  "category": "two-end-middle",
+  "categoryName": "两件 · 端—中",
+  "summary": "一个零件的端部连接到另一个零件中段；可开单面轮廓口、贯穿轮廓口或加工支管相贯端。",
+  "topology": "端部—中段",
+  "interfaceType": "插入 / 贯穿 / 相贯贴合",
+  "lockType": "焊接或结构固定",
+  "motionType": "沿支管轴线装入",
+  "participants": [
+    { "role": "host", "label": "主管 / 母件", "responsibility": "提供中段连接位置", "count": 1 },
+    { "role": "branch", "label": "支管 / 插入件", "responsibility": "以端部接入", "count": 1 }
+  ],
+  "parameters": [
+    { "key": "interfaceMode", "displayName": "端—中方式", "valueType": "choice", "defaultValue": "saddle", "options": [{ "value": "singleInsert", "label": "单面插入" }, { "value": "throughInsert", "label": "贯穿插入" }, { "value": "saddle", "label": "相贯贴合" }], "level": "basic" },
+    { "key": "intersectionAngle", "displayName": "轴线夹角", "valueType": "number", "defaultValue": 90, "min": 10, "max": 170, "step": 1, "unit": "°", "level": "basic" },
+    { "key": "fitGap", "displayName": "轮廓间隙", "valueType": "number", "defaultValue": 0.2, "min": 0, "max": 10, "step": 0.1, "unit": "mm", "level": "basic" }
+  ],
+  "partProcesses": [
+    { "id": "single-opening", "participants": ["host"], "label": "单面轮廓插入口", "appliesWhen": { "op": "eq", "parameter": "interfaceMode", "value": "singleInsert" }, "resource": { "kind": "part-process", "id": "branch-profile", "displayName": "支管相贯" }, "parameterBindings": { "angle": "$intersectionAngle", "azimuth": 0, "roll": 0, "direction": "negative", "length": 120, "offsetY": 0, "offsetZ": 0 }, "previewPlacement": { "target": "part", "reference": "center", "station": 0, "face": "top", "sectionRole": "branch" } },
+    { "id": "through-opening", "participants": ["host"], "label": "贯穿轮廓插入口", "appliesWhen": { "op": "eq", "parameter": "interfaceMode", "value": "throughInsert" }, "resource": { "kind": "part-process", "id": "branch-profile", "displayName": "支管相贯" }, "parameterBindings": { "angle": "$intersectionAngle", "azimuth": 0, "roll": 0, "direction": "through", "length": 120, "offsetY": 0, "offsetZ": 0 }, "previewPlacement": { "target": "part", "reference": "center", "station": 0, "face": "top", "sectionRole": "branch" } },
+    { "id": "saddle-end", "participants": ["branch"], "label": "支管相贯端切", "appliesWhen": { "op": "eq", "parameter": "interfaceMode", "value": "saddle" }, "resource": { "kind": "part-process", "id": "end-profile", "displayName": "支管端切" }, "parameterBindings": { "cutMode": "concave", "angle": "$intersectionAngle", "trim": 0, "rotation": 0, "azimuth": 0, "roll": 0, "axialOffset": 0, "offsetY": 0, "offsetZ": 0 }, "previewPlacement": { "target": "end", "end": "end", "datum": "long", "sectionRole": "host" } }
+  ],
+  "manufacturingPlan": { "realization": "separate", "blankPartPolicy": "keep-separate", "blankParts": [{ "id": "hostBlank", "label": "主管下料", "participants": ["host"] }, { "id": "branchBlank", "label": "支管下料", "participants": ["branch"] }] },
+  "assemblyPath": [
+    { "id": "prepare", "label": "按端—中方式加工轮廓接口", "kind": "$interfaceMode", "direction": "交线", "distance": "$intersectionAngle" },
+    { "id": "insert", "label": "支管端部沿轴线接入主管中段", "kind": "端—中定位", "direction": "支管轴", "distance": "$fitGap" }
+  ],
+  "previewScene": {
+    "designParts": [
+      { "role": "host", "profileRef": { "scope": "system", "id": "rect" }, "parameters": { "width": 80, "depth": 40, "wallThickness": 3, "cornerRadius": 3, "innerRadius": 1 }, "length": 440, "pose": { "origin": [-220, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "role": "branch", "profileRef": { "scope": "system", "id": "round" }, "parameters": { "width": 40, "wallThickness": 2, "innerOffsetX": 0, "innerOffsetY": 0 }, "length": 220, "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 0, 1], "bendAngle": "-$intersectionAngle", "bendPlaneRotation": 90, "axialTranslation": "-220 - $fitGap" } }
+    ],
+    "manufacturingParts": [
+      { "id": "hostBlank", "label": "主管接口下料", "sourceRole": "host", "processes": ["single-opening", "through-opening"], "explodedPose": { "origin": [-220, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "branchBlank", "label": "支管端部下料", "sourceRole": "branch", "processes": ["saddle-end"], "explodedPose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 0, 1], "bendAngle": "-$intersectionAngle", "bendPlaneRotation": 90, "axialTranslation": "-320 - $fitGap" } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 120], "manufacturingOffset": [0, 0, -120] }
+  },
+  "parameterDiagram": { "schemaVersion": 2, "viewBox": "0 0 240 170", "paths": ["M20 95 H220", "M120 20 V150"], "annotations": [{ "parameter": "interfaceMode", "kind": "leader", "side": "top", "point": [120, 95], "description": "决定主管开口或支管端切" }, { "parameter": "intersectionAngle", "kind": "leader", "side": "right", "point": [120, 75], "description": "主管与支管轴线夹角" }, { "parameter": "fitGap", "kind": "leader", "side": "bottom", "point": [120, 95], "description": "截面轮廓之间的装配间隙" }] },
+  "outputs": { "manufacturingPartCount": 2, "partGeometry": ["主管轮廓接口", "支管端部"], "secondaryProcess": ["端—中定位", "焊接或固定"], "bom": [], "assemblyInstruction": true }
+}

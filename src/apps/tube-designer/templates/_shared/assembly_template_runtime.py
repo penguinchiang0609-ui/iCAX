@@ -207,6 +207,20 @@ def _rotate(vector, axis, degrees):
     ]
 
 
+def _variant_value(owner, key, values, default=None):
+    source = owner.get(key, default)
+    variants = owner.get(f"{key}Variants", [])
+    if not isinstance(variants, list):
+        raise ValueError(f"{key}Variants 必须是数组")
+    for variant in variants:
+        if not isinstance(variant, dict):
+            raise ValueError(f"{key}Variants 的分支必须是对象")
+        if _condition_matches(variant.get("when"), values):
+            source = variant.get("value", source)
+            break
+    return copy.deepcopy(source)
+
+
 def _pose_matrix(pose, values, offset=None):
     pose = _resolve(pose or {}, values)
     origin = _finite_vector(pose.get("origin", [0, 0, 0]), 3, "零件原点")
@@ -221,10 +235,23 @@ def _pose_matrix(pose, values, offset=None):
         if isinstance(degrees, bool) or not isinstance(degrees, (int, float)) or not math.isfinite(degrees):
             raise ValueError("旋转角度必须是有限数值")
         x_axis, up = _rotate(x_axis, axis, degrees), _rotate(up, axis, degrees)
+    bend_angle = pose.get("bendAngle")
+    if bend_angle is not None:
+        plane_rotation = pose.get("bendPlaneRotation", 0)
+        if (isinstance(bend_angle, bool) or not isinstance(bend_angle, (int, float)) or not math.isfinite(bend_angle)
+                or isinstance(plane_rotation, bool) or not isinstance(plane_rotation, (int, float)) or not math.isfinite(plane_rotation)):
+            raise ValueError("折弯姿态角度必须是有限数值")
+        bend_axis = _rotate([0.0, 1.0, 0.0], x_axis, plane_rotation)
+        x_axis, up = _rotate(x_axis, bend_axis, bend_angle), _rotate(up, bend_axis, bend_angle)
     x_axis = _normalize(x_axis, "零件轴向")
     up = [up[index] - _dot(up, x_axis) * x_axis[index] for index in range(3)]
     y_axis = _normalize(up, "零件截面向上方向")
     z_axis = _normalize(_cross(x_axis, y_axis), "零件截面法向")
+    axial_translation = pose.get("axialTranslation", 0)
+    if (isinstance(axial_translation, bool) or not isinstance(axial_translation, (int, float))
+            or not math.isfinite(axial_translation)):
+        raise ValueError("零件轴向定位量必须是有限数值")
+    origin = [origin[index] + x_axis[index] * axial_translation for index in range(3)]
     if offset:
         origin = [origin[index] + offset[index] for index in range(3)]
     return [
@@ -240,8 +267,8 @@ def _validate_preview_scene(descriptor, roles, process_ids):
     if not isinstance(scene, dict):
         raise ValueError("装配模板必须声明 previewScene")
     design_parts = scene.get("designParts")
-    if not isinstance(design_parts, list) or len(design_parts) != 2:
-        raise ValueError("装配预览必须声明两个设计位置零件")
+    if not isinstance(design_parts, list) or not 2 <= len(design_parts) <= 4:
+        raise ValueError("装配预览必须声明 2～4 个设计位置零件")
     preview_roles = []
     for part in design_parts:
         if not isinstance(part, dict):
@@ -256,7 +283,7 @@ def _validate_preview_scene(descriptor, roles, process_ids):
         if not isinstance(part.get("pose", {}), dict):
             raise ValueError(f"装配预览角色 {role} 的姿态无效")
     if sorted(preview_roles) != sorted(roles):
-        raise ValueError("装配预览必须且只能覆盖两个逻辑零件")
+        raise ValueError("装配预览必须且只能覆盖全部逻辑零件")
     manufacturing = scene.get("manufacturingParts")
     if not isinstance(manufacturing, list) or not manufacturing:
         raise ValueError("装配预览必须声明下料结果")
@@ -271,6 +298,8 @@ def _validate_preview_scene(descriptor, roles, process_ids):
         process_refs = part.get("processes", [])
         if not isinstance(process_refs, list) or any(item not in process_ids for item in process_refs):
             raise ValueError(f"下料预览 {part['id']} 引用了无效单件工艺")
+        if not isinstance(part.get("explodedPose"), dict):
+            raise ValueError(f"下料预览 {part['id']} 缺少按装配路径定义的炸开姿态")
     if declared != blank_ids:
         raise ValueError("装配预览必须覆盖全部下料零件")
     compare = scene.get("compareLayout", {})
@@ -289,8 +318,8 @@ def _validate_template(descriptor, directory):
     _text(descriptor.get("displayName"), "装配模板名称")
     _text(descriptor.get("category"), "装配模板类别")
     participants = descriptor.get("participants")
-    if not isinstance(participants, list) or len(participants) != 2:
-        raise ValueError("装配模板必须且只能声明两个逻辑零件")
+    if not isinstance(participants, list) or not 2 <= len(participants) <= 4:
+        raise ValueError("装配模板必须声明 2～4 个逻辑零件")
     roles = [_text(item.get("role") if isinstance(item, dict) else None, "逻辑零件角色") for item in participants]
     if len(set(roles)) != len(roles):
         raise ValueError("逻辑零件角色不能重复")
@@ -445,15 +474,11 @@ def _validated_values(descriptor, supplied):
 
 
 def _profile_request(part, values):
-    length_source = part.get("length")
-    for variant in part.get("lengthVariants", []):
-        if isinstance(variant, dict) and _condition_matches(variant.get("when"), values):
-            length_source = variant.get("value", length_source)
-            break
+    length_source = _variant_value(part, "length", values)
     length = _resolve(length_source, values)
     if isinstance(length, bool) or not isinstance(length, (int, float)) or not math.isfinite(length) or length < 1 or length > 100000:
         raise ValueError(f"逻辑零件 {part.get('role')} 的预览长度无效")
-    parameters = _resolve(part.get("parameters", {}), values)
+    parameters = _resolve(_variant_value(part, "parameters", values, {}), values)
     if not isinstance(parameters, dict):
         raise ValueError("管型参数必须是对象")
     return {
@@ -566,10 +591,11 @@ def preview_plan(template_id, supplied_values=None, process_drafts=None):
             "role": item["role"],
             "label": participant_names[item["role"]],
             "request": _profile_request(item, values),
-            "matrix": _pose_matrix(item.get("pose"), values),
-            "compareMatrix": _pose_matrix(item.get("pose"), values, design_offset),
+            "matrix": _pose_matrix(_variant_value(item, "pose", values, {}), values),
+            "compareMatrix": _pose_matrix(_variant_value(item, "pose", values, {}), values, design_offset),
         })
     processes = {item["id"]: item for item in descriptor.get("partProcesses", [])}
+    blank_participants = {item["id"]: list(item["participants"]) for item in descriptor["manufacturingPlan"]["blankParts"]}
     manufacturing_parts = []
     for item in scene["manufacturingParts"]:
         source = part_by_role[item["sourceRole"]]
@@ -585,14 +611,17 @@ def preview_plan(template_id, supplied_values=None, process_drafts=None):
             descriptor_summary = _selected_process_descriptor(process, values)
             resolved_values = _process_values(process, descriptor_summary, values, process_drafts or {})
             _apply_process(request, process, descriptor_summary, resolved_values, process["previewPlacement"], part_by_role, values)
-        pose = item.get("pose", source.get("pose"))
+        pose = _variant_value(item, "explodedPose", values, {})
+        exploded_matrix = _pose_matrix(pose, values)
         manufacturing_parts.append({
             "id": f"manufacturing-{item['id']}",
             "blankId": item["id"],
             "sourceRole": item["sourceRole"],
+            "participantRoles": blank_participants[item["id"]],
             "label": item.get("label", item["id"]),
             "request": request,
-            "matrix": _pose_matrix(pose, values),
+            "matrix": exploded_matrix,
+            "explodedMatrix": exploded_matrix,
             "compareMatrix": _pose_matrix(pose, values, manufacturing_offset),
         })
     return {
@@ -616,7 +645,9 @@ def catalogue():
             if len(raw) > MAX_BYTES:
                 raise ValueError("装配模板超过 4 MB")
             descriptor = json.loads(raw)
-            templates.append(copy.deepcopy(_validate_template(descriptor, manifest.parent)))
+            validated = _validate_template(descriptor, manifest.parent)
+            if not validated.get("catalogueHidden", False):
+                templates.append(copy.deepcopy(validated))
         except (ValueError, OSError, json.JSONDecodeError, KeyError, TypeError) as error:
             errors.append(f"{manifest.parent.name}: {error}")
     return {"assemblies": templates, "errors": errors}

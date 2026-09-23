@@ -80,7 +80,7 @@ namespace iCAX::ExtrusionRecognition
 
     /*
     * @brief 一个可被 C++ 依次调用的 Python 截面 fitter。
-    * @details ScriptPath 指向包含 fitter(contours, context) 的 profile.py。
+    * @details ScriptPath 指向包含 fitting(section, context) 的 fitting.py；通过公共管型运行时直接反解。
     */
     struct _EXTRUSION_RECOGNITION_EXP SPythonSectionFitter final
     {
@@ -253,7 +253,7 @@ namespace iCAX::ExtrusionRecognition
         bool bMatched = false;
         iCAX::Data::ObjectMap Parameters;
         SSectionPlacement Placement;
-        // Python fitter 返回的、作用于已对齐 BRep 的最终截面摆正 TRSF。
+        // Python fitting 姿态的逆变换，作用于已对齐 BRep 的截面摆正 TRSF。
         iCAX::GeometryData::Transform3 TRSF;
         std::vector<std::string> Diagnostics;
     };

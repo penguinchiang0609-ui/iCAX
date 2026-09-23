@@ -188,39 +188,6 @@ export function productTemplateLibrarySelectedTemplateId(view) {
   return String(item?.templateId ?? state.selectedId ?? "");
 }
 
-// The native scene list intentionally contains only card metadata.  Hydrate
-// the selected built-in package on demand so opening the resource page does
-// not parse every template's parameter schema during startup.
-export async function ensureProductTemplateLibraryDescriptor(context, view) {
-  if (view?.activeAreaId !== "templates" || typeof context?.sceneProxy?.invoke !== "function") return false;
-  const state = productTemplateLibraryState(view);
-  const item = templateLibraryItems(view).find((entry) => entry.scope === state.scope && entry.id === state.selectedId);
-  if (!item || item.scope !== "system" || Array.isArray(item.parameters)) return false;
-  const templateId = String(item.templateId ?? item.id ?? "").trim();
-  if (!templateId) return false;
-  const requests = view.tubeDesignerTemplateDescriptorRequests ??= {};
-  if (!requests[templateId]) {
-    requests[templateId] = context.sceneProxy.invoke(
-      "TubeDesigner.GetTemplateDescriptor", { templateId }, { timeoutMs: 30000 },
-    ).then((response) => response?.template ?? null);
-  }
-  try {
-    const detail = await requests[templateId];
-    if (!detail || !Array.isArray(detail.parameters)) {
-      throw new Error(`模板“${item.name ?? templateId}”的参数描述未能加载。`);
-    }
-    const designer = view.scene?.tubeDesigner;
-    if (!designer) return false;
-    designer.templates = (designer.templates ?? []).map((template) =>
-      String(template?.id ?? "") === templateId
-        ? { ...template, ...detail, descriptorLoaded: true }
-        : template);
-    return true;
-  } finally {
-    delete requests[templateId];
-  }
-}
-
 function productTemplateLibraryVisibleItems(view) {
   const state = productTemplateLibraryState(view);
   const search = String(state.search ?? "").trim().toLocaleLowerCase("zh-CN");
@@ -517,12 +484,11 @@ export function renderProductTemplateLibraryRightPane(_context, view) {
   const item = templateLibraryItems(view).find((entry) => entry.scope === state.scope && entry.id === state.selectedId);
   if (!item) return `<div class="tube-designer-panel"><div class="tube-designer-heading"><strong>产品模板</strong><span>尚未选择模板</span></div><div class="tube-designer-empty">从左侧选择一个产品模板，查看摘要和预览参数。</div></div>`;
   const definitions = templateParameterDefinitions(item);
-  const descriptorRequest = view?.tubeDesignerTemplateDescriptorRequests?.[String(item.templateId ?? item.id ?? "")];
   const values = templateParameterValues(view, item);
   const visible = definitions.filter((definition) => templateParameterVisible(definition, values));
   const parameterLayout = templateParameterLayout(item, visible);
-  const emptyContent = descriptorRequest
-    ? `<div class="tube-designer-empty">正在读取模板参数…</div>`
+  const emptyContent = item.scope === "system" && !Array.isArray(item.parameters)
+    ? `<div class="tube-designer-empty" role="alert">模板参数未在启动时载入，请检查模板包。</div>`
     : `<div class="tube-designer-empty">此模板没有可编辑参数。</div>`;
   return `<div class="tube-designer-panel tube-product-template-library-editor"><div class="tube-designer-heading"><div><strong>${escapeText(productTemplateName(item))}</strong><span>${item.scope === "system" ? "系统内置模板" : "我的模板"} · 参数预览</span></div></div><div class="tube-product-template-library-editor-body" data-tube-template-library-rendered-id="${escapeAttr(item.id)}"><dl class="tube-product-template-library-meta"><dt>模板 ID</dt><dd>${escapeText(item.id)}</dd><dt>版本</dt><dd>${escapeText(item.version ?? item.templateVersion ?? "—")}</dd><dt>格式</dt><dd>.itpt</dd></dl><p>${escapeText(item.description ?? "暂无模板说明")}</p>${parameterLayout.length ? `<section class="tube-product-template-library-parameters"><header><strong>预览参数</strong><span>修改后只更新中央场景，不改模板包</span></header>${renderTemplateParameterLayout(view, item, parameterLayout)}</section>` : emptyContent}</div></div>`;
 }
@@ -530,8 +496,9 @@ export function renderProductTemplateLibraryRightPane(_context, view) {
 export function renderProductTemplateLibraryViewportOverlay(context, view) {
   const state = productTemplateLibraryState(view);
   const item = templateLibraryItems(view).find((entry) => entry.scope === state.scope && entry.id === state.selectedId);
-  if (item) ensureProductTemplateLibraryPreview(context, view, item);
-  return `<div class="tube-tool-library-hud"><strong>${escapeText(item ? productTemplateName(item) : "产品模板")}</strong><span>${item ? (item.scope === "system" ? "系统内置模板" : "我的模板") : "选择左侧模板查看摘要"}</span><small>${item ? (state.previewRequest ? "正在生成模板预览…" : "拖动旋转 · 滚轮缩放 · 支持透视 / 正交") : "选择左侧模板查看摘要"}</small>${item && state.previewRequest ? '<div class="tube-tool-library-preview-progress" role="progressbar" aria-label="正在生成产品模板预览"><i></i></div>' : ""}${state.previewError ? `<p role="alert">${escapeText(state.previewError)}</p><button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-product-template-library-retry-preview">重新预览</button>` : ""}</div>`;
+  const missingDescriptor = item?.scope === "system" && !Array.isArray(item.parameters);
+  if (item && !missingDescriptor) ensureProductTemplateLibraryPreview(context, view, item);
+  return `<div class="tube-tool-library-hud"><strong>${escapeText(item ? productTemplateName(item) : "产品模板")}</strong><span>${item ? (item.scope === "system" ? "系统内置模板" : "我的模板") : "选择左侧模板查看摘要"}</span><small>${item ? (missingDescriptor ? "模板参数未载入" : state.previewRequest ? "正在生成模板预览…" : "拖动旋转 · 滚轮缩放 · 支持透视 / 正交") : "选择左侧模板查看摘要"}</small>${item && state.previewRequest ? '<div class="tube-tool-library-preview-progress" role="progressbar" aria-label="正在生成产品模板预览"><i></i></div>' : ""}${missingDescriptor ? '<p role="alert">模板参数未在启动时载入，请检查模板包。</p>' : ""}${state.previewError ? `<p role="alert">${escapeText(state.previewError)}</p><button type="button" class="tube-designer-secondary" data-cam-action="tube-designer-product-template-library-retry-preview">重新预览</button>` : ""}</div>`;
 }
 
 function productTemplatePreviewKey(view, item) {
@@ -542,6 +509,20 @@ function centeredTemplateMatrix(bounds) {
   const min = Array.isArray(bounds?.min) ? bounds.min.map(Number) : [0, 0, 0];
   const max = Array.isArray(bounds?.max) ? bounds.max.map(Number) : [0, 0, 0];
   return [1, 0, 0, -(min[0] + max[0]) / 2, 0, 1, 0, -(min[1] + max[1]) / 2, 0, 0, 1, -(min[2] + max[2]) / 2, 0, 0, 0, 1];
+}
+
+function multiplyTemplateMatrices(left, right) {
+  const result = new Array(16).fill(0);
+  for (let row = 0; row < 4; row++) for (let column = 0; column < 4; column++) {
+    for (let inner = 0; inner < 4; inner++) result[row * 4 + column] += left[row * 4 + inner] * right[inner * 4 + column];
+  }
+  return result;
+}
+
+function templateItemTransform(item) {
+  const values = Array.isArray(item?.transform) ? item.transform.map(Number) : [];
+  return values.length === 16 && values.every(Number.isFinite)
+    ? values : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 }
 
 function productTemplatePreviewRows(response = {}) {
@@ -556,7 +537,7 @@ function productTemplatePreviewRows(response = {}) {
     for (let index = 0; index < 3; index++) { mins[index] = Math.min(mins[index], min[index]); maxs[index] = Math.max(maxs[index], max[index]); }
   }
   const matrix = centeredTemplateMatrix({ min: mins, max: maxs });
-  return items.map((item) => ({ entityId: String(item.entityId ?? `template-preview:${item.key ?? "item"}`), data: { geometry: item.geometry, material: item.material ?? response.material, geometryKind: 1, renderClass: 1, visible: true, selectable: false, localToWorldMatrix: matrix } }));
+  return items.map((item) => ({ entityId: String(item.entityId ?? `template-preview:${item.key ?? "item"}`), data: { geometry: item.geometry, material: item.material ?? response.material, geometryKind: 1, renderClass: 1, visible: true, selectable: false, localToWorldMatrix: multiplyTemplateMatrices(matrix, templateItemTransform(item)) } }));
 }
 
 async function applyProductTemplateLibraryPreview(context, view, item, response, key, request) {
@@ -581,6 +562,10 @@ async function applyProductTemplateLibraryPreview(context, view, item, response,
 
 function ensureProductTemplateLibraryPreview(context, view, item) {
   if (view.activeAreaId !== "templates" || !item || typeof context?.sceneProxy?.invoke !== "function") return;
+  // The catalog card deliberately omits parameter definitions. Starting a
+  // preview here would generate once with incomplete inputs and again when
+  // the selected template's descriptor arrives, serializing two cold builds.
+  if (item.scope === "system" && !Array.isArray(item.parameters)) return;
   const state = productTemplateLibraryState(view);
   const key = productTemplatePreviewKey(view, item);
   if (state.preview?.key === key || state.previewRequest?.key === key || state.previewFailureKey === key) return;

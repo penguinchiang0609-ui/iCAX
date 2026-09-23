@@ -1,4 +1,5 @@
 from copy import deepcopy
+from collections import Counter
 import unittest
 from WindowCatalogueTests import package
 
@@ -24,7 +25,7 @@ class SteelStaircaseTests(unittest.TestCase):
                             self.assertEqual(sum(f["risers"] for f in info["flights"]),6)
                             self.assertEqual(len(info["stringerOffsets"]),1 if system=="mono" else 2)
     def test_plate_holes_and_real_cuts(self):
-        r=self.build(railingSide="none")
+        r=self.build("manufacturing",railingSide="none")
         ops=[g for g in r["geometry"] if g["operator"]=="boolean"]
         self.assertTrue(any(g["arguments"]["operation"]=="intersect" for g in ops))
         self.assertTrue(any(g["arguments"]["operation"]=="subtract" for g in ops))
@@ -64,7 +65,7 @@ class SteelStaircaseTests(unittest.TestCase):
     def test_continuous_guard_profiles(self):
         for kind in ('rect','round','oval','racetrack'):
             for route in ('straight_landing','l_turn','u_turn'):
-                r=self.build(stairRoute=route,handrailProfileType=kind,postProfileType=kind,infillProfileType=kind,
+                r=self.build("manufacturing",stairRoute=route,handrailProfileType=kind,postProfileType=kind,infillProfileType=kind,
                              floorHeight=1080,totalRiserCount=6,firstFlightRiserCount=3)
                 self.assertTrue(any(i['key'].startswith('transition.') for i in r['items']))
                 self.assertTrue(any(g['operator']=='boolean' and g['arguments']['operation']=='subtract' for g in r['geometry']))
@@ -73,7 +74,7 @@ class SteelStaircaseTests(unittest.TestCase):
             r=self.build(stringerProfileType='channel',stringerChannelModel=kind,bracketType='plate',railingSide='none')
             self.assertTrue(r['items'])
     def test_narrow_well_continuous_return(self):
-        r=self.build(stairRoute='u_turn',wellGap=100,postProfileType='oval',postWidth=100,postDepth=20,
+        r=self.build("manufacturing",stairRoute='u_turn',wellGap=100,postProfileType='oval',postWidth=100,postDepth=20,
                      floorHeight=1080,totalRiserCount=6,firstFlightRiserCount=3)
         self.assertTrue(any(i['key'].startswith('transition.') for i in r['items']))
         nodes={g['key']:g for g in r['geometry']}
@@ -86,6 +87,20 @@ class SteelStaircaseTests(unittest.TestCase):
         self.assertIn('transition.2.1.envelope.cut.1',joint['tools'])
         with self.assertRaisesRegex(ValueError,'井道间距'):
             self.build(stairRoute='u_turn',wellGap=0)
+    def test_display_uses_assembly_solids_and_manufacturing_keeps_cuts(self):
+        display=self.build()
+        manufacturing=self.build("manufacturing")
+        display_booleans=[g for g in display["geometry"] if g["operator"]=="boolean"]
+        manufacturing_booleans=[g for g in manufacturing["geometry"] if g["operator"]=="boolean"]
+        self.assertFalse(display_booleans)
+        self.assertGreater(len(manufacturing_booleans),len(display_booleans))
+        graph={g["key"]:g for g in display["geometry"]}
+        instances=[g for g in graph.values() if g["operator"]=="transform" and
+                   g["inputs"] and graph[g["inputs"][0]]["operator"]=="extrude"]
+        prototype_use=Counter(g["inputs"][0] for g in instances)
+        self.assertTrue(prototype_use)
+        self.assertGreater(max(prototype_use.values()),1)
+        self.assertLess(sum(g["operator"]=="extrude" for g in graph.values()),len(display["items"]))
     def test_clear_failure_for_conflicting_nodes(self):
         with self.assertRaisesRegex(ValueError,"端板"):
             self.build(stairRoute="l_turn",landingLength=self.defaults["stairWidth"])

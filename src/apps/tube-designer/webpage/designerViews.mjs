@@ -7,7 +7,7 @@ import {
   scheduleDesignerPartThumbnailHydration,
 } from "./partThumbnail.mjs";
 import { scheduleDesignerPartInspectionHydration } from "./partInspection.mjs";
-import { manufacturingPartKind, plateDimensions } from "./manufacturingParts.mjs";
+import { importableProductManufacturingGroups, manufacturingPartKind, plateDimensions } from "./manufacturingParts.mjs";
 import { restoreScrollAnchor } from "./scrollAnchor.mjs";
 import { renderSecurityWindowReview, securityWindowOpeningDimensions } from "./securityWindowReview.mjs";
 import { renderComponentModelField } from "./componentLibrary.mjs";
@@ -605,7 +605,7 @@ export function renderDesignerDialogs(designer, view) {
     view.tubeDesignerExcelTemplateDialog ? renderBatchExcelTemplateDialog(designer, view) : "",
     view.tubeDesignerExcelImportDialog ? renderBatchExcelImportDialog(view) : "",
     view.tubeDesignerAddDialogOpen ? renderDesignerAddDialog(designer, view) : "",
-    view.tubeDesignerDisassemblySelectorOpen ? renderDisassemblySelector(designer, view) : "",
+    view.tubeDesignerDisassemblySelectorOpen ? renderProductNestingImportSelector(designer, view) : "",
     view.tubeDesignerBreakdownOpen ? renderBreakdownDialog(designer, view) : "",
     view.tubeDesignerPresetDialog ? renderParameterPresetDialog(designer, view) : "",
     view.tubeDesignerProfileDialog ? renderImportedProfileDialog(designer, view) : "",
@@ -1233,37 +1233,55 @@ function renderTemplateCard(template, selected, pending) {
   `;
 }
 
-function renderDisassemblySelector(designer, view) {
+function renderProductNestingImportSelector(designer, view) {
   const instances = designer.instances ?? [];
   const templates = designer.templates ?? [];
-  const selected = new Set(view.tubeDesignerSelectedInstanceIds ?? []);
-  const allSelected = instances.length > 0 && instances.every((item) => selected.has(item.entityId));
+  const requiresDisassembly = new Set(
+    (view.tubeDesignerProductsRequiringDisassembly ?? []).map(String),
+  );
+  const groupsByProductId = new Map(importableProductManufacturingGroups(
+    designer,
+    view.tubeDesignerProductsRequiringDisassembly,
+  )
+    .map((group) => [String(group.productEntityId), group]));
+  const importableIds = new Set(groupsByProductId.keys());
+  const selected = new Set((view.tubeDesignerSelectedInstanceIds ?? [])
+    .map(String).filter((productId) => importableIds.has(productId)));
+  const allSelected = importableIds.size > 0
+    && [...importableIds].every((productId) => selected.has(productId));
+  const unavailableCount = Math.max(0, instances.length - importableIds.size);
   return `
     <div class="tube-designer-modal-backdrop" role="presentation">
       <section class="tube-designer-selection-dialog" role="dialog" aria-modal="true" aria-labelledby="tube-designer-disassemble-title">
         <header class="tube-designer-dialog-header">
-          <div><strong id="tube-designer-disassemble-title">选择要导入下料的产品实例</strong><span>生成制造零件后直接关联到下料清单，不复制几何。</span></div>
+          <div><strong id="tube-designer-disassemble-title">选择已拆单产品</strong><span>只导入产品页已经生成的制造零件；这里不会重新拆单或重新生成零件。</span></div>
           <button class="tube-designer-dialog-close" data-cam-action="tube-designer-close-disassemble" aria-label="取消导入下料" ${view.pending ? "disabled" : ""}>×</button>
         </header>
         <div class="tube-designer-selection-table-wrap">
           <table class="tube-designer-selection-table">
-            <thead><tr><th><input type="checkbox" data-cam-action="tube-designer-toggle-all-instances" ${allSelected ? "checked" : ""} /></th><th>缩略图</th><th>实例名称</th><th>数量</th><th>模板</th><th>外尺寸</th></tr></thead>
+            <thead><tr><th><input type="checkbox" data-cam-action="tube-designer-toggle-all-instances" ${allSelected ? "checked" : ""} ${view.pending || !importableIds.size ? "disabled" : ""} /></th><th>缩略图</th><th>实例名称</th><th>数量</th><th>模板</th><th>外尺寸</th><th>零件状态</th></tr></thead>
             <tbody>${instances.map((instance) => {
               const template = getTemplateById(templates, instance.templateId);
               const parameters = instance.parameters ?? {};
-              return `<tr data-tube-designer-disassembly-instance-row="${escapeAttribute(instance.entityId)}">
-                <td><input type="checkbox" data-cam-action="tube-designer-toggle-instance" data-tube-designer-instance-id="${escapeAttribute(instance.entityId)}" ${selected.has(instance.entityId) ? "checked" : ""} /></td>
+              const productId = String(instance.entityId ?? "");
+              const group = groupsByProductId.get(productId);
+              const importable = importableIds.has(productId);
+              return `<tr class="${importable ? "" : "is-disabled"}" data-tube-designer-disassembly-instance-row="${escapeAttribute(productId)}" aria-disabled="${!importable}">
+                <td><input type="checkbox" data-cam-action="tube-designer-toggle-instance" data-tube-designer-instance-id="${escapeAttribute(productId)}" ${selected.has(productId) ? "checked" : ""} ${view.pending || !importable ? "disabled" : ""} /></td>
                 <td><span class="tube-designer-table-thumbnail">${renderProductInstanceThumbnail(template, parameters) || renderSchematic(template, parameters)}</span></td>
                 <td><strong>${escapeText(instance.name)}</strong><small>${escapeText(instance.productCode)}</small></td>
                 <td>${escapeText(instance.quantity ?? 1)}</td>
                 <td>${escapeText(getTemplateDisplayName(template) || instance.templateId)}</td>
                 <td>${formatNumber(parameters.width)} × ${formatNumber(parameters.height)} mm</td>
+                <td>${importable
+                  ? `<strong>${escapeText(group.parts.length)} 种零件</strong><small>已拆单，可直接导入</small>`
+                  : `<strong>不可导入</strong><small>${requiresDisassembly.has(productId) ? "零件清单已失效，需重新拆单" : "未拆单，请先到产品页生成零件清单"}</small>`}</td>
               </tr>`;
             }).join("")}</tbody>
           </table>
         </div>
         <footer class="tube-designer-dialog-footer">
-          <span>已选择 ${selected.size} / ${instances.length} 个实例</span>
+          <span>已选择 ${selected.size} / ${importableIds.size} 个已拆单实例${unavailableCount ? ` · ${unavailableCount} 个未拆单不可选` : ""}</span>
           <button class="tube-designer-secondary" data-cam-action="tube-designer-close-disassemble" ${view.pending ? "disabled" : ""}>取消</button>
           <button class="tube-designer-primary" data-cam-action="tube-designer-confirm-disassemble" ${view.pending || !selected.size ? "disabled" : ""}>${view.pending ? "正在导入…" : "导入下料"}</button>
         </footer>

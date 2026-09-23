@@ -1,5 +1,20 @@
 const NON_LINEAR_OR_PURCHASED_PROCESSES = new Set(["purchased", "bent", "curved", "bending", "tube-bending", "bent-tube", "curved-tube"]);
 
+export function importableProductManufacturingGroups(designer = {}, productsRequiringDisassembly = []) {
+  const requiresDisassembly = new Set((productsRequiringDisassembly ?? []).map(String));
+  const completeProductIds = new Set((designer.instances ?? [])
+    .filter((instance) => instance?.hasDisassembly === true)
+    .map((instance) => String(instance.entityId)));
+  return (designer.manufacturingGroups ?? []).filter((group) => {
+    const productId = String(group?.productEntityId ?? "");
+    return completeProductIds.has(productId)
+      && !requiresDisassembly.has(productId)
+      && Array.isArray(group?.parts)
+      && group.parts.length > 0
+      && group.parts.every((part) => String(part?.entityId ?? "").trim());
+  });
+}
+
 export function manufacturingPartKind(part) {
   const properties = part?.properties ?? {};
   return String(part?.partKind ?? properties["manufacturing.partKind"]

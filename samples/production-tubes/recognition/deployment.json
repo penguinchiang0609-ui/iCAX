@@ -1,0 +1,42 @@
+{
+  "Date": "2026-09-23T01:13:03",
+  "Backup": "D:\\penguinchinage0609\\iCAX\\tmp\\production-recognition-backup-20260923-011302",
+  "Files": [
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognition.dll",
+      "SHA256": "E8E6BA508874CCC77544FDFDB30F0602AE1AE37641646485EC4B6F579A0F5452"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognition.exp",
+      "SHA256": "502B9E0EE937B459AC0599C7AED6DF620852CEDC13ED574EDFA1643AFD96BF0E"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognition.lib",
+      "SHA256": "FBDA32869B9871BCC04FAB10082674CEC5B99B495F1CD41F12CCF90EE9CB3158"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognition.pdb",
+      "SHA256": "4805D77FFD0BB621F0364B90086A1CB195894B8885DF276625597E0214C9F9EC"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognitionTest.exe",
+      "SHA256": "8C2008F08815209F0B7A5E923F840A439AC44FE633FE8D731AE790F282EA4BD7"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognitionTest.exp",
+      "SHA256": "0DCA97F6266A295476F57FB1010DAC7A13028632D388D8B7FDF6125794D807BB"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognitionTest.lib",
+      "SHA256": "9A8E41FF6DE9FA77E62BE621EF49AB86B5120BBB732667D67FBE5819FC05252D"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\ExtrusionRecognitionTest.pdb",
+      "SHA256": "782B81EA376666FA7548E9B43CC75EC993F2BAF5DD69C519D05F4D6CF279765D"
+    },
+    {
+      "Target": "D:\\penguinchinage0609\\iCAX\\src\\x64\\Debug\\apps\\tube-designer\\templates\\profile\\rect\\profile.json",
+      "SHA256": "5324EA2FF95EF2A6A52B3101EFE659A46E6C6219C5514D3676B1951FCA794876"
+    }
+  ]
+}

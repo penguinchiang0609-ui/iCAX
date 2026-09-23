@@ -26,8 +26,13 @@ export function assemblyLibraryState(view) {
   state.previewFailureKey ??= "";
   state.previewError ??= "";
   state.appliedKey ??= "";
-  state.projectionModes ??= { finished: "perspective", blank: "orthographic" };
-  state.showDiagram ??= true;
+  state.projectionMode ??= "perspective";
+  state.exploded ??= false;
+  state.showDiagram ??= false;
+  // The assembly scene is the source of truth: always show the whole result.
+  // Part-isolation controls duplicated that information and made the workflow
+  // look like a relation inspector instead of an assembly editor.
+  state.focusRole = "";
   const templates = assemblyTemplates(view);
   if (!assemblyTemplateById(templates, state.selectedId)) state.selectedId = templates[0]?.id ?? "";
   return state;
@@ -91,7 +96,7 @@ export function renderAssemblyLibraryLeftPane(_context, view) {
     : state.catalogueError && !templates.length
       ? `<div class="tube-profile-library-empty"><strong>装配模板读取失败</strong><span>${text(state.catalogueError)}</span><button type="button" data-cam-action="tube-designer-assembly-retry">重新读取</button></div>`
       : groups || `<div class="tube-profile-library-empty"><strong>没有匹配的装配模板</strong><span>换一个关键词试试</span></div>`;
-  return `<section class="tube-profile-library-panel tube-connection-library-panel"><header class="tube-profile-library-heading"><div><strong>装配库</strong><span>${templates.length} 个装配模板 · 定义逻辑零件如何形成下料零件</span></div></header><label class="tube-connection-library-search"><span class="sr-only">搜索装配</span><input type="search" value="${attr(state.search)}" placeholder="搜索装配、下料归并、连接方式" data-cam-change-action="tube-designer-assembly-search"></label><div class="tube-connection-library-list">${body}</div></section>`;
+  return `<section class="tube-profile-library-panel tube-connection-library-panel"><header class="tube-profile-library-heading"><div><strong>装配工艺</strong><span>${templates.length} 种 · 按零件数量与连接位置分类</span></div></header><label class="tube-connection-library-search"><span class="sr-only">搜索装配工艺</span><input type="search" value="${attr(state.search)}" placeholder="搜索装配工艺" data-cam-change-action="tube-designer-assembly-search"></label><div class="tube-connection-library-list">${body}</div></section>`;
 }
 
 export function renderAssemblyLibraryRightPane(_context, view) {
@@ -101,7 +106,7 @@ export function renderAssemblyLibraryRightPane(_context, view) {
   const state = assemblyLibraryState(view);
   const basic = template.parameters.filter((item) => item.level !== "advanced" && parameterVisible(item, values));
   const advanced = template.parameters.filter((item) => item.level === "advanced" && parameterVisible(item, values));
-  return `<section class="tube-connection-library-editor" data-assembly-parameter-scope data-parameter-diagram-owner="assembly-library:${attr(template.id)}"><header class="tube-connection-library-editor-heading"><div><strong>${text(template.displayName)}</strong><span>${text(template.categoryName)} · ${text(template.topology)}</span></div><div class="tube-connection-library-heading-actions"><button type="button" data-cam-action="tube-designer-assembly-toggle-diagram" aria-expanded="${state.showDiagram}">参数示意图</button><button type="button" data-cam-action="tube-designer-assembly-reset" data-tube-assembly-id="${attr(template.id)}">恢复默认</button><b>${realizationLabel(template)}</b></div></header><div class="tube-connection-library-editor-body">${parameterSection("装配参数", basic, values, template.id, false)}${renderPartProcesses(view, template, values)}${advanced.length ? parameterSection("高级设置", advanced, values, template.id, true) : ""}</div></section>`;
+  return `<section class="tube-connection-library-editor" data-assembly-parameter-scope data-parameter-diagram-owner="assembly-library:${attr(template.id)}"><header class="tube-connection-library-editor-heading"><div><strong>${text(template.displayName)}</strong><span>修改参数后自动更新成品与炸开图</span></div><div class="tube-connection-library-heading-actions"><button type="button" data-cam-action="tube-designer-assembly-toggle-diagram" aria-expanded="${state.showDiagram}">示意图</button><button type="button" data-cam-action="tube-designer-assembly-reset" data-tube-assembly-id="${attr(template.id)}">重置</button></div></header><div class="tube-connection-library-editor-body">${parameterSection("装配参数", basic, values, template.id, false)}${renderPartProcesses(view, template, values)}${advanced.length ? parameterSection("高级设置", advanced, values, template.id, true) : ""}</div></section>`;
 }
 
 export function renderAssemblyLibraryViewportOverlay(context, view) {
@@ -109,21 +114,25 @@ export function renderAssemblyLibraryViewportOverlay(context, view) {
   if (!template) return "";
   const values = assemblyParameterValues(view, template);
   const state = assemblyLibraryState(view);
-  const activeProcesses = template.partProcesses.filter((item) => processApplies(item, values));
   ensureAssemblyLibraryPreview(context, view, template);
-  const status = state.previewRequest ? "正在根据参数重新生成…" : state.previewError ? state.previewError
-    : state.preview ? "左侧显示装配成品，右侧显示对应下料零件。两个视角可分别旋转、缩放和切换投影。" : "正在准备装配三维预览…";
-  return `${renderAssemblyLibraryDiagramDock(view, template, values)}${renderAssemblyDualViewportStage()}<div class="tube-connection-library-hud"><strong>${text(template.displayName)}</strong><span>${text(template.participants.length)} 个逻辑零件 → ${text(template.outputs?.manufacturingPartCount)} 个下料零件</span><small>${text(realizationLabel(template))} · ${activeProcesses.length} 道单件工艺</small><p class="${state.previewError ? "error" : ""}" aria-live="polite">${text(status)}</p>${state.previewError ? `<button type="button" data-cam-action="tube-designer-assembly-retry-preview">重新生成</button>` : ""}</div>`;
+  const status = state.previewRequest ? "正在更新装配…" : state.previewError ? state.previewError
+    : state.preview ? "" : "正在准备三维预览…";
+  const hud = status ? `<div class="tube-connection-library-hud${state.previewError ? " error" : ""}" aria-live="polite"><i aria-hidden="true"></i><span>${text(status)}</span>${state.previewError ? `<button type="button" data-cam-action="tube-designer-assembly-retry-preview">重新生成</button>` : ""}</div>` : "";
+  return `${renderAssemblyLibraryDiagramDock(view, template, values)}${renderAssemblyViewportStage(template, state)}${hud}`;
 }
 
-function renderAssemblyDualViewportStage() {
-  const pane = (side, title, description) => `<section class="tube-assembly-preview-pane ${side}" data-tube-assembly-preview-pane="${side}">
-    <header><div><strong>${title}</strong><span>${description}</span></div><div class="tube-assembly-preview-camera" role="group" aria-label="${title}视角">
-      ${[["iso", "等轴"], ["front", "前视"], ["top", "顶视"], ["fit", "适合"]].map(([camera, label]) => `<button type="button" data-cam-action="tube-designer-assembly-camera" data-tube-assembly-side="${side}" data-tube-assembly-camera="${camera}">${label}</button>`).join("")}
+function renderAssemblyViewportStage(template, state) {
+  const exploded = !!state.exploded;
+  return `<div class="tube-assembly-preview" data-tube-assembly-preview><section class="tube-assembly-preview-pane scene" data-tube-assembly-preview-pane="scene">
+    <header><div><strong>${text(template.displayName)}</strong><span>${exploded ? "炸开：查看各下料件及加工形状" : "成品：查看最终装配关系"}</span></div><div class="tube-assembly-preview-toolbar">
+      <div class="tube-assembly-view-switch" role="group" aria-label="装配视图">
+        <button type="button" class="tube-assembly-view-mode${exploded ? "" : " active"}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="finished" aria-pressed="${!exploded}">成品</button>
+        <button type="button" class="tube-assembly-view-mode${exploded ? " active" : ""}" data-cam-action="tube-designer-assembly-set-view" data-tube-assembly-view="exploded" aria-pressed="${exploded}">炸开</button>
+      </div>
+      <div class="tube-assembly-preview-camera" role="group" aria-label="三维视角">${[["iso", "等轴"], ["front", "前视"], ["top", "顶视"], ["fit", "适合"]].map(([camera, label]) => `<button type="button" data-cam-action="tube-designer-assembly-camera" data-tube-assembly-camera="${camera}">${label}</button>`).join("")}</div>
     </div></header>
-    <div class="tube-assembly-preview-host" data-tube-assembly-${side}-viewport></div>
-  </section>`;
-  return `<div class="tube-assembly-dual-preview" data-tube-assembly-dual-preview>${pane("finished", "成品", "两个逻辑零件的装配关系")}${pane("blank", "下料", "单件工艺作用后的下料形状")}</div>`;
+    <div class="tube-assembly-preview-host" data-tube-assembly-scene-viewport></div>
+  </section></div>`;
 }
 
 function renderAssemblyLibraryDiagramDock(view, template, values) {
@@ -167,9 +176,17 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
     return { handled: true };
   }
   if (action === "tube-designer-assembly-camera") {
-    const side = String(target?.dataset?.tubeAssemblySide ?? "");
     const camera = String(target?.dataset?.tubeAssemblyCamera ?? "");
-    controlAssemblyLibraryCamera(view, side, camera);
+    controlAssemblyLibraryCamera(view, camera);
+    return { handled: true };
+  }
+  if (action === "tube-designer-assembly-set-view") {
+    const exploded = String(target?.dataset?.tubeAssemblyView ?? "finished") === "exploded";
+    if (state.exploded !== exploded) {
+      state.exploded = exploded;
+      state.appliedKey = "";
+      ops.renderProject(context, view);
+    }
     return { handled: true };
   }
   if (action === "tube-designer-assembly-retry-preview") {
@@ -183,6 +200,7 @@ export async function handleAssemblyLibraryAction(context, view, action, target,
     const id = String(target?.dataset?.tubeAssemblyId ?? "");
     if (id !== state.selectedId && assemblyTemplateById(assemblyTemplates(view), id)) {
       state.selectedId = id;
+      state.exploded = false;
       invalidateAssemblyPreview(view, true);
     }
     ops.renderProject(context, view);
@@ -311,16 +329,22 @@ async function evaluateAssemblyPreviewParts(context, parts, kind, sectionCache) 
 
 export function assemblyFinishedRows(preview) {
   const designParts = preview?.designParts ?? [];
-  const manufacturedByRole = new Map((preview?.manufacturingParts ?? [])
-    .filter((part) => part.sourceRole)
-    .map((part) => [part.sourceRole, part]));
-  const canShowFinishedGeometry = designParts.length > 0
-    && designParts.every((part) => manufacturedByRole.has(part.role));
+  const manufacturedByRole = new Map();
+  for (const part of preview?.manufacturingParts ?? []) {
+    const roles = Array.isArray(part.participantRoles) && part.participantRoles.length
+      ? part.participantRoles : part.sourceRole ? [part.sourceRole] : [];
+    if (roles.length !== 1) continue;
+    manufacturedByRole.set(roles[0], part);
+  }
   return designParts.map((part) => {
-    const manufactured = canShowFinishedGeometry ? manufacturedByRole.get(part.role) : null;
+    const manufactured = manufacturedByRole.get(part.role);
     return {
       entityId: `assembly-finished:${part.id}`,
+      roles: part.role ? [part.role] : [],
       data: {
+        // Separate parts are shown with their real end/side processing so the
+        // finished scene closes at the interface.  A merged blank represents
+        // several roles and deliberately falls back to the logical geometry.
         geometry: manufactured?.response.geometry ?? part.response.baseGeometry,
         material: manufactured?.response.material ?? part.response.baseMaterial,
         geometryKind: 1,
@@ -336,6 +360,8 @@ export function assemblyFinishedRows(preview) {
 export function assemblyBlankRows(preview) {
   return (preview?.manufacturingParts ?? []).map((part) => ({
     entityId: `assembly-blank:${part.id}`,
+    roles: Array.isArray(part.participantRoles) && part.participantRoles.length
+      ? part.participantRoles : part.sourceRole ? [part.sourceRole] : [],
     data: {
       geometry: part.response.geometry,
       material: part.response.material,
@@ -343,26 +369,30 @@ export function assemblyBlankRows(preview) {
       renderClass: 1,
       visible: true,
       selectable: false,
-      localToWorldMatrix: part.matrix,
+      localToWorldMatrix: part.explodedMatrix ?? part.matrix,
     },
   }));
 }
 
+export function assemblySceneRows(preview, exploded = false) {
+  return exploded ? assemblyBlankRows(preview) : assemblyFinishedRows(preview);
+}
+
 const assemblyViewportControllers = new WeakMap();
 
-function createAssemblyViewport(state, side, viewportFactory) {
+function createAssemblyViewport(state, viewportFactory) {
   const viewport = viewportFactory({
     backgroundColor: 0x13252d,
     continuousRender: false,
     constrainOrbit: false,
-    projectionMode: state.projectionModes[side],
+    projectionMode: state.projectionMode,
     showProjectionToggle: true,
     pickingEnabled: false,
     antialias: true,
     pixelRatioCap: 2,
-    onProjectionChange(mode) { state.projectionModes[side] = mode; },
+    onProjectionChange(mode) { state.projectionMode = mode; },
   });
-  return { viewport, host: null, ready: false, appliedKey: "", templateId: "" };
+  return { viewport, host: null, ready: false, appliedKey: "", templateId: "", mode: "", rows: [] };
 }
 
 function mountAssemblyViewportPane(pane, host) {
@@ -376,9 +406,8 @@ export function attachAssemblyLibraryViewports(context, view, mount, options = {
     disposeAssemblyLibraryViewports(view);
     return null;
   }
-  const finishedHost = mount?.querySelector?.("[data-tube-assembly-finished-viewport]");
-  const blankHost = mount?.querySelector?.("[data-tube-assembly-blank-viewport]");
-  if (!finishedHost || !blankHost) return null;
+  const sceneHost = mount?.querySelector?.("[data-tube-assembly-scene-viewport]");
+  if (!sceneHost) return null;
   const state = assemblyLibraryState(view);
   let controller = assemblyViewportControllers.get(view);
   if (!controller) {
@@ -388,19 +417,19 @@ export function attachAssemblyLibraryViewports(context, view, mount, options = {
       view,
       mount,
       generation: 0,
-      finished: createAssemblyViewport(state, "finished", viewportFactory),
-      blank: createAssemblyViewport(state, "blank", viewportFactory),
+      scene: createAssemblyViewport(state, viewportFactory),
     };
     assemblyViewportControllers.set(view, controller);
   }
   controller.context = context;
   controller.mount = mount;
-  mountAssemblyViewportPane(controller.finished, finishedHost);
-  mountAssemblyViewportPane(controller.blank, blankHost);
+  mountAssemblyViewportPane(controller.scene, sceneHost);
   view.viewport?.setVisibleEntityIds?.([]);
   view.viewport?.setContinuousRendering?.(false);
-  if (state.preview && (state.appliedKey !== state.preview.key || !controller.finished.ready || !controller.blank.ready)) {
+  if (state.preview && (state.appliedKey !== assemblyAppliedKey(state, state.preview.key) || !controller.scene.ready)) {
     void applyAssemblyPreview(context, view, state.preview, state.preview.key);
+  } else {
+    refreshAssemblyVisibility(view);
   }
   return controller;
 }
@@ -410,8 +439,7 @@ export function disposeAssemblyLibraryViewports(view) {
   const controller = assemblyViewportControllers.get(view);
   if (!controller) return;
   controller.generation += 1;
-  controller.finished.viewport.dispose?.();
-  controller.blank.viewport.dispose?.();
+  controller.scene.viewport.dispose?.();
   assemblyViewportControllers.delete(view);
 }
 
@@ -419,17 +447,30 @@ function clearAssemblyLibraryViewports(view) {
   const controller = assemblyViewportControllers.get(view);
   if (!controller) return;
   controller.generation += 1;
-  for (const pane of [controller.finished, controller.blank]) {
-    pane.viewport.setVisibleEntityIds?.([]);
-    pane.ready = false;
-    pane.appliedKey = "";
-    pane.templateId = "";
-  }
+  const pane = controller.scene;
+  pane.viewport.setVisibleEntityIds?.([]);
+  pane.ready = false;
+  pane.appliedKey = "";
+  pane.templateId = "";
+  pane.mode = "";
+  pane.rows = [];
 }
 
-export function controlAssemblyLibraryCamera(view, side, command) {
-  if (!["finished", "blank"].includes(side)) return false;
-  const pane = assemblyViewportControllers.get(view)?.[side];
+function visibleAssemblyEntityIds(rows, focusRole) {
+  return rows.filter((row) => !focusRole || row.roles?.includes(focusRole)).map((row) => row.entityId);
+}
+
+function refreshAssemblyVisibility(view) {
+  const controller = assemblyViewportControllers.get(view);
+  if (!controller) return false;
+  const focusRole = assemblyLibraryState(view).focusRole;
+  const pane = controller.scene;
+  if (pane.rows.length) pane.viewport.setVisibleEntityIds?.(visibleAssemblyEntityIds(pane.rows, focusRole));
+  return true;
+}
+
+export function controlAssemblyLibraryCamera(view, command) {
+  const pane = assemblyViewportControllers.get(view)?.scene;
   if (!pane?.viewport) return false;
   if (command === "fit") return Boolean(pane.viewport.fitViewToViewport?.(1.18));
   if (!["iso", "front", "top", "right"].includes(command)) return false;
@@ -438,23 +479,31 @@ export function controlAssemblyLibraryCamera(view, side, command) {
   return changed;
 }
 
-async function applyAssemblyPreviewPane(pane, rows, resources, revision, templateId) {
+async function applyAssemblyPreviewPane(pane, rows, resources, revision, templateId, mode, focusRole) {
   if (!rows.length) throw new Error("装配模板没有生成可显示的三维零件。");
   const previousCamera = pane.ready ? pane.viewport.getCameraState?.() : null;
+  const modeChanged = pane.ready && pane.mode !== mode;
   const receipt = await pane.viewport.applyViewSnapshot({ revision, rows }, resources);
   if (!receipt?.applied || receipt.missingGeometryEntityIds?.length || !receipt.entityIds?.length) {
     throw new Error("装配预览几何未完整进入三维场景。");
   }
-  pane.viewport.setVisibleEntityIds?.(receipt.entityIds ?? rows.map((row) => row.entityId));
+  pane.rows = rows;
+  pane.viewport.setVisibleEntityIds?.(visibleAssemblyEntityIds(rows, focusRole));
   if (!pane.ready || pane.templateId !== templateId) {
     pane.viewport.setStandardView?.("iso");
     pane.viewport.fitViewToViewport?.(1.18);
   } else if (previousCamera) {
     pane.viewport.setCameraState?.(previousCamera);
+    if (modeChanged) pane.viewport.fitViewToViewport?.(1.18);
   }
   pane.ready = true;
   pane.appliedKey = revision;
   pane.templateId = templateId;
+  pane.mode = mode;
+}
+
+function assemblyAppliedKey(state, key) {
+  return `${state.exploded ? "exploded" : "finished"}:${key}`;
 }
 
 async function applyAssemblyPreview(context, view, preview, key) {
@@ -464,13 +513,15 @@ async function applyAssemblyPreview(context, view, preview, key) {
   const generation = ++controller.generation;
   const resources = context.sceneProxy?.resources ?? view.sceneProxy?.resources ?? context.projectProxy?.resources;
   const templateId = String(preview.plan?.templateId ?? "");
-  await Promise.all([
-    applyAssemblyPreviewPane(controller.finished, assemblyFinishedRows(preview), resources, `assembly-finished:${key}`, templateId),
-    applyAssemblyPreviewPane(controller.blank, assemblyBlankRows(preview), resources, `assembly-blank:${key}`, templateId),
-  ]);
+  const state = assemblyLibraryState(view);
+  const mode = state.exploded ? "exploded" : "finished";
+  const appliedKey = assemblyAppliedKey(state, key);
+  await applyAssemblyPreviewPane(controller.scene, assemblySceneRows(preview, state.exploded), resources,
+    `assembly-${appliedKey}`, templateId, mode, state.focusRole);
   if (controller.generation !== generation || view.activeAreaId !== "assemblies"
-      || assemblyPreviewKey(view) !== key || assemblyLibraryState(view).preview !== preview) return false;
-  assemblyLibraryState(view).appliedKey = key;
+      || assemblyPreviewKey(view) !== key || assemblyLibraryState(view).preview !== preview
+      || assemblyAppliedKey(assemblyLibraryState(view), key) !== appliedKey) return false;
+  assemblyLibraryState(view).appliedKey = appliedKey;
   return true;
 }
 
@@ -491,7 +542,7 @@ export function ensureAssemblyLibraryPreview(context, view, template = selectedA
   const state = assemblyLibraryState(view);
   const key = assemblyPreviewKey(view, template);
   if (state.preview?.key === key) {
-    if (state.appliedKey !== key) void applyCurrentAssemblyPreview(context, view);
+    if (state.appliedKey !== assemblyAppliedKey(state, key)) void applyCurrentAssemblyPreview(context, view);
     return state.preview;
   }
   if (state.previewRequest?.key === key || state.previewFailureKey === key) return state.previewRequest;
@@ -504,8 +555,8 @@ export function ensureAssemblyLibraryPreview(context, view, template = selectedA
       processDrafts: state.processDrafts?.[template.id] ?? {},
     }, { timeoutMs: 120000 });
     if (plan?.schema !== "icax.assembly-preview-plan" || plan?.templateId !== template.id
-        || plan?.designParts?.length !== 2 || !plan?.manufacturingParts?.length) {
-      throw new Error("装配模板没有返回完整的双零件预览计划。");
+        || plan?.designParts?.length !== template.participants.length || !plan?.manufacturingParts?.length) {
+      throw new Error("装配模板没有返回覆盖全部逻辑零件的预览计划。");
     }
     if (state.previewRequest !== request || view.activeAreaId !== "assemblies" || assemblyPreviewKey(view, template) !== key) return null;
     const sectionCache = new Map();
@@ -533,7 +584,9 @@ export function ensureAssemblyLibraryPreview(context, view, template = selectedA
 
 function assemblyCard(item, selectedId) {
   const blanks = item.manufacturingPlan?.blankParts?.length ?? 0;
-  return `<button type="button" class="tube-connection-library-card${item.id === selectedId ? " selected" : ""}" data-cam-action="tube-designer-assembly-select" data-tube-assembly-id="${attr(item.id)}"><span class="tube-connection-library-card-art">${miniPlan(item)}</span><span><strong>${text(item.displayName)}</strong><small>${item.participants.length} 个逻辑零件 → ${blanks} 个下料零件</small></span></button>`;
+  const partLabel = `${item.participants.length} 件`;
+  const blankLabel = item.participants.length === blanks ? "分别下料" : blanks === 1 ? "一体下料" : `${blanks} 个下料件`;
+  return `<button type="button" class="tube-connection-library-card${item.id === selectedId ? " selected" : ""}" data-cam-action="tube-designer-assembly-select" data-tube-assembly-id="${attr(item.id)}" aria-label="${attr(`${item.displayName}，${partLabel}，${blankLabel}`)}"><span class="tube-connection-library-card-art">${assemblyIllustration(item)}</span><span><strong>${text(item.displayName)}</strong><small>${text(partLabel)} · ${text(blankLabel)}</small></span></button>`;
 }
 
 function parameterSection(title, definitions, values, templateId, advanced) {
@@ -560,22 +613,18 @@ function renderPartProcesses(view, template, values) {
     const effectiveBindings = { ...(item.parameterBindings ?? {}), ...(item.parameterBindingsByResource?.[descriptor?.id] ?? {}) };
     const definitions = [...(descriptor?.parameters ?? []), ...(descriptor?.operationParameters ?? [])]
       .filter((definition) => !definition.derived && !(definition.key in effectiveBindings) && parameterVisible(definition, processValues));
-    if (item.parameterMode !== "inherit-resource" || !definitions.length) return null;
-    const basic = definitions.filter((definition) => definition.level !== "advanced");
-    const advanced = definitions.filter((definition) => definition.level === "advanced");
-    const heading = processes.length > 1
-      ? `<header><strong>${text(descriptor?.displayName ?? item.label)}</strong></header>` : "";
+    const editable = item.parameterMode === "inherit-resource" ? definitions : [];
+    const basic = editable.filter((definition) => definition.level !== "advanced");
+    const advanced = editable.filter((definition) => definition.level === "advanced");
+    const roleNames = template.participants.filter((participant) => item.participants?.includes(participant.role)).map((participant) => participant.label).join(" + ");
+    const heading = `<header><i>${text(roleNames || "装配件")}</i><span><strong>${text(item.label)}</strong><small>${text(descriptor?.displayName ?? item.label)}</small></span></header>`;
     const basicFields = basic.length
       ? `<div class="tube-connection-library-parameter-grid">${basic.map((definition) => processParameterField(definition, processValues, template.id, item.id, descriptor?.id)).join("")}</div>` : "";
     const advancedFields = advanced.length
       ? `<details class="tube-connection-library-process-advanced"><summary><span>高级设置</span><small>${advanced.length} 项</small></summary><div class="tube-connection-library-parameter-grid">${advanced.map((definition) => processParameterField(definition, processValues, template.id, item.id, descriptor?.id)).join("")}</div></details>` : "";
-    return { category: descriptor?.category, displayName: descriptor?.displayName ?? item.label,
-      html: `<article>${heading}${basicFields}${advancedFields}</article>` };
-  }).filter(Boolean);
-  if (!cards.length) return "";
-  const title = cards.length === 1 && cards[0].category ? `${cards[0].category}参数` : "单件工艺参数";
-  const detail = cards.length === 1 ? cards[0].displayName : `${cards.length} 道`;
-  return `<section class="tube-connection-library-parameter-section basic tube-connection-library-process-section"><header><strong>${text(title)}</strong><small>${text(detail)}</small></header><div class="tube-connection-library-processes">${cards.map((item) => item.html).join("")}</div></section>`;
+    return { html: `<article>${heading}${basicFields}${advancedFields}</article>` };
+  });
+  return `<details class="tube-connection-library-parameter-section tube-connection-library-process-section"><summary><span>加工设置</span><small>${cards.length} 道</small></summary><div class="tube-connection-library-processes">${cards.map((item) => item.html).join("")}</div></details>`;
 }
 
 function processApplies(process, values) {
@@ -612,21 +661,31 @@ function processParameterField(definition, values, templateId, processId, resour
   return `<label><span>${text(definition.displayName)}${definition.unit ? `（${text(definition.unit)}）` : ""}</span><input type="number" value="${attr(values[definition.key])}" min="${attr(definition.min)}" max="${attr(definition.max)}" step="${attr(definition.step ?? 0.1)}" ${data}${enabled ? "" : " disabled"}></label>`;
 }
 
-function miniPlan(template) {
-  const logical = template.participants.length;
-  const blanks = template.manufacturingPlan?.blankParts?.length ?? 0;
-  const top = Array.from({ length: logical }, (_, index) => `<rect x="${4 + index * (40 / logical)}" y="7" width="${Math.max(5, 32 / logical)}" height="10" rx="2"/>`).join("");
-  const bottom = Array.from({ length: blanks }, (_, index) => `<rect x="${4 + index * (40 / blanks)}" y="31" width="${Math.max(5, 32 / blanks)}" height="10" rx="2"/>`).join("");
-  return `<svg viewBox="0 0 48 48">${top}<path d="M24 19v8m-3-3 3 3 3-3"/>${bottom}</svg>`;
-}
-
-function realizationLabel(template) {
-  return ({ integrated: "一体成形", separate: "分件装配", hybrid: "混合装配" })[template.manufacturingPlan?.realization] ?? "装配";
+function assemblyIllustration(template) {
+  const paths = {
+    bend: '<path d="M8 35h18V13h14M23 35a3 3 0 0 0 3-3"/>',
+    "tab-slot-lock": '<path d="M5 14h17v6h6a4 4 0 0 1 0 8h-6v6H5M43 14H32v6h-4a4 4 0 0 0 0 8h4v6h11"/>',
+    "through-bolt": '<path d="M6 16h36v8H6zm0 12h36v8H6zM18 12v28m12-28v28"/><circle cx="18" cy="26" r="3"/><circle cx="30" cy="26" r="3"/>',
+    "slot-bolt-adjustable": '<path d="M6 14h36v20H6zM14 24h18"/><circle cx="34" cy="24" r="4"/>',
+    "saddle-weld": '<path d="M6 31h36M24 31V8M17 31a7 7 0 0 1 14 0"/>',
+    "insert-sleeve": '<path d="M5 18h24v12H5M43 14H27v20h16M15 24h22"/>',
+    "mechanical-fastener": '<path d="M6 15h36v7H6zm0 11h36v7H6zM17 10v28m14-28v28"/><circle cx="17" cy="24" r="3"/><circle cx="31" cy="24" r="3"/>',
+    "weld-interface": '<path d="M5 31h38M24 31V7M16 31l3-4 3 4 3-4 3 4 3-4 3 4"/>',
+    "two-end-end-angle": '<path d="M5 34h18V14M43 34H25V14M23 14l2 2 2-2"/>',
+    "two-end-middle": '<path d="M5 28h38M24 28V7M18 28a6 6 0 0 1 12 0"/>',
+    "three-end-end-end": '<path d="M5 34h38M24 34V7M20 30l4 4 4-4"/>',
+    "three-end-end-middle": '<path d="M5 29h38M16 29V8M32 29V8M13 29a3 3 0 0 1 6 0m10 0a3 3 0 0 1 6 0"/>',
+    "four-end-end-end-end": '<path d="M5 24h38M24 5v38M19 24l5-5 5 5-5 5z"/>',
+  };
+  return `<svg viewBox="0 0 48 48">${paths[template.id] ?? '<path d="M7 13h16v12H7zm18 10h16v12H25M23 19l4 4-4 4"/>'}</svg>`;
 }
 
 function assemblySearchText(item) {
   return [item.displayName, item.categoryName, item.summary, item.topology, item.interfaceType, item.lockType,
-    ...item.partProcesses.flatMap((process) => [process.resource?.id, ...(process.resourceSelection?.options ?? [])])].join(" ").toLocaleLowerCase("zh-CN");
+    ...item.participants.flatMap((participant) => [participant.label, participant.responsibility]),
+    ...(item.manufacturingPlan?.blankParts ?? []).map((blank) => blank.label),
+    ...item.assemblyPath.flatMap((step) => [step.label, step.kind]),
+    ...item.partProcesses.flatMap((process) => [process.label, process.resource?.id, ...(process.resourceSelection?.options ?? [])])].join(" ").toLocaleLowerCase("zh-CN");
 }
 
 function text(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }

@@ -3,6 +3,8 @@
 #include "EntityView.h"
 #include "MetaRegistry.h"
 #include "RepositoryUndoRedoHistory.h"
+#include <chrono>
+#include <cstdio>
 
 
 namespace
@@ -539,12 +541,35 @@ bool iCAX::Database::CRepository::CommitTransaction(IN ITransaction& Transaction
 
     try
     {
+        const bool _ProfileStage = _pTransaction->GetName() == "Add independent nesting parts"
+            && GetEnvironmentVariableA("ICAX_PROFILE_STAGE_NESTING", nullptr, 0) != 0;
+        const auto _ProfileStart = std::chrono::steady_clock::now();
+        double _ApplySeconds = 0.0;
+        double _ApplyEntitySeconds = 0.0;
+        double _ApplyComponentSeconds = 0.0;
         BeginOperationBatchCore(EOperationBatchKind::Transaction, _pTransaction->GetName());
         for (const auto& _Operation : _Operations)
         {
+            const auto _ApplyStart = std::chrono::steady_clock::now();
             ApplyTransactionOperation(_Operation);
+            if (_ProfileStage)
+            {
+                const auto elapsed = std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() - _ApplyStart).count();
+                _ApplySeconds += elapsed;
+                if (_Operation.Type == RepositoryEventArgs::kAddEntity) _ApplyEntitySeconds += elapsed;
+                else _ApplyComponentSeconds += elapsed;
+            }
         }
+        const auto _EndStart = std::chrono::steady_clock::now();
         EndOperationBatch();
+        if (_ProfileStage)
+            std::fprintf(stderr, "StageNestingParts/repository %zu operations begin %.3f apply %.3f (entities %.3f components %.3f) end %.3f total %.3f s\n",
+                _Operations.size(),
+                std::chrono::duration<double>(_EndStart - _ProfileStart).count() - _ApplySeconds,
+                _ApplySeconds, _ApplyEntitySeconds, _ApplyComponentSeconds,
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - _EndStart).count(),
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - _ProfileStart).count());
         return true;
     }
     catch (...)
@@ -1594,6 +1619,13 @@ void iCAX::Database::CRepository::EndOperationBatch()
         return;
     }
 
+    const bool _ProfileStage = m_strOperationBatchName == "Add independent nesting parts"
+        && GetEnvironmentVariableA("ICAX_PROFILE_STAGE_NESTING", nullptr, 0) != 0;
+    const auto _ProfileStart = std::chrono::steady_clock::now();
+    const auto _StageMark = [&](const char* phase) {
+        if (_ProfileStage) std::fprintf(stderr, "StageNestingParts/batch-%s %.3f s\n", phase,
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - _ProfileStart).count());
+    };
     auto _pBuilder = std::move(m_pOperationBatchBuilder);
     auto _nKind = m_nOperationBatchKind;
     m_nOperationBatchKind = EOperationBatchKind::UserCommand;
@@ -1604,7 +1636,9 @@ void iCAX::Database::CRepository::EndOperationBatch()
     // OperationBatch 是事实日志，ChangeSet 是由事实日志派生的净变更摘要。
     // 提交路径必须先冻结 Batch，再派生 Summary，避免撤销/日志丢失真实操作顺序。
     auto _Batch = _pBuilder->Build();
+    _StageMark("built");
     auto _ChangeSet = BuildChangeSetFromOperationBatch(_Batch);
+    _StageMark("change-set");
 
     if (_nKind == EOperationBatchKind::LoadBaseline)
     {
@@ -1632,7 +1666,9 @@ void iCAX::Database::CRepository::EndOperationBatch()
     if (!_ChangeSet.IsEmpty())
     {
         ApplyChangeSetEffects(_ChangeSet);
+        _StageMark("effects");
         HandleCommittedOperationBatch(_Batch, _ChangeSet);
+        _StageMark("history-and-log");
     }
 
     auto _pBatch = std::make_shared<RepositoryEventBatch>();
@@ -1641,6 +1677,7 @@ void iCAX::Database::CRepository::EndOperationBatch()
 
     TriggerRepositoryChanging(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pBatch);
     TriggerRepositoryChanged(RepositoryEventArgs::kBatchChanged, {}, {}, {}, {}, {}, {}, _pBatch);
+    _StageMark("notified");
 }
 
 void iCAX::Database::CRepository::CancelOperationBatch()

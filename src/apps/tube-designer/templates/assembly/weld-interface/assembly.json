@@ -1,0 +1,114 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "weld-interface",
+  "version": "1.0.0",
+  "displayName": "搭接焊 / 塞焊 / 槽焊",
+  "category": "two-middle-middle",
+  "categoryName": "两件 · 中—中",
+  "summary": "两个零件在中段搭接，可直接搭接焊，也可生成塞焊孔或槽焊孔。",
+  "topology": "中段—中段",
+  "interfaceType": "搭接、塞焊或槽焊",
+  "lockType": "焊接",
+  "motionType": "对正贴合",
+  "participants": [
+    { "role": "primary", "label": "基准焊件", "responsibility": "主管、母件或搭接基准件", "count": 1 },
+    { "role": "secondary", "label": "配合焊件", "responsibility": "支管、对接件或开孔搭接件", "count": 1 }
+  ],
+  "parameters": [
+    {
+      "key": "weldType",
+      "displayName": "焊接接口",
+      "valueType": "choice",
+      "defaultValue": "lap",
+      "options": [
+        { "value": "lap", "label": "搭接焊" },
+        { "value": "plug", "label": "塞焊" },
+        { "value": "slot", "label": "槽焊" }
+      ],
+      "level": "basic"
+    },
+    { "key": "fitGap", "displayName": "装配间隙", "valueType": "number", "defaultValue": 0.5, "min": 0, "max": 10, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "overlapLength", "displayName": "搭接长度", "valueType": "number", "defaultValue": 80, "min": 10, "max": 500, "step": 1, "unit": "mm", "level": "basic" },
+    { "key": "openingDiameter", "displayName": "塞焊孔直径", "valueType": "number", "defaultValue": 12, "min": 2, "max": 60, "step": 0.5, "unit": "mm", "level": "basic", "visibleWhen": { "op": "eq", "parameter": "weldType", "value": "plug" } },
+    { "key": "slotLength", "displayName": "槽焊孔长度", "valueType": "number", "defaultValue": 30, "min": 4, "max": 200, "step": 1, "unit": "mm", "level": "basic", "visibleWhen": { "op": "eq", "parameter": "weldType", "value": "slot" } },
+    { "key": "slotWidth", "displayName": "槽焊孔宽度", "valueType": "number", "defaultValue": 10, "min": 2, "max": 80, "step": 0.5, "unit": "mm", "level": "basic", "visibleWhen": { "op": "eq", "parameter": "weldType", "value": "slot" } },
+    { "key": "weldCount", "displayName": "塞孔 / 槽孔数量", "valueType": "integer", "defaultValue": 2, "min": 1, "max": 20, "step": 1, "unit": "个", "level": "basic", "visibleWhen": { "op": "in", "parameter": "weldType", "values": ["plug", "slot"] } },
+    { "key": "weldPitch", "displayName": "塞孔 / 槽孔中心距", "valueType": "number", "defaultValue": 45, "min": 5, "max": 500, "step": 1, "unit": "mm", "level": "basic", "visibleWhen": { "op": "in", "parameter": "weldType", "values": ["plug", "slot"] } },
+    { "key": "weldLeg", "displayName": "焊脚尺寸", "valueType": "number", "defaultValue": 4, "min": 1, "max": 30, "step": 0.5, "unit": "mm", "level": "advanced" },
+    { "key": "weldScope", "displayName": "焊接范围", "valueType": "choice", "defaultValue": "full", "options": [{ "value": "full", "label": "连续满焊" }, { "value": "stitch", "label": "间断焊" }, { "value": "tack", "label": "定位点焊" }], "level": "advanced" }
+  ],
+  "partProcesses": [
+    {
+      "id": "plug-openings",
+      "participants": ["secondary"],
+      "label": "塞焊孔组",
+      "appliesWhen": { "op": "eq", "parameter": "weldType", "value": "plug" },
+      "resource": { "kind": "part-process", "id": "circle", "displayName": "圆孔" },
+      "parameterBindings": { "diameter": "$openingDiameter" },
+      "previewPlacement": { "target": "side", "face": "bottom", "reference": "center", "station": "-($weldCount - 1) * $weldPitch / 2", "arrayCount": "$weldCount", "arrayPitch": "$weldPitch", "opposite": false }
+    },
+    {
+      "id": "slot-openings",
+      "participants": ["secondary"],
+      "label": "槽焊孔组",
+      "appliesWhen": { "op": "eq", "parameter": "weldType", "value": "slot" },
+      "resource": { "kind": "part-process", "id": "slot", "displayName": "腰形孔" },
+      "parameterBindings": { "spanAlong": "$slotLength", "spanAcross": "$slotWidth" },
+      "previewPlacement": { "target": "side", "face": "bottom", "reference": "center", "station": "-($weldCount - 1) * $weldPitch / 2", "arrayCount": "$weldCount", "arrayPitch": "$weldPitch", "opposite": false }
+    }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      { "id": "primaryBlank", "label": "基准焊件下料", "participants": ["primary"] },
+      { "id": "secondaryBlank", "label": "配合焊件下料", "participants": ["secondary"] }
+    ]
+  },
+  "assemblyPath": [
+    { "id": "orient", "label": "建立两件搭接姿态", "kind": "$weldType", "direction": "assembly.x", "distance": "$overlapLength" },
+    { "id": "fit", "label": "保持装配间隙并贴合", "kind": "对正", "direction": "assembly.z", "distance": "$fitGap" },
+    { "id": "weld", "label": "按焊接范围施焊", "kind": "$weldScope", "direction": "焊缝", "distance": "$weldLeg" }
+  ],
+  "previewScene": {
+    "designParts": [
+      {
+        "role": "primary",
+        "profileRef": { "scope": "system", "id": "rect" },
+        "parameters": { "width": 80, "depth": 30, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 },
+        "length": 400,
+        "pose": { "origin": [-220, 0, -15], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      },
+      {
+        "role": "secondary",
+        "profileRef": { "scope": "system", "id": "round" },
+        "parameters": { "width": 40, "wallThickness": 2, "innerOffsetX": 0, "innerOffsetY": 0 },
+        "length": 320,
+        "pose": { "origin": ["-$overlapLength", 0, 15], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      }
+    ],
+    "manufacturingParts": [
+      { "id": "primaryBlank", "label": "基准焊件下料", "sourceRole": "primary", "processes": [], "explodedPose": { "origin": [-220, 0, -95], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "secondaryBlank", "label": "配合焊件下料", "sourceRole": "secondary", "processes": ["plug-openings", "slot-openings"], "explodedPose": { "origin": ["-$overlapLength", 0, 95], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 120], "manufacturingOffset": [0, 0, -120] }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 260 170",
+    "paths": ["M20 85 H240", "M130 20 V150", "M45 65 H110 V105 H45 Z", "M150 65 H215 V105 H150 Z"],
+    "annotations": [
+      { "parameter": "weldType", "kind": "leader", "side": "top", "point": [130, 85], "description": "决定两件拓扑、端切和开孔方式" },
+      { "parameter": "fitGap", "kind": "linear", "axis": "x", "side": "bottom", "from": [110, 85], "to": [150, 85], "description": "装配后保留的焊接间隙" },
+      { "parameter": "overlapLength", "kind": "linear", "axis": "x", "side": "bottom", "from": [90, 110], "to": [170, 110], "description": "两件搭接区域长度" }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": ["基准焊件", "带塞焊孔或槽焊孔的配合焊件"],
+    "secondaryProcess": ["装配定位", "焊接"],
+    "bom": ["按需要记录焊材"],
+    "assemblyInstruction": true
+  }
+}

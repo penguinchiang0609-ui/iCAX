@@ -1,0 +1,36 @@
+{
+  "schema":"icax.assembly-template","schemaVersion":1,"id":"three-end-end-middle","version":"1.0.0",
+  "displayName":"双支管接主管","category":"three-end-end-middle","categoryName":"三件 · 端—端—中",
+  "summary":"两个支管端部连接到同一主管中段，各支管端部按主管通用截面轮廓生成相贯下料。",
+  "topology":"端部—端部—中段","interfaceType":"双支管相贯","lockType":"焊接","motionType":"两端分别贴合主管",
+  "participants":[
+    {"role":"host","label":"主管","responsibility":"中段承接件","count":1},
+    {"role":"branchA","label":"支管 A","responsibility":"第一端部接入","count":1},
+    {"role":"branchB","label":"支管 B","responsibility":"第二端部接入","count":1}
+  ],
+  "parameters":[
+    {"key":"branchSpacing","displayName":"两支管中心距","valueType":"number","defaultValue":160,"min":50,"max":500,"step":1,"unit":"mm","level":"basic"},
+    {"key":"intersectionAngle","displayName":"支管轴线夹角","valueType":"number","defaultValue":90,"min":10,"max":170,"step":1,"unit":"°","level":"basic"},
+    {"key":"fitGap","displayName":"相贯间隙","valueType":"number","defaultValue":0.2,"min":0,"max":10,"step":0.1,"unit":"mm","level":"basic"}
+  ],
+  "partProcesses":[
+    {"id":"profile-a","participants":["branchA"],"label":"支管 A 相贯端切","resource":{"kind":"part-process","id":"end-profile","displayName":"支管端切"},"parameterBindings":{"cutMode":"concave","angle":"$intersectionAngle","trim":0,"rotation":0,"azimuth":0,"roll":0,"axialOffset":0,"offsetY":0,"offsetZ":0},"previewPlacement":{"target":"end","end":"end","datum":"long","sectionRole":"host"}},
+    {"id":"profile-b","participants":["branchB"],"label":"支管 B 相贯端切","resource":{"kind":"part-process","id":"end-profile","displayName":"支管端切"},"parameterBindings":{"cutMode":"concave","angle":"$intersectionAngle","trim":0,"rotation":0,"azimuth":0,"roll":0,"axialOffset":0,"offsetY":0,"offsetZ":0},"previewPlacement":{"target":"end","end":"end","datum":"long","sectionRole":"host"}}
+  ],
+  "manufacturingPlan":{"realization":"separate","blankPartPolicy":"keep-separate","blankParts":[{"id":"hostBlank","label":"主管下料","participants":["host"]},{"id":"branchABlank","label":"支管 A 下料","participants":["branchA"]},{"id":"branchBBlank","label":"支管 B 下料","participants":["branchB"]}]},
+  "assemblyPath":[{"id":"profile","label":"按主管截面加工两支管端部","kind":"相贯端切","direction":"交线","distance":"$intersectionAngle"},{"id":"locate","label":"按中心距定位两个支管","kind":"端—端—中","direction":"主管轴","distance":"$branchSpacing"}],
+  "previewScene":{
+    "designParts":[
+      {"role":"host","profileRef":{"scope":"system","id":"rect"},"parameters":{"width":80,"depth":40,"wallThickness":3,"cornerRadius":3,"innerRadius":1},"length":520,"pose":{"origin":[-260,0,0],"direction":[1,0,0],"up":[0,1,0]}},
+      {"role":"branchA","profileRef":{"scope":"system","id":"round"},"parameters":{"width":40,"wallThickness":2,"innerOffsetX":0,"innerOffsetY":0},"length":220,"pose":{"origin":["-$branchSpacing / 2",220,0],"direction":[0,-1,0],"up":[0,0,1]}},
+      {"role":"branchB","profileRef":{"scope":"system","id":"round"},"parameters":{"width":40,"wallThickness":2,"innerOffsetX":0,"innerOffsetY":0},"length":220,"pose":{"origin":["$branchSpacing / 2",220,0],"direction":[0,-1,0],"up":[0,0,1]}}
+    ],
+    "manufacturingParts":[
+      {"id":"hostBlank","label":"主管下料","sourceRole":"host","processes":[],"explodedPose":{"origin":[-260,0,0],"direction":[1,0,0],"up":[0,1,0]}},
+      {"id":"branchABlank","label":"支管 A 端切下料","sourceRole":"branchA","processes":["profile-a"],"explodedPose":{"origin":["-$branchSpacing / 2",220,0],"direction":[0,-1,0],"up":[0,0,1],"axialTranslation":-100}},
+      {"id":"branchBBlank","label":"支管 B 端切下料","sourceRole":"branchB","processes":["profile-b"],"explodedPose":{"origin":["$branchSpacing / 2",220,0],"direction":[0,-1,0],"up":[0,0,1],"axialTranslation":-100}}
+    ],"compareLayout":{"designOffset":[0,0,140],"manufacturingOffset":[0,0,-140]}
+  },
+  "parameterDiagram":{"schemaVersion":2,"viewBox":"0 0 260 170","paths":["M20 105 H240","M90 20 V105","M170 20 V105"],"annotations":[{"parameter":"branchSpacing","kind":"linear","axis":"x","side":"bottom","from":[90,105],"to":[170,105],"description":"两个支管中心在主管轴向的间距"},{"parameter":"intersectionAngle","kind":"leader","side":"right","point":[170,85],"description":"支管与主管轴线夹角"},{"parameter":"fitGap","kind":"leader","side":"left","point":[90,105],"description":"相贯轮廓装配间隙"}]},
+  "outputs":{"manufacturingPartCount":3,"partGeometry":["主管","支管 A 相贯端","支管 B 相贯端"],"secondaryProcess":["双支管定位","焊接"],"bom":[],"assemblyInstruction":true}
+}

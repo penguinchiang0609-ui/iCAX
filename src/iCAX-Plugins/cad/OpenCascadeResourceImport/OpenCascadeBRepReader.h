@@ -51,4 +51,13 @@ namespace iCAX::OpenCascade
             const std::vector<SBRepConversionInput>& Inputs_,
             double dTolerance_ = 0.001,
             std::size_t MaximumConcurrency_ = 0);
+
+    // Display-only conversion. Unlike the BRep conversion above, this skips
+    // vertices/edges/surfaces/topology and publishes only the triangulation
+    // needed by a renderer. Inputs and result ordering follow the same rules.
+    _OPEN_CASCADE_RESOURCE_IMPORT_EXP std::vector<iCAX::GeometryData::CTriangleMeshResource>
+        ConvertOpenCascadeShapesToTriangleMeshes(
+            const std::vector<SBRepConversionInput>& Inputs_,
+            double dTolerance_ = 0.001,
+            std::size_t MaximumConcurrency_ = 0);
 }

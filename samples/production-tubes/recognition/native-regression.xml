@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="32" failures="0" disabled="0" errors="0" timestamp="2026-09-23T01:05:49" time="15.157" name="AllTests">
+  <testsuite name="ExtrusionRecognitionTest" tests="32" failures="0" disabled="0" errors="0" time="15.157">
+    <testcase name="RecognizesDirectionFromStraightEdgeLengthVotes" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="ExtractsOuterSectionWireFromProjectedSideFaces" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="MergesCoveredEdgesBeforeSplittingAndMergingPoints" status="run" time="0.003" classname="ExtrusionRecognitionTest" />
+    <testcase name="UnionsPartiallyOverlappingEdgesBeforeFindingContours" status="run" time="0.002" classname="ExtrusionRecognitionTest" />
+    <testcase name="MergesProjectedStraightSplinesWithAnalyticEdges" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="KeepsNonlinearProjectedSplineGeometry" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="DoesNotMergeDistinctParallelEdgesOrBridgeGaps" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="FullConicsSwallowCoveredArcsAcrossParameterSeams" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="OverlappingArcsMergeButComplementaryArcsStayDistinct" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="SplitsMergedArcAtSurvivingEndpointOnExactCurve" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="StartsOuterAndInnerAtLowestLeftmostPositionRegardlessOfInputOrder" status="run" time="0.032" classname="ExtrusionRecognitionTest" />
+    <testcase name="StartsAtCurveContainingInteriorMinimumWithoutSplittingIt" status="run" time="0.005" classname="ExtrusionRecognitionTest" />
+    <testcase name="IgnoresLowerPrunedBranchesWhenChoosingFirstContourEdge" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="SplitsHostEdgeWhenEndpointFallsInItsInterior" status="run" time="0.002" classname="ExtrusionRecognitionTest" />
+    <testcase name="FindsOuterContourWithMultipleInternalConnections" status="run" time="0.005" classname="ExtrusionRecognitionTest" />
+    <testcase name="FindsConcaveOuterContourWithMultipleInternalConnections" status="run" time="0.006" classname="ExtrusionRecognitionTest" />
+    <testcase name="ExtractsSectionWiresFromResetStepBRep" status="run" time="0.123" classname="ExtrusionRecognitionTest" />
+    <testcase name="RunsAllTemplateDirectFittersOnNativeExtractedContoursWithoutForwardCalls" status="run" time="2.899" classname="ExtrusionRecognitionTest" />
+    <testcase name="MatchesImportedStepThroughOrderedDirectFitters" status="run" time="0.157" classname="ExtrusionRecognitionTest" />
+    <testcase name="RecognizesMachinedProductionTubeWithoutFollowingHoleAxes" status="run" time="1.26" classname="ExtrusionRecognitionTest" />
+    <testcase name="RetainsCompleteGroovedProductionTubeContours" status="run" time="3.14" classname="ExtrusionRecognitionTest" />
+    <testcase name="PrefersSquareTubeProfileOverGenericRegularPolygon" status="run" time="0.22" classname="ExtrusionRecognitionTest" />
+    <testcase name="DistinguishesUnsupportedAndFailedFittersFromNonMatchingGeometry" status="run" time="0.153" classname="ExtrusionRecognitionTest" />
+    <testcase name="RecognizesHollowSectionAndNormalizesToYAxis" status="run" time="0.006" classname="ExtrusionRecognitionTest" />
+    <testcase name="UsesFirstMatchingDefinitionWithoutConfidenceCompetition" status="run" time="0.005" classname="ExtrusionRecognitionTest" />
+    <testcase name="RejectsTaperWhoseAxialSectionsKeepChanging" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="RejectsUnknownDeclarativeOperator" status="run" time="0.001" classname="ExtrusionRecognitionTest" />
+    <testcase name="LoadsStandardJsonAndPreservesDefinitionOrder" status="run" time="0.005" classname="ExtrusionRecognitionTest" />
+    <testcase name="RecognizesAllTubeOneStepRegressionSamples" status="run" time="1.831" classname="ExtrusionRecognitionTest" />
+    <testcase name="RebuildsNormalizedResourceForOnDemandCadIntent" status="run" time="1.077" classname="ExtrusionRecognitionTest" />
+    <testcase name="RebuildsNormalizedMultiCavityResourceForCadIntent" status="run" time="1.373" classname="ExtrusionRecognitionTest" />
+    <testcase name="PreservesVolumeWhenNormalizingMultiCavityBeveledPart" status="run" time="2.841" classname="ExtrusionRecognitionTest" />
+  </testsuite>
+</testsuites>

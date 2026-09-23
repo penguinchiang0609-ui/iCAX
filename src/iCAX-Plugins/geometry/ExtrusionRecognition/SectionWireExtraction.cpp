@@ -457,7 +457,7 @@ namespace
             }
             else if constexpr (std::is_same_v<T, iCAX::GeometryData::Circle3>)
             {
-                const auto _Angle = Last_ ? 2.0 * kPi : 0.0;
+                const auto _Angle = Last_ ? Range_.Last : Range_.First;
                 return Add(
                     Value_.Placement.Location,
                     AddVectors(
@@ -475,7 +475,7 @@ namespace
             }
             else if constexpr (std::is_same_v<T, iCAX::GeometryData::Ellipse3>)
             {
-                const auto _Angle = Last_ ? 2.0 * kPi : 0.0;
+                const auto _Angle = Last_ ? Range_.Last : Range_.First;
                 return Add(
                     Value_.Placement.Location,
                     AddVectors(
@@ -815,8 +815,65 @@ namespace
         _Result.SourceEdgeId = Edge_.Id;
         _Result.Curve = *_Curve2;
         _Result.Range = Edge_.Range;
+        // Imported circle/ellipse edges can be trimmed through the BRep
+        // range even when the underlying curve is a complete conic.
+        if (std::abs(Edge_.Range.First) > kEpsilon
+            || std::abs(Edge_.Range.Last - 2.0 * kPi) > kEpsilon)
+        {
+            if (const auto* _Circle = std::get_if<iCAX::GeometryData::Circle2>(&*_Curve2))
+                _Result.Curve = iCAX::GeometryData::Arc2{
+                    *_Circle, Edge_.Range.First, Edge_.Range.Last, true };
+            else if (const auto* _Ellipse = std::get_if<iCAX::GeometryData::Ellipse2>(&*_Curve2))
+                _Result.Curve = iCAX::GeometryData::EllipseArc2{
+                    *_Ellipse, Edge_.Range.First, Edge_.Range.Last, true };
+        }
         _Result.Start = Project(*_Start3);
         _Result.End = Project(*_End3);
+        // STEP intersection curves may remain splines after projection even
+        // when all of their control points lie on a straight generator. Use
+        // that control-polygon bound (not a sampled chord fit) to give them
+        // the same representation as coincident analytic line edges.
+        const auto _ChordLength = Distance(_Result.Start, _Result.End);
+        if (_ChordLength > Options_.dConnectionTolerance)
+        {
+            const Point2 _Direction{ (_Result.End.X - _Result.Start.X) / _ChordLength,
+                (_Result.End.Y - _Result.Start.Y) / _ChordLength };
+            const bool _Straight = std::visit([&](const auto& Value_) {
+                using T = std::decay_t<decltype(Value_)>;
+                if constexpr (std::is_same_v<T, iCAX::GeometryData::Bezier2>
+                    || std::is_same_v<T, iCAX::GeometryData::BSpline2>
+                    || std::is_same_v<T, iCAX::GeometryData::NURBS2>)
+                {
+                    if (Value_.Poles.size() < 2) return false;
+                    if constexpr (std::is_same_v<T, iCAX::GeometryData::NURBS2>)
+                        if (std::any_of(Value_.Weights.begin(), Value_.Weights.end(),
+                                [](double Weight_) { return Weight_ <= 0.0; })) return false;
+                    int _MonotoneSign = 0;
+                    std::optional<double> _Previous;
+                    for (const auto& _Pole : Value_.Poles)
+                    {
+                        const Point2 _Delta{ _Pole.X - _Result.Start.X, _Pole.Y - _Result.Start.Y };
+                        if (std::abs(_Delta.X * _Direction.Y - _Delta.Y * _Direction.X)
+                            > Options_.dConnectionTolerance) return false;
+                        const auto _Along = _Delta.X * _Direction.X + _Delta.Y * _Direction.Y;
+                        if (_Previous && std::abs(_Along - *_Previous) > Options_.dConnectionTolerance)
+                        {
+                            const auto _Sign = _Along > *_Previous ? 1 : -1;
+                            if (_MonotoneSign != 0 && _Sign != _MonotoneSign) return false;
+                            _MonotoneSign = _Sign;
+                        }
+                        _Previous = _Along;
+                    }
+                    return _MonotoneSign != 0;
+                }
+                return false;
+            }, _Result.Curve);
+            if (_Straight)
+            {
+                _Result.Curve = iCAX::GeometryData::Segment2{ _Result.Start, _Result.End };
+                _Result.Range = { 0.0, 1.0 };
+            }
+        }
         _Result.Samples = SampleCurve(_Result.Curve, Options_.nCurveSampleCount);
         if (_Result.Samples.empty())
         {
@@ -889,6 +946,182 @@ namespace
         }
         return SameSamples(Left_.Samples, Right_.Samples, false, Tolerance_)
             || SameSamples(Left_.Samples, Right_.Samples, true, Tolerance_);
+    }
+
+    struct SConicInterval final
+    {
+        iCAX::GeometryData::Ellipse2 Basis;
+        double First = 0.0;
+        double Sweep = 2.0 * kPi;
+        bool bCircle = false;
+    };
+
+    std::optional<SConicInterval> ConicInterval(IN const Curve2& Curve_)
+    {
+        std::optional<SConicInterval> _Result;
+        std::visit([&](const auto& Value_) {
+            using T = std::decay_t<decltype(Value_)>;
+            if constexpr (std::is_same_v<T, iCAX::GeometryData::Circle2>)
+                _Result = SConicInterval{ { Value_.Placement, Value_.Radius, Value_.Radius }, 0.0, 2.0 * kPi, true };
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Ellipse2>)
+                _Result = SConicInterval{ Value_ };
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::Arc2>)
+                _Result = SConicInterval{
+                    { Value_.Basis.Placement, Value_.Basis.Radius, Value_.Basis.Radius },
+                    Value_.StartAngle,
+                    Value_.CounterClockwise ? Value_.EndAngle - Value_.StartAngle
+                        : Value_.StartAngle - Value_.EndAngle, true };
+            else if constexpr (std::is_same_v<T, iCAX::GeometryData::EllipseArc2>)
+                _Result = SConicInterval{ Value_.Basis, Value_.StartAngle,
+                    Value_.CounterClockwise ? Value_.EndAngle - Value_.StartAngle
+                        : Value_.StartAngle - Value_.EndAngle };
+        }, Curve_);
+        return _Result;
+    }
+
+    bool IsStraightProjectedEdge(IN const SSectionWireEdge& Edge_)
+    {
+        return std::holds_alternative<iCAX::GeometryData::Line2>(Edge_.Curve)
+            || std::holds_alternative<iCAX::GeometryData::Ray2>(Edge_.Curve)
+            || std::holds_alternative<iCAX::GeometryData::Segment2>(Edge_.Curve);
+    }
+
+    // Merge geometric coverage before any endpoint-on-edge splitting. In
+    // particular, a swallowed edge's endpoints must not split its host later.
+    bool TryMergeProjectedEdges(
+        IN OUT SSectionWireEdge& Left_,
+        IN const SSectionWireEdge& Right_,
+        IN const SSectionWireOptions& Options_)
+    {
+        const auto _Tolerance = Options_.dConnectionTolerance;
+        if (IsStraightProjectedEdge(Left_) && IsStraightProjectedEdge(Right_))
+        {
+            const auto _Length = Distance(Left_.Start, Left_.End);
+            if (_Length <= _Tolerance) return false;
+            const Point2 _Direction{
+                (Left_.End.X - Left_.Start.X) / _Length,
+                (Left_.End.Y - Left_.Start.Y) / _Length };
+            const Point2 _A{ Right_.Start.X - Left_.Start.X, Right_.Start.Y - Left_.Start.Y };
+            const Point2 _B{ Right_.End.X - Left_.Start.X, Right_.End.Y - Left_.Start.Y };
+            if (std::abs(Cross2(_Direction, _A)) > _Tolerance
+                || std::abs(Cross2(_Direction, _B)) > _Tolerance) return false;
+            const auto _First = std::min(Dot2(_Direction, _A), Dot2(_Direction, _B));
+            const auto _Last = std::max(Dot2(_Direction, _A), Dot2(_Direction, _B));
+            // Mere endpoint contact is not overlapping coverage.
+            if (std::min(_Length, _Last) - std::max(0.0, _First) <= _Tolerance) return false;
+            if (_First >= -_Tolerance && _Last <= _Length + _Tolerance) return true;
+            if (_First <= _Tolerance && _Last >= _Length - _Tolerance)
+            {
+                Left_ = Right_;
+                return true;
+            }
+            const auto _Begin = std::min(0.0, _First);
+            const auto _End = std::max(_Length, _Last);
+            const auto _Origin = Left_.Start;
+            Left_.Start = { _Origin.X + _Begin * _Direction.X, _Origin.Y + _Begin * _Direction.Y };
+            Left_.End = { _Origin.X + _End * _Direction.X, _Origin.Y + _End * _Direction.Y };
+            Left_.Curve = iCAX::GeometryData::Line2{
+                { Left_.Start, { _Direction.X, _Direction.Y } } };
+            Left_.Range = { 0.0, _End - _Begin };
+            Left_.Samples = { Left_.Start, Left_.End };
+            return true;
+        }
+
+        const auto _Left = ConicInterval(Left_.Curve);
+        const auto _Right = ConicInterval(Right_.Curve);
+        if (_Left && _Right)
+        {
+            const auto& _A = _Left->Basis;
+            const auto& _B = _Right->Basis;
+            if (_Left->bCircle != _Right->bCircle
+                || Distance(_A.Placement.Location, _B.Placement.Location) > _Tolerance
+                || std::abs(_A.MajorRadius - _B.MajorRadius) > _Tolerance
+                || std::abs(_A.MinorRadius - _B.MinorRadius) > _Tolerance
+                || std::min(_A.MajorRadius, _A.MinorRadius) <= _Tolerance) return false;
+            const auto _AxisDot = _A.Placement.XDirection.X * _B.Placement.XDirection.X
+                + _A.Placement.XDirection.Y * _B.Placement.XDirection.Y;
+            const auto _AxisCross = _A.Placement.XDirection.X * _B.Placement.XDirection.Y
+                - _A.Placement.XDirection.Y * _B.Placement.XDirection.X;
+            if (!_Left->bCircle && std::abs(_AxisCross) * _A.MajorRadius > _Tolerance) return false;
+            const auto _Orientation = [](const auto& Placement_) {
+                return Placement_.XDirection.X * Placement_.YDirection.Y
+                    - Placement_.XDirection.Y * Placement_.YDirection.X;
+            };
+            const auto _Phase = _Left->bCircle
+                ? std::atan2(_AxisCross * _Orientation(_A.Placement), _AxisDot)
+                : (_AxisDot < 0.0 ? kPi : 0.0);
+            const auto _Sign = _Orientation(_A.Placement) * _Orientation(_B.Placement) < 0.0 ? -1.0 : 1.0;
+            const auto _Normalize = [](double Angle_) {
+                const auto _Angle = std::fmod(Angle_, 2.0 * kPi);
+                return _Angle < 0.0 ? _Angle + 2.0 * kPi : _Angle;
+            };
+            const auto _First = _Normalize(std::min(_Left->First, _Left->First + _Left->Sweep));
+            const auto _Last = _First + std::min(std::abs(_Left->Sweep), 2.0 * kPi);
+            const auto _OtherFirst = _Normalize(std::min(
+                _Phase + _Sign * _Right->First,
+                _Phase + _Sign * (_Right->First + _Right->Sweep)));
+            const auto _OtherSpan = std::min(std::abs(_Right->Sweep), 2.0 * kPi);
+            const auto _AngularTolerance = _Tolerance / _A.MajorRadius;
+            for (int _Turn = -1; _Turn <= 1; ++_Turn)
+            {
+                const auto _Begin = _OtherFirst + _Turn * 2.0 * kPi;
+                const auto _End = _Begin + _OtherSpan;
+                if (std::min(_Last, _End) - std::max(_First, _Begin) <= _AngularTolerance) continue;
+                if (_Last - _First >= 2.0 * kPi - _AngularTolerance
+                    || (_Begin >= _First - _AngularTolerance && _End <= _Last + _AngularTolerance)) return true;
+                if (_OtherSpan >= 2.0 * kPi - _AngularTolerance
+                    || (_Begin <= _First + _AngularTolerance && _End >= _Last - _AngularTolerance))
+                {
+                    Left_ = Right_;
+                    return true;
+                }
+                const auto _UnionFirst = std::min(_First, _Begin);
+                const auto _UnionLast = std::max(_Last, _End);
+                const bool _Full = _UnionLast - _UnionFirst >= 2.0 * kPi - _AngularTolerance;
+                if (_Left->bCircle)
+                {
+                    const iCAX::GeometryData::Circle2 _Circle{ _A.Placement, _A.MajorRadius };
+                    Left_.Curve = _Full ? Curve2(_Circle) : Curve2(iCAX::GeometryData::Arc2{
+                        _Circle, _UnionFirst, _UnionLast, true });
+                }
+                else
+                    Left_.Curve = _Full ? Curve2(_A) : Curve2(iCAX::GeometryData::EllipseArc2{
+                        _A, _UnionFirst, _UnionLast, true });
+                Left_.Range = _Full ? ParameterRange{ 0.0, 2.0 * kPi }
+                    : ParameterRange{ _UnionFirst, _UnionLast };
+                Left_.Samples = SampleCurve(Left_.Curve, Options_.nCurveSampleCount);
+                Left_.Start = Left_.Samples.front();
+                Left_.End = Left_.Samples.back();
+                return true;
+            }
+            return false;
+        }
+        return SameProjectedEdge(Left_, Right_, _Tolerance);
+    }
+
+    std::vector<SSectionWireEdge> MergeProjectedEdges(
+        IN std::vector<SSectionWireEdge> Edges_, IN const SSectionWireOptions& Options_)
+    {
+        // Source IDs make the retained representation independent of hash-map
+        // iteration order. Restart after each merge to absorb overlap chains.
+        std::sort(Edges_.begin(), Edges_.end(), [](const auto& Left_, const auto& Right_) {
+            return Left_.SourceEdgeId < Right_.SourceEdgeId;
+        });
+        std::vector<SSectionWireEdge> _Merged;
+        for (auto& _Edge : Edges_)
+        {
+            for (std::size_t _Index = 0; _Index < _Merged.size();)
+            {
+                if (TryMergeProjectedEdges(_Edge, _Merged[_Index], Options_))
+                {
+                    _Merged.erase(_Merged.begin() + _Index);
+                    _Index = 0;
+                }
+                else ++_Index;
+            }
+            _Merged.push_back(std::move(_Edge));
+        }
+        return _Merged;
     }
 
     struct SProjectionResult final
@@ -1425,6 +1658,18 @@ namespace
 
     SLowestCurvePoint FindLowestCurvePoint(IN const SSectionWireEdge& Edge_)
     {
+        // Curve parameters retain the source direction when a wire is reversed.
+        if (Edge_.bReversed)
+        {
+            auto _Forward = Edge_;
+            std::swap(_Forward.Start, _Forward.End);
+            std::reverse(_Forward.Samples.begin(), _Forward.Samples.end());
+            _Forward.bReversed = false;
+            auto _Lowest = FindLowestCurvePoint(_Forward);
+            _Lowest.U = 1.0 - _Lowest.U;
+            _Lowest.Tangent = { -_Lowest.Tangent.X, -_Lowest.Tangent.Y };
+            return _Lowest;
+        }
         std::vector<double> _Candidates{ 0.0, 1.0 };
         const auto _Stationary = StationaryParameters(Edge_);
         _Candidates.insert(_Candidates.end(), _Stationary.begin(), _Stationary.end());
@@ -1434,7 +1679,7 @@ namespace
                 Edge_.Samples.begin(),
                 Edge_.Samples.end(),
                 [](IN const auto& Left_, IN const auto& Right_) {
-                    return Left_.Y < Right_.Y;
+                    return std::tie(Left_.Y, Left_.X) < std::tie(Right_.Y, Right_.X);
                 });
             _Candidates.push_back(
                 static_cast<double>(std::distance(Edge_.Samples.begin(), _Minimum))
@@ -1453,12 +1698,44 @@ namespace
                     ? Edge_.End
                     : EvaluateProjectedCurvePoint(Edge_, _U).value_or(
                         PointOnSamples(Edge_.Samples, _U)));
-            if (_Point.Y < _Result.Point.Y - 1.0e-9)
+            if (_Point.Y < _Result.Point.Y - 1.0e-9
+                || (std::abs(_Point.Y - _Result.Point.Y) <= 1.0e-9
+                    && _Point.X < _Result.Point.X))
             {
                 _Result = { _U, _Point, CurveTangentAt(Edge_, _U) };
             }
         }
         return _Result;
+    }
+
+    using SContourStartKey = std::array<double, 9>;
+
+    SContourStartKey ContourStartKey(
+        IN const SSectionWireEdge& Edge_,
+        IN bool bReverse_,
+        IN double Tolerance_)
+    {
+        const auto _Lowest = FindLowestCurvePoint(Edge_);
+        const auto& _Start = bReverse_ ? Edge_.End : Edge_.Start;
+        const auto& _End = bReverse_ ? Edge_.Start : Edge_.End;
+        const Point2 _Tangent = bReverse_
+            ? Point2{ -_Lowest.Tangent.X, -_Lowest.Tangent.Y }
+            : _Lowest.Tangent;
+        const auto _Interior = _Lowest.U > 1.0e-8 && _Lowest.U < 1.0 - 1.0e-8;
+        // Grid keys give a strict ordering even for numerically equal extrema.
+        // In (Y,Z), prefer lowest Z, then leftmost Y, then an outgoing edge
+        // starting there. An interior minimum uses its tangent without splitting
+        // the curve. Geometry breaks ties before the caller's storage index.
+        const auto _Coordinate = [Tolerance_](double Value_) {
+            return std::round(Value_ / Tolerance_);
+        };
+        return {
+            _Coordinate(_Lowest.Point.Y), _Coordinate(_Lowest.Point.X),
+            Distance(_Start, _Lowest.Point) <= Tolerance_ ? 0.0 : 1.0,
+            _Interior && _Tangent.X >= -kEpsilon ? 1.0 : 0.0,
+            std::round(std::abs(std::atan2(_Tangent.Y, _Tangent.X)) / 1.0e-12),
+            _Coordinate(_Start.Y), _Coordinate(_Start.X),
+            _Coordinate(_End.Y), _Coordinate(_End.X) };
     }
 
     SProjectionResult ProjectPointToSamples(
@@ -1628,10 +1905,10 @@ namespace
         {
             const auto _U = StartU_ + (EndU_ - StartU_)
                 * static_cast<double>(_Index) / static_cast<double>(_Count);
-            _Result.push_back(PointOnSamples(Edge_.Samples, _U));
+            _Result.push_back(EvaluateProjectedCurvePoint(Edge_, _U).value());
         }
-        _Result.front() = PointOnSamples(Edge_.Samples, StartU_);
-        _Result.back() = PointOnSamples(Edge_.Samples, EndU_);
+        _Result.front() = EvaluateProjectedCurvePoint(Edge_, StartU_).value();
+        _Result.back() = EvaluateProjectedCurvePoint(Edge_, EndU_).value();
         return _Result;
     }
 
@@ -1640,6 +1917,7 @@ namespace
         IN std::vector<double> Cuts_,
         IN const SSectionWireOptions& Options_)
     {
+        if (Cuts_.empty()) return { Edge_ };
         Cuts_.push_back(0.0);
         Cuts_.push_back(1.0);
         std::sort(Cuts_.begin(), Cuts_.end());
@@ -1663,8 +1941,8 @@ namespace
             auto _Piece = Edge_;
             _Piece.Range.First = Edge_.Range.First + _RangeDelta * _StartU;
             _Piece.Range.Last = Edge_.Range.First + _RangeDelta * _EndU;
-            _Piece.Start = PointOnSamples(Edge_.Samples, _StartU);
-            _Piece.End = PointOnSamples(Edge_.Samples, _EndU);
+            _Piece.Start = EvaluateProjectedCurvePoint(Edge_, _StartU).value();
+            _Piece.End = EvaluateProjectedCurvePoint(Edge_, _EndU).value();
             if (_StartU <= 1.0e-10)
             {
                 _Piece.Start = Edge_.Start;
@@ -1678,6 +1956,18 @@ namespace
                 _StartU,
                 _EndU,
                 std::max<std::size_t>(8, Options_.nCurveSampleCount / 2));
+            if (const auto _Conic = ConicInterval(Edge_.Curve))
+            {
+                const auto _First = _Conic->First + _Conic->Sweep * _StartU;
+                const auto _Last = _Conic->First + _Conic->Sweep * _EndU;
+                _Piece.Range = { _First, _Last };
+                _Piece.Curve = _Conic->bCircle
+                    ? Curve2(iCAX::GeometryData::Arc2{
+                        { _Conic->Basis.Placement, _Conic->Basis.MajorRadius }, _First, _Last, true })
+                    : Curve2(iCAX::GeometryData::EllipseArc2{ _Conic->Basis, _First, _Last, true });
+            }
+            else if (std::holds_alternative<iCAX::GeometryData::Segment2>(Edge_.Curve))
+                _Piece.Curve = iCAX::GeometryData::Segment2{ _Piece.Start, _Piece.End };
             _Result.push_back(std::move(_Piece));
         }
         return _Result;
@@ -2182,9 +2472,18 @@ namespace
     {
         std::vector<SLoopCandidate> _Loops;
         std::vector<std::vector<std::size_t>> _LoopKeys;
-        for (std::size_t _HalfEdgeIndex = 0;
-            _HalfEdgeIndex < HalfEdges_.size();
-            ++_HalfEdgeIndex)
+        std::vector<std::pair<SContourStartKey, std::size_t>> _Starts;
+        _Starts.reserve(HalfEdges_.size());
+        for (std::size_t _Index = 0; _Index < HalfEdges_.size(); ++_Index)
+        {
+            const auto& _HalfEdge = HalfEdges_[_Index];
+            _Starts.emplace_back(ContourStartKey(
+                GraphEdges_[_HalfEdge.GraphEdge].Projected,
+                !_HalfEdge.bForward,
+                Options_.dConnectionTolerance), _Index);
+        }
+        std::sort(_Starts.begin(), _Starts.end());
+        for (const auto& [_StartKey, _HalfEdgeIndex] : _Starts)
         {
             if (HalfEdges_[_HalfEdgeIndex].bVisited)
             {
@@ -2441,6 +2740,7 @@ namespace
         for (std::size_t _Step = 0; _Step <= GraphEdges_.size(); ++_Step)
         {
             if (_CurrentEdge >= GraphEdges_.size()
+                || !GraphEdges_[_CurrentEdge].bActive
                 || GraphEdges_[_CurrentEdge].bUsed
                 || !_LocalEdges.insert(_CurrentEdge).second)
             {
@@ -2481,7 +2781,8 @@ namespace
             std::vector<std::size_t> _Candidates;
             for (const auto _Candidate : Nodes_[_NextNode].IncidentEdges)
             {
-                if (GraphEdges_[_Candidate].bUsed || _LocalEdges.contains(_Candidate))
+                if (!GraphEdges_[_Candidate].bActive
+                    || GraphEdges_[_Candidate].bUsed || _LocalEdges.contains(_Candidate))
                 {
                     continue;
                 }
@@ -2598,104 +2899,42 @@ namespace
     {
         std::size_t EdgeIndex = 0;
         std::size_t StartNode = 0;
-        double dAxisAngle = 0.0;
-        int nDirectionPriority = 0;
+        SContourStartKey Key{};
     };
 
     std::vector<SOuterSeed> FindOuterSeeds(
-        IN const std::vector<SGraphNode>& Nodes_,
         IN const std::vector<SGraphEdge>& GraphEdges_,
         IN double Tolerance_)
     {
-        if (GraphEdges_.empty())
-        {
-            return {};
-        }
-        double _LowestY = (std::numeric_limits<double>::max)();
-        std::vector<SProjectedEdgeBounds> _Bounds;
-        _Bounds.reserve(GraphEdges_.size());
-        for (const auto& _GraphEdge : GraphEdges_)
-        {
-            _Bounds.push_back(GetBounds(_GraphEdge.Projected));
-            _LowestY = std::min(_LowestY, _Bounds.back().MinimumY);
-        }
-
         std::vector<SOuterSeed> _Seeds;
         for (std::size_t _EdgeIndex = 0; _EdgeIndex < GraphEdges_.size(); ++_EdgeIndex)
         {
             const auto& _GraphEdge = GraphEdges_[_EdgeIndex];
-            if (_Bounds[_EdgeIndex].MinimumY > _LowestY + Tolerance_
+            if (!_GraphEdge.bActive
                 || _GraphEdge.StartNode == _GraphEdge.EndNode)
             {
                 continue;
             }
-            const auto _StartIsLowest = std::abs(
-                Nodes_[_GraphEdge.StartNode].Position.Y - _LowestY) <= Tolerance_;
-            const auto _EndIsLowest = std::abs(
-                Nodes_[_GraphEdge.EndNode].Position.Y - _LowestY) <= Tolerance_;
-
-            std::vector<std::size_t> _StartNodes;
-            if (_StartIsLowest && !_EndIsLowest)
+            for (const bool _Reverse : { false, true })
             {
-                _StartNodes.push_back(_GraphEdge.StartNode);
-            }
-            else if (_EndIsLowest && !_StartIsLowest)
-            {
-                _StartNodes.push_back(_GraphEdge.EndNode);
-            }
-            else
-            {
-                // A horizontal bottom edge has both endpoints at the lowest
-                // level. Try both directions; the axis-angle ordering below
-                // gives the stable preferred seed.
-                _StartNodes.push_back(_GraphEdge.StartNode);
-                _StartNodes.push_back(_GraphEdge.EndNode);
-            }
-
-            // The AABB selects the lowest edge.  If its actual lowest point
-            // is inside a curved edge, use the first derivative at that point
-            // only to prefer the clockwise endpoint-to-endpoint direction.
-            // The edge is deliberately not split and the point is not
-            // inserted into the graph.
-            const auto _Lowest = FindLowestCurvePoint(_GraphEdge.Projected);
-            const auto _HasInteriorLowest = _Lowest.U > 1.0e-8
-                && _Lowest.U < 1.0 - 1.0e-8;
-            const auto _StoredDirectionIsClockwise = _Lowest.Tangent.X < -kEpsilon;
-            const auto _ClockwiseStartNode = _StoredDirectionIsClockwise
-                ? _GraphEdge.StartNode
-                : _GraphEdge.EndNode;
-            for (const auto _StartNode : _StartNodes)
-            {
-                const auto _Outgoing = OutgoingDirection(
-                    _GraphEdge,
-                    _StartNode,
-                    Nodes_);
-                auto _Angle = std::atan2(_Outgoing.Y, _Outgoing.X);
-                while (_Angle > kPi) _Angle -= 2.0 * kPi;
-                while (_Angle < -kPi) _Angle += 2.0 * kPi;
                 _Seeds.push_back({
                     _EdgeIndex,
-                    _StartNode,
-                    std::abs(_Angle),
-                    _HasInteriorLowest && _StartNode == _ClockwiseStartNode ? 0 : 1 });
+                    _Reverse ? _GraphEdge.EndNode : _GraphEdge.StartNode,
+                    ContourStartKey(_GraphEdge.Projected, _Reverse, Tolerance_) });
             }
         }
 
         std::sort(_Seeds.begin(), _Seeds.end(), [](IN const auto& Left_, IN const auto& Right_) {
-            if (std::abs(Left_.dAxisAngle - Right_.dAxisAngle) > 1.0e-12)
-            {
-                return Left_.dAxisAngle < Right_.dAxisAngle;
-            }
-            if (Left_.nDirectionPriority != Right_.nDirectionPriority)
-            {
-                return Left_.nDirectionPriority < Right_.nDirectionPriority;
-            }
-            if (Left_.EdgeIndex != Right_.EdgeIndex)
-            {
-                return Left_.EdgeIndex < Right_.EdgeIndex;
-            }
-            return Left_.StartNode < Right_.StartNode;
+            return std::tie(Left_.Key, Left_.EdgeIndex, Left_.StartNode)
+                < std::tie(Right_.Key, Right_.EdgeIndex, Right_.StartNode);
         });
+        if (!_Seeds.empty())
+        {
+            const auto _LowestY = _Seeds.front().Key[0];
+            _Seeds.erase(std::find_if(_Seeds.begin(), _Seeds.end(), [&](const auto& Seed_) {
+                return Seed_.Key[0] > _LowestY;
+            }), _Seeds.end());
+        }
         return _Seeds;
     }
 
@@ -2709,6 +2948,23 @@ namespace
             std::reverse(_Edge.Samples.begin(), _Edge.Samples.end());
         }
         Wire_.dSignedArea = -Wire_.dSignedArea;
+    }
+
+    void StartWireAtLowestEdge(IN OUT SSectionWire& Wire_, IN double Tolerance_)
+    {
+        if (Wire_.Edges.empty()) return;
+        auto _First = Wire_.Edges.begin();
+        auto _BestKey = ContourStartKey(*_First, false, Tolerance_);
+        for (auto _Edge = _First + 1; _Edge != Wire_.Edges.end(); ++_Edge)
+        {
+            const auto _Key = ContourStartKey(*_Edge, false, Tolerance_);
+            if (_Key < _BestKey)
+            {
+                _First = _Edge;
+                _BestKey = _Key;
+            }
+        }
+        std::rotate(Wire_.Edges.begin(), _First, Wire_.Edges.end());
     }
 }
 
@@ -2796,18 +3052,7 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         {
             continue;
         }
-        if (std::none_of(
-            _ProjectedEdges.begin(),
-            _ProjectedEdges.end(),
-            [&](IN const auto& _Existing) {
-                return SameProjectedEdge(
-                    _Existing,
-                    *_Projected,
-                    Options_.dConnectionTolerance);
-            }))
-        {
-            _ProjectedEdges.push_back(*_Projected);
-        }
+        _ProjectedEdges.push_back(*_Projected);
     }
     if (_ProjectedEdges.empty())
     {
@@ -2815,7 +3060,14 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         return _Result;
     }
 
-    // The original BRep edge endpoints are not sufficient graph vertices:
+    // 1. Merge coincident coverage, including contained and partially
+    // overlapping edges. Only surviving endpoints participate in step 2.
+    const auto _UnmergedCount = _ProjectedEdges.size();
+    _ProjectedEdges = MergeProjectedEdges(std::move(_ProjectedEdges), Options_);
+    _Result.Diagnostics.push_back("Merged " + std::to_string(_UnmergedCount - _ProjectedEdges.size())
+        + " overlapping projected edges before endpoint-on-edge splitting");
+
+    // 2. The original BRep edge endpoints are not sufficient graph vertices:
     // one edge endpoint may lie in the interior of another projected edge.
     // Planarize those T-junctions before constructing the connectivity graph.
     const auto _ProjectedEdgeIndex = BuildProjectedEdgeIndex(
@@ -2887,6 +3139,8 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
             + " projected edges at endpoint-on-edge interior contacts");
     }
 
+    // 3. Merge points only after all remaining endpoint-on-edge contacts have
+    // split their hosts. Do not merge edges again: these splits define nodes.
     std::vector<SGraphNode> _Nodes;
     std::vector<SGraphEdge> _GraphEdges;
     std::unordered_map<SGridKey, std::vector<std::size_t>, SGridKeyHash> _Grid;
@@ -2974,7 +3228,7 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
     if (!_Outer)
     {
         for (const auto& _Seed : FindOuterSeeds(
-                 _Nodes, _GraphEdges, Options_.dConnectionTolerance))
+                 _GraphEdges, Options_.dConnectionTolerance))
         {
             const auto _Candidate = TraceLoop(
                 _Seed.EdgeIndex,
@@ -3063,6 +3317,7 @@ SSectionWiresResult CExtrudeRecognizesService::ExtractSectionWires(
         {
             ReverseWire(_Wire);
         }
+        StartWireAtLowestEdge(_Wire, Options_.dConnectionTolerance);
         _Result.Wires.push_back(std::move(_Wire));
     }
     _Result.bSuccess = true;

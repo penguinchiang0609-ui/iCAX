@@ -9,6 +9,7 @@ import {
 } from "./colliderPDO.mjs";
 import {
   loadRenderResource,
+  loadRenderResources,
   RenderFlags,
   RenderGeometryKind,
   RenderLayers,
@@ -512,10 +513,24 @@ export class ThreeRenderViewport {
       }
     }
 
-    const resources = await Promise.all(
-      [...references.values()].map((reference) =>
-        this.#loadViewResource(resourceClient, reference)),
-    );
+    const pending = [...references.entries()]
+      .filter(([key]) => !this.resourcePromises.has(key));
+    if (typeof resourceClient.getMany === "function") {
+      for (let offset = 0; offset < pending.length; offset += 4) {
+        const batch = pending.slice(offset, offset + 4);
+        if (batch.length < 2) continue;
+        const loaded = loadRenderResources(resourceClient, batch.map(([, reference]) => reference));
+        batch.forEach(([key], index) => {
+          const request = loaded.then((resources) => resources[index]).catch((error) => {
+            this.resourcePromises.delete(key);
+            throw error;
+          });
+          this.resourcePromises.set(key, request);
+        });
+      }
+    }
+    const resources = await Promise.all([...references.values()].map((reference) =>
+      this.#loadViewResource(resourceClient, reference)));
     if (generation !== this.viewApplyGeneration || this.isDisposed) {
       return {
         applied: false,

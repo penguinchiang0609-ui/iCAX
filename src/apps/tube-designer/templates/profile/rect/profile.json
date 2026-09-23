@@ -2,6 +2,7 @@
   "schema": "icax.tube-profile-descriptor",
   "schemaVersion": 3,
   "profileForm": "parametric",
+  "fitterPriority": 90,
   "recognition": {
     "schemaVersion": 1,
     "entryPoint": "fitting.py"

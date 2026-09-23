@@ -148,6 +148,7 @@ def generate(parameters,context):
         raise ValueError("首级支架无法落在梯梁上：请减小踏板/支撑高度或增加级高")
     model=NeutralModel(template_id="straight-steel-staircase",template_version="2.1.0",
         package_digest=str(context.get("template",{}).get("packageDigest","")),parameters=deepcopy(p))
+    shared_tubes=shared("shared_tube_geometry.py").SharedTubeGeometry(model)
     display=[];export=[];rows=[];placement={"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"zAxis":[0,0,1]}
     signatures={};tube_centers={};pending_posts=[]
     def boolean(key,target,tools,operation,keep_point=None):
@@ -162,19 +163,28 @@ def generate(parameters,context):
         return prism(key,[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],[0,0,z0],[1,0,0],[0,1,0],[0,0,z1-z0])
     def tube(key,start,end,pf,x,y,outer=False):
         tube_centers[key+'.solid']=[(start[i]+end[i])/2 for i in range(3)]
-        path=model.geometry(key+".profile","profile2d",arguments={"placement":{"origin":list(start),"xAxis":list(x),"yAxis":list(y)},
-                                 "contours":pf.contours()[:1] if outer else pf.contours()})
-        return model.geometry(key+".solid","extrude",inputs=[path],arguments={"vector":[end[i]-start[i] for i in range(3)]})
-    def item(key,name,solid,kind,dimensions,pf=None,operations=None,purchased=False):
+        return shared_tubes.emit_tube(key,profile_arguments={
+            "placement":{"origin":list(start),"xAxis":list(x),"yAxis":list(y)},
+            "contours":pf.contours()[:1] if outer else pf.contours()},
+            extrude_arguments={"vector":[end[i]-start[i] for i in range(3)]})
+    def item(key,name,solid,kind,dimensions,pf=None,operations=None,purchased=False,display_solid=None):
+        display_solid=solid if display_solid is None else display_solid
         if continuous and name in ('栏杆立柱','平台栏杆立柱'):
             center=tube_centers[solid]
             witness=[center[0]+pf.width/2-pf.wall/2,center[1],center[2]]
             witness=[placement['origin'][i]+sum(witness[j]*placement[k][i] for j,k in enumerate(('xAxis','yAxis','zAxis'))) for i in range(3)]
             center=[placement['origin'][i]+sum(center[j]*placement[k][i] for j,k in enumerate(('xAxis','yAxis','zAxis'))) for i in range(3)]
             placed=model.geometry(key+'.pending','transform',inputs=[solid],arguments={'placement':deepcopy(placement)})
-            pending_posts.append((key,name,placed,kind,dimensions,pf,operations,center,witness))
+            display_placed=(placed if display_solid==solid else model.geometry(
+                key+'.display.pending','transform',inputs=[display_solid],arguments={'placement':deepcopy(placement)}))
+            pending_posts.append((key,name,placed,kind,dimensions,pf,operations,center,witness,display_placed))
             return
-        placed=model.geometry(key+".placed","transform",inputs=[solid],arguments={"placement":deepcopy(placement)})
+        if display_solid==solid:
+            placed=model.geometry(key+".placed","transform",inputs=[solid],arguments={"placement":deepcopy(placement)})
+            display_placed=placed
+        else:
+            display_placed=model.geometry(key+".display.placed","transform",inputs=[display_solid],arguments={"placement":deepcopy(placement)})
+            placed=model.geometry(key+".placed","transform",inputs=[solid],arguments={"placement":deepcopy(placement)})
         props={"partNumber":p["productCode"]+"-"+key,"quantity":1,"group":key.split(".")[0]+"."+key.split(".")[1],
                "manufacturing.partKind":kind,"manufacturing.sourcing":"purchased" if purchased else "made",
                "manufacturing.material":p["treadMaterial"] if purchased else p["materialGrade"],
@@ -186,7 +196,7 @@ def generate(parameters,context):
             props["tubeDesigner.endProcess"]={"startCut":"geometry","endCut":"geometry","cutSource":"finished_geometry",
                    "lengthBasis":"blank_axial_extent","connection":"weld"}
         else:props["manufacturing.plate"]={"width":dimensions[0],"height":dimensions[1],"thickness":dimensions[2],"areaMm2":dimensions[0]*dimensions[1]}
-        rep={"display":placed}
+        rep={"display":display_placed}
         if not purchased:rep["export"]=placed
         k=model.item(key,name,representations=rep,properties=props)
         display.append(k)
@@ -196,14 +206,19 @@ def generate(parameters,context):
         rows.append({"key":key,"values":{"name":name,"kind":kind,"length":round(max(dimensions),3),"quantity":1,"sourcing":props["manufacturing.sourcing"]}})
     def metal_plate(key,name,width,height,thick,center,x=(1,0,0),y=(0,1,0),holes=()):
         solid=plate.emit_rectangular_plate(model,key,width=width,height=height,thickness=thick,center=center,x_axis=x,y_axis=y,holes=holes)
-        item(key,name,solid,"plate",[width,height,thick],operations=list(holes))
+        # The blank plate is sufficient in the assembled product view; bolt
+        # holes stay in the manufacturing representation.
+        item(key,name,solid,"plate",[width,height,thick],operations=list(holes),
+             display_solid=key+".solid" if holes else solid)
         return solid
     def rect_tube(key,name,start,end,pf,x,y,cut=None,ops=None,receivers=()):
-        solid=tube(key,start,end,pf,x,y)
+        raw=tube(key,start,end,pf,x,y);solid=raw
         if cut:solid=boolean(key+".trimmed",solid,[cut],"intersect")
         solid=boolean(key+".coped",solid,list(receivers),"subtract")
         if receivers:ops=list(ops or [])+[{"kind":"outer_envelope_cope","receivers":list(receivers)}]
-        item(key,name,solid,"tube",[math.dist(start,end)],pf,ops)
+        # Intersections with receiving members hide these end cuts in the
+        # assembled view. Keep them only for manufacturing/downstream export.
+        item(key,name,solid,"tube",[math.dist(start,end)],pf,ops,display_solid=raw)
         return solid
 
     for f in flights:
@@ -225,6 +240,11 @@ def generate(parameters,context):
             key=prefix+f".beam.{j+1}"
             if not zigzag:
                 raw=tube(key,[-pad,y,-slope*pad+center_offset],[run+pad,y,slope*(run+pad)+center_offset],beam,[0,1,0],normal)
+                display_x0=(plate_t-center_offset)/slope if f==flights[0] else plate_t
+                display_x1=run-plate_t
+                display_beam=tube(key+".display",
+                    [display_x0,y,slope*display_x0+center_offset],
+                    [display_x1,y,slope*display_x1+center_offset],beam,[0,1,0],normal)
                 keep=prism(key+".keep",outer_poly,[0,y-beam_width,0],[1,0,0],[0,0,1],[0,2*beam_width,0])
                 solid=boolean(key+".finished",raw,[keep],"intersect")
                 envelope=tube(key+".envelope",[-pad,y,-slope*pad+center_offset],[run+pad,y,slope*(run+pad)+center_offset],beam,[0,1,0],normal,outer=True)
@@ -241,7 +261,7 @@ def generate(parameters,context):
                 solid=prism(key+'.zigzag',polygon,[0,y-zigzag_t/2,0],[1,0,0],[0,0,1],[0,zigzag_t,0])
                 item(key,"锯齿板梁",solid,"plate",[run,rise+zigzag_depth,zigzag_t],operations=[{'kind':'plate_contour','points':polygon}])
             else:
-                item(key,"梯梁",solid,"tube",[blank_length],beam,[start_cut,{"kind":"vertical_end_cut","x":run-plate_t}])
+                item(key,"梯梁",solid,"tube",[blank_length],beam,[start_cut,{"kind":"vertical_end_cut","x":run-plate_t}],display_solid=display_beam)
             if plate_t:
                 floor_x0=(plate_t-beam_top_offset)/slope
                 floor_x1=(plate_t-beam_top_offset+beam_depth/c)/slope
@@ -299,7 +319,7 @@ def generate(parameters,context):
                     solid=boolean(key+f".bracket.{j}.{k}.cope",solid,[beam_envelopes[j]],"subtract",keep_point=witness)
                     item(key+f".support.{j}.{k}","钢板支架" if plate_bracket else "踏步立支架",solid,"plate" if plate_bracket else "tube",
                          [frame.width,frame_bottom-bottom,bracket_t] if plate_bracket else [frame_bottom-bottom],None if plate_bracket else frame,
-                         [{"kind":"outer_envelope_cope","receiver":prefix+f'.beam.{j+1}',"slope":slope}])
+                         [{"kind":"outer_envelope_cope","receiver":prefix+f'.beam.{j+1}',"slope":slope}],display_solid=raw)
                     model.relationship(key+f'.support.{j}.{k}.beam','weld',[key+f'.support.{j}.{k}',prefix+f'.beam.{j+1}'])
                     model.relationship(key+f'.support.{j}.{k}.cross','weld',[key+f'.support.{j}.{k}',key+('.cross.1' if support=='cross_tube' else '.cross.3')])
             if tread_kind!="none":
@@ -332,7 +352,7 @@ def generate(parameters,context):
                     keep=prism(prefix+f".guard.{sign}.post.{i}.keep",poly,[0,y-post.depth,0],[1,0,0],[0,0,1],[0,2*post.depth,0])
                     solid=boolean(prefix+f".guard.{sign}.post.{i}.cut",raw,[keep],"intersect")
                     if not continuous:solid=boolean(prefix+f".guard.{sign}.post.{i}.cope",solid,[hand_envelope],"subtract")
-                    item(prefix+f".guard.{sign}.post.{i}","栏杆立柱",solid,"tube",[top+slope*post.width-bottom],post,[{"kind":"slope_top","slope":slope}])
+                    item(prefix+f".guard.{sign}.post.{i}","栏杆立柱",solid,"tube",[top+slope*post.width-bottom],post,[{"kind":"slope_top","slope":slope}],display_solid=raw)
                 if fill!="none":
                     for i,last in zip(post_indices,post_indices[1:]):
                         left=(i+.5)*G;right=(last+.5)*G
@@ -456,8 +476,9 @@ def generate(parameters,context):
         if tread_kind!="none":
             solid=plate.emit_rectangular_plate(model,key+".deck",width=length,height=width,thickness=deck,
                   center=[length/2,offset,-deck/2],x_axis=(1,0,0),y_axis=(0,1,0))
+            display_solid=solid
             solid=boolean(key+".deck.clearance",solid,deck_tools,"subtract")
-            item(key+".deck","平台铺板",solid,"glass" if tread_kind=="glass" else "plate",[length,width,deck],purchased=tread_kind!="steel")
+            item(key+".deck","平台铺板",solid,"glass" if tread_kind=="glass" else "plate",[length,width,deck],purchased=tread_kind!="steel",display_solid=display_solid)
         if p["landingColumns"]:
             intervals=[(landing.width,length-landing.width)]
             if p["stairRoute"]=="l_turn":
@@ -488,7 +509,7 @@ def generate(parameters,context):
         placement={"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"zAxis":[0,0,1]}
         rail_envelopes=network.finish(tube,prism,boolean,item,model.relationship)
         continuous=False
-        for key,name,solid,kind,dimensions,pf,ops,center,witness in pending_posts:
+        for key,name,solid,kind,dimensions,pf,ops,center,witness,display_solid in pending_posts:
             tools=[]
             for envelope,a,b,receiver in rail_envelopes:
                 dx,dy=b[0]-a[0],b[1]-a[1];length2=dx*dx+dy*dy
@@ -499,7 +520,7 @@ def generate(parameters,context):
             # leave coincident sliver faces on curved post sections.
             envelope=boolean(key+'.joint_envelope',tools[0],tools[1:],'union') if tools else None
             solid=boolean(key+'.transition_cope',solid,[envelope] if envelope else [],'subtract',keep_point=witness)
-            item(key,name,solid,kind,dimensions,pf,list(ops or [])+[{'kind':'outer_envelope_cope','receivers':tools}])
+            item(key,name,solid,kind,dimensions,pf,list(ops or [])+[{'kind':'outer_envelope_cope','receivers':tools}],display_solid=display_solid)
     model.output("display.default","display",display);model.output("export.manufacturing","export",export)
     model.table("parts","钢楼梯零件",columns=[{"key":key,"displayName":label,"valueType":typ} for key,label,typ in
          [("name","零件","string"),("kind","类别","string"),("length","毛坯尺寸","number"),("quantity","数量","integer"),("sourcing","供应","string")]],rows=rows)

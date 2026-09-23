@@ -29,7 +29,8 @@ try {
   const result = await page.evaluate(async (templates) => {
     const library = await import("/src/apps/tube-designer/webpage/assemblyLibrary.mjs");
     const patch = await import("/src/apps/tube-designer/webpage/libraryDomPatch.mjs");
-    const view = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: templates, tubeDesignerAssemblyLibrary: { selectedId: "bend" } };
+    const view = { activeAreaId: "assemblies", tubeDesignerAssemblyTemplates: templates,
+      tubeDesignerAssemblyLibrary: { selectedId: "bend", parameterDrafts: { bend: { bendMethod: "notched" } } } };
     const planResolvers = [];
     const calls = [];
     const snapshots = [];
@@ -37,8 +38,8 @@ try {
     const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     const plan = (payload) => ({
       schema: "icax.assembly-preview-plan", templateId: payload.templateId,
-      designParts: ["a", "b"].map((id) => ({ id: `design-${id}`, label: id, request: { length: 100, features: [], ends: {} }, matrix: identity, compareMatrix: identity })),
-      manufacturingParts: [{ id: "manufacturing-blank", label: "blank", request: { length: 200, features: [], ends: {} }, matrix: identity, compareMatrix: identity }],
+      designParts: ["segmentA", "segmentB"].map((id) => ({ id: `design-${id}`, role: id, label: id, request: { length: 100, features: [], ends: {} }, matrix: identity, compareMatrix: identity })),
+      manufacturingParts: [{ id: "manufacturing-blank", sourceRole: "segmentA", participantRoles: ["segmentA", "segmentB"], label: "blank", request: { length: 200, features: [], ends: {} }, matrix: identity, compareMatrix: identity }],
     });
     const context = { sceneProxy: { resources: {}, invoke(method, payload) {
       calls.push({ method, payload });
@@ -57,12 +58,12 @@ try {
       const root = document.createElement("div");
       root.className = "fake-three-viewport";
       let camera = { side: index, revision: 0 };
-      const record = { index, options, root, snapshots: [], views: [], fits: 0 };
+      const record = { index, options, root, snapshots: [], views: [], visible: [], fits: 0 };
       const viewport = {
         root,
         mount(host) { host.replaceChildren(root); return viewport; },
         async applyViewSnapshot(snapshot) { snapshots.push({ index, snapshot }); record.snapshots.push(snapshot); return { applied: true, entityIds: snapshot.rows.map((row) => row.entityId), missingGeometryEntityIds: [] }; },
-        setVisibleEntityIds() {}, setStandardView(name) { record.views.push(name); camera = { ...camera, view: name }; return true; },
+        setVisibleEntityIds(ids) { record.visible = [...ids]; }, setStandardView(name) { record.views.push(name); camera = { ...camera, view: name }; return true; },
         fitViewToViewport() { record.fits += 1; return true; }, getCameraState() { return { ...camera }; },
         setCameraState(value) { camera = { ...value }; }, dispose() { record.disposed = true; },
       };
@@ -88,8 +89,7 @@ try {
     await Promise.resolve();
     const mount = document.querySelector("main");
     const canvas = mount.querySelector("canvas");
-    const finishedRoot = mount.querySelector("[data-tube-assembly-finished-viewport]").firstElementChild;
-    const blankRoot = mount.querySelector("[data-tube-assembly-blank-viewport]").firstElementChild;
+    const sceneRoot = mount.querySelector("[data-tube-assembly-scene-viewport]").firstElementChild;
     const input = mount.querySelector('[data-tube-assembly-parameter="bendRadius"]');
     const rightScroll = mount.querySelector(".tube-connection-library-editor-body");
     input.focus({ preventScroll: true });
@@ -104,29 +104,40 @@ try {
       if (planResolvers.length) planResolvers.splice(0).forEach((resolve) => resolve());
     }
     const updated = mount.querySelector('[data-tube-assembly-parameter="bendRadius"]');
-    const finishedRows = snapshots.filter((item) => item.index === 0).at(-1)?.snapshot.rows.length;
-    const blankRows = snapshots.filter((item) => item.index === 1).at(-1)?.snapshot.rows.length;
-    const finishedFront = mount.querySelector('[data-tube-assembly-side="finished"][data-tube-assembly-camera="front"]');
-    await library.handleAssemblyLibraryAction(context, view, "tube-designer-assembly-camera", finishedFront, { renderProject: render });
+    const finishedSnapshot = snapshots.at(-1)?.snapshot;
+    const front = mount.querySelector('[data-tube-assembly-camera="front"]');
+    await library.handleAssemblyLibraryAction(context, view, "tube-designer-assembly-camera", front, { renderProject: render });
+    const explode = mount.querySelector('[data-tube-assembly-view="exploded"]');
+    await library.handleAssemblyLibraryAction(context, view, "tube-designer-assembly-set-view", explode, { renderProject: render });
+    for (let index = 0; index < 10 && snapshots.at(-1)?.snapshot === finishedSnapshot; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const explodedSnapshot = snapshots.at(-1)?.snapshot;
+    await library.handleAssemblyLibraryAction(context, view, "tube-designer-assembly-toggle-diagram", {}, { renderProject: render });
     const annotation = mount.querySelector('[data-assembly-annotation-key="bendRadius"]');
     annotation?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    const finishedBox = mount.querySelector('[data-tube-assembly-preview-pane="finished"]').getBoundingClientRect();
-    const blankBox = mount.querySelector('[data-tube-assembly-preview-pane="blank"]').getBoundingClientRect();
+    const processDetails = mount.querySelector(".tube-connection-library-process-section");
+    const leftCards = mount.querySelector(".tube-connection-library-cards");
     return {
       canvasStable: canvas === mount.querySelector("canvas"), inputStable: input === updated,
-      finishedRootStable: finishedRoot === mount.querySelector("[data-tube-assembly-finished-viewport]").firstElementChild,
-      blankRootStable: blankRoot === mount.querySelector("[data-tube-assembly-blank-viewport]").firstElementChild,
+      sceneRootStable: sceneRoot === mount.querySelector("[data-tube-assembly-scene-viewport]").firstElementChild,
       focused: document.activeElement === input, scroll: rightScroll.scrollTop,
       value: view.tubeDesignerAssemblyLibrary.parameterDrafts.bend.bendRadius,
       hasColdBend: mount.querySelector(".cam-info-pane").textContent.includes("冷折展开"),
-      hudText: mount.querySelector(".tube-connection-library-hud").textContent,
+      normalHudAbsent: !mount.querySelector(".tube-connection-library-hud"),
       diagramFocused: document.activeElement === input,
-      finishedRows,
-      blankRows,
-      finishedViews: viewportRecords[0].views,
-      blankViews: viewportRecords[1].views,
-      independentProjectionDefaults: [viewportRecords[0].options.projectionMode, viewportRecords[1].options.projectionMode],
-      splitLayout: { finishedLeft: finishedBox.left, finishedWidth: finishedBox.width, blankLeft: blankBox.left, blankWidth: blankBox.width },
+      processCollapsed: processDetails?.tagName === "DETAILS" && !processDetails.hasAttribute("open"),
+      relationAbsent: !mount.querySelector(".tube-connection-library-relation"),
+      leftColumns: getComputedStyle(leftCards).gridTemplateColumns.split(" ").filter(Boolean).length,
+      finishedRows: finishedSnapshot?.rows.length,
+      explodedRows: explodedSnapshot?.rows.length,
+      finishedGeometryUrls: finishedSnapshot?.rows.map((row) => row.data.geometry.url),
+      explodedGeometryUrls: explodedSnapshot?.rows.map((row) => row.data.geometry.url),
+      sceneViews: viewportRecords[0].views,
+      sceneVisible: viewportRecords[0].visible,
+      projectionDefault: viewportRecords[0].options.projectionMode,
+      exploded: view.tubeDesignerAssemblyLibrary.exploded,
+      viewportCount: viewportRecords.length,
       resolveCalls: calls.filter((item) => item.method.endsWith("ResolveAssemblyTemplatePreview")).length,
       previewCalls: calls.filter((item) => item.method.endsWith("PreviewPunchWizard")).length,
     };
@@ -140,33 +151,38 @@ try {
     library.attachAssemblyLibraryViewports({}, view, document.querySelector("main"));
     await new Promise((resolve) => requestAnimationFrame(() => resolve()));
     const canvases = [...document.querySelectorAll(".tube-assembly-preview-host .icax-three-viewport-canvas")];
-    const result = { count: canvases.length, distinct: canvases.length === 2 && canvases[0] !== canvases[1] };
+    const result = { count: canvases.length };
     library.disposeAssemblyLibraryViewports(view);
     return result;
   }, templates);
   assert.equal(result.canvasStable, true);
   assert.equal(result.inputStable, true);
-  assert.equal(result.finishedRootStable, true);
-  assert.equal(result.blankRootStable, true);
+  assert.equal(result.sceneRootStable, true);
   assert.equal(result.focused, true);
   assert.ok(result.scroll > 0);
   assert.equal(result.value, 55);
   assert.equal(result.hasColdBend, true);
-  assert.match(result.hudText, /左侧显示装配成品，右侧显示对应下料零件/);
+  assert.equal(result.normalHudAbsent, true, "正常预览不应常驻状态提示");
   assert.equal(result.diagramFocused, true);
+  assert.equal(result.processCollapsed, true, "加工设置默认应折叠");
+  assert.equal(result.relationAbsent, true, "右侧不应再显示重复的零件对照块");
+  assert.equal(result.leftColumns, 1, "装配工艺必须单列显示，避免名称截断和误读");
   assert.equal(result.finishedRows, 2);
-  assert.equal(result.blankRows, 1);
-  assert.ok(result.finishedViews.includes("front"));
-  assert.equal(result.blankViews.includes("front"), false, "左侧视角操作不得改变右侧相机");
-  assert.deepEqual(result.independentProjectionDefaults, ["perspective", "orthographic"]);
-  assert.ok(result.splitLayout.finishedWidth > 200 && result.splitLayout.blankWidth > 200);
-  assert.ok(result.splitLayout.blankLeft >= result.splitLayout.finishedLeft + result.splitLayout.finishedWidth,
-    "成品视口必须固定在左侧，下料视口必须固定在右侧");
+  assert.equal(result.explodedRows, 1);
+  assert.deepEqual(result.finishedGeometryUrls, ["memory://base-1", "memory://base-2"],
+    "默认成品场景不得错误套用一体下料件的缺口几何");
+  assert.deepEqual(result.explodedGeometryUrls, ["memory://result-3"],
+    "炸开状态必须显示单件工艺处理后的真实下料几何");
+  assert.ok(result.sceneViews.includes("front"));
+  assert.equal(result.sceneVisible.length, 1, "炸开状态应显示当前工艺生成的完整下料结果");
+  assert.equal(result.projectionDefault, "perspective");
+  assert.equal(result.exploded, true);
+  assert.equal(result.viewportCount, 1, "成品与炸开图必须复用同一个三维场景和相机");
   assert.ok(result.resolveCalls >= 2, "参数变化必须使旧请求失效并启动新预览");
   assert.equal(result.previewCalls, 3, "过期计划不得继续生成几何，当前计划只生成两个逻辑件和一个下料件");
-  assert.deepEqual(realViewportResult, { count: 2, distinct: true }, "页面必须创建两个独立 WebGL 视口，而不是在一个场景中偏移摆放");
+  assert.deepEqual(realViewportResult, { count: 1 }, "页面只应创建一个 WebGL 视口，成品与炸开图在同一场景切换");
   assert.deepEqual(errors, []);
-  console.log("Assembly dual viewports, independent cameras, live parameters and focus/scroll preservation passed.");
+  console.log("Assembly finished/exploded single viewport, live parameters and focus/scroll preservation passed.");
 } finally {
   await browser.close();
 }

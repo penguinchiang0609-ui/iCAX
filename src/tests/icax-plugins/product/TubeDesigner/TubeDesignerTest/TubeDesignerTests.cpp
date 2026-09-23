@@ -2777,18 +2777,33 @@ TEST(TemplateRuntimeTest, TwoFaceDirectionRebuildsMirroredFinalShapes)
     EXPECT_TRUE(_Host.IsRunning());
 }
 
-// Opt-in benchmark: compares fresh evaluations, never a cached project result.
-TEST(TemplateRuntimeTest, DISABLED_FiveFaceParallelGeometryBenchmark)
+// Opt-in benchmark: measures one maintained product template from Python model
+// generation through OCC evaluation.  It intentionally bypasses project-result
+// caches so it remains a useful guard for the latency of one preview request.
+TEST(TemplateRuntimeTest, DISABLED_ProductTemplateSingleRunGeometryBenchmark)
 {
     const auto _Root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    const auto _Fixture = TemplateProtocolFixture(_Root, "five_face_security_window");
+    const auto _Fixture = TemplateProtocolFixture(_Root, "straight_steel_staircase");
     for (const auto* _Purpose : { "display", "manufacturing" })
     {
-        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
-            InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose));
+        const auto _PythonStart = std::chrono::steady_clock::now();
+        const auto _Document = InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose);
+        const auto _PythonSeconds = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - _PythonStart).count();
+        const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(_Document);
+        std::cout << "[template benchmark] " << _Purpose << " items=" << _Model.Items.size()
+            << " python_seconds=" << _PythonSeconds << std::endl;
         std::vector<std::string> _Roots;
-        for (const auto& _Node : _Model.Geometry) _Roots.push_back(_Node.Key);
+        for (const auto& _ItemKey : _Model.Outputs.front().ItemKeys)
+        {
+            const auto _Item = std::find_if(_Model.Items.begin(), _Model.Items.end(),
+                [&](const auto& Item_) { return Item_.Key == _ItemKey; });
+            ASSERT_NE(_Item, _Model.Items.end());
+            _Roots.push_back(_Item->Representations.at("result"));
+        }
+        std::cout << "[template benchmark] " << _Purpose << " nodes=" << _Model.Geometry.size()
+            << " output_roots=" << _Roots.size() << std::endl;
         const auto _Timed = [&](std::size_t Workers_, bool Filter_) {
             const auto _Start = std::chrono::steady_clock::now();
             auto _Result = iCAX::OpenCascade::EvaluateNeutralModel(_Model, _Roots, { Workers_, Filter_ });
@@ -2821,28 +2836,39 @@ TEST(TemplateRuntimeTest, DISABLED_FiveFaceParallelGeometryBenchmark)
     }
 }
 
-TEST(TemplateRuntimeTest, DISABLED_FiveFaceBRepConversionBenchmark)
+TEST(TemplateRuntimeTest, DISABLED_ProductTemplateSingleRunDisplayMeshBenchmark)
 {
     using namespace iCAX::OpenCascade;
     const auto _Root = std::filesystem::current_path();
     iCAX::TemplateRuntime::CPythonTemplateHost _Host(EmbeddedPythonHostOptions(_Root));
-    const auto _Fixture = TemplateProtocolFixture(_Root, "five_face_security_window");
+    const auto _Fixture = TemplateProtocolFixture(_Root, "straight_steel_staircase");
     for (const auto* _Purpose : { "display", "manufacturing" })
     {
         const auto _Model = iCAX::TemplateRuntime::CTemplateCodec::ParseNeutralModel(
             InvokeExplicitTemplatePurpose(_Host, _Fixture, _Purpose));
-        const auto _Geometry = EvaluateNeutralModel(_Model);
-        std::vector<SBRepConversionInput> _Inputs;
-        for (const auto& _Item : _Model.Items)
+        std::vector<std::string> _Roots;
+        for (const auto& _ItemKey : _Model.Outputs.front().ItemKeys)
         {
-            auto _Shape = _Geometry.At(_Item.Representations.at("result"));
+            const auto _Item = std::find_if(_Model.Items.begin(), _Model.Items.end(),
+                [&](const auto& Item_) { return Item_.Key == _ItemKey; });
+            ASSERT_NE(_Item, _Model.Items.end());
+            _Roots.push_back(_Item->Representations.at("result"));
+        }
+        const auto _Geometry = EvaluateNeutralModel(_Model, _Roots);
+        std::vector<SBRepConversionInput> _Inputs;
+        for (const auto& _ItemKey : _Model.Outputs.front().ItemKeys)
+        {
+            const auto _Item = std::find_if(_Model.Items.begin(), _Model.Items.end(),
+                [&](const auto& Item_) { return Item_.Key == _ItemKey; });
+            ASSERT_NE(_Item, _Model.Items.end());
+            auto _Shape = _Geometry.At(_Item->Representations.at("result"));
             if (std::string(_Purpose) == "manufacturing") _Shape = NormalizeLinearPartForManufacturing(_Shape);
-            _Inputs.push_back({ _Shape, _Item.Key, "benchmark/" + _Item.Key });
+            _Inputs.push_back({ _Shape, _Item->Key, "benchmark/" + _Item->Key });
         }
         const auto _Timed = [&](std::size_t Workers_) {
             const auto _Start = std::chrono::steady_clock::now();
-            auto _Result = ConvertOpenCascadeShapesToBRep(_Inputs, 0.025, Workers_);
-            std::cout << "[BRep translation benchmark] " << _Purpose << " items=" << _Inputs.size()
+            auto _Result = ConvertOpenCascadeShapesToTriangleMeshes(_Inputs, 0.1, Workers_);
+            std::cout << "[display mesh benchmark] " << _Purpose << " items=" << _Inputs.size()
                 << " workers=" << Workers_ << " seconds="
                 << std::chrono::duration<double>(std::chrono::steady_clock::now() - _Start).count() << std::endl;
             return _Result;
@@ -2855,16 +2881,9 @@ TEST(TemplateRuntimeTest, DISABLED_FiveFaceBRepConversionBenchmark)
             SCOPED_TRACE(std::string(_Purpose) + ":" + _Inputs[_Index].SourceID);
             const auto& _Actual = _Parallel[_Index];
             EXPECT_EQ(_Inputs[_Index].SourceID, _Actual.Metadata.SourceId);
-            EXPECT_EQ(_Serial[_Index].Faces.size(), _Actual.Faces.size());
-            EXPECT_EQ(_Serial[_Index].Edges.size(), _Actual.Edges.size());
-            ASSERT_EQ(_Serial[_Index].Triangulations3.size(), _Actual.Triangulations3.size());
-            for (std::size_t _Face = 0; _Face < _Actual.Triangulations3.size(); ++_Face)
-                EXPECT_EQ(_Serial[_Index].Triangulations3[_Face].Geometry.Triangles.size(),
-                    _Actual.Triangulations3[_Face].Geometry.Triangles.size());
-            const auto _Rebuilt = BuildOpenCascadeShape(_Actual);
-            ASSERT_TRUE(_Rebuilt.bOK);
-            EXPECT_TRUE(BRepCheck_Analyzer(_Rebuilt.Shape).IsValid());
-            ExpectRootSelectionGeometryMatches(_Rebuilt.Shape, _Inputs[_Index].Shape);
+            EXPECT_FALSE(_Actual.Mesh.Vertices.empty());
+            EXPECT_EQ(_Serial[_Index].Mesh.Vertices.size(), _Actual.Mesh.Vertices.size());
+            EXPECT_EQ(_Serial[_Index].Mesh.Triangles, _Actual.Mesh.Triangles);
         }
     }
 }

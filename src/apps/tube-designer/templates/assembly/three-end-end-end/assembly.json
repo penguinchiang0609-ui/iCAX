@@ -1,0 +1,39 @@
+{
+  "schema":"icax.assembly-template","schemaVersion":1,"id":"three-end-end-end","version":"1.0.0",
+  "displayName":"三端汇交","category":"three-end-end-end","categoryName":"三件 · 端—端—端",
+  "summary":"三个构件端部汇交到同一节点，可选择平面 T 形或空间三向节点。",
+  "topology":"端部—端部—端部","interfaceType":"三端汇交","lockType":"焊接","motionType":"节点对正",
+  "participants":[
+    {"role":"armA","label":"构件 A","responsibility":"第一节点端","count":1},
+    {"role":"armB","label":"构件 B","responsibility":"第二节点端","count":1},
+    {"role":"armC","label":"构件 C","responsibility":"第三节点端","count":1}
+  ],
+  "parameters":[
+    {"key":"nodeLayout","displayName":"节点布局","valueType":"choice","defaultValue":"planarT","options":[{"value":"planarT","label":"平面 T 形"},{"value":"spatialY","label":"空间三向"}],"level":"basic"},
+    {"key":"miterAngle","displayName":"端切角度","valueType":"number","defaultValue":45,"min":0,"max":80,"step":1,"unit":"°","level":"basic"},
+    {"key":"fitGap","displayName":"节点间隙","valueType":"number","defaultValue":0,"min":0,"max":20,"step":0.1,"unit":"mm","level":"basic"}
+  ],
+  "partProcesses":[
+    {"id":"cut-a","participants":["armA"],"label":"A 端切","resource":{"kind":"part-process","id":"end-miter","displayName":"端面切割"},"parameterBindings":{"angle":"$miterAngle","trim":0,"rotation":0,"datum":"long"},"previewPlacement":{"target":"end","end":"end","datum":"long"}},
+    {"id":"cut-b","participants":["armB"],"label":"B 端切","resource":{"kind":"part-process","id":"end-miter","displayName":"端面切割"},"parameterBindings":{"angle":"-$miterAngle","trim":0,"rotation":0,"datum":"long"},"previewPlacement":{"target":"end","end":"end","datum":"long"}},
+    {"id":"cut-c","participants":["armC"],"label":"C 端切","resource":{"kind":"part-process","id":"end-miter","displayName":"端面切割"},"parameterBindings":{"angle":"$miterAngle","trim":0,"rotation":90,"datum":"long"},"previewPlacement":{"target":"end","end":"end","datum":"long"}}
+  ],
+  "manufacturingPlan":{"realization":"separate","blankPartPolicy":"keep-separate","blankParts":[
+    {"id":"blankA","label":"构件 A 下料","participants":["armA"]},{"id":"blankB","label":"构件 B 下料","participants":["armB"]},{"id":"blankC","label":"构件 C 下料","participants":["armC"]}
+  ]},
+  "assemblyPath":[{"id":"cut","label":"加工三个节点端面","kind":"三端端切","direction":"节点","distance":"$miterAngle"},{"id":"fit","label":"三个端部汇交定位","kind":"$nodeLayout","direction":"节点中心","distance":"$fitGap"}],
+  "previewScene":{
+    "designParts":[
+      {"role":"armA","profileRef":{"scope":"system","id":"rect"},"parameters":{"width":50,"depth":40,"wallThickness":2,"cornerRadius":2,"innerRadius":1},"length":240,"pose":{"origin":[-240,0,0],"direction":[1,0,0],"up":[0,1,0]}},
+      {"role":"armB","profileRef":{"scope":"system","id":"rect"},"parameters":{"width":50,"depth":40,"wallThickness":2,"cornerRadius":2,"innerRadius":1},"length":240,"pose":{"origin":[240,0,0],"direction":[-1,0,0],"up":[0,1,0]}},
+      {"role":"armC","profileRef":{"scope":"system","id":"rect"},"parameters":{"width":50,"depth":40,"wallThickness":2,"cornerRadius":2,"innerRadius":1},"length":240,"pose":{"origin":[0,240,0],"direction":[0,-1,0],"up":[0,0,1]},"poseVariants":[{"when":{"op":"eq","parameter":"nodeLayout","value":"spatialY"},"value":{"origin":[0,0,240],"direction":[0,0,-1],"up":[0,1,0]}}]}
+    ],
+    "manufacturingParts":[
+      {"id":"blankA","label":"A 端切下料","sourceRole":"armA","processes":["cut-a"],"explodedPose":{"origin":[-240,0,0],"direction":[1,0,0],"up":[0,1,0],"axialTranslation":-100}},
+      {"id":"blankB","label":"B 端切下料","sourceRole":"armB","processes":["cut-b"],"explodedPose":{"origin":[240,0,0],"direction":[-1,0,0],"up":[0,1,0],"axialTranslation":-100}},
+      {"id":"blankC","label":"C 端切下料","sourceRole":"armC","processes":["cut-c"],"explodedPose":{"origin":[0,240,0],"direction":[0,-1,0],"up":[0,0,1],"axialTranslation":-100},"explodedPoseVariants":[{"when":{"op":"eq","parameter":"nodeLayout","value":"spatialY"},"value":{"origin":[0,0,240],"direction":[0,0,-1],"up":[0,1,0],"axialTranslation":-100}}]}
+    ],"compareLayout":{"designOffset":[0,0,130],"manufacturingOffset":[0,0,-130]}
+  },
+  "parameterDiagram":{"schemaVersion":2,"viewBox":"0 0 240 170","paths":["M20 85 H220","M120 20 V85"],"annotations":[{"parameter":"nodeLayout","kind":"leader","side":"top","point":[120,85],"description":"选择平面或空间三端节点"},{"parameter":"miterAngle","kind":"leader","side":"right","point":[120,85],"description":"三个下料端面的切割角度"},{"parameter":"fitGap","kind":"leader","side":"bottom","point":[120,85],"description":"节点中心预留间隙"}]},
+  "outputs":{"manufacturingPartCount":3,"partGeometry":["A 端切","B 端切","C 端切"],"secondaryProcess":["三端节点定位","焊接"],"bom":[],"assemblyInstruction":true}
+}

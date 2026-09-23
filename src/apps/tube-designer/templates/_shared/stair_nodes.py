@@ -97,6 +97,10 @@ class RailNetwork:
         for i,(key,a,b,pf,_) in enumerate(self.edges):
             d=unit(sub(b,a));x=self.vertical_axes[key] if key in self.vertical_axes else unit([-d[1],d[0],0]);y=cross(d,x)
             pad=4*max(pf.width,pf.depth)
+            overlap=max(pf.width,pf.depth)/2
+            display_start=sub(a,mul(d,overlap)) if len(adjacent[ident(a)])>1 else a
+            display_end=add(b,mul(d,overlap)) if len(adjacent[ident(b)])>1 else b
+            display=tube(key+'.display_stock',display_start,display_end,pf,x,y)
             raw=tube(key+'.stock',sub(a,mul(d,pad)),add(b,mul(d,pad)),pf,x,y)
             outer=tube(key+'.network_envelope',sub(a,mul(d,pad)),add(b,mul(d,pad)),pf,x,y,outer=True)
             ops=[]
@@ -113,7 +117,7 @@ class RailNetwork:
                 ops.append({'kind':'miter' if neighbors else 'square','point':v,'inwardNormal':n})
             # Axial blank includes the extreme projection of each oblique cut.
             extra=sum((pf.width*abs(dot(op['inwardNormal'],x))+pf.depth*abs(dot(op['inwardNormal'],y)))/(2*abs(dot(op['inwardNormal'],d))) for op in ops)
-            item(key,'连续扶手转接' if key.startswith('transition.') else '扶手',raw,'tube',[math.dist(a,b)+extra],pf,ops)
+            item(key,'连续扶手转接' if key.startswith('transition.') else '扶手',raw,'tube',[math.dist(a,b)+extra],pf,ops,display_solid=display)
             envelopes.append((outer,a,b,pf))
         for index,(point,members) in enumerate(adjacent.items()):
             if len(members)==2:

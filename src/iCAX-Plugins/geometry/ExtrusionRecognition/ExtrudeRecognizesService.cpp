@@ -914,6 +914,10 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
 
     const SGeometryIndex _GeometryIndex(Geometry_);
     std::vector<SDirectionCluster> _Clusters;
+    // Weight generator spans quadratically. Dense machining holes contribute
+    // many short wall-depth edges and cylinders; summing their lengths alone
+    // can overwhelm the continuous longitudinal generators of the tube.
+    // Applying the same rule to both evidence sources keeps scale invariance.
     for (const auto& _Edge : Geometry_.Edges)
     {
         if (_Edge.Degenerated || _Edge.Curve3Id == 0)
@@ -936,7 +940,7 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
             AddDirectionEvidence(
                 _Clusters,
                 *_Direction,
-                _Length,
+                _Length * _Length,
                 Options_.dAngularToleranceRadians);
         }
     }
@@ -963,7 +967,7 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
                     AddDirectionEvidence(
                         _Clusters,
                         _SurfaceValue.Placement.ZDirection,
-                        _Span,
+                        _Span * _Span,
                         Options_.dAngularToleranceRadians);
                 }
             }
@@ -982,7 +986,7 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
                     AddDirectionEvidence(
                         _Clusters,
                         _Direction,
-                        _Span,
+                        _Span * _Span,
                         Options_.dAngularToleranceRadians);
                 }
                 if (TryAddBSplineGenerators(
@@ -996,7 +1000,7 @@ SExtrusionDirectionResult CExtrudeRecognizesService::Recognize(
                     AddDirectionEvidence(
                         _Clusters,
                         _Direction,
-                        _Span,
+                        _Span * _Span,
                         Options_.dAngularToleranceRadians);
                 }
             }

@@ -1,0 +1,117 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "insert-sleeve",
+  "version": "1.0.0",
+  "displayName": "同轴套接 / 伸缩",
+  "category": "two-end-end",
+  "categoryName": "两件 · 端—端",
+  "summary": "两个端部同轴套接，可固定搭接或保留轴向伸缩行程。",
+  "topology": "端部—端部",
+  "interfaceType": "同轴套接",
+  "lockType": "可选焊接、螺栓或销轴",
+  "motionType": "直线插入 / 轴向滑动",
+  "participants": [
+    { "role": "insertPart", "label": "插入件", "responsibility": "主动插入或内套件", "count": 1 },
+    { "role": "receivePart", "label": "承接件", "responsibility": "开口件或外套件", "count": 1 }
+  ],
+  "parameters": [
+    {
+      "key": "connectionMode",
+      "displayName": "连接方式",
+      "valueType": "choice",
+      "defaultValue": "sleeve",
+      "options": [
+        { "value": "sleeve", "label": "同轴套接" },
+        { "value": "telescopic", "label": "伸缩连接" }
+      ],
+      "level": "basic"
+    },
+    { "key": "insertDepth", "displayName": "插入深度", "valueType": "number", "defaultValue": 50, "min": 1, "max": 500, "step": 1, "unit": "mm", "level": "basic" },
+    { "key": "fitClearance", "displayName": "装配间隙", "valueType": "number", "defaultValue": 0.3, "min": 0, "max": 10, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "innerDiameter", "displayName": "插入件外径", "valueType": "number", "defaultValue": 30, "min": 4, "max": 300, "step": 1, "unit": "mm", "level": "basic" },
+    { "key": "outerDiameter", "displayName": "承接件外径", "valueType": "number", "defaultValue": 60, "min": 10, "max": 500, "step": 1, "unit": "mm", "level": "basic" },
+    {
+      "key": "travelLength",
+      "displayName": "有效伸缩行程",
+      "valueType": "number",
+      "defaultValue": 80,
+      "min": 1,
+      "max": 1000,
+      "step": 1,
+      "unit": "mm",
+      "level": "basic",
+      "visibleWhen": { "op": "eq", "parameter": "connectionMode", "value": "telescopic" }
+    },
+    { "key": "wallThickness", "displayName": "示例壁厚", "valueType": "number", "defaultValue": 2, "min": 0.5, "max": 20, "step": 0.5, "unit": "mm", "level": "advanced" },
+    {
+      "key": "lockMethod",
+      "displayName": "锁止方式",
+      "valueType": "choice",
+      "defaultValue": "none",
+      "options": [
+        { "value": "none", "label": "仅配合" },
+        { "value": "weld", "label": "焊接" },
+        { "value": "bolt", "label": "螺栓" },
+        { "value": "pin", "label": "销轴" }
+      ],
+      "level": "advanced"
+    }
+  ],
+  "partProcesses": [],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      { "id": "insertBlank", "label": "插入件下料", "participants": ["insertPart"] },
+      { "id": "receiveBlank", "label": "承接件下料", "participants": ["receivePart"] }
+    ]
+  },
+  "assemblyPath": [
+    { "id": "align", "label": "对正插入轴与接口", "kind": "对正", "direction": "assembly.z", "distance": 0 },
+    { "id": "insert", "label": "沿装配轴进入目标深度", "kind": "$connectionMode", "direction": "assembly.z", "distance": "$insertDepth" },
+    { "id": "lock", "label": "按选择方式锁止或保留滑动", "kind": "$lockMethod", "direction": "assembly.z", "distance": 0 }
+  ],
+  "previewScene": {
+    "designParts": [
+      {
+        "role": "insertPart",
+        "profileRef": { "scope": "system", "id": "round" },
+        "parameters": { "width": "$innerDiameter", "wallThickness": "$wallThickness", "innerOffsetX": 0, "innerOffsetY": 0 },
+        "length": 280,
+        "pose": { "origin": ["-$insertDepth", 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      },
+      {
+        "role": "receivePart",
+        "profileRef": { "scope": "system", "id": "round" },
+        "parameters": { "width": "$outerDiameter", "wallThickness": "$wallThickness", "innerOffsetX": 0, "innerOffsetY": 0 },
+        "length": 360,
+        "pose": { "origin": [-180, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
+      }
+    ],
+    "manufacturingParts": [
+      { "id": "insertBlank", "label": "插入件下料", "sourceRole": "insertPart", "processes": [], "explodedPose": { "origin": ["-$insertDepth", 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "axialTranslation": "$insertDepth + 280" } },
+      { "id": "receiveBlank", "label": "承接件下料", "sourceRole": "receivePart", "processes": [], "explodedPose": { "origin": [-180, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 120], "manufacturingOffset": [0, 0, -120] }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 260 170",
+    "paths": ["M20 70 H240 V115 H20 Z", "M112 20 H148 V150 H112 Z"],
+    "annotations": [
+      { "parameter": "connectionMode", "kind": "leader", "side": "top", "point": [130, 82], "description": "切换固定套接或保留轴向伸缩行程" },
+      { "parameter": "insertDepth", "kind": "linear", "axis": "y", "side": "right", "from": [130, 70], "to": [130, 115], "description": "插入件进入承接件的有效距离" },
+      { "parameter": "fitClearance", "kind": "leader", "side": "left", "point": [112, 70], "description": "接口轮廓与插入件之间的装配间隙" },
+      { "parameter": "innerDiameter", "kind": "linear", "axis": "x", "side": "top", "from": [112, 40], "to": [148, 40], "description": "插入件外轮廓尺寸" },
+      { "parameter": "outerDiameter", "kind": "linear", "axis": "y", "side": "bottom", "from": [220, 70], "to": [220, 115], "description": "承接件示例外径" }
+    ]
+  },
+  "outputs": {
+    "manufacturingPartCount": 2,
+    "partGeometry": ["内套插入件", "外套承接件"],
+    "secondaryProcess": ["同轴套接或轴向伸缩", "按选项锁止"],
+    "bom": ["按锁止方式选配螺栓或销轴"],
+    "assemblyInstruction": true
+  }
+}

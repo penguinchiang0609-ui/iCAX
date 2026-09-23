@@ -2,10 +2,10 @@
   "schema": "icax.assembly-template",
   "schemaVersion": 1,
   "id": "bend",
-  "version": "1.2.0",
-  "displayName": "折弯",
-  "category": "integrated",
-  "categoryName": "一体成形",
+  "version": "1.3.0",
+  "displayName": "一体折弯",
+  "category": "two-end-end",
+  "categoryName": "两件 · 端—端",
   "summary": "把相邻逻辑管段归并为一个连续下料零件，可选择冷折展开或调用单件槽口工艺实现开槽折弯。",
   "topology": "连续管段—折弯—连续管段",
   "interfaceType": "连续母材",
@@ -26,6 +26,29 @@
         { "value": "notched", "label": "开槽折弯" }
       ],
       "level": "basic"
+    },
+    {
+      "key": "bendPlane",
+      "displayName": "折弯空间",
+      "valueType": "choice",
+      "defaultValue": "planar",
+      "options": [
+        { "value": "planar", "label": "平面折弯" },
+        { "value": "spatial", "label": "空间折弯" }
+      ],
+      "level": "basic"
+    },
+    {
+      "key": "planeRotation",
+      "displayName": "折弯平面转角",
+      "valueType": "number",
+      "defaultValue": 45,
+      "min": -180,
+      "max": 180,
+      "step": 1,
+      "unit": "°",
+      "level": "basic",
+      "visibleWhen": { "op": "eq", "parameter": "bendPlane", "value": "spatial" }
     },
     { "key": "angle", "displayName": "折弯角度", "valueType": "number", "defaultValue": 90, "min": 1, "max": 170, "step": 1, "unit": "°", "level": "basic" },
     { "key": "bendRadius", "displayName": "折弯半径", "valueType": "number", "defaultValue": 40, "min": 0.01, "max": 100000, "step": 0.1, "unit": "mm", "level": "basic" },
@@ -89,6 +112,7 @@
   "assemblyPath": [
     { "id": "merge", "label": "将逻辑管段归并为连续毛坯", "kind": "下料归并", "direction": "连续轴线", "distance": 0 },
     { "id": "develop", "label": "按所选方式计算展开和下料形状", "kind": "$bendMethod", "direction": "折弯区", "distance": "$bendRadius" },
+    { "id": "orient-plane", "label": "空间折弯时先转到目标折弯平面", "kind": "$bendPlane", "direction": "管轴", "distance": "$planeRotation" },
     { "id": "bend", "label": "绕折弯轴形成目标角度", "kind": "折弯", "direction": "折弯轴", "distance": "$angle" }
   ],
   "previewScene": {
@@ -105,7 +129,10 @@
         "profileRef": { "scope": "system", "id": "rect" },
         "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 },
         "length": 260,
-        "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "axisAngle": { "axis": [0, 1, 0], "degrees": "-$angle" } }
+        "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "bendAngle": "-$angle", "bendPlaneRotation": 0 },
+        "poseVariants": [
+          { "when": { "op": "eq", "parameter": "bendPlane", "value": "spatial" }, "value": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "bendAngle": "-$angle", "bendPlaneRotation": "$planeRotation" } }
+        ]
       }
     ],
     "manufacturingParts": [
@@ -118,7 +145,7 @@
           { "when": { "op": "eq", "parameter": "bendMethod", "value": "cold" }, "value": "($bendRadius + $bendFactor * 2) * $angle / 57.295779513 + 520" }
         ],
         "processes": ["bend-slot"],
-        "pose": { "origin": [-300, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
+        "explodedPose": { "origin": [-300, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
       }
     ],
     "compareLayout": { "designOffset": [0, 0, 140], "manufacturingOffset": [0, 0, -160] }
@@ -132,6 +159,8 @@
     ],
     "annotations": [
       { "parameter": "bendMethod", "kind": "leader", "side": "top", "point": [112, 135], "description": "选择冷折展开或开槽折弯" },
+      { "parameter": "bendPlane", "kind": "leader", "side": "top", "point": [147, 100], "description": "选择共面折弯或带转管角的空间折弯" },
+      { "parameter": "planeRotation", "kind": "leader", "side": "right", "point": [174, 75], "visibleWhen": { "op": "eq", "parameter": "bendPlane", "value": "spatial" }, "description": "下一折弯平面绕管轴的转角" },
       { "parameter": "angle", "kind": "leader", "side": "right", "point": [147, 100], "description": "两个逻辑管段的目标夹角" },
       { "parameter": "bendRadius", "kind": "leader", "side": "bottom", "point": [112, 98], "description": "折弯中心线附近的目标半径" },
       { "parameter": "bendFactor", "kind": "leader", "side": "left", "point": [84, 135], "visibleWhen": { "op": "eq", "parameter": "bendMethod", "value": "cold" }, "description": "冷折展开的中性层系数" },

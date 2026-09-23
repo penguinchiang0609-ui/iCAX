@@ -1,0 +1,3035 @@
+{
+  "collected_date": "2026-09-23",
+  "samples": [
+    {
+      "manufacturer": "AndyMark",
+      "part_number": "am-2200",
+      "title": "am-2200 NanoTube20 Rev4-1.STEP",
+      "source_page": "https://www.andymark.com/products/nano-tube-20-in-aluminum-black-finish",
+      "download_url": "https://s3.amazonaws.com/docusync-files/b3e114ea81e78c9d9cf6faf06281bb709686dedce3a72b42fcb1258134d50144/am-2200 NanoTube20 Rev4-1.STEP",
+      "file": "andymark/am-2200.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "machined_bearing_holes"
+      ],
+      "catalog_status": "discontinued",
+      "status": "downloaded",
+      "bytes": 1185073,
+      "sha256": "b3e114ea81e78c9d9cf6faf06281bb709686dedce3a72b42fcb1258134d50144",
+      "resolved_url": "https://s3.amazonaws.com/docusync-files/b3e114ea81e78c9d9cf6faf06281bb709686dedce3a72b42fcb1258134d50144/am-2200%20NanoTube20%20Rev4-1.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 378,
+        "CYLINDRICAL_SURFACE": 332
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 378,
+        "axis_aligned_bbox_mm": [
+          508.0000002,
+          76.2000002,
+          38.1000002
+        ],
+        "volume_mm3": 265339.535091
+      },
+      "recognition_status": "matched",
+      "priority": "first_batch",
+      "test_focus_zh": "真实底盘管梁；大轴承孔、安装孔、偏心孔位；检查加工孔对轴向判断的干扰。",
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 508.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 76.20000000000003,
+          "innerOffsetX": 8.881784197001252e-16,
+          "innerOffsetY": -1.4210854715202004e-14,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.1750000000000007,
+          "width": 38.1
+        },
+        "details": "recognition/verified/andymark__am-2200.step.json"
+      }
+    },
+    {
+      "manufacturer": "AndyMark",
+      "part_number": "am-5001-4700",
+      "title": "am-5001-4700 Robits 0.5x0.5x47.0 Tube.STEP",
+      "source_page": "https://andymark.com/products/pre-drilled-box-tube-extrusion",
+      "download_url": "https://s3.amazonaws.com/docusync-files/0e77ffc265f77fb993f5d3d9be7a4a8e62ab58e6b7e1f2a42dfe456aa158711e/am-5001-4700 Robits 0.5x0.5x47.0 Tube.STEP",
+      "file": "andymark/am-5001-4700.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "grid_holes"
+      ],
+      "catalog_status": "listed",
+      "status": "downloaded",
+      "bytes": 2134314,
+      "sha256": "0e77ffc265f77fb993f5d3d9be7a4a8e62ab58e6b7e1f2a42dfe456aa158711e",
+      "resolved_url": "https://s3.amazonaws.com/docusync-files/0e77ffc265f77fb993f5d3d9be7a4a8e62ab58e6b7e1f2a42dfe456aa158711e/am-5001-4700%20Robits%200.5x0.5x47.0%20Tube.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 762,
+        "CYLINDRICAL_SURFACE": 752
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 762,
+        "axis_aligned_bbox_mm": [
+          12.7000002,
+          12.7000002,
+          1193.8000002
+        ],
+        "volume_mm3": 72020.3191727
+      },
+      "recognition_status": "matched",
+      "priority": "first_batch",
+      "test_focus_zh": "细长小方管、密集孔；检查尺度与孔阵列干扰。",
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 12.7,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 2.220446049250313e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.5875000000000004,
+          "width": 12.7
+        },
+        "details": "recognition/verified/andymark__am-5001-4700.step.json"
+      }
+    },
+    {
+      "manufacturer": "AndyMark",
+      "part_number": "am-5177",
+      "title": "am-5177 1x1x0.063 Wall Pre-Drilled Box Tube.STEP",
+      "source_page": "https://andymark.com/products/pre-drilled-box-tube-extrusion",
+      "download_url": "https://s3.amazonaws.com/docusync-files/62884e037cdb3947178e534fd48ef2fd22703a24b8b9a19c9a9db8ada818dc52/am-5177 1x1x0.063 Wall Pre-Drilled Box Tube.STEP",
+      "file": "andymark/am-5177.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "grid_holes"
+      ],
+      "catalog_status": "listed",
+      "status": "downloaded",
+      "bytes": 2114845,
+      "sha256": "62884e037cdb3947178e534fd48ef2fd22703a24b8b9a19c9a9db8ada818dc52",
+      "resolved_url": "https://s3.amazonaws.com/docusync-files/62884e037cdb3947178e534fd48ef2fd22703a24b8b9a19c9a9db8ada818dc52/am-5177%201x1x0.063%20Wall%20Pre-Drilled%20Box%20Tube.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 754,
+        "CYLINDRICAL_SURFACE": 744
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 754,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          25.4000002,
+          1193.8000002
+        ],
+        "volume_mm3": 169018.297789
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.400000000000002,
+          "innerOffsetX": -1.7763568394002505e-15,
+          "innerOffsetY": 0.0,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.5875000000000004,
+          "width": 25.400000000000006
+        },
+        "details": "recognition/verified/andymark__am-5177.step.json"
+      }
+    },
+    {
+      "manufacturer": "AndyMark",
+      "part_number": "am-5178",
+      "title": "am-5178 1x1x0.125 Wall Pre-Drilled Box Tube.STEP",
+      "source_page": "https://andymark.com/products/pre-drilled-box-tube-extrusion",
+      "download_url": "https://s3.amazonaws.com/docusync-files/3761135be99656645301f2a10a1fcb19e5471c9abf34497d9d660d4a36665c59/am-5178 1x1x0.125 Wall Pre-Drilled Box Tube.STEP",
+      "file": "andymark/am-5178.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "grid_holes"
+      ],
+      "catalog_status": "listed",
+      "status": "downloaded",
+      "bytes": 2114453,
+      "sha256": "3761135be99656645301f2a10a1fcb19e5471c9abf34497d9d660d4a36665c59",
+      "resolved_url": "https://s3.amazonaws.com/docusync-files/3761135be99656645301f2a10a1fcb19e5471c9abf34497d9d660d4a36665c59/am-5178%201x1x0.125%20Wall%20Pre-Drilled%20Box%20Tube.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 754,
+        "CYLINDRICAL_SURFACE": 744
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 754,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          25.4000002,
+          1193.8000002
+        ],
+        "volume_mm3": 313968.095328
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.400000000000002,
+          "innerOffsetX": -1.7763568394002505e-15,
+          "innerOffsetY": 0.0,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999999,
+          "width": 25.400000000000006
+        },
+        "details": "recognition/verified/andymark__am-5178.step.json"
+      }
+    },
+    {
+      "manufacturer": "AndyMark",
+      "part_number": "am-5179",
+      "title": "am-5179 2x1x0.063 Wall Pre-Drilled Box Tube.STEP",
+      "source_page": "https://andymark.com/products/pre-drilled-box-tube-extrusion",
+      "download_url": "https://s3.amazonaws.com/docusync-files/7fc2349fbab690f687ec6fc173671fc3b55d018ae499e6b01ef7d7e3134fc230/am-5179 2x1x0.063 Wall Pre-Drilled Box Tube.STEP",
+      "file": "andymark/am-5179.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "grid_holes"
+      ],
+      "catalog_status": "listed",
+      "status": "downloaded",
+      "bytes": 4216762,
+      "sha256": "7fc2349fbab690f687ec6fc173671fc3b55d018ae499e6b01ef7d7e3134fc230",
+      "resolved_url": "https://s3.amazonaws.com/docusync-files/7fc2349fbab690f687ec6fc173671fc3b55d018ae499e6b01ef7d7e3134fc230/am-5179%202x1x0.063%20Wall%20Pre-Drilled%20Box%20Tube.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1498,
+        "CYLINDRICAL_SURFACE": 1488
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1498,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          1193.8000002
+        ],
+        "volume_mm3": 253796.844703
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.400000000000006,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.5874999999999986,
+          "width": 50.8
+        },
+        "details": "recognition/verified/andymark__am-5179.step.json"
+      }
+    },
+    {
+      "manufacturer": "AndyMark",
+      "part_number": "am-5180",
+      "title": "am-5180 2x1x0.125 Wall Pre-Drilled Box Tube.STEP",
+      "source_page": "https://andymark.com/products/pre-drilled-box-tube-extrusion",
+      "download_url": "https://s3.amazonaws.com/docusync-files/24ff3b5be7824adddda0858047af1fa04ba9abf3fd73afa863b740737ddfa129/am-5180 2x1x0.125 Wall Pre-Drilled Box Tube.STEP",
+      "file": "andymark/am-5180.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "grid_holes"
+      ],
+      "catalog_status": "listed",
+      "status": "downloaded",
+      "bytes": 4223408,
+      "sha256": "24ff3b5be7824adddda0858047af1fa04ba9abf3fd73afa863b740737ddfa129",
+      "resolved_url": "https://s3.amazonaws.com/docusync-files/24ff3b5be7824adddda0858047af1fa04ba9abf3fd73afa863b740737ddfa129/am-5180%202x1x0.125%20Wall%20Pre-Drilled%20Box%20Tube.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1498,
+        "CYLINDRICAL_SURFACE": 1488
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1498,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          1193.8000002
+        ],
+        "volume_mm3": 483525.189156
+      },
+      "recognition_status": "matched",
+      "priority": "first_batch",
+      "test_focus_zh": "厚壁矩形管及多面孔阵列；检查轮廓边合并、端点拆边。",
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.400000000000006,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.1750000000000007,
+          "width": 50.8
+        },
+        "details": "recognition/verified/andymark__am-5180.step.json"
+      }
+    },
+    {
+      "manufacturer": "goBILDA",
+      "distributor": "ServoCity",
+      "part_number": "4100-1214-0300",
+      "title": "4100 Series Aluminum Tube (12mm ID x 14mm OD, 300mm Length)",
+      "source_page": "https://www.servocity.com/4100-series-aluminum-tube-12mm-id-x-14mm-od-300mm-length/",
+      "download_url": "https://www.servocity.com/content/step_files/4100-1214-0300.zip",
+      "archive_member": "4100-1214-0300.STEP",
+      "file": "gobilda/4100-1214-0300.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "thin_wall",
+        "circular_bore"
+      ],
+      "status": "downloaded",
+      "bytes": 17296,
+      "sha256": "bf4fbb1d12d307ca3ec91a707f9368c920eb5baafd42551de1b0a38937970571",
+      "resolved_url": "https://www.servocity.com/content/step_files/4100-1214-0300.zip",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 6,
+        "CYLINDRICAL_SURFACE": 4
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 6,
+        "axis_aligned_bbox_mm": [
+          14.0000002,
+          300.0000002,
+          14.0000002
+        ],
+        "volume_mm3": 12252.211349
+      },
+      "recognition_status": "matched",
+      "priority": "first_batch",
+      "test_focus_zh": "内径 12、外径 14、长度 300 mm 的圆管基线样本。",
+      "recognition_result": {
+        "profile_id": "round",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 300.0,
+        "cavities": 1,
+        "parameters": {
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "wallThickness": 0.9999999999999991,
+          "width": 14.0
+        },
+        "details": "recognition/verified/gobilda__4100-1214-0300.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2160",
+      "title": "MAXTube - 1x1 - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-1x1/?setCurrencyId=3",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2160.STEP",
+      "file": "rev/REV-21-2160.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "square_tube",
+        "internal_nut_grooves"
+      ],
+      "status": "downloaded",
+      "bytes": 5119345,
+      "sha256": "c3fc9441efd312ae133f8b8b38cf77701511883ef225ab1413fb921330737178",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2160.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1564,
+        "CYLINDRICAL_SURFACE": 782
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1564,
+        "axis_aligned_bbox_mm": [
+          25.4000432798,
+          25.4000432798,
+          1193.80004328
+        ],
+        "volume_mm3": 160184.604349
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "first_batch",
+      "test_focus_zh": "1×1 英寸开孔管，内壁带螺母槽；不能只按外轮廓拟合普通方管。",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2160.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2161",
+      "title": "MAXTube - 2x1 - Light - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2161.STEP",
+      "file": "rev/REV-21-2161.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "thin_wall",
+        "internal_nut_grooves",
+        "side_mounting_holes"
+      ],
+      "status": "downloaded",
+      "bytes": 2630634,
+      "sha256": "88ab0b85f1811c3df872661a2ecc8b3deb040ff01aa71b0a2cf756c5b5d39195",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2161.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 816,
+        "CYLINDRICAL_SURFACE": 394
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 816,
+        "axis_aligned_bbox_mm": [
+          25.4000432798,
+          50.8000432798,
+          1193.80004328
+        ],
+        "volume_mm3": 225395.453861
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2161.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2162",
+      "title": "MAXTube - 2x1 - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2162.STEP",
+      "file": "rev/REV-21-2162.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "internal_nut_grooves",
+        "side_mounting_holes"
+      ],
+      "status": "downloaded",
+      "bytes": 2697304,
+      "sha256": "dce2a25d85770aac5b050b52d497f93ee4602a33ad4557fc1334e630e39d945f",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2162.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 842,
+        "CYLINDRICAL_SURFACE": 406
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 842,
+        "axis_aligned_bbox_mm": [
+          25.4000432798,
+          50.8000432798,
+          1193.80004328
+        ],
+        "volume_mm3": 407568.75214
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2162.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2163",
+      "title": "MAXTube - 2x1 - MAX Pattern - 1-Pos (3in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2163.STEP",
+      "file": "rev/REV-21-2163.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "internal_nut_grooves",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 906046,
+      "sha256": "500687693e433c953a7ef01fef491ae7843532607ca2e5c8b99d014125a56dbd",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2163.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 308,
+        "CYLINDRICAL_SURFACE": 144
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 308,
+        "axis_aligned_bbox_mm": [
+          25.4003837258,
+          50.8003837258,
+          76.2003837258
+        ],
+        "volume_mm3": 20240.6359259
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "first_batch",
+      "test_focus_zh": "3 英寸短管、大 MAXSpline 轮廓孔、内部螺母槽；检查短件轴向与异形内轮廓。",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 76.2,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2163.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2164",
+      "title": "MAXTube - 2x1 - MAX Pattern - 2-Pos (5in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2164.STEP",
+      "file": "rev/REV-21-2164.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "internal_nut_grooves",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 1474554,
+      "sha256": "8254f1bb512e61b6cefa4cc169023103ae990ef4a465c83c69550fa396facabe",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2164.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 490,
+        "CYLINDRICAL_SURFACE": 254
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 490,
+        "axis_aligned_bbox_mm": [
+          25.4003837258,
+          50.8003837258,
+          127.000383726
+        ],
+        "volume_mm3": 32154.4678612
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 127.0,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2164.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2165",
+      "title": "MAXTube - 2x1 - MAX Pattern - 3-Pos (7in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2165.STEP",
+      "file": "rev/REV-21-2165.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "internal_nut_grooves",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 2043061,
+      "sha256": "b5c735ff83737057d951e29174c2b41413f288b10bc1cb0dd1f3d5879d0a256f",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2165.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 672,
+        "CYLINDRICAL_SURFACE": 364
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 672,
+        "axis_aligned_bbox_mm": [
+          25.4003837258,
+          50.8003837258,
+          177.800383726
+        ],
+        "volume_mm3": 44068.2997966
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 177.79999999999998,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2165.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2169",
+      "title": "MAXTube - 2x1 - MAX Pattern - 7-Pos (15in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2169.STEP",
+      "file": "rev/REV-21-2169.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "internal_nut_grooves",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 4315735,
+      "sha256": "b11c6830dbaf8484eefd70386f6ebcd579ad0df73f949db1f8e4b295607e7877",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2169.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1400,
+        "CYLINDRICAL_SURFACE": 804
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1400,
+        "axis_aligned_bbox_mm": [
+          25.4003837258,
+          50.8003837258,
+          381.000383726
+        ],
+        "volume_mm3": 91723.6275379
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 381.0,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2169.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2173",
+      "title": "MAXTube - 2x1 - MAX Pattern - 11-Pos (23in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2173.STEP",
+      "file": "rev/REV-21-2173.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "internal_nut_grooves",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 6588585,
+      "sha256": "855c6b6b4bc208e7da6a3448ea27dc5a235537a67e0c7042814aab349c8372b0",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2173.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 2128,
+        "CYLINDRICAL_SURFACE": 1244
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 2128,
+        "axis_aligned_bbox_mm": [
+          25.4003837258,
+          50.8003837258,
+          584.200383726
+        ],
+        "volume_mm3": 139378.955279
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 584.1999999999999,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2173.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2177",
+      "title": "MAXTube - 2x1 - MAX Pattern - 15-Pos (31in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2177.STEP",
+      "file": "rev/REV-21-2177.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "internal_nut_grooves",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 8869330,
+      "sha256": "412fc219de74dd6929d845e770f5b4f9a465e0dd1b458738409e2e5210b9b8d2",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2177.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 2856,
+        "CYLINDRICAL_SURFACE": 1684
+      },
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 2856,
+        "axis_aligned_bbox_mm": [
+          25.4003837258,
+          50.8003837258,
+          787.400383726
+        ],
+        "volume_mm3": 187034.283021
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 787.4,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2177.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2185",
+      "title": "MAXTube - 2x1 - MAX Pattern - 23-Pos (47in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2185.STEP",
+      "file": "rev/REV-21-2185.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "internal_nut_grooves",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 13531503,
+      "sha256": "65862358887661ad33db087b600283e2ef5470634c06041ccd6fc5265d59e3ee",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2185.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 4312,
+        "CYLINDRICAL_SURFACE": 2564
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 4312,
+        "axis_aligned_bbox_mm": [
+          25.4003837258,
+          50.8003837258,
+          1193.80038373
+        ],
+        "volume_mm3": 282344.938503
+      },
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2185.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2289",
+      "title": "MAXTube - 2x1 - Light - Grid Pattern - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2289.STEP",
+      "file": "rev/REV-21-2289.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "grid_holes",
+        "thin_wall",
+        "internal_nut_grooves"
+      ],
+      "status": "downloaded",
+      "bytes": 15931098,
+      "sha256": "7a34c1cc24f48392f06e0f346b1930257fde726117d05e0535a3e4aaf567d05b",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2289.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 4576,
+        "CYLINDRICAL_SURFACE": 1526
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "first_batch",
+      "test_focus_zh": "长薄壁管及密集孔阵列，内壁带槽；检查完整轮廓保留。",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 4576,
+        "axis_aligned_bbox_mm": [
+          25.4000432798,
+          50.8000432798,
+          1193.80004328
+        ],
+        "volume_mm3": 214237.824142
+      },
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2289.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-2590",
+      "title": "MAXTube - 2x1 - Grid Pattern - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-2590.STEP",
+      "file": "rev/REV-21-2590.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "grid_holes",
+        "internal_nut_grooves"
+      ],
+      "status": "downloaded",
+      "bytes": 14447923,
+      "sha256": "31943d575dbc7b9af53f2756b0f414c9ea6c23027a8436e3763bb3fcab29b636",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-2590.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 4190,
+        "CYLINDRICAL_SURFACE": 1522
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 4190,
+        "axis_aligned_bbox_mm": [
+          25.4000432798,
+          50.8000432798,
+          1193.80004328
+        ],
+        "volume_mm3": 372872.472657
+      },
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.7999999999997,
+        "cavities": 5,
+        "parameters": {},
+        "details": "recognition/verified/rev__REV-21-2590.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3540",
+      "title": "MAXTube - 1x1 - 1/16in Wall - Grid Pattern - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-1x1/?setCurrencyId=3",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3540.STEP",
+      "file": "rev/REV-21-3540.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "square_tube",
+        "grid_holes"
+      ],
+      "status": "downloaded",
+      "bytes": 2108209,
+      "sha256": "5203ec6365a9fc2bb2ed618f37ce29f7d404ff222e4116a81b3fde4f94a51db3",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3540.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 754,
+        "CYLINDRICAL_SURFACE": 744
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 754,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          25.4000002,
+          1193.8000002
+        ],
+        "volume_mm3": 168918.32974
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": -1.7763568394002505e-15,
+          "innerOffsetY": 1.0658141036401503e-14,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.5875000000000004,
+          "width": 25.4
+        },
+        "details": "recognition/verified/rev__REV-21-3540.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3543",
+      "title": "MAXTube - 1x1 - 1/8in Wall - Grid Pattern - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-1x1/?setCurrencyId=3",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3543.STEP",
+      "file": "rev/REV-21-3543.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "square_tube",
+        "grid_holes"
+      ],
+      "status": "downloaded",
+      "bytes": 2110538,
+      "sha256": "12a2372306e9276c7a002a3ef8a58de9ab34a741d8699af2aa956a9faed8b138",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3543.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 754,
+        "CYLINDRICAL_SURFACE": 744
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 754,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          25.4000002,
+          1193.8000002
+        ],
+        "volume_mm3": 313768.15923
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": -1.7763568394002505e-15,
+          "innerOffsetY": -3.552713678800501e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999999,
+          "width": 25.4
+        },
+        "details": "recognition/verified/rev__REV-21-3543.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3552",
+      "title": "MAXTube - 2x1 - 1/16in Wall - Grid Pattern - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3552.STEP",
+      "file": "rev/REV-21-3552.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "grid_holes"
+      ],
+      "status": "downloaded",
+      "bytes": 4204475,
+      "sha256": "1a08c566c0f7faf44836cc9399dbc97b4d432cd1ab17b402f77c7445828fb933",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3552.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1498,
+        "CYLINDRICAL_SURFACE": 1488
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1498,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          1193.8000002
+        ],
+        "volume_mm3": 253596.908605
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 3.552713678800501e-15,
+          "innerOffsetY": -3.552713678800501e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.5874999999999986,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3552.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3555",
+      "title": "MAXTube - 2x1 - 1/8in Wall - Grid Pattern - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3555.STEP",
+      "file": "rev/REV-21-3555.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "grid_holes"
+      ],
+      "status": "downloaded",
+      "bytes": 4204477,
+      "sha256": "37dfaec618c3a89d5c5ce80204766f6097731a8ae5770028083de68764888c0d",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3555.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1498,
+        "CYLINDRICAL_SURFACE": 1488
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1498,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          1193.8000002
+        ],
+        "volume_mm3": 483125.316961
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": 0.0,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3555.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3558",
+      "title": "MAXTube - 2x1 - 1/8in Wall - MAX Pattern - 1-Pos (3in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3558.STEP",
+      "file": "rev/REV-21-3558.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 361687,
+      "sha256": "dcc1d08d655bc354d56b372ff04a7d2763e216fbd5839d1926d94231824a0d9c",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3558.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 136,
+        "CYLINDRICAL_SURFACE": 126
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 136,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          76.2000002
+        ],
+        "volume_mm3": 27320.821167
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 76.2,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": -1.7763568394002505e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3558.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3559",
+      "title": "MAXTube - 2x1 - 1/8in Wall - MAX Pattern - 2-Pos (5in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3559.STEP",
+      "file": "rev/REV-21-3559.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 655786,
+      "sha256": "9474b8321e9133dc0c98694d99bd70c27cb61e130e9e0d81382450776a993522",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3559.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 246,
+        "CYLINDRICAL_SURFACE": 236
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 246,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          127.0000002
+        ],
+        "volume_mm3": 43874.2636678
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 127.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": -1.7763568394002505e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3559.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3560",
+      "title": "MAXTube - 2x1 - 1/8in Wall - MAX Pattern - 3-Pos (7in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3560.STEP",
+      "file": "rev/REV-21-3560.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 955934,
+      "sha256": "1584229fa699d777798d307ddaf107390dc8a14664918f04877112a701b67163",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3560.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 356,
+        "CYLINDRICAL_SURFACE": 346
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 356,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          177.8000002
+        ],
+        "volume_mm3": 60427.7061686
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 177.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": -1.7763568394002505e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3560.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3564",
+      "title": "MAXTube - 2x1 - 1/8in Wall - MAX Pattern - 7-Pos (15in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3564.STEP",
+      "file": "rev/REV-21-3564.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 2166939,
+      "sha256": "b6da783d9fa820a0fa85c922b026cfeb1d37f2c1b2af7c9cbe9e8690275cc4a2",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3564.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 796,
+        "CYLINDRICAL_SURFACE": 786
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 796,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          381.0000002
+        ],
+        "volume_mm3": 126641.476172
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 381.000000000001,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": -1.7763568394002505e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3564.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3568",
+      "title": "MAXTube - 2x1 - 1/8in Wall - MAX Pattern - 11-Pos (23in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3568.STEP",
+      "file": "rev/REV-21-3568.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 3378207,
+      "sha256": "74ff3d4b01a12679c6edbc8f20ae4ba864ff5e931b4b247e0205358fb7dac332",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3568.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1236,
+        "CYLINDRICAL_SURFACE": 1226
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1236,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          584.2000002
+        ],
+        "volume_mm3": 192855.246175
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 584.200000000001,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": -1.7763568394002505e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3568.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3572",
+      "title": "MAXTube - 2x1 - 1/8in Wall - MAX Pattern - 15-Pos (31in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3572.STEP",
+      "file": "rev/REV-21-3572.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 4589262,
+      "sha256": "46af4784921f61e9f4649f8df0766d3667369c3ccdf77b3a465f9526904db9e0",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3572.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1676,
+        "CYLINDRICAL_SURFACE": 1666
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1676,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          787.4000002
+        ],
+        "volume_mm3": 259069.016178
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 787.4,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": -1.7763568394002505e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3572.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3580",
+      "title": "MAXTube - 2x1 - 1/8in Wall - MAX Pattern - 23-Pos (47in)",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3580.STEP",
+      "file": "rev/REV-21-3580.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "mounting_holes",
+        "maxspline_cutouts"
+      ],
+      "status": "downloaded",
+      "bytes": 7011607,
+      "sha256": "9f20fdbe1b98cc598aaa1354907d92f4741b37e0fc9a3cc18dbe3faac974e3f1",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3580.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 2556,
+        "CYLINDRICAL_SURFACE": 2546
+      },
+      "recognition_status": "matched",
+      "priority": "first_batch",
+      "test_focus_zh": "47 英寸 MAX Pattern 厚壁管；检查复杂加工孔与长件处理耗时。",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 2556,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          1193.8000002
+        ],
+        "volume_mm3": 391496.556184
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 1.7763568394002505e-15,
+          "innerOffsetY": -1.7763568394002505e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 3.174999999999997,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3580.step.json"
+      }
+    },
+    {
+      "manufacturer": "REV Robotics",
+      "part_number": "REV-21-3586",
+      "title": "MAXTube - 2x1 - 3/16in Wall - Grid Pattern - 47in",
+      "source_page": "https://revrobotics.eu/MAXTube-2x1/?setCurrencyId=1",
+      "download_url": "https://revrobotics.com/content/cad/REV-21-3586.STEP",
+      "file": "rev/REV-21-3586.step",
+      "category": "catalog_machined_tube_part",
+      "features": [
+        "rectangular_tube",
+        "grid_holes"
+      ],
+      "status": "downloaded",
+      "bytes": 4204457,
+      "sha256": "e2a4e0fd359fb551db32076c1ffec959409ed21ee0dac563e445ffdb7dd45eea",
+      "resolved_url": "https://www.revrobotics.com/content/cad/REV-21-3586.STEP",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 1498,
+        "CYLINDRICAL_SURFACE": 1488
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 1498,
+        "axis_aligned_bbox_mm": [
+          25.4000002,
+          50.8000002,
+          1193.8000002
+        ],
+        "volume_mm3": 688585.225066
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 0.0,
+          "depth": 25.4,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": -2.6645352591003757e-15,
+          "innerRadius": 0.0,
+          "innerRadius1": 0.0,
+          "innerRadius2": 0.0,
+          "innerRadius3": 0.0,
+          "innerRadius4": 0.0,
+          "outerRadius1": 0.0,
+          "outerRadius2": 0.0,
+          "outerRadius3": 0.0,
+          "outerRadius4": 0.0,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 4.762499999999999,
+          "width": 50.8
+        },
+        "details": "recognition/verified/rev__REV-21-3586.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Rectangle - 100.0 X 25.0 X 1.60.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings",
+      "download_url": "https://tubecon.co.za/stp_files/Rectangle STEP/Rectangle - 100.0 X 25.0 X 1.60.step",
+      "file": "tubecon/rectangle_-_100.0_x_25.0_x_1.60.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "rectangular_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45826,
+      "sha256": "202985f0f18501f57b66afef2907aba19a14cfaa5eea272b0a7289c4725c5536",
+      "resolved_url": "https://tubecon.co.za/stp_files/Rectangle%20STEP/Rectangle%20-%20100.0%20X%2025.0%20X%201.60.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          100.0000002,
+          25.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 383167.43158
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 3.2000000000000015,
+          "depth": 100.00000000000001,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "innerRadius": 1.600000000000004,
+          "innerRadius1": 1.600000000000004,
+          "innerRadius2": 1.5999999999999972,
+          "innerRadius3": 1.600000000000004,
+          "innerRadius4": 1.600000000000004,
+          "outerRadius1": 3.2000000000000015,
+          "outerRadius2": 3.2000000000000015,
+          "outerRadius3": 3.2000000000000015,
+          "outerRadius4": 3.2000000000000015,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.5999999999999979,
+          "width": 25.000000000000007
+        },
+        "details": "recognition/verified/tubecon__rectangle_-_100.0_x_25.0_x_1.60.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Rectangle - 100.0 X 25.0 X 3.00.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings",
+      "download_url": "https://tubecon.co.za/stp_files/Rectangle STEP/Rectangle - 100.0 X 25.0 X 3.00.step",
+      "file": "tubecon/rectangle_-_100.0_x_25.0_x_3.00.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "rectangular_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45816,
+      "sha256": "2d34184d4d2baab6e00989ef1b98cbec6f94f1da95f448558c33bfd65abf983d",
+      "resolved_url": "https://tubecon.co.za/stp_files/Rectangle%20STEP/Rectangle%20-%20100.0%20X%2025.0%20X%203.00.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          100.0000002,
+          25.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 690823.001647
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 5.999999999999998,
+          "depth": 100.00000000000001,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "innerRadius": 2.9999999999999956,
+          "innerRadius1": 2.9999999999999956,
+          "innerRadius2": 2.9999999999999956,
+          "innerRadius3": 2.9999999999999956,
+          "innerRadius4": 2.9999999999999956,
+          "outerRadius1": 5.999999999999998,
+          "outerRadius2": 5.999999999999998,
+          "outerRadius3": 5.999999999999998,
+          "outerRadius4": 5.999999999999998,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 2.9999999999999982,
+          "width": 25.0
+        },
+        "details": "recognition/verified/tubecon__rectangle_-_100.0_x_25.0_x_3.00.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Rectangle - 100.0 X 50.0 X 1.60.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings",
+      "download_url": "https://tubecon.co.za/stp_files/Rectangle STEP/Rectangle - 100.0 X 50.0 X 1.60.step",
+      "file": "tubecon/rectangle_-_100.0_x_50.0_x_1.60.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "rectangular_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45840,
+      "sha256": "597e244744dadfc56410113c04c75b3da88d9e08d551c3c2e9eb5a5f0a60a296",
+      "resolved_url": "https://tubecon.co.za/stp_files/Rectangle%20STEP/Rectangle%20-%20100.0%20X%2050.0%20X%201.60.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          100.0000002,
+          50.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 463167.43158
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 3.2000000000000015,
+          "depth": 100.00000000000001,
+          "innerOffsetX": 3.552713678800501e-15,
+          "innerOffsetY": 0.0,
+          "innerRadius": 1.5999999999999972,
+          "innerRadius1": 1.5999999999999972,
+          "innerRadius2": 1.5999999999999972,
+          "innerRadius3": 1.5999999999999972,
+          "innerRadius4": 1.5999999999999972,
+          "outerRadius1": 3.2000000000000015,
+          "outerRadius2": 3.1999999999999944,
+          "outerRadius3": 3.1999999999999944,
+          "outerRadius4": 3.2000000000000015,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.6000000000000014,
+          "width": 50.000000000000014
+        },
+        "details": "recognition/verified/tubecon__rectangle_-_100.0_x_50.0_x_1.60.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Rectangle - 80.0 X 40.0 X 4.50.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=30",
+      "download_url": "https://tubecon.co.za/stp_files/Rectangle STEP/Rectangle - 80.0 X 40.0 X 4.50.step",
+      "file": "tubecon/rectangle_-_80.0_x_40.0_x_4.50.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "rectangle_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45791,
+      "sha256": "7066d8d10ce367df6776c6a21b4f20185aa358c49da30b68ed89b449348c63e4",
+      "resolved_url": "https://tubecon.co.za/stp_files/Rectangle%20STEP/Rectangle%20-%2080.0%20X%2040.0%20X%204.50.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          80.0000002,
+          40.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 946851.753706
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 9.000000000000002,
+          "depth": 80.0,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "innerRadius": 4.5000000000000036,
+          "innerRadius1": 4.5000000000000036,
+          "innerRadius2": 4.5000000000000036,
+          "innerRadius3": 4.5000000000000036,
+          "innerRadius4": 4.500000000000001,
+          "outerRadius1": 9.000000000000002,
+          "outerRadius2": 9.000000000000002,
+          "outerRadius3": 9.000000000000002,
+          "outerRadius4": 9.000000000000002,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 4.499999999999998,
+          "width": 40.00000000000001
+        },
+        "details": "recognition/verified/tubecon__rectangle_-_80.0_x_40.0_x_4.50.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Rectangle - 80.0 X 60.0 X 1.60.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=30",
+      "download_url": "https://tubecon.co.za/stp_files/Rectangle STEP/Rectangle - 80.0 X 60.0 X 1.60.step",
+      "file": "tubecon/rectangle_-_80.0_x_60.0_x_1.60.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "rectangle_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45818,
+      "sha256": "ddd4da625f2e8b32c061d30aea0b583cb6df94cf2f8a707925f3bbb035670d45",
+      "resolved_url": "https://tubecon.co.za/stp_files/Rectangle%20STEP/Rectangle%20-%2080.0%20X%2060.0%20X%201.60.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          80.0000002,
+          60.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 431167.43158
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 3.2000000000000015,
+          "depth": 80.0,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "innerRadius": 1.600000000000004,
+          "innerRadius1": 1.600000000000004,
+          "innerRadius2": 1.5999999999999972,
+          "innerRadius3": 1.600000000000004,
+          "innerRadius4": 1.5999999999999972,
+          "outerRadius1": 3.2000000000000015,
+          "outerRadius2": 3.2000000000000015,
+          "outerRadius3": 3.2000000000000015,
+          "outerRadius4": 3.2000000000000015,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 1.5999999999999979,
+          "width": 60.0
+        },
+        "details": "recognition/verified/tubecon__rectangle_-_80.0_x_60.0_x_1.60.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Round - 34.1 X 2.50.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=45",
+      "download_url": "https://tubecon.co.za/stp_files/Round STEP/Round - 34.1 X 2.50.step",
+      "file": "tubecon/round_-_34.1_x_2.50.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 17196,
+      "sha256": "fbb65b4d74a0c55d4981b90a3a8d3ae7bb387f4d4be8247d0e903b5b99e79d5b",
+      "resolved_url": "https://tubecon.co.za/stp_files/Round%20STEP/Round%20-%2034.1%20X%202.50.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 6,
+        "CYLINDRICAL_SURFACE": 4
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 6,
+        "axis_aligned_bbox_mm": [
+          34.1000002,
+          34.1000002,
+          1000.0000002
+        ],
+        "volume_mm3": 248185.819634
+      },
+      "recognition_result": {
+        "profile_id": "round",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "wallThickness": 2.5000000000000018,
+          "width": 34.1
+        },
+        "details": "recognition/verified/tubecon__round_-_34.1_x_2.50.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Round - 34.9 X 1.20.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=45",
+      "download_url": "https://tubecon.co.za/stp_files/Round STEP/Round - 34.9 X 1.20.step",
+      "file": "tubecon/round_-_34.9_x_1.20.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 17188,
+      "sha256": "b64616c565d72e1db6bbc9dee5f53df83ed38fb42dab9aa80b941ef4958392cd",
+      "resolved_url": "https://tubecon.co.za/stp_files/Round%20STEP/Round%20-%2034.9%20X%201.20.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 6,
+        "CYLINDRICAL_SURFACE": 4
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 6,
+        "axis_aligned_bbox_mm": [
+          34.9300002,
+          34.9300002,
+          1000.0000002
+        ],
+        "volume_mm3": 127159.104247
+      },
+      "recognition_result": {
+        "profile_id": "round",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "wallThickness": 1.1999999999999993,
+          "width": 34.93
+        },
+        "details": "recognition/verified/tubecon__round_-_34.9_x_1.20.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Round - 38.1 X 0.90.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=45",
+      "download_url": "https://tubecon.co.za/stp_files/Round STEP/Round - 38.1 X 0.90.step",
+      "file": "tubecon/round_-_38.1_x_0.90.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 17186,
+      "sha256": "73fcfcb969dd54aebb42611fa54238aae5e1d7e7bc386a144ad833ab9354f6e3",
+      "resolved_url": "https://tubecon.co.za/stp_files/Round%20STEP/Round%20-%2038.1%20X%200.90.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 6,
+        "CYLINDRICAL_SURFACE": 4
+      },
+      "recognition_status": "matched",
+      "priority": "first_batch",
+      "test_focus_zh": "薄壁圆钢管；检查内外圆半径、壁厚与公差。",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 6,
+        "axis_aligned_bbox_mm": [
+          38.1000002,
+          38.1000002,
+          1000.0000002
+        ],
+        "volume_mm3": 105180.522042
+      },
+      "recognition_result": {
+        "profile_id": "round",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "wallThickness": 0.9000000000000021,
+          "width": 38.1
+        },
+        "details": "recognition/verified/tubecon__round_-_38.1_x_0.90.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Square - 100.0 X 100.0 X 2.50.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=60",
+      "download_url": "https://tubecon.co.za/stp_files/Square STEP/Square - 100.0 X 100.0 X 2.50.step",
+      "file": "tubecon/square_-_100.0_x_100.0_x_2.50.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "square_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45786,
+      "sha256": "c908a72a1a5282e8054c8c1da23f583a65dd881bfb7113374df1d8c4caf156aa",
+      "resolved_url": "https://tubecon.co.za/stp_files/Square%20STEP/Square%20-%20100.0%20X%20100.0%20X%202.50.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          100.0000002,
+          100.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 958904.862255
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 4.999999999999997,
+          "depth": 100.0,
+          "innerOffsetX": -3.552713678800501e-15,
+          "innerOffsetY": 3.552713678800501e-15,
+          "innerRadius": 2.499999999999995,
+          "innerRadius1": 2.499999999999995,
+          "innerRadius2": 2.499999999999995,
+          "innerRadius3": 2.499999999999995,
+          "innerRadius4": 2.500000000000002,
+          "outerRadius1": 4.999999999999997,
+          "outerRadius2": 4.999999999999997,
+          "outerRadius3": 4.99999999999999,
+          "outerRadius4": 4.99999999999999,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 2.500000000000007,
+          "width": 100.00000000000001
+        },
+        "details": "recognition/verified/tubecon__square_-_100.0_x_100.0_x_2.50.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Square - 100.0 X 100.0 X 6.00.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=60",
+      "download_url": "https://tubecon.co.za/stp_files/Square STEP/Square - 100.0 X 100.0 X 6.00.step",
+      "file": "tubecon/square_-_100.0_x_100.0_x_6.00.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "square_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45832,
+      "sha256": "7e917525096c78fbffdd01622cea9526f730fd1a545d16d0996e82875152c73d",
+      "resolved_url": "https://tubecon.co.za/stp_files/Square%20STEP/Square%20-%20100.0%20X%20100.0%20X%206.00.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          100.0000002,
+          100.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 2163292.00659
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 11.999999999999996,
+          "depth": 100.0,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": -3.552713678800501e-15,
+          "innerRadius": 5.999999999999998,
+          "innerRadius1": 5.999999999999998,
+          "innerRadius2": 6.000000000000005,
+          "innerRadius3": 6.000000000000005,
+          "innerRadius4": 5.999999999999998,
+          "outerRadius1": 11.999999999999996,
+          "outerRadius2": 11.999999999999996,
+          "outerRadius3": 12.00000000000001,
+          "outerRadius4": 11.999999999999996,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 6.0,
+          "width": 100.00000000000003
+        },
+        "details": "recognition/verified/tubecon__square_-_100.0_x_100.0_x_6.00.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Square - 70.0 X 70.0 X 2.00.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=75",
+      "download_url": "https://tubecon.co.za/stp_files/Square STEP/Square - 70.0 X 70.0 X 2.00.step",
+      "file": "tubecon/square_-_70.0_x_70.0_x_2.00.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "square_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45791,
+      "sha256": "762b8f70a402d8e65981d9b9d41686eb785ae9618c946d4c20dbfe90f57bdbb3",
+      "resolved_url": "https://tubecon.co.za/stp_files/Square%20STEP/Square%20-%2070.0%20X%2070.0%20X%202.00.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          70.0000002,
+          70.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 533699.111843
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 4.0,
+          "depth": 70.00000000000003,
+          "innerOffsetX": -3.552713678800501e-15,
+          "innerOffsetY": 0.0,
+          "innerRadius": 1.9999999999999982,
+          "innerRadius1": 1.9999999999999982,
+          "innerRadius2": 2.0000000000000018,
+          "innerRadius3": 2.0000000000000018,
+          "innerRadius4": 2.0000000000000018,
+          "outerRadius1": 4.0,
+          "outerRadius2": 4.0000000000000036,
+          "outerRadius3": 4.000000000000011,
+          "outerRadius4": 4.0000000000000036,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 2.0,
+          "width": 70.0
+        },
+        "details": "recognition/verified/tubecon__square_-_70.0_x_70.0_x_2.00.step.json"
+      }
+    },
+    {
+      "manufacturer": "Tubecon",
+      "part_number": null,
+      "title": "Square - 75.0 X 75.0 X 5.00.step",
+      "source_page": "https://tubecon.co.za/technicalinfo/tubeconcaddrawings?page=75",
+      "download_url": "https://tubecon.co.za/stp_files/Square STEP/Square - 75.0 X 75.0 X 5.00.step",
+      "file": "tubecon/square_-_75.0_x_75.0_x_5.00.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "square_tube",
+        "plain_stock"
+      ],
+      "status": "downloaded",
+      "bytes": 45797,
+      "sha256": "5779d64cda881e72706385404570ad0322a560c4d57b53098b3a3882fa239cc3",
+      "resolved_url": "https://tubecon.co.za/stp_files/Square%20STEP/Square%20-%2075.0%20X%2075.0%20X%205.00.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'CONFIG_CONTROL_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 18,
+        "CYLINDRICAL_SURFACE": 8
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 18,
+        "axis_aligned_bbox_mm": [
+          75.0000002,
+          75.0000002,
+          1000.0000002
+        ],
+        "volume_mm3": 1335619.44902
+      },
+      "recognition_result": {
+        "profile_id": "rect",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1000.0,
+        "cavities": 1,
+        "parameters": {
+          "cornerRadius": 10.000000000000002,
+          "depth": 75.0,
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "innerRadius": 5.000000000000004,
+          "innerRadius1": 5.000000000000004,
+          "innerRadius2": 5.000000000000004,
+          "innerRadius3": 4.999999999999997,
+          "innerRadius4": 5.000000000000001,
+          "outerRadius1": 10.000000000000002,
+          "outerRadius2": 10.000000000000002,
+          "outerRadius3": 10.000000000000002,
+          "outerRadius4": 10.000000000000002,
+          "useInnerRadii": false,
+          "useOuterRadii": false,
+          "wallThickness": 5.0,
+          "width": 75.0
+        },
+        "details": "recognition/verified/tubecon__square_-_75.0_x_75.0_x_5.00.step.json"
+      }
+    },
+    {
+      "manufacturer": "West Coast Products",
+      "distributor": "CTR Electronics",
+      "part_number": "WCP-0910",
+      "title": "0.196in ID x 0.375in OD - 36in Length",
+      "source_page": "https://store.ctr-electronics.com/products/wcp-aluminum-round-tube-stock",
+      "download_url": "https://ctre.download/wcp/cad/WCP-0910.step",
+      "file": "wcp/WCP-0910.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "circular_bore"
+      ],
+      "status": "downloaded",
+      "bytes": 16909,
+      "sha256": "49b50829d67f890bf68bbd1512066fa72bd23d2231672060fba33ecb17f9f42b",
+      "resolved_url": "https://ctre.download/wcp/cad/WCP-0910.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 6,
+        "CYLINDRICAL_SURFACE": 4
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 6,
+        "axis_aligned_bbox_mm": [
+          914.4000002,
+          9.4996002,
+          9.4996002
+        ],
+        "volume_mm3": 47009.7985342
+      },
+      "recognition_result": {
+        "profile_id": "round",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 914.4,
+        "cavities": 1,
+        "parameters": {
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "wallThickness": 2.2606000000000015,
+          "width": 9.499600000000003
+        },
+        "details": "recognition/verified/wcp__WCP-0910.step.json"
+      }
+    },
+    {
+      "manufacturer": "West Coast Products",
+      "distributor": "CTR Electronics",
+      "part_number": "WCP-0913",
+      "title": "0.196in ID x 0.500in OD - 36in Length",
+      "source_page": "https://store.ctr-electronics.com/products/wcp-aluminum-round-tube-stock",
+      "download_url": "https://ctre.download/wcp/cad/WCP-0913.step",
+      "file": "wcp/WCP-0913.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "circular_bore"
+      ],
+      "status": "downloaded",
+      "bytes": 16908,
+      "sha256": "23392c470aabf9e5224b30496ddb2ea4d7c0a3ff280463f9bc5ee7ee32c0ab9a",
+      "resolved_url": "https://ctre.download/wcp/cad/WCP-0913.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 6,
+        "CYLINDRICAL_SURFACE": 4
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 6,
+        "axis_aligned_bbox_mm": [
+          914.4000002,
+          12.6746002,
+          12.6746002
+        ],
+        "volume_mm3": 97571.0469578
+      },
+      "recognition_result": {
+        "profile_id": "round",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 914.4,
+        "cavities": 1,
+        "parameters": {
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "wallThickness": 3.8481,
+          "width": 12.6746
+        },
+        "details": "recognition/verified/wcp__WCP-0913.step.json"
+      }
+    },
+    {
+      "manufacturer": "West Coast Products",
+      "distributor": "CTR Electronics",
+      "part_number": "WCP-1142",
+      "title": "0.500in Hex ID x 0.75in OD - 36in Length",
+      "source_page": "https://store.ctr-electronics.com/products/wcp-aluminum-round-tube-stock",
+      "download_url": "https://ctre.download/wcp/cad/WCP-1142.step",
+      "file": "wcp/WCP-1142.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "hexagonal_bore"
+      ],
+      "status": "downloaded",
+      "bytes": 77506,
+      "sha256": "82c4231b8f80a5b155ec811155d47902cfcd1285bf32501303124fd1aed0fc74",
+      "resolved_url": "https://ctre.download/wcp/cad/WCP-1142.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 30,
+        "CYLINDRICAL_SURFACE": 22
+      },
+      "recognition_status": "section_type_not_matched",
+      "priority": "first_batch",
+      "test_focus_zh": "外圆内六角管；检查内外轮廓必须同时匹配，不能误识别为普通圆管。",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 30,
+        "axis_aligned_bbox_mm": [
+          914.4000002,
+          19.0246002,
+          19.0246002
+        ],
+        "volume_mm3": 130925.594793
+      },
+      "recognition_result": {
+        "profile_id": "",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 914.4,
+        "cavities": 1,
+        "parameters": {},
+        "details": "recognition/verified/wcp__WCP-1142.step.json"
+      }
+    },
+    {
+      "manufacturer": "West Coast Products",
+      "distributor": "CTR Electronics",
+      "part_number": "WCP-1269",
+      "title": "0.625in ID x 0.75in OD - 47in Length",
+      "source_page": "https://store.ctr-electronics.com/products/wcp-aluminum-round-tube-stock",
+      "download_url": "https://ctre.download/wcp/cad/WCP-1269.step",
+      "file": "wcp/WCP-1269.step",
+      "category": "catalog_stock_section",
+      "features": [
+        "round_tube",
+        "circular_bore"
+      ],
+      "status": "downloaded",
+      "bytes": 16910,
+      "sha256": "936797c6f08217112a420b6ca39806c5d1844c8950a1a44e439ee9812eb31990",
+      "resolved_url": "https://ctre.download/wcp/cad/WCP-1269.step",
+      "downloaded_date": "2026-09-23",
+      "step_schema": [
+        " 'AUTOMOTIVE_DESIGN' "
+      ],
+      "entity_counts": {
+        "MANIFOLD_SOLID_BREP": 1,
+        "BREP_WITH_VOIDS": 0,
+        "CLOSED_SHELL": 1,
+        "ADVANCED_FACE": 6,
+        "CYLINDRICAL_SURFACE": 4
+      },
+      "recognition_status": "matched",
+      "priority": "extended_batch",
+      "geometry_validation": {
+        "tool": "Open CASCADE 8.0.0-p1 STEPControl_Reader + BRepCheck_Analyzer",
+        "read_ok": true,
+        "valid_brep": true,
+        "solids": 1,
+        "faces": 6,
+        "axis_aligned_bbox_mm": [
+          1193.8000002,
+          19.0246002,
+          19.0246002
+        ],
+        "volume_mm3": 103061.701231
+      },
+      "recognition_result": {
+        "profile_id": "round",
+        "axis_ok": true,
+        "contours_ok": true,
+        "length_mm": 1193.8,
+        "cavities": 1,
+        "parameters": {
+          "innerOffsetX": 0.0,
+          "innerOffsetY": 0.0,
+          "wallThickness": 1.5747999999999998,
+          "width": 19.0246
+        },
+        "details": "recognition/verified/wcp__WCP-1269.step.json"
+      }
+    }
+  ],
+  "validation_scope": "Original STEP integrity, OCCT import and valid single-solid topology; full native direction, contour and direct-fitting pipeline. All 47 axis/contour checks passed; 34 matched, 13 special sections did not match. Forward generators disabled during fitting.",
+  "sample_counts": {
+    "catalog_machined_tube_part": 30,
+    "catalog_stock_section": 17
+  },
+  "geometry_validated_count": 47,
+  "recognition_summary": {
+    "sample_count": 47,
+    "axis_correct": 47,
+    "contour_checks_passed": 47,
+    "matched": 34,
+    "unmatched": 13,
+    "profiles": {
+      "rect": 27,
+      "round": 7,
+      "no-match": 13
+    },
+    "native_tests": 32,
+    "product_tests": 2,
+    "forward_generation_forbidden": true
+  }
+}

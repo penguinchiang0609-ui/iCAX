@@ -39,6 +39,7 @@ import {
   templateProfilesForProduct,
 } from "./profileLibrary.mjs";
 import { handlePartsAreaAction, listNestingParts } from "./partsArea.mjs";
+import { importableProductManufacturingGroups } from "./manufacturingParts.mjs";
 import { handleNestingSettingsAction, handleNestingSettingsRibbonCommand } from "./nestingSettings.mjs";
 import { handleNestingPartImportAction, handleNestingPartImportRibbonCommand } from "./nestingPartImport.mjs";
 import { handleNestingStandardPartAction, handleNestingStandardPartRibbonCommand } from "./nestingStandardPart.mjs";
@@ -574,7 +575,7 @@ export async function handleDesignerAreaAction(context, view, action, target, op
     return { handled: true, result: await activateInstance(context, view, target, ops) };
   }
   if (action === "tube-designer-disassemble" || action === "tube-designer-open-disassemble") {
-    openDisassemblySelector(context, view, ops);
+    openProductNestingImportSelector(context, view, ops);
     return { handled: true };
   }
   if (action === "tube-designer-close-disassemble") {
@@ -593,7 +594,7 @@ export async function handleDesignerAreaAction(context, view, action, target, op
     return { handled: true };
   }
   if (action === "tube-designer-confirm-disassemble") {
-    return { handled: true, result: await disassembleSelected(context, view, ops, { importToNesting: true }) };
+    return { handled: true, result: await stageSelectedProductsForNesting(context, view, ops) };
   }
   if (action === "tube-designer-dismiss-disassembly-choice") {
     view.tubeDesignerPostDisassemblyChoice = null;
@@ -788,6 +789,10 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
   if (await handleNestingPartImportRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleNestingRibbonCommand(context, view, commandId, ops)) return true;
   if (await handleNestingSettingsRibbonCommand(context, view, commandId, ops)) return true;
+  if (commandId === "nesting.add-from-products") {
+    openProductNestingImportSelector(context, view, ops);
+    return true;
+  }
   if (commandId === "nesting.export-parts") {
     openNestingPartList(context, view, ops);
     return true;
@@ -848,7 +853,7 @@ export async function handleDesignerRibbonCommand(context, view, commandId, ops)
     return true;
   }
   if (commandId === "designer.export-machining" || commandId === "designer.disassemble") {
-    openDisassemblySelector(context, view, ops);
+    await openTransientPartList(context, view, ops);
     return true;
   }
   if (commandId === "designer.breakdown" || commandId === "designer.export-step") {
@@ -3762,19 +3767,26 @@ async function deleteActiveProduct(context, view, ops) {
   });
 }
 
-function openDisassemblySelector(context, view, ops) {
+function openProductNestingImportSelector(context, view, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return;
-  const instances = view.scene?.tubeDesigner?.instances ?? [];
+  const designer = view.scene?.tubeDesigner ?? {};
+  const instances = designer.instances ?? [];
   if (!instances.length) {
     view.error = "请先添加产品实例。";
     ops.renderProject(context, view);
     return;
   }
-  const activeProductId = String(view.scene?.tubeDesigner?.activeProductId
-    ?? view.scene?.tubeDesigner?.product?.entityId
-    ?? instances[0]?.entityId
-    ?? "");
-  view.tubeDesignerSelectedInstanceIds = instances.map((item) => item.entityId);
+  const importableProductIds = importableProductManufacturingGroups(
+    designer,
+    view.tubeDesignerProductsRequiringDisassembly,
+  )
+    .map((group) => String(group.productEntityId));
+  if (!importableProductIds.length) {
+    view.error = "没有可导入的已拆单产品，请先在产品页生成零件清单。";
+    ops.renderProject(context, view);
+    return;
+  }
+  view.tubeDesignerSelectedInstanceIds = importableProductIds;
   view.tubeDesignerDisassemblySelectorOpen = true;
   view.tubeDesignerPostDisassemblyChoice = null;
   view.tubeDesignerBreakdownOpen = false;
@@ -3797,12 +3809,20 @@ async function openTransientPartList(context, view, ops) {
   view.tubeDesignerBreakdownOpen = false;
   view.tubeDesignerBreakdownMode = "export";
   view.error = "";
-  return disassembleSelected(context, view, ops, { importToNesting: false });
+  return disassembleSelected(context, view, ops);
 }
 
 function toggleInstance(context, view, target, ops) {
   const instanceId = String(target?.dataset?.tubeDesignerInstanceId ?? "").trim();
   if (!instanceId) return;
+  const importableProductIds = new Set(
+    importableProductManufacturingGroups(
+      view.scene?.tubeDesigner ?? {},
+      view.tubeDesignerProductsRequiringDisassembly,
+    )
+      .map((group) => String(group.productEntityId)),
+  );
+  if (!importableProductIds.has(instanceId)) return;
   const selected = new Set(view.tubeDesignerSelectedInstanceIds ?? []);
   if (target?.checked) selected.add(instanceId);
   else selected.delete(instanceId);
@@ -3811,17 +3831,153 @@ function toggleInstance(context, view, target, ops) {
 }
 
 function toggleAllInstances(context, view, target, ops) {
-  const instances = view.scene?.tubeDesigner?.instances ?? [];
-  view.tubeDesignerSelectedInstanceIds = target?.checked ? instances.map((item) => item.entityId) : [];
+  const productIds = importableProductManufacturingGroups(
+    view.scene?.tubeDesigner ?? {},
+    view.tubeDesignerProductsRequiringDisassembly,
+  )
+    .map((group) => String(group.productEntityId));
+  view.tubeDesignerSelectedInstanceIds = target?.checked ? productIds : [];
   ops.renderProject(context, view);
 }
 
-async function disassembleSelected(context, view, ops, { importToNesting = false, showBreakdown = true } = {}) {
+async function stageSelectedProductsForNesting(context, view, ops) {
+  if (view.pending || view.tubeDesignerExportOperation) return null;
   const productEntityIds = [...new Set(view.tubeDesignerSelectedInstanceIds ?? [])];
   if (!productEntityIds.length) {
-    view.error = importToNesting
-      ? "请至少选择一个要导入下料的产品实例。"
-      : "请至少选择一个要导出零件的产品实例。";
+    view.error = "请至少选择一个要导入下料的已拆单产品。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  const designer = view.scene?.tubeDesigner ?? {};
+  const groupsByProductId = new Map(
+    importableProductManufacturingGroups(designer, view.tubeDesignerProductsRequiringDisassembly)
+      .map((group) => [String(group.productEntityId), group]),
+  );
+  const groups = productEntityIds.map((productId) => groupsByProductId.get(String(productId)));
+  if (groups.some((group) => !group)) {
+    view.error = "所选产品中存在未拆单或拆单结果已失效的实例，请先在产品页生成零件清单。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  const sourcePartIds = [...new Set(groups.flatMap((group) => group.parts)
+    .map((part) => String(part?.entityId ?? "").trim()).filter(Boolean))];
+  if (!sourcePartIds.length) {
+    view.error = "所选产品没有可导入的制造零件，请先在产品页重新生成零件清单。";
+    ops.renderProject(context, view);
+    return null;
+  }
+  return runDesignerOperation(context, view, ops, async () => {
+    const staged = await invokeDesignerRequest(context, "TubeDesigner.StageNestingParts", {
+      partEntityIds: sourcePartIds,
+    }, { timeoutMs: 180000 });
+    if (!Array.isArray(staged?.stagedParts) || !Array.isArray(staged?.partEntityIds)) {
+      throw new Error("下料零件未能关联。");
+    }
+    const sources = new Map(groups.flatMap((group) => group.parts.map((part) => [
+      String(part.entityId), { group, part },
+    ])));
+    const addedGroups = new Map();
+    for (const entry of staged.stagedParts) {
+      const source = sources.get(String(entry.sourcePartEntityId));
+      if (!source) throw new Error("下料零件与已拆单来源不一致。");
+      const { group, part } = source;
+      const batchId = String(entry.generationRunId);
+      let addedGroup = addedGroups.get(batchId);
+      if (!addedGroup) {
+        addedGroup = {
+          name: group.name,
+          productCode: group.productCode,
+          quantity: group.quantity,
+          source: "product-disassembly",
+          productEntityId: batchId,
+          generationRunId: batchId,
+          parts: [],
+        };
+        addedGroups.set(batchId, addedGroup);
+      }
+      const properties = { ...(part.properties ?? {}) };
+      delete properties["nesting.source"];
+      properties["nesting.snapshot"] = {
+        name: group.name,
+        productCode: group.productCode,
+        quantity: group.quantity,
+        source: "product-disassembly",
+      };
+      properties["nesting.source"] = {
+        kind: "product-disassembly",
+        sourceProductEntityId: String(group.productEntityId),
+        sourceGenerationRunId: String(group.generationRunId),
+        sourcePartEntityId: String(part.entityId),
+        sourceProductName: group.name,
+        sourceProductCode: group.productCode,
+        sourceStableKey: part.stableKey,
+      };
+      const { sourceMemberId, unitQuantity, plate, ...independent } = part;
+      addedGroup.parts.push({
+        ...independent,
+        entityId: String(entry.partEntityId),
+        quantity: entry.quantity,
+        instanceQuantity: 1,
+        status: "Ready",
+        properties,
+        manufacturingGeometryResourceId: entry.manufacturingGeometryResourceId,
+        manufacturingGeometryResourceVersion: entry.manufacturingGeometryResourceVersion,
+        thumbnailGeometryResourceId: entry.thumbnailGeometryResourceId,
+        thumbnailGeometryResourceVersion: entry.thumbnailGeometryResourceVersion,
+      });
+    }
+    for (const group of addedGroups.values()) {
+      group.parts.sort((a, b) => Number(a.index) - Number(b.index));
+    }
+    view.scene ??= {};
+    const designer = view.scene.tubeDesigner ?? {};
+    view.scene.tubeDesigner = {
+      ...designer,
+      nestingGroups: [...(designer.nestingGroups ?? []), ...addedGroups.values()],
+      nestingTask: staged.nestingTask,
+    };
+    const stagedPartIds = staged.partEntityIds.map(String).filter(Boolean);
+    view.tubeDesignerLastOperation = {
+      kind: "import-to-nesting",
+      productEntityIds,
+      groupCount: groups.length,
+      partCount: sourcePartIds.length,
+      stagedPartCount: stagedPartIds.length,
+    };
+    view.tubeDesignerDisassemblySelectorOpen = false;
+    view.tubeDesignerPostDisassemblyChoice = null;
+    view.tubeDesignerBreakdownOpen = false;
+    view.tubeDesignerBreakdownMode = "";
+    view.tubeDesignerBreakdownProductIds = [];
+    view.tubeDesignerSelectedPartIds = [];
+    view.tubeDesignerNestingSelectedPartIds = stagedPartIds;
+    view.tubeDesignerActivePartId = stagedPartIds[0] ?? "";
+    view.tubeDesignerActiveNestingPartId = stagedPartIds[0] ?? "";
+    view.tubeDesignerActiveNestingPlacementId = "";
+    view.tubeDesignerNestingSelectionKind = "part";
+    view.tubeDesignerPartDimensionsVisible = false;
+    view.tubeDesignerPartMeasurementState = null;
+    await acknowledgeOwnMutation(context, view);
+    await context.actions?.selectRibbonTab?.("nesting");
+    context.activeRibbonTabId = "nesting";
+    view.activeAreaId = "nesting";
+    ops.showNotice(context, view, `已从 ${groups.length} 个已拆单产品导入 ${stagedPartIds.length} 种下料零件。`);
+    return view.tubeDesignerLastOperation;
+  }, {
+    operation: {
+      kind: "import-to-nesting",
+      title: "正在导入下料",
+      phase: "staging",
+      phaseLabel: "写入下料清单",
+      message: `正在关联 ${groups.length} 个已拆单产品、${sourcePartIds.length} 种制造零件`,
+    },
+  });
+}
+
+async function disassembleSelected(context, view, ops, { showBreakdown = true } = {}) {
+  const productEntityIds = [...new Set(view.tubeDesignerSelectedInstanceIds ?? [])];
+  if (!productEntityIds.length) {
+    view.error = "请至少选择一个要生成零件清单的产品实例。";
     ops.renderProject(context, view);
     return null;
   }
@@ -3839,17 +3995,13 @@ async function disassembleSelected(context, view, ops, { importToNesting = false
     const groupIdSet = new Set(productEntityIds);
     const groups = (designer.manufacturingGroups ?? []).filter((group) => groupIdSet.has(group.productEntityId));
     if (groups.length !== productEntityIds.length || groups.some((group) => !(group.parts?.length > 0))) {
-      throw new Error(importToNesting
-        ? "批量导入下料没有返回完整的产品零件组。"
-        : "零件清单没有返回完整的产品零件组。");
+      throw new Error("零件清单没有返回完整的产品零件组。");
     }
     const partCount = groups.reduce((count, group) => count + group.parts.length, 0);
     updateDesignerOperation(context, view, {
-      phase: importToNesting ? "staging" : "organizing-results",
-      phaseLabel: importToNesting ? "写入下料清单" : "结果整理",
-      message: importToNesting
-        ? `正在把 ${groups.length} 个产品、${partCount} 种零件关联到下料清单`
-        : `拆分完成，正在整理 ${groups.length} 个产品、${partCount} 个零件`,
+      phase: "organizing-results",
+      phaseLabel: "结果整理",
+      message: `拆分完成，正在整理 ${groups.length} 个产品、${partCount} 个零件`,
     });
     view.scene ??= {};
     view.scene.tubeDesigner = designer;
@@ -3878,44 +4030,12 @@ async function disassembleSelected(context, view, ops, { importToNesting = false
       .map(String)
       .filter((productId) => !productEntityIds.includes(productId));
     view.tubeDesignerLastOperation = {
-      kind: importToNesting ? "import-to-nesting" : "persistent-part-list",
+      kind: "persistent-part-list",
       productEntityIds,
       groupCount: groups.length,
       partCount: view.tubeDesignerSelectedPartIds.length,
     };
     view.tubeDesignerPostDisassemblyChoice = null;
-    if (importToNesting) {
-      view.tubeDesignerBreakdownMode = "";
-      const sourcePartIds = view.tubeDesignerSelectedPartIds.map(String);
-      const staged = await invokeDesignerRequest(context, "TubeDesigner.StageNestingParts", {
-        partEntityIds: sourcePartIds,
-      }, { timeoutMs: 180000 });
-      if (!staged?.tubeDesigner) throw new Error("下料零件未能关联。");
-      view.scene.tubeDesigner = staged.tubeDesigner;
-      restoreLoadedProductTemplateDescriptors(view, staged.tubeDesigner);
-      const stagedPartIds = Array.isArray(staged.partEntityIds)
-        ? staged.partEntityIds.map(String).filter(Boolean)
-        : listNestingParts(staged.tubeDesigner).map((part) => String(part.entityId));
-      view.tubeDesignerNestingSelectedPartIds = stagedPartIds;
-      view.tubeDesignerSelectedPartIds = [];
-      view.tubeDesignerActivePartId = stagedPartIds[0] ?? "";
-      view.tubeDesignerActiveNestingPartId = stagedPartIds[0] ?? "";
-      view.tubeDesignerActiveNestingPlacementId = "";
-      view.tubeDesignerBreakdownOpen = false;
-      view.tubeDesignerNestingSelectionKind = "part";
-      view.tubeDesignerPartDimensionsVisible = false;
-      await acknowledgeOwnMutation(context, view);
-      await context.actions?.selectRibbonTab?.("nesting");
-      // selectRibbonTab() updates the app-shell state, but this action's
-      // context was created before the tab changed.
-      context.activeRibbonTabId = "nesting";
-      view.activeAreaId = "nesting";
-      ops.showNotice(context, view, `已导入下料：${groups.length} 个产品，共 ${stagedPartIds.length} 种零件。`);
-      return {
-        ...view.tubeDesignerLastOperation,
-        stagedPartCount: stagedPartIds.length,
-      };
-    }
     await acknowledgeOwnMutation(context, view);
     view.tubeDesignerBreakdownMode = showBreakdown ? "export" : "";
     view.tubeDesignerBreakdownOpen = showBreakdown;
@@ -3931,13 +4051,11 @@ async function disassembleSelected(context, view, ops, { importToNesting = false
     return view.tubeDesignerLastOperation;
   }, {
     operation: {
-      kind: importToNesting ? "import-to-nesting" : "persistent-part-list",
-      title: importToNesting ? "正在导入下料" : "正在生成零件清单",
+      kind: "persistent-part-list",
+      title: "正在生成零件清单",
       phase: "building-parts",
       phaseLabel: "零件生成",
-      message: importToNesting
-        ? `正在生成所选 ${productEntityIds.length} 个产品实例的下料零件`
-        : `正在生成并保存 ${productEntityIds.length} 个产品实例的制造零件`,
+      message: `正在生成并保存 ${productEntityIds.length} 个产品实例的制造零件`,
     },
   });
   return result;
@@ -3958,7 +4076,7 @@ async function disassembleActiveProduct(context, view, ops) {
   // state before that render cycle starts.
   captureParameterPanelState(context, view);
   view.tubeDesignerSelectedInstanceIds = [productId];
-  return disassembleSelected(context, view, ops, { importToNesting: false, showBreakdown: false });
+  return disassembleSelected(context, view, ops, { showBreakdown: false });
 }
 
 async function exportActiveProductParts(context, view, ops) {
@@ -3988,7 +4106,8 @@ function openBreakdownResults(context, view, ops) {
   if (view.pending || view.tubeDesignerExportOperation) return;
   const groups = view.scene?.tubeDesigner?.manufacturingGroups ?? [];
   if (!groups.length) {
-    openDisassemblySelector(context, view, ops);
+    view.error = "还没有产品零件清单，请先在产品页生成零件清单。";
+    ops.renderProject(context, view);
     return;
   }
   view.tubeDesignerBreakdownProductIds = groups.map((group) => group.productEntityId);

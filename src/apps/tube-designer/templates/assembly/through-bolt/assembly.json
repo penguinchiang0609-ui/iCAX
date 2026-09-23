@@ -2,6 +2,7 @@
   "schema": "icax.assembly-template",
   "schemaVersion": 1,
   "id": "through-bolt",
+  "catalogueHidden": true,
   "version": "1.0.0",
   "displayName": "对穿螺栓装配",
   "category": "fastener",
@@ -56,8 +57,8 @@
       }
     ],
     "manufacturingParts": [
-      { "id": "blankA", "label": "A 件孔组下料件", "sourceRole": "partA", "processes": ["hole-a"], "pose": { "origin": [-220, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
-      { "id": "blankB", "label": "B 件孔组下料件", "sourceRole": "partB", "processes": ["hole-b"], "pose": { "origin": [-220, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+      { "id": "blankA", "label": "A 件孔组下料件", "sourceRole": "partA", "processes": ["hole-a"], "explodedPose": { "origin": [-220, 0, -90], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "id": "blankB", "label": "B 件孔组下料件", "sourceRole": "partB", "processes": ["hole-b"], "explodedPose": { "origin": [-220, 0, 90], "direction": [1, 0, 0], "up": [0, 1, 0] } }
     ],
     "compareLayout": { "designOffset": [0, 0, 110], "manufacturingOffset": [0, 0, -110] }
   },

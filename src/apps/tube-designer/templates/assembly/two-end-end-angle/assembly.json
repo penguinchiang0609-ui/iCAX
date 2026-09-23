@@ -1,0 +1,61 @@
+{
+  "schema": "icax.assembly-template",
+  "schemaVersion": 1,
+  "id": "two-end-end-angle",
+  "version": "1.0.0",
+  "displayName": "直连 / 成角对接",
+  "category": "two-end-end",
+  "categoryName": "两件 · 端—端",
+  "summary": "两个端部共线或按角度相交；下料时同步生成两侧端面切割。",
+  "topology": "端部—端部",
+  "interfaceType": "共线对接 / 成角对接",
+  "lockType": "焊接或现场固定",
+  "motionType": "端面贴合",
+  "participants": [
+    { "role": "memberA", "label": "构件 A", "responsibility": "第一端部", "count": 1 },
+    { "role": "memberB", "label": "构件 B", "responsibility": "第二端部", "count": 1 }
+  ],
+  "parameters": [
+    { "key": "jointAngle", "displayName": "轴线转角", "valueType": "number", "defaultValue": 90, "min": 0, "max": 160, "step": 1, "unit": "°", "level": "basic" },
+    { "key": "fitGap", "displayName": "端面间隙", "valueType": "number", "defaultValue": 0, "min": 0, "max": 20, "step": 0.1, "unit": "mm", "level": "basic" },
+    { "key": "planeRotation", "displayName": "相交平面转角", "valueType": "number", "defaultValue": 0, "min": -180, "max": 180, "step": 1, "unit": "°", "level": "advanced" }
+  ],
+  "partProcesses": [
+    { "id": "miter-a", "participants": ["memberA"], "label": "A 端面切割", "resource": { "kind": "part-process", "id": "end-miter", "displayName": "端面切割" }, "parameterBindings": { "angle": "$jointAngle / 2", "trim": 0, "rotation": "$planeRotation + 90", "datum": "long" }, "previewPlacement": { "target": "end", "end": "end", "datum": "long" } },
+    { "id": "miter-b", "participants": ["memberB"], "label": "B 端面切割", "resource": { "kind": "part-process", "id": "end-miter", "displayName": "端面切割" }, "parameterBindings": { "angle": "-$jointAngle / 2", "trim": 0, "rotation": "$planeRotation + 90", "datum": "long" }, "previewPlacement": { "target": "end", "end": "start", "datum": "long" } }
+  ],
+  "manufacturingPlan": {
+    "realization": "separate",
+    "blankPartPolicy": "keep-separate",
+    "blankParts": [
+      { "id": "blankA", "label": "构件 A 下料", "participants": ["memberA"] },
+      { "id": "blankB", "label": "构件 B 下料", "participants": ["memberB"] }
+    ]
+  },
+  "assemblyPath": [
+    { "id": "cut", "label": "按轴线转角切割两侧端面", "kind": "端面切割", "direction": "接合面", "distance": "$jointAngle" },
+    { "id": "fit", "label": "将两个端部对正贴合", "kind": "端部对接", "direction": "装配轴", "distance": "$fitGap" }
+  ],
+  "previewScene": {
+    "designParts": [
+      { "role": "memberA", "profileRef": { "scope": "system", "id": "rect" }, "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 }, "length": 260, "pose": { "origin": [-260, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] } },
+      { "role": "memberB", "profileRef": { "scope": "system", "id": "rect" }, "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 }, "length": 260, "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "bendAngle": "-$jointAngle", "bendPlaneRotation": "$planeRotation", "axialTranslation": "$fitGap" } }
+    ],
+    "manufacturingParts": [
+      { "id": "blankA", "label": "构件 A 端切下料", "sourceRole": "memberA", "processes": ["miter-a"], "explodedPose": { "origin": [-260, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "axialTranslation": -100 } },
+      { "id": "blankB", "label": "构件 B 端切下料", "sourceRole": "memberB", "processes": ["miter-b"], "explodedPose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "bendAngle": "-$jointAngle", "bendPlaneRotation": "$planeRotation", "axialTranslation": "$fitGap + 100" } }
+    ],
+    "compareLayout": { "designOffset": [0, 0, 120], "manufacturingOffset": [0, 0, -120] }
+  },
+  "parameterDiagram": {
+    "schemaVersion": 2,
+    "viewBox": "0 0 240 170",
+    "paths": ["M20 135 H120", "M120 135 L205 45"],
+    "annotations": [
+      { "parameter": "jointAngle", "kind": "leader", "side": "top", "point": [120, 135], "description": "0° 为共线，非零为成角对接" },
+      { "parameter": "fitGap", "kind": "leader", "side": "bottom", "point": [120, 135], "description": "两端加工后保留的装配间隙" },
+      { "parameter": "planeRotation", "kind": "leader", "side": "right", "point": [165, 90], "description": "接合平面绕第一构件轴线的空间转角" }
+    ]
+  },
+  "outputs": { "manufacturingPartCount": 2, "partGeometry": ["构件 A 端切", "构件 B 端切"], "secondaryProcess": ["端部对正", "焊接或固定"], "bom": [], "assemblyInstruction": true }
+}

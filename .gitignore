@@ -179,3 +179,5 @@ __pycache__/
 
 # Local verification outputs
 /build/
+/Temp
+/tmp

@@ -4,8 +4,8 @@
   "id": "tab-slot-lock",
   "version": "1.0.0",
   "displayName": "插舌 / 插槽装配",
-  "category": "insert",
-  "categoryName": "插接与卡接",
+  "category": "two-end-end",
+  "categoryName": "两件 · 端—端",
   "summary": "两个逻辑零件分别下料，加工插舌与插槽后沿装配轴插入并锁止。",
   "topology": "端部—端部",
   "interfaceType": "插舌 / 插槽",
@@ -52,12 +52,12 @@
         "profileRef": { "scope": "system", "id": "rect" },
         "parameters": { "width": 60, "depth": 40, "wallThickness": 2, "cornerRadius": 3, "innerRadius": 1 },
         "length": 280,
-        "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] }
+        "pose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "axialTranslation": "-$straightDepth - $nominalWidth / 2" }
       }
     ],
     "manufacturingParts": [
-      { "id": "tabBlank", "label": "插舌下料件", "sourceRole": "tab", "processes": ["tab-end"], "pose": { "origin": [-280, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
-      { "id": "slotBlank", "label": "插槽下料件", "sourceRole": "slot", "processes": ["slot-end"], "pose": { "origin": [-280, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+      { "id": "tabBlank", "label": "插舌下料件", "sourceRole": "tab", "processes": ["tab-end"], "explodedPose": { "origin": [-280, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "axialTranslation": -100 } },
+      { "id": "slotBlank", "label": "插槽下料件", "sourceRole": "slot", "processes": ["slot-end"], "explodedPose": { "origin": [0, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0], "axialTranslation": "-$straightDepth - $nominalWidth / 2 + 100" } }
     ],
     "compareLayout": { "designOffset": [0, 0, 100], "manufacturingOffset": [0, 0, -100] }
   },

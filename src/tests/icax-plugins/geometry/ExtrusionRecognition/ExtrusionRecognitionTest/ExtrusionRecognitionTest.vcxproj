@@ -54,6 +54,9 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\..\..\iCAX-Engine\framework\TemplateRuntime\TemplateRuntime.vcxproj">
+      <Project>{60BC73CA-D444-48E9-984F-B3960D374795}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\..\..\iCAX-Plugins\geometry\ExtrusionRecognition\ExtrusionRecognition.vcxproj">
       <Project>{e108b465-2d5a-4904-a2fb-25f7f184d384}</Project>
     </ProjectReference>

@@ -26,7 +26,7 @@ export function patchLibraryDom(view,mount,{left,right,overlay,suffix}) {
   }
   // Patch only HTML-owned HUD nodes. Never touch renderer/canvas/view cube.
   const selectors=view.activeAreaId==="tools"?[".tube-tool-library-hud"]:
-    view.activeAreaId==="assemblies"?[".tube-connection-library-hud"]:
+    view.activeAreaId==="assemblies"?[".tube-assembly-preview-pane > header",".tube-connection-library-hud"]:
     [".tube-profile-library-preview-hud",".tube-profile-library-preview-wait","[data-tube-designer-specification-tree]"];
   const fragment=parse(overlay);
   for(const selector of selectors) {

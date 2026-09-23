@@ -45,6 +45,29 @@ export class ResourceClient {
     return this.fetch(url, { ...init, method: "GET" });
   }
 
+  async getMany(requests) {
+    if (!Array.isArray(requests) || !requests.length || requests.length > 4) {
+      throw new TypeError("resource batch must contain 1 to 4 requests");
+    }
+    if (typeof this.bridge?.requestResources !== "function") {
+      return Promise.all(requests.map(({ url, init }) => this.get(url, init)));
+    }
+    const payload = requests.map(({ url, init = {} }) => ({
+      method: "GET",
+      url: String(url ?? ""),
+      headers: normalizeHeaders(init.headers),
+      body: new ArrayBuffer(0),
+    }));
+    const results = await this.bridge.requestResources(payload);
+    if (!Array.isArray(results) || results.length !== requests.length) {
+      throw new Error("Host bridge returned an incomplete resource batch");
+    }
+    return results.map((result) => new Response(normalizeResponseBody(result?.body), {
+      status: Number(result?.status ?? 500),
+      headers: result?.headers ?? {},
+    }));
+  }
+
   post(collectionUrl, body, init = {}) {
     return this.fetch(collectionUrl, {
       ...init,

@@ -12,6 +12,8 @@ export function matchesParameterCondition(condition, values = {}) {
   if (!key || !Object.hasOwn(values, key)) return false;
   if (condition.op === "eq" || (!condition.op && condition.name)) return Object.is(values[key], condition.value);
   if (condition.op === "ne") return !Object.is(values[key], condition.value);
+  if (condition.op === "in") return (condition.values ?? []).some(value => Object.is(values[key], value));
+  if (condition.op === "notIn") return !(condition.values ?? []).some(value => Object.is(values[key], value));
   return false;
 }
 

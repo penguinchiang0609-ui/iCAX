@@ -24,15 +24,34 @@ export function rgbaToCssColor(colorRGBA) {
 
 export async function loadRenderResource(resourceClient, reference) {
   const url = String(reference?.url ?? "").trim();
-  const version = String(reference?.version ?? "0");
   if (!url) {
     return null;
   }
+  const response = await resourceClient.get(url, { headers: renderResourceHeaders(reference) });
+  return parseRenderResourceResponse(response, reference);
+}
+
+export async function loadRenderResources(resourceClient, references) {
+  const responses = await resourceClient.getMany(references.map((reference) => ({
+    url: String(reference?.url ?? "").trim(),
+    init: { headers: renderResourceHeaders(reference) },
+  })));
+  return Promise.all(responses.map((response, index) =>
+    parseRenderResourceResponse(response, references[index])));
+}
+
+function renderResourceHeaders(reference) {
+  const version = String(reference?.version ?? "0");
   const headers = new Headers({ Accept: "application/vnd.icax.flatbuffer" });
   if (version !== "0") {
     headers.set("ICAX-Resource-Version", version);
   }
-  const response = await resourceClient.get(url, { headers });
+  return headers;
+}
+
+async function parseRenderResourceResponse(response, reference) {
+  const url = String(reference?.url ?? "").trim();
+  const version = String(reference?.version ?? "0");
   if (!response.ok) {
     throw new Error(`Render resource GET failed (${response.status}): ${url}`);
   }

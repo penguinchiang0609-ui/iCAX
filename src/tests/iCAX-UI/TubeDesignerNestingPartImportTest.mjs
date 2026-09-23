@@ -4,6 +4,11 @@ import {
   handleNestingPartImportRibbonCommand,
   renderNestingPartImportDialog,
 } from "../../apps/tube-designer/webpage/nestingPartImport.mjs";
+import {
+  handleDesignerAreaAction,
+  handleDesignerRibbonCommand,
+} from "../../apps/tube-designer/webpage/designerActions.mjs";
+import { renderDesignerDialogs } from "../../apps/tube-designer/webpage/designerViews.mjs";
 import { handlePartsAreaAction, renderNestingLeftPane, renderNestingRightPane } from "../../apps/tube-designer/webpage/partsArea.mjs";
 import { buildAutomaticDimensionReport } from "../../apps/tube-designer/webpage/partInspection.mjs";
 import { ribbonDefinition } from "../../apps/tube-designer/webpage/ribbonDefinition.mjs";
@@ -48,11 +53,138 @@ const ops = { renderProject() {}, showNotice(_context, _view, text) { notices.pu
 
 const nestingTab = ribbonDefinition.tabs.find((tab) => tab.id === "nesting");
 assert.deepEqual(nestingTab.groups.map((group) => group.title), ["零件", "母材", "排样"]);
+assert.equal(nestingTab.groups[0].commands[0].id, "nesting.add-from-products");
+assert.equal(nestingTab.groups[0].commands[0].title, "从产品添加");
 assert.ok(nestingTab.groups.flatMap((group) => group.commands)
   .some((command) => command.id === "nesting.import-part"));
 assert.ok(nestingTab.groups.flatMap((group) => group.commands)
   .every((command) => !command.menuItems?.length));
-assert.match(renderNestingLeftPane({}, view), /“零件”菜单.*导入 STEP \/ IGES/);
+assert.match(renderNestingLeftPane({}, view), /产品页完成拆单.*“零件”菜单批量从产品添加.*导入 STEP \/ IGES/);
+
+const productInstances = Array.from({ length: 90 }, (_, index) => ({
+  entityId: `product-${index + 1}`,
+  name: `产品 ${index + 1}`,
+  productCode: `P-${index + 1}`,
+  quantity: 500,
+  templateId: "bulk-product",
+  parameters: { width: 1200 + index, height: 800 },
+  hasDisassembly: index !== 1,
+  partCount: index === 1 ? 0 : 1,
+}));
+const manufacturingGroups = productInstances
+  .filter((instance) => instance.hasDisassembly)
+  .map((instance) => ({
+    productEntityId: instance.entityId,
+    name: instance.name,
+    parts: [{ entityId: `source-${instance.entityId}`, partKind: "tube" }],
+  }));
+const productSelectionView = {
+  activeAreaId: "nesting",
+  pending: false,
+  scene: {
+    tubeDesigner: {
+      instances: productInstances,
+      templates: [{ id: "bulk-product", name: "批量产品", displayName: "批量产品", available: true }],
+      manufacturingGroups,
+      nestingGroups: [{ generationRunId: "existing", parts: [{ entityId: "existing-part" }] }],
+    },
+  },
+};
+const productImportCalls = [];
+const productImportContext = {
+  activeRibbonTabId: "nesting",
+  sceneProxy: { async invoke(method, payload) {
+    productImportCalls.push({ method, payload });
+    if (method === "TubeDesigner.StageNestingParts") {
+      const stagedPartIds = payload.partEntityIds.map((partEntityId) => `staged-${partEntityId}`);
+      return {
+        stagedParts: payload.partEntityIds.map((sourcePartEntityId, index) => ({
+          sourcePartEntityId,
+          partEntityId: stagedPartIds[index],
+          generationRunId: "bulk",
+          quantity: 500,
+          manufacturingGeometryResourceId: `resource-${index}`,
+          manufacturingGeometryResourceVersion: 1,
+        })),
+        nestingTask: { parts: stagedPartIds.map((partEntityId) => ({ partEntityId, generationRunId: "bulk" })) },
+        partEntityIds: stagedPartIds,
+      };
+    }
+    throw new Error(`Unexpected call: ${method}`);
+  } },
+  actions: { async selectRibbonTab(areaId) { productSelectionView.activeAreaId = areaId; } },
+};
+const productImportNotices = [];
+const productImportOps = { renderProject() {}, showNotice(_context, _view, text) { productImportNotices.push(text); } };
+
+assert.equal(await handleDesignerRibbonCommand(
+  productImportContext,
+  productSelectionView,
+  "nesting.add-from-products",
+  productImportOps,
+), true);
+assert.equal(productSelectionView.tubeDesignerDisassemblySelectorOpen, true);
+assert.equal(productSelectionView.tubeDesignerSelectedInstanceIds.length, 89);
+const productSelectorHtml = renderDesignerDialogs(productSelectionView.scene.tubeDesigner, productSelectionView);
+assert.match(productSelectorHtml, /选择已拆单产品/);
+assert.match(productSelectorHtml, /这里不会重新拆单/);
+assert.match(productSelectorHtml, /已选择 89 \/ 89 个已拆单实例/);
+assert.match(productSelectorHtml, /1 个未拆单不可选/);
+assert.match(productSelectorHtml, /未拆单，请先到产品页生成零件清单/);
+assert.match(productSelectorHtml, /产品 80/);
+
+await handleDesignerAreaAction(
+  productImportContext,
+  productSelectionView,
+  "tube-designer-toggle-instance",
+  { dataset: { tubeDesignerInstanceId: "product-2" }, checked: true },
+  productImportOps,
+);
+assert.equal(productSelectionView.tubeDesignerSelectedInstanceIds.length, 89);
+assert.equal(productSelectionView.tubeDesignerSelectedInstanceIds.includes("product-2"), false);
+
+await handleDesignerAreaAction(
+  productImportContext,
+  productSelectionView,
+  "tube-designer-toggle-instance",
+  { dataset: { tubeDesignerInstanceId: "product-3" }, checked: false },
+  productImportOps,
+);
+assert.equal(productSelectionView.tubeDesignerSelectedInstanceIds.length, 88);
+assert.equal(productSelectionView.tubeDesignerSelectedInstanceIds.includes("product-3"), false);
+
+await handleDesignerAreaAction(
+  productImportContext,
+  productSelectionView,
+  "tube-designer-confirm-disassemble",
+  {},
+  productImportOps,
+);
+assert.deepEqual(productImportCalls.map(({ method }) => method), ["TubeDesigner.StageNestingParts"]);
+assert.equal(productImportCalls[0].payload.partEntityIds.length, 88);
+assert.equal(productImportCalls[0].payload.partEntityIds.length * 500, 44_000);
+assert.equal(productImportCalls[0].payload.partEntityIds.includes("source-product-2"), false);
+assert.equal(productImportCalls[0].payload.partEntityIds.includes("source-product-3"), false);
+assert.equal(productSelectionView.tubeDesignerNestingSelectedPartIds.length, 88);
+assert.equal(productSelectionView.scene.tubeDesigner.nestingGroups[0].parts[0].entityId, "existing-part");
+assert.equal(productSelectionView.scene.tubeDesigner.nestingGroups[1].parts.length, 88);
+assert.equal(productSelectionView.scene.tubeDesigner.manufacturingGroups, manufacturingGroups);
+assert.equal(productSelectionView.activeAreaId, "nesting");
+assert.match(productImportNotices[0], /已拆单产品导入/);
+
+const noDisassemblyView = {
+  activeAreaId: "nesting",
+  pending: false,
+  scene: { tubeDesigner: { instances: [productInstances[1]], manufacturingGroups: [] } },
+};
+assert.equal(await handleDesignerRibbonCommand(
+  productImportContext,
+  noDisassemblyView,
+  "nesting.add-from-products",
+  productImportOps,
+), true);
+assert.equal(noDisassemblyView.tubeDesignerDisassemblySelectorOpen, undefined);
+assert.match(noDisassemblyView.error, /没有可导入的已拆单产品.*产品页生成零件清单/);
 
 await handleNestingPartImportRibbonCommand(context, view, "nesting.import-part", ops);
 assert.deepEqual(calls[0].options.filters[0].extensions, ["step", "stp", "iges", "igs"]);

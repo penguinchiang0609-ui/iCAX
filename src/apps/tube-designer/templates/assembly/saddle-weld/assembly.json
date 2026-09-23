@@ -2,6 +2,7 @@
   "schema": "icax.assembly-template",
   "schemaVersion": 1,
   "id": "saddle-weld",
+  "catalogueHidden": true,
   "version": "1.0.0",
   "displayName": "鞍口相贯焊接",
   "category": "weld",
@@ -55,8 +56,8 @@
       }
     ],
     "manufacturingParts": [
-      { "id": "branchBlank", "label": "支管鞍口下料件", "sourceRole": "branch", "processes": ["cope-branch"], "pose": { "origin": [-220, 0, 70], "direction": [1, 0, 0], "up": [0, 1, 0] } },
-      { "id": "mainBlank", "label": "主管下料件", "sourceRole": "main", "processes": [], "pose": { "origin": [-260, 0, -70], "direction": [1, 0, 0], "up": [0, 1, 0] } }
+      { "id": "branchBlank", "label": "支管鞍口下料件", "sourceRole": "branch", "processes": ["cope-branch"], "explodedPose": { "origin": [0, 0, "$fitGap + 30"], "direction": [0, 0, 1], "up": [0, 1, 0], "axisAngle": { "axis": [0, 1, 0], "degrees": "90 - $intersectionAngle" }, "axialTranslation": 100 } },
+      { "id": "mainBlank", "label": "主管下料件", "sourceRole": "main", "processes": [], "explodedPose": { "origin": [-260, 0, 0], "direction": [1, 0, 0], "up": [0, 1, 0] } }
     ],
     "compareLayout": { "designOffset": [0, 0, 150], "manufacturingOffset": [0, 0, -170] }
   },
